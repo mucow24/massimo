@@ -4,6 +4,7 @@ import type {
   DotFill,
   DotServiceCodeColor,
   DotShape,
+  DotStrokeAlign,
   DotStrokeColor,
   DotStyle,
   StyleDef,
@@ -39,6 +40,7 @@ export const DOT_SHAPE_PRESETS: Record<DotShape, DotStyle> = {
     fill: K,
     strokeWidth: 0,
     strokeColor: W,
+    strokeAlign: 'center',
     showServiceCode: false,
   },
   'open-black': {
@@ -46,6 +48,7 @@ export const DOT_SHAPE_PRESETS: Record<DotShape, DotStyle> = {
     fill: 'none',
     strokeWidth: 1.5,
     strokeColor: K,
+    strokeAlign: 'center',
     showServiceCode: false,
   },
   'filled-black-white-stroke': {
@@ -53,6 +56,7 @@ export const DOT_SHAPE_PRESETS: Record<DotShape, DotStyle> = {
     fill: K,
     strokeWidth: 2,
     strokeColor: W,
+    strokeAlign: 'center',
     showServiceCode: false,
   },
   'filled-white': {
@@ -60,6 +64,7 @@ export const DOT_SHAPE_PRESETS: Record<DotShape, DotStyle> = {
     fill: W,
     strokeWidth: 0,
     strokeColor: K,
+    strokeAlign: 'center',
     showServiceCode: false,
   },
   'open-white': {
@@ -67,6 +72,7 @@ export const DOT_SHAPE_PRESETS: Record<DotShape, DotStyle> = {
     fill: 'none',
     strokeWidth: 1.5,
     strokeColor: W,
+    strokeAlign: 'center',
     showServiceCode: false,
   },
   'filled-white-black-stroke': {
@@ -74,6 +80,7 @@ export const DOT_SHAPE_PRESETS: Record<DotShape, DotStyle> = {
     fill: W,
     strokeWidth: 2,
     strokeColor: K,
+    strokeAlign: 'center',
     showServiceCode: false,
   },
   'filled-line-color': {
@@ -81,6 +88,7 @@ export const DOT_SHAPE_PRESETS: Record<DotShape, DotStyle> = {
     fill: 'line',
     strokeWidth: 0,
     strokeColor: W,
+    strokeAlign: 'center',
     showServiceCode: false,
   },
   'filled-line-color-white-stroke': {
@@ -88,6 +96,7 @@ export const DOT_SHAPE_PRESETS: Record<DotShape, DotStyle> = {
     fill: 'line',
     strokeWidth: 2,
     strokeColor: W,
+    strokeAlign: 'center',
     showServiceCode: false,
   },
   'filled-line-color-black-stroke': {
@@ -95,6 +104,7 @@ export const DOT_SHAPE_PRESETS: Record<DotShape, DotStyle> = {
     fill: 'line',
     strokeWidth: 2,
     strokeColor: K,
+    strokeAlign: 'center',
     showServiceCode: false,
   },
   'filled-black-service-code': {
@@ -102,6 +112,7 @@ export const DOT_SHAPE_PRESETS: Record<DotShape, DotStyle> = {
     fill: K,
     strokeWidth: 0,
     strokeColor: W,
+    strokeAlign: 'center',
     showServiceCode: true,
   },
   'filled-black-diamond': {
@@ -109,6 +120,7 @@ export const DOT_SHAPE_PRESETS: Record<DotShape, DotStyle> = {
     fill: K,
     strokeWidth: 0,
     strokeColor: W,
+    strokeAlign: 'center',
     showServiceCode: false,
   },
   'filled-white-diamond': {
@@ -116,10 +128,25 @@ export const DOT_SHAPE_PRESETS: Record<DotShape, DotStyle> = {
     fill: W,
     strokeWidth: 0,
     strokeColor: K,
+    strokeAlign: 'center',
     showServiceCode: false,
   },
-  'filled-black-x': { shape: 'x', fill: K, strokeWidth: 0, strokeColor: W, showServiceCode: false },
-  'filled-white-x': { shape: 'x', fill: W, strokeWidth: 0, strokeColor: K, showServiceCode: false },
+  'filled-black-x': {
+    shape: 'x',
+    fill: K,
+    strokeWidth: 0,
+    strokeColor: W,
+    strokeAlign: 'center',
+    showServiceCode: false,
+  },
+  'filled-white-x': {
+    shape: 'x',
+    fill: W,
+    strokeWidth: 0,
+    strokeColor: K,
+    strokeAlign: 'center',
+    showServiceCode: false,
+  },
   // The TfL tick. 'line' fill so the bar always paints in its line's color;
   // stroke/code are inert on dash stops (see DotBaseShape doc). Rendered by
   // DashGlyph on canvas; StopGlyph only draws the context-free picker preview.
@@ -128,9 +155,17 @@ export const DOT_SHAPE_PRESETS: Record<DotShape, DotStyle> = {
     fill: 'line',
     strokeWidth: 0,
     strokeColor: 'line',
+    strokeAlign: 'center',
     showServiceCode: false,
   },
-  none: { shape: 'circle', fill: 'none', strokeWidth: 0, strokeColor: K, showServiceCode: false },
+  none: {
+    shape: 'circle',
+    fill: 'none',
+    strokeWidth: 0,
+    strokeColor: K,
+    strokeAlign: 'center',
+    showServiceCode: false,
+  },
 };
 
 // The historical default: `undefined` on `StopCell.dotStyle` defers to the
@@ -290,6 +325,9 @@ export interface DotRenderParams {
   fill: string;
   stroke?: string;
   strokeWidth?: number;
+  // Where the stroke sits relative to the edge. Present only alongside a stroke
+  // (see resolveDotRender); consumers treat an absent value as 'center'.
+  strokeAlign?: DotStrokeAlign;
   code?: { text: string; color: string };
 }
 
@@ -334,6 +372,7 @@ export function resolveDotRender(
   if (style.strokeWidth > 0 && !isDash) {
     out.stroke = resolveLineOrPairColor(style.strokeColor, lineColor, darkMode);
     out.strokeWidth = style.strokeWidth;
+    out.strokeAlign = style.strokeAlign;
   }
   if (showCode) {
     // An explicit serviceCodeColor overrides the auto-contrast: 'line' → the
@@ -389,6 +428,7 @@ export function canonicalDotStyle(s: DotStyle): DotStyle {
     fill: lcFill(s.fill),
     strokeWidth: Math.max(0, Math.round(s.strokeWidth / DOT_STROKE_STEP) * DOT_STROKE_STEP),
     strokeColor: lcStroke(s.strokeColor),
+    strokeAlign: s.strokeAlign,
     showServiceCode: s.showServiceCode,
   };
   // lcStroke passes the 'line' sentinel through and lowercases a day/night pair.
@@ -404,6 +444,11 @@ export function dotStylesEqual(a: DotStyle, b: DotStyle): boolean {
     dotColorsEqual(a.fill, b.fill) &&
     a.strokeWidth === b.strokeWidth &&
     dotColorsEqual(a.strokeColor, b.strokeColor) &&
+    // Absent strokeAlign means 'center' — so a raw pre-strokeAlign dot style
+    // still value-matches the (now strokeAlign-bearing) factory presets during
+    // migration, where the bakes run before the field is backfilled. In the live
+    // app every style is canonical, so this never fires.
+    (a.strokeAlign ?? 'center') === (b.strokeAlign ?? 'center') &&
     a.showServiceCode === b.showServiceCode &&
     optDotColorEqual(a.serviceCodeColor, b.serviceCodeColor)
   );

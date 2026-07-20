@@ -18,6 +18,7 @@ const style = (overrides: Partial<DotStyle> = {}): DotStyle => ({
   fill: K,
   strokeWidth: 0,
   strokeColor: W,
+  strokeAlign: 'center',
   showServiceCode: false,
   ...overrides,
 });
@@ -234,6 +235,30 @@ describe('dotStylesEqual', () => {
     expect(dotStylesEqual(style(), style({ shape: 'diamond' }))).toBe(false);
     expect(dotStylesEqual(style(), style({ strokeWidth: 1 }))).toBe(false);
     expect(dotStylesEqual(style(), style({ showServiceCode: true }))).toBe(false);
+  });
+
+  it('compares strokeAlign', () => {
+    // Two styles that differ only in stroke alignment are NOT equal — otherwise
+    // editing the alignment would be a silent no-op in updateStyleProps.
+    expect(dotStylesEqual(style(), style({ strokeAlign: 'inside' }))).toBe(false);
+    expect(
+      dotStylesEqual(style({ strokeAlign: 'inside' }), style({ strokeAlign: 'outside' })),
+    ).toBe(false);
+    expect(dotStylesEqual(style({ strokeAlign: 'inside' }), style({ strokeAlign: 'inside' }))).toBe(
+      true,
+    );
+  });
+
+  it('treats an ABSENT strokeAlign as center (legacy value-match)', () => {
+    // A raw pre-strokeAlign dot style must still value-match its canonical center
+    // form — this is what lets the migration bakes (bakeStopDotLibrary /
+    // bakeLineDotDefaults) tag legacy dots against the factory presets, which now
+    // carry strokeAlign, BEFORE the v<21 backfill fills the field.
+    const { strokeAlign: _drop, ...noAlign } = style({ strokeWidth: 2 });
+    expect(dotStylesEqual(noAlign as DotStyle, style({ strokeWidth: 2 }))).toBe(true);
+    expect(
+      dotStylesEqual(noAlign as DotStyle, style({ strokeWidth: 2, strokeAlign: 'inside' })),
+    ).toBe(false);
   });
 
   it('compares serviceCodeColor (present vs absent, and both sides)', () => {

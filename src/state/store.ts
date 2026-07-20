@@ -41,6 +41,7 @@ import {
   backfillPolygonDarkColors,
   backfillTextLabelColors,
   backfillTransferDayNightColors,
+  backfillDotStrokeAlign,
   bakeDocCurveRadius,
   bakeLegacyBackgroundOrder,
   bakeLegacyLabelSettings,
@@ -444,6 +445,14 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     if (out.lines && styles) {
       out = { ...out, lines: pruneLineDotTypeTagMismatches(out.lines, styles) };
     }
+  }
+  if (v < 21) {
+    // `strokeAlign` became a REQUIRED DotStyle field (center/inside/outside);
+    // persisted dot styles predate it. Backfill 'center' — the historical,
+    // SVG-native stroke placement — across every dot-style home so the
+    // required-field invariant holds. The file-import path covers this via
+    // `sanitizeDotStyle`.
+    out = backfillDotStrokeAlign(out);
   }
   // Non-version-gated invariant: at least one VALID active palette. Unlike the
   // migrations above, this isn't tied to a schema bump — a persisted doc with
@@ -1061,8 +1070,8 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 20,
-        // Version migration chain v0 → v18 lives in `migrateDoc` (above), which
+        version: 21,
+        // Version migration chain v0 → v21 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         // `migrate` only runs when the STORED version differs from the config

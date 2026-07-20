@@ -60,6 +60,7 @@ import type {
   DotFill,
   DotServiceCodeColor,
   DotShape,
+  DotStrokeAlign,
   DotStrokeColor,
   DotStyle,
   LabelValign,
@@ -715,6 +716,99 @@ export function bakeStopDotLibrary(doc: MapDoc): MapDoc {
 }
 
 /**
+ * Backfill the required `strokeAlign` field onto every persisted dot style that
+ * predates it. Walks all four dot-style homes — a stop's `dotStyle` override, a
+ * line's `singletonDotStyle`/`multiDotStyle` split shadows, and each stopDot
+ * library def's `props` — adding 'center' (the historical, SVG-native stroke
+ * placement) wherever it is absent. Reference-stable when nothing is missing, so
+ * migrateDoc keeps its pass-through-by-reference for already-canonical docs. The
+ * file-import path needs no separate call: every dot style there already flows
+ * through `sanitizeDotStyle`, which defaults the field.
+ */
+export function backfillDotStrokeAlign<
+  T extends {
+    stations?: Record<string, Station>;
+    lines?: Record<string, Line>;
+    styles?: Record<string, StyleDef>;
+  },
+>(doc: T): T {
+  // A DotStyle persisted before the field existed lacks it at runtime; add
+  // 'center'. Same reference back when it's already present (no churn).
+  const withAlign = (ds: DotStyle): DotStyle =>
+    (ds as { strokeAlign?: DotStrokeAlign }).strokeAlign === undefined
+      ? { ...ds, strokeAlign: 'center' }
+      : ds;
+  let changed = false;
+
+  let lines = doc.lines;
+  if (lines) {
+    const next: Record<string, Line> = {};
+    for (const id of Object.keys(lines)) {
+      const ln = lines[id];
+      const s = ln.singletonDotStyle && withAlign(ln.singletonDotStyle);
+      const m = ln.multiDotStyle && withAlign(ln.multiDotStyle);
+      if (s === ln.singletonDotStyle && m === ln.multiDotStyle) {
+        next[id] = ln;
+      } else {
+        changed = true;
+        next[id] = {
+          ...ln,
+          ...(s ? { singletonDotStyle: s } : {}),
+          ...(m ? { multiDotStyle: m } : {}),
+        };
+      }
+    }
+    lines = next;
+  }
+
+  let stations = doc.stations;
+  if (stations) {
+    const next: Record<string, Station> = {};
+    for (const sid of Object.keys(stations)) {
+      const st = stations[sid];
+      let stopsChanged = false;
+      const stops = st.stops.map((stop) => {
+        if (stop.dotStyle === undefined) return stop;
+        const d = withAlign(stop.dotStyle);
+        if (d === stop.dotStyle) return stop;
+        stopsChanged = true;
+        return { ...stop, dotStyle: d };
+      });
+      next[sid] = stopsChanged ? { ...st, stops } : st;
+      if (stopsChanged) changed = true;
+    }
+    stations = next;
+  }
+
+  let styles = doc.styles;
+  if (styles) {
+    const next: Record<string, StyleDef> = {};
+    for (const id of Object.keys(styles)) {
+      const def = styles[id];
+      if (def.kind === 'stopDot') {
+        const props = withAlign(def.props);
+        if (props !== def.props) {
+          changed = true;
+          next[id] = { ...def, props };
+          continue;
+        }
+      }
+      next[id] = def;
+    }
+    styles = next;
+  }
+
+  return changed
+    ? {
+        ...doc,
+        ...(lines ? { lines } : {}),
+        ...(stations ? { stations } : {}),
+        ...(styles ? { styles } : {}),
+      }
+    : doc;
+}
+
+/**
  * Merge the RETIRED `polygonOrder` + `svgImageOrder` into the single
  * `backgroundOrder`. Polygons and svg images share one z-stack now, so either
  * kind can sit over the other; before the merge they were two arrays painted
@@ -854,6 +948,14 @@ export function foldPolygonFillOpacity(polygons: Record<string, Polygon>): {
 }
 
 const KNOWN_DOT_BASE_SHAPES = new Set<DotBaseShape>(['circle', 'square', 'diamond', 'x', 'dash']);
+const KNOWN_DOT_STROKE_ALIGNS = new Set<DotStrokeAlign>(['center', 'inside', 'outside']);
+// Stroke alignment is REQUIRED on DotStyle but was added after some saves; a
+// missing or malformed value defaults to 'center' (the historical behavior)
+// rather than invalidating the whole style.
+const sanitizeStrokeAlign = (v: unknown): DotStrokeAlign =>
+  typeof v === 'string' && KNOWN_DOT_STROKE_ALIGNS.has(v as DotStrokeAlign)
+    ? (v as DotStrokeAlign)
+    : 'center';
 
 // Validate + normalize one raw dot color from a hand-edited file: the 'line'
 // sentinel, the 'none' sentinel (fills only), or a {day, night} string pair
@@ -909,6 +1011,7 @@ function sanitizeDotStyle(raw: unknown): DotStyle | undefined {
     fill,
     strokeWidth: Math.max(0, o.strokeWidth),
     strokeColor,
+    strokeAlign: sanitizeStrokeAlign(o.strokeAlign),
     showServiceCode: o.showServiceCode,
   };
   if (serviceCodeColor !== undefined) out.serviceCodeColor = serviceCodeColor;

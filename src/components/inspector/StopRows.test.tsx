@@ -77,6 +77,7 @@ describe('<StopRows />', () => {
       fill: 'line',
       strokeWidth: 0,
       strokeColor: 'line',
+      strokeAlign: 'center',
       showServiceCode: false,
     } as const;
     seed({
@@ -99,6 +100,7 @@ describe('<StopRows />', () => {
       fill: 'line',
       strokeWidth: 0,
       strokeColor: 'line',
+      strokeAlign: 'center',
       showServiceCode: false,
     } as const;
     seed({
