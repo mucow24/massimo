@@ -8,7 +8,7 @@ import {
   TEXT_LABEL_COLOR_DEFAULT,
   TEXT_LABEL_DARK_COLOR_DEFAULT,
 } from '../model/transforms';
-import { DOT_SHAPE_PRESETS } from '../model/dotStyle';
+import { DEFAULT_STOP_DOT_STYLE_ID, DOT_SHAPE_PRESETS } from '../model/dotStyle';
 import {
   makeLine,
   makeStation,
@@ -277,9 +277,12 @@ describe('migrateDoc', () => {
       };
       const out = run(input, 6);
       expect(out.stations!.S.stops).toBe(input.stations.S.stops);
-      expect('singletonDotStyle' in out.lines!.L1).toBe(false);
-      expect('multiDotStyle' in out.lines!.L1).toBe(false);
       expect('defaultDotShape' in out.lines!.L1).toBe(false);
+      // The v<19 stopDot-library bake materializes + tags each line's split dot
+      // defaults with the ⭐ default (dot appearance is per-line now).
+      const l1 = out.lines!.L1 as { singletonDotStyleId?: string; multiDotStyleId?: string };
+      expect(l1.singletonDotStyleId).toBe(DEFAULT_STOP_DOT_STYLE_ID);
+      expect(l1.multiDotStyleId).toBe(DEFAULT_STOP_DOT_STYLE_ID);
     });
 
     it('does not convert at version >= 7', () => {
@@ -579,8 +582,13 @@ describe('migrateDoc', () => {
       const out = run({ styles: {} } as Record<string, unknown>, 9) as unknown as {
         styles: Record<string, StyleDef>;
       };
-      const names = Object.values(out.styles).map((d) => d.name);
+      // The six per-kind item Defaults (the stopDot library is seeded separately
+      // by the v<19 bake and asserted below).
+      const names = Object.values(out.styles)
+        .filter((d) => d.kind !== 'stopDot')
+        .map((d) => d.name);
       expect(names).toEqual(['Default', 'Default', 'Default', 'Default', 'Default', 'Default']);
+      expect(Object.values(out.styles).some((d) => d.kind === 'stopDot')).toBe(true);
     });
 
     it('strips since-dropped width/leading/tracking keys from round-1 textLabel defs', () => {
@@ -641,14 +649,12 @@ describe('migrateDoc', () => {
         styles: Record<string, StyleDef>;
         styleDefaults: Record<string, string>;
       };
-      expect(Object.values(out.styles).map((d) => d.name)).toEqual([
-        'Default',
-        'Default',
-        'Default',
-        'Default',
-        'Default',
-        'Default',
-      ]);
+      expect(
+        Object.values(out.styles)
+          .filter((d) => d.kind !== 'stopDot')
+          .map((d) => d.name),
+      ).toEqual(['Default', 'Default', 'Default', 'Default', 'Default', 'Default']);
+      expect(Object.values(out.styles).some((d) => d.kind === 'stopDot')).toBe(true);
       expect(out.styleDefaults).toEqual(FACTORY_STYLE_DEFAULTS);
     });
   });

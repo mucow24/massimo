@@ -1,37 +1,17 @@
 import { usePopover } from './usePopover';
 import { StopGlyph } from './StopGlyph';
-import { DOT_SHAPE_PRESETS } from '../model/dotStyle';
-import type { DotShape, DotStyle } from '../model/types';
-
-// Menu options stay keyed by preset id — the picker's currency is presets;
-// each pick writes the preset's full DotStyle into the doc.
-interface ShapeOption {
-  shape: DotShape;
-  label: string;
-}
-
-export const SHAPES: ShapeOption[] = [
-  { shape: 'filled-black', label: 'Filled black' },
-  { shape: 'open-black', label: 'Open black' },
-  { shape: 'filled-black-white-stroke', label: 'Filled black with white stroke' },
-  { shape: 'filled-white', label: 'Filled white' },
-  { shape: 'open-white', label: 'Open white' },
-  { shape: 'filled-white-black-stroke', label: 'Filled white with black stroke' },
-  { shape: 'filled-line-color', label: 'Filled line color' },
-  { shape: 'filled-line-color-white-stroke', label: 'Filled line color with white stroke' },
-  { shape: 'filled-line-color-black-stroke', label: 'Filled line color with black stroke' },
-  { shape: 'filled-black-service-code', label: 'Filled black with service code' },
-  { shape: 'filled-black-diamond', label: 'Filled black diamond' },
-  { shape: 'filled-white-diamond', label: 'Filled white diamond' },
-  { shape: 'filled-black-x', label: 'Filled black X' },
-  { shape: 'filled-white-x', label: 'Filled white X' },
-  { shape: 'dash', label: 'Dash (tick)' },
-  { shape: 'none', label: 'None' },
-];
+import { useDoc } from '../state/store';
+import { stylesOfKind } from '../model/styles';
+import type { DotStyle } from '../model/types';
 
 const PREVIEW_SIZE = 20;
 const TRIGGER_SIZE = 15;
 
+/**
+ * Dot-style picker: the trigger shows the current dot; the menu lists every
+ * style in the doc's stopDot LIBRARY (Styles panel → "Stop dots"). Picking one
+ * emits its style id — the caller stamps + tags the target slot.
+ */
 export function StationShapePicker({
   disabled,
   currentStyle,
@@ -44,21 +24,23 @@ export function StationShapePicker({
   currentStyle: DotStyle;
   lineColor?: string;
   serviceCode?: string;
-  onPick: (shape: DotShape) => void;
+  onPick: (styleId: string) => void;
   // Accessible name of the trigger. Defaults to "Stop shape"; callers with
   // more than one picker on screen (the line inspector's singleton/shared
   // sections) pass distinct names so each is individually addressable.
   ariaLabel?: string;
 }) {
   const { open, setOpen, wrapRef } = usePopover();
+  const styles = useDoc((s) => s.styles);
+  const library = stylesOfKind(styles, 'stopDot');
 
   const onTriggerClick = () => {
     if (disabled) return;
     setOpen((x) => !x);
   };
 
-  const handlePick = (shape: DotShape) => {
-    onPick(shape);
+  const handlePick = (styleId: string) => {
+    onPick(styleId);
     setOpen(false);
   };
 
@@ -91,14 +73,15 @@ export function StationShapePicker({
       </button>
       {open && (
         <div className="shape-grid" role="menu">
-          {SHAPES.map(({ shape, label }) => (
+          {library.map((def) => (
             <button
-              key={shape}
+              key={def.id}
               type="button"
               role="menuitem"
               className="shape-option"
-              aria-label={label}
-              onClick={() => handlePick(shape)}
+              aria-label={def.name}
+              title={def.name}
+              onClick={() => handlePick(def.id)}
             >
               <svg
                 width={PREVIEW_SIZE}
@@ -108,7 +91,7 @@ export function StationShapePicker({
                 <StopGlyph
                   cx={0}
                   cy={0}
-                  style={DOT_SHAPE_PRESETS[shape]}
+                  style={def.props as DotStyle}
                   lineColor={lineColor}
                   serviceCode={serviceCode}
                 />
