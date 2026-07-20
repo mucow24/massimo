@@ -11,13 +11,12 @@ import {
   buildBandGeometry,
   buildOrderedRenderables,
   buildStopMarkers,
-  resolveSegmentStyle,
   stopPosWorld,
   SegmentBandSpec,
 } from '../geometry/interlining';
 import { edgeEndpoints } from '../model/lineTopology';
 import { pairKeyOf } from '../model/pairKey';
-import { decideSegmentClick, NEXT_STYLE } from './canvas/appendGestures';
+import { decideSegmentClick, nextSegmentStyle } from './canvas/appendGestures';
 import { effectiveBackgroundOrder, type ItemRef } from '../model/transforms';
 import { resolveDayNight, TRANSFER_STYLE_DEFAULTS } from '../model/transferStyle';
 import { defaultStyleProps } from '../model/styles';
@@ -902,7 +901,7 @@ export function MapCanvas() {
         const { cursor, line } = ctx;
         if (e.shiftKey) {
           const [a, b] = edgeEndpoints(spec.pairKey);
-          setLineSegmentStyle(line.id, a, b, NEXT_STYLE[resolveSegmentStyle(line, spec.pairKey)]);
+          setLineSegmentStyle(line.id, a, b, nextSegmentStyle(line, spec.pairKey));
           return;
         }
         const world = view.screenToWorld(e.clientX, e.clientY);
@@ -1510,12 +1509,12 @@ export function MapCanvas() {
                 if (!line) return;
                 // Cycle the pattern in place; leave the cursor armed so the
                 // chip stays put and repeated clicks keep cycling (like
-                // shift-click). Reuses the shift-click cycle map + resolver.
+                // shift-click). Reuses the shared nextSegmentStyle cycle.
                 setLineSegmentStyle(
                   mode.lineId,
                   from,
                   to,
-                  NEXT_STYLE[resolveSegmentStyle(line, pairKeyOf(from, to))],
+                  nextSegmentStyle(line, pairKeyOf(from, to)),
                 );
               }}
               vbX={overdrawn.vbX}

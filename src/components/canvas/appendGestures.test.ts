@@ -9,6 +9,7 @@ import {
   decideStationClick,
   validCursor,
   NEXT_STYLE,
+  nextSegmentStyle,
   type AppendCursor,
 } from './appendGestures';
 
@@ -344,5 +345,22 @@ describe('NEXT_STYLE', () => {
       s = NEXT_STYLE[s];
     } while (s !== 'solid');
     expect(seen.size).toBe(Object.keys(NEXT_STYLE).length);
+  });
+});
+
+describe('nextSegmentStyle', () => {
+  it('advances an unstyled (default solid) segment one step to dashed', () => {
+    // a|b has no override → resolves to solid → next is dashed.
+    expect(nextSegmentStyle(line(), 'a|b')).toBe('dashed');
+  });
+
+  it("advances from the segment's stored style, not the line default", () => {
+    const ln = makeLine({
+      id: 'L1',
+      stations: ['a', 'b', 'c'],
+      segmentStyles: { 'a|b': 'dashed', 'b|c': 'dotted' },
+    });
+    expect(nextSegmentStyle(ln, 'a|b')).toBe('hatched'); // dashed → hatched
+    expect(nextSegmentStyle(ln, 'b|c')).toBe('dashed-open'); // dotted → dashed-open
   });
 });

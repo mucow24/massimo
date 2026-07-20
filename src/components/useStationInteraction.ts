@@ -2,13 +2,13 @@ import { Line, LineId, Station } from '../model/types';
 import { dragState, useDoc, useSelection } from '../state/store';
 import { dispatchMirrored } from '../state/mirrorDispatch';
 import { useSnapPrefs } from '../state/snapPrefs';
-import { resolveSegmentStyle, stopPosWorld } from '../geometry/interlining';
+import { stopPosWorld } from '../geometry/interlining';
 import { pairKeyOf } from '../model/pairKey';
 import { pathBetweenStations } from '../model/pathSelect';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { itemCursor } from './canvas/itemCursor';
 import { screenToWorld } from './canvas/viewportMath';
-import { decideStationClick, NEXT_STYLE } from './canvas/appendGestures';
+import { decideStationClick, nextSegmentStyle } from './canvas/appendGestures';
 
 // Map a click on a station to the closest dot's lineId. Used to pin a
 // transfer endpoint to the specific stop the user clicked on, rather than
@@ -170,7 +170,7 @@ export function useStationInteraction(
             lineId,
             decision.from,
             decision.to,
-            NEXT_STYLE[resolveSegmentStyle(ln, pairKeyOf(decision.from, decision.to))],
+            nextSegmentStyle(ln, pairKeyOf(decision.from, decision.to)),
           );
           break;
         default:
