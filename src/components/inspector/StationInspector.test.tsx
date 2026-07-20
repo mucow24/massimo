@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { StationInspector } from './StationInspector';
 import { StationPopover } from '../StationPopover';
 import { useDoc, useSelection } from '../../state/store';
+import { useStationEditorPrefs } from '../../state/stationEditorPrefs';
 import { historyDepth, undo } from '../../state/history';
 import { DEFAULT_DOC, resolveOffsetPerp } from '../../model/transforms';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
@@ -32,6 +33,7 @@ const SELECTION_BLANK = {
 describe('<StationInspector /> — shape picker wiring', () => {
   beforeEach(() => {
     localStorage.clear();
+    useStationEditorPrefs.setState({ styleExpanded: false });
     useDoc.setState({ ...DEFAULT_DOC });
     useSelection.setState(SELECTION_BLANK);
   });
@@ -199,6 +201,9 @@ describe('<StationInspector /> — shape picker wiring', () => {
       }),
     });
     useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+    // The Size slider is in the collapsible detail; open it so the locked-state
+    // assertion below can see it disabled.
+    useStationEditorPrefs.setState({ styleExpanded: true });
 
     function LivePopover() {
       const station = useDoc((s) => s.stations.a);
@@ -235,9 +240,12 @@ describe('<StationInspector /> — shape picker wiring', () => {
   });
 
   describe('Text style section', () => {
+    // The style detail (Size → Tracking) collapses by default; these tests
+    // exercise the controls, so open it up front.
     const setup = (station = makeStation({ id: 'a' })) => {
       useDoc.setState({ ...DEFAULT_DOC, ...makeDoc({ stations: [station] }) });
       useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      useStationEditorPrefs.setState({ styleExpanded: true });
       render(<StationInspector id="a" />);
     };
 
@@ -249,6 +257,50 @@ describe('<StationInspector /> — shape picker wiring', () => {
       expect(screen.getByRole('button', { name: 'Italic' })).toBeInTheDocument();
       expect(screen.getByRole('slider', { name: /leading/i })).toBeInTheDocument();
       expect(screen.getByRole('slider', { name: /tracking/i })).toBeInTheDocument();
+    });
+
+    it('collapses the Size → Tracking detail by default; the style picker stays visible', () => {
+      useDoc.setState({ ...DEFAULT_DOC, ...makeDoc({ stations: [makeStation({ id: 'a' })] }) });
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+      // Picker always shows; the detail rows are hidden until expanded.
+      expect(screen.getByRole('combobox', { name: 'Style' })).toBeInTheDocument();
+      expect(screen.queryByRole('slider', { name: /size/i })).toBeNull();
+      expect(screen.queryByRole('slider', { name: /tracking/i })).toBeNull();
+    });
+
+    it('a locked station still shows the typography detail even when collapsed by preference', () => {
+      // Lock freezes editing, not viewing: the collapse pref is false, but a
+      // locked station forces the (disabled) detail open so its values stay
+      // visible — the disclosure toggle is itself frozen by the fieldset.
+      useStationEditorPrefs.setState({ styleExpanded: false });
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({ stations: [{ ...makeStation({ id: 'a' }), locked: true }] }),
+      });
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+      const size = screen.getByRole('slider', { name: /size/i });
+      expect(size).toBeInTheDocument();
+      expect(size).toHaveAttribute('data-disabled');
+    });
+
+    it('the disclosure reveals the detail and persists the choice', async () => {
+      const user = userEvent.setup();
+      useDoc.setState({ ...DEFAULT_DOC, ...makeDoc({ stations: [makeStation({ id: 'a' })] }) });
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+
+      const toggle = screen.getByRole('button', { name: /size & spacing/i });
+      expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await user.click(toggle);
+      expect(screen.getByRole('slider', { name: /size/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /size & spacing/i })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+      // The open/closed state is a remembered preference.
+      expect(useStationEditorPrefs.getState().styleExpanded).toBe(true);
     });
 
     it('the Size slider writes per-station fontSize', () => {
@@ -284,6 +336,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
         }),
       });
       useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      useStationEditorPrefs.setState({ styleExpanded: true });
       render(<StationInspector id="a" />);
       expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Big');
       stepSlider(screen.getByRole('slider', { name: /size/i }), 1);
@@ -309,6 +362,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
         selectedStationIds: ['a'],
         mirrorMatching: true,
       });
+      useStationEditorPrefs.setState({ styleExpanded: true });
 
       render(<StationInspector id="a" />);
       await user.click(screen.getByRole('button', { name: 'Italic' }));
@@ -398,6 +452,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
 describe('<StationInspector /> — stop dot size textbox', () => {
   beforeEach(() => {
     localStorage.clear();
+    useStationEditorPrefs.setState({ styleExpanded: false });
     useDoc.setState({ ...DEFAULT_DOC });
     useSelection.setState(SELECTION_BLANK);
     useDoc.temporal.getState().clear();
@@ -554,6 +609,7 @@ describe('<StationInspector /> — stop dot size textbox', () => {
 describe('<StationInspector /> — edit paths that reach the document (E8)', () => {
   beforeEach(() => {
     localStorage.clear();
+    useStationEditorPrefs.setState({ styleExpanded: false });
     useDoc.setState({ ...DEFAULT_DOC });
     useSelection.setState(SELECTION_BLANK);
     useDoc.temporal.getState().clear();
@@ -631,65 +687,88 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     expect(screen.queryByRole('button', { name: /Mirror/ })).toBeNull();
   });
 
-  it('WP sits in the top header row next to the Name label (Lock moved to the footer)', () => {
+  it('Edit layout, Select Similar, and WP share the button bar (Name is a row of its own)', () => {
     seedStation();
     render(<StationInspector id="a" />);
+    const editLayout = screen.getByRole('button', { name: 'Edit layout' });
+    const similar = screen.getByRole('button', { name: 'Select Similar' });
     const wp = screen.getByRole('button', { name: 'Waypoint' });
-    const nameLabel = screen.getByText('Name');
-    expect(wp.parentElement).toBe(nameLabel.parentElement);
+    // All three live in one row (the button bar).
+    expect(similar.parentElement).toBe(editLayout.parentElement);
+    expect(wp.parentElement).toBe(editLayout.parentElement);
+    // Left-to-right order: Edit layout, Select Similar, WP (right-justified).
+    const bar = Array.from(editLayout.parentElement!.children);
+    expect(bar.indexOf(editLayout)).toBeLessThan(bar.indexOf(similar));
+    expect(bar.indexOf(similar)).toBeLessThan(bar.indexOf(wp));
+    // The Name field no longer shares a line with these buttons.
+    expect(wp.parentElement).not.toBe(screen.getByText('Name').parentElement);
     // The lock toggle is the StationPopover footer's, not the inspector's.
     expect(screen.queryByRole('button', { name: 'Lock station' })).toBeNull();
   });
 
-  it('clicking the align button cycles label.align one step (auto → left) as one undo entry', async () => {
+  it('clicking a horizontal-alignment segment sets label.align as one undo entry', async () => {
     const user = userEvent.setup();
     seedStation();
+    // Default is the legacy 'auto'; the manual segmented control shows while the
+    // wand is off.
     expect(useDoc.getState().stations.a.label.align).toBe('auto');
     useDoc.temporal.getState().clear();
     const before = historyDepth();
     render(<StationInspector id="a" />);
-    await user.click(
-      screen.getByRole('button', { name: 'Align: auto (snap against adjacent stop)' }),
-    );
+    await user.click(screen.getByLabelText('Align left'));
     expect(useDoc.getState().stations.a.label.align).toBe('start');
     expect(historyDepth() - before).toBe(1);
-    // The button re-labels to the new state and keeps cycling from there.
-    await user.click(screen.getByRole('button', { name: 'Align: left' }));
+    // Each segment writes its own absolute value.
+    await user.click(screen.getByLabelText('Align center'));
     expect(useDoc.getState().stations.a.label.align).toBe('middle');
-  });
-
-  it('the align cycle wraps from the last state back to the first (right → auto)', async () => {
-    const user = userEvent.setup();
-    seedStation();
-    useDoc.getState().setLabelAlign('a', 'end');
-    render(<StationInspector id="a" />);
-    await user.click(screen.getByRole('button', { name: 'Align: right' }));
+    // 'auto' is kept as an explicit segment so old maps stay editable.
+    await user.click(screen.getByLabelText('Align auto'));
     expect(useDoc.getState().stations.a.label.align).toBe('auto');
   });
 
-  it('clicking the valign button cycles label.valign one step (auto-down → top)', async () => {
+  it('marks the current alignment segment active', () => {
+    seedStation();
+    useDoc.getState().setLabelAlign('a', 'end');
+    render(<StationInspector id="a" />);
+    expect(screen.getByLabelText('Align right')).toHaveClass('active');
+    expect(screen.getByLabelText('Align left')).not.toHaveClass('active');
+  });
+
+  it('re-clicking the active alignment segment keeps the value (radio-like, no empty write)', async () => {
+    // Radix ToggleGroup type="single" is deselectable — re-clicking the active
+    // item fires onValueChange(''). The onSet guard must swallow that so an
+    // invalid empty align never reaches the model.
+    const user = userEvent.setup();
+    seedStation();
+    useDoc.getState().setLabelAlign('a', 'start');
+    render(<StationInspector id="a" />);
+    const left = screen.getByLabelText('Align left');
+    expect(left).toHaveClass('active');
+    await user.click(left);
+    expect(useDoc.getState().stations.a.label.align).toBe('start');
+    expect(screen.getByLabelText('Align left')).toHaveClass('active');
+  });
+
+  it('clicking a vertical-alignment segment sets label.valign', async () => {
     const user = userEvent.setup();
     seedStation();
     expect(useDoc.getState().stations.a.label.valign).toBe('auto-down');
     render(<StationInspector id="a" />);
-    await user.click(
-      screen.getByRole('button', {
-        name: 'V-align: auto-down (first line on cell, extra lines below)',
-      }),
-    );
+    await user.click(screen.getByLabelText('V-align top'));
     expect(useDoc.getState().stations.a.label.valign).toBe('top');
+    await user.click(screen.getByLabelText('V-align bottom'));
+    expect(useDoc.getState().stations.a.label.valign).toBe('bottom');
   });
 
-  it('sits in the Label row, after the align/valign formatting buttons', () => {
+  it('the rotate-label button sits last on the Label row, after the alignment controls', () => {
     seedStation();
     render(<StationInspector id="a" />);
     const rotate = screen.getByRole('button', { name: 'Rotate label' });
-    const valign = screen.getByRole('button', {
-      name: 'V-align: auto-down (first line on cell, extra lines below)',
-    });
-    expect(rotate.parentElement).toBe(valign.parentElement);
-    const siblings = Array.from(valign.parentElement!.children);
-    expect(siblings.indexOf(rotate)).toBeGreaterThan(siblings.indexOf(valign));
+    const wand = screen.getByRole('button', { name: 'Auto placement' });
+    expect(rotate.parentElement).toBe(wand.parentElement);
+    const row = Array.from(wand.parentElement!.children);
+    expect(row.indexOf(rotate)).toBe(row.length - 1);
+    expect(row.indexOf(rotate)).toBeGreaterThan(row.indexOf(wand));
   });
 
   it('clicking the rotate-label button steps label.rotation one step (0 → 1) as one undo entry', async () => {
@@ -704,10 +783,10 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     expect(historyDepth() - before).toBe(1);
   });
 
-  it('the rotate-label button stays enabled with Auto placement on (rotation is orthogonal to alignment)', async () => {
-    // The align/valign cycles disable while Auto placement overrides them, but
-    // rotation sets the text's reading axis — which autoAlign still honors — so
-    // this control keeps working.
+  it('the rotate-label button stays on the row with Auto placement on (rotation is orthogonal)', async () => {
+    // Toggling the wand swaps the manual align/valign controls for the auto
+    // tuning ones, but rotation sets the reading axis (which autoAlign honors),
+    // so the rotate control stays put and usable in both setups.
     const user = userEvent.setup();
     seedStation();
     render(<StationInspector id="a" />);
@@ -749,7 +828,7 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     expect(historyDepth() - before).toBe(1);
   });
 
-  it('align cycle with mirror on broadcasts the SAME align to matching stations in one undo group', async () => {
+  it('an alignment segment with mirror on broadcasts the SAME align to matches in one undo group', async () => {
     const user = userEvent.setup();
     useDoc.setState({
       ...DEFAULT_DOC,
@@ -770,35 +849,29 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     const before = historyDepth();
 
     render(<StationInspector id="a" />);
-    await user.click(
-      screen.getByRole('button', { name: 'Align: auto (snap against adjacent stop)' }),
-    );
+    await user.click(screen.getByLabelText('Align left'));
 
     const doc = useDoc.getState();
     expect(doc.stations.a.label.align).toBe('start');
-    // The matching neighbor gets the SAME absolute value — the cycle computes
-    // the next state once, then broadcasts it, so matches cannot diverge.
+    // The matching neighbor gets the SAME absolute value, so matches can't
+    // diverge.
     expect(doc.stations.b.label.align).toBe('start');
     // The whole batch collapses to a single undo entry.
     expect(historyDepth() - before).toBe(1);
   });
 
-  it('the Auto placement toggle writes label.autoAlign as one undo entry and disables the cycles', async () => {
+  it('the Auto placement toggle writes label.autoAlign as one undo entry and swaps the controls', async () => {
     const user = userEvent.setup();
     seedStation();
     useDoc.temporal.getState().clear();
     const before = historyDepth();
     render(<StationInspector id="a" />);
 
-    const alignBtn = screen.getByRole('button', {
-      name: 'Align: auto (snap against adjacent stop)',
-    });
-    const valignBtn = screen.getByRole('button', {
-      name: 'V-align: auto-down (first line on cell, extra lines below)',
-    });
     const toggle = screen.getByRole('button', { name: 'Auto placement' });
     expect(toggle).toHaveAttribute('aria-pressed', 'false');
-    expect(alignBtn).toBeEnabled();
+    // Wand off: the manual align control shows; the auto tuning one does not.
+    expect(screen.getByLabelText('Align auto')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Auto align: auto')).toBeNull();
 
     await user.click(toggle);
     expect(useDoc.getState().stations.a.label.autoAlign).toBe(true);
@@ -807,14 +880,14 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
       'aria-pressed',
       'true',
     );
-    // The overridden align/valign cycles disable while the toggle is on.
-    expect(alignBtn).toBeDisabled();
-    expect(valignBtn).toBeDisabled();
+    // Wand on: the controls swap — manual gone, auto tuning shown.
+    expect(screen.queryByLabelText('Align auto')).toBeNull();
+    expect(screen.getByLabelText('Auto align: auto')).toBeInTheDocument();
 
-    // Toggling off removes the key entirely (omitted-when-false).
+    // Toggling off removes the key entirely (omitted-when-false) and swaps back.
     await user.click(screen.getByRole('button', { name: 'Auto placement' }));
     expect('autoAlign' in useDoc.getState().stations.a.label).toBe(false);
-    expect(alignBtn).toBeEnabled();
+    expect(screen.getByLabelText('Align auto')).toBeInTheDocument();
   });
 
   it('Auto placement with mirror on broadcasts the same value in one undo group', async () => {
@@ -846,47 +919,38 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     expect(historyDepth() - before).toBe(1);
   });
 
-  it('the H/V tuning cycles are enabled only with Auto placement on and write the overrides', async () => {
+  it('the auto H/V tuning controls show only with Auto placement on and write the overrides', async () => {
     const user = userEvent.setup();
     seedStation();
     render(<StationInspector id="a" />);
 
-    const h = screen.getByRole('button', { name: 'Auto align H: auto (from position)' });
-    const v = screen.getByRole('button', { name: 'Auto align V: auto (line nearest the station)' });
-    expect(h).toBeDisabled();
-    expect(v).toBeDisabled();
+    // Wand off: no auto tuning controls in the DOM.
+    expect(screen.queryByLabelText('Auto align: auto')).toBeNull();
+    expect(screen.queryByLabelText('Auto align V: auto')).toBeNull();
 
     await user.click(screen.getByRole('button', { name: 'Auto placement' }));
-    expect(h).toBeEnabled();
-    expect(v).toBeEnabled();
+    // Wand on: the auto tuning controls appear.
+    expect(screen.getByLabelText('Auto align: auto')).toBeInTheDocument();
+    expect(screen.getByLabelText('Auto align V: auto')).toBeInTheDocument();
 
     useDoc.temporal.getState().clear();
     const before = historyDepth();
-    await user.click(h);
+    await user.click(screen.getByLabelText('Auto align: left'));
     expect(useDoc.getState().stations.a.label.autoHAlign).toBe('start');
     expect(historyDepth() - before).toBe(1);
-    // Re-labels to the new state and keeps cycling from there.
-    await user.click(screen.getByRole('button', { name: 'Auto align H: left' }));
+    await user.click(screen.getByLabelText('Auto align: center'));
     expect(useDoc.getState().stations.a.label.autoHAlign).toBe('middle');
 
-    await user.click(v);
+    await user.click(screen.getByLabelText('Auto align V: up'));
     expect(useDoc.getState().stations.a.label.autoVAlign).toBe('up');
-    await user.click(
-      screen.getByRole('button', {
-        name: 'Auto align V: up (bottom line anchors, lines stack up)',
-      }),
-    );
+    await user.click(screen.getByLabelText('Auto align V: down'));
     expect(useDoc.getState().stations.a.label.autoVAlign).toBe('down');
-    // Wrapping back around to auto removes the key entirely.
-    await user.click(
-      screen.getByRole('button', {
-        name: 'Auto align V: down (top line anchors, lines stack down)',
-      }),
-    );
+    // Selecting the auto segment clears the override (key removed).
+    await user.click(screen.getByLabelText('Auto align V: auto'));
     expect('autoVAlign' in useDoc.getState().stations.a.label).toBe(false);
   });
 
-  it('the H tuning cycle broadcasts the same absolute value with mirror on', async () => {
+  it('an auto H segment broadcasts the same absolute value with mirror on', async () => {
     const user = userEvent.setup();
     useDoc.setState({
       ...DEFAULT_DOC,
@@ -909,7 +973,7 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
     const before = historyDepth();
 
     render(<StationInspector id="a" />);
-    await user.click(screen.getByRole('button', { name: 'Auto align H: auto (from position)' }));
+    await user.click(screen.getByLabelText('Auto align: left'));
 
     const doc = useDoc.getState();
     expect(doc.stations.a.label.autoHAlign).toBe('start');
@@ -921,6 +985,7 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
 describe('<StationInspector /> — label offset wiring (along vs perpendicular)', () => {
   beforeEach(() => {
     localStorage.clear();
+    useStationEditorPrefs.setState({ styleExpanded: false });
     useDoc.setState({ ...DEFAULT_DOC });
     useSelection.setState(SELECTION_BLANK);
   });
@@ -973,6 +1038,7 @@ describe('<StationInspector /> — label offset wiring (along vs perpendicular)'
 describe('<StationInspector /> — Edit layout entry', () => {
   beforeEach(() => {
     localStorage.clear();
+    useStationEditorPrefs.setState({ styleExpanded: false });
     useDoc.setState({ ...DEFAULT_DOC });
     useSelection.setState({ ...SELECTION_BLANK, uiMode: { kind: 'idle' } });
   });
@@ -1020,6 +1086,7 @@ describe('<StationInspector /> — Edit layout entry', () => {
 describe('<StationInspector /> — Select Similar (mirror matching) toggle', () => {
   beforeEach(() => {
     localStorage.clear();
+    useStationEditorPrefs.setState({ styleExpanded: false });
     useDoc.setState({ ...DEFAULT_DOC });
     useSelection.setState(SELECTION_BLANK);
     useDoc.temporal.getState().clear();
@@ -1040,13 +1107,16 @@ describe('<StationInspector /> — Select Similar (mirror matching) toggle', () 
     useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'], ...over });
   };
 
-  it('sits in the Name header row, to the left of the WP button', () => {
+  it('sits in the button bar, between Edit layout and the WP button', () => {
     seedPair();
     render(<StationInspector id="a" />);
+    const editLayout = screen.getByRole('button', { name: 'Edit layout' });
     const similar = screen.getByRole('button', { name: 'Select Similar' });
     const wp = screen.getByRole('button', { name: 'Waypoint' });
-    expect(similar.parentElement).toBe(wp.parentElement);
-    const siblings = Array.from(wp.parentElement!.children);
+    expect(similar.parentElement).toBe(editLayout.parentElement);
+    expect(wp.parentElement).toBe(editLayout.parentElement);
+    const siblings = Array.from(editLayout.parentElement!.children);
+    expect(siblings.indexOf(editLayout)).toBeLessThan(siblings.indexOf(similar));
     expect(siblings.indexOf(similar)).toBeLessThan(siblings.indexOf(wp));
   });
 
@@ -1143,5 +1213,82 @@ describe('<StationInspector /> — Select Similar (mirror matching) toggle', () 
     const doc = useDoc.getState();
     expect(doc.stations.a.rotation).toBe(7);
     expect(doc.stations.b.rotation).toBe(0);
+  });
+});
+
+describe('<StationInspector /> — Stop dots section', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useStationEditorPrefs.setState({ styleExpanded: false });
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+  });
+
+  it('is titled "Stop dots" with column captions and no "edited on the map" hint', () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+        lines: [makeLine({ id: 'L1', stations: ['a'] })],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+    render(<StationInspector id="a" />);
+    expect(screen.getByText('Stop dots')).toBeInTheDocument();
+    // Column captions above the rows (the collapsed style detail keeps its own
+    // "Size" label out of the DOM, so this "Size" is the column caption).
+    for (const caption of ['Line', 'Type', 'Size', 'Direction']) {
+      expect(screen.getByText(caption)).toBeInTheDocument();
+    }
+    // The old "positions are edited on the map" help text is gone.
+    expect(screen.queryByText(/edited on the map/i)).toBeNull();
+    expect(screen.queryByText(/click Edit layout/i)).toBeNull();
+  });
+
+  it('shows the column captions only when the station has stops', () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({ stations: [makeStation({ id: 'a', stops: [] })] }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+    render(<StationInspector id="a" />);
+    expect(screen.queryByText('Direction')).toBeNull();
+    // The empty-state hint still shows.
+    expect(screen.getByText(/No stops yet/i)).toBeInTheDocument();
+  });
+});
+
+describe('<StationPopover /> — title', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useStationEditorPrefs.setState({ styleExpanded: false });
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+  });
+
+  const renderPopover = (name: string): HTMLElement => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({ stations: [makeStation({ id: 'a', name })] }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+    const { container } = render(
+      <StationPopover
+        station={useDoc.getState().stations.a}
+        worldRect={{ x0: 0, y0: 0, x1: 0, y1: 0 }}
+        view={{ vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } }}
+        onClose={() => {}}
+      />,
+    );
+    return container.querySelector('.header') as HTMLElement;
+  };
+
+  it('titles the panel with the short name (inline bullets/tags stripped)', () => {
+    // Same text the stations list shows: the bullet token drops, tags strip.
+    expect(renderPopover('Foo |A| Bar')).toHaveTextContent('Foo Bar');
+  });
+
+  it('falls back to "Station" for an empty name', () => {
+    expect(renderPopover('')).toHaveTextContent('Station');
   });
 });

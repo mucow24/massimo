@@ -1629,24 +1629,32 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   drag handle. `reconcileWithDoc` exits the mode if undo removes the edited line.
 - **[StationPopover.tsx](src/components/StationPopover.tsx)** — the station editor's home:
   mounted by `ItemPopovers` for a sole-selected station (idle mode, or that station's own
-  layout-edit mode), hosting the full `StationInspector` — a Name header row with the
-  **Select Similar** mirror-matching toggle + WP / lock toggles, labeled X/Y + a mirrored ±45°
-  rotate icon pair, the **Edit layout** button, per-stop rows
-  ([inspector/StopRows.tsx](src/components/inspector/StopRows.tsx): service badge + always-enabled
-  shape picker + dot size + a world-true orientation cycle button per stop; hover
-  cross-highlights the dot via `hoveredLineStop`), and label align/valign cycle buttons, a
+  layout-edit mode), hosting the full `StationInspector`. Its drag-handle title band shows the
+  station's SHORT name (`stationNameListText`, falling back to "Station"). Layout: a **button bar**
+  (**Edit layout** button, then the **Select Similar** mirror-matching toggle, then a
+  right-justified **WP** toggle; lock lives in the footer), then the Name field on its own row,
+  labeled X/Y + a mirrored ±45° rotate icon pair, a **Stop dots** section (a Line/Type/Size/Direction
+  column header over the per-stop rows —
+  [inspector/StopRows.tsx](src/components/inspector/StopRows.tsx): service badge + always-enabled
+  shape picker + dot size + a world-true orientation cycle button per stop; hover cross-highlights
+  the dot via `hoveredLineStop`), and a Label row whose **magic-wand** Auto-placement toggle stays
+  put and SWAPS the row between the manual align/valign controls (wand off) and the auto H/V tuning
+  controls (wand on) — each a segmented select-one (Radix ToggleGroup, `.align-group`); the manual
+  controls keep an explicit `auto` segment so legacy-auto labels stay editable. Beside them a
   **Rotate button** (steps the label's reading direction 45° through all 8 orientations via
-  `rotateLabel` — the same action bound to `R` and the layout-editor right-click; unlike
-  align/valign it stays enabled under Auto placement, since rotation sets the reading axis that
-  autoAlign still honors), and offset controls. The anchor is CLAMPED into the canvas host so
+  `rotateLabel` — the same action bound to `R` and the layout-editor right-click; it stays on the
+  row in both setups, since rotation sets the reading axis that autoAlign still honors), then offset
+  controls. The Name typography section keeps its style picker always visible with a collapsible,
+  remembered (`useStationEditorPrefs`) Size→Tracking detail. New stations default to Auto placement
+  ON (`makeStation` sets `label.autoAlign = true`). The anchor is CLAMPED into the canvas host so
   sidebar-selecting an off-screen station
   still shows the editor. Inspectors dispatch transforms directly through **mirror matching**
   (`findMatchingStations` returns stations sharing a line + a layout under the model's 4-fold
   mirror symmetry — whole line, not adjacency; an edit broadcasts through
   [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts), rotating local deltas through
   `rotateGridDelta`; orientation cycles and station rotation are relative steps so odd-offset
-  matches stay world-equivalent). The **Select Similar** chip (Name header, left of WP) drives
-  `mirrorMatching`: off = every dispatch resolves to the source station alone; on = stop/label
+  matches stay world-equivalent). The **Select Similar** chip (button bar, between Edit layout and
+  WP) drives `mirrorMatching`: off = every dispatch resolves to the source station alone; on = stop/label
   edits + station rotation broadcast, while name, X/Y, and the per-station WP / lock /
   bold / italic flags stay local. Disabled at zero matches unless already on (so the mode can
   always be exited); MapCanvas highlights the current match set while on.

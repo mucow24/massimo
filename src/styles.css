@@ -2772,3 +2772,78 @@ body:has(.app[data-theme='dark']) {
   gap: 8px;
   margin-bottom: 0;
 }
+
+/* The title band doubles as the drag handle; a long station name can't be
+   allowed to wrap or stretch the fixed-width panel, so it truncates. */
+.station-popover .header {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Button bar: the top row of panel actions (Edit layout, Select Similar, WP).
+   Not a .field, so it needs its own bottom gap; WP hugs the right edge. */
+.station-popover .button-bar {
+  margin-bottom: 8px;
+}
+.station-popover .button-bar .wp-pill-btn {
+  margin-left: auto;
+}
+
+/* Column captions over the stop rows. Mirror the .stop-row flex rhythm so each
+   caption sits roughly over the control it names: Line over the service badge,
+   Type over the shape picker, Size over the size box, Direction over the
+   right-hugging orientation button. Widths are approximate — the captions are
+   wider than the 26px controls — but the left cluster + right Direction read
+   the columns clearly. */
+.station-popover .stop-rows-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 2px;
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+}
+.station-popover .stop-rows-header .col-line {
+  flex: none;
+  width: 24px;
+}
+.station-popover .stop-rows-header .col-type {
+  flex: none;
+  width: 26px;
+}
+.station-popover .stop-rows-header .col-size {
+  flex: none;
+  width: 44px;
+  text-align: center;
+}
+.station-popover .stop-rows-header .col-dir {
+  margin-left: auto;
+  text-align: right;
+}
+
+/* Disclosure that collapses the Style section's manual overrides (Size →
+   Tracking). A quiet full-width sub-header: muted caret + label, warms to full
+   text color on hover. The style picker above it always stays visible. */
+.station-popover .style-collapse-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 2px 0;
+  background: transparent;
+  border: 0;
+  font: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: left;
+}
+.station-popover .style-collapse-toggle:hover:not(:disabled) {
+  color: var(--text);
+}
+.station-popover .style-collapse-toggle > svg {
+  flex: none;
+  color: var(--text-faint);
+}
