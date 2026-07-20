@@ -610,25 +610,18 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
         </div>
       </div>
       {fillMode === 'custom' && (
-        <div className="row">
-          <label htmlFor={`style-${id}-fill-day`}>Fill color</label>
-          <SunIcon aria-hidden="true" />
-          <ColorField
-            id={`style-${id}-fill-day`}
-            ariaLabel="Fill color"
-            title="Light mode fill"
-            value={fillPair.day}
-            onChange={(day) => dp({ fill: { day, night: fillPair.night } })}
-          />
-          <MoonIcon aria-hidden="true" />
-          <ColorField
-            id={`style-${id}-fill-night`}
-            ariaLabel="Dark mode fill color"
-            title="Dark mode fill"
-            value={fillPair.night}
-            onChange={(night) => dp({ fill: { day: fillPair.day, night } })}
-          />
-        </div>
+        <DayNightColorRow
+          label="Fill color"
+          id={`style-${id}-fill-day`}
+          darkId={`style-${id}-fill-night`}
+          lightAriaLabel="Fill color"
+          darkAriaLabel="Dark mode fill color"
+          titleNoun="fill"
+          value={fillPair.day}
+          darkValue={fillPair.night}
+          onChange={(day) => dp({ fill: { day, night: fillPair.night } })}
+          onDarkChange={(night) => dp({ fill: { day: fillPair.day, night } })}
+        />
       )}
       <NumericFieldRow
         id={`style-${id}-dot-stroke`}
@@ -659,25 +652,18 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
         </div>
       </div>
       {strokeMode === 'custom' && (
-        <div className="row">
-          <label htmlFor={`style-${id}-stroke-day`}>Stroke</label>
-          <SunIcon aria-hidden="true" />
-          <ColorField
-            id={`style-${id}-stroke-day`}
-            ariaLabel="Stroke color"
-            title="Light mode stroke"
-            value={strokePair.day}
-            onChange={(day) => dp({ strokeColor: { day, night: strokePair.night } })}
-          />
-          <MoonIcon aria-hidden="true" />
-          <ColorField
-            id={`style-${id}-stroke-night`}
-            ariaLabel="Dark mode stroke color"
-            title="Dark mode stroke"
-            value={strokePair.night}
-            onChange={(night) => dp({ strokeColor: { day: strokePair.day, night } })}
-          />
-        </div>
+        <DayNightColorRow
+          label="Stroke"
+          id={`style-${id}-stroke-day`}
+          darkId={`style-${id}-stroke-night`}
+          lightAriaLabel="Stroke color"
+          darkAriaLabel="Dark mode stroke color"
+          titleNoun="stroke"
+          value={strokePair.day}
+          darkValue={strokePair.night}
+          onChange={(day) => dp({ strokeColor: { day, night: strokePair.night } })}
+          onDarkChange={(night) => dp({ strokeColor: { day: strokePair.day, night } })}
+        />
       )}
       <div className="row">
         <label htmlFor={`style-${id}-service-code`}>Service code</label>
@@ -690,25 +676,18 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
         />
       </div>
       {p.showServiceCode && (
-        <div className="row">
-          <label htmlFor={`style-${id}-code-day`}>Code color</label>
-          <SunIcon aria-hidden="true" />
-          <ColorField
-            id={`style-${id}-code-day`}
-            ariaLabel="Service code color"
-            title="Light mode service-code color"
-            value={codePair.day}
-            onChange={(day) => dp({ serviceCodeColor: { day, night: codePair.night } })}
-          />
-          <MoonIcon aria-hidden="true" />
-          <ColorField
-            id={`style-${id}-code-night`}
-            ariaLabel="Dark mode service code color"
-            title="Dark mode service-code color"
-            value={codePair.night}
-            onChange={(night) => dp({ serviceCodeColor: { day: codePair.day, night } })}
-          />
-        </div>
+        <DayNightColorRow
+          label="Code color"
+          id={`style-${id}-code-day`}
+          darkId={`style-${id}-code-night`}
+          lightAriaLabel="Service code color"
+          darkAriaLabel="Dark mode service code color"
+          titleNoun="service-code color"
+          value={codePair.day}
+          darkValue={codePair.night}
+          onChange={(day) => dp({ serviceCodeColor: { day, night: codePair.night } })}
+          onDarkChange={(night) => dp({ serviceCodeColor: { day: codePair.day, night } })}
+        />
       )}
     </div>
   );
