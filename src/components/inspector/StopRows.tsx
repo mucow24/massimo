@@ -2,7 +2,6 @@ import type { Line, LineId, Station, StopCell } from '../../model/types';
 import { useDoc, useSelection } from '../../state/store';
 import { dispatchMirrored } from '../../state/mirrorDispatch';
 import { AXIS_CYCLE, resolveDotStyle, stationIsSingleton } from '../../model/transforms';
-import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import { DOT_SIZE_MIN, resolveDotSize } from '../../model/dotSize';
 import { legibleTextOn } from '../../util/color';
 import { StationShapePicker } from '../StationShapePicker';
@@ -126,9 +125,9 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
         currentStyle={resolveDotStyle(line, stop, isSingleton)}
         lineColor={line?.color}
         serviceCode={line?.service}
-        onPick={(shape) =>
+        onPick={(styleId) =>
           // dotStyle is rotation-invariant — no per-match transform.
-          dispatchMirrored(stationId, (sid) => setDotStyle(sid, lineId, DOT_SHAPE_PRESETS[shape]))
+          dispatchMirrored(stationId, (sid) => setDotStyle(sid, lineId, styleId))
         }
       />
       <input

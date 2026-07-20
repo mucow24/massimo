@@ -707,22 +707,25 @@ describe('parse — legacy line-STYLE-DEF dot defaults bake', () => {
       doc: { stations: {}, lines: {}, lineOrder: [], styles: { ln: lineDef(styleProps) } },
     });
 
-  it('folds a legacy defaultDotStyle/Size into all four split props and drops the legacy keys', () => {
+  it('folds a legacy defaultDotSize into both split sizes and DROPS all dot-style keys', () => {
     const r = parse(
       buildStyledFile({ defaultDotStyle: DOT_SHAPE_PRESETS['open-white'], defaultDotSize: 12 }),
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const props = r.doc.styles.ln.props as unknown as Record<string, unknown>;
-    expect(props.singletonDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
-    expect(props.multiDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+    // Dot APPEARANCE is no longer a covered line-style field — it lives in the
+    // stopDot library, so the legacy style key is stripped, not folded.
+    expect('singletonDotStyle' in props).toBe(false);
+    expect('multiDotStyle' in props).toBe(false);
+    expect('defaultDotStyle' in props).toBe(false);
+    // Dot SIZE still splits onto the def.
     expect(props.singletonDotSize).toBe(12);
     expect(props.multiDotSize).toBe(12);
-    expect('defaultDotStyle' in props).toBe(false);
     expect('defaultDotSize' in props).toBe(false);
   });
 
-  it('never clobbers a split prop already present; only fills the missing side', () => {
+  it('drops dot-style keys but fills the missing SIZE side from the legacy default', () => {
     const r = parse(
       buildStyledFile({
         defaultDotStyle: DOT_SHAPE_PRESETS['open-white'],
@@ -734,11 +737,11 @@ describe('parse — legacy line-STYLE-DEF dot defaults bake', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const props = r.doc.styles.ln.props as unknown as Record<string, unknown>;
-    // The explicit singleton fields win; the absent interchange fields inherit
-    // the legacy default.
-    expect(props.singletonDotStyle).toEqual(DOT_SHAPE_PRESETS['filled-black']);
+    // No dot-appearance keys survive on a line style, however they arrived.
+    expect('singletonDotStyle' in props).toBe(false);
+    expect('multiDotStyle' in props).toBe(false);
+    // The explicit singleton size wins; the absent interchange size inherits.
     expect(props.singletonDotSize).toBe(20);
-    expect(props.multiDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
     expect(props.multiDotSize).toBe(12);
   });
 });

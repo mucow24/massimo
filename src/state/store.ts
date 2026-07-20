@@ -5,7 +5,6 @@ import type { GridSnap } from '../geometry/snap';
 import type {
   AutoHAlign,
   AutoVAlign,
-  DotStyle,
   LabelAlign,
   LabelValign,
   Line,
@@ -47,6 +46,7 @@ import {
   bakeLegacyLabelSettings,
   bakeLegacyTransferSettings,
   bakeLineDotDefaults,
+  bakeStopDotLibrary,
   convertLegacyDotShapes,
   ensureStyleInvariants,
   foldPolygonFillOpacity,
@@ -330,6 +330,14 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     const styles = migrateV9Styles(out.styles ?? {});
     if (styles !== out.styles) out = { ...out, styles };
   }
+  if (v < 19) {
+    // Introduce the stopDot style library: seed the factory dot styles + tag
+    // every dot slot (line split defaults + per-stop overrides) by value-match.
+    // AFTER the v<18 split bake (line raw values are in singleton/multi form)
+    // and the v<10 style rebuild (so seeded defs aren't re-mangled), BEFORE the
+    // invariant pass below (so it sees the non-empty stopDot kind + designation).
+    out = bakeStopDotLibrary(out as unknown as MapDoc) as typeof out;
+  }
   // Non-version-gated invariant, like the palette check below: every kind has
   // ≥ 1 style and a valid default designation. Must precede the v<10 bake
   // (which seeds the DESIGNATED default transfer style) and the v<11 adoption
@@ -446,7 +454,7 @@ interface DocState extends MapDoc {
   addStation: (x: number, y: number, name?: string) => StationId;
   renameStation: (id: StationId, name: string) => void;
   moveStation: (id: StationId, x: number, y: number) => void;
-  setDotStyle: (stationId: StationId, lineId: LineId, style: DotStyle) => void;
+  setDotStyle: (stationId: StationId, lineId: LineId, styleId: string) => void;
   setDotSize: (stationId: StationId, lineId: LineId, size: number) => void;
   setStationWaypoint: (stationId: StationId, isWaypoint: boolean) => void;
   setStationLocked: (stationId: StationId, locked: boolean) => void;
@@ -495,8 +503,8 @@ interface DocState extends MapDoc {
     toStationId: StationId,
     style: LineStyle,
   ) => void;
-  setLineSingletonDotStyle: (lineId: LineId, style: DotStyle) => void;
-  setLineMultiDotStyle: (lineId: LineId, style: DotStyle) => void;
+  setLineSingletonDotStyle: (lineId: LineId, styleId: string) => void;
+  setLineMultiDotStyle: (lineId: LineId, styleId: string) => void;
   setLineSingletonDotSize: (lineId: LineId, size: number) => void;
   setLineMultiDotSize: (lineId: LineId, size: number) => void;
   setLineWidth: (lineId: LineId, w: number) => void;
@@ -659,8 +667,8 @@ export const useDoc = create<DocState>()(
         },
         renameStation: (id, name) => set((s) => T.renameStation(s, id, name)),
         moveStation: (id, x, y) => set(withRegionReconcile((s) => T.moveStation(s, id, x, y))),
-        setDotStyle: (stationId, lineId, style) =>
-          set((s) => T.setDotStyle(s, stationId, lineId, style)),
+        setDotStyle: (stationId, lineId, styleId) =>
+          set((s) => T.setDotStyle(s, stationId, lineId, styleId)),
         setDotSize: (stationId, lineId, size) =>
           set((s) => T.setDotSize(s, stationId, lineId, size)),
         setStationWaypoint: (stationId, isWaypoint) =>
@@ -721,8 +729,13 @@ export const useDoc = create<DocState>()(
             const service = pickNextLineName(s.lines);
             // New items wear the kind's "Default" style (composed into the
             // same set() so creation stays one undo entry). Color is identity,
-            // not style — the cycled pick above survives the stamp.
-            return S.applyDefaultStyle(T.addLine(s, id, service, color), 'line', id);
+            // not style — the cycled pick above survives the stamp. Dot defaults
+            // are NOT covered by the line style, so seed them with the current
+            // ⭐ stopDot default separately (so new stations track it).
+            return T.applyDefaultStopDotToLine(
+              S.applyDefaultStyle(T.addLine(s, id, service, color), 'line', id),
+              id,
+            );
           });
           return id;
         },
@@ -751,10 +764,10 @@ export const useDoc = create<DocState>()(
               T.setLineSegmentStyle(s, lineId, fromStationId, toStationId, style),
             ),
           ),
-        setLineSingletonDotStyle: (lineId, style) =>
-          set((s) => T.setLineSingletonDotStyle(s, lineId, style)),
-        setLineMultiDotStyle: (lineId, style) =>
-          set((s) => T.setLineMultiDotStyle(s, lineId, style)),
+        setLineSingletonDotStyle: (lineId, styleId) =>
+          set((s) => T.setLineSingletonDotStyle(s, lineId, styleId)),
+        setLineMultiDotStyle: (lineId, styleId) =>
+          set((s) => T.setLineMultiDotStyle(s, lineId, styleId)),
         setLineSingletonDotSize: (lineId, size) =>
           set((s) => T.setLineSingletonDotSize(s, lineId, size)),
         setLineMultiDotSize: (lineId, size) => set((s) => T.setLineMultiDotSize(s, lineId, size)),
@@ -1030,7 +1043,7 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 18,
+        version: 19,
         // Version migration chain v0 → v18 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),

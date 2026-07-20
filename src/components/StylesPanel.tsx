@@ -10,10 +10,12 @@ import {
 import { useDoc } from '../state/store';
 import { stylesOfKind } from '../model/styles';
 import { StyleEditor } from './StyleEditor';
-import type { StyleKind } from '../model/types';
+import { StopGlyph } from './StopGlyph';
+import type { StyleDef, StyleKind } from '../model/types';
 
 const KIND_ORDER: readonly StyleKind[] = [
   'line',
+  'stopDot',
   'station',
   'textLabel',
   'polygon',
@@ -22,6 +24,7 @@ const KIND_ORDER: readonly StyleKind[] = [
 ];
 const KIND_LABELS: Record<StyleKind, string> = {
   line: 'Lines',
+  stopDot: 'Stop dots',
   station: 'Stations',
   textLabel: 'Labels',
   polygon: 'Polygons',
@@ -30,12 +33,33 @@ const KIND_LABELS: Record<StyleKind, string> = {
 };
 const KIND_SINGULAR: Record<StyleKind, string> = {
   line: 'line',
+  stopDot: 'stop dot',
   station: 'station',
   textLabel: 'label',
   polygon: 'polygon',
   routeBullet: 'route bullet',
   transfer: 'transfer',
 };
+
+// A stand-in line color for stopDot row previews (real color comes per line).
+const PREVIEW_LINE_COLOR = '#3b7dd8';
+
+// stopDot rows show a small dot preview beside the name so the library reads
+// visually. Other kinds have no glyph.
+function StyleRowPreview({ def }: { def: StyleDef }) {
+  if (def.kind !== 'stopDot') return null;
+  return (
+    <svg
+      width={16}
+      height={16}
+      viewBox="-8 -8 16 16"
+      aria-hidden="true"
+      className="stopdot-preview"
+    >
+      <StopGlyph cx={0} cy={0} style={def.props} lineColor={PREVIEW_LINE_COLOR} serviceCode="A" />
+    </svg>
+  );
+}
 
 /**
  * Click-to-edit style name (MapNameField pattern): the name shows as a
@@ -156,6 +180,7 @@ export function StylesPanel() {
                     >
                       {expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
                     </button>
+                    <StyleRowPreview def={d} />
                     <StyleNameField id={d.id} name={d.name} />
                     {/* One persistent button (not a button/indicator swap):
                         activating it re-renders the row, and replacing the

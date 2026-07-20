@@ -32,7 +32,13 @@ import {
 } from './lineCurve';
 import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
 import { canonicalStrokeColor, canonicalStrokeWidth, canonicalSeamColor } from './lineStroke';
-import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS, dotStylesEqual } from './dotStyle';
+import {
+  DEFAULT_DOT_STYLE,
+  DEFAULT_STOP_DOT_STYLE_ID,
+  DOT_SHAPE_PRESETS,
+  STOP_DOT_FACTORY_STYLES,
+  dotStylesEqual,
+} from './dotStyle';
 import {
   adoptDefaultStyles,
   canonicalStyleProps,
@@ -314,6 +320,11 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   // sanitized line values.
   const sizes = sanitizeStopDotSizes(merged.stations, merged.lines);
   if (sizes.changed) merged.stations = sizes.stations;
+  // Seed the stopDot style library + tag every dot slot (idempotent; a no-op on
+  // docs that already carry the library). BEFORE the style validation below so
+  // the seeded defs are sanitized and the invariant pass sees the non-empty
+  // stopDot kind + its default designation.
+  merged = bakeStopDotLibrary(merged);
   const cleanedPolygons = backfillPolygonDarkColors(merged.polygons);
   if (cleanedPolygons.changed) merged.polygons = cleanedPolygons.polygons;
   // Fold any legacy fillOpacity into the fill/darkFill alpha (idempotent) —
@@ -512,12 +523,13 @@ export function bakeLineDotDefaults<
         props &&
         ('defaultDotStyle' in props || 'defaultDotSize' in props)
       ) {
-        const { defaultDotStyle: ls, defaultDotSize: lz, ...restProps } = props;
+        // Line styles no longer cover dot APPEARANCE — the retired
+        // `defaultDotStyle` is just stripped here (sanitizeStyleProps would drop
+        // it anyway); only dot SIZE still splits onto the def.
+        const { defaultDotStyle: _ls, defaultDotSize: lz, ...restProps } = props;
         const filled: Record<string, unknown> = { ...restProps };
         // Style-def props are CONCRETE (always store the resolved value, even a
         // default), so no drop-at-default here — mirror bakeDocCurveRadius.
-        if (!('singletonDotStyle' in filled) && ls !== undefined) filled.singletonDotStyle = ls;
-        if (!('multiDotStyle' in filled) && ls !== undefined) filled.multiDotStyle = ls;
         if (!('singletonDotSize' in filled) && lz !== undefined) filled.singletonDotSize = lz;
         if (!('multiDotSize' in filled) && lz !== undefined) filled.multiDotSize = lz;
         styles[id] = { ...def, props: filled } as unknown as StyleDef;
@@ -533,6 +545,70 @@ export function bakeLineDotDefaults<
   }
 
   return changed ? out : doc;
+}
+
+/**
+ * v19: introduce the stopDot style LIBRARY. Pre-v19 docs stored dot appearance
+ * as raw `DotStyle` values on lines (`singleton/multiDotStyle`) and per-stop
+ * overrides (`dotStyle`), with no library. This seeds the factory library into
+ * `doc.styles`, then TAGS every dot slot by value-match so editing a library
+ * style restamps its wearers: each line's split default is materialized (always
+ * stored now) and tagged; a per-stop override that matches a library style is
+ * tagged (unmatched hand-edited values are left untagged, raw kept). Sets the
+ * `stopDot` default designation. Idempotent and keyed off the ABSENCE of any
+ * stopDot style — a doc that already has the library (v19+) is returned
+ * unchanged (reference-stable), so parse() can run it unconditionally and the
+ * localStorage rehydrate gates it at v<19.
+ */
+export function bakeStopDotLibrary(doc: MapDoc): MapDoc {
+  if (!doc.styles || Object.values(doc.styles).some((d) => d.kind === 'stopDot')) return doc;
+  const styles = { ...STOP_DOT_FACTORY_STYLES, ...doc.styles };
+  const stopDefs = Object.values(styles).filter((d) => d.kind === 'stopDot');
+  const idOf = (v: DotStyle): string | undefined =>
+    stopDefs.find((d) => dotStylesEqual(d.props as DotStyle, v))?.id;
+
+  const lines: Record<string, Line> = {};
+  for (const id of Object.keys(doc.lines ?? {})) {
+    const ln = doc.lines[id];
+    // Materialize each split default (absent ⇒ the historical filled-black),
+    // then tag by value-match. A matched value is always a factory style here.
+    const sRaw = ln.singletonDotStyle ?? DEFAULT_DOT_STYLE;
+    const mRaw = ln.multiDotStyle ?? DEFAULT_DOT_STYLE;
+    const sId = idOf(sRaw);
+    const mId = idOf(mRaw);
+    lines[id] = {
+      ...ln,
+      singletonDotStyle: sRaw,
+      multiDotStyle: mRaw,
+      ...(sId !== undefined ? { singletonDotStyleId: sId } : {}),
+      ...(mId !== undefined ? { multiDotStyleId: mId } : {}),
+    };
+  }
+
+  const stations: Record<string, Station> = {};
+  for (const sid of Object.keys(doc.stations ?? {})) {
+    const st = doc.stations[sid];
+    let changed = false;
+    const stops = st.stops.map((s) => {
+      if (s.dotStyle === undefined || s.dotStyleId !== undefined) return s;
+      const id = idOf(s.dotStyle);
+      if (id === undefined) return s;
+      changed = true;
+      return { ...s, dotStyleId: id };
+    });
+    stations[sid] = changed ? { ...st, stops } : st;
+  }
+
+  return {
+    ...doc,
+    styles,
+    lines,
+    stations,
+    styleDefaults: {
+      ...doc.styleDefaults,
+      stopDot: doc.styleDefaults?.stopDot ?? DEFAULT_STOP_DOT_STYLE_ID,
+    },
+  };
 }
 
 /**
@@ -718,13 +794,19 @@ function sanitizeDotStyle(raw: unknown): DotStyle | undefined {
   if (strokeColor === undefined) return undefined;
   if (typeof o.strokeWidth !== 'number' || !Number.isFinite(o.strokeWidth)) return undefined;
   if (typeof o.showServiceCode !== 'boolean') return undefined;
-  return {
+  // serviceCodeColor is OPTIONAL — absent ⇒ auto-contrast; a malformed value is
+  // dropped (treated as absent) rather than invalidating the whole style.
+  const serviceCodeColor =
+    o.serviceCodeColor === undefined ? undefined : sanitizeDayNightColor(o.serviceCodeColor);
+  const out: DotStyle = {
     shape: o.shape as DotBaseShape,
     fill,
     strokeWidth: Math.max(0, o.strokeWidth),
     strokeColor,
     showServiceCode: o.showServiceCode,
   };
+  if (serviceCodeColor !== undefined) out.serviceCodeColor = serviceCodeColor;
+  return out;
 }
 
 // "Already canonical" check for an existing dotStyle value: stringify-equal to
@@ -1522,7 +1604,14 @@ export function ensureStyleInvariants(
       nextDefaults[kind] = incoming;
     } else {
       const sorted = ofKind.slice().sort((a, b) => a.name.localeCompare(b.name));
-      nextDefaults[kind] = (sorted.find((d) => d.name === 'Default') ?? sorted[0]).id;
+      // stopDot styles carry readable names, not "Default"; prefer the factory
+      // default id so the fallback lands on filled-black, not the name-first
+      // "Dash". Harmless for other kinds (no non-stopDot style holds that id).
+      nextDefaults[kind] = (
+        sorted.find((d) => d.id === DEFAULT_STOP_DOT_STYLE_ID) ??
+        sorted.find((d) => d.name === 'Default') ??
+        sorted[0]
+      ).id;
       changed = true;
     }
   }
@@ -1543,6 +1632,7 @@ const KNOWN_STYLE_KINDS = new Set<StyleKind>([
   'routeBullet',
   'transfer',
   'station',
+  'stopDot',
 ]);
 const KNOWN_TEXT_ALIGNS = new Set<TextLabelAlign>(['left', 'center', 'right', 'justify']);
 const KNOWN_BULLET_SHAPES = new Set<RouteBulletShape>(['circle', 'square', 'diamond']);
@@ -1563,20 +1653,16 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
   const o = raw as Record<string, unknown>;
   switch (kind) {
     case 'line': {
-      // The singleton/multi dot fields are required. Defs from builds that
-      // predate the split get them filled from the retired single
-      // `defaultDotStyle` / `defaultDotSize` by bakeLineDotDefaults before this
-      // runs (mirrors the curveRadius bake), so a missing value here is
-      // hand-edited garbage.
-      const singletonDot = sanitizeDotStyle(o.singletonDotStyle);
-      const multiDot = sanitizeDotStyle(o.multiDotStyle);
+      // Dot APPEARANCE is no longer a covered line-style field (it lives in the
+      // stopDot library); only dot SIZE remains. A missing size here is
+      // hand-edited garbage (app-written defs are canonical by construction).
       const singletonDotSize = finiteNum(o.singletonDotSize);
       const multiDotSize = finiteNum(o.multiDotSize);
       const width = finiteNum(o.width);
       const curveRadius = finiteNum(o.curveRadius);
       const strokeWidth = finiteNum(o.strokeWidth);
       const strokeColor = asString(o.strokeColor);
-      if (!singletonDot || !multiDot || width === undefined) return undefined;
+      if (width === undefined) return undefined;
       if (singletonDotSize === undefined || multiDotSize === undefined) return undefined;
       if (curveRadius === undefined) return undefined;
       if (strokeWidth === undefined || strokeColor === undefined) return undefined;
@@ -1588,8 +1674,6 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       const dashLength = finiteNum(o.dashLength);
       const dashWidth = finiteNum(o.dashWidth);
       return canonicalStyleProps('line', {
-        singletonDotStyle: singletonDot,
-        multiDotStyle: multiDot,
         singletonDotSize,
         multiDotSize,
         width,
@@ -1601,6 +1685,11 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
         ...(dashLength !== undefined ? { dashLength } : {}),
         ...(dashWidth !== undefined ? { dashWidth } : {}),
       });
+    }
+    case 'stopDot': {
+      // A stopDot style's props ARE a DotStyle — reuse the dot-style validator.
+      const dot = sanitizeDotStyle(o);
+      return dot === undefined ? undefined : canonicalStyleProps('stopDot', dot);
     }
     case 'textLabel': {
       const color = asString(o.color);

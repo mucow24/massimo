@@ -210,8 +210,11 @@ describe('new items wear the Default style on creation', () => {
   });
 
   it('a fresh doc starts with the six factory Defaults and tags new items with them', () => {
-    // beforeEach seeds DEFAULT_DOC, whose styles are the factory Defaults.
-    const names = Object.values(useDoc.getState().styles).map((d) => d.name);
+    // beforeEach seeds DEFAULT_DOC, whose styles are the factory Defaults plus
+    // the stopDot library (excluded here — it carries readable names).
+    const names = Object.values(useDoc.getState().styles)
+      .filter((d) => d.kind !== 'stopDot')
+      .map((d) => d.name);
     expect(names).toEqual(['Default', 'Default', 'Default', 'Default', 'Default', 'Default']);
     const id = useDoc.getState().addTextLabel(0, 0);
     expect(useDoc.getState().textLabels[id].styleId).toBe('default-textLabel');

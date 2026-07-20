@@ -16,7 +16,7 @@ import {
   updateStyleProps,
 } from './styles';
 import { DEFAULT_DOC, DEFAULT_STYLES, FACTORY_STYLE_DEFAULTS } from './transforms';
-import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS } from './dotStyle';
+import { STOP_DOT_FACTORY_STYLES } from './dotStyle';
 import { DOT_SIZE_DEFAULT } from './dotSize';
 import { LINE_WIDTH_DEFAULT } from './lineWidth';
 import { LINE_CURVE_RADIUS_DEFAULT } from './lineCurve';
@@ -37,8 +37,6 @@ describe('captureStyleProps', () => {
   it('reads a fully-default line as the effective constants', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'l1' })] });
     expect(captureStyleProps(doc, 'line', 'l1')).toEqual({
-      singletonDotStyle: DEFAULT_DOT_STYLE,
-      multiDotStyle: DEFAULT_DOT_STYLE,
       singletonDotSize: DOT_SIZE_DEFAULT,
       multiDotSize: DOT_SIZE_DEFAULT,
       width: LINE_WIDTH_DEFAULT,
@@ -49,12 +47,12 @@ describe('captureStyleProps', () => {
   });
 
   it('reads explicit line overrides verbatim, singleton and shared independently', () => {
+    // Dot APPEARANCE is not a covered line-style field anymore; singleton vs.
+    // shared independence is captured via the two dot SIZES.
     const doc = makeDoc({
       lines: [
         makeLine({
           id: 'l1',
-          singletonDotStyle: DOT_SHAPE_PRESETS['open-black'],
-          multiDotStyle: DOT_SHAPE_PRESETS['filled-white'],
           singletonDotSize: 12,
           multiDotSize: 16,
           width: 10,
@@ -65,8 +63,6 @@ describe('captureStyleProps', () => {
       ],
     });
     expect(captureStyleProps(doc, 'line', 'l1')).toEqual({
-      singletonDotStyle: DOT_SHAPE_PRESETS['open-black'],
-      multiDotStyle: DOT_SHAPE_PRESETS['filled-white'],
       singletonDotSize: 12,
       multiDotSize: 16,
       width: 10,
@@ -204,8 +200,6 @@ describe('stylePropsEqual — line covered fields', () => {
     // missing from it makes curveRadius-only edits no-op in updateStyleProps
     // and invisible to the mismatched-tag pruning.
     const base = {
-      singletonDotStyle: DEFAULT_DOT_STYLE,
-      multiDotStyle: DEFAULT_DOT_STYLE,
       singletonDotSize: DOT_SIZE_DEFAULT,
       multiDotSize: DOT_SIZE_DEFAULT,
       width: LINE_WIDTH_DEFAULT,
@@ -215,11 +209,10 @@ describe('stylePropsEqual — line covered fields', () => {
     };
     expect(stylePropsEqual('line', base, { ...base })).toBe(true);
     expect(stylePropsEqual('line', base, { ...base, curveRadius: 40 })).toBe(false);
-    // The split dot fields are compared too — differing on either side is a
-    // real difference (each is its own covered field).
-    expect(
-      stylePropsEqual('line', base, { ...base, multiDotStyle: DOT_SHAPE_PRESETS['open-white'] }),
-    ).toBe(false);
+    // The split dot SIZE fields are compared too — differing on either side is a
+    // real difference (each is its own covered field). Dot APPEARANCE is no
+    // longer covered, so it is not part of this comparison.
+    expect(stylePropsEqual('line', base, { ...base, multiDotSize: 12 })).toBe(false);
     expect(stylePropsEqual('line', base, { ...base, singletonDotSize: 12 })).toBe(false);
   });
 });
@@ -263,8 +256,6 @@ describe('applyStyleToItem', () => {
   it('stamps a line style through the canonical setters and tags the line', () => {
     const style = makeStyle('line', 'y1', {
       props: {
-        singletonDotStyle: DOT_SHAPE_PRESETS['filled-white'],
-        multiDotStyle: DOT_SHAPE_PRESETS['open-white'],
         singletonDotSize: 12,
         multiDotSize: 16,
         width: 10,
@@ -281,8 +272,7 @@ describe('applyStyleToItem', () => {
     expect(line.curveRadius).toBe(40);
     expect(line.strokeWidth).toBe(2);
     expect(line.strokeColor).toBe('#123456');
-    expect(line.singletonDotStyle).toEqual(DOT_SHAPE_PRESETS['filled-white']);
-    expect(line.multiDotStyle).toEqual(DOT_SHAPE_PRESETS['open-white']);
+    // Dot APPEARANCE is not a covered line-style field — only dot SIZE is stamped.
     expect(line.singletonDotSize).toBe(12);
     expect(line.multiDotSize).toBe(16);
   });
@@ -351,24 +341,24 @@ describe('applyStyleToItem', () => {
     expect(line.multiDotSize).toBeUndefined();
   });
 
-  it('applying a line style prunes now-redundant per-stop dot overrides', () => {
-    // The station below is a singleton, so its override is pruned against the
-    // style's SINGLETON default.
+  it('applying a line style prunes now-redundant per-stop dot SIZE overrides', () => {
+    // The station below is a singleton, so its dot-size override is pruned
+    // against the style's SINGLETON dot size. (Dot APPEARANCE is not a covered
+    // line-style field, so a line style never prunes per-stop dotStyle overrides.)
     const style = makeStyle('line', 'y1', {
-      props: { singletonDotStyle: DOT_SHAPE_PRESETS['filled-white'], singletonDotSize: 12 },
+      props: { singletonDotSize: 12 },
     });
     const doc = makeDoc({
       lines: [makeLine({ id: 'l1' })],
       stations: [
         makeStation({
           id: 's1',
-          stops: [makeStop('l1', { dotStyle: DOT_SHAPE_PRESETS['filled-white'], dotSize: 12 })],
+          stops: [makeStop('l1', { dotSize: 12 })],
         }),
       ],
       styles: [style],
     });
     const next = applyStyleToItem(doc, 'y1', 'l1');
-    expect(next.stations.s1.stops[0].dotStyle).toBeUndefined();
     expect(next.stations.s1.stops[0].dotSize).toBeUndefined();
   });
 
@@ -817,12 +807,16 @@ describe('updateStyleProps', () => {
 });
 
 describe('DEFAULT_STYLES / applyDefaultStyle', () => {
-  it('ships one factory "Default" per kind, and DEFAULT_DOC starts with exactly those designated', () => {
-    const kinds = Object.values(DEFAULT_STYLES)
-      .map((d) => d.kind)
-      .sort();
+  it('ships one factory "Default" per non-stopDot kind plus the stopDot library, and DEFAULT_DOC starts with exactly those designated', () => {
+    // Every kind but stopDot ships exactly one style named "Default"; stopDot is
+    // the outlier — it ships the whole named dot-style LIBRARY.
+    const nonDot = Object.values(DEFAULT_STYLES).filter((d) => d.kind !== 'stopDot');
+    const kinds = nonDot.map((d) => d.kind).sort();
     expect(kinds).toEqual(['line', 'polygon', 'routeBullet', 'station', 'textLabel', 'transfer']);
-    for (const d of Object.values(DEFAULT_STYLES)) expect(d.name).toBe('Default');
+    for (const d of nonDot) expect(d.name).toBe('Default');
+    // The stopDot entries are exactly the factory dot-style library.
+    const dotStyles = Object.values(DEFAULT_STYLES).filter((d) => d.kind === 'stopDot');
+    expect(dotStyles).toHaveLength(Object.keys(STOP_DOT_FACTORY_STYLES).length);
     expect(DEFAULT_DOC.styles).toBe(DEFAULT_STYLES);
     expect(DEFAULT_DOC.styleDefaults).toBe(FACTORY_STYLE_DEFAULTS);
     for (const [kind, id] of Object.entries(FACTORY_STYLE_DEFAULTS)) {

@@ -25,8 +25,6 @@ import {
   setLineDashWidth,
   setLineSingletonDotSize,
   setLineMultiDotSize,
-  setLineSingletonDotStyle,
-  setLineMultiDotStyle,
   setLineStrokeColor,
   setLineSeamColor,
   setLineSeamWidth,
@@ -38,7 +36,7 @@ import {
   updateTextLabel,
   updateTransferStyle,
 } from './transforms';
-import { DEFAULT_DOT_STYLE, dotStylesEqual } from './dotStyle';
+import { canonicalDotStyle, dotStylesEqual } from './dotStyle';
 import { DOT_SIZE_MIN, lineSingletonDotSizeOf, lineMultiDotSizeOf } from './dotSize';
 import { lineDashLengthOf, lineDashWidthOf } from './dashSize';
 import { LINE_WIDTH_MIN, LINE_WIDTH_STEP, lineWidthOf } from './lineWidth';
@@ -66,6 +64,8 @@ import {
   resolveTransferStyle,
 } from './transferStyle';
 import type {
+  DotStyle,
+  Line,
   LineStyleProps,
   MapDoc,
   PolygonStyleProps,
@@ -78,7 +78,9 @@ import type {
   TransferStyleProps,
 } from './types';
 
-// Which MapDoc collection each style kind's items live in.
+// Which MapDoc collection each style kind's items live in. `stopDot` is
+// excluded — it has no item collection (its wearers are dot slots, handled by a
+// dedicated slot-walk), so it never flows through the generic tag/stamp path.
 export const STYLE_COLLECTION_OF = {
   line: 'lines',
   textLabel: 'textLabels',
@@ -86,13 +88,16 @@ export const STYLE_COLLECTION_OF = {
   routeBullet: 'routeBullets',
   transfer: 'transfers',
   station: 'stations',
-} as const satisfies Record<StyleKind, keyof MapDoc>;
+} as const satisfies Record<Exclude<StyleKind, 'stopDot'>, keyof MapDoc>;
 
-// The one shape all five collections share that styles care about.
+// The one shape all six item collections share that styles care about.
 type Tagged = { styleId?: string };
 
+// stopDot resolves to {} — the generic loops (updateStyleProps / deleteStyle /
+// adoptDefaultStyles) then find nothing, and stopDot's real work is done by the
+// dedicated slot functions in its callers.
 const itemsOf = (doc: MapDoc, kind: StyleKind): Record<string, Tagged> =>
-  doc[STYLE_COLLECTION_OF[kind]] as Record<string, Tagged>;
+  kind === 'stopDot' ? {} : (doc[STYLE_COLLECTION_OF[kind]] as Record<string, Tagged>);
 
 /**
  * Read the EFFECTIVE covered-field values of one item as style props —
@@ -115,8 +120,6 @@ export function captureStyleProps<K extends StyleKind>(
       const dashLength = lineDashLengthOf(l);
       const dashWidth = lineDashWidthOf(l);
       return {
-        singletonDotStyle: l.singletonDotStyle ?? DEFAULT_DOT_STYLE,
-        multiDotStyle: l.multiDotStyle ?? DEFAULT_DOT_STYLE,
         singletonDotSize: lineSingletonDotSizeOf(l),
         multiDotSize: lineMultiDotSizeOf(l),
         width: lineWidthOf(l),
@@ -173,6 +176,10 @@ export function captureStyleProps<K extends StyleKind>(
       // station captures the factory props — self-contained like the others.
       return effectiveStationStyleProps(s) as StylePropsByKind[K];
     }
+    case 'stopDot':
+      // A stopDot style is not captured FROM an item — it is edited directly in
+      // the panel (define-in-place). No item to read.
+      return null;
   }
   return null;
 }
@@ -194,12 +201,13 @@ export function stylePropsEqual(
   a: StyleDef['props'],
   b: StyleDef['props'],
 ): boolean {
+  if (kind === 'stopDot') {
+    return dotStylesEqual(a as DotStyle, b as DotStyle);
+  }
   if (kind === 'line') {
     const la = a as LineStyleProps;
     const lb = b as LineStyleProps;
     return (
-      dotStylesEqual(la.singletonDotStyle, lb.singletonDotStyle) &&
-      dotStylesEqual(la.multiDotStyle, lb.multiDotStyle) &&
       la.singletonDotSize === lb.singletonDotSize &&
       la.multiDotSize === lb.multiDotSize &&
       la.width === lb.width &&
@@ -250,8 +258,6 @@ export function canonicalStyleProps<K extends StyleKind>(
       const dashLength = p.dashLength == null ? undefined : canonicalStrokeWidth(p.dashLength);
       const dashWidth = p.dashWidth == null ? undefined : canonicalStrokeWidth(p.dashWidth);
       return {
-        singletonDotStyle: p.singletonDotStyle,
-        multiDotStyle: p.multiDotStyle,
         singletonDotSize: Math.max(DOT_SIZE_MIN, Math.round(p.singletonDotSize)),
         multiDotSize: Math.max(DOT_SIZE_MIN, Math.round(p.multiDotSize)),
         width: Math.max(LINE_WIDTH_MIN, Math.round(p.width / LINE_WIDTH_STEP) * LINE_WIDTH_STEP),
@@ -324,12 +330,17 @@ export function canonicalStyleProps<K extends StyleKind>(
       // compares exactly equal to what stamping it stores back on a station.
       return canonicalStationLabelStyle(props as StationStyleProps) as StylePropsByKind[K];
     }
+    case 'stopDot':
+      return canonicalDotStyle(props as DotStyle) as StylePropsByKind[K];
   }
   return props;
 }
 
 // Set the tag on one item; same reference when already tagged with this id.
+// stopDot has no item collection — its slots carry tags via dedicated setters,
+// so the generic tag path is a no-op for it.
 function withStyleTag(doc: MapDoc, kind: StyleKind, itemId: string, styleId: string): MapDoc {
+  if (kind === 'stopDot') return doc;
   const key = STYLE_COLLECTION_OF[kind];
   const coll = itemsOf(doc, kind);
   const cur = coll[itemId];
@@ -341,12 +352,14 @@ function withStyleTag(doc: MapDoc, kind: StyleKind, itemId: string, styleId: str
 // Always applies (no already-tagged early-out) — the re-stamp path relies on
 // that when a tagged item's values predate a redefined style.
 function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
+  // stopDot styles are never stamped onto a generic item — their wearers are dot
+  // slots, restamped by updateStopDotStyleProps. Guard so this dead path (which
+  // has no collection to tag) is a safe no-op.
+  if (def.kind === 'stopDot') return doc;
   let next = doc;
   switch (def.kind) {
     case 'line': {
       const p = def.props;
-      next = setLineSingletonDotStyle(next, itemId, p.singletonDotStyle);
-      next = setLineMultiDotStyle(next, itemId, p.multiDotStyle);
       next = setLineSingletonDotSize(next, itemId, p.singletonDotSize);
       next = setLineMultiDotSize(next, itemId, p.multiDotSize);
       next = setLineWidth(next, itemId, p.width);
@@ -512,7 +525,8 @@ export type StylePropsPatch =
   | Partial<PolygonStyleProps>
   | Partial<RouteBulletStyleProps>
   | Partial<TransferStyleProps>
-  | Partial<StationStyleProps>;
+  | Partial<StationStyleProps>
+  | Partial<DotStyle>;
 
 /**
  * Patch a style def's props (the panel editor's write path) and re-stamp
@@ -530,6 +544,8 @@ export function updateStyleProps(doc: MapDoc, styleId: string, patch: StyleProps
   if (stylePropsEqual(def.kind, merged, def.props)) return doc;
   const nextDef = { id: def.id, name: def.name, kind: def.kind, props: merged } as StyleDef;
   let next: MapDoc = { ...doc, styles: { ...doc.styles, [styleId]: nextDef } };
+  // stopDot has no item collection — restamp its wearers (dot slots) directly.
+  if (def.kind === 'stopDot') return restampStopDotStyle(next, styleId, merged as DotStyle);
   const coll = itemsOf(next, def.kind);
   for (const id of Object.keys(coll)) {
     if (coll[id].styleId !== styleId) continue;
@@ -566,6 +582,7 @@ export function deleteStyle(doc: MapDoc, styleId: string): MapDoc {
   const { [styleId]: _gone, ...styles } = doc.styles;
   const remaining = stylesOfKind(styles, def.kind);
   if (remaining.length === 0) return doc;
+  if (def.kind === 'stopDot') return deleteStopDotStyle(doc, styleId, styles, remaining[0].id);
   const key = STYLE_COLLECTION_OF[def.kind];
   const coll = itemsOf(doc, def.kind);
   const out: Record<string, Tagged> = {};
@@ -589,8 +606,101 @@ export function deleteStyle(doc: MapDoc, styleId: string): MapDoc {
     : { ...doc, styles, styleDefaults };
 }
 
-/** Drop an item's style tag only (the dropdown's "Custom" choice). */
+// ---- stopDot: the dedicated slot-walk (stopDot has no item collection) ----
+// A stopDot style's "items" are the dot slots: each station stop's `dotStyleId`
+// override and each line's `singletonDotStyleId` / `multiDotStyleId` split
+// default. These two helpers are the stopDot analogue of the generic
+// updateStyleProps restamp loop and deleteStyle untag loop.
+
+/** Re-stamp the raw shadow (`dotStyle` / `singleton|multiDotStyle`) of every dot
+ *  slot tagged with `styleId` to the style's new `props`. The def has already
+ *  been written by the caller; this only refreshes the wearers. Reference-stable
+ *  per collection when nothing wears the style. */
+function restampStopDotStyle(doc: MapDoc, styleId: string, props: DotStyle): MapDoc {
+  let stations = doc.stations;
+  let stationsChanged = false;
+  for (const sid of Object.keys(stations)) {
+    const st = stations[sid];
+    let stopsChanged = false;
+    const stops = st.stops.map((s) => {
+      if (s.dotStyleId !== styleId) return s;
+      stopsChanged = true;
+      return { ...s, dotStyle: props };
+    });
+    if (stopsChanged) {
+      stations = { ...stations, [sid]: { ...st, stops } };
+      stationsChanged = true;
+    }
+  }
+  let lines = doc.lines;
+  let linesChanged = false;
+  for (const lid of Object.keys(lines)) {
+    const ln = lines[lid];
+    let nextLine: Line | undefined;
+    if (ln.singletonDotStyleId === styleId) nextLine = { ...ln, singletonDotStyle: props };
+    if (ln.multiDotStyleId === styleId) nextLine = { ...(nextLine ?? ln), multiDotStyle: props };
+    if (nextLine) {
+      lines = { ...lines, [lid]: nextLine };
+      linesChanged = true;
+    }
+  }
+  if (!stationsChanged && !linesChanged) return doc;
+  return {
+    ...doc,
+    ...(stationsChanged ? { stations } : {}),
+    ...(linesChanged ? { lines } : {}),
+  };
+}
+
+/** Delete a stopDot style: drop the TAG (keep the raw shadow, like every other
+ *  kind's delete) on every dot slot wearing it, and re-point the ⭐ designation
+ *  if the deleted style was the default. `styles` is the def map already minus
+ *  the deleted id; `fallbackDefaultId` is its kind's first remaining style. */
+function deleteStopDotStyle(
+  doc: MapDoc,
+  styleId: string,
+  styles: Record<string, StyleDef>,
+  fallbackDefaultId: string,
+): MapDoc {
+  let stations = doc.stations;
+  for (const sid of Object.keys(stations)) {
+    const st = stations[sid];
+    let stopsChanged = false;
+    const stops = st.stops.map((s) => {
+      if (s.dotStyleId !== styleId) return s;
+      stopsChanged = true;
+      const { dotStyleId: _g, ...rest } = s;
+      return rest;
+    });
+    if (stopsChanged) stations = { ...stations, [sid]: { ...st, stops } };
+  }
+  let lines = doc.lines;
+  for (const lid of Object.keys(lines)) {
+    let ln = lines[lid];
+    let changed = false;
+    if (ln.singletonDotStyleId === styleId) {
+      const { singletonDotStyleId: _g, ...rest } = ln;
+      ln = rest as Line;
+      changed = true;
+    }
+    if (ln.multiDotStyleId === styleId) {
+      const { multiDotStyleId: _g, ...rest } = ln;
+      ln = rest as Line;
+      changed = true;
+    }
+    if (changed) lines = { ...lines, [lid]: ln };
+  }
+  const styleDefaults =
+    doc.styleDefaults.stopDot === styleId
+      ? { ...doc.styleDefaults, stopDot: fallbackDefaultId }
+      : doc.styleDefaults;
+  return { ...doc, styles, styleDefaults, stations, lines };
+}
+
+/** Drop an item's style tag only (the dropdown's "Custom" choice). No stopDot
+ *  Custom state exists, so it is a no-op there. */
 export function clearStyleTag(doc: MapDoc, kind: StyleKind, itemId: string): MapDoc {
+  if (kind === 'stopDot') return doc;
   const key = STYLE_COLLECTION_OF[kind];
   const coll = itemsOf(doc, kind);
   const cur = coll[itemId];
@@ -668,7 +778,8 @@ export function setDefaultStyle(doc: MapDoc, styleId: string): MapDoc {
 export function adoptDefaultStyles(doc: MapDoc): MapDoc {
   if (!doc.styles) return doc;
   let next = doc;
-  for (const kind of Object.keys(STYLE_COLLECTION_OF) as StyleKind[]) {
+  // Only the item-collection kinds — stopDot has no collection to adopt into.
+  for (const kind of Object.keys(STYLE_COLLECTION_OF) as Exclude<StyleKind, 'stopDot'>[]) {
     const def = defaultStyleOf(next, kind);
     if (!def) continue;
     const key = STYLE_COLLECTION_OF[kind];

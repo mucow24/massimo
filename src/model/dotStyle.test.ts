@@ -153,6 +153,22 @@ describe('resolveDotRender', () => {
     it('omits code params when showServiceCode is false', () => {
       expect(resolveDotRender(style(), undefined, 'A', false)!.code).toBeUndefined();
     });
+
+    it('honors an explicit serviceCodeColor day/night pair, overriding auto-contrast', () => {
+      // Black fill would auto-contrast to white; the explicit pair wins.
+      const s = style({
+        showServiceCode: true,
+        serviceCodeColor: { day: '#ff0000', night: '#00ff00' },
+      });
+      expect(resolveDotRender(s, undefined, 'A', false)!.code!.color).toBe('#ff0000');
+      expect(resolveDotRender(s, undefined, 'A', true)!.code!.color).toBe('#00ff00');
+    });
+
+    it('falls back to auto-contrast when serviceCodeColor is absent', () => {
+      // White fill auto-contrasts to black (unchanged legacy behavior).
+      const s = style({ fill: W, showServiceCode: true });
+      expect(resolveDotRender(s, undefined, 'A', false)!.code!.color).toBe('#000');
+    });
   });
 });
 
@@ -187,6 +203,17 @@ describe('dotStylesEqual', () => {
     expect(dotStylesEqual(style(), style({ shape: 'diamond' }))).toBe(false);
     expect(dotStylesEqual(style(), style({ strokeWidth: 1 }))).toBe(false);
     expect(dotStylesEqual(style(), style({ showServiceCode: true }))).toBe(false);
+  });
+
+  it('compares serviceCodeColor (present vs absent, and both sides)', () => {
+    expect(dotStylesEqual(style({ serviceCodeColor: K }), style())).toBe(false);
+    expect(dotStylesEqual(style({ serviceCodeColor: K }), style({ serviceCodeColor: W }))).toBe(
+      false,
+    );
+    expect(
+      dotStylesEqual(style({ serviceCodeColor: K }), style({ serviceCodeColor: { ...K } })),
+    ).toBe(true);
+    expect(dotStylesEqual(style(), style())).toBe(true);
   });
 });
 

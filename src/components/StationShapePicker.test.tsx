@@ -134,7 +134,8 @@ describe('<StationShapePicker />', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Filled black diamond' }));
 
     expect(onPick).toHaveBeenCalledTimes(1);
-    expect(onPick).toHaveBeenCalledWith('filled-black-diamond');
+    // The picker now emits the stopDot library style id, not a preset key.
+    expect(onPick).toHaveBeenCalledWith('stop-filled-black-diamond');
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
