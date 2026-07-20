@@ -1,6 +1,6 @@
 import { useDoc } from '../../state/store';
 import type { LineId } from '../../model/types';
-import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS } from '../../model/dotStyle';
+import { DEFAULT_DOT_STYLE } from '../../model/dotStyle';
 import { ColorPalette } from './ColorPalette';
 import { ColorField } from '../ColorField';
 import { useFieldHistory } from '../useFieldHistory';
@@ -119,7 +119,7 @@ export function LineInspector({ id }: { id: LineId }) {
               currentStyle={line.singletonDotStyle ?? DEFAULT_DOT_STYLE}
               lineColor={line.color}
               serviceCode={line.service}
-              onPick={(shape) => setLineSingletonDotStyle(line.id, DOT_SHAPE_PRESETS[shape])}
+              onPick={(styleId) => setLineSingletonDotStyle(line.id, styleId)}
             />
           }
           min={DOT_SIZE_MIN}
@@ -145,7 +145,7 @@ export function LineInspector({ id }: { id: LineId }) {
               currentStyle={line.multiDotStyle ?? DEFAULT_DOT_STYLE}
               lineColor={line.color}
               serviceCode={line.service}
-              onPick={(shape) => setLineMultiDotStyle(line.id, DOT_SHAPE_PRESETS[shape])}
+              onPick={(styleId) => setLineMultiDotStyle(line.id, styleId)}
             />
           }
           min={DOT_SIZE_MIN}

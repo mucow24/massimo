@@ -278,20 +278,6 @@ describe('style-driven width changes repack through the same path', () => {
           name: 'Thin',
           kind: 'line',
           props: {
-            singletonDotStyle: {
-              shape: 'circle',
-              fill: { day: '#000000', night: '#000000' },
-              strokeWidth: 0,
-              strokeColor: { day: '#000000', night: '#000000' },
-              showServiceCode: false,
-            },
-            multiDotStyle: {
-              shape: 'circle',
-              fill: { day: '#000000', night: '#000000' },
-              strokeWidth: 0,
-              strokeColor: { day: '#000000', night: '#000000' },
-              showServiceCode: false,
-            },
             singletonDotSize: 8,
             multiDotSize: 8,
             width: 8,

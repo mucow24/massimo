@@ -9,10 +9,9 @@ import { ColorField } from './ColorField';
 import { DayNightColorRow } from './DayNightColorRow';
 import { NumericFieldRow } from './NumericFieldRow';
 import { WeightSelect, ItalicButton } from './WeightItalicControls';
-import { StationShapePicker } from './StationShapePicker';
+import { StopGlyph } from './StopGlyph';
 import { ShapeIcon } from './RouteBulletPopover';
 import type { StylePropsPatch } from '../model/styles';
-import { DOT_SHAPE_PRESETS } from '../model/dotStyle';
 import { DOT_SIZE_MAX, DOT_SIZE_MIN } from '../model/dotSize';
 import {
   DASH_LENGTH_MAX,
@@ -69,7 +68,11 @@ import {
   TEXT_LABEL_FONT_SIZE_MIN,
 } from '../model/transforms';
 import { FieldCheckbox } from './FieldCheckbox';
+import { DOT_STROKE_STEP } from '../model/dotStyle';
 import type {
+  DayNightColor,
+  DotBaseShape,
+  DotStyle,
   LineStyleProps,
   PolygonStyleProps,
   RouteBulletShape,
@@ -102,6 +105,8 @@ export function StyleEditor({ def }: { def: StyleDef }) {
       return <TransferStyleEditor id={def.id} props={def.props} />;
     case 'station':
       return <StationStyleEditor id={def.id} props={def.props} />;
+    case 'stopDot':
+      return <StopDotStyleEditor id={def.id} props={def.props} />;
   }
 }
 
@@ -126,24 +131,12 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
   const railW = lineStrokeRailWidth(props.strokeWidth, props.width);
   return (
     <div className="style-editor">
-      {/* Split default dot: singleton (only line at the station) vs.
-          interchange (shared with another line). Independent; resolved live per
-          stop. The picker fills the row's label column, so each row gets its
-          own caption above it (tooltip explains the case). */}
-      <div className="style-editor-caption" title="Stations with only one line stop">
-        Singleton stop dot
-      </div>
+      {/* Dot SIZE only — dot appearance is the stopDot library, set per line in
+          the Line inspector. Split by singleton (only line at the station) vs.
+          interchange (shared with another line). */}
       <NumericFieldRow
         id={`style-${id}-singleton-dot`}
         label="Singleton dot size"
-        leading={
-          <StationShapePicker
-            disabled={false}
-            ariaLabel="Singleton stop shape"
-            currentStyle={props.singletonDotStyle}
-            onPick={(shape) => patch({ singletonDotStyle: DOT_SHAPE_PRESETS[shape] })}
-          />
-        }
         min={DOT_SIZE_MIN}
         max={DOT_SIZE_MAX}
         step={1}
@@ -152,20 +145,9 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
         getCurrent={liveNumberProp(id, 'singletonDotSize', props.singletonDotSize)}
         textboxAllowAboveMax
       />
-      <div className="style-editor-caption" title="Stations with more than one line stop">
-        Interchange stop dot
-      </div>
       <NumericFieldRow
         id={`style-${id}-multi-dot`}
         label="Interchange dot size"
-        leading={
-          <StationShapePicker
-            disabled={false}
-            ariaLabel="Interchange stop shape"
-            currentStyle={props.multiDotStyle}
-            onPick={(shape) => patch({ multiDotStyle: DOT_SHAPE_PRESETS[shape] })}
-          />
-        }
         min={DOT_SIZE_MIN}
         max={DOT_SIZE_MAX}
         step={1}
@@ -536,6 +518,177 @@ function StationStyleEditor({ id, props }: { id: string; props: StationStyleProp
         detent={LABEL_TRACKING_DEFAULT}
         textboxAllowAboveMax
       />
+    </div>
+  );
+}
+
+const DOT_SHAPES: { shape: DotBaseShape; label: string }[] = [
+  { shape: 'circle', label: 'Circle' },
+  { shape: 'square', label: 'Square' },
+  { shape: 'diamond', label: 'Diamond' },
+  { shape: 'x', label: 'X' },
+  { shape: 'dash', label: 'Dash (tick)' },
+];
+
+// A stand-in line color for the editor previews — 'line' fills/strokes/dash
+// need *some* color to show; the real color comes from each line at paint time.
+const PREVIEW_LINE_COLOR = '#3b7dd8';
+
+function DotPreview({ style, size = 20 }: { style: DotStyle; size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`${-size / 2} ${-size / 2} ${size} ${size}`}
+      aria-hidden="true"
+    >
+      <StopGlyph cx={0} cy={0} style={style} lineColor={PREVIEW_LINE_COLOR} serviceCode="A" />
+    </svg>
+  );
+}
+
+/**
+ * The editor for one stopDot library style: 5-way shape, fill (none/line/custom
+ * day-night pair), stroke width + color (line/custom), show-service-code + its
+ * day/night color, and a live preview. Every edit goes through updateStyleProps,
+ * which restamps every dot slot wearing the style (Line inspector + per-stop).
+ */
+function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
+  const patch = usePatch(id);
+  const dp = (x: Partial<DotStyle>) => patch(x);
+
+  const fillMode: 'none' | 'line' | 'custom' =
+    p.fill === 'none' ? 'none' : p.fill === 'line' ? 'line' : 'custom';
+  const strokeMode: 'line' | 'custom' = p.strokeColor === 'line' ? 'line' : 'custom';
+  const fillPair: DayNightColor =
+    typeof p.fill === 'object' ? p.fill : { day: '#000000', night: '#000000' };
+  const strokePair: DayNightColor =
+    typeof p.strokeColor === 'object' ? p.strokeColor : { day: '#ffffff', night: '#ffffff' };
+  const codePair: DayNightColor = p.serviceCodeColor ?? { day: '#ffffff', night: '#ffffff' };
+
+  return (
+    <div className="style-editor">
+      <div className="row">
+        <label>Preview</label>
+        <DotPreview style={p} size={28} />
+      </div>
+      <div className="row">
+        <label>Shape</label>
+        <div className="shape-group">
+          {DOT_SHAPES.map(({ shape, label }) => (
+            <button
+              key={shape}
+              type="button"
+              className={'shape-btn' + (p.shape === shape ? ' active' : '')}
+              title={label}
+              aria-label={label}
+              aria-pressed={p.shape === shape}
+              onClick={() => dp({ shape })}
+            >
+              <DotPreview style={{ ...p, shape }} size={18} />
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="row">
+        <label>Fill</label>
+        <div className="shape-group">
+          {(['none', 'line', 'custom'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              className={'align-btn' + (fillMode === mode ? ' active' : '')}
+              aria-pressed={fillMode === mode}
+              aria-label={`Fill ${mode}`}
+              onClick={() =>
+                dp({ fill: mode === 'none' ? 'none' : mode === 'line' ? 'line' : fillPair })
+              }
+            >
+              {mode === 'none' ? 'None' : mode === 'line' ? 'Line' : 'Custom'}
+            </button>
+          ))}
+        </div>
+      </div>
+      {fillMode === 'custom' && (
+        <DayNightColorRow
+          label="Fill color"
+          id={`style-${id}-fill-day`}
+          darkId={`style-${id}-fill-night`}
+          lightAriaLabel="Fill color"
+          darkAriaLabel="Dark mode fill color"
+          titleNoun="fill"
+          value={fillPair.day}
+          darkValue={fillPair.night}
+          onChange={(day) => dp({ fill: { day, night: fillPair.night } })}
+          onDarkChange={(night) => dp({ fill: { day: fillPair.day, night } })}
+        />
+      )}
+      <NumericFieldRow
+        id={`style-${id}-dot-stroke`}
+        label="Stroke width"
+        min={0}
+        max={6}
+        step={DOT_STROKE_STEP}
+        value={p.strokeWidth}
+        onChange={(strokeWidth) => dp({ strokeWidth })}
+        getCurrent={liveNumberProp(id, 'strokeWidth', p.strokeWidth)}
+        textboxAllowAboveMax
+      />
+      <div className="row">
+        <label>Stroke color</label>
+        <div className="shape-group">
+          {(['line', 'custom'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              className={'align-btn' + (strokeMode === mode ? ' active' : '')}
+              aria-pressed={strokeMode === mode}
+              aria-label={`Stroke ${mode}`}
+              onClick={() => dp({ strokeColor: mode === 'line' ? 'line' : strokePair })}
+            >
+              {mode === 'line' ? 'Line' : 'Custom'}
+            </button>
+          ))}
+        </div>
+      </div>
+      {strokeMode === 'custom' && (
+        <DayNightColorRow
+          label="Stroke"
+          id={`style-${id}-stroke-day`}
+          darkId={`style-${id}-stroke-night`}
+          lightAriaLabel="Stroke color"
+          darkAriaLabel="Dark mode stroke color"
+          titleNoun="stroke"
+          value={strokePair.day}
+          darkValue={strokePair.night}
+          onChange={(day) => dp({ strokeColor: { day, night: strokePair.night } })}
+          onDarkChange={(night) => dp({ strokeColor: { day: strokePair.day, night } })}
+        />
+      )}
+      <div className="row">
+        <label htmlFor={`style-${id}-service-code`}>Service code</label>
+        <FieldCheckbox
+          id={`style-${id}-service-code`}
+          ariaLabel="Show service code"
+          title="Show the line's service code on the dot"
+          checked={p.showServiceCode}
+          onCheckedChange={(showServiceCode) => dp({ showServiceCode })}
+        />
+      </div>
+      {p.showServiceCode && (
+        <DayNightColorRow
+          label="Code color"
+          id={`style-${id}-code-day`}
+          darkId={`style-${id}-code-night`}
+          lightAriaLabel="Service code color"
+          darkAriaLabel="Dark mode service code color"
+          titleNoun="service-code color"
+          value={codePair.day}
+          darkValue={codePair.night}
+          onChange={(day) => dp({ serviceCodeColor: { day, night: codePair.night } })}
+          onDarkChange={(night) => dp({ serviceCodeColor: { day: codePair.day, night } })}
+        />
+      )}
     </div>
   );
 }

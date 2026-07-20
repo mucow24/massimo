@@ -9,6 +9,7 @@ import {
 import { effectiveLineOrder, useDoc, useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { StylesPanel } from './StylesPanel';
+import { NONE_STOP_DOT_STYLE_ID } from '../model/dotStyle';
 import type { Line, Station } from '../model/types';
 import { legibleTextOn } from '../util/color';
 import { stationNameListText } from '../geometry/labelTokens';
@@ -41,7 +42,11 @@ export function Sidebar() {
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
   const lineOrder = useDoc((s) => s.lineOrder);
-  const styleCount = useDoc((s) => Object.keys(s.styles).length);
+  // The reserved "None" stop-dot is hidden from the Styles list, so it must not
+  // inflate the tab's count either.
+  const styleCount = useDoc(
+    (s) => Object.keys(s.styles).filter((id) => id !== NONE_STOP_DOT_STYLE_ID).length,
+  );
   const selection = useSelection();
   const deleteStation = useDoc((s) => s.deleteStation);
   const deleteLine = useDoc((s) => s.deleteLine);

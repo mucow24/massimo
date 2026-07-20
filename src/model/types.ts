@@ -83,6 +83,13 @@ export interface DotStyle {
   // black/white is legible on the resolved fill. Implies the larger
   // SERVICE_CODE_DOT_RADIUS disc so the code stays readable.
   showServiceCode: boolean;
+  // Explicit service-code text color, per theme. Only meaningful when
+  // `showServiceCode` is true. Absent ⇒ the historical behavior: pick
+  // whichever of black/white is legible on the resolved fill
+  // (`legibleTextOn`). Present ⇒ that auto-contrast is overridden by the
+  // chosen day/night pair. Optional so untouched styles (and every preset)
+  // stay byte-identical.
+  serviceCodeColor?: DayNightColor;
 }
 
 export interface StopCell {
@@ -96,6 +103,12 @@ export interface StopCell {
   // saves carried a `dotShape` preset id here — converted on load (see
   // convertLegacyDotShapes in serialize.ts).
   dotStyle?: DotStyle;
+  // Live link to a StyleDef of kind 'stopDot' (the dot-style library). When
+  // present, `dotStyle` equals that style's props (the stamped shadow the
+  // renderer reads). Editing the style restamps `dotStyle`; picking a library
+  // entry sets both. Absent ⇒ this stop has no explicit override and defers to
+  // the line default. Same raw-value-plus-tag contract lines/stations use.
+  dotStyleId?: string;
   // Per-stop dot size override — the dot's DIAMETER in px. `undefined`
   // defers to the line's `defaultDotSize`; the setter (`setDotSize`) drops
   // the field when the chosen size equals the line's effective default, so
@@ -278,6 +291,14 @@ export interface Line {
   // load (bakeLineDotDefaults / convertLegacyDotShapes in serialize.ts).
   singletonDotStyle?: DotStyle;
   multiDotStyle?: DotStyle;
+  // Live links to StyleDefs of kind 'stopDot' — the dot-style library entry
+  // each split default references. When present, the matching `*DotStyle` raw
+  // field equals the style's props (the stamped shadow the renderer reads);
+  // editing the style restamps it, picking a library entry sets both. Absent ⇒
+  // no explicit line default — resolve to the doc's designated default stopDot
+  // style (see resolveDotStyle). Same raw-value-plus-tag contract as `styleId`.
+  singletonDotStyleId?: string;
+  multiDotStyleId?: string;
   // Dot DIAMETER in px for this line's stops, split the same way as
   // `singletonDotStyle` / `multiDotStyle` (singleton vs. shared station) and
   // used only for stops whose own `dotSize` is unset. Each missing ⇒
@@ -782,8 +803,21 @@ export type TransferStylePatch = Partial<
 
 // ---------- Styles (named, reusable per-kind formatting presets) ----------
 
-// Which item collection a style preset applies to.
-export type StyleKind = 'line' | 'textLabel' | 'polygon' | 'routeBullet' | 'transfer' | 'station';
+// Which item collection a style preset applies to. `stopDot` is the outlier:
+// it has no item collection of its own — it's the doc-scoped LIBRARY of named
+// dot styles that the dot pickers choose from and that the line/stop dot slots
+// reference. So it is deliberately absent from STYLE_COLLECTION_OF and the
+// generic capture/stamp/adopt machinery; its wearers are the dot slots
+// (StopCell.dotStyleId, Line.singleton/multiDotStyleId), restamped by a
+// dedicated slot-walk. See model/styles.ts.
+export type StyleKind =
+  | 'line'
+  | 'textLabel'
+  | 'polygon'
+  | 'routeBullet'
+  | 'transfer'
+  | 'station'
+  | 'stopDot';
 
 // Style props hold FULLY-RESOLVED effective values (captured by example from
 // an item — see model/styles.ts), so a style is self-contained: applying one
@@ -791,12 +825,13 @@ export type StyleKind = 'line' | 'textLabel' | 'polygon' | 'routeBullet' | 'tran
 // fields are deliberately NOT style: a line's `color`/`service`/`name`, a
 // bullet's `lineId`.
 export interface LineStyleProps {
-  // Default dot style, split by singleton vs. shared station (see
-  // Line.singletonDotStyle / Line.multiDotStyle). Both fully-resolved.
-  singletonDotStyle: DotStyle;
-  multiDotStyle: DotStyle;
-  // Dot DIAMETER in px, split the same way (see Line.singletonDotSize /
-  // Line.multiDotSize).
+  // Dot APPEARANCE is deliberately NOT covered by line styles — it lives in the
+  // stopDot style library and is referenced per line (Line.singletonDotStyleId /
+  // multiDotStyleId), set in the Line inspector. Keeping it out avoids coupling
+  // a line style to the stopDot ⭐-default designation. Dot SIZE stays here: it
+  // is a plain per-line number, orthogonal to the library.
+  // Dot DIAMETER in px, split by singleton vs. shared station (see
+  // Line.singletonDotSize / Line.multiDotSize).
   singletonDotSize: number;
   multiDotSize: number;
   // Stripe width, world units.
@@ -877,6 +912,10 @@ export interface StylePropsByKind {
   routeBullet: RouteBulletStyleProps;
   transfer: TransferStyleProps;
   station: StationStyleProps;
+  // A stopDot style's props ARE a DotStyle — the named library entry a dot slot
+  // references. (Size is deliberately not covered; it stays the orthogonal
+  // dotSize axis.)
+  stopDot: DotStyle;
 }
 
 // A named, reusable formatting preset stored in the doc (MapDoc.styles).

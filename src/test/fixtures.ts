@@ -20,7 +20,11 @@ import type {
 } from '../model/types';
 import type { SegmentBandSpec } from '../geometry/interlining';
 import { STOP_SIZE, stripeOffsetsForWidths } from '../geometry/orientation';
-import { DEFAULT_DOT_STYLE } from '../model/dotStyle';
+import {
+  DEFAULT_DOT_STYLE,
+  DEFAULT_STOP_DOT_STYLE_ID,
+  STOP_DOT_FACTORY_STYLES,
+} from '../model/dotStyle';
 import { DOT_SIZE_DEFAULT } from '../model/dotSize';
 import { LINE_WIDTH_DEFAULT } from '../model/lineWidth';
 import { LINE_CURVE_RADIUS_DEFAULT } from '../model/lineCurve';
@@ -75,7 +79,19 @@ export function makeLine(overrides: Partial<Line> & { id: LineId }): Line {
   };
   // Topology defaults to the linear path implied by `stations` (the historical
   // shape) unless a fixture supplies an explicit edge set for a loop/branch.
-  return { ...base, edges: overrides.edges ?? edgesFromStations(base.stations) };
+  let line: Line = { ...base, edges: overrides.edges ?? edgesFromStations(base.stations) };
+  // A dot-default TAG given without its raw shadow gets the shadow filled from
+  // the factory library, so the fixture line is consistent (raw + tag) like a
+  // real one — resolveDotStyle reads the raw, the setters key off the tag.
+  if (line.singletonDotStyleId && line.singletonDotStyle === undefined) {
+    const p = STOP_DOT_FACTORY_STYLES[line.singletonDotStyleId]?.props;
+    if (p) line = { ...line, singletonDotStyle: p };
+  }
+  if (line.multiDotStyleId && line.multiDotStyle === undefined) {
+    const p = STOP_DOT_FACTORY_STYLES[line.multiDotStyleId]?.props;
+    if (p) line = { ...line, multiDotStyle: p };
+  }
+  return line;
 }
 
 /**
@@ -208,8 +224,6 @@ export function makeTransfer(overrides: Partial<Transfer> & { id: string }): Tra
 // fields they exercise. Kept in one place so new props get a default here once.
 const STYLE_PROPS_DEFAULTS: StylePropsByKind = {
   line: {
-    singletonDotStyle: DEFAULT_DOT_STYLE,
-    multiDotStyle: DEFAULT_DOT_STYLE,
     singletonDotSize: DOT_SIZE_DEFAULT,
     multiDotSize: DOT_SIZE_DEFAULT,
     width: LINE_WIDTH_DEFAULT,
@@ -217,6 +231,7 @@ const STYLE_PROPS_DEFAULTS: StylePropsByKind = {
     strokeWidth: 0,
     strokeColor: '#ffffff',
   },
+  stopDot: DEFAULT_DOT_STYLE,
   textLabel: {
     color: '#111111',
     darkColor: '#ffffff',
@@ -297,19 +312,30 @@ export function makeDoc(parts: {
   for (const ra of parts.regionAssignments ?? []) regionAssignments[ra.id] = ra;
   const svgImages: Record<string, SvgImage> = {};
   for (const im of parts.svgImages ?? []) svgImages[im.id] = im;
-  const styles: Record<string, StyleDef> = {};
+  // Seed the stopDot LIBRARY into every doc (like a real doc) so the dot-style
+  // setters can dereference a style id; explicit parts.styles override.
+  const styles: Record<string, StyleDef> = { ...STOP_DOT_FACTORY_STYLES };
   for (const st of parts.styles ?? []) styles[st.id] = st;
   // Per-kind default designation: explicit part wins, else the kind's style
   // named "Default", else its first style (name-sorted), else the factory id
   // (dangling in a style-less fixture doc — lookups guard resolution).
   const styleDefaults = {} as Record<StyleKind, string>;
-  const kinds: StyleKind[] = ['line', 'textLabel', 'polygon', 'routeBullet', 'transfer', 'station'];
+  const kinds: StyleKind[] = [
+    'line',
+    'textLabel',
+    'polygon',
+    'routeBullet',
+    'transfer',
+    'station',
+    'stopDot',
+  ];
   for (const kind of kinds) {
     const ofKind = Object.values(styles)
       .filter((d) => d.kind === kind)
       .sort((a, b) => a.name.localeCompare(b.name));
     styleDefaults[kind] =
       parts.styleDefaults?.[kind] ??
+      (kind === 'stopDot' ? DEFAULT_STOP_DOT_STYLE_ID : undefined) ??
       (ofKind.find((d) => d.name === 'Default') ?? ofKind[0])?.id ??
       `default-${kind}`;
   }
