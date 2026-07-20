@@ -731,6 +731,24 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
             />
           )}
           <div className="row">
+            <label>Align</label>
+            <div className="shape-group">
+              {(['center', 'inside', 'outside'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={'align-btn' + (p.strokeAlign === mode ? ' active' : '')}
+                  aria-pressed={p.strokeAlign === mode}
+                  aria-label={`Align ${mode}`}
+                  title={`Stroke ${mode === 'center' ? 'straddles the edge' : mode === 'inside' ? 'grows inward' : 'grows outward'}`}
+                  onClick={() => dp({ strokeAlign: mode })}
+                >
+                  {mode === 'center' ? 'Center' : mode === 'inside' ? 'Inside' : 'Outside'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="row">
             <label htmlFor={`style-${id}-service-code`}>Service code</label>
             <FieldCheckbox
               id={`style-${id}-service-code`}

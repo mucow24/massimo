@@ -71,6 +71,15 @@ export type DotStrokeColor = DayNightColor | 'line';
 // absent serviceCodeColor means auto-contrast (see DotStyle.serviceCodeColor).
 export type DotServiceCodeColor = DayNightColor | 'line';
 
+// Where a dot's stroke sits relative to its silhouette edge, mirroring the
+// Figma/Illustrator "align stroke" control. 'center' straddles the edge (SVG's
+// native behavior — half in, half out); 'inside' keeps the outer edge fixed and
+// grows the stroke inward, eating the fill; 'outside' keeps the fill fixed and
+// grows the stroke outward. Only meaningful when strokeWidth > 0. The renderer
+// realizes this via the existing silhouette+inset two-pass (see StopGlyph) — for
+// 'center' it is pixel-identical to the historical native stroke.
+export type DotStrokeAlign = 'center' | 'inside' | 'outside';
+
 // A procedurally-defined stop dot. All fields are required — a deliberate
 // divergence from the optional-field-plus-named-default convention on `Line`:
 // style objects are canonical by construction so plain deep equality
@@ -85,6 +94,10 @@ export interface DotStyle {
   // World units; 0 = no stroke (stroke attrs omitted at render).
   strokeWidth: number;
   strokeColor: DotStrokeColor;
+  // Where the stroke sits relative to the dot's edge (center/inside/outside).
+  // Required like the other style fields (so `dotStylesEqual` stays a plain deep
+  // compare); rehydrated saves that predate it are backfilled to 'center'.
+  strokeAlign: DotStrokeAlign;
   // Render the line's service code centered on the dot, in whichever of
   // black/white is legible on the resolved fill. Implies the larger
   // SERVICE_CODE_DOT_RADIUS disc so the code stays readable.
