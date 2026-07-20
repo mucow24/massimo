@@ -25,9 +25,16 @@ import {
   DEFAULT_DOT_STYLE,
   DEFAULT_STOP_DOT_STYLE_ID,
   STOP_DOT_FACTORY_STYLES,
+  defaultDotDiameter,
   dotStylesEqual,
   isBlankDotStyle,
+  resolveDotStyle,
 } from './dotStyle';
+
+// `resolveDotStyle` now lives in the leaf `dotStyle` module (so `dotSize` can
+// resolve the style-aware default without an import cycle); keep the historical
+// import path working for its existing callers.
+export { resolveDotStyle } from './dotStyle';
 import { pairKeyOf } from './pairKey';
 import {
   addEdge,
@@ -407,24 +414,6 @@ export function stationIsSingleton(
 }
 
 /**
- * Resolve the style for a stop: explicit per-stop `dotStyle` wins, else the
- * line's split default for the stop's station case (`singletonDotStyle` when
- * `isSingleton`, else `multiDotStyle`), else DEFAULT_DOT_STYLE (the historical
- * filled-black). `isSingleton` is `stationIsSingleton(station)`.
- */
-export function resolveDotStyle(
-  line: Line | undefined,
-  stop: StopCell | undefined,
-  isSingleton: boolean,
-): DotStyle {
-  return (
-    stop?.dotStyle ??
-    (isSingleton ? line?.singletonDotStyle : line?.multiDotStyle) ??
-    DEFAULT_DOT_STYLE
-  );
-}
-
-/**
  * Effective perpendicular label offset. The field defaults to 0 when absent
  * (older saves) or when the label is missing — one named home for that default
  * so read-sites stop re-spelling `?? 0`.
@@ -599,9 +588,16 @@ export function setDotSize(
   const line = doc.lines[lineId];
   return updateStation(doc, stationId, (cur) => {
     // The default this stop tracks is its station's singleton or shared size;
-    // setting exactly that clears the override, any other value pins.
+    // setting exactly that clears the override, any other value pins. When the
+    // line default is itself unset, the tracked size is the stop STYLE's own
+    // default diameter (12 for a service-code disc, 8 otherwise) — NOT a flat
+    // DOT_SIZE_DEFAULT, or an explicit 8 on a service-code dot would collapse
+    // and snap to 12.
+    const isSingleton = stationIsSingleton(cur);
+    const stop = cur.stops.find((s) => s.lineId === lineId);
     const effDefault =
-      (stationIsSingleton(cur) ? line?.singletonDotSize : line?.multiDotSize) ?? DOT_SIZE_DEFAULT;
+      (isSingleton ? line?.singletonDotSize : line?.multiDotSize) ??
+      defaultDotDiameter(resolveDotStyle(line, stop, isSingleton));
     const stored = canonicalDotSize(size, effDefault);
     let changed = false;
     const stops = cur.stops.map((s) => {
@@ -632,19 +628,26 @@ function setLineCaseDotSize(
 ): MapDoc {
   const cur = doc.lines[id];
   if (!cur || !Number.isFinite(size)) return doc;
-  const stored = canonicalDotSize(size);
+  // Collapse to "tracking" only at the size this case's DEFAULT STYLE actually
+  // renders when untracked (12 for a service-code disc, 8 otherwise) — an
+  // explicit 8 on a service-code line is a real, distinct size, not the default.
+  const defaultStyle =
+    (wantSingleton ? cur.singletonDotStyle : cur.multiDotStyle) ?? DEFAULT_DOT_STYLE;
+  const stored = canonicalDotSize(size, defaultDotDiameter(defaultStyle));
   if (cur[field] === stored) return doc;
   const nextLine = writeLineField(cur, field, stored);
-  // The cascade compares against the new EFFECTIVE default — `stored`, or the
-  // global DOT_SIZE_DEFAULT when `stored` collapsed to undefined (`stored` is
-  // undefined ONLY at that default) — but only on stops of the matching case;
-  // the other case keeps its pin.
-  const effDefault = stored ?? DOT_SIZE_DEFAULT;
+  // A per-stop override is redundant when dropping it renders the same size.
+  // With the line default now `stored` (a number), that means the override
+  // equals `stored`. When `stored` collapsed to undefined, the stop would fall
+  // back to ITS OWN style default, so compare against that per-stop diameter —
+  // only on stops of the matching case; the other case keeps its pin.
   const stations = dropRedundantStopOverrides(
     doc.stations,
     id,
     'dotSize',
-    (s, st) => stationIsSingleton(st) === wantSingleton && s.dotSize === effDefault,
+    (s, st) =>
+      stationIsSingleton(st) === wantSingleton &&
+      s.dotSize === (stored ?? defaultDotDiameter(resolveDotStyle(cur, s, wantSingleton))),
   );
   // Fall-through = the stored default-dot-size changed → detach from the
   // line's style preset.
