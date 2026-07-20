@@ -1,6 +1,7 @@
 import { ChevronDownIcon, FontItalicIcon } from '@radix-ui/react-icons';
 import * as Select from '@radix-ui/react-select';
 import * as Toggle from '@radix-ui/react-toggle';
+import { FieldSelectContent } from './FieldSelectContent';
 import { LABEL_WEIGHT_NAMES, isLabelWeight } from '../model/transforms';
 import type { TextLabelWeight } from '../model/types';
 
@@ -14,8 +15,9 @@ import type { TextLabelWeight } from '../model/types';
  * `field-row`, with/without an htmlFor, and whether italic sits in this row
  * or over with align buttons).
  *
- * Not portaled — the panel must stay inside `.app` for the design tokens and
- * the dark-mode reassignment to apply.
+ * The open panel portals to `.app` (via FieldSelectContent) so it escapes the
+ * canvas-host stacking trap — otherwise a weight list that flips up hides under
+ * the toolbar — while staying inside `.app` for the tokens + dark mode.
  */
 export function WeightSelect({
   id,
@@ -50,20 +52,18 @@ export function WeightSelect({
           <ChevronDownIcon />
         </Select.Icon>
       </Select.Trigger>
-      <Select.Content className="field-select-panel" position="popper" sideOffset={4}>
-        <Select.Viewport>
-          {LABEL_WEIGHT_NAMES.map((w) => (
-            <Select.Item
-              key={w.value}
-              value={String(w.value)}
-              className="field-select-item"
-              style={face(w.value)}
-            >
-              <Select.ItemText>{w.name}</Select.ItemText>
-            </Select.Item>
-          ))}
-        </Select.Viewport>
-      </Select.Content>
+      <FieldSelectContent>
+        {LABEL_WEIGHT_NAMES.map((w) => (
+          <Select.Item
+            key={w.value}
+            value={String(w.value)}
+            className="field-select-item"
+            style={face(w.value)}
+          >
+            <Select.ItemText>{w.name}</Select.ItemText>
+          </Select.Item>
+        ))}
+      </FieldSelectContent>
     </Select.Root>
   );
 }

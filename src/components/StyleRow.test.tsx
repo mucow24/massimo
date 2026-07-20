@@ -114,4 +114,30 @@ describe('<StyleRow />', () => {
     render(<StyleRow kind="textLabel" itemId="g1" styleId={undefined} disabled />);
     expect(screen.getByRole('combobox', { name: 'Style' })).toBeDisabled();
   });
+
+  // The item popovers live inside `.canvas-host`, whose `isolation: isolate`
+  // traps their descendants beneath the toolbar (root z-index). An in-place
+  // dropdown that flips up therefore vanishes under the toolbar. The panel must
+  // portal OUT of `.canvas-host` — but into `.app`, not `document.body`, so the
+  // design tokens + dark-mode reassignment still resolve. `.app` is pre-mounted
+  // (as it is in the real app: the root exists before any popover) so the
+  // render-time portal-target lookup resolves it.
+  it('portals the open list out of the canvas-host trap, staying inside .app', async () => {
+    const user = userEvent.setup();
+    const app = document.createElement('div');
+    app.className = 'app';
+    const host = document.createElement('div');
+    host.className = 'canvas-host';
+    app.appendChild(host);
+    document.body.appendChild(app);
+    try {
+      render(<Harness />, { container: host });
+      await user.click(screen.getByRole('combobox', { name: 'Style' }));
+      const option = await screen.findByRole('option', { name: 'Heading' });
+      expect(option.closest('.canvas-host')).toBeNull();
+      expect(option.closest('.app')).not.toBeNull();
+    } finally {
+      app.remove();
+    }
+  });
 });
