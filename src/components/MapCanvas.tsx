@@ -973,7 +973,15 @@ export function MapCanvas() {
   };
 
   return (
-    <div className="canvas-host" data-uimode={selection.uiMode.kind}>
+    <div
+      className="canvas-host"
+      data-uimode={selection.uiMode.kind}
+      // The host background is only a backstop behind the overdrawn SVG bg rect
+      // (a pan can briefly outrun the rect's reproject). It tracks the MAP's
+      // canvas color — not the chrome theme — so "Dark UI in day" darkens the
+      // toolbar/sidebar without leaking a black frame around a light map.
+      style={{ background: theme.canvasBg }}
+    >
       <EditingBanner />
       <svg
         ref={svgRef}

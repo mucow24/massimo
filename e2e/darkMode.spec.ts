@@ -99,3 +99,69 @@ test.describe('dark mode', () => {
     await expect(legacy).toHaveAttribute('stroke', '#123456');
   });
 });
+
+// "Dark UI in day" is the OTHER dark: a local viewing preference (viewportStore,
+// persisted, never on the doc) that darkens only the chrome, leaving the map's
+// canvas exactly as the doc defines it. It's orthogonal to the doc's night mode
+// (the moon toggle) — the whole point is a dark UI over a still-light map.
+test.describe('dark UI in day', () => {
+  test('darkens the chrome only, leaving a light map light on the canvas', async ({ page }) => {
+    await seedAndOpen(page, fourInLineWithBulletsAndLabel);
+
+    const app = page.locator('.app');
+    const host = page.locator('.canvas-host');
+    const bg = page.locator('[data-bg]');
+    const labelText = page.locator('[data-text-label-id="g1"] text').first();
+
+    // Baseline: light chrome, light canvas.
+    await expect(app).not.toHaveAttribute('data-theme', 'dark');
+    await expect(bg).toHaveAttribute('fill', '#fafafa');
+
+    await page.getByRole('button', { name: 'Canvas' }).click();
+    await page.getByRole('menuitemcheckbox', { name: 'Dark UI in day' }).click();
+
+    // Chrome flipped dark…
+    await expect(app).toHaveAttribute('data-theme', 'dark');
+    // …but the canvas is untouched: bg rect, its host backstop, and the on-canvas
+    // label all stay in the doc's (light) palette.
+    await expect(bg).toHaveAttribute('fill', '#fafafa');
+    await expect(labelText).toHaveAttribute('fill', '#111111');
+    await expect(host).toHaveCSS('background-color', 'rgb(250, 250, 250)');
+  });
+
+  test('is independent of the doc night toggle, and sticky across it', async ({ page }) => {
+    await seedAndOpen(page, fourInLineWithBulletsAndLabel);
+
+    const app = page.locator('.app');
+    const bg = page.locator('[data-bg]');
+
+    await page.getByRole('button', { name: 'Canvas' }).click();
+    await page.getByRole('menuitemcheckbox', { name: 'Dark UI in day' }).click();
+    await expect(app).toHaveAttribute('data-theme', 'dark');
+    await expect(bg).toHaveAttribute('fill', '#fafafa');
+
+    // Turn the map itself to night: canvas now darkens too, chrome stays dark.
+    await page.getByRole('button', { name: 'Toggle dark mode' }).click();
+    await expect(app).toHaveAttribute('data-theme', 'dark');
+    await expect(bg).toHaveAttribute('fill', '#000000');
+
+    // Back to a day map: canvas relights, but the chrome preference sticks.
+    await page.getByRole('button', { name: 'Toggle dark mode' }).click();
+    await expect(app).toHaveAttribute('data-theme', 'dark');
+    await expect(bg).toHaveAttribute('fill', '#fafafa');
+  });
+
+  test('persists across a reload', async ({ page }) => {
+    await seedAndOpen(page, fourInLineWithBulletsAndLabel);
+
+    await page.getByRole('button', { name: 'Canvas' }).click();
+    await page.getByRole('menuitemcheckbox', { name: 'Dark UI in day' }).click();
+    await expect(page.locator('.app')).toHaveAttribute('data-theme', 'dark');
+
+    await page.reload();
+    await page.waitForSelector('.canvas-host svg');
+    // Chrome still dark, canvas still light — the preference rode localStorage.
+    await expect(page.locator('.app')).toHaveAttribute('data-theme', 'dark');
+    await expect(page.locator('[data-bg]')).toHaveAttribute('fill', '#fafafa');
+  });
+});

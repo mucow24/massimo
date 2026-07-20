@@ -57,6 +57,15 @@ interface ViewportState extends Viewport {
    *  and doesn't travel in the saved/exported file. Ignored in night mode. */
   dayCanvasColor: DayCanvasColor;
   setDayCanvasColor: (color: DayCanvasColor) => void;
+  /** Darken only the CHROME (toolbar, sidebar, menus, popovers) while the map
+   *  stays a day map — a local viewing preference, never a doc property. This is
+   *  deliberately NOT the doc's night mode (MapDoc.darkMode, the moon toggle):
+   *  that repaints the canvas too and travels in the saved file. This flag only
+   *  flips `data-theme` on `.app` (see App.tsx); the canvas palette (themeColors)
+   *  never reads it, so the map renders exactly as the doc defines. Redundant
+   *  when the doc is already a night map (chrome is dark either way). */
+  darkUiInDay: boolean;
+  setDarkUiInDay: (on: boolean) => void;
 }
 
 /**
@@ -119,6 +128,8 @@ export const useViewportStore = create<ViewportState>()(
       setShowNetwork: (showNetwork) => set({ showNetwork }),
       dayCanvasColor: 'white',
       setDayCanvasColor: (dayCanvasColor) => set({ dayCanvasColor }),
+      darkUiInDay: false,
+      setDarkUiInDay: (darkUiInDay) => set({ darkUiInDay }),
     }),
     {
       name: 'massimo-viewport',
@@ -131,6 +142,7 @@ export const useViewportStore = create<ViewportState>()(
         gridSize: s.gridSize,
         showWaypoints: s.showWaypoints,
         dayCanvasColor: s.dayCanvasColor,
+        darkUiInDay: s.darkUiInDay,
         // showNetwork is deliberately absent: hiding the network is a momentary
         // "get out of my way" toggle, not a saved preference. Persisting it
         // would let a reload open onto an apparently empty map, with only the

@@ -3,6 +3,7 @@ import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
 import { MapCanvas } from './components/MapCanvas';
 import { StatusToasts } from './components/StatusToasts';
+import { useViewportStore } from './state/viewportStore';
 import {
   beginHistoryGroup,
   cancelAppendMode,
@@ -96,6 +97,11 @@ function collectClipItems(
 
 export default function App() {
   const darkMode = useDoc((s) => s.darkMode);
+  // The chrome is dark when the map is a night map OR the local "Dark UI in day"
+  // preference is on. The canvas half doesn't read this — it stays keyed to the
+  // doc's darkMode (see themeColors) — so a dark UI can sit over a light map.
+  const darkUiInDay = useViewportStore((s) => s.darkUiInDay);
+  const chromeDark = darkMode || darkUiInDay;
 
   // Keep the browser tab title in sync with the map name: "Massimo - <name>".
   const docName = useDoc((s) => s.name);
@@ -632,7 +638,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="app" data-theme={darkMode ? 'dark' : undefined}>
+    <div className="app" data-theme={chromeDark ? 'dark' : undefined}>
       <Toolbar />
       <MapCanvas />
       <Sidebar />
