@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as T from './transforms';
 import { repackStationForWidth } from './stationPacking';
 import { applyStyleToItem } from './styles';
+import { DEFAULT_STOP_DOT_STYLE_ID } from './dotStyle';
 import { buildBandGeometry } from '../geometry/interlining';
 import { SQRT2_2 } from '../geometry/vec';
 import { makeDoc, makeLabel, makeLine, makeStation, makeStop } from '../test/fixtures';
@@ -278,6 +279,8 @@ describe('style-driven width changes repack through the same path', () => {
           name: 'Thin',
           kind: 'line',
           props: {
+            singletonDotStyleId: DEFAULT_STOP_DOT_STYLE_ID,
+            multiDotStyleId: DEFAULT_STOP_DOT_STYLE_ID,
             singletonDotSize: 8,
             multiDotSize: 8,
             width: 8,

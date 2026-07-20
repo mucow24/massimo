@@ -68,8 +68,16 @@ describe('detach on covered-field edits — lines', () => {
     expect(setLineSeamColor(doc, 'l1', '#00000000').lines.l1.styleId).toBeUndefined();
   });
 
-  it('the split dot SIZE setters detach on change only; dot STYLE is not a covered field', () => {
-    const doc = tagged();
+  it('the split dot SIZE and TYPE setters detach on change only', () => {
+    const doc = makeDoc({
+      lines: [
+        makeLine({ id: 'l1', width: 10, strokeWidth: 2, strokeColor: '#123456', styleId: 'y1' }),
+      ],
+      styles: [
+        makeStyle('line', 'y1'),
+        makeStyle('stopDot', 'sd-square', { props: { shape: 'square' } }),
+      ],
+    });
     // Dot SIZE is a covered line-style field: a no-op (value already effective)
     // keeps the tag…
     expect(setLineSingletonDotSize(doc, 'l1', 8)).toBe(doc); // 8 = DOT_SIZE_DEFAULT
@@ -77,10 +85,10 @@ describe('detach on covered-field edits — lines', () => {
     // …and a real size change detaches, on either case independently.
     expect(setLineSingletonDotSize(doc, 'l1', 12).lines.l1.styleId).toBeUndefined();
     expect(setLineMultiDotSize(doc, 'l1', 12).lines.l1.styleId).toBeUndefined();
-    // Dot APPEARANCE is NOT covered by line styles, so the split dot-style
-    // setters never detach the line's preset — the tag survives on either case.
-    expect(setLineSingletonDotStyle(doc, 'l1', 'stop-open-black').lines.l1.styleId).toBe('y1');
-    expect(setLineMultiDotStyle(doc, 'l1', 'stop-open-black').lines.l1.styleId).toBe('y1');
+    // Dot TYPE is ALSO covered now: pointing a case at a different stopDot
+    // library style detaches the line's preset, on either case independently.
+    expect(setLineSingletonDotStyle(doc, 'l1', 'sd-square').lines.l1.styleId).toBeUndefined();
+    expect(setLineMultiDotStyle(doc, 'l1', 'sd-square').lines.l1.styleId).toBeUndefined();
   });
 });
 

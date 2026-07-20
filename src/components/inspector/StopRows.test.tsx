@@ -6,6 +6,7 @@ import { useDoc, useSelection } from '../../state/store';
 import { historyDepth } from '../../state/history';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { DOT_SIZE_DEFAULT } from '../../model/dotSize';
+import { STOP_DOT_FACTORY_STYLES } from '../../model/dotStyle';
 import type { Station } from '../../model/types';
 import { makeLine } from '../../test/fixtures';
 
@@ -137,6 +138,9 @@ describe('<StopRows />', () => {
   it("picking a shape writes THAT row's stop style", async () => {
     const user = userEvent.setup();
     seed({ a: hub() });
+    // A fresh map seeds only the pruned library; add the full known catalog to
+    // the doc so the "Filled black diamond" preset is offered for the pick.
+    useDoc.setState({ styles: { ...useDoc.getState().styles, ...STOP_DOT_FACTORY_STYLES } });
     renderRows();
     const rows = screen.getAllByTestId('stop-row');
     await user.click(within(rows[1]).getByRole('button', { name: 'Stop shape' }));

@@ -162,7 +162,7 @@ test.describe('Stop dot size', () => {
   test('an explicit size overrides the service-code disc; tracking code dots keep r 6', async ({
     page,
   }) => {
-    await seedAndOpen(page, fourInLine);
+    await seedAndOpen(page, fourInLine, { stopDotLibrary: true });
 
     // Make the service-code disc the line's SINGLETON default stop dot.
     await selectLine(page, 'L1');

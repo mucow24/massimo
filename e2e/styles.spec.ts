@@ -64,9 +64,9 @@ test('the sidebar Styles tab lists, renames, edits live, and deletes styles', as
   await saveHeadingFromG1(page);
 
   // The sidebar is open by default; the tab counts the six factory Defaults +
-  // the stopDot library MINUS the hidden reserved "None" (15) + the one saved
-  // style = 22.
-  await page.getByRole('button', { name: 'Styles (22)' }).click();
+  // the pruned stopDot seed MINUS the hidden reserved "None" (1 = Filled black) +
+  // the one saved style = 8.
+  await page.getByRole('button', { name: 'Styles (8)' }).click();
   await page.getByRole('button', { name: 'Rename Heading' }).click();
   await page.getByLabel('Style name').fill('Header');
   await page.getByLabel('Style name').press('Enter');
@@ -99,7 +99,7 @@ test('a new label is created wearing the (redefined) Default style', async ({ pa
   // sections render in a fixed order (Lines, Stop dots, Stations, Labels, …);
   // the Stop dots library has no style NAMED "Default", so the "Edit Default"
   // chevrons are Lines (0), Stations (1), Labels (2) — Labels is nth(2).
-  await page.getByRole('button', { name: 'Styles (21)' }).click();
+  await page.getByRole('button', { name: 'Styles (7)' }).click();
   await page.getByRole('button', { name: 'Edit Default' }).nth(2).click();
   const editor = page.locator('.style-editor');
   await editor.getByRole('spinbutton', { name: 'Size' }).fill('32');

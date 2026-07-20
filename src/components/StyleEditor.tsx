@@ -10,6 +10,7 @@ import { DayNightColorRow } from './DayNightColorRow';
 import { NumericFieldRow } from './NumericFieldRow';
 import { WeightSelect, ItalicButton } from './WeightItalicControls';
 import { StopGlyph } from './StopGlyph';
+import { StationShapePicker } from './StationShapePicker';
 import { ShapeIcon } from './RouteBulletPopover';
 import type { StylePropsPatch } from '../model/styles';
 import { DOT_SIZE_MAX, DOT_SIZE_MIN } from '../model/dotSize';
@@ -68,7 +69,7 @@ import {
   TEXT_LABEL_FONT_SIZE_MIN,
 } from '../model/transforms';
 import { FieldCheckbox } from './FieldCheckbox';
-import { DOT_STROKE_STEP } from '../model/dotStyle';
+import { DEFAULT_DOT_STYLE, DOT_STROKE_STEP } from '../model/dotStyle';
 import type {
   DayNightColor,
   DotBaseShape,
@@ -127,35 +128,24 @@ function usePatch(id: string): (patch: StylePropsPatch) => void {
 
 function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
   const patch = usePatch(id);
+  const styles = useDoc((s) => s.styles);
   // Seam controls inherit the casing when unset (see Line.seamWidth / seamColor).
   const railW = lineStrokeRailWidth(props.strokeWidth, props.width);
+  // Resolve each split default's stopDot library entry — drives the type
+  // picker's trigger preview and the dash-only gating below (a dot renders TfL
+  // ticks iff its shape is 'dash'). A since-deleted id falls back to the factory
+  // look (canonicalStyleProps re-points it on the next load).
+  const dotStyleOf = (styleId: string): DotStyle => {
+    const def = styles[styleId];
+    return def?.kind === 'stopDot' ? (def.props as DotStyle) : DEFAULT_DOT_STYLE;
+  };
+  const singletonDot = dotStyleOf(props.singletonDotStyleId);
+  const multiDot = dotStyleOf(props.multiDotStyleId);
+  // Dash length/width only bite on 'dash' stops, so grey them out unless one of
+  // the split defaults is a dash dot.
+  const dashActive = singletonDot.shape === 'dash' || multiDot.shape === 'dash';
   return (
     <div className="style-editor">
-      {/* Dot SIZE only — dot appearance is the stopDot library, set per line in
-          the Line inspector. Split by singleton (only line at the station) vs.
-          interchange (shared with another line). */}
-      <NumericFieldRow
-        id={`style-${id}-singleton-dot`}
-        label="Singleton dot size"
-        min={DOT_SIZE_MIN}
-        max={DOT_SIZE_MAX}
-        step={1}
-        value={props.singletonDotSize}
-        onChange={(singletonDotSize) => patch({ singletonDotSize })}
-        getCurrent={liveNumberProp(id, 'singletonDotSize', props.singletonDotSize)}
-        textboxAllowAboveMax
-      />
-      <NumericFieldRow
-        id={`style-${id}-multi-dot`}
-        label="Interchange dot size"
-        min={DOT_SIZE_MIN}
-        max={DOT_SIZE_MAX}
-        step={1}
-        value={props.multiDotSize}
-        onChange={(multiDotSize) => patch({ multiDotSize })}
-        getCurrent={liveNumberProp(id, 'multiDotSize', props.multiDotSize)}
-        textboxAllowAboveMax
-      />
       <NumericFieldRow
         id={`style-${id}-width`}
         label="Line width"
@@ -179,6 +169,7 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
         getCurrent={liveNumberProp(id, 'curveRadius', props.curveRadius)}
         textboxAllowAboveMax
       />
+      <div className="style-divider" />
       <NumericFieldRow
         id={`style-${id}-stroke`}
         label="Stroke width"
@@ -199,6 +190,7 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
           onChange={(strokeColor) => patch({ strokeColor })}
         />
       </div>
+      <div className="style-divider" />
       <NumericFieldRow
         id={`style-${id}-seam`}
         label="Seam width"
@@ -219,10 +211,63 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
           onChange={(seamColor) => patch({ seamColor })}
         />
       </div>
+      <div className="style-section">Stop dots</div>
+      {/* Dot TYPE + SIZE per station case, split by singleton (only line at the
+          station) vs. interchange (shared). The picker points the split default
+          at a stopDot library style; the slider sets its diameter — same combined
+          row the Line inspector uses. */}
+      <div className="dot-field">
+        <label htmlFor={`style-${id}-singleton-dot`}>Singleton dot</label>
+        <NumericFieldRow
+          id={`style-${id}-singleton-dot`}
+          label="Singleton dot size"
+          leading={
+            <StationShapePicker
+              disabled={false}
+              ariaLabel="Singleton stop shape"
+              currentStyle={singletonDot}
+              lineColor={PREVIEW_LINE_COLOR}
+              serviceCode="A"
+              onPick={(singletonDotStyleId) => patch({ singletonDotStyleId })}
+            />
+          }
+          min={DOT_SIZE_MIN}
+          max={DOT_SIZE_MAX}
+          step={1}
+          value={props.singletonDotSize}
+          onChange={(singletonDotSize) => patch({ singletonDotSize })}
+          getCurrent={liveNumberProp(id, 'singletonDotSize', props.singletonDotSize)}
+          textboxAllowAboveMax
+        />
+      </div>
+      <div className="dot-field">
+        <label htmlFor={`style-${id}-multi-dot`}>Interchange dot</label>
+        <NumericFieldRow
+          id={`style-${id}-multi-dot`}
+          label="Interchange dot size"
+          leading={
+            <StationShapePicker
+              disabled={false}
+              ariaLabel="Interchange stop shape"
+              currentStyle={multiDot}
+              lineColor={PREVIEW_LINE_COLOR}
+              serviceCode="A"
+              onPick={(multiDotStyleId) => patch({ multiDotStyleId })}
+            />
+          }
+          min={DOT_SIZE_MIN}
+          max={DOT_SIZE_MAX}
+          step={1}
+          value={props.multiDotSize}
+          onChange={(multiDotSize) => patch({ multiDotSize })}
+          getCurrent={liveNumberProp(id, 'multiDotSize', props.multiDotSize)}
+          textboxAllowAboveMax
+        />
+      </div>
       {/* TfL-tick dimensions for 'dash' stops. Unset derives from the style's
           line width (length = width, thickness = width/2) — props is
           structurally a {width, dashLength, dashWidth} line, so the shared
-          resolvers apply. */}
+          resolvers apply. Greyed unless a split default is a dash dot. */}
       <NumericFieldRow
         id={`style-${id}-dash-length`}
         label="Dash length"
@@ -233,6 +278,7 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
         onChange={(dashLength) => patch({ dashLength })}
         getCurrent={liveNumberProp(id, 'dashLength', dashRenderLength(props))}
         textboxAllowAboveMax
+        disabled={!dashActive}
       />
       <NumericFieldRow
         id={`style-${id}-dash-width`}
@@ -244,6 +290,7 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
         onChange={(dashWidth) => patch({ dashWidth })}
         getCurrent={liveNumberProp(id, 'dashWidth', dashRenderWidth(props))}
         textboxAllowAboveMax
+        disabled={!dashActive}
       />
     </div>
   );

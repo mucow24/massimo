@@ -2459,6 +2459,36 @@ button.map-library-sort {
 .style-editor .options-popover-row {
   margin-bottom: 0;
 }
+/* Section headers ("Line" / "Stop dots") group the controls; the divider sits
+   above every section but the first, so the block reads as labelled groups. */
+.style-editor .style-section {
+  font-weight: 700;
+  font-size: var(--fs-small);
+  color: var(--text);
+}
+.style-editor .style-section:not(:first-child) {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--inset-border);
+}
+/* Unlabeled hairline between control groups within a section (the Line
+   section's width / stroke / seam trios). Lighter than a .style-section break —
+   the flex gap supplies the breathing room on each side. */
+.style-editor .style-divider {
+  border-top: 1px solid var(--inset-border);
+}
+/* A dot row pairs the stop-dot TYPE picker with the size slider under one muted
+   caption — same idiom as the Line inspector's dot rows (.inspector .dot-field).
+   The embedded slider row's own bottom margin is already zeroed above. */
+.style-editor .dot-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.style-editor .dot-field > label {
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+}
 .style-editor .options-popover-label {
   width: 84px;
   flex-shrink: 0;
