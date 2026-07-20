@@ -24,6 +24,48 @@ describe('themeColors', () => {
     expect(themeColors(false)).toBe(themeColors(false));
   });
 
+  // "Day canvas color" is a local viewing preference (see useViewportStore):
+  // in day mode the big bright paper can be dimmed (gray or black) to cut glare,
+  // WITHOUT flipping to night mode — day-mode ink, grid, underlay and editor all
+  // stay put.
+  describe('day canvas color', () => {
+    it("day mode 'white' is the untinted day palette (the default)", () => {
+      expect(themeColors(false, 'white')).toBe(themeColors(false));
+      expect(themeColors(false, 'white').canvasBg).toBe('#fafafa');
+    });
+
+    it("day mode 'black' dims only the paper, keeping the rest of the day palette", () => {
+      const c = themeColors(false, 'black');
+      expect(c.canvasBg).toBe('#000000');
+      // Everything else stays day mode — this is glare relief, not night mode.
+      expect(c.label).toBe('#111111');
+      expect(c.grid).toBe('#eeeeee');
+      expect(c.underlay).toBe('#ffffff');
+      expect(c.editorBg).toBe('#ffffff');
+      expect(c.accent).toBe('#1a4ea8');
+    });
+
+    it("day mode 'gray' sits between white and black, dimming only the paper", () => {
+      const c = themeColors(false, 'gray');
+      expect(c.canvasBg).toBe('#616161');
+      // Same rule as 'black': only the paper moves, the day palette holds.
+      expect(c.label).toBe('#111111');
+      expect(c.underlay).toBe('#ffffff');
+      expect(c.editorBg).toBe('#ffffff');
+    });
+
+    it('night mode ignores the day canvas color', () => {
+      expect(themeColors(true, 'black')).toBe(themeColors(true));
+      expect(themeColors(true, 'white')).toBe(themeColors(true));
+      expect(themeColors(true, 'black').canvasBg).toBe('#000000');
+    });
+
+    it('returns a stable reference per (mode, day color) pair', () => {
+      expect(themeColors(false, 'black')).toBe(themeColors(false, 'black'));
+      expect(themeColors(false, 'gray')).toBe(themeColors(false, 'gray'));
+    });
+  });
+
   // The editor's interaction accent (marquee, drop targets, mode frames) lives
   // in the palette so both modes define it in one place. Light keeps the
   // original editing blue; dark must be a brighter variant — the light blue is

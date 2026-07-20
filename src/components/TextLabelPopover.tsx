@@ -1,7 +1,5 @@
 import { type ReactNode } from 'react';
 import {
-  MoonIcon,
-  SunIcon,
   TextAlignCenterIcon,
   TextAlignJustifyIcon,
   TextAlignLeftIcon,
@@ -33,7 +31,7 @@ import {
   TEXT_LABEL_WIDTH_MAX,
 } from '../model/transforms';
 import { useFieldHistory } from './useFieldHistory';
-import { ColorField } from './ColorField';
+import { DayNightColorRow } from './DayNightColorRow';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
 import type { TextLabel, TextLabelAlign, TextLabelWeight } from '../model/types';
@@ -162,27 +160,19 @@ export function TextLabelPopover({ label, worldRect, view, spawnBox, onClose }: 
         disabled={locked}
       />
       <hr className="popover-divider" aria-hidden="true" />
-      <div className="row">
-        <label htmlFor={`label-color-${label.id}`}>Color</label>
-        <SunIcon aria-hidden="true" />
-        <ColorField
-          id={`label-color-${label.id}`}
-          ariaLabel="Label color"
-          title="Light mode color"
-          value={label.color}
-          disabled={locked}
-          onChange={setColor}
-        />
-        <MoonIcon aria-hidden="true" />
-        <ColorField
-          id={`label-dark-color-${label.id}`}
-          ariaLabel="Dark mode label color"
-          title="Dark mode color"
-          value={label.darkColor}
-          disabled={locked}
-          onChange={setDarkColor}
-        />
-      </div>
+      <DayNightColorRow
+        label="Color"
+        id={`label-color-${label.id}`}
+        darkId={`label-dark-color-${label.id}`}
+        lightAriaLabel="Label color"
+        darkAriaLabel="Dark mode label color"
+        titleNoun="color"
+        value={label.color}
+        darkValue={label.darkColor}
+        disabled={locked}
+        onChange={setColor}
+        onDarkChange={setDarkColor}
+      />
 
       {/* textboxAllowAboveMax: the spinbutton (typing and step buttons) accepts
           sizes beyond the slider's range; the transform clamps at MIN only. */}

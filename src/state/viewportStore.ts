@@ -6,6 +6,14 @@ import type { Viewport } from '../model/types';
 export const GRID_SIZES: readonly number[] = [5, 10, 20];
 
 /**
+ * The paper color used in DAY mode. A local viewing preference, not a document
+ * property: 'gray'/'black' dim the bright canvas to cut glare without flipping
+ * to night mode (see themeColors) — 'gray' is the middle setting. Night mode is
+ * unaffected — it's always black.
+ */
+export type DayCanvasColor = 'white' | 'gray' | 'black';
+
+/**
  * The next grid size in the cycle (5 → 10 → 20 → 5). Falls back to the first
  * size when `current` isn't one of the known sizes (e.g. a stale persisted
  * value), so a click always lands on a valid grid.
@@ -43,6 +51,21 @@ interface ViewportState extends Viewport {
    *  aren't there) and liveAlignTargets (no snapping to invisible targets). */
   showNetwork: boolean;
   setShowNetwork: (show: boolean) => void;
+  /** Day-mode paper color (see DayCanvasColor). A persisted local preference so
+   *  a glare-averse user reopens the app to the same dimmed canvas, NOT a doc
+   *  property — it never touches the map, so switching it isn't a dirty change
+   *  and doesn't travel in the saved/exported file. Ignored in night mode. */
+  dayCanvasColor: DayCanvasColor;
+  setDayCanvasColor: (color: DayCanvasColor) => void;
+  /** Darken only the CHROME (toolbar, sidebar, menus, popovers) while the map
+   *  stays a day map — a local viewing preference, never a doc property. This is
+   *  deliberately NOT the doc's night mode (MapDoc.darkMode, the moon toggle):
+   *  that repaints the canvas too and travels in the saved file. This flag only
+   *  flips `data-theme` on `.app` (see App.tsx); the canvas palette (themeColors)
+   *  never reads it, so the map renders exactly as the doc defines. Redundant
+   *  when the doc is already a night map (chrome is dark either way). */
+  darkUiInDay: boolean;
+  setDarkUiInDay: (on: boolean) => void;
 }
 
 /**
@@ -103,6 +126,10 @@ export const useViewportStore = create<ViewportState>()(
       setShowWaypoints: (showWaypoints) => set({ showWaypoints }),
       showNetwork: true,
       setShowNetwork: (showNetwork) => set({ showNetwork }),
+      dayCanvasColor: 'white',
+      setDayCanvasColor: (dayCanvasColor) => set({ dayCanvasColor }),
+      darkUiInDay: false,
+      setDarkUiInDay: (darkUiInDay) => set({ darkUiInDay }),
     }),
     {
       name: 'massimo-viewport',
@@ -114,6 +141,8 @@ export const useViewportStore = create<ViewportState>()(
         gridVisible: s.gridVisible,
         gridSize: s.gridSize,
         showWaypoints: s.showWaypoints,
+        dayCanvasColor: s.dayCanvasColor,
+        darkUiInDay: s.darkUiInDay,
         // showNetwork is deliberately absent: hiding the network is a momentary
         // "get out of my way" toggle, not a saved preference. Persisting it
         // would let a reload open onto an apparently empty map, with only the
