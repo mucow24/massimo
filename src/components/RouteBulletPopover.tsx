@@ -6,6 +6,7 @@ import { type ViewportProjection } from './canvas/screenAnchor';
 import type { AABB } from '../geometry/rectPolygon';
 import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
+import { FieldSelectContent } from './FieldSelectContent';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
 import { StyleRow } from './StyleRow';
@@ -107,23 +108,21 @@ export function RouteBulletPopover({ bullet, worldRect, view, spawnBox, onClose 
               <ChevronDownIcon />
             </Select.Icon>
           </Select.Trigger>
-          <Select.Content className="field-select-panel" position="popper" sideOffset={4}>
-            <Select.Viewport>
-              <Select.Item value={NO_LINE} className="field-select-item field-select-action">
-                <Select.ItemText>— none —</Select.ItemText>
+          <FieldSelectContent>
+            <Select.Item value={NO_LINE} className="field-select-item field-select-action">
+              <Select.ItemText>— none —</Select.ItemText>
+            </Select.Item>
+            {orderedLines.map((ln) => (
+              <Select.Item key={ln.id} value={ln.id} className="field-select-item">
+                <Select.ItemText>
+                  {/* Swatch + service code: the list previews the line it
+                      picks, like the weight dropdown's per-face options. */}
+                  <span className="line-swatch" style={{ background: ln.color }} aria-hidden />
+                  {ln.service}
+                </Select.ItemText>
               </Select.Item>
-              {orderedLines.map((ln) => (
-                <Select.Item key={ln.id} value={ln.id} className="field-select-item">
-                  <Select.ItemText>
-                    {/* Swatch + service code: the list previews the line it
-                        picks, like the weight dropdown's per-face options. */}
-                    <span className="line-swatch" style={{ background: ln.color }} aria-hidden />
-                    {ln.service}
-                  </Select.ItemText>
-                </Select.Item>
-              ))}
-            </Select.Viewport>
-          </Select.Content>
+            ))}
+          </FieldSelectContent>
         </Select.Root>
       </div>
       {/* The Line select above is identity, not style — the style row covers
