@@ -535,6 +535,28 @@ export function createStyle(doc: MapDoc, id: string, kind: StyleKind, name: stri
   return { ...doc, styles: { ...doc.styles, [id]: def } };
 }
 
+/**
+ * Duplicate an existing style: a fresh def under `newId`/`name` carrying the
+ * SAME kind and props as `sourceId`. The copy is not made default and wears no
+ * items (nothing is stamped or re-stamped) — like createStyle, only the props
+ * come from the source instead of the factory. Refuses a missing source, the
+ * reserved built-in stopDot "None" (nothing to copy), a taken id, and an
+ * empty/reserved/same-kind-colliding name (the same guards createStyle uses).
+ * Props are shared by reference — safe, since every edit path rebuilds them.
+ */
+export function duplicateStyle(doc: MapDoc, newId: string, sourceId: string, name: string): MapDoc {
+  if (sourceId === NONE_STOP_DOT_STYLE_ID) return doc; // reserved built-in
+  const src = doc.styles[sourceId];
+  if (!src) return doc;
+  const trimmed = name.trim();
+  if (!trimmed || isReservedStyleName(trimmed) || doc.styles[newId]) return doc;
+  for (const other of Object.values(doc.styles)) {
+    if (other.kind === src.kind && other.name === trimmed) return doc;
+  }
+  const def = { id: newId, name: trimmed, kind: src.kind, props: src.props } as StyleDef;
+  return { ...doc, styles: { ...doc.styles, [newId]: def } };
+}
+
 // A partial patch of ONE kind's props — the store/panel write shape for
 // updateStyleProps (each editor patches a single kind). A UNION, not a
 // Partial of the intersection: the same-named `color`/`strokeColor` keys no

@@ -8,6 +8,7 @@ import {
   createStyle,
   defaultStyleProps,
   deleteStyle,
+  duplicateStyle,
   renameStyle,
   saveStyleFromItem,
   setDefaultStyle,
@@ -16,7 +17,11 @@ import {
   updateStyleProps,
 } from './styles';
 import { DEFAULT_DOC, DEFAULT_STYLES, FACTORY_STYLE_DEFAULTS } from './transforms';
-import { DEFAULT_STOP_DOT_STYLE_ID, STOP_DOT_SEED_STYLES } from './dotStyle';
+import {
+  DEFAULT_STOP_DOT_STYLE_ID,
+  NONE_STOP_DOT_STYLE_ID,
+  STOP_DOT_SEED_STYLES,
+} from './dotStyle';
 import { DOT_SIZE_DEFAULT } from './dotSize';
 import { LINE_WIDTH_DEFAULT } from './lineWidth';
 import { LINE_CURVE_RADIUS_DEFAULT } from './lineCurve';
@@ -765,6 +770,67 @@ describe('createStyle', () => {
     expect(createStyle(doc, 'y1', 'routeBullet', 'Other')).toBe(doc);
     // Cross-kind homonym is fine.
     expect(createStyle(doc, 'y2', 'polygon', 'Big').styles.y2.kind).toBe('polygon');
+  });
+});
+
+describe('duplicateStyle', () => {
+  it("copies the source's kind and props under a new id + name, not default, worn by nothing", () => {
+    const doc = makeDoc({
+      routeBullets: [makeRouteBullet({ id: 'b1', shape: 'square', size: 20, styleId: 'y1' })],
+      styles: [
+        makeStyle('routeBullet', 'y1', { name: 'Big', props: { shape: 'square', size: 20 } }),
+      ],
+      styleDefaults: { routeBullet: 'y1' },
+    });
+    const next = duplicateStyle(doc, 'y2', 'y1', 'Big copy');
+    expect(next.styles.y2).toMatchObject({ id: 'y2', name: 'Big copy', kind: 'routeBullet' });
+    // Props copied by value (deep-equal to the source's).
+    expect(next.styles.y2.props).toEqual(doc.styles.y1.props);
+    // The source def is untouched (same reference) and stays the default; the
+    // copy does NOT steal the designation.
+    expect(next.styles.y1).toBe(doc.styles.y1);
+    expect(next.styleDefaults.routeBullet).toBe('y1');
+    // Nothing is (re-)stamped: no item wears the new copy.
+    expect(next.routeBullets.b1.styleId).toBe('y1');
+  });
+
+  it('trims the name', () => {
+    const doc = makeDoc({ styles: [makeStyle('line', 'y1', { name: 'A' })] });
+    expect(duplicateStyle(doc, 'y2', 'y1', '  B  ').styles.y2.name).toBe('B');
+  });
+
+  it('refuses a missing source, a taken id, empty/reserved names, and same-kind collisions', () => {
+    const doc = makeDoc({
+      styles: [
+        makeStyle('routeBullet', 'y1', { name: 'Big' }),
+        makeStyle('routeBullet', 'y2', { name: 'Small' }),
+      ],
+    });
+    expect(duplicateStyle(doc, 'y3', 'nope', 'X')).toBe(doc); // missing source
+    expect(duplicateStyle(doc, 'y2', 'y1', 'X')).toBe(doc); // taken id
+    expect(duplicateStyle(doc, 'y3', 'y1', '  ')).toBe(doc); // empty name
+    expect(duplicateStyle(doc, 'y3', 'y1', ' custom ')).toBe(doc); // reserved sentinel
+    expect(duplicateStyle(doc, 'y3', 'y1', 'Small')).toBe(doc); // same-kind collision
+    // A homonym across kinds is fine.
+    expect(duplicateStyle(doc, 'y3', 'y1', 'Small').styles.y3).toBeUndefined();
+    const withPoly = makeDoc({
+      styles: [
+        makeStyle('routeBullet', 'y1', { name: 'Big' }),
+        makeStyle('polygon', 'p1', { name: 'Zone' }),
+      ],
+    });
+    expect(duplicateStyle(withPoly, 'y3', 'y1', 'Zone').styles.y3.kind).toBe('routeBullet');
+  });
+
+  it('refuses to duplicate the reserved built-in stopDot "None"', () => {
+    // makeDoc seeds the stopDot library, so both "None" and a normal entry exist.
+    const doc = makeDoc({ styles: [makeStyle('stopDot', 'sd1', { name: 'Filled' })] });
+    expect(duplicateStyle(doc, 'sd9', NONE_STOP_DOT_STYLE_ID, 'None copy')).toBe(doc);
+    // A normal stopDot style CAN be duplicated (control for the guard above).
+    expect(duplicateStyle(doc, 'sd9', 'sd1', 'Filled copy').styles.sd9).toMatchObject({
+      kind: 'stopDot',
+      name: 'Filled copy',
+    });
   });
 });
 

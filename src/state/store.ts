@@ -644,6 +644,11 @@ interface DocState extends MapDoc {
   /** The Styles panel's "+ New style": a fresh def of `kind` with factory
    *  props under the first unused "New style N" name. Returns its id. */
   createStyle: (kind: StyleKind) => string;
+  /** The Styles panel's "duplicate": a fresh copy of an existing style —
+   *  same kind and props, a new id, and the first unused "{name} copy" name.
+   *  Not made default and worn by no items. Returns the new style's id (or the
+   *  source id unchanged when it doesn't resolve). */
+  duplicateStyle: (styleId: string) => string;
   /** The Styles panel editor's write path: patch a def's props and re-stamp
    *  its tagged users live, all one undo entry. */
   updateStyleProps: (styleId: string, patch: S.StylePropsPatch) => void;
@@ -1034,6 +1039,22 @@ export const useDoc = create<DocState>()(
           let name = 'New style';
           for (let n = 2; taken.has(name); n++) name = `New style ${n}`;
           set((s) => S.createStyle(s, id, kind, name));
+          return id;
+        },
+        duplicateStyle: (styleId) => {
+          const src = get().styles[styleId];
+          if (!src) return styleId;
+          const id = ids.styleId();
+          // First unused "{name} copy" / "{name} copy N" within the kind, so
+          // the copy never collides (the transform refuses duplicates).
+          const taken = new Set(
+            Object.values(get().styles)
+              .filter((d) => d.kind === src.kind)
+              .map((d) => d.name),
+          );
+          let name = `${src.name} copy`;
+          for (let n = 2; taken.has(name); n++) name = `${src.name} copy ${n}`;
+          set((s) => S.duplicateStyle(s, id, styleId, name));
           return id;
         },
         updateStyleProps: (styleId, patch) =>
