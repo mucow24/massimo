@@ -206,7 +206,12 @@ describe('new items wear the Default style on creation', () => {
     const id = useDoc.getState().addLine();
     expect(useDoc.getState().lines[id].width).toBe(12);
     expect(useDoc.getState().lines[id].styleId).toBe('y1');
-    expect(useDoc.getState().lines[id].color).toBeTruthy(); // identity untouched
+    // Color is identity, not style: the fresh doc (lineCounter 0, active palette
+    // 'mta') cycles to the MTA head swatch and the default-style stamp must NOT
+    // overwrite it. Pinning the exact value is what makes this load-bearing — a
+    // toBeTruthy() would pass even if the stamp clobbered color with some other
+    // non-empty value.
+    expect(useDoc.getState().lines[id].color).toBe('#0039A6');
   });
 
   it('a fresh doc starts with the six factory Defaults and tags new items with them', () => {

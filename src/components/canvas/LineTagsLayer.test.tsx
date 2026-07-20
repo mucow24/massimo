@@ -7,6 +7,10 @@ import { makeBandSpec, makeLine } from '../../test/fixtures';
 import { fakeSvgRef } from '../../test/interaction';
 import type { LineTag } from '../../model/types';
 
+// These specs don't drag, so the cursor→world map is never called; identity
+// satisfies the prop.
+const identityScreenToWorld = (x: number, y: number) => ({ x, y });
+
 // Mixed-width band over the fixture's default s1|s2 corridor: L1 at 14,
 // L2 at 28 → baked offsets ±10.5.
 const mixedBand = () => makeBandSpec(['L1', 'L2'], { stripeWidths: [14, 28] });
@@ -72,6 +76,7 @@ describe('<LineTagsLayer> — selection chrome', () => {
           bands={[makeBandSpec(['L2'], { stripeWidths: [28] })]}
           zoom={zoom}
           svgRef={ref}
+          screenToWorld={identityScreenToWorld}
         />
       </svg>,
     ).container;
@@ -130,7 +135,12 @@ describe('<LineTagsLayer> — clicking a tag while the line editor is open', () 
     const { ref } = fakeSvgRef();
     const { container } = render(
       <svg>
-        <LineTagsLayer bands={[mixedBand()]} zoom={1} svgRef={ref} />
+        <LineTagsLayer
+          bands={[mixedBand()]}
+          zoom={1}
+          svgRef={ref}
+          screenToWorld={identityScreenToWorld}
+        />
       </svg>,
     );
     fireEvent.click(container.querySelector('rect[fill="transparent"]')!);
@@ -159,7 +169,12 @@ describe('<LineTagsLayer> — chevron scales to its stripe', () => {
     const { ref } = fakeSvgRef();
     const { container } = render(
       <svg>
-        <LineTagsLayer bands={[mixedBand()]} zoom={1} svgRef={ref} />
+        <LineTagsLayer
+          bands={[mixedBand()]}
+          zoom={1}
+          svgRef={ref}
+          screenToWorld={identityScreenToWorld}
+        />
       </svg>,
     );
     // Arms reach the wide stripe's edges: half-height = 28/2 (+ the small
@@ -220,7 +235,12 @@ describe('<LineTagsLayer> — orientation rotation (E5a)', () => {
       const { ref } = fakeSvgRef();
       const { container } = render(
         <svg>
-          <LineTagsLayer bands={[mixedBand()]} zoom={1} svgRef={ref} />
+          <LineTagsLayer
+            bands={[mixedBand()]}
+            zoom={1}
+            svgRef={ref}
+            screenToWorld={identityScreenToWorld}
+          />
         </svg>,
       );
       expect(tagRotation(container)).toBeCloseTo(ORIENTATION_OFFSET_DEG[orientation], 6);
@@ -234,7 +254,12 @@ describe('<LineTagsLayer> — orientation rotation (E5a)', () => {
       const { ref } = fakeSvgRef();
       const { container } = render(
         <svg>
-          <LineTagsLayer bands={[mixedBand()]} zoom={1} svgRef={ref} />
+          <LineTagsLayer
+            bands={[mixedBand()]}
+            zoom={1}
+            svgRef={ref}
+            screenToWorld={identityScreenToWorld}
+          />
         </svg>,
       );
       seen.add(tagRotation(container));

@@ -1530,7 +1530,12 @@ export function MapCanvas() {
             outline + layer-number overlays. */}
         {showNetwork && (
           <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
-            <LineTagsLayer bands={bands} zoom={view.viewport.zoom} svgRef={svgRef} />
+            <LineTagsLayer
+              bands={bands}
+              zoom={view.viewport.zoom}
+              svgRef={svgRef}
+              screenToWorld={view.screenToWorld}
+            />
           </g>
         )}
 
