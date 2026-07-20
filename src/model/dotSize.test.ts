@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { STOP_DOT_RADIUS } from '../geometry/orientation';
+import { DOT_SHAPE_PRESETS } from './dotStyle';
 import {
   DOT_SIZE_DEFAULT,
   DOT_SIZE_MIN,
@@ -10,6 +11,10 @@ import {
   lineSingletonDotSizeOf,
   lineMultiDotSizeOf,
 } from './dotSize';
+
+// A service-code disc TRACKS a larger diameter (12) so its code stays legible;
+// the size helpers must report that, not the 8px non-code default.
+const CODE = DOT_SHAPE_PRESETS['filled-black-service-code'];
 
 describe('dot size constants', () => {
   it('defaults to the integer diameter 8 (2 × STOP_DOT_RADIUS, pinned to 4)', () => {
@@ -92,6 +97,13 @@ describe('resolveDotSize', () => {
     expect(resolveDotSize({}, {}, false)).toBe(DOT_SIZE_DEFAULT);
     expect(resolveDotSize(undefined, undefined, true)).toBe(DOT_SIZE_DEFAULT);
   });
+
+  it('a fully-tracking service-code dot resolves to its larger default (12), not 8', () => {
+    expect(resolveDotSize({ singletonDotStyle: CODE }, {}, true)).toBe(12);
+    expect(resolveDotSize({ multiDotStyle: CODE }, {}, false)).toBe(12);
+    // A per-stop style override drives the default even when the line is plain.
+    expect(resolveDotSize({}, { dotStyle: CODE }, true)).toBe(12);
+  });
 });
 
 describe('lineSingletonDotSizeOf / lineMultiDotSizeOf', () => {
@@ -109,5 +121,10 @@ describe('lineSingletonDotSizeOf / lineMultiDotSizeOf', () => {
     expect(lineSingletonDotSizeOf({})).toBe(DOT_SIZE_DEFAULT);
     expect(lineSingletonDotSizeOf(null)).toBe(DOT_SIZE_DEFAULT);
     expect(lineMultiDotSizeOf(undefined)).toBe(DOT_SIZE_DEFAULT);
+  });
+
+  it('report a size-less service-code default as its true rendered size (12)', () => {
+    expect(lineSingletonDotSizeOf({ singletonDotStyle: CODE })).toBe(12);
+    expect(lineMultiDotSizeOf({ multiDotStyle: CODE })).toBe(12);
   });
 });

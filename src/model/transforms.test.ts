@@ -5,8 +5,9 @@ import {
   DEFAULT_STOP_DOT_STYLE_ID,
   DOT_SHAPE_PRESETS,
   STOP_DOT_FACTORY_STYLES,
+  resolveDotRender,
 } from './dotStyle';
-import { DOT_SIZE_DEFAULT } from './dotSize';
+import { DOT_SIZE_DEFAULT, dotSizeOverride } from './dotSize';
 import { measureTextLabel } from '../geometry/textMeasure';
 import { localToWorld, stopCenterAt } from '../geometry/orientation';
 import {
@@ -2692,6 +2693,23 @@ describe('setDotSize', () => {
     expect('dotSize' in next.stations.a.stops[0]).toBe(false);
   });
 
+  it('stores an explicit 8 on a service-code stop — its tracking default is 12, not 8', () => {
+    // Same discontinuity as the line default, one level down: 8 must pin, not
+    // collapse to the larger service-code default.
+    const CODE = DOT_SHAPE_PRESETS['filled-black-service-code'];
+    const doc = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+      lines: [makeLine({ id: 'L1', singletonDotStyle: CODE })],
+    });
+    expect(T.setDotSize(doc, 'a', 'L1', 8).stations.a.stops[0].dotSize).toBe(8);
+    // ...and 12 (the true tracking size) clears back to fully tracking.
+    const pinned = makeDoc({
+      stations: [makeStation({ id: 'a', stops: [makeStop('L1', { dotSize: 8 })] })],
+      lines: [makeLine({ id: 'L1', singletonDotStyle: CODE })],
+    });
+    expect('dotSize' in T.setDotSize(pinned, 'a', 'L1', 12).stations.a.stops[0]).toBe(false);
+  });
+
   it("stores the global default as an explicit override when the line's default differs", () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
@@ -2826,6 +2844,38 @@ describe('setLineSingletonDotSize', () => {
     doc = T.setLineSingletonDotSize(doc, 'L1', 9);
     expect(doc.stations.s.stops[0].dotSize).toBeUndefined();
     expect(doc.lines.L1.singletonDotSize).toBe(9);
+  });
+
+  it('service-code default grows in even increments — no jump when the size passes 8', () => {
+    // Regression: a service-code disc TRACKS a diameter of 12 (the larger
+    // legible default), so an explicit 8 is a real, distinct size. The setter
+    // used to collapse 8 to "tracking", snapping the dot from 8 up to 12.
+    const CODE = DOT_SHAPE_PRESETS['filled-black-service-code'];
+    let doc = makeDoc({
+      stations: [makeStation({ id: 's', stops: [makeStop('L1')] })],
+      lines: [makeLine({ id: 'L1', service: 'A', singletonDotStyle: CODE })],
+    });
+    // The DIAMETER the dot actually renders at, through the full override chain.
+    const renderedDiameter = (): number => {
+      const line = doc.lines.L1;
+      const stop = doc.stations.s.stops[0];
+      const params = resolveDotRender(
+        CODE,
+        line.color,
+        'A',
+        false,
+        dotSizeOverride(line, stop, true),
+      );
+      return params!.r * 2;
+    };
+    for (const px of [6, 7, 8, 9]) {
+      doc = T.setLineSingletonDotSize(doc, 'L1', px);
+      expect(renderedDiameter()).toBe(px);
+    }
+    // Only the true tracking size (12) collapses back to a bare default.
+    doc = T.setLineSingletonDotSize(doc, 'L1', 12);
+    expect('singletonDotSize' in doc.lines.L1).toBe(false);
+    expect(renderedDiameter()).toBe(12);
   });
 });
 
