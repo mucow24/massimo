@@ -1381,8 +1381,38 @@ button.field-select {
     0 2px 6px rgba(0, 0, 0, 0.07),
     0 12px 28px rgba(0, 0, 0, 0.16);
   padding: 4px;
+  /* FieldSelectContent portals this panel to `.app`, so its z-index competes in
+     the ROOT stacking context: 100 clears the toolbar + sidebar (z-index 1) and
+     the canvas-host layer (isolate, z-index auto) that would otherwise bury a
+     panel flipped up over the toolbar. Below the color picker (1200) / help
+     (1300), which never co-open with a select. */
   z-index: 100;
   min-width: var(--radix-select-trigger-width);
+  /* Never taller than the space Radix leaves inside the canvas area (the
+     `.canvas-host` collision boundary): a list too long for the gap scrolls in
+     the Viewport (between the scroll buttons) rather than running off-screen or
+     under the toolbar. Short lists don't reach the cap — they size to content
+     as before, with no scroll buttons. */
+  max-height: var(--radix-select-content-available-height);
+  overflow: hidden;
+  /* Flex column so the Viewport (Radix gives it `flex: 1; overflow: hidden
+     auto`) is bounded by the capped panel height and SCROLLS its overflow —
+     without a flex parent that `flex: 1` is inert and the list would just be
+     clipped, not scrollable. */
+  display: flex;
+  flex-direction: column;
+}
+/* Scroll affordances, mounted by Radix only while the bounded list overflows: a
+   quiet chevron strip painted in the panel surface so the fading row reads as
+   "more above/below". */
+.field-select-scroll {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  color: var(--text-muted);
+  background: var(--surface-raised);
+  cursor: default;
 }
 .field-select-panel .field-select-item {
   border-radius: 4px;

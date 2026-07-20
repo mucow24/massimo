@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { ChevronDownIcon } from '@radix-ui/react-icons';
 import * as Select from '@radix-ui/react-select';
+import { FieldSelectContent } from './FieldSelectContent';
 import { useDoc } from '../state/store';
 import { stylesOfKind } from '../model/styles';
 import type { StyleKind } from '../model/types';
@@ -104,23 +105,21 @@ export function StyleRow({ kind, itemId, styleId, disabled }: Props) {
             <ChevronDownIcon />
           </Select.Icon>
         </Select.Trigger>
-        <Select.Content className="field-select-panel" position="popper" sideOffset={4}>
-          <Select.Viewport>
-            <Select.Item value={CUSTOM} className="field-select-item">
-              <Select.ItemText>Custom</Select.ItemText>
+        <FieldSelectContent>
+          <Select.Item value={CUSTOM} className="field-select-item">
+            <Select.ItemText>Custom</Select.ItemText>
+          </Select.Item>
+          {stylesOfKind(styles, kind).map((d) => (
+            <Select.Item key={d.id} value={d.id} className="field-select-item">
+              <Select.ItemText>{d.name}</Select.ItemText>
             </Select.Item>
-            {stylesOfKind(styles, kind).map((d) => (
-              <Select.Item key={d.id} value={d.id} className="field-select-item">
-                <Select.ItemText>{d.name}</Select.ItemText>
-              </Select.Item>
-            ))}
-            <Select.Separator className="field-select-separator" aria-hidden="true" />
-            {/* An action, not a state — muted so it reads as a verb. */}
-            <Select.Item value={SAVE} className="field-select-item field-select-action">
-              <Select.ItemText>Save style…</Select.ItemText>
-            </Select.Item>
-          </Select.Viewport>
-        </Select.Content>
+          ))}
+          <Select.Separator className="field-select-separator" aria-hidden="true" />
+          {/* An action, not a state — muted so it reads as a verb. */}
+          <Select.Item value={SAVE} className="field-select-item field-select-action">
+            <Select.ItemText>Save style…</Select.ItemText>
+          </Select.Item>
+        </FieldSelectContent>
       </Select.Root>
     </div>
   );
