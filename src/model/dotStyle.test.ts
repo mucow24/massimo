@@ -187,6 +187,19 @@ describe('resolveDotRender', () => {
       const s = style({ fill: W, showServiceCode: true });
       expect(resolveDotRender(s, undefined, 'A', false)!.code!.color).toBe('#000');
     });
+
+    it("paints the code in the line's color for a 'line' serviceCodeColor", () => {
+      // The 'line' sentinel wins over auto-contrast and is theme-agnostic — it's
+      // whatever line color the caller passes (like a 'line' fill/stroke).
+      const s = style({ fill: W, showServiceCode: true, serviceCodeColor: 'line' });
+      expect(resolveDotRender(s, '#e6002d', 'A', false)!.code!.color).toBe('#e6002d');
+      expect(resolveDotRender(s, '#e6002d', 'A', true)!.code!.color).toBe('#e6002d');
+    });
+
+    it("a 'line' serviceCodeColor falls back to black without a line in scope", () => {
+      const s = style({ showServiceCode: true, serviceCodeColor: 'line' });
+      expect(resolveDotRender(s, undefined, 'A', false)!.code!.color).toBe('#000');
+    });
   });
 });
 
@@ -232,6 +245,16 @@ describe('dotStylesEqual', () => {
       dotStylesEqual(style({ serviceCodeColor: K }), style({ serviceCodeColor: { ...K } })),
     ).toBe(true);
     expect(dotStylesEqual(style(), style())).toBe(true);
+  });
+
+  it("distinguishes a 'line' serviceCodeColor from a pair and from absent", () => {
+    expect(
+      dotStylesEqual(style({ serviceCodeColor: 'line' }), style({ serviceCodeColor: K })),
+    ).toBe(false);
+    expect(dotStylesEqual(style({ serviceCodeColor: 'line' }), style())).toBe(false);
+    expect(
+      dotStylesEqual(style({ serviceCodeColor: 'line' }), style({ serviceCodeColor: 'line' })),
+    ).toBe(true);
   });
 });
 

@@ -54,4 +54,34 @@ describe('<StyleEditor> — stopDot', () => {
     expect(screen.queryByText('Stroke color')).toBeNull();
     expect(screen.queryByText('Service code')).toBeNull();
   });
+
+  it('a code-showing dot offers a Line/Custom service-code color toggle, mirroring stroke', () => {
+    render(
+      <StyleEditor
+        def={makeStyle('stopDot', 'y1', { props: { shape: 'circle', showServiceCode: true } })}
+      />,
+    );
+    // The toggle is present with both modes …
+    expect(screen.getByRole('button', { name: 'Code color line' })).toBeTruthy();
+    const custom = screen.getByRole('button', { name: 'Code color custom' });
+    // … and with no explicit color (auto-contrast), 'Custom' is active and its
+    // day/night color row is shown (the light swatch carries this accessible name).
+    expect(custom.getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByRole('button', { name: 'Service code color' })).toBeTruthy();
+  });
+
+  it("'line' service-code color activates the Line mode and hides the custom color row", () => {
+    render(
+      <StyleEditor
+        def={makeStyle('stopDot', 'y1', {
+          props: { shape: 'circle', showServiceCode: true, serviceCodeColor: 'line' },
+        })}
+      />,
+    );
+    expect(
+      screen.getByRole('button', { name: 'Code color line' }).getAttribute('aria-pressed'),
+    ).toBe('true');
+    // In 'line' mode the explicit color row is gone (like the stroke selector).
+    expect(screen.queryByRole('button', { name: 'Service code color' })).toBeNull();
+  });
 });

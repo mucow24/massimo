@@ -57,6 +57,7 @@ import type {
   DayNightColor,
   DotBaseShape,
   DotFill,
+  DotServiceCodeColor,
   DotShape,
   DotStrokeColor,
   DotStyle,
@@ -809,9 +810,12 @@ function sanitizeDotStyle(raw: unknown): DotStyle | undefined {
   if (typeof o.strokeWidth !== 'number' || !Number.isFinite(o.strokeWidth)) return undefined;
   if (typeof o.showServiceCode !== 'boolean') return undefined;
   // serviceCodeColor is OPTIONAL — absent ⇒ auto-contrast; a malformed value is
-  // dropped (treated as absent) rather than invalidating the whole style.
+  // dropped (treated as absent) rather than invalidating the whole style. Same
+  // shape as a stroke color: the 'line' sentinel or a day/night pair (no 'none').
   const serviceCodeColor =
-    o.serviceCodeColor === undefined ? undefined : sanitizeDayNightColor(o.serviceCodeColor);
+    o.serviceCodeColor === undefined
+      ? undefined
+      : (sanitizeDotColor(o.serviceCodeColor, false) as DotServiceCodeColor | undefined);
   const out: DotStyle = {
     shape: o.shape as DotBaseShape,
     fill,
