@@ -92,6 +92,7 @@ export function Toolbar() {
   const setShowWaypoints = useViewportStore((s) => s.setShowWaypoints);
   const showNetwork = useViewportStore((s) => s.showNetwork);
   const setShowNetwork = useViewportStore((s) => s.setShowNetwork);
+  const setDayCanvasColor = useViewportStore((s) => s.setDayCanvasColor);
   const clearAll = useDoc((s) => s.clearAll);
   const addLine = useDoc((s) => s.addLine);
   const selection = useSelection();
@@ -560,6 +561,13 @@ export function Toolbar() {
           <MenuItem onClick={onExportJson}>JSON</MenuItem>
         </SubMenu>
         <MenuSeparator />
+        {/* Local viewing preference: dim the day-mode paper to cut glare
+            without switching to night mode. Persisted, never touches the doc. */}
+        <SubMenu label="Day canvas color">
+          <MenuItem onClick={() => setDayCanvasColor('white')}>White</MenuItem>
+          <MenuItem onClick={() => setDayCanvasColor('gray')}>Gray</MenuItem>
+          <MenuItem onClick={() => setDayCanvasColor('black')}>Black</MenuItem>
+        </SubMenu>
         <MenuItem onClick={onClear}>Clear</MenuItem>
       </Menu>
       <Menu label="Add">

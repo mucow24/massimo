@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useDoc } from './store';
+import { useViewportStore, type DayCanvasColor } from './viewportStore';
 
 /**
  * Theming has two halves, split by what can consume CSS:
@@ -102,14 +103,39 @@ const DARK: ThemeColors = {
   dimmedLabel: '#bbbbbb',
 };
 
-/** Pure mode → palette mapping. Exported for unit tests and non-React callers. */
-export function themeColors(darkMode: boolean): ThemeColors {
-  return darkMode ? DARK : LIGHT;
+/**
+ * Day mode with the paper dimmed — the "reduce glare without going to night
+ * mode" preference. Only `canvasBg` moves; day-mode ink, grid, underlay and
+ * editor stay put, so it reads as day mode with the lights down, not night.
+ * 'gray' (#616161, Material Grey 700) is the middle rung between white and
+ * black. Each is a frozen constant so themeColors stays referentially stable
+ * per input.
+ */
+const DAY_PAPER: Record<DayCanvasColor, ThemeColors> = {
+  white: LIGHT,
+  gray: { ...LIGHT, canvasBg: '#616161' },
+  black: { ...LIGHT, canvasBg: '#000000' },
+};
+
+/**
+ * Pure mode → palette mapping. Exported for unit tests and non-React callers.
+ * `dayCanvasColor` (a local viewing preference) only affects day mode; night
+ * mode is always black, so the argument is ignored there. Falls back to the
+ * plain day palette if a stale/unknown value ever reaches here from storage.
+ */
+export function themeColors(
+  darkMode: boolean,
+  dayCanvasColor: DayCanvasColor = 'white',
+): ThemeColors {
+  if (darkMode) return DARK;
+  return DAY_PAPER[dayCanvasColor] ?? LIGHT;
 }
 
-/** Canvas-side color palette for the active theme (see MapDoc.darkMode — the
- *  document decides, so loading a night map paints night with no extra wiring). */
+/** Canvas-side color palette for the active theme. The document's `darkMode`
+ *  picks day vs night (so loading a night map paints night with no extra
+ *  wiring); the local `dayCanvasColor` preference then dims the day paper. */
 export function useThemeColors(): ThemeColors {
   const darkMode = useDoc((s) => s.darkMode);
-  return useMemo(() => themeColors(darkMode), [darkMode]);
+  const dayCanvasColor = useViewportStore((s) => s.dayCanvasColor);
+  return useMemo(() => themeColors(darkMode, dayCanvasColor), [darkMode, dayCanvasColor]);
 }
