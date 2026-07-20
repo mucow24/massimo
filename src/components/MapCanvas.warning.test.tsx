@@ -228,13 +228,31 @@ describe('MapCanvas — warning glyph reconciliation', () => {
     expect(warnBands).toHaveLength(2);
     expect(warnBands.every((b) => b.lines.length === 1)).toBe(true);
 
-    const fills = Array.from(document.querySelectorAll('svg text'))
-      .filter((t) => t.textContent === '⚠')
-      .map((t) => t.getAttribute('fill'));
-    expect(fills).toHaveLength(2);
-    // One glyph legible on the dark line (white), one on the light line (black).
+    // The load-bearing claim is a PER-BAND pairing (dark band → white glyph,
+    // light band → black glyph). Bind each glyph to ITS band by x: the glyph
+    // sits at the band's centerline midpoint (see BandWarning), so its `x`
+    // attribute is that world x. A Set of the two fills would pass even if the
+    // colors were swapped between bands; matching each glyph to its own band's
+    // expected color does not.
+    const docLines = useDoc.getState().lines;
+    const expectedFillAtX = new Map<number, string>();
+    for (const b of warnBands) {
+      const cl = b.centerline;
+      const midX = Math.round((cl[0].x + cl[cl.length - 1].x) / 2);
+      expectedFillAtX.set(midX, legibleTextOn(docLines[b.lines[0].id].color));
+    }
+    // Sanity: the two bands really do want contrasting glyphs.
     expect(legibleTextOn('#0039A6')).toBe('#fff');
     expect(legibleTextOn('#FFD700')).toBe('#000');
-    expect(new Set(fills)).toEqual(new Set(['#fff', '#000']));
+    expect(new Set(expectedFillAtX.values())).toEqual(new Set(['#fff', '#000']));
+
+    const glyphs = Array.from(document.querySelectorAll('svg text')).filter(
+      (t) => t.textContent === '⚠',
+    );
+    expect(glyphs).toHaveLength(2);
+    for (const g of glyphs) {
+      const gx = Math.round(Number(g.getAttribute('x')));
+      expect(g.getAttribute('fill')).toBe(expectedFillAtX.get(gx));
+    }
   });
 });

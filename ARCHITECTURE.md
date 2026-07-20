@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `9391038` (2026-07-19) — verified against the live source (code-health pass covering the changes since `77d22b5`: the layout-editor locked-station click-through (#294); the Edit Stops overhaul — a 50%-opacity hover preview via the new `appendHover` selection field (#299), the line-editor alt-pick that reaches a segment buried under its endpoint stations (#300), style-cycling a segment from its endpoint station or a visible chip (#300/#301); the `1`–`5`/Numpad snap-toggle keybindings routed through `advanceSnapToggle` (#298); the station-inspector Rotate button (#302); and the width-shrink label edge-carry with the shared `labelAdjacencyGate` (#295). #293's `sanitizeLineStroke` dedup and #297's `bootRecovery` were documented in their own commits.).**
+**Up to date as of commit `f2b8a1a` (2026-07-19) — verified against the live source. Changes since the previous marker (`9391038`): the shared `FieldSelectContent`, which portals the item-popover Style/Weight/route-bullet Radix Selects out of the `.canvas-host` `isolation: isolate` layer (which paints beneath the toolbar) into `.app`, and bounds + scrolls a too-long list in place (#304); plus #303's internal dedup — `twoToneRing` (armed-cursor ring + its hover echo), `nextSegmentStyle` (the three segment style-cycle sites), and the digit snap keys driven by `SNAP_TOGGLE_COUNT` rather than a hardcoded 1–5. This code-health pass also collapsed the ~10 copy-pasted light/dark `ColorField` rows into the shared `DayNightColorRow`, and routed `useLineTagDrag`'s cursor→world through `view.screenToWorld` (dropping the last hand-rolled `getScreenCTM`).**
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
 > caveats. Written for an AI assistant (or new contributor) who needs the full picture
@@ -172,6 +172,9 @@ src/
     MapLibraryDialog.tsx        # the library manager (maps | versions; Radix Dialog)
     MapVersionPill.tsx          # the live doc's version + save-status dot, beside the map name
     *Popover.tsx                # on-canvas item editors
+    DayNightColorRow.tsx        # shared label + light/dark ColorField pair (every themed-color row)
+    FieldSelectContent.tsx      # shared Radix Select panel: portals popover Selects to .app (escapes
+                                #   the .canvas-host isolate layer) + bounds/scrolls a long list (#304)
     canvas/                     # interaction layer: drag/placement/viewport hooks + overlay layers
     inspector/                  # LineInspector (hosted by the pinned on-canvas LinePopover; identity +
                                 #   line-style fields — stop/topology editing is canvas-driven, see
@@ -1507,9 +1510,10 @@ live-projection ref, stationary Shift/Alt recompute, pointercancel rollback),
 `useItemDrag` (bullets + labels — bound bullets via the engine's bullet mode, labels + unbound
 bullets via the point snapper), `usePolygonDrag` (whole-move / vertex / edge-add),
 `useSvgImageDrag` (move / resize / rotate — resize snaps only while axis-aligned, edge resizes
-axis-`constrain`ed; rotation snaps 22.5° by default, Shift frees), `useLineTagDrag` (**uses
-window-level listeners + `getScreenCTM().inverse()`** — the only hook that does, because the
-drag wanders off the small tag rect; neighbor-tag snap per the contract above), `useRectSelect`
+axis-`constrain`ed; rotation snaps 22.5° by default, Shift frees), `useLineTagDrag` (**the only
+hook wired to window-level pointer listeners** — the rest use the SVG's React handlers — because
+the drag wanders off the small tag rect; cursor→world via the shared `view.screenToWorld` like
+every other hook; neighbor-tag snap per the contract above), `useRectSelect`
 (marquee with per-frame preview of the resulting selection per type, through set/add/xor
 modifiers).
 

@@ -12,7 +12,10 @@ import {
   snapNeighborTag,
 } from '../../geometry/lineTagGeometry';
 import { buildBands, SegmentBandSpec } from '../../geometry/interlining';
+import type { Vec2 } from '../../geometry/vec';
 import { finishDrag, trackDragMove } from './dragGesture';
+
+type ScreenToWorld = (mx: number, my: number) => Vec2;
 
 export interface LineTagDragApi {
   lineTagSnapGuides: SnapGuide[];
@@ -34,6 +37,7 @@ export interface LineTagDragApi {
 export function useLineTagDrag(
   svgRef: RefObject<SVGSVGElement | null>,
   zoom: number,
+  screenToWorld: ScreenToWorld,
 ): LineTagDragApi {
   const moveLineTag = useDoc((s) => s.moveLineTag);
   const [lineTagSnapGuides, setLineTagSnapGuides] = useState<SnapGuide[]>([]);
@@ -83,18 +87,10 @@ export function useLineTagDrag(
     const line = docState.lines[tag.lineId];
     if (!line) return;
 
-    // Convert pointer to world coords. We have the svg ref + zoom, but the
-    // viewport offset must be derived from the svg's CTM.
-    const svg = svgRef.current;
-    if (!svg) return;
-    const pt = svg.createSVGPoint();
-    pt.x = e.clientX;
-    pt.y = e.clientY;
-    const ctm = svg.getScreenCTM();
-    if (!ctm) return;
-    const inv = ctm.inverse();
-    const world = pt.matrixTransform(inv);
-    const target = { x: world.x, y: world.y };
+    // Cursor → world through the shared viewport helper (same one every other
+    // drag hook uses), so this stays in sync with the live, un-committed pan/zoom
+    // rather than re-deriving the offset from the svg's CTM.
+    const target = screenToWorld(e.clientX, e.clientY);
 
     // Recompute bands fresh — buildBands is pure & memo'd at the canvas, but
     // here we just need the latest geometry. Cheap relative to drag latency.

@@ -1,11 +1,10 @@
-import { MoonIcon, SunIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import { DraggablePopoverShell } from './DraggablePopoverShell';
 import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
-import { ColorField } from './ColorField';
+import { DayNightColorRow } from './DayNightColorRow';
 import { StyleRow } from './StyleRow';
 import type { AABB } from '../geometry/rectPolygon';
 import {
@@ -90,29 +89,22 @@ export function TransferPopover({ transfer, worldRect, view, spawnBox, onClose }
         getCurrent={currentThickness}
         textboxAllowAboveMax
       />
-      <div className="row">
-        <label htmlFor="transfer-color">Color</label>
-        <SunIcon aria-hidden="true" />
-        <ColorField
-          id="transfer-color"
-          ariaLabel="Transfer color"
-          title="Light mode color"
-          value={style.color.day}
-          onChange={(day) =>
-            updateTransferStyle(transfer.id, { color: { day, night: style.color.night } })
-          }
-        />
-        <MoonIcon aria-hidden="true" />
-        <ColorField
-          id="transfer-dark-color"
-          ariaLabel="Transfer dark color"
-          title="Dark mode color"
-          value={style.color.night}
-          onChange={(night) =>
-            updateTransferStyle(transfer.id, { color: { day: style.color.day, night } })
-          }
-        />
-      </div>
+      <DayNightColorRow
+        label="Color"
+        id="transfer-color"
+        darkId="transfer-dark-color"
+        lightAriaLabel="Transfer color"
+        darkAriaLabel="Transfer dark color"
+        titleNoun="color"
+        value={style.color.day}
+        darkValue={style.color.night}
+        onChange={(day) =>
+          updateTransferStyle(transfer.id, { color: { day, night: style.color.night } })
+        }
+        onDarkChange={(night) =>
+          updateTransferStyle(transfer.id, { color: { day: style.color.day, night } })
+        }
+      />
       <hr className="popover-divider" aria-hidden="true" />
       <NumericFieldRow
         id="transfer-stroke-width"
@@ -125,33 +117,26 @@ export function TransferPopover({ transfer, worldRect, view, spawnBox, onClose }
         getCurrent={currentStrokeWidth}
         textboxAllowAboveMax
       />
-      <div className="row">
-        <label htmlFor="transfer-stroke-color">Stroke color</label>
-        <SunIcon aria-hidden="true" />
-        <ColorField
-          id="transfer-stroke-color"
-          ariaLabel="Transfer stroke color"
-          title="Light mode stroke"
-          value={style.strokeColor.day}
-          onChange={(day) =>
-            updateTransferStyle(transfer.id, {
-              strokeColor: { day, night: style.strokeColor.night },
-            })
-          }
-        />
-        <MoonIcon aria-hidden="true" />
-        <ColorField
-          id="transfer-dark-stroke-color"
-          ariaLabel="Transfer dark stroke color"
-          title="Dark mode stroke"
-          value={style.strokeColor.night}
-          onChange={(night) =>
-            updateTransferStyle(transfer.id, {
-              strokeColor: { day: style.strokeColor.day, night },
-            })
-          }
-        />
-      </div>
+      <DayNightColorRow
+        label="Stroke color"
+        id="transfer-stroke-color"
+        darkId="transfer-dark-stroke-color"
+        lightAriaLabel="Transfer stroke color"
+        darkAriaLabel="Transfer dark stroke color"
+        titleNoun="stroke"
+        value={style.strokeColor.day}
+        darkValue={style.strokeColor.night}
+        onChange={(day) =>
+          updateTransferStyle(transfer.id, {
+            strokeColor: { day, night: style.strokeColor.night },
+          })
+        }
+        onDarkChange={(night) =>
+          updateTransferStyle(transfer.id, {
+            strokeColor: { day: style.strokeColor.day, night },
+          })
+        }
+      />
       <PopoverFooter noun="transfer" onDelete={onDelete} />
     </DraggablePopoverShell>
   );

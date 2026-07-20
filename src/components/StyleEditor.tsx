@@ -1,6 +1,4 @@
 import {
-  MoonIcon,
-  SunIcon,
   TextAlignCenterIcon,
   TextAlignJustifyIcon,
   TextAlignLeftIcon,
@@ -8,6 +6,7 @@ import {
 } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { ColorField } from './ColorField';
+import { DayNightColorRow } from './DayNightColorRow';
 import { NumericFieldRow } from './NumericFieldRow';
 import { WeightSelect, ItalicButton } from './WeightItalicControls';
 import { StationShapePicker } from './StationShapePicker';
@@ -278,25 +277,18 @@ function TextLabelStyleEditor({ id, props }: { id: string; props: TextLabelStyle
   ];
   return (
     <div className="style-editor">
-      <div className="row">
-        <label htmlFor={`style-${id}-color`}>Color</label>
-        <SunIcon aria-hidden="true" />
-        <ColorField
-          id={`style-${id}-color`}
-          ariaLabel="Label color"
-          title="Light mode color"
-          value={props.color}
-          onChange={(color) => patch({ color })}
-        />
-        <MoonIcon aria-hidden="true" />
-        <ColorField
-          id={`style-${id}-dark-color`}
-          ariaLabel="Dark mode label color"
-          title="Dark mode color"
-          value={props.darkColor}
-          onChange={(darkColor) => patch({ darkColor })}
-        />
-      </div>
+      <DayNightColorRow
+        label="Color"
+        id={`style-${id}-color`}
+        darkId={`style-${id}-dark-color`}
+        lightAriaLabel="Label color"
+        darkAriaLabel="Dark mode label color"
+        titleNoun="color"
+        value={props.color}
+        darkValue={props.darkColor}
+        onChange={(color) => patch({ color })}
+        onDarkChange={(darkColor) => patch({ darkColor })}
+      />
       <NumericFieldRow
         id={`style-${id}-size`}
         label="Size"
@@ -344,44 +336,30 @@ function PolygonStyleEditor({ id, props }: { id: string; props: PolygonStyleProp
   const patch = usePatch(id);
   return (
     <div className="style-editor">
-      <div className="row">
-        <label htmlFor={`style-${id}-fill`}>Fill color</label>
-        <SunIcon aria-hidden="true" />
-        <ColorField
-          id={`style-${id}-fill`}
-          ariaLabel="Polygon color"
-          title="Light mode fill"
-          value={props.fill}
-          onChange={(fill) => patch({ fill })}
-        />
-        <MoonIcon aria-hidden="true" />
-        <ColorField
-          id={`style-${id}-dark-fill`}
-          ariaLabel="Dark mode color"
-          title="Dark mode fill"
-          value={props.darkFill}
-          onChange={(darkFill) => patch({ darkFill })}
-        />
-      </div>
-      <div className="row">
-        <label htmlFor={`style-${id}-stroke-color`}>Stroke color</label>
-        <SunIcon aria-hidden="true" />
-        <ColorField
-          id={`style-${id}-stroke-color`}
-          ariaLabel="Stroke color"
-          title="Light mode stroke"
-          value={props.stroke}
-          onChange={(stroke) => patch({ stroke })}
-        />
-        <MoonIcon aria-hidden="true" />
-        <ColorField
-          id={`style-${id}-dark-stroke`}
-          ariaLabel="Dark mode stroke color"
-          title="Dark mode stroke"
-          value={props.darkStroke}
-          onChange={(darkStroke) => patch({ darkStroke })}
-        />
-      </div>
+      <DayNightColorRow
+        label="Fill color"
+        id={`style-${id}-fill`}
+        darkId={`style-${id}-dark-fill`}
+        lightAriaLabel="Polygon color"
+        darkAriaLabel="Dark mode color"
+        titleNoun="fill"
+        value={props.fill}
+        darkValue={props.darkFill}
+        onChange={(fill) => patch({ fill })}
+        onDarkChange={(darkFill) => patch({ darkFill })}
+      />
+      <DayNightColorRow
+        label="Stroke color"
+        id={`style-${id}-stroke-color`}
+        darkId={`style-${id}-dark-stroke`}
+        lightAriaLabel="Stroke color"
+        darkAriaLabel="Dark mode stroke color"
+        titleNoun="stroke"
+        value={props.stroke}
+        darkValue={props.darkStroke}
+        onChange={(stroke) => patch({ stroke })}
+        onDarkChange={(darkStroke) => patch({ darkStroke })}
+      />
       <NumericFieldRow
         id={`style-${id}-stroke-width`}
         label="Stroke width"
@@ -470,25 +448,18 @@ function TransferStyleEditor({ id, props }: { id: string; props: TransferStylePr
         getCurrent={liveNumberProp(id, 'thickness', props.thickness)}
         textboxAllowAboveMax
       />
-      <div className="row">
-        <label htmlFor={`style-${id}-color`}>Color</label>
-        <SunIcon aria-hidden="true" />
-        <ColorField
-          id={`style-${id}-color`}
-          ariaLabel="Transfer color"
-          title="Light mode color"
-          value={props.color.day}
-          onChange={(day) => patch({ color: { day, night: props.color.night } })}
-        />
-        <MoonIcon aria-hidden="true" />
-        <ColorField
-          id={`style-${id}-dark-color`}
-          ariaLabel="Transfer dark color"
-          title="Dark mode color"
-          value={props.color.night}
-          onChange={(night) => patch({ color: { day: props.color.day, night } })}
-        />
-      </div>
+      <DayNightColorRow
+        label="Color"
+        id={`style-${id}-color`}
+        darkId={`style-${id}-dark-color`}
+        lightAriaLabel="Transfer color"
+        darkAriaLabel="Transfer dark color"
+        titleNoun="color"
+        value={props.color.day}
+        darkValue={props.color.night}
+        onChange={(day) => patch({ color: { day, night: props.color.night } })}
+        onDarkChange={(night) => patch({ color: { day: props.color.day, night } })}
+      />
       <NumericFieldRow
         id={`style-${id}-stroke-width`}
         label="Stroke width"
@@ -500,25 +471,18 @@ function TransferStyleEditor({ id, props }: { id: string; props: TransferStylePr
         getCurrent={liveNumberProp(id, 'strokeWidth', props.strokeWidth)}
         textboxAllowAboveMax
       />
-      <div className="row">
-        <label htmlFor={`style-${id}-stroke-color`}>Stroke color</label>
-        <SunIcon aria-hidden="true" />
-        <ColorField
-          id={`style-${id}-stroke-color`}
-          ariaLabel="Transfer stroke color"
-          title="Light mode stroke"
-          value={props.strokeColor.day}
-          onChange={(day) => patch({ strokeColor: { day, night: props.strokeColor.night } })}
-        />
-        <MoonIcon aria-hidden="true" />
-        <ColorField
-          id={`style-${id}-dark-stroke-color`}
-          ariaLabel="Transfer dark stroke color"
-          title="Dark mode stroke"
-          value={props.strokeColor.night}
-          onChange={(night) => patch({ strokeColor: { day: props.strokeColor.day, night } })}
-        />
-      </div>
+      <DayNightColorRow
+        label="Stroke color"
+        id={`style-${id}-stroke-color`}
+        darkId={`style-${id}-dark-stroke-color`}
+        lightAriaLabel="Transfer stroke color"
+        darkAriaLabel="Transfer dark stroke color"
+        titleNoun="stroke"
+        value={props.strokeColor.day}
+        darkValue={props.strokeColor.night}
+        onChange={(day) => patch({ strokeColor: { day, night: props.strokeColor.night } })}
+        onDarkChange={(night) => patch({ strokeColor: { day: props.strokeColor.day, night } })}
+      />
     </div>
   );
 }
