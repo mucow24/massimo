@@ -177,6 +177,13 @@ export const DOT_SHAPE_LIBRARY: { id: string; name: string; shape: DotShape }[] 
 // FACTORY_STYLE_DEFAULTS.stopDot.
 export const DEFAULT_STOP_DOT_STYLE_ID = 'stop-filled-black';
 
+// The built-in "None" (blank/empty) stop-dot style. It's a primitive the
+// singleton/interchange split and the express-skip pattern depend on, and there
+// is nothing meaningful to edit (a blank dot). So it's RESERVED: always offered
+// in the dot picker, but hidden from the editable Styles list and protected
+// from rename/delete. Everything else treats it as an ordinary library style.
+export const NONE_STOP_DOT_STYLE_ID = 'stop-none';
+
 // The factory stopDot StyleDefs, keyed by id — spread into DEFAULT_STYLES so
 // every fresh (and pre-styles-migrated) doc ships the whole library. Typed as
 // the stopDot-narrowed StyleDef so `.props` reads as a concrete DotStyle.

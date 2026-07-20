@@ -1,8 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import * as T from './transforms';
-import { updateStyleProps, deleteStyle, setDefaultStyle } from './styles';
+import {
+  updateStyleProps,
+  deleteStyle,
+  renameStyle,
+  setDefaultStyle,
+  stylesOfKind,
+} from './styles';
 import { bakeStopDotLibrary, serialize, parse } from './serialize';
-import { DEFAULT_STOP_DOT_STYLE_ID, STOP_DOT_FACTORY_STYLES, resolveDotRender } from './dotStyle';
+import {
+  DEFAULT_STOP_DOT_STYLE_ID,
+  NONE_STOP_DOT_STYLE_ID,
+  STOP_DOT_FACTORY_STYLES,
+  resolveDotRender,
+} from './dotStyle';
 import { makeDoc, makeLine, makeStation, makeStop } from '../test/fixtures';
 import type { DotStyle } from './types';
 
@@ -106,6 +117,19 @@ describe('stopDot styles — v19 migration (bakeStopDotLibrary)', () => {
     ).toEqual(
       resolveDotRender(T.resolveDotStyle(baked.lines.L1, afterStop, true), '#abc', 'A', false),
     );
+  });
+});
+
+describe('the reserved "None" stop-dot style', () => {
+  it('is a real library style (so the picker always offers it) but cannot be renamed or deleted', () => {
+    const doc = makeDoc({});
+    // It IS in the library that drives the picker menu.
+    expect(stylesOfKind(doc.styles, 'stopDot').some((d) => d.id === NONE_STOP_DOT_STYLE_ID)).toBe(
+      true,
+    );
+    // But it's reserved: rename and delete are no-ops (reference-stable).
+    expect(renameStyle(doc, NONE_STOP_DOT_STYLE_ID, 'Blank')).toBe(doc);
+    expect(deleteStyle(doc, NONE_STOP_DOT_STYLE_ID)).toBe(doc);
   });
 });
 

@@ -36,7 +36,7 @@ import {
   updateTextLabel,
   updateTransferStyle,
 } from './transforms';
-import { canonicalDotStyle, dotStylesEqual } from './dotStyle';
+import { NONE_STOP_DOT_STYLE_ID, canonicalDotStyle, dotStylesEqual } from './dotStyle';
 import { DOT_SIZE_MIN, lineSingletonDotSizeOf, lineMultiDotSizeOf } from './dotSize';
 import { lineDashLengthOf, lineDashWidthOf } from './dashSize';
 import { LINE_WIDTH_MIN, LINE_WIDTH_STEP, lineWidthOf } from './lineWidth';
@@ -559,6 +559,7 @@ export function updateStyleProps(doc: MapDoc, styleId: string, patch: StyleProps
 /** Rename a style (id kept, no re-stamp). Refuses same-kind name collisions
  *  and the reserved sentinel name "Custom". */
 export function renameStyle(doc: MapDoc, styleId: string, name: string): MapDoc {
+  if (styleId === NONE_STOP_DOT_STYLE_ID) return doc; // reserved built-in
   const def = doc.styles[styleId];
   if (!def) return doc;
   const trimmed = name.trim();
@@ -577,6 +578,7 @@ export function renameStyle(doc: MapDoc, styleId: string, name: string): MapDoc 
  * (name order).
  */
 export function deleteStyle(doc: MapDoc, styleId: string): MapDoc {
+  if (styleId === NONE_STOP_DOT_STYLE_ID) return doc; // reserved built-in
   const def = doc.styles[styleId];
   if (!def) return doc;
   const { [styleId]: _gone, ...styles } = doc.styles;

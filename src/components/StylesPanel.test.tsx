@@ -52,6 +52,22 @@ describe('<StylesPanel />', () => {
     expect(screen.getByRole('button', { name: 'New polygon style' })).toBeInTheDocument();
   });
 
+  it('shows the stopDot library but hides the reserved "None" (no rename/delete row)', () => {
+    // The factory doc carries the whole stopDot library, including "None".
+    useDoc.setState({
+      ...useDoc.getState(),
+      styles: DEFAULT_DOC.styles,
+      styleDefaults: DEFAULT_DOC.styleDefaults,
+    });
+    render(<StylesPanel />);
+    expect(screen.getByText('Stop dots')).toBeInTheDocument();
+    // A normal library entry is editable in the list...
+    expect(screen.getByRole('button', { name: 'Rename Filled black' })).toBeInTheDocument();
+    // ...but "None" is reserved: hidden from the list entirely.
+    expect(screen.queryByRole('button', { name: 'Rename None' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete None' })).toBeNull();
+  });
+
   it('click-to-rename commits once on Enter and reverts on Escape', () => {
     render(<StylesPanel />);
     fireEvent.click(screen.getByRole('button', { name: 'Rename Heading' }));

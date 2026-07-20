@@ -9,6 +9,7 @@ import {
 } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { stylesOfKind } from '../model/styles';
+import { NONE_STOP_DOT_STYLE_ID } from '../model/dotStyle';
 import { StyleEditor } from './StyleEditor';
 import { StopGlyph } from './StopGlyph';
 import type { StyleDef, StyleKind } from '../model/types';
@@ -151,7 +152,9 @@ export function StylesPanel() {
   return (
     <section>
       {KIND_ORDER.map((kind) => {
-        const defs = stylesOfKind(styles, kind);
+        // The reserved "None" stop-dot is offered in the picker but hidden from
+        // the editable list (nothing to edit; protected from rename/delete).
+        const defs = stylesOfKind(styles, kind).filter((d) => d.id !== NONE_STOP_DOT_STYLE_ID);
         return (
           <Fragment key={kind}>
             <div className="list-header">
