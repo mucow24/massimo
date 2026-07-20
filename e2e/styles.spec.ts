@@ -64,8 +64,8 @@ test('the sidebar Styles tab lists, renames, edits live, and deletes styles', as
   await saveHeadingFromG1(page);
 
   // The sidebar is open by default; the tab counts the six factory Defaults
-  // plus the one saved style.
-  await page.getByRole('button', { name: 'Styles (7)' }).click();
+  // plus the 16-entry stopDot library, plus the one saved style (23).
+  await page.getByRole('button', { name: 'Styles (23)' }).click();
   await page.getByRole('button', { name: 'Rename Heading' }).click();
   await page.getByLabel('Style name').fill('Header');
   await page.getByLabel('Style name').press('Enter');
@@ -95,9 +95,10 @@ test('a new label is created wearing the (redefined) Default style', async ({ pa
   await seedAndOpen(page, twoLabels);
 
   // Redefine the Default LABEL style to 32px via the panel editor. The kind
-  // sections render in a fixed order (Lines, Stations, Labels, …), so the
-  // Labels section's Default is the third "Edit Default" chevron.
-  await page.getByRole('button', { name: 'Styles (6)' }).click();
+  // sections render in a fixed order (Lines, Stop dots, Stations, Labels, …);
+  // the Stop dots library has no style NAMED "Default", so the "Edit Default"
+  // chevrons are Lines (0), Stations (1), Labels (2) — Labels is nth(2).
+  await page.getByRole('button', { name: 'Styles (22)' }).click();
   await page.getByRole('button', { name: 'Edit Default' }).nth(2).click();
   const editor = page.locator('.style-editor');
   await editor.getByRole('spinbutton', { name: 'Size' }).fill('32');
