@@ -1,4 +1,18 @@
 import { STOP_DOT_RADIUS } from '../geometry/orientation';
+import { DEFAULT_DOT_STYLE, defaultDotDiameter, resolveDotStyle } from './dotStyle';
+import type { DotStyle } from './types';
+
+// Structural shapes carrying just what the size resolvers read: the split size
+// overrides AND the split dot styles. The style picks the size a dot renders at
+// when fully tracking (12 for a service-code disc, 8 otherwise), so it must be
+// in scope wherever a resolver falls back to that default.
+type SizedLine = {
+  singletonDotSize?: number;
+  multiDotSize?: number;
+  singletonDotStyle?: DotStyle;
+  multiDotStyle?: DotStyle;
+};
+type SizedStop = { dotSize?: number; dotStyle?: DotStyle };
 
 // Stop dot size, expressed as the dot's DIAMETER in px. The default derives
 // from STOP_DOT_RADIUS so the "missing ⇒ default" chain renders identically
@@ -57,23 +71,26 @@ export const dotSizeOverride = (
 
 /**
  * Fully-resolved size for UI display (the station inspector textbox). NOT
- * for rendering — see dotSizeOverride.
+ * for rendering — see dotSizeOverride. A fully-tracking dot reports the
+ * diameter its STYLE renders at (12 for a service-code disc, 8 otherwise), so
+ * the shown number never contradicts the dot on the canvas.
  */
 export const resolveDotSize = (
-  line: { singletonDotSize?: number; multiDotSize?: number } | null | undefined,
-  stop: { dotSize?: number } | null | undefined,
+  line: SizedLine | null | undefined,
+  stop: SizedStop | null | undefined,
   isSingleton: boolean,
-): number => dotSizeOverride(line, stop, isSingleton) ?? DOT_SIZE_DEFAULT;
+): number =>
+  dotSizeOverride(line, stop, isSingleton) ??
+  defaultDotDiameter(resolveDotStyle(line, stop, isSingleton));
 
 /**
  * Effective singleton / shared line-default sizes for the LineInspector
- * sliders. Missing field ⇒ DOT_SIZE_DEFAULT, so saves from before the field
- * existed need no migration (mirrors lineWidthOf).
+ * sliders. A missing field reports the case's default STYLE diameter (12 for a
+ * service-code disc, 8 otherwise) — the size the dot actually renders — so
+ * saves from before the field existed need no migration (mirrors lineWidthOf).
  */
-export const lineSingletonDotSizeOf = (
-  line: { singletonDotSize?: number; multiDotSize?: number } | null | undefined,
-): number => line?.singletonDotSize ?? DOT_SIZE_DEFAULT;
+export const lineSingletonDotSizeOf = (line: SizedLine | null | undefined): number =>
+  line?.singletonDotSize ?? defaultDotDiameter(line?.singletonDotStyle ?? DEFAULT_DOT_STYLE);
 
-export const lineMultiDotSizeOf = (
-  line: { singletonDotSize?: number; multiDotSize?: number } | null | undefined,
-): number => line?.multiDotSize ?? DOT_SIZE_DEFAULT;
+export const lineMultiDotSizeOf = (line: SizedLine | null | undefined): number =>
+  line?.multiDotSize ?? defaultDotDiameter(line?.multiDotStyle ?? DEFAULT_DOT_STYLE);

@@ -2,6 +2,7 @@ import type {
   DayNightColor,
   DotBaseShape,
   DotFill,
+  DotServiceCodeColor,
   DotShape,
   DotStrokeColor,
   DotStyle,
@@ -14,6 +15,15 @@ import { legibleTextOn } from '../util/color';
 // the code inside stays legible. (Moved here from StopGlyph — the radius is a
 // styling rule, not an SVG-assembly detail.)
 export const SERVICE_CODE_DOT_RADIUS = 6;
+
+// The DIAMETER a dot renders at when its size is fully tracking defaults —
+// larger for a service-code disc so the code stays legible. This MUST equal
+// resolveDotRender's untracked radius × 2; it is the single tracking-size the
+// size layer collapses to and falls back to (see canonicalDotSize's `dropAt`
+// and the dotSize.ts display helpers). Identical to DOT_SIZE_DEFAULT for every
+// non-code style, so nothing about plain dots changes.
+export const defaultDotDiameter = (style: DotStyle): number =>
+  2 * (style.showServiceCode ? SERVICE_CODE_DOT_RADIUS : STOP_DOT_RADIUS);
 
 const K: DayNightColor = { day: '#000000', night: '#000000' };
 const W: DayNightColor = { day: '#ffffff', night: '#ffffff' };
@@ -228,6 +238,26 @@ export function isBlankDotStyle(style: DotStyle): boolean {
   return style.fill === 'none' && style.strokeWidth === 0 && !style.showServiceCode;
 }
 
+/**
+ * The effective dot style for a stop: its own `dotStyle` override, else the
+ * line's split default for the stop's station case (`singletonDotStyle` when
+ * `isSingleton`, else `multiDotStyle`), else DEFAULT_DOT_STYLE (the historical
+ * filled-black). `isSingleton` is `stationIsSingleton(station)`. Structural
+ * params so narrowed line/stop shapes pass through (same convention as
+ * `dotSizeOverride`); re-exported from transforms for its existing callers.
+ */
+export function resolveDotStyle(
+  line: { singletonDotStyle?: DotStyle; multiDotStyle?: DotStyle } | null | undefined,
+  stop: { dotStyle?: DotStyle } | null | undefined,
+  isSingleton: boolean,
+): DotStyle {
+  return (
+    stop?.dotStyle ??
+    (isSingleton ? line?.singletonDotStyle : line?.multiDotStyle) ??
+    DEFAULT_DOT_STYLE
+  );
+}
+
 const dayNight = (c: DayNightColor, darkMode: boolean): string => (darkMode ? c.night : c.day);
 
 function resolveFill(fill: DotFill, lineColor: string | undefined, darkMode: boolean): string {
@@ -238,7 +268,11 @@ function resolveFill(fill: DotFill, lineColor: string | undefined, darkMode: boo
   return dayNight(fill, darkMode);
 }
 
-function resolveStrokeColor(
+// Resolve a 'line'-or-pair color reference — a dot's stroke, or its service
+// code — to a concrete SVG color: the 'line' sentinel → the owning line's color
+// (black when the caller has no line in scope, matching resolveFill), else the
+// theme-picked side of the day/night pair.
+function resolveLineOrPairColor(
   color: DotStrokeColor,
   lineColor: string | undefined,
   darkMode: boolean,
@@ -279,27 +313,37 @@ export function resolveDotRender(
 ): DotRenderParams | null {
   if (isBlankDotStyle(style)) return null;
   const fill = resolveFill(style.fill, lineColor, darkMode);
+  // A 'dash' is a TfL-style tick: on canvas DashGlyph draws it in its fill color
+  // and takes its OUTLINE from the owning line's casing, and never draws a
+  // service code. So of the style fields only `fill` applies — enforce that in
+  // this shared resolver so every consumer agrees (crucially the editor/picker
+  // previews via StopGlyph, which would otherwise paint a stroke + code onto the
+  // bar that the canvas never renders).
+  const isDash = style.shape === 'dash';
+  const showCode = style.showServiceCode && !isDash;
   const out: DotRenderParams = {
     shape: style.shape,
     r:
       sizeOverride !== undefined
         ? sizeOverride / 2
-        : style.showServiceCode
+        : showCode
           ? SERVICE_CODE_DOT_RADIUS
           : STOP_DOT_RADIUS,
     fill,
   };
-  if (style.strokeWidth > 0) {
-    out.stroke = resolveStrokeColor(style.strokeColor, lineColor, darkMode);
+  if (style.strokeWidth > 0 && !isDash) {
+    out.stroke = resolveLineOrPairColor(style.strokeColor, lineColor, darkMode);
     out.strokeWidth = style.strokeWidth;
   }
-  if (style.showServiceCode) {
-    // An explicit day/night serviceCodeColor overrides the auto-contrast.
-    // Otherwise legibility is judged against what's actually behind the code:
-    // the resolved fill, or the canvas background when the fill is transparent.
+  if (showCode) {
+    // An explicit serviceCodeColor overrides the auto-contrast: 'line' → the
+    // owning line's color, a day/night pair → that per-theme color. Absent ⇒
+    // judge legibility against what's actually behind the code: the resolved
+    // fill, or the canvas background when the fill is transparent.
+    const scc = style.serviceCodeColor;
     const color =
-      style.serviceCodeColor !== undefined
-        ? dayNight(style.serviceCodeColor, darkMode)
+      scc !== undefined
+        ? resolveLineOrPairColor(scc, lineColor, darkMode)
         : legibleTextOn(fill === 'none' ? (darkMode ? '#000000' : '#ffffff') : fill);
     out.code = { text: serviceCode ?? '?', color };
   }
@@ -311,11 +355,15 @@ function dotColorsEqual(a: DotFill | DotStrokeColor, b: DotFill | DotStrokeColor
   return a.day === b.day && a.night === b.night;
 }
 
-// Optional day/night pair (serviceCodeColor): absent compares equal only to
-// absent; two present pairs compare side-for-side.
-function optDayNightEqual(a: DayNightColor | undefined, b: DayNightColor | undefined): boolean {
+// Optional service-code color: absent compares equal only to absent; two
+// present values (each a 'line' sentinel or a day/night pair) compare via
+// dotColorsEqual (sentinel-vs-pair never equal).
+function optDotColorEqual(
+  a: DotServiceCodeColor | undefined,
+  b: DotServiceCodeColor | undefined,
+): boolean {
   if (a === undefined || b === undefined) return a === b;
-  return a.day === b.day && a.night === b.night;
+  return dotColorsEqual(a, b);
 }
 
 // Stroke width shares the casing width's quarter-unit grid (same stepper
@@ -343,7 +391,8 @@ export function canonicalDotStyle(s: DotStyle): DotStyle {
     strokeColor: lcStroke(s.strokeColor),
     showServiceCode: s.showServiceCode,
   };
-  if (s.serviceCodeColor !== undefined) out.serviceCodeColor = lcDayNight(s.serviceCodeColor);
+  // lcStroke passes the 'line' sentinel through and lowercases a day/night pair.
+  if (s.serviceCodeColor !== undefined) out.serviceCodeColor = lcStroke(s.serviceCodeColor);
   return out;
 }
 
@@ -356,6 +405,6 @@ export function dotStylesEqual(a: DotStyle, b: DotStyle): boolean {
     a.strokeWidth === b.strokeWidth &&
     dotColorsEqual(a.strokeColor, b.strokeColor) &&
     a.showServiceCode === b.showServiceCode &&
-    optDayNightEqual(a.serviceCodeColor, b.serviceCodeColor)
+    optDotColorEqual(a.serviceCodeColor, b.serviceCodeColor)
   );
 }

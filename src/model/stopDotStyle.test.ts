@@ -195,4 +195,25 @@ describe('stopDot styles — serviceCodeColor persistence', () => {
       expect(p.showServiceCode).toBe(true);
     }
   });
+
+  it("a 'line' service-code color survives updateStyleProps and round-trips", () => {
+    let doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    // updateStyleProps canonicalizes the merged style — 'line' must pass through
+    // without tripping the day/night lowercasing.
+    doc = updateStyleProps(doc, DEFAULT_STOP_DOT_STYLE_ID, {
+      showServiceCode: true,
+      serviceCodeColor: 'line',
+    });
+    expect((doc.styles[DEFAULT_STOP_DOT_STYLE_ID].props as DotStyle).serviceCodeColor).toBe('line');
+    // The code then paints in the line's color at render time.
+    const style = doc.styles[DEFAULT_STOP_DOT_STYLE_ID].props as DotStyle;
+    expect(resolveDotRender(style, '#0039a6', 'A', false)!.code!.color).toBe('#0039a6');
+
+    const parsed = parse(serialize(doc));
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      const p = parsed.doc.styles[DEFAULT_STOP_DOT_STYLE_ID].props as DotStyle;
+      expect(p.serviceCodeColor).toBe('line');
+    }
+  });
 });

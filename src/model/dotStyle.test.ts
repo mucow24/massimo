@@ -87,6 +87,24 @@ describe('resolveDotRender', () => {
     );
   });
 
+  it('a dash renders only its fill — stroke and service code are dropped (matches DashGlyph)', () => {
+    // Even with a stroke + service code set, a dash resolves to fill-only, so the
+    // preview (StopGlyph) can't promise a stroke/code the canvas (DashGlyph) — which
+    // reads only params.fill and takes its outline from the line — never renders.
+    const s = style({
+      shape: 'dash',
+      fill: 'line',
+      strokeWidth: 3,
+      strokeColor: K,
+      showServiceCode: true,
+    });
+    const out = resolveDotRender(s, '#e6002d', 'A', false)!;
+    expect(out.fill).toBe('#e6002d'); // fill DOES apply
+    expect(out.stroke).toBeUndefined(); // dot-style stroke is inert for a dash
+    expect(out.strokeWidth).toBeUndefined();
+    expect(out.code).toBeUndefined(); // no service code on a tick
+  });
+
   describe('size override', () => {
     it('halves an explicit diameter into r', () => {
       expect(resolveDotRender(style(), undefined, undefined, false, 9)!.r).toBe(4.5);
@@ -169,6 +187,19 @@ describe('resolveDotRender', () => {
       const s = style({ fill: W, showServiceCode: true });
       expect(resolveDotRender(s, undefined, 'A', false)!.code!.color).toBe('#000');
     });
+
+    it("paints the code in the line's color for a 'line' serviceCodeColor", () => {
+      // The 'line' sentinel wins over auto-contrast and is theme-agnostic — it's
+      // whatever line color the caller passes (like a 'line' fill/stroke).
+      const s = style({ fill: W, showServiceCode: true, serviceCodeColor: 'line' });
+      expect(resolveDotRender(s, '#e6002d', 'A', false)!.code!.color).toBe('#e6002d');
+      expect(resolveDotRender(s, '#e6002d', 'A', true)!.code!.color).toBe('#e6002d');
+    });
+
+    it("a 'line' serviceCodeColor falls back to black without a line in scope", () => {
+      const s = style({ showServiceCode: true, serviceCodeColor: 'line' });
+      expect(resolveDotRender(s, undefined, 'A', false)!.code!.color).toBe('#000');
+    });
   });
 });
 
@@ -214,6 +245,16 @@ describe('dotStylesEqual', () => {
       dotStylesEqual(style({ serviceCodeColor: K }), style({ serviceCodeColor: { ...K } })),
     ).toBe(true);
     expect(dotStylesEqual(style(), style())).toBe(true);
+  });
+
+  it("distinguishes a 'line' serviceCodeColor from a pair and from absent", () => {
+    expect(
+      dotStylesEqual(style({ serviceCodeColor: 'line' }), style({ serviceCodeColor: K })),
+    ).toBe(false);
+    expect(dotStylesEqual(style({ serviceCodeColor: 'line' }), style())).toBe(false);
+    expect(
+      dotStylesEqual(style({ serviceCodeColor: 'line' }), style({ serviceCodeColor: 'line' })),
+    ).toBe(true);
   });
 });
 

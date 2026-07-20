@@ -30,7 +30,7 @@ import {
   LINE_CURVE_RADIUS_MIN,
   canonicalLineCurveRadius,
 } from './lineCurve';
-import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
+import { canonicalDotSize } from './dotSize';
 import { canonicalStrokeColor, canonicalStrokeWidth, canonicalSeamColor } from './lineStroke';
 import {
   DEFAULT_DOT_STYLE,
@@ -38,7 +38,9 @@ import {
   DOT_SHAPE_PRESETS,
   STOP_DOT_FACTORY_STYLES,
   STOP_DOT_SEED_STYLES,
+  defaultDotDiameter,
   dotStylesEqual,
+  resolveDotStyle,
 } from './dotStyle';
 import {
   adoptDefaultStyles,
@@ -56,6 +58,7 @@ import type {
   DayNightColor,
   DotBaseShape,
   DotFill,
+  DotServiceCodeColor,
   DotShape,
   DotStrokeColor,
   DotStyle,
@@ -286,10 +289,10 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   let linesChanged = false;
   for (const id of Object.keys(merged.lines)) {
     const line = merged.lines[id];
-    const cleaned = sanitizeLineDotSize(
-      sanitizeLineStroke(
-        sanitizeLineCurve(sanitizeLineWidth(sanitizeSegments(backfillLineEdges(line)))),
-      ),
+    // NB: dot-SIZE cleaning is deferred to after bakeLineDotDefaults — its
+    // drop-at default is style-aware, so it must see the baked split dot styles.
+    const cleaned = sanitizeLineStroke(
+      sanitizeLineCurve(sanitizeLineWidth(sanitizeSegments(backfillLineEdges(line)))),
     );
     if (cleaned !== line) linesChanged = true;
     cleanedLines[id] = cleaned;
@@ -316,6 +319,18 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   // BEFORE the singleton-aware `sanitizeStopDotSizes` (which reads the split
   // line sizes) and the style validation below (which reads the split props).
   merged = bakeLineDotDefaults(merged);
+  // Canonicalize the split dot SIZES now that the dot styles are baked: the
+  // drop-at default is style-aware (a service-code disc defaults to 12, not 8),
+  // so this must run after bakeLineDotDefaults and before the stop-size pass
+  // (which reads the cleaned line sizes).
+  let lineSizesChanged = false;
+  const sizedLines: Record<string, Line> = {};
+  for (const id of Object.keys(merged.lines)) {
+    const cleaned = sanitizeLineDotSize(merged.lines[id]);
+    if (cleaned !== merged.lines[id]) lineSizesChanged = true;
+    sizedLines[id] = cleaned;
+  }
+  if (lineSizesChanged) merged.lines = sizedLines;
   // Sanitize per-stop dot sizes AFTER the line pass: the canonical stored
   // form depends on the line's effective default, so the comparison must use
   // sanitized line values.
@@ -883,9 +898,12 @@ function sanitizeDotStyle(raw: unknown): DotStyle | undefined {
   if (typeof o.strokeWidth !== 'number' || !Number.isFinite(o.strokeWidth)) return undefined;
   if (typeof o.showServiceCode !== 'boolean') return undefined;
   // serviceCodeColor is OPTIONAL — absent ⇒ auto-contrast; a malformed value is
-  // dropped (treated as absent) rather than invalidating the whole style.
+  // dropped (treated as absent) rather than invalidating the whole style. Same
+  // shape as a stroke color: the 'line' sentinel or a day/night pair (no 'none').
   const serviceCodeColor =
-    o.serviceCodeColor === undefined ? undefined : sanitizeDayNightColor(o.serviceCodeColor);
+    o.serviceCodeColor === undefined
+      ? undefined
+      : (sanitizeDotColor(o.serviceCodeColor, false) as DotServiceCodeColor | undefined);
   const out: DotStyle = {
     shape: o.shape as DotBaseShape,
     fill,
@@ -1086,7 +1104,14 @@ function sanitizeLineDotSizeField(line: Line, field: 'singletonDotSize' | 'multi
   if (!(field in line)) return line;
   const raw = line[field] as unknown;
   if (typeof raw === 'number' && Number.isFinite(raw)) {
-    const stored = canonicalDotSize(raw);
+    // Drop at the size this case's DEFAULT STYLE renders when untracked (12 for
+    // a service-code disc, 8 otherwise) — mirrors setLineCaseDotSize, so an
+    // exported service-code default of 8 re-imports as 8, not a dropped-to-12.
+    // Requires the styles to be baked first (see the call site's ordering).
+    const style =
+      (field === 'singletonDotSize' ? line.singletonDotStyle : line.multiDotStyle) ??
+      DEFAULT_DOT_STYLE;
+    const stored = canonicalDotSize(raw, defaultDotDiameter(style));
     if (stored !== undefined) {
       return stored === line[field] ? line : { ...line, [field]: stored };
     }
@@ -1121,11 +1146,15 @@ export function sanitizeStopDotSizes(
       const raw = s.dotSize as unknown;
       if (typeof raw === 'number' && Number.isFinite(raw)) {
         // Effective default depends on whether this stop's station is a
-        // singleton or shared — same split the renderer resolves.
+        // singleton or shared — same split the renderer resolves — and, when
+        // the line default is itself unset, on the stop STYLE's own default
+        // diameter (12 for a service-code disc, 8 otherwise). Same rule as
+        // setDotSize, so import and edit agree.
         const line = lines[s.lineId];
+        const isSingleton = stationIsSingleton(st);
         const effDefault =
-          (stationIsSingleton(st) ? line?.singletonDotSize : line?.multiDotSize) ??
-          DOT_SIZE_DEFAULT;
+          (isSingleton ? line?.singletonDotSize : line?.multiDotSize) ??
+          defaultDotDiameter(resolveDotStyle(line, s, isSingleton));
         const stored = canonicalDotSize(raw, effDefault);
         if (stored !== undefined) {
           if (stored === s.dotSize) return s;

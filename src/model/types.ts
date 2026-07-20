@@ -65,6 +65,12 @@ export type DotFill = DayNightColor | 'line' | 'none';
 // "no stroke".
 export type DotStrokeColor = DayNightColor | 'line';
 
+// Color of the service code drawn on a dot. Structurally the same as a stroke
+// color — 'line' = the owning line's color (resolved at render), or an explicit
+// day/night pair — but a distinct alias because its ABSENCE has meaning: an
+// absent serviceCodeColor means auto-contrast (see DotStyle.serviceCodeColor).
+export type DotServiceCodeColor = DayNightColor | 'line';
+
 // A procedurally-defined stop dot. All fields are required — a deliberate
 // divergence from the optional-field-plus-named-default convention on `Line`:
 // style objects are canonical by construction so plain deep equality
@@ -83,13 +89,13 @@ export interface DotStyle {
   // black/white is legible on the resolved fill. Implies the larger
   // SERVICE_CODE_DOT_RADIUS disc so the code stays readable.
   showServiceCode: boolean;
-  // Explicit service-code text color, per theme. Only meaningful when
-  // `showServiceCode` is true. Absent ⇒ the historical behavior: pick
-  // whichever of black/white is legible on the resolved fill
-  // (`legibleTextOn`). Present ⇒ that auto-contrast is overridden by the
-  // chosen day/night pair. Optional so untouched styles (and every preset)
-  // stay byte-identical.
-  serviceCodeColor?: DayNightColor;
+  // Explicit service-code text color. Only meaningful when `showServiceCode`
+  // is true. Absent ⇒ the historical behavior: pick whichever of black/white
+  // is legible on the resolved fill (`legibleTextOn`). Present ⇒ that
+  // auto-contrast is overridden — 'line' paints the code in the owning line's
+  // color, a day/night pair in that explicit per-theme color. Optional so
+  // untouched styles (and every preset) stay byte-identical.
+  serviceCodeColor?: DotServiceCodeColor;
 }
 
 export interface StopCell {
