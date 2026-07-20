@@ -560,11 +560,18 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
   const fillMode: 'none' | 'line' | 'custom' =
     p.fill === 'none' ? 'none' : p.fill === 'line' ? 'line' : 'custom';
   const strokeMode: 'line' | 'custom' = p.strokeColor === 'line' ? 'line' : 'custom';
+  // Service-code color mirrors stroke: 'line' or a custom pair. An ABSENT
+  // serviceCodeColor (auto-contrast) reads as 'custom' — the color row shows,
+  // as before — and stays absent until the user picks a mode or a color.
+  const codeMode: 'line' | 'custom' = p.serviceCodeColor === 'line' ? 'line' : 'custom';
   const fillPair: DayNightColor =
     typeof p.fill === 'object' ? p.fill : { day: '#000000', night: '#000000' };
   const strokePair: DayNightColor =
     typeof p.strokeColor === 'object' ? p.strokeColor : { day: '#ffffff', night: '#ffffff' };
-  const codePair: DayNightColor = p.serviceCodeColor ?? { day: '#ffffff', night: '#ffffff' };
+  const codePair: DayNightColor =
+    typeof p.serviceCodeColor === 'object'
+      ? p.serviceCodeColor
+      : { day: '#ffffff', night: '#ffffff' };
   // A dash is a TfL tick: it takes its size AND outline from the owning line and
   // never carries a service code, so only shape + fill do anything (see
   // DashGlyph / resolveDotRender). Don't offer the inert controls.
@@ -687,18 +694,39 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
             />
           </div>
           {p.showServiceCode && (
-            <DayNightColorRow
-              label="Code color"
-              id={`style-${id}-code-day`}
-              darkId={`style-${id}-code-night`}
-              lightAriaLabel="Service code color"
-              darkAriaLabel="Dark mode service code color"
-              titleNoun="service-code color"
-              value={codePair.day}
-              darkValue={codePair.night}
-              onChange={(day) => dp({ serviceCodeColor: { day, night: codePair.night } })}
-              onDarkChange={(night) => dp({ serviceCodeColor: { day: codePair.day, night } })}
-            />
+            <>
+              <div className="row">
+                <label>Code color</label>
+                <div className="shape-group">
+                  {(['line', 'custom'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      className={'align-btn' + (codeMode === mode ? ' active' : '')}
+                      aria-pressed={codeMode === mode}
+                      aria-label={`Code color ${mode}`}
+                      onClick={() => dp({ serviceCodeColor: mode === 'line' ? 'line' : codePair })}
+                    >
+                      {mode === 'line' ? 'Line' : 'Custom'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {codeMode === 'custom' && (
+                <DayNightColorRow
+                  label="Code"
+                  id={`style-${id}-code-day`}
+                  darkId={`style-${id}-code-night`}
+                  lightAriaLabel="Service code color"
+                  darkAriaLabel="Dark mode service code color"
+                  titleNoun="service-code color"
+                  value={codePair.day}
+                  darkValue={codePair.night}
+                  onChange={(day) => dp({ serviceCodeColor: { day, night: codePair.night } })}
+                  onDarkChange={(night) => dp({ serviceCodeColor: { day: codePair.day, night } })}
+                />
+              )}
+            </>
           )}
         </>
       )}
