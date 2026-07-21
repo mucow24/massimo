@@ -10,7 +10,11 @@ import { FieldSelectContent } from './FieldSelectContent';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
 import { StyleRow } from './StyleRow';
-import { ROUTE_BULLET_SIZE_MAX, ROUTE_BULLET_SIZE_MIN } from '../model/transforms';
+import {
+  ROUTE_BULLET_SIZE_MAX,
+  ROUTE_BULLET_SIZE_MIN,
+  ROUTE_BULLET_SIZE_STEP,
+} from '../model/transforms';
 import type { RouteBullet, RouteBulletShape } from '../model/types';
 
 // Radix Select forbids empty-string item values; line ids are UUIDs, so the
@@ -170,7 +174,7 @@ export function RouteBulletPopover({ bullet, worldRect, view, spawnBox, onClose 
         label="Size"
         min={ROUTE_BULLET_SIZE_MIN}
         max={ROUTE_BULLET_SIZE_MAX}
-        step={1}
+        step={ROUTE_BULLET_SIZE_STEP}
         value={bullet.size}
         onChange={onSize}
         getCurrent={() => useDoc.getState().routeBullets[bullet.id]?.size ?? bullet.size}

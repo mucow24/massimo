@@ -91,9 +91,9 @@ describe('<TransferPopover />', () => {
 
   it('editing the thickness writes a per-transfer override', () => {
     renderPopover();
-    // One arrow step from the effective default (2) → 3, stored as an override.
+    // One 0.25 arrow step from the effective default (2) → 2.25, stored as an override.
     stepSlider(screen.getByRole('slider', { name: 'Thickness' }), 1);
-    expect(useDoc.getState().transfers.x1.thickness).toBe(3);
+    expect(useDoc.getState().transfers.x1.thickness).toBe(2.25);
   });
 
   it('choosing the constant default CLEARS the override (never stored)', () => {
@@ -147,8 +147,8 @@ describe('<TransferPopover />', () => {
   it('one wheel notch over a spinbutton steps the EFFECTIVE value exactly once', () => {
     renderPopover();
     fireEvent.wheel(screen.getByRole('spinbutton', { name: 'Thickness' }), { deltaY: -1 });
-    // Tracking transfer: effective 2 + 1 = 3, stored as an override.
-    expect(useDoc.getState().transfers.x1.thickness).toBe(3);
+    // Tracking transfer: effective 2 + 0.25 = 2.25, stored as an override.
+    expect(useDoc.getState().transfers.x1.thickness).toBe(2.25);
   });
 
   it('a wheel notch steps from the OVERRIDE when one is present, not the default', () => {
@@ -158,8 +158,8 @@ describe('<TransferPopover />', () => {
     });
     renderPopover();
     fireEvent.wheel(screen.getByRole('spinbutton', { name: 'Thickness' }), { deltaY: -1 });
-    // 6 + 1, NOT default 2 + 1 (which would silently clobber the override).
-    expect(useDoc.getState().transfers.x1.thickness).toBe(7);
+    // 6 + 0.25, NOT default 2 + 0.25 (which would silently clobber the override).
+    expect(useDoc.getState().transfers.x1.thickness).toBe(6.25);
   });
 
   it('a wheel notch over the Stroke width spinbutton steps the stroke width, not thickness', () => {
@@ -192,7 +192,7 @@ describe('<TransferPopover />', () => {
     // commits exactly one entry — same contract the native range had.
     stepSlider(slider, 3);
     fireEvent.blur(slider);
-    expect(useDoc.getState().transfers.x1.thickness).toBe(5); // effective 2 + 3 steps
+    expect(useDoc.getState().transfers.x1.thickness).toBe(2.75); // effective 2 + 3×0.25 steps
     expect(historyDepth() - before).toBe(1);
   });
 

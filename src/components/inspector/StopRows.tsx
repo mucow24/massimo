@@ -2,7 +2,7 @@ import type { Line, LineId, Station, StopCell } from '../../model/types';
 import { useDoc, useSelection } from '../../state/store';
 import { dispatchMirrored } from '../../state/mirrorDispatch';
 import { AXIS_CYCLE, resolveDotStyle, stationIsSingleton } from '../../model/transforms';
-import { DOT_SIZE_MIN, resolveDotSize } from '../../model/dotSize';
+import { DOT_SIZE_MIN, DOT_SIZE_STEP, resolveDotSize } from '../../model/dotSize';
 import { legibleTextOn } from '../../util/color';
 import { StationShapePicker } from '../StationShapePicker';
 import { useNumericField } from '../useNumericField';
@@ -93,6 +93,7 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
         stationIsSingleton(liveStation),
       );
     },
+    DOT_SIZE_STEP,
   );
 
   // Orientation axes live in the station's LOCAL frame; show the WORLD-true
@@ -138,8 +139,7 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
         }
         disabled={isDash}
         min={DOT_SIZE_MIN}
-        step={1}
-        style={{ width: 44 }}
+        step={DOT_SIZE_STEP}
         value={sizeText}
         // attachWheel binds a non-passive native wheel listener (React's
         // onWheel is passive, so its preventDefault would warn + no-op).

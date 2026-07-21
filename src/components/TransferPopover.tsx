@@ -16,6 +16,7 @@ import {
   TRANSFER_THICKNESS_DEFAULT,
   TRANSFER_THICKNESS_MAX,
   TRANSFER_THICKNESS_MIN,
+  TRANSFER_THICKNESS_STEP,
 } from '../model/transferStyle';
 import type { Transfer } from '../model/types';
 
@@ -83,7 +84,7 @@ export function TransferPopover({ transfer, worldRect, view, spawnBox, onClose }
         label="Thickness"
         min={TRANSFER_THICKNESS_MIN}
         max={TRANSFER_THICKNESS_MAX}
-        step={1}
+        step={TRANSFER_THICKNESS_STEP}
         value={style.thickness}
         onChange={(thickness) => updateTransferStyle(transfer.id, { thickness })}
         getCurrent={currentThickness}

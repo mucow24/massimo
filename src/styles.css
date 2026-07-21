@@ -2684,6 +2684,11 @@ body:has(.app[data-theme='dark']) {
 }
 .stop-row input[type='number'] {
   height: 26px;
+  /* Wide enough for a two-decimal dot size (0.25 grid) PLUS the native stepper
+     arrows Chromium overlays inside the right edge — the same floor as the
+     shared .options-popover-spin. A narrower box clipped the last digit of
+     values like "20.00". */
+  width: 76px;
 }
 /* The orientation cycle button hugs the right edge; the size box stays with
    the shape picker it describes. */
@@ -2897,7 +2902,7 @@ body:has(.app[data-theme='dark']) {
 }
 .station-popover .stop-rows-header .col-size {
   flex: none;
-  width: 44px;
+  width: 76px;
   text-align: center;
 }
 .station-popover .stop-rows-header .col-dir {

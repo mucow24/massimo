@@ -3,6 +3,7 @@ import {
   TRANSFER_THICKNESS_MIN,
   TRANSFER_THICKNESS_MAX,
   TRANSFER_THICKNESS_DEFAULT,
+  TRANSFER_THICKNESS_STEP,
   TRANSFER_COLOR_DEFAULT,
   TRANSFER_STROKE_WIDTH_MIN,
   TRANSFER_STROKE_WIDTH_MAX,
@@ -18,10 +19,11 @@ import {
 } from './transferStyle';
 
 describe('transfer style constants', () => {
-  it('pins the thickness bounds and the legacy 2px default', () => {
+  it('pins the thickness bounds, the legacy 2px default, and the 0.25 grid', () => {
     expect(TRANSFER_THICKNESS_MIN).toBe(1);
     expect(TRANSFER_THICKNESS_MAX).toBe(14);
     expect(TRANSFER_THICKNESS_DEFAULT).toBe(2);
+    expect(TRANSFER_THICKNESS_STEP).toBe(0.25);
   });
 
   it('pins the stroke bounds (0 = no outline) and the day/night default colors', () => {
@@ -73,9 +75,10 @@ describe('legacyColorToDayNight', () => {
 });
 
 describe('canonicalTransferThickness', () => {
-  it('rounds and clamps to the floor TRANSFER_THICKNESS_MIN', () => {
-    expect(canonicalTransferThickness(4.6, 2)).toBe(5);
-    expect(canonicalTransferThickness(4.4, 2)).toBe(4);
+  it('snaps to the quarter-unit grid and clamps to the floor TRANSFER_THICKNESS_MIN', () => {
+    // Quarter values survive verbatim — they did NOT on the old integer grid.
+    expect(canonicalTransferThickness(4.25, 2)).toBe(4.25);
+    expect(canonicalTransferThickness(4.3, 2)).toBe(4.25);
     expect(canonicalTransferThickness(0, 2)).toBe(TRANSFER_THICKNESS_MIN);
     expect(canonicalTransferThickness(-3, 2)).toBe(TRANSFER_THICKNESS_MIN);
   });
@@ -84,9 +87,9 @@ describe('canonicalTransferThickness', () => {
     expect(canonicalTransferThickness(25, 2)).toBe(25);
   });
 
-  it('collapses to undefined at the doc setting, including after rounding/clamping', () => {
+  it('collapses to undefined at the doc setting, including after snapping/clamping', () => {
     expect(canonicalTransferThickness(5, 5)).toBeUndefined();
-    expect(canonicalTransferThickness(5.4, 5)).toBeUndefined();
+    expect(canonicalTransferThickness(5.1, 5)).toBeUndefined(); // snaps to 5 = setting
     // Clamping can land ON the setting: 2px default, junk input below the floor.
     expect(canonicalTransferThickness(-1, TRANSFER_THICKNESS_MIN)).toBeUndefined();
     // ...but the same value is kept when the setting differs.
