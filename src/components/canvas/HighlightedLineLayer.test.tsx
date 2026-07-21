@@ -289,9 +289,14 @@ describe('<HighlightedLineLayer /> — Edit Stops hover preview', () => {
   });
 
   it('no hover-zone boundary outside Edit Stops', () => {
-    const { container } = renderLayer(lines(), stations(), { kind: 'idle' }, {
-      appendHover: { kind: 'station', stationId: 's1' },
-    });
+    const { container } = renderLayer(
+      lines(),
+      stations(),
+      { kind: 'idle' },
+      {
+        appendHover: { kind: 'station', stationId: 's1' },
+      },
+    );
     expect(container.querySelector('[data-station-hover-zone]')).toBeNull();
   });
 
@@ -334,10 +339,15 @@ describe('<HighlightedLineLayer /> — Edit Stops hover preview', () => {
         priority: 0,
       },
     ];
-    const { container } = renderLayer(twoLines, stations(), { kind: 'idle' }, {
-      appendHover: { kind: 'line', lineId: 'L2' },
-      renderables,
-    });
+    const { container } = renderLayer(
+      twoLines,
+      stations(),
+      { kind: 'idle' },
+      {
+        appendHover: { kind: 'line', lineId: 'L2' },
+        renderables,
+      },
+    );
     expect(container.querySelector('[data-append-hover-line]')).toBeNull();
   });
 

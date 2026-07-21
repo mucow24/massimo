@@ -1588,7 +1588,11 @@ export function MapCanvas() {
             const ln = lines[mode.lineId];
             if (!ln) return null;
             const d = decideCanvasClick(ln, mode.cursor, true);
-            if (d.kind !== 'create-seed' && d.kind !== 'create-connect' && d.kind !== 'create-splice')
+            if (
+              d.kind !== 'create-seed' &&
+              d.kind !== 'create-connect' &&
+              d.kind !== 'create-splice'
+            )
               return null;
             return (
               <g

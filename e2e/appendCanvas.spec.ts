@@ -263,12 +263,14 @@ test('right-click anywhere during Edit Stops exits — station, segment, or back
   ).toBe(0);
   expect((await readLine(page)).stations).toEqual(['A', 'B', 'C', 'D']);
 
-  // On a segment of the edited line: exits without cutting the edge.
+  // On a segment of the edited line: exits without cutting the edge. Assert
+  // via the DOM — an exit makes no doc edit, so localStorage still holds the
+  // pre-backfill seed (no `edges` field to read).
   await openEditStops(page);
   const p = await segPoint(page, 'B', 'C');
   await page.mouse.click(p.x, p.y, { button: 'right' });
   await expect(editing(page)).toBeHidden();
-  expect(new Set((await readLine(page)).edges)).toEqual(new Set(['A|B', 'B|C', 'C|D']));
+  await expect(page.locator('[data-band-stripe]')).toHaveCount(3);
 
   // On the empty background: exits.
   await openEditStops(page);

@@ -3,7 +3,7 @@ import { render } from '@testing-library/react';
 import { EditingBanner } from './EditingBanner';
 import { useDoc, useSelection } from '../../state/store';
 import { DEFAULT_DOC } from '../../model/transforms';
-import { makeLine } from '../../test/fixtures';
+import { makeLine, makeStation, makeStop } from '../../test/fixtures';
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -96,22 +96,8 @@ describe('<EditingBanner /> — Edit Stops copy tracks the cursor state', () => 
     useDoc.setState({
       ...useDoc.getState(),
       stations: {
-        S: {
-          id: 'S',
-          name: 'Union |A| Square',
-          x: 0,
-          y: 0,
-          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' as const }],
-          label: { row: 1, col: 0, rotation: 0 as const, offset: 0, align: 'auto' as const, valign: 'auto-down' as const },
-        },
-        T: {
-          id: 'T',
-          name: 'Astor Place',
-          x: 100,
-          y: 0,
-          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' as const }],
-          label: { row: 1, col: 0, rotation: 0 as const, offset: 0, align: 'auto' as const, valign: 'auto-down' as const },
-        },
+        S: makeStation({ id: 'S', name: 'Union |A| Square', x: 0, y: 0, stops: [makeStop('L1')] }),
+        T: makeStation({ id: 'T', name: 'Astor Place', x: 100, y: 0, stops: [makeStop('L1')] }),
       },
       lines: { L1: makeLine({ id: 'L1', service: 'A', color: '#ff0000', stations: ['S', 'T'] }) },
       lineOrder: ['L1'],

@@ -8,11 +8,7 @@ import { pathBetweenStations } from '../model/pathSelect';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { itemCursor } from './canvas/itemCursor';
 import { screenToWorld } from './canvas/viewportMath';
-import {
-  appendStationCursor,
-  decideStationClick,
-  nextSegmentStyle,
-} from './canvas/appendGestures';
+import { appendStationCursor, decideStationClick, nextSegmentStyle } from './canvas/appendGestures';
 
 // Map a click on a station to the closest dot's lineId. Used to pin a
 // transfer endpoint to the specific stop the user clicked on, rather than

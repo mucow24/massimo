@@ -1,10 +1,10 @@
 import { test, expect, type Page } from '@playwright/test';
 import { seedAndOpen, stationCenter, fourInLine } from './fixtures';
 
-// Right-clicking a segment ON THE CANVAS during Edit Stops removes that edge
-// and stays in the mode (right-click is the editor's removal gesture, not
-// cancel-the-mode). Outside Edit Stops the same right-click is inert —
-// destructive topology surgery is deliberately scoped to the editor.
+// Right-click during Edit Stops is the mouse-only EXIT — it must never remove
+// topology, on a segment or anywhere else (removal is the × chip or the
+// Delete key, one deliberate step away from the exit gesture). Outside Edit
+// Stops the same right-click is inert.
 
 const stripe = (page: Page) => page.locator('[data-band-stripe][data-line-id="L1"]').first();
 
@@ -39,9 +39,7 @@ test.beforeEach(async ({ page }) => {
   await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
 });
 
-test('right-click removes a segment in Edit Stops mode and stays in the mode', async ({
-  page,
-}) => {
+test('right-click on a segment exits Edit Stops without removing the edge', async ({ page }) => {
   await seedAndOpen(page, fourInLine);
   // Clicking a stripe goes straight into Edit Stops (no button, no
   // intermediate selected state); the banner is the mode signal.
@@ -51,11 +49,11 @@ test('right-click removes a segment in Edit Stops mode and stays in the mode', a
   const p = await segMid(page, 'B', 'C');
   await page.mouse.click(p.x, p.y, { button: 'right' });
 
-  await expect
-    .poll(async () => new Set(await readEdges(page)))
-    .toEqual(new Set(['A|B', 'C|D']));
-  // The right-click belongs to the editor's remove gesture — the mode stays.
-  await expect(page.locator('.append-banner')).toBeVisible();
+  await expect(page.locator('.append-banner')).toBeHidden();
+  await page.waitForTimeout(300); // give any (wrong) mutation time to persist
+  expect(new Set(await readEdges(page))).toEqual(new Set(['A|B', 'B|C', 'C|D']));
+  // The DOM agrees: all three corridors still painted.
+  await expect(page.locator('[data-band-stripe]')).toHaveCount(3);
 });
 
 test('right-click on a segment outside Edit Stops changes nothing', async ({ page }) => {

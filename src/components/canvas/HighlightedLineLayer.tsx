@@ -410,10 +410,7 @@ export function HighlightedLineLayer({
             // promises an actionable click.
             const hoverZone: ReactNode =
               appendHover?.kind === 'station' && stations[appendHover.stationId] ? (
-                <StationSilhouette
-                  station={stations[appendHover.stationId]}
-                  layer="hover-zone"
-                />
+                <StationSilhouette station={stations[appendHover.stationId]} layer="hover-zone" />
               ) : null;
 
             let hoverRing: ReactNode = null;

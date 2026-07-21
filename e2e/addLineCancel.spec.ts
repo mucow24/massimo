@@ -21,18 +21,13 @@ async function readLines(page: Page): Promise<{ id: string; stations: string[] }
 }
 
 test.describe('Add → Line cancel', () => {
-  test('right-click does NOT cancel (the editor owns right-click for removal)', async ({
-    page,
-  }) => {
+  test('right-click cancels too, garbage-collecting the empty line', async ({ page }) => {
     await seedAndOpen(page, { stations: [], lines: [] });
     await startAddLine(page);
-    // Right-click on the canvas background: Edit Stops is a right-click
-    // passthrough mode now (right-click removes stations/segments), so the
-    // mode must survive. Esc still backs out and garbage-collects the
-    // empty line.
+    // Right-click is the mouse-only exit for Edit Stops — on a freshly
+    // created placeholder line it cancels exactly like Esc, rolling the
+    // empty line back.
     await page.mouse.click(700, 400, { button: 'right' });
-    await expect(page.locator('.append-banner')).toBeVisible();
-    await page.keyboard.press('Escape');
     await expect(page.locator('.append-banner')).toBeHidden();
     expect(await readLines(page)).toEqual([]);
   });
