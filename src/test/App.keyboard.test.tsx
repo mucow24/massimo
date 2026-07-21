@@ -6,6 +6,7 @@ import { LinePopover } from '../components/LinePopover';
 import { NumericFieldRow } from '../components/NumericFieldRow';
 import { WeightSelect } from '../components/WeightItalicControls';
 import { beginHistoryGroup, useDoc, useSelection } from '../state/store';
+import { useLineEditorPrefs } from '../state/lineEditorPrefs';
 import { historyDepth, isHistoryGrouping, redoDepth } from '../state/history';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { DEFAULT_SNAP_MODES } from '../geometry/snap';
@@ -32,6 +33,9 @@ beforeEach(() => {
     // test (which spreads the live selection), so reset it between tests.
     selectedVertices: null,
   });
+  // The slider-guard tests below drive the line popover's Curve radius
+  // slider, which lives inside the collapsed (remembered) style detail.
+  useLineEditorPrefs.setState({ styleExpanded: true });
 });
 
 describe('App keyboard shortcuts: Escape', () => {

@@ -1,6 +1,6 @@
 import { test, expect, type Page, type Download } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { seedAndOpen, type Seed } from './fixtures';
+import { openLineStyleDetail, seedAndOpen, type Seed } from './fixtures';
 
 // ACCEPTANCE SPEC for per-line stroke (casing) — written red-first
 // (double-loop TDD) with `test.fail()` annotations that were removed once
@@ -137,6 +137,8 @@ const tangentFrontStroked: Seed = {
 async function selectLine(page: Page, lineId: string): Promise<void> {
   await STRIPE(page, lineId).click({ force: true });
   await page.locator('.inspector').waitFor();
+  // The width/stroke controls live inside the collapsed style detail.
+  await openLineStyleDetail(page);
 }
 
 // Set the line's stroke width through the inspector spinbutton. Short

@@ -59,6 +59,25 @@ export const dashRenderWidth = (
  * blank-aware), keeping that rule in the model rather than duplicated in
  * geometry — the label clears a tick iff the stop actually paints one.
  */
+/**
+ * True when this line can paint a dash tick anywhere: either line-level
+ * default (singleton or interchange) is the dash shape, or any member stop
+ * carries an explicit dash override. Drives the LineInspector's conditional
+ * Dash length/width rows. Over-showing is deliberate — a dash DEFAULT with no
+ * matching station yet still shows the dims you're about to use — while an
+ * under-show would hide live controls (a stop resolves to dash only via its
+ * override or a line default, so this never misses one).
+ */
+export const lineUsesDashTicks = (
+  line: Line,
+  stations: Record<string, { stops: readonly StopCell[] } | undefined>,
+): boolean =>
+  line.singletonDotStyle?.shape === 'dash' ||
+  line.multiDotStyle?.shape === 'dash' ||
+  line.stations.some((sid) =>
+    stations[sid]?.stops.some((c) => c.lineId === line.id && c.dotStyle?.shape === 'dash'),
+  );
+
 export const stopDashOf =
   (lines: Record<string, Line | undefined>) =>
   (stop: StopCell, stationStops: readonly StopCell[]): { length: number; width: number } | null => {

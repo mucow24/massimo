@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LinePopover } from './LinePopover';
 import { useDoc, useSelection } from '../state/store';
+import { useLineEditorPrefs } from '../state/lineEditorPrefs';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makeLine } from '../test/fixtures';
 import type { LineId } from '../model/types';
@@ -19,6 +20,9 @@ beforeEach(() => {
     lineOrder: ['L1'],
   });
   useSelection.getState().startAppend('L1' as LineId);
+  // The style-parameter stack is behind the remembered disclosure; these
+  // popover tests spot-check controls inside it, so open it up front.
+  useLineEditorPrefs.setState({ styleExpanded: true });
 });
 
 const line = () => useDoc.getState().lines['L1'];

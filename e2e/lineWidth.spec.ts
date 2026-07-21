@@ -1,6 +1,6 @@
 import { test, expect, type Page, type Download } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { seedAndOpen, stationCenter, type Seed } from './fixtures';
+import { openLineStyleDetail, seedAndOpen, stationCenter, type Seed } from './fixtures';
 import { STOP_SIZE } from '../src/geometry/orientation';
 
 // ACCEPTANCE SPEC for per-line width — written red-first (double-loop TDD)
@@ -90,6 +90,8 @@ const legacyInterlined: Seed = {
 async function selectLine(page: Page, lineId: string): Promise<void> {
   await STRIPE(page, lineId).click({ force: true });
   await page.locator('.inspector').waitFor();
+  // The width/stroke controls live inside the collapsed style detail.
+  await openLineStyleDetail(page);
 }
 
 // Set the line's width through the inspector spinbutton. A short visibility
