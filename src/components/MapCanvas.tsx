@@ -1687,23 +1687,6 @@ export function MapCanvas() {
           </g>
         )}
 
-        {/* Mouseover preview — orientation badges: the layout editor's axis
-            glyph on each stop dot, so a hovered station's stop orientations
-            read at a glance without entering the editor. Full opacity, unlike
-            the faint wash/stroke halves — legibility is the whole point. */}
-        {hoverStationId && stations[hoverStationId] && (
-          <g data-export-exclude="1">
-            <StationView
-              key={hoverStationId + ':hover-arrows'}
-              station={stations[hoverStationId]}
-              lines={lines}
-              zoom={view.viewport.zoom}
-              onStartDrag={drag.onStartDrag}
-              layer="hover-arrows"
-            />
-          </g>
-        )}
-
         {/* Selection stroke for text labels: dashed black ring around each
             selected label's rotated bbox. Painted in this pass so it sits
             above the dim overlay and on top of the network — matching how
@@ -1992,6 +1975,28 @@ export function MapCanvas() {
               const iconColor = centerColor ? legibleTextOn(centerColor) : '#000';
               return <BandWarning key={'w:' + b.bandKey} spec={b} iconColor={iconColor} />;
             })}
+          </g>
+        )}
+
+        {/* Mouseover preview — orientation badges: the layout editor's axis
+            glyph on each stop dot, so a hovered station's stop orientations
+            read at a glance without entering the editor. Full opacity, unlike
+            the faint wash/stroke halves — legibility is the whole point.
+            Painted AFTER the routing-warning markers for the same reason the
+            layout editor lifts its dots above them: a ⚠ frame appears exactly
+            where you're looking when things go wrong, and it must never cover
+            the badges. (Idle-mode-only chrome, so it can't collide with the
+            layout-edit focus content below.) */}
+        {hoverStationId && stations[hoverStationId] && (
+          <g data-export-exclude="1">
+            <StationView
+              key={hoverStationId + ':hover-arrows'}
+              station={stations[hoverStationId]}
+              lines={lines}
+              zoom={view.viewport.zoom}
+              onStartDrag={drag.onStartDrag}
+              layer="hover-arrows"
+            />
           </g>
         )}
 
