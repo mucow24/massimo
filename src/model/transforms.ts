@@ -54,6 +54,7 @@ import {
   edgesWithout,
   lineHasEdge,
   removeEdge,
+  shortestPathOnLine,
 } from './lineTopology';
 import { DIR_8, STOP_SIZE, rotateBy, stopCenterAt, tangentGap } from '../geometry/orientation';
 import { CELL_EPS, sameCell } from '../geometry/lattice';
@@ -847,10 +848,12 @@ export function setStationWaypoint(doc: MapDoc, stationId: StationId, isWaypoint
   );
 }
 
-// For every line that contains both startId and endId, evenly redistribute
-// the intervening stops by arc length along the existing polyline through
-// those stops. If a station is intervening on multiple matching lines (its
-// new position would be ambiguous), it is left untouched.
+// For every line that links both startId and endId, evenly redistribute the
+// stops along that line's edge path between them — by arc length along the
+// existing polyline through those stops. A loop takes its shorter arc, and
+// stations on branches off the path are untouched. If a station is intervening
+// on multiple matching lines (its new position would be ambiguous), it is left
+// untouched.
 export type RedistributeMode =
   // Arc length along the existing polyline; corner stations are treated as
   // additional anchors. Used for ctrl-click (one-shot).
@@ -889,16 +892,13 @@ export function redistributeBetween(
   const conflicted = new Set<StationId>();
 
   for (const line of Object.values(doc.lines)) {
-    const iStart = line.stations.indexOf(startId);
-    const iEnd = line.stations.indexOf(endId);
-    if (iStart < 0 || iEnd < 0) continue;
-
-    const iLow = Math.min(iStart, iEnd);
-    const iHigh = Math.max(iStart, iEnd);
-    const n = iHigh - iLow - 1;
-    if (n < 1) continue;
-
-    const ids = line.stations.slice(iLow, iHigh + 1);
+    // The chain between the endpoints comes from the line's EDGE graph —
+    // `stations` is a pure membership list whose order is creation order, not
+    // track order, so an index slice can grab the wrong stations entirely and
+    // leave the real intermediates stuck.
+    const tail = shortestPathOnLine(line, startId, endId);
+    if (!tail || tail.length < 2) continue; // not both members / unlinked / adjacent
+    const ids = [startId, ...tail];
     const sts = ids.map((id) => doc.stations[id]);
     if (sts.some((p) => !p)) continue;
 
