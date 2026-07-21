@@ -13,7 +13,7 @@ import {
 } from '../../geometry/lineTagGeometry';
 import { buildBands, SegmentBandSpec } from '../../geometry/interlining';
 import type { Vec2 } from '../../geometry/vec';
-import { finishDrag, trackDragMove } from './dragGesture';
+import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
 
 type ScreenToWorld = (mx: number, my: number) => Vec2;
 
@@ -75,6 +75,8 @@ export function useLineTagDrag(
   const onPointerMove = (e: PointerEvent) => {
     const ds = dragRef.current;
     if (!ds) return;
+    // A lost pointerup (alt-tab mid-press) surfaces as a button-less move.
+    if (pointerLost(e)) return onPointerCancel();
     // Shared threshold/capture/suppress-click; native PointerEvents satisfy the
     // structural pointer shape, so the same primitive backs this window-level
     // drag and the React-handler hooks.

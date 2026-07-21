@@ -140,6 +140,59 @@ describe('useRectSelect — drag threshold + capture', () => {
   });
 });
 
+describe('useRectSelect — cancelled / dead gestures disarm', () => {
+  // A stranded marquee is worse than a stranded item drag: the armed rect
+  // follows every hover move, and a later unrelated pointerup COMMITS it —
+  // silently replacing the selection with whatever the phantom rect swept.
+  it('pointercancel clears the marquee and a later pointerup commits nothing', () => {
+    useSelection.setState({ ...useSelection.getState(), selectedStationIds: ['A' as StationId] });
+    const { result, ref } = render();
+    down(result, pointerEvent({ clientX: 10, clientY: 10, target: ref.current }));
+    move(result, pointerEvent({ clientX: 50, clientY: 50 }));
+    expect(result.current.rect).not.toBeNull();
+
+    act(() => result.current.onPointerCancel());
+
+    expect(result.current.rect).toBeNull();
+    expect(result.current.previewStationIds).toBeNull();
+    // 'set' mode over empty canvas would wipe the selection if the stale rect
+    // were still armed.
+    up(result, pointerEvent({ clientX: 200, clientY: 200 }));
+    expect(useSelection.getState().selectedStationIds).toEqual(['A']);
+  });
+
+  it('a move with no buttons (lost pointerup) disarms the stranded marquee', () => {
+    useSelection.setState({ ...useSelection.getState(), selectedStationIds: ['A' as StationId] });
+    const { result, ref } = render();
+    down(result, pointerEvent({ clientX: 10, clientY: 10, target: ref.current }));
+    move(result, pointerEvent({ clientX: 50, clientY: 50 }));
+    expect(result.current.rect).not.toBeNull();
+
+    // The pointerup was lost (released over foreign chrome / alt-tab); the
+    // next hover move arrives with buttons === 0 and must disarm, not resize
+    // a button-less marquee glued to the cursor.
+    move(result, pointerEvent({ clientX: 120, clientY: 120, buttons: 0 }));
+
+    expect(result.current.rect).toBeNull();
+    up(result, pointerEvent({ clientX: 200, clientY: 200 }));
+    expect(useSelection.getState().selectedStationIds).toEqual(['A']);
+  });
+
+  it('a sub-threshold armed press is also disarmed by a button-less move', () => {
+    // Press within 4px of chrome, drift onto it, release there: the ref is
+    // armed but never crossed the threshold, so there's no capture and no
+    // marquee yet — the stale ref would still swallow the NEXT gesture's
+    // moves. The first button-less hover move must clear it.
+    const { result, ref } = render();
+    down(result, pointerEvent({ clientX: 10, clientY: 10, target: ref.current }));
+    move(result, pointerEvent({ clientX: 100, clientY: 100, buttons: 0 }));
+    // Fresh state: a later move (new press elsewhere never happened) draws
+    // nothing.
+    move(result, pointerEvent({ clientX: 150, clientY: 150 }));
+    expect(result.current.rect).toBeNull();
+  });
+});
+
 describe('useRectSelect — preview + commit across all object types', () => {
   beforeEach(() => {
     useDoc.setState({

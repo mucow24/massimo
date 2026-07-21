@@ -78,6 +78,22 @@ describe('MapCanvas — item click modifier gating', () => {
     clickEl('[data-polygon-id="p2"]', { shiftKey: true, metaKey: true });
     expect(useSelection.getState().selectedPolygonIds).toEqual(['p2']);
   });
+
+  it('Shift-click on empty background is a no-op add, not a deselect-everything', () => {
+    // Shift is additive in every other gesture (item toggle, station toggle,
+    // marquee 'add'), so a slightly-missed additive click must not wipe the
+    // multi-selection being built.
+    render(<App />);
+    seed();
+    act(() => useSelection.getState().setLabelSelection(['g1', 'g2']));
+
+    clickEl('[data-bg]', { shiftKey: true });
+    expect(useSelection.getState().selectedLabelIds.sort()).toEqual(['g1', 'g2']);
+
+    // A PLAIN background click still deselects.
+    clickEl('[data-bg]', {});
+    expect(useSelection.getState().selectedLabelIds).toEqual([]);
+  });
 });
 
 describe('MapCanvas — polygon vertex click multi-select', () => {

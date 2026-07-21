@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Sidebar } from './Sidebar';
 import { useDoc, useSelection } from '../state/store';
@@ -460,5 +460,25 @@ describe('<Sidebar /> — line list drives Edit Stops (editor lives in the pinne
 
     expect(document.querySelector('.sidebar')).not.toBeNull();
     expect(useSelection.getState().sidebarOpen).toBe(true);
+  });
+});
+
+describe('<Sidebar /> — deleting a selected station via the row ×', () => {
+  // The one delete path that didn't clear the selection first (the popover
+  // delete and the Delete key both do). The dangling id had no visible sign —
+  // the popover unmounts — but the next shift-click built a selection with a
+  // ghost member ("2 items" with one visible).
+  it('leaves no dangling selection id behind', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...makeDoc({ stations: [makeStation({ id: 'alpha', name: 'Alpha' })] }),
+    });
+    useSelection.getState().selectStation('alpha');
+    render(<Sidebar />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete station' }));
+
+    expect(useDoc.getState().stations['alpha']).toBeUndefined();
+    expect(useSelection.getState().selectedStationIds).toEqual([]);
   });
 });

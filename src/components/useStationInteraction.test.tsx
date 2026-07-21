@@ -231,6 +231,18 @@ describe('useStationInteraction — double click', () => {
     expect(sel.selectedStationIds).toEqual(['S']);
     expect(sel.editingStationId).toBe('S');
   });
+
+  it('is inert during Edit Stops — selectStation would wipe selectedLineId mid-mode', () => {
+    // A dblclick's selectStation spreads clearedSelections(), nulling
+    // selectedLineId while uiMode stays appending-to-line: the line highlight
+    // and dim wash vanish but the mode silently keeps routing station clicks
+    // to connect/splice. Renaming waits for the editor to exit, like the
+    // other mode-gated interactions (hand mode, tag/layering modes).
+    useSelection.getState().startAppend('L1' as LineId);
+    const { result } = setup();
+    expect(result.current.handlers.onDoubleClick).toBeUndefined();
+    expect(useSelection.getState().selectedLineId).toBe('L1');
+  });
 });
 
 describe('useStationInteraction — transfer creation', () => {

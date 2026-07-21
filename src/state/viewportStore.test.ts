@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useViewportStore, nextGridSize, GRID_SIZES } from './viewportStore';
+import { useLiveViewportStore, useViewportStore, nextGridSize, GRID_SIZES } from './viewportStore';
 
 beforeEach(() => {
   localStorage.clear();
@@ -12,6 +12,18 @@ beforeEach(() => {
     showWaypoints: false,
     showNetwork: true,
     darkUiInDay: false,
+  });
+});
+
+describe('viewportStore — setViewport voids the live viewport', () => {
+  it('clears any in-flight pending so a stale wheel settle cannot clobber an external jump', () => {
+    // Reset view / sidebar centering / warning-toast jumps write the committed
+    // camera directly while a wheel gesture's settle commit may still be
+    // scheduled; the stale pending must die with the jump or the camera snaps
+    // back up to 90ms later.
+    useLiveViewportStore.getState().setPending({ x: 5, y: 5, zoom: 2 });
+    useViewportStore.getState().setViewport({ x: 100, y: 50, zoom: 1 });
+    expect(useLiveViewportStore.getState().pending).toBeNull();
   });
 });
 

@@ -1,4 +1,5 @@
 import type { StationId } from '../model/types';
+import { isHistoryGrouping } from './history';
 import { beginHistoryGroup, useDoc, useSelection } from './store';
 
 /**
@@ -51,13 +52,15 @@ export function deleteUnlockedSelection(): boolean {
   if (itemIdCount(ids) === 0) return false;
   // Drop the whole selection first so no id dangles at a deleted item.
   useSelection.getState().clearAllSelections();
-  const group = beginHistoryGroup();
+  // The Delete key can land while a drag gesture's group is open (groups
+  // don't nest) — fold in rather than stealing it.
+  const group = isHistoryGrouping() ? null : beginHistoryGroup();
   const doc = useDoc.getState();
   for (const id of ids.stations) doc.deleteStation(id);
   for (const id of ids.bullets) doc.deleteRouteBullet(id);
   for (const id of ids.labels) doc.deleteTextLabel(id);
   for (const id of ids.polygons) doc.deletePolygon(id);
   for (const id of ids.svgImages) doc.deleteSvgImage(id);
-  group.commit();
+  group?.commit();
   return true;
 }

@@ -6,7 +6,7 @@ import { snapPolygonPoint } from '../../geometry/polygonSnap';
 import { polygonSnapAnchor } from '../../geometry/polygon';
 import { SNAP_PERP_TOLERANCE, type SnapGuide } from '../../geometry/snap';
 import type { Vec2 } from '../../geometry/vec';
-import { finishDrag, trackDragMove } from './dragGesture';
+import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
 import { liveAlignTargets } from './snapTargets';
 import {
   collectGroupSiblings,
@@ -207,6 +207,10 @@ export function usePolygonDrag(
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    // A lost pointerup (alt-tab mid-press) surfaces as a button-less move.
+    if ((wholeDragRef.current || vertexDragRef.current) && pointerLost(e)) {
+      return onPointerCancel();
+    }
     const wd = wholeDragRef.current;
     if (wd) {
       const { moved, dxScreen, dyScreen } = trackDragMove(wd, e, svgRef);

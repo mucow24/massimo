@@ -21,6 +21,22 @@ export interface DragThreshold {
 }
 
 /**
+ * True when a move event arrives with no buttons pressed while a gesture is
+ * armed: the gesture's pointerup was LOST — released during alt-tab or over
+ * foreign chrome, so neither pointerup nor pointercancel ever reached the svg
+ * (sub-threshold presses hold no capture, and even a captured pointer gets no
+ * pointerup once the window blurred). Every drag hook treats this exactly
+ * like a browser pointercancel; without it the armed ref resumes a
+ * button-less drag glued to the hovering cursor, and the next unrelated
+ * click commits a move the user never made. (A hovering pen also reports
+ * buttons 0 — the same dead-gesture signal; touch contact always carries a
+ * button bit.)
+ */
+export function pointerLost(e: { buttons: number }): boolean {
+  return e.buttons === 0;
+}
+
+/**
  * Per-move bookkeeping shared by every drag hook: compute the screen delta and,
  * on the first move past DRAG_MOVE_THRESHOLD, flip `moved`, set the global
  * click-suppression flag, and capture the pointer (so the gesture survives the

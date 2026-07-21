@@ -280,6 +280,12 @@ export function Sidebar() {
                       onClick={(e) => {
                         e.stopPropagation();
                         deleteStation(st.id);
+                        // The one delete path that doesn't clear selection
+                        // first (popover delete + the Delete key both do):
+                        // reconcile so a selected row's id can't dangle — a
+                        // ghost member corrupts the next shift-click
+                        // multi-selection.
+                        useSelection.getState().reconcileWithDoc(useDoc.getState());
                       }}
                     >
                       <Cross2Icon />

@@ -148,6 +148,11 @@ export function LineTagsLayer({ bands, zoom, svgRef, screenToWorld }: Props) {
 
   const onTagPointerDown = (e: React.PointerEvent, tagId: string) => {
     if (e.button !== 0) return;
+    // Hand/space pan: don't arm the tag drag — let the press bubble to the
+    // svg pan, like every other draggable (useStationInteraction, the item
+    // drag hooks). Without this, both gestures ran: the pan wrote a doc edit
+    // per move and committed a tag nudge the user never made.
+    if (selection.toolMode === 'hand' || selection.spaceHeld) return;
     drag.onStartDrag(tagId, e);
   };
 

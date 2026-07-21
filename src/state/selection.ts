@@ -460,10 +460,12 @@ export const useSelection = create<SelectionState>()(
 
       // The single source of truth for mode transitions. Entering any non-idle
       // mode wipes all primary selections; every transition (either direction)
-      // also drops all three ephemeral hover previews — lineTagHoverPreview,
-      // hoveredCanvasItem, and appendHover — since each is meaningful only in a
-      // particular mode and must not linger behind a switch. Variant payloads
-      // (transferAnchor, append cursor) are updated in place via
+      // also drops all four ephemeral hover channels — lineTagHoverPreview,
+      // hoveredCanvasItem, appendHover, and hoveredLineStop — since each is
+      // meaningful only in a particular mode and must not linger behind a
+      // switch (a hoveredLineStop surviving a transfer-mode exit left the
+      // white dot ring painted with nothing left to clear it). Variant
+      // payloads (transferAnchor, append cursor) are updated in place via
       // setTransferAnchor / setAppendCursor.
       setUiMode: (mode) =>
         set(
@@ -476,12 +478,14 @@ export const useSelection = create<SelectionState>()(
                 lineTagHoverPreview: null,
                 hoveredCanvasItem: null,
                 appendHover: null,
+                hoveredLineStop: null,
               }
             : {
                 uiMode: mode,
                 lineTagHoverPreview: null,
                 hoveredCanvasItem: null,
                 appendHover: null,
+                hoveredLineStop: null,
                 ...clearedSelections(),
               },
         ),
@@ -756,7 +760,12 @@ export const useSelection = create<SelectionState>()(
           selectedPolygonIds: dedupeLastWins(ids.polygons ?? []),
           selectedSvgImageIds: dedupeLastWins(ids.svgImages ?? []),
         }),
-      clearAllSelections: () => set({ ...clearedSelections() }),
+      // Also drops the canvas hover channels: delete/cut call this with the
+      // cursor still over the (unmounting) item, so no pointerleave will ever
+      // clear them — and a surviving id resolves again after undo, painting
+      // ghost hover chrome over empty background.
+      clearAllSelections: () =>
+        set({ ...clearedSelections(), hoveredCanvasItem: null, hoveredLineStop: null }),
       reconcileWithDoc: (doc) => {
         const s = get();
         const next: Partial<SelectionState> = {};
@@ -784,6 +793,16 @@ export const useSelection = create<SelectionState>()(
         // through append gestures against a dead lineId.
         if (s.uiMode.kind === 'appending-to-line' && !doc.lines[s.uiMode.lineId])
           next.uiMode = { kind: 'idle' };
+        // A transfer anchor bound to an undone station resets to the
+        // first-pick state — the mode survives, and the banner reverts to
+        // "Click the first station" instead of promising a second click that
+        // can only silently no-op against the dead id.
+        if (
+          s.uiMode.kind === 'creating-transfer' &&
+          s.uiMode.anchor &&
+          !doc.stations[s.uiMode.anchor.stationId]
+        )
+          next.uiMode = { kind: 'creating-transfer', anchor: null };
         if (s.selectedLineTagId && !doc.lineTags[s.selectedLineTagId])
           next.selectedLineTagId = null;
         if (s.selectedTransferId && !doc.transfers[s.selectedTransferId])
@@ -793,6 +812,16 @@ export const useSelection = create<SelectionState>()(
         if (s.selectedStopLineId && !doc.lines[s.selectedStopLineId])
           next.selectedStopLineId = null;
         if (s.hoveredStationId && !doc.stations[s.hoveredStationId]) next.hoveredStationId = null;
+        // The canvas hover channels dangle the same way (the hovered element
+        // unmounts with no pointerleave); a dangling id RESOLVES again after
+        // undo restores the entity and paints ghost hover chrome.
+        if (s.hoveredCanvasItem && !hoverTargetExists(doc, s.hoveredCanvasItem))
+          next.hoveredCanvasItem = null;
+        if (
+          s.hoveredLineStop &&
+          (!doc.stations[s.hoveredLineStop.stationId] || !doc.lines[s.hoveredLineStop.lineId])
+        )
+          next.hoveredLineStop = null;
         // Vertex handles dangle if the polygon is gone OR shrank past their index.
         // Prune just the out-of-range indices; drop to null only if none survive.
         if (s.selectedVertices) {
@@ -825,6 +854,26 @@ export const useSelection = create<SelectionState>()(
 );
 
 // ---- canvas hover-preview selector -----------------------------------------
+
+// Does the hovered entity still exist in this doc? (reconcileWithDoc's prune.)
+function hoverTargetExists(doc: MapDoc, h: HoveredCanvasItem): boolean {
+  switch (h.kind) {
+    case 'station':
+      return !!doc.stations[h.id as StationId];
+    case 'transfer':
+      return !!doc.transfers[h.id];
+    case 'bullet':
+      return !!doc.routeBullets[h.id];
+    case 'label':
+      return !!doc.textLabels[h.id];
+    case 'polygon':
+      return !!doc.polygons[h.id];
+    case 'svgImage':
+      return !!doc.svgImages[h.id];
+    case 'lineTag':
+      return !!doc.lineTags[h.id];
+  }
+}
 
 // Is this hovered item already part of the current selection? Its full chrome
 // is then already up, so a 50% hover copy on top would only double the ink.

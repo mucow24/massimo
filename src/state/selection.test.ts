@@ -912,6 +912,38 @@ describe('reconcileWithDoc', () => {
     expect(useSelection.getState().selectedStationIds).toBe(stationIds);
   });
 
+  it('prunes hover ids whose entities are gone (every hover kind)', () => {
+    useSelection.setState({ hoveredCanvasItem: { kind: 'polygon', id: 'ghost' } });
+    useSelection.getState().reconcileWithDoc(docWith({}));
+    expect(useSelection.getState().hoveredCanvasItem).toBeNull();
+
+    useSelection.setState({ hoveredCanvasItem: { kind: 'station', id: 's1' } });
+    useSelection.getState().reconcileWithDoc(docWith({ stations: ['s1'] }));
+    expect(useSelection.getState().hoveredCanvasItem).toEqual({ kind: 'station', id: 's1' });
+
+    useSelection.setState({
+      hoveredLineStop: { stationId: 'ghost' as StationId, lineId: 'L1' as LineId },
+    });
+    useSelection.getState().reconcileWithDoc(docWith({ lines: ['L1'] }));
+    expect(useSelection.getState().hoveredLineStop).toBeNull();
+  });
+
+  it('resets a creating-transfer anchor whose station is gone, keeping the mode', () => {
+    // Undoing the anchor station's creation (setting the anchor wrote no doc
+    // state, so the station's add is the top undo entry) left the mode armed
+    // on a dead id: the banner still promised the second click while the
+    // completing click silently no-op'd and dropped to idle. Reverting to the
+    // first-pick state keeps the banner honest.
+    useSelection.setState({
+      uiMode: {
+        kind: 'creating-transfer',
+        anchor: { stationId: 'ghost' as StationId, lineId: 'L1' as LineId },
+      },
+    });
+    useSelection.getState().reconcileWithDoc(docWith({ lines: ['L1'] }));
+    expect(useSelection.getState().uiMode).toEqual({ kind: 'creating-transfer', anchor: null });
+  });
+
   it('prunes only the out-of-range vertices, keeping the rest', () => {
     useSelection.setState({ selectedVertices: { polygonId: 'p1', indices: [1, 4] } });
     useSelection
@@ -1152,5 +1184,21 @@ describe('clearAllSelections', () => {
     expect(useSelection.getState().uiMode.kind).toBe('editing-station-layout');
     useSelection.getState().clearAllSelections();
     expect(useSelection.getState().uiMode.kind).toBe('editing-station-layout');
+  });
+
+  it('also drops the canvas hover channels (delete/cut fire it with the cursor still over the item)', () => {
+    // Delete/Ctrl+X remove the item under the cursor without an intervening
+    // pointerleave (the element unmounts), so a surviving hover id would
+    // resolve again after Ctrl+Z and paint ghost hover chrome over empty
+    // background.
+    useSelection.getState().setHoveredCanvasItem({ kind: 'polygon', id: 'p1' });
+    useSelection
+      .getState()
+      .setHoveredLineStop({ stationId: 'A' as StationId, lineId: 'L1' as LineId });
+
+    useSelection.getState().clearAllSelections();
+
+    expect(useSelection.getState().hoveredCanvasItem).toBeNull();
+    expect(useSelection.getState().hoveredLineStop).toBeNull();
   });
 });

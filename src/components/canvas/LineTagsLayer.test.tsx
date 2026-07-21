@@ -1,7 +1,8 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { LineTagsLayer, resolveTag } from './LineTagsLayer';
-import { useDoc, useSelection } from '../../state/store';
+import { cancelOpenHistoryGroup, useDoc, useSelection } from '../../state/store';
+import { isHistoryGrouping } from '../../state/history';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { makeBandSpec, makeLine } from '../../test/fixtures';
 import { fakeSvgRef } from '../../test/interaction';
@@ -147,6 +148,57 @@ describe('<LineTagsLayer> — clicking a tag while the line editor is open', () 
     expect(useSelection.getState().uiMode.kind).toBe('idle');
     expect(useSelection.getState().selectedLineId).toBeNull();
     expect(useSelection.getState().selectedLineTagId).toBe('T');
+  });
+});
+
+// Every other draggable bails out of its pointerdown in hand/space mode so the
+// press bubbles to the svg pan. The tag handler must match: without the guard,
+// a pan starting over a tag ALSO armed the tag drag — both gestures ran, the
+// pan wrote a doc edit per move (defeating the imperative-viewBox pan), and
+// releasing committed a tag nudge the user never made (junk undo entry).
+describe('<LineTagsLayer> — hand/space pan does not start a tag drag', () => {
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      lines: { L2: makeLine({ id: 'L2', stations: ['s1', 's2'], width: 28 }) },
+      lineOrder: ['L2'],
+      lineTags: { T: tagOnL2() },
+    });
+    useDoc.temporal.getState().clear();
+  });
+  afterEach(() => {
+    // A failed assertion must not strand an open history group across tests.
+    cancelOpenHistoryGroup();
+    useSelection.setState({ ...useSelection.getState(), toolMode: 'arrow', spaceHeld: false });
+  });
+
+  const renderLayer = () => {
+    const { ref } = fakeSvgRef();
+    return render(
+      <svg>
+        <LineTagsLayer
+          bands={[mixedBand()]}
+          zoom={1}
+          svgRef={ref}
+          screenToWorld={identityScreenToWorld}
+        />
+      </svg>,
+    ).container;
+  };
+
+  it('a left press on a tag in hand mode arms no drag (no history group opens)', () => {
+    useSelection.setState({ ...useSelection.getState(), toolMode: 'hand' });
+    const c = renderLayer();
+    fireEvent.pointerDown(c.querySelector('rect[fill="transparent"]')!, { button: 0 });
+    expect(isHistoryGrouping()).toBe(false);
+  });
+
+  it('same while Space is held', () => {
+    useSelection.setState({ ...useSelection.getState(), spaceHeld: true });
+    const c = renderLayer();
+    fireEvent.pointerDown(c.querySelector('rect[fill="transparent"]')!, { button: 0 });
+    expect(isHistoryGrouping()).toBe(false);
   });
 });
 

@@ -7,7 +7,7 @@ import { snapPolygonPoint } from '../../geometry/polygonSnap';
 import { polygonSnapAnchor } from '../../geometry/polygon';
 import { textLabelCorners } from '../../geometry/stationBoundary';
 import type { Vec2 } from '../../geometry/vec';
-import { finishDrag, trackDragMove } from './dragGesture';
+import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
 import {
   collectGroupSiblings,
   groupAlignExclude,
@@ -136,6 +136,8 @@ export function useItemDrag(
   const onPointerMove = (e: React.PointerEvent) => {
     const ds = dragRef.current;
     if (!ds) return;
+    // A lost pointerup (alt-tab mid-press) surfaces as a button-less move.
+    if (pointerLost(e)) return onPointerCancel();
     const { moved, dxScreen, dyScreen } = trackDragMove(ds, e, svgRef);
     if (!moved) return;
     let nx = ds.startWX + dxScreen / zoom;

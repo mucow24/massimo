@@ -56,7 +56,13 @@ export function OptionsPopover() {
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={panelId}
-        onClick={() => setOpen(!open)}
+        onClick={() => {
+          // A stale load error must not greet the user on reopen: the
+          // component stays mounted while the panel conditionally renders, so
+          // the error state would otherwise survive until a load SUCCEEDS.
+          if (!open) setPaletteError(null);
+          setOpen(!open);
+        }}
       >
         <MixerHorizontalIcon />
       </button>

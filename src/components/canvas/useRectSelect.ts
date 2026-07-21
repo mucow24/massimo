@@ -1,7 +1,7 @@
 import { RefObject, useRef, useState } from 'react';
 import { useDoc, useSelection } from '../../state/store';
 import { useViewportStore } from '../../state/viewportStore';
-import { releaseDragCapture, trackDragMove } from './dragGesture';
+import { pointerLost, releaseDragCapture, trackDragMove } from './dragGesture';
 import {
   polygonsForRect,
   routeBulletsForRect,
@@ -61,6 +61,7 @@ export interface RectSelectApi {
   onPointerDown: (e: React.PointerEvent) => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
+  onPointerCancel: () => void;
 }
 
 type RectSelectMode = 'set' | 'add' | 'xor';
@@ -158,9 +159,36 @@ export function useRectSelect(
     };
   };
 
+  // Clear the rendered marquee + the five selection previews (shared by the
+  // no-move click, the commit, and the cancel paths).
+  const clearOverlay = () => {
+    setRect(null);
+    setPreviewStationIds(null);
+    setPreviewBulletIds(null);
+    setPreviewLabelIds(null);
+    setPreviewPolygonIds(null);
+    setPreviewSvgImageIds(null);
+  };
+
+  // A browser pointercancel voids the marquee with no pointerup: disarm and
+  // clear the overlay. Without this the armed rect follows every hover move
+  // and a later unrelated pointerup COMMITS it — replacing the selection with
+  // whatever the phantom rect swept. (No history group to roll back: the
+  // marquee only writes selection state — which is exactly why it still needs
+  // a cancel path.)
+  const onPointerCancel = () => {
+    if (!dragRef.current) return;
+    dragRef.current = null;
+    clearOverlay();
+  };
+
   const onPointerMove = (e: React.PointerEvent) => {
     const ds = dragRef.current;
     if (!ds) return;
+    // A lost pointerup (alt-tab mid-press, or a sub-threshold release over
+    // sibling HTML chrome the svg never hears about) surfaces as a
+    // button-less move.
+    if (pointerLost(e)) return onPointerCancel();
     // Shared threshold/capture/suppress-click bookkeeping (suppressing the
     // synthesized click on pointerup so onCanvasClick doesn't immediately
     // deselect what the rect just selected).
@@ -203,12 +231,7 @@ export function useRectSelect(
     const wasMoved = ds.moved;
     dragRef.current = null;
     if (!wasMoved) {
-      setRect(null);
-      setPreviewStationIds(null);
-      setPreviewBulletIds(null);
-      setPreviewLabelIds(null);
-      setPreviewPolygonIds(null);
-      setPreviewSvgImageIds(null);
+      clearOverlay();
       return;
     }
     const end = screenToWorld(e.clientX, e.clientY);
@@ -218,12 +241,7 @@ export function useRectSelect(
       x1: end.x,
       y1: end.y,
     };
-    setRect(null);
-    setPreviewStationIds(null);
-    setPreviewBulletIds(null);
-    setPreviewLabelIds(null);
-    setPreviewPolygonIds(null);
-    setPreviewSvgImageIds(null);
+    clearOverlay();
 
     const doc = useDoc.getState();
     const includeLocked = e.altKey;
@@ -268,5 +286,6 @@ export function useRectSelect(
     onPointerDown,
     onPointerMove,
     onPointerUp,
+    onPointerCancel,
   };
 }
