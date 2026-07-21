@@ -67,6 +67,36 @@ export function degreeOf(line: Line, stationId: StationId): number {
   return neighborsOf(line, stationId).length;
 }
 
+// Shortest hop path (BFS) over one line's edge graph from `fromId` to `toId`,
+// excluding `fromId`. Null if either isn't a member or they're not connected on
+// this line. For a plain linear line this is exactly the consecutive walk
+// between them; for a loop it takes the shorter arc, and for a branch it walks
+// the unique tree path.
+export function shortestPathOnLine(
+  line: Line,
+  fromId: StationId,
+  toId: StationId,
+): StationId[] | null {
+  if (!line.stations.includes(fromId) || !line.stations.includes(toId)) return null;
+  const prev = new Map<StationId, StationId | null>([[fromId, null]]);
+  const queue: StationId[] = [fromId];
+  while (queue.length) {
+    const cur = queue.shift() as StationId;
+    if (cur === toId) {
+      const path: StationId[] = [];
+      for (let n: StationId | null = toId; n !== null; n = prev.get(n) ?? null) path.push(n);
+      return path.reverse().slice(1); // from → to, excluding `fromId`
+    }
+    for (const nb of edgeNeighbors(line.edges, cur)) {
+      if (!prev.has(nb)) {
+        prev.set(nb, cur);
+        queue.push(nb);
+      }
+    }
+  }
+  return null;
+}
+
 // Add the canonical edge (a, b) to an edge list. No-op (same array reference)
 // on a self-loop or an edge already present, so callers keep the transform
 // "same reference on no-op" invariant.
