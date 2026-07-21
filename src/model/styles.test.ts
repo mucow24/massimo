@@ -844,8 +844,8 @@ describe('updateStyleProps', () => {
       styles: [makeStyle('routeBullet', 'y1', { props: { shape: 'square', size: 20 } })],
     });
     const next = updateStyleProps(doc, 'y1', { size: 24.4 });
-    expect((next.styles.y1.props as RouteBulletStyleProps).size).toBe(24); // rounded
-    expect(next.routeBullets.b1.size).toBe(24); // live re-stamp
+    expect((next.styles.y1.props as RouteBulletStyleProps).size).toBe(24.5); // snapped to 0.25
+    expect(next.routeBullets.b1.size).toBe(24.5); // live re-stamp
     expect(next.routeBullets.b1.styleId).toBe('y1');
     expect(next.routeBullets.b2).toBe(doc.routeBullets.b2);
   });

@@ -24,6 +24,7 @@ import {
 import {
   DOT_SIZE_MAX,
   DOT_SIZE_MIN,
+  DOT_SIZE_STEP,
   lineSingletonDotSizeOf,
   lineMultiDotSizeOf,
 } from '../../model/dotSize';
@@ -124,7 +125,7 @@ export function LineInspector({ id }: { id: LineId }) {
           }
           min={DOT_SIZE_MIN}
           max={DOT_SIZE_MAX}
-          step={1}
+          step={DOT_SIZE_STEP}
           value={lineSingletonDotSizeOf(line)}
           onChange={(n) => setLineSingletonDotSize(line.id, n)}
           getCurrent={() => lineSingletonDotSizeOf(useDoc.getState().lines[id])}
@@ -150,7 +151,7 @@ export function LineInspector({ id }: { id: LineId }) {
           }
           min={DOT_SIZE_MIN}
           max={DOT_SIZE_MAX}
-          step={1}
+          step={DOT_SIZE_STEP}
           value={lineMultiDotSizeOf(line)}
           onChange={(n) => setLineMultiDotSize(line.id, n)}
           getCurrent={() => lineMultiDotSizeOf(useDoc.getState().lines[id])}

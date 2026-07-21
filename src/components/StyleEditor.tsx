@@ -14,7 +14,7 @@ import { StopGlyph } from './StopGlyph';
 import { StationShapePicker } from './StationShapePicker';
 import { ShapeIcon } from './RouteBulletPopover';
 import type { StylePropsPatch } from '../model/styles';
-import { DOT_SIZE_MAX, DOT_SIZE_MIN } from '../model/dotSize';
+import { DOT_SIZE_MAX, DOT_SIZE_MIN, DOT_SIZE_STEP } from '../model/dotSize';
 import {
   DASH_LENGTH_MAX,
   DASH_WIDTH_MAX,
@@ -45,6 +45,7 @@ import {
   TRANSFER_STROKE_WIDTH_STEP,
   TRANSFER_THICKNESS_MAX,
   TRANSFER_THICKNESS_MIN,
+  TRANSFER_THICKNESS_STEP,
 } from '../model/transferStyle';
 import {
   FONT_SIZE_STEP,
@@ -66,6 +67,7 @@ import {
   POLYGON_STROKE_WIDTH_MIN,
   ROUTE_BULLET_SIZE_MAX,
   ROUTE_BULLET_SIZE_MIN,
+  ROUTE_BULLET_SIZE_STEP,
   TEXT_LABEL_FONT_SIZE_MAX,
   TEXT_LABEL_FONT_SIZE_MIN,
 } from '../model/transforms';
@@ -234,7 +236,7 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
           }
           min={DOT_SIZE_MIN}
           max={DOT_SIZE_MAX}
-          step={1}
+          step={DOT_SIZE_STEP}
           value={props.singletonDotSize}
           onChange={(singletonDotSize) => patch({ singletonDotSize })}
           getCurrent={liveNumberProp(id, 'singletonDotSize', props.singletonDotSize)}
@@ -258,7 +260,7 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
           }
           min={DOT_SIZE_MIN}
           max={DOT_SIZE_MAX}
-          step={1}
+          step={DOT_SIZE_STEP}
           value={props.multiDotSize}
           onChange={(multiDotSize) => patch({ multiDotSize })}
           getCurrent={liveNumberProp(id, 'multiDotSize', props.multiDotSize)}
@@ -471,7 +473,7 @@ function RouteBulletStyleEditor({ id, props }: { id: string; props: RouteBulletS
         label="Size"
         min={ROUTE_BULLET_SIZE_MIN}
         max={ROUTE_BULLET_SIZE_MAX}
-        step={1}
+        step={ROUTE_BULLET_SIZE_STEP}
         value={props.size}
         onChange={(size) => patch({ size })}
         getCurrent={liveNumberProp(id, 'size', props.size)}
@@ -490,7 +492,7 @@ function TransferStyleEditor({ id, props }: { id: string; props: TransferStylePr
         label="Thickness"
         min={TRANSFER_THICKNESS_MIN}
         max={TRANSFER_THICKNESS_MAX}
-        step={1}
+        step={TRANSFER_THICKNESS_STEP}
         value={props.thickness}
         onChange={(thickness) => patch({ thickness })}
         getCurrent={liveNumberProp(id, 'thickness', props.thickness)}

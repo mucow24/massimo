@@ -245,7 +245,7 @@ describe('<LineInspector /> — dot size control', () => {
     });
   };
 
-  it('renders a 0–20 step-1 slider for each case at the effective default dot size', () => {
+  it('renders a 0–20 slider for each case at the effective default dot size', () => {
     seed();
     render(<LineInspector id="L1" />);
     for (const name of ['Singleton dot size', 'Interchange dot size']) {
@@ -278,15 +278,15 @@ describe('<LineInspector /> — dot size control', () => {
     seed();
     render(<LineInspector id="L1" />);
     const singleton = screen.getByRole('slider', { name: 'Singleton dot size' });
-    stepSlider(singleton, 1); // 8 -> 9
-    expect(useDoc.getState().lines.L1.singletonDotSize).toBe(9);
+    stepSlider(singleton, 1); // one 0.25 step: 8 -> 8.25
+    expect(useDoc.getState().lines.L1.singletonDotSize).toBe(8.25);
     expect('multiDotSize' in useDoc.getState().lines.L1).toBe(false);
 
     const shared = screen.getByRole('slider', { name: 'Interchange dot size' });
-    stepSlider(shared, 2); // 8 -> 10
-    expect(useDoc.getState().lines.L1.multiDotSize).toBe(10);
+    stepSlider(shared, 2); // two 0.25 steps: 8 -> 8.5
+    expect(useDoc.getState().lines.L1.multiDotSize).toBe(8.5);
     // Singleton unaffected by the shared edit.
-    expect(useDoc.getState().lines.L1.singletonDotSize).toBe(9);
+    expect(useDoc.getState().lines.L1.singletonDotSize).toBe(8.25);
 
     stepSlider(singleton, -1); // back to the 8 default drops the key
     expect('singletonDotSize' in useDoc.getState().lines.L1).toBe(false);
