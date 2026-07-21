@@ -14,7 +14,7 @@ import {
   type SvgImageGeom,
 } from '../../geometry/svgImage';
 import type { Vec2 } from '../../geometry/vec';
-import { finishDrag, trackDragMove } from './dragGesture';
+import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
 import {
   collectGroupSiblings,
   groupAlignExclude,
@@ -188,6 +188,10 @@ export function useSvgImageDrag(
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    // A lost pointerup (alt-tab mid-press) surfaces as a button-less move.
+    if ((moveRef.current || resizeRef.current || rotateRef.current) && pointerLost(e)) {
+      return onPointerCancel();
+    }
     const mv = moveRef.current;
     if (mv) {
       const { moved, dxScreen, dyScreen } = trackDragMove(mv, e, svgRef);

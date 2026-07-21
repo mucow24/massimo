@@ -192,6 +192,46 @@ describe('useViewport — wheel zoom', () => {
   });
 });
 
+describe('useViewport — cancelled / dead pan gestures disarm', () => {
+  // Pan is a capture-holding gesture like the item drags, so it needs the same
+  // two escape hatches: an explicit cancel (MapCanvas's pointercancel fan-out)
+  // and the buttons === 0 lost-pointerup detection. Unlike the doc-mutating
+  // drags there is nothing to roll back — the accumulated pan COMMITS, since
+  // the viewBox has already visibly moved and snapping back would be jarring.
+  it('a move with no buttons (lost pointerup) ends the pan instead of gluing the map to the cursor', () => {
+    const { result, svg } = render();
+    down(result, pointerEvent({ clientX: 100, clientY: 100, button: 0 }));
+    move(result, pointerEvent({ clientX: 150, clientY: 130 }));
+    expect(svg.getAttribute('viewBox')).toBe('-450 -330 800 600');
+
+    // First hover move after focus returns: no buttons held.
+    move(result, pointerEvent({ clientX: 300, clientY: 300, buttons: 0 }));
+
+    expect(result.current.panning).toBe(false);
+    expect(result.current.viewport.x).toBe(-50);
+    expect(result.current.viewport.y).toBe(-30);
+    // Disarmed: further moves no longer pan.
+    move(result, pointerEvent({ clientX: 400, clientY: 400 }));
+    expect(result.current.viewport.x).toBe(-50);
+    expect(svg.getAttribute('viewBox')).toBe('-450 -330 800 600');
+  });
+
+  it('cancel() disarms an armed pan and resolves the live viewport', () => {
+    const { result } = render();
+    down(result, pointerEvent({ clientX: 100, clientY: 100, button: 0 }));
+    move(result, pointerEvent({ clientX: 150, clientY: 130 }));
+
+    act(() => result.current.cancel());
+
+    expect(result.current.panning).toBe(false);
+    expect(result.current.viewport.x).toBe(-50);
+    // The live slot is resolved — no dangling pending for overlays.
+    expect(useLiveViewportStore.getState().pending).toBeNull();
+    move(result, pointerEvent({ clientX: 400, clientY: 400 }));
+    expect(result.current.viewport.x).toBe(-50);
+  });
+});
+
 describe('useViewport — panning', () => {
   it('starts a pan on the left button and captures the pointer', () => {
     const { result, svg } = render();

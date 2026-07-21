@@ -14,6 +14,11 @@ export interface PointerOpts {
   clientY?: number;
   pointerId?: number;
   button?: number;
+  /** The held-button bitmask (`e.buttons`). Defaults to 1 — a live primary
+   *  contact, which is what nearly every gesture test simulates. Pass 0 to
+   *  simulate a move after a LOST pointerup (alt-tab mid-press), which the
+   *  drag hooks treat as a pointercancel. */
+  buttons?: number;
   shiftKey?: boolean;
   ctrlKey?: boolean;
   metaKey?: boolean;
@@ -30,6 +35,7 @@ export function pointerEvent(opts: PointerOpts = {}): React.PointerEvent {
     clientY: opts.clientY ?? 0,
     pointerId: opts.pointerId ?? 1,
     button: opts.button ?? 0,
+    buttons: opts.buttons ?? 1,
     shiftKey: opts.shiftKey ?? false,
     ctrlKey: opts.ctrlKey ?? false,
     metaKey: opts.metaKey ?? false,
@@ -174,6 +180,7 @@ export function dispatchWindowPointer(
     clientX: opts.clientX ?? 0,
     clientY: opts.clientY ?? 0,
     button: opts.button ?? 0,
+    buttons: opts.buttons ?? 1,
     shiftKey: opts.shiftKey ?? false,
   });
   Object.assign(ev, { pointerId: opts.pointerId ?? 1 });
