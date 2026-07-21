@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { CLIP_RASTER_SCALE, RegionExcludeClips, regionExcludeClipId } from './RegionExcludeClips';
+import { RegionExcludeClips, regionExcludeClipId } from './RegionExcludeClips';
+import { CLIP_RASTER_SCALE } from './clipRaster';
 import type { Ring } from '../../geometry/clip';
 import type { LineId } from '../../model/types';
 

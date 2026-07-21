@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { SeamClips, seamClipId } from './SeamClips';
+import { CLIP_RASTER_SCALE } from './clipRaster';
 import { buildBands } from '../../geometry/interlining';
 import { makeDoc, makeLine, makeStation, makeStop } from '../../test/fixtures';
 import type { Line } from '../../model/types';
@@ -55,6 +56,25 @@ describe('<SeamClips>', () => {
       expect(ribbons.length).toBe(2);
       for (const r of ribbons) expect(r.getAttribute('d')).toMatch(/Z\s*$/);
     }
+  });
+
+  it('emits ×CLIP_RASTER_SCALE local coordinates under an inverse scale()', () => {
+    const { bands, lines } = junctionBandsAndLines('#ffffff80');
+    const { container } = renderClips(bands, lines);
+    const paths = [...container.querySelectorAll('clipPath')].flatMap((c) => [
+      ...c.querySelectorAll('path'),
+    ]);
+    expect(paths.length).toBeGreaterThan(0);
+    const coords: number[] = [];
+    for (const p of paths) {
+      expect(p.getAttribute('transform')).toBe(`scale(${1 / CLIP_RASTER_SCALE})`);
+      for (const m of p.getAttribute('d')!.matchAll(/-?\d+(?:\.\d+)?/g)) {
+        coords.push(Number(m[0]));
+      }
+    }
+    // Stations sit at ±120 world units, so scaled corridor coordinates must
+    // reach ≈120 × CLIP_RASTER_SCALE — far beyond any plain world coordinate.
+    expect(Math.max(...coords.map(Math.abs))).toBeGreaterThan(100 * CLIP_RASTER_SCALE);
   });
 
   it('renders nothing for a line without a seam color', () => {
