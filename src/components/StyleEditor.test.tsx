@@ -111,20 +111,21 @@ describe('<StyleEditor> — stopDot', () => {
     expect(screen.queryByText('Service code')).toBeNull();
   });
 
-  it('a code-showing dot offers a Line/Custom service-code color toggle, mirroring stroke', () => {
+  it('offers a B/W / Line / Custom service-code color toggle; auto-contrast selects B/W', () => {
     render(
       <StyleEditor
         def={makeStyle('stopDot', 'y1', { props: { shape: 'circle', showServiceCode: true } })}
       />,
     );
-    // The toggle is present with both modes (ToggleGroup items — queried by
-    // label, as the rest of the suite queries segmented controls) …
+    // All three modes are present (ToggleGroup items — queried by label, as the
+    // rest of the suite queries segmented controls) …
+    expect(screen.getByLabelText('Code color bw')).toBeTruthy();
     expect(screen.getByLabelText('Code color line')).toBeTruthy();
-    const custom = screen.getByLabelText('Code color custom');
-    // … and with no explicit color (auto-contrast), 'Custom' is active and its
-    // day/night color row is shown (the light swatch carries this accessible name).
-    expect(custom).toHaveClass('active');
-    expect(screen.getByRole('button', { name: 'Service code color' })).toBeTruthy();
+    expect(screen.getByLabelText('Code color custom')).toBeTruthy();
+    // … and with no explicit color, B/W (auto-contrast) is active, with no
+    // explicit color row (the light swatch carries this accessible name).
+    expect(screen.getByLabelText('Code color bw')).toHaveClass('active');
+    expect(screen.queryByRole('button', { name: 'Service code color' })).toBeNull();
   });
 
   it("'line' service-code color activates the Line mode and hides the custom color row", () => {
@@ -138,6 +139,53 @@ describe('<StyleEditor> — stopDot', () => {
     expect(screen.getByLabelText('Code color line')).toHaveClass('active');
     // In 'line' mode the explicit color row is gone (like the stroke selector).
     expect(screen.queryByRole('button', { name: 'Service code color' })).toBeNull();
+  });
+
+  it('an explicit color pair activates Custom and shows the color row', () => {
+    render(
+      <StyleEditor
+        def={makeStyle('stopDot', 'y1', {
+          props: {
+            shape: 'circle',
+            showServiceCode: true,
+            serviceCodeColor: { day: '#ff0000', night: '#00ff00' },
+          },
+        })}
+      />,
+    );
+    expect(screen.getByLabelText('Code color custom')).toHaveClass('active');
+    expect(screen.getByRole('button', { name: 'Service code color' })).toBeTruthy();
+  });
+
+  it('picking a mode writes serviceCodeColor: Line/Custom set it, B/W drops it', () => {
+    // Seed a code-showing dot in the store so the click's updateStyleProps lands;
+    // re-render from the store after each pick so the ToggleGroup reflects the new
+    // active mode (else Radix reads the next click as a deselect of the stale one).
+    useDoc.setState({
+      ...useDoc.getState(),
+      styles: {
+        ...useDoc.getState().styles,
+        'sd-code': makeStyle('stopDot', 'sd-code', {
+          props: { shape: 'circle', showServiceCode: true },
+        }),
+      },
+    });
+    const sccOf = () => (useDoc.getState().styles['sd-code'].props as DotStyle).serviceCodeColor;
+    const { rerender } = render(<StyleEditor def={useDoc.getState().styles['sd-code']} />);
+
+    // Line → the 'line' sentinel.
+    fireEvent.click(screen.getByLabelText('Code color line'));
+    expect(sccOf()).toBe('line');
+    rerender(<StyleEditor def={useDoc.getState().styles['sd-code']} />);
+
+    // Custom → an explicit day/night pair.
+    fireEvent.click(screen.getByLabelText('Code color custom'));
+    expect(typeof sccOf()).toBe('object');
+    rerender(<StyleEditor def={useDoc.getState().styles['sd-code']} />);
+
+    // B/W → the field is dropped entirely (absent ⇒ auto-contrast).
+    fireEvent.click(screen.getByLabelText('Code color bw'));
+    expect(sccOf()).toBeUndefined();
   });
 
   it('offers a Center/Inside/Outside stroke-alignment selector that writes strokeAlign', () => {
