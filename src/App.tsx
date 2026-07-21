@@ -317,9 +317,12 @@ export default function App() {
           const poly = doc.polygons[polygonId];
           if (poly && !poly.locked) {
             e.preventDefault();
-            const group = beginHistoryGroup();
+            // May fire while a drag gesture's group is open (groups don't
+            // nest) — fold in rather than stealing it, like the Alt+arrow
+            // fan-out below.
+            const group = isHistoryGrouping() ? null : beginHistoryGroup();
             doc.moveVertices(polygonId, indices, dx, dy);
-            group.commit();
+            group?.commit();
           }
           return;
         }
@@ -394,7 +397,8 @@ export default function App() {
         const ids = unlockedSelectedItemIds();
         if (itemIdCount(ids) > 0) {
           e.preventDefault();
-          const group = beginHistoryGroup();
+          // Same open-group fold-in as the vertex nudge above.
+          const group = isHistoryGrouping() ? null : beginHistoryGroup();
           for (const id of ids.stations) {
             const s = doc.stations[id];
             if (s) doc.moveStation(id, s.x + dx, s.y + dy);
@@ -412,7 +416,7 @@ export default function App() {
             const im = doc.svgImages[id];
             if (im) doc.moveSvgImage(id, im.x + dx, im.y + dy);
           }
-          group.commit();
+          group?.commit();
         }
         return;
       }
@@ -459,14 +463,16 @@ export default function App() {
             const labels: string[] = [];
             const polygons: string[] = [];
             const svgImages: string[] = [];
-            const group = beginHistoryGroup();
+            // The async read can land mid-drag — same open-group fold-in as
+            // the nudges above.
+            const group = isHistoryGrouping() ? null : beginHistoryGroup();
             for (const item of items) {
               if (item.kind === 'route-bullet') bullets.push(doc.pasteRouteBullet(item.data));
               else if (item.kind === 'text-label') labels.push(doc.pasteTextLabel(item.data));
               else if (item.kind === 'polygon') polygons.push(doc.pastePolygon(item.data));
               else if (item.kind === 'svg-image') svgImages.push(doc.pasteSvgImage(item.data));
             }
-            group.commit();
+            group?.commit();
             useSelection.getState().setMixedSelection({ bullets, labels, polygons, svgImages });
           })
           .catch(() => {});
@@ -483,7 +489,8 @@ export default function App() {
           return;
         e.preventDefault();
         const doc = useDoc.getState();
-        const group = beginHistoryGroup();
+        // Same open-group fold-in as the nudges above.
+        const group = isHistoryGrouping() ? null : beginHistoryGroup();
         const bullets = bulletIds
           .map((id) => doc.duplicateRouteBullet(id))
           .filter((id): id is string => id != null);
@@ -496,7 +503,7 @@ export default function App() {
         const svgImages = svgImageIds
           .map((id) => doc.duplicateSvgImage(id))
           .filter((id): id is string => id != null);
-        group.commit();
+        group?.commit();
         useSelection.getState().setMixedSelection({ bullets, labels, polygons, svgImages });
         return;
       }
@@ -527,12 +534,13 @@ export default function App() {
         // Clear the selection first so no id dangles at a deleted item
         // (mirrors the Delete handler); then remove them in one history group.
         useSelection.getState().clearAllSelections();
-        const group = beginHistoryGroup();
+        // Same open-group fold-in as the nudges above.
+        const group = isHistoryGrouping() ? null : beginHistoryGroup();
         for (const id of bulletIds) doc.deleteRouteBullet(id);
         for (const id of labelIds) doc.deleteTextLabel(id);
         for (const id of polygonIds) doc.deletePolygon(id);
         for (const id of svgImageIds) doc.deleteSvgImage(id);
-        group.commit();
+        group?.commit();
         return;
       }
       // R rotates the selected stop's orientation (4-state axis cycle) or

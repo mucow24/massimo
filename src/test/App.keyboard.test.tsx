@@ -505,6 +505,24 @@ describe('App keyboard shortcuts: blur-then-undo', () => {
   });
 });
 
+// Module-scoped: shared by the copy/paste suite and the open-group overlap
+// suite at the bottom of the file.
+const labelClip = (): ClipPayload => ({
+  kind: 'text-label',
+  data: {
+    x: 0,
+    y: 0,
+    rotation: 0,
+    text: 't',
+    fontSize: 24,
+    weight: 400,
+    italic: false,
+    align: 'left',
+    color: '#111111',
+    darkColor: '#ffffff',
+  },
+});
+
 describe('App keyboard shortcuts: copy / cut / paste / duplicate', () => {
   let writeText: ReturnType<typeof vi.fn>;
   let readText: ReturnType<typeof vi.fn>;
@@ -523,21 +541,6 @@ describe('App keyboard shortcuts: copy / cut / paste / duplicate', () => {
     useSelection.getState().selectStation(null);
   });
 
-  const labelClip = (): ClipPayload => ({
-    kind: 'text-label',
-    data: {
-      x: 0,
-      y: 0,
-      rotation: 0,
-      text: 't',
-      fontSize: 24,
-      weight: 400,
-      italic: false,
-      align: 'left',
-      color: '#111111',
-      darkColor: '#ffffff',
-    },
-  });
   const polygonClip = (): ClipPayload => ({
     kind: 'polygon',
     data: {
@@ -1258,5 +1261,148 @@ describe('App keyboard: station-editor Escape step-out ladder', () => {
     // Rung 3: the global wipe deselects (closing the popover).
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(useSelection.getState().selectedStationIds).toEqual([]);
+  });
+});
+
+// Groups don't nest (store.ts): the global keyboard listener can fire while a
+// canvas drag's history group is open. Every shortcut that opens its own group
+// must gate on isHistoryGrouping() like the Alt+arrow fan-out already does —
+// an unguarded beginHistoryGroup STEALS the drag's group and resumes
+// recording, so the still-armed drag then records one undo entry per
+// pointermove. Same story for Ctrl+Z/Y: time travel mid-group corrupts the
+// stacks (see history.test.ts) and must no-op until the gesture seals.
+describe('App keyboard shortcuts: inside an open history group', () => {
+  let readText: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    readText = vi.fn().mockResolvedValue('');
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: vi.fn().mockResolvedValue(undefined), readText },
+      configurable: true,
+    });
+    useSelection.getState().selectStation(null);
+  });
+
+  it('arrow nudge folds into the open group without stealing it', () => {
+    render(<App />);
+    const s = useDoc.getState().addStation(10, 10);
+    useSelection.getState().selectStation(s);
+    useDoc.temporal.getState().clear();
+
+    const outer = beginHistoryGroup();
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+
+    expect(useDoc.getState().stations[s].x).toBe(11);
+    expect(isHistoryGrouping()).toBe(true);
+    expect(historyDepth()).toBe(0);
+    outer.commit();
+    expect(historyDepth()).toBe(1);
+  });
+
+  it('vertex nudge folds into the open group without stealing it', () => {
+    render(<App />);
+    useDoc.setState({
+      ...useDoc.getState(),
+      polygons: { p1: makePolygon({ id: 'p1' }) },
+      backgroundOrder: ['p1'],
+    });
+    useSelection.getState().selectPolygon('p1');
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedVertices: { polygonId: 'p1', indices: [0] },
+    });
+    useDoc.temporal.getState().clear();
+    const x0 = useDoc.getState().polygons.p1.vertices[0].x;
+
+    const outer = beginHistoryGroup();
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+
+    expect(useDoc.getState().polygons.p1.vertices[0].x).toBe(x0 + 1);
+    expect(isHistoryGrouping()).toBe(true);
+    expect(historyDepth()).toBe(0);
+    outer.commit();
+    expect(historyDepth()).toBe(1);
+  });
+
+  it('Delete folds into the open group without stealing it', () => {
+    render(<App />);
+    const s = useDoc.getState().addStation(10, 10);
+    useSelection.getState().selectStation(s);
+    useDoc.temporal.getState().clear();
+
+    const outer = beginHistoryGroup();
+    fireEvent.keyDown(window, { key: 'Delete' });
+
+    expect(useDoc.getState().stations[s]).toBeUndefined();
+    expect(isHistoryGrouping()).toBe(true);
+    expect(historyDepth()).toBe(0);
+    outer.commit();
+    expect(historyDepth()).toBe(1);
+  });
+
+  it('Ctrl+D duplicate folds into the open group without stealing it', () => {
+    render(<App />);
+    const labelId = useDoc.getState().addTextLabel(10, 10);
+    useSelection.getState().selectLabel(labelId);
+    useDoc.temporal.getState().clear();
+
+    const outer = beginHistoryGroup();
+    fireEvent.keyDown(window, { key: 'd', ctrlKey: true });
+
+    expect(Object.keys(useDoc.getState().textLabels)).toHaveLength(2);
+    expect(isHistoryGrouping()).toBe(true);
+    expect(historyDepth()).toBe(0);
+    outer.commit();
+    expect(historyDepth()).toBe(1);
+  });
+
+  it('Ctrl+X cut folds into the open group without stealing it', () => {
+    render(<App />);
+    const labelId = useDoc.getState().addTextLabel(10, 10);
+    useSelection.getState().selectLabel(labelId);
+    useDoc.temporal.getState().clear();
+
+    const outer = beginHistoryGroup();
+    fireEvent.keyDown(window, { key: 'x', ctrlKey: true });
+
+    expect(useDoc.getState().textLabels[labelId]).toBeUndefined();
+    expect(isHistoryGrouping()).toBe(true);
+    expect(historyDepth()).toBe(0);
+    outer.commit();
+    expect(historyDepth()).toBe(1);
+  });
+
+  it('Ctrl+V paste folds into the open group without stealing it', async () => {
+    render(<App />);
+    readText.mockResolvedValue(writeClipboard([labelClip()]));
+    useDoc.temporal.getState().clear();
+    const before = Object.keys(useDoc.getState().textLabels).length;
+
+    const outer = beginHistoryGroup();
+    fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
+
+    await waitFor(() =>
+      expect(Object.keys(useDoc.getState().textLabels).length).toBe(before + 1),
+    );
+    expect(isHistoryGrouping()).toBe(true);
+    expect(historyDepth()).toBe(0);
+    outer.commit();
+    expect(historyDepth()).toBe(1);
+  });
+
+  it('Ctrl+Z mid-group leaves the doc and both stacks untouched', () => {
+    render(<App />);
+    const s = useDoc.getState().addStation(10, 10); // one committed entry
+    const outer = beginHistoryGroup();
+    useDoc.getState().moveStation(s, 20, 10);
+
+    fireEvent.keyDown(window, { key: 'z', ctrlKey: true });
+
+    expect(useDoc.getState().stations[s].x).toBe(20);
+    expect(isHistoryGrouping()).toBe(true);
+    expect(historyDepth()).toBe(1);
+    expect(redoDepth()).toBe(0);
+    outer.commit();
+    expect(historyDepth()).toBe(2);
   });
 });
