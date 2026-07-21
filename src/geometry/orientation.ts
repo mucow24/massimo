@@ -51,21 +51,26 @@ export const BAND_MERGE_TOL = 0.5;
 
 /**
  * Label-cell adjacency gate, in CELL units: a stop counts as a label's
- * neighbor (the label snaps/aligns against it) up to the stop's tangency
- * distance with the unit label cell — (half + STOP_SIZE/2) world units —
- * floored at the historical 1-cell gate. Width only ever WIDENS adjacency
- * (a width-28 stop tangent to the label sits 1.5 cells away and must still
- * snap); it must never shrink it, because dragging a label against a dot
- * parks the cell at exactly the current tangency, so a narrower gate would
- * detach every parked label the moment its line's width goes down. The
- * BAND_MERGE_TOL slack recognizes tangency-parks recorded under a slightly
- * wider width (the same 0.5-world tolerance the band machinery uses); the
- * epsilon keeps exact-tangent diagonal-grid neighbors (±√2/2 per axis) in.
- * Shared by the renderer's label snap/autoAlign (labelLayout) and the
- * width-edit label carry (stationPacking) so the two can never drift apart.
+ * neighbor (the label snaps/aligns against it) up to the stop's PACKED
+ * distance with the unit label cell — tangency (half + STOP_SIZE/2) plus the
+ * line's interline gap, mirroring tangentGap with the label as a gapless
+ * cell — floored at the historical 1-cell gate. Width and gap only ever
+ * WIDEN adjacency (a width-28 stop tangent to the label sits 1.5 cells away
+ * and must still snap; the ghost lattice parks a label against a gapped line
+ * at the gap-widened pitch); the gate must never shrink below a park the
+ * lattice offers, or the very slot the editor drops the label on renders
+ * detached. Spacing edits keep old parks recognizable the other way around:
+ * the width/gap label carry (stationPacking) re-parks attached labels at the
+ * new pitch. The BAND_MERGE_TOL slack recognizes parks recorded under a
+ * slightly wider spacing (the same 0.5-world tolerance the band machinery
+ * uses); the epsilon keeps exact-tangent diagonal-grid neighbors (±√2/2 per
+ * axis) in. Shared by the renderer's label snap/autoAlign (labelLayout) and
+ * the spacing-edit label carry (stationPacking) so the two can never drift
+ * apart.
  */
-export const labelAdjacencyGate = (half: number): number =>
-  (Math.max(half, STOP_SIZE / 2) + STOP_SIZE / 2 + BAND_MERGE_TOL) / STOP_SIZE + 1e-4;
+export const labelAdjacencyGate = (half: number, gap: number): number =>
+  (Math.max(half, STOP_SIZE / 2) + STOP_SIZE / 2 + Math.max(gap, 0) + BAND_MERGE_TOL) / STOP_SIZE +
+  1e-4;
 
 /**
  * Perpendicular offsets for n packed stripes of the given widths and

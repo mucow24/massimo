@@ -838,3 +838,103 @@ describe('width edits carry attached labels with the stop edge', () => {
     }
   });
 });
+
+// The interline gap widens the packed label⇄stop pitch (the ghost lattice
+// parks a label at tangentGap(unit cell, stop) — the label itself is
+// gapless, so the pair uses the line's gap). A gap edit therefore moves the
+// packed pitch exactly like a width edit moves the edge: the carry follows
+// Δgap along the approach octant — scaled by the octant's L1 length, since
+// the lattice rescales per AXIS (√2 along a corner approach) — so parked
+// stays parked at any gap and inside the gap-aware labelAdjacencyGate.
+describe('interline-gap edits carry attached labels with the packed pitch', () => {
+  const oneLine = () => ({ L1: makeLine({ id: 'L1' }) });
+  // Default-width park pitch under a 4.25 gap: (7 + 7 + 4.25)/14.
+  const PITCH = 18.25 / 14;
+
+  it('a gap-parked label follows the gap back down to plain tangency', () => {
+    const st = makeStation({
+      id: 's1',
+      stops: [makeStop('L1', { row: 0, col: 0, orientation: 'auto-vertical' })],
+      label: makeLabel({ row: 0, col: -PITCH }),
+    });
+    const out = repackStationForSpacing(st, oneLine(), 'L1', 14, 14, 4.25, 0);
+    expect(out.label.col).toBeCloseTo(-1, 12);
+    expect(out.label.row).toBe(0);
+    // No chain here — the stop array passes through by reference.
+    expect(out.stops).toBe(st.stops);
+  });
+
+  it('a gap increase pushes the parked label out, and the round trip is exact', () => {
+    const st = makeStation({
+      id: 's1',
+      stops: [makeStop('L1', { row: 0, col: 0, orientation: 'auto-vertical' })],
+      label: makeLabel({ row: 0, col: -1 }),
+    });
+    const gapped = repackStationForSpacing(st, oneLine(), 'L1', 14, 14, 0, 4.25);
+    expect(gapped.label.col).toBeCloseTo(-PITCH, 12);
+    const back = repackStationForSpacing(gapped, oneLine(), 'L1', 14, 14, 4.25, 0);
+    expect(back.label.col).toBeCloseTo(-1, 12);
+  });
+
+  it('a corner-parked label carries Δgap per axis (lattice rescale)', () => {
+    const st = makeStation({
+      id: 's1',
+      stops: [makeStop('L1', { row: 0, col: 0, orientation: 'auto-vertical' })],
+      label: makeLabel({ row: -PITCH, col: -PITCH }),
+    });
+    const out = repackStationForSpacing(st, oneLine(), 'L1', 14, 14, 4.25, 0);
+    expect(out.label.col).toBeCloseTo(-1, 12);
+    expect(out.label.row).toBeCloseTo(-1, 12);
+  });
+
+  it('width and gap deltas compose in one edit', () => {
+    const st = makeStation({
+      id: 's1',
+      stops: [makeStop('L1', { row: 0, col: 0, orientation: 'auto-vertical' })],
+      label: makeLabel({ row: 0, col: -PITCH }),
+    });
+    // 14→10 pulls the west edge in by 2; 4.25→0 pulls the pitch in by 4.25:
+    // −18.25 + 6.25 = −12 world units.
+    const out = repackStationForSpacing(st, oneLine(), 'L1', 14, 10, 4.25, 0);
+    expect(out.label.col).toBeCloseTo(-12 / 14, 12);
+  });
+
+  it('a detached label (beyond the gap-aware gate) never moves — same station reference', () => {
+    const st = makeStation({
+      id: 's1',
+      stops: [makeStop('L1', { row: 0, col: 0, orientation: 'auto-vertical' })],
+      label: makeLabel({ row: 0, col: -3 }),
+    });
+    expect(repackStationForSpacing(st, oneLine(), 'L1', 14, 14, 4.25, 0)).toBe(st);
+  });
+
+  it("a label attached to ANOTHER line's stop stays put — same station reference", () => {
+    const st = makeStation({
+      id: 's1',
+      stops: [
+        makeStop('L1', { row: 0, col: 0, orientation: 'auto-vertical' }),
+        makeStop('L2', { row: 0, col: 3, orientation: 'auto-vertical' }),
+      ],
+      label: makeLabel({ row: 0, col: 4 }),
+    });
+    const lines = { L1: makeLine({ id: 'L1' }), L2: makeLine({ id: 'L2' }) };
+    expect(repackStationForSpacing(st, lines, 'L1', 14, 14, 0, 4.25)).toBe(st);
+  });
+
+  it('setLineInterlineGap carries the label end to end (the Plaistow-class park)', () => {
+    // A label parked against the stop at the gap pitch; clearing the gap via
+    // the real transform re-parks it at plain tangency.
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          stops: [makeStop('L1', { orientation: 'auto-vertical' })],
+          label: makeLabel({ row: 0, col: -PITCH }),
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1'], interlineGap: 4.25 })],
+    });
+    const next = T.setLineInterlineGap(doc, 'L1', 0);
+    expect(next.stations.s1.label.col).toBeCloseTo(-1, 12);
+  });
+});

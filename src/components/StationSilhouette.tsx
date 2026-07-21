@@ -4,7 +4,7 @@ import { useViewportStore } from '../state/viewportStore';
 import type { Station } from '../model/types';
 import { effectiveStationLabelStyle } from '../model/transforms';
 import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
-import { stopHalfOf } from '../model/lineWidth';
+import { stopGapOf, stopHalfOf } from '../model/lineWidth';
 import { stopDashOf } from '../model/dashSize';
 import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
 import {
@@ -71,6 +71,7 @@ export function StationSilhouette({
     stopHalfOf(lines),
     showWaypoints,
     stopDashOf(lines),
+    stopGapOf(lines),
   );
   // Hidden waypoint: no label polygon to merge, render the cells rect alone.
   const polygons = labelPoly ? unionConvex(cells, labelPoly) : [cells];

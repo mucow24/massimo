@@ -6,7 +6,7 @@ import {
   svgImagesForRect,
   textLabelsForRect,
 } from '../../geometry/stationBoundary';
-import { stopHalfOf } from '../../model/lineWidth';
+import { stopGapOf, stopHalfOf } from '../../model/lineWidth';
 import { stopDashOf } from '../../model/dashSize';
 import { effectiveBackgroundOrder } from '../../model/transforms';
 import { pairKeyOf } from '../../model/pairKey';
@@ -238,9 +238,14 @@ export function lockedHitsAt(pt: Pt, doc: LockedHitDocSlice, pad: number): HitRe
   );
   push(
     'station',
-    stationsForRect(doc.stations, rect, stopHalfOf(doc.lines), true, stopDashOf(doc.lines)).filter(
-      (id) => doc.stations[id].locked,
-    ),
+    stationsForRect(
+      doc.stations,
+      rect,
+      stopHalfOf(doc.lines),
+      true,
+      stopDashOf(doc.lines),
+      stopGapOf(doc.lines),
+    ).filter((id) => doc.stations[id].locked),
   );
   // One walk of the shared background stack, topmost first — polygons and
   // images interleave, so they can't be pushed as two kind-grouped blocks.

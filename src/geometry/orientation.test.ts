@@ -3,6 +3,7 @@ import fc from 'fast-check';
 import {
   DIR_8,
   STOP_SIZE,
+  labelAdjacencyGate,
   rotateBy,
   rotateGridDelta,
   worldDirToLocal,
@@ -224,6 +225,36 @@ describe('tangentGap', () => {
         expect(tangentGap(wA, wB, 0, 0)).toBe((wA + wB) / 2);
       }),
     );
+  });
+});
+
+describe('labelAdjacencyGate', () => {
+  const HALF = STOP_SIZE / 2;
+
+  it('reproduces the legacy width-only gate at zero gap', () => {
+    // (7 + 7 + BAND_MERGE_TOL)/14 + ε — exact, so a formula change is a
+    // deliberate red, not silent drift.
+    expect(labelAdjacencyGate(HALF, 0)).toBeCloseTo((HALF + HALF + 0.5) / STOP_SIZE + 1e-4, 12);
+  });
+
+  it('admits the ghost-lattice gap park — and only WITH the gap', () => {
+    // A label parked against a default-width line with interline gap 4.25
+    // sits at the packed pitch 18.25/14 (the Plaistow regression): inside
+    // the gap-aware gate, outside the gapless one (no blanket widening).
+    const pitch = tangentGap(STOP_SIZE, STOP_SIZE, 0, 4.25) / STOP_SIZE;
+    expect(labelAdjacencyGate(HALF, 4.25)).toBeGreaterThan(pitch);
+    expect(labelAdjacencyGate(HALF, 0)).toBeLessThan(pitch);
+  });
+
+  it('the width floor and the gap compose', () => {
+    // Narrow line: half floors at the historical 1-cell gate, gap adds on.
+    expect(labelAdjacencyGate(2, 6)).toBeCloseTo((HALF + HALF + 6 + 0.5) / STOP_SIZE + 1e-4, 12);
+    // Wide line: its own half + the gap.
+    expect(labelAdjacencyGate(14, 3)).toBeCloseTo((14 + HALF + 3 + 0.5) / STOP_SIZE + 1e-4, 12);
+  });
+
+  it('a negative gap never shrinks the gate', () => {
+    expect(labelAdjacencyGate(HALF, -5)).toBe(labelAdjacencyGate(HALF, 0));
   });
 });
 
