@@ -1,7 +1,21 @@
 import type { Line, LineId } from '../../model/types';
 import type { SegmentBandSpec } from '../../geometry/interlining';
+import type { OffsetPathSegment } from '../../geometry/router';
 import { closedPerimeterPath, computeStripeOutline } from '../../geometry/stripeOutline';
 import { lineSeamColorOf } from '../../model/lineStroke';
+import { CLIP_RASTER_INVERSE_TRANSFORM, CLIP_RASTER_SCALE } from './clipRaster';
+
+// Scale an offset-segment chain into ×CLIP_RASTER_SCALE clip-local space (see
+// clipRaster.ts): unit directions and angles are scale-invariant, all lengths
+// scale.
+const scaleSegs = (segs: OffsetPathSegment[], k: number): OffsetPathSegment[] =>
+  segs.map((s) => {
+    const from = { x: s.from.x * k, y: s.from.y * k };
+    const to = { x: s.to.x * k, y: s.to.y * k };
+    return s.kind === 'line'
+      ? { ...s, from, to, length: s.length * k }
+      : { ...s, from, to, r: s.r * k, length: s.length * k };
+  });
 
 // Clip-path id for one band's branch seam on a given line. The seam paints the
 // casing rails (centered on the body edges) in the seam color, clipped to
@@ -34,7 +48,13 @@ export function SeamClips({ bands, lines }: Props) {
       if (lineSeamColorOf(lines[lineId]) === undefined) continue;
       const outline = computeStripeOutline(band, k);
       if (!outline) continue;
-      const ribbon = closedPerimeterPath(outline.segsA, outline.segsB);
+      // Emit the ribbon in ×CLIP_RASTER_SCALE clip-local coordinates so
+      // Blink's ~1-local-unit clip rasterization snap (see clipRaster.ts)
+      // can't visibly shift the corridor edges.
+      const ribbon = closedPerimeterPath(
+        scaleSegs(outline.segsA, CLIP_RASTER_SCALE),
+        scaleSegs(outline.segsB, CLIP_RASTER_SCALE),
+      );
       if (!ribbon) continue;
       let arr = byLine.get(lineId);
       if (!arr) {
@@ -57,12 +77,14 @@ export function SeamClips({ bands, lines }: Props) {
               clipPathUnits="userSpaceOnUse"
             >
               {others.length > 0 ? (
-                others.map((o, j) => <path key={j} d={o.ribbon} />)
+                others.map((o, j) => (
+                  <path key={j} d={o.ribbon} transform={CLIP_RASTER_INVERSE_TRANSFORM} />
+                ))
               ) : (
                 // No other band ⇒ no self-overlap ⇒ clip to nothing (a zero-area
                 // path keeps the clipPath non-empty so it reliably hides the seam
                 // rather than being treated as "no clip").
-                <path d="M0 0Z" />
+                <path d="M0 0Z" transform={CLIP_RASTER_INVERSE_TRANSFORM} />
               )}
             </clipPath>
           );
