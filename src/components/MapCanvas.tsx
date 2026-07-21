@@ -16,7 +16,7 @@ import {
 } from '../geometry/interlining';
 import { edgeEndpoints } from '../model/lineTopology';
 import { pairKeyOf } from '../model/pairKey';
-import { decideSegmentClick, nextSegmentStyle } from './canvas/appendGestures';
+import { decideCanvasClick, decideSegmentClick, nextSegmentStyle } from './canvas/appendGestures';
 import { effectiveBackgroundOrder, type ItemRef } from '../model/transforms';
 import { resolveDayNight, TRANSFER_STYLE_DEFAULTS } from '../model/transferStyle';
 import { defaultStyleProps } from '../model/styles';
@@ -36,6 +36,9 @@ import {
 import { HatchPatterns } from './HatchPatterns';
 import { SeamClips } from './canvas/SeamClips';
 import { StopMarker } from './StopMarker';
+import { StopGlyph } from './StopGlyph';
+import { resolveDotStyle } from '../model/dotStyle';
+import { dotSizeOverride } from '../model/dotSize';
 import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
 import { overdrawnViewBox } from './canvas/viewportMath';
@@ -483,7 +486,10 @@ export function MapCanvas() {
       mode.kind === 'creating-route-bullet' ||
       mode.kind === 'placing-label' ||
       mode.kind === 'creating-polygon' ||
-      mode.kind === 'placing-svg';
+      mode.kind === 'placing-svg' ||
+      // Edit Stops tracks the cursor only while Alt is held (the create-ghost)
+      // so the mode's ordinary pointer traffic never re-renders the canvas.
+      (mode.kind === 'appending-to-line' && selection.altHeld);
     if (wantsCursorTrack) {
       const raw = view.screenToWorld(e.clientX, e.clientY);
       if (mode.kind === 'creating-transfer') {
@@ -887,18 +893,29 @@ export function MapCanvas() {
     };
     return {
       // Mouseover: mark this corridor as the append hover target so
-      // HighlightedLineLayer previews the halo a click would arm. Only for a
-      // corridor the edited line runs (appendCtx gates); a foreign stripe
-      // previews nothing (clicking it switches lines — a different gesture).
-      // The setter dedupes, so the stripe's pointermove stream is a no-op until
-      // the corridor actually changes.
-      onLineHover: () => {
-        if (!appendCtx()) return;
+      // HighlightedLineLayer previews the halo a click would arm. For a
+      // corridor the edited line runs (appendCtx gates), any stripe in the
+      // band targets the segment. A FOREIGN stripe instead targets its whole
+      // line — clicking it switches the editor there, so the preview gently
+      // highlights the line the click would jump to. The setter dedupes, so
+      // the stripe's pointermove stream is a no-op until the target changes.
+      onLineHover: (lineId: LineId) => {
+        if (!appendCtx()) {
+          const mode = selection.uiMode;
+          if (
+            mode.kind === 'appending-to-line' &&
+            lineId !== mode.lineId &&
+            lines[lineId] !== undefined
+          )
+            selection.setAppendHover({ kind: 'line', lineId });
+          return;
+        }
         selection.setAppendHover({ kind: 'segment', pairKey: spec.pairKey });
       },
-      onLineLeave: () => {
+      onLineLeave: (lineId: LineId) => {
         const h = useSelection.getState().appendHover;
         if (h?.kind === 'segment' && h.pairKey === spec.pairKey) selection.setAppendHover(null);
+        if (h?.kind === 'line' && h.lineId === lineId) selection.setAppendHover(null);
       },
       onLineClick: (lineId: LineId, e: React.MouseEvent) => {
         const ctx = appendCtx();
@@ -1552,6 +1569,45 @@ export function MapCanvas() {
             />
           </g>
         )}
+
+        {/* Edit Stops alt-ghost: while Alt is held over empty canvas and the
+            alt-click would create a station (a create-* decision), preview
+            the actual stop dot the new station gets — the edited line's
+            SINGLETON dot (a fresh station starts with just this line), at the
+            same snapped point the drop will use (wantsCursorTrack routes
+            append-mode moves through snapPlacement). Above the dim, like the
+            rest of the append chrome. Hidden over interactive targets
+            (appendHover non-null): there the click routes to the target, not
+            the canvas. */}
+        {selection.uiMode.kind === 'appending-to-line' &&
+          selection.altHeld &&
+          cursorWorld &&
+          !selection.appendHover &&
+          (() => {
+            const mode = selection.uiMode;
+            const ln = lines[mode.lineId];
+            if (!ln) return null;
+            const d = decideCanvasClick(ln, mode.cursor, true);
+            if (d.kind !== 'create-seed' && d.kind !== 'create-connect' && d.kind !== 'create-splice')
+              return null;
+            return (
+              <g
+                data-export-exclude="1"
+                data-append-create-ghost="1"
+                opacity={0.5}
+                pointerEvents="none"
+              >
+                <StopGlyph
+                  cx={cursorWorld.x}
+                  cy={cursorWorld.y}
+                  style={resolveDotStyle(ln, null, true)}
+                  lineColor={ln.color}
+                  serviceCode={ln.service}
+                  sizeOverride={dotSizeOverride(ln, null, true)}
+                />
+              </g>
+            );
+          })()}
 
         {/* Line tags: in-band labels that ride each line's stripe. Faded
             in layering mode so the tag text doesn't compete with the

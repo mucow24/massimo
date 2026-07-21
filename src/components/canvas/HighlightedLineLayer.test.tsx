@@ -157,6 +157,29 @@ describe('<HighlightedLineLayer /> — Edit Stops cursor chrome', () => {
     expect(onCycle).toHaveBeenCalledWith('s2', 's1'); // the cursor's order
   });
 
+  it('every chip carries an invisible hit pad wider than its painted disc', () => {
+    // The glyph disc is 8px radius over live targets; the transparent 14px pad
+    // makes a near-miss land on the chip instead of mutating the line beneath.
+    const { container } = renderLayer(
+      lines(),
+      stations(),
+      appending({ kind: 'edge', from: 's2', to: 's1' }),
+      {
+        onRemoveCursorEdge: vi.fn(),
+        onCycleCursorEdgeStyle: vi.fn(),
+        renderables: stripeRenderables(),
+      },
+    );
+    for (const chip of [
+      container.querySelector('[data-append-remove-segment="s1|s2"]'),
+      container.querySelector('[data-append-cycle-segment-style="s1|s2"]'),
+    ]) {
+      const pad = chip!.querySelector('[data-chip-hit-pad]');
+      expect(pad).not.toBeNull();
+      expect(Number(pad!.getAttribute('r'))).toBeGreaterThan(8);
+    }
+  });
+
   it('a station cursor gets no style-cycle chip (style is a segment property)', () => {
     const { container } = renderLayer(
       lines(),
@@ -241,6 +264,81 @@ describe('<HighlightedLineLayer /> — Edit Stops hover preview', () => {
       appendHover: { kind: 'station', stationId: 's3' },
     });
     expect(container.querySelector('[data-append-hover-ring]')).toBeNull();
+  });
+
+  it('shows the dashed hover-zone boundary on a hovered member station', () => {
+    // The zone boundary is the station's true clickable footprint (cells ∪
+    // label rect) — "you are over this station, here is its edge". It rides
+    // alongside the ring preview, which separately promises an actionable
+    // click.
+    const { container } = renderLayer(lines(), stations(), appending(null), {
+      appendHover: { kind: 'station', stationId: 's1' },
+    });
+    expect(container.querySelector('[data-station-hover-zone="s1"]')).not.toBeNull();
+  });
+
+  it('shows the hover-zone boundary on a NON-member too, even when the click is dead', () => {
+    // A non-member with nothing armed gets no ring (the click does nothing) —
+    // but the zone cue still acknowledges the station under the pointer.
+    const withOrphan = { ...stations(), s3: triStation('s3', 200, 0) };
+    const { container } = renderLayer(lines(), withOrphan, appending(null), {
+      appendHover: { kind: 'station', stationId: 's3' },
+    });
+    expect(container.querySelector('[data-station-hover-zone="s3"]')).not.toBeNull();
+    expect(container.querySelector('[data-append-hover-ring]')).toBeNull();
+  });
+
+  it('no hover-zone boundary outside Edit Stops', () => {
+    const { container } = renderLayer(lines(), stations(), { kind: 'idle' }, {
+      appendHover: { kind: 'station', stationId: 's1' },
+    });
+    expect(container.querySelector('[data-station-hover-zone]')).toBeNull();
+  });
+
+  it('gently repaints a hovered FOREIGN line above the dim (clicking switches to it)', () => {
+    // Hovering another line's stripe marks the whole line, so "click here
+    // edits L2 instead" is visible before the click. Its stripes repaint
+    // (decorative, partial opacity) inside a data-append-hover-line group.
+    const twoLines = {
+      ...lines(),
+      L2: makeLine({ id: 'L2', service: 'B', color: '#0000cc', stations: ['s3', 's4'] }),
+    };
+    const renderables: OrderedRenderable[] = [
+      { kind: 'stripe', band: makeBandSpec(['L1']), stripeIndex: 0, priority: 0 },
+      {
+        kind: 'stripe',
+        band: makeBandSpec(['L2'], { pairKey: 's3|s4', fromId: 's3', toId: 's4' }),
+        stripeIndex: 0,
+        priority: 1,
+      },
+    ];
+    const { container } = renderLayer(twoLines, stations(), appending(null), {
+      appendHover: { kind: 'line', lineId: 'L2' },
+      renderables,
+    });
+    const group = container.querySelector('[data-append-hover-line="L2"]');
+    expect(group).not.toBeNull();
+    expect(group!.querySelector('path')).not.toBeNull();
+  });
+
+  it('no foreign-line preview outside Edit Stops', () => {
+    const twoLines = {
+      ...lines(),
+      L2: makeLine({ id: 'L2', service: 'B', color: '#0000cc', stations: ['s3', 's4'] }),
+    };
+    const renderables: OrderedRenderable[] = [
+      {
+        kind: 'stripe',
+        band: makeBandSpec(['L2'], { pairKey: 's3|s4', fromId: 's3', toId: 's4' }),
+        stripeIndex: 0,
+        priority: 0,
+      },
+    ];
+    const { container } = renderLayer(twoLines, stations(), { kind: 'idle' }, {
+      appendHover: { kind: 'line', lineId: 'L2' },
+      renderables,
+    });
+    expect(container.querySelector('[data-append-hover-line]')).toBeNull();
   });
 
   it('halos the hovered segment a click would arm', () => {

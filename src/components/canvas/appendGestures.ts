@@ -24,22 +24,26 @@ export type AppendCursor =
   | { kind: 'edge'; from: StationId; to: StationId }
   | null;
 
-// The Edit Stops mouseover target: the station or segment the pointer is
-// currently over. Purely a hover-preview affordance ("what a click acts on"),
-// separate from the CURSOR (the committed pen/armed edge). Ephemeral — set on
-// pointer enter/move, cleared on leave and on mode exit.
+// The Edit Stops mouseover target: the station, segment, or FOREIGN line the
+// pointer is currently over. Purely a hover-preview affordance ("what a click
+// acts on"), separate from the CURSOR (the committed pen/armed edge). The
+// 'line' kind marks a stripe of a line other than the edited one — clicking
+// it switches the editor to that line, so the preview highlights the whole
+// line. Ephemeral — set on pointer enter/move, cleared on leave and on mode
+// exit.
 export type AppendHover =
   | { kind: 'station'; stationId: StationId }
   | { kind: 'segment'; pairKey: string }
+  | { kind: 'line'; lineId: string }
   | null;
 
 /** True when two hover targets are the same (drives the store's no-churn set). */
 export function sameAppendHover(a: AppendHover, b: AppendHover): boolean {
   if (a === b) return true;
   if (!a || !b || a.kind !== b.kind) return false;
-  return a.kind === 'station'
-    ? a.stationId === (b as { stationId: StationId }).stationId
-    : a.pairKey === (b as { pairKey: string }).pairKey;
+  if (a.kind === 'station') return a.stationId === (b as { stationId: StationId }).stationId;
+  if (a.kind === 'segment') return a.pairKey === (b as { pairKey: string }).pairKey;
+  return a.lineId === (b as { lineId: string }).lineId;
 }
 
 // What a gesture means. `cursor` on the mutating kinds is the follow-up cursor

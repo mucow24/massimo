@@ -8,6 +8,7 @@ import { stopHalfOf } from '../model/lineWidth';
 import { stopDashOf } from '../model/dashSize';
 import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
 import {
+  SELECTION_DASH,
   SELECTION_STROKE_WIDTH,
   SELECTION_WASH_OPACITY,
   selectionOutlineTones,
@@ -16,8 +17,14 @@ import {
 const SELECTION_CORNER_RADIUS = 5;
 const MATCH_STROKE_COLOR = '#888';
 const MATCH_STROKE_WIDTH = 1.5;
+// The Edit Stops hover-zone boundary is the selection ring at 3/4 weight —
+// thin enough to read as an ephemeral cue, still two-tone so it survives any
+// backdrop. Dashed on purpose: selected stations deliberately stay SOLID
+// (see SELECTION_DASH), so a dashed silhouette can only ever mean "this is
+// the clickable footprint under your pointer", never "selected".
+const HOVER_ZONE_WEIGHT = 0.75;
 
-export type SilhouetteLayer = 'wash' | 'stroke' | 'match-stroke';
+export type SilhouetteLayer = 'wash' | 'stroke' | 'match-stroke' | 'hover-zone';
 
 /**
  * A station's selection silhouette: the smoothed union of its cells AABB and
@@ -84,6 +91,24 @@ export function StationSilhouette({
           fillOpacity={SELECTION_WASH_OPACITY}
           fillRule="nonzero"
         />
+      </g>
+    );
+  }
+  if (layer === 'hover-zone') {
+    return (
+      <g data-station-hover-zone={station.id} transform={transform} pointerEvents="none">
+        {selectionOutlineTones(themeColors).map(({ tone, stroke, strokeWidth }) => (
+          <path
+            key={tone}
+            d={pathStr}
+            fill="none"
+            stroke={stroke}
+            strokeWidth={strokeWidth * HOVER_ZONE_WEIGHT}
+            strokeDasharray={SELECTION_DASH}
+            vectorEffect="non-scaling-stroke"
+            strokeLinejoin="round"
+          />
+        ))}
       </g>
     );
   }

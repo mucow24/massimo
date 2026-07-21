@@ -12,6 +12,7 @@ import { StopGlyph } from '../StopGlyph';
 import { DashGlyph } from '../DashGlyph';
 import { dashSpec } from '../../geometry/stationDash';
 import { StationView } from '../StationView';
+import { StationSilhouette } from '../StationSilhouette';
 import { useThemeColors } from '../../state/theme';
 import {
   appendSegmentHoverPreview,
@@ -217,6 +218,33 @@ export function HighlightedLineLayer({
                 opacity: 0.5,
               }),
             );
+          // Gentle whole-line preview of a hovered FOREIGN line: repaint its
+          // stripes above the dim at partial strength — the line "lights up"
+          // to say a click here switches the editor to it. Decorative bodies
+          // only (no casing halo): a soft cue, not the selection treatment.
+          if (append && appendHover?.kind === 'line' && lines[appendHover.lineId]) {
+            const foreignId = appendHover.lineId;
+            const foreignStripes = renderables.filter(
+              (r): r is Extract<OrderedRenderable, { kind: 'stripe' }> =>
+                r.kind === 'stripe' && r.band.lines[r.stripeIndex].id === foreignId,
+            );
+            if (foreignStripes.length > 0)
+              push(
+                <g key="hover-line" data-append-hover-line={foreignId} opacity={0.55}>
+                  {foreignStripes.map((r, i) => (
+                    <SegmentBand
+                      key={'hover-line:' + i}
+                      decorative
+                      spec={r.band}
+                      stripeIndex={r.stripeIndex}
+                      pass="body"
+                      lines={lines}
+                      underlayColor={underlayColor}
+                    />
+                  ))}
+                </g>,
+              );
+          }
           renderables.forEach((r, i) => {
             if (r.kind !== 'marker' || r.spec.lineId !== highlightLineId) return;
             push(
@@ -375,6 +403,19 @@ export function HighlightedLineLayer({
             // the click matrix so it never rings a station a click wouldn't act
             // on, and suppressed on the armed station cursor (which wears the
             // full ring above).
+            // The dashed hover-zone boundary on the station under the pointer:
+            // its true clickable footprint (cells ∪ label rect), shown for
+            // EVERY station, member or not — "you are over this station, here
+            // is its edge". Independent of the ring preview below, which only
+            // promises an actionable click.
+            const hoverZone: ReactNode =
+              appendHover?.kind === 'station' && stations[appendHover.stationId] ? (
+                <StationSilhouette
+                  station={stations[appendHover.stationId]}
+                  layer="hover-zone"
+                />
+              ) : null;
+
             let hoverRing: ReactNode = null;
             if (
               appendHover?.kind === 'station' &&
@@ -395,6 +436,7 @@ export function HighlightedLineLayer({
             return (
               <>
                 {addable}
+                {hoverZone}
                 {ring}
                 {starter}
                 {hoverRing}
@@ -487,6 +529,14 @@ export function HighlightedLineLayer({
   );
 }
 
+// Invisible click pad under a chip glyph: the painted disc is only 16px
+// across and floats over live targets (the station / the stripe), so a
+// near-miss used to land beneath it and MUTATE the line (connect/splice/arm)
+// instead of hitting the chip. transparent fill still captures pointer events.
+function ChipHitPad({ cx, cy, zoom }: { cx: number; cy: number; zoom: number }) {
+  return <circle data-chip-hit-pad="1" cx={cx} cy={cy} r={14 / zoom} fill="transparent" />;
+}
+
 // The shared × glyph for the remove chips: a white disc with a black cross,
 // sized in screen space so it stays clickable at any zoom.
 function RemoveChipGlyph({ cx, cy, zoom }: { cx: number; cy: number; zoom: number }) {
@@ -494,6 +544,7 @@ function RemoveChipGlyph({ cx, cy, zoom }: { cx: number; cy: number; zoom: numbe
   const arm = r * 0.45;
   return (
     <>
+      <ChipHitPad cx={cx} cy={cy} zoom={zoom} />
       <circle cx={cx} cy={cy} r={r} fill="#fff" stroke="#000" strokeWidth={1 / zoom} />
       <path
         d={`M ${cx - arm} ${cy - arm} L ${cx + arm} ${cy + arm} M ${cx - arm} ${cy + arm} L ${cx + arm} ${cy - arm}`}
@@ -514,6 +565,7 @@ function StyleChipGlyph({ cx, cy, zoom }: { cx: number; cy: number; zoom: number
   const dash = 2.2 / zoom;
   return (
     <>
+      <ChipHitPad cx={cx} cy={cy} zoom={zoom} />
       <circle cx={cx} cy={cy} r={r} fill="#fff" stroke="#000" strokeWidth={1 / zoom} />
       <line
         x1={cx - half}
