@@ -185,6 +185,30 @@ describe('<StylesPanel />', () => {
     expect(useDoc.getState().routeBullets.b1.styleId).toBe('y2');
   });
 
+  it('kind sections collapse and re-expand from their headers', () => {
+    render(<StylesPanel />);
+    const toggle = screen.getByRole('button', { name: 'Labels' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('Heading')).toBeNull();
+    expect(screen.queryByText('Body')).toBeNull();
+    // Other sections are untouched.
+    expect(screen.getByText('Big')).toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(screen.getByText('Heading')).toBeInTheDocument();
+  });
+
+  it('"+ New style" on a collapsed section re-expands it to show the new editor', () => {
+    render(<StylesPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Route bullets' }));
+    expect(screen.queryByText('Big')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'New route bullet style' }));
+    // The section re-opened and the fresh style's editor is on screen.
+    expect(screen.getByText('Big')).toBeInTheDocument();
+    expect(screen.getByRole('slider', { name: 'Size' })).toBeInTheDocument();
+  });
+
   it('the label editor edits typography (weight select + italic + align)', async () => {
     render(<StylesPanel />);
     fireEvent.click(screen.getByRole('button', { name: 'Edit Heading' }));

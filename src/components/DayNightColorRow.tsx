@@ -41,7 +41,7 @@ export function DayNightColorRow({
   disabled?: boolean;
 }) {
   return (
-    <div className="row">
+    <div className={'row' + (disabled ? ' disabled' : '')}>
       <label htmlFor={id}>{label}</label>
       <SunIcon aria-hidden="true" />
       <ColorField

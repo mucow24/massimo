@@ -600,12 +600,22 @@ const DOT_SHAPES: { shape: DotBaseShape; label: string }[] = [
 // need *some* color to show; the real color comes from each line at paint time.
 const PREVIEW_LINE_COLOR = '#3b7dd8';
 
-function DotPreview({ style, size = 20 }: { style: DotStyle; size?: number }) {
+// `viewSize` is the world-unit window; a size larger than it magnifies the
+// glyph (the big Preview row renders at 2×).
+function DotPreview({
+  style,
+  size = 20,
+  viewSize = size,
+}: {
+  style: DotStyle;
+  size?: number;
+  viewSize?: number;
+}) {
   return (
     <svg
       width={size}
       height={size}
-      viewBox={`${-size / 2} ${-size / 2} ${size} ${size}`}
+      viewBox={`${-viewSize / 2} ${-viewSize / 2} ${viewSize} ${viewSize}`}
       aria-hidden="true"
     >
       <StopGlyph cx={0} cy={0} style={style} lineColor={PREVIEW_LINE_COLOR} serviceCode="A" />
@@ -642,12 +652,16 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
   // never carries a service code, so only shape + fill do anything (see
   // DashGlyph / resolveDotRender). Don't offer the inert controls.
   const isDash = p.shape === 'dash';
+  // No stroke ⇒ its color and alignment are inert; grey them out (don't hide —
+  // the controls keep their place so the editor doesn't reflow while sliding
+  // the width through 0).
+  const strokeOff = p.strokeWidth === 0;
 
   return (
     <div className="style-editor">
       <div className="row">
         <label>Preview</label>
-        <DotPreview style={p} size={28} />
+        <DotPreview style={p} size={56} viewSize={28} />
       </div>
       <div className="row">
         <label>Shape</label>
@@ -720,6 +734,7 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
         </div>
       ) : (
         <>
+          <div className="style-divider" />
           <NumericFieldRow
             id={`style-${id}-dot-stroke`}
             label="Stroke width"
@@ -731,13 +746,14 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
             getCurrent={liveNumberProp(id, 'strokeWidth', p.strokeWidth)}
             textboxAllowAboveMax
           />
-          <div className="row">
+          <div className={'row' + (strokeOff ? ' disabled' : '')}>
             <label>Stroke color</label>
             <div className="shape-group">
               <ToggleGroup.Root
                 type="single"
                 className="align-group"
                 value={strokeMode}
+                disabled={strokeOff}
                 onValueChange={(v) => {
                   if (v) dp({ strokeColor: v === 'line' ? 'line' : strokePair });
                 }}
@@ -765,17 +781,19 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
               titleNoun="stroke"
               value={strokePair.day}
               darkValue={strokePair.night}
+              disabled={strokeOff}
               onChange={(day) => dp({ strokeColor: { day, night: strokePair.night } })}
               onDarkChange={(night) => dp({ strokeColor: { day: strokePair.day, night } })}
             />
           )}
-          <div className="row">
-            <label>Align</label>
+          <div className={'row' + (strokeOff ? ' disabled' : '')}>
+            <label>Stroke align</label>
             <div className="shape-group">
               <ToggleGroup.Root
                 type="single"
                 className="align-group"
                 value={p.strokeAlign}
+                disabled={strokeOff}
                 onValueChange={(v) => {
                   if (v) dp({ strokeAlign: v as DotStyle['strokeAlign'] });
                 }}
@@ -794,6 +812,7 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
               </ToggleGroup.Root>
             </div>
           </div>
+          <div className="style-divider" />
           <div className="row">
             <label htmlFor={`style-${id}-service-code`}>Service code</label>
             <FieldCheckbox

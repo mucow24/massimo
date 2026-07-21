@@ -1800,7 +1800,8 @@ button.field-select {
   top: 0;
   z-index: 1;
 }
-.list-header .sort-header {
+.list-header .sort-header,
+.list-header .section-toggle {
   background: transparent;
   border: 0;
   padding: 2px 0;
@@ -1812,13 +1813,15 @@ button.field-select {
   align-items: center;
   gap: 4px;
 }
-.list-header .sort-header:hover {
+.list-header .sort-header:hover,
+.list-header .section-toggle:hover {
   color: var(--text);
 }
 .list-header .sort-header.active {
   color: var(--text);
 }
-.list-header .sort-header.grow {
+.list-header .sort-header.grow,
+.list-header .section-toggle.grow {
   flex: 1;
 }
 .list-header .sort-arrow {
@@ -2424,13 +2427,21 @@ button.map-library-sort {
 
 /* Styles panel (sidebar): an expanded style row's editor body — the style's
    parameters as direct controls, reusing the popovers' row idioms. Indented
-   under its row and closed off with a hairline so consecutive rows read
-   grouped. */
+   under its row. The OPEN style must read apart from the flat list: its row
+   wears the selected wash, the editor body the inset wash, and a shared accent
+   rail down the left edge ties the two into one card (inset shadow, not a
+   border, so nothing shifts). */
+.list-row.style-open {
+  background: var(--row-selected);
+  box-shadow: inset 2px 0 var(--accent);
+}
 .style-editor {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 4px 12px 12px 34px;
+  padding: 8px 12px 12px 34px;
+  background: var(--inset-bg);
+  box-shadow: inset 2px 0 var(--accent);
   border-bottom: 1px solid var(--inset-border);
 }
 .style-editor .row {
@@ -2444,6 +2455,11 @@ button.map-library-sort {
   color: var(--text);
   font-weight: 700;
   font-size: var(--fs-small);
+}
+/* A gated row (stroke color/align while the stroke width is 0): grey the
+   label to match its disabled controls (button:disabled is 0.45 opacity). */
+.style-editor .row.disabled > label {
+  opacity: 0.45;
 }
 .style-editor .row select {
   flex: 1;

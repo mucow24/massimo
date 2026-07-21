@@ -18,7 +18,8 @@ beforeEach(() => {
       ...DEFAULT_DOC.styles,
       'sd-square': makeStyle('stopDot', 'sd-square', {
         name: 'Square',
-        props: { shape: 'square' },
+        // A real stroke: the color/align controls are gated on strokeWidth > 0.
+        props: { shape: 'square', strokeWidth: 2 },
       }),
       'sd-dash': makeStyle('stopDot', 'sd-dash', { name: 'Dash', props: { shape: 'dash' } }),
     },
@@ -154,6 +155,33 @@ describe('<StyleEditor> — stopDot', () => {
   it('hides the stroke-alignment selector for a dash tick (stroke is inert)', () => {
     render(<StyleEditor def={useDoc.getState().styles['sd-dash']} />);
     expect(screen.queryByLabelText('Align inside')).toBeNull();
+  });
+
+  it('greys out stroke color and alignment while the stroke width is 0', () => {
+    render(
+      <StyleEditor
+        def={makeStyle('stopDot', 'y1', { props: { shape: 'circle', strokeWidth: 0 } })}
+      />,
+    );
+    // The Line/Custom mode toggle, the custom color swatches, and the
+    // alignment selector are all inert without a stroke to color or place.
+    expect(screen.getByLabelText('Stroke line')).toBeDisabled();
+    expect(screen.getByLabelText('Stroke custom')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Stroke color' })).toBeDisabled();
+    expect(screen.getByLabelText('Align center')).toBeDisabled();
+    expect(screen.getByLabelText('Align inside')).toBeDisabled();
+    expect(screen.getByLabelText('Align outside')).toBeDisabled();
+  });
+
+  it('stroke color and alignment come back once the stroke has width', () => {
+    render(
+      <StyleEditor
+        def={makeStyle('stopDot', 'y1', { props: { shape: 'circle', strokeWidth: 2 } })}
+      />,
+    );
+    expect(screen.getByLabelText('Stroke line')).toBeEnabled();
+    expect(screen.getByLabelText('Stroke custom')).toBeEnabled();
+    expect(screen.getByLabelText('Align inside')).toBeEnabled();
   });
 });
 
