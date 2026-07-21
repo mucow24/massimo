@@ -1280,33 +1280,47 @@ export function beginHistoryGroup(): {
 }
 
 /**
- * Cancel append-to-line mode and garbage-collect a freshly-created empty
- * line. "Add → Line" commits the line eagerly so the inspector and banner
- * can preview its color/service letter; if the user cancels (Esc, right-
- * click, or canvas-background click) before adding any stations, that
- * placeholder has no presence on the map and should disappear with the mode.
+ * Cancel append-to-line mode. "Add → Line" commits an empty placeholder line
+ * eagerly so the inspector and banner can preview its color/service letter;
+ * the placeholder is garbage-collected by the mode-exit subscription below,
+ * so this is just the named mode-exit entry point (Esc, right-click,
+ * canvas-background click).
  */
 export function cancelAppendMode(): void {
-  const sel = useSelection.getState();
-  const cur = sel.uiMode;
-  const lineId = cur.kind === 'appending-to-line' ? cur.lineId : null;
-  if (lineId) {
-    const doc = useDoc.getState();
-    const line = doc.lines[lineId];
-    if (line && line.stations.length === 0) {
-      // The placeholder line was committed eagerly by addLine, which also
-      // advanced lineCounter to pick its color. Cancelling before any station
-      // is placed must undo BOTH in one atomic set, so repeated Add→Esc doesn't
-      // walk the color cycle forward. (Real line deletion via T.deleteLine
-      // leaves lineCounter alone, which is why the rollback lives here.)
-      useDoc.setState((s) => ({
-        ...T.deleteLine(s, lineId),
-        lineCounter: Math.max(0, s.lineCounter - 1),
-      }));
-    }
-  }
-  sel.setAppending(null);
+  useSelection.getState().setAppending(null);
 }
+
+// GC a still-empty append placeholder. The placeholder was committed eagerly
+// by addLine, which also advanced lineCounter to pick its color; discarding it
+// must undo BOTH in one atomic set, so repeated Add→Esc doesn't walk the color
+// cycle forward. (Real line deletion via T.deleteLine leaves lineCounter
+// alone, which is why the rollback lives here.) The rollback is only sound
+// while the placeholder is the last-added line — Toolbar's Add→Line exits any
+// active append BEFORE creating the next line to preserve that ordering.
+function collectAppendPlaceholder(lineId: LineId): void {
+  const line = useDoc.getState().lines[lineId];
+  if (!line || line.stations.length !== 0) return;
+  useDoc.setState((s) => ({
+    ...T.deleteLine(s, lineId),
+    lineCounter: Math.max(0, s.lineCounter - 1),
+  }));
+}
+
+// The GC must run on EVERY exit from appending-to-line — not just the
+// Esc/background-click paths that call cancelAppendMode. The T/L shortcuts,
+// toolbar mode toggles, and item-click exits all flip the mode directly, which
+// used to leak the station-less placeholder into the doc (ghost sidebar row,
+// serialized into saves, lineCounter left advanced). Watching the transition
+// makes the GC unconditional; switching straight from one append to another
+// (a foreign-stripe click) collects the elder placeholder too. Re-entrancy is
+// impossible: the GC writes only the doc store, never selection.
+useSelection.subscribe((sel, prev) => {
+  const was = prev.uiMode;
+  if (was.kind !== 'appending-to-line') return;
+  const is = sel.uiMode;
+  if (is.kind === 'appending-to-line' && is.lineId === was.lineId) return;
+  collectAppendPlaceholder(was.lineId);
+});
 
 // ----- Drag-vs-click suppression (module-level, not persisted) -----
 export const dragState = { suppressClick: false };

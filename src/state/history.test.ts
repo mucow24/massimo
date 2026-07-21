@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { pushHistory, historyDepth, redoDepth, undo, redo } from './history';
-import { useDoc, pickDocSnapshot, HISTORY_LIMIT } from './store';
+import { pushHistory, historyDepth, redoDepth, undo, redo, isHistoryGrouping } from './history';
+import { useDoc, pickDocSnapshot, HISTORY_LIMIT, beginHistoryGroup } from './store';
 import type { DocSnapshot } from './store';
 import { DEFAULT_DOC } from '../model/transforms';
 
@@ -72,6 +72,43 @@ describe('undo / redo — persistence flush', () => {
 
     expect(useDoc.getState().name).toBe('Edited');
     expect(persistedName()).toBe('Edited');
+  });
+
+  it('undo is a no-op while a history group is open', () => {
+    // zundo's undo ignores pause (pause only gates RECORDING), so stepping
+    // history mid-gesture would pop an entry the still-armed gesture
+    // immediately clobbers, and the group's later commit would push a stale
+    // snapshot while wiping redo. Time travel must wait for the group to seal.
+    useDoc.getState().setDocName('First');
+    const group = beginHistoryGroup();
+    useDoc.getState().setDocName('Mid-gesture');
+
+    undo();
+
+    expect(useDoc.getState().name).toBe('Mid-gesture');
+    expect(historyDepth()).toBe(1);
+    expect(redoDepth()).toBe(0);
+    expect(isHistoryGrouping()).toBe(true);
+
+    // Once the group seals, undo works normally again.
+    group.commit();
+    expect(historyDepth()).toBe(2);
+    undo();
+    expect(useDoc.getState().name).toBe('First');
+  });
+
+  it('redo is a no-op while a history group is open', () => {
+    useDoc.getState().setDocName('First');
+    undo();
+    expect(redoDepth()).toBe(1);
+    const group = beginHistoryGroup();
+    useDoc.getState().setDocName('Mid-gesture');
+
+    redo();
+
+    expect(useDoc.getState().name).toBe('Mid-gesture');
+    expect(redoDepth()).toBe(1);
+    group.commit();
   });
 
   it('leaves the redo stack intact after an undo (flush records no history)', () => {

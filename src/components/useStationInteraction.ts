@@ -311,7 +311,11 @@ export function useStationInteraction(
   const handlers = {
     onPointerDown: modeInert ? undefined : onPointerDown,
     onClick: modeInert || inHandMode ? undefined : onClick,
-    onDoubleClick: modeInert || inHandMode ? undefined : onDoubleClick,
+    // Inert in Edit Stops too: the dblclick's selectStation spreads
+    // clearedSelections(), which would null selectedLineId while the mode
+    // stays armed — highlight and dim wash gone, invisible line still
+    // routing station clicks to connect/splice.
+    onDoubleClick: modeInert || inHandMode || inAppend ? undefined : onDoubleClick,
     onContextMenu: modeInert ? undefined : onContextMenu,
     onPointerEnter: inIdle ? onHoverEnter : inAppend ? onAppendHoverEnter : undefined,
     onPointerMove: inTransferPick ? onTransferPointerMove : undefined,

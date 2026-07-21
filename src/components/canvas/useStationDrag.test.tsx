@@ -21,12 +21,14 @@ function pointerEvent(opts: {
   clientY: number;
   pointerId?: number;
   shiftKey?: boolean;
+  buttons?: number;
 }): React.PointerEvent {
   return {
     clientX: opts.clientX,
     clientY: opts.clientY,
     pointerId: opts.pointerId ?? 1,
     shiftKey: opts.shiftKey ?? false,
+    buttons: opts.buttons ?? 1,
   } as unknown as React.PointerEvent;
 }
 
@@ -294,6 +296,45 @@ describe('useStationDrag — pointercancel reverts the in-flight drag', () => {
     // The drag ref is cleared: a stray pointermove after cancel is inert (it
     // must NOT resume the drag with no button held).
     result.current.onPointerMove(pointerEvent({ clientX: 400, clientY: 400, shiftKey: true }));
+    expect(useDoc.getState().stations['A'].x).toBe(0);
+  });
+});
+
+describe('useStationDrag — a move with no buttons cancels the dead gesture', () => {
+  it('reverts and disarms when a move arrives with buttons === 0 (lost pointerup)', () => {
+    // Press → alt-tab → release the button elsewhere → return: no pointerup or
+    // pointercancel ever reached the svg (sub-threshold presses hold no
+    // capture, and even a captured pointer gets none once the window blurred).
+    // The armed ref then sees plain HOVER moves, which arrive with
+    // buttons === 0 — they must cancel the gesture, not glue the station to
+    // the cursor.
+    setModes({ line: false, all: 'off', grid: 'off' });
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['A'] }) },
+      lineOrder: ['L1'],
+      stations: { A: stationWithStop('A' as StationId, 'L1', { x: 0, y: 0 }) },
+    });
+    const depthBefore = historyDepth();
+
+    const svgRef = createRef<SVGSVGElement>() as RefObject<SVGSVGElement | null>;
+    const { result } = renderHook(() => useStationDrag(svgRef, 1));
+
+    result.current.onStartDrag(
+      'A' as StationId,
+      pointerEvent({ clientX: 200, clientY: 200, shiftKey: true }),
+    );
+    result.current.onPointerMove(pointerEvent({ clientX: 260, clientY: 240, shiftKey: true }));
+    expect(useDoc.getState().stations['A'].x).toBeCloseTo(60, 5);
+
+    // The first hover move after focus returns: no buttons held.
+    result.current.onPointerMove(pointerEvent({ clientX: 400, clientY: 400, buttons: 0 }));
+
+    expect(useDoc.getState().stations['A'].x).toBe(0);
+    expect(historyDepth()).toBe(depthBefore);
+    expect(isHistoryGrouping()).toBe(false);
+    // Disarmed: later moves are inert.
+    result.current.onPointerMove(pointerEvent({ clientX: 500, clientY: 500 }));
     expect(useDoc.getState().stations['A'].x).toBe(0);
   });
 });

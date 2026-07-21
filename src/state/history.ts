@@ -47,12 +47,22 @@ function flushPersist(): void {
 // After moving through history, prune the (separate) selection store of any
 // ids the restored doc no longer contains — otherwise undoing the deletion of a
 // still-selected item leaves a dangling selection id behind.
+//
+// Both are NO-OPS while a history group is open: zundo's undo/redo ignore
+// pause (pause only gates recording), so stepping mid-gesture would pop an
+// entry the still-armed gesture immediately clobbers, and the group's later
+// commit would push its stale pre-gesture snapshot while wiping the redo
+// stack — non-monotonic undo. Field edits aren't affected: the Ctrl+Z handler
+// blurs first, and blur seals a focused field's group before undo() runs (the
+// blur-then-undo contract).
 export function undo(): void {
+  if (isHistoryGrouping()) return;
   useDoc.temporal.getState().undo();
   flushPersist();
   useSelection.getState().reconcileWithDoc(useDoc.getState());
 }
 export function redo(): void {
+  if (isHistoryGrouping()) return;
   useDoc.temporal.getState().redo();
   flushPersist();
   useSelection.getState().reconcileWithDoc(useDoc.getState());

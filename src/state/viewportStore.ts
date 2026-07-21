@@ -117,7 +117,17 @@ export const useViewportStore = create<ViewportState>()(
       x: 0,
       y: 0,
       zoom: 1,
-      setViewport: (v) => set(v),
+      // Also voids any in-flight live viewport: an external camera jump
+      // (Reset view, sidebar centering, the warning-toast jump) must kill a
+      // scheduled wheel-settle commit, or the stale pre-jump pending snaps
+      // the camera back up to 90ms later (and post-jump momentum ticks would
+      // rebase onto it). commitPending itself is unaffected — it reads
+      // `pending` before calling here, and its own trailing setPending(null)
+      // becomes a no-op.
+      setViewport: (v) => {
+        set(v);
+        useLiveViewportStore.getState().setPending(null);
+      },
       gridVisible: true,
       setGridVisible: (gridVisible) => set({ gridVisible }),
       gridSize: 10,

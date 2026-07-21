@@ -508,15 +508,19 @@ export function MapCanvas() {
   };
   // A browser pointercancel (pen palm rejection, window switch, capture loss)
   // voids an in-flight gesture with no matching pointerup. Fan it out to every
-  // drag hook so each disarms its ref and rolls back its live writes instead of
-  // leaving the drag stranded — armed for a later stray move to resume, or for
-  // an unrelated pointerup to commit a move the user never made, with history
-  // recording paused the whole time. Pan + rect-select are intentionally
-  // omitted: neither opens a history group or mutates the doc. The line-tag
+  // gesture so each disarms its ref instead of leaving it stranded — armed for
+  // a later stray move to resume, or for an unrelated pointerup to commit a
+  // gesture the user never finished. The doc-mutating drags also roll their
+  // live writes back; the pan commits its accumulated delta instead (the
+  // viewBox has already visibly moved — snapping back would be jarring); the
+  // marquee just clears (it mutates no doc, but its pointerup REPLACES the
+  // selection, so a stranded rect must never survive to one). The line-tag
   // drag is window-wired, so it hooks window 'pointercancel' itself instead
   // of appearing here.
   const onPointerCancel = () => {
+    view.cancel();
     drag.onPointerCancel();
+    rectSelect.onPointerCancel();
     itemDrag.onPointerCancel();
     polyDrag.onPointerCancel();
     svgDrag.onPointerCancel();
@@ -766,6 +770,10 @@ export function MapCanvas() {
     // A click-to-place tool / active mode consumes the background click (drop an
     // item or exit the mode); only a plain idle click falls through to deselect.
     if (placement.handleCanvasPlace(e)) return;
+    // Shift is additive in every other gesture (item toggle, station toggle,
+    // marquee 'add'): a modifier click that MISSES an item is a failed
+    // additive click, not a deselect-everything.
+    if (e.shiftKey) return;
     selection.selectStation(null);
     selection.selectLineTag(null);
     selection.selectRouteBullet(null);

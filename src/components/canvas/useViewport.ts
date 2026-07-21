@@ -1,6 +1,6 @@
 import { RefObject, useEffect, useRef, useState } from 'react';
 import { dragState } from '../../state/store';
-import { DRAG_MOVE_THRESHOLD } from './dragGesture';
+import { DRAG_MOVE_THRESHOLD, pointerLost } from './dragGesture';
 import { useLiveViewportStore, useViewportStore } from '../../state/viewportStore';
 import type { Viewport } from '../../model/types';
 import type { ViewportProjection } from './screenAnchor';
@@ -49,6 +49,7 @@ export interface ViewportApi {
   startPan: (e: React.PointerEvent) => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
+  cancel: () => void;
 }
 
 /**
@@ -214,6 +215,9 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
 
   const onPointerMove = (e: React.PointerEvent) => {
     if (!panStartRef.current) return;
+    // A lost pointerup (alt-tab mid-press) surfaces as a button-less move —
+    // end the pan instead of gluing the map to the hovering cursor.
+    if (pointerLost(e)) return cancel();
     const mxDelta = e.clientX - panStartRef.current.mx;
     const myDelta = e.clientY - panStartRef.current.my;
     // Mark the pan as a real drag once it crosses a small threshold so the
@@ -252,6 +256,18 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
     }
   };
 
+  // A browser pointercancel (or a button-less move — lost pointerup) ends the
+  // pan with no pointerup. Commit the pan accumulated so far — the viewBox has
+  // already visibly moved, so discarding would snap the map back — and disarm.
+  // No pointer id here: after a real pointercancel the browser has already
+  // released the capture.
+  const cancel = () => {
+    if (!panStartRef.current) return;
+    commitPending();
+    panStartRef.current = null;
+    setPanning(false);
+  };
+
   return {
     size,
     viewport,
@@ -265,5 +281,6 @@ export function useViewport(svgRef: RefObject<SVGSVGElement | null>): ViewportAp
     startPan,
     onPointerMove,
     onPointerUp,
+    cancel,
   };
 }

@@ -143,6 +143,10 @@ export function Toolbar() {
   const onAddLabel = () => toggleMode('placing-label');
   const onAddPolygon = () => toggleMode('creating-polygon');
   const onAddLine = () => {
+    // Exit any active Edit Stops FIRST: the placeholder GC (the mode-exit
+    // subscription in store.ts) rolls lineCounter back, which is only sound
+    // while the old placeholder is still the last-added line.
+    selection.setAppending(null);
     const id = addLine();
     selection.startAppend(id);
   };

@@ -5,7 +5,7 @@ import { useViewportStore } from '../../state/viewportStore';
 import type { StationId } from '../../model/types';
 import { Rotation } from '../../geometry/orientation';
 import { snapDraggedStation, SnapGuide, SNAP_PERP_TOLERANCE } from '../../geometry/snap';
-import { finishDrag, trackDragMove } from './dragGesture';
+import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
 import {
   collectGroupSiblings,
   emptyGroupSiblings,
@@ -104,6 +104,8 @@ export function useStationDrag(
   const onPointerMove = (e: React.PointerEvent) => {
     const ds = dragStationRef.current;
     if (!ds) return;
+    // A lost pointerup (alt-tab mid-press) surfaces as a button-less move.
+    if (pointerLost(e)) return onPointerCancel();
     const { moved, dxScreen, dyScreen } = trackDragMove(ds, e, svgRef);
     if (!moved) return;
     const dx = dxScreen / viewportZoom;

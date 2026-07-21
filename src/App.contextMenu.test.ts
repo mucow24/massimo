@@ -15,6 +15,7 @@ import type { LineId } from './model/types';
 let sidebar: HTMLDivElement;
 let connector: HTMLDivElement;
 let canvasish: HTMLDivElement;
+let toolbarish: HTMLDivElement;
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -24,8 +25,14 @@ beforeEach(() => {
   sidebar.className = 'sidebar';
   connector = document.createElement('div');
   sidebar.appendChild(connector);
+  // Cancel-a-mode is a CANVAS gesture, so the cancelling surface is the
+  // canvas host, and any other chrome (toolbar, name field, popovers) passes
+  // through like the sidebar always did.
   canvasish = document.createElement('div');
-  document.body.append(sidebar, canvasish);
+  canvasish.className = 'canvas-host';
+  toolbarish = document.createElement('div');
+  toolbarish.className = 'toolbar';
+  document.body.append(sidebar, canvasish, toolbarish);
   document.addEventListener('contextmenu', cancelModeOnContextMenu, true);
 });
 
@@ -33,6 +40,7 @@ afterEach(() => {
   document.removeEventListener('contextmenu', cancelModeOnContextMenu, true);
   sidebar.remove();
   canvasish.remove();
+  toolbarish.remove();
 });
 
 const enterPlacingMode = () => {
@@ -52,11 +60,21 @@ describe('cancelModeOnContextMenu', () => {
     expect(propagated).toBe(true);
   });
 
-  it('a right-click outside the sidebar cancels the mode', () => {
+  it('a right-click on the canvas cancels the mode', () => {
     enterPlacingMode();
     const propagated = rightClick(canvasish);
     expect(useSelection.getState().uiMode.kind).toBe('idle');
     expect(propagated).toBe(false); // preventDefault: no native menu
+  });
+
+  it('a right-click on toolbar chrome leaves the active mode alone', () => {
+    // Right-clicking the map-name field to paste (or any toolbar surface)
+    // must neither kill the mode nor suppress the native context menu — a
+    // placing-svg mode would even lose its parsed file payload.
+    enterPlacingMode();
+    const propagated = rightClick(toolbarish);
+    expect(useSelection.getState().uiMode.kind).toBe('placing-station');
+    expect(propagated).toBe(true); // native menu intact
   });
 
   it('passthrough modes are never touched (layering owns right-click)', () => {

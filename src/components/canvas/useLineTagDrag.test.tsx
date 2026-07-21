@@ -241,6 +241,26 @@ describe('useLineTagDrag', () => {
     expect(useDoc.getState().lineTags['T'].distance).toBe(20); // disarmed
   });
 
+  it('a move with no buttons (lost pointerup) cancels like pointercancel', () => {
+    // The button was released while the window was blurred (alt-tab) — no
+    // pointerup, no pointercancel. The next WINDOW move arrives with
+    // buttons === 0 and must revert + disarm instead of resuming a
+    // button-less tag drag glued to the hovering cursor.
+    const before = historyDepth();
+    const { result } = render();
+    result.current.onStartDrag('T', pointerEvent({ clientX: 20, clientY: 0 }));
+    dispatchWindowPointer('pointermove', { clientX: 40, clientY: 0 });
+    expect(useDoc.getState().lineTags['T'].distance).toBeCloseTo(40, 0);
+
+    dispatchWindowPointer('pointermove', { clientX: 60, clientY: 0, buttons: 0 });
+
+    expect(useDoc.getState().lineTags['T'].distance).toBe(20); // reverted
+    expect(historyDepth()).toBe(before); // nothing committed
+    expect(useDoc.temporal.getState().isTracking).toBe(true); // recording resumed
+    dispatchWindowPointer('pointermove', { clientX: 90, clientY: 0 });
+    expect(useDoc.getState().lineTags['T'].distance).toBe(20); // disarmed + unhooked
+  });
+
   it('can drag a tag onto a loop-filling segment, not just consecutive display pairs', () => {
     // Triangle loop A-B-C-A. The wrap edge A|C is a real segment but NOT a
     // consecutive pair in the display order [A, B, C], so the old candidate set

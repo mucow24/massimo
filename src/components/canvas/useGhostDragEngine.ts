@@ -1,7 +1,7 @@
 import { RefObject, useEffect, useRef, useState } from 'react';
 import type { beginHistoryGroup } from '../../state/store';
 import type { Vec2 } from '../../geometry/vec';
-import { trackDragMove } from './dragGesture';
+import { pointerLost, trackDragMove } from './dragGesture';
 
 type ScreenToWorld = (mx: number, my: number) => Vec2;
 
@@ -90,6 +90,8 @@ export function useGhostDragEngine<TDrag extends GhostDragCore, TOverlay>(
   const onPointerMove = (e: React.PointerEvent) => {
     const ds = dragRef.current;
     if (!ds) return;
+    // A lost pointerup (alt-tab mid-press) surfaces as a button-less move.
+    if (pointerLost(e)) return onPointerCancel();
     const { moved } = trackDragMove(ds, e, svgRef);
     if (!moved) return;
     updateRef.current(e.clientX, e.clientY, { altKey: e.altKey, shiftKey: e.shiftKey });
