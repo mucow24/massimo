@@ -636,10 +636,12 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
   const fillMode: 'none' | 'line' | 'custom' =
     p.fill === 'none' ? 'none' : p.fill === 'line' ? 'line' : 'custom';
   const strokeMode: 'line' | 'custom' = p.strokeColor === 'line' ? 'line' : 'custom';
-  // Service-code color mirrors stroke: 'line' or a custom pair. An ABSENT
-  // serviceCodeColor (auto-contrast) reads as 'custom' — the color row shows,
-  // as before — and stays absent until the user picks a mode or a color.
-  const codeMode: 'line' | 'custom' = p.serviceCodeColor === 'line' ? 'line' : 'custom';
+  // Service-code color has three modes: 'bw' (absent ⇒ auto-contrast, picks
+  // black or white for legibility on the resolved fill), 'line' (the owning
+  // line's color), or a custom day/night pair. Absent is the historical default,
+  // so a fresh service-code dot lands on B/W.
+  const codeMode: 'bw' | 'line' | 'custom' =
+    p.serviceCodeColor === undefined ? 'bw' : p.serviceCodeColor === 'line' ? 'line' : 'custom';
   const fillPair: DayNightColor =
     typeof p.fill === 'object' ? p.fill : { day: '#000000', night: '#000000' };
   const strokePair: DayNightColor =
@@ -833,17 +835,21 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
                     className="align-group"
                     value={codeMode}
                     onValueChange={(v) => {
-                      if (v) dp({ serviceCodeColor: v === 'line' ? 'line' : codePair });
+                      if (v)
+                        dp({
+                          serviceCodeColor:
+                            v === 'bw' ? undefined : v === 'line' ? 'line' : codePair,
+                        });
                     }}
                   >
-                    {(['line', 'custom'] as const).map((mode) => (
+                    {(['bw', 'line', 'custom'] as const).map((mode) => (
                       <ToggleGroup.Item
                         key={mode}
                         value={mode}
                         className={'align-btn' + (codeMode === mode ? ' active' : '')}
                         aria-label={`Code color ${mode}`}
                       >
-                        {mode === 'line' ? 'Line' : 'Custom'}
+                        {mode === 'bw' ? 'B/W' : mode === 'line' ? 'Line' : 'Custom'}
                       </ToggleGroup.Item>
                     ))}
                   </ToggleGroup.Root>
