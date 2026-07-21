@@ -567,8 +567,8 @@ export function Toolbar() {
           Revert
         </MenuItem>
         <SubMenu label="Load">
-          <MenuItem onClick={onLoadClick}>JSON…</MenuItem>
           <MenuItem onClick={onOpenLibrary}>From library…</MenuItem>
+          <MenuItem onClick={onLoadClick}>JSON…</MenuItem>
         </SubMenu>
         <SubMenu label="Export">
           <MenuItem onClick={onExportPng}>PNG</MenuItem>
