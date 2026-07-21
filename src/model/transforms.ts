@@ -41,6 +41,11 @@ import {
 // resolve the style-aware default without an import cycle); keep the historical
 // import path working for its existing callers.
 export { resolveDotStyle } from './dotStyle';
+// `snapToStep` is a leaf grid util (in util/grid) so lower-level model modules
+// like `dotStyle` can share it without importing `transforms`; keep the
+// historical import path working for its existing callers.
+import { snapToStep } from '../util/grid';
+export { snapToStep };
 import { pairKeyOf } from './pairKey';
 import {
   addEdge,
@@ -220,10 +225,7 @@ export function effectiveStationLabelStyle(
  */
 export function canonicalStationLabelStyle(props: StationStyleProps): StationStyleProps {
   return {
-    fontSize: Math.max(
-      LABEL_FONT_SIZE_MIN,
-      Math.round(props.fontSize / FONT_SIZE_STEP) * FONT_SIZE_STEP,
-    ),
+    fontSize: snapToStep(props.fontSize, FONT_SIZE_STEP, LABEL_FONT_SIZE_MIN),
     weight: props.weight,
     italic: props.italic,
     leading: snapToStep(props.leading, LABEL_LEADING_STEP, LABEL_LEADING_MIN),
@@ -2054,17 +2056,6 @@ export function setStationEditorHeight(doc: MapDoc, stationId: StationId, height
   return updateStation(doc, stationId, (st) =>
     st.editorHeight === next ? st : { ...st, editorHeight: next },
   );
-}
-
-// Snap a value to its slider's step and clamp at the bottom only (the
-// spinbutton accepts values above the slider max). The three-decimal rounding
-// kills float artifacts like 1.1500000000000001 while preserving the finest
-// step in use (tracking's 0.001); the coarser 0.05 / 0.25 steps never carry a
-// legitimate third decimal, so they're unaffected. Shared by the per-station
-// updateStationLabelStyle (leading/tracking) and per-label updateTextLabel.
-export function snapToStep(v: number, step: number, min: number): number {
-  if (!Number.isFinite(v)) return min;
-  return Math.max(min, Math.round(Math.round(v / step) * step * 1000) / 1000);
 }
 
 function arraysEqual<T>(a: readonly T[], b: readonly T[]): boolean {

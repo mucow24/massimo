@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import * as ToggleGroup from '@radix-ui/react-toggle-group';
+import { SegmentedToggle } from '../SegmentedToggle';
 import type { AutoHAlign, AutoVAlign, LabelAlign, LabelValign } from '../../model/types';
 
 const ICON_SIZE = 15;
@@ -24,12 +24,9 @@ interface Segment {
 }
 
 /**
- * A joined "select-one" segmented control (Radix ToggleGroup): the shared
- * left/center/right button cluster used across the item popovers. Shows the
- * CURRENT value highlighted; clicking a segment sets it. Re-clicking the active
- * segment is a no-op (the empty-string guard keeps it radio-like — you can't
- * deselect into an empty state). Lock is handled by the enclosing fieldset, so
- * no explicit disabled is needed. `flex` is set to the segment count so segments
+ * The shared left/center/right button cluster used across the item popovers,
+ * via {@link SegmentedToggle}. Lock is handled by the enclosing fieldset, so no
+ * explicit disabled is needed. `flex` is set to the segment count so segments
  * stay equal width even when two groups of different lengths share one row.
  */
 function AlignSegmentedGroup({
@@ -44,28 +41,18 @@ function AlignSegmentedGroup({
   onSelect: (value: string) => void;
 }) {
   return (
-    <ToggleGroup.Root
-      type="single"
-      className="align-group"
-      style={{ flex: segments.length }}
-      aria-label={ariaLabel}
+    <SegmentedToggle
+      ariaLabel={ariaLabel}
       value={value}
-      onValueChange={(v) => {
-        if (v) onSelect(v);
-      }}
-    >
-      {segments.map((s) => (
-        <ToggleGroup.Item
-          key={s.value}
-          value={s.value}
-          className={'align-btn' + (value === s.value ? ' active' : '')}
-          aria-label={s.label}
-          title={s.title}
-        >
-          {s.icon}
-        </ToggleGroup.Item>
-      ))}
-    </ToggleGroup.Root>
+      onSelect={onSelect}
+      style={{ flex: segments.length }}
+      options={segments.map((s) => ({
+        value: s.value,
+        label: s.label,
+        title: s.title,
+        content: s.icon,
+      }))}
+    />
   );
 }
 

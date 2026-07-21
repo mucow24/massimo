@@ -33,6 +33,7 @@ import {
   setLineSeamWidth,
   setLineStrokeWidth,
   setLineWidth,
+  snapToStep,
   updatePolygon,
   updateRouteBullet,
   updateStationLabelStyle,
@@ -284,27 +285,18 @@ export function canonicalStyleProps<K extends StyleKind>(
         // could still dangle here).
         singletonDotStyleId: p.singletonDotStyleId ?? DEFAULT_STOP_DOT_STYLE_ID,
         multiDotStyleId: p.multiDotStyleId ?? DEFAULT_STOP_DOT_STYLE_ID,
-        singletonDotSize: Math.max(
-          DOT_SIZE_MIN,
-          Math.round(p.singletonDotSize / DOT_SIZE_STEP) * DOT_SIZE_STEP,
-        ),
-        multiDotSize: Math.max(
-          DOT_SIZE_MIN,
-          Math.round(p.multiDotSize / DOT_SIZE_STEP) * DOT_SIZE_STEP,
-        ),
-        width: Math.max(LINE_WIDTH_MIN, Math.round(p.width / LINE_WIDTH_STEP) * LINE_WIDTH_STEP),
+        singletonDotSize: snapToStep(p.singletonDotSize, DOT_SIZE_STEP, DOT_SIZE_MIN),
+        multiDotSize: snapToStep(p.multiDotSize, DOT_SIZE_STEP, DOT_SIZE_MIN),
+        width: snapToStep(p.width, LINE_WIDTH_STEP, LINE_WIDTH_MIN),
         // `?? DEFAULT` heals defs from saves that predate the field (the load
         // paths bake it in first — see bakeDocCurveRadius — this is the
         // keep-canonical-props-concrete backstop).
-        curveRadius: Math.max(
+        curveRadius: snapToStep(
+          p.curveRadius ?? LINE_CURVE_RADIUS_DEFAULT,
+          LINE_CURVE_RADIUS_STEP,
           LINE_CURVE_RADIUS_MIN,
-          Math.round((p.curveRadius ?? LINE_CURVE_RADIUS_DEFAULT) / LINE_CURVE_RADIUS_STEP) *
-            LINE_CURVE_RADIUS_STEP,
         ),
-        strokeWidth: Math.max(
-          LINE_STROKE_WIDTH_MIN,
-          Math.round(p.strokeWidth / LINE_STROKE_STEP) * LINE_STROKE_STEP,
-        ),
+        strokeWidth: snapToStep(p.strokeWidth, LINE_STROKE_STEP, LINE_STROKE_WIDTH_MIN),
         strokeColor: p.strokeColor.toLowerCase(),
         ...(seamColor !== undefined ? { seamColor } : {}),
         ...(seamWidth !== undefined ? { seamWidth } : {}),
@@ -318,10 +310,7 @@ export function canonicalStyleProps<K extends StyleKind>(
       return {
         color: p.color,
         darkColor: p.darkColor,
-        fontSize: Math.max(
-          TEXT_LABEL_FONT_SIZE_MIN,
-          Math.round(p.fontSize / FONT_SIZE_STEP) * FONT_SIZE_STEP,
-        ),
+        fontSize: snapToStep(p.fontSize, FONT_SIZE_STEP, TEXT_LABEL_FONT_SIZE_MIN),
         weight: p.weight,
         italic: p.italic,
         align: p.align,
@@ -334,10 +323,7 @@ export function canonicalStyleProps<K extends StyleKind>(
         stroke: p.stroke,
         darkFill: p.darkFill,
         darkStroke: p.darkStroke,
-        strokeWidth: Math.max(
-          POLYGON_STROKE_WIDTH_MIN,
-          Math.round(p.strokeWidth / POLYGON_STROKE_STEP) * POLYGON_STROKE_STEP,
-        ),
+        strokeWidth: snapToStep(p.strokeWidth, POLYGON_STROKE_STEP, POLYGON_STROKE_WIDTH_MIN),
         curveRadius: Math.max(POLYGON_CURVE_RADIUS_MIN, p.curveRadius),
         closed: p.closed,
       } as StylePropsByKind[K];
@@ -349,14 +335,12 @@ export function canonicalStyleProps<K extends StyleKind>(
     case 'transfer': {
       const p = props as TransferStyleProps;
       return {
-        thickness: Math.max(
-          TRANSFER_THICKNESS_MIN,
-          Math.round(p.thickness / TRANSFER_THICKNESS_STEP) * TRANSFER_THICKNESS_STEP,
-        ),
+        thickness: snapToStep(p.thickness, TRANSFER_THICKNESS_STEP, TRANSFER_THICKNESS_MIN),
         color: p.color,
-        strokeWidth: Math.max(
+        strokeWidth: snapToStep(
+          p.strokeWidth,
+          TRANSFER_STROKE_WIDTH_STEP,
           TRANSFER_STROKE_WIDTH_MIN,
-          Math.round(p.strokeWidth / TRANSFER_STROKE_WIDTH_STEP) * TRANSFER_STROKE_WIDTH_STEP,
         ),
         strokeColor: p.strokeColor,
       } as StylePropsByKind[K];

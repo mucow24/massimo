@@ -4,7 +4,6 @@ import {
   TextAlignLeftIcon,
   TextAlignRightIcon,
 } from '@radix-ui/react-icons';
-import * as ToggleGroup from '@radix-ui/react-toggle-group';
 import { useDoc } from '../state/store';
 import { ColorField } from './ColorField';
 import { DayNightColorRow } from './DayNightColorRow';
@@ -13,6 +12,7 @@ import { WeightSelect, ItalicButton } from './WeightItalicControls';
 import { StopGlyph } from './StopGlyph';
 import { StationShapePicker } from './StationShapePicker';
 import { ShapeIcon } from './RouteBulletPopover';
+import { SegmentedToggle } from './SegmentedToggle';
 import type { StylePropsPatch } from '../model/styles';
 import { DOT_SIZE_MAX, DOT_SIZE_MIN, DOT_SIZE_STEP } from '../model/dotSize';
 import {
@@ -73,7 +73,7 @@ import {
   TEXT_LABEL_FONT_SIZE_MIN,
 } from '../model/transforms';
 import { FieldCheckbox } from './FieldCheckbox';
-import { DEFAULT_DOT_STYLE, DOT_STROKE_STEP } from '../model/dotStyle';
+import { BLACK_PAIR, DEFAULT_DOT_STYLE, DOT_STROKE_STEP, WHITE_PAIR } from '../model/dotStyle';
 import type {
   DayNightColor,
   DotBaseShape,
@@ -358,28 +358,16 @@ function TextLabelStyleEditor({ id, props }: { id: string; props: TextLabelStyle
       <div className="row">
         <label>Align</label>
         <div className="shape-group">
-          {/* One roving-focus group; the empty-string guard keeps it radio-like
-              (re-clicking the selected alignment doesn't deselect it). */}
-          <ToggleGroup.Root
-            type="single"
-            className="align-group"
+          <SegmentedToggle
             value={props.align}
-            onValueChange={(v) => {
-              if (v) patch({ align: v as TextLabelAlign });
-            }}
-          >
-            {aligns.map((a) => (
-              <ToggleGroup.Item
-                key={a.value}
-                value={a.value}
-                className={'align-btn' + (props.align === a.value ? ' active' : '')}
-                title={a.label}
-                aria-label={a.label}
-              >
-                {a.icon}
-              </ToggleGroup.Item>
-            ))}
-          </ToggleGroup.Root>
+            onSelect={(v) => patch({ align: v as TextLabelAlign })}
+            options={aligns.map((a) => ({
+              value: a.value,
+              label: a.label,
+              title: a.label,
+              content: a.icon,
+            }))}
+          />
         </div>
         <ItalicButton active={props.italic} onToggle={() => patch({ italic: !props.italic })} />
       </div>
@@ -459,27 +447,17 @@ function RouteBulletStyleEditor({ id, props }: { id: string; props: RouteBulletS
       <div className="row">
         <label>Shape</label>
         <div className="shape-group">
-          {/* Roving-focus group, radio-like via the empty-string guard. */}
-          <ToggleGroup.Root
-            type="single"
-            className="align-group"
+          <SegmentedToggle
             value={props.shape}
-            onValueChange={(v) => {
-              if (v) patch({ shape: v as RouteBulletShape });
-            }}
-          >
-            {shapes.map((s) => (
-              <ToggleGroup.Item
-                key={s}
-                value={s}
-                className={'shape-btn' + (props.shape === s ? ' active' : '')}
-                title={s}
-                aria-label={s}
-              >
-                <ShapeIcon shape={s} />
-              </ToggleGroup.Item>
-            ))}
-          </ToggleGroup.Root>
+            itemClassName="shape-btn"
+            onSelect={(v) => patch({ shape: v as RouteBulletShape })}
+            options={shapes.map((s) => ({
+              value: s,
+              label: s,
+              title: s,
+              content: <ShapeIcon shape={s} />,
+            }))}
+          />
         </div>
       </div>
       <NumericFieldRow
@@ -647,7 +625,6 @@ function DotPreview({
  */
 function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
   const patch = usePatch(id);
-  const dp = (x: Partial<DotStyle>) => patch(x);
 
   const fillMode: 'none' | 'line' | 'custom' =
     p.fill === 'none' ? 'none' : p.fill === 'line' ? 'line' : 'custom';
@@ -658,14 +635,10 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
   // so a fresh service-code dot lands on B/W.
   const codeMode: 'bw' | 'line' | 'custom' =
     p.serviceCodeColor === undefined ? 'bw' : p.serviceCodeColor === 'line' ? 'line' : 'custom';
-  const fillPair: DayNightColor =
-    typeof p.fill === 'object' ? p.fill : { day: '#000000', night: '#000000' };
-  const strokePair: DayNightColor =
-    typeof p.strokeColor === 'object' ? p.strokeColor : { day: '#ffffff', night: '#ffffff' };
+  const fillPair: DayNightColor = typeof p.fill === 'object' ? p.fill : BLACK_PAIR;
+  const strokePair: DayNightColor = typeof p.strokeColor === 'object' ? p.strokeColor : WHITE_PAIR;
   const codePair: DayNightColor =
-    typeof p.serviceCodeColor === 'object'
-      ? p.serviceCodeColor
-      : { day: '#ffffff', night: '#ffffff' };
+    typeof p.serviceCodeColor === 'object' ? p.serviceCodeColor : WHITE_PAIR;
   // A dash is a TfL tick: it takes its size AND outline from the owning line and
   // never carries a service code, so only shape + fill do anything (see
   // DashGlyph / resolveDotRender). Don't offer the inert controls.
@@ -684,51 +657,33 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
       <div className="row">
         <label>Shape</label>
         <div className="shape-group">
-          {/* Roving-focus group, radio-like via the empty-string guard. */}
-          <ToggleGroup.Root
-            type="single"
-            className="align-group"
+          <SegmentedToggle
             value={p.shape}
-            onValueChange={(v) => {
-              if (v) dp({ shape: v as DotBaseShape });
-            }}
-          >
-            {DOT_SHAPES.map(({ shape, label }) => (
-              <ToggleGroup.Item
-                key={shape}
-                value={shape}
-                className={'shape-btn' + (p.shape === shape ? ' active' : '')}
-                title={label}
-                aria-label={label}
-              >
-                <DotPreview style={{ ...p, shape }} size={18} />
-              </ToggleGroup.Item>
-            ))}
-          </ToggleGroup.Root>
+            itemClassName="shape-btn"
+            onSelect={(v) => patch({ shape: v as DotBaseShape })}
+            options={DOT_SHAPES.map(({ shape, label }) => ({
+              value: shape,
+              label,
+              title: label,
+              content: <DotPreview style={{ ...p, shape }} size={18} />,
+            }))}
+          />
         </div>
       </div>
       <div className="row">
         <label>Fill</label>
         <div className="shape-group">
-          <ToggleGroup.Root
-            type="single"
-            className="align-group"
+          <SegmentedToggle
             value={fillMode}
-            onValueChange={(v) => {
-              if (v) dp({ fill: v === 'none' ? 'none' : v === 'line' ? 'line' : fillPair });
-            }}
-          >
-            {(['none', 'line', 'custom'] as const).map((mode) => (
-              <ToggleGroup.Item
-                key={mode}
-                value={mode}
-                className={'align-btn' + (fillMode === mode ? ' active' : '')}
-                aria-label={`Fill ${mode}`}
-              >
-                {mode === 'none' ? 'None' : mode === 'line' ? 'Line' : 'Custom'}
-              </ToggleGroup.Item>
-            ))}
-          </ToggleGroup.Root>
+            onSelect={(v) =>
+              patch({ fill: v === 'none' ? 'none' : v === 'line' ? 'line' : fillPair })
+            }
+            options={(['none', 'line', 'custom'] as const).map((mode) => ({
+              value: mode,
+              label: `Fill ${mode}`,
+              content: mode === 'none' ? 'None' : mode === 'line' ? 'Line' : 'Custom',
+            }))}
+          />
         </div>
       </div>
       {fillMode === 'custom' && (
@@ -741,8 +696,8 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
           titleNoun="fill"
           value={fillPair.day}
           darkValue={fillPair.night}
-          onChange={(day) => dp({ fill: { day, night: fillPair.night } })}
-          onDarkChange={(night) => dp({ fill: { day: fillPair.day, night } })}
+          onChange={(day) => patch({ fill: { day, night: fillPair.night } })}
+          onDarkChange={(night) => patch({ fill: { day: fillPair.day, night } })}
         />
       )}
       {isDash ? (
@@ -760,33 +715,23 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
             max={6}
             step={DOT_STROKE_STEP}
             value={p.strokeWidth}
-            onChange={(strokeWidth) => dp({ strokeWidth })}
+            onChange={(strokeWidth) => patch({ strokeWidth })}
             getCurrent={liveNumberProp(id, 'strokeWidth', p.strokeWidth)}
             textboxAllowAboveMax
           />
           <div className={'row' + (strokeOff ? ' disabled' : '')}>
             <label>Stroke color</label>
             <div className="shape-group">
-              <ToggleGroup.Root
-                type="single"
-                className="align-group"
+              <SegmentedToggle
                 value={strokeMode}
                 disabled={strokeOff}
-                onValueChange={(v) => {
-                  if (v) dp({ strokeColor: v === 'line' ? 'line' : strokePair });
-                }}
-              >
-                {(['line', 'custom'] as const).map((mode) => (
-                  <ToggleGroup.Item
-                    key={mode}
-                    value={mode}
-                    className={'align-btn' + (strokeMode === mode ? ' active' : '')}
-                    aria-label={`Stroke ${mode}`}
-                  >
-                    {mode === 'line' ? 'Line' : 'Custom'}
-                  </ToggleGroup.Item>
-                ))}
-              </ToggleGroup.Root>
+                onSelect={(v) => patch({ strokeColor: v === 'line' ? 'line' : strokePair })}
+                options={(['line', 'custom'] as const).map((mode) => ({
+                  value: mode,
+                  label: `Stroke ${mode}`,
+                  content: mode === 'line' ? 'Line' : 'Custom',
+                }))}
+              />
             </div>
           </div>
           {strokeMode === 'custom' && (
@@ -800,34 +745,24 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
               value={strokePair.day}
               darkValue={strokePair.night}
               disabled={strokeOff}
-              onChange={(day) => dp({ strokeColor: { day, night: strokePair.night } })}
-              onDarkChange={(night) => dp({ strokeColor: { day: strokePair.day, night } })}
+              onChange={(day) => patch({ strokeColor: { day, night: strokePair.night } })}
+              onDarkChange={(night) => patch({ strokeColor: { day: strokePair.day, night } })}
             />
           )}
           <div className={'row' + (strokeOff ? ' disabled' : '')}>
             <label>Stroke align</label>
             <div className="shape-group">
-              <ToggleGroup.Root
-                type="single"
-                className="align-group"
+              <SegmentedToggle
                 value={p.strokeAlign}
                 disabled={strokeOff}
-                onValueChange={(v) => {
-                  if (v) dp({ strokeAlign: v as DotStyle['strokeAlign'] });
-                }}
-              >
-                {(['center', 'inside', 'outside'] as const).map((mode) => (
-                  <ToggleGroup.Item
-                    key={mode}
-                    value={mode}
-                    className={'align-btn' + (p.strokeAlign === mode ? ' active' : '')}
-                    aria-label={`Align ${mode}`}
-                    title={`Stroke ${mode === 'center' ? 'straddles the edge' : mode === 'inside' ? 'grows inward' : 'grows outward'}`}
-                  >
-                    {mode === 'center' ? 'Center' : mode === 'inside' ? 'Inside' : 'Outside'}
-                  </ToggleGroup.Item>
-                ))}
-              </ToggleGroup.Root>
+                onSelect={(v) => patch({ strokeAlign: v as DotStyle['strokeAlign'] })}
+                options={(['center', 'inside', 'outside'] as const).map((mode) => ({
+                  value: mode,
+                  label: `Align ${mode}`,
+                  title: `Stroke ${mode === 'center' ? 'straddles the edge' : mode === 'inside' ? 'grows inward' : 'grows outward'}`,
+                  content: mode === 'center' ? 'Center' : mode === 'inside' ? 'Inside' : 'Outside',
+                }))}
+              />
             </div>
           </div>
           <div className="style-divider" />
@@ -838,7 +773,7 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
               ariaLabel="Show service code"
               title="Show the line's service code on the dot"
               checked={p.showServiceCode}
-              onCheckedChange={(showServiceCode) => dp({ showServiceCode })}
+              onCheckedChange={(showServiceCode) => patch({ showServiceCode })}
             />
           </div>
           {p.showServiceCode && (
@@ -846,29 +781,19 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
               <div className="row">
                 <label>Code color</label>
                 <div className="shape-group">
-                  <ToggleGroup.Root
-                    type="single"
-                    className="align-group"
+                  <SegmentedToggle
                     value={codeMode}
-                    onValueChange={(v) => {
-                      if (v)
-                        dp({
-                          serviceCodeColor:
-                            v === 'bw' ? undefined : v === 'line' ? 'line' : codePair,
-                        });
-                    }}
-                  >
-                    {(['bw', 'line', 'custom'] as const).map((mode) => (
-                      <ToggleGroup.Item
-                        key={mode}
-                        value={mode}
-                        className={'align-btn' + (codeMode === mode ? ' active' : '')}
-                        aria-label={`Code color ${mode}`}
-                      >
-                        {mode === 'bw' ? 'B/W' : mode === 'line' ? 'Line' : 'Custom'}
-                      </ToggleGroup.Item>
-                    ))}
-                  </ToggleGroup.Root>
+                    onSelect={(v) =>
+                      patch({
+                        serviceCodeColor: v === 'bw' ? undefined : v === 'line' ? 'line' : codePair,
+                      })
+                    }
+                    options={(['bw', 'line', 'custom'] as const).map((mode) => ({
+                      value: mode,
+                      label: `Code color ${mode}`,
+                      content: mode === 'bw' ? 'B/W' : mode === 'line' ? 'Line' : 'Custom',
+                    }))}
+                  />
                 </div>
               </div>
               {codeMode === 'custom' && (
@@ -881,8 +806,10 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
                   titleNoun="service-code color"
                   value={codePair.day}
                   darkValue={codePair.night}
-                  onChange={(day) => dp({ serviceCodeColor: { day, night: codePair.night } })}
-                  onDarkChange={(night) => dp({ serviceCodeColor: { day: codePair.day, night } })}
+                  onChange={(day) => patch({ serviceCodeColor: { day, night: codePair.night } })}
+                  onDarkChange={(night) =>
+                    patch({ serviceCodeColor: { day: codePair.day, night } })
+                  }
                 />
               )}
             </>

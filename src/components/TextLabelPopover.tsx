@@ -5,7 +5,6 @@ import {
   TextAlignLeftIcon,
   TextAlignRightIcon,
 } from '@radix-ui/react-icons';
-import * as ToggleGroup from '@radix-ui/react-toggle-group';
 import { FieldCheckbox } from './FieldCheckbox';
 import { useDoc } from '../state/store';
 import { useLabelEditorPrefs } from '../state/labelEditorPrefs';
@@ -34,6 +33,7 @@ import { useFieldHistory } from './useFieldHistory';
 import { DayNightColorRow } from './DayNightColorRow';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
+import { SegmentedToggle } from './SegmentedToggle';
 import type { TextLabel, TextLabelAlign, TextLabelWeight } from '../model/types';
 
 interface Props {
@@ -204,30 +204,17 @@ export function TextLabelPopover({ label, worldRect, view, spawnBox, onClose }: 
       <div className="row">
         <label>Align</label>
         <div className="shape-group">
-          {/* One roving-focus group (a single tab stop; arrows move within).
-              The empty-string guard keeps it radio-like: re-clicking the
-              selected alignment must not deselect into an empty state. */}
-          <ToggleGroup.Root
-            type="single"
-            className="align-group"
+          <SegmentedToggle
             value={label.align}
             disabled={locked}
-            onValueChange={(v) => {
-              if (v) setAlign(v as TextLabelAlign);
-            }}
-          >
-            {ALIGNS.map((a) => (
-              <ToggleGroup.Item
-                key={a.value}
-                value={a.value}
-                className={'align-btn' + (label.align === a.value ? ' active' : '')}
-                title={a.title}
-                aria-label={a.title}
-              >
-                {a.icon}
-              </ToggleGroup.Item>
-            ))}
-          </ToggleGroup.Root>
+            onSelect={(v) => setAlign(v as TextLabelAlign)}
+            options={ALIGNS.map((a) => ({
+              value: a.value,
+              label: a.title,
+              title: a.title,
+              content: a.icon,
+            }))}
+          />
           <ItalicButton
             active={label.italic}
             disabled={locked}
