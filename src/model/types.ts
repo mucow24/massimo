@@ -322,8 +322,8 @@ export interface Line {
   // `singletonDotStyle` / `multiDotStyle` (singleton vs. shared station) and
   // used only for stops whose own `dotSize` is unset. Each missing ⇒
   // DOT_SIZE_DEFAULT (= 2 × STOP_DOT_RADIUS). The setters clamp to
-  // ≥ DOT_SIZE_MIN, round to an integer, and drop the field at the default so
-  // it is never stored. An EXPLICIT size (here or per-stop) applies to every
+  // ≥ DOT_SIZE_MIN, snap to the quarter-unit (0.25) grid, and drop the field at
+  // the default so it is never stored. An EXPLICIT size (here or per-stop) applies to every
   // dot style including service-code discs; only the fully-default chain keeps
   // the larger SERVICE_CODE_DOT_RADIUS (see resolveDotRender's sizeOverride
   // param). Legacy saves carried one combined `defaultDotSize`, baked into both

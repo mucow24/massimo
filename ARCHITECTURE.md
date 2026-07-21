@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `f2b8a1a` (2026-07-19) — verified against the live source. Changes since the previous marker (`9391038`): the shared `FieldSelectContent`, which portals the item-popover Style/Weight/route-bullet Radix Selects out of the `.canvas-host` `isolation: isolate` layer (which paints beneath the toolbar) into `.app`, and bounds + scrolls a too-long list in place (#304); plus #303's internal dedup — `twoToneRing` (armed-cursor ring + its hover echo), `nextSegmentStyle` (the three segment style-cycle sites), and the digit snap keys driven by `SNAP_TOGGLE_COUNT` rather than a hardcoded 1–5. This code-health pass also collapsed the ~10 copy-pasted light/dark `ColorField` rows into the shared `DayNightColorRow`, and routed `useLineTagDrag`'s cursor→world through `view.screenToWorld` (dropping the last hand-rolled `getScreenCTM`).**
+**Up to date as of commit `41c1438` (2026-07-21) — verified against the live source. Changes since the previous marker (`f2b8a1a`, #304), the big one being the doc-scoped "Stop dots" style library: `stopDot` is now a 7th styleable kind whose styles live in a small per-doc library (`bakeStopDotLibrary`, persist v19), the per-line/per-stop dot TYPE became a covered `LineStyleProps` field (`singletonDotStyleId`/`multiDotStyleId`, persist v20), and `DotStyle` gained a required `strokeAlign` (center/inside/outside, persist v21) and an optional `serviceCodeColor` (absent ⇒ B/W auto-contrast). Persist `version` is now `21`. The viewport store gained two local chrome preferences — `dayCanvasColor` (white/gray/black day paper) and `darkUiInDay` (chrome-only dark UI while the map stays in day mode, driving `chromeDark`) — and `themeColors` takes `dayCanvasColor`. All dimensional inputs (dot size, transfer thickness, route-bullet size) unified onto the 0.25 quarter grid (#321). This code-health pass also extracted the shared `SegmentedToggle` (one implementation for the ~13 inline pick-one Radix `ToggleGroup` clusters) and moved `snapToStep` to a leaf `util/grid` shared by every quarter-grid canonicalizer.**
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
 > caveats. Written for an AI assistant (or new contributor) who needs the full picture
@@ -152,7 +152,7 @@ src/
     selectionOps.ts             # bulk selection gestures (delete/lock the unlocked subset)
     mirrorDispatch.ts           # mirror-matching fan-out shared by every layout-edit surface
     viewportStore.ts            # useViewportStore (committed) + useLiveViewportStore (in-flight)
-    theme.ts                    # themeColors(darkMode) table (no store; reads doc.darkMode)
+    theme.ts                    # themeColors(darkMode, dayCanvasColor) table (no store; reads doc.darkMode)
     customPalettes.ts           # useCustomPalettes: imported palettes (global localStorage)
     mapLibrary.ts               # saved maps + versions in IndexedDB (no store; opaque JSON)
     libraryPrefs.ts             # useLibraryPrefs: map-library UI prefs (list sort mode)
@@ -331,9 +331,11 @@ Where interlined lines disagree, the shared band curves at the LARGEST member ra
 
 `DEFAULT_DOC` (in [transforms.ts](src/model/transforms.ts)) is the merge baseline: empty
 collections, `name: 'Untitled map'`, `lineCounter: 0`, `activePalettes:
-['mta']`, `styles: DEFAULT_STYLES` — the six factory "Default"
-presets (one per styleable kind: line, textLabel, polygon, routeBullet, transfer, station) — and
-`styleDefaults: FACTORY_STYLE_DEFAULTS` designating them. Styles are doc-scoped: applying one
+['mta']`, `styles: DEFAULT_STYLES` — the six factory "Default" presets (one per styleable kind:
+line, textLabel, polygon, routeBullet, transfer, station) **plus** the two seeded "Stop dots"
+library styles (`stop-filled-black`, `stop-none`), since `stopDot` is a 7th styleable kind whose
+styles live in a small doc-scoped library rather than as a single Default — and
+`styleDefaults: FACTORY_STYLE_DEFAULTS` designating one per kind (`stopDot` → `stop-filled-black`). Styles are doc-scoped: applying one
 stamps its props onto the item through the canonical setters and tags it (`styleId`, invariant:
 tagged => the item's covered values equal the style's props); editing a covered field detaches
 the item back to "Custom"; redefining a style (Styles-panel editor or "Save style..." over the
@@ -434,7 +436,12 @@ All remaining fields optional and **never stored at default**:
   the singleton default with no rewrite; a per-stop `dotStyle` override always wins. Independent
   (editing one never moves the other); each missing ⇒ `DEFAULT_DOT_STYLE` (filled-black). Legacy
   saves carried one combined `defaultDotStyle` — baked into both on load (`bakeLineDotDefaults`,
-  persist v18).
+  persist v18). Since the doc-scoped "Stop dots" library (persist v19) these two raw `DotStyle`
+  fields are the **stamped shadow** of a library link: `singletonDotStyleId?` / `multiDotStyleId?`
+  (persist v20 — also covered `LineStyleProps` fields) name the `'stopDot'` StyleDef, and the raw
+  `DotStyle` here is its stamped props. The renderer reads the raw value; editing the library entry
+  restamps it (same raw-value-plus-tag contract as `styleId`; an absent id ⇒ the doc's designated
+  default stopDot style).
 - `singletonDotSize?` / `multiDotSize?: number` — dot diameter px, split the same way; each
   missing ⇒ `DOT_SIZE_DEFAULT` (= 2×`STOP_DOT_RADIUS` = 8). Legacy `defaultDotSize` baked into both.
 - `width?: number` — **stripe width, GEOMETRY**; missing ⇒ `LINE_WIDTH_DEFAULT` (= `STOP_SIZE` =
@@ -502,12 +509,18 @@ byte-identical output.
 > `strokeWidth`/`strokeColor`/`seamColor`/`seamWidth`/color/style edit is resolved at render time
 > and never rebuilds. This split is exploited by the band-geometry memo (see Interaction layer).
 
-**`DotStyle`** ([dotStyle.ts](src/model/dotStyle.ts)) — a procedural stop dot. **All fields
-required** (a deliberate divergence from the optional-field convention) so plain deep equality
-`dotStylesEqual` works everywhere: `shape: DotBaseShape` (`circle|square|diamond|x|dash`), `fill:
+**`DotStyle`** ([dotStyle.ts](src/model/dotStyle.ts)) — a procedural stop dot. Its **required**
+fields (a deliberate divergence from the optional-field convention) let plain deep equality
+`dotStylesEqual` work everywhere: `shape: DotBaseShape` (`circle|square|diamond|x|dash`), `fill:
 DotFill` (`DayNightColor | 'line' | 'none'`), `strokeWidth` (0 = no stroke), `strokeColor:
 DotStrokeColor` (`DayNightColor | 'line'`; **no `'none'`** — strokeWidth 0 expresses "no
-stroke"), `showServiceCode`. **Size is deliberately NOT part of style** — it is the orthogonal
+stroke"), `strokeAlign: DotStrokeAlign` (`center|inside|outside` — where the stroke sits relative
+to the dot's edge; persist v21 backfills the historical `'center'`), and `showServiceCode`. The
+one **optional** field is `serviceCodeColor?: DotServiceCodeColor` (`DayNightColor | 'line'`, only
+meaningful when `showServiceCode`): **absent ⇒ B/W auto-contrast** (pick whichever of black/white
+is legible on the resolved fill), `'line'` paints the code in the owning line's color, a pair
+gives an explicit per-theme color — kept optional so every preset stays byte-identical.
+**Size is deliberately NOT part of style** — it is the orthogonal
 `dotSize` / `singletonDotSize` / `multiDotSize` set, so picking a shape preset never clobbers a
 size. **`dash` is the outlier shape** — a TfL-style tick protruding from the stripe edge toward
 the label rather than a centered glyph. It ignores `dotSize` entirely (its size comes from the
@@ -636,11 +649,15 @@ by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}`:
    `convertLegacyDotShapes` (which materializes `defaultDotStyle` from any legacy `defaultDotShape`)
    and **before** the singleton-aware `sanitizeStopDotSizes` + style validation below.
 8. `sanitizeStopDotSizes` — **must run after** the per-line pass AND the dot-defaults bake (a stop
-   compares against the _sanitized_ line default for its own singleton/shared case).
+   compares against the _sanitized_ line default for its own singleton/shared case). Then
+   `bakeStopDotLibrary` (seed the "Stop dots" library + tag every dot slot by value-match; no-op on
+   a doc that already has `stopDot` styles) — **before** `sanitizeStyles`, so the seeded defs are
+   sanitized and the invariant pass sees the non-empty `stopDot` kind.
 9. `backfillPolygonDarkColors`, then `foldPolygonFillOpacity` (legacy polygon `fillOpacity` → the
    alpha of `fill`/`darkFill`; **after** the dark-color backfill so `darkFill` exists to fold),
    then `backfillTextLabelColors`.
-10. `sanitizeStyles` (validate/clamp style defs, per-kind name dedupe, id ← record key) then
+10. `sanitizeStyles` (validate/clamp style defs, per-kind name dedupe, id ← record key; its
+    per-dot `sanitizeDotStyle` also defaults an absent `strokeAlign` to `'center'`) then
     `ensureStyleInvariants` (≥ 1 style per kind — factory Defaults injected into empty kinds —
     and a `styleDefaults` entry resolving per kind). **Before** the transfer bake, which seeds
     the _designated_ default transfer style.
@@ -660,7 +677,7 @@ Path A does **more** than Path B because hand-edited files can be non-canonical 
 sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for this).
 
 **Path B — localStorage rehydration: `migrateDoc(persisted, version)`** ([store.ts](src/state/store.ts)).
-The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 18`, `migrate:
+The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 21`, `migrate:
 migrateDoc`, `partialize: pickDocSnapshot`. Because the persist-merge already fills absent fields
 from the initial state, `migrateDoc` only does **value-level legacy fixups, version-gated**, on
 disjoint fields (order immaterial except where noted), never mutating the input:
@@ -684,6 +701,9 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | `v<16`      | `bakeDocCurveRadius` (retired doc-level `curveRadius` → per-line `Line.curveRadius` + line-style-def fill). Ordered **before** the `v<10` style hygiene — `migrateV9Styles` rebuilds defs on the canonical grids, so a def missing `curveRadius` would heal to the constant default instead of the doc's legacy value. Idempotent, keyed off field presence |
 | `v<17`      | `bakeLegacyBackgroundOrder` (the retired `polygonOrder` + `svgImageOrder` → the single `backgroundOrder`, polygons concatenated first — exactly the stacking the two separate arrays painted, so a legacy map renders unchanged). Each side is reconciled against its records before the concat. Idempotent, keyed off field presence; reference-stable when neither retired key is present |
 | `v<18`      | `bakeLineDotDefaults` (the retired single `defaultDotStyle`/`defaultDotSize` → the split `singletonDotStyle`/`multiDotStyle` + sizes, on lines AND line style-def props — every stop used one default, now both the singleton and interchange cases carry it, so a legacy map renders unchanged). Ordered **after** the `v<7` `convertLegacyDotShapes` (which materializes `defaultDotStyle` from any legacy `defaultDotShape`) and **before** the `v<10` style hygiene, same as `bakeDocCurveRadius`. Idempotent, keyed off the retired keys' presence |
+| `v<19`      | `bakeStopDotLibrary` (introduce the doc-scoped "Stop dots" style library: seed the factory dot styles and tag every dot slot — line split defaults + per-stop overrides — by value-match). Ordered **after** the `v<18` split bake (line values are in singleton/multi form) and **before** the style-invariant pass |
+| `v<20`      | dot **type** became a covered `LineStyleProps` field: `bakeLineStyleDotIds` (backfill `singletonDotStyleId`/`multiDotStyleId` on line style defs, absent ⇒ the `stopDot` ⭐ default), then `pruneLineDotTypeTagMismatches` (untag any line whose split dot type differs from its now-fuller line style — keeping "tagged ⇒ matches"). Ordered **after** the `v<19` library bake; Path A prunes this via `pruneDanglingStyleRefs` instead |
+| `v<21`      | `backfillDotStrokeAlign` (`DotStyle.strokeAlign` became a required field: backfill `'center'`, the historical SVG-native placement, across every dot-style home). Path A covers this via `sanitizeDotStyle` |
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — every rehydrate, **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `validActivePalettes` whenever `activePalettes !== undefined`                                                                              |
@@ -1046,8 +1066,12 @@ on any mode exit.
 - `useViewportStore` — the **committed** camera (`x, y, zoom`) + `gridVisible`, `gridSize`
   (`GRID_SIZES = [5,10,20]`, default 10), `showWaypoints` (default
   false — a pure paint toggle that reveals waypoint stations), `showNetwork` (default true — see
-  below). **No `darkMode`** — day/night is a property of the map, so it lives on `MapDoc`; a
-  stale `darkMode` key in an existing persisted blob is ignored. **Persisted** as
+  below), plus two **local chrome** preferences: `dayCanvasColor: DayCanvasColor`
+  (`'white'|'gray'|'black'`, default white — the day-mode paper color, dimming glare without
+  touching the map) and `darkUiInDay: boolean` (default false — a chrome-only dark UI while the
+  **map** is still in day mode). The map's own day/night is **not** here — that is `MapDoc.darkMode`
+  (a stale `darkMode` key in an existing persisted blob is ignored); `darkUiInDay` is orthogonal
+  to it, so `App` drives `data-theme` off `chromeDark = darkMode || darkUiInDay`. **Persisted** as
   `'massimo-viewport'` (per-browser, **not** per-file) — except
   `showNetwork`, which `partialize` deliberately omits so a reload never opens onto an
   apparently-empty map. The giant SVG tree subscribes here and is re-rendered only on commit.
@@ -1081,7 +1105,8 @@ Three seams cover it, and a fourth rule governs anything new:
 
 ### Preferences
 
-- [theme.ts](src/state/theme.ts) — `themeColors(darkMode): ThemeColors` (pure table:
+- [theme.ts](src/state/theme.ts) — `themeColors(darkMode, dayCanvasColor = 'white'): ThemeColors`
+  (pure table; in day mode `dayCanvasColor` picks the `DAY_PAPER` white/gray/black paper variant):
   `canvasBg, label, selectionStroke, grid, underlay, editorBg, editorText, phantomDot`, plus the
   interaction accent `accent`/`accentWash` — marquee, snap guides, selection washes, mode frames —
   and the line-edit dim `dim`/`dimOpacity`/`dimmedLabel`; light `#fafafa`, dark `#000000`).
