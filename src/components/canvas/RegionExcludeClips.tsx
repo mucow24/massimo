@@ -7,6 +7,26 @@ import { polygonsToPath } from '../../geometry/polygonUnion';
 export const regionExcludeClipId = (lineId: LineId): string =>
   `region-exclude-${lineId.replace(/[^A-Za-z0-9_-]/g, '-')}`;
 
+/**
+ * Blink rasterizes clipPath/mask resource content on a coarse grid in the
+ * resource's LOCAL user space (~1 unit): a hole edge at x = -250.741 landed
+ * snapped near -250.0 on screen, erasing up to a full world unit of the
+ * clipped line beyond the geometric hole — visible as white notches wherever
+ * the snapped boundary crosses exposed background (first seen at interline
+ * gaps, where hole edges stopped being buried under tangent neighbor paint).
+ * The snap is zoom-independent in local units, so it scales like geometry on
+ * screen and survives every zoom level. Emitting the SAME geometry in
+ * ×CLIP_RASTER_SCALE local coordinates under an inverse scale() transform
+ * shrinks the snap to 1/CLIP_RASTER_SCALE world units — invisible at any
+ * practical zoom. Verified live: the notch reproduces with plain world
+ * coordinates (clip AND mask, nonzero AND evenodd) and vanishes with the
+ * scaled form.
+ */
+export const CLIP_RASTER_SCALE = 64;
+
+const scaleRings = (rings: Ring[], k: number): Ring[] =>
+  rings.map((r) => r.map((p) => ({ x: p.x * k, y: p.y * k })));
+
 export interface RegionExcludeClipsProps {
   /** lineId → exclusion hole rings (see buildExclusionHoles). */
   holes: Map<LineId, Ring[]>;
@@ -47,7 +67,11 @@ export const RegionExcludeClips = memo(function RegionExcludeClips({
           clipPathUnits="userSpaceOnUse"
           data-region-exclude={lineId}
         >
-          <path d={polygonsToPath(subtract([world], unionAll(rings)))} clipRule="nonzero" />
+          <path
+            d={polygonsToPath(scaleRings(subtract([world], unionAll(rings)), CLIP_RASTER_SCALE))}
+            transform={`scale(${1 / CLIP_RASTER_SCALE})`}
+            clipRule="nonzero"
+          />
         </clipPath>
       ))}
     </>

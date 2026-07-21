@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { RegionExcludeClips, regionExcludeClipId } from './RegionExcludeClips';
+import { CLIP_RASTER_SCALE, RegionExcludeClips, regionExcludeClipId } from './RegionExcludeClips';
 import type { Ring } from '../../geometry/clip';
 import type { LineId } from '../../model/types';
 
@@ -41,11 +41,11 @@ describe('<RegionExcludeClips>', () => {
     expect(d2.match(/M /g)!.length).toBe(3);
   });
 
-  it('hugs the passed bounds — no giant-coordinate outer rect', () => {
-    // The outer ring used to be a ±500000 constant; coordinates that large
-    // lose float precision in GPU clip rasterization at deep zoom, painting
-    // the hole edges pixels off (white notches over an interline gap). Every
-    // clip vertex must now stay within the passed content bounds.
+  it('emits ×CLIP_RASTER_SCALE local coordinates under an inverse scale()', () => {
+    // Browsers rasterize clip resource content on a coarse grid in the
+    // resource's LOCAL user space (~1 unit) — hole edges snapped by up to a
+    // world unit, visible as white notches over exposed background (interline
+    // gaps). Scaled-up local coordinates shrink the snap to 1/K world units.
     const holes = new Map<LineId, Ring[]>([['l1', [square(50, 0, 7)]]]);
     const { container } = render(
       <svg>
@@ -54,19 +54,25 @@ describe('<RegionExcludeClips>', () => {
         </defs>
       </svg>,
     );
-    const d = container
-      .querySelector(`#${regionExcludeClipId('l1')}`)!
-      .querySelector('path')!
-      .getAttribute('d')!;
-    const coords = d.match(/-?\d+(?:\.\d+)?/g)!.map(Number);
+    const path = container.querySelector(`#${regionExcludeClipId('l1')}`)!.querySelector('path')!;
+    expect(path.getAttribute('transform')).toBe(`scale(${1 / CLIP_RASTER_SCALE})`);
+    const coords = path
+      .getAttribute('d')!
+      .match(/-?\d+(?:\.\d+)?/g)!
+      .map(Number);
+    // Every vertex stays within the scaled content bounds — never the legacy
+    // ±500000 world rect (which also carried float-precision hazards).
     for (const c of coords) {
-      expect(Math.abs(c)).toBeLessThanOrEqual(400);
+      expect(Math.abs(c)).toBeLessThanOrEqual(400 * CLIP_RASTER_SCALE);
     }
-    // The outer subpath really is the bounds rect (all four corners present).
-    expect(coords).toContain(BOUNDS.x0);
-    expect(coords).toContain(BOUNDS.x1);
-    expect(coords).toContain(BOUNDS.y0);
-    expect(coords).toContain(BOUNDS.y1);
+    // The outer subpath really is the bounds rect, in scaled coordinates.
+    expect(coords).toContain(BOUNDS.x0 * CLIP_RASTER_SCALE);
+    expect(coords).toContain(BOUNDS.x1 * CLIP_RASTER_SCALE);
+    expect(coords).toContain(BOUNDS.y0 * CLIP_RASTER_SCALE);
+    expect(coords).toContain(BOUNDS.y1 * CLIP_RASTER_SCALE);
+    // And the hole ring is present in the same scaled space.
+    expect(coords).toContain(43 * CLIP_RASTER_SCALE);
+    expect(coords).toContain(57 * CLIP_RASTER_SCALE);
   });
 
   it('renders nothing without holes', () => {

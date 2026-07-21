@@ -688,8 +688,17 @@ export function stripeIntersectsBox(
  * loser exactly at the winner's stroke edge would expose the winner's
  * antialiased tail (a half-covered pixel row) as a ghost hairline. Along the
  * losers' own edges no inset is needed: there is no loser paint beyond them.
+ *
+ * The value is a visible trade-off: the loser keeps painting over the
+ * winner's outermost INSET strip, so a big inset reads as the loser BITING
+ * into the winner's edges — invisible while every hole edge was buried
+ * under tangent neighbor paint, glaring once interline gaps put those
+ * edges against open background (the historical 0.25 ate a quarter unit
+ * per side, scaling with zoom). Tuned by eye at maximum zoom over a gapped
+ * crossing: 0.00625 reads flush AND seamless — big enough to keep the
+ * hairline guard, ~1/2000 of a default stripe.
  */
-export const EXCLUSION_INSET = 0.25;
+export const EXCLUSION_INSET = 0.00625;
 
 /**
  * Region overrides, subtractively: for every face whose bound choice differs
