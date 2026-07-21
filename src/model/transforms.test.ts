@@ -3444,6 +3444,93 @@ describe('redistributeBetween', () => {
     expect(next.stations.m3).toMatchObject({ x: 30, y: 0 });
   });
 
+  // The chain between the endpoints must come from the line's EDGE graph —
+  // `stations` is a pure membership list whose order is the order stations were
+  // ADDED, which need not match the track. This doc models a real map: the path
+  // runs a→b→c→d→e→f→g down a column, but membership lists the middle stations
+  // first. An index slice of `stations` between the endpoints grabs [g, c, b, a]
+  // and leaves d, e, f stuck (the shipped bug this pins against).
+  describe('membership order ≠ path order', () => {
+    const scrambledDoc = (): MapDoc =>
+      makeDoc({
+        stations: [
+          stationWithStop('d', 'L1', { x: 0, y: 26 }),
+          stationWithStop('e', 'L1', { x: 0, y: 38 }),
+          stationWithStop('f', 'L1', { x: 0, y: 55 }),
+          stationWithStop('g', 'L1', { x: 0, y: 60 }),
+          stationWithStop('c', 'L1', { x: 0, y: 17 }),
+          stationWithStop('b', 'L1', { x: 0, y: 7 }),
+          stationWithStop('a', 'L1', { x: 0, y: 0 }),
+        ],
+        lines: [
+          makeLine({
+            id: 'L1',
+            stations: ['d', 'e', 'f', 'g', 'c', 'b', 'a'],
+            edges: ['a|b', 'b|c', 'c|d', 'd|e', 'e|f', 'f|g'],
+          }),
+        ],
+      });
+
+    it('straight mode moves EVERY stop on the edge path between the endpoints', () => {
+      const next = T.redistributeBetween(scrambledDoc(), 'a', 'g', 'straight');
+      for (const [id, y] of [
+        ['b', 10],
+        ['c', 20],
+        ['d', 30],
+        ['e', 40],
+        ['f', 50],
+      ] as const) {
+        expect(next.stations[id].x).toBe(0);
+        expect(next.stations[id].y).toBeCloseTo(y, 9);
+      }
+    });
+
+    it('arc-bends mode walks the same edge path', () => {
+      // Collinear monotone column → arc-length spacing coincides with straight.
+      const next = T.redistributeBetween(scrambledDoc(), 'a', 'g', 'arc-bends');
+      for (const [id, y] of [
+        ['b', 10],
+        ['c', 20],
+        ['d', 30],
+        ['e', 40],
+        ['f', 50],
+      ] as const) {
+        expect(next.stations[id].y).toBeCloseTo(y, 9);
+      }
+    });
+
+    it('leaves stations of an uninvolved branch untouched', () => {
+      // Trunk a—b—c continues c—d—e; a second branch c—x—y heads right. x and y
+      // sit between the endpoints in MEMBERSHIP order but not on the a→e path.
+      const doc = makeDoc({
+        stations: [
+          stationWithStop('a', 'L1', { x: 0, y: 0 }),
+          stationWithStop('x', 'L1', { x: 10, y: 25 }),
+          stationWithStop('y', 'L1', { x: 20, y: 25 }),
+          stationWithStop('b', 'L1', { x: 0, y: 12 }),
+          stationWithStop('c', 'L1', { x: 0, y: 25 }),
+          stationWithStop('d', 'L1', { x: 0, y: 33 }),
+          stationWithStop('e', 'L1', { x: 0, y: 60 }),
+        ],
+        lines: [
+          makeLine({
+            id: 'L1',
+            stations: ['a', 'x', 'y', 'b', 'c', 'd', 'e'],
+            edges: ['a|b', 'b|c', 'c|d', 'd|e', 'c|x', 'x|y'],
+          }),
+        ],
+      });
+      const next = T.redistributeBetween(doc, 'a', 'e', 'straight');
+      // On-path intermediates land on exact quarters of the 60px span.
+      expect(next.stations.b).toMatchObject({ x: 0, y: 15 });
+      expect(next.stations.c).toMatchObject({ x: 0, y: 30 });
+      expect(next.stations.d).toMatchObject({ x: 0, y: 45 });
+      // Off-path stations keep their exact objects (not even rewritten).
+      expect(next.stations.x).toBe(doc.stations.x);
+      expect(next.stations.y).toBe(doc.stations.y);
+    });
+  });
+
   it('grid-on arc-bends pulls a slightly-off-grid station ONTO the grid (no eps skip)', () => {
     // m sits 0.5 off its grid-snapped redistribute target (50, 0). The
     // sub-pixel drift-skip must not apply when grid is on — the snapped
