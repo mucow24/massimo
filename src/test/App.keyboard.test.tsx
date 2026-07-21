@@ -1483,9 +1483,7 @@ describe('App keyboard shortcuts: inside an open history group', () => {
     const outer = beginHistoryGroup();
     fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
 
-    await waitFor(() =>
-      expect(Object.keys(useDoc.getState().textLabels).length).toBe(before + 1),
-    );
+    await waitFor(() => expect(Object.keys(useDoc.getState().textLabels).length).toBe(before + 1));
     expect(isHistoryGrouping()).toBe(true);
     expect(historyDepth()).toBe(0);
     outer.commit();
