@@ -339,6 +339,16 @@ export interface Line {
   // the setter also re-packs tangent stop chains at the line's stations
   // (stationPacking.ts), keeping packed layouts packed at the new width.
   width?: number;
+  // Extra spacing inserted between this line and each interlined neighbor,
+  // world units. Missing ⇒ 0 (today's edge-to-edge tangency). Where two
+  // neighbors disagree, the pair uses the LARGER of the two gaps. Like
+  // `width` this is GEOMETRY: the packed stop spacing, the band merge gate,
+  // and the stripe offsets all include it (see tangentGap in
+  // geometry/orientation.ts) — so the setter also re-packs tangent stop
+  // chains at the line's stations, keeping dots centered on their stripes.
+  // The setter clamps to ≥ 0, rounds to the 0.25 grid, and drops the field
+  // at 0 so the default is never stored.
+  interlineGap?: number;
   // Casing rails CENTERED on the line's body edges — half in, half out —
   // in world units per side (MTA-style separators; see lineStroke.ts for
   // why centered). Missing ⇒ 0 (no casing). Unlike `width`, stroke is
@@ -380,8 +390,8 @@ export interface Line {
   curveRadius?: number;
   // Live link to a StyleDef of kind 'line' (see MapDoc.styles). INVARIANT:
   // when present, this line's covered style fields (singletonDotStyle,
-  // multiDotStyle, singletonDotSize, multiDotSize, width, strokeWidth,
-  // strokeColor, seamColor, seamWidth, dashLength, dashWidth, curveRadius —
+  // multiDotStyle, singletonDotSize, multiDotSize, width, interlineGap,
+  // strokeWidth, strokeColor, seamColor, seamWidth, dashLength, dashWidth, curveRadius —
   // NOT color) equal the style's props. Transforms maintain it: editing any covered field clears
   // the tag ("detach to Custom"), editing the style re-stamps its users,
   // deleting the style untags. Absent ⇒ no style ("Custom" in the UI).
@@ -876,6 +886,9 @@ export interface LineStyleProps {
   // line width at render time (see Line.dashLength / Line.dashWidth).
   dashLength?: number;
   dashWidth?: number;
+  // Interline gap (world units). Optional: absent ⇒ 0, edge-to-edge tangency
+  // (see Line.interlineGap; 0 is never stored, so absent IS the off state).
+  interlineGap?: number;
 }
 
 export interface TextLabelStyleProps {

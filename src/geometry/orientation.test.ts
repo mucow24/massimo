@@ -202,18 +202,35 @@ describe('rotateGridDelta', () => {
   });
 });
 
+const zeros = (n: number): number[] => Array(n).fill(0);
+
 describe('tangentGap', () => {
-  it('is the mean of the two widths (center distance at which stripes touch)', () => {
-    expect(tangentGap(14, 14)).toBe(14);
-    expect(tangentGap(14, 28)).toBe(21);
-    expect(tangentGap(2, 28)).toBe(15);
+  it('is the mean of the two widths at zero gaps (center distance at which stripes touch)', () => {
+    expect(tangentGap(14, 14, 0, 0)).toBe(14);
+    expect(tangentGap(14, 28, 0, 0)).toBe(21);
+    expect(tangentGap(2, 28, 0, 0)).toBe(15);
+  });
+
+  it('adds the LARGER of the two interline gaps (max-of-pair rule)', () => {
+    expect(tangentGap(6, 6, 2, 0)).toBe(8);
+    expect(tangentGap(6, 6, 0, 2)).toBe(8);
+    expect(tangentGap(6, 6, 2, 3)).toBe(9);
+    expect(tangentGap(14, 28, 1, 0.5)).toBe(22);
+  });
+
+  it('zero gaps are a bit-exact identity (legacy byte-identical rendering)', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: 60 }), fc.integer({ min: 1, max: 60 }), (wA, wB) => {
+        expect(tangentGap(wA, wB, 0, 0)).toBe((wA + wB) / 2);
+      }),
+    );
   });
 });
 
 describe('stripeOffsetsForWidths', () => {
   it('reduces bit-exactly to the historical (k - (n-1)/2) * STOP_SIZE for uniform default widths', () => {
     for (let n = 1; n <= 6; n++) {
-      const offsets = stripeOffsetsForWidths(Array(n).fill(STOP_SIZE));
+      const offsets = stripeOffsetsForWidths(Array(n).fill(STOP_SIZE), zeros(n));
       for (let k = 0; k < n; k++) {
         // Strict toBe, not closeTo: legacy docs must render byte-identically.
         expect(offsets[k]).toBe((k - (n - 1) / 2) * STOP_SIZE);
@@ -222,13 +239,22 @@ describe('stripeOffsetsForWidths', () => {
   });
 
   it('returns [] for no widths and [0] for a single stripe of any width', () => {
-    expect(stripeOffsetsForWidths([])).toEqual([]);
-    expect(stripeOffsetsForWidths([5])).toEqual([0]);
-    expect(stripeOffsetsForWidths([28])).toEqual([0]);
+    expect(stripeOffsetsForWidths([], [])).toEqual([]);
+    expect(stripeOffsetsForWidths([5], [0])).toEqual([0]);
+    expect(stripeOffsetsForWidths([28], [0])).toEqual([0]);
   });
 
   it('handles the canonical mixed pair: [14, 28] -> [-10.5, +10.5]', () => {
-    expect(stripeOffsetsForWidths([14, 28])).toEqual([-10.5, 10.5]);
+    expect(stripeOffsetsForWidths([14, 28], [0, 0])).toEqual([-10.5, 10.5]);
+  });
+
+  it('spreads consecutive pairs by the larger member gap (max-of-pair)', () => {
+    // Two width-6 stripes, one asking for a 2-unit gap: packed spacing 8.
+    expect(stripeOffsetsForWidths([6, 6], [2, 0])).toEqual([-4, 4]);
+    // The middle line's gap applies on BOTH its sides.
+    expect(stripeOffsetsForWidths([14, 14, 14], [0, 4, 0])).toEqual([-18, 0, 18]);
+    // A single stripe's gap is inert (no neighbor to gap against).
+    expect(stripeOffsetsForWidths([14], [4])).toEqual([0]);
   });
 
   it('consecutive PRE-CENTERED positions differ by exactly tangentGap (exact dyadic arithmetic)', () => {
@@ -249,13 +275,15 @@ describe('stripeOffsetsForWidths', () => {
             return p;
           });
           for (let k = 0; k + 1 < widths.length; k++) {
-            expect(positions[k + 1] - positions[k]).toBe(tangentGap(widths[k], widths[k + 1]));
+            expect(positions[k + 1] - positions[k]).toBe(
+              tangentGap(widths[k], widths[k + 1], 0, 0),
+            );
           }
           // And the centered offsets track those positions to float precision.
-          const offsets = stripeOffsetsForWidths(widths);
+          const offsets = stripeOffsetsForWidths(widths, zeros(widths.length));
           for (let k = 0; k + 1 < widths.length; k++) {
             expect(offsets[k + 1] - offsets[k]).toBeCloseTo(
-              tangentGap(widths[k], widths[k + 1]),
+              tangentGap(widths[k], widths[k + 1], 0, 0),
               9,
             );
           }
@@ -269,12 +297,12 @@ describe('stripeOffsetsForWidths', () => {
       fc.property(
         fc.array(fc.integer({ min: 1, max: 60 }), { minLength: 1, maxLength: 8 }),
         (widths) => {
-          const offsets = stripeOffsetsForWidths(widths);
+          const offsets = stripeOffsetsForWidths(widths, zeros(widths.length));
           const sum = offsets.reduce((a, b) => a + b, 0);
           expect(Math.abs(sum)).toBeLessThan(1e-9 * Math.max(1, ...offsets.map(Math.abs)) + 1e-12);
           // Reversing the widths mirrors the offsets: offsets(reverse(w)) ===
           // reverse(-offsets(w)) up to float noise.
-          const rev = stripeOffsetsForWidths([...widths].reverse());
+          const rev = stripeOffsetsForWidths([...widths].reverse(), zeros(widths.length));
           const mirrored = offsets.map((o) => -o).reverse();
           for (let k = 0; k < offsets.length; k++) {
             expect(rev[k]).toBeCloseTo(mirrored[k], 9);
@@ -289,7 +317,7 @@ describe('stripeOffsetsForWidths', () => {
       fc.property(
         fc.array(fc.integer({ min: 1, max: 60 }), { minLength: 1, maxLength: 8 }),
         (widths) => {
-          const offsets = stripeOffsetsForWidths(widths);
+          const offsets = stripeOffsetsForWidths(widths, zeros(widths.length));
           const n = widths.length;
           const lo = offsets[0] - widths[0] / 2;
           const hi = offsets[n - 1] + widths[n - 1] / 2;

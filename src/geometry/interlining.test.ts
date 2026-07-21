@@ -715,7 +715,7 @@ describe('buildBands — per-line widths', () => {
           // Stops at cumulative tangency spacing (in rows).
           const rows: number[] = [0];
           for (let k = 1; k < widths.length; k++) {
-            rows.push(rows[k - 1] + tangentGap(widths[k - 1], widths[k]) / STOP_SIZE);
+            rows.push(rows[k - 1] + tangentGap(widths[k - 1], widths[k], 0, 0) / STOP_SIZE);
           }
           const ids = widths.map((_, i) => `L${i + 1}`);
           const stops = () =>
@@ -780,9 +780,48 @@ describe('buildBands — per-line widths', () => {
         });
         const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
         expect(bands).toHaveLength(1);
-        expect(bands[0].stripeOffsets).toEqual(stripeOffsetsForWidths(Array(n).fill(STOP_SIZE)));
+        expect(bands[0].stripeOffsets).toEqual(
+          stripeOffsetsForWidths(Array(n).fill(STOP_SIZE), Array(n).fill(0)),
+        );
       }),
     );
+  });
+});
+
+describe('buildBands — interline gap', () => {
+  // Two width-6 lines, L1 asking for a 2-unit interline gap: the pair packs
+  // at tangentGap(6, 6) + max(2, 0) = 8 world units (the max-of-pair rule).
+  const gappedDoc = (rowGap: number) => {
+    const stops = () => [
+      makeStop('L1', { row: 0, col: 0, orientation: 'auto-horizontal' }),
+      makeStop('L2', { row: rowGap, col: 0, orientation: 'auto-horizontal' }),
+    ];
+    return makeDoc({
+      stations: [
+        makeStation({ id: 's1', x: 0, y: 0, stops: stops() }),
+        makeStation({ id: 's2', x: 200, y: 0, stops: stops() }),
+      ],
+      lines: [
+        makeLine({ id: 'L1', stations: ['s1', 's2'], width: 6, interlineGap: 2 }),
+        makeLine({ id: 'L2', stations: ['s1', 's2'], width: 6 }),
+      ],
+    });
+  };
+
+  it('merges a gapped pair packed at tangency + max(gap) and spreads the stripes', () => {
+    const doc = gappedDoc(8 / STOP_SIZE);
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+    expect(bands).toHaveLength(1);
+    // Mean-centered around the stop centroid: spacing 8, so ±4 — the stripes
+    // sit centered on their (spread) stops, background showing in between.
+    expect(bands[0].stripeOffsets).toEqual([-4, 4]);
+    // The radius bump reads the grown offsets (straight band: no cap).
+    expect(bands[0].radius).toBeCloseTo(24 + 4, 9);
+  });
+
+  it('keeps a gapped pair at plain tangency separate (the gate expects the gap)', () => {
+    const doc = gappedDoc(6 / STOP_SIZE);
+    expect(buildBands(doc.stations, doc.lines, doc.lineOrder)).toHaveLength(2);
   });
 });
 

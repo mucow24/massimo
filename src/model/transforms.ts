@@ -1,9 +1,15 @@
 import { autoOrientNewStation } from './autoOrient';
 import { effectiveLineOrder } from './lineOrder';
 import { reconcileOrder, moveInOrder, moveToEndInOrder } from './recordOrder';
-import { LINE_WIDTH_DEFAULT, canonicalLineWidth, lineWidthOf } from './lineWidth';
+import {
+  LINE_INTERLINE_GAP_DEFAULT,
+  LINE_WIDTH_DEFAULT,
+  canonicalLineWidth,
+  lineInterlineGapOf,
+  lineWidthOf,
+} from './lineWidth';
 import { LINE_CURVE_RADIUS_DEFAULT, canonicalLineCurveRadius } from './lineCurve';
-import { repackStationForWidth } from './stationPacking';
+import { repackStationForSpacing } from './stationPacking';
 import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
 import {
   LINE_STROKE_COLOR_DEFAULT,
@@ -718,13 +724,55 @@ export function setLineWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
   if (!cur || !Number.isFinite(w)) return doc;
   const stored = canonicalLineWidth(w);
   if (cur.width === stored) return doc;
+  const gap = lineInterlineGapOf(cur);
   const stations = mapRecord(doc.stations, (st) =>
-    repackStationForWidth(st, doc.lines, id, lineWidthOf(cur), stored ?? LINE_WIDTH_DEFAULT),
+    repackStationForSpacing(
+      st,
+      doc.lines,
+      id,
+      lineWidthOf(cur),
+      stored ?? LINE_WIDTH_DEFAULT,
+      gap,
+      gap,
+    ),
   );
   // Fall-through = the stored width changed → detach from the style preset.
   return {
     ...doc,
     lines: { ...doc.lines, [id]: stripStyleId(writeLineField(cur, 'width', stored)) },
+    stations,
+  };
+}
+
+// Per-line interline gap: extra spacing against each interlined neighbor
+// (the pair uses the LARGER of the two lines' gaps). Same storage contract
+// as setLineStrokeWidth (quarter-unit grid, floor at 0, dropped at 0), but
+// like `width` this is GEOMETRY: the packed stop spacing and the band merge
+// gate include it, so a bare write would strand packed layouts and un-merge
+// their bands. Each edit therefore also re-packs the packed stop chains at
+// every station hosting this line (see stationPacking.ts), exactly like a
+// width edit — one doc write, one undo entry.
+export function setLineInterlineGap(doc: MapDoc, id: LineId, v: number): MapDoc {
+  const cur = doc.lines[id];
+  if (!cur || !Number.isFinite(v)) return doc;
+  const stored = canonicalStrokeWidth(v);
+  if (cur.interlineGap === stored) return doc;
+  const width = lineWidthOf(cur);
+  const stations = mapRecord(doc.stations, (st) =>
+    repackStationForSpacing(
+      st,
+      doc.lines,
+      id,
+      width,
+      width,
+      lineInterlineGapOf(cur),
+      stored ?? LINE_INTERLINE_GAP_DEFAULT,
+    ),
+  );
+  // Fall-through = the stored gap changed → detach from the style preset.
+  return {
+    ...doc,
+    lines: { ...doc.lines, [id]: stripStyleId(writeLineField(cur, 'interlineGap', stored)) },
     stations,
   };
 }
@@ -743,7 +791,7 @@ export function setLineCurveRadius(doc: MapDoc, id: LineId, r: number): MapDoc {
 
 // Per-line casing width. Same contract as setLineWidth except the grid:
 // non-finite input is ignored, the value is rounded to the nearest
-// LINE_STROKE_STEP (0.5) and clamped to ≥ LINE_STROKE_WIDTH_MIN, and the
+// LINE_STROKE_STEP (0.25) and clamped to ≥ LINE_STROKE_WIDTH_MIN, and the
 // field is dropped when the result lands on the default (0 = no casing) so
 // it is never stored. Reference-equal no-ops keep slider ticks out of the
 // undo history.
@@ -1553,7 +1601,13 @@ function spawnStopCell(
   const newRow = anchor ? anchor.row : 0;
   const newCol = anchor
     ? anchor.col +
-      tangentGap(lineWidthOf(lines[lineId]), lineWidthOf(lines[anchor.lineId])) / STOP_SIZE
+      tangentGap(
+        lineWidthOf(lines[lineId]),
+        lineWidthOf(lines[anchor.lineId]),
+        lineInterlineGapOf(lines[lineId]),
+        lineInterlineGapOf(lines[anchor.lineId]),
+      ) /
+        STOP_SIZE
     : 0;
   const newCell: StopCell = { lineId, row: newRow, col: newCol, orientation: 'auto-vertical' };
   const stops = [...st.stops, newCell];

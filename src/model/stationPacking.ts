@@ -1,12 +1,13 @@
-// Tangency-preserving station repack for line-width edits.
+// Packing-preserving station repack for line width / interline-gap edits.
 //
 // The interlining merge gate treats two stops as stripes of one band only
-// when their centers sit EXACTLY tangentGap(wA, wB) = (wA + wB) / 2 apart
-// along the perpendicular of their shared travel axis, within TOL = 0.5
-// world units (see buildBandGeometry). Widths live on lines while stop cells
-// live on a fixed-pitch lattice, so a bare width edit strands every packed
-// layout at its old spacing and un-merges its bands. `setLineWidth` calls
-// {@link repackStationForWidth} to rewrite the affected chains instead:
+// when their centers sit EXACTLY tangentGap(wA, wB, gA, gB) =
+// (wA + wB) / 2 + max(gA, gB) apart along the perpendicular of their shared
+// travel axis, within TOL = 0.5 world units (see buildBandGeometry). Widths
+// and gaps live on lines while stop cells live on a fixed-pitch lattice, so
+// a bare width/gap edit strands every packed layout at its old spacing and
+// un-merges its bands. `setLineWidth` / `setLineInterlineGap` call
+// {@link repackStationForSpacing} to rewrite the affected chains instead:
 //
 //   - stops are grouped by travel axis (their orientation), partitioned into
 //     parallel-position clusters (stops from another corridor along the same
@@ -38,7 +39,7 @@ import {
 } from '../geometry/orientation';
 import { DIRS_8, dirIndex } from '../geometry/router';
 import { leftNormal } from '../geometry/vec';
-import { lineWidthOf } from './lineWidth';
+import { lineInterlineGapOf, lineWidthOf } from './lineWidth';
 import type { Line, LineId, Station, StopCell, StopOrientation } from './types';
 
 /** Chain-recognition tolerance, world units — the shared band-merge tolerance
@@ -53,23 +54,26 @@ const REPACK_TOL = BAND_MERGE_TOL;
 const MOVE_EPS = 1e-9;
 
 /**
- * Re-pack `station`'s tangent stop chains for a width change on `lineId`
- * (oldWidth → newWidth, both EFFECTIVE widths in world units). Returns the
- * station unchanged (same reference) when nothing needs to move: no stop of
- * the line, no tangent chain containing it, or a no-op width.
+ * Re-pack `station`'s packed stop chains for a width and/or interline-gap
+ * change on `lineId` (oldWidth → newWidth, oldGap → newGap, all EFFECTIVE
+ * values in world units). Returns the station unchanged (same reference)
+ * when nothing needs to move: no stop of the line, no packed chain
+ * containing it, or a no-op edit.
  *
  * Pure and station-local: positions are handled in the unrotated local frame
  * (cell × STOP_SIZE), where tangency distances equal their world-frame
  * counterparts because rotation preserves lengths.
  */
-export function repackStationForWidth(
+export function repackStationForSpacing(
   station: Station,
   lines: Record<LineId, Line>,
   lineId: LineId,
   oldWidth: number,
   newWidth: number,
+  oldGap: number,
+  newGap: number,
 ): Station {
-  if (oldWidth === newWidth) return station;
+  if (oldWidth === newWidth && oldGap === newGap) return station;
   if (!station.stops.some((c) => c.lineId === lineId)) return station;
 
   // Per-stop movement in cell units, keyed by index into station.stops.
@@ -95,6 +99,7 @@ export function repackStationForWidth(
       const y = c.row * STOP_SIZE;
       const edited = c.lineId === lineId;
       const w = edited ? oldWidth : lineWidthOf(lines[c.lineId]);
+      const g = edited ? oldGap : lineInterlineGapOf(lines[c.lineId]);
       return {
         i,
         edited,
@@ -102,6 +107,8 @@ export function repackStationForWidth(
         perp: x * perpAxis.x + y * perpAxis.y,
         w,
         wNew: edited ? newWidth : w,
+        g,
+        gNew: edited ? newGap : g,
       };
     });
     // Partition into PARALLEL-position clusters first. The merge gate groups
@@ -132,7 +139,9 @@ export function repackStationForWidth(
           k < cluster.length &&
           Math.abs(cluster[k].par - cluster[k - 1].par) < REPACK_TOL &&
           Math.abs(
-            cluster[k].perp - cluster[k - 1].perp - tangentGap(cluster[k - 1].w, cluster[k].w),
+            cluster[k].perp -
+              cluster[k - 1].perp -
+              tangentGap(cluster[k - 1].w, cluster[k].w, cluster[k - 1].g, cluster[k].g),
           ) < REPACK_TOL;
         if (linked) continue;
         const chain = cluster.slice(start, k);
@@ -141,12 +150,15 @@ export function repackStationForWidth(
         // chains have unchanged gaps, and canonicalizing their within-TOL slop
         // as a side effect of an unrelated width edit would surprise.
         if (chain.length < 2 || !chain.some((n) => n.edited)) continue;
-        // New perp positions: cumulative NEW tangent gaps, mean-centered onto
+        // New perp positions: cumulative NEW packed gaps, mean-centered onto
         // the chain's old centroid (least total movement — the exact analogue
         // of stripeOffsetsForWidths' mean-centering).
         const cum = [0];
         for (let j = 1; j < chain.length; j++)
-          cum.push(cum[j - 1] + tangentGap(chain[j - 1].wNew, chain[j].wNew));
+          cum.push(
+            cum[j - 1] +
+              tangentGap(chain[j - 1].wNew, chain[j].wNew, chain[j - 1].gNew, chain[j].gNew),
+          );
         const oldMean = chain.reduce((s, n) => s + n.perp, 0) / chain.length;
         const cumMean = cum.reduce((s, v) => s + v, 0) / cum.length;
         chain.forEach((n, j) => {

@@ -9,10 +9,12 @@ import { withHexAlpha } from '../../util/color';
 import { NumericFieldRow } from '../NumericFieldRow';
 import { StyleRow } from '../StyleRow';
 import {
+  LINE_INTERLINE_GAP_MAX,
   LINE_WIDTH_MAX,
   LINE_WIDTH_MIN,
   LINE_WIDTH_SLIDER_MIN,
   LINE_WIDTH_STEP,
+  lineInterlineGapOf,
   lineWidthOf,
 } from '../../model/lineWidth';
 import {
@@ -59,6 +61,7 @@ export function LineInspector({ id }: { id: LineId }) {
   const setLineSingletonDotSize = useDoc((s) => s.setLineSingletonDotSize);
   const setLineMultiDotSize = useDoc((s) => s.setLineMultiDotSize);
   const setLineWidth = useDoc((s) => s.setLineWidth);
+  const setLineInterlineGap = useDoc((s) => s.setLineInterlineGap);
   const setLineCurveRadius = useDoc((s) => s.setLineCurveRadius);
   const setLineStrokeWidth = useDoc((s) => s.setLineStrokeWidth);
   const setLineStrokeColor = useDoc((s) => s.setLineStrokeColor);
@@ -169,6 +172,20 @@ export function LineInspector({ id }: { id: LineId }) {
         getCurrent={() => lineWidthOf(useDoc.getState().lines[id])}
         textboxAllowAboveMax
         textboxMin={LINE_WIDTH_MIN}
+      />
+      {/* Extra spacing against each interlined neighbor (the pair uses the
+          larger of the two lines' gaps). 0 = classic edge-to-edge tangency.
+          Editing re-packs the stops, so bands stay merged with dots centered. */}
+      <NumericFieldRow
+        id={`line-interline-gap-${line.id}`}
+        label="Interline gap"
+        min={0}
+        max={LINE_INTERLINE_GAP_MAX}
+        step={LINE_WIDTH_STEP}
+        value={lineInterlineGapOf(line)}
+        onChange={(n) => setLineInterlineGap(line.id, n)}
+        getCurrent={() => lineInterlineGapOf(useDoc.getState().lines[id])}
+        textboxAllowAboveMax
       />
       <NumericFieldRow
         id={`line-curve-${line.id}`}

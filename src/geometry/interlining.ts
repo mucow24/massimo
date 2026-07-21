@@ -26,7 +26,7 @@ import {
   travelDirLocal,
   worldDirToLocal,
 } from './orientation';
-import { lineWidthOf } from '../model/lineWidth';
+import { lineInterlineGapOf, lineWidthOf } from '../model/lineWidth';
 import { lineCurveRadiusOf } from '../model/lineCurve';
 
 export interface SegmentBandSpec {
@@ -278,11 +278,12 @@ export function buildBandGeometry(
       const tPerp: Vec2 = leftNormal(tDir);
 
       // Enrich with world perp/parallel positions at each end for sorting and
-      // adjacency comparison, plus the line's effective width (which sets the
-      // pairwise tangency distance below).
+      // adjacency comparison, plus the line's effective width and interline
+      // gap (which together set the pairwise packed distance below).
       type Enriched = {
         seg: SegInfo;
         width: number;
+        gap: number;
         fPerpPos: number;
         fParPos: number;
         tPerpPos: number;
@@ -297,6 +298,7 @@ export function buildBandGeometry(
         return {
           seg: s,
           width: lineWidthOf(lines[s.lineId]),
+          gap: lineInterlineGapOf(lines[s.lineId]),
           fPerpPos: dot(fp, fPerp),
           fParPos: dot(fp, fDir),
           tPerpPos: dot(tp, tPerp),
@@ -307,10 +309,11 @@ export function buildBandGeometry(
 
       // Greedily merge contiguous perp-adjacency in WORLD coords at both
       // ends, with matching parallel position at both ends. "Adjacent" =
-      // EXACTLY tangent: the perp step between consecutive stop centers must
-      // equal tangentGap(width, width) (= STOP_SIZE for two default-width
-      // lines). Stops that are not tangent — including mixed-width pairs
-      // still at the legacy unit spacing — stay in separate bands.
+      // EXACTLY packed: the perp step between consecutive stop centers must
+      // equal tangentGap(width, width, gap, gap) (= STOP_SIZE for two
+      // default-width zero-gap lines). Stops that are not packed — including
+      // mixed-width pairs still at the legacy unit spacing — stay in
+      // separate bands.
       let group: Enriched[] = [];
       const flush = () => {
         if (group.length === 0) return;
@@ -318,6 +321,7 @@ export function buildBandGeometry(
           buildBandSpec(
             group.map((e) => e.seg),
             group.map((e) => e.width),
+            group.map((e) => e.gap),
             // Interlined lines may disagree on curve radius; the shared
             // centerline curves at the LARGEST member radius, so no line
             // curves tighter than it asked for (the smaller-radius lines
@@ -341,7 +345,7 @@ export function buildBandGeometry(
         const prev = group[group.length - 1];
         const dFromPerp = e.fPerpPos - prev.fPerpPos;
         const dToPerp = e.tPerpPos - prev.tPerpPos;
-        const tangent = tangentGap(prev.width, e.width);
+        const tangent = tangentGap(prev.width, e.width, prev.gap, e.gap);
         const sameParA = Math.abs(e.fParPos - prev.fParPos) < TOL;
         const sameParB = Math.abs(e.tParPos - prev.tParPos) < TOL;
         if (
@@ -604,9 +608,10 @@ export function cornerCapRadius(
 
 function buildBandSpec(
   group: SegInfo[],
-  // Per-line effective widths, parallel to `group` (already in the bucket's
-  // perp-sorted order).
+  // Per-line effective widths and interline gaps, parallel to `group`
+  // (already in the bucket's perp-sorted order).
   widths: number[],
+  gaps: number[],
   R: number,
   pairKey: string,
   // The band's canonical-direction tangents (signed canonFrom→canonTo). Must
@@ -626,12 +631,12 @@ function buildBandSpec(
   const fromMeanWorld = bandCentroid(fromWorlds);
   const toMeanWorld = bandCentroid(toWorlds);
 
-  // Per-stripe offsets: mean-centered tangency positions of the widths. The
-  // merge gate guaranteed the actual stop centers sit at exactly these
+  // Per-stripe offsets: mean-centered packed positions of the widths + gaps.
+  // The merge gate guaranteed the actual stop centers sit at exactly these
   // spacings, and the centerline is the stop centroid (the mean), so
   // centerline + offset_k reproduces each stop position.
   const n = group.length;
-  const offsets = stripeOffsetsForWidths(widths);
+  const offsets = stripeOffsetsForWidths(widths, gaps);
   const maxAbsOffset = offsets.reduce((m, o) => Math.max(m, Math.abs(o)), 0);
 
   // Bump centerline radius so the INNERMOST stripe still has radius ≥ R.

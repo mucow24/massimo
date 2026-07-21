@@ -163,6 +163,47 @@ describe('computeGhosts', () => {
     expect(ghosts.some((g) => sameCell(g, { row: 0, col: 1 }))).toBe(false);
   });
 
+  it('interline gaps widen ring-1 to the packed pitch (max-of-pair) but not the clearance', () => {
+    // Gapped anchor (g = 4) against a gap-less source:
+    // t = ((14+14)/2 + max(0, 4)) / 14 = 18/14.
+    const gapped: WidthNode = { row: 0, col: 0, w: W, g: 4 };
+    const fromAnchor = computeGhosts({
+      wSrc: W,
+      anchor: gapped,
+      otherNodes: [gapped],
+      basis: 'orthogonal',
+      stationRotation: 0,
+      gridRadius: 2,
+    });
+    expect(fromAnchor.some((g) => sameCell(g, { row: 0, col: 18 / 14 }))).toBe(true);
+    expect(fromAnchor.some((g) => sameCell(g, { row: 0, col: 1 }))).toBe(false);
+    // gSrc drives the same pitch from the source side (max-of-pair).
+    const fromSrc = computeGhosts({
+      wSrc: W,
+      gSrc: 4,
+      anchor,
+      otherNodes: [anchor],
+      basis: 'orthogonal',
+      stationRotation: 0,
+      gridRadius: 2,
+    });
+    expect(fromSrc.some((g) => sameCell(g, { row: 0, col: 18 / 14 }))).toBe(true);
+    // Clearance stays WIDTH-ONLY: a gapped neighbor exactly one width-tangency
+    // (1 cell) from the slot does not repel it — bodies don't grow with the
+    // gap. (A gap-aware clearance of 18/14 would drop the slot.)
+    const neighbor: WidthNode = { row: 0, col: 18 / 14 + 1, w: W, g: 4 };
+    const withNeighbor = computeGhosts({
+      wSrc: W,
+      gSrc: 4,
+      anchor,
+      otherNodes: [anchor, neighbor],
+      basis: 'orthogonal',
+      stationRotation: 0,
+      gridRadius: 2,
+    });
+    expect(withNeighbor.some((g) => sameCell(g, { row: 0, col: 18 / 14 }))).toBe(true);
+  });
+
   it('drops slots that would overlap another node, keeps tangent ones', () => {
     const other: WidthNode = { row: 0, col: 1, w: W };
     const ghosts = computeGhosts({

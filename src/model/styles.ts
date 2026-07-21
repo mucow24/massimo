@@ -23,6 +23,7 @@ import {
   setLineCurveRadius,
   setLineDashLength,
   setLineDashWidth,
+  setLineInterlineGap,
   setLineSingletonDotStyle,
   setLineMultiDotStyle,
   setLineSingletonDotSize,
@@ -127,6 +128,7 @@ export function captureStyleProps<K extends StyleKind>(
       const seamWidth = lineSeamWidthOf(l);
       const dashLength = lineDashLengthOf(l);
       const dashWidth = lineDashWidthOf(l);
+      const interlineGap = l.interlineGap;
       return {
         // Dot TYPE ids (always stored on a real line; the ?? heals a bare
         // fixture / legacy line so the captured style is still self-contained).
@@ -144,6 +146,7 @@ export function captureStyleProps<K extends StyleKind>(
         ...(seamWidth !== undefined ? { seamWidth } : {}),
         ...(dashLength !== undefined ? { dashLength } : {}),
         ...(dashWidth !== undefined ? { dashWidth } : {}),
+        ...(interlineGap !== undefined ? { interlineGap } : {}),
       } as StylePropsByKind[K];
     }
     case 'textLabel': {
@@ -231,7 +234,8 @@ export function stylePropsEqual(
       la.seamColor === lb.seamColor &&
       la.seamWidth === lb.seamWidth &&
       la.dashLength === lb.dashLength &&
-      la.dashWidth === lb.dashWidth
+      la.dashWidth === lb.dashWidth &&
+      la.interlineGap === lb.interlineGap
     );
   }
   if (kind === 'transfer') {
@@ -271,6 +275,8 @@ export function canonicalStyleProps<K extends StyleKind>(
       const seamWidth = p.seamWidth == null ? undefined : canonicalStrokeWidth(p.seamWidth);
       const dashLength = p.dashLength == null ? undefined : canonicalStrokeWidth(p.dashLength);
       const dashWidth = p.dashWidth == null ? undefined : canonicalStrokeWidth(p.dashWidth);
+      const interlineGap =
+        p.interlineGap == null ? undefined : canonicalStrokeWidth(p.interlineGap);
       return {
         // `?? DEFAULT` heals a def from a save that predates dot-type coverage
         // (and is the concrete backstop for a since-deleted id — see
@@ -304,6 +310,7 @@ export function canonicalStyleProps<K extends StyleKind>(
         ...(seamWidth !== undefined ? { seamWidth } : {}),
         ...(dashLength !== undefined ? { dashLength } : {}),
         ...(dashWidth !== undefined ? { dashWidth } : {}),
+        ...(interlineGap !== undefined ? { interlineGap } : {}),
       } as StylePropsByKind[K];
     }
     case 'textLabel': {
@@ -406,6 +413,10 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
       // undefined ⇒ 0 ⇒ dropped, so the stamped line derives from its width.
       next = setLineDashLength(next, itemId, p.dashLength ?? 0);
       next = setLineDashWidth(next, itemId, p.dashWidth ?? 0);
+      // undefined ⇒ 0 ⇒ dropped, back to plain tangency. Goes through the
+      // canonical setter, so stamping a different gap also re-packs the
+      // line's stations (same as a manual edit).
+      next = setLineInterlineGap(next, itemId, p.interlineGap ?? 0);
       break;
     }
     case 'textLabel': {

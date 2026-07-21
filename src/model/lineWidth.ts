@@ -42,6 +42,24 @@ export const canonicalLineWidth = (w: number): number | undefined => {
 export const lineWidthOf = (line: { width?: number } | null | undefined): number =>
   line?.width ?? LINE_WIDTH_DEFAULT;
 
+// Extra spacing between a line and each interlined neighbor, world units.
+// 0 = today's edge-to-edge tangency; never stored at the default. Stored on
+// the same quarter-unit grid as the casing width (canonicalStrokeWidth —
+// grid + floor-at-0 + drop-at-0 is exactly this field's contract too).
+// Where two neighbors disagree, the pair uses the LARGER gap (see
+// tangentGap in geometry/orientation.ts). GEOMETRY, like `width`.
+export const LINE_INTERLINE_GAP_DEFAULT = 0;
+// Slider bound only — the textbox may exceed it (textboxAllowAboveMax).
+export const LINE_INTERLINE_GAP_MAX = STOP_SIZE;
+
+/**
+ * Effective interline gap of a line. Missing field ⇒ 0 (tangent, the
+ * historical behavior) — saves from before the field existed need no
+ * migration. Structural parameter so narrowed line shapes pass through.
+ */
+export const lineInterlineGapOf = (line: { interlineGap?: number } | null | undefined): number =>
+  line?.interlineGap ?? LINE_INTERLINE_GAP_DEFAULT;
+
 /**
  * Per-line half-width lookup keyed by line id — the single home for the
  * `width / 2` derivation that station-local geometry (boundary AABB, label

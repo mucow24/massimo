@@ -219,7 +219,10 @@ export function MapCanvas() {
   // edit must repaint WITHOUT a geometry rebuild (stripes resolve color live).
   // Width, by contrast, IS geometry — it moves the baked paths and changes band
   // merging — so it must be in the hash or width edits never repaint. Curve
-  // radius is geometry for the same reason (it moves the baked fillets).
+  // radius is geometry for the same reason (it moves the baked fillets), and
+  // the interline gap likewise (it feeds the merge gate and stripe offsets;
+  // in practice every gap write also re-packs stops, which invalidates the
+  // stations-side sig, but the hash must not rely on that coupling).
   const linesGeometrySig = useMemo(() => {
     const parts: string[] = [];
     for (const id of Object.keys(lines)) {
@@ -229,6 +232,7 @@ export function MapCanvas() {
         ln.edges.join('.'),
         Object.keys(ln.segmentStyles ?? {}).join('.'),
         String(ln.width ?? ''),
+        String(ln.interlineGap ?? ''),
         String(ln.curveRadius ?? ''),
       );
     }

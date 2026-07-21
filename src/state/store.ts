@@ -532,6 +532,7 @@ interface DocState extends MapDoc {
   setLineSingletonDotSize: (lineId: LineId, size: number) => void;
   setLineMultiDotSize: (lineId: LineId, size: number) => void;
   setLineWidth: (lineId: LineId, w: number) => void;
+  setLineInterlineGap: (lineId: LineId, v: number) => void;
   setLineCurveRadius: (lineId: LineId, r: number) => void;
   setLineStrokeWidth: (lineId: LineId, w: number) => void;
   setLineStrokeColor: (lineId: LineId, c: string) => void;
@@ -804,6 +805,8 @@ export const useDoc = create<DocState>()(
           set((s) => T.setLineSingletonDotSize(s, lineId, size)),
         setLineMultiDotSize: (lineId, size) => set((s) => T.setLineMultiDotSize(s, lineId, size)),
         setLineWidth: (lineId, w) => set(withRegionReconcile((s) => T.setLineWidth(s, lineId, w))),
+        setLineInterlineGap: (lineId, v) =>
+          set(withRegionReconcile((s) => T.setLineInterlineGap(s, lineId, v))),
         setLineCurveRadius: (lineId, r) =>
           set(withRegionReconcile((s) => T.setLineCurveRadius(s, lineId, r))),
         setLineStrokeWidth: (lineId, w) => set((s) => T.setLineStrokeWidth(s, lineId, w)),
