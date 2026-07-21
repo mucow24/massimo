@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useSelection } from './store';
 import { clearedSelections, hoveredChrome, type HoveredCanvasItem } from './selection';
-import type { StationId } from '../model/types';
+import type { LineId, StationId } from '../model/types';
 
 beforeEach(() => {
   useSelection.setState({
@@ -33,6 +33,21 @@ describe('hoveredCanvasItem store', () => {
     useSelection.getState().setHoveredCanvasItem({ kind: 'station', id: 'A' });
     useSelection.getState().setUiMode({ kind: 'idle' });
     expect(useSelection.getState().hoveredCanvasItem).toBeNull();
+  });
+});
+
+describe('hoveredLineStop store (transfer-mode dot ring)', () => {
+  // Exiting transfer mode with the cursor still over a station used to leave
+  // the white hover ring painted on that dot: back in idle, the station's
+  // pointerleave swaps to the idle handler (which clears only
+  // hoveredCanvasItem), so pointer motion could never clear the stale value.
+  it('setUiMode clears hoveredLineStop like the other ephemeral hover channels', () => {
+    useSelection.getState().setUiMode({ kind: 'creating-transfer', anchor: null });
+    useSelection
+      .getState()
+      .setHoveredLineStop({ stationId: 'A' as StationId, lineId: 'L1' as LineId });
+    useSelection.getState().setUiMode({ kind: 'idle' });
+    expect(useSelection.getState().hoveredLineStop).toBeNull();
   });
 });
 

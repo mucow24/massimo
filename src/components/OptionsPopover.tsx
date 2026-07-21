@@ -1,4 +1,4 @@
-import { Fragment, useId, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { ChevronDownIcon, Cross2Icon, MixerHorizontalIcon } from '@radix-ui/react-icons';
 import * as Select from '@radix-ui/react-select';
 import { useDoc } from '../state/store';
@@ -32,6 +32,11 @@ export function OptionsPopover() {
   const deleteCustomPalette = useDoc((s) => s.deleteCustomPalette);
   const paletteFileRef = useRef<HTMLInputElement>(null);
   const [paletteError, setPaletteError] = useState<string | null>(null);
+  // The component stays mounted while the panel conditionally renders, so the
+  // error would otherwise greet the user on every reopen until a load SUCCEEDS.
+  useEffect(() => {
+    if (!open) setPaletteError(null);
+  }, [open]);
 
   const onLoadPalette = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];

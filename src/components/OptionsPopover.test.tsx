@@ -279,5 +279,20 @@ describe('<OptionsPopover />', () => {
       expect(await screen.findByRole('alert')).toBeInTheDocument();
       expect(useCustomPalettes.getState().palettes).toEqual([]);
     });
+
+    it('the load-error banner does not survive close/reopen', async () => {
+      const user = userEvent.setup();
+      render(<Toolbar />);
+      await openPalettes(user);
+      const bad = new File(['{not json'], 'bad.json', { type: 'application/json' });
+      fireEvent.change(screen.getByLabelText('Load palette file'), { target: { files: [bad] } });
+      expect(await screen.findByRole('alert')).toBeInTheDocument();
+
+      // Close via the Options trigger, reopen: no load was attempted, so no
+      // stale error should greet the user.
+      await user.click(screen.getByRole('button', { name: 'Options' }));
+      await openPalettes(user);
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
   });
 });

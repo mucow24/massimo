@@ -58,10 +58,12 @@ export function cancelModeOnContextMenu(e: globalThis.MouseEvent): void {
   // else exits on right-click. The set lives next to UiMode in the store so
   // a new variant declares its right-click policy in one place.
   if (RIGHT_CLICK_PASSTHROUGH_MODES.has(sel.uiMode.kind)) return;
-  // The sidebar owns its own right-click gestures. Cancel-a-mode is a canvas
-  // gesture; a right-click on chrome shouldn't silently kick the user out of
-  // the mode they're working in.
-  if (e.target instanceof Element && e.target.closest('.sidebar')) return;
+  // Cancel-a-mode is a CANVAS gesture: only a right-click on the canvas backs
+  // out of the mode. Chrome — toolbar (including the map-name field), sidebar,
+  // popovers — owns its own right-click; cancelling from there kicked the user
+  // out of the mode mid-flow (a placing-svg mode even lost its parsed file
+  // payload) while ALSO suppressing the native menu they asked for.
+  if (!(e.target instanceof Element && e.target.closest('.canvas-host'))) return;
   e.preventDefault();
   e.stopPropagation();
   cancelAppendMode();

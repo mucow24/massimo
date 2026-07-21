@@ -770,6 +770,10 @@ export function MapCanvas() {
     // A click-to-place tool / active mode consumes the background click (drop an
     // item or exit the mode); only a plain idle click falls through to deselect.
     if (placement.handleCanvasPlace(e)) return;
+    // Shift is additive in every other gesture (item toggle, station toggle,
+    // marquee 'add'): a modifier click that MISSES an item is a failed
+    // additive click, not a deselect-everything.
+    if (e.shiftKey) return;
     selection.selectStation(null);
     selection.selectLineTag(null);
     selection.selectRouteBullet(null);
