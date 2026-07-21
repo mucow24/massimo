@@ -140,6 +140,20 @@ describe('MapCanvas — mouseover orientation arrows on stop dots', () => {
     expect(document.querySelector('[data-station-arrows]')).toBeNull();
   });
 
+  it('paints the arrows above the routing-warning markers', () => {
+    render(<App />);
+    seed();
+    hoverStation('s1');
+    // Same reason the layout editor lifts its dots + arrows above the
+    // warnings: a ⚠ frame appears exactly where you're looking when things
+    // go wrong, and it must never cover the orientation badges.
+    const warnings = document.querySelector('[data-band-warnings]')!;
+    const arrows = document.querySelector('[data-station-arrows="s1"]')!;
+    const arrowsAfterWarnings =
+      warnings.compareDocumentPosition(arrows) & Node.DOCUMENT_POSITION_FOLLOWING;
+    expect(arrowsAfterWarnings).toBeTruthy();
+  });
+
   it('arrows are hover chrome: excluded from export and inert to the pointer', () => {
     render(<App />);
     seed();
