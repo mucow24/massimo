@@ -5,6 +5,7 @@ import {
   DOT_SIZE_DEFAULT,
   DOT_SIZE_MIN,
   DOT_SIZE_MAX,
+  DOT_SIZE_STEP,
   canonicalDotSize,
   dotSizeOverride,
   resolveDotSize,
@@ -18,23 +19,29 @@ const CODE = DOT_SHAPE_PRESETS['filled-black-service-code'];
 
 describe('dot size constants', () => {
   it('defaults to the integer diameter 8 (2 × STOP_DOT_RADIUS, pinned to 4)', () => {
-    // The pin matters: an integer default is what makes "value equals
-    // default" reachable from the step-1 slider.
+    // The default sits on the quarter-unit grid (8 is a whole multiple of
+    // 0.25), so "value equals default" stays reachable from the slider.
     expect(STOP_DOT_RADIUS).toBe(4);
     expect(DOT_SIZE_DEFAULT).toBe(2 * STOP_DOT_RADIUS);
     expect(DOT_SIZE_DEFAULT).toBe(8);
   });
 
-  it('clamp floor is 0 (invisible is legal); slider max is 20', () => {
+  it('clamp floor is 0 (invisible is legal); slider max is 20; steps by 0.25', () => {
     expect(DOT_SIZE_MIN).toBe(0);
     expect(DOT_SIZE_MAX).toBe(20);
+    expect(DOT_SIZE_STEP).toBe(0.25);
   });
 });
 
 describe('canonicalDotSize', () => {
-  it('rounds and clamps to the floor DOT_SIZE_MIN (0 is a legal, visible-free dot)', () => {
-    expect(canonicalDotSize(10.4)).toBe(10);
-    expect(canonicalDotSize(10.6)).toBe(11);
+  it('snaps to the DOT_SIZE_STEP (quarter-unit) grid and clamps to the floor', () => {
+    // Quarter values survive verbatim — they did NOT on the old integer grid.
+    expect(canonicalDotSize(10.25)).toBe(10.25);
+    expect(canonicalDotSize(10.75)).toBe(10.75);
+    // Off-grid inputs snap to the nearest quarter.
+    expect(canonicalDotSize(10.2)).toBe(10.25);
+    expect(canonicalDotSize(10.1)).toBe(10);
+    // The floor still clamps; 0 is a legal, visible-free dot.
     expect(canonicalDotSize(-3)).toBe(DOT_SIZE_MIN);
     expect(DOT_SIZE_MIN).toBe(0);
   });

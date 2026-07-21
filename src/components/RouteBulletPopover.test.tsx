@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { RouteBulletPopover } from './RouteBulletPopover';
 import { useDoc } from '../state/store';
 import { historyDepth } from '../state/history';
-import { DEFAULT_DOC, ROUTE_BULLET_SIZE_MIN } from '../model/transforms';
+import { DEFAULT_DOC, ROUTE_BULLET_SIZE_MIN, ROUTE_BULLET_SIZE_STEP } from '../model/transforms';
 import { makeLine, makeStyle } from '../test/fixtures';
 import { chooseOption, stepSlider } from '../test/interaction';
 import type { RouteBullet } from '../model/types';
@@ -149,7 +149,7 @@ describe('<RouteBulletPopover /> size control', () => {
     // with the Options and polygon popovers.
     stepSlider(slider, 3);
     fireEvent.blur(slider);
-    expect(useDoc.getState().routeBullets.b1.size).toBe(BULLET.size + 3);
+    expect(useDoc.getState().routeBullets.b1.size).toBe(BULLET.size + 3 * ROUTE_BULLET_SIZE_STEP);
     expect(historyDepth() - before).toBe(1);
   });
 
@@ -166,7 +166,7 @@ describe('<RouteBulletPopover /> size control', () => {
       />,
     );
     fireEvent.wheel(screen.getByRole('spinbutton'), { deltaY: -1 });
-    expect(useDoc.getState().routeBullets.b1.size).toBe(BULLET.size + 1);
+    expect(useDoc.getState().routeBullets.b1.size).toBe(BULLET.size + ROUTE_BULLET_SIZE_STEP);
   });
 
   it('a wheel notch over the slider steps the size once (row-level handler)', () => {
@@ -179,7 +179,7 @@ describe('<RouteBulletPopover /> size control', () => {
       />,
     );
     fireEvent.wheel(screen.getByRole('slider'), { deltaY: 1 });
-    expect(useDoc.getState().routeBullets.b1.size).toBe(BULLET.size - 1);
+    expect(useDoc.getState().routeBullets.b1.size).toBe(BULLET.size - ROUTE_BULLET_SIZE_STEP);
   });
 
   it('wheel over a locked bullet’s size row leaves the size unchanged', () => {

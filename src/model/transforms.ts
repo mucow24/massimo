@@ -2160,11 +2160,18 @@ export function deleteLineTag(doc: MapDoc, id: string): MapDoc {
 export const ROUTE_BULLET_SIZE_MIN = 6;
 export const ROUTE_BULLET_SIZE_MAX = 48;
 export const ROUTE_BULLET_SIZE_DEFAULT = 14;
+// Sizes live on a quarter-unit grid: the slider/steppers move in 0.25
+// increments and the clamp rounds to the nearest step (like line width).
+export const ROUTE_BULLET_SIZE_STEP = 0.25;
 
-// Clamps at the bottom only; the spinbutton accepts sizes beyond the slider's
-// range (ROUTE_BULLET_SIZE_MAX constrains the slider, not the value).
+// Snaps to the quarter-unit grid and clamps at the bottom only; the spinbutton
+// accepts sizes beyond the slider's range (ROUTE_BULLET_SIZE_MAX constrains the
+// slider, not the value).
 export function clampRouteBulletSize(n: number): number {
-  return Math.max(ROUTE_BULLET_SIZE_MIN, Math.round(n));
+  return Math.max(
+    ROUTE_BULLET_SIZE_MIN,
+    Math.round(n / ROUTE_BULLET_SIZE_STEP) * ROUTE_BULLET_SIZE_STEP,
+  );
 }
 
 export function addRouteBullet(

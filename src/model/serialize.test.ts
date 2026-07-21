@@ -957,10 +957,10 @@ describe('parse — dot size sanitizing', () => {
   });
 
   it("drops a singleton stop override equal to the line's effective default (after bake + sanitizing)", () => {
-    // The legacy 10.4 bakes to a canonical singleton default of 10; the
-    // singleton stop's 10 must compare against THAT — catching a bake/sanitize
-    // ordering bug.
-    const result = parse(buildDotSizePayload({ dotSize: 10 }, { defaultDotSize: 10.4 }));
+    // The legacy 10.1 snaps to a canonical singleton default of 10 on the 0.25
+    // grid; the singleton stop's 10 must compare against THAT — catching a
+    // bake/sanitize ordering bug.
+    const result = parse(buildDotSizePayload({ dotSize: 10 }, { defaultDotSize: 10.1 }));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.doc.lines.L1.singletonDotSize).toBe(10);
@@ -989,11 +989,11 @@ describe('parse — dot size sanitizing', () => {
     const low = parse(buildDotSizePayload({ dotSize: -3 }, { defaultDotSize: 9.6 }));
     expect(low.ok).toBe(true);
     if (!low.ok) return;
-    expect(low.doc.lines.L1.singletonDotSize).toBe(10);
-    expect(low.doc.lines.L1.multiDotSize).toBe(10);
+    expect(low.doc.lines.L1.singletonDotSize).toBe(9.5); // 9.6 snaps to the 0.25 grid
+    expect(low.doc.lines.L1.multiDotSize).toBe(9.5);
     expect(low.doc.stations.s1.stops[0].dotSize).toBe(0);
-    // Rounds-to-default is dropped like an exact 8.
-    const nearDefault = parse(buildDotSizePayload({}, { defaultDotSize: 8.4 }));
+    // Snaps-to-default (8.1 → 8 on the 0.25 grid) is dropped like an exact 8.
+    const nearDefault = parse(buildDotSizePayload({}, { defaultDotSize: 8.1 }));
     expect(nearDefault.ok).toBe(true);
     if (nearDefault.ok) {
       expect('singletonDotSize' in nearDefault.doc.lines.L1).toBe(false);
@@ -1227,11 +1227,11 @@ describe('parse — transfer style sanitizing', () => {
     const frac = parse(buildWithTransfer({ thickness: 4.6, strokeWidth: 2.7 }));
     expect(frac.ok).toBe(true);
     if (frac.ok) {
-      expect(frac.doc.transfers.x1.thickness).toBe(5);
+      expect(frac.doc.transfers.x1.thickness).toBe(4.5); // 4.6 snaps to the 0.25 grid
       expect(frac.doc.transfers.x1.strokeWidth).toBe(2.75);
     }
-    // Rounds-to-setting is dropped like an exact match.
-    const nearDefault = parse(buildWithTransfer({ thickness: 2.4 }));
+    // Snaps-to-setting is dropped like an exact match.
+    const nearDefault = parse(buildWithTransfer({ thickness: 2.1 }));
     expect(nearDefault.ok).toBe(true);
     if (nearDefault.ok) expect('thickness' in nearDefault.doc.transfers.x1).toBe(false);
     // Negative thickness clamps to the floor 1 — distinct from the setting 2, kept.

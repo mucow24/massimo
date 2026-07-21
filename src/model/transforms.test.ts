@@ -22,6 +22,19 @@ import {
 } from '../test/fixtures';
 import type { MapDoc, RouteBullet, Station, TextLabel } from './types';
 
+describe('clampRouteBulletSize', () => {
+  it('snaps to the quarter-unit grid and clamps to the floor ROUTE_BULLET_SIZE_MIN', () => {
+    expect(T.ROUTE_BULLET_SIZE_STEP).toBe(0.25);
+    // Quarter values survive verbatim — they did NOT on the old integer grid.
+    expect(T.clampRouteBulletSize(14.25)).toBe(14.25);
+    expect(T.clampRouteBulletSize(14.3)).toBe(14.25);
+    // Below the floor clamps up to the minimum.
+    expect(T.clampRouteBulletSize(-3)).toBe(T.ROUTE_BULLET_SIZE_MIN);
+    // Above the slider max is allowed (only the floor clamps).
+    expect(T.clampRouteBulletSize(999)).toBe(999);
+  });
+});
+
 describe('addStation', () => {
   it('inserts a station with default rotation/stops/label at the given coords', () => {
     const doc0 = makeDoc({});
@@ -1596,9 +1609,9 @@ describe('per-transfer style overrides', () => {
       expect('thickness' in doc.transfers['x1']).toBe(false);
     });
 
-    it('rounds and floor-clamps the numeric fields', () => {
+    it('snaps to the quarter grid and floor-clamps the numeric fields', () => {
       const doc = T.updateTransferStyle(baseDoc(), 'x1', { thickness: 4.6, strokeWidth: -2 });
-      expect(doc.transfers['x1'].thickness).toBe(5);
+      expect(doc.transfers['x1'].thickness).toBe(4.5);
       // -2 clamps to 0 — the constant strokeWidth default — so it collapses
       // rather than storing a redundant 0.
       expect('strokeWidth' in doc.transfers['x1']).toBe(false);
@@ -2719,12 +2732,13 @@ describe('setDotSize', () => {
     expect(next.stations.a.stops[0].dotSize).toBe(DOT_SIZE_DEFAULT);
   });
 
-  it('rounds to the integer grid and clamps to ≥ DOT_SIZE_MIN', () => {
+  it('snaps to the quarter-unit grid and clamps to ≥ DOT_SIZE_MIN', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
       lines: [makeLine({ id: 'L1' })],
     });
-    expect(T.setDotSize(doc, 'a', 'L1', 7.4).stations.a.stops[0].dotSize).toBe(7);
+    expect(T.setDotSize(doc, 'a', 'L1', 7.4).stations.a.stops[0].dotSize).toBe(7.5);
+    expect(T.setDotSize(doc, 'a', 'L1', 7.25).stations.a.stops[0].dotSize).toBe(7.25);
     expect(T.setDotSize(doc, 'a', 'L1', -3).stations.a.stops[0].dotSize).toBe(0);
   });
 
@@ -2775,7 +2789,7 @@ describe('setLineSingletonDotSize', () => {
       'singletonDotSize' in T.setLineSingletonDotSize(doc, 'L1', DOT_SIZE_DEFAULT).lines.L1,
     ).toBe(false);
     expect(
-      'singletonDotSize' in T.setLineSingletonDotSize(doc, 'L1', DOT_SIZE_DEFAULT + 0.3).lines.L1,
+      'singletonDotSize' in T.setLineSingletonDotSize(doc, 'L1', DOT_SIZE_DEFAULT + 0.1).lines.L1,
     ).toBe(false);
   });
 

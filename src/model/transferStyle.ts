@@ -13,6 +13,10 @@ export const TRANSFER_THICKNESS_MIN = 1;
 // Slider bound only — the textbox may exceed it (NumericFieldRow's
 // textboxAllowAboveMax); the transforms clamp only the floor.
 export const TRANSFER_THICKNESS_MAX = 14;
+// Thickness lives on a quarter-unit grid: the slider/steppers move in 0.25
+// increments and the setter rounds to the nearest step (like the outline width
+// and line stroke).
+export const TRANSFER_THICKNESS_STEP = 0.25;
 // The legacy hard-coded look: 2px body, no outline. Body and outline colors
 // are theme-aware (day/night); the defaults are black in both themes for the
 // body and white in both for the outline — so old, single-color maps read
@@ -27,7 +31,8 @@ export const TRANSFER_STROKE_WIDTH_MIN = 0;
 export const TRANSFER_STROKE_WIDTH_MAX = 5;
 export const TRANSFER_STROKE_WIDTH_DEFAULT = 0;
 // Outline width lives on a quarter-unit grid: the slider/steppers move in 0.25
-// increments and the setter rounds to the nearest step. (Thickness stays whole.)
+// increments and the setter rounds to the nearest step. (Same grid as the body
+// thickness above.)
 export const TRANSFER_STROKE_WIDTH_STEP = 0.25;
 export const TRANSFER_STROKE_COLOR_DEFAULT: DayNightColor = { day: '#ffffff', night: '#ffffff' };
 
@@ -72,21 +77,25 @@ export const legacyColorToDayNight = (c: DayNightColor | string): DayNightColor 
   typeof c === 'string' ? { day: c, night: c } : c;
 
 /**
- * The canonical STORED form of a per-transfer thickness override: round to
- * an integer, clamp to ≥ TRANSFER_THICKNESS_MIN, and collapse to `undefined`
- * when it equals `dropAt` — the constant default the value would otherwise
- * redundantly duplicate. Shared by the `updateTransferStyle` transform and
- * the `sanitizeTransferStyles` file cleaner so the clamp rule can never
- * drift (same idiom as canonicalDotSize). Callers own the finiteness guard.
+ * The canonical STORED form of a per-transfer thickness override: round to the
+ * TRANSFER_THICKNESS_STEP (quarter-unit) grid, clamp to ≥ TRANSFER_THICKNESS_MIN,
+ * and collapse to `undefined` when it equals `dropAt` — the constant default
+ * the value would otherwise redundantly duplicate. Shared by the
+ * `updateTransferStyle` transform and the `sanitizeTransferStyles` file cleaner
+ * so the clamp rule can never drift (same idiom as canonicalDotSize). Callers
+ * own the finiteness guard.
  */
 export const canonicalTransferThickness = (n: number, dropAt: number): number | undefined => {
-  const norm = Math.max(TRANSFER_THICKNESS_MIN, Math.round(n));
+  const norm = Math.max(
+    TRANSFER_THICKNESS_MIN,
+    Math.round(n / TRANSFER_THICKNESS_STEP) * TRANSFER_THICKNESS_STEP,
+  );
   return norm === dropAt ? undefined : norm;
 };
 
 /**
- * Same contract as canonicalTransferThickness for the outline width, but on the
- * TRANSFER_STROKE_WIDTH_STEP (quarter-unit) grid rather than whole integers.
+ * Same contract as canonicalTransferThickness for the outline width, on the
+ * TRANSFER_STROKE_WIDTH_STEP (quarter-unit) grid.
  */
 export const canonicalTransferStrokeWidth = (n: number, dropAt: number): number | undefined => {
   const norm = Math.max(

@@ -44,7 +44,7 @@ import {
   canonicalDotStyle,
   dotStylesEqual,
 } from './dotStyle';
-import { DOT_SIZE_MIN, lineSingletonDotSizeOf, lineMultiDotSizeOf } from './dotSize';
+import { DOT_SIZE_MIN, DOT_SIZE_STEP, lineSingletonDotSizeOf, lineMultiDotSizeOf } from './dotSize';
 import { lineDashLengthOf, lineDashWidthOf } from './dashSize';
 import { LINE_WIDTH_MIN, LINE_WIDTH_STEP, lineWidthOf } from './lineWidth';
 import {
@@ -67,6 +67,7 @@ import {
   TRANSFER_STROKE_WIDTH_MIN,
   TRANSFER_STROKE_WIDTH_STEP,
   TRANSFER_THICKNESS_MIN,
+  TRANSFER_THICKNESS_STEP,
   dayNightColorsEqual,
   resolveTransferStyle,
 } from './transferStyle';
@@ -277,8 +278,14 @@ export function canonicalStyleProps<K extends StyleKind>(
         // could still dangle here).
         singletonDotStyleId: p.singletonDotStyleId ?? DEFAULT_STOP_DOT_STYLE_ID,
         multiDotStyleId: p.multiDotStyleId ?? DEFAULT_STOP_DOT_STYLE_ID,
-        singletonDotSize: Math.max(DOT_SIZE_MIN, Math.round(p.singletonDotSize)),
-        multiDotSize: Math.max(DOT_SIZE_MIN, Math.round(p.multiDotSize)),
+        singletonDotSize: Math.max(
+          DOT_SIZE_MIN,
+          Math.round(p.singletonDotSize / DOT_SIZE_STEP) * DOT_SIZE_STEP,
+        ),
+        multiDotSize: Math.max(
+          DOT_SIZE_MIN,
+          Math.round(p.multiDotSize / DOT_SIZE_STEP) * DOT_SIZE_STEP,
+        ),
         width: Math.max(LINE_WIDTH_MIN, Math.round(p.width / LINE_WIDTH_STEP) * LINE_WIDTH_STEP),
         // `?? DEFAULT` heals defs from saves that predate the field (the load
         // paths bake it in first — see bakeDocCurveRadius — this is the
@@ -335,7 +342,10 @@ export function canonicalStyleProps<K extends StyleKind>(
     case 'transfer': {
       const p = props as TransferStyleProps;
       return {
-        thickness: Math.max(TRANSFER_THICKNESS_MIN, Math.round(p.thickness)),
+        thickness: Math.max(
+          TRANSFER_THICKNESS_MIN,
+          Math.round(p.thickness / TRANSFER_THICKNESS_STEP) * TRANSFER_THICKNESS_STEP,
+        ),
         color: p.color,
         strokeWidth: Math.max(
           TRANSFER_STROKE_WIDTH_MIN,
