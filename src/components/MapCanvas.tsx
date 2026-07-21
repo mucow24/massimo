@@ -875,42 +875,54 @@ export function MapCanvas() {
     };
   };
 
-  // Edit Stops: stripe clicks operate on the EDITED line's edge in this band's
-  // corridor — any stripe in the band is a fat target for the same pairKey, and
-  // stripes of corridors the edited line doesn't run are inert (no
-  // stopPropagation, so a miss reads as a canvas click). Plain click arms /
-  // disarms the insertion cursor (nearest endpoint first — see
-  // decideSegmentClick), shift-click cycles the edge's style. No contextmenu
-  // handler on purpose: right-click bubbles to the SVG root and exits the
-  // mode (edge removal is the × chip or the Delete key).
+  // Edit Stops: a stripe click/hover operates on the EDITED line's edge in this
+  // band's corridor, and the target is the edited line's OWN stripe. Any OTHER
+  // line's stripe — including a co-corridor interlined NEIGHBOR — is a
+  // switch-to-that-line target, exactly like a stripe on a corridor the edited
+  // line doesn't run. Scoping the segment to the edited line's own stripe (the
+  // same key resolveHitStack/resolveAppendStack use for the alt-pick) keeps the
+  // hit box symmetric about the highlighted line: bands are mean-centered, so
+  // the edited stripe sits at one edge of an interlined band, and letting the
+  // neighbor stripe target the segment too spilled a full stripe width of hit
+  // area across the inner side only. Plain click arms / disarms the insertion
+  // cursor (nearest endpoint first — see decideSegmentClick), shift-click cycles
+  // the edge's style. No contextmenu handler on purpose: right-click bubbles to
+  // the SVG root and exits the mode (edge removal is the × chip or the Delete
+  // key).
   const makeAppendBandHandlers = (spec: SegmentBandSpec) => {
-    const appendCtx = () => {
+    // The edited line editing THIS corridor via its own stripe, or null (idle,
+    // a different corridor, or a foreign/neighbor stripe). `lineId` is the
+    // stripe the pointer is actually over — the segment is armed only from the
+    // edited line's OWN stripe.
+    const ownSegment = (lineId: LineId) => {
       const mode = selection.uiMode;
-      if (mode.kind !== 'appending-to-line') return null;
+      if (mode.kind !== 'appending-to-line' || lineId !== mode.lineId) return null;
       const line = lines[mode.lineId];
       if (!line || !line.edges.includes(spec.pairKey)) return null;
       return { cursor: mode.cursor, line };
     };
+    // A pointer over some OTHER real line's stripe (co-corridor neighbor or a
+    // corridor the edited line doesn't run): the switch-to-that-line target.
+    const foreignSwitch = (lineId: LineId): LineId | null => {
+      const mode = selection.uiMode;
+      return mode.kind === 'appending-to-line' &&
+        lineId !== mode.lineId &&
+        lines[lineId] !== undefined
+        ? lineId
+        : null;
+    };
     return {
-      // Mouseover: mark this corridor as the append hover target so
-      // HighlightedLineLayer previews the halo a click would arm. For a
-      // corridor the edited line runs (appendCtx gates), any stripe in the
-      // band targets the segment. A FOREIGN stripe instead targets its whole
-      // line — clicking it switches the editor there, so the preview gently
-      // highlights the line the click would jump to. The setter dedupes, so
-      // the stripe's pointermove stream is a no-op until the target changes.
+      // Mouseover: the edited line's own stripe previews the segment halo a
+      // click would arm; any other line's stripe gently highlights ITS line —
+      // clicking there switches the editor to it. The setter dedupes, so the
+      // stripe's pointermove stream is a no-op until the target changes.
       onLineHover: (lineId: LineId) => {
-        if (!appendCtx()) {
-          const mode = selection.uiMode;
-          if (
-            mode.kind === 'appending-to-line' &&
-            lineId !== mode.lineId &&
-            lines[lineId] !== undefined
-          )
-            selection.setAppendHover({ kind: 'line', lineId });
+        if (ownSegment(lineId)) {
+          selection.setAppendHover({ kind: 'segment', pairKey: spec.pairKey });
           return;
         }
-        selection.setAppendHover({ kind: 'segment', pairKey: spec.pairKey });
+        const foreign = foreignSwitch(lineId);
+        if (foreign) selection.setAppendHover({ kind: 'line', lineId: foreign });
       },
       onLineLeave: (lineId: LineId) => {
         const h = useSelection.getState().appendHover;
@@ -918,19 +930,14 @@ export function MapCanvas() {
         if (h?.kind === 'line' && h.lineId === lineId) selection.setAppendHover(null);
       },
       onLineClick: (lineId: LineId, e: React.MouseEvent) => {
-        const ctx = appendCtx();
+        const ctx = ownSegment(lineId);
         if (!ctx) {
-          // A corridor the edited line doesn't run: clicking another line's
-          // stripe switches the editor to that line (matching the old
-          // stripe-click-switches behavior).
-          const mode = selection.uiMode;
-          if (
-            mode.kind === 'appending-to-line' &&
-            lineId !== mode.lineId &&
-            lines[lineId] !== undefined
-          ) {
+          // Another line's stripe (co-corridor neighbor or a corridor the
+          // edited line doesn't run): switch the editor to it.
+          const foreign = foreignSwitch(lineId);
+          if (foreign) {
             e.stopPropagation();
-            selection.setAppending(lineId);
+            selection.setAppending(foreign);
           }
           return;
         }
