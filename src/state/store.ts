@@ -155,7 +155,7 @@ export function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
 }
 
 /**
- * Persisted-document version migration (v0 → v18). Exported and pure so it can
+ * Persisted-document version migration (v0 → v21). Exported and pure so it can
  * be unit-tested in isolation; the persist config below just delegates here.
  * Never mutates `persisted` — returns a possibly-new doc snapshot.
  *
@@ -240,6 +240,18 @@ export function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
  *   v<7 `convertLegacyDotShapes` (which materializes `defaultDotStyle` from any
  *   legacy `defaultDotShape`) and BEFORE the v<10 style hygiene, same as
  *   `bakeDocCurveRadius`. Idempotent, keyed off the retired keys' presence.
+ * - v18 → v19: introduce the doc-scoped stopDot style library — seed the factory
+ *   dot styles and tag every dot slot (line split defaults + per-stop overrides)
+ *   by value-match, via `bakeStopDotLibrary`. Ordered after the v<18 split bake
+ *   (line values are in singleton/multi form) and before the invariant pass.
+ * - v19 → v20: the dot TYPE (the stopDot-library id per case) became a covered
+ *   LINE-style field — backfill `singletonDotStyleId`/`multiDotStyleId` on line
+ *   style defs (`bakeLineStyleDotIds`), then untag any line whose split dot type
+ *   differs from its now-fuller line style (`pruneLineDotTypeTagMismatches`),
+ *   keeping "tagged ⇒ matches". Ordered after the v<19 library bake.
+ * - v20 → v21: `strokeAlign` became a REQUIRED DotStyle field (center/inside/
+ *   outside); backfill 'center' (the historical SVG-native placement) across
+ *   every dot-style home via `backfillDotStrokeAlign` so the invariant holds.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
