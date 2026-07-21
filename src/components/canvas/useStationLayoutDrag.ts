@@ -4,7 +4,7 @@ import type { LineId, StationId } from '../../model/types';
 import type { Vec2 } from '../../geometry/vec';
 import type { RowCol } from '../../geometry/lattice';
 import { STOP_SIZE, rotateGridDelta, type Rotation } from '../../geometry/orientation';
-import { lineWidthOf } from '../../model/lineWidth';
+import { lineInterlineGapOf, lineWidthOf } from '../../model/lineWidth';
 import { captureMirrorTargets, type MirrorTarget } from '../../state/mirrorDispatch';
 import {
   GHOST_SNAP_RADIUS,
@@ -114,10 +114,12 @@ export function useStationLayoutDrag(
     const sourceCell = sourceCellOf(st, ds.source);
     if (!sourceCell) return;
     const wSrc = ds.source.kind === 'label' ? STOP_SIZE : lineWidthOf(doc.lines[ds.source.lineId]);
+    const gSrc = ds.source.kind === 'label' ? 0 : lineInterlineGapOf(doc.lines[ds.source.lineId]);
     const otherNodes = otherLayoutNodes(stationLayoutNodes(st, doc.lines), ds.source);
     const { ghosts } = dragLattice({
       cursor,
       wSrc,
+      gSrc,
       srcIsLabel: ds.source.kind === 'label',
       otherNodes,
       basis: shiftKey ? 'diagonal' : 'orthogonal',

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { buildExclusionHoles, buildOverlapRegions, type RegionSliver } from './lineRegions';
+import {
+  EXCLUSION_INSET,
+  buildExclusionHoles,
+  buildOverlapRegions,
+  type RegionSliver,
+} from './lineRegions';
 import { pointInFace, splitIntoFaces } from './clip';
 import { makeBandSpec } from '../test/fixtures';
 import type { Vec2 } from './vec';
@@ -58,12 +63,15 @@ describe('buildExclusionHoles', () => {
     const winners = [{ winner: 'l2' as LineId, assignmentId: 'r1' }];
     const holes = buildExclusionHoles(faces, winners, ['l1', 'l2'], bands, [], () => 0);
     const hole = holes.get('l1');
-    // Winner l2's body spans x ∈ [43, 57]. Just inside its edge (x = 43.1)
-    // the hole has retreated — l1 still paints there, hiding l2's soft
-    // antialiased edge tail under opaque l1.
-    expect(contains(hole, { x: 43.1, y: 0 })).toBe(false);
-    expect(contains(hole, { x: 56.9, y: 0 })).toBe(false);
+    // Winner l2's body spans x ∈ [43, 57]. Within EXCLUSION_INSET of its
+    // edge the hole has retreated — l1 still paints there, hiding l2's soft
+    // antialiased edge tail under opaque l1. The inset is deliberately TINY
+    // (l1 visibly bites into l2's edge by exactly this much where the edge
+    // faces open background — see the constant's doc), so probe close in.
+    expect(contains(hole, { x: 43 + EXCLUSION_INSET * 0.4, y: 0 })).toBe(false);
+    expect(contains(hole, { x: 57 - EXCLUSION_INSET * 0.4, y: 0 })).toBe(false);
     // Past the retreat the hole is open.
+    expect(contains(hole, { x: 43 + EXCLUSION_INSET + 0.05, y: 0 })).toBe(true);
     expect(contains(hole, { x: 44, y: 0 })).toBe(true);
     // Along the LOSER l1's own edges (y = ±7) there is NO retreat — the hole
     // cuts exactly at l1's stroke edge (no paint beyond it anyway).

@@ -688,8 +688,17 @@ export function stripeIntersectsBox(
  * loser exactly at the winner's stroke edge would expose the winner's
  * antialiased tail (a half-covered pixel row) as a ghost hairline. Along the
  * losers' own edges no inset is needed: there is no loser paint beyond them.
+ *
+ * The value is a visible trade-off: the loser keeps painting over the
+ * winner's outermost INSET strip, so a big inset reads as the loser BITING
+ * into the winner's edges — invisible while every hole edge was buried
+ * under tangent neighbor paint, glaring once interline gaps put those
+ * edges against open background (the historical 0.25 ate a quarter unit
+ * per side, scaling with zoom). Tuned by eye at maximum zoom over a gapped
+ * crossing: 0.00625 reads flush AND seamless — big enough to keep the
+ * hairline guard, ~1/2000 of a default stripe.
  */
-export const EXCLUSION_INSET = 0.25;
+export const EXCLUSION_INSET = 0.00625;
 
 /**
  * Region overrides, subtractively: for every face whose bound choice differs
@@ -850,6 +859,62 @@ export function buildExclusionHoles(
     }
   });
   return holes;
+}
+
+/** Slack around {@link regionClipBounds}: covers seam strokes, antialiasing,
+ *  and any sub-world-unit overhang the per-band reach bound doesn't model. */
+export const REGION_CLIP_BOUNDS_PAD = 50;
+
+/**
+ * World AABB every region-exclude clip must PASS — the union extent of all
+ * band stripes (centerline vertices + max |stripe offset| + stripe width,
+ * which also covers casing silhouettes; fillet arcs never leave the vertex
+ * hull) and stop markers, padded by {@link REGION_CLIP_BOUNDS_PAD}.
+ *
+ * The exclude clip is "everything EXCEPT the holes", so its outer ring must
+ * cover all clipped paint — but no more. It was historically a ±500000
+ * constant, and coordinates that large lose float precision in GPU clip
+ * rasterization at deep zoom (500000 × a 20–30× device scale lands in the
+ * ~1e7 range, where float32 ULP approaches whole pixels), which painted the
+ * hole edges a few pixels off. Under full tangency the drift hid beneath
+ * opaque neighbor paint; an interline gap exposes hole edges over bare
+ * background, where it read as white notches on the clipped line. Returns
+ * null when there is nothing to cover.
+ */
+export function regionClipBounds(
+  bands: SegmentBandSpec[],
+  markers: StopMarkerSpec[],
+): { x0: number; y0: number; x1: number; y1: number } | null {
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const b of bands) {
+    let reach = 0;
+    for (let k = 0; k < b.lines.length; k++) {
+      reach = Math.max(reach, Math.abs(b.stripeOffsets[k]) + b.stripeWidths[k]);
+    }
+    for (const v of b.centerline) {
+      if (v.x - reach < x0) x0 = v.x - reach;
+      if (v.x + reach > x1) x1 = v.x + reach;
+      if (v.y - reach < y0) y0 = v.y - reach;
+      if (v.y + reach > y1) y1 = v.y + reach;
+    }
+  }
+  for (const m of markers) {
+    // A width × width square at any rotation reaches at most width/√2 < width.
+    if (m.cx - m.width < x0) x0 = m.cx - m.width;
+    if (m.cx + m.width > x1) x1 = m.cx + m.width;
+    if (m.cy - m.width < y0) y0 = m.cy - m.width;
+    if (m.cy + m.width > y1) y1 = m.cy + m.width;
+  }
+  if (!Number.isFinite(x0)) return null;
+  return {
+    x0: x0 - REGION_CLIP_BOUNDS_PAD,
+    y0: y0 - REGION_CLIP_BOUNDS_PAD,
+    x1: x1 + REGION_CLIP_BOUNDS_PAD,
+    y1: y1 + REGION_CLIP_BOUNDS_PAD,
+  };
 }
 
 /** Per-face effective winner: bound assignment's line, else lineOrder-first. */

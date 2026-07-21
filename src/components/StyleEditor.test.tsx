@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StyleEditor } from './StyleEditor';
 import { useDoc } from '../state/store';
@@ -53,6 +53,21 @@ describe('<StyleEditor> — line', () => {
     expect(screen.getByRole('slider', { name: 'Seam width' })).toHaveAttribute(
       'aria-valuenow',
       '4', // inherits the casing rail width
+    );
+  });
+
+  it('renders the interline gap row at the def value, 0 when the def has none', () => {
+    render(<StyleEditor def={makeStyle('line', 'y1', { props: { interlineGap: 2 } })} />);
+    expect(screen.getByRole('slider', { name: 'Interline gap' })).toHaveAttribute(
+      'aria-valuenow',
+      '2',
+    );
+    cleanup();
+    // Absent ⇒ 0 (never stored at the default) — the row still renders.
+    render(<StyleEditor def={makeStyle('line', 'y2')} />);
+    expect(screen.getByRole('slider', { name: 'Interline gap' })).toHaveAttribute(
+      'aria-valuenow',
+      '0',
     );
   });
 

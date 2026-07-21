@@ -27,12 +27,19 @@ export const stopCenterAt = (row: number, col: number): Vec2 => ({
   y: row * (STOP_SIZE + STOP_GAP),
 });
 
-// Center-to-center distance at which two stripes of the given widths are
-// exactly TANGENT (edges touching, no overlap). The uniform-width special
-// case is the historical STOP_SIZE step. Shared by the band merge gate, the
-// offset recurrence below, and the StopGrid's ghost/overlap math (which
-// divides by STOP_SIZE to convert into lattice units).
-export const tangentGap = (wA: number, wB: number): number => (wA + wB) / 2;
+// Center-to-center distance at which two stripes of the given widths sit
+// PACKED: exactly tangent (edges touching, no overlap) plus the pair's
+// interline gap — the LARGER of the two lines' requested gaps (max-of-pair;
+// pass 0/0 for plain tangency). At zero gaps the addition is bit-exact
+// (`x + 0 === x`), which is what keeps legacy docs rendering byte-identically.
+// The uniform-width zero-gap special case is the historical STOP_SIZE step.
+// Shared by the band merge gate, the offset recurrence below, the width/gap
+// edit repack (stationPacking), stop spawn, and the StopGrid's ghost/overlap
+// math (which divides by STOP_SIZE to convert into lattice units). The gap
+// params are deliberately REQUIRED so no call site can silently drift back
+// to plain tangency.
+export const tangentGap = (wA: number, wB: number, gapA: number, gapB: number): number =>
+  (wA + wB) / 2 + Math.max(gapA, gapB);
 
 // Perp/parallel proximity tolerance (world units) for deciding two adjacent
 // stripes are packed tightly enough to share one band. Slightly loose to
@@ -61,29 +68,36 @@ export const labelAdjacencyGate = (half: number): number =>
   (Math.max(half, STOP_SIZE / 2) + STOP_SIZE / 2 + BAND_MERGE_TOL) / STOP_SIZE + 1e-4;
 
 /**
- * Perpendicular offsets for n mutually-tangent stripes of the given widths,
- * in world units, relative to the band centerline. Tangency positions:
- * p_0 = 0; p_k = p_{k-1} + tangentGap(w_{k-1}, w_k). The run is then
+ * Perpendicular offsets for n packed stripes of the given widths and
+ * per-line interline gaps (parallel arrays), in world units, relative to the
+ * band centerline. Packed positions: p_0 = 0;
+ * p_k = p_{k-1} + tangentGap(w_{k-1}, w_k, g_{k-1}, g_k) — each consecutive
+ * pair sits at tangency plus the larger of the two gaps. The run is then
  * mean-centered (offset_k = p_k − mean(p)) so it straddles the band's
  * centerline exactly as the stop cells straddle their centroid — the band
  * centerline IS bandCentroid(stop positions) (the mean), so mean-centered
  * offsets land each stripe precisely on its stop.
  *
- * Uniform widths reduce BIT-EXACTLY to the historical
+ * Uniform widths at zero gaps reduce BIT-EXACTLY to the historical
  * `(k − (n−1)/2) · width` — for w = 14 every intermediate (prefix sums,
  * their mean) is exactly representable, which is what keeps legacy
- * all-default docs rendering byte-identically.
+ * all-default docs rendering byte-identically (a zero gap adds a literal
+ * `+ 0`, exact in IEEE arithmetic).
  *
  * These offsets MUST agree across band paint, outline, label placement, and
  * the hit/drag paths or the rendered geometry desyncs — so they are computed
  * once (in buildBandSpec) and baked onto SegmentBandSpec.stripeOffsets for
  * every consumer to read.
  */
-export function stripeOffsetsForWidths(widths: readonly number[]): number[] {
+export function stripeOffsetsForWidths(
+  widths: readonly number[],
+  gaps: readonly number[],
+): number[] {
   const n = widths.length;
   if (n === 0) return [];
   const p: number[] = [0];
-  for (let k = 1; k < n; k++) p.push(p[k - 1] + tangentGap(widths[k - 1], widths[k]));
+  for (let k = 1; k < n; k++)
+    p.push(p[k - 1] + tangentGap(widths[k - 1], widths[k], gaps[k - 1], gaps[k]));
   const mean = p.reduce((a, b) => a + b, 0) / n;
   return p.map((x) => x - mean);
 }

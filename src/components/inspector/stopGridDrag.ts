@@ -18,7 +18,7 @@ import {
   STOP_SIZE,
   type Rotation,
 } from '../../geometry/orientation';
-import { lineWidthOf } from '../../model/lineWidth';
+import { lineInterlineGapOf, lineWidthOf } from '../../model/lineWidth';
 import type { Line, Station } from '../../model/types';
 import type { Vec2 } from '../../geometry/vec';
 export { sameCell, CELL_EPS } from '../../geometry/lattice';
@@ -131,8 +131,11 @@ export const ORIENTATION_NAME: Record<keyof typeof ORIENTATION_GLYPH, string> = 
  *  its line's width; the label cell is unit-sized = STOP_SIZE). `isLabel`
  *  marks the label node: it anchors text but has no body on the rendered
  *  map, so the overlap filter treats it as a point (width 0) — only its
- *  nominal `w` still sets the lattice pitch when it serves as anchor. */
-export type WidthNode = RowCol & { w: number; isLabel?: boolean };
+ *  nominal `w` still sets the lattice pitch when it serves as anchor.
+ *  `g` is the line's interline gap (absent ⇒ 0): it widens the lattice
+ *  pitch (packed spacing, max-of-pair) but not the overlap clearance —
+ *  bodies don't grow with the gap. */
+export type WidthNode = RowCol & { w: number; g?: number; isLabel?: boolean };
 
 /** A station lattice node: width-annotated cell + which line owns it
  *  (null = the label cell). */
@@ -156,6 +159,7 @@ export function stationLayoutNodes(
       row: s.row,
       col: s.col,
       w: lineWidthOf(lines[s.lineId]),
+      g: lineInterlineGapOf(lines[s.lineId]),
       lineId: s.lineId as string | null,
     })),
     { row: station.label.row, col: station.label.col, w: STOP_SIZE, isLabel: true, lineId: null },
@@ -182,6 +186,10 @@ export function sourceCellOf(
 export interface GhostSpec {
   /** The dragged/nudged node's own effective width. */
   wSrc: number;
+  /** The dragged/nudged node's line interline gap (absent ⇒ 0). Widens the
+   *  ring-1 packed pitch against the anchor (max-of-pair), so a dropped
+   *  stop lands where the band merge gate expects it. */
+  gSrc?: number;
   /** The dragged/nudged node is the label — a point for overlap purposes
    *  (its handle is editor chrome, not map ink), so slots are only dropped
    *  where a dot's body would cover the label's anchor point. */
@@ -213,8 +221,8 @@ export interface GhostSpec {
  * edge reaches that point.
  */
 export function computeGhosts(spec: GhostSpec): RowCol[] {
-  const { wSrc, srcIsLabel, anchor, otherNodes, basis, stationRotation, gridRadius } = spec;
-  const t = tangentGap(wSrc, anchor.w) / STOP_SIZE;
+  const { wSrc, gSrc, srcIsLabel, anchor, otherNodes, basis, stationRotation, gridRadius } = spec;
+  const t = tangentGap(wSrc, anchor.w, gSrc ?? 0, anchor.g ?? 0) / STOP_SIZE;
   const localOffsets = projectScreenToLocal(latticeOffsets(basis, gridRadius), stationRotation);
   const ghosts: RowCol[] = [];
   for (const o of localOffsets) {
@@ -222,7 +230,11 @@ export function computeGhosts(spec: GhostSpec): RowCol[] {
     let overlap = false;
     for (const n of otherNodes) {
       if (sameCell(n, anchor)) continue;
-      const clearance = tangentGap(srcIsLabel ? 0 : wSrc, n.isLabel ? 0 : n.w) / STOP_SIZE;
+      // Clearance stays WIDTH-ONLY (gaps 0/0): it guards visual body
+      // overlap, and plain tangency is a legitimate spacing for neighbors
+      // that aren't meant to interline — only the packed pitch above grows
+      // with the gap.
+      const clearance = tangentGap(srcIsLabel ? 0 : wSrc, n.isLabel ? 0 : n.w, 0, 0) / STOP_SIZE;
       if (Math.hypot(g.row - n.row, g.col - n.col) < clearance - CELL_EPS) {
         overlap = true;
         break;
@@ -259,17 +271,20 @@ export function anchorPool<T extends WidthNode>(nodes: readonly T[]): readonly T
 export function dragLattice(spec: {
   cursor: RowCol;
   wSrc: number;
+  /** See GhostSpec.gSrc. */
+  gSrc?: number;
   /** See GhostSpec.srcIsLabel. */
   srcIsLabel?: boolean;
   otherNodes: readonly WidthNode[];
   basis: LatticeBasis;
   stationRotation: Rotation;
 }): { anchor: WidthNode | null; ghosts: RowCol[] } {
-  const { cursor, wSrc, srcIsLabel, otherNodes, basis, stationRotation } = spec;
+  const { cursor, wSrc, gSrc, srcIsLabel, otherNodes, basis, stationRotation } = spec;
   const anchor = nearestNode(cursor, anchorPool(otherNodes));
   if (!anchor) return { anchor: null, ghosts: [] };
   const ghosts = computeGhosts({
     wSrc,
+    gSrc,
     srcIsLabel,
     anchor,
     otherNodes,
@@ -295,6 +310,8 @@ export function dragLattice(spec: {
 export function nudgeTarget(spec: {
   source: RowCol;
   wSrc: number;
+  /** See GhostSpec.gSrc. */
+  gSrc?: number;
   /** See GhostSpec.srcIsLabel. */
   srcIsLabel?: boolean;
   otherNodes: readonly WidthNode[];
@@ -303,11 +320,12 @@ export function nudgeTarget(spec: {
   /** Screen-frame arrow direction: one of (±1, 0) / (0, ±1). */
   arrow: RowCol;
 }): RowCol | null {
-  const { source, wSrc, srcIsLabel, otherNodes, basis, stationRotation, arrow } = spec;
+  const { source, wSrc, gSrc, srcIsLabel, otherNodes, basis, stationRotation, arrow } = spec;
   const anchor = nearestNode(source, anchorPool(otherNodes));
   if (!anchor) return null;
   const ghosts = computeGhosts({
     wSrc,
+    gSrc,
     srcIsLabel,
     anchor,
     otherNodes,

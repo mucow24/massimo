@@ -787,6 +787,48 @@ describe('parse — legacy line-STYLE-DEF dot defaults bake', () => {
   });
 });
 
+describe('parse — line style-def interline gap sanitizing', () => {
+  const buildStyledFile = (extra: Record<string, unknown>) =>
+    JSON.stringify({
+      format: 'massimo-map',
+      version: 2,
+      doc: {
+        stations: {},
+        lines: {},
+        lineOrder: [],
+        styles: {
+          ln: {
+            id: 'ln',
+            name: 'Default',
+            kind: 'line',
+            props: {
+              width: 14,
+              strokeWidth: 0,
+              strokeColor: '#ffffff',
+              singletonDotSize: 8,
+              multiDotSize: 8,
+              curveRadius: 24,
+              ...extra,
+            },
+          },
+        },
+      },
+    });
+
+  it('canonicalizes onto the quarter grid, collapses 0 to absent, drops junk', () => {
+    const keep = parse(buildStyledFile({ interlineGap: 2.1 }));
+    expect(keep.ok).toBe(true);
+    if (keep.ok) {
+      expect((keep.doc.styles.ln.props as unknown as Record<string, unknown>).interlineGap).toBe(2);
+    }
+    for (const off of [{ interlineGap: 0 }, { interlineGap: 'wide' }, {}]) {
+      const r = parse(buildStyledFile(off));
+      expect(r.ok).toBe(true);
+      if (r.ok) expect('interlineGap' in r.doc.styles.ln.props).toBe(false);
+    }
+  });
+});
+
 describe('parse — dot size sanitizing at a shared (interchange) station', () => {
   // Every single-stop case above exercises only the singletonDotSize side of
   // the effective-default split. A stop at a SHARED station (≥2 visible stops)
@@ -1156,6 +1198,23 @@ describe('parse — line stroke sanitizing', () => {
         expect('dashLength' in result.doc.lines.L1).toBe(false);
         expect('dashWidth' in result.doc.lines.L1).toBe(false);
       }
+    }
+  });
+
+  it('round-trips an interline gap on the quarter-unit grid and drops it at 0 (unset ⇒ tangent)', () => {
+    const keep = parse(buildWithStroke({ interlineGap: 2.1 }));
+    expect(keep.ok).toBe(true);
+    if (keep.ok) expect(keep.doc.lines.L1.interlineGap).toBe(2);
+    const off = parse(buildWithStroke({ interlineGap: 0 }));
+    expect(off.ok).toBe(true);
+    if (off.ok) expect('interlineGap' in off.doc.lines.L1).toBe(false);
+  });
+
+  it('drops non-numeric interline gaps', () => {
+    for (const junk of ['wide', null, true, {}]) {
+      const result = parse(buildWithStroke({ interlineGap: junk }));
+      expect(result.ok).toBe(true);
+      if (result.ok) expect('interlineGap' in result.doc.lines.L1).toBe(false);
     }
   });
 });

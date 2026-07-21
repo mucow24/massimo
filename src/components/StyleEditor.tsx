@@ -22,6 +22,7 @@ import {
   dashRenderWidth,
 } from '../model/dashSize';
 import {
+  LINE_INTERLINE_GAP_MAX,
   LINE_WIDTH_MAX,
   LINE_WIDTH_MIN,
   LINE_WIDTH_SLIDER_MIN,
@@ -160,6 +161,19 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
         getCurrent={liveNumberProp(id, 'width', props.width)}
         textboxAllowAboveMax
         textboxMin={LINE_WIDTH_MIN}
+      />
+      {/* Extra spacing against interlined neighbors (max-of-pair). Absent ⇒ 0
+          = classic tangency; stamping re-packs wearers' stations. */}
+      <NumericFieldRow
+        id={`style-${id}-interline-gap`}
+        label="Interline gap"
+        min={0}
+        max={LINE_INTERLINE_GAP_MAX}
+        step={LINE_WIDTH_STEP}
+        value={props.interlineGap ?? 0}
+        onChange={(interlineGap) => patch({ interlineGap })}
+        getCurrent={liveNumberProp(id, 'interlineGap', props.interlineGap ?? 0)}
+        textboxAllowAboveMax
       />
       <NumericFieldRow
         id={`style-${id}-curve`}

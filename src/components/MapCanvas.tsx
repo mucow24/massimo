@@ -28,6 +28,7 @@ import { regionsFor } from '../geometry/regionCache';
 import {
   buildExclusionHoles,
   regionClickAction,
+  regionClipBounds,
   regionFloodTargets,
   regionSetAction,
   resolveRegionWinners,
@@ -219,7 +220,10 @@ export function MapCanvas() {
   // edit must repaint WITHOUT a geometry rebuild (stripes resolve color live).
   // Width, by contrast, IS geometry — it moves the baked paths and changes band
   // merging — so it must be in the hash or width edits never repaint. Curve
-  // radius is geometry for the same reason (it moves the baked fillets).
+  // radius is geometry for the same reason (it moves the baked fillets), and
+  // the interline gap likewise (it feeds the merge gate and stripe offsets;
+  // in practice every gap write also re-packs stops, which invalidates the
+  // stations-side sig, but the hash must not rely on that coupling).
   const linesGeometrySig = useMemo(() => {
     const parts: string[] = [];
     for (const id of Object.keys(lines)) {
@@ -229,6 +233,7 @@ export function MapCanvas() {
         ln.edges.join('.'),
         Object.keys(ln.segmentStyles ?? {}).join('.'),
         String(ln.width ?? ''),
+        String(ln.interlineGap ?? ''),
         String(ln.curveRadius ?? ''),
       );
     }
@@ -374,6 +379,12 @@ export function MapCanvas() {
           )
         : null,
     [regionGeom, regionWinners, lineOrder, lines],
+  );
+  // Tight outer bounds for the exclude clips (see regionClipBounds — a huge
+  // constant outer rect breaks GPU clip rasterization precision at deep zoom).
+  const regionClipOuter = useMemo(
+    () => (regionGeom ? regionClipBounds(regionGeom.bands, regionGeom.markers) : null),
+    [regionGeom],
   );
 
   const itemDrag = useItemDrag(svgRef, view.viewport.zoom, inHandMode);
@@ -1038,7 +1049,9 @@ export function MapCanvas() {
           <HatchPatterns colors={hatchedColors} underlayColor={underlayColor} />
           {/* Per-line corridor clips for the branch seam (see SeamClips). */}
           <SeamClips bands={bands} lines={lines} />
-          {regionExcludeHoles && <RegionExcludeClips holes={regionExcludeHoles} />}
+          {regionExcludeHoles && regionClipOuter && (
+            <RegionExcludeClips holes={regionExcludeHoles} bounds={regionClipOuter} />
+          )}
         </defs>
 
         {/* Background hit target for panning. Overdrawn one viewport-width in
