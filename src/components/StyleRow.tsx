@@ -1,7 +1,7 @@
-import { useRef, useState } from 'react';
 import { ChevronDownIcon } from '@radix-ui/react-icons';
 import * as Select from '@radix-ui/react-select';
 import { FieldSelectContent } from './FieldSelectContent';
+import { useInlineRename } from './useInlineRename';
 import { useDoc } from '../state/store';
 import { stylesOfKind } from '../model/styles';
 import type { StyleKind } from '../model/types';
@@ -34,11 +34,18 @@ export function StyleRow({ kind, itemId, styleId, disabled }: Props) {
   const applyStyle = useDoc((s) => s.applyStyle);
   const clearStyleTag = useDoc((s) => s.clearStyleTag);
   const saveStyle = useDoc((s) => s.saveStyle);
-  const [naming, setNaming] = useState(false);
-  const [draft, setDraft] = useState('');
-  // Escape sets this before blurring so the blur-driven commit is skipped
-  // (MapNameField pattern).
-  const cancelledRef = useRef(false);
+  // Shared inline-rename plumbing (same as MapNameField / the Styles panel).
+  const {
+    editing: naming,
+    start,
+    inputProps,
+  } = useInlineRename((draft) => {
+    const name = draft.trim();
+    // Empty cancels; "Custom" is reserved — it's the detached sentinel and a
+    // style wearing it would be indistinguishable in this dropdown.
+    if (!name || name.toLowerCase() === 'custom') return;
+    saveStyle(kind, name, itemId);
+  });
 
   // Belt and braces: a tag that doesn't resolve to a def of this kind reads
   // as Custom (parse prunes these; only a mid-flight delete can race here).
@@ -46,19 +53,7 @@ export function StyleRow({ kind, itemId, styleId, disabled }: Props) {
 
   const startNaming = () => {
     const cur = current !== CUSTOM ? styles[current] : undefined;
-    setDraft(cur?.name ?? '');
-    cancelledRef.current = false;
-    setNaming(true);
-  };
-
-  const commit = () => {
-    setNaming(false);
-    if (cancelledRef.current) return;
-    const name = draft.trim();
-    // Empty cancels; "Custom" is reserved — it's the detached sentinel and a
-    // style wearing it would be indistinguishable in this dropdown.
-    if (!name || name.toLowerCase() === 'custom') return;
-    saveStyle(kind, name, itemId);
+    start(cur?.name ?? '');
   };
 
   if (naming) {
@@ -69,19 +64,7 @@ export function StyleRow({ kind, itemId, styleId, disabled }: Props) {
           id={`style-name-${itemId}`}
           aria-label="Style name"
           placeholder="Style name"
-          value={draft}
-          autoFocus
-          onFocus={(e) => e.currentTarget.select()}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.currentTarget.blur();
-            } else if (e.key === 'Escape') {
-              cancelledRef.current = true;
-              e.currentTarget.blur();
-            }
-          }}
+          {...inputProps}
         />
       </div>
     );

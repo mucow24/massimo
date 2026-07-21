@@ -33,10 +33,12 @@ export function useDismiss(
     if (!active) return;
     const onDocClick = (e: globalThis.MouseEvent) => {
       const target = e.target as Node;
-      // A ColorField opens its RGBA picker in a portal on <body>, outside every
-      // popover's own subtree — interacting with it must not dismiss the popover
-      // (inspector, options panel) that owns the field.
-      if (target instanceof Element && target.closest('.color-field-popover')) return;
+      // A ColorField opens its RGBA picker, and a field-select its option panel,
+      // in portals under `.app` — outside every popover's own subtree. Interacting
+      // with either must not dismiss the popover (inspector, options panel) that
+      // owns the control.
+      if (target instanceof Element && target.closest('.color-field-popover, .field-select-panel'))
+        return;
       for (const r of ignore) {
         if (r.current && r.current.contains(target)) return;
       }

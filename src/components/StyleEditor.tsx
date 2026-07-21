@@ -4,6 +4,7 @@ import {
   TextAlignLeftIcon,
   TextAlignRightIcon,
 } from '@radix-ui/react-icons';
+import * as ToggleGroup from '@radix-ui/react-toggle-group';
 import { useDoc } from '../state/store';
 import { ColorField } from './ColorField';
 import { DayNightColorRow } from './DayNightColorRow';
@@ -341,19 +342,28 @@ function TextLabelStyleEditor({ id, props }: { id: string; props: TextLabelStyle
       <div className="row">
         <label>Align</label>
         <div className="shape-group">
-          {aligns.map((a) => (
-            <button
-              key={a.value}
-              type="button"
-              className={'align-btn' + (props.align === a.value ? ' active' : '')}
-              title={a.label}
-              aria-label={a.label}
-              aria-pressed={props.align === a.value}
-              onClick={() => patch({ align: a.value })}
-            >
-              {a.icon}
-            </button>
-          ))}
+          {/* One roving-focus group; the empty-string guard keeps it radio-like
+              (re-clicking the selected alignment doesn't deselect it). */}
+          <ToggleGroup.Root
+            type="single"
+            className="align-group"
+            value={props.align}
+            onValueChange={(v) => {
+              if (v) patch({ align: v as TextLabelAlign });
+            }}
+          >
+            {aligns.map((a) => (
+              <ToggleGroup.Item
+                key={a.value}
+                value={a.value}
+                className={'align-btn' + (props.align === a.value ? ' active' : '')}
+                title={a.label}
+                aria-label={a.label}
+              >
+                {a.icon}
+              </ToggleGroup.Item>
+            ))}
+          </ToggleGroup.Root>
         </div>
         <ItalicButton active={props.italic} onToggle={() => patch({ italic: !props.italic })} />
       </div>
@@ -433,18 +443,27 @@ function RouteBulletStyleEditor({ id, props }: { id: string; props: RouteBulletS
       <div className="row">
         <label>Shape</label>
         <div className="shape-group">
-          {shapes.map((s) => (
-            <button
-              key={s}
-              type="button"
-              className={'shape-btn' + (props.shape === s ? ' active' : '')}
-              title={s}
-              aria-label={s}
-              onClick={() => patch({ shape: s })}
-            >
-              <ShapeIcon shape={s} />
-            </button>
-          ))}
+          {/* Roving-focus group, radio-like via the empty-string guard. */}
+          <ToggleGroup.Root
+            type="single"
+            className="align-group"
+            value={props.shape}
+            onValueChange={(v) => {
+              if (v) patch({ shape: v as RouteBulletShape });
+            }}
+          >
+            {shapes.map((s) => (
+              <ToggleGroup.Item
+                key={s}
+                value={s}
+                className={'shape-btn' + (props.shape === s ? ' active' : '')}
+                title={s}
+                aria-label={s}
+              >
+                <ShapeIcon shape={s} />
+              </ToggleGroup.Item>
+            ))}
+          </ToggleGroup.Root>
         </div>
       </div>
       <NumericFieldRow
@@ -633,38 +652,51 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
       <div className="row">
         <label>Shape</label>
         <div className="shape-group">
-          {DOT_SHAPES.map(({ shape, label }) => (
-            <button
-              key={shape}
-              type="button"
-              className={'shape-btn' + (p.shape === shape ? ' active' : '')}
-              title={label}
-              aria-label={label}
-              aria-pressed={p.shape === shape}
-              onClick={() => dp({ shape })}
-            >
-              <DotPreview style={{ ...p, shape }} size={18} />
-            </button>
-          ))}
+          {/* Roving-focus group, radio-like via the empty-string guard. */}
+          <ToggleGroup.Root
+            type="single"
+            className="align-group"
+            value={p.shape}
+            onValueChange={(v) => {
+              if (v) dp({ shape: v as DotBaseShape });
+            }}
+          >
+            {DOT_SHAPES.map(({ shape, label }) => (
+              <ToggleGroup.Item
+                key={shape}
+                value={shape}
+                className={'shape-btn' + (p.shape === shape ? ' active' : '')}
+                title={label}
+                aria-label={label}
+              >
+                <DotPreview style={{ ...p, shape }} size={18} />
+              </ToggleGroup.Item>
+            ))}
+          </ToggleGroup.Root>
         </div>
       </div>
       <div className="row">
         <label>Fill</label>
         <div className="shape-group">
-          {(['none', 'line', 'custom'] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              className={'align-btn' + (fillMode === mode ? ' active' : '')}
-              aria-pressed={fillMode === mode}
-              aria-label={`Fill ${mode}`}
-              onClick={() =>
-                dp({ fill: mode === 'none' ? 'none' : mode === 'line' ? 'line' : fillPair })
-              }
-            >
-              {mode === 'none' ? 'None' : mode === 'line' ? 'Line' : 'Custom'}
-            </button>
-          ))}
+          <ToggleGroup.Root
+            type="single"
+            className="align-group"
+            value={fillMode}
+            onValueChange={(v) => {
+              if (v) dp({ fill: v === 'none' ? 'none' : v === 'line' ? 'line' : fillPair });
+            }}
+          >
+            {(['none', 'line', 'custom'] as const).map((mode) => (
+              <ToggleGroup.Item
+                key={mode}
+                value={mode}
+                className={'align-btn' + (fillMode === mode ? ' active' : '')}
+                aria-label={`Fill ${mode}`}
+              >
+                {mode === 'none' ? 'None' : mode === 'line' ? 'Line' : 'Custom'}
+              </ToggleGroup.Item>
+            ))}
+          </ToggleGroup.Root>
         </div>
       </div>
       {fillMode === 'custom' && (
@@ -702,18 +734,25 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
           <div className="row">
             <label>Stroke color</label>
             <div className="shape-group">
-              {(['line', 'custom'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  className={'align-btn' + (strokeMode === mode ? ' active' : '')}
-                  aria-pressed={strokeMode === mode}
-                  aria-label={`Stroke ${mode}`}
-                  onClick={() => dp({ strokeColor: mode === 'line' ? 'line' : strokePair })}
-                >
-                  {mode === 'line' ? 'Line' : 'Custom'}
-                </button>
-              ))}
+              <ToggleGroup.Root
+                type="single"
+                className="align-group"
+                value={strokeMode}
+                onValueChange={(v) => {
+                  if (v) dp({ strokeColor: v === 'line' ? 'line' : strokePair });
+                }}
+              >
+                {(['line', 'custom'] as const).map((mode) => (
+                  <ToggleGroup.Item
+                    key={mode}
+                    value={mode}
+                    className={'align-btn' + (strokeMode === mode ? ' active' : '')}
+                    aria-label={`Stroke ${mode}`}
+                  >
+                    {mode === 'line' ? 'Line' : 'Custom'}
+                  </ToggleGroup.Item>
+                ))}
+              </ToggleGroup.Root>
             </div>
           </div>
           {strokeMode === 'custom' && (
@@ -733,19 +772,26 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
           <div className="row">
             <label>Align</label>
             <div className="shape-group">
-              {(['center', 'inside', 'outside'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  className={'align-btn' + (p.strokeAlign === mode ? ' active' : '')}
-                  aria-pressed={p.strokeAlign === mode}
-                  aria-label={`Align ${mode}`}
-                  title={`Stroke ${mode === 'center' ? 'straddles the edge' : mode === 'inside' ? 'grows inward' : 'grows outward'}`}
-                  onClick={() => dp({ strokeAlign: mode })}
-                >
-                  {mode === 'center' ? 'Center' : mode === 'inside' ? 'Inside' : 'Outside'}
-                </button>
-              ))}
+              <ToggleGroup.Root
+                type="single"
+                className="align-group"
+                value={p.strokeAlign}
+                onValueChange={(v) => {
+                  if (v) dp({ strokeAlign: v as DotStyle['strokeAlign'] });
+                }}
+              >
+                {(['center', 'inside', 'outside'] as const).map((mode) => (
+                  <ToggleGroup.Item
+                    key={mode}
+                    value={mode}
+                    className={'align-btn' + (p.strokeAlign === mode ? ' active' : '')}
+                    aria-label={`Align ${mode}`}
+                    title={`Stroke ${mode === 'center' ? 'straddles the edge' : mode === 'inside' ? 'grows inward' : 'grows outward'}`}
+                  >
+                    {mode === 'center' ? 'Center' : mode === 'inside' ? 'Inside' : 'Outside'}
+                  </ToggleGroup.Item>
+                ))}
+              </ToggleGroup.Root>
             </div>
           </div>
           <div className="row">
@@ -763,18 +809,25 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
               <div className="row">
                 <label>Code color</label>
                 <div className="shape-group">
-                  {(['line', 'custom'] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      className={'align-btn' + (codeMode === mode ? ' active' : '')}
-                      aria-pressed={codeMode === mode}
-                      aria-label={`Code color ${mode}`}
-                      onClick={() => dp({ serviceCodeColor: mode === 'line' ? 'line' : codePair })}
-                    >
-                      {mode === 'line' ? 'Line' : 'Custom'}
-                    </button>
-                  ))}
+                  <ToggleGroup.Root
+                    type="single"
+                    className="align-group"
+                    value={codeMode}
+                    onValueChange={(v) => {
+                      if (v) dp({ serviceCodeColor: v === 'line' ? 'line' : codePair });
+                    }}
+                  >
+                    {(['line', 'custom'] as const).map((mode) => (
+                      <ToggleGroup.Item
+                        key={mode}
+                        value={mode}
+                        className={'align-btn' + (codeMode === mode ? ' active' : '')}
+                        aria-label={`Code color ${mode}`}
+                      >
+                        {mode === 'line' ? 'Line' : 'Custom'}
+                      </ToggleGroup.Item>
+                    ))}
+                  </ToggleGroup.Root>
                 </div>
               </div>
               {codeMode === 'custom' && (

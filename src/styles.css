@@ -549,13 +549,6 @@ select option {
 .options-popover-block-label {
   color: var(--text-muted);
 }
-.options-popover-select {
-  width: 100%;
-  font-size: var(--fs-small);
-  padding: 2px 4px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
 .options-palettes {
   display: flex;
   flex-direction: column;
