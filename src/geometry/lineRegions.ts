@@ -852,6 +852,62 @@ export function buildExclusionHoles(
   return holes;
 }
 
+/** Slack around {@link regionClipBounds}: covers seam strokes, antialiasing,
+ *  and any sub-world-unit overhang the per-band reach bound doesn't model. */
+export const REGION_CLIP_BOUNDS_PAD = 50;
+
+/**
+ * World AABB every region-exclude clip must PASS — the union extent of all
+ * band stripes (centerline vertices + max |stripe offset| + stripe width,
+ * which also covers casing silhouettes; fillet arcs never leave the vertex
+ * hull) and stop markers, padded by {@link REGION_CLIP_BOUNDS_PAD}.
+ *
+ * The exclude clip is "everything EXCEPT the holes", so its outer ring must
+ * cover all clipped paint — but no more. It was historically a ±500000
+ * constant, and coordinates that large lose float precision in GPU clip
+ * rasterization at deep zoom (500000 × a 20–30× device scale lands in the
+ * ~1e7 range, where float32 ULP approaches whole pixels), which painted the
+ * hole edges a few pixels off. Under full tangency the drift hid beneath
+ * opaque neighbor paint; an interline gap exposes hole edges over bare
+ * background, where it read as white notches on the clipped line. Returns
+ * null when there is nothing to cover.
+ */
+export function regionClipBounds(
+  bands: SegmentBandSpec[],
+  markers: StopMarkerSpec[],
+): { x0: number; y0: number; x1: number; y1: number } | null {
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const b of bands) {
+    let reach = 0;
+    for (let k = 0; k < b.lines.length; k++) {
+      reach = Math.max(reach, Math.abs(b.stripeOffsets[k]) + b.stripeWidths[k]);
+    }
+    for (const v of b.centerline) {
+      if (v.x - reach < x0) x0 = v.x - reach;
+      if (v.x + reach > x1) x1 = v.x + reach;
+      if (v.y - reach < y0) y0 = v.y - reach;
+      if (v.y + reach > y1) y1 = v.y + reach;
+    }
+  }
+  for (const m of markers) {
+    // A width × width square at any rotation reaches at most width/√2 < width.
+    if (m.cx - m.width < x0) x0 = m.cx - m.width;
+    if (m.cx + m.width > x1) x1 = m.cx + m.width;
+    if (m.cy - m.width < y0) y0 = m.cy - m.width;
+    if (m.cy + m.width > y1) y1 = m.cy + m.width;
+  }
+  if (!Number.isFinite(x0)) return null;
+  return {
+    x0: x0 - REGION_CLIP_BOUNDS_PAD,
+    y0: y0 - REGION_CLIP_BOUNDS_PAD,
+    x1: x1 + REGION_CLIP_BOUNDS_PAD,
+    y1: y1 + REGION_CLIP_BOUNDS_PAD,
+  };
+}
+
 /** Per-face effective winner: bound assignment's line, else lineOrder-first. */
 export function resolveRegionWinners(
   faces: RegionFace[],

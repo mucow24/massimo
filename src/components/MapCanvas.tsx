@@ -28,6 +28,7 @@ import { regionsFor } from '../geometry/regionCache';
 import {
   buildExclusionHoles,
   regionClickAction,
+  regionClipBounds,
   regionFloodTargets,
   regionSetAction,
   resolveRegionWinners,
@@ -378,6 +379,12 @@ export function MapCanvas() {
           )
         : null,
     [regionGeom, regionWinners, lineOrder, lines],
+  );
+  // Tight outer bounds for the exclude clips (see regionClipBounds — a huge
+  // constant outer rect breaks GPU clip rasterization precision at deep zoom).
+  const regionClipOuter = useMemo(
+    () => (regionGeom ? regionClipBounds(regionGeom.bands, regionGeom.markers) : null),
+    [regionGeom],
   );
 
   const itemDrag = useItemDrag(svgRef, view.viewport.zoom, inHandMode);
@@ -1042,7 +1049,9 @@ export function MapCanvas() {
           <HatchPatterns colors={hatchedColors} underlayColor={underlayColor} />
           {/* Per-line corridor clips for the branch seam (see SeamClips). */}
           <SeamClips bands={bands} lines={lines} />
-          {regionExcludeHoles && <RegionExcludeClips holes={regionExcludeHoles} />}
+          {regionExcludeHoles && regionClipOuter && (
+            <RegionExcludeClips holes={regionExcludeHoles} bounds={regionClipOuter} />
+          )}
         </defs>
 
         {/* Background hit target for panning. Overdrawn one viewport-width in

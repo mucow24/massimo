@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildBandGeometry, buildStopMarkers } from './interlining';
-import { buildExclusionHoles, buildOverlapRegions } from './lineRegions';
+import { buildExclusionHoles, buildOverlapRegions, regionClipBounds } from './lineRegions';
 import { pointInFace, splitIntoFaces } from './clip';
 import { makeDoc, makeLine, makeStation, makeStop } from '../test/fixtures';
 import type { Vec2 } from './vec';
@@ -49,7 +49,7 @@ describe('exclusion holes at a gapped band', () => {
     const faces = buildOverlapRegions(bands, markers);
     expect(faces).toHaveLength(2);
     const winnerOf = (i: number): LineId => faces[i].lineIds.find((id) => id !== 'G') as LineId;
-    const winners = faces.map((f, i) => ({ winner: winnerOf(i), assignmentId: `r${i}` }));
+    const winners = faces.map((_, i) => ({ winner: winnerOf(i), assignmentId: `r${i}` }));
     const holes = buildExclusionHoles(faces, winners, ['G', 'B', 'O'], bands, markers, () => 0);
     const hole = holes.get('G');
     expect(hole).toBeDefined();
@@ -66,5 +66,29 @@ describe('exclusion holes at a gapped band', () => {
     // Nor outside the band's outer edges.
     expect(contains(hole, { x: 92.5, y: 100 })).toBe(false);
     expect(contains(hole, { x: 125.5, y: 100 })).toBe(false);
+  });
+});
+
+describe('regionClipBounds', () => {
+  it('hugs the band + marker extent — never the legacy ±500000 world rect', () => {
+    // Giant clip coordinates lose float precision in GPU rasterization at
+    // deep zoom, which painted hole edges pixels off (white notches where an
+    // interline gap exposes them over background). The outer ring must stay
+    // content-sized.
+    const { bands, markers } = gappedCrossing();
+    const b = regionClipBounds(bands, markers)!;
+    expect(b).not.toBeNull();
+    expect(b.x0).toBeGreaterThan(-1000);
+    expect(b.y0).toBeGreaterThan(-1000);
+    expect(b.x1).toBeLessThan(1000);
+    expect(b.y1).toBeLessThan(1000);
+    // …while still COVERING every stripe extreme (outer band edges at
+    // x = 93 / 125 plus casing headroom).
+    expect(b.x0).toBeLessThan(93 - 14);
+    expect(b.x1).toBeGreaterThan(111 + 14);
+  });
+
+  it('returns null with nothing to cover', () => {
+    expect(regionClipBounds([], [])).toBeNull();
   });
 });

@@ -7,31 +7,36 @@ import { polygonsToPath } from '../../geometry/polygonUnion';
 export const regionExcludeClipId = (lineId: LineId): string =>
   `region-exclude-${lineId.replace(/[^A-Za-z0-9_-]/g, '-')}`;
 
-// Big enough to cover any map; the clip must pass everything EXCEPT the holes.
-const WORLD_EXTENT = 500000;
-
 export interface RegionExcludeClipsProps {
   /** lineId → exclusion hole rings (see buildExclusionHoles). */
   holes: Map<LineId, Ring[]>;
+  /** World AABB the clips must PASS — the padded extent of everything the
+   *  clipped lines paint (see regionClipBounds). Deliberately TIGHT: the
+   *  outer ring was historically a ±500000 constant, and coordinates that
+   *  large lose float precision in GPU clip rasterization at deep zoom,
+   *  shifting the hole edges by visible pixels — white notches wherever an
+   *  interline gap exposes a hole edge over bare background. */
+  bounds: { x0: number; y0: number; x1: number; y1: number };
 }
 
 /**
- * One clipPath per line that loses an overridden region: the whole world
- * minus its exclusion holes. Applied to that line's base renderables, so the
- * region's winner shows through as its original, never-repainted stroke —
- * clipPath (not mask) so PDF export keeps it, and clipped areas also stop
- * receiving pointer events, which is what makes idle clicks land on the
- * visible winner.
+ * One clipPath per line that loses an overridden region: the whole content
+ * extent minus its exclusion holes. Applied to that line's base renderables,
+ * so the region's winner shows through as its original, never-repainted
+ * stroke — clipPath (not mask) so PDF export keeps it, and clipped areas
+ * also stop receiving pointer events, which is what makes idle clicks land
+ * on the visible winner.
  */
 export const RegionExcludeClips = memo(function RegionExcludeClips({
   holes,
+  bounds,
 }: RegionExcludeClipsProps) {
   if (!holes.size) return null;
   const world: Ring = [
-    { x: -WORLD_EXTENT, y: -WORLD_EXTENT },
-    { x: WORLD_EXTENT, y: -WORLD_EXTENT },
-    { x: WORLD_EXTENT, y: WORLD_EXTENT },
-    { x: -WORLD_EXTENT, y: WORLD_EXTENT },
+    { x: bounds.x0, y: bounds.y0 },
+    { x: bounds.x1, y: bounds.y0 },
+    { x: bounds.x1, y: bounds.y1 },
+    { x: bounds.x0, y: bounds.y1 },
   ];
   return (
     <>
