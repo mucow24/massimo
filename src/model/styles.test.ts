@@ -112,6 +112,15 @@ describe('captureStyleProps', () => {
     expect(plain).not.toHaveProperty('dashWidth');
   });
 
+  it('captures the interline gap when set, and omits the key when unset', () => {
+    const gapped = makeDoc({ lines: [makeLine({ id: 'l1', interlineGap: 2 })] });
+    expect(captureStyleProps(gapped, 'line', 'l1')).toMatchObject({ interlineGap: 2 });
+    // A gap-less line captures NO key (so it compares equal to a style that
+    // never had one — 0 is never stored).
+    const plain = captureStyleProps(makeDoc({ lines: [makeLine({ id: 'l1' })] }), 'line', 'l1');
+    expect(plain).not.toHaveProperty('interlineGap');
+  });
+
   it('captures only the covered label typography — width/leading/tracking stay per-label', () => {
     const doc = makeDoc({
       textLabels: [makeTextLabel({ id: 'g1', fontSize: 20, weight: 700, width: 200, leading: 2 })],
@@ -232,6 +241,23 @@ describe('stylePropsEqual — line covered fields', () => {
     );
     expect(stylePropsEqual('line', base, { ...base, multiDotStyleId: 'stop-none' })).toBe(false);
   });
+
+  it('distinguishes props differing only in interlineGap (covered-field list)', () => {
+    const base = {
+      singletonDotStyleId: DEFAULT_STOP_DOT_STYLE_ID,
+      multiDotStyleId: DEFAULT_STOP_DOT_STYLE_ID,
+      singletonDotSize: DOT_SIZE_DEFAULT,
+      multiDotSize: DOT_SIZE_DEFAULT,
+      width: LINE_WIDTH_DEFAULT,
+      curveRadius: LINE_CURVE_RADIUS_DEFAULT,
+      strokeWidth: 0,
+      strokeColor: '#ffffff',
+    };
+    expect(stylePropsEqual('line', base, { ...base, interlineGap: 2 })).toBe(false);
+    expect(
+      stylePropsEqual('line', { ...base, interlineGap: 2 }, { ...base, interlineGap: 2 }),
+    ).toBe(true);
+  });
 });
 
 describe('stylePropsEqual — transfer day/night colors', () => {
@@ -336,6 +362,25 @@ describe('applyStyleToItem', () => {
     const cleared = applyStyleToItem(doc2, 'y2', 'l1').lines.l1;
     expect('dashLength' in cleared).toBe(false);
     expect('dashWidth' in cleared).toBe(false);
+    expect(cleared.styleId).toBe('y2');
+  });
+
+  it('stamps the interline gap, and stamping a style without one clears it', () => {
+    const gapStyle = makeStyle('line', 'y1', { props: { interlineGap: 2 } });
+    const doc = makeDoc({ lines: [makeLine({ id: 'l1' })], styles: [gapStyle] });
+    const stamped = applyStyleToItem(doc, 'y1', 'l1').lines.l1;
+    expect(stamped.interlineGap).toBe(2);
+    expect(stamped.styleId).toBe('y1');
+
+    // A style with NO gap, stamped onto a line that HAS one, removes it
+    // (back to tangency).
+    const plainStyle = makeStyle('line', 'y2', { props: {} });
+    const doc2 = makeDoc({
+      lines: [makeLine({ id: 'l1', interlineGap: 2 })],
+      styles: [plainStyle],
+    });
+    const cleared = applyStyleToItem(doc2, 'y2', 'l1').lines.l1;
+    expect('interlineGap' in cleared).toBe(false);
     expect(cleared.styleId).toBe('y2');
   });
 

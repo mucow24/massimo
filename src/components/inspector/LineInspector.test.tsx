@@ -174,6 +174,63 @@ describe('<LineInspector /> — width control', () => {
   });
 });
 
+describe('<LineInspector /> — interline gap control', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+    useDoc.temporal.getState().clear();
+  });
+
+  // Two lines packed tangent (rows 0/1 at default width) at both corridor
+  // ends — the layout a gap edit must spread without un-merging.
+  const seedPair = () => {
+    const stops = () => [
+      makeStop('L1', { row: 0, col: 0, orientation: 'auto-horizontal' }),
+      makeStop('L2', { row: 1, col: 0, orientation: 'auto-horizontal' }),
+    ];
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', x: 0, y: 0, stops: stops() }),
+          makeStation({ id: 's2', x: 200, y: 0, stops: stops() }),
+        ],
+        lines: [
+          makeLine({ id: 'L1', stations: ['s1', 's2'] }),
+          makeLine({ id: 'L2', stations: ['s1', 's2'] }),
+        ],
+      }),
+    });
+  };
+
+  it('renders a 0–14 quarter-step slider at the effective gap (0 by default)', () => {
+    seedPair();
+    render(<LineInspector id="L1" />);
+    const slider = screen.getByRole('slider', { name: 'Interline gap' });
+    expect(slider).toHaveAttribute('aria-valuemin', '0');
+    expect(slider).toHaveAttribute('aria-valuemax', '14');
+    expect(slider).toHaveAttribute('aria-valuenow', '0');
+  });
+
+  it('slider edits write the gap and re-pack the stops; back to 0 drops the key', () => {
+    seedPair();
+    render(<LineInspector id="L1" />);
+    const slider = screen.getByRole('slider', { name: 'Interline gap' });
+    stepSlider(slider, 1); // one 0.25 step
+    expect(useDoc.getState().lines.L1.interlineGap).toBe(0.25);
+    // The packed pair spread symmetrically: spacing 14 → 14.25.
+    const rows = useDoc.getState().stations.s1.stops.map((s) => s.row);
+    expect(rows[0]).toBeCloseTo(-0.125 / 14, 12);
+    expect(rows[1]).toBeCloseTo(14.125 / 14, 12);
+    stepSlider(slider, -1); // back to 0 drops the key and re-packs to tangency
+    expect('interlineGap' in useDoc.getState().lines.L1).toBe(false);
+    const back = useDoc.getState().stations.s1.stops.map((s) => s.row);
+    expect(back[0]).toBeCloseTo(0, 12);
+    expect(back[1]).toBeCloseTo(1, 12);
+  });
+});
+
 describe('<LineInspector /> — dash dimension controls', () => {
   beforeEach(() => {
     localStorage.clear();

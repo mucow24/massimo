@@ -1292,8 +1292,15 @@ function sanitizeLineStroke(line: Line): Line {
   // Every numeric width field shares one contract — canonicalStrokeWidth
   // (casing grid/floor) + drop-at-0: strokeWidth/seamWidth are the casing rails,
   // dashLength/dashWidth the TfL-tick dims (0 / absent = derive from the line
-  // width at render). One loop keeps them from drifting apart.
-  for (const field of ['strokeWidth', 'seamWidth', 'dashLength', 'dashWidth'] as const) {
+  // width at render), interlineGap the packed spacing bump (0 / absent =
+  // plain tangency). One loop keeps them from drifting apart.
+  for (const field of [
+    'strokeWidth',
+    'seamWidth',
+    'dashLength',
+    'dashWidth',
+    'interlineGap',
+  ] as const) {
     if (!(field in line)) continue;
     const raw = line[field] as unknown;
     const stored =
@@ -1897,13 +1904,15 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       if (singletonDotSize === undefined || multiDotSize === undefined) return undefined;
       if (curveRadius === undefined) return undefined;
       if (strokeWidth === undefined || strokeColor === undefined) return undefined;
-      // seamColor / seamWidth / dashLength / dashWidth are OPTIONAL — absent ⇒
-      // no seam / inherit / derive; a malformed value is dropped (treated as
-      // absent) rather than invalidating the whole def.
+      // seamColor / seamWidth / dashLength / dashWidth / interlineGap are
+      // OPTIONAL — absent ⇒ no seam / inherit / derive / plain tangency; a
+      // malformed value is dropped (treated as absent) rather than
+      // invalidating the whole def.
       const seamColor = asString(o.seamColor);
       const seamWidth = finiteNum(o.seamWidth);
       const dashLength = finiteNum(o.dashLength);
       const dashWidth = finiteNum(o.dashWidth);
+      const interlineGap = finiteNum(o.interlineGap);
       return canonicalStyleProps('line', {
         singletonDotStyleId,
         multiDotStyleId,
@@ -1917,6 +1926,7 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
         ...(seamWidth !== undefined ? { seamWidth } : {}),
         ...(dashLength !== undefined ? { dashLength } : {}),
         ...(dashWidth !== undefined ? { dashWidth } : {}),
+        ...(interlineGap !== undefined ? { interlineGap } : {}),
       });
     }
     case 'stopDot': {

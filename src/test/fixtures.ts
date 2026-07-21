@@ -126,7 +126,12 @@ export function makeBandSpec(
     linePriorities: lineIds.map((_, i) => i),
     ...overrides,
     stripeWidths,
-    stripeOffsets: stripeOffsetsForWidths(stripeWidths),
+    // Band fixtures are zero-gap: gapped bands are built through the real
+    // buildBands in the interlining tests, not hand-assembled here.
+    stripeOffsets: stripeOffsetsForWidths(
+      stripeWidths,
+      stripeWidths.map(() => 0),
+    ),
   };
 }
 

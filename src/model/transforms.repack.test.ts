@@ -1,6 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import * as T from './transforms';
-import { repackStationForWidth } from './stationPacking';
+import { repackStationForSpacing } from './stationPacking';
+import type { Line, LineId } from './types';
+
+// Width-edit shorthand: interline gaps unchanged at 0 — the pre-gap contract
+// these tests pin. Gap-edit repack behavior has its own tests below.
+const repackStationForWidth = (
+  st: Station,
+  lines: Record<LineId, Line>,
+  lineId: LineId,
+  oldWidth: number,
+  newWidth: number,
+): Station => repackStationForSpacing(st, lines, lineId, oldWidth, newWidth, 0, 0);
 import { applyStyleToItem } from './styles';
 import { DEFAULT_STOP_DOT_STYLE_ID } from './dotStyle';
 import { buildBandGeometry } from '../geometry/interlining';
@@ -402,6 +413,87 @@ describe('repackStationForWidth (unit)', () => {
       stops: [makeStop('L2', { row: 0, col: 0 })],
     });
     expect(repackStationForWidth(st, linePair(), 'L1', 14, 8)).toBe(st);
+  });
+});
+
+describe('interline gap edits (setLineInterlineGap)', () => {
+  it('spreads a packed pair apart and keeps the band merged', () => {
+    const doc = interlinedPairDoc();
+    const next = T.setLineInterlineGap(doc, 'L1', 4);
+    expect(next.lines.L1.interlineGap).toBe(4);
+    // Packed spacing 14 → 18; chain centroid (y = 7) preserved: rows
+    // −2/14 and 16/14 at both corridor ends.
+    for (const sid of ['s1', 's2']) {
+      expect(stopOf(next, sid, 'L1').row).toBeCloseTo(-2 / 14, 12);
+      expect(stopOf(next, sid, 'L2').row).toBeCloseTo(16 / 14, 12);
+    }
+    // The band survives the edit (merge gate and repack agree on the gap),
+    // and the stripes spread to the packed offsets.
+    const bands = buildBandGeometry(next.stations, next.lines);
+    expect(bands).toHaveLength(1);
+    expect(bands[0].stripeOffsets).toEqual([-9, 9]);
+  });
+
+  it('round-trips: clearing the gap re-packs to plain tangency', () => {
+    const doc = interlinedPairDoc();
+    const back = T.setLineInterlineGap(T.setLineInterlineGap(doc, 'L1', 4), 'L1', 0);
+    expect(back.lines.L1.interlineGap).toBeUndefined();
+    for (const sid of ['s1', 's2']) {
+      expect(stopOf(back, sid, 'L1').row).toBeCloseTo(0, 12);
+      expect(stopOf(back, sid, 'L2').row).toBeCloseTo(1, 12);
+    }
+  });
+
+  it('never moves deliberately non-tangent stops', () => {
+    const doc = interlinedPairDoc([0, 2]);
+    const next = T.setLineInterlineGap(doc, 'L1', 4);
+    expect(next.lines.L1.interlineGap).toBe(4);
+    for (const sid of ['s1', 's2']) {
+      expect(stopOf(next, sid, 'L1').row).toBe(0);
+      expect(stopOf(next, sid, 'L2').row).toBe(2);
+    }
+  });
+
+  it('no-ops (same reference) on an unchanged stored gap and non-finite input', () => {
+    const doc = interlinedPairDoc();
+    expect(T.setLineInterlineGap(doc, 'L1', 0)).toBe(doc);
+    expect(T.setLineInterlineGap(doc, 'L1', Number.NaN)).toBe(doc);
+    const gapped = T.setLineInterlineGap(doc, 'L1', 4);
+    expect(T.setLineInterlineGap(gapped, 'L1', 4)).toBe(gapped);
+  });
+
+  it('rounds to the quarter-unit grid and drops the field at 0', () => {
+    const doc = interlinedPairDoc();
+    expect(T.setLineInterlineGap(doc, 'L1', 3.9).lines.L1.interlineGap).toBe(4);
+    expect(T.setLineInterlineGap(doc, 'L1', 0.1).lines.L1.interlineGap).toBeUndefined();
+  });
+
+  it('a width edit preserves an existing gap (the repack recognizes gapped chains)', () => {
+    const gapped = T.setLineInterlineGap(interlinedPairDoc(), 'L1', 4);
+    const widened = T.setLineWidth(gapped, 'L1', 20);
+    // Packed spacing (20+14)/2 + 4 = 21; centroid preserved: 7 ∓ 10.5.
+    for (const sid of ['s1', 's2']) {
+      expect(stopOf(widened, sid, 'L1').row).toBeCloseTo(-3.5 / 14, 12);
+      expect(stopOf(widened, sid, 'L2').row).toBeCloseTo(17.5 / 14, 12);
+    }
+    expect(buildBandGeometry(widened.stations, widened.lines)).toHaveLength(1);
+  });
+
+  it('spawns a new stop at the packed distance from a gapped line', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          stops: [makeStop('L1', { row: 0, col: 0, orientation: 'auto-vertical' })],
+          label: makeLabel({ row: 3, col: 0 }),
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] }), makeLine({ id: 'L3', interlineGap: 4 })],
+    });
+    const next = T.addStationToLine(doc, 'L3', 's1');
+    // Packed col step = ((14+14)/2 + max(4, 0)) / 14 = 18/14.
+    expect(stopOf(next, 's1', 'L3').row).toBe(0);
+    expect(stopOf(next, 's1', 'L3').col).toBeCloseTo(18 / 14, 12);
   });
 });
 

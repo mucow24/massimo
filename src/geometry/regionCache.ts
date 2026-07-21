@@ -21,9 +21,10 @@ export interface GeometrySlice {
 
 /**
  * Hash of everything region geometry depends on: station positions/rotations
- * and stop cells, line edge sets, widths and curve radii, and segment style
- * VALUES (they flip marker footprints between full-square and stub/none).
- * Deliberately excludes colors, casing, seams, lineOrder — presentation.
+ * and stop cells, line edge sets, widths, interline gaps and curve radii,
+ * and segment style VALUES (they flip marker footprints between full-square
+ * and stub/none). Deliberately excludes colors, casing, seams, lineOrder —
+ * presentation.
  */
 export function regionGeometrySig(g: GeometrySlice): string {
   const parts: string[] = [];
@@ -36,7 +37,13 @@ export function regionGeometrySig(g: GeometrySlice): string {
   for (const id of Object.keys(g.lines)) {
     const ln = g.lines[id];
     if (!ln.edges.length) continue; // edgeless lines have no bands
-    parts.push(id, ln.edges.join('.'), String(ln.width ?? ''), String(ln.curveRadius ?? ''));
+    parts.push(
+      id,
+      ln.edges.join('.'),
+      String(ln.width ?? ''),
+      String(ln.interlineGap ?? ''),
+      String(ln.curveRadius ?? ''),
+    );
     const styles = ln.segmentStyles;
     if (styles) for (const k of Object.keys(styles)) parts.push(k, styles[k]);
   }
