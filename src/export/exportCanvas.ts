@@ -44,14 +44,23 @@ function sanitizeBasename(name: string): string {
 }
 
 /**
- * Name-stamped base filename shared by save + export, e.g.
- * "My Subway Map - 2026-05-31". The sanitized map name leads (falling back to
- * "map" when it's empty or all-illegal) so successive saves stay grouped, and
- * the date keeps them distinct and sortable.
+ * Name-stamped base filename for an export, e.g. "My Subway Map - v23" (clean)
+ * or "My Subway Map - v23d" (dirty — edited since that version was saved). The
+ * sanitized map name leads (falling back to "map" when it's empty or
+ * all-illegal) so successive exports stay grouped.
+ *
+ * A map with no library version yet — a fresh New map, or a loaded JSON file —
+ * has no number to stamp, so it falls back to a date stamp
+ * ("My Subway Map - 2026-05-31") to keep exports distinct and sortable. The
+ * `dirty` flag is meaningless without a version there, so it's ignored.
  */
-export function mapFileBasename(name: string): string {
-  const date = new Date().toISOString().slice(0, 10);
-  return `${sanitizeBasename(name) || 'map'} - ${date}`;
+export function mapFileBasename(name: string, version: number | null, dirty: boolean): string {
+  const base = sanitizeBasename(name) || 'map';
+  if (version === null) {
+    const date = new Date().toISOString().slice(0, 10);
+    return `${base} - ${date}`;
+  }
+  return `${base} - v${version}${dirty ? 'd' : ''}`;
 }
 
 /** Trigger a browser download of `blob` as `filename`. */

@@ -308,6 +308,16 @@ export function Toolbar() {
     }
   };
 
+  // The export basename stamps the map's version and whether it's diverged from
+  // it — "Foo map - v23" clean, "Foo map - v23d" dirty. A map with no library
+  // version (fresh New, loaded JSON) falls back to a date stamp.
+  const currentBasename = () =>
+    mapFileBasename(
+      useDoc.getState().name,
+      useLibraryPointer.getState().version,
+      saveStatusOf(useDoc.getState(), useSaveBaseline.getState()) !== 'clean',
+    );
+
   // A downloaded file, which is what Export means here — saving now writes a
   // version to the library instead.
   const onExportJson = () => {
@@ -315,7 +325,7 @@ export function Toolbar() {
     // from the model when a field is added.
     const json = serialize(pickDocSnapshot(useDoc.getState()));
     const blob = new Blob([json], { type: 'application/json' });
-    downloadBlob(blob, `${mapFileBasename(useDoc.getState().name)}.massimo.json`);
+    downloadBlob(blob, `${currentBasename()}.massimo.json`);
   };
 
   const onSaveToLibrary = async () => {
@@ -462,7 +472,7 @@ export function Toolbar() {
       await fn(
         captureExportSnapshot(svg),
         themeColors(useDoc.getState().darkMode).canvasBg,
-        mapFileBasename(useDoc.getState().name),
+        currentBasename(),
       );
     } catch (err) {
       pushToast('error', errorText(err, 'Export failed.'));
