@@ -239,6 +239,31 @@ export function appendSegmentHoverPreview(
   return true;
 }
 
+/**
+ * The CSS cursor for a station while editing a line's stops, derived from the
+ * click matrix above so the cursor never promises an action the click
+ * wouldn't take: 'copy' (the OS arrow-with-plus) when the click would put the
+ * station on the line (seed/connect/splice), 'pointer' when it would
+ * arm/jump/disarm the pen, 'default' when the click means nothing. The
+ * four-arrow 'move' never shows — stations don't drag in Edit Stops.
+ */
+export function appendStationCursor(
+  line: Line,
+  cursor: AppendCursor,
+  stationId: StationId,
+): 'copy' | 'pointer' | 'default' {
+  switch (decideStationClick(line, cursor, stationId).kind) {
+    case 'seed':
+    case 'connect':
+    case 'splice':
+      return 'copy';
+    case 'cursor':
+      return 'pointer';
+    default:
+      return 'default';
+  }
+}
+
 // Segment style cycle order (shift-click a segment). Moved from the old line
 // editor tree; the full cycle must visit every LineStyle exactly once.
 export const NEXT_STYLE: Record<LineStyle, LineStyle> = {

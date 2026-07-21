@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { dragState, useDoc, useSelection } from '../state/store';
+import { cancelAppendMode, dragState, useDoc, useSelection } from '../state/store';
 import { hoveredChrome, type HoverKind } from '../state/selection';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useViewportStore } from '../state/viewportStore';
@@ -874,8 +874,9 @@ export function MapCanvas() {
   // stripes of corridors the edited line doesn't run are inert (no
   // stopPropagation, so a miss reads as a canvas click). Plain click arms /
   // disarms the insertion cursor (nearest endpoint first — see
-  // decideSegmentClick), shift-click cycles the edge's style, right-click
-  // removes the edge.
+  // decideSegmentClick), shift-click cycles the edge's style. No contextmenu
+  // handler on purpose: right-click bubbles to the SVG root and exits the
+  // mode (edge removal is the × chip or the Delete key).
   const makeAppendBandHandlers = (spec: SegmentBandSpec) => {
     const appendCtx = () => {
       const mode = selection.uiMode;
@@ -926,21 +927,6 @@ export function MapCanvas() {
         const world = view.screenToWorld(e.clientX, e.clientY);
         const decision = decideSegmentClick(line, cursor, spec.pairKey, world, stopPosOf(line.id));
         if (decision.kind === 'cursor') selection.setAppendCursor(decision.cursor);
-      },
-      onLineContextMenu: (_lineId: LineId, e: React.MouseEvent) => {
-        const ctx = appendCtx();
-        if (!ctx) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const { cursor, line } = ctx;
-        const [a, b] = edgeEndpoints(spec.pairKey);
-        // Drop a cursor that referenced the removed edge.
-        if (
-          cursor?.kind === 'edge' &&
-          ((cursor.from === a && cursor.to === b) || (cursor.from === b && cursor.to === a))
-        )
-          selection.setAppendCursor(null);
-        toggleEdgeOnLine(line.id, a, b); // the guard proved the edge exists → removal
       },
     };
   };
@@ -1042,7 +1028,15 @@ export function MapCanvas() {
         }}
         onContextMenuCapture={(e) => rerouteProxyEventBeneath('contextmenu', e)}
         onClick={onCanvasClick}
-        onContextMenu={(e) => e.preventDefault()}
+        // Bubble-phase, so it only fires when no inner handler stopped
+        // propagation. During Edit Stops every canvas right-click reaches here
+        // (stations/segments deliberately leave contextmenu unwired in the
+        // mode) and is the mouse-only exit — the same cancelAppendMode() path
+        // Esc and the exit canvas-click take.
+        onContextMenu={(e) => {
+          e.preventDefault();
+          if (useSelection.getState().uiMode.kind === 'appending-to-line') cancelAppendMode();
+        }}
         onDragStart={(e) => e.preventDefault()}
       >
         <defs>
@@ -1234,6 +1228,9 @@ export function MapCanvas() {
                   interactive={
                     selection.uiMode.kind === 'creating-line-tag' ||
                     selection.uiMode.kind === 'appending-to-line'
+                  }
+                  interactiveCursor={
+                    selection.uiMode.kind === 'appending-to-line' ? 'pointer' : 'crosshair'
                   }
                   lines={lines}
                   colorMap={colorMap}
@@ -1514,7 +1511,9 @@ export function MapCanvas() {
               uiMode={selection.uiMode}
               // Pan-suppress the hover preview the same way hoveredChrome does
               // for idle mode — a lingering ring/halo mid-pan reads as stale.
-              appendHover={inHandMode ? null : selection.appendHover}
+              // view.panning covers the arrow-mode middle-drag pan, whose
+              // pointer capture freezes appendHover at its pre-pan target.
+              appendHover={inHandMode || view.panning ? null : selection.appendHover}
               zoom={view.viewport.zoom}
               onStartDrag={drag.onStartDrag}
               onRemoveCursorStation={(sid) => {

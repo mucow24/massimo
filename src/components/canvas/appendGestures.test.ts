@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { makeLine } from '../../test/fixtures';
 import {
   appendSegmentHoverPreview,
+  appendStationCursor,
   appendStationHoverPreview,
   decideCanvasClick,
   decideDeleteKey,
@@ -28,6 +29,36 @@ describe('validCursor', () => {
     expect(validCursor(ln, stationCursor('zzz'))).toBeNull(); // not a member
     expect(validCursor(ln, edgeCursor('a', 'c'))).toBeNull(); // not an edge
     expect(validCursor(ln, null)).toBeNull();
+  });
+});
+
+describe('appendStationCursor', () => {
+  // The cursor IS the click matrix, re-voiced: 'copy' (arrow-with-plus) for a
+  // click that puts the station on the line, 'pointer' for arm/jump/disarm,
+  // 'default' for a click that means nothing.
+  it("'copy' whenever the click would seed/connect/splice", () => {
+    const empty = makeLine({ id: 'L1', stations: [] });
+    expect(appendStationCursor(empty, null, 'x')).toBe('copy'); // seed
+    expect(appendStationCursor(line(), stationCursor('a'), 'c')).toBe('copy'); // connect (member)
+    expect(appendStationCursor(line(), stationCursor('a'), 'n')).toBe('copy'); // connect (new)
+    expect(appendStationCursor(line(), edgeCursor('a', 'b'), 'n')).toBe('copy'); // splice
+  });
+
+  it("'pointer' whenever the click would arm/jump/disarm the pen", () => {
+    expect(appendStationCursor(line(), null, 'b')).toBe('pointer'); // arm
+    expect(appendStationCursor(line(), stationCursor('b'), 'b')).toBe('pointer'); // disarm
+    expect(appendStationCursor(line(), edgeCursor('a', 'b'), 'a')).toBe('pointer'); // endpoint jump
+  });
+
+  it("'default' when the click means nothing (non-member, nothing armed)", () => {
+    expect(appendStationCursor(line(), null, 'zzz')).toBe('default');
+  });
+
+  it('a stale cursor degrades first, so the cursor matches what the click would really do', () => {
+    // The armed station left the line (undo): a member hover arms → pointer,
+    // a non-member hover is inert → default. Never 'copy' off a dead cursor.
+    expect(appendStationCursor(line(), stationCursor('gone'), 'b')).toBe('pointer');
+    expect(appendStationCursor(line(), stationCursor('gone'), 'zzz')).toBe('default');
   });
 });
 

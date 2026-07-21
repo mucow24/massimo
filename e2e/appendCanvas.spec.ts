@@ -10,9 +10,9 @@ import {
 
 // Canvas-only line editing (Edit Stops): the cursor model. Click stations to
 // connect from the cursor, click a segment to arm insertion into that edge,
-// alt-click to create a station as the action's second click, right-click to
-// remove, Esc/canvas-click to back out one level. The old inspector tree is
-// gone — these flows ARE the line editor.
+// alt-click to create a station as the action's second click, Delete/× to
+// remove, Esc/canvas-click to back out one level, right-click anywhere to
+// exit. The old inspector tree is gone — these flows ARE the line editor.
 
 const stripe = (page: Page) => page.locator('[data-band-stripe][data-line-id="L1"]').first();
 
@@ -245,23 +245,35 @@ test('the style chip on the armed segment cycles its line style', async ({ page 
   await expect(editing(page)).toBeVisible();
 });
 
-test('right-click on a station during Edit Stops rotates it (never removes)', async ({ page }) => {
+test('right-click anywhere during Edit Stops exits — station, segment, or background', async ({
+  page,
+}) => {
   await seedAndOpen(page, fourInLine);
-  await openEditStops(page);
 
+  // On a station: exits without rotating or removing it.
+  await openEditStops(page);
   const b = await stationCenter(page, 'B');
   await page.mouse.click(b.x, b.y, { button: 'right' });
+  await expect(editing(page)).toBeHidden();
+  expect(
+    await page.evaluate(() => {
+      const raw = localStorage.getItem('vignelli-map-doc-v1');
+      return raw ? ((JSON.parse(raw).state.stations.B.rotation ?? 0) as number) : -1;
+    }),
+  ).toBe(0);
+  expect((await readLine(page)).stations).toEqual(['A', 'B', 'C', 'D']);
 
-  await expect
-    .poll(async () =>
-      page.evaluate(() => {
-        const raw = localStorage.getItem('vignelli-map-doc-v1');
-        return raw ? (JSON.parse(raw).state.stations.B.rotation as number) : -1;
-      }),
-    )
-    .not.toBe(0);
-  expect((await readLine(page)).stations).toEqual(['A', 'B', 'C', 'D']); // still a member
-  await expect(editing(page)).toBeVisible();
+  // On a segment of the edited line: exits without cutting the edge.
+  await openEditStops(page);
+  const p = await segPoint(page, 'B', 'C');
+  await page.mouse.click(p.x, p.y, { button: 'right' });
+  await expect(editing(page)).toBeHidden();
+  expect(new Set((await readLine(page)).edges)).toEqual(new Set(['A|B', 'B|C', 'C|D']));
+
+  // On the empty background: exits.
+  await openEditStops(page);
+  await page.mouse.click(b.x - 60, b.y - 140, { button: 'right' });
+  await expect(editing(page)).toBeHidden();
 });
 
 test('the × chip beside the cursor station removes it from the line', async ({ page }) => {
