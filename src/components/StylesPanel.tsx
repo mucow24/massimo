@@ -114,8 +114,26 @@ export function StylesPanel() {
   const createStyle = useDoc((s) => s.createStyle);
   const duplicateStyle = useDoc((s) => s.duplicateStyle);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  // Collapsed kind sections. Ephemeral like expandedId — a fresh panel opens
+  // with every section expanded.
+  const [collapsedKinds, setCollapsedKinds] = useState<ReadonlySet<StyleKind>>(new Set());
+
+  const toggleKind = (kind: StyleKind) => {
+    setCollapsedKinds((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(kind)) next.add(kind);
+      return next;
+    });
+  };
 
   const onCreate = (kind: StyleKind) => {
+    // Re-open a collapsed section so the fresh style's editor is visible.
+    setCollapsedKinds((prev) => {
+      if (!prev.has(kind)) return prev;
+      const next = new Set(prev);
+      next.delete(kind);
+      return next;
+    });
     setExpandedId(createStyle(kind));
   };
 
@@ -125,10 +143,20 @@ export function StylesPanel() {
         // The reserved "None" stop-dot is offered in the picker but hidden from
         // the editable list (nothing to edit; protected from rename/delete).
         const defs = stylesOfKind(styles, kind).filter((d) => d.id !== NONE_STOP_DOT_STYLE_ID);
+        const collapsed = collapsedKinds.has(kind);
         return (
           <Fragment key={kind}>
             <div className="list-header">
-              <span className="grow">{KIND_LABELS[kind]}</span>
+              <button
+                type="button"
+                className="section-toggle grow"
+                aria-expanded={!collapsed}
+                title={collapsed ? 'Expand section' : 'Collapse section'}
+                onClick={() => toggleKind(kind)}
+              >
+                {collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
+                {KIND_LABELS[kind]}
+              </button>
               <button
                 className="btn-mini icon"
                 aria-label={`New ${KIND_SINGULAR[kind]} style`}
@@ -138,69 +166,70 @@ export function StylesPanel() {
                 <PlusIcon />
               </button>
             </div>
-            {defs.map((d) => {
-              const expanded = expandedId === d.id;
-              const isDefault = styleDefaults[kind] === d.id;
-              return (
-                <div key={d.id}>
-                  <div className="list-row">
-                    <button
-                      className="btn-mini icon"
-                      aria-label={`Edit ${d.name}`}
-                      aria-expanded={expanded}
-                      title={expanded ? 'Collapse' : 'Edit style'}
-                      onClick={() => setExpandedId(expanded ? null : d.id)}
-                    >
-                      {expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
-                    </button>
-                    <StyleRowPreview def={d} />
-                    <StyleNameField id={d.id} name={d.name} />
-                    {/* Duplicate: a fresh "{name} copy" of this style, expanded
+            {!collapsed &&
+              defs.map((d) => {
+                const expanded = expandedId === d.id;
+                const isDefault = styleDefaults[kind] === d.id;
+                return (
+                  <div key={d.id}>
+                    <div className={'list-row' + (expanded ? ' style-open' : '')}>
+                      <button
+                        className="btn-mini icon"
+                        aria-label={`Edit ${d.name}`}
+                        aria-expanded={expanded}
+                        title={expanded ? 'Collapse' : 'Edit style'}
+                        onClick={() => setExpandedId(expanded ? null : d.id)}
+                      >
+                        {expanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
+                      </button>
+                      <StyleRowPreview def={d} />
+                      <StyleNameField id={d.id} name={d.name} />
+                      {/* Duplicate: a fresh "{name} copy" of this style, expanded
                         for immediate editing. */}
-                    <button
-                      className="btn-mini icon"
-                      aria-label={`Duplicate ${d.name}`}
-                      title="Duplicate style"
-                      onClick={() => setExpandedId(duplicateStyle(d.id))}
-                    >
-                      <CopyIcon />
-                    </button>
-                    {/* One persistent button (not a button/indicator swap):
+                      <button
+                        className="btn-mini icon"
+                        aria-label={`Duplicate ${d.name}`}
+                        title="Duplicate style"
+                        onClick={() => setExpandedId(duplicateStyle(d.id))}
+                      >
+                        <CopyIcon />
+                      </button>
+                      {/* One persistent button (not a button/indicator swap):
                         activating it re-renders the row, and replacing the
                         focused element would drop keyboard focus to <body>. */}
-                    <button
-                      className={`btn-mini icon${isDefault ? ' style-default-star' : ''}`}
-                      aria-pressed={isDefault}
-                      aria-label={
-                        isDefault ? `${d.name} is the default` : `Make ${d.name} the default`
-                      }
-                      title={
-                        isDefault
-                          ? `Default ${KIND_SINGULAR[kind]} style (new ${KIND_SINGULAR[kind]}s use it)`
-                          : 'Make default'
-                      }
-                      onClick={() => setDefaultStyle(d.id)}
-                    >
-                      {isDefault ? <StarFilledIcon /> : <StarIcon />}
-                    </button>
-                    <button
-                      className="btn-mini danger"
-                      aria-label={`Delete ${d.name}`}
-                      title={
-                        defs.length === 1
-                          ? 'The last style of a kind can’t be deleted'
-                          : 'Delete style (items keep their formatting)'
-                      }
-                      disabled={defs.length === 1}
-                      onClick={() => deleteStyle(d.id)}
-                    >
-                      <Cross2Icon />
-                    </button>
+                      <button
+                        className={`btn-mini icon${isDefault ? ' style-default-star' : ''}`}
+                        aria-pressed={isDefault}
+                        aria-label={
+                          isDefault ? `${d.name} is the default` : `Make ${d.name} the default`
+                        }
+                        title={
+                          isDefault
+                            ? `Default ${KIND_SINGULAR[kind]} style (new ${KIND_SINGULAR[kind]}s use it)`
+                            : 'Make default'
+                        }
+                        onClick={() => setDefaultStyle(d.id)}
+                      >
+                        {isDefault ? <StarFilledIcon /> : <StarIcon />}
+                      </button>
+                      <button
+                        className="btn-mini danger"
+                        aria-label={`Delete ${d.name}`}
+                        title={
+                          defs.length === 1
+                            ? 'The last style of a kind can’t be deleted'
+                            : 'Delete style (items keep their formatting)'
+                        }
+                        disabled={defs.length === 1}
+                        onClick={() => deleteStyle(d.id)}
+                      >
+                        <Cross2Icon />
+                      </button>
+                    </div>
+                    {expanded && <StyleEditor def={d} />}
                   </div>
-                  {expanded && <StyleEditor def={d} />}
-                </div>
-              );
-            })}
+                );
+              })}
           </Fragment>
         );
       })}
