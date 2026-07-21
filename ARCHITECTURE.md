@@ -453,11 +453,16 @@ All remaining fields optional and **never stored at default**:
   nearest stop — so a width edit never un-merges an interlined band. Non-tangent spacing never
   moves. New stops likewise spawn one tangent gap (not one flat cell) from their anchor. A label
   parked _tangent_ to a stop of the edited line additionally **edge-carries** (`labelCarryDelta`,
-  `dWidth/2` scaled by the marker square's support along the label's approach octant) so it
-  survives width **shrinks** — without which the label detaches and jumps to the centered
-  fallback. Both the renderer's adjacency test and this carry share `labelAdjacencyGate(half)`
+  `dWidth/2` scaled by the marker square's support along the label's approach octant, plus
+  `dGap` per axis for interline-gap edits) so it survives width **shrinks** and gap changes —
+  without which the label detaches and jumps to the centered fallback. Both the renderer's
+  adjacency test and this carry share `labelAdjacencyGate(half, gap)`
   ([geometry/orientation.ts](src/geometry/orientation.ts)), which floors adjacency at the
-  historical 1-cell gate so width only ever WIDENS it.
+  historical 1-cell gate and widens it by the stop's interline gap (the ghost lattice parks a
+  label against a gapped line at tangency + gap), so width and gap only ever WIDEN it. The gap
+  reaches the renderer through `stopGapOf(lines)` — threaded at every `labelLayoutLocal` /
+  `stationBoundaryRectsLocal` / `stationsForRect` / `stationWorldAABB` call site alongside
+  `stopHalfOf`/`stopDashOf` (same must-agree contract).
 - `interlineGap?: number` — **extra spacing against interlined neighbors, GEOMETRY**; world
   units, missing ⇒ 0 (classic edge-to-edge tangency); on the 0.25 grid, ≥ 0, ≤ `STOP_SIZE`,
   dropped at 0 (`canonicalStrokeWidth` idiom, `interlineGapOf`). Lets a thin line carry stop dots
@@ -466,9 +471,11 @@ All remaining fields optional and **never stored at default**:
   used identically by the band merge gate, the stripe offsets, the packed-stop spawn, and the
   repack — so where two neighbors disagree the pair uses the **larger** gap, and editing the gap
   re-packs tangent stop chains via `repackStationForSpacing` (the width-edit repack, renamed and
-  generalized from `repackStationForWidth`) so bands stay merged with dots centered. Ghost overlap
-  clearance deliberately stays width-only (dot bodies don't grow with the gap; only the pitch
-  does). `gap = 0` is a bit-exact identity — the interlining golden snapshot is unchanged.
+  generalized from `repackStationForWidth`) so bands stay merged with dots centered; the label
+  edge-carry rides the same edit (Δgap per axis), keeping a gap-parked label attached. Ghost
+  overlap clearance deliberately stays width-only (dot bodies don't grow with the gap; only the
+  pitch does), but the label **adjacency** gate does widen with the gap — see `width` above.
+  `gap = 0` is a bit-exact identity — the interlining golden snapshot is unchanged.
 - `strokeWidth?: number` — **casing rail, PRESENTATION**; centered on the body edges (half in /
   half out), missing ⇒ 0; rounded to a 0.25 grid (`LINE_STROKE_STEP`). Resolved live; never moves paths.
 - `strokeColor?: string` — casing color; missing ⇒ `'#ffffff'`; lowercased.

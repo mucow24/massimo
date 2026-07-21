@@ -102,6 +102,45 @@ describe('stationBoundaryRectsLocal — dash tick clearance parity', () => {
   });
 });
 
+describe('stationBoundaryRectsLocal — interline gap parity', () => {
+  it('a gap-parked autoAlign label keeps its beside-the-stop rect when stopGap is passed', () => {
+    // Label parked at the gap-4.25 ghost pitch east of the stop. With the
+    // gap lookup the boundary recognizes the park (same gate as the
+    // renderer): the label rect pins start-anchored at the marker edge, not
+    // centered on the far-off cell — this pins that the boundary geometry
+    // actually consumes the lookup.
+    const pitch = 18.25 / 14;
+    const st = makeStation({
+      id: 'A',
+      stops: [makeStop('L1', { row: 0, col: 0 })],
+      label: {
+        row: 0,
+        col: pitch,
+        rotation: 0,
+        offset: 0,
+        align: 'auto',
+        valign: 'middle',
+        autoAlign: true,
+      },
+    });
+    const detached = stationBoundaryRectsLocal(st).label!;
+    const parked = stationBoundaryRectsLocal(
+      st,
+      undefined,
+      undefined,
+      false,
+      undefined,
+      () => 4.25,
+    ).label!;
+    // Detached fallback centers the rect on the label cell; the gap-aware
+    // park pins its left edge at the stop edge + LABEL_GAP (7 + 3) − HIT_PAD.
+    const detachedMinX = Math.min(...detached.map((p) => p.x));
+    const parkedMinX = Math.min(...parked.map((p) => p.x));
+    expect(parkedMinX).toBeCloseTo(7 + 3 - 2, 6);
+    expect(parkedMinX).not.toBeCloseTo(detachedMinX, 1);
+  });
+});
+
 describe('stationBoundaryRectsLocal', () => {
   it('returns two 4-vertex rects (cells + label) in local coords', () => {
     const st = stationWithStop('A', 'L1', { x: 100, y: 100 });

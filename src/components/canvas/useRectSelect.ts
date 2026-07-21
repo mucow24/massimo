@@ -9,7 +9,7 @@ import {
   svgImagesForRect,
   textLabelsForRect,
 } from '../../geometry/stationBoundary';
-import { stopHalfOf } from '../../model/lineWidth';
+import { stopGapOf, stopHalfOf } from '../../model/lineWidth';
 import { stopDashOf } from '../../model/dashSize';
 import type { MapDoc, StationId } from '../../model/types';
 import type { Pt } from '../../geometry/polygonUnion';
@@ -33,6 +33,7 @@ function stationsForRectVisible(
     stopHalfOf(doc.lines),
     includeLocked,
     stopDashOf(doc.lines),
+    stopGapOf(doc.lines),
   );
 }
 

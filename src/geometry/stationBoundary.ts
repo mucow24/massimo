@@ -6,10 +6,12 @@ import { svgImageCorners } from './svgImage';
 import {
   DEFAULT_LABEL_STYLE,
   DEFAULT_STOP_DASH,
+  DEFAULT_STOP_GAP,
   DEFAULT_STOP_HALF,
   labelLayoutLocal,
   type LabelStyle,
   type StopDashFn,
+  type StopGapFn,
   type StopHalfFn,
 } from './labelLayout';
 import { normalizeAABB, rectIntersectsPolygon, type AABB } from './rectPolygon';
@@ -103,6 +105,9 @@ export function stationBoundaryRectsLocal(
   // Dash-tick lookup — pass `stopDashOf(lines)` alongside stopHalf so the
   // label rect tracks the autoAlign pin's tick clearance (see StopDashFn).
   stopDash: StopDashFn = DEFAULT_STOP_DASH,
+  // Interline-gap lookup — pass `stopGapOf(lines)` alongside stopHalf so the
+  // label rect recognizes gap-widened parks (see StopGapFn).
+  stopGap: StopGapFn = DEFAULT_STOP_GAP,
 ): StationBoundaryRects {
   const label = station.label;
   const labeled = !station.isWaypoint || revealWaypoint;
@@ -119,7 +124,7 @@ export function stationBoundaryRectsLocal(
   // Label rect — same layout the renderer uses (including the same per-stop
   // width lookup, so label snapping agrees), then rotated about the anchor
   // so the polygon aligns with the painted label.
-  const lay = labelLayoutLocal(station, style, undefined, stopHalf, stopDash);
+  const lay = labelLayoutLocal(station, style, undefined, stopHalf, stopDash, stopGap);
   const labelAnchor = { x: lay.anchorX, y: lay.anchorY };
   const rotateLabelCorner = (px: number, py: number): Pt =>
     rotateAround({ x: px, y: py }, labelAnchor, rotRad(label.rotation));
@@ -164,6 +169,7 @@ export function stationsForRect(
   stopHalf: StopHalfFn = DEFAULT_STOP_HALF,
   includeLocked = false,
   stopDash: StopDashFn = DEFAULT_STOP_DASH,
+  stopGap: StopGapFn = DEFAULT_STOP_GAP,
 ): StationId[] {
   const hits: StationId[] = [];
   for (const id of Object.keys(stations)) {
@@ -176,6 +182,7 @@ export function stationsForRect(
       stopHalf,
       false,
       stopDash,
+      stopGap,
     );
     const cellsWorld = b.cells.map((p) => stationLocalToWorld(st, p));
     if (rectIntersectsPolygon(rect, cellsWorld)) {

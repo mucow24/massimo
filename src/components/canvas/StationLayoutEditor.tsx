@@ -4,7 +4,7 @@ import { dispatchMirrored } from '../../state/mirrorDispatch';
 import { STOP_SIZE, stopCenterAt } from '../../geometry/orientation';
 import { cellsAABBLocal } from '../../geometry/stationBoundary';
 import { labelLayoutLocal } from '../../geometry/labelLayout';
-import { stopHalfOf, lineWidthOf } from '../../model/lineWidth';
+import { stopGapOf, stopHalfOf, lineWidthOf } from '../../model/lineWidth';
 import { stopDashOf } from '../../model/dashSize';
 import { useThemeColors } from '../../state/theme';
 import { legibleTextOn } from '../../util/color';
@@ -103,6 +103,7 @@ export function StationLayoutEditor({
     undefined,
     stopHalf,
     stopDashOf(lines),
+    stopGapOf(lines),
   );
 
   const shieldHandlers = inHandMode

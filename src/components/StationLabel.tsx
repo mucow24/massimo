@@ -4,7 +4,7 @@ import { useDoc, useSelection } from '../state/store';
 import { useThemeColors } from '../state/theme';
 import { useViewportStore } from '../state/viewportStore';
 import { labelLayoutLocal } from '../geometry/labelLayout';
-import { stopHalfOf } from '../model/lineWidth';
+import { stopGapOf, stopHalfOf } from '../model/lineWidth';
 import { stopDashOf } from '../model/dashSize';
 import { bumpWeightByIndex, effectiveStationStyleProps } from '../model/transforms';
 import { legibleTextOn } from '../util/color';
@@ -78,7 +78,14 @@ function useStationLabelLayout(station: Station, lines: Record<string, Line>) {
   // structurally a LabelStyle) and per-stop width lookup as the hit rect /
   // silhouette, so the painted anchor agrees with the boundary geometry next to
   // wide stops.
-  const lay = labelLayoutLocal(station, effStyle, undefined, stopHalfOf(lines), stopDashOf(lines));
+  const lay = labelLayoutLocal(
+    station,
+    effStyle,
+    undefined,
+    stopHalfOf(lines),
+    stopDashOf(lines),
+    stopGapOf(lines),
+  );
   return {
     angle: station.rotation * 45,
     rotationDeg: station.label.rotation * 45,
@@ -261,6 +268,7 @@ export function StationLabel({
         undefined,
         stopHalfOf(lines),
         stopDashOf(lines),
+        stopGapOf(lines),
       )
     : null;
 

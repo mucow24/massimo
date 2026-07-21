@@ -46,6 +46,21 @@ export type StopDashFn = (
 ) => { length: number; width: number } | null;
 export const DEFAULT_STOP_DASH: StopDashFn = () => null;
 
+/**
+ * Per-stop interline-gap lookup (world units), keyed by line id — how much
+ * the stop's line widens its packed pitch against a neighbor. Only the label
+ * adjacency gate reads it (a label parked by the ghost lattice against a
+ * gapped line sits at tangency + gap, and must still count as attached);
+ * extents and pins stay width-only, because the gap is empty space, not
+ * marker body. Production callers pass `stopGapOf(lines)` (model/
+ * lineWidth.ts) — at EVERY site that passes `stopHalfOf(lines)`, same
+ * must-agree contract as StopDashFn, or a gap-parked label paints beside its
+ * dot while the hit rect sits centered on the cell. The default reproduces
+ * the gapless pre-gap gate.
+ */
+export type StopGapFn = (lineId: string) => number;
+export const DEFAULT_STOP_GAP: StopGapFn = () => 0;
+
 export type LabelBaseline = 'central' | 'text-before-edge' | 'text-after-edge';
 
 /**
@@ -137,6 +152,8 @@ export function labelLayoutLocal(
   stopHalf: StopHalfFn = DEFAULT_STOP_HALF,
   // Per-stop dash-tick lookup — same must-agree contract as stopHalf.
   stopDash: StopDashFn = DEFAULT_STOP_DASH,
+  // Per-stop interline-gap lookup — same must-agree contract as stopHalf.
+  stopGap: StopGapFn = DEFAULT_STOP_GAP,
 ): LabelLayout {
   const stops = station.stops;
   const label = station.label;
@@ -206,6 +223,7 @@ export function labelLayoutLocal(
       // isWaypoint alone (not the view toggle) so layout never shifts with
       // the Show-waypoints overlay.
       station.isWaypoint ? DEFAULT_STOP_DASH : stopDash,
+      stopGap,
       station.rotation,
       lineAdvances,
     );
@@ -230,8 +248,26 @@ export function labelLayoutLocal(
     // (perpendicular) doesn't snap. The 0 threshold is safe because in the
     // 8-cell grid the smallest non-zero |dot| is ~0.707; perpendicular
     // cells are exactly 0 (mod fp noise).
-    const plus = snapInfoInHalfPlane(stops, phantomDot, label, readCos, readSin, 1, stopHalf);
-    const minus = snapInfoInHalfPlane(stops, phantomDot, label, readCos, readSin, -1, stopHalf);
+    const plus = snapInfoInHalfPlane(
+      stops,
+      phantomDot,
+      label,
+      readCos,
+      readSin,
+      1,
+      stopHalf,
+      stopGap,
+    );
+    const minus = snapInfoInHalfPlane(
+      stops,
+      phantomDot,
+      label,
+      readCos,
+      readSin,
+      -1,
+      stopHalf,
+      stopGap,
+    );
     if (plus.inHalfPlane) {
       textAnchor = 'end';
       anchorX = labelCenter.x + dirPlus.anchor.x - LABEL_GAP * readCos;
@@ -415,6 +451,7 @@ function snapInfoInHalfPlane(
   readSin: number,
   sign: 1 | -1,
   stopHalf: StopHalfFn,
+  stopGap: StopGapFn,
 ): SnapInfo {
   // Perpendicular gate in cell-space: HALF / STOP_SIZE = 0.5. A stop with
   // |perp| > this sits outside the text's perpendicular envelope, so the
@@ -425,9 +462,9 @@ function snapInfoInHalfPlane(
   let inHalfPlane = false;
   let inWayStopProj: number | null = null;
   let inWayStopHalf: number | null = null;
-  const consider = (dRow: number, dCol: number, half: number) => {
+  const consider = (dRow: number, dCol: number, half: number, gap: number) => {
     // Accept any cell within the adjacency gate (see labelAdjacencyGate).
-    if (Math.max(Math.abs(dRow), Math.abs(dCol)) > labelAdjacencyGate(half)) return;
+    if (Math.max(Math.abs(dRow), Math.abs(dCol)) > labelAdjacencyGate(half, gap)) return;
     const proj = dCol * readCos + dRow * readSin;
     if (sign * proj <= 1e-6) return;
     inHalfPlane = true;
@@ -446,8 +483,9 @@ function snapInfoInHalfPlane(
       inWayStopHalf = half;
     }
   };
-  for (const s of stops) consider(s.row - label.row, s.col - label.col, stopHalf(s.lineId));
-  if (phantomDot) consider(phantomDot.row - label.row, phantomDot.col - label.col, HALF);
+  for (const s of stops)
+    consider(s.row - label.row, s.col - label.col, stopHalf(s.lineId), stopGap(s.lineId));
+  if (phantomDot) consider(phantomDot.row - label.row, phantomDot.col - label.col, HALF, 0);
   return { inHalfPlane, inWayStopProj, inWayStopHalf };
 }
 
@@ -546,6 +584,7 @@ function autoAlignInfo(
   fontSize: number,
   stopHalf: StopHalfFn,
   stopDash: StopDashFn,
+  stopGap: StopGapFn,
   // The station's own rotation — only the dash tick's on-axis tie fallback
   // reads it (dashOutward evaluates that fallback in world space).
   stationRotation: Rotation,
@@ -556,6 +595,7 @@ function autoAlignInfo(
     dRow: number;
     dCol: number;
     half: number;
+    gap: number;
     orientation: StopOrientation | null;
     dash: { length: number; width: number } | null;
   }
@@ -567,6 +607,7 @@ function autoAlignInfo(
     dRow: s.row - label.row,
     dCol: s.col - label.col,
     half: stopHalf(s.lineId),
+    gap: stopGap(s.lineId),
     orientation: s.orientation,
     dash: stopDash(s, stops),
   }));
@@ -575,6 +616,7 @@ function autoAlignInfo(
       dRow: phantomDot.row - label.row,
       dCol: phantomDot.col - label.col,
       half: HALF,
+      gap: 0,
       orientation: null,
       dash: null,
     });
@@ -596,7 +638,7 @@ function autoAlignInfo(
   for (const c of candidates) {
     const cheb = Math.max(Math.abs(c.dRow), Math.abs(c.dCol));
     if (cheb < 1e-6) continue; // a stop on the label cell has no direction
-    if (cheb > labelAdjacencyGate(c.half)) continue; // same gate as the legacy snap
+    if (cheb > labelAdjacencyGate(c.half, c.gap)) continue; // same gate as the legacy snap
     const proj = c.dCol * readCos + c.dRow * readSin;
     const perp = c.dCol * -readSin + c.dRow * readCos;
     const d2 = c.dRow * c.dRow + c.dCol * c.dCol;
