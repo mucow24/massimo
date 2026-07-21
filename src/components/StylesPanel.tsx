@@ -1,4 +1,4 @@
-import { Fragment, useRef, useState } from 'react';
+import { Fragment, useState } from 'react';
 import {
   ChevronDownIcon,
   ChevronRightIcon,
@@ -13,6 +13,7 @@ import { stylesOfKind } from '../model/styles';
 import { NONE_STOP_DOT_STYLE_ID } from '../model/dotStyle';
 import { StyleEditor } from './StyleEditor';
 import { StopGlyph } from './StopGlyph';
+import { useInlineRename } from './useInlineRename';
 import type { StyleDef, StyleKind } from '../model/types';
 
 const KIND_ORDER: readonly StyleKind[] = [
@@ -72,43 +73,10 @@ function StyleRowPreview({ def }: { def: StyleDef }) {
  */
 function StyleNameField({ id, name }: { id: string; name: string }) {
   const renameStyle = useDoc((s) => s.renameStyle);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-  // Escape sets this before blurring so the blur-driven commit is skipped.
-  const cancelledRef = useRef(false);
-
-  const startEdit = () => {
-    setDraft(name);
-    cancelledRef.current = false;
-    setEditing(true);
-  };
-
-  const commit = () => {
-    setEditing(false);
-    if (cancelledRef.current) return;
-    renameStyle(id, draft);
-  };
+  const { editing, start, inputProps } = useInlineRename((draft) => renameStyle(id, draft));
 
   if (editing) {
-    return (
-      <input
-        className="style-name-input grow"
-        aria-label="Style name"
-        value={draft}
-        autoFocus
-        onFocus={(e) => e.currentTarget.select()}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.currentTarget.blur();
-          } else if (e.key === 'Escape') {
-            cancelledRef.current = true;
-            e.currentTarget.blur();
-          }
-        }}
-      />
-    );
+    return <input className="style-name-input grow" aria-label="Style name" {...inputProps} />;
   }
 
   return (
@@ -117,7 +85,7 @@ function StyleNameField({ id, name }: { id: string; name: string }) {
       className="style-name grow"
       aria-label={`Rename ${name}`}
       title="Rename style"
-      onClick={startEdit}
+      onClick={() => start(name)}
     >
       {name}
     </button>
