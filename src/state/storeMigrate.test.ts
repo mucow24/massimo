@@ -1315,3 +1315,71 @@ describe('cancelAppendMode', () => {
     expect(useSelection.getState().uiMode.kind).toBe('idle');
   });
 });
+
+// The GC used to live only inside cancelAppendMode, reachable from Esc and the
+// canvas-background click — every OTHER exit (the T/L shortcuts, toolbar
+// re-entry, clicking a free item / a foreign stripe) bypassed it and leaked
+// the station-less placeholder into the doc. The GC now rides a mode-exit
+// subscription, so ANY transition out of appending-to-line collects it.
+describe('append-mode placeholder GC on bypass exits', () => {
+  beforeEach(() => {
+    useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
+    useSelection.setState({ ...useSelection.getState(), uiMode: { kind: 'idle' } });
+  });
+
+  it('collects the empty placeholder when the mode exits WITHOUT cancelAppendMode', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1' as LineId, stations: [] }) },
+      lineOrder: ['L1' as LineId],
+      lineCounter: 3,
+    });
+    useSelection.getState().startAppend('L1' as LineId);
+
+    // The T-shortcut path: setUiMode directly, no cancelAppendMode call.
+    useSelection.getState().setUiMode({ kind: 'creating-transfer', anchor: null });
+
+    expect(useDoc.getState().lines['L1' as LineId]).toBeUndefined();
+    expect(useDoc.getState().lineCounter).toBe(2);
+    expect(useSelection.getState().uiMode.kind).toBe('creating-transfer');
+  });
+
+  it('collects the elder placeholder when switching straight to editing another line', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: {
+        L1: makeLine({ id: 'L1' as LineId, stations: [] }),
+        L2: makeLine({ id: 'L2' as LineId, stations: ['A' as StationId] }),
+      },
+      lineOrder: ['L1' as LineId, 'L2' as LineId],
+      stations: { A: stationWithStop('A' as StationId, 'L2' as LineId, { x: 0, y: 0 }) },
+      lineCounter: 3,
+    });
+    useSelection.getState().startAppend('L1' as LineId);
+
+    useSelection.getState().startAppend('L2' as LineId);
+
+    expect(useDoc.getState().lines['L1' as LineId]).toBeUndefined();
+    expect(useDoc.getState().lines['L2' as LineId]).toBeDefined();
+    expect(useSelection.getState().uiMode).toMatchObject({
+      kind: 'appending-to-line',
+      lineId: 'L2',
+    });
+  });
+
+  it('keeps a placeholder that gained stations, whatever the exit', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1' as LineId, stations: ['A' as StationId] }) },
+      lineOrder: ['L1' as LineId],
+      stations: { A: stationWithStop('A' as StationId, 'L1' as LineId, { x: 0, y: 0 }) },
+      lineCounter: 5,
+    });
+    useSelection.getState().startAppend('L1' as LineId);
+
+    useSelection.getState().setUiMode({ kind: 'layering' });
+
+    expect(useDoc.getState().lines['L1' as LineId]).toBeDefined();
+    expect(useDoc.getState().lineCounter).toBe(5);
+  });
+});
