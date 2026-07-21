@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `41c1438` (2026-07-21) — verified against the live source. Changes since the previous marker (`f2b8a1a`, #304), the big one being the doc-scoped "Stop dots" style library: `stopDot` is now a 7th styleable kind whose styles live in a small per-doc library (`bakeStopDotLibrary`, persist v19), the per-line/per-stop dot TYPE became a covered `LineStyleProps` field (`singletonDotStyleId`/`multiDotStyleId`, persist v20), and `DotStyle` gained a required `strokeAlign` (center/inside/outside, persist v21) and an optional `serviceCodeColor` (absent ⇒ B/W auto-contrast). Persist `version` is now `21`. The viewport store gained two local chrome preferences — `dayCanvasColor` (white/gray/black day paper) and `darkUiInDay` (chrome-only dark UI while the map stays in day mode, driving `chromeDark`) — and `themeColors` takes `dayCanvasColor`. All dimensional inputs (dot size, transfer thickness, route-bullet size) unified onto the 0.25 quarter grid (#321). This code-health pass also extracted the shared `SegmentedToggle` (one implementation for the ~13 inline pick-one Radix `ToggleGroup` clusters) and moved `snapToStep` to a leaf `util/grid` shared by every quarter-grid canonicalizer.**
+**Up to date as of commit `832e2a2` (2026-07-21) — verified against the live source. Since #321: a per-line `interlineGap` (GEOMETRY, 0.25 grid, drop-at-0) inserts spacing between interlined neighbors — `tangentGap` now takes both widths AND both gaps (`(wA+wB)/2 + max(gapA,gapB)`), threaded through the band merge gate, stripe offsets, spawn, and the width-edit repack (`repackStationForWidth` → `repackStationForSpacing`); `gap=0` is a bit-exact identity (#323). Its exposed hole/seam edges surfaced two clip-precision fixes: clip content is emitted in ×64 local coords to beat Blink's ~1-unit clip-resource raster snap (shared `clipRaster.ts`, used by both `SeamClips` and `RegionExcludeClips`), and the region-exclude outer ring is a content-sized AABB (`regionClipBounds`) rather than a ±500000 constant (#323/#324). Earlier changes since `f2b8a1a` (#304), the big one being the doc-scoped "Stop dots" style library: `stopDot` is now a 7th styleable kind whose styles live in a small per-doc library (`bakeStopDotLibrary`, persist v19), the per-line/per-stop dot TYPE became a covered `LineStyleProps` field (`singletonDotStyleId`/`multiDotStyleId`, persist v20), and `DotStyle` gained a required `strokeAlign` (center/inside/outside, persist v21) and an optional `serviceCodeColor` (absent ⇒ B/W auto-contrast). Persist `version` is now `21`. The viewport store gained two local chrome preferences — `dayCanvasColor` (white/gray/black day paper) and `darkUiInDay` (chrome-only dark UI while the map stays in day mode, driving `chromeDark`) — and `themeColors` takes `dayCanvasColor`. All dimensional inputs (dot size, transfer thickness, route-bullet size) unified onto the 0.25 quarter grid (#321). This code-health pass also extracted the shared `SegmentedToggle` (one implementation for the ~13 inline pick-one Radix `ToggleGroup` clusters) and moved `snapToStep` to a leaf `util/grid` shared by every quarter-grid canonicalizer.**
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
 > caveats. Written for an AI assistant (or new contributor) who needs the full picture
@@ -458,6 +458,17 @@ All remaining fields optional and **never stored at default**:
   fallback. Both the renderer's adjacency test and this carry share `labelAdjacencyGate(half)`
   ([geometry/orientation.ts](src/geometry/orientation.ts)), which floors adjacency at the
   historical 1-cell gate so width only ever WIDENS it.
+- `interlineGap?: number` — **extra spacing against interlined neighbors, GEOMETRY**; world
+  units, missing ⇒ 0 (classic edge-to-edge tangency); on the 0.25 grid, ≥ 0, ≤ `STOP_SIZE`,
+  dropped at 0 (`canonicalStrokeWidth` idiom, `interlineGapOf`). Lets a thin line carry stop dots
+  fatter than its stripe without adjacent dots overlapping. Like `width` this is GEOMETRY: it feeds
+  the single tangency choke point `tangentGap(wA, wB, gapA, gapB) = (wA+wB)/2 + max(gapA, gapB)` —
+  used identically by the band merge gate, the stripe offsets, the packed-stop spawn, and the
+  repack — so where two neighbors disagree the pair uses the **larger** gap, and editing the gap
+  re-packs tangent stop chains via `repackStationForSpacing` (the width-edit repack, renamed and
+  generalized from `repackStationForWidth`) so bands stay merged with dots centered. Ghost overlap
+  clearance deliberately stays width-only (dot bodies don't grow with the gap; only the pitch
+  does). `gap = 0` is a bit-exact identity — the interlining golden snapshot is unchanged.
 - `strokeWidth?: number` — **casing rail, PRESENTATION**; centered on the body edges (half in /
   half out), missing ⇒ 0; rounded to a 0.25 grid (`LINE_STROKE_STEP`). Resolved live; never moves paths.
 - `strokeColor?: string` — casing color; missing ⇒ `'#ffffff'`; lowercased.
@@ -1169,11 +1180,12 @@ This produces the Vignelli parallel-stripe look. `buildBandGeometry` (the heart)
 4. **Enrich & sort** ascending by perpendicular projection — this assigns low indices to the
    right-of-motion side, matching `stripeOffsetsForWidths` order.
 5. **Greedy adjacency merge**: two consecutive segments merge iff they are **exactly tangent** at
-   both ends (perp step ≈ `tangentGap(prevW, w)` within `TOL=0.5`) and their parallel positions
+   both ends (perp step ≈ `tangentGap(prevW, w, prevGap, gap)` within `BAND_MERGE_TOL` = 0.5 —
+   the gap widens the tangent step by `max(prevGap, gap)`) and their parallel positions
    match. Otherwise flush and start a new band. (Mixed-width pairs at the legacy unit gap stay
    separate — they'd overlap.)
 6. **`buildBandSpec`**: centerline endpoints = centroid of the group's stop positions;
-   `stripeOffsets = stripeOffsetsForWidths(widths)` (mean-centered tangency positions —
+   `stripeOffsets = stripeOffsetsForWidths(widths, gaps)` (mean-centered tangency positions —
    bit-exactly `(k−(n−1)/2)·STOP_SIZE` for uniform width 14); **radius bump** (`idealR = R +
 maxAbsOffset` so the innermost stripe still curves at ≥ R); **marker-fit cap** (cap R so the
    post-fillet straight run ≥ the widest marker half-width — single-stripe bands may cap _below_
@@ -1883,6 +1895,18 @@ Each is confirmed in source/tests; file pointers included.
   painted path on every existing map while staying green elsewhere. (`interlining.golden.test.ts`)
 - **`toFixed(6)` in the router is load-bearing** — lower precision caused band/marker hash-bleed.
   ([router.ts](src/geometry/router.ts))
+- **`clipPath`/`mask` content is raster-snapped by Blink** — the browser rasterizes clip _resource_
+  content on a ~1-unit grid in its local user space (zoom-independent), so a world-coordinate clip
+  edge can snap by up to a whole world unit and erase the clipped line over exposed background. Both
+  `SeamClips` and `RegionExcludeClips` defend by emitting clip content in ×64 local coords under
+  `transform="scale(1/64)"` — the shared `CLIP_RASTER_SCALE`/inverse in
+  [clipRaster.ts](src/components/canvas/clipRaster.ts) — shrinking the snap to 1/64 unit. Invisible
+  under full tangency; the interline gap (which exposes bare background at hole/seam edges) is what
+  surfaced it. Relatedly, the region-exclude outer ring is a **content-sized AABB**
+  (`regionClipBounds`, bands + markers, padded), not the old `±500000` constant whose device-space
+  magnitude was itself a deep-zoom precision hazard; and `EXCLUSION_INSET` (the hole's retreat
+  inside the winner) is `0.00625`, tuned near-flush so a loser can't bite the winner's edge once
+  that edge faces open background instead of tangent paint.
 - **Single- vs multi-stripe radius cap diverge** — single-stripe bands may cap _below_ the user's
   R (a tighter curve reads as intentional); multi-stripe bands floor _at_ R (dropping below
   collapses inner stripes). ([interlining.ts](src/geometry/interlining.ts))
