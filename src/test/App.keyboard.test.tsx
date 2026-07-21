@@ -1264,6 +1264,108 @@ describe('App keyboard: station-editor Escape step-out ladder', () => {
   });
 });
 
+// Radix Select/DropdownMenu content and the library dialog do NOT stop
+// keydown propagation, so the window handler hears every key pressed while
+// the user is browsing a dropdown or a modal. Focus inside any open overlay
+// ([role=dialog], [role=listbox], [role=menu]) must read as a form context:
+// arrows browse options (not nudge the canvas), letters run typeahead (not
+// switch modes — which would wipe the selection and unmount the very panel
+// being browsed), and Delete must not edit the doc behind a modal.
+describe('App keyboard shortcuts: focus inside an open overlay', () => {
+  const mountOverlay = (role: 'dialog' | 'listbox' | 'menu') => {
+    const overlay = document.createElement('div');
+    overlay.setAttribute('role', role);
+    const item = document.createElement(role === 'dialog' ? 'button' : 'div');
+    if (role !== 'dialog') item.setAttribute('role', role === 'listbox' ? 'option' : 'menuitem');
+    item.tabIndex = 0;
+    overlay.appendChild(item);
+    document.body.appendChild(overlay);
+    return { overlay, item };
+  };
+
+  it('ArrowDown on a listbox option does not nudge the selected item', () => {
+    render(<App />);
+    useDoc.setState({
+      ...useDoc.getState(),
+      routeBullets: { rb: makeRouteBullet({ id: 'rb', x: 10, y: 10 }) },
+    });
+    useSelection.getState().selectRouteBullet('rb');
+    useDoc.temporal.getState().clear();
+    const { overlay, item } = mountOverlay('listbox');
+    try {
+      fireEvent.keyDown(item, { key: 'ArrowDown' });
+      expect(useDoc.getState().routeBullets.rb.y).toBe(10);
+      expect(historyDepth()).toBe(0);
+    } finally {
+      document.body.removeChild(overlay);
+    }
+  });
+
+  it("'l' on a listbox option does not toggle layering mode under the dropdown", () => {
+    render(<App />);
+    useDoc.setState({
+      ...useDoc.getState(),
+      routeBullets: { rb: makeRouteBullet({ id: 'rb', x: 10, y: 10 }) },
+    });
+    useSelection.getState().selectRouteBullet('rb');
+    const { overlay, item } = mountOverlay('listbox');
+    try {
+      fireEvent.keyDown(item, { key: 'l' });
+      expect(useSelection.getState().uiMode.kind).toBe('idle');
+      // The mode switch would also have wiped the selection (unmounting the
+      // popover hosting the open dropdown).
+      expect(useSelection.getState().selectedRouteBulletIds).toEqual(['rb']);
+    } finally {
+      document.body.removeChild(overlay);
+    }
+  });
+
+  it('Delete with focus inside a dialog does not delete the canvas selection', () => {
+    render(<App />);
+    const s = useDoc.getState().addStation(10, 10);
+    useSelection.getState().selectStation(s);
+    const { overlay, item } = mountOverlay('dialog');
+    try {
+      fireEvent.keyDown(item, { key: 'Delete' });
+      expect(useDoc.getState().stations[s]).toBeDefined();
+      expect(useSelection.getState().selectedStationIds).toEqual([s]);
+    } finally {
+      document.body.removeChild(overlay);
+    }
+  });
+
+  it('digits inside an open menu do not flip snap toggles', () => {
+    render(<App />);
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES } });
+    const before = useSnapPrefs.getState().modes;
+    const { overlay, item } = mountOverlay('menu');
+    try {
+      fireEvent.keyDown(item, { key: '1' });
+      expect(useSnapPrefs.getState().modes).toEqual(before);
+    } finally {
+      document.body.removeChild(overlay);
+    }
+  });
+});
+
+describe('App keyboard shortcuts: Space auto-repeat', () => {
+  it('preventDefaults repeat Space keydowns so a focused button cannot re-activate on keyup', () => {
+    // The UA arms a focused button's native Space activation per unprevented
+    // keydown and fires it on keyup. The first (non-repeat) press is
+    // prevented, but if auto-repeat keydowns pass through unprevented, a
+    // toolbar toggle that silently kept focus after a mouse click re-clicks
+    // itself when Space is released after a held pan (the PR #316 class,
+    // generalized to every non-Menu button).
+    render(<App />);
+    expect(fireEvent.keyDown(window, { key: ' ' })).toBe(false); // prevented
+    expect(useSelection.getState().spaceHeld).toBe(true);
+    expect(fireEvent.keyDown(window, { key: ' ', repeat: true })).toBe(false); // still prevented
+    expect(useSelection.getState().spaceHeld).toBe(true);
+    fireEvent.keyUp(window, { key: ' ' });
+    expect(useSelection.getState().spaceHeld).toBe(false);
+  });
+});
+
 // Groups don't nest (store.ts): the global keyboard listener can fire while a
 // canvas drag's history group is open. Every shortcut that opens its own group
 // must gate on isHistoryGrouping() like the Alt+arrow fan-out already does —

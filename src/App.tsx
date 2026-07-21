@@ -174,11 +174,21 @@ export default function App() {
       const role = target?.getAttribute?.('role');
       const ariaFormRole =
         role === 'checkbox' || role === 'radio' || role === 'switch' || role === 'combobox';
+      // Focus inside an open overlay — a Radix Select/DropdownMenu panel or
+      // the library dialog — reads as a form context too. Those panels don't
+      // stop keydown propagation, so without this, arrows browsing a dropdown
+      // also nudge the canvas, letters switch modes (wiping the selection and
+      // unmounting the very panel being browsed), and Delete edits the doc
+      // behind a modal. The item popovers are plain divs (no dialog role), so
+      // canvas shortcuts keep working while one is merely open.
+      // Optional-call: the event target can be the window itself.
+      const inOverlay = !!target?.closest?.('[role="dialog"],[role="listbox"],[role="menu"]');
       const inForm =
         (tag === 'INPUT' && inputType !== 'range' && inputType !== 'color') ||
         tag === 'TEXTAREA' ||
         tag === 'SELECT' ||
         ariaFormRole ||
+        inOverlay ||
         target?.isContentEditable;
       const inFormControl =
         tag === 'INPUT' ||
@@ -186,6 +196,7 @@ export default function App() {
         tag === 'SELECT' ||
         ariaFormRole ||
         role === 'slider' ||
+        inOverlay ||
         !!target?.isContentEditable;
 
       if (e.key === 'Escape') {
@@ -608,9 +619,14 @@ export default function App() {
         );
         return;
       }
-      if (!inFormControl && e.key === ' ' && !e.repeat) {
+      if (!inFormControl && e.key === ' ') {
+        // preventDefault EVERY non-form Space keydown, repeats included. The
+        // UA arms a focused button's native Space activation per unprevented
+        // keydown and fires it on keyup — so if repeats passed through, a
+        // toolbar toggle that silently kept focus after a mouse click would
+        // re-click itself when Space is released after a held pan.
         e.preventDefault();
-        setSpaceHeld(true);
+        if (!e.repeat) setSpaceHeld(true);
         return;
       }
     };
