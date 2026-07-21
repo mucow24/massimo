@@ -2910,10 +2910,13 @@ body:has(.app[data-theme='dark']) {
   text-align: right;
 }
 
-/* Disclosure that collapses the Style section's manual overrides (Size →
-   Tracking). A quiet full-width sub-header: muted caret + label, warms to full
-   text color on hover. The style picker above it always stays visible. */
-.station-popover .style-collapse-toggle {
+/* Disclosure that collapses a popover's style detail: the station popover's
+   manual typography overrides (Size → Tracking) and the line popover's full
+   parameter stack (Line width → Seam color). A quiet full-width sub-header:
+   muted caret + label, warms to full text color on hover. The style picker
+   above it always stays visible. */
+.station-popover .style-collapse-toggle,
+.line-popover .style-collapse-toggle {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -2928,10 +2931,22 @@ body:has(.app[data-theme='dark']) {
   cursor: pointer;
   text-align: left;
 }
-.station-popover .style-collapse-toggle:hover:not(:disabled) {
+.station-popover .style-collapse-toggle:hover:not(:disabled),
+.line-popover .style-collapse-toggle:hover:not(:disabled) {
   color: var(--text);
 }
-.station-popover .style-collapse-toggle > svg {
+.station-popover .style-collapse-toggle > svg,
+.line-popover .style-collapse-toggle > svg {
   flex: none;
   color: var(--text-faint);
+}
+
+/* Static section header inside a popover's style detail (e.g. the line
+   popover's "Station stop dot types and sizes" group) — the collapse
+   toggle's typography without the button affordance. */
+.line-popover .popover-section-header {
+  padding: 2px 0;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--text-muted);
 }

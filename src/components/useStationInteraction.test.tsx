@@ -476,22 +476,32 @@ describe('useStationInteraction — append-to-line (Edit Stops)', () => {
     expect(appendCursor()).toEqual({ kind: 'edge', from: 'T', to: 'U' });
   });
 
-  it('right-click during Edit Stops ROTATES (removal is the × chip / Delete key)', () => {
-    // Auto-orient often lands a fresh station in a weird orientation while
-    // laying out a line — right-click must stay the quick fix, never a
-    // one-slip-away deletion.
+  it('right-click is unwired during Edit Stops — it bubbles to the canvas-root exit', () => {
+    // Edit Stops is line construction, not station placement: rotate (like
+    // drag) sits outside the mode. Leaving the handler off lets the event
+    // bubble to the MapCanvas root, where right-click exits the mode.
     useSelection.getState().startAppend('L1' as LineId);
     useSelection.getState().setAppendCursor({ kind: 'station', stationId: 'S' as StationId });
     const lines = {
       L1: makeLine({ id: 'L1' as LineId, stations: ['T', 'S', 'U'] as StationId[] }),
     };
     const { result } = setup(stationS(), lines);
-    act(() =>
-      result.current.handlers.onContextMenu?.(pointerEvent({}) as unknown as React.MouseEvent),
-    );
-    expect(rotateStation).toHaveBeenCalledWith('S');
-    expect(removeStationFromLine).not.toHaveBeenCalled();
-    expect(useSelection.getState().uiMode.kind).toBe('appending-to-line');
+    expect(result.current.handlers.onContextMenu).toBeUndefined();
+    expect(rotateStation).not.toHaveBeenCalled();
+  });
+
+  it('never starts a drag during Edit Stops — micro-drags were eating connect clicks', () => {
+    // A few pixels of wobble during a rapid connect-click used to BOTH move
+    // the station AND suppress the click (dragState.suppressClick), so the
+    // connect silently died and geometry shifted. Station placement lives
+    // outside the mode; exit (right-click) to move a station.
+    useSelection.getState().startAppend('L1' as LineId);
+    const lines = {
+      L1: makeLine({ id: 'L1' as LineId, stations: ['S', 'T'] as StationId[] }),
+    };
+    const { result, onStartDrag } = setup(stationS(), lines);
+    expect(result.current.handlers.onPointerDown).toBeUndefined();
+    expect(onStartDrag).not.toHaveBeenCalled();
   });
 });
 
@@ -580,6 +590,61 @@ describe('useStationInteraction — locked stations are click-through unless sel
     expect(result.current.hitless).toBe(false);
     click(result.current.handlers, pointerEvent({}) as unknown as React.MouseEvent);
     expect(addStationToLine).toHaveBeenCalledWith('L1', 'S');
+  });
+});
+
+describe('useStationInteraction — Edit Stops cursor', () => {
+  // The cursor is derived from the SAME decision matrix the click uses, so it
+  // never promises an action the click wouldn't take: 'copy' (the OS
+  // arrow-with-plus) when the click puts the station on the line, 'pointer'
+  // when it arms/jumps/disarms, 'default' when the click means nothing. The
+  // four-arrow 'move' never shows — stations don't drag in Edit Stops.
+  const linesST = () => ({
+    L1: makeLine({ id: 'L1' as LineId, stations: ['S', 'T'] as StationId[] }),
+  });
+
+  it("nothing armed: 'pointer' over a member (click arms it)", () => {
+    useSelection.getState().startAppend('L1' as LineId);
+    const { result } = setup(stationS(), linesST());
+    expect(result.current.cursor).toBe('pointer');
+  });
+
+  it("nothing armed: 'default' over a non-member (click is inert)", () => {
+    useSelection.getState().startAppend('L1' as LineId);
+    const lines = { L1: makeLine({ id: 'L1' as LineId, stations: ['T', 'U'] as StationId[] }) };
+    const { result } = setup(stationS(), lines);
+    expect(result.current.cursor).toBe('default');
+  });
+
+  it("station cursor armed: 'copy' over any other station (click connects)", () => {
+    useSelection.getState().startAppend('L1' as LineId);
+    useSelection.getState().setAppendCursor({ kind: 'station', stationId: 'T' as StationId });
+    const { result } = setup(stationS(), linesST());
+    expect(result.current.cursor).toBe('copy');
+  });
+
+  it("station cursor armed: 'pointer' over the armed station itself (click disarms)", () => {
+    useSelection.getState().startAppend('L1' as LineId);
+    useSelection.getState().setAppendCursor({ kind: 'station', stationId: 'S' as StationId });
+    const { result } = setup(stationS(), linesST());
+    expect(result.current.cursor).toBe('pointer');
+  });
+
+  it("edge cursor armed: 'copy' over a station that would splice in", () => {
+    useSelection.getState().startAppend('L1' as LineId);
+    useSelection
+      .getState()
+      .setAppendCursor({ kind: 'edge', from: 'T' as StationId, to: 'U' as StationId });
+    const lines = { L1: makeLine({ id: 'L1' as LineId, stations: ['T', 'U'] as StationId[] }) };
+    const { result } = setup(stationS(), lines);
+    expect(result.current.cursor).toBe('copy');
+  });
+
+  it('hand mode still wins with grab during Edit Stops', () => {
+    useSelection.getState().startAppend('L1' as LineId);
+    useSelection.setState({ ...useSelection.getState(), toolMode: 'hand' });
+    const { result } = setup(stationS(), linesST());
+    expect(result.current.cursor).toBe('grab');
   });
 });
 

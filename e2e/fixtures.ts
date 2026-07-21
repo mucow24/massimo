@@ -334,6 +334,17 @@ export async function clickAtWithModifiers(
  * coordinate click there lands on the panel, which swallows canvas events.
  * Parking uses the real drag-handle affordance, so tests exercise honest UX.
  */
+/**
+ * Expand the line popover's collapsed style detail (Line width → Seam color).
+ * The disclosure is remembered per browser profile, but every spec starts on
+ * fresh storage, so it opens collapsed — call this before driving any of the
+ * style-parameter controls.
+ */
+export async function openLineStyleDetail(page: Page): Promise<void> {
+  const toggle = page.getByRole('button', { name: 'Style detail' });
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+}
+
 export async function parkPopover(page: Page): Promise<void> {
   const header = page.locator('.bullet-popover .header, .text-label-popover .header').first();
   const box = await header.boundingBox();

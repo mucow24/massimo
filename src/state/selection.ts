@@ -220,8 +220,13 @@ export interface SelectionState {
   toolMode: 'arrow' | 'hand';
   // Spacebar held → temporarily acts like hand mode.
   spaceHeld: boolean;
+  // Alt held → Edit Stops previews the create-station ghost under the cursor
+  // (alt-click is the create gesture there). Tracked like spaceHeld: set on
+  // keydown, cleared on keyup AND window blur (alt-tab eats the keyup).
+  altHeld: boolean;
   setToolMode: (m: 'arrow' | 'hand') => void;
   setSpaceHeld: (v: boolean) => void;
+  setAltHeld: (v: boolean) => void;
   selectStation: (id: StationId | null) => void;
   toggleStationSelection: (id: StationId) => void;
   setStationSelection: (ids: StationId[]) => void;
@@ -455,8 +460,10 @@ export const useSelection = create<SelectionState>()(
       mirrorMatching: false,
       toolMode: 'arrow',
       spaceHeld: false,
+      altHeld: false,
       setToolMode: (m) => set({ toolMode: m }),
       setSpaceHeld: (v) => set({ spaceHeld: v }),
+      setAltHeld: (v) => set({ altHeld: v }),
 
       // The single source of truth for mode transitions. Entering any non-idle
       // mode wipes all primary selections; every transition (either direction)

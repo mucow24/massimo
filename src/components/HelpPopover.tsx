@@ -90,10 +90,11 @@ const SECTIONS: HelpSection[] = [
       { k: 'Alt+click canvas', effect: 'Create a station and connect/splice it in one go' },
       {
         k: 'Del / ×',
-        effect: 'Remove the armed stop or segment — right-click also removes a segment',
+        effect: 'Remove the armed stop or segment',
       },
       { k: 'Shift+click segment', effect: 'Cycle that segment’s style' },
       { k: 'Esc', effect: 'Drop the cursor, then exit the editor' },
+      { k: 'Right-click', effect: 'Exit the editor' },
       { k: 'Tag', effect: 'Drag slides it along the line — right-click cycles text/chevron' },
     ],
   },
