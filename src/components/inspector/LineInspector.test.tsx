@@ -3,12 +3,18 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LineInspector } from './LineInspector';
 import { useDoc, useSelection } from '../../state/store';
+import { useLineEditorPrefs } from '../../state/lineEditorPrefs';
 import { historyDepth } from '../../state/history';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { makeDoc, makeLine, makeStation, makeStop, makeStyle } from '../../test/fixtures';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import { openColorField } from '../../test/colorField';
 import { chooseOption, stepSlider } from '../../test/interaction';
+
+// Most style controls live inside the collapsible style-detail section
+// (collapsed by default, remembered) — the describes below expand it up front
+// and the collapse behavior itself is pinned in its own describe at the end.
+const expandStyleDetail = () => useLineEditorPrefs.setState({ styleExpanded: true });
 
 const SELECTION_BLANK = {
   selectedStationIds: [] as string[],
@@ -37,6 +43,7 @@ describe('<LineInspector /> — name / service / default-shape (E9)', () => {
     // doesn't carry uiMode, so it would otherwise leak between these tests.
     useSelection.setState({ ...SELECTION_BLANK, uiMode: { kind: 'idle' } });
     useDoc.temporal.getState().clear();
+    expandStyleDetail();
   });
 
   const seedThree = () => {
@@ -112,6 +119,7 @@ describe('<LineInspector /> — width control', () => {
     useDoc.setState({ ...DEFAULT_DOC });
     useSelection.setState(SELECTION_BLANK);
     useDoc.temporal.getState().clear();
+    expandStyleDetail();
   });
 
   const seed = (width?: number) => {
@@ -180,6 +188,7 @@ describe('<LineInspector /> — interline gap control', () => {
     useDoc.setState({ ...DEFAULT_DOC });
     useSelection.setState(SELECTION_BLANK);
     useDoc.temporal.getState().clear();
+    expandStyleDetail();
   });
 
   // Two lines packed tangent (rows 0/1 at default width) at both corridor
@@ -237,6 +246,7 @@ describe('<LineInspector /> — dash dimension controls', () => {
     useDoc.setState({ ...DEFAULT_DOC });
     useSelection.setState(SELECTION_BLANK);
     useDoc.temporal.getState().clear();
+    expandStyleDetail();
   });
 
   const seedDash = (over: Record<string, unknown> = {}) => {
@@ -244,7 +254,16 @@ describe('<LineInspector /> — dash dimension controls', () => {
       ...DEFAULT_DOC,
       ...makeDoc({
         stations: [makeStation({ id: 's1', stops: [makeStop('L1')] })],
-        lines: [makeLine({ id: 'L1', stations: ['s1'], ...over })],
+        // The dash rows only render while a dash dot is in use (see the
+        // conditional-rows describe) — seed the singleton default as dash.
+        lines: [
+          makeLine({
+            id: 'L1',
+            stations: ['s1'],
+            singletonDotStyle: DOT_SHAPE_PRESETS.dash,
+            ...over,
+          }),
+        ],
       }),
     });
   };
@@ -283,6 +302,7 @@ describe('<LineInspector /> — dot size control', () => {
     useDoc.setState({ ...DEFAULT_DOC });
     useSelection.setState(SELECTION_BLANK);
     useDoc.temporal.getState().clear();
+    expandStyleDetail();
   });
 
   const seed = (sizes?: { singletonDotSize?: number; multiDotSize?: number }) => {
@@ -313,22 +333,19 @@ describe('<LineInspector /> — dot size control', () => {
     }
   });
 
-  it('the singleton section shares one row with its picker, under a caption below Color', () => {
+  it('each dot case shares one row with its picker, in renamed captioned fields', () => {
     seed();
     render(<LineInspector id="L1" />);
-    const color = screen.getByText('Color');
-    const caption = screen.getByText('Singleton stop dot type and size');
+    const singleton = screen.getByText('Singleton (One line stops)');
     const picker = screen.getByRole('button', { name: 'Singleton stop shape' });
     const slider = screen.getByRole('slider', { name: 'Singleton dot size' });
     // DOCUMENT_POSITION_FOLLOWING = 4: the argument follows the receiver.
-    expect(color.compareDocumentPosition(caption) & 4).toBe(4);
-    expect(caption.compareDocumentPosition(picker) & 4).toBe(4);
-    expect(color.compareDocumentPosition(slider) & 4).toBe(4);
+    expect(singleton.compareDocumentPosition(picker) & 4).toBe(4);
     // The picker and the size slider live in the same row.
     expect(picker.closest('.options-popover-row')).toBe(slider.closest('.options-popover-row'));
-    // The shared section follows the singleton one.
-    const shared = screen.getByText('Interchange stop dot type and size');
-    expect(caption.compareDocumentPosition(shared) & 4).toBe(4);
+    // The interchange field follows the singleton one.
+    const shared = screen.getByText('Interchange (Multiple lines stop)');
+    expect(singleton.compareDocumentPosition(shared) & 4).toBe(4);
   });
 
   it('the two sliders write their own field independently; the default drops the key', () => {
@@ -379,6 +396,7 @@ describe('<LineInspector /> — stroke controls', () => {
     useDoc.setState({ ...DEFAULT_DOC });
     useSelection.setState(SELECTION_BLANK);
     useDoc.temporal.getState().clear();
+    expandStyleDetail();
   });
 
   const seed = (
@@ -435,7 +453,8 @@ describe('<LineInspector /> — stroke controls', () => {
 
   it('the color picker reflects the effective stroke color and writes edits', async () => {
     const user = userEvent.setup();
-    seed({ strokeColor: '#ff0000' });
+    // A nonzero width: the color row only renders while the casing is on.
+    seed({ strokeWidth: 2, strokeColor: '#ff0000' });
     render(<LineInspector id="L1" />);
     const input = await openColorField(user, 'Stroke color');
     expect(input).toHaveValue('#ff0000');
@@ -446,9 +465,9 @@ describe('<LineInspector /> — stroke controls', () => {
     expect('strokeColor' in useDoc.getState().lines.L1).toBe(false);
   });
 
-  it('defaults the color picker to white for a stroke-less line', async () => {
+  it('defaults the color picker to white when the casing is on but colorless', async () => {
     const user = userEvent.setup();
-    seed();
+    seed({ strokeWidth: 4 });
     render(<LineInspector id="L1" />);
     expect(await openColorField(user, 'Stroke color')).toHaveValue('#ffffff');
   });
@@ -499,11 +518,109 @@ describe('<LineInspector /> — stroke controls', () => {
   });
 });
 
+describe('<LineInspector /> — collapsible style detail', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+    useDoc.temporal.getState().clear();
+    useLineEditorPrefs.setState({ styleExpanded: false });
+  });
+
+  const seed = (lineOver: Record<string, unknown> = {}, stopOver: Record<string, unknown> = {}) => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', stops: [makeStop('L1', stopOver)] }),
+          makeStation({ id: 's2', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['s1', 's2'], ...lineOver })],
+      }),
+    });
+  };
+
+  it('collapsed by default: identity + Style row visible, the parameter stack hidden', () => {
+    seed();
+    render(<LineInspector id="L1" />);
+    expect(screen.getByText('Line name')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Style' })).toBeInTheDocument();
+    const toggle = screen.getByRole('button', { name: /style detail/i });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    for (const name of ['Line width', 'Curve radius', 'Seam width']) {
+      expect(screen.queryByRole('slider', { name })).toBeNull();
+    }
+    expect(screen.queryByRole('button', { name: 'Singleton stop shape' })).toBeNull();
+  });
+
+  it('the toggle expands the section and the preference is remembered', () => {
+    seed();
+    render(<LineInspector id="L1" />);
+    fireEvent.click(screen.getByRole('button', { name: /style detail/i }));
+    expect(screen.getByRole('slider', { name: 'Line width' })).toBeInTheDocument();
+    // Remembered — the pref store persists it for the next popover/reload.
+    expect(useLineEditorPrefs.getState().styleExpanded).toBe(true);
+  });
+
+  it('orders the expanded stack: geometry, dots (with header), stroke, seam', () => {
+    seed();
+    expandStyleDetail();
+    render(<LineInspector id="L1" />);
+    const order = [
+      screen.getByRole('slider', { name: 'Line width' }),
+      screen.getByRole('slider', { name: 'Interline gap' }),
+      screen.getByRole('slider', { name: 'Curve radius' }),
+      screen.getByText('Station stop dot types and sizes'),
+      screen.getByText('Singleton (One line stops)'),
+      screen.getByText('Interchange (Multiple lines stop)'),
+      screen.getByRole('slider', { name: 'Stroke width' }),
+      screen.getByRole('slider', { name: 'Seam width' }),
+    ];
+    for (let i = 0; i + 1 < order.length; i++) {
+      // DOCUMENT_POSITION_FOLLOWING = 4: the argument follows the receiver.
+      expect(order[i].compareDocumentPosition(order[i + 1]) & 4).toBe(4);
+    }
+  });
+
+  it('dash rows render only while a dash dot is in use (line default or stop override)', () => {
+    seed();
+    expandStyleDetail();
+    const { unmount } = render(<LineInspector id="L1" />);
+    expect(screen.queryByRole('slider', { name: 'Dash length' })).toBeNull();
+    expect(screen.queryByRole('slider', { name: 'Dash width' })).toBeNull();
+    unmount();
+
+    // Line-level default: the singleton case is dash.
+    seed({ singletonDotStyle: DOT_SHAPE_PRESETS.dash });
+    const second = render(<LineInspector id="L1" />);
+    expect(screen.getByRole('slider', { name: 'Dash length' })).toBeInTheDocument();
+    second.unmount();
+
+    // Per-stop override on a member stop, with non-dash line defaults.
+    seed({}, { dotStyle: DOT_SHAPE_PRESETS.dash });
+    render(<LineInspector id="L1" />);
+    expect(screen.getByRole('slider', { name: 'Dash width' })).toBeInTheDocument();
+  });
+
+  it('the stroke color row renders only while the stroke width is > 0', () => {
+    seed();
+    expandStyleDetail();
+    const { unmount } = render(<LineInspector id="L1" />);
+    expect(screen.queryByText('Stroke color')).toBeNull();
+    unmount();
+
+    seed({ strokeWidth: 2 });
+    render(<LineInspector id="L1" />);
+    expect(screen.getByText('Stroke color')).toBeInTheDocument();
+  });
+});
+
 describe('<LineInspector /> — style presets', () => {
   beforeEach(() => {
     localStorage.clear();
     useDoc.setState({ ...DEFAULT_DOC });
     useSelection.setState(SELECTION_BLANK);
+    expandStyleDetail();
   });
 
   it('applies a preset from the Style row, then flips to Custom on a covered edit', async () => {

@@ -45,10 +45,13 @@ interface Props {
   // hover-to-preview and click-to-insert in add-line-tag mode. (Body pass only;
   // the silhouette is always inert.)
   interactive?: boolean;
+  // Cursor for the interactive stripe: tag mode keeps 'crosshair' (precise
+  // placement along the stripe), Edit Stops passes 'pointer' (a stripe click
+  // arms/disarms or switches lines — a selection, not a placement).
+  interactiveCursor?: 'crosshair' | 'pointer';
   onLineHover?: (lineId: LineId, e: React.PointerEvent<SVGPathElement>) => void;
   onLineLeave?: (lineId: LineId, e: React.PointerEvent<SVGPathElement>) => void;
   onLineClick?: (lineId: LineId, e: React.MouseEvent<SVGPathElement>) => void;
-  onLineContextMenu?: (lineId: LineId, e: React.MouseEvent<SVGPathElement>) => void;
   // Default-mode click handler: selects a line by clicking its stripe. Also
   // receives this band's corridor pairKey so shift-click can address the
   // segment (style cycling) without a per-band closure.
@@ -87,10 +90,10 @@ export const SegmentBand = memo(function SegmentBand({
   stripeIndex,
   pass,
   interactive = false,
+  interactiveCursor = 'crosshair',
   onLineHover,
   onLineLeave,
   onLineClick,
-  onLineContextMenu,
   onLineSelect,
   lines,
   colorMap,
@@ -209,7 +212,9 @@ export const SegmentBand = memo(function SegmentBand({
         strokeLinejoin="round"
         strokeDasharray={strokeDasharray}
         pointerEvents={decorative ? 'none' : active || selectable ? 'stroke' : undefined}
-        style={active ? { cursor: 'crosshair' } : selectable ? { cursor: 'pointer' } : undefined}
+        style={
+          active ? { cursor: interactiveCursor } : selectable ? { cursor: 'pointer' } : undefined
+        }
         onPointerMove={active && onLineHover ? (e) => onLineHover(lineId, e) : undefined}
         onPointerLeave={active && onLineLeave ? (e) => onLineLeave(lineId, e) : undefined}
         onClick={
@@ -218,9 +223,6 @@ export const SegmentBand = memo(function SegmentBand({
             : selectable
               ? (e) => onLineSelect!(lineId, e, spec.pairKey)
               : undefined
-        }
-        onContextMenu={
-          active && onLineContextMenu ? (e) => onLineContextMenu(lineId, e) : undefined
         }
       />
       {/* Open styles keep centered casing rails inline (a silhouette would

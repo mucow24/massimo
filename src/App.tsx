@@ -146,9 +146,19 @@ export default function App() {
   const selectSvgImage = useSelection((s) => s.selectSvgImage);
   const setToolMode = useSelection((s) => s.setToolMode);
   const setSpaceHeld = useSelection((s) => s.setSpaceHeld);
+  const setAltHeld = useSelection((s) => s.setAltHeld);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Alt tracking, before every guard: the held state drives the Edit
+      // Stops create-ghost, and the mouse events that consume it read their
+      // own e.altKey (a form focus never makes a held Alt untrue).
+      // preventDefault keeps the browser from arming its menu bar on Alt.
+      if (e.key === 'Alt') {
+        e.preventDefault();
+        if (!e.repeat) setAltHeld(true);
+        return;
+      }
       // Two-tier form-field guard.
       //
       // `inForm` excludes range sliders and color pickers so the Ctrl-combos
@@ -635,10 +645,18 @@ export default function App() {
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.key === ' ') setSpaceHeld(false);
+      if (e.key === 'Alt') {
+        // Firefox arms its menu bar on the Alt keyUP — suppress that too.
+        e.preventDefault();
+        setAltHeld(false);
+      }
     };
-    // If the window loses focus while Space is held (alt-tab mid hand-pan), the
-    // keyup never arrives and pan mode would stay stuck on. Reset on blur.
-    const onBlur = () => setSpaceHeld(false);
+    // If the window loses focus while Space/Alt is held (alt-tab mid-gesture),
+    // the keyup never arrives and the mode would stay stuck on. Reset on blur.
+    const onBlur = () => {
+      setSpaceHeld(false);
+      setAltHeld(false);
+    };
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onBlur);
@@ -656,6 +674,7 @@ export default function App() {
     selectSvgImage,
     setToolMode,
     setSpaceHeld,
+    setAltHeld,
   ]);
 
   // Right-click cancels an active mode (see cancelModeOnContextMenu above).

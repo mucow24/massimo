@@ -1,5 +1,8 @@
 import { useDoc, useSelection } from '../../state/store';
 import { legibleTextOn } from '../../util/color';
+import { stationNameListText } from '../../geometry/labelTokens';
+import { validCursor } from './appendGestures';
+import type { Station, StationId } from '../../model/types';
 
 // Copy for the simple one-click placement modes. Right-click cancels every
 // mode outside RIGHT_CLICK_PASSTHROUGH_MODES (App.tsx), so the shared hint is
@@ -32,6 +35,7 @@ const CANCEL_HINT = 'Esc or right-click to cancel.';
  */
 export function EditingBanner() {
   const lines = useDoc((s) => s.lines);
+  const stations = useDoc((s) => s.stations);
   const uiMode = useSelection((s) => s.uiMode);
 
   switch (uiMode.kind) {
@@ -64,13 +68,25 @@ export function EditingBanner() {
       const line = lines[uiMode.lineId];
       if (!line) return null;
       const text = legibleTextOn(line.color);
+      // The tail tracks the cursor machine (nothing armed / pen on a station /
+      // inserting into an edge) so "armed" is never inferable only from canvas
+      // chrome. A stale cursor (undo can strip it) reads as nothing armed —
+      // matching what the next click will actually do.
+      const cursor = validCursor(line, uiMode.cursor);
+      const nameOf = (sid: StationId) => {
+        const st: Station | undefined = stations[sid];
+        return (st && stationNameListText(st.name)) || 'station';
+      };
+      const tail = !cursor
+        ? 'click a station or segment to start, Alt-click for a new station. Esc or right-click exits.'
+        : cursor.kind === 'station'
+          ? `pen at ${nameOf(cursor.stationId)} — click a station to connect it (Alt-click: new station), Del or × removes this stop. Esc backs out.`
+          : `inserting into ${nameOf(cursor.from)}–${nameOf(cursor.to)} — click a station to splice it in (Alt-click: new station), Del or × cuts the segment, the chip cycles its style. Esc backs out.`;
       return (
         <>
           <div className="append-frame" style={{ borderColor: line.color }} />
           <div className="append-banner" style={{ background: line.color, color: text }}>
-            Editing line {line.service} — click stations to connect, click a segment to insert into
-            it, Alt-click for a new station, Del (or the ×) removes the armed stop/segment. Esc
-            backs out.
+            Editing line {line.service} — {tail}
           </div>
         </>
       );

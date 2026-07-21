@@ -3,7 +3,7 @@ import { render } from '@testing-library/react';
 import { EditingBanner } from './EditingBanner';
 import { useDoc, useSelection } from '../../state/store';
 import { DEFAULT_DOC } from '../../model/transforms';
-import { makeLine } from '../../test/fixtures';
+import { makeLine, makeStation, makeStop } from '../../test/fixtures';
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -84,5 +84,57 @@ describe('<EditingBanner /> — every non-idle mode gets chrome', () => {
     // hardcoded accent, which is exactly the regression this guards against.
     // (jsdom normalizes #ff0000 to rgb.)
     expect(banner()!.style.background).toBe('rgb(255, 0, 0)');
+  });
+});
+
+// The Edit Stops banner tail tracks the invisible three-state cursor machine
+// — nothing armed / pen on a station / inserting into an edge — so the user
+// never has to infer "armed" from canvas chrome alone. Names are the compact
+// list form (markup + bullet tokens stripped).
+describe('<EditingBanner /> — Edit Stops copy tracks the cursor state', () => {
+  const seed = () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      stations: {
+        S: makeStation({ id: 'S', name: 'Union |A| Square', x: 0, y: 0, stops: [makeStop('L1')] }),
+        T: makeStation({ id: 'T', name: 'Astor Place', x: 100, y: 0, stops: [makeStop('L1')] }),
+      },
+      lines: { L1: makeLine({ id: 'L1', service: 'A', color: '#ff0000', stations: ['S', 'T'] }) },
+      lineOrder: ['L1'],
+    });
+  };
+  const appending = (cursor: import('./appendGestures').AppendCursor) =>
+    useSelection.getState().setUiMode({ kind: 'appending-to-line', lineId: 'L1', cursor });
+
+  it('nothing armed: the starting instructions, with the right-click exit', () => {
+    seed();
+    appending(null);
+    render(<EditingBanner />);
+    expect(banner()!.textContent).toMatch(/click a station or segment/i);
+    expect(banner()!.textContent).toMatch(/right-click exits/i);
+  });
+
+  it('station cursor: names the pen station and offers connect/remove', () => {
+    seed();
+    appending({ kind: 'station', stationId: 'S' });
+    render(<EditingBanner />);
+    expect(banner()!.textContent).toMatch(/Union Square/); // bullet token stripped
+    expect(banner()!.textContent).toMatch(/connect/i);
+  });
+
+  it('edge cursor: names the armed corridor endpoints', () => {
+    seed();
+    appending({ kind: 'edge', from: 'S', to: 'T' });
+    render(<EditingBanner />);
+    expect(banner()!.textContent).toMatch(/Union Square/);
+    expect(banner()!.textContent).toMatch(/Astor Place/);
+    expect(banner()!.textContent).toMatch(/insert/i);
+  });
+
+  it('a stale cursor (undo stripped it) falls back to the starting copy', () => {
+    seed();
+    appending({ kind: 'station', stationId: 'GONE' });
+    render(<EditingBanner />);
+    expect(banner()!.textContent).toMatch(/click a station or segment/i);
   });
 });

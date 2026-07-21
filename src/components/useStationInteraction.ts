@@ -8,7 +8,7 @@ import { pathBetweenStations } from '../model/pathSelect';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { itemCursor } from './canvas/itemCursor';
 import { screenToWorld } from './canvas/viewportMath';
-import { decideStationClick, nextSegmentStyle } from './canvas/appendGestures';
+import { appendStationCursor, decideStationClick, nextSegmentStyle } from './canvas/appendGestures';
 
 // Map a click on a station to the closest dot's lineId. Used to pin a
 // transfer endpoint to the specific stop the user clicked on, rather than
@@ -202,9 +202,6 @@ export function useStationInteraction(
   const onContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    // NOTE: right-click rotates in Edit Stops too (auto-orient often needs a
-    // quick fix while laying out a line) — stop removal is the × chip or the
-    // Delete key, never right-click, which sits one slip away from rotate.
     // Right-click on a station that's part of a multi-selection rotates the
     // whole group rigidly around this station (each member rotates in place AND
     // non-pivot members — bullets, labels, AND polygons — orbit 45° around the
@@ -309,14 +306,20 @@ export function useStationInteraction(
     if (h?.kind === 'station' && h.stationId === station.id) selection.setAppendHover(null);
   };
   const handlers = {
-    onPointerDown: modeInert ? undefined : onPointerDown,
+    // Edit Stops is line construction, not station placement: drag and
+    // right-click rotate are unwired there. A few pixels of wobble during a
+    // rapid connect-click used to both move the station AND suppress the
+    // click (dragState.suppressClick) — the connect silently died. With no
+    // contextmenu handler the right-click bubbles to the MapCanvas root,
+    // where it exits the mode; to move or rotate a station, exit first.
+    onPointerDown: modeInert || inAppend ? undefined : onPointerDown,
     onClick: modeInert || inHandMode ? undefined : onClick,
     // Inert in Edit Stops too: the dblclick's selectStation spreads
     // clearedSelections(), which would null selectedLineId while the mode
     // stays armed — highlight and dim wash gone, invisible line still
     // routing station clicks to connect/splice.
     onDoubleClick: modeInert || inHandMode || inAppend ? undefined : onDoubleClick,
-    onContextMenu: modeInert ? undefined : onContextMenu,
+    onContextMenu: modeInert || inAppend ? undefined : onContextMenu,
     onPointerEnter: inIdle ? onHoverEnter : inAppend ? onAppendHoverEnter : undefined,
     onPointerMove: inTransferPick ? onTransferPointerMove : undefined,
     onPointerLeave: inTransferPick
@@ -327,12 +330,19 @@ export function useStationInteraction(
           ? onAppendHoverLeave
           : undefined,
   };
-  // Hand mode → open hand (pannable). Otherwise a movable station shows the
+  // Hand mode → open hand (pannable). Edit Stops → the click-matrix cursor
+  // (copy/pointer/default, see appendStationCursor — 'move' never shows since
+  // stations don't drag in the mode). Otherwise a movable station shows the
   // four-arrow move cursor; a locked station shows the pointing hand. The
   // pointer only ever shows while the locked station is SELECTED (unselected
   // locked stations are click-through, so nothing hovers them) — where it
   // reads as "clickable to keep the popover/unlock reachable, not draggable".
-  const cursor = itemCursor(inHandMode, station.locked);
+  const appendMode = selection.uiMode.kind === 'appending-to-line' ? selection.uiMode : null;
+  const appendLine = appendMode ? lines[appendMode.lineId] : undefined;
+  const cursor =
+    !inHandMode && appendMode && appendLine
+      ? appendStationCursor(appendLine, appendMode.cursor, station.id)
+      : itemCursor(inHandMode, station.locked);
 
   return { handlers, cursor, hitless };
 }

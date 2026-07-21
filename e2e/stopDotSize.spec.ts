@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { seedAndOpen, stationCenter, fourInLine } from './fixtures';
+import { seedAndOpen, stationCenter, fourInLine, openLineStyleDetail } from './fixtures';
 
 // ACCEPTANCE SPEC for stop dot sizes — written red-first (double-loop TDD)
 // with `test.fail()` annotations that were removed once the feature landed.
@@ -47,6 +47,8 @@ const STRIPE = (page: Page, lineId: string) =>
 async function selectLine(page: Page, lineId: string): Promise<void> {
   await STRIPE(page, lineId).click({ force: true });
   await page.locator('.inspector').waitFor();
+  // The dot controls live inside the collapsed style detail.
+  await openLineStyleDetail(page);
 }
 
 // Select station `stationId`, enter its on-canvas layout editor, and click
