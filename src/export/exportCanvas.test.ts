@@ -33,18 +33,33 @@ afterEach(() => {
 });
 
 describe('mapFileBasename', () => {
-  it('folds the map name and a date stamp into the basename', () => {
-    expect(mapFileBasename('My Subway Map')).toMatch(/^My Subway Map - \d{4}-\d{2}-\d{2}$/);
+  it('stamps a clean version as "${name} - v${version}"', () => {
+    expect(mapFileBasename('Foo map', 23, false)).toBe('Foo map - v23');
+  });
+
+  it('appends "d" to a dirty version', () => {
+    expect(mapFileBasename('Foo map', 23, true)).toBe('Foo map - v23d');
+  });
+
+  it('falls back to a date stamp when there is no version', () => {
+    // A fresh New map or a loaded JSON file has no library version.
+    expect(mapFileBasename('My Subway Map', null, false)).toMatch(
+      /^My Subway Map - \d{4}-\d{2}-\d{2}$/,
+    );
+    // The dirty flag is irrelevant without a version — no trailing "d".
+    expect(mapFileBasename('My Subway Map', null, true)).toMatch(
+      /^My Subway Map - \d{4}-\d{2}-\d{2}$/,
+    );
   });
 
   it('strips characters that are illegal in filenames', () => {
     // Windows/macOS/Linux collectively reject < > : " / \ | ? * in filenames.
-    expect(mapFileBasename('A/B:C*?"<>|\\')).toMatch(/^ABC - \d{4}-\d{2}-\d{2}$/);
+    expect(mapFileBasename('A/B:C*?"<>|\\', 7, false)).toBe('ABC - v7');
   });
 
   it('falls back to "map" when the name is empty or all-illegal', () => {
-    expect(mapFileBasename('   ')).toMatch(/^map - \d{4}-\d{2}-\d{2}$/);
-    expect(mapFileBasename('/\\:')).toMatch(/^map - \d{4}-\d{2}-\d{2}$/);
+    expect(mapFileBasename('   ', 7, false)).toBe('map - v7');
+    expect(mapFileBasename('/\\:', 7, true)).toBe('map - v7d');
   });
 });
 
