@@ -3,6 +3,7 @@ import {
   adoptDefaultStyles,
   applyDefaultStyle,
   applyStyleToItem,
+  canonicalStyleProps,
   captureStyleProps,
   clearStyleTag,
   createStyle,
@@ -831,6 +832,30 @@ describe('duplicateStyle', () => {
       kind: 'stopDot',
       name: 'Filled copy',
     });
+  });
+});
+
+describe('canonicalStyleProps — quarter-unit grids', () => {
+  // Regression: the style-props canonicalizer MUST use the same 0.25 grids the
+  // item transforms use (its own contract). Dot sizes and transfer thickness had
+  // drifted to integer Math.round, so a StyleEditor dot-size edit snapped the map
+  // to whole diameters (visible change only at each .5 rounding threshold) while
+  // the line inspector — routed through canonicalDotSize — moved smoothly.
+  it('snaps line dot sizes to the 0.25 grid, not integers', () => {
+    const base = defaultStyleProps(DEFAULT_DOC, 'line')!;
+    const out = canonicalStyleProps('line', {
+      ...base,
+      singletonDotSize: 6.25,
+      multiDotSize: 9.75,
+    });
+    expect(out.singletonDotSize).toBe(6.25);
+    expect(out.multiDotSize).toBe(9.75);
+  });
+
+  it('snaps transfer thickness to the 0.25 grid, not integers', () => {
+    const base = defaultStyleProps(DEFAULT_DOC, 'transfer')!;
+    const out = canonicalStyleProps('transfer', { ...base, thickness: 4.25 });
+    expect(out.thickness).toBe(4.25);
   });
 });
 
