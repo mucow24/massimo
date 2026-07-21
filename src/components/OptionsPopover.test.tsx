@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { chooseOption } from '../test/interaction';
 import { Toolbar } from './Toolbar';
 import { useDoc } from '../state/store';
 import { useCustomPalettes } from '../state/customPalettes';
@@ -99,24 +100,23 @@ describe('<OptionsPopover />', () => {
   });
 
   describe('branch inner edges', () => {
-    it("defaults to 'both'", async () => {
+    it("defaults to 'both' (shown on the field-select trigger)", async () => {
       const user = userEvent.setup();
       render(<Toolbar />);
       await user.click(screen.getByRole('button', { name: 'Options' }));
-      const select = screen.getByRole('combobox', {
-        name: /branch inner edges/i,
-      }) as HTMLSelectElement;
-      expect(select.value).toBe('both');
+      // Radix Select trigger is a combobox button; the current value shows as its
+      // text (Select.Value), not a native <select> value.
+      const select = screen.getByRole('combobox', { name: /branch inner edges/i });
+      expect(select).toHaveTextContent('Both');
     });
 
     it('selecting a mode writes it to the doc', async () => {
       const user = userEvent.setup();
       render(<Toolbar />);
       await user.click(screen.getByRole('button', { name: 'Options' }));
-      const select = screen.getByRole('combobox', { name: /branch inner edges/i });
-      await user.selectOptions(select, 'curved');
+      await chooseOption(user, /branch inner edges/i, 'Curved only');
       expect(useDoc.getState().seamEdges).toBe('curved');
-      await user.selectOptions(select, 'straight');
+      await chooseOption(user, /branch inner edges/i, 'Straight only');
       expect(useDoc.getState().seamEdges).toBe('straight');
     });
   });

@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { StyleEditor } from './StyleEditor';
 import { useDoc } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
@@ -115,12 +116,13 @@ describe('<StyleEditor> — stopDot', () => {
         def={makeStyle('stopDot', 'y1', { props: { shape: 'circle', showServiceCode: true } })}
       />,
     );
-    // The toggle is present with both modes …
-    expect(screen.getByRole('button', { name: 'Code color line' })).toBeTruthy();
-    const custom = screen.getByRole('button', { name: 'Code color custom' });
+    // The toggle is present with both modes (ToggleGroup items — queried by
+    // label, as the rest of the suite queries segmented controls) …
+    expect(screen.getByLabelText('Code color line')).toBeTruthy();
+    const custom = screen.getByLabelText('Code color custom');
     // … and with no explicit color (auto-contrast), 'Custom' is active and its
     // day/night color row is shown (the light swatch carries this accessible name).
-    expect(custom.getAttribute('aria-pressed')).toBe('true');
+    expect(custom).toHaveClass('active');
     expect(screen.getByRole('button', { name: 'Service code color' })).toBeTruthy();
   });
 
@@ -132,9 +134,7 @@ describe('<StyleEditor> — stopDot', () => {
         })}
       />,
     );
-    expect(
-      screen.getByRole('button', { name: 'Code color line' }).getAttribute('aria-pressed'),
-    ).toBe('true');
+    expect(screen.getByLabelText('Code color line')).toHaveClass('active');
     // In 'line' mode the explicit color row is gone (like the stroke selector).
     expect(screen.queryByRole('button', { name: 'Service code color' })).toBeNull();
   });
@@ -143,16 +143,56 @@ describe('<StyleEditor> — stopDot', () => {
     // Rendered from the SEEDED def so the click's updateStyleProps lands on it.
     render(<StyleEditor def={useDoc.getState().styles['sd-square']} />);
     // All three alignment options are present for a non-dash dot …
-    expect(screen.getByRole('button', { name: 'Align center' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Align inside' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Align outside' })).toBeTruthy();
+    expect(screen.getByLabelText('Align center')).toBeTruthy();
+    expect(screen.getByLabelText('Align inside')).toBeTruthy();
+    expect(screen.getByLabelText('Align outside')).toBeTruthy();
     // … and picking one writes the covered style field through updateStyleProps.
-    fireEvent.click(screen.getByRole('button', { name: 'Align inside' }));
+    fireEvent.click(screen.getByLabelText('Align inside'));
     expect((useDoc.getState().styles['sd-square'].props as DotStyle).strokeAlign).toBe('inside');
   });
 
   it('hides the stroke-alignment selector for a dash tick (stroke is inert)', () => {
     render(<StyleEditor def={useDoc.getState().styles['sd-dash']} />);
-    expect(screen.queryByRole('button', { name: 'Align inside' })).toBeNull();
+    expect(screen.queryByLabelText('Align inside')).toBeNull();
+  });
+});
+
+// The segmented pick-one clusters (align / shape / mode) are Radix ToggleGroups,
+// same as the item popovers — a single roving-focus tab stop (arrows move within)
+// rather than a bag of independent buttons. These lock that contract in.
+describe('<StyleEditor> — segmented controls are roving-focus ToggleGroups', () => {
+  it('the label Align cluster is one roving-focus group (arrows move between segments)', async () => {
+    const user = userEvent.setup();
+    render(<StyleEditor def={makeStyle('textLabel', 'y1', { props: { align: 'left' } })} />);
+    await user.click(screen.getByLabelText('Align left'));
+    expect(screen.getByLabelText('Align left')).toHaveFocus();
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByLabelText('Align center')).toHaveFocus();
+  });
+
+  it('the stop-dot Shape cluster is one roving-focus group', async () => {
+    const user = userEvent.setup();
+    render(<StyleEditor def={makeStyle('stopDot', 'y1', { props: { shape: 'circle' } })} />);
+    await user.click(screen.getByLabelText('Circle'));
+    expect(screen.getByLabelText('Circle')).toHaveFocus();
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByLabelText('Square')).toHaveFocus();
+  });
+
+  it('re-clicking the active mode keeps it (radio-like: the deselect write is swallowed)', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...useDoc.getState(),
+      styles: {
+        ...useDoc.getState().styles,
+        'sd-fill': makeStyle('stopDot', 'sd-fill', { props: { shape: 'circle', fill: 'line' } }),
+      },
+    });
+    render(<StyleEditor def={useDoc.getState().styles['sd-fill']} />);
+    // 'Fill line' is already the active segment; re-clicking it fires Radix's
+    // deselect (onValueChange('')), which the `if (v)` guard must swallow — the
+    // fill must stay 'line', not fall through to a custom day/night pair.
+    await user.click(screen.getByLabelText('Fill line'));
+    expect((useDoc.getState().styles['sd-fill'].props as DotStyle).fill).toBe('line');
   });
 });

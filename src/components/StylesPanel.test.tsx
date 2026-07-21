@@ -190,7 +190,8 @@ describe('<StylesPanel />', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit Heading' }));
     await chooseOption(userEvent.setup(), 'Weight', 'Bold');
     fireEvent.click(screen.getByRole('button', { name: 'Italic' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Align center' }));
+    // Align is a Radix ToggleGroup item now — queried by label, like the popovers.
+    fireEvent.click(screen.getByLabelText('Align center'));
     const props = useDoc.getState().styles.y1.props as TextLabelStyleProps;
     expect(props.weight).toBe(700);
     expect(props.italic).toBe(true);
