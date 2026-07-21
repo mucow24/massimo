@@ -174,13 +174,15 @@ export function repackStationForSpacing(
   }
 
   // Edge-carry: a label ATTACHED to a stop of the edited line — within the
-  // shared labelAdjacencyGate under the OLD widths, the same gate the
-  // renderer's snap/autoAlign use — tracks the stop's EDGE, not its center.
-  // The rendered pin sits at (support · half + gap) along the approach
-  // octant, so the width edit moves it by Δhalf · support; carrying the cell
-  // the same way keeps a tangency-parked label parked (and inside the gate)
-  // at ANY width instead of stranding it at the old width's tangency.
-  const carry = labelCarryDelta(station, lines, lineId, oldWidth, newWidth);
+  // shared labelAdjacencyGate under the OLD spacing, the same gate the
+  // renderer's snap/autoAlign use — tracks the stop's packed EDGE, not its
+  // center. The rendered pin sits at (support · half + gap) along the
+  // approach octant and the lattice parks the cell at tangency + interline
+  // gap, so a width edit moves the park by Δhalf · support and a gap edit by
+  // Δgap per axis; carrying the cell the same way keeps a parked label
+  // parked (and inside the gate) at ANY spacing instead of stranding it at
+  // the old pitch.
+  const carry = labelCarryDelta(station, lines, lineId, oldWidth, newWidth, oldGap, newGap);
 
   if (deltas.size === 0 && !carry) return station;
 
@@ -243,19 +245,22 @@ export function repackStationForSpacing(
 }
 
 /**
- * The label's edge-carry for a width edit on `lineId`: when the label is
+ * The label's edge-carry for a width/gap edit on `lineId`: when the label is
  * attached to a stop of the edited line, return the cell delta that keeps it
- * at the same distance from that stop's EDGE; null otherwise.
+ * at the same distance from that stop's packed EDGE; null otherwise.
  *
  * The reference stop mirrors autoAlignInfo's pick (labelLayout.ts): the
- * nearest stop within the shared labelAdjacencyGate under the OLD widths,
- * ties preferring the stop below the reading direction. The movement is the
- * pin's: the marker square's support along the approach octant scales the
- * half-width change (a cardinal approach onto the square moves by Δhalf, a
- * diagonal one by Δhalf·√2 along the diagonal — Δhalf per axis). Dash ticks
- * are deliberately ignored: a dash stop's derived tick also scales with
- * width, but the painted pin is stop-relative either way, so the carried
- * cell merely sits a whisker off the tick's tangency — still inside the gate.
+ * nearest stop within the shared labelAdjacencyGate under the OLD spacing,
+ * ties preferring the stop below the reading direction. The width movement
+ * is the pin's: the marker square's support along the approach octant scales
+ * the half-width change (a cardinal approach onto the square moves by Δhalf,
+ * a diagonal one by Δhalf·√2 along the diagonal — Δhalf per axis). The gap
+ * movement is the lattice's: the ghost pitch (tangentGap with the label as a
+ * gapless cell) rescales per AXIS, so the park moves by Δgap on each axis —
+ * Δgap · L1(u) along the approach (1 cardinal, √2 diagonal). Dash ticks are
+ * deliberately ignored: a dash stop's derived tick also scales with width,
+ * but the painted pin is stop-relative either way, so the carried cell
+ * merely sits a whisker off the tick's tangency — still inside the gate.
  */
 function labelCarryDelta(
   station: Station,
@@ -263,6 +268,8 @@ function labelCarryDelta(
   lineId: LineId,
   oldWidth: number,
   newWidth: number,
+  oldGap: number,
+  newGap: number,
 ): { dRow: number; dCol: number } | null {
   const label = station.label;
   const readAngle = (label.rotation * Math.PI) / 4;
@@ -276,8 +283,10 @@ function labelCarryDelta(
     const dCol = c.col - label.col;
     const cheb = Math.max(Math.abs(dRow), Math.abs(dCol));
     if (cheb < 1e-6) continue; // a stop on the label cell has no direction
-    const half = (c.lineId === lineId ? oldWidth : lineWidthOf(lines[c.lineId])) / 2;
-    if (cheb > labelAdjacencyGate(half)) continue;
+    const edited = c.lineId === lineId;
+    const half = (edited ? oldWidth : lineWidthOf(lines[c.lineId])) / 2;
+    const gap = edited ? oldGap : lineInterlineGapOf(lines[c.lineId]);
+    if (cheb > labelAdjacencyGate(half, gap)) continue;
     const d2 = dRow * dRow + dCol * dCol;
     const perp = dCol * -readSin + dRow * readCos;
     if (ref === null || d2 < refD2 - 1e-9 || (d2 < refD2 + 1e-9 && perp > refPerp)) {
@@ -293,7 +302,8 @@ function labelCarryDelta(
   const u = DIRS_8[o];
   const axis = travelDirLocal(ref.orientation);
   const support = Math.abs(u.x * axis.x + u.y * axis.y) + Math.abs(u.x * -axis.y + u.y * axis.x);
-  const dExtent = ((newWidth - oldWidth) / 2) * support;
+  const dExtent =
+    ((newWidth - oldWidth) / 2) * support + (newGap - oldGap) * (Math.abs(u.x) + Math.abs(u.y));
   if (Math.abs(dExtent) < MOVE_EPS) return null;
   return { dRow: (dExtent * u.y) / STOP_SIZE, dCol: (dExtent * u.x) / STOP_SIZE };
 }

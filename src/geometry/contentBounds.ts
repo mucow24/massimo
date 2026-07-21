@@ -1,5 +1,5 @@
 import type { MapDoc } from '../model/types';
-import { stopHalfOf } from '../model/lineWidth';
+import { stopGapOf, stopHalfOf } from '../model/lineWidth';
 import { stopDashOf } from '../model/dashSize';
 import { effectiveStationLabelStyle } from '../model/transforms';
 import { TEXT_LABEL_HIT_PAD, type AABBRect } from './stationBoundary';
@@ -39,10 +39,11 @@ export function computeContentBounds(doc: MapDoc): AABBRect | null {
 
   const stopHalf = stopHalfOf(doc.lines);
   const stopDash = stopDashOf(doc.lines);
+  const stopGap = stopGapOf(doc.lines);
 
   for (const id in doc.stations) {
     const st = doc.stations[id];
-    acc(stationWorldAABB(st, effectiveStationLabelStyle(st), stopHalf, stopDash));
+    acc(stationWorldAABB(st, effectiveStationLabelStyle(st), stopHalf, stopDash, stopGap));
   }
   for (const id in doc.textLabels) {
     acc(textLabelAABB(doc.textLabels[id], TEXT_LABEL_HIT_PAD));

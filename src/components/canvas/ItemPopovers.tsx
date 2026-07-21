@@ -11,7 +11,7 @@ import {
   transferAABB,
   unionAABBs,
 } from '../../geometry/itemBounds';
-import { stopHalfOf } from '../../model/lineWidth';
+import { stopGapOf, stopHalfOf } from '../../model/lineWidth';
 import { stopDashOf } from '../../model/dashSize';
 import { effectiveStationLabelStyle } from '../../model/transforms';
 import { resolveTransferStyle } from '../../model/transferStyle';
@@ -103,10 +103,13 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
       const rects: AABB[] = [];
       const stopHalf = stopHalfOf(lines);
       const stopDash = stopDashOf(lines);
+      const stopGap = stopGapOf(lines);
       for (const id of multiIds.stations) {
         const st = stations[id];
         if (st)
-          rects.push(stationWorldAABB(st, effectiveStationLabelStyle(st), stopHalf, stopDash));
+          rects.push(
+            stationWorldAABB(st, effectiveStationLabelStyle(st), stopHalf, stopDash, stopGap),
+          );
       }
       for (const id of multiIds.bullets) {
         const b = routeBullets[id];
@@ -187,6 +190,7 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
           effectiveStationLabelStyle(st),
           stopHalfOf(lines),
           stopDashOf(lines),
+          stopGapOf(lines),
         )}
         view={view}
         spawnBox={spawnBox}

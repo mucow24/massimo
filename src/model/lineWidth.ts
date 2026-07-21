@@ -70,3 +70,14 @@ export const stopHalfOf =
   (lines: Record<string, { width?: number } | undefined>) =>
   (id: string): number =>
     lineWidthOf(lines[id]) / 2;
+
+/**
+ * Per-line interline-gap lookup keyed by line id — the companion of
+ * `stopHalfOf` for the label adjacency gate (a label parks against a gapped
+ * line at the gap-widened lattice pitch, so the gate must widen with it).
+ * Unknown ids fall back to the gapless default.
+ */
+export const stopGapOf =
+  (lines: Record<string, { interlineGap?: number } | undefined>) =>
+  (id: string): number =>
+    lineInterlineGapOf(lines[id]);

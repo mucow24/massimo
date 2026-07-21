@@ -408,6 +408,88 @@ describe('labelLayoutLocal — narrow stops keep the 1-cell adjacency gate', () 
   });
 });
 
+describe('labelLayoutLocal — autoAlign across an interline gap', () => {
+  // The ghost lattice parks a label against a gapped line at the PACKED
+  // pitch — tangency plus the pair's interline gap (the label itself is
+  // gapless, so the stop's own gap decides). The adjacency gate must accept
+  // those parks, or the exact slot the station editor offers renders as the
+  // detached centered fallback and the text slides over the dot (the
+  // Plaistow regression: gap 4.25 ⇒ pitch 18.25/14 ≈ 1.304, past the
+  // width-only gate ≈ 1.036).
+  const GAP = 4.25;
+  const PITCH = (STOP_SIZE + GAP) / STOP_SIZE; // default-width park: 18.25/14
+  const gap425 = () => GAP;
+
+  it('E of a vertical stop at the gap pitch: still pinned start-anchored at the marker edge', () => {
+    const lay = labelLayoutLocal(
+      autoStation({ stops: [{ dRow: 0, dCol: -PITCH, orientation: 'auto-vertical' }] }),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      gap425,
+    );
+    expect(lay.textAnchor).toBe('start');
+    // The pin stays stop-relative (marker edge + LABEL_GAP): the gap widens
+    // only the GATE, not the painted clearance — empty space, not body.
+    expect(lay.anchorX).toBeCloseTo(-PITCH * STOP_SIZE + (HALF + LABEL_GAP), 6);
+    expect(lay.anchorY).toBeCloseTo(CTR, 6);
+  });
+
+  it('without a gap the same distance stays detached (no blanket widening)', () => {
+    const lay = labelLayoutLocal(
+      autoStation({ stops: [{ dRow: 0, dCol: -PITCH, orientation: 'auto-vertical' }] }),
+    );
+    expect(lay.textAnchor).toBe('middle'); // centered fallback — by design
+  });
+
+  it('the Plaistow field repro: crossing gap-packed stops, S-reading label right of the lower dot', () => {
+    // Faithful cell geometry from the bug report (station rotation stripped —
+    // labelLayoutLocal works in the unrotated local frame): label reads S
+    // (rotation 2); the horizontal-line stop sits PITCH behind the reading
+    // direction, the vertical-line stop PITCH behind and PITCH beside. The
+    // nearer horizontal stop wins as reference and the text starts at its
+    // edge — the regression centered it on the label cell, over the dot.
+    const lay = labelLayoutLocal(
+      autoStation({
+        rotation: 2,
+        stops: [
+          { dRow: -PITCH, dCol: 0, orientation: 'auto-horizontal', lineId: 'L1' },
+          { dRow: -PITCH, dCol: PITCH, orientation: 'auto-vertical', lineId: 'L2' },
+        ],
+      }),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      gap425,
+    );
+    expect(lay.textAnchor).toBe('start');
+    // Reading-frame S: the pin sits (HALF + LABEL_GAP) past the horizontal
+    // stop's edge along reading — local y = −PITCH·14 + 7 + 3.
+    expect(lay.anchorY).toBeCloseTo(-PITCH * STOP_SIZE + (HALF + LABEL_GAP), 6);
+    expect(lay.anchorX).toBeCloseTo(-CTR, 6);
+  });
+
+  it('the legacy align:"auto" snap recognizes the gap pitch too', () => {
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [{ dRow: 0, dCol: -PITCH, orientation: 'auto-vertical' }],
+        autoAlign: false,
+        align: 'auto',
+      }),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      gap425,
+    );
+    expect(lay.textAnchor).toBe('start');
+    // Stop-relative clamp: text begins HALF + LABEL_GAP past the stop center.
+    expect(lay.anchorX).toBeCloseTo(-PITCH * STOP_SIZE + (HALF + LABEL_GAP), 6);
+  });
+});
+
 describe('labelLayoutLocal — autoAlign rotation covariance', () => {
   it('rotation 2 (S-reading) beside-stop case = rotation-0 case rotated 90°', () => {
     // Rotation-0 oracle: stop (0,1) auto-vertical ⇒ anchor (4, CTR), 'end'.

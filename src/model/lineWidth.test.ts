@@ -7,6 +7,7 @@ import {
   LINE_WIDTH_MAX,
   canonicalLineWidth,
   lineWidthOf,
+  stopGapOf,
   stopHalfOf,
 } from './lineWidth';
 
@@ -69,5 +70,14 @@ describe('stopHalfOf', () => {
     expect(half('L1')).toBe(14);
     expect(half('L2')).toBe(7);
     expect(half('ghost')).toBe(7);
+  });
+});
+
+describe('stopGapOf', () => {
+  it('returns the effective interline gap per line id, defaulting unknown ids to 0', () => {
+    const gap = stopGapOf({ L1: { interlineGap: 4.25 }, L2: {} });
+    expect(gap('L1')).toBe(4.25);
+    expect(gap('L2')).toBe(0);
+    expect(gap('ghost')).toBe(0);
   });
 });
