@@ -1,6 +1,5 @@
 import { ChevronDownIcon } from '@radix-ui/react-icons';
 import * as Select from '@radix-ui/react-select';
-import * as ToggleGroup from '@radix-ui/react-toggle-group';
 import { useDoc } from '../state/store';
 import { type ViewportProjection } from './canvas/screenAnchor';
 import type { AABB } from '../geometry/rectPolygon';
@@ -9,6 +8,7 @@ import { useDraggablePopover } from './canvas/useDraggablePopover';
 import { FieldSelectContent } from './FieldSelectContent';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
+import { SegmentedToggle } from './SegmentedToggle';
 import { StyleRow } from './StyleRow';
 import {
   ROUTE_BULLET_SIZE_MAX,
@@ -142,29 +142,18 @@ export function RouteBulletPopover({ bullet, worldRect, view, spawnBox, onClose 
       <div className="row">
         <label>Shape</label>
         <div className="shape-group">
-          {/* One roving-focus group; the empty-string guard keeps it
-              radio-like (re-clicking the selected shape doesn't deselect). */}
-          <ToggleGroup.Root
-            type="single"
-            className="align-group"
+          <SegmentedToggle
             value={bullet.shape}
             disabled={locked}
-            onValueChange={(v) => {
-              if (v) onShape(v as RouteBulletShape);
-            }}
-          >
-            {shapes.map((s) => (
-              <ToggleGroup.Item
-                key={s}
-                value={s}
-                className={'shape-btn' + (bullet.shape === s ? ' active' : '')}
-                title={s}
-                aria-label={s}
-              >
-                <ShapeIcon shape={s} />
-              </ToggleGroup.Item>
-            ))}
-          </ToggleGroup.Root>
+            itemClassName="shape-btn"
+            onSelect={(v) => onShape(v as RouteBulletShape)}
+            options={shapes.map((s) => ({
+              value: s,
+              label: s,
+              title: s,
+              content: <ShapeIcon shape={s} />,
+            }))}
+          />
         </div>
       </div>
       {/* textboxAllowAboveMax: the spinbutton (typing and step buttons) accepts

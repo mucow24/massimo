@@ -11,6 +11,7 @@ import type {
 } from './types';
 import { STOP_DOT_RADIUS } from '../geometry/orientation';
 import { legibleTextOn } from '../util/color';
+import { snapToStep } from '../util/grid';
 
 // A dot showing its service code uses a larger disc than STOP_DOT_RADIUS so
 // the code inside stays legible. (Moved here from StopGlyph — the radius is a
@@ -28,6 +29,10 @@ export const defaultDotDiameter = (style: DotStyle): number =>
 
 const K: DayNightColor = { day: '#000000', night: '#000000' };
 const W: DayNightColor = { day: '#ffffff', night: '#ffffff' };
+// Well-named aliases for reuse outside this file (e.g. the StopDot editor's
+// custom-mode fallback pairs), so those can't drift from the preset table's K/W.
+export const BLACK_PAIR = K;
+export const WHITE_PAIR = W;
 
 // Pinned re-implementations of the legacy DotShape enum. Every preset is
 // theme-blind (day === night) so converting old saves changes nothing
@@ -426,7 +431,7 @@ export function canonicalDotStyle(s: DotStyle): DotStyle {
   const out: DotStyle = {
     shape: s.shape,
     fill: lcFill(s.fill),
-    strokeWidth: Math.max(0, Math.round(s.strokeWidth / DOT_STROKE_STEP) * DOT_STROKE_STEP),
+    strokeWidth: snapToStep(s.strokeWidth, DOT_STROKE_STEP, 0),
     strokeColor: lcStroke(s.strokeColor),
     strokeAlign: s.strokeAlign,
     showServiceCode: s.showServiceCode,
