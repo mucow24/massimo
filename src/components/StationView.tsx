@@ -5,6 +5,7 @@ import { StationSilhouette } from './StationSilhouette';
 import { StationHitArea } from './StationHitArea';
 import { StationDots } from './StationDots';
 import { StationLabel, StationHighlightLabel, StationStarterLabel } from './StationLabel';
+import { StationOrientationArrows } from './StationOrientationArrows';
 
 interface Props {
   station: Station;
@@ -20,7 +21,8 @@ interface Props {
     | 'starter-label'
     | 'dots'
     | 'stroke'
-    | 'match-stroke';
+    | 'match-stroke'
+    | 'hover-arrows';
   // Override fill for the highlight-* layers (default white).
   highlightColor?: string;
   // Override the `stroke` layer's outline color (default: theme selection
@@ -99,5 +101,7 @@ export const StationView = memo(function StationView({
       return <StationLabel station={station} lines={lines} />;
     case 'dots':
       return <StationDots station={station} lines={lines} onStartDrag={onStartDrag} />;
+    case 'hover-arrows':
+      return <StationOrientationArrows station={station} lines={lines} />;
   }
 });
