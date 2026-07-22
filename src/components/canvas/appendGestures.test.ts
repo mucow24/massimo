@@ -8,6 +8,7 @@ import {
   decideDeleteKey,
   decideSegmentClick,
   decideStationClick,
+  sameAppendHover,
   validCursor,
   NEXT_STYLE,
   nextSegmentStyle,
@@ -199,6 +200,56 @@ describe('decideStationClick — shift cycles the armed segment', () => {
       kind: 'cursor',
       cursor: stationCursor('b'),
     });
+  });
+});
+
+// sameAppendHover backs setAppendHover's no-churn gate: a per-frame pointermove
+// stream over one target must NOT re-render. Each variant compares only its own
+// identifying field, and different kinds are never equal.
+describe('sameAppendHover', () => {
+  it('same station is same, different station is not', () => {
+    expect(
+      sameAppendHover({ kind: 'station', stationId: 'a' }, { kind: 'station', stationId: 'a' }),
+    ).toBe(true);
+    expect(
+      sameAppendHover({ kind: 'station', stationId: 'a' }, { kind: 'station', stationId: 'b' }),
+    ).toBe(false);
+  });
+
+  it('same segment is same, different segment is not', () => {
+    expect(
+      sameAppendHover({ kind: 'segment', pairKey: 'a|b' }, { kind: 'segment', pairKey: 'a|b' }),
+    ).toBe(true);
+    expect(
+      sameAppendHover({ kind: 'segment', pairKey: 'a|b' }, { kind: 'segment', pairKey: 'b|c' }),
+    ).toBe(false);
+  });
+
+  it('same foreign line is same, different foreign line is not', () => {
+    // The 'line' branch — a foreign stripe under the cursor. If it compared the
+    // wrong field, hovering a stripe would either churn re-renders every frame
+    // or freeze on a stale line highlight.
+    expect(sameAppendHover({ kind: 'line', lineId: 'L1' }, { kind: 'line', lineId: 'L1' })).toBe(
+      true,
+    );
+    expect(sameAppendHover({ kind: 'line', lineId: 'L1' }, { kind: 'line', lineId: 'L2' })).toBe(
+      false,
+    );
+  });
+
+  it('different kinds are never equal, even sharing an id', () => {
+    expect(
+      sameAppendHover({ kind: 'station', stationId: 'x' }, { kind: 'line', lineId: 'x' }),
+    ).toBe(false);
+    expect(sameAppendHover({ kind: 'segment', pairKey: 'x' }, { kind: 'line', lineId: 'x' })).toBe(
+      false,
+    );
+  });
+
+  it('null handling: two nulls match, a target vs null does not', () => {
+    expect(sameAppendHover(null, null)).toBe(true);
+    expect(sameAppendHover({ kind: 'line', lineId: 'L1' }, null)).toBe(false);
+    expect(sameAppendHover(null, { kind: 'station', stationId: 'a' })).toBe(false);
   });
 });
 

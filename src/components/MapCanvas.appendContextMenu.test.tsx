@@ -75,11 +75,15 @@ describe('MapCanvas — right-click exits Edit Stops', () => {
     expect(useDoc.getState().lines.L1.stations).toEqual(['A', 'B']);
   });
 
-  it('right-click in idle mode still does nothing to the mode or the doc', () => {
+  it('right-click on a segment in idle mode does NOT remove the edge (retired accelerator stays retired)', () => {
+    // The old right-click-removes-edge accelerator is gone everywhere, not just
+    // inside Edit Stops. Outside the mode a right-click on the band stripe must
+    // leave the topology untouched — no mode is entered and no edge is dropped.
     render(<App />);
     seedAndEnter();
     act(() => useSelection.getState().setAppending(null));
-    contextMenuOn('[data-bg]');
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+    contextMenuOn('[data-band-stripe][data-line-id="L1"]');
     expect(useSelection.getState().uiMode.kind).toBe('idle');
     expect(useDoc.getState().lines.L1.edges).toEqual(['A|B']);
   });

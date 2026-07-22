@@ -49,17 +49,6 @@ export const dashRenderWidth = (
 ): number => lineDashWidthOf(line) ?? lineWidthOf(line) * DASH_WIDTH_RATIO;
 
 /**
- * Per-stop dash-tick lookup for the label layout (labelLayout's StopDashFn):
- * the tick's rendered dimensions when the stop's effective style is 'dash',
- * else null. The companion of `stopHalfOf` (lineWidth.ts) — pass the two
- * together at every labelLayoutLocal / stationBoundary / itemBounds site, so
- * the autoAlign pin, the hit rect, and the silhouette all clear the same tick
- * the canvas paints. Takes the stop's whole station `stops` array so it can
- * resolve the SAME split default the canvas does (`stationIsSingleton` is
- * blank-aware), keeping that rule in the model rather than duplicated in
- * geometry — the label clears a tick iff the stop actually paints one.
- */
-/**
  * True when this line can paint a dash tick anywhere: either line-level
  * default (singleton or interchange) is the dash shape, or any member stop
  * carries an explicit dash override. Drives the LineInspector's conditional
@@ -78,6 +67,17 @@ export const lineUsesDashTicks = (
     stations[sid]?.stops.some((c) => c.lineId === line.id && c.dotStyle?.shape === 'dash'),
   );
 
+/**
+ * Per-stop dash-tick lookup for the label layout (labelLayout's StopDashFn):
+ * the tick's rendered dimensions when the stop's effective style is 'dash',
+ * else null. The companion of `stopHalfOf` (lineWidth.ts) — pass the two
+ * together at every labelLayoutLocal / stationBoundary / itemBounds site, so
+ * the autoAlign pin, the hit rect, and the silhouette all clear the same tick
+ * the canvas paints. Takes the stop's whole station `stops` array so it can
+ * resolve the SAME split default the canvas does (`stationIsSingleton` is
+ * blank-aware), keeping that rule in the model rather than duplicated in
+ * geometry — the label clears a tick iff the stop actually paints one.
+ */
 export const stopDashOf =
   (lines: Record<string, Line | undefined>) =>
   (stop: StopCell, stationStops: readonly StopCell[]): { length: number; width: number } | null => {

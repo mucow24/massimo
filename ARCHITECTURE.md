@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `832e2a2` (2026-07-21) — verified against the live source. Since #321: a per-line `interlineGap` (GEOMETRY, 0.25 grid, drop-at-0) inserts spacing between interlined neighbors — `tangentGap` now takes both widths AND both gaps (`(wA+wB)/2 + max(gapA,gapB)`), threaded through the band merge gate, stripe offsets, spawn, and the width-edit repack (`repackStationForWidth` → `repackStationForSpacing`); `gap=0` is a bit-exact identity (#323). Its exposed hole/seam edges surfaced two clip-precision fixes: clip content is emitted in ×64 local coords to beat Blink's ~1-unit clip-resource raster snap (shared `clipRaster.ts`, used by both `SeamClips` and `RegionExcludeClips`), and the region-exclude outer ring is a content-sized AABB (`regionClipBounds`) rather than a ±500000 constant (#323/#324). Earlier changes since `f2b8a1a` (#304), the big one being the doc-scoped "Stop dots" style library: `stopDot` is now a 7th styleable kind whose styles live in a small per-doc library (`bakeStopDotLibrary`, persist v19), the per-line/per-stop dot TYPE became a covered `LineStyleProps` field (`singletonDotStyleId`/`multiDotStyleId`, persist v20), and `DotStyle` gained a required `strokeAlign` (center/inside/outside, persist v21) and an optional `serviceCodeColor` (absent ⇒ B/W auto-contrast). Persist `version` is now `21`. The viewport store gained two local chrome preferences — `dayCanvasColor` (white/gray/black day paper) and `darkUiInDay` (chrome-only dark UI while the map stays in day mode, driving `chromeDark`) — and `themeColors` takes `dayCanvasColor`. All dimensional inputs (dot size, transfer thickness, route-bullet size) unified onto the 0.25 quarter grid (#321). This code-health pass also extracted the shared `SegmentedToggle` (one implementation for the ~13 inline pick-one Radix `ToggleGroup` clusters) and moved `snapToStep` to a leaf `util/grid` shared by every quarter-grid canonicalizer.**
+**Up to date as of commit `0a9ce21` (2026-07-21, #332) — verified against the live source. Since #324 (`832e2a2`): export filenames now version-stamp (`<name> - v<version>[d]`, date only as a no-library fallback) instead of date-stamping (#325); the Edit Stops (`appending-to-line`) mode got a usability overhaul — it is now manipulation-free (station drag/rotate unwired), **alt-click** creates a fresh station under the cursor, right-click anywhere **exits** the mode (removing nothing; removal is the × chip or Delete) rather than removing an edge, `appendHover` gained a `{kind:'line'}` variant that previews/switches to a foreign line's stripe, and the line-popover's style detail collapses via a new persisted `useLineEditorPrefs` store (#326); label adjacency recognizes interline-gap parks (#327); ctrl-click redistribute walks edge topology via `shortestPathOnLine` rather than membership order (#329); and hovering a station in idle mode paints its stop dots' orientation glyphs (a new `hover-arrows` paint layer above the routing-warning markers) (#330/#331). Earlier, since #321: a per-line `interlineGap` (GEOMETRY, 0.25 grid, drop-at-0) inserts spacing between interlined neighbors — `tangentGap` now takes both widths AND both gaps (`(wA+wB)/2 + max(gapA,gapB)`), threaded through the band merge gate, stripe offsets, spawn, and the width-edit repack (`repackStationForWidth` → `repackStationForSpacing`); `gap=0` is a bit-exact identity (#323). Its exposed hole/seam edges surfaced two clip-precision fixes: clip content is emitted in ×64 local coords to beat Blink's ~1-unit clip-resource raster snap (shared `clipRaster.ts`, used by both `SeamClips` and `RegionExcludeClips`), and the region-exclude outer ring is a content-sized AABB (`regionClipBounds`) rather than a ±500000 constant (#323/#324). Earlier changes since `f2b8a1a` (#304), the big one being the doc-scoped "Stop dots" style library: `stopDot` is now a 7th styleable kind whose styles live in a small per-doc library (`bakeStopDotLibrary`, persist v19), the per-line/per-stop dot TYPE became a covered `LineStyleProps` field (`singletonDotStyleId`/`multiDotStyleId`, persist v20), and `DotStyle` gained a required `strokeAlign` (center/inside/outside, persist v21) and an optional `serviceCodeColor` (absent ⇒ B/W auto-contrast). Persist `version` is now `21`. The viewport store gained two local chrome preferences — `dayCanvasColor` (white/gray/black day paper) and `darkUiInDay` (chrome-only dark UI while the map stays in day mode, driving `chromeDark`) — and `themeColors` takes `dayCanvasColor`. All dimensional inputs (dot size, transfer thickness, route-bullet size) unified onto the 0.25 quarter grid (#321). This code-health pass also extracted the shared `SegmentedToggle` (one implementation for the ~13 inline pick-one Radix `ToggleGroup` clusters) and moved `snapToStep` to a leaf `util/grid` shared by every quarter-grid canonicalizer.**
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
 > caveats. Written for an AI assistant (or new contributor) who needs the full picture
@@ -745,10 +745,13 @@ custom ids.
 - **Startup**: no explicit load in `App.tsx` — zustand `persist` rehydrates from localStorage on
   boot, running `migrateDoc`.
 - **Load → JSON…**: `parse(text, customPalettes)` then `adoptParsedDoc()` (below).
-- File basename: `${sanitizedName} - YYYY-MM-DD` (e.g. `My Subway Map - 2026-07-01`), shared by
-  every export via `mapFileBasename` ([exportCanvas.ts](src/export/exportCanvas.ts)). The map
-  name leads so successive saves group together; it falls back to the literal `map` only when the
-  name is empty or all-illegal after stripping filename-hostile characters.
+- File basename: `${sanitizedName} - v${version}` (clean) or `${sanitizedName} - v${version}d`
+  (dirty — edited since that library version was saved), shared by every export via
+  `mapFileBasename(name, version, dirty)` ([exportCanvas.ts](src/export/exportCanvas.ts)). A map
+  with no library version yet — a fresh New map, or a loaded JSON file — has no number to stamp, so
+  it falls back to a `YYYY-MM-DD` date stamp (the `dirty` flag is meaningless there and ignored).
+  The map name leads so successive saves group together; it falls back to the literal `map` only
+  when the name is empty or all-illegal after stripping filename-hostile characters.
 
 ### The map library ([mapLibrary.ts](src/state/mapLibrary.ts))
 
@@ -1046,9 +1049,13 @@ one variant + handlers; its right-click policy is declared in one place,
 `RIGHT_CLICK_PASSTHROUGH_MODES` (`{idle, layering, editing-station-layout, appending-to-line}` —
 modes where right-click does **not** cancel). The cancel gesture is also scoped to the canvas: a
 right-click landing inside `.sidebar` is exempt (`cancelModeOnContextMenu` in App.tsx), so sidebar
-controls keep their own right-click semantics mid-mode. During Edit Stops, right-click removes a
-segment/edge on the canvas rather than ejecting the mode (why `appending-to-line` is a passthrough
-mode). Every non-idle mode announces itself on the canvas via
+controls keep their own right-click semantics mid-mode. During Edit Stops, right-click anywhere on
+the canvas **exits** the mode (the mouse-only twin of Esc) and removes nothing — edge/stop removal
+is the × chip or the Delete key. `appending-to-line` sits in the passthrough set so the
+document-level cancel stands down and defers to the canvas's own `onContextMenu` exit handler
+([MapCanvas.tsx](src/components/MapCanvas.tsx) — stations/segments deliberately leave contextmenu
+unwired in the mode so every right-click bubbles to the SVG root), NOT because right-click keeps a
+mid-mode removal gesture. Every non-idle mode announces itself on the canvas via
 [canvas/EditingBanner.tsx](src/components/canvas/EditingBanner.tsx) (banner + 4-side mode frame:
 accent for placement modes, the line's color for appending, orange for layering; an exhaustive
 `switch` over the union with a compile-time `never` guard, so a new mode that forgets its banner
@@ -1068,11 +1075,13 @@ the polygon stays selected while its vertex handles are active). Selectors:
 Separately, `hoveredCanvasItem: HoveredCanvasItem | null` (`{kind: HoverKind, id}`) tracks the
 item under the cursor so the canvas can preview each item's selection chrome at 50% opacity on
 mouseover — a pure hover cue, independent of the selection lists above. Its Edit-Stops twin is
-`appendHover: AppendHover` (`{kind:'station', stationId} | {kind:'segment', pairKey} | null`),
-the station/segment under the cursor _while editing a line's stops_. It drives the same
+`appendHover: AppendHover`
+(`{kind:'station', stationId} | {kind:'segment', pairKey} | {kind:'line', lineId} | null`),
+the station/segment/foreign-line under the cursor _while editing a line's stops_. It drives the same
 50%-opacity preview — but of the ring/halo a click would place next (gated through the click
 matrix by `appendStationHoverPreview`/`appendSegmentHoverPreview`), painted in
-`HighlightedLineLayer`. It is kept apart from `hoveredCanvasItem` (whose `hoveredChrome` gate is
+`HighlightedLineLayer`. The `'line'` variant marks a stripe of a line _other_ than the edited one:
+its preview highlights that whole line, and clicking it switches the editor over to it. It is kept apart from `hoveredCanvasItem` (whose `hoveredChrome` gate is
 idle-only); its setter `setAppendHover` no-ops on an unchanged target so a segment stripe's
 per-frame `pointermove` stream doesn't churn re-renders. Ephemeral; cleared on pointer-leave and
 on any mode exit.
@@ -1416,7 +1425,12 @@ instantiated **once per pass**. Top→bottom paint order (later = on top):
 16. `BandWarning` ⚠ markers — painted after everything above, so a warning is never occluded by
     any stripe, dot, or label (deliberately NOT interleaved with the band pass; see the note in
     `buildOrderedRenderables`).
-17. **Layout-editor focus content** (editing-station-layout mode only) — painted last of all,
+17. **Hover orientation arrows** (`StationView layer="hover-arrows"`, idle mode only) — when the
+    cursor rests on a station, its stop dots wear the layout editor's axis glyphs (↕ ⤢ ↔ ⤡) as a
+    read-only orientation cue ([StationOrientationArrows.tsx](src/components/StationOrientationArrows.tsx)).
+    Painted _after_ the routing-warning markers so a ⚠ frame can never cover the badges. Idle-only
+    chrome, so it can't collide with the layout-edit focus content below.
+18. **Layout-editor focus content** (editing-station-layout mode only) — painted last of all,
     _above_ the warnings, so the station being edited stays reachable: a white selection
     re-stroke over the focus dim, its stops re-painted at full strength, `StationLayoutEditor`
     grab rings + direction arrows, then `GhostLattice` during a drag.
@@ -1659,8 +1673,10 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   editor mode is active (`sidebarVisible`: `editing-station-layout` or `appending-to-line`),
   ceding the corner. Stop/topology editing is **canvas-driven**
   ([canvas/appendGestures.ts](src/components/canvas/appendGestures.ts)): click stations to connect,
-  click a segment to insert into it, Delete/× removes the armed stop/edge, right-click removes a
-  segment/edge. A segment's line style cycles three ways, all through the one `NEXT_STYLE` map:
+  click a segment to insert into it, **alt-click** an empty spot to create a fresh station there
+  (manipulation-free mode — dragging/rotating a station is unwired from the editor, so a stray drag
+  can't disturb the map), Delete/× removes the armed stop/edge, and right-click exits the mode
+  (removing nothing). A segment's line style cycles three ways, all through the one `NEXT_STYLE` map:
   shift-clicking the band stripe, shift-clicking an armed segment's **endpoint station** (the
   `cycle-style` decision — how a segment buried under its endpoints stays restyleable; shift
   NEVER adds to the line), or clicking the **style-cycle chip** that flanks the × chip on the
