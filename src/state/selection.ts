@@ -84,9 +84,9 @@ export const RIGHT_CLICK_PASSTHROUGH_MODES: ReadonlySet<UiMode['kind']> = new Se
   'layering',
   // Right-click rotates the stop/label under the cursor.
   'editing-station-layout',
-  // Right-click REMOVES the station / segment under the cursor (Esc or a
-  // plain canvas click back out of the mode instead), so a missed right-click
-  // while deleting track must not eject the user from the editor.
+  // Right-click EXITS Edit Stops via the canvas's own onContextMenu handler
+  // (MapCanvas), so the document-level cancel must stand down here and defer
+  // to it — removal is the × chip or the Delete key, not a right-click.
   'appending-to-line',
 ]);
 
