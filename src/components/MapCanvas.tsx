@@ -16,7 +16,7 @@ import {
 } from '../geometry/interlining';
 import { edgeEndpoints } from '../model/lineTopology';
 import { pairKeyOf } from '../model/pairKey';
-import { decideCanvasClick, decideSegmentClick, nextSegmentStyle } from './canvas/appendGestures';
+import { decideCanvasClick, decideSegmentClick, nextSegmentStyle } from '../model/appendGestures';
 import { effectiveBackgroundOrder, type ItemRef } from '../model/transforms';
 import { resolveDayNight, TRANSFER_STYLE_DEFAULTS } from '../model/transferStyle';
 import { defaultStyleProps } from '../model/styles';

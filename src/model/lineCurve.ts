@@ -1,3 +1,5 @@
+import { roundClamp } from '../util/grid';
+
 // Per-line corner-rounding radius, in world units. Historically a doc-global
 // option (MapDoc.curveRadius, default 24); now a per-line style field. The
 // default IS the historical value — all-default docs render bit-identically
@@ -25,10 +27,7 @@ export const LINE_CURVE_RADIUS_STEP = 0.25;
  * non-finite input; a sanitizer drops the field).
  */
 export const canonicalLineCurveRadius = (r: number): number | undefined => {
-  const norm = Math.max(
-    LINE_CURVE_RADIUS_MIN,
-    Math.round(r / LINE_CURVE_RADIUS_STEP) * LINE_CURVE_RADIUS_STEP,
-  );
+  const norm = roundClamp(r, LINE_CURVE_RADIUS_STEP, LINE_CURVE_RADIUS_MIN);
   return norm === LINE_CURVE_RADIUS_DEFAULT ? undefined : norm;
 };
 

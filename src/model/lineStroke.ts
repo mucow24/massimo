@@ -15,6 +15,8 @@
 // Renderers resolve it live from the line (like color), so edits repaint
 // without a geometry rebuild.
 
+import { roundClamp } from '../util/grid';
+
 // 0 = no casing; the field is dropped at the default so it is never stored.
 export const LINE_STROKE_WIDTH_DEFAULT = 0;
 // Transform clamp floor (a casing can't be negative).
@@ -39,7 +41,7 @@ export const LINE_STROKE_COLOR_DEFAULT = '#ffffff';
  * guard.
  */
 export const canonicalStrokeWidth = (w: number): number | undefined => {
-  const norm = Math.max(LINE_STROKE_WIDTH_MIN, Math.round(w / LINE_STROKE_STEP) * LINE_STROKE_STEP);
+  const norm = roundClamp(w, LINE_STROKE_STEP, LINE_STROKE_WIDTH_MIN);
   return norm === LINE_STROKE_WIDTH_DEFAULT ? undefined : norm;
 };
 

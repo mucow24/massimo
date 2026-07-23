@@ -19,7 +19,7 @@ import {
   appendStationHoverPreview,
   validCursor,
   type AppendHover,
-} from './appendGestures';
+} from '../../model/appendGestures';
 import { offsetFilletPath } from '../../geometry/router';
 import { sampleOffsetPath } from '../../geometry/lineTagGeometry';
 

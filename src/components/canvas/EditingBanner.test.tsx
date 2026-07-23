@@ -103,7 +103,7 @@ describe('<EditingBanner /> — Edit Stops copy tracks the cursor state', () => 
       lineOrder: ['L1'],
     });
   };
-  const appending = (cursor: import('./appendGestures').AppendCursor) =>
+  const appending = (cursor: import('../../model/appendGestures').AppendCursor) =>
     useSelection.getState().setUiMode({ kind: 'appending-to-line', lineId: 'L1', cursor });
 
   it('nothing armed: the starting instructions, with the right-click exit', () => {

@@ -1,7 +1,7 @@
 import { useDoc, useSelection } from '../../state/store';
 import { legibleTextOn } from '../../util/color';
 import { stationNameListText } from '../../geometry/labelTokens';
-import { validCursor } from './appendGestures';
+import { validCursor } from '../../model/appendGestures';
 import type { Station, StationId } from '../../model/types';
 
 // Copy for the simple one-click placement modes. Right-click cancels every

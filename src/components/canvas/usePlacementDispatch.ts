@@ -6,7 +6,7 @@ import {
   useSelection,
   type UiMode,
 } from '../../state/store';
-import { decideCanvasClick } from './appendGestures';
+import { decideCanvasClick } from '../../model/appendGestures';
 import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
 import { randomStationName } from '../../state/stationNames';
