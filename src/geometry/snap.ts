@@ -4,7 +4,7 @@ import { cross, SQRT2_2 } from './vec';
 import { rotateBy, stopCenterAt, travelDirLocal } from './orientation';
 import type { Rotation } from './orientation';
 import { stopPosWorld } from './interlining';
-import { lineHasEdge } from '../model/lineTopology';
+import { lineHasEdge, shortestPathOnLine } from '../model/lineTopology';
 
 /**
  * Default perpendicular tolerance for engaging a snap, in world units — this is
@@ -509,14 +509,20 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   // primary guide axis — a line on a different axis would report a spacing for
   // stops the guide isn't drawn through. Among the parallel lines the gap is
   // identical by construction, so Math.max is a safe conservative pick.
+  //
+  // Segments come from the line's EDGE graph (shortestPathOnLine), NOT a
+  // `line.stations` index slice: membership order is creation order, not track
+  // order, so `|indexOf(d) - indexOf(a)|` can miscount on loops/branches or any
+  // out-of-order line. This mirrors redistributeBetween, which walks the same
+  // graph — the readout must divide by the same segment count the redistribute
+  // actually uses.
   const spacingDivisor = (() => {
     if (!redistributeAnchor) return 0;
     let segments = 0;
     if (!draggedId) return 0;
     for (const line of Object.values(lines)) {
-      const dIdx = line.stations.indexOf(draggedId);
-      const tIdx = line.stations.indexOf(redistributeAnchor);
-      if (dIdx < 0 || tIdx < 0) continue;
+      const path = shortestPathOnLine(line, draggedId, redistributeAnchor);
+      if (!path) continue; // not both members, or unlinked on this line
       const dCell = (draggedStops ?? []).find((c) => c.lineId === line.id);
       if (!dCell) continue;
       const lineAxis = rotateBy(
@@ -524,7 +530,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
         (draggedRotation ?? 0) as Rotation,
       );
       if (!parallel(lineAxis, primary.axis)) continue;
-      segments = Math.max(segments, Math.abs(dIdx - tIdx));
+      segments = Math.max(segments, path.length);
     }
     return segments;
   })();

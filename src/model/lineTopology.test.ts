@@ -9,6 +9,7 @@ import {
   lineHasEdge,
   neighborsOf,
   removeEdge,
+  shortestPathOnLine,
 } from './lineTopology';
 import { pairKeyOf } from './pairKey';
 import { makeLine } from '../test/fixtures';
@@ -102,5 +103,81 @@ describe('edge-set mutators', () => {
     const edges = [pairKeyOf('s1', 's2'), pairKeyOf('s2', 's3'), pairKeyOf('s3', 's4')];
     expect(edgesWithout(edges, 's2')).toEqual([pairKeyOf('s3', 's4')]);
     expect(edgesWithout(edges, 'sX')).toBe(edges);
+  });
+});
+
+describe('shortestPathOnLine', () => {
+  it('walks the consecutive chain on a linear line, excluding the start', () => {
+    const line = makeLine({ id: 'l1', stations: ['a', 'b', 'c', 'd'] });
+    expect(shortestPathOnLine(line, 'a', 'd')).toEqual(['b', 'c', 'd']);
+    // Direction-independent: the reverse walk drops its own start.
+    expect(shortestPathOnLine(line, 'd', 'a')).toEqual(['c', 'b', 'a']);
+  });
+
+  it('returns a single hop for directly-linked stations', () => {
+    const line = makeLine({ id: 'l1', stations: ['a', 'b', 'c'] });
+    expect(shortestPathOnLine(line, 'b', 'c')).toEqual(['c']);
+  });
+
+  it('takes the shorter arc around a loop', () => {
+    // 4-cycle a-b-c-d-a: a→c has two equal 2-hop arcs; either is fine, but it
+    // must never take the 3-hop long way round.
+    const loop = makeLine({
+      id: 'l1',
+      stations: ['a', 'b', 'c', 'd'],
+      edges: [pairKeyOf('a', 'b'), pairKeyOf('b', 'c'), pairKeyOf('c', 'd'), pairKeyOf('a', 'd')],
+    });
+    const path = shortestPathOnLine(loop, 'a', 'c');
+    expect(path).not.toBeNull();
+    expect(path).toHaveLength(2); // shorter arc, not the 3-hop long way
+    expect(path?.[path.length - 1]).toBe('c');
+
+    // On a 5-cycle the short and long arcs differ in length: a→c is 2 hops
+    // (via b), never 3 (via e, d).
+    const five = makeLine({
+      id: 'l2',
+      stations: ['a', 'b', 'c', 'd', 'e'],
+      edges: [
+        pairKeyOf('a', 'b'),
+        pairKeyOf('b', 'c'),
+        pairKeyOf('c', 'd'),
+        pairKeyOf('d', 'e'),
+        pairKeyOf('a', 'e'),
+      ],
+    });
+    expect(shortestPathOnLine(five, 'a', 'c')).toEqual(['b', 'c']);
+  });
+
+  it('walks the unique tree path across a branch junction', () => {
+    // Y-junction: trunk s1-s2-J, branches J-s3 and J-s4.
+    const y = makeLine({
+      id: 'l1',
+      stations: ['s1', 's2', 'J', 's3', 's4'],
+      edges: [
+        pairKeyOf('s1', 's2'),
+        pairKeyOf('s2', 'J'),
+        pairKeyOf('J', 's3'),
+        pairKeyOf('J', 's4'),
+      ],
+    });
+    expect(shortestPathOnLine(y, 's1', 's3')).toEqual(['s2', 'J', 's3']);
+    // Between the two branch tips: through the junction, never onto the trunk.
+    expect(shortestPathOnLine(y, 's3', 's4')).toEqual(['J', 's4']);
+  });
+
+  it('returns null for members in disconnected edge components', () => {
+    // Two separate chains that happen to share one line's membership list.
+    const split = makeLine({
+      id: 'l1',
+      stations: ['a', 'b', 'x', 'y'],
+      edges: [pairKeyOf('a', 'b'), pairKeyOf('x', 'y')],
+    });
+    expect(shortestPathOnLine(split, 'a', 'x')).toBeNull();
+  });
+
+  it('returns null when either endpoint is not a member', () => {
+    const line = makeLine({ id: 'l1', stations: ['a', 'b'] });
+    expect(shortestPathOnLine(line, 'a', 'zzz')).toBeNull();
+    expect(shortestPathOnLine(line, 'zzz', 'b')).toBeNull();
   });
 });

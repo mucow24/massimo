@@ -598,12 +598,15 @@ function pointToFaceDistance(p: Vec2, face: RegionFace): number {
 
 /**
  * Nearest-compatible-face binding (shared by rendering and reconciliation):
- * assignment id → face index. Distances are measured in arc length along
- * each anchor's line — that is what follows a crossing that slides ALONG an
- * unmoved line, where any world-point containment test loses it. Unbindable
- * assignments are absent from the result (dormant). One assignment per face:
- * on conflict the earlier id (or the caller's explicit `order`, which
- * reconciliation uses to give larger old faces priority) keeps it.
+ * assignment id → face index. Each anchor evaluates to a world point on its
+ * line; a face's score is a discounted sum of the *world* distances from those
+ * points to the face (nearest anchor at full weight, the rest at 25% — see the
+ * inline note below for why), and the assignment binds to the lowest-scoring
+ * compatible face. (The arc-length value `evaluateAnchor` also returns is not
+ * used here.) Unbindable assignments are absent from the result (dormant). One
+ * assignment per face: on conflict the earlier id (or the caller's explicit
+ * `order`, which reconciliation uses to give larger old faces priority) keeps
+ * it.
  */
 export function bindAssignments(
   faces: RegionFace[],

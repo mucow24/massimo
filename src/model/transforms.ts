@@ -44,7 +44,7 @@ export { resolveDotStyle } from './dotStyle';
 // `snapToStep` is a leaf grid util (in util/grid) so lower-level model modules
 // like `dotStyle` can share it without importing `transforms`; keep the
 // historical import path working for its existing callers.
-import { snapToStep } from '../util/grid';
+import { roundClamp, snapToStep } from '../util/grid';
 export { snapToStep };
 import { pairKeyOf } from './pairKey';
 import {
@@ -2213,10 +2213,7 @@ export const ROUTE_BULLET_SIZE_STEP = 0.25;
 // accepts sizes beyond the slider's range (ROUTE_BULLET_SIZE_MAX constrains the
 // slider, not the value).
 export function clampRouteBulletSize(n: number): number {
-  return Math.max(
-    ROUTE_BULLET_SIZE_MIN,
-    Math.round(n / ROUTE_BULLET_SIZE_STEP) * ROUTE_BULLET_SIZE_STEP,
-  );
+  return roundClamp(n, ROUTE_BULLET_SIZE_STEP, ROUTE_BULLET_SIZE_MIN);
 }
 
 export function addRouteBullet(
@@ -2318,10 +2315,7 @@ export function updateTextLabel(
     // `canonicalStationLabelStyle`'s fontSize clamp.
     let nextPatch = patch;
     if (typeof patch.fontSize === 'number') {
-      const clamped = Math.max(
-        TEXT_LABEL_FONT_SIZE_MIN,
-        Math.round(patch.fontSize / FONT_SIZE_STEP) * FONT_SIZE_STEP,
-      );
+      const clamped = roundClamp(patch.fontSize, FONT_SIZE_STEP, TEXT_LABEL_FONT_SIZE_MIN);
       nextPatch = { ...nextPatch, fontSize: clamped };
     }
     // Clamp the column width to a non-negative integer (0 = Auto). Callers

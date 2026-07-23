@@ -1,4 +1,5 @@
 import { STOP_SIZE } from '../geometry/orientation';
+import { roundClamp } from '../util/grid';
 
 // Per-line stripe width, in world units. The default IS the historical
 // constant — `LINE_WIDTH_DEFAULT === STOP_SIZE` is what makes all-default
@@ -29,7 +30,7 @@ export const LINE_WIDTH_STEP = 0.25;
  * value; a sanitizer drops the field).
  */
 export const canonicalLineWidth = (w: number): number | undefined => {
-  const norm = Math.max(LINE_WIDTH_MIN, Math.round(w / LINE_WIDTH_STEP) * LINE_WIDTH_STEP);
+  const norm = roundClamp(w, LINE_WIDTH_STEP, LINE_WIDTH_MIN);
   return norm === LINE_WIDTH_DEFAULT ? undefined : norm;
 };
 

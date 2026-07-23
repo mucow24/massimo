@@ -10,7 +10,7 @@ import { stopGapOf, stopHalfOf } from '../../model/lineWidth';
 import { stopDashOf } from '../../model/dashSize';
 import { effectiveBackgroundOrder } from '../../model/transforms';
 import { pairKeyOf } from '../../model/pairKey';
-import type { AppendCursor } from './appendGestures';
+import type { AppendCursor } from '../../model/appendGestures';
 import type { Pt } from '../../geometry/polygonUnion';
 import type {
   Line,
