@@ -1,7 +1,7 @@
-import type { Line, LineStyle, StationId } from '../../model/types';
-import { edgeEndpoints, lineHasEdge } from '../../model/lineTopology';
-import { pairKeyOf } from '../../model/pairKey';
-import { resolveSegmentStyle } from '../../geometry/interlining';
+import type { Line, LineStyle, StationId } from './types';
+import { edgeEndpoints, lineHasEdge } from './lineTopology';
+import { pairKeyOf } from './pairKey';
+import { resolveSegmentStyle } from '../geometry/interlining';
 
 // The Edit Stops gesture model, as pure decision functions: (line, cursor,
 // target) → decision. All behavioral rules of canvas line editing live here,

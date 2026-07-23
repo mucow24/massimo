@@ -5,7 +5,7 @@ import { makeBandSpec, makeLine, makeStation, makeStop } from '../../test/fixtur
 import type { Line, Station } from '../../model/types';
 import type { OrderedRenderable } from '../../geometry/interlining';
 import type { UiMode } from '../../state/selection';
-import type { AppendCursor, AppendHover } from './appendGestures';
+import type { AppendCursor, AppendHover } from '../../model/appendGestures';
 
 const triStation = (id: string, x: number, y: number): Station =>
   makeStation({ id, x, y, stops: [makeStop('L1', { orientation: 'auto-horizontal' })] });

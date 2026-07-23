@@ -1,4 +1,5 @@
 import { STOP_DOT_RADIUS } from '../geometry/orientation';
+import { roundClamp } from '../util/grid';
 import { DEFAULT_DOT_STYLE, defaultDotDiameter, resolveDotStyle } from './dotStyle';
 import type { DotStyle } from './types';
 
@@ -45,7 +46,7 @@ export const canonicalDotSize = (
   size: number,
   dropAt: number = DOT_SIZE_DEFAULT,
 ): number | undefined => {
-  const norm = Math.max(DOT_SIZE_MIN, Math.round(size / DOT_SIZE_STEP) * DOT_SIZE_STEP);
+  const norm = roundClamp(size, DOT_SIZE_STEP, DOT_SIZE_MIN);
   return norm === dropAt ? undefined : norm;
 };
 

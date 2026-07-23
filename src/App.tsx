@@ -42,7 +42,7 @@ import {
   unlockedSelectedItemIds,
 } from './state/selectionOps';
 import { isHistoryGrouping, redo, undo } from './state/history';
-import { decideDeleteKey } from './components/canvas/appendGestures';
+import { decideDeleteKey } from './model/appendGestures';
 
 /**
  * The document-level capture handler behind "right-click cancels an active

@@ -2,11 +2,10 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { LineId, MapDoc, StationId } from '../model/types';
 import type { Vec2 } from '../geometry/vec';
-// Type-only: the append cursor is defined next to the gesture decisions it
-// drives (appendGestures.ts is pure — no store import, so no cycle). The
-// hover-equality helper is a value import (same pure module).
-import type { AppendCursor, AppendHover } from '../components/canvas/appendGestures';
-import { sameAppendHover } from '../components/canvas/appendGestures';
+// The append cursor/hover types and the hover-equality helper live in the pure
+// appendGestures model module (no store or component import, so no cycle).
+import type { AppendCursor, AppendHover } from '../model/appendGestures';
+import { sameAppendHover } from '../model/appendGestures';
 
 // ----- Selection (ephemeral, except the persisted sidebarOpen flag) -----
 

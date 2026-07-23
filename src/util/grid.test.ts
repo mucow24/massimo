@@ -1,5 +1,24 @@
 import { describe, it, expect } from 'vitest';
-import { snapToStep } from './grid';
+import { roundClamp, snapToStep } from './grid';
+
+describe('roundClamp', () => {
+  it('rounds to the step grid and clamps at the bottom only', () => {
+    expect(roundClamp(1.13, 0.25, 0)).toBe(1.25);
+    expect(roundClamp(-5, 0.25, 0)).toBe(0);
+    expect(roundClamp(1000, 0.25, 0)).toBe(1000); // no upper clamp
+  });
+
+  it('kills binary float artifacts to three decimals', () => {
+    expect(roundClamp(1.15, 0.05, 0)).toBe(1.15);
+  });
+
+  it('does NOT guard finiteness — that is the callers job (unlike snapToStep)', () => {
+    // The per-field canonicalizers own the finiteness guard because they
+    // diverge on non-finite input, so the shared primitive must pass NaN
+    // through rather than swallow it to `min`.
+    expect(roundClamp(NaN, 0.25, 3)).toBeNaN();
+  });
+});
 
 describe('snapToStep', () => {
   it('snaps to the nearest multiple of the step', () => {

@@ -6,6 +6,7 @@
 // restyling goes through the "Default" transfer style preset instead (its
 // editor re-stamps every transfer wearing it).
 
+import { roundClamp } from '../util/grid';
 import type { DayNightColor } from './types';
 
 // Transform clamp floor; the slider min too.
@@ -86,10 +87,7 @@ export const legacyColorToDayNight = (c: DayNightColor | string): DayNightColor 
  * own the finiteness guard.
  */
 export const canonicalTransferThickness = (n: number, dropAt: number): number | undefined => {
-  const norm = Math.max(
-    TRANSFER_THICKNESS_MIN,
-    Math.round(n / TRANSFER_THICKNESS_STEP) * TRANSFER_THICKNESS_STEP,
-  );
+  const norm = roundClamp(n, TRANSFER_THICKNESS_STEP, TRANSFER_THICKNESS_MIN);
   return norm === dropAt ? undefined : norm;
 };
 
@@ -98,10 +96,7 @@ export const canonicalTransferThickness = (n: number, dropAt: number): number | 
  * TRANSFER_STROKE_WIDTH_STEP (quarter-unit) grid.
  */
 export const canonicalTransferStrokeWidth = (n: number, dropAt: number): number | undefined => {
-  const norm = Math.max(
-    TRANSFER_STROKE_WIDTH_MIN,
-    Math.round(n / TRANSFER_STROKE_WIDTH_STEP) * TRANSFER_STROKE_WIDTH_STEP,
-  );
+  const norm = roundClamp(n, TRANSFER_STROKE_WIDTH_STEP, TRANSFER_STROKE_WIDTH_MIN);
   return norm === dropAt ? undefined : norm;
 };
 
