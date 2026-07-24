@@ -212,21 +212,24 @@ export function MapCanvas() {
   // of selecting the polygon.
   const polygonsInteractive = selection.uiMode.kind === 'idle';
 
-  // Geometry hash for buildBandGeometry's inputs (line topology + segmentStyles
-  // + per-line width + curve radius). Topology is the `edges` SET, not the `stations` member
-  // list — buildBandGeometry iterates edges, and a display-only reorder of
-  // `stations` must NOT churn geometry (so `edges`, not `stations`, is hashed;
-  // adding/removing an edge — e.g. closing a loop or branching — changes it and
-  // triggers the rebuild). EXCLUDES presentation-only fields so repaints don't churn
-  // geometry — `bandsGeometry`'s reference stays stable across them, which the
-  // layering-mode memos rely on. Color is also intentionally absent: a color
-  // edit must repaint WITHOUT a geometry rebuild (stripes resolve color live).
-  // Width, by contrast, IS geometry — it moves the baked paths and changes band
-  // merging — so it must be in the hash or width edits never repaint. Curve
-  // radius is geometry for the same reason (it moves the baked fillets), and
-  // the interline gap likewise (it feeds the merge gate and stripe offsets;
-  // in practice every gap write also re-packs stops, which invalidates the
-  // stations-side sig, but the hash must not rely on that coupling).
+  // Geometry hash for buildBandGeometry's inputs: line topology (the `edges`
+  // SET) + per-line width + interline gap + curve radius. Topology is `edges`,
+  // not the `stations` member list — buildBandGeometry iterates edges, and a
+  // display-only reorder of `stations` must NOT churn geometry (so `edges`, not
+  // `stations`, is hashed; adding/removing an edge — e.g. closing a loop or
+  // branching — changes it and triggers the rebuild). EXCLUDES presentation-only
+  // fields so repaints don't churn geometry — `bandsGeometry`'s reference stays
+  // stable across them, which the layering-mode memos rely on. Color AND
+  // per-segment style are intentionally absent: buildBandGeometry is
+  // presentation-blind (stripes resolve both live from `lines`), so a color or
+  // style edit repaints WITHOUT a geometry rebuild — and the stop markers, whose
+  // footprint DOES depend on style, rebuild via the `renderables` memo's direct
+  // `lines` dep. Width, by contrast, IS geometry — it moves the baked paths and
+  // changes band merging — so it must be in the hash or width edits never
+  // repaint. Curve radius is geometry for the same reason (it moves the baked
+  // fillets), and the interline gap likewise (it feeds the merge gate and stripe
+  // offsets; in practice every gap write also re-packs stops, which invalidates
+  // the stations-side sig, but the hash must not rely on that coupling).
   const linesGeometrySig = useMemo(() => {
     const parts: string[] = [];
     for (const id of Object.keys(lines)) {
@@ -234,7 +237,6 @@ export function MapCanvas() {
       parts.push(
         id,
         ln.edges.join('.'),
-        Object.keys(ln.segmentStyles ?? {}).join('.'),
         String(ln.width ?? ''),
         String(ln.interlineGap ?? ''),
         String(ln.curveRadius ?? ''),

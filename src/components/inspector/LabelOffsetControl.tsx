@@ -1,5 +1,6 @@
 import * as Slider from '@radix-ui/react-slider';
 import { useFieldHistory } from '../useFieldHistory';
+import { clamp } from '../../util/grid';
 
 export function LabelOffsetControl({
   value,
@@ -14,7 +15,7 @@ export function LabelOffsetControl({
 }) {
   // Slider [-100, 100] with detent at 0; textbox accepts any number.
   // Snap to 0 when the slider sits within ±2 of zero.
-  const clampedSlider = Math.max(-100, Math.min(100, value));
+  const clampedSlider = clamp(value, -100, 100);
   const sliderField = useFieldHistory();
   const numberField = useFieldHistory();
   return (

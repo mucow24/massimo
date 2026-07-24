@@ -25,6 +25,7 @@ import {
   legacyColorToDayNight,
 } from './transferStyle';
 import { canonicalLineWidth } from './lineWidth';
+import { clamp } from '../util/grid';
 import {
   LINE_CURVE_RADIUS_DEFAULT,
   LINE_CURVE_RADIUS_MIN,
@@ -938,7 +939,7 @@ export function foldPolygonFillOpacity(polygons: Record<string, Polygon>): {
       next[id] = p;
       continue;
     }
-    const pct = Math.max(0, Math.min(100, p.fillOpacity));
+    const pct = clamp(p.fillOpacity, 0, 100);
     const fold = (hex: string) => withHexAlpha(hex, (parseHexA(hex)[3] * pct) / 100);
     const { fillOpacity: _drop, ...rest } = p;
     next[id] = { ...rest, fill: fold(p.fill), darkFill: fold(p.darkFill) };

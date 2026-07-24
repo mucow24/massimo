@@ -1,3 +1,5 @@
+import { clamp } from '../../util/grid';
+
 // Minimal viewport slice needed to project world coords to screen pixels.
 // A structural subset of useViewport's ViewportApi, so the live `view` object
 // can be passed straight through.
@@ -68,7 +70,7 @@ export const POPOVER_GAP = 14;
 const CLAMP_MARGIN = 8;
 
 const clampAxis = (v: number, extent: number, popExtent: number) =>
-  Math.max(CLAMP_MARGIN, Math.min(v, extent - popExtent - CLAMP_MARGIN));
+  clamp(v, CLAMP_MARGIN, extent - popExtent - CLAMP_MARGIN);
 
 /**
  * Choose a popover's spawn position (top-left, host-relative screen px) next

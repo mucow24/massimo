@@ -3,6 +3,7 @@ import fc from 'fast-check';
 import { computeArcRadii } from './router';
 import {
   bandCentroid,
+  buildBandGeometry,
   buildBands,
   buildLineIndex,
   buildOrderedRenderables,
@@ -73,6 +74,37 @@ describe('resolveSegmentStyle', () => {
     expect(resolveSegmentStyle(line, 's1|s2')).toBe('hatched');
     // A different segment on the same line stays solid.
     expect(resolveSegmentStyle(line, 's2|s3')).toBe('solid');
+  });
+});
+
+describe('buildBandGeometry — segment-style independence', () => {
+  // buildBandGeometry is presentation-BLIND: per-segment style (dashed/hatched/
+  // …) is resolved LIVE at render time (see resolveSegmentStyle and the
+  // SegmentBandSpec.lines doc), never baked into the band paths. This pins that
+  // contract, so the "a color/style edit repaints WITHOUT rebuilding geometry"
+  // invariant — and MapCanvas's geometry memo that leans on it — can't silently
+  // regress, and the docstring's "reads only …" list stays honest.
+  const stations = [
+    stationWithStop('s1', 'L1', { x: 0, y: 0 }),
+    stationWithStop('s2', 'L1', { x: 0, y: 100 }),
+    stationWithStop('s3', 'L1', { x: 100, y: 100 }),
+  ];
+  const bandsFor = (segmentStyles: Record<string, LineStyle>) => {
+    const doc = makeDoc({
+      stations,
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'], segmentStyles })],
+    });
+    return buildBandGeometry(doc.stations, doc.lines);
+  };
+
+  it('yields identical geometry regardless of segment-style VALUES', () => {
+    // Same key, different style value: purely a render concern.
+    expect(bandsFor({ 's1|s2': 'hatched' })).toEqual(bandsFor({ 's1|s2': 'dashed' }));
+  });
+
+  it('yields identical geometry regardless of segment-style KEY presence', () => {
+    // Adding/removing overrides (solid ⇄ non-solid) must not move the paths.
+    expect(bandsFor({})).toEqual(bandsFor({ 's1|s2': 'dashed', 's2|s3': 'hatched' }));
   });
 });
 
