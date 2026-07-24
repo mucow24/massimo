@@ -296,6 +296,35 @@ describe('decideSegmentClick', () => {
       cursor: edgeCursor('a', 'b'),
     });
   });
+
+  // Alt-click on a segment splices a new station INTO it at the click point —
+  // the same create decideCanvasClick makes over empty canvas, but reachable by
+  // clicking the segment directly (the natural "drop a stop mid-segment"
+  // gesture). It only fires once the segment is the ARMED edge: alt-clicking a
+  // not-yet-armed segment arms it first, so cycling to reach a buried segment
+  // (alt-pick) can land on it before a second alt-click splices.
+  it('alt-click on the armed segment splices, preserving the armed direction', () => {
+    expect(
+      decideSegmentClick(line(), edgeCursor('a', 'b'), 'a|b', { x: 50, y: 0 }, posOf, true),
+    ).toEqual({ kind: 'create-splice', from: 'a', to: 'b' });
+    // Direction is the armed cursor's, NOT re-derived from the click point —
+    // so a click-click-click run keeps marching, exactly like the canvas splice.
+    expect(
+      decideSegmentClick(line(), edgeCursor('b', 'a'), 'a|b', { x: 10, y: 0 }, posOf, true),
+    ).toEqual({ kind: 'create-splice', from: 'b', to: 'a' });
+  });
+
+  it('alt-click on a not-yet-armed segment arms it (cycling reaches a buried segment before it splices)', () => {
+    expect(decideSegmentClick(line(), null, 'a|b', { x: 10, y: 0 }, posOf, true)).toEqual({
+      kind: 'cursor',
+      cursor: edgeCursor('a', 'b'),
+    });
+    // A different edge is armed: alt-click arms the clicked one (nearest-endpoint
+    // order), it does not splice into the wrong edge.
+    expect(
+      decideSegmentClick(line(), edgeCursor('b', 'c'), 'a|b', { x: 90, y: 0 }, posOf, true),
+    ).toEqual({ kind: 'cursor', cursor: edgeCursor('b', 'a') });
+  });
 });
 
 describe('decideCanvasClick', () => {
