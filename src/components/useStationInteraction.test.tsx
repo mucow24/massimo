@@ -131,6 +131,19 @@ describe('useStationInteraction — pointer down drag routing', () => {
     act(() => result.current.handlers.onPointerDown?.(e));
     expect(onStartDrag).toHaveBeenCalledWith('S', e, 'A');
   });
+
+  it('captures the potential anchor even without Ctrl, so Ctrl pressed mid-drag can engage it', () => {
+    // The redistribute anchor is captured at pointer-down whenever exactly one
+    // OTHER station is selected — Ctrl need not be held yet. useStationDrag
+    // re-reads the live Ctrl state each move, so pressing Ctrl mid-drag switches
+    // to redistribute; without the anchor captured here, it would have nothing
+    // to switch to.
+    useSelection.setState({ ...useSelection.getState(), selectedStationIds: ['A' as StationId] });
+    const { result, onStartDrag } = setup();
+    const e = pointerEvent({});
+    act(() => result.current.handlers.onPointerDown?.(e));
+    expect(onStartDrag).toHaveBeenCalledWith('S', e, 'A');
+  });
 });
 
 describe('useStationInteraction — context menu rotation', () => {

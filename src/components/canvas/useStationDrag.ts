@@ -76,9 +76,10 @@ export function useStationDrag(
       // never stops propagation), so a drag over it begins a marquee instead.
       if (st.locked) return;
       // Group-drag: tow the rest of the multi-selection (every type) by the same
-      // delta. Suppressed during a ctrl-drag redistribute (anchor set), where the
-      // intervening stops are reflowed instead. Snap runs on the grabbed station
-      // only; siblings translate.
+      // delta. Suppressed when a redistribute anchor is present — that only
+      // happens when exactly one OTHER station is selected, so the grabbed
+      // (unselected) station tows nothing anyway; empty either way. Snap runs on
+      // the grabbed station only; siblings translate.
       const siblings = redistributeAnchor
         ? emptyGroupSiblings()
         : collectGroupSiblings('station', id);
@@ -115,6 +116,11 @@ export function useStationDrag(
     const draggedSt = stations[ds.id];
     const draggedRot = (draggedSt?.rotation ?? 0) as Rotation;
     const draggedStops = draggedSt?.stops ?? [];
+    // Redistribute mode is toggled LIVE by Ctrl/Cmd, re-read every move: the
+    // anchor was captured at pointer-down, but whether we redistribute follows
+    // the modifier held right now, so pressing or releasing Ctrl mid-drag
+    // switches between plain drag and even-spacing between anchor and grab.
+    const redistributeAnchor = e.ctrlKey || e.metaKey ? ds.redistributeAnchor : null;
     // Snap is on by default; Shift bypasses it.
     const shouldSnap = !e.shiftKey;
     if (shouldSnap) {
@@ -132,7 +138,7 @@ export function useStationDrag(
         tolerance: SNAP_PERP_TOLERANCE / viewportZoom,
         // Ctrl-drag: snap exclusively to the anchor (the originally selected
         // station). Intermediates are moving with the redistribute.
-        redistributeAnchor: ds.redistributeAnchor ?? undefined,
+        redistributeAnchor: redistributeAnchor ?? undefined,
         // Group-drag: siblings move with the grab, so exclude them as targets.
         excludedIds: ds.siblingIdSet.size > 0 ? ds.siblingIdSet : undefined,
         modes: snapModes,
@@ -148,12 +154,12 @@ export function useStationDrag(
     if (hasGroupSiblings(ds.siblings)) {
       translateSiblings(ds.siblings, nx - ds.startWX, ny - ds.startWY);
     }
-    if (ds.redistributeAnchor) {
+    if (redistributeAnchor) {
       // Drag-mode redistribute uses straight-line interpolation between A and
       // B's stop positions so spacing stays predictable and intermediates don't
       // wobble off-axis. Hard-grid applies to intermediates too (Shift bypasses).
       redistributeBetween(
-        ds.redistributeAnchor,
+        redistributeAnchor,
         ds.id,
         'straight',
         shouldSnap ? snapModes.grid : 'off',
