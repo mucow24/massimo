@@ -81,15 +81,19 @@ export function useStationInteraction(
     if (e.button !== 0) return;
     // In hand mode, let the event bubble to the SVG so it becomes a pan.
     if (selection.toolMode === 'hand' || selection.spaceHeld) return;
-    // Ctrl/Cmd+drag on a different station while exactly one is selected:
-    // drag the target while continuously redistributing intervening stops
-    // between the two. A pure click (no drag) still routes to onClick →
-    // one-shot redistribute via the click handler. When multi-selected,
-    // ctrl-drag yields to group-drag (no anchor captured).
+    // Drag on a different station while exactly one is selected: capture that
+    // selected station as the redistribute anchor. Capture it whether or not
+    // Ctrl is held right now — useStationDrag re-reads the live Ctrl/Cmd state
+    // on every move to decide whether redistribute is active, so pressing or
+    // releasing Ctrl mid-drag switches between plain drag and continuously
+    // redistributing intervening stops between the two. Without the anchor
+    // captured up front, a Ctrl press mid-drag would have nothing to engage.
+    // A pure click (no drag) still routes to onClick → one-shot redistribute
+    // via the click handler. When multi-selected, drag yields to group-drag
+    // (no solo anchor).
     const ids = selection.selectedStationIds;
     const soloAnchor = ids.length === 1 ? ids[0] : null;
-    const anchor =
-      (e.ctrlKey || e.metaKey) && soloAnchor && soloAnchor !== station.id ? soloAnchor : undefined;
+    const anchor = soloAnchor && soloAnchor !== station.id ? soloAnchor : undefined;
     onStartDrag(station.id, e, anchor);
   };
 
