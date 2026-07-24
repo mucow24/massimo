@@ -401,6 +401,7 @@ describe('<LineInspector /> — stroke controls', () => {
 
   const seed = (
     over: {
+      color?: string;
       strokeWidth?: number;
       strokeColor?: string;
       seamColor?: string;
@@ -483,6 +484,17 @@ describe('<LineInspector /> — stroke controls', () => {
     // Dragging alpha to zero (fully transparent) turns the seam OFF → key dropped.
     fireEvent.change(input, { target: { value: '#00aa5500' } });
     expect('seamColor' in useDoc.getState().lines.L1).toBe(false);
+  });
+
+  // A line style can set the casing/seam to the LINE_OWN_COLOR sentinel and
+  // stamp it onto its lines, so the inspector must cope with a stored 'line'.
+  // The sentinel is not a color: show what's actually PAINTED, never the word.
+  it("shows the line's own color in both pickers when they follow it ('line')", async () => {
+    const user = userEvent.setup();
+    seed({ color: '#123456', strokeWidth: 4, strokeColor: 'line', seamColor: 'line' });
+    render(<LineInspector id="L1" />);
+    expect(await openColorField(user, 'Stroke color')).toHaveValue('#123456');
+    expect(await openColorField(user, 'Seam color')).toHaveValue('#123456');
   });
 
   it('seeds the seam picker at the casing hue with zero alpha when off (reads as off)', async () => {

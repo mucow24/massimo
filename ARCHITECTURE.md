@@ -479,10 +479,15 @@ All remaining fields optional and **never stored at default**:
   `gap = 0` is a bit-exact identity — the interlining golden snapshot is unchanged.
 - `strokeWidth?: number` — **casing rail, PRESENTATION**; centered on the body edges (half in /
   half out), missing ⇒ 0; rounded to a 0.25 grid (`LINE_STROKE_STEP`). Resolved live; never moves paths.
-- `strokeColor?: string` — casing color; missing ⇒ `'#ffffff'`; lowercased.
+- `strokeColor?: string` — casing color; missing ⇒ `'#ffffff'`; lowercased. May instead be the
+  sentinel `'line'` (`LINE_OWN_COLOR`) — "the line's OWN color", resolved at render time, mirroring
+  a dot style's `'line'` fill/stroke. `lineStrokeColorStored` reads the raw value (capture-by-example
+  and the editors' mode pickers); `lineCasingColor(line, lineColor)` resolves it for paint, taking
+  the EFFECTIVE color so a line-colored casing desaturates with the body.
 - `seamColor?: string` — **interior seam** for a branch/loop: where a line's OWN bands overlap (a
   self-junction) the casing normally merges away; set this to paint a subtle stroke there so the
-  overlap still reads as two tracks. Lowercase hex, may carry alpha (`#rrggbbaa`). Missing ⇒ no
+  overlap still reads as two tracks. Lowercase hex, may carry alpha (`#rrggbbaa`), or `'line'` (see
+  `strokeColor`; raw = `lineSeamColorStored`, resolved = `lineSeamColor`). Missing ⇒ no
   seam; dropped when unset or fully transparent (the "off" state). PRESENTATION, like the casing.
 - `seamWidth?: number` — seam width per side, world units. Stored like `strokeWidth` (drop at 0),
   but an **unset** value inherits the casing width at render time (`seamRenderWidth`) so a

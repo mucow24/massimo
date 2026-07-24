@@ -1,7 +1,7 @@
 import { memo } from 'react';
 import { rotatedRectCorners, v } from '../geometry/vec';
 import type { StopMarkerSpec } from '../geometry/interlining';
-import { lineStrokeColorOf, lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
+import { lineCasingColor, lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
 import { hatchPatternId, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
 
 interface Props {
@@ -76,7 +76,7 @@ export const StopMarker = memo(function StopMarker({
         y={y}
         width={spec.width}
         height={railW}
-        fill={lineStrokeColorOf(live)}
+        fill={lineCasingColor(live, color)}
         transform={`translate(${spec.cx} ${spec.cy}) rotate(${spec.rotationDeg})`}
         pointerEvents="none"
       />
@@ -100,7 +100,7 @@ export const StopMarker = memo(function StopMarker({
               y1={ey + ow.x * reach}
               x2={ex + ow.y * reach}
               y2={ey - ow.x * reach}
-              stroke={lineStrokeColorOf(live)}
+              stroke={lineCasingColor(live, color)}
               strokeWidth={railW}
               strokeLinecap="butt"
               pointerEvents="none"
@@ -176,7 +176,7 @@ export const StopMarker = memo(function StopMarker({
               y1={y1 + py * o}
               x2={x2 + px * o}
               y2={y2 + py * o}
-              stroke={lineStrokeColorOf(live)}
+              stroke={lineCasingColor(live, color)}
               strokeWidth={railW}
               strokeLinecap="butt"
               pointerEvents="none"

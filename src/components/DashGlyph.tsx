@@ -1,5 +1,5 @@
 import { resolveDotRender } from '../model/dotStyle';
-import { lineStrokeColorOf, lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
+import { lineCasingColor, lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
 import { lineWidthOf } from '../model/lineWidth';
 import { useDoc } from '../state/store';
 import type { DotStyle } from '../model/types';
@@ -102,7 +102,7 @@ export function DashGlyph({
         y={-halfT - h}
         width={spec.length + railW}
         height={spec.width + railW}
-        fill={lineStrokeColorOf(line)}
+        fill={lineCasingColor(line, lineColor)}
         transform={transform}
         data-stop-stroke={stationId ?? ''}
         {...(lineId ? { 'data-stop-line': lineId } : {})}

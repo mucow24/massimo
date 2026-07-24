@@ -43,9 +43,9 @@ import {
   LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_MAX,
   LINE_STROKE_WIDTH_MIN,
-  lineSeamColorOf,
+  lineCasingColor,
+  lineSeamColor,
   lineSeamWidthOf,
-  lineStrokeColorOf,
   lineStrokeRailWidth,
   lineStrokeWidthOf,
 } from '../../model/lineStroke';
@@ -272,10 +272,16 @@ export function LineInspector({ id }: { id: LineId }) {
               <label htmlFor={`line-stroke-color-${line.id}`} className="options-popover-label">
                 Stroke color
               </label>
+              {/* RESOLVED, not stored: a line style can set the casing to the
+                  line's own color, and that sentinel is not a paintable hex —
+                  the swatch shows what's actually on the canvas. Picking a
+                  color here writes a fixed one (and detaches from the style),
+                  which is exactly what reaching for the swatch means; the
+                  "follow the line" mode itself is chosen in the style editor. */}
               <ColorField
                 id={`line-stroke-color-${line.id}`}
                 ariaLabel="Stroke color"
-                value={lineStrokeColorOf(line)}
+                value={lineCasingColor(line, line.color)}
                 onChange={(c) => setLineStrokeColor(line.id, c)}
               />
             </div>
@@ -314,7 +320,10 @@ export function LineInspector({ id }: { id: LineId }) {
             <ColorField
               id={`line-seam-color-${line.id}`}
               ariaLabel="Seam color"
-              value={lineSeamColorOf(line) ?? withHexAlpha(lineStrokeColorOf(line), 0)}
+              value={
+                lineSeamColor(line, line.color) ??
+                withHexAlpha(lineCasingColor(line, line.color), 0)
+              }
               onChange={(c) => setLineSeamColor(line.id, c)}
             />
           </div>

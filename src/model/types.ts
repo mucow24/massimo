@@ -356,15 +356,17 @@ export interface Line {
   // renderers resolve it live. The setter clamps to ≥ 0, rounds to the
   // 0.25 (quarter-unit) grid, and drops the field at 0 so the default is never stored.
   strokeWidth?: number;
-  // Casing color, 7-char lowercase hex. Missing ⇒ '#ffffff'. The setter
-  // normalizes to lowercase and drops the field at the default.
+  // Casing color: a 7-char lowercase hex, or the literal 'line'
+  // (LINE_OWN_COLOR) for "the line's own color", resolved at render time like
+  // a dot style's 'line' stroke. Missing ⇒ '#ffffff'. The setter normalizes to
+  // lowercase and drops the field at the default.
   strokeColor?: string;
   // Interior "seam" color for a branch/loop. Where a line's OWN bands overlap
   // (a self-junction) the casing is normally merged away; set this to paint a
   // subtle stroke there so the overlap still reads as two tracks. Lowercase
-  // hex, may carry alpha (#rrggbbaa) for a translucent seam. Missing ⇒ no seam;
-  // the setter drops the field when unset or fully transparent (the "off"
-  // state).
+  // hex, may carry alpha (#rrggbbaa) for a translucent seam, or 'line' (see
+  // `strokeColor`). Missing ⇒ no seam; the setter drops the field when unset or
+  // fully transparent (the "off" state).
   seamColor?: string;
   // Seam width per side, world units. Stored like `strokeWidth` (drop at 0), but
   // an UNSET value inherits the casing width at render time (see seamRenderWidth)
@@ -874,10 +876,12 @@ export interface LineStyleProps {
   curveRadius: number;
   // Casing width per side, world units (0 = no casing).
   strokeWidth: number;
-  // Casing color, lowercase hex.
+  // Casing color: lowercase hex, or 'line' for each wearer's own color (see
+  // Line.strokeColor) — captured and stamped as the sentinel, so one style can
+  // give a dozen differently-colored lines a casing in their own hue.
   strokeColor: string;
-  // Interior branch/loop seam color (lowercase hex, may carry alpha). Optional:
-  // absent ⇒ the style leaves the seam off (see Line.seamColor).
+  // Interior branch/loop seam color (lowercase hex, may carry alpha, or 'line').
+  // Optional: absent ⇒ the style leaves the seam off (see Line.seamColor).
   seamColor?: string;
   // Seam width per side (world units). Optional: absent ⇒ inherit the casing
   // width (see Line.seamWidth).

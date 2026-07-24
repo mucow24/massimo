@@ -5,7 +5,7 @@ import { StyleEditor } from './StyleEditor';
 import { useDoc } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makeStyle } from '../test/fixtures';
-import type { DotStyle } from '../model/types';
+import type { DotStyle, LineStyleProps } from '../model/types';
 
 // Reset the live store each test and seed two custom stopDot styles the line
 // editor's type pickers resolve against (a dash dot for the dash-gating tests).
@@ -74,8 +74,9 @@ describe('<StyleEditor> — line', () => {
   it('heads the dot controls with a "Stop dots" section, with no redundant "Line" header', () => {
     render(<StyleEditor def={makeStyle('line', 'y1')} />);
     expect(screen.getByText('Stop dots')).toBeInTheDocument();
-    // The line controls lead the panel with no redundant "Line" header above them.
-    expect(screen.queryByText('Line')).toBeNull();
+    // The line controls lead the panel with no redundant "Line" header above
+    // them. Scoped to section headers — "Line" is also a color-mode segment.
+    expect(screen.queryByText('Line', { selector: '.style-section' })).toBeNull();
     expect(screen.getByRole('slider', { name: 'Line width' })).toBeInTheDocument();
   });
 
@@ -87,6 +88,70 @@ describe('<StyleEditor> — line', () => {
     // …alongside their size sliders.
     expect(screen.getByRole('slider', { name: 'Singleton dot size' })).toBeInTheDocument();
     expect(screen.getByRole('slider', { name: 'Interchange dot size' })).toBeInTheDocument();
+  });
+
+  // Casing and seam can each be a fixed hex or the line's OWN color — same
+  // Line/Custom idiom the stopDot editor uses for its fill/stroke/code colors,
+  // so one style can give differently-colored lines a casing in their own hue.
+  it('activates Custom and shows the swatch for a hex casing / seam', () => {
+    render(
+      <StyleEditor
+        def={makeStyle('line', 'y1', { props: { strokeColor: '#ff0000', seamColor: '#00ff0080' } })}
+      />,
+    );
+    expect(screen.getByLabelText('Stroke color custom')).toHaveClass('active');
+    expect(screen.getByRole('button', { name: 'Stroke color' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Seam color custom')).toHaveClass('active');
+    expect(screen.getByRole('button', { name: 'Seam color' })).toBeInTheDocument();
+  });
+
+  it("the 'line' sentinel activates Line and hides the swatch, on both colors", () => {
+    render(
+      <StyleEditor
+        def={makeStyle('line', 'y1', { props: { strokeColor: 'line', seamColor: 'line' } })}
+      />,
+    );
+    expect(screen.getByLabelText('Stroke color line')).toHaveClass('active');
+    expect(screen.queryByRole('button', { name: 'Stroke color' })).toBeNull();
+    expect(screen.getByLabelText('Seam color line')).toHaveClass('active');
+    expect(screen.queryByRole('button', { name: 'Seam color' })).toBeNull();
+  });
+
+  it('an unset seam still reads as Custom (absent IS the off state, a transparent swatch)', () => {
+    render(<StyleEditor def={makeStyle('line', 'y1')} />);
+    expect(screen.getByLabelText('Seam color custom')).toHaveClass('active');
+    expect(screen.getByRole('button', { name: 'Seam color' })).toBeInTheDocument();
+  });
+
+  it('picking a mode writes the prop: Line sets the sentinel, Custom restores a hex', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      styles: {
+        ...useDoc.getState().styles,
+        'ln-1': makeStyle('line', 'ln-1', { props: { strokeColor: '#ff0000' } }),
+      },
+    });
+    const propsOf = () => useDoc.getState().styles['ln-1'].props as LineStyleProps;
+    // Re-render from the store after each pick so the ToggleGroup sees the new
+    // active mode (else Radix reads the next click as a deselect of the stale one).
+    const { rerender } = render(<StyleEditor def={useDoc.getState().styles['ln-1']} />);
+
+    fireEvent.click(screen.getByLabelText('Stroke color line'));
+    expect(propsOf().strokeColor).toBe('line');
+    rerender(<StyleEditor def={useDoc.getState().styles['ln-1']} />);
+
+    fireEvent.click(screen.getByLabelText('Stroke color custom'));
+    expect(propsOf().strokeColor).toBe('#ffffff');
+    rerender(<StyleEditor def={useDoc.getState().styles['ln-1']} />);
+
+    // Seam: Line sets the sentinel; Custom drops back to the transparent "off"
+    // seed, which is never stored — the same off state a fresh style has.
+    fireEvent.click(screen.getByLabelText('Seam color line'));
+    expect(propsOf().seamColor).toBe('line');
+    rerender(<StyleEditor def={useDoc.getState().styles['ln-1']} />);
+
+    fireEvent.click(screen.getByLabelText('Seam color custom'));
+    expect(propsOf().seamColor).toBeUndefined();
   });
 
   it('greys out Dash length/width unless a split default is a dash dot', () => {

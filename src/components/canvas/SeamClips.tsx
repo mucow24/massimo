@@ -2,7 +2,7 @@ import type { Line, LineId } from '../../model/types';
 import type { SegmentBandSpec } from '../../geometry/interlining';
 import type { OffsetPathSegment } from '../../geometry/router';
 import { closedPerimeterPath, computeStripeOutline } from '../../geometry/stripeOutline';
-import { lineSeamColorOf } from '../../model/lineStroke';
+import { lineSeamColorStored } from '../../model/lineStroke';
 import { CLIP_RASTER_INVERSE_TRANSFORM, CLIP_RASTER_SCALE } from './clipRaster';
 
 // Scale an offset-segment chain into ×CLIP_RASTER_SCALE clip-local space (see
@@ -45,7 +45,9 @@ export function SeamClips({ bands, lines }: Props) {
   for (const band of bands) {
     for (let k = 0; k < band.lines.length; k++) {
       const lineId = band.lines[k].id;
-      if (lineSeamColorOf(lines[lineId]) === undefined) continue;
+      // Existence only — a 'line' sentinel is a seam like any other, so the
+      // stored value (not the resolved paint) is the right thing to test.
+      if (lineSeamColorStored(lines[lineId]) === undefined) continue;
       const outline = computeStripeOutline(band, k);
       if (!outline) continue;
       // Emit the ribbon in ×CLIP_RASTER_SCALE clip-local coordinates so
