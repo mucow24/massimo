@@ -91,6 +91,30 @@ describe('MapCanvas — Edit Stops alt-held create ghost', () => {
     expect(ghost()).toBeNull();
   });
 
+  it("shows the ghost over the line's OWN armed segment (alt-click there splices)", () => {
+    render(<App />);
+    seedAndEnter(['A', 'B']);
+    act(() => useSelection.getState().setAppendCursor({ kind: 'edge', from: 'A', to: 'B' }));
+    altDown();
+    moveOnCanvas();
+    // Hovering the armed segment: alt-click splices a stop into it, so the
+    // create ghost DOES show here (unlike other interactive targets).
+    act(() => useSelection.getState().setAppendHover({ kind: 'segment', pairKey: 'A|B' }));
+    expect(ghost()).not.toBeNull();
+  });
+
+  it('no ghost over a segment while the pen is armed (alt-click there arms it, does not splice)', () => {
+    render(<App />);
+    seedAndEnter(['A', 'B']);
+    act(() => useSelection.getState().setAppendCursor({ kind: 'station', stationId: 'A' }));
+    altDown();
+    moveOnCanvas();
+    // A station cursor is armed, not this edge, so an alt-click on the segment
+    // would ARM it, not create — no ghost.
+    act(() => useSelection.getState().setAppendHover({ kind: 'segment', pairKey: 'A|B' }));
+    expect(ghost()).toBeNull();
+  });
+
   it('releasing Alt hides the ghost immediately; window blur does too', () => {
     render(<App />);
     seedAndEnter(['A', 'B']);
