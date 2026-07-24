@@ -682,8 +682,21 @@ export function MapCanvas() {
       selection.setAppendCursor({ kind: 'station', stationId: next.id as StationId });
     } else {
       const world = view.screenToWorld(e.clientX, e.clientY);
-      const decision = decideSegmentClick(line, null, next.id, world, stopPosOf(mode.lineId));
+      // alt=true: an alt-click on the segment already armed is a SPLICE — a new
+      // station dropped at the click point and wired into the edge, the same
+      // create the alt-click over empty canvas makes. Alt-clicking (cycling
+      // onto) a not-yet-armed segment still just arms it.
+      const decision = decideSegmentClick(
+        line,
+        mode.cursor,
+        next.id,
+        world,
+        stopPosOf(mode.lineId),
+        true,
+      );
       if (decision.kind === 'cursor') selection.setAppendCursor(decision.cursor);
+      else if (decision.kind === 'create-splice')
+        placement.runAppendCreate(mode.lineId, decision, e);
     }
     return true;
   };
@@ -1591,9 +1604,20 @@ export function MapCanvas() {
         {selection.uiMode.kind === 'appending-to-line' &&
           selection.altHeld &&
           cursorWorld &&
-          !selection.appendHover &&
           (() => {
             const mode = selection.uiMode;
+            // The ghost previews an alt-click CREATE. That fires over empty
+            // canvas (no hover target) and — since splice-by-clicking — over
+            // the line's OWN armed segment, where the alt-click now splices
+            // instead of re-arming. Any other hover target (a station, an
+            // unarmed segment, a foreign stripe) routes the click elsewhere, so
+            // no ghost there.
+            const hover = selection.appendHover;
+            const overArmedSegment =
+              hover?.kind === 'segment' &&
+              mode.cursor?.kind === 'edge' &&
+              pairKeyOf(mode.cursor.from, mode.cursor.to) === hover.pairKey;
+            if (hover && !overArmedSegment) return null;
             const ln = lines[mode.lineId];
             if (!ln) return null;
             const d = decideCanvasClick(ln, mode.cursor, true);

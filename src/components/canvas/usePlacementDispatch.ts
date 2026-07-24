@@ -6,7 +6,7 @@ import {
   useSelection,
   type UiMode,
 } from '../../state/store';
-import { decideCanvasClick } from '../../model/appendGestures';
+import { decideCanvasClick, type AppendDecision } from '../../model/appendGestures';
 import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
 import { randomStationName } from '../../state/stationNames';
@@ -117,6 +117,13 @@ export function snapPlacement(
   }
 }
 
+/** The create-* subset of AppendDecision: an Edit Stops action that mints a
+ *  new station (seed / connect / splice) as the second click of the gesture. */
+export type AppendCreate = Extract<
+  AppendDecision,
+  { kind: 'create-seed' | 'create-connect' | 'create-splice' }
+>;
+
 export interface PlacementDispatch {
   /**
    * Handle a background canvas click while a click-to-place / mode is active.
@@ -124,6 +131,14 @@ export interface PlacementDispatch {
    * exited); false means the canvas should fall through to its deselect-all.
    */
   handleCanvasPlace: (e: React.MouseEvent) => boolean;
+  /**
+   * Execute an Edit Stops create decision at the event's snapped point: mint
+   * the station and wire it (seed / connect / splice) in ONE undo group, then
+   * advance the append cursor. Shared by the empty-canvas alt-click
+   * (handleCanvasPlace) and the alt-click directly on the armed segment
+   * (MapCanvas appendDeepPick), so the two can never wire a splice differently.
+   */
+  runAppendCreate: (lineId: LineId, decision: AppendCreate, e: React.MouseEvent) => void;
   /**
    * The pre-rolled name for the next station drop in placing-station mode, so
    * the ghost preview shows the real name and the click commits the same one.
@@ -169,6 +184,35 @@ export function usePlacementDispatch(view: ViewportApi): PlacementDispatch {
     setPrevPlacing(placingStation);
     setPreviewName(placingStation ? randomStationName() : null);
   }
+
+  const runAppendCreate = (lineId: LineId, decision: AppendCreate, e: React.MouseEvent): void => {
+    // Snap exactly like placing-station (the appending-to-line branch of
+    // snapPlacement), so the drop matches the alt-ghost preview. The mode's
+    // cursor is irrelevant to the snap, so a throwaway one keeps this decoupled
+    // from the live uiMode.
+    const w = snapPlacement(
+      { kind: 'appending-to-line', lineId, cursor: null },
+      view.screenToWorld(e.clientX, e.clientY),
+      e.shiftKey,
+      snapModes,
+      gridSize,
+      view.viewport.zoom,
+    );
+    // Grouped so one Ctrl+Z removes the station AND its wiring together.
+    const group = beginHistoryGroup();
+    const id = addStation(w.x, w.y);
+    if (decision.kind === 'create-seed') {
+      addStationToLine(lineId, id);
+      setAppendCursor({ kind: 'station', stationId: id });
+    } else if (decision.kind === 'create-connect') {
+      connectStationsOnLine(lineId, decision.from, id);
+      setAppendCursor({ kind: 'station', stationId: id });
+    } else {
+      spliceStationIntoEdge(lineId, decision.from, decision.to, id);
+      setAppendCursor({ kind: 'edge', from: id, to: decision.to });
+    }
+    group.commit();
+  };
 
   const handleCanvasPlace = (e: React.MouseEvent): boolean => {
     const mode = uiMode;
@@ -239,23 +283,9 @@ export function usePlacementDispatch(view: ViewportApi): PlacementDispatch {
         decision.kind === 'create-connect' ||
         decision.kind === 'create-splice'
       ) {
-        // Alt-click drops a new station at the snapped point and completes
-        // the pending action with it. Grouped so one Ctrl+Z removes the
-        // station AND its wiring together.
-        const w = snappedWorld();
-        const group = beginHistoryGroup();
-        const id = addStation(w.x, w.y);
-        if (decision.kind === 'create-seed') {
-          addStationToLine(mode.lineId, id);
-          setAppendCursor({ kind: 'station', stationId: id });
-        } else if (decision.kind === 'create-connect') {
-          connectStationsOnLine(mode.lineId, decision.from, id);
-          setAppendCursor({ kind: 'station', stationId: id });
-        } else {
-          spliceStationIntoEdge(mode.lineId, decision.from, decision.to, id);
-          setAppendCursor({ kind: 'edge', from: id, to: decision.to });
-        }
-        group.commit();
+        // Alt-click drops a new station at the snapped point and completes the
+        // pending action with it.
+        runAppendCreate(mode.lineId, decision, e);
       }
       return true; // consumed either way ('none' falls through to here)
     }
@@ -297,5 +327,5 @@ export function usePlacementDispatch(view: ViewportApi): PlacementDispatch {
     return false;
   };
 
-  return { handleCanvasPlace, previewName };
+  return { handleCanvasPlace, runAppendCreate, previewName };
 }

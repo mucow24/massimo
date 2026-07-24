@@ -132,6 +132,13 @@ export function decideStationClick(
  * canonical station-pair key; `click` is the world-space click point and
  * `stopPosOf` resolves a member's stop position (both may be unavailable, in
  * which case the edge arms in canonical order).
+ *
+ * With `alt`, a click on the ALREADY-armed segment splices a new station into
+ * it at the click point — the same create decideCanvasClick makes over empty
+ * canvas, but reached by clicking the segment directly (the natural "drop a
+ * stop mid-segment" gesture). Alt on a not-yet-armed segment still just arms
+ * it, so the alt-pick can cycle onto a buried segment before a second alt-click
+ * splices; and alt never disarms.
  */
 export function decideSegmentClick(
   line: Line,
@@ -139,16 +146,21 @@ export function decideSegmentClick(
   pairKey: string,
   click: { x: number; y: number } | null,
   stopPosOf: (sid: StationId) => { x: number; y: number } | null,
+  alt = false,
 ): AppendDecision {
   if (!line.edges.includes(pairKey)) return { kind: 'none' };
   const cursor = validCursor(line, cursorIn);
   const [a, b] = edgeEndpoints(pairKey);
-  // Re-clicking the armed segment disarms it, whichever direction it stored.
+  // On the already-armed segment (whichever direction it stored): alt splices a
+  // new station into it, preserving the armed direction so a click-click-click
+  // run keeps marching; a plain re-click disarms.
   if (
     cursor?.kind === 'edge' &&
     ((cursor.from === a && cursor.to === b) || (cursor.from === b && cursor.to === a))
   )
-    return { kind: 'cursor', cursor: null };
+    return alt
+      ? { kind: 'create-splice', from: cursor.from, to: cursor.to }
+      : { kind: 'cursor', cursor: null };
   let from = a;
   let to = b;
   const pa = stopPosOf(a);
