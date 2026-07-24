@@ -60,9 +60,9 @@ import {
   LINE_STROKE_WIDTH_MIN,
   canonicalSeamColor,
   canonicalStrokeWidth,
-  lineSeamColorOf,
+  lineSeamColorStored,
   lineSeamWidthOf,
-  lineStrokeColorOf,
+  lineStrokeColorStored,
   lineStrokeWidthOf,
 } from './lineStroke';
 import {
@@ -125,7 +125,11 @@ export function captureStyleProps<K extends StyleKind>(
     case 'line': {
       const l = doc.lines[itemId];
       if (!l) return null;
-      const seamColor = lineSeamColorOf(l);
+      // STORED, not resolved: a casing/seam set to the line's own color must
+      // capture as the 'line' sentinel, so the style hands every wearer ITS
+      // color instead of baking the example line's hue (and so a tagged line
+      // still compares equal to its style).
+      const seamColor = lineSeamColorStored(l);
       const seamWidth = lineSeamWidthOf(l);
       const dashLength = lineDashLengthOf(l);
       const dashWidth = lineDashWidthOf(l);
@@ -140,7 +144,7 @@ export function captureStyleProps<K extends StyleKind>(
         width: lineWidthOf(l),
         curveRadius: lineCurveRadiusOf(l),
         strokeWidth: lineStrokeWidthOf(l),
-        strokeColor: lineStrokeColorOf(l),
+        strokeColor: lineStrokeColorStored(l),
         // Optional: omitted when unset, so a captured style compares equal to
         // one that never had the key.
         ...(seamColor !== undefined ? { seamColor } : {}),

@@ -33,6 +33,18 @@ export const LINE_STROKE_STEP = 0.25;
 export const LINE_STROKE_COLOR_DEFAULT = '#ffffff';
 
 /**
+ * Sentinel stored in place of a hex in `Line.strokeColor` / `Line.seamColor`:
+ * "paint this in the LINE'S OWN color", resolved at render time. Same word and
+ * same meaning as the dot styles' 'line' fill/stroke (see DotFill /
+ * DotStrokeColor in types.ts), so the two color systems read alike.
+ *
+ * It survives both canonicalizers untouched — lowercase already, and neither
+ * the white-casing default nor the transparent-seam "off" test matches it — so
+ * it stores, round-trips, and stamps like any other color value.
+ */
+export const LINE_OWN_COLOR = 'line';
+
+/**
  * The canonical STORED form of a casing width: round to the LINE_STROKE_STEP
  * (quarter-unit) grid, clamp to ≥ LINE_STROKE_WIDTH_MIN, and collapse to
  * `undefined` at LINE_STROKE_WIDTH_DEFAULT (0 = no casing, never stored).
@@ -64,18 +76,54 @@ export const canonicalStrokeColor = (c: string): string | undefined => {
 export const lineStrokeWidthOf = (line: { strokeWidth?: number } | null | undefined): number =>
   line?.strokeWidth ?? LINE_STROKE_WIDTH_DEFAULT;
 
-/** Effective casing color. Missing field ⇒ the white default. */
-export const lineStrokeColorOf = (line: { strokeColor?: string } | null | undefined): string =>
+/**
+ * The STORED casing color — the raw field, with only the missing-field default
+ * (white) applied. May be the {@link LINE_OWN_COLOR} sentinel, so this is NOT a
+ * paintable value: renderers want {@link lineCasingColor}. Capture-by-example
+ * and the editors' mode pickers want this one, so a style defined from a
+ * line-colored casing captures the SENTINEL rather than baking that one line's
+ * hue.
+ */
+export const lineStrokeColorStored = (line: { strokeColor?: string } | null | undefined): string =>
   line?.strokeColor ?? LINE_STROKE_COLOR_DEFAULT;
 
 /**
- * Effective seam color — the interior overlap indicator painted where a line's
- * OWN bands overlap (branch/loop). Unlike the casing there is NO default color:
- * absent ⇒ NO seam (the overlaps stay merged). Returns undefined when unset.
+ * The STORED seam color. Unlike the casing there is NO default color: absent ⇒
+ * NO seam (the overlaps stay merged), so this returns undefined when unset —
+ * which is also how callers test "does this line have a seam at all" (the
+ * sentinel counts as one). Raw like {@link lineStrokeColorStored}; renderers
+ * want {@link lineSeamColor}.
  */
-export const lineSeamColorOf = (
+export const lineSeamColorStored = (
   line: { seamColor?: string } | null | undefined,
 ): string | undefined => line?.seamColor;
+
+/**
+ * Resolve a stored casing/seam color to a paintable one: the
+ * {@link LINE_OWN_COLOR} sentinel becomes `lineColor`, anything else passes
+ * through. `lineColor` is the EFFECTIVE body color, so a line-colored casing
+ * tracks the selection desaturation with the body instead of popping at full
+ * saturation. Picker-less callers with no line to hand (see DashGlyph) pass
+ * undefined and get the white casing default — the literal word must never
+ * reach an SVG paint attribute.
+ */
+const resolveOwnColor = (stored: string, lineColor: string | undefined): string =>
+  stored === LINE_OWN_COLOR ? (lineColor ?? LINE_STROKE_COLOR_DEFAULT) : stored;
+
+/** Paintable casing color: {@link lineStrokeColorStored} with the sentinel resolved. */
+export const lineCasingColor = (
+  line: { strokeColor?: string } | null | undefined,
+  lineColor: string | undefined,
+): string => resolveOwnColor(lineStrokeColorStored(line), lineColor);
+
+/** Paintable seam color, or undefined when the line has no seam. */
+export const lineSeamColor = (
+  line: { seamColor?: string } | null | undefined,
+  lineColor: string | undefined,
+): string | undefined => {
+  const stored = lineSeamColorStored(line);
+  return stored === undefined ? undefined : resolveOwnColor(stored, lineColor);
+};
 
 /**
  * Canonical STORED form of a seam color: lowercased, and collapsed to

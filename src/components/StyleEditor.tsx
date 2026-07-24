@@ -34,6 +34,8 @@ import {
   LINE_CURVE_RADIUS_STEP,
 } from '../model/lineCurve';
 import {
+  LINE_OWN_COLOR,
+  LINE_STROKE_COLOR_DEFAULT,
   LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_MAX,
   LINE_STROKE_WIDTH_MIN,
@@ -130,6 +132,40 @@ function usePatch(id: string): (patch: StylePropsPatch) => void {
   return (patch) => updateStyleProps(id, patch);
 }
 
+/**
+ * The "follow the line's color, or pick one" two-way switch, shared by the line
+ * style's casing and seam rows. Same shape and wording as the stopDot editor's
+ * fill/stroke/service-code mode pickers, so the two color systems read alike;
+ * the caller conditionally renders the swatch row beneath when the mode is
+ * 'custom'. `ariaPrefix` names the field the segments belong to ("Stroke color"
+ * ⇒ "Stroke color line" / "Stroke color custom"), keeping the two rows'
+ * segments distinguishable to tests and screen readers.
+ */
+function LineOrCustomToggle({
+  mode,
+  ariaPrefix,
+  onSelect,
+}: {
+  mode: 'line' | 'custom';
+  ariaPrefix: string;
+  onSelect: (mode: 'line' | 'custom') => void;
+}) {
+  return (
+    <div className="shape-group">
+      <SegmentedToggle
+        value={mode}
+        onSelect={(v) => onSelect(v as 'line' | 'custom')}
+        options={(['line', 'custom'] as const).map((m) => ({
+          value: m,
+          label: `${ariaPrefix} ${m}`,
+          title: m === 'line' ? "The line's own color" : 'A fixed color',
+          content: m === 'line' ? 'Line' : 'Custom',
+        }))}
+      />
+    </div>
+  );
+}
+
 function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
   const patch = usePatch(id);
   const styles = useDoc((s) => s.styles);
@@ -148,6 +184,16 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
   // Dash length/width only bite on 'dash' stops, so grey them out unless one of
   // the split defaults is a dash dot.
   const dashActive = singletonDot.shape === 'dash' || multiDot.shape === 'dash';
+  // Casing and seam each carry either a hex or the LINE_OWN_COLOR sentinel, so
+  // one style can give differently-colored lines a casing in their own hue. An
+  // UNSET seam is Custom, not Line: absent is the seam's off state, and the
+  // swatch shows it as transparent (the same "drag the alpha up to enable" flow
+  // the Line inspector has).
+  const strokeMode: 'line' | 'custom' = props.strokeColor === LINE_OWN_COLOR ? 'line' : 'custom';
+  const seamMode: 'line' | 'custom' = props.seamColor === LINE_OWN_COLOR ? 'line' : 'custom';
+  // The hue the seam's off/transparent swatch is seeded from: the casing, unless
+  // that's the sentinel — 'line' is not a hex and would poison the alpha math.
+  const seamSeedHex = strokeMode === 'custom' ? props.strokeColor : LINE_STROKE_COLOR_DEFAULT;
   return (
     <div className="style-editor">
       <NumericFieldRow
@@ -199,14 +245,28 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
         textboxAllowAboveMax
       />
       <div className="row">
-        <label htmlFor={`style-${id}-stroke-color`}>Stroke color</label>
-        <ColorField
-          id={`style-${id}-stroke-color`}
-          ariaLabel="Stroke color"
-          value={props.strokeColor}
-          onChange={(strokeColor) => patch({ strokeColor })}
+        <label>Stroke color</label>
+        <LineOrCustomToggle
+          mode={strokeMode}
+          ariaPrefix="Stroke color"
+          // Leaving Line lands on the casing default rather than some remembered
+          // hue — a style has no line of its own to take a color from.
+          onSelect={(m) =>
+            patch({ strokeColor: m === 'line' ? LINE_OWN_COLOR : LINE_STROKE_COLOR_DEFAULT })
+          }
         />
       </div>
+      {strokeMode === 'custom' && (
+        <div className="row">
+          <label htmlFor={`style-${id}-stroke-color`}>Stroke</label>
+          <ColorField
+            id={`style-${id}-stroke-color`}
+            ariaLabel="Stroke color"
+            value={props.strokeColor}
+            onChange={(strokeColor) => patch({ strokeColor })}
+          />
+        </div>
+      )}
       <div className="style-divider" />
       <NumericFieldRow
         id={`style-${id}-seam`}
@@ -220,14 +280,28 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
         textboxAllowAboveMax
       />
       <div className="row">
-        <label htmlFor={`style-${id}-seam-color`}>Seam color</label>
-        <ColorField
-          id={`style-${id}-seam-color`}
-          ariaLabel="Seam color"
-          value={props.seamColor ?? withHexAlpha(props.strokeColor, 0)}
-          onChange={(seamColor) => patch({ seamColor })}
+        <label>Seam color</label>
+        <LineOrCustomToggle
+          mode={seamMode}
+          ariaPrefix="Seam color"
+          // Leaving Line drops to the transparent seed — which is never stored,
+          // so the seam returns to plain OFF, exactly where a fresh style sits.
+          onSelect={(m) =>
+            patch({ seamColor: m === 'line' ? LINE_OWN_COLOR : withHexAlpha(seamSeedHex, 0) })
+          }
         />
       </div>
+      {seamMode === 'custom' && (
+        <div className="row">
+          <label htmlFor={`style-${id}-seam-color`}>Seam</label>
+          <ColorField
+            id={`style-${id}-seam-color`}
+            ariaLabel="Seam color"
+            value={props.seamColor ?? withHexAlpha(seamSeedHex, 0)}
+            onChange={(seamColor) => patch({ seamColor })}
+          />
+        </div>
+      )}
       <div className="style-section">Stop dots</div>
       {/* Dot TYPE + SIZE per station case, split by singleton (only line at the
           station) vs. interchange (shared). The picker points the split default

@@ -1150,6 +1150,19 @@ describe('parse — line stroke sanitizing', () => {
     if (off.ok) expect('seamColor' in off.doc.lines.L1).toBe(false);
   });
 
+  // 'line' (LINE_OWN_COLOR) means "paint this in the line's own color". It is a
+  // stored value like any other, so it must survive the file cleaner untouched
+  // on BOTH fields — it is already lowercase, and it matches neither the
+  // white-casing default nor the transparent-seam "off" test.
+  it("round-trips the 'line' sentinel on the casing and the seam", () => {
+    const result = parse(buildWithStroke({ strokeColor: 'line', seamColor: 'line' }));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.lines.L1.strokeColor).toBe('line');
+      expect(result.doc.lines.L1.seamColor).toBe('line');
+    }
+  });
+
   it('drops non-string seam colors', () => {
     for (const junk of [5, null, true, {}]) {
       const result = parse(buildWithStroke({ seamColor: junk }));
