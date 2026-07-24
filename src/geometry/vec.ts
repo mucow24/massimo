@@ -1,3 +1,5 @@
+import { clamp } from '../util/grid';
+
 export type Vec2 = { x: number; y: number };
 
 export const v = (x: number, y: number): Vec2 => ({ x, y });
@@ -70,8 +72,7 @@ export const centroid = (points: readonly Vec2[]): Vec2 => {
 // Unsigned angle in radians ([0, π]) between two UNIT vectors, via their
 // clamped dot product (the clamp guards acos against FP drift past ±1). Callers
 // pass unit tangents/directions; this does NOT normalize its inputs.
-export const angleBetween = (a: Vec2, b: Vec2): number =>
-  Math.acos(Math.max(-1, Math.min(1, dot(a, b))));
+export const angleBetween = (a: Vec2, b: Vec2): number => Math.acos(clamp(dot(a, b), -1, 1));
 
 // Half-angle tangent tan(θ/2) — the fillet / corner tangent-length factor.
 export const tanHalf = (theta: number): number => Math.tan(theta / 2);

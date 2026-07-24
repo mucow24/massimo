@@ -1,3 +1,12 @@
+// Clamp `v` into the closed interval [lo, hi]. Callers must pass lo ≤ hi (the
+// two-sided `Math.max(lo, Math.min(hi, v))` idiom this replaces has the same
+// precondition). Pure min/max — no rounding — so it never perturbs a value that
+// is already in range, which is why it's safe on the float-sensitive geometry
+// call sites (angle cosines, arc parameters) as well as the integer/percent ones.
+export function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
 // Round a value to a step grid and clamp at the bottom only (spinbuttons accept
 // values above a slider's max). The three-decimal rounding kills float artifacts
 // like 1.1500000000000001 while preserving the finest step in use (tracking's

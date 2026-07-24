@@ -14,6 +14,7 @@ import type { LineId, RegionAnchor, RegionAssignment } from '../model/types';
 import type { SegmentBandSpec, StopMarkerSpec } from './interlining';
 import type { OffsetPathSegment } from './router';
 import { emitOffsetSegments } from './router';
+import { clamp } from '../util/grid';
 import { closestParamOnOffsetPath, sampleOffsetPathByArcLength } from './lineTagGeometry';
 import { leftNormal, perp, rotatedRectCorners, type Vec2 } from './vec';
 import {
@@ -100,9 +101,9 @@ export function flattenOffsetSegments(segs: OffsetPathSegment[], tol = FLATTEN_T
     if (s.kind === 'arc') {
       // Chord error e = r(1 − cos(dψ/2)) ⇒ dψ = 2·acos(1 − e/r), clamped so
       // tiny radii (inner fillets shrink arbitrarily) can't NaN the acos.
-      const cosArg = Math.min(1, Math.max(-1, 1 - tol / s.r));
+      const cosArg = clamp(1 - tol / s.r, -1, 1);
       const maxStep = 2 * Math.acos(cosArg);
-      const n = Math.min(256, Math.max(1, Math.ceil(s.theta / Math.max(maxStep, 1e-4))));
+      const n = clamp(Math.ceil(s.theta / Math.max(maxStep, 1e-4)), 1, 256);
       // p(ψ) = from + r·(sin ψ · inDir + sign·(1 − cos ψ)·perp(inDir)) — the
       // exact parametrization lineTagGeometry samples with.
       const pp = perp(s.inDir);
@@ -223,7 +224,7 @@ function stripePathFor(band: SegmentBandSpec, stripeIndex: number): StripePath {
 }
 
 function pointAtArcLength(sp: StripePath, d: number): Vec2 {
-  const target = Math.min(Math.max(d, 0), sp.len);
+  const target = clamp(d, 0, sp.len);
   let lo = 0;
   let hi = sp.cum.length - 1;
   while (lo + 1 < hi) {
@@ -516,7 +517,7 @@ function projectOntoLineStripe(
       const n = leftNormal(at.tangent);
       const half = band.stripeWidths[k] / 2;
       const raw = (target.x - at.p.x) * n.x + (target.y - at.p.y) * n.y;
-      const side = Math.max(-half, Math.min(half, raw));
+      const side = clamp(raw, -half, half);
       best = { pairKey: band.pairKey, mid: d, totalLen: sp.len, size: 0, side };
     }
   }
@@ -557,7 +558,7 @@ export function evaluateAnchor(
     if (k < 0) continue;
     const sp = stripePathFor(band, k);
     const raw = anchor.anchorEnd === 'from' ? anchor.distance : sp.len - anchor.distance;
-    const d = Math.min(Math.max(raw, 0), sp.len);
+    const d = clamp(raw, 0, sp.len);
     const side = anchor.side ?? 0;
     if (side === 0) return { p: pointAtArcLength(sp, d), d };
     const at = sampleOffsetPathByArcLength(band.centerline, band.radius, band.stripeOffsets[k], d);
@@ -587,8 +588,7 @@ function pointToFaceDistance(p: Vec2, face: RegionFace): number {
     const ex = c.x - a.x;
     const ey = c.y - a.y;
     const lenSq = ex * ex + ey * ey;
-    const t =
-      lenSq > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * ex + (p.y - a.y) * ey) / lenSq)) : 0;
+    const t = lenSq > 0 ? clamp(((p.x - a.x) * ex + (p.y - a.y) * ey) / lenSq, 0, 1) : 0;
     const qx = a.x + ex * t;
     const qy = a.y + ey * t;
     min = Math.min(min, Math.hypot(p.x - qx, p.y - qy));

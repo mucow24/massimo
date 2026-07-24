@@ -11,6 +11,7 @@ import {
   deleteStyle,
   duplicateStyle,
   renameStyle,
+  restampStyleTag,
   saveStyleFromItem,
   setDefaultStyle,
   stylePropsEqual,
@@ -313,6 +314,37 @@ describe('stylePropsEqual — transfer day/night colors', () => {
     expect(
       stylePropsEqual('transfer', base, props(base.color, { day: '#ffffff', night: '#999999' })),
     ).toBe(false);
+  });
+});
+
+describe('restampStyleTag', () => {
+  // The clipboard-paste invariant repair: a pasted item can arrive still tagged
+  // with a style whose props were redefined AFTER the copy, so its frozen
+  // snapshot is stale. restampStyleTag re-asserts tagged ⇒ matches by stamping
+  // the style's CURRENT props onto the survivor.
+  it('re-stamps a tagged item whose style was redefined since the copy', () => {
+    const style = makeStyle('line', 'y1', {
+      props: { width: 10, curveRadius: 40, strokeWidth: 2, strokeColor: '#123456' },
+    });
+    // A line tagged y1 but carrying STALE props (copied when y1 was thinner).
+    const stale = makeLine({ id: 'l1', styleId: 'y1', width: 5, strokeWidth: 1 });
+    const doc = makeDoc({ lines: [stale], styles: [style] });
+    const next = restampStyleTag(doc, 'line', 'l1');
+    expect(next.lines.l1.width).toBe(10);
+    expect(next.lines.l1.strokeWidth).toBe(2);
+    expect(next.lines.l1.strokeColor).toBe('#123456');
+    // Still tagged — the repair keeps the item wearing its style.
+    expect(next.lines.l1.styleId).toBe('y1');
+  });
+
+  it('is a no-op (same doc reference) for an untagged item', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'l1', width: 5 })] });
+    expect(restampStyleTag(doc, 'line', 'l1')).toBe(doc);
+  });
+
+  it('is a no-op (same doc reference) when the item is missing', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'l1' })] });
+    expect(restampStyleTag(doc, 'line', 'nope')).toBe(doc);
   });
 });
 

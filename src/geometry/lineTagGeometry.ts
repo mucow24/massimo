@@ -2,6 +2,7 @@ import { perp, rotate, Vec2 } from './vec';
 import { emitOffsetSegments, OffsetPathSegment } from './router';
 import { pairKeyOf } from '../model/pairKey';
 import type { Line, LineId, LineTag, StationId } from '../model/types';
+import { clamp } from '../util/grid';
 
 /**
  * Walk an offset path by arc length: return the world-frame point and the
@@ -35,7 +36,7 @@ export function sampleOffsetPathByArcLength(
   if (total < 1e-9 || segs.length === 0) {
     return { p: verts[0] ?? { x: 0, y: 0 }, tangent: { x: 1, y: 0 } };
   }
-  const target = Math.max(0, Math.min(total, arcLen));
+  const target = clamp(arcLen, 0, total);
   // Skip zero-length segments when selecting the sample segment: a degenerate
   // leading (or trailing) line — e.g. from a coincident vertex — has no
   // meaningful tangent, and sampleSegment would hand back (0, 0). Land on the

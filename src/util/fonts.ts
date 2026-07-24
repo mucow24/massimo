@@ -11,6 +11,7 @@
  */
 
 import type { TextLabelWeight } from '../model/types';
+import { clamp } from './grid';
 
 export const FONT_FAMILY = 'Helvetica Neue';
 
@@ -60,7 +61,7 @@ const WEIGHT_NAME_TO_VALUE = new Map(
 export function stepWeight(weight: number, steps: number): number {
   const i = AVAILABLE_WEIGHTS.indexOf(weight);
   const from = i >= 0 ? i : AVAILABLE_WEIGHTS.indexOf(normalizeWeight(String(weight)));
-  return AVAILABLE_WEIGHTS[Math.max(0, Math.min(from + steps, AVAILABLE_WEIGHTS.length - 1))];
+  return AVAILABLE_WEIGHTS[clamp(from + steps, 0, AVAILABLE_WEIGHTS.length - 1)];
 }
 
 /**

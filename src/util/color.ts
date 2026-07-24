@@ -1,3 +1,5 @@
+import { clamp } from './grid';
+
 // Pick black or white text for legibility against an arbitrary hex bg.
 // Uses the W3C relative-luminance formula.
 export function legibleTextOn(hex: string): string {
@@ -45,10 +47,7 @@ export function parseHexA(hex: string): [number, number, number, number] {
 // so translucent colors round-trip. Keeping opaque colors 6-digit means stored
 // colors, palette-swatch matching, and existing saves don't churn.
 function toHex(r: number, g: number, b: number, a = 255): string {
-  const h = (n: number) =>
-    Math.max(0, Math.min(255, Math.round(n)))
-      .toString(16)
-      .padStart(2, '0');
+  const h = (n: number) => clamp(Math.round(n), 0, 255).toString(16).padStart(2, '0');
   const rgb = `#${h(r)}${h(g)}${h(b)}`;
   return a >= 255 ? rgb : `${rgb}${h(a)}`;
 }
@@ -69,7 +68,7 @@ export function normalizeHex(hex: string): string {
 // polygon fill-opacity percentage into the fill color's alpha.
 export function withHexAlpha(hex: string, a: number): string {
   const [r, g, b] = parseHexA(hex);
-  return toHex(r, g, b, Math.max(0, Math.min(255, Math.round(a))));
+  return toHex(r, g, b, clamp(Math.round(a), 0, 255));
 }
 
 // Returns a CSS rgba() string with the given alpha applied to a hex color.
@@ -86,7 +85,7 @@ export function withAlpha(hex: string, alpha: number): string {
 export function blendOver(fg: string, alpha: number, bg = '#ffffff'): string {
   const [fr, fgg, fb] = parseHex(fg);
   const [br, bgg, bb] = parseHex(bg);
-  const a = Math.max(0, Math.min(1, alpha));
+  const a = clamp(alpha, 0, 1);
   return toHex(fr * a + br * (1 - a), fgg * a + bgg * (1 - a), fb * a + bb * (1 - a));
 }
 
@@ -96,7 +95,7 @@ export function desaturateColor(hex: string, amount: number): string {
   if (amount >= 1) return hex;
   const [r, g, b, a] = parseHexA(hex);
   const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  const t = Math.max(0, Math.min(1, amount));
+  const t = clamp(amount, 0, 1);
   // Desaturate only the RGB; the source alpha rides through so a dimmed
   // non-selected line keeps its transparency.
   return toHex(y + (r - y) * t, y + (g - y) * t, y + (b - y) * t, a);

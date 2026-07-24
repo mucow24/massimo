@@ -44,7 +44,7 @@ export { resolveDotStyle } from './dotStyle';
 // `snapToStep` is a leaf grid util (in util/grid) so lower-level model modules
 // like `dotStyle` can share it without importing `transforms`; keep the
 // historical import path working for its existing callers.
-import { roundClamp, snapToStep } from '../util/grid';
+import { clamp, roundClamp, snapToStep } from '../util/grid';
 export { snapToStep };
 import { pairKeyOf } from './pairKey';
 import {
@@ -166,7 +166,7 @@ export const MAP_NAME_DEFAULT = 'Untitled map';
 export function bumpWeightByIndex(weight: TextLabelWeight, delta: number): TextLabelWeight {
   const i = LABEL_WEIGHT_VALUES.indexOf(weight);
   if (i < 0) return weight;
-  const next = Math.max(0, Math.min(LABEL_WEIGHT_VALUES.length - 1, i + delta));
+  const next = clamp(i + delta, 0, LABEL_WEIGHT_VALUES.length - 1);
   return LABEL_WEIGHT_VALUES[next];
 }
 
@@ -932,7 +932,7 @@ export function redistributeBetween(
         const bLen = Math.hypot(bx, by);
         if (aLen === 0 || bLen === 0) continue;
         const cosA = (ax * bx + ay * by) / (aLen * bLen);
-        const angle = Math.acos(Math.max(-1, Math.min(1, cosA)));
+        const angle = Math.acos(clamp(cosA, -1, 1));
         if (angle > ANGLE_THRESHOLD) anchors.push(k);
       }
     }
@@ -2433,7 +2433,7 @@ export const POLYGON_MIN_VERTICES = 3;
 // (POLYGON_STROKE_WIDTH_MAX constrains the slider, not the value). Mirrors the
 // line stroke-width control.
 const clampPolygonStrokeWidth = (w: number): number =>
-  Math.max(POLYGON_STROKE_WIDTH_MIN, Math.round(w / POLYGON_STROKE_STEP) * POLYGON_STROKE_STEP);
+  roundClamp(w, POLYGON_STROKE_STEP, POLYGON_STROKE_WIDTH_MIN);
 // Curve radius clamps at the bottom only (no rounding) — a free-form world-unit
 // value whose spinbutton accepts values beyond the slider max.
 const clampPolygonCurveRadius = (r: number): number => Math.max(POLYGON_CURVE_RADIUS_MIN, r);
@@ -2666,7 +2666,7 @@ export const SVG_IMAGE_OPACITY_DEFAULT = 1;
 // Clamps at BOTH ends (unlike the polygon widths, whose spinbuttons run past
 // the slider): an alpha outside 0..1 has no meaning to render.
 const clampSvgImageOpacity = (o: number): number =>
-  Math.min(SVG_IMAGE_OPACITY_MAX, Math.max(SVG_IMAGE_OPACITY_MIN, o));
+  clamp(o, SVG_IMAGE_OPACITY_MIN, SVG_IMAGE_OPACITY_MAX);
 
 // Insert a fully-specified imported svg image. Used by the placement drop and
 // by duplicate/paste (the store actions supply all fields).
