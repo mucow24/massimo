@@ -9,6 +9,11 @@ function tangentRotation(wx: number, wy: number): Rotation {
   return (((Math.round((4 * theta) / Math.PI - 2) % 8) + 8) % 8) as Rotation;
 }
 
+// Screen octants that render a label upside down: its glyphs come out rotated
+// between 135° and 225° (octants 3, 4, 5). A label reads at screen octant
+// (station.rotation + label.rotation) mod 8.
+const LABEL_UPSIDE_DOWN = new Set<number>([3, 4, 5]);
+
 /**
  * Orient the one station that was just added to a line so the line travels
  * cleanly through it — its local +y points along the line's world travel
@@ -19,6 +24,11 @@ function tangentRotation(wx: number, wy: number): Rotation {
  * Only the just-added station is touched. Stations already on the line keep the
  * rotation the user gave them: auto-orientation is a convenience for a station
  * gaining its first line, never a whole-line reflow.
+ *
+ * A line's travel axis is symmetric under a 180° flip — orienting the station
+ * to the tangent `r` or to `r + 4` puts the same stripe through the same
+ * centered stop — so when the tangent would render the label upside down we
+ * take the opposite rotation instead: identical geometry, right-side-up text.
  */
 export function autoOrientNewStation(
   stationsIn: Record<StationId, Station>,
@@ -50,5 +60,10 @@ export function autoOrientNewStation(
   if (wx === 0 && wy === 0) return stationsIn;
 
   const r = tangentRotation(wx, wy);
-  return st.rotation === r ? stationsIn : { ...stationsIn, [stationId]: { ...st, rotation: r } };
+  // Prefer a right-side-up label: if the tangent would land the label in the
+  // upside-down band, flip 180° to the axis-equivalent rotation.
+  const rot: Rotation = LABEL_UPSIDE_DOWN.has((r + st.label.rotation) % 8)
+    ? (((r + 4) % 8) as Rotation)
+    : r;
+  return st.rotation === rot ? stationsIn : { ...stationsIn, [stationId]: { ...st, rotation: rot } };
 }
