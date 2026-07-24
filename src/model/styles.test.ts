@@ -97,6 +97,27 @@ describe('captureStyleProps', () => {
     expect(noSeam).not.toHaveProperty('seamWidth');
   });
 
+  // The whole point of the sentinel: a style set to "the line's own color" must
+  // capture and stamp as the WORD, never as the example line's hue — otherwise
+  // one line's color leaks into every wearer.
+  it("captures the 'line' sentinel verbatim, not the example line's color", () => {
+    const doc = makeDoc({
+      lines: [
+        makeLine({
+          id: 'l1',
+          color: '#c60c30',
+          strokeWidth: 2,
+          strokeColor: 'line',
+          seamColor: 'line',
+        }),
+      ],
+    });
+    expect(captureStyleProps(doc, 'line', 'l1')).toMatchObject({
+      strokeColor: 'line',
+      seamColor: 'line',
+    });
+  });
+
   it('captures dash dimensions when set, and omits both keys when unset', () => {
     const withDash = makeDoc({
       lines: [makeLine({ id: 'l1', dashLength: 21, dashWidth: 3 })],
@@ -318,6 +339,30 @@ describe('applyStyleToItem', () => {
     // Dot APPEARANCE is not a covered line-style field — only dot SIZE is stamped.
     expect(line.singletonDotSize).toBe(12);
     expect(line.multiDotSize).toBe(16);
+  });
+
+  it("stamps the 'line' sentinel onto lines of ANY color, keeping them tagged", () => {
+    const style = makeStyle('line', 'y1', {
+      props: { strokeWidth: 2, strokeColor: 'line', seamColor: 'line' },
+    });
+    const doc = makeDoc({
+      lines: [makeLine({ id: 'l1', color: '#c60c30' }), makeLine({ id: 'l2', color: '#00933c' })],
+      styles: [style],
+    });
+    let next = applyStyleToItem(doc, 'y1', 'l1');
+    next = applyStyleToItem(next, 'y1', 'l2');
+    // Both wearers store the sentinel — each paints its casing/seam in its OWN
+    // color at render time (see lineCasingColor), while the STORED values match
+    // the style, so the tagged⇒matches invariant holds for both.
+    for (const id of ['l1', 'l2'] as const) {
+      expect(next.lines[id].strokeColor).toBe('line');
+      expect(next.lines[id].seamColor).toBe('line');
+      expect(next.lines[id].styleId).toBe('y1');
+      expect(captureStyleProps(next, 'line', id)).toMatchObject({
+        strokeColor: 'line',
+        seamColor: 'line',
+      });
+    }
   });
 
   it('stamps a style seam color + width, and stamping a seamless style clears both', () => {

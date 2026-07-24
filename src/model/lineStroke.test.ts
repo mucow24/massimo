@@ -8,9 +8,12 @@ import {
   canonicalStrokeWidth,
   canonicalStrokeColor,
   canonicalSeamColor,
+  LINE_OWN_COLOR,
   lineStrokeWidthOf,
-  lineStrokeColorOf,
-  lineSeamColorOf,
+  lineStrokeColorStored,
+  lineSeamColorStored,
+  lineCasingColor,
+  lineSeamColor,
   lineSeamWidthOf,
   lineStrokeRailWidth,
   seamRenderWidth,
@@ -57,19 +60,19 @@ describe('canonicalStrokeColor', () => {
   });
 });
 
-describe('lineStrokeWidthOf / lineStrokeColorOf', () => {
+describe('lineStrokeWidthOf / lineStrokeColorStored', () => {
   it('read the stored values when present', () => {
     expect(lineStrokeWidthOf({ strokeWidth: 1.5 })).toBe(1.5);
-    expect(lineStrokeColorOf({ strokeColor: '#ff0000' })).toBe('#ff0000');
+    expect(lineStrokeColorStored({ strokeColor: '#ff0000' })).toBe('#ff0000');
   });
 
   it('fall back to the defaults for a bare line, null, and undefined', () => {
     expect(lineStrokeWidthOf({})).toBe(LINE_STROKE_WIDTH_DEFAULT);
     expect(lineStrokeWidthOf(null)).toBe(LINE_STROKE_WIDTH_DEFAULT);
     expect(lineStrokeWidthOf(undefined)).toBe(LINE_STROKE_WIDTH_DEFAULT);
-    expect(lineStrokeColorOf({})).toBe(LINE_STROKE_COLOR_DEFAULT);
-    expect(lineStrokeColorOf(null)).toBe(LINE_STROKE_COLOR_DEFAULT);
-    expect(lineStrokeColorOf(undefined)).toBe(LINE_STROKE_COLOR_DEFAULT);
+    expect(lineStrokeColorStored({})).toBe(LINE_STROKE_COLOR_DEFAULT);
+    expect(lineStrokeColorStored(null)).toBe(LINE_STROKE_COLOR_DEFAULT);
+    expect(lineStrokeColorStored(undefined)).toBe(LINE_STROKE_COLOR_DEFAULT);
   });
 });
 
@@ -88,12 +91,48 @@ describe('canonicalSeamColor', () => {
   });
 });
 
-describe('lineSeamColorOf', () => {
+describe('lineSeamColorStored', () => {
   it('returns the stored seam color, or undefined when unset (no seam by default)', () => {
-    expect(lineSeamColorOf({ seamColor: '#ff000080' })).toBe('#ff000080');
-    expect(lineSeamColorOf({})).toBeUndefined();
-    expect(lineSeamColorOf(null)).toBeUndefined();
-    expect(lineSeamColorOf(undefined)).toBeUndefined();
+    expect(lineSeamColorStored({ seamColor: '#ff000080' })).toBe('#ff000080');
+    expect(lineSeamColorStored({})).toBeUndefined();
+    expect(lineSeamColorStored(null)).toBeUndefined();
+    expect(lineSeamColorStored(undefined)).toBeUndefined();
+  });
+});
+
+describe("the 'line' sentinel (casing / seam painted in the line's own color)", () => {
+  it('resolves the casing to the line color, passing a hex through untouched', () => {
+    expect(lineCasingColor({ strokeColor: LINE_OWN_COLOR }, '#c60c30')).toBe('#c60c30');
+    expect(lineCasingColor({ strokeColor: '#00ff00' }, '#c60c30')).toBe('#00ff00');
+    // Unset is still the white default, not the line color.
+    expect(lineCasingColor({}, '#c60c30')).toBe(LINE_STROKE_COLOR_DEFAULT);
+    expect(lineCasingColor(null, '#c60c30')).toBe(LINE_STROKE_COLOR_DEFAULT);
+  });
+
+  it('resolves the seam to the line color, keeping "unset ⇒ no seam"', () => {
+    expect(lineSeamColor({ seamColor: LINE_OWN_COLOR }, '#c60c30')).toBe('#c60c30');
+    expect(lineSeamColor({ seamColor: '#ff000080' }, '#c60c30')).toBe('#ff000080');
+    expect(lineSeamColor({}, '#c60c30')).toBeUndefined();
+    expect(lineSeamColor(null, '#c60c30')).toBeUndefined();
+  });
+
+  it('falls back to the casing default when a caller has no line color to give', () => {
+    // Picker-less callers (DashGlyph without a line) pass undefined; a sentinel
+    // must never reach an SVG paint attribute as the literal word.
+    expect(lineCasingColor({ strokeColor: LINE_OWN_COLOR }, undefined)).toBe(
+      LINE_STROKE_COLOR_DEFAULT,
+    );
+    expect(lineSeamColor({ seamColor: LINE_OWN_COLOR }, undefined)).toBe(LINE_STROKE_COLOR_DEFAULT);
+  });
+
+  it('keeps the STORED accessors raw, so capture-by-example preserves the sentinel', () => {
+    expect(lineStrokeColorStored({ strokeColor: LINE_OWN_COLOR })).toBe(LINE_OWN_COLOR);
+    expect(lineSeamColorStored({ seamColor: LINE_OWN_COLOR })).toBe(LINE_OWN_COLOR);
+  });
+
+  it('survives canonicalization — the sentinel is storable on both fields', () => {
+    expect(canonicalStrokeColor(LINE_OWN_COLOR)).toBe(LINE_OWN_COLOR);
+    expect(canonicalSeamColor(LINE_OWN_COLOR)).toBe(LINE_OWN_COLOR);
   });
 });
 

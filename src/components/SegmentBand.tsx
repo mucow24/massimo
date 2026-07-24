@@ -3,9 +3,9 @@ import { resolveSegmentStyle, SegmentBandSpec } from '../geometry/interlining';
 import {
   casingInsetBodyWidth,
   casingSilhouetteWidth,
-  lineSeamColorOf,
+  lineCasingColor,
+  lineSeamColor,
   lineSeamWidthOf,
-  lineStrokeColorOf,
   lineStrokeRailWidth,
   lineStrokeWidthOf,
   seamRenderWidth,
@@ -121,7 +121,7 @@ export const SegmentBand = memo(function SegmentBand({
   // own bands and vanishes on a plain segment and the outer boundary. Width is
   // independent (seamWidth), inheriting the casing width when unset.
   if (pass === 'seam') {
-    const seamColor = lineSeamColorOf(live);
+    const seamColor = lineSeamColor(live, color);
     const seamW = seamRenderWidth(lineSeamWidthOf(live), railW, fullWidth);
     if (!seamColor || seamW <= 0) return null;
     const off = spec.stripeOffsets[stripeIndex];
@@ -167,7 +167,7 @@ export const SegmentBand = memo(function SegmentBand({
         data-band-casing={decorative ? undefined : ''}
         data-line-id={decorative ? undefined : lineId}
         fill="none"
-        stroke={lineStrokeColorOf(live)}
+        stroke={lineCasingColor(live, color)}
         strokeWidth={casingSilhouetteWidth(fullWidth, railW)}
         strokeLinecap="butt"
         strokeLinejoin="round"
@@ -235,7 +235,7 @@ export const SegmentBand = memo(function SegmentBand({
           offset={spec.stripeOffsets[stripeIndex]}
           bodyWidth={fullWidth}
           railW={railW}
-          color={lineStrokeColorOf(live)}
+          color={lineCasingColor(live, color)}
           lineId={decorative ? undefined : lineId}
         />
       )}
