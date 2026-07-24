@@ -15,12 +15,14 @@ const setModes = (partial: Partial<SnapModes>) =>
   useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, ...partial } });
 
 // Synthesize a React.PointerEvent-ish object exposing only the fields the
-// hook actually reads (clientX, clientY, pointerId, shiftKey).
+// hook actually reads (clientX, clientY, pointerId, shiftKey, ctrlKey/metaKey).
 function pointerEvent(opts: {
   clientX: number;
   clientY: number;
   pointerId?: number;
   shiftKey?: boolean;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
   buttons?: number;
 }): React.PointerEvent {
   return {
@@ -28,6 +30,8 @@ function pointerEvent(opts: {
     clientY: opts.clientY,
     pointerId: opts.pointerId ?? 1,
     shiftKey: opts.shiftKey ?? false,
+    ctrlKey: opts.ctrlKey ?? false,
+    metaKey: opts.metaKey ?? false,
     buttons: opts.buttons ?? 1,
   } as unknown as React.PointerEvent;
 }
@@ -336,6 +340,74 @@ describe('useStationDrag — a move with no buttons cancels the dead gesture', (
     // Disarmed: later moves are inert.
     result.current.onPointerMove(pointerEvent({ clientX: 500, clientY: 500 }));
     expect(useDoc.getState().stations['A'].x).toBe(0);
+  });
+});
+
+describe('useStationDrag — Ctrl toggles redistribute mode live, mid-drag', () => {
+  // A—M—B on one line; M is the intervening stop redistribute reflows. Shift is
+  // held throughout to bypass snap so the grabbed station's world position is
+  // exact; grid is off so redistribute doesn't round M off the straight line.
+  beforeEach(() =>
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['A', 'M', 'B'] }) },
+      lineOrder: ['L1'],
+      stations: {
+        A: stationWithStop('A' as StationId, 'L1', { x: 0, y: 0 }),
+        M: stationWithStop('M' as StationId, 'L1', { x: 50, y: 0 }),
+        B: stationWithStop('B' as StationId, 'L1', { x: 100, y: 0 }),
+      },
+    }),
+  );
+
+  it('pressing Ctrl mid-drag starts redistributing between the anchor and grab', () => {
+    setModes({ line: false, all: 'off', grid: 'off' });
+    const svgRef = createRef<SVGSVGElement>() as RefObject<SVGSVGElement | null>;
+    const { result } = renderHook(() => useStationDrag(svgRef, 1));
+
+    // A is the captured anchor; grab B. Start the drag: move B to (100, 100)
+    // with NO modifier — a plain drag, so M must stay put.
+    result.current.onStartDrag(
+      'B' as StationId,
+      pointerEvent({ clientX: 300, clientY: 200, shiftKey: true }),
+      'A' as StationId,
+    );
+    result.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 300, shiftKey: true }));
+    expect(useDoc.getState().stations['M'].x).toBeCloseTo(50, 5);
+    expect(useDoc.getState().stations['M'].y).toBeCloseTo(0, 5);
+
+    // Now hold Ctrl and keep dragging (same spot): redistribute kicks in, so M
+    // reflows onto the straight A→B line — the midpoint of (0,0)→(100,100).
+    result.current.onPointerMove(
+      pointerEvent({ clientX: 300, clientY: 300, shiftKey: true, ctrlKey: true }),
+    );
+    expect(useDoc.getState().stations['M'].x).toBeCloseTo(50, 5);
+    expect(useDoc.getState().stations['M'].y).toBeCloseTo(50, 5);
+  });
+
+  it('releasing Ctrl mid-drag falls back to a plain drag (stops redistributing)', () => {
+    setModes({ line: false, all: 'off', grid: 'off' });
+    const svgRef = createRef<SVGSVGElement>() as RefObject<SVGSVGElement | null>;
+    const { result } = renderHook(() => useStationDrag(svgRef, 1));
+
+    // Ctrl-drag B to (100, 100): M redistributes to the (0,0)→(100,100) midpoint.
+    result.current.onStartDrag(
+      'B' as StationId,
+      pointerEvent({ clientX: 300, clientY: 200, shiftKey: true }),
+      'A' as StationId,
+    );
+    result.current.onPointerMove(
+      pointerEvent({ clientX: 300, clientY: 300, shiftKey: true, ctrlKey: true }),
+    );
+    expect(useDoc.getState().stations['M'].x).toBeCloseTo(50, 5);
+    expect(useDoc.getState().stations['M'].y).toBeCloseTo(50, 5);
+
+    // Release Ctrl and drag B elsewhere (to (300, 0)): now a plain drag, so only
+    // B moves — M stays where the last redistribute left it, not reflowed again.
+    result.current.onPointerMove(pointerEvent({ clientX: 500, clientY: 200, shiftKey: true }));
+    expect(useDoc.getState().stations['B'].x).toBeCloseTo(300, 5);
+    expect(useDoc.getState().stations['M'].x).toBeCloseTo(50, 5);
+    expect(useDoc.getState().stations['M'].y).toBeCloseTo(50, 5);
   });
 });
 
