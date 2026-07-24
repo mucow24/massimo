@@ -121,7 +121,7 @@ src/
     lineTopology.ts             # the single owner of a Line's edge-set adjacency (degree/neighbours/incidence, add/remove edge, edgesFromStations, shortestPathOnLine)
     appendGestures.ts           # pure Edit Stops gesture decisions ((line, cursor, click/delete target) → next doc edit); no React/store, so state/ and canvas/ both consume it
     matching.ts pathSelect.ts   # interlining-group matching + shortest-path selection
-    autoOrient.ts               # rotate a just-added station to the line tangent
+    autoOrient.ts               # rotate a just-added station to the line tangent (flipping 180° when the tangent would render its label upside down — same axis, right-side-up text)
     clipboard.ts                # ClipPayload union + read/write + SVG-href security guard
     svgImport.ts                # import external .svg or png/jpeg raster → intrinsic/decoded
                                 #   size + data URI (+ href security allow-list)

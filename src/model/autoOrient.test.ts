@@ -81,6 +81,28 @@ describe('autoOrientNewStation', () => {
     expect(out.b.rotation).toBe(7);
   });
 
+  it('flips a NORTH-travelling tangent so the label stays right-side-up', () => {
+    // a below, b above; b is the just-added station, so the tangent points
+    // NORTH (up the screen). The raw tangent rotation is 4 (180°), which would
+    // render b's label upside down. The travel axis is the same as a
+    // south-going line, so b settles at 0 (upright) instead.
+    const a = makeStation({ id: 'a', x: 0, y: 100, rotation: 0, stops: [makeStop('L1')] });
+    const b = makeStation({ id: 'b', x: 0, y: 0, rotation: 3, stops: [makeStop('L1')] });
+    const out = autoOrientNewStation(dictOf(a, b), ['a', 'b'], 'b');
+    expect(out.b.rotation).toBe(0); // NOT 4 (upside down)
+  });
+
+  it('flips an upside-down bisector to its right-side-up opposite', () => {
+    // Splice geometry: prev to the west, next far to the NORTH, so the bisector
+    // points NE and the raw tangent rotation is 5 (225°, upside-down band). The
+    // axis-equivalent rotation 1 (45°) reads right-side-up.
+    const a = makeStation({ id: 'a', x: -10, y: 0, stops: [makeStop('L1')] });
+    const m = makeStation({ id: 'm', x: 0, y: 0, rotation: 0, stops: [makeStop('L1')] });
+    const b = makeStation({ id: 'b', x: 0, y: -1000, stops: [makeStop('L1')] });
+    const out = autoOrientNewStation(dictOf(a, m, b), ['a', 'm', 'b'], 'm');
+    expect(out.m.rotation).toBe(1); // NOT 5 (upside down)
+  });
+
   it('is idempotent', () => {
     const a = makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1')] });
     const b = makeStation({ id: 'b', x: 0, y: 100, stops: [makeStop('L1')] });
