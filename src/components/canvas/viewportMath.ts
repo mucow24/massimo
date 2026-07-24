@@ -3,6 +3,7 @@
 // hook stays a thin stateful wrapper that reads one getBoundingClientRect per
 // gesture event and delegates the arithmetic here.
 import type { Viewport } from '../../model/types';
+import { clamp } from '../../util/grid';
 import type { ViewportProjection } from './screenAnchor';
 
 export interface Size {
@@ -98,7 +99,7 @@ export function computeWheelZoom(
 ): Viewport {
   const before = screenToWorld({ x: clientX, y: clientY }, viewBoxFor(v, size), rect);
   const factor = Math.exp(-deltaY * WHEEL_ZOOM_RATE);
-  const zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, v.zoom * factor));
+  const zoom = clamp(v.zoom * factor, ZOOM_MIN, ZOOM_MAX);
   const relX = (clientX - rect.left) / rect.width;
   const relY = (clientY - rect.top) / rect.height;
   const newVbW = size.w / zoom;
@@ -148,7 +149,7 @@ export function fitViewport(
   const zByH = bounds.h > 0 && usableH > 0 ? usableH / bounds.h : Infinity;
   let zoom = Math.min(zByW, zByH, maxZoom);
   if (!Number.isFinite(zoom)) zoom = maxZoom; // zero-size box: nothing to fit
-  zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, zoom));
+  zoom = clamp(zoom, ZOOM_MIN, ZOOM_MAX);
   return { x: cx, y: cy, zoom };
 }
 

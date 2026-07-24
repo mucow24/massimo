@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import * as Slider from '@radix-ui/react-slider';
 import { useNumericField } from './useNumericField';
+import { clamp } from '../util/grid';
 
 interface Props {
   /** Used as the slider thumb's `id` and the spinbutton's `aria-label`, so
@@ -73,7 +74,7 @@ export function NumericFieldRow({
   // The store value may sit outside the slider's range (the spinbutton can
   // type past `max`); the slider clamps its own display, like the native
   // range did.
-  const sliderValue = Math.min(Math.max(value, min), max);
+  const sliderValue = clamp(value, min, max);
 
   // attachWheel binds a non-passive native wheel listener (React's onWheel is
   // passive, so its preventDefault would warn + no-op). Omit it while disabled

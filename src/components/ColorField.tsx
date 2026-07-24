@@ -1,6 +1,7 @@
 import { CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { HexAlphaColorPicker } from 'react-colorful';
+import { clamp } from '../util/grid';
 import { beginHistoryGroup } from '../state/store';
 import { normalizeHex } from '../util/color';
 
@@ -149,7 +150,7 @@ export function ColorField({
     const below = r.bottom + GAP;
     const top =
       below + POPOVER_H <= window.innerHeight ? below : Math.max(GAP, r.top - GAP - POPOVER_H);
-    const left = Math.min(Math.max(GAP, r.left), window.innerWidth - POPOVER_W - GAP);
+    const left = clamp(r.left, GAP, window.innerWidth - POPOVER_W - GAP);
     setPos({ left, top });
   }, [open]);
 

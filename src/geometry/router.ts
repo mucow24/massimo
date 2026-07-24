@@ -12,6 +12,7 @@ import {
   angleBetween,
   tanHalf,
 } from './vec';
+import { clamp } from '../util/grid';
 
 const TAU = Math.PI * 2;
 
@@ -342,7 +343,7 @@ export function computeArcRadii(verts: Vec2[], R: number): { rs: number[]; angle
   for (let i = 1; i < n - 1; i++) {
     const inDir = norm(sub(verts[i], verts[i - 1]));
     const outDir = norm(sub(verts[i + 1], verts[i]));
-    const cosA = Math.max(-1, Math.min(1, dot(inDir, outDir)));
+    const cosA = clamp(dot(inDir, outDir), -1, 1);
     angles[i] = Math.acos(cosA);
     tans[i] = R * Math.tan(angles[i] / 2);
   }

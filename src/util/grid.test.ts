@@ -1,5 +1,25 @@
 import { describe, it, expect } from 'vitest';
-import { roundClamp, snapToStep } from './grid';
+import { clamp, roundClamp, snapToStep } from './grid';
+
+describe('clamp', () => {
+  it('passes an in-range value through untouched', () => {
+    expect(clamp(5, 0, 10)).toBe(5);
+    // Exact float preserved — no rounding.
+    expect(clamp(0.30000000000000004, 0, 1)).toBe(0.30000000000000004);
+  });
+
+  it('clamps to the lower and upper bounds', () => {
+    expect(clamp(-1, 0, 10)).toBe(0);
+    expect(clamp(11, 0, 10)).toBe(10);
+    expect(clamp(-2, -1, 1)).toBe(-1);
+    expect(clamp(2, -1, 1)).toBe(1);
+  });
+
+  it('returns the boundary values exactly at the edges', () => {
+    expect(clamp(0, 0, 10)).toBe(0);
+    expect(clamp(10, 0, 10)).toBe(10);
+  });
+});
 
 describe('roundClamp', () => {
   it('rounds to the step grid and clamps at the bottom only', () => {

@@ -189,12 +189,15 @@ export function buildBands(
  * station-pair, buckets by world travel axis, merges perpendicular-
  * adjacency runs, and computes the routed centerline + per-stripe paths.
  *
- * Reads only `stations`, `line.stations`, `line.segmentStyles`,
- * `line.width`, and `line.curveRadius`. None of those change on a per-segment
- * layer cycle, so a caller that memoizes this output gets a stable bands
- * reference across layer edits — that's how the layering-mode caches stay
- * valid without a content-hash workaround. (A width edit DOES rebuild —
- * width is geometry; MapCanvas's linesGeometrySig must include it.)
+ * Reads only `stations`, `line.edges`, `line.width`, `line.interlineGap`, and
+ * `line.curveRadius`. NOT color, per-segment style, or lineOrder — those are
+ * presentation, resolved live at render time (see `resolveSegmentStyle` and the
+ * {@link SegmentBandSpec} `lines` doc). So a color/style edit or a layer
+ * reorder leaves this output byte-identical, and a caller that memoizes it gets
+ * a stable bands reference across those edits — that's how the layering-mode
+ * caches stay valid without a content-hash workaround. (A width, gap, or
+ * curve-radius edit DOES rebuild — those ARE geometry; MapCanvas's
+ * `linesGeometrySig` must include them, and only them.)
  *
  * Returns bands with `linePriorities: []`; call {@link assignLinePriorities}
  * to fill those in before consuming the array for paint order.
