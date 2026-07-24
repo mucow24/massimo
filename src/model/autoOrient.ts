@@ -65,5 +65,7 @@ export function autoOrientNewStation(
   const rot: Rotation = LABEL_UPSIDE_DOWN.has((r + st.label.rotation) % 8)
     ? (((r + 4) % 8) as Rotation)
     : r;
-  return st.rotation === rot ? stationsIn : { ...stationsIn, [stationId]: { ...st, rotation: rot } };
+  return st.rotation === rot
+    ? stationsIn
+    : { ...stationsIn, [stationId]: { ...st, rotation: rot } };
 }
