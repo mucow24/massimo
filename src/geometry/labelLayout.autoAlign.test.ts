@@ -490,6 +490,147 @@ describe('labelLayoutLocal — autoAlign across an interline gap', () => {
   });
 });
 
+describe('labelLayoutLocal — autoAlign at a crossing (cross station)', () => {
+  // A cross packs the crossing line's stop BESIDE the stop the label belongs
+  // to, in the same cell row. The label parks squarely across the line from
+  // its own stop (octant 2/6 ⇒ 'middle'), which straddles the crossing
+  // stripe. The text must butt up to that stripe instead — while the
+  // baseline keeps its LABEL_GAP off the line it labels, so a row of labels
+  // along that line stays level.
+  const SIT = STOP_SIZE - (HALF + LABEL_GAP) - CB; // 0.4 — the plain-N anchorY
+  const HANG_Y = -STOP_SIZE + HALF + LABEL_GAP + HANG; // 0.968 — the plain-S one
+
+  it('crossing stop to the EAST: text ends at its edge, baseline unchanged', () => {
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L1' },
+          { dRow: 1, dCol: 1, orientation: 'auto-vertical', lineId: 'L2' },
+        ],
+      }),
+    );
+    expect(lay.textAnchor).toBe('end');
+    expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (HALF + LABEL_GAP), 6); // 4
+    expect(lay.anchorY).toBeCloseTo(SIT, 6);
+  });
+
+  it('crossing stop to the WEST: text starts at its edge', () => {
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L1' },
+          { dRow: 1, dCol: -1, orientation: 'auto-vertical', lineId: 'L2' },
+        ],
+      }),
+    );
+    expect(lay.textAnchor).toBe('start');
+    expect(lay.anchorX).toBeCloseTo(-STOP_SIZE + HALF + LABEL_GAP, 6); // −4
+    expect(lay.anchorY).toBeCloseTo(SIT, 6);
+  });
+
+  it('mirror case below the line: hangs from the cap, still butted to the stripe', () => {
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: -1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L1' },
+          { dRow: -1, dCol: 1, orientation: 'auto-vertical', lineId: 'L2' },
+        ],
+      }),
+    );
+    expect(lay.textAnchor).toBe('end');
+    expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (HALF + LABEL_GAP), 6);
+    expect(lay.anchorY).toBeCloseTo(HANG_Y, 6);
+  });
+
+  it('a wider crossing line pushes the text along READING only, never off its line', () => {
+    // The whole point of measuring each axis against the stop that blocks it:
+    // the crossing stripe's width moves the text sideways, the baseline stays
+    // level with the rest of the labels on the horizontal line.
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L1' },
+          { dRow: 1, dCol: 1, orientation: 'auto-vertical', lineId: 'L2' },
+        ],
+      }),
+      DEFAULT_LABEL_STYLE,
+      undefined,
+      stopHalfOf({ L1: { width: STOP_SIZE }, L2: { width: 2 * STOP_SIZE } }),
+    );
+    expect(lay.textAnchor).toBe('end');
+    expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (STOP_SIZE + LABEL_GAP), 6); // −3
+    expect(lay.anchorY).toBeCloseTo(SIT, 6);
+  });
+
+  it("the crossing stop's dash tick points AT the label, and the text clears it", () => {
+    // A crossing dash stop ticks perpendicular to its own travel axis — i.e.
+    // straight down the reading axis at the label. The reading-axis pin has
+    // to clear the tick tip, not just the stripe.
+    const DASH = { length: 14, width: 7 };
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L1' },
+          { dRow: 1, dCol: 1, orientation: 'auto-vertical', lineId: 'L2' },
+        ],
+      }),
+      undefined,
+      undefined,
+      undefined,
+      (s) => (s.lineId === 'L2' ? DASH : null),
+    );
+    expect(lay.textAnchor).toBe('end');
+    // Tick reaches HALF + length = 21 west of the crossing stop's center.
+    expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (HALF + DASH.length + LABEL_GAP), 6); // −10
+    expect(lay.anchorY).toBeCloseTo(SIT, 6); // its own stop is tickless: unchanged
+  });
+
+  it('boxed in on BOTH sides: stays centered on its own stop', () => {
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L1' },
+          { dRow: 1, dCol: 1, orientation: 'auto-vertical', lineId: 'L2' },
+          { dRow: 1, dCol: -1, orientation: 'auto-vertical', lineId: 'L3' },
+        ],
+      }),
+    );
+    expect(lay.textAnchor).toBe('middle');
+    expect(lay.anchorX).toBeCloseTo(0, 6);
+    expect(lay.anchorY).toBeCloseTo(SIT, 6);
+  });
+
+  it('a PARALLEL neighbour is not a crossing: centered as before', () => {
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L1' },
+          { dRow: 1, dCol: 1, orientation: 'auto-horizontal', lineId: 'L2' },
+        ],
+      }),
+    );
+    expect(lay.textAnchor).toBe('middle');
+    expect(lay.anchorX).toBeCloseTo(0, 6);
+  });
+
+  it('rotation 2 (S-reading) cross = the rotation-0 cross rotated 90°', () => {
+    // Oracle: 'end' at (4, SIT). Rotate the config 90° CW (y-down:
+    // (x, y) → (−y, x)); cells rotate row′ = col, col′ = −row.
+    const lay = labelLayoutLocal(
+      autoStation({
+        rotation: 2,
+        stops: [
+          { dRow: 0, dCol: -1, orientation: 'auto-vertical', lineId: 'L1' },
+          { dRow: 1, dCol: -1, orientation: 'auto-horizontal', lineId: 'L2' },
+        ],
+      }),
+    );
+    expect(lay.textAnchor).toBe('end');
+    expect(lay.anchorX).toBeCloseTo(-SIT, 6);
+    expect(lay.anchorY).toBeCloseTo(STOP_SIZE - (HALF + LABEL_GAP), 6);
+  });
+});
+
 describe('labelLayoutLocal — autoAlign rotation covariance', () => {
   it('rotation 2 (S-reading) beside-stop case = rotation-0 case rotated 90°', () => {
     // Rotation-0 oracle: stop (0,1) auto-vertical ⇒ anchor (4, CTR), 'end'.

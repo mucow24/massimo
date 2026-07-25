@@ -1,5 +1,6 @@
 import type { Station, StopCell, StopOrientation } from '../model/types';
 import {
+  BAND_MERGE_TOL,
   DIR_8,
   labelAdjacencyGate,
   STOP_SIZE,
@@ -560,6 +561,43 @@ const AUTO_TEXT_ANCHOR: AutoAlignInfo['textAnchor'][] = [
   'start', // 7 NE
 ];
 
+// Cell-space slack for "same row as the reference stop": the shared
+// band-merge tolerance, the same 0.5 world units the packing and merge gates
+// treat as one position.
+const CROSS_PERP_TOL = BAND_MERGE_TOL / STOP_SIZE;
+
+/**
+ * The stop of a CROSSING line packed beside `ref` — same reading-frame row
+ * (within CROSS_PERP_TOL), a different travel axis, on one side only. Its
+ * stripe is what blocks a label centered on `ref`; see the call site.
+ *
+ * A neighbor on the same axis is a parallel line of the same corridor, not a
+ * crossing, and never triggers this. Boxed in on BOTH sides (a label between
+ * two crossing stripes) returns null: centering on the stop is the only
+ * placement left. Distance needs no gate of its own — every candidate here
+ * already passed `labelAdjacencyGate` against the label cell, which is a
+ * cell-and-change away from `ref`.
+ */
+function crossingStop<
+  T extends { proj: number; perp: number; orientation: StopOrientation | null },
+>(ref: T, gated: T[]): T | null {
+  if (!ref.orientation) return null;
+  let ahead: T | null = null;
+  let behind: T | null = null;
+  for (const c of gated) {
+    if (c === ref || !c.orientation || c.orientation === ref.orientation) continue;
+    if (Math.abs(c.perp - ref.perp) > CROSS_PERP_TOL) continue;
+    const d = c.proj - ref.proj;
+    if (d > 1e-9) {
+      if (!ahead || d < ahead.proj - ref.proj) ahead = c;
+    } else if (d < -1e-9) {
+      if (!behind || d > behind.proj - ref.proj) behind = c;
+    }
+  }
+  if (ahead && behind) return null;
+  return ahead ?? behind;
+}
+
 /**
  * transitmap.net-style placement for `autoAlign` labels. The octant of the
  * label cell relative to the nearest adjacent stop — measured in the
@@ -574,6 +612,10 @@ const AUTO_TEXT_ANCHOR: AutoAlignInfo['textAnchor'][] = [
  * along the approach (the stop is a `half`-extent square rotated to its
  * travel axis; extent = its support function), so cardinal and diagonal
  * markers both get exactly LABEL_GAP of clearance.
+ *
+ * One exception to "the octant decides everything": at a CROSS the centering
+ * octants would run the text straight through the crossing line's stripe, so
+ * the reading axis re-anchors against the crossing stop (see `crossingStop`).
  */
 function autoAlignInfo(
   stops: Station['stops'],
@@ -622,37 +664,32 @@ function autoAlignInfo(
     });
   }
 
+  // Gate to the label's neighbors (same gate as the legacy snap) and project
+  // each into the reading frame once: both the reference pick and the
+  // crossing-stop scan below read these.
+  const gated = candidates
+    .filter((c) => {
+      const cheb = Math.max(Math.abs(c.dRow), Math.abs(c.dCol));
+      if (cheb < 1e-6) return false; // a stop on the label cell has no direction
+      return cheb <= labelAdjacencyGate(c.half, c.gap);
+    })
+    .map((c) => ({
+      ...c,
+      proj: c.dCol * readCos + c.dRow * readSin,
+      perp: c.dCol * -readSin + c.dRow * readCos,
+      d2: c.dRow * c.dRow + c.dCol * c.dCol,
+    }));
+  type Gated = (typeof gated)[number];
+
   // Reference stop: the nearest candidate within the tangency gate. Ties
   // prefer the stop below the text (larger perp), so the label sits on its
   // baseline above the line — the typographic default side.
-  let ref: {
-    proj: number;
-    perp: number;
-    dRow: number;
-    dCol: number;
-    half: number;
-    orientation: StopOrientation | null;
-    dash: { length: number; width: number } | null;
-  } | null = null;
+  let ref: Gated | null = null;
   let refD2 = Infinity;
-  for (const c of candidates) {
-    const cheb = Math.max(Math.abs(c.dRow), Math.abs(c.dCol));
-    if (cheb < 1e-6) continue; // a stop on the label cell has no direction
-    if (cheb > labelAdjacencyGate(c.half, c.gap)) continue; // same gate as the legacy snap
-    const proj = c.dCol * readCos + c.dRow * readSin;
-    const perp = c.dCol * -readSin + c.dRow * readCos;
-    const d2 = c.dRow * c.dRow + c.dCol * c.dCol;
-    if (ref === null || d2 < refD2 - 1e-9 || (d2 < refD2 + 1e-9 && perp > ref.perp)) {
-      ref = {
-        proj,
-        perp,
-        dRow: c.dRow,
-        dCol: c.dCol,
-        half: c.half,
-        orientation: c.orientation,
-        dash: c.dash,
-      };
-      refD2 = Math.min(refD2, d2);
+  for (const c of gated) {
+    if (ref === null || c.d2 < refD2 - 1e-9 || (c.d2 < refD2 + 1e-9 && c.perp > ref.perp)) {
+      ref = c;
+      refD2 = Math.min(refD2, c.d2);
     }
   }
   // Center-of-line-box → baseline distance; the typographic fold-ins below
@@ -677,15 +714,17 @@ function autoAlignInfo(
   const o = dirIndex({ x: -ref.proj, y: -ref.perp });
   const u = DIRS_8[o]; // approach unit vector, stop → label, reading frame
 
-  // Marker extent along the approach, via the rotated square's support
-  // function in the LOCAL frame. The phantom dot has no orientation; treat
-  // it as axis-aligned (extent = half for its cardinal approach).
-  const uLocX = u.x * readCos - u.y * readSin;
-  const uLocY = u.x * readSin + u.y * readCos;
-  const axis = ref.orientation ? travelDirLocal(ref.orientation) : { x: 1, y: 0 };
-  const alongAxis = Math.abs(uLocX * axis.x + uLocY * axis.y);
-  let extent = ref.half * (alongAxis + Math.abs(uLocX * -axis.y + uLocY * axis.x));
-  if (ref.dash && ref.orientation) {
+  // Marker extent along a reading-frame unit direction, via the rotated
+  // square's support function in the LOCAL frame. The phantom dot has no
+  // orientation; treat it as axis-aligned (extent = half for its cardinal
+  // approach).
+  const extentAlong = (c: Gated, dir: Vec2): number => {
+    const uLocX = dir.x * readCos - dir.y * readSin;
+    const uLocY = dir.x * readSin + dir.y * readCos;
+    const axis = c.orientation ? travelDirLocal(c.orientation) : { x: 1, y: 0 };
+    const alongAxis = Math.abs(uLocX * axis.x + uLocY * axis.y);
+    const extent = c.half * (alongAxis + Math.abs(uLocX * -axis.y + uLocY * axis.x));
+    if (!c.dash || !c.orientation) return extent;
     // A dash stop's tick is a second obstacle: a rect from the stripe edge
     // (± half on the label-signed perpendicular) reaching `length` toward
     // the label, `width` thick along the travel axis. Its support along the
@@ -697,21 +736,40 @@ function autoAlignInfo(
     // fields only; this extent merely moves the painted anchor.
     const offsetPerp = label.offsetPerp ?? 0;
     const delta = {
-      x: -ref.dCol * STOP_SIZE + label.offset * readCos + offsetPerp * -readSin,
-      y: -ref.dRow * STOP_SIZE + label.offset * readSin + offsetPerp * readCos,
+      x: -c.dCol * STOP_SIZE + label.offset * readCos + offsetPerp * -readSin,
+      y: -c.dRow * STOP_SIZE + label.offset * readSin + offsetPerp * readCos,
     };
-    const out = dashOutward(delta, ref.orientation, stationRotation);
+    const out = dashOutward(delta, c.orientation, stationRotation);
     const proj = out.x * uLocX + out.y * uLocY;
     const tickExtent =
-      Math.max(ref.half * proj, (ref.half + ref.dash.length) * proj) +
-      (ref.dash.width / 2) * alongAxis;
-    extent = Math.max(extent, tickExtent);
-  }
+      Math.max(c.half * proj, (c.half + c.dash.length) * proj) + (c.dash.width / 2) * alongAxis;
+    return Math.max(extent, tickExtent);
+  };
 
   // Pin point: marker edge + LABEL_GAP along the approach, stop-relative on
   // BOTH axes (the cell picks the octant; offset/offsetPerp fine-tune).
-  const pinRead = ref.proj * STOP_SIZE + u.x * (extent + LABEL_GAP);
+  const extent = extentAlong(ref, u);
+  let pinRead = ref.proj * STOP_SIZE + u.x * (extent + LABEL_GAP);
   const pinPerp = ref.perp * STOP_SIZE + u.y * (extent + LABEL_GAP);
+
+  // Cross stations (the Vignelli staple): the label parks squarely across
+  // the line from its own stop — octants 2/6, which CENTER the text on that
+  // stop — while a crossing line's stop is packed beside it in the same cell
+  // row, and its stripe runs straight through the centered text. Re-anchor
+  // the READING axis against that crossing stop so the text butts up to the
+  // stripe instead of straddling it. Each axis stays measured against the
+  // stop that actually blocks it: the perpendicular pin above still comes
+  // from the label's own stop, so the baseline keeps its LABEL_GAP off the
+  // line it labels (a row of labels along that line stays level) and doesn't
+  // drift when the CROSSING line's width or interline gap changes.
+  let textAnchorDefault = AUTO_TEXT_ANCHOR[o];
+  const cross = o === 2 || o === 6 ? crossingStop(ref, gated) : null;
+  if (cross) {
+    const side = cross.proj > ref.proj ? 1 : -1; // which way along reading the stripe sits
+    const away = { x: -side, y: 0 }; // crossing stop → label, along the reading axis
+    pinRead = cross.proj * STOP_SIZE - side * (extentAlong(cross, away) + LABEL_GAP);
+    textAnchorDefault = side > 0 ? 'end' : 'start';
+  }
 
   // Fold the typographic target into the anchor. The anchor is the pinned
   // line's central-baseline center: the baseline sits `cb` below it, the
@@ -735,7 +793,7 @@ function autoAlignInfo(
     anchorPerp = pinPerp + ((CAP_FRACTION / 2) * fontSize - cb);
     valign = 'auto-down';
   }
-  return applyAutoOverrides(label, AUTO_TEXT_ANCHOR[o], valign, pinRead, anchorPerp, lineAdvances);
+  return applyAutoOverrides(label, textAnchorDefault, valign, pinRead, anchorPerp, lineAdvances);
 }
 
 /**
