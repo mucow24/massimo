@@ -266,7 +266,7 @@ describe('<HighlightedLineLayer /> — Edit Stops hover preview', () => {
     expect(container.querySelector('[data-append-hover-ring]')).toBeNull();
   });
 
-  it('shows the dashed hover-zone boundary on a hovered member station', () => {
+  it('shows the hover-zone boundary on a hovered member station', () => {
     // The zone boundary is the station's true clickable footprint (cells ∪
     // label rect) — "you are over this station, here is its edge". It rides
     // alongside the ring preview, which separately promises an actionable
@@ -277,15 +277,19 @@ describe('<HighlightedLineLayer /> — Edit Stops hover preview', () => {
     expect(container.querySelector('[data-station-hover-zone="s1"]')).not.toBeNull();
   });
 
-  it('shows the hover-zone boundary on a NON-member too, even when the click is dead', () => {
-    // A non-member with nothing armed gets no ring (the click does nothing) —
-    // but the zone cue still acknowledges the station under the pointer.
+  it('shows the hover-zone boundary on a hovered NON-member with the pen armed', () => {
+    // With the pen armed, hovering a non-member is a live connect target, so its
+    // footprint-edge cue rides alongside the ring. (With NOTHING armed a
+    // non-member is click-through and never hovers — see the foreign-station
+    // click-through test — so this cue only appears once there's a pen.)
     const withOrphan = { ...stations(), s3: triStation('s3', 200, 0) };
-    const { container } = renderLayer(lines(), withOrphan, appending(null), {
-      appendHover: { kind: 'station', stationId: 's3' },
-    });
+    const { container } = renderLayer(
+      lines(),
+      withOrphan,
+      appending({ kind: 'station', stationId: 's1' }),
+      { appendHover: { kind: 'station', stationId: 's3' } },
+    );
     expect(container.querySelector('[data-station-hover-zone="s3"]')).not.toBeNull();
-    expect(container.querySelector('[data-append-hover-ring]')).toBeNull();
   });
 
   it('no hover-zone boundary outside Edit Stops', () => {
@@ -300,13 +304,40 @@ describe('<HighlightedLineLayer /> — Edit Stops hover preview', () => {
     expect(container.querySelector('[data-station-hover-zone]')).toBeNull();
   });
 
-  it('gently repaints a hovered FOREIGN line above the dim (clicking switches to it)', () => {
-    // Hovering another line's stripe marks the whole line, so "click here
-    // edits L2 instead" is visible before the click. Its stripes repaint
-    // (decorative, partial opacity) inside a data-append-hover-line group.
+  it('lifts a hovered FOREIGN line above the dim at half strength, cased, with its dots', () => {
+    // Hovering another line lifts the WHOLE line above the dim — the same three-
+    // pass (silhouette/body/seam) repaint the edited line gets PLUS its stop dots
+    // — at HALF strength, so "click here edits L2 instead" reads as a cased line
+    // that stands out without competing with the fully-bright edited line (not
+    // the old body-only @0.55 smear that mangled dashes and dropped the dots).
     const twoLines = {
       ...lines(),
-      L2: makeLine({ id: 'L2', service: 'B', color: '#0000cc', stations: ['s3', 's4'] }),
+      L2: makeLine({
+        id: 'L2',
+        service: 'B',
+        color: '#0000cc',
+        stations: ['s3', 's4'],
+        // A casing so the silhouette pass has something to paint; a distinct
+        // color makes that casing path unambiguous to find.
+        strokeWidth: 3,
+        strokeColor: '#00ff00',
+      }),
+    };
+    // s3/s4 carry L2 stops so the line's dots have geometry to render.
+    const withL2 = {
+      ...stations(),
+      s3: makeStation({
+        id: 's3',
+        x: 0,
+        y: 100,
+        stops: [makeStop('L2', { orientation: 'auto-horizontal' })],
+      }),
+      s4: makeStation({
+        id: 's4',
+        x: 100,
+        y: 100,
+        stops: [makeStop('L2', { orientation: 'auto-horizontal' })],
+      }),
     };
     const renderables: OrderedRenderable[] = [
       { kind: 'stripe', band: makeBandSpec(['L1']), stripeIndex: 0, priority: 0 },
@@ -317,13 +348,18 @@ describe('<HighlightedLineLayer /> — Edit Stops hover preview', () => {
         priority: 1,
       },
     ];
-    const { container } = renderLayer(twoLines, stations(), appending(null), {
+    const { container } = renderLayer(twoLines, withL2, appending(null), {
       appendHover: { kind: 'line', lineId: 'L2' },
       renderables,
     });
     const group = container.querySelector('[data-append-hover-line="L2"]');
     expect(group).not.toBeNull();
-    expect(group!.querySelector('path')).not.toBeNull();
+    // Half strength — dimmer than the edited line, brighter than the dim.
+    expect(group!.getAttribute('opacity')).toBe('0.5');
+    // Cased (silhouette pass paints the casing) — the dashed/cased-line fix.
+    expect(group!.querySelector('path[stroke="#00ff00"]')).not.toBeNull();
+    // Its two stop dots ride along inside the same group (they used to vanish).
+    expect(group!.querySelectorAll('[data-stop-line="L2"]')).toHaveLength(2);
   });
 
   it('no foreign-line preview outside Edit Stops', () => {

@@ -23,6 +23,12 @@ import {
 import { offsetFilletPath } from '../../geometry/router';
 import { sampleOffsetPath } from '../../geometry/lineTagGeometry';
 
+// A hovered FOREIGN line's preview brightness. It lifts above the dim like the
+// edited line — cased stripes plus its stop dots — but at HALF strength, so it
+// reads as "click here to switch" and clearly stands out from the dimmed map,
+// without competing with the fully-bright line being edited.
+const HOVER_LINE_OPACITY = 0.5;
+
 interface Props {
   highlightLineId: LineId;
   lines: Record<LineId, Line>;
@@ -108,23 +114,29 @@ export function HighlightedLineLayer({
           const armedPairKey = cursor?.kind === 'edge' ? pairKeyOf(cursor.from, cursor.to) : null;
           const parts: ReactNode[] = [];
           const push = (node: ReactNode) => parts.push(node);
-          // Repaint the selected line's bands with the SAME three-pass renderer
-          // the main layer uses (SegmentBand), rendered `decorative` so the
-          // overlay copies carry no DOM identity tags (see SegmentBand). Each
-          // pass is its OWN sweep — every silhouette, then every body, then
-          // every seam — so the line's own overlapping bands (loops/branches)
-          // merge into one outer casing / one seam instead of a later stripe
-          // overdrawing an earlier one. Color, per-segment style, casing, and
-          // seam are all resolved live inside SegmentBand from the `lines` map.
-          const stripesOfLine = renderables.filter(
-            (r): r is Extract<OrderedRenderable, { kind: 'stripe' }> =>
-              r.kind === 'stripe' && r.band.lines[r.stripeIndex].id === highlightLineId,
-          );
-          const pushBand = (pass: 'silhouette' | 'body' | 'seam', keyPrefix: string) =>
-            stripesOfLine.forEach((r, i) =>
-              push(
+          // Repaint a line's bands with the SAME three-pass renderer the main
+          // layer uses (SegmentBand), rendered `decorative` so the overlay
+          // copies carry no DOM identity tags (see SegmentBand). Each pass is
+          // its OWN sweep — every silhouette, then every body, then every seam —
+          // so a line's own overlapping bands (loops/branches) merge into one
+          // outer casing / one seam instead of a later stripe overdrawing an
+          // earlier one. Color, per-segment style, casing, and seam are all
+          // resolved live inside SegmentBand from the `lines` map. Shared by the
+          // edited line and a hovered foreign line, so both "light up" above the
+          // dim identically — bright and cased, not a faint casing-less overlay.
+          const stripesOf = (lineId: string) =>
+            renderables.filter(
+              (r): r is Extract<OrderedRenderable, { kind: 'stripe' }> =>
+                r.kind === 'stripe' && r.band.lines[r.stripeIndex].id === lineId,
+            );
+          const lineRepaintNodes = (
+            stripes: Extract<OrderedRenderable, { kind: 'stripe' }>[],
+            keyPrefix: string,
+          ): ReactNode[] =>
+            (['silhouette', 'body', 'seam'] as const).flatMap((pass) =>
+              stripes.map((r, i) => (
                 <SegmentBand
-                  key={keyPrefix + i}
+                  key={`${keyPrefix}:${pass}:${i}`}
                   decorative
                   spec={r.band}
                   stripeIndex={r.stripeIndex}
@@ -132,12 +144,66 @@ export function HighlightedLineLayer({
                   lines={lines}
                   underlayColor={underlayColor}
                   seamEdges={seamEdges}
-                />,
-              ),
+                />
+              )),
             );
-          pushBand('silhouette', 'hl-sil:');
-          pushBand('body', 'hl-b:');
-          pushBand('seam', 'hl-seam:');
+          // A line's stop markers (from the band pipeline) then its stop dots on
+          // top, so the colored markers don't swallow the dots. Dash stops render
+          // as their travel-axis ticks, same as the base dots pass. Shared by the
+          // edited line and a hovered foreign line so both carry their stops.
+          const lineMarkerAndDotNodes = (line: Line, keyPrefix: string): ReactNode[] => {
+            const nodes: ReactNode[] = [];
+            renderables.forEach((r, i) => {
+              if (r.kind !== 'marker' || r.spec.lineId !== line.id) return;
+              nodes.push(
+                <StopMarker
+                  key={`${keyPrefix}-m:${i}`}
+                  spec={r.spec}
+                  underlayColor={underlayColor}
+                  lines={lines}
+                />,
+              );
+            });
+            for (const sid of line.stations) {
+              const st = stations[sid];
+              if (!st) continue;
+              const cell = st.stops.find((c) => c.lineId === line.id);
+              if (!cell) continue;
+              const isSingleton = stationIsSingleton(st);
+              const style = resolveDotStyle(line, cell, isSingleton);
+              if (style.shape === 'dash') {
+                nodes.push(
+                  <DashGlyph
+                    key={`${keyPrefix}-d:${sid}`}
+                    spec={dashSpec(st, cell, line)}
+                    style={style}
+                    lineColor={line.color}
+                    line={line}
+                    stationId={sid}
+                    lineId={cell.lineId}
+                  />,
+                );
+                continue;
+              }
+              const { x: cx, y: cy } = stopPosWorld(cell, st);
+              nodes.push(
+                <StopGlyph
+                  key={`${keyPrefix}-d:${sid}`}
+                  cx={cx}
+                  cy={cy}
+                  style={style}
+                  lineColor={line.color}
+                  serviceCode={line.service}
+                  sizeOverride={dotSizeOverride(line, cell, isSingleton)}
+                  stationId={sid}
+                  lineId={cell.lineId}
+                />,
+              );
+            }
+            return nodes;
+          };
+          const stripesOfLine = stripesOf(highlightLineId);
+          lineRepaintNodes(stripesOfLine, 'hl').forEach(push);
           // A two-tone halo (black edge / white core, the selection-ring
           // convention) around a corridor's stripes. The ARMED edge cursor
           // repaints the body on top at full strength (a brightness bump alone
@@ -218,83 +284,31 @@ export function HighlightedLineLayer({
                 opacity: 0.5,
               }),
             );
-          // Gentle whole-line preview of a hovered FOREIGN line: repaint its
-          // stripes above the dim at partial strength — the line "lights up"
-          // to say a click here switches the editor to it. Decorative bodies
-          // only (no casing halo): a soft cue, not the selection treatment.
+          // Whole-line preview of a hovered FOREIGN line: repaint it above the dim
+          // with the same renderer the edited line gets — cased stripes (three-
+          // pass) PLUS its stop markers and dots — but at HALF strength
+          // (HOVER_LINE_OPACITY), so it reads as "click here to switch" and stands
+          // out from the dimmed map without competing with the fully-bright edited
+          // line. (The old body-only, casing-less overlay let the dimmed original
+          // bleed through a dashed body's gaps and dropped the dots entirely;
+          // lifting the real line at half strength fixes both.)
           if (append && appendHover?.kind === 'line' && lines[appendHover.lineId]) {
-            const foreignId = appendHover.lineId;
-            const foreignStripes = renderables.filter(
-              (r): r is Extract<OrderedRenderable, { kind: 'stripe' }> =>
-                r.kind === 'stripe' && r.band.lines[r.stripeIndex].id === foreignId,
-            );
+            const foreignLine = lines[appendHover.lineId];
+            const foreignStripes = stripesOf(foreignLine.id);
             if (foreignStripes.length > 0)
               push(
-                <g key="hover-line" data-append-hover-line={foreignId} opacity={0.55}>
-                  {foreignStripes.map((r, i) => (
-                    <SegmentBand
-                      key={'hover-line:' + i}
-                      decorative
-                      spec={r.band}
-                      stripeIndex={r.stripeIndex}
-                      pass="body"
-                      lines={lines}
-                      underlayColor={underlayColor}
-                    />
-                  ))}
+                <g
+                  key="hover-line"
+                  data-append-hover-line={foreignLine.id}
+                  opacity={HOVER_LINE_OPACITY}
+                >
+                  {lineRepaintNodes(foreignStripes, 'hover-line')}
+                  {lineMarkerAndDotNodes(foreignLine, 'hover-line')}
                 </g>,
               );
           }
-          renderables.forEach((r, i) => {
-            if (r.kind !== 'marker' || r.spec.lineId !== highlightLineId) return;
-            push(
-              <StopMarker
-                key={'hl-m:' + i}
-                spec={r.spec}
-                underlayColor={underlayColor}
-                lines={lines}
-              />,
-            );
-          });
-          // Re-render the selected line's stop dots on top so the colored
-          // markers don't swallow them.
-          for (const sid of ln.stations) {
-            const st = stations[sid];
-            if (!st) continue;
-            const cell = st.stops.find((c) => c.lineId === highlightLineId);
-            if (!cell) continue;
-            const isSingleton = stationIsSingleton(st);
-            const style = resolveDotStyle(ln, cell, isSingleton);
-            if (style.shape === 'dash') {
-              // Dash stops re-render as ticks, same as the base dots pass.
-              push(
-                <DashGlyph
-                  key={'hl-d:' + sid}
-                  spec={dashSpec(st, cell, ln)}
-                  style={style}
-                  lineColor={ln.color}
-                  line={ln}
-                  stationId={sid}
-                  lineId={cell.lineId}
-                />,
-              );
-              continue;
-            }
-            const { x: cx, y: cy } = stopPosWorld(cell, st);
-            push(
-              <StopGlyph
-                key={'hl-d:' + sid}
-                cx={cx}
-                cy={cy}
-                style={style}
-                lineColor={ln.color}
-                serviceCode={ln.service}
-                sizeOverride={dotSizeOverride(ln, cell, isSingleton)}
-                stationId={sid}
-                lineId={cell.lineId}
-              />,
-            );
-          }
+          // The selected line's stop markers + dots, repainted above the dim.
+          lineMarkerAndDotNodes(ln, 'hl').forEach(push);
           // Selected line's station names rendered in white above dim.
           // The cursor station gets its own treatment below (line-color
           // name + ring), so skip it here.

@@ -8,7 +8,6 @@ import { stopGapOf, stopHalfOf } from '../model/lineWidth';
 import { stopDashOf } from '../model/dashSize';
 import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
 import {
-  SELECTION_DASH,
   SELECTION_STROKE_WIDTH,
   SELECTION_WASH_OPACITY,
   selectionOutlineTones,
@@ -17,12 +16,17 @@ import {
 const SELECTION_CORNER_RADIUS = 5;
 const MATCH_STROKE_COLOR = '#888';
 const MATCH_STROKE_WIDTH = 1.5;
-// The Edit Stops hover-zone boundary is the selection ring at 3/4 weight —
-// thin enough to read as an ephemeral cue, still two-tone so it survives any
-// backdrop. Dashed on purpose: selected stations deliberately stay SOLID
-// (see SELECTION_DASH), so a dashed silhouette can only ever mean "this is
-// the clickable footprint under your pointer", never "selected".
+// The Edit Stops hover-zone mirrors the main map's station hover: a SOLID
+// two-tone ring over a gentle fill wash. The ring rides at 3/4 weight — thin
+// enough to read as an ephemeral cue, still two-tone so it survives any
+// backdrop. The wash is a light lift (white), NOT the map's accent tint: the
+// editor dims the map to near-black even in day mode, where an accent fill
+// would vanish, whereas white reads on the dark backdrop in both themes. Its
+// ~0.1 alpha matches the map hover's effective wash (SELECTION_WASH_OPACITY
+// inside a 50% group).
 const HOVER_ZONE_WEIGHT = 0.75;
+const HOVER_ZONE_WASH = '#ffffff';
+const HOVER_ZONE_WASH_OPACITY = 0.1;
 
 export type SilhouetteLayer = 'wash' | 'stroke' | 'match-stroke' | 'hover-zone';
 
@@ -98,6 +102,12 @@ export function StationSilhouette({
   if (layer === 'hover-zone') {
     return (
       <g data-station-hover-zone={station.id} transform={transform} pointerEvents="none">
+        <path
+          d={pathStr}
+          fill={HOVER_ZONE_WASH}
+          fillOpacity={HOVER_ZONE_WASH_OPACITY}
+          fillRule="nonzero"
+        />
         {selectionOutlineTones(themeColors).map(({ tone, stroke, strokeWidth }) => (
           <path
             key={tone}
@@ -105,7 +115,6 @@ export function StationSilhouette({
             fill="none"
             stroke={stroke}
             strokeWidth={strokeWidth * HOVER_ZONE_WEIGHT}
-            strokeDasharray={SELECTION_DASH}
             vectorEffect="non-scaling-stroke"
             strokeLinejoin="round"
           />

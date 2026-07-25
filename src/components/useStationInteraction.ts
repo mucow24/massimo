@@ -8,7 +8,12 @@ import { pathBetweenStations } from '../model/pathSelect';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { itemCursor } from './canvas/itemCursor';
 import { screenToWorld } from './canvas/viewportMath';
-import { appendStationCursor, decideStationClick, nextSegmentStyle } from '../model/appendGestures';
+import {
+  appendStationCursor,
+  decideStationClick,
+  nextSegmentStyle,
+  validCursor,
+} from '../model/appendGestures';
 
 // Map a click on a station to the closest dot's lineId. Used to pin a
 // transfer endpoint to the specific stop the user clicked on, rather than
@@ -262,8 +267,24 @@ export function useStationInteraction(
   // keeps them WIRED — pointer-events already blocks every real click, while
   // the alt+click deep-pick reaches locked stations by dispatching synthetic
   // clicks to these very handlers (dispatch ignores pointer-events).
+  // Edit Stops with NOTHING armed (append cursor null/stale): a station that
+  // isn't a member of the edited line is a dead click (decideStationClick
+  // returns 'none') AND it visually sits over other lines. Make it hitless so
+  // the click falls through to the line beneath — clicking a foreign line there
+  // switches the editor to it — and so it stops catching hover. This mirrors
+  // decideStationClick's dead-click case exactly: NON-empty line + no valid
+  // cursor + non-member. An empty line is excluded (there every click SEEDS the
+  // first station), an armed cursor makes foreign stations live again (a click
+  // CONNECTS the line to them), and members are never affected (a click arms
+  // the pen there).
+  const appendMode = selection.uiMode.kind === 'appending-to-line' ? selection.uiMode : null;
+  const appendLine = appendMode ? lines[appendMode.lineId] : undefined;
+  const appendForeignInert =
+    appendMode && appendLine && appendLine.stations.length > 0
+      ? !validCursor(appendLine, appendMode.cursor) && !appendLine.stations.includes(station.id)
+      : false;
   const modeInert = inTagMode || inLayerMode;
-  const hitless = modeInert || lockedClickThrough;
+  const hitless = modeInert || lockedClickThrough || appendForeignInert;
   const onTransferPointerMove = (e: React.PointerEvent) => {
     const lineId = closestStopLineId(station, e);
     if (!lineId) return;
@@ -341,8 +362,6 @@ export function useStationInteraction(
   // pointer only ever shows while the locked station is SELECTED (unselected
   // locked stations are click-through, so nothing hovers them) — where it
   // reads as "clickable to keep the popover/unlock reachable, not draggable".
-  const appendMode = selection.uiMode.kind === 'appending-to-line' ? selection.uiMode : null;
-  const appendLine = appendMode ? lines[appendMode.lineId] : undefined;
   const cursor =
     !inHandMode && appendMode && appendLine
       ? appendStationCursor(appendLine, appendMode.cursor, station.id)
