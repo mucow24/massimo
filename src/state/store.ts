@@ -915,7 +915,18 @@ export const useDoc = create<DocState>()(
         addTextLabel: (x, y) => {
           const id = ids.textLabelId();
           // New items wear the kind's "Default" style — same set(), one undo.
-          set((s) => S.applyDefaultStyle(T.addTextLabel(s, id, x, y), 'textLabel', id));
+          // MINTED with those props rather than created factory-sized and then
+          // patched: updateTextLabel re-anchors on a font-size change (the box
+          // grows from a pinned edge, not the center), so stamping afterwards
+          // would slide the label half a size-delta away from the point the
+          // ghost previewed and the snap solved for. applyDefaultStyle then
+          // only has to attach the tag — applyStyleToItem skips the stamp when
+          // the values already match.
+          set((s) => {
+            const props = S.defaultStyleProps(s, 'textLabel');
+            const seeded = T.addTextLabelWith(s, id, { ...T.TEXT_LABEL_DEFAULTS, ...props, x, y });
+            return S.applyDefaultStyle(seeded, 'textLabel', id);
+          });
           return id;
         },
         addTextLabelWith: (fields) => {

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ChevronDownIcon, ChevronRightIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../../state/store';
 import { useLineEditorPrefs } from '../../state/lineEditorPrefs';
@@ -83,6 +84,13 @@ export function LineInspector({ id }: { id: LineId }) {
   const setStyleExpanded = useLineEditorPrefs((s) => s.setStyleExpanded);
   const nameField = useFieldHistory();
   const serviceField = useFieldHistory();
+  // Mid-edit mirror for the Service code ONLY while it is empty (null = not
+  // mid-edit, show the store value — so no resync effect is needed). The
+  // service code is the search key for updateLine's inline-bullet migration,
+  // and an empty code can neither be searched for nor written, so letting the
+  // empty intermediate of a backspace-then-retype write through would strand
+  // every bullet wearing the old code. Non-empty keystrokes still commit live.
+  const [serviceDraft, setServiceDraft] = useState<string | null>(null);
 
   if (!line) return null;
 
@@ -104,9 +112,20 @@ export function LineInspector({ id }: { id: LineId }) {
           id={`line-service-${line.id}`}
           type="text"
           maxLength={3}
-          value={line.service}
-          onChange={(e) => updateLine(line.id, { service: e.target.value.toUpperCase() })}
-          {...serviceField}
+          value={serviceDraft ?? line.service}
+          onChange={(e) => {
+            const v = e.target.value.toUpperCase();
+            setServiceDraft(v === '' ? '' : null);
+            if (v !== '') updateLine(line.id, { service: v });
+          }}
+          onFocus={serviceField.onFocus}
+          onBlur={() => {
+            // A deliberate clear still reaches the doc — just once, on blur,
+            // inside the same history group.
+            if (serviceDraft === '') updateLine(line.id, { service: '' });
+            setServiceDraft(null);
+            serviceField.onBlur();
+          }}
         />
       </div>
       <div className="field">

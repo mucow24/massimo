@@ -15,7 +15,7 @@ import {
   translateSiblings,
   type GroupSiblings,
 } from './groupDrag';
-import { liveAlignTargets } from './snapTargets';
+import { liveAlignTargets, liveSnapStations } from './snapTargets';
 
 // Drag state for a free-floating x/y item. `kind` selects the per-frame snap;
 // everything else (lifecycle, group towing) is shared.
@@ -158,7 +158,9 @@ export function useItemDrag(
         const snap = snapDraggedStation({
           proposedX: nx,
           proposedY: ny,
-          stations,
+          // Gated: a bound bullet is still draggable with the network hidden,
+          // and must not align to stations that aren't on the canvas.
+          stations: liveSnapStations(stations),
           lines,
           tolerance: SNAP_PERP_TOLERANCE / zoom,
           bulletLineId: lineId,

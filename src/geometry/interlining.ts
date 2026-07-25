@@ -484,9 +484,13 @@ export function buildStopMarkers(
 ): StopMarkerSpec[] {
   const lineIndex = buildLineIndex(lineOrder, lines);
   const fallback = Object.keys(lineIndex).length;
-  // Index bands by pairKey for O(1) lookup during outward computation.
-  const bandByPair: Record<string, SegmentBandSpec> = {};
-  for (const b of bands) bandByPair[b.pairKey] = b;
+  // Index bands by pairKey for O(1) lookup during outward computation. One
+  // pairKey can carry SIBLING bands (two lines sharing a corridor but reaching
+  // it on different world axes land in different axis buckets), so this is a
+  // LIST — a last-wins map would hand a terminus the tangent of whichever
+  // sibling happened to be built last, pointing its cap stub the wrong way.
+  const bandsByPair: Record<string, SegmentBandSpec[]> = {};
+  for (const b of bands) (bandsByPair[b.pairKey] ??= []).push(b);
   const markers: StopMarkerSpec[] = [];
   for (const station of Object.values(stations)) {
     for (const cell of station.stops) {
@@ -511,7 +515,7 @@ export function buildStopMarkers(
         rotationDeg,
         priority: basePriority,
         style,
-        outward: terminusOutwardFromBand(line, station.id, bandByPair),
+        outward: terminusOutwardFromBand(line, station.id, bandsByPair),
         width: lineWidthOf(line),
       });
     }
@@ -531,14 +535,19 @@ export function buildStopMarkers(
 function terminusOutwardFromBand(
   line: Line,
   stationId: StationId,
-  bandByPair: Record<string, SegmentBandSpec>,
+  bandsByPair: Record<string, SegmentBandSpec[]>,
 ): Vec2 | null {
   // A terminus is a degree-1 station: exactly one incident edge. Loops
   // (degree 2) and junctions (degree ≥ 3) correctly get no cap stub.
   const nbrs = neighborsOf(line, stationId);
   if (nbrs.length !== 1) return null;
   const neighbourId = nbrs[0];
-  const band = bandByPair[pairKeyOf(stationId, neighbourId)];
+  // Disambiguate siblings on line membership — the cap must follow the band
+  // THIS line actually rides, the way LineTagsLayer and lineRegions already do
+  // at their equivalent lookups.
+  const band = bandsByPair[pairKeyOf(stationId, neighbourId)]?.find((b) =>
+    b.lines.some((l) => l.id === line.id),
+  );
   if (!band || band.centerline.length < 2) return null;
   // Centerline goes canonFrom → canonTo. Pick the endpoint matching our
   // terminus station and read the tangent pointing OUT of the band there.

@@ -94,6 +94,19 @@ export interface LineMetrics {
    */
   advanceWidth: number;
   /**
+   * `advanceWidth` minus the ONE trailing letter-spacing step the last glyph
+   * (or bullet) carries — the reference every ALIGNMENT decision uses.
+   *
+   * Tracking is emitted after each character, so the pen ends one step past the
+   * last ink while the measured bbox is sized by ink. Aligning by the raw
+   * advance therefore pushes a right- or centre-aligned tracked line that whole
+   * step out of its own selection ring, hit rect and exported AABB. Positioning
+   * still happens in pen space (see `advanceWidth`) — this only drops the
+   * phantom gap that has no ink behind it. Equal to `advanceWidth` when there is
+   * no tracking, which is why the bug hid.
+   */
+  alignAdvance: number;
+  /**
    * Largest resolved run size (world units) on this line — the label's base size
    * when nothing is tagged bigger; inline bullets count as the base size. The
    * line occupies one LINE_HEIGHT of this, so a bigger inline `<size>` grows the
@@ -131,7 +144,13 @@ export interface LineMetrics {
  *  second pass by `measureTextLabel`). */
 type LineInk = Pick<
   LineMetrics,
-  'inkWidth' | 'bearingLeft' | 'bearingRight' | 'advanceWidth' | 'maxFontSize' | 'segments'
+  | 'inkWidth'
+  | 'bearingLeft'
+  | 'bearingRight'
+  | 'advanceWidth'
+  | 'alignAdvance'
+  | 'maxFontSize'
+  | 'segments'
 >;
 
 /** A measured line plus the tag state it leaves open for the next line. */
@@ -215,14 +234,17 @@ function measureTextSegment(
   measureCtx: CanvasRenderingContext2D | null,
   fontDecl: string,
   letterSpacingPx: number,
-): { advance: number; bearingLeft: number; bearingRight: number } {
-  if (value.length === 0) return { advance: 0, bearingLeft: 0, bearingRight: 0 };
+): { advance: number; bearingLeft: number; bearingRight: number; trailing: number } {
+  if (value.length === 0) return { advance: 0, bearingLeft: 0, bearingRight: 0, trailing: 0 };
   if (measureCtx) {
     measureCtx.font = fontDecl;
     // Chromium's canvas honors letterSpacing (added after each character,
     // matching SVG letter-spacing); environments without the property just
     // measure untracked.
-    if ('letterSpacing' in measureCtx) {
+    // Whether it was honored decides `trailing` below: an environment that
+    // measures untracked has no trailing step to discount.
+    const tracked = 'letterSpacing' in measureCtx;
+    if (tracked) {
       (measureCtx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
         `${letterSpacingPx}px`;
     }
@@ -244,15 +266,22 @@ function measureTextSegment(
         advance: adv,
         bearingLeft: startsWithWs ? 0 : bL,
         bearingRight: endsWithWs ? adv : bR,
+        trailing: tracked ? letterSpacingPx : 0,
       };
     }
     if (advance > 0) {
       // Real canvas advance but no ink bounds — treat the whole advance as ink.
-      return { advance, bearingLeft: 0, bearingRight: advance };
+      return {
+        advance,
+        bearingLeft: 0,
+        bearingRight: advance,
+        trailing: tracked ? letterSpacingPx : 0,
+      };
     }
   }
+  // The estimate adds one letterSpacingPx per character, the last included.
   const approx = approximateLineWidth(value, fontSize, letterSpacingPx);
-  return { advance: approx, bearingLeft: 0, bearingRight: approx };
+  return { advance: approx, bearingLeft: 0, bearingRight: approx, trailing: letterSpacingPx };
 }
 
 /**
@@ -275,6 +304,13 @@ export function measureAdvance(
 }
 
 type ParseMode = 'literal' | 'formatted';
+
+// Drop the trailing letter-spacing step from a line's pen advance (see
+// LineMetrics.alignAdvance). Only when the line advanced at all — an empty line
+// has no trailing step to remove — and never past zero.
+function alignAdvanceOf(cursor: number, trailing: number): number {
+  return cursor > 0 ? Math.max(0, cursor - trailing) : cursor;
+}
 
 function computeLineMetrics(
   raw: string,
@@ -305,6 +341,7 @@ function computeLineMetrics(
       bearingLeft: 0,
       bearingRight: 0,
       advanceWidth: 0,
+      alignAdvance: 0,
       maxFontSize: fontSize,
       segments: [],
       exit,
@@ -313,10 +350,15 @@ function computeLineMetrics(
   // Largest resolved run size on the line drives its height. Bullets are the base
   // size (styles, incl. <size>, never attach to a bullet).
   let maxFontSize = 0;
+  // The letter-spacing baked in AFTER the final glyph of each segment — 0 in
+  // environments whose canvas ignores letterSpacing, so alignAdvance never
+  // discounts a step that was not measured in the first place.
+  const trailings: number[] = [];
   const segMetrics: SegmentMetric[] = segments.map((seg) => {
     if (seg.kind === 'bullet') {
       const d = inlineBulletDiameter(fontSize);
       if (fontSize > maxFontSize) maxFontSize = fontSize;
+      trailings.push(letterSpacingPx);
       return {
         kind: 'bullet',
         code: seg.code,
@@ -337,9 +379,11 @@ function computeLineMetrics(
       declFor(seg.style, segFontSize),
       letterSpacingPx,
     );
+    trailings.push(t.trailing);
+    const { trailing: _trailing, ...tm } = t;
     return seg.style
-      ? { kind: 'text', value: seg.value, style: seg.style, fontSize: segFontSize, ...t }
-      : { kind: 'text', value: seg.value, fontSize: segFontSize, ...t };
+      ? { kind: 'text', value: seg.value, style: seg.style, fontSize: segFontSize, ...tm }
+      : { kind: 'text', value: seg.value, fontSize: segFontSize, ...tm };
   });
 
   // Walk segments to compute the line's ink extent.
@@ -359,6 +403,7 @@ function computeLineMetrics(
       bearingLeft: 0,
       bearingRight: 0,
       advanceWidth: cursor,
+      alignAdvance: alignAdvanceOf(cursor, trailings[trailings.length - 1] ?? 0),
       maxFontSize,
       segments: segMetrics,
       exit,
@@ -369,6 +414,7 @@ function computeLineMetrics(
     bearingLeft: -inkLeft,
     bearingRight: inkRight,
     advanceWidth: cursor,
+    alignAdvance: alignAdvanceOf(cursor, trailings[trailings.length - 1] ?? 0),
     maxFontSize,
     segments: segMetrics,
     exit,

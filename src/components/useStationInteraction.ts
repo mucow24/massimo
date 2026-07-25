@@ -5,6 +5,7 @@ import { useSnapPrefs } from '../state/snapPrefs';
 import { stopPosWorld } from '../geometry/interlining';
 import { pairKeyOf } from '../model/pairKey';
 import { pathBetweenStations } from '../model/pathSelect';
+import { incidentEdges } from '../model/lineTopology';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { itemCursor } from './canvas/itemCursor';
 import { screenToWorld } from './canvas/viewportMath';
@@ -277,10 +278,21 @@ export function useStationInteraction(
   // first station), an armed cursor makes foreign stations live again (a click
   // CONNECTS the line to them), and members are never affected (a click arms
   // the pen there).
+  // ...but ONLY where a stripe is actually painted beneath to catch the click.
+  // The fall-through IS the feature; with nothing under the station the click
+  // reaches MapCanvas's full-viewport background rect instead, which reads as
+  // "clicked empty canvas" and EXITS the editor. Losing the whole session by
+  // aiming at a station you can see is a harsh price for a dead click, so an
+  // orphan station (no line through it) keeps its hit rect and swallows it —
+  // decideStationClick already makes that handler a no-op.
   const appendMode = selection.uiMode.kind === 'appending-to-line' ? selection.uiMode : null;
   const appendLine = appendMode ? lines[appendMode.lineId] : undefined;
+  const hasStripeBeneath = station.stops.some((c) => {
+    const ln = lines[c.lineId];
+    return !!ln && incidentEdges(ln, station.id).length > 0;
+  });
   const appendForeignInert =
-    appendMode && appendLine && appendLine.stations.length > 0
+    appendMode && appendLine && appendLine.stations.length > 0 && hasStripeBeneath
       ? !validCursor(appendLine, appendMode.cursor) && !appendLine.stations.includes(station.id)
       : false;
   const modeInert = inTagMode || inLayerMode;
