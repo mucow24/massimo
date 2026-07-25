@@ -43,10 +43,11 @@ const baseStation = (
   label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
 });
 
-// Selecting a station and opening its layout editor shows the L1 stop handle;
-// shows the orientation as a glyph (↕ / ⤢ / ↔ / ⤡). Reading the glyph is the
-// most reliable way to confirm migration without depending on store internals.
-async function orientationGlyphFor(page: Page, stationId: string): Promise<string> {
+// Selecting a station and opening its layout editor shows the L1 stop handle,
+// which draws the orientation as an arrow tagged with its axis. Reading that
+// tag is the most reliable way to confirm migration without depending on store
+// internals.
+async function orientationAxisFor(page: Page, stationId: string): Promise<string> {
   const center = await stationCenter(page, stationId);
   await page.mouse.click(center.x, center.y);
   await page.getByRole('button', { name: 'Edit layout' }).click();
@@ -54,7 +55,7 @@ async function orientationGlyphFor(page: Page, stationId: string): Promise<strin
     '[data-cell-row="0"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L1"]',
   );
   await expect(cell).toBeVisible();
-  const glyph = (await cell.locator('text').textContent()) ?? '';
+  const axis = (await cell.locator('[data-arrow-axis]').getAttribute('data-arrow-axis')) ?? '';
   // Step all the way back out before the caller moves to the NEXT station:
   // the first Escape exits layout-edit (whose popover pins to the top-right
   // of the canvas), the second deselects the station entirely — its editor
@@ -63,7 +64,7 @@ async function orientationGlyphFor(page: Page, stationId: string): Promise<strin
   await page.keyboard.press('Escape');
   await page.keyboard.press('Escape');
   await expect(page.locator('.station-popover')).toHaveCount(0);
-  return glyph;
+  return axis;
 }
 
 test.describe('Legacy dotShape migration on load (v6 → v7)', () => {
@@ -270,12 +271,12 @@ test.describe('Legacy stop-orientation migration on load', () => {
 
     expect(errors).toEqual([]);
 
-    // up/down → auto-vertical (↕); left/right → auto-horizontal (↔);
-    // garbage → auto-vertical fallback (↕).
-    expect(await orientationGlyphFor(page, 'A')).toBe('↕');
-    expect(await orientationGlyphFor(page, 'B')).toBe('↕');
-    expect(await orientationGlyphFor(page, 'C')).toBe('↔');
-    expect(await orientationGlyphFor(page, 'D')).toBe('↔');
-    expect(await orientationGlyphFor(page, 'E')).toBe('↕');
+    // up/down → auto-vertical; left/right → auto-horizontal;
+    // garbage → auto-vertical fallback.
+    expect(await orientationAxisFor(page, 'A')).toBe('auto-vertical');
+    expect(await orientationAxisFor(page, 'B')).toBe('auto-vertical');
+    expect(await orientationAxisFor(page, 'C')).toBe('auto-horizontal');
+    expect(await orientationAxisFor(page, 'D')).toBe('auto-horizontal');
+    expect(await orientationAxisFor(page, 'E')).toBe('auto-vertical');
   });
 });

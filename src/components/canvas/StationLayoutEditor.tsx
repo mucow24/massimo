@@ -8,25 +8,42 @@ import { stopGapOf, stopHalfOf, lineWidthOf } from '../../model/lineWidth';
 import { stopDashOf } from '../../model/dashSize';
 import { lineDisplayName } from '../../model/lineNaming';
 import { useThemeColors } from '../../state/theme';
-import { legibleTextOn } from '../../util/color';
-import { dotSizeOverride, resolveDotSize } from '../../model/dotSize';
-import { resolveDotRender } from '../../model/dotStyle';
+import { resolveDotSize } from '../../model/dotSize';
 import {
   effectiveStationLabelStyle,
-  resolveDotStyle,
+  LABEL_FONT_SIZE_DEFAULT,
   stationIsSingleton,
 } from '../../model/transforms';
-import { ORIENTATION_GLYPH, sameCell } from '../inspector/stopGridDrag';
+import { sameCell } from '../inspector/stopGridDrag';
+import { OrientationArrow } from '../StationOrientationArrows';
 import type { LayoutDragSource } from './useStationLayoutDrag';
 
-// Handles never shrink below this screen size, however far out the view is
-// zoomed — the mini-canvas's "grab targets scale away" failure mode is the
-// exact thing this editor exists to fix.
-const MIN_HANDLE_PX = 10;
+// Every handle is sized in WORLD units — geometry AND stroke weight — so it
+// grows and shrinks with the map, like the station it wraps, and reads exactly
+// the same at every zoom. Sizing off the COMMITTED zoom (`X / zoom`) held a
+// screen size that went stale mid-gesture and snapped when the camera
+// committed; holding only the WEIGHT screen-constant (vector-effect, the
+// selection ring's recipe) leaves the weight fighting world-sized geometry as
+// you zoom. Read the number against the ring it draws, not against a screen
+// weight: 0.5 on the default r=7 ring is a fine hairline.
+const RING_WIDTH = 0.5;
+// The active (selected / swap-target) ring reads a half-step heavier.
+const RING_ACTIVE_WIDTH = RING_WIDTH * 1.5;
+
+// Arrow length as a fraction of its ring's DIAMETER. In here the arrow has to
+// live inside the ring, so it takes its size from the ring — not from the dot
+// like the map's hover badge, where a service-code disc (12) scaled the arrow
+// past the ring it would have to fit in.
+const ARROW_FIT = 0.88;
+
+// Scrim inside each stop ring. A dot carrying the line's service code puts text
+// directly under the orientation glyph, where the two compete and neither
+// reads; a wash over the dot settles it in the arrow's favor.
+const RING_SCRIM = 'rgba(0, 0, 0, 0.8)';
 
 // The editor dims the whole map behind it (see MapCanvas), so its rings read
-// against a DARK backdrop in BOTH themes: a light dashed ring for idle stops,
-// a bright accent for the active/swap stop. High contrast on the dim is the
+// against a DARK backdrop in BOTH themes: a light ring for idle stops, a
+// bright accent for the active/swap stop. High contrast on the dim is the
 // whole point — the old thin, theme-accent (dark-blue in light mode) ring is
 // exactly what the redesign replaces.
 const LAYOUT_RING = 'rgba(255, 255, 255, 0.92)';
@@ -55,13 +72,11 @@ const LAYOUT_RING_ACTIVE = '#5b9dff';
 export function StationLayoutEditor({
   station,
   lines,
-  zoom,
   onStartNodeDrag,
   swapTarget,
 }: {
   station: Station;
   lines: Record<string, Line>;
-  zoom: number;
   onStartNodeDrag: (id: string, source: LayoutDragSource, e: React.PointerEvent) => void;
   /** The stop currently resolved as a swap drop target, if any. */
   swapTarget: { row: number; col: number } | null;
@@ -70,10 +85,9 @@ export function StationLayoutEditor({
   const rotateStop = useDoc((s) => s.rotateStop);
   const rotateLabel = useDoc((s) => s.rotateLabel);
 
-  // Theme still drives the label-handle stroke; darkMode resolves each dot's
-  // fill so the orientation arrow can contrast it.
+  // Theme drives the label-handle stroke. Nothing here reads the dot's COLOR
+  // any more — the ring scrim darkens every dot, so the arrow is always white.
   const theme = useThemeColors();
-  const darkMode = useDoc((s) => s.darkMode);
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
   const angle = station.rotation * 45;
   // Singleton vs. shared picks each stop's split default (dot style + size);
@@ -162,9 +176,6 @@ export function StationLayoutEditor({
     },
   });
 
-  const ringStroke = 2.5 / zoom;
-  const glyphShadow = '0 0 2px rgba(0,0,0,0.6)';
-
   return (
     <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
       {/* Halo first (beneath): document order is hit-test priority, so the
@@ -206,27 +217,21 @@ export function StationLayoutEditor({
         {...shieldHandlers}
       />
 
-      {/* Stop handles: a ring around each real dot, floored to a constant
-          screen size, with the orientation glyph as a badge. */}
+      {/* Stop handles: a ring around each real dot, sized in world units, with
+          the orientation glyph as a badge. */}
       {station.stops.map((s) => {
         const c = stopCenterAt(s.row, s.col);
-        const r = Math.max(lineWidthOf(lines[s.lineId]) / 2, MIN_HANDLE_PX / zoom);
         const selected = selection.selectedStopLineId === s.lineId;
         const isSwap = !!swapTarget && sameCell(swapTarget, s);
-        // Resolve the dot exactly as it's painted, then flip the arrow to
-        // whichever of black/white reads on its fill. An unfilled dot (open
-        // ring / none / no line) leaves the arrow on the dim, where white wins.
         const line = lines[s.lineId];
-        const dot = line
-          ? resolveDotRender(
-              resolveDotStyle(line, s, isSingleton),
-              line.color,
-              line.service,
-              darkMode,
-              dotSizeOverride(line, s, isSingleton),
-            )
-          : null;
-        const glyphColor = dot && dot.fill !== 'none' ? legibleTextOn(dot.fill) : '#fff';
+        // The ring wraps the stop cell: half the stripe width, never inside an
+        // oversized dot (same reason the shield pads by maxDotR), never below
+        // the lattice cell a thin line's stop still occupies.
+        const r = Math.max(
+          lineWidthOf(line) / 2,
+          resolveDotSize(line, s, isSingleton) / 2,
+          STOP_SIZE / 2,
+        );
         // Native tooltip naming the line this stop serves — the shared
         // user-facing line name, same as the sidebar row and the inspector badge.
         const lineLabel = lineDisplayName(line);
@@ -246,24 +251,19 @@ export function StationLayoutEditor({
               cx={c.x}
               cy={c.y}
               r={r}
-              fill="transparent"
+              fill={RING_SCRIM}
               pointerEvents={inHandMode ? 'none' : 'all'}
               stroke={selected || isSwap ? LAYOUT_RING_ACTIVE : LAYOUT_RING}
-              strokeWidth={selected || isSwap ? 3 / zoom : ringStroke}
-              strokeDasharray={selected || isSwap ? undefined : `${5 / zoom} ${3 / zoom}`}
+              strokeWidth={selected || isSwap ? RING_ACTIVE_WIDTH : RING_WIDTH}
             />
-            <text
+            <OrientationArrow
               x={c.x}
               y={c.y}
-              textAnchor="middle"
-              dominantBaseline="central"
-              fontSize={Math.max(r * 0.9, 9 / zoom)}
-              fontWeight={700}
-              fill={glyphColor}
-              style={{ pointerEvents: 'none', userSelect: 'none', textShadow: glyphShadow }}
-            >
-              {ORIENTATION_GLYPH[s.orientation]}
-            </text>
+              size={r * 2 * ARROW_FIT}
+              orientation={s.orientation}
+              lineId={s.lineId}
+              fill="#fff"
+            />
           </g>
         );
       })}
@@ -272,7 +272,7 @@ export function StationLayoutEditor({
           offset from it via offset/offsetPerp/align. */}
       {(() => {
         const c = stopCenterAt(station.label.row, station.label.col);
-        const r = Math.max(STOP_SIZE / 2, MIN_HANDLE_PX / zoom);
+        const r = STOP_SIZE / 2;
         const selected = selection.labelSelected;
         return (
           <g
@@ -290,7 +290,7 @@ export function StationLayoutEditor({
               fill="rgba(255,255,255,0.65)"
               pointerEvents={inHandMode ? 'none' : 'all'}
               stroke={selected ? theme.selectionStroke : 'rgba(0,0,0,0.45)'}
-              strokeWidth={selected ? 2 / zoom : ringStroke}
+              strokeWidth={RING_WIDTH}
             />
             <text
               x={c.x}
@@ -298,7 +298,7 @@ export function StationLayoutEditor({
               transform={`rotate(${station.label.rotation * 45} ${c.x} ${c.y})`}
               textAnchor="middle"
               dominantBaseline="central"
-              fontSize={Math.max(9, 12 / zoom)}
+              fontSize={LABEL_FONT_SIZE_DEFAULT}
               fontWeight={700}
               fill="#222"
               style={{ pointerEvents: 'none', userSelect: 'none' }}
