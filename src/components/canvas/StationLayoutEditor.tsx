@@ -226,6 +226,9 @@ export function StationLayoutEditor({
             )
           : null;
         const glyphColor = dot && dot.fill !== 'none' ? legibleTextOn(dot.fill) : '#fff';
+        // Native tooltip naming the line this stop serves — same identity
+        // string the sidebar shows (`name`, or a `${service} line` fallback).
+        const lineLabel = line ? line.name || `${line.service} line` : 'Unknown line';
         return (
           <g
             key={`h-${s.lineId}`}
@@ -237,6 +240,7 @@ export function StationLayoutEditor({
             style={{ cursor: inHandMode ? undefined : 'grab' }}
             {...handleFor({ kind: 'stop', lineId: s.lineId as LineId })}
           >
+            <title>{lineLabel}</title>
             <circle
               cx={c.x}
               cy={c.y}

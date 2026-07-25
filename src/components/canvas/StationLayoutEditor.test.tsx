@@ -78,6 +78,15 @@ describe('<StationLayoutEditor />', () => {
     expect(l2?.getAttribute('data-cell-col')).toBe('1');
   });
 
+  it('gives each stop handle a tooltip naming its line', () => {
+    seed();
+    const { container } = renderEditor();
+    const l1 = container.querySelector('[data-cell-kind="stop"][data-line-id="L1"]');
+    const l2 = container.querySelector('[data-cell-kind="stop"][data-line-id="L2"]');
+    expect(l1?.querySelector('title')?.textContent).toBe('1 line');
+    expect(l2?.querySelector('title')?.textContent).toBe('2 line');
+  });
+
   it('pointerdown on a stop handle starts a node drag with that source', () => {
     seed();
     const { container, onStartNodeDrag } = renderEditor();
