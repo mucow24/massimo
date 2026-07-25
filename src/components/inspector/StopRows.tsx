@@ -115,10 +115,19 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
         }
       }}
     >
+      {/* The badge names the stop's line — and double-clicking it goes there,
+          into that line's editor (startAppend, the one line-editor entry). The
+          single clicks on the way just select this row's stop, so the hop
+          leaves nothing behind. */}
       <span
         className="line-badge"
         style={{ background: line?.color ?? '#888', color: legibleTextOn(line?.color ?? '#888') }}
-        title={lineDisplayName(line)}
+        title={
+          line ? `${lineDisplayName(line)} — double-click to edit this line` : lineDisplayName(line)
+        }
+        onDoubleClick={() => {
+          if (line) selection.startAppend(lineId);
+        }}
       >
         {line?.service ?? '?'}
       </span>

@@ -1708,8 +1708,13 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   `cycle-style` decision — how a segment buried under its endpoints stays restyleable; shift
   NEVER adds to the line), or clicking the **style-cycle chip** that flanks the × chip on the
   armed segment. Alt-click deep-picks a buried segment (see the Edit Stops alt-pick above), and a
-  50%-opacity hover preview shows the ring/halo the next click will place. (This replaced the old
-  in-sidebar git-graph tree editor, `StationGraph`/`lineGraphLayout`, both retired.)
+  50%-opacity hover preview shows the ring/halo the next click will place. **Double-clicking a
+  station already on the line** hops out to that station's `editing-station-layout`
+  (`startEditingStationLayout`) — the mode's answer to "this stop's dots are wrong"; a station NOT
+  on the line has no dblclick at all. The two clicks underneath still run the append gesture, so a
+  pen armed elsewhere connects first (deliberate: the click matrix means what it always means, and
+  it stays undoable). (This replaced the old in-sidebar git-graph tree editor,
+  `StationGraph`/`lineGraphLayout`, both retired.)
 - **[LinePopover.tsx](src/components/LinePopover.tsx)** — the line editor's home: mounted by
   `ItemPopovers` for the whole `appending-to-line` mode, hosting `LineInspector` (name, service
   code, color palette, style row, default dot type/size, line width, curve radius, stroke
@@ -1728,7 +1733,9 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   column header over the per-stop rows —
   [inspector/StopRows.tsx](src/components/inspector/StopRows.tsx): service badge + always-enabled
   shape picker + dot size + a world-true orientation cycle button per stop; hover cross-highlights
-  the dot via `hoveredLineStop`), and a Label row whose **magic-wand** Auto-placement toggle stays
+  the dot via `hoveredLineStop`, and **double-clicking the badge** jumps to that line's editor
+  (`startAppend`) — the reverse of the line editor's own station dblclick), and a Label row whose
+  **magic-wand** Auto-placement toggle stays
   put and SWAPS the row between the manual align/valign controls (wand off) and the auto H/V tuning
   controls (wand on) — each a segmented select-one (Radix ToggleGroup, `.align-group`); the manual
   controls keep an explicit `auto` segment so legacy-auto labels stay editable. Beside them a
