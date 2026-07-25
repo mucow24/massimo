@@ -6,6 +6,7 @@ import { cellsAABBLocal } from '../../geometry/stationBoundary';
 import { labelLayoutLocal } from '../../geometry/labelLayout';
 import { stopGapOf, stopHalfOf, lineWidthOf } from '../../model/lineWidth';
 import { stopDashOf } from '../../model/dashSize';
+import { lineDisplayName } from '../../model/lineNaming';
 import { useThemeColors } from '../../state/theme';
 import { legibleTextOn } from '../../util/color';
 import { dotSizeOverride, resolveDotSize } from '../../model/dotSize';
@@ -226,9 +227,9 @@ export function StationLayoutEditor({
             )
           : null;
         const glyphColor = dot && dot.fill !== 'none' ? legibleTextOn(dot.fill) : '#fff';
-        // Native tooltip naming the line this stop serves — same identity
-        // string the sidebar shows (`name`, or a `${service} line` fallback).
-        const lineLabel = line ? line.name || `${line.service} line` : 'Unknown line';
+        // Native tooltip naming the line this stop serves — the shared
+        // user-facing line name, same as the sidebar row and the inspector badge.
+        const lineLabel = lineDisplayName(line);
         return (
           <g
             key={`h-${s.lineId}`}

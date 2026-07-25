@@ -33,10 +33,11 @@ export type SilhouetteLayer = 'wash' | 'stroke' | 'match-stroke' | 'hover-zone';
 /**
  * A station's selection silhouette: the smoothed union of its cells AABB and
  * its (rotated) label rect. `wash` is the translucent accent fill, `stroke`
- * the selection outline, `match-stroke` the gray mirror-match outline.
- * Skipped while the station is being renamed — the inline editor draws its
- * own box, and the collapsed-label silhouette would overdraw the wider
- * editor.
+ * the selection outline, `match-stroke` the gray mirror-match outline, and
+ * `hover-zone` the Edit Stops mouseover cue (wash + ring in one layer — see
+ * the constants above). Skipped while the station is being renamed — the
+ * inline editor draws its own box, and the collapsed-label silhouette would
+ * overdraw the wider editor.
  */
 export function StationSilhouette({
   station,

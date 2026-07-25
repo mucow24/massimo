@@ -3,6 +3,7 @@ import { useDoc, useSelection } from '../../state/store';
 import { dispatchMirrored } from '../../state/mirrorDispatch';
 import { AXIS_CYCLE, resolveDotStyle, stationIsSingleton } from '../../model/transforms';
 import { DOT_SIZE_MIN, DOT_SIZE_STEP, resolveDotSize } from '../../model/dotSize';
+import { lineDisplayName } from '../../model/lineNaming';
 import { legibleTextOn } from '../../util/color';
 import { StationShapePicker } from '../StationShapePicker';
 import { useNumericField } from '../useNumericField';
@@ -117,7 +118,7 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
       <span
         className="line-badge"
         style={{ background: line?.color ?? '#888', color: legibleTextOn(line?.color ?? '#888') }}
-        title={line ? `Line ${line.service}` : 'Unknown line'}
+        title={lineDisplayName(line)}
       >
         {line?.service ?? '?'}
       </span>

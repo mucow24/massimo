@@ -11,6 +11,7 @@ import { useViewportStore } from '../state/viewportStore';
 import { StylesPanel } from './StylesPanel';
 import { NONE_STOP_DOT_STYLE_ID } from '../model/dotStyle';
 import type { Line, Station } from '../model/types';
+import { lineDisplayName } from '../model/lineNaming';
 import { legibleTextOn } from '../util/color';
 import { stationNameListText } from '../geometry/labelTokens';
 
@@ -329,7 +330,7 @@ export function Sidebar() {
                       {ln.service}
                     </span>
                     <span className="grow">
-                      {ln.name || `${ln.service} line`} · {ln.stations.length} stations
+                      {lineDisplayName(ln)} · {ln.stations.length} stations
                     </span>
                     <button
                       className="btn-mini icon"
