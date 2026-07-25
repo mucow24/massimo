@@ -1,14 +1,14 @@
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeAll } from 'vitest';
 import { cleanup } from '@testing-library/react';
-import { loadWasmClipper } from '../geometry/clip';
+import { loadClipper } from '../geometry/clip';
 
-// Production runs every polygon boolean through the WebAssembly clipper (see
-// clip.ts). The JS engine is only a startup fallback, and the two are
-// equivalent rather than bit-identical — so tests that pin exact geometry must
-// run on the same engine the app does, or they pin something nobody ships.
+// Every polygon boolean goes through the one clipper engine (see clip.ts), and
+// it loads asynchronously, so nothing geometric can run until this resolves.
+// It REJECTS rather than degrading if the engine is missing — which fails the
+// suite loudly instead of quietly testing something that cannot ship.
 beforeAll(async () => {
-  await loadWasmClipper();
+  await loadClipper();
 }, 30000);
 
 // jsdom doesn't ship ResizeObserver. The canvas hook needs a (no-op) one.

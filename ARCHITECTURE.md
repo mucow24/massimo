@@ -21,8 +21,10 @@ Stack: **React 18 + TypeScript + Vite**, **Zustand** for state, **zundo** for un
 **Vitest** (jsdom) for unit tests, **Playwright** for e2e. No heavyweight UI framework — the
 chrome is hand-rolled CSS over a set of **Radix primitives** (`@radix-ui/react-{dropdown-menu,
 select, slider, checkbox, toggle, toggle-group, toast, dialog, hover-card, icons}`), with
-`react-colorful` for the RGBA color picker. `clipper-lib` (integer-snapped polygon booleans/offsets) powers the
-region-layering geometry.
+`react-colorful` for the RGBA color picker. `js-angusj-clipper` (Clipper 6 compiled to WebAssembly;
+integer-snapped polygon booleans/offsets) powers the region-layering geometry. It loads
+asynchronously, so `main.tsx` awaits it before mounting and there is no second engine to draw
+with meanwhile — a failure to load is reported instead of degraded.
 
 ---
 
@@ -136,8 +138,9 @@ src/
     stationDash.ts              # TfL-tick ('dash' stop) geometry: per-stop tick anchor/angle/length (label-side aware; emergent notched composite)
     stripeOutline.ts            # per-stripe edge/cap geometry (stroke-before-fill dots)
     polygon.ts polygonSnap.ts polygonUnion.ts rectPolygon.ts  # polygon geom + union + hit test
-    clip.ts                     # typed clipper-lib wrapper (booleans/offsets, integer-snapped)
-    lineRegions.ts              # overlap faces (region layering) + anchor binding + exclusion holes
+    clip.ts                     # typed wasm-clipper wrapper (booleans/offsets, integer-snapped); async load, one engine
+    lineRegions.ts              # overlap-face PHASES (zone → components → cells → faces) + anchor binding + exclusion holes
+    regionIncremental.ts        # the live region builder: per-component reuse across frames
     regionCache.ts              # sig-keyed cache of bands+markers+faces (render + reconcile)
     regionReconcile.ts          # carries regionAssignments across geometry edits
     labelTokens.ts textMeasure.ts labelLayout.ts labelJustify.ts  # name → tokens → measured → placed
@@ -503,7 +506,7 @@ All remaining fields optional and **never stored at default**:
   identity/topology).
 
 **Region layering ("paint by numbers").** There is no per-segment z-order. Where line bodies
-overlap, the planar arrangement's faces are derived live (`lineRegions.buildOverlapRegions`,
+overlap, the planar arrangement's faces are derived live (`regionIncremental.buildRegionsIncremental`,
 clipper-backed via `clip.ts`, cached in `regionCache.ts`); each face shows one covering line —
 by default the `lineOrder` front-most, overridable per face via `MapDoc.regionAssignments`
 (Layering mode, `L`: click a face to cycle, right-click backward, landing on the default
@@ -532,6 +535,26 @@ ring (its rails are already painted beneath — uncovering them gives the natura
 look) and swallows the losers' fringes near the face. Clipped areas take no pointer events,
 so idle clicks land on the visible winner natively. Zero assignments ⇒ zero cost and
 byte-identical output.
+
+**How the faces are actually built.** `lineRegions.ts` holds the pipeline as separable phases —
+`buildLineBodies` → `buildOverlapZone` (pairwise body intersections; any ≥2-cover point is in one
+of them) → `significantComponents` (the zone's connected components, dropping sub-`SLIVER_MIN_AREA`
+ones, which are ~98% of them by count and can reach neither output) → per component
+`restrictBodiesToZone` → `subdivideCells` → `extractFaces` → one `finalizeFaces` over the merged
+set. A cell can never span two components, so per-component subdivision is equivalent to one
+global pass while keeping every clipper operand down to one crossing's worth of geometry.
+`buildOverlapRegions` composes exactly those phases and is the full-rebuild reference the
+incremental builder is tested against — **production goes through
+`regionIncremental.buildRegionsIncremental`**, which caches per component across frames and is
+seeded from a module-level slot in `regionCache.ts`. A component is reused only when its own ring
+hash matches AND nothing that moved this frame lies near it; the second condition is load-bearing,
+because a component's faces depend on the bodies restricted to it and not just on its outline.
+Two subtleties worth knowing before touching it: face **spans** are arc lengths measured from each
+stripe's start, so they go stale on a face whose polygon never moved (each cached component carries
+a `spanHash` of its cover and re-measures when that changes — writing the result *back* into the
+cache, not just into the copy handed out); and the per-stripe unit hash includes the **line id**,
+because `bandKey` is built from sorted ids and two lines swapping stripe slots is otherwise
+invisible while inverting the cover of every face the band crosses.
 
 > **Width is GEOMETRY, stroke/seam are PRESENTATION.** A `width` edit rebuilds band geometry; a
 > `strokeWidth`/`strokeColor`/`seamColor`/`seamWidth`/color/style edit is resolved at render time
