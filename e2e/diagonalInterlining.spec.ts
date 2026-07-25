@@ -141,26 +141,25 @@ test.describe('Diagonal interlining — right-click cycle in inspector', () => {
     const cell = page.locator(
       '[data-cell-row="0"][data-cell-col="0"][data-cell-kind="stop"][data-line-id="L1"]',
     );
-    // The cell <g> contains both the glyph <text> and a <title> sibling, so
-    // textContent at the <g> level is "<glyph><title-text>". Scope assertions
-    // to the <text> child to read just the glyph.
-    const glyph = cell.locator('text');
-    await expect(glyph).toHaveText('↕'); // auto-vertical glyph
+    // The orientation is drawn as an arrow rotated onto its axis, tagged with
+    // that axis by name — the rotation alone would be unreadable here.
+    const arrow = cell.locator('[data-arrow-axis]');
+    await expect(arrow).toHaveAttribute('data-arrow-axis', 'auto-vertical');
 
-    // Right-click 1: → auto-ne-sw (⤢)
+    // Right-click 1: → auto-ne-sw
     await cell.click({ button: 'right' });
-    await expect(glyph).toHaveText('⤢');
+    await expect(arrow).toHaveAttribute('data-arrow-axis', 'auto-ne-sw');
 
-    // Right-click 2: → auto-horizontal (↔)
+    // Right-click 2: → auto-horizontal
     await cell.click({ button: 'right' });
-    await expect(glyph).toHaveText('↔');
+    await expect(arrow).toHaveAttribute('data-arrow-axis', 'auto-horizontal');
 
-    // Right-click 3: → auto-nw-se (⤡)
+    // Right-click 3: → auto-nw-se
     await cell.click({ button: 'right' });
-    await expect(glyph).toHaveText('⤡');
+    await expect(arrow).toHaveAttribute('data-arrow-axis', 'auto-nw-se');
 
-    // Right-click 4: → back to auto-vertical (↕)
+    // Right-click 4: → back to auto-vertical
     await cell.click({ button: 'right' });
-    await expect(glyph).toHaveText('↕');
+    await expect(arrow).toHaveAttribute('data-arrow-axis', 'auto-vertical');
   });
 });

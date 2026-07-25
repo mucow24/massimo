@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { StationLayoutEditor } from './StationLayoutEditor';
+import { StationOrientationArrows, orientationArrowPath } from '../StationOrientationArrows';
 import { useDoc, useSelection, dragState } from '../../state/store';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
@@ -51,7 +52,6 @@ const renderEditor = () => {
       <StationLayoutEditor
         station={station}
         lines={lines}
-        zoom={1}
         onStartNodeDrag={onStartNodeDrag}
         swapTarget={null}
       />
@@ -170,14 +170,15 @@ describe('<StationLayoutEditor />', () => {
     expect(l2?.getAttribute('data-selected')).toBe('true');
   });
 
-  it('paints each orientation arrow in whichever of black/white reads on the dot fill', () => {
-    // The arrow sits on top of the stop dot, so its color must contrast the
-    // dot's resolved fill — a fixed white arrow vanishes on white/light dots.
+  it('paints every orientation arrow white, whatever the dot underneath', () => {
+    // The ring carries a heavy black scrim over the dot, so the arrow contrasts
+    // the SCRIM, not the dot: white everywhere, including on a white dot, where
+    // the old flip-to-black would now paint black on near-black.
     useDoc.setState({
       ...DEFAULT_DOC,
       stations: { a: hubStation() },
       lines: {
-        // White-filled dot ⇒ the arrow must flip to black.
+        // White-filled dot — the case that used to flip the arrow to black.
         L1: makeLine({
           id: 'L1',
           service: '1',
@@ -187,7 +188,7 @@ describe('<StationLayoutEditor />', () => {
           // 'a' is a hub (L1 + L2), so L1's dot there is a shared stop.
           multiDotStyle: DOT_SHAPE_PRESETS['filled-white'],
         }),
-        // Black-filled dot ⇒ white arrow.
+        // Black-filled dot — white either way.
         L2: makeLine({ id: 'L2', service: '2', name: '2 line', color: '#111111', stations: ['a'] }),
       },
       lineOrder: ['L1', 'L2'],
@@ -202,10 +203,12 @@ describe('<StationLayoutEditor />', () => {
       spaceHeld: false,
     });
     const { container } = renderEditor();
-    const l1 = container.querySelector('[data-cell-kind="stop"][data-line-id="L1"] text');
-    const l2 = container.querySelector('[data-cell-kind="stop"][data-line-id="L2"] text');
-    expect(l1?.getAttribute('fill')).toBe('#000');
+    const l1 = container.querySelector('[data-cell-kind="stop"][data-line-id="L1"] path');
+    const l2 = container.querySelector('[data-cell-kind="stop"][data-line-id="L2"] path');
+    expect(l1?.getAttribute('fill')).toBe('#fff');
     expect(l2?.getAttribute('fill')).toBe('#fff');
+    // No contrast halo in the editor — the scrim does that job.
+    expect(l1?.getAttribute('stroke')).toBeNull();
   });
 
   it('rotates the "L" glyph to match the label rotation', () => {
@@ -223,6 +226,87 @@ describe('<StationLayoutEditor />', () => {
     expect(labelText).not.toBeNull();
     // Cell center for row=0,col=-1 is (-14, 0); the glyph pivots there.
     expect(labelText.getAttribute('transform')).toBe('rotate(90 -14 0)');
+  });
+});
+
+describe('<StationLayoutEditor /> — map-fixed chrome', () => {
+  // The handles are sized in WORLD units (the component reads no zoom at all),
+  // so they grow and shrink with the map instead of holding a screen size off
+  // the committed zoom — which snapped on every gesture commit and, zoomed out,
+  // left a handful of chunky dashes that didn't read as a circle. The stroke
+  // WEIGHT scales too: a screen-constant weight over world-sized dashes smears
+  // the dotted ring into a solid one as you zoom out.
+  it('sizes the stop grab ring in world units, weight included', () => {
+    seed();
+    const { container } = renderEditor();
+    const ring = container.querySelector(
+      '[data-cell-kind="stop"][data-line-id="L1"] circle',
+    ) as Element;
+    // Half the stripe width (default 14) — the stop cell, in world units.
+    expect(ring.getAttribute('r')).toBe('7');
+    // A world-unit hairline — NOT pinned to the screen by vector-effect.
+    expect(ring.getAttribute('stroke-width')).toBe('0.5');
+    expect(ring.getAttribute('vector-effect')).toBeNull();
+    // Solid: a dashed ring this small read as a handful of chunky arcs.
+    expect(ring.getAttribute('stroke-dasharray')).toBeNull();
+    // And a scrim over the dot, so a service-code disc can't fight the arrow.
+    expect(ring.getAttribute('fill')).toBe('rgba(0, 0, 0, 0.8)');
+  });
+
+  it('keeps the active ring solid, one step heavier', () => {
+    seed();
+    useSelection.setState({ ...useSelection.getState(), selectedStopLineId: 'L1' });
+    const { container } = renderEditor();
+    const ring = container.querySelector(
+      '[data-cell-kind="stop"][data-line-id="L1"] circle',
+    ) as Element;
+    expect(ring.getAttribute('stroke-dasharray')).toBeNull();
+    expect(ring.getAttribute('stroke-width')).toBe('0.75');
+    expect(ring.getAttribute('vector-effect')).toBeNull();
+  });
+
+  it('fits the arrow to its ring — close to the stroke, never through it', () => {
+    // The map's hover badge sizes off the DOT, which on a service-code disc
+    // (12) runs longer than this ring's 14 diameter. In here the ring is the
+    // container, so the arrow is measured against it instead.
+    seed();
+    const { container } = renderEditor();
+    const stop = container.querySelector('[data-cell-kind="stop"][data-line-id="L1"]') as Element;
+    const r = Number(stop.querySelector('circle')!.getAttribute('r'));
+    const arrow = stop.querySelector('path') as Element;
+    expect(arrow.getAttribute('d')).toBe(orientationArrowPath(r * 2 * 0.88));
+    // Tip to tip stays inside the ring.
+    expect(r * 2 * 0.88).toBeLessThan(2 * r);
+  });
+
+  it('draws the same arrow shape as the map’s hover badge, on the same axis', () => {
+    seed();
+    const { container } = renderEditor();
+    const station = useDoc.getState().stations.a;
+    const lines = useDoc.getState().lines;
+    const hover = render(
+      <svg>
+        <StationOrientationArrows station={station} lines={lines} />
+      </svg>,
+    );
+    const inEditor = container.querySelector(
+      '[data-cell-kind="stop"][data-line-id="L1"] path',
+    ) as Element;
+    const onHover = hover.container.querySelector('[data-arrow-line="L1"]') as Element;
+    expect(onHover.getAttribute('d')).toBe(orientationArrowPath(12));
+    // Same axis rotation in both surfaces; only the length differs.
+    expect(inEditor.getAttribute('transform')).toBe(onHover.getAttribute('transform'));
+  });
+
+  it('sizes the label handle and its glyph in world units', () => {
+    seed();
+    const { container } = renderEditor();
+    const ring = container.querySelector('[data-cell-kind="label"] circle') as Element;
+    expect(ring.getAttribute('r')).toBe('7');
+    expect(ring.getAttribute('stroke-width')).toBe('0.5');
+    expect(ring.getAttribute('vector-effect')).toBeNull();
+    const glyph = container.querySelector('[data-cell-kind="label"] text') as Element;
+    expect(glyph.getAttribute('font-size')).toBe('12');
   });
 });
 

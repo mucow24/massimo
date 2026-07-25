@@ -2063,7 +2063,6 @@ export function MapCanvas() {
               <StationLayoutEditor
                 station={layoutEditStation}
                 lines={lines}
-                zoom={view.viewport.zoom}
                 onStartNodeDrag={layoutDrag.onStartNodeDrag}
                 swapTarget={
                   layoutDrag.overlay?.over?.kind === 'stop' ? layoutDrag.overlay.over : null
