@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
-import { StationOrientationArrows } from './StationOrientationArrows';
+import { StationOrientationArrows, orientationArrowPath } from './StationOrientationArrows';
 import type { Station } from '../model/types';
 import { makeLine } from '../test/fixtures';
 
@@ -39,7 +39,10 @@ const renderArrows = (st: Station) => {
 };
 
 describe('<StationOrientationArrows />', () => {
-  it('paints each orientation as its axis glyph', () => {
+  // The arrow is DRAWN and rotated onto its axis, not typeset: every font puts
+  // ⤢/⤡ corner-to-corner of a tall em box (~34° off vertical, not 45°), which
+  // showed up as crooked vertical/horizontal arrows inside a rotated station.
+  it('rotates one drawn arrow onto each stop’s axis, diagonals at a true 45°', () => {
     const c = renderArrows(
       station({
         stops: [
@@ -48,36 +51,53 @@ describe('<StationOrientationArrows />', () => {
         ],
       }),
     );
-    const glyphs = [...c.querySelectorAll('text')].map((t) => t.textContent);
-    expect(glyphs).toEqual(['↔', '⤡']);
+    const arrows = [...c.querySelectorAll('path')];
+    expect(arrows.map((p) => p.getAttribute('transform'))).toEqual([
+      'translate(0 0) rotate(90)',
+      'translate(14 0) rotate(135)',
+    ]);
+    // One shared shape on both, so the axis comes only from the rotation.
+    expect(arrows[0].getAttribute('d')).toBe(arrows[1].getAttribute('d'));
   });
 
-  it('renders inside the station-rotated frame so glyphs read world-true', () => {
+  it('draws the arrow symmetric about its own center, so rotating it stays on-axis', () => {
+    // Tips at ±half, mirrored shoulders: the shape carries no bias that a
+    // 45° rotation could turn into a lean.
+    const d = orientationArrowPath(20);
+    expect(d.startsWith('M0 -10')).toBe(true);
+    expect(d).toContain('L0 10');
+    expect(d).toContain('L-4 -4');
+    expect(d).toContain('L4 4');
+  });
+
+  it('renders inside the station-rotated frame so arrows read world-true', () => {
     const c = renderArrows(station({ rotation: 2 }));
     expect(c.querySelector('[data-station-arrows="a"]')!.getAttribute('transform')).toBe(
       'translate(100 50) rotate(90)',
     );
   });
 
-  it('floors the glyph at the station-name default size for a default (8px) dot', () => {
+  it('floors the arrow at the station-name default size for a default (8px) dot', () => {
     const c = renderArrows(station());
-    expect(Number(c.querySelector('text')!.getAttribute('font-size'))).toBe(12);
+    expect(c.querySelector('path')!.getAttribute('d')).toBe(orientationArrowPath(12));
   });
 
-  it('scales the glyph with an oversized dot instead of hiding under it', () => {
+  it('scales the arrow with an oversized dot instead of hiding under it', () => {
     const c = renderArrows(
       station({
         stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical', dotSize: 20 }],
       }),
     );
-    expect(Number(c.querySelector('text')!.getAttribute('font-size'))).toBe(24);
+    expect(c.querySelector('path')!.getAttribute('d')).toBe(orientationArrowPath(24));
   });
 
   it('uses the two-tone white-core/black-edge recipe so it reads on any dot color', () => {
     const c = renderArrows(station());
-    const t = c.querySelector('text')!;
-    expect(t.getAttribute('fill')).toBe('#fff');
-    expect(t.getAttribute('stroke')).toBe('#000');
-    expect(t.getAttribute('paint-order')).toBe('stroke');
+    const p = c.querySelector('path')!;
+    expect(p.getAttribute('fill')).toBe('#fff');
+    expect(p.getAttribute('stroke')).toBe('#000');
+    expect(p.getAttribute('paint-order')).toBe('stroke');
+    // The halo scales with the arrow (12 / 8), so it never swallows a small one.
+    expect(Number(p.getAttribute('stroke-width'))).toBe(1.5);
   });
 });

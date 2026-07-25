@@ -107,14 +107,17 @@ describe('MapCanvas — mouseover orientation arrows on stop dots', () => {
     expect(document.querySelector('[data-station-arrows]')).toBeNull();
   });
 
-  it('hovering a station paints one orientation glyph per stop, and only for that station', () => {
+  it('hovering a station paints one orientation arrow per stop, and only for that station', () => {
     render(<App />);
     seed();
     hoverStation('s1');
     const group = document.querySelector('[data-station-arrows="s1"]');
     expect(group).not.toBeNull();
-    const glyphs = [...group!.querySelectorAll('text')].map((t) => t.textContent);
-    expect(glyphs).toEqual(['↕', '⤢']);
+    // One drawn arrow per stop, each rotated onto its own axis (vertical, NE–SW).
+    const axes = [...group!.querySelectorAll('path')].map((p) =>
+      p.getAttribute('transform')!.replace(/^translate\([^)]*\) /, ''),
+    );
+    expect(axes).toEqual(['rotate(0)', 'rotate(45)']);
     // Only the hovered station gets arrows.
     expect(document.querySelectorAll('[data-station-arrows]')).toHaveLength(1);
   });
