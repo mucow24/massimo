@@ -21,8 +21,8 @@ export interface RegionModeOverlayProps {
  * Layering-mode chrome for region painting: dashed outlines mark every
  * clickable overlap face; hovering halos one; clicking cycles which covering
  * line paints it (handled by the owner via onFaceClick). Right-click cycles
- * backward; shift is an orthogonal modifier that floods the new winner out to
- * neighbouring faces. Export-excluded by the mount site. Strokes use
+ * backward; shift floods instead of cycling, spreading the face's current
+ * winner to its neighbours. Export-excluded by the mount site. Strokes use
  * non-scaling-stroke so they read at any zoom.
  */
 export const RegionModeOverlay = memo(function RegionModeOverlay({

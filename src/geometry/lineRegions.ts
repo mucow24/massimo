@@ -962,10 +962,12 @@ export const REGION_ADJACENCY_TOL = 0.05;
  *
  * This turns a click from "flip one window pane" into "flip a logical piece
  * of a line": where line D crosses a trunk of A/B/C, the panes {A,D} {B,D}
- * {C,D} abut along the trunk's stripe seams, so one click carries D over the
- * whole crossing. The already-showing-target rule is what bounds it — a face
- * that already shows D is a wall, so the flood can't run away up and down D's
- * whole length through some chain of incidental touches.
+ * {C,D} abut along the trunk's stripe seams, so one shift-click carries D over
+ * the whole crossing. The already-showing-target rule is what bounds it — a
+ * face that already shows D is a wall, so the flood can't run away up and down
+ * D's whole length through some chain of incidental touches. The seed is
+ * exempt from that rule (it's the normal case: {@link regionPaintPlan} floods
+ * the winner the seed ALREADY shows), so it always comes back in the result.
  *
  * Faces that merely touch but can't show `target` are walls too, which is why
  * the flood doesn't leak sideways: {A,D} abuts {A,E} along the D/E seam, but
@@ -1061,4 +1063,54 @@ export function regionSetAction(args: {
     id,
     assignment: { id, lineId: winner, lines: [...face.lineIds], anchors: mintAnchors(face, bands) },
   };
+}
+
+/**
+ * The whole layering-mode click, as a list of writes for `assignRegions`.
+ *
+ * A plain click cycles the clicked face's winner ({@link regionClickAction}).
+ * A shift-click does NOT cycle: it floods the winner the face ALREADY shows
+ * out to its neighbours ({@link regionFloodTargets}), so what spreads is the
+ * color you can see rather than whichever one the cycle happened to land on.
+ * The clicked face is therefore left untouched by a flood — get the color you
+ * want with plain clicks first, then shift-click to carry it.
+ *
+ * Entry ids are the faces' currently bound assignment ids, or null where the
+ * face has none — the store mints those, so the ids in the returned
+ * assignments are placeholders it overwrites. An empty list means the click
+ * changes nothing and must not be written (it would cost an empty undo).
+ */
+export function regionPaintPlan(args: {
+  faces: RegionFace[];
+  winners: { winner: LineId; assignmentId: string | null }[];
+  assignments: Record<string, RegionAssignment>;
+  faceIndex: number;
+  dir: 1 | -1;
+  flood: boolean;
+  lineOrder: LineId[];
+  bands: SegmentBandSpec[];
+}): { id: string | null; assignment: RegionAssignment | null }[] {
+  const { faces, winners, assignments, faceIndex, dir, flood, lineOrder, bands } = args;
+  const face = faces[faceIndex];
+  const w = winners[faceIndex];
+  if (!face || !w) return [];
+  if (flood) {
+    return regionFloodTargets(faces, winners, faceIndex, w.winner)
+      .filter((i) => i !== faceIndex)
+      .map((i) => {
+        const boundId = winners[i].assignmentId;
+        const set = regionSetAction({
+          face: faces[i],
+          boundId,
+          lineOrder,
+          winner: w.winner,
+          bands,
+          newId: '',
+        });
+        return { id: boundId, assignment: set.assignment };
+      });
+  }
+  const bound = (w.assignmentId && assignments[w.assignmentId]) || null;
+  const seed = regionClickAction({ face, bound, lineOrder, dir, bands, newId: '' });
+  return [{ id: bound?.id ?? null, assignment: seed.assignment }];
 }

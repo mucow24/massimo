@@ -8,6 +8,7 @@ import {
   resolveRegionWinners,
   regionClickAction,
   regionFloodTargets,
+  regionPaintPlan,
   mintAnchors,
 } from './lineRegions';
 import { splitIntoFaces, faceArea, pointInFace } from './clip';
@@ -500,37 +501,39 @@ describe('regionClickAction', () => {
   });
 });
 
+// A horizontal trunk of three mutually-tangent stripes (a/b/c at y = -14/0/
+// +14) crossed at x = 50 by a vertical trunk of two (d/e): a 3×2 grid of
+// 14×14 overlap panes, every pane abutting its neighbours along a stripe
+// seam. `atIn` is unambiguous — all six covers are distinct.
+const trunkBands = () => [
+  makeBandSpec(['a', 'b', 'c'], {
+    pairKey: 's1|s2',
+    bandKey: 's1|s2#a,b,c',
+    fromId: 's1',
+    toId: 's2',
+    centerline: [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+    ],
+  }),
+  makeBandSpec(['d', 'e'], {
+    pairKey: 's3|s4',
+    bandKey: 's3|s4#d,e',
+    fromId: 's3',
+    toId: 's4',
+    centerline: [
+      { x: 50, y: -50 },
+      { x: 50, y: 50 },
+    ],
+  }),
+];
+// Trunk lines front-most, so every pane defaults to the horizontal trunk.
+const trunkOrder = ['a', 'b', 'c', 'd', 'e'];
+const atIn = (faces: ReturnType<typeof buildOverlapRegions>, cover: string) =>
+  faces.findIndex((f) => f.lineIds.join(',') === cover);
+
 describe('regionFloodTargets', () => {
-  // A horizontal trunk of three mutually-tangent stripes (a/b/c at y = -14/0/
-  // +14) crossed at x = 50 by a vertical trunk of two (d/e): a 3×2 grid of
-  // 14×14 overlap panes, every pane abutting its neighbours along a stripe
-  // seam. `at` is unambiguous — all six covers are distinct.
-  const trunkBands = () => [
-    makeBandSpec(['a', 'b', 'c'], {
-      pairKey: 's1|s2',
-      bandKey: 's1|s2#a,b,c',
-      fromId: 's1',
-      toId: 's2',
-      centerline: [
-        { x: 0, y: 0 },
-        { x: 100, y: 0 },
-      ],
-    }),
-    makeBandSpec(['d', 'e'], {
-      pairKey: 's3|s4',
-      bandKey: 's3|s4#d,e',
-      fromId: 's3',
-      toId: 's4',
-      centerline: [
-        { x: 50, y: -50 },
-        { x: 50, y: 50 },
-      ],
-    }),
-  ];
-  // Trunk lines front-most, so every pane defaults to the horizontal trunk.
-  const lineOrder = ['a', 'b', 'c', 'd', 'e'];
-  const atIn = (faces: ReturnType<typeof buildOverlapRegions>, cover: string) =>
-    faces.findIndex((f) => f.lineIds.join(',') === cover);
+  const lineOrder = trunkOrder;
 
   it('carries the target across a whole crossing trunk, but not sideways', () => {
     const bands = trunkBands();
@@ -588,5 +591,89 @@ describe('regionFloodTargets', () => {
     expect(winners[at('b,d')].winner).toBe('d');
 
     expect(regionFloodTargets(faces, winners, at('a,d'), 'a')).toEqual([at('a,d')]);
+  });
+});
+
+describe('regionPaintPlan', () => {
+  const lineOrder = trunkOrder;
+  // Which face each write lands on, by cover — an assignment carries its
+  // face's lineIds, so the plan is readable without ids.
+  const covers = (plan: { assignment: RegionAssignment | null }[]) =>
+    plan.map((e) => e.assignment?.lines.join(',') ?? null).sort();
+
+  it('cycles only the clicked face on a plain click', () => {
+    const bands = trunkBands();
+    const faces = buildOverlapRegions(bands, []);
+    const at = (cover: string) => atIn(faces, cover);
+    const winners = resolveRegionWinners(faces, {}, bands, lineOrder);
+
+    const plan = regionPaintPlan({
+      faces,
+      winners,
+      assignments: {},
+      faceIndex: at('a,d'),
+      dir: 1,
+      flood: false,
+      lineOrder,
+      bands,
+    });
+
+    expect(plan).toHaveLength(1);
+    expect(plan[0].id).toBeNull(); // unbound face — the store mints
+    expect(plan[0].assignment!.lineId).toBe('d'); // default a → next in cover
+  });
+
+  it('shift-click floods the winner the face ALREADY shows, without cycling it', () => {
+    // The point of the flood: spread the color you can SEE. Cycling first made
+    // it a guess — you had no way to know which color would spread.
+    const bands = trunkBands();
+    const faces = buildOverlapRegions(bands, []);
+    const at = (cover: string) => atIn(faces, cover);
+    const seed = faces[at('a,d')];
+    // The user has already clicked {a,d} over to d; now they shift-click it.
+    const assignments: Record<string, RegionAssignment> = {
+      r1: { id: 'r1', lineId: 'd', lines: [...seed.lineIds], anchors: mintAnchors(seed, bands) },
+    };
+    const winners = resolveRegionWinners(faces, assignments, bands, lineOrder);
+    expect(winners[at('a,d')].winner).toBe('d');
+
+    const plan = regionPaintPlan({
+      faces,
+      winners,
+      assignments,
+      faceIndex: at('a,d'),
+      dir: 1,
+      flood: true,
+      lineOrder,
+      bands,
+    });
+
+    // d carries across the rest of the crossing, and every write says d.
+    expect(covers(plan)).toEqual(['b,d', 'c,d']);
+    expect(plan.every((e) => e.assignment!.lineId === 'd')).toBe(true);
+    // The clicked face is left alone — it already shows d, so re-writing it
+    // would only churn its anchors (and cycling it would undo the click).
+    expect(plan.map((e) => e.id)).not.toContain('r1');
+  });
+
+  it('shift-click that spreads nowhere writes nothing', () => {
+    // {a,d} shows its default a; no neighbour's cover has a, so flooding a
+    // reaches nothing. An empty plan is the signal not to burn an undo entry.
+    const bands = trunkBands();
+    const faces = buildOverlapRegions(bands, []);
+    const winners = resolveRegionWinners(faces, {}, bands, lineOrder);
+
+    const plan = regionPaintPlan({
+      faces,
+      winners,
+      assignments: {},
+      faceIndex: atIn(faces, 'a,d'),
+      dir: 1,
+      flood: true,
+      lineOrder,
+      bands,
+    });
+
+    expect(plan).toEqual([]);
   });
 });

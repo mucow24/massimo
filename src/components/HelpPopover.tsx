@@ -115,7 +115,7 @@ const SECTIONS: HelpSection[] = [
       {
         k: 'L',
         effect:
-          'Layering: click an overlap to cycle which line paints on top — Shift/right-click cycle backward',
+          'Layering: click an overlap to cycle which line paints on top (right-click cycles back) — Shift-click spreads the line it already shows',
       },
       { k: 'Esc / right-click', effect: 'Cancel the active mode' },
       { k: '?', effect: 'This guide' },
