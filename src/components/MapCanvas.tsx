@@ -546,6 +546,19 @@ export function MapCanvas() {
     layoutDrag.onPointerCancel();
   };
 
+  // Run a DOM hit-test (`element(s)FromPoint`) with the drag-proxy layer hidden,
+  // so a selected item's proxy can't shadow the REAL element beneath it, then
+  // restore the layer. Shared by every proxy-aware pick — the reroute below and
+  // both alt deep-picks — so the hide/restore dance lives in one place.
+  const hitTestBeneathProxies = <T,>(probe: () => T): T => {
+    const layer = proxyLayerRef.current;
+    const prev = layer ? layer.style.display : '';
+    if (layer) layer.style.display = 'none';
+    const result = probe();
+    if (layer) layer.style.display = prev;
+    return result;
+  };
+
   // A plain click / right-click that lands on a selected item's drag proxy must
   // select by NORMAL layer order, not act on the proxy's item. Intercept in the
   // capture phase (before the proxy's own handler), suppress it, and re-dispatch
@@ -561,10 +574,7 @@ export function MapCanvas() {
     e.stopPropagation();
     if (type === 'contextmenu') e.preventDefault();
     if (dragState.suppressClick) return; // a drag just ended — no selection click
-    const prev = layer.style.display;
-    layer.style.display = 'none';
-    const beneath = document.elementFromPoint(e.clientX, e.clientY);
-    layer.style.display = prev;
+    const beneath = hitTestBeneathProxies(() => document.elementFromPoint(e.clientX, e.clientY));
     if (!beneath || beneath === svgRef.current) return;
     beneath.dispatchEvent(
       new MouseEvent(type, {
@@ -602,8 +612,8 @@ export function MapCanvas() {
   // re-dispatch (no recursion); shift is preserved (multi-select toggle);
   // ctrl/meta are dropped (station redistribute must not fire from a
   // deep-pick). The proxy layer is hidden during the elementsFromPoint
-  // snapshot, mirroring rerouteProxyEventBeneath. Returns true when the
-  // click was handled (callers skip the normal capture path).
+  // snapshot (via hitTestBeneathProxies). Returns true when the click was
+  // handled (callers skip the normal capture path).
   const deepPickAltClick = (e: React.MouseEvent): boolean => {
     if (!e.altKey) return false;
     if (inHandMode || selection.uiMode.kind !== 'idle') return false;
@@ -612,11 +622,7 @@ export function MapCanvas() {
     // things beneath the open editor.
     if (selection.editingStationId) return false;
     if (dragState.suppressClick) return false; // post-drag click: the normal path consumes it
-    const layer = proxyLayerRef.current;
-    const prevDisplay = layer ? layer.style.display : '';
-    if (layer) layer.style.display = 'none';
-    const els = document.elementsFromPoint(e.clientX, e.clientY);
-    if (layer) layer.style.display = prevDisplay;
+    const els = hitTestBeneathProxies(() => document.elementsFromPoint(e.clientX, e.clientY));
     // Locked, unselected items are click-through (pointer-events: none), so
     // elementsFromPoint never reports them. Point-test them geometrically and
     // append below the live stack — locked reads as background, so cycling
@@ -663,11 +669,7 @@ export function MapCanvas() {
     if (mode.kind !== 'appending-to-line') return false;
     const line = lines[mode.lineId];
     if (!line) return false;
-    const layer = proxyLayerRef.current;
-    const prevDisplay = layer ? layer.style.display : '';
-    if (layer) layer.style.display = 'none';
-    const els = document.elementsFromPoint(e.clientX, e.clientY);
-    if (layer) layer.style.display = prevDisplay;
+    const els = hitTestBeneathProxies(() => document.elementsFromPoint(e.clientX, e.clientY));
     // Only a line MEMBER can hold the cursor, so non-member stations under the
     // cursor drop out of the cycle (they'd arm a stale, immediately-degraded
     // station cursor).

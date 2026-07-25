@@ -133,14 +133,10 @@ export function stopPosWorld(cell: StopCell, station: Station): Vec2 {
   return localToWorld(stopCenterAt(cell.row, cell.col), station);
 }
 
-// Rotate a world-frame vector into the unrotated station-local frame so that
-// `travelDirLocal` can decide which way an auto-axis stop should travel.
-function worldToStationLocal(v: Vec2, station: Station): Vec2 {
-  return worldDirToLocal(v, station.rotation);
-}
-
 export function travelDirWorld(cell: StopCell, station: Station, worldHint: Vec2 | null): Vec2 {
-  const localHint = worldHint ? worldToStationLocal(worldHint, station) : null;
+  // Rotate the world-frame hint into the unrotated station-local frame so
+  // `travelDirLocal` can decide which way an auto-axis stop should travel.
+  const localHint = worldHint ? worldDirToLocal(worldHint, station.rotation) : null;
   return rotateBy(travelDirLocal(cell.orientation, localHint), station.rotation);
 }
 
@@ -576,11 +572,6 @@ function stationMarkerStyle(line: Line, stationId: StationId): LineStyle {
   return 'solid';
 }
 
-// Centroid (mean) of a set of points. Pure. Thin alias over `vec.centroid`.
-export function bandCentroid(points: Vec2[]): Vec2 {
-  return centroid(points);
-}
-
 // Centerline radius bumped so the INNERMOST stripe of a band still has
 // radius >= the configured curve radius. `maxAbsOffset` is the extreme
 // |stripe-center offset| (max |stripeOffsetsForWidths(widths)|) — for a
@@ -631,8 +622,8 @@ function buildBandSpec(
   // positions — i.e. the centroid of the contributing stop cells at each end.
   const fromWorlds = group.map((g) => stopPosWorld(g.fromCell, fromStation));
   const toWorlds = group.map((g) => stopPosWorld(g.toCell, toStation));
-  const fromMeanWorld = bandCentroid(fromWorlds);
-  const toMeanWorld = bandCentroid(toWorlds);
+  const fromMeanWorld = centroid(fromWorlds);
+  const toMeanWorld = centroid(toWorlds);
 
   // Per-stripe offsets: mean-centered packed positions of the widths + gaps.
   // The merge gate guaranteed the actual stop centers sit at exactly these
