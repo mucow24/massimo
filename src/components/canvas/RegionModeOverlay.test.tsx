@@ -72,8 +72,10 @@ describe('<RegionModeOverlay>', () => {
     const target = container.querySelector('[data-region-target]')!;
     fireEvent.click(target);
     expect(onFaceClick).toHaveBeenLastCalledWith(0, 1, false);
-    // Shift is the flood modifier, orthogonal to direction — it does NOT
-    // reverse the cycle (right-click is the way to that).
+    // Shift is the flood modifier — it does NOT reverse the cycle (right-click
+    // is the way to that). `dir` still rides along, and the owner ignores it
+    // when flooding (a flood spreads the CURRENT winner, so it has no
+    // direction), which is why shift-right-click reports dir -1 with flood on.
     fireEvent.click(target, { shiftKey: true });
     expect(onFaceClick).toHaveBeenLastCalledWith(0, 1, true);
     fireEvent.contextMenu(target);

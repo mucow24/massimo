@@ -125,6 +125,18 @@ describe('<StopRows />', () => {
     expect(rows[1]).toHaveTextContent('2');
   });
 
+  it("titles each badge with the line's display name, like every other surface", () => {
+    // The badge tooltip is the inspector's answer to "which line is this stop
+    // on?" — the same question the sidebar row and the layout editor's stop
+    // tooltip answer. All three go through lineDisplayName, so a named line
+    // reads by NAME here too instead of "Line <service>".
+    seed({ a: hub() });
+    renderRows();
+    const rows = screen.getAllByTestId('stop-row');
+    expect(rows[0].querySelector('.line-badge')).toHaveAttribute('title', '1 line');
+    expect(rows[1].querySelector('.line-badge')).toHaveAttribute('title', '2 line');
+  });
+
   it('every row has an ENABLED shape picker (no selection ritual)', () => {
     seed({ a: hub() });
     renderRows();

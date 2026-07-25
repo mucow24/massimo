@@ -4,7 +4,7 @@ import { svgImageCorners } from '../../geometry/svgImage';
 import { type Vec2 } from '../../geometry/vec';
 import { useDoc } from '../../state/store';
 import { useViewportStore } from '../../state/viewportStore';
-import type { MapDoc, TextLabel } from '../../model/types';
+import type { MapDoc, Station, TextLabel } from '../../model/types';
 
 /** Per-kind id sets excluded from the pool — the dragged item itself plus, in a
  *  group drag, every co-selected sibling (they move with the drag, so they'd be
@@ -87,6 +87,20 @@ export function alignTargets(doc: AlignDoc, exclude: AlignExclude = {}): Vec2[] 
  */
 export function liveAlignTargets(exclude: AlignExclude = {}): Vec2[] {
   const doc = useDoc.getState();
-  const visible = useViewportStore.getState().showNetwork ? doc : { ...doc, stations: {} };
-  return alignTargets(visible, exclude);
+  return alignTargets({ ...doc, stations: liveSnapStations(doc.stations) }, exclude);
+}
+
+/**
+ * The stations the snap ENGINE may align to — `{}` while the lines/stations
+ * toggle is off, mirroring the pool gate above.
+ *
+ * The engine takes a `stations` record directly, so every caller that can run
+ * while the network is hidden must route it through here. A bound route bullet
+ * is the reachable case: it stays visible and draggable with the network off,
+ * and without this gate it jerks into alignment with an invisible stop and
+ * draws a labelled guide across bare canvas. One named helper per pool keeps
+ * the "doc-geometric code must opt in to visibility" rule findable.
+ */
+export function liveSnapStations(stations: Record<string, Station>): Record<string, Station> {
+  return useViewportStore.getState().showNetwork ? stations : {};
 }

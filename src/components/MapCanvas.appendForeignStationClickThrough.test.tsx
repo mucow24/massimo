@@ -85,6 +85,21 @@ describe('Edit Stops — foreign stations are click-through when nothing is arme
     expect(hitPointerEvents('C')).toBe('all');
   });
 
+  it('re-enables foreign stations with an EDGE armed (a click there splices)', () => {
+    // The other half of "an armed cursor makes foreign stations live": with a
+    // segment armed rather than a pen, a click on a foreign station SPLICES it
+    // into that segment. Same rule, other cursor kind — the gate is the click
+    // matrix's dead-click case, not the station-cursor case alone.
+    render(<App />);
+    seedForeign();
+    act(() => {
+      useSelection
+        .getState()
+        .setAppendCursor({ kind: 'edge', from: 'A' as StationId, to: 'B' as StationId });
+    });
+    expect(hitPointerEvents('C')).toBe('all');
+  });
+
   it('keeps every station hittable when the edited line is EMPTY (a click seeds it)', () => {
     // With no members yet, a click on ANY station seeds the first stop — that is
     // never a dead click, so nothing goes click-through (the length>0 guard).

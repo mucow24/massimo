@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cancelAppendMode, dragState, useDoc, useSelection } from '../state/store';
 import { hoveredChrome, type HoverKind } from '../state/selection';
 import { useSnapPrefs } from '../state/snapPrefs';
+import { useFontEpochValue } from '../state/fontEpoch';
 import { useViewportStore } from '../state/viewportStore';
 import { useThemeColors } from '../state/theme';
 import type { SnapGuide } from '../geometry/snap';
@@ -27,10 +28,8 @@ import { RegionExcludeClips, regionExcludeClipId } from './canvas/RegionExcludeC
 import { regionsFor } from '../geometry/regionCache';
 import {
   buildExclusionHoles,
-  regionClickAction,
   regionClipBounds,
-  regionFloodTargets,
-  regionSetAction,
+  regionPaintPlan,
   resolveRegionWinners,
 } from '../geometry/lineRegions';
 import { HatchPatterns } from './HatchPatterns';
@@ -148,6 +147,12 @@ export function MapCanvas() {
   // self-gate inside StationView (one chokepoint for ~15 call sites); lines and
   // everything anchored to them are gated at the blocks below.
   const showNetwork = useViewportStore((s) => s.showNetwork);
+  // Re-render (and therefore re-measure) the whole canvas when the web fonts
+  // land. The epoch lives in a store rather than in App state so it can also
+  // punch through StationView's memo; MapCanvas subscribes too so the layers it
+  // renders DIRECTLY — free text labels, line tags, route bullets — re-measure
+  // with it instead of riding on an App-level re-render.
+  useFontEpochValue();
   // For resolving theme-aware (day/night) transfer colors on the creation preview.
   const darkMode = useDoc((s) => s.darkMode);
   const theme = useThemeColors();
@@ -317,8 +322,15 @@ export function MapCanvas() {
         (s) => s === 'hatched' || s === 'hatched-mirror',
       );
       if (!hasHatch) continue;
-      const effective = colorMap?.[ln.id] ?? ln.color;
-      seen.add(effective);
+      // BOTH colors a hatched line can be painted in. The desaturated one is
+      // what the main pass uses while a line is selected — but the Edit Stops
+      // hover-lift overlay deliberately repaints the hovered foreign line at
+      // its RAW color, so emitting only the desaturated pattern leaves that
+      // overlay referencing a <pattern> id that is not in <defs> and its
+      // hatched segments and stop markers paint nothing at all.
+      seen.add(ln.color);
+      const desaturated = colorMap?.[ln.id];
+      if (desaturated) seen.add(desaturated);
     }
     return Array.from(seen);
   }, [lines, colorMap]);
@@ -664,7 +676,10 @@ export function MapCanvas() {
   // (connect/splice) in Edit Stops. Nothing to pick here means "let the normal
   // alt handling run" (e.g. alt-click on empty canvas creates a station).
   const appendDeepPick = (e: React.MouseEvent): boolean => {
-    if (!e.altKey || dragState.suppressClick) return false;
+    // `inHandMode` gate as in the idle sibling above: hand/pan makes every
+    // canvas gesture inert, so Space+Alt+click must not splice a station (and
+    // burn an undo entry) while nothing else on the canvas responds.
+    if (!e.altKey || inHandMode || dragState.suppressClick) return false;
     const mode = selection.uiMode;
     if (mode.kind !== 'appending-to-line') return false;
     const line = lines[mode.lineId];
@@ -972,50 +987,23 @@ export function MapCanvas() {
     };
   };
 
-  // Layering-mode click: cycle which covering line paints the face. The pure
-  // decision (next winner, wrap, delete-at-default, fresh anchors) lives in
-  // regionClickAction; the store mints the ids and records ONE undo entry.
-  // The face/winner set the user CLICKS is the one being DISPLAYED (the
-  // deferred snapshot); the bound assignment object is read fresh by id.
-  //
-  // With `flood` (shift held), the new winner carries out to every face
-  // regionFloodTargets reaches — flipping a logical piece of a line (one
-  // click takes it over a whole crossing) instead of one window pane.
+  // Layering-mode click: cycle (or flood) which covering line paints the face.
+  // The whole pure decision lives in regionPaintPlan; the store mints the ids
+  // and records ONE undo entry. The face/winner set the user CLICKS is the one
+  // being DISPLAYED (the deferred snapshot); assignments are read fresh by id.
   const handleRegionClick = (faceIndex: number, dir: 1 | -1, flood: boolean) => {
     if (!regionGeom || !regionWinners) return;
-    const face = regionGeom.faces[faceIndex];
-    const w = regionWinners[faceIndex];
-    if (!face || !w) return;
-    const assignments = useDoc.getState().regionAssignments;
-    const bound = (w.assignmentId && assignments[w.assignmentId]) || null;
-    const seed = regionClickAction({
-      face,
-      bound,
-      lineOrder,
+    const plan = regionPaintPlan({
+      faces: regionGeom.faces,
+      winners: regionWinners,
+      assignments: useDoc.getState().regionAssignments,
+      faceIndex,
       dir,
+      flood,
+      lineOrder,
       bands: regionGeom.bands,
-      newId: '',
     });
-    const spread = flood
-      ? regionFloodTargets(regionGeom.faces, regionWinners, faceIndex, seed.winner)
-      : [faceIndex];
-    // Ids come from the bound assignment (or null, for the store to mint) —
-    // never from the pure action, which has no id generator to draw on.
-    assignRegions(
-      spread.map((i) => {
-        if (i === faceIndex) return { id: bound?.id ?? null, assignment: seed.assignment };
-        const boundId = regionWinners[i].assignmentId;
-        const set = regionSetAction({
-          face: regionGeom.faces[i],
-          boundId,
-          lineOrder,
-          winner: seed.winner,
-          bands: regionGeom.bands,
-          newId: '',
-        });
-        return { id: boundId, assignment: set.assignment };
-      }),
-    );
+    if (plan.length) assignRegions(plan);
   };
 
   return (

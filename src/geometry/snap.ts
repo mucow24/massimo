@@ -4,7 +4,7 @@ import { cross, SQRT2_2 } from './vec';
 import { rotateBy, stopCenterAt, travelDirLocal } from './orientation';
 import type { Rotation } from './orientation';
 import { stopPosWorld } from './interlining';
-import { lineHasEdge, shortestPathOnLine } from '../model/lineTopology';
+import { lineHasEdge, neighborsOf, shortestPathOnLine } from '../model/lineTopology';
 
 /**
  * Default perpendicular tolerance for engaging a snap, in world units — this is
@@ -1015,19 +1015,49 @@ function refineAlongAxis(args: {
   // Station path.
   if (draggedId === undefined) return null;
   for (const line of Object.values(lines)) {
-    const dIdx = line.stations.indexOf(draggedId);
-    if (dIdx < 0) continue;
+    if (!line.stations.includes(draggedId)) continue;
     const dCell = draggedStops.find((c) => c.lineId === line.id);
     if (!dCell) continue;
     const lineAxis = rotateBy(travelDirLocal(dCell.orientation), draggedRotation);
     if (!parallel(lineAxis, axis)) continue;
 
-    const prevId = dIdx > 0 ? line.stations[dIdx - 1] : null;
-    const nextId = dIdx < line.stations.length - 1 ? line.stations[dIdx + 1] : null;
-    const prev = anchorStationFor(prevId);
-    const next = anchorStationFor(nextId);
-    const prevStop = prev ? stopWorldFor(prev, line.id) : null;
-    const nextStop = next ? stopWorldFor(next, line.id) : null;
+    /**
+     * The cadence neighbour of `fromId` on one side along `axis`.
+     *
+     * Neighbours come from the line's EDGE graph, never `line.stations` order:
+     * membership order is DISPLAY ONLY since topology became an edge set, so a
+     * spliced station's array neighbours are not its route neighbours and the
+     * cadence would be measured against the wrong pair. Sides are decided by
+     * which way along `axis` the neighbour lies, which is what prev/next mean
+     * for an along-axis cadence — and stays well-defined at a branch, where the
+     * nearest neighbour on that side is the one whose spacing a drag follows.
+     */
+    const cadenceNeighbor = (
+      fromId: StationId,
+      fromX: number,
+      fromY: number,
+      sign: 1 | -1,
+      exclude: StationId | null,
+    ): { id: StationId; x: number; y: number } | null => {
+      let best: { id: StationId; x: number; y: number } | null = null;
+      let bestDist = Infinity;
+      for (const nid of neighborsOf(line, fromId)) {
+        if (nid === exclude) continue;
+        const st = anchorStationFor(nid);
+        const s = st ? stopWorldFor(st, line.id) : null;
+        if (!s?.axisOk) continue;
+        const d = (s.x - fromX) * axis.x + (s.y - fromY) * axis.y;
+        if (d * sign <= 0) continue;
+        if (Math.abs(d) < bestDist) {
+          bestDist = Math.abs(d);
+          best = { id: nid, x: s.x, y: s.y };
+        }
+      }
+      return best;
+    };
+
+    const prevStop = cadenceNeighbor(draggedId, dStopX, dStopY, -1, null);
+    const nextStop = cadenceNeighbor(draggedId, dStopX, dStopY, 1, null);
 
     // Closure — parallels `pushGuide` in the caller. Pushes an equidistant
     // candidate iff the proposed dStop is within tolerance of (targetX,
@@ -1046,17 +1076,16 @@ function refineAlongAxis(args: {
     };
 
     if (modes.equidistant) {
-      if (prevStop?.axisOk && nextStop?.axisOk) {
+      if (prevStop && nextStop) {
         // Interior: midpoint of same-line prev/next.
         pushEquiCandidate((prevStop.x + nextStop.x) / 2, (prevStop.y + nextStop.y) / 2);
-      } else if (!redistributeAnchor && nextId === null && prevStop?.axisOk && dIdx >= 2) {
+      } else if (!redistributeAnchor && !nextStop && prevStop) {
         // End terminus: extend the prev-prev → prev segment outward by its
         // along-axis length so terminus↔prev matches prev↔prev-prev.
         // Disabled during Ctrl-drag so we don't override the redistribute
         // anchor with the local A↔B cadence.
-        const prevPrev = anchorStationFor(line.stations[dIdx - 2]);
-        const prevPrevStop = prevPrev ? stopWorldFor(prevPrev, line.id) : null;
-        if (prevPrevStop?.axisOk) {
+        const prevPrevStop = cadenceNeighbor(prevStop.id, prevStop.x, prevStop.y, -1, draggedId);
+        if (prevPrevStop) {
           const ref =
             (prevStop.x - prevPrevStop.x) * axis.x + (prevStop.y - prevPrevStop.y) * axis.y;
           pushEquiCandidate(prevStop.x + ref * axis.x, prevStop.y + ref * axis.y, {
@@ -1064,16 +1093,10 @@ function refineAlongAxis(args: {
             to: { x: prevStop.x, y: prevStop.y },
           });
         }
-      } else if (
-        !redistributeAnchor &&
-        prevId === null &&
-        nextStop?.axisOk &&
-        dIdx + 2 < line.stations.length
-      ) {
+      } else if (!redistributeAnchor && !prevStop && nextStop) {
         // Start terminus: mirror of the end case. Same Ctrl-drag gate.
-        const nextNext = anchorStationFor(line.stations[dIdx + 2]);
-        const nextNextStop = nextNext ? stopWorldFor(nextNext, line.id) : null;
-        if (nextNextStop?.axisOk) {
+        const nextNextStop = cadenceNeighbor(nextStop.id, nextStop.x, nextStop.y, 1, draggedId);
+        if (nextNextStop) {
           const ref =
             (nextNextStop.x - nextStop.x) * axis.x + (nextNextStop.y - nextStop.y) * axis.y;
           pushEquiCandidate(nextStop.x - ref * axis.x, nextStop.y - ref * axis.y, {
@@ -1089,7 +1112,7 @@ function refineAlongAxis(args: {
       // still get a tens anchor. Either side defines the same grid-length
       // cadence along the axis (a whole multiple of the active grid size —
       // gridInterval, 5/10/20 — just shifted by the segment length).
-      const tensAnchor = prevStop?.axisOk ? prevStop : nextStop?.axisOk ? nextStop : null;
+      const tensAnchor = prevStop ?? nextStop;
       if (tensAnchor) {
         const dAlong = (dStopX - tensAnchor.x) * axis.x + (dStopY - tensAnchor.y) * axis.y;
         const tensAlong = Math.round(dAlong / gridInterval) * gridInterval;

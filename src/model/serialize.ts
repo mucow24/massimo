@@ -342,7 +342,7 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   // docs that already carry the library). BEFORE the style validation below so
   // the seeded defs are sanitized and the invariant pass sees the non-empty
   // stopDot kind + its default designation.
-  merged = bakeStopDotLibrary(merged);
+  merged = bakeStopDotLibrary(merged, hadStyles);
   const cleanedPolygons = backfillPolygonDarkColors(merged.polygons);
   if (cleanedPolygons.changed) merged.polygons = cleanedPolygons.polygons;
   // Fold any legacy fillOpacity into the fill/darkFill alpha (idempotent) —
@@ -654,8 +654,16 @@ export function bakeLineDotDefaults<
  * unchanged (reference-stable), so parse() can run it unconditionally and the
  * localStorage rehydrate gates it at v<19.
  */
-export function bakeStopDotLibrary(doc: MapDoc): MapDoc {
-  if (!doc.styles || Object.values(doc.styles).some((d) => d.kind === 'stopDot')) return doc;
+export function bakeStopDotLibrary(doc: MapDoc, sourceHadStyles = true): MapDoc {
+  if (!doc.styles) return doc;
+  // Idempotency gate: a doc that already carries the library is left alone.
+  // `sourceHadStyles` lets parse() judge that against the FILE rather than
+  // against `doc` — its DEFAULT_DOC merge fabricates a whole styles record
+  // (seeded stopDot entries and all) BEFORE this runs, so testing `doc` alone
+  // short-circuits the bake on exactly the pre-Styles files it exists for,
+  // leaving their dot slots untagged and their raw shadows orphaned. The
+  // rehydrate path reads a real persisted record, so it keeps the default.
+  if (sourceHadStyles && Object.values(doc.styles).some((d) => d.kind === 'stopDot')) return doc;
   // Recognize against the FULL known catalog, but seed only the pruned baseline
   // plus whatever the map actually wears (collected below).
   const knownDefs = Object.values(STOP_DOT_FACTORY_STYLES);
@@ -670,16 +678,16 @@ export function bakeStopDotLibrary(doc: MapDoc): MapDoc {
   const lines: Record<string, Line> = {};
   for (const id of Object.keys(doc.lines ?? {})) {
     const ln = doc.lines[id];
-    // Materialize each split default (absent ⇒ the historical filled-black),
-    // then tag by value-match against the known catalog.
-    const sRaw = ln.singletonDotStyle ?? DEFAULT_DOT_STYLE;
-    const mRaw = ln.multiDotStyle ?? DEFAULT_DOT_STYLE;
-    const sId = track(idOf(sRaw));
-    const mId = track(idOf(mRaw));
+    // Tag each split default by value-match against the known catalog, using
+    // the RESOLVED value (an absent raw already renders filled-black). The raw
+    // itself is left exactly as the file had it: materializing an absent one
+    // would store a value equal to its default, against the clean-persisted
+    // convention — and on the file-import path (where this bake now correctly
+    // runs for pre-Styles saves) it would dirty every legacy line on load.
+    const sId = track(idOf(ln.singletonDotStyle ?? DEFAULT_DOT_STYLE));
+    const mId = track(idOf(ln.multiDotStyle ?? DEFAULT_DOT_STYLE));
     lines[id] = {
       ...ln,
-      singletonDotStyle: sRaw,
-      multiDotStyle: mRaw,
       ...(sId !== undefined ? { singletonDotStyleId: sId } : {}),
       ...(mId !== undefined ? { multiDotStyleId: mId } : {}),
     };

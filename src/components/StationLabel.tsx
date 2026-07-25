@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { Line, Station } from '../model/types';
 import { useDoc, useSelection } from '../state/store';
 import { useThemeColors } from '../state/theme';
@@ -9,7 +9,7 @@ import { stopDashOf } from '../model/dashSize';
 import { bumpWeightByIndex, effectiveStationStyleProps } from '../model/transforms';
 import { legibleTextOn } from '../util/color';
 import { waypointLabelRectLocal } from '../geometry/waypointLozenge';
-import { renderStationLabelText } from './stationLabelText';
+import { renderStationLabelText, type RenderLabelTextArgs } from './stationLabelText';
 import { StationNameEditor } from './StationNameEditor';
 import { WaypointLozenge } from './WaypointLozenge';
 
@@ -48,7 +48,79 @@ function WaypointLozengeLabel({
 }
 
 /**
- * The common text-positioning bundle shared by all three station-label passes
+ * The positioning half of a label paint: the anchor, the anchoring mode, the
+ * first-line metrics, and the label rotation — everything that says WHERE the
+ * name lands, straight off the shared layout. All three passes paint the same
+ * name in the same place and differ only in HOW (fill, size, weight, stroke),
+ * so each spreads this and adds its own paint instead of re-listing the seven
+ * positioning fields. The highlight pass is drawn OVER the normal one, so a
+ * drifted copy would read as a doubled label.
+ */
+function labelTextPosition(
+  lay: ReturnType<typeof labelLayoutLocal>,
+  rotationDeg: number,
+  lineByService: Map<string, Line>,
+): Pick<
+  RenderLabelTextArgs,
+  | 'anchorX'
+  | 'anchorY'
+  | 'textAnchor'
+  | 'baseline'
+  | 'firstLineDyPx'
+  | 'firstLineCenterY'
+  | 'rotationDeg'
+  | 'lineByService'
+> {
+  return {
+    anchorX: lay.anchorX,
+    anchorY: lay.anchorY,
+    textAnchor: lay.textAnchor,
+    baseline: lay.baseline,
+    firstLineDyPx: lay.firstLineDyPx,
+    firstLineCenterY: lay.firstLineCenterY,
+    rotationDeg,
+    lineByService,
+  };
+}
+
+/**
+ * The frame the two above-the-dim passes (starter / highlight) paint into:
+ * the hidden-waypoint skip, the station-rotated `<g>`, and the "WP" lozenge
+ * that replaces the name on a revealed waypoint. Identical for both — only
+ * `text` differs — so it is written once here. (The normal pass keeps its own
+ * frame: its inline rename editor must win over the lozenge, so its branch
+ * order isn't this one.)
+ */
+function OverlayLabelFrame({
+  station,
+  lay,
+  angle,
+  rotationDeg,
+  fontSize,
+  text,
+}: {
+  station: Station;
+  lay: ReturnType<typeof labelLayoutLocal>;
+  angle: number;
+  rotationDeg: number;
+  fontSize: number;
+  text: ReactNode;
+}) {
+  const showWaypoints = useViewportStore((s) => s.showWaypoints);
+  if (station.isWaypoint && !showWaypoints) return null;
+  return (
+    <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
+      {station.isWaypoint ? (
+        <WaypointLozengeLabel lay={lay} rotationDeg={rotationDeg} fontSize={fontSize} />
+      ) : (
+        text
+      )}
+    </g>
+  );
+}
+
+/**
+ * The common layout + typography bundle behind all three station-label passes
  * (starter / highlight / normal). Mirrors the derivation StationView used to
  * do inline so the rendered <text>/<tspan> geometry is byte-for-byte the same:
  * the label layout (anchor, text-anchor, baseline, hit rect) and the painted
@@ -113,40 +185,35 @@ export function StationStarterLabel({
   lines: Record<string, Line>;
   highlightColor: string;
 }) {
-  const showWaypoints = useViewportStore((s) => s.showWaypoints);
   const { angle, rotationDeg, hovered, effStyle, lineByService, lay } = useStationLabelLayout(
     station,
     lines,
   );
-  if (station.isWaypoint && !showWaypoints) return null;
-  const strokeColor = legibleTextOn(highlightColor);
   return (
-    <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
-      {station.isWaypoint ? (
-        <WaypointLozengeLabel lay={lay} rotationDeg={rotationDeg} fontSize={effStyle.fontSize} />
-      ) : (
-        renderStationLabelText({
-          text: station.name,
-          fontSize: 12,
-          fontWeight: 700,
-          leading: effStyle.leading,
-          tracking: effStyle.tracking,
-          fill: highlightColor,
-          stroke: strokeColor,
-          strokeWidth: 2,
-          paintOrder: 'stroke',
-          textDecoration: hovered ? 'underline' : 'none',
-          anchorX: lay.anchorX,
-          anchorY: lay.anchorY,
-          textAnchor: lay.textAnchor,
-          baseline: lay.baseline,
-          firstLineDyPx: lay.firstLineDyPx,
-          firstLineCenterY: lay.firstLineCenterY,
-          rotationDeg,
-          lineByService,
-        })
-      )}
-    </g>
+    <OverlayLabelFrame
+      station={station}
+      lay={lay}
+      angle={angle}
+      rotationDeg={rotationDeg}
+      fontSize={effStyle.fontSize}
+      text={renderStationLabelText({
+        ...labelTextPosition(lay, rotationDeg, lineByService),
+        text: station.name,
+        // The station's OWN size — `lay` was computed at it, so a hardcoded
+        // 12 halves the glyphs while keeping the 24px line pitch. Matches
+        // StationHighlightLabel and the waypoint branch above; only the
+        // always-bold weight is deliberate starter styling.
+        fontSize: effStyle.fontSize,
+        fontWeight: 700,
+        leading: effStyle.leading,
+        tracking: effStyle.tracking,
+        fill: highlightColor,
+        stroke: legibleTextOn(highlightColor),
+        strokeWidth: 2,
+        paintOrder: 'stroke',
+        textDecoration: hovered ? 'underline' : 'none',
+      })}
+    />
   );
 }
 
@@ -164,7 +231,6 @@ export function StationHighlightLabel({
   lines: Record<string, Line>;
   highlightColor: string;
 }) {
-  const showWaypoints = useViewportStore((s) => s.showWaypoints);
   const {
     angle,
     rotationDeg,
@@ -175,32 +241,25 @@ export function StationHighlightLabel({
     lineByService,
     lay,
   } = useStationLabelLayout(station, lines);
-  if (station.isWaypoint && !showWaypoints) return null;
   return (
-    <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
-      {station.isWaypoint ? (
-        <WaypointLozengeLabel lay={lay} rotationDeg={rotationDeg} fontSize={effStyle.fontSize} />
-      ) : (
-        renderStationLabelText({
-          text: station.name,
-          fontSize: effStyle.fontSize,
-          fontWeight: renderedWeight,
-          fontStyle: stationItalic ? 'italic' : undefined,
-          leading: effStyle.leading,
-          tracking: effStyle.tracking,
-          textDecoration: hovered ? 'underline' : 'none',
-          fill: highlightColor,
-          anchorX: lay.anchorX,
-          anchorY: lay.anchorY,
-          textAnchor: lay.textAnchor,
-          baseline: lay.baseline,
-          firstLineDyPx: lay.firstLineDyPx,
-          firstLineCenterY: lay.firstLineCenterY,
-          rotationDeg,
-          lineByService,
-        })
-      )}
-    </g>
+    <OverlayLabelFrame
+      station={station}
+      lay={lay}
+      angle={angle}
+      rotationDeg={rotationDeg}
+      fontSize={effStyle.fontSize}
+      text={renderStationLabelText({
+        ...labelTextPosition(lay, rotationDeg, lineByService),
+        text: station.name,
+        fontSize: effStyle.fontSize,
+        fontWeight: renderedWeight,
+        fontStyle: stationItalic ? 'italic' : undefined,
+        leading: effStyle.leading,
+        tracking: effStyle.tracking,
+        textDecoration: hovered ? 'underline' : 'none',
+        fill: highlightColor,
+      })}
+    />
   );
 }
 
@@ -293,6 +352,7 @@ export function StationLabel({
         <WaypointLozengeLabel lay={lay} rotationDeg={rotationDeg} fontSize={effStyle.fontSize} />
       ) : (
         renderStationLabelText({
+          ...labelTextPosition(lay, rotationDeg, lineByService),
           text: station.name,
           fontSize: effStyle.fontSize,
           fontWeight: renderedWeight,
@@ -301,14 +361,6 @@ export function StationLabel({
           tracking: effStyle.tracking,
           textDecoration: hovered ? 'underline' : 'none',
           fill: themeColors.label,
-          anchorX: lay.anchorX,
-          anchorY: lay.anchorY,
-          textAnchor: lay.textAnchor,
-          baseline: lay.baseline,
-          firstLineDyPx: lay.firstLineDyPx,
-          firstLineCenterY: lay.firstLineCenterY,
-          rotationDeg,
-          lineByService,
         })
       )}
     </g>

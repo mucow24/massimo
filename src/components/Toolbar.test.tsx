@@ -1505,11 +1505,14 @@ describe('Toolbar — status toasts', () => {
     seedRealMap('Canal Line');
     vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
     // The short-duration seam: the contract is "expires on its own", asserted
-    // with real timers that must not wait out the real three seconds.
+    // with real timers that must not wait out the real three seconds. It must
+    // still comfortably exceed waitFor's 50ms poll interval — at 40ms the whole
+    // visible window could fall between two polls of findToast below, which
+    // made this test fail only when the suite was under load.
     render(
       <>
         <Toolbar />
-        <StatusToasts infoDurationMs={40} />
+        <StatusToasts infoDurationMs={400} />
       </>,
     );
     await saveToLibrary(user);

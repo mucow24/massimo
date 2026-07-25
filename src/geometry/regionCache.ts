@@ -29,15 +29,25 @@ export interface GeometrySlice {
  */
 export function regionGeometrySig(g: GeometrySlice): string {
   const parts: string[] = [];
+  // Lines that own at least one stop. An edgeless line still contributes a
+  // width x width marker square to the arrangement (buildStopMarkers emits a
+  // marker per stop regardless of edges), so its width has to be in the key —
+  // and edgeless-but-stopped is ordinary, not exotic: a line is that way from
+  // its first station until its second, and again whenever an endpoint of a
+  // two-station line is deleted.
+  const stoppedLines = new Set<LineId>();
   for (const id of Object.keys(g.stations)) {
     const st = g.stations[id];
     if (!st.stops.length) continue; // stopless stations carry no band geometry
     parts.push(id, String(st.x), String(st.y), String(st.rotation));
-    for (const c of st.stops) parts.push(c.lineId, String(c.row), String(c.col), c.orientation);
+    for (const c of st.stops) {
+      parts.push(c.lineId, String(c.row), String(c.col), c.orientation);
+      stoppedLines.add(c.lineId);
+    }
   }
   for (const id of Object.keys(g.lines)) {
     const ln = g.lines[id];
-    if (!ln.edges.length) continue; // edgeless lines have no bands
+    if (!ln.edges.length && !stoppedLines.has(id)) continue; // contributes nothing
     parts.push(
       id,
       ln.edges.join('.'),

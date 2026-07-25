@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
 import { MapCanvas } from './components/MapCanvas';
@@ -22,6 +22,7 @@ import {
   type ClipPayload,
 } from './model/clipboard';
 import { _clearTextMeasureCache } from './geometry/textMeasure';
+import { useFontEpoch } from './state/fontEpoch';
 import { screenDeltaToLabelOffsets } from './geometry/labelLayout';
 import { STOP_SIZE, rotateGridDelta, type Rotation } from './geometry/orientation';
 import { lineInterlineGapOf, lineWidthOf } from './model/lineWidth';
@@ -118,7 +119,7 @@ export default function App() {
   // re-measures them — which looked like a line "shifting" when you edited a
   // sibling line. Dropping the stale cache and bumping this counter on font
   // load lets every label settle at its real metrics up front.
-  const [, setFontEpoch] = useState(0);
+  const bumpFontEpoch = useFontEpoch((s) => s.bump);
   useEffect(() => {
     const fonts = document.fonts;
     if (!fonts) return;
@@ -126,7 +127,7 @@ export default function App() {
     const refresh = () => {
       if (cancelled) return;
       _clearTextMeasureCache();
-      setFontEpoch((e) => e + 1);
+      bumpFontEpoch();
     };
     // `ready` covers the fonts in use at first paint; `loadingdone` covers
     // weights that load later (e.g. switching a label to a weight not yet
@@ -137,7 +138,7 @@ export default function App() {
       cancelled = true;
       fonts.removeEventListener('loadingdone', refresh);
     };
-  }, []);
+  }, [bumpFontEpoch]);
   const setUiMode = useSelection((s) => s.setUiMode);
   const selectLineTag = useSelection((s) => s.selectLineTag);
   const selectRouteBullet = useSelection((s) => s.selectRouteBullet);

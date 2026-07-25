@@ -349,7 +349,7 @@ export function LabelView({
                 lm.raw,
                 label.fontSize,
                 letterSpacingPx,
-                lm.advanceWidth,
+                lm.alignAdvance,
                 m.width,
                 runAdvance,
                 lm.entryStyle,
@@ -380,7 +380,7 @@ export function LabelView({
             }
           });
         } else {
-          let cursor = lineCursorX(label.align, halfW, lm.advanceWidth);
+          let cursor = lineCursorX(label.align, halfW, lm.alignAdvance);
           lm.segments.forEach((seg, j) => {
             const segCursor = cursor;
             cursor += seg.advance;

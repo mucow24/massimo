@@ -411,6 +411,17 @@ export function HighlightedLineLayer({
               );
             }
 
+            // The hover-zone wash + ring on the station under the pointer: its
+            // true clickable footprint (cells ∪ label rect), shown for EVERY
+            // station, member or not — "you are over this station, here is its
+            // edge". Painted the way the main map paints a station hover (see
+            // StationSilhouette's hover-zone layer), and independent of the ring
+            // preview below, which only promises an actionable click.
+            const hoverZone: ReactNode =
+              appendHover?.kind === 'station' && stations[appendHover.stationId] ? (
+                <StationSilhouette station={stations[appendHover.stationId]} layer="hover-zone" />
+              ) : null;
+
             // Hover-preview ring on the station under the cursor: a 50% copy of
             // the same two-tone ring, at the stop (a member) or where a click
             // would DROP the new stop on a non-member (spawnStopCellAt — the
@@ -420,16 +431,6 @@ export function HighlightedLineLayer({
             // matrix so it never rings a station a click wouldn't act on, and
             // suppressed on the armed station cursor (which wears the full ring
             // above).
-            // The dashed hover-zone boundary on the station under the pointer:
-            // its true clickable footprint (cells ∪ label rect), shown for
-            // EVERY station, member or not — "you are over this station, here
-            // is its edge". Independent of the ring preview below, which only
-            // promises an actionable click.
-            const hoverZone: ReactNode =
-              appendHover?.kind === 'station' && stations[appendHover.stationId] ? (
-                <StationSilhouette station={stations[appendHover.stationId]} layer="hover-zone" />
-              ) : null;
-
             let hoverRing: ReactNode = null;
             if (
               appendHover?.kind === 'station' &&

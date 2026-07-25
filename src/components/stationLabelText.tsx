@@ -154,7 +154,7 @@ export function renderStationLabelText({
             if (lm.inkWidth <= 0) return null;
             // Underline hugs the visible ink: start at the pen origin walked left
             // by the line's leading bearing (ink-left = penStart − bearingLeft).
-            const x1 = lineStartPenX(textAnchor, anchorX, lm.advanceWidth) - lm.bearingLeft;
+            const x1 = lineStartPenX(textAnchor, anchorX, lm.alignAdvance) - lm.bearingLeft;
             const x2 = x1 + lm.inkWidth;
             const y = firstLineBaselineY + i * lineSpacingPx + UNDERLINE_OFFSET;
             return (
@@ -211,7 +211,7 @@ export function renderStationLabelText({
         // Shared baseline for every run on this line; the measurer placed the
         // cumulative offset, so a bigger inline <size> already spread the lines.
         const baselineY = firstLineBaseline0 + (lm.baselineFromTop - baseline0FromTop);
-        const linePenX = lineStartPenX(textAnchor, anchorX, lm.advanceWidth);
+        const linePenX = lineStartPenX(textAnchor, anchorX, lm.alignAdvance);
         let cursor = linePenX;
         const nodes: ReactNode[] = [];
         lm.segments.forEach((seg, j) => {
