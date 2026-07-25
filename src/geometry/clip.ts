@@ -1,5 +1,16 @@
 /**
- * Thin typed wrapper around clipper-lib isolating the dependency.
+ * Thin typed wrapper isolating the polygon-boolean dependency.
+ *
+ * TWO ENGINES, one API. `clipper-lib` (pure JS) is always available and is what
+ * runs until the WebAssembly build of the same Clipper 6 finishes loading (see
+ * `clipWasm.ts`); after that every call routes to wasm. The JS engine stays as
+ * the synchronous fallback because every consumer here is synchronous and wasm
+ * instantiation is not.
+ *
+ * The two engines are EQUIVALENT, not bit-identical: coordinates can differ by
+ * ~0.01 world units on the same input. Anything pinning exact geometry (the
+ * region arrangement fingerprint) is baselined against whichever engine is
+ * active in that environment.
  *
  * All inputs/outputs are WORLD-space rings (Vec2[]); coordinates are scaled to
  * integers internally (CLIP_SCALE), which is what makes exactly-coincident,
@@ -9,8 +20,19 @@
  */
 import * as ClipperLib from 'clipper-lib';
 import type { Vec2 } from './vec';
+import { CLIP_SCALE } from './clipScale';
+import {
+  wasmClipper,
+  wasmExecute,
+  wasmFaceArea,
+  wasmOffsetClosed,
+  wasmOffsetOpenPath,
+  wasmPointInFace,
+  wasmSplitIntoFaces,
+} from './clipWasm';
 
-export const CLIP_SCALE = 1000;
+export { CLIP_SCALE };
+export { loadWasmClipper } from './clipWasm';
 
 /** Arc flattening tolerance for round joins, in scaled integer units. */
 const ARC_TOLERANCE = 0.01 * CLIP_SCALE;
@@ -27,8 +49,16 @@ const toInt = (ring: Ring): ClipperLib.Path =>
 const fromInt = (path: ClipperLib.Path): Ring =>
   path.map((p) => ({ x: p.X / CLIP_SCALE, y: p.Y / CLIP_SCALE }));
 
+const WASM_KIND = {
+  [ClipperLib.ClipType.ctIntersection]: 'intersection',
+  [ClipperLib.ClipType.ctUnion]: 'union',
+  [ClipperLib.ClipType.ctDifference]: 'difference',
+} as const;
+
 function execute(clipType: ClipperLib.ClipType, subject: Ring[], clip: Ring[]): Ring[] {
   if (!subject.length) return [];
+  if (wasmClipper())
+    return wasmExecute(WASM_KIND[clipType as keyof typeof WASM_KIND], subject, clip);
   const clipper = new ClipperLib.Clipper();
   clipper.AddPaths(subject.map(toInt), ClipperLib.PolyType.ptSubject, true);
   if (clip.length) clipper.AddPaths(clip.map(toInt), ClipperLib.PolyType.ptClip, true);
@@ -62,6 +92,7 @@ export function subtract(a: Ring[], b: Ring[]): Ring[] {
 /** Stroke an open polyline: round joins, butt end caps, half-width delta. */
 export function offsetOpenPath(path: Vec2[], delta: number): Ring[] {
   if (path.length < 2 || delta <= 0) return [];
+  if (wasmClipper()) return wasmOffsetOpenPath(path, delta);
   const offset = new ClipperLib.ClipperOffset(2, ARC_TOLERANCE);
   offset.AddPath(toInt(path), ClipperLib.JoinType.jtRound, ClipperLib.EndType.etOpenButt);
   const solution: ClipperLib.Paths = [];
@@ -86,6 +117,7 @@ export function offsetClosed(
   if (!rings.length) return [];
   const normalized = unionAll(rings);
   if (!normalized.length) return [];
+  if (wasmClipper()) return wasmOffsetClosed(normalized, delta, join);
   const offset = new ClipperLib.ClipperOffset(3, ARC_TOLERANCE);
   offset.AddPaths(
     normalized.map(toInt),
@@ -103,6 +135,7 @@ export function offsetClosed(
  */
 export function splitIntoFaces(rings: Ring[]): Face[] {
   if (!rings.length) return [];
+  if (wasmClipper()) return wasmSplitIntoFaces(rings);
   const clipper = new ClipperLib.Clipper();
   clipper.AddPaths(rings.map(toInt), ClipperLib.PolyType.ptSubject, true);
   const tree = new ClipperLib.PolyTree();
@@ -122,6 +155,7 @@ export function splitIntoFaces(rings: Ring[]): Face[] {
  */
 export function pointInFace(p: Vec2, face: Face): boolean {
   if (!face.length) return false;
+  if (wasmClipper()) return wasmPointInFace(p, face);
   const ip: ClipperLib.IntPoint = {
     X: Math.round(p.x * CLIP_SCALE),
     Y: Math.round(p.y * CLIP_SCALE),
@@ -136,6 +170,7 @@ export function pointInFace(p: Vec2, face: Face): boolean {
 /** Face area in world units²: |outer| − Σ|holes|. */
 export function faceArea(face: Face): number {
   if (!face.length) return 0;
+  if (wasmClipper()) return wasmFaceArea(face);
   const scale2 = CLIP_SCALE * CLIP_SCALE;
   let area = Math.abs(ClipperLib.Clipper.Area(toInt(face[0]))) / scale2;
   for (let i = 1; i < face.length; i++) {

@@ -160,24 +160,70 @@ function markerBodyRings(spec: StopMarkerSpec): Ring[] {
 export function buildLineBodies(
   bands: SegmentBandSpec[],
   markers: StopMarkerSpec[],
+  reuse?: (id: LineId) => Ring[] | undefined,
 ): Map<LineId, Ring[]> {
   const raw = new Map<LineId, Ring[]>();
-  const add = (id: LineId, rings: Ring[]) => {
-    if (!rings.length) return;
+  const reused = new Map<LineId, Ring[]>();
+  const notReusable = new Set<LineId>();
+  // A reusable line short-circuits before its stripe outline is ever offset —
+  // the offsets are the expensive part of this pass, so the ring producer is
+  // deliberately a thunk rather than an argument.
+  const isReused = (id: LineId): boolean => {
+    if (reused.has(id)) return true;
+    if (!reuse || notReusable.has(id)) return false;
+    const cached = reuse(id);
+    if (cached) {
+      reused.set(id, cached);
+      return true;
+    }
+    notReusable.add(id);
+    return false;
+  };
+  const add = (id: LineId, rings: () => Ring[]) => {
+    if (isReused(id)) return;
+    const r = rings();
+    if (!r.length) return;
     const list = raw.get(id);
-    if (list) list.push(...rings);
-    else raw.set(id, [...rings]);
+    if (list) list.push(...r);
+    else raw.set(id, [...r]);
   };
   for (const band of bands) {
-    for (let k = 0; k < band.lines.length; k++) add(band.lines[k].id, stripeBodyPolys(band, k));
+    for (let k = 0; k < band.lines.length; k++) {
+      add(band.lines[k].id, () => stripeBodyPolys(band, k));
+    }
   }
-  for (const m of markers) add(m.lineId, markerBodyRings(m));
-  const out = new Map<LineId, Ring[]>();
+  for (const m of markers) add(m.lineId, () => markerBodyRings(m));
+  const out = new Map<LineId, Ring[]>(reused);
   for (const [id, rings] of raw) {
     const merged = unionAll(rings);
     if (merged.length) out.set(id, merged);
   }
   return out;
+}
+
+/**
+ * Face geometry is independent of where a stripe runs OUTSIDE the overlap zone,
+ * but {@link computeSpans} is not: it measures arc length from each stripe's
+ * start, so a band that moves anywhere along a covering line shifts that face's
+ * span intervals even when the face polygon is untouched. An incremental
+ * rebuild that reuses face geometry must therefore still refresh the spans of
+ * every face covered by a line whose bands changed, or stored region anchors
+ * bind against stale arc positions.
+ *
+ * Returns fresh face objects (geometry shared, spans replaced) for affected
+ * faces; untouched faces are returned by reference.
+ */
+export function refreshFaceSpans(
+  faces: RegionFace[],
+  bands: SegmentBandSpec[],
+  dirtyLines: ReadonlySet<LineId>,
+): RegionFace[] {
+  if (!dirtyLines.size) return faces;
+  return faces.map((f) =>
+    f.lineIds.some((id) => dirtyLines.has(id))
+      ? { ...f, spans: computeSpans(f.face, f.bbox, f.lineIds, bands) }
+      : f,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -240,7 +286,7 @@ function pointAtArcLength(sp: StripePath, d: number): Vec2 {
   };
 }
 
-const boxesOverlap = (
+export const boxesOverlap = (
   a: { x0: number; y0: number; x1: number; y1: number },
   b: { x0: number; y0: number; x1: number; y1: number },
   pad = 0,
@@ -249,7 +295,7 @@ const boxesOverlap = (
 // ---------------------------------------------------------------------------
 // Overlap faces
 
-function ringsBbox(rings: Ring[]): { x0: number; y0: number; x1: number; y1: number } {
+export function ringsBbox(rings: Ring[]): { x0: number; y0: number; x1: number; y1: number } {
   let x0 = Infinity;
   let y0 = Infinity;
   let x1 = -Infinity;
@@ -315,11 +361,28 @@ export function buildOverlapRegions(
   const bodies = buildLineBodies(bands, markers);
   const ids = [...bodies.keys()].sort();
   if (ids.length < 2) return [];
-  const boxes = new Map(ids.map((id) => [id, ringsBbox(bodies.get(id)!)]));
+  const zone = buildOverlapZone(ids, bodies);
+  if (!zone.length) return [];
+  // Component-at-a-time. Cells cannot span components, so this yields the same
+  // faces as one global subdivision while keeping every clipper operand down to
+  // one crossing's worth of geometry — and it is the seam the incremental
+  // builder caches on.
+  const faces: RegionFace[] = [];
+  for (const comp of significantComponents(zone)) {
+    faces.push(
+      ...extractFaces(subdivideCells(restrictBodiesToZone(ids, bodies, comp)), bands, sliverSink),
+    );
+  }
+  return finalizeFaces(faces);
+}
 
-  // Restrict everything to the pairwise-overlap zone: any ≥2-cover point is
-  // in some pairwise intersection, so cells inside the zone subdivide exactly
-  // as they would in the full arrangement, at a fraction of the cost.
+/**
+ * The pairwise-overlap zone: any ≥2-cover point lies in some pairwise body
+ * intersection, so cells inside this zone subdivide exactly as they would in
+ * the full arrangement, at a fraction of the cost.
+ */
+export function buildOverlapZone(ids: LineId[], bodies: Map<LineId, Ring[]>): Ring[] {
+  const boxes = new Map(ids.map((id) => [id, ringsBbox(bodies.get(id)!)]));
   const zoneParts: Ring[] = [];
   for (let i = 0; i < ids.length; i++) {
     for (let j = i + 1; j < ids.length; j++) {
@@ -328,15 +391,39 @@ export function buildOverlapRegions(
     }
   }
   if (!zoneParts.length) return [];
-  const zone = unionAll(zoneParts);
+  return unionAll(zoneParts);
+}
 
-  // Iterative cell splitting: each cell is a maximal area with one cover set.
-  let cells: { cover: LineId[]; rings: Ring[] }[] = [];
+/** Each line's body clipped to the zone, in `ids` order; empties dropped. */
+export function restrictBodiesToZone(
+  ids: LineId[],
+  bodies: Map<LineId, Ring[]>,
+  zone: Ring[],
+): { id: LineId; rings: Ring[] }[] {
+  const out: { id: LineId; rings: Ring[] }[] = [];
+  // Most lines are nowhere near any one component; a bbox reject is far cheaper
+  // than asking clipper for an empty intersection.
+  const zoneBox = ringsBbox(zone);
   for (const id of ids) {
-    const restricted = intersect(bodies.get(id)!, zone);
-    if (!restricted.length) continue;
+    const body = bodies.get(id)!;
+    if (!boxesOverlap(ringsBbox(body), zoneBox)) continue;
+    const rings = intersect(body, zone);
+    if (rings.length) out.push({ id, rings });
+  }
+  return out;
+}
+
+/**
+ * Iterative cell splitting: each cell is a maximal area with one cover set.
+ * Order-dependent — callers must pass `restricted` in a stable (sorted) order.
+ */
+export function subdivideCells(
+  restricted: { id: LineId; rings: Ring[] }[],
+): { cover: LineId[]; rings: Ring[] }[] {
+  let cells: { cover: LineId[]; rings: Ring[] }[] = [];
+  for (const { id, rings } of restricted) {
     const next: typeof cells = [];
-    let remaining = restricted;
+    let remaining = rings;
     for (const cell of cells) {
       const inter = intersect(cell.rings, remaining);
       if (!inter.length) {
@@ -351,7 +438,64 @@ export function buildOverlapRegions(
     if (remaining.length) next.push({ cover: [id], rings: remaining });
     cells = next;
   }
+  return cells;
+}
 
+/**
+ * Connected components of the zone, minus the ones too small to matter.
+ *
+ * Splitting here is what makes an incremental rebuild possible: cells never
+ * span two components (every cell is a subset of the zone, and disjoint
+ * territory cannot interact through intersect/subtract), so each component's
+ * faces can be computed — and cached — independently.
+ *
+ * Sub-`SLIVER_MIN_AREA` components are dropped because they cannot reach either
+ * output: a cell is a subset of its component, so any face or sliver it yields
+ * is at most that area, and both `pushFace`'s erosion and `addSliver`'s area
+ * test already discard those. They are also ~95% of components by count (426 on
+ * the DKLB map, ~20 above the threshold) and they churn constantly, so keeping
+ * them would defeat caching for no output.
+ */
+export function significantComponents(zone: Ring[]): Face[] {
+  const out: Face[] = [];
+  for (const comp of splitIntoFaces(zone)) {
+    if (faceArea(comp) < SLIVER_MIN_AREA) continue;
+    out.push(comp);
+  }
+  return out;
+}
+
+/**
+ * Sort faces back-to-front and stamp render keys. Split out of face extraction
+ * because an incremental build assembles its face list from several components
+ * (some freshly built, some reused) and must key the merged result exactly as a
+ * single-pass build would.
+ */
+export function finalizeFaces(faces: RegionFace[]): RegionFace[] {
+  faces.sort(
+    (a, b) =>
+      a.bbox.y0 - b.bbox.y0 ||
+      a.bbox.x0 - b.bbox.x0 ||
+      (a.lineIds.join(',') < b.lineIds.join(',') ? -1 : 1),
+  );
+  faces.forEach((f, i) => {
+    const cx = Math.round((f.bbox.x0 + f.bbox.x1) / 2);
+    const cy = Math.round((f.bbox.y0 + f.bbox.y1) / 2);
+    f.key = `${f.lineIds.join(',')}@${cx},${cy}#${i}`;
+  });
+  return faces;
+}
+
+/**
+ * Split cells into clickable faces, applying the sliver-opening morphology.
+ * Returns them UNSORTED and UNKEYED — run {@link finalizeFaces} over the
+ * complete set once every component has contributed.
+ */
+export function extractFaces(
+  cells: { cover: LineId[]; rings: Ring[] }[],
+  bands: SegmentBandSpec[],
+  sliverSink?: RegionSliver[],
+): RegionFace[] {
   const out: RegionFace[] = [];
   const pushFace = (face: Face, cover: LineId[]) => {
     const bbox = ringsBbox([face[0]]);
@@ -404,17 +548,6 @@ export function buildOverlapRegions(
       addSliver(remaining, cell.cover); // leftover neck residue between lobes
     }
   }
-  out.sort(
-    (a, b) =>
-      a.bbox.y0 - b.bbox.y0 ||
-      a.bbox.x0 - b.bbox.x0 ||
-      (a.lineIds.join(',') < b.lineIds.join(',') ? -1 : 1),
-  );
-  out.forEach((f, i) => {
-    const cx = Math.round((f.bbox.x0 + f.bbox.x1) / 2);
-    const cy = Math.round((f.bbox.y0 + f.bbox.y1) / 2);
-    f.key = `${f.lineIds.join(',')}@${cx},${cy}#${i}`;
-  });
   return out;
 }
 

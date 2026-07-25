@@ -12,7 +12,8 @@ import {
   type SegmentBandSpec,
   type StopMarkerSpec,
 } from './interlining';
-import { buildOverlapRegions, type RegionFace, type RegionSliver } from './lineRegions';
+import { type RegionFace, type RegionSliver } from './lineRegions';
+import { buildRegionsIncremental, type RegionIncrementalState } from './regionIncremental';
 
 export interface GeometrySlice {
   stations: Record<StationId, Station>;
@@ -62,6 +63,14 @@ const CACHE_LIMIT = 4;
 const cache = new Map<string, RegionGeometry>();
 
 /**
+ * The most recent incremental build, carried across calls so a drag's next
+ * frame can reuse it. Deliberately module-scoped and single-slot: the useful
+ * comparison is always "what did we build immediately before", and holding more
+ * would not help — a drag never revisits a geometry.
+ */
+let lastIncremental: RegionIncrementalState | null = null;
+
+/**
  * Bands + markers + overlap faces for a geometry slice. LRU-cached by sig
  * (small: render + reconcile old/new). Markers are built with an empty
  * lineOrder — their priority field is irrelevant to region geometry.
@@ -77,9 +86,19 @@ export function regionsFor(g: GeometrySlice): RegionGeometry {
   }
   const bands = buildBandGeometry(g.stations, g.lines);
   const markers = buildStopMarkers(g.stations, g.lines, [], bands);
-  const slivers: RegionSliver[] = [];
-  const faces = buildOverlapRegions(bands, markers, slivers);
-  const entry: RegionGeometry = { bands, markers, faces, slivers };
+  // Seeded from whatever we built last. During a drag that is the previous
+  // frame, which is exactly the comparison the incremental builder wants; the
+  // reconcile step's old-then-new pair chains the same way. A mismatched seed
+  // only costs a miss — the result is identical either way (the builder hashes
+  // its own inputs rather than trusting the seed).
+  const built = buildRegionsIncremental(bands, markers, lastIncremental);
+  lastIncremental = built.state;
+  const entry: RegionGeometry = {
+    bands,
+    markers,
+    faces: built.faces,
+    slivers: built.slivers,
+  };
   cache.set(sig, entry);
   if (cache.size > CACHE_LIMIT) {
     const oldest = cache.keys().next().value;
