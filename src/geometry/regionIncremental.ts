@@ -27,14 +27,20 @@
  *     changed (this also skips its stripe offsets, the priciest prefix step);
  *   - per-PAIR zone intersections, skipped while both bodies are clean.
  *
- * And one thing is always redone: `refreshFaceSpans`. Span intervals are arc
- * lengths measured from each stripe's start, so a band that moves far away
- * still shifts them even when the face polygon is untouched.
+ * A face polygon is not the whole of a face. Span intervals are arc lengths
+ * measured from each stripe's START, so a covering line that moves ANYWHERE
+ * shifts them even when the face polygon is untouched — and that shift persists
+ * into later frames which do not touch that line at all. So each cached
+ * component records `spanHash`, the combined per-line hash of its cover at the
+ * moment its spans were measured; a mismatch re-measures, and the result is
+ * written BACK into the cache. Refreshing only the copy handed out would leave
+ * the cache frozen at the last full rebuild, and stored region anchors would
+ * bind against stale arc positions.
  *
- * Correctness is pinned by `lineRegions.fingerprint.test.ts` (bit-exact
- * arrangement hash) and `regionIncremental.test.ts`, which asserts the
- * incremental result equals a full rebuild across drags AND that reuse actually
- * fires — without the latter, a builder that never reuses passes everything.
+ * Correctness is pinned by `regionIncremental.test.ts`, which asserts the
+ * incremental result equals a full rebuild — covers, polygons AND spans —
+ * across a drag, a deletion and a stripe permutation, AND that reuse actually
+ * fires: without the latter, a builder that never reuses passes everything.
  */
 import type { LineId } from '../model/types';
 import type { SegmentBandSpec, StopMarkerSpec } from './interlining';
@@ -60,25 +66,17 @@ type Box = { x0: number; y0: number; x1: number; y1: number };
 interface CachedComponent {
   faces: RegionFace[];
   slivers: RegionSliver[];
+  /** Combined cover-line hash at the moment `faces`' spans were measured. */
+  spanHash: number;
 }
 
 /**
  * One independently-movable piece of body geometry: a band stripe or a stop
- * marker. `box` bounds everything it can paint; `pts` is the quantized
- * centerline for band stripes (absent for markers, whose box is already tight).
- *
- * Keeping `pts` lets a change be localized to the vertices that actually moved.
- * A band spans two stations, so dragging one end shifts only the vertices near
- * that end — invalidating the band's whole bounding box would needlessly dirty
- * every component along its length.
+ * marker, with a content hash and a CONSERVATIVE box of everything it can paint.
  */
 interface GeomUnit {
   hash: number;
   box: Box;
-  /** Quantized centerline, [x0,y0,x1,y1,…]; band stripes only. */
-  pts?: Int32Array;
-  /** How far this unit's paint can reach beyond its centerline. */
-  pad: number;
 }
 
 /** Carried between frames. Opaque to callers; pass the previous one back in. */
@@ -158,47 +156,16 @@ const growBox = (b: Box, pad: number): Box => ({
 });
 
 /**
- * Where a band stripe actually changed, or null when that can't be localized
- * (a marker, or a centerline whose vertex count changed) and the caller must
- * fall back to both full boxes.
- *
- * A band spans two stations, so dragging one end moves only the vertices near
- * it while the rest sit still. Bounding just the moved vertices — plus their
- * immediate neighbours, since the segments joining them also sweep — keeps a
- * long trunk from dirtying every component along its length.
+ * Combined hash of the lines covering `faces`, as of this frame. Two frames
+ * agreeing on this agree that every covering line is geometrically unchanged,
+ * which is exactly the condition under which arc-length spans stay valid.
  */
-function changedRegion(old: GeomUnit, next: GeomUnit): Box | null {
-  const a = old.pts;
-  const b = next.pts;
-  if (!a || !b || a.length !== b.length) return null;
-
-  let x0 = Infinity;
-  let y0 = Infinity;
-  let x1 = -Infinity;
-  let y1 = -Infinity;
-  let any = false;
-  const n = a.length / 2;
-  const take = (arr: Int32Array, i: number) => {
-    const x = arr[i * 2] / 1000;
-    const y = arr[i * 2 + 1] / 1000;
-    x0 = Math.min(x0, x);
-    y0 = Math.min(y0, y);
-    x1 = Math.max(x1, x);
-    y1 = Math.max(y1, y);
-  };
-  for (let i = 0; i < n; i++) {
-    if (a[i * 2] === b[i * 2] && a[i * 2 + 1] === b[i * 2 + 1]) continue;
-    any = true;
-    // The moved vertex in both positions, and its neighbours: the segments
-    // incident to it sweep across the area between old and new.
-    for (const j of [i - 1, i, i + 1]) {
-      if (j < 0 || j >= n) continue;
-      take(a, j);
-      take(b, j);
-    }
-  }
-  if (!any) return null;
-  return growBox({ x0, y0, x1, y1 }, Math.max(old.pad, next.pad));
+function coverHash(faces: RegionFace[], lineHash: Map<LineId, number>): number {
+  const ids = new Set<LineId>();
+  for (const f of faces) for (const id of f.lineIds) ids.add(id);
+  let h = mix(FNV_OFFSET, ids.size);
+  for (const id of [...ids].sort()) h = mix(h, lineHash.get(id) ?? 0);
+  return h;
 }
 
 /**
@@ -225,13 +192,10 @@ function hashUnits(
     let cx1 = -Infinity;
     let cy1 = -Infinity;
     let ch = mix(FNV_OFFSET, band.centerline.length);
-    const pts = new Int32Array(band.centerline.length * 2);
     for (let i = 0; i < band.centerline.length; i++) {
       const p = band.centerline[i];
       const qx = Math.round(p.x * 1000);
       const qy = Math.round(p.y * 1000);
-      pts[i * 2] = qx;
-      pts[i * 2 + 1] = qy;
       ch = mix(ch, qx);
       ch = mix(ch, qy);
       cx0 = Math.min(cx0, p.x);
@@ -244,6 +208,11 @@ function hashUnits(
       let h = mixNum(ch, band.radius);
       h = mixNum(h, band.stripeOffsets[k]);
       h = mixNum(h, band.stripeWidths[k]);
+      // WHICH line owns this slot is part of the unit, not just bookkeeping:
+      // `bandKey` is built from SORTED ids, so two lines swapping stripe slots
+      // leaves every key and every geometric field identical while inverting
+      // the cover of every face the band crosses.
+      h = mixString(h, band.lines[k].id);
       // The offset path stays within the centerline's box grown by the stripe
       // offset (corner fillets cut INWARD, so the radius adds nothing), and the
       // stroke adds half a width. +1 of slack covers flattening chord error.
@@ -251,8 +220,6 @@ function hashUnits(
       units.set(key, {
         hash: h,
         box: growBox({ x0: cx0, y0: cy0, x1: cx1, y1: cy1 }, pad),
-        pts,
-        pad,
       });
       lineOf.set(key, band.lines[k].id);
     }
@@ -270,7 +237,6 @@ function hashUnits(
     units.set(key, {
       hash: h,
       box: { x0: m.cx - pad, y0: m.cy - pad, x1: m.cx + pad, y1: m.cy + pad },
-      pad,
     });
     lineOf.set(key, m.lineId);
   }
@@ -346,6 +312,12 @@ export function buildRegionsIncremental(
   // What moved, and where. A unit that appeared, vanished, or changed hash
   // contributes BOTH its old and new box — geometry that left a place matters
   // as much as geometry that arrived.
+  //
+  // The WHOLE box, deliberately. Narrowing to the vertices that moved looks
+  // safe and is not: `computeArcRadii` (router.ts) shrinks each corner's
+  // tangent budget in a single forward pass that writes `tans[i + 1]` in place,
+  // so one vertex move can cascade fillet radii along the entire polyline. A
+  // band is one station pair, so its box is one segment's worth anyway.
   const dirtyLines = new Set<LineId>();
   const dirtyBoxes: Box[] = [];
   for (const [key, u] of units) {
@@ -353,12 +325,8 @@ export function buildRegionsIncremental(
     if (old && old.hash === u.hash) continue;
     const line = lineOf.get(key);
     if (line) dirtyLines.add(line);
-    const local = old && changedRegion(old, u);
-    if (local) dirtyBoxes.push(local);
-    else {
-      dirtyBoxes.push(u.box);
-      if (old) dirtyBoxes.push(old.box); // where it used to be counts too
-    }
+    dirtyBoxes.push(u.box);
+    if (old) dirtyBoxes.push(old.box); // where it used to be counts too
   }
   // A unit that vanished leaves its old footprint dirty. Its owning line is
   // caught by the per-line hash comparison below.
@@ -408,7 +376,6 @@ export function buildRegionsIncremental(
   const nextComps = new Map<number, CachedComponent>();
   const faces: RegionFace[] = [];
   const slivers: RegionSliver[] = [];
-  const reusedFaces: RegionFace[] = [];
   let rebuilt = 0;
 
   for (const comp of comps) {
@@ -418,13 +385,27 @@ export function buildRegionsIncremental(
     const untouched = !dirtyBoxes.some((d) => boxesOverlap(d, box));
 
     if (cached && untouched) {
+      // The polygons are right, but the spans may not be: they are arc lengths
+      // from each stripe's start, so a covering line that moved anywhere since
+      // this component was last measured shifts them. Compare against the cover
+      // hash recorded WITH the spans, not against this frame's dirty set — the
+      // line may have moved several frames ago and be clean now.
+      let entry = cached;
+      const spanHash = coverHash(cached.faces, lineHash);
+      if (spanHash !== cached.spanHash) {
+        const covers = new Set<LineId>();
+        for (const f of cached.faces) for (const id of f.lineIds) covers.add(id);
+        entry = {
+          faces: refreshFaceSpans(cached.faces, bands, covers),
+          slivers: cached.slivers,
+          spanHash,
+        };
+      }
+      nextComps.set(hash, entry);
       // Clone before handing out: `finalizeFaces` stamps `key` in place, and
       // these objects are still owned by the cache.
-      const copies = cached.faces.map((f) => ({ ...f }));
-      nextComps.set(hash, cached);
-      faces.push(...copies);
-      reusedFaces.push(...copies);
-      slivers.push(...cached.slivers);
+      faces.push(...entry.faces.map((f) => ({ ...f })));
+      slivers.push(...entry.slivers);
       continue;
     }
 
@@ -435,20 +416,13 @@ export function buildRegionsIncremental(
       bands,
       compSlivers,
     );
-    nextComps.set(hash, { faces: built, slivers: compSlivers });
+    nextComps.set(hash, {
+      faces: built,
+      slivers: compSlivers,
+      spanHash: coverHash(built, lineHash),
+    });
     faces.push(...built);
     slivers.push(...compSlivers);
-  }
-
-  // Reused polygons are correct, but their span arc-lengths may not be: spans
-  // are measured from each stripe's start, so a covering line that moved
-  // ANYWHERE shifts them. Cheap relative to a rebuild, and skipping it would
-  // bind stored anchors at stale arc positions.
-  if (dirtyLines.size) {
-    const refreshed = refreshFaceSpans(reusedFaces, bands, dirtyLines);
-    for (let i = 0; i < reusedFaces.length; i++) {
-      if (refreshed[i] !== reusedFaces[i]) reusedFaces[i].spans = refreshed[i].spans;
-    }
   }
 
   return {

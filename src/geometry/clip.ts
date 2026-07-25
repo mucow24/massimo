@@ -8,9 +8,10 @@
  * instantiation is not.
  *
  * The two engines are EQUIVALENT, not bit-identical: coordinates can differ by
- * ~0.01 world units on the same input. Anything pinning exact geometry (the
- * region arrangement fingerprint) is baselined against whichever engine is
- * active in that environment.
+ * ~0.01 world units on the same input. So any test that pins exact geometry
+ * pins whichever engine is active in that environment — which is why
+ * `src/test/setup.ts` loads wasm, the one the app ships on. Nothing here
+ * currently compares the two engines against each other.
  *
  * All inputs/outputs are WORLD-space rings (Vec2[]); coordinates are scaled to
  * integers internally (CLIP_SCALE), which is what makes exactly-coincident,
