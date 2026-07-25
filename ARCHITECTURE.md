@@ -408,7 +408,8 @@ absent), `align: LabelAlign` (`auto|start|middle|end`), `valign: LabelValign`
 (`auto-down|top|middle|bottom|auto-up`). `auto-down`/`auto-up` pin the block's top/bottom as a
 multi-line label grows; identical to `middle` for single-line. `autoAlign?: boolean` (omitted
 when off) overrides align **and** valign with transitmap.net typography derived from the label's
-octant relative to the nearest stop (see `labelLayoutLocal`); `offset`/`offsetPerp` still apply.
+octant relative to the nearest stop, re-anchored along the reading axis at a cross (see
+`labelLayoutLocal`); `offset`/`offsetPerp` still apply.
 `autoHAlign?: 'start'|'middle'|'end'` / `autoVAlign?: 'up'|'down'` (omitted = derived) tune
 autoAlign's multi-line handling: within-block line alignment, and which line anchors.
 
@@ -1400,6 +1401,15 @@ which are a separate slot-based system where Shift flips the lattice basis.
   stays put, which makes both overrides no-ops for single-line labels.
   The pin clears the marker's support-function extent along the approach (a `half`-extent
   square rotated to the stop's travel axis), stop-relative on both axes.
+  **Cross stations** are the one exception to "the octant decides everything": when the label
+  parks squarely across the line from its stop (the centering octants) and a **crossing** line's
+  stop is packed beside it — same reading-frame row within `BAND_MERGE_TOL`, different travel
+  axis, on one side only (`crossingStop`) — the READING axis re-anchors against that crossing
+  stop, so the text butts up to its stripe (`end`/`start`) instead of straddling it. Each axis
+  stays measured against the stop that actually blocks it: the perpendicular pin still comes
+  from the label's own stop, so the baseline holds its `LABEL_GAP` off the line it labels (a row
+  of labels stays level) no matter how wide the crossing line gets. Parallel neighbours are not
+  crossings, and a label boxed in on both sides keeps centering.
 
 ### Polygons — `polygon.ts`, `polygonUnion.ts`, `rectPolygon.ts`, `polygonSnap.ts`
 
