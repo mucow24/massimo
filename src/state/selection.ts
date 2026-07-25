@@ -121,6 +121,14 @@ const SIBLING_PRIMARY_CLEAR = {
   selectedLineId: null as LineId | null,
   selectedLineTagId: null as string | null,
   selectedTransferId: null as string | null,
+  // A vertex set belongs to ONE polygon's edit session, and its handles only
+  // render for a polygon that is itself selected — so any selection change
+  // that doesn't keep that polygon alone leaves an INVISIBLE armed vertex.
+  // Delete and the arrow keys both give it top priority, so a marquee or a
+  // shift-click would silently amputate or nudge a vertex of a polygon the
+  // user can no longer see selected. (The toggle-REMOVE branch clears it via
+  // the polygon kind's own `extraToggleClear`.)
+  selectedVertices: null as { polygonId: string; indices: number[] } | null,
   mirrorMatching: false,
 };
 

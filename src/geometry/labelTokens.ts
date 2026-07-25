@@ -106,6 +106,24 @@ export function inlineBulletDiameter(fontSize: number): number {
  * else is just a backslash.
  */
 const CODE = '[^|<>[\\]{}\\n]+';
+
+const CODE_ONLY = new RegExp(`^${CODE}$`);
+
+/**
+ * Would `s` parse as a bullet CODE — the text between a token's delimiters?
+ * The grammar above is the single owner of that answer, so callers that build
+ * or match tokens gate on this rather than re-deriving the character class.
+ *
+ * The load-bearing case is the EMPTY string, which is not a code (`CODE` is
+ * one-or-more): `updateLine`'s service-code rename builds its search patterns
+ * as `|${service}|` etc., so an empty service degenerates them to the bare
+ * delimiter pairs `||`, `[]`, `{}` — which match literal text, and match both
+ * halves of an UNFILLED bullet belonging to another line.
+ */
+export function isBulletCode(s: string): boolean {
+  return CODE_ONLY.test(s);
+}
+
 // Doubled (unfilled) alternatives listed before their single (filled) forms so
 // they win at the same start position. Group names: shape initial + u/f.
 const BULLET_ALTS =

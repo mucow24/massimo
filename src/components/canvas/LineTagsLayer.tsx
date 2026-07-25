@@ -28,11 +28,16 @@ const CHEVRON_DEPTH = 6; // how far the V point juts forward
 const CHEVRON_THICK = 4; // band thickness measured along the line
 // Bleed the arms a hair past the line edge so the chevron overlaps the stripe
 // instead of abutting it — two coincident antialiased edges otherwise leak a
-// hairline of the line color through the seam. Expressed in *screen* pixels and
-// divided by zoom at render time so the overlap stays a constant sub-pixel
-// sliver at every zoom: big enough to cover the seam, too small to visibly
-// spill onto a touching interlined neighbor.
-const CHEVRON_EDGE_BLEED_PX = 0.33;
+// hairline of the line color through the seam.
+//
+// WORLD units, deliberately. This used to be screen pixels over `zoom`, which
+// made the chevron's world geometry depend on the live camera: an export taken
+// zoomed out baked an oversized bleed into the file (arms visibly overhanging
+// the stripe), and even on screen the drawn glyph disagreed with its own
+// zoom-independent hit box. 0.33 is the value the old formula produced at
+// zoom 1, so the default view is unchanged — ~2% of a default stripe width,
+// still far too small to spill onto a touching interlined neighbor.
+const CHEVRON_EDGE_BLEED = 0.33;
 // Front face left x, chosen so the band's bounding box is centered on x=0.
 const CHEVRON_FRONT_X = (CHEVRON_THICK - CHEVRON_DEPTH) / 2;
 // Along-line half-extent of the chevron's hit/selection box. The cross-line
@@ -40,7 +45,7 @@ const CHEVRON_FRONT_X = (CHEVRON_THICK - CHEVRON_DEPTH) / 2;
 const CHEVRON_BOX_HALF_W = (CHEVRON_DEPTH + CHEVRON_THICK) / 2;
 // Closed polygon: front V (top→tip→bottom) then back V (bottom→tip→top); the
 // connecting top/bottom edges are the flat segments along the line edges.
-// `armH` is the half-height including the zoom-aware bleed.
+// `armH` is the half-height including the edge bleed.
 function chevronPoints(armH: number): string {
   return [
     [CHEVRON_FRONT_X, -armH],
@@ -205,7 +210,6 @@ export function LineTagsLayer({ bands, zoom, svgRef, screenToWorld }: Props) {
               r={r}
               widths={widths}
               layer="wash"
-              zoom={zoom}
               onPointerDown={(e) => onTagPointerDown(e, r.tag.id)}
               onClick={(e) => onTagClick(e, r.tag.id)}
               onContextMenu={(e) => onTagContextMenu(e, r.tag.id)}
@@ -220,7 +224,6 @@ export function LineTagsLayer({ bands, zoom, svgRef, screenToWorld }: Props) {
           r={r}
           widths={widths}
           layer="text"
-          zoom={zoom}
           onPointerDown={(e) => onTagPointerDown(e, r.tag.id)}
           onClick={(e) => onTagClick(e, r.tag.id)}
           onContextMenu={(e) => onTagContextMenu(e, r.tag.id)}
@@ -237,7 +240,6 @@ export function LineTagsLayer({ bands, zoom, svgRef, screenToWorld }: Props) {
             r={hoverTag}
             widths={widths}
             layer="wash"
-            zoom={zoom}
             onPointerDown={(e) => onTagPointerDown(e, hoverTag.tag.id)}
             onClick={(e) => onTagClick(e, hoverTag.tag.id)}
             onContextMenu={(e) => onTagContextMenu(e, hoverTag.tag.id)}
@@ -246,7 +248,6 @@ export function LineTagsLayer({ bands, zoom, svgRef, screenToWorld }: Props) {
             r={hoverTag}
             widths={widths}
             layer="stroke"
-            zoom={zoom}
             onPointerDown={(e) => onTagPointerDown(e, hoverTag.tag.id)}
             onClick={(e) => onTagClick(e, hoverTag.tag.id)}
             onContextMenu={(e) => onTagContextMenu(e, hoverTag.tag.id)}
@@ -264,7 +265,6 @@ export function LineTagsLayer({ bands, zoom, svgRef, screenToWorld }: Props) {
               r={r}
               widths={widths}
               layer="stroke"
-              zoom={zoom}
               onPointerDown={(e) => onTagPointerDown(e, r.tag.id)}
               onClick={(e) => onTagClick(e, r.tag.id)}
               onContextMenu={(e) => onTagContextMenu(e, r.tag.id)}
@@ -294,7 +294,6 @@ interface TagShapeProps {
   r: ResolvedTag;
   widths: Map<string, number>;
   layer: 'wash' | 'text' | 'stroke';
-  zoom: number;
   onPointerDown: (e: React.PointerEvent) => void;
   onClick: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
@@ -308,7 +307,6 @@ function TagShape({
   r,
   widths,
   layer,
-  zoom,
   onPointerDown,
   onClick,
   onContextMenu,
@@ -348,7 +346,7 @@ function TagShape({
         />
         {isChevron ? (
           <polygon
-            points={chevronPoints(r.stripeWidth / 2 + CHEVRON_EDGE_BLEED_PX / zoom)}
+            points={chevronPoints(r.stripeWidth / 2 + CHEVRON_EDGE_BLEED)}
             fill={legibleTextOn(r.color)}
             pointerEvents="none"
           />

@@ -21,8 +21,10 @@ import { polygonSnapAnchor } from '../../geometry/polygon';
 import type { Vec2 } from '../../geometry/vec';
 import type { LineId } from '../../model/types';
 import { textLabelCorners } from '../../geometry/stationBoundary';
-import { starterPolygonVertices, TEXT_LABEL_DEFAULTS } from '../../model/transforms';
-import { liveAlignTargets } from './snapTargets';
+import { starterPolygonVertices } from '../../model/transforms';
+import { defaultStyleProps } from '../../model/styles';
+import { makePreviewTextLabel } from './LabelPlacingPreview';
+import { liveAlignTargets, liveSnapStations } from './snapTargets';
 import type { ViewportApi } from './useViewport';
 
 export interface PlacementSnap {
@@ -61,7 +63,9 @@ export function snapPlacement(
       proposedY: world.y,
       draggedRotation: 0,
       draggedStops: [],
-      stations: doc.stations,
+      // Same visibility gate as the point-snapper pool: placing a bullet while
+      // the network is hidden must not align to invisible stops.
+      stations: liveSnapStations(doc.stations),
       lines: doc.lines,
       tolerance,
       bulletLineId,
@@ -96,8 +100,13 @@ export function snapPlacement(
       return lineId ? viaEngine(lineId) : viaPoint({ x: 0, y: 0 });
     }
     case 'placing-label': {
+      // Measure the label the DROP will actually create — the doc's designated
+      // default label style included — not a factory-sized phantom. Sharing
+      // makePreviewTextLabel with the ghost keeps preview, snap and drop on ONE
+      // box; measuring the factory box instead offsets the snap by half the
+      // size delta the moment the Default style is redefined.
       const anchor = polygonSnapAnchor(
-        textLabelCorners({ id: 'preview', x: world.x, y: world.y, ...TEXT_LABEL_DEFAULTS }),
+        textLabelCorners(makePreviewTextLabel(world, defaultStyleProps(doc, 'textLabel'))),
       );
       return viaPoint({ x: anchor.x - world.x, y: anchor.y - world.y });
     }

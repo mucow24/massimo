@@ -268,12 +268,20 @@ export function Toolbar() {
   const captureExportSnapshot = (svg: SVGSVGElement): SVGSVGElement => {
     const prevLineId = useSelection.getState().selectedLineId;
     const prevShowNetwork = useViewportStore.getState().showNetwork;
+    // Layering mode fades labels, bullets and line tags to 25% to focus the
+    // bands. That fade is an `opacity` on content groups, not chrome carrying
+    // data-export-exclude, so it CLONES — every export and every library
+    // thumbnail taken while the mode is up comes out quarter-strength. Drop it
+    // for the capture like the selected-line dim.
+    const prevUiMode = useSelection.getState().uiMode;
+    const wasLayering = prevUiMode.kind === 'layering';
     flushSync(() => {
       // The gentle null-clear: drops the id (and thus the dim) without
       // touching uiMode, so an in-progress Edit Stops session survives the
       // capture. The restore is a bare setState for the same reason — the
       // selectLine ACTION would kick the mode back to idle.
       if (prevLineId) useSelection.getState().selectLine(null);
+      if (wasLayering) useSelection.setState({ uiMode: { kind: 'idle' } });
       if (!prevShowNetwork) useViewportStore.getState().setShowNetwork(true);
     });
     try {
@@ -281,6 +289,9 @@ export function Toolbar() {
     } finally {
       flushSync(() => {
         if (prevLineId) useSelection.setState({ selectedLineId: prevLineId });
+        // Bare setState again: setUiMode would wipe the selection on the way
+        // back in, so the user's layering session must be restored, not re-entered.
+        if (wasLayering) useSelection.setState({ uiMode: prevUiMode });
         if (!prevShowNetwork) useViewportStore.getState().setShowNetwork(false);
       });
     }

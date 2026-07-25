@@ -242,12 +242,6 @@ export async function exportCanvasPdf(
     // <filter>, so their casing/shadow would otherwise vanish.
     bakeImageDropShadows(el);
 
-    // svg2pdf ignores letter-spacing; re-express tracked label text as
-    // textLength (→ PDF charSpace). Needs the attached clone for
-    // getComputedTextLength, and must run BEFORE glyph outlining so char
-    // positions are read from the final spacing.
-    bakeLetterSpacing(el);
-
     // svg2pdf ignores dominant-baseline and renders every run on the alphabetic
     // baseline; re-baseline text with a measured y-shift so it lands where the
     // browser drew it (also needs the attached clone for getBBox).
@@ -256,10 +250,21 @@ export async function exportCanvasPdf(
     // Outline characters Helvetica Neue can't render (and jsPDF can't encode,
     // e.g. astral symbols) into vector paths from the fallback font, so they
     // appear without rasterizing. Runs AFTER normalization so getStartPositionOfChar
-    // gives the alphabetic baseline the outline placement expects.
+    // gives the alphabetic baseline the outline placement expects — and BEFORE
+    // the tracking bake below, so the char positions it reads still have the
+    // real `letter-spacing` applied.
     if (needsGlyphOutlining(el)) {
       outlineUnsupportedText(el, await loadGlyphFonts());
     }
+
+    // svg2pdf ignores letter-spacing; re-express tracked label text as
+    // textLength (→ PDF charSpace). Needs the attached clone for
+    // getComputedTextLength. Runs AFTER glyph outlining because that step
+    // SPLITS a mixed <text> (an <xfer>/<air> glyph beside ordinary letters)
+    // into an outlined path plus a fresh covered run — baking first would
+    // consume the tracking on the original node and leave the split run
+    // untracked, silently collapsing the spacing of that label in the PDF.
+    bakeLetterSpacing(el);
 
     // svg2pdf drops the alpha of an 8-digit hex color, so split every #rrggbbaa
     // fill/stroke into a 6-digit color + fill-opacity/stroke-opacity (which it

@@ -207,7 +207,7 @@ export function labelLayoutLocal(
     // Lines align by pen advance (see textMeasure), with the jsdom/stub
     // fallbacks the rest of the file uses.
     const lineAdvances = nameLines.map(
-      (_, i) => measured.lines[i]?.advanceWidth ?? measured.lineWidths[i] ?? measured.width,
+      (_, i) => measured.lines[i]?.alignAdvance ?? measured.lineWidths[i] ?? measured.width,
     );
     const info = autoAlignInfo(
       stops,
