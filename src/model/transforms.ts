@@ -1580,22 +1580,21 @@ function edgesAfterRemoveStation(edges: string[], stationId: StationId): string[
   return nbrs.length === 2 ? addEdge(e, nbrs[0], nbrs[1]) : e;
 }
 
-// Spawn a stop cell for `lineId` on station `st` when it doesn't have one,
-// placed one tangent gap east of the rightmost existing stop (exactly one
-// column at default widths; (0,0) when empty), and nudge an auto-placed label
-// out from under it. Spawning at tangency — not a flat column step — is what
-// makes a new stop on a non-default-width line land packed against its
-// neighbor, matching the width-aware ghost lattice the layout editor offers.
-// Anchoring on a real stop — not the bounding box — keeps the new cell
-// adjacent so the layout never gains an orphan. Returns the originals
-// unchanged when a stop already exists. Shared by the linear-append and
-// lone-member add paths so the two never drift.
-function spawnStopCell(
+// The lattice cell a fresh stop for `lineId` would occupy on station `st`: one
+// tangent gap east of the rightmost existing stop (exactly one column at
+// default widths), or the origin (0,0) when the station has no stops yet.
+// Spawning at tangency — not a flat column step — is what makes a new stop on a
+// non-default-width line land packed against its neighbor, matching the
+// width-aware ghost lattice the layout editor offers; anchoring on a real stop
+// (not the bounding box) keeps the new cell adjacent so the layout never gains
+// an orphan. Pure and side-effect-free, so the Edit Stops hover preview can
+// call it to ring exactly where a connect/splice would drop the stop — the
+// promised spot can't drift from the committed one (spawnStopCell below).
+export function spawnStopCellAt(
   st: Station,
   lineId: LineId,
   lines: Record<LineId, Line>,
-): { stops: StopCell[]; label: LabelCell } {
-  if (st.stops.some((c) => c.lineId === lineId)) return { stops: st.stops, label: st.label };
+): StopCell {
   const anchor =
     st.stops.length === 0
       ? null
@@ -1611,7 +1610,21 @@ function spawnStopCell(
       ) /
         STOP_SIZE
     : 0;
-  const newCell: StopCell = { lineId, row: newRow, col: newCol, orientation: 'auto-vertical' };
+  return { lineId, row: newRow, col: newCol, orientation: 'auto-vertical' };
+}
+
+// Spawn a stop cell for `lineId` on station `st` when it doesn't have one
+// (placed by spawnStopCellAt), and nudge an auto-placed label out from under
+// it. Returns the originals unchanged when a stop already exists. Shared by the
+// linear-append and lone-member add paths so the two never drift.
+function spawnStopCell(
+  st: Station,
+  lineId: LineId,
+  lines: Record<LineId, Line>,
+): { stops: StopCell[]; label: LabelCell } {
+  if (st.stops.some((c) => c.lineId === lineId)) return { stops: st.stops, label: st.label };
+  const newCell = spawnStopCellAt(st, lineId, lines);
+  const { row: newRow, col: newCol } = newCell;
   const stops = [...st.stops, newCell];
   let label = st.label;
   // Only nudge auto labels (legacy 'auto' align or autoAlign) — manual

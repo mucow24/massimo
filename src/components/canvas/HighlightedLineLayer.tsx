@@ -3,7 +3,7 @@ import type { Line, LineId, SeamEdges, Station, StationId } from '../../model/ty
 import type { UiMode } from '../../state/selection';
 import { stopPosWorld, type OrderedRenderable } from '../../geometry/interlining';
 import { pairKeyOf } from '../../model/pairKey';
-import { resolveDotStyle, stationIsSingleton } from '../../model/transforms';
+import { resolveDotStyle, spawnStopCellAt, stationIsSingleton } from '../../model/transforms';
 import { STOP_SIZE } from '../../geometry/orientation';
 import { SegmentBand } from '../SegmentBand';
 import { dotSizeOverride } from '../../model/dotSize';
@@ -412,11 +412,14 @@ export function HighlightedLineLayer({
             }
 
             // Hover-preview ring on the station under the cursor: a 50% copy of
-            // the same two-tone ring, at the stop (a member) or the anchor (a
-            // not-yet-added station a click would seed/connect/splice). Gated by
-            // the click matrix so it never rings a station a click wouldn't act
-            // on, and suppressed on the armed station cursor (which wears the
-            // full ring above).
+            // the same two-tone ring, at the stop (a member) or where a click
+            // would DROP the new stop on a non-member (spawnStopCellAt — the
+            // exact cell seed/connect/splice will add). Ringing the station
+            // anchor instead promised the wrong spot on an interchange, whose
+            // anchor sits over an unrelated existing stop. Gated by the click
+            // matrix so it never rings a station a click wouldn't act on, and
+            // suppressed on the armed station cursor (which wears the full ring
+            // above).
             // The dashed hover-zone boundary on the station under the pointer:
             // its true clickable footprint (cells ∪ label rect), shown for
             // EVERY station, member or not — "you are over this station, here
@@ -434,8 +437,10 @@ export function HighlightedLineLayer({
             ) {
               const st = stations[appendHover.stationId];
               if (st) {
-                const cell = st.stops.find((c) => c.lineId === highlightLineId);
-                const p = cell ? stopPosWorld(cell, st) : { x: st.x, y: st.y };
+                const cell =
+                  st.stops.find((c) => c.lineId === highlightLineId) ??
+                  spawnStopCellAt(st, highlightLineId, lines);
+                const p = stopPosWorld(cell, st);
                 hoverRing = twoToneRing(p.x, p.y, {
                   dataAttr: 'data-append-hover-ring',
                   id: appendHover.stationId,
