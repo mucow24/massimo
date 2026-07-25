@@ -1,6 +1,15 @@
 import '@testing-library/jest-dom/vitest';
-import { afterEach } from 'vitest';
+import { afterEach, beforeAll } from 'vitest';
 import { cleanup } from '@testing-library/react';
+import { loadClipper } from '../geometry/clip';
+
+// Every polygon boolean goes through the one clipper engine (see clip.ts), and
+// it loads asynchronously, so nothing geometric can run until this resolves.
+// It REJECTS rather than degrading if the engine is missing — which fails the
+// suite loudly instead of quietly testing something that cannot ship.
+beforeAll(async () => {
+  await loadClipper();
+}, 30000);
 
 // jsdom doesn't ship ResizeObserver. The canvas hook needs a (no-op) one.
 class NoopResizeObserver {
