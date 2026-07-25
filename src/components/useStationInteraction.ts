@@ -230,6 +230,22 @@ export function useStationInteraction(
     selection.setEditingStationId(station.id);
   };
 
+  // Edit Stops' own double-click: hop from "where does this line stop" to
+  // "how does this station lay its stops out", for a station already ON the
+  // line. Not the rename editor (that stays the idle-mode gesture) — renaming
+  // mid-mode would null selectedLineId while appending-to-line stayed armed.
+  //
+  // The two clicks underneath still run the append gesture, so a pen armed
+  // elsewhere CONNECTS to this station before the hop lands. That's the click
+  // matrix doing exactly what a single click there means, and it stays undoable
+  // (Ctrl+Z) — the alternative, a gesture that silently no-ops depending on
+  // invisible cursor state, is worse.
+  const onAppendDoubleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    selection.startEditingStationLayout(station.id);
+  };
+
   const inTagMode = selection.uiMode.kind === 'creating-line-tag';
   const inLayerMode = selection.uiMode.kind === 'layering';
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
@@ -290,6 +306,9 @@ export function useStationInteraction(
     !!appendLine &&
     hasStripeBeneath &&
     decideStationClick(appendLine, appendMode.cursor, station.id).kind === 'none';
+  // A station already ON the edited line — the only kind with a stop of this
+  // line to lay out, so the only one the mode's double-click hands off to.
+  const appendMember = !!appendLine && appendLine.stations.includes(station.id);
   const modeInert = inTagMode || inLayerMode;
   const hitless = modeInert || lockedClickThrough || appendForeignInert;
   const onTransferPointerMove = (e: React.PointerEvent) => {
@@ -337,6 +356,13 @@ export function useStationInteraction(
     const h = useSelection.getState().appendHover;
     if (h?.kind === 'station' && h.stationId === station.id) selection.setAppendHover(null);
   };
+  // In Edit Stops a member hops to the layout editor and a foreign station has
+  // no double-click at all; everywhere else it opens the rename editor.
+  const dblClickForMode = inAppend
+    ? appendMember
+      ? onAppendDoubleClick
+      : undefined
+    : onDoubleClick;
   const handlers = {
     // Edit Stops is line construction, not station placement: drag and
     // right-click rotate are unwired there. A few pixels of wobble during a
@@ -346,11 +372,12 @@ export function useStationInteraction(
     // where it exits the mode; to move or rotate a station, exit first.
     onPointerDown: modeInert || inAppend ? undefined : onPointerDown,
     onClick: modeInert || inHandMode ? undefined : onClick,
-    // Inert in Edit Stops too: the dblclick's selectStation spreads
-    // clearedSelections(), which would null selectedLineId while the mode
-    // stays armed — highlight and dim wash gone, invisible line still
-    // routing station clicks to connect/splice.
-    onDoubleClick: modeInert || inHandMode || inAppend ? undefined : onDoubleClick,
+    // Two different double-clicks: rename when idle, the layout-editor hop in
+    // Edit Stops (members only — see onAppendDoubleClick). The rename one must
+    // NOT run in the mode: its selectStation spreads clearedSelections(), which
+    // would null selectedLineId while the mode stays armed — highlight and dim
+    // wash gone, invisible line still routing station clicks to connect/splice.
+    onDoubleClick: modeInert || inHandMode ? undefined : dblClickForMode,
     onContextMenu: modeInert || inAppend ? undefined : onContextMenu,
     onPointerEnter: inIdle ? onHoverEnter : inAppend ? onAppendHoverEnter : undefined,
     onPointerMove: inTransferPick ? onTransferPointerMove : undefined,

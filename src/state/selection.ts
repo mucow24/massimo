@@ -626,6 +626,10 @@ export const useSelection = create<SelectionState>()(
           mirrorMatching: get().mirrorMatching,
           activeTab: 'stations',
           lineTagHoverPreview: null,
+          // Edit Stops double-click hops straight in here with the pointer
+          // still over the station, so no pointerleave will clear its hover
+          // target — this transition drops it like setUiMode would.
+          appendHover: null,
         }),
       // THE way into the line editor — there is no "selected but not editing"
       // state: picking a line (sidebar row, badge, or canvas stripe) goes
