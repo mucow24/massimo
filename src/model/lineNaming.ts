@@ -23,6 +23,18 @@ export const nameForIndex = (n: number): string => {
   return '?'; // overflow; unlikely for v1
 };
 
+/**
+ * How a line is named TO THE USER, wherever one is identified in prose: its
+ * own `name`, falling back to `"<service> line"` for an unnamed line, and to
+ * `'Unknown line'` when the line is gone (a stop can outlive the line it
+ * belonged to mid-edit). One helper because these strings sit side by side —
+ * the sidebar's line row, the inspector's stop badge, the layout editor's stop
+ * tooltip — and a user hovering the same stop on two surfaces must not be told
+ * two different names.
+ */
+export const lineDisplayName = (line: Pick<Line, 'name' | 'service'> | null | undefined): string =>
+  line ? line.name || `${line.service} line` : 'Unknown line';
+
 // First auto-name not already used by an existing line's `service` code.
 export const pickNextLineName = (lines: Record<LineId, Line>): string => {
   const taken = new Set(Object.values(lines).map((l) => l.service));
