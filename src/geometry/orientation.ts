@@ -80,7 +80,7 @@ export const labelAdjacencyGate = (half: number, gap: number): number =>
  * pair sits at tangency plus the larger of the two gaps. The run is then
  * mean-centered (offset_k = p_k − mean(p)) so it straddles the band's
  * centerline exactly as the stop cells straddle their centroid — the band
- * centerline IS bandCentroid(stop positions) (the mean), so mean-centered
+ * centerline IS the centroid of the stop positions (the mean), so mean-centered
  * offsets land each stripe precisely on its stop.
  *
  * Uniform widths at zero gaps reduce BIT-EXACTLY to the historical

@@ -9,6 +9,7 @@ import { polygonSnapAnchor } from '../../geometry/polygon';
 import { measureTextLabel } from '../../geometry/textMeasure';
 import { makeLine, stationWithStop } from '../../test/fixtures';
 import { pointerEvent } from '../../test/interaction';
+import { pairKeyOf } from '../../model/pairKey';
 import type { StationId } from '../../model/types';
 import type { ViewportApi } from './useViewport';
 import type { UiMode } from '../../state/store';
@@ -193,6 +194,148 @@ describe('usePlacementDispatch', () => {
     });
     expect(consumed).toBe(true);
     expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+});
+
+// The appending-to-line branch of handleCanvasPlace (and runAppendCreate's
+// seed/connect arms) reached only via this hook — the splice arm is covered
+// through MapCanvas's on-segment alt-pick, but the empty-canvas alt-click that
+// the extraction was meant to keep in lock-step with it lives here.
+describe('handleCanvasPlace — appending-to-line (Edit Stops)', () => {
+  const cursorOf = () => {
+    const m = useSelection.getState().uiMode;
+    return m.kind === 'appending-to-line' ? m.cursor : undefined;
+  };
+
+  it('alt-click on the empty-line seed creates a station, adds it, and arms it', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: [] }) },
+      lineOrder: ['L1'],
+    });
+    resetSelection({ kind: 'appending-to-line', lineId: 'L1', cursor: null });
+    const { result } = renderHook(() => usePlacementDispatch(fakeView));
+
+    let consumed = false;
+    act(() => {
+      consumed = result.current.handleCanvasPlace(
+        pointerEvent({ clientX: 20, clientY: 30, altKey: true }),
+      );
+    });
+    expect(consumed).toBe(true);
+
+    const stations = Object.values(useDoc.getState().stations);
+    expect(stations).toHaveLength(1);
+    expect(stations[0]).toMatchObject({ x: 20, y: 30 });
+    expect(useDoc.getState().lines.L1.stations).toEqual([stations[0].id]);
+    expect(cursorOf()).toEqual({ kind: 'station', stationId: stations[0].id });
+  });
+
+  it('alt-click with a station cursor connects a new station and advances the pen', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['S'] }) },
+      lineOrder: ['L1'],
+      stations: { S: stationWithStop('S' as StationId, 'L1', { x: 0, y: 0 }) },
+    });
+    resetSelection({
+      kind: 'appending-to-line',
+      lineId: 'L1',
+      cursor: { kind: 'station', stationId: 'S' as StationId },
+    });
+    const { result } = renderHook(() => usePlacementDispatch(fakeView));
+
+    act(() => {
+      result.current.handleCanvasPlace(pointerEvent({ clientX: 40, clientY: 0, altKey: true }));
+    });
+
+    const line = useDoc.getState().lines.L1;
+    const nid = line.stations.find((id) => id !== 'S');
+    expect(nid).toBeDefined();
+    expect(useDoc.getState().stations[nid as string]).toMatchObject({ x: 40, y: 0 });
+    expect(line.edges).toContain(pairKeyOf('S' as StationId, nid as StationId));
+    expect(cursorOf()).toEqual({ kind: 'station', stationId: nid });
+  });
+
+  it('one undo removes the connected station and its edge together (grouped)', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['S'] }) },
+      lineOrder: ['L1'],
+      stations: { S: stationWithStop('S' as StationId, 'L1', { x: 0, y: 0 }) },
+    });
+    resetSelection({
+      kind: 'appending-to-line',
+      lineId: 'L1',
+      cursor: { kind: 'station', stationId: 'S' as StationId },
+    });
+    const { result } = renderHook(() => usePlacementDispatch(fakeView));
+
+    act(() => {
+      result.current.handleCanvasPlace(pointerEvent({ clientX: 40, clientY: 0, altKey: true }));
+    });
+    const nid = useDoc.getState().lines.L1.stations.find((id) => id !== 'S');
+    expect(useDoc.getState().stations[nid as string]).toBeDefined();
+
+    act(() => useDoc.temporal.getState().undo());
+
+    expect(useDoc.getState().lines.L1.stations).toEqual(['S']);
+    expect(useDoc.getState().stations[nid as string]).toBeUndefined();
+  });
+
+  it('plain click with a cursor backs it out to null and mutates nothing', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['S'] }) },
+      lineOrder: ['L1'],
+      stations: { S: stationWithStop('S' as StationId, 'L1', { x: 0, y: 0 }) },
+    });
+    resetSelection({
+      kind: 'appending-to-line',
+      lineId: 'L1',
+      cursor: { kind: 'station', stationId: 'S' as StationId },
+    });
+    const { result } = renderHook(() => usePlacementDispatch(fakeView));
+
+    let consumed = false;
+    act(() => {
+      consumed = result.current.handleCanvasPlace(pointerEvent({ clientX: 40, clientY: 0 }));
+    });
+    expect(consumed).toBe(true);
+    expect(cursorOf()).toBeNull();
+    expect(useDoc.getState().lines.L1.stations).toEqual(['S']); // no new station
+  });
+
+  it('plain click with no cursor exits Edit Stops to idle', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['S'] }) },
+      lineOrder: ['L1'],
+      stations: { S: stationWithStop('S' as StationId, 'L1', { x: 0, y: 0 }) },
+    });
+    resetSelection({ kind: 'appending-to-line', lineId: 'L1', cursor: null });
+    const { result } = renderHook(() => usePlacementDispatch(fakeView));
+
+    act(() => {
+      result.current.handleCanvasPlace(pointerEvent({ clientX: 40, clientY: 0 }));
+    });
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+
+  it('a deleted line under the cursor cancels the mode instead of throwing', () => {
+    // No L1 in the doc: the branch must fall back to cancelAppendMode.
+    resetSelection({ kind: 'appending-to-line', lineId: 'L1', cursor: null });
+    const { result } = renderHook(() => usePlacementDispatch(fakeView));
+
+    let consumed = false;
+    act(() => {
+      consumed = result.current.handleCanvasPlace(
+        pointerEvent({ clientX: 5, clientY: 5, altKey: true }),
+      );
+    });
+    expect(consumed).toBe(true);
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+    expect(Object.keys(useDoc.getState().stations)).toHaveLength(0);
   });
 });
 
