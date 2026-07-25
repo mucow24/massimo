@@ -98,8 +98,9 @@ export function EditingBanner() {
         <>
           <div className="append-frame layering" />
           <div className="append-banner layering">
-            Layering mode — click where lines overlap to cycle which line shows on top; shift-click
-            or right-click cycles backward. Press Esc to exit.
+            Layering mode — click where lines overlap to cycle which line shows on top (right-click
+            cycles backward); shift-click spreads the line an overlap already shows across the whole
+            crossing. Press Esc to exit.
           </div>
         </>
       );
