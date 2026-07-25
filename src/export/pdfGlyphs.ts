@@ -166,6 +166,11 @@ export function outlineUnsupportedText(svg: SVGSVGElement, fonts: GlyphFonts): v
         t.setAttribute('font-weight', fontWeight);
         t.setAttribute('font-style', fontStyle);
         t.setAttribute('fill', fill);
+        // Carry the source run's tracking. The letter-spacing bake runs after
+        // this split precisely so it can see these nodes; without the copy the
+        // covered half of a mixed run loses its spacing entirely.
+        const ls = text.getAttribute('letter-spacing');
+        if (ls) t.setAttribute('letter-spacing', ls);
         t.style.whiteSpace = 'pre';
         t.textContent = piece.text;
         node = t;

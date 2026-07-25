@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { Line, Station } from '../model/types';
 import { useViewportStore } from '../state/viewportStore';
+import { useFontEpochValue } from '../state/fontEpoch';
 import { StationSilhouette } from './StationSilhouette';
 import { StationHitArea } from './StationHitArea';
 import { StationDots } from './StationDots';
@@ -44,8 +45,9 @@ interface Props {
  * (station/lines are immutable store refs; zoom is constant during a pan;
  * onStartDrag is a stable useCallback), so React skips re-rendering every
  * station's subtree when only the viewBox moves — the dominant pan cost.
- * (memo doesn't block the showNetwork subscription below: a store change
- * re-renders through it regardless of prop equality.)
+ * (memo doesn't block the store subscriptions below: a store change
+ * re-renders through them regardless of prop equality — which is also why the
+ * font epoch has to be a store and not App-local state.)
  */
 export const StationView = memo(function StationView({
   station,
@@ -57,6 +59,12 @@ export const StationView = memo(function StationView({
   preview = false,
 }: Props) {
   const showNetwork = useViewportStore((s) => s.showNetwork);
+  // Subscribe to the web-font epoch so a font load actually re-measures every
+  // station label. The value is unused: reading it is the point — without a
+  // store subscription reaching INSIDE this memo, App's post-font-load bump
+  // re-renders App and MapCanvas and then React bails out of the whole station
+  // subtree, stranding every label at its fallback-font geometry.
+  useFontEpochValue();
   // The lines/stations toggle is gated HERE rather than at the ~15 call sites,
   // because this dispatcher is the one chokepoint every station pass — wash,
   // hit area, dots, labels, selection stroke, drag proxy — funnels through, in

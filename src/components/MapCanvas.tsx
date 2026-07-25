@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cancelAppendMode, dragState, useDoc, useSelection } from '../state/store';
 import { hoveredChrome, type HoverKind } from '../state/selection';
 import { useSnapPrefs } from '../state/snapPrefs';
+import { useFontEpochValue } from '../state/fontEpoch';
 import { useViewportStore } from '../state/viewportStore';
 import { useThemeColors } from '../state/theme';
 import type { SnapGuide } from '../geometry/snap';
@@ -146,6 +147,12 @@ export function MapCanvas() {
   // self-gate inside StationView (one chokepoint for ~15 call sites); lines and
   // everything anchored to them are gated at the blocks below.
   const showNetwork = useViewportStore((s) => s.showNetwork);
+  // Re-render (and therefore re-measure) the whole canvas when the web fonts
+  // land. The epoch lives in a store rather than in App state so it can also
+  // punch through StationView's memo; MapCanvas subscribes too so the layers it
+  // renders DIRECTLY — free text labels, line tags, route bullets — re-measure
+  // with it instead of riding on an App-level re-render.
+  useFontEpochValue();
   // For resolving theme-aware (day/night) transfer colors on the creation preview.
   const darkMode = useDoc((s) => s.darkMode);
   const theme = useThemeColors();
@@ -315,8 +322,15 @@ export function MapCanvas() {
         (s) => s === 'hatched' || s === 'hatched-mirror',
       );
       if (!hasHatch) continue;
-      const effective = colorMap?.[ln.id] ?? ln.color;
-      seen.add(effective);
+      // BOTH colors a hatched line can be painted in. The desaturated one is
+      // what the main pass uses while a line is selected — but the Edit Stops
+      // hover-lift overlay deliberately repaints the hovered foreign line at
+      // its RAW color, so emitting only the desaturated pattern leaves that
+      // overlay referencing a <pattern> id that is not in <defs> and its
+      // hatched segments and stop markers paint nothing at all.
+      seen.add(ln.color);
+      const desaturated = colorMap?.[ln.id];
+      if (desaturated) seen.add(desaturated);
     }
     return Array.from(seen);
   }, [lines, colorMap]);
@@ -662,7 +676,10 @@ export function MapCanvas() {
   // (connect/splice) in Edit Stops. Nothing to pick here means "let the normal
   // alt handling run" (e.g. alt-click on empty canvas creates a station).
   const appendDeepPick = (e: React.MouseEvent): boolean => {
-    if (!e.altKey || dragState.suppressClick) return false;
+    // `inHandMode` gate as in the idle sibling above: hand/pan makes every
+    // canvas gesture inert, so Space+Alt+click must not splice a station (and
+    // burn an undo entry) while nothing else on the canvas responds.
+    if (!e.altKey || inHandMode || dragState.suppressClick) return false;
     const mode = selection.uiMode;
     if (mode.kind !== 'appending-to-line') return false;
     const line = lines[mode.lineId];

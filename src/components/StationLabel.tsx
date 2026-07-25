@@ -127,7 +127,11 @@ export function StationStarterLabel({
       ) : (
         renderStationLabelText({
           text: station.name,
-          fontSize: 12,
+          // The station's OWN size — `lay` was computed at it, so a hardcoded
+          // 12 halves the glyphs while keeping the 24px line pitch. Matches
+          // StationHighlightLabel and the waypoint branch above; only the
+          // always-bold weight is deliberate starter styling.
+          fontSize: effStyle.fontSize,
           fontWeight: 700,
           leading: effStyle.leading,
           tracking: effStyle.tracking,

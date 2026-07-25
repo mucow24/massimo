@@ -62,6 +62,7 @@ import { GRID_INTERVAL, snapPointToGrid, type GridSnap } from '../geometry/snap'
 import { polygonCentroid, edgeMidpoint } from '../geometry/polygon';
 import { clampSize as clampSvgImageSize, normalizeRotation } from '../geometry/svgImage';
 import { measureTextLabel } from '../geometry/textMeasure';
+import { isBulletCode } from '../geometry/labelTokens';
 import type { LabelStyle } from '../geometry/labelLayout';
 import { rotateAround, type Vec2 } from '../geometry/vec';
 import { normalizePaletteIds, type Palette, type PaletteId } from './palettes';
@@ -459,10 +460,16 @@ export function setDotStyle(
   const props = def.props;
   const line = doc.lines[lineId];
   return updateStation(doc, stationId, (cur) => {
-    const lineDefaultId =
-      (stationIsSingleton(cur) ? line?.singletonDotStyleId : line?.multiDotStyleId) ??
-      DEFAULT_STOP_DOT_STYLE_ID;
-    const clears = styleId === lineDefaultId;
+    // "Does this pick equal the line default?" — decided by VALUE against the
+    // default the RENDERER resolves, matching how the line-default setters
+    // prune redundant overrides. An id comparison against the factory constant
+    // lies whenever the line's split default is an ORPHANED raw shadow (a
+    // stopDot style deleted out from under it keeps the drawn value and drops
+    // the tag): the line still paints, say, a diamond, but reads as untagged,
+    // so picking "Filled black" would clear the override and leave the stop on
+    // the diamond it was trying to leave.
+    const lineDefault = resolveDotStyle(line, null, stationIsSingleton(cur));
+    const clears = dotStylesEqual(props, lineDefault);
     let changed = false;
     const stops = cur.stops.map((s) => {
       if (s.lineId !== lineId) return s;
@@ -1402,7 +1409,13 @@ export function mirrorLabel(doc: MapDoc, stationId: StationId): MapDoc {
 }
 
 export function setLabelOffset(doc: MapDoc, stationId: StationId, offset: number): MapDoc {
-  return updateLabel(doc, stationId, (label) => ({ ...label, offset }));
+  // Value guard, like every sibling here (setLabelOffsetPerp/Align/Valign):
+  // without it a slider gesture that never leaves its current detent still
+  // allocates, so the group commit's reference check sees a change and spends
+  // an undo entry on nothing — the next Ctrl+Z then appears to do nothing.
+  return updateLabel(doc, stationId, (label) =>
+    label.offset === offset ? label : { ...label, offset },
+  );
 }
 
 export function setLabelOffsetPerp(doc: MapDoc, stationId: StationId, offsetPerp: number): MapDoc {
@@ -1499,6 +1512,18 @@ export function updateLine(
 ): MapDoc {
   const cur = doc.lines[id];
   if (!cur) return doc;
+  // Same-reference-on-no-op (ARCHITECTURE §2). This is an UNGROUPED store
+  // write, so a value-identical patch that allocated would push a dead undo
+  // entry AND wipe the redo stack — re-clicking the already-selected color
+  // swatch is the everyday way to hit it. The gesture-group commit is no
+  // backstop: its change check is reference equality too.
+  if (
+    (patch.service === undefined || patch.service === cur.service) &&
+    (patch.name === undefined || patch.name === cur.name) &&
+    (patch.color === undefined || patch.color === cur.color)
+  ) {
+    return doc;
+  }
   const nextLine = { ...cur, ...patch };
   const lines = { ...doc.lines, [id]: nextLine };
   if (patch.service === undefined || patch.service === cur.service) {
@@ -1511,10 +1536,17 @@ export function updateLine(
   // `|code|` / `[code]` / `{code}` substring is always parsed as a bullet —
   // no false hits — and the doubled (unfilled) forms contain their single
   // form, so rewriting the singles covers them too. A backslash-escaped
-  // token is literal TEXT, not a bullet, so the lookbehind skips it. A
-  // service that itself contains a delimiter can never appear in a token;
-  // skip the rewrite rather than mangle literal text.
-  if (/[|<>[\]{}\n]/.test(cur.service)) {
+  // token is literal TEXT, not a bullet, so the lookbehind skips it.
+  //
+  // Both codes must be valid bullet CODEs (labelTokens owns that grammar) or
+  // there is nothing safe to do: a code containing a delimiter can never
+  // appear in a token, and an EMPTY one collapses the patterns below to the
+  // bare delimiter pairs `||`/`[]`/`{}` — which match literal punctuation and
+  // both halves of another line's UNFILLED bullet, so a single keystroke would
+  // rewrite every station name and text label in the document. An empty
+  // service is one Backspace away, since the inspector's field writes through
+  // on every keystroke. Skip the rewrite; the rename itself still lands.
+  if (!isBulletCode(cur.service) || !isBulletCode(nextLine.service)) {
     return { ...doc, lines };
   }
   const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

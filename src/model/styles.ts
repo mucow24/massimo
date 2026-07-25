@@ -599,13 +599,37 @@ export function updateStyleProps(doc: MapDoc, styleId: string, patch: StyleProps
   const nextDef = { id: def.id, name: def.name, kind: def.kind, props: merged } as StyleDef;
   let next: MapDoc = { ...doc, styles: { ...doc.styles, [styleId]: nextDef } };
   // stopDot has no item collection — restamp its wearers (dot slots) directly.
-  if (def.kind === 'stopDot') return restampStopDotStyle(next, styleId, merged as DotStyle);
+  if (def.kind === 'stopDot') {
+    next = restampStopDotStyle(next, styleId, merged as DotStyle);
+    // A stopDot style also picks the dot DIAMETER a tracking slot renders
+    // (service-code discs default to 12px, plain dots to 8) — and dot size is
+    // a covered LINE-style field. So this edit can move the resolved size of a
+    // line that stores none, drifting it off a line style it is still tagged
+    // with. Re-assert that contract on every line style pointing at this
+    // entry, mirroring what deleteStopDotStyle does for the delete half.
+    for (const d of Object.values(next.styles)) {
+      if (d.kind !== 'line') continue;
+      if (d.props.singletonDotStyleId !== styleId && d.props.multiDotStyleId !== styleId) continue;
+      next = restampTaggedWearers(next, d);
+    }
+    return next;
+  }
+  return restampTaggedWearers(next, nextDef);
+}
+
+/**
+ * Re-stamp every item tagged with `def` whose covered values have drifted away
+ * from it, restoring the `tagged => matches` invariant. Reference-stable when
+ * every wearer already matches.
+ */
+function restampTaggedWearers(doc: MapDoc, def: StyleDef): MapDoc {
+  let next = doc;
   const coll = itemsOf(next, def.kind);
   for (const id of Object.keys(coll)) {
-    if (coll[id].styleId !== styleId) continue;
+    if (coll[id].styleId !== def.id) continue;
     const cur = captureStyleProps(next, def.kind, id);
-    if (cur && stylePropsEqual(def.kind, cur, merged)) continue;
-    next = stampStyle(next, nextDef, id);
+    if (cur && stylePropsEqual(def.kind, cur, def.props)) continue;
+    next = stampStyle(next, def, id);
   }
   return next;
 }
