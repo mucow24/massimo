@@ -167,11 +167,13 @@ export interface SnapInput {
   lines: Record<LineId, Line>;
   /** World-units perpendicular tolerance for engaging a snap. */
   tolerance?: number;
-  /** Ctrl-drag (redistribute) mode: snap exclusively to this station. The
-   *  intermediates between dragged and anchor are moving targets during the
-   *  redistribute and make poor snap candidates; the anchor is the single
-   *  fixed point on the line. Adjacency on each shared line is bypassed
-   *  here — the anchor qualifies regardless of how many stops sit between. */
+  /** Ctrl-drag (redistribute) mode: the fixed end of the redistribute. Line
+   *  mode snaps exclusively to this station — the intermediates between it and
+   *  the grab are moving targets and make poor line candidates, so the anchor
+   *  is the single fixed point on the line. Adjacency on each shared line is
+   *  bypassed here — the anchor qualifies regardless of how many stops sit
+   *  between. Snap-to-all is NOT narrowed this way: it keeps every station the
+   *  redistribute isn't moving (see {@link redistributeMovingIds}). */
   redistributeAnchor?: StationId;
   /** Bullet mode: snap a free-floating element (no stops of its own) to
    *  align with any station's stop on this line. The bullet anchors at
@@ -235,9 +237,17 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
 
   // Collect every alignment pair within perp tolerance.
   const all: Cand[] = [];
-  // Pick the right pool of target stations for the active mode.
   const excluded = excludedIds;
-  const targets = bulletLineId
+  const requireAdjacency = !redistributeAnchor;
+  // Redistribute (Ctrl-drag) is treated like a line-mode operation regardless
+  // of the user's `modes.line` toggle — it's an explicit, modal interaction.
+  const lineModeOn = modes.line || !!redistributeAnchor;
+  const allModeOn = modes.all !== 'off';
+
+  // Line mode's target pool. During a redistribute the anchor is the ONLY
+  // line-mode candidate: the intermediates are moving with the drag, and
+  // aligning to them would fight the redistribute itself.
+  const lineTargets = bulletLineId
     ? Object.values(stations).filter((t) => !excluded || !excluded.has(t.id))
     : redistributeAnchor
       ? stations[redistributeAnchor]
@@ -246,25 +256,44 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
       : Object.values(stations).filter(
           (t) => t.id !== draggedId && (!excluded || !excluded.has(t.id)),
         );
-  const requireAdjacency = !redistributeAnchor;
-  // Redistribute (Ctrl-drag) is treated like a line-mode operation regardless
-  // of the user's `modes.line` toggle — it's an explicit, modal interaction.
-  const lineModeOn = modes.line || !!redistributeAnchor;
-  const allModeOn = modes.all !== 'off' && !redistributeAnchor;
+  // Snap-to-all keeps the whole map in play during a redistribute — only the
+  // stations the redistribute is actively pushing around are unstable targets,
+  // not everything that isn't the anchor. Outside a redistribute the two pools
+  // are the same set.
+  const moving =
+    redistributeAnchor && draggedId
+      ? redistributeMovingIds(lines, draggedId, redistributeAnchor)
+      : null;
+  const allTargets = !allModeOn
+    ? []
+    : moving
+      ? Object.values(stations).filter(
+          (t) => t.id !== draggedId && !moving.has(t.id) && (!excluded || !excluded.has(t.id)),
+        )
+      : lineTargets;
+
+  const lineTargetIds = new Set(lineTargets.map((t) => t.id));
+  const allTargetIds = new Set(allTargets.map((t) => t.id));
+  const targets =
+    allTargets.length === 0
+      ? lineTargets
+      : [...allTargets, ...lineTargets.filter((t) => !allTargetIds.has(t.id))];
+
   for (const t of targets) {
-    const linePairs: AlignmentPair[] = lineModeOn
-      ? bulletLineId
-        ? bulletAlignmentPairs(t, bulletLineId)
-        : alignmentPairs(
-            draggedId as StationId,
-            draggedRotation as Rotation,
-            draggedStops ?? [],
-            t,
-            lines,
-            requireAdjacency,
-          )
-      : [];
-    const allPairs: AlignmentPair[] = allModeOn
+    const linePairs: AlignmentPair[] =
+      lineModeOn && lineTargetIds.has(t.id)
+        ? bulletLineId
+          ? bulletAlignmentPairs(t, bulletLineId)
+          : alignmentPairs(
+              draggedId as StationId,
+              draggedRotation as Rotation,
+              draggedStops ?? [],
+              t,
+              lines,
+              requireAdjacency,
+            )
+        : [];
+    const allPairs: AlignmentPair[] = allTargetIds.has(t.id)
       ? allAxesPairs(draggedStops ?? [], (draggedRotation ?? 0) as Rotation, t, modes.all)
       : [];
     type TaggedPair = AlignmentPair & { kind: 'line' | 'all' };
@@ -614,6 +643,30 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   }
 
   return { x: sx, y: sy, guides };
+}
+
+/**
+ * The stations a Ctrl-drag redistribute is actively moving: the interior of
+ * the shortest edge path between the anchor and the dragged station on every
+ * line that links both — exactly the chain `redistributeBetween` rewrites on
+ * each move. They're mid-flight for the whole gesture, so they make useless
+ * snap targets. The anchor and the dragged station are endpoints, so neither
+ * ends up in the set.
+ */
+function redistributeMovingIds(
+  lines: Record<LineId, Line>,
+  draggedId: StationId,
+  anchorId: StationId,
+): Set<StationId> {
+  const moving = new Set<StationId>();
+  for (const line of Object.values(lines)) {
+    // `shortestPathOnLine` returns the tail — every station after the anchor,
+    // ending at the dragged one. Drop that last entry to get the interior.
+    const tail = shortestPathOnLine(line, anchorId, draggedId);
+    if (!tail) continue;
+    for (let i = 0; i < tail.length - 1; i++) moving.add(tail[i]);
+  }
+  return moving;
 }
 
 // ----- Internals (exported for testing) -----

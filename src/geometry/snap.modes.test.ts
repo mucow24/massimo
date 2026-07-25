@@ -843,6 +843,126 @@ describe('snapDraggedStation: snap-to-all mode', () => {
   });
 });
 
+describe('snapDraggedStation: snap-to-all during Ctrl-drag (redistribute)', () => {
+  const ALL_ONLY: SnapModes = {
+    line: true,
+    equidistant: false,
+    tens: false,
+    all: 'all',
+    grid: 'off',
+  };
+
+  it('aligns the dragged endpoint with an unrelated stationary station', () => {
+    // L1 corridor a — m — d at y=0; Ctrl-drag d with a as the anchor. `u` is
+    // an unrelated station on another line, sitting at x=300. Dragging d well
+    // off the corridor (y=137, so the anchor's horizontal line snap can't
+    // engage) to x=302 must still catch u's vertical alignment.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const m = makeStation({ id: 'm', x: 100, y: 0, stops: [horizontalStop('L1')] });
+    const d = makeStation({ id: 'd', x: 200, y: 0, stops: [horizontalStop('L1')] });
+    const u = makeStation({ id: 'u', x: 300, y: -200, stops: [makeStop('L2')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 302,
+      proposedY: 137,
+      draggedRotation: 0,
+      draggedStops: d.stops,
+      stations: stations(a, m, d, u),
+      lines: linesOf(lineOf('L1', ['a', 'm', 'd']), lineOf('L2', ['u'])),
+      redistributeAnchor: 'a',
+      modes: ALL_ONLY,
+    });
+    expect(r.x).toBeCloseTo(300, 5);
+    expect(r.y).toBeCloseTo(137, 5);
+    expect(r.guides).toHaveLength(1);
+  });
+
+  it('aligns the dragged endpoint with the anchor off the line axis', () => {
+    // a — d on a horizontal corridor. Dragged far off it (y=137), so the
+    // line-mode anchor snap is out of tolerance — but snap-to-all should still
+    // catch the anchor's own vertical axis at x=0.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const d = makeStation({ id: 'd', x: 200, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 3,
+      proposedY: 137,
+      draggedRotation: 0,
+      draggedStops: d.stops,
+      stations: stations(a, d),
+      lines: linesOf(lineOf('L1', ['a', 'd'])),
+      redistributeAnchor: 'a',
+      modes: ALL_ONLY,
+    });
+    expect(r.x).toBeCloseTo(0, 5);
+    expect(r.y).toBeCloseTo(137, 5);
+  });
+
+  it('never targets an intermediate the redistribute is moving', () => {
+    // a — m — d; m is mid-flight for the whole gesture, so its vertical axis
+    // (x=50) must not capture the drag even at 2 world units away.
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const m = makeStation({ id: 'm', x: 50, y: 0, stops: [horizontalStop('L1')] });
+    const d = makeStation({ id: 'd', x: 100, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 52,
+      proposedY: 137,
+      draggedRotation: 0,
+      draggedStops: d.stops,
+      stations: stations(a, m, d),
+      lines: linesOf(lineOf('L1', ['a', 'm', 'd'])),
+      redistributeAnchor: 'a',
+      modes: ALL_ONLY,
+    });
+    expect(r.x).toBeCloseTo(52, 5);
+    expect(r.y).toBeCloseTo(137, 5);
+    expect(r.guides).toEqual([]);
+  });
+
+  it('targets a same-line station outside the redistributed chain', () => {
+    // L1 runs u — a — m — d. Only m sits between the anchor and the grab, so
+    // u stays put and is a legitimate all-axes target.
+    const u = makeStation({ id: 'u', x: 300, y: -200, stops: [horizontalStop('L1')] });
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const m = makeStation({ id: 'm', x: 100, y: 0, stops: [horizontalStop('L1')] });
+    const d = makeStation({ id: 'd', x: 200, y: 0, stops: [horizontalStop('L1')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 302,
+      proposedY: 137,
+      draggedRotation: 0,
+      draggedStops: d.stops,
+      stations: stations(u, a, m, d),
+      lines: linesOf(lineOf('L1', ['u', 'a', 'm', 'd'])),
+      redistributeAnchor: 'a',
+      modes: ALL_ONLY,
+    });
+    expect(r.x).toBeCloseTo(300, 5);
+    expect(r.y).toBeCloseTo(137, 5);
+  });
+
+  it('stays off when snap-to-all is off', () => {
+    const a = makeStation({ id: 'a', x: 0, y: 0, stops: [horizontalStop('L1')] });
+    const d = makeStation({ id: 'd', x: 200, y: 0, stops: [horizontalStop('L1')] });
+    const u = makeStation({ id: 'u', x: 300, y: -200, stops: [makeStop('L2')] });
+    const r = snapDraggedStation({
+      draggedId: 'd',
+      proposedX: 302,
+      proposedY: 137,
+      draggedRotation: 0,
+      draggedStops: d.stops,
+      stations: stations(a, d, u),
+      lines: linesOf(lineOf('L1', ['a', 'd']), lineOf('L2', ['u'])),
+      redistributeAnchor: 'a',
+      modes: LINE_ONLY,
+    });
+    expect(r.x).toBe(302);
+    expect(r.y).toBe(137);
+    expect(r.guides).toEqual([]);
+  });
+});
+
 describe('axesForAllSnap', () => {
   it('returns the axis family for each directional mode', () => {
     expect(axesForAllSnap('off')).toEqual([]);
