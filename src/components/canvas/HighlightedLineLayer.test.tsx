@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { HighlightedLineLayer } from './HighlightedLineLayer';
-import { makeBandSpec, makeLine, makeStation, makeStop } from '../../test/fixtures';
+import { makeBandSpec, makeDoc, makeLine, makeStation, makeStop } from '../../test/fixtures';
+import { connectStationsOnLine } from '../../model/transforms';
+import { stopPosWorld } from '../../geometry/interlining';
 import type { Line, Station } from '../../model/types';
 import type { OrderedRenderable } from '../../geometry/interlining';
 import type { UiMode } from '../../state/selection';
@@ -240,10 +242,11 @@ describe('<HighlightedLineLayer /> — Edit Stops hover preview', () => {
     expect(container.querySelector('[data-append-cursor="s1"]')).not.toBeNull();
   });
 
-  it('rings a not-yet-added station (no stop cell) a click would connect — at its anchor', () => {
-    // Pen on s1, hovering an orphan with no L1 stop → a click connects it, so it
-    // previews a ring positioned at the station anchor (the stop-cell branch has
-    // nothing to read).
+  it('rings a not-yet-added EMPTY station a click would connect — at its center', () => {
+    // Pen on s1, hovering an orphan with NO stops at all → a click connects it,
+    // spawning its first stop at the origin (0,0) = the station center, so the
+    // ring sits there. (The interchange case — new stop east of existing stops —
+    // is the neighbouring test.)
     const orphan = { ...stations(), s3: makeStation({ id: 's3', x: 200, y: 0, stops: [] }) };
     const { container } = renderLayer(
       lines(),
@@ -256,6 +259,46 @@ describe('<HighlightedLineLayer /> — Edit Stops hover preview', () => {
     const ring = container.querySelector('[data-append-hover-ring="s3"]');
     expect(ring).not.toBeNull();
     expect(ring!.querySelector('circle')!.getAttribute('cx')).toBe('200');
+  });
+
+  it('rings where the stop will DROP on an interchange station — not the anchor', () => {
+    // Pen on s1, hovering s3 — an interchange already carrying ANOTHER line's
+    // stop but not L1's. A click connects, and spawnStopCell drops L1's new stop
+    // one tangent gap EAST of s3's existing stop, NOT at the station anchor. The
+    // preview ring must promise that real landing spot: the old code drew it at
+    // the anchor, which on an interchange sits over an unrelated existing stop.
+    const withL2 = {
+      ...lines(),
+      L2: makeLine({ id: 'L2', service: 'B', color: '#0000cc', stations: ['s3'] }),
+    };
+    const s3 = makeStation({
+      id: 's3',
+      x: 200,
+      y: 0,
+      stops: [makeStop('L2', { orientation: 'auto-horizontal' })],
+    });
+    const withStations = { ...stations(), s3 };
+    const { container } = renderLayer(
+      withL2,
+      withStations,
+      appending({ kind: 'station', stationId: 's1' }),
+      { appendHover: { kind: 'station', stationId: 's3' } },
+    );
+    const ring = container.querySelector('[data-append-hover-ring="s3"] circle');
+    expect(ring).not.toBeNull();
+
+    // Ground truth: where does the connect gesture ACTUALLY place the stop?
+    const doc = makeDoc({
+      lines: Object.values(withL2),
+      stations: Object.values(withStations),
+    });
+    const after = connectStationsOnLine(doc, 'L1', 's1', 's3');
+    const cell = after.stations.s3.stops.find((c) => c.lineId === 'L1')!;
+    const truth = stopPosWorld(cell, after.stations.s3);
+
+    expect(truth.x).not.toBeCloseTo(200); // the stop really moves off the anchor
+    expect(Number(ring!.getAttribute('cx'))).toBeCloseTo(truth.x);
+    expect(Number(ring!.getAttribute('cy'))).toBeCloseTo(truth.y);
   });
 
   it('does not ring a non-member when a click there is a dead click (null cursor)', () => {
