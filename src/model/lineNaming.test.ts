@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Line, LineId } from './types';
-import { nameForIndex, pickNextLineName } from './lineNaming';
+import { lineDisplayName, nameForIndex, pickNextLineName } from './lineNaming';
 
 // Build a lines record from a list of service codes. Only `.service` is read
 // by the naming logic, so the rest of the Line shape is irrelevant here.
@@ -52,5 +52,22 @@ describe('pickNextLineName', () => {
   it('rolls into two-character names once all 36 single names are taken', () => {
     const allSingles = Array.from({ length: 36 }, (_, i) => nameForIndex(i));
     expect(pickNextLineName(linesWithServices(allSingles))).toBe('AA');
+  });
+});
+
+describe('lineDisplayName', () => {
+  it('uses the line name when it has one', () => {
+    expect(lineDisplayName({ name: 'Broadway Express', service: 'N' } as Line)).toBe(
+      'Broadway Express',
+    );
+  });
+
+  it('falls back to "<service> line" for an unnamed line', () => {
+    expect(lineDisplayName({ name: '', service: 'N' } as Line)).toBe('N line');
+  });
+
+  it('names a missing line "Unknown line" (a stale stop can outlive its line)', () => {
+    expect(lineDisplayName(undefined)).toBe('Unknown line');
+    expect(lineDisplayName(null)).toBe('Unknown line');
   });
 });
