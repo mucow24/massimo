@@ -70,6 +70,48 @@ describe('<StationSilhouette /> — selection stroke (no-snap two-tone)', () => 
   });
 });
 
+describe('<StationSilhouette /> — Edit Stops hover-zone (map-consistent)', () => {
+  const hoverZonePaths = () =>
+    Array.from(
+      render(
+        <svg>
+          <StationSilhouette station={station()} layer="hover-zone" />
+        </svg>,
+      ).container.querySelectorAll('[data-station-hover-zone] path'),
+    );
+
+  it('outlines the footprint with a SOLID ring (no dash), like the map hover', () => {
+    // Previously dashed ("double-dotted"); now solid to match the main map's
+    // station hover.
+    for (const p of hoverZonePaths()) {
+      expect(p.getAttribute('stroke-dasharray')).toBeNull();
+    }
+  });
+
+  it('fills the footprint with a gentle light wash (was fill:none before)', () => {
+    const washed = hoverZonePaths().filter((p) => (p.getAttribute('fill') ?? 'none') !== 'none');
+    expect(washed).toHaveLength(1);
+    const wash = washed[0];
+    // A light lift that reads on the dimmed (dark) editor backdrop in both
+    // themes — not the map's accent tint, which vanishes on the day-mode dim.
+    expect(wash.getAttribute('fill')).toBe('#ffffff');
+    const alpha = Number(wash.getAttribute('fill-opacity'));
+    expect(alpha).toBeGreaterThan(0);
+    expect(alpha).toBeLessThan(0.3); // gentle
+  });
+
+  it('keeps the two-tone ring (white underlay + dark core) at 3/4 weight', () => {
+    const strokes = hoverZonePaths().filter((p) => p.getAttribute('fill') === 'none');
+    expect(strokes).toHaveLength(2);
+    const widths = strokes.map((p) => Number(p.getAttribute('stroke-width')));
+    expect(widths).toContain(3); // 4 × 0.75 underlay
+    expect(widths).toContain(1.5); // 2 × 0.75 core
+    expect(strokes.map((p) => p.getAttribute('stroke'))).toEqual(
+      expect.arrayContaining(['#ffffff', '#000000']),
+    );
+  });
+});
+
 describe('<StationSilhouette /> — match stroke (mirror hint)', () => {
   it('is a single gray stroke held screen-constant by vector-effect', () => {
     const paths = strokePaths('match-stroke');
