@@ -1078,6 +1078,16 @@ describe('editing-station-layout mode', () => {
     expect(s.mirrorMatching).toBe(true);
   });
 
+  it('drops the Edit Stops hover target on the way in (the mode hop from the line editor)', () => {
+    // Double-clicking a member station in Edit Stops hops straight here, with
+    // the pointer still over that station — no pointerleave will ever fire to
+    // clear appendHover, so entry must, like every other mode transition.
+    useSelection.getState().startAppend('L1' as LineId);
+    useSelection.getState().setAppendHover({ kind: 'station', stationId: 'A' as StationId });
+    useSelection.getState().startEditingStationLayout('A' as StationId);
+    expect(useSelection.getState().appendHover).toBeNull();
+  });
+
   it('selecting a DIFFERENT station retargets the editor to it; re-selecting the same keeps it', () => {
     useSelection.getState().startEditingStationLayout('A' as StationId);
     useSelection.getState().selectStation('A' as StationId);

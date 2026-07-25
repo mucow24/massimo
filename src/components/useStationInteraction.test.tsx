@@ -245,16 +245,34 @@ describe('useStationInteraction — double click', () => {
     expect(sel.editingStationId).toBe('S');
   });
 
-  it('is inert during Edit Stops — selectStation would wipe selectedLineId mid-mode', () => {
-    // A dblclick's selectStation spreads clearedSelections(), nulling
-    // selectedLineId while uiMode stays appending-to-line: the line highlight
-    // and dim wash vanish but the mode silently keeps routing station clicks
-    // to connect/splice. Renaming waits for the editor to exit, like the
-    // other mode-gated interactions (hand mode, tag/layering modes).
+  it('during Edit Stops, a member station jumps straight into its layout editor', () => {
+    // The line editor's dblclick is a MODE HOP, not the rename editor: the
+    // station whose stops you're looking at is the one whose layout you want
+    // to fix, so double-clicking it hands off to editing-station-layout.
+    // (Rename is the idle-mode dblclick; it would wipe selectedLineId mid-mode.)
     useSelection.getState().startAppend('L1' as LineId);
     const { result } = setup();
+    act(() =>
+      result.current.handlers.onDoubleClick?.(pointerEvent({}) as unknown as React.MouseEvent),
+    );
+    const sel = useSelection.getState();
+    expect(sel.uiMode).toEqual({ kind: 'editing-station-layout', stationId: 'S' });
+    expect(sel.selectedStationIds).toEqual(['S']);
+    // The hop leaves the line editor outright — no rename, no stale line.
+    expect(sel.editingStationId).toBeNull();
+    expect(sel.selectedLineId).toBeNull();
+  });
+
+  it('during Edit Stops, a station NOT on the line has no dblclick', () => {
+    // Layout editing is offered for the line's OWN stops; a foreign station has
+    // none to edit, and its clicks belong to the append gesture (connect/splice)
+    // — a mode hop there would strand a half-finished pen stroke.
+    useSelection.getState().startAppend('L1' as LineId);
+    const lines = {
+      L1: makeLine({ id: 'L1' as LineId, stations: ['T', 'U'] as StationId[] }),
+    };
+    const { result } = setup(stationS(), lines);
     expect(result.current.handlers.onDoubleClick).toBeUndefined();
-    expect(useSelection.getState().selectedLineId).toBe('L1');
   });
 });
 

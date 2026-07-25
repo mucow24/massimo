@@ -87,6 +87,10 @@ const SECTIONS: HelpSection[] = [
         effect:
           'Arm insertion into that edge — station/Alt clicks splice in, marching to the far end',
       },
+      {
+        k: 'Double-click a station',
+        effect: 'Leave the editor and edit that stop’s layout (stations on this line only)',
+      },
       { k: 'Alt+click canvas', effect: 'Create a station and connect/splice it in one go' },
       {
         k: 'Del / ×',

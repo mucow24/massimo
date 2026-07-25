@@ -133,8 +133,34 @@ describe('<StopRows />', () => {
     seed({ a: hub() });
     renderRows();
     const rows = screen.getAllByTestId('stop-row');
-    expect(rows[0].querySelector('.line-badge')).toHaveAttribute('title', '1 line');
-    expect(rows[1].querySelector('.line-badge')).toHaveAttribute('title', '2 line');
+    // ...followed by the double-click affordance, so the mode hop below is
+    // discoverable rather than folklore.
+    expect(rows[0].querySelector('.line-badge')).toHaveAttribute(
+      'title',
+      '1 line — double-click to edit this line',
+    );
+    expect(rows[1].querySelector('.line-badge')).toHaveAttribute(
+      'title',
+      '2 line — double-click to edit this line',
+    );
+  });
+
+  it('double-clicking a badge jumps to editing that line', async () => {
+    // The badge answers "which line is this stop on?"; double-clicking it goes
+    // there — straight into Edit Stops for that line (the only line-editor
+    // entry point, see startAppend). The single clicks on the way just select
+    // the row's stop, so nothing is left behind.
+    const user = userEvent.setup();
+    seed({ a: hub() });
+    renderRows();
+    const badge = screen.getAllByTestId('stop-row')[1].querySelector('.line-badge')!;
+    await user.dblClick(badge);
+    expect(useSelection.getState().uiMode).toEqual({
+      kind: 'appending-to-line',
+      lineId: 'L2',
+      cursor: null,
+    });
+    expect(useSelection.getState().selectedLineId).toBe('L2');
   });
 
   it('every row has an ENABLED shape picker (no selection ritual)', () => {
