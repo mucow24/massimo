@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { computeArcRadii } from './router';
 import {
-  bandCentroid,
   buildBandGeometry,
   buildBands,
   buildLineIndex,
@@ -19,23 +18,6 @@ import { makeDoc, makeLine, makeStation, makeStop, stationWithStop } from '../te
 import type { LineStyle, StopCell } from '../model/types';
 
 describe('band geometry helpers', () => {
-  it('bandCentroid averages the points', () => {
-    expect(bandCentroid([{ x: 0, y: 0 }])).toEqual({ x: 0, y: 0 });
-    expect(
-      bandCentroid([
-        { x: 0, y: 0 },
-        { x: 10, y: 20 },
-      ]),
-    ).toEqual({ x: 5, y: 10 });
-    expect(
-      bandCentroid([
-        { x: 0, y: 0 },
-        { x: 6, y: 0 },
-        { x: 0, y: 9 },
-      ]),
-    ).toEqual({ x: 2, y: 3 });
-  });
-
   it('idealBandRadius bumps by the extreme stripe-center offset; a single stripe is a no-op', () => {
     // Signature takes max|stripe offset| directly; the uniform-width values
     // are the historical (n−1)/2 · STOP_SIZE bumps.
