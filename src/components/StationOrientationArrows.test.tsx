@@ -56,6 +56,12 @@ describe('<StationOrientationArrows />', () => {
       'translate(0 0) rotate(90)',
       'translate(14 0) rotate(135)',
     ]);
+    // The axis is also tagged by name — a bare rotation is unreadable from a
+    // test or the elements panel (the e2e orientation specs read this).
+    expect(arrows.map((p) => p.getAttribute('data-arrow-axis'))).toEqual([
+      'auto-horizontal',
+      'auto-nw-se',
+    ]);
     // One shared shape on both, so the axis comes only from the rotation.
     expect(arrows[0].getAttribute('d')).toBe(arrows[1].getAttribute('d'));
   });

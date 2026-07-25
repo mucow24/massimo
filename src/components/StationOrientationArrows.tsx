@@ -86,6 +86,9 @@ export function OrientationArrow({
   return (
     <path
       data-arrow-line={lineId}
+      // The axis in words. The shape carries it only as a rotation, which is
+      // unreadable from a test or the elements panel.
+      data-arrow-axis={orientation}
       d={orientationArrowPath(size)}
       transform={`translate(${x} ${y}) rotate(${ORIENTATION_ANGLE[orientation]})`}
       fill={fill}
