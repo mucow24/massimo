@@ -135,6 +135,28 @@ export interface StopCell {
   dotSize?: number;
 }
 
+// A TRANSFER ANCHOR hosted inside a station's local cell grid — a bare point in
+// the same (row, col) frame as StopCell/LabelCell, existing only so a Transfer
+// end can bind to it. It has no line, no orientation, no dot, and no style: it
+// is never painted on an export (see MapDoc.transferAnchors for the free twin).
+//
+// It lives on the STATION rather than in the doc-level collection precisely so
+// every station-layout transform carries it for free — `rotateStationLayoutBy90`
+// rewrites stops and label cells through a local `rotateGrid`, and an anchor
+// held anywhere else would stay put while the layout turned 90° around it,
+// tearing the elbowed transfer this whole feature exists to draw.
+//
+// Deliberately NOT part of `stationLayoutNodes`: that list discriminates the
+// label as `lineId === null` (an anchor node would be indistinguishable from
+// it) and `anchorPool` filters on `isLabel` (an anchor would become a lattice
+// ORIGIN, producing the incommensurate-pitch kink anchorPool exists to forbid).
+// The drag/nudge paths pass anchors in as extra point-nodes instead.
+export interface AnchorCell {
+  id: string;
+  row: number;
+  col: number;
+}
+
 // Alignment of the rendered label text relative to the label cell, expressed
 // in the label's reading-direction frame.
 //
@@ -211,6 +233,11 @@ export interface Station {
   rotation: Rotation;
   stops: StopCell[];
   label: LabelCell;
+  // Transfer anchors parked in this station's cell grid (see AnchorCell).
+  // Omitted when empty, so a station that never grew one stores nothing.
+  // Editable only inside the station layout editor — like a stop dot, an anchor
+  // is not an independently selectable canvas object.
+  transferAnchors?: AnchorCell[];
   // Marks a "routing point" station: the name and all bullet glyphs are
   // hidden on the canvas, and the label hit rect is dropped. The station
   // remains selectable/draggable via the hit rect around its stop cells.
@@ -508,6 +535,25 @@ export interface RouteBullet {
   styleId?: string;
 }
 
+// A FREE transfer anchor: a bare world point that exists only so a Transfer end
+// can bind to it. Two of them (or one plus a station stop) let a transfer turn a
+// corner — the 90° transfer this feature exists for. The station-hosted twin is
+// `AnchorCell` on Station; the two are separate homes on purpose, so this record
+// stays homogeneous `{id, x, y}` and every consumer that treats it like a route
+// bullet (group drag, group rotate, the align pool, the camera hull) needs no
+// variant narrowing at all.
+//
+// Deliberately minimal: no rotation (nothing to orient), no `locked` (the first
+// canvas kind without one — see groupRotate's `isItemLocked`), no `styleId`
+// (nothing to style). It is EDITOR CHROME, never map ink: the anchor layer
+// carries `data-export-exclude`, so an anchor is absent from every SVG/PNG/PDF
+// export while the transfer bound to it still prints.
+export interface TransferAnchor {
+  id: string;
+  x: number;
+  y: number;
+}
+
 // A free-floating background shape (river, lake, park, …). Rendered UNDER all
 // other map content. Vertices are stored in WORLD coordinates (length >= 3, in
 // order); there is no separate center/rotation — rotation rewrites the vertices
@@ -632,6 +678,11 @@ export interface MapDoc {
   lineTags: Record<string, LineTag>;
   // Free-floating route badges. Keyed by bullet id.
   routeBullets: Record<string, RouteBullet>;
+  // Free-floating transfer anchors (see TransferAnchor). Keyed by anchor id.
+  // The station-hosted ones live on their Station instead (Station.transferAnchors),
+  // so this record is uniformly `{id, x, y}`. Absent in older saves, backfilled
+  // to {} by the shallow merge on both load paths — no migration.
+  transferAnchors: Record<string, TransferAnchor>;
   // Inter-station transfer indicators (a theme-aware line between two stations,
   // black-on-white by default in both themes).
   transfers: Record<string, Transfer>;
@@ -785,14 +836,27 @@ export interface TextLabel {
   styleId?: string;
 }
 
-// One endpoint of a transfer: a specific dot on a station. `lineId` picks
-// which dot when the station has multiple (interlining); null means "no
-// specific line / station has no stops" — render falls back to the
-// station's anchor.
-export interface TransferEnd {
-  stationId: StationId;
-  lineId: LineId | null;
-}
+// One endpoint of a transfer. Three shapes, discriminated STRUCTURALLY rather
+// than by a `kind` tag — the stop arm is byte-identical to what every existing
+// saved file already carries, so the union needs no migration and no persist
+// version bump. Narrow with the guards in model/transferAnchors.ts (test
+// `'anchorId' in end` FIRST: two of the three arms carry a stationId).
+//
+//  1. A STOP on a station. `lineId` picks which dot when the station has
+//     several (interlining); null means "no specific line / station has no
+//     stops" — render falls back to the station's own anchor point.
+//  2. A station-hosted TRANSFER ANCHOR (Station.transferAnchors). Carries the
+//     stationId so it resolves in one lookup, exactly like arm 1 — no scan of
+//     every station to find which one owns the anchor.
+//  3. A FREE transfer anchor (MapDoc.transferAnchors).
+//
+// Arms 1 and 2 both being station-keyed is what keeps the delete cascade a
+// one-liner: `'stationId' in end && end.stationId === id` orphans a station's
+// stops AND its hosted anchors in a single predicate.
+export type TransferEnd =
+  | { stationId: StationId; lineId: LineId | null }
+  | { stationId: StationId; anchorId: string }
+  | { anchorId: string };
 
 // A transfer is a line connecting one station dot to another (thickness and
 // theme-aware color come from the per-transfer overrides below, falling back

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { LineId, MapDoc, StationId } from '../model/types';
+import type { LineId, MapDoc, StationId, TransferEnd } from '../model/types';
+import { transferEndResolves } from '../model/transferAnchors';
 import type { Vec2 } from '../geometry/vec';
 // The append cursor/hover types and the hover-equality helper live in the pure
 // appendGestures model module (no store or component import, so no cycle).
@@ -38,9 +39,15 @@ export type UiMode =
   | { kind: 'creating-route-bullet' }
   | {
       kind: 'creating-transfer';
-      anchor: { stationId: StationId; lineId: LineId | null } | null;
+      // The FIRST end picked, or null before the first click. Named `firstEnd`
+      // rather than `anchor` because a transfer end can now BE a transfer
+      // anchor — `anchor.anchorId` was going to read like a riddle.
+      firstEnd: TransferEnd | null;
     }
   | { kind: 'placing-label' }
+  // Sticky click-to-place for transfer anchors, like placing-station: each
+  // click drops one, Esc / right-click exits.
+  | { kind: 'placing-anchor' }
   | { kind: 'creating-polygon' }
   // Carries the parsed svg payload (data URI + intrinsic size) read from the
   // file at import time; the next canvas click drops it at the cursor.
@@ -101,12 +108,14 @@ export const clearedSelections = () => ({
   selectedLabelIds: [] as string[],
   selectedPolygonIds: [] as string[],
   selectedSvgImageIds: [] as string[],
+  selectedAnchorIds: [] as string[],
   selectedVertices: null as { polygonId: string; indices: number[] } | null,
   selectedLineId: null as LineId | null,
   selectedLineTagId: null as string | null,
   selectedTransferId: null as string | null,
   selectedStopLineId: null as LineId | null,
   labelSelected: false,
+  selectedAnchorCellId: null as string | null,
   editingStationId: null as StationId | null,
   mirrorMatching: false,
 });
@@ -181,12 +190,26 @@ export interface SelectionState {
   // The (lineId, stationId) currently hovered in the transfer-creation flow.
   // Used to highlight the corresponding stop dot on the canvas.
   hoveredLineStop: { lineId: LineId; stationId: StationId } | null;
+  // The transfer ANCHOR hovered in that same flow — the anchor twin of
+  // hoveredLineStop, giving both kinds of endpoint the same "you can click
+  // this" affordance. Keyed by the layer's own render key (`anchorId` for a
+  // free anchor, `stationId:anchorId` for a hosted one) so one nullable string
+  // covers both homes. Ephemeral; dropped on every mode transition, because
+  // committing or cancelling unmounts the anchor under the cursor and no
+  // pointerout ever fires.
+  hoveredAnchorKey: string | null;
   // The lineId of the currently-selected stop cell within the active station
   // inspector. Cleared whenever a different station is selected.
   selectedStopLineId: LineId | null;
   // True if the label cell is the current selection within the grid editor.
-  // Mutually exclusive with selectedStopLineId.
+  // Mutually exclusive with selectedStopLineId and selectedAnchorCellId.
   labelSelected: boolean;
+  // The station-HOSTED transfer anchor armed within the layout editor, if any.
+  // The third arm of the same mutually-exclusive sub-selection: whichever of
+  // the three is set is what the arrow keys nudge and what the editor rings.
+  // Distinct from `selectedAnchorIds` — that is the canvas selection of FREE
+  // anchors, which are a different thing living in a different collection.
+  selectedAnchorCellId: string | null;
   // The station whose name is being edited inline on the canvas.
   editingStationId: StationId | null;
   // Which sidebar tab is currently visible.
@@ -218,6 +241,14 @@ export interface SelectionState {
   // Svg-image selection. Multi-selection: parallel to the other id lists. The
   // last entry is the anchor used by the popover when length === 1.
   selectedSvgImageIds: string[];
+  // FREE transfer-anchor selection. Multi-selection: parallel to the other id
+  // lists. Station-HOSTED anchors never appear here — they are station
+  // internals, edited only in the layout editor, exactly like a stop dot.
+  // Anchors are the one selectable kind with no `locked` field and no popover,
+  // so they are deliberately absent from getCopyableSelection (nothing to
+  // paste that would carry its transfer) while still answering Delete, the
+  // arrow keys, the marquee, and group drag/rotate.
+  selectedAnchorIds: string[];
   // When true (the inspector's Select Similar toggle), layout edits (stop
   // layout + label + station rotation) mirror to every station sharing a
   // line whose layout renders identically (model/matching.ts — whole line,
@@ -258,8 +289,10 @@ export interface SelectionState {
   // re-renders — only an actual change of station/segment notifies subscribers.
   setAppendHover: (hover: AppendHover) => void;
   setHoveredLineStop: (v: { lineId: LineId; stationId: StationId } | null) => void;
+  setHoveredAnchorKey: (key: string | null) => void;
   setSelectedStopLineId: (id: LineId | null) => void;
   setLabelSelected: (selected: boolean) => void;
+  setSelectedAnchorCellId: (id: string | null) => void;
   setEditingStationId: (id: StationId | null) => void;
   // Tab click from the sidebar: collapse if it's the shown tab, otherwise open
   // that tab's list (see `sidebarOpen`).
@@ -277,7 +310,7 @@ export interface SelectionState {
   selectTransfer: (id: string | null) => void;
   // Narrowing helper: updates the creating-transfer variant's anchor in place.
   // No-op when uiMode.kind isn't 'creating-transfer'.
-  setTransferAnchor: (anchor: { stationId: StationId; lineId: LineId | null } | null) => void;
+  setTransferFirstEnd: (end: TransferEnd | null) => void;
   setMirrorMatching: (on: boolean) => void;
   selectLabel: (id: string | null) => void;
   toggleLabelSelection: (id: string) => void;
@@ -294,6 +327,11 @@ export interface SelectionState {
   setSvgImageSelection: (ids: string[]) => void;
   addSvgImagesToSelection: (ids: string[]) => void;
   xorSvgImagesToSelection: (ids: string[]) => void;
+  selectAnchor: (id: string | null) => void;
+  toggleAnchorSelection: (id: string) => void;
+  setAnchorSelection: (ids: string[]) => void;
+  addAnchorsToSelection: (ids: string[]) => void;
+  xorAnchorsToSelection: (ids: string[]) => void;
   // Replace the vertex selection (or clear with null). Does NOT touch
   // selectedPolygonIds — the polygon remains the primary selection.
   selectVertices: (sel: { polygonId: string; indices: number[] } | null) => void;
@@ -366,7 +404,8 @@ type IdListField =
   | 'selectedRouteBulletIds'
   | 'selectedLabelIds'
   | 'selectedPolygonIds'
-  | 'selectedSvgImageIds';
+  | 'selectedSvgImageIds'
+  | 'selectedAnchorIds';
 
 type SelectionSet = (
   partial: Partial<SelectionState> | ((s: SelectionState) => Partial<SelectionState>),
@@ -451,8 +490,10 @@ export const useSelection = create<SelectionState>()(
       hoveredCanvasItem: null,
       appendHover: null,
       hoveredLineStop: null,
+      hoveredAnchorKey: null,
       selectedStopLineId: null,
       labelSelected: false,
+      selectedAnchorCellId: null,
       editingStationId: null,
       activeTab: 'stations',
       sidebarOpen: true,
@@ -463,6 +504,7 @@ export const useSelection = create<SelectionState>()(
       selectedLabelIds: [],
       selectedPolygonIds: [],
       selectedSvgImageIds: [],
+      selectedAnchorIds: [],
       selectedVertices: null,
       mirrorMatching: false,
       toolMode: 'arrow',
@@ -480,7 +522,7 @@ export const useSelection = create<SelectionState>()(
       // switch (a hoveredLineStop surviving a transfer-mode exit left the
       // white dot ring painted with nothing left to clear it). Variant
       // payloads (transferAnchor, append cursor) are updated in place via
-      // setTransferAnchor / setAppendCursor.
+      // setTransferFirstEnd / setAppendCursor.
       setUiMode: (mode) =>
         set(
           // A deliberate mode switch drops the canvas hover-preview outright
@@ -493,6 +535,7 @@ export const useSelection = create<SelectionState>()(
                 hoveredCanvasItem: null,
                 appendHover: null,
                 hoveredLineStop: null,
+                hoveredAnchorKey: null,
               }
             : {
                 uiMode: mode,
@@ -500,6 +543,7 @@ export const useSelection = create<SelectionState>()(
                 hoveredCanvasItem: null,
                 appendHover: null,
                 hoveredLineStop: null,
+                hoveredAnchorKey: null,
                 ...clearedSelections(),
               },
         ),
@@ -684,12 +728,26 @@ export const useSelection = create<SelectionState>()(
         set({ appendHover: hover });
       },
       setHoveredLineStop: (v) => set({ hoveredLineStop: v }),
+      setHoveredAnchorKey: (key) => set({ hoveredAnchorKey: key }),
+      // The three sub-selection arms are mutually exclusive: arming one clears
+      // the others, clearing one leaves the rest alone.
       setSelectedStopLineId: (id) =>
-        set({ selectedStopLineId: id, labelSelected: id === null ? get().labelSelected : false }),
+        set({
+          selectedStopLineId: id,
+          labelSelected: id === null ? get().labelSelected : false,
+          selectedAnchorCellId: id === null ? get().selectedAnchorCellId : null,
+        }),
       setLabelSelected: (selected) =>
         set({
           labelSelected: selected,
           selectedStopLineId: selected ? null : get().selectedStopLineId,
+          selectedAnchorCellId: selected ? null : get().selectedAnchorCellId,
+        }),
+      setSelectedAnchorCellId: (id) =>
+        set({
+          selectedAnchorCellId: id,
+          selectedStopLineId: id === null ? get().selectedStopLineId : null,
+          labelSelected: id === null ? get().labelSelected : false,
         }),
       setEditingStationId: (id) => set({ editingStationId: id }),
       toggleTab: (tab) =>
@@ -721,10 +779,10 @@ export const useSelection = create<SelectionState>()(
           selectedTransferId: id,
           lineTagHoverPreview: null,
         }),
-      setTransferAnchor: (anchor) => {
+      setTransferFirstEnd: (end) => {
         const cur = get().uiMode;
         if (cur.kind !== 'creating-transfer') return;
-        set({ uiMode: { ...cur, anchor } });
+        set({ uiMode: { ...cur, firstEnd: end } });
       },
       setMirrorMatching: (on) => set({ mirrorMatching: on }),
       ...makeIdListActions(set, get, 'selectedLabelIds', {
@@ -755,6 +813,13 @@ export const useSelection = create<SelectionState>()(
         replace: 'setSvgImageSelection',
         add: 'addSvgImagesToSelection',
         xor: 'xorSvgImagesToSelection',
+      }),
+      ...makeIdListActions(set, get, 'selectedAnchorIds', {
+        select: 'selectAnchor',
+        toggle: 'toggleAnchorSelection',
+        replace: 'setAnchorSelection',
+        add: 'addAnchorsToSelection',
+        xor: 'xorAnchorsToSelection',
       }),
       selectVertices: (sel) => set({ selectedVertices: sel }),
       toggleVertexSelection: ({ polygonId, index }) =>
@@ -803,6 +868,9 @@ export const useSelection = create<SelectionState>()(
         if (polygons) next.selectedPolygonIds = polygons;
         const svgImages = prune(s.selectedSvgImageIds, (id) => !!doc.svgImages[id]);
         if (svgImages) next.selectedSvgImageIds = svgImages;
+        // Free anchors only — a hosted anchor id can never be in this list.
+        const anchors = prune(s.selectedAnchorIds, (id) => !!doc.transferAnchors[id]);
+        if (anchors) next.selectedAnchorIds = anchors;
         // Single primaries.
         if (s.selectedLineId && !doc.lines[s.selectedLineId]) next.selectedLineId = null;
         // Edit Stops is bound to one line the same way selectedLineId is: if
@@ -817,10 +885,10 @@ export const useSelection = create<SelectionState>()(
         // can only silently no-op against the dead id.
         if (
           s.uiMode.kind === 'creating-transfer' &&
-          s.uiMode.anchor &&
-          !doc.stations[s.uiMode.anchor.stationId]
+          s.uiMode.firstEnd &&
+          !transferEndResolves(doc, s.uiMode.firstEnd)
         )
-          next.uiMode = { kind: 'creating-transfer', anchor: null };
+          next.uiMode = { kind: 'creating-transfer', firstEnd: null };
         if (s.selectedLineTagId && !doc.lineTags[s.selectedLineTagId])
           next.selectedLineTagId = null;
         if (s.selectedTransferId && !doc.transfers[s.selectedTransferId])
@@ -829,6 +897,15 @@ export const useSelection = create<SelectionState>()(
         if (s.editingStationId && !doc.stations[s.editingStationId]) next.editingStationId = null;
         if (s.selectedStopLineId && !doc.lines[s.selectedStopLineId])
           next.selectedStopLineId = null;
+        // The armed anchor cell belongs to the edited station; it dangles when
+        // an undo removes the anchor (or the station) out from under it.
+        if (s.selectedAnchorCellId) {
+          const host = s.selectedStationIds[0];
+          const live = host
+            ? doc.stations[host]?.transferAnchors?.some((a) => a.id === s.selectedAnchorCellId)
+            : false;
+          if (!live) next.selectedAnchorCellId = null;
+        }
         if (s.hoveredStationId && !doc.stations[s.hoveredStationId]) next.hoveredStationId = null;
         // The canvas hover channels dangle the same way (the hovered element
         // unmounts with no pointerleave); a dangling id RESOLVES again after
@@ -937,6 +1014,12 @@ export type SoleSelection =
   | { type: 'label'; id: string }
   | { type: 'polygon'; id: string }
   | { type: 'svgImage'; id: string }
+  // Anchors have NO popover, so ItemPopovers returns null for this arm. It is
+  // here because soleSelection is ALSO hitStack's "what is currently picked"
+  // source for alt-click cycling — leaving anchors out doesn't mean "no
+  // popover", it means the deep-pick can't find the current entry and stops
+  // cycling entirely.
+  | { type: 'anchor'; id: string }
   | null;
 
 export function soleSelection(s: SelectionState): SoleSelection {
@@ -945,14 +1028,25 @@ export function soleSelection(s: SelectionState): SoleSelection {
     s.selectedRouteBulletIds.length +
     s.selectedLabelIds.length +
     s.selectedPolygonIds.length +
-    s.selectedSvgImageIds.length;
+    s.selectedSvgImageIds.length +
+    s.selectedAnchorIds.length;
   if (total !== 1) return null;
   if (s.selectedStationIds.length === 1) return { type: 'station', id: s.selectedStationIds[0] };
   if (s.selectedRouteBulletIds.length === 1)
     return { type: 'bullet', id: s.selectedRouteBulletIds[0] };
   if (s.selectedLabelIds.length === 1) return { type: 'label', id: s.selectedLabelIds[0] };
   if (s.selectedPolygonIds.length === 1) return { type: 'polygon', id: s.selectedPolygonIds[0] };
-  return { type: 'svgImage', id: s.selectedSvgImageIds[0] };
+  if (s.selectedSvgImageIds.length === 1) return { type: 'svgImage', id: s.selectedSvgImageIds[0] };
+  if (s.selectedAnchorIds.length === 1) return { type: 'anchor', id: s.selectedAnchorIds[0] };
+  // Every list checked explicitly, then null. This used to fall through to an
+  // unguarded `return { type: 'svgImage', id: s.selectedSvgImageIds[0] }`, so a
+  // new selection list holding the sole item yielded `{ svgImage, id: undefined }`
+  // — which hitStack.currentHitEntity feeds straight into the alt-click cycle,
+  // where `findIndex` misses and every alt-click re-returns the top of the stack
+  // (the deep-pick stops cycling). ItemPopovers just returns null for it, so
+  // nothing failed loudly. A new list MUST add its arm above; until it does,
+  // null degrades to "no sole selection", which is safe on both consumers.
+  return null;
 }
 
 // The copyable/duplicable selection: every item type EXCEPT stations (the

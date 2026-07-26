@@ -40,6 +40,23 @@ interface ViewportState extends Viewport {
    *  same as the `isWaypoint` flag itself). */
   showWaypoints: boolean;
   setShowWaypoints: (show: boolean) => void;
+  /** Render toggle: paint the transfer anchors (the small anchor glyphs that
+   *  give a transfer end something other than a stop dot to bind to). Defaults
+   *  OFF: anchors are scaffolding over finished artwork, so a map you are not
+   *  currently routing transfers on should not carry them. The two gestures
+   *  that are ABOUT anchors reveal them regardless — see
+   *  state/anchorVisibility.ts, which derives that rather than temporarily
+   *  writing this flag (a write would need a revert on every exit path). Anchors are editor
+   *  chrome either way: their layer carries `data-export-exclude`, so they
+   *  never reach an SVG/PNG/PDF export while the transfers bound to them do.
+   *  A pure paint toggle; it never mutates the doc. Like `showNetwork`, code
+   *  that reads geometry from the doc instead of the DOM has to opt in by hand
+   *  — see useRectSelect (a marquee must not sweep up hidden anchors, or an
+   *  invisible selection answers Delete) and liveAlignTargets (no snapping to
+   *  invisible targets). Hiding is a PEEK, not a deselect: an already-selected
+   *  anchor stays selected. */
+  showAnchors: boolean;
+  setShowAnchors: (show: boolean) => void;
   /** Render toggle: paint the line/station network at all — line bands, stop
    *  markers, station dots + names, line tags, and transfers. Off leaves the
    *  background (polygons, imported images, grid) alone on the canvas, so art
@@ -134,6 +151,8 @@ export const useViewportStore = create<ViewportState>()(
       setGridSize: (gridSize) => set({ gridSize }),
       showWaypoints: false,
       setShowWaypoints: (showWaypoints) => set({ showWaypoints }),
+      showAnchors: false,
+      setShowAnchors: (showAnchors) => set({ showAnchors }),
       showNetwork: true,
       setShowNetwork: (showNetwork) => set({ showNetwork }),
       dayCanvasColor: 'white',
@@ -151,6 +170,9 @@ export const useViewportStore = create<ViewportState>()(
         gridVisible: s.gridVisible,
         gridSize: s.gridSize,
         showWaypoints: s.showWaypoints,
+        // Persisted (unlike showNetwork): hiding anchors is a durable "I'm done
+        // routing transfers" preference, not a momentary get-out-of-my-way.
+        showAnchors: s.showAnchors,
         dayCanvasColor: s.dayCanvasColor,
         darkUiInDay: s.darkUiInDay,
         // showNetwork is deliberately absent: hiding the network is a momentary

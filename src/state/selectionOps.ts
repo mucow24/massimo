@@ -6,6 +6,12 @@ import { beginHistoryGroup, useDoc, useSelection } from './store';
  * The current selection's ids across every multi-selectable kind, one concrete
  * list per kind. Structurally assignable to transforms.LockableItemIds, so the
  * same struct feeds bulk lock/unlock and the bulk gestures below.
+ *
+ * `anchors` is the exception to that sentence: transfer anchors have no
+ * `locked` field, so `setItemsLocked` simply ignores the key. That is
+ * deliberate, not an oversight — but it does mean any bulk lock/unlock UI must
+ * exclude anchors from its "N items" affordance, or it offers to lock things it
+ * cannot lock (see SelectionPopover's lockableTotal).
  */
 export interface SelectionItemIds {
   stations: StationId[];
@@ -13,6 +19,7 @@ export interface SelectionItemIds {
   labels: string[];
   polygons: string[];
   svgImages: string[];
+  anchors: string[];
 }
 
 // The selection minus locked members — locked items resist Delete, arrow-nudge
@@ -26,6 +33,10 @@ export function unlockedSelectedItemIds(): SelectionItemIds {
     labels: sel.selectedLabelIds.filter((id) => !doc.textLabels[id]?.locked),
     polygons: sel.selectedPolygonIds.filter((id) => !doc.polygons[id]?.locked),
     svgImages: sel.selectedSvgImageIds.filter((id) => !doc.svgImages[id]?.locked),
+    // No lock filter: anchors have none. Breaking the visual symmetry of the
+    // lines above is the honest spelling — a `.filter(() => true)` would read
+    // like a lock check that happens to pass.
+    anchors: sel.selectedAnchorIds,
   };
 }
 
@@ -35,7 +46,10 @@ export function itemIdCount(ids: SelectionItemIds): number {
     ids.bullets.length +
     ids.labels.length +
     ids.polygons.length +
-    ids.svgImages.length
+    ids.svgImages.length +
+    // MANDATORY: both bulk gestures gate on this count being non-zero, so an
+    // anchor-only selection would silently ignore Delete and the arrow keys.
+    ids.anchors.length
   );
 }
 
@@ -61,6 +75,9 @@ export function deleteUnlockedSelection(): boolean {
   for (const id of ids.labels) doc.deleteTextLabel(id);
   for (const id of ids.polygons) doc.deletePolygon(id);
   for (const id of ids.svgImages) doc.deleteSvgImage(id);
+  // Inside the same group, so a mixed station+anchor delete stays ONE undo
+  // entry. deleteTransferAnchor also cascades the transfers bound to it.
+  for (const id of ids.anchors) doc.deleteTransferAnchor(id);
   group?.commit();
   return true;
 }

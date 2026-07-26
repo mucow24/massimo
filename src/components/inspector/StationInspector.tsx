@@ -18,6 +18,7 @@ import {
   LabelValignButtons,
 } from './LabelAlignButtons';
 import { StopRows } from './StopRows';
+import { spawnAnchorCell } from './stopGridDrag';
 import { StyleRow } from '../StyleRow';
 import { NumericFieldRow } from '../NumericFieldRow';
 import { WeightSelect, ItalicButton } from '../WeightItalicControls';
@@ -47,6 +48,7 @@ export function StationInspector({ id }: { id: StationId }) {
   const stationsAll = useDoc((s) => s.stations);
   const linesAll = useDoc((s) => s.lines);
   const renameStation = useDoc((s) => s.renameStation);
+  const addStationAnchor = useDoc((s) => s.addStationAnchor);
   const rotateStation = useDoc((s) => s.rotateStation);
   const moveStation = useDoc((s) => s.moveStation);
   const setLabelOffset = useDoc((s) => s.setLabelOffset);
@@ -284,6 +286,19 @@ export function StationInspector({ id }: { id: StationId }) {
           <div ref={stopRowsRef}>
             <StopRows station={station} lines={linesAll} />
           </div>
+          <button
+            type="button"
+            className="ghost-btn add-anchor-btn"
+            title="Park a transfer anchor in this station's grid — a corner a transfer can turn"
+            onClick={() => {
+              const [row, col] = spawnAnchorCell(station, linesAll);
+              // Arm it immediately so the arrow keys can walk it into place
+              // without a second click on the canvas handle.
+              selection.setSelectedAnchorCellId(addStationAnchor(station.id, row, col));
+            }}
+          >
+            Add transfer anchor
+          </button>
           {(station.stops.length === 0 || inLayoutEdit) && (
             <div className="field-hint">
               {station.stops.length === 0

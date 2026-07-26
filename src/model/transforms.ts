@@ -1,4 +1,5 @@
 import { autoOrientNewStation } from './autoOrient';
+import { endStationId, isStopEnd, stationAnchorCell } from './transferAnchors';
 import { effectiveLineOrder } from './lineOrder';
 import { reconcileOrder, moveInOrder, moveToEndInOrder } from './recordOrder';
 import {
@@ -294,6 +295,7 @@ type RecordCollectionKey =
   | 'polygons'
   | 'svgImages'
   | 'lineTags'
+  | 'transferAnchors'
   | 'transfers';
 
 function updateRecord<K extends RecordCollectionKey>(
@@ -1062,8 +1064,19 @@ const ORBIT_STEP_RAD = Math.PI / 4;
  * callers to pre-split by type.
  */
 export interface ItemRef {
-  type: 'station' | 'bullet' | 'label' | 'polygon' | 'svgImage';
+  type: 'station' | 'bullet' | 'label' | 'polygon' | 'svgImage' | 'anchor';
   id: string;
+}
+
+/**
+ * Exhaustiveness guard for {@link ItemRef} dispatch chains. Both chains in
+ * `rotateItemsAround` (pivot resolution and the member loop) used to end in a
+ * catch-all that assumed the last type — so widening `ItemRef` compiled cleanly
+ * and wrote the new type into `textLabels` / `svgImages`. Routing the tail
+ * through this instead makes that a compile error at both sites.
+ */
+function assertNeverItemType(t: never): never {
+  throw new Error(`rotateItemsAround: unhandled item type ${String(t)}`);
 }
 
 /**
@@ -1092,13 +1105,24 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
     if (!pv) return doc;
     px = pv.x;
     py = pv.y;
+  } else if (pivot.type === 'anchor') {
+    const pv = doc.transferAnchors[pivot.id];
+    if (!pv) return doc;
+    px = pv.x;
+    py = pv.y;
   } else {
+    // Each remaining type named explicitly. The tail used to be a bare
+    // `: doc.textLabels[pivot.id]`, so a new ItemRef type would have been looked
+    // up in the text-label collection and silently pivoted about the wrong item
+    // (or bailed, if the id happened not to resolve there).
     const pivotItem =
       pivot.type === 'station'
         ? doc.stations[pivot.id]
         : pivot.type === 'bullet'
           ? doc.routeBullets[pivot.id]
-          : doc.textLabels[pivot.id];
+          : pivot.type === 'label'
+            ? doc.textLabels[pivot.id]
+            : assertNeverItemType(pivot.type);
     if (!pivotItem) return doc;
     px = pivotItem.x;
     py = pivotItem.y;
@@ -1110,6 +1134,7 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
   let textLabels = doc.textLabels;
   let polygons = doc.polygons;
   let svgImages = doc.svgImages;
+  let transferAnchors = doc.transferAnchors;
 
   for (const m of members) {
     const isPivot = m.type === pivot.type && m.id === pivot.id;
@@ -1145,7 +1170,17 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
       if (!cur) continue;
       const vertices = cur.vertices.map((vert) => rotateAround(vert, pivotPt, ORBIT_STEP_RAD));
       polygons = { ...polygons, [m.id]: { ...cur, vertices } };
-    } else {
+    } else if (m.type === 'anchor') {
+      // Position only. An anchor has no orientation to advance — it is the
+      // polygon case (orbiting IS the rotation) collapsed to a single point,
+      // which also makes an anchor-as-pivot a natural no-op via `isPivot`.
+      const cur = transferAnchors[m.id];
+      if (!cur) continue;
+      const p = isPivot
+        ? { x: cur.x, y: cur.y }
+        : rotateAround({ x: cur.x, y: cur.y }, pivotPt, ORBIT_STEP_RAD);
+      transferAnchors = { ...transferAnchors, [m.id]: { ...cur, x: p.x, y: p.y } };
+    } else if (m.type === 'svgImage') {
       // Svg image: orbit the center (held fixed when it IS the pivot) and step
       // its continuous rotation by 45° — a clean multiple of the 22.5° snap
       // grid, so a group rotate never desyncs an image from that grid.
@@ -1158,9 +1193,11 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
         ...svgImages,
         [m.id]: { ...cur, x: p.x, y: p.y, rotation: normalizeRotation(cur.rotation + 45) },
       };
+    } else {
+      assertNeverItemType(m.type);
     }
   }
-  return { ...doc, stations, routeBullets, textLabels, polygons, svgImages };
+  return { ...doc, stations, routeBullets, textLabels, polygons, svgImages, transferAnchors };
 }
 
 /**
@@ -1175,6 +1212,7 @@ export function buildRotateMembers(
   labelIds: string[],
   polygonIds: string[] = [],
   svgImageIds: string[] = [],
+  anchorIds: string[] = [],
 ): ItemRef[] {
   return [
     ...stationIds.map((id): ItemRef => ({ type: 'station', id })),
@@ -1182,6 +1220,7 @@ export function buildRotateMembers(
     ...labelIds.map((id): ItemRef => ({ type: 'label', id })),
     ...polygonIds.map((id): ItemRef => ({ type: 'polygon', id })),
     ...svgImageIds.map((id): ItemRef => ({ type: 'svgImage', id })),
+    ...anchorIds.map((id): ItemRef => ({ type: 'anchor', id })),
   ];
 }
 
@@ -1226,7 +1265,22 @@ export function rotateStationLayoutBy90(station: Station, dir: -1 | 1): Station 
   const labelStep = dir === 1 ? 2 : 6;
   const labelRot = ((station.label.rotation + labelStep) % 8) as Rotation;
   const label = { ...station.label, col: lr.col, row: lr.row, rotation: labelRot };
-  return { ...station, rotation: nextRot, stops, label };
+  // Hosted transfer anchors turn with the layout. They are plain cells (no
+  // orientation, no rotation of their own), so they only need the grid map —
+  // but they DO need it: an anchor left behind while the stops rotated 90°
+  // around it would tear apart the elbowed transfer bound to it. This is the
+  // whole reason they live on the Station rather than in a doc-level record.
+  const transferAnchors = station.transferAnchors?.map((a) => {
+    const r = rotateGrid(a.col, a.row);
+    return { ...a, col: r.col, row: r.row };
+  });
+  return {
+    ...station,
+    rotation: nextRot,
+    stops,
+    label,
+    ...(transferAnchors ? { transferAnchors } : {}),
+  };
 }
 
 export function rotateStationAndLayout(doc: MapDoc, id: StationId, dir: -1 | 1): MapDoc {
@@ -1238,20 +1292,28 @@ export function rotateStationAndLayout(doc: MapDoc, id: StationId, dir: -1 | 1):
   };
 }
 
-// Drop every transfer that has an endpoint anchored at a stop the caller is
-// removing. `orphaned` decides whether an endpoint now points at a stop that
-// no longer exists — matched by (stationId, lineId) for a single stop, by
-// lineId for a whole line, or by stationId for a whole station.
+// Drop every transfer with an endpoint the caller is removing. `orphaned`
+// decides whether an endpoint now points at something that no longer exists —
+// matched by (stationId, lineId) for a single stop, by lineId for a whole line,
+// by stationId for a whole station (which orphans its hosted anchors too), or
+// by anchorId for a single anchor.
+//
+// Returns the SAME record reference when nothing was pruned. Change detection is
+// per-DOC_FIELDS reference equality (docSnapshotsEqual), and the anchor deletes
+// call this on every removal — allocating unconditionally would mark `transfers`
+// dirty for an anchor that never had one.
 function pruneTransfers(
   transfers: Record<string, Transfer>,
   orphaned: (end: TransferEnd) => boolean,
 ): Record<string, Transfer> {
   const next: Record<string, Transfer> = {};
+  let pruned = false;
   for (const xid of Object.keys(transfers)) {
     const t = transfers[xid];
     if (!orphaned(t.a) && !orphaned(t.b)) next[xid] = t;
+    else pruned = true;
   }
-  return next;
+  return pruned ? next : transfers;
 }
 
 export function deleteStation(doc: MapDoc, id: StationId): MapDoc {
@@ -1269,7 +1331,9 @@ export function deleteStation(doc: MapDoc, id: StationId): MapDoc {
     });
   }
   // Cascade-delete transfers that referenced the removed station.
-  const transfers = pruneTransfers(doc.transfers, (e) => e.stationId === id);
+  // One predicate covers both station-keyed end shapes: the station's stops AND
+  // the transfer anchors hosted in its cell grid (which go with the station).
+  const transfers = pruneTransfers(doc.transfers, (e) => endStationId(e) === id);
   return pruneOrphanLineTags({ ...doc, stations: rest, lines, transfers });
 }
 
@@ -1711,10 +1775,11 @@ export function removeStationFromLine(doc: MapDoc, lineId: LineId, idx: number):
       ...stations,
       [removedStationId]: { ...st, stops: st.stops.filter((c) => c.lineId !== lineId) },
     };
-    // The (station, line) stop is gone — delete transfers anchored at it.
+    // The (station, line) stop is gone — delete transfers anchored at it. Stop
+    // ends only: the station itself survives, so its hosted anchors do too.
     transfers = pruneTransfers(
       transfers,
-      (e) => e.stationId === removedStationId && e.lineId === lineId,
+      (e) => isStopEnd(e) && e.stationId === removedStationId && e.lineId === lineId,
     );
   }
   const updatedLine = pruneOrphanSegmentStyles({
@@ -1867,7 +1932,8 @@ export function deleteLine(doc: MapDoc, id: LineId): MapDoc {
   }
   // Deleting the line removes all its stops, so delete every transfer anchored
   // at one — an endpoint with lineId === id pointed at a stop that's now gone.
-  const transfers = pruneTransfers(doc.transfers, (e) => e.lineId === id);
+  // Stop ends only: an anchor end has no lineId, and must not be swept up here.
+  const transfers = pruneTransfers(doc.transfers, (e) => isStopEnd(e) && e.lineId === id);
   const regionAssignments = pruneRegionAssignmentsForLine(doc.regionAssignments, id);
   return {
     ...doc,
@@ -2757,22 +2823,33 @@ export function deleteSvgImage(doc: MapDoc, id: string): MapDoc {
 
 // ---------- Transfers ----------
 
-export function addTransfer(
-  doc: MapDoc,
-  id: string,
-  a: { stationId: StationId; lineId: LineId | null },
-  b: { stationId: StationId; lineId: LineId | null },
-): MapDoc {
-  // Same station + same lineId is a self-transfer (zero-length); reject.
-  // Same station + DIFFERENT lineIds is fine — a short transfer between
-  // two dots of an interlined station is a valid use case.
-  if (a.stationId === b.stationId && a.lineId === b.lineId) return doc;
-  if (!doc.stations[a.stationId] || !doc.stations[b.stationId]) return doc;
-  const transfer: Transfer = {
-    id,
-    a: { stationId: a.stationId, lineId: a.lineId },
-    b: { stationId: b.stationId, lineId: b.lineId },
-  };
+/** Do two ends name the exact same point? A zero-length transfer is rejected. */
+export function sameTransferEnd(a: TransferEnd, b: TransferEnd): boolean {
+  const aAnchor = 'anchorId' in a;
+  const bAnchor = 'anchorId' in b;
+  if (aAnchor !== bAnchor) return false;
+  if (aAnchor && bAnchor) return a.anchorId === b.anchorId;
+  // Both stop ends. Same station + DIFFERENT lineIds is fine — a short transfer
+  // between two dots of an interlined station is a valid use case.
+  return isStopEnd(a) && isStopEnd(b) && a.stationId === b.stationId && a.lineId === b.lineId;
+}
+
+/** Does this end name something that exists right now? */
+function transferEndExists(doc: MapDoc, end: TransferEnd): boolean {
+  if (isStopEnd(end)) return !!doc.stations[end.stationId];
+  if ('stationId' in end) return !!stationAnchorCell(doc.stations[end.stationId], end.anchorId);
+  return !!doc.transferAnchors[end.anchorId];
+}
+
+/**
+ * Join two transfer ends. Either end may be a station stop, a station-hosted
+ * transfer anchor, or a free anchor — an anchor end is what lets a transfer turn
+ * a corner (two segments meeting at one anchor is a 90° transfer).
+ */
+export function addTransfer(doc: MapDoc, id: string, a: TransferEnd, b: TransferEnd): MapDoc {
+  if (sameTransferEnd(a, b)) return doc;
+  if (!transferEndExists(doc, a) || !transferEndExists(doc, b)) return doc;
+  const transfer: Transfer = { id, a, b };
   return { ...doc, transfers: { ...doc.transfers, [id]: transfer } };
 }
 
@@ -2780,6 +2857,87 @@ export function deleteTransfer(doc: MapDoc, id: string): MapDoc {
   if (!doc.transfers[id]) return doc;
   const { [id]: _gone, ...rest } = doc.transfers;
   return { ...doc, transfers: rest };
+}
+
+// ---------- Transfer anchors ----------
+//
+// Two homes, one purpose: give a transfer end something to bind to that isn't a
+// station stop. FREE anchors are world points in `doc.transferAnchors`; HOSTED
+// anchors are cells in `Station.transferAnchors` (see model/transferAnchors.ts
+// for why the split is load-bearing). Both cascade their transfers on delete —
+// a transfer needs both ends, so orphaning one removes the segment.
+
+export function addTransferAnchor(doc: MapDoc, id: string, x: number, y: number): MapDoc {
+  return { ...doc, transferAnchors: { ...doc.transferAnchors, [id]: { id, x, y } } };
+}
+
+export function moveTransferAnchor(doc: MapDoc, id: string, x: number, y: number): MapDoc {
+  return updateRecord(doc, 'transferAnchors', id, (cur) => ({ ...cur, x, y }));
+}
+
+export function deleteTransferAnchor(doc: MapDoc, id: string): MapDoc {
+  if (!doc.transferAnchors[id]) return doc;
+  const { [id]: _gone, ...rest } = doc.transferAnchors;
+  return {
+    ...doc,
+    transferAnchors: rest,
+    // Reference-stable when this anchor carried no transfers, so a stray delete
+    // doesn't also mark `transfers` dirty.
+    transfers: pruneTransfers(doc.transfers, (e) => 'anchorId' in e && e.anchorId === id),
+  };
+}
+
+/** Park a new anchor cell in a station's grid. */
+export function addStationAnchor(
+  doc: MapDoc,
+  stationId: StationId,
+  id: string,
+  row: number,
+  col: number,
+): MapDoc {
+  return updateStation(doc, stationId, (st) => ({
+    ...st,
+    transferAnchors: [...(st.transferAnchors ?? []), { id, row, col }],
+  }));
+}
+
+/** Nudge a hosted anchor by a (dRow, dCol) delta — the moveStop convention. */
+export function moveStationAnchor(
+  doc: MapDoc,
+  stationId: StationId,
+  anchorId: string,
+  dRow: number,
+  dCol: number,
+): MapDoc {
+  if (dRow === 0 && dCol === 0) return doc;
+  const st = doc.stations[stationId];
+  if (!stationAnchorCell(st, anchorId)) return doc;
+  return updateStation(doc, stationId, (s) => ({
+    ...s,
+    transferAnchors: (s.transferAnchors ?? []).map((a) =>
+      a.id === anchorId ? { ...a, row: a.row + dRow, col: a.col + dCol } : a,
+    ),
+  }));
+}
+
+export function deleteStationAnchor(doc: MapDoc, stationId: StationId, anchorId: string): MapDoc {
+  const st = doc.stations[stationId];
+  if (!stationAnchorCell(st, anchorId)) return doc;
+  const kept = (st.transferAnchors ?? []).filter((a) => a.id !== anchorId);
+  const withoutAnchor = updateStation(doc, stationId, (s) => {
+    // Drop the array entirely at zero, per the omitted-when-empty convention —
+    // a station that never grew one, and one that lost its last, must persist
+    // identically.
+    const { transferAnchors: _gone, ...rest } = s;
+    return kept.length > 0 ? { ...rest, transferAnchors: kept } : rest;
+  });
+  return {
+    ...withoutAnchor,
+    transfers: pruneTransfers(
+      withoutAnchor.transfers,
+      (e) => 'anchorId' in e && e.anchorId === anchorId,
+    ),
+  };
 }
 
 // Write one canonicalized style override onto a transfer: `undefined` (the
@@ -2987,6 +3145,7 @@ export const DEFAULT_DOC: MapDoc = {
   lineCounter: 0,
   lineTags: {},
   routeBullets: {},
+  transferAnchors: {},
   transfers: {},
   textLabels: {},
   polygons: {},

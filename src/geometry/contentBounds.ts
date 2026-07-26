@@ -9,6 +9,7 @@ import {
   stationWorldAABB,
   svgImageAABB,
   textLabelAABB,
+  transferAnchorAABB,
 } from './itemBounds';
 import type { AABB } from './rectPolygon';
 
@@ -56,6 +57,16 @@ export function computeContentBounds(doc: MapDoc): AABBRect | null {
   }
   for (const id in doc.routeBullets) {
     acc(routeBulletAABB(doc.routeBullets[id]));
+  }
+  // FREE transfer anchors only. Unlike a transfer (safely omitted, because its
+  // ENDS are stations the hull already spans), a free anchor is a user-placed
+  // world point nothing else covers — leave it out and Reset view scrolls it
+  // off-screen with no way back. Deliberately NOT gated on `showAnchors`: this
+  // is a pure doc function with no viewport access, and it already ignores
+  // `showNetwork` for stations, so a toggle-sensitive kind would be the worse
+  // inconsistency. Hosted anchors stay out — their station's box covers them.
+  for (const id in doc.transferAnchors) {
+    acc(transferAnchorAABB(doc.transferAnchors[id]));
   }
 
   if (!Number.isFinite(minX)) return null;

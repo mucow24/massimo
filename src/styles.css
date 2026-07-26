@@ -2676,6 +2676,30 @@ body:has(.app[data-theme='dark']) {
 .stop-row .line-badge {
   flex: none;
 }
+/* A transfer-anchor row shares the stop row's shell but carries no line badge,
+   type picker, size field or orientation button — an anchor has none of them.
+   The badge slot holds the anchor mark instead, in the muted chrome ink rather
+   than a line color (an anchor belongs to no line). */
+.anchor-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.anchor-row-name {
+  flex: 1;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+/* Full-width so it reads as an action on the section above it, not as another
+   row in the list. */
+.add-anchor-btn {
+  width: 100%;
+  justify-content: center;
+  margin-top: 6px;
+}
 .stop-row .btn-mini.shape-picker-trigger {
   width: 26px;
   height: 26px;

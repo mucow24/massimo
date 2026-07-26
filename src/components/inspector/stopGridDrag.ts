@@ -57,7 +57,7 @@ export function nearestNode<T extends RowCol>(cursor: RowCol, nodes: readonly T[
   return best;
 }
 
-export type DragSourceKind = 'stop' | 'label';
+export type DragSourceKind = 'stop' | 'label' | 'anchor';
 export type DropTarget =
   | { kind: 'ghost'; row: number; col: number }
   | { kind: 'stop'; row: number; col: number; lineId: string };
@@ -146,7 +146,16 @@ export type WidthNode = RowCol & { w: number; g?: number; isLabel?: boolean };
  *  (null = the label cell). */
 export type LayoutNode = WidthNode & { lineId: string | null };
 
-export type LayoutSource = { kind: 'stop'; lineId: string } | { kind: 'label' };
+export type LayoutSource =
+  | { kind: 'stop'; lineId: string }
+  | { kind: 'label' }
+  // A station-hosted transfer anchor. Deliberately NOT a LayoutNode: this
+  // module's node identity is `lineId: string | null`, where null means "the
+  // label" — an anchor node would be indistinguishable from it in
+  // `otherLayoutNodes`, and lacking `isLabel` it would become a lattice ORIGIN
+  // in `anchorPool`, producing exactly the incommensurate-pitch kink that
+  // function exists to forbid. Anchors ride the lattice as passengers instead.
+  | { kind: 'anchor'; anchorId: string };
 
 /**
  * Every lattice node of a station with its effective width: one per stop
@@ -173,6 +182,9 @@ export function stationLayoutNodes(
 
 /** The non-source nodes for a drag/nudge: anchor candidates + overlap filter. */
 export function otherLayoutNodes(nodes: readonly LayoutNode[], source: LayoutSource): LayoutNode[] {
+  // An anchor is not in `nodes` at all, so nothing needs filtering out for it —
+  // every stop AND the label stay available as lattice anchors and blockers.
+  if (source.kind === 'anchor') return [...nodes];
   return nodes.filter((n) =>
     source.kind === 'label' ? n.lineId !== null : n.lineId !== source.lineId,
   );
@@ -180,12 +192,36 @@ export function otherLayoutNodes(nodes: readonly LayoutNode[], source: LayoutSou
 
 /** The dragged/nudged node's own cell, or null when it no longer exists. */
 export function sourceCellOf(
-  station: Pick<Station, 'stops' | 'label'>,
+  station: Pick<Station, 'stops' | 'label' | 'transferAnchors'>,
   source: LayoutSource,
 ): RowCol | null {
   if (source.kind === 'label') return { row: station.label.row, col: station.label.col };
+  if (source.kind === 'anchor') {
+    const a = station.transferAnchors?.find((x) => x.id === source.anchorId);
+    return a ? { row: a.row, col: a.col } : null;
+  }
   const cell = station.stops.find((s) => s.lineId === source.lineId);
   return cell ? { row: cell.row, col: cell.col } : null;
+}
+
+/**
+ * A station's transfer anchors as width-0 point nodes, for the OVERLAP filter
+ * only. Appended to `otherNodes` by the drag and nudge paths so a stop or the
+ * label can't be dropped straight on top of an anchor — the repulsion an
+ * anchor would have exerted had it been a real LayoutNode, without giving it
+ * the node identity that breaks `otherLayoutNodes` and `anchorPool`.
+ *
+ * `isLabel: true` is the "point, not a body" flag, and `lineId: null` keeps
+ * them out of `anchorPool` (which filters on isLabel) — they can block a slot
+ * but never originate the lattice.
+ */
+export function anchorBlockerNodes(
+  station: Pick<Station, 'transferAnchors'>,
+  exclude?: string,
+): LayoutNode[] {
+  return (station.transferAnchors ?? [])
+    .filter((a) => a.id !== exclude)
+    .map((a) => ({ row: a.row, col: a.col, w: STOP_SIZE, isLabel: true, lineId: null }));
 }
 
 export interface GhostSpec {
@@ -195,10 +231,12 @@ export interface GhostSpec {
    *  ring-1 packed pitch against the anchor (max-of-pair), so a dropped
    *  stop lands where the band merge gate expects it. */
   gSrc?: number;
-  /** The dragged/nudged node is the label — a point for overlap purposes
-   *  (its handle is editor chrome, not map ink), so slots are only dropped
-   *  where a dot's body would cover the label's anchor point. */
-  srcIsLabel?: boolean;
+  /** The dragged/nudged node is POINT-like — the label cell, or a transfer
+   *  anchor. Its handle is editor chrome, not map ink, so it has no body for
+   *  overlap purposes: slots are only dropped where a dot's body would cover
+   *  the point itself. (Named srcIsLabel until anchors became the second
+   *  source with exactly these mechanics.) */
+  srcIsPoint?: boolean;
   /** Anchor node the candidate lattice hangs off (typically the nearest
    *  non-source node). */
   anchor: WidthNode;
@@ -226,7 +264,7 @@ export interface GhostSpec {
  * edge reaches that point.
  */
 export function computeGhosts(spec: GhostSpec): RowCol[] {
-  const { wSrc, gSrc, srcIsLabel, anchor, otherNodes, basis, stationRotation, gridRadius } = spec;
+  const { wSrc, gSrc, srcIsPoint, anchor, otherNodes, basis, stationRotation, gridRadius } = spec;
   const t = tangentGap(wSrc, anchor.w, gSrc ?? 0, anchor.g ?? 0) / STOP_SIZE;
   const localOffsets = projectScreenToLocal(latticeOffsets(basis, gridRadius), stationRotation);
   const ghosts: RowCol[] = [];
@@ -239,7 +277,7 @@ export function computeGhosts(spec: GhostSpec): RowCol[] {
       // overlap, and plain tangency is a legitimate spacing for neighbors
       // that aren't meant to interline — only the packed pitch above grows
       // with the gap.
-      const clearance = tangentGap(srcIsLabel ? 0 : wSrc, n.isLabel ? 0 : n.w, 0, 0) / STOP_SIZE;
+      const clearance = tangentGap(srcIsPoint ? 0 : wSrc, n.isLabel ? 0 : n.w, 0, 0) / STOP_SIZE;
       if (Math.hypot(g.row - n.row, g.col - n.col) < clearance - CELL_EPS) {
         overlap = true;
         break;
@@ -278,19 +316,19 @@ export function dragLattice(spec: {
   wSrc: number;
   /** See GhostSpec.gSrc. */
   gSrc?: number;
-  /** See GhostSpec.srcIsLabel. */
-  srcIsLabel?: boolean;
+  /** See GhostSpec.srcIsPoint. */
+  srcIsPoint?: boolean;
   otherNodes: readonly WidthNode[];
   basis: LatticeBasis;
   stationRotation: Rotation;
 }): { anchor: WidthNode | null; ghosts: RowCol[] } {
-  const { cursor, wSrc, gSrc, srcIsLabel, otherNodes, basis, stationRotation } = spec;
+  const { cursor, wSrc, gSrc, srcIsPoint, otherNodes, basis, stationRotation } = spec;
   const anchor = nearestNode(cursor, anchorPool(otherNodes));
   if (!anchor) return { anchor: null, ghosts: [] };
   const ghosts = computeGhosts({
     wSrc,
     gSrc,
-    srcIsLabel,
+    srcIsPoint,
     anchor,
     otherNodes,
     basis,
@@ -317,21 +355,21 @@ export function nudgeTarget(spec: {
   wSrc: number;
   /** See GhostSpec.gSrc. */
   gSrc?: number;
-  /** See GhostSpec.srcIsLabel. */
-  srcIsLabel?: boolean;
+  /** See GhostSpec.srcIsPoint. */
+  srcIsPoint?: boolean;
   otherNodes: readonly WidthNode[];
   basis: LatticeBasis;
   stationRotation: Rotation;
   /** Screen-frame arrow direction: one of (±1, 0) / (0, ±1). */
   arrow: RowCol;
 }): RowCol | null {
-  const { source, wSrc, gSrc, srcIsLabel, otherNodes, basis, stationRotation, arrow } = spec;
+  const { source, wSrc, gSrc, srcIsPoint, otherNodes, basis, stationRotation, arrow } = spec;
   const anchor = nearestNode(source, anchorPool(otherNodes));
   if (!anchor) return null;
   const ghosts = computeGhosts({
     wSrc,
     gSrc,
-    srcIsLabel,
+    srcIsPoint,
     anchor,
     otherNodes,
     basis,
@@ -370,4 +408,43 @@ export function nudgeTarget(spec: {
     }
   }
   return best;
+}
+
+/**
+ * Where a newly added transfer anchor lands in a station's grid.
+ *
+ * `spawnStopCellAt` is deliberately NOT reused: it needs a lineId twice (once
+ * for the new node's width, once to stamp onto the returned StopCell), anchors
+ * on the rightmost STOP only, and ignores the label cell entirely — an anchor
+ * has no line and must not land on the label.
+ *
+ * Instead it reuses the lattice the DRAG would offer: ghosts around the nearest
+ * anchorable node, computed with the label's point-like parameters, minus any
+ * slot an existing anchor already holds. Deterministic (first by row, then col)
+ * so repeated clicks walk outward rather than stacking. Falls back to one cell
+ * right of the label when the overlap filter leaves nothing.
+ */
+export function spawnAnchorCell(
+  station: Pick<Station, 'stops' | 'label' | 'transferAnchors'>,
+  lines: Record<string, Line>,
+): [row: number, col: number] {
+  const nodes = stationLayoutNodes(station, lines);
+  const anchor = anchorPool(nodes)[0];
+  const taken = station.transferAnchors ?? [];
+  const fallback: [number, number] = [station.label.row, station.label.col + 1];
+  if (!anchor) return fallback;
+  const ghosts = computeGhosts({
+    wSrc: STOP_SIZE,
+    gSrc: 0,
+    srcIsPoint: true,
+    anchor,
+    otherNodes: [...nodes, ...anchorBlockerNodes(station)],
+    basis: 'orthogonal',
+    stationRotation: 0,
+    gridRadius: GRID_RADIUS,
+  })
+    .filter((g) => !taken.some((a) => sameCell(a, g)))
+    .sort((a, b) => a.row - b.row || a.col - b.col);
+  const pick = ghosts[0];
+  return pick ? [pick.row, pick.col] : fallback;
 }

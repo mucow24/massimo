@@ -359,7 +359,7 @@ const NON_IDLE_MODES: UiMode[] = [
   { kind: 'placing-station' },
   { kind: 'creating-line-tag' },
   { kind: 'creating-route-bullet' },
-  { kind: 'creating-transfer', anchor: null },
+  { kind: 'creating-transfer', firstEnd: null },
   { kind: 'placing-label' },
   { kind: 'appending-to-line', lineId: 'L1' as LineId, cursor: null },
   { kind: 'layering' },
@@ -435,33 +435,33 @@ describe('uiMode transitions', () => {
 
 describe('uiMode variant payloads', () => {
   it('creating-transfer carries null anchor on entry', () => {
-    useSelection.getState().setUiMode({ kind: 'creating-transfer', anchor: null });
+    useSelection.getState().setUiMode({ kind: 'creating-transfer', firstEnd: null });
     const cur = useSelection.getState().uiMode;
-    expect(cur).toEqual({ kind: 'creating-transfer', anchor: null });
+    expect(cur).toEqual({ kind: 'creating-transfer', firstEnd: null });
   });
 
-  it('setTransferAnchor updates the creating-transfer variant in place', () => {
-    useSelection.getState().setUiMode({ kind: 'creating-transfer', anchor: null });
+  it('setTransferFirstEnd updates the creating-transfer variant in place', () => {
+    useSelection.getState().setUiMode({ kind: 'creating-transfer', firstEnd: null });
     useSelection
       .getState()
-      .setTransferAnchor({ stationId: 'S1' as StationId, lineId: 'L1' as LineId });
+      .setTransferFirstEnd({ stationId: 'S1' as StationId, lineId: 'L1' as LineId });
     const cur = useSelection.getState().uiMode;
     expect(cur.kind).toBe('creating-transfer');
     if (cur.kind === 'creating-transfer') {
-      expect(cur.anchor).toEqual({ stationId: 'S1', lineId: 'L1' });
+      expect(cur.firstEnd).toEqual({ stationId: 'S1', lineId: 'L1' });
     }
   });
 
-  it('setTransferAnchor is a no-op when not in creating-transfer', () => {
+  it('setTransferFirstEnd is a no-op when not in creating-transfer', () => {
     useSelection.getState().setUiMode({ kind: 'placing-station' });
-    useSelection.getState().setTransferAnchor({ stationId: 'S1' as StationId, lineId: null });
+    useSelection.getState().setTransferFirstEnd({ stationId: 'S1' as StationId, lineId: null });
     expect(useSelection.getState().uiMode.kind).toBe('placing-station');
   });
 
   it('exiting creating-transfer drops the anchor', () => {
     useSelection.getState().setUiMode({
       kind: 'creating-transfer',
-      anchor: { stationId: 'S1' as StationId, lineId: null },
+      firstEnd: { stationId: 'S1' as StationId, lineId: null },
     });
     useSelection.getState().setUiMode({ kind: 'idle' });
     expect(useSelection.getState().uiMode).toEqual({ kind: 'idle' });
@@ -937,11 +937,11 @@ describe('reconcileWithDoc', () => {
     useSelection.setState({
       uiMode: {
         kind: 'creating-transfer',
-        anchor: { stationId: 'ghost' as StationId, lineId: 'L1' as LineId },
+        firstEnd: { stationId: 'ghost' as StationId, lineId: 'L1' as LineId },
       },
     });
     useSelection.getState().reconcileWithDoc(docWith({ lines: ['L1'] }));
-    expect(useSelection.getState().uiMode).toEqual({ kind: 'creating-transfer', anchor: null });
+    expect(useSelection.getState().uiMode).toEqual({ kind: 'creating-transfer', firstEnd: null });
   });
 
   it('prunes only the out-of-range vertices, keeping the rest', () => {

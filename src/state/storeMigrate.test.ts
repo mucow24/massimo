@@ -1337,7 +1337,7 @@ describe('append-mode placeholder GC on bypass exits', () => {
     useSelection.getState().startAppend('L1' as LineId);
 
     // The T-shortcut path: setUiMode directly, no cancelAppendMode call.
-    useSelection.getState().setUiMode({ kind: 'creating-transfer', anchor: null });
+    useSelection.getState().setUiMode({ kind: 'creating-transfer', firstEnd: null });
 
     expect(useDoc.getState().lines['L1' as LineId]).toBeUndefined();
     expect(useDoc.getState().lineCounter).toBe(2);

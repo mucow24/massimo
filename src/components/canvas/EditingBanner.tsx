@@ -12,6 +12,7 @@ const PLACING_TEXT: Record<
   | 'creating-line-tag'
   | 'creating-route-bullet'
   | 'placing-label'
+  | 'placing-anchor'
   | 'creating-polygon'
   | 'placing-svg',
   string
@@ -20,6 +21,8 @@ const PLACING_TEXT: Record<
   'creating-line-tag': 'Click a colored line to place a tag.',
   'creating-route-bullet': 'Click on the canvas to place a route bullet.',
   'placing-label': 'Click on the canvas to place a text label.',
+  'placing-anchor':
+    'Click on the canvas to place a transfer anchor — a corner for a transfer to turn.',
   'creating-polygon': 'Click on the canvas to place a polygon.',
   'placing-svg': 'Click on the canvas to place the imported image.',
 };
@@ -43,6 +46,7 @@ export function EditingBanner() {
     case 'creating-line-tag':
     case 'creating-route-bullet':
     case 'placing-label':
+    case 'placing-anchor':
     case 'creating-polygon':
     case 'placing-svg':
       return (
@@ -58,7 +62,7 @@ export function EditingBanner() {
         <>
           <div className="append-frame" />
           <div className="append-banner placing">
-            {uiMode.anchor
+            {uiMode.firstEnd
               ? `Click the second station to complete the transfer. ${CANCEL_HINT}`
               : `Click the first station to start a transfer. ${CANCEL_HINT}`}
           </div>

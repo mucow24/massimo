@@ -297,6 +297,7 @@ interface MapDoc {
   lineCounter: number; // monotonic; advanced per addLine; drives palette color cycle
   lineTags: Record<string, LineTag>;
   routeBullets: Record<string, RouteBullet>;
+  transferAnchors: Record<string, TransferAnchor>; // FREE anchors (hosted ones ride on their Station)
   transfers: Record<string, Transfer>;
   textLabels: Record<string, TextLabel>;
   polygons: Record<string, Polygon>;
@@ -635,10 +636,59 @@ carry their own per-station `leading`/`tracking` (see `Station`), no longer any 
 `id, x, y, rotation: Rotation, lineId: LineId | null` (null = unset placeholder), `shape:
 RouteBulletShape` (`circle|square|diamond`), `size` (half-extent), `locked?`.
 
+**`TransferAnchor`** (free) + **`AnchorCell`** (station-hosted) — a bare point that exists
+only so a `TransferEnd` can bind to it. Two of them (or one plus a station stop) let a transfer
+turn a corner: a 90° transfer is two segments meeting at one anchor. **Two homes, deliberately:**
+a FREE anchor is `{id, x, y}` in `MapDoc.transferAnchors`, so every consumer that treats it like a
+route bullet (group drag/rotate, the align pool, the camera hull) needs no variant narrowing;
+a HOSTED anchor is `{id, row, col}` in `Station.transferAnchors?` (omitted when empty), so every
+station-layout transform carries it for free — chief among them `rotateStationLayoutBy90`, which
+rewrites cells through a local `rotateGrid`. An anchor held in a doc-level record would sit still
+while the layout turned 90° around it, tearing apart the very elbow it was placed to make. Ids come
+from one factory (`IdFactory.anchorId`) and are unique across both homes.
+
+Anchors are **editor chrome, never map ink**: `AnchorLayer` mounts inside a `data-export-exclude`
+subtree, so an anchor is absent from every SVG/PNG/PDF export while the transfer bound to it still
+prints. The toolbar's anchor button (`useViewportStore.showAnchors`, **default ON** — unlike
+`showWaypoints`; an anchor you can't see is one you can't grab) hides them, gated together with
+`showNetwork` since they're part of the transfer network. Hiding is a **peek, not a deselect**, and
+the two doc-geometric consumers opt in by hand exactly as they do for `showNetwork`
+(`anchorsForRectVisible`, `liveSnapAnchors`).
+
+FREE anchors are first-class canvas objects — multi-select, marquee, group drag, group rotate
+(orbit-only: the polygon case reduced to a point, no orientation to step), arrow-nudge, Delete —
+and are the **first selectable kind with no `locked` field** (`isItemLocked` returns false;
+`SelectionPopover` gates Lock-all on a `lockableTotal` that subtracts them, while Delete-all still
+counts them). They have **no popover**, but they ARE in `soleSelection` — that selector is also
+`hitStack.currentHitEntity`'s source for alt-click cycling, so omitting them would stop the
+deep-pick cycling rather than merely suppressing a panel. They are deliberately **not copyable**
+(`ClipPayload` has no transfer kind, so a pasted anchor could never carry the transfer that gives
+it meaning). HOSTED anchors are station internals like a stop dot: rendered `pointerEvents="none"`
+(so alt-click reaches through them), edited only in the layout editor.
+
+In the lattice they ride as **passengers**: never in `stationLayoutNodes` (whose node identity is
+`lineId: string | null`, where null already means "the label", and where a non-`isLabel` node would
+become a lattice ORIGIN via `anchorPool`), but appended to `otherNodes` as width-0 blockers
+(`anchorBlockerNodes`) so a stop can't be dropped on one. They drag and nudge on the LABEL's exact
+parameters (`wSrc = STOP_SIZE`, `gSrc = 0`, `srcIsPoint` — renamed from `srcIsLabel` when anchors
+became its second user). A hosted-anchor move **must not** fan out through `dispatchMirrored`:
+`matching.ts`'s `stopsKey` ignores anchors, so two stations with different anchor sets still MATCH,
+and every target would apply its own rotated delta to the same global anchorId — a 0/2 offset pair
+cancels outright and the anchor wouldn't move at all.
+
 **`Transfer`** + **`TransferEnd`** — a styled line connecting one station dot to another.
 `Transfer = {id, a: TransferEnd, b: TransferEnd, thickness?, color?, strokeWidth?, strokeColor?}`;
-`TransferEnd = {stationId, lineId: LineId | null}` (lineId picks _which_ dot at an interlined
-station; null ⇒ station anchor). **Cascade-deleted** when either endpoint's stop is removed (by
+`TransferEnd` is a three-arm **structural** union (no `kind` tag, so the stop arm is byte-identical
+to what every existing saved file carries — no migration, no persist bump):
+`{stationId, lineId}` (a stop; lineId picks _which_ dot at an interlined station, null ⇒ station
+anchor) · `{stationId, anchorId}` (a station-hosted anchor — station-keyed so it resolves in one
+lookup) · `{anchorId}` (a free anchor). Narrow via `model/transferAnchors.ts`, testing
+`'anchorId' in end` FIRST — two of the three arms carry a `stationId`. That shared shape is what
+keeps the station cascade a one-liner: `endStationId(e) === id` orphans a station's stops AND its
+hosted anchors together. World resolution for all three is `geometry/transferEnds.transferEndWorld`,
+which returns null for a dangling end — both paint passes, the popover spawn and the in-progress
+preview all go through it, and dropping the transfer on null is why neither load path needs a
+transfer-endpoint sanitizer. **Cascade-deleted** when either endpoint's stop is removed (by
 deleting the station/line or removing that line's stop). Default styling (thickness, color,
 optional halo) comes from the constant `TRANSFER_STYLE_DEFAULTS` — there are **no doc-level
 transfer settings** (see the MapDoc note above); the four optional fields are per-transfer
