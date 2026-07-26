@@ -244,8 +244,8 @@ describe('computeGhosts', () => {
 
   it('stop source: the label node repels only up to the dot radius', () => {
     const anchor: WidthNode = { row: 0, col: 0, w: W };
-    const labelNode: WidthNode = { row: 0, col: 1.6, w: W, isLabel: true };
-    const nearLabel: WidthNode = { row: 0, col: 1.45, w: W, isLabel: true };
+    const labelNode: WidthNode = { row: 0, col: 1.6, w: W, isPoint: true };
+    const nearLabel: WidthNode = { row: 0, col: 1.45, w: W, isPoint: true };
     const kept = computeGhosts({
       wSrc: W,
       anchor,
@@ -294,7 +294,7 @@ describe('dragLattice — stop drags anchor to stops, not the label', () => {
   // overlaps and still anchors when it's the only other node.
   const U: WidthNode = { row: 25 / 14, col: 43 / 14, w: 12 };
   const M: WidthNode = { row: 1 / 14, col: 55 / 14, w: 12 };
-  const label: WidthNode = { row: 25 / 14, col: 56 / 14, w: W, isLabel: true };
+  const label: WidthNode = { row: 25 / 14, col: 56 / 14, w: W, isPoint: true };
   const stops = [
     { lineId: 'U', row: U.row, col: U.col },
     { lineId: 'M', row: M.row, col: M.col },
@@ -348,7 +348,7 @@ describe('dragLattice — stop drags anchor to stops, not the label', () => {
   });
 
   it('keyboard nudge matches: on-axis hop even when the label is nearest the source', () => {
-    const nearLabel: WidthNode = { row: 24 / 14, col: 55 / 14, w: W, isLabel: true };
+    const nearLabel: WidthNode = { row: 24 / 14, col: 55 / 14, w: W, isPoint: true };
     const target = nudgeTarget({
       source: { row: 13 / 14, col: 55 / 14 },
       wSrc: 12,
@@ -364,7 +364,7 @@ describe('dragLattice — stop drags anchor to stops, not the label', () => {
     const target = nudgeTarget({
       source: { row: 0, col: 0 },
       wSrc: 12,
-      otherNodes: [{ row: 0, col: 13 / 14, w: W, isLabel: true }],
+      otherNodes: [{ row: 0, col: 13 / 14, w: W, isPoint: true }],
       basis: 'orthogonal',
       stationRotation: 0,
       arrow: { row: 0, col: 1 },

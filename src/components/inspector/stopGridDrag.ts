@@ -117,14 +117,16 @@ export const ORIENTATION_NAME: Record<StopOrientation, string> = {
 };
 
 /** A stop/label node with its effective width in world units (a stop's is
- *  its line's width; the label cell is unit-sized = STOP_SIZE). `isLabel`
- *  marks the label node: it anchors text but has no body on the rendered
- *  map, so the overlap filter treats it as a point (width 0) — only its
- *  nominal `w` still sets the lattice pitch when it serves as anchor.
+ *  its line's width; the label cell is unit-sized = STOP_SIZE). `isPoint`
+ *  marks a BODY-LESS node — the label cell or a hosted transfer anchor: it
+ *  occupies a lattice cell but has no ink on the rendered map, so the overlap
+ *  filter treats it as a point (width 0) — only its nominal `w` still sets the
+ *  lattice pitch when it serves as anchor. (Named `isLabel` until anchors
+ *  became its second user, matching the srcIsLabel → srcIsPoint rename.)
  *  `g` is the line's interline gap (absent ⇒ 0): it widens the lattice
  *  pitch (packed spacing, max-of-pair) but not the overlap clearance —
  *  bodies don't grow with the gap. */
-export type WidthNode = RowCol & { w: number; g?: number; isLabel?: boolean };
+export type WidthNode = RowCol & { w: number; g?: number; isPoint?: boolean };
 
 /** A station lattice node: width-annotated cell + which line owns it
  *  (null = the label cell). */
@@ -136,7 +138,7 @@ export type LayoutSource =
   // A station-hosted transfer anchor. Deliberately NOT a LayoutNode: this
   // module's node identity is `lineId: string | null`, where null means "the
   // label" — an anchor node would be indistinguishable from it in
-  // `otherLayoutNodes`, and lacking `isLabel` it would become a lattice ORIGIN
+  // `otherLayoutNodes`, and lacking `isPoint` it would become a lattice ORIGIN
   // in `anchorPool`, producing exactly the incommensurate-pitch kink that
   // function exists to forbid. Anchors ride the lattice as passengers instead.
   | { kind: 'anchor'; anchorId: string };
@@ -160,7 +162,7 @@ export function stationLayoutNodes(
       g: lineInterlineGapOf(lines[s.lineId]),
       lineId: s.lineId as string | null,
     })),
-    { row: station.label.row, col: station.label.col, w: STOP_SIZE, isLabel: true, lineId: null },
+    { row: station.label.row, col: station.label.col, w: STOP_SIZE, isPoint: true, lineId: null },
   ];
 }
 
@@ -195,8 +197,8 @@ export function sourceCellOf(
  * anchor would have exerted had it been a real LayoutNode, without giving it
  * the node identity that breaks `otherLayoutNodes` and `anchorPool`.
  *
- * `isLabel: true` is the "point, not a body" flag, and `lineId: null` keeps
- * them out of `anchorPool` (which filters on isLabel) — they can block a slot
+ * `isPoint: true` is the "point, not a body" flag, and `lineId: null` keeps
+ * them out of `anchorPool` (which filters on isPoint) — they can block a slot
  * but never originate the lattice.
  */
 export function anchorBlockerNodes(
@@ -205,7 +207,7 @@ export function anchorBlockerNodes(
 ): LayoutNode[] {
   return (station.transferAnchors ?? [])
     .filter((a) => a.id !== exclude)
-    .map((a) => ({ row: a.row, col: a.col, w: STOP_SIZE, isLabel: true, lineId: null }));
+    .map((a) => ({ row: a.row, col: a.col, w: STOP_SIZE, isPoint: true, lineId: null }));
 }
 
 export interface GhostSpec {
@@ -261,7 +263,15 @@ export function computeGhosts(spec: GhostSpec): RowCol[] {
       // overlap, and plain tangency is a legitimate spacing for neighbors
       // that aren't meant to interline — only the packed pitch above grows
       // with the gap.
-      const clearance = tangentGap(srcIsPoint ? 0 : wSrc, n.isLabel ? 0 : n.w, 0, 0) / STOP_SIZE;
+      //
+      // A body-less node (the label, or a hosted anchor) reads as width 0 to a
+      // BODY source — a dot may approach it until its own edge reaches the
+      // point. But to a POINT source (another anchor, or the label being
+      // dragged) two body-less nodes have no clearance at all and would stack;
+      // there it presents its nominal cell width instead, so an anchor can't
+      // land on the label or on another anchor (spawnAnchorCell's invariant).
+      const nBody = n.isPoint ? (srcIsPoint ? n.w : 0) : n.w;
+      const clearance = tangentGap(srcIsPoint ? 0 : wSrc, nBody, 0, 0) / STOP_SIZE;
       if (Math.hypot(g.row - n.row, g.col - n.col) < clearance - CELL_EPS) {
         overlap = true;
         break;
@@ -284,7 +294,7 @@ export function computeGhosts(spec: GhostSpec): RowCol[] {
  * stop stays movable.
  */
 export function anchorPool<T extends WidthNode>(nodes: readonly T[]): readonly T[] {
-  const stops = nodes.filter((n) => !n.isLabel);
+  const stops = nodes.filter((n) => !n.isPoint);
   return stops.length > 0 ? stops : nodes;
 }
 

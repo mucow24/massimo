@@ -649,11 +649,14 @@ from one factory (`IdFactory.anchorId`) and are unique across both homes.
 
 Anchors are **editor chrome, never map ink**: `AnchorLayer` mounts inside a `data-export-exclude`
 subtree, so an anchor is absent from every SVG/PNG/PDF export while the transfer bound to it still
-prints. The toolbar's anchor button (`useViewportStore.showAnchors`, **default ON** — unlike
-`showWaypoints`; an anchor you can't see is one you can't grab) hides them, gated together with
-`showNetwork` since they're part of the transfer network. Hiding is a **peek, not a deselect**, and
-the two doc-geometric consumers opt in by hand exactly as they do for `showNetwork`
-(`anchorsForRectVisible`, `liveSnapAnchors`).
+prints. The toolbar's anchor button (`useViewportStore.showAnchors`) shows them; it **defaults OFF**
+(like `showWaypoints`, and persisted) so a finished map isn't cluttered, gated together with
+`showNetwork` since anchors are part of the transfer network. The two gestures that are ABOUT anchors
+— picking a transfer end (`creating-transfer`) and placing one (`placing-anchor`) — **reveal** them
+regardless of the toggle by DERIVATION (`anchorsRevealedByMode`), never by writing the flag: a
+temporary write would need a matching revert on every exit path, and a missed one would strand the
+user's own preference. The two doc-geometric consumers opt in by hand through `anchorsVisibleNow`
+exactly as they do for `showNetwork` (`anchorsForRectVisible`, `liveSnapAnchors`).
 
 FREE anchors are first-class canvas objects — multi-select, marquee, group drag, group rotate
 (orbit-only: the polygon case reduced to a point, no orientation to step), arrow-nudge, Delete —

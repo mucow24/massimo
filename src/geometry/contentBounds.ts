@@ -64,7 +64,10 @@ export function computeContentBounds(doc: MapDoc): AABBRect | null {
   // off-screen with no way back. Deliberately NOT gated on `showAnchors`: this
   // is a pure doc function with no viewport access, and it already ignores
   // `showNetwork` for stations, so a toggle-sensitive kind would be the worse
-  // inconsistency. Hosted anchors stay out — their station's box covers them.
+  // inconsistency. Hosted anchors stay out: they're chrome anchored to a station
+  // the hull already spans, and are normally within its footprint. (The station
+  // AABB does not literally enclose an anchor cell parked outside the stops+label
+  // box; framing may clip such an outlier, which is acceptable for chrome.)
   for (const id in doc.transferAnchors) {
     acc(transferAnchorAABB(doc.transferAnchors[id]));
   }

@@ -74,10 +74,11 @@ export function stationAnchorCell(
 }
 
 /**
- * Does this end still resolve in `doc`? Used by the selection reconcile and by
- * the parse-time hygiene pass — a transfer whose end dangles renders nothing
- * (the resolver returns null and the layer drops it), so this is about telling
- * "temporarily dormant" from "genuinely broken", not about crash-safety.
+ * Does this end still resolve in `doc`? Used by the selection reconcile (to tell
+ * a temporarily-dormant end from a genuinely broken one) and by `addTransfer`'s
+ * guard (both ends must resolve for a transfer to be created). A transfer whose
+ * end dangles renders nothing anyway — the resolver returns null and the layer
+ * drops it — so this is about hygiene, not crash-safety.
  */
 export function transferEndResolves(
   doc: Pick<MapDoc, 'stations' | 'transferAnchors'>,

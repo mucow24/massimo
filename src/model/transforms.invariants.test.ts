@@ -7,9 +7,20 @@ import {
   LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_DEFAULT,
 } from './lineStroke';
-import type { LineStyle, MapDoc } from './types';
+import type { LineStyle, MapDoc, TransferEnd } from './types';
 import { counterIdFactory } from './ids';
 import { isStopEnd, transferEndResolves } from './transferAnchors';
+
+// One transfer endpoint to fabricate: `endKind % 3` selects the arm — 0 a
+// station stop, 1 a free anchor, 2 a station-hosted anchor — resolved against
+// the current doc at apply time (null when the doc has nothing to bind).
+type EndSpec = {
+  endKind: number;
+  stationIdx: number;
+  lineIdx: number;
+  lineNull: boolean;
+  anchorIdx: number;
+};
 
 // A single test action — a labeled discriminated union of transforms applied
 // to whatever doc state currently exists. We don't generate raw arguments;
@@ -47,12 +58,26 @@ type Action =
       bLineIdx: number;
       bLineNull: boolean;
     }
-  | { kind: 'addRouteBullet'; lineIdx: number; lineNull: boolean };
+  | { kind: 'addRouteBullet'; lineIdx: number; lineNull: boolean }
+  | { kind: 'addFreeAnchor' }
+  | { kind: 'addStationAnchor'; stationIdx: number; row: number; col: number }
+  | { kind: 'deleteFreeAnchor'; idx: number }
+  | { kind: 'deleteStationAnchor'; stationIdx: number; anchorIdx: number }
+  | { kind: 'moveStationAnchor'; stationIdx: number; anchorIdx: number; dRow: number; dCol: number }
+  | { kind: 'addAnchorTransfer'; a: EndSpec; b: EndSpec };
 
 // Small non-negative index used to pick an operand out of the current id list
 // (taken `% list.length` at apply time). Drawn wide enough to reach beyond the
 // first entry so multi-station lines and cross-pair segments can form.
 const idxArb = fc.nat({ max: 12 });
+
+const endSpecArb = fc.record({
+  endKind: fc.nat({ max: 2 }),
+  stationIdx: idxArb,
+  lineIdx: idxArb,
+  lineNull: fc.boolean(),
+  anchorIdx: idxArb,
+});
 
 const actionArb = fc.oneof(
   fc.constant<Action>({ kind: 'addStation' }),
@@ -131,12 +156,69 @@ const actionArb = fc.oneof(
     lineIdx: idxArb,
     lineNull: fc.boolean(),
   }),
+  fc.constant<Action>({ kind: 'addFreeAnchor' }),
+  fc.record({
+    kind: fc.constant<'addStationAnchor'>('addStationAnchor'),
+    stationIdx: idxArb,
+    row: fc.integer({ min: -3, max: 3 }),
+    col: fc.integer({ min: -3, max: 3 }),
+  }),
+  fc.record({ kind: fc.constant<'deleteFreeAnchor'>('deleteFreeAnchor'), idx: idxArb }),
+  fc.record({
+    kind: fc.constant<'deleteStationAnchor'>('deleteStationAnchor'),
+    stationIdx: idxArb,
+    anchorIdx: idxArb,
+  }),
+  fc.record({
+    kind: fc.constant<'moveStationAnchor'>('moveStationAnchor'),
+    stationIdx: idxArb,
+    anchorIdx: idxArb,
+    dRow: fc.integer({ min: -2, max: 2 }),
+    dCol: fc.integer({ min: -2, max: 2 }),
+  }),
+  fc.record({
+    kind: fc.constant<'addAnchorTransfer'>('addAnchorTransfer'),
+    a: endSpecArb,
+    b: endSpecArb,
+  }),
 );
 
 // Pick the id at `idx % keys.length`, or null when the collection is empty.
 function pickAt<T>(rec: Record<string, T>, idx: number): string | null {
   const ks = Object.keys(rec);
   return ks.length === 0 ? null : ks[idx % ks.length];
+}
+
+// Pick a station-hosted anchor (its station id + anchor id) from the stations
+// that currently own at least one, or null when none do.
+function pickHostedAnchor(
+  doc: MapDoc,
+  stationIdx: number,
+  anchorIdx: number,
+): { stationId: string; anchorId: string } | null {
+  const hosts = Object.keys(doc.stations).filter(
+    (id) => (doc.stations[id].transferAnchors?.length ?? 0) > 0,
+  );
+  if (hosts.length === 0) return null;
+  const stationId = hosts[stationIdx % hosts.length];
+  const anchors = doc.stations[stationId].transferAnchors!;
+  return { stationId, anchorId: anchors[anchorIdx % anchors.length].id };
+}
+
+// Resolve an EndSpec into a concrete TransferEnd against the current doc, or
+// null when the chosen arm has nothing to bind to yet.
+function resolveEnd(doc: MapDoc, spec: EndSpec): TransferEnd | null {
+  const arm = spec.endKind % 3;
+  if (arm === 0) {
+    const stationId = pickAt(doc.stations, spec.stationIdx);
+    if (!stationId) return null;
+    return { stationId, lineId: spec.lineNull ? null : pickAt(doc.lines, spec.lineIdx) };
+  }
+  if (arm === 1) {
+    const anchorId = pickAt(doc.transferAnchors, spec.anchorIdx);
+    return anchorId ? { anchorId } : null;
+  }
+  return pickHostedAnchor(doc, spec.stationIdx, spec.anchorIdx);
 }
 
 function applyOne(doc: MapDoc, action: Action, ids: ReturnType<typeof counterIdFactory>): MapDoc {
@@ -235,6 +317,34 @@ function applyOne(doc: MapDoc, action: Action, ids: ReturnType<typeof counterIdF
     case 'addRouteBullet': {
       const lineId = action.lineNull ? null : pickAt(doc.lines, action.lineIdx);
       return T.addRouteBullet(doc, ids.routeBulletId(), 0, 0, lineId);
+    }
+    case 'addFreeAnchor':
+      return T.addTransferAnchor(doc, ids.anchorId(), 0, 0);
+    case 'addStationAnchor': {
+      const stationId = pickAt(doc.stations, action.stationIdx);
+      return stationId
+        ? T.addStationAnchor(doc, stationId, ids.anchorId(), action.row, action.col)
+        : doc;
+    }
+    case 'deleteFreeAnchor': {
+      const id = pickAt(doc.transferAnchors, action.idx);
+      return id ? T.deleteTransferAnchor(doc, id) : doc;
+    }
+    case 'deleteStationAnchor': {
+      const h = pickHostedAnchor(doc, action.stationIdx, action.anchorIdx);
+      return h ? T.deleteStationAnchor(doc, h.stationId, h.anchorId) : doc;
+    }
+    case 'moveStationAnchor': {
+      const h = pickHostedAnchor(doc, action.stationIdx, action.anchorIdx);
+      return h ? T.moveStationAnchor(doc, h.stationId, h.anchorId, action.dRow, action.dCol) : doc;
+    }
+    case 'addAnchorTransfer': {
+      // Fabricate a transfer whose ends may be stops OR anchors (either home) —
+      // the only path that gives the referential-integrity property a hosted-
+      // or free-anchor end to resolve, and that fuzzes the anchor delete cascades.
+      const a = resolveEnd(doc, action.a);
+      const b = resolveEnd(doc, action.b);
+      return a && b ? T.addTransfer(doc, ids.transferId(), a, b) : doc;
     }
   }
 }
@@ -435,6 +545,33 @@ describe('transforms invariants (property-based)', () => {
       }),
       { numRuns: REFERENTIAL_RUNS },
     );
+  });
+
+  it('the anchor actions actually form (and cascade) anchor-ended transfers', () => {
+    // Coverage guard: the referential property above only MEANS something for
+    // anchors if the fuzzer can build an anchor-ended transfer. Pin that the
+    // machinery does, deterministically — one free end and one hosted end.
+    const build: Action[] = [
+      { kind: 'addStation' }, // s0
+      { kind: 'addFreeAnchor' }, // a0 (free)
+      { kind: 'addStationAnchor', stationIdx: 0, row: 2, col: 0 }, // a1 hosted on s0
+      {
+        kind: 'addAnchorTransfer',
+        a: { endKind: 1, stationIdx: 0, lineIdx: 0, lineNull: true, anchorIdx: 0 }, // free a0
+        b: { endKind: 2, stationIdx: 0, lineIdx: 0, lineNull: true, anchorIdx: 0 }, // hosted a1
+      },
+    ];
+    const doc = applyAll(build);
+    const transfers = Object.values(doc.transfers);
+    expect(transfers).toHaveLength(1);
+    expect(isStopEnd(transfers[0].a)).toBe(false); // free-anchor arm exercised
+    expect(isStopEnd(transfers[0].b)).toBe(false); // hosted-anchor arm exercised
+    expect(transferEndResolves(doc, transfers[0].a)).toBe(true);
+    expect(transferEndResolves(doc, transfers[0].b)).toBe(true);
+
+    // Removing the free anchor cascades its transfer away.
+    const afterDelete = applyAll([...build, { kind: 'deleteFreeAnchor', idx: 0 }]);
+    expect(Object.keys(afterDelete.transfers)).toHaveLength(0);
   });
 
   it('every routeBullet references a live line or null', () => {

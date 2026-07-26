@@ -148,7 +148,7 @@ export interface StopCell {
 //
 // Deliberately NOT part of `stationLayoutNodes`: that list discriminates the
 // label as `lineId === null` (an anchor node would be indistinguishable from
-// it) and `anchorPool` filters on `isLabel` (an anchor would become a lattice
+// it) and `anchorPool` filters on `isPoint` (an anchor would become a lattice
 // ORIGIN, producing the incommensurate-pitch kink anchorPool exists to forbid).
 // The drag/nudge paths pass anchors in as extra point-nodes instead.
 export interface AnchorCell {
