@@ -86,7 +86,7 @@ import { snapPlacement, usePlacementDispatch } from './canvas/usePlacementDispat
 import { TransferLayer, TransferSelectionOutline } from './TransferLayer';
 import { AnchorLayer } from './canvas/AnchorLayer';
 import { pickTransferEnd } from '../state/transferPick';
-import { useAnchorsVisible } from '../state/anchorVisibility';
+import { revealedAnchorStations, useAnchorsVisible } from '../state/anchorVisibility';
 import { transferEndWorld } from '../geometry/transferEnds';
 import {
   anchorFromArcLen,
@@ -119,6 +119,10 @@ const proxyClickNoop = () => {};
 // Shared empty set for polygons with no selected vertices, so unselected
 // polygons don't each allocate one every render.
 const NO_VERTEX_INDICES: ReadonlySet<number> = new Set();
+
+// Shared empty free-anchor map: the hover/selection reveal shows a station's
+// own anchors only, so it hands AnchorLayer nothing for the free home.
+const NO_FREE_ANCHORS: Record<string, never> = {};
 
 export function MapCanvas() {
   const stations = useDoc((s) => s.stations);
@@ -1465,14 +1469,19 @@ export function MapCanvas() {
         {/* Transfer anchors. Above the dots so a free anchor stays grabbable
             where it overlaps one, and inside an export-excluded subtree — the
             anchor is scaffolding, the transfer bound to it is the artwork, so
-            only the transfer prints. Gated on BOTH toggles: anchors are part of
-            the transfer network, and every transfer surface goes with
-            showNetwork. */}
-        {anchorsVisible && (
+            only the transfer prints. Gated on showNetwork: anchors are part of
+            the transfer network, and every transfer surface goes with it. */}
+        {showNetwork && (
           <g data-export-exclude="1">
             <AnchorLayer
-              transferAnchors={transferAnchors}
-              stations={stations}
+              // Two ways in. With the anchor toggle on (or a mode that forces
+              // it) the whole network paints. With it off, only the hovered or
+              // selected stations' HOSTED anchors do — and no free ones, since
+              // that reveal is about the station you're looking at rather than
+              // the network (revealedAnchorStations). The layer renders nothing
+              // at all when both collections come back empty.
+              transferAnchors={anchorsVisible ? transferAnchors : NO_FREE_ANCHORS}
+              stations={anchorsVisible ? stations : revealedAnchorStations(stations, selection)}
               selectedIds={selection.selectedAnchorIds}
               hoveredKey={selection.hoveredAnchorKey}
               onHover={selection.setHoveredAnchorKey}
