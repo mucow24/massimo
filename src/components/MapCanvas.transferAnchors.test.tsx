@@ -187,6 +187,92 @@ describe('MapCanvas — clicking an anchor to draw a transfer', () => {
   });
 });
 
+// Anchors are hidden by default, which left no way to see what a station
+// carries short of flipping a global toggle (and then flipping it back). Looking
+// at a station — pointing at it, or selecting it — now reveals ITS anchors, and
+// only its own.
+describe('MapCanvas — a station reveals its own anchors on hover / selection', () => {
+  const seedPair = () => {
+    act(() => {
+      useDoc.getState().loadDoc(
+        makeDoc({
+          stations: [
+            makeStation({ id: 's1', x: 0, y: 0, transferAnchors: [{ id: 'h1', row: 0, col: 1 }] }),
+            makeStation({
+              id: 's2',
+              x: 300,
+              y: 0,
+              transferAnchors: [{ id: 'h2', row: 0, col: 1 }],
+            }),
+          ],
+          transferAnchors: [{ id: 'a1', x: 120, y: 40 }],
+        }),
+      );
+    });
+    act(() => useViewportStore.getState().setShowAnchors(false));
+    act(() => useSelection.getState().setHoveredCanvasItem(null));
+  };
+
+  const hostedOf = (sid: string) =>
+    document.querySelectorAll(`[data-anchor-station="${sid}"] [data-anchor-disc]`);
+  const hover = (sid: string | null) =>
+    act(() =>
+      useSelection.getState().setHoveredCanvasItem(sid ? { kind: 'station', id: sid } : null),
+    );
+
+  it('shows the hovered station’s anchors with the toggle off', () => {
+    render(<App />);
+    seedPair();
+    expect(allDiscs()).toHaveLength(0);
+    hover('s1');
+    expect(hostedOf('s1')).toHaveLength(1);
+  });
+
+  it('shows a selected station’s anchors', () => {
+    render(<App />);
+    seedPair();
+    act(() => useSelection.getState().selectStation('s1' as never));
+    expect(hostedOf('s1')).toHaveLength(1);
+  });
+
+  it('reveals ONLY that station’s anchors — not a neighbour’s, not the free ones', () => {
+    // The headline of the request: the whole point is to see one station's
+    // anchors without lighting up the entire network.
+    render(<App />);
+    seedPair();
+    hover('s1');
+    expect(hostedOf('s2')).toHaveLength(0);
+    expect(freeAnchors()).toHaveLength(0);
+  });
+
+  it('hides them again when the pointer leaves', () => {
+    render(<App />);
+    seedPair();
+    hover('s1');
+    hover(null);
+    expect(allDiscs()).toHaveLength(0);
+  });
+
+  it('leaves the revealed anchors click-through', () => {
+    // Pure display: revealing an anchor must not put a new pointer surface over
+    // the station under it, or hovering a station would stop you clicking it.
+    render(<App />);
+    seedPair();
+    hover('s1');
+    expect(hostedOf('s1')[0].getAttribute('pointer-events')).toBe('none');
+  });
+
+  it('stays hidden with the network toggled off', () => {
+    // Anchors go with the rest of the transfer network; a reveal must not be a
+    // back door around that.
+    render(<App />);
+    seedPair();
+    act(() => useViewportStore.getState().setShowNetwork(false));
+    hover('s1');
+    expect(allDiscs()).toHaveLength(0);
+  });
+});
+
 describe('MapCanvas — anchor hover highlight while picking transfer ends', () => {
   const enterTransferMode = () =>
     act(() => useSelection.getState().setUiMode({ kind: 'creating-transfer', firstEnd: null }));
