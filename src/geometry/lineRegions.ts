@@ -348,10 +348,15 @@ function computeSpans(
 }
 
 /**
- * All overlap faces (cover ≥ 2 lines) of the current geometry. Territory that
- * the sliver erosion drops is pushed into `sliverSink` when one is supplied
- * (see {@link RegionSliver}); rendering passes one so bridges can reveal across
- * the gaps, while the many geometry-only callers omit it and pay nothing.
+ * All overlap faces (cover ≥ 2 lines) of the current geometry, composing the
+ * phases above in one full rebuild.
+ *
+ * NOT the production path — nothing outside tests calls this. The app builds
+ * faces through `regionIncremental.buildRegionsIncremental`, which reuses these
+ * same phases per component across frames; this is the reference it is asserted
+ * equal to, so keep it the obvious, cache-free composition. Territory that the
+ * sliver erosion drops is pushed into `sliverSink` when one is supplied (see
+ * {@link RegionSliver}); callers that only want faces omit it and pay nothing.
  */
 export function buildOverlapRegions(
   bands: SegmentBandSpec[],
