@@ -1,5 +1,13 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { pushHistory, historyDepth, redoDepth, undo, redo, isHistoryGrouping } from './history';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import {
+  pushHistory,
+  historyDepth,
+  redoDepth,
+  undo,
+  redo,
+  isHistoryGrouping,
+  withCoalescedHistory,
+} from './history';
 import { useDoc, pickDocSnapshot, HISTORY_LIMIT, beginHistoryGroup } from './store';
 import type { DocSnapshot } from './store';
 import { DEFAULT_DOC } from '../model/transforms';
@@ -27,6 +35,105 @@ describe('pushHistory — undo-stack cap', () => {
     expect(redoDepth()).toBe(1);
     pushHistory(snap);
     expect(redoDepth()).toBe(0);
+  });
+});
+
+describe('withCoalescedHistory — burst folding', () => {
+  // Rapid-fire writes from one control (wheel ticks over a slider/spinbutton)
+  // collapse to a single undo entry. `key` stands in for the control's identity
+  // — the production one is a per-field token from useNumericField.
+  beforeEach(() => {
+    useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
+    useDoc.temporal.getState().clear();
+  });
+
+  it('folds a run of same-key writes into one entry, undoable in one step', () => {
+    const key = {};
+    useDoc.getState().setDocName('Before');
+    expect(historyDepth()).toBe(1);
+
+    for (const n of ['1', '2', '3', '4']) {
+      withCoalescedHistory(key, () => useDoc.getState().setDocName(n));
+    }
+
+    expect(useDoc.getState().name).toBe('4');
+    expect(historyDepth()).toBe(2);
+    undo();
+    expect(useDoc.getState().name).toBe('Before');
+  });
+
+  it('starts a new entry once the run goes quiet', () => {
+    // Two separate visits to the same control stay separately undoable — the
+    // fold is scoped to one continuous gesture, not to the control forever.
+    const key = {};
+    const clock = vi.spyOn(Date, 'now');
+    clock.mockReturnValue(1_000_000);
+    withCoalescedHistory(key, () => useDoc.getState().setDocName('First'));
+    clock.mockReturnValue(1_000_000 + 5_000);
+    withCoalescedHistory(key, () => useDoc.getState().setDocName('Second'));
+    clock.mockRestore();
+
+    expect(historyDepth()).toBe(2);
+    undo();
+    expect(useDoc.getState().name).toBe('First');
+  });
+
+  it('does not merge writes from two different controls', () => {
+    const width = {};
+    const gap = {};
+    withCoalescedHistory(width, () => useDoc.getState().setDocName('Width'));
+    withCoalescedHistory(gap, () => useDoc.getState().setDocName('Gap'));
+
+    expect(historyDepth()).toBe(2);
+    undo();
+    expect(useDoc.getState().name).toBe('Width');
+  });
+
+  it('never swallows an unrelated edit made between two ticks', () => {
+    // The run is pinned to the exact entry it owns, so anything else recording
+    // ends it. Without that check the second tick would discard the STATION's
+    // entry and one undo would revert both it and the tick.
+    const key = {};
+    withCoalescedHistory(key, () => useDoc.getState().setDocName('Tick 1'));
+    const id = useDoc.getState().addStation(0, 0);
+    withCoalescedHistory(key, () => useDoc.getState().setDocName('Tick 2'));
+
+    expect(historyDepth()).toBe(3);
+    undo();
+    expect(useDoc.getState().name).toBe('Tick 1');
+    expect(useDoc.getState().stations[id]).toBeDefined();
+    undo();
+    expect(useDoc.getState().stations[id]).toBeUndefined();
+  });
+
+  it('is inert inside an open history group (the group owns the entry)', () => {
+    // Writes made while a group is open record nothing of their own, so there
+    // is nothing to fold — and nothing to accidentally truncate.
+    const key = {};
+    useDoc.getState().setDocName('Before');
+    const group = beginHistoryGroup();
+    withCoalescedHistory(key, () => useDoc.getState().setDocName('Mid'));
+    withCoalescedHistory(key, () => useDoc.getState().setDocName('End'));
+    group.commit();
+
+    expect(historyDepth()).toBe(2);
+    undo();
+    expect(useDoc.getState().name).toBe('Before');
+  });
+
+  it('a tick after an undo starts a fresh entry, not a fold into the popped one', () => {
+    const key = {};
+    useDoc.getState().setDocName('Before');
+    withCoalescedHistory(key, () => useDoc.getState().setDocName('Scrolled'));
+    undo();
+    expect(useDoc.getState().name).toBe('Before');
+
+    withCoalescedHistory(key, () => useDoc.getState().setDocName('Scrolled again'));
+
+    // Folding into the undone entry would leave nothing to go back to.
+    expect(historyDepth()).toBe(2);
+    undo();
+    expect(useDoc.getState().name).toBe('Before');
   });
 });
 
@@ -109,6 +216,15 @@ describe('undo / redo — persistence flush', () => {
     expect(useDoc.getState().name).toBe('Mid-gesture');
     expect(redoDepth()).toBe(1);
     group.commit();
+  });
+
+  it('a coalesced write still writes through to localStorage', () => {
+    // The fold discards an undo ENTRY, never a doc write — the persisted blob
+    // must still track the latest value of a burst.
+    const key = {};
+    withCoalescedHistory(key, () => useDoc.getState().setDocName('One'));
+    withCoalescedHistory(key, () => useDoc.getState().setDocName('Two'));
+    expect(persistedName()).toBe('Two');
   });
 
   it('leaves the redo stack intact after an undo (flush records no history)', () => {
