@@ -19,7 +19,7 @@ import {
   type Rotation,
 } from '../../geometry/orientation';
 import { lineInterlineGapOf, lineWidthOf } from '../../model/lineWidth';
-import type { Line, Station } from '../../model/types';
+import type { Line, Station, StopOrientation } from '../../model/types';
 import type { Vec2 } from '../../geometry/vec';
 export { sameCell, CELL_EPS } from '../../geometry/lattice';
 
@@ -105,27 +105,11 @@ export function findDropTarget<S extends RowCol & { lineId: string }>(
   return { kind: 'ghost', row: nearest.row, col: nearest.col };
 }
 
-/** The four axes a stop's orientation can take. */
-export type StopAxis = 'auto-vertical' | 'auto-ne-sw' | 'auto-horizontal' | 'auto-nw-se';
-
-/** Clockwise rotation (degrees) that puts a vertical double-headed arrow onto a
- *  stop's axis. The layout editor and the hover badges DRAW that arrow (see
- *  orientationArrowPath) rather than typesetting ↕ ⤢ ↔ ⤡: fonts draw the
- *  diagonal pair corner-to-corner of a tall em box — measured at 33.8° off
- *  vertical, not 45° — so inside a rotated station frame those glyphs rendered
- *  as visibly crooked vertical/horizontal arrows. Drawn geometry is exact on
- *  every axis, and both surfaces render inside the station-rotated frame, so
- *  the arrow always reads world-true. */
-export const ORIENTATION_ANGLE: Record<StopAxis, number> = {
-  'auto-vertical': 0,
-  'auto-ne-sw': 45,
-  'auto-horizontal': 90,
-  'auto-nw-se': 135,
-};
-
-/** Human-readable axis names for the same orientations (accessible labels +
- *  tooltips on the inspector's orientation cycle button). */
-export const ORIENTATION_NAME: Record<StopAxis, string> = {
+/** Human-readable axis names for a stop's four orientations (accessible labels
+ *  + tooltips on the inspector's orientation cycle button). The rotation that
+ *  DRAWS each axis is `ORIENTATION_ANGLE`, in geometry/orientation beside the
+ *  travel direction it has to agree with. */
+export const ORIENTATION_NAME: Record<StopOrientation, string> = {
   'auto-vertical': 'vertical',
   'auto-ne-sw': 'NE–SW',
   'auto-horizontal': 'horizontal',

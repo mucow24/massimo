@@ -108,6 +108,29 @@ export function stripeOffsetsForWidths(
 }
 
 /**
+ * Clockwise rotation (degrees) that puts a vertical double-headed arrow onto a
+ * stop's axis — the second encoding of the same four axes `travelDirLocal`
+ * resolves below, and it has to agree with it up to sign (a rotation carries no
+ * direction along the axis). `orientation.test.ts` pins that agreement: the two
+ * tables sitting side by side is the point, since a stop's stripe follows
+ * `travelDirLocal` while the arrow drawn on it follows this.
+ *
+ * Both surfaces that draw the arrow — the layout editor's grab rings and the
+ * map's hover badges — DRAW it (`orientationArrowPath`) rather than typesetting
+ * ↕ ⤢ ↔ ⤡: fonts draw the diagonal pair corner-to-corner of a tall em box
+ * (~33.8° off vertical in the shipped stack, not 45°), which read as visibly
+ * crooked vertical and horizontal arrows inside a rotated station frame. Drawn
+ * geometry is exact on every axis, and both surfaces render inside the
+ * station-rotated frame, so the arrow always reads world-true.
+ */
+export const ORIENTATION_ANGLE: Record<StopOrientation, number> = {
+  'auto-vertical': 0,
+  'auto-ne-sw': 45,
+  'auto-horizontal': 90,
+  'auto-nw-se': 135,
+};
+
+/**
  * Travel direction in the unrotated local frame for a stop with the given
  * orientation. Returns a unit vector along one of the four 45°-spaced axes.
  *

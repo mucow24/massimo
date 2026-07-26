@@ -197,10 +197,10 @@ editing happens on the canvas in Edit Stops, driven by a CURSOR
 4. **Create:** Alt-click empty canvas to mint a station as the second click of the pending
    connect/splice (station-engine snap; grouped into one undo entry with its wiring).
 5. **Remove:** the armed stop/segment shows a clickable × chip, and Delete/Backspace removes
-   it too; right-click removes a SEGMENT directly. Right-click on a STATION rotates it (as
-   everywhere — the quick fix for a weird auto-orientation while laying out a line; deletion
-   deliberately isn't one slip away from it). Edit Stops is a right-click passthrough mode —
-   right-click never exits it.
+   it too. Right-click anywhere **exits** the mode, removing nothing (#326): Edit Stops is in
+   `RIGHT_CLICK_PASSTHROUGH_MODES`, so the document-level cancel stands down and the canvas's
+   own `onContextMenu` owns the gesture. It used to remove the segment under the cursor, which
+   put deletion one slip away from a rotate.
 6. **Style:** shift-click a segment cycles its per-segment style (also works with the line
    merely selected, outside Edit Stops).
 7. **Back out:** Esc or a plain canvas click drops the cursor first; a second one exits.
@@ -212,9 +212,12 @@ meaningless now that nothing displays it).
 
 ## Iterate-later (known gaps; correct for linear today, cosmetic/edge-case on non-linear)
 
-- **`redistributeBetween`** (ctrl+click even-spacing) and **`snap.refineAlongAxis`** terminus
-  extrapolation still read display order — correct for linear lines, approximate on
-  branchy/looped ones.
+- ~~**`redistributeBetween`** (ctrl+click even-spacing) and **`snap.refineAlongAxis`** terminus
+  extrapolation still read display order.~~ **Both closed.** `redistributeBetween` takes its
+  chain from `shortestPathOnLine` over the edge graph (#329), and so does the ctrl-drag spacing
+  readout `spacingDivisor` (#334); `refineAlongAxis` picks its cadence neighbours with
+  `neighborsOf` (#346), which is well-defined at a branch — the nearest neighbour on the
+  dragged side.
 - **Line-tag drag** now builds its candidate set from `line.edges` (fixed), so tags drag onto
   loop wrap-edges / branch legs. Remaining display-order bit: `lineTraversesForwardCanon` only
   sets the tag's tangent (text) direction and falls back to canonical-forward on a loop
