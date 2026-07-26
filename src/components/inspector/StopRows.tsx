@@ -5,6 +5,8 @@ import { AXIS_CYCLE, resolveDotStyle, stationIsSingleton } from '../../model/tra
 import { DOT_SIZE_MIN, DOT_SIZE_STEP, resolveDotSize } from '../../model/dotSize';
 import { lineDisplayName } from '../../model/lineNaming';
 import { legibleTextOn } from '../../util/color';
+import { Cross2Icon } from '@radix-ui/react-icons';
+import { AnchorGlyph } from '../AnchorGlyph';
 import { StationShapePicker } from '../StationShapePicker';
 import { useNumericField } from '../useNumericField';
 import { ORIENTATION_NAME } from './stopGridDrag';
@@ -22,12 +24,54 @@ export function StopRows({ station, lines }: { station: Station; lines: Record<s
   const rows = station.stops
     .slice()
     .sort((a, b) => a.row - b.row || a.col - b.col || a.lineId.localeCompare(b.lineId));
-  if (rows.length === 0) return null;
+  const anchors = station.transferAnchors ?? [];
+  if (rows.length === 0 && anchors.length === 0) return null;
   return (
     <div>
       {rows.map((s) => (
         <StopRow key={s.lineId} station={station} stop={s} line={lines[s.lineId]} />
       ))}
+      {/* Transfer anchors listed BENEATH the stops rather than interleaved:
+          they share the station's cell grid but none of a stop's controls (no
+          line, no dot type, no size, no orientation), so sorting them into the
+          same (row, col) order would only make the columns look broken. */}
+      {anchors.map((a) => (
+        <AnchorRow key={a.id} station={station} anchorId={a.id} />
+      ))}
+    </div>
+  );
+}
+
+/** One row per hosted transfer anchor: a label and a delete button. This is
+ *  where an anchor is REMOVED — it has no popover of its own, and its only
+ *  other edit (position) happens by dragging it in the layout editor. */
+function AnchorRow({ station, anchorId }: { station: Station; anchorId: string }) {
+  const selection = useSelection();
+  const deleteStationAnchor = useDoc((d) => d.deleteStationAnchor);
+  const selected = selection.selectedAnchorCellId === anchorId;
+  return (
+    <div
+      data-testid="anchor-row"
+      className={'stop-row anchor-row' + (selected ? ' selected' : '')}
+      onClick={() => selection.setSelectedAnchorCellId(anchorId)}
+    >
+      <span className="line-badge anchor-badge" title="Transfer anchor">
+        <AnchorGlyph />
+      </span>
+      <span className="anchor-row-name">Transfer anchor</span>
+      <button
+        type="button"
+        className="chip-btn"
+        aria-label="Delete transfer anchor"
+        title="Delete this transfer anchor (and any transfers bound to it)"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (selected) selection.setSelectedAnchorCellId(null);
+          deleteStationAnchor(station.id, anchorId);
+        }}
+      >
+        <Cross2Icon aria-hidden="true" />
+      </button>
     </div>
   );
 }

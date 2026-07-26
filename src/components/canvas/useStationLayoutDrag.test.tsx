@@ -63,6 +63,7 @@ const seed = (stations: Record<string, Station>, over: Record<string, unknown> =
     uiMode: { kind: 'editing-station-layout', stationId: 'a' },
     selectedStopLineId: null,
     labelSelected: false,
+    selectedAnchorCellId: null,
     mirrorMatching: false,
     ...over,
   });
@@ -277,5 +278,72 @@ describe('useStationLayoutDrag — stationary Shift flips the lattice basis', ()
     expect(hasCell(-1, 0)).toBe(false);
     expect(hasCell(-Math.SQRT1_2, 1 - Math.SQRT1_2)).toBe(true);
     up(result, pointerEvent({ clientX: 100, clientY: 86, shiftKey: true }));
+  });
+});
+
+describe('useStationLayoutDrag — hosted transfer anchor', () => {
+  const withAnchor = () => hubStation({ transferAnchors: [{ id: 'k1', row: 1, col: 0 }] });
+
+  it('drags onto a ghost slot and arms itself as the sub-selection', () => {
+    seed({ a: withAnchor() });
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useStationLayoutDrag(ref, identity));
+    const src: LayoutDragSource = { kind: 'anchor', anchorId: 'k1' };
+    down(result, 'a', src, pointerEvent({ clientX: 100, clientY: 114 }));
+    // Drag up toward the row above the stop row.
+    move(result, pointerEvent({ clientX: 100, clientY: 72 }));
+    up(result, pointerEvent({ clientX: 100, clientY: 72 }));
+
+    const cell = useDoc.getState().stations.a.transferAnchors![0];
+    expect(cell.id).toBe('k1');
+    expect({ row: cell.row, col: cell.col }).not.toEqual({ row: 1, col: 0 });
+    expect(useSelection.getState().selectedAnchorCellId).toBe('k1');
+  });
+
+  it('a no-move click just arms it, clearing the stop/label arms', () => {
+    seed({ a: withAnchor() }, { selectedStopLineId: 'L1' });
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useStationLayoutDrag(ref, identity));
+    const e = pointerEvent({ clientX: 100, clientY: 114 });
+    down(result, 'a', { kind: 'anchor', anchorId: 'k1' }, e);
+    up(result, e);
+    const sel = useSelection.getState();
+    expect(sel.selectedAnchorCellId).toBe('k1');
+    // The three sub-selection arms are mutually exclusive.
+    expect(sel.selectedStopLineId).toBeNull();
+    expect(sel.labelSelected).toBe(false);
+    expect(historyDepth()).toBe(0); // a pure click burns no undo entry
+  });
+
+  it('does NOT fan out to mirror matches', () => {
+    // The blocking reason: mirror targets are keyed by (stationId, lineId) and
+    // matched by stopsKey, which deliberately ignores anchors — so two stations
+    // with DIFFERENT anchor sets still MATCH. Every target would then apply its
+    // own rotated delta to the SAME global anchorId, and an offset-0/offset-2
+    // pair (180° apart) cancels outright: the anchor would not move at all.
+    const mirrored = rotateStationLayoutBy90(rotateStationLayoutBy90(hubStation(), 1), 1);
+    seed(
+      { a: withAnchor(), b: { ...mirrored, id: 'b', name: 'B', x: 400, y: 400 } },
+      { mirrorMatching: true },
+    );
+    // Precondition: the two stations really do match, so the fan-out is live.
+    expect(findMatchingStations(useDoc.getState(), 'a').length).toBeGreaterThan(0);
+
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useStationLayoutDrag(ref, identity));
+    down(
+      result,
+      'a',
+      { kind: 'anchor', anchorId: 'k1' },
+      pointerEvent({ clientX: 100, clientY: 114 }),
+    );
+    move(result, pointerEvent({ clientX: 100, clientY: 72 }));
+    up(result, pointerEvent({ clientX: 100, clientY: 72 }));
+
+    const doc = useDoc.getState();
+    // The source moved...
+    expect(doc.stations.a.transferAnchors![0]).not.toEqual({ id: 'k1', row: 1, col: 0 });
+    // ...and the match grew no anchor of its own.
+    expect(doc.stations.b.transferAnchors).toBeUndefined();
   });
 });

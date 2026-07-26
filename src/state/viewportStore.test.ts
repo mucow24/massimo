@@ -10,6 +10,10 @@ beforeEach(() => {
     gridVisible: true,
     gridSize: 10,
     showWaypoints: false,
+    // setState shallow-MERGES, so every persisted key has to be listed here or
+    // it leaks across cases — a rehydrate test would then read whatever the
+    // previous test left behind instead of the initializer's default.
+    showAnchors: false,
     showNetwork: true,
     darkUiInDay: false,
   });
@@ -173,5 +177,40 @@ describe('viewportStore — showNetwork', () => {
     const persisted = JSON.parse(raw!).state;
     expect(persisted.gridSize).toBe(20);
     expect('showNetwork' in persisted).toBe(false);
+  });
+});
+
+describe('viewportStore — showAnchors', () => {
+  // Anchors are scaffolding over finished artwork, so they default OFF like
+  // waypoints. The gestures that NEED them visible reveal them by derivation
+  // (state/anchorVisibility.ts) rather than by writing this flag.
+  it('defaults to OFF', () => {
+    expect(useViewportStore.getInitialState().showAnchors).toBe(false);
+  });
+
+  it('setShowAnchors updates the value', () => {
+    useViewportStore.getState().setShowAnchors(true);
+    expect(useViewportStore.getState().showAnchors).toBe(true);
+    useViewportStore.getState().setShowAnchors(false);
+    expect(useViewportStore.getState().showAnchors).toBe(false);
+  });
+
+  it('persists showAnchors to localStorage (partialize)', () => {
+    useViewportStore.getState().setShowAnchors(true);
+    const raw = localStorage.getItem('massimo-viewport');
+    expect(raw).toBeTruthy();
+    expect(JSON.parse(raw!).state.showAnchors).toBe(true);
+  });
+
+  it('rehydrates a persisted blob without showAnchors back to the default OFF', async () => {
+    localStorage.setItem(
+      'massimo-viewport',
+      JSON.stringify({
+        state: { x: 1, y: 2, zoom: 3, gridVisible: false, gridSize: 10 },
+        version: 0,
+      }),
+    );
+    await useViewportStore.persist.rehydrate();
+    expect(useViewportStore.getState().showAnchors).toBe(false);
   });
 });

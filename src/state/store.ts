@@ -23,6 +23,7 @@ import type {
   SvgImageStylePatch,
   TextLabel,
   TextLabelWeight,
+  TransferEnd,
   TransferStylePatch,
 } from '../model/types';
 import * as S from '../model/styles';
@@ -102,6 +103,15 @@ const DOC_FIELDS = [
   'lineCounter',
   'lineTags',
   'routeBullets',
+  // Free transfer anchors (the station-hosted ones ride inside `stations`). New
+  // field: absent in older saves, backfilled to {} by the shallow merge on both
+  // load paths — no migration, no persist version bump. Adding it here DOES
+  // change EMPTY_DOC_JSON's bytes, so every persisted save-baseline hash is
+  // invalidated once on the first boot of this build and the doc reads dirty.
+  // That is the byte gate working as designed (saveBaseline.ts), not a bug —
+  // and it is exactly why an anchors-only doc is correctly treated as non-empty
+  // by the auto-save gate instead of being silently wiped by New.
+  'transferAnchors',
   'transfers',
   'textLabels',
   'polygons',
@@ -594,10 +604,17 @@ interface DocState extends MapDoc {
   ) => void;
   deleteRouteBullet: (id: string) => void;
 
-  addTransfer: (
-    a: { stationId: StationId; lineId: LineId | null },
-    b: { stationId: StationId; lineId: LineId | null },
-  ) => string;
+  // Transfer anchors. FREE ones are a free-floating x/y item like a bullet;
+  // HOSTED ones are cells in a station's grid, so they move by a (dRow, dCol)
+  // delta like a stop. Both deletes cascade the transfers bound to them.
+  addTransferAnchor: (x: number, y: number) => string;
+  moveTransferAnchor: (id: string, x: number, y: number) => void;
+  deleteTransferAnchor: (id: string) => void;
+  addStationAnchor: (stationId: StationId, row: number, col: number) => string;
+  moveStationAnchor: (stationId: StationId, anchorId: string, dRow: number, dCol: number) => void;
+  deleteStationAnchor: (stationId: StationId, anchorId: string) => void;
+
+  addTransfer: (a: TransferEnd, b: TransferEnd) => string;
   updateTransferStyle: (id: string, patch: TransferStylePatch) => void;
   deleteTransfer: (id: string) => void;
 
@@ -899,6 +916,28 @@ export const useDoc = create<DocState>()(
         rotateRouteBullet: (id) => set((s) => T.rotateRouteBullet(s, id)),
         updateRouteBullet: (id, patch) => set((s) => T.updateRouteBullet(s, id, patch)),
         deleteRouteBullet: (id) => set((s) => T.deleteRouteBullet(s, id)),
+
+        addTransferAnchor: (x, y) => {
+          const id = ids.anchorId();
+          // No applyDefaultStyle: anchors carry no styleId — there is nothing
+          // about them to style, and they never reach an export.
+          set((s) => T.addTransferAnchor(s, id, x, y));
+          return id;
+        },
+        // Plain set, NOT withRegionReconcile: an anchor move changes no line
+        // geometry, and reconciling regions on every pointermove of a group
+        // drag would be a real cost for no effect.
+        moveTransferAnchor: (id, x, y) => set((s) => T.moveTransferAnchor(s, id, x, y)),
+        deleteTransferAnchor: (id) => set((s) => T.deleteTransferAnchor(s, id)),
+        addStationAnchor: (stationId, row, col) => {
+          const id = ids.anchorId();
+          set((s) => T.addStationAnchor(s, stationId, id, row, col));
+          return id;
+        },
+        moveStationAnchor: (stationId, anchorId, dRow, dCol) =>
+          set((s) => T.moveStationAnchor(s, stationId, anchorId, dRow, dCol)),
+        deleteStationAnchor: (stationId, anchorId) =>
+          set((s) => T.deleteStationAnchor(s, stationId, anchorId)),
 
         addTransfer: (a, b) => {
           const id = ids.transferId();

@@ -50,7 +50,7 @@ describe('<EditingBanner /> — every non-idle mode gets chrome', () => {
   });
 
   it('creating-transfer keeps its two-step copy', () => {
-    useSelection.getState().setUiMode({ kind: 'creating-transfer', anchor: null });
+    useSelection.getState().setUiMode({ kind: 'creating-transfer', firstEnd: null });
     render(<EditingBanner />);
     expect(banner()!.textContent).toMatch(/first station/i);
   });

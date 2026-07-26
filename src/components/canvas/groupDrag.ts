@@ -2,7 +2,7 @@ import { useDoc, useSelection } from '../../state/store';
 import type { Vec2 } from '../../geometry/vec';
 import type { AlignExclude } from './snapTargets';
 
-export type GrabbedKind = 'station' | 'bullet' | 'label' | 'polygon' | 'svgImage';
+export type GrabbedKind = 'station' | 'bullet' | 'label' | 'polygon' | 'svgImage' | 'anchor';
 
 // Every OTHER selected item, captured at pointer-down with its start position,
 // so a group drag can tow them by the grabbed item's per-frame delta. x/y items
@@ -13,10 +13,14 @@ export interface GroupSiblings {
   labels: { id: string; startX: number; startY: number }[];
   polygons: { id: string; startVerts: Vec2[] }[];
   svgImages: { id: string; startX: number; startY: number }[];
+  // Free transfer anchors — the plain x/y flavour, like bullets and labels.
+  // HOSTED anchors have no x/y at all (they are station-grid cells) and are
+  // never canvas-selectable, so they can never reach this list.
+  anchors: { id: string; startX: number; startY: number }[];
 }
 
 export function emptyGroupSiblings(): GroupSiblings {
-  return { stations: [], bullets: [], labels: [], polygons: [], svgImages: [] };
+  return { stations: [], bullets: [], labels: [], polygons: [], svgImages: [], anchors: [] };
 }
 
 /**
@@ -27,17 +31,31 @@ export function emptyGroupSiblings(): GroupSiblings {
  */
 export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string): GroupSiblings {
   const sel = useSelection.getState();
-  const grabbedSelected =
-    grabbedKind === 'station'
-      ? sel.selectedStationIds.includes(grabbedId)
-      : grabbedKind === 'bullet'
-        ? sel.selectedRouteBulletIds.includes(grabbedId)
-        : grabbedKind === 'label'
-          ? sel.selectedLabelIds.includes(grabbedId)
-          : grabbedKind === 'polygon'
-            ? sel.selectedPolygonIds.includes(grabbedId)
-            : sel.selectedSvgImageIds.includes(grabbedId);
-  if (!grabbedSelected) return emptyGroupSiblings();
+  // Spelled out as an exhaustive switch rather than a ternary chain ending in a
+  // catch-all: the tail used to be a bare `: sel.selectedSvgImageIds`, so a new
+  // GrabbedKind would have been silently tested against the svg-image selection
+  // instead of failing to compile.
+  const selectedIdsFor = (kind: GrabbedKind): readonly string[] => {
+    switch (kind) {
+      case 'station':
+        return sel.selectedStationIds;
+      case 'bullet':
+        return sel.selectedRouteBulletIds;
+      case 'label':
+        return sel.selectedLabelIds;
+      case 'polygon':
+        return sel.selectedPolygonIds;
+      case 'svgImage':
+        return sel.selectedSvgImageIds;
+      case 'anchor':
+        return sel.selectedAnchorIds;
+      default: {
+        const unhandled: never = kind;
+        return unhandled;
+      }
+    }
+  };
+  if (!selectedIdsFor(grabbedKind).includes(grabbedId)) return emptyGroupSiblings();
 
   const doc = useDoc.getState();
   const out = emptyGroupSiblings();
@@ -67,6 +85,13 @@ export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string
     const im = doc.svgImages[id];
     if (im && !im.locked) out.svgImages.push({ id, startX: im.x, startY: im.y });
   }
+  for (const id of sel.selectedAnchorIds) {
+    if (grabbedKind === 'anchor' && id === grabbedId) continue;
+    const a = doc.transferAnchors[id];
+    // No `!a.locked` guard — anchors have no lock, so they always tow. This is
+    // the one deliberate break from the five loops above.
+    if (a) out.anchors.push({ id, startX: a.x, startY: a.y });
+  }
   return out;
 }
 
@@ -87,12 +112,35 @@ export function groupAlignExclude(
     labelIds: new Set(siblings.labels.map((l) => l.id)),
     polygonIds: new Set(siblings.polygons.map((p) => p.id)),
     svgImageIds: new Set(siblings.svgImages.map((i) => i.id)),
+    anchorIds: new Set(siblings.anchors.map((a) => a.id)),
   };
-  if (grabbedKind === 'station') ex.stationIds.add(grabbedId);
-  else if (grabbedKind === 'bullet') ex.bulletIds.add(grabbedId);
-  else if (grabbedKind === 'label') ex.labelIds.add(grabbedId);
-  else if (grabbedKind === 'polygon') ex.polygonIds.add(grabbedId);
-  else ex.svgImageIds.add(grabbedId);
+  // Every kind spelled out (the tail was a catch-all `else`, which would have
+  // quietly filed a new kind's id under svgImageIds — excluding the wrong item
+  // from the snap pool and leaving the dragged one in it).
+  switch (grabbedKind) {
+    case 'station':
+      ex.stationIds.add(grabbedId);
+      break;
+    case 'bullet':
+      ex.bulletIds.add(grabbedId);
+      break;
+    case 'label':
+      ex.labelIds.add(grabbedId);
+      break;
+    case 'polygon':
+      ex.polygonIds.add(grabbedId);
+      break;
+    case 'svgImage':
+      ex.svgImageIds.add(grabbedId);
+      break;
+    case 'anchor':
+      ex.anchorIds.add(grabbedId);
+      break;
+    default: {
+      const unhandled: never = grabbedKind;
+      throw new Error(`groupAlignExclude: unhandled kind ${String(unhandled)}`);
+    }
+  }
   return ex;
 }
 
@@ -102,7 +150,8 @@ export function hasGroupSiblings(s: GroupSiblings): boolean {
       s.bullets.length +
       s.labels.length +
       s.polygons.length +
-      s.svgImages.length >
+      s.svgImages.length +
+      s.anchors.length >
     0
   );
 }
@@ -120,4 +169,5 @@ export function translateSiblings(s: GroupSiblings, dx: number, dy: number): voi
     );
   }
   for (const is of s.svgImages) doc.moveSvgImage(is.id, is.startX + dx, is.startY + dy);
+  for (const as of s.anchors) doc.moveTransferAnchor(as.id, as.startX + dx, as.startY + dy);
 }

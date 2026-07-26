@@ -42,7 +42,7 @@ describe('hoveredLineStop store (transfer-mode dot ring)', () => {
   // pointerleave swaps to the idle handler (which clears only
   // hoveredCanvasItem), so pointer motion could never clear the stale value.
   it('setUiMode clears hoveredLineStop like the other ephemeral hover channels', () => {
-    useSelection.getState().setUiMode({ kind: 'creating-transfer', anchor: null });
+    useSelection.getState().setUiMode({ kind: 'creating-transfer', firstEnd: null });
     useSelection
       .getState()
       .setHoveredLineStop({ stationId: 'A' as StationId, lineId: 'L1' as LineId });
@@ -118,7 +118,7 @@ describe('hoveredChrome — passes the hovered item through when idle and unsele
 describe('hoveredChrome — suppression', () => {
   it('is null in a non-idle mode', () => {
     useSelection.setState({
-      uiMode: { kind: 'creating-transfer', anchor: null },
+      uiMode: { kind: 'creating-transfer', firstEnd: null },
       hoveredCanvasItem: { kind: 'station', id: 'A' },
     });
     expect(hoveredChrome(useSelection.getState())).toBeNull();

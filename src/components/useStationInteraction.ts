@@ -1,5 +1,7 @@
 import { Line, LineId, Station } from '../model/types';
 import { dragState, useDoc, useSelection } from '../state/store';
+import { pickTransferEnd } from '../state/transferPick';
+import { isStopEnd } from '../model/transferAnchors';
 import { dispatchMirrored } from '../state/mirrorDispatch';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { stopPosWorld } from '../geometry/interlining';
@@ -75,7 +77,6 @@ export function useStationInteraction(
   const spliceStationIntoEdge = useDoc((s) => s.spliceStationIntoEdge);
   const setLineSegmentStyle = useDoc((s) => s.setLineSegmentStyle);
   const redistributeBetween = useDoc((s) => s.redistributeBetween);
-  const addTransfer = useDoc((s) => s.addTransfer);
   const gridMode = useSnapPrefs((s) => s.modes.grid);
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -105,24 +106,11 @@ export function useStationInteraction(
     // Capture which specific dot was closest to the click so the transfer
     // pins to that stop instead of an arbitrary station-anchor location.
     if (selection.uiMode.kind === 'creating-transfer') {
-      const lineId = closestStopLineId(station, e);
-      const anchor = selection.uiMode.anchor;
-      if (!anchor) {
-        selection.setTransferAnchor({ stationId: station.id, lineId });
-        // Clear the first-pick hover highlight — the dot is now committed
-        // as the anchor, no longer just hovered.
-        selection.setHoveredLineStop(null);
-      } else {
-        // Same station + same dot is a no-op self-transfer; same station
-        // + a DIFFERENT dot (interlined station) is allowed.
-        const sameStation = anchor.stationId === station.id;
-        const sameLine = anchor.lineId === lineId;
-        if (!(sameStation && sameLine)) {
-          addTransfer(anchor, { stationId: station.id, lineId });
-          selection.setUiMode({ kind: 'idle' });
-          selection.setHoveredLineStop(null);
-        }
-      }
+      // The two-click contract lives in pickTransferEnd, shared with the anchor
+      // layer — same station + same dot is still an inert self-transfer, same
+      // station + a DIFFERENT dot (interlined) is still allowed, and both rules
+      // now come from one place.
+      pickTransferEnd({ stationId: station.id, lineId: closestStopLineId(station, e) });
       return;
     }
     // Ctrl/Cmd-click on a different station while exactly one is selected:
@@ -314,8 +302,8 @@ export function useStationInteraction(
   const onTransferPointerMove = (e: React.PointerEvent) => {
     const lineId = closestStopLineId(station, e);
     if (!lineId) return;
-    const anchor = selection.uiMode.kind === 'creating-transfer' ? selection.uiMode.anchor : null;
-    if (anchor && anchor.stationId === station.id && anchor.lineId === lineId) {
+    const first = selection.uiMode.kind === 'creating-transfer' ? selection.uiMode.firstEnd : null;
+    if (first && isStopEnd(first) && first.stationId === station.id && first.lineId === lineId) {
       const cur = selection.hoveredLineStop;
       if (cur && cur.stationId === station.id) selection.setHoveredLineStop(null);
       return;

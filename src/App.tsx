@@ -30,6 +30,7 @@ import { resolveOffsetPerp } from './model/transforms';
 import {
   nudgeTarget,
   otherLayoutNodes,
+  anchorBlockerNodes,
   sourceCellOf,
   stationLayoutNodes,
   type LayoutSource,
@@ -230,9 +231,10 @@ export default function App() {
         // through to the global close-everything wipe below.
         {
           const sel = useSelection.getState();
-          if (sel.selectedStopLineId || sel.labelSelected) {
+          if (sel.selectedStopLineId || sel.labelSelected || sel.selectedAnchorCellId) {
             sel.setSelectedStopLineId(null);
             sel.setLabelSelected(false);
+            sel.setSelectedAnchorCellId(null);
             return;
           }
           if (sel.uiMode.kind === 'editing-station-layout') {
@@ -369,7 +371,9 @@ export default function App() {
             ? { kind: 'label' }
             : sel.selectedStopLineId
               ? { kind: 'stop', lineId: sel.selectedStopLineId }
-              : null;
+              : sel.selectedAnchorCellId
+                ? { kind: 'anchor', anchorId: sel.selectedAnchorCellId }
+                : null;
         const subCell = subStation && subSource ? sourceCellOf(subStation, subSource) : null;
         if (subStation && subSource && subCell) {
           e.preventDefault();
@@ -398,10 +402,19 @@ export default function App() {
           }
           const target = nudgeTarget({
             source: subCell,
-            wSrc: subSource.kind === 'label' ? STOP_SIZE : lineWidthOf(doc.lines[subSource.lineId]),
-            gSrc: subSource.kind === 'label' ? 0 : lineInterlineGapOf(doc.lines[subSource.lineId]),
-            srcIsLabel: subSource.kind === 'label',
-            otherNodes: otherLayoutNodes(stationLayoutNodes(subStation, doc.lines), subSource),
+            // A hosted anchor takes the label's parameters exactly (unit
+            // nominal width, no gap, body-less for overlap), so the keyboard
+            // reaches the same slots the drag does.
+            wSrc: subSource.kind === 'stop' ? lineWidthOf(doc.lines[subSource.lineId]) : STOP_SIZE,
+            gSrc: subSource.kind === 'stop' ? lineInterlineGapOf(doc.lines[subSource.lineId]) : 0,
+            srcIsPoint: subSource.kind !== 'stop',
+            otherNodes: [
+              ...otherLayoutNodes(stationLayoutNodes(subStation, doc.lines), subSource),
+              ...anchorBlockerNodes(
+                subStation,
+                subSource.kind === 'anchor' ? subSource.anchorId : undefined,
+              ),
+            ],
             basis: e.shiftKey ? 'diagonal' : 'orthogonal',
             stationRotation: rotation,
             arrow: { row: Math.sign(dy), col: Math.sign(dx) },
@@ -409,6 +422,13 @@ export default function App() {
           if (!target) return;
           const dRow = target.row - subCell.row;
           const dCol = target.col - subCell.col;
+          if (subSource.kind === 'anchor') {
+            // NO mirror fan-out — see useStationLayoutDrag for why: an anchor
+            // id is global, so every match would nudge the SAME anchor by its
+            // own rotated delta, and an offset-0/offset-2 pair cancels.
+            doc.moveStationAnchor(subStation.id, subSource.anchorId, dRow, dCol);
+            return;
+          }
           dispatchMirrored(subStation.id, (sid, k) => {
             // Local-frame deltas rotate by the match's layoutOffset so the
             // world-frame edit mirrors the source (same as the inspector).
@@ -440,6 +460,12 @@ export default function App() {
           for (const id of ids.svgImages) {
             const im = doc.svgImages[id];
             if (im) doc.moveSvgImage(id, im.x + dx, im.y + dy);
+          }
+          // Absolute coords like every x/y kind above (only movePolygon takes a
+          // delta). Inside the same group, so a mixed nudge is one undo entry.
+          for (const id of ids.anchors) {
+            const a = doc.transferAnchors[id];
+            if (a) doc.moveTransferAnchor(id, a.x + dx, a.y + dy);
           }
           group?.commit();
         }
@@ -629,7 +655,7 @@ export default function App() {
         setUiMode(
           cur.kind === 'creating-transfer'
             ? { kind: 'idle' }
-            : { kind: 'creating-transfer', anchor: null },
+            : { kind: 'creating-transfer', firstEnd: null },
         );
         return;
       }

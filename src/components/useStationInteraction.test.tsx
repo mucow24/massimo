@@ -278,7 +278,7 @@ describe('useStationInteraction — double click', () => {
 
 describe('useStationInteraction — transfer creation', () => {
   it('first pick sets the anchor, second pick commits the transfer', () => {
-    useSelection.getState().setUiMode({ kind: 'creating-transfer', anchor: null });
+    useSelection.getState().setUiMode({ kind: 'creating-transfer', firstEnd: null });
 
     const linesAB = {
       L1: makeLine({ id: 'L1' as LineId, stations: ['S', 'B'] as StationId[] }),
@@ -294,7 +294,7 @@ describe('useStationInteraction — transfer creation', () => {
     let uiMode = useSelection.getState().uiMode;
     expect(uiMode.kind).toBe('creating-transfer');
     if (uiMode.kind === 'creating-transfer') {
-      expect(uiMode.anchor).toEqual({ stationId: 'S', lineId: 'L1' });
+      expect(uiMode.firstEnd).toEqual({ stationId: 'S', lineId: 'L1' });
     }
 
     // Second pick on B commits and exits.
@@ -307,14 +307,14 @@ describe('useStationInteraction — transfer creation', () => {
   });
 
   it('highlights the hovered dot during a transfer pick', () => {
-    useSelection.getState().setUiMode({ kind: 'creating-transfer', anchor: null });
+    useSelection.getState().setUiMode({ kind: 'creating-transfer', firstEnd: null });
     const { result } = setup();
     act(() => result.current.handlers.onPointerMove?.(pointerEvent({ clientX: 0, clientY: 0 })));
     expect(useSelection.getState().hoveredLineStop).toEqual({ stationId: 'S', lineId: 'L1' });
   });
 
   it('clears the hover highlight on pointer leave', () => {
-    useSelection.getState().setUiMode({ kind: 'creating-transfer', anchor: null });
+    useSelection.getState().setUiMode({ kind: 'creating-transfer', firstEnd: null });
     useSelection.setState({
       ...useSelection.getState(),
       hoveredLineStop: { stationId: 'S' as StationId, lineId: 'L1' as LineId },
@@ -331,7 +331,7 @@ describe('useStationInteraction — transfer creation', () => {
     // since there's no '.canvas-host svg' in the DOM.
     useSelection.getState().setUiMode({
       kind: 'creating-transfer',
-      anchor: { stationId: 'S' as StationId, lineId: 'L1' as LineId },
+      firstEnd: { stationId: 'S' as StationId, lineId: 'L1' as LineId },
     });
     const { result } = setup();
     click(result.current.handlers, pointerEvent({}) as unknown as React.MouseEvent);
@@ -340,7 +340,7 @@ describe('useStationInteraction — transfer creation', () => {
     const uiMode = useSelection.getState().uiMode;
     expect(uiMode.kind).toBe('creating-transfer');
     if (uiMode.kind === 'creating-transfer') {
-      expect(uiMode.anchor).toEqual({ stationId: 'S', lineId: 'L1' });
+      expect(uiMode.firstEnd).toEqual({ stationId: 'S', lineId: 'L1' });
     }
   });
 
@@ -350,7 +350,7 @@ describe('useStationInteraction — transfer creation', () => {
     // anchor, not a hover target), never re-set it.
     useSelection.getState().setUiMode({
       kind: 'creating-transfer',
-      anchor: { stationId: 'S' as StationId, lineId: 'L1' as LineId },
+      firstEnd: { stationId: 'S' as StationId, lineId: 'L1' as LineId },
     });
     useSelection.setState({
       ...useSelection.getState(),
@@ -603,14 +603,14 @@ describe('useStationInteraction — locked stations are click-through unless sel
   // unreachable in every mode — silently killing gestures that legitimately
   // target locked stations (lock protects geometry, not mode participation).
   it('a locked station is still a transfer endpoint in creating-transfer mode', () => {
-    useSelection.getState().setUiMode({ kind: 'creating-transfer', anchor: null });
+    useSelection.getState().setUiMode({ kind: 'creating-transfer', firstEnd: null });
     const { result } = setup({ ...stationS(), locked: true });
     expect(result.current.hitless).toBe(false);
     click(result.current.handlers, pointerEvent({}) as unknown as React.MouseEvent);
     const uiMode = useSelection.getState().uiMode;
     expect(uiMode.kind).toBe('creating-transfer');
     if (uiMode.kind === 'creating-transfer') {
-      expect(uiMode.anchor).toEqual({ stationId: 'S', lineId: 'L1' });
+      expect(uiMode.firstEnd).toEqual({ stationId: 'S', lineId: 'L1' });
     }
   });
 

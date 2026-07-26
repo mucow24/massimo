@@ -16,6 +16,7 @@ import {
 } from '../../model/transforms';
 import { sameCell } from '../inspector/stopGridDrag';
 import { OrientationArrow } from '../StationOrientationArrows';
+import { AnchorMark, ANCHOR_ICON_BOX } from '../AnchorGlyph';
 import type { LayoutDragSource } from './useStationLayoutDrag';
 
 // Every handle is sized in WORLD units — geometry AND stroke weight — so it
@@ -104,7 +105,16 @@ export function StationLayoutEditor({
       (m, s) => Math.max(m, resolveDotSize(lines[s.lineId], s, isSingleton)),
       0,
     ) / 2;
-  const shieldPad = Math.max(STOP_SIZE, maxDotR);
+  // The halo must also reach every transfer anchor: an anchor parked outside
+  // the cells box would otherwise sit beyond the swallowing zone, and a
+  // near-miss right-click there would rotate the WHOLE station through the hit
+  // rect beneath — the exact gap the shield exists to close. Extending the PAD
+  // (not cellsAABBLocal) keeps the painted border as the stay/exit boundary.
+  const anchorReach = (station.transferAnchors ?? []).reduce((m, a) => {
+    const c = stopCenterAt(a.row, a.col);
+    return Math.max(m, Math.abs(c.x) - cellsBox.w / 2, Math.abs(c.y) - cellsBox.h / 2);
+  }, 0);
+  const shieldPad = Math.max(STOP_SIZE, maxDotR, anchorReach + STOP_SIZE / 2);
   const {
     anchorX: labelAnchorX,
     anchorY: labelAnchorY,
@@ -132,6 +142,7 @@ export function StationLayoutEditor({
           e.stopPropagation();
           selection.setSelectedStopLineId(null);
           selection.setLabelSelected(false);
+          selection.setSelectedAnchorCellId(null);
         },
         onContextMenu: (e: React.MouseEvent) => {
           e.preventDefault();
@@ -166,10 +177,15 @@ export function StationLayoutEditor({
     onContextMenu: (e: React.MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      // Both rotatable kinds named explicitly. The label arm used to be a bare
+      // `else`, so a source kind with no orientation of its own would have
+      // rotated the station's LABEL on right-click — and nothing about that
+      // would fail to compile. A source that isn't listed here has nothing to
+      // rotate, which is the correct no-op.
       if (source.kind === 'stop') {
         selection.setSelectedStopLineId(source.lineId);
         dispatchMirrored(station.id, (sid) => rotateStop(sid, source.lineId));
-      } else {
+      } else if (source.kind === 'label') {
         selection.setLabelSelected(true);
         dispatchMirrored(station.id, (sid) => rotateLabel(sid));
       }
@@ -264,6 +280,45 @@ export function StationLayoutEditor({
               lineId={s.lineId}
               fill="#fff"
             />
+          </g>
+        );
+      })}
+
+      {/* Transfer-anchor handles: the same grab ring as a stop, carrying the
+          anchor mark instead of an orientation arrow (an anchor has no axis).
+          Drags on the same ghost lattice as the label — a body-less point. */}
+      {(station.transferAnchors ?? []).map((a) => {
+        const c = stopCenterAt(a.row, a.col);
+        const r = STOP_SIZE / 2;
+        const selected = selection.selectedAnchorCellId === a.id;
+        return (
+          <g
+            key={`a-${a.id}`}
+            data-cell-kind="anchor"
+            data-cell-row={a.row}
+            data-cell-col={a.col}
+            data-anchor-cell-id={a.id}
+            data-selected={selected || undefined}
+            style={{ cursor: inHandMode ? undefined : 'grab' }}
+            {...handleFor({ kind: 'anchor', anchorId: a.id })}
+          >
+            <title>Transfer anchor</title>
+            <circle
+              cx={c.x}
+              cy={c.y}
+              r={r}
+              fill={RING_SCRIM}
+              pointerEvents={inHandMode ? 'none' : 'all'}
+              stroke={selected ? LAYOUT_RING_ACTIVE : LAYOUT_RING}
+              strokeWidth={selected ? RING_ACTIVE_WIDTH : RING_WIDTH}
+            />
+            <g
+              transform={`translate(${c.x - r} ${c.y - r}) scale(${(r * 2) / ANCHOR_ICON_BOX})`}
+              color="#fff"
+              pointerEvents="none"
+            >
+              <AnchorMark strokeWidth={1.6} />
+            </g>
           </g>
         );
       })}

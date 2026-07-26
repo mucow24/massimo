@@ -9,6 +9,7 @@ import {
 } from './lineStroke';
 import type { LineStyle, MapDoc } from './types';
 import { counterIdFactory } from './ids';
+import { isStopEnd, transferEndResolves } from './transferAnchors';
 
 // A single test action — a labeled discriminated union of transforms applied
 // to whatever doc state currently exists. We don't generate raw arguments;
@@ -414,15 +415,19 @@ describe('transforms invariants (property-based)', () => {
     );
   });
 
-  it('every transfer endpoint references a live station and a live line or null', () => {
+  it('every transfer endpoint resolves: a live stop, or a live anchor in either home', () => {
     fc.assert(
       fc.property(fc.array(actionArb, { maxLength: 30 }), (actions) => {
         const doc = applyAll(actions);
         for (const xid of Object.keys(doc.transfers)) {
           const t = doc.transfers[xid];
           for (const end of [t.a, t.b]) {
-            expect(doc.stations[end.stationId]).toBeDefined();
-            if (end.lineId !== null) {
+            // One predicate per arm of the union, rather than reading
+            // .stationId/.lineId unconditionally: a stop end resolves in
+            // `stations`, a hosted-anchor end in that station's own cell list,
+            // and a free-anchor end in `transferAnchors`.
+            expect(transferEndResolves(doc, end)).toBe(true);
+            if (isStopEnd(end) && end.lineId !== null) {
               expect(doc.lines[end.lineId]).toBeDefined();
             }
           }

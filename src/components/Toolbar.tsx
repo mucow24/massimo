@@ -6,6 +6,7 @@ import { useViewportStore, nextGridSize } from '../state/viewportStore';
 import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
 import { computeContentBounds } from '../geometry/contentBounds';
+import { AnchorGlyph } from './AnchorGlyph';
 import { fitViewport } from './canvas/viewportMath';
 import { clearHistory } from '../state/history';
 import { parseSvgIntrinsicSize, rasterFileToImage, svgTextToDataUri } from '../model/svgImport';
@@ -90,6 +91,8 @@ export function Toolbar() {
   const setDarkMode = useDoc((s) => s.setDarkMode);
   const showWaypoints = useViewportStore((s) => s.showWaypoints);
   const setShowWaypoints = useViewportStore((s) => s.setShowWaypoints);
+  const showAnchors = useViewportStore((s) => s.showAnchors);
+  const setShowAnchors = useViewportStore((s) => s.setShowAnchors);
   const showNetwork = useViewportStore((s) => s.showNetwork);
   const setShowNetwork = useViewportStore((s) => s.setShowNetwork);
   const setDayCanvasColor = useViewportStore((s) => s.setDayCanvasColor);
@@ -137,10 +140,11 @@ export function Toolbar() {
     selection.setUiMode(
       selection.uiMode.kind === 'creating-transfer'
         ? { kind: 'idle' }
-        : { kind: 'creating-transfer', anchor: null },
+        : { kind: 'creating-transfer', firstEnd: null },
     );
   };
   const onAddLabel = () => toggleMode('placing-label');
+  const onAddAnchor = () => toggleMode('placing-anchor');
   const onAddPolygon = () => toggleMode('creating-polygon');
   const onAddLine = () => {
     // Exit any active Edit Stops FIRST: the placeholder GC (the mode-exit
@@ -609,6 +613,7 @@ export function Toolbar() {
         <MenuItem onClick={onAddLineTag}>Line tags</MenuItem>
         <MenuItem onClick={onAddRouteBullet}>Route bullets</MenuItem>
         <MenuItem onClick={onAddTransfer}>Transfer</MenuItem>
+        <MenuItem onClick={onAddAnchor}>Transfer anchor</MenuItem>
         <MenuItem onClick={onAddLabel}>Label</MenuItem>
         <MenuItem onClick={onAddPolygon}>Polygon</MenuItem>
         <MenuItem onClick={onAddImage}>Image / SVG…</MenuItem>
@@ -676,6 +681,16 @@ export function Toolbar() {
           onClick={() => setShowWaypoints(!showWaypoints)}
         >
           WP
+        </button>
+        <button
+          type="button"
+          className={'tool-btn' + (showAnchors ? ' active' : '')}
+          title={showAnchors ? 'Hide transfer anchors' : 'Show transfer anchors'}
+          aria-label="Toggle transfer anchors"
+          aria-pressed={showAnchors}
+          onClick={() => setShowAnchors(!showAnchors)}
+        >
+          <AnchorGlyph />
         </button>
         <button
           type="button"

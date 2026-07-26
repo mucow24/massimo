@@ -110,6 +110,11 @@ export function snapPlacement(
       );
       return viaPoint({ x: anchor.x - world.x, y: anchor.y - world.y });
     }
+    case 'placing-anchor':
+      // A bare point with nothing to measure: snap the drop position itself
+      // through the point snapper, exactly like an unbound bullet and like the
+      // anchor's own drag (useItemDrag), so preview == drop == drag.
+      return viaPoint({ x: 0, y: 0 });
     case 'creating-polygon': {
       const anchor = polygonSnapAnchor(starterPolygonVertices(world.x, world.y));
       return viaPoint({ x: anchor.x - world.x, y: anchor.y - world.y });
@@ -173,6 +178,7 @@ export function usePlacementDispatch(view: ViewportApi): PlacementDispatch {
   const connectStationsOnLine = useDoc((s) => s.connectStationsOnLine);
   const spliceStationIntoEdge = useDoc((s) => s.spliceStationIntoEdge);
   const addRouteBullet = useDoc((s) => s.addRouteBullet);
+  const addTransferAnchor = useDoc((s) => s.addTransferAnchor);
   const addTextLabel = useDoc((s) => s.addTextLabel);
   const addPolygon = useDoc((s) => s.addPolygon);
   const addSvgImage = useDoc((s) => s.addSvgImage);
@@ -242,6 +248,13 @@ export function usePlacementDispatch(view: ViewportApi): PlacementDispatch {
       // Stay in place-station mode; user clicks again or hits Esc / the
       // toolbar button to exit. Don't auto-select the new station — that
       // would close the placing-mode banner via the inspector swap.
+      return true;
+    }
+    if (mode.kind === 'placing-anchor') {
+      const w = snappedWorld();
+      addTransferAnchor(w.x, w.y);
+      // Sticky like stations and bullets: click-click-click drops a row of
+      // them. Don't auto-select — that would close the placement banner.
       return true;
     }
     if (mode.kind === 'creating-route-bullet') {

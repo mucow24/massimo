@@ -4,7 +4,8 @@ import { svgImageCorners } from '../../geometry/svgImage';
 import { type Vec2 } from '../../geometry/vec';
 import { useDoc } from '../../state/store';
 import { useViewportStore } from '../../state/viewportStore';
-import type { MapDoc, Station, TextLabel } from '../../model/types';
+import { anchorsVisibleNow } from '../../state/anchorVisibility';
+import type { MapDoc, Station, TextLabel, TransferAnchor } from '../../model/types';
 
 /** Per-kind id sets excluded from the pool — the dragged item itself plus, in a
  *  group drag, every co-selected sibling (they move with the drag, so they'd be
@@ -15,13 +16,14 @@ export interface AlignExclude {
   svgImageIds?: ReadonlySet<string>;
   labelIds?: ReadonlySet<string>;
   bulletIds?: ReadonlySet<string>;
+  anchorIds?: ReadonlySet<string>;
 }
 
 /** The doc slices the pool draws from. Structural so tests can pass a plain
  *  object; the live store state satisfies it. */
 export type AlignDoc = Pick<
   MapDoc,
-  'stations' | 'polygons' | 'svgImages' | 'textLabels' | 'routeBullets'
+  'stations' | 'polygons' | 'svgImages' | 'textLabels' | 'routeBullets' | 'transferAnchors'
 >;
 
 /**
@@ -67,6 +69,14 @@ export function alignTargets(doc: AlignDoc, exclude: AlignExclude = {}): Vec2[] 
     const b = doc.routeBullets[id];
     out.push({ x: b.x, y: b.y });
   }
+  // Free transfer anchors are targets as well as snappers — an elbow is only
+  // useful if the NEXT thing can line up on it. Hosted anchors are omitted:
+  // they sit on the station lattice, whose stop centres are already in the pool.
+  for (const id of Object.keys(doc.transferAnchors)) {
+    if (exclude.anchorIds?.has(id)) continue;
+    const a = doc.transferAnchors[id];
+    out.push({ x: a.x, y: a.y });
+  }
   return out;
 }
 
@@ -87,7 +97,30 @@ export function alignTargets(doc: AlignDoc, exclude: AlignExclude = {}): Vec2[] 
  */
 export function liveAlignTargets(exclude: AlignExclude = {}): Vec2[] {
   const doc = useDoc.getState();
-  return alignTargets({ ...doc, stations: liveSnapStations(doc.stations) }, exclude);
+  return alignTargets(
+    {
+      ...doc,
+      stations: liveSnapStations(doc.stations),
+      transferAnchors: liveSnapAnchors(doc.transferAnchors),
+    },
+    exclude,
+  );
+}
+
+/**
+ * The transfer anchors the snap pool may align to — `{}` while either toggle
+ * that hides them is off. Same rule, and the same reason, as
+ * {@link liveSnapStations}: the pool is geometric (straight off the doc), so
+ * hiding anchors doesn't remove them by itself, and snapping to an invisible
+ * one draws a guide pointing at bare canvas.
+ *
+ * Gated on BOTH flags because the layer renders under both: anchors are part of
+ * the transfer network, and every transfer surface goes with `showNetwork`.
+ */
+export function liveSnapAnchors(
+  transferAnchors: Record<string, TransferAnchor>,
+): Record<string, TransferAnchor> {
+  return anchorsVisibleNow() ? transferAnchors : {};
 }
 
 /**

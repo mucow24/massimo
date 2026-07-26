@@ -51,6 +51,12 @@ export function SelectionPopover({ ids, worldRect, view, spawnBox }: Props) {
   const svgImages = useDoc((s) => s.svgImages);
 
   const total = itemIdCount(ids);
+  // Transfer anchors have no `locked` field, so they can never be counted as
+  // locked — which means `lockedCount === total` would be unreachable with one
+  // in the selection, leaving Lock all permanently enabled and silently inert.
+  // Lock gates on the LOCKABLE subset; Delete deliberately still gates on the
+  // full total, because an anchor IS deletable.
+  const lockableTotal = total - ids.anchors.length;
   // Members that momentarily fail to resolve (mid-delete render) count as
   // unlocked; reconcileWithDoc prunes dangling ids right after.
   const lockedCount =
@@ -77,7 +83,7 @@ export function SelectionPopover({ ids, worldRect, view, spawnBox }: Props) {
         <button
           type="button"
           className="lock-btn"
-          disabled={lockedCount === total}
+          disabled={lockedCount === lockableTotal}
           onClick={() => setItemsLocked(ids, true)}
           title="Lock every selected item"
         >

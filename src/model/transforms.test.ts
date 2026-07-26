@@ -487,8 +487,11 @@ describe('addTransfer', () => {
       { stationId: 's1', lineId: null },
       { stationId: 's2', lineId: null },
     );
-    expect(next.transfers.x1.a.lineId).toBeNull();
-    expect(next.transfers.x1.b.lineId).toBeNull();
+    // Asserted as whole ends rather than `.lineId` reads: TransferEnd is a
+    // union now, and this pins the STOP arm's exact stored shape (which is
+    // also what every pre-union saved file carries).
+    expect(next.transfers.x1.a).toEqual({ stationId: 's1', lineId: null });
+    expect(next.transfers.x1.b).toEqual({ stationId: 's2', lineId: null });
   });
 
   it('allows a same-station transfer between two distinct dots', () => {
@@ -577,8 +580,8 @@ describe('deleteLine: transfers', () => {
     expect(next.transfers.x1).toBeUndefined();
     expect(next.transfers.x2).toBeUndefined();
     expect(next.transfers.x3).toBeDefined();
-    expect(next.transfers.x3.a.lineId).toBeNull();
-    expect(next.transfers.x3.b.lineId).toBe('L2');
+    expect(next.transfers.x3.a).toEqual({ stationId: 's1', lineId: null });
+    expect(next.transfers.x3.b).toEqual({ stationId: 's2', lineId: 'L2' });
   });
 });
 

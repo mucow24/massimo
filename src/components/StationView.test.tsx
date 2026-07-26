@@ -612,7 +612,7 @@ describe('<StationView /> — transfer-pick hover highlight', () => {
     });
     useSelection.setState({
       ...useSelection.getState(),
-      uiMode: { kind: 'creating-transfer', anchor: null },
+      uiMode: { kind: 'creating-transfer', firstEnd: null },
       hoveredLineStop: null,
     });
     const { container } = renderBg(station);
@@ -632,7 +632,7 @@ describe('<StationView /> — transfer-pick hover highlight', () => {
       ...useSelection.getState(),
       uiMode: {
         kind: 'creating-transfer',
-        anchor: { stationId: 's1', lineId: 'L1' },
+        firstEnd: { stationId: 's1', lineId: 'L1' },
       },
       hoveredLineStop: null,
     });
@@ -653,7 +653,7 @@ describe('<StationView /> — transfer-pick hover highlight', () => {
       ...useSelection.getState(),
       uiMode: {
         kind: 'creating-transfer',
-        anchor: { stationId: 's1', lineId: 'L1' },
+        firstEnd: { stationId: 's1', lineId: 'L1' },
       },
       hoveredLineStop: null,
     });

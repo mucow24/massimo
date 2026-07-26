@@ -38,6 +38,7 @@ const resetSelection = (uiMode: UiMode) =>
     selectedLabelIds: [],
     selectedPolygonIds: [],
     selectedSvgImageIds: [],
+    selectedAnchorIds: [],
   });
 
 beforeEach(() => {
@@ -185,7 +186,7 @@ describe('usePlacementDispatch', () => {
   );
 
   it('exit-only mode creating-transfer: returns true and drops to idle', () => {
-    resetSelection({ kind: 'creating-transfer', anchor: null });
+    resetSelection({ kind: 'creating-transfer', firstEnd: null });
     const { result } = renderHook(() => usePlacementDispatch(fakeView));
 
     let consumed = false;
@@ -464,5 +465,43 @@ describe('handleCanvasPlace — editing-station-layout', () => {
     expect(useSelection.getState().uiMode.kind).toBe('idle');
     // Unlike the other modes' cancel paths, the inspector stays open.
     expect(useSelection.getState().selectedStationIds).toEqual(['A']);
+  });
+});
+
+describe('usePlacementDispatch — placing-anchor', () => {
+  it('drops a transfer anchor at the click and STAYS in the mode', () => {
+    resetSelection({ kind: 'placing-anchor' });
+    const { result } = renderHook(() => usePlacementDispatch(fakeView));
+
+    let consumed = false;
+    act(() => {
+      consumed = result.current.handleCanvasPlace(pointerEvent({ clientX: 40, clientY: -12 }));
+    });
+    expect(consumed).toBe(true);
+    const anchors = Object.values(useDoc.getState().transferAnchors);
+    expect(anchors).toHaveLength(1);
+    expect(anchors[0]).toMatchObject({ x: 40, y: -12 });
+    // Sticky like stations and bullets: click-click-click drops a row.
+    expect(useSelection.getState().uiMode.kind).toBe('placing-anchor');
+  });
+
+  it('does not auto-select the dropped anchor (that would close the banner)', () => {
+    resetSelection({ kind: 'placing-anchor' });
+    const { result } = renderHook(() => usePlacementDispatch(fakeView));
+    act(() => {
+      result.current.handleCanvasPlace(pointerEvent({ clientX: 0, clientY: 0 }));
+    });
+    expect(useSelection.getState().selectedAnchorIds).toEqual([]);
+  });
+
+  it('snaps the drop to the grid like every other point placement', () => {
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, grid: 'both' } });
+    resetSelection({ kind: 'placing-anchor' });
+    const { result } = renderHook(() => usePlacementDispatch(fakeView));
+    act(() => {
+      result.current.handleCanvasPlace(pointerEvent({ clientX: 43, clientY: 77 }));
+    });
+    const a = Object.values(useDoc.getState().transferAnchors)[0];
+    expect(a).toMatchObject(snapPointToGrid(43, 77, 'both', 10));
   });
 });

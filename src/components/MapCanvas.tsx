@@ -74,6 +74,7 @@ import { StationPlacingPreview } from './canvas/StationPlacingPreview';
 import { PolygonPlacingPreview } from './canvas/PolygonPlacingPreview';
 import { SvgImagePlacingPreview } from './canvas/SvgImagePlacingPreview';
 import { RouteBulletPlacingPreview } from './canvas/RouteBulletPlacingPreview';
+import { AnchorPlacingPreview } from './canvas/AnchorPlacingPreview';
 import { HighlightedLineLayer } from './canvas/HighlightedLineLayer';
 import { LabelPlacingPreview } from './canvas/LabelPlacingPreview';
 import { RouteBulletView, RouteBulletSelectionRing } from './RouteBulletView';
@@ -82,7 +83,11 @@ import { PolygonView, PolygonSelectionOutline } from './PolygonView';
 import { SvgImageView, SvgImageSelectionBox } from './SvgImageView';
 import { ItemPopovers } from './canvas/ItemPopovers';
 import { snapPlacement, usePlacementDispatch } from './canvas/usePlacementDispatch';
-import { TransferLayer, TransferSelectionOutline, transferEndWorld } from './TransferLayer';
+import { TransferLayer, TransferSelectionOutline } from './TransferLayer';
+import { AnchorLayer } from './canvas/AnchorLayer';
+import { pickTransferEnd } from '../state/transferPick';
+import { useAnchorsVisible } from '../state/anchorVisibility';
+import { transferEndWorld } from '../geometry/transferEnds';
 import {
   anchorFromArcLen,
   closestParamOnOffsetPath,
@@ -92,7 +97,7 @@ import {
   sampleOffsetPath,
   snapNeighborTag,
 } from '../geometry/lineTagGeometry';
-import type { LineId, StationId } from '../model/types';
+import type { LineId, StationId, TransferEnd } from '../model/types';
 import { findMatchingStations } from '../model/matching';
 import { desaturateColor } from '../util/color';
 
@@ -128,6 +133,7 @@ export function MapCanvas() {
   const routeBullets = useDoc((s) => s.routeBullets);
   const rotateRouteBullet = useDoc((s) => s.rotateRouteBullet);
   const transfers = useDoc((s) => s.transfers);
+  const transferAnchors = useDoc((s) => s.transferAnchors);
   const styles = useDoc((s) => s.styles);
   const styleDefaults = useDoc((s) => s.styleDefaults);
   const textLabels = useDoc((s) => s.textLabels);
@@ -147,6 +153,9 @@ export function MapCanvas() {
   // self-gate inside StationView (one chokepoint for ~15 call sites); lines and
   // everything anchored to them are gated at the blocks below.
   const showNetwork = useViewportStore((s) => s.showNetwork);
+  // Derived, not the raw toggle: transfer-picking and anchor-placing reveal
+  // anchors whatever the toolbar says (anchorVisibility.ts).
+  const anchorsVisible = useAnchorsVisible();
   // Re-render (and therefore re-measure) the whole canvas when the web fonts
   // land. The epoch lives in a store rather than in App state so it can also
   // punch through StationView's memo; MapCanvas subscribes too so the layers it
@@ -216,6 +225,16 @@ export function MapCanvas() {
   // ignore pointer events so a canvas click places the item over them instead
   // of selecting the polygon.
   const polygonsInteractive = selection.uiMode.kind === 'idle';
+  // Anchors stay live in ONE non-idle mode: picking transfer ends, which is the
+  // entire reason they exist. Everywhere else they must read as background, or
+  // an anchor painted over the drop point swallows the click that placement /
+  // layering / Edit Stops / layout-edit modes use to place or to EXIT.
+  // FREE anchors are live in idle (select/drag) and while picking transfer
+  // ends. HOSTED anchors are live ONLY while picking: on the main map they are
+  // station-grid cells, so outside that gesture they stay click-through and a
+  // click lands on the station beneath, exactly as a stop dot does.
+  const pickingTransferEnd = selection.uiMode.kind === 'creating-transfer';
+  const freeAnchorsLive = selection.uiMode.kind === 'idle' || pickingTransferEnd;
 
   // Geometry hash for buildBandGeometry's inputs: line topology (the `edges`
   // SET) + per-line width + interline gap + curve radius. Topology is `edges`,
@@ -495,10 +514,11 @@ export function MapCanvas() {
     rectSelect.onPointerMove(e);
     const mode = selection.uiMode;
     const wantsCursorTrack =
-      (mode.kind === 'creating-transfer' && mode.anchor !== null) ||
+      (mode.kind === 'creating-transfer' && mode.firstEnd !== null) ||
       mode.kind === 'placing-station' ||
       mode.kind === 'creating-route-bullet' ||
       mode.kind === 'placing-label' ||
+      mode.kind === 'placing-anchor' ||
       mode.kind === 'creating-polygon' ||
       mode.kind === 'placing-svg' ||
       // Edit Stops tracks the cursor only while Alt is held (the create-ghost)
@@ -757,6 +777,34 @@ export function MapCanvas() {
       rotateItemOnContextMenu({ type, id }, () => opts.rotate(id));
     },
   });
+
+  // Anchors do NOT go through makeItemClickHandlers. Two reasons, both real:
+  //   - its select() forces uiMode to idle, which would kill the very transfer
+  //     pick an anchor click is FOR; and
+  //   - its onContextMenu unconditionally stopPropagation()s, which would break
+  //     the bubble-phase right-click that exits Edit Stops (the station layer
+  //     solves the same problem by stripping its handler in that mode).
+  // Anchors have nothing to rotate in place, so they get no context menu at
+  // all — a co-selected anchor still orbits via rotateItemOnContextMenu when
+  // some OTHER item is the right-clicked pivot.
+  const onAnchorClick = (end: TransferEnd, e: React.MouseEvent) => {
+    if (dragState.suppressClick) return;
+    if (inHandMode) return;
+    e.stopPropagation();
+    const sel = useSelection.getState();
+    if (sel.uiMode.kind === 'creating-transfer') {
+      // Either home works here — an anchor's whole job is to be a transfer
+      // endpoint, and the end carries which one it is.
+      pickTransferEnd(end);
+      return;
+    }
+    // Selection is a FREE-anchor concept; a hosted anchor never reaches this
+    // line, because it takes no pointer events outside the pick gesture.
+    if (!('stationId' in end)) {
+      if (e.shiftKey && !(e.ctrlKey || e.metaKey)) sel.toggleAnchorSelection(end.anchorId);
+      else sel.selectAnchor(end.anchorId);
+    }
+  };
 
   const { onClick: onBulletClick, onContextMenu: onBulletContextMenu } = makeItemClickHandlers(
     'bullet',
@@ -1345,6 +1393,7 @@ export function MapCanvas() {
           <TransferLayer
             transfers={transfers}
             stations={stations}
+            transferAnchors={transferAnchors}
             defaults={TRANSFER_STYLE_DEFAULTS}
             onSelect={(id) => {
               // Same exit-then-select contract as the free items above.
@@ -1363,13 +1412,15 @@ export function MapCanvas() {
             renders below the dots for the same reason as the real ones. */}
         {showNetwork &&
           selection.uiMode.kind === 'creating-transfer' &&
-          selection.uiMode.anchor &&
+          selection.uiMode.firstEnd &&
           cursorWorld &&
-          stations[selection.uiMode.anchor.stationId] &&
           (() => {
-            const anchor = selection.uiMode.anchor;
+            const anchor = selection.uiMode.firstEnd;
             if (!anchor) return null;
-            const anchorWorld = transferEndWorld(stations[anchor.stationId], anchor.lineId);
+            // Resolved through the union-aware helper, same as both paint
+            // passes — the first-picked end may be a stop or an anchor.
+            const anchorWorld = transferEndWorld(anchor, stations, transferAnchors);
+            if (!anchorWorld) return null;
             // The dropped transfer will wear the designated default transfer
             // style, so the preview reads it too (a loaded doc always has
             // one; constants are a type-level fallback).
@@ -1411,6 +1462,31 @@ export function MapCanvas() {
           ),
         )}
 
+        {/* Transfer anchors. Above the dots so a free anchor stays grabbable
+            where it overlaps one, and inside an export-excluded subtree — the
+            anchor is scaffolding, the transfer bound to it is the artwork, so
+            only the transfer prints. Gated on BOTH toggles: anchors are part of
+            the transfer network, and every transfer surface goes with
+            showNetwork. */}
+        {anchorsVisible && (
+          <g data-export-exclude="1">
+            <AnchorLayer
+              transferAnchors={transferAnchors}
+              stations={stations}
+              selectedIds={selection.selectedAnchorIds}
+              hoveredKey={selection.hoveredAnchorKey}
+              onHover={selection.setHoveredAnchorKey}
+              // Live only where an anchor click means something. Everywhere
+              // else it must not swallow the BACKGROUND click that placement
+              // modes (and Edit Stops, and layering) use as their exit.
+              freeLive={freeAnchorsLive}
+              picking={pickingTransferEnd}
+              onPointerDown={itemDrag.onAnchorPointerDown}
+              onClick={onAnchorClick}
+            />
+          </g>
+        )}
+
         {/* Selected-transfer outline: above the dots (unlike TransferLayer)
             so the connected dots — and any crossing transfer — can't cover
             the selection chrome. */}
@@ -1418,6 +1494,7 @@ export function MapCanvas() {
           <TransferSelectionOutline
             transfers={transfers}
             stations={stations}
+            transferAnchors={transferAnchors}
             defaults={TRANSFER_STYLE_DEFAULTS}
             selectedId={selection.selectedTransferId}
           />
@@ -1430,6 +1507,7 @@ export function MapCanvas() {
             <TransferSelectionOutline
               transfers={transfers}
               stations={stations}
+              transferAnchors={transferAnchors}
               defaults={TRANSFER_STYLE_DEFAULTS}
               selectedId={hoverTransferId}
             />
@@ -1471,6 +1549,11 @@ export function MapCanvas() {
             lines={lines}
             lineOrder={lineOrder}
             style={defaultStyleProps({ styles, styleDefaults }, 'routeBullet')}
+          />
+          {/* Transfer-anchor-placing ghost: the same mark the click will drop,
+              drawn through AnchorLayer so preview and drop can't drift. */}
+          <AnchorPlacingPreview
+            world={selection.uiMode.kind === 'placing-anchor' ? cursorWorld : null}
           />
         </g>
 
@@ -2078,6 +2161,11 @@ export function MapCanvas() {
                   over={layoutDrag.overlay.over?.kind === 'ghost' ? layoutDrag.overlay.over : null}
                   station={stations[layoutDrag.overlay.stationId]}
                   zoom={view.viewport.zoom}
+                  // A stop's drop radius is its stripe's half-width; every
+                  // POINT-like source (the label cell, and any future one)
+                  // takes the unit cell's half — which is what the tail means,
+                  // not "label" specifically. Safe as a catch-all for that
+                  // reason; a source needing its own radius must branch above.
                   dropR={
                     layoutDrag.overlay.source.kind === 'stop'
                       ? lineWidthOf(lines[layoutDrag.overlay.source.lineId]) / 2
