@@ -218,7 +218,7 @@ export function StationLayoutEditor({
       />
 
       {/* Stop handles: a ring around each real dot, sized in world units, with
-          the orientation glyph as a badge. */}
+          the drawn orientation arrow as a badge. */}
       {station.stops.map((s) => {
         const c = stopCenterAt(s.row, s.col);
         const selected = selection.selectedStopLineId === s.lineId;

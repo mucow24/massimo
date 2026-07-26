@@ -1,8 +1,7 @@
-import type { Line, Station } from '../model/types';
-import { stopCenterAt } from '../geometry/orientation';
+import type { Line, Station, StopOrientation } from '../model/types';
+import { ORIENTATION_ANGLE, stopCenterAt } from '../geometry/orientation';
 import { resolveDotSize } from '../model/dotSize';
 import { LABEL_FONT_SIZE_DEFAULT, stationIsSingleton } from '../model/transforms';
-import { ORIENTATION_ANGLE, type StopAxis } from './inspector/stopGridDrag';
 
 // World-unit arrow sizing — deliberately no /zoom floor: a wheel zoom commits
 // the camera only after the wheel settles, so screen-floored chrome would
@@ -20,11 +19,17 @@ const HEAD_HALF_WIDTH = 0.2;
 const SHAFT_HALF_WIDTH = 0.06;
 
 /**
- * World-unit size (tip to tip) of one stop's orientation arrow. Shared with the
- * layout editor, which paints the same badge on the same dots — entering the
- * mode must not resize the arrows.
+ * World-unit size (tip to tip) of the MAP's hover badge on one stop: scaled off
+ * that stop's painted dot so an oversized dot can't swallow its arrow, floored
+ * at the station-name default size so a default 8px dot's badge still reads.
+ *
+ * Deliberately NOT what the layout editor uses. There the arrow has to fit
+ * inside its grab ring, so it sizes off the RING (see `ARROW_FIT` in
+ * StationLayoutEditor) — a service-code disc would otherwise scale the arrow
+ * straight through the ring it lives in. So the two surfaces share the shape
+ * and the rotation, not the size, and entering the mode can resize a badge.
  */
-export function orientationArrowSize(
+function orientationArrowSize(
   line: Line | undefined,
   stop: Station['stops'][number],
   isSingleton: boolean,
@@ -36,9 +41,9 @@ const round = (v: number) => +v.toFixed(2);
 
 /**
  * A double-headed arrow `size` long tip to tip, centered on the origin and
- * pointing up/down. Rotate by ORIENTATION_ANGLE to land it on a stop's axis —
- * which is the point of drawing it rather than typesetting ↕ ⤢ ↔ ⤡, whose
- * diagonals no font puts at a true 45°.
+ * pointing up/down. Rotated by ORIENTATION_ANGLE onto a stop's axis — which is
+ * the point of drawing it rather than typesetting ↕ ⤢ ↔ ⤡, whose diagonals no
+ * font puts at a true 45° (see ORIENTATION_ANGLE).
  */
 export function orientationArrowPath(size: number): string {
   const half = round(size / 2);
@@ -78,7 +83,7 @@ export function OrientationArrow({
   x: number;
   y: number;
   size: number;
-  orientation: StopAxis;
+  orientation: StopOrientation;
   lineId: string;
   fill: string;
   outline?: string;

@@ -1424,9 +1424,6 @@ export function setLabelOffsetPerp(doc: MapDoc, stationId: StationId, offsetPerp
   );
 }
 
-// Canonical display order for the align/valign segmented pickers.
-export const ALIGN_CYCLE: LabelAlign[] = ['auto', 'start', 'middle', 'end'];
-
 export function setLabelAlign(doc: MapDoc, stationId: StationId, align: LabelAlign): MapDoc {
   return updateLabel(doc, stationId, (label) =>
     label.align === align ? label : { ...label, align },
@@ -1474,16 +1471,6 @@ export function setLabelAutoVAlign(
     return rest;
   });
 }
-
-// Cycle orders for the inspector's auto-tuning chips; null = auto (derived
-// from the label's octant).
-export const AUTO_HALIGN_CYCLE: (AutoHAlign | null)[] = [null, 'start', 'middle', 'end'];
-export const AUTO_VALIGN_CYCLE: (AutoVAlign | null)[] = [null, 'up', 'down'];
-
-// Canonical display order, geometrically symmetric: auto-down (block top
-// pinned, grows down) → top → middle → bottom → auto-up (block bottom
-// pinned, grows up). The default 'auto-down' sits at index 0.
-export const VALIGN_CYCLE: LabelValign[] = ['auto-down', 'top', 'middle', 'bottom', 'auto-up'];
 
 export function setLabelValign(doc: MapDoc, stationId: StationId, valign: LabelValign): MapDoc {
   return updateLabel(doc, stationId, (label) =>

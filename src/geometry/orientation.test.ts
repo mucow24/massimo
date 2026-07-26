@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import {
   DIR_8,
+  ORIENTATION_ANGLE,
   STOP_SIZE,
   labelAdjacencyGate,
   rotateBy,
@@ -15,6 +16,13 @@ import {
 import type { Rotation, StopOrientation } from '../model/types';
 
 const SQRT2_2 = Math.SQRT1_2;
+
+const ORIENTATIONS: StopOrientation[] = [
+  'auto-vertical',
+  'auto-ne-sw',
+  'auto-horizontal',
+  'auto-nw-se',
+];
 
 describe('rotateBy', () => {
   it('returns the input for rotation 0', () => {
@@ -61,6 +69,22 @@ describe('worldDirToLocal', () => {
     const local = worldDirToLocal({ x: 0, y: 1 }, 2);
     expect(local.x).toBeCloseTo(1, 10);
     expect(local.y).toBeCloseTo(0, 10);
+  });
+});
+
+describe('ORIENTATION_ANGLE', () => {
+  // Two encodings of the same four axes: a stop's STRIPE follows
+  // travelDirLocal, while the arrow drawn on that stop is a vertical shape
+  // rotated by ORIENTATION_ANGLE. Nothing else compares them, so swapping two
+  // entries in either table would silently point every badge across the line it
+  // labels instead of along it.
+  it.each(ORIENTATIONS)('rotates a vertical arrow onto %s’s travel axis', (o) => {
+    // SVG rotate() is clockwise in screen coords (y down).
+    const rad = (ORIENTATION_ANGLE[o] * Math.PI) / 180;
+    const tip = { x: -Math.sin(rad), y: Math.cos(rad) }; // (0,1) turned by the angle
+    const axis = travelDirLocal(o, null);
+    // Parallel up to sign: a rotation carries no direction along the axis.
+    expect(Math.abs(tip.x * axis.x + tip.y * axis.y)).toBeCloseTo(1, 10);
   });
 });
 
