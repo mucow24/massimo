@@ -1,5 +1,5 @@
 import { RefObject, useRef, useState } from 'react';
-import { beginHistoryGroup, useDoc } from '../../state/store';
+import { beginHistoryGroup, useDoc, useSelection } from '../../state/store';
 import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
 import { SNAP_PERP_TOLERANCE, snapDraggedStation, type SnapGuide } from '../../geometry/snap';
@@ -20,7 +20,7 @@ import { liveAlignTargets, liveSnapStations } from './snapTargets';
 // Drag state for a free-floating x/y item. `kind` selects the per-frame snap;
 // everything else (lifecycle, group towing) is shared.
 type ItemDragState = {
-  kind: 'bullet' | 'label';
+  kind: 'bullet' | 'label' | 'anchor';
   id: string;
   startWX: number;
   startWY: number;
@@ -44,6 +44,7 @@ export interface ItemDragApi {
   itemSnapGuides: SnapGuide[];
   onBulletPointerDown: (id: string, e: React.PointerEvent) => void;
   onLabelPointerDown: (id: string, e: React.PointerEvent) => void;
+  onAnchorPointerDown: (id: string, e: React.PointerEvent) => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
   onPointerCancel: () => void;
@@ -66,10 +67,12 @@ export function useItemDrag(
 ): ItemDragApi {
   const routeBullets = useDoc((s) => s.routeBullets);
   const textLabels = useDoc((s) => s.textLabels);
+  const transferAnchors = useDoc((s) => s.transferAnchors);
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
   const moveRouteBullet = useDoc((s) => s.moveRouteBullet);
   const moveTextLabel = useDoc((s) => s.moveTextLabel);
+  const moveTransferAnchor = useDoc((s) => s.moveTransferAnchor);
   const snapModes = useSnapPrefs((s) => s.modes);
   const gridSize = useViewportStore((s) => s.gridSize);
 
@@ -77,7 +80,7 @@ export function useItemDrag(
   const [itemSnapGuides, setItemSnapGuides] = useState<SnapGuide[]>([]);
 
   const begin = (
-    kind: 'bullet' | 'label',
+    kind: 'bullet' | 'label' | 'anchor',
     id: string,
     wx: number,
     wy: number,
@@ -90,7 +93,14 @@ export function useItemDrag(
     // marquee-select (the rect-select gate treats [data-locked] as background).
     // A plain no-move click still selects it, so the popover — and its unlock
     // toggle — stays reachable. Mirrors usePolygonDrag's locked guard.
-    const item = kind === 'bullet' ? routeBullets[id] : textLabels[id];
+    // Anchors are the one draggable kind with a MODE gate. This hook has none
+    // otherwise, and an anchor is clickable in creating-transfer mode (that is
+    // the whole point) — without the gate a 4px wobble while picking a transfer
+    // end would start a drag, set suppressClick, and silently eat the pick.
+    if (kind === 'anchor' && useSelection.getState().uiMode.kind !== 'idle') return;
+    // Anchors have no `locked` field, so they are never lock-blocked.
+    const item =
+      kind === 'bullet' ? routeBullets[id] : kind === 'label' ? textLabels[id] : undefined;
     if (item?.locked) return;
     e.stopPropagation();
     // Tow the rest of the multi-selection (every type) by the same delta.
@@ -131,6 +141,12 @@ export function useItemDrag(
     const lbl = textLabels[id];
     if (!lbl) return;
     begin('label', id, lbl.x, lbl.y, e);
+  };
+
+  const onAnchorPointerDown = (id: string, e: React.PointerEvent) => {
+    const a = transferAnchors[id];
+    if (!a) return;
+    begin('anchor', id, a.x, a.y, e);
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -188,6 +204,26 @@ export function useItemDrag(
         setItemSnapGuides(snap.guides);
       }
       moveRouteBullet(ds.id, nx, ny);
+    } else if (ds.kind === 'anchor') {
+      // A bare point with no line to align along, exactly like an unbound
+      // bullet: the center snaps through the point snapper — "Snap to all" +
+      // grid — against the shared pool. Shift bypasses.
+      let guides: SnapGuide[] = [];
+      if (!e.shiftKey) {
+        const snap = snapPolygonPoint({
+          proposed: { x: nx, y: ny },
+          lineTargets: [],
+          allTargets: ds.allTargets,
+          modes: snapModes,
+          tolerance: SNAP_PERP_TOLERANCE / zoom,
+          gridInterval: gridSize,
+        });
+        nx = snap.x;
+        ny = snap.y;
+        guides = snap.guides;
+      }
+      setItemSnapGuides(guides);
+      moveTransferAnchor(ds.id, nx, ny);
     } else {
       // Labels snap like polygons/images: the topmost-then-leftmost visible
       // (rotated, unpadded) corner aligns against the shared pool, with grid
@@ -238,6 +274,7 @@ export function useItemDrag(
     itemSnapGuides,
     onBulletPointerDown,
     onLabelPointerDown,
+    onAnchorPointerDown,
     onPointerMove,
     onPointerUp,
     onPointerCancel,

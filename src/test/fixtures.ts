@@ -288,6 +288,9 @@ export function makeDoc(parts: {
   lineOrder?: LineId[];
   lineTags?: import('../model/types').LineTag[];
   routeBullets?: RouteBullet[];
+  // FREE transfer anchors only. Station-hosted ones ride on their Station
+  // (Station.transferAnchors), so they are seeded through `stations`.
+  transferAnchors?: import('../model/types').TransferAnchor[];
   transfers?: import('../model/types').Transfer[];
   textLabels?: TextLabel[];
   polygons?: Polygon[];
@@ -309,6 +312,8 @@ export function makeDoc(parts: {
   for (const t of parts.lineTags ?? []) lineTags[t.id] = t;
   const routeBullets: Record<string, RouteBullet> = {};
   for (const rb of parts.routeBullets ?? []) routeBullets[rb.id] = rb;
+  const transferAnchors: Record<string, import('../model/types').TransferAnchor> = {};
+  for (const a of parts.transferAnchors ?? []) transferAnchors[a.id] = a;
   const transfers: Record<string, import('../model/types').Transfer> = {};
   for (const x of parts.transfers ?? []) transfers[x.id] = x;
   const textLabels: Record<string, TextLabel> = {};
@@ -354,6 +359,7 @@ export function makeDoc(parts: {
     lineCounter: 0,
     lineTags,
     routeBullets,
+    transferAnchors,
     transfers,
     textLabels,
     polygons,

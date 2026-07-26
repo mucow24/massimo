@@ -8,7 +8,12 @@
 // All results are NORMALIZED (x0 ≤ x1, y0 ≤ y1), unlike the general AABB
 // type whose corners may sit in any diagonal order.
 import type { Pt } from './polygonUnion';
-import type { RouteBullet, Station, TextLabel } from '../model/types';
+import type { RouteBullet, Station, TextLabel, TransferAnchor } from '../model/types';
+
+/** Half the painted diameter of an anchor disc — one half lattice cell. Kept
+ *  here rather than imported from the render layer so this module stays free of
+ *  component imports; AnchorLayer's ANCHOR_SIZE is the same number. */
+const ANCHOR_HALF = 7;
 import type { AABB } from './rectPolygon';
 import {
   stationBoundaryRectsLocal,
@@ -89,6 +94,15 @@ export function svgImageAABB(img: SvgImageGeom): AABB {
  */
 export function routeBulletAABB(b: Pick<RouteBullet, 'x' | 'y' | 'size'>): AABB {
   return { x0: b.x - b.size, y0: b.y - b.size, x1: b.x + b.size, y1: b.y + b.size };
+}
+
+/**
+ * World AABB of a FREE transfer anchor: the painted disc's square. Hosted
+ * anchors get none — they live inside their station's cell grid, which
+ * `stationWorldAABB` already spans.
+ */
+export function transferAnchorAABB(a: Pick<TransferAnchor, 'x' | 'y'>, r = ANCHOR_HALF): AABB {
+  return { x0: a.x - r, y0: a.y - r, x1: a.x + r, y1: a.y + r };
 }
 
 /**

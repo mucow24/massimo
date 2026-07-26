@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { serialize, parse } from './serialize';
-import { makeDoc, makeLineTag, makeRouteBullet, makeTransfer } from '../test/fixtures';
+import { makeDoc, makeLineTag, makeRouteBullet, makeStation, makeTransfer } from '../test/fixtures';
 
 // Round-trip guards for the three entities that had no dedicated serialize
 // coverage (Transfer / RouteBullet / LineTag). serialize is pure pass-through,
@@ -124,5 +124,59 @@ describe('Transfer serialization', () => {
     for (const field of ['thickness', 'color', 'strokeWidth', 'strokeColor']) {
       expect(field in doc.transfers['x1']).toBe(false);
     }
+  });
+});
+
+describe('TransferAnchor serialization', () => {
+  it('round-trips free anchors and every arm of the TransferEnd union', () => {
+    const doc = roundTrip(
+      makeDoc({
+        stations: [makeStation({ id: 's1', transferAnchors: [{ id: 'h1', row: 1, col: -2 }] })],
+        transferAnchors: [{ id: 'a1', x: 12.5, y: -30 }],
+        transfers: [
+          makeTransfer({ id: 'x1', a: { stationId: 's1', lineId: 'l1' }, b: { anchorId: 'a1' } }),
+          makeTransfer({
+            id: 'x2',
+            a: { stationId: 's1', anchorId: 'h1' },
+            b: { anchorId: 'a1' },
+          }),
+        ],
+      }),
+    );
+    expect(doc.transferAnchors.a1).toEqual({ id: 'a1', x: 12.5, y: -30 });
+    // Hosted anchors ride inside their station, so they survive the same way
+    // stops do rather than needing a collection of their own.
+    expect(doc.stations.s1.transferAnchors).toEqual([{ id: 'h1', row: 1, col: -2 }]);
+    expect(doc.transfers.x1.b).toEqual({ anchorId: 'a1' });
+    expect(doc.transfers.x2.a).toEqual({ stationId: 's1', anchorId: 'h1' });
+  });
+
+  it('loads a pre-anchors file with an empty collection and no hosted arrays', () => {
+    // The whole migration story: absent fields fill from DEFAULT_DOC on the
+    // merge. If this ever needs a migrateDoc step, the reference-identity pins
+    // in storeMigrate.test.ts are what will break first.
+    const legacy = JSON.stringify({
+      format: 'massimo-map',
+      doc: {
+        stations: {
+          s1: {
+            id: 's1',
+            name: 'A',
+            x: 0,
+            y: 0,
+            rotation: 0,
+            stops: [],
+            label: { row: 0, col: 0, rotation: 0, offset: 0, align: 'auto', valign: 'auto-down' },
+          },
+        },
+        lines: {},
+        lineOrder: [],
+      },
+    });
+    const result = parse(legacy);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.doc.transferAnchors).toEqual({});
+    expect(result.doc.stations.s1.transferAnchors).toBeUndefined();
   });
 });

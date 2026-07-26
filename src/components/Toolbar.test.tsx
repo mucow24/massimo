@@ -104,6 +104,9 @@ beforeEach(() => {
     gridVisible: true,
     gridSize: 10,
     showWaypoints: false,
+    // Listed explicitly: setState shallow-merges, so a new persisted key would
+    // otherwise carry whatever the previous test left behind.
+    showAnchors: false,
     showNetwork: true,
   });
   vi.mocked(downloadBlob).mockClear();
@@ -486,7 +489,7 @@ describe('Toolbar — Add menu mode commands', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Transfer' }));
     const mode = useSelection.getState().uiMode;
     expect(mode.kind).toBe('creating-transfer');
-    expect(mode.kind === 'creating-transfer' && mode.anchor).toBeNull();
+    expect(mode.kind === 'creating-transfer' && mode.firstEnd).toBeNull();
   });
 
   it('clicking an active Add item again toggles back to idle', async () => {
@@ -1555,5 +1558,21 @@ describe('Toolbar — status toasts', () => {
     expect(toastsNow()).toHaveLength(1);
     await user.click(toast);
     await waitFor(() => expect(toastsNow()).toHaveLength(0));
+  });
+});
+
+describe('Toolbar — transfer anchors toggle', () => {
+  it('toggles anchor visibility, and starts OFF', async () => {
+    const user = userEvent.setup();
+    renderToolbar();
+    const btn = () => screen.getByLabelText('Toggle transfer anchors');
+    // Same default as the WP button beside it: anchors are scaffolding, shown
+    // on demand. The transfer/place gestures reveal them on their own.
+    expect(btn()).toHaveAttribute('aria-pressed', 'false');
+    await user.click(btn());
+    expect(useViewportStore.getState().showAnchors).toBe(true);
+    expect(btn()).toHaveAttribute('aria-pressed', 'true');
+    await user.click(btn());
+    expect(useViewportStore.getState().showAnchors).toBe(false);
   });
 });

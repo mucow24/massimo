@@ -39,7 +39,8 @@ export type HitKind =
   | 'bullet'
   | 'label'
   | 'polygon'
-  | 'svgImage';
+  | 'svgImage'
+  | 'anchor';
 
 export interface HitRef {
   kind: HitKind;
@@ -71,6 +72,10 @@ const RESOLVERS: { selector: string; kind: HitKind; attr: string }[] = [
   { selector: '[data-text-label-id]', kind: 'label', attr: 'data-text-label-id' },
   { selector: '[data-polygon-id]', kind: 'polygon', attr: 'data-polygon-id' },
   { selector: '[data-svg-image-id]', kind: 'svgImage', attr: 'data-svg-image-id' },
+  // Only FREE anchors carry this attribute; station-hosted ones render with
+  // pointer-events none and no id, so they never enter the snapshot at all and
+  // an alt-click reaches whatever sits beneath them.
+  { selector: '[data-anchor-id]', kind: 'anchor', attr: 'data-anchor-id' },
 ];
 
 // Selected-item drag proxies re-assert footprints at top z; they must never

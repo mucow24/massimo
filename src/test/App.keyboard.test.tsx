@@ -32,6 +32,9 @@ beforeEach(() => {
     // A stray vertex selection would take Delete/nudge priority in the next
     // test (which spreads the live selection), so reset it between tests.
     selectedVertices: null,
+    // Same hazard, same fix: setState shallow-merges, so a leftover anchor
+    // selection would answer the next test's Delete and arrow presses.
+    selectedAnchorIds: [],
   });
   // The slider-guard tests below drive the line popover's Curve radius
   // slider, which lives inside the collapsed (remembered) style detail.
@@ -440,7 +443,7 @@ describe('App keyboard shortcuts: add-transfer mode', () => {
 
   it('Esc exits add-transfer mode', () => {
     render(<App />);
-    useSelection.setState({ uiMode: { kind: 'creating-transfer', anchor: null } });
+    useSelection.setState({ uiMode: { kind: 'creating-transfer', firstEnd: null } });
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(useSelection.getState().uiMode.kind).toBe('idle');
   });
@@ -1508,5 +1511,69 @@ describe('App keyboard shortcuts: inside an open history group', () => {
     expect(redoDepth()).toBe(0);
     outer.commit();
     expect(historyDepth()).toBe(2);
+  });
+});
+
+describe('App keyboard: transfer anchors are first-class canvas objects', () => {
+  const seed = () => {
+    const doc = useDoc.getState();
+    const a = doc.addTransferAnchor(100, 50);
+    const s = doc.addStation(0, 0);
+    useSelection.getState().setAnchorSelection([a]);
+    return { a, s };
+  };
+
+  it('Delete removes a selected anchor', () => {
+    render(<App />);
+    const { a } = seed();
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(useDoc.getState().transferAnchors[a]).toBeUndefined();
+  });
+
+  it('Delete also removes the transfers bound to it', () => {
+    render(<App />);
+    const { a, s } = seed();
+    const x = useDoc.getState().addTransfer({ stationId: s, lineId: null }, { anchorId: a });
+    fireEvent.keyDown(window, { key: 'Delete' });
+    const doc = useDoc.getState();
+    expect(doc.transferAnchors[a]).toBeUndefined();
+    // A transfer needs both ends; orphaning one removes the segment.
+    expect(doc.transfers[x]).toBeUndefined();
+    expect(doc.stations[s]).toBeDefined();
+  });
+
+  it('deletes a mixed station+anchor selection in ONE undo entry', () => {
+    render(<App />);
+    const { a, s } = seed();
+    useSelection.getState().addStationsToSelection([s]);
+    useDoc.temporal.getState().clear();
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(useDoc.getState().transferAnchors[a]).toBeUndefined();
+    expect(useDoc.getState().stations[s]).toBeUndefined();
+    // One Ctrl+Z brings BOTH back — the anchor delete rides inside
+    // deleteUnlockedSelection's group rather than opening its own.
+    useDoc.temporal.getState().undo();
+    const doc = useDoc.getState();
+    expect(doc.transferAnchors[a]).toBeDefined();
+    expect(doc.stations[s]).toBeDefined();
+  });
+
+  it('ArrowRight nudges a selected anchor by 1, Shift by 5', () => {
+    render(<App />);
+    const { a } = seed();
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(useDoc.getState().transferAnchors[a].x).toBe(101);
+    fireEvent.keyDown(window, { key: 'ArrowRight', shiftKey: true });
+    expect(useDoc.getState().transferAnchors[a].x).toBe(106);
+  });
+
+  it('nudges a co-selected station and anchor together', () => {
+    render(<App />);
+    const { a, s } = seed();
+    useSelection.getState().addStationsToSelection([s]);
+    fireEvent.keyDown(window, { key: 'ArrowDown' });
+    const doc = useDoc.getState();
+    expect(doc.transferAnchors[a].y).toBe(51);
+    expect(doc.stations[s].y).toBe(1);
   });
 });

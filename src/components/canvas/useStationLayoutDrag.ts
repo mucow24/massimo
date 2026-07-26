@@ -7,6 +7,7 @@ import { STOP_SIZE, rotateGridDelta, type Rotation } from '../../geometry/orient
 import { lineInterlineGapOf, lineWidthOf } from '../../model/lineWidth';
 import { captureMirrorTargets, type MirrorTarget } from '../../state/mirrorDispatch';
 import {
+  anchorBlockerNodes,
   GHOST_SNAP_RADIUS,
   cursorCellAt,
   dragLattice,
@@ -26,7 +27,10 @@ type ScreenToWorld = (mx: number, my: number) => Vec2;
 // same rule as the old StopGrid.
 const STOP_SWAP_RADIUS = 0.6;
 
-export type LayoutDragSource = { kind: 'stop'; lineId: LineId } | { kind: 'label' };
+export type LayoutDragSource =
+  | { kind: 'stop'; lineId: LineId }
+  | { kind: 'label' }
+  | { kind: 'anchor'; anchorId: string };
 
 // Overlay state for the editing-station-layout mode: the in-flight drag's
 // candidate ghost lattice + the resolved drop target (ghost slot or swap).
@@ -35,6 +39,17 @@ export interface LayoutDragOverlay {
   source: LayoutDragSource;
   ghosts: RowCol[];
   over: DropTarget | null;
+}
+
+/**
+ * Arm the grabbed node as the station's sub-selection — the three fields are
+ * mutually exclusive, and each of the three setters clears the other two.
+ * Shared by the no-move click and the post-drop path so they can't disagree.
+ */
+function armLayoutNode(sel: ReturnType<typeof useSelection.getState>, source: LayoutDragSource) {
+  if (source.kind === 'stop') sel.setSelectedStopLineId(source.lineId);
+  else if (source.kind === 'anchor') sel.setSelectedAnchorCellId(source.anchorId);
+  else sel.setLabelSelected(true);
 }
 
 export interface StationLayoutDragApi {
@@ -113,21 +128,33 @@ export function useStationLayoutDrag(
 
     const sourceCell = sourceCellOf(st, ds.source);
     if (!sourceCell) return;
-    const wSrc = ds.source.kind === 'label' ? STOP_SIZE : lineWidthOf(doc.lines[ds.source.lineId]);
-    const gSrc = ds.source.kind === 'label' ? 0 : lineInterlineGapOf(doc.lines[ds.source.lineId]);
-    const otherNodes = otherLayoutNodes(stationLayoutNodes(st, doc.lines), ds.source);
+    // A hosted anchor takes the LABEL's parameters exactly: unit nominal width
+    // (so ring-1 lands a full cell out from a default-width stop) and no
+    // interline gap, with srcIsPoint making it body-less for the overlap check.
+    const isPoint = ds.source.kind !== 'stop';
+    const wSrc = ds.source.kind === 'stop' ? lineWidthOf(doc.lines[ds.source.lineId]) : STOP_SIZE;
+    const gSrc = ds.source.kind === 'stop' ? lineInterlineGapOf(doc.lines[ds.source.lineId]) : 0;
+    const otherNodes = [
+      ...otherLayoutNodes(stationLayoutNodes(st, doc.lines), ds.source),
+      // Anchors block slots without being lattice nodes (see anchorBlockerNodes).
+      ...anchorBlockerNodes(st, ds.source.kind === 'anchor' ? ds.source.anchorId : undefined),
+    ];
     const { ghosts } = dragLattice({
       cursor,
       wSrc,
       gSrc,
-      srcIsLabel: ds.source.kind === 'label',
+      srcIsPoint: isPoint,
       otherNodes,
       basis: shiftKey ? 'diagonal' : 'orthogonal',
       stationRotation: rotation,
     });
     const over = findDropTarget(
       cursor,
-      ds.source.kind === 'label' ? { kind: 'label' } : { kind: 'stop', lineId: ds.source.lineId },
+      ds.source.kind === 'stop'
+        ? { kind: 'stop', lineId: ds.source.lineId }
+        : // Neither the label nor an anchor ever SWAPS with a stop; naming the
+          // kind honestly keeps findDropTarget's parameter from lying.
+          { kind: ds.source.kind },
       st.stops,
       ghosts,
       {
@@ -152,8 +179,7 @@ export function useStationLayoutDrag(
     const sel = useSelection.getState();
     if (!ds.moved) {
       // Pure click: select the grabbed node (StopGrid parity).
-      if (ds.source.kind === 'stop') sel.setSelectedStopLineId(ds.source.lineId);
-      else sel.setLabelSelected(true);
+      armLayoutNode(sel, ds.source);
       finishDrag(ds, e, svgRef); // cancels the empty history group
       return;
     }
@@ -165,15 +191,24 @@ export function useStationLayoutDrag(
       if (sourceCell && !sameCell(over, sourceCell)) {
         const dRow = over.row - sourceCell.row;
         const dCol = over.col - sourceCell.col;
-        for (const t of ds.targets) {
-          const d = rotateGridDelta(dRow, dCol, t.layoutOffset);
-          if (ds.source.kind === 'stop') doc.moveStop(t.id, ds.source.lineId, d.dRow, d.dCol);
-          else doc.moveLabel(t.id, d.dRow, d.dCol);
+        if (ds.source.kind === 'anchor') {
+          // NO mirror fan-out. Mirror targets are keyed by (stationId, lineId)
+          // and matched by `stopsKey`, which deliberately ignores anchors — so
+          // two stations with DIFFERENT anchor sets still match, and every
+          // target would apply its own rotated delta to the SAME global
+          // anchorId. A 0/2 offset pair is 180° apart and cancels outright:
+          // the anchor would refuse to move at all.
+          doc.moveStationAnchor(ds.id, ds.source.anchorId, dRow, dCol);
+        } else {
+          for (const t of ds.targets) {
+            const d = rotateGridDelta(dRow, dCol, t.layoutOffset);
+            if (ds.source.kind === 'stop') doc.moveStop(t.id, ds.source.lineId, d.dRow, d.dCol);
+            else doc.moveLabel(t.id, d.dRow, d.dCol);
+          }
         }
       }
       // Keep the dragged node armed as the sub-selection after the drop.
-      if (ds.source.kind === 'stop') sel.setSelectedStopLineId(ds.source.lineId);
-      else sel.setLabelSelected(true);
+      armLayoutNode(sel, ds.source);
     }
     finishDrag(ds, e, svgRef);
   };

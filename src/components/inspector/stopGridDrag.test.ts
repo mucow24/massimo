@@ -227,7 +227,7 @@ describe('computeGhosts', () => {
     const other12: WidthNode = { row: -12 / 14, col: 12 / 14, w: 12 };
     const ghosts = computeGhosts({
       wSrc: W,
-      srcIsLabel: true,
+      srcIsPoint: true,
       anchor: anchor12,
       otherNodes: [anchor12, other12],
       basis: 'orthogonal',
@@ -449,7 +449,7 @@ describe('nudgeTarget', () => {
     const target = nudgeTarget({
       source: { row: 38 / 14, col: 56 / 14 },
       wSrc: W,
-      srcIsLabel: true,
+      srcIsPoint: true,
       otherNodes: stops,
       basis: 'orthogonal',
       stationRotation: 6,

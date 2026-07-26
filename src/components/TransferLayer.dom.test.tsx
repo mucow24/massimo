@@ -479,7 +479,7 @@ describe('TransferLayer — DOM rendering', () => {
       act(() => {
         useSelection.getState().setUiMode({
           kind: 'creating-transfer',
-          anchor: { stationId: 's1', lineId: 'L1' },
+          firstEnd: { stationId: 's1', lineId: 'L1' },
         });
       });
       // Cursor tracking populates cursorWorld; jsdom geometry is degenerate

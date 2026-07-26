@@ -1,12 +1,14 @@
 import { RefObject, useRef, useState } from 'react';
 import { useDoc, useSelection } from '../../state/store';
 import { useViewportStore } from '../../state/viewportStore';
+import { anchorsVisibleNow } from '../../state/anchorVisibility';
 import { pointerLost, releaseDragCapture, trackDragMove } from './dragGesture';
 import {
   polygonsForRect,
   routeBulletsForRect,
   stationsForRect,
   svgImagesForRect,
+  transferAnchorsForRect,
   textLabelsForRect,
 } from '../../geometry/stationBoundary';
 import { stopGapOf, stopHalfOf } from '../../model/lineWidth';
@@ -37,6 +39,21 @@ function stationsForRectVisible(
   );
 }
 
+/**
+ * FREE transfer anchors swept up by the rect — none while either toggle that
+ * hides them is off. Same rule and same reason as stationsForRectVisible: hits
+ * are geometric, so an invisible anchor would otherwise join a selection that
+ * answers Delete. Hiding stays a PEEK though — an already-selected anchor is
+ * not deselected by the toggle, only kept out of NEW marquees.
+ */
+function anchorsForRectVisible(
+  doc: Pick<MapDoc, 'transferAnchors'>,
+  rect: RectSelectRect,
+): string[] {
+  if (!anchorsVisibleNow()) return [];
+  return transferAnchorsForRect(doc.transferAnchors, rect);
+}
+
 export interface RectSelectRect {
   x0: number;
   y0: number;
@@ -53,6 +70,7 @@ export interface RectSelectApi {
   previewStationIds: StationId[] | null;
   /** Bullets the selection WILL contain on release. Null when not dragging. */
   previewBulletIds: string[] | null;
+  previewAnchorIds: string[] | null;
   /** Text labels the selection WILL contain on release. Null when not dragging. */
   previewLabelIds: string[] | null;
   /** Polygons the selection WILL contain on release. Null when not dragging. */
@@ -132,6 +150,7 @@ export function useRectSelect(
   const [previewLabelIds, setPreviewLabelIds] = useState<string[] | null>(null);
   const [previewPolygonIds, setPreviewPolygonIds] = useState<string[] | null>(null);
   const [previewSvgImageIds, setPreviewSvgImageIds] = useState<string[] | null>(null);
+  const [previewAnchorIds, setPreviewAnchorIds] = useState<string[] | null>(null);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -169,6 +188,7 @@ export function useRectSelect(
     setPreviewLabelIds(null);
     setPreviewPolygonIds(null);
     setPreviewSvgImageIds(null);
+    setPreviewAnchorIds(null);
   };
 
   // A browser pointercancel voids the marquee with no pointerup: disarm and
@@ -224,6 +244,9 @@ export function useRectSelect(
     setPreviewLabelIds(applyMode(sel.selectedLabelIds, labelHits, mode));
     setPreviewPolygonIds(applyMode(sel.selectedPolygonIds, polygonHits, mode));
     setPreviewSvgImageIds(applyMode(sel.selectedSvgImageIds, svgImageHits, mode));
+    setPreviewAnchorIds(
+      applyMode(sel.selectedAnchorIds, anchorsForRectVisible(doc, nextRect), mode),
+    );
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
@@ -251,6 +274,7 @@ export function useRectSelect(
     const labelHits = textLabelsForRect(doc.textLabels, finalRect, includeLocked);
     const polygonHits = polygonsForRect(doc.polygons, finalRect, includeLocked);
     const svgImageHits = svgImagesForRect(doc.svgImages, finalRect, includeLocked);
+    const anchorHits = anchorsForRectVisible(doc, finalRect);
 
     const sel = useSelection.getState();
     const mode = modeFromEvent(e);
@@ -260,18 +284,21 @@ export function useRectSelect(
       sel.xorLabelsToSelection(labelHits);
       sel.xorPolygonsToSelection(polygonHits);
       sel.xorSvgImagesToSelection(svgImageHits);
+      sel.xorAnchorsToSelection(anchorHits);
     } else if (mode === 'add') {
       sel.addStationsToSelection(stationHits);
       sel.addRouteBulletsToSelection(bulletHits);
       sel.addLabelsToSelection(labelHits);
       sel.addPolygonsToSelection(polygonHits);
       sel.addSvgImagesToSelection(svgImageHits);
+      sel.addAnchorsToSelection(anchorHits);
     } else {
       sel.setStationSelection(stationHits);
       sel.setRouteBulletSelection(bulletHits);
       sel.setLabelSelection(labelHits);
       sel.setPolygonSelection(polygonHits);
       sel.setSvgImageSelection(svgImageHits);
+      sel.setAnchorSelection(anchorHits);
     }
 
     releaseDragCapture(e, svgRef);
@@ -281,6 +308,7 @@ export function useRectSelect(
     rect,
     previewStationIds,
     previewBulletIds,
+    previewAnchorIds,
     previewLabelIds,
     previewPolygonIds,
     previewSvgImageIds,

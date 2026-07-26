@@ -9,6 +9,7 @@ import {
   svgImageAABB,
   textLabelAABB,
   transferAABB,
+  transferAnchorAABB,
   unionAABBs,
 } from '../../geometry/itemBounds';
 import { stopGapOf, stopHalfOf } from '../../model/lineWidth';
@@ -26,7 +27,7 @@ import { PolygonPopover } from '../PolygonPopover';
 import { SvgImagePopover } from '../SvgImagePopover';
 import { StationPopover } from '../StationPopover';
 import { TransferPopover } from '../TransferPopover';
-import { transferEndWorld } from '../TransferLayer';
+import { transferEndWorld } from '../../geometry/transferEnds';
 
 /**
  * Mounts the single floating popover for the current sole selection — a
@@ -56,6 +57,7 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
   const svgImages = useDoc((s) => s.svgImages);
   const lines = useDoc((s) => s.lines);
   const transfers = useDoc((s) => s.transfers);
+  const transferAnchors = useDoc((s) => s.transferAnchors);
   // These panels are DOM overlays, not canvas content, so the lines/stations
   // toggle doesn't take the station/transfer ones with it — they'd hang there
   // anchored to nothing, offering to edit what the user can't see.
@@ -98,6 +100,7 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
       labels: selection.selectedLabelIds,
       polygons: selection.selectedPolygonIds,
       svgImages: selection.selectedSvgImageIds,
+      anchors: selection.selectedAnchorIds,
     };
     if (itemIdCount(multiIds) >= 2 && selection.uiMode.kind === 'idle') {
       const rects: AABB[] = [];
@@ -127,6 +130,10 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
         const im = svgImages[id];
         if (im) rects.push(svgImageAABB(im));
       }
+      for (const id of multiIds.anchors) {
+        const a = transferAnchors[id];
+        if (a) rects.push(transferAnchorAABB(a));
+      }
       if (rects.length === 0) return null;
       return (
         <SelectionPopover
@@ -142,26 +149,30 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
     // has no hidden prop, and a transfer's panel is cheap to re-spawn beside its
     // (restored) transfer on the way back.
     if (!t || !showNetwork) return null;
-    // A live transfer's stations always exist (either end's removal
-    // cascade-deletes it); the guard covers a transient render mid-delete.
-    const sa = stations[t.a.stationId];
-    const sb = stations[t.b.stationId];
-    if (!sa || !sb) return null;
+    // A live transfer's ends always resolve (either end's removal cascade-
+    // deletes it); the guard covers a transient render mid-delete. Resolved
+    // through the SAME helper the two paint passes use, so the popover can't
+    // spawn beside a point the transfer isn't drawn at.
+    const ea = transferEndWorld(t.a, stations, transferAnchors);
+    const eb = transferEndWorld(t.b, stations, transferAnchors);
+    if (!ea || !eb) return null;
     const style = resolveTransferStyle(t);
     return (
       <TransferPopover
         transfer={t}
-        worldRect={transferAABB(
-          transferEndWorld(sa, t.a.lineId),
-          transferEndWorld(sb, t.b.lineId),
-          style.thickness / 2 + style.strokeWidth,
-        )}
+        worldRect={transferAABB(ea, eb, style.thickness / 2 + style.strokeWidth)}
         view={view}
         spawnBox={spawnBox}
         onClose={() => selection.selectTransfer(null)}
       />
     );
   }
+
+  // Anchors have no popover — they are "very boring" by design: select, drag,
+  // nudge, delete. They ARE in soleSelection because hitStack's alt-click cycle
+  // reads it to find the current entry, so bailing here is what keeps the two
+  // consumers honest about the same state.
+  if (sole.type === 'anchor') return null;
 
   if (sole.type === 'station') {
     const st = stations[sole.id];

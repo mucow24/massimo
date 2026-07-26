@@ -5,6 +5,10 @@ export interface IdFactory {
   lineId(): LineId;
   lineTagId(): string;
   routeBulletId(): string;
+  // One factory for BOTH anchor homes (free and station-hosted), so an anchor id
+  // is unique across the doc and a transfer end never has to say which home it
+  // means beyond what its own shape already says.
+  anchorId(): string;
   transferId(): string;
   textLabelId(): string;
   polygonId(): string;
@@ -24,6 +28,7 @@ export function defaultIdFactory(): IdFactory {
     lineId: uid,
     lineTagId: uid,
     routeBulletId: uid,
+    anchorId: uid,
     transferId: uid,
     textLabelId: uid,
     polygonId: uid,
@@ -48,11 +53,13 @@ export function counterIdFactory(seed = 0): IdFactory {
   let i = seed;
   let y = seed;
   let r = seed;
+  let a = seed;
   return {
     stationId: () => `s${s++}`,
     lineId: () => `l${l++}`,
     lineTagId: () => `t${t++}`,
     routeBulletId: () => `b${b++}`,
+    anchorId: () => `a${a++}`,
     transferId: () => `x${x++}`,
     textLabelId: () => `g${g++}`,
     polygonId: () => `p${p++}`,

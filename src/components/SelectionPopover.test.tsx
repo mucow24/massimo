@@ -23,6 +23,7 @@ const ALL_IDS: SelectionItemIds = {
   labels: ['t1'],
   polygons: ['p1'],
   svgImages: ['i1'],
+  anchors: [],
 };
 
 // Seed the doc with one item of every lockable kind (locked per the flags) AND

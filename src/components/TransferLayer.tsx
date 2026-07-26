@@ -1,6 +1,6 @@
-import type { LineId, Station, Transfer, TransferEnd } from '../model/types';
+import type { Station, Transfer, TransferAnchor } from '../model/types';
 import { resolveDayNight, resolveTransferStyle, type TransferStyle } from '../model/transferStyle';
-import { stopPosWorld } from '../geometry/interlining';
+import { transferEndWorld } from '../geometry/transferEnds';
 import { useThemeColors } from '../state/theme';
 import { useDoc } from '../state/store';
 import { selectionOutlineTones } from './selectionStyle';
@@ -17,6 +17,11 @@ const SELECTION_OUTLINE_PAD = 2.5;
 interface Props {
   transfers: Record<string, Transfer>;
   stations: Record<string, Station>;
+  // Free transfer anchors, for ends bound to one. Station-hosted anchor ends
+  // resolve through `stations`, so both passes need both records — and both
+  // MUST resolve an end identically, or a transfer would paint somewhere its
+  // own selection outline isn't.
+  transferAnchors: Record<string, TransferAnchor>;
   // The constant transfer defaults (TRANSFER_STYLE_DEFAULTS); each transfer
   // may override any field (resolved per transfer via resolveTransferStyle).
   defaults: TransferStyle;
@@ -67,30 +72,6 @@ export function capsuleOutlinePath(
 }
 
 /**
- * World position of a station's specific dot. Falls back to the station's
- * anchor when no lineId is given or the line isn't on this station (e.g.,
- * after the line was deleted).
- */
-export function transferEndWorld(
-  station: Station,
-  lineId: LineId | null,
-): { x: number; y: number } {
-  if (!lineId) return { x: station.x, y: station.y };
-  const cell = station.stops.find((c) => c.lineId === lineId);
-  if (!cell) return { x: station.x, y: station.y };
-  return stopPosWorld(cell, station);
-}
-
-function endpointWorld(
-  end: TransferEnd,
-  stations: Record<string, Station>,
-): { x: number; y: number } | null {
-  const st = stations[end.stationId];
-  if (!st) return null;
-  return transferEndWorld(st, end.lineId);
-}
-
-/**
  * Renders all inter-station transfers in two flat passes across the whole
  * set (painted in document order so the second pass lays on top):
  *
@@ -119,6 +100,7 @@ function endpointWorld(
 export function TransferLayer({
   transfers,
   stations,
+  transferAnchors,
   defaults,
   onSelect,
   onHoverEnter,
@@ -135,8 +117,11 @@ export function TransferLayer({
   // the user stroke and the body. Colors are resolved to hex here so both
   // passes just emit strings.
   const drawable = list.flatMap((t) => {
-    const a = endpointWorld(t.a, stations);
-    const b = endpointWorld(t.b, stations);
+    const a = transferEndWorld(t.a, stations, transferAnchors);
+    const b = transferEndWorld(t.b, stations, transferAnchors);
+    // Both ends must resolve for there to be a segment. A dangling end (deleted
+    // station, removed anchor) drops the whole transfer quietly — which is why
+    // neither load path needs a transfer-endpoint sanitizer.
     if (!a || !b) return [];
     const lineEnds = {
       x1: a.x,
@@ -209,6 +194,7 @@ export function TransferLayer({
 export function TransferSelectionOutline({
   transfers,
   stations,
+  transferAnchors,
   defaults,
   selectedId,
 }: Omit<Props, 'onSelect'>) {
@@ -216,8 +202,8 @@ export function TransferSelectionOutline({
   const themeColors = useThemeColors();
   const t = selectedId ? transfers[selectedId] : undefined;
   if (!t) return null;
-  const a = endpointWorld(t.a, stations);
-  const b = endpointWorld(t.b, stations);
+  const a = transferEndWorld(t.a, stations, transferAnchors);
+  const b = transferEndWorld(t.b, stations, transferAnchors);
   if (!a || !b) return null;
   const style = resolveTransferStyle(t, defaults);
   const visibleExtent = style.thickness + 2 * style.strokeWidth;

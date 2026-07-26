@@ -1,5 +1,13 @@
 import type { Pt } from './polygonUnion';
-import type { Polygon, RouteBullet, Station, StationId, SvgImage, TextLabel } from '../model/types';
+import type {
+  Polygon,
+  RouteBullet,
+  Station,
+  StationId,
+  SvgImage,
+  TextLabel,
+  TransferAnchor,
+} from '../model/types';
 import { STOP_SIZE, localToWorld, rotRad, stopCenterAt } from './orientation';
 import { rotateAround, rotatedRectCorners } from './vec';
 import { svgImageCorners } from './svgImage';
@@ -311,6 +319,28 @@ export function routeBulletsForRect(
     if (b.locked && !includeLocked) continue;
     if (b.x + b.size < xLo || b.x - b.size > xHi) continue;
     if (b.y + b.size < yLo || b.y - b.size > yHi) continue;
+    hits.push(id);
+  }
+  return hits;
+}
+
+/**
+ * FREE transfer anchors swept up by the rect, by their painted disc. No
+ * `includeLocked` twin of the bullet guard above — anchors have no lock, so
+ * every one inside the rect is a hit. Hosted anchors are station internals and
+ * are never marquee-selectable; their station answers the marquee instead.
+ */
+export function transferAnchorsForRect(
+  anchors: Record<string, TransferAnchor>,
+  rect: AABB,
+  half = 7,
+): string[] {
+  const { xLo, xHi, yLo, yHi } = normalizeAABB(rect);
+  const hits: string[] = [];
+  for (const id of Object.keys(anchors)) {
+    const a = anchors[id];
+    if (a.x + half < xLo || a.x - half > xHi) continue;
+    if (a.y + half < yLo || a.y - half > yHi) continue;
     hits.push(id);
   }
   return hits;
