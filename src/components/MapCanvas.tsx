@@ -215,6 +215,7 @@ export function MapCanvas() {
   const labelSelectedIds = rectSelect.previewLabelIds ?? selection.selectedLabelIds;
   const polygonSelectedIds = rectSelect.previewPolygonIds ?? selection.selectedPolygonIds;
   const svgImageSelectedIds = rectSelect.previewSvgImageIds ?? selection.selectedSvgImageIds;
+  const anchorSelectedIds = rectSelect.previewAnchorIds ?? selection.selectedAnchorIds;
   // Paint order for the background band: polygons and svg images share ONE
   // stack, so either kind can sit over the other. Later = on top.
   const backgroundRenderOrder = useMemo(
@@ -1473,7 +1474,7 @@ export function MapCanvas() {
             <AnchorLayer
               transferAnchors={transferAnchors}
               stations={stations}
-              selectedIds={selection.selectedAnchorIds}
+              selectedIds={anchorSelectedIds}
               hoveredKey={selection.hoveredAnchorKey}
               onHover={selection.setHoveredAnchorKey}
               // Live only where an anchor click means something. Everywhere

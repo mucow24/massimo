@@ -424,8 +424,8 @@ export default function App() {
           const dCol = target.col - subCell.col;
           if (subSource.kind === 'anchor') {
             // NO mirror fan-out — see useStationLayoutDrag for why: an anchor
-            // id is global, so every match would nudge the SAME anchor by its
-            // own rotated delta, and an offset-0/offset-2 pair cancels.
+            // id is globally unique and lives on this one station, so a mirror
+            // match has no counterpart anchor to nudge. Move it once, here.
             doc.moveStationAnchor(subStation.id, subSource.anchorId, dRow, dCol);
             return;
           }

@@ -192,12 +192,12 @@ export function useStationLayoutDrag(
         const dRow = over.row - sourceCell.row;
         const dCol = over.col - sourceCell.col;
         if (ds.source.kind === 'anchor') {
-          // NO mirror fan-out. Mirror targets are keyed by (stationId, lineId)
-          // and matched by `stopsKey`, which deliberately ignores anchors — so
-          // two stations with DIFFERENT anchor sets still match, and every
-          // target would apply its own rotated delta to the SAME global
-          // anchorId. A 0/2 offset pair is 180° apart and cancels outright:
-          // the anchor would refuse to move at all.
+          // NO mirror fan-out: an anchor id is globally unique and lives on
+          // exactly this station, so there is no per-target counterpart for a
+          // matched station to move (matching.ts's stopsKey ignores anchors —
+          // a mirror match need not own one at all). Applying the source's
+          // delta once, unrotated, to the single station that hosts the anchor
+          // is the whole move.
           doc.moveStationAnchor(ds.id, ds.source.anchorId, dRow, dCol);
         } else {
           for (const t of ds.targets) {

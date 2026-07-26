@@ -1,5 +1,11 @@
 import { autoOrientNewStation } from './autoOrient';
-import { endStationId, isStopEnd, stationAnchorCell } from './transferAnchors';
+import {
+  endStationId,
+  isAnchorEnd,
+  isStopEnd,
+  stationAnchorCell,
+  transferEndResolves,
+} from './transferAnchors';
 import { effectiveLineOrder } from './lineOrder';
 import { reconcileOrder, moveInOrder, moveToEndInOrder } from './recordOrder';
 import {
@@ -2812,20 +2818,13 @@ export function deleteSvgImage(doc: MapDoc, id: string): MapDoc {
 
 /** Do two ends name the exact same point? A zero-length transfer is rejected. */
 export function sameTransferEnd(a: TransferEnd, b: TransferEnd): boolean {
-  const aAnchor = 'anchorId' in a;
-  const bAnchor = 'anchorId' in b;
+  const aAnchor = isAnchorEnd(a);
+  const bAnchor = isAnchorEnd(b);
   if (aAnchor !== bAnchor) return false;
   if (aAnchor && bAnchor) return a.anchorId === b.anchorId;
   // Both stop ends. Same station + DIFFERENT lineIds is fine — a short transfer
   // between two dots of an interlined station is a valid use case.
   return isStopEnd(a) && isStopEnd(b) && a.stationId === b.stationId && a.lineId === b.lineId;
-}
-
-/** Does this end name something that exists right now? */
-function transferEndExists(doc: MapDoc, end: TransferEnd): boolean {
-  if (isStopEnd(end)) return !!doc.stations[end.stationId];
-  if ('stationId' in end) return !!stationAnchorCell(doc.stations[end.stationId], end.anchorId);
-  return !!doc.transferAnchors[end.anchorId];
 }
 
 /**
@@ -2835,7 +2834,7 @@ function transferEndExists(doc: MapDoc, end: TransferEnd): boolean {
  */
 export function addTransfer(doc: MapDoc, id: string, a: TransferEnd, b: TransferEnd): MapDoc {
   if (sameTransferEnd(a, b)) return doc;
-  if (!transferEndExists(doc, a) || !transferEndExists(doc, b)) return doc;
+  if (!transferEndResolves(doc, a) || !transferEndResolves(doc, b)) return doc;
   const transfer: Transfer = { id, a, b };
   return { ...doc, transfers: { ...doc.transfers, [id]: transfer } };
 }
@@ -2870,7 +2869,7 @@ export function deleteTransferAnchor(doc: MapDoc, id: string): MapDoc {
     transferAnchors: rest,
     // Reference-stable when this anchor carried no transfers, so a stray delete
     // doesn't also mark `transfers` dirty.
-    transfers: pruneTransfers(doc.transfers, (e) => 'anchorId' in e && e.anchorId === id),
+    transfers: pruneTransfers(doc.transfers, (e) => isAnchorEnd(e) && e.anchorId === id),
   };
 }
 
@@ -2922,7 +2921,7 @@ export function deleteStationAnchor(doc: MapDoc, stationId: StationId, anchorId:
     ...withoutAnchor,
     transfers: pruneTransfers(
       withoutAnchor.transfers,
-      (e) => 'anchorId' in e && e.anchorId === anchorId,
+      (e) => isAnchorEnd(e) && e.anchorId === anchorId,
     ),
   };
 }

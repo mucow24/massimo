@@ -1038,13 +1038,14 @@ export function soleSelection(s: SelectionState): SoleSelection {
   if (s.selectedPolygonIds.length === 1) return { type: 'polygon', id: s.selectedPolygonIds[0] };
   if (s.selectedSvgImageIds.length === 1) return { type: 'svgImage', id: s.selectedSvgImageIds[0] };
   if (s.selectedAnchorIds.length === 1) return { type: 'anchor', id: s.selectedAnchorIds[0] };
-  // Every list checked explicitly, then null. This used to fall through to an
-  // unguarded `return { type: 'svgImage', id: s.selectedSvgImageIds[0] }`, so a
-  // new selection list holding the sole item yielded `{ svgImage, id: undefined }`
-  // — which hitStack.currentHitEntity feeds straight into the alt-click cycle,
-  // where `findIndex` misses and every alt-click re-returns the top of the stack
-  // (the deep-pick stops cycling). ItemPopovers just returns null for it, so
-  // nothing failed loudly. A new list MUST add its arm above; until it does,
+  // Every list checked explicitly, then null. This used to END in an unguarded
+  // `return { type: 'svgImage', id: s.selectedSvgImageIds[0] }`. The `total`
+  // guard kept that honest while svgImages was the last list — but it was a
+  // footgun: adding a new list (as this PR's `selectedAnchorIds` did) to `total`
+  // without an arm here would have returned `{ svgImage, id: undefined }`, which
+  // hitStack.currentHitEntity feeds into the alt-click cycle, where `findIndex`
+  // misses and the deep-pick stops cycling (ItemPopovers just returns null, so
+  // nothing fails loudly). A new list MUST add its arm above; until it does,
   // null degrades to "no sole selection", which is safe on both consumers.
   return null;
 }
