@@ -29,7 +29,7 @@ describe('hosted anchors and the layout lattice', () => {
   it('never appear in stationLayoutNodes', () => {
     // Two independent reasons this MUST hold: otherLayoutNodes discriminates
     // the label purely as `lineId === null` (an anchor node would be
-    // indistinguishable), and anchorPool filters on isLabel (an anchor without
+    // indistinguishable), and anchorPool filters on isPoint (an anchor without
     // it would become a lattice ORIGIN, producing the incommensurate-pitch
     // kink anchorPool exists to forbid).
     const nodes = stationLayoutNodes(station([{ id: 'a1', row: 2, col: 0 }]), lines);
@@ -84,7 +84,7 @@ describe('hosted anchors and the layout lattice', () => {
       { id: 'a2', row: 0, col: 2 },
     ]);
     expect(anchorBlockerNodes(st, 'a1')).toEqual([
-      { row: 0, col: 2, w: STOP_SIZE, isLabel: true, lineId: null },
+      { row: 0, col: 2, w: STOP_SIZE, isPoint: true, lineId: null },
     ]);
   });
 });
@@ -106,5 +106,55 @@ describe('spawnAnchorCell', () => {
 
   it('is deterministic', () => {
     expect(spawnAnchorCell(station(), lines)).toEqual(spawnAnchorCell(station(), lines));
+  });
+});
+
+describe('a point source cannot stack on a body-less node', () => {
+  // A point source (a hosted anchor, or the label) has no ink, so against
+  // another body-less node (the label, or another anchor) plain geometry gives
+  // zero clearance and they could occupy the SAME cell — the elbow anchor
+  // vanishing under the label. computeGhosts must reject that coincidence.
+  it('excludes a slot already held by the label/another anchor', () => {
+    const anchor = { row: 0, col: 0, w: STOP_SIZE };
+    const common = {
+      wSrc: STOP_SIZE,
+      srcIsPoint: true,
+      anchor,
+      basis: 'orthogonal' as const,
+      stationRotation: 0 as const,
+      gridRadius: GRID_RADIUS,
+    };
+    // A valid point-source slot when only the origin stop is present.
+    const free = computeGhosts({ ...common, otherNodes: [anchor] });
+    const target = free.find((g) => g.row !== 0 || g.col !== 0);
+    expect(target).toBeDefined();
+    // Park a body-less node (the label, or a hosted anchor) exactly there.
+    const pointNode = { row: target!.row, col: target!.col, w: STOP_SIZE, isPoint: true };
+    const blocked = computeGhosts({ ...common, otherNodes: [anchor, pointNode] });
+    const stillThere = blocked.some(
+      (g) => Math.abs(g.row - target!.row) < 1e-9 && Math.abs(g.col - target!.col) < 1e-9,
+    );
+    expect(stillThere).toBe(false);
+  });
+
+  it('leaves a body (stop) source unaffected — it still tangents the label', () => {
+    // Regression guard: the fix only tightens POINT sources. For a stop source
+    // the label still reads as width 0, so the label's own cell is excluded by
+    // the SAME half-cell clearance as before and the adjacent slots survive.
+    const anchor = { row: 0, col: 0, w: STOP_SIZE };
+    const label = { row: 0, col: 1, w: STOP_SIZE, isPoint: true };
+    const ghosts = computeGhosts({
+      wSrc: STOP_SIZE,
+      srcIsPoint: false,
+      anchor,
+      otherNodes: [anchor, label],
+      basis: 'orthogonal' as const,
+      stationRotation: 0 as const,
+      gridRadius: GRID_RADIUS,
+    });
+    const onLabel = ghosts.some((g) => Math.abs(g.row) < 1e-9 && Math.abs(g.col - 1) < 1e-9);
+    const opposite = ghosts.some((g) => Math.abs(g.row) < 1e-9 && Math.abs(g.col + 1) < 1e-9);
+    expect(onLabel).toBe(false); // the label's cell stays blocked
+    expect(opposite).toBe(true); // the slot away from the label survives
   });
 });

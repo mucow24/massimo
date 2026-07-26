@@ -30,6 +30,7 @@ function resetSelection(over: Record<string, unknown> = {}) {
     selectedRouteBulletIds: [],
     selectedLabelIds: [],
     selectedPolygonIds: [],
+    selectedAnchorIds: [],
     ...over,
   });
 }
@@ -242,6 +243,50 @@ describe('useRectSelect — preview + commit across all object types', () => {
     expect(sel.selectedPolygonIds).toContain('p1');
     expect(result.current.rect).toBeNull();
     expect(result.current.previewStationIds).toBeNull();
+  });
+});
+
+describe('useRectSelect — free transfer anchors', () => {
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      transferAnchors: { an1: { id: 'an1', x: 50, y: 50 } },
+    });
+    // Anchors are marquee-able only while visible (the showAnchors toggle, or a
+    // reveal mode) — anchorsForRectVisible gates on anchorsVisibleNow().
+    useViewportStore.setState({ showNetwork: true, showAnchors: true });
+  });
+
+  it('previews and commits a free anchor swept by the band', () => {
+    const { result, ref } = render();
+    down(result, pointerEvent({ clientX: 0, clientY: 0, target: ref.current }));
+    move(result, pointerEvent({ clientX: 150, clientY: 150 }));
+    expect(result.current.previewAnchorIds).toContain('an1');
+    up(result, pointerEvent({ clientX: 150, clientY: 150 }));
+    expect(useSelection.getState().selectedAnchorIds).toContain('an1');
+    expect(result.current.previewAnchorIds).toBeNull();
+  });
+
+  it('shift+ctrl removes an already-selected anchor (xor), like every other kind', () => {
+    useSelection.setState({ ...useSelection.getState(), selectedAnchorIds: ['an1'] });
+    const { result, ref } = render();
+    down(result, pointerEvent({ clientX: 0, clientY: 0, target: ref.current }));
+    move(result, pointerEvent({ clientX: 150, clientY: 150, shiftKey: true, ctrlKey: true }));
+    up(result, pointerEvent({ clientX: 150, clientY: 150, shiftKey: true, ctrlKey: true }));
+    expect(useSelection.getState().selectedAnchorIds).toEqual([]);
+  });
+
+  it('leaves hidden anchors out of the marquee', () => {
+    // Same opt-out as a hidden network: an anchor you can't see must not be
+    // silently swept into a selection that then answers Delete and the nudge keys.
+    useViewportStore.setState({ showAnchors: false });
+    resetSelection(); // idle uiMode: nothing reveals the anchors
+    const { result, ref } = render();
+    down(result, pointerEvent({ clientX: 0, clientY: 0, target: ref.current }));
+    move(result, pointerEvent({ clientX: 150, clientY: 150 }));
+    expect(result.current.previewAnchorIds).toEqual([]);
+    up(result, pointerEvent({ clientX: 150, clientY: 150 }));
+    expect(useSelection.getState().selectedAnchorIds).toEqual([]);
   });
 });
 

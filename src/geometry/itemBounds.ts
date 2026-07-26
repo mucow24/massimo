@@ -10,10 +10,12 @@
 import type { Pt } from './polygonUnion';
 import type { RouteBullet, Station, TextLabel, TransferAnchor } from '../model/types';
 
-/** Half the painted diameter of an anchor disc — one half lattice cell. Kept
- *  here rather than imported from the render layer so this module stays free of
- *  component imports; AnchorLayer's ANCHOR_SIZE is the same number. */
-const ANCHOR_HALF = 7;
+/** A free anchor's bounds footprint: half a lattice cell, matching the
+ *  STOP_SIZE/2 half-extent a hosted anchor cell (and the label cell) gets in the
+ *  station silhouette — so a free anchor occupies the same one-cell box in
+ *  content bounds. This is NOT the painted disc: AnchorLayer paints it at
+ *  ANCHOR_SIZE (10.5, radius 5.25), deliberately larger for grabbability. */
+const ANCHOR_HALF = STOP_SIZE / 2;
 import type { AABB } from './rectPolygon';
 import {
   stationBoundaryRectsLocal,
@@ -21,6 +23,7 @@ import {
   textLabelCorners,
 } from './stationBoundary';
 import { svgImageCorners, type SvgImageGeom } from './svgImage';
+import { STOP_SIZE } from './orientation';
 import {
   DEFAULT_LABEL_STYLE,
   DEFAULT_STOP_DASH,
