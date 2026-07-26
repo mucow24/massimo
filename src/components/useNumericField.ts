@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useFieldHistory } from './useFieldHistory';
+import { withCoalescedHistory } from '../state/history';
 
 /** Decimal places implied by a step: 1 → 0, 0.5 → 1, 0.25 → 2. Drives how many
  *  digits the text mirror shows so a half-step field reads "9.0" / "7.5". */
@@ -43,6 +44,8 @@ export function useNumericField(
   const history = useFieldHistory();
   const [text, setText] = useState(formatValue(value, decimals));
   const focusedRef = useRef(false);
+  // Stable identity for this field's wheel-burst coalescing (see onWheel).
+  const burstKey = useRef({}).current;
   useEffect(() => {
     if (!focusedRef.current) setText(formatValue(value, decimals));
   }, [value, decimals]);
@@ -55,7 +58,13 @@ export function useNumericField(
   // rebinding. Same pattern as the canvas wheel-zoom in useViewport.
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
-    onChange(getCurrent() + (e.deltaY < 0 ? step : -step));
+    // One undo entry per SCROLL, not per tick: a trackpad flick over this field
+    // fires dozens of these, and unfocused they land outside any field-history
+    // group. burstKey is this field's identity, so a scroll that moves on to a
+    // different field starts a new entry there.
+    withCoalescedHistory(burstKey, () => {
+      onChange(getCurrent() + (e.deltaY < 0 ? step : -step));
+    });
     // A wheel tick is a deliberate adjustment of THIS field, so mirror the new
     // (clamped) value straight into the text — bypassing the focus guard, which
     // only exists to protect in-progress TYPING from foreign updates. Without

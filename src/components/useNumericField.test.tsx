@@ -1,6 +1,10 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { useNumericField } from './useNumericField';
+import { useDoc } from '../state/store';
+import { historyDepth, undo } from '../state/history';
+import { DEFAULT_DOC } from '../model/transforms';
+import { LINE_WIDTH_STEP, lineWidthOf } from '../model/lineWidth';
 
 // A stand-in for the element the wheel ref attaches to. Records the bound
 // native listener + its options so tests can assert the non-passive binding
@@ -156,6 +160,46 @@ describe('useNumericField — wheel binding', () => {
     expect(target.entry).toBeDefined();
     act(() => result.current.attachWheel(null));
     expect(target.entry).toBeUndefined();
+  });
+});
+
+describe('useNumericField — wheel burst coalescing', () => {
+  beforeEach(() => {
+    useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
+    useDoc.temporal.getState().clear();
+  });
+
+  // A trackpad delivers DOZENS of wheel events per flick. Each tick writes the
+  // doc outside any history group, so ungrouped they each became their own undo
+  // entry — and Ctrl+Z after an accidental scroll unwound a single 0.25 step and
+  // looked like it did nothing. The whole burst must collapse to one entry.
+  it('records ONE undo entry for a burst of wheel ticks over an unfocused field', () => {
+    const lineId = useDoc.getState().addLine();
+    useDoc.getState().setLineWidth(lineId, 10);
+    useDoc.temporal.getState().clear();
+    const live = () => lineWidthOf(useDoc.getState().lines[lineId]);
+
+    const { result } = renderHook(() =>
+      useNumericField(
+        live(),
+        (n) => useDoc.getState().setLineWidth(lineId, n),
+        live,
+        LINE_WIDTH_STEP,
+      ),
+    );
+    const target = fakeWheelTarget();
+    act(() => result.current.attachWheel(target.el));
+
+    // Never focused — the wheel is over the row, not in it.
+    for (let i = 0; i < 8; i++) {
+      act(() => target.entry!.listener({ deltaY: -1, preventDefault() {} }));
+    }
+
+    expect(live()).toBe(12);
+    expect(historyDepth()).toBe(1);
+    // And one Ctrl+Z takes the whole accidental scroll back.
+    undo();
+    expect(live()).toBe(10);
   });
 });
 

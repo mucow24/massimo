@@ -17,6 +17,78 @@ export function pushHistory(snapshot: DocSnapshot): void {
   }));
 }
 
+// How long after a coalesced write the next one still counts as the same
+// gesture. Long enough to bridge the ragged tail of trackpad inertia (and a
+// few deliberate mouse-wheel clicks in a row); short enough that two separate
+// visits to the same control stay separately undoable.
+const COALESCE_WINDOW_MS = 500;
+
+// How zundo types the entries it stores (a Partial of the partialized doc).
+// The burst tracking only ever compares them by IDENTITY, never reads a field.
+type PastEntry = Partial<DocSnapshot>;
+
+// The run of writes the last withCoalescedHistory call belongs to: whose
+// control (`key`), which undo entry it owns, and when it last fired.
+let burst: { key: object; entry: PastEntry; at: number } | null = null;
+
+function topPastState(): PastEntry | undefined {
+  const { pastStates } = useDoc.temporal.getState();
+  return pastStates[pastStates.length - 1];
+}
+
+// Drop everything recorded above `entry`, putting the past stack back exactly
+// where the burst started. A no-op if the entry is gone (a load cleared the
+// stack mid-burst) — never guess at an index.
+function truncatePastTo(entry: PastEntry): void {
+  useDoc.temporal.setState((s) => {
+    const i = s.pastStates.lastIndexOf(entry);
+    return i === -1 ? {} : { pastStates: s.pastStates.slice(0, i + 1) };
+  });
+}
+
+/**
+ * Run a write that a user can fire in rapid succession without lifting a
+ * finger — a wheel tick over a slider or spinbutton — and fold consecutive
+ * ones into a SINGLE undo entry. A trackpad emits dozens of wheel events per
+ * flick; one entry each meant an accidental scroll buried the real work under
+ * a wall of 0.25-step entries that Ctrl+Z had to unwind one at a time.
+ *
+ * Unlike beginHistoryGroup this never pauses recording: each write records
+ * normally and the entry it just added is then discarded, so the burst's FIRST
+ * entry (the pre-burst doc) is what survives. Nothing is held open between
+ * ticks — undo/redo, unrelated actions, and a file load all keep working
+ * mid-burst, and any of them ends the run: `entry` is an identity check on the
+ * top of the past stack, so the moment anything else records (or removes) an
+ * entry the next write starts a fresh burst instead of swallowing it.
+ *
+ * `key` identifies the control — a stable per-field token — so wheeling one
+ * field and then another doesn't merge the two into one entry.
+ *
+ * Writes made while a history GROUP is open (a focused field, a drag) record
+ * nothing of their own, so this is inert for them: the group already collapses
+ * them into its one entry.
+ */
+export function withCoalescedHistory(key: object, apply: () => void): void {
+  const now = Date.now();
+  const before = topPastState();
+  const continues =
+    burst !== null &&
+    burst.key === key &&
+    burst.entry === before &&
+    now - burst.at < COALESCE_WINDOW_MS;
+
+  apply();
+
+  if (continues) {
+    truncatePastTo(burst!.entry);
+    burst!.at = now;
+    return;
+  }
+  // A run only begins once a write has actually landed an entry to fold into.
+  const after = topPastState();
+  if (after !== undefined && after !== before) burst = { key, entry: after, at: now };
+}
+
 // Pause / resume recording while a grouped edit is in flight.
 export function pauseHistory(): void {
   useDoc.temporal.getState().pause();

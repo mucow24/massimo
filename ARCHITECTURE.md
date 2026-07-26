@@ -1118,6 +1118,19 @@ edits as a real entry, so recording can never stay paused forever. `clearHistory
 cancels the open group too — its snapshot belongs to the replaced document, and undo must never
 cross a file load.
 
+**Coalesced bursts — `withCoalescedHistory(key, apply)`**. Wheel ticks over a slider or
+spinbutton ([useNumericField.ts](src/components/useNumericField.ts)) are ungrouped one-shot
+writes and a trackpad fires dozens per flick — one undo entry each, so Ctrl+Z after an accidental
+scroll unwound a single 0.25 step and looked like it did nothing. This runs the write normally
+and then **discards the entry it just added**, so the burst's FIRST entry (the pre-burst doc)
+survives and one Ctrl+Z takes the whole scroll back. It never pauses recording — unlike a group,
+nothing is held open between ticks, so undo/redo, unrelated actions and a file load all keep
+working mid-burst. A run continues only while the same `key` (a stable per-field token, so
+wheeling one field then another doesn't merge them) writes again within `COALESCE_WINDOW_MS`
+(500) **and** the top of `pastStates` is still the exact entry the run owns — that identity check
+is what stops an unrelated edit landing between two ticks from being swallowed. Inert inside an
+open group: those writes record nothing of their own for it to fold.
+
 ### `useSelection` — ephemeral UI/mode state ([selection.ts](src/state/selection.ts))
 
 Not persisted, not undoable. Two key pieces:
