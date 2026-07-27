@@ -4,6 +4,7 @@ import { InlineBullet } from './InlineBullet';
 import { useDoc } from '../state/store';
 import type { Line } from '../model/types';
 import { edgesFromStations } from '../model/lineTopology';
+import { capCenterDy } from '../geometry/textMeasure';
 
 const lineMap = (lines: Line[]): Map<string, Line> => {
   const m = new Map<string, Line>();
@@ -168,5 +169,29 @@ describe('<InlineBullet />', () => {
     );
     const g = container.querySelector('[data-inline-bullet]');
     expect(g?.getAttribute('transform')).toBe('translate(123 456)');
+  });
+
+  // `dominantBaseline="central"` centers the font's ascent..descent box, which
+  // Chrome sources per-platform (usWin on Windows, hhea on macOS) — the code
+  // rendered ~0.09em lower on a Mac. Centered on the alphabetic baseline instead.
+  it('centers the code on the alphabetic baseline, not via dominant-baseline', () => {
+    const { container } = render(
+      <svg>
+        <InlineBullet
+          code="A1"
+          shape="circle"
+          filled
+          diameter={20}
+          cx={50}
+          cy={30}
+          lineByService={redA1}
+        />
+      </svg>,
+    );
+    const text = container.querySelector('text')!;
+    // The bullet's <g> carries the translate, so the text is local-origin.
+    const fontSize = Number(text.getAttribute('font-size'));
+    expect(Number(text.getAttribute('y'))).toBeCloseTo(capCenterDy(fontSize), 6);
+    expect(text.getAttribute('dominant-baseline')).toBeNull();
   });
 });

@@ -4,6 +4,7 @@ import { dispatchMirrored } from '../../state/mirrorDispatch';
 import { STOP_SIZE, stopCenterAt } from '../../geometry/orientation';
 import { cellsAABBLocal } from '../../geometry/stationBoundary';
 import { labelLayoutLocal } from '../../geometry/labelLayout';
+import { capCenterDy } from '../../geometry/textMeasure';
 import { stopGapOf, stopHalfOf, lineWidthOf } from '../../model/lineWidth';
 import { stopDashOf } from '../../model/dashSize';
 import { lineDisplayName } from '../../model/lineNaming';
@@ -349,10 +350,11 @@ export function StationLayoutEditor({
             />
             <text
               x={c.x}
-              y={c.y}
+              // Cap-centered on the alphabetic baseline — NOT dominantBaseline="central",
+              // which resolves from platform-specific font metrics (see capCenterDy).
+              y={c.y + capCenterDy(LABEL_FONT_SIZE_DEFAULT)}
               transform={`rotate(${station.label.rotation * 45} ${c.x} ${c.y})`}
               textAnchor="middle"
-              dominantBaseline="central"
               fontSize={LABEL_FONT_SIZE_DEFAULT}
               fontWeight={700}
               fill="#222"

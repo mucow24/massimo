@@ -3,6 +3,7 @@ import { FONT_STACK } from '../util/fonts';
 import { useThemeColors } from '../state/theme';
 import { badgeColors } from './badge';
 import { BulletShape } from './bulletShape';
+import { capCenterDy } from '../geometry/textMeasure';
 
 /** Outline thickness of an unfilled bullet, as a fraction of its diameter. */
 const HOLLOW_STROKE_RATIO = 0.12;
@@ -50,9 +51,10 @@ export function InlineBullet({ code, shape, filled, diameter, cx, cy, lineByServ
       />
       <text
         x={0}
-        y={0}
+        // Cap-centered on the alphabetic baseline — NOT dominantBaseline="central",
+        // which resolves from platform-specific font metrics (see capCenterDy).
+        y={capCenterDy(r * 1.1)}
         textAnchor="middle"
-        dominantBaseline="central"
         fontFamily={FONT_STACK}
         fontSize={r * 1.1}
         fontWeight={700}
