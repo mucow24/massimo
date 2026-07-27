@@ -45,7 +45,7 @@
 import type { LineId } from '../model/types';
 import type { SegmentBandSpec, StopMarkerSpec } from './interlining';
 import type { Face, Ring } from './clip';
-import { intersect, unionAll } from './clip';
+import { intersect } from './clip';
 import {
   boxesOverlap,
   buildLineBodies,
@@ -54,13 +54,23 @@ import {
   refreshFaceSpans,
   restrictBodiesToZone,
   ringsBbox,
-  significantComponents,
   subdivideCells,
+  zoneComponents,
   type RegionFace,
   type RegionSliver,
 } from './lineRegions';
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
+
+// TEMP instrumentation for the perf probe — remove before commit.
+export const __perfTimers: Record<string, number> = {};
+export const __perfCounts: Record<string, number> = {};
+const tmark = (name: string, t0: number) => {
+  __perfTimers[name] = (__perfTimers[name] ?? 0) + (performance.now() - t0);
+};
+const tcount = (name: string, n = 1) => {
+  __perfCounts[name] = (__perfCounts[name] ?? 0) + n;
+};
 
 /** One component's built output, keyed in the cache by {@link compCacheKey}. */
 interface CachedComponent {
@@ -89,6 +99,8 @@ export interface RegionIncrementalState {
   /** `a|b` → that pair's body intersection, reusable while both bodies are. */
   pairParts: Map<string, Ring[]>;
   zone: Ring[];
+  /** Significant components of `zone`, cached with it (same polytree pass). */
+  zoneComps: Face[];
   comps: Map<string, CachedComponent>;
 }
 
@@ -279,7 +291,7 @@ function buildZoneCached(
   bodies: Map<LineId, Ring[]>,
   dirtyLines: ReadonlySet<LineId>,
   prev: RegionIncrementalState | null,
-): { zone: Ring[]; pairParts: Map<string, Ring[]> } {
+): { zone: Ring[]; zoneComps: Face[]; pairParts: Map<string, Ring[]> } {
   const boxes = new Map(ids.map((id) => [id, ringsBbox(bodies.get(id)!)]));
   const pairParts = new Map<string, Ring[]>();
   const parts: Ring[] = [];
@@ -297,9 +309,13 @@ function buildZoneCached(
         continue;
       }
       allReused = false;
-      const rings = boxesOverlap(boxes.get(a)!, boxes.get(b)!)
-        ? intersect(bodies.get(a)!, bodies.get(b)!)
-        : [];
+      const tp = performance.now();
+      const hit = boxesOverlap(boxes.get(a)!, boxes.get(b)!);
+      const rings = hit ? intersect(bodies.get(a)!, bodies.get(b)!) : [];
+      if (hit) {
+        tmark('zone: pair intersects', tp);
+        tcount('pair intersects run');
+      }
       pairParts.set(key, rings);
       parts.push(...rings);
     }
@@ -311,9 +327,12 @@ function buildZoneCached(
   // shrinks the pair set, and a same-size-but-different set cannot have reused
   // every pair (its new pairs are not in the cache), so size is enough.
   if (allReused && prev && prev.pairParts.size === pairParts.size && prev.zone.length) {
-    return { zone: prev.zone, pairParts };
+    return { zone: prev.zone, zoneComps: prev.zoneComps, pairParts };
   }
-  return { zone: parts.length ? unionAll(parts) : [], pairParts };
+  const tu = performance.now();
+  const { zone, comps } = zoneComponents(parts);
+  tmark('zone: union+split (zoneComponents)', tu);
+  return { zone, zoneComps: comps, pairParts };
 }
 
 const emptyState = (
@@ -325,6 +344,7 @@ const emptyState = (
   bodies: new Map(),
   pairParts: new Map(),
   zone: [],
+  zoneComps: [],
   comps: new Map(),
 });
 
@@ -378,7 +398,10 @@ export function buildRegionsIncremental(
         dirtyLines.has(id) ? undefined : (prev.bodies.get(id) ?? undefined)
     : undefined;
 
+  const tb = performance.now();
   const bodies = buildLineBodies(bands, markers, reuse);
+  tmark('buildLineBodies', tb);
+  tcount('dirty lines', dirtyLines.size);
   const ids = [...bodies.keys()].sort();
   if (ids.length < 2) {
     return {
@@ -391,7 +414,9 @@ export function buildRegionsIncremental(
     };
   }
 
-  const { zone, pairParts } = buildZoneCached(ids, bodies, dirtyLines, prev);
+  const tz = performance.now();
+  const { zone, zoneComps, pairParts } = buildZoneCached(ids, bodies, dirtyLines, prev);
+  tmark('buildZoneCached (total)', tz);
   if (!zone.length) {
     return {
       faces: [],
@@ -403,7 +428,7 @@ export function buildRegionsIncremental(
     };
   }
 
-  const comps = significantComponents(zone);
+  const comps = zoneComps;
   const nextComps = new Map<string, CachedComponent>();
   const faces: RegionFace[] = [];
   const slivers: RegionSliver[] = [];
@@ -442,11 +467,15 @@ export function buildRegionsIncremental(
 
     rebuilt++;
     const compSlivers: RegionSliver[] = [];
-    const built = extractFaces(
-      subdivideCells(restrictBodiesToZone(ids, bodies, comp)),
-      bands,
-      compSlivers,
-    );
+    const tr = performance.now();
+    const restricted = restrictBodiesToZone(ids, bodies, comp);
+    tmark('rebuild: restrictBodiesToZone', tr);
+    const ts = performance.now();
+    const cells = subdivideCells(restricted);
+    tmark('rebuild: subdivideCells', ts);
+    const te = performance.now();
+    const built = extractFaces(cells, bands, compSlivers);
+    tmark('rebuild: extractFaces', te);
     nextComps.set(key, {
       faces: built,
       slivers: compSlivers,
@@ -456,10 +485,15 @@ export function buildRegionsIncremental(
     slivers.push(...compSlivers);
   }
 
+  tcount('components rebuilt', rebuilt);
+  tcount('components total', comps.length);
+  const tf = performance.now();
+  const finalized = finalizeFaces(faces);
+  tmark('finalizeFaces', tf);
   return {
-    faces: finalizeFaces(faces),
+    faces: finalized,
     slivers,
-    state: { lineHash, units, bodies, pairParts, zone, comps: nextComps },
+    state: { lineHash, units, bodies, pairParts, zone, zoneComps, comps: nextComps },
     reused: rebuilt === 0,
     rebuilt,
     total: comps.length,

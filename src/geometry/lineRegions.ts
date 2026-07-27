@@ -455,14 +455,12 @@ export function buildOverlapRegions(
   const bodies = buildLineBodies(bands, markers);
   const ids = [...bodies.keys()].sort();
   if (ids.length < 2) return [];
-  const zone = buildOverlapZone(ids, bodies);
-  if (!zone.length) return [];
   // Component-at-a-time. Cells cannot span components, so this yields the same
   // faces as one global subdivision while keeping every clipper operand down to
   // one crossing's worth of geometry — and it is the seam the incremental
   // builder caches on.
   const faces: RegionFace[] = [];
-  for (const comp of significantComponents(zone)) {
+  for (const comp of significantComponents(overlapZoneParts(ids, bodies))) {
     faces.push(
       ...extractFaces(subdivideCells(restrictBodiesToZone(ids, bodies, comp)), bands, sliverSink),
     );
@@ -471,11 +469,14 @@ export function buildOverlapRegions(
 }
 
 /**
- * The pairwise-overlap zone: any ≥2-cover point lies in some pairwise body
- * intersection, so cells inside this zone subdivide exactly as they would in
- * the full arrangement, at a fraction of the cost.
+ * The raw parts of the pairwise-overlap zone: any ≥2-cover point lies in some
+ * pairwise body intersection, so cells inside their union subdivide exactly as
+ * they would in the full arrangement, at a fraction of the cost. Deliberately
+ * NOT unioned here — {@link significantComponents}' polytree union both merges
+ * the parts and splits the result into components in one boolean, so a
+ * separate unionAll pass would just do the same work twice.
  */
-export function buildOverlapZone(ids: LineId[], bodies: Map<LineId, Ring[]>): Ring[] {
+export function overlapZoneParts(ids: LineId[], bodies: Map<LineId, Ring[]>): Ring[] {
   const boxes = new Map(ids.map((id) => [id, ringsBbox(bodies.get(id)!)]));
   const zoneParts: Ring[] = [];
   for (let i = 0; i < ids.length; i++) {
@@ -484,8 +485,7 @@ export function buildOverlapZone(ids: LineId[], bodies: Map<LineId, Ring[]>): Ri
       zoneParts.push(...intersect(bodies.get(ids[i])!, bodies.get(ids[j])!));
     }
   }
-  if (!zoneParts.length) return [];
-  return unionAll(zoneParts);
+  return zoneParts;
 }
 
 /** Each line's body clipped to the zone, in `ids` order; empties dropped. */
@@ -570,12 +570,25 @@ export function subdivideCells(
  * them would defeat caching for no output.
  */
 export function significantComponents(zone: Ring[]): Face[] {
-  const out: Face[] = [];
-  for (const comp of splitIntoFaces(zone)) {
+  return zoneComponents(zone).comps;
+}
+
+/**
+ * One polytree union over the raw zone parts, yielding both products of the
+ * old unionAll-then-splitIntoFaces pair in a single boolean: the merged zone
+ * rings (every component's outer + holes, flattened, sub-sliver ones
+ * included so `zone.length` keeps meaning "any overlap exists") and the
+ * significant components. The incremental builder caches both together.
+ */
+export function zoneComponents(parts: Ring[]): { zone: Ring[]; comps: Face[] } {
+  if (!parts.length) return { zone: [], comps: [] };
+  const all = splitIntoFaces(parts);
+  const comps: Face[] = [];
+  for (const comp of all) {
     if (faceArea(comp) < SLIVER_MIN_AREA) continue;
-    out.push(comp);
+    comps.push(comp);
   }
-  return out;
+  return { zone: all.flat(), comps };
 }
 
 /**
