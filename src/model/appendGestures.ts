@@ -256,6 +256,31 @@ export function appendSegmentHoverPreview(
 }
 
 /**
+ * The corridors a click on `stationId` would ADD to the line: one for a
+ * connect (cursor → station), BOTH halves for a splice (from → station → to,
+ * since the click also cuts the corridor it subdivides), and none for a click
+ * that only moves the pen, a dead click, or the empty-line seed (which has no
+ * first station to route from). A connect onto an ALREADY-connected neighbour
+ * counts as nothing too: `connectStationsOnLine` no-ops on an existing edge,
+ * so the click's whole effect is to walk the pen forward.
+ *
+ * The single gate behind the hover ROUTE preview — the preview stripes
+ * themselves (see geometry/appendRoutePreview) and the starter treatment the
+ * hovered station's name is promoted to. Non-empty ⇒ "this is the second
+ * station", so the name cue and the route can never disagree.
+ */
+export function appendRoutePreviewEdges(
+  line: Line,
+  cursor: AppendCursor,
+  stationId: StationId,
+): string[] {
+  const d = decideStationClick(line, cursor, stationId);
+  if (d.kind === 'connect') return lineHasEdge(line, d.from, d.to) ? [] : [pairKeyOf(d.from, d.to)];
+  if (d.kind === 'splice') return [pairKeyOf(d.from, d.stationId), pairKeyOf(d.stationId, d.to)];
+  return [];
+}
+
+/**
  * The CSS cursor for a station while editing a line's stops, derived from the
  * click matrix above so the cursor never promises an action the click
  * wouldn't take: 'copy' (the OS arrow-with-plus) when the click would put the

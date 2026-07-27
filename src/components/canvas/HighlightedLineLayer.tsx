@@ -1,7 +1,11 @@
-import { type ComponentProps, type ReactNode } from 'react';
+import { useMemo, type ComponentProps, type ReactNode } from 'react';
 import type { Line, LineId, SeamEdges, Station, StationId } from '../../model/types';
 import type { UiMode } from '../../state/selection';
-import { stopPosWorld, type OrderedRenderable } from '../../geometry/interlining';
+import {
+  stopPosWorld,
+  type OrderedRenderable,
+  type SegmentBandSpec,
+} from '../../geometry/interlining';
 import { pairKeyOf } from '../../model/pairKey';
 import { resolveDotStyle, spawnStopCellAt, stationIsSingleton } from '../../model/transforms';
 import { STOP_SIZE } from '../../geometry/orientation';
@@ -15,11 +19,13 @@ import { StationView } from '../StationView';
 import { StationSilhouette } from '../StationSilhouette';
 import { useThemeColors } from '../../state/theme';
 import {
+  appendRoutePreviewEdges,
   appendSegmentHoverPreview,
   appendStationHoverPreview,
   validCursor,
   type AppendHover,
 } from '../../model/appendGestures';
+import { appendRoutePreviewStripes } from '../../geometry/appendRoutePreview';
 import { offsetFilletPath } from '../../geometry/router';
 import { sampleOffsetPath } from '../../geometry/lineTagGeometry';
 
@@ -28,6 +34,13 @@ import { sampleOffsetPath } from '../../geometry/lineTagGeometry';
 // reads as "click here to switch" and clearly stands out from the dimmed map,
 // without competing with the fully-bright line being edited.
 const HOVER_LINE_OPACITY = 0.5;
+
+// The Edit Stops ROUTE preview's brightness — the corridors a click on the
+// hovered second station would draw. Same half strength as the rest of the
+// mode's mouseover chrome, which lands it exactly where it should read: above
+// the dimmed map (which shows through at 1 − dimOpacity = 0.3) and below the
+// fully-bright line being edited.
+const ROUTE_PREVIEW_OPACITY = 0.5;
 
 interface Props {
   highlightLineId: LineId;
@@ -87,6 +100,42 @@ export function HighlightedLineLayer({
   vbH,
 }: Props) {
   const themeColors = useThemeColors();
+  const ln = lines[highlightLineId];
+  // Edit Stops state for THIS line, derived once for all three blocks below
+  // (the band/label repaint, the mode chrome, and the clickable chips) rather
+  // than three times over. The cursor is validated: undo or a right-click
+  // removal can strip its station/edge out from under the mode, and a stale
+  // cursor renders no chrome anywhere.
+  const append =
+    uiMode.kind === 'appending-to-line' && uiMode.lineId === highlightLineId ? uiMode : null;
+  const cursor = ln && append ? validCursor(ln, append.cursor) : null;
+  // The station under the pointer that a click would ADD to the line: the
+  // SECOND station of the connect/splice the first one (the pen, or the armed
+  // segment's near end) started. One gate drives both cues below — the
+  // line-colored name and the route preview — so they can never disagree about
+  // what the click does.
+  const secondStationId =
+    append && appendHover?.kind === 'station' && ln
+      ? appendRoutePreviewEdges(ln, append.cursor, appendHover.stationId).length > 0
+        ? appendHover.stationId
+        : null
+      : null;
+  // Rebuilding bands for the prospective route is one geometry pass, so key it
+  // on the hover target — it only changes when the pointer crosses onto a
+  // different station, while this layer re-renders on every viewport commit.
+  const routePreview = useMemo(
+    () =>
+      secondStationId
+        ? appendRoutePreviewStripes(
+            stations,
+            lines,
+            highlightLineId,
+            append?.cursor ?? null,
+            secondStationId,
+          )
+        : [],
+    [stations, lines, highlightLineId, append, secondStationId],
+  );
   return (
     <>
       {themeColors.dimOpacity > 0 && (
@@ -103,14 +152,7 @@ export function HighlightedLineLayer({
       )}
       <g pointerEvents="none" data-highlight-layer={highlightLineId}>
         {(() => {
-          const ln = lines[highlightLineId];
           if (!ln) return null;
-          // Edit Stops cursor (validated: a stale cursor renders nothing).
-          const append =
-            uiMode.kind === 'appending-to-line' && uiMode.lineId === highlightLineId
-              ? uiMode
-              : null;
-          const cursor = append ? validCursor(ln, append.cursor) : null;
           const armedPairKey = cursor?.kind === 'edge' ? pairKeyOf(cursor.from, cursor.to) : null;
           const parts: ReactNode[] = [];
           const push = (node: ReactNode) => parts.push(node);
@@ -129,11 +171,15 @@ export function HighlightedLineLayer({
               (r): r is Extract<OrderedRenderable, { kind: 'stripe' }> =>
                 r.kind === 'stripe' && r.band.lines[r.stripeIndex].id === lineId,
             );
+          // `passes` defaults to the full three; the route preview drops the
+          // seam, whose clip-path is keyed on a REAL band (see SeamClips) that
+          // a not-yet-drawn corridor has no entry for.
           const lineRepaintNodes = (
-            stripes: Extract<OrderedRenderable, { kind: 'stripe' }>[],
+            stripes: { band: SegmentBandSpec; stripeIndex: number }[],
             keyPrefix: string,
+            passes: readonly ('silhouette' | 'body' | 'seam')[] = ['silhouette', 'body', 'seam'],
           ): ReactNode[] =>
-            (['silhouette', 'body', 'seam'] as const).flatMap((pass) =>
+            passes.flatMap((pass) =>
               stripes.map((r, i) => (
                 <SegmentBand
                   key={`${keyPrefix}:${pass}:${i}`}
@@ -204,6 +250,22 @@ export function HighlightedLineLayer({
           };
           const stripesOfLine = stripesOf(highlightLineId);
           lineRepaintNodes(stripesOfLine, 'hl').forEach(push);
+          // The ROUTE preview: the corridor(s) a click on the hovered second
+          // station would draw — one for a connect, both halves for a splice.
+          // Painted with the SAME renderer as the real line, so it carries the
+          // line's own color, width, casing and fillets, at
+          // ROUTE_PREVIEW_OPACITY. It sits under the halos, dots and names
+          // pushed below, so no committed chrome is obscured by a maybe.
+          if (routePreview.length > 0)
+            push(
+              <g
+                key="route-preview"
+                data-append-route-preview={secondStationId}
+                opacity={ROUTE_PREVIEW_OPACITY}
+              >
+                {lineRepaintNodes(routePreview, 'route-preview', ['silhouette', 'body'])}
+              </g>,
+            );
           // A two-tone halo (black edge / white core, the selection-ring
           // convention) around a corridor's stripes. The ARMED edge cursor
           // repaints the body on top at full strength (a brightness bump alone
@@ -310,11 +372,12 @@ export function HighlightedLineLayer({
           // The selected line's stop markers + dots, repainted above the dim.
           lineMarkerAndDotNodes(ln, 'hl').forEach(push);
           // Selected line's station names rendered in white above dim.
-          // The cursor station gets its own treatment below (line-color
-          // name + ring), so skip it here.
+          // The cursor station and the hovered second station both get the
+          // line-color starter treatment below, so skip them here rather than
+          // double-painting a white name under a colored one.
           const cursorStationId = cursor?.kind === 'station' ? cursor.stationId : null;
           for (const sid of ln.stations) {
-            if (sid === cursorStationId) continue;
+            if (sid === cursorStationId || sid === secondStationId) continue;
             const st = stations[sid];
             if (!st) continue;
             push(
@@ -334,10 +397,8 @@ export function HighlightedLineLayer({
             labels above the dim, and mark the cursor: a two-tone ring + line-
             color name on a station cursor (the armed edge repaints brighter in
             the band sweep above). */}
-        {uiMode.kind === 'appending-to-line' &&
-          uiMode.lineId === highlightLineId &&
+        {append &&
           (() => {
-            const ln = lines[highlightLineId];
             if (!ln) return null;
             // A two-tone ring (white core / black edge, the same selection-ring
             // convention as the segment halo) around a stop. One helper for both
@@ -372,7 +433,7 @@ export function HighlightedLineLayer({
             );
             const onLine = new Set(ln.stations);
             const addable = Object.values(stations)
-              .filter((st) => !onLine.has(st.id))
+              .filter((st) => !onLine.has(st.id) && st.id !== secondStationId)
               .map((st) => (
                 <StationView
                   key={'add-l:' + st.id}
@@ -385,7 +446,6 @@ export function HighlightedLineLayer({
                 />
               ));
 
-            const cursor = validCursor(ln, uiMode.cursor);
             let ring: ReactNode = null;
             let starter: ReactNode = null;
             if (cursor?.kind === 'station' && stations[cursor.stationId]) {
@@ -434,7 +494,7 @@ export function HighlightedLineLayer({
             let hoverRing: ReactNode = null;
             if (
               appendHover?.kind === 'station' &&
-              appendStationHoverPreview(ln, uiMode.cursor, appendHover.stationId)
+              appendStationHoverPreview(ln, append.cursor, appendHover.stationId)
             ) {
               const st = stations[appendHover.stationId];
               if (st) {
@@ -450,12 +510,32 @@ export function HighlightedLineLayer({
               }
             }
 
+            // The hovered SECOND station's name, promoted to the SAME
+            // line-colored starter treatment the first station wears, so the
+            // two ends of the pending click read as a pair. It replaces this
+            // station's white/dimmed name (both passes above skip it) rather
+            // than stacking a second label on top of it.
+            const secondStarter: ReactNode =
+              secondStationId && stations[secondStationId] ? (
+                <g data-append-second-station={secondStationId}>
+                  <StationView
+                    station={stations[secondStationId]}
+                    lines={lines}
+                    zoom={zoom}
+                    onStartDrag={onStartDrag}
+                    layer="starter-label"
+                    highlightColor={ln.color}
+                  />
+                </g>
+              ) : null;
+
             return (
               <>
                 {addable}
                 {hoverZone}
                 {ring}
                 {starter}
+                {secondStarter}
                 {hoverRing}
               </>
             );
@@ -465,12 +545,9 @@ export function HighlightedLineLayer({
           middle of the armed segment) — removes it. Clickable, so it lives
           OUTSIDE the pointer-events:none wash. Sized in screen space via the
           committed zoom, like the rest of the edit chrome. */}
-      {uiMode.kind === 'appending-to-line' &&
-        uiMode.lineId === highlightLineId &&
+      {append &&
         (() => {
-          const ln = lines[highlightLineId];
           if (!ln) return null;
-          const cursor = validCursor(ln, uiMode.cursor);
           if (cursor?.kind === 'station' && onRemoveCursorStation) {
             const st = stations[cursor.stationId];
             const cell = st?.stops.find((c) => c.lineId === highlightLineId);
