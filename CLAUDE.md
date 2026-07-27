@@ -13,6 +13,22 @@ How to work in this repo. These override default behavior.
 - Use red-first / TDD whenever possible: write the failing test first, watch it fail, then make it pass.
 - A red test must fail on **behavioral logic**, not on plumbing. "The module I'm about to write isn't importing yet" is NOT a red test. The test must exercise actual behavior and fail because that behavior is wrong or missing.
 
+## Architecture doc
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) describes the code as it stands. Ask on every PR whether the
+  change leaves it wrong or incomplete, and fix that in the same PR. Most PRs need no edit — that's
+  a fine answer, but ask.
+- A now-**wrong** statement always gets fixed. A **gap** gets filled only when the silence would
+  misdirect someone bootstrapping the codebase: a new concept, layer, or invariant, or a new member
+  of a set the doc enumerates. Not a new function. Grepping the doc for what the diff touched is a
+  useful first pass, but zero hits settles nothing — new code can't hit.
+- Edit the prose in place, at the altitude it already sits at. Rewrite what's wrong, delete what's
+  gone; never record change (no changelog, no "new in", no "as of PR #N", no "previously X, now Y",
+  no note bolted onto a section instead of editing it). Legacy _data_ shapes the code still handles
+  (persist versions, migration gates) are present-tense facts, not history; those stay.
+- Hand-edit only, never Prettier; wrap at 100 columns; leave the "up to date as of commit …" stamp
+  to the nightly scrub.
+
 ## Plans
 
 - Before presenting any plan, do a full adversarial / critique pass over it yourself. Confirm it:
