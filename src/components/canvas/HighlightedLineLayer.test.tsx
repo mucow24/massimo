@@ -461,3 +461,116 @@ describe('<HighlightedLineLayer /> — Edit Stops hover preview', () => {
     expect(container.querySelector('[data-append-hover-segment]')).toBeNull();
   });
 });
+
+describe('<HighlightedLineLayer /> — Edit Stops second station + route preview', () => {
+  const lines = () => redLine(['s1', 's2']);
+  // s3 is off the line: hovering it with the pen armed is the "second station".
+  const stations = () => ({
+    s1: triStation('s1', 0, 0),
+    s2: triStation('s2', 100, 0),
+    s3: triStation('s3', 200, 0),
+  });
+  const appending = (cursor: AppendCursor): UiMode => ({
+    kind: 'appending-to-line',
+    lineId: 'L1',
+    cursor,
+  });
+  const hover = (stationId: string): AppendHover => ({ kind: 'station', stationId });
+  // The preview repaints the line's own body, so its stripes carry L1's color.
+  const previewBodies = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('[data-append-route-preview] path[stroke="#cc0000"]'));
+
+  it('promotes the hovered second station’s name to the line-colored starter treatment', () => {
+    const { container } = renderLayer(
+      lines(),
+      stations(),
+      appending({ kind: 'station', stationId: 's2' }),
+      { appendHover: hover('s3') },
+    );
+    const group = container.querySelector('[data-append-second-station="s3"]');
+    expect(group).not.toBeNull();
+    const second = group!.querySelector('text')!;
+    expect(second.textContent).toContain('s3');
+    // Literally the treatment the FIRST station (the pen, on s2) wears: the
+    // line color, over a contrasting stroke painted underneath.
+    const first = Array.from(container.querySelectorAll('text')).find((t) =>
+      (t.textContent ?? '').includes('s2'),
+    )!;
+    expect(second.getAttribute('fill')).toBe('#cc0000');
+    expect(second.getAttribute('fill')).toBe(first.getAttribute('fill'));
+    expect(second.getAttribute('stroke')).toBe(first.getAttribute('stroke'));
+    expect(second.getAttribute('paint-order')).toBe('stroke');
+    expect(second.getAttribute('font-weight')).toBe(first.getAttribute('font-weight'));
+  });
+
+  it('paints the second station’s name ONCE — the dimmed pass steps aside', () => {
+    const { container } = renderLayer(
+      lines(),
+      stations(),
+      appending({ kind: 'station', stationId: 's2' }),
+      { appendHover: hover('s3') },
+    );
+    const s3Texts = Array.from(container.querySelectorAll('text')).filter((t) =>
+      (t.textContent ?? '').includes('s3'),
+    );
+    expect(s3Texts).toHaveLength(1);
+  });
+
+  it('draws the connect corridor at half strength — over the dim, under the line', () => {
+    const { container } = renderLayer(
+      lines(),
+      stations(),
+      appending({ kind: 'station', stationId: 's2' }),
+      { appendHover: hover('s3') },
+    );
+    const preview = container.querySelector('[data-append-route-preview="s3"]');
+    expect(preview).not.toBeNull();
+    expect(preview!.getAttribute('opacity')).toBe('0.5');
+    expect(previewBodies(container)).toHaveLength(1);
+  });
+
+  it('draws BOTH halves of a splice — the corridor really becomes a dogleg', () => {
+    const { container } = renderLayer(
+      lines(),
+      stations(),
+      appending({ kind: 'edge', from: 's1', to: 's2' }),
+      { appendHover: hover('s3') },
+    );
+    expect(container.querySelector('[data-append-route-preview="s3"]')).not.toBeNull();
+    expect(previewBodies(container)).toHaveLength(2);
+  });
+
+  it('no second station or route for a click that only walks the pen', () => {
+    // s2 is already the pen's neighbour: clicking it advances the cursor and
+    // draws nothing, so neither cue should promise a new corridor.
+    const { container } = renderLayer(
+      lines(),
+      stations(),
+      appending({ kind: 'station', stationId: 's1' }),
+      { appendHover: hover('s2') },
+    );
+    expect(container.querySelector('[data-append-second-station]')).toBeNull();
+    expect(container.querySelector('[data-append-route-preview]')).toBeNull();
+    // The ring still shows — the click IS actionable, it just adds no route.
+    expect(container.querySelector('[data-append-hover-ring="s2"]')).not.toBeNull();
+  });
+
+  it('no second station or route on a dead click (nothing armed, non-member)', () => {
+    const { container } = renderLayer(lines(), stations(), appending(null), {
+      appendHover: hover('s3'),
+    });
+    expect(container.querySelector('[data-append-second-station]')).toBeNull();
+    expect(container.querySelector('[data-append-route-preview]')).toBeNull();
+  });
+
+  it('no route preview outside Edit Stops', () => {
+    const { container } = renderLayer(
+      lines(),
+      stations(),
+      { kind: 'idle' },
+      { appendHover: hover('s3') },
+    );
+    expect(container.querySelector('[data-append-route-preview]')).toBeNull();
+    expect(container.querySelector('[data-append-second-station]')).toBeNull();
+  });
+});

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { makeLine } from '../test/fixtures';
 import {
+  appendRoutePreviewEdges,
   appendSegmentHoverPreview,
   appendStationCursor,
   appendStationHoverPreview,
@@ -444,6 +445,47 @@ describe('appendSegmentHoverPreview', () => {
 
   it('a stale edge cursor no longer suppresses (its edge is gone)', () => {
     expect(appendSegmentHoverPreview(line(), edgeCursor('a', 'c'), 'a|b')).toBe(true);
+  });
+});
+
+// The route preview's gate: which corridors a click on the hovered station
+// would ADD. Non-empty ⇒ the station is a "second station" (the click puts it
+// on the line), which is also what promotes its name to the starter treatment.
+describe('appendRoutePreviewEdges', () => {
+  it('station cursor: one new corridor, cursor → hovered', () => {
+    expect(appendRoutePreviewEdges(line(), stationCursor('a'), 'n')).toEqual(['a|n']);
+  });
+
+  it('station cursor onto a far MEMBER: the loop/branch corridor it would close', () => {
+    expect(appendRoutePreviewEdges(line(), stationCursor('a'), 'c')).toEqual(['a|c']);
+  });
+
+  it('nothing onto an ALREADY-connected neighbour — the click only walks the pen', () => {
+    // a–b is already drawn, so connectStationsOnLine no-ops on the doc and the
+    // click's whole effect is to advance the cursor. Promising a route here
+    // would be a route that never appears.
+    expect(appendRoutePreviewEdges(line(), stationCursor('a'), 'b')).toEqual([]);
+  });
+
+  it('edge cursor: BOTH halves of the splice, not just the near one', () => {
+    // Splicing n into a–b replaces it with a–n and n–b; previewing only a–n
+    // would promise a dogleg that keeps the original straight run.
+    expect(appendRoutePreviewEdges(line(), edgeCursor('a', 'b'), 'n').sort()).toEqual([
+      'a|n',
+      'b|n',
+    ]);
+  });
+
+  it('nothing for a click that only moves the pen (arm / jump / disarm)', () => {
+    expect(appendRoutePreviewEdges(line(), null, 'b')).toEqual([]); // arms
+    expect(appendRoutePreviewEdges(line(), stationCursor('b'), 'b')).toEqual([]); // disarms
+    expect(appendRoutePreviewEdges(line(), edgeCursor('a', 'b'), 'a')).toEqual([]); // jumps
+  });
+
+  it('nothing for a dead click, and nothing for the empty-line seed', () => {
+    expect(appendRoutePreviewEdges(line(), null, 'zzz')).toEqual([]);
+    // A seed draws no corridor — there is no first station to route from.
+    expect(appendRoutePreviewEdges(makeLine({ id: 'L1', stations: [] }), null, 'x')).toEqual([]);
   });
 });
 
