@@ -12,6 +12,7 @@ import { hoveredChrome } from '../../state/selection';
 import { useThemeColors } from '../../state/theme';
 import { legibleTextOn } from '../../util/color';
 import { angleDeg, scale, type Vec2 } from '../../geometry/vec';
+import { capCenterDy } from '../../geometry/textMeasure';
 import { pairKeyOf } from '../../model/pairKey';
 import { SELECTION_WASH_OPACITY, selectionOutlineTones } from '../selectionStyle';
 import { useLineTagDrag } from './useLineTagDrag';
@@ -353,9 +354,10 @@ function TagShape({
         ) : (
           <text
             x={0}
-            y={0}
+            // Cap-centered on the alphabetic baseline — NOT dominantBaseline="central",
+            // which resolves from platform-specific font metrics (see capCenterDy).
+            y={capCenterDy(ALONG_FONT_SIZE)}
             textAnchor="middle"
-            dominantBaseline="central"
             fontSize={ALONG_FONT_SIZE}
             fontWeight={700}
             fill={legibleTextOn(r.color)}
@@ -435,9 +437,10 @@ function GhostPreview({
     >
       <text
         x={0}
-        y={0}
+        // Cap-centered on the alphabetic baseline — NOT dominantBaseline="central",
+        // which resolves from platform-specific font metrics (see capCenterDy).
+        y={capCenterDy(fontSize)}
         textAnchor="middle"
-        dominantBaseline="central"
         fontSize={fontSize}
         fontWeight={700}
         fill={legibleTextOn(color)}

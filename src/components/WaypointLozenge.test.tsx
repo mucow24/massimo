@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { WaypointLozenge } from './WaypointLozenge';
+import { capCenterDy } from '../geometry/textMeasure';
 
 function renderLozenge(props: { rightX: number; centerY: number; fontSize: number }) {
   const { container } = render(
@@ -38,6 +39,17 @@ describe('WaypointLozenge', () => {
     expect(x).toBeLessThan(rightX);
     // Vertically centered on centerY.
     expect(y + h / 2).toBeCloseTo(centerY, 5);
+  });
+
+  // `dominantBaseline="central"` centers the font's ascent..descent box, which
+  // Chrome sources per-platform (usWin on Windows, hhea on macOS) — "WP"
+  // rendered ~0.09em lower on a Mac. Centered on the alphabetic baseline instead.
+  it('centers "WP" on the alphabetic baseline, not via dominant-baseline', () => {
+    const centerY = 50;
+    const text = renderLozenge({ rightX: 100, centerY, fontSize: 12 }).querySelector('text')!;
+    const fontSize = Number(text.getAttribute('font-size'));
+    expect(Number(text.getAttribute('y'))).toBeCloseTo(centerY + capCenterDy(fontSize), 6);
+    expect(text.getAttribute('dominant-baseline')).toBeNull();
   });
 
   it('scales with the host font size', () => {

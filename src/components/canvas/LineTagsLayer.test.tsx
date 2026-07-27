@@ -7,6 +7,7 @@ import { DEFAULT_DOC } from '../../model/transforms';
 import { makeBandSpec, makeLine } from '../../test/fixtures';
 import { fakeSvgRef } from '../../test/interaction';
 import type { LineTag } from '../../model/types';
+import { capCenterDy } from '../../geometry/textMeasure';
 
 // These specs don't drag, so the cursor→world map is never called; identity
 // satisfies the prop.
@@ -186,6 +187,21 @@ describe('<LineTagsLayer> — hand/space pan does not start a tag drag', () => {
       </svg>,
     ).container;
   };
+
+  // `dominantBaseline="central"` centers the font's ascent..descent box, which
+  // Chrome sources per-platform (usWin on Windows, hhea on macOS) — the tag
+  // rendered ~0.09em lower on a Mac. Centered on the alphabetic baseline instead.
+  it('centers the tag glyphs on the alphabetic baseline, not via dominant-baseline', () => {
+    const c = renderLayer();
+    // Scope to the tag's own <g> — a bare `text` selector picks up the
+    // offscreen width measurer, which is unpositioned by design.
+    const tagG = c.querySelector('[data-line-tag-id]')!.parentElement!;
+    const text = tagG.querySelector('text')!;
+    // The tag's <g> carries the translate + rotate, so the text is local-origin.
+    const fontSize = Number(text.getAttribute('font-size'));
+    expect(Number(text.getAttribute('y'))).toBeCloseTo(capCenterDy(fontSize), 6);
+    expect(text.getAttribute('dominant-baseline')).toBeNull();
+  });
 
   it('a left press on a tag in hand mode arms no drag (no history group opens)', () => {
     useSelection.setState({ ...useSelection.getState(), toolMode: 'hand' });

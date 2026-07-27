@@ -1,5 +1,6 @@
 import type { Line, RouteBullet } from '../model/types';
 import { badgeColors } from './badge';
+import { capCenterDy } from '../geometry/textMeasure';
 import { BulletShape } from './bulletShape';
 import { useThemeColors } from '../state/theme';
 import { itemCursor } from './canvas/itemCursor';
@@ -144,9 +145,10 @@ export function RouteBulletView({
       {selected && <BulletRingCircles bullet={bullet} />}
       <text
         x={0}
-        y={0}
+        // Cap-centered on the alphabetic baseline — NOT dominantBaseline="central",
+        // which resolves from platform-specific font metrics (see capCenterDy).
+        y={capCenterDy(fontSize)}
         textAnchor="middle"
-        dominantBaseline="central"
         fontSize={fontSize}
         fontWeight={700}
         fill={textColor}

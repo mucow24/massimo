@@ -7,6 +7,7 @@ import { DEFAULT_DOC } from '../../model/transforms';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import type { Station } from '../../model/types';
 import { makeLine } from '../../test/fixtures';
+import { capCenterDy } from '../../geometry/textMeasure';
 
 const hubStation = (): Station => ({
   id: 'a',
@@ -226,6 +227,24 @@ describe('<StationLayoutEditor />', () => {
     expect(labelText).not.toBeNull();
     // Cell center for row=0,col=-1 is (-14, 0); the glyph pivots there.
     expect(labelText.getAttribute('transform')).toBe('rotate(90 -14 0)');
+  });
+});
+
+describe('<StationLayoutEditor /> — label handle glyph', () => {
+  // `dominantBaseline="central"` centers the font's ascent..descent box, which
+  // Chrome sources per-platform (usWin on Windows, hhea on macOS) — the "L"
+  // rendered ~0.09em lower on a Mac. Centered on the alphabetic baseline instead.
+  it('centers the "L" on the alphabetic baseline, not via dominant-baseline', () => {
+    seed();
+    const { container } = renderEditor();
+    const handle = container.querySelector('[data-cell-kind="label"]')!;
+    const circle = handle.querySelector('circle')!;
+    const text = handle.querySelector('text')!;
+    expect(text.textContent).toBe('L');
+    const fontSize = Number(text.getAttribute('font-size'));
+    const cy = Number(circle.getAttribute('cy'));
+    expect(Number(text.getAttribute('y'))).toBeCloseTo(cy + capCenterDy(fontSize), 6);
+    expect(text.getAttribute('dominant-baseline')).toBeNull();
   });
 });
 
