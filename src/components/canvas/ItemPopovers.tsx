@@ -88,7 +88,7 @@ export function ItemPopovers({ view: committed }: { view: ViewportProjection }) 
 
   const sole = soleSelection(selection);
   if (!sole) {
-    // ≥2 items across the five multi-select lists: ONE popover for the whole
+    // ≥2 items across the six multi-select lists: ONE popover for the whole
     // group (count summary + bulk lock/unlock/delete). Idle-only — the modes
     // that preserve a selection (placing-label's marquee) shouldn't pop a
     // group editor under their placement clicks, mirroring the station gate

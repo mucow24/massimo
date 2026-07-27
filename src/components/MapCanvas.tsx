@@ -87,6 +87,7 @@ import { TransferLayer, TransferSelectionOutline } from './TransferLayer';
 import { AnchorLayer } from './canvas/AnchorLayer';
 import { pickTransferEnd } from '../state/transferPick';
 import { revealedAnchorStations, useAnchorsVisible } from '../state/anchorVisibility';
+import { isFreeAnchorEnd } from '../model/transferAnchors';
 import { transferEndWorld } from '../geometry/transferEnds';
 import {
   anchorFromArcLen,
@@ -805,7 +806,7 @@ export function MapCanvas() {
     }
     // Selection is a FREE-anchor concept; a hosted anchor never reaches this
     // line, because it takes no pointer events outside the pick gesture.
-    if (!('stationId' in end)) {
+    if (isFreeAnchorEnd(end)) {
       if (e.shiftKey && !(e.ctrlKey || e.metaKey)) sel.toggleAnchorSelection(end.anchorId);
       else sel.selectAnchor(end.anchorId);
     }

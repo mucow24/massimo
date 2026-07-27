@@ -347,6 +347,17 @@ describe('currentHitEntity', () => {
     });
   });
 
+  it('returns a selected FREE anchor, so alt-click cycles PAST it', () => {
+    // The consumer half of soleSelection's anchor arm. `nextInStack` locates
+    // the current entry by (kind, id); an anchor that doesn't resolve here
+    // makes findIndex miss, and the cycle restarts at the top instead of
+    // advancing — an alt-click that appears to do nothing.
+    expect(currentHitEntity(sel({ selectedAnchorIds: ['an1'] }))).toEqual({
+      kind: 'anchor',
+      id: 'an1',
+    });
+  });
+
   it('covers the single-id primaries soleSelection does not: line, transfer, line tag', () => {
     expect(currentHitEntity(sel({ selectedLineId: 'L1' }))).toEqual({ kind: 'line', id: 'L1' });
     expect(currentHitEntity(sel({ selectedTransferId: 't1' }))).toEqual({
