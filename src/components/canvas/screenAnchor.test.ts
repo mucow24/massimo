@@ -42,63 +42,86 @@ describe('choosePopoverSpawn', () => {
   const host = { w: 800, h: 600 };
   const pop = { w: 248, h: 248 };
 
-  it('places diagonally below-right of the item when there is room', () => {
-    // Diagonal candidate (410+14, 310+14) fits (672 ≤ 792, 572 ≤ 592) and by
-    // construction clears the item — no clamping, no flip. The diagonal keeps
-    // same-row neighbors (metro lines run horizontally) clickable beside the
-    // open panel.
+  it('places diagonally below-left of the item when there is room', () => {
+    // Diagonal candidate (390−14−248, 310+14) = (128,324) fits and by
+    // construction clears the item — no clamping, no flip. Below-left keeps
+    // the space right of the station — where work usually continues — clear,
+    // and the diagonal keeps same-row neighbors (metro lines run
+    // horizontally) clickable beside the open panel.
     expect(choosePopoverSpawn({ x0: 390, y0: 290, x1: 410, y1: 310 }, pop, host)).toEqual({
-      x: 424,
+      x: 128,
       y: 324,
     });
   });
 
-  it('a degenerate point rect reproduces the legacy point+gap spawn exactly', () => {
+  it('a degenerate point rect gets the point+gap spawn mirrored to the left', () => {
+    // (400−14−248, 300+14): the historical point+gap shape, left-handed.
     expect(choosePopoverSpawn({ x0: 400, y0: 300, x1: 400, y1: 300 }, pop, host)).toEqual({
-      x: 414,
+      x: 138,
       y: 314,
     });
   });
 
-  it('slides along the item bottom when the right edge clamps the diagonal', () => {
-    // Diagonal (774,254) clamps to (544,254): still below the item
-    // ([700,760]×[200,240]) — 254 > 240 keeps it clear, no flip needed.
-    expect(choosePopoverSpawn({ x0: 700, y0: 200, x1: 760, y1: 240 }, pop, host)).toEqual({
-      x: 544,
+  it('slides along the item bottom when the left edge clamps the diagonal', () => {
+    // Diagonal (−222,254) clamps to (8,254): still below the item
+    // ([40,100]×[200,240]) — 254 > 240 keeps it clear, no flip needed.
+    expect(choosePopoverSpawn({ x0: 40, y0: 200, x1: 100, y1: 240 }, pop, host)).toEqual({
+      x: 8,
       y: 254,
     });
   });
 
-  it('flips left when right and below are both blocked (bottom-right item)', () => {
-    // Right and below both clamp to (544,344) → overlap the item
-    // ([700,760]×[500,560]). Left: (700−14−248, 500) = (438,500), y clamps to
-    // 344 → [438,686] clears the item horizontally.
+  it('slides up the left side when the bottom edge clamps the diagonal (bottom-right item)', () => {
+    // Below-left diagonal (438,574) clamps to (438,344): the popover's right
+    // edge 438+248 = 686 still clears the item's left edge 700, so the
+    // clamped diagonal wins without a flip.
     expect(choosePopoverSpawn({ x0: 700, y0: 500, x1: 760, y1: 560 }, pop, host)).toEqual({
       x: 438,
       y: 344,
     });
   });
 
+  it('flips above when clamping pushes the below diagonal into the item (bottom-left item)', () => {
+    // Below-left diagonal (−162,574) clamps to (8,344) → overlaps the item
+    // ([100,160]×[500,560]). Above-left diagonal: (8, 500−14−248) = (8,238)
+    // clears it vertically.
+    expect(choosePopoverSpawn({ x0: 100, y0: 500, x1: 160, y1: 560 }, pop, host)).toEqual({
+      x: 8,
+      y: 238,
+    });
+  });
+
   it('flips above for an item spanning the bottom of the view', () => {
-    // Right/below/left all clamp into the item band ([0,800]×[500,560]).
-    // Above: (0, 500−14−248) = (0,238), x clamps to 8 — vertically clear.
+    // The below-left diagonal clamps into the item band ([0,800]×[500,560]);
+    // the above-left diagonal (x clamps to 8, y = 500−262 = 238) is
+    // vertically clear.
     expect(choosePopoverSpawn({ x0: 0, y0: 500, x1: 800, y1: 560 }, pop, host)).toEqual({
       x: 8,
       y: 238,
     });
   });
 
+  it('flips right when the whole left column is blocked', () => {
+    // Item spans the left column ([0,100]×[0,600]): every left/above/below
+    // candidate clamps into it; the below-right diagonal (100+14, y clamps
+    // to 344) is the first that clears.
+    expect(choosePopoverSpawn({ x0: 0, y0: 0, x1: 100, y1: 600 }, pop, host)).toEqual({
+      x: 114,
+      y: 344,
+    });
+  });
+
   it('falls back to the clamped diagonal when every side overlaps (item fills the view)', () => {
     // No side can clear a viewport-covering item; fully-visible wins and the
-    // popover sits at the clamped first candidate: (914,714) → (544,344).
+    // popover sits at the clamped first candidate: (−362,714) → (8,344).
     expect(choosePopoverSpawn({ x0: -100, y0: -100, x1: 900, y1: 700 }, pop, host)).toEqual({
-      x: 544,
+      x: 8,
       y: 344,
     });
   });
 
   it('clamps an off-screen item spawn into the host (no overlap possible)', () => {
-    // Item projects far right of the host: diagonal (5424,324) clamps to
+    // Item projects far right of the host: diagonal (5128,324) clamps to
     // (544,324); the item rect is entirely off-host so nothing overlaps.
     expect(choosePopoverSpawn({ x0: 5390, y0: 290, x1: 5410, y1: 310 }, pop, host)).toEqual({
       x: 544,
@@ -107,11 +130,11 @@ describe('choosePopoverSpawn', () => {
   });
 
   it('respects a non-square footprint per axis', () => {
-    // Station-sized popover (320×560): diagonal keeps x 424, y clamps to
-    // 600−560−8 = 32; [424,744] still clears the item horizontally.
+    // Station-sized popover (320×560): diagonal x = 390−14−320 = 56, y clamps
+    // to 600−560−8 = 32; [56,376] still clears the item horizontally.
     expect(
       choosePopoverSpawn({ x0: 390, y0: 290, x1: 410, y1: 310 }, { w: 320, h: 560 }, host),
-    ).toEqual({ x: 424, y: 32 });
+    ).toEqual({ x: 56, y: 32 });
   });
 
   it('pins to the margin when the host cannot fit the popover at all', () => {
@@ -124,8 +147,8 @@ describe('choosePopoverSpawn', () => {
   });
 
   it('pins the y axis to the margin the same way (100px-tall host)', () => {
-    // Diagonal (234,44): x fits, y pins to 8 (limit 100−248−8 < margin); the
-    // popover clears the item horizontally.
+    // Every left/above/below candidate pins into the item band; the
+    // below-right diagonal (234, y pinned to 8) clears it horizontally.
     expect(
       choosePopoverSpawn({ x0: 200, y0: 10, x1: 220, y1: 30 }, pop, { w: 800, h: 100 }),
     ).toEqual({ x: 234, y: 8 });

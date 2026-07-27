@@ -210,9 +210,9 @@ describe('<TransferPopover />', () => {
     const el = container.querySelector('.transfer-popover') as HTMLElement;
     const left = parseFloat(el.style.left);
     const top = parseFloat(el.style.top);
-    // Point rect at the capsule midpoint (100,0) → the diagonal spawn
-    // candidate (100+14, 0+14), unclamped this far from the edges.
-    expect(left).toBeCloseTo(114, 6);
+    // Point rect at the capsule midpoint (100,0) → the below-left diagonal
+    // spawn (100−14−248, 0+14) clamps x to the 8px margin.
+    expect(left).toBeCloseTo(8, 6);
     expect(top).toBeCloseTo(14, 6);
     // An endpoint move re-renders with a fresh worldRect: the frozen anchor
     // must not follow (the rect is a spawn hint only).

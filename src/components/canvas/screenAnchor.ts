@@ -90,20 +90,25 @@ export function choosePopoverSpawn(
   pop: { w: number; h: number },
   host: { w: number; h: number },
 ): { x: number; y: number } {
-  // Diagonally below-right of the item first — the legacy spawn's shape, and
-  // deliberately so: a panel top-aligned beside a station would sit exactly
-  // over the neighboring stations on its (usually horizontal) line, swallowing
-  // the next click. Then right (top-aligned), below (left-aligned), left,
-  // above. Clamping can slide a candidate along its free axis (or, when the
-  // host is too small, off its side entirely) — the overlap check judges the
-  // candidate where it actually lands. A degenerate point rect makes the
-  // diagonal exactly the historical point+gap spawn.
+  // Diagonally below-left of the item first: the space right of the item is
+  // where work usually continues, so the whole left/above/below half of the
+  // ring is preferred and the right side is a last resort (item near the left
+  // edge). Diagonals keep a panel off the item's (usually horizontal) line —
+  // a panel top-aligned beside a station would sit exactly over the
+  // neighboring stations, swallowing the next click. Clamping can slide a
+  // candidate along its free axis (or, when the host is too small, off its
+  // side entirely) — the overlap check judges the candidate where it actually
+  // lands. A degenerate point rect makes the below-left diagonal the
+  // historical point+gap spawn mirrored to the left.
   const candidates = [
-    { x: item.x1 + POPOVER_GAP, y: item.y1 + POPOVER_GAP },
-    { x: item.x1 + POPOVER_GAP, y: item.y0 },
+    { x: item.x0 - POPOVER_GAP - pop.w, y: item.y1 + POPOVER_GAP },
+    { x: item.x0 - POPOVER_GAP - pop.w, y: item.y0 - POPOVER_GAP - pop.h },
+    { x: item.x0, y: item.y0 - POPOVER_GAP - pop.h },
     { x: item.x0, y: item.y1 + POPOVER_GAP },
     { x: item.x0 - POPOVER_GAP - pop.w, y: item.y0 },
-    { x: item.x0, y: item.y0 - POPOVER_GAP - pop.h },
+    { x: item.x1 + POPOVER_GAP, y: item.y1 + POPOVER_GAP },
+    { x: item.x1 + POPOVER_GAP, y: item.y0 - POPOVER_GAP - pop.h },
+    { x: item.x1 + POPOVER_GAP, y: item.y0 },
   ];
   let fallback: { x: number; y: number } | null = null;
   for (const c of candidates) {
