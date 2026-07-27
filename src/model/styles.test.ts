@@ -27,7 +27,13 @@ import {
 import { DOT_SIZE_DEFAULT } from './dotSize';
 import { LINE_WIDTH_DEFAULT } from './lineWidth';
 import { LINE_CURVE_RADIUS_DEFAULT } from './lineCurve';
-import type { RouteBulletStyleProps, TextLabelStyleProps, TransferStyleProps } from './types';
+import type {
+  LineEndStyle,
+  RouteBulletStyleProps,
+  TextLabelStyleProps,
+  TransferStyleProps,
+} from './types';
+import * as T from './transforms';
 import {
   makeDoc,
   makeLine,
@@ -50,6 +56,7 @@ describe('captureStyleProps', () => {
       multiDotSize: DOT_SIZE_DEFAULT,
       width: LINE_WIDTH_DEFAULT,
       curveRadius: LINE_CURVE_RADIUS_DEFAULT,
+      endStyle: 'square' as const,
       strokeWidth: 0,
       strokeColor: '#ffffff',
     });
@@ -78,6 +85,7 @@ describe('captureStyleProps', () => {
       multiDotSize: 16,
       width: 10,
       curveRadius: 40,
+      endStyle: 'square' as const,
       strokeWidth: 1.5,
       strokeColor: '#123456',
     });
@@ -247,6 +255,7 @@ describe('stylePropsEqual — line covered fields', () => {
       multiDotSize: DOT_SIZE_DEFAULT,
       width: LINE_WIDTH_DEFAULT,
       curveRadius: LINE_CURVE_RADIUS_DEFAULT,
+      endStyle: 'square' as const,
       strokeWidth: 0,
       strokeColor: '#ffffff',
     };
@@ -272,6 +281,7 @@ describe('stylePropsEqual — line covered fields', () => {
       multiDotSize: DOT_SIZE_DEFAULT,
       width: LINE_WIDTH_DEFAULT,
       curveRadius: LINE_CURVE_RADIUS_DEFAULT,
+      endStyle: 'square' as const,
       strokeWidth: 0,
       strokeColor: '#ffffff',
     };
@@ -1161,5 +1171,78 @@ describe('stylesOfKind', () => {
     };
     expect(stylesOfKind(styles, 'line').map((d) => d.name)).toEqual(['Alpha', 'Zebra']);
     expect(stylesOfKind(styles, 'polygon').map((d) => d.name)).toEqual(['Middle']);
+  });
+});
+
+// Line ENDS are a covered style field: define-by-example captures them,
+// stamping forces them (including back to square), and a manual edit detaches.
+// The per-terminus pins are deliberately outside all of this.
+describe('line style — end style coverage', () => {
+  const lineDoc = (patch = {}) =>
+    makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('l1')] }),
+        makeStation({ id: 'b', stops: [makeStop('l1')] }),
+      ],
+      lines: [makeLine({ id: 'l1', stations: ['a', 'b'], ...patch })],
+    });
+
+  it('captures the line’s end style', () => {
+    expect(captureStyleProps(lineDoc({ endStyle: 'round' }), 'line', 'l1')!).toMatchObject({
+      endStyle: 'round',
+    });
+  });
+
+  it('does NOT capture the per-terminus pins', () => {
+    const doc = lineDoc({ endStyle: 'round', stationEndStyles: { a: 'short' } });
+    expect(captureStyleProps(doc, 'line', 'l1')).not.toHaveProperty('stationEndStyles');
+  });
+
+  it('separates two styles that differ only by end style', () => {
+    const base = captureStyleProps(lineDoc(), 'line', 'l1')!;
+    expect(stylePropsEqual('line', base, { ...base, endStyle: 'round' })).toBe(false);
+    expect(
+      stylePropsEqual('line', { ...base, endStyle: 'round' }, { ...base, endStyle: 'round' }),
+    ).toBe(true);
+  });
+
+  it('heals a def written before the field existed to square', () => {
+    const captured = captureStyleProps(lineDoc(), 'line', 'l1')!;
+    const legacy = { ...captured, endStyle: undefined as unknown as LineEndStyle };
+    expect(canonicalStyleProps('line', legacy).endStyle).toBe('square');
+  });
+
+  it('stamps the end style onto a wearer, square included', () => {
+    let doc = lineDoc({ endStyle: 'round' });
+    const styleId = 'sty-round';
+    doc = saveStyleFromItem(doc, styleId, 'line', 'Rounded', 'l1');
+    // A second, square-ended line takes the round end from the style…
+    doc = {
+      ...doc,
+      lines: { ...doc.lines, l2: makeLine({ id: 'l2', stations: ['a', 'b'] }) },
+    };
+    doc = applyStyleToItem(doc, styleId, 'l2');
+    expect(doc.lines.l2.endStyle).toBe('round');
+    // …and a square-ended style puts it back, rather than leaving it round.
+    doc = updateStyleProps(doc, styleId, { endStyle: 'square' });
+    expect('endStyle' in doc.lines.l2).toBe(false);
+    expect(doc.lines.l2.styleId).toBe(styleId);
+  });
+
+  it('detaches the line when the end style is edited by hand', () => {
+    let doc = lineDoc();
+    doc = saveStyleFromItem(doc, 'sty-plain', 'line', 'Plain', 'l1');
+    expect(doc.lines.l1.styleId).toBeDefined();
+    doc = T.setLineEndStyle(doc, 'l1', 'round');
+    expect(doc.lines.l1.styleId).toBeUndefined();
+  });
+
+  it('leaves the tag alone when only a per-terminus pin changes', () => {
+    let doc = lineDoc();
+    doc = saveStyleFromItem(doc, 'sty-plain', 'line', 'Plain', 'l1');
+    const styleId = doc.lines.l1.styleId;
+    doc = T.setStationEndStyle(doc, 'l1', 'a', 'round');
+    expect(doc.lines.l1.styleId).toBe(styleId);
+    expect(doc.lines.l1.stationEndStyles).toEqual({ a: 'round' });
   });
 });

@@ -2714,6 +2714,28 @@ body:has(.app[data-theme='dark']) {
      values like "20.00". */
   width: 76px;
 }
+/* Per-terminus line-end dropdown: a 26px trigger showing just the end glyph,
+   sized to sit in the same rhythm as the type picker. Non-terminus rows render
+   the placeholder instead so the Direction column stays put down the list —
+   a control that appears on some rows and not others would otherwise make the
+   whole column jitter. */
+.stop-row .end-style-select {
+  width: 42px;
+  height: 26px;
+  padding: 0 2px 0 4px;
+  flex: none;
+  gap: 0;
+}
+.stop-row .end-style-placeholder {
+  width: 42px;
+  flex: none;
+}
+/* Glyph + name inside an open end-style panel. */
+.end-style-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 /* The orientation cycle button hugs the right edge; the size box stays with
    the shape picker it describes. */
 .stop-row .orient-btn {
@@ -2927,6 +2949,11 @@ body:has(.app[data-theme='dark']) {
 .station-popover .stop-rows-header .col-size {
   flex: none;
   width: 76px;
+  text-align: center;
+}
+.station-popover .stop-rows-header .col-end {
+  flex: none;
+  width: 42px;
   text-align: center;
 }
 .station-popover .stop-rows-header .col-dir {

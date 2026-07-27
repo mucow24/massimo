@@ -11,6 +11,8 @@ import { StationShapePicker } from '../StationShapePicker';
 import { withHexAlpha } from '../../util/color';
 import { NumericFieldRow } from '../NumericFieldRow';
 import { StyleRow } from '../StyleRow';
+import { LineEndSegmented } from '../LineEndPicker';
+import { lineEndStyleOf } from '../../model/lineEnd';
 import {
   LINE_INTERLINE_GAP_MAX,
   LINE_WIDTH_MAX,
@@ -74,6 +76,7 @@ export function LineInspector({ id }: { id: LineId }) {
   const setLineWidth = useDoc((s) => s.setLineWidth);
   const setLineInterlineGap = useDoc((s) => s.setLineInterlineGap);
   const setLineCurveRadius = useDoc((s) => s.setLineCurveRadius);
+  const setLineEndStyle = useDoc((s) => s.setLineEndStyle);
   const setLineStrokeWidth = useDoc((s) => s.setLineStrokeWidth);
   const setLineStrokeColor = useDoc((s) => s.setLineStrokeColor);
   const setLineSeamColor = useDoc((s) => s.setLineSeamColor);
@@ -184,6 +187,15 @@ export function LineInspector({ id }: { id: LineId }) {
             getCurrent={() => lineCurveRadiusOf(useDoc.getState().lines[id])}
             textboxAllowAboveMax
           />
+          {/* How the line's ends are painted at every terminus. Individual
+              termini can override this in the station editor's stop row. */}
+          <div className="options-popover-row">
+            <label className="options-popover-label">Line ends</label>
+            <LineEndSegmented
+              value={lineEndStyleOf(line)}
+              onSelect={(end) => setLineEndStyle(line.id, end)}
+            />
+          </div>
           <hr className="popover-divider" aria-hidden="true" />
           <div className="popover-section-header">Station stop dot types and sizes</div>
           {/* Default stop dot, split by how the stop's station is shared: a

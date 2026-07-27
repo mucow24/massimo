@@ -9,6 +9,7 @@ import { DOT_SIZE_DEFAULT } from '../../model/dotSize';
 import { STOP_DOT_FACTORY_STYLES } from '../../model/dotStyle';
 import type { Station } from '../../model/types';
 import { makeLine } from '../../test/fixtures';
+import { chooseOption } from '../../test/interaction';
 
 const hub = (over: Partial<Station> = {}): Station => ({
   id: 'a',
@@ -248,5 +249,113 @@ describe('<StopRows />', () => {
     expect(useSelection.getState().selectedStopLineId).toBe('L2');
     await user.unhover(rows[1]);
     expect(useSelection.getState().hoveredLineStop).toBeNull();
+  });
+});
+
+// The per-terminus END style override. It shows only where the stop IS one of
+// its line's ends, and writes through setStationEndStyle's clear-at-default
+// contract (so picking the line's own value un-pins rather than storing it).
+describe('<StopRows /> — line ends', () => {
+  const endCombo = (service: string) => `Line end (line ${service})`;
+
+  // a—b for L1 (so `a` is an end); L2 runs a—b—c, so `b` is interior for it.
+  const chain = () => {
+    seed({
+      a: hub({ stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }] }),
+    });
+    useDoc.setState({
+      lines: {
+        ...useDoc.getState().lines,
+        L1: makeLine({ id: 'L1', service: '1', color: '#c60c30', stations: ['a', 'b'] }),
+      },
+    });
+  };
+
+  it('offers the end control at a terminus', () => {
+    chain();
+    renderRows();
+    expect(screen.getByRole('combobox', { name: endCombo('1') })).toBeTruthy();
+  });
+
+  it('hides it at an interior stop, keeping the row’s columns aligned', () => {
+    seed({ a: hub({ stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }] }) });
+    useDoc.setState({
+      lines: {
+        ...useDoc.getState().lines,
+        L1: makeLine({ id: 'L1', service: '1', color: '#c60c30', stations: ['x', 'a', 'b'] }),
+      },
+    });
+    const { container } = renderRows();
+    expect(screen.queryByRole('combobox', { name: endCombo('1') })).toBeNull();
+    // The slot is still held, so Direction doesn't slide left on this row.
+    expect(container.querySelector('.end-style-placeholder')).not.toBeNull();
+  });
+
+  it('pins this terminus without touching the line default', async () => {
+    chain();
+    const user = userEvent.setup();
+    renderRows();
+    await chooseOption(user, endCombo('1'), 'Round');
+    expect(useDoc.getState().lines.L1.stationEndStyles).toEqual({ a: 'round' });
+    expect(useDoc.getState().lines.L1.endStyle).toBeUndefined();
+  });
+
+  it('shows the RESOLVED end — the line default when nothing is pinned', () => {
+    chain();
+    useDoc.setState({
+      lines: {
+        ...useDoc.getState().lines,
+        L1: { ...useDoc.getState().lines.L1, endStyle: 'round' },
+      },
+    });
+    renderRows();
+    // The trigger is a glyph, and the glyph IS the SVG cap — so a round line
+    // default shows a round cap here even with nothing pinned at this stop.
+    const cap = screen
+      .getByRole('combobox', { name: endCombo('1') })
+      .querySelector('line')!
+      .getAttribute('stroke-linecap');
+    expect(cap).toBe('round');
+  });
+
+  it('clears the pin when set back to the line’s own end', async () => {
+    chain();
+    useDoc.setState({
+      lines: {
+        ...useDoc.getState().lines,
+        L1: { ...useDoc.getState().lines.L1, endStyle: 'round', stationEndStyles: { a: 'short' } },
+      },
+    });
+    const user = userEvent.setup();
+    renderRows();
+    await chooseOption(user, endCombo('1'), 'Round');
+    expect('stationEndStyles' in useDoc.getState().lines.L1).toBe(false);
+  });
+
+  it('does NOT mirror to matching stations', async () => {
+    // Dot type and size fan out across mirror matches; an end is topology, not
+    // a look, so it stays put — pinned deliberately.
+    seed(
+      { a: hub({ stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }] }) },
+      { mirrorMatching: true, matchedStationIds: ['a', 'z'] },
+    );
+    useDoc.setState({
+      stations: {
+        ...useDoc.getState().stations,
+        z: hub({
+          id: 'z',
+          x: 500,
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+        }),
+      },
+      lines: {
+        ...useDoc.getState().lines,
+        L1: makeLine({ id: 'L1', service: '1', color: '#c60c30', stations: ['a', 'b'] }),
+      },
+    });
+    const user = userEvent.setup();
+    renderRows();
+    await chooseOption(user, endCombo('1'), 'Short');
+    expect(useDoc.getState().lines.L1.stationEndStyles).toEqual({ a: 'short' });
   });
 });

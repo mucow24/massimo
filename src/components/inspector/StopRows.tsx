@@ -8,6 +8,9 @@ import { legibleTextOn } from '../../util/color';
 import { Cross2Icon } from '@radix-ui/react-icons';
 import { AnchorGlyph } from '../AnchorGlyph';
 import { StationShapePicker } from '../StationShapePicker';
+import { LineEndSelect } from '../LineEndPicker';
+import { stationEndStyleOf } from '../../model/lineEnd';
+import { isLineTerminus } from '../../model/lineTopology';
 import { useNumericField } from '../useNumericField';
 import { ORIENTATION_NAME } from './stopGridDrag';
 import type { Rotation } from '../../geometry/orientation';
@@ -107,6 +110,7 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
   const setDotStyle = useDoc((d) => d.setDotStyle);
   const setDotSize = useDoc((d) => d.setDotSize);
   const rotateStop = useDoc((d) => d.rotateStop);
+  const setStationEndStyle = useDoc((d) => d.setStationEndStyle);
   const lineId = stop.lineId as LineId;
   const stationId = station.id;
   const selected = selection.selectedStopLineId === lineId;
@@ -117,6 +121,9 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
   // Dash (tick) dimensions derive from the line width (+ per-line overrides
   // in the line inspector); the per-stop dot size is inert for them.
   const isDash = resolveDotStyle(line, stop, isSingleton).shape === 'dash';
+  // Is this stop one of the line's ENDS? Only there does an end style mean
+  // anything — and only there will a pin survive the next topology change.
+  const isTerminus = !!line && isLineTerminus(line, stationId);
 
   const {
     text: sizeText,
@@ -205,6 +212,23 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
         onChange={onSizeChange}
         onBlur={onSizeBlur}
       />
+      {/* Per-terminus END style, only where this stop IS one of the line's
+          ends — the slot is held open (but empty) elsewhere so the row's
+          columns stay aligned down the list. Shows the RESOLVED end, so
+          picking the line's own value clears the pin rather than storing it
+          (setStationEndStyle's contract, same as the size box above).
+          Deliberately NOT mirrored: unlike dot type and size, an end is a
+          property of this line's topology here, not a look to spread across
+          matching stations. */}
+      {isTerminus ? (
+        <LineEndSelect
+          value={stationEndStyleOf(line, stationId)}
+          ariaLabel={`Line end (line ${line?.service ?? '?'})`}
+          onSelect={(end) => setStationEndStyle(lineId, stationId, end)}
+        />
+      ) : (
+        <span className="end-style-placeholder" aria-hidden="true" />
+      )}
       {/* One-step cycle, like right-click / R on the canvas handle. Cycling
           is frame-invariant across mirror matches (each steps from its OWN
           current axis), so a rotated match keeps its world-equivalent

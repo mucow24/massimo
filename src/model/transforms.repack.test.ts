@@ -296,6 +296,7 @@ describe('style-driven width changes repack through the same path', () => {
             multiDotSize: 8,
             width: 8,
             curveRadius: 24,
+            endStyle: 'square',
             strokeWidth: 0,
             strokeColor: '#ffffff',
           },

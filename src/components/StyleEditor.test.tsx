@@ -56,6 +56,16 @@ describe('<StyleEditor> — line', () => {
     );
   });
 
+  it('renders the line-ends group at the def value and writes a pick through', async () => {
+    const def = makeStyle('line', 'y1', { props: { endStyle: 'short' } });
+    useDoc.setState({ styles: { ...useDoc.getState().styles, y1: def } });
+    render(<StyleEditor def={def} />);
+    expect(screen.getByRole('radio', { name: 'Short' })).toHaveAttribute('aria-checked', 'true');
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('radio', { name: 'Round' }));
+    expect((useDoc.getState().styles.y1.props as LineStyleProps).endStyle).toBe('round');
+  });
+
   it('renders the interline gap row at the def value, 0 when the def has none', () => {
     render(<StyleEditor def={makeStyle('line', 'y1', { props: { interlineGap: 2 } })} />);
     expect(screen.getByRole('slider', { name: 'Interline gap' })).toHaveAttribute(

@@ -280,6 +280,7 @@ export function StationInspector({ id }: { id: StationId }) {
               <span className="col-line">Line</span>
               <span className="col-type">Type</span>
               <span className="col-size">Size</span>
+              <span className="col-end">End</span>
               <span className="col-dir">Direction</span>
             </div>
           )}

@@ -32,6 +32,10 @@ export function regionGeometrySig(g: GeometrySlice): string {
   // Lines that own at least one stop. An edgeless line still contributes a
   // width x width marker square to the arrangement (buildStopMarkers emits a
   // marker per stop regardless of edges), so its width has to be in the key —
+  // (an edgeless line has no terminus, so its end style genuinely cannot
+  // matter; it is hashed anyway rather than conditionally, since a key that
+  // over-invalidates costs one rebuild and one that under-invalidates is a
+  // stale arrangement)
   // and edgeless-but-stopped is ordinary, not exotic: a line is that way from
   // its first station until its second, and again whenever an endpoint of a
   // two-station line is deleted.
@@ -54,7 +58,13 @@ export function regionGeometrySig(g: GeometrySlice): string {
       String(ln.width ?? ''),
       String(ln.interlineGap ?? ''),
       String(ln.curveRadius ?? ''),
+      // Line END style, and every per-terminus pin: like a segment style
+      // these flip marker footprints — a short end withdraws its outward half
+      // from the arrangement, a round one replaces it with a half-disc.
+      String(ln.endStyle ?? ''),
     );
+    const ends = ln.stationEndStyles;
+    if (ends) for (const k of Object.keys(ends)) parts.push(k, ends[k]);
     const styles = ln.segmentStyles;
     if (styles) for (const k of Object.keys(styles)) parts.push(k, styles[k]);
   }

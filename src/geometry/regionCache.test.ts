@@ -78,6 +78,30 @@ describe('regionGeometrySig', () => {
       lines: { ...base.lines, l1: { ...base.lines.l1, curveRadius: 12 } },
     };
     expect(regionGeometrySig(tightened)).not.toBe(sig);
+    // line END style (withdraws or reshapes the marker's outward half)
+    const rounded = {
+      ...base,
+      lines: { ...base.lines, l1: { ...base.lines.l1, endStyle: 'round' as const } },
+    };
+    expect(regionGeometrySig(rounded)).not.toBe(sig);
+    // …and a single per-terminus pin, which reshapes exactly one marker
+    const pinned = {
+      ...base,
+      lines: {
+        ...base.lines,
+        l1: { ...base.lines.l1, stationEndStyles: { s1: 'short' as const } },
+      },
+    };
+    expect(regionGeometrySig(pinned)).not.toBe(sig);
+    // two different pins on the same line must not collide
+    const pinnedElsewhere = {
+      ...base,
+      lines: {
+        ...base.lines,
+        l1: { ...base.lines.l1, stationEndStyles: { s2: 'short' as const } },
+      },
+    };
+    expect(regionGeometrySig(pinnedElsewhere)).not.toBe(regionGeometrySig(pinned));
   });
 
   it('is stable across presentation-only changes (color, casing, seam)', () => {

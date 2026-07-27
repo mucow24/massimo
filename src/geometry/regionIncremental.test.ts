@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { buildOverlapRegions, type RegionFace } from './lineRegions';
 import { buildRegionsIncremental, type RegionIncrementalState } from './regionIncremental';
 import { makeBandSpec } from '../test/fixtures';
-import type { SegmentBandSpec } from './interlining';
+import type { SegmentBandSpec, StopMarkerSpec } from './interlining';
+import type { LineEndStyle } from '../model/types';
 
 /**
  * A grid of three horizontal and three vertical lines: nine well-separated
@@ -68,6 +69,9 @@ const describeFaces = (faces: RegionFace[]): string =>
     .join('\n');
 
 const full = (bands: SegmentBandSpec[]) => describeFaces(buildOverlapRegions(bands, [], []));
+/** Cold build including markers — the answer an incremental frame must match. */
+const fullWith = (bands: SegmentBandSpec[], markers: StopMarkerSpec[]) =>
+  describeFaces(buildOverlapRegions(bands, markers, []));
 
 /**
  * A line with INTERIOR centerline vertices, so moving one end localizes the
@@ -187,5 +191,60 @@ describe('buildRegionsIncremental', () => {
     const state = buildRegionsIncremental(shared(['A', 'B']), [], null).state;
     const inc = buildRegionsIncremental(shared(['B', 'A']), [], state);
     expect(describeFaces(inc.faces)).toBe(full(shared(['B', 'A'])));
+  });
+
+  // A marker's LINE END reshapes its painted footprint (markerBodyRings), so it
+  // has to reach the unit hash. It is the one marker field with no other
+  // observable effect on the spec — cx/cy/rotationDeg/width/style/outward all
+  // stay put when only the end changes — so if it is missing from the hash the
+  // line never goes dirty and the PREVIOUS frame's square-footprint body is
+  // reused, silently, under a cache key that says it is current.
+  it('rebuilds when only a marker’s line END changes', () => {
+    // hA ENDS at x=250 and vB runs at x=257, clear of it — so the only thing
+    // that can overlap vB is the marker's OUTWARD half. A square end reaches
+    // x=257 and crosses; a short end stops dead at 250 and cannot. That makes
+    // the end style the sole determinant of whether a face exists at all.
+    const marker = (end: LineEndStyle): StopMarkerSpec => ({
+      cx: 250,
+      cy: 0,
+      color: '#000000',
+      lineId: 'hA',
+      stationId: 'sEnd',
+      rotationDeg: 0,
+      priority: 0,
+      style: 'solid',
+      end,
+      outward: { x: 1, y: 0 },
+      width: 14,
+    });
+    const bands = [
+      makeBandSpec(['hA'], {
+        pairKey: 'hA|hAb',
+        bandKey: 'hA@end',
+        centerline: [
+          { x: -40, y: 0 },
+          { x: 250, y: 0 },
+        ],
+      }),
+      makeBandSpec(['vB'], {
+        pairKey: 'vB|vBb',
+        bandKey: 'vB@257',
+        centerline: [
+          { x: 257, y: -40 },
+          { x: 257, y: 260 },
+        ],
+      }),
+    ];
+
+    // The two ends really do differ cold — otherwise this test is vacuous.
+    const coldSquare = fullWith(bands, [marker('square')]);
+    const coldShort = fullWith(bands, [marker('short')]);
+    expect(coldSquare).not.toBe(coldShort);
+    expect(coldSquare).toContain('hA,vB'); // the square end crosses vB
+    expect(coldShort).toBe(''); // the short end never reaches it
+
+    const state = buildRegionsIncremental(bands, [marker('square')], null).state;
+    const inc = buildRegionsIncremental(bands, [marker('short')], state);
+    expect(describeFaces(inc.faces)).toBe(coldShort);
   });
 });
