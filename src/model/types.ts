@@ -295,6 +295,13 @@ export type LineStyle =
   | 'dotted'
   | 'dashed-open';
 
+// How a line's painted end looks at a terminus — the outward half of the stop
+// marker there. 'square' keeps the full marker square (the historical look),
+// 'short' drops it so the line ends flush at the stop center, 'round' replaces
+// it with a half-disc of radius width/2. Resolution, degrade rules and the
+// per-station override live in model/lineEnd.ts.
+export type LineEndStyle = 'square' | 'short' | 'round';
+
 export interface Line {
   id: LineId;
   service: string;
@@ -417,6 +424,23 @@ export interface Line {
   // clamps to ≥ LINE_CURVE_RADIUS_MIN, and drops the field at the default so
   // it is never stored.
   curveRadius?: number;
+  // What this line's painted ENDS look like — the outward half of the stop
+  // marker at each terminus (see model/lineEnd.ts). Missing ⇒ 'square', the
+  // historical full square, so saves that predate the field need no migration;
+  // the setter drops the field at that default so it is never stored. Like
+  // `strokeWidth` this is PRESENTATION — it never moves a band path — but it
+  // DOES change the marker's painted footprint, so the region arrangement
+  // hashes it (see regionGeometrySig).
+  endStyle?: LineEndStyle;
+  // Per-terminus overrides of `endStyle`, keyed by station id. INVARIANT: every
+  // key is a degree-1 station on this line — an end that stops being an end
+  // loses its override (pruned by pruneOrphanLineOverrides on every topology
+  // change, and by the file loader). Lives on the LINE rather than the StopCell
+  // precisely so it prunes alongside `segmentStyles`: both are per-topology
+  // overrides with the same lifetime. NOT a covered style field — a line style
+  // carries the line's own `endStyle`, never these pins (same split as the
+  // per-stop dot overrides).
+  stationEndStyles?: Record<StationId, LineEndStyle>;
   // Live link to a StyleDef of kind 'line' (see MapDoc.styles). INVARIANT:
   // when present, this line's covered style fields (singletonDotStyle,
   // multiDotStyle, singletonDotSize, multiDotSize, width, interlineGap,
@@ -938,6 +962,13 @@ export interface LineStyleProps {
   width: number;
   // Corner-rounding radius, world units.
   curveRadius: number;
+  // What the wearer's painted ENDS look like (see Line.endStyle). Required, not
+  // optional: a style has to be able to force 'square' back onto a line that
+  // was set to round, which an absent-means-inherit field could not do. Defs
+  // from saves that predate it heal to 'square' in canonicalStyleProps. The
+  // per-TERMINUS pins (Line.stationEndStyles) are deliberately NOT covered —
+  // they are per-topology overrides, like the per-stop dot overrides.
+  endStyle: LineEndStyle;
   // Casing width per side, world units (0 = no casing).
   strokeWidth: number;
   // Casing color: lowercase hex, or 'line' for each wearer's own color (see

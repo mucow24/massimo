@@ -118,11 +118,12 @@ src/
     dashSize.ts                 # TfL-tick ('dash' stop) length/thickness resolution (derive from line width)
     transferStyle.ts            # TRANSFER_STYLE_DEFAULTS + per-transfer override resolution
     lineWidth.ts lineStroke.ts  # stripe width (GEOMETRY) + casing rails (PRESENTATION)
+    lineEnd.ts                  # line END style resolution (line default → per-terminus pin) + the round→short degrade
     stationPacking.ts           # width-edit repack: keeps tangent stop chains packed
     lineOrder.ts                # z-order reconcile (lineOrder = the default stacking)
     lineNaming.ts               # nameForIndex/pickNextLineName + lineDisplayName (the ONE
                                 #   user-facing name for a line, shared by every surface)
-    lineTopology.ts             # the single owner of a Line's edge-set adjacency (degree/neighbours/incidence, add/remove edge, edgesFromStations, shortestPathOnLine)
+    lineTopology.ts             # the single owner of a Line's edge-set adjacency (degree/neighbours/incidence, isLineTerminus, add/remove edge, edgesFromStations, shortestPathOnLine)
     appendGestures.ts           # pure Edit Stops gesture decisions ((line, cursor, click/delete target) → next doc edit); no React/store, so state/ and canvas/ both consume it
     matching.ts pathSelect.ts   # interlining-group matching + shortest-path selection
     autoOrient.ts               # rotate a just-added station to the line tangent (flipping 180° when the tangent would render its label upside down — same axis, right-side-up text)
@@ -142,6 +143,7 @@ src/
     stationBoundary.ts          # selection silhouette + marquee hit rects
     stationDash.ts              # TfL-tick ('dash' stop) geometry: per-stop tick anchor/angle/length (label-side aware; emergent notched composite)
     stripeOutline.ts            # per-stripe edge/cap geometry (stroke-before-fill dots)
+    markerEnd.ts                # non-square line-end shapes (path to paint, ring to cover, rails)
     polygon.ts polygonSnap.ts polygonUnion.ts rectPolygon.ts  # polygon geom + union + hit test
     clip.ts                     # typed wasm-clipper wrapper (booleans/offsets, integer-snapped); async load, one engine
     lineRegions.ts              # overlap-face PHASES (zone → components → cells → faces) + anchor binding + exclusion holes
@@ -531,6 +533,20 @@ All remaining fields optional and **never stored at default**:
   casing width's quarter-unit grid with drop-at-0 (0 = "auto" ⇒ field dropped, derivation takes
   over). `dashLength` is how far the tick protrudes from the stripe edge toward the label;
   `dashWidth` is its thickness along the travel axis. Covered by line styles.
+- `endStyle?: LineEndStyle` — how the line's ends are PAINTED at every terminus: `'square'` (the
+  full stop-marker square, missing ⇒ this), `'short'` (only the inward half, so the line stops
+  flush at the stop center) or `'round'` (the outward half replaced by a half-disc of radius
+  `width/2`). PRESENTATION — it never moves a band path — but unlike the casing it does change
+  the marker's painted FOOTPRINT, so `regionGeometrySig` hashes it and the store actions
+  reconcile regions. Covered by line styles. See [lineEnd.ts](src/model/lineEnd.ts).
+- `stationEndStyles?: Record<StationId, LineEndStyle>` — per-TERMINUS overrides of `endStyle`,
+  edited in the station editor's stop row. **Valid keys are exactly this line's degree-1
+  stations**, the end-style twin of `segmentStyles`' edge rule — appending past an end, closing a
+  loop, branching at it or dropping the stop all revoke the pin, and both maps prune together in
+  `pruneOrphanLineOverrides` (transforms) / `sanitizeLineOverrides` (load). A pin equal to the
+  line's own `endStyle` is redundant and never stored. **Not** covered by line styles: a style
+  carries the line's own end, never its per-station pins — the same split the per-stop dot
+  overrides have.
 - `styleId?` — live link to a StyleDef of kind `'line'` (covers the style fields above, not
   identity/topology).
 
@@ -584,6 +600,14 @@ a `spanHash` of its cover and re-measures when that changes — writing the resu
 cache, not just into the copy handed out); and the per-stripe unit hash includes the **line id**,
 because `bandKey` is built from sorted ids and two lines swapping stripe slots is otherwise
 invisible while inverting the cover of every face the band crosses.
+
+The marker unit hash has the same trap in its own form: it must include the **line end**
+(`spec.end`), the one marker field that reshapes the painted footprint while `cx`/`cy`/
+`rotationDeg`/`width`/`style`/`outward` all stay put. Miss it and the line never goes dirty, the
+previous frame's square-footprint body is reused, and — because `regionGeometrySig` DOES see the
+edit — the stale arrangement is then memoized under a cache key that says it is current. The rule
+for both: a hash here must cover every input `markerBodyRings` and `stripeBodyPolys` branch on,
+not merely every input that moves geometry.
 
 > **Width is GEOMETRY, stroke/seam are PRESENTATION.** A `width` edit rebuilds band geometry; a
 > `strokeWidth`/`strokeColor`/`seamColor`/`seamWidth`/color/style edit is resolved at render time
@@ -1837,6 +1861,23 @@ circular dot), sized to the line `width`, with casing rails centered on the trav
 patterns would re-rotate the stripes). Dashed/dotted markers render nothing at interior stops
 (the pattern flows through) and a half-width stub at termini.
 
+**The marker's outward half at a terminus IS the line's painted end** — the stripe itself stops
+dead at the stop center (butt cap), so `spec.end` reshapes exactly that half, and the three ends
+are precisely SVG's three line caps taken there. `'short'` drops it, `'round'` replaces it with a
+half-disc; both are one filled `<path>` from [markerEnd.ts](src/geometry/markerEnd.ts), never a
+clip of the square (a clip rasterizes a hair off its path and snags the PDF exporter). The casing
+follows: side rails shorten to the inward half and the straight end-cap bar moves back to the stop
+center, or becomes the matching arc for a round end. A patterned terminus's stub is that same
+outward half, so `'short'` simply omits it. Everything is built in the **outward frame** (the
+band's own tangent, not the marker square's rotation) so a rounded end continues the stripe's
+edges — the frame the end cap and dashed stub already used. `buildStopMarkers` resolves
+`spec.end` ONCE (per-terminus pin over line default, then `resolveEndStyle`'s degrade) and both the
+painter and `lineRegions.markerBodyRings` read it, so a cover can never disagree with its paint.
+**`'round'` degrades to `'short'` on the three dash-pattern styles** (`dashed`, `dashed-open`,
+`dotted`) — drawn as one dash-array stroke, they have no shape to round. The degrade is
+render-time only: the stored value stays `'round'`, so cycling the segment back to solid brings it
+straight back, and one line can round at a solid end while stopping short at a dashed one.
+
 **`TransferLayer`** renders all transfers in **two flat passes** (user stroke halos → bodies) so
 overlapping thick transfers trace one outer union. Bodies + halos are click targets
 (`pointer-events="stroke"`). The selected transfer's ring is **not** in this layer: it renders in a
@@ -2318,7 +2359,8 @@ downstream luminance / `rgba()` math.
   clamp/round/lowercase and drop at default. `DotStyle` objects are written in fixed field order
   so `JSON.stringify` equality is exact for app-written docs.
 - **Referential integrity after every action**: `line.stations[i] ∈ stations`; `stop.lineId ∈
-lines`; every `segmentStyles` key is a real, non-default adjacency; every
+lines`; every `segmentStyles` key is a real, non-default adjacency; every `stationEndStyles`
+  key is a live degree-1 TERMINUS of its line (and never repeats the line's own end); every
   tag/transfer endpoint and `routeBullet.lineId` resolves live-or-null. Maintained by cascade
   prunes after structural edits (`deleteStation`/`deleteLine`/`removeStationFromLine`/…).
 - **`LineTag.fromStationId < toStationId`** always (canonical/alphabetic, = `pairKeyOf`).
@@ -2441,7 +2483,9 @@ Each is confirmed in source/tests; file pointers included.
 - **An edgeless line is still real geometry** — a line with one station and no edges draws no band
   but DOES emit a `width × width` stop marker, which `buildLineBodies` folds into its body and
   which therefore produces overlap faces. `regionGeometrySig` must keep such a line's `width` in
-  the hash or a width edit serves a stale face from the region cache. ([regionCache.ts](src/geometry/regionCache.ts))
+  the hash or a width edit serves a stale face from the region cache. (It has no terminus, so no
+  line end applies — a lone stop has no direction to end along, and stays a full square.)
+  ([regionCache.ts](src/geometry/regionCache.ts))
 - **`pre-pr` ends with the full Playwright suite** — it's the slow step, but interaction-behavior
   changes can invalidate e2e specs without failing any unit test (PR #159's layout-edit retarget
   did exactly that), and migration/rehydration is only covered by e2e (`e2e/migration.spec.ts`).
@@ -2563,6 +2607,8 @@ Each is confirmed in source/tests; file pointers included.
 - **Casing / rail** — the thin outline ("stroke") along a line's body edges, MTA-style.
 - **Dot vs marker** — the circular **dot** (`StopGlyph`) is the stop indicator; the **marker**
   (`StopMarker`) is the colored square sitting in the band at the same stop.
+- **Line end** — how a line's paint terminates at a degree-1 station: the marker's outward half,
+  kept (`square`), dropped (`short`) or rounded (`round`).
 - **Wash / silhouette** — the soft selection-highlight fill behind a selected station.
 - **Waypoint** — a routing-point station with name + bullets hidden.
 - **Route bullet** — a free-floating badge showing a line's service code.

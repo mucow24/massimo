@@ -67,6 +67,15 @@ export function degreeOf(line: Line, stationId: StationId): number {
   return neighborsOf(line, stationId).length;
 }
 
+// Is this station one of the line's ENDS? Degree 1 exactly: a loop (degree 2
+// throughout) has no end, a junction has none at the fork, and a lone stop
+// (degree 0) has no direction to end along. A branching line has one per branch
+// tip. This is the predicate the painted end style and its per-station override
+// key off.
+export function isLineTerminus(line: Line, stationId: StationId): boolean {
+  return degreeOf(line, stationId) === 1;
+}
+
 // Shortest hop path (BFS) over one line's edge graph from `fromId` to `toId`,
 // excluding `fromId`. Null if either isn't a member or they're not connected on
 // this line. For a plain linear line this is exactly the consecutive walk

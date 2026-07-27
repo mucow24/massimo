@@ -21,6 +21,7 @@ import {
   clampRouteBulletSize,
   effectiveStationStyleProps,
   setLineCurveRadius,
+  setLineEndStyle,
   setLineDashLength,
   setLineDashWidth,
   setLineInterlineGap,
@@ -49,6 +50,7 @@ import {
 import { DOT_SIZE_MIN, DOT_SIZE_STEP, lineSingletonDotSizeOf, lineMultiDotSizeOf } from './dotSize';
 import { lineDashLengthOf, lineDashWidthOf } from './dashSize';
 import { LINE_WIDTH_MIN, LINE_WIDTH_STEP, lineWidthOf } from './lineWidth';
+import { LINE_END_STYLE_DEFAULT, isLineEndStyle, lineEndStyleOf } from './lineEnd';
 import {
   LINE_CURVE_RADIUS_DEFAULT,
   LINE_CURVE_RADIUS_MIN,
@@ -143,6 +145,7 @@ export function captureStyleProps<K extends StyleKind>(
         multiDotSize: lineMultiDotSizeOf(l),
         width: lineWidthOf(l),
         curveRadius: lineCurveRadiusOf(l),
+        endStyle: lineEndStyleOf(l),
         strokeWidth: lineStrokeWidthOf(l),
         strokeColor: lineStrokeColorStored(l),
         // Optional: omitted when unset, so a captured style compares equal to
@@ -234,6 +237,7 @@ export function stylePropsEqual(
       la.multiDotSize === lb.multiDotSize &&
       la.width === lb.width &&
       la.curveRadius === lb.curveRadius &&
+      la.endStyle === lb.endStyle &&
       la.strokeWidth === lb.strokeWidth &&
       la.strokeColor === lb.strokeColor &&
       la.seamColor === lb.seamColor &&
@@ -300,6 +304,9 @@ export function canonicalStyleProps<K extends StyleKind>(
           LINE_CURVE_RADIUS_STEP,
           LINE_CURVE_RADIUS_MIN,
         ),
+        // Same `?? DEFAULT` healing as curveRadius, for defs written before
+        // line ends were a covered field.
+        endStyle: isLineEndStyle(p.endStyle) ? p.endStyle : LINE_END_STYLE_DEFAULT,
         strokeWidth: snapToStep(p.strokeWidth, LINE_STROKE_STEP, LINE_STROKE_WIDTH_MIN),
         strokeColor: p.strokeColor.toLowerCase(),
         ...(seamColor !== undefined ? { seamColor } : {}),
@@ -392,6 +399,7 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
       next = setLineMultiDotSize(next, itemId, p.multiDotSize);
       next = setLineWidth(next, itemId, p.width);
       next = setLineCurveRadius(next, itemId, p.curveRadius);
+      next = setLineEndStyle(next, itemId, p.endStyle);
       next = setLineStrokeWidth(next, itemId, p.strokeWidth);
       next = setLineStrokeColor(next, itemId, p.strokeColor);
       // undefined ⇒ fully transparent ⇒ removes any prior seam (stamp "off").

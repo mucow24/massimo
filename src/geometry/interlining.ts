@@ -1,6 +1,15 @@
-import { Line, LineId, LineStyle, Station, StationId, StopCell } from '../model/types';
+import {
+  Line,
+  LineEndStyle,
+  LineId,
+  LineStyle,
+  Station,
+  StationId,
+  StopCell,
+} from '../model/types';
 import { pairKeyOf } from '../model/pairKey';
 import { edgeEndpoints, incidentEdges, neighborsOf } from '../model/lineTopology';
+import { LINE_END_STYLE_DEFAULT, resolveEndStyle, stationEndStyleOf } from '../model/lineEnd';
 import { reconcileOrder } from '../model/recordOrder';
 import {
   Vec2,
@@ -106,6 +115,12 @@ export interface StopMarkerSpec {
   // The line's effective width: the marker renders as a width × width square
   // (and the dashed terminus stub at this stroke width).
   width: number;
+  // How the line's end is painted here, already RESOLVED: the per-station
+  // override folded over the line default, then degraded against `style` (a
+  // dash-pattern stroke has no shape to round — see resolveEndStyle). Always
+  // 'square' where `outward` is null, so a consumer branches on this alone and
+  // an interior stop can never be handed a half marker.
+  end: LineEndStyle;
 }
 
 interface SegInfo {
@@ -506,6 +521,7 @@ export function buildStopMarkers(
       const rotationDeg = angleDeg(worldTangent);
       const style = stationMarkerStyle(line, station.id);
       const basePriority = lineIndex[cell.lineId] ?? fallback;
+      const outward = terminusOutwardFromBand(line, station.id, bandsByPair);
       markers.push({
         cx,
         cy,
@@ -515,8 +531,13 @@ export function buildStopMarkers(
         rotationDeg,
         priority: basePriority,
         style,
-        outward: terminusOutwardFromBand(line, station.id, bandsByPair),
+        outward,
         width: lineWidthOf(line),
+        // Resolved once, here, so the painter and the region footprint can
+        // never disagree about which shape this end is.
+        end: outward
+          ? resolveEndStyle(stationEndStyleOf(line, station.id), style)
+          : LINE_END_STYLE_DEFAULT,
       });
     }
   }

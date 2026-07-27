@@ -235,6 +235,7 @@ const STYLE_PROPS_DEFAULTS: StylePropsByKind = {
     multiDotSize: DOT_SIZE_DEFAULT,
     width: LINE_WIDTH_DEFAULT,
     curveRadius: LINE_CURVE_RADIUS_DEFAULT,
+    endStyle: 'square',
     strokeWidth: 0,
     strokeColor: '#ffffff',
   },

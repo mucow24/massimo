@@ -582,6 +582,7 @@ describe('<LineInspector /> — collapsible style detail', () => {
       screen.getByRole('slider', { name: 'Line width' }),
       screen.getByRole('slider', { name: 'Interline gap' }),
       screen.getByRole('slider', { name: 'Curve radius' }),
+      screen.getByRole('radiogroup', { name: 'Line ends' }),
       screen.getByText('Station stop dot types and sizes'),
       screen.getByText('Singleton (One line stops)'),
       screen.getByText('Interchange (Multiple lines stop)'),
@@ -651,5 +652,75 @@ describe('<LineInspector /> — style presets', () => {
     stepSlider(screen.getByRole('slider', { name: 'Line width' }), 1);
     expect(useDoc.getState().lines['L1'].styleId).toBeUndefined();
     expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Custom');
+  });
+});
+
+// The line's END style: one segment per end, in the geometry group. Writing it
+// is a covered-field edit, so it detaches the line from its style preset.
+describe('<LineInspector /> — line ends', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState({ ...SELECTION_BLANK, uiMode: { kind: 'idle' } });
+    useDoc.temporal.getState().clear();
+    expandStyleDetail();
+  });
+
+  const seedLine = (over = {}) =>
+    useDoc.setState({
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 's1', stops: [makeStop('L1')] }),
+          makeStation({ id: 's2', x: 100, stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['s1', 's2'], ...over })],
+      }),
+    });
+
+  it('shows all three ends, with the current one pressed', () => {
+    seedLine({ endStyle: 'round' });
+    render(<LineInspector id="L1" />);
+    for (const name of ['Square', 'Short', 'Round']) {
+      expect(screen.getByRole('radio', { name })).toBeInTheDocument();
+    }
+    expect(screen.getByRole('radio', { name: 'Round' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: 'Square' })).toHaveAttribute('aria-checked', 'false');
+  });
+
+  it('writes the picked end to the line', async () => {
+    seedLine();
+    const user = userEvent.setup();
+    render(<LineInspector id="L1" />);
+    await user.click(screen.getByRole('radio', { name: 'Short' }));
+    expect(useDoc.getState().lines.L1.endStyle).toBe('short');
+  });
+
+  it('drops the field when square is picked back', async () => {
+    seedLine({ endStyle: 'round' });
+    const user = userEvent.setup();
+    render(<LineInspector id="L1" />);
+    await user.click(screen.getByRole('radio', { name: 'Square' }));
+    expect('endStyle' in useDoc.getState().lines.L1).toBe(false);
+  });
+
+  it('detaches from the style preset, like every other covered field', async () => {
+    seedLine();
+    useDoc.setState({
+      styles: { ...useDoc.getState().styles, sty: makeStyle('line', 'sty') },
+      lines: { ...useDoc.getState().lines, L1: { ...useDoc.getState().lines.L1, styleId: 'sty' } },
+    });
+    const user = userEvent.setup();
+    render(<LineInspector id="L1" />);
+    await user.click(screen.getByRole('radio', { name: 'Round' }));
+    expect(useDoc.getState().lines.L1.styleId).toBeUndefined();
+  });
+
+  it('is one undo entry per pick', async () => {
+    seedLine();
+    const user = userEvent.setup();
+    render(<LineInspector id="L1" />);
+    const before = historyDepth();
+    await user.click(screen.getByRole('radio', { name: 'Round' }));
+    expect(historyDepth()).toBe(before + 1);
   });
 });

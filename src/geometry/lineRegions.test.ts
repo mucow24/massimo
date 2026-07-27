@@ -32,6 +32,7 @@ const marker = (
   rotationDeg: 0,
   priority: 0,
   style: 'solid',
+  end: 'square',
   outward: null,
   width: 14,
   ...over,
@@ -219,6 +220,46 @@ describe('buildLineBodies', () => {
     const inTerminus = splitIntoFaces(terminus.get('l1')!).some((f) => pointInFace(stubProbe, f));
     expect(inInterior).toBe(false);
     expect(inTerminus).toBe(true);
+  });
+
+  // The cover has to BE the paint: a shortened or rounded end that still
+  // claimed the full square would hand its corners to the region arrangement
+  // and let a crossing there resolve against territory nothing paints.
+  describe('line ends', () => {
+    const bands = [hBand('l1', 's1|s2', 0, 100)];
+    const east = { x: 1, y: 0 };
+    // The band is butt-capped at x = 100, so everything past it comes from the
+    // marker alone. Corner = the square's outer corner; axis = straight out.
+    const corner = { x: 105, y: 5 };
+    const axis = { x: 105, y: 0 };
+    const covers = (m: StopMarkerSpec, probe: Vec2) =>
+      splitIntoFaces(buildLineBodies(bands, [m]).get('l1')!).some((f) => pointInFace(probe, f));
+
+    it('claims the whole square for a square end', () => {
+      const m = marker('l1', 100, 0, { outward: east, end: 'square' });
+      expect(covers(m, axis)).toBe(true);
+      expect(covers(m, corner)).toBe(true);
+    });
+
+    it('claims nothing past the stop center for a short end', () => {
+      const m = marker('l1', 100, 0, { outward: east, end: 'short' });
+      expect(covers(m, axis)).toBe(false);
+      expect(covers(m, corner)).toBe(false);
+      // …but the inward half is still there, holding the band's own corridor.
+      expect(covers(m, { x: 96, y: 0 })).toBe(true);
+    });
+
+    it('claims the half-disc, and only that, for a round end', () => {
+      const m = marker('l1', 100, 0, { outward: east, end: 'round' });
+      expect(covers(m, axis)).toBe(true); // 5 out on the axis is inside r=7
+      expect(covers(m, corner)).toBe(false); // but the corner is outside it
+      expect(covers(m, { x: 108, y: 0 })).toBe(false); // and 8 out is past r=7
+    });
+
+    it('drops a patterned terminus stub when the end is short', () => {
+      const m = marker('l1', 100, 0, { style: 'dashed', outward: east, end: 'short' });
+      expect(covers(m, { x: 103, y: 0 })).toBe(false);
+    });
   });
 });
 

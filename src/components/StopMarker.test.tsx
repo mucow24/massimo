@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { StopMarker } from './StopMarker';
 import type { StopMarkerSpec } from '../geometry/interlining';
-import type { LineId, StationId, LineStyle } from '../model/types';
+import type { LineEndStyle, LineId, StationId, LineStyle } from '../model/types';
 
 function spec(over: Partial<StopMarkerSpec> = {}): StopMarkerSpec {
   return {
@@ -14,6 +14,7 @@ function spec(over: Partial<StopMarkerSpec> = {}): StopMarkerSpec {
     rotationDeg: 0,
     priority: 0,
     style: 'solid' as LineStyle,
+    end: 'square' as LineEndStyle,
     outward: null,
     width: 14,
     ...over,
@@ -24,6 +25,18 @@ function renderMarker(props: Parameters<typeof StopMarker>[0]) {
   return render(
     <svg>
       <StopMarker {...props} />
+    </svg>,
+  );
+}
+
+const strokedLines = (strokeWidth: number, strokeColor?: string) => ({
+  L1: { strokeWidth: strokeWidth > 0 ? strokeWidth : undefined, strokeColor },
+});
+
+function renderWithStroke(s: StopMarkerSpec, strokeWidth: number, strokeColor?: string) {
+  return render(
+    <svg>
+      <StopMarker spec={s} lines={strokedLines(strokeWidth, strokeColor)} />
     </svg>,
   );
 }
@@ -181,18 +194,6 @@ describe('StopMarker', () => {
 });
 
 describe('StopMarker — casing rails (centered on the body edges)', () => {
-  const strokedLines = (strokeWidth: number, strokeColor?: string) => ({
-    L1: { strokeWidth: strokeWidth > 0 ? strokeWidth : undefined, strokeColor },
-  });
-
-  function renderWithStroke(s: StopMarkerSpec, strokeWidth: number, strokeColor?: string) {
-    return render(
-      <svg>
-        <StopMarker spec={s} lines={strokedLines(strokeWidth, strokeColor)} />
-      </svg>,
-    );
-  }
-
   it('paints two rails AFTER the body, centered on its travel-axis edges', () => {
     // rotationDeg 0 ⇒ travel along +x: rails are width-long rects straddling
     // local y = ±w/2 — along the body, never across its ends.
@@ -318,5 +319,129 @@ describe('StopMarker — casing rails (centered on the body edges)', () => {
     expect(stroked.container.querySelectorAll('rect').length).toBe(1);
     const bare = renderMarker({ spec: spec() });
     expect(bare.container.querySelectorAll('rect').length).toBe(1);
+  });
+});
+
+// The line's painted END: the marker's outward half. `end` only ever reshapes
+// that half — the inward half, and every interior stop, are untouched.
+describe('StopMarker line ends', () => {
+  // Terminus pointing east from (10, 20), width 14: the square end reaches
+  // x = 17, a short end stops at x = 10, a round one bulges back out to 17.
+  const east = (over: Partial<StopMarkerSpec> = {}) => spec({ outward: { x: 1, y: 0 }, ...over });
+
+  it('keeps the square end on the historical <rect>', () => {
+    const { container } = renderMarker({ spec: east({ end: 'square' }) });
+    expect(container.querySelector('rect')).not.toBeNull();
+    expect(container.querySelector('path')).toBeNull();
+  });
+
+  it('ignores a non-square end at an INTERIOR stop', () => {
+    // Defensive: the spec bakes 'square' without `outward`, but a hand-built
+    // spec must not produce a half marker with no direction to halve along.
+    const { container } = renderMarker({ spec: spec({ end: 'round', outward: null }) });
+    expect(container.querySelector('rect')).not.toBeNull();
+    expect(container.querySelector('path')).toBeNull();
+  });
+
+  it('paints a short end as a straight path that stops at the stop center', () => {
+    const { container } = renderMarker({ spec: east({ end: 'short' }) });
+    expect(container.querySelector('rect')).toBeNull();
+    const d = container.querySelector('path')!.getAttribute('d')!;
+    expect(d).not.toContain('A');
+    const xs = [...d.matchAll(/(-?[\d.]+) (-?[\d.]+)/g)].map((m) => Number(m[1]));
+    expect(Math.max(...xs)).toBeCloseTo(10, 6); // never past the center
+    expect(Math.min(...xs)).toBeCloseTo(3, 6); // still a full half inward
+  });
+
+  it('paints a round end as an arc of radius width/2', () => {
+    const { container } = renderMarker({ spec: east({ end: 'round' }) });
+    const d = container.querySelector('path')!.getAttribute('d')!;
+    const arc = /A (-?[\d.]+) (-?[\d.]+) 0 0 ([01]) (-?[\d.]+) (-?[\d.]+)/.exec(d)!;
+    expect(arc).not.toBeNull();
+    expect(Number(arc[1])).toBeCloseTo(7, 6);
+    expect(arc[3]).toBe('0'); // bulges outward, not carved inward
+  });
+
+  it('gives a hatched end the same shape, still pattern-filled', () => {
+    const { container } = renderMarker({ spec: east({ end: 'round', style: 'hatched' }) });
+    expect(container.querySelector('polygon')).toBeNull();
+    const path = container.querySelector('path')!;
+    expect(path.getAttribute('d')).toContain('A');
+    expect(path.getAttribute('fill')).toBe('url(#hatch--ff0000)');
+  });
+
+  it('drops the terminus stub entirely for a short patterned end', () => {
+    for (const style of ['dashed', 'dotted', 'dashed-open'] as const) {
+      const { container } = renderMarker({ spec: east({ end: 'short', style }) });
+      expect(container.querySelector('[stroke-dasharray]')).toBeNull();
+      expect(container.querySelector('path')).toBeNull();
+    }
+  });
+
+  it('shortens the side rails to the inward half and moves the cap to the center', () => {
+    const { container } = renderWithStroke(east({ end: 'short' }), 4, '#ff0000');
+    const casings = Array.from(container.querySelectorAll('line[data-marker-casing]'));
+    // Two side rails + the cap; no rail <rect>s survive a reshaped end.
+    expect(container.querySelectorAll('rect[data-marker-casing]').length).toBe(0);
+    const sides = casings.filter((l) => l.getAttribute('y1') === l.getAttribute('y2'));
+    expect(sides.length).toBe(2);
+    for (const l of sides) {
+      expect(Number(l.getAttribute('x1'))).toBeCloseTo(3, 6); // inward corner
+      expect(Number(l.getAttribute('x2'))).toBeCloseTo(10, 6); // the new end
+    }
+    expect(sides.map((l) => Number(l.getAttribute('y1'))).sort((a, b) => a - b)).toEqual([13, 27]);
+    const cap = casings.find((l) => l.getAttribute('x1') === l.getAttribute('x2'))!;
+    expect(Number(cap.getAttribute('x1'))).toBeCloseTo(10, 6); // NOT 17
+    expect(
+      [Number(cap.getAttribute('y1')), Number(cap.getAttribute('y2'))].sort((a, b) => a - b),
+    ).toEqual([11, 29]);
+  });
+
+  it('closes a round end with an arc rail instead of a straight cap', () => {
+    const { container } = renderWithStroke(east({ end: 'round' }), 4, '#ff0000');
+    const capPath = container.querySelector('path[data-marker-casing]')!;
+    expect(capPath).not.toBeNull();
+    expect(capPath.getAttribute('fill')).toBe('none');
+    expect(capPath.getAttribute('stroke-width')).toBe('4');
+    expect(capPath.getAttribute('d')).toContain('A');
+    // No straight bar sawn across the curve.
+    expect(container.querySelectorAll('line[data-marker-casing]').length).toBe(2);
+  });
+
+  // A stop's travel axis and the band's own tangent can DISAGREE — a stop whose
+  // orientation was never derived from the line (a line's seed station is never
+  // auto-oriented) keeps a stale axis. The square end follows the stop axis and
+  // paints its rails across the band there; a reshaped end must not, because it
+  // has to continue the STRIPE's edges. Every other test here has the two frames
+  // agreeing, so this is the only thing pinning that choice.
+  it('follows the BAND, not the stop axis, when the two disagree', () => {
+    // Stop axis vertical (rotationDeg 90) while the band leaves westward.
+    const spec90 = spec({ rotationDeg: 90, outward: { x: -1, y: 0 }, end: 'short' });
+    const { container } = renderWithStroke(spec90, 4, '#ff0000');
+
+    // Body: the inward half reaches EAST of the stop centre (10, 20) — away
+    // from the outward direction — and never west of it.
+    const d = container.querySelector('path')!.getAttribute('d')!;
+    const xs = [...d.matchAll(/(-?[\d.]+) (-?[\d.]+)/g)].map((m) => Number(m[1]));
+    expect(Math.min(...xs)).toBeCloseTo(10, 6);
+    expect(Math.max(...xs)).toBeCloseTo(17, 6);
+
+    // Rails: horizontal, along the band's edges — NOT the vertical bars the
+    // square end would emit in the rotated frame.
+    const sides = Array.from(container.querySelectorAll('line[data-marker-casing]')).filter(
+      (l) => l.getAttribute('y1') === l.getAttribute('y2'),
+    );
+    expect(sides.length).toBe(2);
+    expect(sides.map((l) => Number(l.getAttribute('y1'))).sort((a, b) => a - b)).toEqual([13, 27]);
+  });
+
+  it('still suppresses the cap on a reshaped end when noEndCap is set', () => {
+    const { container } = render(
+      <svg>
+        <StopMarker spec={east({ end: 'round' })} lines={strokedLines(4, '#ff0000')} noEndCap />
+      </svg>,
+    );
+    expect(container.querySelector('path[data-marker-casing]')).toBeNull();
+    expect(container.querySelectorAll('line[data-marker-casing]').length).toBe(2);
   });
 });

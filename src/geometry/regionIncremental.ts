@@ -232,6 +232,12 @@ function hashUnits(
     h = mixNum(h, m.rotationDeg);
     h = mixNum(h, m.width);
     h = mixString(h, m.style);
+    // The line END reshapes the marker's painted footprint (markerBodyRings)
+    // while every other field here stays put — it is the ONLY thing that moves
+    // when a terminus goes square → short → round, so without it the line never
+    // goes dirty and the previous frame's footprint is reused under a cache key
+    // that claims to be current.
+    h = mixString(h, m.end);
     h = m.outward ? mixNum(mixNum(mix(h, 1), m.outward.x), m.outward.y) : mix(h, 0);
     const pad = m.width; // > half-diagonal (w·0.707) for any rotation
     units.set(key, {

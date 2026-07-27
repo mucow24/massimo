@@ -17,6 +17,7 @@ import { emitOffsetSegments } from './router';
 import { clamp } from '../util/grid';
 import { closestParamOnOffsetPath, sampleOffsetPathByArcLength } from './lineTagGeometry';
 import { leftNormal, perp, rotatedRectCorners, type Vec2 } from './vec';
+import { markerEndRing } from './markerEnd';
 import {
   type Face,
   type Ring,
@@ -135,13 +136,20 @@ export function stripeBodyPolys(band: SegmentBandSpec, stripeIndex: number): Rin
 function markerBodyRings(spec: StopMarkerSpec): Ring[] {
   const half = spec.width / 2;
   const center = { x: spec.cx, y: spec.cy };
+  // A reshaped line end (see markerEnd.ts) replaces the square outright, for
+  // every style that paints a shape — same helper the painter uses, so the
+  // cover is the paint.
+  const endShape = spec.outward && spec.end !== 'square' ? spec.end : null;
   if (spec.style === 'solid' || spec.style === 'hatched' || spec.style === 'hatched-mirror') {
+    if (endShape && spec.outward) return [markerEndRing(center, spec.outward, half, endShape)];
     const rad = (spec.rotationDeg * Math.PI) / 180;
     return [Array.from(rotatedRectCorners(center, half, half, rad))];
   }
   // Patterned (dashed/dotted/dashed-open): nothing at interior stops; a
-  // width/2-long, width-wide stub continuing outward at a terminus.
-  if (!spec.outward) return [];
+  // width/2-long, width-wide stub continuing outward at a terminus — and
+  // nothing at all when that end is short, since the stub IS the outward half
+  // the style drops.
+  if (!spec.outward || endShape) return [];
   const o = spec.outward;
   const px = -o.y;
   const py = o.x;
