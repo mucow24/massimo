@@ -3,6 +3,7 @@ import { render } from '@testing-library/react';
 import { StopGlyph, X_POINTS } from './StopGlyph';
 import { DOT_SHAPE_PRESETS, SERVICE_CODE_DOT_RADIUS } from '../model/dotStyle';
 import { STOP_DOT_RADIUS } from '../geometry/orientation';
+import { CAP_FRACTION } from '../geometry/textMeasure';
 import { useDoc } from '../state/store';
 import type { DotStyle } from '../model/types';
 
@@ -266,6 +267,25 @@ describe('<StopGlyph /> procedural styles', () => {
     const s = custom({ fill: { day: '#ffffff', night: '#ffffff' }, showServiceCode: true });
     const svg = renderGlyph(s, false, undefined, 'A');
     expect(svg.querySelector('text')!.getAttribute('fill')).toBe('#000');
+  });
+
+  it('anchors the service code on the ALPHABETIC baseline, cap-box centered on the dot', () => {
+    // `dominant-baseline="central"` centers the font's ascent..descent box, and
+    // Chrome sources those from a different table per platform: usWin on
+    // Windows (central at 0.345em), hhea on macOS (0.258em) — this font sets
+    // neither USE_TYPO_METRICS nor matching values, so the code sat ~0.09em low
+    // on macOS. The alphabetic baseline is platform-invariant, so the code is
+    // placed on it explicitly, half a cap-height below the dot center.
+    const { container } = render(
+      <svg>
+        <StopGlyph cx={30} cy={50} style={P['filled-black-service-code']} serviceCode="A" />
+      </svg>,
+    );
+    const t = container.querySelector('text')!;
+    const fontSize = SERVICE_CODE_DOT_RADIUS * 1.2;
+    expect(parseFloat(t.getAttribute('x')!)).toBeCloseTo(30, 5);
+    expect(parseFloat(t.getAttribute('y')!)).toBeCloseTo(50 + (fontSize * CAP_FRACTION) / 2, 5);
+    expect(t.getAttribute('dominant-baseline')).toBeNull();
   });
 
   it('a service code on a non-circle shape still bumps the glyph to the code disc size', () => {

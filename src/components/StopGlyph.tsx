@@ -3,6 +3,7 @@ import { DEFAULT_DOT_STYLE, resolveDotRender, type DotRenderParams } from '../mo
 import { useDoc } from '../state/store';
 import type { DotStyle } from '../model/types';
 import { FONT_STACK } from '../util/fonts';
+import { CAP_FRACTION } from '../geometry/textMeasure';
 
 interface Props {
   cx: number;
@@ -186,6 +187,20 @@ export function StopGlyph({
   }
 
   const { code } = params;
+  const codeFontSize = params.r * 1.2;
+  // Vertically centered by hand, on the ALPHABETIC baseline — NOT by
+  // `dominantBaseline="central"`. `central` centers the font's ascent..descent
+  // box, and Chrome reads those from a different table per platform: usWin on
+  // Windows (central lands 0.345em above the baseline), hhea on macOS
+  // (0.258em). Helvetica Neue's two sets disagree wildly (904/-214 vs
+  // 714/-198) and it doesn't set USE_TYPO_METRICS, so the same markup put the
+  // code ~0.09em — over half a world unit on a default 12px disc — lower on
+  // macOS than on Windows. The alphabetic baseline is platform-invariant, so
+  // place it there explicitly: half a cap-height below the dot's center puts
+  // the cap box (all a service code ever contains) on the center. This is also
+  // the baseline the PDF export normalizes everything to (see export/pdfText),
+  // so the export inherits the same deterministic position.
+  const codeBaselineY = cy + (codeFontSize * CAP_FRACTION) / 2;
   // With a code, the data attrs live on the wrapping <g> so the test seam
   // stays one element per stop.
   const withCode = (el: ReactNode) =>
@@ -196,11 +211,10 @@ export function StopGlyph({
         {el}
         <text
           x={cx}
-          y={cy}
+          y={codeBaselineY}
           textAnchor="middle"
-          dominantBaseline="central"
           fontFamily={FONT_STACK}
-          fontSize={params.r * 1.2}
+          fontSize={codeFontSize}
           fontWeight={700}
           fill={code.color}
           pointerEvents="none"
