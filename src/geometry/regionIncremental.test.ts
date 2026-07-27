@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { buildOverlapRegions, type RegionFace } from './lineRegions';
-import { buildRegionsIncremental, type RegionIncrementalState } from './regionIncremental';
+import { buildOverlapRegions, ringsBbox, type RegionFace } from './lineRegions';
+import {
+  buildRegionsIncremental,
+  compCacheKey,
+  type RegionIncrementalState,
+} from './regionIncremental';
 import { makeBandSpec } from '../test/fixtures';
 import type { SegmentBandSpec, StopMarkerSpec } from './interlining';
 import type { LineEndStyle } from '../model/types';
+import type { Ring } from './clip';
 
 /**
  * A grid of three horizontal and three vertical lines: nine well-separated
@@ -148,6 +153,19 @@ describe('buildRegionsIncremental', () => {
     expect(describeFaces(inc.faces)).toBe(full(fewer));
   });
 
+  // Removing a line leaves every SURVIVING pair clean, so the zone fast-path
+  // would happily return the previous frame's zone — which still contains the
+  // dead line's overlap territory. Faces come out right either way (downstream
+  // drops single-cover cells), but the phantom territory lingers as zombie
+  // components that are pointlessly rebuilt and cached. Component count is the
+  // observable: it must match a cold build's.
+  it('drops a removed line’s overlap territory from the zone', () => {
+    const state = buildRegionsIncremental(grid(), [], null).state;
+    const fewer = grid().filter((b) => b.lines[0].id !== 'vB');
+    const inc = buildRegionsIncremental(fewer, [], state);
+    expect(inc.total).toBe(buildRegionsIncremental(fewer, [], null).total);
+  });
+
   // Without these, every equivalence test above would still pass on an
   // implementation that rebuilt everything on every frame.
   it('reuses every component when nothing moves', () => {
@@ -246,5 +264,31 @@ describe('buildRegionsIncremental', () => {
     const state = buildRegionsIncremental(bands, [marker('square')], null).state;
     const inc = buildRegionsIncremental(bands, [marker('short')], state);
     expect(describeFaces(inc.faces)).toBe(coldShort);
+  });
+
+  // The 32-bit ring hash is the cache's lookup workhorse, but alone it would
+  // let two different components silently alias — and a false hit hands out the
+  // WRONG component's faces. These two squares genuinely collide in the ring
+  // hash (brute-forced offline over milliunit-quantized squares; the guard
+  // below fails if the hash function ever changes and the pair stops
+  // colliding). The key must still tell them apart.
+  it('cache keys distinguish components whose 32-bit ring hashes collide', () => {
+    const collA: Ring = [
+      { x: 11.907, y: 52.731 },
+      { x: 18.608, y: 52.731 },
+      { x: 18.608, y: 59.432 },
+      { x: 11.907, y: 59.432 },
+    ];
+    const collB: Ring = [
+      { x: 112.644, y: 498.852 },
+      { x: 121.448, y: 498.852 },
+      { x: 121.448, y: 507.656 },
+      { x: 112.644, y: 507.656 },
+    ];
+    const keyA = compCacheKey([collA], ringsBbox([collA]));
+    const keyB = compCacheKey([collB], ringsBbox([collB]));
+    // Fixture guard: both keys still open with the same ring hash.
+    expect(keyA.split('|')[0]).toBe(keyB.split('|')[0]);
+    expect(keyA).not.toBe(keyB);
   });
 });
