@@ -38,6 +38,10 @@ import {
 import { lineInterlineGapOf, lineWidthOf } from '../model/lineWidth';
 import { lineCurveRadiusOf } from '../model/lineCurve';
 
+// A new field that changes a stripe's PAINTED BODY (stripeBodyPolys reads the
+// centerline, radius, offsets and widths) must also be folded into
+// regionIncremental's hashUnits, or incremental region reuse serves stale
+// geometry under a cache key that claims to be current.
 export interface SegmentBandSpec {
   pairKey: string;
   // Stable per-band identity for React keying. A station-pair can have
@@ -102,6 +106,10 @@ export interface SegmentBandSpec {
 // dot — without it the patterned line would visually end mid-dot); stroked
 // lines of any style use it to place the casing's end-cap rail across the
 // line's end. Null at interior stations and when bands aren't supplied.
+//
+// A new field that changes the marker's painted footprint (markerBodyRings)
+// must also be folded into regionIncremental's hashUnits — `end` is the
+// precedent — or incremental region reuse serves stale geometry.
 export interface StopMarkerSpec {
   cx: number;
   cy: number;
