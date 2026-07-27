@@ -178,13 +178,13 @@ describe('<PolygonPopover />', () => {
     );
     const popover = container.querySelector('.polygon-popover') as HTMLElement;
     const header = container.querySelector('.polygon-popover .header') as HTMLElement;
-    // Point (0,0) → point + 14 gap diagonal.
-    expect(parseFloat(popover.style.left)).toBeCloseTo(14, 9);
+    // Point (0,0) → below-left diagonal, x clamped to the 8px margin.
+    expect(parseFloat(popover.style.left)).toBeCloseTo(8, 9);
     expect(parseFloat(popover.style.top)).toBeCloseTo(14, 9);
     fireEvent.pointerDown(header, { clientX: 100, clientY: 100, button: 0 });
     fireEvent.pointerMove(header, { clientX: 130, clientY: 120 });
     fireEvent.pointerUp(header, { clientX: 130, clientY: 120 });
-    expect(parseFloat(popover.style.left)).toBeCloseTo(44, 9); // 14 + 30
+    expect(parseFloat(popover.style.left)).toBeCloseTo(38, 9); // 8 + 30
     expect(parseFloat(popover.style.top)).toBeCloseTo(34, 9); // 14 + 20
   });
 
@@ -210,17 +210,17 @@ describe('<PolygonPopover />', () => {
     fireEvent.pointerDown(header, { clientX: 0, clientY: 0, button: 0 });
     fireEvent.pointerMove(header, { clientX: 30, clientY: 20 });
     fireEvent.pointerUp(header, { clientX: 30, clientY: 20 });
-    expect(parseFloat(popover.style.left)).toBeCloseTo(44, 9); // 14 + 30
+    expect(parseFloat(popover.style.left)).toBeCloseTo(38, 9); // 8 + 30
     expect(parseFloat(popover.style.top)).toBeCloseTo(34, 9); // 14 + 20
 
     // Zoom 2× about the world origin. The corner sits on world point
-    // (14,8)+drag(30,20) = (44,28), which now projects to (88,56) — the whole
+    // (8,14)+drag(30,20) = (38,34), which now projects to (76,68) — the whole
     // offset doubles with the canvas; nothing stays a fixed pixel size.
     const zoom2 = { vbX: 0, vbY: 0, vbW: 400, vbH: 300, size: { w: 800, h: 600 } };
     rerender(
       <PolygonPopover polygon={polygon} worldRect={rectAt(0, 0)} view={zoom2} onClose={() => {}} />,
     );
-    expect(parseFloat(popover.style.left)).toBeCloseTo(88, 9);
+    expect(parseFloat(popover.style.left)).toBeCloseTo(76, 9);
     expect(parseFloat(popover.style.top)).toBeCloseTo(68, 9);
   });
 
@@ -239,19 +239,19 @@ describe('<PolygonPopover />', () => {
       />,
     );
     const popover = container.querySelector('.polygon-popover') as HTMLElement;
-    expect(parseFloat(popover.style.left)).toBeCloseTo(14, 9); // point + 14 gap diagonal
+    expect(parseFloat(popover.style.left)).toBeCloseTo(8, 9); // below-left, x at the margin
     expect(parseFloat(popover.style.top)).toBeCloseTo(14, 9);
 
     const right = makePolygon({ id: 'p1' });
     rerender(
       <PolygonPopover
         polygon={right}
-        worldRect={rectAt(70, 50)}
+        worldRect={rectAt(300, 50)}
         view={identityView}
         onClose={() => {}}
       />,
     );
-    expect(parseFloat(popover.style.left)).toBeCloseTo(84, 9); // 70 + 14
+    expect(parseFloat(popover.style.left)).toBeCloseTo(38, 9); // 300 − 14 − 248
     expect(parseFloat(popover.style.top)).toBeCloseTo(64, 9); // 50 + 14
   });
 

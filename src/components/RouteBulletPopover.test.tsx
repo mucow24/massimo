@@ -256,12 +256,13 @@ describe('<RouteBulletPopover /> header drag', () => {
     );
     const popover = container.querySelector('.bullet-popover') as HTMLElement;
     const header = container.querySelector('.bullet-popover .header') as HTMLElement;
-    expect(parseFloat(popover.style.left)).toBeCloseTo(14, 9); // point + 14 gap diagonal
+    // Below-left diagonal off the origin point: x clamps to the 8px margin.
+    expect(parseFloat(popover.style.left)).toBeCloseTo(8, 9);
     expect(parseFloat(popover.style.top)).toBeCloseTo(14, 9);
     fireEvent.pointerDown(header, { clientX: 100, clientY: 100, button: 0 });
     fireEvent.pointerMove(header, { clientX: 130, clientY: 120 });
     fireEvent.pointerUp(header, { clientX: 130, clientY: 120 });
-    expect(parseFloat(popover.style.left)).toBeCloseTo(44, 9); // 14 + 30
+    expect(parseFloat(popover.style.left)).toBeCloseTo(38, 9); // 8 + 30
     expect(parseFloat(popover.style.top)).toBeCloseTo(34, 9); // 14 + 20
   });
 
@@ -280,7 +281,7 @@ describe('<RouteBulletPopover /> header drag', () => {
       />,
     );
     const popover = container.querySelector('.bullet-popover') as HTMLElement;
-    expect(parseFloat(popover.style.left)).toBeCloseTo(14, 9);
+    expect(parseFloat(popover.style.left)).toBeCloseTo(8, 9);
     rerender(
       <RouteBulletPopover
         bullet={bullet}
@@ -289,7 +290,7 @@ describe('<RouteBulletPopover /> header drag', () => {
         onClose={() => {}}
       />,
     );
-    expect(parseFloat(popover.style.left)).toBeCloseTo(14, 9);
+    expect(parseFloat(popover.style.left)).toBeCloseTo(8, 9);
     expect(parseFloat(popover.style.top)).toBeCloseTo(14, 9);
   });
 });

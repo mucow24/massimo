@@ -249,10 +249,10 @@ afterEach(() => {
 describe('popover canvas lock — the corner stays glued to its spawn world point', () => {
   it('plain on-screen spawn, wheel-zoom-out to ZOOM_MIN with settle commits', () => {
     // Bullet rect (±10 world) spans screen (390,290)–(410,310); spawn opens
-    // gap-diagonal below-right of it: (410+14, 310+14), unclamped.
+    // gap-diagonal below-left of it: (390−14−248, 310+14), unclamped.
     seedBullet(0, 0);
     render(<Harness />);
-    expect(cornerPx(SEL).x).toBeCloseTo(424, 9);
+    expect(cornerPx(SEL).x).toBeCloseTo(128, 9);
     expect(cornerPx(SEL).y).toBeCloseTo(324, 9);
     const t = new Tracker(SEL);
     zoomCycles(t, { x: 250, y: 200 }, 120, 3, 5); // ends clamped at ZOOM_MIN=0.1
@@ -263,14 +263,14 @@ describe('popover canvas lock — the corner stays glued to its spawn world poin
     // The app runs under StrictMode in dev; the measure-then-freeze layout
     // effect is double-invoked on mount. Both invocations recompute the same
     // spawn from the same render-captured inputs, so the corner must land on
-    // the plain (424,324) spawn and stay canvas-locked.
+    // the plain (128,324) spawn and stay canvas-locked.
     seedBullet(0, 0);
     render(
       <StrictMode>
         <Harness />
       </StrictMode>,
     );
-    expect(cornerPx(SEL).x).toBeCloseTo(424, 9);
+    expect(cornerPx(SEL).x).toBeCloseTo(128, 9);
     expect(cornerPx(SEL).y).toBeCloseTo(324, 9);
     const t = new Tracker(SEL);
     zoomCycles(t, { x: 250, y: 200 }, 120, 1, 5);
@@ -282,9 +282,10 @@ describe('popover canvas lock — the corner stays glued to its spawn world poin
     // POPOVER_NOMINAL fallback — stub layout-aware getters (zero under
     // display:none, like a real browser) so this test exercises the measured
     // path end-to-end: a 320×560 shell beside the (390,290)–(410,310) bullet
-    // rect keeps the diagonal x 424 but clamps y to 600−560−8 = 32. A dropped
-    // shellRef, transposed w/h, or a display:none measuring frame would all
-    // land elsewhere ((424,324) / different side / (424,324)).
+    // rect puts the diagonal x at 390−14−320 = 56 and clamps y to
+    // 600−560−8 = 32. A dropped shellRef, transposed w/h, or a display:none
+    // measuring frame would all land elsewhere ((128,324) / the right side /
+    // (128,324)).
     const origW = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')!;
     const origH = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!;
     Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
@@ -302,7 +303,7 @@ describe('popover canvas lock — the corner stays glued to its spawn world poin
     try {
       seedBullet(0, 0);
       render(<Harness />);
-      expect(cornerPx(SEL).x).toBeCloseTo(424, 9);
+      expect(cornerPx(SEL).x).toBeCloseTo(56, 9);
       expect(cornerPx(SEL).y).toBeCloseTo(32, 9);
       // The measured spawn dissolves into a frozen world point like any other.
       const t = new Tracker(SEL);
@@ -315,9 +316,9 @@ describe('popover canvas lock — the corner stays glued to its spawn world poin
   });
 
   it('clamped spawn (item near bottom-right), same zoom-out', () => {
-    // Bullet rect spans screen (770,570)–(790,590): the clamped diagonal/
-    // right/below spots (544,344) would cover it, so the spawn flips left of
-    // the rect — x 770−14−248 = 508, y clamps to 600−248−8 = 344.
+    // Bullet rect spans screen (770,570)–(790,590): the below-left diagonal
+    // x = 770−14−248 = 508 clears the rect on its own; y clamps to
+    // 600−248−8 = 344.
     seedBullet(380, 280);
     render(<Harness />);
     expect(cornerPx(SEL).x).toBeCloseTo(508, 9);
@@ -404,7 +405,7 @@ describe('popover canvas lock — the corner stays glued to its spawn world poin
     fireEvent.pointerDown(header, { clientX: 100, clientY: 100, button: 0 });
     fireEvent.pointerMove(header, { clientX: 160, clientY: 140 });
     fireEvent.pointerUp(header, { clientX: 160, clientY: 140 });
-    expect(cornerPx(SEL).x).toBeCloseTo(424 + 60, 9);
+    expect(cornerPx(SEL).x).toBeCloseTo(128 + 60, 9);
     expect(cornerPx(SEL).y).toBeCloseTo(324 + 40, 9);
     const t = new Tracker(SEL); // baseline = post-drag canvas point
     zoomCycles(t, { x: 250, y: 200 }, 120, 3, 5);
@@ -491,12 +492,13 @@ describe('popover canvas lock — the corner stays glued to its spawn world poin
       useDoc.setState({ ...useDoc.getState(), routeBullets: { b1: b } });
     });
     const v = currentView();
-    const p1 = projectToScreen({ x: 390, y: 290 }, v); // bullet rect max corner
+    const pMin = projectToScreen({ x: 370, y: 270 }, v); // bullet rect min corner
+    const pMax = projectToScreen({ x: 390, y: 290 }, v); // bullet rect max corner
     const c = cornerPx(SEL);
-    // Fresh spawn = gap-diagonal below-right of the rect (unclamped here: the
+    // Fresh spawn = gap-diagonal below-left of the rect (unclamped here: the
     // item projects mid-host at this zoom).
-    expect(c.x).toBeCloseTo(p1.x + 14, 6);
-    expect(c.y).toBeCloseTo(p1.y + 14, 6);
+    expect(c.x).toBeCloseTo(pMin.x - 14 - POPOVER_NOMINAL, 6);
+    expect(c.y).toBeCloseTo(pMax.y + 14, 6);
     const t = new Tracker(SEL);
     zoomCycles(t, { x: 250, y: 200 }, 120, 1, 5);
     expect(t.maxDrift).toBeLessThanOrEqual(EPS);
