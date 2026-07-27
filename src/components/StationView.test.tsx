@@ -8,7 +8,7 @@ import type { Station } from '../model/types';
 import { makeLabel, makeLine, makeStation, makeStop } from '../test/fixtures';
 import { STOP_SIZE } from '../geometry/orientation';
 import { labelLayoutLocal } from '../geometry/labelLayout';
-import { measureTextLabel, BASELINE_FRACTION } from '../geometry/textMeasure';
+import { measureTextLabel, BASELINE_FRACTION, capCenterDy } from '../geometry/textMeasure';
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -773,6 +773,36 @@ describe('<StationView /> — the painted baseline IS the model baseline', () =>
     const tagged = named('<b>Foo</b>'); // a formatted token routes to per-segment
     expect(Number(tagged.getAttribute('y'))).toBeCloseTo(Number(plain.getAttribute('y')), 5);
     expect(tagged.getAttribute('dominant-baseline')).toBeNull();
+  });
+
+  it('centres an inline bullet on the cap box of the text beside it', () => {
+    // Same invariant as LabelView: bullet and text centre on the same thing.
+    // The old flat 0.3em rendered as ~0.333em because the text painted off its
+    // own baseline; with the baseline honoured, cap-centring is explicit.
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', service: 'A1', stations: [] }) },
+      lineOrder: ['L1'],
+    });
+    const { container } = render(
+      <svg>
+        <StationView
+          station={makeStation({ id: 's1', name: '|A1| Foo', x: 100, y: 100 })}
+          lines={{}}
+          zoom={1}
+          onStartDrag={vi.fn()}
+          layer="label"
+        />
+      </svg>,
+    );
+    const bullet = container.querySelector('[data-inline-bullet]')!;
+    const cy = Number(/translate\([-\d.]+ ([-\d.]+)\)/.exec(bullet.getAttribute('transform')!)![1]);
+    const textY = Number(
+      [...container.querySelectorAll('text')]
+        .find((t) => t.textContent === ' Foo')!
+        .getAttribute('y'),
+    );
+    expect(cy).toBeCloseTo(textY - capCenterDy(12), 5);
   });
 
   it('plain path: the hover underline sits one offset below the PAINTED y', () => {

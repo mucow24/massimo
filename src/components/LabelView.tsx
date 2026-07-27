@@ -1,8 +1,18 @@
 import { useMemo } from 'react';
 import type { Line, RouteBulletShape, TextLabel } from '../model/types';
-import { measureAdvance, measureTextLabel, type MeasuredBBox } from '../geometry/textMeasure';
+import {
+  capCenterDy,
+  measureAdvance,
+  measureTextLabel,
+  type MeasuredBBox,
+} from '../geometry/textMeasure';
 import { justifyLine, type JustifyAtom } from '../geometry/labelJustify';
-import { resolveRunFontSize, resolveRunWeight, type SegmentStyle } from '../geometry/labelTokens';
+import {
+  INLINE_BULLET_DIAMETER_RATIO,
+  resolveRunFontSize,
+  resolveRunWeight,
+  type SegmentStyle,
+} from '../geometry/labelTokens';
 import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
 import { FONT_STACK } from '../util/fonts';
 import { useDoc } from '../state/store';
@@ -328,7 +338,13 @@ export function LabelView({
             filled={b.filled}
             diameter={b.diameter}
             cx={x + b.diameter / 2}
-            cy={baselineY - b.diameter / 2}
+            // Optically centered on the run's CAP BOX — the same rule
+            // capCenterDy applies to the code inside the bullet, so badge and
+            // text agree by construction. (Was `baselineY - diameter/2`, which
+            // sat the bullet's bottom on the baseline; that only LOOKED
+            // cap-centered because the text used to paint ~0.089em off its own
+            // baseline, and the two errors cancelled.)
+            cy={baselineY - capCenterDy(b.diameter / INLINE_BULLET_DIAMETER_RATIO)}
             lineByService={lineByService}
           />
         );

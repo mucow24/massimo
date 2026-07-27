@@ -1,7 +1,12 @@
 import type { ReactNode } from 'react';
 import { Line } from '../model/types';
 import { hasFormattedToken, resolveRunWeight, type SegmentStyle } from '../geometry/labelTokens';
-import { BASELINE_FRACTION, LINE_HEIGHT, measureTextLabel } from '../geometry/textMeasure';
+import {
+  BASELINE_FRACTION,
+  LINE_HEIGHT,
+  capCenterDy,
+  measureTextLabel,
+} from '../geometry/textMeasure';
 import { InlineBullet } from './InlineBullet';
 
 export interface RenderLabelTextArgs {
@@ -295,11 +300,11 @@ export function renderStationLabelText({
                 filled={seg.filled}
                 diameter={seg.diameter}
                 cx={segCursor + r}
-                // Bullet center at the text's optical midpoint (≈0.3em above
-                // baseline) so the badge looks visually centered on mixed
-                // upper/lowercase. Older convention sat the bullet's bottom on
-                // the baseline, which left it riding above the cap-line.
-                cy={baselineY - fontSize * 0.3}
+                // Optically centered on the CAP BOX — the same rule capCenterDy
+                // applies to the code inside the bullet, so badge and text agree
+                // by construction. (Was a flat 0.3em, which rendered at ~0.333em
+                // because the text used to paint off its own baseline.)
+                cy={baselineY - capCenterDy(fontSize)}
                 lineByService={lineByService}
               />,
             );
