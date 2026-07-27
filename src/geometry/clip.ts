@@ -175,14 +175,32 @@ export function offsetClosed(
 ): Ring[] {
   if (!rings.length) return [];
   const normalized = unionAll(rings);
-  if (!normalized.length) return [];
+  return offsetNormalized(normalized, delta, join);
+}
+
+/**
+ * {@link offsetClosed} minus the normalization union, for rings that are
+ * ALREADY engine output (boolean / polytree results): their winding is
+ * consistent by the engine's own convention, so re-unioning them is one
+ * redundant boolean per call — and this runs per face per frame in the
+ * sliver-opening morphology. Rings that are NOT engine output (hand-built,
+ * or concatenations of separate outputs that may overlap) must use
+ * offsetClosed: for those the union is load-bearing — a negative delta does
+ * not distribute over overlapping rings.
+ */
+export function offsetNormalized(
+  rings: Ring[],
+  delta: number,
+  join: 'round' | 'miter' = 'round',
+): Ring[] {
+  if (!rings.length) return [];
   const solution = engine().offsetToPaths({
     delta: delta * CLIP_SCALE,
     arcTolerance: ARC_TOLERANCE,
     miterLimit: 3,
     offsetInputs: [
       {
-        data: normalized.map(toInt),
+        data: rings.map(toInt),
         joinType: as<JoinType>(join),
         endType: as<EndType>('closedPolygon'),
       },
@@ -273,8 +291,11 @@ export function faceArea(face: Face): number {
  * is too thin to erode at any depth down to ~0.001 world units.
  */
 export function interiorPoint(face: Face): Vec2 | null {
+  // Faces here are always engine output (arrangement faces), so the
+  // normalization-free offset is safe — and this halving loop can run the
+  // offset up to ten times per call.
   for (let depth = 1; depth >= 0.001; depth /= 2) {
-    const eroded = offsetClosed(face, -depth);
+    const eroded = offsetNormalized(face, -depth);
     if (eroded.length && eroded[0].length) {
       const v = eroded[0][0];
       if (pointInFace(v, face)) return v;

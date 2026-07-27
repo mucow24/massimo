@@ -24,6 +24,7 @@ import {
   interiorPoint,
   intersect,
   offsetClosed,
+  offsetNormalized,
   offsetOpenPath,
   pointInFace,
   faceArea,
@@ -645,8 +646,10 @@ export function extractFaces(
   };
   for (const cell of cells) {
     if (cell.cover.length < 2) continue;
+    // Faces, lobes and pieces below are all splitIntoFaces output, so the
+    // normalization-free offset applies throughout this loop.
     for (const face of splitIntoFaces(cell.rings)) {
-      const eroded = offsetClosed(face, -SLIVER_ERODE);
+      const eroded = offsetNormalized(face, -SLIVER_ERODE);
       if (!eroded.length) {
         addSliver(face, cell.cover); // whole face is a hairline sliver
         continue;
@@ -663,10 +666,10 @@ export function extractFaces(
       }
       let remaining: Ring[] = [...face];
       for (const lobe of lobes) {
-        const blob = intersect(remaining, offsetClosed(lobe, SLIVER_ERODE * 2 + 0.05));
+        const blob = intersect(remaining, offsetNormalized(lobe, SLIVER_ERODE * 2 + 0.05));
         if (!blob.length) continue;
         for (const piece of splitIntoFaces(blob)) {
-          if (offsetClosed(piece, -SLIVER_ERODE).length) pushFace(piece, cell.cover);
+          if (offsetNormalized(piece, -SLIVER_ERODE).length) pushFace(piece, cell.cover);
           else addSliver(piece, cell.cover); // reclaimed piece still sub-sliver
         }
         remaining = subtract(remaining, blob);

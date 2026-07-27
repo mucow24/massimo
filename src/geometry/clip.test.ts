@@ -5,6 +5,7 @@ import {
   subtract,
   offsetOpenPath,
   offsetClosed,
+  offsetNormalized,
   splitIntoFaces,
   pointInFace,
   faceArea,
@@ -201,5 +202,28 @@ describe('splitIntoFaces / pointInFace / interiorPoint', () => {
     const p = interiorPoint(face);
     expect(p).not.toBeNull();
     expect(pointInFace(p!, face)).toBe(true);
+  });
+});
+
+describe('offsetNormalized', () => {
+  it('matches offsetClosed exactly on engine-output faces with holes, both delta signs', () => {
+    // A square with a square hole, produced BY the engine (subtract), so its
+    // winding is the engine's own convention — the input contract of
+    // offsetNormalized. If the skipped normalization were load-bearing here,
+    // the negative delta would grow the hole instead of shrinking the face.
+    const donut = subtract([sq(0, 0, 20)], [sq(0, 0, 8)]);
+    const face = splitIntoFaces(donut)[0];
+    expect(face.length).toBe(2); // outer + hole — the orientation-sensitive case
+    for (const delta of [3, -3]) {
+      for (const join of ['round', 'miter'] as const) {
+        expect(offsetNormalized(face, delta, join)).toEqual(offsetClosed(face, delta, join));
+      }
+    }
+  });
+
+  it('matches offsetClosed on multi-face boolean output', () => {
+    const two = unionAll([sq(0, 0, 10), sq(100, 0, 10)]);
+    expect(offsetNormalized(two, 2)).toEqual(offsetClosed(two, 2));
+    expect(offsetNormalized(two, -2)).toEqual(offsetClosed(two, -2));
   });
 });
