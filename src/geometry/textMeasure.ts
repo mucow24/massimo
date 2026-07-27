@@ -191,6 +191,27 @@ export const BASELINE_FRACTION = 0.8;
  */
 export const CAP_FRACTION = 0.714;
 
+/**
+ * Baseline offset that optically centers a run of CAPS/digits on a shape's
+ * center: `y = centerY + capCenterDy(fontSize)`, leaving the text on the
+ * default (alphabetic) baseline. For badge-style text — a service code in a
+ * stop dot or route bullet, "WP" in a lozenge, a one-letter handle.
+ *
+ * Do NOT center that text with `dominantBaseline="central"` instead. `central`
+ * centers the font's ascent..descent box, and Chrome sources those metrics from
+ * a different table per platform: usWinAscent/Descent on Windows, hhea (via
+ * CoreText) on macOS. The shipped Helvetica Neue doesn't set USE_TYPO_METRICS
+ * and its two sets disagree badly — 904/-214 vs 714/-198 — so `central` lands
+ * 0.345em above the baseline on Windows but 0.258em on macOS, i.e. identical
+ * markup renders ~0.09em lower on a Mac. The alphabetic baseline is
+ * platform-invariant, and is also what `export/pdfText` normalizes to.
+ *
+ * Only valid for text with no descenders and no non-Latin glyphs — it centers
+ * the CAP BOX, not the ink. A dingbat from the DejaVu fallback (say the ⚠ on a
+ * routing warning) isn't described by CAP_FRACTION at all.
+ */
+export const capCenterDy = (fontSize: number) => (fontSize * CAP_FRACTION) / 2;
+
 // Internal cache: keyed by the full content + style tuple (weight, italic,
 // parse mode, font size, column width, leading, tracking, text — see
 // cacheKey). Marquee hit testing re-measures every label on every move;

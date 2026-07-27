@@ -3,6 +3,7 @@ import { DEFAULT_DOT_STYLE, resolveDotRender, type DotRenderParams } from '../mo
 import { useDoc } from '../state/store';
 import type { DotStyle } from '../model/types';
 import { FONT_STACK } from '../util/fonts';
+import { capCenterDy } from '../geometry/textMeasure';
 
 interface Props {
   cx: number;
@@ -186,6 +187,12 @@ export function StopGlyph({
   }
 
   const { code } = params;
+  const codeFontSize = params.r * 1.2;
+  // Cap-centered on the ALPHABETIC baseline — NOT dominantBaseline="central",
+  // which resolves from platform-specific font metrics and put the code ~0.09em
+  // lower on macOS than on Windows (see capCenterDy for the full story). On a
+  // default 12-unit code disc that was over half a world unit.
+  const codeBaselineY = cy + capCenterDy(codeFontSize);
   // With a code, the data attrs live on the wrapping <g> so the test seam
   // stays one element per stop.
   const withCode = (el: ReactNode) =>
@@ -196,11 +203,10 @@ export function StopGlyph({
         {el}
         <text
           x={cx}
-          y={cy}
+          y={codeBaselineY}
           textAnchor="middle"
-          dominantBaseline="central"
           fontFamily={FONT_STACK}
-          fontSize={params.r * 1.2}
+          fontSize={codeFontSize}
           fontWeight={700}
           fill={code.color}
           pointerEvents="none"

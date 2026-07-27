@@ -5,6 +5,7 @@ import { useDoc } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
 import type { RouteBullet } from '../model/types';
+import { capCenterDy } from '../geometry/textMeasure';
 
 const noop = () => {};
 
@@ -131,6 +132,31 @@ describe('<RouteBulletView /> — locked bullets are click-through unless select
 // (black-white-black) on the dark one — so it stays legible around a bullet of
 // any color. Screen weight held by vector-effect="non-scaling-stroke", so the
 // ring tracks in-flight pan/zoom natively instead of snapping on commit.
+describe('<RouteBulletView /> — service code baseline', () => {
+  // `dominantBaseline="central"` centers the font's ascent..descent box, which
+  // Chrome sources per-platform (usWin on Windows, hhea on macOS) — the code
+  // rendered ~0.09em lower on a Mac. Centered on the alphabetic baseline instead.
+  it('centers the code on the alphabetic baseline, not via dominant-baseline', () => {
+    const { container } = render(
+      <svg>
+        <RouteBulletView
+          bullet={makeBullet({ id: 'b1', x: 30, y: 60 })}
+          lines={{}}
+          selected={false}
+          onPointerDown={noop}
+          onClick={noop}
+          onContextMenu={noop}
+        />
+      </svg>,
+    );
+    const text = container.querySelector('[data-bullet-id="b1"] text')!;
+    // The bullet's <g> carries the translate + rotate, so the text is local-origin.
+    const fontSize = Number(text.getAttribute('font-size'));
+    expect(Number(text.getAttribute('y'))).toBeCloseTo(capCenterDy(fontSize), 6);
+    expect(text.getAttribute('dominant-baseline')).toBeNull();
+  });
+});
+
 describe('<RouteBulletView /> — selection ring', () => {
   afterEach(() => useViewportStore.setState({ zoom: 1 }));
 

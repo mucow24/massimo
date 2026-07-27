@@ -1,5 +1,6 @@
 import { waypointLozengeSize } from '../geometry/waypointLozenge';
 import { FONT_STACK } from '../util/fonts';
+import { capCenterDy } from '../geometry/textMeasure';
 
 // The on-canvas twin of the sidebar's `.wp-pill` (styles.css): a gray,
 // fully-rounded "WP" pill. Fixed gray/white like the CSS pill — theme-blind, so
@@ -34,9 +35,10 @@ export function WaypointLozenge({
       <rect x={x} y={y} width={w} height={h} rx={h / 2} ry={h / 2} fill={WP_PILL_FILL} />
       <text
         x={rightX - w / 2}
-        y={centerY}
+        // Cap-centered on the alphabetic baseline — NOT dominantBaseline="central",
+        // which resolves from platform-specific font metrics (see capCenterDy).
+        y={centerY + capCenterDy(pillFont)}
         textAnchor="middle"
-        dominantBaseline="central"
         fontFamily={FONT_STACK}
         fontSize={pillFont}
         fontWeight={600}

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { SnapGuides } from './SnapGuides';
 import type { SnapGuide } from '../../geometry/snap';
+import { capCenterDy } from '../../geometry/textMeasure';
 
 const labelText = (container: HTMLElement): SVGTextElement =>
   container.querySelector('text') as unknown as SVGTextElement;
@@ -16,9 +17,24 @@ describe('<SnapGuides />', () => {
     expect(text).not.toBeNull();
     expect(text.textContent).toBe('42');
     // Midpoint y is 0; the flipped label is offset by 9/zoom to the smaller-y
-    // side, i.e. y = -9.
+    // side, i.e. its CENTER sits at y = -9 — the attribute carries the
+    // alphabetic-baseline shift on top (see the dominant-baseline spec below).
     expect(Number(text.getAttribute('x'))).toBeCloseTo(5, 6);
-    expect(Number(text.getAttribute('y'))).toBeCloseTo(-9, 6);
+    expect(Number(text.getAttribute('y'))).toBeCloseTo(-9 + capCenterDy(14), 6);
+  });
+
+  // `dominantBaseline="central"` centers the font's ascent..descent box, which
+  // Chrome sources per-platform (usWin on Windows, hhea on macOS) — the readout
+  // rendered ~0.09em lower on a Mac. Centered on the alphabetic baseline instead.
+  it('centers the measurement readout on the alphabetic baseline, not via dominant-baseline', () => {
+    const guides: SnapGuide[] = [{ from: { x: 0, y: 0 }, to: { x: 10, y: 0 }, label: '42' }];
+    const { container } = render(<SnapGuides guides={guides} zoom={2} />);
+    const text = labelText(container);
+    // Zoom-compensated: both the offset and the font size scale by 1/zoom.
+    const fontSize = Number(text.getAttribute('font-size'));
+    expect(fontSize).toBeCloseTo(7, 6);
+    expect(Number(text.getAttribute('y'))).toBeCloseTo(-4.5 + capCenterDy(fontSize), 6);
+    expect(text.getAttribute('dominant-baseline')).toBeNull();
   });
 
   // Snap feedback speaks the shared editor accent — not its own teal/subway-
@@ -48,9 +64,9 @@ describe('<SnapGuides />', () => {
     const y = Number(text.getAttribute('y'));
     expect(Number.isFinite(x)).toBe(true);
     expect(Number.isFinite(y)).toBe(true);
-    // The degenerate guide collapses the perpendicular to 0, so the label sits
-    // exactly on the (shared) point.
+    // The degenerate guide collapses the perpendicular to 0, so the label
+    // centers on the (shared) point.
     expect(x).toBeCloseTo(5, 6);
-    expect(y).toBeCloseTo(5, 6);
+    expect(y).toBeCloseTo(5 + capCenterDy(14), 6);
   });
 });

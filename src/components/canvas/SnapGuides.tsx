@@ -1,6 +1,7 @@
 import { STOP_DOT_RADIUS } from '../../geometry/orientation';
 import type { SnapGuide } from '../../geometry/snap';
 import { midpoint, norm, perp, sub } from '../../geometry/vec';
+import { capCenterDy } from '../../geometry/textMeasure';
 import { useThemeColors } from '../../state/theme';
 import { withAlpha } from '../../util/color';
 
@@ -95,7 +96,9 @@ export function SnapGuides({ guides, zoom }: Props) {
           <text
             key={'label' + i}
             x={lx}
-            y={ly}
+            // Cap-centered on the alphabetic baseline — NOT dominantBaseline="central",
+            // which resolves from platform-specific font metrics (see capCenterDy).
+            y={ly + capCenterDy(14 / zoom)}
             fontSize={14 / zoom}
             fontWeight={700}
             fill="#fff"
@@ -103,7 +106,6 @@ export function SnapGuides({ guides, zoom }: Props) {
             strokeWidth={4 / zoom}
             paintOrder="stroke"
             textAnchor="middle"
-            dominantBaseline="central"
             pointerEvents="none"
           >
             {g.label}
