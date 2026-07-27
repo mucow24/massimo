@@ -319,6 +319,41 @@ export function ringsBbox(rings: Ring[]): { x0: number; y0: number; x1: number; 
   return { x0, y0, x1, y1 };
 }
 
+/**
+ * Merged arc-length windows of `sp` whose segments come within `pad` of
+ * `bbox`. A sample at arc position `at` lies on some segment; if that whole
+ * segment sits clear of the padded box, {@link pointNearFace}'s own bbox
+ * gate would reject the sample — so outside these windows `inside` is
+ * provably false and the walk can skip constructing the point at all. The
+ * windows only need to be supersets: a false-positive window costs one real
+ * evaluation that returns false, changing nothing.
+ */
+function nearWindows(
+  sp: StripePath,
+  bbox: { x0: number; y0: number; x1: number; y1: number },
+  pad: number,
+): { d0: number; d1: number }[] {
+  const wins: { d0: number; d1: number }[] = [];
+  for (let i = 0; i + 1 < sp.pts.length; i++) {
+    const a = sp.pts[i];
+    const b = sp.pts[i + 1];
+    const near =
+      Math.min(a.x, b.x) <= bbox.x1 + pad &&
+      Math.max(a.x, b.x) >= bbox.x0 - pad &&
+      Math.min(a.y, b.y) <= bbox.y1 + pad &&
+      Math.max(a.y, b.y) >= bbox.y0 - pad;
+    if (!near) continue;
+    const last = wins[wins.length - 1];
+    if (last && last.d1 >= sp.cum[i]) last.d1 = sp.cum[i + 1];
+    else wins.push({ d0: sp.cum[i], d1: sp.cum[i + 1] });
+  }
+  return wins;
+}
+
+/** Slack around window edges so a sample exactly on a shared vertex between
+ * a near and a far segment is always evaluated for real, never skipped. */
+const WINDOW_EPS = 1e-7;
+
 function computeSpans(
   face: Face,
   bbox: { x0: number; y0: number; x1: number; y1: number },
@@ -335,16 +370,24 @@ function computeSpans(
       const halfWidth = band.stripeWidths[k] / 2;
       // The stripe's painted body extends half a width past the path bbox.
       if (!boxesOverlap(sp.bbox, bbox, halfWidth)) continue;
+      // The walk below visits the stripe's WHOLE arc, but almost all of it
+      // runs nowhere near this face; precomputing the near windows makes the
+      // out-of-window iterations a couple of float compares instead of an
+      // arc-length binary search + point test each.
+      const wins = nearWindows(sp, bbox, halfWidth);
+      let w = 0;
       const intervals: { d0: number; d1: number }[] = [];
       let runStart: number | null = null;
       for (let d = 0; ; d += SPAN_STEP) {
         const at = Math.min(d, sp.len);
+        while (w < wins.length && at > wins[w].d1 + WINDOW_EPS) w++;
+        const maybeNear = w < wins.length && at >= wins[w].d0 - WINDOW_EPS;
         // Body overlap, not center containment: the stripe covers face
         // material anywhere within half its width of the path. Small corner
         // faces sit inside a stripe's body but off its center path — with
         // center containment they'd get no span here, and a spanless cover
         // line can only be anchored by projection (the flakiest anchor kind).
-        const inside = pointNearFace(pointAtArcLength(sp, at), face, bbox, halfWidth);
+        const inside = maybeNear && pointNearFace(pointAtArcLength(sp, at), face, bbox, halfWidth);
         if (inside && runStart === null) runStart = Math.max(0, at - SPAN_STEP / 2);
         if (!inside && runStart !== null) {
           intervals.push({ d0: runStart, d1: Math.min(sp.len, at - SPAN_STEP / 2) });
