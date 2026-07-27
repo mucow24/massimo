@@ -42,7 +42,7 @@ export const SLIVER_ERODE = 0.15;
 const SPAN_STEP = 2;
 
 export interface RegionSpanEntry {
-  /** Arc-length intervals of the stripe path inside the face. */
+  /** Arc-length intervals of the stripe path where the stripe BODY overlaps the face. */
   intervals: { d0: number; d1: number }[];
   /** Total arc length of that stripe path. */
   totalLen: number;
@@ -332,13 +332,19 @@ function computeSpans(
       const lineId = band.lines[k].id;
       if (!coverSet.has(lineId)) continue;
       const sp = stripePathFor(band, k);
+      const halfWidth = band.stripeWidths[k] / 2;
       // The stripe's painted body extends half a width past the path bbox.
-      if (!boxesOverlap(sp.bbox, bbox, band.stripeWidths[k] / 2)) continue;
+      if (!boxesOverlap(sp.bbox, bbox, halfWidth)) continue;
       const intervals: { d0: number; d1: number }[] = [];
       let runStart: number | null = null;
       for (let d = 0; ; d += SPAN_STEP) {
         const at = Math.min(d, sp.len);
-        const inside = pointInFace(pointAtArcLength(sp, at), face);
+        // Body overlap, not center containment: the stripe covers face
+        // material anywhere within half its width of the path. Small corner
+        // faces sit inside a stripe's body but off its center path — with
+        // center containment they'd get no span here, and a spanless cover
+        // line can only be anchored by projection (the flakiest anchor kind).
+        const inside = pointNearFace(pointAtArcLength(sp, at), face, bbox, halfWidth);
         if (inside && runStart === null) runStart = Math.max(0, at - SPAN_STEP / 2);
         if (!inside && runStart !== null) {
           intervals.push({ d0: runStart, d1: Math.min(sp.len, at - SPAN_STEP / 2) });
@@ -353,6 +359,38 @@ function computeSpans(
     }
   }
   return spans;
+}
+
+/**
+ * Is `p` on the face's material, or within `tol` of it? A point inside a hole
+ * (or outside the outer ring) counts only when within `tol` of some boundary
+ * ring — which is the right body-overlap semantics either way.
+ */
+function pointNearFace(
+  p: Vec2,
+  face: Face,
+  bbox: { x0: number; y0: number; x1: number; y1: number },
+  tol: number,
+): boolean {
+  if (p.x < bbox.x0 - tol || p.x > bbox.x1 + tol || p.y < bbox.y0 - tol || p.y > bbox.y1 + tol) {
+    return false;
+  }
+  if (pointInFace(p, face)) return true;
+  const tolSq = tol * tol;
+  for (const ring of face) {
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i];
+      const b = ring[(i + 1) % ring.length];
+      const ex = b.x - a.x;
+      const ey = b.y - a.y;
+      const lenSq = ex * ex + ey * ey;
+      const t = lenSq > 0 ? clamp(((p.x - a.x) * ex + (p.y - a.y) * ey) / lenSq, 0, 1) : 0;
+      const dx = p.x - (a.x + ex * t);
+      const dy = p.y - (a.y + ey * t);
+      if (dx * dx + dy * dy <= tolSq) return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -569,13 +607,18 @@ export function extractFaces(
 
 /**
  * Fresh anchors for a face: one per covering line, at its span midpoint.
- * A cover line whose stripe CENTER path doesn't cross the face (small corner
- * faces sit inside the stripe body but off its center; marker-only cover)
- * gets a projection fallback: the arc position on its nearest stripe.
+ * Spans record body overlap, so every stripe-covered line has one; a line
+ * whose presence in the cover comes from its stop marker alone gets a
+ * projection fallback: the arc position on its nearest stripe.
  */
 export function mintAnchors(face: RegionFace, bands: SegmentBandSpec[]): RegionAnchor[] {
   const anchors: RegionAnchor[] = [];
   let fallbackTarget: Vec2 | undefined;
+  const target = () =>
+    (fallbackTarget ??= interiorPoint(face.face) ?? {
+      x: (face.bbox.x0 + face.bbox.x1) / 2,
+      y: (face.bbox.y0 + face.bbox.y1) / 2,
+    });
   for (const lineId of face.lineIds) {
     let best: { pairKey: string; mid: number; totalLen: number; size: number } | null = null;
     for (const [key, entry] of face.spans) {
@@ -589,14 +632,31 @@ export function mintAnchors(face: RegionFace, bands: SegmentBandSpec[]): RegionA
       }
     }
     let side = 0;
-    if (!best) {
-      if (fallbackTarget === undefined) {
-        fallbackTarget = interiorPoint(face.face) ?? {
-          x: (face.bbox.x0 + face.bbox.x1) / 2,
-          y: (face.bbox.y0 + face.bbox.y1) / 2,
-        };
+    if (best) {
+      // Spans record BODY overlap, so on a corner face the span midpoint is
+      // an arc position whose center-path point lies OUTSIDE the face. The
+      // binder's distance scoring assumes a minted anchor evaluates on its
+      // own face (a big neighboring superset-cover face touching the center
+      // path would otherwise outscore it) — carry such an anchor onto the
+      // face with the same capped side offset the projection fallback uses.
+      const stripe = stripeFor(bands, best.pairKey, lineId);
+      if (stripe) {
+        const { band, k } = stripe;
+        const at = sampleOffsetPathByArcLength(
+          band.centerline,
+          band.radius,
+          band.stripeOffsets[k],
+          best.mid,
+        );
+        if (!pointInFace(at.p, face.face)) {
+          const n = leftNormal(at.tangent);
+          const t = target();
+          const half = band.stripeWidths[k] / 2;
+          side = clamp((t.x - at.p.x) * n.x + (t.y - at.p.y) * n.y, -half, half);
+        }
       }
-      const projected = projectOntoLineStripe(lineId, fallbackTarget, bands);
+    } else {
+      const projected = projectOntoLineStripe(lineId, target(), bands);
       if (projected) {
         best = projected;
         side = projected.side;
@@ -670,6 +730,20 @@ function projectOntoLineStripe(
   return best;
 }
 
+/** A line's stripe in a corridor: its band and stripe index, or null. */
+function stripeFor(
+  bands: SegmentBandSpec[],
+  pairKey: string,
+  lineId: LineId,
+): { band: SegmentBandSpec; k: number } | null {
+  for (const band of bands) {
+    if (band.pairKey !== pairKey) continue;
+    const k = band.lines.findIndex((l) => l.id === lineId);
+    if (k >= 0) return { band, k };
+  }
+  return null;
+}
+
 /**
  * Total arc length of a line's stripe in a corridor, or null when the line
  * has no stripe there. Used by reconcile's anchor translation to walk
@@ -680,13 +754,8 @@ export function stripeArcLength(
   pairKey: string,
   lineId: LineId,
 ): number | null {
-  for (const band of bands) {
-    if (band.pairKey !== pairKey) continue;
-    const k = band.lines.findIndex((l) => l.id === lineId);
-    if (k < 0) continue;
-    return stripePathFor(band, k).len;
-  }
-  return null;
+  const stripe = stripeFor(bands, pairKey, lineId);
+  return stripe ? stripePathFor(stripe.band, stripe.k).len : null;
 }
 
 /**
@@ -743,16 +812,31 @@ function pointToFaceDistance(p: Vec2, face: RegionFace): number {
 }
 
 /**
- * Nearest-compatible-face binding (shared by rendering and reconciliation):
- * assignment id → face index. Each anchor evaluates to a world point on its
- * line; a face's score is a discounted sum of the *world* distances from those
- * points to the face (nearest anchor at full weight, the rest at 25% — see the
- * inline note below for why), and the assignment binds to the lowest-scoring
- * compatible face. (The arc-length value `evaluateAnchor` also returns is not
- * used here.) Unbindable assignments are absent from the result (dormant). One
- * assignment per face: on conflict the earlier id (or the caller's explicit
- * `order`, which reconciliation uses to give larger old faces priority) keeps
- * it.
+ * Corridor-identity-first face binding (shared by rendering and
+ * reconciliation): assignment id → face index. Each anchor names its line's
+ * corridor (`pairKey`) and evaluates to a world point on it; a candidate face
+ * must cover the assignment's lines, and binding runs in two passes over the
+ * assignments:
+ *
+ * Pass 1 — identity: a face is eligible only when each evaluable anchor's own
+ * corridor runs inside it (see {@link anchorCorridorOk}). Corridors are
+ * station-id pairs, so the match survives arbitrary drags: mid-gesture the
+ * stored arc distances go stale (the reconcile that would re-mint them only
+ * runs on commit), but the corridors a crossing sits on do not — sibling
+ * faces with the same cover elsewhere on the map are not interchangeable.
+ *
+ * Pass 2 — distance-only fallback for what pass 1 left unbound: an
+ * assignment whose crossing slid onto a NEIGHBORING corridor (past a
+ * station) still survives by proximity instead of going dormant.
+ *
+ * Within a pass, a face's score is a discounted sum of the *world* distances
+ * from the anchor points to the face (nearest anchor at full weight, the rest
+ * at 25% — see the inline note below for why), and the assignment binds to
+ * the lowest-scoring eligible face. (The arc-length value `evaluateAnchor`
+ * also returns is not used here.) Unbindable assignments are absent from the
+ * result (dormant). One assignment per face: on conflict the earlier id (or
+ * the caller's explicit `order`, which reconciliation uses to give larger old
+ * faces priority) keeps it.
  */
 export function bindAssignments(
   faces: RegionFace[],
@@ -763,48 +847,76 @@ export function bindAssignments(
 ): Map<string, number> {
   const out = new Map<string, number>();
   const taken = new Set<number>();
-  for (const id of order ?? Object.keys(assignments).sort()) {
+  const ids = order ?? Object.keys(assignments).sort();
+  const prepared = new Map<
+    string,
+    { required: LineId[]; evals: { anchor: RegionAnchor; ev: { p: Vec2; d: number } }[] }
+  >();
+  for (const id of ids) {
     const a = assignments[id];
     if (!a || !liveLines.has(a.lineId)) continue;
-    const required = a.lines.filter((l) => liveLines.has(l));
     const evals = a.anchors
       .filter((anchor) => liveLines.has(anchor.lineId))
       .map((anchor) => ({ anchor, ev: evaluateAnchor(anchor, bands) }))
       .filter((x): x is { anchor: RegionAnchor; ev: { p: Vec2; d: number } } => x.ev !== null);
     if (!evals.length) continue; // nothing evaluable — dormant
-    let best = -1;
-    let bestScore = Infinity;
-    for (let i = 0; i < faces.length; i++) {
-      if (taken.has(i)) continue;
-      const f = faces[i];
-      const cover = new Set(f.lineIds);
-      if (!cover.has(a.lineId)) continue;
-      if (!required.every((l) => cover.has(l))) continue;
-      // Discounted sum of world distances: the nearest anchor counts in
-      // full, the rest at 25%. A long drag strands the anchors of UNMOVED
-      // cover lines at the old location — the anchor that rode the moved
-      // line must outvote them (plain sum lets a stale anchor drag the bind
-      // onto a nearer sibling crossing) — while small corner faces at a
-      // junction still need the agreement of every anchor (plain min would
-      // let one shared-boundary anchor steal a neighbor's face).
-      const contributions = evals
-        .map(({ ev }) => pointToFaceDistance(ev.p, f))
-        .sort((x, y) => x - y);
-      let score = 0;
-      for (let c = 0; c < contributions.length; c++) {
-        score += c === 0 ? contributions[c] : 0.25 * contributions[c];
+    prepared.set(id, { required: a.lines.filter((l) => liveLines.has(l)), evals });
+  }
+  for (const strict of [true, false]) {
+    for (const id of ids) {
+      if (out.has(id)) continue;
+      const prep = prepared.get(id);
+      if (!prep) continue;
+      const a = assignments[id];
+      let best = -1;
+      let bestScore = Infinity;
+      for (let i = 0; i < faces.length; i++) {
+        if (taken.has(i)) continue;
+        const f = faces[i];
+        const cover = new Set(f.lineIds);
+        if (!cover.has(a.lineId)) continue;
+        if (!prep.required.every((l) => cover.has(l))) continue;
+        if (strict && !prep.evals.every(({ anchor }) => anchorCorridorOk(anchor, f))) continue;
+        // Discounted sum of world distances: the nearest anchor counts in
+        // full, the rest at 25%. A long drag strands the anchors of UNMOVED
+        // cover lines at the old location — the anchor that rode the moved
+        // line must outvote them (plain sum lets a stale anchor drag the bind
+        // onto a nearer sibling crossing) — while small corner faces at a
+        // junction still need the agreement of every anchor (plain min would
+        // let one shared-boundary anchor steal a neighbor's face).
+        const contributions = prep.evals
+          .map(({ ev }) => pointToFaceDistance(ev.p, f))
+          .sort((x, y) => x - y);
+        let score = 0;
+        for (let c = 0; c < contributions.length; c++) {
+          score += c === 0 ? contributions[c] : 0.25 * contributions[c];
+        }
+        if (score < bestScore - 1e-9) {
+          bestScore = score;
+          best = i;
+        }
       }
-      if (score < bestScore - 1e-9) {
-        bestScore = score;
-        best = i;
+      if (best >= 0) {
+        out.set(id, best);
+        taken.add(best);
       }
-    }
-    if (best >= 0) {
-      out.set(id, best);
-      taken.add(best);
     }
   }
   return out;
+}
+
+/**
+ * Does the face run this anchor's own corridor? True also when the face has
+ * no stripe of the anchor's line at all — a marker-only cover leaves nothing
+ * to compare against. False only on a genuine mismatch: the line's stripe
+ * runs through the face, but under different corridors than the anchor names.
+ */
+function anchorCorridorOk(anchor: RegionAnchor, face: RegionFace): boolean {
+  if (face.spans.has(`${anchor.lineId}|${anchor.pairKey}`)) return true;
+  for (const key of face.spans.keys()) {
+    if (key.startsWith(`${anchor.lineId}|`)) return false;
+  }
+  return true;
 }
 
 const orderIndexer = (lineOrder: LineId[]) => {
