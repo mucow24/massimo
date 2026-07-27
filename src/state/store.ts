@@ -8,6 +8,7 @@ import type {
   LabelAlign,
   LabelValign,
   Line,
+  LineEndStyle,
   LineId,
   LineStyle,
   MapDoc,
@@ -556,6 +557,8 @@ interface DocState extends MapDoc {
   setLineWidth: (lineId: LineId, w: number) => void;
   setLineInterlineGap: (lineId: LineId, v: number) => void;
   setLineCurveRadius: (lineId: LineId, r: number) => void;
+  setLineEndStyle: (lineId: LineId, end: LineEndStyle) => void;
+  setStationEndStyle: (lineId: LineId, stationId: StationId, end: LineEndStyle) => void;
   setLineStrokeWidth: (lineId: LineId, w: number) => void;
   setLineStrokeColor: (lineId: LineId, c: string) => void;
   setLineSeamColor: (lineId: LineId, c: string) => void;
@@ -838,6 +841,13 @@ export const useDoc = create<DocState>()(
           set(withRegionReconcile((s) => T.setLineInterlineGap(s, lineId, v))),
         setLineCurveRadius: (lineId, r) =>
           set(withRegionReconcile((s) => T.setLineCurveRadius(s, lineId, r))),
+        // End style leaves band paths alone but reshapes the stop markers at
+        // termini, and marker footprints are what the region arrangement is
+        // built from — so both writers reconcile, like the geometry writers.
+        setLineEndStyle: (lineId, end) =>
+          set(withRegionReconcile((s) => T.setLineEndStyle(s, lineId, end))),
+        setStationEndStyle: (lineId, stationId, end) =>
+          set(withRegionReconcile((s) => T.setStationEndStyle(s, lineId, stationId, end))),
         setLineStrokeWidth: (lineId, w) => set((s) => T.setLineStrokeWidth(s, lineId, w)),
         setLineStrokeColor: (lineId, c) => set((s) => T.setLineStrokeColor(s, lineId, c)),
         setLineSeamColor: (lineId, c) => set((s) => T.setLineSeamColor(s, lineId, c)),

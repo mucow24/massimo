@@ -2171,6 +2171,206 @@ describe('deleteStation — segment override cascade', () => {
   });
 });
 
+describe('setLineEndStyle', () => {
+  const doc = () => makeDoc({ lines: [makeLine({ id: 'L1', styleId: 'sty' })] });
+
+  it('stores a non-default end and drops the field at square', () => {
+    const round = T.setLineEndStyle(doc(), 'L1', 'round');
+    expect(round.lines.L1.endStyle).toBe('round');
+    const back = T.setLineEndStyle(round, 'L1', 'square');
+    expect('endStyle' in back.lines.L1).toBe(false);
+  });
+
+  it('detaches from the style preset — end style is a covered field', () => {
+    expect(T.setLineEndStyle(doc(), 'L1', 'short').lines.L1.styleId).toBeUndefined();
+  });
+
+  it('is a reference no-op when the stored value would not change', () => {
+    const d = doc();
+    expect(T.setLineEndStyle(d, 'L1', 'square')).toBe(d);
+    const round = T.setLineEndStyle(d, 'L1', 'round');
+    expect(T.setLineEndStyle(round, 'L1', 'round')).toBe(round);
+    // …so a no-op re-write cannot silently strip the tag either.
+    const tagged = T.setLineEndStyle(d, 'L1', 'square');
+    expect(tagged.lines.L1.styleId).toBe('sty');
+  });
+
+  it('no-ops on an unknown line', () => {
+    const d = doc();
+    expect(T.setLineEndStyle(d, 'nope' as never, 'round')).toBe(d);
+  });
+
+  // The stored form must stay canonical from BOTH directions. setStationEndStyle
+  // refuses to store a pin equal to the line's end; changing the LINE has to
+  // re-apply that rule, or a now-redundant pin survives in memory and is then
+  // dropped on load — the same document rendering differently after a reload.
+  it('drops a pin the new line end makes redundant', () => {
+    const chained = makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b'], stationEndStyles: { a: 'round' } })],
+    });
+    const next = T.setLineEndStyle(chained, 'L1', 'round');
+    expect(next.lines.L1.endStyle).toBe('round');
+    expect('stationEndStyles' in next.lines.L1).toBe(false);
+  });
+
+  it('keeps a pin the new line end does NOT make redundant', () => {
+    const chained = makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', stops: [makeStop('L1')] }),
+      ],
+      lines: [
+        makeLine({ id: 'L1', stations: ['a', 'b'], stationEndStyles: { a: 'round', b: 'short' } }),
+      ],
+    });
+    const next = T.setLineEndStyle(chained, 'L1', 'short');
+    expect(next.lines.L1.stationEndStyles).toEqual({ a: 'round' });
+  });
+
+  it('drops a pin made redundant by returning the line to square', () => {
+    const chained = makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', stops: [makeStop('L1')] }),
+      ],
+      lines: [
+        makeLine({
+          id: 'L1',
+          stations: ['a', 'b'],
+          endStyle: 'round',
+          stationEndStyles: { a: 'square' },
+        }),
+      ],
+    });
+    const next = T.setLineEndStyle(chained, 'L1', 'square');
+    expect('endStyle' in next.lines.L1).toBe(false);
+    expect('stationEndStyles' in next.lines.L1).toBe(false);
+  });
+});
+
+describe('setStationEndStyle', () => {
+  const doc = (linePatch = {}) =>
+    makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        makeStation({ id: 'c', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'], styleId: 'sty', ...linePatch })],
+    });
+
+  it('pins one terminus without touching the other', () => {
+    const next = T.setStationEndStyle(doc(), 'L1', 'a', 'round');
+    expect(next.lines.L1.stationEndStyles).toEqual({ a: 'round' });
+  });
+
+  it('clears the pin when set back to the line’s effective default', () => {
+    let next = T.setStationEndStyle(doc({ endStyle: 'round' }), 'L1', 'a', 'short');
+    expect(next.lines.L1.stationEndStyles).toEqual({ a: 'short' });
+    next = T.setStationEndStyle(next, 'L1', 'a', 'round');
+    expect('stationEndStyles' in next.lines.L1).toBe(false);
+  });
+
+  it('PINS square when the line default is not square', () => {
+    // square is a real choice here, not "no override" — the distinction the
+    // clear-at-default rule turns on.
+    const next = T.setStationEndStyle(doc({ endStyle: 'round' }), 'L1', 'a', 'square');
+    expect(next.lines.L1.stationEndStyles).toEqual({ a: 'square' });
+  });
+
+  it('no-ops at a station that is not an end', () => {
+    const d = doc();
+    expect(T.setStationEndStyle(d, 'L1', 'b', 'round')).toBe(d); // interior
+    expect(T.setStationEndStyle(d, 'L1', 'nope', 'round')).toBe(d); // not a member
+  });
+
+  it('keeps the line attached to its style preset — pins are not covered', () => {
+    expect(T.setStationEndStyle(doc(), 'L1', 'a', 'round').lines.L1.styleId).toBe('sty');
+  });
+
+  it('is a reference no-op when the pin would not change', () => {
+    const pinned = T.setStationEndStyle(doc(), 'L1', 'a', 'round');
+    expect(T.setStationEndStyle(pinned, 'L1', 'a', 'round')).toBe(pinned);
+    const d = doc();
+    expect(T.setStationEndStyle(d, 'L1', 'a', 'square')).toBe(d);
+  });
+});
+
+// A per-terminus end override is only meaningful while that station IS an end.
+// The moment topology says otherwise the key is dropped — the same lifetime
+// `segmentStyles` keys have, which is why both prune together.
+describe('line end overrides — topology cascade', () => {
+  const chain = (stationEndStyles: Record<string, 'square' | 'short' | 'round'>) =>
+    makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        makeStation({ id: 'c', stops: [makeStop('L1')] }),
+        makeStation({ id: 'd', stops: [] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'], stationEndStyles })],
+    });
+
+  it('drops the override when appending past a terminus (degree 1 → 2)', () => {
+    const doc = chain({ c: 'round' });
+    const next = T.connectStationsOnLine(doc, 'L1', 'c', 'd');
+    expect(next.lines.L1.edges).toContain('c|d');
+    expect(next.lines.L1.stationEndStyles ?? {}).toEqual({});
+  });
+
+  it('keeps the override at the terminus that is STILL a terminus', () => {
+    const doc = chain({ a: 'round', c: 'round' });
+    const next = T.connectStationsOnLine(doc, 'L1', 'c', 'd');
+    expect(next.lines.L1.stationEndStyles).toEqual({ a: 'round' });
+  });
+
+  it('drops the override when closing a loop leaves no ends at all', () => {
+    const doc = chain({ a: 'short', c: 'short' });
+    const next = T.toggleEdgeOnLine(doc, 'L1', 'a', 'c');
+    expect(next.lines.L1.stationEndStyles ?? {}).toEqual({});
+  });
+
+  it('drops the override at a station that becomes a branch junction', () => {
+    let doc = chain({ b: 'round', c: 'round' });
+    // b is interior already (its key is inert), but after branching to d it is
+    // degree 3 — and c stays an end throughout.
+    doc = T.addStationToLine(doc, 'L1', 'd');
+    const next = T.toggleEdgeOnLine(doc, 'L1', 'b', 'd');
+    expect(next.lines.L1.edges.filter((e) => e.split('|').includes('b'))).toHaveLength(3);
+    expect(next.lines.L1.stationEndStyles).toEqual({ c: 'round' });
+  });
+
+  it('drops the override when the station is deleted outright', () => {
+    const doc = chain({ c: 'round' });
+    expect(T.deleteStation(doc, 'c').lines.L1.stationEndStyles ?? {}).toEqual({});
+  });
+
+  it('drops the override when the stop is removed from the line', () => {
+    const doc = chain({ c: 'round' });
+    const idx = doc.lines.L1.stations.indexOf('c');
+    expect(T.removeStationFromLine(doc, 'L1', idx).lines.L1.stationEndStyles ?? {}).toEqual({});
+  });
+
+  it('MOVES the end when splicing a new station onto a terminus edge', () => {
+    // Splicing d into a|b makes d interior and leaves a an end: a's override
+    // survives, and no key is invented for d.
+    const doc = chain({ a: 'round' });
+    const next = T.spliceStationIntoEdge(doc, 'L1', 'a', 'b', 'd');
+    expect(next.lines.L1.stationEndStyles).toEqual({ a: 'round' });
+  });
+
+  it('leaves a line with no overrides untouched (same reference)', () => {
+    const doc = chain({});
+    const bare = { ...doc, lines: { L1: { ...doc.lines.L1, stationEndStyles: undefined } } };
+    delete (bare.lines.L1 as { stationEndStyles?: unknown }).stationEndStyles;
+    expect(T.connectStationsOnLine(bare, 'L1', 'c', 'd').lines.L1.stationEndStyles).toBeUndefined();
+  });
+});
+
 describe('clearAll — line tags', () => {
   it('clears lineTags', () => {
     const doc = makeDoc({

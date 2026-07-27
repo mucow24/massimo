@@ -50,7 +50,8 @@ import {
   isReservedStyleName,
   stylePropsEqual,
 } from './styles';
-import { edgesFromStations } from './lineTopology';
+import { edgesFromStations, isLineTerminus } from './lineTopology';
+import { LINE_END_STYLE_DEFAULT, isLineEndStyle, lineEndStyleOf } from './lineEnd';
 import { reconcileOrder } from './recordOrder';
 import { parseHexA, withHexAlpha } from '../util/color';
 import { migrateLegacyInlineTokens } from '../geometry/labelTokens';
@@ -66,6 +67,7 @@ import type {
   DotStyle,
   LabelValign,
   Line,
+  LineEndStyle,
   LineStyle,
   MapDoc,
   Polygon,
@@ -73,6 +75,7 @@ import type {
   RegionAssignment,
   RouteBulletShape,
   Station,
+  StationId,
   StationStyleProps,
   StopCell,
   StopOrientation,
@@ -294,7 +297,7 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
     // NB: dot-SIZE cleaning is deferred to after bakeLineDotDefaults — its
     // drop-at default is style-aware, so it must see the baked split dot styles.
     const cleaned = sanitizeLineStroke(
-      sanitizeLineCurve(sanitizeLineWidth(sanitizeSegments(backfillLineEdges(line)))),
+      sanitizeLineCurve(sanitizeLineWidth(sanitizeLineOverrides(backfillLineEdges(line)))),
     );
     if (cleaned !== line) linesChanged = true;
     cleanedLines[id] = cleaned;
@@ -1907,6 +1910,10 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       const multiDotSize = finiteNum(o.multiDotSize);
       const width = finiteNum(o.width);
       const curveRadius = finiteNum(o.curveRadius);
+      // Line end: 'square' for defs written before it was covered, and for a
+      // hand-edited garbage value — it is the historical look, so healing to it
+      // can never change how an older file paints.
+      const endStyle = isLineEndStyle(o.endStyle) ? o.endStyle : LINE_END_STYLE_DEFAULT;
       const strokeWidth = finiteNum(o.strokeWidth);
       const strokeColor = asString(o.strokeColor);
       if (width === undefined) return undefined;
@@ -1929,6 +1936,7 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
         multiDotSize,
         width,
         curveRadius,
+        endStyle,
         strokeWidth,
         strokeColor,
         ...(seamColor !== undefined ? { seamColor } : {}),
@@ -2154,6 +2162,61 @@ export function backfillLinesEdges(lines: Record<string, Line>): {
     out[id] = next;
   }
   return { lines: changed ? out : lines, changed };
+}
+
+// The load-time twin of transforms' pruneOrphanLineOverrides: validate the
+// line's topology-scoped overrides against the edge set a file actually
+// carries. Same two maps, same rules — a segment style needs its pair to be an
+// edge, an end-style pin needs its station to be a degree-1 END — plus the
+// value validation a hand-edited file makes necessary.
+function sanitizeLineOverrides(line: Line): Line {
+  return sanitizeLineEnds(sanitizeSegments(line));
+}
+
+// Per-line END style + per-terminus pins. Both are dropped at their default so
+// the "never store a default" invariant survives a hand-edited file, and a pin
+// on anything that isn't currently an end is dropped outright.
+function sanitizeLineEnds(line: Line): Line {
+  const rawEnd = (line as Line & { endStyle?: unknown }).endStyle;
+  const hasEnd = rawEnd !== undefined;
+  const keepEnd = isLineEndStyle(rawEnd) && rawEnd !== LINE_END_STYLE_DEFAULT;
+  const pins = line.stationEndStyles;
+  const hasPins = pins !== undefined;
+  if (!hasEnd && !hasPins) return line;
+
+  let next = line;
+  let changed = false;
+  if (hasEnd && !keepEnd) {
+    const { endStyle: _gone, ...rest } = next;
+    next = rest as Line;
+    changed = true;
+  }
+  if (hasPins) {
+    const kept: Record<StationId, LineEndStyle> = {};
+    let pinsChanged = false;
+    // Read the line's own end from the CLEANED value above, so a pin is judged
+    // redundant against what the line will actually paint.
+    const lineEnd = lineEndStyleOf(next);
+    const valid = pins && typeof pins === 'object' ? pins : {};
+    for (const stationId of Object.keys(valid)) {
+      const pin = valid[stationId];
+      if (!isLineEndStyle(pin) || pin === lineEnd || !isLineTerminus(next, stationId)) {
+        pinsChanged = true;
+        continue;
+      }
+      kept[stationId] = pin;
+    }
+    if (pinsChanged || typeof pins !== 'object') {
+      changed = true;
+      if (Object.keys(kept).length === 0) {
+        const { stationEndStyles: _dropped, ...rest } = next;
+        next = rest as Line;
+      } else {
+        next = { ...next, stationEndStyles: kept };
+      }
+    }
+  }
+  return changed ? next : line;
 }
 
 function sanitizeSegments(line: Line): Line {

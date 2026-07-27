@@ -1,5 +1,11 @@
 import { memo } from 'react';
 import { rotatedRectCorners, v } from '../geometry/vec';
+import {
+  markerEndCapCenter,
+  markerEndPath,
+  markerEndRailArc,
+  markerEndSides,
+} from '../geometry/markerEnd';
 import type { StopMarkerSpec } from '../geometry/interlining';
 import { lineCasingColor, lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
 import { hatchPatternId, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
@@ -40,13 +46,24 @@ interface Props {
 //             same pattern continuing outward, so the pattern also fills
 //             the outer half of the dot area.
 //
+// THE LINE END. At a terminus the marker's outward half IS the line's painted
+// end, so `spec.end` (already resolved — see lineEnd.ts) reshapes exactly that
+// half: 'square' keeps everything below untouched, 'short' drops the outward
+// half so the line stops flush at the stop center, and 'round' replaces it with
+// a half-disc. Both non-square ends are one filled <path> from markerEnd.ts,
+// per style — never a clip of the square (a clip would rasterize a hair off its
+// path and snag the PDF exporter). A patterned terminus's stub IS the outward
+// half, so 'short' simply drops it.
+//
 // A stroked line's marker additionally paints two casing rails CENTERED on
 // the edges parallel to the travel axis (local +x after rotationDeg),
 // immediately after the body — continuing the stripe rails through the
 // station and out to the line end at termini. Centering makes tangent
 // neighbors' facing rails coincide and anchors the separator to the edge
 // regardless of draw order or layering (see lineStroke.ts); rails only
-// ever run ALONG the marker, never across its ends.
+// ever run ALONG the marker, never across its ends. A non-square end shortens
+// them to the inward half and closes with a cap at the new end — a straight bar
+// at the stop center for 'short', the matching arc for 'round'.
 //
 // Memoized: there's one marker per line per station and all props are
 // referentially/value-stable across a viewport pan (spec is from a doc-keyed
@@ -63,43 +80,81 @@ export const StopMarker = memo(function StopMarker({
   const half = spec.width / 2;
   const live = lines?.[spec.lineId];
   const railW = lineStrokeRailWidth(lineStrokeWidthOf(live), spec.width);
+  const ow = spec.outward;
+  // The reshaped end, or null for the classic full square — which keeps every
+  // branch below on exactly the geometry it has always emitted. `end` is only
+  // meaningful alongside `outward` (the spec bakes 'square' without it); the
+  // guard also covers a hand-built spec that pairs one with the other.
+  const center = v(spec.cx, spec.cy);
+  const endShape = ow && spec.end !== 'square' ? spec.end : null;
   // Two rails along the travel axis straddling local y = ±half, rendered in
-  // the marker's rotated frame.
+  // the marker's rotated frame — or, for a reshaped end, along the inward half
+  // of the marker's side edges in the OUTWARD frame (which is the frame that
+  // end follows; see markerEnd.ts).
   const rails =
     railW > 0 &&
-    [half - railW / 2, -half - railW / 2].map((y) => (
-      <rect
-        key={y}
-        data-marker-casing
-        data-line-id={spec.lineId}
-        x={-half}
-        y={y}
-        width={spec.width}
-        height={railW}
-        fill={lineCasingColor(live, color)}
-        transform={`translate(${spec.cx} ${spec.cy}) rotate(${spec.rotationDeg})`}
-        pointerEvents="none"
-      />
-    ));
+    (endShape && ow
+      ? markerEndSides(center, ow, half).map(([from, to], i) => (
+          <line
+            key={i}
+            data-marker-casing
+            data-line-id={spec.lineId}
+            x1={from.x}
+            y1={from.y}
+            x2={to.x}
+            y2={to.y}
+            stroke={lineCasingColor(live, color)}
+            strokeWidth={railW}
+            strokeLinecap="butt"
+            pointerEvents="none"
+          />
+        ))
+      : [half - railW / 2, -half - railW / 2].map((y) => (
+          <rect
+            key={y}
+            data-marker-casing
+            data-line-id={spec.lineId}
+            x={-half}
+            y={y}
+            width={spec.width}
+            height={railW}
+            fill={lineCasingColor(live, color)}
+            transform={`translate(${spec.cx} ${spec.cy}) rotate(${spec.rotationDeg})`}
+            pointerEvents="none"
+          />
+        )));
   // End cap: at a terminus (outward set), one rail straddling the line's
   // outer end edge, perpendicular to the band tangent and spanning the
   // full cased width (width + railW) so it meets the side rails' corners
-  // cleanly — the casing closes around the line's end.
-  const ow = spec.outward;
+  // cleanly — the casing closes around the line's end. A 'short' end moves
+  // that bar back to the stop center (where the line now stops); a 'round' one
+  // replaces it with the arc, stroked on the same boundary the side rails sit
+  // on, so the three meet tangentially instead of at a corner.
   const cap =
-    railW > 0 && ow && !noEndCap
-      ? (() => {
-          const ex = spec.cx + ow.x * half;
-          const ey = spec.cy + ow.y * half;
+    railW > 0 && ow && !noEndCap ? (
+      endShape === 'round' ? (
+        <path
+          data-marker-casing
+          data-line-id={spec.lineId}
+          d={markerEndRailArc(center, ow, half)}
+          fill="none"
+          stroke={lineCasingColor(live, color)}
+          strokeWidth={railW}
+          strokeLinecap="butt"
+          pointerEvents="none"
+        />
+      ) : (
+        (() => {
+          const e = markerEndCapCenter(center, ow, half, spec.end);
           const reach = half + railW / 2;
           return (
             <line
               data-marker-casing
               data-line-id={spec.lineId}
-              x1={ex - ow.y * reach}
-              y1={ey + ow.x * reach}
-              x2={ex + ow.y * reach}
-              y2={ey - ow.x * reach}
+              x1={e.x - ow.y * reach}
+              y1={e.y + ow.x * reach}
+              x2={e.x + ow.y * reach}
+              y2={e.y - ow.x * reach}
               stroke={lineCasingColor(live, color)}
               strokeWidth={railW}
               strokeLinecap="butt"
@@ -107,18 +162,20 @@ export const StopMarker = memo(function StopMarker({
             />
           );
         })()
-      : null;
+      )
+    ) : null;
   if (spec.style === 'hatched' || spec.style === 'hatched-mirror') {
+    const fill = `url(#${hatchPatternId(color, spec.style)})`;
     const pts = rotatedSquareCorners(spec.cx, spec.cy, half, spec.rotationDeg)
       .map((p) => `${p.x},${p.y}`)
       .join(' ');
     return (
       <>
-        <polygon
-          points={pts}
-          fill={`url(#${hatchPatternId(color, spec.style)})`}
-          pointerEvents="none"
-        />
+        {endShape && ow ? (
+          <path d={markerEndPath(center, ow, half, endShape)} fill={fill} pointerEvents="none" />
+        ) : (
+          <polygon points={pts} fill={fill} pointerEvents="none" />
+        )}
         {rails}
         {cap}
       </>
@@ -126,6 +183,11 @@ export const StopMarker = memo(function StopMarker({
   }
   if (spec.style !== 'solid') {
     if (!spec.outward) return null;
+    // The stub IS this style's outward half, so a short end is exactly "no
+    // stub": the patterned corridor stops at the stop center, and only the
+    // casing's end cap moves back to close it there. (A round end can't reach
+    // here — resolveEndStyle degraded it to short before the spec was baked.)
+    if (endShape) return <>{cap}</>;
     const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(
       spec.style,
       color,
@@ -188,15 +250,19 @@ export const StopMarker = memo(function StopMarker({
   }
   return (
     <>
-      <rect
-        x={-half}
-        y={-half}
-        width={spec.width}
-        height={spec.width}
-        fill={color}
-        transform={`translate(${spec.cx} ${spec.cy}) rotate(${spec.rotationDeg})`}
-        pointerEvents="none"
-      />
+      {endShape && ow ? (
+        <path d={markerEndPath(center, ow, half, endShape)} fill={color} pointerEvents="none" />
+      ) : (
+        <rect
+          x={-half}
+          y={-half}
+          width={spec.width}
+          height={spec.width}
+          fill={color}
+          transform={`translate(${spec.cx} ${spec.cy}) rotate(${spec.rotationDeg})`}
+          pointerEvents="none"
+        />
+      )}
       {rails}
       {cap}
     </>

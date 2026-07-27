@@ -1618,3 +1618,69 @@ describe('parse — legacy doc-level curveRadius bake', () => {
     if (second.ok) expect(second.doc).toEqual(first.doc);
   });
 });
+
+// Line ends on disk: the line's own style is a plain drop-at-default field; the
+// per-terminus pins are topology-scoped, so the loader re-validates them
+// against the edge set the file actually carries (a hand-edited or
+// concurrently-edited file can disagree with itself).
+describe('line ends — file hygiene', () => {
+  const chain = (linePatch: object) =>
+    makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', stops: [makeStop('L1')] }),
+        makeStation({ id: 'c', stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'], ...linePatch })],
+      styles: Object.values(T.DEFAULT_STYLES),
+    });
+  const load = (doc: MapDoc) => {
+    const r = parse(serialize(doc));
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error('unreachable');
+    return r.doc.lines.L1;
+  };
+
+  it('round-trips a line end and its terminus pins', () => {
+    const line = load(chain({ endStyle: 'round', stationEndStyles: { a: 'short' } }));
+    expect(line.endStyle).toBe('round');
+    expect(line.stationEndStyles).toEqual({ a: 'short' });
+  });
+
+  it('drops a square end style — the default is never stored', () => {
+    expect('endStyle' in load(chain({ endStyle: 'square' }))).toBe(false);
+  });
+
+  it('drops a garbage end style rather than rejecting the file', () => {
+    const line = load(chain({ endStyle: 'bevelled' as never }));
+    expect('endStyle' in line).toBe(false);
+  });
+
+  it('drops a pin on a station that is not an end', () => {
+    // b is interior; c really is an end and survives.
+    const line = load(chain({ stationEndStyles: { b: 'round', c: 'round' } }));
+    expect(line.stationEndStyles).toEqual({ c: 'round' });
+  });
+
+  it('drops a pin that merely repeats the line’s own end', () => {
+    const line = load(chain({ endStyle: 'round', stationEndStyles: { a: 'round' } }));
+    expect('stationEndStyles' in line).toBe(false);
+  });
+
+  it('judges pin redundancy against the CLEANED line end', () => {
+    // The garbage line end heals to square, so a square pin is redundant —
+    // deciding that against the raw value would have kept it.
+    const line = load(chain({ endStyle: 'nonsense' as never, stationEndStyles: { a: 'square' } }));
+    expect('stationEndStyles' in line).toBe(false);
+  });
+
+  it('drops a garbage pin value and the whole map once it empties', () => {
+    const line = load(chain({ stationEndStyles: { a: 'blobby' as never } }));
+    expect('stationEndStyles' in line).toBe(false);
+  });
+
+  it('survives a pin map that is not an object at all', () => {
+    const line = load(chain({ stationEndStyles: 'nope' as never }));
+    expect('stationEndStyles' in line).toBe(false);
+  });
+});

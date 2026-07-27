@@ -8,6 +8,7 @@ import { useDoc } from '../state/store';
 import { ColorField } from './ColorField';
 import { DayNightColorRow } from './DayNightColorRow';
 import { NumericFieldRow } from './NumericFieldRow';
+import { LineEndSegmented } from './LineEndPicker';
 import { WeightSelect, ItalicButton } from './WeightItalicControls';
 import { StopGlyph } from './StopGlyph';
 import { StationShapePicker } from './StationShapePicker';
@@ -232,6 +233,13 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
         getCurrent={liveNumberProp(id, 'curveRadius', props.curveRadius)}
         textboxAllowAboveMax
       />
+      {/* The wearer's painted ends. Covered like every other field here, so a
+          style can force square back onto a line someone rounded by hand. The
+          per-terminus pins are NOT covered — they stay with the line. */}
+      <div className="row">
+        <label>Line ends</label>
+        <LineEndSegmented value={props.endStyle} onSelect={(endStyle) => patch({ endStyle })} />
+      </div>
       <div className="style-divider" />
       <NumericFieldRow
         id={`style-${id}-stroke`}

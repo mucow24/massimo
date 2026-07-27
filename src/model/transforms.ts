@@ -16,6 +16,7 @@ import {
   lineWidthOf,
 } from './lineWidth';
 import { LINE_CURVE_RADIUS_DEFAULT, canonicalLineCurveRadius } from './lineCurve';
+import { LINE_END_STYLE_DEFAULT, lineEndStyleOf } from './lineEnd';
 import { repackStationForSpacing } from './stationPacking';
 import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
 import {
@@ -59,6 +60,7 @@ import {
   degreeOf,
   edgeNeighbors,
   edgesWithout,
+  isLineTerminus,
   lineHasEdge,
   removeEdge,
   shortestPathOnLine,
@@ -81,6 +83,7 @@ import type {
   LabelCell,
   LabelValign,
   Line,
+  LineEndStyle,
   LineId,
   LineStyle,
   LineTag,
@@ -807,6 +810,76 @@ export function setLineCurveRadius(doc: MapDoc, id: LineId, r: number): MapDoc {
   return setLineStyleField(doc, id, 'curveRadius', canonicalLineCurveRadius(r));
 }
 
+// Per-line END style — what the line's painted ends look like at every one of
+// its termini (see model/lineEnd.ts). Same contract as the other plain style
+// setters: the field is dropped at the default ('square', the historical full
+// marker square) so it is never stored, and a real change detaches the line
+// from its style preset. PRESENTATION for band geometry, but it moves the stop
+// markers' painted FOOTPRINT, so store actions wrap this in withRegionReconcile
+// like the geometry writers.
+// Also canonicalizes the per-terminus pins against the NEW end, the way the four
+// "set line default" dot setters prune per-stop overrides the new default just
+// made redundant: a pin equal to the line's own end is not an override at all,
+// and leaving one stored would make the doc render differently after a
+// save/load round-trip, since the file loader drops it (see sanitizeLineEnds).
+export function setLineEndStyle(doc: MapDoc, id: LineId, end: LineEndStyle): MapDoc {
+  const next = setLineStyleField(
+    doc,
+    id,
+    'endStyle',
+    end === LINE_END_STYLE_DEFAULT ? undefined : end,
+  );
+  if (next === doc) return doc;
+  const line = next.lines[id];
+  const pins = line.stationEndStyles;
+  if (!pins) return next;
+  const kept: Record<StationId, LineEndStyle> = {};
+  let changed = false;
+  for (const stationId of Object.keys(pins)) {
+    if (pins[stationId] === end) changed = true;
+    else kept[stationId] = pins[stationId];
+  }
+  if (!changed) return next;
+  const updated: Line =
+    Object.keys(kept).length === 0
+      ? (({ stationEndStyles: _gone, ...rest }) => rest as Line)(line)
+      : { ...line, stationEndStyles: kept };
+  return { ...next, lines: { ...next.lines, [id]: updated } };
+}
+
+/**
+ * Pin ONE terminus's end style, overriding the line's own. Setting the line's
+ * effective default clears the pin instead — so the station tracks the line
+ * going forward and persisted state stays clean (the same contract
+ * `setDotStyle` / `setDotSize` use for per-stop dot overrides).
+ *
+ * No-ops unless `stationId` is currently an END of the line: the override has no
+ * meaning anywhere else, and admitting one would leave a key that the very next
+ * topology change prunes. Not a covered style field, so unlike `setLineEndStyle`
+ * this does NOT detach the line from its preset — a line style carries the
+ * line's own end, never its per-station pins.
+ */
+export function setStationEndStyle(
+  doc: MapDoc,
+  lineId: LineId,
+  stationId: StationId,
+  end: LineEndStyle,
+): MapDoc {
+  const line = doc.lines[lineId];
+  if (!line || !isLineTerminus(line, stationId)) return doc;
+  const cur = line.stationEndStyles;
+  const stored = end === lineEndStyleOf(line) ? undefined : end;
+  if ((cur?.[stationId] ?? undefined) === stored) return doc;
+  const next: Record<StationId, LineEndStyle> = { ...cur };
+  if (stored === undefined) delete next[stationId];
+  else next[stationId] = stored;
+  const updated: Line =
+    Object.keys(next).length === 0
+      ? (({ stationEndStyles: _gone, ...rest }) => rest as Line)(line)
+      : { ...line, stationEndStyles: next };
+  return { ...doc, lines: { ...doc.lines, [lineId]: updated } };
+}
+
 // Per-line casing width. Same contract as setLineWidth except the grid:
 // non-finite input is ignored, the value is rounded to the nearest
 // LINE_STROKE_STEP (0.25) and clamped to ≥ LINE_STROKE_WIDTH_MIN, and the
@@ -1330,7 +1403,7 @@ export function deleteStation(doc: MapDoc, id: StationId): MapDoc {
     // Drop the station from the line (healing a degree-2 gap so the line stays
     // connected), then prune any segment style/layer override whose pair-key is
     // no longer an edge — same contract as removeStationFromLine / deleteLine.
-    lines[lid] = pruneOrphanSegmentStyles({
+    lines[lid] = pruneOrphanLineOverrides({
       ...ln,
       stations: ln.stations.filter((x) => x !== id),
       edges: edgesAfterRemoveStation(ln.edges, id),
@@ -1775,7 +1848,7 @@ export function removeStationFromLine(doc: MapDoc, lineId: LineId, idx: number):
       (e) => isStopEnd(e) && e.stationId === removedStationId && e.lineId === lineId,
     );
   }
-  const updatedLine = pruneOrphanSegmentStyles({
+  const updatedLine = pruneOrphanLineOverrides({
     ...ln,
     stations: newStations,
     edges: edgesAfterRemoveStation(ln.edges, removedStationId),
@@ -1807,7 +1880,7 @@ export function toggleEdgeOnLine(doc: MapDoc, lineId: LineId, a: StationId, b: S
   const removing = lineHasEdge(ln, a, b);
   const nextEdges = removing ? removeEdge(ln.edges, a, b) : addEdge(ln.edges, a, b);
   if (nextEdges === ln.edges) return doc;
-  const updatedLine = pruneOrphanSegmentStyles({ ...ln, edges: nextEdges });
+  const updatedLine = pruneOrphanLineOverrides({ ...ln, edges: nextEdges });
   let out = pruneOrphanLineTags({ ...doc, lines: { ...doc.lines, [lineId]: updatedLine } });
   if (removing) {
     for (const endpoint of [a, b]) {
@@ -1850,7 +1923,13 @@ export function connectStationsOnLine(
   const edges = addEdge(ln.edges, fromStationId, toStationId);
   return {
     ...doc,
-    lines: { ...doc.lines, [lineId]: { ...ln, stations: newStations, edges } },
+    // Wiring an edge can only ADD adjacency, so no segment style is orphaned —
+    // but the station it wires FROM just stopped being an end, and its end-style
+    // override goes with it.
+    lines: {
+      ...doc.lines,
+      [lineId]: pruneOrphanLineOverrides({ ...ln, stations: newStations, edges }),
+    },
     // Only a station gaining its first line is auto-oriented; anything already
     // served keeps the rotation the user gave it.
     stations:
@@ -1892,7 +1971,7 @@ export function spliceStationIntoEdge(
   let edges = removeEdge(ln.edges, fromStationId, toStationId);
   edges = addEdge(edges, fromStationId, stationId);
   edges = addEdge(edges, stationId, toStationId);
-  const updatedLine = pruneOrphanSegmentStyles({ ...ln, stations: newStations, edges });
+  const updatedLine = pruneOrphanLineOverrides({ ...ln, stations: newStations, edges });
   return pruneOrphanLineTags({
     ...doc,
     lines: { ...doc.lines, [lineId]: updatedLine },
@@ -3002,21 +3081,50 @@ function pruneOrphanLineTags(doc: MapDoc): MapDoc {
   return changed ? { ...doc, lineTags: next } : doc;
 }
 
-// Drop entries from `line.segmentStyles` whose pair-key no longer corresponds
-// to a station-pair adjacency on this line. Returns the input line unchanged
-// if the map is missing/empty or every key still maps to a real edge.
-function pruneOrphanSegmentStyles(line: Line): Line {
-  const styles = line.segmentStyles;
-  if (!styles) return line;
-  // Valid keys are exactly this line's edges — the topology source of truth.
-  const validKeys = new Set<string>(line.edges);
-  const filtered: Record<string, LineStyle> = {};
-  let changed = false;
-  for (const key of Object.keys(styles)) {
-    if (validKeys.has(key)) filtered[key] = styles[key];
-    else changed = true;
+// Drop the line's TOPOLOGY-SCOPED overrides that its current edge set no longer
+// admits. Two maps qualify, and they share this one choke point because they
+// share a lifetime — an override outlives the thing it overrides for exactly as
+// long as nobody looks:
+//
+//   segmentStyles     — keyed by pair-key; valid while that pair is an edge.
+//   stationEndStyles  — keyed by station; valid while that station is an END
+//                       (degree 1). Appending past a terminus, closing a loop,
+//                       branching at it, or dropping the stop all revoke it.
+//
+// Returns the input line unchanged when nothing needed dropping (the
+// reference-on-no-op contract undo grouping relies on).
+function pruneOrphanLineOverrides(line: Line): Line {
+  let next = line;
+  const styles = next.segmentStyles;
+  if (styles) {
+    // Valid keys are exactly this line's edges — the topology source of truth.
+    const validKeys = new Set<string>(next.edges);
+    const filtered: Record<string, LineStyle> = {};
+    let changed = false;
+    for (const key of Object.keys(styles)) {
+      if (validKeys.has(key)) filtered[key] = styles[key];
+      else changed = true;
+    }
+    if (changed) next = { ...next, segmentStyles: filtered };
   }
-  return changed ? { ...line, segmentStyles: filtered } : line;
+  const ends = next.stationEndStyles;
+  if (ends) {
+    const filtered: Record<StationId, LineEndStyle> = {};
+    let changed = false;
+    for (const stationId of Object.keys(ends)) {
+      if (isLineTerminus(next, stationId)) filtered[stationId] = ends[stationId];
+      else changed = true;
+    }
+    if (changed) {
+      // Drop the map entirely once it empties, so "no overrides" has one
+      // representation on disk and in memory.
+      next =
+        Object.keys(filtered).length === 0
+          ? (({ stationEndStyles: _gone, ...rest }) => rest as Line)(next)
+          : { ...next, stationEndStyles: filtered };
+    }
+  }
+  return next;
 }
 
 function isLineEdge(line: Line, a: StationId, b: StationId): boolean {
@@ -3049,6 +3157,7 @@ export const DEFAULT_STYLES: Record<string, StyleDef> = {
       multiDotSize: DOT_SIZE_DEFAULT,
       width: LINE_WIDTH_DEFAULT,
       curveRadius: LINE_CURVE_RADIUS_DEFAULT,
+      endStyle: LINE_END_STYLE_DEFAULT,
       strokeWidth: LINE_STROKE_WIDTH_DEFAULT,
       strokeColor: LINE_STROKE_COLOR_DEFAULT,
     },
