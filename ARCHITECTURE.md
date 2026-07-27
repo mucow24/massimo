@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `2b44c86` (2026-07-27, #357) — verified against the live source. This PR: the Edit Stops hover gained a SECOND-station cue and a route preview. Pointing at a station a click would put on the line now promotes its name to the same line-colored `starter-label` treatment the pen's own station wears — REPLACING its dimmed/white pass rather than stacking a second label on it — and paints the corridor(s) the click would draw at `ROUTE_PREVIEW_OPACITY` = 0.5, over the dim (which shows through at 1 − `dimOpacity` = 0.3) and under the fully-bright line being edited, beneath the halos/dots/names so no committed chrome is hidden by a maybe. The route is NOT an approximation: [appendRoutePreview.ts](src/geometry/appendRoutePreview.ts) runs the ACTUAL `connectStationsOnLine` / `spliceStationIntoEdge` over a `DEFAULT_DOC` scratch shell (the transforms read only `lines`/`stations`, plus `lineTags` for the splice's orphan prune, and band geometry reads nothing else — so the paint layer never has to thread the whole doc down) and rebuilds bands from the result, inheriting the stop-cell spawn (a new stop on an interchange lands OFF the anchor), `autoOrientNewStation`, the fillet radius and any interlining for free; it cannot promise a shape the click won't deliver, and the tests pin each preview band against that ground truth. A splice previews BOTH halves — the click cuts the corridor it subdivides, so previewing only the near half would promise a dogleg that keeps the original straight run. The seam pass is deliberately dropped: its clip is keyed on a REAL band (`SeamClips`), which an undrawn corridor has no entry for, and a dangling `url(#…)` risks the same "treated as no clip" ambiguity `SeamClips` already pads its EMPTY clips against — an unclipped seam would paint the preview's full length. ONE gate feeds both cues — `appendRoutePreviewEdges` (appendGestures), the edges a click ADDS — so the name and the route can never disagree; it is empty for a click that only walks the pen, INCLUDING onto an already-connected neighbour, where `connectStationsOnLine` no-ops (the hover ring still shows, since the click does advance the cursor, but no route is promised). `HighlightedLineLayer` also stopped re-deriving `ln` / `append` / `validCursor` once per block (three times over) and `lineRepaintNodes` took a `passes` argument instead of hard-coding all three. A code-health pass before it (#357): four documented claims this file had outlived, plus the `TransferEnd` narrowing seam and the anchor footprint behind them. The doc was still describing `UiMode` with a `creating-transfer(anchor)` payload and no `placing-anchor` at all, the selection as **five** id-lists when #352 made it six (`selectedAnchorIds`, plus the `selectedAnchorCellId` sub-selection), and its exhaustive 18-step paint order never mentioned `AnchorLayer` — a whole layer, mounted between the dots and the transfer outline since #352. #355 shipped without touching this file at all, so the per-station hover/selection reveal (`revealedAnchorStations`, the reason `MapCanvas` gates its anchor block on `showNetwork` and PICKS the layer's inputs rather than gating on `anchorsVisible`) was undocumented; it is written down beside the two mode reveals now. Code: `model/transferAnchors.ts` OWNS the three-arm narrowing and warns that `'stationId' in end` is the subtle test — two arms carry one — yet four sites hand-rolled exactly that check ([MapCanvas](src/components/MapCanvas.tsx), [AnchorLayer](src/components/canvas/AnchorLayer.tsx) via a private `isHosted`, [transferEnds](src/geometry/transferEnds.ts), and the module itself), each correct only because of where it sat in an if-chain; they now ask `isHostedAnchorEnd` / `isFreeAnchorEnd`, total guards pinned by a test that fails on the naive spelling. The same module's `endAnchorId`/`endLineId` are gone — exported accessors with zero callers, since every consumer narrows with a guard and reads the field directly. `ANCHOR_HALF` (a free anchor's one-cell world footprint) moved to [geometry/orientation](src/geometry/orientation.ts) beside the `STOP_SIZE` it derives from: content bounds computed it while the marquee (`transferAnchorsForRect`) carried a bare `7`, and BOTH docstrings misdescribed it — the marquee claimed to measure “their painted disc” and itemBounds called that disc “deliberately larger” when it is smaller (radius 5.25 vs 7) — so a boundary test now pins framing and grabbing to the one constant. Tests: `soleSelection`'s and `currentHitEntity`'s `anchor` arm gained the coverage its own comment said it needed — it exists for hitStack's alt-click cycle, not for a popover, so dropping it fails silently; both new tests go red when the arm is removed. Also corrected three comments #352 outran: `setUiMode` clears **five** hover channels, not four (`hoveredAnchorKey`), `ItemPopovers` groups **six** multi-select lists, and `setTransferFirstEnd` no longer claims to update “the variant's anchor”. Since #351 (`4caa741`): a transfer end can be something other than a stop dot — `TransferEnd` became a three-arm STRUCTURAL union (stop · station-hosted anchor · free anchor, no `kind` tag, so the stop arm stays byte-identical to every saved file and needs no migration), anchors got two deliberate homes (`MapDoc.transferAnchors` for free ones, `Station.transferAnchors` cells for hosted ones so `rotateStationLayoutBy90` carries them), free anchors became first-class canvas objects (multi-select, marquee, group drag/rotate, nudge, Delete — and the first selectable kind with no `locked` field), and `AnchorLayer` paints both homes as export-excluded chrome (#352); a post-merge audit of that work followed (#354); pointing at or selecting a station now reveals ITS anchors only, leaving the rest of the network clean (#355); and a burst of wheel ticks over a slider or spinbutton coalesces into ONE undo entry (`withCoalescedHistory`, a 500ms window keyed per field, discarding the entry it just added rather than pausing recording) (#356). A code-health pass in between (#353): two stale documents, and three claims inside them that the source had already contradicted. This file still described the station-layout editor's chrome as **zoom-floored** rings wearing **orientation glyphs** — #347 made every handle world-sized (geometry AND stroke weight, so the component reads no zoom at all) and replaced the typeset ↕ ⤢ ↔ ⤡ with a drawn, `ORIENTATION_ANGLE`-rotated path, because no font puts that diagonal pair at a true 45° — and it said nothing about #350's redistribute pool split, now written down beside the two snappers. [docs/loops-and-branches.md](docs/loops-and-branches.md) told the reader right-click REMOVES a segment in Edit Stops and never exits the mode, the exact reverse of #326, and still listed `redistributeBetween` + `snap.refineAlongAxis` as open display-order gaps though both walk the edge graph now (#329/#334/#346). Code: `ORIENTATION_ANGLE` moved from [inspector/stopGridDrag.ts](src/components/inspector/stopGridDrag.ts) to [geometry/orientation.ts](src/geometry/orientation.ts), beside the `travelDirLocal` it has to agree with — a canvas component was reaching into an inspector leaf for a rotation table whose key type `StopAxis` was a second spelling of `StopOrientation` — and a new test pins the two tables parallel, since a stop's STRIPE follows `travelDirLocal` while the arrow drawn on it follows `ORIENTATION_ANGLE`, nothing else compared them, and a swapped entry would point every badge across its own line. Four exported label-align cycle constants (`ALIGN_CYCLE`, `VALIGN_CYCLE`, `AUTO_HALIGN_CYCLE`, `AUTO_VALIGN_CYCLE`) are gone: each one's comment claimed to be the canonical display order for the inspector's pickers, which have listed their own options (with icons) since the `SegmentedToggle` extraction, so all four were dead constants fronted by a comment that invited an edit with no effect. And two docstrings asserting contracts the code does not hold — `orientationArrowSize` said the layout editor shares it so “entering the mode must not resize the arrows” (the editor deliberately fits the arrow to its ring instead, and says so ten lines away), and `buildOverlapRegions` described “the many geometry-only callers” it no longer has, being the full-rebuild reference the incremental builder is tested against with no production caller at all. Since #346 (`89d15c7`): the station-layout editor's handles became map-fixed and its arrows drawn rather than typeset (#347); a double-click navigates between the line editor and a station's layout (#349); the region rebuild went component-wise plus incrementally reused behind a single WASM clipper engine, ~144ms per frame down to 12–54ms (#348); snap-to-all works during a Ctrl-drag redistribute, against every station the redistribute isn't moving (#350); and the magic wand butts a label to the crossing stripe at a cross station instead of straddling it (#351). A code-health pass in between (#345): the Edit Stops hit gate stopped re-deriving the click matrix — `useStationInteraction`'s `appendForeignInert` hand-rolled `decideStationClick`'s dead-click case (non-empty line + no valid cursor + non-member) inline and now simply ASKS it (`decideStationClick(...).kind === 'none'`, still AND-ed with `hasStripeBeneath`), so the hit surface and the click can't disagree about which stations are dead, with the previously-uncovered edge-cursor arm pinned by a new test; a line's user-facing name became one shared `lineDisplayName(line)` ([lineNaming.ts](src/model/lineNaming.ts)) — the sidebar row, the layout editor's stop tooltip, and the inspector's stop badge each spelled it their own way and the badge DISAGREED (`Line <service>`, dropping a named line's name), so the same stop now reads the same on every surface; the three station-label passes ([StationLabel.tsx](src/components/StationLabel.tsx) — starter / highlight / normal) stopped re-listing the seven positioning fields and the overlay frame (hidden-waypoint skip, station-rotated `<g>`, "WP" lozenge), now sharing `labelTextPosition` + `OverlayLabelFrame`, with the cross-pass geometry agreement pinned by a test (the highlight pass paints OVER the normal one, so drift reads as a doubled label); and two comments were corrected — [HighlightedLineLayer](src/components/canvas/HighlightedLineLayer.tsx)'s hover-zone note still called the ring "dashed" (solid since #342) and sat above the wrong declaration, and [StationSilhouette](src/components/StationSilhouette.tsx)'s docstring never listed its `hover-zone` layer. Since #344 (`d7b6591`): a 20-bug fix pass from an adversarial audit; each fix ships with the failing test that found it. The load-bearing ones, all of which changed a documented invariant: `updateLine`'s inline-bullet migration now gates on `isBulletCode` (labelTokens owns that grammar) — an EMPTY old service code used to collapse its search patterns to the bare delimiter pairs and rewrite every station name and text label in the doc, and the Line inspector no longer writes an empty service through mid-edit; `SIBLING_PRIMARY_CLEAR` gained `selectedVertices` so a marquee/shift-click can't strand an invisible armed vertex that Delete and the arrows then obey; `updateLine`/`setLabelOffset` regained the same-reference-on-no-op guard; `setDotStyle` decides "equals the line default" by VALUE against the resolved default (an id compare lied once a stopDot style was deleted out from under a line); `updateStyleProps` re-asserts the line-style contract after a stopDot edit (dot diameter is style-dependent, so it can drift a tagged line off its style); `parse()` gates `bakeStopDotLibrary` on whether the FILE carried styles, not the merge-fabricated record; `refineAlongAxis` walks the edge graph via `neighborsOf` instead of `line.stations` order; `buildStopMarkers` indexes bands by pairKey into a LIST and picks the one its own line rides; `regionGeometrySig` keeps an edgeless-but-stopped line's width; `LineMetrics.alignAdvance` (advance minus the ONE trailing letter-spacing step, reported per segment so an untracked measurer isn't over-corrected) is now the alignment reference so tracked labels stay inside their own box; the font-load epoch moved to a store (`state/fontEpoch.ts`) because App-local state could never reach memo'd `StationView`; the export snapshot neutralizes layering mode; the chevron edge bleed is world units, not screen-px-over-zoom; `bakeLetterSpacing` runs AFTER glyph outlining and the splitter carries `letter-spacing`; `liveSnapStations` gates the snap ENGINE the way `liveAlignTargets` gates the pool; and a text label is minted already wearing its default style so the drop lands where the ghost promised. Since #340 (`b35d064`): each stop grab-handle in the on-canvas station layout editor gained a native `<title>` naming its line (#341); the Edit Stops hover behavior got three fixes — the station hover-zone now matches the main map (SOLID two-tone ring over a light white wash instead of a dashed outline, white because the editor's dim would swallow an accent tint), foreign stations go click-through exactly where `decideStationClick` returns 'none' so the click reaches the line beneath, and a hovered foreign line lifts above the dim through the edited line's own renderer — cased three-pass stripes PLUS its markers and dots — at `HOVER_LINE_OPACITY` = 0.5, replacing a body-only 0.55 overlay that carried no casing and dropped the dots (#342); the Edit Stops hover ring moved off the station anchor to `spawnStopCellAt` — where a click actually DROPS the new stop, which on an interchange is not the anchor (#343); and shift-click in layering mode floods the color a region already shows (#344). Previously (#339 and earlier): the drag-proxy hide/restore dance around DOM hit-tests (`element(s)FromPoint`), copy-pasted across `rerouteProxyEventBeneath` and both alt deep-picks in [MapCanvas](src/components/MapCanvas.tsx), collapsed into one `hitTestBeneathProxies(probe)` helper; the `appending-to-line` branch of `handleCanvasPlace` plus `runAppendCreate`'s seed/connect arms ([usePlacementDispatch.ts](src/components/canvas/usePlacementDispatch.ts)) — the empty-canvas alt-click half of the Edit Stops create path, whose splice half was already covered through MapCanvas — gained direct tests (create/connect, one-undo grouping, cursor back-out, mode exit, deleted-line guard); and two needless single-call wrappers in [interlining.ts](src/geometry/interlining.ts) — `bandCentroid` (an EXPORTED alias over `vec.centroid`) and `worldToStationLocal` — were inlined, dropping `bandCentroid`'s non-load-bearing alias test. Since #335 (`0b95649`): a prior code-health pass extracted the shared `clamp(v, lo, hi)` primitive into [util/grid](src/util/grid.ts) (backing the ~25 hand-rolled `Math.max(lo, Math.min(hi, …))` sites across every layer), routed `clampPolygonStrokeWidth` ([transforms.ts](src/model/transforms.ts)) through `roundClamp` (restoring its dropped float-artifact scrub), and dropped `segmentStyles` from both `buildBandGeometry`'s docstring and MapCanvas's `linesGeometrySig` hash — band geometry is presentation-BLIND, so a segment-style edit now repaints WITHOUT a needless band rebuild, pinned by a style-independence test (#336); an alt-click on the ALREADY-armed Edit Stops segment now splices a station mid-segment (a new `alt` param on `decideSegmentClick`) instead of doing nothing, routed through the same `runAppendCreate` as the empty-canvas alt-click so both mint+wire the station identically (#337); the ctrl-drag redistribute now toggles LIVE mid-drag — pressing/releasing Ctrl during a station drag engages/drops even-spacing on the next move (`useStationDrag`) rather than being latched at grab (#338); and `autoOrientNewStation` ([autoOrient.ts](src/model/autoOrient.ts)) flips 180° to the axis-equivalent rotation when the raw tangent would land the label upside-down (screen octants 3/4/5) — same stripe through the same centered stop, right-side-up text (#339). Since #333 (`55fec33`): a prior code-health pass fixed the ctrl-drag redistribute readout (`spacingDivisor`, [snap.ts](src/geometry/snap.ts)) to count segments over the edge graph via `shortestPathOnLine` (the old `line.stations` index slice miscounted on loops/branches/out-of-order lines), extracted the `roundClamp` primitive shared by the ~8 quarter-grid canonicalizers, moved `appendGestures.ts` from `components/canvas/` to `model/` (undoing the store→component inversion `state/selection.ts` had triggered), and corrected the `bindAssignments` docstring to *world* distance (#334); and line casing/seam colors can now follow the line's OWN color — `Line.strokeColor`/`seamColor` and the matching `LineStyleProps` fields accept the `'line'` sentinel (`LINE_OWN_COLOR`), resolved at render time and mirroring a dot style's `'line'` fill/stroke, so the raw accessors `lineStrokeColorOf`/`lineSeamColorOf` were renamed to `lineStrokeColorStored`/`lineSeamColorStored` (capture-by-example and the editors keep the sentinel) while new `lineCasingColor`/`lineSeamColor` resolve it to a paintable hue; no migration (#335). Since #324 (`832e2a2`): export filenames now version-stamp (`<name> - v<version>[d]`, date only as a no-library fallback) instead of date-stamping (#325); the Edit Stops (`appending-to-line`) mode got a usability overhaul — it is now manipulation-free (station drag/rotate unwired), **alt-click** creates a fresh station under the cursor, right-click anywhere **exits** the mode (removing nothing; removal is the × chip or Delete) rather than removing an edge, `appendHover` gained a `{kind:'line'}` variant that previews/switches to a foreign line's stripe, and the line-popover's style detail collapses via a new persisted `useLineEditorPrefs` store (#326); label adjacency recognizes interline-gap parks (#327); ctrl-click redistribute walks edge topology via `shortestPathOnLine` rather than membership order (#329); and hovering a station in idle mode paints its stop dots' orientation glyphs (a new `hover-arrows` paint layer above the routing-warning markers) (#330/#331). Earlier, since #321: a per-line `interlineGap` (GEOMETRY, 0.25 grid, drop-at-0) inserts spacing between interlined neighbors — `tangentGap` now takes both widths AND both gaps (`(wA+wB)/2 + max(gapA,gapB)`), threaded through the band merge gate, stripe offsets, spawn, and the width-edit repack (`repackStationForWidth` → `repackStationForSpacing`); `gap=0` is a bit-exact identity (#323). Its exposed hole/seam edges surfaced two clip-precision fixes: clip content is emitted in ×64 local coords to beat Blink's ~1-unit clip-resource raster snap (shared `clipRaster.ts`, used by both `SeamClips` and `RegionExcludeClips`), and the region-exclude outer ring is a content-sized AABB (`regionClipBounds`) rather than a ±500000 constant (#323/#324). Earlier changes since `f2b8a1a` (#304), the big one being the doc-scoped "Stop dots" style library: `stopDot` is now a 7th styleable kind whose styles live in a small per-doc library (`bakeStopDotLibrary`, persist v19), the per-line/per-stop dot TYPE became a covered `LineStyleProps` field (`singletonDotStyleId`/`multiDotStyleId`, persist v20), and `DotStyle` gained a required `strokeAlign` (center/inside/outside, persist v21) and an optional `serviceCodeColor` (absent ⇒ B/W auto-contrast). Persist `version` is now `21`. The viewport store gained two local chrome preferences — `dayCanvasColor` (white/gray/black day paper) and `darkUiInDay` (chrome-only dark UI while the map stays in day mode, driving `chromeDark`) — and `themeColors` takes `dayCanvasColor`. All dimensional inputs (dot size, transfer thickness, route-bullet size) unified onto the 0.25 quarter grid (#321). This code-health pass also extracted the shared `SegmentedToggle` (one implementation for the ~13 inline pick-one Radix `ToggleGroup` clusters) and moved `snapToStep` to a leaf `util/grid` shared by every quarter-grid canonicalizer.**
+**Up to date as of commit `2a8f4fc` (2026-07-27, #358) — verified against the live source.**
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
 > caveats. Written for an AI assistant (or new contributor) who needs the full picture
@@ -119,7 +119,9 @@ src/
     lineWidth.ts lineStroke.ts  # stripe width (GEOMETRY) + casing rails (PRESENTATION)
     stationPacking.ts           # width-edit repack: keeps tangent stop chains packed
     lineOrder.ts                # z-order reconcile (lineOrder = the default stacking)
-    lineNaming.ts               # nameForIndex/pickNextLineName (next free letter name)
+    lineNaming.ts               # nameForIndex/pickNextLineName (next free letter name) + lineDisplayName
+                                #   (the ONE user-facing spelling of a line's name — sidebar row, layout-editor
+                                #   stop tooltip, and inspector stop badge all read it, so they can't disagree)
     lineTopology.ts             # the single owner of a Line's edge-set adjacency (degree/neighbours/incidence, add/remove edge, edgesFromStations, shortestPathOnLine)
     appendGestures.ts           # pure Edit Stops gesture decisions ((line, cursor, click/delete target) → next doc edit); no React/store, so state/ and canvas/ both consume it
     matching.ts pathSelect.ts   # interlining-group matching + shortest-path selection
@@ -129,7 +131,10 @@ src/
                                 #   size + data URI (+ href security allow-list)
 
   geometry/                     # PURE math — world coordinates, no React/store
-    vec.ts orientation.ts       # vector primitives; rotation/local↔world; STOP_SIZE=14
+    vec.ts orientation.ts       # vector primitives; rotation/local↔world; STOP_SIZE=14;
+                                #   ORIENTATION_ANGLE (stop-axis arrow rotations, beside the travelDirLocal
+                                #   table it must stay parallel to — a test pins the pair) and ANCHOR_HALF
+                                #   (a free transfer anchor's one-cell frame/grab footprint)
     router.ts                   # octolinear path solver + arc fillets + offset paths
     interlining.ts              # THE band algorithm: merge lines into parallel stripes
     appendRoutePreview.ts       # Edit Stops route preview: run the REAL connect/splice on a scratch doc, rebuild bands, keep the ADDED corridors
@@ -150,7 +155,7 @@ src/
     waypointLozenge.ts          # WP-lozenge pill geometry (shared drawn glyph + hit/selection box)
     itemBounds.ts contentBounds.ts  # per-item + whole-map world AABBs (popover spawn + camera fit)
 
-  state/                        # Zustand stores (10 of them) + history
+  state/                        # Zustand stores (14 of them) + history
     store.ts                    # useDoc: temporal(persist(...)) + ~110 actions + migrateDoc
     history.ts                  # the ONLY module touching zundo internals
     selection.ts                # useSelection: UiMode union + multi-select + reconcileWithDoc
@@ -167,6 +172,10 @@ src/
     toastStore.ts               # useToasts: stacking status toasts (pushToast from anywhere)
     snapPrefs.ts                # useSnapPrefs: snap toggles (+ v0→v1 migration)
     labelEditorPrefs.ts         # useLabelEditorPrefs: text-label editor UI prefs (wrapText)
+    lineEditorPrefs.ts          # useLineEditorPrefs: line-popover UI prefs (style detail collapsed)
+    stationEditorPrefs.ts       # useStationEditorPrefs: station-popover UI prefs (typography detail)
+    fontEpoch.ts                # useFontEpoch: web-font load epoch (a STORE so the bump crosses memo'd views)
+    anchorVisibility.ts         # anchorsRevealedByMode + revealedAnchorStations (which transfer anchors show)
     stationNames.ts             # random station-name word lists
 
   components/                   # React + SVG rendering and UI chrome
@@ -180,6 +189,7 @@ src/
     DayNightColorRow.tsx        # shared label + light/dark ColorField pair (every themed-color row)
     FieldSelectContent.tsx      # shared Radix Select panel: portals popover Selects to .app (escapes
                                 #   the .canvas-host isolate layer) + bounds/scrolls a long list (#304)
+    SegmentedToggle.tsx         # THE shared pick-one Radix ToggleGroup (the ~13 inline segmented controls)
     canvas/                     # interaction layer: drag/placement/viewport hooks + overlay layers
     inspector/                  # LineInspector (hosted by the pinned on-canvas LinePopover; identity +
                                 #   line-style fields — stop/topology editing is canvas-driven, see
@@ -189,7 +199,9 @@ src/
   export/                       # exportCanvas.ts (SVG/PNG), fonts.ts, exportCanvasPdf.ts
                                 #   + pure PDF-gap modules pdfHatch/pdfText/pdfGlyphs/
                                 #   pdfDropShadow/pdfMask/pdfAlpha + embeddedSvg (shared image-href plumbing)
-  util/                         # color.ts (hex math), fonts.ts (font stack + weight math)
+  util/                         # color.ts (hex math), fonts.ts (font stack + weight math), grid.ts
+                                #   (clamp/roundClamp/snapToStep — the shared clamp + quarter-grid
+                                #   primitives behind every canonicalizer; leaf, importable anywhere)
   test/                         # fixtures, jsdom setup, integration tests
 e2e/                            # Playwright specs + seedAndOpen harness
 public/fonts/                   # 16 Helvetica Neue .ttf faces + DejaVuSans.ttf (symbol fallback)
@@ -394,7 +406,7 @@ kind. See [styles.ts](src/model/styles.ts).
   selection is visible without inviting edits. Polygon, RouteBullet, TextLabel and SvgImage
   share the same canvas protections, but their popovers **disable every editing control
   except the lock toggle** while locked. **Bulk lock/unlock**: a multi-selection (≥2 items,
-  any mix of the five kinds) mounts one shared `SelectionPopover` with Lock all / Unlock all /
+  any mix of the six kinds) mounts one shared `SelectionPopover` with Lock all / Unlock all /
   Delete all (`setItemsLocked` — one undo entry; delete shares the Delete key's
   unlocked-subset semantics via `state/selectionOps.ts`), so **Alt+marquee → Unlock all** is
   the mass-unlock path (and Lock all the mass-lock).
@@ -682,7 +694,10 @@ counts them). They have **no popover**, but they ARE in `soleSelection` — that
 `hitStack.currentHitEntity`'s source for alt-click cycling, so omitting them would stop the
 deep-pick cycling rather than merely suppressing a panel. They are deliberately **not copyable**
 (`ClipPayload` has no transfer kind, so a pasted anchor could never carry the transfer that gives
-it meaning). HOSTED anchors are station internals like a stop dot: rendered `pointerEvents="none"`
+it meaning). A free anchor's content-bounds and marquee footprint are both the one `ANCHOR_HALF`
+half-cell ([geometry/orientation](src/geometry/orientation.ts), `STOP_SIZE / 2`) — deliberately
+larger than its painted disc (radius 7 vs 5.25), and pinned by a boundary test so framing and
+grabbing can never drift apart. HOSTED anchors are station internals like a stop dot: rendered `pointerEvents="none"`
 (so alt-click reaches through them), edited only in the layout editor.
 
 In the lattice they ride as **passengers**: never in `stationLayoutNodes` (whose node identity is
@@ -701,8 +716,11 @@ cancels outright and the anchor wouldn't move at all.
 to what every existing saved file carries — no migration, no persist bump):
 `{stationId, lineId}` (a stop; lineId picks _which_ dot at an interlined station, null ⇒ station
 anchor) · `{stationId, anchorId}` (a station-hosted anchor — station-keyed so it resolves in one
-lookup) · `{anchorId}` (a free anchor). Narrow via `model/transferAnchors.ts`, testing
-`'anchorId' in end` FIRST — two of the three arms carry a `stationId`. That shared shape is what
+lookup) · `{anchorId}` (a free anchor). Narrow via `model/transferAnchors.ts`'s exported guards
+`isHostedAnchorEnd` / `isFreeAnchorEnd` — never a hand-rolled `'stationId' in end`, which is
+correct only by its position in an if-chain, since two of the three arms carry a `stationId`
+(the module itself tests `'anchorId' in end` FIRST for exactly that reason, and a test fails on
+the naive spelling). That shared shape is what
 keeps the station cascade a one-liner: `endStationId(e) === id` orphans a station's stops AND its
 hosted anchors together. World resolution for all three is `geometry/transferEnds.transferEndWorld`,
 which returns null for a dangling end — both paint passes, the popover spawn and the in-progress
@@ -1067,9 +1085,10 @@ parts and shared one millisecond suffix across kinds.)
 
 ## State management
 
-Ten Zustand stores, split deliberately by lifecycle (`useDoc`, `useSelection`, `useViewportStore`,
-`useLiveViewportStore`, `useSnapPrefs`, `useCustomPalettes`, `useLabelEditorPrefs`,
-`useLibraryPointer`, `useSaveBaseline`, `useToasts`). Files in [src/state/](src/state/).
+Fourteen Zustand stores, split deliberately by lifecycle (`useDoc`, `useSelection`,
+`useViewportStore`, `useLiveViewportStore`, `useSnapPrefs`, `useCustomPalettes`,
+`useLabelEditorPrefs`, `useLineEditorPrefs`, `useStationEditorPrefs`, `useLibraryPrefs`,
+`useLibraryPointer`, `useSaveBaseline`, `useToasts`, `useFontEpoch`). Files in [src/state/](src/state/).
 (`mapLibrary.ts` sits alongside them but is IndexedDB, not a store — it owns no React state; see
 the map-library section below.)
 
@@ -1403,7 +1422,9 @@ of them:
   a primary + a non-parallel secondary axis → solve (2×2 intersection or projection) → apply
   grid as a **hard constraint** (when on, the result is always on-grid; an alignment fires only
   if reconcilable, else falls back to plain grid with no guide) → optional along-axis refinement
-  (equidistant / tens; `excludedIds` also guards the cadence anchors) → build guides.
+  (equidistant / tens — `refineAlongAxis` finds its reference neighbors over the edge graph via
+  `neighborsOf`, never `line.stations` order; `excludedIds` also guards the cadence anchors) →
+  build guides.
 - The **point snapper** `snapPolygonPoint` (`polygonSnap.ts`, decomposed — no 2×2 solver) snaps
   one reference point against a target pool: polygon whole-drags + vertex drags, svg-image
   moves + axis-aligned resizes, text-label drags, unbound route bullets, and **all placement**.
@@ -1630,6 +1651,13 @@ as a prop specifically so it never rebuilds the router.
 stable `useCallback` handlers), so an imperative pan that rewrites the viewBox does **not**
 re-render every station subtree.
 
+**Station names paint in three passes** ([StationLabel.tsx](src/components/StationLabel.tsx) —
+the append-mode `starter`, the selection `highlight`, and the `normal` pass), all sharing
+`labelTextPosition` + `OverlayLabelFrame` so the seven positioning fields and the overlay frame
+(hidden-waypoint skip, station-rotated `<g>`, "WP" lozenge) live once; a test pins the cross-pass
+geometry agreement, because the highlight pass paints OVER the normal one and any drift reads as
+a doubled label.
+
 **Stroke-before-fill dots (the headline render motif).** `StationDots` maps `['stroke','fill'] ×
 stops`, emitting **all stroke-pass glyphs before all fill-pass glyphs**, so overlapping dots share
 **one continuous outer border** (every silhouette is painted before every body). `StopGlyph`
@@ -1715,7 +1743,9 @@ reroute described below; `onContextMenu`/`onDragStart` just `preventDefault`):
 - **Alt+click deep-pick** (`deepPickAltClick` in `onClickCapture`, idle arrow mode only): cycles
   the selection through the stack of selectable entities under the cursor, topmost first — the
   way to reach an element buried under other hit surfaces (a stripe under a station's hit rect, a
-  polygon under a label). `document.elementsFromPoint` (proxy layer hidden, like the reroute) is
+  polygon under a label). `document.elementsFromPoint` — through the shared
+  `hitTestBeneathProxies(probe)`, which hides the drag-proxy layer around any DOM hit-test
+  (`rerouteProxyEventBeneath` and both alt deep-picks all use it) — is
   resolved to entities by the pure [hitStack.ts](src/components/canvas/hitStack.ts)
   (`resolveHitStack` maps the existing `data-*` identity attrs, deduping multi-surface entities;
   `nextInStack` picks the entry after the current sole selection, wrapping — the selection itself
@@ -1794,7 +1824,7 @@ popover/handles). Cursor-following ghost previews (`*PlacingPreview`, all `opaci
 `ItemPopovers` mounts the single popover for the sole selection — including the station editor
 (see UI chrome) and the transfer popover (whose selection is the single-id
 `selectedTransferId` primary outside `soleSelection`) — plus the one shared `SelectionPopover`
-when **≥2 items** are selected across the five lists (idle only): a count summary + Lock all /
+when **≥2 items** are selected across the six lists (idle only): a count summary + Lock all /
 Unlock all / Delete all over the whole group, spawned beside the members' **union AABB** and
 keyed by membership so it re-places when the selection changes. All of them reproject through
 `useLiveView` so they track the canvas during pan/zoom.
@@ -1851,7 +1881,9 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   opened by the `?` key). Owns the **export desaturation flush**: before export it drops the
   selected-line desaturation via `flushSync(() => selectLine(null))` so it isn't baked into the
   clone, then restores the id with a bare `setState` in `finally` (the selectLine ACTION would
-  kick an in-progress Edit Stops session back to idle).
+  kick an in-progress Edit Stops session back to idle). The same flush neutralizes **layering
+  mode** (uiMode → idle for the clone; the session is restored — not re-entered — in `finally`),
+  so the mode's paint state never leaks into an export.
 - **[StatusToasts.tsx](src/components/StatusToasts.tsx)** — the status-message surface (Radix
   toasts sliding in over the canvas, lower-left). Actions report outcomes by calling `pushToast`
   ([state/toastStore.ts](src/state/toastStore.ts)) — a plain Zustand store (`useToasts`) so any
@@ -1907,7 +1939,7 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   (`startAppend`) — the reverse of the line editor's own station dblclick), and a Label row whose
   **magic-wand** Auto-placement toggle stays
   put and SWAPS the row between the manual align/valign controls (wand off) and the auto H/V tuning
-  controls (wand on) — each a segmented select-one (Radix ToggleGroup, `.align-group`); the manual
+  controls (wand on) — each a segmented select-one (the shared `SegmentedToggle`, `.align-group`); the manual
   controls keep an explicit `auto` segment so legacy-auto labels stay editable. Beside them a
   **Rotate button** (steps the label's reading direction 45° through all 8 orientations via
   `rotateLabel` — the same action bound to `R` and the layout-editor right-click; it stays on the
@@ -1941,7 +1973,8 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
        the mode to it (`layoutEditReconcile`: the mode follows the sole-selected station; a
        multi/empty selection exits to idle). Grab rings over each real dot (each wearing the
        drawn orientation arrow, sized to fit its own ring — not off the dot like the map's hover
-       badge, where a service-code disc would scale the arrow past the ring it has to live in) +
+       badge, where a service-code disc would scale the arrow past the ring it has to live in —
+       and carrying a native `<title>` tooltip naming its line via `lineDisplayName`) +
        a label-cell ring. All of that chrome is in **world** units, geometry AND stroke weight,
        so it grows with the map and reads the same at every zoom; the component reads no zoom at
        all, because sizing off the COMMITTED zoom (`X / zoom`) held a screen size that went stale
@@ -2023,8 +2056,12 @@ are closed here:
 5. **Letter-spacing** — svg2pdf ignores the SVG `letter-spacing` property, so a tracked label would
    print at default spacing. `bakeLetterSpacing` ([pdfText.ts](src/export/pdfText.ts)) re-expresses
    each tracked run as an SVG `textLength` (which svg2pdf converts to a PDF `charSpace`); it runs on
-   the attached clone (needs `getComputedTextLength`) and **before** glyph outlining so char
-   positions are read from the final spacing.
+   the attached clone (needs `getComputedTextLength`) and **after** glyph outlining — outlining
+   SPLITS a mixed `<text>` (an `<xfer>`/`<air>` glyph beside ordinary letters) into an outlined
+   path plus a fresh covered run, and baking first would consume the tracking on the original node
+   and leave the split run untracked, silently collapsing that label's spacing in the PDF. (The
+   outliner, conversely, runs before the bake so the char positions it reads still carry the real
+   `letter-spacing`.)
 6. **Uncovered glyphs** — characters Helvetica Neue lacks (✈, ↔, ★, …) are drawn on screen by the
    shipped fallback font in [`FONT_STACK`](src/util/fonts.ts) (`'Helvetica Neue', 'DejaVu Sans', …`),
    but svg2pdf only embeds HN and jsPDF can't even encode supplementary-plane chars. Because the app
