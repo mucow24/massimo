@@ -31,13 +31,13 @@ export interface RenderLabelTextArgs {
   anchorX: number;
   anchorY: number;
   textAnchor: 'start' | 'middle' | 'end';
-  baseline: 'central' | 'text-before-edge' | 'text-after-edge';
-  firstLineDyPx: number;
-  // Visual center y of the first text line in the rotated label frame. The
-  // per-segment path derives each line's baseline from firstLineCenterY +
-  // centralToBaseline + i*lineSpacing so it lands on exactly the y the plain
-  // path computes. Without it, labels with inline bullets rendered their first
-  // line a few pixels above their bullet-free counterparts.
+  // Visual center y of the first text line in the rotated label frame, already
+  // encoding the valign AND the multi-line first-line shift. BOTH render paths
+  // derive every baseline from it (see firstLineBaselineY), which is what keeps
+  // a bulleted label on exactly the y its plain counterpart would use.
+  // `LabelLayout`'s `baseline`/`firstLineDyPx` are deliberately NOT taken: they
+  // describe the first line's top/bottom EDGE, a frame the 1.2em line box and
+  // the 1.0em em box disagree on.
   firstLineCenterY: number;
   rotationDeg: number;
   lineByService: Map<string, Line>;
@@ -70,8 +70,6 @@ export function renderStationLabelText({
   anchorX,
   anchorY,
   textAnchor,
-  baseline,
-  firstLineDyPx,
   firstLineCenterY,
   rotationDeg,
   lineByService,
@@ -113,26 +111,25 @@ export function renderStationLabelText({
         tracking,
       })
     : null;
-  // Distance from the central-baseline anchor down to the text baseline.
-  // Reuses the constant the bullet path already relies on.
+  // Distance from a line's CENTER down to its text baseline.
   const centralToBaseline = fontSize * (BASELINE_FRACTION - 0.5);
   // Underline geometry, in unrotated label-local px.
   const UNDERLINE_OFFSET = 4;
   const UNDERLINE_STROKE = 2;
-  // The FIRST line's baseline, in label-local coords: which edge of the line
-  // box sits on `anchorY` (the `baseline` mode) decides how far below it the
-  // baseline falls, per the model's BASELINE_FRACTION. This is the single
-  // number the glyphs, the underline and the geometry all key off — it is
-  // written straight to the <text> rather than handed to `dominant-baseline`,
-  // whose real offset Chrome derives from platform font metrics (0.333em at
-  // fontSize 12 on Windows, 0.258em on macOS — never the 0.3em assumed here).
-  // Subsequent lines stack by `lineSpacingPx` below (leading-scaled).
-  const firstLineBaselineY =
-    baseline === 'central'
-      ? anchorY + centralToBaseline + firstLineDyPx
-      : baseline === 'text-before-edge'
-        ? anchorY + fontSize * BASELINE_FRACTION + firstLineDyPx
-        : anchorY - fontSize * (1 - BASELINE_FRACTION) + firstLineDyPx;
+  // The FIRST line's baseline, in label-local coords — the single number the
+  // glyphs, the underline and the layout geometry all key off. Written straight
+  // to the <text> rather than handed to `dominant-baseline`, whose real offset
+  // Chrome derives from platform font metrics (0.333em at fontSize 12 on
+  // Windows, 0.258em on macOS — never the 0.3em assumed here). Subsequent lines
+  // stack by `lineSpacingPx` below (leading-scaled).
+  //
+  // Measured from the line's CENTER, never from its top or bottom edge, for
+  // every valign. labelLayout works in a 1.2em LINE box (LINE_HEIGHT) while
+  // BASELINE_FRACTION measures down from the 1.0em EM box top; the two share a
+  // center but not their edges — 0.1em of half-leading sits at each end. So
+  // center-relative is the only frame both agree on, and `firstLineCenterY`
+  // already folds in the valign AND the multi-line first-line shift.
+  const firstLineBaselineY = firstLineCenterY + centralToBaseline;
   const lineSpacingPx = fontSize * LINE_HEIGHT * lead;
   if (!perSegment) {
     return (
@@ -201,11 +198,10 @@ export function renderStationLabelText({
       leading: lead,
       tracking,
     });
-  // Line 0's baseline under the central anchor — unchanged from the historical
-  // single-size placement. Later lines stack by the measurer's cumulative
-  // baseline deltas (which already grow with any inline <size>), rather than a
-  // fixed per-line spacing, so a bigger run spreads the lines apart.
-  const firstLineBaseline0 = firstLineCenterY + centralToBaseline;
+  // Same first-line baseline the plain path uses. Later lines stack by the
+  // measurer's cumulative baseline deltas (which already grow with any inline
+  // <size>), rather than a fixed per-line spacing, so a bigger run spreads the
+  // lines apart.
   const baseline0FromTop = m.lines[0].baselineFromTop;
 
   // Per-run style resolution for the inline formatting tags, mirroring
@@ -222,7 +218,7 @@ export function renderStationLabelText({
         if (lm.segments.length === 0) return null;
         // Shared baseline for every run on this line; the measurer placed the
         // cumulative offset, so a bigger inline <size> already spread the lines.
-        const baselineY = firstLineBaseline0 + (lm.baselineFromTop - baseline0FromTop);
+        const baselineY = firstLineBaselineY + (lm.baselineFromTop - baseline0FromTop);
         const linePenX = lineStartPenX(textAnchor, anchorX, lm.alignAdvance);
         let cursor = linePenX;
         const nodes: ReactNode[] = [];

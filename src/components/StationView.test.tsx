@@ -4,7 +4,7 @@ import { StationView } from './StationView';
 import { useDoc, useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
-import type { Station } from '../model/types';
+import type { LabelValign, Station } from '../model/types';
 import { makeLabel, makeLine, makeStation, makeStop } from '../test/fixtures';
 import { STOP_SIZE } from '../geometry/orientation';
 import { labelLayoutLocal } from '../geometry/labelLayout';
@@ -773,6 +773,37 @@ describe('<StationView /> — the painted baseline IS the model baseline', () =>
     const tagged = named('<b>Foo</b>'); // a formatted token routes to per-segment
     expect(Number(tagged.getAttribute('y'))).toBeCloseTo(Number(plain.getAttribute('y')), 5);
     expect(tagged.getAttribute('dominant-baseline')).toBeNull();
+  });
+
+  it('plain and per-segment agree at every valign, top and bottom included', () => {
+    // labelLayout works in a 1.2em LINE box (LINE_HEIGHT) while
+    // BASELINE_FRACTION measures down from the 1.0em EM box top. The two boxes
+    // share a CENTRE but not their top/bottom edges — there is 0.1em of
+    // half-leading at each end. So a baseline derived from an edge drops that
+    // 0.1em, while one derived from the centre is right for both boxes. Every
+    // valign therefore has to route through firstLineCenterY.
+    const namedAt = (name: string, valign: LabelValign) => {
+      const s = makeStation({ id: 's1', name, x: 100, y: 100 });
+      const { container } = render(
+        <svg>
+          <StationView
+            station={{ ...s, label: { ...s.label, valign } }}
+            lines={{}}
+            zoom={1}
+            onStartDrag={vi.fn()}
+            layer="label"
+          />
+        </svg>,
+      );
+      return Number(container.querySelector('text')!.getAttribute('y'));
+    };
+    for (const valign of ['auto-down', 'top', 'middle', 'bottom', 'auto-up'] as const) {
+      // '<b>Foo</b>' routes to per-segment; 'Foo' stays on the plain path.
+      expect({ valign, y: namedAt('Foo', valign) }).toEqual({
+        valign,
+        y: namedAt('<b>Foo</b>', valign),
+      });
+    }
   });
 
   it('centres an inline bullet on the cap box of the text beside it', () => {

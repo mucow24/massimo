@@ -1631,14 +1631,21 @@ which are a separate slot-based system where Shift flips the lattice basis.
   valid only for text with no descenders and no fallback-font glyphs — `SegmentBand`'s
   routing-warning ⚠ (a DejaVu dingbat, not caps) is the one element on `dominant-baseline` anywhere
   in the app.
-- **The label pipeline paints on the baseline it computes.** `LabelLayout.baseline`
-  (`central`/`text-before-edge`/`text-after-edge`) names which edge of the first line box sits on
-  `anchorY`; it is **never written to the DOM**. `stationLabelText`'s `firstLineBaselineY` turns it
-  into an explicit alphabetic y via `BASELINE_FRACTION`, and that one number is what the glyphs, the
-  hover underline, the wash silhouette and the hit rect all key off. Same for the per-segment
-  (bullet/tracked) path and `LabelView`'s per-run text: every run carries its shared baseline
-  outright, so mixed inline `<size>` runs align with no per-size anchor back-off, and an inline
-  bullet centers on its run's cap box (`capCenterDy`) rather than on a raw fraction of the line.
+- **The label pipeline paints on the baseline it computes**, and it measures that baseline from the
+  line's **center**. `stationLabelText`'s `firstLineBaselineY` is `firstLineCenterY +
+  fontSize·(BASELINE_FRACTION − 0.5)` for every valign, and that one number is what the glyphs, the
+  hover underline, the wash silhouette and the hit rect all key off. Center-relative is not a
+  stylistic choice: `labelLayout` lays out in a **1.2em line box** (`LINE_HEIGHT`) while
+  `BASELINE_FRACTION` measures down from the **1.0em em box** top, and the two share a center but
+  not their top/bottom edges — 0.1em of half-leading sits at each end. Measuring from an edge drops
+  it. That is why `LabelLayout.baseline` (`central`/`text-before-edge`/`text-after-edge`) and
+  `firstLineDyPx` are **not** forwarded to the renderer: they name an edge, and `firstLineCenterY`
+  already folds in both the valign and the multi-line first-line shift. The per-segment
+  (bullet/tracked) path derives from the same number, which is what keeps a bulleted label on
+  exactly the y its plain counterpart uses. `LabelView`'s per-run text works the same way: every run
+  carries its shared baseline outright, so mixed inline `<size>` runs align with no per-size anchor
+  back-off, and an inline bullet centers on its run's cap box (`capCenterDy`) rather than on a raw
+  fraction of the line.
   `dominant-baseline` cannot do this job: Chrome derives its offset from the platform font metrics,
   so `central` measures 0.333em at fontSize 12 and 0.357em at 14 on Windows against 0.258em on
   macOS, versus the model's flat 0.3em — enough to put painted text ~1 world unit off the geometry
