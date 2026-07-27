@@ -104,7 +104,8 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
       />,
     );
     const popover = container.querySelector('.text-label-popover') as HTMLElement;
-    expect(positionOf(popover).left).toBeCloseTo(114, 9); // point + 14 gap diagonal
+    // Below-left diagonal off (100,100): x = 100−14−248 clamps to the margin.
+    expect(positionOf(popover).left).toBeCloseTo(8, 9);
     expect(positionOf(popover).top).toBeCloseTo(114, 9);
 
     const right = makeTextLabel({ id: 'g2', text: 'R' });
@@ -117,8 +118,8 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
       />,
     );
     // Tracks the new label, placed fully inside the 800×600 host AND off the
-    // point: the clamped right/below spots (544,344) would cover (700,500),
-    // so the spawn flips left — 700−14−248 = 438; y clamps to 600−248−8 = 344.
+    // point: the below-left diagonal x = 700−14−248 = 438 clears the point on
+    // its own; y clamps to 600−248−8 = 344.
     expect(positionOf(popover).left).toBeCloseTo(438, 9);
     expect(positionOf(popover).top).toBeCloseTo(344, 9);
   });
@@ -198,7 +199,7 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     const header = container.querySelector('.text-label-popover .header') as HTMLElement;
     fireEvent.pointerDown(header, { clientX: 0, clientY: 0, button: 0 });
     fireEvent.pointerMove(header, { clientX: 30, clientY: 20 });
-    expect(positionOf(popover).left).toBeCloseTo(144, 9); // dragging normally
+    expect(positionOf(popover).left).toBeCloseTo(38, 9); // dragging normally (8 + 30)
 
     const b = makeTextLabel({ id: 'g2', text: 'B' });
     rerender(
@@ -209,11 +210,11 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
         onClose={() => {}}
       />,
     );
-    expect(positionOf(popover).left).toBeCloseTo(414, 9); // fresh spawn for g2
+    expect(positionOf(popover).left).toBeCloseTo(138, 9); // fresh spawn for g2 (400 − 262)
     expect(positionOf(popover).top).toBeCloseTo(314, 9);
     // The still-captured pointer keeps moving: must be a no-op now.
     fireEvent.pointerMove(header, { clientX: 90, clientY: 90 });
-    expect(positionOf(popover).left).toBeCloseTo(414, 9);
+    expect(positionOf(popover).left).toBeCloseTo(138, 9);
     expect(positionOf(popover).top).toBeCloseTo(314, 9);
   });
 
@@ -252,9 +253,9 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
       );
       const popover = container.querySelector('.text-label-popover') as HTMLElement;
       // Measured 240×500 (100 chrome + 400 restored height): diagonal spawn
-      // (414,314) clamps y to 600−500−8 = 92. Measuring before the height
-      // restore would see 240×144 and leave y at 314.
-      expect(positionOf(popover).left).toBeCloseTo(414, 9);
+      // (400−14−240, 314) = (146,314) clamps y to 600−500−8 = 92. Measuring
+      // before the height restore would see 240×144 and leave y at 314.
+      expect(positionOf(popover).left).toBeCloseTo(146, 9);
       expect(positionOf(popover).top).toBeCloseTo(92, 9);
     } finally {
       Object.defineProperty(HTMLElement.prototype, 'offsetWidth', origW);
@@ -274,12 +275,12 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     );
     const popover = container.querySelector('.text-label-popover') as HTMLElement;
     const header = container.querySelector('.text-label-popover .header') as HTMLElement;
-    expect(positionOf(popover).left).toBeCloseTo(514, 9); // point + 14 gap diagonal
+    expect(positionOf(popover).left).toBeCloseTo(238, 9); // below-left diagonal (500 − 262)
     expect(positionOf(popover).top).toBeCloseTo(314, 9);
     fireEvent.pointerDown(header, { clientX: 0, clientY: 0, button: 0 });
-    fireEvent.pointerMove(header, { clientX: 200, clientY: 100 });
-    fireEvent.pointerUp(header, { clientX: 200, clientY: 100 });
-    expect(positionOf(popover).left).toBeCloseTo(714, 9); // past the x-limit of 544
+    fireEvent.pointerMove(header, { clientX: 400, clientY: 100 });
+    fireEvent.pointerUp(header, { clientX: 400, clientY: 100 });
+    expect(positionOf(popover).left).toBeCloseTo(638, 9); // past the x-limit of 544
     expect(positionOf(popover).top).toBeCloseTo(414, 9);
   });
 
@@ -301,22 +302,22 @@ describe('<TextLabelPopover /> — world position freezes, viewport tracks live'
     const popover = container.querySelector('.text-label-popover') as HTMLElement;
     const header = container.querySelector('.text-label-popover .header') as HTMLElement;
 
-    // Spawn: point + 14 gap diagonal. Move it +30/+20 screen px at zoom 1
-    // (→ world drag of 30/20).
+    // Spawn: below-left diagonal off the origin point, x clamped to the 8px
+    // margin. Move it +30/+20 screen px at zoom 1 (→ world drag of 30/20).
     fireEvent.pointerDown(header, { clientX: 0, clientY: 0, button: 0 });
     fireEvent.pointerMove(header, { clientX: 30, clientY: 20 });
     fireEvent.pointerUp(header, { clientX: 30, clientY: 20 });
-    expect(positionOf(popover).left).toBeCloseTo(44, 9); // 14 + 30
+    expect(positionOf(popover).left).toBeCloseTo(38, 9); // 8 + 30
     expect(positionOf(popover).top).toBeCloseTo(34, 9); // 14 + 20
 
     // Zoom 2× about the world origin. The corner sits on world point
-    // (14,14)+drag(30,20) = (44,34), which now projects to (88,68) — the whole
+    // (8,14)+drag(30,20) = (38,34), which now projects to (76,68) — the whole
     // offset doubles with the canvas; nothing stays a fixed pixel size.
     const zoom2 = { vbX: 0, vbY: 0, vbW: 400, vbH: 300, size: { w: 800, h: 600 } };
     rerender(
       <TextLabelPopover label={label} worldRect={rectAt(0, 0)} view={zoom2} onClose={() => {}} />,
     );
-    expect(positionOf(popover).left).toBeCloseTo(88, 9);
+    expect(positionOf(popover).left).toBeCloseTo(76, 9);
     expect(positionOf(popover).top).toBeCloseTo(68, 9);
   });
 });

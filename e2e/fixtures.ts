@@ -346,7 +346,9 @@ export async function openLineStyleDetail(page: Page): Promise<void> {
 }
 
 export async function parkPopover(page: Page): Promise<void> {
-  const header = page.locator('.bullet-popover .header, .text-label-popover .header').first();
+  const header = page
+    .locator('.bullet-popover .header, .text-label-popover .header, .station-popover .header')
+    .first();
   const box = await header.boundingBox();
   if (!box) throw new Error('parkPopover: no popover open');
   const grabX = box.x + box.width / 2;
