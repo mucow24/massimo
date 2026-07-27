@@ -46,6 +46,28 @@ export function isStopEnd(end: TransferEnd): end is StopEnd {
 }
 
 /**
+ * Is this end bound to a station-HOSTED anchor — the middle arm, the one that
+ * carries BOTH a stationId and an anchorId?
+ *
+ * This exists because `'stationId' in end` is the single easiest thing to get
+ * wrong about this union: a stop end carries a stationId too, so that test
+ * alone answers "hosted" for a plain stop dot. Callers that had already
+ * excluded the stop arm were writing the bare `in` check inline and were
+ * correct only because of where they sat in an if-chain — a fragile thing to
+ * re-derive at four call sites. Ask here instead; the guard is total.
+ */
+export function isHostedAnchorEnd(end: TransferEnd): end is HostedAnchorEnd {
+  return 'anchorId' in end && 'stationId' in end;
+}
+
+/** Is this end bound to a FREE anchor — the arm with an anchorId and no station?
+ *  The complement of {@link isHostedAnchorEnd} within the two anchor arms, and
+ *  the test for "is this the selectable, draggable kind". */
+export function isFreeAnchorEnd(end: TransferEnd): end is FreeAnchorEnd {
+  return 'anchorId' in end && !('stationId' in end);
+}
+
+/**
  * The station this end resolves against, or null for a free anchor. Both the
  * stop arm and the hosted-anchor arm are station-keyed, which is what lets the
  * delete cascades orphan a station's stops AND its hosted anchors with the one
@@ -53,16 +75,6 @@ export function isStopEnd(end: TransferEnd): end is StopEnd {
  */
 export function endStationId(end: TransferEnd): StationId | null {
   return 'stationId' in end ? end.stationId : null;
-}
-
-/** The anchor id this end binds to, or null when it binds a stop. */
-export function endAnchorId(end: TransferEnd): string | null {
-  return 'anchorId' in end ? end.anchorId : null;
-}
-
-/** The line whose dot this end picks, or null when it isn't a stop end. */
-export function endLineId(end: TransferEnd): LineId | null {
-  return isStopEnd(end) ? end.lineId : null;
 }
 
 /** A station's hosted anchor cell by id, or undefined. */
@@ -85,6 +97,6 @@ export function transferEndResolves(
   end: TransferEnd,
 ): boolean {
   if (isStopEnd(end)) return !!doc.stations[end.stationId];
-  if ('stationId' in end) return !!stationAnchorCell(doc.stations[end.stationId], end.anchorId);
+  if (isHostedAnchorEnd(end)) return !!stationAnchorCell(doc.stations[end.stationId], end.anchorId);
   return !!doc.transferAnchors[end.anchorId];
 }

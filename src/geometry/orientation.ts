@@ -8,6 +8,22 @@ export const STOP_GAP = 0;
 // the step-1 dot-size slider. ~2% visual growth, accepted.
 export const STOP_DOT_RADIUS = 4;
 
+/**
+ * Half-extent of the world footprint a FREE transfer anchor reserves — content
+ * bounds (`transferAnchorAABB`) and the marquee hit test
+ * (`transferAnchorsForRect`) both measure it from here, so an anchor can't be
+ * framed by one rule and grabbed by another.
+ *
+ * Half a lattice cell, matching the box a hosted anchor cell (and the label
+ * cell) gets in the station silhouette, so a free anchor occupies the same
+ * one-cell square wherever it is reasoned about. This is deliberately NOT the
+ * painted disc: `AnchorLayer` draws that at `ANCHOR_SIZE` = 10.5 (radius 5.25),
+ * SMALLER than this box — the mark reads as scaffolding rather than competing
+ * with the stop dots, while the footprint stays a full cell so a near-miss
+ * still frames and still grabs.
+ */
+export const ANCHOR_HALF = STOP_SIZE / 2;
+
 export type Rotation = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 const HALF = STOP_SIZE / 2;

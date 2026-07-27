@@ -9,7 +9,9 @@ import {
   textLabelCorners,
   textLabelHitPolygon,
   textLabelsForRect,
+  transferAnchorsForRect,
 } from './stationBoundary';
+import { transferAnchorAABB } from './itemBounds';
 import {
   makePolygon,
   makeStation,
@@ -17,7 +19,7 @@ import {
   makeTextLabel,
   stationWithStop,
 } from '../test/fixtures';
-import { STOP_SIZE } from './orientation';
+import { ANCHOR_HALF, STOP_SIZE } from './orientation';
 import { rectIntersectsPolygon } from './rectPolygon';
 import { stopHalfOf } from '../model/lineWidth';
 import type { RouteBullet } from '../model/types';
@@ -534,5 +536,36 @@ describe('polygonsForRect', () => {
       'open',
       'solid',
     ]);
+  });
+});
+
+describe('transferAnchorsForRect', () => {
+  const anchors = { f1: { id: 'f1', x: 0, y: 0 } };
+
+  it('returns ids of free anchors whose footprint overlaps the rect', () => {
+    expect(transferAnchorsForRect(anchors, { x0: -50, y0: -50, x1: 50, y1: 50 })).toEqual(['f1']);
+    expect(transferAnchorsForRect(anchors, { x0: 100, y0: 100, x1: 200, y1: 200 })).toEqual([]);
+  });
+
+  it('handles inverted rect coords (negative width/height)', () => {
+    expect(transferAnchorsForRect(anchors, { x0: 50, y0: 50, x1: -50, y1: -50 })).toEqual(['f1']);
+  });
+
+  it('grabs over exactly the footprint content bounds reserve — not the painted disc', () => {
+    // The two used to be spelled separately: content bounds derived the box
+    // from STOP_SIZE/2 while the marquee carried a bare literal, and the
+    // marquee's docstring claimed it measured the painted disc (radius 5.25,
+    // which is SMALLER). One constant now feeds both, and this pins them
+    // together at the boundary where a discrepancy would show.
+    const box = transferAnchorAABB({ x: 0, y: 0 });
+    expect(box.x1 - box.x0).toBe(ANCHOR_HALF * 2);
+
+    // A rect whose near edge just touches the footprint's far edge: a hit.
+    const grazing = { x0: ANCHOR_HALF, y0: -1, x1: ANCHOR_HALF + 10, y1: 1 };
+    expect(transferAnchorsForRect(anchors, grazing)).toEqual(['f1']);
+
+    // One hair further out and the footprints no longer meet: a miss.
+    const clear = { x0: ANCHOR_HALF + 0.01, y0: -1, x1: ANCHOR_HALF + 10, y1: 1 };
+    expect(transferAnchorsForRect(anchors, clear)).toEqual([]);
   });
 });

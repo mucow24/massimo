@@ -815,6 +815,25 @@ describe('soleSelection', () => {
     useSelection.setState({ selectedStationIds: ['s1'] as StationId[], selectedLabelIds: ['g1'] });
     expect(soleSelection(useSelection.getState())).toBeNull();
   });
+
+  // A free anchor has NO popover, so this arm looks droppable — it isn't.
+  // soleSelection is also hitStack.currentHitEntity's "what is picked right now"
+  // source for the alt-click deep-pick cycle, so an anchor missing here doesn't
+  // read as "no panel", it reads as "the cycle can't find its place" and the
+  // deep-pick stops advancing. Nothing failed loudly when the arm was absent,
+  // which is exactly why it needs a test of its own.
+  it('routes a lone free anchor, so the alt-click cycle can find its place', () => {
+    useSelection.getState().selectAnchor('an1');
+    expect(soleSelection(useSelection.getState())).toEqual({ type: 'anchor', id: 'an1' });
+  });
+
+  it('counts anchors toward "multi", so a co-selected anchor suppresses the sole panel', () => {
+    useSelection.setState({
+      selectedStationIds: ['s1'] as StationId[],
+      selectedAnchorIds: ['an1'],
+    });
+    expect(soleSelection(useSelection.getState())).toBeNull();
+  });
 });
 
 describe('replace/set selection drops a stale sibling primary (transfer + line)', () => {
