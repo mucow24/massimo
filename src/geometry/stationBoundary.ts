@@ -8,7 +8,7 @@ import type {
   TextLabel,
   TransferAnchor,
 } from '../model/types';
-import { STOP_SIZE, localToWorld, rotRad, stopCenterAt } from './orientation';
+import { ANCHOR_HALF, STOP_SIZE, localToWorld, rotRad, stopCenterAt } from './orientation';
 import { rotateAround, rotatedRectCorners } from './vec';
 import { svgImageCorners } from './svgImage';
 import {
@@ -325,15 +325,19 @@ export function routeBulletsForRect(
 }
 
 /**
- * FREE transfer anchors swept up by the rect, by their painted disc. No
- * `includeLocked` twin of the bullet guard above — anchors have no lock, so
- * every one inside the rect is a hit. Hosted anchors are station internals and
- * are never marquee-selectable; their station answers the marquee instead.
+ * FREE transfer anchors swept up by the rect, over the same one-cell footprint
+ * content bounds reserve for them (`ANCHOR_HALF` — which is WIDER than the
+ * painted disc, so a marquee that grazes the mark still grabs it). Sharing the
+ * constant is the point: an anchor framed by Reset view and an anchor caught by
+ * a marquee must be the same square. No `includeLocked` twin of the bullet
+ * guard above — anchors have no lock, so every one inside the rect is a hit.
+ * Hosted anchors are station internals and are never marquee-selectable; their
+ * station answers the marquee instead.
  */
 export function transferAnchorsForRect(
   anchors: Record<string, TransferAnchor>,
   rect: AABB,
-  half = 7,
+  half = ANCHOR_HALF,
 ): string[] {
   const { xLo, xHi, yLo, yHi } = normalizeAABB(rect);
   const hits: string[] = [];

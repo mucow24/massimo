@@ -308,7 +308,8 @@ export interface SelectionState {
   addRouteBulletsToSelection: (ids: string[]) => void;
   xorRouteBulletsToSelection: (ids: string[]) => void;
   selectTransfer: (id: string | null) => void;
-  // Narrowing helper: updates the creating-transfer variant's anchor in place.
+  // Narrowing helper: updates the creating-transfer variant's FIRST PICKED END
+  // in place — not an "anchor" in either sense the word now carries here.
   // No-op when uiMode.kind isn't 'creating-transfer'.
   setTransferFirstEnd: (end: TransferEnd | null) => void;
   setMirrorMatching: (on: boolean) => void;
@@ -516,13 +517,15 @@ export const useSelection = create<SelectionState>()(
 
       // The single source of truth for mode transitions. Entering any non-idle
       // mode wipes all primary selections; every transition (either direction)
-      // also drops all four ephemeral hover channels — lineTagHoverPreview,
-      // hoveredCanvasItem, appendHover, and hoveredLineStop — since each is
-      // meaningful only in a particular mode and must not linger behind a
-      // switch (a hoveredLineStop surviving a transfer-mode exit left the
-      // white dot ring painted with nothing left to clear it). Variant
-      // payloads (transferAnchor, append cursor) are updated in place via
-      // setTransferFirstEnd / setAppendCursor.
+      // also drops all five ephemeral hover channels — lineTagHoverPreview,
+      // hoveredCanvasItem, appendHover, hoveredLineStop, and hoveredAnchorKey —
+      // since each is meaningful only in a particular mode and must not linger
+      // behind a switch (a hoveredLineStop surviving a transfer-mode exit left
+      // the white dot ring painted with nothing left to clear it; an anchor's
+      // hover ring has the same failure, and no pointerout ever fires because
+      // committing the transfer unmounts the anchor under the cursor). Variant
+      // payloads (the transfer's first end, the append cursor) are updated in
+      // place via setTransferFirstEnd / setAppendCursor.
       setUiMode: (mode) =>
         set(
           // A deliberate mode switch drops the canvas hover-preview outright

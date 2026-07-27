@@ -9,13 +9,6 @@
 // type whose corners may sit in any diagonal order.
 import type { Pt } from './polygonUnion';
 import type { RouteBullet, Station, TextLabel, TransferAnchor } from '../model/types';
-
-/** A free anchor's bounds footprint: half a lattice cell, matching the
- *  STOP_SIZE/2 half-extent a hosted anchor cell (and the label cell) gets in the
- *  station silhouette — so a free anchor occupies the same one-cell box in
- *  content bounds. This is NOT the painted disc: AnchorLayer paints it at
- *  ANCHOR_SIZE (10.5, radius 5.25), deliberately larger for grabbability. */
-const ANCHOR_HALF = STOP_SIZE / 2;
 import type { AABB } from './rectPolygon';
 import {
   stationBoundaryRectsLocal,
@@ -23,7 +16,7 @@ import {
   textLabelCorners,
 } from './stationBoundary';
 import { svgImageCorners, type SvgImageGeom } from './svgImage';
-import { STOP_SIZE } from './orientation';
+import { ANCHOR_HALF } from './orientation';
 import {
   DEFAULT_LABEL_STYLE,
   DEFAULT_STOP_DASH,
@@ -100,7 +93,8 @@ export function routeBulletAABB(b: Pick<RouteBullet, 'x' | 'y' | 'size'>): AABB 
 }
 
 /**
- * World AABB of a FREE transfer anchor: the painted disc's square. Hosted
+ * World AABB of a FREE transfer anchor: the one-cell footprint `ANCHOR_HALF`
+ * defines (which is wider than the painted disc — see that constant). Hosted
  * anchors get none — they live inside their station's cell grid, which
  * `stationWorldAABB` already spans.
  */

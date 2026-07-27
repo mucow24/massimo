@@ -10,7 +10,7 @@
 import { stopPosWorld } from './interlining';
 import { localToWorld, stopCenterAt } from './orientation';
 import type { Vec2 } from './vec';
-import { isStopEnd, stationAnchorCell } from '../model/transferAnchors';
+import { isHostedAnchorEnd, isStopEnd, stationAnchorCell } from '../model/transferAnchors';
 import type { LineId, Station, StationId, TransferAnchor, TransferEnd } from '../model/types';
 
 /**
@@ -46,7 +46,7 @@ export function transferEndWorld(
     const st = stations[end.stationId];
     return st ? stopWorld(st, end.lineId) : null;
   }
-  if ('stationId' in end) {
+  if (isHostedAnchorEnd(end)) {
     const st = stations[end.stationId];
     const cell = stationAnchorCell(st, end.anchorId);
     return st && cell ? stationAnchorWorld(st, cell) : null;

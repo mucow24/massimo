@@ -1,5 +1,6 @@
 import type { Station, TransferAnchor, TransferEnd } from '../../model/types';
 import { stationAnchorWorld } from '../../geometry/transferEnds';
+import { isHostedAnchorEnd } from '../../model/transferAnchors';
 import { useThemeColors } from '../../state/theme';
 import { AnchorMark, ANCHOR_ICON_BOX } from '../AnchorGlyph';
 import { selectionOutlineTones } from '../selectionStyle';
@@ -21,10 +22,6 @@ const SELECTION_OUTLINE_PAD = 2.5;
  *  paint. (The third arm is a station stop, which is not an anchor.) */
 type AnchorEnd = Extract<TransferEnd, { anchorId: string }>;
 
-/** Is this end a station-hosted anchor rather than a free one? */
-const isHosted = (end: AnchorEnd): end is Extract<AnchorEnd, { stationId: string }> =>
-  'stationId' in end;
-
 /**
  * Stable per-anchor key. Anchor ids are unique across both homes already, but
  * qualifying the hosted ones keeps the key self-describing — and this is the
@@ -32,7 +29,7 @@ const isHosted = (end: AnchorEnd): end is Extract<AnchorEnd, { stationId: string
  * alone at both the write and the compare.
  */
 const anchorKey = (end: AnchorEnd): string =>
-  isHosted(end) ? `${end.stationId}:${end.anchorId}` : end.anchorId;
+  isHostedAnchorEnd(end) ? `${end.stationId}:${end.anchorId}` : end.anchorId;
 
 /**
  * Transfer anchors, in one pass over both homes.
@@ -93,7 +90,7 @@ export function AnchorLayer({
 
   // One row per painted anchor. `end` is the ONLY identity carried: which home
   // it came from, its react key, and every data-* attribute all derive from it
-  // (see anchorKey / isHosted below), so there is nothing to keep in sync.
+  // (see anchorKey / isHostedAnchorEnd), so there is nothing to keep in sync.
   // Hosted first, so a free anchor dropped on one paints over it.
   const drawn: { end: AnchorEnd; x: number; y: number }[] = [
     ...Object.values(stations).flatMap((st) =>
@@ -117,7 +114,7 @@ export function AnchorLayer({
         const key = anchorKey(end);
         // Free anchors are the selectable/draggable ones; a hosted anchor's id
         // is meaningless to the selection, which only knows doc.transferAnchors.
-        const freeId = isHosted(end) ? null : end.anchorId;
+        const freeId = isHostedAnchorEnd(end) ? null : end.anchorId;
         const selected = freeId !== null && selectedIds.includes(freeId);
         const live = freeId !== null ? freeLive : picking;
         // Already-selected anchors carry the full ring; a 50% copy on top would
@@ -131,8 +128,8 @@ export function AnchorLayer({
             // Hosted ones carry their (station, cell) pair instead — they are
             // never selected, but they ARE clickable as a transfer endpoint, so
             // they need an identity the DOM can be queried by.
-            data-anchor-station={isHosted(end) ? end.stationId : undefined}
-            data-anchor-cell={isHosted(end) ? end.anchorId : undefined}
+            data-anchor-station={isHostedAnchorEnd(end) ? end.stationId : undefined}
+            data-anchor-cell={isHostedAnchorEnd(end) ? end.anchorId : undefined}
           >
             {/* Selection ring, when armed. Decorative only: pointerEvents none,
                 so it never shadows the disc's own entry in the hit stack. */}
