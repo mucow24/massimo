@@ -514,11 +514,29 @@ export function restrictBodiesToZone(
 export function subdivideCells(
   restricted: { id: LineId; rings: Ring[] }[],
 ): { cover: LineId[]; rings: Ring[] }[] {
-  let cells: { cover: LineId[]; rings: Ring[] }[] = [];
+  // Each cell carries its bbox so the loop can prove "these can't interact"
+  // without a clipper round-trip: an intersection is a subset of both
+  // operands' boxes, so strictly disjoint boxes take exactly the branch an
+  // empty intersection takes — cell pushed through, remaining untouched. On
+  // a multi-crossing component most cell/line pairs sit at different
+  // crossings, so most of the empty intersects (71% of subdivide's clipper
+  // calls on the DKLB drag) never run. Touching-but-not-overlapping boxes
+  // still go through clipper; the skip only fires on strict separation.
+  interface Cell {
+    cover: LineId[];
+    rings: Ring[];
+    box: { x0: number; y0: number; x1: number; y1: number };
+  }
+  let cells: Cell[] = [];
   for (const { id, rings } of restricted) {
-    const next: typeof cells = [];
+    const next: Cell[] = [];
     let remaining = rings;
+    let remainingBox = ringsBbox(remaining);
     for (const cell of cells) {
+      if (!remaining.length || !boxesOverlap(cell.box, remainingBox)) {
+        next.push(cell);
+        continue;
+      }
       const inter = intersect(cell.rings, remaining);
       if (!inter.length) {
         next.push(cell);
@@ -526,10 +544,11 @@ export function subdivideCells(
       }
       const diff = subtract(cell.rings, remaining);
       remaining = subtract(remaining, cell.rings);
-      next.push({ cover: [...cell.cover, id], rings: inter });
-      if (diff.length) next.push({ cover: cell.cover, rings: diff });
+      remainingBox = ringsBbox(remaining);
+      next.push({ cover: [...cell.cover, id], rings: inter, box: ringsBbox(inter) });
+      if (diff.length) next.push({ cover: cell.cover, rings: diff, box: ringsBbox(diff) });
     }
-    if (remaining.length) next.push({ cover: [id], rings: remaining });
+    if (remaining.length) next.push({ cover: [id], rings: remaining, box: remainingBox });
     cells = next;
   }
   return cells;
