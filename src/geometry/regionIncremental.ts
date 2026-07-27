@@ -44,7 +44,7 @@
  */
 import type { LineId } from '../model/types';
 import type { SegmentBandSpec, StopMarkerSpec } from './interlining';
-import type { Ring } from './clip';
+import type { Face, Ring } from './clip';
 import { intersect, unionAll } from './clip';
 import {
   boxesOverlap,
@@ -62,7 +62,7 @@ import {
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
 
-/** One component's built output, keyed in the cache by the component's hash. */
+/** One component's built output, keyed in the cache by {@link compCacheKey}. */
 interface CachedComponent {
   faces: RegionFace[];
   slivers: RegionSliver[];
@@ -89,7 +89,7 @@ export interface RegionIncrementalState {
   /** `a|b` → that pair's body intersection, reusable while both bodies are. */
   pairParts: Map<string, Ring[]>;
   zone: Ring[];
-  comps: Map<number, CachedComponent>;
+  comps: Map<string, CachedComponent>;
 }
 
 export interface RegionIncrementalResult {
@@ -146,6 +146,24 @@ function hashRings(rings: Ring[]): number {
   let h = mix(FNV_OFFSET, per.length);
   for (const x of per) h = mix(h, x);
   return h;
+}
+
+/**
+ * Cache key for one zone component: the ring hash, then cheap structural
+ * discriminators (ring count, vertex count, quantized bbox). The 32-bit hash
+ * does the real work; the discriminators exist because this cache runs per
+ * pointermove for hours and a silent 32-bit collision would hand out the WRONG
+ * component's faces — with them, two components must collide in the hash AND
+ * agree on shape statistics and position at once to alias.
+ */
+export function compCacheKey(comp: Face, box: Box): string {
+  let verts = 0;
+  for (const ring of comp) verts += ring.length;
+  const q = (v: number) => Math.round(v * 1000);
+  return (
+    `${hashRings(comp)}|${comp.length}|${verts}|` +
+    `${q(box.x0)},${q(box.y0)},${q(box.x1)},${q(box.y1)}`
+  );
 }
 
 const growBox = (b: Box, pad: number): Box => ({
@@ -287,7 +305,14 @@ function buildZoneCached(
     }
   }
 
-  if (allReused && prev && prev.zone.length) return { zone: prev.zone, pairParts };
+  // Equal pair COUNTS are part of the reuse condition: a removed line leaves
+  // every SURVIVING pair clean, so `allReused` alone would return the previous
+  // zone with the dead line's territory still in it. A vanished line strictly
+  // shrinks the pair set, and a same-size-but-different set cannot have reused
+  // every pair (its new pairs are not in the cache), so size is enough.
+  if (allReused && prev && prev.pairParts.size === pairParts.size && prev.zone.length) {
+    return { zone: prev.zone, pairParts };
+  }
   return { zone: parts.length ? unionAll(parts) : [], pairParts };
 }
 
@@ -379,15 +404,15 @@ export function buildRegionsIncremental(
   }
 
   const comps = significantComponents(zone);
-  const nextComps = new Map<number, CachedComponent>();
+  const nextComps = new Map<string, CachedComponent>();
   const faces: RegionFace[] = [];
   const slivers: RegionSliver[] = [];
   let rebuilt = 0;
 
   for (const comp of comps) {
-    const hash = hashRings(comp);
     const box = ringsBbox(comp);
-    const cached = prev?.comps.get(hash);
+    const key = compCacheKey(comp, box);
+    const cached = prev?.comps.get(key);
     const untouched = !dirtyBoxes.some((d) => boxesOverlap(d, box));
 
     if (cached && untouched) {
@@ -407,7 +432,7 @@ export function buildRegionsIncremental(
           spanHash,
         };
       }
-      nextComps.set(hash, entry);
+      nextComps.set(key, entry);
       // Clone before handing out: `finalizeFaces` stamps `key` in place, and
       // these objects are still owned by the cache.
       faces.push(...entry.faces.map((f) => ({ ...f })));
@@ -422,7 +447,7 @@ export function buildRegionsIncremental(
       bands,
       compSlivers,
     );
-    nextComps.set(hash, {
+    nextComps.set(key, {
       faces: built,
       slivers: compSlivers,
       spanHash: coverHash(built, lineHash),
