@@ -5,7 +5,6 @@ import { useDoc } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC, updateTextLabel } from '../model/transforms';
 import { makeLine, makeTextLabel } from '../test/fixtures';
-import { BASELINE_FRACTION } from '../geometry/textMeasure';
 import type { Line, TextLabel, TextLabelAlign } from '../model/types';
 
 const seedLine = (overrides: Partial<Line> & Pick<Line, 'id' | 'service'>): Line =>
@@ -273,12 +272,14 @@ describe('<LabelView /> — inline <size> tags', () => {
     const c = renderLabel(
       makeTextLabel({ id: 'g1', text: '<size=6>a</size><size=24>b</size>', fontSize: 10 }),
     );
-    // Each run is anchored (dominantBaseline="hanging") at baseline −
-    // BASELINE_FRACTION·size, so adding BASELINE_FRACTION·size back must recover
-    // the same baseline for both runs.
-    const baseline = (el: Element, size: number) =>
-      parseFloat(el.getAttribute('y')!) + BASELINE_FRACTION * size;
-    expect(baseline(textByContent(c, 'a'), 6)).toBeCloseTo(baseline(textByContent(c, 'b'), 24), 5);
+    // Each run sits ON its shared alphabetic baseline, so differently-sized
+    // runs carry the SAME y outright — no per-size anchor back-off to undo.
+    // (Was: anchored via dominantBaseline="hanging" at baseline −
+    // BASELINE_FRACTION·size, which Chrome then resolved from platform font
+    // metrics rather than the 0.8 the model assumed.)
+    const y = (el: Element) => parseFloat(el.getAttribute('y')!);
+    expect(y(textByContent(c, 'a'))).toBeCloseTo(y(textByContent(c, 'b')), 5);
+    expect(textByContent(c, 'a').getAttribute('dominant-baseline')).toBeNull();
   });
 
   it('scales an underline decoration with the run size', () => {

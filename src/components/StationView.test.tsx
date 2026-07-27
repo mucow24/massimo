@@ -728,6 +728,71 @@ describe('<StationView /> — locked station hit area (bg layer)', () => {
   });
 });
 
+// The label pipeline used to PAINT via dominant-baseline while COMPUTING its
+// hit rect, wash, underline and autoAlign pin from BASELINE_FRACTION. Chrome
+// resolves `central` from platform font metrics (0.333em at fontSize 12 on
+// Windows, 0.258em on macOS) — not the model's 0.3em — so the painted text
+// drifted from its own geometry, by a different amount per platform and per
+// font size. The renderer now places text on the ALPHABETIC baseline at exactly
+// the y the model predicts, so paint and geometry are the same number.
+describe('<StationView /> — the painted baseline IS the model baseline', () => {
+  const defaultStyle = { fontSize: 12, weight: 400, italic: false };
+
+  it('plain path: <text> y is the model baseline, with no dominant-baseline', () => {
+    const { text, station } = renderLabel();
+    const lay = labelLayoutLocal(station, defaultStyle);
+    expect(lay.baseline).toBe('central'); // premise for this station's layout
+    // What stationLabelText computes as firstLineBaselineY for 'central'.
+    const modelBaselineY = lay.anchorY + 12 * (BASELINE_FRACTION - 0.5) + lay.firstLineDyPx;
+    expect(Number(text.getAttribute('y'))).toBeCloseTo(modelBaselineY, 5);
+    expect(text.getAttribute('dominant-baseline')).toBeNull();
+    // The first line's shift is folded into y, so its tspan must not re-apply it.
+    expect(Number(text.querySelector('tspan')!.getAttribute('dy'))).toBe(0);
+  });
+
+  it('per-segment path lands its first baseline on the same y as the plain path', () => {
+    // The invariant the bullet/tracked path exists to preserve (see
+    // stationLabelText's firstLineCenterY doc): a formatted label must sit
+    // exactly where its plain counterpart does. Both are now expressed as a
+    // plain alphabetic baseline, so this is a direct comparison.
+    const named = (name: string) => {
+      const { container } = render(
+        <svg>
+          <StationView
+            station={makeStation({ id: 's1', name, x: 100, y: 100 })}
+            lines={{}}
+            zoom={1}
+            onStartDrag={vi.fn()}
+            layer="label"
+          />
+        </svg>,
+      );
+      return container.querySelector('text')!;
+    };
+    const plain = named('Foo');
+    const tagged = named('<b>Foo</b>'); // a formatted token routes to per-segment
+    expect(Number(tagged.getAttribute('y'))).toBeCloseTo(Number(plain.getAttribute('y')), 5);
+    expect(tagged.getAttribute('dominant-baseline')).toBeNull();
+  });
+
+  it('plain path: the hover underline sits one offset below the PAINTED y', () => {
+    // The property that was broken: underline geometry came from the model
+    // while the glyphs came from the font metrics, so they disagreed by
+    // ~0.4 world units at fontSize 12 on Windows (more on macOS). Now both
+    // read the same coordinate.
+    const station = makeStation({ id: 's1', name: 'Foo', x: 100, y: 100 });
+    useSelection.setState({ ...useSelection.getState(), hoveredStationId: station.id });
+    const { container } = render(
+      <svg>
+        <StationView station={station} lines={{}} zoom={1} onStartDrag={vi.fn()} layer="label" />
+      </svg>,
+    );
+    const text = container.querySelector('text')!;
+    const line = container.querySelector('line')!;
+    expect(Number(line.getAttribute('y1'))).toBeCloseTo(Number(text.getAttribute('y')) + 4, 5);
+  });
+});
+
 describe('<StationView /> — hover underline geometry (E1)', () => {
   // The hover underline is drawn as an explicit <line> (renderStationLabelText
   // draws it instead of the SVG text-decoration attribute). Earlier tests only

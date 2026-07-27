@@ -103,8 +103,14 @@ export interface LabelLayout {
   // time.
   anchorX: number;
   anchorY: number;
-  // SVG attribute values: which side of the anchor the text aligns to.
+  // SVG attribute value: which side of the anchor the text aligns to.
   textAnchor: 'start' | 'middle' | 'end';
+  // Which vertical edge of the first line lands on `anchorY` — its top
+  // ('text-before-edge'), centre ('central'), or bottom ('text-after-edge').
+  // NOT written to the DOM: the renderer converts it into an explicit
+  // alphabetic baseline y (see stationLabelText's firstLineBaselineY). The
+  // names stay because they read as the geometry, and the mapping to the SVG
+  // modes of the same name is exactly what the model assumes them to mean.
   baseline: LabelBaseline;
   // First-line baseline shift in px (negative = up), shifting a multi-line
   // block so `valign` refers to the BLOCK, not just the first line. Subsequent

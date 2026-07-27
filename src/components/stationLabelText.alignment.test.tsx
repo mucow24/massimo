@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import type { Line } from '../model/types';
 import { renderStationLabelText } from './stationLabelText';
-import { BASELINE_FRACTION, _clearTextMeasureCache } from '../geometry/textMeasure';
+import { _clearTextMeasureCache } from '../geometry/textMeasure';
 
 // Same fake-canvas trick as LabelView.alignment: report ink that overhangs the
 // pen box for hooked/tailed glyphs, so we can prove multi-line station labels
@@ -128,10 +128,12 @@ describe('renderStationLabelText — inline <size> tags', () => {
 
   it('sits differently-sized runs on one shared baseline', () => {
     const c = renderSize('<size=6>a</size><size=40>b</size>');
-    // central-anchored runs: the text baseline is y + (BASELINE_FRACTION − 0.5)·size.
-    const F = BASELINE_FRACTION - 0.5;
-    const baseline = (content: string, size: number) =>
-      parseFloat(textByContent(c, content).getAttribute('y')!) + F * size;
-    expect(baseline('a', 6)).toBeCloseTo(baseline('b', 40), 5);
+    // Runs sit ON the shared alphabetic baseline, so mixed sizes carry the SAME
+    // y outright — no per-size anchor back-off to undo. (Was: central-anchored
+    // at y + (BASELINE_FRACTION − 0.5)·size, which Chrome then resolved from
+    // platform font metrics rather than the 0.3em the model assumed.)
+    const y = (content: string) => parseFloat(textByContent(c, content).getAttribute('y')!);
+    expect(y('a')).toBeCloseTo(y('b'), 5);
+    expect(textByContent(c, 'a').getAttribute('dominant-baseline')).toBeNull();
   });
 });

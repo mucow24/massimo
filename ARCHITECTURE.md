@@ -1629,10 +1629,18 @@ which are a separate slot-based system where Shift flips the lattice basis.
   0.258em on macOS — identical markup rendered ~0.09em lower on a Mac (over half a world unit on a
   default 12-unit code disc, and it grows with zoom). It centers the **cap box**, so it is valid
   only for text with no descenders and no fallback-font glyphs: `SegmentBand`'s routing-warning ⚠ (a
-  DejaVu dingbat, not caps) is deliberately left on `central`. **`labelLayout` is the open
-  exception** — it still emits `central`/`text-before-edge`/`text-after-edge` while deriving its
-  hit-rect, wash, and autoAlign pin from fixed `BASELINE_FRACTION`/`CAP_FRACTION`, so on macOS a
-  painted station name can drift from the geometry that selects it.
+  DejaVu dingbat, not caps) is the one element still on `dominant-baseline` anywhere in the app.
+- **The label pipeline paints on the baseline it computes.** `LabelLayout.baseline`
+  (`central`/`text-before-edge`/`text-after-edge`) names which edge of the first line box sits on
+  `anchorY`; it is **never written to the DOM**. `stationLabelText`'s `firstLineBaselineY` turns it
+  into an explicit alphabetic y via `BASELINE_FRACTION`, and that one number is what the glyphs, the
+  hover underline, the wash silhouette and the hit rect all key off. Same for the per-segment
+  (bullet/tracked) path and `LabelView`'s per-run text: every run carries its shared baseline
+  outright, so mixed inline `<size>` runs align with no per-size anchor back-off. Handing the job to
+  `dominant-baseline` instead meant Chrome supplied the offset from platform font metrics — `central`
+  measures 0.333em at fontSize 12 and 0.357em at 14 on Windows, 0.258em on macOS, against the model's
+  flat 0.3em — so the painted text drifted off its own geometry by up to ~1 world unit, differently
+  per platform *and* per font size (the metrics round to whole device pixels).
 - **`labelLayoutLocal`** is the single source of truth for a station name's `<text>`
   anchor/baseline/hit-rect, all in **unrotated station-local** coords (the `label.rotation` is
   applied around the anchor at render). `'auto'` align snaps the text against an adjacent stop;
@@ -2229,13 +2237,13 @@ are closed here:
    `<filter>`, so a logo's hard `feDropShadow` casing would silently drop; `bakeImageDropShadows`
    bakes it into a real offset silhouette (pure core in the unit-tested
    [pdfDropShadow.ts](src/export/pdfDropShadow.ts)).
-4. **Text baseline** — svg2pdf never reads `dominant-baseline` (only `alignment-baseline`), so every
-   run still carrying one — station names use `central`/`text-before-edge`/`text-after-edge`, free
-   labels `hanging` — lands on the alphabetic baseline, too high. [pdfText.ts](src/export/pdfText.ts)
+4. **Text baseline** — svg2pdf never reads `dominant-baseline` (only `alignment-baseline`), so any run
+   carrying one lands on the alphabetic baseline, too high. [pdfText.ts](src/export/pdfText.ts)
    `normalizeTextBaselines` measures each `<text>`'s box vs its forced-alphabetic box (`getBBox`,
    browser truth) and shifts `y` by the delta — exact for any baseline mode/font without metrics.
-   Badge glyphs carry no `dominant-baseline` at all (`capCenterDy` already put them on the alphabetic
-   baseline), so this pass is a no-op for them and the PDF inherits their platform-invariant position.
+   **It is now a no-op for everything except `SegmentBand`'s ⚠**: badge glyphs (`capCenterDy`) and
+   label text (`firstLineBaselineY`) are already ON the alphabetic baseline, so the export inherits
+   their platform-invariant position rather than re-deriving it from whatever the browser painted.
 5. **Letter-spacing** — svg2pdf ignores the SVG `letter-spacing` property, so a tracked label would
    print at default spacing. `bakeLetterSpacing` ([pdfText.ts](src/export/pdfText.ts)) re-expresses
    each tracked run as an SVG `textLength` (which svg2pdf converts to a PDF `charSpace`); it runs on
