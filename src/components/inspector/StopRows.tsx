@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import type { Line, LineId, Station, StopCell } from '../../model/types';
 import { useDoc, useSelection } from '../../state/store';
 import { dispatchMirrored } from '../../state/mirrorDispatch';
@@ -153,18 +154,39 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
   const worldIdx = (AXIS_CYCLE.indexOf(stop.orientation) + rotation) % 4;
   const worldName = ORIENTATION_NAME[AXIS_CYCLE[worldIdx]];
 
+  // The dot highlight rides NATIVE mouseenter/mouseleave, not React's synthetic
+  // pair. React's follows the REACT tree, where the end-style panel — portaled
+  // out to `.app` — counts as INSIDE this row: the pointer walking into it
+  // re-entered the row instead of leaving it, and the panel then unmounted
+  // under the cursor with no leave left to fire, stranding a white highlight on
+  // the canvas for good. Native enter/leave follow the DOM, where the portal is
+  // plainly outside, so opening the panel darkens the highlight and picking an
+  // option can't strand one. Controls that live in the row's own DOM (the shape
+  // grid) still keep it lit while they're open.
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = rowRef.current;
+    if (!el) return;
+    const enter = () => useSelection.getState().setHoveredLineStop({ lineId, stationId });
+    const leave = () => {
+      const sel = useSelection.getState();
+      const cur = sel.hoveredLineStop;
+      if (cur && cur.stationId === stationId && cur.lineId === lineId) sel.setHoveredLineStop(null);
+    };
+    el.addEventListener('mouseenter', enter);
+    el.addEventListener('mouseleave', leave);
+    return () => {
+      el.removeEventListener('mouseenter', enter);
+      el.removeEventListener('mouseleave', leave);
+    };
+  }, [stationId, lineId]);
+
   return (
     <div
+      ref={rowRef}
       data-testid="stop-row"
       className={'stop-row' + (selected ? ' selected' : '')}
       onClick={() => selection.setSelectedStopLineId(lineId)}
-      onMouseEnter={() => selection.setHoveredLineStop({ lineId, stationId })}
-      onMouseLeave={() => {
-        const cur = useSelection.getState().hoveredLineStop;
-        if (cur && cur.stationId === stationId && cur.lineId === lineId) {
-          selection.setHoveredLineStop(null);
-        }
-      }}
     >
       {/* The badge names the stop's line — and double-clicking it goes there,
           into that line's editor (startAppend, the one line-editor entry). The
