@@ -566,9 +566,13 @@ band stripes are built mutually tangent, so a line crossing a trunk yields panes
 along each stripe seam), and stops at any face that either can't legally show the target (it
 isn't in the cover) or already shows it — the latter is what keeps a flood from running away
 along a line's whole length. All of it writes through the list-taking `assignRegions` so a
-flood costs exactly one undo. An assignment is anchored IN THE LINES' OWN FRAME (`RegionAnchor`: arc position +
-side offset per covering line) and is carried across every geometry edit by
-`regionReconcile.ts` — rebinding by nearest-compatible face (survives drags/teleports),
+flood costs exactly one undo. An assignment is anchored IN THE LINES' OWN FRAME (`RegionAnchor`:
+corridor + arc position + side offset per covering line) and is carried across every geometry
+edit by `regionReconcile.ts` — rebinding corridor-identity-first (a face must run the anchors'
+own corridors, so same-cover sibling crossings are not interchangeable; `bindAssignments` is
+shared with rendering, whose per-frame re-binds during a drag see anchors whose arc positions
+are stale until the commit reconcile re-mints them), falling back to nearest-compatible face
+when no face runs those corridors (survives teleports and a crossing sliding past a station),
 duplicating onto split halves, resolving merges by largest old face, going dormant when its
 overlap temporarily vanishes. The reconcile runs inside `beginHistoryGroup.commit()` (drags,
 sliders, nudge groups) or inline via `withRegionReconcile` (ungrouped one-shots), always in
@@ -594,10 +598,13 @@ incremental builder is tested against — **production goes through
 seeded from a module-level slot in `regionCache.ts`. A component is reused only when its own ring
 hash matches AND nothing that moved this frame lies near it; the second condition is load-bearing,
 because a component's faces depend on the bodies restricted to it and not just on its outline.
-Two subtleties worth knowing before touching it: face **spans** are arc lengths measured from each
-stripe's start, so they go stale on a face whose polygon never moved (each cached component carries
-a `spanHash` of its cover and re-measures when that changes — writing the result *back* into the
-cache, not just into the copy handed out); and the per-stripe unit hash includes the **line id**,
+Two subtleties worth knowing before touching it: face **spans** are arc-length intervals of
+stripe-BODY overlap (not center-path containment — a corner face off its stripes' centers still
+gets one per cover line, with `mintAnchors` side-offsetting its anchors onto the face), measured
+from each stripe's start, so they go stale on a face whose polygon never moved (each cached
+component carries a `spanHash` of its cover and re-measures when that changes — writing the
+result *back* into the cache, not just into the copy handed out); and the per-stripe unit hash
+includes the **line id**,
 because `bandKey` is built from sorted ids and two lines swapping stripe slots is otherwise
 invisible while inverting the cover of every face the band crosses.
 

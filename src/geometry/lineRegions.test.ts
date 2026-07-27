@@ -10,6 +10,7 @@ import {
   regionFloodTargets,
   regionPaintPlan,
   mintAnchors,
+  evaluateAnchor,
 } from './lineRegions';
 import { splitIntoFaces, faceArea, pointInFace } from './clip';
 import { emitOffsetSegments } from './router';
@@ -275,9 +276,13 @@ describe('buildOverlapRegions', () => {
     const spanV = f.spans.get('l2|s3|s4');
     expect(spanH).toBeDefined();
     expect(spanV).toBeDefined();
-    // The crossing occupies x ∈ [43, 57] along the 100-long horizontal stripe.
-    expect(spanH!.intervals[0].d0).toBeGreaterThan(38);
-    expect(spanH!.intervals[0].d1).toBeLessThan(62);
+    // The crossing occupies x ∈ [43, 57] along the 100-long horizontal
+    // stripe; the span records BODY overlap, which reaches half a width (7)
+    // further out on each side.
+    expect(spanH!.intervals[0].d0).toBeGreaterThan(32);
+    expect(spanH!.intervals[0].d1).toBeLessThan(68);
+    expect(spanH!.intervals[0].d0).toBeLessThan(43);
+    expect(spanH!.intervals[0].d1).toBeGreaterThan(57);
     expect(spanH!.totalLen).toBeCloseTo(100, 0);
   });
 
@@ -292,6 +297,29 @@ describe('buildOverlapRegions', () => {
   it('produces NO faces for tangent interlined stripes of one band', () => {
     const band = makeBandSpec(['l1', 'l2']);
     expect(buildOverlapRegions([band], [])).toHaveLength(0);
+  });
+
+  it('spans cover a face the stripe bodies overlap but both center paths miss', () => {
+    // Two parallel corridors offset by 10: bodies y ∈ [-7,7] and [3,17]
+    // overlap in y ∈ [3,7], and BOTH center paths (y=0, y=10) run outside
+    // the face. Small corner faces at real crossings have the same shape —
+    // inside a stripe's painted body but off its center path — and a face
+    // with no span for a cover line can only be anchored by projection,
+    // the flakiest kind of anchor under drags.
+    const faces = buildOverlapRegions(
+      [hBand('l1', 's1|s2', 0, 100, 0), hBand('l2', 's3|s4', 0, 100, 10)],
+      [],
+    );
+    expect(faces).toHaveLength(1);
+    const f = faces[0];
+    expect(f.lineIds).toEqual(['l1', 'l2']);
+    const s1 = f.spans.get('l1|s1|s2');
+    const s2 = f.spans.get('l2|s3|s4');
+    expect(s1).toBeDefined();
+    expect(s2).toBeDefined();
+    // The overlap runs the corridors' full shared length.
+    expect(s1!.intervals[0].d0).toBeLessThan(10);
+    expect(s1!.intervals[0].d1).toBeGreaterThan(90);
   });
 
   it('culls hairline slivers but keeps real overlaps', () => {
@@ -443,6 +471,76 @@ describe('anchors: mint, bind, resolve', () => {
     const nearIdx = faces.findIndex((f) => f.bbox.x0 < 200);
     const bound = bindAssignments(faces, { r1: asg }, after, new Set(['l1', 'l2']));
     expect(bound.get('r1')).toBe(nearIdx);
+  });
+
+  it('mints anchors that evaluate INSIDE a face the center paths miss', () => {
+    // The binder's distance scoring assumes a minted anchor evaluates on its
+    // own face — a corner face whose span midpoints sit on center paths
+    // OUTSIDE it would otherwise score no better than (and lose to) a big
+    // neighboring superset-cover face touching those paths. The side offset
+    // must carry the anchor from the center path onto the face.
+    const bands = [hBand('l1', 's1|s2', 0, 100, 0), hBand('l2', 's3|s4', 0, 100, 10)];
+    const [face] = buildOverlapRegions(bands, []);
+    const anchors = mintAnchors(face, bands);
+    expect(anchors).toHaveLength(2);
+    for (const anchor of anchors) {
+      const ev = evaluateAnchor(anchor, bands);
+      expect(ev).not.toBeNull();
+      expect(pointInFace(ev!.p, face.face)).toBe(true);
+    }
+  });
+
+  it('does not jump to a sibling crossing when stale mid-drag anchors smear toward it', () => {
+    // Mid-gesture render state: the reconcile only runs on commit, so during
+    // a drag the stored anchors are pre-drag while the corridors have already
+    // changed length — the stored arc distances evaluate far from the
+    // crossing they mark. Here both anchors have slid toward the x=300
+    // sibling, so distance scoring alone binds the sibling; the corridors
+    // pinned in the anchors (l2 via s3|s4, not s5|s6) identify the true face.
+    const bands = [
+      hBand('l1', 's1|s2', 0, 400),
+      vBand('l2', 's3|s4', -50, 50, 100),
+      vBand('l2', 's5|s6', -50, 50, 300),
+    ];
+    const faces = buildOverlapRegions(bands, []);
+    expect(faces).toHaveLength(2);
+    const nearIdx = faces.findIndex((f) => f.bbox.x0 < 200);
+    const asg: RegionAssignment = {
+      id: 'r1',
+      lineId: 'l2',
+      lines: ['l1', 'l2'],
+      anchors: [
+        { lineId: 'l1', pairKey: 's1|s2', anchorEnd: 'from', distance: 280 },
+        { lineId: 'l2', pairKey: 's3|s4', anchorEnd: 'from', distance: 95 },
+      ],
+    };
+    const bound = bindAssignments(faces, { r1: asg }, bands, new Set(['l1', 'l2']));
+    expect(bound.get('r1')).toBe(nearIdx);
+  });
+
+  it('still binds by distance when the crossing slid onto the next corridor', () => {
+    // The crossing used to sit on l2's s3|s4 corridor; a long drag carried it
+    // past the intermediate station onto s5|s6. No face runs s3|s4, so
+    // corridor identity cannot match — the paint choice must still survive by
+    // distance (the pre-identity behavior), not go dormant.
+    const bands = [
+      hBand('l1', 's1|s2', 0, 400),
+      vBand('l2', 's3|s4', -50, -20, 300),
+      vBand('l2', 's5|s6', -20, 50, 300),
+    ];
+    const faces = buildOverlapRegions(bands, []);
+    expect(faces).toHaveLength(1);
+    const asg: RegionAssignment = {
+      id: 'r1',
+      lineId: 'l2',
+      lines: ['l1', 'l2'],
+      anchors: [
+        { lineId: 'l1', pairKey: 's1|s2', anchorEnd: 'from', distance: 300 },
+        { lineId: 'l2', pairKey: 's3|s4', anchorEnd: 'from', distance: 25 },
+      ],
+    };
+    const bound = bindAssignments(faces, { r1: asg }, bands, new Set(['l1', 'l2']));
+    expect(bound.get('r1')).toBe(0);
   });
 
   it('leaves an assignment dormant when no compatible-cover face exists', () => {
