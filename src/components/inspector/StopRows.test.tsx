@@ -332,6 +332,16 @@ describe('<StopRows /> — line ends', () => {
     expect('stationEndStyles' in useDoc.getState().lines.L1).toBe(false);
   });
 
+  it('leaves no stuck dot highlight behind when an end is picked', async () => {
+    chain();
+    const user = userEvent.setup();
+    renderRows();
+    await user.hover(screen.getByTestId('stop-row'));
+    expect(useSelection.getState().hoveredLineStop).toEqual({ lineId: 'L1', stationId: 'a' });
+    await chooseOption(user, endCombo('1'), 'Round');
+    expect(useSelection.getState().hoveredLineStop).toBeNull();
+  });
+
   it('does NOT mirror to matching stations', async () => {
     // Dot type and size fan out across mirror matches; an end is topology, not
     // a look, so it stays put — pinned deliberately.
