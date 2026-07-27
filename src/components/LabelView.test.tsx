@@ -5,7 +5,7 @@ import { useDoc } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC, updateTextLabel } from '../model/transforms';
 import { makeLine, makeTextLabel } from '../test/fixtures';
-import { BASELINE_FRACTION } from '../geometry/textMeasure';
+import { capCenterDy } from '../geometry/textMeasure';
 import type { Line, TextLabel, TextLabelAlign } from '../model/types';
 
 const seedLine = (overrides: Partial<Line> & Pick<Line, 'id' | 'service'>): Line =>
@@ -165,6 +165,34 @@ describe('<LabelView /> — inline bullets', () => {
     expect(container.querySelectorAll('[data-inline-bullet]')).toHaveLength(0);
   });
 
+  // The bullet and its text must be centred on the SAME thing. `diameter/2`
+  // (bullet bottom on the baseline) only ever LOOKED right because the text
+  // painted ~0.089em off its own baseline and the two errors cancelled; once
+  // the text sits on the baseline the bullet rides high by that much.
+  it('centres an inline bullet on the cap box of the text beside it', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: seedLine({ id: 'L1', service: 'A1' }) },
+      lineOrder: ['L1'],
+    });
+    const { container } = render(
+      <svg>
+        <LabelView
+          label={makeTextLabel({ id: 'g1', text: '|A1| Foo', fontSize: 12 })}
+          selected={false}
+        />
+      </svg>,
+    );
+    const bullet = container.querySelector('[data-inline-bullet]')!;
+    const cy = Number(/translate\([-\d.]+ ([-\d.]+)\)/.exec(bullet.getAttribute('transform')!)![1]);
+    const textY = Number(
+      [...container.querySelectorAll('text')]
+        .find((t) => t.textContent === ' Foo')!
+        .getAttribute('y'),
+    );
+    expect(cy).toBeCloseTo(textY - capCenterDy(12), 5);
+  });
+
   it('renders text segments around an inline bullet', () => {
     useDoc.setState({
       ...useDoc.getState(),
@@ -273,12 +301,14 @@ describe('<LabelView /> — inline <size> tags', () => {
     const c = renderLabel(
       makeTextLabel({ id: 'g1', text: '<size=6>a</size><size=24>b</size>', fontSize: 10 }),
     );
-    // Each run is anchored (dominantBaseline="hanging") at baseline −
-    // BASELINE_FRACTION·size, so adding BASELINE_FRACTION·size back must recover
-    // the same baseline for both runs.
-    const baseline = (el: Element, size: number) =>
-      parseFloat(el.getAttribute('y')!) + BASELINE_FRACTION * size;
-    expect(baseline(textByContent(c, 'a'), 6)).toBeCloseTo(baseline(textByContent(c, 'b'), 24), 5);
+    // Each run sits ON its shared alphabetic baseline, so differently-sized
+    // runs carry the SAME y outright — no per-size anchor back-off to undo.
+    // (Was: anchored via dominantBaseline="hanging" at baseline −
+    // BASELINE_FRACTION·size, which Chrome then resolved from platform font
+    // metrics rather than the 0.8 the model assumed.)
+    const y = (el: Element) => parseFloat(el.getAttribute('y')!);
+    expect(y(textByContent(c, 'a'))).toBeCloseTo(y(textByContent(c, 'b')), 5);
+    expect(textByContent(c, 'a').getAttribute('dominant-baseline')).toBeNull();
   });
 
   it('scales an underline decoration with the run size', () => {
