@@ -48,13 +48,17 @@ function WaypointLozengeLabel({
 }
 
 /**
- * The positioning half of a label paint: the anchor, the anchoring mode, the
- * first-line metrics, and the label rotation — everything that says WHERE the
- * name lands, straight off the shared layout. All three passes paint the same
- * name in the same place and differ only in HOW (fill, size, weight, stroke),
- * so each spreads this and adds its own paint instead of re-listing the seven
- * positioning fields. The highlight pass is drawn OVER the normal one, so a
- * drifted copy would read as a doubled label.
+ * The positioning half of a label paint: the anchor, the first line's center,
+ * and the label rotation — everything that says WHERE the name lands, straight
+ * off the shared layout. All three passes paint the same name in the same place
+ * and differ only in HOW (fill, size, weight, stroke), so each spreads this and
+ * adds its own paint instead of re-listing the positioning fields. The
+ * highlight pass is drawn OVER the normal one, so a drifted copy would read as
+ * a doubled label.
+ *
+ * `lay.baseline` / `lay.firstLineDyPx` are deliberately not forwarded: the
+ * renderer derives every baseline from `firstLineCenterY` (see
+ * `firstLineBaselineY`), the one frame the line box and the em box agree on.
  */
 function labelTextPosition(
   lay: ReturnType<typeof labelLayoutLocal>,
@@ -62,21 +66,12 @@ function labelTextPosition(
   lineByService: Map<string, Line>,
 ): Pick<
   RenderLabelTextArgs,
-  | 'anchorX'
-  | 'anchorY'
-  | 'textAnchor'
-  | 'baseline'
-  | 'firstLineDyPx'
-  | 'firstLineCenterY'
-  | 'rotationDeg'
-  | 'lineByService'
+  'anchorX' | 'anchorY' | 'textAnchor' | 'firstLineCenterY' | 'rotationDeg' | 'lineByService'
 > {
   return {
     anchorX: lay.anchorX,
     anchorY: lay.anchorY,
     textAnchor: lay.textAnchor,
-    baseline: lay.baseline,
-    firstLineDyPx: lay.firstLineDyPx,
     firstLineCenterY: lay.firstLineCenterY,
     rotationDeg,
     lineByService,

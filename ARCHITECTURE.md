@@ -1626,13 +1626,32 @@ which are a separate slot-based system where Shift flips the lattice basis.
   those from a **different metric table per platform** — usWinAscent/Descent on Windows, `hhea` via
   CoreText on macOS. The shipped Helvetica Neue leaves `USE_TYPO_METRICS` clear and its two sets
   disagree (904/−214 vs 714/−198), so `central` lands 0.345em above the baseline on Windows but
-  0.258em on macOS — identical markup rendered ~0.09em lower on a Mac (over half a world unit on a
-  default 12-unit code disc, and it grows with zoom). It centers the **cap box**, so it is valid
-  only for text with no descenders and no fallback-font glyphs: `SegmentBand`'s routing-warning ⚠ (a
-  DejaVu dingbat, not caps) is deliberately left on `central`. **`labelLayout` is the open
-  exception** — it still emits `central`/`text-before-edge`/`text-after-edge` while deriving its
-  hit-rect, wash, and autoAlign pin from fixed `BASELINE_FRACTION`/`CAP_FRACTION`, so on macOS a
-  painted station name can drift from the geometry that selects it.
+  0.258em on macOS: identical markup sits ~0.09em lower on a Mac, over half a world unit on a
+  default 12-unit code disc, and it grows with zoom. `capCenterDy` centers the **cap box**, so it is
+  valid only for text with no descenders and no fallback-font glyphs — `SegmentBand`'s
+  routing-warning ⚠ (a DejaVu dingbat, not caps) is the one element on `dominant-baseline` anywhere
+  in the app.
+- **The label pipeline paints on the baseline it computes**, and it measures that baseline from the
+  line's **center**. `stationLabelText`'s `firstLineBaselineY` is `firstLineCenterY +
+  fontSize·(BASELINE_FRACTION − 0.5)` for every valign, and that one number is what the glyphs, the
+  hover underline, the wash silhouette and the hit rect all key off. Center-relative is not a
+  stylistic choice: `labelLayout` lays out in a **1.2em line box** (`LINE_HEIGHT`) while
+  `BASELINE_FRACTION` measures down from the **1.0em em box** top, and the two share a center but
+  not their top/bottom edges — 0.1em of half-leading sits at each end. Measuring from an edge drops
+  it. That is why `LabelLayout.baseline` (`central`/`text-before-edge`/`text-after-edge`) and
+  `firstLineDyPx` are **not** forwarded to the renderer: they name an edge, and `firstLineCenterY`
+  already folds in both the valign and the multi-line first-line shift. The per-segment
+  (bullet/tracked) path derives from the same number, which is what keeps a bulleted label on
+  exactly the y its plain counterpart uses. `LabelView`'s per-run text works the same way: every run
+  carries its shared baseline outright, so mixed inline `<size>` runs align with no per-size anchor
+  back-off, and an inline bullet centers on its run's cap box (`capCenterDy`) rather than on a raw
+  fraction of the line.
+  `dominant-baseline` cannot do this job: Chrome derives its offset from the platform font metrics,
+  so `central` measures 0.333em at fontSize 12 and 0.357em at 14 on Windows against 0.258em on
+  macOS, versus the model's flat 0.3em — enough to put painted text ~1 world unit off the geometry
+  that selects it, by a margin that varies per platform *and* per font size (the metrics round to
+  whole device pixels). Anything positioned **relative to** label text keys off the same computed
+  baseline for the same reason.
 - **`labelLayoutLocal`** is the single source of truth for a station name's `<text>`
   anchor/baseline/hit-rect, all in **unrotated station-local** coords (the `label.rotation` is
   applied around the anchor at render). `'auto'` align snaps the text against an adjacent stop;
@@ -2229,13 +2248,13 @@ are closed here:
    `<filter>`, so a logo's hard `feDropShadow` casing would silently drop; `bakeImageDropShadows`
    bakes it into a real offset silhouette (pure core in the unit-tested
    [pdfDropShadow.ts](src/export/pdfDropShadow.ts)).
-4. **Text baseline** — svg2pdf never reads `dominant-baseline` (only `alignment-baseline`), so every
-   run still carrying one — station names use `central`/`text-before-edge`/`text-after-edge`, free
-   labels `hanging` — lands on the alphabetic baseline, too high. [pdfText.ts](src/export/pdfText.ts)
+4. **Text baseline** — svg2pdf never reads `dominant-baseline` (only `alignment-baseline`), so any run
+   carrying one lands on the alphabetic baseline, too high. [pdfText.ts](src/export/pdfText.ts)
    `normalizeTextBaselines` measures each `<text>`'s box vs its forced-alphabetic box (`getBBox`,
    browser truth) and shifts `y` by the delta — exact for any baseline mode/font without metrics.
-   Badge glyphs carry no `dominant-baseline` at all (`capCenterDy` already put them on the alphabetic
-   baseline), so this pass is a no-op for them and the PDF inherits their platform-invariant position.
+   **In practice it only fires for `SegmentBand`'s ⚠**: badge glyphs (`capCenterDy`) and label text
+   (`firstLineBaselineY`) are already ON the alphabetic baseline, so the export inherits their
+   platform-invariant position instead of re-deriving it from whatever the browser painted.
 5. **Letter-spacing** — svg2pdf ignores the SVG `letter-spacing` property, so a tracked label would
    print at default spacing. `bakeLetterSpacing` ([pdfText.ts](src/export/pdfText.ts)) re-expresses
    each tracked run as an SVG `textLength` (which svg2pdf converts to a PDF `charSpace`); it runs on

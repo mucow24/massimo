@@ -1,13 +1,18 @@
 import { useMemo } from 'react';
 import type { Line, RouteBulletShape, TextLabel } from '../model/types';
 import {
-  BASELINE_FRACTION,
+  capCenterDy,
   measureAdvance,
   measureTextLabel,
   type MeasuredBBox,
 } from '../geometry/textMeasure';
 import { justifyLine, type JustifyAtom } from '../geometry/labelJustify';
-import { resolveRunFontSize, resolveRunWeight, type SegmentStyle } from '../geometry/labelTokens';
+import {
+  INLINE_BULLET_DIAMETER_RATIO,
+  resolveRunFontSize,
+  resolveRunWeight,
+  type SegmentStyle,
+} from '../geometry/labelTokens';
 import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
 import { FONT_STACK } from '../util/fonts';
 import { useDoc } from '../state/store';
@@ -214,13 +219,13 @@ export function LabelView({
           <text
             key={key}
             x={x}
-            // Anchor each run by its OWN top (dominantBaseline="hanging") so
-            // differently-sized runs share the baseline: baseline −
-            // BASELINE_FRACTION·size is the hanging top. Reduces to the historical
-            // per-line top when every run is the base size.
-            y={baselineY - fontSize * BASELINE_FRACTION}
+            // Every run sits ON the shared alphabetic baseline, so differently-
+            // sized runs align with no per-size anchor back-off to get wrong.
+            // (Was: a "hanging" anchor at baseline − BASELINE_FRACTION·size,
+            // which Chrome resolved from platform font metrics — 0.71em, not
+            // the 0.8 assumed here — so the paint drifted off the measured box.)
+            y={baselineY}
             textAnchor="start"
-            dominantBaseline="hanging"
             fontFamily={FONT_STACK}
             fontSize={fontSize}
             fontWeight={runWeight(style)}
@@ -333,7 +338,13 @@ export function LabelView({
             filled={b.filled}
             diameter={b.diameter}
             cx={x + b.diameter / 2}
-            cy={baselineY - b.diameter / 2}
+            // Optically centered on the run's CAP BOX — the same rule
+            // capCenterDy applies to the code inside the bullet, so badge and
+            // text agree by construction. (Was `baselineY - diameter/2`, which
+            // sat the bullet's bottom on the baseline; that only LOOKED
+            // cap-centered because the text used to paint ~0.089em off its own
+            // baseline, and the two errors cancelled.)
+            cy={baselineY - capCenterDy(b.diameter / INLINE_BULLET_DIAMETER_RATIO)}
             lineByService={lineByService}
           />
         );

@@ -1,7 +1,12 @@
 import type { ReactNode } from 'react';
 import { Line } from '../model/types';
 import { hasFormattedToken, resolveRunWeight, type SegmentStyle } from '../geometry/labelTokens';
-import { BASELINE_FRACTION, LINE_HEIGHT, measureTextLabel } from '../geometry/textMeasure';
+import {
+  BASELINE_FRACTION,
+  LINE_HEIGHT,
+  capCenterDy,
+  measureTextLabel,
+} from '../geometry/textMeasure';
 import { InlineBullet } from './InlineBullet';
 
 export interface RenderLabelTextArgs {
@@ -26,15 +31,13 @@ export interface RenderLabelTextArgs {
   anchorX: number;
   anchorY: number;
   textAnchor: 'start' | 'middle' | 'end';
-  baseline: 'central' | 'text-before-edge' | 'text-after-edge';
-  firstLineDyPx: number;
-  // Visual center y of the first text line in the rotated label frame.
-  // The bullet path anchors each line with dominantBaseline='central' at
-  // firstLineCenterY + i*lineSpacing so it lines up exactly with the
-  // non-bullet path (also central-anchored). Without this, labels with
-  // inline bullets render their first line a few pixels above their
-  // bullet-free counterparts (SVG's 'hanging' anchor sits at the cap-line,
-  // not the EM-box top).
+  // Visual center y of the first text line in the rotated label frame, already
+  // encoding the valign AND the multi-line first-line shift. BOTH render paths
+  // derive every baseline from it (see firstLineBaselineY), which is what keeps
+  // a bulleted label on exactly the y its plain counterpart would use.
+  // `LabelLayout`'s `baseline`/`firstLineDyPx` are deliberately NOT taken: they
+  // describe the first line's top/bottom EDGE, a frame the 1.2em line box and
+  // the 1.0em em box disagree on.
   firstLineCenterY: number;
   rotationDeg: number;
   lineByService: Map<string, Line>;
@@ -42,9 +45,10 @@ export interface RenderLabelTextArgs {
 
 /**
  * Render a station label's text content. For plain text (no bullet
- * tokens) this falls back to the historical single-`<text>` + `<tspan>`
- * pattern with its existing dominantBaseline/firstLineDy positioning, so
- * the wash silhouette / hit rect / unit tests stay byte-for-byte the same.
+ * tokens) this falls back to the single-`<text>` + `<tspan>` pattern, placed on
+ * the alphabetic baseline at the y the layout model predicts — so the painted
+ * glyphs, the wash silhouette, the hit rect and the underline are all the same
+ * number, on every platform.
  * Labels that contain inline bullets switch to per-segment positioning:
  * each line is laid out explicitly via the segment-aware measurement, and
  * bullets render as a small badge shape with their service code (gray "?"
@@ -66,8 +70,6 @@ export function renderStationLabelText({
   anchorX,
   anchorY,
   textAnchor,
-  baseline,
-  firstLineDyPx,
   firstLineCenterY,
   rotationDeg,
   lineByService,
@@ -109,30 +111,35 @@ export function renderStationLabelText({
         tracking,
       })
     : null;
-  // Distance from the central-baseline anchor down to the text baseline.
-  // Reuses the constant the bullet path already relies on.
+  // Distance from a line's CENTER down to its text baseline.
   const centralToBaseline = fontSize * (BASELINE_FRACTION - 0.5);
   // Underline geometry, in unrotated label-local px.
   const UNDERLINE_OFFSET = 4;
   const UNDERLINE_STROKE = 2;
-  // Compute the y position of the FIRST line's baseline given the active
-  // dominant-baseline mode. Subsequent lines stack by `lineSpacingPx` below
-  // (leading-scaled; see below).
-  const firstLineBaselineY =
-    baseline === 'central'
-      ? anchorY + centralToBaseline + firstLineDyPx
-      : baseline === 'text-before-edge'
-        ? anchorY + fontSize * BASELINE_FRACTION + firstLineDyPx
-        : anchorY - fontSize * (1 - BASELINE_FRACTION) + firstLineDyPx;
+  // The FIRST line's baseline, in label-local coords — the single number the
+  // glyphs, the underline and the layout geometry all key off. Written straight
+  // to the <text> rather than handed to `dominant-baseline`, whose real offset
+  // Chrome derives from platform font metrics (0.333em at fontSize 12 on
+  // Windows, 0.258em on macOS — never the 0.3em assumed here). Subsequent lines
+  // stack by `lineSpacingPx` below (leading-scaled).
+  //
+  // Measured from the line's CENTER, never from its top or bottom edge, for
+  // every valign. labelLayout works in a 1.2em LINE box (LINE_HEIGHT) while
+  // BASELINE_FRACTION measures down from the 1.0em EM box top; the two share a
+  // center but not their edges — 0.1em of half-leading sits at each end. So
+  // center-relative is the only frame both agree on, and `firstLineCenterY`
+  // already folds in the valign AND the multi-line first-line shift.
+  const firstLineBaselineY = firstLineCenterY + centralToBaseline;
   const lineSpacingPx = fontSize * LINE_HEIGHT * lead;
   if (!perSegment) {
     return (
       <g transform={`rotate(${rotationDeg} ${anchorX} ${anchorY})`} pointerEvents="none">
         <text
           x={anchorX}
-          y={anchorY}
+          // ON the model's own baseline, alphabetic — not `anchorY` + a
+          // dominant-baseline mode. See firstLineBaselineY.
+          y={firstLineBaselineY}
           textAnchor={textAnchor}
-          dominantBaseline={baseline}
           fontSize={fontSize}
           fontWeight={fontWeight}
           fontStyle={fontStyle}
@@ -143,7 +150,9 @@ export function renderStationLabelText({
           style={{ whiteSpace: 'pre' }}
         >
           {lines.map((line, i) => (
-            <tspan key={i} x={anchorX} dy={i === 0 ? firstLineDyPx : lineSpacingPx}>
+            // firstLineDyPx is already folded into firstLineBaselineY, so line
+            // 0 adds nothing and the rest stack by one line spacing.
+            <tspan key={i} x={anchorX} dy={i === 0 ? 0 : lineSpacingPx}>
               {line}
             </tspan>
           ))}
@@ -175,10 +184,10 @@ export function renderStationLabelText({
 
   // Per-segment path: measure segment-aware and emit explicit per-segment
   // elements. Taken for inline-bullet labels AND any tracked label. Each line
-  // is anchored at its visual center with dominantBaseline='central' so it
-  // lines up with the non-bullet path (also central-anchored). firstLineCenterY
-  // comes from the layout and already encodes the valign semantics; line i sits
-  // lineSpacing below the previous one.
+  // lands on the same alphabetic baseline the plain path would have used, so
+  // the two agree glyph-for-glyph. firstLineCenterY comes from the layout and
+  // already encodes the valign semantics; line i sits lineSpacing below the
+  // previous one.
   const m =
     measured ??
     measureTextLabel({
@@ -189,11 +198,10 @@ export function renderStationLabelText({
       leading: lead,
       tracking,
     });
-  // Line 0's baseline under the central anchor — unchanged from the historical
-  // single-size placement. Later lines stack by the measurer's cumulative
-  // baseline deltas (which already grow with any inline <size>), rather than a
-  // fixed per-line spacing, so a bigger run spreads the lines apart.
-  const firstLineBaseline0 = firstLineCenterY + centralToBaseline;
+  // Same first-line baseline the plain path uses. Later lines stack by the
+  // measurer's cumulative baseline deltas (which already grow with any inline
+  // <size>), rather than a fixed per-line spacing, so a bigger run spreads the
+  // lines apart.
   const baseline0FromTop = m.lines[0].baselineFromTop;
 
   // Per-run style resolution for the inline formatting tags, mirroring
@@ -210,7 +218,7 @@ export function renderStationLabelText({
         if (lm.segments.length === 0) return null;
         // Shared baseline for every run on this line; the measurer placed the
         // cumulative offset, so a bigger inline <size> already spread the lines.
-        const baselineY = firstLineBaseline0 + (lm.baselineFromTop - baseline0FromTop);
+        const baselineY = firstLineBaselineY + (lm.baselineFromTop - baseline0FromTop);
         const linePenX = lineStartPenX(textAnchor, anchorX, lm.alignAdvance);
         let cursor = linePenX;
         const nodes: ReactNode[] = [];
@@ -224,13 +232,10 @@ export function renderStationLabelText({
               <text
                 key={`${i}-${j}-t`}
                 x={segCursor}
-                // Central-anchor each run off the shared baseline: a run of size
-                // s centred at baseline − (BASELINE_FRACTION − 0.5)·s puts its
-                // baseline on `baselineY`, so mixed sizes align. Reduces to the
-                // historical y = yCenter when every run is the base size.
-                y={baselineY - segFontSize * (BASELINE_FRACTION - 0.5)}
+                // Every run sits ON the shared alphabetic baseline, so mixed
+                // sizes align with no per-size anchor back-off to get wrong.
+                y={baselineY}
                 textAnchor="start"
-                dominantBaseline="central"
                 fontSize={segFontSize}
                 fontWeight={runWeight(st)}
                 fontStyle={runItalic(st) ? 'italic' : undefined}
@@ -291,11 +296,11 @@ export function renderStationLabelText({
                 filled={seg.filled}
                 diameter={seg.diameter}
                 cx={segCursor + r}
-                // Bullet center at the text's optical midpoint (≈0.3em above
-                // baseline) so the badge looks visually centered on mixed
-                // upper/lowercase. Older convention sat the bullet's bottom on
-                // the baseline, which left it riding above the cap-line.
-                cy={baselineY - fontSize * 0.3}
+                // Optically centered on the CAP BOX — the same rule capCenterDy
+                // applies to the code inside the bullet, so badge and text agree
+                // by construction. (Was a flat 0.3em, which rendered at ~0.333em
+                // because the text used to paint off its own baseline.)
+                cy={baselineY - capCenterDy(fontSize)}
                 lineByService={lineByService}
               />,
             );
