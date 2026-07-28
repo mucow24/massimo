@@ -62,16 +62,6 @@ import {
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
 
-// TEMP instrumentation for the perf probe — remove before commit.
-export const __perfTimers: Record<string, number> = {};
-export const __perfCounts: Record<string, number> = {};
-const tmark = (name: string, t0: number) => {
-  __perfTimers[name] = (__perfTimers[name] ?? 0) + (performance.now() - t0);
-};
-const tcount = (name: string, n = 1) => {
-  __perfCounts[name] = (__perfCounts[name] ?? 0) + n;
-};
-
 /** One component's built output, keyed in the cache by {@link compCacheKey}. */
 interface CachedComponent {
   faces: RegionFace[];
@@ -84,7 +74,7 @@ interface CachedComponent {
  * One independently-movable piece of body geometry: a band stripe or a stop
  * marker, with a content hash and a CONSERVATIVE box of everything it can paint.
  */
-interface GeomUnit {
+export interface GeomUnit {
   hash: number;
   box: Box;
 }
@@ -209,7 +199,7 @@ function coverHash(faces: RegionFace[], lineHash: Map<LineId, number>): number {
  * body is bounded by its centerline box grown by the corner radius, the stripe
  * offset and half the stroke width; a marker by its square's circumradius.
  */
-function hashUnits(
+export function hashUnits(
   bands: SegmentBandSpec[],
   markers: StopMarkerSpec[],
 ): { units: Map<string, GeomUnit>; lineOf: Map<string, LineId> } {
@@ -309,13 +299,9 @@ function buildZoneCached(
         continue;
       }
       allReused = false;
-      const tp = performance.now();
-      const hit = boxesOverlap(boxes.get(a)!, boxes.get(b)!);
-      const rings = hit ? intersect(bodies.get(a)!, bodies.get(b)!) : [];
-      if (hit) {
-        tmark('zone: pair intersects', tp);
-        tcount('pair intersects run');
-      }
+      const rings = boxesOverlap(boxes.get(a)!, boxes.get(b)!)
+        ? intersect(bodies.get(a)!, bodies.get(b)!)
+        : [];
       pairParts.set(key, rings);
       parts.push(...rings);
     }
@@ -329,9 +315,7 @@ function buildZoneCached(
   if (allReused && prev && prev.pairParts.size === pairParts.size && prev.zone.length) {
     return { zone: prev.zone, zoneComps: prev.zoneComps, pairParts };
   }
-  const tu = performance.now();
   const { zone, comps } = zoneComponents(parts);
-  tmark('zone: union+split (zoneComponents)', tu);
   return { zone, zoneComps: comps, pairParts };
 }
 
@@ -398,10 +382,7 @@ export function buildRegionsIncremental(
         dirtyLines.has(id) ? undefined : (prev.bodies.get(id) ?? undefined)
     : undefined;
 
-  const tb = performance.now();
   const bodies = buildLineBodies(bands, markers, reuse);
-  tmark('buildLineBodies', tb);
-  tcount('dirty lines', dirtyLines.size);
   const ids = [...bodies.keys()].sort();
   if (ids.length < 2) {
     return {
@@ -414,9 +395,7 @@ export function buildRegionsIncremental(
     };
   }
 
-  const tz = performance.now();
   const { zone, zoneComps, pairParts } = buildZoneCached(ids, bodies, dirtyLines, prev);
-  tmark('buildZoneCached (total)', tz);
   if (!zone.length) {
     return {
       faces: [],
@@ -467,15 +446,11 @@ export function buildRegionsIncremental(
 
     rebuilt++;
     const compSlivers: RegionSliver[] = [];
-    const tr = performance.now();
-    const restricted = restrictBodiesToZone(ids, bodies, comp);
-    tmark('rebuild: restrictBodiesToZone', tr);
-    const ts = performance.now();
-    const cells = subdivideCells(restricted);
-    tmark('rebuild: subdivideCells', ts);
-    const te = performance.now();
-    const built = extractFaces(cells, bands, compSlivers);
-    tmark('rebuild: extractFaces', te);
+    const built = extractFaces(
+      subdivideCells(restrictBodiesToZone(ids, bodies, comp)),
+      bands,
+      compSlivers,
+    );
     nextComps.set(key, {
       faces: built,
       slivers: compSlivers,
@@ -485,11 +460,7 @@ export function buildRegionsIncremental(
     slivers.push(...compSlivers);
   }
 
-  tcount('components rebuilt', rebuilt);
-  tcount('components total', comps.length);
-  const tf = performance.now();
   const finalized = finalizeFaces(faces);
-  tmark('finalizeFaces', tf);
   return {
     faces: finalized,
     slivers,
