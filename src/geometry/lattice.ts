@@ -1,4 +1,4 @@
-import { rotateBy, type Rotation } from './orientation';
+import { type Rotation } from './orientation';
 import { SQRT2_2 } from './vec';
 
 // A position in row/col space (the station-local cell coordinate system,
@@ -50,19 +50,37 @@ export function latticeOffsets(basis: LatticeBasis, radius: number): RowCol[] {
   return out;
 }
 
+const OTHER_BASIS: Record<LatticeBasis, LatticeBasis> = {
+  orthogonal: 'diagonal',
+  diagonal: 'orthogonal',
+};
+
 /**
- * Project screen-frame offsets into the local frame of an element rotated
- * by `rotation` 45°-steps clockwise (i.e. an SVG with CSS
- * `transform: rotate(rotation·45deg)`). Applies the INVERSE rotation so that
- * the caller can generate a lattice in screen-aligned terms and have it
- * paint correctly inside the rotated SVG.
+ * The same lattice as `latticeOffsets`, but chosen in SCREEN terms and returned
+ * in the LOCAL frame of an element rotated by `rotation` 45°-steps clockwise
+ * (an SVG with `transform: rotate(rotation·45deg)`). Callers pick the basis the
+ * user sees — the station editor's unshifted lattice is screen-orthogonal at
+ * every rotation — and get cells they can store.
+ *
+ * The two bases are each other's 45° rotation, and each is closed under 90°
+ * rotation, so projecting one into a rotated frame never leaves the pair: a
+ * quarter turn maps a lattice onto ITSELF (a relabeling of the same offsets),
+ * and an eighth turn maps each basis onto the other. Choosing the basis is
+ * therefore the whole projection — there is no rotation left to apply.
+ *
+ * That matters for more than tidiness. Actually rotating the offsets cannot be
+ * made exact: generating the diagonal basis scales by √2/2, turning 45° scales
+ * by √2/2 again, and √2/2 · √2/2 is 0.5000000000000001, so a slot one cell from
+ * its anchor came back as 1.0000000000000002. `computeGhosts` adds these to a
+ * station's anchor cell and the sum is committed and saved, so that drift became
+ * a permanent coordinate in the document. Picking the basis has no arithmetic in
+ * it at all, and every cell it yields is exactly an integer or exactly an
+ * integer multiple of √2/2.
  */
-export function projectScreenToLocal(offsets: RowCol[], rotation: Rotation): RowCol[] {
-  if (rotation === 0) return offsets;
-  const inv = ((8 - rotation) % 8) as Rotation;
-  return offsets.map((o) => {
-    // rotateBy operates on (x, y) where x = col, y = row.
-    const p = rotateBy({ x: o.col, y: o.row }, inv);
-    return { row: p.y, col: p.x };
-  });
+export function localLatticeOffsets(
+  basis: LatticeBasis,
+  radius: number,
+  rotation: Rotation,
+): RowCol[] {
+  return latticeOffsets(rotation % 2 === 0 ? basis : OTHER_BASIS[basis], radius);
 }

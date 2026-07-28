@@ -66,7 +66,7 @@ import {
   removeEdge,
   shortestPathOnLine,
 } from './lineTopology';
-import { DIR_8, STOP_SIZE, rotateBy, stopCenterAt, tangentGap } from '../geometry/orientation';
+import { STOP_SIZE, rotateBy, stopCenterAt, tangentGap } from '../geometry/orientation';
 import { CELL_EPS, sameCell } from '../geometry/lattice';
 import { GRID_INTERVAL, snapPointToGrid, type GridSnap } from '../geometry/snap';
 import { polygonCentroid, edgeMidpoint } from '../geometry/polygon';
@@ -1503,62 +1503,6 @@ export function rotateLabel(doc: MapDoc, stationId: StationId): MapDoc {
     ...label,
     rotation: ((label.rotation + 1) % 8) as Rotation,
   }));
-}
-
-export function flipLabel(doc: MapDoc, stationId: StationId): MapDoc {
-  return updateLabel(doc, stationId, (label) => ({
-    ...label,
-    rotation: ((label.rotation + 4) % 8) as Rotation,
-  }));
-}
-
-export function mirrorLabel(doc: MapDoc, stationId: StationId): MapDoc {
-  return updateStation(doc, stationId, (st) => {
-    if (st.stops.length === 0) {
-      // Just flip the rotation; nothing to mirror around.
-      const next = ((st.label.rotation + 4) % 8) as Rotation;
-      return { ...st, label: { ...st.label, rotation: next } };
-    }
-    // Direction from the label to the stops' centroid (quantized to a single
-    // dominant cardinal axis). The mirrored label sits one step past the
-    // FURTHEST stop along that direction (and any stops beyond), so a label on
-    // one side ends up on the opposite side of the entire footprint.
-    const cx = st.stops.reduce((a, c) => a + c.col, 0) / st.stops.length;
-    const cy = st.stops.reduce((a, c) => a + c.row, 0) / st.stops.length;
-    const drRaw = cy - st.label.row;
-    const dcRaw = cx - st.label.col;
-    let dRow = 0;
-    let dCol = 0;
-    if (drRaw === 0 && dcRaw === 0) {
-      // Label sits exactly on the centroid (e.g. a symmetric vertical/horizontal
-      // stop pair): there is no centroid direction to mirror along, so fall back
-      // to the label's own facing direction (DIR_8[rotation]) instead of always
-      // defaulting east.
-      const read = DIR_8[st.label.rotation];
-      dRow = read.dRow;
-      dCol = read.dCol;
-    } else if (Math.abs(drRaw) > Math.abs(dcRaw)) {
-      dRow = Math.sign(drRaw) || 1;
-    } else {
-      dCol = Math.sign(dcRaw) || 1;
-    }
-    // Furthest stop along (dRow, dCol).
-    const proj = (r: number, c: number) => r * dRow + c * dCol;
-    const maxProj = st.stops.reduce((m, cell) => Math.max(m, proj(cell.row, cell.col)), -Infinity);
-    // Step past the max-projected stop (and any other stops at the same
-    // projection level beyond) until we land on an empty cell. Safety bound.
-    let newRow = st.label.row;
-    let newCol = st.label.col;
-    for (let k = 0; k < 1000; k++) {
-      newRow += dRow;
-      newCol += dCol;
-      const beyond = proj(newRow, newCol) > maxProj + CELL_EPS;
-      const empty = !st.stops.some((c) => sameCell(c, { row: newRow, col: newCol }));
-      if (beyond && empty) break;
-    }
-    const next = ((st.label.rotation + 4) % 8) as Rotation;
-    return { ...st, label: { ...st.label, row: newRow, col: newCol, rotation: next } };
-  });
 }
 
 export function setLabelOffset(doc: MapDoc, stationId: StationId, offset: number): MapDoc {

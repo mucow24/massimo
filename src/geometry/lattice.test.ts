@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { latticeOffsets, projectScreenToLocal, type RowCol } from './lattice';
+import { latticeOffsets, localLatticeOffsets, type RowCol } from './lattice';
 
 const HALF_SQRT2 = Math.SQRT1_2;
 
@@ -83,40 +83,84 @@ describe('latticeOffsets', () => {
   });
 });
 
-describe('projectScreenToLocal', () => {
+describe('localLatticeOffsets', () => {
+  const ROTATIONS = [0, 1, 2, 3, 4, 5, 6, 7] as const;
+  const BASES = ['orthogonal', 'diagonal'] as const;
+
   it('is the identity at rotation 0', () => {
-    const ps = latticeOffsets('orthogonal', 2);
-    const out = projectScreenToLocal(ps, 0);
-    expect(keys(out)).toEqual(keys(ps));
-  });
-
-  it('rotates orthogonal screen-east into local-NE at rotation 1 (45° CW)', () => {
-    // Screen east is (row=0, col=1). To paint at screen-east inside a SVG
-    // rotated by +45° CW, the local point must be the inverse: (-√2/2, +√2/2).
-    const [out] = projectScreenToLocal([{ row: 0, col: 1 }], 1);
-    expect(close(out.row, -HALF_SQRT2)).toBe(true);
-    expect(close(out.col, HALF_SQRT2)).toBe(true);
-  });
-
-  it('rotates orthogonal screen-east into local-N at rotation 2 (90° CW)', () => {
-    const [out] = projectScreenToLocal([{ row: 0, col: 1 }], 2);
-    expect(close(out.row, -1)).toBe(true);
-    expect(close(out.col, 0)).toBe(true);
-  });
-
-  it('preserves point count regardless of rotation', () => {
-    const ps = latticeOffsets('orthogonal', 2);
-    for (const r of [0, 1, 2, 3, 4, 5, 6, 7] as const) {
-      expect(projectScreenToLocal(ps, r)).toHaveLength(ps.length);
+    for (const basis of BASES) {
+      expect(keys(localLatticeOffsets(basis, 2, 0))).toEqual(keys(latticeOffsets(basis, 2)));
     }
   });
 
-  it('round-trips orthogonal screen lattice back to the local orthogonal lattice at rotation 4', () => {
-    // 180° rotation: each (row, col) maps to (-row, -col), which is still in
-    // the integer orthogonal lattice. The output set should equal the input
-    // set point-for-point.
-    const ps = latticeOffsets('orthogonal', 2);
-    const out = projectScreenToLocal(ps, 4);
-    expect(keys(out)).toEqual(keys(ps));
+  it('preserves point count regardless of rotation', () => {
+    for (const basis of BASES) {
+      for (const r of ROTATIONS) {
+        expect(localLatticeOffsets(basis, 2, r)).toHaveLength(latticeOffsets(basis, 2).length);
+      }
+    }
+  });
+
+  it('leaves the slot set unchanged at the quarter turns', () => {
+    // A 90° turn permutes a lattice onto itself, so the reachable slots at
+    // rotation 2/4/6 are the very same cells as at rotation 0. Only the
+    // arrow→slot mapping turns with the station, and that lives in nudgeTarget.
+    for (const basis of BASES) {
+      for (const r of [0, 2, 4, 6] as const) {
+        expect(keys(localLatticeOffsets(basis, 2, r))).toEqual(keys(latticeOffsets(basis, 2)));
+      }
+    }
+  });
+
+  it('swaps the two bases at the eighth turns', () => {
+    // The design fact behind the non-integer cells a rotated station records: a
+    // screen-orthogonal lattice seen from a 45°-rotated local frame IS the
+    // diagonal lattice, so those ±√2/2 cells are the same ones Shift-drag
+    // already writes at rotation 0 — not a third, irrational family. And a
+    // screen-DIAGONAL choice comes back on the integer lattice.
+    for (const r of [1, 3, 5, 7] as const) {
+      expect(keys(localLatticeOffsets('orthogonal', 2, r))).toEqual(
+        keys(latticeOffsets('diagonal', 2)),
+      );
+      expect(keys(localLatticeOffsets('diagonal', 2, r))).toEqual(
+        keys(latticeOffsets('orthogonal', 2)),
+      );
+    }
+  });
+
+  it('offers exactly the slots the trig projection did', () => {
+    // These offsets are added to a station's anchor cell and the sum is saved,
+    // so the basis-picking form had to reproduce the rotation it replaced —
+    // this is the pin that it changed only the drift, never a slot position.
+    const trigProjected = (offsets: RowCol[], rotation: number): RowCol[] => {
+      const rad = (((8 - rotation) % 8) * Math.PI) / 4;
+      const c = Math.cos(rad);
+      const s = Math.sin(rad);
+      // The old body: rotateBy({ x: col, y: row }, inv), read back as (y, x).
+      return offsets.map((o) => ({ row: o.col * s + o.row * c, col: o.col * c - o.row * s }));
+    };
+    for (const basis of BASES) {
+      for (const r of ROTATIONS) {
+        const want = trigProjected(latticeOffsets(basis, 2), r);
+        const got = localLatticeOffsets(basis, 2, r);
+        expect(got).toHaveLength(want.length);
+        for (const w of want) expect(includesClose(got, w)).toBe(true);
+      }
+    }
+  });
+
+  // Exactness is the point of the rewrite: the offsets land on a cell the doc
+  // can hold, not 1.0000000000000002 cells away from one.
+  it('lands on values that are exactly integer or exactly k·√2/2', () => {
+    const exact = (v: number) =>
+      !Object.is(v, -0) && (Number.isInteger(v) || Number.isInteger(v / HALF_SQRT2));
+    for (const basis of BASES) {
+      for (const r of ROTATIONS) {
+        for (const o of localLatticeOffsets(basis, 2, r)) {
+          expect(exact(o.row)).toBe(true);
+          expect(exact(o.col)).toBe(true);
+        }
+      }
+    }
   });
 });
