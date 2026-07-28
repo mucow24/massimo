@@ -71,11 +71,12 @@ export interface StopMetrics {
   /** Which signed halves of the stop's travel axis (canonical
    *  `travelDirLocal(orientation)` sign) carry painted line body away from
    *  this stop, resolved from the line's edges and the neighbours' world
-   *  positions. Read ONLY by the beside-slant window, which models stripe
-   *  running past the marker — at a terminus facing the other way there is
-   *  nothing there to clear (the Yipping bug). A neighbour perpendicular to
-   *  the axis counts on neither side: the line bends away, and its body
-   *  toward that neighbour is not the along-axis stripe the window models. */
+   *  positions. Read ONLY by the slant window (beside octants and the
+   *  diagonal-cross butt), which models stripe running past the marker — at
+   *  a terminus facing the other way there is nothing there to clear (the
+   *  Yipping bug). A neighbour perpendicular to the axis counts on neither
+   *  side: the line bends away, and its body toward that neighbour is not
+   *  the along-axis stripe the window models. */
   continues: { plus: boolean; minus: boolean };
 }
 
@@ -798,21 +799,25 @@ function autoAlignInfo(
   // the pin clears whichever reaches furthest along the approach, and each is
   // measured in the direction that actually matters rather than by a single
   // circumscribing radius.
-  const extentAlong = (c: Gated, dir: Vec2): number => {
+  // `stripeOverride` replaces the marker-square term with a reach measured
+  // elsewhere (the cross butt's slant window below) — possibly NEGATIVE when
+  // the stripe has retreated past the stop's center at the text's rows, so
+  // the dot/transfer terms join only when they exist rather than flooring the
+  // credit at zero.
+  const extentAlong = (c: Gated, dir: Vec2, stripeOverride?: number): number => {
     const uLocX = dir.x * readCos - dir.y * readSin;
     const uLocY = dir.x * readSin + dir.y * readCos;
     const axis = c.orientation ? travelDirLocal(c.orientation) : { x: 1, y: 0 };
     const alongAxis = Math.abs(uLocX * axis.x + uLocY * axis.y);
-    const stripe = c.half * (alongAxis + Math.abs(uLocX * -axis.y + uLocY * axis.x));
+    const stripe =
+      stripeOverride ?? c.half * (alongAxis + Math.abs(uLocX * -axis.y + uLocY * axis.x));
     // The dot can be WIDER than its own line — a service-code disc sizes itself
     // for legibility, and any dot size is settable — so it is a real obstacle,
     // not a subset of the stripe. It is also the one obstacle measured in WORLD
     // axes rather than the station's (see dotSupport).
-    const extent = Math.max(
-      stripe,
-      dotSupport(c.dot, uLocX, uLocY, stationRotation),
-      c.transferRadius,
-    );
+    let extent = stripe;
+    if (c.dot) extent = Math.max(extent, dotSupport(c.dot, uLocX, uLocY, stationRotation));
+    if (c.transferRadius > 0) extent = Math.max(extent, c.transferRadius);
     if (!c.dash || !c.orientation) return extent;
     // A dash stop's tick is a second obstacle: a rect from the stripe edge
     // (± half on the label-signed perpendicular) reaching `length` toward
@@ -836,53 +841,60 @@ function autoAlignInfo(
   };
 
   /**
-   * Stripe reach along a beside approach measured over the text's
-   * perpendicular WINDOW, not just the CTA-center ray. The ray support is
-   * exact for a stripe perpendicular to the approach, but a DIAGONAL stripe
-   * advances toward the label by |along/cross| per unit of text height, so
-   * the near corner of the block — half a cap up, half a cap plus the
-   * half-weight descender charge down, plus any stacked lines on the growing
-   * side — is what actually has to clear. Returns 0 for a stripe PARALLEL to
-   * the approach: there the finite marker-square model is the deliberate
-   * choice (it is what lets a terminus label read along its own line).
+   * Stripe reach along an approach measured over the text's perpendicular
+   * WINDOW `[t1, t2]` (reading-perp offsets from the stop's row, +down), not
+   * just the row-level ray. The ray support is exact for a stripe
+   * perpendicular to the approach, but a DIAGONAL stripe's edge moves by
+   * |along/cross| per unit of that offset, so the block's nearest ink corner
+   * is what actually has to clear — a CHARGE when the window leans into the
+   * advance (beside octants straddle the row; the cross butt's mirror case),
+   * a CREDIT when the whole window sits where the edge has retreated (the
+   * cross butt's screenshots). Returns null for a stripe PARALLEL to the
+   * approach — no slant model; the finite marker square is the deliberate
+   * obstacle there (it is what lets a terminus label read along its own
+   * line) — and for the stripeless phantom dot.
    */
-  const stripeSlantExtent = (c: Gated, dir: Vec2, tUp: number, tDown: number): number => {
-    if (!c.orientation) return 0; // phantom dot paints no stripe
+  const stripeSlantExtent = (c: Gated, dir: Vec2, t1: number, t2: number): number | null => {
+    if (!c.orientation) return null; // phantom dot paints no stripe
     const uLocX = dir.x * readCos - dir.y * readSin;
     const uLocY = dir.x * readSin + dir.y * readCos;
     const axis = travelDirLocal(c.orientation);
     // Label-side stripe edge: normal = axis⊥, signed toward the approach.
     const un = uLocX * -axis.y + uLocY * axis.x;
-    if (Math.abs(un) < 1e-6) return 0;
+    if (Math.abs(un) < 1e-6) return null;
     const pn = (-readSin * -axis.y + readCos * axis.x) * Math.sign(un);
     // Edge advance along the approach per unit of +perp (the stacking side).
     const k = -pn / Math.abs(un);
     const base = c.half / Math.abs(un);
-    const extra = Math.max(0, k * tDown, -k * tUp);
-    if (extra === 0) return base;
-    // The window charges for stripe BODY continuing past the marker on the
-    // axis half the approach leans toward — nonexistent at a terminus facing
-    // the other way, where the finite marker square is the honest obstacle.
+    // Binding corner: the window end the edge reaches furthest toward (or
+    // retreats least from).
+    const t = k * t1 >= k * t2 ? t1 : t2;
+    if (k * t === 0) return base;
+    // The window reads stripe BODY away from the row; it counts only when
+    // the line actually continues on the axis half the binding corner's
+    // contact point sits on — at a terminus facing the other way there is
+    // nothing there, and the row-level ray (≡ the finite marker square along
+    // this approach) is the honest obstacle.
+    const reach = base + k * t;
     const along = uLocX * axis.x + uLocY * axis.y;
-    return (along > 0 ? c.continues.plus : c.continues.minus) ? base + extra : base;
+    const sAxis = t * (-readSin * axis.x + readCos * axis.y) + reach * along;
+    return (sAxis > 0 ? c.continues.plus : c.continues.minus) ? reach : base;
   };
 
   // Pin point: marker edge + LABEL_GAP along the approach, stop-relative on
   // BOTH axes (the cell picks the octant; offset/offsetPerp fine-tune).
+  const stacked = (lineAdvances.length - 1) * fontSize * LINE_HEIGHT * (style.leading ?? 1);
   let extent = extentAlong(ref, u);
   if (o === 0 || o === 4) {
     // Beside octants only: the corner octants pin the block's extremity
     // already, and a label centered above/below a diagonal line is not a
-    // layout the octant model serves (the corners are). The crossing butt
-    // below shares this blind spot in miniature for a diagonal CROSSING
-    // stripe; left alone until a real map hits it — crossing stops are
-    // near-universally perpendicular.
+    // layout the octant model serves (the corners are). A diagonal CROSSING
+    // stripe gets the same window treatment at the butt below.
     const growsUp = label.autoVAlign === 'up';
-    const stacked = (lineAdvances.length - 1) * fontSize * LINE_HEIGHT * (style.leading ?? 1);
     const tUp = capCenterDy(fontSize) + (growsUp ? stacked : 0);
     const tDown =
       capCenterDy(fontSize) + 0.5 * DESCENDER_FRACTION * fontSize + (growsUp ? 0 : stacked);
-    extent = Math.max(extent, stripeSlantExtent(ref, u, tUp, tDown));
+    extent = Math.max(extent, stripeSlantExtent(ref, u, -tUp, tDown) ?? 0);
   }
   let pinRead = ref.proj * STOP_SIZE + u.x * (extent + ref.labelGap);
   const pinPerp = ref.perp * STOP_SIZE + u.y * (extent + ref.labelGap);
@@ -902,9 +914,25 @@ function autoAlignInfo(
   if (cross) {
     const side = cross.proj > ref.proj ? 1 : -1; // which way along reading the stripe sits
     const away = { x: -side, y: 0 }; // crossing stop → label, along the reading axis
+    // A DIAGONAL crossing stripe is measured where the TEXT is, not on the
+    // stop row: the block sits wholly above/below the row (the perpendicular
+    // pin put it there), and the slanted edge has moved sideways by then —
+    // the block's nearest ink corner butts at the gap, pulled inward when
+    // the stripe retreats from the text, pushed out when it advances over
+    // it. The window is the charged ink: the above pin IS the half-descender
+    // ink bottom; the below pin is the hanging cap line.
+    const capH = CAP_FRACTION * fontSize;
+    const descHalf = 0.5 * DESCENDER_FRACTION * fontSize;
+    const tRel = pinPerp - cross.perp * STOP_SIZE;
+    const slant =
+      o === 6
+        ? stripeSlantExtent(cross, away, tRel - descHalf - stacked - capH, tRel)
+        : stripeSlantExtent(cross, away, tRel, tRel + capH + stacked + descHalf);
     // The butt clears by the CROSSING line's own gap — each axis reads the
     // gap of the stop that blocks it, like every other term of its pin.
-    pinRead = cross.proj * STOP_SIZE - side * (extentAlong(cross, away) + cross.labelGap);
+    pinRead =
+      cross.proj * STOP_SIZE -
+      side * (extentAlong(cross, away, slant ?? undefined) + cross.labelGap);
     textAnchorDefault = side > 0 ? 'end' : 'start';
   }
 

@@ -839,6 +839,149 @@ describe('labelLayoutLocal — autoAlign at a crossing (cross station)', () => {
   });
 });
 
+describe('labelLayoutLocal — autoAlign at a DIAGONAL crossing', () => {
+  // The butt measures the crossing stripe where the TEXT is, not on the stop
+  // row: the block sits wholly above/below the row, and a 45° stripe has
+  // slanted one unit sideways per unit of that height by then. The block's
+  // nearest ink corner pins at the crossing labelGap off the slanted edge —
+  // pulled INWARD when the stripe retreats from the text, pushed OUT when it
+  // advances over it. Same window model as the beside octants, same
+  // half-descender charge on the ink bottom.
+  const SIT = STOP_SIZE - (HALF + LABEL_GAP) - CB - DESC_N;
+  const HANG_Y = -STOP_SIZE + HALF + LABEL_GAP + HANG;
+  const RISE = HALF * Math.SQRT2; // a 45° stripe's row-level support along reading
+  const LINE_STACK = 14.4; // FS · LINE_HEIGHT (leading 1)
+  // The charged ink sits HALF + LABEL_GAP off the row on either side (the
+  // above pin already folds the half-descender; the below cap hangs there).
+  const NEAR = HALF + LABEL_GAP;
+
+  it('above the line, stripe slanting AWAY: the ink-bottom corner pulls the text inward', () => {
+    // Crossing NW–SE stop to the WEST: above the row its stripe retreats
+    // west, so at the ink bottom the east edge sits NEAR short of the
+    // row-level RISE and the text starts that much closer to the crossing.
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L1' },
+          { dRow: 1, dCol: -1, orientation: 'auto-nw-se', lineId: 'L2' },
+        ],
+      }),
+    );
+    expect(lay.textAnchor).toBe('start');
+    expect(lay.anchorX).toBeCloseTo(-STOP_SIZE + (RISE - NEAR) + LABEL_GAP, 6);
+    expect(lay.anchorY).toBeCloseTo(SIT, 6); // baseline stays level with its row
+  });
+
+  it('above the line, stripe slanting TOWARD: the ink-top corner pushes the text out', () => {
+    // Same cross with the OTHER diagonal (NE–SW): above the row the stripe
+    // advances east over the text, and the top corner — a cap and the
+    // half-descender charge beyond NEAR — is what has to clear. The row-level
+    // ray under-clears here: this is the overlapping mirror case.
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L1' },
+          { dRow: 1, dCol: -1, orientation: 'auto-ne-sw', lineId: 'L2' },
+        ],
+      }),
+    );
+    expect(lay.textAnchor).toBe('start');
+    expect(lay.anchorX).toBeCloseTo(-STOP_SIZE + RISE + (NEAR + DESC_N + CAP) + LABEL_GAP, 6);
+    expect(lay.anchorY).toBeCloseTo(SIT, 6);
+  });
+
+  it('below-the-line mirror: hanging text pulls inward the same way', () => {
+    // Crossing NW–SE stop to the EAST, label hanging below: below the row
+    // that stripe retreats east, and the ink TOP (the hanging cap line at
+    // NEAR) is the binding corner.
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: -1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L1' },
+          { dRow: -1, dCol: 1, orientation: 'auto-nw-se', lineId: 'L2' },
+        ],
+      }),
+    );
+    expect(lay.textAnchor).toBe('end');
+    expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (RISE - NEAR) - LABEL_GAP, 6);
+    expect(lay.anchorY).toBeCloseTo(HANG_Y, 6);
+  });
+
+  it('extra lines stacking AWAY from the row leave a retreating pin alone', () => {
+    // Below-label lines grow further down, where the stripe has retreated
+    // even further: the binding corner stays the hanging cap line.
+    const lay = labelLayoutLocal(
+      autoStation({
+        name: 'A\nB',
+        stops: [
+          { dRow: -1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L1' },
+          { dRow: -1, dCol: 1, orientation: 'auto-nw-se', lineId: 'L2' },
+        ],
+      }),
+    );
+    expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (RISE - NEAR) - LABEL_GAP, 6);
+  });
+
+  it('extra lines stacking INTO an advancing stripe widen the window', () => {
+    // Above-label lines stack upward, into the NE–SW stripe's advance: the
+    // second line moves the binding top corner a line stack further out.
+    const lay = labelLayoutLocal(
+      autoStation({
+        name: 'A\nB',
+        stops: [
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L1' },
+          { dRow: 1, dCol: -1, orientation: 'auto-ne-sw', lineId: 'L2' },
+        ],
+      }),
+    );
+    expect(lay.anchorX).toBeCloseTo(
+      -STOP_SIZE + RISE + (NEAR + DESC_N + CAP + LINE_STACK) + LABEL_GAP,
+      6,
+    );
+  });
+
+  it('the slant reads only stripe body that CONTINUES toward the text side', () => {
+    // A crossing line terminating at the shared station paints no stripe on
+    // the text's half of its axis: the row-level support is then the honest
+    // obstacle — no credit, no charge. The above-west NW–SE credit lives on
+    // the NW (−axis) half; the NE–SW charge on the NE (+axis) half.
+    const stops = [
+      { dRow: 1, dCol: 0, orientation: 'auto-horizontal' as const, lineId: 'L1' },
+      { dRow: 1, dCol: -1, orientation: 'auto-nw-se' as const, lineId: 'L2' },
+    ];
+    const seOnly = labelLayoutLocal(
+      autoStation({ stops }),
+      undefined,
+      undefined,
+      metrics((stop) => (stop.lineId === 'L2' ? { continues: { plus: true, minus: false } } : {})),
+    );
+    expect(seOnly.anchorX).toBeCloseTo(-STOP_SIZE + RISE + LABEL_GAP, 6);
+    const neSw = [{ ...stops[0] }, { ...stops[1], orientation: 'auto-ne-sw' as const }];
+    const swOnly = labelLayoutLocal(
+      autoStation({ stops: neSw }),
+      undefined,
+      undefined,
+      metrics((stop) => (stop.lineId === 'L2' ? { continues: { plus: false, minus: true } } : {})),
+    );
+    expect(swOnly.anchorX).toBeCloseTo(-STOP_SIZE + RISE + LABEL_GAP, 6);
+  });
+
+  it('a perpendicular crossing is untouched: the row-level support IS the stripe', () => {
+    // The vertical-cross butt (every existing cross test) must not move: a
+    // stripe perpendicular to reading has no slant, whatever the window.
+    const lay = labelLayoutLocal(
+      autoStation({
+        name: 'A\nB',
+        stops: [
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L1' },
+          { dRow: 1, dCol: 1, orientation: 'auto-vertical', lineId: 'L2' },
+        ],
+      }),
+    );
+    expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (HALF + LABEL_GAP), 6);
+  });
+});
+
 describe('labelLayoutLocal — autoAlign rotation covariance', () => {
   it('rotation 2 (S-reading) beside-stop case = rotation-0 case rotated 90°', () => {
     // Rotation-0 oracle: stop (0,1) auto-vertical ⇒ anchor (4, CTR), 'end'.
