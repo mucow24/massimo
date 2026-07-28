@@ -753,10 +753,17 @@ mouseover chrome and stays quiet mid-pan. **Idle-only**, for the reason the mode
 from the other side: `creating-transfer` and `placing-anchor` already reveal EVERY anchor, and the
 layout editor draws its own grab rings on the edited station. This is why `MapCanvas` gates the
 anchor block on `showNetwork` and then PICKS the layer's inputs (whole network vs revealed
-stations only) rather than gating on `anchorsVisible` — `AnchorLayer` itself is unchanged by the
-feature, since it already renders nothing when both collections are empty, and a hosted anchor is
-already `pointer-events: none` outside transfer-picking, so a revealed one can't steal the click
-meant for the station under it.
+stations only) rather than gating on `anchorsVisible` — `AnchorLayer` already renders nothing when
+both collections are empty, and a hosted anchor is already `pointer-events: none` outside
+transfer-picking, so a revealed one can't steal the click meant for the station under it.
+
+The same reveal set does double duty when the toggle is ON: on an idle canvas the whole network
+paints, but HOSTED anchors rest at **half opacity** and come forward only while their station is
+hovered or selected — so the mouseover still says "this mark belongs to THAT station" even though
+everything is technically visible. `AnchorLayer` takes the full-opacity stations as
+`dimHostedExcept` (null = no dimming regime: toggle off, the picking modes — where every endpoint
+must be fully legible — and the layout editor). Free anchors never dim; they belong to no station,
+so no mouseover could bring one forward.
 
 FREE anchors are first-class canvas objects — multi-select, marquee, group drag, group rotate
 (orbit-only: the polygon case reduced to a point, no orientation to step), arrow-nudge, Delete —
@@ -767,7 +774,10 @@ counts them). They have **no popover**, but they ARE in `soleSelection` — that
 deep-pick cycling rather than merely suppressing a panel. They are deliberately **not copyable**
 (`ClipPayload` has no transfer kind, so a pasted anchor could never carry the transfer that gives
 it meaning). HOSTED anchors are station internals like a stop dot: rendered `pointerEvents="none"`
-(so alt-click reaches through them), edited only in the layout editor.
+(so alt-click reaches through them), edited only in the layout editor. Removal has two equivalent
+doors: the popover's anchor row (×) and the Delete key while the cell is armed
+(`selectedAnchorCellId` — the state the "Add transfer anchor" button leaves you in); both go
+through `deleteStationAnchor`, which cascades any transfers bound to the cell.
 
 In the lattice they ride as **passengers**: never in `stationLayoutNodes` (whose node identity is
 `lineId: string | null`, where null already means "the label", and where a non-`isLabel` node would
