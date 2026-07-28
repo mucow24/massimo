@@ -1782,7 +1782,12 @@ which are a separate slot-based system where Shift flips the lattice basis.
   stays measured against the stop that actually blocks it — extent AND `labelGap` alike: the
   perpendicular pin still comes from the label's own stop, so the baseline holds that line's gap
   off the line it labels (a row of labels stays level) no matter how wide the crossing line gets,
-  while the butt clears by the crossing line's own gap. Parallel neighbours are not
+  while the butt clears by the crossing line's own gap. A DIAGONAL crossing stripe is measured
+  where the text is, not on the stop row: the block sits wholly above/below the row, so the butt
+  runs the same slant window over the block's ink (the above pin is already the half-descender
+  ink bottom; the below pin the hanging cap line) and the nearest ink corner butts at the gap —
+  pulled inward past the row-level support when the stripe retreats from the text, pushed out
+  when it advances over it, with the same `continues` gate. Parallel neighbours are not
   crossings, and a label boxed in on both sides keeps centering.
 
 ### Polygons — `polygon.ts`, `polygonUnion.ts`, `rectPolygon.ts`, `polygonSnap.ts`
