@@ -45,7 +45,7 @@
 import type { LineId } from '../model/types';
 import type { SegmentBandSpec, StopMarkerSpec } from './interlining';
 import type { Face, Ring } from './clip';
-import { intersect, unionAll } from './clip';
+import { intersect } from './clip';
 import {
   boxesOverlap,
   buildLineBodies,
@@ -54,8 +54,8 @@ import {
   refreshFaceSpans,
   restrictBodiesToZone,
   ringsBbox,
-  significantComponents,
   subdivideCells,
+  zoneComponents,
   type RegionFace,
   type RegionSliver,
 } from './lineRegions';
@@ -74,7 +74,7 @@ interface CachedComponent {
  * One independently-movable piece of body geometry: a band stripe or a stop
  * marker, with a content hash and a CONSERVATIVE box of everything it can paint.
  */
-interface GeomUnit {
+export interface GeomUnit {
   hash: number;
   box: Box;
 }
@@ -89,6 +89,8 @@ export interface RegionIncrementalState {
   /** `a|b` → that pair's body intersection, reusable while both bodies are. */
   pairParts: Map<string, Ring[]>;
   zone: Ring[];
+  /** Significant components of `zone`, cached with it (same polytree pass). */
+  zoneComps: Face[];
   comps: Map<string, CachedComponent>;
 }
 
@@ -197,7 +199,7 @@ function coverHash(faces: RegionFace[], lineHash: Map<LineId, number>): number {
  * body is bounded by its centerline box grown by the corner radius, the stripe
  * offset and half the stroke width; a marker by its square's circumradius.
  */
-function hashUnits(
+export function hashUnits(
   bands: SegmentBandSpec[],
   markers: StopMarkerSpec[],
 ): { units: Map<string, GeomUnit>; lineOf: Map<string, LineId> } {
@@ -279,7 +281,7 @@ function buildZoneCached(
   bodies: Map<LineId, Ring[]>,
   dirtyLines: ReadonlySet<LineId>,
   prev: RegionIncrementalState | null,
-): { zone: Ring[]; pairParts: Map<string, Ring[]> } {
+): { zone: Ring[]; zoneComps: Face[]; pairParts: Map<string, Ring[]> } {
   const boxes = new Map(ids.map((id) => [id, ringsBbox(bodies.get(id)!)]));
   const pairParts = new Map<string, Ring[]>();
   const parts: Ring[] = [];
@@ -311,9 +313,10 @@ function buildZoneCached(
   // shrinks the pair set, and a same-size-but-different set cannot have reused
   // every pair (its new pairs are not in the cache), so size is enough.
   if (allReused && prev && prev.pairParts.size === pairParts.size && prev.zone.length) {
-    return { zone: prev.zone, pairParts };
+    return { zone: prev.zone, zoneComps: prev.zoneComps, pairParts };
   }
-  return { zone: parts.length ? unionAll(parts) : [], pairParts };
+  const { zone, comps } = zoneComponents(parts);
+  return { zone, zoneComps: comps, pairParts };
 }
 
 const emptyState = (
@@ -325,6 +328,7 @@ const emptyState = (
   bodies: new Map(),
   pairParts: new Map(),
   zone: [],
+  zoneComps: [],
   comps: new Map(),
 });
 
@@ -391,7 +395,7 @@ export function buildRegionsIncremental(
     };
   }
 
-  const { zone, pairParts } = buildZoneCached(ids, bodies, dirtyLines, prev);
+  const { zone, zoneComps, pairParts } = buildZoneCached(ids, bodies, dirtyLines, prev);
   if (!zone.length) {
     return {
       faces: [],
@@ -403,7 +407,7 @@ export function buildRegionsIncremental(
     };
   }
 
-  const comps = significantComponents(zone);
+  const comps = zoneComps;
   const nextComps = new Map<string, CachedComponent>();
   const faces: RegionFace[] = [];
   const slivers: RegionSliver[] = [];
@@ -456,10 +460,11 @@ export function buildRegionsIncremental(
     slivers.push(...compSlivers);
   }
 
+  const finalized = finalizeFaces(faces);
   return {
-    faces: finalizeFaces(faces),
+    faces: finalized,
     slivers,
-    state: { lineHash, units, bodies, pairParts, zone, comps: nextComps },
+    state: { lineHash, units, bodies, pairParts, zone, zoneComps, comps: nextComps },
     reused: rebuilt === 0,
     rebuilt,
     total: comps.length,

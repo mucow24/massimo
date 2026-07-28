@@ -24,6 +24,7 @@ import {
   interiorPoint,
   intersect,
   offsetClosed,
+  offsetNormalized,
   offsetOpenPath,
   pointInFace,
   faceArea,
@@ -319,6 +320,41 @@ export function ringsBbox(rings: Ring[]): { x0: number; y0: number; x1: number; 
   return { x0, y0, x1, y1 };
 }
 
+/**
+ * Merged arc-length windows of `sp` whose segments come within `pad` of
+ * `bbox`. A sample at arc position `at` lies on some segment; if that whole
+ * segment sits clear of the padded box, {@link pointNearFace}'s own bbox
+ * gate would reject the sample — so outside these windows `inside` is
+ * provably false and the walk can skip constructing the point at all. The
+ * windows only need to be supersets: a false-positive window costs one real
+ * evaluation that returns false, changing nothing.
+ */
+function nearWindows(
+  sp: StripePath,
+  bbox: { x0: number; y0: number; x1: number; y1: number },
+  pad: number,
+): { d0: number; d1: number }[] {
+  const wins: { d0: number; d1: number }[] = [];
+  for (let i = 0; i + 1 < sp.pts.length; i++) {
+    const a = sp.pts[i];
+    const b = sp.pts[i + 1];
+    const near =
+      Math.min(a.x, b.x) <= bbox.x1 + pad &&
+      Math.max(a.x, b.x) >= bbox.x0 - pad &&
+      Math.min(a.y, b.y) <= bbox.y1 + pad &&
+      Math.max(a.y, b.y) >= bbox.y0 - pad;
+    if (!near) continue;
+    const last = wins[wins.length - 1];
+    if (last && last.d1 >= sp.cum[i]) last.d1 = sp.cum[i + 1];
+    else wins.push({ d0: sp.cum[i], d1: sp.cum[i + 1] });
+  }
+  return wins;
+}
+
+/** Slack around window edges so a sample exactly on a shared vertex between
+ * a near and a far segment is always evaluated for real, never skipped. */
+const WINDOW_EPS = 1e-7;
+
 function computeSpans(
   face: Face,
   bbox: { x0: number; y0: number; x1: number; y1: number },
@@ -335,16 +371,24 @@ function computeSpans(
       const halfWidth = band.stripeWidths[k] / 2;
       // The stripe's painted body extends half a width past the path bbox.
       if (!boxesOverlap(sp.bbox, bbox, halfWidth)) continue;
+      // The walk below visits the stripe's WHOLE arc, but almost all of it
+      // runs nowhere near this face; precomputing the near windows makes the
+      // out-of-window iterations a couple of float compares instead of an
+      // arc-length binary search + point test each.
+      const wins = nearWindows(sp, bbox, halfWidth);
+      let w = 0;
       const intervals: { d0: number; d1: number }[] = [];
       let runStart: number | null = null;
       for (let d = 0; ; d += SPAN_STEP) {
         const at = Math.min(d, sp.len);
+        while (w < wins.length && at > wins[w].d1 + WINDOW_EPS) w++;
+        const maybeNear = w < wins.length && at >= wins[w].d0 - WINDOW_EPS;
         // Body overlap, not center containment: the stripe covers face
         // material anywhere within half its width of the path. Small corner
         // faces sit inside a stripe's body but off its center path — with
         // center containment they'd get no span here, and a spanless cover
         // line can only be anchored by projection (the flakiest anchor kind).
-        const inside = pointNearFace(pointAtArcLength(sp, at), face, bbox, halfWidth);
+        const inside = maybeNear && pointNearFace(pointAtArcLength(sp, at), face, bbox, halfWidth);
         if (inside && runStart === null) runStart = Math.max(0, at - SPAN_STEP / 2);
         if (!inside && runStart !== null) {
           intervals.push({ d0: runStart, d1: Math.min(sp.len, at - SPAN_STEP / 2) });
@@ -412,14 +456,12 @@ export function buildOverlapRegions(
   const bodies = buildLineBodies(bands, markers);
   const ids = [...bodies.keys()].sort();
   if (ids.length < 2) return [];
-  const zone = buildOverlapZone(ids, bodies);
-  if (!zone.length) return [];
   // Component-at-a-time. Cells cannot span components, so this yields the same
   // faces as one global subdivision while keeping every clipper operand down to
   // one crossing's worth of geometry — and it is the seam the incremental
   // builder caches on.
   const faces: RegionFace[] = [];
-  for (const comp of significantComponents(zone)) {
+  for (const comp of significantComponents(overlapZoneParts(ids, bodies))) {
     faces.push(
       ...extractFaces(subdivideCells(restrictBodiesToZone(ids, bodies, comp)), bands, sliverSink),
     );
@@ -428,11 +470,14 @@ export function buildOverlapRegions(
 }
 
 /**
- * The pairwise-overlap zone: any ≥2-cover point lies in some pairwise body
- * intersection, so cells inside this zone subdivide exactly as they would in
- * the full arrangement, at a fraction of the cost.
+ * The raw parts of the pairwise-overlap zone: any ≥2-cover point lies in some
+ * pairwise body intersection, so cells inside their union subdivide exactly as
+ * they would in the full arrangement, at a fraction of the cost. Deliberately
+ * NOT unioned here — {@link significantComponents}' polytree union both merges
+ * the parts and splits the result into components in one boolean, so a
+ * separate unionAll pass would just do the same work twice.
  */
-export function buildOverlapZone(ids: LineId[], bodies: Map<LineId, Ring[]>): Ring[] {
+export function overlapZoneParts(ids: LineId[], bodies: Map<LineId, Ring[]>): Ring[] {
   const boxes = new Map(ids.map((id) => [id, ringsBbox(bodies.get(id)!)]));
   const zoneParts: Ring[] = [];
   for (let i = 0; i < ids.length; i++) {
@@ -441,8 +486,7 @@ export function buildOverlapZone(ids: LineId[], bodies: Map<LineId, Ring[]>): Ri
       zoneParts.push(...intersect(bodies.get(ids[i])!, bodies.get(ids[j])!));
     }
   }
-  if (!zoneParts.length) return [];
-  return unionAll(zoneParts);
+  return zoneParts;
 }
 
 /** Each line's body clipped to the zone, in `ids` order; empties dropped. */
@@ -471,11 +515,29 @@ export function restrictBodiesToZone(
 export function subdivideCells(
   restricted: { id: LineId; rings: Ring[] }[],
 ): { cover: LineId[]; rings: Ring[] }[] {
-  let cells: { cover: LineId[]; rings: Ring[] }[] = [];
+  // Each cell carries its bbox so the loop can prove "these can't interact"
+  // without a clipper round-trip: an intersection is a subset of both
+  // operands' boxes, so strictly disjoint boxes take exactly the branch an
+  // empty intersection takes — cell pushed through, remaining untouched. On
+  // a multi-crossing component most cell/line pairs sit at different
+  // crossings, so most of the empty intersects (71% of subdivide's clipper
+  // calls on the DKLB drag) never run. Touching-but-not-overlapping boxes
+  // still go through clipper; the skip only fires on strict separation.
+  interface Cell {
+    cover: LineId[];
+    rings: Ring[];
+    box: { x0: number; y0: number; x1: number; y1: number };
+  }
+  let cells: Cell[] = [];
   for (const { id, rings } of restricted) {
-    const next: typeof cells = [];
+    const next: Cell[] = [];
     let remaining = rings;
+    let remainingBox = ringsBbox(remaining);
     for (const cell of cells) {
+      if (!remaining.length || !boxesOverlap(cell.box, remainingBox)) {
+        next.push(cell);
+        continue;
+      }
       const inter = intersect(cell.rings, remaining);
       if (!inter.length) {
         next.push(cell);
@@ -483,10 +545,11 @@ export function subdivideCells(
       }
       const diff = subtract(cell.rings, remaining);
       remaining = subtract(remaining, cell.rings);
-      next.push({ cover: [...cell.cover, id], rings: inter });
-      if (diff.length) next.push({ cover: cell.cover, rings: diff });
+      remainingBox = ringsBbox(remaining);
+      next.push({ cover: [...cell.cover, id], rings: inter, box: ringsBbox(inter) });
+      if (diff.length) next.push({ cover: cell.cover, rings: diff, box: ringsBbox(diff) });
     }
-    if (remaining.length) next.push({ cover: [id], rings: remaining });
+    if (remaining.length) next.push({ cover: [id], rings: remaining, box: remainingBox });
     cells = next;
   }
   return cells;
@@ -508,12 +571,25 @@ export function subdivideCells(
  * them would defeat caching for no output.
  */
 export function significantComponents(zone: Ring[]): Face[] {
-  const out: Face[] = [];
-  for (const comp of splitIntoFaces(zone)) {
+  return zoneComponents(zone).comps;
+}
+
+/**
+ * One polytree union over the raw zone parts, yielding both products of the
+ * old unionAll-then-splitIntoFaces pair in a single boolean: the merged zone
+ * rings (every component's outer + holes, flattened, sub-sliver ones
+ * included so `zone.length` keeps meaning "any overlap exists") and the
+ * significant components. The incremental builder caches both together.
+ */
+export function zoneComponents(parts: Ring[]): { zone: Ring[]; comps: Face[] } {
+  if (!parts.length) return { zone: [], comps: [] };
+  const all = splitIntoFaces(parts);
+  const comps: Face[] = [];
+  for (const comp of all) {
     if (faceArea(comp) < SLIVER_MIN_AREA) continue;
-    out.push(comp);
+    comps.push(comp);
   }
-  return out;
+  return { zone: all.flat(), comps };
 }
 
 /**
@@ -570,8 +646,10 @@ export function extractFaces(
   };
   for (const cell of cells) {
     if (cell.cover.length < 2) continue;
+    // Faces, lobes and pieces below are all splitIntoFaces output, so the
+    // normalization-free offset applies throughout this loop.
     for (const face of splitIntoFaces(cell.rings)) {
-      const eroded = offsetClosed(face, -SLIVER_ERODE);
+      const eroded = offsetNormalized(face, -SLIVER_ERODE);
       if (!eroded.length) {
         addSliver(face, cell.cover); // whole face is a hairline sliver
         continue;
@@ -588,10 +666,10 @@ export function extractFaces(
       }
       let remaining: Ring[] = [...face];
       for (const lobe of lobes) {
-        const blob = intersect(remaining, offsetClosed(lobe, SLIVER_ERODE * 2 + 0.05));
+        const blob = intersect(remaining, offsetNormalized(lobe, SLIVER_ERODE * 2 + 0.05));
         if (!blob.length) continue;
         for (const piece of splitIntoFaces(blob)) {
-          if (offsetClosed(piece, -SLIVER_ERODE).length) pushFace(piece, cell.cover);
+          if (offsetNormalized(piece, -SLIVER_ERODE).length) pushFace(piece, cell.cover);
           else addSliver(piece, cell.cover); // reclaimed piece still sub-sliver
         }
         remaining = subtract(remaining, blob);

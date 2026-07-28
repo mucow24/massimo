@@ -91,11 +91,24 @@ const cache = new Map<string, RegionGeometry>();
 let lastIncremental: RegionIncrementalState | null = null;
 
 /**
- * Bands + markers + overlap faces for a geometry slice. LRU-cached by sig
- * (small: render + reconcile old/new). Markers are built with an empty
- * lineOrder — their priority field is irrelevant to region geometry.
+ * Bands + markers built by the caller from the SAME geometry slice passed to
+ * {@link regionsFor} — the render layer's memos already hold this frame's
+ * build, and rebuilding it here was pure duplicate work. Priority fields may
+ * be stamped or not: region geometry never reads them, so entries built from
+ * either side of the cache are interchangeable.
  */
-export function regionsFor(g: GeometrySlice): RegionGeometry {
+export interface PrebuiltGeometry {
+  bands: SegmentBandSpec[];
+  markers: StopMarkerSpec[];
+}
+
+/**
+ * Bands + markers + overlap faces for a geometry slice. LRU-cached by sig
+ * (small: render + reconcile old/new). Without `prebuilt`, markers are built
+ * with an empty lineOrder — their priority field is irrelevant to region
+ * geometry.
+ */
+export function regionsFor(g: GeometrySlice, prebuilt?: PrebuiltGeometry): RegionGeometry {
   const sig = regionGeometrySig(g);
   const hit = cache.get(sig);
   if (hit) {
@@ -104,8 +117,8 @@ export function regionsFor(g: GeometrySlice): RegionGeometry {
     cache.set(sig, hit);
     return hit;
   }
-  const bands = buildBandGeometry(g.stations, g.lines);
-  const markers = buildStopMarkers(g.stations, g.lines, [], bands);
+  const bands = prebuilt?.bands ?? buildBandGeometry(g.stations, g.lines);
+  const markers = prebuilt?.markers ?? buildStopMarkers(g.stations, g.lines, [], bands);
   // Seeded from whatever we built last. During a drag that is the previous
   // frame, which is exactly the comparison the incremental builder wants; the
   // reconcile step's old-then-new pair chains the same way. A mismatched seed
