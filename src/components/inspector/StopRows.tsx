@@ -17,12 +17,16 @@ import { ORIENTATION_NAME } from './stopGridDrag';
 import type { Rotation } from '../../geometry/orientation';
 
 /**
- * One editor row per stop: [service badge | shape picker | dot size |
- * orientation cycle button]. Always enabled — no click-a-dot-first ritual; the
- * row IS the per-stop control surface. Clicking a row also selects its stop
- * (lighting the canvas layout-editor ring + arming keyboard nudge), and
- * hovering highlights the corresponding dot on the map via the same
- * hoveredLineStop channel the line inspector uses.
+ * One editor row per stop: [service badge | shape picker | dot size | line-end
+ * picker | orientation cycle button] — matching the
+ * Line/Type/Size/End/Direction header the station inspector puts above them.
+ * The end slot is the one that isn't always filled: only a TERMINUS can pin an
+ * end, so elsewhere the row holds the column open with a placeholder so the
+ * columns stay aligned down the list. Always enabled otherwise —
+ * no click-a-dot-first ritual; the row IS the per-stop control surface.
+ * Clicking a row also selects its stop (lighting the canvas layout-editor ring
+ * + arming keyboard nudge), and hovering highlights the corresponding dot on
+ * the map via the same hoveredLineStop channel the line inspector uses.
  */
 export function StopRows({ station, lines }: { station: Station; lines: Record<string, Line> }) {
   const rows = station.stops

@@ -729,10 +729,10 @@ function setLineStyleField<K extends keyof Line>(
 // Per-line stripe width. Non-finite input is ignored; otherwise the value is
 // rounded and clamped to ≥ LINE_WIDTH_MIN, and the field is dropped when the
 // result lands on LINE_WIDTH_DEFAULT so the default is never stored (mirrors
-// `setLineDefaultDotStyle` + DEFAULT_DOT_STYLE). Returns the input doc unchanged
-// when the effective stored form wouldn't change — the slider fires this on
-// every drag tick, and reference equality is what keeps no-op ticks out of
-// the undo history.
+// `setLineSingletonDotStyle`/`setLineMultiDotStyle` + DEFAULT_DOT_STYLE).
+// Returns the input doc unchanged when the effective stored form wouldn't
+// change — the slider fires this on every drag tick, and reference equality is
+// what keeps no-op ticks out of the undo history.
 //
 // Width is GEOMETRY: the interlining merge gate keys on stops sitting exactly
 // tangentGap(wA, wB) apart, so a bare width write would strand every packed

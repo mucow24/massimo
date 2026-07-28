@@ -1,9 +1,6 @@
 import { RefObject, useRef, useState } from 'react';
 import { beginHistoryGroup, useDoc, useSelection } from '../../state/store';
-import { useSnapPrefs } from '../../state/snapPrefs';
-import { useViewportStore } from '../../state/viewportStore';
 import { SNAP_PERP_TOLERANCE, snapDraggedStation, type SnapGuide } from '../../geometry/snap';
-import { snapPolygonPoint } from '../../geometry/polygonSnap';
 import { polygonSnapAnchor } from '../../geometry/polygon';
 import { textLabelCorners } from '../../geometry/stationBoundary';
 import type { Vec2 } from '../../geometry/vec';
@@ -16,6 +13,7 @@ import {
   type GroupSiblings,
 } from './groupDrag';
 import { liveAlignTargets, liveSnapStations } from './snapTargets';
+import { useDragSnap } from './useDragSnap';
 
 // Drag state for a free-floating x/y item. `kind` selects the per-frame snap;
 // everything else (lifecycle, group towing) is shared.
@@ -73,8 +71,7 @@ export function useItemDrag(
   const moveRouteBullet = useDoc((s) => s.moveRouteBullet);
   const moveTextLabel = useDoc((s) => s.moveTextLabel);
   const moveTransferAnchor = useDoc((s) => s.moveTransferAnchor);
-  const snapModes = useSnapPrefs((s) => s.modes);
-  const gridSize = useViewportStore((s) => s.gridSize);
+  const { modes: snapModes, gridInterval: gridSize, snapPoint } = useDragSnap(zoom);
 
   const dragRef = useRef<ItemDragState | null>(null);
   const [itemSnapGuides, setItemSnapGuides] = useState<SnapGuide[]>([]);
@@ -191,14 +188,7 @@ export function useItemDrag(
         // Unbound bullet: no line to align along, but the center still snaps
         // through the point snapper — "Snap to all" + grid — like every other
         // decoration item.
-        const snap = snapPolygonPoint({
-          proposed: { x: nx, y: ny },
-          lineTargets: [],
-          allTargets: ds.allTargets,
-          modes: snapModes,
-          tolerance: SNAP_PERP_TOLERANCE / zoom,
-          gridInterval: gridSize,
-        });
+        const snap = snapPoint({ x: nx, y: ny }, { allTargets: ds.allTargets });
         nx = snap.x;
         ny = snap.y;
         setItemSnapGuides(snap.guides);
@@ -210,14 +200,7 @@ export function useItemDrag(
       // grid — against the shared pool. Shift bypasses.
       let guides: SnapGuide[] = [];
       if (!e.shiftKey) {
-        const snap = snapPolygonPoint({
-          proposed: { x: nx, y: ny },
-          lineTargets: [],
-          allTargets: ds.allTargets,
-          modes: snapModes,
-          tolerance: SNAP_PERP_TOLERANCE / zoom,
-          gridInterval: gridSize,
-        });
+        const snap = snapPoint({ x: nx, y: ny }, { allTargets: ds.allTargets });
         nx = snap.x;
         ny = snap.y;
         guides = snap.guides;
@@ -230,14 +213,10 @@ export function useItemDrag(
       // as the hard constraint. Shift bypasses.
       let guides: SnapGuide[] = [];
       if (!e.shiftKey) {
-        const snap = snapPolygonPoint({
-          proposed: { x: nx + ds.anchorOff.x, y: ny + ds.anchorOff.y },
-          lineTargets: [],
-          allTargets: ds.allTargets,
-          modes: snapModes,
-          tolerance: SNAP_PERP_TOLERANCE / zoom,
-          gridInterval: gridSize,
-        });
+        const snap = snapPoint(
+          { x: nx + ds.anchorOff.x, y: ny + ds.anchorOff.y },
+          { allTargets: ds.allTargets },
+        );
         nx = snap.x - ds.anchorOff.x;
         ny = snap.y - ds.anchorOff.y;
         guides = snap.guides;
