@@ -19,13 +19,9 @@ import { svgImageCorners, type SvgImageGeom } from './svgImage';
 import { ANCHOR_HALF } from './orientation';
 import {
   DEFAULT_LABEL_STYLE,
-  DEFAULT_STOP_DASH,
-  DEFAULT_STOP_GAP,
-  DEFAULT_STOP_HALF,
+  DEFAULT_STOP_METRICS,
   type LabelStyle,
-  type StopDashFn,
-  type StopGapFn,
-  type StopHalfFn,
+  type StopMetricsFn,
 } from './labelLayout';
 
 function aabbOfPoints(pts: Iterable<Pt>): AABB {
@@ -45,17 +41,15 @@ function aabbOfPoints(pts: Iterable<Pt>): AABB {
 /**
  * World AABB of a station's selection silhouette: the rotated cells rect
  * plus (for non-waypoints) the rotated name-label rect. Pass the same
- * per-station style (`effectiveStationLabelStyle`) and `stopHalf` the
+ * per-station style (`effectiveStationLabelStyle`) and `metrics` the
  * renderer uses, or the label half drifts from the painted text.
  */
 export function stationWorldAABB(
   station: Station,
   style: LabelStyle = DEFAULT_LABEL_STYLE,
-  stopHalf: StopHalfFn = DEFAULT_STOP_HALF,
-  stopDash: StopDashFn = DEFAULT_STOP_DASH,
-  stopGap: StopGapFn = DEFAULT_STOP_GAP,
+  metrics: StopMetricsFn = DEFAULT_STOP_METRICS,
 ): AABB {
-  const b = stationBoundaryRectsLocal(station, style, stopHalf, false, stopDash, stopGap);
+  const b = stationBoundaryRectsLocal(station, style, metrics, false);
   const pts = b.cells.concat(b.label ?? []).map((p) => stationLocalToWorld(station, p));
   return aabbOfPoints(pts);
 }

@@ -6,8 +6,7 @@ import {
   svgImagesForRect,
   textLabelsForRect,
 } from '../../geometry/stationBoundary';
-import { stopGapOf, stopHalfOf } from '../../model/lineWidth';
-import { stopDashOf } from '../../model/dashSize';
+import { stopMetricsOf } from '../../model/stopMetrics';
 import { effectiveBackgroundOrder } from '../../model/transforms';
 import { pairKeyOf } from '../../model/pairKey';
 import type { AppendCursor } from '../../model/appendGestures';
@@ -21,6 +20,7 @@ import type {
   StationId,
   SvgImage,
   TextLabel,
+  Transfer,
 } from '../../model/types';
 
 /**
@@ -210,6 +210,9 @@ export const LOCKED_HIT_PAD_PX = 4;
 export interface LockedHitDocSlice {
   stations: Record<StationId, Station>;
   lines: Record<LineId, Line>;
+  // Station hits go through the label geometry, which clears a transfer's cap
+  // at the stop it lands on (see StopMetrics).
+  transfers: Record<string, Transfer>;
   polygons: Record<string, Polygon>;
   svgImages: Record<string, SvgImage>;
   backgroundOrder: string[];
@@ -243,14 +246,9 @@ export function lockedHitsAt(pt: Pt, doc: LockedHitDocSlice, pad: number): HitRe
   );
   push(
     'station',
-    stationsForRect(
-      doc.stations,
-      rect,
-      stopHalfOf(doc.lines),
-      true,
-      stopDashOf(doc.lines),
-      stopGapOf(doc.lines),
-    ).filter((id) => doc.stations[id].locked),
+    stationsForRect(doc.stations, rect, stopMetricsOf(doc), true).filter(
+      (id) => doc.stations[id].locked,
+    ),
   );
   // One walk of the shared background stack, topmost first — polygons and
   // images interleave, so they can't be pushed as two kind-grouped blocks.

@@ -7,8 +7,6 @@ import {
   LINE_WIDTH_MAX,
   canonicalLineWidth,
   lineWidthOf,
-  stopGapOf,
-  stopHalfOf,
 } from './lineWidth';
 
 describe('line width constants', () => {
@@ -61,23 +59,5 @@ describe('lineWidthOf', () => {
     expect(lineWidthOf({})).toBe(LINE_WIDTH_DEFAULT);
     expect(lineWidthOf(null)).toBe(LINE_WIDTH_DEFAULT);
     expect(lineWidthOf(undefined)).toBe(LINE_WIDTH_DEFAULT);
-  });
-});
-
-describe('stopHalfOf', () => {
-  it('returns half the effective width per line id, defaulting unknown ids', () => {
-    const half = stopHalfOf({ L1: { width: 28 }, L2: {} });
-    expect(half('L1')).toBe(14);
-    expect(half('L2')).toBe(7);
-    expect(half('ghost')).toBe(7);
-  });
-});
-
-describe('stopGapOf', () => {
-  it('returns the effective interline gap per line id, defaulting unknown ids to 0', () => {
-    const gap = stopGapOf({ L1: { interlineGap: 4.25 }, L2: {} });
-    expect(gap('L1')).toBe(4.25);
-    expect(gap('L2')).toBe(0);
-    expect(gap('ghost')).toBe(0);
   });
 });

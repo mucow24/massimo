@@ -4,8 +4,7 @@ import { useDoc, useSelection } from '../state/store';
 import { useThemeColors } from '../state/theme';
 import { useViewportStore } from '../state/viewportStore';
 import { labelLayoutLocal } from '../geometry/labelLayout';
-import { stopGapOf, stopHalfOf } from '../model/lineWidth';
-import { stopDashOf } from '../model/dashSize';
+import { useStopMetrics } from './useStopMetrics';
 import { bumpWeightByIndex, effectiveStationStyleProps } from '../model/transforms';
 import { legibleTextOn } from '../util/color';
 import { waypointLabelRectLocal } from '../geometry/waypointLozenge';
@@ -124,6 +123,7 @@ function OverlayLabelFrame({
  */
 function useStationLabelLayout(station: Station, lines: Record<string, Line>) {
   const hovered = useSelection((s) => s.hoveredStationId === station.id);
+  const metrics = useStopMetrics(lines);
   // The station's own effective typography (stored ?? LABEL_* default) — the
   // single source the hit rect / silhouette (via effectiveStationLabelStyle,
   // the same object) and the painted text share. `weight` is a shipped-ladder
@@ -145,14 +145,7 @@ function useStationLabelLayout(station: Station, lines: Record<string, Line>) {
   // structurally a LabelStyle) and per-stop width lookup as the hit rect /
   // silhouette, so the painted anchor agrees with the boundary geometry next to
   // wide stops.
-  const lay = labelLayoutLocal(
-    station,
-    effStyle,
-    undefined,
-    stopHalfOf(lines),
-    stopDashOf(lines),
-    stopGapOf(lines),
-  );
+  const lay = labelLayoutLocal(station, effStyle, undefined, metrics);
   return {
     angle: station.rotation * 45,
     rotationDeg: station.label.rotation * 45,
@@ -163,6 +156,7 @@ function useStationLabelLayout(station: Station, lines: Record<string, Line>) {
     stationItalic,
     lineByService,
     lay,
+    metrics,
   };
 }
 
@@ -290,6 +284,7 @@ export function StationLabel({
     stationItalic,
     lineByService,
     lay,
+    metrics,
   } = useStationLabelLayout(station, lines);
 
   // A hidden waypoint paints nothing; a revealed one flows through the normal
@@ -316,14 +311,7 @@ export function StationLabel({
   // than the bullets they render as. Re-measure the box against that literal
   // text so a bullet-heavy name doesn't overflow its collapsed hit rect.
   const editorHit = isEditing
-    ? labelLayoutLocal(
-        station,
-        { ...effStyle, literalBullets: true },
-        undefined,
-        stopHalfOf(lines),
-        stopDashOf(lines),
-        stopGapOf(lines),
-      )
+    ? labelLayoutLocal(station, { ...effStyle, literalBullets: true }, undefined, metrics)
     : null;
 
   return (

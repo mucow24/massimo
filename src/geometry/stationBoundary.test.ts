@@ -21,8 +21,9 @@ import {
 } from '../test/fixtures';
 import { ANCHOR_HALF, STOP_SIZE } from './orientation';
 import { rectIntersectsPolygon } from './rectPolygon';
-import { stopHalfOf } from '../model/lineWidth';
+import { stopMetricsOf } from '../model/stopMetrics';
 import type { RouteBullet } from '../model/types';
+import { makeLine } from '../test/fixtures';
 
 const makeBullet = (id: string, x: number, y: number, size = 12): RouteBullet => ({
   id,
@@ -45,7 +46,10 @@ describe('cellsAABBLocal — per-stop widths', () => {
   it('grows each side by the dominating cell’s own half-extent', () => {
     // L1 at width 28: the stop contributes ±14 on every side it dominates;
     // the label cell stays unit-sized (±7) and still wins the left edge.
-    const box = cellsAABBLocal(st(), stopHalfOf({ L1: { width: 28 } }));
+    const box = cellsAABBLocal(
+      st(),
+      stopMetricsOf({ lines: { L1: makeLine({ id: 'L1', width: 28 }) }, transfers: {} }),
+    );
     expect(box).toEqual({ x: -23, y: -16, w: 39, h: 32 });
   });
 
@@ -57,7 +61,13 @@ describe('cellsAABBLocal — per-stop widths', () => {
       id: 'A',
       stops: [makeStop('L1', { row: 0, col: 0 }), makeStop('L2', { row: 0, col: 0.5 })],
     });
-    const box = cellsAABBLocal(station, stopHalfOf({ L1: { width: 28 }, L2: { width: 2 } }));
+    const box = cellsAABBLocal(
+      station,
+      stopMetricsOf({
+        lines: { L1: makeLine({ id: 'L1', width: 28 }), L2: makeLine({ id: 'L2', width: 2 }) },
+        transfers: {},
+      }),
+    );
     expect(box.x + box.w).toBeCloseTo(16, 6); // 14 + HIT_PAD
   });
 });
@@ -69,7 +79,13 @@ describe('stationsForRect — per-stop widths', () => {
     const st = makeStation({ id: 'A', stops: [makeStop('L1', { row: 0, col: 0 })] });
     const rect = { x0: 10, y0: -2, x1: 12, y1: 2 };
     expect(stationsForRect({ A: st }, rect)).toEqual([]);
-    expect(stationsForRect({ A: st }, rect, stopHalfOf({ L1: { width: 28 } }))).toEqual(['A']);
+    expect(
+      stationsForRect(
+        { A: st },
+        rect,
+        stopMetricsOf({ lines: { L1: makeLine({ id: 'L1', width: 28 }) }, transfers: {} }),
+      ),
+    ).toEqual(['A']);
   });
 });
 
@@ -93,9 +109,12 @@ describe('stationBoundaryRectsLocal — dash tick clearance parity', () => {
       },
     });
     const plain = stationBoundaryRectsLocal(st).label!;
-    const dashed = stationBoundaryRectsLocal(st, undefined, undefined, false, () => ({
-      length: 14,
-      width: 7,
+    const dashed = stationBoundaryRectsLocal(st, undefined, (_station, _stop) => ({
+      half: STOP_SIZE / 2,
+      gap: 0,
+      dash: { length: 14, width: 7 },
+      dot: null,
+      transferRadius: 0,
     })).label!;
     for (let i = 0; i < 4; i++) {
       expect(dashed[i].x - plain[i].x).toBeCloseTo(14, 6);
@@ -126,14 +145,13 @@ describe('stationBoundaryRectsLocal — interline gap parity', () => {
       },
     });
     const detached = stationBoundaryRectsLocal(st).label!;
-    const parked = stationBoundaryRectsLocal(
-      st,
-      undefined,
-      undefined,
-      false,
-      undefined,
-      () => 4.25,
-    ).label!;
+    const parked = stationBoundaryRectsLocal(st, undefined, (_station, _stop) => ({
+      half: STOP_SIZE / 2,
+      gap: 4.25,
+      dash: null,
+      dot: null,
+      transferRadius: 0,
+    })).label!;
     // Detached fallback centers the rect on the label cell; the gap-aware
     // park pins its left edge at the stop edge + LABEL_GAP (7 + 3) − HIT_PAD.
     const detachedMinX = Math.min(...detached.map((p) => p.x));

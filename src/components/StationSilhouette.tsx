@@ -4,8 +4,7 @@ import { useViewportStore } from '../state/viewportStore';
 import type { Station } from '../model/types';
 import { effectiveStationLabelStyle } from '../model/transforms';
 import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
-import { stopGapOf, stopHalfOf } from '../model/lineWidth';
-import { stopDashOf } from '../model/dashSize';
+import { useStopMetrics } from './useStopMetrics';
 import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
 import {
   SELECTION_STROKE_WIDTH,
@@ -56,6 +55,7 @@ export function StationSilhouette({
   preview?: boolean;
 }) {
   const lines = useDoc((s) => s.lines);
+  const metrics = useStopMetrics(lines);
   const editingStationId = useSelection((s) => s.editingStationId);
   const themeColors = useThemeColors();
   // Paint toggle: reveal waypoint stations (widens the silhouette to wrap the
@@ -73,10 +73,8 @@ export function StationSilhouette({
   const { cells, label: labelPoly } = stationBoundaryRectsLocal(
     station,
     effectiveStationLabelStyle(station),
-    stopHalfOf(lines),
+    metrics,
     showWaypoints,
-    stopDashOf(lines),
-    stopGapOf(lines),
   );
   // Hidden waypoint: no label polygon to merge, render the cells rect alone.
   const polygons = labelPoly ? unionConvex(cells, labelPoly) : [cells];

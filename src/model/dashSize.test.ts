@@ -7,7 +7,6 @@ import {
   lineDashLengthOf,
   lineDashWidthOf,
   lineUsesDashTicks,
-  stopDashOf,
 } from './dashSize';
 import { DOT_SHAPE_PRESETS } from './dotStyle';
 import { makeLine, makeStop } from '../test/fixtures';
@@ -88,60 +87,5 @@ describe('dash dimension resolution', () => {
     expect(lineDashLengthOf(undefined)).toBeUndefined();
     expect(lineDashWidthOf({ dashWidth: 3 })).toBe(3);
     expect(lineDashWidthOf(null)).toBeUndefined();
-  });
-});
-
-describe('stopDashOf — split default resolution for label tick clearance', () => {
-  const dash = DOT_SHAPE_PRESETS['dash'];
-  const circle = DOT_SHAPE_PRESETS['filled-black'];
-  const blank = DOT_SHAPE_PRESETS['none'];
-  // A default-width (14) line: the derived tick is 14 long × 7 thick.
-  const TICK = { length: 14, width: 7 };
-
-  it('resolves a singleton stop against singletonDotStyle, a shared stop against multiDotStyle', () => {
-    const dashFn = stopDashOf({
-      L1: makeLine({ id: 'L1', singletonDotStyle: dash, multiDotStyle: circle }),
-    });
-    const s = makeStop('L1');
-    expect(dashFn(s, [s])).toEqual(TICK); // alone → singleton → dash → ticks
-    expect(dashFn(s, [s, makeStop('L2', { col: 1 })])).toBeNull(); // shared → circle → none
-  });
-
-  it("an interchange-default change never flips a singleton stop's tick (the label-drift regression)", () => {
-    // Both defaults dash → the stop ticks in either case. Change ONLY the
-    // interchange default to a circle: a singleton stop must still tick (so its
-    // label clearance is unchanged), while a shared stop loses its tick.
-    const before = stopDashOf({
-      L1: makeLine({ id: 'L1', singletonDotStyle: dash, multiDotStyle: dash }),
-    });
-    const after = stopDashOf({
-      L1: makeLine({ id: 'L1', singletonDotStyle: dash, multiDotStyle: circle }),
-    });
-    const s = makeStop('L1');
-    expect(before(s, [s])).toEqual(after(s, [s])); // singleton unaffected
-    const shared = [s, makeStop('L2', { col: 1 })];
-    expect(after(s, shared)).toBeNull(); // interchange changed
-    expect(before(s, shared)).toEqual(TICK);
-  });
-
-  it('ignores a blanked sibling stop when deciding singleton vs. interchange (express+local)', () => {
-    const dashFn = stopDashOf({
-      LOCAL: makeLine({ id: 'LOCAL', singletonDotStyle: dash, multiDotStyle: circle }),
-    });
-    const local = makeStop('LOCAL');
-    // Shared with a BLANKED express stop → the local stop is still a singleton
-    // → it ticks (its label clears the tick).
-    expect(dashFn(local, [local, makeStop('EXPRESS', { col: 1, dotStyle: blank })])).toEqual(TICK);
-    // …but a REAL express stop makes it a genuine interchange → no tick.
-    expect(dashFn(local, [local, makeStop('EXPRESS', { col: 1 })])).toBeNull();
-  });
-
-  it('a per-stop dotStyle override wins over either default', () => {
-    const dashFn = stopDashOf({
-      L1: makeLine({ id: 'L1', singletonDotStyle: circle, multiDotStyle: circle }),
-    });
-    const pinnedDash = makeStop('L1', { dotStyle: dash });
-    expect(dashFn(pinnedDash, [pinnedDash])).toEqual(TICK);
-    expect(dashFn(pinnedDash, [pinnedDash, makeStop('L2', { col: 1 })])).toEqual(TICK);
   });
 });
