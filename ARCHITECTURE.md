@@ -570,7 +570,8 @@ flood costs exactly one undo. An assignment is anchored IN THE LINES' OWN FRAME 
 corridor + arc position + side offset per covering line) and is carried across every geometry
 edit by `regionReconcile.ts` — rebinding corridor-identity-first (a face must run the anchors'
 own corridors, so same-cover sibling crossings are not interchangeable; `bindAssignments` is
-shared with rendering), falling back to nearest-compatible face
+shared with rendering, whose per-frame re-binds during a drag see anchors whose arc positions
+are stale until the commit reconcile re-mints them), falling back to nearest-compatible face
 when no face runs those corridors (survives teleports and a crossing sliding past a station),
 duplicating onto split halves, resolving merges by largest old face, going dormant when its
 overlap temporarily vanishes. The reconcile runs inside `beginHistoryGroup.commit()` (drags,
@@ -583,34 +584,6 @@ ring (its rails are already painted beneath — uncovering them gives the natura
 look) and swallows the losers' fringes near the face. Clipped areas take no pointer events,
 so idle clicks land on the visible winner natively. Zero assignments ⇒ zero cost and
 byte-identical output.
-
-**While a history group is open, the arrangement is FROZEN.** The rebuild is the app's most
-expensive pure computation and used to run per pointermove; but the doc reads faces only at the
-group's commit (reconcile), so mid-gesture face geometry is pure presentation. MapCanvas renders
-the arrangement captured at gesture start and, per frame, diffs the geometry units against that
-capture (`regionIncremental.hashUnits`) and **drops** the per-face exclusion holes anything dirty
-could have reached — the face's own dilation neighborhood, shield-range neighbor faces, or
-absorbable slivers (`canvas/regionFreeze.retainFaceHoles`; `buildExclusionFaceHoles` /
-`mergeFaceHoles` are the per-face form the retention filters). A retained hole sits on geometry
-that provably did not move, so it is byte-identical to a synchronous recompute and cannot tear
-off its stroke; a dropped face shows the default lineOrder stacking until the drop, exactly like
-an unassigned face. Non-geometry hole inputs (casing rails, lineOrder, the assignments record —
-`regionFreeze.railSig` + the freeze key) drop everything when they drift mid-group. Winner
-BINDING freezes with the rest: per-frame re-binding against smeared arc anchors is the flicker
-regime corridor-identity binding hardened, and freezing is its "bind once at gesture start" form.
-The clip outer ring keeps its frozen object while it still covers the live extent (a stable ring
-keeps every retained clip's `d` byte-identical, so nothing re-rasterizes mid-gesture) and grows
-only when an extremal drag escapes it. **The freeze SETTLES while the pointer rests**: after
-`REGION_SETTLE_MS` (100ms) of geometry quiet mid-group, MapCanvas captures the live doc slice and
-re-bases the whole chain on it — the pause renders the exact arrangement of what is on screen
-(the dirty diff against itself is empty, so every hole is retained), and further movement
-degrades only relative to what the pause just showed. Placement work is pause-and-look, so the
-view at rest always predicts the drop; a pure grab-to-drop freeze was tried and rejected as
-unusably divergent. Outside a group the memo chain stays synchronous: clips
-attach to the LIVE base strokes they were derived from. The commit render then rebuilds once —
-and because the mid-drag frames no longer flood `regionsFor`'s LRU, reconcile's old-geometry
-lookup at commit is usually a cache hit (frequent settles can evict the grab entry; that costs
-commit one rebuild, nothing more).
 
 **How the faces are actually built.** `lineRegions.ts` holds the pipeline as separable phases —
 `buildLineBodies` → `overlapZoneParts` (pairwise body intersections; any ≥2-cover point is in one
