@@ -729,8 +729,9 @@ prints. The toolbar's anchor button (`useViewportStore.showAnchors`) shows them;
 — picking a transfer end (`creating-transfer`) and placing one (`placing-anchor`) — **reveal** them
 regardless of the toggle by DERIVATION (`anchorsRevealedByMode`), never by writing the flag: a
 temporary write would need a matching revert on every exit path, and a missed one would strand the
-user's own preference. The two doc-geometric consumers opt in by hand through `anchorsVisibleNow`
-exactly as they do for `showNetwork` (`anchorsForRectVisible`, `liveSnapAnchors`).
+user's own preference. The three doc-geometric consumers opt in by hand through `anchorsVisibleNow`
+exactly as they do for `showNetwork` (`anchorsForRectVisible`, `liveSnapAnchors`, and
+`liveSnapHostedAnchors` for the cells a station carries).
 
 There is a **third, narrower reveal** (`revealedAnchorStations`, [anchorVisibility.ts](src/state/anchorVisibility.ts)):
 pointing at a station — or selecting it — shows **that station's own** hosted anchors with the
@@ -1413,12 +1414,13 @@ Three seams cover it, and a fourth rule governs anything new:
 - **Doc-geometric code must opt in by hand.** Not rendering kills DOM hit-testing, but anything
   reading geometry straight off the doc never notices: `useRectSelect` would sweep hidden stations
   into a marquee (an invisible selection that answers Delete), and the snap pool would align art
-  to stations that aren't on screen. There are **four** such gates, not two:
+  to stations that aren't on screen. There are **five** such gates, not two:
   `stationsForRectVisible` (marquee), `liveAlignTargets` (the point-snapper pool, wrapping the
   still-pure `alignTargets`), `liveSnapStations` (the station record handed to the snap **engine** —
   a bound route bullet stays draggable while the network is hidden, and without this it would align
-  to invisible stops), and `liveSnapAnchors` (free anchors, gated on `showNetwork` **and**
-  `showAnchors`).
+  to invisible stops), `liveSnapAnchors` (free anchors, gated on `showNetwork` **and**
+  `showAnchors`), and `liveSnapHostedAnchors` (the same anchor gate over the cells a station
+  carries — it empties those, leaving the station's stops in the pool).
   **Any new feature that reads `doc.stations`/`doc.lines` for interaction needs the same gate.**
 
 ### Preferences
@@ -1590,12 +1592,14 @@ The **target pool** (`alignTargets(doc, exclude)` in
 [snapTargets.ts](src/components/canvas/snapTargets.ts)) is what "Snap to all" means for point-
 snapper consumers: every station stop-center (anchor when stopless), every polygon vertex,
 every svg image's rotated corners, three points per text label (visible-bbox UL corner, center,
-LR corner — no hit pad), every route bullet center, and every **free** transfer anchor (hosted
-ones are station internals and deliberately stay out). Per-kind exclusion sets remove the
-dragged item and, in a group drag, its co-selected siblings — stationary items always remain
-valid targets. Pools are snapshotted at pointer-down. One deliberate asymmetry: **stations are
-skeleton** — they snap only among themselves, never to decoration; and a bound bullet's
-all-mode pool is station stops (engine-internal), not the decoration pool.
+LR corner — no hit pad), every route bullet center, and every transfer anchor — free ones from
+the doc collection, hosted ones alongside their station's stops (an anchor cell is its own point
+on the station lattice, so no stop centre stands in for one parked a few cells out). Per-kind
+exclusion sets remove the dragged item and, in a group drag, its co-selected siblings — a
+station's hosted anchors leave with it, since they ride on the same record. Stationary items
+always remain valid targets. Pools are snapshotted at pointer-down. One deliberate asymmetry:
+**stations are skeleton** — they snap only among themselves, never to decoration; and a bound
+bullet's all-mode pool is station stops (engine-internal), not the decoration pool.
 
 **Reference points** (grid + alignment use the same one per type, drag AND placement): station
 anchor; bullet center; text label topmost-then-leftmost visible rotated corner; polygon

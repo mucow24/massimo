@@ -1,4 +1,5 @@
 import { stopPosWorld } from '../../geometry/interlining';
+import { stationAnchorWorld } from '../../geometry/transferEnds';
 import { textLabelCorners } from '../../geometry/stationBoundary';
 import { svgImageCorners } from '../../geometry/svgImage';
 import { type Vec2 } from '../../geometry/vec';
@@ -38,11 +39,12 @@ export function textLabelAlignPoints(label: TextLabel): Vec2[] {
 }
 
 /**
- * The shared "Snap to all" target pool: every station stop-center (anchor when
- * stopless), every polygon vertex, every svg image's rotated corners, three
- * points per text label, and every route bullet's center — minus the excluded
- * items. Built once at pointer-down (everything in it is stationary for the
- * duration of a drag), shared by every point-snapper drag path.
+ * The shared "Snap to all" target pool: every station stop-center (the station's
+ * own point when stopless) plus each anchor cell it hosts, every polygon vertex,
+ * every svg image's rotated corners, three points per text label, every route
+ * bullet's center, and every free transfer anchor — minus the excluded items.
+ * Built once at pointer-down (everything in it is stationary for the duration of
+ * a drag), shared by every point-snapper drag path.
  */
 export function alignTargets(doc: AlignDoc, exclude: AlignExclude = {}): Vec2[] {
   const out: Vec2[] = [];
@@ -51,6 +53,9 @@ export function alignTargets(doc: AlignDoc, exclude: AlignExclude = {}): Vec2[] 
     const st = doc.stations[id];
     if (st.stops.length === 0) out.push({ x: st.x, y: st.y });
     else for (const c of st.stops) out.push(stopPosWorld(c, st));
+    // Hosted anchors ride along with their station, so the one `stationIds`
+    // check above covers them in a group drag too.
+    for (const cell of st.transferAnchors ?? []) out.push(stationAnchorWorld(st, cell));
   }
   for (const id of Object.keys(doc.polygons)) {
     if (exclude.polygonIds?.has(id)) continue;
@@ -69,9 +74,11 @@ export function alignTargets(doc: AlignDoc, exclude: AlignExclude = {}): Vec2[] 
     const b = doc.routeBullets[id];
     out.push({ x: b.x, y: b.y });
   }
-  // Free transfer anchors are targets as well as snappers — an elbow is only
-  // useful if the NEXT thing can line up on it. Hosted anchors are omitted:
-  // they sit on the station lattice, whose stop centres are already in the pool.
+  // Transfer anchors are targets as well as snappers — an elbow is only useful
+  // if the NEXT thing can line up on it. The hosted ones go in with their
+  // station above rather than here: an anchor cell is its own point on the
+  // station lattice, and one parked a few cells out lands nowhere near a stop
+  // centre, so the stops already in the pool do not stand in for it.
   for (const id of Object.keys(doc.transferAnchors)) {
     if (exclude.anchorIds?.has(id)) continue;
     const a = doc.transferAnchors[id];
@@ -100,7 +107,7 @@ export function liveAlignTargets(exclude: AlignExclude = {}): Vec2[] {
   return alignTargets(
     {
       ...doc,
-      stations: liveSnapStations(doc.stations),
+      stations: liveSnapHostedAnchors(liveSnapStations(doc.stations)),
       transferAnchors: liveSnapAnchors(doc.transferAnchors),
     },
     exclude,
@@ -108,8 +115,8 @@ export function liveAlignTargets(exclude: AlignExclude = {}): Vec2[] {
 }
 
 /**
- * The transfer anchors the snap pool may align to — `{}` while either toggle
- * that hides them is off. Same rule, and the same reason, as
+ * The FREE transfer anchors the snap pool may align to — `{}` while either
+ * toggle that hides them is off. Same rule, and the same reason, as
  * {@link liveSnapStations}: the pool is geometric (straight off the doc), so
  * hiding anchors doesn't remove them by itself, and snapping to an invisible
  * one draws a guide pointing at bare canvas.
@@ -121,6 +128,27 @@ export function liveSnapAnchors(
   transferAnchors: Record<string, TransferAnchor>,
 ): Record<string, TransferAnchor> {
   return anchorsVisibleNow() ? transferAnchors : {};
+}
+
+/**
+ * The same gate for the HOSTED half: the stations with their anchor cells
+ * emptied while anchors are off screen. Only the anchors go — the stations, and
+ * their stops, stay in the pool either way (they answer to `showNetwork`, which
+ * {@link liveSnapStations} already applied).
+ *
+ * A separate pass rather than a flag on {@link alignTargets} because the pool
+ * takes doc slices, not toggles, and because the snap ENGINE shares
+ * `liveSnapStations` — it reads stops only, and has no business acquiring an
+ * opinion about anchors.
+ */
+export function liveSnapHostedAnchors(stations: Record<string, Station>): Record<string, Station> {
+  if (anchorsVisibleNow()) return stations;
+  const out: Record<string, Station> = {};
+  for (const id of Object.keys(stations)) {
+    const st = stations[id];
+    out[id] = st.transferAnchors ? { ...st, transferAnchors: [] } : st;
+  }
+  return out;
 }
 
 /**

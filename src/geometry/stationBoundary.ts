@@ -1,5 +1,6 @@
 import type { Pt } from './polygonUnion';
 import type {
+  AnchorCell,
   Polygon,
   RouteBullet,
   Station,
@@ -102,6 +103,29 @@ export function cellsAABBLocal(
   const x = minX - HIT_PAD;
   const y = minY - HIT_PAD;
   return { x, y, w: maxX + HIT_PAD - x, h: maxY + HIT_PAD - y };
+}
+
+/**
+ * How far the farthest transfer-anchor CELL CENTRE sits outside `box` — 0 when
+ * every one is inside it. Both in station-local coords.
+ *
+ * The layout editor's shield pad grows by this so its halo still swallows a
+ * near-miss right-click beside an anchor parked off the cells box.
+ *
+ * Measured against the box's EDGES, not its half-extent: the cells box is not
+ * centred on the local origin (the label cell alone pushes it off, and any
+ * off-origin stop moves it further), so `|centre| − w/2` compares a distance
+ * from the origin against a distance from the box's own centre. A merely WIDE
+ * box then reads an anchor as inside no matter how far past the near edge it
+ * actually sits.
+ */
+export function anchorOvershootLocal(box: AABBRect, anchors: readonly AnchorCell[] = []): number {
+  let out = 0;
+  for (const a of anchors) {
+    const c = stopCenterAt(a.row, a.col);
+    out = Math.max(out, box.x - c.x, c.x - (box.x + box.w), box.y - c.y, c.y - (box.y + box.h));
+  }
+  return out;
 }
 
 export function stationBoundaryRectsLocal(

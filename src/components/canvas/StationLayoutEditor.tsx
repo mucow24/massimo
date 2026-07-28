@@ -2,7 +2,7 @@ import type { Line, LineId, Station } from '../../model/types';
 import { useDoc, useSelection } from '../../state/store';
 import { dispatchMirrored } from '../../state/mirrorDispatch';
 import { STOP_SIZE, stopCenterAt } from '../../geometry/orientation';
-import { cellsAABBLocal } from '../../geometry/stationBoundary';
+import { anchorOvershootLocal, cellsAABBLocal } from '../../geometry/stationBoundary';
 import { labelLayoutLocal } from '../../geometry/labelLayout';
 import { capCenterDy } from '../../geometry/textMeasure';
 import { lineWidthOf } from '../../model/lineWidth';
@@ -111,10 +111,7 @@ export function StationLayoutEditor({
   // near-miss right-click there would rotate the WHOLE station through the hit
   // rect beneath — the exact gap the shield exists to close. Extending the PAD
   // (not cellsAABBLocal) keeps the painted border as the stay/exit boundary.
-  const anchorReach = (station.transferAnchors ?? []).reduce((m, a) => {
-    const c = stopCenterAt(a.row, a.col);
-    return Math.max(m, Math.abs(c.x) - cellsBox.w / 2, Math.abs(c.y) - cellsBox.h / 2);
-  }, 0);
+  const anchorReach = anchorOvershootLocal(cellsBox, station.transferAnchors);
   const shieldPad = Math.max(STOP_SIZE, maxDotR, anchorReach + STOP_SIZE / 2);
   const {
     anchorX: labelAnchorX,

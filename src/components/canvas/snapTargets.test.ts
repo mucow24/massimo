@@ -3,6 +3,7 @@ import { alignTargets, liveAlignTargets, textLabelAlignPoints } from './snapTarg
 import { stopPosWorld } from '../../geometry/interlining';
 import { svgImageCorners } from '../../geometry/svgImage';
 import { measureTextLabel } from '../../geometry/textMeasure';
+import { STOP_SIZE } from '../../geometry/orientation';
 import { useDoc } from '../../state/store';
 import { useViewportStore } from '../../state/viewportStore';
 import {
@@ -51,6 +52,46 @@ describe('alignTargets', () => {
     expect(out).toContainEqual({ x: 12, y: -7 });
     expect(out).toContainEqual(stopPosWorld(withStop.stops[0], withStop));
     expect(out).toHaveLength(2);
+  });
+
+  it('emits each hosted transfer anchor cell alongside the stop centres', () => {
+    const st = makeStation({
+      id: 'a',
+      x: 100,
+      y: 50,
+      stops: [makeStop('L1')],
+      transferAnchors: [{ id: 'an0', row: 0, col: 2 }],
+    });
+    const out = alignTargets(makeDoc({ stations: [st] }));
+    expect(out).toContainEqual(stopPosWorld(st.stops[0], st));
+    expect(out).toContainEqual({ x: 100 + 2 * STOP_SIZE, y: 50 });
+    expect(out).toHaveLength(2);
+  });
+
+  it('rotates a hosted anchor with its station (rotation 2 = 90° clockwise)', () => {
+    const st = makeStation({
+      id: 'a',
+      x: 100,
+      y: 50,
+      rotation: 2,
+      transferAnchors: [{ id: 'an0', row: 0, col: 2 }],
+    });
+    // Stopless: the station's own point, then the anchor cell two cells along
+    // +x locally, which 90° CW in the y-down frame swings onto +y.
+    const out = alignTargets(makeDoc({ stations: [st] }));
+    expect(out).toHaveLength(2);
+    expect(out[0]).toEqual({ x: 100, y: 50 });
+    expect(out[1].x).toBeCloseTo(100, 6);
+    expect(out[1].y).toBeCloseTo(50 + 2 * STOP_SIZE, 6);
+  });
+
+  it("drops a station's hosted anchors with the station itself", () => {
+    const st = makeStation({
+      id: 's0',
+      stops: [makeStop('L1')],
+      transferAnchors: [{ id: 'an0', row: 0, col: 2 }],
+    });
+    expect(alignTargets(makeDoc({ stations: [st] }), { stationIds: new Set(['s0']) })).toEqual([]);
   });
 
   it('emits every polygon vertex', () => {
@@ -148,5 +189,39 @@ describe('liveAlignTargets — the lines/stations toggle', () => {
     expect(liveAlignTargets({ polygonIds: new Set(['p1']) })).toEqual(
       alignTargets(useDoc.getState(), { polygonIds: new Set(['p1']) }),
     );
+  });
+});
+
+describe('liveAlignTargets — the anchor toggle', () => {
+  const station = makeStation({
+    id: 'a',
+    x: 300,
+    y: 300,
+    stops: [makeStop('L1')],
+    transferAnchors: [{ id: 'an0', row: 0, col: 2 }],
+  });
+  const hosted = { x: 300 + 2 * STOP_SIZE, y: 300 };
+  const free = { x: -40, y: -40 };
+
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...makeDoc({ stations: [station], transferAnchors: [{ id: 'free0', ...free }] }),
+    });
+    useViewportStore.setState({ showNetwork: true, showAnchors: true });
+  });
+
+  it('offers hosted and free anchors as targets while anchors are shown', () => {
+    const out = liveAlignTargets();
+    expect(out).toContainEqual(hosted);
+    expect(out).toContainEqual(free);
+  });
+
+  it('drops both while anchors are hidden, keeping the station stops', () => {
+    // Same rule, and the same reason, as the network toggle above: a guide to
+    // an anchor that isn't on the canvas is a guide pointing at bare canvas.
+    // Only the anchor points go — the station's stops are still visible.
+    useViewportStore.setState({ showAnchors: false });
+    expect(liveAlignTargets()).toEqual([stopPosWorld(station.stops[0], station)]);
   });
 });
