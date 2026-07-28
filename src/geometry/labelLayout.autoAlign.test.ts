@@ -537,10 +537,7 @@ describe('labelLayoutLocal — beside a diagonal line, the slant advances into t
       undefined,
       metrics({ continues: { plus: false, minus: true } }),
     );
-    expect(nwOnly.anchorX).toBeCloseTo(
-      STOP_SIZE - (HALF * Math.SQRT2 + CAP / 2 + LABEL_GAP),
-      6,
-    );
+    expect(nwOnly.anchorX).toBeCloseTo(STOP_SIZE - (HALF * Math.SQRT2 + CAP / 2 + LABEL_GAP), 6);
   });
 
   it('a wide dot still joins by MAX and can out-reach the slanted stripe', () => {

@@ -22,7 +22,10 @@ const metricsFor = (
   transfers: Record<string, Transfer> = {},
   st: Station = station(),
 ) =>
-  stopMetricsOf({ lines: { L1: makeLine({ id: 'L1', ...lineOver }) }, transfers, stations: {} })(st, st.stops[0]);
+  stopMetricsOf({ lines: { L1: makeLine({ id: 'L1', ...lineOver }) }, transfers, stations: {} })(
+    st,
+    st.stops[0],
+  );
 
 describe('stopMetricsOf — stripe and gap', () => {
   it('halves the line width and reports its interline gap', () => {
@@ -42,7 +45,12 @@ describe('stopMetricsOf — stripe continuation (terminus-aware)', () => {
   // resolved from the line's edges and the neighbours' world positions. The
   // beside-slant window charges only for stripe that exists (Yipping bug).
   const stationAt = (id: string, x: number, y: number, withStop = false): Station =>
-    makeStation({ id, x, y, stops: withStop ? [makeStop('L1', { orientation: 'auto-horizontal' })] : [] });
+    makeStation({
+      id,
+      x,
+      y,
+      stops: withStop ? [makeStop('L1', { orientation: 'auto-horizontal' })] : [],
+    });
 
   const continuesFor = (neighbours: { id: string; x: number; y: number }[]) => {
     const s1 = stationAt('s1', 0, 0, true);

@@ -50,7 +50,11 @@ describe('cellsAABBLocal — per-stop widths', () => {
     // the label cell stays unit-sized (±7) and still wins the left edge.
     const box = cellsAABBLocal(
       st(),
-      stopMetricsOf({ lines: { L1: makeLine({ id: 'L1', width: 28 }) }, transfers: {}, stations: {} }),
+      stopMetricsOf({
+        lines: { L1: makeLine({ id: 'L1', width: 28 }) },
+        transfers: {},
+        stations: {},
+      }),
     );
     expect(box).toEqual({ x: -23, y: -16, w: 39, h: 32 });
   });
@@ -122,7 +126,11 @@ describe('stationsForRect — per-stop widths', () => {
       stationsForRect(
         { A: st },
         rect,
-        stopMetricsOf({ lines: { L1: makeLine({ id: 'L1', width: 28 }) }, transfers: {}, stations: {} }),
+        stopMetricsOf({
+          lines: { L1: makeLine({ id: 'L1', width: 28 }) },
+          transfers: {},
+          stations: {},
+        }),
       ),
     ).toEqual(['A']);
   });
