@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { seedAndOpen, labelCenter, type Seed } from './fixtures';
+import { closeSidebar, seedAndOpen, labelCenter, type Seed } from './fixtures';
 
 // Two free-floating labels far apart: g1 is the style source (24px bold),
 // g2 the apply target (16px regular). No stations/lines needed.
@@ -40,6 +40,9 @@ test('save a label style, survive reload, apply to another label, detach on edit
 
   // Definition + tag survive a reload (persisted doc).
   await page.reload();
+  // g2 sits under the docked editor while the sidebar is open; closing it
+  // moves the dock out to the host edge and hands that band back.
+  await closeSidebar(page);
   const g1 = await labelCenter(page, 'g1');
   await page.mouse.click(g1.x, g1.y);
   await expect(currentStyleName(page)).toHaveText('Heading');

@@ -1,13 +1,11 @@
 import { useDoc } from '../state/store';
-import { type ViewportProjection } from './canvas/screenAnchor';
-import { DraggablePopoverShell } from './DraggablePopoverShell';
-import { useDraggablePopover } from './canvas/useDraggablePopover';
+import { PopoverShell } from './PopoverShell';
+import { usePinnedPopover } from './canvas/usePinnedPopover';
 import { LayerOrderRow } from './LayerOrderRow';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
 import { DayNightColorRow } from './DayNightColorRow';
 import { StyleRow } from './StyleRow';
-import type { AABB } from '../geometry/rectPolygon';
 import {
   POLYGON_CURVE_RADIUS_DEFAULT,
   POLYGON_CURVE_RADIUS_MAX,
@@ -22,35 +20,19 @@ import { FieldCheckbox } from './FieldCheckbox';
 
 interface Props {
   polygon: Polygon;
-  // The polygon's world AABB at the moment of selection — the spawn opens the
-  // popover beside it (vertex bounds; stroke ink is ignored).
-  worldRect: AABB;
-  view: ViewportProjection;
-  // Spawn-placement box (host minus the open sidebar strip); see ItemPopovers.
-  spawnBox?: { w: number; h: number };
+  // Width of the box the panel docks into — the host minus the open sidebar
+  // strip; see ItemPopovers.
+  hostW: number;
   onClose: () => void;
 }
 
 /**
  * Editing popover for a selected polygon: fill color + opacity, stroke color +
- * width, curve radius, closed toggle, layer order, and delete. The spawn
- * placement is frozen at first display and projected through the live viewport
- * so it tracks pan/zoom without sliding when vertices move; the header drag
- * (world-space, via useDraggablePopover) stays pinned to the canvas through
- * zoom. Mirrors {@link TextLabelPopover}.
+ * width, curve radius, closed toggle, layer order, and delete. Docked to the
+ * host's top-right corner (usePinnedPopover). Mirrors {@link TextLabelPopover}.
  */
-export function PolygonPopover({ polygon, worldRect, view, spawnBox, onClose }: Props) {
-  // Frozen-anchor + header-drag mechanism (freeze the spawn at first display
-  // so vertex edits / whole-polygon drags don't slide the popover; re-freeze
-  // when the selected polygon changes; project live for pan/zoom). Shared
-  // with the text-label popover.
-  const { anchor, measuring, shellRef, headerHandlers } = useDraggablePopover(
-    polygon.id,
-    worldRect,
-    view,
-    false,
-    spawnBox,
-  );
+export function PolygonPopover({ polygon, hostW, onClose }: Props) {
+  const { anchor, shellRef } = usePinnedPopover(hostW);
   const updatePolygon = useDoc((s) => s.updatePolygon);
   const deletePolygon = useDoc((s) => s.deletePolygon);
   const moveBackgroundUp = useDoc((s) => s.moveBackgroundUp);
@@ -79,14 +61,12 @@ export function PolygonPopover({ polygon, worldRect, view, spawnBox, onClose }: 
   };
 
   return (
-    <DraggablePopoverShell
+    <PopoverShell
       className="bullet-popover polygon-popover"
       title="Polygon"
       left={anchor.x}
       top={anchor.y}
-      measuring={measuring}
       shellRef={shellRef}
-      headerHandlers={headerHandlers}
     >
       <StyleRow
         key={polygon.id}
@@ -177,6 +157,6 @@ export function PolygonPopover({ polygon, worldRect, view, spawnBox, onClose }: 
         onToggleLock={onToggleLock}
         onDelete={onDelete}
       />
-    </DraggablePopoverShell>
+    </PopoverShell>
   );
 }

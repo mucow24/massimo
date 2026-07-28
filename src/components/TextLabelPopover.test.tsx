@@ -13,315 +13,6 @@ beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
 });
 
-const positionOf = (el: HTMLElement) => ({
-  left: parseFloat(el.style.left),
-  top: parseFloat(el.style.top),
-});
-
-// A 1:1 world→screen projection so positions are easy to reason about:
-// screenX = ((worldX - 0) / 800) * 800 = worldX.
-const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
-
-// Degenerate point rect: keeps the spawn arithmetic one-point simple (the
-// popover opens gap-right of the point, top-aligned). Real callers pass the
-// label's world AABB (ItemPopovers → textLabelAABB).
-const rectAt = (x: number, y: number) => ({ x0: x, y0: y, x1: x, y1: y });
-
-describe('<TextLabelPopover /> — world position freezes, viewport tracks live', () => {
-  // Regression: an earlier version recomputed the popover position from the
-  // label's live screen position every render. Combined with upper-left-
-  // preserving label resize, dragging the fontSize slider moved the label's
-  // screen position, moved the popover under the user's pointer, mapped to a
-  // new slider value, and looped — the slider exploded to max. The fix freezes
-  // the label's *world* position on first render.
-  it('keeps left/top constant when the label world position changes after mount', () => {
-    const label = makeTextLabel({ id: 'g1', text: 'X' });
-    const { container, rerender } = render(
-      <TextLabelPopover
-        label={label}
-        worldRect={rectAt(100, 200)}
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
-    const popover = container.querySelector('.text-label-popover') as HTMLElement;
-    const before = positionOf(popover);
-    rerender(
-      <TextLabelPopover
-        label={label}
-        worldRect={rectAt(500, 600)}
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
-    const after = positionOf(popover);
-    expect(after.left).toBe(before.left);
-    expect(after.top).toBe(before.top);
-  });
-
-  // The popover must follow canvas pan/zoom: the frozen world point projects
-  // through the *live* viewport, so a viewport shift moves the popover.
-  it('moves left/top when the viewport pans (frozen world projected live)', () => {
-    const label = makeTextLabel({ id: 'g1', text: 'X' });
-    const { container, rerender } = render(
-      <TextLabelPopover
-        label={label}
-        worldRect={rectAt(100, 200)}
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
-    const popover = container.querySelector('.text-label-popover') as HTMLElement;
-    const before = positionOf(popover);
-    // Pan the viewBox 50 world units right / 30 down: screen anchor shifts by
-    // the negative of that (the world point slides up-left under the viewport).
-    rerender(
-      <TextLabelPopover
-        label={label}
-        worldRect={rectAt(100, 200)}
-        view={{ ...identityView, vbX: 50, vbY: 30 }}
-        onClose={() => {}}
-      />,
-    );
-    const after = positionOf(popover);
-    expect(after.left).toBeCloseTo(before.left - 50, 9);
-    expect(after.top).toBeCloseTo(before.top - 30, 9);
-  });
-
-  // Regression: selecting a *different* label reuses the same popover instance
-  // (MapCanvas renders one <TextLabelPopover> with no per-label key). The frozen
-  // world must re-freeze to the new label, or the popover anchors at the old
-  // label's position — e.g. a far-right label's controls appearing next to the
-  // far-left label you clicked first.
-  it('re-freezes to the new world when a different label is selected', () => {
-    const left = makeTextLabel({ id: 'g1', text: 'L' });
-    const { container, rerender } = render(
-      <TextLabelPopover
-        label={left}
-        worldRect={rectAt(100, 100)}
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
-    const popover = container.querySelector('.text-label-popover') as HTMLElement;
-    // Below-left diagonal off (100,100): x = 100−14−248 clamps to the margin.
-    expect(positionOf(popover).left).toBeCloseTo(8, 9);
-    expect(positionOf(popover).top).toBeCloseTo(114, 9);
-
-    const right = makeTextLabel({ id: 'g2', text: 'R' });
-    rerender(
-      <TextLabelPopover
-        label={right}
-        worldRect={rectAt(700, 500)}
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
-    // Tracks the new label, placed fully inside the 800×600 host AND off the
-    // point: the below-left diagonal x = 700−14−248 = 438 clears the point on
-    // its own; y clamps to 600−248−8 = 344.
-    expect(positionOf(popover).left).toBeCloseTo(438, 9);
-    expect(positionOf(popover).top).toBeCloseTo(344, 9);
-  });
-
-  // A label selected near the host's bottom-right corner would put the popover
-  // (240px wide, overflow:hidden host) entirely off-screen. Initial placement
-  // clamps into view; the clamp is baked into the frozen world point, so
-  // pan/zoom tracking and drags behave exactly as from any other spawn point.
-  it('clamps the spawn position into the host near the canvas edge', () => {
-    const label = makeTextLabel({ id: 'g1', text: 'X' });
-    const { container } = render(
-      <TextLabelPopover
-        label={label}
-        worldRect={rectAt(790, 590)}
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
-    const popover = container.querySelector('.text-label-popover') as HTMLElement;
-    // Clamped right/below spots cover the corner point; left of it clears:
-    // 790−14−248 = 528, y clamps to 344.
-    expect(positionOf(popover).left).toBeCloseTo(528, 9);
-    expect(positionOf(popover).top).toBeCloseTo(344, 9);
-  });
-
-  // Regression guard: at zero host size (first paint before measurement) there
-  // is no screen↔world mapping, so the spawn must not freeze — inverting a
-  // 0-sized viewport is a division by zero that would poison the frozen anchor
-  // permanently. The spawn defers to the first measured render and places
-  // (gap + clamp) against that real view.
-  it('defers the spawn while the host has no size, then places against the real view', () => {
-    const label = makeTextLabel({ id: 'g1', text: 'X' });
-    const { container, rerender } = render(
-      <TextLabelPopover
-        label={label}
-        worldRect={rectAt(790, 590)}
-        view={{ vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 0, h: 0 } }}
-        onClose={() => {}}
-      />,
-    );
-    const popover = container.querySelector('.text-label-popover') as HTMLElement;
-    // Unfrozen fallback (nothing is visible in a 0-px host anyway): plain
-    // projection + gap, and crucially no NaN. The deferred (measuring) shell
-    // must not paint this placeholder position — visibility hides it.
-    expect(positionOf(popover)).toEqual({ left: 14, top: 14 });
-    expect(popover).not.toBeVisible();
-    // Host measured: the deferred spawn runs now, placed into the real box —
-    // same flip-left arithmetic as the edge-spawn test: (528, 344).
-    rerender(
-      <TextLabelPopover
-        label={label}
-        worldRect={rectAt(790, 590)}
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
-    expect(positionOf(popover).left).toBeCloseTo(528, 9);
-    expect(positionOf(popover).top).toBeCloseTo(344, 9);
-    expect(popover).toBeVisible();
-  });
-
-  it('an id switch mid-drag abandons the captured drag (no stale offset on the new spawn)', () => {
-    // The pointer can still be captured on the header when the selection
-    // switches to another label (same reused component instance). The old
-    // drag's accumulated offset must not re-apply to the new item's fresh
-    // spawn on the next pointermove.
-    const a = makeTextLabel({ id: 'g1', text: 'A' });
-    const { container, rerender } = render(
-      <TextLabelPopover
-        label={a}
-        worldRect={rectAt(100, 100)}
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
-    const popover = container.querySelector('.text-label-popover') as HTMLElement;
-    const header = container.querySelector('.text-label-popover .header') as HTMLElement;
-    fireEvent.pointerDown(header, { clientX: 0, clientY: 0, button: 0 });
-    fireEvent.pointerMove(header, { clientX: 30, clientY: 20 });
-    expect(positionOf(popover).left).toBeCloseTo(38, 9); // dragging normally (8 + 30)
-
-    const b = makeTextLabel({ id: 'g2', text: 'B' });
-    rerender(
-      <TextLabelPopover
-        label={b}
-        worldRect={rectAt(400, 300)}
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
-    expect(positionOf(popover).left).toBeCloseTo(138, 9); // fresh spawn for g2 (400 − 262)
-    expect(positionOf(popover).top).toBeCloseTo(314, 9);
-    // The still-captured pointer keeps moving: must be a no-op now.
-    fireEvent.pointerMove(header, { clientX: 90, clientY: 90 });
-    expect(positionOf(popover).left).toBeCloseTo(138, 9);
-    expect(positionOf(popover).top).toBeCloseTo(314, 9);
-  });
-
-  it('measures the shell AFTER the persisted textarea height is applied', () => {
-    // usePersistedTextareaHeight applies label.editorHeight in a layout
-    // effect; the spawn-measuring effect must run after it (hook-call order)
-    // or a stretched text box is placed for its default height and paints
-    // past the host bottom. Stub layout-aware measurement: the shell reports
-    // 100px of chrome plus the textarea's applied inline height.
-    const origW = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')!;
-    const origH = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')!;
-    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
-      configurable: true,
-      get(this: HTMLElement) {
-        return this.classList.contains('text-label-popover') ? 240 : 0;
-      },
-    });
-    Object.defineProperty(HTMLElement.prototype, 'offsetHeight', {
-      configurable: true,
-      get(this: HTMLElement) {
-        if (!this.classList.contains('text-label-popover')) return 0;
-        const ta = this.querySelector('textarea');
-        const h = ta && ta.style.height ? parseFloat(ta.style.height) : 44;
-        return 100 + h;
-      },
-    });
-    try {
-      const label = makeTextLabel({ id: 'g1', text: 'X', editorHeight: 400 });
-      const { container } = render(
-        <TextLabelPopover
-          label={label}
-          worldRect={rectAt(400, 300)}
-          view={identityView}
-          onClose={() => {}}
-        />,
-      );
-      const popover = container.querySelector('.text-label-popover') as HTMLElement;
-      // Measured 240×500 (100 chrome + 400 restored height): diagonal spawn
-      // (400−14−240, 314) = (146,314) clamps y to 600−500−8 = 92. Measuring
-      // before the height restore would see 240×144 and leave y at 314.
-      expect(positionOf(popover).left).toBeCloseTo(146, 9);
-      expect(positionOf(popover).top).toBeCloseTo(92, 9);
-    } finally {
-      Object.defineProperty(HTMLElement.prototype, 'offsetWidth', origW);
-      Object.defineProperty(HTMLElement.prototype, 'offsetHeight', origH);
-    }
-  });
-
-  it('a header drag can still push the popover past the host edge (clamp is spawn-only)', () => {
-    const label = makeTextLabel({ id: 'g1', text: 'X' });
-    const { container } = render(
-      <TextLabelPopover
-        label={label}
-        worldRect={rectAt(500, 300)}
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
-    const popover = container.querySelector('.text-label-popover') as HTMLElement;
-    const header = container.querySelector('.text-label-popover .header') as HTMLElement;
-    expect(positionOf(popover).left).toBeCloseTo(238, 9); // below-left diagonal (500 − 262)
-    expect(positionOf(popover).top).toBeCloseTo(314, 9);
-    fireEvent.pointerDown(header, { clientX: 0, clientY: 0, button: 0 });
-    fireEvent.pointerMove(header, { clientX: 400, clientY: 100 });
-    fireEvent.pointerUp(header, { clientX: 400, clientY: 100 });
-    expect(positionOf(popover).left).toBeCloseTo(638, 9); // past the x-limit of 544
-    expect(positionOf(popover).top).toBeCloseTo(414, 9);
-  });
-
-  // Regression: any offset held in screen pixels and added on top of the
-  // live-projected anchor detaches the popover from the canvas under zoom —
-  // this bit the header drag first, then the 14px spawn gap itself (the
-  // wandering-popovers bug). Everything now lives in the frozen WORLD point,
-  // so the whole popover position — spawn gap included — scales with the map.
-  it('keeps a dragged popover pinned to the canvas when zooming', () => {
-    const label = makeTextLabel({ id: 'g1', text: 'X' });
-    const { container, rerender } = render(
-      <TextLabelPopover
-        label={label}
-        worldRect={rectAt(0, 0)} // anchor at the origin → screen (0,0)
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
-    const popover = container.querySelector('.text-label-popover') as HTMLElement;
-    const header = container.querySelector('.text-label-popover .header') as HTMLElement;
-
-    // Spawn: below-left diagonal off the origin point, x clamped to the 8px
-    // margin. Move it +30/+20 screen px at zoom 1 (→ world drag of 30/20).
-    fireEvent.pointerDown(header, { clientX: 0, clientY: 0, button: 0 });
-    fireEvent.pointerMove(header, { clientX: 30, clientY: 20 });
-    fireEvent.pointerUp(header, { clientX: 30, clientY: 20 });
-    expect(positionOf(popover).left).toBeCloseTo(38, 9); // 8 + 30
-    expect(positionOf(popover).top).toBeCloseTo(34, 9); // 14 + 20
-
-    // Zoom 2× about the world origin. The corner sits on world point
-    // (8,14)+drag(30,20) = (38,34), which now projects to (76,68) — the whole
-    // offset doubles with the canvas; nothing stays a fixed pixel size.
-    const zoom2 = { vbX: 0, vbY: 0, vbW: 400, vbH: 300, size: { w: 800, h: 600 } };
-    rerender(
-      <TextLabelPopover label={label} worldRect={rectAt(0, 0)} view={zoom2} onClose={() => {}} />,
-    );
-    expect(positionOf(popover).left).toBeCloseTo(76, 9);
-    expect(positionOf(popover).top).toBeCloseTo(68, 9);
-  });
-});
-
 describe('<TextLabelPopover /> — day/night color pickers', () => {
   function seedAndRender(
     label = makeTextLabel({ id: 'g1', color: '#112233', darkColor: '#445566' }),
@@ -333,8 +24,7 @@ describe('<TextLabelPopover /> — day/night color pickers', () => {
     return render(
       <TextLabelPopover
         label={useDoc.getState().textLabels['g1']}
-        worldRect={rectAt(0, 0)}
-        view={identityView}
+        hostW={800}
         onClose={() => {}}
       />,
     );
@@ -366,20 +56,11 @@ describe('<TextLabelPopover /> — day/night color pickers', () => {
 });
 
 describe('<TextLabelPopover /> — text / size / align / weight controls', () => {
-  const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
-
   // Subscribe to the live store label, like the real mount (ItemPopovers)
   // does — successive slider steps must see each other's writes.
   function LiveControlsPopover({ onClose }: { onClose: () => void }) {
     const label = useDoc((s) => s.textLabels['g1']);
-    return label ? (
-      <TextLabelPopover
-        label={label}
-        worldRect={rectAt(0, 0)}
-        view={identityView}
-        onClose={onClose}
-      />
-    ) : null;
+    return label ? <TextLabelPopover label={label} hostW={800} onClose={onClose} /> : null;
   }
 
   function seedAndRender(onClose = () => {}) {
@@ -400,8 +81,7 @@ describe('<TextLabelPopover /> — text / size / align / weight controls', () =>
     const { container } = render(
       <TextLabelPopover
         label={useDoc.getState().textLabels['g1']}
-        worldRect={rectAt(0, 0)}
-        view={identityView}
+        hostW={800}
         onClose={() => {}}
       />,
     );
@@ -498,16 +178,13 @@ describe('<TextLabelPopover /> — text / size / align / weight controls', () =>
 });
 
 describe('<TextLabelPopover /> — leading + tracking', () => {
-  const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
-
   function seedAndRender() {
     const label = makeTextLabel({ id: 'g1', text: 'Hi\nThere' });
     useDoc.setState({ ...useDoc.getState(), textLabels: { g1: label } });
     render(
       <TextLabelPopover
         label={useDoc.getState().textLabels['g1']}
-        worldRect={rectAt(0, 0)}
-        view={identityView}
+        hostW={800}
         onClose={() => {}}
       />,
     );
@@ -551,29 +228,19 @@ describe('<TextLabelPopover /> — leading + tracking', () => {
   it('disables both rows when locked', () => {
     const label = makeTextLabel({ id: 'g1', text: 'Hi', locked: true });
     useDoc.setState({ ...useDoc.getState(), textLabels: { g1: label } });
-    render(
-      <TextLabelPopover
-        label={label}
-        worldRect={rectAt(0, 0)}
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
+    render(<TextLabelPopover label={label} hostW={800} onClose={() => {}} />);
     expect(screen.getByRole('slider', { name: 'Leading' })).toHaveAttribute('data-disabled');
     expect(screen.getByRole('slider', { name: 'Tracking' })).toHaveAttribute('data-disabled');
   });
 });
 
 describe('<TextLabelPopover /> — lock toggle', () => {
-  const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
-
   function seedAndRender(label = makeTextLabel({ id: 'g1', text: 'Hi' })) {
     useDoc.setState({ ...useDoc.getState(), textLabels: { g1: label } });
     render(
       <TextLabelPopover
         label={useDoc.getState().textLabels['g1']}
-        worldRect={rectAt(0, 0)}
-        view={identityView}
+        hostW={800}
         onClose={() => {}}
       />,
     );
@@ -606,15 +273,12 @@ describe('<TextLabelPopover /> — lock toggle', () => {
 });
 
 describe('<TextLabelPopover /> — column width + justify', () => {
-  const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
-
   function seed(label = makeTextLabel({ id: 'g1', text: 'Hi', align: 'left' })) {
     useDoc.setState({ ...useDoc.getState(), textLabels: { g1: label } });
     render(
       <TextLabelPopover
         label={useDoc.getState().textLabels['g1']}
-        worldRect={rectAt(0, 0)}
-        view={identityView}
+        hostW={800}
         onClose={() => {}}
       />,
     );
@@ -660,8 +324,6 @@ describe('<TextLabelPopover /> — column width + justify', () => {
 });
 
 describe('<TextLabelPopover /> — wrap-lines toggle (persisted editor preference)', () => {
-  const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
-
   beforeEach(() => {
     // The wrap flag is a global persisted preference, not doc state — reset both
     // the store and its localStorage backing so tests don't leak into each other
@@ -676,8 +338,7 @@ describe('<TextLabelPopover /> — wrap-lines toggle (persisted editor preferenc
     render(
       <TextLabelPopover
         label={useDoc.getState().textLabels['g1']}
-        worldRect={rectAt(0, 0)}
-        view={identityView}
+        hostW={800}
         onClose={() => {}}
       />,
     );
@@ -709,14 +370,7 @@ describe('<TextLabelPopover /> — wrap-lines toggle (persisted editor preferenc
   it('stays usable on a locked label (view-only preference, never mutates the label)', () => {
     const label = makeTextLabel({ id: 'g1', text: 'Hi', locked: true });
     useDoc.setState({ ...useDoc.getState(), textLabels: { g1: label } });
-    render(
-      <TextLabelPopover
-        label={label}
-        worldRect={rectAt(0, 0)}
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
+    render(<TextLabelPopover label={label} hostW={800} onClose={() => {}} />);
     const box = screen.getByRole('checkbox', { name: 'Wrap' });
     expect(box).toBeEnabled();
     fireEvent.click(box);
@@ -729,16 +383,11 @@ describe('<TextLabelPopover /> — wrap-lines toggle (persisted editor preferenc
 // lives in App's global keydown handler — covered in App.keyboard.test.tsx.
 
 describe('<TextLabelPopover /> — style presets', () => {
-  const presetView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
-  const presetRect = { x0: 0, y0: 0, x1: 0, y1: 0 };
-
   // The real mount (ItemPopovers) passes the live store label; mirror that
   // so the Style row re-derives when an action writes the tag.
   function LivePopover() {
     const label = useDoc((s) => s.textLabels['g1']);
-    return label ? (
-      <TextLabelPopover label={label} worldRect={presetRect} view={presetView} onClose={() => {}} />
-    ) : null;
+    return label ? <TextLabelPopover label={label} hostW={800} onClose={() => {}} /> : null;
   }
 
   it('applies a preset from the Style row, then flips to Custom on a covered edit', async () => {

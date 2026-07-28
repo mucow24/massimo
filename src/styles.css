@@ -901,11 +901,11 @@ select option {
   display: flex;
   flex-direction: column;
 }
-/* The header is the panel title AND the drag handle (wired via
-   useDraggablePopover): the signature black band, now wearing the panel's
-   rounded top corners — white bold Helvetica doing the chrome's talking.
-   Same black in both themes (it's the brand, not a surface). The top radius
-   is the shell's 10px minus its 1px border so the band nests flush. */
+/* The header is the panel's title band — the panels are docked to the host
+   corner, not dragged: the signature black band wearing the panel's rounded
+   top corners, white bold Helvetica doing the chrome's talking. Same black in
+   both themes (it's the brand, not a surface). The top radius is the shell's
+   10px minus its 1px border so the band nests flush. */
 .bullet-popover .header,
 .text-label-popover .header {
   padding: 7px 16px 8px;
@@ -914,9 +914,8 @@ select option {
   font-size: var(--fs-ui);
   font-weight: 700;
   border-radius: 9px 9px 0 0;
-  cursor: move;
+  cursor: default;
   user-select: none;
-  touch-action: none;
   flex-shrink: 0;
 }
 .bullet-popover .body,
@@ -2775,11 +2774,6 @@ body:has(.app[data-theme='dark']) {
   bottom: -14px;
   background: var(--surface);
   border-radius: 0 0 9px 9px;
-}
-/* The line popover is hard-pinned to the host corner (no drag), so its header
-   is a title band, not a drag handle. */
-.line-popover .header {
-  cursor: default;
 }
 /* Hairline dividers between the popover's sections (Name / Position / Stop
    layout / Label) — the taller multi-section panel needs them where the

@@ -1,9 +1,9 @@
 // World-space axis-aligned bounds of a single canvas item, one helper per
 // item type — each a thin min/max fold over the type's existing boundary
 // geometry (station silhouette rects, text-label corners, polygon vertices,
-// svg-image corners, route-bullet square). Shared by the whole-map content
-// bounds and the popover spawn placement, so "how big is this item" can
-// never drift between them.
+// svg-image corners, route-bullet square). Folded together by the whole-map
+// content bounds (contentBounds.ts), so "how big is this item" can never
+// drift between the camera fit and the item's own boundary geometry.
 //
 // All results are NORMALIZED (x0 ≤ x1, y0 ≤ y1), unlike the general AABB
 // type whose corners may sit in any diagonal order.
@@ -100,36 +100,4 @@ export function routeBulletAABB(b: Pick<RouteBullet, 'x' | 'y' | 'size'>): AABB 
  */
 export function transferAnchorAABB(a: Pick<TransferAnchor, 'x' | 'y'>, r = ANCHOR_HALF): AABB {
   return { x0: a.x - r, y0: a.y - r, x1: a.x + r, y1: a.y + r };
-}
-
-/**
- * Union of several NORMALIZED AABBs — the joint bounds of a multi-selection
- * (the selection popover's spawn hint). Precondition: at least one rect.
- */
-export function unionAABBs(rects: readonly AABB[]): AABB {
-  let { x0, y0, x1, y1 } = rects[0];
-  for (const r of rects) {
-    if (r.x0 < x0) x0 = r.x0;
-    if (r.y0 < y0) y0 = r.y0;
-    if (r.x1 > x1) x1 = r.x1;
-    if (r.y1 > y1) y1 = r.y1;
-  }
-  return { x0, y0, x1, y1 };
-}
-
-/**
- * World AABB of a transfer's drawn capsule: the box spanned by its two
- * endpoint dots, grown by `halfExtent` (effective thickness/2 + stroke) on
- * every side. Exact for the round-capped stroke — each cap is a circle of
- * that radius centered on an endpoint. Endpoints are resolved by the caller
- * (transferEndWorld needs the stations record).
- */
-export function transferAABB(a: Pt, b: Pt, halfExtent: number): AABB {
-  const box = aabbOfPoints([a, b]);
-  return {
-    x0: box.x0 - halfExtent,
-    y0: box.y0 - halfExtent,
-    x1: box.x1 + halfExtent,
-    y1: box.y1 + halfExtent,
-  };
 }

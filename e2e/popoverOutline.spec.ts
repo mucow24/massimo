@@ -4,7 +4,6 @@ import {
   fourInLineWithBulletsAndLabel,
   bulletCenter,
   labelCenter,
-  parkPopover,
 } from './fixtures';
 
 // Every canvas popover is one of two CSS shells: `.bullet-popover` (route
@@ -52,7 +51,6 @@ test.describe('canvas popover edge ring', () => {
     await toggleDarkMode(page);
     await expectEdge(bullet, DARK_RING);
     await toggleDarkMode(page);
-    await parkPopover(page); // keep the bullet panel clear of the label below
 
     // Text label → `.text-label-popover` shell.
     const g1 = await labelCenter(page, 'g1');

@@ -154,7 +154,7 @@ src/
     lineTagGeometry.ts          # offset-path arc-length sampling for in-band tags
     svgImage.ts                 # svg-image corners/resize/rotate/snap geometry
     waypointLozenge.ts          # WP-lozenge pill geometry (shared drawn glyph + hit/selection box)
-    itemBounds.ts contentBounds.ts  # per-item + whole-map world AABBs (popover spawn + camera fit)
+    itemBounds.ts contentBounds.ts  # per-item + whole-map world AABBs (camera fit)
 
   state/                        # Zustand stores (14 of them) + history
     store.ts                    # useDoc: temporal(persist(...)) + ~110 actions + migrateDoc
@@ -776,8 +776,8 @@ the three arms carry one — so a hand-rolled `in` check is correct only by acci
 in an if-chain. Ask the guards; they are total, and a test pins them against the naive spelling. That shared shape is what
 keeps the station cascade a one-liner: `endStationId(e) === id` orphans a station's stops AND its
 hosted anchors together. World resolution for all three is `geometry/transferEnds.transferEndWorld`,
-which returns null for a dangling end — both paint passes, the popover spawn and the in-progress
-preview all go through it, and dropping the transfer on null is why neither load path needs a
+which returns null for a dangling end — both paint passes and the in-progress preview all go
+through it, and dropping the transfer on null is why neither load path needs a
 transfer-endpoint sanitizer. **Cascade-deleted** when either endpoint's stop is removed (by
 deleting the station/line or removing that line's stop). Default styling (thickness, color,
 optional halo) comes from the constant `TRANSFER_STYLE_DEFAULTS` — there are **no doc-level
@@ -1379,9 +1379,9 @@ on any mode exit.
   `showNetwork`, which `partialize` deliberately omits so a reload never opens onto an
   apparently-empty map. The giant SVG tree subscribes here and is re-rendered only on commit.
 - `useLiveViewportStore` — the **in-flight** gesture viewport (`pending: Viewport | null`).
-  **Not persisted, not undoable.** Only a small set of overlays subscribes — the popover overlay,
-  and the selected-item handle overlays (`PolygonView`, `SvgImageView`) via the `useLiveZoom`
-  selector — never the giant station/band tree. Exists solely
+  **Not persisted, not undoable.** Only a small set of overlays subscribes — the selected-item
+  handle overlays (`PolygonView`, `SvgImageView`) via the `useLiveZoom` selector — never the giant
+  station/band tree. Exists solely
   so per-frame pan/zoom writes don't hammer localStorage or re-render the SVG. See the
   [Interaction layer](#canvas-interaction-layer) for how the viewBox is written imperatively.
 
@@ -2035,22 +2035,19 @@ popover/handles). Cursor-following ghost previews (`*PlacingPreview`, all `opaci
 (see UI chrome) and the transfer popover (whose selection is the single-id
 `selectedTransferId` primary outside `soleSelection`) — plus the one shared `SelectionPopover`
 when **≥2 items** are selected across the six lists (idle only): a count summary + Lock all /
-Unlock all / Delete all over the whole group, spawned beside the members' **union AABB** and
-keyed by membership so it re-places when the selection changes. All of them reproject through
-`useLiveView` so they track the canvas during pan/zoom.
-`useDraggablePopover` **freezes the popover's spawn position as one world point** (item
-projection + 14px gap, clamped into the host, then inverted through `screenToWorldPoint`) and
-renders `projectToScreen(that point + drag)` with **nothing added after projection** — the
-top-left corner is glued to the canvas point where the panel appeared (any per-render
-screen-px term reintroduces the wandering-popovers bug; invariant pinned by
-`popoverCanvasLock.test.tsx`). Freezing at spawn also means a size slider editing the item
-can't feed its own position back. Header-drag accumulates in **world units**; the freeze
-re-runs when the selection `id` changes (one popover instance reused across selections) and
-defers while hidden or unmeasured (the station popover hides — `display:none`, not unmount —
-during non-idle uiMode excursions so its anchor survives). Every item popover renders inside
-`DraggablePopoverShell`, which owns the floating frame (header drag strip + body) and the
-load-bearing event swallowing — pointerdown/click/contextmenu inside a popover must never reach
-the canvas, which would deselect the item (closing the popover) or right-click-rotate under it.
+Unlock all / Delete all over the whole group.
+Every panel — those, the line editor and the station layout editor — is **docked to the
+host's top-right corner** by `usePinnedPopover`, right-aligned on the panel's own measured
+width (248 for the item popovers, 320 for the station/line editors) 8px off the top and right
+edges. Nothing about the item or the camera reaches the panel: the only input is `hostW`, the
+canvas host minus the open sidebar's `SIDEBAR_WIDTH` strip (the sidebar paints ABOVE the
+popovers, so docking to the raw host width would park a panel under it). A pan or zoom
+therefore moves the map under a panel that stays put, and there is no drag handle — the header
+is a title band. The station popover hides (`display:none`, not unmount) during non-idle
+uiMode excursions, keeping its DOM node and measured width. Every popover renders inside
+`PopoverShell`, which owns the floating frame (header + body) and the load-bearing event
+swallowing — pointerdown/click/contextmenu inside a popover must never reach the canvas, which
+would deselect the item (closing the popover) or right-click-rotate under it.
 
 ### Memo contract (subtle but important)
 
@@ -2155,13 +2152,12 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   panel stays compact while editing stops, and that open/closed choice is a persisted UI
   preference (`useLineEditorPrefs`, defaulting to collapsed) rather than document state — it
   sticks across lines and reloads, mirroring `useStationEditorPrefs`.
-  HARD-PINNED to the host's top-right via `pinnedTopRight`
-  (shared with the station layout editor's pin, [DraggablePopoverShell.tsx](src/components/DraggablePopoverShell.tsx))
-  — a line has no single on-canvas anchor to spawn beside, so the header is a title band, not a
-  drag handle. `reconcileWithDoc` exits the mode if undo removes the edited line.
+  Docked top-right like every other canvas panel
+  ([usePinnedPopover.ts](src/components/canvas/usePinnedPopover.ts)); the sidebar cedes the
+  corner for the whole mode. `reconcileWithDoc` exits the mode if undo removes the edited line.
 - **[StationPopover.tsx](src/components/StationPopover.tsx)** — the station editor's home:
   mounted by `ItemPopovers` for a sole-selected station (idle mode, or that station's own
-  layout-edit mode), hosting the full `StationInspector`. Its drag-handle title band shows the
+  layout-edit mode), hosting the full `StationInspector`. Its title band shows the
   station's SHORT name (`stationNameListText`, falling back to "Station"). Layout: a **button bar**
   (**Edit layout** button, then the **Select Similar** mirror-matching toggle, then a
   right-justified **WP** toggle; lock lives in the footer), then the Name field on its own row,
@@ -2181,9 +2177,7 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   row in both setups, since rotation sets the reading axis that autoAlign still honors), then offset
   controls. The Name typography section keeps its style picker always visible with a collapsible,
   remembered (`useStationEditorPrefs`) Size→Tracking detail. New stations default to Auto placement
-  ON (`makeStation` sets `label.autoAlign = true`). The anchor is CLAMPED into the canvas host so
-  sidebar-selecting an off-screen station
-  still shows the editor. Inspectors dispatch transforms directly through **mirror matching**
+  ON (`makeStation` sets `label.autoAlign = true`). Inspectors dispatch transforms directly through **mirror matching**
   (`findMatchingStations` returns stations sharing a line + a layout under the model's 4-fold
   mirror symmetry — whole line, not adjacency; an edit broadcasts through
   [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts), rotating local deltas through

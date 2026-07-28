@@ -2,11 +2,11 @@ import { test, expect, type Page } from '@playwright/test';
 import {
   bulletCenter,
   clickAtWithModifiers,
+  closeSidebar,
   fourInLine,
   fourInLineWithBullets,
   fourInLineWithBulletsAndLabel,
   labelCenter,
-  parkPopover,
   seedAndOpen,
   stationCenter,
 } from './fixtures';
@@ -49,6 +49,7 @@ async function labelWorldPos(page: Page, id: string): Promise<{ x: number; y: nu
 test.describe('multi-station selection', () => {
   test('shift-click toggles stations into and out of the set', async ({ page }) => {
     await seedAndOpen(page, fourInLine);
+    await closeSidebar(page);
 
     const a = await stationCenter(page, 'A');
     const c = await stationCenter(page, 'C');
@@ -70,28 +71,32 @@ test.describe('multi-station selection', () => {
   test('inspector hides when more than one station is selected', async ({ page }) => {
     await seedAndOpen(page, fourInLine);
 
+    // This one keeps the sidebar open (it asserts the list rows), so the second
+    // station has to be one the docked editor doesn't cover: A and B both sit
+    // left of the panel.
     const a = await stationCenter(page, 'A');
-    const c = await stationCenter(page, 'C');
+    const b = await stationCenter(page, 'B');
 
     await page.mouse.click(a.x, a.y);
     // The station editor is an on-canvas popover for the sole selection.
     await expect(page.locator('.station-popover')).toBeVisible();
 
-    await clickAtWithModifiers(page, c, ['Shift']);
+    await clickAtWithModifiers(page, b, ['Shift']);
     // Multi-select: no station popover.
     await expect(page.locator('.station-popover')).toHaveCount(0);
 
     // Both rows still marked selected in the list.
     await expect(page.locator('[data-station-row="A"] .list-row.selected')).toBeVisible();
-    await expect(page.locator('[data-station-row="C"] .list-row.selected')).toBeVisible();
+    await expect(page.locator('[data-station-row="B"] .list-row.selected')).toBeVisible();
 
-    // Shift-click C off → back to single selection, the editor returns.
-    await clickAtWithModifiers(page, c, ['Shift']);
+    // Shift-click B off → back to single selection, the editor returns.
+    await clickAtWithModifiers(page, b, ['Shift']);
     await expect(page.locator('.station-popover')).toBeVisible();
   });
 
   test('ctrl+shift+click extends selection along a shared line', async ({ page }) => {
     await seedAndOpen(page, fourInLine);
+    await closeSidebar(page);
 
     const a = await stationCenter(page, 'A');
     const d = await stationCenter(page, 'D');
@@ -130,6 +135,7 @@ test.describe('multi-station selection', () => {
     page,
   }) => {
     await seedAndOpen(page, fourInLine);
+    await closeSidebar(page);
 
     const a = await stationCenter(page, 'A');
     const b = await stationCenter(page, 'B');
@@ -320,6 +326,7 @@ test.describe('multi-station selection', () => {
     page,
   }) => {
     await seedAndOpen(page, fourInLine);
+    await closeSidebar(page);
 
     const a = await stationCenter(page, 'A');
     const c = await stationCenter(page, 'C');
@@ -370,6 +377,7 @@ test.describe('multi-station selection', () => {
     page,
   }) => {
     await seedAndOpen(page, fourInLine);
+    await closeSidebar(page);
 
     // Pre-select A and C (so a rect over A+B will toggle A off, leaving
     // {C, B} after the gesture).
@@ -413,7 +421,6 @@ test.describe('multi-bullet selection', () => {
     // Pre-select station A.
     await page.mouse.click(a.x, a.y);
     await expect(page.locator('[data-station-wash="A"]')).toBeVisible();
-    await parkPopover(page); // A's popover spawns over the bullet row
 
     // Plain-click bullet b1 → station A deselected, b1 marked selected.
     await page.mouse.click(b1.x, b1.y);
@@ -425,6 +432,7 @@ test.describe('multi-bullet selection', () => {
     page,
   }) => {
     await seedAndOpen(page, fourInLineWithBullets);
+    await closeSidebar(page);
 
     const a = await stationCenter(page, 'A');
     const b1 = await bulletCenter(page, 'b1');
@@ -434,19 +442,16 @@ test.describe('multi-bullet selection', () => {
     // spawn (station, then the re-anchoring selection popover) so it can't
     // sit over the next click target.
     await page.mouse.click(a.x, a.y);
-    await parkPopover(page);
     await clickAtWithModifiers(page, b1, ['Shift']);
     await expect(page.locator('[data-station-wash="A"]')).toBeVisible();
     await expect(page.locator('[data-bullet-id="b1"][data-bullet-selected]')).toBeVisible();
     await expect(page.locator('[data-bullet-id="b2"][data-bullet-selected]')).toHaveCount(0);
-    await parkPopover(page);
 
     // Shift-click b2 → adds b2; A and b1 stay.
     await clickAtWithModifiers(page, b2, ['Shift']);
     await expect(page.locator('[data-station-wash="A"]')).toBeVisible();
     await expect(page.locator('[data-bullet-id="b1"][data-bullet-selected]')).toBeVisible();
     await expect(page.locator('[data-bullet-id="b2"][data-bullet-selected]')).toBeVisible();
-    await parkPopover(page);
 
     // Shift-click b1 again → removes b1; A and b2 stay.
     await clickAtWithModifiers(page, b1, ['Shift']);
@@ -489,19 +494,16 @@ test.describe('multi-bullet selection', () => {
     page,
   }) => {
     await seedAndOpen(page, fourInLineWithBullets);
+    await closeSidebar(page);
 
     const a = await stationCenter(page, 'A');
     const b1 = await bulletCenter(page, 'b1');
     const b2 = await bulletCenter(page, 'b2');
 
-    // Build a mixed selection: A + b1 + b2, parking each popover spawn so
-    // it can't sit over the next click/drag target.
+    // Build a mixed selection: A + b1 + b2.
     await page.mouse.click(a.x, a.y);
-    await parkPopover(page);
     await clickAtWithModifiers(page, b1, ['Shift']);
-    await parkPopover(page);
     await clickAtWithModifiers(page, b2, ['Shift']);
-    await parkPopover(page);
 
     const before = {
       A: await stationWorldPos(page, 'A'),
@@ -554,15 +556,11 @@ test.describe('multi-bullet selection', () => {
     const a = await stationCenter(page, 'A');
     const b1 = await bulletCenter(page, 'b1');
 
-    // Build a mixed selection: station A + bullet b1 + label g1, parking
-    // each popover spawn so it can't sit over the next click/drag target.
+    // Build a mixed selection: station A + bullet b1 + label g1.
     await page.mouse.click(a.x, a.y);
-    await parkPopover(page);
     await clickAtWithModifiers(page, b1, ['Shift']);
-    await parkPopover(page);
     const g1 = await labelCenter(page, 'g1');
     await clickAtWithModifiers(page, g1, ['Shift']);
-    await parkPopover(page);
     // Sanity: label IS in the selected set (otherwise the rest of the
     // test would silently degenerate to "drag bullet, label stays put").
     await expect(page.locator('[data-text-label-id="g1"][data-text-label-selected]')).toBeVisible();
@@ -609,9 +607,7 @@ test.describe('multi-bullet selection', () => {
     const b1 = await bulletCenter(page, 'b1');
 
     await page.mouse.click(a.x, a.y);
-    await parkPopover(page);
     await clickAtWithModifiers(page, b1, ['Shift']);
-    await parkPopover(page); // the selection popover re-anchors over the row
 
     const before = {
       A: await stationWorldPos(page, 'A'),
@@ -643,11 +639,9 @@ test.describe('multi-bullet selection', () => {
     const a = await stationCenter(page, 'A');
     const b1 = await bulletCenter(page, 'b1');
 
-    // Select A + b1, parking each popover spawn clear of the pivot.
+    // Select A + b1.
     await page.mouse.click(a.x, a.y);
-    await parkPopover(page);
     await clickAtWithModifiers(page, b1, ['Shift']);
-    await parkPopover(page);
 
     const beforeA = await stationWorldPos(page, 'A');
     const beforeb1 = await bulletWorldPos(page, 'b1');
@@ -685,7 +679,6 @@ test.describe('multi-bullet selection', () => {
     // Single-station selection → station popover visible.
     await page.mouse.click(a.x, a.y);
     await expect(page.locator('.station-popover')).toBeVisible();
-    await parkPopover(page); // keep it clear of the bullet row
 
     // Add a bullet via shift-click → mixed selection. The per-item editors
     // hide; the ONE group popover (bulk lock/unlock/delete) takes their
@@ -695,7 +688,6 @@ test.describe('multi-bullet selection', () => {
     await expect(page.locator('.selection-popover .selection-summary')).toHaveText(
       '2 items · 0 locked',
     );
-    await parkPopover(page); // ...and clear of station A before the next toggle
 
     // Reduce to a single bullet → the group popover yields back.
     await clickAtWithModifiers(page, a, ['Shift']);
@@ -712,7 +704,6 @@ test.describe('multi-bullet selection', () => {
     const b1 = await bulletCenter(page, 'b1');
 
     await page.mouse.click(a.x, a.y);
-    await parkPopover(page);
     await clickAtWithModifiers(page, b1, ['Shift']);
 
     await page.keyboard.press('Delete');

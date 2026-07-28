@@ -1,12 +1,10 @@
 import { useDoc } from '../state/store';
-import { type ViewportProjection } from './canvas/screenAnchor';
-import { DraggablePopoverShell } from './DraggablePopoverShell';
-import { useDraggablePopover } from './canvas/useDraggablePopover';
+import { PopoverShell } from './PopoverShell';
+import { usePinnedPopover } from './canvas/usePinnedPopover';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
 import { DayNightColorRow } from './DayNightColorRow';
 import { StyleRow } from './StyleRow';
-import type { AABB } from '../geometry/rectPolygon';
 import {
   resolveTransferStyle,
   TRANSFER_STROKE_WIDTH_DEFAULT,
@@ -22,12 +20,9 @@ import type { Transfer } from '../model/types';
 
 interface Props {
   transfer: Transfer;
-  // The transfer capsule's world AABB at the moment of selection — the spawn
-  // opens the popover beside it (see transferAABB / ItemPopovers).
-  worldRect: AABB;
-  view: ViewportProjection;
-  // Spawn-placement box (host minus the open sidebar strip); see ItemPopovers.
-  spawnBox?: { w: number; h: number };
+  // Width of the box the panel docks into — the host minus the open sidebar
+  // strip; see ItemPopovers.
+  hostW: number;
   onClose: () => void;
 }
 
@@ -37,23 +32,15 @@ interface Props {
  * plus delete. Every control shows the EFFECTIVE value (override when
  * present, else the constant default); choosing the default's own value
  * clears that override — the same default-vs-override contract as per-stop
- * dot styles (see `updateTransferStyle`). The spawn placement is frozen at
- * first display and projected through the live viewport
- * (useDraggablePopover), so it tracks pan/zoom without sliding when
- * endpoints move. Mirrors {@link PolygonPopover}.
+ * dot styles (see `updateTransferStyle`). Docked to the host's top-right
+ * corner (usePinnedPopover). Mirrors {@link PolygonPopover}.
  */
-export function TransferPopover({ transfer, worldRect, view, spawnBox, onClose }: Props) {
+export function TransferPopover({ transfer, hostW, onClose }: Props) {
   const updateTransferStyle = useDoc((s) => s.updateTransferStyle);
   const deleteTransfer = useDoc((s) => s.deleteTransfer);
   const style = resolveTransferStyle(transfer);
 
-  const { anchor, measuring, shellRef, headerHandlers } = useDraggablePopover(
-    transfer.id,
-    worldRect,
-    view,
-    false,
-    spawnBox,
-  );
+  const { anchor, shellRef } = usePinnedPopover(hostW);
 
   // Wheel ticks must step from the authoritative EFFECTIVE value, resolved
   // live from the store (not the render-stale prop).
@@ -68,14 +55,12 @@ export function TransferPopover({ transfer, worldRect, view, spawnBox, onClose }
   };
 
   return (
-    <DraggablePopoverShell
+    <PopoverShell
       className="bullet-popover transfer-popover"
       title="Transfer"
       left={anchor.x}
       top={anchor.y}
-      measuring={measuring}
       shellRef={shellRef}
-      headerHandlers={headerHandlers}
     >
       <StyleRow key={transfer.id} kind="transfer" itemId={transfer.id} styleId={transfer.styleId} />
       <hr className="popover-divider" aria-hidden="true" />
@@ -139,6 +124,6 @@ export function TransferPopover({ transfer, worldRect, view, spawnBox, onClose }
         }
       />
       <PopoverFooter noun="transfer" onDelete={onDelete} />
-    </DraggablePopoverShell>
+    </PopoverShell>
   );
 }

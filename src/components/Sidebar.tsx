@@ -20,7 +20,8 @@ type SortDirection = 'asc' | 'desc';
 
 // Panel width — matches `.sidebar` in styles.css. The sidebar floats OVER the
 // canvas host's right edge and stacks ABOVE the item popovers (.canvas-host
-// isolation), so spawn placement subtracts this strip while the panel shows.
+// isolation), so the popovers' top-right dock subtracts this strip while the
+// panel shows.
 export const SIDEBAR_WIDTH = 320;
 
 /** Whether the sidebar panel is actually showing (mirrors Sidebar's render
@@ -59,10 +60,9 @@ export function Sidebar() {
   const orderedLineIds = effectiveLineOrder(lineOrder, lines);
 
   // Clicking a station row pans the camera to it (zoom unchanged — this
-  // centers, it doesn't reframe). Uses the station origin, the same anchor
-  // the on-canvas station popover attaches to, so the popover spawns next to
-  // the now-centered station. Read live via getState so the sidebar doesn't
-  // re-render on every pan/zoom.
+  // centers, it doesn't reframe), so the station the docked editor is editing
+  // is on screen. Read live via getState so the sidebar doesn't re-render on
+  // every pan/zoom.
   const centerOnStation = (st: Station): void => {
     const { zoom, setViewport } = useViewportStore.getState();
     setViewport({ x: st.x, y: st.y, zoom });
