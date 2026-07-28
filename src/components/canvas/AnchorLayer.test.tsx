@@ -32,6 +32,7 @@ function renderLayer(props: Partial<Parameters<typeof AnchorLayer>[0]> = {}): SV
         onHover={vi.fn()}
         freeLive
         picking
+        dimHostedExcept={null}
         onPointerDown={vi.fn()}
         onClick={vi.fn()}
         {...props}
@@ -120,6 +121,29 @@ describe('AnchorLayer', () => {
     // The ring must never take pointer events, or it shadows the disc's own
     // entry in the hit stack under the same id.
     expect(rings[0].getAttribute('pointer-events')).toBe('none');
+  });
+
+  it('dims hosted anchors to half opacity when a dim regime is active', () => {
+    // "View anchors" on, idle canvas: the whole network paints, but a hosted
+    // anchor belongs to its station — at rest it sits back at half opacity and
+    // only comes forward when its station is hovered/selected, so mouseover
+    // still reads as "this mark is part of THAT station".
+    const svg = renderLayer({ dimHostedExcept: new Set<string>() });
+    const hosted = svg.querySelector('[data-anchor-station="s1"]')!;
+    expect(hosted.getAttribute('opacity')).toBe('0.5');
+  });
+
+  it('keeps a hosted anchor at full opacity while its station is revealed', () => {
+    const svg = renderLayer({ dimHostedExcept: new Set(['s1']) });
+    const hosted = svg.querySelector('[data-anchor-station="s1"]')!;
+    expect(hosted.getAttribute('opacity')).toBeNull();
+  });
+
+  it('never dims free anchors or dims at all outside the regime', () => {
+    const dimmed = renderLayer({ dimHostedExcept: new Set<string>() });
+    expect(dimmed.querySelector('[data-anchor-id="a1"]')!.getAttribute('opacity')).toBeNull();
+    const off = renderLayer({ dimHostedExcept: null });
+    expect(off.querySelector('[data-anchor-station="s1"]')!.getAttribute('opacity')).toBeNull();
   });
 
   it('renders nothing at all when there are no anchors', () => {

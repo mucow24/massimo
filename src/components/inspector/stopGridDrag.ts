@@ -414,9 +414,12 @@ export function nudgeTarget(spec: {
  *
  * Instead it reuses the lattice the DRAG would offer: ghosts around the nearest
  * anchorable node, computed with the label's point-like parameters, minus any
- * slot an existing anchor already holds. Deterministic (first by row, then col)
- * so repeated clicks walk outward rather than stacking. Falls back to one cell
- * right of the label when the overlap filter leaves nothing.
+ * slot an existing anchor already holds. Picks the free slot CLOSEST to a
+ * station node (row, col as deterministic tie-breaks): a new anchor must sit
+ * visibly against the station it belongs to — spawned at the lattice's far
+ * corner it reads as a stray map object, not a station cell. Repeated clicks
+ * still walk outward, one ring at a time. Falls back to one cell right of the
+ * label when the overlap filter leaves nothing.
  */
 export function spawnAnchorCell(
   station: Pick<Station, 'stops' | 'label' | 'transferAnchors'>,
@@ -436,9 +439,10 @@ export function spawnAnchorCell(
     basis: 'orthogonal',
     stationRotation: 0,
     gridRadius: GRID_RADIUS,
-  })
-    .filter((g) => !taken.some((a) => sameCell(a, g)))
-    .sort((a, b) => a.row - b.row || a.col - b.col);
+  }).filter((g) => !taken.some((a) => sameCell(a, g)));
+  const nearestNodeDist = (g: RowCol) =>
+    Math.min(...nodes.map((n) => Math.hypot(g.row - n.row, g.col - n.col)));
+  ghosts.sort((a, b) => nearestNodeDist(a) - nearestNodeDist(b) || a.row - b.row || a.col - b.col);
   const pick = ghosts[0];
   return pick ? [pick.row, pick.col] : fallback;
 }
