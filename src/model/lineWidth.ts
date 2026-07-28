@@ -60,25 +60,3 @@ export const LINE_INTERLINE_GAP_MAX = STOP_SIZE;
  */
 export const lineInterlineGapOf = (line: { interlineGap?: number } | null | undefined): number =>
   line?.interlineGap ?? LINE_INTERLINE_GAP_DEFAULT;
-
-/**
- * Per-line half-width lookup keyed by line id — the single home for the
- * `width / 2` derivation that station-local geometry (boundary AABB, label
- * snap) needs per stop. Unknown ids fall back to the default half, matching
- * how orphan stops render.
- */
-export const stopHalfOf =
-  (lines: Record<string, { width?: number } | undefined>) =>
-  (id: string): number =>
-    lineWidthOf(lines[id]) / 2;
-
-/**
- * Per-line interline-gap lookup keyed by line id — the companion of
- * `stopHalfOf` for the label adjacency gate (a label parks against a gapped
- * line at the gap-widened lattice pitch, so the gate must widen with it).
- * Unknown ids fall back to the gapless default.
- */
-export const stopGapOf =
-  (lines: Record<string, { interlineGap?: number } | undefined>) =>
-  (id: string): number =>
-    lineInterlineGapOf(lines[id]);

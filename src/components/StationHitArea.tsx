@@ -2,8 +2,7 @@ import { Line, Station } from '../model/types';
 import { labelLayoutLocal } from '../geometry/labelLayout';
 import { cellsAABBLocal } from '../geometry/stationBoundary';
 import { waypointLabelRectLocal } from '../geometry/waypointLozenge';
-import { stopGapOf, stopHalfOf } from '../model/lineWidth';
-import { stopDashOf } from '../model/dashSize';
+import { useStopMetrics } from './useStopMetrics';
 import { effectiveStationLabelStyle } from '../model/transforms';
 import { useViewportStore } from '../state/viewportStore';
 import { useStationInteraction } from './useStationInteraction';
@@ -39,6 +38,7 @@ export function StationHitArea({
   proxy?: boolean;
 }) {
   const { handlers, cursor, hitless } = useStationInteraction(station, onStartDrag, lines);
+  const metrics = useStopMetrics(lines);
   const showWaypoints = useViewportStore((s) => s.showWaypoints);
 
   const angle = station.rotation * 45;
@@ -46,17 +46,9 @@ export function StationHitArea({
   // A revealed waypoint (overlay on) gets a label hit rect so its lozenge is
   // clickable like a regular station's name.
   const hideLabelRect = !!station.isWaypoint && !showWaypoints;
-  const stopHalf = stopHalfOf(lines);
-  const cellsBox = cellsAABBLocal(station, stopHalf, showWaypoints);
+  const cellsBox = cellsAABBLocal(station, metrics, showWaypoints);
   const effStyle = effectiveStationLabelStyle(station);
-  const lay = labelLayoutLocal(
-    station,
-    effStyle,
-    undefined,
-    stopHalf,
-    stopDashOf(lines),
-    stopGapOf(lines),
-  );
+  const lay = labelLayoutLocal(station, effStyle, undefined, metrics);
   const labelHitTransform = `rotate(${station.label.rotation * 45} ${lay.anchorX} ${lay.anchorY})`;
   // A revealed waypoint's label is the WP lozenge, so its clickable rect is the
   // pill's box (matching the paint), not the invisible name's.

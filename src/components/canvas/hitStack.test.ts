@@ -223,6 +223,7 @@ describe('lockedHitsAt', () => {
     backgroundOrder: [] as string[],
     textLabels: {},
     routeBullets: {},
+    transfers: {},
     ...over,
   });
 

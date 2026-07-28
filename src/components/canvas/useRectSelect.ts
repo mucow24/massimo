@@ -11,8 +11,7 @@ import {
   transferAnchorsForRect,
   textLabelsForRect,
 } from '../../geometry/stationBoundary';
-import { stopGapOf, stopHalfOf } from '../../model/lineWidth';
-import { stopDashOf } from '../../model/dashSize';
+import { stopMetricsOf } from '../../model/stopMetrics';
 import type { MapDoc, StationId } from '../../model/types';
 import type { Pt } from '../../geometry/polygonUnion';
 
@@ -24,19 +23,12 @@ import type { Pt } from '../../geometry/polygonUnion';
  * station it crossed, invisibly — and that selection answers Delete.
  */
 function stationsForRectVisible(
-  doc: Pick<MapDoc, 'stations' | 'lines'>,
+  doc: Pick<MapDoc, 'stations' | 'lines' | 'transfers'>,
   rect: RectSelectRect,
   includeLocked: boolean,
 ): StationId[] {
   if (!useViewportStore.getState().showNetwork) return [];
-  return stationsForRect(
-    doc.stations,
-    rect,
-    stopHalfOf(doc.lines),
-    includeLocked,
-    stopDashOf(doc.lines),
-    stopGapOf(doc.lines),
-  );
+  return stationsForRect(doc.stations, rect, stopMetricsOf(doc), includeLocked);
 }
 
 /**

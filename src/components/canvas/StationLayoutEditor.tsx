@@ -5,8 +5,8 @@ import { STOP_SIZE, stopCenterAt } from '../../geometry/orientation';
 import { cellsAABBLocal } from '../../geometry/stationBoundary';
 import { labelLayoutLocal } from '../../geometry/labelLayout';
 import { capCenterDy } from '../../geometry/textMeasure';
-import { stopGapOf, stopHalfOf, lineWidthOf } from '../../model/lineWidth';
-import { stopDashOf } from '../../model/dashSize';
+import { lineWidthOf } from '../../model/lineWidth';
+import { useStopMetrics } from '../useStopMetrics';
 import { lineDisplayName } from '../../model/lineNaming';
 import { useThemeColors } from '../../state/theme';
 import { resolveDotSize } from '../../model/dotSize';
@@ -95,8 +95,8 @@ export function StationLayoutEditor({
   // Singleton vs. shared picks each stop's split default (dot style + size);
   // it's a per-station property, so resolve it once for this editor.
   const isSingleton = stationIsSingleton(station);
-  const stopHalf = stopHalfOf(lines);
-  const cellsBox = cellsAABBLocal(station, stopHalf);
+  const metrics = useStopMetrics(lines);
+  const cellsBox = cellsAABBLocal(station, metrics);
   // Halo reach past the cells AABB: at least one cell, and at least the
   // biggest dot's painted radius — an oversized per-stop dotSize override is
   // a live station click target, and any exposed ring would re-enable the
@@ -123,14 +123,7 @@ export function StationLayoutEditor({
     hitY,
     hitW,
     hitH,
-  } = labelLayoutLocal(
-    station,
-    effectiveStationLabelStyle(station),
-    undefined,
-    stopHalf,
-    stopDashOf(lines),
-    stopGapOf(lines),
-  );
+  } = labelLayoutLocal(station, effectiveStationLabelStyle(station), undefined, metrics);
 
   const shieldHandlers = inHandMode
     ? {}
