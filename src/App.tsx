@@ -45,6 +45,7 @@ import {
 } from './state/selectionOps';
 import { isHistoryGrouping, redo, undo } from './state/history';
 import { decideDeleteKey } from './model/appendGestures';
+import { stationAnchorCell } from './model/transferAnchors';
 
 /**
  * The document-level capture handler behind "right-click cancels an active
@@ -291,6 +292,20 @@ export default function App() {
             e.preventDefault();
             sel.selectVertices(null);
             useDoc.getState().deleteVertices(polygonId, indices);
+            return;
+          }
+        }
+        // An armed hosted-anchor sub-selection answers Delete before the
+        // whole-station path — parity with the popover row's × button
+        // (deleteStationAnchor cascades any transfers bound to the cell). A
+        // DANGLING arm falls through, same as the arrow-key ladder.
+        {
+          const sid = sel.selectedStationIds.length === 1 ? sel.selectedStationIds[0] : null;
+          const cellId = sel.selectedAnchorCellId;
+          if (sid && cellId && stationAnchorCell(useDoc.getState().stations[sid], cellId)) {
+            e.preventDefault();
+            sel.setSelectedAnchorCellId(null);
+            useDoc.getState().deleteStationAnchor(sid, cellId);
             return;
           }
         }

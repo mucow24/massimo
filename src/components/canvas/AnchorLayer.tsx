@@ -61,6 +61,7 @@ export function AnchorLayer({
   onHover,
   freeLive,
   picking,
+  dimHostedExcept,
   onPointerDown,
   onClick,
 }: {
@@ -79,6 +80,14 @@ export function AnchorLayer({
    *  anchors are scaffolding, so they get an affordance exactly when the user
    *  is being asked to click one, and stay quiet the rest of the time. */
   picking: boolean;
+  /** The half-opacity rest state for HOSTED anchors, active when the layer
+   *  paints the whole network at once ("view anchors" on, idle canvas): a
+   *  hosted anchor belongs to its station, so it sits back until that station
+   *  is hovered or selected — the set names the stations at full opacity.
+   *  Null outside the regime (toggle off, picking, layout editor): everything
+   *  paints full, exactly as before. Free anchors never dim; they belong to
+   *  no station, so no mouseover could ever bring one forward. */
+  dimHostedExcept: ReadonlySet<string> | null;
   onPointerDown: (id: string, e: React.PointerEvent) => void;
   /** Receives the anchor's TransferEnd, so the caller never has to reconstruct
    *  which home it came from. */
@@ -120,9 +129,12 @@ export function AnchorLayer({
         // Already-selected anchors carry the full ring; a 50% copy on top would
         // only double the ink (the hoveredChrome rule, applied locally).
         const hovered = picking && live && hoveredKey === key && !selected;
+        const dimmed =
+          dimHostedExcept !== null && isHostedAnchorEnd(end) && !dimHostedExcept.has(end.stationId);
         return (
           <g
             key={key}
+            opacity={dimmed ? 0.5 : undefined}
             // Free anchors carry the id the selection/hit-stack keys off.
             data-anchor-id={freeId ?? undefined}
             // Hosted ones carry their (station, cell) pair instead — they are

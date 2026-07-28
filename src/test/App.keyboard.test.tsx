@@ -1558,6 +1558,25 @@ describe('App keyboard: transfer anchors are first-class canvas objects', () => 
     expect(doc.stations[s]).toBeDefined();
   });
 
+  it('Delete removes an ARMED HOSTED anchor cell, not its station', () => {
+    // Parity with the popover row's × button: an armed anchor sub-selection
+    // (the state the "Add transfer anchor" button leaves you in) must answer
+    // Delete. Before this, the press fell through to the station delete path —
+    // or did nothing — and the anchor read as undeletable.
+    render(<App />);
+    const doc = useDoc.getState();
+    const s = doc.addStation(0, 0);
+    const cell = doc.addStationAnchor(s, -1, 0);
+    const sel = useSelection.getState();
+    sel.selectStation(s);
+    sel.setSelectedAnchorCellId(cell);
+    fireEvent.keyDown(window, { key: 'Delete' });
+    const after = useDoc.getState();
+    expect(after.stations[s]).toBeDefined();
+    expect(after.stations[s].transferAnchors ?? []).toHaveLength(0);
+    expect(useSelection.getState().selectedAnchorCellId).toBeNull();
+  });
+
   it('ArrowRight nudges a selected anchor by 1, Shift by 5', () => {
     render(<App />);
     const { a } = seed();

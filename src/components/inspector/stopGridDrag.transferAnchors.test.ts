@@ -97,6 +97,21 @@ describe('spawnAnchorCell', () => {
     expect([row, col]).not.toEqual([st.label.row, st.label.col]);
   });
 
+  it('spawns directly adjacent to a station node, not in the grid corner', () => {
+    // A new anchor must read as part of the station at a glance. Spawning at
+    // the lattice's far corner (the old row-then-col sort picked (-2,-2)) made
+    // it look like a stray map object two cells off in space — see the DKLB
+    // ghost-anchor incident.
+    const st = station();
+    const [row, col] = spawnAnchorCell(st, lines);
+    const nodes = [
+      { row: 0, col: 0 },
+      { row: st.label.row, col: st.label.col },
+    ];
+    const nearest = Math.min(...nodes.map((n) => Math.hypot(row - n.row, col - n.col)));
+    expect(nearest).toBeLessThanOrEqual(1 + 1e-9);
+  });
+
   it('walks outward instead of stacking anchors on one cell', () => {
     const st = station();
     const first = spawnAnchorCell(st, lines);
