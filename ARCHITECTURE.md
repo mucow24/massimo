@@ -2649,7 +2649,12 @@ Each is confirmed in source/tests; file pointers included.
   flat-pass invariants (`StationDots.order.test.tsx`, `TransferLayer.dom.test.tsx`).
 - **Integration** ([src/test/](src/test/)) — `App.smoke`, `App.keyboard` (the two-tier form
   guard), `App.fontLoad`, `saveLoad` (round-trip through the real `pickDocSnapshot` path),
-  `undoRedo` (value-restore, viewport-excluded-from-history, no-op equality, selection reconcile).
+  `undoRedo` (value-restore, viewport-excluded-from-history, no-op equality, selection reconcile),
+  `wandGalleryDoc` (one station per autoAlign placement case — readable label rotation × stripe
+  axis × reading-frame octant mid-line, every exit ray × octant at termini, crossing-stripe
+  configs incl. diagonals, plus fallback/phantom/stacking — asserted against `labelLayoutLocal`
+  and kept in sync with the loadable gallery map `docs/wand-gallery.massimo.json`; regenerate
+  with `UPDATE_WAND_GALLERY=1`).
   Shared helpers: `fixtures.ts` (`makeStation`/`makeLine`/…), `interaction.ts` (synthetic pointer/
   wheel events + a `fakeSvg` with an identity screen↔world CTM), `setup.ts` (jsdom polyfills:
   ResizeObserver, pointer-capture, scrollIntoView).
