@@ -168,6 +168,73 @@ export function sanitizeStations(stations: Record<string, Station>): {
   return { stations: out, changed };
 }
 
+/**
+ * Widest gap between a cell coordinate and the integer it was meant to be.
+ *
+ * There is no lattice to round cells to in general: integers (the cardinal
+ * lattice), integer multiples of √2/2 (the diagonal one), and width/gap-derived
+ * pitches like 1.25 or 17/14 are all coordinates a stop legitimately holds. But
+ * a value THIS close to an integer can only be an integer that drifted — the
+ * nearest legitimate non-integer is 1 − √2/2 ≈ 0.17 away, eight orders of
+ * magnitude out. It is also far tighter than `CELL_EPS` (1e-4), so nothing that
+ * compares cells can tell the difference between a snapped value and its
+ * original; the repair is invisible to the map and visible only in the file.
+ */
+const CELL_DUST = 1e-9;
+
+const snapCell = (v: number): number => {
+  const r = Math.round(v);
+  // `+ 0` normalizes Math.round's -0 (for -0 and for tiny negatives) to +0.
+  return Math.abs(v - r) < CELL_DUST ? r + 0 : v;
+};
+
+/**
+ * Pull station cells that drifted off the integer lattice back onto it.
+ *
+ * The editor's ghost lattice used to be produced by trigonometric rotation, so
+ * a station at any non-zero rotation offered slots a fraction of a ulp off
+ * true — `Math.cos(π/2)` is 6.1e-17, not 0. `computeGhosts` added those offsets
+ * to an anchor cell and moveStop/moveLabel/moveStationAnchor committed the sum,
+ * so saved maps carry cells like `2.220446049250313e-16` where they mean 0. The
+ * lattice is exact now (`localLatticeOffsets`), but nothing else on the load
+ * path touches a cell, so documents that already recorded the drift keep it.
+ *
+ * Idempotent and keyed off the values themselves, so it runs ungated on BOTH
+ * entry points — `parse()` and the persist `migrate` hook — rather than behind a
+ * schema bump: the drift is not tied to a version, and a doc written by today's
+ * build carries it at the newest one.
+ */
+export function snapStationCells(stations: Record<string, Station>): {
+  stations: Record<string, Station>;
+  changed: boolean;
+} {
+  let changed = false;
+  const out: Record<string, Station> = {};
+  for (const id of Object.keys(stations)) {
+    const st = stations[id];
+    let stationChanged = false;
+    const snap = <T extends { row: number; col: number }>(cell: T): T => {
+      const row = snapCell(cell.row);
+      const col = snapCell(cell.col);
+      if (Object.is(row, cell.row) && Object.is(col, cell.col)) return cell;
+      stationChanged = true;
+      return { ...cell, row, col };
+    };
+    const stops = st.stops.map(snap);
+    const label = snap(st.label);
+    // Absent stays absent — a station that never grew an anchor must persist
+    // identically (the omitted-when-empty convention).
+    const anchors = st.transferAnchors?.map(snap);
+    if (!stationChanged) {
+      out[id] = st;
+      continue;
+    }
+    changed = true;
+    out[id] = { ...st, stops, label, ...(anchors ? { transferAnchors: anchors } : {}) };
+  }
+  return { stations: out, changed };
+}
+
 export const SCHEMA_FORMAT = 'massimo-map';
 // File schema version. Bump when a load-time rewrite must run exactly once
 // and can't be inferred from the data itself (unlike the idempotent
@@ -311,6 +378,10 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   if (linesChanged || named.changed) merged.lines = named.lines;
   const sanitized = sanitizeStations(merged.stations);
   if (sanitized.changed) merged.stations = sanitized.stations;
+  // Pull cells that drifted off the integer lattice back onto it. Not gated on
+  // the file version — see `snapStationCells`.
+  const snapped = snapStationCells(merged.stations);
+  if (snapped.changed) merged.stations = snapped.stations;
   // Region assignments validate against the CLEANED lines (dangling ids drop
   // the assignment; dangling pairKey anchors survive for reconcile).
   const cleanedAssignments = sanitizeRegionAssignments(merged.regionAssignments, merged.lines);

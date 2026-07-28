@@ -1,4 +1,4 @@
-import { Vec2, SQRT2_2, rotate } from './vec';
+import { Vec2, SQRT2_2 } from './vec';
 import type { StopOrientation } from '../model/types';
 
 export const STOP_SIZE = 14;
@@ -30,9 +30,53 @@ const HALF = STOP_SIZE / 2;
 
 export const rotRad = (r: Rotation) => (r * Math.PI) / 4;
 
-// Rotate a point by a Rotation step (r × 45°). Thin wrapper over `vec.rotate`
-// so the rotation matrix lives in exactly one place.
-export const rotateBy = (p: Vec2, r: Rotation): Vec2 => rotate(p, rotRad(r));
+// Normalize -0 to +0. Same reason as `rotateGridDelta` below: -0 stringifies as
+// "0" but loses every Object.is / toBe / toEqual comparison against 0.
+const nz = (n: number): number => (n === 0 ? 0 : n);
+
+/**
+ * Rotate a point by a Rotation step (r × 45°) — same clockwise, y-down frame as
+ * `vec.rotate`, but evaluated from the EXACT matrix entries (0, ±1, ±√2/2)
+ * instead of `rotate(p, rotRad(r))`.
+ *
+ * The trig form is not accurate enough for what rides on this: `Math.cos(π/2)`
+ * is 6.1e-17, not 0, so a quarter turn of an integer vector comes back as
+ * (1, 6.1e-17) and a half turn as (0.9999999999999999, 1.2e-16). Every station's
+ * geometry is rotated through here — `localToWorld` for each stop's world
+ * position, `worldDirToLocal` for the cell under a drag cursor, `nudgeTarget`
+ * for the screen direction of a candidate slot — and the drift crossed into the
+ * DOCUMENT when a lattice offset rotated through it was added to a stop's cell
+ * and committed. Cells are compared with `CELL_EPS` almost everywhere, so that
+ * hides — until something reads them exactly (the layout editor's
+ * `data-cell-row` attributes stringify the raw number; `a.row - b.row || …`
+ * sort ladders never reach their tie-break) or a human opens the file.
+ *
+ * At the quarter turns this is a signed axis swap, so an integer input stays
+ * exactly integer. At the eighth turns every component is an exact integer
+ * multiple of √2/2 — the same values `latticeOffsets('diagonal', …)` generates.
+ */
+export const rotateBy = (p: Vec2, r: Rotation): Vec2 => {
+  const { x, y } = p;
+  const s = SQRT2_2;
+  switch (r) {
+    case 0:
+      return { x: nz(x), y: nz(y) };
+    case 1:
+      return { x: nz((x - y) * s), y: nz((x + y) * s) };
+    case 2:
+      return { x: nz(-y), y: nz(x) };
+    case 3:
+      return { x: nz(-(x + y) * s), y: nz((x - y) * s) };
+    case 4:
+      return { x: nz(-x), y: nz(-y) };
+    case 5:
+      return { x: nz((y - x) * s), y: nz(-(x + y) * s) };
+    case 6:
+      return { x: nz(y), y: nz(-x) };
+    case 7:
+      return { x: nz((x + y) * s), y: nz((y - x) * s) };
+  }
+};
 
 /**
  * Local-space center of a grid cell at (row, col). Cells touch (no gap), so

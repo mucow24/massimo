@@ -471,3 +471,85 @@ describe('nudgeTarget', () => {
     expect(target).toBeNull();
   });
 });
+
+// The cells these two produce are written into the doc verbatim (App's arrow
+// handler and useStationLayoutDrag both commit `target - source` as a delta
+// onto the stored cell), so a slot that is merely *near* the lattice becomes a
+// permanent coordinate in a saved map. At a rotated station the whole candidate
+// set is projected out of the screen frame, which is where the drift entered.
+describe('ghost slots are exact at every station rotation', () => {
+  const ANCHOR: WidthNode[] = [{ row: 0, col: 0, w: STOP_SIZE }];
+  const SOURCE = { row: 0, col: 1 };
+  const ARROWS = [
+    { row: -1, col: 0 },
+    { row: 1, col: 0 },
+    { row: 0, col: -1 },
+    { row: 0, col: 1 },
+  ];
+
+  // Exactly an integer, or exactly an integer multiple of √2/2 — the two
+  // families `latticeOffsets` generates. Anything else is drift.
+  const isExactCell = (v: number) => {
+    if (Object.is(v, -0)) return false;
+    return Number.isInteger(v) || Number.isInteger(v / Math.SQRT1_2);
+  };
+
+  it.each([0, 1, 2, 3, 4, 5, 6, 7] as const)('nudgeTarget at rotation %i', (stationRotation) => {
+    for (const arrow of ARROWS) {
+      const target = nudgeTarget({
+        source: SOURCE,
+        wSrc: STOP_SIZE,
+        gSrc: 0,
+        otherNodes: ANCHOR,
+        basis: 'orthogonal',
+        stationRotation,
+        arrow,
+      });
+      if (!target) continue;
+      expect({ rot: stationRotation, arrow, ...target, exact: true }).toEqual({
+        rot: stationRotation,
+        arrow,
+        ...target,
+        exact: isExactCell(target.row) && isExactCell(target.col),
+      });
+    }
+  });
+
+  it.each([0, 1, 2, 3, 4, 5, 6, 7] as const)('dragLattice at rotation %i', (stationRotation) => {
+    for (const basis of ['orthogonal', 'diagonal'] as const) {
+      const { ghosts } = dragLattice({
+        cursor: SOURCE,
+        wSrc: STOP_SIZE,
+        gSrc: 0,
+        otherNodes: ANCHOR,
+        basis,
+        stationRotation,
+      });
+      expect(ghosts.length).toBeGreaterThan(0);
+      const drifted = ghosts.filter((g) => !isExactCell(g.row) || !isExactCell(g.col));
+      expect(drifted).toEqual([]);
+    }
+  });
+
+  it('a quarter-turned station keeps its cells on the integer lattice', () => {
+    // The strongest form of the claim, and the one a user sees: at 90°/180°/270°
+    // a screen-cardinal step is still a local-cardinal step, so nothing the
+    // editor offers can take an integer layout off the integer lattice.
+    for (const stationRotation of [0, 2, 4, 6] as const) {
+      for (const arrow of ARROWS) {
+        const target = nudgeTarget({
+          source: SOURCE,
+          wSrc: STOP_SIZE,
+          gSrc: 0,
+          otherNodes: ANCHOR,
+          basis: 'orthogonal',
+          stationRotation,
+          arrow,
+        });
+        if (!target) continue;
+        expect(Number.isInteger(target.row)).toBe(true);
+        expect(Number.isInteger(target.col)).toBe(true);
+      }
+    }
+  });
+});

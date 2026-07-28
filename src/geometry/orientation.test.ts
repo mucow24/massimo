@@ -50,6 +50,56 @@ describe('rotateBy', () => {
       expect(Math.hypot(out.x, out.y)).toBeCloseTo(5, 10);
     }
   });
+
+  // The 45°-step rotation is EXACT, not merely close: every station's stop
+  // lattice is projected through it, and the result is written into the doc as
+  // a (row, col) cell. Trig would leave `Math.cos(π/2) = 6.1e-17` dust in place
+  // of a clean 0, which then persists into saved maps and defeats every
+  // exact-value consumer (`String(cell.row)` in the editor's data-cell-row
+  // attributes, `a.row - b.row || …` sort tie-breaks).
+  it('is exact at quarter turns: an integer vector stays exactly integer', () => {
+    const cases: [Rotation, number, number][] = [
+      [0, 3, 5],
+      [2, -5, 3],
+      [4, -3, -5],
+      [6, 5, -3],
+    ];
+    for (const [r, x, y] of cases) {
+      const out = rotateBy({ x: 3, y: 5 }, r);
+      expect(Object.is(out.x, x)).toBe(true);
+      expect(Object.is(out.y, y)).toBe(true);
+    }
+  });
+
+  it('is exact at eighth turns: components are exact multiples of √2/2', () => {
+    // (1, 1) turned 45° CW in the y-down frame lands on (0, √2) — the x
+    // component must be a clean 0, not the 1.1e-16 the trig form leaves.
+    const out = rotateBy({ x: 1, y: 1 }, 1);
+    expect(Object.is(out.x, 0)).toBe(true);
+    expect(Object.is(out.y, 2 * SQRT2_2)).toBe(true);
+    // A cardinal turned 45° splits into two equal, exactly-representable halves.
+    const e = rotateBy({ x: 1, y: 0 }, 7);
+    expect(Object.is(e.x, SQRT2_2)).toBe(true);
+    expect(Object.is(e.y, -SQRT2_2)).toBe(true);
+  });
+
+  it('never returns a negative zero', () => {
+    // -0 stringifies as "0" but fails Object.is / toBe against 0, and
+    // `rotateGridDelta` already normalizes it away for the same reason.
+    for (let r = 0; r < 8; r++) {
+      for (const p of [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 0, y: 1 },
+        { x: 1, y: -1 },
+        { x: -1, y: -1 },
+      ]) {
+        const out = rotateBy(p, r as Rotation);
+        expect(Object.is(out.x, -0)).toBe(false);
+        expect(Object.is(out.y, -0)).toBe(false);
+      }
+    }
+  });
 });
 
 describe('worldDirToLocal', () => {
