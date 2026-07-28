@@ -375,7 +375,10 @@ export function MapCanvas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [bands, stationsGeometrySig, lines, lineOrder],
   );
-  const renderables = useMemo(() => buildOrderedRenderables(bands, stopMarkers), [bands, stopMarkers]);
+  const renderables = useMemo(
+    () => buildOrderedRenderables(bands, stopMarkers),
+    [bands, stopMarkers],
+  );
 
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
 
