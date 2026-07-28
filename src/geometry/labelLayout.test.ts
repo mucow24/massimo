@@ -57,7 +57,7 @@ function station({
 }
 
 describe('labelLayoutLocal — per-stop widths', () => {
-  const half28 = stopMetricsOf({ lines: { L1: makeLine({ id: 'L1', width: 28 }) }, transfers: {} });
+  const half28 = stopMetricsOf({ lines: { L1: makeLine({ id: 'L1', width: 28 }) }, transfers: {}, stations: {} });
 
   it('snaps against a wide stop at its tangent distance (Chebyshev 1.5)', () => {
     // A width-28 stop tangent to the unit label cell sits 1.5 cells away —
@@ -83,7 +83,7 @@ describe('labelLayoutLocal — per-stop widths', () => {
       st,
       DEFAULT_LABEL_STYLE,
       undefined,
-      stopMetricsOf({ lines: { L1: makeLine({ id: 'L1', width: 13 }) }, transfers: {} }),
+      stopMetricsOf({ lines: { L1: makeLine({ id: 'L1', width: 13 }) }, transfers: {}, stations: {} }),
     );
     expect(lay.textAnchor).toBe('end');
     // The in-way clamp clears the stop's ACTUAL edge: 14 − (6.5 + 3) = 4.5.

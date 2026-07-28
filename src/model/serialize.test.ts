@@ -1261,6 +1261,13 @@ describe('parse — line stroke sanitizing', () => {
     const butt = parse(buildWithStroke({ labelGap: 0 }));
     expect(butt.ok).toBe(true);
     if (butt.ok) expect(butt.doc.lines.L1.labelGap).toBe(0);
+    // Negative gaps are legal (ink deliberately into the marker), floored.
+    const neg = parse(buildWithStroke({ labelGap: -2 }));
+    expect(neg.ok).toBe(true);
+    if (neg.ok) expect(neg.doc.lines.L1.labelGap).toBe(-2);
+    const floor = parse(buildWithStroke({ labelGap: -99 }));
+    expect(floor.ok).toBe(true);
+    if (floor.ok) expect(floor.doc.lines.L1.labelGap).toBe(-10);
   });
 
   it('drops non-numeric label gaps', () => {
