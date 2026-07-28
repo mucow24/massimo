@@ -20,7 +20,11 @@ import {
 const GOLDEN_PATH = resolve(process.cwd(), 'docs/wand-gallery.massimo.json');
 
 const { doc, cases } = wandGalleryDoc();
-const metrics = stopMetricsOf({ lines: doc.lines, transfers: doc.transfers });
+const metrics = stopMetricsOf({
+  stations: doc.stations,
+  lines: doc.lines,
+  transfers: doc.transfers,
+});
 
 function layoutOf(c: WandGalleryCase): LabelLayout {
   const station = doc.stations[c.stationId];
