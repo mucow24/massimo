@@ -69,4 +69,27 @@ describe('editing a stopDot style vs. the tagged ⇒ matches invariant on LINE s
     expect(r.doc.lines.L2.styleId).toBe('default-line');
     expect(r.doc.lines.L1.styleId).toBe('default-line');
   });
+
+  it('re-picking the current dot type keeps the tag when the raw shadow is absent', () => {
+    // A long-lived map: the v19 library bake tagged each split default by
+    // value-match but deliberately left the raw shadow unmaterialized, so its
+    // lines carry singleton/multiDotStyleId with NO singleton/multiDotStyle.
+    // The shape picker is a plain button grid — clicking the already-active
+    // shape still fires onPick with the current id — and a value-identical
+    // write must keep the style tag, like every other covered setter.
+    let doc = addStyledLine(T.DEFAULT_DOC, 'L1', 'A');
+    const { singletonDotStyle: _s, multiDotStyle: _m, ...bare } = doc.lines.L1;
+    doc = { ...doc, lines: { ...doc.lines, L1: bare } };
+    expect(doc.lines.L1.styleId).toBe('default-line');
+
+    const rePickedSingleton = T.setLineSingletonDotStyle(doc, 'L1', DEFAULT_STOP_DOT_STYLE_ID);
+    expect(rePickedSingleton.lines.L1.styleId).toBe('default-line');
+    // Full no-op, same reference — the absent raw already renders filled-black,
+    // so nothing changed and no undo entry should be minted.
+    expect(rePickedSingleton).toBe(doc);
+
+    const rePickedMulti = T.setLineMultiDotStyle(doc, 'L1', DEFAULT_STOP_DOT_STYLE_ID);
+    expect(rePickedMulti.lines.L1.styleId).toBe('default-line');
+    expect(rePickedMulti).toBe(doc);
+  });
 });

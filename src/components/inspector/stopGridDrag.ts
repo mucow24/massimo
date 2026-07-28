@@ -4,8 +4,7 @@
 // Shared by the keyboard nudge (App.tsx) and the on-canvas station editing
 // surfaces (useStationLayoutDrag / StationLayoutEditor).
 import {
-  latticeOffsets,
-  projectScreenToLocal,
+  localLatticeOffsets,
   sameCell,
   CELL_EPS,
   type LatticeBasis,
@@ -240,10 +239,10 @@ export interface GhostSpec {
  * drag-pair tangency factor — ring-1 ghosts land where the source's body
  * exactly touches the anchor's (1 for two default-width nodes, e.g. 1.5 for
  * a width-28 stop against a default one; farther rings scale uniformly).
- * Generated in the SCREEN frame and projected into the station's unrotated
- * local frame, so the user-facing slot directions are identical at any
- * station rotation. Slots closer to another node than their mutual tangency
- * distance are dropped (tangent is allowed) — with the label counting as a
+ * The basis is chosen in SCREEN terms and read back in the station's unrotated
+ * local frame (`localLatticeOffsets`), so the user-facing slot directions are
+ * identical at any station rotation. Slots closer to another node than their
+ * mutual tangency distance are dropped (tangent is allowed) — with the label counting as a
  * width-0 point on either side of that check, since it has no body on the
  * rendered map: a slot is only "occupied" for a label where a dot would
  * cover its anchor point, and a dot may approach a label cell until its own
@@ -252,7 +251,7 @@ export interface GhostSpec {
 export function computeGhosts(spec: GhostSpec): RowCol[] {
   const { wSrc, gSrc, srcIsPoint, anchor, otherNodes, basis, stationRotation, gridRadius } = spec;
   const t = tangentGap(wSrc, anchor.w, gSrc ?? 0, anchor.g ?? 0) / STOP_SIZE;
-  const localOffsets = projectScreenToLocal(latticeOffsets(basis, gridRadius), stationRotation);
+  const localOffsets = localLatticeOffsets(basis, gridRadius, stationRotation);
   const ghosts: RowCol[] = [];
   for (const o of localOffsets) {
     const g = { row: anchor.row + o.row * t, col: anchor.col + o.col * t };
@@ -414,9 +413,12 @@ export function nudgeTarget(spec: {
  *
  * Instead it reuses the lattice the DRAG would offer: ghosts around the nearest
  * anchorable node, computed with the label's point-like parameters, minus any
- * slot an existing anchor already holds. Deterministic (first by row, then col)
- * so repeated clicks walk outward rather than stacking. Falls back to one cell
- * right of the label when the overlap filter leaves nothing.
+ * slot an existing anchor already holds. Picks the free slot CLOSEST to a
+ * station node (row, col as deterministic tie-breaks): a new anchor must sit
+ * visibly against the station it belongs to — spawned at the lattice's far
+ * corner it reads as a stray map object, not a station cell. Repeated clicks
+ * still walk outward, one ring at a time. Falls back to one cell right of the
+ * label when the overlap filter leaves nothing.
  */
 export function spawnAnchorCell(
   station: Pick<Station, 'stops' | 'label' | 'transferAnchors'>,
@@ -436,9 +438,10 @@ export function spawnAnchorCell(
     basis: 'orthogonal',
     stationRotation: 0,
     gridRadius: GRID_RADIUS,
-  })
-    .filter((g) => !taken.some((a) => sameCell(a, g)))
-    .sort((a, b) => a.row - b.row || a.col - b.col);
+  }).filter((g) => !taken.some((a) => sameCell(a, g)));
+  const nearestNodeDist = (g: RowCol) =>
+    Math.min(...nodes.map((n) => Math.hypot(g.row - n.row, g.col - n.col)));
+  ghosts.sort((a, b) => nearestNodeDist(a) - nearestNodeDist(b) || a.row - b.row || a.col - b.col);
   const pick = ghosts[0];
   return pick ? [pick.row, pick.col] : fallback;
 }

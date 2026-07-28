@@ -754,10 +754,17 @@ mouseover chrome and stays quiet mid-pan. **Idle-only**, for the reason the mode
 from the other side: `creating-transfer` and `placing-anchor` already reveal EVERY anchor, and the
 layout editor draws its own grab rings on the edited station. This is why `MapCanvas` gates the
 anchor block on `showNetwork` and then PICKS the layer's inputs (whole network vs revealed
-stations only) rather than gating on `anchorsVisible` — `AnchorLayer` itself is unchanged by the
-feature, since it already renders nothing when both collections are empty, and a hosted anchor is
-already `pointer-events: none` outside transfer-picking, so a revealed one can't steal the click
-meant for the station under it.
+stations only) rather than gating on `anchorsVisible` — `AnchorLayer` already renders nothing when
+both collections are empty, and a hosted anchor is already `pointer-events: none` outside
+transfer-picking, so a revealed one can't steal the click meant for the station under it.
+
+The same reveal set does double duty when the toggle is ON: on an idle canvas the whole network
+paints, but HOSTED anchors rest at **half opacity** and come forward only while their station is
+hovered or selected — so the mouseover still says "this mark belongs to THAT station" even though
+everything is technically visible. `AnchorLayer` takes the full-opacity stations as
+`dimHostedExcept` (null = no dimming regime: toggle off, the picking modes — where every endpoint
+must be fully legible — and the layout editor). Free anchors never dim; they belong to no station,
+so no mouseover could bring one forward.
 
 FREE anchors are first-class canvas objects — multi-select, marquee, group drag, group rotate
 (orbit-only: the polygon case reduced to a point, no orientation to step), arrow-nudge, Delete —
@@ -768,7 +775,10 @@ counts them). They have **no popover**, but they ARE in `soleSelection` — that
 deep-pick cycling rather than merely suppressing a panel. They are deliberately **not copyable**
 (`ClipPayload` has no transfer kind, so a pasted anchor could never carry the transfer that gives
 it meaning). HOSTED anchors are station internals like a stop dot: rendered `pointerEvents="none"`
-(so alt-click reaches through them), edited only in the layout editor.
+(so alt-click reaches through them), edited only in the layout editor. Removal has two equivalent
+doors: the popover's anchor row (×) and the Delete key while the cell is armed
+(`selectedAnchorCellId` — the state the "Add transfer anchor" button leaves you in); both go
+through `deleteStationAnchor`, which cascades any transfers bound to the cell.
 
 In the lattice they ride as **passengers**: never in `stationLayoutNodes` (whose node identity is
 `lineId: string | null`, where null already means "the label", and where a non-`isLabel` node would
@@ -872,7 +882,10 @@ by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}`:
    its drop-at default is style-aware (a service-code disc defaults to 12, not 8), so it needs the
    baked split dot styles and runs as a **second per-line loop** (`sanitizeLineDotSize`) after
    step 7 — see step 7b.
-6. `sanitizeStations` (legacy orientations + `valign:'auto'`→`'auto-down'`), then
+6. `sanitizeStations` (legacy orientations + `valign:'auto'`→`'auto-down'`) → `snapStationCells`
+   (stop/label/anchor cells within 1e-9 of an integer snap onto it — the drift the old
+   trig-rotated ghost lattice wrote; ±k·√2/2 and width-derived pitches are real coordinates and
+   are left alone), then
    `sanitizeRegionAssignments` (region-assignment hygiene — validates against the **cleaned**
    lines: dangling line ids drop the assignment, dangling pairKey anchors survive for reconcile).
 7. `convertLegacyDotShapes` (preset ids → `DotStyle`) — **runs after** the line/station passes.
@@ -945,22 +958,26 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array. **But see the `merge` hook** — this call alone is not "every rehydrate" |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `validActivePalettes` whenever `activePalettes !== undefined`                                                                              |
+| (not gated) | `snapStationCells` whenever `stations !== undefined` — cell drift is not tied to a schema bump, so a gate could never catch it. **But see the `merge` hook** — for this repair that caveat is the main event, not a footnote |
 
-A **corrupt/missing version is treated as v0** (all migrations run). The three non-gated
-repairs (`backfillLinesEdges`, `ensureStyleInvariants`, `validActivePalettes`) are **not** tied to
-a schema bump — they run any time their field is present (an absent field is left for the
-persist-merge). `validActivePalettes` reads `useCustomPalettes.getState().palettes` to validate
-custom ids.
+A **corrupt/missing version is treated as v0** (all migrations run). The four non-gated repairs
+(`backfillLinesEdges`, `ensureStyleInvariants`, `validActivePalettes`, `snapStationCells`) are
+**not** tied to a schema bump — they run any time their field is present (an absent field is left
+for the persist-merge). `validActivePalettes` reads `useCustomPalettes.getState().palettes` to
+validate custom ids.
 
 > **`migrateDoc` does not run on every rehydrate** — zustand calls `migrate` only when the STORED
 > version DIFFERS from the config version. A doc stranded at 14 by that intermediate build is
 > already _at_ the version it claims, so it skips `migrateDoc` entirely, ungated repairs included,
 > and the renderer crashes on `ln.edges.join(...)`. That is why the persist config carries a custom
-> **`merge` hook** which runs `backfillLinesEdges` **on every rehydrate**, whatever the version
-> says. `migrateDoc`'s own ungated call covers the version-changed path; `merge` covers the rest.
-> It is reference-stable when every line already has an array, so canonical docs still pass
-> straight through the default merge. If you ever need a second must-always-hold invariant, that
-> hook — not the ungated block in `migrateDoc` — is where it belongs.
+> **`merge` hook** which runs the must-always-hold repairs — `backfillLinesEdges` and
+> `snapStationCells` — **on every rehydrate**, whatever the version says. `migrateDoc`'s own
+> ungated calls cover the version-changed path; `merge` covers the rest. Both are
+> reference-stable on a canonical doc, so it still passes straight through the default merge.
+> A must-always-hold invariant belongs in that hook, **not** in the ungated block in `migrateDoc`
+> alone. `snapStationCells` shows why the distinction is not academic: the docs carrying cell
+> drift were saved by the CURRENT build at the CURRENT version, so they are precisely the ones
+> `migrate` never sees.
 
 > **Do not "simplify" the two paths into one.** `storeMigrate.test.ts` pins reference-equality
 > pass-through for already-canonical docs (`expect(out).toBe(input)`); adding a file-only width
@@ -1816,7 +1833,14 @@ renderers** (one pass rounds convex corners and fillets concave junctions).
   (`atan2(dx, -dy)`; rotation snaps to `SNAP_ANGLE_STEP` = 22.5° **by default and Shift FREES it**
   — the inverse of every other snap in the app, and the drag hook passes `!e.shiftKey` accordingly),
   snap anchor — all in the image's local frame.
-- `lattice.ts` — orthogonal/diagonal stop-placement lattices, disjoint except at the origin.
+- `lattice.ts` — orthogonal/diagonal stop-placement lattices, disjoint except at the origin. The
+  two are each other's 45° rotation and each is closed under 90°, so a lattice chosen in SCREEN
+  terms and read in a rotated station's local frame is always still one of the two:
+  `localLatticeOffsets` picks the basis (swapped at odd rotations, kept at even) instead of
+  rotating the offsets. That is why a 45°-rotated station's cells are ±k·√2/2 rather than integers
+  — the same values Shift-drag writes at rotation 0, not a third family — and why choosing beats
+  rotating: generating the diagonal basis scales by √2/2 and turning 45° scales by it again, but
+  √2/2 · √2/2 is 0.5000000000000001, so a rotated slot never landed on a storable cell.
 
 ---
 
@@ -2320,7 +2344,8 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
 - **Station layout editing happens ON the canvas** (the sidebar mini-canvas "StopGrid" was
   retired in favor of these two surfaces; its pure drag/ghost math lives on in
   [inspector/stopGridDrag.ts](src/components/inspector/stopGridDrag.ts) — `computeGhosts`,
-  `findDropTarget`, `nudgeTarget`, all screen-frame-generated and projected to station-local):
+  `findDropTarget`, `nudgeTarget`, all choosing their lattice in screen terms and reading it back
+  in station-local cells via `localLatticeOffsets`):
   1. **`editing-station-layout` mode** ([canvas/StationLayoutEditor.tsx](src/components/canvas/StationLayoutEditor.tsx)
      - [useStationLayoutDrag.ts](src/components/canvas/useStationLayoutDrag.ts)): entered via the
        inspector's **Edit layout** button (`startEditingStationLayout` preserves selection + mirror

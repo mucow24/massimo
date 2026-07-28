@@ -24,6 +24,7 @@ export function AnchorPlacingPreview({ world }: { world: Vec2 | null }) {
         onHover={noop}
         freeLive={false}
         picking={false}
+        dimHostedExcept={null}
         onPointerDown={noop}
         onClick={noop}
       />

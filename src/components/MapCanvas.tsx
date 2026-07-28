@@ -1513,6 +1513,18 @@ export function MapCanvas() {
                 // at all when both collections come back empty.
                 transferAnchors={anchorsVisible ? transferAnchors : NO_FREE_ANCHORS}
                 stations={anchorsVisible ? stations : revealedAnchorStations(stations, selection)}
+                // With the whole network painted on an idle canvas, hosted
+                // anchors rest at half opacity and come forward when their
+                // station is hovered/selected — the same reveal set the
+                // toggle-off path paints from, reused as the focus set. Null
+                // (= no dimming) everywhere else: picking modes need every
+                // endpoint fully legible, and the layout editor draws its own
+                // chrome.
+                dimHostedExcept={
+                  anchorsVisible && selection.uiMode.kind === 'idle'
+                    ? new Set(Object.keys(revealedAnchorStations(stations, selection)))
+                    : null
+                }
                 // During a marquee, free anchors preview like every other kind
                 // (rectSelect.previewAnchorIds ?? committed); empty when hidden.
                 selectedIds={anchorSelectedIds}
