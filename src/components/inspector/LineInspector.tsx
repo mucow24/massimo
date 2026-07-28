@@ -15,11 +15,13 @@ import { LineEndSegmented } from '../LineEndPicker';
 import { lineEndStyleOf } from '../../model/lineEnd';
 import {
   LINE_INTERLINE_GAP_MAX,
+  LINE_LABEL_GAP_MAX,
   LINE_WIDTH_MAX,
   LINE_WIDTH_MIN,
   LINE_WIDTH_SLIDER_MIN,
   LINE_WIDTH_STEP,
   lineInterlineGapOf,
+  lineLabelGapOf,
   lineWidthOf,
 } from '../../model/lineWidth';
 import {
@@ -75,6 +77,7 @@ export function LineInspector({ id }: { id: LineId }) {
   const setLineMultiDotSize = useDoc((s) => s.setLineMultiDotSize);
   const setLineWidth = useDoc((s) => s.setLineWidth);
   const setLineInterlineGap = useDoc((s) => s.setLineInterlineGap);
+  const setLineLabelGap = useDoc((s) => s.setLineLabelGap);
   const setLineCurveRadius = useDoc((s) => s.setLineCurveRadius);
   const setLineEndStyle = useDoc((s) => s.setLineEndStyle);
   const setLineStrokeWidth = useDoc((s) => s.setLineStrokeWidth);
@@ -174,6 +177,19 @@ export function LineInspector({ id }: { id: LineId }) {
             value={lineInterlineGapOf(line)}
             onChange={(n) => setLineInterlineGap(line.id, n)}
             getCurrent={() => lineInterlineGapOf(useDoc.getState().lines[id])}
+            textboxAllowAboveMax
+          />
+          {/* Clearance station labels keep from this line's marker (stripe,
+              dot, tick or transfer cap). 0 butts the text to the marker. */}
+          <NumericFieldRow
+            id={`line-label-gap-${line.id}`}
+            label="Label gap"
+            min={0}
+            max={LINE_LABEL_GAP_MAX}
+            step={LINE_WIDTH_STEP}
+            value={lineLabelGapOf(line)}
+            onChange={(n) => setLineLabelGap(line.id, n)}
+            getCurrent={() => lineLabelGapOf(useDoc.getState().lines[id])}
             textboxAllowAboveMax
           />
           <NumericFieldRow

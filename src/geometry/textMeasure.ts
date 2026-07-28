@@ -210,12 +210,12 @@ export const CAP_FRACTION = 0.714;
  * usWin).
  *
  * The Core Type Area ends AT the baseline, so nothing else in the label model
- * accounts for a descender. `autoAlign` adds this to the clearance of every
- * label sitting above a route line, unconditionally rather than per-name: a
- * "g" would otherwise reach into the line, and pushing up only the names that
- * own a descender is exactly the ragged-baseline effect the transitmap.net
- * tutorial rules out. Nothing measures real ink depth — like CAP_FRACTION this
- * is the font model, not a measurement.
+ * accounts for a descender. `autoAlign` charges HALF of this — scaled by the
+ * vertical share of the approach — to every label sitting above a route line,
+ * unconditionally rather than per-name: pushing up only the names that own a
+ * descender is exactly the ragged-baseline effect the transitmap.net tutorial
+ * rules out. Nothing measures real ink depth — like CAP_FRACTION this is the
+ * font model, not a measurement.
  */
 export const DESCENDER_FRACTION = 1 - BASELINE_FRACTION;
 

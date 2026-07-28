@@ -238,6 +238,17 @@ describe('<LineInspector /> — interline gap control', () => {
     expect(back[0]).toBeCloseTo(0, 12);
     expect(back[1]).toBeCloseTo(1, 12);
   });
+
+  it('the Label gap slider writes the line field, and the default 3 drops the key', () => {
+    seedPair();
+    render(<LineInspector id="L1" />);
+    const slider = screen.getByRole('slider', { name: 'Label gap' });
+    expect(slider).toHaveAttribute('aria-valuenow', '3'); // effective default
+    stepSlider(slider, 1); // one 0.25 step
+    expect(useDoc.getState().lines.L1.labelGap).toBe(3.25);
+    stepSlider(slider, -1); // back to the default drops the key
+    expect('labelGap' in useDoc.getState().lines.L1).toBe(false);
+  });
 });
 
 describe('<LineInspector /> — dash dimension controls', () => {

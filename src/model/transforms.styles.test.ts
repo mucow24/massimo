@@ -11,6 +11,7 @@ import {
   setLineMultiDotSize,
   setLineSingletonDotStyle,
   setLineMultiDotStyle,
+  setLineLabelGap,
   setLineStrokeColor,
   setLineSeamColor,
   setLineStrokeWidth,
@@ -89,6 +90,23 @@ describe('detach on covered-field edits — lines', () => {
     // library style detaches the line's preset, on either case independently.
     expect(setLineSingletonDotStyle(doc, 'l1', 'sd-square').lines.l1.styleId).toBeUndefined();
     expect(setLineMultiDotStyle(doc, 'l1', 'sd-square').lines.l1.styleId).toBeUndefined();
+  });
+
+  it('setLineLabelGap snaps to the quarter grid, collapses at the default 3, keeps 0', () => {
+    const doc = tagged();
+    // 2.1 rounds onto the grid and stores.
+    expect(setLineLabelGap(doc, 'l1', 2.1).lines.l1.labelGap).toBe(2);
+    // 2.9 rounds to 3 — the default is never stored.
+    expect('labelGap' in setLineLabelGap(doc, 'l1', 2.9).lines.l1).toBe(false);
+    // 0 is a REAL value (text butts the marker), unlike interlineGap's 0-off.
+    expect(setLineLabelGap(doc, 'l1', 0).lines.l1.labelGap).toBe(0);
+  });
+
+  it('setLineLabelGap detaches on a real change, keeps the tag on a no-op', () => {
+    const doc = tagged();
+    expect(setLineLabelGap(doc, 'l1', 3)).toBe(doc); // absent ≡ default → same reference
+    expect(setLineLabelGap(doc, 'l1', Number.NaN)).toBe(doc);
+    expect(setLineLabelGap(doc, 'l1', 5).lines.l1.styleId).toBeUndefined();
   });
 });
 

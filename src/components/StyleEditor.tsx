@@ -24,6 +24,8 @@ import {
 } from '../model/dashSize';
 import {
   LINE_INTERLINE_GAP_MAX,
+  LINE_LABEL_GAP_DEFAULT,
+  LINE_LABEL_GAP_MAX,
   LINE_WIDTH_MAX,
   LINE_WIDTH_MIN,
   LINE_WIDTH_SLIDER_MIN,
@@ -220,6 +222,19 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
         value={props.interlineGap ?? 0}
         onChange={(interlineGap) => patch({ interlineGap })}
         getCurrent={liveNumberProp(id, 'interlineGap', props.interlineGap ?? 0)}
+        textboxAllowAboveMax
+      />
+      {/* Station-label clearance off the marker. Absent ⇒ the default 3;
+          0 butts the text to the marker. */}
+      <NumericFieldRow
+        id={`style-${id}-label-gap`}
+        label="Label gap"
+        min={0}
+        max={LINE_LABEL_GAP_MAX}
+        step={LINE_WIDTH_STEP}
+        value={props.labelGap ?? LINE_LABEL_GAP_DEFAULT}
+        onChange={(labelGap) => patch({ labelGap })}
+        getCurrent={liveNumberProp(id, 'labelGap', props.labelGap ?? LINE_LABEL_GAP_DEFAULT)}
         textboxAllowAboveMax
       />
       <NumericFieldRow

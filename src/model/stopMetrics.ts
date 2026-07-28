@@ -1,7 +1,7 @@
 import { dashRenderLength, dashRenderWidth } from './dashSize';
 import { dotSizeOverride } from './dotSize';
 import { defaultDotDiameter, isBlankDotStyle } from './dotStyle';
-import { lineInterlineGapOf, lineWidthOf } from './lineWidth';
+import { lineInterlineGapOf, lineLabelGapOf, lineWidthOf } from './lineWidth';
 import { isStopEnd } from './transferAnchors';
 import { resolveTransferStyle } from './transferStyle';
 import { resolveDotStyle, stationIsSingleton } from './transforms';
@@ -107,6 +107,7 @@ export const stopMetricsOf = (src: StopMetricsSource): StopMetricsFn => {
     return {
       half: lineWidthOf(line) / 2,
       gap: lineInterlineGapOf(line),
+      labelGap: lineLabelGapOf(line),
       dash: isDash ? { length: dashRenderLength(line), width: dashRenderWidth(line) } : null,
       dot:
         isDash || isBlankDotStyle(style)

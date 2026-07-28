@@ -383,6 +383,14 @@ export interface Line {
   // The setter clamps to ≥ 0, rounds to the 0.25 grid, and drops the field
   // at 0 so the default is never stored.
   interlineGap?: number;
+  // Clearance a station label keeps from this line's marker (stripe, dot,
+  // tick, transfer cap — whichever reaches furthest), world units. Missing ⇒
+  // 3, the historical LABEL_GAP. 0 is a REAL value (text butted to the
+  // marker), so unlike `interlineGap` the setter collapses the field at the
+  // DEFAULT, not at 0. Read per-stop through StopMetrics: each label pin uses
+  // the gap of the line that blocks it, so a row of labels along one corridor
+  // stays consistent by construction.
+  labelGap?: number;
   // Casing rails CENTERED on the line's body edges — half in, half out —
   // in world units per side (MTA-style separators; see lineStroke.ts for
   // why centered). Missing ⇒ 0 (no casing). Unlike `width`, stroke is
@@ -443,7 +451,7 @@ export interface Line {
   stationEndStyles?: Record<StationId, LineEndStyle>;
   // Live link to a StyleDef of kind 'line' (see MapDoc.styles). INVARIANT:
   // when present, this line's covered style fields (singletonDotStyle,
-  // multiDotStyle, singletonDotSize, multiDotSize, width, interlineGap,
+  // multiDotStyle, singletonDotSize, multiDotSize, width, interlineGap, labelGap,
   // strokeWidth, strokeColor, seamColor, seamWidth, dashLength, dashWidth, curveRadius —
   // NOT color) equal the style's props. Transforms maintain it: editing any covered field clears
   // the tag ("detach to Custom"), editing the style re-stamps its users,
@@ -988,6 +996,10 @@ export interface LineStyleProps {
   // Interline gap (world units). Optional: absent ⇒ 0, edge-to-edge tangency
   // (see Line.interlineGap; 0 is never stored, so absent IS the off state).
   interlineGap?: number;
+  // Station-label clearance (world units). Optional: absent ⇒ the default 3
+  // (see Line.labelGap; the default is never stored, and 0 is a real value —
+  // equality treats an absent key and an explicit 3 as the same gap).
+  labelGap?: number;
 }
 
 export interface TextLabelStyleProps {
