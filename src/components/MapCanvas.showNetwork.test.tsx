@@ -122,11 +122,12 @@ describe('MapCanvas — the lines/stations toggle', () => {
 
   it("hides a selected station's editor panel, without dropping the selection", () => {
     // The popover is a DOM overlay, not canvas content, so it doesn't vanish
-    // with the station — it would hang there anchored to nothing, offering to
-    // edit dots the user can't see. `hidden` (display:none, still mounted) is
-    // the mechanism the panel already uses for mode excursions: it keeps the
-    // frozen anchor alive so the panel comes back to the same canvas point
-    // rather than re-spawning wherever the camera has drifted to.
+    // with the station — it would hang there offering to edit dots the user
+    // can't see. `hidden` (display:none, still mounted) is the mechanism the
+    // panel already uses for mode excursions: it keeps the DOM node — and with
+    // it the width usePinnedPopover measured to right-align the dock — across
+    // the excursion, so the panel comes back exactly where it was instead of
+    // re-measuring from the nominal fallback.
     render(<App />);
     seed();
     act(() => {
