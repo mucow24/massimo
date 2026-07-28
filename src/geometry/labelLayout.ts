@@ -841,7 +841,7 @@ function autoAlignInfo(
     // Label-side stripe edge: normal = axis⊥, signed toward the approach.
     const un = uLocX * -axis.y + uLocY * axis.x;
     if (Math.abs(un) < 1e-6) return 0;
-    const pn = ((-readSin) * -axis.y + readCos * axis.x) * Math.sign(un);
+    const pn = (-readSin * -axis.y + readCos * axis.x) * Math.sign(un);
     // Edge advance along the approach per unit of +perp (the stacking side).
     const k = -pn / Math.abs(un);
     return c.half / Math.abs(un) + Math.max(0, k * tDown, -k * tUp);
