@@ -1,9 +1,6 @@
 import { RefObject, useRef, useState } from 'react';
 import { beginHistoryGroup, useDoc } from '../../state/store';
-import { useSnapPrefs } from '../../state/snapPrefs';
-import { useViewportStore } from '../../state/viewportStore';
-import { snapPolygonPoint } from '../../geometry/polygonSnap';
-import { SNAP_PERP_TOLERANCE, type SnapGuide } from '../../geometry/snap';
+import type { SnapGuide } from '../../geometry/snap';
 import {
   normalizeRotation,
   resizeSvgImageCorner,
@@ -15,6 +12,7 @@ import {
 } from '../../geometry/svgImage';
 import type { Vec2 } from '../../geometry/vec';
 import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
+import { useDragSnap } from './useDragSnap';
 import {
   collectGroupSiblings,
   groupAlignExclude,
@@ -111,8 +109,7 @@ export function useSvgImageDrag(
 ): SvgImageDragApi {
   const moveSvgImage = useDoc((s) => s.moveSvgImage);
   const updateSvgImage = useDoc((s) => s.updateSvgImage);
-  const snapModes = useSnapPrefs((s) => s.modes);
-  const gridSize = useViewportStore((s) => s.gridSize);
+  const { snapPoint } = useDragSnap(zoom);
 
   const moveRef = useRef<MoveState | null>(null);
   const resizeRef = useRef<ResizeState | null>(null);
@@ -204,14 +201,7 @@ export function useSvgImageDrag(
         let guides: SnapGuide[] = [];
         const inGroupDrag = hasGroupSiblings(mv.siblings);
         if (!e.shiftKey) {
-          const snap = snapPolygonPoint({
-            proposed: anchor,
-            lineTargets: [],
-            allTargets: mv.allTargets,
-            modes: snapModes,
-            tolerance: SNAP_PERP_TOLERANCE / zoom,
-            gridInterval: gridSize,
-          });
+          const snap = snapPoint(anchor, { allTargets: mv.allTargets });
           anchor = { x: snap.x, y: snap.y };
           guides = snap.guides;
         }
@@ -233,13 +223,8 @@ export function useSvgImageDrag(
         // rotated off-axis, snapping a corner to a grid point would distort it.
         const axisAligned = normalizeRotation(rz.start.rotation) % 90 === 0;
         if (axisAligned && !e.shiftKey) {
-          const snap = snapPolygonPoint({
-            proposed: pointer,
-            lineTargets: [],
+          const snap = snapPoint(pointer, {
             allTargets: rz.allTargets,
-            modes: snapModes,
-            tolerance: SNAP_PERP_TOLERANCE / zoom,
-            gridInterval: gridSize,
             // An edge resize has one degree of freedom — only snaps along
             // that world axis are considered, so a guide can never show a
             // perpendicular alignment the resize would discard. At 0/180 the
