@@ -7,6 +7,7 @@ import { DEFAULT_DOC } from '../../model/transforms';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import type { Station } from '../../model/types';
 import { makeLine } from '../../test/fixtures';
+import { STOP_SIZE } from '../../geometry/orientation';
 import { capCenterDy } from '../../geometry/textMeasure';
 
 const hubStation = (): Station => ({
@@ -161,6 +162,29 @@ describe('<StationLayoutEditor />', () => {
     const [halo, cells] = shields;
     expect(Number(halo.getAttribute('x'))).toBeLessThan(Number(cells.getAttribute('x')));
     expect(Number(halo.getAttribute('width'))).toBeGreaterThan(Number(cells.getAttribute('width')));
+  });
+
+  it('the halo covers an anchor parked outside the cells box', () => {
+    // Label pushed out to col −3 makes the cells box lopsided: x ∈ [−51, 23].
+    // The anchor at col 3 sits 19 past its RIGHT edge but only 5 past its
+    // half-extent, so a half-extent pad leaves the anchor exposed — and a
+    // near-miss right-click there rotates the whole station beneath.
+    seed();
+    useDoc.setState((s) => ({
+      stations: {
+        ...s.stations,
+        a: {
+          ...s.stations.a,
+          label: { ...s.stations.a.label, col: -3 },
+          transferAnchors: [{ id: 'an0', row: 0, col: 3 }],
+        },
+      },
+    }));
+    const { container } = renderEditor();
+    const halo = container.querySelector('[data-layout-shield="halo"]') as Element;
+    const right = Number(halo.getAttribute('x')) + Number(halo.getAttribute('width'));
+    // Must reach the far edge of the anchor's own cell, not just its centre.
+    expect(right).toBeGreaterThanOrEqual(3 * STOP_SIZE + STOP_SIZE / 2);
   });
 
   it('marks the selected stop handle', () => {

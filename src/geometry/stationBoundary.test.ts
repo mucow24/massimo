@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  anchorOvershootLocal,
   cellsAABBLocal,
   polygonsForRect,
   routeBulletsForRect,
@@ -13,6 +14,7 @@ import {
 } from './stationBoundary';
 import { transferAnchorAABB } from './itemBounds';
 import {
+  makeLabel,
   makePolygon,
   makeStation,
   makeStop,
@@ -69,6 +71,42 @@ describe('cellsAABBLocal — per-stop widths', () => {
       }),
     );
     expect(box.x + box.w).toBeCloseTo(16, 6); // 14 + HIT_PAD
+  });
+});
+
+describe('anchorOvershootLocal', () => {
+  // Stop at (0,0), label pushed out to col −3, anchor at col +2. The cells box
+  // is x ∈ [−51, 9] (label −42−7−2 … stop 0+7+2) — 60 wide but NOT centred on
+  // the origin, so its half-extent (30) exceeds the anchor's |x| (28) even
+  // though the anchor sits 19 past the box's right EDGE.
+  const st = () =>
+    makeStation({
+      id: 'A',
+      stops: [makeStop('L1', { row: 0, col: 0 })],
+      label: makeLabel({ col: -3 }),
+      transferAnchors: [{ id: 'an0', row: 0, col: 2 }],
+    });
+
+  it('measures an off-centre box from its edges, not its half-extent', () => {
+    const box = cellsAABBLocal(st());
+    expect(box).toEqual({ x: -51, y: -9, w: 60, h: 18 });
+    expect(anchorOvershootLocal(box, st().transferAnchors)).toBeCloseTo(19, 6);
+  });
+
+  it('is 0 for an anchor inside the box, and for no anchors at all', () => {
+    const box = cellsAABBLocal(st());
+    expect(anchorOvershootLocal(box, [{ id: 'an0', row: 0, col: -1 }])).toBe(0);
+    expect(anchorOvershootLocal(box)).toBe(0);
+  });
+
+  it('takes the farthest anchor on either axis', () => {
+    const box = cellsAABBLocal(st());
+    expect(
+      anchorOvershootLocal(box, [
+        { id: 'an0', row: 0, col: 2 }, // 19 past the right edge
+        { id: 'an1', row: -3, col: 0 }, // −42 vs. the top edge at −9 ⇒ 33
+      ]),
+    ).toBeCloseTo(33, 6);
   });
 });
 

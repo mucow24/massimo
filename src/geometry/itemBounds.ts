@@ -89,8 +89,10 @@ export function routeBulletAABB(b: Pick<RouteBullet, 'x' | 'y' | 'size'>): AABB 
 /**
  * World AABB of a FREE transfer anchor: the one-cell footprint `ANCHOR_HALF`
  * defines (which is wider than the painted disc — see that constant). Hosted
- * anchors get none — they live inside their station's cell grid, which
- * `stationWorldAABB` already spans.
+ * anchors get none: they're chrome on a station the hull already spans, and are
+ * normally within its footprint. `stationWorldAABB` does NOT literally enclose
+ * an anchor cell parked outside the stops+label box; framing may clip such an
+ * outlier, which is acceptable for chrome.
  */
 export function transferAnchorAABB(a: Pick<TransferAnchor, 'x' | 'y'>, r = ANCHOR_HALF): AABB {
   return { x0: a.x - r, y0: a.y - r, x1: a.x + r, y1: a.y + r };
