@@ -319,19 +319,6 @@ function buildZoneCached(
   return { zone, zoneComps: comps, pairParts };
 }
 
-const emptyState = (
-  lineHash: Map<LineId, number>,
-  units: Map<string, GeomUnit>,
-): RegionIncrementalState => ({
-  lineHash,
-  units,
-  bodies: new Map(),
-  pairParts: new Map(),
-  zone: [],
-  zoneComps: [],
-  comps: new Map(),
-});
-
 /**
  * Build the arrangement, reusing whatever the previous frame's `state` makes
  * provably reusable. Pass `null` for a cold build. The result is always
@@ -382,13 +369,29 @@ export function buildRegionsIncremental(
         dirtyLines.has(id) ? undefined : (prev.bodies.get(id) ?? undefined)
     : undefined;
 
+  // Both early-outs below carry everything they already paid for. An
+  // arrangement can be empty without the FRAME being idle — a document with
+  // dormant `regionAssignments` runs this builder on every pointermove, and a
+  // map whose lines happen not to cross yet takes one of these exits on all of
+  // them. Returning an empty state there would make the next frame re-offset
+  // every stripe and re-intersect every pair from scratch: the expensive half
+  // of the build, discarded because the cheap half came out empty.
   const bodies = buildLineBodies(bands, markers, reuse);
   const ids = [...bodies.keys()].sort();
   if (ids.length < 2) {
     return {
       faces: [],
       slivers: [],
-      state: emptyState(lineHash, units),
+      // One line has no pairs and therefore no zone, but its body is built.
+      state: {
+        lineHash,
+        units,
+        bodies,
+        pairParts: new Map(),
+        zone: [],
+        zoneComps: [],
+        comps: new Map(),
+      },
       reused: false,
       rebuilt: 0,
       total: 0,
@@ -400,7 +403,7 @@ export function buildRegionsIncremental(
     return {
       faces: [],
       slivers: [],
-      state: emptyState(lineHash, units),
+      state: { lineHash, units, bodies, pairParts, zone, zoneComps, comps: new Map() },
       reused: false,
       rebuilt: 0,
       total: 0,
