@@ -44,6 +44,7 @@ import {
   backfillTextLabelColors,
   backfillTransferDayNightColors,
   backfillDotStrokeAlign,
+  backfillLineStyleEndStyle,
   bakeDocCurveRadius,
   bakeLegacyBackgroundOrder,
   bakeLegacyLabelSettings,
@@ -263,6 +264,10 @@ export function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
  * - v20 → v21: `strokeAlign` became a REQUIRED DotStyle field (center/inside/
  *   outside); backfill 'center' (the historical SVG-native placement) across
  *   every dot-style home via `backfillDotStrokeAlign` so the invariant holds.
+ * - v21 → v22: the line END became a REQUIRED covered field of line style defs;
+ *   heal absent/garbage values to 'square' (the historical full marker square)
+ *   via `backfillLineStyleEndStyle`. No tag prune follows it — a line from those
+ *   saves carries no end of its own, so it already paints what the heal writes.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -476,6 +481,14 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     // required-field invariant holds. The file-import path covers this via
     // `sanitizeDotStyle`.
     out = backfillDotStrokeAlign(out);
+  }
+  if (v < 22 && out.styles) {
+    // The line END became a REQUIRED covered field of line style defs; defs
+    // persisted before it lack the key. Heal to 'square' — the historical look,
+    // so nothing repaints. No tag pruning after it (unlike the v<20 dot-type
+    // backfill): a line from those saves carries no end of its own, so it
+    // already paints square and matches the healed def.
+    out = backfillLineStyleEndStyle(out);
   }
   // Non-version-gated invariant: at least one VALID active palette. Unlike the
   // migrations above, this isn't tied to a schema bump — a persisted doc with
@@ -1166,8 +1179,8 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: createJSONStorage(() => localStorage),
-        version: 21,
-        // Version migration chain v0 → v21 lives in `migrateDoc` (above), which
+        version: 22,
+        // Version migration chain v0 → v22 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         // `migrate` only runs when the STORED version differs from the config

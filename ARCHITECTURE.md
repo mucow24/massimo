@@ -902,7 +902,7 @@ Path A does **more** than Path B because hand-edited files can be non-canonical 
 sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for this).
 
 **Path B — localStorage rehydration: `migrateDoc(persisted, version)`** ([store.ts](src/state/store.ts)).
-The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 21`, `migrate:
+The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 22`, `migrate:
 migrateDoc`, `partialize: pickDocSnapshot`, plus a **custom `merge` hook** (below). Because the persist-merge already fills absent fields
 from the initial state, `migrateDoc` only does **value-level legacy fixups, version-gated**, on
 disjoint fields (order immaterial except where noted), never mutating the input:
@@ -929,6 +929,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | `v<19`      | `bakeStopDotLibrary` (introduce the doc-scoped "Stop dots" style library: seed the factory dot styles and tag every dot slot — line split defaults + per-stop overrides — by value-match). Ordered **after** the `v<18` split bake (line values are in singleton/multi form) and **before** the style-invariant pass |
 | `v<20`      | dot **type** became a covered `LineStyleProps` field: `bakeLineStyleDotIds` (backfill `singletonDotStyleId`/`multiDotStyleId` on line style defs, absent ⇒ the `stopDot` ⭐ default), then `pruneLineDotTypeTagMismatches` (untag any line whose split dot type differs from its now-fuller line style — keeping "tagged ⇒ matches"). Ordered **after** the `v<19` library bake; Path A prunes this via `pruneDanglingStyleRefs` instead |
 | `v<21`      | `backfillDotStrokeAlign` (`DotStyle.strokeAlign` became a required field: backfill `'center'`, the historical SVG-native placement, across every dot-style home). Path A covers this via `sanitizeDotStyle` |
+| `v<22`      | `backfillLineStyleEndStyle` (the line **end** became a required covered `LineStyleProps` field: heal absent/garbage `endStyle` on line defs to `'square'`, the historical full marker square, so nothing repaints). No tag prune follows — a line from those saves carries no end of its own, so it already paints what the heal writes. Path A covers this via `sanitizeStyleProps` |
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array. **But see the `merge` hook** — this call alone is not "every rehydrate" |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `validActivePalettes` whenever `activePalettes !== undefined`                                                                              |

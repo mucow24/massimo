@@ -1683,4 +1683,23 @@ describe('line ends — file hygiene', () => {
     const line = load(chain({ stationEndStyles: 'nope' as never }));
     expect('stationEndStyles' in line).toBe(false);
   });
+
+  // "No overrides" has ONE representation — the field absent. Each of these
+  // holds no usable pin, so none may reach the doc: `typeof null === 'object'`
+  // and an array is an object too, so the non-object guard alone lets them by,
+  // and an empty map has nothing to change and so was never rewritten.
+  it('drops a null pin map', () => {
+    const line = load(chain({ stationEndStyles: null as never }));
+    expect('stationEndStyles' in line).toBe(false);
+  });
+
+  it('drops an empty pin map', () => {
+    const line = load(chain({ stationEndStyles: {} }));
+    expect('stationEndStyles' in line).toBe(false);
+  });
+
+  it('drops an array pin map', () => {
+    const line = load(chain({ stationEndStyles: [] as never }));
+    expect('stationEndStyles' in line).toBe(false);
+  });
 });

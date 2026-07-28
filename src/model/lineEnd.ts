@@ -17,7 +17,7 @@
 // region arrangement reads it (see lineRegions.markerBodyRings) — which is why
 // the resolution below is shared rather than duplicated per consumer.
 
-import type { LineEndStyle, LineStyle, StationId } from './types';
+import type { Line, LineEndStyle, LineStyle, StationId } from './types';
 
 export type { LineEndStyle };
 
@@ -57,6 +57,18 @@ export function stationEndStyleOf(
   stationId: StationId,
 ): LineEndStyle {
   return line?.stationEndStyles?.[stationId] ?? lineEndStyleOf(line);
+}
+
+/**
+ * Write a line's per-terminus pins, keeping "no overrides" in ONE
+ * representation: an empty map DROPS the field rather than storing `{}`. Every
+ * writer of the map goes through here — the two setters, the orphan prune, and
+ * the file loader — so the invariant can't drift apart across them.
+ */
+export function withStationEndStyles(line: Line, pins: Record<StationId, LineEndStyle>): Line {
+  if (Object.keys(pins).length > 0) return { ...line, stationEndStyles: pins };
+  const { stationEndStyles: _gone, ...rest } = line;
+  return rest as Line;
 }
 
 /**
