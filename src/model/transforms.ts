@@ -555,12 +555,13 @@ function setLineCaseDotStyle(
   const def = doc.styles[styleId];
   if (def?.kind !== 'stopDot') return doc;
   const props = def.props;
+  // Value-identical early-out. An ABSENT raw shadow resolves as filled-black —
+  // the same resolution the renderer uses (resolveDotStyle) — because the v19
+  // library bake tagged legacy lines' split defaults WITHOUT materializing the
+  // raw; re-picking such a line's current dot type must stay a no-op, not
+  // detach it from its line style.
   const existingRaw = cur[rawField];
-  if (
-    cur[tagField] === styleId &&
-    existingRaw !== undefined &&
-    dotStylesEqual(existingRaw, props)
-  ) {
+  if (cur[tagField] === styleId && dotStylesEqual(existingRaw ?? DEFAULT_DOT_STYLE, props)) {
     return doc;
   }
   // Real change (the value-identical case returned above) ⇒ detach the line's
