@@ -1097,8 +1097,57 @@ export function buildExclusionHoles(
   railWOf: (lineId: LineId) => number,
   slivers: RegionSliver[] = [],
 ): Map<LineId, Ring[]> {
-  const orderIdx = orderIndexer(lineOrder);
+  return mergeFaceHoles(
+    buildExclusionFaceHoles(faces, winners, lineOrder, bands, markers, railWOf, slivers),
+  );
+}
+
+/**
+ * One overridden face's exclusion holes, with the spatial envelope of what
+ * the computation READ — `bbox` is the reveal region's box (the face plus any
+ * absorbed slivers) and `reach` the largest dilation applied. Together they
+ * bound the geometry this entry depends on, which is what lets the render
+ * layer retain still-valid entries while a drag is in flight and recompute
+ * nothing (see MapCanvas's freeze-during-gesture path).
+ */
+export interface FaceHoles {
+  /** Index into the `faces` array this entry was built from. */
+  faceIndex: number;
+  /** The reveal region's bbox — face bbox grown by any absorbed slivers. */
+  bbox: RegionFace['bbox'];
+  /** Largest dilation reach used (miter joins can poke 3× past a corner). */
+  reach: number;
+  holes: Map<LineId, Ring[]>;
+}
+
+/** Merge per-face hole entries into the per-line map the clip layer paints.
+ * Iterates in face order appending per line, so the merged map is exactly
+ * what the single-pass builder historically produced. */
+export function mergeFaceHoles(faceHoles: FaceHoles[]): Map<LineId, Ring[]> {
   const holes = new Map<LineId, Ring[]>();
+  for (const fh of faceHoles) {
+    for (const [lineId, rings] of fh.holes) {
+      const list = holes.get(lineId);
+      if (list) list.push(...rings);
+      else holes.set(lineId, [...rings]);
+    }
+  }
+  return holes;
+}
+
+/** Per-face form of {@link buildExclusionHoles} — same computation, holes
+ * grouped by the face that produced them instead of merged per line. */
+export function buildExclusionFaceHoles(
+  faces: RegionFace[],
+  winners: { winner: LineId; assignmentId: string | null }[],
+  lineOrder: LineId[],
+  bands: SegmentBandSpec[],
+  markers: StopMarkerSpec[],
+  railWOf: (lineId: LineId) => number,
+  slivers: RegionSliver[] = [],
+): FaceHoles[] {
+  const orderIdx = orderIndexer(lineOrder);
+  const out: FaceHoles[] = [];
 
   // A line's painted footprint near one face, at body width (pad 0) or
   // silhouette width (pad railW). Bbox-filtered; markers dilate by pad/2.
@@ -1187,17 +1236,19 @@ export function buildExclusionHoles(
       if (!boxesOverlap(other.bbox, regionBbox, maxReach * 3)) return;
       shield.push(...other.face);
     });
+    const faceHoles = new Map<LineId, Ring[]>();
     for (const lineId of losers) {
       const reach = railWOf(lineId) / 2 + railWWinner / 2 + 0.5;
       const dilated = intersect(offsetClosed(region, reach, 'miter'), footprint);
       const hole = shield.length ? subtract(dilated, shield) : dilated;
       if (!hole.length) continue;
-      const list = holes.get(lineId);
-      if (list) list.push(...hole);
-      else holes.set(lineId, [...hole]);
+      faceHoles.set(lineId, hole);
+    }
+    if (faceHoles.size) {
+      out.push({ faceIndex: i, bbox: regionBbox, reach: maxReach, holes: faceHoles });
     }
   });
-  return holes;
+  return out;
 }
 
 /** Slack around {@link regionClipBounds}: covers seam strokes, antialiasing,
