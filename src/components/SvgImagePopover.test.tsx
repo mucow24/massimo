@@ -6,8 +6,6 @@ import { stepSlider } from '../test/interaction';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makeSvgImage } from '../test/fixtures';
 
-const view = { vbX: 0, vbY: 0, vbW: 100, vbH: 100, size: { w: 100, h: 100 } };
-
 beforeEach(() => {
   useDoc.setState({
     ...useDoc.getState(),
@@ -18,14 +16,7 @@ beforeEach(() => {
 });
 
 const renderPopover = (id = 'i0', onClose = () => {}) =>
-  render(
-    <SvgImagePopover
-      image={useDoc.getState().svgImages[id]}
-      worldRect={{ x0: -50, y0: -30, x1: 50, y1: 30 }}
-      view={view}
-      onClose={onClose}
-    />,
-  );
+  render(<SvgImagePopover image={useDoc.getState().svgImages[id]} hostW={800} onClose={onClose} />);
 
 describe('<SvgImagePopover />', () => {
   it('toggles the lock flag', () => {

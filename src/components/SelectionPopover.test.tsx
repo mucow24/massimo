@@ -14,9 +14,6 @@ import {
 } from '../test/fixtures';
 import type { SelectionItemIds } from '../state/selectionOps';
 
-const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
-const rect = { x0: 0, y0: 0, x1: 40, y1: 40 };
-
 const ALL_IDS: SelectionItemIds = {
   stations: ['s1'],
   bullets: ['b1'],
@@ -55,7 +52,7 @@ function seed(locked: {
 }
 
 function renderPopover(ids: SelectionItemIds = ALL_IDS) {
-  return render(<SelectionPopover ids={ids} worldRect={rect} view={identityView} />);
+  return render(<SelectionPopover ids={ids} hostW={800} />);
 }
 
 describe('<SelectionPopover />', () => {

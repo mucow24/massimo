@@ -3,26 +3,12 @@ import { dragState } from '../../state/store';
 import { DRAG_MOVE_THRESHOLD, pointerLost } from './dragGesture';
 import { useLiveViewportStore, useViewportStore } from '../../state/viewportStore';
 import type { Viewport } from '../../model/types';
-import type { ViewportProjection } from './screenAnchor';
 import {
   computeWheelZoom,
-  liveProjection,
   panFromDelta,
   screenToWorld as toWorld,
   viewBoxFor,
 } from './viewportMath';
-
-/**
- * The viewport projection an anchored overlay should render with this frame:
- * the committed `view` between gestures, or the live in-flight viewport during
- * an imperative-viewBox pan/zoom (so the overlay tracks the canvas instead of
- * jumping at commit — see {@link liveProjection}). Subscribes only the calling
- * overlay to the per-frame `pending` updates, never the SVG canvas.
- */
-export function useLiveView(view: ViewportProjection): ViewportProjection {
-  const pending = useLiveViewportStore((s) => s.pending);
-  return liveProjection(view, pending);
-}
 
 const viewBoxStr = (vb: { vbX: number; vbY: number; vbW: number; vbH: number }) =>
   `${vb.vbX} ${vb.vbY} ${vb.vbW} ${vb.vbH}`;

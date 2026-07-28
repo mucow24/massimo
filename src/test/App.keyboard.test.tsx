@@ -140,7 +140,7 @@ describe('App keyboard shortcuts: inForm guard routing', () => {
       lineOrder: ['L1'],
     });
     useSelection.getState().selectLine('L1');
-    render(<LinePopover line={useDoc.getState().lines.L1} hostSize={{ w: 800, h: 600 }} />);
+    render(<LinePopover line={useDoc.getState().lines.L1} hostW={800} />);
     // Create an undoable entry so Ctrl+Z has something to pop.
     useDoc.getState().addStation(50, 50);
     const pastBefore = historyDepth();
@@ -483,7 +483,7 @@ describe('App keyboard shortcuts: blur-then-undo', () => {
       lineOrder: ['L1'],
     });
     useSelection.getState().selectLine('L1');
-    render(<LinePopover line={useDoc.getState().lines.L1} hostSize={{ w: 800, h: 600 }} />);
+    render(<LinePopover line={useDoc.getState().lines.L1} hostW={800} />);
     const slider = await screen.findByRole('slider', {
       name: /curve radius/i,
     });

@@ -326,14 +326,17 @@ export async function clickAtWithModifiers(
 }
 
 /**
- * Drag the open on-canvas popover (any shell) by its title header down to the
- * viewport's bottom edge, so the panel hangs off-screen and stops covering
- * fixture items. The redesigned chrome is taller than the old shells, and a
- * fresh spawn (which recurs whenever a multi-selection's membership changes —
- * the anchor re-freezes per member set) can sit over a neighbouring item; a
- * coordinate click there lands on the panel, which swallows canvas events.
- * Parking uses the real drag-handle affordance, so tests exercise honest UX.
+ * Close the right sidebar. The canvas popovers dock to the top-right corner of
+ * whatever the sidebar leaves of the host, so while it's open a panel covers
+ * the canvas band just left of it — which is where these fixtures put their
+ * right-hand items. Closing the sidebar hands that band back (the dock moves
+ * out to the host's own edge), the same move a user makes to work over there.
  */
+export async function closeSidebar(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Toggle sidebar' }).click();
+  await page.locator('.sidebar').waitFor({ state: 'detached' });
+}
+
 /**
  * Expand the line popover's collapsed style detail (Line width → Seam color).
  * The disclosure is remembered per browser profile, but every spec starts on
@@ -345,17 +348,3 @@ export async function openLineStyleDetail(page: Page): Promise<void> {
   if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
 }
 
-export async function parkPopover(page: Page): Promise<void> {
-  const header = page
-    .locator('.bullet-popover .header, .text-label-popover .header, .station-popover .header')
-    .first();
-  const box = await header.boundingBox();
-  if (!box) throw new Error('parkPopover: no popover open');
-  const grabX = box.x + box.width / 2;
-  const grabY = box.y + box.height / 2;
-  await page.mouse.move(grabX, grabY);
-  await page.mouse.down();
-  await page.mouse.move(grabX + 10, grabY, { steps: 2 });
-  await page.mouse.move(grabX, 714, { steps: 3 });
-  await page.mouse.up();
-}

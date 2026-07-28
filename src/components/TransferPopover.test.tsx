@@ -9,13 +9,6 @@ import { makeStation, makeStyle, makeTransfer } from '../test/fixtures';
 import { openColorField, setColorField } from '../test/colorField';
 import { chooseOption, stepSlider } from '../test/interaction';
 
-const view = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
-
-// Degenerate point rect for the spawn hint — placement details live in
-// screenAnchor.test.ts, and the capsule rect itself in itemBounds.test.ts;
-// here the point keeps positions easy to reason about.
-const rectAt = (x: number, y: number) => ({ x0: x, y0: y, x1: x, y1: y });
-
 beforeEach(() => {
   localStorage.clear();
   useDoc.setState({
@@ -32,12 +25,7 @@ beforeEach(() => {
 
 function renderPopover(onClose = () => {}) {
   return render(
-    <TransferPopover
-      transfer={useDoc.getState().transfers['x1']}
-      worldRect={rectAt(100, 0)}
-      view={view}
-      onClose={onClose}
-    />,
+    <TransferPopover transfer={useDoc.getState().transfers['x1']} hostW={800} onClose={onClose} />,
   );
 }
 
@@ -176,14 +164,7 @@ describe('<TransferPopover />', () => {
     // it live rather than with the static renderPopover snapshot.
     function LivePopover() {
       const transfer = useDoc((s) => s.transfers['x1']);
-      return (
-        <TransferPopover
-          transfer={transfer}
-          worldRect={rectAt(100, 0)}
-          view={view}
-          onClose={() => {}}
-        />
-      );
+      return <TransferPopover transfer={transfer} hostW={800} onClose={() => {}} />;
     }
     render(<LivePopover />);
     const slider = screen.getByRole('slider', { name: 'Thickness' });
@@ -204,29 +185,6 @@ describe('<TransferPopover />', () => {
     expect(useDoc.getState().transfers.x1).toBeUndefined();
     expect(onClose).toHaveBeenCalledTimes(1);
   });
-
-  it('spawns beside the worldRect, frozen at first display (endpoint moves do not slide it)', () => {
-    const { container, rerender } = renderPopover();
-    const el = container.querySelector('.transfer-popover') as HTMLElement;
-    const left = parseFloat(el.style.left);
-    const top = parseFloat(el.style.top);
-    // Point rect at the capsule midpoint (100,0) → the below-left diagonal
-    // spawn (100−14−248, 0+14) clamps x to the 8px margin.
-    expect(left).toBeCloseTo(8, 6);
-    expect(top).toBeCloseTo(14, 6);
-    // An endpoint move re-renders with a fresh worldRect: the frozen anchor
-    // must not follow (the rect is a spawn hint only).
-    rerender(
-      <TransferPopover
-        transfer={useDoc.getState().transfers['x1']}
-        worldRect={rectAt(400, 300)}
-        view={view}
-        onClose={() => {}}
-      />,
-    );
-    expect(parseFloat(el.style.left)).toBeCloseTo(left, 6);
-    expect(parseFloat(el.style.top)).toBeCloseTo(top, 6);
-  });
 });
 
 describe('<TransferPopover /> — style presets', () => {
@@ -234,14 +192,7 @@ describe('<TransferPopover /> — style presets', () => {
   // so the Style row re-derives when an action writes the tag.
   function LivePopover() {
     const transfer = useDoc((s) => s.transfers['x1']);
-    return transfer ? (
-      <TransferPopover
-        transfer={transfer}
-        worldRect={rectAt(100, 0)}
-        view={view}
-        onClose={() => {}}
-      />
-    ) : null;
+    return transfer ? <TransferPopover transfer={transfer} hostW={800} onClose={() => {}} /> : null;
   }
 
   it('applies a preset from the Style row, then flips to Custom on a covered edit', async () => {

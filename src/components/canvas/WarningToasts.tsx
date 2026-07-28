@@ -17,7 +17,7 @@ export function WarningToasts({ bands }: { bands: readonly SegmentBandSpec[] }) 
   // styles.css) — right where the open sidebar paints over them. While the
   // panel shows, shift them a panel-width left so they clear it and stay on
   // screen, keeping the same 12px gap on the panel's near edge. Same
-  // SIDEBAR_WIDTH inset ItemPopovers subtracts from its spawn box; re-renders
+  // SIDEBAR_WIDTH inset ItemPopovers subtracts from the popover dock; re-renders
   // only when the panel toggles (boolean selector), never rebuilding the router.
   const underSidebar = useSelection(sidebarVisible);
   const warnings = bands.filter((b) => b.warning);
