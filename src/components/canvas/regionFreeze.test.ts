@@ -93,9 +93,12 @@ describe('retainFaceHoles', () => {
   });
 
   it('keeps everything when the dirt is far from entries, neighbors and slivers', () => {
-    const out = retainFaceHoles(entries, faces, [sliver(box(700, 0, 710, 10))], [
-      box(900, 900, 910, 910),
-    ]);
+    const out = retainFaceHoles(
+      entries,
+      faces,
+      [sliver(box(700, 0, 710, 10))],
+      [box(900, 900, 910, 910)],
+    );
     expect(out).toHaveLength(2);
   });
 });

@@ -570,8 +570,7 @@ flood costs exactly one undo. An assignment is anchored IN THE LINES' OWN FRAME 
 corridor + arc position + side offset per covering line) and is carried across every geometry
 edit by `regionReconcile.ts` — rebinding corridor-identity-first (a face must run the anchors'
 own corridors, so same-cover sibling crossings are not interchangeable; `bindAssignments` is
-shared with rendering, whose per-frame re-binds during a drag see anchors whose arc positions
-are stale until the commit reconcile re-mints them), falling back to nearest-compatible face
+shared with rendering), falling back to nearest-compatible face
 when no face runs those corridors (survives teleports and a crossing sliding past a station),
 duplicating onto split halves, resolving merges by largest old face, going dormant when its
 overlap temporarily vanishes. The reconcile runs inside `beginHistoryGroup.commit()` (drags,
@@ -585,13 +584,41 @@ look) and swallows the losers' fringes near the face. Clipped areas take no poin
 so idle clicks land on the visible winner natively. Zero assignments ⇒ zero cost and
 byte-identical output.
 
+**While a history group is open, the arrangement is FROZEN.** The rebuild is the app's most
+expensive pure computation and used to run per pointermove; but the doc reads faces only at the
+group's commit (reconcile), so mid-gesture face geometry is pure presentation. MapCanvas renders
+the arrangement captured at gesture start and, per frame, diffs the geometry units against that
+capture (`regionIncremental.hashUnits`) and **drops** the per-face exclusion holes anything dirty
+could have reached — the face's own dilation neighborhood, shield-range neighbor faces, or
+absorbable slivers (`canvas/regionFreeze.retainFaceHoles`; `buildExclusionFaceHoles` /
+`mergeFaceHoles` are the per-face form the retention filters). A retained hole sits on geometry
+that provably did not move, so it is byte-identical to a synchronous recompute and cannot tear
+off its stroke; a dropped face shows the default lineOrder stacking until the drop, exactly like
+an unassigned face. Non-geometry hole inputs (casing rails, lineOrder, the assignments record —
+`regionFreeze.railSig` + the freeze key) drop everything when they drift mid-group. Winner
+BINDING freezes with the rest: per-frame re-binding against smeared arc anchors is the flicker
+regime corridor-identity binding hardened, and freezing is its "bind once at gesture start" form.
+The clip outer ring keeps its frozen object while it still covers the live extent (a stable ring
+keeps every retained clip's `d` byte-identical, so nothing re-rasterizes mid-gesture) and grows
+only when an extremal drag escapes it. Outside a group the memo chain stays synchronous: clips
+attach to the LIVE base strokes they were derived from. The commit render then rebuilds once —
+and because the mid-drag frames no longer flood `regionsFor`'s LRU, reconcile's old-geometry
+lookup at commit is a cache hit.
+
 **How the faces are actually built.** `lineRegions.ts` holds the pipeline as separable phases —
-`buildLineBodies` → `buildOverlapZone` (pairwise body intersections; any ≥2-cover point is in one
-of them) → `significantComponents` (the zone's connected components, dropping sub-`SLIVER_MIN_AREA`
-ones, which are ~95% of them by count and can reach neither output) → per component
-`restrictBodiesToZone` → `subdivideCells` → `extractFaces` → one `finalizeFaces` over the merged
-set. A cell can never span two components, so per-component subdivision is equivalent to one
-global pass while keeping every clipper operand down to one crossing's worth of geometry.
+`buildLineBodies` → `overlapZoneParts` (pairwise body intersections; any ≥2-cover point is in one
+of them; deliberately not unioned) → `zoneComponents` (ONE polytree union over the raw parts,
+yielding both the merged zone rings and its connected components; sub-`SLIVER_MIN_AREA`
+components — ~95% of them by count — are dropped since they can reach neither output, and
+`significantComponents` is the comps-only view of the same call) → per component
+`restrictBodiesToZone` → `subdivideCells` (each cell carries its bbox; strictly-disjoint
+cell/rings pairs skip the provably-empty clipper intersect) → `extractFaces` → one
+`finalizeFaces` over the merged set. A cell can never span two components, so per-component
+subdivision is equivalent to one global pass while keeping every clipper operand down to one
+crossing's worth of geometry. Span sampling walks each covering stripe's whole arc grid but
+evaluates points only inside precomputed windows where the path nears the face bbox — outside
+them a sample is provably rejected by `pointNearFace`'s own bbox gate, so skipping preserves the
+interval output byte-for-byte.
 `buildOverlapRegions` composes exactly those phases and is the full-rebuild reference the
 incremental builder is tested against — **production goes through
 `regionIncremental.buildRegionsIncremental`**, which caches per component across frames and is
@@ -2061,11 +2088,17 @@ single resolver shared by the geometry bake and the render-time refresh, so the 
 disagree). **Width, by contrast, IS geometry (in the hash) — it moves the baked paths and changes
 band merging.** So a color or casing edit — or a dashed→dotted change on an already-styled
 segment — repaints without a band-geometry rebuild; the stop markers, whose footprint DOES depend on
-style, rebuild instead via the `renderables` memo's direct `lines` dep. Region layering keeps its own
+style, rebuild instead via their own `stopMarkers` memo's direct `lines` dep (`renderables` just
+orders bands + markers). Region layering keeps its own
 parallel cache: the overlays read `regionCache.regionsFor` (sig-keyed on the same geometry fields,
 presentation excluded), so cycling a region assignment reuses the cached faces/bands/markers and
 doesn't re-run the per-face arc-length search (a single click on a busy map once burned
-300–500ms). `assignLinePriorities` mutates in place, so `bands` clones each spec.
+300–500ms). On a cache miss the render layer passes its own just-built geometry through
+`regionsFor`'s prebuilt param — the PRISTINE `bandsGeometry` plus the `stopMarkers` memo — so
+bands and markers are never built twice in one frame; marker priorities are invisible to region
+geometry, which is what makes entries built from either side of the cache interchangeable
+(pinned by `regionCache.prebuilt.test.ts`). `assignLinePriorities` mutates in place, so `bands`
+clones each spec.
 
 The stations side works the same way: `stationsGeometrySig` hashes only the station fields
 `buildBandGeometry` / `buildStopMarkers` read (x, y, rotation, per-stop lineId/row/col/orientation)

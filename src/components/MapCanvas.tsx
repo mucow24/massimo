@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from 'zustand';
 
-import { cancelAppendMode, dragState, useDoc, useSelection } from '../state/store';
+import {
+  cancelAppendMode,
+  dragState,
+  openHistoryGroupSnapshot,
+  useDoc,
+  useSelection,
+} from '../state/store';
 import { hoveredChrome, type HoverKind } from '../state/selection';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useFontEpochValue } from '../state/fontEpoch';
@@ -29,6 +35,7 @@ import { RegionExcludeClips, regionExcludeClipId } from './canvas/RegionExcludeC
 import { regionsFor } from '../geometry/regionCache';
 import {
   buildExclusionFaceHoles,
+  buildExclusionHoles,
   mergeFaceHoles,
   regionClipBounds,
   regionPaintPlan,
@@ -36,14 +43,7 @@ import {
   type FaceHoles,
 } from '../geometry/lineRegions';
 import type { Ring } from '../geometry/clip';
-import type { RegionGeometry } from '../geometry/regionCache';
-import type { GeomUnit } from '../geometry/regionIncremental';
-import {
-  captureUnits,
-  dirtyBoxesSince,
-  railSig,
-  retainFaceHoles,
-} from './canvas/regionFreeze';
+import { captureUnits, dirtyBoxesSince, railSig, retainFaceHoles } from './canvas/regionFreeze';
 import { HatchPatterns } from './HatchPatterns';
 import { SeamClips } from './canvas/SeamClips';
 import { StopMarker } from './StopMarker';
@@ -136,24 +136,6 @@ const NO_VERTEX_INDICES: ReadonlySet<number> = new Set();
 // Shared empty free-anchor map: the hover/selection reveal shows a station's
 // own anchors only, so it hands AnchorLayer nothing for the free home.
 const NO_FREE_ANCHORS: Record<string, never> = {};
-
-/** One fully built region frame: arrangement + winners + per-face holes. */
-interface BuiltRegions {
-  geom: RegionGeometry;
-  winners: ReturnType<typeof resolveRegionWinners>;
-  faceHoles: FaceHoles[];
-  holes: Map<string, Ring[]>;
-  clipOuter: { x0: number; y0: number; x1: number; y1: number } | null;
-  /** Non-geometry hole inputs (casing rails + stacking order), for the freeze. */
-  freezeKey: string;
-  assignments: Record<string, unknown>;
-}
-
-/** BuiltRegions captured at gesture start, plus what the retention diff needs. */
-interface FrozenRegions extends BuiltRegions {
-  units: Map<string, GeomUnit>;
-  lastMerged: { key: string; map: Map<string, Ring[]> } | null;
-}
 
 /** Stable reference for the drop-everything freeze frames. */
 const EMPTY_HOLES: Map<string, Ring[]> = new Map();
@@ -408,7 +390,10 @@ export function MapCanvas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [bands, stationsGeometrySig, lines, lineOrder],
   );
-  const renderables = useMemo(() => buildOrderedRenderables(bands, stopMarkers), [bands, stopMarkers]);
+  const renderables = useMemo(
+    () => buildOrderedRenderables(bands, stopMarkers),
+    [bands, stopMarkers],
+  );
 
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
 
@@ -428,15 +413,20 @@ export function MapCanvas() {
   // is FROZEN: the doc doesn't need faces until the group's commit runs
   // reconcile, so mid-gesture face geometry is pure presentation — and the
   // rebuild is the app's most expensive pure computation, paid per
-  // pointermove on a busy map. What renders instead is the last built
-  // arrangement, with the per-face exclusion holes anything dirty could have
-  // touched DROPPED each frame (see regionFreeze.ts): a hole either sits on
-  // geometry that provably didn't move — byte-identical to a synchronous
-  // recompute, no tearing possible — or it isn't painted, and its face shows
-  // the default lineOrder stacking until the drop, exactly like an
+  // pointermove on a busy map. What renders instead is the arrangement of the
+  // PRE-GESTURE doc (the open group's snapshot — a pure function of it, not a
+  // previous-render cache), with the per-face exclusion holes anything dirty
+  // could have touched DROPPED each frame (see regionFreeze.ts): a hole
+  // either sits on geometry that provably didn't move — byte-identical to a
+  // synchronous recompute, no tearing possible — or it isn't painted, and its
+  // face shows the default lineOrder stacking until the drop, exactly like an
   // unassigned face. Outside a group the chain stays synchronous: the clips
-  // attach to the LIVE base strokes they were derived from.
-  const historyGrouping = useStore(useDoc.temporal, (s) => !s.isTracking);
+  // attach to the LIVE base strokes they were derived from. The isTracking
+  // subscription is the reactivity for both: the snapshot getter changes
+  // value exactly when the flag flips.
+  const frozenSnap = useStore(useDoc.temporal, (s) =>
+    s.isTracking ? null : openHistoryGroupSnapshot(),
+  );
   const railWOf = useCallback(
     (lineId: string) => {
       const line = lines[lineId];
@@ -444,106 +434,31 @@ export function MapCanvas() {
     },
     [lines],
   );
-  const frozenRegionsRef = useRef<FrozenRegions | null>(null);
-  const lastRegionsRef = useRef<BuiltRegions | null>(null);
-  const regionBundle = useMemo(() => {
-    if (!needRegions) {
-      frozenRegionsRef.current = null;
-      lastRegionsRef.current = null;
-      return null;
-    }
-    const build = (): BuiltRegions => {
-      // The prebuilt pair hands regionsFor this render's own bands + markers
-      // so a cache miss doesn't rebuild them: bandsGeometry is the PRISTINE
-      // geometry (not the priority-stamped clones), and the markers' stamped
-      // priorities are invisible to region geometry (pinned by
-      // regionCache.prebuilt.test.ts). Within one render the memos above have
-      // already refreshed both for the current stations/lines, so the pair
-      // always matches the sig regionsFor computes from them.
-      const geom = regionsFor({ stations, lines }, { bands: bandsGeometry, markers: stopMarkers });
-      const winners = resolveRegionWinners(geom.faces, regionAssignments, geom.bands, lineOrder);
-      const faceHoles = buildExclusionFaceHoles(
-        geom.faces,
-        winners,
-        lineOrder,
-        geom.bands,
-        geom.markers,
-        railWOf,
-        geom.slivers,
-      );
-      return {
-        geom,
-        winners,
-        faceHoles,
-        holes: mergeFaceHoles(faceHoles),
-        clipOuter: regionClipBounds(geom.bands, geom.markers),
-        freezeKey: railSig(lines) + '§' + lineOrder.join(','),
-        assignments: regionAssignments,
-      };
-    };
-    if (!historyGrouping) {
-      frozenRegionsRef.current = null;
-      const built = build();
-      lastRegionsRef.current = built;
-      return built;
-    }
-    // Grouping: adopt the last painted arrangement (building fresh only if a
-    // group somehow opened before any build), then derive this frame's
-    // retained holes from what moved since the freeze.
-    let fz = frozenRegionsRef.current;
-    if (!fz) {
-      const base = lastRegionsRef.current ?? build();
-      fz = frozenRegionsRef.current = {
-        ...base,
-        units: captureUnits(base.geom.bands, base.geom.markers),
-        lastMerged: null,
-      };
-    }
-    // Inputs the unit diff can't see (casing rails, stacking order, the
-    // assignments themselves): if any drifted mid-group, no retained hole is
-    // provably valid — drop them all until the commit rebuild.
-    const keyNow = railSig(lines) + '§' + lineOrder.join(',');
-    let holes: Map<string, Ring[]>;
-    if (keyNow !== fz.freezeKey || regionAssignments !== fz.assignments) {
-      holes = EMPTY_HOLES;
-    } else {
-      const dirty = dirtyBoxesSince(fz.units, bandsGeometry, stopMarkers);
-      const retained = retainFaceHoles(fz.faceHoles, fz.geom.faces, fz.geom.slivers, dirty);
-      const retainedKey = retained.map((fh) => fh.faceIndex).join(',');
-      if (fz.lastMerged?.key === retainedKey) {
-        holes = fz.lastMerged.map;
-      } else {
-        holes = retained.length === fz.faceHoles.length ? fz.holes : mergeFaceHoles(retained);
-        fz.lastMerged = { key: retainedKey, map: holes };
-      }
-    }
-    // The clip outer ring must PASS everything painted, including strokes
-    // that moved since the freeze — grow it if the live extent escapes, but
-    // keep the frozen object while it still covers (a stable ring keeps the
-    // clip `d` unchanged, so Blink never re-rasterizes mid-gesture).
-    const liveOuter = regionClipBounds(bandsGeometry, stopMarkers);
-    if (liveOuter && fz.clipOuter) {
-      const o = fz.clipOuter;
-      if (
-        liveOuter.x0 < o.x0 ||
-        liveOuter.y0 < o.y0 ||
-        liveOuter.x1 > o.x1 ||
-        liveOuter.y1 > o.y1
-      ) {
-        fz.clipOuter = {
-          x0: Math.min(o.x0, liveOuter.x0),
-          y0: Math.min(o.y0, liveOuter.y0),
-          x1: Math.max(o.x1, liveOuter.x1),
-          y1: Math.max(o.y1, liveOuter.y1),
-        };
-      }
-    } else if (liveOuter && !fz.clipOuter) {
-      fz.clipOuter = liveOuter;
-    }
-    return { ...fz, holes };
+  // The live (non-grouping) bundle — the synchronous chain.
+  const liveRegions = useMemo(() => {
+    if (!needRegions || frozenSnap) return null;
+    // The prebuilt pair hands regionsFor this render's own bands + markers
+    // so a cache miss doesn't rebuild them: bandsGeometry is the PRISTINE
+    // geometry (not the priority-stamped clones), and the markers' stamped
+    // priorities are invisible to region geometry (pinned by
+    // regionCache.prebuilt.test.ts). Within one render the memos above have
+    // already refreshed both for the current stations/lines, so the pair
+    // always matches the sig regionsFor computes from them.
+    const geom = regionsFor({ stations, lines }, { bands: bandsGeometry, markers: stopMarkers });
+    const winners = resolveRegionWinners(geom.faces, regionAssignments, geom.bands, lineOrder);
+    const holes = buildExclusionHoles(
+      geom.faces,
+      winners,
+      lineOrder,
+      geom.bands,
+      geom.markers,
+      railWOf,
+      geom.slivers,
+    );
+    return { geom, winners, holes, clipOuter: regionClipBounds(geom.bands, geom.markers) };
   }, [
     needRegions,
-    historyGrouping,
+    frozenSnap,
     stations,
     lines,
     regionAssignments,
@@ -552,10 +467,93 @@ export function MapCanvas() {
     stopMarkers,
     railWOf,
   ]);
-  const regionGeom = regionBundle?.geom ?? null;
-  const regionWinners = regionBundle?.winners ?? null;
-  const regionExcludeHoles = regionBundle?.holes ?? null;
-  const regionClipOuter = regionBundle?.clipOuter ?? null;
+  // The frozen base — built ONCE per group from the snapshot (regionsFor's
+  // LRU almost always still holds the pre-gesture entry).
+  const frozenBase = useMemo(() => {
+    if (!needRegions || !frozenSnap) return null;
+    const geom = regionsFor({ stations: frozenSnap.stations, lines: frozenSnap.lines });
+    const winners = resolveRegionWinners(
+      geom.faces,
+      frozenSnap.regionAssignments,
+      geom.bands,
+      frozenSnap.lineOrder,
+    );
+    const railOf = (lineId: string) => {
+      const line = frozenSnap.lines[lineId];
+      return line ? lineStrokeRailWidth(lineStrokeWidthOf(line), lineWidthOf(line)) : 0;
+    };
+    const faceHoles = buildExclusionFaceHoles(
+      geom.faces,
+      winners,
+      frozenSnap.lineOrder,
+      geom.bands,
+      geom.markers,
+      railOf,
+      geom.slivers,
+    );
+    return {
+      geom,
+      winners,
+      faceHoles,
+      holes: mergeFaceHoles(faceHoles),
+      clipOuter: regionClipBounds(geom.bands, geom.markers),
+      freezeKey: railSig(frozenSnap.lines) + '§' + frozenSnap.lineOrder.join(','),
+      assignments: frozenSnap.regionAssignments,
+      units: captureUnits(geom.bands, geom.markers),
+    };
+  }, [needRegions, frozenSnap]);
+  // Per-frame retention pass (cheap): which frozen holes are provably still
+  // what a fresh build would compute, given what moved since the snapshot.
+  // Inputs the unit diff can't see (casing rails, stacking order, the
+  // assignments record) drop everything when they drift mid-group.
+  const freezeFrame = useMemo(() => {
+    if (!frozenBase) return null;
+    const keyOk =
+      railSig(lines) + '§' + lineOrder.join(',') === frozenBase.freezeKey &&
+      regionAssignments === frozenBase.assignments;
+    if (!keyOk) return { retained: [] as FaceHoles[], retainedKey: '!' };
+    const dirty = dirtyBoxesSince(frozenBase.units, bandsGeometry, stopMarkers);
+    const retained = retainFaceHoles(
+      frozenBase.faceHoles,
+      frozenBase.geom.faces,
+      frozenBase.geom.slivers,
+      dirty,
+    );
+    return { retained, retainedKey: retained.map((fh) => fh.faceIndex).join(',') };
+  }, [frozenBase, lines, lineOrder, regionAssignments, bandsGeometry, stopMarkers]);
+  // Merge keyed on the retained SET (not the per-frame array identity), so
+  // the map reference — and with it every clip `d` — is stable across frames
+  // while the set is, and Blink never re-rasterizes a retained clip.
+  const retainedKey = freezeFrame?.retainedKey;
+  const frozenHoles = useMemo(() => {
+    if (!frozenBase || !freezeFrame) return null;
+    if (!freezeFrame.retained.length) return EMPTY_HOLES;
+    if (freezeFrame.retained.length === frozenBase.faceHoles.length) return frozenBase.holes;
+    return mergeFaceHoles(freezeFrame.retained);
+    // The retained array's identity churns per frame; the KEY is the content.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frozenBase, retainedKey]);
+  // The clip outer ring must PASS everything painted, including strokes that
+  // moved since the freeze — return the frozen object while it still covers
+  // (a stable ring keeps the clip `d` unchanged), growing only when an
+  // extremal drag escapes it.
+  const frozenOuter = useMemo(() => {
+    if (!frozenBase) return null;
+    const live = regionClipBounds(bandsGeometry, stopMarkers);
+    const o = frozenBase.clipOuter;
+    if (!o || !live) return o ?? live;
+    if (live.x0 >= o.x0 && live.y0 >= o.y0 && live.x1 <= o.x1 && live.y1 <= o.y1) return o;
+    return {
+      x0: Math.min(o.x0, live.x0),
+      y0: Math.min(o.y0, live.y0),
+      x1: Math.max(o.x1, live.x1),
+      y1: Math.max(o.y1, live.y1),
+    };
+  }, [frozenBase, bandsGeometry, stopMarkers]);
+  const regionGeom = frozenBase?.geom ?? liveRegions?.geom ?? null;
+  const regionWinners = frozenBase?.winners ?? liveRegions?.winners ?? null;
+  const regionExcludeHoles = frozenBase ? frozenHoles : (liveRegions?.holes ?? null);
+  const regionClipOuter = frozenBase ? frozenOuter : (liveRegions?.clipOuter ?? null);
 
   const itemDrag = useItemDrag(svgRef, view.viewport.zoom, inHandMode);
   const polyDrag = usePolygonDrag(svgRef, view.viewport.zoom, inHandMode);

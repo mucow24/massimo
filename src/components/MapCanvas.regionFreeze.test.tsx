@@ -9,6 +9,9 @@ import { makeLine, makeStation, makeStop } from '../test/fixtures';
 import type { RegionAssignment } from '../model/types';
 
 beforeEach(() => {
+  // Seal any group a failed test leaked open (begin() steals + commits it),
+  // then reset — a leaked group would freeze the next test's first render.
+  beginHistoryGroup().cancel();
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useDoc.temporal.getState().clear();
 });
@@ -85,10 +88,17 @@ describe('MapCanvas — region freeze during a history group', () => {
     act(() => {
       useDoc.getState().moveStation('s3', 112, 906);
     });
+    // Building the frozen base costs at most ONE regionsFor — an LRU hit on
+    // the pre-gesture entry. Streaming further moves must add none.
+    const callsAfterFreeze = spy.mock.calls.length;
+    expect(callsAfterFreeze).toBeLessThanOrEqual(callsBefore + 1);
     act(() => {
       useDoc.getState().moveStation('s3', 126, 913);
     });
-    expect(spy.mock.calls.length).toBe(callsBefore);
+    act(() => {
+      useDoc.getState().moveStation('s3', 131, 909);
+    });
+    expect(spy.mock.calls.length).toBe(callsAfterFreeze);
     expect(clipFor(container, 'V1')).toBeNull();
     const v2Mid = clipFor(container, 'V2');
     expect(v2Mid).toBeTruthy();

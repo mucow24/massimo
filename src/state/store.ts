@@ -1209,7 +1209,12 @@ export const useDoc = create<DocState>()(
 
 // The one currently-open history group, if any — the ownership reference
 // behind the steal-on-begin overlap contract documented on beginHistoryGroup.
-let openHistoryGroup: { commit: () => void; cancel: () => void } | null = null;
+let openHistoryGroup: {
+  snapshot: DocSnapshot;
+  commit: () => void;
+  cancel: () => void;
+  rollback: () => void;
+} | null = null;
 
 /**
  * Cancel the currently-open history group, if any. Called by clearHistory():
@@ -1317,6 +1322,7 @@ export function beginHistoryGroup(): {
     return true;
   };
   const group = {
+    snapshot,
     commit: () => {
       if (!finish()) return;
       // Region reconcile fold-in: recording is still paused here, so the
@@ -1352,6 +1358,17 @@ export function beginHistoryGroup(): {
   };
   openHistoryGroup = group;
   return group;
+}
+
+/**
+ * The open history group's pre-gesture doc snapshot, or null when no group
+ * is open. The render layer's region freeze derives its frozen arrangement
+ * from this — a pure function of the snapshot, not a previous-render cache.
+ * Stable for the life of the group; nulled by finish() before recording
+ * resumes, so a subscriber keyed on `isTracking` never sees a stale one.
+ */
+export function openHistoryGroupSnapshot(): DocSnapshot | null {
+  return openHistoryGroup?.snapshot ?? null;
 }
 
 /**
