@@ -50,7 +50,11 @@ describe('cellsAABBLocal — per-stop widths', () => {
     // the label cell stays unit-sized (±7) and still wins the left edge.
     const box = cellsAABBLocal(
       st(),
-      stopMetricsOf({ lines: { L1: makeLine({ id: 'L1', width: 28 }) }, transfers: {} }),
+      stopMetricsOf({
+        lines: { L1: makeLine({ id: 'L1', width: 28 }) },
+        transfers: {},
+        stations: {},
+      }),
     );
     expect(box).toEqual({ x: -23, y: -16, w: 39, h: 32 });
   });
@@ -68,6 +72,7 @@ describe('cellsAABBLocal — per-stop widths', () => {
       stopMetricsOf({
         lines: { L1: makeLine({ id: 'L1', width: 28 }), L2: makeLine({ id: 'L2', width: 2 }) },
         transfers: {},
+        stations: {},
       }),
     );
     expect(box.x + box.w).toBeCloseTo(16, 6); // 14 + HIT_PAD
@@ -121,7 +126,11 @@ describe('stationsForRect — per-stop widths', () => {
       stationsForRect(
         { A: st },
         rect,
-        stopMetricsOf({ lines: { L1: makeLine({ id: 'L1', width: 28 }) }, transfers: {} }),
+        stopMetricsOf({
+          lines: { L1: makeLine({ id: 'L1', width: 28 }) },
+          transfers: {},
+          stations: {},
+        }),
       ),
     ).toEqual(['A']);
   });
@@ -154,6 +163,7 @@ describe('stationBoundaryRectsLocal — dash tick clearance parity', () => {
       dot: null,
       transferRadius: 0,
       labelGap: 3,
+      continues: { plus: true, minus: true },
     })).label!;
     for (let i = 0; i < 4; i++) {
       expect(dashed[i].x - plain[i].x).toBeCloseTo(14, 6);
@@ -191,6 +201,7 @@ describe('stationBoundaryRectsLocal — interline gap parity', () => {
       dot: null,
       transferRadius: 0,
       labelGap: 3,
+      continues: { plus: true, minus: true },
     })).label!;
     // Detached fallback centers the rect on the label cell; the gap-aware
     // park pins its left edge at the stop edge + LABEL_GAP (7 + 3) − HIT_PAD.

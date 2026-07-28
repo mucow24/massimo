@@ -35,7 +35,7 @@ const HALF = STOP_SIZE / 2;
 /**
  * Everything the label geometry needs to know about ONE painted stop.
  *
- * Production callers pass `stopMetricsOf({ lines, transfers })`
+ * Production callers pass `stopMetricsOf({ lines, transfers, stations })`
  * (model/stopMetrics.ts) at EVERY `labelLayoutLocal` / `stationBoundary` /
  * `itemBounds` site — renderer and hit/bounds geometry alike — or the painted
  * label drifts off its own hit rect. The fields travel as one bundle precisely
@@ -68,6 +68,15 @@ export interface StopMetrics {
    *  stays consistent; at a cross each axis uses the gap of the stop that
    *  blocks it. */
   labelGap: number;
+  /** Which signed halves of the stop's travel axis (canonical
+   *  `travelDirLocal(orientation)` sign) carry painted line body away from
+   *  this stop, resolved from the line's edges and the neighbours' world
+   *  positions. Read ONLY by the beside-slant window, which models stripe
+   *  running past the marker — at a terminus facing the other way there is
+   *  nothing there to clear (the Yipping bug). A neighbour perpendicular to
+   *  the axis counts on neither side: the line bends away, and its body
+   *  toward that neighbour is not the along-axis stripe the window models. */
+  continues: { plus: boolean; minus: boolean };
 }
 
 /**
@@ -88,6 +97,9 @@ export const DEFAULT_STOP_METRICS: StopMetricsFn = () => ({
   dot: null,
   transferRadius: 0,
   labelGap: LABEL_GAP,
+  // The historical infinite-stripe assumption — non-doc callers have no
+  // topology to consult, and assuming body on both sides only ever over-clears.
+  continues: { plus: true, minus: true },
 });
 
 export type LabelBaseline = 'central' | 'text-before-edge' | 'text-after-edge';
@@ -720,6 +732,7 @@ function autoAlignInfo(
       dot: null,
       transferRadius: 0,
       labelGap: LABEL_GAP,
+      continues: { plus: false, minus: false },
       dRow: phantomDot.row - label.row,
       dCol: phantomDot.col - label.col,
       orientation: null,
@@ -844,7 +857,14 @@ function autoAlignInfo(
     const pn = (-readSin * -axis.y + readCos * axis.x) * Math.sign(un);
     // Edge advance along the approach per unit of +perp (the stacking side).
     const k = -pn / Math.abs(un);
-    return c.half / Math.abs(un) + Math.max(0, k * tDown, -k * tUp);
+    const base = c.half / Math.abs(un);
+    const extra = Math.max(0, k * tDown, -k * tUp);
+    if (extra === 0) return base;
+    // The window charges for stripe BODY continuing past the marker on the
+    // axis half the approach leans toward — nonexistent at a terminus facing
+    // the other way, where the finite marker square is the honest obstacle.
+    const along = uLocX * axis.x + uLocY * axis.y;
+    return (along > 0 ? c.continues.plus : c.continues.minus) ? base + extra : base;
   };
 
   // Pin point: marker edge + LABEL_GAP along the approach, stop-relative on

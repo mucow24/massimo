@@ -131,7 +131,7 @@ export function anchorOvershootLocal(box: AABBRect, anchors: readonly AnchorCell
 export function stationBoundaryRectsLocal(
   station: Station,
   style: LabelStyle = DEFAULT_LABEL_STYLE,
-  // Per-stop metrics — pass `stopMetricsOf({ lines, transfers })`, the same one
+  // Per-stop metrics — pass `stopMetricsOf({ lines, transfers, stations })`, the same one
   // the renderer uses, or the label rect drifts off the painted name (see
   // StopMetrics).
   metrics: StopMetricsFn = DEFAULT_STOP_METRICS,

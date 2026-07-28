@@ -23,6 +23,7 @@ const metrics = (
     dot: null,
     transferRadius: 0,
     labelGap: LABEL_GAP,
+    continues: { plus: true, minus: true },
     ...(typeof over === 'function' ? over(stop) : over),
   });
 };
@@ -493,6 +494,50 @@ describe('labelLayoutLocal — beside a diagonal line, the slant advances into t
       STOP_SIZE - (HALF * Math.SQRT2 + CAP / 2 + LINE_STACK + LABEL_GAP),
       6,
     );
+  });
+
+  it('the slant charges only when the stripe CONTINUES on the side being cleared', () => {
+    // The window models line body running past the marker on the axis half the
+    // approach leans toward. At a terminus facing the other way there is
+    // nothing there (the Yipping bug: label E of a NW–SE terminus whose line
+    // leaves NW sat ~4 units too far out) — the finite marker square is then
+    // the honest obstacle. E of NW–SE needs the SE (+axis) half:
+    const stops = [{ dRow: 0, dCol: -1, orientation: 'auto-nw-se' as const }];
+    const nwOnly = labelLayoutLocal(
+      autoStation({ stops }),
+      undefined,
+      undefined,
+      metrics({ continues: { plus: false, minus: true } }),
+    );
+    expect(nwOnly.anchorX).toBeCloseTo(-STOP_SIZE + HALF * Math.SQRT2 + LABEL_GAP, 6);
+    const seOnly = labelLayoutLocal(
+      autoStation({ stops }),
+      undefined,
+      undefined,
+      metrics({ continues: { plus: true, minus: false } }),
+    );
+    expect(seOnly.anchorX).toBeCloseTo(
+      -STOP_SIZE + HALF * Math.SQRT2 + CAP / 2 + DESC / 2 + LABEL_GAP,
+      6,
+    );
+  });
+
+  it('the W-side mirror needs the NW (−axis) half', () => {
+    const stops = [{ dRow: 0, dCol: 1, orientation: 'auto-nw-se' as const }];
+    const seOnly = labelLayoutLocal(
+      autoStation({ stops }),
+      undefined,
+      undefined,
+      metrics({ continues: { plus: true, minus: false } }),
+    );
+    expect(seOnly.anchorX).toBeCloseTo(STOP_SIZE - (HALF * Math.SQRT2 + LABEL_GAP), 6);
+    const nwOnly = labelLayoutLocal(
+      autoStation({ stops }),
+      undefined,
+      undefined,
+      metrics({ continues: { plus: false, minus: true } }),
+    );
+    expect(nwOnly.anchorX).toBeCloseTo(STOP_SIZE - (HALF * Math.SQRT2 + CAP / 2 + LABEL_GAP), 6);
   });
 
   it('a wide dot still joins by MAX and can out-reach the slanted stripe', () => {

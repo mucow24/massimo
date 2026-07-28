@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { cleanup, render, screen, fireEvent } from '@testing-library/react';
+import { act, cleanup, render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StyleEditor } from './StyleEditor';
 import { useDoc } from '../state/store';
@@ -88,6 +88,29 @@ describe('<StyleEditor> — line', () => {
     // Absent ⇒ the default 3 (never stored) — the row still renders.
     render(<StyleEditor def={makeStyle('line', 'y2')} />);
     expect(screen.getByRole('slider', { name: 'Label gap' })).toHaveAttribute('aria-valuenow', '3');
+  });
+
+  it('wheel ticks step THROUGH the collapse-at-default value without stalling', () => {
+    // A canonical write COLLAPSES labelGap 3 to no-key. The wheel's live read
+    // must then resolve the effective default — not fall back to a render-time
+    // snapshot of the props, which is the value the scroll just left. Two raw
+    // dispatches in one act() batch model a trackpad outpacing the re-render
+    // (the wheel listener is a native non-React listener, so nothing flushes
+    // between them); with the stale fallback the second tick re-writes 3 and
+    // the scroll stalls for a frame, then double-jumps (the field bug report).
+    const def = makeStyle('line', 'y1', { props: { labelGap: 2.75 } });
+    useDoc.setState({ styles: { ...useDoc.getState().styles, y1: def } });
+    render(<StyleEditor def={def} />);
+    const row = screen
+      .getByRole('slider', { name: 'Label gap' })
+      .closest('.options-popover-row') as HTMLElement;
+    const tick = () =>
+      row.dispatchEvent(new WheelEvent('wheel', { deltaY: -1, bubbles: true, cancelable: true }));
+    act(() => {
+      tick(); // 2.75 → 3, stored as ABSENT
+      tick(); // must read effective 3 and write 3.25
+    });
+    expect((useDoc.getState().styles.y1.props as LineStyleProps).labelGap).toBe(3.25);
   });
 
   it('heads the dot controls with a "Stop dots" section, with no redundant "Line" header', () => {
