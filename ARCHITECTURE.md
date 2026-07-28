@@ -1725,12 +1725,15 @@ which are a separate slot-based system where Shift flips the lattice basis.
   by, so an inline route bullet inside a beside-aligned name lands on the stop's row too. Those
   pins are asserted against the painted `<text>` baseline, not just the model
   ([stationLabel.autoAlign.test.tsx](src/components/stationLabel.autoAlign.test.tsx)).
-  An **above**-side label clears by `LABEL_GAP` + one `DESCENDER_FRACTION`, every other side by
-  `LABEL_GAP` alone: the CTA stops at the baseline but ink does not, and a constant gap against a
-  size-proportional descender put a "g" inside the route line above ~fontSize 15. The allowance
-  is unconditional rather than measured per name — clearing only the names that own a descender
-  is what leaves a row of labels on ragged baselines, which is the thing the tutorial rules out.
-  Below and beside need none: there the block grows AWAY from the marker.
+  An **above**-side label clears by `LABEL_GAP` + a descender charge — half a
+  `DESCENDER_FRACTION`, scaled by the vertical share of the approach (1 straight above, √2/2 on a
+  corner) — every other side by `LABEL_GAP` alone: the CTA stops at the baseline but ink does not,
+  and a constant gap against a size-proportional descender put a "g" inside the route line above
+  ~fontSize 15. Half rather than the full drop is a deliberate dial (full clearance read too far
+  on real maps); the deepest ink may dip the other half into the gap. The charge is unconditional
+  rather than measured per name — clearing only the names that own a descender is what leaves a
+  row of labels on ragged baselines, which is the thing the tutorial rules out. Below and beside
+  need none: there the block grows AWAY from the marker.
   Multi-line blocks anchor by the **line nearest the marker** and stack away from
   it: bottom line above (`auto-up`), top line below (`auto-down`), first line beside/fallback
   (`auto-down` align-down, so added lines never move the line that sits level with the dot).

@@ -830,19 +830,22 @@ function autoAlignInfo(
   let anchorPerp: number;
   let valign: AutoAlignInfo['valign'];
   if (o === 5 || o === 6 || o === 7) {
-    // Above: the LAST (bottom) line's baseline sits LABEL_GAP + one descender
-    // above the marker; earlier lines stack upward, away from it.
+    // Above: the LAST (bottom) line's baseline sits LABEL_GAP + a descender
+    // charge above the marker; earlier lines stack upward, away from it.
     //
     // The Core Type Area stops at the baseline, but ink does not — so pinning
     // the baseline itself put a "g" inside the route line, by an amount that
     // grew with font size while LABEL_GAP stayed constant (touching at ~15,
-    // overlapping above it). The allowance is unconditional, NOT measured per
-    // name: giving it only to names that own a descender is the same rule the
-    // tutorial rejects, since it would leave a row of labels on ragged
-    // baselines. Every above-side label clears by the same amount and they all
-    // stay level. Nothing below or beside moves — there the text grows AWAY
-    // from the marker.
-    anchorPerp = pinPerp - cb - DESCENDER_FRACTION * fontSize;
+    // overlapping above it). Charging the FULL drop cleared it but read too
+    // far on real maps (most names own no descender), so the charge is HALF
+    // the descender, scaled by the vertical share of the approach (-u.y: 1
+    // straight above, √2/2 on a corner, where the ink descends past the
+    // marker rather than onto it) — deepest ink may dip half a descender into
+    // the gap. The charge is still NOT measured per name: that is the
+    // ragged-baseline effect the tutorial rejects. Every above-side label
+    // charges the same and a row stays level. Nothing below or beside moves —
+    // there the text grows AWAY from the marker.
+    anchorPerp = pinPerp - cb - 0.5 * DESCENDER_FRACTION * fontSize * -u.y;
     valign = 'auto-up';
   } else if (o === 1 || o === 2 || o === 3) {
     // Below: the FIRST (top) line's cap hangs from the pin; later lines
