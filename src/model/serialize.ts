@@ -51,7 +51,12 @@ import {
   stylePropsEqual,
 } from './styles';
 import { edgesFromStations, isLineTerminus } from './lineTopology';
-import { LINE_END_STYLE_DEFAULT, isLineEndStyle, lineEndStyleOf } from './lineEnd';
+import {
+  LINE_END_STYLE_DEFAULT,
+  isLineEndStyle,
+  lineEndStyleOf,
+  withStationEndStyles,
+} from './lineEnd';
 import { reconcileOrder } from './recordOrder';
 import { parseHexA, withHexAlpha } from '../util/color';
 import { migrateLegacyInlineTokens } from '../geometry/labelTokens';
@@ -499,6 +504,43 @@ export function bakeLineStyleDotIds<T extends { styles?: Record<string, StyleDef
             ...(missingSingle ? { singletonDotStyleId: DEFAULT_STOP_DOT_STYLE_ID } : {}),
             ...(missingMulti ? { multiDotStyleId: DEFAULT_STOP_DOT_STYLE_ID } : {}),
           },
+        } as StyleDef;
+        changed = true;
+        continue;
+      }
+    }
+    styles[id] = def;
+  }
+  return changed ? ({ ...doc, styles } as T) : doc;
+}
+
+/**
+ * Heal `endStyle` on LINE STYLE DEFS saved before the line END became a covered
+ * line-style field — anything that isn't one of the three known values (absent
+ * included) ⇒ 'square', the historical full marker square, so a legacy def
+ * still paints what it always did. Only the defs need it: a line that predates
+ * the feature carries no end of its own, so it already paints square and stays
+ * a MATCH for its healed def — no tag pruning, unlike the v20 dot-type
+ * backfill. The file-import path heals the same way inside `sanitizeStyleProps`
+ * (canonicalStyleProps' `isLineEndStyle` guard), so this is the
+ * localStorage-rehydrate counterpart, gated at v<22 by `migrateDoc`.
+ * Reference-stable when every line def already carries a valid value.
+ */
+export function backfillLineStyleEndStyle<T extends { styles?: Record<string, StyleDef> }>(
+  doc: T,
+): T {
+  if (!doc.styles) return doc;
+  let changed = false;
+  const styles: Record<string, StyleDef> = {};
+  for (const id of Object.keys(doc.styles)) {
+    const def = doc.styles[id];
+    if (def && def.kind === 'line' && def.props && typeof def.props === 'object') {
+      // Raw persisted props — a pre-v22 def isn't a valid LineStyleProps yet.
+      const props = def.props as unknown as Record<string, unknown>;
+      if (!isLineEndStyle(props.endStyle)) {
+        styles[id] = {
+          ...def,
+          props: { ...props, endStyle: LINE_END_STYLE_DEFAULT },
         } as StyleDef;
         changed = true;
         continue;
@@ -2197,7 +2239,10 @@ function sanitizeLineEnds(line: Line): Line {
     // Read the line's own end from the CLEANED value above, so a pin is judged
     // redundant against what the line will actually paint.
     const lineEnd = lineEndStyleOf(next);
-    const valid = pins && typeof pins === 'object' ? pins : {};
+    // `typeof null === 'object'`, and so is an array — a bare non-object guard
+    // lets both ride along as a stored map holding no pin at all.
+    const isPinMap = pins !== null && typeof pins === 'object' && !Array.isArray(pins);
+    const valid = isPinMap ? pins : {};
     for (const stationId of Object.keys(valid)) {
       const pin = valid[stationId];
       if (!isLineEndStyle(pin) || pin === lineEnd || !isLineTerminus(next, stationId)) {
@@ -2206,14 +2251,12 @@ function sanitizeLineEnds(line: Line): Line {
       }
       kept[stationId] = pin;
     }
-    if (pinsChanged || typeof pins !== 'object') {
+    // Rewrite unless the field already IS a map with at least one pin to judge:
+    // an empty one has nothing to change, but still has to go, so "no
+    // overrides" keeps its single field-absent representation.
+    if (!isPinMap || pinsChanged || Object.keys(valid).length === 0) {
       changed = true;
-      if (Object.keys(kept).length === 0) {
-        const { stationEndStyles: _dropped, ...rest } = next;
-        next = rest as Line;
-      } else {
-        next = { ...next, stationEndStyles: kept };
-      }
+      next = withStationEndStyles(next, kept);
     }
   }
   return changed ? next : line;

@@ -14,6 +14,7 @@ import {
   NONE_STOP_DOT_STYLE_ID,
   STOP_DOT_FACTORY_STYLES,
 } from '../model/dotStyle';
+import { captureStyleProps, stylePropsEqual } from '../model/styles';
 import {
   makeLine,
   makeStation,
@@ -27,6 +28,7 @@ import type {
   DotStyle,
   LineId,
   LineStyleProps,
+  MapDoc,
   StationId,
   StopOrientation,
   StyleDef,
@@ -453,6 +455,48 @@ describe('migrateDoc', () => {
       );
       const l1 = out.lines!.L1 as { singletonDotStyleId?: string };
       expect(l1.singletonDotStyleId).toBe('stop-filled-black');
+    });
+  });
+
+  describe('v21 → v22: heal line style defs that predate the covered line end', () => {
+    // A line def as persisted BEFORE `endStyle` was a covered field: the file
+    // loader heals this (sanitizeStyleProps), but the rehydrate path had no
+    // gate, so a persisted def could keep arriving without it.
+    const { endStyle: _drop, ...oldLineProps } = DEFAULT_STYLES['default-line']
+      .props as LineStyleProps;
+    // L1 wears the def and, like every pre-feature line, carries no end of its
+    // own — so it paints the square the heal writes onto the def.
+    const persisted = () => ({
+      lines: { L1: { service: 'A', name: 'A line', stations: [], edges: [], styleId: 'ln' } },
+      styles: {
+        ...STOP_DOT_FACTORY_STYLES,
+        ln: { id: 'ln', name: 'My line', kind: 'line', props: oldLineProps },
+      },
+      styleDefaults: { ...FACTORY_STYLE_DEFAULTS, line: 'ln' },
+    });
+
+    it("backfills 'square' onto a line def that predates the covered field", () => {
+      const props = run(persisted(), 21).styles!.ln.props as unknown as LineStyleProps;
+      expect(props.endStyle).toBe('square');
+    });
+
+    it('leaves the tagged wearer matching its healed style', () => {
+      // The point of the heal: "tagged ⇒ matches" is what keeps the Styles
+      // panel from reading every legacy wearer as detached.
+      const out = migrateDoc(persisted(), 21) as unknown as MapDoc;
+      const captured = captureStyleProps(out, 'line', 'L1' as LineId)!;
+      expect(stylePropsEqual('line', captured, out.styles.ln.props)).toBe(true);
+    });
+
+    it('leaves a def that already carries an end style alone', () => {
+      const doc = persisted();
+      doc.styles.ln.props = { ...oldLineProps, endStyle: 'round' } as LineStyleProps;
+      const props = run(doc, 21).styles!.ln.props as unknown as LineStyleProps;
+      expect(props.endStyle).toBe('round');
+    });
+
+    it('does not backfill at version >= 22', () => {
+      expect('endStyle' in run(persisted(), 22).styles!.ln.props).toBe(false);
     });
   });
 
