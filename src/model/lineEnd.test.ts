@@ -6,6 +6,7 @@ import {
   lineEndStyleOf,
   resolveEndStyle,
   stationEndStyleOf,
+  withStationEndStyles,
 } from './lineEnd';
 import { isLineTerminus } from './lineTopology';
 import type { Line } from './types';
@@ -93,6 +94,24 @@ describe('isLineEndStyle', () => {
     for (const v of ['Round', 'butt', '', null, undefined, 3, {}]) {
       expect(isLineEndStyle(v)).toBe(false);
     }
+  });
+});
+
+describe('withStationEndStyles', () => {
+  it('replaces the map when pins remain', () => {
+    const next = withStationEndStyles(line({ stationEndStyles: { S1: 'round' } }), { S2: 'short' });
+    expect(next.stationEndStyles).toEqual({ S2: 'short' });
+  });
+
+  it('drops the field entirely once the map empties', () => {
+    const next = withStationEndStyles(line({ stationEndStyles: { S1: 'round' } }), {});
+    expect('stationEndStyles' in next).toBe(false);
+  });
+
+  it('leaves the input line untouched', () => {
+    const before = line({ stationEndStyles: { S1: 'round' } });
+    withStationEndStyles(before, {});
+    expect(before.stationEndStyles).toEqual({ S1: 'round' });
   });
 });
 

@@ -16,7 +16,7 @@ import {
   lineWidthOf,
 } from './lineWidth';
 import { LINE_CURVE_RADIUS_DEFAULT, canonicalLineCurveRadius } from './lineCurve';
-import { LINE_END_STYLE_DEFAULT, lineEndStyleOf } from './lineEnd';
+import { LINE_END_STYLE_DEFAULT, lineEndStyleOf, withStationEndStyles } from './lineEnd';
 import { repackStationForSpacing } from './stationPacking';
 import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
 import {
@@ -840,11 +840,7 @@ export function setLineEndStyle(doc: MapDoc, id: LineId, end: LineEndStyle): Map
     else kept[stationId] = pins[stationId];
   }
   if (!changed) return next;
-  const updated: Line =
-    Object.keys(kept).length === 0
-      ? (({ stationEndStyles: _gone, ...rest }) => rest as Line)(line)
-      : { ...line, stationEndStyles: kept };
-  return { ...next, lines: { ...next.lines, [id]: updated } };
+  return { ...next, lines: { ...next.lines, [id]: withStationEndStyles(line, kept) } };
 }
 
 /**
@@ -873,11 +869,7 @@ export function setStationEndStyle(
   const next: Record<StationId, LineEndStyle> = { ...cur };
   if (stored === undefined) delete next[stationId];
   else next[stationId] = stored;
-  const updated: Line =
-    Object.keys(next).length === 0
-      ? (({ stationEndStyles: _gone, ...rest }) => rest as Line)(line)
-      : { ...line, stationEndStyles: next };
-  return { ...doc, lines: { ...doc.lines, [lineId]: updated } };
+  return { ...doc, lines: { ...doc.lines, [lineId]: withStationEndStyles(line, next) } };
 }
 
 // Per-line casing width. Same contract as setLineWidth except the grid:
@@ -3115,14 +3107,7 @@ function pruneOrphanLineOverrides(line: Line): Line {
       if (isLineTerminus(next, stationId)) filtered[stationId] = ends[stationId];
       else changed = true;
     }
-    if (changed) {
-      // Drop the map entirely once it empties, so "no overrides" has one
-      // representation on disk and in memory.
-      next =
-        Object.keys(filtered).length === 0
-          ? (({ stationEndStyles: _gone, ...rest }) => rest as Line)(next)
-          : { ...next, stationEndStyles: filtered };
-    }
+    if (changed) next = withStationEndStyles(next, filtered);
   }
   return next;
 }
