@@ -32,6 +32,21 @@ describe('clipper engine', () => {
     expect(await loadClipper()).toBe(first);
   });
 
+  // Memoizing only the RESOLVED instance leaves the load window itself
+  // unguarded: callers arriving before the first resolve each compile their own
+  // wasm module, and the loser's instance replaces the winner's in the slot
+  // every synchronous consumer reads. Promise identity is the whole contract —
+  // one shared load, not two that happen to agree — so assert exactly that
+  // rather than the format, which two independent loads would also agree on.
+  it('concurrent callers share one in-flight load', async () => {
+    __resetClipper();
+    // Deliberately un-awaited: both calls have to be in flight at once.
+    const first = loadClipper();
+    const second = loadClipper();
+    expect(second).toBe(first);
+    expect(await second).toBe(await first);
+  });
+
   // There is no fallback implementation any more, so using the module early has
   // to be a loud, named failure rather than a null dereference three call
   // frames into a geometry pass.
