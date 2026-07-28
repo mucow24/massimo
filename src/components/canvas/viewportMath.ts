@@ -40,10 +40,10 @@ export function viewBoxFor(v: Viewport, size: Size): ViewBox {
 /**
  * A viewBox grown one viewport-width/height in every direction — a 3×3 tile
  * centered on the original. Full-viewport overlays (the background fill, the
- * grid, and the line-highlight dim wash) are drawn at this extent so that an
- * imperative-viewBox pan or zoom — which moves/scales the live viewBox WITHOUT
- * re-rendering these elements until the gesture commits (see useViewport) —
- * can't run past their edge and reveal a bare strip mid-gesture.
+ * grid, and the line-highlight dim wash) are drawn at this extent so that a
+ * mid-gesture camera the world hasn't re-rendered for — a pan's composited
+ * translate, or a wheel zoom's imperative viewBox write (see useViewport) —
+ * can't run past their edge and reveal a bare strip before the commit.
  */
 export function overdrawnViewBox(vb: ViewBox): ViewBox {
   return {
@@ -51,6 +51,25 @@ export function overdrawnViewBox(vb: ViewBox): ViewBox {
     vbY: vb.vbY - vb.vbH,
     vbW: vb.vbW * 3,
     vbH: vb.vbH * 3,
+  };
+}
+
+/**
+ * The window the map svg actually renders: the visible viewBox grown half a
+ * viewport in every direction (2× per axis, same center, same zoom). The svg
+ * element is oversized to match (`.canvas-pan-layer{inset:-50%}`), so the
+ * half-viewport ring around the visible window is PAINTED — that's what a
+ * composited pan translate reveals instead of a bare strip. The extent is
+ * deliberately bounded by the element box (svg overflow stays hidden): letting
+ * ink overflow set the layer bounds instead (~3× per axis) breaks the
+ * compositor's transform fast path and the pan re-rasters every frame.
+ */
+export function panSurfaceViewBox(vb: ViewBox): ViewBox {
+  return {
+    vbX: vb.vbX - vb.vbW / 2,
+    vbY: vb.vbY - vb.vbH / 2,
+    vbW: vb.vbW * 2,
+    vbH: vb.vbH * 2,
   };
 }
 

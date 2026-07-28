@@ -162,7 +162,10 @@ export function Toolbar() {
     const bounds = computeContentBounds(doc);
     const svg = getCanvasSvg();
     if (!bounds || !svg) return false;
-    const rect = svg.getBoundingClientRect();
+    // Fit to the VISIBLE canvas: the host box, not the svg — the svg is the
+    // oversized pan surface (2× per axis; see panSurfaceViewBox). A detached
+    // svg (tests) has no host and keeps its own rect.
+    const rect = (svg.closest('.canvas-host') ?? svg).getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return false;
     setViewport(fitViewport(bounds, { w: rect.width, h: rect.height }));
     return true;

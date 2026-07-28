@@ -33,8 +33,10 @@ const LOADED_FILE = JSON.stringify({
 });
 
 // Center of the live SVG's viewBox, in world coords — where the camera points.
+// (The svg renders the 2× pan-surface window, but that window shares the
+// visible box's center, so the center IS the camera.)
 async function viewBoxCenter(page: Page): Promise<{ cx: number; cy: number }> {
-  const vb = await page.locator('.canvas-host > svg').getAttribute('viewBox');
+  const vb = await page.locator('.canvas-host .canvas-pan-layer > svg').getAttribute('viewBox');
   const [vx, vy, vw, vh] = vb!.split(/\s+/).map(Number);
   return { cx: vx + vw / 2, cy: vy + vh / 2 };
 }
@@ -69,8 +71,9 @@ test('opening a map file recenters the camera onto the loaded content', async ({
   expect(after.cy).toBeGreaterThan(4500);
   expect(after.cy).toBeLessThan(5500);
 
-  // And the loaded station renders inside the SVG's on-screen rectangle.
-  const host = await page.locator('.canvas-host > svg').boundingBox();
+  // And the loaded station renders inside the canvas's on-screen rectangle
+  // (the host box — the svg itself is the oversized pan surface).
+  const host = await page.locator('.canvas-host').boundingBox();
   const dot = await page.locator('[data-station-id="X"]').boundingBox();
   expect(dot).not.toBeNull();
   expect(host).not.toBeNull();

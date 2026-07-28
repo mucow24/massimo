@@ -21,9 +21,9 @@ beforeEach(() => {
 // 800×600 canvas at the top-left of the screen; the effect reads the size off
 // the fake parentElement on mount.
 function render() {
-  const { ref, svg } = fakeSvgRef({ width: 800, height: 600 });
-  const { result } = renderHook(() => useViewport(ref));
-  return { result, ref, svg };
+  const { ref, svg, panLayerRef, panLayer } = fakeSvgRef({ width: 800, height: 600 });
+  const { result } = renderHook(() => useViewport(ref, panLayerRef));
+  return { result, ref, svg, panLayer };
 }
 
 describe('useViewport — sizing + screenToWorld', () => {
@@ -52,14 +52,23 @@ describe('useViewport — null ref safety', () => {
   // throws if a pointer/wheel event ever fires with a detached ref. They now
   // fall back to a size-derived origin rect instead.
   it('screenToWorld does not throw with a null ref', () => {
-    const { result } = renderHook(() => useViewport({ current: null }));
+    const { result } = renderHook(() => useViewport({ current: null }, { current: null }));
     expect(() => result.current.screenToWorld(400, 300)).not.toThrow();
   });
 
   it('onWheel does not throw with a null ref', () => {
-    const { result } = renderHook(() => useViewport({ current: null }));
+    const { result } = renderHook(() => useViewport({ current: null }, { current: null }));
     expect(() =>
       wheel(result as Result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100 })),
+    ).not.toThrow();
+  });
+
+  it('a pan move does not throw with a null pan-layer ref', () => {
+    const { ref } = fakeSvgRef({ width: 800, height: 600 });
+    const { result } = renderHook(() => useViewport(ref, { current: null }));
+    down(result as Result, pointerEvent({ clientX: 100, clientY: 100, button: 0 }));
+    expect(() =>
+      move(result as Result, pointerEvent({ clientX: 150, clientY: 130 })),
     ).not.toThrow();
   });
 });
@@ -73,6 +82,23 @@ describe('useViewport — wheel zoom', () => {
     expect(svg.getAttribute('viewBox')).not.toBe(vbBefore);
     // ...but the store waits for the gesture to settle (no per-tick re-render).
     expect(result.current.viewport.zoom).toBe(1);
+  });
+
+  it('writes the pan-surface window (2× the visible box), matching the oversized svg', () => {
+    // The svg element is 2× the host per axis (.canvas-pan-layer{inset:-50%}),
+    // and React's JSX binding renders panSurfaceViewBox — the imperative wheel
+    // write must produce the SAME framing or every tick would jump the world.
+    const { result, svg } = render();
+    wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100 }));
+    const zoom = Math.exp(0.15);
+    const [vbX, vbY, vbW, vbH] = svg.getAttribute('viewBox')!.split(' ').map(Number);
+    // Visible window at the zoomed viewport: centered on (0,0), 800/zoom wide.
+    // The surface doubles it about the same center.
+    expect(vbW).toBeCloseTo((800 / zoom) * 2, 9);
+    expect(vbH).toBeCloseTo((600 / zoom) * 2, 9);
+    expect(vbX).toBeCloseTo(-800 / zoom, 9);
+    expect(vbY).toBeCloseTo(-600 / zoom, 9);
+    expect(result.current.viewport.zoom).toBe(1); // still uncommitted
   });
 
   it('commits the zoom by exp(-deltaY*0.0015) once the wheel settles', () => {
@@ -143,8 +169,8 @@ describe('useViewport — wheel zoom', () => {
     // non-origin rect; this closes the hook-level wiring.)
     vi.useFakeTimers();
     try {
-      const { ref } = fakeSvgRef({ width: 800, height: 600, left: 100, top: 60 });
-      const { result } = renderHook(() => useViewport(ref));
+      const { ref, panLayerRef } = fakeSvgRef({ width: 800, height: 600, left: 100, top: 60 });
+      const { result } = renderHook(() => useViewport(ref, panLayerRef));
       const cx = 600;
       const cy = 200;
       const before = result.current.screenToWorld(cx, cy);
@@ -200,8 +226,8 @@ describe('useViewport — wheel zoom', () => {
   });
 
   it('removes the wheel listener on unmount', () => {
-    const { ref, svg } = fakeSvgRef({ width: 800, height: 600 });
-    const { unmount } = renderHook(() => useViewport(ref));
+    const { ref, svg, panLayerRef } = fakeSvgRef({ width: 800, height: 600 });
+    const { unmount } = renderHook(() => useViewport(ref, panLayerRef));
     expect(svg.eventListener('wheel')).toBeDefined();
     unmount();
     expect(svg.eventListener('wheel')).toBeUndefined();
@@ -215,10 +241,10 @@ describe('useViewport — cancelled / dead pan gestures disarm', () => {
   // drags there is nothing to roll back — the accumulated pan COMMITS, since
   // the viewBox has already visibly moved and snapping back would be jarring.
   it('a move with no buttons (lost pointerup) ends the pan instead of gluing the map to the cursor', () => {
-    const { result, svg } = render();
+    const { result, panLayer } = render();
     down(result, pointerEvent({ clientX: 100, clientY: 100, button: 0 }));
     move(result, pointerEvent({ clientX: 150, clientY: 130 }));
-    expect(svg.getAttribute('viewBox')).toBe('-450 -330 800 600');
+    expect(panLayer.style.transform).toBe('translate(50px, 30px)');
 
     // First hover move after focus returns: no buttons held.
     move(result, pointerEvent({ clientX: 300, clientY: 300, buttons: 0 }));
@@ -226,14 +252,16 @@ describe('useViewport — cancelled / dead pan gestures disarm', () => {
     expect(result.current.panning).toBe(false);
     expect(result.current.viewport.x).toBe(-50);
     expect(result.current.viewport.y).toBe(-30);
+    // The composited layer is retired along with the gesture.
+    expect(panLayer.style.transform).toBe('');
     // Disarmed: further moves no longer pan.
     move(result, pointerEvent({ clientX: 400, clientY: 400 }));
     expect(result.current.viewport.x).toBe(-50);
-    expect(svg.getAttribute('viewBox')).toBe('-450 -330 800 600');
+    expect(panLayer.style.transform).toBe('');
   });
 
-  it('cancel() disarms an armed pan and resolves the live viewport', () => {
-    const { result } = render();
+  it('cancel() disarms an armed pan, resolves the live viewport, and clears the transform', () => {
+    const { result, panLayer } = render();
     down(result, pointerEvent({ clientX: 100, clientY: 100, button: 0 }));
     move(result, pointerEvent({ clientX: 150, clientY: 130 }));
 
@@ -243,6 +271,8 @@ describe('useViewport — cancelled / dead pan gestures disarm', () => {
     expect(result.current.viewport.x).toBe(-50);
     // The live slot is resolved — no dangling pending for overlays.
     expect(useLiveViewportStore.getState().pending).toBeNull();
+    expect(panLayer.style.transform).toBe('');
+    expect(panLayer.style.willChange).toBe('');
     move(result, pointerEvent({ clientX: 400, clientY: 400 }));
     expect(result.current.viewport.x).toBe(-50);
   });
@@ -272,23 +302,82 @@ describe('useViewport — panning', () => {
     expect(result.current.viewport.y).toBe(-30);
   });
 
-  it('writes the viewBox imperatively during a move, deferring the store commit to pointer-up', () => {
-    const { result, svg } = render();
+  it('moves the composited pan layer during a move — no viewBox write, no store commit', () => {
+    // The load-bearing perf invariant: a pan move must not touch the viewBox
+    // (a viewBox write re-lays-out, re-paints, and re-rasters the whole SVG
+    // every frame — ~20fps on a big map on integrated graphics). The move
+    // translates the composited pan-layer div instead, which the compositor
+    // slides without any paint or raster work.
+    const { result, svg, panLayer } = render();
     down(result, pointerEvent({ clientX: 100, clientY: 100, button: 0 }));
     move(result, pointerEvent({ clientX: 150, clientY: 130 }));
-    // viewBox tracks the pan immediately: next viewport {-50,-30,1} →
-    // vb {-450,-330,800,600}.
-    expect(svg.getAttribute('viewBox')).toBe('-450 -330 800 600');
-    // ...but the store stays put until pointer-up (no per-move re-render).
+    // The pan layer carries the gesture: screen-px delta from the pan start.
+    expect(panLayer.style.transform).toBe('translate(50px, 30px)');
+    // The viewBox is untouched (only React's committed render writes it).
+    expect(svg.getAttribute('viewBox')).toBeNull();
+    // ...and the store stays put until pointer-up (no per-move re-render).
     expect(result.current.viewport.x).toBe(0);
     expect(result.current.viewport.y).toBe(0);
     up(result, pointerEvent({ clientX: 150, clientY: 130 }));
     expect(result.current.viewport.x).toBe(-50);
+    // Commit retires the transform in the same frame React re-renders the
+    // committed viewBox — the two swap atomically, no double-offset frame.
+    expect(panLayer.style.transform).toBe('');
+  });
+
+  it('promotes the pan layer on pan start and demotes it when the gesture ends', () => {
+    // will-change is gesture-scoped: promotion happens at pointer-down (the
+    // one-off layerization raster hides in the press), and the layer is
+    // demoted on commit so idle rendering is exactly what it was before.
+    const { result, panLayer } = render();
+    down(result, pointerEvent({ clientX: 100, clientY: 100, button: 0 }));
+    expect(panLayer.style.willChange).toBe('transform');
+    up(result, pointerEvent({ clientX: 100, clientY: 100 }));
+    expect(panLayer.style.willChange).toBe('');
+    expect(panLayer.style.transform).toBe('');
+  });
+
+  it('re-anchors a long pan mid-gesture: commits the camera, zeroes the transform, keeps panning', () => {
+    // The revealed-edge margin (the 3×3 overdrawn bg/grid and the svg's ink
+    // overflow) only covers about a viewport of travel. Once the transform
+    // exceeds 45% of the viewport dimension the gesture re-anchors: one
+    // commit re-renders the world at the current camera and the transform
+    // restarts from zero — one repaint per half-viewport instead of per frame.
+    const { result, panLayer } = render();
+    down(result, pointerEvent({ clientX: 100, clientY: 100, button: 0 }));
+    // 800px-wide host → threshold 360px. A 400px drag crosses it.
+    move(result, pointerEvent({ clientX: 500, clientY: 100 }));
+    // Mid-gesture commit: camera moved by the full delta, transform reset.
+    expect(result.current.viewport.x).toBe(-400);
+    expect(panLayer.style.transform).toBe('');
+    expect(result.current.panning).toBe(true);
+    // The gesture continues seamlessly from the new anchor…
+    move(result, pointerEvent({ clientX: 550, clientY: 100 }));
+    expect(panLayer.style.transform).toBe('translate(50px, 0px)');
+    // …and the final commit lands on start + total client delta.
+    up(result, pointerEvent({ clientX: 550, clientY: 100 }));
+    expect(result.current.viewport.x).toBe(-450);
+    expect(result.current.viewport.y).toBe(0);
+    expect(panLayer.style.transform).toBe('');
+  });
+
+  it('ignores wheel zoom while a pan is active', () => {
+    // A wheel tick mid-pan would have to write the viewBox under a live
+    // transform — a double-offset frame and a corrupted anchor. (The old
+    // imperative pan silently discarded the zoom on the next move anyway.)
+    const { result, svg, panLayer } = render();
+    down(result, pointerEvent({ clientX: 100, clientY: 100, button: 1 }));
+    move(result, pointerEvent({ clientX: 150, clientY: 100 }));
+    wheel(result, wheelEvent({ clientX: 400, clientY: 300, deltaY: -100 }));
+    expect(svg.getAttribute('viewBox')).toBeNull();
+    expect(panLayer.style.transform).toBe('translate(50px, 0px)');
+    up(result, pointerEvent({ clientX: 150, clientY: 100 }));
+    expect(result.current.viewport.zoom).toBe(1);
   });
 
   it('publishes the in-flight viewport to the live store for overlays, and clears it on commit', () => {
     // The popover overlay tracks a pan by subscribing to the live viewport
-    // store (the SVG viewBox moves imperatively without a re-render, so a
+    // store (the pan layer translates imperatively without a re-render, so a
     // committed-only overlay would sit still and jump at commit). A move
     // publishes the live viewport; pointer-up commits it and clears the live
     // slot so the overlay falls back to the committed prop.
@@ -303,8 +392,8 @@ describe('useViewport — panning', () => {
   });
 
   it('clears the live viewport on unmount so an abandoned gesture leaks nothing', () => {
-    const { ref } = fakeSvgRef({ width: 800, height: 600 });
-    const { result, unmount } = renderHook(() => useViewport(ref));
+    const { ref, panLayerRef } = fakeSvgRef({ width: 800, height: 600 });
+    const { result, unmount } = renderHook(() => useViewport(ref, panLayerRef));
     act(() => result.current.startPan(pointerEvent({ clientX: 100, clientY: 100, button: 1 })));
     act(() => result.current.onPointerMove(pointerEvent({ clientX: 150, clientY: 130 })));
     expect(useLiveViewportStore.getState().pending).not.toBeNull();
@@ -328,9 +417,9 @@ describe('useViewport — panning', () => {
 
   it('keeps the grabbed world point under the cursor mid-pan', () => {
     // A cursor-following overlay (e.g. the placing-station ghost) reprojects the
-    // cursor each move via screenToWorld. Because a pan writes the viewBox
+    // cursor each move via screenToWorld. Because a pan moves the world
     // imperatively WITHOUT committing to the store, screenToWorld must read the
-    // live (pending) viewBox — otherwise the overlay drifts off the cursor by
+    // live (pending) viewport — otherwise the overlay drifts off the cursor by
     // the full pan delta. Invariant: a grab-pan keeps the grabbed world point
     // pinned under the cursor, so screenToWorld at the moving cursor returns the
     // same world point it did at grab time.
@@ -345,15 +434,17 @@ describe('useViewport — panning', () => {
 
   it('binds the returned viewBox to the committed viewport, not the in-flight pan', () => {
     // Load-bearing partner to the test above: screenToWorld reads the LIVE
-    // viewBox, but the returned vb* fields (which the SVG's JSX viewBox binds
-    // to) must stay COMMITTED. The pan moves the viewBox imperatively; a
-    // mid-pan re-render (the cursor-track setState fires one every move) must
-    // NOT rewrite the viewBox attribute and clobber the imperative pan. React
-    // only skips that DOM write because the bound prop string is unchanged —
-    // which holds only while these fields track the committed viewport. If they
-    // ever tracked liveViewport() the clobber (and the drift) would return.
-    const { ref } = fakeSvgRef({ width: 800, height: 600 });
-    const { result, rerender } = renderHook(() => useViewport(ref));
+    // viewport, but the returned vb* fields (which the SVG's JSX viewBox binds
+    // to, via panSurfaceViewBox) must stay COMMITTED. Mid-pan the attribute
+    // must not move at all (the transform carries the gesture), and mid-wheel
+    // it moves imperatively; either way a mid-gesture re-render (the
+    // cursor-track setState fires one every move) must NOT write a
+    // live-derived viewBox. React only skips that DOM write because the bound
+    // prop string is unchanged — which holds only while these fields track the
+    // committed viewport. If they ever tracked liveViewport() the clobber (and
+    // the drift) would return.
+    const { ref, panLayerRef } = fakeSvgRef({ width: 800, height: 600 });
+    const { result, rerender } = renderHook(() => useViewport(ref, panLayerRef));
     down(result as Result, pointerEvent({ clientX: 100, clientY: 100, button: 1 }));
     move(result as Result, pointerEvent({ clientX: 250, clientY: 180 }));
     // Force the kind of re-render the cursor-track setState triggers mid-pan.

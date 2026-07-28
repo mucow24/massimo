@@ -33,7 +33,7 @@ export const EXPORT_EXCLUDE_ATTR = 'data-export-exclude';
 
 /** The live map `<svg>` (single canvas), or null if it isn't mounted. */
 export function getCanvasSvg(): SVGSVGElement | null {
-  return document.querySelector<SVGSVGElement>('.canvas-host > svg');
+  return document.querySelector<SVGSVGElement>('.canvas-host .canvas-pan-layer > svg');
 }
 
 // Strip the characters Windows/macOS/Linux collectively reject in filenames
