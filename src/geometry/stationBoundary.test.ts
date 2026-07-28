@@ -153,6 +153,7 @@ describe('stationBoundaryRectsLocal — dash tick clearance parity', () => {
       dash: { length: 14, width: 7 },
       dot: null,
       transferRadius: 0,
+      labelGap: 3,
     })).label!;
     for (let i = 0; i < 4; i++) {
       expect(dashed[i].x - plain[i].x).toBeCloseTo(14, 6);
@@ -189,6 +190,7 @@ describe('stationBoundaryRectsLocal — interline gap parity', () => {
       dash: null,
       dot: null,
       transferRadius: 0,
+      labelGap: 3,
     })).label!;
     // Detached fallback centers the rect on the label cell; the gap-aware
     // park pins its left edge at the stop edge + LABEL_GAP (7 + 3) − HIT_PAD.

@@ -57,6 +57,13 @@ const CTA = 0.714 * FS;
 // the route line.
 const DESC = 0.2 * FS;
 const S2 = Math.SQRT1_2;
+// What an above-side pin actually charges for that ink: HALF the descender,
+// scaled by the vertical share of the approach (1 straight above, √2/2 on a
+// 45° corner). Full clearance was measured-honest but read too far on real
+// maps; half is the deliberate compromise — still name-independent, so
+// above-side baselines stay level.
+const CHARGE_N = DESC / 2;
+const CHARGE_DIAG = (DESC / 2) * S2;
 
 type StopSpec = { dRow: number; dCol: number; orientation: StopOrientation };
 
@@ -114,16 +121,18 @@ describe('magic wand — horizontal and vertical route lines', () => {
   // "Labels below the line: align to the cap height. Labels above the line:
   // align to the baseline, NOT the descender line."
 
-  it('above a horizontal line: the glyphs SIT on their baseline, a descender clear of the marker', () => {
+  it('above a horizontal line: the glyphs SIT on their baseline, half a descender clear of the marker', () => {
     const { baselineY, textAnchor } = paintedLabel([
       { dRow: 1, dCol: 0, orientation: 'auto-horizontal' },
     ]);
     // The label sits on its baseline — the tutorial's rule, and what keeps a row
-    // of these level whatever letters they contain. The GAP is then measured to
-    // the DESCENDER line, not the baseline: the Core Type Area stops at the
-    // baseline but the ink does not, and "ensure sufficient clearance between
-    // the descender line and station markers" is the tutorial's own caveat.
-    expect(baselineY + DESC).toBeCloseTo(STOP_SIZE - HALF - GAP, 5);
+    // of these level whatever letters they contain. The GAP is then measured
+    // half a descender below the baseline: the CTA stops at the baseline but
+    // the ink does not ("ensure sufficient clearance between the descender
+    // line and station markers" is the tutorial's own caveat) — yet charging
+    // the full drop read too far on real maps, so the deepest ink is allowed
+    // to dip the other half-descender into the gap.
+    expect(baselineY + CHARGE_N).toBeCloseTo(STOP_SIZE - HALF - GAP, 5);
     expect(textAnchor).toBe('middle');
   });
 
@@ -137,7 +146,7 @@ describe('magic wand — horizontal and vertical route lines', () => {
     const flat = paintedLabel(stops, 0, 'Bank'); // nothing below the baseline
     expect(tailed.baselineY).toBeCloseTo(flat.baselineY, 5);
     // …and both carry the allowance, rather than neither.
-    expect(flat.baselineY).toBeCloseTo(STOP_SIZE - HALF - GAP - DESC, 5);
+    expect(flat.baselineY).toBeCloseTo(STOP_SIZE - HALF - GAP - CHARGE_N, 5);
   });
 
   it('below a horizontal line: the glyphs HANG from their cap line, GAP clear of the marker', () => {
@@ -149,18 +158,19 @@ describe('magic wand — horizontal and vertical route lines', () => {
     expect(textAnchor).toBe('middle');
   });
 
-  it('the two sides are mirror images: equal INK clearance, not equal baselines', () => {
-    // The tutorial's whole argument for cap-aligning the lower label. Aligning
-    // both by baseline would leave the lower one CTA-tall too close to the line.
-    // What matches on the two sides is how much clear space the deepest ink
-    // leaves — below, the cap line IS the top of the ink; above, the descender
-    // line is the bottom of it.
+  it('the two sides NEARLY mirror: the above side concedes half a descender of ink clearance', () => {
+    // The tutorial's argument for cap-aligning the lower label still holds —
+    // aligning both by baseline would leave the lower one CTA-tall too close
+    // to the line. Below, the cap line IS the top of the ink and keeps the
+    // full GAP. Above, the descender line is the bottom of the ink, and the
+    // pin charges only half its drop — the deliberate dial between clearing a
+    // "g" outright and the too-airy look full clearance gave.
     const above = paintedLabel([{ dRow: 1, dCol: 0, orientation: 'auto-horizontal' }]);
     const below = paintedLabel([{ dRow: -1, dCol: 0, orientation: 'auto-horizontal' }]);
     const topClear = STOP_SIZE - HALF - (above.baselineY + DESC);
     const bottomClear = below.baselineY - CTA - (-STOP_SIZE + HALF);
-    expect(topClear).toBeCloseTo(bottomClear, 5);
-    expect(topClear).toBeCloseTo(GAP, 5);
+    expect(bottomClear).toBeCloseTo(GAP, 5);
+    expect(topClear).toBeCloseTo(GAP - CHARGE_N, 5);
   });
 
   it('beside a vertical line: the Core Type Area CENTERS on the stop row', () => {
@@ -193,7 +203,7 @@ describe('magic wand — 45° route lines', () => {
     ]);
     expect(textAnchor).toBe('start'); // left edge faces the stop
     expect(penX).toBeCloseTo(-PIN, 5);
-    expect(baselineY + DESC).toBeCloseTo(PIN, 5); // bottom edge = the descender line
+    expect(baselineY + CHARGE_DIAG).toBeCloseTo(PIN, 5); // baseline the corner charge above the ray point
   });
 
   it('above-left of the line: the bottom-RIGHT corner of the CTA pins', () => {
@@ -202,7 +212,7 @@ describe('magic wand — 45° route lines', () => {
     ]);
     expect(textAnchor).toBe('end');
     expect(penX).toBeCloseTo(PIN, 5);
-    expect(baselineY + DESC).toBeCloseTo(PIN, 5);
+    expect(baselineY + CHARGE_DIAG).toBeCloseTo(PIN, 5);
   });
 
   it('below-right of the line: the top-LEFT corner of the CTA pins', () => {
@@ -226,12 +236,12 @@ describe('magic wand — 45° route lines', () => {
   it('moves the corner ACROSS and UP/DOWN an even amount, never sideways only', () => {
     // The tutorial's named error: shifting the label sideways off the marker
     // gives inconsistent spacing and uneven baselines. Along a 45° approach the
-    // two components must be equal.
-    // Measured on the INK box, whose bottom edge is the descender line — that is
-    // the corner actually facing the marker on an above-side approach.
+    // two components must be equal — measured at the charged baseline corner,
+    // which is what the pin places (the half-descender corner charge lifts it
+    // straight up off the geometric ray point).
     const stop = { x: -S2 * STOP_SIZE, y: S2 * STOP_SIZE };
     const { penX, baselineY } = paintedLabel([{ dRow: S2, dCol: -S2, orientation: 'auto-nw-se' }]);
-    expect(Math.abs(penX - stop.x)).toBeCloseTo(Math.abs(baselineY + DESC - stop.y), 5);
+    expect(Math.abs(penX - stop.x)).toBeCloseTo(Math.abs(baselineY + CHARGE_DIAG - stop.y), 5);
   });
 });
 
@@ -287,7 +297,7 @@ describe('magic wand — labels at a crossing', () => {
     // Top/bottom: the SAME distance, off its own line — so a row of labels
     // along that line stays level whether or not one of them is at a cross.
     expect(crossed.baselineY).toBeCloseTo(plain.baselineY, 5);
-    expect(STOP_SIZE - HALF - (crossed.baselineY + DESC)).toBeCloseTo(GAP, 5);
+    expect(STOP_SIZE - HALF - (crossed.baselineY + CHARGE_N)).toBeCloseTo(GAP, 5);
   });
 
   it('below the crossing line it still hangs from the cap, butted the same way', () => {

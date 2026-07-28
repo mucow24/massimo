@@ -21,9 +21,15 @@ import {
   capCenterDy,
   measureTextLabel,
 } from './textMeasure';
+import { LINE_LABEL_GAP_DEFAULT } from '../model/lineWidth';
 
 const HIT_PAD = 2;
-const LABEL_GAP = 3;
+// The DEFAULT clearance between a label and the marker it pins against —
+// the stored default of the per-line `Line.labelGap` (one owner:
+// model/lineWidth.ts). Stop-relative pins read the gap from StopMetrics;
+// this constant serves the phantom dot, the test fallback metrics, and the
+// legacy cell-boundary anchor, which is not measured off any stop.
+const LABEL_GAP = LINE_LABEL_GAP_DEFAULT;
 const HALF = STOP_SIZE / 2;
 
 /**
@@ -57,6 +63,11 @@ export interface StopMetrics {
    *  transfer is a round-capped capsule of uniform half-width, so at its end it
    *  is exactly a disc — isotropic, needing no direction. */
   transferRadius: number;
+  /** Clearance a label keeps from this stop's marker (Line.labelGap, default
+   *  3). Rides the LINE, not the label, so a row of labels along one corridor
+   *  stays consistent; at a cross each axis uses the gap of the stop that
+   *  blocks it. */
+  labelGap: number;
 }
 
 /**
@@ -76,6 +87,7 @@ export const DEFAULT_STOP_METRICS: StopMetricsFn = () => ({
   dash: null,
   dot: null,
   transferRadius: 0,
+  labelGap: LABEL_GAP,
 });
 
 export type LabelBaseline = 'central' | 'text-before-edge' | 'text-after-edge';
@@ -243,7 +255,7 @@ export function labelLayoutLocal(
       phantomDot,
       readCos,
       readSin,
-      style.fontSize,
+      style,
       stopMetrics,
       lineAdvances,
     );
@@ -288,7 +300,9 @@ export function labelLayoutLocal(
         // `proj * STOP_SIZE` stays — the projection is in lattice units and
         // the lattice does NOT scale with width; only the stop's own
         // half-extent does.
-        const target = plus.inWayStopProj * STOP_SIZE - ((plus.inWayStopHalf ?? HALF) + LABEL_GAP);
+        const target =
+          plus.inWayStopProj * STOP_SIZE -
+          ((plus.inWayStopHalf ?? HALF) + (plus.inWayStopLabelGap ?? LABEL_GAP));
         anchorX = labelCenter.x + target * readCos;
         anchorY = labelCenter.y + target * readSin;
       }
@@ -298,7 +312,8 @@ export function labelLayoutLocal(
       anchorY = labelCenter.y + dirMinus.anchor.y + LABEL_GAP * readSin;
       if (minus.inWayStopProj !== null) {
         const target =
-          minus.inWayStopProj * STOP_SIZE + ((minus.inWayStopHalf ?? HALF) + LABEL_GAP);
+          minus.inWayStopProj * STOP_SIZE +
+          ((minus.inWayStopHalf ?? HALF) + (minus.inWayStopLabelGap ?? LABEL_GAP));
         anchorX = labelCenter.x + target * readCos;
         anchorY = labelCenter.y + target * readSin;
       }
@@ -437,6 +452,10 @@ interface SnapInfo {
   // clears the stop's ACTUAL edge, not the default STOP_SIZE/2. Null
   // whenever `inWayStopProj` is null.
   inWayStopHalf: number | null;
+  // The winning in-way stop's own label gap (Line.labelGap) — the clamp
+  // clears by the LINE's clearance, not the global default. Null whenever
+  // `inWayStopProj` is null.
+  inWayStopLabelGap: number | null;
 }
 
 /**
@@ -464,7 +483,8 @@ function snapInfoInHalfPlane(
   let inHalfPlane = false;
   let inWayStopProj: number | null = null;
   let inWayStopHalf: number | null = null;
-  const consider = (dRow: number, dCol: number, half: number, gap: number) => {
+  let inWayStopLabelGap: number | null = null;
+  const consider = (dRow: number, dCol: number, half: number, gap: number, labelGap: number) => {
     // Accept any cell within the adjacency gate (see labelAdjacencyGate).
     if (Math.max(Math.abs(dRow), Math.abs(dCol)) > labelAdjacencyGate(half, gap)) return;
     const proj = dCol * readCos + dRow * readSin;
@@ -483,14 +503,16 @@ function snapInfoInHalfPlane(
     if (inWayStopProj === null || sign * proj < sign * inWayStopProj) {
       inWayStopProj = proj;
       inWayStopHalf = half;
+      inWayStopLabelGap = labelGap;
     }
   };
   for (const s of stops) {
     const m = metrics(station, s);
-    consider(s.row - label.row, s.col - label.col, m.half, m.gap);
+    consider(s.row - label.row, s.col - label.col, m.half, m.gap, m.labelGap);
   }
-  if (phantomDot) consider(phantomDot.row - label.row, phantomDot.col - label.col, HALF, 0);
-  return { inHalfPlane, inWayStopProj, inWayStopHalf };
+  if (phantomDot)
+    consider(phantomDot.row - label.row, phantomDot.col - label.col, HALF, 0, LABEL_GAP);
+  return { inHalfPlane, inWayStopProj, inWayStopHalf, inWayStopLabelGap };
 }
 
 interface AutoAlignInfo {
@@ -662,11 +684,12 @@ function autoAlignInfo(
   phantomDot: { row: number; col: number } | null,
   readCos: number,
   readSin: number,
-  fontSize: number,
+  style: LabelStyle,
   metrics: StopMetricsFn,
   // Per-line pen advances of the rendered name, for the H/V overrides.
   lineAdvances: number[],
 ): AutoAlignInfo {
+  const fontSize = style.fontSize;
   const stops = station.stops;
   const label = station.label;
   // The station's own rotation — only the dash tick's on-axis tie fallback
@@ -696,6 +719,7 @@ function autoAlignInfo(
       dash: null,
       dot: null,
       transferRadius: 0,
+      labelGap: LABEL_GAP,
       dRow: phantomDot.row - label.row,
       dCol: phantomDot.col - label.col,
       orientation: null,
@@ -798,11 +822,50 @@ function autoAlignInfo(
     return Math.max(extent, tickExtent);
   };
 
+  /**
+   * Stripe reach along a beside approach measured over the text's
+   * perpendicular WINDOW, not just the CTA-center ray. The ray support is
+   * exact for a stripe perpendicular to the approach, but a DIAGONAL stripe
+   * advances toward the label by |along/cross| per unit of text height, so
+   * the near corner of the block — half a cap up, half a cap plus the
+   * half-weight descender charge down, plus any stacked lines on the growing
+   * side — is what actually has to clear. Returns 0 for a stripe PARALLEL to
+   * the approach: there the finite marker-square model is the deliberate
+   * choice (it is what lets a terminus label read along its own line).
+   */
+  const stripeSlantExtent = (c: Gated, dir: Vec2, tUp: number, tDown: number): number => {
+    if (!c.orientation) return 0; // phantom dot paints no stripe
+    const uLocX = dir.x * readCos - dir.y * readSin;
+    const uLocY = dir.x * readSin + dir.y * readCos;
+    const axis = travelDirLocal(c.orientation);
+    // Label-side stripe edge: normal = axis⊥, signed toward the approach.
+    const un = uLocX * -axis.y + uLocY * axis.x;
+    if (Math.abs(un) < 1e-6) return 0;
+    const pn = (-readSin * -axis.y + readCos * axis.x) * Math.sign(un);
+    // Edge advance along the approach per unit of +perp (the stacking side).
+    const k = -pn / Math.abs(un);
+    return c.half / Math.abs(un) + Math.max(0, k * tDown, -k * tUp);
+  };
+
   // Pin point: marker edge + LABEL_GAP along the approach, stop-relative on
   // BOTH axes (the cell picks the octant; offset/offsetPerp fine-tune).
-  const extent = extentAlong(ref, u);
-  let pinRead = ref.proj * STOP_SIZE + u.x * (extent + LABEL_GAP);
-  const pinPerp = ref.perp * STOP_SIZE + u.y * (extent + LABEL_GAP);
+  let extent = extentAlong(ref, u);
+  if (o === 0 || o === 4) {
+    // Beside octants only: the corner octants pin the block's extremity
+    // already, and a label centered above/below a diagonal line is not a
+    // layout the octant model serves (the corners are). The crossing butt
+    // below shares this blind spot in miniature for a diagonal CROSSING
+    // stripe; left alone until a real map hits it — crossing stops are
+    // near-universally perpendicular.
+    const growsUp = label.autoVAlign === 'up';
+    const stacked = (lineAdvances.length - 1) * fontSize * LINE_HEIGHT * (style.leading ?? 1);
+    const tUp = capCenterDy(fontSize) + (growsUp ? stacked : 0);
+    const tDown =
+      capCenterDy(fontSize) + 0.5 * DESCENDER_FRACTION * fontSize + (growsUp ? 0 : stacked);
+    extent = Math.max(extent, stripeSlantExtent(ref, u, tUp, tDown));
+  }
+  let pinRead = ref.proj * STOP_SIZE + u.x * (extent + ref.labelGap);
+  const pinPerp = ref.perp * STOP_SIZE + u.y * (extent + ref.labelGap);
 
   // Cross stations (the Vignelli staple): the label parks squarely across
   // the line from its own stop — octants 2/6, which CENTER the text on that
@@ -819,7 +882,9 @@ function autoAlignInfo(
   if (cross) {
     const side = cross.proj > ref.proj ? 1 : -1; // which way along reading the stripe sits
     const away = { x: -side, y: 0 }; // crossing stop → label, along the reading axis
-    pinRead = cross.proj * STOP_SIZE - side * (extentAlong(cross, away) + LABEL_GAP);
+    // The butt clears by the CROSSING line's own gap — each axis reads the
+    // gap of the stop that blocks it, like every other term of its pin.
+    pinRead = cross.proj * STOP_SIZE - side * (extentAlong(cross, away) + cross.labelGap);
     textAnchorDefault = side > 0 ? 'end' : 'start';
   }
 
@@ -830,19 +895,22 @@ function autoAlignInfo(
   let anchorPerp: number;
   let valign: AutoAlignInfo['valign'];
   if (o === 5 || o === 6 || o === 7) {
-    // Above: the LAST (bottom) line's baseline sits LABEL_GAP + one descender
-    // above the marker; earlier lines stack upward, away from it.
+    // Above: the LAST (bottom) line's baseline sits LABEL_GAP + a descender
+    // charge above the marker; earlier lines stack upward, away from it.
     //
     // The Core Type Area stops at the baseline, but ink does not — so pinning
     // the baseline itself put a "g" inside the route line, by an amount that
     // grew with font size while LABEL_GAP stayed constant (touching at ~15,
-    // overlapping above it). The allowance is unconditional, NOT measured per
-    // name: giving it only to names that own a descender is the same rule the
-    // tutorial rejects, since it would leave a row of labels on ragged
-    // baselines. Every above-side label clears by the same amount and they all
-    // stay level. Nothing below or beside moves — there the text grows AWAY
-    // from the marker.
-    anchorPerp = pinPerp - cb - DESCENDER_FRACTION * fontSize;
+    // overlapping above it). Charging the FULL drop cleared it but read too
+    // far on real maps (most names own no descender), so the charge is HALF
+    // the descender, scaled by the vertical share of the approach (-u.y: 1
+    // straight above, √2/2 on a corner, where the ink descends past the
+    // marker rather than onto it) — deepest ink may dip half a descender into
+    // the gap. The charge is still NOT measured per name: that is the
+    // ragged-baseline effect the tutorial rejects. Every above-side label
+    // charges the same and a row stays level. Nothing below or beside moves —
+    // there the text grows AWAY from the marker.
+    anchorPerp = pinPerp - cb - 0.5 * DESCENDER_FRACTION * fontSize * -u.y;
     valign = 'auto-up';
   } else if (o === 1 || o === 2 || o === 3) {
     // Below: the FIRST (top) line's cap hangs from the pin; later lines

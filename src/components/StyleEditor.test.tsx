@@ -81,6 +81,15 @@ describe('<StyleEditor> — line', () => {
     );
   });
 
+  it('renders the label gap row at the def value, the default 3 when the def has none', () => {
+    render(<StyleEditor def={makeStyle('line', 'y1', { props: { labelGap: 6 } })} />);
+    expect(screen.getByRole('slider', { name: 'Label gap' })).toHaveAttribute('aria-valuenow', '6');
+    cleanup();
+    // Absent ⇒ the default 3 (never stored) — the row still renders.
+    render(<StyleEditor def={makeStyle('line', 'y2')} />);
+    expect(screen.getByRole('slider', { name: 'Label gap' })).toHaveAttribute('aria-valuenow', '3');
+  });
+
   it('heads the dot controls with a "Stop dots" section, with no redundant "Line" header', () => {
     render(<StyleEditor def={makeStyle('line', 'y1')} />);
     expect(screen.getByText('Stop dots')).toBeInTheDocument();

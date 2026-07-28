@@ -25,6 +25,7 @@ import {
   setLineDashLength,
   setLineDashWidth,
   setLineInterlineGap,
+  setLineLabelGap,
   setLineSingletonDotStyle,
   setLineMultiDotStyle,
   setLineSingletonDotSize,
@@ -49,7 +50,13 @@ import {
 } from './dotStyle';
 import { DOT_SIZE_MIN, DOT_SIZE_STEP, lineSingletonDotSizeOf, lineMultiDotSizeOf } from './dotSize';
 import { lineDashLengthOf, lineDashWidthOf } from './dashSize';
-import { LINE_WIDTH_MIN, LINE_WIDTH_STEP, lineWidthOf } from './lineWidth';
+import {
+  LINE_LABEL_GAP_DEFAULT,
+  LINE_WIDTH_MIN,
+  LINE_WIDTH_STEP,
+  canonicalLineLabelGap,
+  lineWidthOf,
+} from './lineWidth';
 import { LINE_END_STYLE_DEFAULT, isLineEndStyle, lineEndStyleOf } from './lineEnd';
 import {
   LINE_CURVE_RADIUS_DEFAULT,
@@ -136,6 +143,7 @@ export function captureStyleProps<K extends StyleKind>(
       const dashLength = lineDashLengthOf(l);
       const dashWidth = lineDashWidthOf(l);
       const interlineGap = l.interlineGap;
+      const labelGap = l.labelGap;
       return {
         // Dot TYPE ids (always stored on a real line; the ?? heals a bare
         // fixture / legacy line so the captured style is still self-contained).
@@ -155,6 +163,7 @@ export function captureStyleProps<K extends StyleKind>(
         ...(dashLength !== undefined ? { dashLength } : {}),
         ...(dashWidth !== undefined ? { dashWidth } : {}),
         ...(interlineGap !== undefined ? { interlineGap } : {}),
+        ...(labelGap !== undefined ? { labelGap } : {}),
       } as StylePropsByKind[K];
     }
     case 'textLabel': {
@@ -244,7 +253,11 @@ export function stylePropsEqual(
       la.seamWidth === lb.seamWidth &&
       la.dashLength === lb.dashLength &&
       la.dashWidth === lb.dashWidth &&
-      la.interlineGap === lb.interlineGap
+      la.interlineGap === lb.interlineGap &&
+      // Absent ≡ the default 3: a def from a save that predates the field must
+      // compare equal to one carrying the explicit default, or every legacy
+      // wearer reads as detached on load (the DotStyle strokeAlign trap).
+      (la.labelGap ?? LINE_LABEL_GAP_DEFAULT) === (lb.labelGap ?? LINE_LABEL_GAP_DEFAULT)
     );
   }
   if (kind === 'transfer') {
@@ -286,6 +299,9 @@ export function canonicalStyleProps<K extends StyleKind>(
       const dashWidth = p.dashWidth == null ? undefined : canonicalStrokeWidth(p.dashWidth);
       const interlineGap =
         p.interlineGap == null ? undefined : canonicalStrokeWidth(p.interlineGap);
+      // Label gap collapses at its DEFAULT (3), not at 0 — 0 is a real value
+      // (text butted to the marker) and absent means 3.
+      const labelGap = p.labelGap == null ? undefined : canonicalLineLabelGap(p.labelGap);
       return {
         // `?? DEFAULT` heals a def from a save that predates dot-type coverage
         // (and is the concrete backstop for a since-deleted id — see
@@ -314,6 +330,7 @@ export function canonicalStyleProps<K extends StyleKind>(
         ...(dashLength !== undefined ? { dashLength } : {}),
         ...(dashWidth !== undefined ? { dashWidth } : {}),
         ...(interlineGap !== undefined ? { interlineGap } : {}),
+        ...(labelGap !== undefined ? { labelGap } : {}),
       } as StylePropsByKind[K];
     }
     case 'textLabel': {
@@ -413,6 +430,8 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
       // canonical setter, so stamping a different gap also re-packs the
       // line's stations (same as a manual edit).
       next = setLineInterlineGap(next, itemId, p.interlineGap ?? 0);
+      // undefined ⇒ the default 3 ⇒ dropped, back to the stock clearance.
+      next = setLineLabelGap(next, itemId, p.labelGap ?? LINE_LABEL_GAP_DEFAULT);
       break;
     }
     case 'textLabel': {

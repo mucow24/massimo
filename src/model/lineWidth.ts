@@ -60,3 +60,34 @@ export const LINE_INTERLINE_GAP_MAX = STOP_SIZE;
  */
 export const lineInterlineGapOf = (line: { interlineGap?: number } | null | undefined): number =>
   line?.interlineGap ?? LINE_INTERLINE_GAP_DEFAULT;
+
+// Clearance a station label keeps from this line's marker, world units. The
+// default IS the historical LABEL_GAP constant, so all-default docs place
+// labels bit-identically to the pre-feature app. Unlike interlineGap, 0 is a
+// REAL value (text butted to the marker): the canonical form collapses at the
+// DEFAULT, never at 0.
+export const LINE_LABEL_GAP_DEFAULT = 3;
+// Slider bound only — the textbox may exceed it (textboxAllowAboveMax).
+export const LINE_LABEL_GAP_MAX = 10;
+
+/**
+ * The canonical STORED form of a label gap: round to the quarter-unit grid,
+ * clamp to ≥ 0, and collapse to `undefined` (store nothing) when it lands on
+ * LINE_LABEL_GAP_DEFAULT — the app never stores the default. Shared by the
+ * `setLineLabelGap` transform, the style-props canonicalizer and the
+ * file-import cleaner so the three can never drift. Callers own the
+ * finiteness guard (a transform ignores non-finite input; a sanitizer drops
+ * the field).
+ */
+export const canonicalLineLabelGap = (v: number): number | undefined => {
+  const norm = roundClamp(v, LINE_WIDTH_STEP, 0);
+  return norm === LINE_LABEL_GAP_DEFAULT ? undefined : norm;
+};
+
+/**
+ * Effective label gap of a line. Missing field ⇒ 3 (the historical constant)
+ * — saves from before the field existed need no migration. Structural
+ * parameter so narrowed line shapes pass through.
+ */
+export const lineLabelGapOf = (line: { labelGap?: number } | null | undefined): number =>
+  line?.labelGap ?? LINE_LABEL_GAP_DEFAULT;

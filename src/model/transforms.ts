@@ -11,6 +11,7 @@ import { reconcileOrder, moveInOrder, moveToEndInOrder } from './recordOrder';
 import {
   LINE_INTERLINE_GAP_DEFAULT,
   LINE_WIDTH_DEFAULT,
+  canonicalLineLabelGap,
   canonicalLineWidth,
   lineInterlineGapOf,
   lineWidthOf,
@@ -795,6 +796,22 @@ export function setLineInterlineGap(doc: MapDoc, id: LineId, v: number): MapDoc 
     ...doc,
     lines: { ...doc.lines, [id]: stripStyleId(writeLineField(cur, 'interlineGap', stored)) },
     stations,
+  };
+}
+
+// Per-line station-label clearance. Same storage contract as setLineWidth
+// (quarter-unit grid, collapse at the DEFAULT — here 3, and 0 is a real
+// stored value). Pure label placement: nothing packs or re-routes, so no
+// repack and no region reconcile — the derived label layout follows the doc.
+export function setLineLabelGap(doc: MapDoc, id: LineId, v: number): MapDoc {
+  const cur = doc.lines[id];
+  if (!cur || !Number.isFinite(v)) return doc;
+  const stored = canonicalLineLabelGap(v);
+  if (cur.labelGap === stored) return doc;
+  // Fall-through = the stored gap changed → detach from the style preset.
+  return {
+    ...doc,
+    lines: { ...doc.lines, [id]: stripStyleId(writeLineField(cur, 'labelGap', stored)) },
   };
 }
 
