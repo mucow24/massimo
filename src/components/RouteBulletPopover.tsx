@@ -1,10 +1,8 @@
 import { ChevronDownIcon } from '@radix-ui/react-icons';
 import * as Select from '@radix-ui/react-select';
 import { useDoc } from '../state/store';
-import { type ViewportProjection } from './canvas/screenAnchor';
-import type { AABB } from '../geometry/rectPolygon';
-import { DraggablePopoverShell } from './DraggablePopoverShell';
-import { useDraggablePopover } from './canvas/useDraggablePopover';
+import { PopoverShell } from './PopoverShell';
+import { usePinnedPopover } from './canvas/usePinnedPopover';
 import { FieldSelectContent } from './FieldSelectContent';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
@@ -23,14 +21,9 @@ const NO_LINE = '__none__';
 
 interface Props {
   bullet: RouteBullet;
-  // The bullet's world AABB at the moment of selection — the spawn opens the
-  // popover beside it. Placement is frozen at spawn (useDraggablePopover) but
-  // projected through the live viewport, so the popover tracks canvas
-  // pan/zoom like the other item popovers.
-  worldRect: AABB;
-  view: ViewportProjection;
-  // Spawn-placement box (host minus the open sidebar strip); see ItemPopovers.
-  spawnBox?: { w: number; h: number };
+  // Width of the box the panel docks into — the host minus the open sidebar
+  // strip; see ItemPopovers.
+  hostW: number;
   onClose: () => void;
 }
 
@@ -60,15 +53,8 @@ export function ShapeIcon({ shape }: { shape: RouteBulletShape }) {
   );
 }
 
-export function RouteBulletPopover({ bullet, worldRect, view, spawnBox, onClose }: Props) {
-  // Frozen-anchor + header-drag mechanism shared with the other item popovers.
-  const { anchor, measuring, shellRef, headerHandlers } = useDraggablePopover(
-    bullet.id,
-    worldRect,
-    view,
-    false,
-    spawnBox,
-  );
+export function RouteBulletPopover({ bullet, hostW, onClose }: Props) {
+  const { anchor, shellRef } = usePinnedPopover(hostW);
   const lines = useDoc((s) => s.lines);
   const lineOrder = useDoc((s) => s.lineOrder);
   const updateRouteBullet = useDoc((s) => s.updateRouteBullet);
@@ -90,14 +76,12 @@ export function RouteBulletPopover({ bullet, worldRect, view, spawnBox, onClose 
   const shapes: RouteBulletShape[] = ['circle', 'square', 'diamond'];
 
   return (
-    <DraggablePopoverShell
+    <PopoverShell
       className="bullet-popover"
       title="Route bullet"
       left={anchor.x}
       top={anchor.y}
-      measuring={measuring}
       shellRef={shellRef}
-      headerHandlers={headerHandlers}
     >
       <div className="row">
         <label>Line</label>
@@ -176,6 +160,6 @@ export function RouteBulletPopover({ bullet, worldRect, view, spawnBox, onClose 
         onToggleLock={onToggleLock}
         onDelete={onDelete}
       />
-    </DraggablePopoverShell>
+    </PopoverShell>
   );
 }

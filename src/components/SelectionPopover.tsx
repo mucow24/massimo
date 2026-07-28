@@ -1,29 +1,16 @@
 import { LockClosedIcon, LockOpen1Icon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
-import { type ViewportProjection } from './canvas/screenAnchor';
-import type { AABB } from '../geometry/rectPolygon';
-import { DraggablePopoverShell } from './DraggablePopoverShell';
-import { useDraggablePopover } from './canvas/useDraggablePopover';
+import { PopoverShell } from './PopoverShell';
+import { usePinnedPopover } from './canvas/usePinnedPopover';
 import { deleteUnlockedSelection, itemIdCount, type SelectionItemIds } from '../state/selectionOps';
 
 interface Props {
   // Every selected item, one id list per kind. Always ≥2 in total — the
   // per-item popovers own the single-item case (ItemPopovers gates).
   ids: SelectionItemIds;
-  // Union AABB of the members at selection time; spawn hint only.
-  worldRect: AABB;
-  view: ViewportProjection;
-  // Spawn-placement box (host minus the open sidebar strip); see ItemPopovers.
-  spawnBox?: { w: number; h: number };
-}
-
-// The popover's identity is the selection's MEMBERSHIP: adding/removing an
-// item re-spawns the panel beside the new union rect, exactly like the
-// per-item popovers re-freezing when the selected id switches.
-function memberKey(ids: SelectionItemIds): string {
-  return [...ids.stations, ...ids.bullets, ...ids.labels, ...ids.polygons, ...ids.svgImages]
-    .sort()
-    .join('\n');
+  // Width of the box the panel docks into — the host minus the open sidebar
+  // strip; see ItemPopovers.
+  hostW: number;
 }
 
 /**
@@ -34,15 +21,8 @@ function memberKey(ids: SelectionItemIds): string {
  * Delete all shares the Delete key's semantics (state/selectionOps.ts): the
  * unlocked subset goes, locked members survive, one history entry.
  */
-export function SelectionPopover({ ids, worldRect, view, spawnBox }: Props) {
-  // Frozen-anchor + header-drag mechanism shared with the item popovers.
-  const { anchor, measuring, shellRef, headerHandlers } = useDraggablePopover(
-    memberKey(ids),
-    worldRect,
-    view,
-    false,
-    spawnBox,
-  );
+export function SelectionPopover({ ids, hostW }: Props) {
+  const { anchor, shellRef } = usePinnedPopover(hostW);
   const setItemsLocked = useDoc((s) => s.setItemsLocked);
   const stations = useDoc((s) => s.stations);
   const routeBullets = useDoc((s) => s.routeBullets);
@@ -67,14 +47,12 @@ export function SelectionPopover({ ids, worldRect, view, spawnBox }: Props) {
     ids.svgImages.filter((id) => svgImages[id]?.locked).length;
 
   return (
-    <DraggablePopoverShell
+    <PopoverShell
       className="bullet-popover selection-popover"
       title="Selection"
       left={anchor.x}
       top={anchor.y}
-      measuring={measuring}
       shellRef={shellRef}
-      headerHandlers={headerHandlers}
     >
       <div className="selection-summary">
         {total} items · {lockedCount} locked
@@ -111,6 +89,6 @@ export function SelectionPopover({ ids, worldRect, view, spawnBox }: Props) {
           Delete all
         </button>
       </div>
-    </DraggablePopoverShell>
+    </PopoverShell>
   );
 }

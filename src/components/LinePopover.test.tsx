@@ -29,7 +29,7 @@ const line = () => useDoc.getState().lines['L1'];
 
 describe('<LinePopover />', () => {
   it('hosts the full line inspector under the "Line" title band', () => {
-    render(<LinePopover line={line()} hostSize={HOST} />);
+    render(<LinePopover line={line()} hostW={HOST.w} />);
     // The black header band carries the panel title.
     expect(document.querySelector('.line-popover .header')?.textContent).toBe('Line');
     // Identity + style controls are all inside — spot-check one of each band:
@@ -42,7 +42,7 @@ describe('<LinePopover />', () => {
 
   it('edits write through to the doc (name field)', async () => {
     const user = userEvent.setup();
-    render(<LinePopover line={line()} hostSize={HOST} />);
+    render(<LinePopover line={line()} hostW={HOST.w} />);
     const name = screen.getByLabelText('Line name');
     await user.clear(name);
     await user.type(name, 'Broadway Express');
@@ -50,14 +50,14 @@ describe('<LinePopover />', () => {
   });
 
   it('has a Delete-only footer: no lock button (lines have no locked field)', () => {
-    render(<LinePopover line={line()} hostSize={HOST} />);
+    render(<LinePopover line={line()} hostW={HOST.w} />);
     expect(document.querySelector('.line-popover .footer .lock-btn')).toBeNull();
     expect(document.querySelector('.line-popover .footer .delete-btn')).not.toBeNull();
   });
 
   it('Delete removes the line and exits Edit Stops', async () => {
     const user = userEvent.setup();
-    render(<LinePopover line={line()} hostSize={HOST} />);
+    render(<LinePopover line={line()} hostW={HOST.w} />);
 
     await user.click(screen.getByRole('button', { name: 'Delete' }));
 
@@ -68,7 +68,7 @@ describe('<LinePopover />', () => {
   });
 
   it('pins to the top-right, clamped to the edge pad on a narrow host', () => {
-    render(<LinePopover line={line()} hostSize={{ w: 200, h: 600 }} />);
+    render(<LinePopover line={line()} hostW={200} />);
     const el = document.querySelector('.line-popover') as HTMLElement;
     // 200 − 320 − 8 would be negative; the pin floors at the 8px pad.
     expect(el.style.left).toBe('8px');

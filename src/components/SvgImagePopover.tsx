@@ -1,8 +1,6 @@
 import { useDoc } from '../state/store';
-import { type ViewportProjection } from './canvas/screenAnchor';
-import type { AABB } from '../geometry/rectPolygon';
-import { DraggablePopoverShell } from './DraggablePopoverShell';
-import { useDraggablePopover } from './canvas/useDraggablePopover';
+import { PopoverShell } from './PopoverShell';
+import { usePinnedPopover } from './canvas/usePinnedPopover';
 import { LayerOrderRow } from './LayerOrderRow';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
@@ -22,12 +20,9 @@ const toPercent = (alpha: number | undefined): number =>
 
 interface Props {
   image: SvgImage;
-  // The image's world AABB (rotated rect bounds) at the moment of selection —
-  // the spawn opens the popover beside it.
-  worldRect: AABB;
-  view: ViewportProjection;
-  // Spawn-placement box (host minus the open sidebar strip); see ItemPopovers.
-  spawnBox?: { w: number; h: number };
+  // Width of the box the panel docks into — the host minus the open sidebar
+  // strip; see ItemPopovers.
+  hostW: number;
   onClose: () => void;
 }
 
@@ -35,18 +30,11 @@ interface Props {
  * Popover for a selected svg image: opacity, layer up/down, lock, delete. The
  * artwork's own colors are baked into the import and can't be edited, and size
  * and rotation are edited via the on-canvas handles — so opacity is the one
- * style knob here. The spawn placement is frozen at first display and projected
- * through the live viewport, and the header drag stays pinned to the canvas
- * through zoom. Mirrors {@link PolygonPopover} minus the paint rows.
+ * style knob here. Docked to the host's top-right corner (usePinnedPopover).
+ * Mirrors {@link PolygonPopover} minus the paint rows.
  */
-export function SvgImagePopover({ image, worldRect, view, spawnBox, onClose }: Props) {
-  const { anchor, measuring, shellRef, headerHandlers } = useDraggablePopover(
-    image.id,
-    worldRect,
-    view,
-    false,
-    spawnBox,
-  );
+export function SvgImagePopover({ image, hostW, onClose }: Props) {
+  const { anchor, shellRef } = usePinnedPopover(hostW);
   const updateSvgImage = useDoc((s) => s.updateSvgImage);
   const deleteSvgImage = useDoc((s) => s.deleteSvgImage);
   const moveBackgroundUp = useDoc((s) => s.moveBackgroundUp);
@@ -63,14 +51,12 @@ export function SvgImagePopover({ image, worldRect, view, spawnBox, onClose }: P
   };
 
   return (
-    <DraggablePopoverShell
+    <PopoverShell
       className="bullet-popover polygon-popover svg-image-popover"
       title="Image"
       left={anchor.x}
       top={anchor.y}
-      measuring={measuring}
       shellRef={shellRef}
-      headerHandlers={headerHandlers}
     >
       <NumericFieldRow
         id="svg-image-opacity"
@@ -93,6 +79,6 @@ export function SvgImagePopover({ image, worldRect, view, spawnBox, onClose }: P
         disabled={locked}
       />
       <PopoverFooter noun="image" locked={locked} onToggleLock={onToggleLock} onDelete={onDelete} />
-    </DraggablePopoverShell>
+    </PopoverShell>
   );
 }

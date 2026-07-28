@@ -9,12 +9,6 @@ import { makeLine, makeStyle } from '../test/fixtures';
 import { chooseOption, stepSlider } from '../test/interaction';
 import type { RouteBullet } from '../model/types';
 
-const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
-
-// Degenerate point rect for the spawn hint — placement details live in
-// screenAnchor.test.ts; here the point keeps positions easy to reason about.
-const rectAt = (x: number, y: number) => ({ x0: x, y0: y, x1: x, y1: y });
-
 function seed(bullet: RouteBullet) {
   useDoc.setState({
     ...useDoc.getState(),
@@ -45,14 +39,7 @@ describe('RouteBulletPopover — line / shape / delete', () => {
 
   function renderPopover(bullet: RouteBullet, onClose = vi.fn()) {
     seed(bullet);
-    render(
-      <RouteBulletPopover
-        bullet={bullet}
-        worldRect={rectAt(0, 0)}
-        view={identityView}
-        onClose={onClose}
-      />,
-    );
+    render(<RouteBulletPopover bullet={bullet} hostW={800} onClose={onClose} />);
     return { onClose };
   }
 
@@ -104,10 +91,6 @@ describe('RouteBulletPopover — line / shape / delete', () => {
   });
 });
 
-// Size control was unified onto the useNumericField / useFieldHistory idiom in
-// the arch cleanup; these tests come from that change.
-const VIEW = { vbX: 0, vbY: 0, vbW: 100, vbH: 100, size: { w: 100, h: 100 } };
-
 const BULLET: RouteBullet = {
   id: 'b1',
   x: 10,
@@ -131,14 +114,7 @@ describe('<RouteBulletPopover /> size control', () => {
     // live rather than passing the static BULLET snapshot.
     function LivePopover() {
       const bullet = useDoc((s) => s.routeBullets['b1']);
-      return (
-        <RouteBulletPopover
-          bullet={bullet}
-          worldRect={rectAt(10, 10)}
-          view={VIEW}
-          onClose={() => {}}
-        />
-      );
+      return <RouteBulletPopover bullet={bullet} hostW={800} onClose={() => {}} />;
     }
     render(<LivePopover />);
     const slider = screen.getByRole('slider');
@@ -157,27 +133,13 @@ describe('<RouteBulletPopover /> size control', () => {
     // Regression: onWheel was wired on BOTH the row and the spinbutton, so a
     // wheel event over the spinbutton ran the handler twice (once directly,
     // once via bubbling to the row) — every notch stepped the size by two.
-    render(
-      <RouteBulletPopover
-        bullet={BULLET}
-        worldRect={rectAt(10, 10)}
-        view={VIEW}
-        onClose={() => {}}
-      />,
-    );
+    render(<RouteBulletPopover bullet={BULLET} hostW={800} onClose={() => {}} />);
     fireEvent.wheel(screen.getByRole('spinbutton'), { deltaY: -1 });
     expect(useDoc.getState().routeBullets.b1.size).toBe(BULLET.size + ROUTE_BULLET_SIZE_STEP);
   });
 
   it('a wheel notch over the slider steps the size once (row-level handler)', () => {
-    render(
-      <RouteBulletPopover
-        bullet={BULLET}
-        worldRect={rectAt(10, 10)}
-        view={VIEW}
-        onClose={() => {}}
-      />,
-    );
+    render(<RouteBulletPopover bullet={BULLET} hostW={800} onClose={() => {}} />);
     fireEvent.wheel(screen.getByRole('slider'), { deltaY: 1 });
     expect(useDoc.getState().routeBullets.b1.size).toBe(BULLET.size - ROUTE_BULLET_SIZE_STEP);
   });
@@ -187,14 +149,7 @@ describe('<RouteBulletPopover /> size control', () => {
     // disabled, so a wheel notch anywhere in the row must not edit the bullet.
     const locked = { ...BULLET, locked: true };
     useDoc.setState({ ...DEFAULT_DOC, routeBullets: { b1: locked } });
-    render(
-      <RouteBulletPopover
-        bullet={locked}
-        worldRect={rectAt(10, 10)}
-        view={VIEW}
-        onClose={() => {}}
-      />,
-    );
+    render(<RouteBulletPopover bullet={locked} hostW={800} onClose={() => {}} />);
     fireEvent.wheel(screen.getByRole('slider'), { deltaY: -1 });
     fireEvent.wheel(screen.getByRole('spinbutton'), { deltaY: -1 });
     expect(useDoc.getState().routeBullets.b1.size).toBe(BULLET.size);
@@ -222,76 +177,11 @@ describe('<RouteBulletPopover /> canvas event swallowing', () => {
     const onContextMenu = vi.fn();
     const { container } = render(
       <div onContextMenu={onContextMenu}>
-        <RouteBulletPopover
-          bullet={bullet}
-          worldRect={rectAt(0, 0)}
-          view={identityView}
-          onClose={vi.fn()}
-        />
+        <RouteBulletPopover bullet={bullet} hostW={800} onClose={vi.fn()} />
       </div>,
     );
     fireEvent.contextMenu(container.querySelector('.bullet-popover .body')!);
     expect(onContextMenu).not.toHaveBeenCalled();
-  });
-});
-
-describe('<RouteBulletPopover /> header drag', () => {
-  beforeEach(() => {
-    localStorage.clear();
-    useDoc.setState({ ...DEFAULT_DOC, routeBullets: { b1: bulletFixture() } });
-    useDoc.temporal.getState().clear();
-  });
-
-  // The bullet popover shares useDraggablePopover with the other three item
-  // popovers — its header strip must actually drag, not just look like the
-  // others' drag handles.
-  it('dragging the header moves the popover by the pointer delta', () => {
-    const { container } = render(
-      <RouteBulletPopover
-        bullet={useDoc.getState().routeBullets['b1']}
-        worldRect={rectAt(0, 0)}
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
-    const popover = container.querySelector('.bullet-popover') as HTMLElement;
-    const header = container.querySelector('.bullet-popover .header') as HTMLElement;
-    // Below-left diagonal off the origin point: x clamps to the 8px margin.
-    expect(parseFloat(popover.style.left)).toBeCloseTo(8, 9);
-    expect(parseFloat(popover.style.top)).toBeCloseTo(14, 9);
-    fireEvent.pointerDown(header, { clientX: 100, clientY: 100, button: 0 });
-    fireEvent.pointerMove(header, { clientX: 130, clientY: 120 });
-    fireEvent.pointerUp(header, { clientX: 130, clientY: 120 });
-    expect(parseFloat(popover.style.left)).toBeCloseTo(38, 9); // 8 + 30
-    expect(parseFloat(popover.style.top)).toBeCloseTo(34, 9); // 14 + 20
-  });
-
-  // Deliberate behavior change from adopting useDraggablePopover: the anchor
-  // freezes at selection time (like the other item popovers), so moving the
-  // bullet itself (canvas drag, arrow nudge, undo) no longer drags the popover
-  // around — only pan/zoom and the header drag move it.
-  it('freezes the anchor: a moved bullet does not re-anchor the popover', () => {
-    const bullet = useDoc.getState().routeBullets['b1'];
-    const { container, rerender } = render(
-      <RouteBulletPopover
-        bullet={bullet}
-        worldRect={rectAt(0, 0)}
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
-    const popover = container.querySelector('.bullet-popover') as HTMLElement;
-    expect(parseFloat(popover.style.left)).toBeCloseTo(8, 9);
-    rerender(
-      <RouteBulletPopover
-        bullet={bullet}
-        worldRect={rectAt(100, 50)}
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
-    expect(parseFloat(popover.style.left)).toBeCloseTo(8, 9);
-    expect(parseFloat(popover.style.top)).toBeCloseTo(14, 9);
   });
 });
 
@@ -304,14 +194,7 @@ describe('RouteBulletPopover — style presets', () => {
   // so the Style row re-derives when an action writes the tag.
   function LivePopover() {
     const bullet = useDoc((s) => s.routeBullets['b1']);
-    return bullet ? (
-      <RouteBulletPopover
-        bullet={bullet}
-        worldRect={rectAt(0, 0)}
-        view={identityView}
-        onClose={() => {}}
-      />
-    ) : null;
+    return bullet ? <RouteBulletPopover bullet={bullet} hostW={800} onClose={() => {}} /> : null;
   }
 
   it('applies a preset from the Style row, then flips to Custom on a covered edit', async () => {

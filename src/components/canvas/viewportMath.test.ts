@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   computeWheelZoom,
   fitViewport,
-  liveProjection,
   overdrawnViewBox,
   panFromDelta,
   screenToWorld,
@@ -48,32 +47,6 @@ describe('overdrawnViewBox', () => {
     const od = overdrawnViewBox(vb);
     expect(od.vbX + od.vbW / 2).toBe(vb.vbX + vb.vbW / 2);
     expect(od.vbY + od.vbH / 2).toBe(vb.vbY + vb.vbH / 2);
-  });
-});
-
-describe('liveProjection', () => {
-  const committed = { vbX: -400, vbY: -300, vbW: 800, vbH: 600, size: SIZE };
-
-  it('returns the committed projection unchanged between gestures (pending null)', () => {
-    expect(liveProjection(committed, null)).toBe(committed);
-  });
-
-  it('reprojects through the in-flight viewport while a gesture is pending', () => {
-    // A pan that moved the center to (-50,-30) at zoom 1 → vb origin (-450,-330).
-    expect(liveProjection(committed, { x: -50, y: -30, zoom: 1 })).toEqual({
-      vbX: -450,
-      vbY: -330,
-      vbW: 800,
-      vbH: 600,
-      size: SIZE,
-    });
-  });
-
-  it('keeps the committed host size when the pending viewport zooms', () => {
-    const live = liveProjection(committed, { x: 0, y: 0, zoom: 2 });
-    expect(live.size).toBe(SIZE);
-    // zoom 2 halves the world extent (size unchanged).
-    expect({ vbW: live.vbW, vbH: live.vbH }).toEqual({ vbW: 400, vbH: 300 });
   });
 });
 

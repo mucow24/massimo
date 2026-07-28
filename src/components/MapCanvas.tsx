@@ -2191,7 +2191,7 @@ export function MapCanvas() {
         )}
       </svg>
 
-      <ItemPopovers view={view} />
+      <ItemPopovers hostSize={view.size} />
 
       {/* Routing warnings are about bands the user can't see while the network
           is hidden — the toast's "jump to the band" click would land on blank

@@ -8,17 +8,6 @@ import { makePolygon, makeStyle } from '../test/fixtures';
 import { openColorField, setColorField } from '../test/colorField';
 import { chooseOption, stepSlider } from '../test/interaction';
 
-const view = { vbX: 0, vbY: 0, vbW: 100, vbH: 100, size: { w: 100, h: 100 } };
-
-// 1:1 world→screen so spawn positions are hand-computable (the 100×100 view
-// above is too small for the popover footprint — every spawn pins to the
-// margin there, fine for the control tests that ignore position).
-const identityView = { vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
-
-// Degenerate point rect for the spawn hint — placement details live in
-// screenAnchor.test.ts. Real callers pass polygonAABB(vertices).
-const rectAt = (x: number, y: number) => ({ x0: x, y0: y, x1: x, y1: y });
-
 beforeEach(() => {
   useDoc.setState({
     ...useDoc.getState(),
@@ -33,19 +22,12 @@ beforeEach(() => {
 // slider/wheel edits, the Style row re-deriving after an action).
 function LivePopover() {
   const polygon = useDoc((s) => s.polygons['p0']);
-  return polygon ? (
-    <PolygonPopover polygon={polygon} worldRect={rectAt(0, 0)} view={view} onClose={() => {}} />
-  ) : null;
+  return polygon ? <PolygonPopover polygon={polygon} hostW={800} onClose={() => {}} /> : null;
 }
 
 function renderPopover(onClose = () => {}) {
   return render(
-    <PolygonPopover
-      polygon={useDoc.getState().polygons['p0']}
-      worldRect={rectAt(0, 0)}
-      view={view}
-      onClose={onClose}
-    />,
+    <PolygonPopover polygon={useDoc.getState().polygons['p0']} hostW={800} onClose={onClose} />,
   );
 }
 
@@ -165,94 +147,6 @@ describe('<PolygonPopover />', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
     expect(useDoc.getState().polygons['p0']).toBeUndefined();
     expect(onClose).toHaveBeenCalled();
-  });
-
-  it('dragging the header moves the popover by the pointer delta', () => {
-    const { container } = render(
-      <PolygonPopover
-        polygon={useDoc.getState().polygons['p0']}
-        worldRect={rectAt(0, 0)}
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
-    const popover = container.querySelector('.polygon-popover') as HTMLElement;
-    const header = container.querySelector('.polygon-popover .header') as HTMLElement;
-    // Point (0,0) → below-left diagonal, x clamped to the 8px margin.
-    expect(parseFloat(popover.style.left)).toBeCloseTo(8, 9);
-    expect(parseFloat(popover.style.top)).toBeCloseTo(14, 9);
-    fireEvent.pointerDown(header, { clientX: 100, clientY: 100, button: 0 });
-    fireEvent.pointerMove(header, { clientX: 130, clientY: 120 });
-    fireEvent.pointerUp(header, { clientX: 130, clientY: 120 });
-    expect(parseFloat(popover.style.left)).toBeCloseTo(38, 9); // 8 + 30
-    expect(parseFloat(popover.style.top)).toBeCloseTo(34, 9); // 14 + 20
-  });
-
-  it('keeps a dragged popover pinned to the canvas when zooming', () => {
-    // Regression: any offset held in screen pixels and added on top of the
-    // live-projected anchor detaches the popover from the canvas under zoom —
-    // this bit the header drag first, then the 14px spawn gap itself (the
-    // wandering-popovers bug). Everything now lives in the frozen WORLD point,
-    // so the whole popover position — spawn gap included — scales with the map.
-    const polygon = useDoc.getState().polygons['p0'];
-    const { container, rerender } = render(
-      <PolygonPopover
-        polygon={polygon}
-        worldRect={rectAt(0, 0)}
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
-    const popover = container.querySelector('.polygon-popover') as HTMLElement;
-    const header = container.querySelector('.polygon-popover .header') as HTMLElement;
-
-    // Move the popover +30/+20 screen px at zoom 1 (→ world drag of 30/20).
-    fireEvent.pointerDown(header, { clientX: 0, clientY: 0, button: 0 });
-    fireEvent.pointerMove(header, { clientX: 30, clientY: 20 });
-    fireEvent.pointerUp(header, { clientX: 30, clientY: 20 });
-    expect(parseFloat(popover.style.left)).toBeCloseTo(38, 9); // 8 + 30
-    expect(parseFloat(popover.style.top)).toBeCloseTo(34, 9); // 14 + 20
-
-    // Zoom 2× about the world origin. The corner sits on world point
-    // (8,14)+drag(30,20) = (38,34), which now projects to (76,68) — the whole
-    // offset doubles with the canvas; nothing stays a fixed pixel size.
-    const zoom2 = { vbX: 0, vbY: 0, vbW: 400, vbH: 300, size: { w: 800, h: 600 } };
-    rerender(
-      <PolygonPopover polygon={polygon} worldRect={rectAt(0, 0)} view={zoom2} onClose={() => {}} />,
-    );
-    expect(parseFloat(popover.style.left)).toBeCloseTo(76, 9);
-    expect(parseFloat(popover.style.top)).toBeCloseTo(68, 9);
-  });
-
-  it('re-freezes the spawn when a different polygon is selected', () => {
-    // MapCanvas renders one <PolygonPopover> with no per-polygon key, so
-    // selecting a different polygon reuses this instance. The frozen spawn
-    // must re-freeze to the new polygon — otherwise a far-away polygon's
-    // controls anchor at the previously selected polygon's position.
-    const left = makePolygon({ id: 'p0' });
-    const { container, rerender } = render(
-      <PolygonPopover
-        polygon={left}
-        worldRect={rectAt(0, 0)}
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
-    const popover = container.querySelector('.polygon-popover') as HTMLElement;
-    expect(parseFloat(popover.style.left)).toBeCloseTo(8, 9); // below-left, x at the margin
-    expect(parseFloat(popover.style.top)).toBeCloseTo(14, 9);
-
-    const right = makePolygon({ id: 'p1' });
-    rerender(
-      <PolygonPopover
-        polygon={right}
-        worldRect={rectAt(300, 50)}
-        view={identityView}
-        onClose={() => {}}
-      />,
-    );
-    expect(parseFloat(popover.style.left)).toBeCloseTo(38, 9); // 300 − 14 − 248
-    expect(parseFloat(popover.style.top)).toBeCloseTo(64, 9); // 50 + 14
   });
 
   it('the curve-radius slider (0–50) writes through to the store', () => {

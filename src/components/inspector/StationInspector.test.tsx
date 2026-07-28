@@ -207,14 +207,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
 
     function LivePopover() {
       const station = useDoc((s) => s.stations.a);
-      return station ? (
-        <StationPopover
-          station={station}
-          worldRect={{ x0: 0, y0: 0, x1: 0, y1: 0 }}
-          view={{ vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } }}
-          onClose={() => {}}
-        />
-      ) : null;
+      return station ? <StationPopover station={station} hostW={800} onClose={() => {}} /> : null;
     }
     render(<LivePopover />);
     const lockBtn = screen.getByRole('button', { name: 'Lock station' });
@@ -1273,12 +1266,7 @@ describe('<StationPopover /> — title', () => {
     });
     useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
     const { container } = render(
-      <StationPopover
-        station={useDoc.getState().stations.a}
-        worldRect={{ x0: 0, y0: 0, x1: 0, y1: 0 }}
-        view={{ vbX: 0, vbY: 0, vbW: 800, vbH: 600, size: { w: 800, h: 600 } }}
-        onClose={() => {}}
-      />,
+      <StationPopover station={useDoc.getState().stations.a} hostW={800} onClose={() => {}} />,
     );
     return container.querySelector('.header') as HTMLElement;
   };

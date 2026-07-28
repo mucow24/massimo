@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { seedAndOpen, stationCenter, fourInLine, parkPopover } from './fixtures';
+import { seedAndOpen, stationCenter, fourInLine } from './fixtures';
 
 // Line END styles, through the two surfaces that set them: the line editor
 // (the whole line's ends) and the station editor's stop row (one terminus).
@@ -128,9 +128,7 @@ test.describe('Line ends — the per-terminus override', () => {
     const b = await stationCenter(page, 'B');
     await page.mouse.click(b.x, b.y);
     await expect(page.getByRole('combobox', { name: /^Line end/ })).toHaveCount(0);
-    // B's popover spawns below-left — toward A; park it so the next click
-    // reaches the canvas instead of the panel.
-    await parkPopover(page);
+    // B's docked editor sits in the host's top-right corner, clear of A.
 
     // A is a terminus.
     const a = await stationCenter(page, 'A');
