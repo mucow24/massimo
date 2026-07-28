@@ -102,6 +102,12 @@ describe('detach on covered-field edits — lines', () => {
     expect(setLineLabelGap(doc, 'l1', 0).lines.l1.labelGap).toBe(0);
   });
 
+  it('setLineLabelGap accepts NEGATIVE gaps (ink into the marker), floored at −10', () => {
+    const doc = tagged();
+    expect(setLineLabelGap(doc, 'l1', -2.1).lines.l1.labelGap).toBe(-2);
+    expect(setLineLabelGap(doc, 'l1', -99).lines.l1.labelGap).toBe(-10);
+  });
+
   it('setLineLabelGap detaches on a real change, keeps the tag on a no-op', () => {
     const doc = tagged();
     expect(setLineLabelGap(doc, 'l1', 3)).toBe(doc); // absent ≡ default → same reference

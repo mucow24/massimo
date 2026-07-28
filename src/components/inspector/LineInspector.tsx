@@ -16,6 +16,7 @@ import { lineEndStyleOf } from '../../model/lineEnd';
 import {
   LINE_INTERLINE_GAP_MAX,
   LINE_LABEL_GAP_MAX,
+  LINE_LABEL_GAP_MIN,
   LINE_WIDTH_MAX,
   LINE_WIDTH_MIN,
   LINE_WIDTH_SLIDER_MIN,
@@ -180,11 +181,12 @@ export function LineInspector({ id }: { id: LineId }) {
             textboxAllowAboveMax
           />
           {/* Clearance station labels keep from this line's marker (stripe,
-              dot, tick or transfer cap). 0 butts the text to the marker. */}
+              dot, tick or transfer cap). 0 butts the text to the marker;
+              negative pulls the ink into it. */}
           <NumericFieldRow
             id={`line-label-gap-${line.id}`}
             label="Label gap"
-            min={0}
+            min={LINE_LABEL_GAP_MIN}
             max={LINE_LABEL_GAP_MAX}
             step={LINE_WIDTH_STEP}
             value={lineLabelGapOf(line)}

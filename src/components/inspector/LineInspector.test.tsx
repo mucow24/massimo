@@ -244,6 +244,7 @@ describe('<LineInspector /> — interline gap control', () => {
     render(<LineInspector id="L1" />);
     const slider = screen.getByRole('slider', { name: 'Label gap' });
     expect(slider).toHaveAttribute('aria-valuenow', '3'); // effective default
+    expect(slider).toHaveAttribute('aria-valuemin', '-10'); // negative = ink into the marker
     stepSlider(slider, 1); // one 0.25 step
     expect(useDoc.getState().lines.L1.labelGap).toBe(3.25);
     stepSlider(slider, -1); // back to the default drops the key

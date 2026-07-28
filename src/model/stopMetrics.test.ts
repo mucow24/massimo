@@ -22,7 +22,10 @@ const metricsFor = (
   transfers: Record<string, Transfer> = {},
   st: Station = station(),
 ) =>
-  stopMetricsOf({ lines: { L1: makeLine({ id: 'L1', ...lineOver }) }, transfers })(st, st.stops[0]);
+  stopMetricsOf({ lines: { L1: makeLine({ id: 'L1', ...lineOver }) }, transfers, stations: {} })(
+    st,
+    st.stops[0],
+  );
 
 describe('stopMetricsOf — stripe and gap', () => {
   it('halves the line width and reports its interline gap', () => {
@@ -34,6 +37,61 @@ describe('stopMetricsOf — stripe and gap', () => {
   it('reports the line’s label gap, defaulting to the historical 3', () => {
     expect(metricsFor().labelGap).toBe(3);
     expect(metricsFor({ labelGap: 5 }).labelGap).toBe(5);
+  });
+});
+
+describe('stopMetricsOf — stripe continuation (terminus-aware)', () => {
+  // Which signed halves of the stop's travel axis carry painted line body,
+  // resolved from the line's edges and the neighbours' world positions. The
+  // beside-slant window charges only for stripe that exists (Yipping bug).
+  const stationAt = (id: string, x: number, y: number, withStop = false): Station =>
+    makeStation({
+      id,
+      x,
+      y,
+      stops: withStop ? [makeStop('L1', { orientation: 'auto-horizontal' })] : [],
+    });
+
+  const continuesFor = (neighbours: { id: string; x: number; y: number }[]) => {
+    const s1 = stationAt('s1', 0, 0, true);
+    const stations: Record<string, Station> = { s1 };
+    for (const n of neighbours) stations[n.id] = stationAt(n.id, n.x, n.y);
+    const line = makeLine({ id: 'L1', stations: ['s1', ...neighbours.map((n) => n.id)] });
+    line.edges = neighbours.map((n) => `s1|${n.id}`);
+    return stopMetricsOf({ lines: { L1: line }, transfers: {}, stations })(s1, s1.stops[0]);
+  };
+
+  it('a terminus continues only toward its neighbour', () => {
+    expect(continuesFor([{ id: 's2', x: 100, y: 0 }]).continues).toEqual({
+      plus: true,
+      minus: false,
+    });
+    expect(continuesFor([{ id: 's2', x: -100, y: 0 }]).continues).toEqual({
+      plus: false,
+      minus: true,
+    });
+  });
+
+  it('a through-station continues both ways', () => {
+    expect(
+      continuesFor([
+        { id: 's0', x: -100, y: 0 },
+        { id: 's2', x: 100, y: 20 },
+      ]).continues,
+    ).toEqual({ plus: true, minus: true });
+  });
+
+  it('a neighbour perpendicular to the axis counts on neither side', () => {
+    // The line bends away at the station — its body toward that neighbour is
+    // not the along-axis stripe the slant window models.
+    expect(continuesFor([{ id: 's2', x: 0, y: 100 }]).continues).toEqual({
+      plus: false,
+      minus: false,
+    });
+  });
+
+  it('an edge-less stop continues nowhere', () => {
+    expect(continuesFor([]).continues).toEqual({ plus: false, minus: false });
   });
 });
 
@@ -152,6 +210,7 @@ describe('stopMetricsOf — transfer caps', () => {
     const fn = stopMetricsOf({
       lines: { L1: makeLine({ id: 'L1' }), L2: makeLine({ id: 'L2' }) },
       transfers: { t1: selfLink },
+      stations: {},
     });
     expect(fn(st, st.stops[0]).transferRadius).toBe(6);
     expect(fn(st, st.stops[1]).transferRadius).toBe(6);
@@ -171,7 +230,7 @@ describe('stopMetricsOf — split singleton/interchange resolution', () => {
   const TICK = { length: 14, width: 7 };
 
   const dashOf = (line: Line, stop: StopCell, stops: StopCell[]) =>
-    stopMetricsOf({ lines: { [line.id]: line }, transfers: {} })(
+    stopMetricsOf({ lines: { [line.id]: line }, transfers: {}, stations: {} })(
       makeStation({ id: 's1', stops }),
       stop,
     ).dash;
@@ -210,7 +269,7 @@ describe('stopMetricsOf — split singleton/interchange resolution', () => {
 
   it('an orphan stop whose line is gone falls back to the default width and no gap', () => {
     const orphan = makeStop('GHOST');
-    const m = stopMetricsOf({ lines: {}, transfers: {} })(
+    const m = stopMetricsOf({ lines: {}, transfers: {}, stations: {} })(
       makeStation({ id: 's1', stops: [orphan] }),
       orphan,
     );

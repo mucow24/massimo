@@ -26,6 +26,7 @@ import {
   LINE_INTERLINE_GAP_MAX,
   LINE_LABEL_GAP_DEFAULT,
   LINE_LABEL_GAP_MAX,
+  LINE_LABEL_GAP_MIN,
   LINE_WIDTH_MAX,
   LINE_WIDTH_MIN,
   LINE_WIDTH_SLIDER_MIN,
@@ -121,12 +122,25 @@ export function StyleEditor({ def }: { def: StyleDef }) {
 }
 
 // Live read of one numeric prop for the sliders' wheel ticks (they must step
-// from the authoritative store value, not the render-stale prop).
-function liveNumberProp(id: string, key: string, fallback: number) {
+// from the authoritative store value, not the render-stale prop). `fallback`
+// resolves the field's EFFECTIVE value when the live key is ABSENT — which a
+// canonical write can make it mid-scroll, by collapsing an optional field at
+// its default (labelGap at 3, interlineGap/seam/dash at 0). It must therefore
+// be the field's own default — a constant, or a function of the LIVE props for
+// derived defaults — never a render-time snapshot of the value: that is the
+// value the scroll just left, and stepping from it stalls the wheel for a
+// frame at every collapse point and then double-jumps past it.
+function liveNumberProp(
+  id: string,
+  key: string,
+  fallback: number | ((liveProps: Record<string, unknown>) => number),
+) {
   return () => {
     const def = useDoc.getState().styles[id];
-    const value = def ? (def.props as unknown as Record<string, unknown>)[key] : undefined;
-    return typeof value === 'number' ? value : fallback;
+    const props = def ? (def.props as unknown as Record<string, unknown>) : undefined;
+    const value = props ? props[key] : undefined;
+    if (typeof value === 'number') return value;
+    return typeof fallback === 'number' ? fallback : fallback(props ?? {});
   };
 }
 
@@ -221,20 +235,20 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
         step={LINE_WIDTH_STEP}
         value={props.interlineGap ?? 0}
         onChange={(interlineGap) => patch({ interlineGap })}
-        getCurrent={liveNumberProp(id, 'interlineGap', props.interlineGap ?? 0)}
+        getCurrent={liveNumberProp(id, 'interlineGap', 0)}
         textboxAllowAboveMax
       />
       {/* Station-label clearance off the marker. Absent ⇒ the default 3;
-          0 butts the text to the marker. */}
+          0 butts the text to the marker, negative pulls the ink into it. */}
       <NumericFieldRow
         id={`style-${id}-label-gap`}
         label="Label gap"
-        min={0}
+        min={LINE_LABEL_GAP_MIN}
         max={LINE_LABEL_GAP_MAX}
         step={LINE_WIDTH_STEP}
         value={props.labelGap ?? LINE_LABEL_GAP_DEFAULT}
         onChange={(labelGap) => patch({ labelGap })}
-        getCurrent={liveNumberProp(id, 'labelGap', props.labelGap ?? LINE_LABEL_GAP_DEFAULT)}
+        getCurrent={liveNumberProp(id, 'labelGap', LINE_LABEL_GAP_DEFAULT)}
         textboxAllowAboveMax
       />
       <NumericFieldRow
@@ -299,7 +313,9 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
         step={LINE_STROKE_STEP}
         value={props.seamWidth ?? railW}
         onChange={(seamWidth) => patch({ seamWidth })}
-        getCurrent={liveNumberProp(id, 'seamWidth', props.seamWidth ?? railW)}
+        getCurrent={liveNumberProp(id, 'seamWidth', (p) =>
+          lineStrokeRailWidth(p.strokeWidth as number, p.width as number),
+        )}
         textboxAllowAboveMax
       />
       <div className="row">
@@ -390,7 +406,7 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
         step={LINE_STROKE_STEP}
         value={dashRenderLength(props)}
         onChange={(dashLength) => patch({ dashLength })}
-        getCurrent={liveNumberProp(id, 'dashLength', dashRenderLength(props))}
+        getCurrent={liveNumberProp(id, 'dashLength', (p) => dashRenderLength(p))}
         textboxAllowAboveMax
         disabled={!dashActive}
       />
@@ -402,7 +418,7 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
         step={LINE_STROKE_STEP}
         value={dashRenderWidth(props)}
         onChange={(dashWidth) => patch({ dashWidth })}
-        getCurrent={liveNumberProp(id, 'dashWidth', dashRenderWidth(props))}
+        getCurrent={liveNumberProp(id, 'dashWidth', (p) => dashRenderWidth(p))}
         textboxAllowAboveMax
         disabled={!dashActive}
       />

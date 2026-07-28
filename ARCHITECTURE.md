@@ -513,8 +513,9 @@ All remaining fields optional and **never stored at default**:
   `gap = 0` is a bit-exact identity — the interlining golden snapshot is unchanged.
 - `labelGap?: number` — **clearance a station label keeps from this line's marker** (stripe, dot,
   tick or transfer cap, whichever reaches furthest along the approach); world units, missing ⇒ 3
-  (the historical constant, now `LINE_LABEL_GAP_DEFAULT`); on the 0.25 grid, ≥ 0. Unlike
-  `interlineGap`, **0 is a real value** (text butted to the marker), so `canonicalLineLabelGap`
+  (the historical constant, now `LINE_LABEL_GAP_DEFAULT`); on the 0.25 grid, floored at
+  `LINE_LABEL_GAP_MIN` (−10) — **0 and negative are real values** (text butted to, or ink into,
+  the marker). Unlike `interlineGap`, `canonicalLineLabelGap`
   collapses the field at the DEFAULT, never at 0 — and style equality treats an absent key and an
   explicit 3 as the same gap, so defs predating the field don't detach their wearers on load.
   Reaches the label pins per-stop through `StopMetrics.labelGap`: each pin uses the gap of the
@@ -1712,7 +1713,7 @@ which are a separate slot-based system where Shift flips the lattice basis.
   baseline for the same reason.
 - **`StopMetrics`** ([geometry/labelLayout.ts](src/geometry/labelLayout.ts)) is everything the
   label geometry knows about one painted stop — stripe `half`, interline `gap`, `dash` tick, `dot`
-  silhouette, `transferRadius` — resolved together by `stopMetricsOf({ lines, transfers })`
+  silhouette, `transferRadius` — resolved together by `stopMetricsOf({ lines, transfers, stations })`
   ([model/stopMetrics.ts](src/model/stopMetrics.ts)) and threaded to `labelLayoutLocal`,
   `stationBoundaryRectsLocal`, `cellsAABBLocal`, `stationsForRect` and `stationWorldAABB`. It is
   ONE bundle rather than a lookup per field precisely so a call site cannot pass four of five and
@@ -1751,9 +1752,11 @@ which are a separate slot-based system where Shift flips the lattice basis.
   need none: there the block grows AWAY from the marker. A **beside** label against a stripe
   DIAGONAL to its reading axis clears at the text's near corner, not just the CTA-center row —
   the stripe advances one unit per unit of text height, so the pin charges the block's window
-  (half a cap up; half a cap, the half-weight descender and any stacked lines down). A stripe
-  parallel to reading keeps the finite marker-square model, which is what lets a terminus label
-  read along its own line.
+  (half a cap up; half a cap, the half-weight descender and any stacked lines down). The window
+  charges only where line body actually CONTINUES (`StopMetrics.continues`, resolved from the
+  line's edges and neighbour positions): at a terminus facing the other way the finite marker
+  square is the honest obstacle. A stripe parallel to reading keeps that square model
+  unconditionally, which is what lets a terminus label read along its own line.
   Multi-line blocks anchor by the **line nearest the marker** and stack away from
   it: bottom line above (`auto-up`), top line below (`auto-down`), first line beside/fallback
   (`auto-down` align-down, so added lines never move the line that sits level with the dot).

@@ -64,23 +64,27 @@ export const lineInterlineGapOf = (line: { interlineGap?: number } | null | unde
 // Clearance a station label keeps from this line's marker, world units. The
 // default IS the historical LABEL_GAP constant, so all-default docs place
 // labels bit-identically to the pre-feature app. Unlike interlineGap, 0 is a
-// REAL value (text butted to the marker): the canonical form collapses at the
-// DEFAULT, never at 0.
+// REAL value (text butted to the marker) and NEGATIVE values are legal too —
+// ink deliberately into the marker: the canonical form collapses at the
+// DEFAULT, never at 0, and floors at LINE_LABEL_GAP_MIN so an extreme value
+// stays a bounded style choice rather than flinging the label across the stop.
 export const LINE_LABEL_GAP_DEFAULT = 3;
-// Slider bound only — the textbox may exceed it (textboxAllowAboveMax).
+// Slider bounds; the textbox may exceed the MAX (textboxAllowAboveMax) but
+// the MIN is the transform's hard floor.
+export const LINE_LABEL_GAP_MIN = -10;
 export const LINE_LABEL_GAP_MAX = 10;
 
 /**
  * The canonical STORED form of a label gap: round to the quarter-unit grid,
- * clamp to ≥ 0, and collapse to `undefined` (store nothing) when it lands on
- * LINE_LABEL_GAP_DEFAULT — the app never stores the default. Shared by the
- * `setLineLabelGap` transform, the style-props canonicalizer and the
- * file-import cleaner so the three can never drift. Callers own the
+ * clamp to ≥ LINE_LABEL_GAP_MIN, and collapse to `undefined` (store nothing)
+ * when it lands on LINE_LABEL_GAP_DEFAULT — the app never stores the default.
+ * Shared by the `setLineLabelGap` transform, the style-props canonicalizer and
+ * the file-import cleaner so the three can never drift. Callers own the
  * finiteness guard (a transform ignores non-finite input; a sanitizer drops
  * the field).
  */
 export const canonicalLineLabelGap = (v: number): number | undefined => {
-  const norm = roundClamp(v, LINE_WIDTH_STEP, 0);
+  const norm = roundClamp(v, LINE_WIDTH_STEP, LINE_LABEL_GAP_MIN);
   return norm === LINE_LABEL_GAP_DEFAULT ? undefined : norm;
 };
 
