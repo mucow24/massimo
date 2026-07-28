@@ -741,7 +741,7 @@ describe('moveLabel', () => {
   });
 });
 
-describe('rotateLabel / flipLabel', () => {
+describe('rotateLabel', () => {
   it('rotateLabel adds 1 mod 8', () => {
     const doc = makeDoc({
       stations: [
@@ -752,94 +752,6 @@ describe('rotateLabel / flipLabel', () => {
       ],
     });
     expect(T.rotateLabel(doc, 's1').stations.s1.label.rotation).toBe(0);
-  });
-
-  it('flipLabel adds 4 mod 8 without moving', () => {
-    const doc = makeDoc({
-      stations: [
-        makeStation({
-          id: 's1',
-          label: { row: 5, col: 7, rotation: 1, offset: 3, align: 'auto', valign: 'middle' },
-        }),
-      ],
-    });
-    const next = T.flipLabel(doc, 's1').stations.s1.label;
-    expect(next).toMatchObject({ row: 5, col: 7, rotation: 5, offset: 3 });
-  });
-});
-
-describe('mirrorLabel', () => {
-  it('with no stops: only flips rotation', () => {
-    const doc = makeDoc({
-      stations: [
-        makeStation({
-          id: 's1',
-          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
-        }),
-      ],
-    });
-    const next = T.mirrorLabel(doc, 's1').stations.s1.label;
-    expect(next).toMatchObject({ row: 0, col: -1, rotation: 4 });
-  });
-
-  it('with stops: moves to the opposite side of the footprint', () => {
-    // Label at (0, -1), stops at (0, 0), (0, 1), (0, 2). Mirroring along
-    // +col: label should end up at (0, 3).
-    const doc = makeDoc({
-      stations: [
-        makeStation({
-          id: 's1',
-          stops: [
-            makeStop('L1', { row: 0, col: 0 }),
-            makeStop('L1', { row: 0, col: 1 }),
-            makeStop('L1', { row: 0, col: 2 }),
-          ],
-          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
-        }),
-      ],
-    });
-    const next = T.mirrorLabel(doc, 's1').stations.s1.label;
-    expect(next).toMatchObject({ row: 0, col: 3, rotation: 4 });
-  });
-
-  it('with a vertical footprint: mirrors a label above the stops to below them', () => {
-    // Stops stacked vertically at (0,0),(1,0),(2,0) (centroid row 1); label
-    // ABOVE at (-1,0). The vertical offset dominates (|drRaw|=2 > |dcRaw|=0),
-    // so this drives the dRow branch that the horizontal/centered tests skip.
-    // The label steps south past the furthest stop, landing at (3,0).
-    const doc = makeDoc({
-      stations: [
-        makeStation({
-          id: 's1',
-          stops: [
-            makeStop('L1', { row: 0, col: 0 }),
-            makeStop('L1', { row: 1, col: 0 }),
-            makeStop('L1', { row: 2, col: 0 }),
-          ],
-          label: { row: -1, col: 0, rotation: 6, offset: 0, align: 'auto', valign: 'middle' },
-        }),
-      ],
-    });
-    const next = T.mirrorLabel(doc, 's1').stations.s1.label;
-    expect(next).toMatchObject({ row: 3, col: 0, rotation: 2 });
-  });
-
-  it('label centered on a symmetric pair mirrors along its reading axis, not east', () => {
-    // Stops at (0,-1) and (0,1) (centroid (0,0)); label at (0,0) reading
-    // vertically (rotation 2 = S). drRaw === dcRaw === 0, so the old code forced
-    // dCol=1 and stepped east through the footprint to (0,2). The fix mirrors
-    // along the label's own reading axis (south) → (1,0).
-    const doc = makeDoc({
-      stations: [
-        makeStation({
-          id: 's1',
-          stops: [makeStop('L1', { row: 0, col: -1 }), makeStop('L1', { row: 0, col: 1 })],
-          label: { row: 0, col: 0, rotation: 2, offset: 0, align: 'auto', valign: 'middle' },
-        }),
-      ],
-    });
-    const next = T.mirrorLabel(doc, 's1').stations.s1.label;
-    expect(next).toMatchObject({ row: 1, col: 0, rotation: 6 });
   });
 });
 

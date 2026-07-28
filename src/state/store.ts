@@ -38,6 +38,7 @@ import { cyclingColors, FALLBACK_LINE_COLOR, type PaletteId } from '../model/pal
 import { useCustomPalettes } from './customPalettes';
 import {
   sanitizeStations,
+  snapStationCells,
   backfillLineNames,
   backfillLinesEdges,
   backfillPolygonDarkColors,
@@ -490,6 +491,17 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     // already paints square and matches the healed def.
     out = backfillLineStyleEndStyle(out);
   }
+  // Non-version-gated repair: station cells that drifted off the integer
+  // lattice. Like the palette invariant below and unlike the migrations above,
+  // this isn't tied to a schema bump — the editor's old trig-rotated ghost
+  // lattice wrote sub-ulp drift into cells at EVERY store version, including
+  // the current one, so a gate would skip the docs most likely to carry it.
+  // Idempotent and value-keyed; shared with the file-import path via
+  // `snapStationCells`.
+  if (out.stations) {
+    const snapped = snapStationCells(out.stations);
+    if (snapped.changed) out = { ...out, stations: snapped.stations };
+  }
   // Non-version-gated invariant: at least one VALID active palette. Unlike the
   // migrations above, this isn't tied to a schema bump — a persisted doc with
   // an explicit empty / all-unknown `activePalettes` (tampering, or a
@@ -535,8 +547,6 @@ interface DocState extends MapDoc {
   rotateStop: (stationId: StationId, lineId: LineId) => void;
   moveLabel: (stationId: StationId, dRow: number, dCol: number) => void;
   rotateLabel: (stationId: StationId) => void;
-  flipLabel: (stationId: StationId) => void;
-  mirrorLabel: (stationId: StationId) => void;
   setLabelOffset: (stationId: StationId, offset: number) => void;
   setLabelOffsetPerp: (stationId: StationId, offsetPerp: number) => void;
   setLabelAlign: (stationId: StationId, align: LabelAlign) => void;
@@ -784,8 +794,6 @@ export const useDoc = create<DocState>()(
 
         moveLabel: (stationId, dRow, dCol) => set((s) => T.moveLabel(s, stationId, dRow, dCol)),
         rotateLabel: (stationId) => set((s) => T.rotateLabel(s, stationId)),
-        flipLabel: (stationId) => set((s) => T.flipLabel(s, stationId)),
-        mirrorLabel: (stationId) => set((s) => T.mirrorLabel(s, stationId)),
         setLabelOffset: (stationId, offset) => set((s) => T.setLabelOffset(s, stationId, offset)),
         setLabelOffsetPerp: (stationId, offsetPerp) =>
           set((s) => T.setLabelOffsetPerp(s, stationId, offsetPerp)),
@@ -1191,16 +1199,25 @@ export const useDoc = create<DocState>()(
         // version — so a doc stranded at 14 (an intermediate build re-saved docs
         // at the bumped version BEFORE lines carried `edges`) skips migrateDoc's
         // unconditional edge backfill entirely, and the renderer crashes on
-        // `ln.edges.join(...)`. `merge` runs on EVERY rehydrate, so repair that
-        // one invariant here too. Reference-stable when every line already has
-        // an array, so canonical docs pass straight through the default merge.
+        // `ln.edges.join(...)`. `merge` runs on EVERY rehydrate, so repair those
+        // invariants here too. Both are reference-stable on a canonical doc, so
+        // it passes straight through the default merge.
+        //
+        // Cell-dust snapping needs `merge` for a sharper reason than `edges`
+        // does: the drift is still being carried by docs saved at the CURRENT
+        // version, which by definition never reach `migrate` at all.
         merge: (persisted, current) => {
           const doc = (persisted ?? {}) as Partial<DocState>;
+          const patch: Partial<DocState> = {};
           if (doc.lines) {
             const { lines, changed } = backfillLinesEdges(doc.lines);
-            if (changed) return { ...current, ...doc, lines };
+            if (changed) patch.lines = lines;
           }
-          return { ...current, ...doc };
+          if (doc.stations) {
+            const { stations, changed } = snapStationCells(doc.stations);
+            if (changed) patch.stations = stations;
+          }
+          return { ...current, ...doc, ...patch };
         },
         partialize: (s) => pickDocSnapshot(s),
       },
