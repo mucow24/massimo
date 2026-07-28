@@ -24,7 +24,7 @@ import {
   canonicalTransferThickness,
   legacyColorToDayNight,
 } from './transferStyle';
-import { canonicalLineWidth } from './lineWidth';
+import { canonicalLineLabelGap, canonicalLineWidth } from './lineWidth';
 import { clamp } from '../util/grid';
 import {
   LINE_CURVE_RADIUS_DEFAULT,
@@ -1366,6 +1366,19 @@ function sanitizeLineStroke(line: Line): Line {
       next = { ...next, [field]: stored };
     }
   }
+  // labelGap has its OWN canonical (collapse at the default 3, keep 0), so it
+  // sits outside the shared drop-at-0 loop above.
+  if ('labelGap' in line) {
+    const raw = line.labelGap as unknown;
+    const stored =
+      typeof raw === 'number' && Number.isFinite(raw) ? canonicalLineLabelGap(raw) : undefined;
+    if (stored === undefined) {
+      const { labelGap: _gone, ...rest } = next;
+      next = rest;
+    } else if (stored !== next.labelGap) {
+      next = { ...next, labelGap: stored };
+    }
+  }
   if ('strokeColor' in line) {
     const raw = line.strokeColor as unknown;
     const stored = typeof raw === 'string' ? canonicalStrokeColor(raw) : undefined;
@@ -1971,6 +1984,7 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       const dashLength = finiteNum(o.dashLength);
       const dashWidth = finiteNum(o.dashWidth);
       const interlineGap = finiteNum(o.interlineGap);
+      const labelGap = finiteNum(o.labelGap);
       return canonicalStyleProps('line', {
         singletonDotStyleId,
         multiDotStyleId,
@@ -1986,6 +2000,7 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
         ...(dashLength !== undefined ? { dashLength } : {}),
         ...(dashWidth !== undefined ? { dashWidth } : {}),
         ...(interlineGap !== undefined ? { interlineGap } : {}),
+        ...(labelGap !== undefined ? { labelGap } : {}),
       });
     }
     case 'stopDot': {

@@ -22,6 +22,7 @@ const metrics = (
     dash: null,
     dot: null,
     transferRadius: 0,
+    labelGap: LABEL_GAP,
     ...(typeof over === 'function' ? over(stop) : over),
   });
 };
@@ -365,6 +366,66 @@ describe('labelLayoutLocal — autoAlign marker extent (support function)', () =
       metrics({ half: 28 / 2 }),
     );
     expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (14 + LABEL_GAP), 6); // = -3
+  });
+});
+
+describe('labelLayoutLocal — per-stop labelGap drives every pin', () => {
+  // The gap rides the LINE, not the label (Line.labelGap, default 3), so a
+  // row of labels along one corridor stays consistent by construction. Each
+  // pin reads the gap of the stop that blocks it.
+
+  it('beside: the text starts the stop line’s own gap past the marker edge', () => {
+    const lay = labelLayoutLocal(
+      autoStation({ stops: [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' }] }),
+      undefined,
+      undefined,
+      metrics({ labelGap: 6 }),
+    );
+    expect(lay.anchorX).toBeCloseTo(-STOP_SIZE + HALF + 6, 6);
+  });
+
+  it('above: the baseline target rides the gap too', () => {
+    const lay = labelLayoutLocal(
+      autoStation({ stops: [{ dRow: 1, dCol: 0, orientation: 'auto-horizontal' }] }),
+      undefined,
+      undefined,
+      metrics({ labelGap: 6 }),
+    );
+    expect(lay.anchorY).toBeCloseTo(STOP_SIZE - (HALF + 6) - CB - DESC_N, 6);
+  });
+
+  it('at a crossing, each axis reads the gap of the line that blocks it', () => {
+    // Own line keeps the default 3 (perpendicular axis / baseline); the
+    // crossing line carries 8 (reading axis / the butt).
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L1' },
+          { dRow: 1, dCol: 1, orientation: 'auto-vertical', lineId: 'L2' },
+        ],
+      }),
+      undefined,
+      undefined,
+      metrics((stop) => (stop.lineId === 'L2' ? { labelGap: 8 } : {})),
+    );
+    expect(lay.textAnchor).toBe('end');
+    expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (HALF + 8), 6);
+    expect(lay.anchorY).toBeCloseTo(STOP_SIZE - (HALF + LABEL_GAP) - CB - DESC_N, 6);
+  });
+
+  it('the legacy align:"auto" stop-relative clamp honors it', () => {
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' }],
+        autoAlign: false,
+        align: 'auto',
+      }),
+      undefined,
+      undefined,
+      metrics({ labelGap: 6 }),
+    );
+    expect(lay.textAnchor).toBe('start');
+    expect(lay.anchorX).toBeCloseTo(-STOP_SIZE + HALF + 6, 6);
   });
 });
 

@@ -511,6 +511,15 @@ All remaining fields optional and **never stored at default**:
   overlap clearance deliberately stays width-only (dot bodies don't grow with the gap; only the
   pitch does), but the label **adjacency** gate does widen with the gap — see `width` above.
   `gap = 0` is a bit-exact identity — the interlining golden snapshot is unchanged.
+- `labelGap?: number` — **clearance a station label keeps from this line's marker** (stripe, dot,
+  tick or transfer cap, whichever reaches furthest along the approach); world units, missing ⇒ 3
+  (the historical constant, now `LINE_LABEL_GAP_DEFAULT`); on the 0.25 grid, ≥ 0. Unlike
+  `interlineGap`, **0 is a real value** (text butted to the marker), so `canonicalLineLabelGap`
+  collapses the field at the DEFAULT, never at 0 — and style equality treats an absent key and an
+  explicit 3 as the same gap, so defs predating the field don't detach their wearers on load.
+  Reaches the label pins per-stop through `StopMetrics.labelGap`: each pin uses the gap of the
+  line that blocks it (at a cross, each AXIS does), so a row of labels along one corridor stays
+  consistent by construction. Pure label placement — no repack, no region reconcile.
 - `strokeWidth?: number` — **casing rail, PRESENTATION**; centered on the body edges (half in /
   half out), missing ⇒ 0; rounded to a 0.25 grid (`LINE_STROKE_STEP`). Resolved live; never moves paths.
 - `strokeColor?: string` — casing color; missing ⇒ `'#ffffff'`; lowercased. May instead be the
@@ -1725,9 +1734,11 @@ which are a separate slot-based system where Shift flips the lattice basis.
   by, so an inline route bullet inside a beside-aligned name lands on the stop's row too. Those
   pins are asserted against the painted `<text>` baseline, not just the model
   ([stationLabel.autoAlign.test.tsx](src/components/stationLabel.autoAlign.test.tsx)).
-  An **above**-side label clears by `LABEL_GAP` + a descender charge — half a
+  The base clearance of every pin is the blocking LINE's own gap — `StopMetrics.labelGap`, from
+  `Line.labelGap` (default 3, the historical `LABEL_GAP` constant). An **above**-side label
+  clears by that gap + a descender charge — half a
   `DESCENDER_FRACTION`, scaled by the vertical share of the approach (1 straight above, √2/2 on a
-  corner) — every other side by `LABEL_GAP` alone: the CTA stops at the baseline but ink does not,
+  corner) — every other side by the gap alone: the CTA stops at the baseline but ink does not,
   and a constant gap against a size-proportional descender put a "g" inside the route line above
   ~fontSize 15. Half rather than the full drop is a deliberate dial (full clearance read too far
   on real maps); the deepest ink may dip the other half into the gap. The charge is unconditional
@@ -1761,9 +1772,10 @@ which are a separate slot-based system where Shift flips the lattice basis.
   stop is packed beside it — same reading-frame row within `BAND_MERGE_TOL`, different travel
   axis, on one side only (`crossingStop`) — the READING axis re-anchors against that crossing
   stop, so the text butts up to its stripe (`end`/`start`) instead of straddling it. Each axis
-  stays measured against the stop that actually blocks it: the perpendicular pin still comes
-  from the label's own stop, so the baseline holds its `LABEL_GAP` off the line it labels (a row
-  of labels stays level) no matter how wide the crossing line gets. Parallel neighbours are not
+  stays measured against the stop that actually blocks it — extent AND `labelGap` alike: the
+  perpendicular pin still comes from the label's own stop, so the baseline holds that line's gap
+  off the line it labels (a row of labels stays level) no matter how wide the crossing line gets,
+  while the butt clears by the crossing line's own gap. Parallel neighbours are not
   crossings, and a label boxed in on both sides keeps centering.
 
 ### Polygons — `polygon.ts`, `polygonUnion.ts`, `rectPolygon.ts`, `polygonSnap.ts`

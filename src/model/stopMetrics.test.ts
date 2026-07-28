@@ -30,6 +30,11 @@ describe('stopMetricsOf — stripe and gap', () => {
     expect(m.half).toBe(6.5);
     expect(m.gap).toBe(4.25);
   });
+
+  it('reports the line’s label gap, defaulting to the historical 3', () => {
+    expect(metricsFor().labelGap).toBe(3);
+    expect(metricsFor({ labelGap: 5 }).labelGap).toBe(5);
+  });
 });
 
 describe('stopMetricsOf — the dot', () => {

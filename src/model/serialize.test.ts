@@ -827,6 +827,24 @@ describe('parse — line style-def interline gap sanitizing', () => {
       if (r.ok) expect('interlineGap' in r.doc.styles.ln.props).toBe(false);
     }
   });
+
+  it('labelGap props: snapped and kept (0 included), collapsed at the default 3, junk dropped', () => {
+    const keep = parse(buildStyledFile({ labelGap: 2.1 }));
+    expect(keep.ok).toBe(true);
+    if (keep.ok) {
+      expect((keep.doc.styles.ln.props as unknown as Record<string, unknown>).labelGap).toBe(2);
+    }
+    const butt = parse(buildStyledFile({ labelGap: 0 }));
+    expect(butt.ok).toBe(true);
+    if (butt.ok) {
+      expect((butt.doc.styles.ln.props as unknown as Record<string, unknown>).labelGap).toBe(0);
+    }
+    for (const off of [{ labelGap: 3 }, { labelGap: 'wide' }, {}]) {
+      const r = parse(buildStyledFile(off));
+      expect(r.ok).toBe(true);
+      if (r.ok) expect('labelGap' in r.doc.styles.ln.props).toBe(false);
+    }
+  });
 });
 
 describe('parse — dot size sanitizing at a shared (interchange) station', () => {
@@ -1228,6 +1246,28 @@ describe('parse — line stroke sanitizing', () => {
       const result = parse(buildWithStroke({ interlineGap: junk }));
       expect(result.ok).toBe(true);
       if (result.ok) expect('interlineGap' in result.doc.lines.L1).toBe(false);
+    }
+  });
+
+  it('round-trips a label gap on the quarter grid; the default 3 collapses, 0 is REAL', () => {
+    const keep = parse(buildWithStroke({ labelGap: 2.1 }));
+    expect(keep.ok).toBe(true);
+    if (keep.ok) expect(keep.doc.lines.L1.labelGap).toBe(2);
+    // Unlike interlineGap (0 = off = absent), labelGap collapses at its
+    // default 3 and keeps an explicit 0 — text butted to the marker.
+    const def = parse(buildWithStroke({ labelGap: 3 }));
+    expect(def.ok).toBe(true);
+    if (def.ok) expect('labelGap' in def.doc.lines.L1).toBe(false);
+    const butt = parse(buildWithStroke({ labelGap: 0 }));
+    expect(butt.ok).toBe(true);
+    if (butt.ok) expect(butt.doc.lines.L1.labelGap).toBe(0);
+  });
+
+  it('drops non-numeric label gaps', () => {
+    for (const junk of ['wide', null, true, {}]) {
+      const result = parse(buildWithStroke({ labelGap: junk }));
+      expect(result.ok).toBe(true);
+      if (result.ok) expect('labelGap' in result.doc.lines.L1).toBe(false);
     }
   });
 });

@@ -569,6 +569,7 @@ interface DocState extends MapDoc {
   setLineMultiDotSize: (lineId: LineId, size: number) => void;
   setLineWidth: (lineId: LineId, w: number) => void;
   setLineInterlineGap: (lineId: LineId, v: number) => void;
+  setLineLabelGap: (lineId: LineId, v: number) => void;
   setLineCurveRadius: (lineId: LineId, r: number) => void;
   setLineEndStyle: (lineId: LineId, end: LineEndStyle) => void;
   setStationEndStyle: (lineId: LineId, stationId: StationId, end: LineEndStyle) => void;
@@ -852,6 +853,9 @@ export const useDoc = create<DocState>()(
         setLineWidth: (lineId, w) => set(withRegionReconcile((s) => T.setLineWidth(s, lineId, w))),
         setLineInterlineGap: (lineId, v) =>
           set(withRegionReconcile((s) => T.setLineInterlineGap(s, lineId, v))),
+        // Pure label placement — no bands or marker footprints move, so no
+        // region reconcile.
+        setLineLabelGap: (lineId, v) => set((s) => T.setLineLabelGap(s, lineId, v)),
         setLineCurveRadius: (lineId, r) =>
           set(withRegionReconcile((s) => T.setLineCurveRadius(s, lineId, r))),
         // End style leaves band paths alone but reshapes the stop markers at

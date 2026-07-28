@@ -21,9 +21,15 @@ import {
   capCenterDy,
   measureTextLabel,
 } from './textMeasure';
+import { LINE_LABEL_GAP_DEFAULT } from '../model/lineWidth';
 
 const HIT_PAD = 2;
-const LABEL_GAP = 3;
+// The DEFAULT clearance between a label and the marker it pins against —
+// the stored default of the per-line `Line.labelGap` (one owner:
+// model/lineWidth.ts). Stop-relative pins read the gap from StopMetrics;
+// this constant serves the phantom dot, the test fallback metrics, and the
+// legacy cell-boundary anchor, which is not measured off any stop.
+const LABEL_GAP = LINE_LABEL_GAP_DEFAULT;
 const HALF = STOP_SIZE / 2;
 
 /**
@@ -57,6 +63,11 @@ export interface StopMetrics {
    *  transfer is a round-capped capsule of uniform half-width, so at its end it
    *  is exactly a disc — isotropic, needing no direction. */
   transferRadius: number;
+  /** Clearance a label keeps from this stop's marker (Line.labelGap, default
+   *  3). Rides the LINE, not the label, so a row of labels along one corridor
+   *  stays consistent; at a cross each axis uses the gap of the stop that
+   *  blocks it. */
+  labelGap: number;
 }
 
 /**
@@ -76,6 +87,7 @@ export const DEFAULT_STOP_METRICS: StopMetricsFn = () => ({
   dash: null,
   dot: null,
   transferRadius: 0,
+  labelGap: LABEL_GAP,
 });
 
 export type LabelBaseline = 'central' | 'text-before-edge' | 'text-after-edge';
@@ -288,7 +300,9 @@ export function labelLayoutLocal(
         // `proj * STOP_SIZE` stays — the projection is in lattice units and
         // the lattice does NOT scale with width; only the stop's own
         // half-extent does.
-        const target = plus.inWayStopProj * STOP_SIZE - ((plus.inWayStopHalf ?? HALF) + LABEL_GAP);
+        const target =
+          plus.inWayStopProj * STOP_SIZE -
+          ((plus.inWayStopHalf ?? HALF) + (plus.inWayStopLabelGap ?? LABEL_GAP));
         anchorX = labelCenter.x + target * readCos;
         anchorY = labelCenter.y + target * readSin;
       }
@@ -298,7 +312,8 @@ export function labelLayoutLocal(
       anchorY = labelCenter.y + dirMinus.anchor.y + LABEL_GAP * readSin;
       if (minus.inWayStopProj !== null) {
         const target =
-          minus.inWayStopProj * STOP_SIZE + ((minus.inWayStopHalf ?? HALF) + LABEL_GAP);
+          minus.inWayStopProj * STOP_SIZE +
+          ((minus.inWayStopHalf ?? HALF) + (minus.inWayStopLabelGap ?? LABEL_GAP));
         anchorX = labelCenter.x + target * readCos;
         anchorY = labelCenter.y + target * readSin;
       }
@@ -437,6 +452,10 @@ interface SnapInfo {
   // clears the stop's ACTUAL edge, not the default STOP_SIZE/2. Null
   // whenever `inWayStopProj` is null.
   inWayStopHalf: number | null;
+  // The winning in-way stop's own label gap (Line.labelGap) — the clamp
+  // clears by the LINE's clearance, not the global default. Null whenever
+  // `inWayStopProj` is null.
+  inWayStopLabelGap: number | null;
 }
 
 /**
@@ -464,7 +483,8 @@ function snapInfoInHalfPlane(
   let inHalfPlane = false;
   let inWayStopProj: number | null = null;
   let inWayStopHalf: number | null = null;
-  const consider = (dRow: number, dCol: number, half: number, gap: number) => {
+  let inWayStopLabelGap: number | null = null;
+  const consider = (dRow: number, dCol: number, half: number, gap: number, labelGap: number) => {
     // Accept any cell within the adjacency gate (see labelAdjacencyGate).
     if (Math.max(Math.abs(dRow), Math.abs(dCol)) > labelAdjacencyGate(half, gap)) return;
     const proj = dCol * readCos + dRow * readSin;
@@ -483,14 +503,16 @@ function snapInfoInHalfPlane(
     if (inWayStopProj === null || sign * proj < sign * inWayStopProj) {
       inWayStopProj = proj;
       inWayStopHalf = half;
+      inWayStopLabelGap = labelGap;
     }
   };
   for (const s of stops) {
     const m = metrics(station, s);
-    consider(s.row - label.row, s.col - label.col, m.half, m.gap);
+    consider(s.row - label.row, s.col - label.col, m.half, m.gap, m.labelGap);
   }
-  if (phantomDot) consider(phantomDot.row - label.row, phantomDot.col - label.col, HALF, 0);
-  return { inHalfPlane, inWayStopProj, inWayStopHalf };
+  if (phantomDot)
+    consider(phantomDot.row - label.row, phantomDot.col - label.col, HALF, 0, LABEL_GAP);
+  return { inHalfPlane, inWayStopProj, inWayStopHalf, inWayStopLabelGap };
 }
 
 interface AutoAlignInfo {
@@ -697,6 +719,7 @@ function autoAlignInfo(
       dash: null,
       dot: null,
       transferRadius: 0,
+      labelGap: LABEL_GAP,
       dRow: phantomDot.row - label.row,
       dCol: phantomDot.col - label.col,
       orientation: null,
@@ -841,8 +864,8 @@ function autoAlignInfo(
       capCenterDy(fontSize) + 0.5 * DESCENDER_FRACTION * fontSize + (growsUp ? 0 : stacked);
     extent = Math.max(extent, stripeSlantExtent(ref, u, tUp, tDown));
   }
-  let pinRead = ref.proj * STOP_SIZE + u.x * (extent + LABEL_GAP);
-  const pinPerp = ref.perp * STOP_SIZE + u.y * (extent + LABEL_GAP);
+  let pinRead = ref.proj * STOP_SIZE + u.x * (extent + ref.labelGap);
+  const pinPerp = ref.perp * STOP_SIZE + u.y * (extent + ref.labelGap);
 
   // Cross stations (the Vignelli staple): the label parks squarely across
   // the line from its own stop — octants 2/6, which CENTER the text on that
@@ -859,7 +882,9 @@ function autoAlignInfo(
   if (cross) {
     const side = cross.proj > ref.proj ? 1 : -1; // which way along reading the stripe sits
     const away = { x: -side, y: 0 }; // crossing stop → label, along the reading axis
-    pinRead = cross.proj * STOP_SIZE - side * (extentAlong(cross, away) + LABEL_GAP);
+    // The butt clears by the CROSSING line's own gap — each axis reads the
+    // gap of the stop that blocks it, like every other term of its pin.
+    pinRead = cross.proj * STOP_SIZE - side * (extentAlong(cross, away) + cross.labelGap);
     textAnchorDefault = side > 0 ? 'end' : 'start';
   }
 
