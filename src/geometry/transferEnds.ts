@@ -3,10 +3,10 @@
 // This lived inside TransferLayer.tsx as a private `endpointWorld` plus an
 // exported `transferEndWorld`, which meant a component owned the geometry and
 // two other modules imported it back out of the render layer. It is pure
-// world-coordinate math over the doc, so it belongs here — and there are now
-// four call sites (the transfer bodies pass, the selection outline, the popover
-// spawn hint, and the in-progress creation preview) that must all resolve an
-// end identically or a transfer would render somewhere its own outline isn't.
+// world-coordinate math over the doc, so it belongs here — and its call sites
+// (the transfer bodies pass, the selection outline, and the in-progress
+// creation preview) must all resolve an end identically or a transfer would
+// render somewhere its own outline isn't.
 import { stopPosWorld } from './interlining';
 import { localToWorld, stopCenterAt } from './orientation';
 import type { Vec2 } from './vec';

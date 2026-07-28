@@ -61,6 +61,9 @@ export interface SeedTextLabel {
   weight?: 100 | 200 | 300 | 400 | 500 | 700 | 800 | 900;
   italic?: boolean;
   align?: 'left' | 'center' | 'right';
+  // Remembered CSS-px height of the popover's Text box. Omit to simulate a
+  // label the user never stretched (the box auto-sizes to its rows).
+  editorHeight?: number;
 }
 
 export interface SeedPolygon {
@@ -174,6 +177,7 @@ export async function seedAndOpen(
       weight: g.weight ?? 400,
       italic: g.italic ?? false,
       align: g.align ?? 'left',
+      ...(g.editorHeight !== undefined ? { editorHeight: g.editorHeight } : {}),
     };
   }
 
