@@ -2,11 +2,13 @@ import { dashRenderLength, dashRenderWidth } from './dashSize';
 import { dotSizeOverride } from './dotSize';
 import { defaultDotDiameter, isBlankDotStyle } from './dotStyle';
 import { lineInterlineGapOf, lineLabelGapOf, lineWidthOf } from './lineWidth';
+import { neighborsOf } from './lineTopology';
 import { isStopEnd } from './transferAnchors';
 import { resolveTransferStyle } from './transferStyle';
 import { resolveDotStyle, stationIsSingleton } from './transforms';
 import type { DotStyle, Line, Station, StopCell, Transfer } from './types';
 import type { StopMetrics, StopMetricsFn } from '../geometry/labelLayout';
+import { rotateBy, travelDirLocal } from '../geometry/orientation';
 
 /**
  * The doc slice `stopMetricsOf` resolves against. A `MapDoc` satisfies it
@@ -16,6 +18,9 @@ import type { StopMetrics, StopMetricsFn } from '../geometry/labelLayout';
 export interface StopMetricsSource {
   lines: Record<string, Line | undefined>;
   transfers: Record<string, Transfer>;
+  // Needed only to resolve `continues` (neighbour world positions); every
+  // production site holds the full station record anyway.
+  stations: Record<string, Station | undefined>;
 }
 
 /**
@@ -95,6 +100,31 @@ const dotOuterRadius = (r: number, style: DotStyle): number => {
  */
 export const stopMetricsOf = (src: StopMetricsSource): StopMetricsFn => {
   const caps = transferCapsByStop(src.transfers);
+  // Which signed halves of the stop's travel axis carry line body away from
+  // the station: project each edge-neighbour's world delta onto the canonical
+  // world axis. A perpendicular neighbour (the line bends away AT the
+  // station) counts on neither side — its body is not the along-axis stripe
+  // the beside-slant window models. Orphan or edge-less stops continue
+  // nowhere: the finite marker square is all that paints.
+  const continuesOf = (
+    station: Station,
+    stop: StopCell,
+    line: Line | undefined,
+  ): StopMetrics['continues'] => {
+    let plus = false;
+    let minus = false;
+    if (line) {
+      const axis = rotateBy(travelDirLocal(stop.orientation), station.rotation);
+      for (const id of neighborsOf(line, station.id)) {
+        const n = src.stations[id];
+        if (!n) continue;
+        const proj = (n.x - station.x) * axis.x + (n.y - station.y) * axis.y;
+        if (proj > 1e-6) plus = true;
+        else if (proj < -1e-6) minus = true;
+      }
+    }
+    return { plus, minus };
+  };
   return (station: Station, stop: StopCell): StopMetrics => {
     const line = src.lines[stop.lineId];
     // Singleton vs. shared drives both the dot STYLE and the dot SIZE default,
@@ -114,6 +144,7 @@ export const stopMetricsOf = (src: StopMetricsSource): StopMetricsFn => {
           ? null
           : { r: dotOuterRadius(baseR, style), shape: style.shape },
       transferRadius: caps.get(stopKey(station.id, stop.lineId)) ?? 0,
+      continues: continuesOf(station, stop, line),
     };
   };
 };
