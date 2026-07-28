@@ -6,7 +6,6 @@ import { DEFAULT_DOC } from '../model/transforms';
 import type { Rotation, StopOrientation } from '../model/types';
 import { makeLabel, makeStation, makeStop } from '../test/fixtures';
 import { STOP_SIZE } from '../geometry/orientation';
-import { CAP_FRACTION, DESCENDER_FRACTION } from '../geometry/textMeasure';
 
 /**
  * The magic wand's typography, measured on the PAINTED glyphs.
@@ -21,8 +20,12 @@ import { CAP_FRACTION, DESCENDER_FRACTION } from '../geometry/textMeasure';
  * silently off by ~0.4 world units on Windows and ~-0.5 on macOS.
  *
  * These tests therefore read the `<text>` element's own alphabetic baseline and
- * compare it against targets derived from the marker and the Core Type Area
- * alone — never from `labelLayoutLocal`. The four tutorials:
+ * compare it against targets built from the marker geometry and the font model
+ * — never from `labelLayoutLocal`. The font fractions are HARDCODED below
+ * rather than imported: importing them would pin only that a value is applied,
+ * not what it is (zeroing `DESCENDER_FRACTION` would leave all of this green).
+ * A change to either constant should be a deliberate red here. The four
+ * tutorials:
  *   https://transitmap.net/label-horizontal-vertical/
  *   https://transitmap.net/labels-45-degrees/
  *   https://transitmap.net/angled-labels/
@@ -44,12 +47,15 @@ beforeEach(() => {
 const FS = 12; // DEFAULT_DOC label size
 const HALF = STOP_SIZE / 2; // marker half-extent, 7
 const GAP = 3; // LABEL_GAP
+// Helvetica Neue's own numbers, stated here so the implementation cannot move
+// them silently (mirrors labelLayout.autoAlign.test.ts).
 // The Core Type Area: baseline up to cap height. The whole vertical model.
-const CTA = CAP_FRACTION * FS;
-// How far the deepest ink drops below the baseline. The CTA stops AT the
-// baseline, so this is the part of the label the tutorials' alignment rules
-// don't describe — and the part that would otherwise reach into the route line.
-const DESC = DESCENDER_FRACTION * FS;
+const CTA = 0.714 * FS;
+// How far the deepest ink drops below the baseline (1 − BASELINE_FRACTION). The
+// CTA stops AT the baseline, so this is the part of the label the tutorials'
+// alignment rules don't describe — and the part that would otherwise reach into
+// the route line.
+const DESC = 0.2 * FS;
 const S2 = Math.SQRT1_2;
 
 type StopSpec = { dRow: number; dCol: number; orientation: StopOrientation };
@@ -64,10 +70,10 @@ type StopSpec = { dRow: number; dCol: number; orientation: StopOrientation };
  * anchor. So the rotation is undone here, and an angled label is measured on the
  * same map the reader sees rather than in its own reading frame.
  */
-function paintedLabel(stops: StopSpec[], labelRotation: Rotation = 0) {
+function paintedLabel(stops: StopSpec[], labelRotation: Rotation = 0, name = 'Foo') {
   const station = makeStation({
     id: 's1',
-    name: 'Foo',
+    name,
     x: 0,
     y: 0,
     stops: stops.map((s, i) =>
@@ -124,9 +130,14 @@ describe('magic wand — horizontal and vertical route lines', () => {
   it('the descender allowance is unconditional, so above-line baselines stay level', () => {
     // Measuring each name's real descender would clear the line just as well and
     // is exactly what the tutorial rules out: it puts neighbouring labels on
-    // different baselines. Nothing here depends on the text, so nothing can.
-    const withTail = paintedLabel([{ dRow: 1, dCol: 0, orientation: 'auto-horizontal' }]);
-    expect(withTail.baselineY).toBeCloseTo(STOP_SIZE - HALF - GAP - DESC, 5);
+    // different baselines. So two names that differ ONLY in whether they own a
+    // descender have to land on the same baseline.
+    const stops: StopSpec[] = [{ dRow: 1, dCol: 0, orientation: 'auto-horizontal' }];
+    const tailed = paintedLabel(stops, 0, 'Paddington'); // g descends
+    const flat = paintedLabel(stops, 0, 'Bank'); // nothing below the baseline
+    expect(tailed.baselineY).toBeCloseTo(flat.baselineY, 5);
+    // …and both carry the allowance, rather than neither.
+    expect(flat.baselineY).toBeCloseTo(STOP_SIZE - HALF - GAP - DESC, 5);
   });
 
   it('below a horizontal line: the glyphs HANG from their cap line, GAP clear of the marker', () => {

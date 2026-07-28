@@ -55,6 +55,7 @@ const S2 = Math.SQRT1_2; // √2/2 — diagonal-lattice step and octant unit com
 function autoStation({
   stops,
   rotation = 0,
+  stationRotation = 0,
   name = 'Foo',
   align = 'auto',
   valign = 'middle',
@@ -66,6 +67,7 @@ function autoStation({
 }: {
   stops: { dRow: number; dCol: number; orientation?: StopOrientation; lineId?: string }[];
   rotation?: Rotation;
+  stationRotation?: Rotation;
   name?: string;
   align?: 'auto' | 'start' | 'middle' | 'end';
   valign?: 'auto-down' | 'top' | 'middle' | 'bottom' | 'auto-up';
@@ -80,7 +82,7 @@ function autoStation({
     name,
     x: 0,
     y: 0,
-    rotation: 0,
+    rotation: stationRotation,
     stops: stops.map((s, i) => ({
       lineId: s.lineId ?? `L${i + 1}`,
       row: s.dRow,
@@ -491,7 +493,7 @@ describe('labelLayoutLocal — autoAlign at a crossing (cross station)', () => {
   // stripe. The text must butt up to that stripe instead — while the
   // baseline keeps its LABEL_GAP off the line it labels, so a row of labels
   // along that line stays level.
-  const SIT = STOP_SIZE - (HALF + LABEL_GAP) - CB - DESC; // 0.4 — the plain-N anchorY
+  const SIT = STOP_SIZE - (HALF + LABEL_GAP) - CB - DESC; // −2.0 — the plain-N anchorY
   const HANG_Y = -STOP_SIZE + HALF + LABEL_GAP + HANG; // 0.968 — the plain-S one
 
   it('crossing stop to the EAST: text ends at its edge, baseline unchanged', () => {
@@ -707,7 +709,7 @@ describe('labelLayoutLocal — autoAlign multi-line blocks', () => {
         stops: [{ dRow: 1, dCol: 0, orientation: 'auto-horizontal' }],
       }),
     );
-    const anchorY = STOP_SIZE - (HALF + LABEL_GAP) - CB - DESC; // 0.4
+    const anchorY = STOP_SIZE - (HALF + LABEL_GAP) - CB - DESC; // −2.0
     expect(lay.anchorY).toBeCloseTo(anchorY, 6);
     expect(lay.firstLineDyPx).toBeCloseTo(-2 * 14.4, 6);
     expect(lay.blockTopY).toBeCloseTo(anchorY - 7.2 - 2 * 14.4, 6);
@@ -1107,5 +1109,46 @@ describe('labelLayoutLocal — autoAlign clears a TRANSFER cap', () => {
     expect(lay.textAnchor).toBe('end');
     expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (11 + LABEL_GAP), 6);
     expect(lay.anchorY).toBeCloseTo(STOP_SIZE - (HALF + LABEL_GAP) - CB - DESC, 6);
+  });
+});
+
+describe('labelLayoutLocal — a polygon dot is axis-aligned in the WORLD frame', () => {
+  // StationDots paints real dots at `stopPosWorld` inside an UNTRANSFORMED <g>
+  // — only the phantom drag preview sits in the station-rotated group. So a
+  // square or diamond dot keeps its edges square to the WORLD on a rotated
+  // station, unlike the stripe (which rotates with its travel axis). The
+  // support has to be evaluated in that frame or every odd station rotation is
+  // wrong by √2, in opposite directions for the two shapes.
+  const R = 10;
+  // Station rotation 1 = 45°, so a label reading E in the station's local frame
+  // approaches the dot along a 45° WORLD direction.
+  const at = (shape: 'circle' | 'square' | 'diamond') =>
+    labelLayoutLocal(
+      autoStation({
+        stationRotation: 1,
+        stops: [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' }],
+      }),
+      undefined,
+      undefined,
+      metrics({ dot: { r: R, shape } }),
+    ).anchorX;
+
+  it('a square is widest across its diagonals, so a 45° station APPROACH sees r·√2', () => {
+    expect(at('square')).toBeCloseTo(-STOP_SIZE + R * Math.SQRT2 + LABEL_GAP, 6);
+  });
+
+  it('a diamond is narrowest across its diagonals, so the same approach sees only r/√2', () => {
+    // Stripe half 7 still loses to 10/√2 ≈ 7.07, so the dot is what is measured.
+    expect(at('diamond')).toBeCloseTo(-STOP_SIZE + R * S2 + LABEL_GAP, 6);
+  });
+
+  it('a circle is isotropic, so station rotation cannot change its clearance', () => {
+    const unrotated = labelLayoutLocal(
+      autoStation({ stops: [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' }] }),
+      undefined,
+      undefined,
+      metrics({ dot: { r: R, shape: 'circle' } }),
+    ).anchorX;
+    expect(at('circle')).toBeCloseTo(unrotated, 6);
   });
 });

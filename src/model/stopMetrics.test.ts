@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { stopMetricsOf } from './stopMetrics';
-import { DEFAULT_DOT_STYLE, SERVICE_CODE_DOT_RADIUS } from './dotStyle';
+import { DEFAULT_DOT_STYLE, DOT_SHAPE_PRESETS, SERVICE_CODE_DOT_RADIUS } from './dotStyle';
 import { makeLine, makeStation, makeStop, makeTransfer } from '../test/fixtures';
-import type { DotStyle, Line, Station, Transfer } from './types';
+import type { DotStyle, Line, Station, StopCell, Transfer } from './types';
 
 // The OTHER half of the label-clearance contract: labelLayout.autoAlign.test.ts
 // pins what a given obstacle does to the pin, this pins that a real line, dot
@@ -150,5 +150,66 @@ describe('stopMetricsOf — transfer caps', () => {
     });
     expect(fn(st, st.stops[0]).transferRadius).toBe(6);
     expect(fn(st, st.stops[1]).transferRadius).toBe(6);
+  });
+});
+
+describe('stopMetricsOf — split singleton/interchange resolution', () => {
+  // Ported from stopDashOf's own tests when the three separate lookups folded
+  // into this bundle. The rule they pin lives here now: a stop's effective dot
+  // style — and so whether it paints a TICK the label has to clear — depends on
+  // whether its station is a singleton, which is a property of the whole stop
+  // SET, not the cell. That is why the lookup takes the station.
+  const dash = DOT_SHAPE_PRESETS['dash'];
+  const circle = DOT_SHAPE_PRESETS['filled-black'];
+  const blank = DOT_SHAPE_PRESETS['none'];
+  // A default-width (14) line: the derived tick is 14 long × 7 thick.
+  const TICK = { length: 14, width: 7 };
+
+  const dashOf = (line: Line, stop: StopCell, stops: StopCell[]) =>
+    stopMetricsOf({ lines: { [line.id]: line }, transfers: {} })(
+      makeStation({ id: 's1', stops }),
+      stop,
+    ).dash;
+
+  it('resolves a singleton stop against singletonDotStyle, a shared stop against multiDotStyle', () => {
+    const line = makeLine({ id: 'L1', singletonDotStyle: dash, multiDotStyle: circle });
+    const s = makeStop('L1');
+    expect(dashOf(line, s, [s])).toEqual(TICK); // alone → singleton → dash → ticks
+    expect(dashOf(line, s, [s, makeStop('L2', { col: 1 })])).toBeNull(); // shared → circle
+  });
+
+  it("an interchange-default change never flips a singleton stop's tick (the label-drift regression)", () => {
+    const before = makeLine({ id: 'L1', singletonDotStyle: dash, multiDotStyle: dash });
+    const after = makeLine({ id: 'L1', singletonDotStyle: dash, multiDotStyle: circle });
+    const s = makeStop('L1');
+    expect(dashOf(before, s, [s])).toEqual(dashOf(after, s, [s])); // singleton unaffected
+    const shared = [s, makeStop('L2', { col: 1 })];
+    expect(dashOf(after, s, shared)).toBeNull();
+    expect(dashOf(before, s, shared)).toEqual(TICK);
+  });
+
+  it('ignores a blanked sibling stop when deciding singleton vs. interchange (express+local)', () => {
+    const line = makeLine({ id: 'LOCAL', singletonDotStyle: dash, multiDotStyle: circle });
+    const local = makeStop('LOCAL');
+    const blanked = makeStop('EXPRESS', { col: 1, dotStyle: blank });
+    expect(dashOf(line, local, [local, blanked])).toEqual(TICK); // still a singleton
+    expect(dashOf(line, local, [local, makeStop('EXPRESS', { col: 1 })])).toBeNull();
+  });
+
+  it('a per-stop dotStyle override wins over either default', () => {
+    const line = makeLine({ id: 'L1', singletonDotStyle: circle, multiDotStyle: circle });
+    const pinned = makeStop('L1', { dotStyle: dash });
+    expect(dashOf(line, pinned, [pinned])).toEqual(TICK);
+    expect(dashOf(line, pinned, [pinned, makeStop('L2', { col: 1 })])).toEqual(TICK);
+  });
+
+  it('an orphan stop whose line is gone falls back to the default width and no gap', () => {
+    const orphan = makeStop('GHOST');
+    const m = stopMetricsOf({ lines: {}, transfers: {} })(
+      makeStation({ id: 's1', stops: [orphan] }),
+      orphan,
+    );
+    expect(m.half).toBe(7);
+    expect(m.gap).toBe(0);
   });
 });

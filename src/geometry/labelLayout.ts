@@ -3,6 +3,7 @@ import {
   BAND_MERGE_TOL,
   DIR_8,
   labelAdjacencyGate,
+  rotateBy,
   STOP_SIZE,
   stopCenterAt,
   travelDirLocal,
@@ -49,9 +50,8 @@ export interface StopMetrics {
   /** The painted dot's OUTER silhouette — `r` already includes the stroke
    *  outset — or null when the stop paints no dot (a blank style, or a 'dash',
    *  whose tick is `dash` above). A dot can be WIDER than its own line, so this
-   *  is a real obstacle and not a subset of `half`. Deliberately NOT rotated to
-   *  the travel axis: StopGlyph draws it axis-aligned in the station frame,
-   *  unlike the stripe. */
+   *  is a real obstacle and not a subset of `half`. Its axes are the WORLD's,
+   *  not the station's and not the travel axis's — see `dotSupport`. */
   dot: { r: number; shape: DotBaseShape } | null;
   /** Radius of the largest transfer cap landing on this stop, 0 when none. A
    *  transfer is a round-capped capsule of uniform half-width, so at its end it
@@ -570,8 +570,8 @@ const AUTO_TEXT_ANCHOR: AutoAlignInfo['textAnchor'][] = [
 const CROSS_PERP_TOL = BAND_MERGE_TOL / STOP_SIZE;
 
 /**
- * Support function of a painted stop dot along a STATION-LOCAL unit direction —
- * how far its silhouette reaches that way. 0 when the stop paints no dot.
+ * Support function of a painted stop dot — how far its silhouette reaches along
+ * an approach given in STATION-LOCAL coords. 0 when the stop paints no dot.
  *
  * Per shape rather than by one circumscribing radius, because the two polygon
  * shapes are narrow in opposite directions and a single radius would over-clear
@@ -582,12 +582,26 @@ const CROSS_PERP_TOL = BAND_MERGE_TOL / STOP_SIZE;
  *   x        a saltire inside the same 2r box as 'square', so the square's
  *            support bounds it — exact on the cardinals, generous on the
  *            diagonals, and generous only ever over-clears
+ *
+ * Those axes are the WORLD's, not the station's: `StationDots` paints real dots
+ * at `stopPosWorld` inside an UNTRANSFORMED group — only the phantom drag
+ * preview sits in the station-rotated one — so a square or diamond keeps its
+ * edges square to the world however the station is turned. The stripe does the
+ * opposite (it rotates with its travel axis), which is why only this term
+ * changes frame. Rotated by the same local→world step `travelDirWorld` uses; a
+ * circle is isotropic, so it never pays for the rotation.
  */
-function dotSupport(dot: StopMetrics['dot'], ux: number, uy: number): number {
+function dotSupport(
+  dot: StopMetrics['dot'],
+  uLocX: number,
+  uLocY: number,
+  stationRotation: Rotation,
+): number {
   if (!dot) return 0;
-  const ax = Math.abs(ux);
-  const ay = Math.abs(uy);
   if (dot.shape === 'circle') return dot.r;
+  const u = rotateBy({ x: uLocX, y: uLocY }, stationRotation);
+  const ax = Math.abs(u.x);
+  const ay = Math.abs(u.y);
   if (dot.shape === 'diamond') return dot.r * Math.max(ax, ay);
   return dot.r * (ax + ay);
 }
@@ -755,9 +769,13 @@ function autoAlignInfo(
     const stripe = c.half * (alongAxis + Math.abs(uLocX * -axis.y + uLocY * axis.x));
     // The dot can be WIDER than its own line — a service-code disc sizes itself
     // for legibility, and any dot size is settable — so it is a real obstacle,
-    // not a subset of the stripe. Its silhouette is axis-aligned in the STATION
-    // frame (StopGlyph draws it so), never rotated to the travel axis.
-    const extent = Math.max(stripe, dotSupport(c.dot, uLocX, uLocY), c.transferRadius);
+    // not a subset of the stripe. It is also the one obstacle measured in WORLD
+    // axes rather than the station's (see dotSupport).
+    const extent = Math.max(
+      stripe,
+      dotSupport(c.dot, uLocX, uLocY, stationRotation),
+      c.transferRadius,
+    );
     if (!c.dash || !c.orientation) return extent;
     // A dash stop's tick is a second obstacle: a rect from the stripe edge
     // (± half on the label-signed perpendicular) reaching `length` toward

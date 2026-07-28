@@ -1696,10 +1696,10 @@ which are a separate slot-based system where Shift flips the lattice basis.
   that selects it, by a margin that varies per platform *and* per font size (the metrics round to
   whole device pixels). Anything positioned **relative to** label text keys off the same computed
   baseline for the same reason.
-- **`StopMetrics`** ([geometry/labelLayout.ts](src\geometry\labelLayout.ts)) is everything the
+- **`StopMetrics`** ([geometry/labelLayout.ts](src/geometry/labelLayout.ts)) is everything the
   label geometry knows about one painted stop — stripe `half`, interline `gap`, `dash` tick, `dot`
   silhouette, `transferRadius` — resolved together by `stopMetricsOf({ lines, transfers })`
-  ([model/stopMetrics.ts](src\model\stopMetrics.ts)) and threaded to `labelLayoutLocal`,
+  ([model/stopMetrics.ts](src/model/stopMetrics.ts)) and threaded to `labelLayoutLocal`,
   `stationBoundaryRectsLocal`, `cellsAABBLocal`, `stationsForRect` and `stationWorldAABB`. It is
   ONE bundle rather than a lookup per field precisely so a call site cannot pass four of five and
   drift off the paint; on the canvas it comes from `useStopMetrics(lines)`, which adds the
@@ -1723,7 +1723,7 @@ which are a separate slot-based system where Shift flips the lattice basis.
   untouched. The beside case steps by `capCenterDy`, the same half-cap the badge glyphs center
   by, so an inline route bullet inside a beside-aligned name lands on the stop's row too. Those
   pins are asserted against the painted `<text>` baseline, not just the model
-  ([stationLabel.autoAlign.test.tsx](src\components\stationLabel.autoAlign.test.tsx)).
+  ([stationLabel.autoAlign.test.tsx](src/components/stationLabel.autoAlign.test.tsx)).
   An **above**-side label clears by `LABEL_GAP` + one `DESCENDER_FRACTION`, every other side by
   `LABEL_GAP` alone: the CTA stops at the baseline but ink does not, and a constant gap against a
   size-proportional descender put a "g" inside the route line above ~fontSize 15. The allowance
@@ -1742,7 +1742,8 @@ which are a separate slot-based system where Shift flips the lattice basis.
   rotated to the stop's **travel axis**), the TfL tick, the transfer cap, and the **dot** — which
   is not a subset of the stripe, since a service-code disc sizes itself for legibility and any dot
   size is settable, so a dot routinely reaches past a narrow line. The dot's silhouette is
-  axis-aligned in the **station** frame (StopGlyph draws it so), and its support is per shape
+  axis-aligned in the **world** frame — `StationDots` paints real dots at `stopPosWorld` inside an
+  untransformed group, so only the phantom drag preview is station-rotated — and its support is per shape
   rather than by one circumscribing radius: a square is narrow on the cardinals and a diamond on
   the diagonals, so a single radius would over-clear one of them by √2. All stop-relative on both
   axes.

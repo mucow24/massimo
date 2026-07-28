@@ -59,7 +59,9 @@ const transferCapsByStop = (transfers: Record<string, Transfer>): Map<string, nu
 /**
  * The OUTER silhouette radius of a painted stop dot, in the same `r` units
  * `StopGlyph` draws with — the circumscribing radius for a circle or square,
- * the vertex distance for a diamond.
+ * the vertex distance for a diamond. A radius only; which AXES a polygon dot's
+ * edges align to is the geometry's problem (they are the world's — see
+ * `dotSupport` in labelLayout.ts).
  *
  * Mirrors StopGlyph's `silDelta` exactly: a stroke widens the painted
  * silhouette by `strokeWidth/2` for each side it sits outside the edge, and a
