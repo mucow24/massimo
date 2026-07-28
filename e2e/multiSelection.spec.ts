@@ -438,9 +438,7 @@ test.describe('multi-bullet selection', () => {
     const b1 = await bulletCenter(page, 'b1');
     const b2 = await bulletCenter(page, 'b2');
 
-    // Build a mixed selection: station A + bullet b1. Park each popover
-    // spawn (station, then the re-anchoring selection popover) so it can't
-    // sit over the next click target.
+    // Build a mixed selection: station A + bullet b1.
     await page.mouse.click(a.x, a.y);
     await clickAtWithModifiers(page, b1, ['Shift']);
     await expect(page.locator('[data-station-wash="A"]')).toBeVisible();

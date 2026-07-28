@@ -92,8 +92,8 @@ describe('WarningToasts', () => {
   // The toasts rest in the host's bottom-right corner — exactly where the open
   // sidebar paints over them (it overlays the right strip, z-index above the
   // canvas). So while the panel shows, shift them left of it so they stay on
-  // screen; the offset clears SIDEBAR_WIDTH the same way ItemPopovers' spawn
-  // box does.
+  // screen; the offset is the same SIDEBAR_WIDTH inset ItemPopovers subtracts
+  // from the popover dock.
   it('shifts the toasts left of the sidebar while the panel is open', () => {
     render(<App />);
     seedWarningDoc();

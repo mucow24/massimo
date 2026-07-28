@@ -871,9 +871,9 @@ select option {
   overflow: hidden;
   /* Contain the canvas as one stacking layer. Without this, `position:relative`
      alone is NOT a stacking context, so the item popovers' zIndex:1100 (see
-     DraggablePopoverShell) escapes into the ROOT context and out-ranks the
-     sidebar (z-index:1), painting on top of it. Isolating keeps every
-     popover trapped in the canvas layer, which sits below the sidebar. */
+     PopoverShell) escapes into the ROOT context and out-ranks the sidebar
+     (z-index:1), painting on top of it. Isolating keeps every popover trapped
+     in the canvas layer, which sits below the sidebar. */
   isolation: isolate;
 }
 
@@ -924,6 +924,28 @@ select option {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* The panels dock to the host's top corner and the host clips (overflow:
+     hidden), so anything past the bottom edge is simply unreachable. Clamp to
+     the viewport ONLY and scroll inside, so the panel grows to fit its content
+     and the scrollbar appears solely when the content genuinely can't fit the
+     window. A prior fixed 720px ceiling sat just under a multi-line station's
+     natural height, forcing a stray hairline scroll even with the whole window
+     free; the viewport clamp alone avoids that. When scrolling is real, keep it
+     a hairline. */
+  max-height: 84vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+/* The two stretchable boxes (the label's Text, the station's Name) are the only
+   controls a user can drag taller than the window, and their stored px height
+   is re-applied verbatim on every open — a box stretched on a big screen would
+   otherwise fill a smaller one edge to edge, leaving the panel nothing but text
+   area. Cap them inside the body's own scroll box so the rest of the panel stays
+   in reach. A vh cap is also what re-clamps on a window RESIZE, which
+   re-applying a stored number can't. */
+.text-label-popover textarea {
+  max-height: 60vh;
 }
 /* One field recipe inside the popovers: hairline border, shared radius, quiet
    until hovered/focused (the app-wide :focus-visible ring does the talking). */
@@ -1226,7 +1248,9 @@ select option {
 
 /* Footer holds the lock toggle (left, when the item supports locking) and
    Delete (right) in its own zone: a hairline divider spanning the full panel
-   width (negative margins swallow the body padding). */
+   width (negative margins swallow the body padding). It stays put while the
+   sections scroll beneath it — opaque surface + the shell's bottom radius so
+   scrolled content never peeks through or clips the rounded corners. */
 .bullet-popover .footer,
 .text-label-popover .footer {
   display: flex;
@@ -1236,6 +1260,10 @@ select option {
   border-top: 1px solid var(--border-soft);
   margin: 2px -16px -14px;
   padding: 8px 12px 9px;
+  position: sticky;
+  bottom: -14px;
+  background: var(--surface);
+  border-radius: 0 0 9px 9px;
 }
 /* Delete is a quiet text button — red says enough at rest; a soft wash
    answers on hover. */
@@ -2751,29 +2779,6 @@ body:has(.app[data-theme='dark']) {
 .station-popover .inspector,
 .line-popover .inspector {
   padding: 0;
-}
-.station-popover .body,
-.line-popover .body {
-  /* Tall multi-section panel: clamp to the viewport ONLY and scroll inside, so
-     the panel grows to fit its content and the scrollbar appears solely when
-     the content genuinely can't fit the window. A prior fixed 720px ceiling sat
-     just under a multi-line station's natural height, forcing a stray hairline
-     scroll even with the whole window free; the viewport clamp alone avoids
-     that. When scrolling is real, keep it a hairline. */
-  max-height: 84vh;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-}
-/* The footer stays visible while the sections scroll beneath it. Opaque
-   surface + the shell's bottom radius so scrolled content never peeks
-   through or clips the rounded corners. */
-.station-popover .footer,
-.line-popover .footer {
-  position: sticky;
-  bottom: -14px;
-  background: var(--surface);
-  border-radius: 0 0 9px 9px;
 }
 /* Hairline dividers between the popover's sections (Name / Position / Stop
    layout / Label) — the taller multi-section panel needs them where the

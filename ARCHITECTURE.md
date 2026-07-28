@@ -2093,11 +2093,13 @@ Unlock all / Delete all over the whole group.
 Every panel — those, the line editor and the station layout editor — is **docked to the
 host's top-right corner** by `usePinnedPopover`, right-aligned on the panel's own measured
 width (248 for the item popovers, 320 for the station/line editors) 8px off the top and right
-edges. Nothing about the item or the camera reaches the panel: the only input is `hostW`, the
-canvas host minus the open sidebar's `SIDEBAR_WIDTH` strip (the sidebar paints ABOVE the
-popovers, so docking to the raw host width would park a panel under it). A pan or zoom
-therefore moves the map under a panel that stays put, and there is no drag handle — the header
-is a title band. The station popover hides (`display:none`, not unmount) during non-idle
+edges. Vertically the body clamps to the viewport and scrolls inside itself, its footer sticky
+at the shell's bottom edge — the host clips (`overflow: hidden`), so anything past that edge
+would simply be unreachable. Nothing about the item or the camera reaches the panel: the only
+input is `hostW`, the canvas host minus the open sidebar's `SIDEBAR_WIDTH` strip (the sidebar
+paints ABOVE the popovers, so docking to the raw host width would park a panel under it). A pan
+or zoom therefore moves the map under a panel that stays put, and there is no drag handle — the
+header is a title band. The station popover hides (`display:none`, not unmount) during non-idle
 uiMode excursions, keeping its DOM node and measured width. Every popover renders inside
 `PopoverShell`, which owns the floating frame (header + body) and the load-bearing event
 swallowing — pointerdown/click/contextmenu inside a popover must never reach the canvas, which
