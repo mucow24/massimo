@@ -586,12 +586,19 @@ so idle clicks land on the visible winner natively. Zero assignments ⇒ zero co
 byte-identical output.
 
 **How the faces are actually built.** `lineRegions.ts` holds the pipeline as separable phases —
-`buildLineBodies` → `buildOverlapZone` (pairwise body intersections; any ≥2-cover point is in one
-of them) → `significantComponents` (the zone's connected components, dropping sub-`SLIVER_MIN_AREA`
-ones, which are ~95% of them by count and can reach neither output) → per component
-`restrictBodiesToZone` → `subdivideCells` → `extractFaces` → one `finalizeFaces` over the merged
-set. A cell can never span two components, so per-component subdivision is equivalent to one
-global pass while keeping every clipper operand down to one crossing's worth of geometry.
+`buildLineBodies` → `overlapZoneParts` (pairwise body intersections; any ≥2-cover point is in one
+of them; deliberately not unioned) → `zoneComponents` (ONE polytree union over the raw parts,
+yielding both the merged zone rings and its connected components; sub-`SLIVER_MIN_AREA`
+components — ~95% of them by count — are dropped since they can reach neither output, and
+`significantComponents` is the comps-only view of the same call) → per component
+`restrictBodiesToZone` → `subdivideCells` (each cell carries its bbox; strictly-disjoint
+cell/rings pairs skip the provably-empty clipper intersect) → `extractFaces` → one
+`finalizeFaces` over the merged set. A cell can never span two components, so per-component
+subdivision is equivalent to one global pass while keeping every clipper operand down to one
+crossing's worth of geometry. Span sampling walks each covering stripe's whole arc grid but
+evaluates points only inside precomputed windows where the path nears the face bbox — outside
+them a sample is provably rejected by `pointNearFace`'s own bbox gate, so skipping preserves the
+interval output byte-for-byte.
 `buildOverlapRegions` composes exactly those phases and is the full-rebuild reference the
 incremental builder is tested against — **production goes through
 `regionIncremental.buildRegionsIncremental`**, which caches per component across frames and is
@@ -2058,11 +2065,17 @@ single resolver shared by the geometry bake and the render-time refresh, so the 
 disagree). **Width, by contrast, IS geometry (in the hash) — it moves the baked paths and changes
 band merging.** So a color or casing edit — or a dashed→dotted change on an already-styled
 segment — repaints without a band-geometry rebuild; the stop markers, whose footprint DOES depend on
-style, rebuild instead via the `renderables` memo's direct `lines` dep. Region layering keeps its own
+style, rebuild instead via their own `stopMarkers` memo's direct `lines` dep (`renderables` just
+orders bands + markers). Region layering keeps its own
 parallel cache: the overlays read `regionCache.regionsFor` (sig-keyed on the same geometry fields,
 presentation excluded), so cycling a region assignment reuses the cached faces/bands/markers and
 doesn't re-run the per-face arc-length search (a single click on a busy map once burned
-300–500ms). `assignLinePriorities` mutates in place, so `bands` clones each spec.
+300–500ms). On a cache miss the render layer passes its own just-built geometry through
+`regionsFor`'s prebuilt param — the PRISTINE `bandsGeometry` plus the `stopMarkers` memo — so
+bands and markers are never built twice in one frame; marker priorities are invisible to region
+geometry, which is what makes entries built from either side of the cache interchangeable
+(pinned by `regionCache.prebuilt.test.ts`). `assignLinePriorities` mutates in place, so `bands`
+clones each spec.
 
 The stations side works the same way: `stationsGeometrySig` hashes only the station fields
 `buildBandGeometry` / `buildStopMarkers` read (x, y, rotation, per-stop lineId/row/col/orientation)

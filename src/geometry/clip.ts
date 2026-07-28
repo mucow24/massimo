@@ -175,14 +175,32 @@ export function offsetClosed(
 ): Ring[] {
   if (!rings.length) return [];
   const normalized = unionAll(rings);
-  if (!normalized.length) return [];
+  return offsetNormalized(normalized, delta, join);
+}
+
+/**
+ * {@link offsetClosed} minus the normalization union, for rings that are
+ * ALREADY engine output (boolean / polytree results): their winding is
+ * consistent by the engine's own convention, so re-unioning them is one
+ * redundant boolean per call — and this runs per face per frame in the
+ * sliver-opening morphology. Rings that are NOT engine output (hand-built,
+ * or concatenations of separate outputs that may overlap) must use
+ * offsetClosed: for those the union is load-bearing — a negative delta does
+ * not distribute over overlapping rings.
+ */
+export function offsetNormalized(
+  rings: Ring[],
+  delta: number,
+  join: 'round' | 'miter' = 'round',
+): Ring[] {
+  if (!rings.length) return [];
   const solution = engine().offsetToPaths({
     delta: delta * CLIP_SCALE,
     arcTolerance: ARC_TOLERANCE,
     miterLimit: 3,
     offsetInputs: [
       {
-        data: normalized.map(toInt),
+        data: rings.map(toInt),
         joinType: as<JoinType>(join),
         endType: as<EndType>('closedPolygon'),
       },
@@ -232,14 +250,37 @@ export function pointInFace(p: Vec2, face: Face): boolean {
   return true;
 }
 
+/**
+ * Shoelace over the ring's CLIP_SCALE integer coordinates — the same
+ * arithmetic the engine's own Area() runs, kept in JS to spare a wasm
+ * round-trip per ring (faceArea runs per component per frame). Translating
+ * by the first vertex keeps every product within 2^53, so the sum is exact
+ * and the result is bit-identical to the engine's.
+ */
+function ringAreaInt(ring: Ring): number {
+  if (ring.length < 3) return 0;
+  const x0 = Math.round(ring[0].x * CLIP_SCALE);
+  const y0 = Math.round(ring[0].y * CLIP_SCALE);
+  let sum = 0;
+  let px = 0;
+  let py = 0;
+  for (let i = 1; i < ring.length; i++) {
+    const qx = Math.round(ring[i].x * CLIP_SCALE) - x0;
+    const qy = Math.round(ring[i].y * CLIP_SCALE) - y0;
+    sum += px * qy - qx * py;
+    px = qx;
+    py = qy;
+  }
+  return sum / 2;
+}
+
 /** Face area in world units²: |outer| − Σ|holes|. */
 export function faceArea(face: Face): number {
   if (!face.length) return 0;
-  const w = engine();
   const scale2 = CLIP_SCALE * CLIP_SCALE;
-  let area = Math.abs(w.area(toInt(face[0]))) / scale2;
+  let area = Math.abs(ringAreaInt(face[0])) / scale2;
   for (let i = 1; i < face.length; i++) {
-    area -= Math.abs(w.area(toInt(face[i]))) / scale2;
+    area -= Math.abs(ringAreaInt(face[i])) / scale2;
   }
   return area;
 }
@@ -250,8 +291,11 @@ export function faceArea(face: Face): number {
  * is too thin to erode at any depth down to ~0.001 world units.
  */
 export function interiorPoint(face: Face): Vec2 | null {
+  // Faces here are always engine output (arrangement faces), so the
+  // normalization-free offset is safe — and this halving loop can run the
+  // offset up to ten times per call.
   for (let depth = 1; depth >= 0.001; depth /= 2) {
-    const eroded = offsetClosed(face, -depth);
+    const eroded = offsetNormalized(face, -depth);
     if (eroded.length && eroded[0].length) {
       const v = eroded[0][0];
       if (pointInFace(v, face)) return v;

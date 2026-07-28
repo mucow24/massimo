@@ -367,14 +367,18 @@ export function MapCanvas() {
   // renders between their stripes (not behind the whole band). Per-line
   // casing rails need no entries of their own — they paint inside their
   // body within SegmentBand/StopMarker.
-  const renderables = useMemo(() => {
-    const markers = buildStopMarkers(stations, lines, lineOrder, bands);
-    return buildOrderedRenderables(bands, markers);
+  const stopMarkers = useMemo(
+    () => buildStopMarkers(stations, lines, lineOrder, bands),
     // buildStopMarkers reads the same station fields the signature hashes,
     // so keying on it (not the stations reference) lets label/dot edits
-    // skip the marker rebuild + priority sort along with band routing.
+    // skip the marker rebuild along with band routing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bands, stationsGeometrySig, lines, lineOrder]);
+    [bands, stationsGeometrySig, lines, lineOrder],
+  );
+  const renderables = useMemo(
+    () => buildOrderedRenderables(bands, stopMarkers),
+    [bands, stopMarkers],
+  );
 
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
 
@@ -393,9 +397,19 @@ export function MapCanvas() {
   const needRegions =
     showNetwork &&
     (selection.uiMode.kind === 'layering' || Object.keys(regionAssignments).length > 0);
+  // The prebuilt pair hands regionsFor this render's own bands + markers so a
+  // cache miss doesn't rebuild them: bandsGeometry is the PRISTINE geometry
+  // (not the priority-stamped clones), and the markers' stamped priorities are
+  // invisible to region geometry (pinned by regionCache.prebuilt.test.ts).
+  // Within one render the memos above have already refreshed both for the
+  // current stations/lines, so the pair always matches the sig regionsFor
+  // computes from them.
   const regionGeom = useMemo(
-    () => (needRegions ? regionsFor({ stations, lines }) : null),
-    [needRegions, stations, lines],
+    () =>
+      needRegions
+        ? regionsFor({ stations, lines }, { bands: bandsGeometry, markers: stopMarkers })
+        : null,
+    [needRegions, stations, lines, bandsGeometry, stopMarkers],
   );
   const regionWinners = useMemo(
     () =>
