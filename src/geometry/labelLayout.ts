@@ -243,7 +243,7 @@ export function labelLayoutLocal(
       phantomDot,
       readCos,
       readSin,
-      style.fontSize,
+      style,
       stopMetrics,
       lineAdvances,
     );
@@ -662,11 +662,12 @@ function autoAlignInfo(
   phantomDot: { row: number; col: number } | null,
   readCos: number,
   readSin: number,
-  fontSize: number,
+  style: LabelStyle,
   metrics: StopMetricsFn,
   // Per-line pen advances of the rendered name, for the H/V overrides.
   lineAdvances: number[],
 ): AutoAlignInfo {
+  const fontSize = style.fontSize;
   const stops = station.stops;
   const label = station.label;
   // The station's own rotation — only the dash tick's on-axis tie fallback
@@ -798,9 +799,48 @@ function autoAlignInfo(
     return Math.max(extent, tickExtent);
   };
 
+  /**
+   * Stripe reach along a beside approach measured over the text's
+   * perpendicular WINDOW, not just the CTA-center ray. The ray support is
+   * exact for a stripe perpendicular to the approach, but a DIAGONAL stripe
+   * advances toward the label by |along/cross| per unit of text height, so
+   * the near corner of the block — half a cap up, half a cap plus the
+   * half-weight descender charge down, plus any stacked lines on the growing
+   * side — is what actually has to clear. Returns 0 for a stripe PARALLEL to
+   * the approach: there the finite marker-square model is the deliberate
+   * choice (it is what lets a terminus label read along its own line).
+   */
+  const stripeSlantExtent = (c: Gated, dir: Vec2, tUp: number, tDown: number): number => {
+    if (!c.orientation) return 0; // phantom dot paints no stripe
+    const uLocX = dir.x * readCos - dir.y * readSin;
+    const uLocY = dir.x * readSin + dir.y * readCos;
+    const axis = travelDirLocal(c.orientation);
+    // Label-side stripe edge: normal = axis⊥, signed toward the approach.
+    const un = uLocX * -axis.y + uLocY * axis.x;
+    if (Math.abs(un) < 1e-6) return 0;
+    const pn = ((-readSin) * -axis.y + readCos * axis.x) * Math.sign(un);
+    // Edge advance along the approach per unit of +perp (the stacking side).
+    const k = -pn / Math.abs(un);
+    return c.half / Math.abs(un) + Math.max(0, k * tDown, -k * tUp);
+  };
+
   // Pin point: marker edge + LABEL_GAP along the approach, stop-relative on
   // BOTH axes (the cell picks the octant; offset/offsetPerp fine-tune).
-  const extent = extentAlong(ref, u);
+  let extent = extentAlong(ref, u);
+  if (o === 0 || o === 4) {
+    // Beside octants only: the corner octants pin the block's extremity
+    // already, and a label centered above/below a diagonal line is not a
+    // layout the octant model serves (the corners are). The crossing butt
+    // below shares this blind spot in miniature for a diagonal CROSSING
+    // stripe; left alone until a real map hits it — crossing stops are
+    // near-universally perpendicular.
+    const growsUp = label.autoVAlign === 'up';
+    const stacked = (lineAdvances.length - 1) * fontSize * LINE_HEIGHT * (style.leading ?? 1);
+    const tUp = capCenterDy(fontSize) + (growsUp ? stacked : 0);
+    const tDown =
+      capCenterDy(fontSize) + 0.5 * DESCENDER_FRACTION * fontSize + (growsUp ? 0 : stacked);
+    extent = Math.max(extent, stripeSlantExtent(ref, u, tUp, tDown));
+  }
   let pinRead = ref.proj * STOP_SIZE + u.x * (extent + LABEL_GAP);
   const pinPerp = ref.perp * STOP_SIZE + u.y * (extent + LABEL_GAP);
 

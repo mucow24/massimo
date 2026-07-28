@@ -340,14 +340,20 @@ describe('labelLayoutLocal — autoAlign marker extent (support function)', () =
     expect(lay.anchorY).toBeCloseTo(perAxis - CB - DESC_DIAG, 6);
   });
 
-  it('beside a DIAGONAL-line stop: clears the rotated square’s full horizontal extent', () => {
-    // A rotated marker square reaches HALF·√2 ≈ 9.9 horizontally; the text
-    // must start beyond that + gap (legacy used flat HALF+3 and clipped it).
+  it('beside a DIAGONAL-line stop: clears the stripe at the text corner, not just the CTA row', () => {
+    // A rotated marker square reaches HALF·√2 ≈ 9.9 horizontally at the CTA
+    // row — but a NE–SW stripe advances toward a west-side label by one unit
+    // per unit BELOW the row, so the tight point is the text's baseline-side
+    // corner: the slant eats CAP/2 + half a descender more (the descender at
+    // the same half weight the above octants charge).
     const lay = labelLayoutLocal(
       autoStation({ stops: [{ dRow: 0, dCol: 1, orientation: 'auto-ne-sw' }] }),
     );
     expect(lay.textAnchor).toBe('end');
-    expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (HALF * Math.SQRT2 + LABEL_GAP), 6);
+    expect(lay.anchorX).toBeCloseTo(
+      STOP_SIZE - (HALF * Math.SQRT2 + CAP / 2 + DESC / 2 + LABEL_GAP),
+      6,
+    );
     expect(lay.anchorY).toBeCloseTo(CTR, 6);
   });
 
@@ -359,6 +365,100 @@ describe('labelLayoutLocal — autoAlign marker extent (support function)', () =
       metrics({ half: 28 / 2 }),
     );
     expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (14 + LABEL_GAP), 6); // = -3
+  });
+});
+
+describe('labelLayoutLocal — beside a diagonal line, the slant advances into the text', () => {
+  // A beside pin clears the stripe along the CTA-center row, but the text is
+  // a BLOCK — half a cap tall each side, plus stacked lines — and a stripe at
+  // 45° to the reading axis advances toward the label by one unit per unit of
+  // that height. Without the window term the near corner kept LABEL_GAP −
+  // CAP/2 of clearance: negative at any font size ≥ 8.4 (the FURTA "label
+  // left of a NW–SE line touches it" bug). The window charges the descender
+  // at HALF weight on the baseline side, the same dial the above octants use.
+  const LINE_STACK = 14.4; // FS · LINE_HEIGHT (leading 1)
+
+  it('E of a NW–SE stop: the stripe rises under the text — baseline-corner window', () => {
+    const lay = labelLayoutLocal(
+      autoStation({ stops: [{ dRow: 0, dCol: -1, orientation: 'auto-nw-se' }] }),
+    );
+    expect(lay.textAnchor).toBe('start');
+    expect(lay.anchorX).toBeCloseTo(
+      -STOP_SIZE + HALF * Math.SQRT2 + CAP / 2 + DESC / 2 + LABEL_GAP,
+      6,
+    );
+    expect(lay.anchorY).toBeCloseTo(CTR, 6);
+  });
+
+  it('W of a NW–SE stop: the stripe drops over the text — cap-corner window, no descender', () => {
+    const lay = labelLayoutLocal(
+      autoStation({ stops: [{ dRow: 0, dCol: 1, orientation: 'auto-nw-se' }] }),
+    );
+    expect(lay.textAnchor).toBe('end');
+    expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (HALF * Math.SQRT2 + CAP / 2 + LABEL_GAP), 6);
+    expect(lay.anchorY).toBeCloseTo(CTR, 6);
+  });
+
+  it('extra lines growing INTO the slant widen the window', () => {
+    // E of NW–SE grows down (auto-down default) and down is the advancing
+    // side, so the second line pushes the whole block out by one line stack.
+    const lay = labelLayoutLocal(
+      autoStation({ name: 'A\nB', stops: [{ dRow: 0, dCol: -1, orientation: 'auto-nw-se' }] }),
+    );
+    expect(lay.anchorX).toBeCloseTo(
+      -STOP_SIZE + HALF * Math.SQRT2 + CAP / 2 + DESC / 2 + LINE_STACK + LABEL_GAP,
+      6,
+    );
+  });
+
+  it('extra lines growing AWAY from the slant leave the pin alone', () => {
+    // W of NW–SE: the advancing side is UP, the block grows DOWN — same pin
+    // as the single-line case whatever the line count.
+    const lay = labelLayoutLocal(
+      autoStation({ name: 'A\nB', stops: [{ dRow: 0, dCol: 1, orientation: 'auto-nw-se' }] }),
+    );
+    expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (HALF * Math.SQRT2 + CAP / 2 + LABEL_GAP), 6);
+  });
+
+  it("autoVAlign 'up' flips which side the block grows onto, and the window follows", () => {
+    const lay = labelLayoutLocal(
+      autoStation({
+        name: 'A\nB',
+        stops: [{ dRow: 0, dCol: 1, orientation: 'auto-nw-se' }],
+        autoVAlign: 'up',
+      }),
+    );
+    expect(lay.anchorX).toBeCloseTo(
+      STOP_SIZE - (HALF * Math.SQRT2 + CAP / 2 + LINE_STACK + LABEL_GAP),
+      6,
+    );
+  });
+
+  it('a wide dot still joins by MAX and can out-reach the slanted stripe', () => {
+    const lay = labelLayoutLocal(
+      autoStation({ stops: [{ dRow: 0, dCol: -1, orientation: 'auto-nw-se' }] }),
+      undefined,
+      undefined,
+      metrics({ dot: { r: 20, shape: 'circle' } }),
+    );
+    expect(lay.anchorX).toBeCloseTo(-STOP_SIZE + 20 + LABEL_GAP, 6);
+  });
+
+  it('a rotated label sees the slant in ITS reading frame: NE-reading beside a vertical line', () => {
+    // Rotation 1 label with a vertical-line stop ahead of reading: in the
+    // reading frame the stripe is diagonal, so this IS the W-of-diagonal case
+    // — cap-side window — rotated back out.
+    const lay = labelLayoutLocal(
+      autoStation({
+        rotation: 1,
+        stops: [{ dRow: S2, dCol: S2, orientation: 'auto-vertical' }],
+      }),
+    );
+    expect(lay.textAnchor).toBe('end');
+    const aR = STOP_SIZE - (HALF * Math.SQRT2 + CAP / 2 + LABEL_GAP);
+    // (aR, CTR) rotated by +45° (y-down): x = (aR − CTR)·√2/2, y = (aR + CTR)·√2/2.
+    expect(lay.anchorX).toBeCloseTo((aR - CTR) * S2, 6);
+    expect(lay.anchorY).toBeCloseTo((aR + CTR) * S2, 6);
   });
 });
 

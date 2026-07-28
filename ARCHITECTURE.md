@@ -1733,7 +1733,12 @@ which are a separate slot-based system where Shift flips the lattice basis.
   on real maps); the deepest ink may dip the other half into the gap. The charge is unconditional
   rather than measured per name — clearing only the names that own a descender is what leaves a
   row of labels on ragged baselines, which is the thing the tutorial rules out. Below and beside
-  need none: there the block grows AWAY from the marker.
+  need none: there the block grows AWAY from the marker. A **beside** label against a stripe
+  DIAGONAL to its reading axis clears at the text's near corner, not just the CTA-center row —
+  the stripe advances one unit per unit of text height, so the pin charges the block's window
+  (half a cap up; half a cap, the half-weight descender and any stacked lines down). A stripe
+  parallel to reading keeps the finite marker-square model, which is what lets a terminus label
+  read along its own line.
   Multi-line blocks anchor by the **line nearest the marker** and stack away from
   it: bottom line above (`auto-up`), top line below (`auto-down`), first line beside/fallback
   (`auto-down` align-down, so added lines never move the line that sits level with the dot).
