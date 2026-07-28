@@ -1,13 +1,11 @@
 import { RefObject, useRef, useState } from 'react';
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../../state/store';
-import { useSnapPrefs } from '../../state/snapPrefs';
-import { useViewportStore } from '../../state/viewportStore';
-import { snapPolygonPoint } from '../../geometry/polygonSnap';
 import { polygonSnapAnchor } from '../../geometry/polygon';
-import { SNAP_PERP_TOLERANCE, type SnapGuide } from '../../geometry/snap';
+import type { SnapGuide } from '../../geometry/snap';
 import type { Vec2 } from '../../geometry/vec';
 import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
 import { liveAlignTargets } from './snapTargets';
+import { useDragSnap } from './useDragSnap';
 import {
   collectGroupSiblings,
   groupAlignExclude,
@@ -90,8 +88,7 @@ export function usePolygonDrag(
   inHandMode: boolean,
 ): PolygonDragApi {
   const setPolygonVertices = useDoc((s) => s.setPolygonVertices);
-  const snapModes = useSnapPrefs((s) => s.modes);
-  const gridSize = useViewportStore((s) => s.gridSize);
+  const { snapPoint } = useDragSnap(zoom);
 
   const wholeDragRef = useRef<WholeDragState | null>(null);
   const vertexDragRef = useRef<VertexDragState | null>(null);
@@ -223,15 +220,7 @@ export function usePolygonDrag(
         let guides: SnapGuide[] = [];
         const inGroupDrag = hasGroupSiblings(wd.siblings);
         if (!e.shiftKey) {
-          const snap = snapPolygonPoint({
-            proposed: anchor,
-            lineTargets: [],
-            allTargets: wd.allTargets,
-            modes: snapModes,
-            // Constant screen-pixel engage radius (see useStationDrag).
-            tolerance: SNAP_PERP_TOLERANCE / zoom,
-            gridInterval: gridSize,
-          });
+          const snap = snapPoint(anchor, { allTargets: wd.allTargets });
           anchor = { x: snap.x, y: snap.y };
           guides = snap.guides;
         }
@@ -257,15 +246,7 @@ export function usePolygonDrag(
         };
         let guides: SnapGuide[] = [];
         if (!e.shiftKey) {
-          const snap = snapPolygonPoint({
-            proposed: p,
-            lineTargets: vd.lineTargets,
-            allTargets: vd.allTargets,
-            modes: snapModes,
-            // Constant screen-pixel engage radius (see useStationDrag).
-            tolerance: SNAP_PERP_TOLERANCE / zoom,
-            gridInterval: gridSize,
-          });
+          const snap = snapPoint(p, { allTargets: vd.allTargets, lineTargets: vd.lineTargets });
           p = { x: snap.x, y: snap.y };
           guides = snap.guides;
         }
