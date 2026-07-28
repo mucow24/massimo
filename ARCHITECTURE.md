@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `2a8f4fc` (2026-07-27, #358) — verified against the live source.** This
+**Up to date as of commit `4e4998a` (2026-07-28, #370) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -45,7 +45,7 @@ with meanwhile — a failure to load is reported instead of degraded.
      React components render the doc to SVG and dispatch actions.
 - **Editing = pure transforms.** Store actions are thin wrappers: `set((s) => T.moveStation(s, …))`.
   Transforms return the **same object reference on no-op** — this is load-bearing for undo
-  grouping. ([src/model/transforms.ts](src/model/transforms.ts) is the ~2800-line heart.)
+  grouping. ([src/model/transforms.ts](src/model/transforms.ts) is the ~3250-line heart.)
 - **The Vignelli look comes from "interlining"** ([src/geometry/interlining.ts](src/geometry/interlining.ts)):
   multiple lines sharing a station-pair corridor are merged into mean-centered parallel stripes.
   This is the single most intricate algorithm in the repo and is pinned by a **byte-exact golden
@@ -106,7 +106,7 @@ src/
 
   model/                        # PURE domain logic — no React, no store
     types.ts                    # MapDoc + every entity type (the canonical data shape)
-    transforms.ts               # ~2800 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
+    transforms.ts               # ~3250 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
     serialize.ts                # serialize()/parse() + shared backfill/sanitize helpers
     styles.ts                   # named per-kind formatting presets (StyleDef) + styleId tag/stamp
     ids.ts                      # IdFactory: crypto UUIDs (prod) / counter ids (tests)
@@ -157,7 +157,7 @@ src/
     itemBounds.ts contentBounds.ts  # per-item + whole-map world AABBs (camera fit)
 
   state/                        # Zustand stores (14 of them) + history
-    store.ts                    # useDoc: temporal(persist(...)) + ~110 actions + migrateDoc
+    store.ts                    # useDoc: temporal(persist(...)) + ~125 actions + migrateDoc
     history.ts                  # the ONLY module touching zundo internals
     selection.ts                # useSelection: UiMode union + multi-select + reconcileWithDoc
     selectionOps.ts             # bulk selection gestures (delete/lock the unlocked subset)
@@ -1200,7 +1200,7 @@ referentially-stable props make it bail out and keep every label's fallback-font
 
 `create<DocState>()(temporal(persist((set, get) => ({...DEFAULT_DOC, ...actions}), persistCfg),
 temporalCfg))`. **`temporal` is the outer wrapper, `persist` the inner**; both use the same
-`partialize: pickDocSnapshot` over `DOC_FIELDS`. The ~120 actions are thin wrappers delegating to
+`partialize: pickDocSnapshot` over `DOC_FIELDS`. The ~125 actions are thin wrappers delegating to
 pure transforms (`import * as T from '../model/transforms'`). Adders mint an id from the
 module-level `ids` factory, call the transform, and return the id. Note that any action writing
 **geometry** wraps with `withRegionReconcile` so region assignments ride the edit in the same undo
@@ -2013,6 +2013,14 @@ every other hook; neighbor-tag snap per the contract above), `useRectSelect`
 (marquee with per-frame preview of the resulting selection per type, through set/add/xor
 modifiers).
 
+Every hook that reaches the **point snapper** does so through
+[useDragSnap.ts](src/components/canvas/useDragSnap.ts), which binds it to the live snap prefs, the
+active grid size, and the camera zoom. The zoom is the reason it exists: `SNAP_PERP_TOLERANCE` is
+the value at zoom 1 and each path must divide it by the zoom for the engage radius to be a constant
+number of screen pixels, so the rule lives in one expression rather than at every call site. Its
+callers keep their own pools and their own single-DOF `constrain`; `snapPlacement` (a pure
+function, not a hook) applies the same division for the placement side.
+
 **Group drag** ([groupDrag.ts](src/components/canvas/groupDrag.ts)): at pointerdown,
 `collectGroupSiblings` snapshots every _other_ selected item — but only if the grabbed item is
 itself selected (dragging an unselected item never tows; locked items never tow). Snap during a
@@ -2158,11 +2166,11 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
 - **[LinePopover.tsx](src/components/LinePopover.tsx)** — the line editor's home: mounted by
   `ItemPopovers` for the whole `appending-to-line` mode, hosting `LineInspector` (name, service
   code, color palette, style row, default dot type + **two** separate sizes — singleton and
-  interchange, line width, **interline gap**, curve radius, stroke width/color, seam width/color,
-  **dash length/width**) over a Delete-only `PopoverFooter` (lines have no `locked`
-  field; Delete also exits the mode). Identity (name/service/color) and the Style picker always
-  show; everything from **Line width → Seam color** collapses into a style-detail section so the
-  panel stays compact while editing stops, and that open/closed choice is a persisted UI
+  interchange, line width, **interline gap**, curve radius, **line ends**, stroke width/color,
+  seam width/color, **dash length/width**) over a Delete-only `PopoverFooter` (lines have no
+  `locked` field; Delete also exits the mode). Identity (name/service/color) and the Style picker
+  always show; everything from **Line width → Seam color** collapses into a style-detail section
+  so the panel stays compact while editing stops, and that open/closed choice is a persisted UI
   preference (`useLineEditorPrefs`, defaulting to collapsed) rather than document state — it
   sticks across lines and reloads, mirroring `useStationEditorPrefs`.
   Docked top-right like every other canvas panel
@@ -2174,11 +2182,20 @@ band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
   station's SHORT name (`stationNameListText`, falling back to "Station"). Layout: a **button bar**
   (**Edit layout** button, then the **Select Similar** mirror-matching toggle, then a
   right-justified **WP** toggle; lock lives in the footer), then the Name field on its own row,
-  labeled X/Y + a mirrored ±45° rotate icon pair, a **Stop dots** section (a Line/Type/Size/Direction
-  column header over the per-stop rows —
+  labeled X/Y + a mirrored ±45° rotate icon pair, a **Stop dots** section (a
+  Line/Type/Size/End/Direction column header over the per-stop rows —
   [inspector/StopRows.tsx](src/components/inspector/StopRows.tsx): service badge + always-enabled
-  shape picker + dot size + a world-true orientation cycle button per stop; hover cross-highlights
-  the dot via `hoveredLineStop`, and **double-clicking the badge** jumps to that line's editor
+  shape picker + dot size + a per-terminus **line-end** picker + a world-true orientation cycle
+  button per stop. The end slot is the one conditional column — only a degree-1 stop can pin an
+  end, so an interior row holds it open with a placeholder rather than closing up and breaking the
+  column alignment down the list; it shows the RESOLVED end, so picking the line's own value clears
+  the pin instead of storing a redundant one, and it is deliberately NOT mirror-dispatched (an end
+  belongs to this line's topology here, not to a look worth spreading across matching stations).
+  Hover cross-highlights the dot via `hoveredLineStop` — on NATIVE mouseenter/mouseleave, not
+  React's synthetic pair, because the end picker's panel portals out to `.app` and so counts as
+  inside the row in the REACT tree: the pointer walking into it would re-enter rather than leave,
+  and the panel then unmounts under the cursor with no leave left to fire, stranding a highlight on
+  the canvas for good. **Double-clicking the badge** jumps to that line's editor
   (`startAppend`) — the reverse of the line editor's own station dblclick; an **Add-anchor** ghost
   button beside the rows parks a transfer anchor in this station's grid), and a Label row whose
   **magic-wand** Auto-placement toggle stays

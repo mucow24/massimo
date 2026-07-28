@@ -87,6 +87,24 @@ export const StopMarker = memo(function StopMarker({
   // guard also covers a hand-built spec that pairs one with the other.
   const center = v(spec.cx, spec.cy);
   const endShape = ow && spec.end !== 'square' ? spec.end : null;
+  const casingColor = lineCasingColor(live, color);
+  // What makes an element part of the casing rather than the body: the
+  // marker-casing tag plus its line id (how the rails are picked out of the
+  // tree), and no hit area of its own. Shared by every rail and cap below so a
+  // new one cannot be added half-tagged.
+  const casingId = {
+    'data-marker-casing': true,
+    'data-line-id': spec.lineId,
+    pointerEvents: 'none',
+  } as const;
+  // The stroked casing elements add the resolved color at the rail width, butt
+  // caps throughout so meeting rails abut instead of overshooting.
+  const casingStroke = {
+    ...casingId,
+    stroke: casingColor,
+    strokeWidth: railW,
+    strokeLinecap: 'butt',
+  } as const;
   // Two rails along the travel axis straddling local y = ±half, rendered in
   // the marker's rotated frame — or, for a reshaped end, along the inward half
   // of the marker's side edges in the OUTWARD frame (which is the frame that
@@ -95,32 +113,18 @@ export const StopMarker = memo(function StopMarker({
     railW > 0 &&
     (endShape && ow
       ? markerEndSides(center, ow, half).map(([from, to], i) => (
-          <line
-            key={i}
-            data-marker-casing
-            data-line-id={spec.lineId}
-            x1={from.x}
-            y1={from.y}
-            x2={to.x}
-            y2={to.y}
-            stroke={lineCasingColor(live, color)}
-            strokeWidth={railW}
-            strokeLinecap="butt"
-            pointerEvents="none"
-          />
+          <line key={i} {...casingStroke} x1={from.x} y1={from.y} x2={to.x} y2={to.y} />
         ))
       : [half - railW / 2, -half - railW / 2].map((y) => (
           <rect
             key={y}
-            data-marker-casing
-            data-line-id={spec.lineId}
+            {...casingId}
             x={-half}
             y={y}
             width={spec.width}
             height={railW}
-            fill={lineCasingColor(live, color)}
+            fill={casingColor}
             transform={`translate(${spec.cx} ${spec.cy}) rotate(${spec.rotationDeg})`}
-            pointerEvents="none"
           />
         )));
   // End cap: at a terminus (outward set), one rail straddling the line's
@@ -133,32 +137,18 @@ export const StopMarker = memo(function StopMarker({
   const cap =
     railW > 0 && ow && !noEndCap ? (
       endShape === 'round' ? (
-        <path
-          data-marker-casing
-          data-line-id={spec.lineId}
-          d={markerEndRailArc(center, ow, half)}
-          fill="none"
-          stroke={lineCasingColor(live, color)}
-          strokeWidth={railW}
-          strokeLinecap="butt"
-          pointerEvents="none"
-        />
+        <path {...casingStroke} d={markerEndRailArc(center, ow, half)} fill="none" />
       ) : (
         (() => {
           const e = markerEndCapCenter(center, ow, half, spec.end);
           const reach = half + railW / 2;
           return (
             <line
-              data-marker-casing
-              data-line-id={spec.lineId}
+              {...casingStroke}
               x1={e.x - ow.y * reach}
               y1={e.y + ow.x * reach}
               x2={e.x + ow.y * reach}
               y2={e.y - ow.x * reach}
-              stroke={lineCasingColor(live, color)}
-              strokeWidth={railW}
-              strokeLinecap="butt"
-              pointerEvents="none"
             />
           );
         })()
@@ -232,16 +222,11 @@ export const StopMarker = memo(function StopMarker({
           [railOff, -railOff].map((o) => (
             <line
               key={o}
-              data-marker-casing
-              data-line-id={spec.lineId}
+              {...casingStroke}
               x1={x1 + px * o}
               y1={y1 + py * o}
               x2={x2 + px * o}
               y2={y2 + py * o}
-              stroke={lineCasingColor(live, color)}
-              strokeWidth={railW}
-              strokeLinecap="butt"
-              pointerEvents="none"
             />
           ))}
         {cap}
