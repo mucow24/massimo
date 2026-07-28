@@ -26,6 +26,7 @@ import { edgeEndpoints } from '../model/lineTopology';
 import { pairKeyOf } from '../model/pairKey';
 import { decideCanvasClick, decideSegmentClick, nextSegmentStyle } from '../model/appendGestures';
 import { effectiveBackgroundOrder, type ItemRef } from '../model/transforms';
+import type { MapDoc } from '../model/types';
 import { resolveDayNight, TRANSFER_STYLE_DEFAULTS } from '../model/transferStyle';
 import { defaultStyleProps } from '../model/styles';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
@@ -139,6 +140,21 @@ const NO_FREE_ANCHORS: Record<string, never> = {};
 
 /** Stable reference for the drop-everything freeze frames. */
 const EMPTY_HOLES: Map<string, Ring[]> = new Map();
+
+/**
+ * How long the geometry must sit quiet mid-gesture before the frozen
+ * arrangement re-settles to an exact rebuild of the CURRENT doc. Placement
+ * work is pause-and-look: the pause shows the truth (and re-bases the
+ * freeze, so further movement only degrades relative to what was just
+ * shown), while active motion stays on the cheap frozen path. Small enough
+ * to feel immediate at rest; large enough that a slow, deliberate drag
+ * doesn't flicker between regimes on every hesitation.
+ */
+const REGION_SETTLE_MS = 100;
+
+/** The doc slice the freeze chain derives an arrangement from — the shape
+ * shared by the group's grab snapshot and a mid-gesture settle capture. */
+type FreezeSlice = Pick<MapDoc, 'stations' | 'lines' | 'lineOrder' | 'regionAssignments'>;
 
 export function MapCanvas() {
   const stations = useDoc((s) => s.stations);
@@ -427,6 +443,32 @@ export function MapCanvas() {
   const frozenSnap = useStore(useDoc.temporal, (s) =>
     s.isTracking ? null : openHistoryGroupSnapshot(),
   );
+  // Mid-gesture SETTLE: after REGION_SETTLE_MS of geometry quiet, capture the
+  // live doc slice and re-base the freeze on it — the pause renders the exact
+  // arrangement of what's on screen (dirty diff vs. itself is empty, so every
+  // hole is retained), and movement after it degrades only relative to what
+  // the pause just showed. Any new group (or none) invalidates the previous
+  // settle before its own first frame.
+  const [settleSnap, setSettleSnap] = useState<FreezeSlice | null>(null);
+  useEffect(() => {
+    setSettleSnap(null);
+  }, [frozenSnap]);
+  useEffect(() => {
+    if (!frozenSnap || !needRegions) return;
+    const t = window.setTimeout(() => {
+      const s = useDoc.getState();
+      setSettleSnap({
+        stations: s.stations,
+        lines: s.lines,
+        lineOrder: s.lineOrder,
+        regionAssignments: s.regionAssignments,
+      });
+    }, REGION_SETTLE_MS);
+    return () => window.clearTimeout(t);
+    // Re-armed by every GEOMETRY change (the sigs), not by unrelated doc
+    // writes — a label fine-drag mid-group must not hold the settle off.
+  }, [frozenSnap, needRegions, stationsGeometrySig, linesGeometrySig]);
+  const activeSnap: FreezeSlice | null = frozenSnap ? (settleSnap ?? frozenSnap) : null;
   const railWOf = useCallback(
     (lineId: string) => {
       const line = lines[lineId];
@@ -470,22 +512,22 @@ export function MapCanvas() {
   // The frozen base — built ONCE per group from the snapshot (regionsFor's
   // LRU almost always still holds the pre-gesture entry).
   const frozenBase = useMemo(() => {
-    if (!needRegions || !frozenSnap) return null;
-    const geom = regionsFor({ stations: frozenSnap.stations, lines: frozenSnap.lines });
+    if (!needRegions || !activeSnap) return null;
+    const geom = regionsFor({ stations: activeSnap.stations, lines: activeSnap.lines });
     const winners = resolveRegionWinners(
       geom.faces,
-      frozenSnap.regionAssignments,
+      activeSnap.regionAssignments,
       geom.bands,
-      frozenSnap.lineOrder,
+      activeSnap.lineOrder,
     );
     const railOf = (lineId: string) => {
-      const line = frozenSnap.lines[lineId];
+      const line = activeSnap.lines[lineId];
       return line ? lineStrokeRailWidth(lineStrokeWidthOf(line), lineWidthOf(line)) : 0;
     };
     const faceHoles = buildExclusionFaceHoles(
       geom.faces,
       winners,
-      frozenSnap.lineOrder,
+      activeSnap.lineOrder,
       geom.bands,
       geom.markers,
       railOf,
@@ -497,11 +539,11 @@ export function MapCanvas() {
       faceHoles,
       holes: mergeFaceHoles(faceHoles),
       clipOuter: regionClipBounds(geom.bands, geom.markers),
-      freezeKey: railSig(frozenSnap.lines) + '§' + frozenSnap.lineOrder.join(','),
-      assignments: frozenSnap.regionAssignments,
+      freezeKey: railSig(activeSnap.lines) + '§' + activeSnap.lineOrder.join(','),
+      assignments: activeSnap.regionAssignments,
       units: captureUnits(geom.bands, geom.markers),
     };
-  }, [needRegions, frozenSnap]);
+  }, [needRegions, activeSnap]);
   // Per-frame retention pass (cheap): which frozen holes are provably still
   // what a fresh build would compute, given what moved since the snapshot.
   // Inputs the unit diff can't see (casing rails, stacking order, the

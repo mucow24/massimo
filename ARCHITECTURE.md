@@ -600,10 +600,17 @@ BINDING freezes with the rest: per-frame re-binding against smeared arc anchors 
 regime corridor-identity binding hardened, and freezing is its "bind once at gesture start" form.
 The clip outer ring keeps its frozen object while it still covers the live extent (a stable ring
 keeps every retained clip's `d` byte-identical, so nothing re-rasterizes mid-gesture) and grows
-only when an extremal drag escapes it. Outside a group the memo chain stays synchronous: clips
+only when an extremal drag escapes it. **The freeze SETTLES while the pointer rests**: after
+`REGION_SETTLE_MS` (100ms) of geometry quiet mid-group, MapCanvas captures the live doc slice and
+re-bases the whole chain on it — the pause renders the exact arrangement of what is on screen
+(the dirty diff against itself is empty, so every hole is retained), and further movement
+degrades only relative to what the pause just showed. Placement work is pause-and-look, so the
+view at rest always predicts the drop; a pure grab-to-drop freeze was tried and rejected as
+unusably divergent. Outside a group the memo chain stays synchronous: clips
 attach to the LIVE base strokes they were derived from. The commit render then rebuilds once —
 and because the mid-drag frames no longer flood `regionsFor`'s LRU, reconcile's old-geometry
-lookup at commit is a cache hit.
+lookup at commit is usually a cache hit (frequent settles can evict the grab entry; that costs
+commit one rebuild, nothing more).
 
 **How the faces are actually built.** `lineRegions.ts` holds the pipeline as separable phases —
 `buildLineBodies` → `overlapZoneParts` (pairwise body intersections; any ≥2-cover point is in one

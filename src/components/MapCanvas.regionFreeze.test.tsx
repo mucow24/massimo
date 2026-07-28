@@ -112,6 +112,46 @@ describe('MapCanvas — region freeze during a history group', () => {
     expect(clipFor(container, 'V1')).toBeTruthy();
   });
 
+  it('settles to the exact arrangement after the pointer goes quiet mid-group, then re-freezes on it', () => {
+    vi.useFakeTimers();
+    try {
+      const { container } = render(<App />);
+      seedTwoCrossings();
+      expect(clipFor(container, 'V1')).toBeTruthy();
+
+      let group!: ReturnType<typeof beginHistoryGroup>;
+      act(() => {
+        group = beginHistoryGroup();
+      });
+      act(() => {
+        useDoc.getState().moveStation('s3', 112, 906);
+      });
+      expect(clipFor(container, 'V1')).toBeNull(); // frozen path dropped it
+
+      // Pointer quiet: the settle rebuilds the exact arrangement of the
+      // CURRENT (moved) doc — V1's hole comes back, attached to the moved
+      // geometry, while the drag is still in flight.
+      act(() => {
+        vi.advanceTimersByTime(400);
+      });
+      expect(clipFor(container, 'V1')).toBeTruthy();
+
+      // Movement resumes: the baseline re-froze at the settle, so the hole
+      // drops again relative to the settled state.
+      act(() => {
+        useDoc.getState().moveStation('s3', 148, 918);
+      });
+      expect(clipFor(container, 'V1')).toBeNull();
+
+      act(() => {
+        group.commit();
+      });
+      expect(clipFor(container, 'V1')).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('a cancelled gesture restores the original holes untouched', () => {
     const { container } = render(<App />);
     seedTwoCrossings();
