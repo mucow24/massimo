@@ -13,14 +13,10 @@ import { rotateAround, rotatedRectCorners } from './vec';
 import { svgImageCorners } from './svgImage';
 import {
   DEFAULT_LABEL_STYLE,
-  DEFAULT_STOP_DASH,
-  DEFAULT_STOP_GAP,
-  DEFAULT_STOP_HALF,
+  DEFAULT_STOP_METRICS,
   labelLayoutLocal,
   type LabelStyle,
-  type StopDashFn,
-  type StopGapFn,
-  type StopHalfFn,
+  type StopMetricsFn,
 } from './labelLayout';
 import { normalizeAABB, rectIntersectsPolygon, type AABB } from './rectPolygon';
 import { measureTextLabel } from './textMeasure';
@@ -57,13 +53,18 @@ export interface AABBRect {
  * rect. Shared with StationView's bg hit rect so the two can never drift.
  *
  * Each cell contributes its OWN half-extent (a stop's is half its line's
- * width via `stopHalf`; the label cell and phantom dot stay STOP_SIZE/2), so
+ * width via `metrics`; the label cell and phantom dot stay STOP_SIZE/2), so
  * the extents are per-cell min/max — the dominating edge can come from a
  * wide stop whose CENTER is not extremal.
+ *
+ * Deliberately the STRIPE half only, not the wider of stripe and dot: a dot
+ * bigger than its line would poke past this box, but growing it here would move
+ * marquee hits, selection washes and Reset-view framing, which is a different
+ * change from where the label parks.
  */
 export function cellsAABBLocal(
   station: Station,
-  stopHalf: StopHalfFn = DEFAULT_STOP_HALF,
+  metrics: StopMetricsFn = DEFAULT_STOP_METRICS,
   // A revealed waypoint (Show-waypoints overlay on) is treated like a regular
   // station: its label cell + empty-station phantom count toward the box, so
   // its hit/selection footprint matches a normal station's. Off by default so
@@ -79,7 +80,7 @@ export function cellsAABBLocal(
   const allCells: { row: number; col: number; half: number }[] = stops.map((s) => ({
     row: s.row,
     col: s.col,
-    half: stopHalf(s.lineId),
+    half: metrics(station, s).half,
   }));
   if (labeled) allCells.push({ row: label.row, col: label.col, half: HALF });
   if (phantomDot) allCells.push({ ...phantomDot, half: HALF });
@@ -106,20 +107,17 @@ export function cellsAABBLocal(
 export function stationBoundaryRectsLocal(
   station: Station,
   style: LabelStyle = DEFAULT_LABEL_STYLE,
-  stopHalf: StopHalfFn = DEFAULT_STOP_HALF,
+  // Per-stop metrics — pass `stopMetricsOf({ lines, transfers })`, the same one
+  // the renderer uses, or the label rect drifts off the painted name (see
+  // StopMetrics).
+  metrics: StopMetricsFn = DEFAULT_STOP_METRICS,
   // See cellsAABBLocal: a revealed waypoint gets its label rect back, so its
   // selection silhouette wraps the (now painted) name. Defaulted off.
   revealWaypoint = false,
-  // Dash-tick lookup — pass `stopDashOf(lines)` alongside stopHalf so the
-  // label rect tracks the autoAlign pin's tick clearance (see StopDashFn).
-  stopDash: StopDashFn = DEFAULT_STOP_DASH,
-  // Interline-gap lookup — pass `stopGapOf(lines)` alongside stopHalf so the
-  // label rect recognizes gap-widened parks (see StopGapFn).
-  stopGap: StopGapFn = DEFAULT_STOP_GAP,
 ): StationBoundaryRects {
   const label = station.label;
   const labeled = !station.isWaypoint || revealWaypoint;
-  const { x, y, w, h } = cellsAABBLocal(station, stopHalf, revealWaypoint);
+  const { x, y, w, h } = cellsAABBLocal(station, metrics, revealWaypoint);
   const cells: Pt[] = [
     { x, y },
     { x: x + w, y },
@@ -132,7 +130,7 @@ export function stationBoundaryRectsLocal(
   // Label rect — same layout the renderer uses (including the same per-stop
   // width lookup, so label snapping agrees), then rotated about the anchor
   // so the polygon aligns with the painted label.
-  const lay = labelLayoutLocal(station, style, undefined, stopHalf, stopDash, stopGap);
+  const lay = labelLayoutLocal(station, style, undefined, metrics);
   const labelAnchor = { x: lay.anchorX, y: lay.anchorY };
   const rotateLabelCorner = (px: number, py: number): Pt =>
     rotateAround({ x: px, y: py }, labelAnchor, rotRad(label.rotation));
@@ -174,24 +172,15 @@ export function stationLocalToWorld(station: Station, p: Pt): Pt {
 export function stationsForRect(
   stations: Record<StationId, Station>,
   rect: AABB,
-  stopHalf: StopHalfFn = DEFAULT_STOP_HALF,
+  metrics: StopMetricsFn = DEFAULT_STOP_METRICS,
   includeLocked = false,
-  stopDash: StopDashFn = DEFAULT_STOP_DASH,
-  stopGap: StopGapFn = DEFAULT_STOP_GAP,
 ): StationId[] {
   const hits: StationId[] = [];
   for (const id of Object.keys(stations)) {
     const st = stations[id];
     // Locked stations are excluded from marquee selection (mirrors polygons).
     if (st.locked && !includeLocked) continue;
-    const b = stationBoundaryRectsLocal(
-      st,
-      effectiveStationLabelStyle(st),
-      stopHalf,
-      false,
-      stopDash,
-      stopGap,
-    );
+    const b = stationBoundaryRectsLocal(st, effectiveStationLabelStyle(st), metrics, false);
     const cellsWorld = b.cells.map((p) => stationLocalToWorld(st, p));
     if (rectIntersectsPolygon(rect, cellsWorld)) {
       hits.push(id);

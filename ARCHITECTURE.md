@@ -493,9 +493,9 @@ All remaining fields optional and **never stored at default**:
   ([geometry/orientation.ts](src/geometry/orientation.ts)), which floors adjacency at the
   historical 1-cell gate and widens it by the stop's interline gap (the ghost lattice parks a
   label against a gapped line at tangency + gap), so width and gap only ever WIDEN it. The gap
-  reaches the renderer through `stopGapOf(lines)` — threaded at every `labelLayoutLocal` /
-  `stationBoundaryRectsLocal` / `stationsForRect` / `stationWorldAABB` call site alongside
-  `stopHalfOf`/`stopDashOf` (same must-agree contract).
+  reaches the renderer inside `StopMetrics` (see `stopMetricsOf` under Labels & text) — threaded
+  at every `labelLayoutLocal` / `stationBoundaryRectsLocal` / `stationsForRect` /
+  `stationWorldAABB` call site.
 - `interlineGap?: number` — **extra spacing against interlined neighbors, GEOMETRY**; world
   units, missing ⇒ 0 (classic edge-to-edge tangency); on the 0.25 grid, ≥ 0 and **unbounded above**,
   dropped at 0 (`canonicalStrokeWidth` clamps the floor only; `lineInterlineGapOf` reads it).
@@ -1657,6 +1657,12 @@ which are a separate slot-based system where Shift flips the lattice basis.
   when nothing is resized. Results are cached (module-level LRU,
   limit 256) keyed by weight/style/parse-mode/size/width/leading/tracking/text — and that cache is
   cleared on web-font load (see `App.tsx`).
+- **The vertical font model is three hardcoded fractions**, not measurement — no font tables exist.
+  `BASELINE_FRACTION` (em-box top → baseline) is reached from the line's CENTRE everywhere, so it
+  cancels out of the autoAlign pins and only slides glyphs inside their own hit rect;
+  `CAP_FRACTION` is the **Core Type Area** height the transitmap.net rules align by, and the one
+  the pins actually ride on; `DESCENDER_FRACTION` (= `1 - BASELINE_FRACTION`) is how far ink drops
+  below the baseline, which the CTA does not describe at all and only the above-side pin consumes.
 - **`capCenterDy(fontSize)`** places every **badge glyph** — a service code in a stop dot or route
   bullet, an inline bullet, the WP lozenge, a line tag, the snap readout, the layout editor's `L`
   handle — at `y = centre + capCenterDy(fontSize)` on the **alphabetic** baseline. **Never
@@ -1690,25 +1696,56 @@ which are a separate slot-based system where Shift flips the lattice basis.
   that selects it, by a margin that varies per platform *and* per font size (the metrics round to
   whole device pixels). Anything positioned **relative to** label text keys off the same computed
   baseline for the same reason.
+- **`StopMetrics`** ([geometry/labelLayout.ts](src\geometry\labelLayout.ts)) is everything the
+  label geometry knows about one painted stop — stripe `half`, interline `gap`, `dash` tick, `dot`
+  silhouette, `transferRadius` — resolved together by `stopMetricsOf({ lines, transfers })`
+  ([model/stopMetrics.ts](src\model\stopMetrics.ts)) and threaded to `labelLayoutLocal`,
+  `stationBoundaryRectsLocal`, `cellsAABBLocal`, `stationsForRect` and `stationWorldAABB`. It is
+  ONE bundle rather than a lookup per field precisely so a call site cannot pass four of five and
+  drift off the paint; on the canvas it comes from `useStopMetrics(lines)`, which adds the
+  transfers so no component has to know they are part of the answer. The lookup takes the whole
+  **station**, not just the stop: the split singleton/interchange dot default is a property of the
+  station's stop SET, and a transfer end names its station. A waypoint's `dash` and `dot` are
+  neutralized inside `labelLayoutLocal` — hidden it paints nothing, revealed the overlay replaces
+  every style with a fixed circle, so layout must not shift with Show-waypoints. `cellsAABBLocal`
+  deliberately reads only `half`: growing it by the dot would move marquee hits, washes and
+  Reset-view framing, which is a different change from where the label parks.
 - **`labelLayoutLocal`** is the single source of truth for a station name's `<text>`
   anchor/baseline/hit-rect, all in **unrotated station-local** coords (the `label.rotation` is
   applied around the anchor at render). `'auto'` align snaps the text against an adjacent stop;
   `valign` drives the multi-line block math. **The renderer and the hit/silhouette geometry must
-  pass the same `stopHalf` width lookup** or the wash drifts off the painted text.
+  pass the same `StopMetrics` lookup** or the wash drifts off the painted text.
   `label.autoAlign` overrides both: the octant of the label cell relative to the **nearest**
   adjacent stop (in the reading frame) picks the alignment per the transitmap.net tutorials —
-  baseline sits `LABEL_GAP` above the marker, cap line hangs below it, the first line's Core
+  baseline sits above the marker, cap line hangs below it, the first line's Core
   Type Area (`CAP_FRACTION` in `textMeasure.ts`) centers beside it, corner octants pin the
   facing CTA corner — and maps onto the existing valign machinery, so the renderer is
-  untouched. Multi-line blocks anchor by the **line nearest the marker** and stack away from
+  untouched. The beside case steps by `capCenterDy`, the same half-cap the badge glyphs center
+  by, so an inline route bullet inside a beside-aligned name lands on the stop's row too. Those
+  pins are asserted against the painted `<text>` baseline, not just the model
+  ([stationLabel.autoAlign.test.tsx](src\components\stationLabel.autoAlign.test.tsx)).
+  An **above**-side label clears by `LABEL_GAP` + one `DESCENDER_FRACTION`, every other side by
+  `LABEL_GAP` alone: the CTA stops at the baseline but ink does not, and a constant gap against a
+  size-proportional descender put a "g" inside the route line above ~fontSize 15. The allowance
+  is unconditional rather than measured per name — clearing only the names that own a descender
+  is what leaves a row of labels on ragged baselines, which is the thing the tutorial rules out.
+  Below and beside need none: there the block grows AWAY from the marker.
+  Multi-line blocks anchor by the **line nearest the marker** and stack away from
   it: bottom line above (`auto-up`), top line below (`auto-down`), first line beside/fallback
   (`auto-down` align-down, so added lines never move the line that sits level with the dot).
   `label.autoVAlign` overrides WHICH line anchors ('down' = top line, 'up' = bottom line; the
   octant still supplies the pinned typographic edge), and `label.autoHAlign` re-aligns the
   lines WITHIN the block — anchorX slides by the anchor line's pen advance so its pinned edge
   stays put, which makes both overrides no-ops for single-line labels.
-  The pin clears the marker's support-function extent along the approach (a `half`-extent
-  square rotated to the stop's travel axis), stop-relative on both axes.
+  The pin clears whichever thing painted at the stop reaches furthest along the approach, each by
+  its own support function and joined by MAX (`StopMetrics`): the stripe (a `half`-extent square
+  rotated to the stop's **travel axis**), the TfL tick, the transfer cap, and the **dot** — which
+  is not a subset of the stripe, since a service-code disc sizes itself for legibility and any dot
+  size is settable, so a dot routinely reaches past a narrow line. The dot's silhouette is
+  axis-aligned in the **station** frame (StopGlyph draws it so), and its support is per shape
+  rather than by one circumscribing radius: a square is narrow on the cardinals and a diamond on
+  the diagonals, so a single radius would over-clear one of them by √2. All stop-relative on both
+  axes.
   **Cross stations** are the one exception to "the octant decides everything": when the label
   parks squarely across the line from its stop (the centering octants) and a **crossing** line's
   stop is packed beside it — same reading-frame row within `BAND_MERGE_TOL`, different travel

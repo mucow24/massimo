@@ -177,19 +177,47 @@ export interface MeasuredBBox {
 export const LINE_HEIGHT = 1.2;
 
 /**
- * Fraction of fontSize from the line's top (the `dominantBaseline="hanging"`
- * anchor) down to the visual baseline, for Helvetica-like fonts. Used by
- * inline-bullet renderers to sit the bullet's bottom on the text baseline.
+ * Fraction of fontSize from the 1.0em EM box top down to the visual baseline,
+ * for Helvetica-like fonts. Both the layout and the renderers reach it from the
+ * line's CENTER — `fontSize * (BASELINE_FRACTION - 0.5)` — because labelLayout
+ * works in a 1.2em LINE box and the two boxes share a center but not their
+ * edges (see stationLabelText's firstLineBaselineY).
+ *
+ * It is deliberately NOT a `dominant-baseline` mode's offset. Chrome derives
+ * those from platform font metrics, so nothing here can predict them; see
+ * capCenterDy below for the full account.
+ *
+ * Because the model and the paint apply the same number, it cancels out of every
+ * autoAlign pin: changing it slides the glyphs inside their own hit rect and
+ * wash, but never moves a baseline or cap line off the marker it was pinned to.
+ * CAP_FRACTION is the constant those pins actually ride on.
  */
 export const BASELINE_FRACTION = 0.8;
 
 /**
- * Cap height as a fraction of fontSize (Helvetica Neue: 714/1000 em).
- * Together with BASELINE_FRACTION this is the whole vertical font model the
- * autoAlign label placement aligns by (baseline / cap line / Core Type Area
- * center). Hardcoded like BASELINE_FRACTION — no font tables exist.
+ * Cap height as a fraction of fontSize (Helvetica Neue: 714/1000 em) — the
+ * height of the **Core Type Area**, baseline up to cap line, which is what the
+ * transitmap.net tutorials align labels by and what autoAlign implements
+ * (baseline sits above a line, cap line hangs below it, CTA center goes beside
+ * it, the facing CTA corner pins on a 45°). Hardcoded — no font tables exist.
  */
 export const CAP_FRACTION = 0.714;
+
+/**
+ * How far the deepest ink drops below the baseline, as a fraction of fontSize —
+ * the other side of the em box from BASELINE_FRACTION, and consistent with the
+ * shipped Helvetica Neue's own recorded descents (198/1000 hhea, 214/1000
+ * usWin).
+ *
+ * The Core Type Area ends AT the baseline, so nothing else in the label model
+ * accounts for a descender. `autoAlign` adds this to the clearance of every
+ * label sitting above a route line, unconditionally rather than per-name: a
+ * "g" would otherwise reach into the line, and pushing up only the names that
+ * own a descender is exactly the ragged-baseline effect the transitmap.net
+ * tutorial rules out. Nothing measures real ink depth — like CAP_FRACTION this
+ * is the font model, not a measurement.
+ */
+export const DESCENDER_FRACTION = 1 - BASELINE_FRACTION;
 
 /**
  * Baseline offset that optically centers a run of CAPS/digits on a shape's

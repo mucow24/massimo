@@ -1,6 +1,5 @@
 import type { MapDoc } from '../model/types';
-import { stopGapOf, stopHalfOf } from '../model/lineWidth';
-import { stopDashOf } from '../model/dashSize';
+import { stopMetricsOf } from '../model/stopMetrics';
 import { effectiveStationLabelStyle } from '../model/transforms';
 import { TEXT_LABEL_HIT_PAD, type AABBRect } from './stationBoundary';
 import {
@@ -38,13 +37,11 @@ export function computeContentBounds(doc: MapDoc): AABBRect | null {
     if (r.y1 > maxY) maxY = r.y1;
   };
 
-  const stopHalf = stopHalfOf(doc.lines);
-  const stopDash = stopDashOf(doc.lines);
-  const stopGap = stopGapOf(doc.lines);
+  const metrics = stopMetricsOf(doc);
 
   for (const id in doc.stations) {
     const st = doc.stations[id];
-    acc(stationWorldAABB(st, effectiveStationLabelStyle(st), stopHalf, stopDash, stopGap));
+    acc(stationWorldAABB(st, effectiveStationLabelStyle(st), metrics));
   }
   for (const id in doc.textLabels) {
     acc(textLabelAABB(doc.textLabels[id], TEXT_LABEL_HIT_PAD));

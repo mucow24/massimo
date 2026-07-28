@@ -1,11 +1,30 @@
 import { describe, it, expect } from 'vitest';
-import { labelLayoutLocal, DEFAULT_LABEL_STYLE } from './labelLayout';
+import { labelLayoutLocal, DEFAULT_LABEL_STYLE, type StopMetrics } from './labelLayout';
+import type { StopMetricsFn } from './labelLayout';
 import { STOP_SIZE } from './orientation';
-import { stopHalfOf } from '../model/lineWidth';
-import type { Rotation, Station, StopOrientation } from '../model/types';
+import type { Rotation, Station, StopCell, StopOrientation } from '../model/types';
 
 const HALF = STOP_SIZE / 2;
 const LABEL_GAP = 3;
+
+/**
+ * A `StopMetricsFn` from explicit per-field overrides — constant, or per stop.
+ * These tests pin the GEOMETRY (which obstacle moves the pin how far), so they
+ * state the obstacles outright; `stopMetrics.test.ts` pins the other half, that
+ * a real line/dot-style/transfer resolves to these numbers.
+ */
+const metrics = (
+  over: Partial<StopMetrics> | ((stop: StopCell) => Partial<StopMetrics>) = {},
+): StopMetricsFn => {
+  return (_station, stop) => ({
+    half: HALF,
+    gap: 0,
+    dash: null,
+    dot: null,
+    transferRadius: 0,
+    ...(typeof over === 'function' ? over(stop) : over),
+  });
+};
 
 // Typographic constants pinned independently of the implementation (the
 // implementation derives them from BASELINE_FRACTION/CAP_FRACTION; the test
@@ -22,6 +41,10 @@ const CAP = 0.714 * FS; // 8.568
 // Type Area center at the pinned target.
 const HANG = CAP - CB; // +4.968 below the cap target
 const CTR = CAP / 2 - CB; // +0.684 below the CTA-center target
+// Descender allowance (= fontSize * (1 − BASELINE_FRACTION 0.8)). A label
+// sitting ABOVE a line clears by LABEL_GAP plus this, so a "g" cannot reach
+// into the stripe. Unconditional, so every above-side baseline stays level.
+const DESC = 0.2 * FS; // 2.4
 
 const S2 = Math.SQRT1_2; // √2/2 — diagonal-lattice step and octant unit component
 
@@ -95,11 +118,11 @@ describe('labelLayoutLocal — autoAlign clears the dash tick', () => {
   // (length 14 = one line width, thickness 7). The pin must clear the tick's
   // support extent along the approach — not just the marker square.
   const DASH = { length: 14, width: 7 };
-  const dashAll = () => DASH;
+  const withTick = metrics({ dash: DASH });
 
   it('E of a dashed vertical stop: the pin clears the tick tip', () => {
     const st = autoStation({ stops: [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' }] });
-    const lay = labelLayoutLocal(st, undefined, undefined, undefined, dashAll);
+    const lay = labelLayoutLocal(st, undefined, undefined, withTick);
     // Tick reaches HALF + length = 21 east of the stop center; text begins
     // LABEL_GAP past the tip: −14 + (21 + 3) = +10 (vs −4 without the tick).
     expect(lay.textAnchor).toBe('start');
@@ -112,13 +135,7 @@ describe('labelLayoutLocal — autoAlign clears the dash tick', () => {
     // so only its thin cross-section matters and the marker square dominates.
     const stops = [{ dRow: -1, dCol: 0, orientation: 'auto-vertical' as const }];
     const base = labelLayoutLocal(autoStation({ stops }));
-    const dashed = labelLayoutLocal(
-      autoStation({ stops }),
-      undefined,
-      undefined,
-      undefined,
-      dashAll,
-    );
+    const dashed = labelLayoutLocal(autoStation({ stops }), undefined, undefined, withTick);
     expect(dashed.anchorX).toBeCloseTo(base.anchorX, 6);
     expect(dashed.anchorY).toBeCloseTo(base.anchorY, 6);
   });
@@ -134,8 +151,7 @@ describe('labelLayoutLocal — autoAlign clears the dash tick', () => {
       autoStation({ stops, offset: -30 }),
       undefined,
       undefined,
-      undefined,
-      dashAll,
+      withTick,
     );
     expect(dashed.anchorX).toBeCloseTo(base.anchorX, 6);
     expect(dashed.anchorY).toBeCloseTo(base.anchorY, 6);
@@ -148,13 +164,7 @@ describe('labelLayoutLocal — autoAlign clears the dash tick', () => {
     // on each axis.
     const stops = [{ dRow: 1, dCol: -1, orientation: 'auto-vertical' as const }];
     const base = labelLayoutLocal(autoStation({ stops }));
-    const dashed = labelLayoutLocal(
-      autoStation({ stops }),
-      undefined,
-      undefined,
-      undefined,
-      dashAll,
-    );
+    const dashed = labelLayoutLocal(autoStation({ stops }), undefined, undefined, withTick);
     expect(dashed.anchorX - base.anchorX).toBeCloseTo(5.25, 6);
     expect(dashed.anchorY - base.anchorY).toBeCloseTo(-5.25, 6);
   });
@@ -166,13 +176,7 @@ describe('labelLayoutLocal — autoAlign clears the dash tick', () => {
     const stops = [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' as const }];
     const wp = (s: Station): Station => ({ ...s, isWaypoint: true });
     const base = labelLayoutLocal(wp(autoStation({ stops })));
-    const dashed = labelLayoutLocal(
-      wp(autoStation({ stops })),
-      undefined,
-      undefined,
-      undefined,
-      dashAll,
-    );
+    const dashed = labelLayoutLocal(wp(autoStation({ stops })), undefined, undefined, withTick);
     expect(dashed.anchorX).toBeCloseTo(base.anchorX, 6);
     expect(dashed.anchorY).toBeCloseTo(base.anchorY, 6);
   });
@@ -180,13 +184,7 @@ describe('labelLayoutLocal — autoAlign clears the dash tick', () => {
   it('non-dash stops are unaffected by the lookup being present', () => {
     const stops = [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' as const }];
     const base = labelLayoutLocal(autoStation({ stops }));
-    const withLookup = labelLayoutLocal(
-      autoStation({ stops }),
-      undefined,
-      undefined,
-      undefined,
-      () => null,
-    );
+    const withLookup = labelLayoutLocal(autoStation({ stops }), undefined, undefined, metrics());
     expect(withLookup.anchorX).toBeCloseTo(base.anchorX, 6);
     expect(withLookup.anchorY).toBeCloseTo(base.anchorY, 6);
   });
@@ -224,10 +222,12 @@ describe('labelLayoutLocal — autoAlign octant table', () => {
     );
     expect(lay.textAnchor).toBe('middle');
     expect(lay.anchorX).toBeCloseTo(0, 6);
-    // Baseline target = stop row 14 − (7+3) = 4; anchor = target − CB = 0.4.
-    expect(lay.anchorY).toBeCloseTo(STOP_SIZE - (HALF + LABEL_GAP) - CB, 6);
-    // The baseline itself lands 3px above the marker's top edge (at 14−7=7).
-    expect(lay.anchorY + CB).toBeCloseTo(7 - LABEL_GAP + 0, 6);
+    // Descender target = stop row 14 − (7+3) = 4; baseline sits DESC above it,
+    // and the anchor a further CB above that.
+    expect(lay.anchorY).toBeCloseTo(STOP_SIZE - (HALF + LABEL_GAP) - CB - DESC, 6);
+    // What the rule is actually about: the DEEPEST ink clears the marker's top
+    // edge (at 14−7=7) by LABEL_GAP. The baseline itself sits a descender higher.
+    expect(lay.anchorY + CB + DESC).toBeCloseTo(7 - LABEL_GAP, 6);
   });
 
   it('S of a horizontal-line stop: centered, cap line hangs LABEL_GAP below the marker bottom', () => {
@@ -253,7 +253,7 @@ describe('labelLayoutLocal — autoAlign octant table', () => {
     );
     expect(lay.textAnchor).toBe('end');
     expect(lay.anchorX).toBeCloseTo(dPin, 6);
-    expect(lay.anchorY).toBeCloseTo(dPin - CB, 6);
+    expect(lay.anchorY).toBeCloseTo(dPin - CB - DESC, 6);
   });
 
   it('SE of a NE–SW line stop: start-aligned, hangs from its top-left cap corner', () => {
@@ -271,7 +271,7 @@ describe('labelLayoutLocal — autoAlign octant table', () => {
     );
     expect(lay.textAnchor).toBe('start');
     expect(lay.anchorX).toBeCloseTo(-dPin, 6);
-    expect(lay.anchorY).toBeCloseTo(dPin - CB, 6);
+    expect(lay.anchorY).toBeCloseTo(dPin - CB - DESC, 6);
   });
 
   it('SW of a NW–SE line stop: end-aligned, hangs from its top-right cap corner', () => {
@@ -299,7 +299,7 @@ describe('labelLayoutLocal — autoAlign centers over interline rows (legacy end
     );
     expect(lay.textAnchor).toBe('middle');
     expect(lay.anchorX).toBeCloseTo(0, 6);
-    expect(lay.anchorY).toBeCloseTo(STOP_SIZE - (HALF + LABEL_GAP) - CB, 6);
+    expect(lay.anchorY).toBeCloseTo(STOP_SIZE - (HALF + LABEL_GAP) - CB - DESC, 6);
   });
 
   it('label at the east end of a horizontal row: reads away, CTA centered', () => {
@@ -328,7 +328,7 @@ describe('labelLayoutLocal — autoAlign marker extent (support function)', () =
     const perAxis = STOP_SIZE - (HALF * Math.SQRT2 + LABEL_GAP) * S2; // ≈ 4.8787
     expect(lay.textAnchor).toBe('end');
     expect(lay.anchorX).toBeCloseTo(perAxis, 6);
-    expect(lay.anchorY).toBeCloseTo(perAxis - CB, 6);
+    expect(lay.anchorY).toBeCloseTo(perAxis - CB - DESC, 6);
   });
 
   it('beside a DIAGONAL-line stop: clears the rotated square’s full horizontal extent', () => {
@@ -347,7 +347,7 @@ describe('labelLayoutLocal — autoAlign marker extent (support function)', () =
       autoStation({ stops: [{ dRow: 0, dCol: 1, orientation: 'auto-vertical', lineId: 'L1' }] }),
       DEFAULT_LABEL_STYLE,
       undefined,
-      stopHalfOf({ L1: { width: 28 } }),
+      metrics({ half: 28 / 2 }),
     );
     expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (14 + LABEL_GAP), 6); // = -3
   });
@@ -363,7 +363,7 @@ describe('labelLayoutLocal — narrow stops keep the 1-cell adjacency gate', () 
       autoStation({ stops: [{ dRow: 0, dCol: 1, orientation: 'auto-vertical', lineId: 'L1' }] }),
       DEFAULT_LABEL_STYLE,
       undefined,
-      stopHalfOf({ L1: { width: 13 } }),
+      metrics({ half: 13 / 2 }),
     );
     expect(lay.textAnchor).toBe('end');
     // The pin stays stop-relative: text ends LABEL_GAP west of the 6.5 edge.
@@ -383,7 +383,7 @@ describe('labelLayoutLocal — narrow stops keep the 1-cell adjacency gate', () 
       }),
       DEFAULT_LABEL_STYLE,
       undefined,
-      stopHalfOf({ L1: { width: 13 } }),
+      metrics({ half: 13 / 2 }),
     );
     expect(lay.textAnchor).toBe('end');
     expect(lay.anchorX).toBeCloseTo(parked * STOP_SIZE - (6.5 + LABEL_GAP), 6);
@@ -400,7 +400,7 @@ describe('labelLayoutLocal — narrow stops keep the 1-cell adjacency gate', () 
       }),
       DEFAULT_LABEL_STYLE,
       undefined,
-      stopHalfOf({ L1: { width: 4.75 } }),
+      metrics({ half: 4.75 / 2 }),
     );
     expect(lay.textAnchor).toBe('end');
     expect(lay.anchorX).toBeCloseTo(tangent5 * STOP_SIZE - (2.375 + LABEL_GAP), 6);
@@ -418,16 +418,14 @@ describe('labelLayoutLocal — autoAlign across an interline gap', () => {
   // width-only gate ≈ 1.036).
   const GAP = 4.25;
   const PITCH = (STOP_SIZE + GAP) / STOP_SIZE; // default-width park: 18.25/14
-  const gap425 = () => GAP;
+  const gapped = metrics({ gap: GAP });
 
   it('E of a vertical stop at the gap pitch: still pinned start-anchored at the marker edge', () => {
     const lay = labelLayoutLocal(
       autoStation({ stops: [{ dRow: 0, dCol: -PITCH, orientation: 'auto-vertical' }] }),
       undefined,
       undefined,
-      undefined,
-      undefined,
-      gap425,
+      gapped,
     );
     expect(lay.textAnchor).toBe('start');
     // The pin stays stop-relative (marker edge + LABEL_GAP): the gap widens
@@ -460,9 +458,7 @@ describe('labelLayoutLocal — autoAlign across an interline gap', () => {
       }),
       undefined,
       undefined,
-      undefined,
-      undefined,
-      gap425,
+      gapped,
     );
     expect(lay.textAnchor).toBe('start');
     // Reading-frame S: the pin sits (HALF + LABEL_GAP) past the horizontal
@@ -480,9 +476,7 @@ describe('labelLayoutLocal — autoAlign across an interline gap', () => {
       }),
       undefined,
       undefined,
-      undefined,
-      undefined,
-      gap425,
+      gapped,
     );
     expect(lay.textAnchor).toBe('start');
     // Stop-relative clamp: text begins HALF + LABEL_GAP past the stop center.
@@ -497,7 +491,7 @@ describe('labelLayoutLocal — autoAlign at a crossing (cross station)', () => {
   // stripe. The text must butt up to that stripe instead — while the
   // baseline keeps its LABEL_GAP off the line it labels, so a row of labels
   // along that line stays level.
-  const SIT = STOP_SIZE - (HALF + LABEL_GAP) - CB; // 0.4 — the plain-N anchorY
+  const SIT = STOP_SIZE - (HALF + LABEL_GAP) - CB - DESC; // 0.4 — the plain-N anchorY
   const HANG_Y = -STOP_SIZE + HALF + LABEL_GAP + HANG; // 0.968 — the plain-S one
 
   it('crossing stop to the EAST: text ends at its edge, baseline unchanged', () => {
@@ -555,7 +549,7 @@ describe('labelLayoutLocal — autoAlign at a crossing (cross station)', () => {
       }),
       DEFAULT_LABEL_STYLE,
       undefined,
-      stopHalfOf({ L1: { width: STOP_SIZE }, L2: { width: 2 * STOP_SIZE } }),
+      metrics((stop) => ({ half: stop.lineId === 'L2' ? STOP_SIZE : HALF })),
     );
     expect(lay.textAnchor).toBe('end');
     expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (STOP_SIZE + LABEL_GAP), 6); // −3
@@ -576,8 +570,7 @@ describe('labelLayoutLocal — autoAlign at a crossing (cross station)', () => {
       }),
       undefined,
       undefined,
-      undefined,
-      (s) => (s.lineId === 'L2' ? DASH : null),
+      metrics((stop) => (stop.lineId === 'L2' ? { dash: DASH } : {})),
     );
     expect(lay.textAnchor).toBe('end');
     // Tick reaches HALF + length = 21 west of the crossing stop's center.
@@ -674,7 +667,7 @@ describe('labelLayoutLocal — autoAlign tie-breaking and fallbacks', () => {
       }),
     );
     expect(lay.textAnchor).toBe('middle');
-    expect(lay.anchorY).toBeCloseTo(STOP_SIZE - (HALF + LABEL_GAP) - CB, 6); // sit, not hang
+    expect(lay.anchorY).toBeCloseTo(STOP_SIZE - (HALF + LABEL_GAP) - CB - DESC, 6); // sit, not hang
   });
 
   it('no stop within the adjacency gate: first line CTA-centered on the cell, grows down', () => {
@@ -714,7 +707,7 @@ describe('labelLayoutLocal — autoAlign multi-line blocks', () => {
         stops: [{ dRow: 1, dCol: 0, orientation: 'auto-horizontal' }],
       }),
     );
-    const anchorY = STOP_SIZE - (HALF + LABEL_GAP) - CB; // 0.4
+    const anchorY = STOP_SIZE - (HALF + LABEL_GAP) - CB - DESC; // 0.4
     expect(lay.anchorY).toBeCloseTo(anchorY, 6);
     expect(lay.firstLineDyPx).toBeCloseTo(-2 * 14.4, 6);
     expect(lay.blockTopY).toBeCloseTo(anchorY - 7.2 - 2 * 14.4, 6);
@@ -790,7 +783,7 @@ describe('labelLayoutLocal — autoAlign overrides and offsets', () => {
       }),
     );
     expect(lay.anchorX).toBeCloseTo(5, 6);
-    expect(lay.anchorY).toBeCloseTo(STOP_SIZE - (HALF + LABEL_GAP) - CB - 2, 6);
+    expect(lay.anchorY).toBeCloseTo(STOP_SIZE - (HALF + LABEL_GAP) - CB - DESC - 2, 6);
   });
 });
 
@@ -811,7 +804,7 @@ describe('labelLayoutLocal — autoAlign H/V overrides', () => {
         autoVAlign: 'down',
       }),
     );
-    const anchorY = STOP_SIZE - (HALF + LABEL_GAP) - CB; // fold unchanged
+    const anchorY = STOP_SIZE - (HALF + LABEL_GAP) - CB - DESC; // fold unchanged
     expect(lay.anchorY).toBeCloseTo(anchorY, 6);
     // First line pinned, block grows down (default sit shifts up 2 stacks).
     expect(lay.firstLineDyPx).toBeCloseTo(0, 6);
@@ -877,7 +870,7 @@ describe('labelLayoutLocal — autoAlign H/V overrides', () => {
     );
     expect(lay.textAnchor).toBe('end');
     expect(lay.anchorX).toBeCloseTo(-dPin + 100, 6); // name's left edge at the pin
-    expect(lay.anchorY).toBeCloseTo(dPin - CB, 6); // name's baseline on the pin
+    expect(lay.anchorY).toBeCloseTo(dPin - CB - DESC, 6); // name's baseline on the pin
     expect(lay.firstLineDyPx).toBeCloseTo(0, 6); // grows down
   });
 
@@ -970,5 +963,149 @@ describe('labelLayoutLocal — autoAlign H/V overrides', () => {
       measureLines([100, 40]),
     );
     expect(withOverrides).toEqual(plain);
+  });
+});
+
+describe('labelLayoutLocal — autoAlign clears the stop DOT', () => {
+  // A dot is not a subset of its stripe: a service-code disc sizes itself for
+  // legibility, and any dot size is settable, so a dot routinely reaches past a
+  // narrow line. Every obstacle at the stop joins by MAX along the approach.
+
+  // Distance from the stop CENTER to the pinned typographic edge, per axis, for
+  // a 45° approach — the same "across and up/down an even amount" the corner
+  // octants place by.
+  const diagReach = (extent: number) => S2 * (extent + LABEL_GAP);
+
+  it('a dot wider than the stripe drives the pin; a narrower one changes nothing', () => {
+    const stops = [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' as const }];
+    const big = labelLayoutLocal(
+      autoStation({ stops }),
+      undefined,
+      undefined,
+      metrics({ dot: { r: 10, shape: 'circle' } }),
+    );
+    // Text begins at the DOT's east edge + gap: −14 + (10 + 3) = −1.
+    expect(big.anchorX).toBeCloseTo(-STOP_SIZE + 10 + LABEL_GAP, 6);
+
+    const small = labelLayoutLocal(
+      autoStation({ stops }),
+      undefined,
+      undefined,
+      metrics({ dot: { r: 4, shape: 'circle' } }),
+    );
+    // Stripe half 7 still wins, so this is the plain beside pin.
+    expect(small.anchorX).toBeCloseTo(-STOP_SIZE + HALF + LABEL_GAP, 6);
+  });
+
+  it('a circle is isotropic — the same clearance cardinally and diagonally', () => {
+    const R = 10;
+    const lay = labelLayoutLocal(
+      autoStation({ stops: [{ dRow: S2, dCol: -S2, orientation: 'auto-nw-se' }] }),
+      undefined,
+      undefined,
+      metrics({ dot: { r: R, shape: 'circle' } }),
+    );
+    const stop = { x: -S2 * STOP_SIZE, y: S2 * STOP_SIZE };
+    expect(lay.anchorX - stop.x).toBeCloseTo(diagReach(R), 6);
+    // Above octant: the descender line is what sits on the pin.
+    expect(lay.anchorY + CB + DESC - stop.y).toBeCloseTo(-diagReach(R), 6);
+  });
+
+  it('a square reaches √2 FURTHER on the diagonal than a circle of the same r', () => {
+    const R = 10;
+    const lay = labelLayoutLocal(
+      autoStation({ stops: [{ dRow: S2, dCol: -S2, orientation: 'auto-nw-se' }] }),
+      undefined,
+      undefined,
+      metrics({ dot: { r: R, shape: 'square' } }),
+    );
+    const stop = { x: -S2 * STOP_SIZE, y: S2 * STOP_SIZE };
+    expect(lay.anchorX - stop.x).toBeCloseTo(diagReach(R * Math.SQRT2), 6);
+  });
+
+  it('a diamond reaches √2 LESS on the diagonal — the opposite of a square', () => {
+    // Which direction a polygon dot is narrow in flips with the shape, so one
+    // circumscribing radius would over-clear one of the two by √2.
+    const R = 14;
+    const lay = labelLayoutLocal(
+      autoStation({ stops: [{ dRow: S2, dCol: -S2, orientation: 'auto-nw-se' }] }),
+      undefined,
+      undefined,
+      metrics({ dot: { r: R, shape: 'diamond' } }),
+    );
+    const stop = { x: -S2 * STOP_SIZE, y: S2 * STOP_SIZE };
+    expect(lay.anchorX - stop.x).toBeCloseTo(diagReach(R * S2), 6);
+  });
+
+  it('a square dot is exactly as wide as a circle on a CARDINAL approach', () => {
+    const R = 10;
+    const at = (shape: 'circle' | 'square') =>
+      labelLayoutLocal(
+        autoStation({ stops: [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' }] }),
+        undefined,
+        undefined,
+        metrics({ dot: { r: R, shape } }),
+      ).anchorX;
+    expect(at('square')).toBeCloseTo(at('circle'), 6);
+  });
+
+  it('a waypoint paints no dot of its own, so its pin clears none', () => {
+    // Same rule the tick already follows: hidden it paints nothing, revealed the
+    // overlay replaces every style with a fixed circle — so layout must not shift
+    // with the Show-waypoints toggle.
+    const stops = [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' as const }];
+    const wp = (s: Station): Station => ({ ...s, isWaypoint: true });
+    const lay = labelLayoutLocal(
+      wp(autoStation({ stops })),
+      undefined,
+      undefined,
+      metrics({ dot: { r: 10, shape: 'circle' } }),
+    );
+    expect(lay.anchorX).toBeCloseTo(-STOP_SIZE + HALF + LABEL_GAP, 6);
+  });
+});
+
+describe('labelLayoutLocal — autoAlign clears a TRANSFER cap', () => {
+  // A transfer is a round-capped capsule, so at the stop it ends in a disc of
+  // its half-width — isotropic, and often fatter than the line it lands on.
+
+  it('a fat transfer stub pushes the text out', () => {
+    const lay = labelLayoutLocal(
+      autoStation({ stops: [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' }] }),
+      undefined,
+      undefined,
+      metrics({ transferRadius: 12 }),
+    );
+    expect(lay.anchorX).toBeCloseTo(-STOP_SIZE + 12 + LABEL_GAP, 6);
+  });
+
+  it('joins the dot by MAX, not by sum', () => {
+    const lay = labelLayoutLocal(
+      autoStation({ stops: [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' }] }),
+      undefined,
+      undefined,
+      metrics({ dot: { r: 10, shape: 'circle' }, transferRadius: 6 }),
+    );
+    expect(lay.anchorX).toBeCloseTo(-STOP_SIZE + 10 + LABEL_GAP, 6);
+  });
+
+  it('a transfer on the CROSSING stop butts the text to its cap', () => {
+    // The crossing re-anchor measures the reading axis against the stop that
+    // actually blocks it, so a fat transfer there moves the text sideways while
+    // the baseline stays level with the rest of its own line's labels.
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L1' },
+          { dRow: 1, dCol: 1, orientation: 'auto-vertical', lineId: 'L2' },
+        ],
+      }),
+      undefined,
+      undefined,
+      metrics((stop) => (stop.lineId === 'L2' ? { transferRadius: 11 } : {})),
+    );
+    expect(lay.textAnchor).toBe('end');
+    expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (11 + LABEL_GAP), 6);
+    expect(lay.anchorY).toBeCloseTo(STOP_SIZE - (HALF + LABEL_GAP) - CB - DESC, 6);
   });
 });
