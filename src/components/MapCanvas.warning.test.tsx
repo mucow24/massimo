@@ -37,9 +37,9 @@ describe('MapCanvas — warning glyph reconciliation', () => {
   // stations. The perpendicular gap exceeds STOP_SIZE so interlining
   // doesn't merge them — two bands, same pairKey. With S1 and S2 close
   // enough vertically that the router can't fit a clean fillet for either
-  // band, both warn. The drag sweep reduces the y distance through the
-  // warning band and out the other side, exercising the fire/resolve
-  // transition many times in tight succession.
+  // band, both warn. The drag sweep then pulls S2 away and back, taking the
+  // pair through 2 → 1 → 0 warnings and back, so the reconciler sees the
+  // duplicate-key siblings mount, update, unmount, and remount.
   it('keeps the on-canvas ⚠ count in sync with the actual warning count, even after many drag frames', () => {
     // React surfaces duplicate-key collisions via console.error in dev. The
     // bug we're guarding against is precisely that condition, so spy on
@@ -52,11 +52,16 @@ describe('MapCanvas — warning glyph reconciliation', () => {
 
     render(<App />);
 
-    // S2 at rotation=2 (90°cw): its stops, defined in local frame at col 0
-    // and col 1, end up vertically stacked in world coords with the lines
-    // flowing horizontally — perpendicular to S1. The rotation also flips
-    // the perp-adjacency check across the two ends, so both bands stay
-    // separate even with adjacent local cols.
+    // S2 at rotation=1 (45°cw): each band leaves S1 on the vertical axis and
+    // arrives at S2 turned 45°, so the router must fit a fillet into that
+    // corner. Rotating also keeps the two ends' perp-adjacency checks from
+    // agreeing, so the bands stay separate rather than interlining into one.
+    //
+    // 45° (not the 90° a perpendicular station would give) is what makes the
+    // sweep below meaningful: at 90° the corner is too tight for R=80 at ANY
+    // separation, so both bands warn at every y and the sweep never leaves
+    // the warning state. At 45° the fillet fits once the stations are far
+    // enough apart, so pulling S2 away actually resolves the warnings.
     const s1: Station = {
       id: 's1',
       name: 'S1',
@@ -74,7 +79,7 @@ describe('MapCanvas — warning glyph reconciliation', () => {
       name: 'S2',
       x: 0,
       y: 20, // very close → both bands route through tight corners → both warn
-      rotation: 2,
+      rotation: 1,
       stops: [
         { lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' },
         { lineId: 'L2', row: 0, col: 5, orientation: 'auto-vertical' },
@@ -123,12 +128,12 @@ describe('MapCanvas — warning glyph reconciliation', () => {
 
     expect(countWarningGlyphs()).toBe(expectedWarningCount());
 
-    // Sweep S2's y in many tight steps — exactly the drag pattern that
-    // previously orphaned one fiber per frame for each duplicate-key
-    // sibling. CRUCIAL: each moveStation runs in its own act() so React
-    // commits between every step. Batching the whole loop into one act()
-    // would let React reconcile only once at the end and miss the
-    // per-frame fiber leak this test guards against.
+    // Sweep S2's y in steps — the drag pattern that previously orphaned one
+    // fiber per frame for each duplicate-key sibling. CRUCIAL: each
+    // moveStation runs in its own act() so React commits between every step.
+    // Batching the whole loop into one act() would let React reconcile only
+    // once at the end and miss the per-frame fiber leak this test guards
+    // against.
     const sweep = (yStart: number, yEnd: number, steps: number) => {
       for (let i = 0; i <= steps; i++) {
         const t = i / steps;
@@ -136,21 +141,34 @@ describe('MapCanvas — warning glyph reconciliation', () => {
         act(() => {
           useDoc.getState().moveStation('s2', 0, ny);
         });
+        // Every frame must agree, not just the last one: a leak that
+        // self-corrected by the end of the sweep would still be a leak.
+        expect(countWarningGlyphs()).toBe(expectedWarningCount());
       }
     };
 
-    // Drive the same many-frame drag sweeps that previously orphaned a fiber
-    // per frame for each duplicate-key sibling. We deliberately do NOT assert a
-    // DOM-glyph "drift" count here: jsdom's reconciler cleans up orphaned
-    // dup-key fibers at commit, so the count never diverges in this environment
-    // regardless of the bug — the console.error spy below is the SOLE real
-    // regression catch. (A drift assertion would masquerade as a guard while
-    // being unable to fail on the bug this test exists for.)
-    sweep(20, 400, 80);
-    sweep(400, 20, 80);
-    sweep(20, 400, 80);
-    sweep(400, 20, 80);
-    expect(countWarningGlyphs()).toBe(expectedWarningCount());
+    // One round trip over [20, 250] — the range that actually spans the
+    // transition (2 warnings while close, 1 mid-way, 0 past ~195), so the
+    // duplicate-key siblings mount, update, unmount and remount together.
+    //
+    // Deliberately a SHORT sweep. Past covering the transition, extra frames
+    // buy nothing: React re-emits the dup-key console.error on EVERY commit
+    // that renders colliding keys, so the spy below trips on the first
+    // offending render whether that is frame 1 or frame 300. The original
+    // 4×80-step sweeps cost ~600ms of the test's ~1.3s runtime and put it
+    // close enough to vitest's 5s default that it timed out under the CPU
+    // contention of a full parallel suite run while passing in isolation.
+    // Worse, they ran at rotation=2, where the warnings never resolve — so
+    // all 324 frames re-rendered one unchanging two-band configuration.
+    //
+    // We deliberately do NOT assert a DOM-glyph "drift" count here: jsdom's
+    // reconciler cleans up orphaned dup-key fibers at commit, so the count
+    // never diverges in this environment regardless of the bug — the
+    // console.error spy below is the SOLE real regression catch. (A drift
+    // assertion would masquerade as a guard while being unable to fail on the
+    // bug this test exists for.)
+    sweep(20, 250, 12);
+    sweep(250, 20, 12);
 
     // No duplicate-key warning was logged anywhere during setup or any
     // drag frame. If someone reverts <BandWarning>'s key to use only
@@ -190,7 +208,7 @@ describe('MapCanvas — warning glyph reconciliation', () => {
       valign: 'middle',
     };
     const s1: Station = { id: 's1', name: 'S1', x: 0, y: 0, rotation: 0, stops, label };
-    const s2: Station = { id: 's2', name: 'S2', x: 0, y: 20, rotation: 2, stops, label };
+    const s2: Station = { id: 's2', name: 'S2', x: 0, y: 20, rotation: 1, stops, label };
     // L1 dark → white glyph; L2 light → black glyph. Large curveRadius on
     // both lines forces the tight-corner warning at close range.
     const l1: Line = makeLine({
