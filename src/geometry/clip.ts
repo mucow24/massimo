@@ -66,30 +66,52 @@ export class ClipperUnavailableError extends Error {
 }
 
 let lib: ClipperLibWrapper | null = null;
+/** The load itself, memoized IN FLIGHT — see {@link loadClipper}. */
+let libPromise: Promise<'wasm' | 'asmJs'> | null = null;
+
+async function load(): Promise<'wasm' | 'asmJs'> {
+  let instance: ClipperLibWrapper;
+  try {
+    const m = await import('js-angusj-clipper');
+    instance = await m.loadNativeClipperLibInstanceAsync(
+      m.NativeClipperLibRequestedFormat.WasmWithAsmJsFallback,
+    );
+  } catch (cause) {
+    throw new ClipperUnavailableError('Could not load the polygon clipping engine', cause);
+  }
+  lib = instance;
+  return instance.format === 'wasm' ? 'wasm' : 'asmJs';
+}
 
 /**
  * Load the engine. Idempotent; resolves to the format actually loaded so
  * callers can log which one they got. REJECTS if neither build loads — there is
  * no second implementation to degrade to, and a caller that ignored this would
  * fail far away from the cause.
+ *
+ * The memo is the PROMISE, and every caller gets that same promise back.
+ * Guarding on the resolved instance instead would leave the load window itself
+ * unguarded: `main.tsx` and `src/test/setup.ts` both call this, and two callers
+ * arriving before the first resolve would each compile their own wasm module —
+ * megabytes of duplicate startup work — with the loser's instance then
+ * replacing the winner's in the slot every synchronous consumer reads.
  */
-export async function loadClipper(): Promise<'wasm' | 'asmJs'> {
-  if (!lib) {
-    try {
-      const m = await import('js-angusj-clipper');
-      lib = await m.loadNativeClipperLibInstanceAsync(
-        m.NativeClipperLibRequestedFormat.WasmWithAsmJsFallback,
-      );
-    } catch (cause) {
-      throw new ClipperUnavailableError('Could not load the polygon clipping engine', cause);
-    }
+export function loadClipper(): Promise<'wasm' | 'asmJs'> {
+  if (!libPromise) {
+    // A FAILED load is not memoized: the slot clears so the next call retries
+    // rather than replaying one rejection for the life of the page.
+    libPromise = load().catch((err: unknown) => {
+      libPromise = null;
+      throw err;
+    });
   }
-  return lib.format === 'wasm' ? 'wasm' : 'asmJs';
+  return libPromise;
 }
 
-/** Test seam: forget the loaded instance so the unloaded path can be exercised. */
+/** Test seam: forget the loaded engine so the unloaded path can be exercised. */
 export function __resetClipper(): void {
   lib = null;
+  libPromise = null;
 }
 
 function engine(): ClipperLibWrapper {

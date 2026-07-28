@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildOverlapRegions, ringsBbox, type RegionFace } from './lineRegions';
+import { buildOverlapRegions, ringsBbox, type RegionFace, type RegionSliver } from './lineRegions';
 import {
   buildRegionsIncremental,
   compCacheKey,
+  type RegionIncrementalResult,
   type RegionIncrementalState,
 } from './regionIncremental';
 import { makeBandSpec } from '../test/fixtures';
@@ -73,8 +74,37 @@ const describeFaces = (faces: RegionFace[]): string =>
     .sort()
     .join('\n');
 
-const full = (bands: SegmentBandSpec[]) => describeFaces(buildOverlapRegions(bands, [], []));
-/** Cold build including markers — the answer an incremental frame must match. */
+/** Dropped slivers described by cover + geometry, order-independent. */
+const describeSlivers = (slivers: RegionSliver[]): string =>
+  slivers
+    .map(
+      (s) =>
+        `${s.lineIds.join(',')}#` +
+        s.face.map((r) => r.map((p) => `${p.x.toFixed(3)},${p.y.toFixed(3)}`).join(';')).join('|'),
+    )
+    .sort()
+    .join('\n');
+
+/** Cold build — faces AND dropped slivers, the answer any frame must match. */
+const fullBuild = (bands: SegmentBandSpec[]): { faces: string; slivers: string } => {
+  const sink: RegionSliver[] = [];
+  const faces = buildOverlapRegions(bands, [], sink);
+  return { faces: describeFaces(faces), slivers: describeSlivers(sink) };
+};
+
+/**
+ * Slivers are compared alongside faces because they are not debris:
+ * `buildExclusionHoles` absorbs them to keep a winner's revealed casing
+ * continuous across a fillet gap. A component served from the cache has to hand
+ * its slivers back as faithfully as its faces, and the faces alone cannot see it.
+ */
+const expectEqualsFull = (inc: RegionIncrementalResult, bands: SegmentBandSpec[]): void => {
+  const ref = fullBuild(bands);
+  expect(describeFaces(inc.faces)).toBe(ref.faces);
+  expect(describeSlivers(inc.slivers)).toBe(ref.slivers);
+};
+
+/** Cold build including markers — faces only, for the marker-end test. */
 const fullWith = (bands: SegmentBandSpec[], markers: StopMarkerSpec[]) =>
   describeFaces(buildOverlapRegions(bands, markers, []));
 
@@ -114,6 +144,90 @@ const stubbedGrid = (hStart: number, vAdx: number): SegmentBandSpec[] => [
   crossing('vC', 220),
 ];
 
+/**
+ * Three bands far enough apart that no two bodies touch, so the overlap zone is
+ * empty on every frame. Line `c` shifts by `dx`.
+ */
+const apart = (dx = 0): SegmentBandSpec[] => [
+  makeBandSpec(['a'], {
+    pairKey: 'a1|a2',
+    bandKey: 'b-a',
+    centerline: [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+    ],
+  }),
+  makeBandSpec(['b'], {
+    pairKey: 'b1|b2',
+    bandKey: 'b-b',
+    centerline: [
+      { x: 0, y: 200 },
+      { x: 100, y: 200 },
+    ],
+  }),
+  makeBandSpec(['c'], {
+    pairKey: 'c1|c2',
+    bandKey: 'b-c',
+    centerline: [
+      { x: dx, y: 400 },
+      { x: 100 + dx, y: 400 },
+    ],
+  }),
+];
+
+/**
+ * A near-tangent dumbbell: `l2` crosses `l1` twice and runs 0.1 INSIDE it in
+ * between (stripes are 14 wide, so a 13.9 offset leaves a 0.1 overlap), and the
+ * opening splits that hairline neck off and drops it as a SLIVER. Plus a plain
+ * crossing far to the right by `l3` — the only thing `dx` moves, so the
+ * dumbbell's component is reused across a drag while `l3`'s is rebuilt.
+ *
+ * The grid fixtures above drop no slivers at all, which would make any sliver
+ * comparison over them a comparison of two empty lists.
+ */
+const dumbbell = (dx = 0): SegmentBandSpec[] => [
+  makeBandSpec(['l1'], {
+    pairKey: 'd0|d1',
+    bandKey: 'd-l1',
+    centerline: [
+      { x: 0, y: 0 },
+      { x: 700, y: 0 },
+    ],
+  }),
+  makeBandSpec(['l2'], {
+    pairKey: 'd2|d3',
+    bandKey: 'd-l2-in',
+    centerline: [
+      { x: 100, y: -50 },
+      { x: 100, y: 13.9 },
+    ],
+  }),
+  makeBandSpec(['l2'], {
+    pairKey: 'd3|d4',
+    bandKey: 'd-l2-neck',
+    centerline: [
+      { x: 100, y: 13.9 },
+      { x: 300, y: 13.9 },
+    ],
+  }),
+  makeBandSpec(['l2'], {
+    pairKey: 'd4|d5',
+    bandKey: 'd-l2-out',
+    centerline: [
+      { x: 300, y: 13.9 },
+      { x: 300, y: -50 },
+    ],
+  }),
+  makeBandSpec(['l3'], {
+    pairKey: 'd6|d7',
+    bandKey: 'd-l3',
+    centerline: [
+      { x: 600 + dx, y: -50 },
+      { x: 600 + dx, y: 50 },
+    ],
+  }),
+];
+
 /** One two-line band, varying ONLY which line takes which stripe slot. */
 const shared = (order: string[]): SegmentBandSpec[] => [
   makeBandSpec(order, {
@@ -133,7 +247,7 @@ describe('buildRegionsIncremental', () => {
     const bands = grid();
     const r = buildRegionsIncremental(bands, [], null);
     expect(r.faces.length).toBeGreaterThan(0);
-    expect(describeFaces(r.faces)).toBe(full(bands));
+    expectEqualsFull(r, bands);
   });
 
   it('equals a full build after each step of a drag', () => {
@@ -141,7 +255,7 @@ describe('buildRegionsIncremental', () => {
     for (const dx of [3, 6, 9, 12]) {
       const bands = grid(dx);
       const inc = buildRegionsIncremental(bands, [], state);
-      expect(describeFaces(inc.faces)).toBe(full(bands));
+      expectEqualsFull(inc, bands);
       state = inc.state;
     }
   });
@@ -150,7 +264,29 @@ describe('buildRegionsIncremental', () => {
     const state = buildRegionsIncremental(grid(), [], null).state;
     const fewer = grid().filter((b) => b.lines[0].id !== 'vB');
     const inc = buildRegionsIncremental(fewer, [], state);
-    expect(describeFaces(inc.faces)).toBe(full(fewer));
+    expectEqualsFull(inc, fewer);
+  });
+
+  // The grid never produces a sliver, so every equivalence above compares two
+  // empty sliver lists. This fixture drops one on every frame, and drags a line
+  // that is nowhere near it — so the dumbbell's component is served from cache
+  // and has to hand its slivers back exactly as a cold build computes them.
+  it('equals a full build — slivers included — across a near-tangent drag', () => {
+    const cold = buildRegionsIncremental(dumbbell(), [], null);
+    // Non-vacuity guard: without a dropped sliver this test proves nothing.
+    expect(fullBuild(dumbbell()).slivers).not.toBe('');
+    expectEqualsFull(cold, dumbbell());
+
+    let state = cold.state;
+    for (const dx of [3, 6, 9]) {
+      const bands = dumbbell(dx);
+      const inc = buildRegionsIncremental(bands, [], state);
+      // Both paths are live: l3's crossing rebuilds, the dumbbell is reused.
+      expect(inc.rebuilt).toBeGreaterThan(0);
+      expect(inc.rebuilt).toBeLessThan(inc.total);
+      expectEqualsFull(inc, bands);
+      state = inc.state;
+    }
   });
 
   // Removing a line leaves every SURVIVING pair clean, so the zone fast-path
@@ -199,7 +335,7 @@ describe('buildRegionsIncremental', () => {
     // those components were last built.
     const inc = buildRegionsIncremental(stubbedGrid(-60, 3), [], s1);
     expect(inc.rebuilt).toBeLessThan(inc.total); // reuse really is in play
-    expect(describeFaces(inc.faces)).toBe(full(stubbedGrid(-60, 3)));
+    expectEqualsFull(inc, stubbedGrid(-60, 3));
   });
 
   // Two lines swapping stripe slots leaves every stripe's geometry byte-identical
@@ -208,7 +344,7 @@ describe('buildRegionsIncremental', () => {
   it('notices two lines swapping stripe slots within a band', () => {
     const state = buildRegionsIncremental(shared(['A', 'B']), [], null).state;
     const inc = buildRegionsIncremental(shared(['B', 'A']), [], state);
-    expect(describeFaces(inc.faces)).toBe(full(shared(['B', 'A'])));
+    expectEqualsFull(inc, shared(['B', 'A']));
   });
 
   // A marker's LINE END reshapes its painted footprint (markerBodyRings), so it
@@ -264,6 +400,45 @@ describe('buildRegionsIncremental', () => {
     const state = buildRegionsIncremental(bands, [marker('square')], null).state;
     const inc = buildRegionsIncremental(bands, [marker('short')], state);
     expect(describeFaces(inc.faces)).toBe(coldShort);
+  });
+
+  // An overlap-free frame is not an idle one: a document with dormant
+  // `regionAssignments` runs this builder on every pointermove, and a map whose
+  // lines happen not to cross yet takes the empty-zone early-out on all of
+  // them. Throwing the prefix away there made the NEXT frame re-offset every
+  // stripe and re-intersect every pair from scratch — the priciest half of the
+  // build, discarded because the cheap half came out empty.
+  it('carries bodies and pair intersections through an overlap-free frame', () => {
+    const f1 = buildRegionsIncremental(apart(), [], null);
+    expect(f1.faces).toHaveLength(0);
+    expect(f1.state.bodies.size).toBe(3);
+    expect(f1.state.pairParts.size).toBe(3); // a|b, a|c, b|c — the zone path ran
+
+    // Nothing moved: every body and every pair intersection comes back as the
+    // SAME object, which is what reuse looks like from outside.
+    const f2 = buildRegionsIncremental(apart(), [], f1.state);
+    for (const id of ['a', 'b', 'c']) {
+      expect(f2.state.bodies.get(id)).toBe(f1.state.bodies.get(id));
+    }
+    expect(f2.state.pairParts.get('a|b')).toBe(f1.state.pairParts.get('a|b'));
+
+    // Third frame: only `c` moves. The clean pair keeps its cached
+    // intersection; the pairs touching `c` and `c`'s own body are rebuilt.
+    const f3 = buildRegionsIncremental(apart(9), [], f2.state);
+    expect(f3.state.bodies.get('a')).toBe(f1.state.bodies.get('a'));
+    expect(f3.state.bodies.get('c')).not.toBe(f1.state.bodies.get('c'));
+    expect(f3.state.pairParts.get('a|b')).toBe(f1.state.pairParts.get('a|b'));
+    expect(f3.state.pairParts.get('a|c')).not.toBe(f1.state.pairParts.get('a|c'));
+  });
+
+  // The same for the other early-out: one line can produce no overlap at all,
+  // so the build stops before the zone — but it has already paid for the body.
+  it('carries the body through a single-line frame', () => {
+    const one = apart().slice(0, 1);
+    const f1 = buildRegionsIncremental(one, [], null);
+    expect(f1.state.bodies.size).toBe(1);
+    const f2 = buildRegionsIncremental(apart().slice(0, 1), [], f1.state);
+    expect(f2.state.bodies.get('a')).toBe(f1.state.bodies.get('a'));
   });
 
   // The 32-bit ring hash is the cache's lookup workhorse, but alone it would
