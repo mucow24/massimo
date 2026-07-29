@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createRef, type RefObject } from 'react';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { useStationDrag } from './useStationDrag';
 import { useDoc, useSelection } from '../../state/store';
 import { useSnapPrefs } from '../../state/snapPrefs';
@@ -103,6 +103,58 @@ describe('useStationDrag — snap engages within a constant screen distance', ()
 
     expect(useDoc.getState().stations['D'].x).toBeCloseTo(100, 5);
     expect(useDoc.getState().stations['D'].y).toBeCloseTo(50, 5);
+  });
+});
+
+describe('useStationDrag — snap-guide identity across moves', () => {
+  // Same fixture as the zoom tests above: D and T line-adjacent on L1 with
+  // auto-vertical stops, so T defines a vertical snap axis at x=100. Zoom 2 —
+  // the snap radius is 5 world units.
+  beforeEach(() => {
+    setModes({ line: true, all: 'off', grid: 'off' });
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['D', 'T'] }) },
+      lineOrder: ['L1'],
+      stations: {
+        D: stationWithStop('D' as StationId, 'L1', { x: 0, y: 0 }),
+        T: stationWithStop('T' as StationId, 'L1', { x: 100, y: 0 }),
+      },
+    });
+  });
+
+  it('keeps the same guides array when a move reproduces the previous guides', () => {
+    const svgRef = createRef<SVGSVGElement>() as RefObject<SVGSVGElement | null>;
+    const { result } = renderHook(() => useStationDrag(svgRef, 2));
+
+    // World (96, 50): 4 units off the x=100 axis, inside the radius → snaps.
+    act(() => {
+      result.current.onStartDrag('D' as StationId, pointerEvent({ clientX: 200, clientY: 200 }));
+      result.current.onPointerMove(pointerEvent({ clientX: 392, clientY: 300 }));
+    });
+    const first = result.current.snapGuides;
+    expect(first.length).toBeGreaterThan(0); // the snapped move produced guides
+
+    // The identical move again: same snap, value-equal guides — the state must
+    // keep the previous array (same reference), not re-render with a fresh one.
+    act(() => {
+      result.current.onPointerMove(pointerEvent({ clientX: 392, clientY: 300 }));
+    });
+    expect(result.current.snapGuides).toBe(first);
+  });
+
+  it('keeps the initial empty array across no-snap moves (no fresh [] per move)', () => {
+    const svgRef = createRef<SVGSVGElement>() as RefObject<SVGSVGElement | null>;
+    const { result } = renderHook(() => useStationDrag(svgRef, 2));
+    const initial = result.current.snapGuides;
+
+    // World (70, 50): 30 units off the x=100 axis — far outside the radius, so
+    // the move produces no guides. No-guides ⇒ no-guides must not mint a new [].
+    act(() => {
+      result.current.onStartDrag('D' as StationId, pointerEvent({ clientX: 200, clientY: 200 }));
+      result.current.onPointerMove(pointerEvent({ clientX: 340, clientY: 300 }));
+    });
+    expect(result.current.snapGuides).toBe(initial);
   });
 });
 
