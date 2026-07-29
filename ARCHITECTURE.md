@@ -600,37 +600,51 @@ winner is one continuous base stroke). Cased lines: the hole runs through the wi
 ring (its rails are already painted beneath — uncovering them gives the natural bridges-over
 look) and swallows the losers' fringes near the face. Clipped areas take no pointer events,
 so idle clicks land on the visible winner natively. Zero assignments ⇒ zero cost and
-byte-identical output.
+byte-identical output. `buildExclusionHoles` is the cache-free reference; production renders go
+through `buildExclusionHolesCached`, a per-face cross-frame cache whose entries are reused only
+when every input is provably unchanged (face content key, no dirty geometry within a
+conservative reach, winner/railW signature, shield-neighborhood signature, per-sliver
+absorb-gate outcomes) — its output is pinned byte-equal to the reference by
+`lineRegions.holeCache.test.ts`, and an unverifiable frame chain (an undo served from the
+geometry LRU) flushes it to a full rebuild.
 
 **How the faces are actually built.** `lineRegions.ts` holds the pipeline as separable phases —
 `buildLineBodies` → `overlapZoneParts` (pairwise body intersections; any ≥2-cover point is in one
 of them; deliberately not unioned) → `zoneComponents` (ONE polytree union over the raw parts,
-yielding both the merged zone rings and its connected components; sub-`SLIVER_MIN_AREA`
-components — ~95% of them by count — are dropped since they can reach neither output, and
-`significantComponents` is the comps-only view of the same call) → per component
-`restrictBodiesToZone` → `subdivideCells` (each cell carries its bbox; strictly-disjoint
-cell/rings pairs skip the provably-empty clipper intersect) → `extractFaces` → one
-`finalizeFaces` over the merged set. A cell can never span two components, so per-component
+yielding the merged zone rings and its connected components in canonical content-key order —
+iteration order is output-visible through per-component sliver emission, so it must be a pure
+function of geometry; sub-`SLIVER_MIN_AREA` components — ~95% of them by count — are dropped
+from the significant set, and `significantComponents` is the comps-only view of the same call) →
+per component `restrictBodiesToZone` → `subdivideCells` (each cell carries its bbox;
+strictly-disjoint cell/rings pairs skip the provably-empty clipper intersect) → `extractFaces` →
+one `finalizeFaces` over the merged set. A cell can never span two components, so per-component
 subdivision is equivalent to one global pass while keeping every clipper operand down to one
-crossing's worth of geometry. Span sampling walks each covering stripe's whole arc grid but
-evaluates points only inside precomputed windows where the path nears the face bbox — outside
-them a sample is provably rejected by `pointNearFace`'s own bbox gate, so skipping preserves the
-interval output byte-for-byte.
+crossing's worth of geometry. Span sampling walks each covering stripe's arc grid only inside
+precomputed windows where the path nears the face bbox, jumping the gaps between them — outside
+a window a sample is provably rejected by `pointNearFace`'s own bbox gate, so the skips preserve
+the interval output byte-for-byte. Stripe bodies, marker footprints and flattened stripe paths
+all memoize per SPEC OBJECT, which is sound because interlining's reuse layer hands back the
+same spec only when value-identical (see the Memo contract).
 `buildOverlapRegions` composes exactly those phases and is the full-rebuild reference the
 incremental builder is tested against — **production goes through
-`regionIncremental.buildRegionsIncremental`**, which caches per component across frames and is
-seeded from a module-level slot in `regionCache.ts`. A component is reused only when its own ring
-hash matches AND nothing that moved this frame lies near it; the second condition is load-bearing,
-because a component's faces depend on the bodies restricted to it and not just on its outline.
-Two subtleties worth knowing before touching it: face **spans** are arc-length intervals of
-stripe-BODY overlap (not center-path containment — a corner face off its stripes' centers still
-gets one per cover line, with `mintAnchors` side-offsetting its anchors onto the face), measured
-from each stripe's start, so they go stale on a face whose polygon never moved (each cached
-component carries a `spanHash` of its cover and re-measures when that changes — writing the
-result *back* into the cache, not just into the copy handed out); and the per-stripe unit hash
-includes the **line id**,
-because `bandKey` is built from sorted ids and two lines swapping stripe slots is otherwise
-invisible while inverting the cover of every face the band crosses.
+`regionIncremental.buildRegionsIncremental`**, which reuses three tiers across frames, each an
+identity-proof pure memo: per-line bodies and per-pair zone intersections (a dirty pair whose
+intersect comes out content-equal at clipper resolution keeps the cached array and does not
+count as changed); the zone's component split (a frame re-unions only the super-region its
+changed pairs touch, via a per-ring membership index over EVERY component including sub-sliver
+ones — membership upkeep is skipped when a frame changes more than a dozen pairs, since a
+hub-scale frame unions most of the zone regardless); and per-component faces, seeded from a
+module-level slot in `regionCache.ts`. A component is reused only when its own ring hash matches
+AND nothing that moved this frame lies near it; the second condition is load-bearing, because a
+component's faces depend on the bodies restricted to it and not just on its outline. Face
+**spans** are arc-length intervals of stripe-BODY overlap (not center-path containment — a
+corner face off its stripes' centers still gets one per cover line, with `mintAnchors`
+side-offsetting its anchors onto the face), measured per BAND from that band's own start — and
+any band that can contribute a span to a component's face has a unit box overlapping the
+component's box, so the same untouched test that proves the polygons reusable proves the spans
+byte-identical too; they ride the reuse with no refresh pass. The per-stripe unit hash includes
+the **line id**, because `bandKey` is built from sorted ids and two lines swapping stripe slots
+is otherwise invisible while inverting the cover of every face the band crosses.
 
 The marker unit hash has the same trap in its own form: it must include the **line end**
 (`spec.end`), the one marker field that reshapes the painted footprint while `cx`/`cy`/
@@ -1262,12 +1276,22 @@ must be pruned.
 **Both no-op while a history group is open** (`if (isHistoryGrouping()) return;`) — undoing
 mid-gesture would restore a snapshot the still-running gesture is about to overwrite, and the
 group's own commit would then push an entry spanning two unrelated states.
-**`undo`/`redo` also flush persist** with an empty-partial `useDoc.setState({})` right after the
-zundo call. zundo applies undo/redo through the raw `set` it captured — which sits **above**
-`persist` in the `temporal(persist(...))` chain — so the reverted doc never reaches persist's
-storage writer on its own, and `localStorage` would lag the canvas until the next ordinary edit
-(edit → undo → refresh would resurrect the edit). The empty-partial write changes nothing, so
-temporal's `equality` (`docSnapshotsEqual`) skips both the history entry and the redo-stack wipe.
+**`undo`/`redo` also flush persist**: an empty-partial `useDoc.setState({})` right after the
+zundo call routes the reverted snapshot into the debounced doc storage's pending slot, and a
+synchronous `flushDocPersist()` writes it. zundo applies undo/redo through the raw `set` it
+captured — which sits **above** `persist` in the `temporal(persist(...))` chain — so the
+reverted doc never reaches persist's storage writer on its own, and `localStorage` would lag the
+canvas until the next ordinary edit (edit → undo → refresh would resurrect the edit). The
+empty-partial write changes nothing, so temporal's `equality` (`docSnapshotsEqual`) skips both
+the history entry and the redo-stack wipe; the flush cancels any pre-undo debounce timer, so a
+stale write can never land on top of the undo's.
+
+**The doc storage write is debounced** (`debouncedDocStorage`, store.ts): every `set()` — every
+pointermove of a drag — hands persist the un-stringified `{state, version}`, and the full-doc
+`JSON.stringify` + `localStorage.setItem` run once per ~300ms quiet period (one pending slot,
+last-write-wins; stored bytes pinned identical to what `createJSONStorage` produced). Flush
+points close the durability window: gesture commit (durable at pointerup), the undo path above,
+and pagehide/beforeunload/visibilitychange.
 
 **Grouped edits — `beginHistoryGroup()`** ([store.ts](src/state/store.ts)). A drag is many
 `moveStation` calls; a text edit is many `onChange`s; a slider drag is many ticks. The pattern:
@@ -2247,8 +2271,21 @@ doesn't re-run the per-face arc-length search (a single click on a busy map once
 `regionsFor`'s prebuilt param — the PRISTINE `bandsGeometry` plus the `stopMarkers` memo — so
 bands and markers are never built twice in one frame; marker priorities are invisible to region
 geometry, which is what makes entries built from either side of the cache interchangeable
-(pinned by `regionCache.prebuilt.test.ts`). `assignLinePriorities` mutates in place, so `bands`
-clones each spec.
+(pinned by `regionCache.prebuilt.test.ts`). During an open gesture the render passes
+`regionsFor` a `transient` flag: mid-drag frames are never revisited, so the sig string and LRU
+bookkeeping are skipped — which also preserves the pre-gesture entry for the commit reconcile's
+old-geometry lookup instead of evicting it.
+
+**Specs are identity-stable.** Both interlining builders finish through a single-slot reuse
+layer: a band/marker spec whose every compared field equals the previous build's comes back as
+the SAME object (`BAND_SPEC_FIELDS`/`MARKER_SPEC_FIELDS` classify every field as
+compared/derived/excluded, so adding a spec field fails to compile until classified). One
+station's drag frame therefore re-renders only the corridors it touches — every other
+`SegmentBand`/`StopMarker` memo bails on reference equality — and every identity-keyed cache
+downstream (unit hashes, stripe paths, stripe bodies, marker footprints) survives the frame.
+`assignLinePriorities` must consequently never touch a pristine spec: `bands` stamps priorities
+through `withLinePriorities`, which clones per pristine spec and caches the clone so per-spec
+identity stays stable across frames.
 
 The stations side works the same way: `stationsGeometrySig` hashes only the station fields
 `buildBandGeometry` / `buildStopMarkers` read (x, y, rotation, per-stop lineId/row/col/orientation)
