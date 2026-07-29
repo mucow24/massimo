@@ -124,17 +124,42 @@ export function flattenOffsetSegments(segs: OffsetPathSegment[], tol = FLATTEN_T
   return pts;
 }
 
-/** The painted body of one stripe: round-join, butt-cap stroke outline. */
+/**
+ * The painted body of one stripe: round-join, butt-cap stroke outline.
+ * Memoized per spec object (like {@link stripePathFor} below): interlining's
+ * reuse layer hands back the same spec only when value-identical, so identity
+ * implies current geometry, and an untouched corridor's stripes stop paying
+ * their clipper offset on every rebuild. Callers treat the rings as
+ * read-only, which they already did — the same arrays flow through
+ * unionAll/intersect operands untouched.
+ */
+const stripeBodyCache = new WeakMap<SegmentBandSpec, Map<number, Ring[]>>();
 export function stripeBodyPolys(band: SegmentBandSpec, stripeIndex: number): Ring[] {
+  let byIndex = stripeBodyCache.get(band);
+  if (!byIndex) stripeBodyCache.set(band, (byIndex = new Map()));
+  const hit = byIndex.get(stripeIndex);
+  if (hit) return hit;
   const { pts } = stripePathFor(band, stripeIndex);
-  return offsetOpenPath(pts, band.stripeWidths[stripeIndex] / 2);
+  const rings = offsetOpenPath(pts, band.stripeWidths[stripeIndex] / 2);
+  byIndex.set(stripeIndex, rings);
+  return rings;
 }
 
 /**
  * The rendered footprint of a stop marker, or nothing when the marker paints
- * nothing (patterned styles at interior stops).
+ * nothing (patterned styles at interior stops). Memoized per spec object —
+ * same contract as {@link stripeBodyPolys}.
  */
+const markerBodyCache = new WeakMap<StopMarkerSpec, Ring[]>();
 function markerBodyRings(spec: StopMarkerSpec): Ring[] {
+  const hit = markerBodyCache.get(spec);
+  if (hit) return hit;
+  const rings = markerBodyRingsUncached(spec);
+  markerBodyCache.set(spec, rings);
+  return rings;
+}
+
+function markerBodyRingsUncached(spec: StopMarkerSpec): Ring[] {
   const half = spec.width / 2;
   const center = { x: spec.cx, y: spec.cy };
   // A reshaped line end (see markerEnd.ts) replaces the square outright, for

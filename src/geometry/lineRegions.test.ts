@@ -1002,3 +1002,17 @@ describe('bindAssignments cross-check vs reference implementation', () => {
     );
   });
 });
+
+describe('stripeBodyPolys memo', () => {
+  it('returns the same rings object for the same spec object', () => {
+    // Identity-stable band specs make spec identity a version stamp (the
+    // reuse layer only hands back the same object when value-identical), so
+    // the stripe body memo can never serve stale rings — and an untouched
+    // corridor's body stops paying its offset on every rebuild.
+    const band = hBand('l1', 's1|s2', 0, 100);
+    expect(stripeBodyPolys(band, 0)).toBe(stripeBodyPolys(band, 0));
+    // A fresh spec object recomputes — identical content, new rings.
+    const again = hBand('l1', 's1|s2', 0, 100);
+    expect(stripeBodyPolys(again, 0)).not.toBe(stripeBodyPolys(band, 0));
+  });
+});
