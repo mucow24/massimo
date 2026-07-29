@@ -105,9 +105,7 @@ describe('useStationDrag — line-circle binding', () => {
     const result = dragHook();
     // A tiny move that stays ON the rim's neighborhood — but Shift is held.
     result.current.onStartDrag('S' as StationId, pointerEvent({ clientX: 300, clientY: 300 }));
-    result.current.onPointerMove(
-      pointerEvent({ clientX: 308, clientY: 300, shiftKey: true }),
-    );
+    result.current.onPointerMove(pointerEvent({ clientX: 308, clientY: 300, shiftKey: true }));
     result.current.onPointerUp(pointerEvent({ clientX: 308, clientY: 300, shiftKey: true }));
     const st = useDoc.getState().stations['S'];
     expect(st.circleId).toBeUndefined();

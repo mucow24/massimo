@@ -165,10 +165,7 @@ describe('the whole flow: bind, connect, arc', () => {
     // Raw stations near (not on) the rim, one line, one circle — then only
     // public transforms: bind both, add the first to the line, connect.
     let doc = makeDoc({
-      stations: [
-        makeStation({ id: 'a', x: 180, y: 110 }),
-        makeStation({ id: 'b', x: 90, y: 180 }),
-      ],
+      stations: [makeStation({ id: 'a', x: 180, y: 110 }), makeStation({ id: 'b', x: 90, y: 180 })],
       lines: [makeLine({ id: 'l1' })],
       lineCircles: [makeLineCircle({ id: 'c1', x: CX, y: CY, radius: R })],
     });

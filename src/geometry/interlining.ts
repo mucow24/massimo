@@ -118,7 +118,9 @@ export interface StopMarkerSpec {
   color: string;
   lineId: LineId;
   stationId: StationId;
-  rotationDeg: number; // station rotation in degrees CW
+  // The stop's world travel-axis angle in degrees CW — octant-derived for
+  // normal stops, the EXACT circle tangent (continuous) for viaCircle stops.
+  rotationDeg: number;
   priority: number;
   style: LineStyle;
   outward: Vec2 | null;
@@ -1030,11 +1032,7 @@ function buildCircleBandSpec(
   // flattening, the incremental hash — sees the true circle through the code
   // paths it already has. No marker-fit cap and no inner-stripe bump: the
   // geometry is dictated by the circle, not by the corner-styling trade-offs.
-  const centerline = arcTangentPolygon(
-    { x: circle.x, y: circle.y, radius: bandR },
-    aFrom,
-    delta,
-  );
+  const centerline = arcTangentPolygon({ x: circle.x, y: circle.y, radius: bandR }, aFrom, delta);
   const offsets = stripeOffsetsForWidths(widths, gaps);
   const linesArr = group.map((g) => ({ id: g.lineId }));
   const paths = offsets.map((o) => offsetFilletPath(centerline, bandR, o));

@@ -225,7 +225,12 @@ describe('bindStationToCircle flags existing stops', () => {
   it('sets viaCircle on every stop (the always-arc default; flip to opt out)', () => {
     const doc = makeDoc({
       stations: [
-        makeStation({ id: 's1', x: 300, y: 100, stops: [makeStop('l1'), makeStop('l2', { col: 1 })] }),
+        makeStation({
+          id: 's1',
+          x: 300,
+          y: 100,
+          stops: [makeStop('l1'), makeStop('l2', { col: 1 })],
+        }),
       ],
       lineCircles: [CIRCLE],
     });
