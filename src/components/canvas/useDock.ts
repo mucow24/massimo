@@ -70,12 +70,30 @@ function readDock(el: HTMLElement | null, into: DockInto): Dock {
 export function useDock(ref: React.MutableRefObject<HTMLElement | null>, into: DockInto): Dock {
   const [dock, setDock] = useState<Dock>(() => readDock(null, into));
   const measureRef = useRef<() => void>(() => {});
+  // What the last measurement was taken FOR — see the guard below.
+  const measuredFor = useRef<{ el: HTMLElement | null; strip: number; fallbackW: number } | null>(
+    null,
+  );
 
-  // Deliberately dep-less: the measurement must re-run on EVERY commit, not
-  // just when `into` changes. The element it measures from may have only just
-  // appeared (WarningToasts renders null until the router flags a band, keeping
-  // this hook alive with a null ref), and a keyed effect would never hear
-  // about it. The value-equal bailout is what stops the setState looping.
+  // Dep-less, because one of the inputs isn't a dep at all: the element this
+  // measures from may attach on a LATER commit than the mount (WarningToasts
+  // renders null until the router flags a band, keeping this hook alive with a
+  // null ref), and a keyed effect would never hear about it.
+  //
+  // But measuring on every commit is what made a narrow window crash. The
+  // measurement moves with the page, and an ANIMATED page scroll gives a
+  // different reading every frame — so through the stretch where the host's own
+  // edge is the dock, a commit measured, set state, and committed again into a
+  // page that had moved on. The value-equal bailout never fired and React tore
+  // the app down at its nested-update limit. (The animation was the sidebar
+  // revealing a selected station's row with `scrollIntoView`, which dragged the
+  // whole page sideways to reach a row off the side of the window; Sidebar.tsx
+  // scrolls the list's own box now. Any animated page scroll does it, though,
+  // which is why the guard belongs here and not only there.)
+  //
+  // So measure when an INPUT changed, never merely because a commit happened.
+  // Tracking motion is the scroll listener's job below, where one event costs
+  // exactly one render.
   useLayoutEffect(() => {
     const measure = () =>
       setDock((prev) => {
@@ -90,6 +108,16 @@ export function useDock(ref: React.MutableRefObject<HTMLElement | null>, into: D
           : next;
       });
     measureRef.current = measure;
+    const prev = measuredFor.current;
+    if (
+      prev &&
+      prev.el === ref.current &&
+      prev.strip === into.strip &&
+      prev.fallbackW === into.fallbackW
+    ) {
+      return;
+    }
+    measuredFor.current = { el: ref.current, strip: into.strip, fallbackW: into.fallbackW };
     measure();
   });
 
