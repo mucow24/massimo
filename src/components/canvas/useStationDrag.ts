@@ -4,7 +4,12 @@ import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
 import type { StationId } from '../../model/types';
 import { Rotation } from '../../geometry/orientation';
-import { snapDraggedStation, SnapGuide, snapGuidesEqual, snapToleranceAt } from '../../geometry/snap';
+import {
+  snapDraggedStation,
+  SnapGuide,
+  snapGuidesEqual,
+  snapToleranceAt,
+} from '../../geometry/snap';
 import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
 import {
   collectGroupSiblings,

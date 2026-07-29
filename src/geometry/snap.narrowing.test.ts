@@ -44,7 +44,7 @@ const mulberry32 = (seed: number) => {
 };
 type Rnd = () => number;
 const int = (rnd: Rnd, n: number) => Math.floor(rnd() * n);
-const pick = <T,>(rnd: Rnd, xs: readonly T[]): T => xs[int(rnd, xs.length)];
+const pick = <T>(rnd: Rnd, xs: readonly T[]): T => xs[int(rnd, xs.length)];
 
 // A small random doc + drag: loops, branches, stopless members, stopless
 // free-floating stations, group-drag exclusions, redistribute anchors, and a
@@ -100,7 +100,10 @@ function makeScenario(seed: number): SnapInput {
 
   let excludedIds: ReadonlySet<StationId> | undefined;
   if (rnd() < 0.25) {
-    const other = pick(rnd, stations.filter((s) => s.id !== dragged.id));
+    const other = pick(
+      rnd,
+      stations.filter((s) => s.id !== dragged.id),
+    );
     excludedIds = new Set([other.id]);
   }
 
@@ -295,8 +298,9 @@ describe('snapDraggedStation — preserved corner cases of the line-mode pool', 
       lines: linesRec(L1),
     };
     expect(snapDraggedStation(base).x).toBeCloseTo(100, 5);
-    expect(
-      snapDraggedStation({ ...base, excludedIds: new Set(['b' as StationId]) }).x,
-    ).toBeCloseTo(96, 5);
+    expect(snapDraggedStation({ ...base, excludedIds: new Set(['b' as StationId]) }).x).toBeCloseTo(
+      96,
+      5,
+    );
   });
 });

@@ -899,8 +899,7 @@ describe('bindAssignments cross-check vs reference implementation', () => {
         .filter((anchor) => liveLines.has(anchor.lineId))
         .map((anchor) => ({ anchor, ev: refEvaluateAnchor(anchor, bands) }))
         .filter(
-          (x): x is { anchor: RegionAssignment['anchors'][number]; ev: Evaluated } =>
-            x.ev !== null,
+          (x): x is { anchor: RegionAssignment['anchors'][number]; ev: Evaluated } => x.ev !== null,
         );
       if (!evals.length) continue;
       prepared.set(id, { required: a.lines.filter((l) => liveLines.has(l)), evals });
@@ -919,8 +918,7 @@ describe('bindAssignments cross-check vs reference implementation', () => {
           const cover = new Set(f.lineIds);
           if (!cover.has(a.lineId)) continue;
           if (!prep.required.every((l) => cover.has(l))) continue;
-          if (strict && !prep.evals.every(({ anchor }) => refAnchorCorridorOk(anchor, f)))
-            continue;
+          if (strict && !prep.evals.every(({ anchor }) => refAnchorCorridorOk(anchor, f))) continue;
           const contributions = prep.evals
             .map(({ ev }) => refPointToFaceDistance(ev.p, f))
             .sort((x, y) => x - y);

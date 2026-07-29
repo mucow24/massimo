@@ -60,9 +60,7 @@ const overrideAll = (faces: RegionFace[], lineOrder: LineId[]) => {
     );
     const def = sorted[0];
     const winner = sorted[sorted.length - 1];
-    return winner !== def
-      ? { winner, assignmentId: 'r' }
-      : { winner: def, assignmentId: null };
+    return winner !== def ? { winner, assignmentId: 'r' } : { winner: def, assignmentId: null };
   });
 };
 
@@ -358,16 +356,7 @@ describe('buildExclusionHolesCached ≡ buildExclusionHoles', () => {
     expect(built.faces.length).toBe(2);
     // Both panes overridden to vA (defaults are hA / hB).
     const both = built.faces.map(() => ({ winner: 'vA' as LineId, assignmentId: 'r' }));
-    buildExclusionHolesCached(
-      built.faces,
-      both,
-      order,
-      bands,
-      [],
-      () => 0,
-      built.slivers,
-      chain,
-    );
+    buildExclusionHolesCached(built.faces, both, order, bands, [], () => 0, built.slivers, chain);
     // Flip the SECOND pane back to its default; same geometry, same state.
     const hbIdx = built.faces.findIndex((f) => f.lineIds.includes('hB'));
     const flipped = built.faces.map((_f, i) =>
@@ -401,15 +390,7 @@ describe('buildExclusionHolesCached ≡ buildExclusionHoles', () => {
     // The flip must genuinely change the surviving pane's holes (the shield
     // it gains bites the dilation poke into the neighbor) — otherwise this
     // fixture is vacuous…
-    const before = buildExclusionHoles(
-      built.faces,
-      both,
-      order,
-      bands,
-      [],
-      () => 0,
-      built.slivers,
-    );
+    const before = buildExclusionHoles(built.faces, both, order, bands, [], () => 0, built.slivers);
     expect(describeHoles(before)).not.toBe(describeHoles(reference));
     // …and the cache must have seen it: the surviving pane recomputed.
     expect(stats.recomputed).toBe(1);
