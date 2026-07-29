@@ -8,6 +8,8 @@ import {
   reconcileCorner,
   reconcileLockWithGrid,
   snapDraggedStation,
+  SNAP_PERP_TOLERANCE,
+  snapToleranceAt,
 } from './snap';
 import { makeLine, makeStation, makeStop } from '../test/fixtures';
 import { pairKeyOf } from '../model/pairKey';
@@ -860,5 +862,20 @@ describe('grid reconciliation: 5px grid interval', () => {
     expect(r.kept).toBe('both');
     expect(r.x).toBeCloseTo(5, 5);
     expect(r.y).toBeCloseTo(20, 5);
+  });
+});
+
+describe('snapToleranceAt', () => {
+  // The engage radius is specified in SCREEN pixels, not world units — that is
+  // the whole reason every snap site converts rather than passing the constant.
+  it('holds the engage radius constant in screen pixels across zooms', () => {
+    for (const zoom of [0.1, 0.5, 1, 2, 8, 64]) {
+      expect(snapToleranceAt(zoom) * zoom).toBeCloseTo(SNAP_PERP_TOLERANCE, 9);
+    }
+  });
+
+  it('shrinks the world-space radius as you zoom in, so fine positioning wins', () => {
+    expect(snapToleranceAt(4)).toBeLessThan(snapToleranceAt(1));
+    expect(snapToleranceAt(0.25)).toBeGreaterThan(snapToleranceAt(1));
   });
 });

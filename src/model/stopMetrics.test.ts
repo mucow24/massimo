@@ -277,3 +277,28 @@ describe('stopMetricsOf — split singleton/interchange resolution', () => {
     expect(m.gap).toBe(0);
   });
 });
+
+describe('stopMetricsOf — the last-result cache', () => {
+  // The canvas builds this once per STATION component, and the transfer index
+  // inside is eager, so repeated builds against one doc state are the cost the
+  // cache exists to remove. Identity is the observable: one reference, one
+  // build.
+  const src = () => ({
+    lines: { L1: makeLine({ id: 'L1' }) },
+    transfers: {},
+    stations: {},
+  });
+
+  it('hands back the same function for the same three slices', () => {
+    const s = src();
+    expect(stopMetricsOf(s)).toBe(stopMetricsOf({ ...s }));
+  });
+
+  it('rebuilds when any one slice changes, so it can never answer stale', () => {
+    const s = src();
+    const first = stopMetricsOf(s);
+    expect(stopMetricsOf({ ...s, transfers: {} })).not.toBe(first);
+    expect(stopMetricsOf({ ...s, stations: {} })).not.toBe(first);
+    expect(stopMetricsOf({ ...s, lines: { L1: makeLine({ id: 'L1' }) } })).not.toBe(first);
+  });
+});

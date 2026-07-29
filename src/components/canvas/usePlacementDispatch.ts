@@ -11,8 +11,8 @@ import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
 import { randomStationName } from '../../state/stationNames';
 import {
-  SNAP_PERP_TOLERANCE,
   snapDraggedStation,
+  snapToleranceAt,
   type SnapGuide,
   type SnapModes,
 } from '../../geometry/snap';
@@ -52,7 +52,7 @@ export function snapPlacement(
   const raw: PlacementSnap = { x: world.x, y: world.y, guides: [] };
   if (shiftKey) return raw;
   const doc = useDoc.getState();
-  const tolerance = SNAP_PERP_TOLERANCE / zoom;
+  const tolerance = snapToleranceAt(zoom);
 
   // Station engine: a new station has no stops yet, so line mode is naturally
   // inert (nothing shares a line) and "Snap to all" works via the anchor

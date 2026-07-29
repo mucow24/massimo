@@ -8,9 +8,9 @@ import { pointerEvent } from '../test/interaction';
 import type { LineId, Line, Station, StationId } from '../model/types';
 
 // Doc mutators are replaced with spies — the interaction logic is what's under
-// test, not the transforms (covered elsewhere). closestStopLineId queries the
-// DOM for '.canvas-host svg'; with none present it returns the first stop's
-// lineId, which is deterministic for these fixtures.
+// test, not the transforms (covered elsewhere). closestStopLineId resolves the
+// map svg through getCanvasSvg(); with no canvas mounted it returns the first
+// stop's lineId, which is deterministic for these fixtures.
 let rotateStation: ReturnType<typeof vi.fn>;
 let rotateItemsAround: ReturnType<typeof vi.fn>;
 let redistributeBetween: ReturnType<typeof vi.fn>;
@@ -328,7 +328,7 @@ describe('useStationInteraction — transfer creation', () => {
     // Anchor already committed to S/L1; clicking the SAME station + SAME dot is
     // a self-transfer (sameStation && sameLine) and must NOT addTransfer or
     // exit the mode. closestStopLineId returns the first stop's lineId (L1)
-    // since there's no '.canvas-host svg' in the DOM.
+    // since there's no map canvas mounted in the DOM.
     useSelection.getState().setUiMode({
       kind: 'creating-transfer',
       firstEnd: { stationId: 'S' as StationId, lineId: 'L1' as LineId },

@@ -27,6 +27,43 @@ export const SERVICE_CODE_DOT_RADIUS = 6;
 export const defaultDotDiameter = (style: DotStyle): number =>
   2 * (style.showServiceCode ? SERVICE_CODE_DOT_RADIUS : STOP_DOT_RADIUS);
 
+/**
+ * How far a stroke moves a dot's two radii off the nominal `r`, in RADIUS
+ * units. THE owner of that rule — both the painter (`StopGlyph`, which draws
+ * at these radii) and the label geometry (`stopMetricsOf`, whose `dot.r` is
+ * what a label pin clears) resolve it here, because a label parked on a radius
+ * the canvas didn't paint at is exactly the drift `StopMetrics` exists to
+ * prevent. Pinned end-to-end by StopGlyph.labelClearance.test.tsx.
+ *
+ * A filled, stroked dot paints as a `silhouette` outset under a `body` inset,
+ * so overlapping dots merge into one outer border; `native` is their midpoint,
+ * where a single element's centred SVG stroke lands in the same band. The
+ * deltas are in radius units so the visible band stays a uniform `strokeWidth`
+ * on every edge: a circle/square has its edges AT radius r, but a diamond's are
+ * only r/√2 from the centre, so moving them by h needs √2× the radius delta.
+ *
+ * `align` places the band on the edge — 'center' straddles it (±off), 'inside'
+ * pins the outer edge and eats inward, 'outside' pins the fill and grows out.
+ * All three are 0-preserving for 'center', so the historical render is
+ * untouched. The concave 'x' is always centred whatever the style asks: no
+ * single radius delta offsets a saltire uniformly. (The hover affordance is
+ * also always centred — chrome, not style — but that is the painter's call, so
+ * it passes 'center' rather than being special-cased here.)
+ */
+export function dotStrokeRadiusDeltas(
+  strokeWidth: number,
+  shape: DotBaseShape,
+  align: DotStrokeAlign,
+): { silhouette: number; body: number; native: number } {
+  if (!(strokeWidth > 0)) return { silhouette: 0, body: 0, native: 0 };
+  const h = strokeWidth / 2;
+  const a = shape === 'x' ? 'center' : align;
+  const off = shape === 'diamond' ? h * Math.SQRT2 : h;
+  const silhouette = a === 'inside' ? 0 : a === 'outside' ? 2 * off : off;
+  const body = a === 'inside' ? -2 * off : a === 'outside' ? 0 : -off;
+  return { silhouette, body, native: (silhouette + body) / 2 };
+}
+
 const K: DayNightColor = { day: '#000000', night: '#000000' };
 const W: DayNightColor = { day: '#ffffff', night: '#ffffff' };
 // Well-named aliases for reuse outside this file (e.g. the StopDot editor's
