@@ -924,8 +924,8 @@ select option {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  /* The panels dock to the host's top corner and the host clips (overflow:
-     hidden), so anything past the bottom edge is simply unreachable. Clamp to
+  /* The panels dock to the top corner and are pinned to the window (position:
+     fixed), so anything past its bottom edge is simply unreachable. Clamp to
      the viewport ONLY and scroll inside, so the panel grows to fit its content
      and the scrollbar appears solely when the content genuinely can't fit the
      window. A prior fixed 720px ceiling sat just under a multi-line station's
@@ -2090,9 +2090,13 @@ button.field-select {
   font: inherit;
 }
 
+/* Pinned to the WINDOW, not the host, for the same reason the item popovers
+   are (see PopoverShell): a window narrower than the app scrolls the page
+   sideways, and a host-anchored corner rides off screen with it. `right` is
+   written inline by WarningToasts — it has the sidebar to clear — while
+   `bottom` is constant, the app being one viewport tall. */
 .warning-toasts {
-  position: absolute;
-  right: 12px;
+  position: fixed;
   bottom: 12px;
   display: flex;
   flex-direction: column;
