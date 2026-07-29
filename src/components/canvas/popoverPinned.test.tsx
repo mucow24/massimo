@@ -59,7 +59,10 @@ const HOST_TOP = 44;
 // scrolling right slides that box left to a negative `left`. jsdom has no
 // layout (every rect is zeros, every clientWidth 0), so stub both and dispatch
 // the scroll event the browser would fire.
-function stubPage(windowW: number): { scrollTo: (x: number) => void; restore: () => void } {
+function stubPage(
+  windowW: number,
+  hostW = 1200,
+): { scrollTo: (x: number) => void; restore: () => void } {
   const docEl = document.documentElement;
   const origW = Object.getOwnPropertyDescriptor(docEl, 'clientWidth');
   // getBoundingClientRect lives on Element, not HTMLElement.
@@ -68,7 +71,17 @@ function stubPage(windowW: number): { scrollTo: (x: number) => void; restore: ()
   Object.defineProperty(docEl, 'clientWidth', { configurable: true, get: () => windowW });
   Object.defineProperty(Element.prototype, 'getBoundingClientRect', {
     configurable: true,
-    value: () => ({ left: -x, top: HOST_TOP, right: 0, bottom: 0, width: 0, height: 0 }),
+    // A full, self-consistent box: the dock reads the host's live RIGHT edge,
+    // and only falls back to React's copy of the width when there's no laid-out
+    // box at all (width 0 — the unstubbed jsdom rect every other test gets).
+    value: () => ({
+      left: -x,
+      right: -x + hostW,
+      width: hostW,
+      top: HOST_TOP,
+      bottom: 0,
+      height: 0,
+    }),
   });
   return {
     scrollTo: (to: number) => {

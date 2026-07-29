@@ -1,4 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
+import { useSelection } from '../../state/store';
+import { SIDEBAR_WIDTH, sidebarVisible } from '../Sidebar';
 import { useDock } from './useDock';
 
 export interface PinnedPopover {
@@ -51,7 +53,12 @@ const EDGE_PAD = 8;
 export function usePinnedPopover(hostW: number): PinnedPopover {
   const shellRef = useRef<HTMLDivElement | null>(null);
   const [shellW, setShellW] = useState(NOMINAL_W);
-  const dock = useDock(shellRef, hostW);
+  // The strip goes to the dock SEPARATELY from `hostW` (which already has it
+  // subtracted): the dock prefers the host's live right edge, and has to know
+  // what to take off it. Same `sidebarVisible` ItemPopovers reads to compute
+  // `hostW`, so the two can't disagree.
+  const strip = useSelection(sidebarVisible) ? SIDEBAR_WIDTH : 0;
+  const dock = useDock(shellRef, { strip, fallbackW: hostW });
   // Deliberately dep-less: it must also catch the commit where a HIDDEN panel
   // is revealed (offsetWidth was 0 while display:none, and the panel keeps its
   // DOM node across the excursion). The `w !== shellW` guard is what stops the

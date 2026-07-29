@@ -140,7 +140,15 @@ describe('WarningToasts on a window narrower than the app', () => {
     Object.defineProperty(docEl, 'clientWidth', { configurable: true, get: () => WINDOW_W });
     Object.defineProperty(Element.prototype, 'getBoundingClientRect', {
       configurable: true,
-      value: () => ({ left: -x, top: 0, right: 0, bottom: 0, width: 0, height: 0 }),
+      // Full, self-consistent box: the dock reads the host's live RIGHT edge.
+      value: () => ({
+        left: -x,
+        right: -x + HOST.w,
+        width: HOST.w,
+        top: 0,
+        bottom: 0,
+        height: 0,
+      }),
     });
     return {
       scrollTo: (to: number) => {

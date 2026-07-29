@@ -36,13 +36,14 @@ export function WarningToasts({
   const underSidebar = useSelection(sidebarVisible);
   const rootRef = useRef<HTMLDivElement | null>(null);
   // Same box the popover dock uses: the host minus the sidebar's strip.
-  const dock = useDock(rootRef, underSidebar ? hostSize.w - SIDEBAR_WIDTH : hostSize.w);
+  const strip = underSidebar ? SIDEBAR_WIDTH : 0;
+  const dock = useDock(rootRef, { strip, fallbackW: hostSize.w - strip });
   // How much of that strip is actually inside the window — the whole 320 when
   // the host's corner is on screen, tapering to nothing as the sidebar scrolls
   // out of view with it. Capped at the strip's own width, which is all there
   // ever is to clear: an unmeasured host (zero-size, before the ResizeObserver
   // reports) would otherwise read as "the entire window is past the dock".
-  const clearSidebar = Math.min(dock.insetRight, underSidebar ? SIDEBAR_WIDTH : 0);
+  const clearSidebar = Math.min(dock.insetRight, strip);
   const warnings = bands.filter((b) => b.warning);
   if (warnings.length === 0) return null;
   return (

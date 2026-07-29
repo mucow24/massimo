@@ -11,7 +11,16 @@ export interface Dock {
   insetRight: number;
 }
 
-function readDock(el: HTMLElement | null, hostW: number): Dock {
+export interface DockInto {
+  /** Width of the strip the open sidebar overlays at the host's right edge; 0
+   *  while it's hidden or has ceded the corner. */
+  strip: number;
+  /** React's copy of the host width, already minus `strip` — the stand-in for
+   *  when there is no laid-out host box to measure. */
+  fallbackW: number;
+}
+
+function readDock(el: HTMLElement | null, into: DockInto): Dock {
   // The caller's element is a direct child of `.canvas-host`, so its parent IS
   // the host. (`offsetParent`, the usual way to name the box an offset is
   // measured from, is null for the fixed-position boxes this feeds.) Before it
@@ -24,11 +33,20 @@ function readDock(el: HTMLElement | null, hostW: number): Dock {
   // vertically by its height. jsdom has no layout and reports 0 for every
   // clientWidth; the innerWidth it does report stands in there.
   const windowW = document.documentElement.clientWidth || window.innerWidth;
+  // The host's LIVE right edge, not `fallbackW`. The two agree whenever React's
+  // copy of the host width is current — but a viewport resize can leave that
+  // copy a commit behind, and then the dock clears where the sidebar USED to
+  // be: measured, a panel a second after the window narrowed still docked to
+  // the pre-resize edge and sat under the sidebar. A rect is never stale. The
+  // copy only stands in where there's no laid-out box to read at all — jsdom,
+  // and the frame before the host is first measured.
+  const dockable =
+    host && host.width > 0 ? host.right - into.strip : (host?.left ?? 0) + into.fallbackW;
   // Both derived values are folded in HERE rather than left to the caller, so
   // that they STOP CHANGING once the window's edge is the nearer one: the
   // bailout below then swallows every scroll event in that regime and nothing
   // re-renders or repositions. `position: fixed` is what holds the box there.
-  const right = Math.min((host?.left ?? 0) + hostW, windowW);
+  const right = Math.min(dockable, windowW);
   return { right, top: host?.top ?? 0, insetRight: windowW - right };
 }
 
@@ -37,9 +55,9 @@ function readDock(el: HTMLElement | null, hostW: number): Dock {
  * measurement behind every piece of chrome pinned to a corner of the canvas
  * (the item popovers via `usePinnedPopover`, the routing-warning toasts).
  *
- * `ref` is any element rendered directly into `.canvas-host`; `hostW` is the
- * width to dock into, which is the host MINUS the open sidebar's strip (the
- * sidebar overlays — and paints above — the host's right edge).
+ * `ref` is any element rendered directly into `.canvas-host`; `into` describes
+ * the box to dock into — the host MINUS the open sidebar's strip, since the
+ * sidebar overlays (and paints above) the host's right edge.
  *
  * Why this exists at all: the app grid is floored at the toolbar's natural
  * width (`.toolbar { min-width: max-content }`), so a narrower window leaves
@@ -49,19 +67,19 @@ function readDock(el: HTMLElement | null, hostW: number): Dock {
  * be `position: fixed`, so the browser holds it against the window instead of
  * a scroll listener dragging it back a frame late.
  */
-export function useDock(ref: React.MutableRefObject<HTMLElement | null>, hostW: number): Dock {
-  const [dock, setDock] = useState<Dock>(() => readDock(null, hostW));
+export function useDock(ref: React.MutableRefObject<HTMLElement | null>, into: DockInto): Dock {
+  const [dock, setDock] = useState<Dock>(() => readDock(null, into));
   const measureRef = useRef<() => void>(() => {});
 
   // Deliberately dep-less: the measurement must re-run on EVERY commit, not
-  // just when `hostW` changes. The element it measures from may have only just
+  // just when `into` changes. The element it measures from may have only just
   // appeared (WarningToasts renders null until the router flags a band, keeping
-  // this hook alive with a null ref), and a `hostW`-keyed effect would never
-  // hear about it. The value-equal bailout is what stops the setState looping.
+  // this hook alive with a null ref), and a keyed effect would never hear
+  // about it. The value-equal bailout is what stops the setState looping.
   useLayoutEffect(() => {
     const measure = () =>
       setDock((prev) => {
-        const next = readDock(ref.current, hostW);
+        const next = readDock(ref.current, into);
         // insetRight too, not just right: a resize while the HOST's edge is the
         // dock moves the window's edge without moving `right`, and a
         // right-anchored consumer reads only the inset.

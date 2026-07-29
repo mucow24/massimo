@@ -109,13 +109,20 @@ test.describe('canvas popovers dock to the top-right corner', () => {
     // At the end of the travel the sidebar's edge has come into view and is the
     // nearer obstacle: the panel settles into its home dock and stops.
     await page.evaluate((x) => window.scrollTo(x, 0), m.maxScroll);
+    // Reported as an object, not a bare gap: when this fails the message names
+    // where each edge actually landed, which is the difference between "the
+    // dock is off by the sidebar's width" and "it never moved at all".
     await expect
       .poll(async () => {
         const sidebar = await boxOf(page, '.sidebar');
         const end = await boxOf(page, '.bullet-popover');
-        return Math.round(sidebar.x - (end.x + end.width));
+        return {
+          gap: Math.round(sidebar.x - (end.x + end.width)),
+          sidebarLeft: Math.round(sidebar.x),
+          panelRight: Math.round(end.x + end.width),
+        };
       })
-      .toBe(8);
+      .toMatchObject({ gap: 8 });
   });
 
   // The panel is pinned to the window, so one taller than it runs off the
