@@ -131,6 +131,176 @@ export interface StopMarkerSpec {
   end: LineEndStyle;
 }
 
+// ————— Identity-stable spec reuse ————————————————————————————————————————
+//
+// Both builders mint fresh spec objects on every call. Downstream, everything
+// keys on spec IDENTITY — the SegmentBand/StopMarker React memos, lineRegions'
+// per-spec stripe-path cache, regionIncremental's unit hashing — so fresh
+// objects per frame defeat all of it: moving one station re-renders every
+// band and marker on the map. The fix is the stopMetrics last-build bargain
+// (src/model/stopMetrics.ts): after the full exact rebuild, each fresh spec is
+// swapped for the PREVIOUS build's object when — and only when — every
+// consumed field is value-identical. Value-identical immutable specs are
+// indistinguishable to consumers, so emitting `prev` changes nothing but
+// identity, which becomes a truthful "this geometry did not change" signal.
+//
+// The classification tables below must list EVERY field of their spec — the
+// `satisfies` clause fails to compile when a field is added to the interface
+// but not classified here, forcing the author to decide how reuse treats it
+// (and, per the interface doc comments above, whether regionIncremental's
+// hashUnits needs it too). A field that is read anywhere but missing from the
+// equality would ship a STALE spec under a fresh-looking identity — so
+// 'compared' is the only safe default for a new field.
+type SpecFieldPolicy = 'compared' | 'derived' | 'excluded';
+
+export const BAND_SPEC_FIELDS = {
+  bandKey: 'compared',
+  pairKey: 'compared',
+  fromId: 'compared',
+  toId: 'compared',
+  // Element-wise by id, ORDER INCLUDED — see bandSpecEqual for why.
+  lines: 'compared',
+  warning: 'compared',
+  // Exact float compare, never quantized (unlike hashUnits' deliberate
+  // clipper-matched rounding): reuse must not conflate inputs the renderer
+  // distinguishes.
+  centerline: 'compared',
+  radius: 'compared',
+  stripeOffsets: 'compared',
+  stripeWidths: 'compared',
+  // paths[k] = offsetFilletPath(centerline, radius, stripeOffsets[k]) — a
+  // pure function of three compared fields, so equal inputs imply equal
+  // strings. Comparing the ~KB path text would re-pay much of the build cost;
+  // determinism is pinned by interlining.reuse.test.ts instead.
+  paths: 'derived',
+  // Always [] on pristine builder output; stamped only onto CLONES
+  // (withLinePriorities / buildBands), never onto the cached objects.
+  linePriorities: 'excluded',
+} as const satisfies Record<keyof SegmentBandSpec, SpecFieldPolicy>;
+
+// Markers are NOT presentation-free (color and priority are baked at build),
+// so every field is compared — a color edit or layer reorder correctly mints
+// fresh markers.
+export const MARKER_SPEC_FIELDS = {
+  cx: 'compared',
+  cy: 'compared',
+  color: 'compared',
+  lineId: 'compared',
+  stationId: 'compared',
+  rotationDeg: 'compared',
+  priority: 'compared',
+  style: 'compared',
+  outward: 'compared',
+  width: 'compared',
+  end: 'compared',
+} as const satisfies Record<keyof StopMarkerSpec, SpecFieldPolicy>;
+
+function sameNumbers(a: readonly number[], b: readonly number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+// Value equality over BAND_SPEC_FIELDS' 'compared' set — one clause per
+// field, in table order. NaN compares unequal and falls through to a fresh
+// spec: the safe direction.
+function bandSpecEqual(a: SegmentBandSpec, b: SegmentBandSpec): boolean {
+  if (
+    a.bandKey !== b.bandKey ||
+    a.pairKey !== b.pairKey ||
+    a.fromId !== b.fromId ||
+    a.toId !== b.toId ||
+    a.warning !== b.warning ||
+    a.radius !== b.radius
+  ) {
+    return false;
+  }
+  // Slot ORDER matters: bandKey is built from the SORTED ids, so two lines
+  // swapping stripe slots leave bandKey identical while inverting every
+  // stripe's cover — the same trap regionIncremental's hashUnits mixes the
+  // slot line-id for.
+  if (a.lines.length !== b.lines.length) return false;
+  for (let i = 0; i < a.lines.length; i++) if (a.lines[i].id !== b.lines[i].id) return false;
+  if (a.centerline.length !== b.centerline.length) return false;
+  for (let i = 0; i < a.centerline.length; i++) {
+    if (a.centerline[i].x !== b.centerline[i].x || a.centerline[i].y !== b.centerline[i].y) {
+      return false;
+    }
+  }
+  return (
+    sameNumbers(a.stripeOffsets, b.stripeOffsets) && sameNumbers(a.stripeWidths, b.stripeWidths)
+  );
+}
+
+// Value equality over MARKER_SPEC_FIELDS — every field, in table order.
+function markerSpecEqual(a: StopMarkerSpec, b: StopMarkerSpec): boolean {
+  return (
+    a.cx === b.cx &&
+    a.cy === b.cy &&
+    a.color === b.color &&
+    a.lineId === b.lineId &&
+    a.stationId === b.stationId &&
+    a.rotationDeg === b.rotationDeg &&
+    a.priority === b.priority &&
+    a.style === b.style &&
+    (a.outward === b.outward ||
+      (a.outward !== null &&
+        b.outward !== null &&
+        a.outward.x === b.outward.x &&
+        a.outward.y === b.outward.y)) &&
+    a.width === b.width &&
+    a.end === b.end
+  );
+}
+
+// One slot per builder, replaced wholesale on every call (the stopMetrics
+// single-slot shape): every canvas consumer builds from the same doc, so they
+// miss and hit together. Interleaved consumers building a DIFFERENT doc
+// (append-mode route previews; the commit reconcile's fallback marker build
+// with an empty lineOrder) repopulate the slot and cost the next same-doc
+// build one all-miss pass — a per-gesture blip, never a per-frame one, and
+// never a correctness issue: reuse only ever fires on full value equality.
+//
+// Keys are proven-unique identities: bandKey uniqueness is documented on the
+// spec; the marker key is the same `${lineId}#${stationId}` identity
+// regionIncremental's hashUnits already uses.
+let lastBandSpecs: Map<string, SegmentBandSpec> | null = null;
+let lastMarkerSpecs: Map<string, StopMarkerSpec> | null = null;
+
+function reuseBandSpecs(fresh: SegmentBandSpec[]): SegmentBandSpec[] {
+  const prev = lastBandSpecs;
+  const next = new Map<string, SegmentBandSpec>();
+  const out = fresh.map((spec) => {
+    const old = prev?.get(spec.bandKey);
+    const emit = old && bandSpecEqual(old, spec) ? old : spec;
+    next.set(emit.bandKey, emit);
+    return emit;
+  });
+  lastBandSpecs = next;
+  return out;
+}
+
+function reuseMarkerSpecs(fresh: StopMarkerSpec[]): StopMarkerSpec[] {
+  const prev = lastMarkerSpecs;
+  const next = new Map<string, StopMarkerSpec>();
+  const out = fresh.map((spec) => {
+    const key = `${spec.lineId}#${spec.stationId}`;
+    const old = prev?.get(key);
+    const emit = old && markerSpecEqual(old, spec) ? old : spec;
+    next.set(key, emit);
+    return emit;
+  });
+  lastMarkerSpecs = next;
+  return out;
+}
+
+/** Test seam: forget the last build so a suite can pin cache-free output. */
+export function __resetSpecReuse(): void {
+  lastBandSpecs = null;
+  lastMarkerSpecs = null;
+  stampedBandClones = new WeakMap();
+}
+
 interface SegInfo {
   // Canonical (alphabetic): fromId < toId always. Both fromCell and toCell are
   // this line's stops at canonFrom and canonTo. So segs from different lines
@@ -198,7 +368,10 @@ export function buildBands(
   lines: Record<LineId, Line>,
   lineOrder: LineId[] = [],
 ): SegmentBandSpec[] {
-  const bands = buildBandGeometry(stations, lines);
+  // Clone before stamping: buildBandGeometry's output objects are shared with
+  // the reuse slot (and through it with every other caller across frames), so
+  // an in-place stamp here would leak priorities onto cached pristine specs.
+  const bands = buildBandGeometry(stations, lines).map((b) => ({ ...b }));
   assignLinePriorities(bands, lines, lineOrder);
   return bands;
 }
@@ -386,7 +559,11 @@ export function buildBandGeometry(
     }
   }
 
-  return bands;
+  // Swap value-identical specs for the previous build's objects so identity
+  // survives a rebuild wherever geometry didn't change (see the reuse layer
+  // above). The array itself is fresh every call — only per-spec identity is
+  // stabilized, which is what the downstream memos and caches key on.
+  return reuseBandSpecs(bands);
 }
 
 /**
@@ -414,6 +591,40 @@ export function assignLinePriorities(
   for (const band of bands) {
     band.linePriorities = band.lines.map((l) => lineIndex[l.id] ?? fallback);
   }
+}
+
+// pristine spec → its most recent priority-stamped clone. Keying on
+// pristine-spec identity is sound because that identity implies value-identity
+// of every geometry field (the reuse layer's contract), and the one divergent
+// field, linePriorities, is compared explicitly before a clone is reused.
+// Cache-owned clones are handed to consumers across frames — they must never
+// be mutated (the same discipline the reuse slots impose on pristine specs).
+let stampedBandClones = new WeakMap<SegmentBandSpec, SegmentBandSpec>();
+
+/**
+ * {@link assignLinePriorities} semantics without the in-place mutation:
+ * returns priority-stamped CLONES, leaving the pristine input specs untouched
+ * (the reuse layer's cached objects must never carry priorities). The clones
+ * are identity-stable: a pristine spec kept by the reuse layer hands back the
+ * SAME stamped clone while its priorities hold, so per-spec identity survives
+ * the stamp — which is what lets SegmentBand's memo bail out for clean
+ * corridors mid-drag.
+ */
+export function withLinePriorities(
+  bands: SegmentBandSpec[],
+  lines: Record<LineId, Line>,
+  lineOrder: LineId[],
+): SegmentBandSpec[] {
+  const lineIndex = buildLineIndex(lineOrder, lines);
+  const fallback = Object.keys(lineIndex).length;
+  return bands.map((b) => {
+    const want = b.lines.map((l) => lineIndex[l.id] ?? fallback);
+    const prev = stampedBandClones.get(b);
+    if (prev && sameNumbers(prev.linePriorities, want)) return prev;
+    const clone = { ...b, linePriorities: want };
+    stampedBandClones.set(b, clone);
+    return clone;
+  });
 }
 
 // Casing paints just BEHIND its own body: a stripe emits a `casing` renderable
@@ -549,7 +760,9 @@ export function buildStopMarkers(
       });
     }
   }
-  return markers;
+  // As with bands: value-identical markers keep the previous build's
+  // identity (see the reuse layer above).
+  return reuseMarkerSpecs(markers);
 }
 
 // Unit vector pointing outward from `stationId` along the band's actual

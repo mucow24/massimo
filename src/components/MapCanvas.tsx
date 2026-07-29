@@ -8,11 +8,11 @@ import { useViewportStore } from '../state/viewportStore';
 import { useThemeColors } from '../state/theme';
 import type { SnapGuide } from '../geometry/snap';
 import {
-  assignLinePriorities,
   buildBandGeometry,
   buildOrderedRenderables,
   buildStopMarkers,
   stopPosWorld,
+  withLinePriorities,
   SegmentBandSpec,
 } from '../geometry/interlining';
 import { edgeEndpoints } from '../model/lineTopology';
@@ -308,19 +308,19 @@ export function MapCanvas() {
   );
 
   const bands = useMemo(() => {
-    // assignLinePriorities mutates in place; clone so memoized priorities
-    // don't leak between the two memo levels (matters once a future caller
-    // wants the geometry array without priorities — for layering-mode
-    // outlines we pass `bandsGeometry` directly). The spec is presentation-
-    // free, so color/style aren't carried here — stripe consumers resolve
-    // them live from `lines`, which is why a color/style edit repaints
-    // without the (intentionally presentation-blind) geometry memo
-    // rebuilding. Per-stripe widths/offsets ARE on the spec — width is
-    // geometry (it shapes `paths`), so width edits flow through the
-    // geometry rebuild instead.
-    const out = bandsGeometry.map((b) => ({ ...b }));
-    assignLinePriorities(out, lines, lineOrder);
-    return out;
+    // Priorities go on CLONES (withLinePriorities), never on bandsGeometry's
+    // own objects: the interlining reuse layer shares those pristine specs
+    // across frames and callers (this is also why layering-mode outlines can
+    // take `bandsGeometry` directly, without priorities). The clone cache
+    // inside withLinePriorities keeps per-spec identity stable across drag
+    // frames, so SegmentBand's memo bails out for corridors the drag didn't
+    // touch. The spec is presentation-free, so color/style aren't carried
+    // here — stripe consumers resolve them live from `lines`, which is why a
+    // color/style edit repaints without the (intentionally presentation-
+    // blind) geometry memo rebuilding. Per-stripe widths/offsets ARE on the
+    // spec — width is geometry (it shapes `paths`), so width edits flow
+    // through the geometry rebuild instead.
+    return withLinePriorities(bandsGeometry, lines, lineOrder);
   }, [bandsGeometry, lines, lineOrder]);
 
   // When mirror-matching mode is on for the selected station, highlight the

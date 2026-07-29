@@ -211,9 +211,11 @@ export function buildLineBodies(
 }
 
 // ---------------------------------------------------------------------------
-// Stripe-path sampling (flattened once per band spec, WeakMap-cached — band
-// specs are rebuilt objects whenever geometry changes, so the cache can never
-// serve stale paths).
+// Stripe-path sampling (flattened once per band spec, WeakMap-cached). The
+// safety argument is owned by interlining's spec-reuse layer: a spec object
+// is reused across frames ONLY when value-identical, so spec identity still
+// implies current geometry and the cache can never serve stale paths — and
+// reuse now means these flattenings survive a drag for untouched corridors.
 
 interface StripePath {
   pts: Vec2[];
