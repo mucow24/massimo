@@ -4,7 +4,7 @@ import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
 import type { StationId } from '../../model/types';
 import { Rotation } from '../../geometry/orientation';
-import { snapDraggedStation, SnapGuide, SNAP_PERP_TOLERANCE } from '../../geometry/snap';
+import { snapDraggedStation, SnapGuide, snapToleranceAt } from '../../geometry/snap';
 import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
 import {
   collectGroupSiblings,
@@ -132,10 +132,7 @@ export function useStationDrag(
         draggedStops,
         stations,
         lines,
-        // Constant screen-pixel engage radius: dividing by zoom shrinks the
-        // world-space tolerance as you zoom in, mirroring the screen-space drag
-        // threshold. Grid snap (a hard constraint) is unaffected.
-        tolerance: SNAP_PERP_TOLERANCE / viewportZoom,
+        tolerance: snapToleranceAt(viewportZoom),
         // Ctrl-drag: snap exclusively to the anchor (the originally selected
         // station). Intermediates are moving with the redistribute.
         redistributeAnchor: redistributeAnchor ?? undefined,

@@ -14,8 +14,15 @@ import type { StopMetricsFn } from '../geometry/labelLayout';
  * stations are read here so no caller has to know they are part of the answer
  * (stations resolve `continues` — the terminus-aware beside-slant gate).
  *
- * Memoized on the store slices: `stopMetricsOf` indexes every transfer once
- * when it's built, and these components render per station.
+ * The `useMemo` is only the per-component half. This hook runs once per STATION
+ * component (label, hit rect, drag proxy, silhouette), so a per-instance memo
+ * still rebuilds a map's worth of them on every station write — and
+ * `stopMetricsOf` indexes every transfer eagerly as it is built, making that
+ * O(stations × transfers) on each frame of a label fine-drag, which the memo
+ * contract (ARCHITECTURE: "Memo contract") exists to keep cheap. The build is
+ * shared across instances by `stopMetricsOf`'s own last-result cache; the
+ * `useMemo` stays as the local fast path, so a re-render for any other reason
+ * doesn't even reach that comparison.
  */
 export function useStopMetrics(lines: Record<string, Line>): StopMetricsFn {
   const transfers = useDoc((s) => s.transfers);

@@ -11,6 +11,7 @@ import { incidentEdges } from '../model/lineTopology';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
 import { itemCursor } from './canvas/itemCursor';
 import { screenToWorld } from './canvas/viewportMath';
+import { getCanvasSvg } from '../export/exportCanvas';
 import { appendStationCursor, decideStationClick, nextSegmentStyle } from '../model/appendGestures';
 
 // Map a click on a station to the closest dot's lineId. Used to pin a
@@ -18,7 +19,12 @@ import { appendStationCursor, decideStationClick, nextSegmentStyle } from '../mo
 // the station's anchor center.
 function closestStopLineId(station: Station, e: React.MouseEvent): LineId | null {
   if (station.stops.length === 0) return null;
-  const svg = document.querySelector('.canvas-host svg') as SVGSVGElement | null;
+  // getCanvasSvg, not a hand-rolled selector: the item popovers live inside
+  // .canvas-host too and carry their own little icon <svg>s, so "the first svg
+  // under the host" names the map surface only by DOM luck. One owner also
+  // keeps this on the right element as the shell changes — the pan layer moved
+  // the map svg a level deeper (see useViewport).
+  const svg = getCanvasSvg();
   if (!svg) return station.stops[0].lineId;
   const rect = svg.getBoundingClientRect();
   const vb = svg.viewBox.baseVal;
