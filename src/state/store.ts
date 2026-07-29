@@ -1419,8 +1419,16 @@ function applyRegionReconcile<T extends MapDoc>(prev: GeometrySlice, next: T): T
   if (prev.stations === next.stations && prev.lines === next.lines) {
     return next;
   }
-  const oldGeom: GeometrySlice = { stations: prev.stations, lines: prev.lines };
-  const newGeom: GeometrySlice = { stations: next.stations, lines: next.lines };
+  const oldGeom: GeometrySlice = {
+    stations: prev.stations,
+    lines: prev.lines,
+    lineCircles: prev.lineCircles,
+  };
+  const newGeom: GeometrySlice = {
+    stations: next.stations,
+    lines: next.lines,
+    lineCircles: next.lineCircles,
+  };
   if (regionGeometrySig(oldGeom) === regionGeometrySig(newGeom)) return next;
   const reconciled = reconcileRegionAssignments(oldGeom, newGeom, assignments, () =>
     ids.regionAssignmentId(),

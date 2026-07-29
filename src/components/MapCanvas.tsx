@@ -130,6 +130,7 @@ export function MapCanvas() {
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
   const lineOrder = useDoc((s) => s.lineOrder);
+  const lineCircles = useDoc((s) => s.lineCircles);
   const seamEdges = useDoc((s) => s.seamEdges);
   const addLineTag = useDoc((s) => s.addLineTag);
   const assignRegions = useDoc((s) => s.assignRegions);
@@ -296,16 +297,30 @@ export function MapCanvas() {
     const parts: string[] = [];
     for (const id of Object.keys(stations)) {
       const st = stations[id];
-      parts.push(id, String(st.x), String(st.y), String(st.rotation));
-      for (const c of st.stops) parts.push(c.lineId, String(c.row), String(c.col), c.orientation);
+      parts.push(id, String(st.x), String(st.y), String(st.rotation), st.circleId ?? '');
+      for (const c of st.stops)
+        parts.push(c.lineId, String(c.row), String(c.col), c.orientation, c.viaCircle ? '~' : '');
     }
     return parts.join('|');
   }, [stations]);
 
+  // Line circles are geometry too: a viaCircle edge's arc reads the bound
+  // circle's center + radius. (In practice every circle move/resize also moves
+  // its bound stations, which changes the stations sig — but the hash must not
+  // rely on that coupling, same rule as the interline gap above.)
+  const circlesGeometrySig = useMemo(() => {
+    const parts: string[] = [];
+    for (const id of Object.keys(lineCircles)) {
+      const c = lineCircles[id];
+      parts.push(id, String(c.x), String(c.y), String(c.radius));
+    }
+    return parts.join('|');
+  }, [lineCircles]);
+
   const bandsGeometry = useMemo(
-    () => buildBandGeometry(stations, lines),
+    () => buildBandGeometry(stations, lines, lineCircles),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stationsGeometrySig, linesGeometrySig],
+    [stationsGeometrySig, linesGeometrySig, circlesGeometrySig],
   );
 
   const bands = useMemo(() => {
@@ -378,12 +393,12 @@ export function MapCanvas() {
   // casing rails need no entries of their own — they paint inside their
   // body within SegmentBand/StopMarker.
   const stopMarkers = useMemo(
-    () => buildStopMarkers(stations, lines, lineOrder, bands),
+    () => buildStopMarkers(stations, lines, lineOrder, bands, lineCircles),
     // buildStopMarkers reads the same station fields the signature hashes,
     // so keying on it (not the stations reference) lets label/dot edits
     // skip the marker rebuild along with band routing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [bands, stationsGeometrySig, lines, lineOrder],
+    [bands, stationsGeometrySig, circlesGeometrySig, lines, lineOrder],
   );
   const renderables = useMemo(
     () => buildOrderedRenderables(bands, stopMarkers),
@@ -418,7 +433,7 @@ export function MapCanvas() {
     () =>
       needRegions
         ? regionsFor(
-            { stations, lines },
+            { stations, lines, lineCircles },
             { bands: bandsGeometry, markers: stopMarkers },
             // Mid-gesture frames are never revisited, so the sig string and
             // LRU bookkeeping are pure waste there — and skipping the inserts
@@ -427,7 +442,7 @@ export function MapCanvas() {
             { transient: isHistoryGrouping() },
           )
         : null,
-    [needRegions, stations, lines, bandsGeometry, stopMarkers],
+    [needRegions, stations, lines, lineCircles, bandsGeometry, stopMarkers],
   );
   const regionWinners = useMemo(
     () =>
@@ -1681,6 +1696,7 @@ export function MapCanvas() {
                 highlightLineId={highlightLineId}
                 lines={lines}
                 stations={stations}
+                lineCircles={lineCircles}
                 renderables={renderables}
                 underlayColor={underlayColor}
                 seamEdges={seamEdges}
