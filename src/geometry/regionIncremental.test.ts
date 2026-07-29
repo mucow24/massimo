@@ -3,6 +3,7 @@ import { buildOverlapRegions, ringsBbox, type RegionFace, type RegionSliver } fr
 import {
   buildRegionsIncremental,
   compCacheKey,
+  hashUnits,
   type RegionIncrementalResult,
   type RegionIncrementalState,
 } from './regionIncremental';
@@ -344,6 +345,27 @@ describe('buildRegionsIncremental', () => {
   // an untouched component. This is the invariant that lets reuse carry spans
   // verbatim with no refresh pass; if spans were ever measured per-line-global,
   // this fixture would catch the stale arc lengths.
+  // With interlining's reuse layer handing back the SAME spec object for an
+  // untouched corridor, re-hashing its units every frame is pure waste — and
+  // spec identity implies value identity (the reuse layer's contract), so a
+  // per-spec memo is exact. Reference-equal unit objects are the observable.
+  it('reuses unit hashes for spec objects carried across calls', () => {
+    const bands = grid();
+    const first = hashUnits(bands, []);
+    const second = hashUnits(bands, []);
+    for (const [key, unit] of first.units) {
+      expect(second.units.get(key)).toBe(unit);
+    }
+    // A FRESH spec object with identical content recomputes (the memo keys
+    // on identity, not content) — and must land on the identical hash, or
+    // the memo would be observable.
+    const rebuilt = hashUnits(grid(), []);
+    for (const [key, unit] of first.units) {
+      expect(rebuilt.units.get(key)).not.toBe(unit);
+      expect(rebuilt.units.get(key)!.hash).toBe(unit.hash);
+    }
+  });
+
   it('carries spans verbatim when a cover line changes only in a distant band', () => {
     const near = (): SegmentBandSpec =>
       makeBandSpec(['hA'], {

@@ -143,6 +143,16 @@ const growBox = (b: Box, pad: number): Box => ({
   y1: b.y1 + pad,
 });
 
+/** One band's / marker's finished unit entries, memoized per SPEC OBJECT —
+ *  interlining's reuse layer hands back the same object only when every
+ *  compared field is value-identical, so identity implies identical hashes
+ *  and boxes, and an untouched corridor never re-hashes. */
+const bandUnitsCache = new WeakMap<
+  SegmentBandSpec,
+  { key: string; lineId: LineId; unit: GeomUnit }[]
+>();
+const markerUnitCache = new WeakMap<StopMarkerSpec, { key: string; lineId: LineId; unit: GeomUnit }>();
+
 /**
  * Every independently-movable piece of body geometry — one entry per band
  * stripe and per stop marker — with a content hash and a CONSERVATIVE bounding
@@ -162,6 +172,15 @@ export function hashUnits(
   const lineOf = new Map<string, LineId>();
 
   for (const band of bands) {
+    const cached = bandUnitsCache.get(band);
+    if (cached) {
+      for (const e of cached) {
+        units.set(e.key, e.unit);
+        lineOf.set(e.key, e.lineId);
+      }
+      continue;
+    }
+    const entries: { key: string; lineId: LineId; unit: GeomUnit }[] = [];
     let cx0 = Infinity;
     let cy0 = Infinity;
     let cx1 = -Infinity;
@@ -192,15 +211,24 @@ export function hashUnits(
       // offset (corner fillets cut INWARD, so the radius adds nothing), and the
       // stroke adds half a width. +1 of slack covers flattening chord error.
       const pad = Math.abs(band.stripeOffsets[k]) + band.stripeWidths[k] / 2 + 1;
-      units.set(key, {
+      const unit: GeomUnit = {
         hash: h,
         box: growBox({ x0: cx0, y0: cy0, x1: cx1, y1: cy1 }, pad),
-      });
+      };
+      units.set(key, unit);
       lineOf.set(key, band.lines[k].id);
+      entries.push({ key, lineId: band.lines[k].id, unit });
     }
+    bandUnitsCache.set(band, entries);
   }
 
   for (const m of markers) {
+    const cached = markerUnitCache.get(m);
+    if (cached) {
+      units.set(cached.key, cached.unit);
+      lineOf.set(cached.key, cached.lineId);
+      continue;
+    }
     const key = `m:${m.lineId}#${m.stationId}`;
     let h = mixNum(FNV_OFFSET, m.cx);
     h = mixNum(h, m.cy);
@@ -215,11 +243,13 @@ export function hashUnits(
     h = mixString(h, m.end);
     h = m.outward ? mixNum(mixNum(mix(h, 1), m.outward.x), m.outward.y) : mix(h, 0);
     const pad = m.width; // > half-diagonal (w·0.707) for any rotation
-    units.set(key, {
+    const unit: GeomUnit = {
       hash: h,
       box: { x0: m.cx - pad, y0: m.cy - pad, x1: m.cx + pad, y1: m.cy + pad },
-    });
+    };
+    units.set(key, unit);
     lineOf.set(key, m.lineId);
+    markerUnitCache.set(m, { key, lineId: m.lineId, unit });
   }
   return { units, lineOf };
 }

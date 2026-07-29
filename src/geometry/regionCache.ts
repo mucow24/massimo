@@ -114,15 +114,31 @@ export interface PrebuiltGeometry {
  * (small: render + reconcile old/new). Without `prebuilt`, markers are built
  * with an empty lineOrder — their priority field is irrelevant to region
  * geometry.
+ *
+ * `transient` marks a mid-gesture frame: the sig string (a walk over every
+ * station and line) and the LRU probe/insert are skipped — a drag never
+ * revisits an intermediate geometry, so the entry could never hit, and
+ * SKIPPING the insert preserves the pre-gesture entry for the commit
+ * reconcile's old-geometry lookup instead of evicting it within
+ * CACHE_LIMIT frames. The incremental state still advances, so the next
+ * frame (transient or not) reuses everything this one built.
  */
-export function regionsFor(g: GeometrySlice, prebuilt?: PrebuiltGeometry): RegionGeometry {
-  const sig = regionGeometrySig(g);
-  const hit = cache.get(sig);
-  if (hit) {
-    // Refresh recency.
-    cache.delete(sig);
-    cache.set(sig, hit);
-    return hit;
+export function regionsFor(
+  g: GeometrySlice,
+  prebuilt?: PrebuiltGeometry,
+  opts?: { transient?: boolean },
+): RegionGeometry {
+  const transient = opts?.transient ?? false;
+  let sig: string | null = null;
+  if (!transient) {
+    sig = regionGeometrySig(g);
+    const hit = cache.get(sig);
+    if (hit) {
+      // Refresh recency.
+      cache.delete(sig);
+      cache.set(sig, hit);
+      return hit;
+    }
   }
   const bands = prebuilt?.bands ?? buildBandGeometry(g.stations, g.lines);
   const markers = prebuilt?.markers ?? buildStopMarkers(g.stations, g.lines, [], bands);
@@ -141,10 +157,12 @@ export function regionsFor(g: GeometrySlice, prebuilt?: PrebuiltGeometry): Regio
     slivers: built.slivers,
     holeChain: { state: built.state, prevState: seed, dirtyBoxes: built.dirtyBoxes },
   };
-  cache.set(sig, entry);
-  if (cache.size > CACHE_LIMIT) {
-    const oldest = cache.keys().next().value;
-    if (oldest !== undefined) cache.delete(oldest);
+  if (sig !== null) {
+    cache.set(sig, entry);
+    if (cache.size > CACHE_LIMIT) {
+      const oldest = cache.keys().next().value;
+      if (oldest !== undefined) cache.delete(oldest);
+    }
   }
   return entry;
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { cancelAppendMode, dragState, useDoc, useSelection } from '../state/store';
+import { isHistoryGrouping } from '../state/history';
 import { hoveredChrome, type HoverKind } from '../state/selection';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useFontEpochValue } from '../state/fontEpoch';
@@ -27,7 +28,7 @@ import { BandWarning, SegmentBand } from './SegmentBand';
 import { RegionExcludeClips, regionExcludeClipId } from './canvas/RegionExcludeClips';
 import { regionsFor } from '../geometry/regionCache';
 import {
-  buildExclusionHoles,
+  buildExclusionHolesCached,
   regionClipBounds,
   regionPaintPlan,
   resolveRegionWinners,
@@ -416,7 +417,15 @@ export function MapCanvas() {
   const regionGeom = useMemo(
     () =>
       needRegions
-        ? regionsFor({ stations, lines }, { bands: bandsGeometry, markers: stopMarkers })
+        ? regionsFor(
+            { stations, lines },
+            { bands: bandsGeometry, markers: stopMarkers },
+            // Mid-gesture frames are never revisited, so the sig string and
+            // LRU bookkeeping are pure waste there — and skipping the inserts
+            // PRESERVES the pre-gesture entry for the commit reconcile's
+            // old-geometry lookup instead of evicting it within four frames.
+            { transient: isHistoryGrouping() },
+          )
         : null,
     [needRegions, stations, lines, bandsGeometry, stopMarkers],
   );
@@ -430,7 +439,7 @@ export function MapCanvas() {
   const regionExcludeHoles = useMemo(
     () =>
       regionGeom && regionWinners
-        ? buildExclusionHoles(
+        ? buildExclusionHolesCached(
             regionGeom.faces,
             regionWinners,
             lineOrder,
@@ -441,6 +450,7 @@ export function MapCanvas() {
               return line ? lineStrokeRailWidth(lineStrokeWidthOf(line), lineWidthOf(line)) : 0;
             },
             regionGeom.slivers,
+            regionGeom.holeChain,
           )
         : null,
     [regionGeom, regionWinners, lineOrder, lines],
