@@ -443,8 +443,7 @@ function computeSpans(
         // exact — the jump rejoins the identical sample sequence.
         if (!maybeNear && runStart === null) {
           if (w >= wins.length) break; // nothing near for the rest of the arc
-          const target =
-            Math.floor((wins[w].d0 - WINDOW_EPS) / SPAN_STEP) * SPAN_STEP - SPAN_STEP;
+          const target = Math.floor((wins[w].d0 - WINDOW_EPS) / SPAN_STEP) * SPAN_STEP - SPAN_STEP;
           if (target > d) d = target;
         }
       }
@@ -1323,7 +1322,11 @@ function makeHoleContext(
     pad: number,
   ): number[] => {
     const seen = new Set<number>();
-    for (let gx = Math.floor((box.x0 - pad) / cell); gx <= Math.floor((box.x1 + pad) / cell); gx++) {
+    for (
+      let gx = Math.floor((box.x0 - pad) / cell);
+      gx <= Math.floor((box.x1 + pad) / cell);
+      gx++
+    ) {
       for (
         let gy = Math.floor((box.y0 - pad) / cell);
         gy <= Math.floor((box.y1 + pad) / cell);
