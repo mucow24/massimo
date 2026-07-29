@@ -7,6 +7,7 @@ import {
   type SegmentBandSpec,
 } from './interlining';
 import { offsetPathLength, sampleOffsetPath } from './lineTagGeometry';
+import * as T from '../model/transforms';
 import type { MapDoc, Rotation, Station } from '../model/types';
 
 const R = 70;
@@ -156,6 +157,29 @@ describe('viaCircle edges render as circular arcs', () => {
     __resetSpecReuse();
     const defaulted = buildBandGeometry(stations, doc.lines);
     expect(defaulted.map((b) => b.paths)).toEqual(explicit.map((b) => b.paths));
+  });
+});
+
+describe('the whole flow: bind, connect, arc', () => {
+  it('connecting two bound stations in Edit Stops yields the arc with no extra steps', () => {
+    // Raw stations near (not on) the rim, one line, one circle — then only
+    // public transforms: bind both, add the first to the line, connect.
+    let doc = makeDoc({
+      stations: [
+        makeStation({ id: 'a', x: 180, y: 110 }),
+        makeStation({ id: 'b', x: 90, y: 180 }),
+      ],
+      lines: [makeLine({ id: 'l1' })],
+      lineCircles: [makeLineCircle({ id: 'c1', x: CX, y: CY, radius: R })],
+    });
+    doc = T.bindStationToCircle(doc, 'a', 'c1');
+    doc = T.bindStationToCircle(doc, 'b', 'c1');
+    doc = T.addStationToLine(doc, 'l1', 'a');
+    doc = T.connectStationsOnLine(doc, 'l1', 'a', 'b');
+    const bands = buildBandGeometry(doc.stations, doc.lines, doc.lineCircles);
+    expect(bands).toHaveLength(1);
+    expect(bands[0].paths[0]).toContain('A ');
+    for (const d of bandArcSamples(bands[0], 0)) expect(d).toBeCloseTo(R, 3);
   });
 });
 

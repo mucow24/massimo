@@ -71,6 +71,7 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
       polygons: selection.selectedPolygonIds,
       svgImages: selection.selectedSvgImageIds,
       anchors: selection.selectedAnchorIds,
+      lineCircles: selection.selectedLineCircleIds,
     };
     if (itemIdCount(multiIds) >= 2 && selection.uiMode.kind === 'idle') {
       return <SelectionPopover ids={multiIds} hostW={hostW} />;

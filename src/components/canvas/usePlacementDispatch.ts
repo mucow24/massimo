@@ -17,6 +17,7 @@ import {
   type SnapModes,
 } from '../../geometry/snap';
 import { snapPolygonPoint } from '../../geometry/polygonSnap';
+import { lineCircleAtPoint, projectToCircle } from '../../geometry/lineCircle';
 import { polygonSnapAnchor } from '../../geometry/polygon';
 import type { Vec2 } from '../../geometry/vec';
 import type { LineId } from '../../model/types';
@@ -90,9 +91,20 @@ export function snapPlacement(
     return { x: snap.x - anchorOff.x, y: snap.y - anchorOff.y, guides: snap.guides };
   };
 
+  // Ring capture: a station placed (or alt-created in Edit Stops) within snap
+  // tolerance of a line circle's rim projects ONTO the rim — the drop then
+  // binds it (see bindDroppedStation). Runs before the engine so the ring, a
+  // hard constraint like the grid, wins over alignment candidates.
+  const viaCircleRim = (): PlacementSnap | null => {
+    const circle = lineCircleAtPoint(doc.lineCircles, world, tolerance);
+    if (!circle) return null;
+    const p = projectToCircle(circle, world);
+    return { x: p.x, y: p.y, guides: [] };
+  };
+
   switch (mode.kind) {
     case 'placing-station':
-      return viaEngine();
+      return viaCircleRim() ?? viaEngine();
     case 'creating-route-bullet': {
       // Same default-line pick as the drop below, so the snap matches the
       // bullet the click will actually create.
@@ -125,10 +137,26 @@ export function snapPlacement(
       return viaPoint({ x: -mode.image.width / 2, y: -mode.image.height / 2 });
     case 'appending-to-line':
       // Alt-click station creation snaps exactly like placing-station.
-      return viaEngine();
+      return viaCircleRim() ?? viaEngine();
+    case 'placing-line-circle':
+      // Snap the circle's CENTER like a bare point (unbound bullet / anchor).
+      return viaPoint({ x: 0, y: 0 });
     default:
       return raw;
   }
+}
+
+/**
+ * Bind a just-placed station onto the line circle whose rim it landed on, if
+ * any. The placement snap (`viaCircleRim`) already projected the drop point
+ * exactly onto the rim, so a tight tolerance is enough — this is drop-side
+ * recognition of that snap, not a second capture. One shared home for the
+ * placing-station drop and the Edit Stops create-click.
+ */
+function bindDroppedStation(stationId: string, w: { x: number; y: number }): void {
+  const doc = useDoc.getState();
+  const circle = lineCircleAtPoint(doc.lineCircles, w, 0.5);
+  if (circle) doc.bindStationToCircle(stationId, circle.id);
 }
 
 /** The create-* subset of AppendDecision: an Edit Stops action that mints a
@@ -173,6 +201,7 @@ export function usePlacementDispatch(view: ViewportApi): PlacementDispatch {
   const selectLabel = useSelection((s) => s.selectLabel);
   const selectPolygon = useSelection((s) => s.selectPolygon);
   const selectSvgImage = useSelection((s) => s.selectSvgImage);
+  const selectLineCircle = useSelection((s) => s.selectLineCircle);
   const addStation = useDoc((s) => s.addStation);
   const addStationToLine = useDoc((s) => s.addStationToLine);
   const connectStationsOnLine = useDoc((s) => s.connectStationsOnLine);
@@ -182,6 +211,7 @@ export function usePlacementDispatch(view: ViewportApi): PlacementDispatch {
   const addTextLabel = useDoc((s) => s.addTextLabel);
   const addPolygon = useDoc((s) => s.addPolygon);
   const addSvgImage = useDoc((s) => s.addSvgImage);
+  const addLineCircle = useDoc((s) => s.addLineCircle);
   const lineOrder = useDoc((s) => s.lineOrder);
   const lines = useDoc((s) => s.lines);
   const snapModes = useSnapPrefs((s) => s.modes);
@@ -216,6 +246,9 @@ export function usePlacementDispatch(view: ViewportApi): PlacementDispatch {
     // Grouped so one Ctrl+Z removes the station AND its wiring together.
     const group = beginHistoryGroup();
     const id = addStation(w.x, w.y);
+    // Bind BEFORE wiring: the stop the connect/splice spawns reads the
+    // station's binding for its viaCircle default.
+    bindDroppedStation(id, w);
     if (decision.kind === 'create-seed') {
       addStationToLine(lineId, id);
       setAppendCursor({ kind: 'station', stationId: id });
@@ -243,11 +276,26 @@ export function usePlacementDispatch(view: ViewportApi): PlacementDispatch {
       );
     if (mode.kind === 'placing-station') {
       const w = snappedWorld();
-      addStation(w.x, w.y, previewName ?? undefined);
+      // One undo entry for place + bind (a station dropped on a circle's rim
+      // binds to it — the snap already projected the point onto the rim).
+      const group = beginHistoryGroup();
+      const id = addStation(w.x, w.y, previewName ?? undefined);
+      bindDroppedStation(id, w);
+      group.commit();
       setPreviewName(randomStationName());
       // Stay in place-station mode; user clicks again or hits Esc / the
       // toolbar button to exit. Don't auto-select the new station — that
       // would close the placing-mode banner via the inspector swap.
+      return true;
+    }
+    if (mode.kind === 'placing-line-circle') {
+      // Single-shot like polygons: drop a default-radius circle, exit placing
+      // mode, and select it so the rim/knob handles appear for immediate
+      // manipulation.
+      const w = snappedWorld();
+      const id = addLineCircle(w.x, w.y);
+      setUiMode({ kind: 'idle' });
+      selectLineCircle(id);
       return true;
     }
     if (mode.kind === 'placing-anchor') {

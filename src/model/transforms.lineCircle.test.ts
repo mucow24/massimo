@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { makeDoc, makeLineCircle, makeStation, makeStop } from '../test/fixtures';
+import { makeDoc, makeLine, makeLineCircle, makeStation, makeStop } from '../test/fixtures';
 import {
   addLineCircle,
+  addStationToLine,
   bindStationToCircle,
   deleteLineCircle,
   moveLineCircle,
@@ -10,6 +11,7 @@ import {
   setLineCircleLocked,
   setLineCircleRadius,
   setStopViaCircle,
+  spawnStopCellAt,
   unbindStationFromCircle,
 } from './transforms';
 import { LINE_CIRCLE_RADIUS_DEFAULT, LINE_CIRCLE_RADIUS_MIN } from './lineCircle';
@@ -188,6 +190,47 @@ describe('setStopViaCircle', () => {
     const out = rotateStop(doc, 's1', 'l1');
     expect(out.stations.s1.stops[0].orientation).toBe('auto-ne-sw');
     expect('viaCircle' in out.stations.s1.stops[0]).toBe(false);
+  });
+});
+
+describe('stop spawn + line add on a bound station', () => {
+  it('a stop spawned on a bound station defaults to riding the circle', () => {
+    const doc = boundDoc();
+    const cell = spawnStopCellAt(doc.stations.s1, 'l2', {});
+    expect(cell.viaCircle).toBe(true);
+    const free = spawnStopCellAt(doc.stations.free, 'l2', {});
+    expect('viaCircle' in free).toBe(false);
+  });
+
+  it('addStationToLine keeps a bound station at its tangent rotation', () => {
+    // s1 sits at the circle's east point (tangent rotation 0); the line's only
+    // other member is far north-east, whose travel direction would autoOrient
+    // an unbound station to a diagonal. Bound stations skip that — the circle
+    // owns their rotation.
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', x: 170, y: 100, rotation: 0, circleId: 'c1' }),
+        makeStation({ id: 'n1', x: 400, y: -200, stops: [makeStop('l1')] }),
+      ],
+      lines: [makeLine({ id: 'l1', stations: ['n1'] })],
+      lineCircles: [CIRCLE],
+    });
+    const out = addStationToLine(doc, 'l1', 's1');
+    expect(out.stations.s1.rotation).toBe(0);
+    expect(out.stations.s1.stops[0].viaCircle).toBe(true);
+  });
+});
+
+describe('bindStationToCircle flags existing stops', () => {
+  it('sets viaCircle on every stop (the always-arc default; flip to opt out)', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', x: 300, y: 100, stops: [makeStop('l1'), makeStop('l2', { col: 1 })] }),
+      ],
+      lineCircles: [CIRCLE],
+    });
+    const out = bindStationToCircle(doc, 's1', 'c1');
+    expect(out.stations.s1.stops.every((c) => c.viaCircle === true)).toBe(true);
   });
 });
 

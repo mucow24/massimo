@@ -146,6 +146,7 @@ export function Toolbar() {
   const onAddLabel = () => toggleMode('placing-label');
   const onAddAnchor = () => toggleMode('placing-anchor');
   const onAddPolygon = () => toggleMode('creating-polygon');
+  const onAddLineCircle = () => toggleMode('placing-line-circle');
   const onAddLine = () => {
     // Exit any active Edit Stops FIRST: the placeholder GC (the mode-exit
     // subscription in store.ts) rolls lineCounter back, which is only sound
@@ -619,6 +620,7 @@ export function Toolbar() {
         <MenuItem onClick={onAddAnchor}>Transfer anchor</MenuItem>
         <MenuItem onClick={onAddLabel}>Label</MenuItem>
         <MenuItem onClick={onAddPolygon}>Polygon</MenuItem>
+        <MenuItem onClick={onAddLineCircle}>Line circle</MenuItem>
         <MenuItem onClick={onAddImage}>Image / SVG…</MenuItem>
       </Menu>
       <ToolButtons />

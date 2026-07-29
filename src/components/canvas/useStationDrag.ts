@@ -10,6 +10,7 @@ import {
   snapGuidesEqual,
   snapToleranceAt,
 } from '../../geometry/snap';
+import { lineCircleAtPoint, projectToCircle } from '../../geometry/lineCircle';
 import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
 import {
   collectGroupSiblings,
@@ -36,13 +37,24 @@ export interface StationDragApi {
  * one-history-entry-per-gesture) and the group-drag sibling towing are shared
  * with the other drag hooks via dragGesture + groupDrag.
  */
+// How far past a circle's rim (as a multiple of the capture tolerance) a
+// bound station may be pulled before it pops OFF the ring: within the band
+// the drag slides along the circle; beyond it the station detaches and
+// follows the cursor. The asymmetry (capture at 1×, release at 3×) is the
+// escape hysteresis — snapping ON is as easy as any other snap, staying ON
+// is deliberately stickier.
+const CIRCLE_RELEASE_FACTOR = 3;
+
 export function useStationDrag(
   svgRef: RefObject<SVGSVGElement | null>,
   viewportZoom: number,
 ): StationDragApi {
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
+  const lineCircles = useDoc((s) => s.lineCircles);
   const moveStation = useDoc((s) => s.moveStation);
+  const bindStationToCircle = useDoc((s) => s.bindStationToCircle);
+  const unbindStationFromCircle = useDoc((s) => s.unbindStationFromCircle);
   const redistributeBetween = useDoc((s) => s.redistributeBetween);
   const snapModes = useSnapPrefs((s) => s.modes);
   const gridSize = useViewportStore((s) => s.gridSize);
@@ -128,6 +140,39 @@ export function useStationDrag(
     const redistributeAnchor = e.ctrlKey || e.metaKey ? ds.redistributeAnchor : null;
     // Snap is on by default; Shift bypasses it.
     const shouldSnap = !e.shiftKey;
+    // Line-circle binding (skipped during a redistribute — that modal gesture
+    // owns its own constraint). A BOUND station slides along its circle while
+    // the cursor stays within the release band, and detaches when pulled past
+    // it (or instantly on Shift — "Shift bypasses all snapping"). A FREE
+    // station carried within capture tolerance of a rim binds onto it —
+    // projection, tangent rotation and the viaCircle stop defaults all live
+    // in the transforms; everything here is just the capture/release call.
+    if (!redistributeAnchor) {
+      const tolerance = snapToleranceAt(viewportZoom);
+      const circle =
+        draggedSt?.circleId !== undefined ? lineCircles[draggedSt.circleId] : undefined;
+      const moveConstrained = (c: { x: number; y: number; radius: number }) => {
+        const p = projectToCircle(c, { x: nx, y: ny });
+        moveStation(ds.id, nx, ny);
+        if (hasGroupSiblings(ds.siblings)) {
+          translateSiblings(ds.siblings, p.x - ds.startWX, p.y - ds.startWY);
+        }
+        if (snapGuides.length > 0) setSnapGuides([]);
+      };
+      if (circle && !shouldSnap) {
+        unbindStationFromCircle(ds.id);
+      } else if (circle) {
+        const rimDist = Math.abs(Math.hypot(nx - circle.x, ny - circle.y) - circle.radius);
+        if (rimDist <= tolerance * CIRCLE_RELEASE_FACTOR) return moveConstrained(circle);
+        unbindStationFromCircle(ds.id);
+      } else if (shouldSnap) {
+        const captured = lineCircleAtPoint(lineCircles, { x: nx, y: ny }, tolerance);
+        if (captured) {
+          bindStationToCircle(ds.id, captured.id);
+          return moveConstrained(captured);
+        }
+      }
+    }
     if (shouldSnap) {
       const snap = snapDraggedStation({
         draggedId: ds.id,

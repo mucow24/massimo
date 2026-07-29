@@ -44,6 +44,30 @@ export function tangentAtAngle(theta: number): Vec2 {
 }
 
 /**
+ * The first line circle whose RIM lies within `tolerance` of `p`, or null.
+ * The capture test for binding gestures: station drags, station placement and
+ * the Edit Stops create-click all share it, so "close enough to snap onto the
+ * ring" can never mean different things in different modes.
+ */
+export function lineCircleAtPoint<C extends CircleSpec & { id: string }>(
+  lineCircles: Record<string, C>,
+  p: Vec2,
+  tolerance: number,
+): C | null {
+  let best: C | null = null;
+  let bestDist = tolerance;
+  for (const id of Object.keys(lineCircles)) {
+    const c = lineCircles[id];
+    const d = Math.abs(Math.hypot(p.x - c.x, p.y - c.y) - c.radius);
+    if (d <= bestDist) {
+      best = c;
+      bestDist = d;
+    }
+  }
+  return best;
+}
+
+/**
  * Normalize an angle difference into (−π, π] — the SHORTER way around, with
  * the antipodal tie broken deterministically toward +π (increasing theta =
  * visually clockwise in the y-down frame). This is the whole "which arc?"

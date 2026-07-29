@@ -43,6 +43,8 @@ import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
 import { overdrawnViewBox, panSurfaceViewBox } from './canvas/viewportMath';
 import { useStationDrag } from './canvas/useStationDrag';
+import { useLineCircleDrag } from './canvas/useLineCircleDrag';
+import { LineCircleView } from './LineCircleView';
 import { useStationLayoutDrag } from './canvas/useStationLayoutDrag';
 import { StationLayoutEditor } from './canvas/StationLayoutEditor';
 import { GhostLattice } from './canvas/GhostLattice';
@@ -201,6 +203,7 @@ export function MapCanvas() {
   const surface = panSurfaceViewBox(view);
   const placement = usePlacementDispatch(view);
   const drag = useStationDrag(svgRef, view.viewport.zoom);
+  const circleDrag = useLineCircleDrag(svgRef, view.viewport.zoom);
   const rectSelect = useRectSelect(svgRef, view.screenToWorld);
   // While a rect-select drag is in flight, render selection visuals
   // (station wash/stroke and bullet ring) over the previewed result
@@ -601,6 +604,7 @@ export function MapCanvas() {
     polyDrag.onPointerMove(e);
     svgDrag.onPointerMove(e);
     layoutDrag.onPointerMove(e);
+    circleDrag.onPointerMove(e);
   };
   const onPointerUp = (e: React.PointerEvent) => {
     view.onPointerUp(e);
@@ -610,6 +614,7 @@ export function MapCanvas() {
     polyDrag.onPointerUp(e);
     svgDrag.onPointerUp(e);
     layoutDrag.onPointerUp(e);
+    circleDrag.onPointerUp(e);
   };
   // A browser pointercancel (pen palm rejection, window switch, capture loss)
   // voids an in-flight gesture with no matching pointerup. Fan it out to every
@@ -630,6 +635,7 @@ export function MapCanvas() {
     polyDrag.onPointerCancel();
     svgDrag.onPointerCancel();
     layoutDrag.onPointerCancel();
+    circleDrag.onPointerCancel();
   };
 
   // Run a DOM hit-test (`element(s)FromPoint`) with the drag-proxy layer hidden,
@@ -1265,6 +1271,26 @@ export function MapCanvas() {
               />
             );
           })}
+
+          {/* Line circles: dashed guide rings stations bind to. Editor
+            scaffolding, never map ink (export-excluded); painted above the
+            background band so a polygon can't hide the guide, below all map
+            content. Selection happens at pointer-down inside the drag hook. */}
+          <g data-export-exclude="1">
+            {Object.keys(lineCircles).map((cid) => (
+              <LineCircleView
+                key={cid}
+                circle={lineCircles[cid]}
+                zoom={view.viewport.zoom}
+                guideColor={theme.guide}
+                accentColor={theme.accent}
+                selected={selection.selectedLineCircleIds.includes(cid)}
+                interactive={polygonsInteractive}
+                inHandMode={inHandMode}
+                onPointerDown={(e, id, part) => circleDrag.onStartDrag(id, part, e)}
+              />
+            ))}
+          </g>
 
           {/* selection wash: painted before bands so the wash sits behind
             line segments, markers, dots, and labels — all the way in the
@@ -2102,6 +2128,7 @@ export function MapCanvas() {
                 ...itemDrag.itemSnapGuides,
                 ...polyDrag.polygonSnapGuides,
                 ...svgDrag.svgImageSnapGuides,
+                ...circleDrag.snapGuides,
                 ...placementGuides,
               ]}
               zoom={view.viewport.zoom}

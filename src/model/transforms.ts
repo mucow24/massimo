@@ -1750,7 +1750,16 @@ export function spawnStopCellAt(
       ) /
         STOP_SIZE
     : 0;
-  return { lineId, row: newRow, col: newCol, orientation: 'auto-vertical' };
+  return {
+    lineId,
+    row: newRow,
+    col: newCol,
+    orientation: 'auto-vertical',
+    // A stop born on a circle-bound station defaults to riding the circle —
+    // the always-arc default; explicitly flipping the orientation is the
+    // opt-out (rotateStop clears the flag).
+    ...(st.circleId !== undefined ? { viaCircle: true } : {}),
+  };
 }
 
 // Spawn a stop cell for `lineId` on station `st` when it doesn't have one
@@ -1797,8 +1806,11 @@ export function addStationToLine(doc: MapDoc, lineId: LineId, stationId: Station
   return {
     ...doc,
     lines: { ...doc.lines, [lineId]: { ...ln, stations: newStations } },
+    // A bound station skips the first-line auto-orientation: the circle owns
+    // its rotation (the tangent octant), and the neighbor-derived travel
+    // direction would swing it off the ring's tangent.
     stations:
-      st.stops.length === 0
+      st.stops.length === 0 && st.circleId === undefined
         ? autoOrientNewStation(stationsAfter, newStations, stationId)
         : stationsAfter,
   };
@@ -1909,9 +1921,10 @@ export function connectStationsOnLine(
       [lineId]: pruneOrphanLineOverrides({ ...ln, stations: newStations, edges }),
     },
     // Only a station gaining its first line is auto-oriented; anything already
-    // served keeps the rotation the user gave it.
+    // served keeps the rotation the user gave it. Circle-bound stations skip
+    // it too — the circle owns their rotation (the tangent octant).
     stations:
-      !isMember && to.stops.length === 0
+      !isMember && to.stops.length === 0 && to.circleId === undefined
         ? autoOrientNewStation(stationsAfter, [fromStationId, toStationId], toStationId)
         : stationsAfter,
   };
@@ -1954,7 +1967,8 @@ export function spliceStationIntoEdge(
     ...doc,
     lines: { ...doc.lines, [lineId]: updatedLine },
     stations:
-      !isMember && st.stops.length === 0
+      // Circle-bound stations keep the tangent octant (see connect above).
+      !isMember && st.stops.length === 0 && st.circleId === undefined
         ? autoOrientNewStation(stationsAfter, [fromStationId, stationId, toStationId], stationId)
         : stationsAfter,
   });
@@ -2095,6 +2109,7 @@ export interface LockableItemIds {
   labels?: readonly string[];
   polygons?: readonly string[];
   svgImages?: readonly string[];
+  lineCircles?: readonly string[];
 }
 
 // Flip `locked` on the listed members of one collection, allocating a new
@@ -2135,16 +2150,18 @@ export function setItemsLocked(doc: MapDoc, ids: LockableItemIds, locked: boolea
   const textLabels = setLockedIn(doc.textLabels, ids.labels, locked);
   const polygons = setLockedIn(doc.polygons, ids.polygons, locked);
   const svgImages = setLockedIn(doc.svgImages, ids.svgImages, locked);
+  const lineCircles = setLockedIn(doc.lineCircles, ids.lineCircles, locked);
   if (
     stations === doc.stations &&
     routeBullets === doc.routeBullets &&
     textLabels === doc.textLabels &&
     polygons === doc.polygons &&
-    svgImages === doc.svgImages
+    svgImages === doc.svgImages &&
+    lineCircles === doc.lineCircles
   ) {
     return doc;
   }
-  return { ...doc, stations, routeBullets, textLabels, polygons, svgImages };
+  return { ...doc, stations, routeBullets, textLabels, polygons, svgImages, lineCircles };
 }
 
 // The covered per-station typography fields a station style controls. The patch
@@ -3004,13 +3021,10 @@ export function setLineCircleRadius(doc: MapDoc, id: string, radius: number): Ma
   };
 }
 
+// Thin wrapper over the canonical multi-item setItemsLocked (see
+// setStationLocked) so single- and multi-select locking can't drift apart.
 export function setLineCircleLocked(doc: MapDoc, id: string, locked: boolean): MapDoc {
-  return updateRecord(doc, 'lineCircles', id, (cur) => {
-    if (!!cur.locked === locked) return cur;
-    if (locked) return { ...cur, locked: true };
-    const { locked: _off, ...rest } = cur;
-    return rest;
-  });
+  return setItemsLocked(doc, { lineCircles: [id] }, locked);
 }
 
 // Strip a station's circle binding: drop `circleId` and every stop's
@@ -3043,9 +3057,21 @@ export function bindStationToCircle(doc: MapDoc, stationId: StationId, circleId:
     const p = pointAtAngle(circle, theta);
     const t = tangentAtAngle(theta);
     const rotation = uprightTangentRotation(t.x, t.y, st.label.rotation);
-    if (st.circleId === circleId && st.x === p.x && st.y === p.y && st.rotation === rotation)
+    // Binding defaults every stop to riding the circle (the always-arc
+    // default the ring exists for); flipping a stop's orientation opts it
+    // back out per line.
+    const stops = st.stops.every((c) => c.viaCircle)
+      ? st.stops
+      : st.stops.map((c) => (c.viaCircle ? c : { ...c, viaCircle: true }));
+    if (
+      st.circleId === circleId &&
+      st.x === p.x &&
+      st.y === p.y &&
+      st.rotation === rotation &&
+      stops === st.stops
+    )
       return st;
-    return { ...st, circleId, x: p.x, y: p.y, rotation };
+    return { ...st, circleId, x: p.x, y: p.y, rotation, stops };
   });
 }
 

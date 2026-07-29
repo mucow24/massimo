@@ -49,6 +49,9 @@ export type UiMode =
   // click drops one, Esc / right-click exits.
   | { kind: 'placing-anchor' }
   | { kind: 'creating-polygon' }
+  // Single-shot like polygons: the next click drops a default-radius line
+  // circle and selects it (rim drag moves, knob drag resizes).
+  | { kind: 'placing-line-circle' }
   // Carries the parsed svg payload (data URI + intrinsic size) read from the
   // file at import time; the next canvas click drops it at the cursor.
   | { kind: 'placing-svg'; image: { href: string; width: number; height: number } }
@@ -109,6 +112,7 @@ export const clearedSelections = () => ({
   selectedPolygonIds: [] as string[],
   selectedSvgImageIds: [] as string[],
   selectedAnchorIds: [] as string[],
+  selectedLineCircleIds: [] as string[],
   selectedVertices: null as { polygonId: string; indices: number[] } | null,
   selectedLineId: null as LineId | null,
   selectedLineTagId: null as string | null,
@@ -249,6 +253,11 @@ export interface SelectionState {
   // paste that would carry its transfer) while still answering Delete, the
   // arrow keys, the marquee, and group drag/rotate.
   selectedAnchorIds: string[];
+  // Line-circle selection (the dashed guide rings). Multi-selection list for
+  // consistency with the other kinds, though the canvas only single-selects
+  // them today (no marquee membership — a guide caught in every box-select
+  // would be noise). No popover; absent from getCopyableSelection.
+  selectedLineCircleIds: string[];
   // When true (the inspector's Select Similar toggle), layout edits (stop
   // layout + label + station rotation) mirror to every station sharing a
   // line whose layout renders identically (model/matching.ts — whole line,
@@ -333,6 +342,11 @@ export interface SelectionState {
   setAnchorSelection: (ids: string[]) => void;
   addAnchorsToSelection: (ids: string[]) => void;
   xorAnchorsToSelection: (ids: string[]) => void;
+  selectLineCircle: (id: string | null) => void;
+  toggleLineCircleSelection: (id: string) => void;
+  setLineCircleSelection: (ids: string[]) => void;
+  addLineCirclesToSelection: (ids: string[]) => void;
+  xorLineCirclesToSelection: (ids: string[]) => void;
   // Replace the vertex selection (or clear with null). Does NOT touch
   // selectedPolygonIds — the polygon remains the primary selection.
   selectVertices: (sel: { polygonId: string; indices: number[] } | null) => void;
@@ -406,7 +420,8 @@ type IdListField =
   | 'selectedLabelIds'
   | 'selectedPolygonIds'
   | 'selectedSvgImageIds'
-  | 'selectedAnchorIds';
+  | 'selectedAnchorIds'
+  | 'selectedLineCircleIds';
 
 type SelectionSet = (
   partial: Partial<SelectionState> | ((s: SelectionState) => Partial<SelectionState>),
@@ -506,6 +521,7 @@ export const useSelection = create<SelectionState>()(
       selectedPolygonIds: [],
       selectedSvgImageIds: [],
       selectedAnchorIds: [],
+      selectedLineCircleIds: [],
       selectedVertices: null,
       mirrorMatching: false,
       toolMode: 'arrow',
@@ -824,6 +840,13 @@ export const useSelection = create<SelectionState>()(
         add: 'addAnchorsToSelection',
         xor: 'xorAnchorsToSelection',
       }),
+      ...makeIdListActions(set, get, 'selectedLineCircleIds', {
+        select: 'selectLineCircle',
+        toggle: 'toggleLineCircleSelection',
+        replace: 'setLineCircleSelection',
+        add: 'addLineCirclesToSelection',
+        xor: 'xorLineCirclesToSelection',
+      }),
       selectVertices: (sel) => set({ selectedVertices: sel }),
       toggleVertexSelection: ({ polygonId, index }) =>
         set((s) => {
@@ -874,6 +897,8 @@ export const useSelection = create<SelectionState>()(
         // Free anchors only — a hosted anchor id can never be in this list.
         const anchors = prune(s.selectedAnchorIds, (id) => !!doc.transferAnchors[id]);
         if (anchors) next.selectedAnchorIds = anchors;
+        const circles = prune(s.selectedLineCircleIds, (id) => !!doc.lineCircles[id]);
+        if (circles) next.selectedLineCircleIds = circles;
         // Single primaries.
         if (s.selectedLineId && !doc.lines[s.selectedLineId]) next.selectedLineId = null;
         // Edit Stops is bound to one line the same way selectedLineId is: if
@@ -1032,7 +1057,12 @@ export function soleSelection(s: SelectionState): SoleSelection {
     s.selectedLabelIds.length +
     s.selectedPolygonIds.length +
     s.selectedSvgImageIds.length +
-    s.selectedAnchorIds.length;
+    s.selectedAnchorIds.length +
+    // Line circles count toward the total (a circle+item pair is NOT a sole
+    // selection) but deliberately have no arm below: no popover, and they are
+    // not part of the alt-click deep-pick stack — a sole circle degrades to
+    // null, which both consumers treat as "nothing to show/cycle".
+    s.selectedLineCircleIds.length;
   if (total !== 1) return null;
   if (s.selectedStationIds.length === 1) return { type: 'station', id: s.selectedStationIds[0] };
   if (s.selectedRouteBulletIds.length === 1)
