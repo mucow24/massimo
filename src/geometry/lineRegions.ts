@@ -277,6 +277,69 @@ export const boxesOverlap = (
 ) => a.x0 <= b.x1 + pad && b.x0 <= a.x1 + pad && a.y0 <= b.y1 + pad && b.y0 <= a.y1 + pad;
 
 // ---------------------------------------------------------------------------
+// Ring-set content identity (FNV-1a over coordinates quantized to clipper's
+// own 1e-3 resolution, so the key cannot distinguish inputs clipper itself
+// would treat as identical). Shared by the incremental builder's component
+// cache and the exclusion-hole cache's face identity.
+
+const FNV_OFFSET = 0x811c9dc5;
+const FNV_PRIME = 0x01000193;
+const fnvMix = (h: number, v: number): number => Math.imul(h ^ (v | 0), FNV_PRIME) >>> 0;
+
+/**
+ * Hash one ring independently of where its vertex list starts. Clipper is free
+ * to emit the same polygon rotated to a different first vertex when unrelated
+ * input moved; without canonicalizing, reuse never fires.
+ */
+function hashRingCanonical(ring: Ring): number {
+  const n = ring.length;
+  if (!n) return FNV_OFFSET;
+  const qx = (i: number) => Math.round(ring[i].x * 1000);
+  const qy = (i: number) => Math.round(ring[i].y * 1000);
+  let start = 0;
+  for (let i = 1; i < n; i++) {
+    const dx = qx(i) - qx(start);
+    if (dx < 0 || (dx === 0 && qy(i) < qy(start))) start = i;
+  }
+  let h = fnvMix(FNV_OFFSET, n);
+  for (let i = 0; i < n; i++) {
+    const j = (start + i) % n;
+    h = fnvMix(h, qx(j));
+    h = fnvMix(h, qy(j));
+  }
+  return h;
+}
+
+/** Order-independent hash of a ring set (clipper does not promise ring order). */
+function hashRings(rings: Ring[]): number {
+  const per = rings.map(hashRingCanonical).sort((a, b) => a - b);
+  let h = fnvMix(FNV_OFFSET, per.length);
+  for (const x of per) h = fnvMix(h, x);
+  return h;
+}
+
+/**
+ * Collision-hardened content key for a ring set: the canonical hash, then
+ * cheap structural discriminators (ring count, vertex count, quantized bbox).
+ * The 32-bit hash does the real work; the discriminators exist because these
+ * caches run per pointermove for hours and a silent collision would hand out
+ * the WRONG cached geometry — with them, two ring sets must collide in the
+ * hash AND agree on shape statistics and position at once to alias.
+ */
+export function ringSetKey(
+  rings: Ring[],
+  box: { x0: number; y0: number; x1: number; y1: number },
+): string {
+  let verts = 0;
+  for (const ring of rings) verts += ring.length;
+  const q = (v: number) => Math.round(v * 1000);
+  return (
+    `${hashRings(rings)}|${rings.length}|${verts}|` +
+    `${q(box.x0)},${q(box.y0)},${q(box.x1)},${q(box.y1)}`
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Overlap faces
 
 export function ringsBbox(rings: Ring[]): { x0: number; y0: number; x1: number; y1: number } {
@@ -1135,17 +1198,41 @@ export const EXCLUSION_INSET = 0.00625;
  * Clipping also removes the losers' pointer-event surface over the face, so
  * idle-mode clicks and deep-picks reach the visible winner natively.
  */
-export function buildExclusionHoles(
+/**
+ * One overridden face's hole output: the loser-ordered ring lists the hole
+ * assembly appends, plus the reveal region's bbox (face + absorbed slivers) —
+ * stored by the cross-frame cache so validation can re-query the shield
+ * neighborhood without recomputing the absorption.
+ */
+interface FaceHoleContribution {
+  contributions: { lineId: LineId; rings: Ring[] }[];
+  regionBbox: { x0: number; y0: number; x1: number; y1: number };
+}
+
+/**
+ * The shared per-face hole builder both {@link buildExclusionHoles} (the
+ * cache-free reference) and {@link buildExclusionHolesCached} run — one owner
+ * for the geometry, so the cached path cannot drift from the reference.
+ */
+function makeHoleContext(
   faces: RegionFace[],
   winners: { winner: LineId; assignmentId: string | null }[],
   lineOrder: LineId[],
   bands: SegmentBandSpec[],
   markers: StopMarkerSpec[],
   railWOf: (lineId: LineId) => number,
-  slivers: RegionSliver[] = [],
-): Map<LineId, Ring[]> {
+  slivers: RegionSliver[],
+) {
   const orderIdx = orderIndexer(lineOrder);
-  const holes = new Map<LineId, Ring[]>();
+
+  // Call-scoped memos over the repeated clipper calls below. Faces along one
+  // winner's trunk request the same stripe silhouette — and adjacent faces of
+  // one junction the same marker dilation — once per face; the arguments fully
+  // determine the (pure, deterministic) result, so the memoized rings ARE what
+  // the call would return, byte for byte. Keyed on the band OBJECT (stable
+  // within one call) rather than bandKey so the key cannot alias.
+  const stripeSil = new Map<SegmentBandSpec, Map<string, Ring[]>>();
+  const markerDil = new Map<string, Ring[]>();
 
   // A line's painted footprint near one face, at body width (pad 0) or
   // silhouette width (pad railW). Bbox-filtered; markers dilate by pad/2.
@@ -1155,16 +1242,22 @@ export function buildExclusionHoles(
       for (let k = 0; k < band.lines.length; k++) {
         if (band.lines[k].id !== lineId) continue;
         if (!stripeIntersectsBox(band, k, box, (band.stripeWidths[k] + pad) / 2 + pad)) continue;
-        if (pad === 0) {
-          rings.push(...stripeBodyPolys(band, k));
-        } else {
-          rings.push(
-            ...offsetOpenPath(stripePathFor(band, k).pts, (band.stripeWidths[k] + pad) / 2),
-          );
+        let byArgs = stripeSil.get(band);
+        if (!byArgs) stripeSil.set(band, (byArgs = new Map()));
+        const argKey = `${k}|${pad}`;
+        let sil = byArgs.get(argKey);
+        if (!sil) {
+          sil =
+            pad === 0
+              ? stripeBodyPolys(band, k)
+              : offsetOpenPath(stripePathFor(band, k).pts, (band.stripeWidths[k] + pad) / 2);
+          byArgs.set(argKey, sil);
         }
+        rings.push(...sil);
       }
     }
     const markerRings: Ring[] = [];
+    const markerIds: string[] = [];
     for (const m of markers) {
       if (m.lineId !== lineId) continue;
       const half = m.width + pad; // generous reject: squares are width×width
@@ -1177,22 +1270,84 @@ export function buildExclusionHoles(
         continue;
       }
       markerRings.push(...markerBodyRings(m));
+      markerIds.push(`${m.lineId}#${m.stationId}`);
     }
     if (markerRings.length) {
-      rings.push(...(pad > 0 ? offsetClosed(markerRings, pad / 2) : markerRings));
+      if (pad > 0) {
+        // The dilation memo keys on the COLLECTED subset (in `markers` array
+        // order) + pad: the one offsetClosed over exactly those rings is what
+        // determines the output. Never split into per-marker dilations — the
+        // call union-normalizes its whole operand, so the ring structure of
+        // the single call is part of the byte-identity argument.
+        const dilKey = `${markerIds.join(',')}|${pad}`;
+        let dil = markerDil.get(dilKey);
+        if (!dil) markerDil.set(dilKey, (dil = offsetClosed(markerRings, pad / 2)));
+        rings.push(...dil);
+      } else {
+        rings.push(...markerRings);
+      }
     }
     return rings;
   };
 
-  faces.forEach((face, i) => {
-    const w = winners[i];
-    if (!w || !w.assignmentId) return;
-    if (w.winner === defaultWinner(face, orderIdx)) return; // base already shows it
+  // Uniform-grid bucket index over face bboxes, so the shield scan (and the
+  // cached path's neighborhood signature) queries ~tens of candidates instead
+  // of testing all faces per overridden face. Candidates come back sorted
+  // ascending and re-checked against the exact bbox predicate, so shield
+  // membership and push order are byte-identical to the linear scan.
+  const cell = (() => {
+    let maxExt = 32;
+    const exts: number[] = [];
+    for (const f of faces) {
+      const ext = Math.max(f.bbox.x1 - f.bbox.x0, f.bbox.y1 - f.bbox.y0);
+      exts.push(ext);
+      maxExt = Math.max(maxExt, ext);
+    }
+    exts.sort((a, b) => a - b);
+    return Math.max(16, 4 * (exts[exts.length >> 1] ?? 32), maxExt / 64);
+  })();
+  const grid = new Map<string, number[]>();
+  for (let i = 0; i < faces.length; i++) {
+    const b = faces[i].bbox;
+    for (let gx = Math.floor(b.x0 / cell); gx <= Math.floor(b.x1 / cell); gx++) {
+      for (let gy = Math.floor(b.y0 / cell); gy <= Math.floor(b.y1 / cell); gy++) {
+        const k = `${gx},${gy}`;
+        const list = grid.get(k);
+        if (list) list.push(i);
+        else grid.set(k, [i]);
+      }
+    }
+  }
+  const facesNear = (
+    box: { x0: number; y0: number; x1: number; y1: number },
+    pad: number,
+  ): number[] => {
+    const seen = new Set<number>();
+    for (let gx = Math.floor((box.x0 - pad) / cell); gx <= Math.floor((box.x1 + pad) / cell); gx++) {
+      for (
+        let gy = Math.floor((box.y0 - pad) / cell);
+        gy <= Math.floor((box.y1 + pad) / cell);
+        gy++
+      ) {
+        const list = grid.get(`${gx},${gy}`);
+        if (list) for (const j of list) seen.add(j);
+      }
+    }
+    return [...seen].filter((j) => boxesOverlap(faces[j].bbox, box, pad)).sort((a, b) => a - b);
+  };
+
+  /** The per-face body. Caller has already established `w` is an overridden
+   *  non-default winner; returns null when there is nothing to hole. */
+  const contributionFor = (
+    face: RegionFace,
+    i: number,
+    w: { winner: LineId; assignmentId: string | null },
+  ): FaceHoleContribution | null => {
     const winnerRank = orderIdx(w.winner);
     const losers = face.lineIds.filter(
       (lineId) => lineId !== w.winner && orderIdx(lineId) < winnerRank,
     );
-    if (!losers.length) return;
+    if (!losers.length) return null;
     const railWWinner = railWOf(w.winner);
 
     // Absorb adjacent dropped slivers into the reveal region (see the doc
@@ -1223,27 +1378,283 @@ export function buildExclusionHoles(
       railWWinner > 0
         ? paintNear(w.winner, regionBbox, railWWinner)
         : offsetClosed(paintNear(w.winner, regionBbox, 0), -EXCLUSION_INSET);
-    if (!footprint.length) return;
+    if (!footprint.length) return { contributions: [], regionBbox };
     // Differently-won neighboring faces, to subtract from every hole (see
     // the doc comment). Bbox-filtered generously: a miter dilation can poke
     // up to 3× reach (the miter limit) past a corner.
     const maxReach = Math.max(...losers.map((id) => railWOf(id))) / 2 + railWWinner / 2 + 0.5;
     const shield: Ring[] = [];
-    faces.forEach((other, j) => {
-      if (j === i || winners[j]?.winner === w.winner) return;
-      if (!boxesOverlap(other.bbox, regionBbox, maxReach * 3)) return;
-      shield.push(...other.face);
-    });
+    for (const j of facesNear(regionBbox, maxReach * 3)) {
+      if (j === i || winners[j]?.winner === w.winner) continue;
+      shield.push(...faces[j].face);
+    }
+    // Within one face, losers sharing a railW dilate the same region by the
+    // same reach — memo the dilation: pure call, identical arguments.
+    const regionDil = new Map<number, Ring[]>();
+    const contributions: { lineId: LineId; rings: Ring[] }[] = [];
     for (const lineId of losers) {
       const reach = railWOf(lineId) / 2 + railWWinner / 2 + 0.5;
-      const dilated = intersect(offsetClosed(region, reach, 'miter'), footprint);
+      let dil = regionDil.get(reach);
+      if (!dil) regionDil.set(reach, (dil = offsetClosed(region, reach, 'miter')));
+      const dilated = intersect(dil, footprint);
       const hole = shield.length ? subtract(dilated, shield) : dilated;
       if (!hole.length) continue;
+      contributions.push({ lineId, rings: hole });
+    }
+    return { contributions, regionBbox };
+  };
+
+  /** Is this face's winner an override the base paint doesn't already show? */
+  const overridden = (
+    face: RegionFace,
+    w: { winner: LineId; assignmentId: string | null } | undefined,
+  ): w is { winner: LineId; assignmentId: string } =>
+    !!w && !!w.assignmentId && w.winner !== defaultWinner(face, orderIdx);
+
+  return { orderIdx, contributionFor, overridden, facesNear };
+}
+
+/** See the block comment above. This is the cache-free REFERENCE; production
+ *  renders go through {@link buildExclusionHolesCached}, whose output must
+ *  byte-equal this. */
+export function buildExclusionHoles(
+  faces: RegionFace[],
+  winners: { winner: LineId; assignmentId: string | null }[],
+  lineOrder: LineId[],
+  bands: SegmentBandSpec[],
+  markers: StopMarkerSpec[],
+  railWOf: (lineId: LineId) => number,
+  slivers: RegionSliver[] = [],
+): Map<LineId, Ring[]> {
+  const ctx = makeHoleContext(faces, winners, lineOrder, bands, markers, railWOf, slivers);
+  const holes = new Map<LineId, Ring[]>();
+  faces.forEach((face, i) => {
+    const w = winners[i];
+    if (!ctx.overridden(face, w)) return;
+    const c = ctx.contributionFor(face, i, w);
+    if (!c) return;
+    for (const { lineId, rings } of c.contributions) {
       const list = holes.get(lineId);
-      if (list) list.push(...hole);
-      else holes.set(lineId, [...hole]);
+      if (list) list.push(...rings);
+      else holes.set(lineId, [...rings]);
     }
   });
+  return holes;
+}
+
+// ---------------------------------------------------------------------------
+// Cross-frame exclusion-hole cache. buildExclusionHoles recomputes every
+// overridden face's holes per pointermove, yet on a typical drag frame ~all
+// of them are byte-identical to the previous frame's. Each entry records the
+// full input signature of one face's contribution; an entry is reused only
+// when every input is provably unchanged, so the cached path's output equals
+// the reference's byte for byte (pinned by lineRegions.holeCache.test.ts).
+
+interface FaceHoleEntry {
+  contribution: FaceHoleContribution;
+  /** Winner id | winner railW | default winner | losers with their railWs. */
+  inputSig: string;
+  /** (face key, winner) of every shield-scan candidate near the region. */
+  neighborSig: string;
+  /** (sliver token, gate outcomes) of every bbox-prefilter-passing sliver. */
+  sliverSig: string;
+}
+
+/**
+ * How the cache knows WHICH transition its dirty boxes describe: the
+ * incremental builder's state objects are unique per build, so `state` /
+ * `prevState` identity ties the boxes to exactly one before/after pair. A
+ * chain the cache cannot verify (an undo served from the geometry LRU, a
+ * cold start) flushes to a full rebuild — over-invalidation is always safe.
+ */
+export interface HoleChain {
+  state: unknown;
+  prevState: unknown;
+  dirtyBoxes: { x0: number; y0: number; x1: number; y1: number }[];
+}
+
+let holeCacheSlot: { validForState: unknown; entries: Map<string, FaceHoleEntry> } | null = null;
+
+/** Test hook: forget everything, as at app start. */
+export function resetExclusionHoleCache(): void {
+  holeCacheSlot = null;
+}
+
+// Face identity = collision-hardened content key, memoized per ring-array
+// reference (untouched comps hand out clones SHARING `face.face`, so
+// unchanged faces never re-hash; a rebuilt comp's fresh-but-identical face
+// re-hashes once and lands on the same key).
+const faceKeyCache = new WeakMap<Face, string>();
+const faceKeyOf = (face: RegionFace): string => {
+  let key = faceKeyCache.get(face.face);
+  if (!key) faceKeyCache.set(face.face, (key = ringSetKey(face.face, face.bbox)));
+  return key;
+};
+
+// Sliver identity is per OBJECT (untouched comps push cached sliver objects
+// by reference; a rebuilt comp's fresh slivers mint new tokens and force a
+// spurious-but-safe recompute of the faces near them).
+const sliverTokens = new WeakMap<RegionSliver, number>();
+let nextSliverToken = 1;
+const sliverTokenOf = (s: RegionSliver): number => {
+  let t = sliverTokens.get(s);
+  if (!t) sliverTokens.set(s, (t = nextSliverToken++));
+  return t;
+};
+
+/** Optional instrumentation for the cache's tests. */
+export interface HoleCacheStats {
+  reused: number;
+  recomputed: number;
+}
+
+/**
+ * {@link buildExclusionHoles} with a per-face cross-frame cache. An entry for
+ * face F is reused only when ALL of:
+ *
+ *  1. F's content key matches (same rings, same place);
+ *  2. the chain is verified (see {@link HoleChain}) and no dirty box comes
+ *     within `R` of F's bbox — R conservatively covers every reach through
+ *     which geometry enters F's contribution: paintNear's stripe/marker
+ *     collection (up to a stripe width + 1.5 railW), sliver absorption
+ *     (3× SLIVER_ABSORB_REACH, miter), loser dilation (3× reach, miter),
+ *     and the unit-box-vs-silhouette slack;
+ *  3. the presentation inputs match (`inputSig`: winner, railWs, default);
+ *  4. the shield neighborhood matches (`neighborSig`: every candidate face's
+ *     content key + CURRENT winner — a neighbor flipping between same- and
+ *     different-winner must invalidate, so same-winner candidates are in the
+ *     sig even though they are excluded from the shield);
+ *  5. the nearby-sliver set matches (`sliverSig`: token + BOTH absorb-gate
+ *     outcomes per bbox-passing sliver — a lineOrder edit can flip a gate
+ *     through a sliver line that is NOT in F's cover, so the outcomes are
+ *     part of the signature, not derivable from the face alone).
+ *
+ * Under 1-5 every input to `contributionFor` is identical to the entry's
+ * build frame and the clipper is deterministic, so reuse is byte-exact; the
+ * assembly appends reused and fresh contributions in face order, exactly as
+ * the reference does.
+ */
+export function buildExclusionHolesCached(
+  faces: RegionFace[],
+  winners: { winner: LineId; assignmentId: string | null }[],
+  lineOrder: LineId[],
+  bands: SegmentBandSpec[],
+  markers: StopMarkerSpec[],
+  railWOf: (lineId: LineId) => number,
+  slivers: RegionSliver[] = [],
+  chain: HoleChain | null = null,
+  stats?: HoleCacheStats,
+): Map<LineId, Ring[]> {
+  const ctx = makeHoleContext(faces, winners, lineOrder, bands, markers, railWOf, slivers);
+  const holes = new Map<LineId, Ring[]>();
+  const nextEntries = new Map<string, FaceHoleEntry>();
+
+  // Which transition do we know about? Same state ⇒ geometry is unchanged
+  // since the cache was filled (only presentation can differ — the sigs
+  // catch it). Prev state ⇒ the chain's boxes are exactly what changed.
+  // Anything else ⇒ the cache cannot prove reuse; rebuild everything.
+  const prevSlot = holeCacheSlot;
+  const reusable =
+    prevSlot && chain
+      ? chain.state === prevSlot.validForState
+        ? { entries: prevSlot.entries, boxes: [] as HoleChain['dirtyBoxes'] }
+        : chain.prevState === prevSlot.validForState
+          ? { entries: prevSlot.entries, boxes: chain.dirtyBoxes }
+          : null
+      : null;
+
+  // The reuse radius. Every geometric input to a face's contribution is
+  // collected within: a stripe silhouette admitted by paintNear's filter
+  // (≤ stripeWidth/2 + 1.5·railW past the region bbox), a marker (≤ width +
+  // railW), an absorbed sliver (≤ 3·SLIVER_ABSORB_REACH, miter), a loser
+  // dilation poke (≤ 3·(railW + 0.5), miter) — and the region bbox itself
+  // sits ≤ 3·SLIVER_ABSORB_REACH outside the face bbox. Unit boxes trail
+  // painted silhouettes by ≤ railW/2 + 1. Sum every term, generously: an
+  // over-padded R costs a needless recompute, never a wrong reuse.
+  let maxW = 0;
+  let maxRailW = 0;
+  for (const band of bands) {
+    for (let k = 0; k < band.lines.length; k++) {
+      maxW = Math.max(maxW, band.stripeWidths[k]);
+      maxRailW = Math.max(maxRailW, railWOf(band.lines[k].id));
+    }
+  }
+  for (const m of markers) {
+    maxW = Math.max(maxW, m.width);
+    maxRailW = Math.max(maxRailW, railWOf(m.lineId));
+  }
+  const R = 6 * SLIVER_ABSORB_REACH + 1.5 * maxW + 6 * maxRailW + 4;
+
+  faces.forEach((face, i) => {
+    const w = winners[i];
+    if (!ctx.overridden(face, w)) return;
+
+    const winnerRank = ctx.orderIdx(w.winner);
+    const losers = face.lineIds.filter(
+      (lineId) => lineId !== w.winner && ctx.orderIdx(lineId) < winnerRank,
+    );
+    const loserSet = new Set(losers);
+    const inputSig =
+      `${w.winner}|${railWOf(w.winner)}|${defaultWinner(face, ctx.orderIdx)}|` +
+      losers.map((l) => `${l}:${railWOf(l)}`).join(',');
+    let sliverSig = '';
+    for (const s of slivers) {
+      if (!boxesOverlap(s.bbox, face.bbox, SLIVER_ABSORB_REACH * 3)) continue;
+      const gWinner = s.lineIds.includes(w.winner) ? 1 : 0;
+      const gLosers = s.lineIds.every((id) => ctx.orderIdx(id) >= winnerRank || loserSet.has(id))
+        ? 1
+        : 0;
+      sliverSig += `${sliverTokenOf(s)}:${gWinner}${gLosers};`;
+    }
+    const maxReach = losers.length
+      ? Math.max(...losers.map((id) => railWOf(id))) / 2 + railWOf(w.winner) / 2 + 0.5
+      : 0;
+    const neighborSigAround = (box: FaceHoleContribution['regionBbox']): string => {
+      let sig = '';
+      for (const j of ctx.facesNear(box, maxReach * 3)) {
+        if (j === i) continue;
+        sig += `${faceKeyOf(faces[j])}=${winners[j]?.winner ?? ''};`;
+      }
+      return sig;
+    };
+
+    const key = faceKeyOf(face);
+    const prev = reusable?.entries.get(key);
+    let entry: FaceHoleEntry | null = null;
+    if (
+      prev &&
+      prev.inputSig === inputSig &&
+      prev.sliverSig === sliverSig &&
+      !reusable!.boxes.some((d) => boxesOverlap(d, face.bbox, R)) &&
+      // The shield neighborhood, queried against the ENTRY's region bbox —
+      // identical to this frame's by conditions 1/2/5.
+      neighborSigAround(prev.contribution.regionBbox) === prev.neighborSig
+    ) {
+      entry = prev;
+      if (stats) stats.reused++;
+    }
+
+    if (!entry) {
+      const c = ctx.contributionFor(face, i, w);
+      if (stats) stats.recomputed++;
+      if (!c) return; // no losers — nothing to hole, nothing to cache
+      entry = {
+        contribution: c,
+        inputSig,
+        neighborSig: neighborSigAround(c.regionBbox),
+        sliverSig,
+      };
+    }
+
+    nextEntries.set(key, entry);
+    for (const { lineId, rings } of entry.contribution.contributions) {
+      const list = holes.get(lineId);
+      if (list) list.push(...rings);
+      else holes.set(lineId, [...rings]);
+    }
+  });
+
+  holeCacheSlot = { validForState: chain ? chain.state : {}, entries: nextEntries };
   return holes;
 }
 

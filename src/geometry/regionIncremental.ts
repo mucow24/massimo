@@ -54,6 +54,7 @@ import {
   extractFaces,
   finalizeFaces,
   restrictBodiesToZone,
+  ringSetKey,
   ringsBbox,
   subdivideCells,
   zoneComponents,
@@ -102,6 +103,13 @@ export interface RegionIncrementalResult {
   /** Components rebuilt this frame, out of the total. */
   rebuilt: number;
   total: number;
+  /**
+   * Old + new boxes of every unit that changed, appeared or vanished vs
+   * `prev` — the same boxes the component reuse test consumed. Downstream
+   * caches (the exclusion-hole cache) apply the identical invalidation
+   * scheme at their own granularity.
+   */
+  dirtyBoxes: Box[];
 }
 
 // FNV-1a over coordinates quantized to clipper's own 1e-3 resolution, so the
@@ -118,53 +126,14 @@ function mixString(h: number, s: string): number {
 }
 
 /**
- * Hash one ring independently of where its vertex list starts. Clipper is free
- * to emit the same polygon rotated to a different first vertex when unrelated
- * input moved; without canonicalizing, reuse never fires.
- */
-function hashRingCanonical(ring: Ring): number {
-  const n = ring.length;
-  if (!n) return FNV_OFFSET;
-  const qx = (i: number) => Math.round(ring[i].x * 1000);
-  const qy = (i: number) => Math.round(ring[i].y * 1000);
-  let start = 0;
-  for (let i = 1; i < n; i++) {
-    const dx = qx(i) - qx(start);
-    if (dx < 0 || (dx === 0 && qy(i) < qy(start))) start = i;
-  }
-  let h = mix(FNV_OFFSET, n);
-  for (let i = 0; i < n; i++) {
-    const j = (start + i) % n;
-    h = mix(h, qx(j));
-    h = mix(h, qy(j));
-  }
-  return h;
-}
-
-/** Order-independent hash of a ring set (clipper does not promise ring order). */
-function hashRings(rings: Ring[]): number {
-  const per = rings.map(hashRingCanonical).sort((a, b) => a - b);
-  let h = mix(FNV_OFFSET, per.length);
-  for (const x of per) h = mix(h, x);
-  return h;
-}
-
-/**
- * Cache key for one zone component: the ring hash, then cheap structural
- * discriminators (ring count, vertex count, quantized bbox). The 32-bit hash
- * does the real work; the discriminators exist because this cache runs per
- * pointermove for hours and a silent 32-bit collision would hand out the WRONG
- * component's faces — with them, two components must collide in the hash AND
- * agree on shape statistics and position at once to alias.
+ * Cache key for one zone component: {@link ringSetKey}'s collision-hardened
+ * content key (canonical ring hash + structural discriminators + quantized
+ * bbox). This cache runs per pointermove for hours and a silent collision
+ * would hand out the WRONG component's faces; the key construction — shared
+ * with the exclusion-hole cache's face identity — lives in lineRegions.
  */
 export function compCacheKey(comp: Face, box: Box): string {
-  let verts = 0;
-  for (const ring of comp) verts += ring.length;
-  const q = (v: number) => Math.round(v * 1000);
-  return (
-    `${hashRings(comp)}|${comp.length}|${verts}|` +
-    `${q(box.x0)},${q(box.y0)},${q(box.x1)},${q(box.y1)}`
-  );
+  return ringSetKey(comp, box);
 }
 
 const growBox = (b: Box, pad: number): Box => ({
@@ -381,6 +350,7 @@ export function buildRegionsIncremental(
       reused: false,
       rebuilt: 0,
       total: 0,
+      dirtyBoxes,
     };
   }
 
@@ -393,6 +363,7 @@ export function buildRegionsIncremental(
       reused: false,
       rebuilt: 0,
       total: 0,
+      dirtyBoxes,
     };
   }
 
@@ -440,5 +411,6 @@ export function buildRegionsIncremental(
     reused: rebuilt === 0,
     rebuilt,
     total: comps.length,
+    dirtyBoxes,
   };
 }

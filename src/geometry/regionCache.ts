@@ -12,7 +12,7 @@ import {
   type SegmentBandSpec,
   type StopMarkerSpec,
 } from './interlining';
-import { type RegionFace, type RegionSliver } from './lineRegions';
+import { type HoleChain, type RegionFace, type RegionSliver } from './lineRegions';
 import { buildRegionsIncremental, type RegionIncrementalState } from './regionIncremental';
 
 export interface GeometrySlice {
@@ -77,6 +77,13 @@ export interface RegionGeometry {
   faces: RegionFace[];
   /** Dropped overlap slivers, for bridge reveals (see buildExclusionHoles). */
   slivers: RegionSliver[];
+  /**
+   * The incremental transition that PRODUCED this entry, for the exclusion-
+   * hole cache's invalidation (see {@link HoleChain}). An LRU hit hands back
+   * the entry's original chain; the hole cache recognizes the broken link
+   * and flushes — over-invalidation, never staleness.
+   */
+  holeChain: HoleChain;
 }
 
 const CACHE_LIMIT = 4;
@@ -124,13 +131,15 @@ export function regionsFor(g: GeometrySlice, prebuilt?: PrebuiltGeometry): Regio
   // reconcile step's old-then-new pair chains the same way. A mismatched seed
   // only costs a miss — the result is identical either way (the builder hashes
   // its own inputs rather than trusting the seed).
-  const built = buildRegionsIncremental(bands, markers, lastIncremental);
+  const seed = lastIncremental;
+  const built = buildRegionsIncremental(bands, markers, seed);
   lastIncremental = built.state;
   const entry: RegionGeometry = {
     bands,
     markers,
     faces: built.faces,
     slivers: built.slivers,
+    holeChain: { state: built.state, prevState: seed, dirtyBoxes: built.dirtyBoxes },
   };
   cache.set(sig, entry);
   if (cache.size > CACHE_LIMIT) {
