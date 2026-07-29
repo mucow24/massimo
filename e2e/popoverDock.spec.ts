@@ -179,6 +179,87 @@ test.describe('canvas popovers dock to the top-right corner', () => {
   });
 });
 
+// The same narrow window, from the other side: what must NOT move. Selecting a
+// station reveals its row in the sidebar's list, and the sidebar rides the right
+// edge of a grid floored at the toolbar's width — so at 700 that row sits off
+// the screen entirely. `scrollIntoView` reaches it by scrolling every scrollable
+// ancestor up to the document, which drags the whole page ~490px sideways and
+// takes the map out from under the click. Only a browser has the toolbar's
+// natural width and a real page scroll, so the guard lives here.
+// A list long enough to overflow the sidebar's box, with the target station's
+// row LAST in it (sorted by name, ascending): only then does revealing that row
+// have real vertical work to do, and only then does `scrollIntoView` reach for
+// the page as well. A four-station seed never overflows, the reveal is a no-op,
+// and the page stays put whichever way the code is written — a test built on one
+// proves nothing. The filler grid sits well above the target so the click on it
+// lands on bare dot.
+const longStationList: Seed = {
+  stations: [
+    ...Array.from({ length: 30 }, (_, i) => ({
+      id: `f${i}`,
+      name: `Filler ${String(i).padStart(2, '0')}`,
+      x: -400 + (i % 6) * 60,
+      y: -300 + Math.floor(i / 6) * 60,
+      stops: [{ lineId: 'L1', row: 0, col: 0 }],
+    })),
+    { id: 'zz', name: 'Zzz Terminal', x: 0, y: 250, stops: [{ lineId: 'L1', row: 0, col: 0 }] },
+  ],
+  lines: [
+    {
+      id: 'L1',
+      service: 'L',
+      color: '#0039A6',
+      stations: [...Array.from({ length: 30 }, (_, i) => `f${i}`), 'zz'],
+    },
+  ],
+};
+
+test.describe('selecting a station leaves the page where it is', () => {
+  test('a narrow window does not lurch sideways to reveal the sidebar row', async ({ page }) => {
+    await page.setViewportSize({ width: 700, height: 820 });
+    await seedAndOpen(page, longStationList);
+    await expect(page.locator('.sidebar')).toBeVisible();
+
+    const m = await page.evaluate(() => {
+      const box = document.querySelector('.sidebar .scroll') as HTMLElement;
+      const row = document.querySelector('[data-station-row="zz"]')!;
+      return {
+        maxScroll: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        scrollX: window.scrollX,
+        boxLeft: box.getBoundingClientRect().left,
+        winW: document.documentElement.clientWidth,
+        overflows: box.scrollHeight > box.clientHeight,
+        rowBelowFold: row.getBoundingClientRect().bottom > box.getBoundingClientRect().bottom,
+      };
+    });
+    // Guards, all four load-bearing: the page can scroll and starts unscrolled,
+    // the list (and the row) really is off the side of the window, the list
+    // really overflows, and the target row really is past its bottom edge.
+    expect(m.maxScroll).toBeGreaterThan(0);
+    expect(m.scrollX).toBe(0);
+    expect(m.boxLeft).toBeGreaterThanOrEqual(m.winW);
+    expect(m.overflows).toBe(true);
+    expect(m.rowBelowFold).toBe(true);
+
+    // Selected through the store rather than by clicking the dot. The reveal
+    // fires on the selection, not on the click, and at this width much of the
+    // canvas is outside the window — aiming a real click at a station whose row
+    // must also sort last is fragile for no gain.
+    await page.evaluate(async () => {
+      const s = await import('/src/state/store.ts');
+      s.useSelection.getState().selectStation('zz');
+    });
+    await expect(page.locator('.station-popover')).toBeVisible();
+
+    // Polled rather than read once: the reveal is animated, so an immediate
+    // sample would catch the page before it had a chance to move. Scrolling the
+    // list is fine and expected — scrolling the PAGE is the lurch.
+    await expect
+      .poll(async () => page.evaluate(() => Math.round(window.scrollX)), { timeout: 2000 })
+      .toBe(0);
+  });
+});
+
 test.describe('canvas popovers stack below the sidebar', () => {
   // `.toolbar { min-width: max-content }` floors the app grid — and with it the
   // canvas host — at the toolbar's natural ~1189px however narrow the window

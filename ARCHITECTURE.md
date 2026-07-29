@@ -2229,6 +2229,20 @@ uiMode excursions, keeping its DOM node and measured width. Every popover render
 swallowing — pointerdown/click/contextmenu inside a popover must never reach the canvas, which
 would deselect the item (closing the popover) or right-click-rotate under it.
 
+The dock **re-measures when one of its inputs changes** — the element it reads from, which can
+attach a commit late, or the box being docked into — and never merely because a commit happened.
+The page it measures can be MOVING, and an animated scroll gives a different answer every frame:
+through the tracking regime a measurement per commit sets state into a page that has moved on,
+commits, measures again, and React's nested-update limit tears the app down. Motion is the scroll
+listener's job, where one event is one render.
+
+Nothing should be animating the page sideways in the first place, and the one thing that could is
+why that cadence matters. Selecting a station reveals its row in the sidebar's list, and the
+sidebar rides the right edge of the same over-wide grid — so in a narrow window that row is
+outside the window entirely. `scrollIntoView` would reach it by scrolling every scrollable
+ancestor up to the document, dragging the whole page across; the reveal instead scrolls the
+list's own box by the row's overhang — `block: 'nearest'` by hand, over one axis of one element.
+
 ### Memo contract (subtle but important)
 
 `bandsGeometry` (`buildBandGeometry`) excludes ALL presentation from its signature — color AND
