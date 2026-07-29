@@ -225,11 +225,38 @@ export function hashUnits(
 }
 
 /**
+ * Pointwise ring-list equality at clipper's own 1e-3 resolution — the
+ * finest distinction the engine can act on (`CLIP_SCALE`), so substituting a
+ * content-equal cached array for a fresh one cannot change any downstream
+ * boolean. Deliberately order-sensitive (same rings, same order, same start
+ * vertex): a stricter compare only costs a missed reuse, never a wrong one.
+ */
+function ringsContentEqual(a: Ring[], b: Ring[]): boolean {
+  if (a.length !== b.length) return false;
+  const q = (v: number) => Math.round(v * 1000);
+  for (let r = 0; r < a.length; r++) {
+    const ra = a[r];
+    const rb = b[r];
+    if (ra.length !== rb.length) return false;
+    for (let i = 0; i < ra.length; i++) {
+      if (q(ra[i].x) !== q(rb[i].x) || q(ra[i].y) !== q(rb[i].y)) return false;
+    }
+  }
+  return true;
+}
+
+/**
  * The overlap zone, reusing each pair's body intersection while neither of its
  * two bodies changed. This is the expensive half of the prefix — O(lines²)
  * whole-body clipper intersections — and a station move dirties only the two or
  * three lines passing through it, so most pairs are answerable from cache.
  * Bbox-rejected pairs are cached as empty so the map stays total.
+ *
+ * A pair with a dirty LINE whose intersection came out content-equal anyway
+ * (the line moved at a faraway station) keeps the cached array by reference
+ * and does not count as changed — the moved-line-crosses-many-stationary-
+ * lines case is what keeps the changed set to the crossings that genuinely
+ * moved.
  */
 function buildZoneCached(
   ids: LineId[],
@@ -253,10 +280,17 @@ function buildZoneCached(
         parts.push(...cached);
         continue;
       }
-      allReused = false;
       const rings = boxesOverlap(boxes.get(a)!, boxes.get(b)!)
         ? intersect(bodies.get(a)!, bodies.get(b)!)
         : [];
+      if (cached && ringsContentEqual(cached, rings)) {
+        // Clean after all: the intersect had to run to learn it, but the
+        // answer is engine-indistinguishable from the cached one.
+        pairParts.set(key, cached);
+        parts.push(...cached);
+        continue;
+      }
+      allReused = false;
       pairParts.set(key, rings);
       parts.push(...rings);
     }

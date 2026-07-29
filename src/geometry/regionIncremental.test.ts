@@ -458,12 +458,16 @@ describe('buildRegionsIncremental', () => {
     expect(f2.state.pairParts.get('a|b')).toBe(f1.state.pairParts.get('a|b'));
 
     // Third frame: only `c` moves. The clean pair keeps its cached
-    // intersection; the pairs touching `c` and `c`'s own body are rebuilt.
+    // intersection; `c`'s own body is rebuilt. The pairs touching `c` re-run
+    // their intersect but come out content-equal (still no overlap), so they
+    // keep the cached array by REFERENCE — the content compare classifying a
+    // dirty-line pair as clean-after-all is what keeps a distant move from
+    // forcing a global zone re-union.
     const f3 = buildRegionsIncremental(apart(9), [], f2.state);
     expect(f3.state.bodies.get('a')).toBe(f1.state.bodies.get('a'));
     expect(f3.state.bodies.get('c')).not.toBe(f1.state.bodies.get('c'));
     expect(f3.state.pairParts.get('a|b')).toBe(f1.state.pairParts.get('a|b'));
-    expect(f3.state.pairParts.get('a|c')).not.toBe(f1.state.pairParts.get('a|c'));
+    expect(f3.state.pairParts.get('a|c')).toBe(f1.state.pairParts.get('a|c'));
   });
 
   // The same for the other early-out: one line can produce no overlap at all,
