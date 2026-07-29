@@ -1286,12 +1286,16 @@ empty-partial write changes nothing, so temporal's `equality` (`docSnapshotsEqua
 the history entry and the redo-stack wipe; the flush cancels any pre-undo debounce timer, so a
 stale write can never land on top of the undo's.
 
-**The doc storage write is debounced** (`debouncedDocStorage`, store.ts): every `set()` — every
-pointermove of a drag — hands persist the un-stringified `{state, version}`, and the full-doc
-`JSON.stringify` + `localStorage.setItem` run once per ~300ms quiet period (one pending slot,
-last-write-wins; stored bytes pinned identical to what `createJSONStorage` produced). Flush
-points close the durability window: gesture commit (durable at pointerup), the undo path above,
-and pagehide/beforeunload/visibilitychange.
+**The doc storage write is debounced inside deferring gestures** (`debouncedDocStorage`,
+store.ts): a history group opened with `deferPersist` — the canvas drag hooks' per-frame write
+streams — hands persist the un-stringified `{state, version}` and the full-doc `JSON.stringify`
++ `localStorage.setItem` run once per ~300ms quiet period (one pending slot, last-write-wins;
+stored bytes pinned identical to what `createJSONStorage` produced). Everything else — one-shot
+edits and focus-scoped groups (numeric fields, the color picker, name editors) — writes
+synchronously: a focus group stays open as long as focus does, so deferring under it would
+leave storage arbitrarily stale behind a discrete, observable edit. Flush points close the
+deferred window: gesture commit (durable at pointerup), the undo path above, and
+pagehide/beforeunload/visibilitychange.
 
 **Grouped edits — `beginHistoryGroup()`** ([store.ts](src/state/store.ts)). A drag is many
 `moveStation` calls; a text edit is many `onChange`s; a slider drag is many ticks. The pattern:

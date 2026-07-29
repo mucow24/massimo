@@ -62,7 +62,7 @@ export function useLineTagDrag(
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
-      history: beginHistoryGroup(),
+      history: beginHistoryGroup({ deferPersist: true }),
       onMove,
       onUp,
       onCancel,

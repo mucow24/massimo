@@ -101,7 +101,7 @@ export function useStationDrag(
         // Snapshot the doc + pause history; commit one entry on drag, cancel on a
         // pure click. Pointer capture is deferred to first movement (trackDragMove)
         // so the synthesized click still lands on the station's rect.
-        history: beginHistoryGroup(),
+        history: beginHistoryGroup({ deferPersist: true }),
       };
     },
     [],

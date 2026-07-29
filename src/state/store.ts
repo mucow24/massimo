@@ -178,6 +178,16 @@ export function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
 // per quiet period. State updates (and hence undo, rendering, everything
 // in-memory) stay synchronous — only the storage write trails.
 //
+// The debounce applies ONLY while a group opened with `deferPersist` is
+// open — the canvas drag hooks' per-frame write streams, where the whole
+// win lives. Everything else (one-shot edits, focus-scoped field groups,
+// the color picker) writes synchronously, exactly as createJSONStorage
+// did: a focus group stays open as long as focus does, so deferring under
+// it would leave storage arbitrarily stale behind a discrete, observable
+// edit — anything reading localStorage as ground truth (the e2e helpers
+// do) keeps its contract. Only mid-drag intermediates — states nobody
+// should durably observe — trail.
+//
 // Flush points close the ≤PERSIST_DEBOUNCE_MS durability window where it
 // matters: gesture commit (beginHistoryGroup's commit below), undo/redo
 // (history.ts flushPersist), and the page-hide listeners at the bottom of this
@@ -216,6 +226,12 @@ const debouncedDocStorage: PersistStorage<DocSnapshot> = {
     // The snapshot inside `value` is immutable (transforms replace objects),
     // so holding the reference and stringifying later cannot tear.
     pendingPersist = { name, value };
+    if (openHistoryGroup === null || !openGroupDefersPersist) {
+      // Discrete or focus-scoped edit: write now, synchronously — the
+      // pre-debounce contract. Only pointer-stream gestures defer.
+      flushDocPersist();
+      return;
+    }
     cancelPersistTimer();
     persistTimer = setTimeout(() => {
       persistTimer = null;
@@ -1327,6 +1343,9 @@ export const useDoc = create<DocState>()(
 // The one currently-open history group, if any — the ownership reference
 // behind the steal-on-begin overlap contract documented on beginHistoryGroup.
 let openHistoryGroup: { commit: () => void; cancel: () => void } | null = null;
+// Whether the open group's write stream defers the storage write (see
+// beginHistoryGroup's deferPersist). Reset whenever ownership is released.
+let openGroupDefersPersist = false;
 
 /**
  * Cancel the currently-open history group, if any. Called by clearHistory():
@@ -1409,7 +1428,18 @@ function withRegionReconcile<T extends MapDoc>(updater: (s: DocState) => T): (s:
  * group — every write then records its own entry plus a stray snapshot on
  * top, leaving undo non-monotonic.
  */
-export function beginHistoryGroup(): {
+export function beginHistoryGroup(opts?: {
+  /**
+   * Trailing-debounce the localStorage write for this group's write stream
+   * (see the persistence block above). Pass it from POINTER-DRIVEN per-frame
+   * streams — the canvas drag hooks — where a full-doc stringify per move is
+   * real money. Focus-scoped groups (numeric fields, the color picker, name
+   * editors) must NOT defer: their writes come at typing cadence, and the
+   * group stays open as long as focus does, so deferral would leave storage
+   * arbitrarily stale behind a discrete, observable edit.
+   */
+  deferPersist?: boolean;
+}): {
   commit: () => void;
   cancel: () => void;
   rollback: () => void;
@@ -1424,13 +1454,17 @@ export function beginHistoryGroup(): {
 
   const snapshot = pickDocSnapshot(useDoc.getState());
   pauseHistory();
+  openGroupDefersPersist = opts?.deferPersist ?? false;
   let done = false;
   // Shared first step of every ender: run once, and release ownership only if
   // this group still holds it (a stolen group must not null out its stealer).
   const finish = (): boolean => {
     if (done) return false;
     done = true;
-    if (openHistoryGroup === group) openHistoryGroup = null;
+    if (openHistoryGroup === group) {
+      openHistoryGroup = null;
+      openGroupDefersPersist = false;
+    }
     return true;
   };
   const group = {
