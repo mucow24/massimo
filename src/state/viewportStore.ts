@@ -87,13 +87,14 @@ interface ViewportState extends Viewport {
 
 /**
  * The live, un-committed viewport during an in-flight gesture (pan / wheel
- * zoom), or null between gestures. useViewport writes the SVG viewBox
- * imperatively each event and publishes the same viewport here so overlays
- * pinned to the canvas (the item popovers) can track the gesture per frame —
- * the only React subscriber is the small popover layer, so the ~2.7k-node SVG
- * tree (which reads the committed `useViewportStore`) is never re-rendered
- * mid-gesture. Kept OUT of `useViewportStore` precisely because that store is
- * persisted: a per-frame write there would hammer localStorage.
+ * zoom), or null between gestures. useViewport moves the world imperatively
+ * each event (pan: composited pan-layer translate; zoom: viewBox write) and
+ * publishes the same viewport here so overlays pinned to the canvas (the item
+ * popovers) can track the gesture per frame — the only React subscriber is
+ * the small popover layer, so the multi-thousand-node SVG tree (which reads
+ * the committed `useViewportStore`) is never re-rendered mid-gesture. Kept
+ * OUT of `useViewportStore` precisely because that store is persisted: a
+ * per-frame write there would hammer localStorage.
  */
 interface LiveViewportState {
   pending: Viewport | null;
@@ -110,8 +111,8 @@ export const useLiveViewportStore = create<LiveViewportState>((set) => ({
  * (pending) gesture zoom while a pan/zoom is live, else the committed zoom.
  * Subscribing to `pending` re-renders the caller on every gesture frame, so use
  * it ONLY inside selected-only overlays (one item at a time) — never in a
- * per-item body pass, which would re-render the whole ~2.7k-node canvas per
- * frame, the exact cost the imperative viewBox avoids. Handles stay
+ * per-item body pass, which would re-render the whole multi-thousand-node
+ * canvas per frame, the exact cost the imperative gesture path avoids. Handles stay
  * screen-constant AND track the gesture, so nothing snaps when it commits.
  * (Stroke widths don't need this — vector-effect="non-scaling-stroke" holds
  * them with no subscription at all; only handle body geometry, which

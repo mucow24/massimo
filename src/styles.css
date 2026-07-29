@@ -140,7 +140,7 @@ body,
   background: #f4f4f4;
 }
 
-.canvas-host > svg text {
+.canvas-pan-layer > svg text {
   user-select: none;
   -webkit-user-select: none;
   /* Inherit the page font ('Helvetica Neue' loaded from /fonts/). */
@@ -1648,17 +1648,29 @@ button.field-select {
   display: block;
 }
 
-/* Direct child only: this is the map canvas itself. The item popovers also
-   live inside .canvas-host, and a descendant selector would blow their little
-   icon svgs up to width:100% of the popover row. */
-.canvas-host > svg {
+/* The composited pan layer: the div a pan translates instead of rewriting the
+   viewBox (see useViewport). It overhangs the host by half a viewport on every
+   side, and the svg renders the matching 2× window (panSurfaceViewBox), so a
+   mid-gesture translate reveals pre-painted content — never a bare strip.
+   .canvas-host's overflow: hidden clips the overhang at the pane edge. The
+   margin comes from oversizing the ELEMENT, not from svg overflow: visible —
+   ink-overflow bounds (~3× per axis) break the compositor's transform fast
+   path and the pan re-rasters every frame; the 2× element box keeps it. */
+.canvas-pan-layer {
+  position: absolute;
+  inset: -50%;
+}
+/* Child of the pan layer only: this is the map canvas itself. The item
+   popovers also live inside .canvas-host, and a descendant selector would blow
+   their little icon svgs up to width:100% of the popover row. */
+.canvas-pan-layer > svg {
   width: 100%;
   height: 100%;
   display: block;
   cursor: default;
   shape-rendering: geometricPrecision;
 }
-.canvas-host > svg.tool-hand {
+.canvas-pan-layer > svg.tool-hand {
   cursor: grab;
 }
 /* Any in-flight pan shows the closed "panning hand": the hand-tool left-drag
@@ -1666,7 +1678,7 @@ button.field-select {
    alone (not .tool-hand.panning) so a middle-drag, which leaves the svg in
    .tool-arrow, still gets grabbing. Sits after .tool-hand so it wins the
    equal-specificity tie while a hand-tool pan is in flight. */
-.canvas-host > svg.panning {
+.canvas-pan-layer > svg.panning {
   cursor: grabbing;
 }
 
@@ -1680,9 +1692,11 @@ button.field-select {
    and the descendant `*` reaches hit shapes nested inside a group (bullet,
    label). */
 .canvas-host[data-uimode='appending-to-line']
+  .canvas-pan-layer
   > svg
   :is([data-bullet-id], [data-text-label-id], [data-transfer-id], [data-line-tag-id]),
 .canvas-host[data-uimode='appending-to-line']
+  .canvas-pan-layer
   > svg
   :is([data-bullet-id], [data-text-label-id], [data-transfer-id], [data-line-tag-id])
   * {

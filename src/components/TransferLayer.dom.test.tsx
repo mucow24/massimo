@@ -484,7 +484,7 @@ describe('TransferLayer — DOM rendering', () => {
       });
       // Cursor tracking populates cursorWorld; jsdom geometry is degenerate
       // but the branch only needs a truthy cursor point to render.
-      fireEvent.pointerMove(document.querySelector('.canvas-host > svg')!, {
+      fireEvent.pointerMove(document.querySelector('.canvas-host svg')!, {
         clientX: 120,
         clientY: 80,
       });

@@ -4,6 +4,7 @@ import {
   fitViewport,
   overdrawnViewBox,
   panFromDelta,
+  panSurfaceViewBox,
   screenToWorld,
   viewBoxFor,
 } from './viewportMath';
@@ -47,6 +48,27 @@ describe('overdrawnViewBox', () => {
     const od = overdrawnViewBox(vb);
     expect(od.vbX + od.vbW / 2).toBe(vb.vbX + vb.vbW / 2);
     expect(od.vbY + od.vbH / 2).toBe(vb.vbY + vb.vbH / 2);
+  });
+});
+
+describe('panSurfaceViewBox', () => {
+  it('grows the box half a viewport in every direction (2× per axis, same center)', () => {
+    expect(panSurfaceViewBox({ vbX: 10, vbY: 20, vbW: 100, vbH: 60 })).toEqual({
+      vbX: -40,
+      vbY: -10,
+      vbW: 200,
+      vbH: 120,
+    });
+  });
+
+  it('preserves the world-per-pixel scale of the visible box (2× window for a 2× element)', () => {
+    // The svg element is 2× the host per axis (.canvas-pan-layer{inset:-50%}),
+    // so doubling the window keeps zoom identical — the same world point lands
+    // on the same screen pixel.
+    const vb = viewBoxFor({ x: 30, y: -12, zoom: 2.5 }, { w: 800, h: 600 });
+    const surface = panSurfaceViewBox(vb);
+    expect(surface.vbW / (800 * 2)).toBeCloseTo(vb.vbW / 800, 12);
+    expect(surface.vbH / (600 * 2)).toBeCloseTo(vb.vbH / 600, 12);
   });
 });
 

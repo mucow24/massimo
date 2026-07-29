@@ -50,7 +50,7 @@ test.describe('Canvas export', () => {
     await seedAndOpen(page, fourInLineWithBulletsAndLabel);
 
     const screenViewBox = await page
-      .locator('.canvas-host > svg')
+      .locator('.canvas-host .canvas-pan-layer > svg')
       .getAttribute('viewBox');
 
     const download = await exportVia(page, 'SVG');
