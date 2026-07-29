@@ -212,6 +212,57 @@ describe('item popovers dock to the top-right corner', () => {
     }
   });
 
+  // Clicking a station on the canvas makes the sidebar scroll its row into view
+  // with `behavior: 'smooth'` (Sidebar.tsx). With the sidebar open but scrolled
+  // off the side of a narrow window, that row is outside the window entirely, so
+  // the browser animates the whole PAGE sideways to reach it — the host's box
+  // moves under the dock for the length of the animation, and the compositor
+  // keeps moving it while the main thread works, so two reads inside one commit
+  // pass do NOT agree. A dock that re-measures on every commit then feeds its own
+  // next commit: the value-equality bailout never fires, and React tears the app
+  // down with "Maximum update depth exceeded" (the minified #185 the crash
+  // reports). Settling is the whole requirement — one scroll must not become an
+  // unbounded render chain.
+  it('settles while a smooth page scroll is still in flight', () => {
+    const docEl = document.documentElement;
+    const origW = Object.getOwnPropertyDescriptor(docEl, 'clientWidth');
+    const origRect = Object.getOwnPropertyDescriptor(Element.prototype, 'getBoundingClientRect')!;
+    // Already 200px into the travel: past that the sidebar's strip is inside the
+    // window and the host's own edge — which moves with every scrolled pixel —
+    // is the dock. That is the stretch the dock genuinely has to track, and so
+    // the only one where a moving page changes its answer.
+    let x = 200;
+    let reads = 0;
+    Object.defineProperty(docEl, 'clientWidth', { configurable: true, get: () => 700 });
+    Object.defineProperty(Element.prototype, 'getBoundingClientRect', {
+      configurable: true,
+      // Every READ advances the scroll a step, up to the 500px target — a
+      // compositor-driven animation as the main thread sees it, rather than a
+      // position that politely holds still between measurements.
+      value: () => {
+        reads++;
+        x = Math.min(500, x + 1);
+        return { left: -x, right: -x + 1200, width: 1200, top: HOST_TOP, bottom: 0, height: 0 };
+      },
+    });
+    try {
+      act(() => useSelection.setState({ ...useSelection.getState(), sidebarOpen: true }));
+      render(<ItemPopovers hostSize={{ w: 1200, h: 600 }} />);
+      // One scroll event, as the animation's first frame would deliver.
+      expect(() => fireEvent.scroll(document)).not.toThrow();
+      // One event, a handful of readings — not the runaway chain of them that
+      // reaching React's limit takes. Generous: the bug spends 50+ here.
+      expect(reads).toBeLessThan(20);
+      // And it tracked the strip rather than freezing: the host's right edge,
+      // less the sidebar and the panel's own 320.
+      expect(leftTop().left).toBeCloseTo(1200 - x - 320 - 320 - 8, 9);
+    } finally {
+      if (origW) Object.defineProperty(docEl, 'clientWidth', origW);
+      else delete (docEl as unknown as Record<string, unknown>).clientWidth;
+      Object.defineProperty(Element.prototype, 'getBoundingClientRect', origRect);
+    }
+  });
+
   it('has an inert header — the panel is not draggable', () => {
     render(<ItemPopovers hostSize={committedView.size} />);
     const header = document.querySelector(`${SEL} .header`) as HTMLElement;

@@ -482,3 +482,72 @@ describe('<Sidebar /> — deleting a selected station via the row ×', () => {
     expect(useSelection.getState().selectedStationIds).toEqual([]);
   });
 });
+
+// Revealing the selected row must move the sidebar's OWN list and nothing else.
+// `scrollIntoView` cannot do that: it walks every scrollable ancestor up to the
+// document, and the sidebar sits at the right edge of an app grid floored at the
+// toolbar's max-content width — so in a window narrower than that, the row is
+// outside the window entirely and the browser satisfies the request by scrolling
+// the whole PAGE sideways to it. The map lurches ~490px out from under the click
+// that selected the station, and (until useDock stopped measuring on every
+// commit) the animated page took the canvas dock down with it.
+describe('<Sidebar /> — revealing the selected row scrolls the list, not the page', () => {
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...makeDoc({ stations: [makeStation({ id: 'alpha', name: 'Alpha' })] }),
+    });
+  });
+
+  // jsdom has no layout: every rect is zeros and nothing scrolls. Stub the one
+  // relationship this reads — a row sitting below the bottom of its box.
+  function stubBelowTheFold(): () => void {
+    const orig = Object.getOwnPropertyDescriptor(Element.prototype, 'getBoundingClientRect')!;
+    Object.defineProperty(Element.prototype, 'getBoundingClientRect', {
+      configurable: true,
+      value(this: Element) {
+        const box = this.classList.contains('scroll');
+        // Box spans y 0..300; the row sits at 400..420, eighty past the bottom.
+        return box
+          ? { top: 0, bottom: 300, left: 0, right: 320, width: 320, height: 300 }
+          : { top: 400, bottom: 420, left: 0, right: 320, width: 320, height: 20 };
+      },
+    });
+    return () => Object.defineProperty(Element.prototype, 'getBoundingClientRect', orig);
+  }
+
+  it("scrolls the list box to the row and never calls the page's scrollIntoView", () => {
+    const restore = stubBelowTheFold();
+    const intoView: string[] = [];
+    const origInto = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollIntoView')!;
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      value(this: Element) {
+        intoView.push(this.className || this.tagName);
+      },
+    });
+    const scrolled: { top?: number; behavior?: string }[] = [];
+    const origTo = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTo');
+    Object.defineProperty(Element.prototype, 'scrollTo', {
+      configurable: true,
+      value(this: Element, opts: { top?: number; behavior?: string }) {
+        scrolled.push(opts);
+      },
+    });
+    try {
+      render(<Sidebar />);
+      // Selected from OUTSIDE the sidebar — the canvas click this exists for.
+      act(() => useSelection.getState().selectStation('alpha'));
+
+      // The box scrolled by exactly the overhang: bottom 420 − 300 = 120.
+      expect(scrolled).toEqual([{ top: 120, behavior: 'smooth' }]);
+      // And the page was never asked to go anywhere.
+      expect(intoView).toEqual([]);
+    } finally {
+      restore();
+      Object.defineProperty(Element.prototype, 'scrollIntoView', origInto);
+      if (origTo) Object.defineProperty(Element.prototype, 'scrollTo', origTo);
+      else delete (Element.prototype as unknown as Record<string, unknown>).scrollTo;
+    }
+  });
+});

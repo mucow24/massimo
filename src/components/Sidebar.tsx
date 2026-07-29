@@ -250,7 +250,18 @@ export function Sidebar() {
   useEffect(() => {
     if (selection.activeTab !== 'stations' || !stationAnchorId) return;
     const el = document.querySelector(`[data-station-row="${stationAnchorId}"]`);
-    el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const box = el?.closest('.scroll');
+    if (!el || !box) return;
+    // `block: 'nearest'` by hand, over this box alone. `scrollIntoView` walks
+    // every scrollable ancestor up to the document, and the sidebar rides the
+    // right edge of a grid floored at the toolbar's `max-content` width — so in
+    // a narrower window the row is outside the window entirely and the browser
+    // obliges by scrolling the whole PAGE sideways to it, yanking the map out
+    // from under the very click that selected the station.
+    const r = el.getBoundingClientRect();
+    const b = box.getBoundingClientRect();
+    const delta = r.top < b.top ? r.top - b.top : r.bottom > b.bottom ? r.bottom - b.bottom : 0;
+    if (delta !== 0) box.scrollTo({ top: box.scrollTop + delta, behavior: 'smooth' });
   }, [stationAnchorId, selection.activeTab]);
 
   // Collapsed = the whole panel is gone: render nothing so the grid column can
