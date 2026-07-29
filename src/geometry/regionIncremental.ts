@@ -47,7 +47,7 @@
 import type { LineId } from '../model/types';
 import type { SegmentBandSpec, StopMarkerSpec } from './interlining';
 import type { Face, Ring } from './clip';
-import { intersect, pointInFace } from './clip';
+import { intersect } from './clip';
 import {
   boxesOverlap,
   buildLineBodies,
@@ -97,7 +97,7 @@ export interface RegionIncrementalState {
    * membership index or a drag growing them into significance would lose it.
    * Ids are private to one state lineage; nothing downstream sees them.
    */
-  zoneIndex: Map<number, { rings: Face; box: Box; significant: boolean }>;
+  zoneIndex: Map<number, CompEntry>;
   /** pairKey → per-ring home comp ids (all of them, on boundary ambiguity). */
   partHome: Map<string, number[][]>;
   nextCompId: number;
@@ -297,30 +297,79 @@ interface ZoneBuild {
   zone: Ring[];
   zoneComps: Face[];
   pairParts: Map<string, Ring[]>;
-  zoneIndex: Map<number, { rings: Face; box: Box; significant: boolean }>;
+  zoneIndex: Map<number, CompEntry>;
   partHome: Map<string, number[][]>;
   nextCompId: number;
   zoneUnionParts: number;
 }
 
-/** All home comp ids of one part ring: every indexed comp whose (padded-by-≤)
- *  bbox admits it AND whose polygon contains the ring's probe vertex. A ring
- *  vertex ON a shared boundary can test inside more than one comp — all of
- *  them are recorded, and the seed closure treats such a part as belonging to
- *  every one (over-seeding is exact; a silent single pick is not). */
-function ringHomes(
-  ring: Ring,
-  candidates: Iterable<[number, { rings: Face; box: Box; significant: boolean }]>,
-): number[] {
+/**
+ * Pure-JS nonzero-winding containment tester over a comp's rings (outer +
+ * holes), with edges y-bucketed so one probe scans only the edges whose
+ * y-range can cross its scanline — membership probes hundreds of part rings
+ * per frame, and the biggest comp carries thousands of vertices. Built
+ * lazily per comp entry and carried with it across frames.
+ */
+interface CompEntry {
+  rings: Face;
+  box: Box;
+  significant: boolean;
+  tester?: (p: { x: number; y: number }) => boolean;
+}
+
+function makeFaceTester(rings: Face, box: Box): (p: { x: number; y: number }) => boolean {
+  const H = 64;
+  const yMin = box.y0;
+  const span = Math.max(box.y1 - box.y0, 1e-9);
+  const bucketOf = (y: number) => Math.min(H - 1, Math.max(0, Math.floor(((y - yMin) / span) * H)));
+  const buckets: { ax: number; ay: number; bx: number; by: number }[][] = Array.from(
+    { length: H },
+    () => [],
+  );
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const a = ring[j];
+      const b = ring[i];
+      const lo = bucketOf(Math.min(a.y, b.y));
+      const hi = bucketOf(Math.max(a.y, b.y));
+      for (let k = lo; k <= hi; k++) buckets[k].push({ ax: a.x, ay: a.y, bx: b.x, by: b.y });
+    }
+  }
+  return (p) => {
+    let winding = 0;
+    for (const e of buckets[bucketOf(p.y)]) {
+      if (e.ay <= p.y) {
+        if (e.by > p.y && (e.bx - e.ax) * (p.y - e.ay) - (p.x - e.ax) * (e.by - e.ay) > 0) {
+          winding++;
+        }
+      } else if (e.by <= p.y && (e.bx - e.ax) * (p.y - e.ay) - (p.x - e.ax) * (e.by - e.ay) < 0) {
+        winding--;
+      }
+    }
+    return winding !== 0;
+  };
+}
+
+/** All home comp ids of one part ring: every candidate comp whose bbox admits
+ *  it AND whose polygon winds around the ring's probe vertex. A vertex ON a
+ *  shared boundary can test inside several comps — or, with the strict
+ *  winding test, inside NONE — so an empty result falls back to every comp
+ *  whose bbox contains the vertex (a superset of the true home): membership
+ *  only decides what seeds and what joins the re-union, and over-seeding is
+ *  exact where a silent miss would drop territory. */
+function ringHomes(ring: Ring, candidates: Iterable<[number, CompEntry]>): number[] {
   const p = ring[0];
   const homes: number[] = [];
+  const boxed: number[] = [];
   for (const [id, comp] of candidates) {
     if (p.x < comp.box.x0 || p.x > comp.box.x1 || p.y < comp.box.y0 || p.y > comp.box.y1) {
       continue;
     }
-    if (pointInFace(p, comp.rings)) homes.push(id);
+    boxed.push(id);
+    comp.tester ??= makeFaceTester(comp.rings, comp.box);
+    if (comp.tester(p)) homes.push(id);
   }
-  return homes;
+  return homes.length ? homes : boxed;
 }
 
 /**
@@ -409,28 +458,39 @@ function buildZoneCached(
     };
   }
 
+  // Membership (the per-ring home index) exists to make SMALL changes local.
+  // A hub-scale frame — tens of genuinely-changed pairs — is going to union
+  // most of the zone regardless, and during a hub drag every frame is like
+  // that: computing membership there is pure upkeep for an ability the next
+  // frame won't use either. So membership is maintained only when the change
+  // is small; a membership-less state simply takes one global-with-membership
+  // build the next time a small change arrives, then locality resumes.
+  const wantMembership = changed.size + removed.length <= 12;
+
   // Global union: cold builds, and the fallback when a change touches most of
   // the index anyway (splicing would buy nothing over rebuilding).
   const globalBuild = (): ZoneBuild => {
     const { zone, comps, all } = zoneComponents(parts);
-    const zoneIndex = new Map<number, { rings: Face; box: Box; significant: boolean }>();
+    const zoneIndex = new Map<number, CompEntry>();
     const significant = new Set(comps);
     all.forEach((rings, i) => {
       zoneIndex.set(i, { rings, box: ringsBbox(rings), significant: significant.has(rings) });
     });
     const partHome = new Map<string, number[][]>();
-    for (const [key, rings] of pairParts) {
-      if (rings.length)
-        partHome.set(
-          key,
-          rings.map((r) => ringHomes(r, zoneIndex)),
-        );
+    if (wantMembership) {
+      for (const [key, rings] of pairParts) {
+        if (rings.length)
+          partHome.set(
+            key,
+            rings.map((r) => ringHomes(r, zoneIndex)),
+          );
+      }
     }
     return {
       zone,
       zoneComps: comps,
       pairParts,
-      zoneIndex,
+      zoneIndex: wantMembership ? zoneIndex : new Map(),
       partHome,
       nextCompId: all.length,
       zoneUnionParts: parts.length,
@@ -503,7 +563,7 @@ function buildZoneCached(
   const zoneIndex = new Map(prev.zoneIndex);
   for (const id of seeds) zoneIndex.delete(id);
   let nextCompId = prev.nextCompId;
-  const fresh = new Map<number, { rings: Face; box: Box; significant: boolean }>();
+  const fresh = new Map<number, CompEntry>();
   const localSignificant = new Set(local.comps);
   for (const rings of local.all) {
     const entry = { rings, box: ringsBbox(rings), significant: localSignificant.has(rings) };
