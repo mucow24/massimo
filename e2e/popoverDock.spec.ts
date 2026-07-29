@@ -62,8 +62,64 @@ test.describe('canvas popovers dock to the top-right corner', () => {
     expect(host.x + host.width - (wide.x + wide.width)).toBeCloseTo(8, 0);
   });
 
-  // The host clips (overflow: hidden), so a panel taller than the window runs
-  // off the bottom with no way to reach what's down there — Lock and Delete
+  // `.toolbar { min-width: max-content }` floors the app grid — and with it the
+  // canvas host — at the toolbar's natural ~1189px, so a narrower window leaves
+  // the host wider than itself and the PAGE scrolls sideways, carrying the
+  // host's top-right corner off the right of the screen. Only a browser has the
+  // toolbar's natural width, a real page scroll, and the scrollbars that come
+  // with it, so the dock's window-tracking is pinned here.
+  test('follows a narrow window across a horizontal scroll, then settles at its dock', async ({
+    page,
+  }) => {
+    await openBulletPopover(page);
+    // Narrowed after the popover is open — at 700 there is no bare canvas left
+    // to click, and the sidebar's own edge (host x ≈ 869) sits off screen, so
+    // the window's edge is the only thing left to dock against.
+    await page.setViewportSize({ width: 700, height: 820 });
+
+    // Every reading is taken fresh and polled: a resize or a scroll reaches the
+    // dock a frame after Playwright's promise resolves, so a single shot can
+    // catch the panel still at its pre-resize position.
+    const gapToWindowRight = async () => {
+      const b = await boxOf(page, '.bullet-popover');
+      const winW = await page.evaluate(() => document.documentElement.clientWidth);
+      return Math.round(winW - (b.x + b.width));
+    };
+
+    // Scrolled hard left, where the host's own corner is ~489px off screen: the
+    // panel is at the window's right edge, one 8px pad off it.
+    await expect.poll(gapToWindowRight).toBe(8);
+
+    const m = await page.evaluate(() => ({
+      hostW: document.querySelector('.canvas-host')!.clientWidth,
+      winW: document.documentElement.clientWidth,
+      maxScroll: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    }));
+    // Guards, read once the narrowing has settled: the app really is wider than
+    // the window and the page really does scroll — without both, the assertion
+    // above and those below prove nothing.
+    expect(m.hostW).toBeGreaterThan(m.winW);
+    expect(m.maxScroll).toBeGreaterThan(0);
+
+    // Mid-scroll it holds that same edge — it tracked the page pixel for pixel
+    // instead of riding away with the host.
+    await page.evaluate(() => window.scrollTo(150, 0));
+    await expect.poll(gapToWindowRight).toBe(8);
+
+    // At the end of the travel the sidebar's edge has come into view and is the
+    // nearer obstacle: the panel settles into its home dock and stops.
+    await page.evaluate((x) => window.scrollTo(x, 0), m.maxScroll);
+    await expect
+      .poll(async () => {
+        const sidebar = await boxOf(page, '.sidebar');
+        const end = await boxOf(page, '.bullet-popover');
+        return Math.round(sidebar.x - (end.x + end.width));
+      })
+      .toBe(8);
+  });
+
+  // The panel is pinned to the window, so one taller than it runs off the
+  // bottom with no way to reach what's down there — Lock and Delete
   // included. The body clamps to the viewport and scrolls inside itself, the
   // footer sticks to the shell's bottom edge, and the one control a user can
   // drag past the window (the Text box) is capped short of it.

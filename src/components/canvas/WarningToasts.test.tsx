@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import App from '../../App';
+import { WarningToasts } from './WarningToasts';
 import { useDoc, useSelection } from '../../state/store';
 import * as interlining from '../../geometry/interlining';
+import type { SegmentBandSpec } from '../../geometry/interlining';
 import { DEFAULT_DOC } from '../../model/transforms';
 import type { Line, Station } from '../../model/types';
 import { makeLine } from '../../test/fixtures';
@@ -89,11 +91,11 @@ describe('WarningToasts', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  // The toasts rest in the host's bottom-right corner — exactly where the open
-  // sidebar paints over them (it overlays the right strip, z-index above the
-  // canvas). So while the panel shows, shift them left of it so they stay on
-  // screen; the offset is the same SIDEBAR_WIDTH inset ItemPopovers subtracts
-  // from the popover dock.
+  // The toasts rest in the bottom-right corner — exactly where the open sidebar
+  // paints over them (it overlays the right strip, z-index above the canvas).
+  // So while the panel shows, shift them left of it so they stay on screen; the
+  // offset is the same SIDEBAR_WIDTH inset ItemPopovers subtracts from the
+  // popover dock.
   it('shifts the toasts left of the sidebar while the panel is open', () => {
     render(<App />);
     seedWarningDoc();
@@ -107,8 +109,87 @@ describe('WarningToasts', () => {
     seedWarningDoc();
     act(() => useSelection.setState({ ...useSelection.getState(), sidebarOpen: false }));
 
-    // No inline override → the toasts fall back to the CSS `right: 12px` inset.
     const el = document.querySelector('.warning-toasts') as HTMLElement;
-    expect(el.style.right).toBe('');
+    expect(el.style.right).toBe('12px');
+  });
+});
+
+// A window narrower than the app scrolls the page sideways (`.toolbar {
+// min-width: max-content }` floors the grid), carrying the host's bottom-right
+// corner — and the sidebar docked at it — off the screen. The stack is pinned
+// to the WINDOW, so it stays in the corner the user can see and only gives way
+// to the sidebar for the part of that strip actually in view.
+describe('WarningToasts on a window narrower than the app', () => {
+  const HOST = { w: 1189, h: 700 };
+  const WINDOW_W = 700;
+  // Only the fields the component reads; the router's real spec is far wider.
+  const band = {
+    bandKey: 'b1',
+    fromId: 's1',
+    toId: 's2',
+    warning: true,
+    centerline: [{ x: 0, y: 0 }],
+  } as unknown as SegmentBandSpec;
+
+  // jsdom has no layout: stub the window's width and the host's box within it
+  // (scrolling right slides that box left, to a negative `left`).
+  function stubPage(): { scrollTo: (x: number) => void; restore: () => void } {
+    const docEl = document.documentElement;
+    const origRect = Object.getOwnPropertyDescriptor(Element.prototype, 'getBoundingClientRect')!;
+    let x = 0;
+    Object.defineProperty(docEl, 'clientWidth', { configurable: true, get: () => WINDOW_W });
+    Object.defineProperty(Element.prototype, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ left: -x, top: 0, right: 0, bottom: 0, width: 0, height: 0 }),
+    });
+    return {
+      scrollTo: (to: number) => {
+        x = to;
+        fireEvent.scroll(window);
+      },
+      restore: () => {
+        delete (docEl as unknown as Record<string, unknown>).clientWidth;
+        Object.defineProperty(Element.prototype, 'getBoundingClientRect', origRect);
+      },
+    };
+  }
+
+  const rightInset = () => (document.querySelector('.warning-toasts') as HTMLElement).style.right;
+
+  it('hugs the window while the sidebar is scrolled out of view, then gives way to it', () => {
+    const page = stubPage();
+    try {
+      render(<WarningToasts bands={[band]} hostSize={HOST} />);
+      // The sidebar owns host x ∈ [869, 1189] — entirely right of a 700px
+      // window, so there is nothing to clear and the stack sits at its resting
+      // inset from the window's own corner.
+      expect(rightInset()).toBe('12px');
+      // Its left edge (host 869) reaches the window's right edge at scrollX
+      // 169; still nothing in view to clear.
+      page.scrollTo(169);
+      expect(rightInset()).toBe('12px');
+      // 100px further and 100px of strip is inside the window — the stack gives
+      // way by exactly that much, no more.
+      page.scrollTo(269);
+      expect(rightInset()).toBe('112px');
+      // At the end of the travel the whole strip is in view: the full shift.
+      page.scrollTo(489);
+      expect(rightInset()).toBe(`${12 + SIDEBAR_WIDTH}px`);
+    } finally {
+      page.restore();
+    }
+  });
+
+  it('ignores the sidebar strip entirely when the panel is closed', () => {
+    act(() => useSelection.setState({ ...useSelection.getState(), sidebarOpen: false }));
+    const page = stubPage();
+    try {
+      render(<WarningToasts bands={[band]} hostSize={HOST} />);
+      expect(rightInset()).toBe('12px');
+      page.scrollTo(489);
+      expect(rightInset()).toBe('12px');
+    } finally {
+      page.restore();
+    }
   });
 });

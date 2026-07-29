@@ -1945,7 +1945,9 @@ of their own, and are omitted below to keep it readable:
 
 Outside the `<svg>`, `WarningToasts` renders one clickable HTML toast per router-flagged band;
 clicking it jumps the viewport to the band's center. It takes MapCanvas's memoized `bands`
-as a prop specifically so it never rebuilds the router.
+as a prop specifically so it never rebuilds the router. The stack rests in the bottom-right
+corner of the visible host on the same `useDock` measurement the popovers use at the top-right,
+giving way only to the part of the open sidebar's strip actually in the window.
 
 `StationView`'s props are referentially stable across a pan (immutable store refs, constant zoom,
 stable `useCallback` handlers), so a mid-pan re-render — and the commit's own — does **not**
@@ -2197,15 +2199,31 @@ popover/handles). Cursor-following ghost previews (`*PlacingPreview`, all `opaci
 when **≥2 items** are selected across the six lists (idle only): a count summary + Lock all /
 Unlock all / Delete all over the whole group.
 Every panel — those, the line editor and the station layout editor — is **docked to the
-host's top-right corner** by `usePinnedPopover`, right-aligned on the panel's own measured
-width (248 for the item popovers, 320 for the station/line editors) 8px off the top and right
-edges. Vertically the body clamps to the viewport and scrolls inside itself, its footer sticky
-at the shell's bottom edge — the host clips (`overflow: hidden`), so anything past that edge
-would simply be unreachable. Nothing about the item or the camera reaches the panel: the only
-input is `hostW`, the canvas host minus the open sidebar's `SIDEBAR_WIDTH` strip (the sidebar
-paints ABOVE the popovers, so docking to the raw host width would park a panel under it). A pan
-or zoom therefore moves the map under a panel that stays put, and there is no drag handle — the
-header is a title band. The station popover hides (`display:none`, not unmount) during non-idle
+top-right corner of what's visible of the host** by `usePinnedPopover`, right-aligned on the
+panel's own measured width (248 for the item popovers, 320 for the station/line editors) 8px
+off the top and right edges. Vertically the body clamps to the viewport and scrolls inside
+itself, its footer sticky at the shell's bottom edge — the panel is pinned to the window, so
+anything past its bottom edge would simply be unreachable. Nothing about the item or the camera
+reaches the panel; its two inputs are `hostW` — the canvas host minus the open sidebar's
+`SIDEBAR_WIDTH` strip (the sidebar paints ABOVE the popovers, so docking to the raw host width
+would park a panel under it) — and the host's own box in the window. The second input is what a
+window narrower than the app needs: the grid is floored at the toolbar's `max-content` width,
+so the page scrolls sideways and the host's corner leaves the screen. The dock is then the
+nearer of the two right edges — the window's while the host's is out of reach, the host's (or
+the sidebar's) once it scrolls into view.
+
+The **anchor is in window coordinates and `PopoverShell` is `position: fixed`**, which is what
+makes that stable — `useDock` owns the measurement, shared with the routing-warning toasts that
+dock to the opposite corner: through the whole first regime the anchor doesn't change, so the browser
+holds the panel against the window edge and a scroll costs no re-render and no repositioning.
+Only the second regime updates per scroll frame, because a panel giving way to the
+document-positioned sidebar has to track it — `SIDEBAR_WIDTH` of travel with the sidebar open,
+none without. (Absolute positioning plus a scroll listener was tried and visibly trailed: the
+compositor scrolls without waiting for the main thread.) Fixed positioning changes nothing
+about paint order — `.canvas-host`'s `isolation: isolate` still traps the shell's z-index in
+the canvas layer, since a stacking context follows DOM ancestry, not the containing block. A
+pan or zoom, by contrast, moves the map under a panel that stays put, and there is no drag
+handle — the header is a title band. The station popover hides (`display:none`, not unmount) during non-idle
 uiMode excursions, keeping its DOM node and measured width. Every popover renders inside
 `PopoverShell`, which owns the floating frame (header + body) and the load-bearing event
 swallowing — pointerdown/click/contextmenu inside a popover must never reach the canvas, which
