@@ -50,8 +50,9 @@ with meanwhile — a failure to load is reported instead of degraded.
   multiple lines sharing a station-pair corridor are merged into mean-centered parallel stripes.
   This is the single most intricate algorithm in the repo and is pinned by a **byte-exact golden
   snapshot**.
-- **Performance spine:** pan/zoom writes the SVG `viewBox` **imperatively and synchronously**
-  (not via React, not via rAF) so the ~2,700-node SVG tree is never re-rendered mid-gesture.
+- **Performance spine:** gestures never re-render the SVG tree mid-flight. A pan translates a
+  **composited wrapper div** (compositor-only — no layout/paint/raster, whatever the map size); a
+  wheel zoom writes the SVG `viewBox` **imperatively and synchronously** (not via React, not rAF).
 - **Persistence has two load paths that must stay in sync:** `parse()` (file import) and
   `migrateDoc()` (localStorage rehydration). There is **no `normalizeDoc()`** — absent fields
   fill from `DEFAULT_DOC`; legacy fixups are shared exported "backfill"/"sanitize" functions
@@ -1419,7 +1420,8 @@ on any mode exit.
   handle overlays (`PolygonView`, `SvgImageView`) via the `useLiveZoom` selector — never the giant
   station/band tree. Exists solely
   so per-frame pan/zoom writes don't hammer localStorage or re-render the SVG. See the
-  [Interaction layer](#canvas-interaction-layer) for how the viewBox is written imperatively.
+  [Interaction layer](#canvas-interaction-layer) for how the gestures move the world imperatively
+  (pan: composited pan-layer translate; zoom: viewBox write).
 
 **`showNetwork` — the lines/stations toggle** (toolbar eye button; the toggle row runs `WP` →
 anchors → eye). Off leaves only
@@ -1934,7 +1936,7 @@ clicking it jumps the viewport to the band's center. It takes MapCanvas's memoiz
 as a prop specifically so it never rebuilds the router.
 
 `StationView`'s props are referentially stable across a pan (immutable store refs, constant zoom,
-stable `useCallback` handlers), so an imperative pan that rewrites the viewBox does **not**
+stable `useCallback` handlers), so a mid-pan re-render — and the commit's own — does **not**
 re-render every station subtree.
 
 **A station name paints in three passes** ([StationLabel.tsx](src/components/StationLabel.tsx)) —
@@ -2004,28 +2006,49 @@ Files in [src/components/canvas/](src/components/canvas/). `MapCanvas` composes 
 ### The viewport perf spine
 
 Committed camera in persisted `useViewportStore`; in-flight in non-persisted
-`useLiveViewportStore`. During a gesture, `applyViewBox(v)` does two things: `setPending(v)` (live
-store) **and** `svgRef.current.setAttribute('viewBox', …)` directly. No doc/committed-store write
-→ no React re-render of the SVG tree per frame; the browser just re-rasters the moved region. On
-gesture end (`commitPending`), `setViewport(pending)` then `setPending(null)` (clearing pending
-**last** so overlays stay on the live viewport right up to commit — no jump). The JSX `viewBox`
-binds to the **committed** viewport, so a mid-pan re-render leaves that prop string unchanged and
-React skips the DOM write (never clobbering the imperative pan).
+`useLiveViewportStore`. Neither gesture writes the doc or the committed store per frame → no React
+re-render of the SVG tree mid-gesture — but the two move the world by different mechanisms:
 
-> The viewBox write is **synchronous, not rAF** — rAF was tried and reverted (synchronous tracks
+- **Pan — composited translate.** The `<svg>` sits inside `.canvas-pan-layer`, a wrapper div half
+  a viewport bigger than the host on every side (`inset: -50%`); the svg renders the matching 2×
+  window (`panSurfaceViewBox`), so a half-viewport ring around the visible box is pre-painted.
+  Each move, `applyPan(v)` does `setPending(v)` (live store) and sets a `translate(…)` on the
+  layer — promoted via gesture-scoped `will-change: transform` at pointer-down — which the
+  compositor executes without any style/layout/paint/raster work, whatever the map's node count.
+  Blink has no such fast path for transforms on the svg element itself or an inner `<g>`, and
+  letting svg ink overflow define the layer bounds also kills it — the margin must come from the
+  oversized **element box**. Before a translate could outrun the margin (45% of a viewport
+  dimension, `REANCHOR_FRAC`), the gesture **re-anchors**: commits the camera and zeroes the
+  transform in the same synchronous handler — one repaint per half-viewport of travel. (A
+  per-move `viewBox` write would re-lay-out, re-paint, and re-raster the whole svg every frame —
+  ~20fps on a ~9k-node map on integrated graphics, where the translate runs at display rate.)
+- **Zoom — imperative viewBox.** Each wheel tick, `applyViewBox(v)` does `setPending(v)` and
+  `svgRef.current.setAttribute('viewBox', …)` (the pan-surface window) directly; the browser
+  re-rasters. A transform zoom would scale the cached raster — blurry — so zoom keeps the
+  repaint-per-tick path. Ticks are ignored while a pan gesture is active.
+
+On gesture end (`commitPending`), `setViewport(pending)` then `setPending(null)` (clearing pending
+**last** so overlays stay on the live viewport right up to commit — no jump); a pan also retires
+its transform and `will-change` in the same handler, so the swap lands in one frame. The JSX
+`viewBox` binds to the **committed** viewport (via `panSurfaceViewBox`), so a mid-gesture
+re-render leaves that prop string unchanged and React skips the DOM write (never clobbering an
+imperative zoom write, never moving the attribute mid-pan).
+
+> The gesture writes are **synchronous, not rAF** — rAF was tried and reverted (synchronous tracks
 > the cursor with zero added latency). Per-frame writes go to `useLiveViewportStore`, **never**
 > `useViewportStore` (which is persisted — a per-frame write would hammer localStorage).
 
-`screenToWorld` reads the **live** viewport (so a cursor-following overlay doesn't drift
-mid-gesture); the returned `vb*` fields track the **committed** viewport (so a mid-pan re-render
-can't clobber the imperative pan). Both distinctions are explicitly tested
+`screenToWorld` reads the **live** viewport and measures the **host** box (`.canvas-host` — the
+svg's own rect rides the pan transform, so measuring it would double-count the gesture); the
+returned `vb*` fields track the **committed** viewport. Both distinctions are explicitly tested
 ([useViewport.test.tsx](src/components/canvas/useViewport.test.tsx)). Pure math lives in
-[viewportMath.ts](src/components/canvas/viewportMath.ts) (`viewBoxFor`, `overdrawnViewBox` —
-draws bg/grid/dim at a 3×3 tile so an imperative pan can't reveal a bare strip — `computeWheelZoom`
-clamps zoom to `[0.1, 64]`). Wheel zoom commits after a settle timer (~90ms quiet); pan commits on
-pointer-up. The background `Grid` level-of-details its own spacing (`gridStep` in
-[canvas/Grid.tsx](src/components/canvas/Grid.tsx): the drawn interval doubles in powers of two so
-on-screen spacing stays ≥ 5px — snapping still reads the true `gridSize` from the store).
+[viewportMath.ts](src/components/canvas/viewportMath.ts) (`viewBoxFor`, `panSurfaceViewBox`,
+`overdrawnViewBox` — draws bg/grid/dim at a 3×3 tile so a mid-gesture camera can't reveal a bare
+strip — `computeWheelZoom` clamps zoom to `[0.1, 64]`). Wheel zoom commits after a settle timer
+(~90ms quiet); pan commits on pointer-up. The background `Grid` level-of-details its own spacing
+(`gridStep` in [canvas/Grid.tsx](src/components/canvas/Grid.tsx): the drawn interval doubles in
+powers of two so on-screen spacing stays ≥ 5px — snapping still reads the true `gridSize` from the
+store).
 
 ### Pointer flow
 

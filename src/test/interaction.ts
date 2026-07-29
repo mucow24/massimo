@@ -156,13 +156,44 @@ export function fakeSvg(opts: FakeSvgOpts = {}): FakeSvg {
   };
 }
 
-/** A `{ current }` ref wrapping a fake svg, typed for the hooks under test. */
+/** The pan-layer stand-in useViewport writes its composited transform to: a
+ *  bare `style` bag to assert transform/will-change writes, plus a
+ *  `parentElement` (the canvas host) that sizes the viewport and anchors
+ *  screenToWorld — the STATIONARY box, unlike the svg's rect, which moves
+ *  with the transform in a real browser. */
+export interface FakePanLayer {
+  style: { transform: string; willChange: string };
+  parentElement: {
+    clientWidth: number;
+    clientHeight: number;
+    getBoundingClientRect(): FakeRect;
+  };
+}
+
+/** A `{ current }` ref wrapping a fake svg, typed for the hooks under test.
+ *  Also builds the sibling fake pan layer (same host rect as the svg) for
+ *  hooks that take one — consumers that don't can ignore it. */
 export function fakeSvgRef(opts: FakeSvgOpts = {}): {
   ref: { current: SVGSVGElement | null };
   svg: FakeSvg;
+  panLayerRef: { current: HTMLDivElement | null };
+  panLayer: FakePanLayer;
 } {
   const svg = fakeSvg(opts);
-  return { ref: { current: svg as unknown as SVGSVGElement }, svg };
+  const panLayer: FakePanLayer = {
+    style: { transform: '', willChange: '' },
+    parentElement: {
+      clientWidth: opts.width ?? 800,
+      clientHeight: opts.height ?? 600,
+      getBoundingClientRect: () => svg.getBoundingClientRect(),
+    },
+  };
+  return {
+    ref: { current: svg as unknown as SVGSVGElement },
+    svg,
+    panLayerRef: { current: panLayer as unknown as HTMLDivElement },
+    panLayer,
+  };
 }
 
 /**

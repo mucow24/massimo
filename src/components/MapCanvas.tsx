@@ -40,7 +40,7 @@ import { resolveDotStyle } from '../model/dotStyle';
 import { dotSizeOverride } from '../model/dotSize';
 import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
-import { overdrawnViewBox } from './canvas/viewportMath';
+import { overdrawnViewBox, panSurfaceViewBox } from './canvas/viewportMath';
 import { useStationDrag } from './canvas/useStationDrag';
 import { useStationLayoutDrag } from './canvas/useStationLayoutDrag';
 import { StationLayoutEditor } from './canvas/StationLayoutEditor';
@@ -183,11 +183,20 @@ export function MapCanvas() {
   // selected-item priority. The ref is used to scope "is this event on a proxy?"
   // and to momentarily hide the layer for the beneath hit-test.
   const proxyLayerRef = useRef<SVGGElement | null>(null);
-  const view = useViewport(svgRef);
+  // The composited pan layer wrapping the svg. A pan translates THIS div —
+  // compositor-only, no repaint — instead of rewriting the viewBox, which
+  // re-lays-out/re-paints/re-rasters the whole svg every frame (Blink has no
+  // fast path for svg-root or inner-<g> transforms). See useViewport.
+  const panLayerRef = useRef<HTMLDivElement | null>(null);
+  const view = useViewport(svgRef, panLayerRef);
   // Full-viewport overlays (background, grid, dim wash) are drawn at this
-  // overdrawn extent so an imperative-viewBox pan/zoom can't reveal a bare strip
-  // before the gesture commits and re-renders them. See overdrawnViewBox.
+  // overdrawn extent so a mid-gesture camera (composited pan translate, or a
+  // wheel zoom's imperative viewBox write) can't reveal a bare strip before
+  // the gesture commits and re-renders them. See overdrawnViewBox.
   const overdrawn = overdrawnViewBox(view);
+  // The window the (oversized) svg element actually renders: the visible box
+  // grown half a viewport per side, matching .canvas-pan-layer{inset:-50%}.
+  const surface = panSurfaceViewBox(view);
   const placement = usePlacementDispatch(view);
   const drag = useStationDrag(svgRef, view.viewport.zoom);
   const rectSelect = useRectSelect(svgRef, view.screenToWorld);
@@ -1085,626 +1094,632 @@ export function MapCanvas() {
       style={{ background: theme.canvasBg }}
     >
       <EditingBanner />
-      <svg
-        ref={svgRef}
-        viewBox={`${view.vbX} ${view.vbY} ${view.vbW} ${view.vbH}`}
-        className={(inHandMode ? 'tool-hand' : 'tool-arrow') + (view.panning ? ' panning' : '')}
-        // Wheel zoom is bound as a non-passive native listener inside useViewport
-        // (React's onWheel is passive, so its preventDefault would warn + no-op).
-        // Self-heal a stranded click-suppress flag at the start of every fresh
-        // gesture. A drag cancelled without a pointerup (lost capture,
-        // pointercancel) would otherwise leave dragState.suppressClick = true
-        // and silently swallow the next click. Capture phase so it runs before
-        // any child's stopPropagation; the drag re-sets the flag on first move.
-        onPointerDownCapture={() => {
-          dragState.suppressClick = false;
-        }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerCancel}
-        onPointerLeave={() => {
-          if (cursorWorld) setCursorWorld(null);
-        }}
-        // Alt+click deep-picks through the under-cursor stack; otherwise
-        // re-route a click/right-click on a selected item's drag proxy to the
-        // real element beneath, so selection always follows normal layer order
-        // (only DRAG gets selected-item priority). Capture phase so both run
-        // before the target's own handler and the canvas click handler.
-        onClickCapture={(e) => {
-          if (appendDeepPick(e)) return;
-          if (deepPickAltClick(e)) return;
-          rerouteProxyEventBeneath('click', e);
-        }}
-        // Two rapid alt+clicks (deep-pick cycling) also synthesize a native
-        // dblclick on the topmost element — which would open the station
-        // rename editor and clobber the deep-picked selection. Swallow
-        // alt-dblclicks; plain double-click rename is untouched.
-        onDoubleClickCapture={(e) => {
-          if (e.altKey) e.stopPropagation();
-        }}
-        onContextMenuCapture={(e) => rerouteProxyEventBeneath('contextmenu', e)}
-        onClick={onCanvasClick}
-        // Bubble-phase, so it only fires when no inner handler stopped
-        // propagation. During Edit Stops every canvas right-click reaches here
-        // (stations/segments deliberately leave contextmenu unwired in the
-        // mode) and is the mouse-only exit — the same cancelAppendMode() path
-        // Esc and the exit canvas-click take.
-        onContextMenu={(e) => {
-          e.preventDefault();
-          if (useSelection.getState().uiMode.kind === 'appending-to-line') cancelAppendMode();
-        }}
-        onDragStart={(e) => e.preventDefault()}
-      >
-        <defs>
-          <HatchPatterns colors={hatchedColors} underlayColor={underlayColor} />
-          {/* Per-line corridor clips for the branch seam (see SeamClips). */}
-          <SeamClips bands={bands} lines={lines} />
-          {regionExcludeHoles && regionClipOuter && (
-            <RegionExcludeClips holes={regionExcludeHoles} bounds={regionClipOuter} />
+      {/* The pan layer holds ONLY the svg (overlays stay outside so a pan
+          doesn't drag them). No inline style: useViewport writes the gesture
+          transform imperatively, and React must never own — or clobber — it. */}
+      <div className="canvas-pan-layer" ref={panLayerRef}>
+        <svg
+          ref={svgRef}
+          viewBox={`${surface.vbX} ${surface.vbY} ${surface.vbW} ${surface.vbH}`}
+          className={(inHandMode ? 'tool-hand' : 'tool-arrow') + (view.panning ? ' panning' : '')}
+          // Wheel zoom is bound as a non-passive native listener inside useViewport
+          // (React's onWheel is passive, so its preventDefault would warn + no-op).
+          // Self-heal a stranded click-suppress flag at the start of every fresh
+          // gesture. A drag cancelled without a pointerup (lost capture,
+          // pointercancel) would otherwise leave dragState.suppressClick = true
+          // and silently swallow the next click. Capture phase so it runs before
+          // any child's stopPropagation; the drag re-sets the flag on first move.
+          onPointerDownCapture={() => {
+            dragState.suppressClick = false;
+          }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerCancel}
+          onPointerLeave={() => {
+            if (cursorWorld) setCursorWorld(null);
+          }}
+          // Alt+click deep-picks through the under-cursor stack; otherwise
+          // re-route a click/right-click on a selected item's drag proxy to the
+          // real element beneath, so selection always follows normal layer order
+          // (only DRAG gets selected-item priority). Capture phase so both run
+          // before the target's own handler and the canvas click handler.
+          onClickCapture={(e) => {
+            if (appendDeepPick(e)) return;
+            if (deepPickAltClick(e)) return;
+            rerouteProxyEventBeneath('click', e);
+          }}
+          // Two rapid alt+clicks (deep-pick cycling) also synthesize a native
+          // dblclick on the topmost element — which would open the station
+          // rename editor and clobber the deep-picked selection. Swallow
+          // alt-dblclicks; plain double-click rename is untouched.
+          onDoubleClickCapture={(e) => {
+            if (e.altKey) e.stopPropagation();
+          }}
+          onContextMenuCapture={(e) => rerouteProxyEventBeneath('contextmenu', e)}
+          onClick={onCanvasClick}
+          // Bubble-phase, so it only fires when no inner handler stopped
+          // propagation. During Edit Stops every canvas right-click reaches here
+          // (stations/segments deliberately leave contextmenu unwired in the
+          // mode) and is the mouse-only exit — the same cancelAppendMode() path
+          // Esc and the exit canvas-click take.
+          onContextMenu={(e) => {
+            e.preventDefault();
+            if (useSelection.getState().uiMode.kind === 'appending-to-line') cancelAppendMode();
+          }}
+          onDragStart={(e) => e.preventDefault()}
+        >
+          <defs>
+            <HatchPatterns colors={hatchedColors} underlayColor={underlayColor} />
+            {/* Per-line corridor clips for the branch seam (see SeamClips). */}
+            <SeamClips bands={bands} lines={lines} />
+            {regionExcludeHoles && regionClipOuter && (
+              <RegionExcludeClips holes={regionExcludeHoles} bounds={regionClipOuter} />
+            )}
+          </defs>
+
+          {/* Background hit target for panning. Overdrawn one viewport-width in
+            every direction so a mid-gesture camera — the pan's composited
+            translate, or a wheel zoom's imperative viewBox write, neither of
+            which re-renders this rect before the commit — never reveals a
+            bare edge. */}
+          <rect
+            data-bg="1"
+            x={overdrawn.vbX}
+            y={overdrawn.vbY}
+            width={overdrawn.vbW}
+            height={overdrawn.vbH}
+            fill={theme.canvasBg}
+          />
+
+          {gridVisible && (
+            <g data-export-exclude="1">
+              {/* Overdrawn one viewport in each direction (like the background
+                rect) so a mid-gesture pan translate or zoom write doesn't run
+                past the drawn grid before the commit reprojects it. Off-screen
+                lines are clipped by the browser, so this adds no per-frame
+                raster cost. */}
+              <Grid
+                vbX={overdrawn.vbX}
+                vbY={overdrawn.vbY}
+                vbW={overdrawn.vbW}
+                vbH={overdrawn.vbH}
+                zoom={view.viewport.zoom}
+                gridSize={gridSize}
+              />
+            </g>
           )}
-        </defs>
 
-        {/* Background hit target for panning. Overdrawn one viewport-width in
-            every direction so an imperative-viewBox pan (which moves the viewBox
-            without re-rendering this rect until pointer-up) never reveals a bare
-            edge before it reprojects. */}
-        <rect
-          data-bg="1"
-          x={overdrawn.vbX}
-          y={overdrawn.vbY}
-          width={overdrawn.vbW}
-          height={overdrawn.vbH}
-          fill={theme.canvasBg}
-        />
-
-        {gridVisible && (
-          <g data-export-exclude="1">
-            {/* Overdrawn one viewport in each direction (like the background
-                rect) so an imperative-viewBox pan doesn't run past the drawn
-                grid before pointer-up reprojects it. Off-screen lines are
-                clipped by the browser, so this adds no per-frame raster cost. */}
-            <Grid
-              vbX={overdrawn.vbX}
-              vbY={overdrawn.vbY}
-              vbW={overdrawn.vbW}
-              vbH={overdrawn.vbH}
-              zoom={view.viewport.zoom}
-              gridSize={gridSize}
-            />
-          </g>
-        )}
-
-        {/* Background band: polygon and svg-image bodies INTERLEAVED in one
+          {/* Background band: polygon and svg-image bodies INTERLEAVED in one
             paint order, so a polygon can sit over an image or vice versa.
             Painted just above the grid and below ALL map content (bands,
             stations, dots, labels) so background shapes like rivers/lakes and
             imported graphics always sit underneath everything else. Selection
             handles, vertex/"+" buttons and image transform knobs render in a
             separate top overlay pass below. */}
-        {backgroundRenderOrder.map((bid) => {
-          const poly = polygons[bid];
-          if (poly) {
+          {backgroundRenderOrder.map((bid) => {
+            const poly = polygons[bid];
+            if (poly) {
+              return (
+                <PolygonView
+                  key={bid}
+                  polygon={poly}
+                  layer="body"
+                  selected={polygonSelectedIds.includes(bid)}
+                  selectedVertexIndices={vertexIndicesFor(bid)}
+                  interactive={polygonsInteractive}
+                  inHandMode={inHandMode}
+                  onPointerDown={polyDrag.onPolygonPointerDown}
+                  onClick={onPolygonClick}
+                  onContextMenu={onPolygonContextMenu}
+                  onVertexPointerDown={polyDrag.onVertexPointerDown}
+                  onVertexClick={onVertexClick}
+                  onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
+                  onHoverEnter={(id) => setHover({ kind: 'polygon', id })}
+                  onHoverLeave={(id) => clearHoverIf('polygon', id)}
+                />
+              );
+            }
+            const im = svgImages[bid];
             return (
-              <PolygonView
+              <SvgImageView
                 key={bid}
-                polygon={poly}
+                image={im}
                 layer="body"
-                selected={polygonSelectedIds.includes(bid)}
-                selectedVertexIndices={vertexIndicesFor(bid)}
+                selected={svgImageSelectedIds.includes(bid)}
                 interactive={polygonsInteractive}
                 inHandMode={inHandMode}
-                onPointerDown={polyDrag.onPolygonPointerDown}
-                onClick={onPolygonClick}
-                onContextMenu={onPolygonContextMenu}
-                onVertexPointerDown={polyDrag.onVertexPointerDown}
-                onVertexClick={onVertexClick}
-                onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
-                onHoverEnter={(id) => setHover({ kind: 'polygon', id })}
-                onHoverLeave={(id) => clearHoverIf('polygon', id)}
+                onPointerDown={svgDrag.onSvgImagePointerDown}
+                onClick={onSvgImageClick}
+                onContextMenu={onSvgImageContextMenu}
+                onCornerPointerDown={svgDrag.onSvgCornerPointerDown}
+                onEdgePointerDown={svgDrag.onSvgEdgePointerDown}
+                onRotatePointerDown={svgDrag.onSvgRotatePointerDown}
+                onHoverEnter={(id) => setHover({ kind: 'svgImage', id })}
+                onHoverLeave={(id) => clearHoverIf('svgImage', id)}
               />
             );
-          }
-          const im = svgImages[bid];
-          return (
-            <SvgImageView
-              key={bid}
-              image={im}
-              layer="body"
-              selected={svgImageSelectedIds.includes(bid)}
-              interactive={polygonsInteractive}
-              inHandMode={inHandMode}
-              onPointerDown={svgDrag.onSvgImagePointerDown}
-              onClick={onSvgImageClick}
-              onContextMenu={onSvgImageContextMenu}
-              onCornerPointerDown={svgDrag.onSvgCornerPointerDown}
-              onEdgePointerDown={svgDrag.onSvgEdgePointerDown}
-              onRotatePointerDown={svgDrag.onSvgRotatePointerDown}
-              onHoverEnter={(id) => setHover({ kind: 'svgImage', id })}
-              onHoverLeave={(id) => clearHoverIf('svgImage', id)}
-            />
-          );
-        })}
+          })}
 
-        {/* selection wash: painted before bands so the wash sits behind
+          {/* selection wash: painted before bands so the wash sits behind
             line segments, markers, dots, and labels — all the way in the
             background. One per selected station (or per previewed station
             during a rect-select drag). */}
-        <g data-export-exclude="1">
-          {washIds.map(
-            (sid) =>
-              stations[sid] && (
-                <StationView
-                  key={sid + ':wash'}
-                  station={stations[sid]}
-                  lines={lines}
-                  zoom={view.viewport.zoom}
-                  onStartDrag={drag.onStartDrag}
-                  layer="wash"
-                />
-              ),
-          )}
-        </g>
+          <g data-export-exclude="1">
+            {washIds.map(
+              (sid) =>
+                stations[sid] && (
+                  <StationView
+                    key={sid + ':wash'}
+                    station={stations[sid]}
+                    lines={lines}
+                    zoom={view.viewport.zoom}
+                    onStartDrag={drag.onStartDrag}
+                    layer="wash"
+                  />
+                ),
+            )}
+          </g>
 
-        {/* Mouseover preview — wash half: the hovered (unselected) station's
+          {/* Mouseover preview — wash half: the hovered (unselected) station's
             accent fill at 50% of the selected strength, in the same back-of-
             stack band as the real wash so it reads identically, just fainter. */}
-        {hoverStationId && stations[hoverStationId] && (
-          <g data-export-exclude="1" opacity={0.5}>
-            <StationView
-              key={hoverStationId + ':hover-wash'}
-              station={stations[hoverStationId]}
-              lines={lines}
-              zoom={view.viewport.zoom}
-              onStartDrag={drag.onStartDrag}
-              layer="wash"
-              preview
-            />
-          </g>
-        )}
+          {hoverStationId && stations[hoverStationId] && (
+            <g data-export-exclude="1" opacity={0.5}>
+              <StationView
+                key={hoverStationId + ':hover-wash'}
+                station={stations[hoverStationId]}
+                lines={lines}
+                zoom={view.viewport.zoom}
+                onStartDrag={drag.onStartDrag}
+                layer="wash"
+                preview
+              />
+            </g>
+          )}
 
-        {/* band stripes, warnings, and stop squares interleaved by per-stripe
+          {/* band stripes, warnings, and stop squares interleaved by per-stripe
             z-priority. A line that LOSES an overridden overlap region renders
             through its exclusion clip (holes over the faces it loses), so the
             region's winner shows through as its own continuous base stroke —
             see buildExclusionHoles. The clip wrapper also removes the loser's
             pointer surface there, landing clicks on the visible winner. */}
-        {showNetwork &&
-          renderables.map((r) => {
-            const lineId = r.kind === 'marker' ? r.spec.lineId : r.band.lines[r.stripeIndex].id;
-            const clipped = regionExcludeHoles?.has(lineId) ?? false;
-            const withExcludeClip = (key: string, node: React.ReactNode) =>
-              clipped ? (
-                <g
-                  key={key}
-                  data-region-excluded={lineId}
-                  clipPath={`url(#${regionExcludeClipId(lineId)})`}
-                >
-                  {node}
-                </g>
-              ) : (
-                node
-              );
-            if (r.kind === 'casing') {
+          {showNetwork &&
+            renderables.map((r) => {
+              const lineId = r.kind === 'marker' ? r.spec.lineId : r.band.lines[r.stripeIndex].id;
+              const clipped = regionExcludeHoles?.has(lineId) ?? false;
+              const withExcludeClip = (key: string, node: React.ReactNode) =>
+                clipped ? (
+                  <g
+                    key={key}
+                    data-region-excluded={lineId}
+                    clipPath={`url(#${regionExcludeClipId(lineId)})`}
+                  >
+                    {node}
+                  </g>
+                ) : (
+                  node
+                );
+              if (r.kind === 'casing') {
+                return withExcludeClip(
+                  'c:' + r.band.bandKey + ':' + lineId,
+                  <SegmentBand
+                    key={'c:' + r.band.bandKey + ':' + lineId}
+                    spec={r.band}
+                    stripeIndex={r.stripeIndex}
+                    pass="silhouette"
+                    lines={lines}
+                    colorMap={colorMap}
+                    underlayColor={underlayColor}
+                  />,
+                );
+              }
+              if (r.kind === 'seam') {
+                return withExcludeClip(
+                  'seam:' + r.band.bandKey + ':' + lineId,
+                  <SegmentBand
+                    key={'seam:' + r.band.bandKey + ':' + lineId}
+                    spec={r.band}
+                    stripeIndex={r.stripeIndex}
+                    pass="seam"
+                    lines={lines}
+                    colorMap={colorMap}
+                    underlayColor={underlayColor}
+                    seamEdges={seamEdges}
+                  />,
+                );
+              }
+              if (r.kind === 'stripe') {
+                return withExcludeClip(
+                  's:' + r.band.bandKey + ':' + lineId,
+                  <SegmentBand
+                    key={'s:' + r.band.bandKey + ':' + lineId}
+                    spec={r.band}
+                    stripeIndex={r.stripeIndex}
+                    pass="body"
+                    interactive={
+                      selection.uiMode.kind === 'creating-line-tag' ||
+                      selection.uiMode.kind === 'appending-to-line'
+                    }
+                    interactiveCursor={
+                      selection.uiMode.kind === 'appending-to-line' ? 'pointer' : 'crosshair'
+                    }
+                    lines={lines}
+                    colorMap={colorMap}
+                    underlayColor={underlayColor}
+                    onLineSelect={inHandMode || inLayeringMode ? undefined : handleLineSelect}
+                    {...(selection.uiMode.kind === 'creating-line-tag'
+                      ? makeBandHandlers(r.band)
+                      : {})}
+                    {...(selection.uiMode.kind === 'appending-to-line'
+                      ? makeAppendBandHandlers(r.band)
+                      : {})}
+                  />,
+                );
+              }
+              const effectiveColor =
+                colorMap && r.spec.lineId !== highlightLineId
+                  ? (colorMap[r.spec.lineId] ?? r.spec.color)
+                  : r.spec.color;
               return withExcludeClip(
-                'c:' + r.band.bandKey + ':' + lineId,
-                <SegmentBand
-                  key={'c:' + r.band.bandKey + ':' + lineId}
-                  spec={r.band}
-                  stripeIndex={r.stripeIndex}
-                  pass="silhouette"
-                  lines={lines}
-                  colorMap={colorMap}
+                'm:' + r.spec.stationId + ':' + lineId,
+                <StopMarker
+                  key={'m:' + r.spec.stationId + ':' + lineId}
+                  spec={r.spec}
+                  effectiveColor={effectiveColor}
                   underlayColor={underlayColor}
+                  lines={lines}
                 />,
               );
-            }
-            if (r.kind === 'seam') {
-              return withExcludeClip(
-                'seam:' + r.band.bandKey + ':' + lineId,
-                <SegmentBand
-                  key={'seam:' + r.band.bandKey + ':' + lineId}
-                  spec={r.band}
-                  stripeIndex={r.stripeIndex}
-                  pass="seam"
-                  lines={lines}
-                  colorMap={colorMap}
-                  underlayColor={underlayColor}
-                  seamEdges={seamEdges}
-                />,
-              );
-            }
-            if (r.kind === 'stripe') {
-              return withExcludeClip(
-                's:' + r.band.bandKey + ':' + lineId,
-                <SegmentBand
-                  key={'s:' + r.band.bandKey + ':' + lineId}
-                  spec={r.band}
-                  stripeIndex={r.stripeIndex}
-                  pass="body"
-                  interactive={
-                    selection.uiMode.kind === 'creating-line-tag' ||
-                    selection.uiMode.kind === 'appending-to-line'
-                  }
-                  interactiveCursor={
-                    selection.uiMode.kind === 'appending-to-line' ? 'pointer' : 'crosshair'
-                  }
-                  lines={lines}
-                  colorMap={colorMap}
-                  underlayColor={underlayColor}
-                  onLineSelect={inHandMode || inLayeringMode ? undefined : handleLineSelect}
-                  {...(selection.uiMode.kind === 'creating-line-tag'
-                    ? makeBandHandlers(r.band)
-                    : {})}
-                  {...(selection.uiMode.kind === 'appending-to-line'
-                    ? makeAppendBandHandlers(r.band)
-                    : {})}
-                />,
-              );
-            }
-            const effectiveColor =
-              colorMap && r.spec.lineId !== highlightLineId
-                ? (colorMap[r.spec.lineId] ?? r.spec.color)
-                : r.spec.color;
-            return withExcludeClip(
-              'm:' + r.spec.stationId + ':' + lineId,
-              <StopMarker
-                key={'m:' + r.spec.stationId + ':' + lineId}
-                spec={r.spec}
-                effectiveColor={effectiveColor}
-                underlayColor={underlayColor}
-                lines={lines}
-              />,
-            );
-          })}
+            })}
 
-        {/* station backgrounds: hit areas, names, colored stop squares */}
-        {Object.values(stations).map((st) => (
-          <StationView
-            key={st.id + ':bg'}
-            station={st}
-            lines={lines}
-            zoom={view.viewport.zoom}
-            onStartDrag={drag.onStartDrag}
-            layer="bg"
-          />
-        ))}
+          {/* station backgrounds: hit areas, names, colored stop squares */}
+          {Object.values(stations).map((st) => (
+            <StationView
+              key={st.id + ':bg'}
+              station={st}
+              lines={lines}
+              zoom={view.viewport.zoom}
+              onStartDrag={drag.onStartDrag}
+              layer="bg"
+            />
+          ))}
 
-        {/* station labels: rendered after bg/wash so a selected station's
+          {/* station labels: rendered after bg/wash so a selected station's
             accent wash never paints over a neighbor's label. Faded in
             layering mode so the focus stays on the band layers. The
             layout-edited station's label is NOT special-cased here — it (name
             and any inline route bullets) fades under the focus dim with every
             other label; only its dots + editor chrome are lifted above the
             dim. */}
-        <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
-          {Object.values(stations).map((st) => (
-            <StationView
-              key={st.id + ':label'}
-              station={st}
-              lines={lines}
-              zoom={view.viewport.zoom}
-              onStartDrag={drag.onStartDrag}
-              layer="label"
-            />
-          ))}
-        </g>
+          <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
+            {Object.values(stations).map((st) => (
+              <StationView
+                key={st.id + ':label'}
+                station={st}
+                lines={lines}
+                zoom={view.viewport.zoom}
+                onStartDrag={drag.onStartDrag}
+                layer="label"
+              />
+            ))}
+          </g>
 
-        {/* Layering-mode region outlines: a dashed footprint per clickable
+          {/* Layering-mode region outlines: a dashed footprint per clickable
             overlap face, mounted BELOW transfers + station dots so those keep
             their visual primacy. The hover halo + click targets paint at the
             very end so they stay on top. */}
-        {inLayeringMode && regionGeom && (
-          <g data-export-exclude="1">
-            <RegionModeOverlay
-              faces={regionGeom.faces}
-              hoveredKey={hoveredRegionKey}
-              layer="outlines"
-            />
-          </g>
-        )}
+          {inLayeringMode && regionGeom && (
+            <g data-export-exclude="1">
+              <RegionModeOverlay
+                faces={regionGeom.faces}
+                hoveredKey={hoveredRegionKey}
+                layer="outlines"
+              />
+            </g>
+          )}
 
-        {/* Transfers: user-styled lines connecting two dots. Rendered BEFORE
+          {/* Transfers: user-styled lines connecting two dots. Rendered BEFORE
             the station dots so the dots paint on top — a transfer never
             obscures the dot it's connecting. Stay at full opacity in
             layering mode (they ride between line stops so they're part of
             the route-network reading, not background annotation). */}
-        {showNetwork && (
-          <TransferLayer
-            transfers={transfers}
-            stations={stations}
-            transferAnchors={transferAnchors}
-            defaults={TRANSFER_STYLE_DEFAULTS}
-            onSelect={(id) => {
-              // Same exit-then-select contract as the free items above.
-              const sel = useSelection.getState();
-              if (sel.uiMode.kind === 'appending-to-line') sel.setAppending(null);
-              sel.selectTransfer(id);
-            }}
-            onHoverEnter={(id) => setHover({ kind: 'transfer', id })}
-            onHoverLeave={(id) => clearHoverIf('transfer', id)}
-          />
-        )}
+          {showNetwork && (
+            <TransferLayer
+              transfers={transfers}
+              stations={stations}
+              transferAnchors={transferAnchors}
+              defaults={TRANSFER_STYLE_DEFAULTS}
+              onSelect={(id) => {
+                // Same exit-then-select contract as the free items above.
+                const sel = useSelection.getState();
+                if (sel.uiMode.kind === 'appending-to-line') sel.setAppending(null);
+                sel.selectTransfer(id);
+              }}
+              onHoverEnter={(id) => setHover({ kind: 'transfer', id })}
+              onHoverLeave={(id) => clearHoverIf('transfer', id)}
+            />
+          )}
 
-        {/* In-progress transfer preview line: from the anchor dot to the
+          {/* In-progress transfer preview line: from the anchor dot to the
             cursor while waiting for the second click. Dashed + translucent so
             it reads as provisional rather than an already-placed transfer;
             renders below the dots for the same reason as the real ones. */}
-        {showNetwork &&
-          selection.uiMode.kind === 'creating-transfer' &&
-          selection.uiMode.firstEnd &&
-          cursorWorld &&
-          (() => {
-            const anchor = selection.uiMode.firstEnd;
-            if (!anchor) return null;
-            // Resolved through the union-aware helper, same as both paint
-            // passes — the first-picked end may be a stop or an anchor.
-            const anchorWorld = transferEndWorld(anchor, stations, transferAnchors);
-            if (!anchorWorld) return null;
-            // The dropped transfer will wear the designated default transfer
-            // style, so the preview reads it too (a loaded doc always has
-            // one; constants are a type-level fallback).
-            const preview =
-              defaultStyleProps({ styles, styleDefaults }, 'transfer') ?? TRANSFER_STYLE_DEFAULTS;
-            return (
-              <line
-                data-export-exclude="1"
-                data-transfer-preview="1"
-                x1={anchorWorld.x}
-                y1={anchorWorld.y}
-                x2={cursorWorld.x}
-                y2={cursorWorld.y}
-                stroke={resolveDayNight(preview.color, darkMode)}
-                strokeWidth={preview.thickness}
-                strokeLinecap="round"
-                strokeDasharray="6 4"
-                opacity={0.6}
-                pointerEvents="none"
-              />
-            );
-          })()}
+          {showNetwork &&
+            selection.uiMode.kind === 'creating-transfer' &&
+            selection.uiMode.firstEnd &&
+            cursorWorld &&
+            (() => {
+              const anchor = selection.uiMode.firstEnd;
+              if (!anchor) return null;
+              // Resolved through the union-aware helper, same as both paint
+              // passes — the first-picked end may be a stop or an anchor.
+              const anchorWorld = transferEndWorld(anchor, stations, transferAnchors);
+              if (!anchorWorld) return null;
+              // The dropped transfer will wear the designated default transfer
+              // style, so the preview reads it too (a loaded doc always has
+              // one; constants are a type-level fallback).
+              const preview =
+                defaultStyleProps({ styles, styleDefaults }, 'transfer') ?? TRANSFER_STYLE_DEFAULTS;
+              return (
+                <line
+                  data-export-exclude="1"
+                  data-transfer-preview="1"
+                  x1={anchorWorld.x}
+                  y1={anchorWorld.y}
+                  x2={cursorWorld.x}
+                  y2={cursorWorld.y}
+                  stroke={resolveDayNight(preview.color, darkMode)}
+                  strokeWidth={preview.thickness}
+                  strokeLinecap="round"
+                  strokeDasharray="6 4"
+                  opacity={0.6}
+                  pointerEvents="none"
+                />
+              );
+            })()}
 
-        {/* station dots: above the transfer layer so a dot click routes to
+          {/* station dots: above the transfer layer so a dot click routes to
             the station, not the transfer (overlays below — previews, labels,
             snap guides — still paint over the dots) */}
-        {Object.values(stations).map((st) =>
-          // The layout-edited station is painted above the focus dim instead,
-          // so it stays bright and its dots keep their true colors; skip it here.
-          st.id === layoutEditStationId ? null : (
-            <StationView
-              key={st.id + ':dots'}
-              station={st}
-              lines={lines}
-              zoom={view.viewport.zoom}
-              onStartDrag={drag.onStartDrag}
-              layer="dots"
-            />
-          ),
-        )}
+          {Object.values(stations).map((st) =>
+            // The layout-edited station is painted above the focus dim instead,
+            // so it stays bright and its dots keep their true colors; skip it here.
+            st.id === layoutEditStationId ? null : (
+              <StationView
+                key={st.id + ':dots'}
+                station={st}
+                lines={lines}
+                zoom={view.viewport.zoom}
+                onStartDrag={drag.onStartDrag}
+                layer="dots"
+              />
+            ),
+          )}
 
-        {/* Transfer anchors. Above the dots so a free anchor stays grabbable
+          {/* Transfer anchors. Above the dots so a free anchor stays grabbable
             where it overlaps one, and inside an export-excluded subtree — the
             anchor is scaffolding, the transfer bound to it is the artwork, so
             only the transfer prints. Gated on showNetwork: anchors are part of
             the transfer network, and every transfer surface goes with it. */}
-        {showNetwork && (
-          <g data-export-exclude="1">
-            <AnchorLayer
-              // Two ways in. With the anchor toggle on (or a mode that forces
-              // it) the whole network paints. With it off, only the hovered or
-              // selected stations' HOSTED anchors do — and no free ones, since
-              // that reveal is about the station you're looking at rather than
-              // the network (revealedAnchorStations). The layer renders nothing
-              // at all when both collections come back empty.
-              transferAnchors={anchorsVisible ? transferAnchors : NO_FREE_ANCHORS}
-              stations={anchorsVisible ? stations : revealedAnchorStations(stations, selection)}
-              // With the whole network painted on an idle canvas, hosted
-              // anchors rest at half opacity and come forward when their
-              // station is hovered/selected — the same reveal set the
-              // toggle-off path paints from, reused as the focus set. Null
-              // (= no dimming) everywhere else: picking modes need every
-              // endpoint fully legible, and the layout editor draws its own
-              // chrome.
-              dimHostedExcept={
-                anchorsVisible && selection.uiMode.kind === 'idle'
-                  ? new Set(Object.keys(revealedAnchorStations(stations, selection)))
-                  : null
-              }
-              // During a marquee, free anchors preview like every other kind
-              // (rectSelect.previewAnchorIds ?? committed); empty when hidden.
-              selectedIds={anchorSelectedIds}
-              hoveredKey={selection.hoveredAnchorKey}
-              onHover={selection.setHoveredAnchorKey}
-              // Live only where an anchor click means something. Everywhere
-              // else it must not swallow the BACKGROUND click that placement
-              // modes (and Edit Stops, and layering) use as their exit.
-              freeLive={freeAnchorsLive}
-              picking={pickingTransferEnd}
-              onPointerDown={itemDrag.onAnchorPointerDown}
-              onClick={onAnchorClick}
-            />
-          </g>
-        )}
+          {showNetwork && (
+            <g data-export-exclude="1">
+              <AnchorLayer
+                // Two ways in. With the anchor toggle on (or a mode that forces
+                // it) the whole network paints. With it off, only the hovered or
+                // selected stations' HOSTED anchors do — and no free ones, since
+                // that reveal is about the station you're looking at rather than
+                // the network (revealedAnchorStations). The layer renders nothing
+                // at all when both collections come back empty.
+                transferAnchors={anchorsVisible ? transferAnchors : NO_FREE_ANCHORS}
+                stations={anchorsVisible ? stations : revealedAnchorStations(stations, selection)}
+                // With the whole network painted on an idle canvas, hosted
+                // anchors rest at half opacity and come forward when their
+                // station is hovered/selected — the same reveal set the
+                // toggle-off path paints from, reused as the focus set. Null
+                // (= no dimming) everywhere else: picking modes need every
+                // endpoint fully legible, and the layout editor draws its own
+                // chrome.
+                dimHostedExcept={
+                  anchorsVisible && selection.uiMode.kind === 'idle'
+                    ? new Set(Object.keys(revealedAnchorStations(stations, selection)))
+                    : null
+                }
+                // During a marquee, free anchors preview like every other kind
+                // (rectSelect.previewAnchorIds ?? committed); empty when hidden.
+                selectedIds={anchorSelectedIds}
+                hoveredKey={selection.hoveredAnchorKey}
+                onHover={selection.setHoveredAnchorKey}
+                // Live only where an anchor click means something. Everywhere
+                // else it must not swallow the BACKGROUND click that placement
+                // modes (and Edit Stops, and layering) use as their exit.
+                freeLive={freeAnchorsLive}
+                picking={pickingTransferEnd}
+                onPointerDown={itemDrag.onAnchorPointerDown}
+                onClick={onAnchorClick}
+              />
+            </g>
+          )}
 
-        {/* Selected-transfer outline: above the dots (unlike TransferLayer)
+          {/* Selected-transfer outline: above the dots (unlike TransferLayer)
             so the connected dots — and any crossing transfer — can't cover
             the selection chrome. */}
-        {showNetwork && (
-          <TransferSelectionOutline
-            transfers={transfers}
-            stations={stations}
-            transferAnchors={transferAnchors}
-            defaults={TRANSFER_STYLE_DEFAULTS}
-            selectedId={selection.selectedTransferId}
-          />
-        )}
-
-        {/* Mouseover preview: the hovered (unselected) transfer's selection
-            outline at 50% opacity — the same ring, reused, just fainter. */}
-        {showNetwork && hoverTransferId && (
-          <g data-export-exclude="1" opacity={0.5}>
+          {showNetwork && (
             <TransferSelectionOutline
               transfers={transfers}
               stations={stations}
               transferAnchors={transferAnchors}
               defaults={TRANSFER_STYLE_DEFAULTS}
-              selectedId={hoverTransferId}
+              selectedId={selection.selectedTransferId}
             />
-          </g>
-        )}
+          )}
 
-        {/* Station-placing-mode ghost: a faint dot + name following the
+          {/* Mouseover preview: the hovered (unselected) transfer's selection
+            outline at 50% opacity — the same ring, reused, just fainter. */}
+          {showNetwork && hoverTransferId && (
+            <g data-export-exclude="1" opacity={0.5}>
+              <TransferSelectionOutline
+                transfers={transfers}
+                stations={stations}
+                transferAnchors={transferAnchors}
+                defaults={TRANSFER_STYLE_DEFAULTS}
+                selectedId={hoverTransferId}
+              />
+            </g>
+          )}
+
+          {/* Station-placing-mode ghost: a faint dot + name following the
             cursor before each click, so the user can see where (and what
             name) the next placement will land. */}
-        <g data-export-exclude="1">
-          <StationPlacingPreview
-            world={selection.uiMode.kind === 'placing-station' ? cursorWorld : null}
-            name={placement.previewName}
-            lines={lines}
-          />
-          {/* Label-placing-mode ghost: a faint "New Label" following the cursor
+          <g data-export-exclude="1">
+            <StationPlacingPreview
+              world={selection.uiMode.kind === 'placing-station' ? cursorWorld : null}
+              name={placement.previewName}
+              lines={lines}
+            />
+            {/* Label-placing-mode ghost: a faint "New Label" following the cursor
               before the click. Single-shot placement, so it disappears as soon
               as the user clicks (the click handler exits placing-label). */}
-          <LabelPlacingPreview
-            world={selection.uiMode.kind === 'placing-label' ? cursorWorld : null}
-            style={defaultStyleProps({ styles, styleDefaults }, 'textLabel')}
-          />
-          {/* Polygon-placing-mode ghost: a faint starter square following the
-              cursor before the click, matching the shape that will drop. */}
-          <PolygonPlacingPreview
-            world={selection.uiMode.kind === 'creating-polygon' ? cursorWorld : null}
-            style={defaultStyleProps({ styles, styleDefaults }, 'polygon')}
-          />
-          {/* Svg-image-placing ghost: the imported graphic at 50% opacity
-              following the cursor, centered, until the click drops it. */}
-          <SvgImagePlacingPreview
-            world={selection.uiMode.kind === 'placing-svg' ? cursorWorld : null}
-            image={selection.uiMode.kind === 'placing-svg' ? selection.uiMode.image : null}
-          />
-          {/* Route-bullet-placing ghost: the default bullet following the
-              cursor, matching the badge the click will drop. */}
-          <RouteBulletPlacingPreview
-            world={selection.uiMode.kind === 'creating-route-bullet' ? cursorWorld : null}
-            lines={lines}
-            lineOrder={lineOrder}
-            style={defaultStyleProps({ styles, styleDefaults }, 'routeBullet')}
-          />
-          {/* Transfer-anchor-placing ghost: the same mark the click will drop,
-              drawn through AnchorLayer so preview and drop can't drift. */}
-          <AnchorPlacingPreview
-            world={selection.uiMode.kind === 'placing-anchor' ? cursorWorld : null}
-          />
-        </g>
-
-        {/* Route bullets: rendered before the dim so they fade with the
-            rest of the map when a line is selected. Faded in layering mode. */}
-        <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
-          {Object.values(routeBullets).map((b) => (
-            <RouteBulletView
-              key={b.id}
-              bullet={b}
-              lines={lines}
-              selected={bulletSelectedIds.includes(b.id)}
-              inHandMode={inHandMode}
-              onPointerDown={itemDrag.onBulletPointerDown}
-              onClick={onBulletClick}
-              onContextMenu={onBulletContextMenu}
-              onHoverEnter={(id) => setHover({ kind: 'bullet', id })}
-              onHoverLeave={(id) => clearHoverIf('bullet', id)}
+            <LabelPlacingPreview
+              world={selection.uiMode.kind === 'placing-label' ? cursorWorld : null}
+              style={defaultStyleProps({ styles, styleDefaults }, 'textLabel')}
             />
-          ))}
-        </g>
+            {/* Polygon-placing-mode ghost: a faint starter square following the
+              cursor before the click, matching the shape that will drop. */}
+            <PolygonPlacingPreview
+              world={selection.uiMode.kind === 'creating-polygon' ? cursorWorld : null}
+              style={defaultStyleProps({ styles, styleDefaults }, 'polygon')}
+            />
+            {/* Svg-image-placing ghost: the imported graphic at 50% opacity
+              following the cursor, centered, until the click drops it. */}
+            <SvgImagePlacingPreview
+              world={selection.uiMode.kind === 'placing-svg' ? cursorWorld : null}
+              image={selection.uiMode.kind === 'placing-svg' ? selection.uiMode.image : null}
+            />
+            {/* Route-bullet-placing ghost: the default bullet following the
+              cursor, matching the badge the click will drop. */}
+            <RouteBulletPlacingPreview
+              world={selection.uiMode.kind === 'creating-route-bullet' ? cursorWorld : null}
+              lines={lines}
+              lineOrder={lineOrder}
+              style={defaultStyleProps({ styles, styleDefaults }, 'routeBullet')}
+            />
+            {/* Transfer-anchor-placing ghost: the same mark the click will drop,
+              drawn through AnchorLayer so preview and drop can't drift. */}
+            <AnchorPlacingPreview
+              world={selection.uiMode.kind === 'placing-anchor' ? cursorWorld : null}
+            />
+          </g>
 
-        {/* Mouseover preview: the hovered (unselected) bullet's selection ring
+          {/* Route bullets: rendered before the dim so they fade with the
+            rest of the map when a line is selected. Faded in layering mode. */}
+          <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
+            {Object.values(routeBullets).map((b) => (
+              <RouteBulletView
+                key={b.id}
+                bullet={b}
+                lines={lines}
+                selected={bulletSelectedIds.includes(b.id)}
+                inHandMode={inHandMode}
+                onPointerDown={itemDrag.onBulletPointerDown}
+                onClick={onBulletClick}
+                onContextMenu={onBulletContextMenu}
+                onHoverEnter={(id) => setHover({ kind: 'bullet', id })}
+                onHoverLeave={(id) => clearHoverIf('bullet', id)}
+              />
+            ))}
+          </g>
+
+          {/* Mouseover preview: the hovered (unselected) bullet's selection ring
             at 50% opacity — the same ring, reused, just fainter. At the bullet
             z-band, matching where the real ring paints. */}
-        {hoverBulletId && routeBullets[hoverBulletId] && (
-          <g data-export-exclude="1" opacity={0.5}>
-            <RouteBulletSelectionRing bullet={routeBullets[hoverBulletId]} />
-          </g>
-        )}
+          {hoverBulletId && routeBullets[hoverBulletId] && (
+            <g data-export-exclude="1" opacity={0.5}>
+              <RouteBulletSelectionRing bullet={routeBullets[hoverBulletId]} />
+            </g>
+          )}
 
-        {/* Text labels: free-floating annotations on top of stations + bullets
+          {/* Text labels: free-floating annotations on top of stations + bullets
             but beneath the selection stroke ring. Dimmed alongside the rest
             of the map when a line is selected. Faded in layering mode. */}
-        <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
-          {Object.values(textLabels).map((g) => (
-            <LabelView
-              key={g.id}
-              label={g}
-              selected={labelSelectedIds.includes(g.id)}
-              layer="bg"
-              inHandMode={inHandMode}
-              onPointerDown={itemDrag.onLabelPointerDown}
-              onClick={onLabelClick}
-              onContextMenu={onLabelContextMenu}
-              onHoverEnter={(id) => setHover({ kind: 'label', id })}
-              onHoverLeave={(id) => clearHoverIf('label', id)}
-            />
-          ))}
-        </g>
+          <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
+            {Object.values(textLabels).map((g) => (
+              <LabelView
+                key={g.id}
+                label={g}
+                selected={labelSelectedIds.includes(g.id)}
+                layer="bg"
+                inHandMode={inHandMode}
+                onPointerDown={itemDrag.onLabelPointerDown}
+                onClick={onLabelClick}
+                onContextMenu={onLabelContextMenu}
+                onHoverEnter={(id) => setHover({ kind: 'label', id })}
+                onHoverLeave={(id) => clearHoverIf('label', id)}
+              />
+            ))}
+          </g>
 
-        {/* Line-selection highlight: dim wash + re-painted selected line on
+          {/* Line-selection highlight: dim wash + re-painted selected line on
             top. Painted after dots so other lines' stop dots can't punch
             through the selected line's outline. Gated on showNetwork for the
             DIM above all: it covers the whole viewport, so leaving it up with
             the network hidden would black out the background art the toggle
             exists to expose. */}
-        {showNetwork && highlightLineId && (
-          <g data-export-exclude="1">
-            <HighlightedLineLayer
-              highlightLineId={highlightLineId}
-              lines={lines}
-              stations={stations}
-              renderables={renderables}
-              underlayColor={underlayColor}
-              seamEdges={seamEdges}
-              uiMode={selection.uiMode}
-              // Pan-suppress the hover preview the same way hoveredChrome does
-              // for idle mode — a lingering ring/halo mid-pan reads as stale.
-              // view.panning covers the arrow-mode middle-drag pan, whose
-              // pointer capture freezes appendHover at its pre-pan target.
-              appendHover={inHandMode || view.panning ? null : selection.appendHover}
-              zoom={view.viewport.zoom}
-              onStartDrag={drag.onStartDrag}
-              onRemoveCursorStation={(sid) => {
-                const mode = selection.uiMode;
-                if (mode.kind !== 'appending-to-line') return;
-                const line = lines[mode.lineId];
-                if (!line || !line.stations.includes(sid)) return;
-                selection.setAppendCursor(null);
-                removeStationFromLine(mode.lineId, line.stations.indexOf(sid));
-              }}
-              onRemoveCursorEdge={(from, to) => {
-                const mode = selection.uiMode;
-                if (mode.kind !== 'appending-to-line') return;
-                selection.setAppendCursor(null);
-                toggleEdgeOnLine(mode.lineId, from, to);
-              }}
-              onCycleCursorEdgeStyle={(from, to) => {
-                const mode = selection.uiMode;
-                if (mode.kind !== 'appending-to-line') return;
-                const line = lines[mode.lineId];
-                if (!line) return;
-                // Cycle the pattern in place; leave the cursor armed so the
-                // chip stays put and repeated clicks keep cycling (like
-                // shift-click). Reuses the shared nextSegmentStyle cycle.
-                setLineSegmentStyle(
-                  mode.lineId,
-                  from,
-                  to,
-                  nextSegmentStyle(line, pairKeyOf(from, to)),
-                );
-              }}
-              vbX={overdrawn.vbX}
-              vbY={overdrawn.vbY}
-              vbW={overdrawn.vbW}
-              vbH={overdrawn.vbH}
-            />
-          </g>
-        )}
+          {showNetwork && highlightLineId && (
+            <g data-export-exclude="1">
+              <HighlightedLineLayer
+                highlightLineId={highlightLineId}
+                lines={lines}
+                stations={stations}
+                renderables={renderables}
+                underlayColor={underlayColor}
+                seamEdges={seamEdges}
+                uiMode={selection.uiMode}
+                // Pan-suppress the hover preview the same way hoveredChrome does
+                // for idle mode — a lingering ring/halo mid-pan reads as stale.
+                // view.panning covers the arrow-mode middle-drag pan, whose
+                // pointer capture freezes appendHover at its pre-pan target.
+                appendHover={inHandMode || view.panning ? null : selection.appendHover}
+                zoom={view.viewport.zoom}
+                onStartDrag={drag.onStartDrag}
+                onRemoveCursorStation={(sid) => {
+                  const mode = selection.uiMode;
+                  if (mode.kind !== 'appending-to-line') return;
+                  const line = lines[mode.lineId];
+                  if (!line || !line.stations.includes(sid)) return;
+                  selection.setAppendCursor(null);
+                  removeStationFromLine(mode.lineId, line.stations.indexOf(sid));
+                }}
+                onRemoveCursorEdge={(from, to) => {
+                  const mode = selection.uiMode;
+                  if (mode.kind !== 'appending-to-line') return;
+                  selection.setAppendCursor(null);
+                  toggleEdgeOnLine(mode.lineId, from, to);
+                }}
+                onCycleCursorEdgeStyle={(from, to) => {
+                  const mode = selection.uiMode;
+                  if (mode.kind !== 'appending-to-line') return;
+                  const line = lines[mode.lineId];
+                  if (!line) return;
+                  // Cycle the pattern in place; leave the cursor armed so the
+                  // chip stays put and repeated clicks keep cycling (like
+                  // shift-click). Reuses the shared nextSegmentStyle cycle.
+                  setLineSegmentStyle(
+                    mode.lineId,
+                    from,
+                    to,
+                    nextSegmentStyle(line, pairKeyOf(from, to)),
+                  );
+                }}
+                vbX={overdrawn.vbX}
+                vbY={overdrawn.vbY}
+                vbW={overdrawn.vbW}
+                vbH={overdrawn.vbH}
+              />
+            </g>
+          )}
 
-        {/* Edit Stops alt-ghost: while Alt is held over empty canvas and the
+          {/* Edit Stops alt-ghost: while Alt is held over empty canvas and the
             alt-click would create a station (a create-* decision), preview
             the actual stop dot the new station gets — the edited line's
             SINGLETON dot (a fresh station starts with just this line), at the
@@ -1713,147 +1728,152 @@ export function MapCanvas() {
             rest of the append chrome. Hidden over interactive targets
             (appendHover non-null): there the click routes to the target, not
             the canvas. */}
-        {selection.uiMode.kind === 'appending-to-line' &&
-          selection.altHeld &&
-          cursorWorld &&
-          (() => {
-            const mode = selection.uiMode;
-            // The ghost previews an alt-click CREATE. That fires over empty
-            // canvas (no hover target) and — since splice-by-clicking — over
-            // the line's OWN armed segment, where the alt-click now splices
-            // instead of re-arming. Any other hover target (a station, an
-            // unarmed segment, a foreign stripe) routes the click elsewhere, so
-            // no ghost there.
-            const hover = selection.appendHover;
-            const overArmedSegment =
-              hover?.kind === 'segment' &&
-              mode.cursor?.kind === 'edge' &&
-              pairKeyOf(mode.cursor.from, mode.cursor.to) === hover.pairKey;
-            if (hover && !overArmedSegment) return null;
-            const ln = lines[mode.lineId];
-            if (!ln) return null;
-            const d = decideCanvasClick(ln, mode.cursor, true);
-            if (
-              d.kind !== 'create-seed' &&
-              d.kind !== 'create-connect' &&
-              d.kind !== 'create-splice'
-            )
-              return null;
-            return (
-              <g
-                data-export-exclude="1"
-                data-append-create-ghost="1"
-                opacity={0.5}
-                pointerEvents="none"
-              >
-                <StopGlyph
-                  cx={cursorWorld.x}
-                  cy={cursorWorld.y}
-                  style={resolveDotStyle(ln, null, true)}
-                  lineColor={ln.color}
-                  serviceCode={ln.service}
-                  sizeOverride={dotSizeOverride(ln, null, true)}
-                />
-              </g>
-            );
-          })()}
+          {selection.uiMode.kind === 'appending-to-line' &&
+            selection.altHeld &&
+            cursorWorld &&
+            (() => {
+              const mode = selection.uiMode;
+              // The ghost previews an alt-click CREATE. That fires over empty
+              // canvas (no hover target) and — since splice-by-clicking — over
+              // the line's OWN armed segment, where the alt-click now splices
+              // instead of re-arming. Any other hover target (a station, an
+              // unarmed segment, a foreign stripe) routes the click elsewhere, so
+              // no ghost there.
+              const hover = selection.appendHover;
+              const overArmedSegment =
+                hover?.kind === 'segment' &&
+                mode.cursor?.kind === 'edge' &&
+                pairKeyOf(mode.cursor.from, mode.cursor.to) === hover.pairKey;
+              if (hover && !overArmedSegment) return null;
+              const ln = lines[mode.lineId];
+              if (!ln) return null;
+              const d = decideCanvasClick(ln, mode.cursor, true);
+              if (
+                d.kind !== 'create-seed' &&
+                d.kind !== 'create-connect' &&
+                d.kind !== 'create-splice'
+              )
+                return null;
+              return (
+                <g
+                  data-export-exclude="1"
+                  data-append-create-ghost="1"
+                  opacity={0.5}
+                  pointerEvents="none"
+                >
+                  <StopGlyph
+                    cx={cursorWorld.x}
+                    cy={cursorWorld.y}
+                    style={resolveDotStyle(ln, null, true)}
+                    lineColor={ln.color}
+                    serviceCode={ln.service}
+                    sizeOverride={dotSizeOverride(ln, null, true)}
+                  />
+                </g>
+              );
+            })()}
 
-        {/* Line tags: in-band labels that ride each line's stripe. Faded
+          {/* Line tags: in-band labels that ride each line's stripe. Faded
             in layering mode so the tag text doesn't compete with the
             outline + layer-number overlays. */}
-        {showNetwork && (
-          <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
-            <LineTagsLayer
-              bands={bands}
-              zoom={view.viewport.zoom}
-              svgRef={svgRef}
-              screenToWorld={view.screenToWorld}
-            />
-          </g>
-        )}
+          {showNetwork && (
+            <g opacity={inLayeringMode ? LAYERING_FADE_OPACITY : 1}>
+              <LineTagsLayer
+                bands={bands}
+                zoom={view.viewport.zoom}
+                svgRef={svgRef}
+                screenToWorld={view.screenToWorld}
+              />
+            </g>
+          )}
 
-        {/* Match-stroke: gray outline on each station whose layout matches
+          {/* Match-stroke: gray outline on each station whose layout matches
             the selected station while mirror mode is on. Drawn beneath the
             selection stroke so the selected station's black outline still
             stands out. */}
-        <g data-export-exclude="1">
-          {matchingIds.map(
-            (sid) =>
-              stations[sid] && (
-                <StationView
-                  key={sid + ':match-stroke'}
-                  station={stations[sid]}
-                  lines={lines}
-                  zoom={view.viewport.zoom}
-                  onStartDrag={drag.onStartDrag}
-                  layer="match-stroke"
-                />
-              ),
-          )}
-        </g>
+          <g data-export-exclude="1">
+            {matchingIds.map(
+              (sid) =>
+                stations[sid] && (
+                  <StationView
+                    key={sid + ':match-stroke'}
+                    station={stations[sid]}
+                    lines={lines}
+                    zoom={view.viewport.zoom}
+                    onStartDrag={drag.onStartDrag}
+                    layer="match-stroke"
+                  />
+                ),
+            )}
+          </g>
 
-        {/* selection stroke: 2px black ring around the merged silhouette,
+          {/* selection stroke: 2px black ring around the merged silhouette,
             painted on top of everything so the outline is never occluded.
             One per selected station (or per previewed station during a
             rect-select drag). The layout-edited station is skipped — it gets a
             white border painted above the focus dim, in the block below. */}
-        <g data-export-exclude="1">
-          {washIds.map(
-            (sid) =>
-              stations[sid] &&
-              sid !== layoutEditStationId && (
-                <StationView
-                  key={sid + ':stroke'}
-                  station={stations[sid]}
-                  lines={lines}
-                  zoom={view.viewport.zoom}
-                  onStartDrag={drag.onStartDrag}
-                  layer="stroke"
-                />
-              ),
-          )}
-        </g>
+          <g data-export-exclude="1">
+            {washIds.map(
+              (sid) =>
+                stations[sid] &&
+                sid !== layoutEditStationId && (
+                  <StationView
+                    key={sid + ':stroke'}
+                    station={stations[sid]}
+                    lines={lines}
+                    zoom={view.viewport.zoom}
+                    onStartDrag={drag.onStartDrag}
+                    layer="stroke"
+                  />
+                ),
+            )}
+          </g>
 
-        {/* Mouseover preview — stroke half: the hovered (unselected) station's
+          {/* Mouseover preview — stroke half: the hovered (unselected) station's
             two-tone selection ring at 50% opacity, painted in the same top-of-
             stack pass as the real ring so it can't be occluded. Pairs with the
             hover-wash block above to make one faint copy of full selection. */}
-        {hoverStationId && stations[hoverStationId] && (
-          <g data-export-exclude="1" opacity={0.5}>
-            <StationView
-              key={hoverStationId + ':hover-stroke'}
-              station={stations[hoverStationId]}
-              lines={lines}
-              zoom={view.viewport.zoom}
-              onStartDrag={drag.onStartDrag}
-              layer="stroke"
-              preview
-            />
-          </g>
-        )}
+          {hoverStationId && stations[hoverStationId] && (
+            <g data-export-exclude="1" opacity={0.5}>
+              <StationView
+                key={hoverStationId + ':hover-stroke'}
+                station={stations[hoverStationId]}
+                lines={lines}
+                zoom={view.viewport.zoom}
+                onStartDrag={drag.onStartDrag}
+                layer="stroke"
+                preview
+              />
+            </g>
+          )}
 
-        {/* Selection stroke for text labels: dashed black ring around each
+          {/* Selection stroke for text labels: dashed black ring around each
             selected label's rotated bbox. Painted in this pass so it sits
             above the dim overlay and on top of the network — matching how
             stations and bullets handle their outlines. */}
-        <g data-export-exclude="1">
-          {labelSelectedIds.map(
-            (gid) =>
-              textLabels[gid] && (
-                <LabelView key={gid + ':stroke'} label={textLabels[gid]} selected layer="stroke" />
-              ),
-          )}
-        </g>
-
-        {/* Mouseover preview: the hovered (unselected) label's selection ring at
-            50% opacity — reusing the exact stroke layer, just fainter. */}
-        {hoverLabelId && textLabels[hoverLabelId] && (
-          <g data-export-exclude="1" opacity={0.5}>
-            <LabelView label={textLabels[hoverLabelId]} selected layer="stroke" preview />
+          <g data-export-exclude="1">
+            {labelSelectedIds.map(
+              (gid) =>
+                textLabels[gid] && (
+                  <LabelView
+                    key={gid + ':stroke'}
+                    label={textLabels[gid]}
+                    selected
+                    layer="stroke"
+                  />
+                ),
+            )}
           </g>
-        )}
 
-        {/* Selected-item drag proxies: a transparent hit target per selected,
+          {/* Mouseover preview: the hovered (unselected) label's selection ring at
+            50% opacity — reusing the exact stroke layer, just fainter. */}
+          {hoverLabelId && textLabels[hoverLabelId] && (
+            <g data-export-exclude="1" opacity={0.5}>
+              <LabelView label={textLabels[hoverLabelId]} selected layer="stroke" preview />
+            </g>
+          )}
+
+          {/* Selected-item drag proxies: a transparent hit target per selected,
             unlocked item, painted ABOVE all map content so a selected item wins
             the DRAG over whatever is stacked above it — a selected polygon under
             a station drags the polygon, not the station. onPointerDown routes to
@@ -1875,255 +1895,255 @@ export function MapCanvas() {
             the handle overlays, harmless mid-marquee since useRectSelect
             captures the pointer on first move. Excluded from export — pure
             interaction chrome. */}
-        <g ref={proxyLayerRef} data-export-exclude="1">
-          {backgroundRenderOrder.map((bid) => {
-            const poly = polygons[bid];
-            if (poly) {
-              return polygonSelectedIds.includes(bid) ? (
-                <PolygonView
-                  key={bid + ':hit'}
-                  polygon={poly}
-                  layer="hit"
-                  selected
-                  selectedVertexIndices={NO_VERTEX_INDICES}
-                  interactive={polygonsInteractive}
-                  inHandMode={inHandMode}
-                  onPointerDown={polyDrag.onPolygonPointerDown}
-                  onClick={proxyClickNoop}
-                  onContextMenu={proxyClickNoop}
-                  onVertexPointerDown={polyDrag.onVertexPointerDown}
-                  onVertexClick={onVertexClick}
-                  onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
-                />
-              ) : null;
-            }
-            const im = svgImages[bid];
-            return im && svgImageSelectedIds.includes(bid) ? (
-              <SvgImageView
-                key={bid + ':hit'}
-                image={im}
-                layer="hit"
-                selected
-                interactive={polygonsInteractive}
-                inHandMode={inHandMode}
-                onPointerDown={svgDrag.onSvgImagePointerDown}
-                onClick={proxyClickNoop}
-                onContextMenu={proxyClickNoop}
-                onCornerPointerDown={svgDrag.onSvgCornerPointerDown}
-                onEdgePointerDown={svgDrag.onSvgEdgePointerDown}
-                onRotatePointerDown={svgDrag.onSvgRotatePointerDown}
-              />
-            ) : null;
-          })}
-          {washIds.map((sid) =>
-            stations[sid] && !stations[sid].locked ? (
-              <StationView
-                key={sid + ':hit'}
-                station={stations[sid]}
-                lines={lines}
-                zoom={view.viewport.zoom}
-                onStartDrag={drag.onStartDrag}
-                layer="hit"
-              />
-            ) : null,
-          )}
-          {bulletSelectedIds.map((id) =>
-            routeBullets[id] ? (
-              <RouteBulletView
-                key={id + ':hit'}
-                bullet={routeBullets[id]}
-                lines={lines}
-                selected
-                layer="hit"
-                inHandMode={inHandMode}
-                onPointerDown={itemDrag.onBulletPointerDown}
-                onClick={proxyClickNoop}
-                onContextMenu={proxyClickNoop}
-              />
-            ) : null,
-          )}
-          {labelSelectedIds.map((id) =>
-            textLabels[id] ? (
-              <LabelView
-                key={id + ':hit'}
-                label={textLabels[id]}
-                selected
-                layer="hit"
-                inHandMode={inHandMode}
-                onPointerDown={itemDrag.onLabelPointerDown}
-                onClick={proxyClickNoop}
-                onContextMenu={proxyClickNoop}
-              />
-            ) : null,
-          )}
-        </g>
-
-        {/* Polygon selection overlay: dashed outline, vertex handles, and edge
-            "+" buttons. Painted in this top pass so the handles stay clickable
-            above all map content. Only selected polygons render here. Excluded
-            from image export — it's selection chrome, not map content (the
-            polygon bodies above ARE exported). */}
-        <g data-export-exclude="1">
-          {polygonSelectedIds.map(
-            (pid) =>
-              polygons[pid] && (
-                <PolygonView
-                  key={pid + ':overlay'}
-                  polygon={polygons[pid]}
-                  layer="overlay"
-                  selected
-                  selectedVertexIndices={vertexIndicesFor(pid)}
-                  interactive={polygonsInteractive}
-                  onPointerDown={polyDrag.onPolygonPointerDown}
-                  onClick={onPolygonClick}
-                  onContextMenu={onPolygonContextMenu}
-                  onVertexPointerDown={polyDrag.onVertexPointerDown}
-                  onVertexClick={onVertexClick}
-                  onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
-                />
-              ),
-          )}
-        </g>
-
-        {/* Mouseover preview: the hovered (unselected) polygon's selection
-            outline at 50% opacity — ONLY the outline, never the vertex / edge-add
-            manipulators (those belong to an actually-selected polygon). */}
-        {hoverPolygonId && polygons[hoverPolygonId] && (
-          <g data-export-exclude="1" opacity={0.5}>
-            <PolygonSelectionOutline polygon={polygons[hoverPolygonId]} />
-          </g>
-        )}
-
-        {/* Svg-image transform handles (corners, edges, rotation knob). Top
-            pass so they stay clickable above all content; only selected images
-            render here. Excluded from image export — selection chrome, not map
-            content (the image bodies above ARE exported). */}
-        <g data-export-exclude="1">
-          {svgImageSelectedIds.map(
-            (iid) =>
-              svgImages[iid] && (
+          <g ref={proxyLayerRef} data-export-exclude="1">
+            {backgroundRenderOrder.map((bid) => {
+              const poly = polygons[bid];
+              if (poly) {
+                return polygonSelectedIds.includes(bid) ? (
+                  <PolygonView
+                    key={bid + ':hit'}
+                    polygon={poly}
+                    layer="hit"
+                    selected
+                    selectedVertexIndices={NO_VERTEX_INDICES}
+                    interactive={polygonsInteractive}
+                    inHandMode={inHandMode}
+                    onPointerDown={polyDrag.onPolygonPointerDown}
+                    onClick={proxyClickNoop}
+                    onContextMenu={proxyClickNoop}
+                    onVertexPointerDown={polyDrag.onVertexPointerDown}
+                    onVertexClick={onVertexClick}
+                    onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
+                  />
+                ) : null;
+              }
+              const im = svgImages[bid];
+              return im && svgImageSelectedIds.includes(bid) ? (
                 <SvgImageView
-                  key={iid + ':overlay'}
-                  image={svgImages[iid]}
-                  layer="overlay"
+                  key={bid + ':hit'}
+                  image={im}
+                  layer="hit"
                   selected
                   interactive={polygonsInteractive}
                   inHandMode={inHandMode}
                   onPointerDown={svgDrag.onSvgImagePointerDown}
-                  onClick={onSvgImageClick}
-                  onContextMenu={onSvgImageContextMenu}
+                  onClick={proxyClickNoop}
+                  onContextMenu={proxyClickNoop}
                   onCornerPointerDown={svgDrag.onSvgCornerPointerDown}
                   onEdgePointerDown={svgDrag.onSvgEdgePointerDown}
                   onRotatePointerDown={svgDrag.onSvgRotatePointerDown}
                 />
-              ),
-          )}
-        </g>
+              ) : null;
+            })}
+            {washIds.map((sid) =>
+              stations[sid] && !stations[sid].locked ? (
+                <StationView
+                  key={sid + ':hit'}
+                  station={stations[sid]}
+                  lines={lines}
+                  zoom={view.viewport.zoom}
+                  onStartDrag={drag.onStartDrag}
+                  layer="hit"
+                />
+              ) : null,
+            )}
+            {bulletSelectedIds.map((id) =>
+              routeBullets[id] ? (
+                <RouteBulletView
+                  key={id + ':hit'}
+                  bullet={routeBullets[id]}
+                  lines={lines}
+                  selected
+                  layer="hit"
+                  inHandMode={inHandMode}
+                  onPointerDown={itemDrag.onBulletPointerDown}
+                  onClick={proxyClickNoop}
+                  onContextMenu={proxyClickNoop}
+                />
+              ) : null,
+            )}
+            {labelSelectedIds.map((id) =>
+              textLabels[id] ? (
+                <LabelView
+                  key={id + ':hit'}
+                  label={textLabels[id]}
+                  selected
+                  layer="hit"
+                  inHandMode={inHandMode}
+                  onPointerDown={itemDrag.onLabelPointerDown}
+                  onClick={proxyClickNoop}
+                  onContextMenu={proxyClickNoop}
+                />
+              ) : null,
+            )}
+          </g>
 
-        {/* Mouseover preview: the hovered (unselected) image's selection box at
+          {/* Polygon selection overlay: dashed outline, vertex handles, and edge
+            "+" buttons. Painted in this top pass so the handles stay clickable
+            above all map content. Only selected polygons render here. Excluded
+            from image export — it's selection chrome, not map content (the
+            polygon bodies above ARE exported). */}
+          <g data-export-exclude="1">
+            {polygonSelectedIds.map(
+              (pid) =>
+                polygons[pid] && (
+                  <PolygonView
+                    key={pid + ':overlay'}
+                    polygon={polygons[pid]}
+                    layer="overlay"
+                    selected
+                    selectedVertexIndices={vertexIndicesFor(pid)}
+                    interactive={polygonsInteractive}
+                    onPointerDown={polyDrag.onPolygonPointerDown}
+                    onClick={onPolygonClick}
+                    onContextMenu={onPolygonContextMenu}
+                    onVertexPointerDown={polyDrag.onVertexPointerDown}
+                    onVertexClick={onVertexClick}
+                    onEdgeAddPointerDown={polyDrag.onEdgeAddPointerDown}
+                  />
+                ),
+            )}
+          </g>
+
+          {/* Mouseover preview: the hovered (unselected) polygon's selection
+            outline at 50% opacity — ONLY the outline, never the vertex / edge-add
+            manipulators (those belong to an actually-selected polygon). */}
+          {hoverPolygonId && polygons[hoverPolygonId] && (
+            <g data-export-exclude="1" opacity={0.5}>
+              <PolygonSelectionOutline polygon={polygons[hoverPolygonId]} />
+            </g>
+          )}
+
+          {/* Svg-image transform handles (corners, edges, rotation knob). Top
+            pass so they stay clickable above all content; only selected images
+            render here. Excluded from image export — selection chrome, not map
+            content (the image bodies above ARE exported). */}
+          <g data-export-exclude="1">
+            {svgImageSelectedIds.map(
+              (iid) =>
+                svgImages[iid] && (
+                  <SvgImageView
+                    key={iid + ':overlay'}
+                    image={svgImages[iid]}
+                    layer="overlay"
+                    selected
+                    interactive={polygonsInteractive}
+                    inHandMode={inHandMode}
+                    onPointerDown={svgDrag.onSvgImagePointerDown}
+                    onClick={onSvgImageClick}
+                    onContextMenu={onSvgImageContextMenu}
+                    onCornerPointerDown={svgDrag.onSvgCornerPointerDown}
+                    onEdgePointerDown={svgDrag.onSvgEdgePointerDown}
+                    onRotatePointerDown={svgDrag.onSvgRotatePointerDown}
+                  />
+                ),
+            )}
+          </g>
+
+          {/* Mouseover preview: the hovered (unselected) image's selection box at
             50% opacity — ONLY the box, never the resize/rotate handles (those
             belong to an actually-selected image). */}
-        {hoverSvgImageId && svgImages[hoverSvgImageId] && (
-          <g data-export-exclude="1" opacity={0.5}>
-            <SvgImageSelectionBox image={svgImages[hoverSvgImageId]} />
-          </g>
-        )}
+          {hoverSvgImageId && svgImages[hoverSvgImageId] && (
+            <g data-export-exclude="1" opacity={0.5}>
+              <SvgImageSelectionBox image={svgImages[hoverSvgImageId]} />
+            </g>
+          )}
 
-        {/* Rubber-band rect for the rect-select gesture. World coords; the
+          {/* Rubber-band rect for the rect-select gesture. World coords; the
             stroke width compensates for zoom so the dashed line stays a
             consistent screen weight. */}
-        {rectSelect.rect && (
-          <rect
-            data-export-exclude="1"
-            x={Math.min(rectSelect.rect.x0, rectSelect.rect.x1)}
-            y={Math.min(rectSelect.rect.y0, rectSelect.rect.y1)}
-            width={Math.abs(rectSelect.rect.x1 - rectSelect.rect.x0)}
-            height={Math.abs(rectSelect.rect.y1 - rectSelect.rect.y0)}
-            fill={theme.accentWash}
-            stroke={theme.accent}
-            strokeWidth={1.5 / view.viewport.zoom}
-            strokeDasharray={`${4 / view.viewport.zoom} ${3 / view.viewport.zoom}`}
-            pointerEvents="none"
-          />
-        )}
+          {rectSelect.rect && (
+            <rect
+              data-export-exclude="1"
+              x={Math.min(rectSelect.rect.x0, rectSelect.rect.x1)}
+              y={Math.min(rectSelect.rect.y0, rectSelect.rect.y1)}
+              width={Math.abs(rectSelect.rect.x1 - rectSelect.rect.x0)}
+              height={Math.abs(rectSelect.rect.y1 - rectSelect.rect.y0)}
+              fill={theme.accentWash}
+              stroke={theme.accent}
+              strokeWidth={1.5 / view.viewport.zoom}
+              strokeDasharray={`${4 / view.viewport.zoom} ${3 / view.viewport.zoom}`}
+              pointerEvents="none"
+            />
+          )}
 
-        {/* Snap guides: rendered last so the dotted lines + measurement
+          {/* Snap guides: rendered last so the dotted lines + measurement
             labels sit on top of line tags and everything else. */}
-        <g data-export-exclude="1">
-          <SnapGuides
-            guides={[
-              ...drag.snapGuides,
-              ...itemDrag.itemSnapGuides,
-              ...polyDrag.polygonSnapGuides,
-              ...svgDrag.svgImageSnapGuides,
-              ...placementGuides,
-            ]}
-            zoom={view.viewport.zoom}
-          />
-        </g>
+          <g data-export-exclude="1">
+            <SnapGuides
+              guides={[
+                ...drag.snapGuides,
+                ...itemDrag.itemSnapGuides,
+                ...polyDrag.polygonSnapGuides,
+                ...svgDrag.svgImageSnapGuides,
+                ...placementGuides,
+              ]}
+              zoom={view.viewport.zoom}
+            />
+          </g>
 
-        {/* Station-layout-editor focus dim (editing-station-layout mode):
+          {/* Station-layout-editor focus dim (editing-station-layout mode):
             mutes the whole map so the mode is unmistakable and the overlays
             read. The edited station's own content (white border, dots, label,
             grab rings + direction arrows) is painted at the very END of the
             SVG, AFTER the routing-warning markers, so those markers can never
             cover its click targets. Same focus language as the line-selection
             highlight; chrome, excluded from export. */}
-        {showNetwork && layoutEditStation && theme.dimOpacity > 0 && (
-          <rect
-            data-export-exclude="1"
-            data-dim="1"
-            x={overdrawn.vbX}
-            y={overdrawn.vbY}
-            width={overdrawn.vbW}
-            height={overdrawn.vbH}
-            fill={theme.dim}
-            fillOpacity={theme.dimOpacity}
-            pointerEvents="none"
-          />
-        )}
+          {showNetwork && layoutEditStation && theme.dimOpacity > 0 && (
+            <rect
+              data-export-exclude="1"
+              data-dim="1"
+              x={overdrawn.vbX}
+              y={overdrawn.vbY}
+              width={overdrawn.vbW}
+              height={overdrawn.vbH}
+              fill={theme.dim}
+              fillOpacity={theme.dimOpacity}
+              pointerEvents="none"
+            />
+          )}
 
-        {/* Layering-mode top overlays: the hovered-stripe solid outline +
+          {/* Layering-mode top overlays: the hovered-stripe solid outline +
             small layer-number labels. Painted at the very end of the SVG
             so they stay on top of station dots, transfers, and every other
             line — the click target and the layer number stay readable
             regardless of how busy the canvas is underneath. The dashed
             footprint is rendered earlier (above) so dots and transfers
             paint over it. */}
-        {inLayeringMode && regionGeom && (
-          <g data-export-exclude="1">
-            <RegionModeOverlay
-              faces={regionGeom.faces}
-              hoveredKey={hoveredRegionKey}
-              layer="hit"
-              onHover={setHoveredRegionKey}
-              onFaceClick={handleRegionClick}
-            />
-          </g>
-        )}
+          {inLayeringMode && regionGeom && (
+            <g data-export-exclude="1">
+              <RegionModeOverlay
+                faces={regionGeom.faces}
+                hoveredKey={hoveredRegionKey}
+                layer="hit"
+                onHover={setHoveredRegionKey}
+                onFaceClick={handleRegionClick}
+              />
+            </g>
+          )}
 
-        {/* Routing warnings: a red+white frame around each unrouteable band's
+          {/* Routing warnings: a red+white frame around each unrouteable band's
             crude straight segment plus a ⚠ over its center. Painted at the
             very end of the SVG so the marker draws on top of every stripe,
             dot, and label and is never occluded. The ⚠ takes whichever of
             black/white is legible against the stripe under its center. */}
-        {showNetwork && (
-          <g data-export-exclude="1" data-band-warnings="1">
-            {bands.map((b) => {
-              if (!b.warning) return null;
-              // Color under the glyph = the band's center stripe, resolved the
-              // same way SegmentBand paints it (desaturation override, else live).
-              const centerId = b.lines[Math.floor(b.lines.length / 2)]?.id;
-              const centerColor = centerId
-                ? (colorMap?.[centerId] ?? lines[centerId]?.color)
-                : undefined;
-              const iconColor = centerColor ? legibleTextOn(centerColor) : '#000';
-              return <BandWarning key={'w:' + b.bandKey} spec={b} iconColor={iconColor} />;
-            })}
-          </g>
-        )}
+          {showNetwork && (
+            <g data-export-exclude="1" data-band-warnings="1">
+              {bands.map((b) => {
+                if (!b.warning) return null;
+                // Color under the glyph = the band's center stripe, resolved the
+                // same way SegmentBand paints it (desaturation override, else live).
+                const centerId = b.lines[Math.floor(b.lines.length / 2)]?.id;
+                const centerColor = centerId
+                  ? (colorMap?.[centerId] ?? lines[centerId]?.color)
+                  : undefined;
+                const iconColor = centerColor ? legibleTextOn(centerColor) : '#000';
+                return <BandWarning key={'w:' + b.bandKey} spec={b} iconColor={iconColor} />;
+              })}
+            </g>
+          )}
 
-        {/* Mouseover preview — orientation badges: the layout editor's axis
+          {/* Mouseover preview — orientation badges: the layout editor's axis
             glyph on each stop dot, so a hovered station's stop orientations
             read at a glance without entering the editor. Full opacity, unlike
             the faint wash/stroke halves — legibility is the whole point.
@@ -2132,90 +2152,93 @@ export function MapCanvas() {
             where you're looking when things go wrong, and it must never cover
             the badges. (Idle-mode-only chrome, so it can't collide with the
             layout-edit focus content below.) */}
-        {hoverStationId && stations[hoverStationId] && (
-          <g data-export-exclude="1">
-            <StationView
-              key={hoverStationId + ':hover-arrows'}
-              station={stations[hoverStationId]}
-              lines={lines}
-              zoom={view.viewport.zoom}
-              onStartDrag={drag.onStartDrag}
-              layer="hover-arrows"
-            />
-          </g>
-        )}
+          {hoverStationId && stations[hoverStationId] && (
+            <g data-export-exclude="1">
+              <StationView
+                key={hoverStationId + ':hover-arrows'}
+                station={stations[hoverStationId]}
+                lines={lines}
+                zoom={view.viewport.zoom}
+                onStartDrag={drag.onStartDrag}
+                layer="hover-arrows"
+              />
+            </g>
+          )}
 
-        {/* Layout-editor focus content, painted at the very END of the SVG so
+          {/* Layout-editor focus content, painted at the very END of the SVG so
             it sits ABOVE the routing-warning markers, which would otherwise
             cover the edited station's dots + direction arrows (the click
             targets you reach for exactly when a routing warning appears). The
             dim is painted much earlier, below the warnings, so the warnings
             stay visible beneath this content. */}
-        {showNetwork && layoutEditStation && (
-          <>
-            {/* White selection border, above the dim. The base stroke pass
+          {showNetwork && layoutEditStation && (
+            <>
+              {/* White selection border, above the dim. The base stroke pass
                 skips this station's themed (black) border; white reads on the
                 darkened backdrop in both themes. */}
-            <g data-export-exclude="1">
-              <StationView
-                station={layoutEditStation}
-                lines={lines}
-                zoom={view.viewport.zoom}
-                onStartDrag={drag.onStartDrag}
-                layer="stroke"
-                strokeColor="#ffffff"
-              />
-            </g>
-            {/* Stop dots at full strength — the thing you're editing. Skipped
+              <g data-export-exclude="1">
+                <StationView
+                  station={layoutEditStation}
+                  lines={lines}
+                  zoom={view.viewport.zoom}
+                  onStartDrag={drag.onStartDrag}
+                  layer="stroke"
+                  strokeColor="#ffffff"
+                />
+              </g>
+              {/* Stop dots at full strength — the thing you're editing. Skipped
                 in the base dots pass, so this is a move, not a duplicate: one
                 hit-seam per dot. Real map content, so NOT export-excluded. The
                 label is intentionally NOT re-painted here; it fades under the
                 dim in the base pass. */}
-            <g pointerEvents="none">
-              <StationView
-                station={layoutEditStation}
-                lines={lines}
-                zoom={view.viewport.zoom}
-                onStartDrag={drag.onStartDrag}
-                layer="dots"
-              />
-            </g>
-            {/* Grab rings + direction arrows on top (interactive chrome). */}
-            <g data-export-exclude="1">
-              <StationLayoutEditor
-                station={layoutEditStation}
-                lines={lines}
-                onStartNodeDrag={layoutDrag.onStartNodeDrag}
-                swapTarget={
-                  layoutDrag.overlay?.over?.kind === 'stop' ? layoutDrag.overlay.over : null
-                }
-              />
-            </g>
-            {/* Ghost lattice during a layout drag, above the dots so drop
-                targets stay readable. */}
-            {layoutDrag.overlay && stations[layoutDrag.overlay.stationId] && (
-              <g data-export-exclude="1">
-                <GhostLattice
-                  ghosts={layoutDrag.overlay.ghosts}
-                  over={layoutDrag.overlay.over?.kind === 'ghost' ? layoutDrag.overlay.over : null}
-                  station={stations[layoutDrag.overlay.stationId]}
+              <g pointerEvents="none">
+                <StationView
+                  station={layoutEditStation}
+                  lines={lines}
                   zoom={view.viewport.zoom}
-                  // A stop's drop radius is its stripe's half-width; every
-                  // POINT-like source (the label cell, and any future one)
-                  // takes the unit cell's half — which is what the tail means,
-                  // not "label" specifically. Safe as a catch-all for that
-                  // reason; a source needing its own radius must branch above.
-                  dropR={
-                    layoutDrag.overlay.source.kind === 'stop'
-                      ? lineWidthOf(lines[layoutDrag.overlay.source.lineId]) / 2
-                      : STOP_SIZE / 2
+                  onStartDrag={drag.onStartDrag}
+                  layer="dots"
+                />
+              </g>
+              {/* Grab rings + direction arrows on top (interactive chrome). */}
+              <g data-export-exclude="1">
+                <StationLayoutEditor
+                  station={layoutEditStation}
+                  lines={lines}
+                  onStartNodeDrag={layoutDrag.onStartNodeDrag}
+                  swapTarget={
+                    layoutDrag.overlay?.over?.kind === 'stop' ? layoutDrag.overlay.over : null
                   }
                 />
               </g>
-            )}
-          </>
-        )}
-      </svg>
+              {/* Ghost lattice during a layout drag, above the dots so drop
+                targets stay readable. */}
+              {layoutDrag.overlay && stations[layoutDrag.overlay.stationId] && (
+                <g data-export-exclude="1">
+                  <GhostLattice
+                    ghosts={layoutDrag.overlay.ghosts}
+                    over={
+                      layoutDrag.overlay.over?.kind === 'ghost' ? layoutDrag.overlay.over : null
+                    }
+                    station={stations[layoutDrag.overlay.stationId]}
+                    zoom={view.viewport.zoom}
+                    // A stop's drop radius is its stripe's half-width; every
+                    // POINT-like source (the label cell, and any future one)
+                    // takes the unit cell's half — which is what the tail means,
+                    // not "label" specifically. Safe as a catch-all for that
+                    // reason; a source needing its own radius must branch above.
+                    dropR={
+                      layoutDrag.overlay.source.kind === 'stop'
+                        ? lineWidthOf(lines[layoutDrag.overlay.source.lineId]) / 2
+                        : STOP_SIZE / 2
+                    }
+                  />
+                </g>
+              )}
+            </>
+          )}
+        </svg>
+      </div>
 
       <ItemPopovers hostSize={view.size} />
 

@@ -93,18 +93,24 @@ describe('MapCanvas — the line-highlight dim wash survives imperative-viewBox 
       useSelection.getState().selectLine('L1');
     });
 
-    // The committed (1×) viewBox React last rendered onto the map <svg> (the one
-    // that owns the background rect — not some unrelated icon svg in the chrome).
+    // The viewBox React last rendered onto the map <svg> (the one that owns
+    // the background rect — not some unrelated icon svg in the chrome) is the
+    // 2×-per-axis pan SURFACE (panSurfaceViewBox); recover the visible window
+    // by shrinking it back about its center.
     const svg = document.querySelector('[data-bg]')!.closest('svg')!;
-    const [cx, cy, cw, ch] = svg.getAttribute('viewBox')!.split(' ').map(Number);
+    const [sx, sy, sw, sh] = svg.getAttribute('viewBox')!.split(' ').map(Number);
     // Sanity: the size stub took, so the assertions below aren't vacuous.
-    expect(cw).toBeGreaterThan(0);
+    expect(sw).toBeGreaterThan(0);
+    const cw = sw / 2;
+    const ch = sh / 2;
+    const cx = sx + sw / 4;
+    const cy = sy + sh / 4;
 
     const dim = box(document.querySelector('[data-dim]')!);
     const bg = box(document.querySelector('[data-bg]')!);
 
     // The dim wash is overdrawn one viewport-width/height in every direction —
-    // identical to the background fill, not the bare 1× committed viewBox.
+    // identical to the background fill, not the bare 1× committed viewport.
     expect(dim).toEqual(bg);
     expect(dim).toEqual({ x: cx - cw, y: cy - ch, w: cw * 3, h: ch * 3 });
   });
