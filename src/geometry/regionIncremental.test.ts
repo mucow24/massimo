@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import fc from 'fast-check';
 import { buildOverlapRegions, ringsBbox, type RegionFace, type RegionSliver } from './lineRegions';
 import {
   buildRegionsIncremental,
@@ -337,6 +338,97 @@ describe('buildRegionsIncremental', () => {
     const inc = buildRegionsIncremental(stubbedGrid(-60, 3), [], s1);
     expect(inc.rebuilt).toBeLessThan(inc.total); // reuse really is in play
     expectEqualsFull(inc, stubbedGrid(-60, 3));
+  });
+
+  // Design 2's hardest case: a drag that MERGES two components and then
+  // splits them again. Every frame must equal a cold build — polygons, spans
+  // and slivers alike — through both topology events.
+  it('stays equal to a full rebuild through a component merge and split', () => {
+    const frames = [110, 30, 10, 30, 110]; // apart → touching → merged → apart
+    const mk = (x: number): SegmentBandSpec[] => [
+      hBand('hA', 0),
+      crossing('vA', 0),
+      crossing('vB', 0, x),
+    ];
+    let state: RegionIncrementalState | null = null;
+    for (const x of frames) {
+      const bands = mk(x);
+      const inc = buildRegionsIncremental(bands, [], state);
+      expectEqualsFull(inc, bands);
+      state = inc.state;
+    }
+  });
+
+  // Randomized drag sequences over both line arrangements, chaining state
+  // frame to frame — merges, splits, near-tangencies and reversals in
+  // arbitrary order. Every frame must equal a cold build.
+  it('equals a full rebuild across randomized drag sequences', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.integer({ min: -30, max: 120 }), { minLength: 2, maxLength: 6 }),
+        fc.boolean(),
+        (offsets, useStubbed) => {
+          let state: RegionIncrementalState | null = null;
+          for (const dx of offsets) {
+            const bands = useStubbed ? stubbedGrid(-40, dx) : grid(dx);
+            const inc = buildRegionsIncremental(bands, [], state);
+            expectEqualsFull(inc, bands);
+            state = inc.state;
+          }
+        },
+      ),
+      { numRuns: 25 },
+    );
+  });
+
+  // The zone's component split must be LOCAL: a move far from most crossings
+  // re-unions only the parts near it, not the whole zone. Without this
+  // assertion, a builder that re-unions everything passes every equality
+  // test above.
+  it('re-unions only the parts near the move', () => {
+    const bands = grid();
+    const cold = buildRegionsIncremental(bands, [], null);
+    expect(cold.zoneUnionParts).toBeGreaterThan(0); // cold: everything
+    // vB moves; the other six crossings' parts must stay out of the union.
+    const inc = buildRegionsIncremental(grid(6), [], cold.state);
+    expect(inc.zoneUnionParts).toBeGreaterThan(0);
+    expect(inc.zoneUnionParts).toBeLessThan(cold.zoneUnionParts / 2);
+    expectEqualsFull(inc, grid(6));
+    // And a frame where nothing moved unions nothing at all.
+    const idle = buildRegionsIncremental(grid(6), [], inc.state);
+    expect(idle.zoneUnionParts).toBe(0);
+  });
+
+  // A sub-SLIVER_MIN_AREA component is invisible in the output but its
+  // territory must stay in the membership index: when a drag grows the
+  // overlap into significance, the local re-union has to find those parts or
+  // the territory silently vanishes from the arrangement.
+  it('grows a sub-sliver component into significance without losing territory', () => {
+    // l2's crossing with hA starts at a hair overlap (body corner ~0.1×0.1,
+    // below SLIVER_MIN_AREA), then l2 slides down into a full crossing.
+    const mk = (y0: number): SegmentBandSpec[] => [
+      hBand('hA', 0),
+      makeBandSpec(['l2'], {
+        pairKey: 'l2|l2b',
+        bandKey: 'b-l2',
+        centerline: [
+          { x: 60, y: y0 },
+          { x: 60, y: y0 + 100 },
+        ],
+      }),
+    ];
+    // Body of hA spans y ∈ [-7, 7]; l2's body starts at y0 − 7. y0 = 13.9
+    // leaves a 0.1-deep, 14-wide strip? No — the strip is 14 wide (l2's
+    // width), 0.1 deep: area 1.4, significant. Overlap depth 0.001 gives
+    // area ~0.014 < 0.02: sub-sliver.
+    const seq = [13.999, 13.9, 0];
+    let state: RegionIncrementalState | null = null;
+    for (const y0 of seq) {
+      const bands = mk(y0);
+      const inc = buildRegionsIncremental(bands, [], state);
+      expectEqualsFull(inc, bands);
+      state = inc.state;
+    }
   });
 
   // Spans are keyed per BAND (`lineId|pairKey`) and measured from that band's

@@ -47,14 +47,14 @@
 import type { LineId } from '../model/types';
 import type { SegmentBandSpec, StopMarkerSpec } from './interlining';
 import type { Face, Ring } from './clip';
-import { intersect } from './clip';
+import { intersect, pointInFace } from './clip';
 import {
   boxesOverlap,
   buildLineBodies,
+  compKeyOf,
   extractFaces,
   finalizeFaces,
   restrictBodiesToZone,
-  ringSetKey,
   ringsBbox,
   subdivideCells,
   zoneComponents,
@@ -89,8 +89,18 @@ export interface RegionIncrementalState {
   /** `a|b` → that pair's body intersection, reusable while both bodies are. */
   pairParts: Map<string, Ring[]>;
   zone: Ring[];
-  /** Significant components of `zone`, cached with it (same polytree pass). */
+  /** Significant components of `zone`, in canonical (content-key) order. */
   zoneComps: Face[];
+  /**
+   * EVERY zone component by stable internal id — including sub-sliver ones,
+   * which are invisible in the output but whose territory must stay in the
+   * membership index or a drag growing them into significance would lose it.
+   * Ids are private to one state lineage; nothing downstream sees them.
+   */
+  zoneIndex: Map<number, { rings: Face; box: Box; significant: boolean }>;
+  /** pairKey → per-ring home comp ids (all of them, on boundary ambiguity). */
+  partHome: Map<string, number[][]>;
+  nextCompId: number;
   comps: Map<string, CachedComponent>;
 }
 
@@ -110,6 +120,8 @@ export interface RegionIncrementalResult {
    * scheme at their own granularity.
    */
   dirtyBoxes: Box[];
+  /** Ring count fed to this frame's zone union: 0 = fast path, small = local. */
+  zoneUnionParts: number;
 }
 
 // FNV-1a over coordinates quantized to clipper's own 1e-3 resolution, so the
@@ -126,14 +138,16 @@ function mixString(h: number, s: string): number {
 }
 
 /**
- * Cache key for one zone component: {@link ringSetKey}'s collision-hardened
+ * Cache key for one zone component: {@link compKeyOf}'s collision-hardened
  * content key (canonical ring hash + structural discriminators + quantized
- * bbox). This cache runs per pointermove for hours and a silent collision
- * would hand out the WRONG component's faces; the key construction — shared
- * with the exclusion-hole cache's face identity — lives in lineRegions.
+ * bbox), memoized per ring-array identity — comps carried across frames by
+ * the zone maintenance keep their arrays, so untouched comps never re-hash.
+ * This cache runs per pointermove for hours and a silent collision would
+ * hand out the WRONG component's faces; the key construction — shared with
+ * the exclusion-hole cache's face identity — lives in lineRegions.
  */
-export function compCacheKey(comp: Face, box: Box): string {
-  return ringSetKey(comp, box);
+export function compCacheKey(comp: Face, _box: Box): string {
+  return compKeyOf(comp);
 }
 
 const growBox = (b: Box, pad: number): Box => ({
@@ -151,7 +165,10 @@ const bandUnitsCache = new WeakMap<
   SegmentBandSpec,
   { key: string; lineId: LineId; unit: GeomUnit }[]
 >();
-const markerUnitCache = new WeakMap<StopMarkerSpec, { key: string; lineId: LineId; unit: GeomUnit }>();
+const markerUnitCache = new WeakMap<
+  StopMarkerSpec,
+  { key: string; lineId: LineId; unit: GeomUnit }
+>();
 
 /**
  * Every independently-movable piece of body geometry — one entry per band
@@ -275,6 +292,37 @@ function ringsContentEqual(a: Ring[], b: Ring[]): boolean {
   return true;
 }
 
+/** What buildZoneCached hands back — the zone bookkeeping the state carries. */
+interface ZoneBuild {
+  zone: Ring[];
+  zoneComps: Face[];
+  pairParts: Map<string, Ring[]>;
+  zoneIndex: Map<number, { rings: Face; box: Box; significant: boolean }>;
+  partHome: Map<string, number[][]>;
+  nextCompId: number;
+  zoneUnionParts: number;
+}
+
+/** All home comp ids of one part ring: every indexed comp whose (padded-by-≤)
+ *  bbox admits it AND whose polygon contains the ring's probe vertex. A ring
+ *  vertex ON a shared boundary can test inside more than one comp — all of
+ *  them are recorded, and the seed closure treats such a part as belonging to
+ *  every one (over-seeding is exact; a silent single pick is not). */
+function ringHomes(
+  ring: Ring,
+  candidates: Iterable<[number, { rings: Face; box: Box; significant: boolean }]>,
+): number[] {
+  const p = ring[0];
+  const homes: number[] = [];
+  for (const [id, comp] of candidates) {
+    if (p.x < comp.box.x0 || p.x > comp.box.x1 || p.y < comp.box.y0 || p.y > comp.box.y1) {
+      continue;
+    }
+    if (pointInFace(p, comp.rings)) homes.push(id);
+  }
+  return homes;
+}
+
 /**
  * The overlap zone, reusing each pair's body intersection while neither of its
  * two bodies changed. This is the expensive half of the prefix — O(lines²)
@@ -287,17 +335,36 @@ function ringsContentEqual(a: Ring[], b: Ring[]): boolean {
  * and does not count as changed — the moved-line-crosses-many-stationary-
  * lines case is what keeps the changed set to the crossings that genuinely
  * moved.
+ *
+ * The component split is LOCAL: only components affected by the changed pairs
+ * are re-unioned; everything else keeps its ring arrays by reference.
+ * Soundness of the seed set: components of a union are maximal connected
+ * sets, so an untouched component can only change by connecting to added
+ * territory or losing removed territory. Removed territory is the changed and
+ * removed pairs' OLD rings — their home comps seed (via `partHome`). Added
+ * territory is the changed pairs' NEW rings — every indexed comp whose bbox
+ * overlaps one seeds (inclusive overlap, so touch-at-a-point counts), and
+ * connection without bbox overlap is impossible. A part homed in several
+ * comps (boundary-ambiguous probe) pulls ALL of them in, to a fixpoint, so a
+ * retained comp can never share territory with the union input. Sub-sliver
+ * comps live in the index for exactly this purpose: a new ring bridging into
+ * former sub-sliver territory must find those parts.
+ *
+ * Byte-identity of a spliced build vs the global union is gated, not
+ * assumed: the equality suite pins polygon coordinates exactly through
+ * merge/split/growth fixtures, and iteration order is canonicalized by
+ * content key in `zoneComponents`, so clipper's output ORDER cannot leak.
  */
 function buildZoneCached(
   ids: LineId[],
   bodies: Map<LineId, Ring[]>,
   dirtyLines: ReadonlySet<LineId>,
   prev: RegionIncrementalState | null,
-): { zone: Ring[]; zoneComps: Face[]; pairParts: Map<string, Ring[]> } {
+): ZoneBuild {
   const boxes = new Map(ids.map((id) => [id, ringsBbox(bodies.get(id)!)]));
   const pairParts = new Map<string, Ring[]>();
   const parts: Ring[] = [];
-  let allReused = prev !== null;
+  const changed = new Set<string>();
 
   for (let i = 0; i < ids.length; i++) {
     for (let j = i + 1; j < ids.length; j++) {
@@ -320,22 +387,160 @@ function buildZoneCached(
         parts.push(...cached);
         continue;
       }
-      allReused = false;
+      if (cached || rings.length) changed.add(key);
       pairParts.set(key, rings);
       parts.push(...rings);
     }
   }
-
-  // Equal pair COUNTS are part of the reuse condition: a removed line leaves
-  // every SURVIVING pair clean, so `allReused` alone would return the previous
-  // zone with the dead line's territory still in it. A vanished line strictly
-  // shrinks the pair set, and a same-size-but-different set cannot have reused
-  // every pair (its new pairs are not in the cache), so size is enough.
-  if (allReused && prev && prev.pairParts.size === pairParts.size && prev.zone.length) {
-    return { zone: prev.zone, zoneComps: prev.zoneComps, pairParts };
+  const removed: string[] = [];
+  for (const key of prev?.pairParts.keys() ?? []) {
+    if (!pairParts.has(key)) removed.push(key);
   }
-  const { zone, comps } = zoneComponents(parts);
-  return { zone, zoneComps: comps, pairParts };
+
+  if (!changed.size && !removed.length && prev && prev.zone.length) {
+    return {
+      zone: prev.zone,
+      zoneComps: prev.zoneComps,
+      pairParts,
+      zoneIndex: prev.zoneIndex,
+      partHome: prev.partHome,
+      nextCompId: prev.nextCompId,
+      zoneUnionParts: 0,
+    };
+  }
+
+  // Global union: cold builds, and the fallback when a change touches most of
+  // the index anyway (splicing would buy nothing over rebuilding).
+  const globalBuild = (): ZoneBuild => {
+    const { zone, comps, all } = zoneComponents(parts);
+    const zoneIndex = new Map<number, { rings: Face; box: Box; significant: boolean }>();
+    const significant = new Set(comps);
+    all.forEach((rings, i) => {
+      zoneIndex.set(i, { rings, box: ringsBbox(rings), significant: significant.has(rings) });
+    });
+    const partHome = new Map<string, number[][]>();
+    for (const [key, rings] of pairParts) {
+      if (rings.length)
+        partHome.set(
+          key,
+          rings.map((r) => ringHomes(r, zoneIndex)),
+        );
+    }
+    return {
+      zone,
+      zoneComps: comps,
+      pairParts,
+      zoneIndex,
+      partHome,
+      nextCompId: all.length,
+      zoneUnionParts: parts.length,
+    };
+  };
+  if (!prev || !prev.zoneIndex.size) return globalBuild();
+
+  // Seeds: homes of every changed/removed pair's OLD rings, plus every comp a
+  // changed pair's NEW ring touches.
+  const seeds = new Set<number>();
+  for (const key of [...changed, ...removed]) {
+    for (const homes of prev.partHome.get(key) ?? []) {
+      for (const id of homes) seeds.add(id);
+    }
+  }
+  for (const key of changed) {
+    for (const ring of pairParts.get(key)!) {
+      const rb = ringsBbox([ring]);
+      for (const [id, comp] of prev.zoneIndex) {
+        if (boxesOverlap(rb, comp.box)) seeds.add(id);
+      }
+    }
+  }
+  // Over-seed closure: a part homed in a seed AND a non-seed pulls the
+  // non-seed in, so no retained comp shares territory with the union input.
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const ringHomesList of prev.partHome.values()) {
+      for (const homes of ringHomesList) {
+        if (homes.length < 2) continue;
+        const some = homes.some((id) => seeds.has(id));
+        if (some && !homes.every((id) => seeds.has(id))) {
+          for (const id of homes) seeds.add(id);
+          grew = true;
+        }
+      }
+    }
+  }
+  if (seeds.size > prev.zoneIndex.size / 2) return globalBuild();
+
+  // Union input, assembled in canonical pair order (pairParts iteration order
+  // IS the sorted-ids i<j loop): a changed pair contributes all its new
+  // rings; an unchanged pair only the rings homed in a seed comp. Ring
+  // indices align with prev's homes because unchanged pairs carry prev's
+  // array by reference.
+  const input: Ring[] = [];
+  const contributed: { key: string; indices: number[] }[] = [];
+  for (const [key, rings] of pairParts) {
+    if (!rings.length) continue;
+    if (changed.has(key)) {
+      const indices = rings.map((_r, i) => i);
+      contributed.push({ key, indices });
+      input.push(...rings);
+      continue;
+    }
+    const homes = prev.partHome.get(key);
+    if (!homes) continue;
+    const indices: number[] = [];
+    for (let i = 0; i < rings.length; i++) {
+      if (homes[i]?.some((id) => seeds.has(id))) indices.push(i);
+    }
+    if (indices.length) {
+      contributed.push({ key, indices });
+      for (const i of indices) input.push(rings[i]);
+    }
+  }
+
+  const local = zoneComponents(input);
+  const zoneIndex = new Map(prev.zoneIndex);
+  for (const id of seeds) zoneIndex.delete(id);
+  let nextCompId = prev.nextCompId;
+  const fresh = new Map<number, { rings: Face; box: Box; significant: boolean }>();
+  const localSignificant = new Set(local.comps);
+  for (const rings of local.all) {
+    const entry = { rings, box: ringsBbox(rings), significant: localSignificant.has(rings) };
+    zoneIndex.set(nextCompId, entry);
+    fresh.set(nextCompId, entry);
+    nextCompId++;
+  }
+
+  const partHome = new Map(prev.partHome);
+  for (const key of removed) partHome.delete(key);
+  for (const { key, indices } of contributed) {
+    const rings = pairParts.get(key)!;
+    const oldHomes = changed.has(key) ? null : partHome.get(key);
+    const inInput = new Set(indices);
+    partHome.set(
+      key,
+      rings.map((r, i) => (inInput.has(i) ? ringHomes(r, fresh) : oldHomes![i])),
+    );
+  }
+
+  const zoneComps: Face[] = [];
+  const zone: Ring[] = [];
+  for (const { rings, significant } of zoneIndex.values()) {
+    if (significant) zoneComps.push(rings);
+    zone.push(...rings);
+  }
+  zoneComps.sort((a, b) => (compKeyOf(a) < compKeyOf(b) ? -1 : 1));
+
+  return {
+    zone,
+    zoneComps,
+    pairParts,
+    zoneIndex,
+    partHome,
+    nextCompId,
+    zoneUnionParts: input.length,
+  };
 }
 
 /**
@@ -409,25 +614,42 @@ export function buildRegionsIncremental(
         pairParts: new Map(),
         zone: [],
         zoneComps: [],
+        zoneIndex: new Map(),
+        partHome: new Map(),
+        nextCompId: 0,
         comps: new Map(),
       },
       reused: false,
       rebuilt: 0,
       total: 0,
       dirtyBoxes,
+      zoneUnionParts: 0,
     };
   }
 
-  const { zone, zoneComps, pairParts } = buildZoneCached(ids, bodies, dirtyLines, prev);
+  const zb = buildZoneCached(ids, bodies, dirtyLines, prev);
+  const { zone, zoneComps, pairParts } = zb;
   if (!zone.length) {
     return {
       faces: [],
       slivers: [],
-      state: { lineHash, units, bodies, pairParts, zone, zoneComps, comps: new Map() },
+      state: {
+        lineHash,
+        units,
+        bodies,
+        pairParts,
+        zone,
+        zoneComps,
+        zoneIndex: zb.zoneIndex,
+        partHome: zb.partHome,
+        nextCompId: zb.nextCompId,
+        comps: new Map(),
+      },
       reused: false,
       rebuilt: 0,
       total: 0,
       dirtyBoxes,
+      zoneUnionParts: zb.zoneUnionParts,
     };
   }
 
@@ -471,10 +693,22 @@ export function buildRegionsIncremental(
   return {
     faces: finalized,
     slivers,
-    state: { lineHash, units, bodies, pairParts, zone, zoneComps, comps: nextComps },
+    state: {
+      lineHash,
+      units,
+      bodies,
+      pairParts,
+      zone,
+      zoneComps,
+      zoneIndex: zb.zoneIndex,
+      partHome: zb.partHome,
+      nextCompId: zb.nextCompId,
+      comps: nextComps,
+    },
     reused: rebuilt === 0,
     rebuilt,
     total: comps.length,
     dirtyBoxes,
+    zoneUnionParts: zb.zoneUnionParts,
   };
 }

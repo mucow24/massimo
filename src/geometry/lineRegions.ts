@@ -628,21 +628,40 @@ export function significantComponents(zone: Ring[]): Face[] {
 }
 
 /**
+ * Canonical content key of one zone component, memoized per ring-array
+ * identity (comps carried across frames by the incremental zone maintenance
+ * keep their arrays, so an untouched comp never re-hashes). Also the sort
+ * key that fixes the component ITERATION order to a pure function of
+ * geometry — clipper's own output order can differ between a global union
+ * and a spliced local one, and iteration order is output-visible through
+ * per-component sliver emission.
+ */
+const compKeys = new WeakMap<Face, string>();
+export function compKeyOf(comp: Face): string {
+  let key = compKeys.get(comp);
+  if (!key) compKeys.set(comp, (key = ringSetKey(comp, ringsBbox(comp))));
+  return key;
+}
+
+/**
  * One polytree union over the raw zone parts, yielding both products of the
  * old unionAll-then-splitIntoFaces pair in a single boolean: the merged zone
  * rings (every component's outer + holes, flattened, sub-sliver ones
  * included so `zone.length` keeps meaning "any overlap exists") and the
- * significant components. The incremental builder caches both together.
+ * significant components, in canonical (content-key) order. `all` is every
+ * component including sub-sliver ones — the incremental zone maintenance
+ * needs them for part membership; nothing else reads them.
  */
-export function zoneComponents(parts: Ring[]): { zone: Ring[]; comps: Face[] } {
-  if (!parts.length) return { zone: [], comps: [] };
+export function zoneComponents(parts: Ring[]): { zone: Ring[]; comps: Face[]; all: Face[] } {
+  if (!parts.length) return { zone: [], comps: [], all: [] };
   const all = splitIntoFaces(parts);
   const comps: Face[] = [];
   for (const comp of all) {
     if (faceArea(comp) < SLIVER_MIN_AREA) continue;
     comps.push(comp);
   }
-  return { zone: all.flat(), comps };
+  comps.sort((a, b) => (compKeyOf(a) < compKeyOf(b) ? -1 : 1));
+  return { zone: all.flat(), comps, all };
 }
 
 /**
