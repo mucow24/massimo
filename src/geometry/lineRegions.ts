@@ -210,31 +210,6 @@ export function buildLineBodies(
   return out;
 }
 
-/**
- * Face geometry is independent of where a stripe runs OUTSIDE the overlap zone,
- * but {@link computeSpans} is not: it measures arc length from each stripe's
- * start, so a band that moves anywhere along a covering line shifts that face's
- * span intervals even when the face polygon is untouched. An incremental
- * rebuild that reuses face geometry must therefore still refresh the spans of
- * every face covered by a line whose bands changed, or stored region anchors
- * bind against stale arc positions.
- *
- * Returns fresh face objects (geometry shared, spans replaced) for affected
- * faces; untouched faces are returned by reference.
- */
-export function refreshFaceSpans(
-  faces: RegionFace[],
-  bands: SegmentBandSpec[],
-  dirtyLines: ReadonlySet<LineId>,
-): RegionFace[] {
-  if (!dirtyLines.size) return faces;
-  return faces.map((f) =>
-    f.lineIds.some((id) => dirtyLines.has(id))
-      ? { ...f, spans: computeSpans(f.face, f.bbox, f.lineIds, bands) }
-      : f,
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Stripe-path sampling (flattened once per band spec, WeakMap-cached — band
 // specs are rebuilt objects whenever geometry changes, so the cache can never
@@ -395,6 +370,20 @@ function computeSpans(
           runStart = null;
         }
         if (at >= sp.len) break;
+        // Out of window with no run open, every grid point from here to the
+        // next window is provably `!inside` (the windows are a superset of
+        // where `inside` can hold), and a false sample with no open run emits
+        // nothing — so the walk can jump. Land one full step BEFORE the
+        // window edge's grid cell so the first possibly-near sample is still
+        // evaluated for real (it may sit exactly on `d0 − eps`). SPAN_STEP is
+        // dyadic, so the iterated d values and the floor-to-grid target are
+        // exact — the jump rejoins the identical sample sequence.
+        if (!maybeNear && runStart === null) {
+          if (w >= wins.length) break; // nothing near for the rest of the arc
+          const target =
+            Math.floor((wins[w].d0 - WINDOW_EPS) / SPAN_STEP) * SPAN_STEP - SPAN_STEP;
+          if (target > d) d = target;
+        }
       }
       if (runStart !== null) intervals.push({ d0: runStart, d1: sp.len });
       if (intervals.length) {
@@ -844,8 +833,13 @@ export function stripeArcLength(
 export function evaluateAnchor(
   anchor: RegionAnchor,
   bands: SegmentBandSpec[],
+  // Optional pairKey → bands index (in original array order) so a caller
+  // evaluating many anchors skips the linear scan. Same first-hit semantics:
+  // the indexed list preserves array order and non-matching bands can't match.
+  byPairKey?: Map<string, SegmentBandSpec[]>,
 ): { p: Vec2; d: number } | null {
-  for (const band of bands) {
+  const candidates = byPairKey ? (byPairKey.get(anchor.pairKey) ?? []) : bands;
+  for (const band of candidates) {
     if (band.pairKey !== anchor.pairKey) continue;
     const k = band.lines.findIndex((l) => l.id === anchor.lineId);
     if (k < 0) continue;
@@ -926,20 +920,71 @@ export function bindAssignments(
   const out = new Map<string, number>();
   const taken = new Set<number>();
   const ids = order ?? Object.keys(assignments).sort();
+
+  // This runs per render frame over every assignment × candidate face, so the
+  // per-candidate work is kept allocation-free: anchors evaluate through a
+  // pairKey index instead of scanning the band array, cover subset tests are
+  // bitmasks over the live-line universe built once per call, and only faces
+  // covering the assignment's own line are visited at all (an ascending index
+  // list, preserving the first-best tie-break order of the full scan).
+  const bandsByPairKey = new Map<string, SegmentBandSpec[]>();
+  for (const band of bands) {
+    const list = bandsByPairKey.get(band.pairKey);
+    if (list) list.push(band);
+    else bandsByPairKey.set(band.pairKey, [band]);
+  }
+  const lineBit = new Map<LineId, number>();
+  for (const id of liveLines) lineBit.set(id, lineBit.size);
+  const words = (lineBit.size >> 5) + 1;
+  const maskOf = (lineIds: Iterable<LineId>): Uint32Array => {
+    const m = new Uint32Array(words);
+    for (const id of lineIds) {
+      const bit = lineBit.get(id);
+      // Non-live ids stay out of the mask — the reference predicate never
+      // tests them (required lines are pre-filtered to live, and a cover's
+      // non-live members can satisfy no requirement).
+      if (bit !== undefined) m[bit >> 5] |= 1 << (bit & 31);
+    }
+    return m;
+  };
+  const hasAll = (need: Uint32Array, have: Uint32Array): boolean => {
+    for (let i = 0; i < words; i++) if ((need[i] & have[i]) !== need[i]) return false;
+    return true;
+  };
+  const coverMasks = faces.map((f) => maskOf(f.lineIds));
+  const facesByLine = new Map<LineId, number[]>();
+  for (let i = 0; i < faces.length; i++) {
+    for (const id of faces[i].lineIds) {
+      const list = facesByLine.get(id);
+      if (list) list.push(i);
+      else facesByLine.set(id, [i]);
+    }
+  }
+
   const prepared = new Map<
     string,
-    { required: LineId[]; evals: { anchor: RegionAnchor; ev: { p: Vec2; d: number } }[] }
+    {
+      requiredMask: Uint32Array;
+      evals: { anchor: RegionAnchor; ev: { p: Vec2; d: number } }[];
+    }
   >();
   for (const id of ids) {
     const a = assignments[id];
     if (!a || !liveLines.has(a.lineId)) continue;
     const evals = a.anchors
       .filter((anchor) => liveLines.has(anchor.lineId))
-      .map((anchor) => ({ anchor, ev: evaluateAnchor(anchor, bands) }))
+      .map((anchor) => ({ anchor, ev: evaluateAnchor(anchor, bands, bandsByPairKey) }))
       .filter((x): x is { anchor: RegionAnchor; ev: { p: Vec2; d: number } } => x.ev !== null);
     if (!evals.length) continue; // nothing evaluable — dormant
-    prepared.set(id, { required: a.lines.filter((l) => liveLines.has(l)), evals });
+    // The assignment's own line rides in the mask too: candidates come from
+    // its face list, so the bit is always satisfied — folding it in keeps the
+    // mask the single subset test.
+    prepared.set(id, {
+      requiredMask: maskOf([a.lineId, ...a.lines.filter((l) => liveLines.has(l))]),
+      evals,
+    });
   }
+  const scratch: number[] = [];
   for (const strict of [true, false]) {
     for (const id of ids) {
       if (out.has(id)) continue;
@@ -948,12 +993,10 @@ export function bindAssignments(
       const a = assignments[id];
       let best = -1;
       let bestScore = Infinity;
-      for (let i = 0; i < faces.length; i++) {
+      for (const i of facesByLine.get(a.lineId) ?? []) {
         if (taken.has(i)) continue;
         const f = faces[i];
-        const cover = new Set(f.lineIds);
-        if (!cover.has(a.lineId)) continue;
-        if (!prep.required.every((l) => cover.has(l))) continue;
+        if (!hasAll(prep.requiredMask, coverMasks[i])) continue;
         if (strict && !prep.evals.every(({ anchor }) => anchorCorridorOk(anchor, f))) continue;
         // Discounted sum of world distances: the nearest anchor counts in
         // full, the rest at 25%. A long drag strands the anchors of UNMOVED
@@ -962,12 +1005,16 @@ export function bindAssignments(
         // onto a nearer sibling crossing) — while small corner faces at a
         // junction still need the agreement of every anchor (plain min would
         // let one shared-boundary anchor steal a neighbor's face).
-        const contributions = prep.evals
-          .map(({ ev }) => pointToFaceDistance(ev.p, f))
-          .sort((x, y) => x - y);
+        // Scratch reuse keeps the sort's fp-accumulation ORDER identical to
+        // the fresh-array form — the sorted order is the documented contract.
+        scratch.length = prep.evals.length;
+        for (let c = 0; c < prep.evals.length; c++) {
+          scratch[c] = pointToFaceDistance(prep.evals[c].ev.p, f);
+        }
+        scratch.sort((x, y) => x - y);
         let score = 0;
-        for (let c = 0; c < contributions.length; c++) {
-          score += c === 0 ? contributions[c] : 0.25 * contributions[c];
+        for (let c = 0; c < scratch.length; c++) {
+          score += c === 0 ? scratch[c] : 0.25 * scratch[c];
         }
         if (score < bestScore - 1e-9) {
           bestScore = score;

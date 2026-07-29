@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import fc from 'fast-check';
 import {
   flattenOffsetSegments,
   stripeBodyPolys,
@@ -814,5 +815,190 @@ describe('regionPaintPlan', () => {
     });
 
     expect(plan).toEqual([]);
+  });
+});
+
+/**
+ * Byte-exact cross-check of the optimized `bindAssignments` against a literal
+ * copy of the pre-optimization implementation (linear band scans, per-candidate
+ * Set allocations). The optimizations — pairKey band index, cover bitmasks,
+ * per-line candidate prefilter, scratch-array scoring — are all claimed
+ * output-identical; this property is the claim, executable. Reference kept
+ * verbatim on purpose: if the two ever disagree, the reference is the spec.
+ */
+describe('bindAssignments cross-check vs reference implementation', () => {
+  type Evaluated = { p: Vec2; d: number };
+
+  const refEvaluateAnchor = (
+    anchor: RegionAssignment['anchors'][number],
+    bands: ReturnType<typeof hBand>[],
+  ): Evaluated | null => evaluateAnchor(anchor, bands);
+
+  const clamp01 = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+  const refPointToFaceDistance = (
+    p: Vec2,
+    face: ReturnType<typeof buildOverlapRegions>[number],
+  ): number => {
+    const b = face.bbox;
+    const dx = Math.max(b.x0 - p.x, 0, p.x - b.x1);
+    const dy = Math.max(b.y0 - p.y, 0, p.y - b.y1);
+    const bboxDist = Math.hypot(dx, dy);
+    if (bboxDist > 0) {
+      if (bboxDist > 4) return bboxDist;
+    }
+    if (pointInFace(p, face.face)) return 0;
+    const ring = face.face[0];
+    let min = Infinity;
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i];
+      const c = ring[(i + 1) % ring.length];
+      const ex = c.x - a.x;
+      const ey = c.y - a.y;
+      const lenSq = ex * ex + ey * ey;
+      const t = lenSq > 0 ? clamp01(((p.x - a.x) * ex + (p.y - a.y) * ey) / lenSq, 0, 1) : 0;
+      const qx = a.x + ex * t;
+      const qy = a.y + ey * t;
+      min = Math.min(min, Math.hypot(p.x - qx, p.y - qy));
+    }
+    return min;
+  };
+
+  const refAnchorCorridorOk = (
+    anchor: RegionAssignment['anchors'][number],
+    face: ReturnType<typeof buildOverlapRegions>[number],
+  ): boolean => {
+    if (face.spans.has(`${anchor.lineId}|${anchor.pairKey}`)) return true;
+    for (const key of face.spans.keys()) {
+      if (key.startsWith(`${anchor.lineId}|`)) return false;
+    }
+    return true;
+  };
+
+  const refBindAssignments = (
+    faces: ReturnType<typeof buildOverlapRegions>,
+    assignments: Record<string, RegionAssignment>,
+    bands: ReturnType<typeof hBand>[],
+    liveLines: Set<string>,
+    order?: string[],
+  ): Map<string, number> => {
+    const out = new Map<string, number>();
+    const taken = new Set<number>();
+    const ids = order ?? Object.keys(assignments).sort();
+    const prepared = new Map<
+      string,
+      {
+        required: string[];
+        evals: { anchor: RegionAssignment['anchors'][number]; ev: Evaluated }[];
+      }
+    >();
+    for (const id of ids) {
+      const a = assignments[id];
+      if (!a || !liveLines.has(a.lineId)) continue;
+      const evals = a.anchors
+        .filter((anchor) => liveLines.has(anchor.lineId))
+        .map((anchor) => ({ anchor, ev: refEvaluateAnchor(anchor, bands) }))
+        .filter(
+          (x): x is { anchor: RegionAssignment['anchors'][number]; ev: Evaluated } =>
+            x.ev !== null,
+        );
+      if (!evals.length) continue;
+      prepared.set(id, { required: a.lines.filter((l) => liveLines.has(l)), evals });
+    }
+    for (const strict of [true, false]) {
+      for (const id of ids) {
+        if (out.has(id)) continue;
+        const prep = prepared.get(id);
+        if (!prep) continue;
+        const a = assignments[id];
+        let best = -1;
+        let bestScore = Infinity;
+        for (let i = 0; i < faces.length; i++) {
+          if (taken.has(i)) continue;
+          const f = faces[i];
+          const cover = new Set(f.lineIds);
+          if (!cover.has(a.lineId)) continue;
+          if (!prep.required.every((l) => cover.has(l))) continue;
+          if (strict && !prep.evals.every(({ anchor }) => refAnchorCorridorOk(anchor, f)))
+            continue;
+          const contributions = prep.evals
+            .map(({ ev }) => refPointToFaceDistance(ev.p, f))
+            .sort((x, y) => x - y);
+          let score = 0;
+          for (let c = 0; c < contributions.length; c++) {
+            score += c === 0 ? contributions[c] : 0.25 * contributions[c];
+          }
+          if (score < bestScore - 1e-9) {
+            bestScore = score;
+            best = i;
+          }
+        }
+        if (best >= 0) {
+          out.set(id, best);
+          taken.add(best);
+        }
+      }
+    }
+    return out;
+  };
+
+  it('matches the reference on randomized grids, assignments and orders', () => {
+    // 2-3 horizontals × 2-3 verticals with distinct corridors per band gives
+    // arrangements with sibling same-cover crossings — the case the two-pass
+    // corridor logic exists for. Anchor distances are perturbed to simulate
+    // the stale mid-drag values the binder must handle.
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 2, max: 3 }),
+        fc.integer({ min: 2, max: 3 }),
+        fc.array(
+          fc.record({
+            face: fc.nat(30),
+            winnerPick: fc.nat(5),
+            drift: fc.double({ min: -80, max: 80, noNaN: true }),
+            dropAnchor: fc.boolean(),
+          }),
+          { minLength: 0, maxLength: 6 },
+        ),
+        fc.boolean(),
+        fc.boolean(),
+        (nH, nV, seeds, shuffleOrder, dropLive) => {
+          const bands = [
+            ...Array.from({ length: nH }, (_, i) =>
+              hBand(`h${i}`, `sh${i}|sh${i}b`, -30, 260, i * 90),
+            ),
+            ...Array.from({ length: nV }, (_, i) =>
+              vBand(`v${i}`, `sv${i}|sv${i}b`, -30, 260, i * 90),
+            ),
+          ];
+          const faces = buildOverlapRegions(bands, []);
+          if (!faces.length) return;
+          const assignments: Record<string, RegionAssignment> = {};
+          seeds.forEach((s, n) => {
+            const face = faces[s.face % faces.length];
+            const anchors = mintAnchors(face, bands).map((a) => ({
+              ...a,
+              distance: Math.max(0, a.distance + s.drift),
+            }));
+            if (s.dropAnchor && anchors.length > 1) anchors.pop();
+            const id = `r${n}`;
+            assignments[id] = {
+              id,
+              lineId: face.lineIds[s.winnerPick % face.lineIds.length],
+              lines: [...face.lineIds].sort(),
+              anchors,
+            };
+          });
+          const allLines = [...new Set(bands.map((b) => b.lines[0].id))];
+          const liveLines = new Set(dropLive ? allLines.slice(1) : allLines);
+          const order = shuffleOrder ? Object.keys(assignments).sort().reverse() : undefined;
+
+          const expected = refBindAssignments(faces, assignments, bands, liveLines, order);
+          const actual = bindAssignments(faces, assignments, bands, liveLines, order);
+          expect([...actual.entries()].sort()).toEqual([...expected.entries()].sort());
+        },
+      ),
+      { numRuns: 40 },
+    );
   });
 });

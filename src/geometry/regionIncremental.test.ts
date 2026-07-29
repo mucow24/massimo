@@ -338,6 +338,41 @@ describe('buildRegionsIncremental', () => {
     expectEqualsFull(inc, stubbedGrid(-60, 3));
   });
 
+  // Spans are keyed per BAND (`lineId|pairKey`) and measured from that band's
+  // own start, so a cover line changing in a DISTANT band — its line hash
+  // moves, but no dirty box reaches the component — cannot shift the spans of
+  // an untouched component. This is the invariant that lets reuse carry spans
+  // verbatim with no refresh pass; if spans were ever measured per-line-global,
+  // this fixture would catch the stale arc lengths.
+  it('carries spans verbatim when a cover line changes only in a distant band', () => {
+    const near = (): SegmentBandSpec =>
+      makeBandSpec(['hA'], {
+        pairKey: 'hA|hAn',
+        bandKey: 'hA@near',
+        centerline: [
+          { x: -40, y: 0 },
+          { x: 200, y: 0 },
+        ],
+      });
+    const far = (dx: number): SegmentBandSpec =>
+      makeBandSpec(['hA'], {
+        pairKey: 'hAf|hAg',
+        bandKey: 'hA@far',
+        centerline: [
+          { x: 1000 + dx, y: 0 },
+          { x: 1100 + dx, y: 0 },
+        ],
+      });
+    const frame = (dx: number): SegmentBandSpec[] => [near(), far(dx), crossing('vB', 110)];
+    const state = buildRegionsIncremental(frame(0), [], null).state;
+    const inc = buildRegionsIncremental(frame(7), [], state);
+    // The far band crosses nothing, so the one component must be pure reuse…
+    expect(inc.total).toBe(1);
+    expect(inc.rebuilt).toBe(0);
+    // …and its spans must still equal a from-scratch build's.
+    expectEqualsFull(inc, frame(7));
+  });
+
   // Two lines swapping stripe slots leaves every stripe's geometry byte-identical
   // and the band key untouched, so nothing about the SHAPE of the frame changed —
   // only which line owns which side.

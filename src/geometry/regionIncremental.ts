@@ -27,15 +27,17 @@
  *     changed (this also skips its stripe offsets, the priciest prefix step);
  *   - per-PAIR zone intersections, skipped while both bodies are clean.
  *
- * A face polygon is not the whole of a face. Span intervals are arc lengths
- * measured from each stripe's START, so a covering line that moves ANYWHERE
- * shifts them even when the face polygon is untouched — and that shift persists
- * into later frames which do not touch that line at all. So each cached
- * component records `spanHash`, the combined per-line hash of its cover at the
- * moment its spans were measured; a mismatch re-measures, and the result is
- * written BACK into the cache. Refreshing only the copy handed out would leave
- * the cache frozen at the last full rebuild, and stored region anchors would
- * bind against stale arc positions.
+ * Spans ride the reuse untouched. A face's span intervals are arc lengths
+ * measured from the start of each contributing BAND's stripe (keyed per
+ * `lineId|pairKey` — never from anywhere on the line as a whole), and any band
+ * whose stripe body can contribute a span to a component's face has a unit box
+ * overlapping that component's box (the unit box is the centerline box grown
+ * by stripe offset + half width + slack — a superset of the painted stripe).
+ * So the same `untouched` test that proves the polygons reusable also proves
+ * every span-relevant band unchanged: cached spans are byte-identical to a
+ * recompute. A cover line changing far away moves its hash but not its boxes,
+ * and cannot shift them. Pinned by the distant-band fixture in
+ * `regionIncremental.test.ts`.
  *
  * Correctness is pinned by `regionIncremental.test.ts`, which asserts the
  * incremental result equals a full rebuild — covers, polygons AND spans —
@@ -51,7 +53,6 @@ import {
   buildLineBodies,
   extractFaces,
   finalizeFaces,
-  refreshFaceSpans,
   restrictBodiesToZone,
   ringsBbox,
   subdivideCells,
@@ -66,8 +67,6 @@ type Box = { x0: number; y0: number; x1: number; y1: number };
 interface CachedComponent {
   faces: RegionFace[];
   slivers: RegionSliver[];
-  /** Combined cover-line hash at the moment `faces`' spans were measured. */
-  spanHash: number;
 }
 
 /**
@@ -174,19 +173,6 @@ const growBox = (b: Box, pad: number): Box => ({
   x1: b.x1 + pad,
   y1: b.y1 + pad,
 });
-
-/**
- * Combined hash of the lines covering `faces`, as of this frame. Two frames
- * agreeing on this agree that every covering line is geometrically unchanged,
- * which is exactly the condition under which arc-length spans stay valid.
- */
-function coverHash(faces: RegionFace[], lineHash: Map<LineId, number>): number {
-  const ids = new Set<LineId>();
-  for (const f of faces) for (const id of f.lineIds) ids.add(id);
-  let h = mix(FNV_OFFSET, ids.size);
-  for (const id of [...ids].sort()) h = mix(h, lineHash.get(id) ?? 0);
-  return h;
-}
 
 /**
  * Every independently-movable piece of body geometry — one entry per band
@@ -423,27 +409,14 @@ export function buildRegionsIncremental(
     const untouched = !dirtyBoxes.some((d) => boxesOverlap(d, box));
 
     if (cached && untouched) {
-      // The polygons are right, but the spans may not be: they are arc lengths
-      // from each stripe's start, so a covering line that moved anywhere since
-      // this component was last measured shifts them. Compare against the cover
-      // hash recorded WITH the spans, not against this frame's dirty set — the
-      // line may have moved several frames ago and be clean now.
-      let entry = cached;
-      const spanHash = coverHash(cached.faces, lineHash);
-      if (spanHash !== cached.spanHash) {
-        const covers = new Set<LineId>();
-        for (const f of cached.faces) for (const id of f.lineIds) covers.add(id);
-        entry = {
-          faces: refreshFaceSpans(cached.faces, bands, covers),
-          slivers: cached.slivers,
-          spanHash,
-        };
-      }
-      nextComps.set(key, entry);
+      // Spans reuse verbatim with the polygons: every band that can contribute
+      // a span here has a unit box overlapping this comp's box (see the header),
+      // so `untouched` already proves them unchanged.
+      nextComps.set(key, cached);
       // Clone before handing out: `finalizeFaces` stamps `key` in place, and
       // these objects are still owned by the cache.
-      faces.push(...entry.faces.map((f) => ({ ...f })));
-      slivers.push(...entry.slivers);
+      faces.push(...cached.faces.map((f) => ({ ...f })));
+      slivers.push(...cached.slivers);
       continue;
     }
 
@@ -454,11 +427,7 @@ export function buildRegionsIncremental(
       bands,
       compSlivers,
     );
-    nextComps.set(key, {
-      faces: built,
-      slivers: compSlivers,
-      spanHash: coverHash(built, lineHash),
-    });
+    nextComps.set(key, { faces: built, slivers: compSlivers });
     faces.push(...built);
     slivers.push(...compSlivers);
   }
