@@ -25,6 +25,11 @@ interface Boot {
 }
 
 const boot = async (): Promise<Boot> => {
+  // A real reload fires pagehide first, which flushes the store's debounced
+  // localStorage write (store.ts). The jsdom window — and the previous boot's
+  // listeners on it — survive vi.resetModules(), so dispatching the event here
+  // gives the outgoing module instance the same last-write a browser would.
+  window.dispatchEvent(new window.Event('pagehide'));
   vi.resetModules();
   return {
     store: await import('./store'),

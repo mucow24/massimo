@@ -1,4 +1,10 @@
-import { HISTORY_LIMIT, cancelOpenHistoryGroup, useDoc, type DocSnapshot } from './store';
+import {
+  HISTORY_LIMIT,
+  cancelOpenHistoryGroup,
+  flushDocPersist,
+  useDoc,
+  type DocSnapshot,
+} from './store';
 import { useSelection } from './selection';
 
 // The ONE module that reaches into zundo's temporal-store internals — the
@@ -108,12 +114,17 @@ export function isHistoryGrouping(): boolean {
 // zundo applies undo/redo through the raw `set` it captured, which sits ABOVE
 // persist in the temporal(persist(...)) chain (store.ts) — so the reverted doc
 // never reaches persist's storage writer, and a refresh would resurrect the
-// undone edit from localStorage. Nudge persist to flush by writing an empty
-// partial through useDoc.setState, which persist's middleware wraps with a
-// storage write. It is a true no-op to history: nothing changes, so temporal's
-// `equality` (docSnapshotsEqual) skips both the entry AND the redo-stack wipe.
+// undone edit from localStorage. Nudge persist by writing an empty partial
+// through useDoc.setState, which persist's middleware wraps: that routes the
+// post-undo snapshot into the debounced doc storage's pending slot, and
+// flushDocPersist then writes it synchronously — cancelling any timer a
+// pre-undo edit left armed, so a stale debounced write can never land on top
+// of the undo's. The setState is a true no-op to history: nothing changes, so
+// temporal's `equality` (docSnapshotsEqual) skips both the entry AND the
+// redo-stack wipe.
 function flushPersist(): void {
   useDoc.setState({});
+  flushDocPersist();
 }
 
 // After moving through history, prune the (separate) selection store of any
