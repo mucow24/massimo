@@ -124,7 +124,7 @@ export function useItemDrag(
       siblingStationIds: new Set(siblings.stations.map((s) => s.id)),
       anchorOff,
       allTargets,
-      history: beginHistoryGroup(),
+      history: beginHistoryGroup({ deferPersist: true }),
     };
   };
 

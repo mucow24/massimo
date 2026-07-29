@@ -50,7 +50,8 @@ describe('refineAlongAxis equidistant: neighbours must come from the edge graph'
     });
 
     // Sanity: the edge graph really does say b's neighbours are d and c.
-    expect(neighborsOf(l1, 'b').sort()).toEqual(['c', 'd']);
+    // (Copy before sorting — the helper hands back a shared cached array.)
+    expect([...neighborsOf(l1, 'b')].sort()).toEqual(['c', 'd']);
 
     const r = snapDraggedStation({
       draggedId: 'b',
@@ -117,6 +118,6 @@ describe('refineAlongAxis equidistant: neighbours must come from the edge graph'
       [pairKeyOf('a', 'd'), pairKeyOf('d', 'b'), pairKeyOf('b', 'c')].sort(),
     );
     // Array neighbours of b are a and c; edge neighbours are d and c.
-    expect(neighborsOf(l1, 'b').sort()).toEqual(['c', 'd']);
+    expect([...neighborsOf(l1, 'b')].sort()).toEqual(['c', 'd']);
   });
 });

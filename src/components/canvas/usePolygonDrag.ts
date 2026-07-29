@@ -121,7 +121,7 @@ export function usePolygonDrag(
       // (they move with the grab); stationary items stay valid targets even
       // during a group drag.
       allTargets: liveAlignTargets(groupAlignExclude('polygon', id, siblings)),
-      history: beginHistoryGroup(),
+      history: beginHistoryGroup({ deferPersist: true }),
     };
   };
 
@@ -161,7 +161,7 @@ export function usePolygonDrag(
       moved: false,
       forceCommit: false,
       ...vertexDragTargets(polygonId, new Set(indices)),
-      history: beginHistoryGroup(),
+      history: beginHistoryGroup({ deferPersist: true }),
     };
   };
 
@@ -179,7 +179,7 @@ export function usePolygonDrag(
     // One history entry for the whole gesture: pause first, insert the midpoint
     // vertex (lands at edgeIndex + 1), then drag it. forceCommit makes even a
     // no-move click persist the insert.
-    const history = beginHistoryGroup();
+    const history = beginHistoryGroup({ deferPersist: true });
     doc.insertVertex(polygonId, edgeIndex);
     const newIndex = edgeIndex + 1;
     const polyAfter = useDoc.getState().polygons[polygonId];

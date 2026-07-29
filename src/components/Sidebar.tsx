@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import {
   ChevronDownIcon,
   ChevronUpIcon,
@@ -10,7 +10,7 @@ import { effectiveLineOrder, useDoc, useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { StylesPanel } from './StylesPanel';
 import { NONE_STOP_DOT_STYLE_ID } from '../model/dotStyle';
-import type { Line, Station } from '../model/types';
+import type { Line, LineId, Station, StationId } from '../model/types';
 import { lineDisplayName } from '../model/lineNaming';
 import { legibleTextOn } from '../util/color';
 import { stationNameListText } from '../geometry/labelTokens';
@@ -40,6 +40,160 @@ function nameSortRank(cleaned: string): 0 | 1 {
   return /^[\p{L}\p{N}]/u.test(cleaned) ? 0 : 1;
 }
 
+// Per-station line lookups, one inversion of `line.stations` per `lines`
+// identity instead of a filter over every line per row per render. Cached on
+// the identity of the `lines` record (the stopMetrics `lastBuild` pattern) —
+// sound because transforms are immutable, so any membership/service edit
+// yields a new record, while a station move leaves `lines` untouched. One
+// slot suffices: the sidebar is the only consumer and reads one doc.
+export interface StationLineIndex {
+  /** Lines stopping at the station, sorted by service code (badge order). */
+  linesAt: Map<StationId, Line[]>;
+  /** Stops-sort key: the sorted service codes joined with spaces. */
+  stopsKey: Map<StationId, string>;
+}
+
+let lastLineIndex: { lines: Record<LineId, Line>; index: StationLineIndex } | null = null;
+
+export function linesByStation(lines: Record<LineId, Line>): StationLineIndex {
+  if (lastLineIndex && lastLineIndex.lines === lines) return lastLineIndex.index;
+  const linesAt = new Map<StationId, Line[]>();
+  for (const ln of Object.values(lines)) {
+    for (const id of ln.stations) {
+      const list = linesAt.get(id);
+      if (list) list.push(ln);
+      else linesAt.set(id, [ln]);
+    }
+  }
+  const stopsKey = new Map<StationId, string>();
+  for (const [id, list] of linesAt) {
+    // Lists collect in Object.values order and the sort is stable, so each
+    // matches the filter-then-sort it replaces element for element.
+    list.sort((a, b) => a.service.localeCompare(b.service));
+    stopsKey.set(id, list.map((ln) => ln.service).join(' '));
+  }
+  lastLineIndex = { lines, index: { linesAt, stopsKey } };
+  return lastLineIndex.index;
+}
+
+const NO_LINES: readonly Line[] = [];
+
+// Cleaned list text + sort bucket per Station OBJECT — the cleaning tokenizer
+// is the dominant sort cost, and the name sort calls it per comparison. The
+// WeakMap self-invalidates: a rename yields a new object (transforms are
+// immutable), so stale text can't survive an edit.
+const listNameCache = new WeakMap<Station, { text: string; rank: 0 | 1 }>();
+
+function listNameOf(st: Station): { text: string; rank: 0 | 1 } {
+  let entry = listNameCache.get(st);
+  if (!entry) {
+    const text = stationNameListText(st.name);
+    entry = { text, rank: nameSortRank(text) };
+    listNameCache.set(st, entry);
+  }
+  return entry;
+}
+
+// Clicking a station row pans the camera to it (zoom unchanged — this
+// centers, it doesn't reframe), so the station the docked editor is editing
+// is on screen. Read live via getState so the sidebar doesn't re-render on
+// every pan/zoom.
+const centerOnStation = (st: Station): void => {
+  const { zoom, setViewport } = useViewportStore.getState();
+  setViewport({ x: st.x, y: st.y, zoom });
+};
+
+interface StationRowProps {
+  station: Station;
+  badgeLines: readonly Line[];
+  inSelection: boolean;
+  soleSelected: boolean;
+}
+
+// One station row, memoized so a doc change re-renders only the rows whose
+// inputs changed — a pure x/y move re-renders just the moved station's row
+// (whose output is unchanged; no positional field is rendered). Handlers read
+// the stores at event time (getState), so the memo has no callback props to
+// go stale or defeat it.
+const StationRow = memo(function StationRow({
+  station,
+  badgeLines,
+  inSelection,
+  soleSelected,
+}: StationRowProps) {
+  const label = listNameOf(station).text;
+  return (
+    <div data-station-row={station.id}>
+      <div
+        className={'list-row' + (inSelection ? ' selected' : '')}
+        onClick={() => {
+          useSelection.getState().selectStation(soleSelected ? null : station.id);
+          // Center on the station when selecting it (not when the click is a
+          // deselect of the sole-selected row).
+          if (!soleSelected) centerOnStation(station);
+        }}
+        onMouseEnter={() => useSelection.getState().setHoveredStation(station.id)}
+        onMouseLeave={() => useSelection.getState().setHoveredStation(null)}
+      >
+        {station.isWaypoint && (
+          <span className="wp-pill" title="Waypoint">
+            WP
+          </span>
+        )}
+        {label.length > 0 ? (
+          <span className="grow">{label}</span>
+        ) : (
+          <span className="grow no-name">(No name)</span>
+        )}
+        <span className="line-badges">
+          {badgeLines
+            // slice: the list is the shared index array — don't reverse it in
+            // place.
+            .slice()
+            .reverse()
+            .map((ln) => (
+              <span
+                key={ln.id}
+                className="line-badge"
+                style={{
+                  background: ln.color,
+                  color: legibleTextOn(ln.color),
+                  cursor: 'pointer',
+                }}
+                title={`Edit line ${ln.service}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const sel = useSelection.getState();
+                  sel.setHoveredStation(null);
+                  sel.startAppend(ln.id);
+                }}
+              >
+                <span className="line-badge__code">{ln.service}</span>
+              </span>
+            ))}
+        </span>
+        <button
+          className="btn-mini danger"
+          aria-label="Delete station"
+          title="Delete station"
+          onClick={(e) => {
+            e.stopPropagation();
+            useDoc.getState().deleteStation(station.id);
+            // The one delete path that doesn't clear selection
+            // first (popover delete + the Delete key both do):
+            // reconcile so a selected row's id can't dangle — a
+            // ghost member corrupts the next shift-click
+            // multi-selection.
+            useSelection.getState().reconcileWithDoc(useDoc.getState());
+          }}
+        >
+          <Cross2Icon />
+        </button>
+      </div>
+    </div>
+  );
+});
+
 export function Sidebar() {
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
@@ -50,7 +204,6 @@ export function Sidebar() {
     (s) => Object.keys(s.styles).filter((id) => id !== NONE_STOP_DOT_STYLE_ID).length,
   );
   const selection = useSelection();
-  const deleteStation = useDoc((s) => s.deleteStation);
   const deleteLine = useDoc((s) => s.deleteLine);
   const moveLineInOrder = useDoc((s) => s.moveLineInOrder);
 
@@ -59,42 +212,24 @@ export function Sidebar() {
 
   const orderedLineIds = effectiveLineOrder(lineOrder, lines);
 
-  // Clicking a station row pans the camera to it (zoom unchanged — this
-  // centers, it doesn't reframe), so the station the docked editor is editing
-  // is on screen. Read live via getState so the sidebar doesn't re-render on
-  // every pan/zoom.
-  const centerOnStation = (st: Station): void => {
-    const { zoom, setViewport } = useViewportStore.getState();
-    setViewport({ x: st.x, y: st.y, zoom });
-  };
-
-  // Per-station: lines that stop here, alphabetical by service code.
-  const linesAtStation = (stationId: string): Line[] =>
-    Object.values(lines)
-      .filter((ln) => ln.stations.includes(stationId))
-      .sort((a, b) => a.service.localeCompare(b.service));
-
-  const stopsKey = (stationId: string): string =>
-    linesAtStation(stationId)
-      .map((ln) => ln.service)
-      .join(' ');
+  const lineIndex = linesByStation(lines);
 
   const stationList = Object.values(stations).sort((a, b) => {
     if (stationSortBy === 'name') {
       // Sort by the same cleaned text the list shows, so a leading tag or
       // bullet (`<b>…`, `|A| …`) can't order a row away from its visible name.
-      const na = stationNameListText(a.name);
-      const nb = stationNameListText(b.name);
+      const na = listNameOf(a);
+      const nb = listNameOf(b);
       // Empty names and names starting with a nontraditional character (a
       // symbol/glyph like ✈, not a letter or digit) sink to the bottom in BOTH
       // directions — the direction toggle only reorders the ordinary names.
-      const ra = nameSortRank(na);
-      const rb = nameSortRank(nb);
-      if (ra !== rb) return ra - rb;
-      const cmp = na.localeCompare(nb);
+      if (na.rank !== nb.rank) return na.rank - nb.rank;
+      const cmp = na.text.localeCompare(nb.text);
       return stationSortDir === 'asc' ? cmp : -cmp;
     }
-    const cmp = stopsKey(a.id).localeCompare(stopsKey(b.id));
+    const cmp = (lineIndex.stopsKey.get(a.id) ?? '').localeCompare(
+      lineIndex.stopsKey.get(b.id) ?? '',
+    );
     return stationSortDir === 'asc' ? cmp : -cmp;
   });
 
@@ -216,7 +351,6 @@ export function Sidebar() {
             {stationList.length === 0 && <div className="empty">No stations yet.</div>}
             {stationList.map((st) => {
               const ids = selection.selectedStationIds;
-              const inSelection = ids.includes(st.id);
               // The editor lives in the on-canvas station popover now; a row
               // click selects (opening the popover), clicking the sole-
               // selected row again deselects (closing it).
@@ -225,74 +359,13 @@ export function Sidebar() {
                 ids[0] === st.id &&
                 selection.selectedRouteBulletIds.length === 0;
               return (
-                <div key={st.id} data-station-row={st.id}>
-                  <div
-                    className={'list-row' + (inSelection ? ' selected' : '')}
-                    onClick={() => {
-                      selection.selectStation(soleSelected ? null : st.id);
-                      // Center on the station when selecting it (not when the
-                      // click is a deselect of the sole-selected row).
-                      if (!soleSelected) centerOnStation(st);
-                    }}
-                    onMouseEnter={() => selection.setHoveredStation(st.id)}
-                    onMouseLeave={() => selection.setHoveredStation(null)}
-                  >
-                    {st.isWaypoint && (
-                      <span className="wp-pill" title="Waypoint">
-                        WP
-                      </span>
-                    )}
-                    {(() => {
-                      const label = stationNameListText(st.name);
-                      return label.length > 0 ? (
-                        <span className="grow">{label}</span>
-                      ) : (
-                        <span className="grow no-name">(No name)</span>
-                      );
-                    })()}
-                    <span className="line-badges">
-                      {linesAtStation(st.id)
-                        .slice()
-                        .reverse()
-                        .map((ln) => (
-                          <span
-                            key={ln.id}
-                            className="line-badge"
-                            style={{
-                              background: ln.color,
-                              color: legibleTextOn(ln.color),
-                              cursor: 'pointer',
-                            }}
-                            title={`Edit line ${ln.service}`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              selection.setHoveredStation(null);
-                              selection.startAppend(ln.id);
-                            }}
-                          >
-                            <span className="line-badge__code">{ln.service}</span>
-                          </span>
-                        ))}
-                    </span>
-                    <button
-                      className="btn-mini danger"
-                      aria-label="Delete station"
-                      title="Delete station"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteStation(st.id);
-                        // The one delete path that doesn't clear selection
-                        // first (popover delete + the Delete key both do):
-                        // reconcile so a selected row's id can't dangle — a
-                        // ghost member corrupts the next shift-click
-                        // multi-selection.
-                        useSelection.getState().reconcileWithDoc(useDoc.getState());
-                      }}
-                    >
-                      <Cross2Icon />
-                    </button>
-                  </div>
-                </div>
+                <StationRow
+                  key={st.id}
+                  station={st}
+                  badgeLines={lineIndex.linesAt.get(st.id) ?? NO_LINES}
+                  inSelection={ids.includes(st.id)}
+                  soleSelected={soleSelected}
+                />
               );
             })}
           </section>

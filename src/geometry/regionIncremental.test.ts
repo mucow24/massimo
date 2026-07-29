@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import fc from 'fast-check';
 import { buildOverlapRegions, ringsBbox, type RegionFace, type RegionSliver } from './lineRegions';
 import {
   buildRegionsIncremental,
   compCacheKey,
+  hashUnits,
   type RegionIncrementalResult,
   type RegionIncrementalState,
 } from './regionIncremental';
@@ -338,6 +340,153 @@ describe('buildRegionsIncremental', () => {
     expectEqualsFull(inc, stubbedGrid(-60, 3));
   });
 
+  // Design 2's hardest case: a drag that MERGES two components and then
+  // splits them again. Every frame must equal a cold build — polygons, spans
+  // and slivers alike — through both topology events.
+  it('stays equal to a full rebuild through a component merge and split', () => {
+    const frames = [110, 30, 10, 30, 110]; // apart → touching → merged → apart
+    const mk = (x: number): SegmentBandSpec[] => [
+      hBand('hA', 0),
+      crossing('vA', 0),
+      crossing('vB', 0, x),
+    ];
+    let state: RegionIncrementalState | null = null;
+    for (const x of frames) {
+      const bands = mk(x);
+      const inc = buildRegionsIncremental(bands, [], state);
+      expectEqualsFull(inc, bands);
+      state = inc.state;
+    }
+  });
+
+  // Randomized drag sequences over both line arrangements, chaining state
+  // frame to frame — merges, splits, near-tangencies and reversals in
+  // arbitrary order. Every frame must equal a cold build.
+  it('equals a full rebuild across randomized drag sequences', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.integer({ min: -30, max: 120 }), { minLength: 2, maxLength: 6 }),
+        fc.boolean(),
+        (offsets, useStubbed) => {
+          let state: RegionIncrementalState | null = null;
+          for (const dx of offsets) {
+            const bands = useStubbed ? stubbedGrid(-40, dx) : grid(dx);
+            const inc = buildRegionsIncremental(bands, [], state);
+            expectEqualsFull(inc, bands);
+            state = inc.state;
+          }
+        },
+      ),
+      { numRuns: 25 },
+    );
+  });
+
+  // The zone's component split must be LOCAL: a move far from most crossings
+  // re-unions only the parts near it, not the whole zone. Without this
+  // assertion, a builder that re-unions everything passes every equality
+  // test above.
+  it('re-unions only the parts near the move', () => {
+    const bands = grid();
+    const cold = buildRegionsIncremental(bands, [], null);
+    expect(cold.zoneUnionParts).toBeGreaterThan(0); // cold: everything
+    // vB moves; the other six crossings' parts must stay out of the union.
+    const inc = buildRegionsIncremental(grid(6), [], cold.state);
+    expect(inc.zoneUnionParts).toBeGreaterThan(0);
+    expect(inc.zoneUnionParts).toBeLessThan(cold.zoneUnionParts / 2);
+    expectEqualsFull(inc, grid(6));
+    // And a frame where nothing moved unions nothing at all.
+    const idle = buildRegionsIncremental(grid(6), [], inc.state);
+    expect(idle.zoneUnionParts).toBe(0);
+  });
+
+  // A sub-SLIVER_MIN_AREA component is invisible in the output but its
+  // territory must stay in the membership index: when a drag grows the
+  // overlap into significance, the local re-union has to find those parts or
+  // the territory silently vanishes from the arrangement.
+  it('grows a sub-sliver component into significance without losing territory', () => {
+    // l2's crossing with hA starts at a hair overlap (body corner ~0.1×0.1,
+    // below SLIVER_MIN_AREA), then l2 slides down into a full crossing.
+    const mk = (y0: number): SegmentBandSpec[] => [
+      hBand('hA', 0),
+      makeBandSpec(['l2'], {
+        pairKey: 'l2|l2b',
+        bandKey: 'b-l2',
+        centerline: [
+          { x: 60, y: y0 },
+          { x: 60, y: y0 + 100 },
+        ],
+      }),
+    ];
+    // Body of hA spans y ∈ [-7, 7]; l2's body starts at y0 − 7. y0 = 13.9
+    // leaves a 0.1-deep, 14-wide strip? No — the strip is 14 wide (l2's
+    // width), 0.1 deep: area 1.4, significant. Overlap depth 0.001 gives
+    // area ~0.014 < 0.02: sub-sliver.
+    const seq = [13.999, 13.9, 0];
+    let state: RegionIncrementalState | null = null;
+    for (const y0 of seq) {
+      const bands = mk(y0);
+      const inc = buildRegionsIncremental(bands, [], state);
+      expectEqualsFull(inc, bands);
+      state = inc.state;
+    }
+  });
+
+  // Spans are keyed per BAND (`lineId|pairKey`) and measured from that band's
+  // own start, so a cover line changing in a DISTANT band — its line hash
+  // moves, but no dirty box reaches the component — cannot shift the spans of
+  // an untouched component. This is the invariant that lets reuse carry spans
+  // verbatim with no refresh pass; if spans were ever measured per-line-global,
+  // this fixture would catch the stale arc lengths.
+  // With interlining's reuse layer handing back the SAME spec object for an
+  // untouched corridor, re-hashing its units every frame is pure waste — and
+  // spec identity implies value identity (the reuse layer's contract), so a
+  // per-spec memo is exact. Reference-equal unit objects are the observable.
+  it('reuses unit hashes for spec objects carried across calls', () => {
+    const bands = grid();
+    const first = hashUnits(bands, []);
+    const second = hashUnits(bands, []);
+    for (const [key, unit] of first.units) {
+      expect(second.units.get(key)).toBe(unit);
+    }
+    // A FRESH spec object with identical content recomputes (the memo keys
+    // on identity, not content) — and must land on the identical hash, or
+    // the memo would be observable.
+    const rebuilt = hashUnits(grid(), []);
+    for (const [key, unit] of first.units) {
+      expect(rebuilt.units.get(key)).not.toBe(unit);
+      expect(rebuilt.units.get(key)!.hash).toBe(unit.hash);
+    }
+  });
+
+  it('carries spans verbatim when a cover line changes only in a distant band', () => {
+    const near = (): SegmentBandSpec =>
+      makeBandSpec(['hA'], {
+        pairKey: 'hA|hAn',
+        bandKey: 'hA@near',
+        centerline: [
+          { x: -40, y: 0 },
+          { x: 200, y: 0 },
+        ],
+      });
+    const far = (dx: number): SegmentBandSpec =>
+      makeBandSpec(['hA'], {
+        pairKey: 'hAf|hAg',
+        bandKey: 'hA@far',
+        centerline: [
+          { x: 1000 + dx, y: 0 },
+          { x: 1100 + dx, y: 0 },
+        ],
+      });
+    const frame = (dx: number): SegmentBandSpec[] => [near(), far(dx), crossing('vB', 110)];
+    const state = buildRegionsIncremental(frame(0), [], null).state;
+    const inc = buildRegionsIncremental(frame(7), [], state);
+    // The far band crosses nothing, so the one component must be pure reuse…
+    expect(inc.total).toBe(1);
+    expect(inc.rebuilt).toBe(0);
+    // …and its spans must still equal a from-scratch build's.
+    expectEqualsFull(inc, frame(7));
+  });
+
   // Two lines swapping stripe slots leaves every stripe's geometry byte-identical
   // and the band key untouched, so nothing about the SHAPE of the frame changed —
   // only which line owns which side.
@@ -423,12 +572,16 @@ describe('buildRegionsIncremental', () => {
     expect(f2.state.pairParts.get('a|b')).toBe(f1.state.pairParts.get('a|b'));
 
     // Third frame: only `c` moves. The clean pair keeps its cached
-    // intersection; the pairs touching `c` and `c`'s own body are rebuilt.
+    // intersection; `c`'s own body is rebuilt. The pairs touching `c` re-run
+    // their intersect but come out content-equal (still no overlap), so they
+    // keep the cached array by REFERENCE — the content compare classifying a
+    // dirty-line pair as clean-after-all is what keeps a distant move from
+    // forcing a global zone re-union.
     const f3 = buildRegionsIncremental(apart(9), [], f2.state);
     expect(f3.state.bodies.get('a')).toBe(f1.state.bodies.get('a'));
     expect(f3.state.bodies.get('c')).not.toBe(f1.state.bodies.get('c'));
     expect(f3.state.pairParts.get('a|b')).toBe(f1.state.pairParts.get('a|b'));
-    expect(f3.state.pairParts.get('a|c')).not.toBe(f1.state.pairParts.get('a|c'));
+    expect(f3.state.pairParts.get('a|c')).toBe(f1.state.pairParts.get('a|c'));
   });
 
   // The same for the other early-out: one line can produce no overlap at all,

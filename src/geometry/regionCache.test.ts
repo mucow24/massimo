@@ -178,4 +178,25 @@ describe('regionsFor caching', () => {
     const newest = regionsFor(gs[5]);
     expect(regionsFor(gs[5])).toBe(newest); // still cached
   });
+
+  it('transient frames stay out of the LRU and preserve the pre-gesture entry', () => {
+    // The pre-gesture geometry goes in normally…
+    const pre = crossGeom(1113);
+    const preEntry = regionsFor(pre);
+    // …then a long drag streams transient frames — more than the LRU holds.
+    for (const x of [1163, 1213, 1263, 1313, 1363, 1413]) {
+      regionsFor(crossGeom(x), undefined, { transient: true });
+    }
+    // The commit reconcile's old-geometry lookup still HITS: mid-gesture
+    // frames were never inserted, so they could not evict it. (Under
+    // insert-per-frame it would have been evicted within CACHE_LIMIT moves.)
+    expect(regionsFor(pre)).toBe(preEntry);
+    // And the transient frames themselves were not cached: asking for one
+    // non-transiently is a fresh build, not a hit.
+    const again = regionsFor(crossGeom(1413));
+    expect(again.faces.length).toBeGreaterThanOrEqual(0); // built, no throw
+    // Its chain seeds from the LAST build, whichever that was — the
+    // incremental slot advanced through the transient frames.
+    expect(again.holeChain.prevState).not.toBeNull();
+  });
 });

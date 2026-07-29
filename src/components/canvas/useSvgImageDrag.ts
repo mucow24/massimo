@@ -137,7 +137,7 @@ export function useSvgImageDrag(
       // (they move with the grab); stationary items stay valid targets even
       // during a group drag.
       allTargets: liveAlignTargets(groupAlignExclude('svgImage', id, siblings)),
-      history: beginHistoryGroup(),
+      history: beginHistoryGroup({ deferPersist: true }),
     };
   };
 
@@ -160,7 +160,7 @@ export function useSvgImageDrag(
       startMY: e.clientY,
       moved: false,
       allTargets: liveAlignTargets({ svgImageIds: new Set([id]) }),
-      history: beginHistoryGroup(),
+      history: beginHistoryGroup({ deferPersist: true }),
     };
   };
 
@@ -180,7 +180,7 @@ export function useSvgImageDrag(
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
-      history: beginHistoryGroup(),
+      history: beginHistoryGroup({ deferPersist: true }),
     };
   };
 

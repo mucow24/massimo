@@ -8,7 +8,13 @@ import {
   isHistoryGrouping,
   withCoalescedHistory,
 } from './history';
-import { useDoc, pickDocSnapshot, HISTORY_LIMIT, beginHistoryGroup } from './store';
+import {
+  useDoc,
+  pickDocSnapshot,
+  HISTORY_LIMIT,
+  beginHistoryGroup,
+  flushDocPersist,
+} from './store';
 import type { DocSnapshot } from './store';
 import { DEFAULT_DOC } from '../model/transforms';
 
@@ -151,20 +157,39 @@ describe('undo / redo — persistence flush', () => {
 
   beforeEach(() => {
     useDoc.setState({ ...DEFAULT_DOC });
+    // Consume the debounced write the setState just armed, so no stray timer
+    // fires mid-test; then start from empty storage.
+    flushDocPersist();
     useDoc.temporal.getState().clear();
     localStorage.clear();
   });
 
   it('undo writes the reverted doc through to localStorage', () => {
-    // A normal edit persists the way it always has.
+    // A normal edit reaches storage on the debounce trail — flush stands in
+    // for the timer here to pin the pre-undo bytes.
     useDoc.getState().setDocName('Edited');
+    flushDocPersist();
     expect(persistedName()).toBe('Edited');
     expect(historyDepth()).toBe(1);
 
     undo();
 
-    // In-memory the edit is gone — and the stored blob must reflect it too.
+    // In-memory the edit is gone — and the stored blob must reflect it too,
+    // immediately (undo flushes; it never waits out the debounce).
     expect(useDoc.getState().name).toBe(DEFAULT_DOC.name);
+    expect(persistedName()).toBe(DEFAULT_DOC.name);
+  });
+
+  it("an undo's write is never overtaken by a stale pending write", async () => {
+    // The edit arms a debounced write of 'Edited'; undo must both write the
+    // reverted doc synchronously AND cancel that pending write — otherwise the
+    // stale timer fires ~300ms later and resurrects the undone edit on disk.
+    useDoc.getState().setDocName('Edited');
+    undo();
+    expect(persistedName()).toBe(DEFAULT_DOC.name);
+
+    // Give a leaked timer every chance to fire.
+    await new Promise((r) => setTimeout(r, 350));
     expect(persistedName()).toBe(DEFAULT_DOC.name);
   });
 
@@ -220,10 +245,11 @@ describe('undo / redo — persistence flush', () => {
 
   it('a coalesced write still writes through to localStorage', () => {
     // The fold discards an undo ENTRY, never a doc write — the persisted blob
-    // must still track the latest value of a burst.
+    // must still track the latest value of a burst once the debounce settles.
     const key = {};
     withCoalescedHistory(key, () => useDoc.getState().setDocName('One'));
     withCoalescedHistory(key, () => useDoc.getState().setDocName('Two'));
+    flushDocPersist();
     expect(persistedName()).toBe('Two');
   });
 
