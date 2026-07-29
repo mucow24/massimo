@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `4e4998a` (2026-07-28, #370) — verified against the live source.** This
+**Up to date as of commit `8180b7f` (2026-07-29, #385) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -118,8 +118,13 @@ src/
     dotStyle.ts dotSize.ts      # procedural stop-dot style + size resolution
     dashSize.ts                 # TfL-tick ('dash' stop) length/thickness resolution (derive from line width)
     transferStyle.ts            # TRANSFER_STYLE_DEFAULTS + per-transfer override resolution
+    transferAnchors.ts          # the ONLY place a TransferEnd's three-arm union is narrowed (all four guards)
     lineWidth.ts lineStroke.ts  # stripe width (GEOMETRY) + casing rails (PRESENTATION)
+    lineCurve.ts                # per-line corner radius resolution (the fillet the router turns by)
     lineEnd.ts                  # line END style resolution (line default → per-terminus pin) + the round→short degrade
+    stopMetrics.ts              # stopMetricsOf: the production StopMetrics lookup — everything the
+                                #   label geometry knows about one PAINTED stop, resolved through the
+                                #   helpers the canvas paints by (last-result cached)
     stationPacking.ts           # width-edit repack: keeps tangent stop chains packed
     lineOrder.ts                # z-order reconcile (lineOrder = the default stacking)
     lineNaming.ts               # nameForIndex/pickNextLineName + lineDisplayName (the ONE
@@ -154,6 +159,7 @@ src/
     labelTokens.ts textMeasure.ts labelLayout.ts labelJustify.ts  # name → tokens → measured → placed
     lineTagGeometry.ts          # offset-path arc-length sampling for in-band tags
     svgImage.ts                 # svg-image corners/resize/rotate/snap geometry
+    transferEnds.ts             # resolve a TransferEnd (stop / hosted anchor / free anchor) to its world point
     waypointLozenge.ts          # WP-lozenge pill geometry (shared drawn glyph + hit/selection box)
     itemBounds.ts contentBounds.ts  # per-item + whole-map world AABBs (camera fit)
 
@@ -255,7 +261,7 @@ is not a micro-optimization — it is the foundation of undo grouping:
 | `LabelCell.offset/offsetPerp`                                                                                                         | **Pixels in unrotated-station-local space**                                                                              |
 | Snap guides, viewBox, redistribute, curveRadius, line width/stroke, transfer thickness                                                | **World**                                                                                                                |
 | Drag thresholds (`DRAG_MOVE_THRESHOLD=4`), pointer start coords                                                                       | **Screen pixels**                                                                                                        |
-| Snap engage radius (`SNAP_PERP_TOLERANCE=10`; `LINE_TAG_SNAP_TOLERANCE=10` in dragged-stripe arc length — both **world units at zoom 1**) | Call sites pass `/zoom`, so the _effective_ radius is constant in screen px (the world tolerance shrinks as you zoom in) |
+| Snap engage radius (`SNAP_PERP_TOLERANCE=10`; `LINE_TAG_SNAP_TOLERANCE=10` in dragged-stripe arc length — both **world units at zoom 1**) | Call sites go through `snapToleranceAt(zoom)`, so the _effective_ radius is constant in screen px (the world tolerance shrinks as you zoom in) |
 | Grid snap                                                                                                                             | **Hard world constraint** — unaffected by zoom                                                                           |
 
 Screen y is **down** everywhere. `vec.leftNormal((x,y)) = (y,-x)` is "left of travel" in the
@@ -1737,7 +1743,13 @@ which are a separate slot-based system where Shift flips the lattice basis.
   `stationBoundaryRectsLocal`, `cellsAABBLocal`, `stationsForRect` and `stationWorldAABB`. It is
   ONE bundle rather than a lookup per field precisely so a call site cannot pass four of five and
   drift off the paint; on the canvas it comes from `useStopMetrics(lines)`, which adds the
-  transfers so no component has to know they are part of the answer. The lookup takes the whole
+  transfers so no component has to know they are part of the answer. That hook runs once per
+  STATION component (label, hit rect, drag proxy, silhouette) while the builder indexes every
+  transfer eagerly, so `stopMetricsOf` keeps a **last-result cache** keyed on the identity of its
+  three slices — every canvas consumer reads the same slices from the same store, so they all miss
+  and all hit together, and a station write costs one build rather than one per station. (Same
+  bargain `measureTextLabel` makes: the builder is pure, so reusing the previous function is
+  invisible.) The lookup takes the whole
   **station**, not just the stop: the split singleton/interchange dot default is a property of the
   station's stop SET, and a transfer end names its station. A waypoint's `dash` and `dot` are
   neutralized inside `labelLayoutLocal` — hidden it paints nothing, revealed the overlay replaces
@@ -1961,6 +1973,16 @@ carries the canonical `data-stop-*` E2E attributes. **Not split**: open rings (`
 `x` saltire (concave), borderless dots. A lone dot's outer edge is byte-identical to the old
 centered stroke.
 
+The three radii — silhouette, body, and the midpoint a single native stroke draws at — come from
+`dotStrokeRadiusDeltas` ([model/dotStyle.ts](src/model/dotStyle.ts)), and that is the **one owner**
+because the painter is not the only reader: `stopMetricsOf`'s `dot.r` is the radius a label pin has
+to clear, so a second copy of the rule would let a label park where no ink was painted — the drift
+`StopMetrics` exists to prevent, and unlike a dropped field it would not announce itself. The
+`strokeAlign` cases and the diamond's `√2` live there; the hover affordance does not, because
+that override belongs to the painter alone (a label that shifted on mouseover would be a bug).
+The two sides are pinned together against the rendered DOM by
+[StopGlyph.labelClearance.test.tsx](src/components/StopGlyph.labelClearance.test.tsx).
+
 > Per project memory: this stroke-before-fill is **dot-internal** (`StopGlyph`). Reordering
 > **line casings** to merge interlined separators was tried and **reverted** (it erased the
 > separators). Do not conflate the two.
@@ -2133,11 +2155,16 @@ modifiers).
 
 Every hook that reaches the **point snapper** does so through
 [useDragSnap.ts](src/components/canvas/useDragSnap.ts), which binds it to the live snap prefs, the
-active grid size, and the camera zoom. The zoom is the reason it exists: `SNAP_PERP_TOLERANCE` is
-the value at zoom 1 and each path must divide it by the zoom for the engage radius to be a constant
-number of screen pixels, so the rule lives in one expression rather than at every call site. Its
-callers keep their own pools and their own single-DOF `constrain`; `snapPlacement` (a pure
-function, not a hook) applies the same division for the placement side.
+active grid size, and the camera zoom. Its callers keep their own pools and their own single-DOF
+`constrain`; `snapPlacement` (a pure function, not a hook) is the placement side's equivalent.
+
+The **engage tolerance itself** belongs to neither: `SNAP_PERP_TOLERANCE` is the value at zoom 1,
+and every path must divide it by the zoom for the radius to be a constant number of screen pixels,
+so that divide is `snapToleranceAt(zoom)` in [snap.ts](src/geometry/snap.ts) and nothing restates
+it. Both engines ask there — the station engine's three sites (`useStationDrag`, `useItemDrag`'s
+bullet mode, `snapPlacement`) as much as the point snapper's — because a site that passed the raw
+world-unit constant would silently snap from twice as far out at 2× zoom, and that reads as
+correct until you zoom.
 
 **Group drag** ([groupDrag.ts](src/components/canvas/groupDrag.ts)): at pointerdown,
 `collectGroupSiblings` snapshots every _other_ selected item — but only if the grabbed item is
@@ -2702,7 +2729,12 @@ Each is confirmed in source/tests; file pointers included.
   **byte-exact golden snapshot** for interlining (`interlining.golden.test.ts`); **invariant
   assertions** (arc-length monotonicity, unit tangents, palette luminance, FONT_TABLE shape);
   **document-order assertions** (`compareDocumentPosition`) for the stroke-before-fill and
-  flat-pass invariants (`StationDots.order.test.tsx`, `TransferLayer.dom.test.tsx`).
+  flat-pass invariants (`StationDots.order.test.tsx`, `TransferLayer.dom.test.tsx`);
+  **paint-vs-geometry seams**, which render the real component and measure the emitted SVG against
+  the pure model value that is supposed to describe it — the way to pin a rule two layers must
+  agree on, since matching hand-written expectations on each side would still both be wrong
+  together (`StopGlyph.labelClearance.test.tsx`: the painted dot silhouette vs. the clearance
+  `stopMetricsOf` reports for it).
 - **Integration** ([src/test/](src/test/)) — `App.smoke`, `App.keyboard` (the two-tier form
   guard), `App.fontLoad`, `saveLoad` (round-trip through the real `pickDocSnapshot` path),
   `undoRedo` (value-restore, viewport-excluded-from-history, no-op equality, selection reconcile),

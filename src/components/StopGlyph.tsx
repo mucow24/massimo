@@ -1,5 +1,10 @@
 import type { ReactNode } from 'react';
-import { DEFAULT_DOT_STYLE, resolveDotRender, type DotRenderParams } from '../model/dotStyle';
+import {
+  DEFAULT_DOT_STYLE,
+  dotStrokeRadiusDeltas,
+  resolveDotRender,
+  type DotRenderParams,
+} from '../model/dotStyle';
 import { useDoc } from '../state/store';
 import type { DotStyle } from '../model/types';
 import { FONT_STACK } from '../util/fonts';
@@ -142,25 +147,22 @@ export function StopGlyph({
   // strokeWidth/2 (stroke pass) with the body INSET by the same amount (fill
   // pass) — identical to the centered stroke for a lone dot (outer edge still
   // r + strokeWidth/2), but overlapping dots now merge into one outer border
-  // because every silhouette is painted before every body.
-  const h = strokeAttrs ? strokeAttrs.strokeWidth / 2 : 0;
-  // Outset/inset in RADIUS units so the visible band is a uniform strokeWidth on
-  // every edge. A circle/square has its edges at radius r (delta = h), but a
-  // diamond's edges are only r/√2 from center, so moving them by h needs √2×
-  // the radius delta.
-  const off = params.shape === 'diamond' ? h * Math.SQRT2 : h;
-  // Where the stroke sits relative to the edge. The hover affordance and the
-  // concave 'x' always use center: hover is chrome (not the style), and no single
-  // radius delta offsets a saltire uniformly. 'center' straddles the edge (±off);
-  // 'inside' pins the outer edge and eats inward; 'outside' pins the fill and
-  // grows outward. silDelta/bodyDelta shift the two split radii; nativeDelta is
-  // their midpoint — where a single native-stroke element (open ring, 'x',
-  // combined-center) draws so its centered stroke lands in the same band. All
-  // are 0-preserving for center, so the historical render is untouched.
-  const align = isHovered || params.shape === 'x' ? 'center' : (params.strokeAlign ?? 'center');
-  const silDelta = align === 'inside' ? 0 : align === 'outside' ? 2 * off : off;
-  const bodyDelta = align === 'inside' ? -2 * off : align === 'outside' ? 0 : -off;
-  const nativeDelta = (silDelta + bodyDelta) / 2;
+  // because every silhouette is painted before every body. nativeDelta is the
+  // two's midpoint — where a single native-stroke element (open ring, 'x',
+  // combined-center) draws so its centered stroke lands in the same band.
+  //
+  // The deltas come from dotStrokeRadiusDeltas, which the label geometry reads
+  // too (see stopMetricsOf): a label has to clear the silhouette this pass
+  // paints, so the two must never drift. The hover affordance overrides the
+  // style's alignment to centered — it is chrome, not style, and a label that
+  // shifted on mouseover would be a bug, which is why only this side knows
+  // about it.
+  const align = isHovered ? 'center' : (params.strokeAlign ?? 'center');
+  const {
+    silhouette: silDelta,
+    body: bodyDelta,
+    native: nativeDelta,
+  } = dotStrokeRadiusDeltas(strokeAttrs?.strokeWidth ?? 0, params.shape, align);
   // Only filled, stroked, non-x dots split into a silhouette + inset body.
   // Everything else keeps its outline on the single fill-pass element:
   //   - open rings (fill='none'): no fill to merge against, and the seam

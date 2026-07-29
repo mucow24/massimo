@@ -1,6 +1,6 @@
 import { RefObject, useRef, useState } from 'react';
 import { beginHistoryGroup, useDoc, useSelection } from '../../state/store';
-import { SNAP_PERP_TOLERANCE, snapDraggedStation, type SnapGuide } from '../../geometry/snap';
+import { snapDraggedStation, snapToleranceAt, type SnapGuide } from '../../geometry/snap';
 import { polygonSnapAnchor } from '../../geometry/polygon';
 import { textLabelCorners } from '../../geometry/stationBoundary';
 import type { Vec2 } from '../../geometry/vec';
@@ -175,7 +175,7 @@ export function useItemDrag(
           // and must not align to stations that aren't on the canvas.
           stations: liveSnapStations(stations),
           lines,
-          tolerance: SNAP_PERP_TOLERANCE / zoom,
+          tolerance: snapToleranceAt(zoom),
           bulletLineId: lineId,
           excludedIds: ds.siblingStationIds.size > 0 ? ds.siblingStationIds : undefined,
           modes: snapModes,

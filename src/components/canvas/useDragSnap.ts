@@ -1,6 +1,6 @@
 import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
-import { SNAP_PERP_TOLERANCE, type SnapModes } from '../../geometry/snap';
+import { snapToleranceAt, type SnapModes } from '../../geometry/snap';
 import { snapPolygonPoint, type PolygonSnapResult } from '../../geometry/polygonSnap';
 import type { Vec2 } from '../../geometry/vec';
 
@@ -27,12 +27,12 @@ export interface DragSnapApi {
  * camera zoom — the three inputs every drag site was reading and re-threading
  * for itself.
  *
- * The reason to have it is the TOLERANCE. `SNAP_PERP_TOLERANCE` is the value at
- * zoom 1 and every path must divide it by the zoom so the engage radius is a
- * constant number of SCREEN pixels (see Snapping in ARCHITECTURE.md) — a
- * must-agree rule that was restated at every call site, where a site could
- * quietly pass the world-unit constant and snap from twice as far out when
- * zoomed in. Here it is one expression.
+ * The tolerance is the reason it exists: a caller that forgot to convert the
+ * world-unit constant for the camera zoom would snap from twice as far out at
+ * 2× (see Snapping in ARCHITECTURE.md). The conversion itself belongs to
+ * `snapToleranceAt`, which the station engine's sites share; this hook's job is
+ * to bind it to the live prefs and grid so the point-snapper callers pass
+ * nothing but their own pools.
  */
 export function useDragSnap(zoom: number): DragSnapApi {
   const modes = useSnapPrefs((s) => s.modes);
@@ -46,8 +46,7 @@ export function useDragSnap(zoom: number): DragSnapApi {
         lineTargets: opts.lineTargets ?? [],
         allTargets: opts.allTargets,
         modes,
-        // Constant screen-pixel engage radius, at every zoom.
-        tolerance: SNAP_PERP_TOLERANCE / zoom,
+        tolerance: snapToleranceAt(zoom),
         gridInterval,
         constrain: opts.constrain,
       }),

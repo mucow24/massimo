@@ -1,6 +1,6 @@
 import { dashRenderLength, dashRenderWidth } from './dashSize';
 import { dotSizeOverride } from './dotSize';
-import { defaultDotDiameter, isBlankDotStyle } from './dotStyle';
+import { defaultDotDiameter, dotStrokeRadiusDeltas, isBlankDotStyle } from './dotStyle';
 import { lineInterlineGapOf, lineLabelGapOf, lineWidthOf } from './lineWidth';
 import { neighborsOf } from './lineTopology';
 import { isStopEnd } from './transferAnchors';
@@ -68,21 +68,35 @@ const transferCapsByStop = (transfers: Record<string, Transfer>): Map<string, nu
  * edges align to is the geometry's problem (they are the world's — see
  * `dotSupport` in labelLayout.ts).
  *
- * Mirrors StopGlyph's `silDelta` exactly: a stroke widens the painted
- * silhouette by `strokeWidth/2` for each side it sits outside the edge, and a
- * diamond needs √2× the RADIUS delta to move its edges by that much (its edges
- * are only r/√2 from the center). `inside` pins the outer edge, `center`
- * straddles it, `outside` grows from it. Hover's 3px affordance is deliberately
- * excluded — it is transient chrome, and a label that shifted on mouseover
- * would be a bug.
+ * The stroke's contribution comes from `dotStrokeRadiusDeltas`, the same owner
+ * `StopGlyph` paints its silhouette pass at, so the radius a label clears and
+ * the radius the canvas draws cannot drift. Hover's 3px affordance never
+ * reaches here — it is transient chrome the painter applies on its own side,
+ * and a label that shifted on mouseover would be a bug.
  */
-const dotOuterRadius = (r: number, style: DotStyle): number => {
-  if (!(style.strokeWidth > 0)) return r;
-  const h = style.strokeWidth / 2;
-  // 'x' is concave, so StopGlyph always strokes it centered whatever the style says.
-  const align = style.shape === 'x' ? 'center' : style.strokeAlign;
-  const off = style.shape === 'diamond' ? h * Math.SQRT2 : h;
-  return r + (align === 'inside' ? 0 : align === 'outside' ? 2 * off : off);
+const dotOuterRadius = (r: number, style: DotStyle): number =>
+  r + dotStrokeRadiusDeltas(style.strokeWidth, style.shape, style.strokeAlign).silhouette;
+
+/**
+ * Last build, keyed by the identity of the three slices it reads. The builder
+ * is pure and its result is deterministic, so handing back the previous
+ * function is invisible to callers — the same module-level-cache bargain
+ * `measureTextLabel` makes, and for the same reason: this runs once per STATION
+ * component on the canvas (see `useStopMetrics`), while the eager transfer
+ * index inside costs O(transfers) per build. One entry is enough because every
+ * canvas consumer reads the same three slices from the same store, so they all
+ * miss and all hit together.
+ */
+let lastBuild: { src: StopMetricsSource; fn: StopMetricsFn } | null = null;
+
+const cachedBuild = (src: StopMetricsSource): StopMetricsFn | null => {
+  const prev = lastBuild;
+  return prev &&
+    prev.src.lines === src.lines &&
+    prev.src.transfers === src.transfers &&
+    prev.src.stations === src.stations
+    ? prev.fn
+    : null;
 };
 
 /**
@@ -97,8 +111,16 @@ const dotOuterRadius = (r: number, style: DotStyle): number => {
  * be right for display but hides which of the two applied. A blank style paints
  * nothing, and a `'dash'` paints a tick rather than a dot: that one is already
  * described by `dash`, and counting it here too would clear it twice.
+ *
+ * The build is cached on the IDENTITY of the three slices (see `lastBuild`),
+ * which is sound because every producer of them is a pure transform — a doc
+ * edit yields new objects. A caller that mutated a slice in place would get the
+ * stale answer, but that caller is already breaking the same-reference-on-no-op
+ * rule the whole render pipeline memoizes on.
  */
 export const stopMetricsOf = (src: StopMetricsSource): StopMetricsFn => {
+  const hit = cachedBuild(src);
+  if (hit) return hit;
   const caps = transferCapsByStop(src.transfers);
   // Which signed halves of the stop's travel axis carry line body away from
   // the station: project each edge-neighbour's world delta onto the canonical
@@ -125,7 +147,7 @@ export const stopMetricsOf = (src: StopMetricsSource): StopMetricsFn => {
     }
     return { plus, minus };
   };
-  return (station: Station, stop: StopCell): StopMetrics => {
+  const fn: StopMetricsFn = (station: Station, stop: StopCell): StopMetrics => {
     const line = src.lines[stop.lineId];
     // Singleton vs. shared drives both the dot STYLE and the dot SIZE default,
     // and resolving it walks the station's stops — so once, not once each.
@@ -147,4 +169,6 @@ export const stopMetricsOf = (src: StopMetricsSource): StopMetricsFn => {
       continues: continuesOf(station, stop, line),
     };
   };
+  lastBuild = { src, fn };
+  return fn;
 };

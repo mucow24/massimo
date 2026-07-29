@@ -8,11 +8,21 @@ import { lineHasEdge, neighborsOf, shortestPathOnLine } from '../model/lineTopol
 
 /**
  * Default perpendicular tolerance for engaging a snap, in world units — this is
- * the value at zoom 1. Drag handlers pass `SNAP_PERP_TOLERANCE / zoom` so the
- * engage radius stays constant in *screen* pixels: zooming in shrinks the
- * world-space radius, allowing finer positioning before a snap takes effect.
+ * the value at zoom 1. Callers reach it through {@link snapToleranceAt}, never
+ * raw, so the engage radius stays constant in *screen* pixels.
  */
 export const SNAP_PERP_TOLERANCE = 10;
+
+/**
+ * The engage tolerance at a given camera zoom, in world units. THE one home for
+ * the divide: the radius must be a constant number of SCREEN pixels at every
+ * zoom, so zooming in shrinks the world-space radius and allows finer
+ * positioning before a snap takes effect. Every snap site — both engines, both
+ * drags and the placement path — asks here rather than restating it, because a
+ * site that passed the raw world-unit constant would silently snap from twice
+ * as far out at 2× zoom. (Grid snap is a hard constraint and unaffected.)
+ */
+export const snapToleranceAt = (zoom: number): number => SNAP_PERP_TOLERANCE / zoom;
 
 /**
  * Tighter tolerance used to detect a *third* station that is also already
