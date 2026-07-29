@@ -145,7 +145,8 @@ describe('WarningToasts on a window narrower than the app', () => {
     return {
       scrollTo: (to: number) => {
         x = to;
-        fireEvent.scroll(window);
+        // At `document`, where the browser fires it when the PAGE scrolls.
+        fireEvent.scroll(document);
       },
       restore: () => {
         delete (docEl as unknown as Record<string, unknown>).clientWidth;

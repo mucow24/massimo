@@ -77,15 +77,25 @@ export function useDock(ref: React.MutableRefObject<HTMLElement | null>, hostW: 
 
   // Registered once, and only the host-edge regime needs them: while the
   // window's edge is the dock, `readDock` returns the same value every time
-  // and the bailout above swallows the event. Capture phase so a scroll of any
-  // container on the way to the window counts (scroll doesn't bubble from
-  // elements); passive so the listener never holds up the scroll itself.
+  // and the bailout above swallows the event.
+  //
+  // A page scroll is dispatched at `document`, and the listener that reliably
+  // sees it is the BUBBLE-phase one on `window` — the canonical page-scroll
+  // hook. A capture-phase listener on `window` does NOT: instrumenting one in
+  // Chrome counted zero events across a scroll that demonstrably moved the
+  // page, which is what left a panel sitting under the sidebar at the end of
+  // the travel. The capture listener on `document` is the one that catches a
+  // scroll of some nested container instead, since those don't bubble at all;
+  // a page scroll trips both, and the bailout makes the second a no-op.
+  // Passive throughout, so tracking never holds up the scroll itself.
   useEffect(() => {
     const onScroll = () => measureRef.current();
-    window.addEventListener('scroll', onScroll, { passive: true, capture: true });
+    window.addEventListener('scroll', onScroll, { passive: true });
+    document.addEventListener('scroll', onScroll, { passive: true, capture: true });
     window.addEventListener('resize', onScroll);
     return () => {
-      window.removeEventListener('scroll', onScroll, { capture: true });
+      window.removeEventListener('scroll', onScroll);
+      document.removeEventListener('scroll', onScroll, { capture: true });
       window.removeEventListener('resize', onScroll);
     };
   }, []);

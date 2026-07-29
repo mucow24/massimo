@@ -73,7 +73,9 @@ function stubPage(windowW: number): { scrollTo: (x: number) => void; restore: ()
   return {
     scrollTo: (to: number) => {
       x = to;
-      fireEvent.scroll(window);
+      // At `document`, which is where the browser fires it when the PAGE
+      // scrolls — not at `window`, which no real scroll ever targets.
+      fireEvent.scroll(document);
     },
     restore: () => {
       if (origW) Object.defineProperty(docEl, 'clientWidth', origW);
