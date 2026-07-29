@@ -101,17 +101,25 @@ test.describe('canvas popovers dock to the top-right corner', () => {
     expect(m.hostW).toBeGreaterThan(m.winW);
     expect(m.maxScroll).toBeGreaterThan(0);
 
-    // Mid-scroll it holds that same edge — it tracked the page pixel for pixel
-    // instead of riding away with the host.
-    await page.evaluate(() => window.scrollTo(150, 0));
+    // Scrolled with a real wheel rather than `window.scrollTo`: a programmatic
+    // scroll in a headless page that is producing no frames never dispatches
+    // its scroll event at all — instrumenting a listener here counted zero
+    // across a scroll that moved the page 339px, and a `requestAnimationFrame`
+    // in the same page mostly never resolved. Nothing can react to an event the
+    // browser never fires, so that is an artifact of the environment rather
+    // than something for the dock to survive. Input-driven scrolling produces
+    // the frames, and is what a user does anyway. The pointer sits over the
+    // toolbar because the canvas takes the wheel for zoom.
+    await page.mouse.move(300, 22);
+
+    // Mid-scroll it holds that same edge — the browser carries it, rather than
+    // it riding away with the host.
+    await page.mouse.wheel(150, 0);
     await expect.poll(gapToWindowRight).toBe(8);
 
     // At the end of the travel the sidebar's edge has come into view and is the
     // nearer obstacle: the panel settles into its home dock and stops.
-    await page.evaluate((x) => window.scrollTo(x, 0), m.maxScroll);
-    // Reported as an object, not a bare gap: when this fails the message names
-    // where each edge actually landed, which is the difference between "the
-    // dock is off by the sidebar's width" and "it never moved at all".
+    await page.mouse.wheel(m.maxScroll + 200, 0);
     await expect
       .poll(async () => {
         const sidebar = await boxOf(page, '.sidebar');
