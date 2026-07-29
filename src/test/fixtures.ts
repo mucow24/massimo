@@ -201,6 +201,18 @@ export function makeLineTag(overrides: Partial<LineTag> & { id: string }): LineT
   };
 }
 
+// A line circle (dashed guide circle stations bind to).
+export function makeLineCircle(
+  overrides: Partial<import('../model/types').LineCircle> & { id: string },
+): import('../model/types').LineCircle {
+  return {
+    x: 0,
+    y: 0,
+    radius: 70,
+    ...overrides,
+  };
+}
+
 // A route bullet showing one line's badge. `lineId` may be null (unset).
 export function makeRouteBullet(overrides: Partial<RouteBullet> & { id: string }): RouteBullet {
   return {
@@ -299,6 +311,7 @@ export function makeDoc(parts: {
   svgImages?: SvgImage[];
   // The shared polygon + image z-stack; defaults to polygons then images.
   backgroundOrder?: string[];
+  lineCircles?: import('../model/types').LineCircle[];
   styles?: StyleDef[];
   styleDefaults?: Partial<Record<StyleKind, string>>;
   activePalettes?: import('../model/palettes').PaletteId[];
@@ -325,6 +338,8 @@ export function makeDoc(parts: {
   for (const ra of parts.regionAssignments ?? []) regionAssignments[ra.id] = ra;
   const svgImages: Record<string, SvgImage> = {};
   for (const im of parts.svgImages ?? []) svgImages[im.id] = im;
+  const lineCircles: Record<string, import('../model/types').LineCircle> = {};
+  for (const lc of parts.lineCircles ?? []) lineCircles[lc.id] = lc;
   // Seed the stopDot LIBRARY into every doc (like a real doc) so the dot-style
   // setters can dereference a style id; explicit parts.styles override.
   const styles: Record<string, StyleDef> = { ...STOP_DOT_FACTORY_STYLES };
@@ -367,6 +382,7 @@ export function makeDoc(parts: {
     backgroundOrder: parts.backgroundOrder ?? [...Object.keys(polygons), ...Object.keys(svgImages)],
     regionAssignments,
     svgImages,
+    lineCircles,
     styles,
     styleDefaults,
     activePalettes: parts.activePalettes ?? ['mta'],

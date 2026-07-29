@@ -10255,6 +10255,7 @@
     "backgroundOrder": [],
     "regionAssignments": {},
     "svgImages": {},
+    "lineCircles": {},
     "styles": {
       "default-line": {
         "id": "default-line",

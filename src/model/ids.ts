@@ -13,6 +13,7 @@ export interface IdFactory {
   textLabelId(): string;
   polygonId(): string;
   svgImageId(): string;
+  lineCircleId(): string;
   styleId(): string;
   regionAssignmentId(): string;
 }
@@ -33,6 +34,7 @@ export function defaultIdFactory(): IdFactory {
     textLabelId: uid,
     polygonId: uid,
     svgImageId: uid,
+    lineCircleId: uid,
     styleId: uid,
     regionAssignmentId: uid,
   };
@@ -54,6 +56,7 @@ export function counterIdFactory(seed = 0): IdFactory {
   let y = seed;
   let r = seed;
   let a = seed;
+  let c = seed;
   return {
     stationId: () => `s${s++}`,
     lineId: () => `l${l++}`,
@@ -64,6 +67,7 @@ export function counterIdFactory(seed = 0): IdFactory {
     textLabelId: () => `g${g++}`,
     polygonId: () => `p${p++}`,
     svgImageId: () => `i${i++}`,
+    lineCircleId: () => `c${c++}`,
     styleId: () => `y${y++}`,
     regionAssignmentId: () => `r${r++}`,
   };

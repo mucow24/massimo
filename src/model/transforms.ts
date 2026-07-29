@@ -1,4 +1,11 @@
-import { autoOrientNewStation } from './autoOrient';
+import { autoOrientNewStation, uprightTangentRotation } from './autoOrient';
+import { LINE_CIRCLE_RADIUS_DEFAULT, canonicalLineCircleRadius } from './lineCircle';
+import {
+  circleAngleAt,
+  pointAtAngle,
+  projectToCircle,
+  tangentAtAngle,
+} from '../geometry/lineCircle';
 import {
   endStationId,
   isAnchorEnd,
@@ -84,6 +91,7 @@ import type {
   LabelCell,
   LabelValign,
   Line,
+  LineCircle,
   LineEndStyle,
   LineId,
   LineStyle,
@@ -306,7 +314,8 @@ type RecordCollectionKey =
   | 'svgImages'
   | 'lineTags'
   | 'transferAnchors'
-  | 'transfers';
+  | 'transfers'
+  | 'lineCircles';
 
 function updateRecord<K extends RecordCollectionKey>(
   doc: MapDoc,
@@ -405,7 +414,18 @@ export function renameStation(doc: MapDoc, id: StationId, name: string): MapDoc 
 }
 
 export function moveStation(doc: MapDoc, id: StationId, x: number, y: number): MapDoc {
-  return updateStation(doc, id, (st) => ({ ...st, x, y }));
+  return updateStation(doc, id, (st) => {
+    const circle = st.circleId !== undefined ? doc.lineCircles[st.circleId] : undefined;
+    if (!circle) return { ...st, x, y };
+    // Bound stations move ALONG their circle: the target projects onto the
+    // circumference and the rotation tracks the tangent octant there (label
+    // kept right-side-up). Detaching is the caller's move (unbind first) —
+    // see the drag hysteresis in the interaction layer.
+    const theta = circleAngleAt(circle, { x, y });
+    const p = pointAtAngle(circle, theta);
+    const t = tangentAtAngle(theta);
+    return { ...st, x: p.x, y: p.y, rotation: uprightTangentRotation(t.x, t.y, st.label.rotation) };
+  });
 }
 
 /**
@@ -1473,7 +1493,11 @@ export function rotateStop(doc: MapDoc, stationId: StationId, lineId: LineId): M
     const next = AXIS_CYCLE[(idx + 1) % 4];
     if (next === cur.orientation) return st;
     const newStops = st.stops.slice();
-    newStops[i] = { ...cur, orientation: next };
+    // Explicitly editing the orientation is the opt-out gesture for "routed
+    // via the circle" — the octant axis takes over, so the flag clears (the
+    // covered-field-detach idiom).
+    const { viaCircle: _via, ...rest } = cur;
+    newStops[i] = { ...rest, orientation: next };
     return { ...st, stops: newStops };
   });
 }
@@ -2907,6 +2931,155 @@ export function deleteTransferAnchor(doc: MapDoc, id: string): MapDoc {
 }
 
 /** Park a new anchor cell in a station's grid. */
+// ---------- Line circles ----------
+//
+// A LineCircle is a dumb guide circle (see types.ts). The binding invariants
+// these transforms maintain:
+//   - a bound station (Station.circleId) sits ON its circle's circumference,
+//     rotated to the nearest-octant tangent (label kept right-side-up);
+//   - `StopCell.viaCircle` only ever appears on stops of bound stations;
+//   - deleting a circle strips bindings and leaves stations where they stand.
+
+export function addLineCircle(
+  doc: MapDoc,
+  id: string,
+  x: number,
+  y: number,
+  radius: number = LINE_CIRCLE_RADIUS_DEFAULT,
+): MapDoc {
+  const circle: LineCircle = { id, x, y, radius: canonicalLineCircleRadius(radius) };
+  return { ...doc, lineCircles: { ...doc.lineCircles, [id]: circle } };
+}
+
+// Rewrite every station bound to `circleId` through `fn`, allocating only if
+// one actually changed. The shared walk behind circle move/resize/delete.
+function mapBoundStations(
+  doc: MapDoc,
+  circleId: string,
+  fn: (st: Station) => Station,
+): Record<StationId, Station> | null {
+  let out: Record<StationId, Station> | null = null;
+  for (const sid of Object.keys(doc.stations)) {
+    const st = doc.stations[sid];
+    if (st.circleId !== circleId) continue;
+    const next = fn(st);
+    if (next === st) continue;
+    if (!out) out = { ...doc.stations };
+    out[sid] = next;
+  }
+  return out;
+}
+
+export function moveLineCircle(doc: MapDoc, id: string, x: number, y: number): MapDoc {
+  const cur = doc.lineCircles[id];
+  if (!cur || (cur.x === x && cur.y === y)) return doc;
+  const dx = x - cur.x;
+  const dy = y - cur.y;
+  // Bound stations ride the center rigidly: angle (and so tangent rotation)
+  // is preserved by a pure translation.
+  const stations = mapBoundStations(doc, id, (st) => ({ ...st, x: st.x + dx, y: st.y + dy }));
+  return {
+    ...doc,
+    lineCircles: { ...doc.lineCircles, [id]: { ...cur, x, y } },
+    ...(stations ? { stations } : {}),
+  };
+}
+
+export function setLineCircleRadius(doc: MapDoc, id: string, radius: number): MapDoc {
+  const cur = doc.lineCircles[id];
+  if (!cur || !Number.isFinite(radius)) return doc;
+  const r = canonicalLineCircleRadius(radius);
+  if (r === cur.radius) return doc;
+  const next = { ...cur, radius: r };
+  // Reproject members radially — angle preserved, so the tangent (and the
+  // station's rotation) is unchanged.
+  const stations = mapBoundStations(doc, id, (st) => {
+    const p = projectToCircle(next, st);
+    return p.x === st.x && p.y === st.y ? st : { ...st, x: p.x, y: p.y };
+  });
+  return {
+    ...doc,
+    lineCircles: { ...doc.lineCircles, [id]: next },
+    ...(stations ? { stations } : {}),
+  };
+}
+
+export function setLineCircleLocked(doc: MapDoc, id: string, locked: boolean): MapDoc {
+  return updateRecord(doc, 'lineCircles', id, (cur) => {
+    if (!!cur.locked === locked) return cur;
+    if (locked) return { ...cur, locked: true };
+    const { locked: _off, ...rest } = cur;
+    return rest;
+  });
+}
+
+// Strip a station's circle binding: drop `circleId` and every stop's
+// `viaCircle` flag (the flag is only meaningful on a bound station). Position
+// and rotation stay — the station stands where it stood.
+function withoutCircleBinding(st: Station): Station {
+  const { circleId: _gone, ...rest } = st;
+  const stops = st.stops.some((c) => c.viaCircle)
+    ? st.stops.map((c) => {
+        if (!c.viaCircle) return c;
+        const { viaCircle: _via, ...cellRest } = c;
+        return cellRest;
+      })
+    : st.stops;
+  return { ...rest, stops };
+}
+
+export function deleteLineCircle(doc: MapDoc, id: string): MapDoc {
+  if (!doc.lineCircles[id]) return doc;
+  const { [id]: _gone, ...rest } = doc.lineCircles;
+  const stations = mapBoundStations(doc, id, withoutCircleBinding);
+  return { ...doc, lineCircles: rest, ...(stations ? { stations } : {}) };
+}
+
+export function bindStationToCircle(doc: MapDoc, stationId: StationId, circleId: string): MapDoc {
+  const circle = doc.lineCircles[circleId];
+  if (!circle) return doc;
+  return updateStation(doc, stationId, (st) => {
+    const theta = circleAngleAt(circle, st);
+    const p = pointAtAngle(circle, theta);
+    const t = tangentAtAngle(theta);
+    const rotation = uprightTangentRotation(t.x, t.y, st.label.rotation);
+    if (st.circleId === circleId && st.x === p.x && st.y === p.y && st.rotation === rotation)
+      return st;
+    return { ...st, circleId, x: p.x, y: p.y, rotation };
+  });
+}
+
+export function unbindStationFromCircle(doc: MapDoc, stationId: StationId): MapDoc {
+  return updateStation(doc, stationId, (st) =>
+    st.circleId === undefined ? st : withoutCircleBinding(st),
+  );
+}
+
+export function setStopViaCircle(
+  doc: MapDoc,
+  stationId: StationId,
+  lineId: LineId,
+  via: boolean,
+): MapDoc {
+  return updateStation(doc, stationId, (st) => {
+    const idx = st.stops.findIndex((c) => c.lineId === lineId);
+    if (idx === -1) return st;
+    const cell = st.stops[idx];
+    if (via) {
+      // Invariant: the flag only lives on stops of BOUND stations.
+      if (st.circleId === undefined || cell.viaCircle) return st;
+      const stops = st.stops.slice();
+      stops[idx] = { ...cell, viaCircle: true };
+      return { ...st, stops };
+    }
+    if (cell.viaCircle === undefined) return st;
+    const { viaCircle: _off, ...cellRest } = cell;
+    const stops = st.stops.slice();
+    stops[idx] = cellRest;
+    return { ...st, stops };
+  });
+}
+
 export function addStationAnchor(
   doc: MapDoc,
   stationId: StationId,
@@ -3194,6 +3367,7 @@ export const DEFAULT_DOC: MapDoc = {
   backgroundOrder: [],
   regionAssignments: {},
   svgImages: {},
+  lineCircles: {},
   styles: DEFAULT_STYLES,
   styleDefaults: FACTORY_STYLE_DEFAULTS,
   activePalettes: ['mta'],
