@@ -162,6 +162,25 @@ export interface SnapResult {
   guides: SnapGuide[];
 }
 
+/**
+ * Value equality for guide lists. Drag hooks use it in a functional state
+ * update so a move that reproduces the previous guides — including the common
+ * no-guides ⇒ no-guides case — keeps the same array reference and React can
+ * bail instead of re-rendering.
+ */
+export function snapGuidesEqual(a: SnapGuide[], b: SnapGuide[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const ga = a[i];
+    const gb = b[i];
+    if (ga.from.x !== gb.from.x || ga.from.y !== gb.from.y) return false;
+    if (ga.to.x !== gb.to.x || ga.to.y !== gb.to.y) return false;
+    if (ga.label !== gb.label) return false;
+  }
+  return true;
+}
+
 export interface SnapInput {
   /** Station drag mode: required when no `bulletLineId`. */
   draggedId?: StationId;
@@ -254,6 +273,27 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   const lineModeOn = modes.line || !!redistributeAnchor;
   const allModeOn = modes.all !== 'off';
 
+  // Line-mode candidate narrowing for the plain drag (no bullet, no
+  // redistribute): a target can only ever emit a line pair when it is an
+  // edge-neighbour of the dragged station on one of its stop lines — for any
+  // other target every `alignmentPairs` iteration finds no tCell, no line, or
+  // fails its `lineHasEdge` check and returns []. The one adjacency-free case,
+  // the stopless↔stopless anchor fallback, is preserved by the stops-length
+  // arm of `lineTargetEligible`. Bullet mode (adjacency doesn't apply) and
+  // redistribute (adjacency deliberately bypassed) keep their full pools.
+  const plainLineMode = lineModeOn && !bulletLineId && !redistributeAnchor;
+  const dStops = draggedStops ?? [];
+  const dragNeighborIds: ReadonlySet<StationId> | null =
+    plainLineMode && dStops.length > 0
+      ? new Set(
+          dStops.flatMap((c) =>
+            lines[c.lineId] ? neighborsOf(lines[c.lineId], draggedId as StationId) : [],
+          ),
+        )
+      : null;
+  const lineTargetEligible = (t: Station): boolean =>
+    !plainLineMode || (dragNeighborIds ? dragNeighborIds.has(t.id) : t.stops.length === 0);
+
   // Line mode's target pool. During a redistribute the anchor is the ONLY
   // line-mode candidate: the intermediates are moving with the drag, and
   // aligning to them would fight the redistribute itself.
@@ -291,20 +331,20 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
 
   for (const t of targets) {
     const linePairs: AlignmentPair[] =
-      lineModeOn && lineTargetIds.has(t.id)
+      lineModeOn && lineTargetIds.has(t.id) && lineTargetEligible(t)
         ? bulletLineId
           ? bulletAlignmentPairs(t, bulletLineId)
           : alignmentPairs(
               draggedId as StationId,
               draggedRotation as Rotation,
-              draggedStops ?? [],
+              dStops,
               t,
               lines,
               requireAdjacency,
             )
         : [];
     const allPairs: AlignmentPair[] = allTargetIds.has(t.id)
-      ? allAxesPairs(draggedStops ?? [], (draggedRotation ?? 0) as Rotation, t, modes.all)
+      ? allAxesPairs(dStops, (draggedRotation ?? 0) as Rotation, t, modes.all)
       : [];
     type TaggedPair = AlignmentPair & { kind: 'line' | 'all' };
     const pairs: TaggedPair[] = [

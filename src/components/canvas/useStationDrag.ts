@@ -4,7 +4,12 @@ import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
 import type { StationId } from '../../model/types';
 import { Rotation } from '../../geometry/orientation';
-import { snapDraggedStation, SnapGuide, snapToleranceAt } from '../../geometry/snap';
+import {
+  snapDraggedStation,
+  SnapGuide,
+  snapGuidesEqual,
+  snapToleranceAt,
+} from '../../geometry/snap';
 import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
 import {
   collectGroupSiblings,
@@ -96,7 +101,7 @@ export function useStationDrag(
         // Snapshot the doc + pause history; commit one entry on drag, cancel on a
         // pure click. Pointer capture is deferred to first movement (trackDragMove)
         // so the synthesized click still lands on the station's rect.
-        history: beginHistoryGroup(),
+        history: beginHistoryGroup({ deferPersist: true }),
       };
     },
     [],
@@ -143,7 +148,10 @@ export function useStationDrag(
       });
       nx = snap.x;
       ny = snap.y;
-      setSnapGuides(snap.guides);
+      // Keep the previous array when this move reproduced it (including the
+      // no-guides case) so React bails on the same-reference state instead of
+      // re-rendering for a value-identical fresh array every move.
+      setSnapGuides((prev) => (snapGuidesEqual(prev, snap.guides) ? prev : snap.guides));
     } else if (snapGuides.length > 0) {
       setSnapGuides([]);
     }

@@ -84,6 +84,56 @@ describe('adjacency over an edge set', () => {
   });
 });
 
+describe('adjacency cache — identity-keyed on the edges array', () => {
+  const y = makeLine({
+    id: 'l1',
+    stations: ['s1', 's2', 'J', 's3', 's4'],
+    edges: [
+      pairKeyOf('s1', 's2'),
+      pairKeyOf('s2', 'J'),
+      pairKeyOf('J', 's3'),
+      pairKeyOf('J', 's4'),
+    ],
+  });
+
+  it('returns the same array instances while the edges array identity holds', () => {
+    expect(neighborsOf(y, 'J')).toBe(neighborsOf(y, 'J'));
+    expect(incidentEdges(y, 'J')).toBe(incidentEdges(y, 'J'));
+  });
+
+  it('a line clone sharing its edges array hits the same cache', () => {
+    const clone = { ...y, color: '#ff0000' };
+    expect(neighborsOf(clone, 'J')).toBe(neighborsOf(y, 'J'));
+    expect(incidentEdges(clone, 's2')).toBe(incidentEdges(y, 's2'));
+  });
+
+  it('a no-op transform keeps the same edges reference, so the cache holds', () => {
+    const same = removeEdge(y.edges, 'nope', 'nada');
+    expect(same).toBe(y.edges);
+    expect(neighborsOf({ ...y, edges: same }, 'J')).toBe(neighborsOf(y, 'J'));
+  });
+
+  it('a changed edges array recomputes the adjacency', () => {
+    const grown = addEdge(y.edges, 'J', 's5');
+    const y2 = { ...y, edges: grown };
+    expect(neighborsOf(y2, 'J')).not.toBe(neighborsOf(y, 'J'));
+    expect(neighborsOf(y2, 'J')).toEqual([...neighborsOf(y, 'J'), 's5']);
+    expect(lineHasEdge(y2, 'J', 's5')).toBe(true);
+    expect(lineHasEdge(y, 'J', 's5')).toBe(false);
+  });
+
+  it('reproduces the old per-call scans element-for-element (edges order)', () => {
+    expect(neighborsOf(y, 'J')).toEqual(['s2', 's3', 's4']);
+    expect(incidentEdges(y, 'J')).toEqual([
+      pairKeyOf('s2', 'J'),
+      pairKeyOf('J', 's3'),
+      pairKeyOf('J', 's4'),
+    ]);
+    expect(neighborsOf(y, 'zz')).toEqual([]);
+    expect(incidentEdges(y, 'zz')).toEqual([]);
+  });
+});
+
 describe('edge-set mutators', () => {
   it('addEdge appends a canonical key and is a no-op on duplicates / self-loops', () => {
     const start: string[] = [];

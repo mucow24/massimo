@@ -106,7 +106,7 @@ export function useStationLayoutDrag(
         lastMX: e.clientX,
         lastMY: e.clientY,
         targets: captureMirrorTargets(id),
-        history: beginHistoryGroup(),
+        history: beginHistoryGroup({ deferPersist: true }),
       };
     },
     [dragRef],

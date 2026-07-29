@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { cancelAppendMode, dragState, useDoc, useSelection } from '../state/store';
+import { isHistoryGrouping } from '../state/history';
 import { hoveredChrome, type HoverKind } from '../state/selection';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useFontEpochValue } from '../state/fontEpoch';
@@ -8,11 +9,11 @@ import { useViewportStore } from '../state/viewportStore';
 import { useThemeColors } from '../state/theme';
 import type { SnapGuide } from '../geometry/snap';
 import {
-  assignLinePriorities,
   buildBandGeometry,
   buildOrderedRenderables,
   buildStopMarkers,
   stopPosWorld,
+  withLinePriorities,
   SegmentBandSpec,
 } from '../geometry/interlining';
 import { edgeEndpoints } from '../model/lineTopology';
@@ -27,7 +28,7 @@ import { BandWarning, SegmentBand } from './SegmentBand';
 import { RegionExcludeClips, regionExcludeClipId } from './canvas/RegionExcludeClips';
 import { regionsFor } from '../geometry/regionCache';
 import {
-  buildExclusionHoles,
+  buildExclusionHolesCached,
   regionClipBounds,
   regionPaintPlan,
   resolveRegionWinners,
@@ -308,19 +309,19 @@ export function MapCanvas() {
   );
 
   const bands = useMemo(() => {
-    // assignLinePriorities mutates in place; clone so memoized priorities
-    // don't leak between the two memo levels (matters once a future caller
-    // wants the geometry array without priorities — for layering-mode
-    // outlines we pass `bandsGeometry` directly). The spec is presentation-
-    // free, so color/style aren't carried here — stripe consumers resolve
-    // them live from `lines`, which is why a color/style edit repaints
-    // without the (intentionally presentation-blind) geometry memo
-    // rebuilding. Per-stripe widths/offsets ARE on the spec — width is
-    // geometry (it shapes `paths`), so width edits flow through the
-    // geometry rebuild instead.
-    const out = bandsGeometry.map((b) => ({ ...b }));
-    assignLinePriorities(out, lines, lineOrder);
-    return out;
+    // Priorities go on CLONES (withLinePriorities), never on bandsGeometry's
+    // own objects: the interlining reuse layer shares those pristine specs
+    // across frames and callers (this is also why layering-mode outlines can
+    // take `bandsGeometry` directly, without priorities). The clone cache
+    // inside withLinePriorities keeps per-spec identity stable across drag
+    // frames, so SegmentBand's memo bails out for corridors the drag didn't
+    // touch. The spec is presentation-free, so color/style aren't carried
+    // here — stripe consumers resolve them live from `lines`, which is why a
+    // color/style edit repaints without the (intentionally presentation-
+    // blind) geometry memo rebuilding. Per-stripe widths/offsets ARE on the
+    // spec — width is geometry (it shapes `paths`), so width edits flow
+    // through the geometry rebuild instead.
+    return withLinePriorities(bandsGeometry, lines, lineOrder);
   }, [bandsGeometry, lines, lineOrder]);
 
   // When mirror-matching mode is on for the selected station, highlight the
@@ -416,7 +417,15 @@ export function MapCanvas() {
   const regionGeom = useMemo(
     () =>
       needRegions
-        ? regionsFor({ stations, lines }, { bands: bandsGeometry, markers: stopMarkers })
+        ? regionsFor(
+            { stations, lines },
+            { bands: bandsGeometry, markers: stopMarkers },
+            // Mid-gesture frames are never revisited, so the sig string and
+            // LRU bookkeeping are pure waste there — and skipping the inserts
+            // PRESERVES the pre-gesture entry for the commit reconcile's
+            // old-geometry lookup instead of evicting it within four frames.
+            { transient: isHistoryGrouping() },
+          )
         : null,
     [needRegions, stations, lines, bandsGeometry, stopMarkers],
   );
@@ -430,7 +439,7 @@ export function MapCanvas() {
   const regionExcludeHoles = useMemo(
     () =>
       regionGeom && regionWinners
-        ? buildExclusionHoles(
+        ? buildExclusionHolesCached(
             regionGeom.faces,
             regionWinners,
             lineOrder,
@@ -441,6 +450,7 @@ export function MapCanvas() {
               return line ? lineStrokeRailWidth(lineStrokeWidthOf(line), lineWidthOf(line)) : 0;
             },
             regionGeom.slivers,
+            regionGeom.holeChain,
           )
         : null,
     [regionGeom, regionWinners, lineOrder, lines],
