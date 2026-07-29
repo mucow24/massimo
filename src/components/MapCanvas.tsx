@@ -2245,7 +2245,7 @@ export function MapCanvas() {
       {/* Routing warnings are about bands the user can't see while the network
           is hidden — the toast's "jump to the band" click would land on blank
           canvas. Comes back with the map. */}
-      {showNetwork && <WarningToasts bands={bands} />}
+      {showNetwork && <WarningToasts bands={bands} hostSize={view.size} />}
     </div>
   );
 }
