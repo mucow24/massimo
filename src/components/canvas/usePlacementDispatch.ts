@@ -139,8 +139,11 @@ export function snapPlacement(
       // Alt-click station creation snaps exactly like placing-station.
       return viaCircleRim() ?? viaEngine();
     case 'placing-line-circle':
-      // Snap the circle's CENTER like a bare point (unbound bullet / anchor).
-      return viaPoint({ x: 0, y: 0 });
+      // First click: snap the circle's CENTER like a bare point (unbound
+      // bullet / anchor). Second click sets the RADIUS from the raw cursor
+      // distance — there is nothing meaningful to align a rim point to, and
+      // the transform's quarter-grid canonicalization owns the rounding.
+      return mode.center === null ? viaPoint({ x: 0, y: 0 }) : raw;
     default:
       return raw;
   }
@@ -289,11 +292,21 @@ export function usePlacementDispatch(view: ViewportApi): PlacementDispatch {
       return true;
     }
     if (mode.kind === 'placing-line-circle') {
-      // Single-shot like polygons: drop a default-radius circle, exit placing
-      // mode, and select it so the rim/knob handles appear for immediate
-      // manipulation.
       const w = snappedWorld();
-      const id = addLineCircle(w.x, w.y);
+      if (mode.center === null) {
+        // First click: arm the center; the ghost ring + diameter readout now
+        // track the cursor until the second click sets the radius.
+        setUiMode({ kind: 'placing-line-circle', center: { x: w.x, y: w.y } });
+        return true;
+      }
+      // Second click: radius = cursor distance from the armed center (the
+      // transform floors + quarter-grids it). Exit and select so the rim/knob
+      // handles appear for immediate manipulation.
+      const id = addLineCircle(
+        mode.center.x,
+        mode.center.y,
+        Math.hypot(w.x - mode.center.x, w.y - mode.center.y),
+      );
       setUiMode({ kind: 'idle' });
       selectLineCircle(id);
       return true;

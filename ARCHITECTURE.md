@@ -437,8 +437,13 @@ kind. See [styles.ts](src/model/styles.ts).
 `dotStyle?: DotStyle`, `dotSize?: number` (dot **diameter** in px), plus `dotStyleId?: string` —
 the stopDot-library link whose stamped shadow is `dotStyle`, exactly analogous to `Line`'s
 `singletonDotStyleId`/`multiDotStyleId`. `viaCircle?: boolean` (omitted when false) marks the
-stop as "routed via the circle" its station is bound to — see Line circles below; an explicit
-orientation edit (`rotateStop`) clears it, the covered-field-detach idiom.
+stop as "routed via the circle" its station is bound to — see Line circles below. It is the
+FIFTH state of the stop's direction cycle: on a stop that can form a circular connection
+(`stopCanRideCircle` — station bound AND a line-neighbor on the same circle, read off the
+neighbor STATION's binding so two opted-out stops can't deadlock), `rotateStop` walks
+Circle → V → NE/SW → H → NW/SE → Circle; ineligible stops keep the plain four-axis wrap, and
+leaving the Circle state clears the flag either way. Shown as a ring where the axes show
+arrows (stop rows, layout editor, hover badges).
 
 **`LineCircle`** (`MapDoc.lineCircles`) — a perfect-circle guide: `id, x, y` (center),
 `radius` (quarter-unit grid, ≥ `LINE_CIRCLE_RADIUS_MIN`, [model/lineCircle.ts](src/model/lineCircle.ts)),
@@ -457,7 +462,8 @@ painted arcs come from line edges. The concept splits in two, on purpose:
 - **"Routed via the circle"** is the per-stop `viaCircle` flag. An EDGE renders as a circular
   arc iff BOTH endpoint stops carry it, both stations bind to the SAME circle, and the stops sit
   at matching radial offsets (else it degrades to the normal octolinear route — so a crosstown
-  chord between two ring stations is one orientation flip away). **Always the SHORTER arc**
+  chord between two ring stations is one direction-cycle step away, and the cycle wraps back to
+  Circle). **Always the SHORTER arc**
   (`wrapAngleToPi`; antipodal ties sweep clockwise). The longer way around is expressed by
   splicing a bound waypoint onto the circle, which splits the edge into two shorter arcs — the
   ordinary routing-override idiom, no stored sweep state.

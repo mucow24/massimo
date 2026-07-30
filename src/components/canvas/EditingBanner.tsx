@@ -14,7 +14,6 @@ const PLACING_TEXT: Record<
   | 'placing-label'
   | 'placing-anchor'
   | 'creating-polygon'
-  | 'placing-line-circle'
   | 'placing-svg',
   string
 > = {
@@ -25,8 +24,6 @@ const PLACING_TEXT: Record<
   'placing-anchor':
     'Click on the canvas to place a transfer anchor — a corner for a transfer to turn.',
   'creating-polygon': 'Click on the canvas to place a polygon.',
-  'placing-line-circle':
-    'Click on the canvas to place a line circle — stations dropped on its rim snap onto it.',
   'placing-svg': 'Click on the canvas to place the imported image.',
 };
 const CANCEL_HINT = 'Esc or right-click to cancel.';
@@ -51,13 +48,23 @@ export function EditingBanner() {
     case 'placing-label':
     case 'placing-anchor':
     case 'creating-polygon':
-    case 'placing-line-circle':
     case 'placing-svg':
       return (
         <>
           <div className="append-frame" />
           <div className="append-banner placing">
             {PLACING_TEXT[uiMode.kind]} {CANCEL_HINT}
+          </div>
+        </>
+      );
+    case 'placing-line-circle':
+      return (
+        <>
+          <div className="append-frame" />
+          <div className="append-banner placing">
+            {uiMode.center
+              ? `Click to set the circle's radius — stations dropped on its rim snap onto it. ${CANCEL_HINT}`
+              : `Click on the canvas to place the line circle's CENTER. ${CANCEL_HINT}`}
           </div>
         </>
       );

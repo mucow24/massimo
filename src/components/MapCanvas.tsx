@@ -45,6 +45,7 @@ import { overdrawnViewBox, panSurfaceViewBox } from './canvas/viewportMath';
 import { useStationDrag } from './canvas/useStationDrag';
 import { useLineCircleDrag } from './canvas/useLineCircleDrag';
 import { LineCircleView } from './LineCircleView';
+import { CircleDiameterLabel, LineCirclePlacingPreview } from './canvas/LineCirclePlacingPreview';
 import { useStationLayoutDrag } from './canvas/useStationLayoutDrag';
 import { StationLayoutEditor } from './canvas/StationLayoutEditor';
 import { GhostLattice } from './canvas/GhostLattice';
@@ -577,6 +578,7 @@ export function MapCanvas() {
       mode.kind === 'placing-label' ||
       mode.kind === 'placing-anchor' ||
       mode.kind === 'creating-polygon' ||
+      mode.kind === 'placing-line-circle' ||
       mode.kind === 'placing-svg' ||
       // Edit Stops tracks the cursor only while Alt is held (the create-ghost)
       // so the mode's ordinary pointer traffic never re-renders the canvas.
@@ -1641,6 +1643,26 @@ export function MapCanvas() {
               world={selection.uiMode.kind === 'creating-polygon' ? cursorWorld : null}
               style={defaultStyleProps({ styles, styleDefaults }, 'polygon')}
             />
+            {/* Line-circle two-click ghost: a center cross before the first
+              click; the dashed ring + diameter readout tracking the cursor
+              between the clicks. */}
+            {selection.uiMode.kind === 'placing-line-circle' && (
+              <LineCirclePlacingPreview
+                center={selection.uiMode.center}
+                world={cursorWorld}
+                zoom={view.viewport.zoom}
+              />
+            )}
+            {/* Diameter readout while the resize knob is being dragged — the
+              same measurement chip the placement ghost shows. */}
+            {circleDrag.resizingId && lineCircles[circleDrag.resizingId] && (
+              <CircleDiameterLabel
+                cx={lineCircles[circleDrag.resizingId].x}
+                cy={lineCircles[circleDrag.resizingId].y}
+                radius={lineCircles[circleDrag.resizingId].radius}
+                zoom={view.viewport.zoom}
+              />
+            )}
             {/* Svg-image-placing ghost: the imported graphic at 50% opacity
               following the cursor, centered, until the click drops it. */}
             <SvgImagePlacingPreview

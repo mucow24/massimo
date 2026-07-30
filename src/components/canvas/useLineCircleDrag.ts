@@ -11,6 +11,10 @@ import type { LineCirclePart } from '../LineCircleView';
 
 export interface LineCircleDragApi {
   snapGuides: SnapGuide[];
+  // The circle whose radius is being knob-dragged right now (null otherwise) —
+  // drives the diameter readout. State, not a ref: the label must re-render
+  // with the gesture.
+  resizingId: string | null;
   onStartDrag: (id: string, part: LineCirclePart, e: React.PointerEvent) => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
@@ -34,6 +38,7 @@ export function useLineCircleDrag(
   const snapModes = useSnapPrefs((s) => s.modes);
   const gridSize = useViewportStore((s) => s.gridSize);
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
+  const [resizingId, setResizingId] = useState<string | null>(null);
 
   const dragRef = useRef<{
     id: string;
@@ -75,7 +80,9 @@ export function useLineCircleDrag(
     if (ds.part === 'knob') {
       // The knob sits on the east point, so the radius follows the pointer's
       // horizontal world distance from the center. Quarter-grid + minimum are
-      // the transform's clamp; nothing else to snap to.
+      // the transform's clamp; nothing else to snap to. The diameter readout
+      // arms on the first real move (not pointer-down, so a click shows none).
+      if (resizingId !== ds.id) setResizingId(ds.id);
       setLineCircleRadius(ds.id, ds.startRadius + dx);
       return;
     }
@@ -104,6 +111,7 @@ export function useLineCircleDrag(
     if (!ds) return;
     dragRef.current = null;
     setSnapGuides([]);
+    setResizingId(null);
     finishDrag(ds, e, svgRef);
   };
 
@@ -112,8 +120,9 @@ export function useLineCircleDrag(
     if (!ds) return;
     dragRef.current = null;
     setSnapGuides([]);
+    setResizingId(null);
     ds.history.rollback();
   };
 
-  return { snapGuides, onStartDrag, onPointerMove, onPointerUp, onPointerCancel };
+  return { snapGuides, resizingId, onStartDrag, onPointerMove, onPointerUp, onPointerCancel };
 }

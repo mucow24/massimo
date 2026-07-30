@@ -1484,20 +1484,51 @@ export const AXIS_CYCLE: StopOrientation[] = [
   'auto-nw-se', // 3 — NW/SE
 ];
 
+/**
+ * Can this stop's direction cycle offer the CIRCLE state? True when the
+ * station is bound to a line circle AND at least one of the line's neighbors
+ * at this station sits on the same circle — i.e. opting in could actually
+ * form a circular connection. Deliberately reads the neighbor STATION's
+ * binding, never its stop's viaCircle flag: eligibility must not depend on
+ * the neighbor's own opt-in, or two opted-out stops would deadlock each
+ * other with no way back. Drives the five-state rotateStop cycle and the
+ * direction control's circle glyph.
+ */
+export function stopCanRideCircle(doc: MapDoc, stationId: StationId, lineId: LineId): boolean {
+  const st = doc.stations[stationId];
+  const cid = st?.circleId;
+  if (cid === undefined || !doc.lineCircles[cid]) return false;
+  const line = doc.lines[lineId];
+  if (!line) return false;
+  return edgeNeighbors(line.edges, stationId).some((nid) => doc.stations[nid]?.circleId === cid);
+}
+
 export function rotateStop(doc: MapDoc, stationId: StationId, lineId: LineId): MapDoc {
   return updateStation(doc, stationId, (st) => {
     const i = st.stops.findIndex((c) => c.lineId === lineId);
     if (i < 0) return st;
     const cur = st.stops[i];
+    const newStops = st.stops.slice();
+    // Stops that can form a circular connection cycle through FIVE states:
+    // Circle → V → NE → H → NW → Circle. The Circle state is the viaCircle
+    // flag (the stored octant is pinned to auto-vertical, the quantized
+    // tangent on a bound station, so every travel-axis consumer keeps a
+    // coherent fallback). Everything else keeps the plain four-axis wrap —
+    // and leaving the Circle state clears the flag either way (the opt-out
+    // gesture).
+    if (cur.viaCircle) {
+      const { viaCircle: _via, ...rest } = cur;
+      newStops[i] = { ...rest, orientation: 'auto-vertical' };
+      return { ...st, stops: newStops };
+    }
     const idx = AXIS_CYCLE.indexOf(cur.orientation);
+    if (idx === 3 && stopCanRideCircle(doc, stationId, lineId)) {
+      newStops[i] = { ...cur, orientation: 'auto-vertical', viaCircle: true };
+      return { ...st, stops: newStops };
+    }
     const next = AXIS_CYCLE[(idx + 1) % 4];
     if (next === cur.orientation) return st;
-    const newStops = st.stops.slice();
-    // Explicitly editing the orientation is the opt-out gesture for "routed
-    // via the circle" — the octant axis takes over, so the flag clears (the
-    // covered-field-detach idiom).
-    const { viaCircle: _via, ...rest } = cur;
-    newStops[i] = { ...rest, orientation: next };
+    newStops[i] = { ...cur, orientation: next };
     return { ...st, stops: newStops };
   });
 }

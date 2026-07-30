@@ -49,9 +49,10 @@ export type UiMode =
   // click drops one, Esc / right-click exits.
   | { kind: 'placing-anchor' }
   | { kind: 'creating-polygon' }
-  // Single-shot like polygons: the next click drops a default-radius line
-  // circle and selects it (rim drag moves, knob drag resizes).
-  | { kind: 'placing-line-circle' }
+  // Two-click placement: the first click sets the CENTER (stored here), the
+  // second sets the radius from the cursor's distance — with a live ghost ring
+  // + diameter readout in between. `center: null` is the first phase.
+  | { kind: 'placing-line-circle'; center: Vec2 | null }
   // Carries the parsed svg payload (data URI + intrinsic size) read from the
   // file at import time; the next canvas click drops it at the cursor.
   | { kind: 'placing-svg'; image: { href: string; width: number; height: number } }

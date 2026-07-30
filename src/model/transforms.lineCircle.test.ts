@@ -12,6 +12,7 @@ import {
   setLineCircleRadius,
   setStopViaCircle,
   spawnStopCellAt,
+  stopCanRideCircle,
   unbindStationFromCircle,
 } from './transforms';
 import { LINE_CIRCLE_RADIUS_DEFAULT, LINE_CIRCLE_RADIUS_MIN } from './lineCircle';
@@ -188,8 +189,99 @@ describe('setStopViaCircle', () => {
   it('is cleared by an explicit orientation edit (the opt-out gesture)', () => {
     const doc = boundDoc();
     const out = rotateStop(doc, 's1', 'l1');
-    expect(out.stations.s1.stops[0].orientation).toBe('auto-ne-sw');
+    // Leaving the Circle state lands on the first axis of the cycle.
+    expect(out.stations.s1.stops[0].orientation).toBe('auto-vertical');
     expect('viaCircle' in out.stations.s1.stops[0]).toBe(false);
+  });
+});
+
+// Two bound stations joined by l1 — the stop at s1 CAN form a circular
+// connection, so its direction cycle includes the Circle state.
+function ringLineDoc(): MapDoc {
+  return makeDoc({
+    stations: [
+      makeStation({
+        id: 's1',
+        x: 170,
+        y: 100,
+        circleId: 'c1',
+        stops: [makeStop('l1', { viaCircle: true })],
+      }),
+      makeStation({
+        id: 's2',
+        x: 100,
+        y: 170,
+        rotation: 2,
+        circleId: 'c1',
+        stops: [makeStop('l1', { viaCircle: true })],
+      }),
+    ],
+    lines: [makeLine({ id: 'l1', stations: ['s1', 's2'] })],
+    lineCircles: [CIRCLE],
+  });
+}
+
+describe('stopCanRideCircle', () => {
+  it('true only when bound AND a line-neighbor sits on the same circle', () => {
+    const doc = ringLineDoc();
+    expect(stopCanRideCircle(doc, 's1', 'l1')).toBe(true);
+    // Unbind the NEIGHBOR: s1 stays bound but no partner remains.
+    const half = unbindStationFromCircle(doc, 's2');
+    expect(stopCanRideCircle(half, 's1', 'l1')).toBe(false);
+    // Unbound station: never.
+    expect(stopCanRideCircle(unbindStationFromCircle(doc, 's1'), 's1', 'l1')).toBe(false);
+    // No edges on the line: nothing to connect circularly.
+    const edgeless = makeDoc({
+      stations: [
+        makeStation({ id: 's1', x: 170, y: 100, circleId: 'c1', stops: [makeStop('l1')] }),
+      ],
+      lines: [makeLine({ id: 'l1', stations: ['s1'], edges: [] })],
+      lineCircles: [CIRCLE],
+    });
+    expect(stopCanRideCircle(edgeless, 's1', 'l1')).toBe(false);
+  });
+
+  it('binding is station-level, so two opted-out stops cannot deadlock each other', () => {
+    // Both stops flipped to normal routing: each can still cycle back to
+    // Circle, because eligibility reads the NEIGHBOR STATION's binding, not
+    // its stop's flag.
+    let doc = ringLineDoc();
+    doc = setStopViaCircle(doc, 's1', 'l1', false);
+    doc = setStopViaCircle(doc, 's2', 'l1', false);
+    expect(stopCanRideCircle(doc, 's1', 'l1')).toBe(true);
+    expect(stopCanRideCircle(doc, 's2', 'l1')).toBe(true);
+  });
+});
+
+describe('rotateStop — the five-state direction cycle on circle stops', () => {
+  it('cycles Circle → the four axes → back to Circle', () => {
+    let doc = ringLineDoc();
+    const stop = () => doc.stations.s1.stops[0];
+    expect(stop().viaCircle).toBe(true);
+    doc = rotateStop(doc, 's1', 'l1'); // Circle → V
+    expect('viaCircle' in stop()).toBe(false);
+    expect(stop().orientation).toBe('auto-vertical');
+    doc = rotateStop(doc, 's1', 'l1'); // V → NE
+    expect(stop().orientation).toBe('auto-ne-sw');
+    doc = rotateStop(doc, 's1', 'l1'); // NE → H
+    expect(stop().orientation).toBe('auto-horizontal');
+    doc = rotateStop(doc, 's1', 'l1'); // H → NW
+    expect(stop().orientation).toBe('auto-nw-se');
+    doc = rotateStop(doc, 's1', 'l1'); // NW → Circle (back where we started)
+    expect(stop().viaCircle).toBe(true);
+    expect(stop().orientation).toBe('auto-vertical');
+  });
+
+  it('keeps the plain four-axis wrap when the stop cannot ride the circle', () => {
+    let doc = unbindStationFromCircle(ringLineDoc(), 's2');
+    doc = rotateStop(doc, 's1', 'l1'); // Circle state exits to V (flag cleared)
+    doc = rotateStop(doc, 's1', 'l1'); // V → NE
+    doc = rotateStop(doc, 's1', 'l1'); // NE → H
+    doc = rotateStop(doc, 's1', 'l1'); // H → NW
+    expect(doc.stations.s1.stops[0].orientation).toBe('auto-nw-se');
+    doc = rotateStop(doc, 's1', 'l1'); // NW wraps straight to V — no Circle
+    expect(doc.stations.s1.stops[0].orientation).toBe('auto-vertical');
+    expect('viaCircle' in doc.stations.s1.stops[0]).toBe(false);
   });
 });
 
