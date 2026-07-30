@@ -148,6 +148,10 @@ export function useStationLayoutDrag(
     ];
     const { ghosts } = dragLattice({
       cursor,
+      // Slots are windowed on where the node IS, so a move longer than
+      // GRID_RADIUS is walked out: drop at the rim, grab it again, and the
+      // next window is centered on the cell it just landed in.
+      source: sourceCell,
       wSrc,
       gSrc,
       srcIsPoint: isPoint,
