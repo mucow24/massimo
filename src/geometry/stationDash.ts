@@ -2,7 +2,13 @@ import type { Station, StopCell } from '../model/types';
 import { dashRenderLength, dashRenderWidth } from '../model/dashSize';
 import { lineWidthOf } from '../model/lineWidth';
 import { dot, leftNormal, type Vec2 } from './vec';
-import { localToWorld, rotateBy, stopCenterAt, travelDirLocal } from './orientation';
+import {
+  rotateBy,
+  stationCellToWorld,
+  stationDirToWorld,
+  stopCenterAt,
+  travelDirLocal,
+} from './orientation';
 
 // TfL-style tick geometry for one 'dash' stop. Every dash stop is a
 // SINGLETON: it knows only its own stripe (center + width) and the station
@@ -95,17 +101,23 @@ export function dashSpec(
   station: Station,
   cell: StopCell,
   line: { width?: number; dashLength?: number; dashWidth?: number } | null | undefined,
+  // The ring the station is bound to, or null. A tick is placed off its own
+  // stop, so it has to resolve through the SAME frame the stop does — see
+  // `stationFrameRad`. Passing null for a bound station would slide every tick
+  // off its dot.
+  circle: { x: number; y: number } | null,
 ): DashSpec {
   const stopLocal = stopCenterAt(cell.row, cell.col);
   const labelLocal = labelAnchorLocal(station);
   const delta = { x: labelLocal.x - stopLocal.x, y: labelLocal.y - stopLocal.y };
   const out = dashOutward(delta, cell.orientation, station.rotation);
   const half = lineWidthOf(line) / 2;
-  const anchor = localToWorld(
+  const anchor = stationCellToWorld(
     { x: stopLocal.x + out.x * half, y: stopLocal.y + out.y * half },
     station,
+    circle,
   );
-  const outWorld = rotateBy(out, station.rotation);
+  const outWorld = stationDirToWorld(out, station, circle);
   return {
     ax: anchor.x,
     ay: anchor.y,

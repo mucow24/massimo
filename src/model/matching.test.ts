@@ -612,8 +612,8 @@ describe('findMatchingStations', () => {
     const bd = rotateGridDelta(d.dRow, d.dCol, match!.layoutOffset);
     const aStop = { ...A.stops[0], row: A.stops[0].row + d.dRow, col: A.stops[0].col + d.dCol };
     const bStop = { ...B.stops[0], row: B.stops[0].row + bd.dRow, col: B.stops[0].col + bd.dCol };
-    const aWorld = stopPosWorld(aStop, A);
-    const bWorld = stopPosWorld(bStop, { ...B, stops: [bStop] });
+    const aWorld = stopPosWorld(aStop, A, {});
+    const bWorld = stopPosWorld(bStop, { ...B, stops: [bStop] }, {});
     expect(bWorld.x).toBeCloseTo(aWorld.x, 6);
     expect(bWorld.y).toBeCloseTo(aWorld.y, 6);
   });

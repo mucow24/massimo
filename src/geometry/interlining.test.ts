@@ -1352,7 +1352,7 @@ describe('buildStopMarkers — rendered position equals cell-grid position', () 
     const markers = buildStopMarkers(doc.stations, doc.lines, doc.lineOrder);
     for (const cell of station.stops) {
       const got = markerFor(markers, 's', cell.lineId);
-      const want = stopPosWorld(cell, station);
+      const want = stopPosWorld(cell, station, {});
       expect(got.x).toBeCloseTo(want.x, 6);
       expect(got.y).toBeCloseTo(want.y, 6);
     }
@@ -1426,7 +1426,7 @@ describe('buildStopMarkers — rendered position equals cell-grid position', () 
       // And each stop's marker still sits at stopPosWorld of its cell.
       for (const cell of before.stops) {
         const got = markerFor(mBefore, 's', cell.lineId);
-        const want = stopPosWorld(cell, before);
+        const want = stopPosWorld(cell, before, {});
         expect(got.x, `${cell.lineId} at rotation ${r}`).toBeCloseTo(want.x, 6);
         expect(got.y, `${cell.lineId} at rotation ${r}`).toBeCloseTo(want.y, 6);
       }

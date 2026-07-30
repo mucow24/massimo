@@ -56,6 +56,7 @@ describe('appendRoutePreviewStripes', () => {
     const landed = stopPosWorld(
       next.stations.c.stops.find((s) => s.lineId === 'L1')!,
       next.stations.c,
+      {},
     );
     expect(landed.x).not.toBeCloseTo(200);
 

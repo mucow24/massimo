@@ -56,6 +56,7 @@ const anchorKey = (end: AnchorEnd): string =>
 export function AnchorLayer({
   transferAnchors,
   stations,
+  lineCircles,
   selectedIds,
   hoveredKey,
   onHover,
@@ -67,6 +68,7 @@ export function AnchorLayer({
 }: {
   transferAnchors: Record<string, TransferAnchor>;
   stations: Record<string, Station>;
+  lineCircles: Record<string, import('../../model/types').LineCircle>;
   selectedIds: readonly string[];
   /** The layer key of the anchor under the cursor (see hoveredAnchorKey). */
   hoveredKey: string | null;
@@ -106,7 +108,7 @@ export function AnchorLayer({
       (st.transferAnchors ?? []).map((cell) => ({
         // Station-keyed, so the end resolves in one lookup.
         end: { stationId: st.id, anchorId: cell.id } as AnchorEnd,
-        ...stationAnchorWorld(st, cell),
+        ...stationAnchorWorld(st, cell, lineCircles),
       })),
     ),
     ...Object.values(transferAnchors).map((a) => ({

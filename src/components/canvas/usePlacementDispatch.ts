@@ -68,6 +68,7 @@ export function snapPlacement(
       // the network is hidden must not align to invisible stops.
       stations: liveSnapStations(doc.stations),
       lines: doc.lines,
+      lineCircles: doc.lineCircles,
       tolerance,
       bulletLineId,
       modes,

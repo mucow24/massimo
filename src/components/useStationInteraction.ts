@@ -17,7 +17,11 @@ import { appendStationCursor, decideStationClick, nextSegmentStyle } from '../mo
 // Map a click on a station to the closest dot's lineId. Used to pin a
 // transfer endpoint to the specific stop the user clicked on, rather than
 // the station's anchor center.
-function closestStopLineId(station: Station, e: React.MouseEvent): LineId | null {
+function closestStopLineId(
+  station: Station,
+  e: React.MouseEvent,
+  lineCircles: Record<string, import('../model/types').LineCircle>,
+): LineId | null {
   if (station.stops.length === 0) return null;
   // getCanvasSvg, not a hand-rolled selector: the item popovers live inside
   // .canvas-host too and carry their own little icon <svg>s, so "the first svg
@@ -39,7 +43,7 @@ function closestStopLineId(station: Station, e: React.MouseEvent): LineId | null
   let bestId = station.stops[0].lineId;
   let bestDist = Infinity;
   for (const cell of station.stops) {
-    const { x: sx, y: sy } = stopPosWorld(cell, station);
+    const { x: sx, y: sy } = stopPosWorld(cell, station, lineCircles);
     const d = Math.hypot(wx - sx, wy - sy);
     if (d < bestDist) {
       bestDist = d;
@@ -77,6 +81,9 @@ export function useStationInteraction(
   lines: Record<string, Line>,
 ) {
   const selection = useSelection();
+  // Ring-bound stations resolve their stop cells through the ring frame, so a
+  // click picks the dot the user actually sees (see `stationFrameRad`).
+  const lineCircles = useDoc((s) => s.lineCircles);
   const rotateStation = useDoc((s) => s.rotateStation);
   const addStationToLine = useDoc((s) => s.addStationToLine);
   const connectStationsOnLine = useDoc((s) => s.connectStationsOnLine);
@@ -116,7 +123,10 @@ export function useStationInteraction(
       // layer — same station + same dot is still an inert self-transfer, same
       // station + a DIFFERENT dot (interlined) is still allowed, and both rules
       // now come from one place.
-      pickTransferEnd({ stationId: station.id, lineId: closestStopLineId(station, e) });
+      pickTransferEnd({
+        stationId: station.id,
+        lineId: closestStopLineId(station, e, lineCircles),
+      });
       return;
     }
     // Ctrl/Cmd-click on a different station while exactly one is selected:
@@ -306,7 +316,7 @@ export function useStationInteraction(
   const modeInert = inTagMode || inLayerMode;
   const hitless = modeInert || lockedClickThrough || appendForeignInert;
   const onTransferPointerMove = (e: React.PointerEvent) => {
-    const lineId = closestStopLineId(station, e);
+    const lineId = closestStopLineId(station, e, lineCircles);
     if (!lineId) return;
     const first = selection.uiMode.kind === 'creating-transfer' ? selection.uiMode.firstEnd : null;
     if (first && isStopEnd(first) && first.stationId === station.id && first.lineId === lineId) {

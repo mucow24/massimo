@@ -59,7 +59,7 @@ describe('axisForRotation', () => {
 describe('alignmentPairs', () => {
   it('returns the rotation-axis fallback when neither side has stops', () => {
     const target = makeStation({ id: 't', x: 0, y: 0 });
-    const pairs = alignmentPairs('d', 0, [], target, {});
+    const pairs = alignmentPairs('d', 0, [], target, {}, {});
     expect(pairs).toHaveLength(1);
     expect(pairs[0].axis).toEqual({ x: 0, y: 1 });
   });
@@ -76,7 +76,7 @@ describe('alignmentPairs', () => {
       makeStop('L2', { row: 0, col: 1 }),
     ];
     const lines = linesOf(lineOf('L1', ['d', 't']), lineOf('L2', ['d', 't']));
-    const pairs = alignmentPairs('d', 0, draggedStops, target, lines);
+    const pairs = alignmentPairs('d', 0, draggedStops, target, lines, {});
     expect(pairs).toHaveLength(2);
   });
 
@@ -95,6 +95,7 @@ describe('alignmentPairs', () => {
         draggedStops,
         target,
         linesOf(lineOf('LX', ['t']), lineOf('LY', ['d'])),
+        {},
       ),
     ).toEqual([]);
   });
@@ -109,7 +110,7 @@ describe('alignmentPairs', () => {
     });
     const draggedStops: StopCell[] = [makeStop('L1', { row: 0, col: 0 })];
     const lines = linesOf(lineOf('L1', ['d', 'x', 't']));
-    expect(alignmentPairs('d', 0, draggedStops, target, lines)).toEqual([]);
+    expect(alignmentPairs('d', 0, draggedStops, target, lines, {})).toEqual([]);
   });
 
   it('emits a NE-SW diagonal axis for an auto-ne-sw target stop', () => {
@@ -125,7 +126,7 @@ describe('alignmentPairs', () => {
       makeStop('L1', { row: 0, col: 0, orientation: 'auto-ne-sw' }),
     ];
     const lines = linesOf(lineOf('L1', ['d', 't']));
-    const pairs = alignmentPairs('d', 0, draggedStops, target, lines);
+    const pairs = alignmentPairs('d', 0, draggedStops, target, lines, {});
     expect(pairs).toHaveLength(1);
     expect(parallel(pairs[0].axis, { x: SQRT2_2, y: -SQRT2_2 })).toBe(true);
   });
@@ -143,7 +144,7 @@ describe('alignmentPairs', () => {
       makeStop('L2', { row: 0, col: 1 }),
     ];
     const lines = linesOf(lineOf('L1', ['d', 't']), lineOf('L2', ['d', 'x', 't']));
-    const pairs = alignmentPairs('d', 0, draggedStops, target, lines);
+    const pairs = alignmentPairs('d', 0, draggedStops, target, lines, {});
     expect(pairs).toHaveLength(1);
   });
 });
@@ -164,6 +165,7 @@ describe('snapDraggedStation', () => {
       draggedStops: [makeStop('L1')],
       stations: stations(makeStation({ id: 'd', x: 0, y: 0 })),
       lines: linesOf(lineOf('L1', ['d'])),
+      lineCircles: {},
     });
     expect(r.x).toBe(50);
     expect(r.y).toBe(50);
@@ -194,6 +196,7 @@ describe('snapDraggedStation', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
+      lineCircles: {},
       excludedIds: new Set(['t']),
     });
     expect(r.x).toBe(105);
@@ -233,6 +236,7 @@ describe('snapDraggedStation', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
+      lineCircles: {},
     });
     expect(r.x).toBeCloseTo(targetL1.x, 4);
     expect(r.y).toBeCloseTo(targetL1.y, 4);
@@ -261,6 +265,7 @@ describe('snapDraggedStation', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
+      lineCircles: {},
     });
     expect(r.x).toBeCloseTo(100, 5);
     expect(r.y).toBeCloseTo(50, 5);
@@ -305,6 +310,7 @@ describe('snapDraggedStation', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, t1, t2),
       lines: linesOf(lineOf('L1', ['d', 't1']), lineOf('L2', ['d', 't2'])),
+      lineCircles: {},
     });
     expect(r.x).toBeCloseTo(100, 3);
     expect(r.y).toBeCloseTo(200, 3);
@@ -334,6 +340,7 @@ describe('snapDraggedStation', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines,
+      lineCircles: {},
       tolerance: 10,
     });
     expect(inTol.guides).toHaveLength(1);
@@ -346,6 +353,7 @@ describe('snapDraggedStation', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines,
+      lineCircles: {},
       tolerance: 10,
     });
     expect(outTol.guides).toEqual([]);
@@ -374,6 +382,7 @@ describe('snapDraggedStation', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't']), lineOf('L2', ['d', 't']), lineOf('L3', ['d', 't'])),
+      lineCircles: {},
     });
     expect(r.guides).toHaveLength(1);
   });
@@ -392,6 +401,7 @@ describe('snapDraggedStation', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: {},
+      lineCircles: {},
     });
     expect(r.x).toBeCloseTo(100, 3);
     expect(r.y).toBeCloseTo(50, 3);
@@ -418,6 +428,7 @@ describe('snapDraggedStation', () => {
       proposedY: 50,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       bulletLineId: 'L1',
     });
     expect(r.x).toBeCloseTo(0, 5);
@@ -451,6 +462,7 @@ describe('snapDraggedStation', () => {
       proposedY: 200,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['b'])),
+      lineCircles: {},
       bulletLineId: 'L1',
     });
     // Snap engages only via `a`: x snaps onto a's vertical axis (0), not b's.
@@ -475,6 +487,7 @@ describe('snapDraggedStation', () => {
       proposedY: 250,
       stations: stations(a, b, c, d),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      lineCircles: {},
       bulletLineId: 'L1',
     });
     // Snap pins x to 0; y preserved.
@@ -498,6 +511,7 @@ describe('snapDraggedStation', () => {
       proposedY: 50,
       stations: stations(a),
       lines: linesOf(lineOf('L1', ['a'])),
+      lineCircles: {},
       bulletLineId: 'L1',
       tolerance: 10,
     });
@@ -521,6 +535,7 @@ describe('snapDraggedStation', () => {
       draggedStops: d.stops,
       stations: stations(d, a, x),
       lines: linesOf(lineOf('L1', ['a', 'x', 'd'])),
+      lineCircles: {},
       redistributeAnchor: 'a',
     });
     expect(r.x).toBeCloseTo(100, 5);
@@ -570,6 +585,7 @@ describe('snapDraggedStation', () => {
       draggedStops: d.stops,
       stations: stations(d, a, x, y),
       lines: linesOf(lineOf('L1', ['a', 'd']), lineOf('L2', ['a', 'x', 'y', 'd'])),
+      lineCircles: {},
       redistributeAnchor: 'a',
     });
     // Snaps onto a's vertical axis (x=100); the anchor guide spans 90px.
@@ -601,6 +617,7 @@ describe('snapDraggedStation', () => {
       draggedStops: d.stops,
       stations: stations(d, a, m),
       lines: linesOf(l1),
+      lineCircles: {},
       redistributeAnchor: 'a',
     });
     expect(r.x).toBeCloseTo(100, 5);
@@ -638,6 +655,7 @@ describe('snapDraggedStation', () => {
       stations: stations(dragged, target, third),
       // d is line-adjacent to both a and c on L1: a — d — c.
       lines: linesOf(lineOf('L1', ['a', 'd', 'c'])),
+      lineCircles: {},
     });
     // 1 primary guide + 1 opposite-direction guide.
     expect(r.guides.length).toBeGreaterThanOrEqual(2);
@@ -660,6 +678,7 @@ describe('snapDraggedStation', () => {
       draggedRotation: 0,
       draggedStops: dragged.stops,
       lines: linesOf(lineOf('L1', ['a', 'd', 'c'])),
+      lineCircles: {},
       stations: stations(dragged, target, third),
     });
     expect(r.x).toBeCloseTo(100, 5);

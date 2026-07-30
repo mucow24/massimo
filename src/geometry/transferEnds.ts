@@ -8,26 +8,52 @@
 // creation preview) must all resolve an end identically or a transfer would
 // render somewhere its own outline isn't.
 import { stopPosWorld } from './interlining';
-import { localToWorld, stopCenterAt } from './orientation';
+import { stationCellToWorld, stopCenterAt } from './orientation';
+import { stationCircle } from './lineCircle';
 import type { Vec2 } from './vec';
 import { isHostedAnchorEnd, isStopEnd, stationAnchorCell } from '../model/transferAnchors';
-import type { LineId, Station, StationId, TransferAnchor, TransferEnd } from '../model/types';
+import type {
+  LineCircle,
+  LineId,
+  Station,
+  StationId,
+  TransferAnchor,
+  TransferEnd,
+} from '../model/types';
 
 /**
  * World position of a station's specific stop dot. Falls back to the station's
  * own anchor point when no lineId is given or that line isn't on this station
  * (e.g. after the line was deleted).
  */
-export function stopWorld(station: Station, lineId: LineId | null): Vec2 {
+export function stopWorld(
+  station: Station,
+  lineId: LineId | null,
+  lineCircles: Record<string, LineCircle>,
+): Vec2 {
   if (!lineId) return { x: station.x, y: station.y };
   const cell = station.stops.find((c) => c.lineId === lineId);
   if (!cell) return { x: station.x, y: station.y };
-  return stopPosWorld(cell, station);
+  return stopPosWorld(cell, station, lineCircles);
 }
 
-/** World position of a station-hosted anchor cell, in the station's frame. */
-export function stationAnchorWorld(station: Station, cell: { row: number; col: number }): Vec2 {
-  return localToWorld(stopCenterAt(cell.row, cell.col), station);
+/**
+ * World position of a station-hosted anchor cell, in the station's frame — the
+ * SAME frame its stops resolve through, ring included (see `stationFrameRad`).
+ * An anchor exists to hold a transfer against a particular stop, so a frame
+ * that applied to one and not the other would slide the elbow off the dot on
+ * every circle-bound station.
+ */
+export function stationAnchorWorld(
+  station: Station,
+  cell: { row: number; col: number },
+  lineCircles: Record<string, LineCircle>,
+): Vec2 {
+  return stationCellToWorld(
+    stopCenterAt(cell.row, cell.col),
+    station,
+    stationCircle(station, lineCircles),
+  );
 }
 
 /**
@@ -41,15 +67,16 @@ export function transferEndWorld(
   end: TransferEnd,
   stations: Record<StationId, Station>,
   transferAnchors: Record<string, TransferAnchor>,
+  lineCircles: Record<string, LineCircle>,
 ): Vec2 | null {
   if (isStopEnd(end)) {
     const st = stations[end.stationId];
-    return st ? stopWorld(st, end.lineId) : null;
+    return st ? stopWorld(st, end.lineId, lineCircles) : null;
   }
   if (isHostedAnchorEnd(end)) {
     const st = stations[end.stationId];
     const cell = stationAnchorCell(st, end.anchorId);
-    return st && cell ? stationAnchorWorld(st, cell) : null;
+    return st && cell ? stationAnchorWorld(st, cell, lineCircles) : null;
   }
   const free = transferAnchors[end.anchorId];
   return free ? { x: free.x, y: free.y } : null;
