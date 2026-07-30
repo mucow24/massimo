@@ -121,17 +121,25 @@ export interface StopMarkerSpec {
   // The stop's world travel-axis angle in degrees CW — octant-derived for
   // normal stops, the EXACT circle tangent (continuous) for viaCircle stops.
   rotationDeg: number;
-  // Second painted frame for a JOINT stop — a viaCircle stop where an arc
-  // band meets an octolinear one. The two band ends cross the stop at
-  // different angles (exact tangent vs. octant, up to 22.5° apart), and one
-  // square can only cover one of them: the marker paints an extra square at
-  // this octant travel-axis angle so the union covers the wedge where the
-  // straight band's butt end pokes past the tangent square. Null everywhere
-  // else (pure ring stops, normal stops, termini — one edge has one frame;
-  // null-not-optional so the field-drift guard sees it on every built spec,
-  // like `outward`). Reshapes the painted footprint, so it joins
-  // markerBodyRings AND regionIncremental's unit hash (the `end` precedent).
+  // Second frame for a JOINT stop — a viaCircle stop where an arc band meets
+  // an octolinear one. The two band ends cross the stop at different angles
+  // (exact tangent vs. octant, up to 22.5° apart), and a single full square
+  // can only stay flush with ONE of them (whichever frame it takes, its other
+  // half runs at the wrong angle through the other band — a poking corner on
+  // one side, a bite on the other). A joint marker is therefore SPLIT BY
+  // SIDE: the arc-side HALF-square in the tangent frame (`rotationDeg`,
+  // extending along `jointArcOut`), the straight-side half-square in this
+  // octant frame (extending the other way), and the cap-plane wedge between
+  // them (`jointWedgeCorners`). Null everywhere else (pure ring stops, normal
+  // stops, termini — one edge has one frame; null-not-optional so the
+  // field-drift guard sees it on every built spec, like `outward`). Reshapes
+  // the painted footprint, so both joint fields join markerBodyRings AND
+  // regionIncremental's unit hash (the `end` precedent).
   jointRotationDeg: number | null;
+  // Unit vector along the tangent axis pointing toward the ARC neighbor —
+  // which side of the joint the tangent half-square covers. Non-null exactly
+  // when jointRotationDeg is.
+  jointArcOut: Vec2 | null;
   priority: number;
   style: LineStyle;
   outward: Vec2 | null;
@@ -204,6 +212,7 @@ export const MARKER_SPEC_FIELDS = {
   stationId: 'compared',
   rotationDeg: 'compared',
   jointRotationDeg: 'compared',
+  jointArcOut: 'compared',
   priority: 'compared',
   style: 'compared',
   outward: 'compared',
@@ -258,6 +267,11 @@ function markerSpecEqual(a: StopMarkerSpec, b: StopMarkerSpec): boolean {
     a.stationId === b.stationId &&
     a.rotationDeg === b.rotationDeg &&
     a.jointRotationDeg === b.jointRotationDeg &&
+    (a.jointArcOut === b.jointArcOut ||
+      (a.jointArcOut !== null &&
+        b.jointArcOut !== null &&
+        a.jointArcOut.x === b.jointArcOut.x &&
+        a.jointArcOut.y === b.jointArcOut.y)) &&
     a.priority === b.priority &&
     a.style === b.style &&
     (a.outward === b.outward ||
@@ -789,36 +803,51 @@ export function buildStopMarkers(
         cell.viaCircle && station.circleId !== undefined
           ? lineCircles[station.circleId]
           : undefined;
-      const worldTangent = viaCircle
+      const octantTangent = rotateBy(travelDirLocal(cell.orientation), station.rotation);
+      let worldTangent = viaCircle
         ? tangentAtAngle(circleAngleAt(viaCircle, { x: cx, y: cy }))
-        : rotateBy(travelDirLocal(cell.orientation), station.rotation);
-      const rotationDeg = angleDeg(worldTangent);
+        : octantTangent;
       const style = stationMarkerStyle(line, station.id);
       const basePriority = lineIndex[cell.lineId] ?? fallback;
       const outward = terminusOutwardFromBand(line, station.id, bandsByPair);
-      // A JOINT stop — a circle-riding stop with at least one incident edge
-      // that does NOT arc — needs the second, octant-frame square too (see
-      // StopMarkerSpec.jointRotationDeg). Termini are exempt: one edge, one
-      // frame, and the end-style machinery owns their outward half.
+      // Which frame(s) does this stop's marker paint? A viaCircle stop:
+      //  - every incident edge arcs → the plain TANGENT square;
+      //  - NO incident edge arcs (opted in but blocked/alone) → the plain
+      //    OCTANT square — no arc meets this stop, so a tangent square would
+      //    poke out of the octolinear bands for nothing;
+      //  - mixed → a JOINT: arc-side tangent half + straight-side octant half
+      //    + the cap-plane wedge (see StopMarkerSpec.jointRotationDeg).
+      // Termini are exempt: one edge, one frame, and the end-style machinery
+      // owns their outward half.
       let jointRotationDeg: number | null = null;
+      let jointArcOut: Vec2 | null = null;
       if (viaCircle && !outward) {
-        const hasStraightEdge = incidentEdges(line, station.id).some((edge) => {
+        let arcNbrPos: Vec2 | null = null;
+        let hasStraight = false;
+        for (const edge of incidentEdges(line, station.id)) {
           const [a, b] = edgeEndpoints(edge);
           const nid = a === station.id ? b : a;
           const nSt = stations[nid];
           const nCell = nSt?.stops.find((c) => c.lineId === cell.lineId);
-          if (!nSt || !nCell) return false; // no rendered band, no joint
+          if (!nSt || !nCell) continue; // no rendered band, no joint
           const fit = segCircleFit(
             { fromId: station.id, toId: nid, fromCell: cell, toCell: nCell },
             stations,
             lineCircles,
           );
-          return fit?.kind !== 'rides';
-        });
-        if (hasStraightEdge) {
-          jointRotationDeg = angleDeg(rotateBy(travelDirLocal(cell.orientation), station.rotation));
+          if (fit?.kind === 'rides') arcNbrPos ??= stopPosWorld(nCell, nSt);
+          else hasStraight = true;
+        }
+        if (!arcNbrPos) {
+          worldTangent = octantTangent;
+        } else if (hasStraight) {
+          jointRotationDeg = angleDeg(octantTangent);
+          const toArc = { x: arcNbrPos.x - cx, y: arcNbrPos.y - cy };
+          const along = worldTangent.x * toArc.x + worldTangent.y * toArc.y;
+          jointArcOut = along >= 0 ? worldTangent : { x: -worldTangent.x, y: -worldTangent.y };
         }
       }
+      const rotationDeg = angleDeg(worldTangent);
       markers.push({
         cx,
         cy,
@@ -827,6 +856,7 @@ export function buildStopMarkers(
         stationId: station.id,
         rotationDeg,
         jointRotationDeg,
+        jointArcOut,
         priority: basePriority,
         style,
         outward,

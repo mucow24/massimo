@@ -481,12 +481,21 @@ polygon** (`arcTangentPolygon`, [geometry/lineCircle.ts](src/geometry/lineCircle
 on the tangent lines, filleted at exactly the circle's radius, so the router's own fillet walk
 reproduces the TRUE arc and offsets are exactly concentric. A circle band is therefore an
 ordinary `SegmentBandSpec` (no new fields; every consumer, the region hash and PDF export work
-unchanged). Ring-stop markers rotate to the EXACT tangent (continuous, not octant), and a
-JOINT stop — where an arc band meets an octolinear one — paints a second marker square at the
-octant frame (`StopMarkerSpec.jointRotationDeg`; the union covers the wedge where the straight
-band's butt end crosses the tangent square, which otherwise notches by up to `(w/2)·tan 22.5°`).
-Like `end`, the joint frame reshapes the painted footprint, so it joins `markerBodyRings` and
-the incremental-region unit hash. `sanitizeLineCircles` (serialize.ts) enforces the binding invariants on both load
+unchanged). Ring-stop markers rotate to the EXACT tangent (continuous, not octant); a stop
+that opted in but has NO ridable edge reverts to the plain octant square. A JOINT stop — where
+an arc band meets an octolinear one — is the one place two band frames cross (octolinearity
+puts every other station's corridors on one axis; turns happen mid-corridor), and a single
+full square cannot stay flush with both: whichever frame it takes, its other half runs at the
+wrong angle through the other band (a poking corner on one side, a bite on the other — both
+up to `(w/2)·tan 22.5°`). So a joint marker is SPLIT BY SIDE
+(`StopMarkerSpec.jointRotationDeg` + `jointArcOut`): the arc-side HALF-square in the tangent
+frame, the straight-side half-square in the octant frame (`jointHalfSquareCorners` /
+`jointStraightOut`), and the cap-plane WEDGE between them (`jointWedgeCorners` — the bowtie
+between the two butt-cap lines, corners exactly ON the band edges). Each piece is flush with
+its own band; the residual is the ~`(w/2)²/2r` chord-vs-arc nub at the arc half's corners.
+Like `end`, the joint fields reshape the painted footprint, so they join `markerBodyRings`
+(halves as rects, the wedge as its two simple triangle lobes) and the incremental-region unit
+hash. `sanitizeLineCircles` (serialize.ts) enforces the binding invariants on both load
 paths: malformed circles drop, dangling `circleId`s and orphaned `viaCircle` flags strip, and a
 bound station that drifted off its circle reprojects.
 

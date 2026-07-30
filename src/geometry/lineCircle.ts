@@ -68,6 +68,75 @@ export function lineCircleAtPoint<C extends CircleSpec & { id: string }>(
 }
 
 /**
+ * The JOINT WEDGE at a stop where two band frames meet (a ring stop with an
+ * arc on one side and an octolinear band on the other). Both bands end AT the
+ * stop center with butt caps perpendicular to their own travel axes, so the
+ * uncovered ink is exactly the bowtie between the two cap lines, clipped to
+ * the stripe width: corners at c ± perpA·(w/2) and c ± perpB·(w/2) — all ON
+ * the stripes' edges, so the filler pokes nothing past the band silhouette
+ * (a full second square would overshoot by up to w/√2 − w/2 at its corners).
+ *
+ * Returns the four corners ordered as the crossed "bowtie" quad
+ * [pA+, pB+, pA−, pB−] — one lobe per side, both filled under either SVG fill
+ * rule — or null when the frames are (nearly) parallel and there is no wedge.
+ * `aDeg`/`bDeg` are travel-AXIS angles in degrees; sign is immaterial (the
+ * perpendiculars are sign-aligned before pairing).
+ */
+export function jointWedgeCorners(
+  c: Vec2,
+  aDeg: number,
+  bDeg: number,
+  width: number,
+): [Vec2, Vec2, Vec2, Vec2] | null {
+  const aRad = (aDeg * Math.PI) / 180;
+  const bRad = (bDeg * Math.PI) / 180;
+  const perpA = { x: -Math.sin(aRad), y: Math.cos(aRad) };
+  let perpB = { x: -Math.sin(bRad), y: Math.cos(bRad) };
+  if (perpA.x * perpB.x + perpA.y * perpB.y < 0) perpB = { x: -perpB.x, y: -perpB.y };
+  // Parallel frames (axis difference ~0 mod 180°): no wedge to fill.
+  if (Math.abs(perpA.x * perpB.y - perpA.y * perpB.x) < 1e-6) return null;
+  const h = width / 2;
+  return [
+    { x: c.x + perpA.x * h, y: c.y + perpA.y * h },
+    { x: c.x + perpB.x * h, y: c.y + perpB.y * h },
+    { x: c.x - perpA.x * h, y: c.y - perpA.y * h },
+    { x: c.x - perpB.x * h, y: c.y - perpB.y * h },
+  ];
+}
+
+/**
+ * One HALF of a joint stop's marker: a width × width/2 rectangle extending
+ * from the stop's cap plane in `dir` (unit), full stripe width across. The
+ * arc-side half takes the tangent frame's `jointArcOut`; the straight-side
+ * half takes the octant frame via {@link jointStraightOut}. Shared by the
+ * painter and the region footprint so the cover is the paint.
+ */
+export function jointHalfSquareCorners(
+  c: Vec2,
+  dir: Vec2,
+  width: number,
+): [Vec2, Vec2, Vec2, Vec2] {
+  const h = width / 2;
+  const n = { x: -dir.y, y: dir.x };
+  return [
+    { x: c.x + n.x * h, y: c.y + n.y * h },
+    { x: c.x + n.x * h + dir.x * h, y: c.y + n.y * h + dir.y * h },
+    { x: c.x - n.x * h + dir.x * h, y: c.y - n.y * h + dir.y * h },
+    { x: c.x - n.x * h, y: c.y - n.y * h },
+  ];
+}
+
+/**
+ * The straight-side direction of a joint marker: the octant travel axis
+ * (`jointRotationDeg`), sign-picked to point AWAY from the arc side.
+ */
+export function jointStraightOut(jointRotationDeg: number, jointArcOut: Vec2): Vec2 {
+  const rad = (jointRotationDeg * Math.PI) / 180;
+  const o = { x: Math.cos(rad), y: Math.sin(rad) };
+  return o.x * jointArcOut.x + o.y * jointArcOut.y <= 0 ? o : { x: -o.x, y: -o.y };
+}
+
+/**
  * Line circles swept up by a marquee rect: hit iff the rect touches the RIM
  * (nearest point of the rect to the center is inside the radius, farthest
  * corner outside) — a marquee dragged wholly inside the ring grabs nothing,

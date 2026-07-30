@@ -218,6 +218,33 @@ describe('joint markers (arc meets octolinear at one stop)', () => {
     expect(m1?.rotationDeg).toBeCloseTo(90, 9);
     // Joint frame: the octant travel axis, present only at the joint.
     expect(m1?.jointRotationDeg).not.toBeNull();
+    // The arc-side pointer: s1 sits at the east point, its arc partner s2 at
+    // the south point — the tangent axis is vertical, and the arc side is
+    // DOWN (+y toward s2), so the half-squares split south/north.
+    expect(m1?.jointArcOut).not.toBeNull();
+    expect(m1!.jointArcOut!.x).toBeCloseTo(0, 6);
+    expect(m1!.jointArcOut!.y).toBeCloseTo(1, 6);
+  });
+
+  it('a viaCircle stop with NO ridable edge falls back to the octant marker', () => {
+    // Push s2's stop a cell radially out: the s1–s2 edge is BLOCKED (both
+    // asked, radial mismatch) and s1's only other edge is straight — no arc
+    // actually meets s1, so a tangent-rotated marker would poke out of two
+    // octolinear bands for no reason. It reverts to the plain octant frame.
+    const doc = jointDoc();
+    const s2 = doc.stations.s2;
+    const stations = {
+      ...doc.stations,
+      s2: { ...s2, stops: [{ ...s2.stops[0], col: 1 }] },
+    };
+    const bands = buildBandGeometry(stations, doc.lines, doc.lineCircles);
+    const markers = buildStopMarkers(stations, doc.lines, ['l1'], bands, doc.lineCircles);
+    const m1 = markers.find((m) => m.stationId === 's1');
+    // Octant travel axis of an auto-vertical stop at rotation 0: 90° — and no
+    // joint pieces at all.
+    expect(m1?.rotationDeg).toBeCloseTo(90, 9);
+    expect(m1?.jointRotationDeg).toBeNull();
+    expect(m1?.jointArcOut).toBeNull();
   });
 
   it('a pure ring stop (every edge arcs) has NO joint frame', () => {

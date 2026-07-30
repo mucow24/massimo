@@ -515,6 +515,7 @@ describe('buildRegionsIncremental', () => {
       stationId: 'sEnd',
       rotationDeg: 0,
       jointRotationDeg: null,
+      jointArcOut: null,
       priority: 0,
       style: 'solid',
       end,
