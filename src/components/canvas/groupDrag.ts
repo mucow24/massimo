@@ -2,7 +2,14 @@ import { useDoc, useSelection } from '../../state/store';
 import type { Vec2 } from '../../geometry/vec';
 import type { AlignExclude } from './snapTargets';
 
-export type GrabbedKind = 'station' | 'bullet' | 'label' | 'polygon' | 'svgImage' | 'anchor';
+export type GrabbedKind =
+  | 'station'
+  | 'bullet'
+  | 'label'
+  | 'polygon'
+  | 'svgImage'
+  | 'anchor'
+  | 'lineCircle';
 
 // Every OTHER selected item, captured at pointer-down with its start position,
 // so a group drag can tow them by the grabbed item's per-frame delta. x/y items
@@ -17,10 +24,30 @@ export interface GroupSiblings {
   // HOSTED anchors have no x/y at all (they are station-grid cells) and are
   // never canvas-selectable, so they can never reach this list.
   anchors: { id: string; startX: number; startY: number }[];
+  // Line circles, towed by their CENTER (`moveLineCircle`, which carries the
+  // stations bound to them).
+  lineCircles: { id: string; startX: number; startY: number }[];
+  // Stations that MOVE with the drag but are NOT towed by us: the passengers of
+  // a towed ring, carried by `moveLineCircle`. Ids only — nothing here is
+  // translated. They are tracked so the snap pools can still exclude them (a
+  // target that moves with the grab is an unstable one) without a second write:
+  // a bound station's `moveStation` reseats it on its ring, so towing a
+  // passenger as well would drift it round the rim. The drag twin of
+  // `rotateItemsAround`'s `carriedByCircle`.
+  carriedStations: string[];
 }
 
 export function emptyGroupSiblings(): GroupSiblings {
-  return { stations: [], bullets: [], labels: [], polygons: [], svgImages: [], anchors: [] };
+  return {
+    stations: [],
+    bullets: [],
+    labels: [],
+    polygons: [],
+    svgImages: [],
+    anchors: [],
+    lineCircles: [],
+    carriedStations: [],
+  };
 }
 
 /**
@@ -49,6 +76,8 @@ export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string
         return sel.selectedSvgImageIds;
       case 'anchor':
         return sel.selectedAnchorIds;
+      case 'lineCircle':
+        return sel.selectedLineCircleIds;
       default: {
         const unhandled: never = kind;
         return unhandled;
@@ -59,11 +88,35 @@ export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string
 
   const doc = useDoc.getState();
   const out = emptyGroupSiblings();
+  // Which rings will MOVE this gesture — every unlocked selected one, including
+  // the grabbed ring (excluded from the towed list below, but it moves). Their
+  // passengers ride along inside `moveLineCircle`, so the station loop files
+  // them under `carriedStations` instead of towing them. A LOCKED ring stays
+  // put, so its passengers are towed normally (and slide along the stationary
+  // rim, exactly as a lone bound-station drag does).
+  const movingCircleIds = new Set<string>();
+  for (const id of sel.selectedLineCircleIds) {
+    const c = doc.lineCircles[id];
+    if (c && !c.locked) movingCircleIds.add(id);
+  }
+  // Every station bound to a moving ring, SELECTED OR NOT: the ring takes its
+  // passengers with it either way, so selection has no say here. Lock has none
+  // either — `moveLineCircle` carries a locked passenger just the same.
+  if (movingCircleIds.size > 0) {
+    for (const id of Object.keys(doc.stations)) {
+      const cid = doc.stations[id].circleId;
+      if (cid !== undefined && movingCircleIds.has(cid)) out.carriedStations.push(id);
+    }
+  }
   for (const id of sel.selectedStationIds) {
     if (grabbedKind === 'station' && id === grabbedId) continue;
     const s = doc.stations[id];
+    if (!s) continue;
+    // Already carried by its ring (above) — towing it as well would be the
+    // second write that drifts it round the rim.
+    if (s.circleId !== undefined && movingCircleIds.has(s.circleId)) continue;
     // Locked stations never tow (mirrors locked polygons below).
-    if (s && !s.locked) out.stations.push({ id, startX: s.x, startY: s.y });
+    if (!s.locked) out.stations.push({ id, startX: s.x, startY: s.y });
   }
   for (const id of sel.selectedRouteBulletIds) {
     if (grabbedKind === 'bullet' && id === grabbedId) continue;
@@ -92,12 +145,32 @@ export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string
     // the one deliberate break from the five loops above.
     if (a) out.anchors.push({ id, startX: a.x, startY: a.y });
   }
+  for (const id of sel.selectedLineCircleIds) {
+    if (grabbedKind === 'lineCircle' && id === grabbedId) continue;
+    // `movingCircleIds` already dropped the locked ones — same set, so a ring
+    // whose passengers were filed as carried is guaranteed to be towed here.
+    if (movingCircleIds.has(id)) {
+      const c = doc.lineCircles[id];
+      out.lineCircles.push({ id, startX: c.x, startY: c.y });
+    }
+  }
   return out;
 }
 
 /**
+ * Every station that MOVES during the drag: the towed siblings plus the
+ * passengers a towed ring carries. This is the snap engines' exclusion set —
+ * stationary stations stay valid targets, but anything moving with the grab is
+ * an unstable one.
+ */
+export function movingStationIds(s: GroupSiblings): ReadonlySet<string> {
+  return new Set([...s.stations.map((x) => x.id), ...s.carriedStations]);
+}
+
+/**
  * The alignment-pool exclusion set for a drag: the grabbed item itself plus
- * every towed sibling. Everything else — including stationary, non-selected
+ * everything that MOVES with it — every towed sibling, and the passengers a
+ * towed ring carries. Everything else — including stationary, non-selected
  * items — stays a valid snap target, so a group drag keeps the same alignment
  * quality as a solo drag.
  */
@@ -107,7 +180,7 @@ export function groupAlignExclude(
   siblings: GroupSiblings,
 ): AlignExclude {
   const ex = {
-    stationIds: new Set(siblings.stations.map((s) => s.id)),
+    stationIds: new Set(movingStationIds(siblings)),
     bulletIds: new Set(siblings.bullets.map((b) => b.id)),
     labelIds: new Set(siblings.labels.map((l) => l.id)),
     polygonIds: new Set(siblings.polygons.map((p) => p.id)),
@@ -136,6 +209,13 @@ export function groupAlignExclude(
     case 'anchor':
       ex.anchorIds.add(grabbedId);
       break;
+    case 'lineCircle':
+      // Nothing to add: line circles are not in the align pool at all (they sit
+      // outside both snappers — a ring's own capture rule is
+      // `lineCircleAtPoint`), so there is no ring target to exclude. The
+      // passengers it carries are already excluded above, via
+      // `movingStationIds`.
+      break;
     default: {
       const unhandled: never = grabbedKind;
       throw new Error(`groupAlignExclude: unhandled kind ${String(unhandled)}`);
@@ -144,6 +224,9 @@ export function groupAlignExclude(
   return ex;
 }
 
+// `carriedStations` is deliberately absent: nothing translates them (their ring
+// does), and a non-empty list always comes with the ring that carries them —
+// either in `lineCircles` or as the grabbed master.
 export function hasGroupSiblings(s: GroupSiblings): boolean {
   return (
     s.stations.length +
@@ -151,7 +234,8 @@ export function hasGroupSiblings(s: GroupSiblings): boolean {
       s.labels.length +
       s.polygons.length +
       s.svgImages.length +
-      s.anchors.length >
+      s.anchors.length +
+      s.lineCircles.length >
     0
   );
 }
@@ -159,6 +243,7 @@ export function hasGroupSiblings(s: GroupSiblings): boolean {
 /** Translate every captured sibling by (dx, dy) through the store mutators. */
 export function translateSiblings(s: GroupSiblings, dx: number, dy: number): void {
   const doc = useDoc.getState();
+  for (const cs of s.lineCircles) doc.moveLineCircle(cs.id, cs.startX + dx, cs.startY + dy);
   for (const ss of s.stations) doc.moveStation(ss.id, ss.startX + dx, ss.startY + dy);
   for (const bs of s.bullets) doc.moveRouteBullet(bs.id, bs.startX + dx, bs.startY + dy);
   for (const ls of s.labels) doc.moveTextLabel(ls.id, ls.startX + dx, ls.startY + dy);
