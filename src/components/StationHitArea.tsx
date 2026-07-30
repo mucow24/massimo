@@ -2,8 +2,11 @@ import { Line, Station } from '../model/types';
 import { labelLayoutLocal } from '../geometry/labelLayout';
 import { cellsAABBLocal } from '../geometry/stationBoundary';
 import { waypointLabelRectLocal } from '../geometry/waypointLozenge';
+import { stationFrameDeg } from '../geometry/orientation';
+import { stationCircle } from '../geometry/lineCircle';
 import { useStopMetrics } from './useStopMetrics';
 import { effectiveStationLabelStyle } from '../model/transforms';
+import { useDoc } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { useStationInteraction } from './useStationInteraction';
 
@@ -39,9 +42,12 @@ export function StationHitArea({
 }) {
   const { handlers, cursor, hitless } = useStationInteraction(station, onStartDrag, lines);
   const metrics = useStopMetrics(lines);
+  const lineCircles = useDoc((s) => s.lineCircles);
   const showWaypoints = useViewportStore((s) => s.showWaypoints);
 
-  const angle = station.rotation * 45;
+  // Same frame the dots and the painted name resolve through, or the grab
+  // handle sits off the ink it is supposed to be a handle for.
+  const angle = stationFrameDeg(station, stationCircle(station, lineCircles));
   const revealedWaypoint = !!station.isWaypoint && showWaypoints;
   // A revealed waypoint (overlay on) gets a label hit rect so its lozenge is
   // clickable like a regular station's name.

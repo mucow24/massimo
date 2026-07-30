@@ -13,6 +13,7 @@ import type { AppendCursor } from '../../model/appendGestures';
 import type { Pt } from '../../geometry/polygonUnion';
 import type {
   Line,
+  LineCircle,
   LineId,
   Polygon,
   RouteBullet,
@@ -220,6 +221,9 @@ export interface LockedHitDocSlice {
   // Station hits go through the label geometry, which clears a transfer's cap
   // at the stop it lands on (see StopMetrics).
   transfers: Record<string, Transfer>;
+  // …and through the station's cell frame, which is the RING's on a bound
+  // station (see stationsForRect).
+  lineCircles: Record<string, LineCircle>;
   polygons: Record<string, Polygon>;
   svgImages: Record<string, SvgImage>;
   backgroundOrder: string[];
@@ -253,7 +257,7 @@ export function lockedHitsAt(pt: Pt, doc: LockedHitDocSlice, pad: number): HitRe
   );
   push(
     'station',
-    stationsForRect(doc.stations, rect, stopMetricsOf(doc), true).filter(
+    stationsForRect(doc.stations, rect, doc.lineCircles, stopMetricsOf(doc), true).filter(
       (id) => doc.stations[id].locked,
     ),
   );

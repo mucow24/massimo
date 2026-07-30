@@ -14,16 +14,50 @@ function tangentRotation(wx: number, wy: number): Rotation {
 // (station.rotation + label.rotation) mod 8.
 const LABEL_UPSIDE_DOWN = new Set<number>([3, 4, 5]);
 
+// The same band as one CONTINUOUS interval, for a reading angle that is not
+// quantized to an octant. Endpoints included, so a reading that lands exactly on
+// 135° or 225° flips just as octants 3 and 5 do — which is what keeps a seat at
+// an octant angle answering bit-identically either way. The epsilon absorbs the
+// atan2 round-trip that leaves such a seat at 134.999999999999986.
+const ANGLE_EPS = 1e-9;
+const readsUpsideDown = (deg: number): boolean => {
+  const a = ((deg % 360) + 360) % 360;
+  return a >= 135 - ANGLE_EPS && a <= 225 + ANGLE_EPS;
+};
+
 /**
  * The station rotation for a world travel tangent, label kept right-side-up:
  * nearest octant whose local +y runs along (wx, wy), flipped 180° (same axis,
  * identical geometry) when that octant would render the label upside down.
  * The shared derivation behind `autoOrientNewStation` and the line-circle
  * binding (a bound station rides the circle at the tangent octant).
+ *
+ * `frameRad` is the angle the station's local frame ACTUALLY resolves at, when
+ * that is not the octant — a CIRCLE-bound station's cells, and so the name that
+ * shares their lattice, go through the ring frame, which is the true tangent and
+ * up to 22.5° off the rounded octant (see `stationFrameRad`). The flip has to be
+ * judged on the angle the name is PAINTED at or it fires early: at the worst
+ * seat the octant reads 135° while the name reads 112.5°, so a drag along the
+ * rim spins the name end-for-end while it is still plainly upright. It also
+ * costs reach — flipping by the rounded angle can only ever paint inside a 180°
+ * window, where the band itself leaves 270° free.
+ *
+ * Omit it off a ring, where the octant IS the frame and the two are the same
+ * number. The flipped seat needs no separate handling: the frame tracks
+ * `rotation`, so turning the octant 180° turns the painted reading 180° with it.
  */
-export function uprightTangentRotation(wx: number, wy: number, labelRotation: Rotation): Rotation {
+export function uprightTangentRotation(
+  wx: number,
+  wy: number,
+  labelRotation: Rotation,
+  frameRad?: number,
+): Rotation {
   const r = tangentRotation(wx, wy);
-  return LABEL_UPSIDE_DOWN.has((r + labelRotation) % 8) ? (((r + 4) % 8) as Rotation) : r;
+  const upsideDown =
+    frameRad === undefined
+      ? LABEL_UPSIDE_DOWN.has((r + labelRotation) % 8)
+      : readsUpsideDown((frameRad * 180) / Math.PI + labelRotation * 45);
+  return upsideDown ? (((r + 4) % 8) as Rotation) : r;
 }
 
 /**

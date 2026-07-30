@@ -4,6 +4,7 @@ import type { LineId, StationId } from '../../model/types';
 import type { Vec2 } from '../../geometry/vec';
 import type { RowCol } from '../../geometry/lattice';
 import { STOP_SIZE, rotateGridDelta, type Rotation } from '../../geometry/orientation';
+import { stationCircle } from '../../geometry/lineCircle';
 import { lineInterlineGapOf, lineWidthOf } from '../../model/lineWidth';
 import { captureMirrorTargets, type MirrorTarget } from '../../state/mirrorDispatch';
 import {
@@ -124,7 +125,13 @@ export function useStationLayoutDrag(
     if (!st) return;
     const rotation = (st.rotation % 8) as Rotation;
 
-    const cursor = cursorCellAt(st, rotation, screenToWorldRef.current(clientX, clientY));
+    // Cells were placed through the station's FRAME, so the cursor reads back
+    // through it too — a ring's, not the rounded octant (see stationDirToLocal).
+    const cursor = cursorCellAt(
+      st,
+      screenToWorldRef.current(clientX, clientY),
+      stationCircle(st, doc.lineCircles),
+    );
 
     const sourceCell = sourceCellOf(st, ds.source);
     if (!sourceCell) return;

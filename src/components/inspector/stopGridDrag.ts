@@ -12,8 +12,8 @@ import {
 } from '../../geometry/lattice';
 import {
   rotateBy,
+  stationDirToLocal,
   tangentGap,
-  worldDirToLocal,
   STOP_SIZE,
   type Rotation,
 } from '../../geometry/orientation';
@@ -31,13 +31,20 @@ export const GRID_RADIUS = 2;
 const dist = (a: RowCol, b: RowCol): number => Math.hypot(a.row - b.row, a.col - b.col);
 
 /** The station-local (row, col) cell under a world-space point: the world
- *  delta rotated into the station's frame, scaled by the stop pitch. */
+ *  delta rotated into the station's frame, scaled by the stop pitch. `circle`
+ *  is the ring the station is bound to, or null — reading a cell back has to
+ *  undo exactly what placed it, so it goes through the same frame
+ *  (`stationDirToLocal`) rather than the rounded octant. */
 export function cursorCellAt(
-  station: Pick<Station, 'x' | 'y'>,
-  rotation: Rotation,
+  station: Pick<Station, 'x' | 'y' | 'rotation'>,
   world: Vec2,
+  circle: { x: number; y: number } | null,
 ): RowCol {
-  const local = worldDirToLocal({ x: world.x - station.x, y: world.y - station.y }, rotation);
+  const local = stationDirToLocal(
+    { x: world.x - station.x, y: world.y - station.y },
+    station,
+    circle,
+  );
   return { row: local.y / STOP_SIZE, col: local.x / STOP_SIZE };
 }
 

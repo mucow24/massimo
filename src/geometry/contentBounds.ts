@@ -2,6 +2,7 @@ import type { MapDoc } from '../model/types';
 import { stopMetricsOf } from '../model/stopMetrics';
 import { effectiveStationLabelStyle } from '../model/transforms';
 import { TEXT_LABEL_HIT_PAD, type AABBRect } from './stationBoundary';
+import { stationCircle } from './lineCircle';
 import {
   polygonAABB,
   routeBulletAABB,
@@ -41,7 +42,14 @@ export function computeContentBounds(doc: MapDoc): AABBRect | null {
 
   for (const id in doc.stations) {
     const st = doc.stations[id];
-    acc(stationWorldAABB(st, effectiveStationLabelStyle(st), metrics));
+    acc(
+      stationWorldAABB(
+        st,
+        stationCircle(st, doc.lineCircles),
+        effectiveStationLabelStyle(st),
+        metrics,
+      ),
+    );
   }
   for (const id in doc.textLabels) {
     acc(textLabelAABB(doc.textLabels[id], TEXT_LABEL_HIT_PAD));
