@@ -1,5 +1,5 @@
 import type { Station } from '../../model/types';
-import { localToWorld, stopCenterAt } from '../../geometry/orientation';
+import { stationCellToWorld, stopCenterAt } from '../../geometry/orientation';
 import { sameCell, type RowCol } from '../../geometry/lattice';
 import { useThemeColors } from '../../state/theme';
 import { withAlpha } from '../../util/color';
@@ -16,6 +16,7 @@ export function GhostLattice({
   ghosts,
   over,
   station,
+  circle,
   zoom,
   dropR,
 }: {
@@ -23,6 +24,10 @@ export function GhostLattice({
   /** The snapped slot, if any — drawn as a true-size drop preview ring. */
   over: RowCol | null;
   station: Station;
+  /** The ring the station is bound to, or null. Slots are lattice CELLS, so
+   *  they resolve through the station's frame — a ring's, not its rounded
+   *  octant — or the targets paint off the slots the drop actually lands in. */
+  circle: { x: number; y: number } | null;
   zoom: number;
   /** World radius of the node that will land on the snapped slot. */
   dropR: number;
@@ -30,7 +35,8 @@ export function GhostLattice({
   // Accent flips with the theme so the drop targets stay visible on the
   // dark canvas (matches the marquee / mode frames / snap guides).
   const theme = useThemeColors();
-  const toWorld = (cell: RowCol) => localToWorld(stopCenterAt(cell.row, cell.col), station);
+  const toWorld = (cell: RowCol) =>
+    stationCellToWorld(stopCenterAt(cell.row, cell.col), station, circle);
   return (
     <g pointerEvents="none">
       {ghosts.map((g) => {

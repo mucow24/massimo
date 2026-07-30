@@ -50,6 +50,7 @@ import { useStationLayoutDrag } from './canvas/useStationLayoutDrag';
 import { StationLayoutEditor } from './canvas/StationLayoutEditor';
 import { GhostLattice } from './canvas/GhostLattice';
 import { STOP_SIZE } from '../geometry/orientation';
+import { stationCircle } from '../geometry/lineCircle';
 import { lineWidthOf } from '../model/lineWidth';
 import { lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
 import { useRectSelect } from './canvas/useRectSelect';
@@ -2314,6 +2315,7 @@ export function MapCanvas() {
                       layoutDrag.overlay.over?.kind === 'ghost' ? layoutDrag.overlay.over : null
                     }
                     station={stations[layoutDrag.overlay.stationId]}
+                    circle={stationCircle(stations[layoutDrag.overlay.stationId], lineCircles)}
                     zoom={view.viewport.zoom}
                     // A stop's drop radius is its stripe's half-width; every
                     // POINT-like source (the label cell, and any future one)

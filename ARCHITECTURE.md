@@ -503,11 +503,27 @@ circle). The painted arcs come from line edges. The concept splits in two, on pu
   one at an octant angle — the frame IS `rotation · 45°` and the bit-exact `rotateBy` path is
   taken, so nothing else moves. Hence `stopPosWorld` takes `lineCircles` as a REQUIRED param (the
   `tangentGap` idiom): a call site that skipped it would place a ring stop a lane off its own arc.
-  The station LABEL deliberately stays in the octant frame — its angle is typography, and the
-  autoAlign octant model owns it.
+
+  EVERY cell of a station resolves through that one frame — stops, hosted anchors, and the name's
+  label cell alike, along with everything derived from them: the painted label, its hit rect, the
+  selection silhouette and marquee (`stationLocalToWorld` / `stationsForRect`), content bounds
+  (`stationWorldAABB`), the layout editor and its ghost lattice, and the cursor→cell read-back
+  (`stationDirToLocal`, the inverse). A surface left on `rotation · 45°` swings its cell off the
+  lattice by `2·d·sin(Δ/2)` — ≈ `0.39·d` at the worst seat, where `d` is the cell's distance from
+  the station origin, so an outer-lane label on a wide-line interchange lands a good 100 units from
+  its own dot. `stationFrameDeg` is the one owner of the degree form those `<g>` transforms take,
+  because `station.rotation * 45` reads like the same number and is right for seven seats in eight.
+  The name's ANGLE comes along with its cell: a ring station's label reads at the arc's true
+  tangent, parallel to the band it labels, rather than at the nearest 45°.
 
   Re-seating compensates for the uprightness flip. `circleSeat` turns `rotation` a full 180° where
-  the name would otherwise read upside-down, and cells are expressed in that frame, so the turn
+  the name would otherwise read upside-down — judged on the RING frame it paints through (the polar
+  angle `circleSeat` already holds), not the rounded octant, since a flip is a judgement about
+  painted glyphs and the octant is up to 22.5° away from them. Judging the octant fires the flip
+  early, spinning a name end-for-end mid-drag while it still reads at an upright 112.5°, and confines
+  the reachable readings to a 180° window where the band leaves 270° free. So
+  `uprightTangentRotation` takes the frame angle as an optional argument, omitted off a ring where
+  the octant IS the frame. Cells are expressed in that frame, so the turn
   would mirror the whole layout through the anchor and send every lane across the rim. So every
   path that re-seats — `moveStation` for a drag, `rotateBoundStations` for a circle rotation,
   `bindStationToCircle` for a capture — goes through `reseatCircleLayout`, which negates the cells

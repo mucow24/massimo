@@ -1,7 +1,9 @@
 import type { Line, Station, StopOrientation } from '../model/types';
-import { ORIENTATION_ANGLE, stopCenterAt } from '../geometry/orientation';
+import { ORIENTATION_ANGLE, stationFrameDeg, stopCenterAt } from '../geometry/orientation';
+import { stationCircle } from '../geometry/lineCircle';
 import { resolveDotSize } from '../model/dotSize';
 import { LABEL_FONT_SIZE_DEFAULT, stationIsSingleton } from '../model/transforms';
+import { useDoc } from '../state/store';
 
 // World-unit arrow sizing — deliberately no /zoom floor: a wheel zoom commits
 // the camera only after the wheel settles, so screen-floored chrome would
@@ -138,7 +140,10 @@ export function StationOrientationArrows({
   lines: Record<string, Line>;
 }) {
   const isSingleton = stationIsSingleton(station);
-  const angle = station.rotation * 45;
+  // Each badge is drawn at its stop's CELL, so the group turns with the frame
+  // those cells resolve through — the ring's on a bound station.
+  const lineCircles = useDoc((s) => s.lineCircles);
+  const angle = stationFrameDeg(station, stationCircle(station, lineCircles));
   return (
     <g
       data-station-arrows={station.id}

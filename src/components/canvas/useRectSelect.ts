@@ -24,12 +24,12 @@ import type { Pt } from '../../geometry/polygonUnion';
  * station it crossed, invisibly — and that selection answers Delete.
  */
 function stationsForRectVisible(
-  doc: Pick<MapDoc, 'stations' | 'lines' | 'transfers'>,
+  doc: Pick<MapDoc, 'stations' | 'lines' | 'transfers' | 'lineCircles'>,
   rect: RectSelectRect,
   includeLocked: boolean,
 ): StationId[] {
   if (!useViewportStore.getState().showNetwork) return [];
-  return stationsForRect(doc.stations, rect, stopMetricsOf(doc), includeLocked);
+  return stationsForRect(doc.stations, rect, doc.lineCircles, stopMetricsOf(doc), includeLocked);
 }
 
 /**

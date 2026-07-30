@@ -333,6 +333,19 @@ export function stationFrameRad(
 }
 
 /**
+ * The station frame in DEGREES — the form every station-local `<g>` writes into
+ * its `rotate(...)`. One owner, because the failure mode of doing the
+ * conversion inline is a surface that half-adopts the frame: `station.rotation *
+ * 45` reads like the same number and is right for seven stations out of eight,
+ * so a lattice painted through it drifts only on the ring seats between octants
+ * — exactly where nobody is looking.
+ */
+export const stationFrameDeg = (
+  station: { x: number; y: number; rotation: Rotation },
+  circle: { x: number; y: number } | null,
+): number => (stationFrameRad(station, circle) * 180) / Math.PI;
+
+/**
  * Which quarter-turn of a bound station's local frame points radially OUT,
  * as 0..3 (0 = local +x is outward, 1 = +y, 2 = −x, 3 = −y). This is what a
  * stop cell's radial MEANING rests on: `col: 1` is a lane outside the ring at
@@ -404,3 +417,28 @@ export const stationDirToWorld = (
 // (rotation only, no translation) — the inverse of `rotateBy`.
 export const worldDirToLocal = (world: Vec2, rotation: Rotation): Vec2 =>
   rotateBy(world, ((8 - rotation) % 8) as Rotation);
+
+/**
+ * A WORLD direction (or offset) rotated back into a station's unrotated local
+ * frame, through the station's frame — the exact inverse of
+ * {@link stationDirToWorld}, and what any cursor→cell resolver wants: the frame
+ * that PLACED the cells is the frame that has to read them back, or a drag over
+ * a ring station's own dot resolves to a cell that dot is not in.
+ *
+ * The octant case delegates to `worldDirToLocal` for the same reason its twin
+ * delegates to `rotateBy` — exact matrix entries, no 6.1e-17 drift.
+ */
+export const stationDirToLocal = (
+  world: Vec2,
+  station: { x: number; y: number; rotation: Rotation },
+  circle: { x: number; y: number } | null,
+): Vec2 => {
+  if (!circle) return worldDirToLocal(world, station.rotation);
+  const a = stationFrameRad(station, circle);
+  if (Math.abs(wrapAngleToPi(a - rotRad(station.rotation))) < 1e-12) {
+    return worldDirToLocal(world, station.rotation);
+  }
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  return { x: world.x * c + world.y * s, y: -world.x * s + world.y * c };
+};

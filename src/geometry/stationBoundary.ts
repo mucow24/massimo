@@ -9,7 +9,8 @@ import type {
   TextLabel,
   TransferAnchor,
 } from '../model/types';
-import { ANCHOR_HALF, STOP_SIZE, localToWorld, rotRad, stopCenterAt } from './orientation';
+import { ANCHOR_HALF, STOP_SIZE, rotRad, stationCellToWorld, stopCenterAt } from './orientation';
+import { stationCircle, type CircleSpec } from './lineCircle';
 import { rotateAround, rotatedRectCorners } from './vec';
 import { svgImageCorners } from './svgImage';
 import {
@@ -174,9 +175,18 @@ export function stationBoundaryRectsLocal(
   return { cells, label: labelPoly };
 }
 
-/** Apply the station's rotation+translation to a local-frame point. */
-export function stationLocalToWorld(station: Station, p: Pt): Pt {
-  return localToWorld(p, station);
+/**
+ * Apply the station's frame+translation to a local-frame point. `circle` is the
+ * line circle the station is bound to, or null — REQUIRED, the `stopPosWorld`
+ * idiom: a caller that skipped it would put a bound station's cells (and the
+ * name that shares their lattice) a lane off the arc they belong to.
+ */
+export function stationLocalToWorld(
+  station: Station,
+  p: Pt,
+  circle: { x: number; y: number } | null,
+): Pt {
+  return stationCellToWorld(p, station, circle);
 }
 
 /**
@@ -196,6 +206,11 @@ export function stationLocalToWorld(station: Station, p: Pt): Pt {
 export function stationsForRect(
   stations: Record<StationId, Station>,
   rect: AABB,
+  // The doc's line circles, for the frame a bound station's cells resolve
+  // through — required for the same reason `stopPosWorld`'s copy is (see
+  // `stationLocalToWorld`): a marquee that framed the octant ghost of a ring
+  // station's name would miss the name the user is dragging over.
+  lineCircles: Record<string, CircleSpec>,
   metrics: StopMetricsFn = DEFAULT_STOP_METRICS,
   includeLocked = false,
 ): StationId[] {
@@ -204,14 +219,15 @@ export function stationsForRect(
     const st = stations[id];
     // Locked stations are excluded from marquee selection (mirrors polygons).
     if (st.locked && !includeLocked) continue;
+    const circle = stationCircle(st, lineCircles);
     const b = stationBoundaryRectsLocal(st, effectiveStationLabelStyle(st), metrics, false);
-    const cellsWorld = b.cells.map((p) => stationLocalToWorld(st, p));
+    const cellsWorld = b.cells.map((p) => stationLocalToWorld(st, p, circle));
     if (rectIntersectsPolygon(rect, cellsWorld)) {
       hits.push(id);
       continue;
     }
     if (b.label) {
-      const labelWorld = b.label.map((p) => stationLocalToWorld(st, p));
+      const labelWorld = b.label.map((p) => stationLocalToWorld(st, p, circle));
       if (rectIntersectsPolygon(rect, labelWorld)) hits.push(id);
     }
   }

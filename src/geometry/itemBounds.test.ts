@@ -111,7 +111,7 @@ describe('stationWorldAABB', () => {
       isWaypoint: true,
       stops: [makeStop('l1')],
     });
-    expect(stationWorldAABB(st)).toEqual({ x0: 91, y0: 41, x1: 109, y1: 59 });
+    expect(stationWorldAABB(st, null)).toEqual({ x0: 91, y0: 41, x1: 109, y1: 59 });
   });
 
   it('rotation carries the local box into world space', () => {
@@ -125,15 +125,17 @@ describe('stationWorldAABB', () => {
       isWaypoint: true,
       stops: [makeStop('l1'), makeStop('l1', { col: 1 })],
     });
-    expectCloseAABB(stationWorldAABB(st), { x0: 91, y0: 41, x1: 109, y1: 73 });
+    expectCloseAABB(stationWorldAABB(st, null), { x0: 91, y0: 41, x1: 109, y1: 73 });
   });
 
   it('a named station is strictly wider than its waypoint twin (name label included)', () => {
     const wp = stationWorldAABB(
       makeStation({ id: 's', x: 100, y: 50, isWaypoint: true, stops: [makeStop('l1')] }),
+      null,
     );
     const named = stationWorldAABB(
       makeStation({ id: 's', x: 100, y: 50, name: 'Alpha', stops: [makeStop('l1')] }),
+      null,
     );
     // Contains the waypoint box…
     expect(named.x0).toBeLessThanOrEqual(wp.x0);

@@ -46,11 +46,14 @@ function aabbOfPoints(pts: Iterable<Pt>): AABB {
  */
 export function stationWorldAABB(
   station: Station,
+  // The line circle the station is bound to, or null — the frame its cells (and
+  // its name) resolve through. Required, like `stationLocalToWorld`'s copy.
+  circle: { x: number; y: number } | null,
   style: LabelStyle = DEFAULT_LABEL_STYLE,
   metrics: StopMetricsFn = DEFAULT_STOP_METRICS,
 ): AABB {
   const b = stationBoundaryRectsLocal(station, style, metrics, false);
-  const pts = b.cells.concat(b.label ?? []).map((p) => stationLocalToWorld(station, p));
+  const pts = b.cells.concat(b.label ?? []).map((p) => stationLocalToWorld(station, p, circle));
   return aabbOfPoints(pts);
 }
 

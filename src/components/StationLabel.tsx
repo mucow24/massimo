@@ -4,6 +4,8 @@ import { useDoc, useSelection } from '../state/store';
 import { useThemeColors } from '../state/theme';
 import { useViewportStore } from '../state/viewportStore';
 import { labelLayoutLocal } from '../geometry/labelLayout';
+import { stationFrameDeg } from '../geometry/orientation';
+import { stationCircle } from '../geometry/lineCircle';
 import { useStopMetrics } from './useStopMetrics';
 import { bumpWeightByIndex, effectiveStationStyleProps } from '../model/transforms';
 import { legibleTextOn } from '../util/color';
@@ -124,6 +126,11 @@ function OverlayLabelFrame({
 function useStationLabelLayout(station: Station, lines: Record<string, Line>) {
   const hovered = useSelection((s) => s.hoveredStationId === station.id);
   const metrics = useStopMetrics(lines);
+  // The label cell is a cell of the same lattice the stops sit in, so it
+  // resolves through the same frame they do — the RING's on a bound station,
+  // not the rounded octant (see `stationFrameRad`). Reference-stable, so this
+  // subscription only re-renders labels when the circles themselves change.
+  const lineCircles = useDoc((s) => s.lineCircles);
   // The station's own effective typography (stored ?? LABEL_* default) — the
   // single source the hit rect / silhouette (via effectiveStationLabelStyle,
   // the same object) and the painted text share. `weight` is a shipped-ladder
@@ -147,7 +154,7 @@ function useStationLabelLayout(station: Station, lines: Record<string, Line>) {
   // wide stops.
   const lay = labelLayoutLocal(station, effStyle, undefined, metrics);
   return {
-    angle: station.rotation * 45,
+    angle: stationFrameDeg(station, stationCircle(station, lineCircles)),
     rotationDeg: station.label.rotation * 45,
     hovered,
     effStyle,
