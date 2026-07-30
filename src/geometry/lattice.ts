@@ -27,15 +27,40 @@ export const sameCell = (a: RowCol, b: RowCol): boolean =>
 export type LatticeBasis = 'orthogonal' | 'diagonal';
 
 /**
- * (2·radius + 1)² − 1 offsets centered on (0, 0), excluding the origin,
- * in the chosen basis. Output is in the same coordinate system as the
- * input — caller is responsible for any rotation projection if the lattice
- * was generated in one frame and must be applied in another.
+ * The integer coefficients of the lattice point nearest `d`, a delta in the
+ * same (row, col) space the offsets come back in. Both bases are ORTHONORMAL —
+ * 'orthogonal' trivially, and 'diagonal' because NE and SE are perpendicular
+ * unit vectors — so rounding each coefficient on its own lands on the nearest
+ * point, with no lattice search.
  */
-export function latticeOffsets(basis: LatticeBasis, radius: number): RowCol[] {
+function nearestCoeffs(basis: LatticeBasis, d: RowCol): [a: number, b: number] {
+  if (basis === 'orthogonal') return [Math.round(d.row), Math.round(d.col)];
+  // Inverting the diagonal generators below: row = (b − a)·√2/2 and
+  // col = (a + b)·√2/2, so a = (col − row) / (2·√2/2) and b = (col + row) / (2·√2/2).
+  return [Math.round((d.col - d.row) / (2 * SQRT2_2)), Math.round((d.col + d.row) / (2 * SQRT2_2))];
+}
+
+/**
+ * A (2·radius + 1)² window of offsets in the chosen basis, excluding the
+ * ORIGIN. Output is in the same coordinate system as the input — caller is
+ * responsible for any rotation projection if the lattice was generated in one
+ * frame and must be applied in another.
+ *
+ * `center` slides the window onto the lattice point nearest it (an off-lattice
+ * center snaps, which is how a drifted node heals back onto the lattice)
+ * without moving the lattice itself: same pitch, same phase, so slots stay
+ * where the origin's lattice puts them. The origin exclusion does NOT travel
+ * with the window — a slid window that reaches back over the origin still
+ * omits it, and offers its own center like any other cell.
+ */
+export function latticeOffsets(basis: LatticeBasis, radius: number, center?: RowCol): RowCol[] {
   const out: RowCol[] = [];
-  for (let a = -radius; a <= radius; a++) {
-    for (let b = -radius; b <= radius; b++) {
+  // Fold the shift into the loop bounds rather than adding it to the emitted
+  // cells: every offset then still comes out of the SAME single multiplication
+  // that keeps it exactly an integer or exactly k·√2/2 (see below).
+  const [ca, cb] = center ? nearestCoeffs(basis, center) : [0, 0];
+  for (let a = ca - radius; a <= ca + radius; a++) {
+    for (let b = cb - radius; b <= cb + radius; b++) {
       if (a === 0 && b === 0) continue;
       if (basis === 'orthogonal') {
         out.push({ row: a, col: b });
@@ -81,6 +106,7 @@ export function localLatticeOffsets(
   basis: LatticeBasis,
   radius: number,
   rotation: Rotation,
+  center?: RowCol,
 ): RowCol[] {
-  return latticeOffsets(rotation % 2 === 0 ? basis : OTHER_BASIS[basis], radius);
+  return latticeOffsets(rotation % 2 === 0 ? basis : OTHER_BASIS[basis], radius, center);
 }

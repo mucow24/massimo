@@ -124,6 +124,35 @@ describe('useStationLayoutDrag — stop drag', () => {
     expect(historyDepth()).toBe(0);
   });
 
+  it('walks a stop out one window at a time — the second grab re-centers on where it landed', () => {
+    // A move longer than GRID_RADIUS is made in stages: each grab windows its
+    // slots on the cell the stop is in NOW, so dropping at the rim and picking
+    // it up again carries it another full radius. Windowed on the CLUSTER
+    // instead, the second drag has no slot within snap range and drops nothing.
+    seed({ a: hubStation() });
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useStationLayoutDrag(ref, identity));
+
+    // Grab L1 at (100, 100) and take it 4 cells up: world y = 100 − 4·14 = 44.
+    down(result, 'a', { kind: 'stop', lineId: 'L1' }, pointerEvent({ clientX: 100, clientY: 100 }));
+    move(result, pointerEvent({ clientX: 100, clientY: 44 }));
+    up(result, pointerEvent({ clientX: 100, clientY: 44 }));
+    expect(useDoc.getState().stations.a.stops.find((s) => s.lineId === 'L1')!.row).toBeCloseTo(
+      -4,
+      3,
+    );
+
+    // Grab it where it now sits and take it 4 more: world y = 100 − 8·14 = −12.
+    down(result, 'a', { kind: 'stop', lineId: 'L1' }, pointerEvent({ clientX: 100, clientY: 44 }));
+    move(result, pointerEvent({ clientX: 100, clientY: -12 }));
+    up(result, pointerEvent({ clientX: 100, clientY: -12 }));
+
+    const stop = useDoc.getState().stations.a.stops.find((s) => s.lineId === 'L1')!;
+    expect(stop.row).toBeCloseTo(-8, 3);
+    expect(stop.col).toBeCloseTo(0, 3);
+    expect(historyDepth()).toBe(2); // one entry per grab, not one per window
+  });
+
   it('publishes ghosts + the resolved drop target while dragging', () => {
     seed({ a: hubStation() });
     const { ref } = fakeSvgRef();
