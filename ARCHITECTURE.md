@@ -375,11 +375,17 @@ the item back to "Custom"; redefining a style (Styles-panel editor or "Save styl
 same name) re-stamps its tagged users in the same undo entry; new items are stamped with their
 kind's DESIGNATED default style on creation. Defaultness is explicit and id-keyed, never
 name-derived: `styleDefaults` maps each kind to one of its styles (`setDefaultStyle` re-assigns
-it — the panel's star), with two structural invariants enforced on both load paths by
+it — the panel's star), with three structural invariants enforced on both load paths by
 `ensureStyleInvariants` (serialize.ts): every kind has >= 1 style (empty kinds get their
 factory Default injected; `deleteStyle` refuses last-of-kind and re-points the designation when
-the default itself is deleted), and every `styleDefaults` entry resolves to a style of its
-kind. See [styles.ts](src/model/styles.ts).
+the default itself is deleted), every `styleDefaults` entry resolves to a style of its
+kind, and every line style's dot-TYPE ids (`singleton`/`multiDotStyleId`) name live `stopDot`
+styles. That last one is what keeps dot type STAMPABLE: the setters no-op on an id that doesn't
+resolve, so a def naming a deleted dot style is unmatchable — applying it leaves the line tagged
+over diverged values and the next load strips the tag, i.e. the style silently reads "Custom"
+again after every save/load. A present-but-dangling (or wrong-kind) id is re-pointed at the
+designated default dot; `deleteStyle` re-points the defs it can see at delete time.
+See [styles.ts](src/model/styles.ts).
 
 ### Entities (field-level)
 
@@ -1009,8 +1015,11 @@ by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}`:
 10. `sanitizeStyles` (validate/clamp style defs, per-kind name dedupe, id ← record key; its
     per-dot `sanitizeDotStyle` also defaults an absent `strokeAlign` to `'center'`) then
     `ensureStyleInvariants` (≥ 1 style per kind — factory Defaults injected into empty kinds —
-    and a `styleDefaults` entry resolving per kind). **Before** the transfer bake, which seeds
-    the _designated_ default transfer style.
+    a `styleDefaults` entry resolving per kind, and every line style's dot-TYPE ids naming live
+    `stopDot` styles). **Before** the transfer bake, which seeds the _designated_ default
+    transfer style. Order matters for the third: `sanitizeStyles` runs first and heals an
+    ABSENT dot id to the module constant `stop-filled-black`, which a map whose library no
+    longer holds that preset would otherwise carry away as a dangling ref.
 11. `bakeLegacyTransferSettings` (retired doc-level transfer settings → per-transfer overrides;
     idempotent, keyed off field presence) then `sanitizeTransferStyles`, then
     `bakeLegacyLabelSettings` (retired doc-level station-label settings → per-station typography +
