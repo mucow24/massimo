@@ -73,6 +73,12 @@ export function useStationDrag(
     // Station-sibling ids excluded from the snap engine's candidate set — they
     // move with the grab, so they're unstable targets.
     siblingIdSet: ReadonlySet<StationId>;
+    // The seat a bound station was last pulled OFF, kept for the rest of the
+    // gesture. A detached station keeps its cells but carries the rotation of
+    // that seat, so re-capturing the ring needs the pose those cells were
+    // authored in to land where the unbroken slide would have — see
+    // `bindStationToCircle`. Null until the ring lets go.
+    escapedFrom: { circleId: string; x: number; y: number; rotation: Rotation } | null;
     history: ReturnType<typeof beginHistoryGroup>;
   } | null>(null);
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
@@ -111,6 +117,7 @@ export function useStationDrag(
         redistributeAnchor: redistributeAnchor ?? null,
         siblings,
         siblingIdSet: movingStationIds(siblings),
+        escapedFrom: null,
         // Snapshot the doc + pause history; commit one entry on drag, cancel on a
         // pure click. Pointer capture is deferred to first movement (trackDragMove)
         // so the synthesized click still lands on the station's rect.
@@ -177,16 +184,35 @@ export function useStationDrag(
         }
         if (snapGuides.length > 0) setSnapGuides([]);
       };
-      if (circle && !shouldSnap) {
+      // Remember the seat as the ring lets go: a straight cursor path across a
+      // wide arc dips out of the release band partway and comes back, and that
+      // round trip must leave the layout exactly where sliding would have.
+      const release = () => {
+        if (draggedSt && circle) {
+          ds.escapedFrom = {
+            circleId: circle.id,
+            x: draggedSt.x,
+            y: draggedSt.y,
+            rotation: draggedRot,
+          };
+        }
         unbindStationFromCircle(ds.id);
+      };
+      if (circle && !shouldSnap) {
+        release();
       } else if (circle) {
         const rimDist = Math.abs(Math.hypot(nx - circle.x, ny - circle.y) - circle.radius);
         if (rimDist <= tolerance * CIRCLE_RELEASE_FACTOR) return moveConstrained(circle);
-        unbindStationFromCircle(ds.id);
+        release();
       } else if (shouldSnap) {
         const captured = lineCircleAtPoint(lineCircles, { x: nx, y: ny }, tolerance);
         if (captured) {
-          bindStationToCircle(ds.id, captured.id);
+          const escaped = ds.escapedFrom;
+          bindStationToCircle(
+            ds.id,
+            captured.id,
+            escaped?.circleId === captured.id ? escaped : undefined,
+          );
           return moveConstrained(captured);
         }
       }

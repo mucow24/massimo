@@ -1,12 +1,14 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createRef, type RefObject } from 'react';
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { useStationDrag } from './useStationDrag';
 import { useDoc, useSelection } from '../../state/store';
 import { useSnapPrefs } from '../../state/snapPrefs';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { DEFAULT_SNAP_MODES } from '../../geometry/snap';
-import { makeLineCircle, makeStation } from '../../test/fixtures';
+import { stopPosWorld } from '../../geometry/interlining';
+import { STOP_SIZE } from '../../geometry/orientation';
+import { makeLine, makeLineCircle, makeStation, makeStop } from '../../test/fixtures';
 import type { StationId } from '../../model/types';
 
 function pointerEvent(opts: {
@@ -287,6 +289,113 @@ describe('useStationDrag — line-circle binding', () => {
     expect(doc.stations['S'].circleId).toBe('c1');
     expect(doc.lineCircles.c1).toMatchObject({ x: 120, y: 100 });
     expect(doc.stations['S'].x).toBeCloseTo(190, 6);
+  });
+
+  // A straight cursor path across a wide arc dips far inside the rim — 55
+  // units at the sweep below — so an ordinary "slide it round the ring" drag
+  // leaves the release band partway and re-captures at the far end. The
+  // station's cells are untouched by that round trip, but the rotation it
+  // carries is the seat it LEFT, so a plain re-bind re-reads the layout
+  // through a frame a quarter turn out and mirrors the lanes across the rim.
+  describe('an escape and return inside one drag', () => {
+    // A big ring, centered on the origin, so the seat angles are readable.
+    const BIG = makeLineCircle({ id: 'big', x: 0, y: 0, radius: 300 });
+    const rim = (deg: number) => ({
+      x: BIG.radius * Math.cos((deg * Math.PI) / 180),
+      y: BIG.radius * Math.sin((deg * Math.PI) / 180),
+    });
+    const laneRadius = (lineId: string) => {
+      const doc = useDoc.getState();
+      const st = doc.stations['S'];
+      const p = stopPosWorld(st.stops.find((c) => c.lineId === lineId)!, st, doc.lineCircles);
+      return Math.hypot(p.x - BIG.x, p.y - BIG.y);
+    };
+
+    function seedTwoLane() {
+      const at = rim(130);
+      useDoc.setState({
+        ...useDoc.getState(),
+        ...DEFAULT_DOC,
+        lineCircles: { big: BIG },
+        stations: {
+          // The seat at 130° reads its radial frame a half turn from local +x,
+          // so the lane OUTSIDE the ring is col −1 there.
+          S: makeStation({
+            id: 'S',
+            ...at,
+            rotation: 7,
+            circleId: 'big',
+            stops: [
+              makeStop('l1', { viaCircle: true }),
+              makeStop('l2', { col: -1, viaCircle: true }),
+            ],
+          }),
+        },
+        lines: {
+          l1: makeLine({ id: 'l1', stations: ['S' as StationId] }),
+          l2: makeLine({ id: 'l2', stations: ['S' as StationId] }),
+        },
+      });
+      useDoc.temporal.getState().clear();
+    }
+
+    it('keeps the outer lane outside when the ring re-captures the station', () => {
+      seedTwoLane();
+      expect(laneRadius('l2')).toBeCloseTo(BIG.radius + STOP_SIZE, 6);
+      const result = dragHook();
+      const from = rim(130);
+      const to = rim(60);
+      result.current.onStartDrag('S' as StationId, pointerEvent({ clientX: 1000, clientY: 1000 }));
+      let escaped = false;
+      for (let i = 1; i <= 8; i++) {
+        const t = i / 8;
+        act(() =>
+          result.current.onPointerMove(
+            pointerEvent({
+              clientX: 1000 + (to.x - from.x) * t,
+              clientY: 1000 + (to.y - from.y) * t,
+            }),
+          ),
+        );
+        if (useDoc.getState().stations['S'].circleId === undefined) escaped = true;
+      }
+      result.current.onPointerUp(
+        pointerEvent({ clientX: 1000 + (to.x - from.x), clientY: 1000 + (to.y - from.y) }),
+      );
+      // The round trip really happened — otherwise this test proves nothing.
+      expect(escaped).toBe(true);
+      const st = useDoc.getState().stations['S'];
+      expect(st.circleId).toBe('big');
+      expect(Math.hypot(st.x, st.y)).toBeCloseTo(BIG.radius, 6);
+      expect(laneRadius('l1')).toBeCloseTo(BIG.radius, 6);
+      expect(laneRadius('l2')).toBeCloseTo(BIG.radius + STOP_SIZE, 6);
+    });
+
+    it('still folds the whole round trip into one undo', () => {
+      seedTwoLane();
+      const before = useDoc.getState().stations['S'];
+      const result = dragHook();
+      const from = rim(130);
+      const to = rim(60);
+      result.current.onStartDrag('S' as StationId, pointerEvent({ clientX: 1000, clientY: 1000 }));
+      for (let i = 1; i <= 8; i++) {
+        const t = i / 8;
+        act(() =>
+          result.current.onPointerMove(
+            pointerEvent({
+              clientX: 1000 + (to.x - from.x) * t,
+              clientY: 1000 + (to.y - from.y) * t,
+            }),
+          ),
+        );
+      }
+      result.current.onPointerUp(
+        pointerEvent({ clientX: 1000 + (to.x - from.x), clientY: 1000 + (to.y - from.y) }),
+      );
+      act(() => useDoc.temporal.getState().undo());
+      expect(useDoc.getState().stations['S']).toEqual(before);
+      expect(useDoc.temporal.getState().pastStates.length).toBe(0);
+    });
   });
 
   it('one undo reverts a bind-drag entirely (binding included)', () => {

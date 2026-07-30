@@ -498,12 +498,21 @@ circle). The painted arcs come from line edges. The concept splits in two, on pu
   Re-seating compensates for the uprightness flip. `circleSeat` turns `rotation` a full 180° where
   the name would otherwise read upside-down, and cells are expressed in that frame, so the turn
   would mirror the whole layout through the anchor and send every lane across the rim. So every
-  path that re-seats — `moveStation` for a drag, `rotateBoundStations` for a circle rotation —
-  goes through `reseatCircleLayout`, which negates the cells whenever `radialLocalTurn` inverts:
-  stops, hosted anchors and the label CELL keep their world positions while `label.rotation` is
-  left alone, which is what lets the 180° land on the name — the one thing the flip is for. The
-  other two member mutators need no compensation, both preserving each station's polar angle and
-  so its frame: `moveLineCircle` translates rigidly, `setLineCircleRadius` reprojects radially.
+  path that re-seats — `moveStation` for a drag, `rotateBoundStations` for a circle rotation,
+  `bindStationToCircle` for a capture — goes through `reseatCircleLayout`, which negates the cells
+  when `radialLocalTurn` REVERSES: stops, hosted anchors and the label CELL keep their world
+  positions while `label.rotation` is left alone, which is what lets the 180° land on the name —
+  the one thing the flip is for. Reversal exactly, not any change: between two seats it is the only
+  difference reachable (a seat puts local ±x on the radial), but a bind arrives from a FREE station
+  under no such constraint, and a quarter turn there is a real reorientation onto the ring — the
+  one that lands a station's lanes concentric the moment it binds. A station that ESCAPED the rim
+  mid-drag is neither: its cells are untouched but the rotation it carries is the seat it left, so
+  `useStationDrag` keeps that pose for the rest of the gesture and hands it back as
+  `bindStationToCircle`'s `seatFrom`, which reads the turn from where the cells were authored. The
+  re-bind then lands exactly where the unbroken slide would have — the turn is a function of the
+  seat ANGLE alone, so the answer can't depend on the path taken between the two. The other two
+  member mutators need no compensation, both preserving each station's polar angle and so its
+  frame: `moveLineCircle` translates rigidly, `setLineCircleRadius` reprojects radially.
 - **"Routed via the circle"** is the per-stop `viaCircle` flag. An EDGE renders as a circular
   arc iff BOTH endpoint stops carry it, both stations bind to the SAME circle, and the stops sit
   at matching radial offsets. A deliberate opt-out (one end unflagged) degrades SILENTLY to the

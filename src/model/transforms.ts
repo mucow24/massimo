@@ -472,9 +472,17 @@ export function moveStation(doc: MapDoc, id: StationId, x: number, y: number): M
  * the flip exists to do. `label.rotation` is deliberately untouched: the label's
  * world angle is `rotation + label.rotation`, so leaving it is what lets the
  * 180° land on the type. Stop orientations are axes, invariant under 180°.
+ *
+ * Only the exact REVERSAL is compensated. Between two seats that is the only
+ * difference reachable — a seat puts local ±x on the radial, so the turn is 0 or
+ * 2 and never a quarter — but `bindStationToCircle` also arrives here from a
+ * FREE station, whose rotation is under no such constraint. A quarter turn there
+ * is a genuine reorientation onto the ring, and the layout is meant to ride it:
+ * that is what lands a station's lanes concentric the moment it binds.
  */
 function reseatCircleLayout(before: Station, after: Station, circle: CircleSpec): Station {
-  if (radialLocalTurn(before, circle) === radialLocalTurn(after, circle)) return after;
+  const turn = radialLocalTurn(after, circle) - radialLocalTurn(before, circle);
+  if (((turn % 4) + 4) % 4 !== 2) return after;
   const flip = <T extends { row: number; col: number }>(cell: T): T => ({
     ...cell,
     // Normalize -0 → 0: it stringifies as "0" but loses every strict compare.
@@ -3316,7 +3324,28 @@ export function deleteLineCircle(doc: MapDoc, id: string): MapDoc {
   return { ...doc, lineCircles: rest, ...(stations ? { stations } : {}) };
 }
 
-export function bindStationToCircle(doc: MapDoc, stationId: StationId, circleId: string): MapDoc {
+/**
+ * Bind a station to a circle: project it onto the rim, take the tangent seat,
+ * and default every stop to riding the ring.
+ *
+ * `seatFrom` is the pose the station's CELLS were authored in, and is what a
+ * drag hands back when it re-captures a ring it escaped mid-gesture (see
+ * `useStationDrag`). A detached station keeps its cells but carries the
+ * rotation of the seat it LEFT, so by the time it comes back that rotation
+ * names a frame a quarter turn out of true and the plain bind re-reads the
+ * whole layout through it — every lane crosses the rim. Reading the turn from
+ * the seat it left instead makes the re-bind land exactly where the unbroken
+ * slide would have: the turn is a function of the seat angle alone, so "did the
+ * frame reverse between these two angles" is the same question either way, and
+ * the answer doesn't depend on the path between them. Omitted, this is an
+ * ordinary bind of a station that was never on the ring.
+ */
+export function bindStationToCircle(
+  doc: MapDoc,
+  stationId: StationId,
+  circleId: string,
+  seatFrom?: { x: number; y: number; rotation: Rotation },
+): MapDoc {
   const circle = doc.lineCircles[circleId];
   if (!circle) return doc;
   return updateStation(doc, stationId, (st) => {
@@ -3335,7 +3364,11 @@ export function bindStationToCircle(doc: MapDoc, stationId: StationId, circleId:
       stops === st.stops
     )
       return st;
-    return { ...st, circleId, ...seat, stops };
+    return reseatCircleLayout(
+      seatFrom ? { ...st, ...seatFrom } : st,
+      { ...st, circleId, ...seat, stops },
+      circle,
+    );
   });
 }
 
