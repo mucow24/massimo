@@ -32,6 +32,7 @@ const marker = (
   lineId,
   stationId: 'sX',
   rotationDeg: 0,
+  jointRotationDeg: null,
   priority: 0,
   style: 'solid',
   end: 'square',

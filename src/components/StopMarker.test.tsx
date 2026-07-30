@@ -12,6 +12,7 @@ function spec(over: Partial<StopMarkerSpec> = {}): StopMarkerSpec {
     lineId: 'L1' as LineId,
     stationId: 'S' as StationId,
     rotationDeg: 0,
+    jointRotationDeg: null,
     priority: 0,
     style: 'solid' as LineStyle,
     end: 'square' as LineEndStyle,

@@ -121,6 +121,17 @@ export interface StopMarkerSpec {
   // The stop's world travel-axis angle in degrees CW — octant-derived for
   // normal stops, the EXACT circle tangent (continuous) for viaCircle stops.
   rotationDeg: number;
+  // Second painted frame for a JOINT stop — a viaCircle stop where an arc
+  // band meets an octolinear one. The two band ends cross the stop at
+  // different angles (exact tangent vs. octant, up to 22.5° apart), and one
+  // square can only cover one of them: the marker paints an extra square at
+  // this octant travel-axis angle so the union covers the wedge where the
+  // straight band's butt end pokes past the tangent square. Null everywhere
+  // else (pure ring stops, normal stops, termini — one edge has one frame;
+  // null-not-optional so the field-drift guard sees it on every built spec,
+  // like `outward`). Reshapes the painted footprint, so it joins
+  // markerBodyRings AND regionIncremental's unit hash (the `end` precedent).
+  jointRotationDeg: number | null;
   priority: number;
   style: LineStyle;
   outward: Vec2 | null;
@@ -192,6 +203,7 @@ export const MARKER_SPEC_FIELDS = {
   lineId: 'compared',
   stationId: 'compared',
   rotationDeg: 'compared',
+  jointRotationDeg: 'compared',
   priority: 'compared',
   style: 'compared',
   outward: 'compared',
@@ -245,6 +257,7 @@ function markerSpecEqual(a: StopMarkerSpec, b: StopMarkerSpec): boolean {
     a.lineId === b.lineId &&
     a.stationId === b.stationId &&
     a.rotationDeg === b.rotationDeg &&
+    a.jointRotationDeg === b.jointRotationDeg &&
     a.priority === b.priority &&
     a.style === b.style &&
     (a.outward === b.outward ||
@@ -783,6 +796,29 @@ export function buildStopMarkers(
       const style = stationMarkerStyle(line, station.id);
       const basePriority = lineIndex[cell.lineId] ?? fallback;
       const outward = terminusOutwardFromBand(line, station.id, bandsByPair);
+      // A JOINT stop — a circle-riding stop with at least one incident edge
+      // that does NOT arc — needs the second, octant-frame square too (see
+      // StopMarkerSpec.jointRotationDeg). Termini are exempt: one edge, one
+      // frame, and the end-style machinery owns their outward half.
+      let jointRotationDeg: number | null = null;
+      if (viaCircle && !outward) {
+        const hasStraightEdge = incidentEdges(line, station.id).some((edge) => {
+          const [a, b] = edgeEndpoints(edge);
+          const nid = a === station.id ? b : a;
+          const nSt = stations[nid];
+          const nCell = nSt?.stops.find((c) => c.lineId === cell.lineId);
+          if (!nSt || !nCell) return false; // no rendered band, no joint
+          const fit = segCircleFit(
+            { fromId: station.id, toId: nid, fromCell: cell, toCell: nCell },
+            stations,
+            lineCircles,
+          );
+          return fit?.kind !== 'rides';
+        });
+        if (hasStraightEdge) {
+          jointRotationDeg = angleDeg(rotateBy(travelDirLocal(cell.orientation), station.rotation));
+        }
+      }
       markers.push({
         cx,
         cy,
@@ -790,6 +826,7 @@ export function buildStopMarkers(
         lineId: cell.lineId,
         stationId: station.id,
         rotationDeg,
+        jointRotationDeg,
         priority: basePriority,
         style,
         outward,
@@ -904,7 +941,9 @@ export function cornerCapRadius(
 type SegCircleFit = { kind: 'rides'; circle: LineCircle } | { kind: 'blocked' } | null;
 
 function segCircleFit(
-  s: SegInfo,
+  // Narrowed so buildStopMarkers can probe an edge with a hand-built pair
+  // (worldHint and lineId play no part in the fit).
+  s: Pick<SegInfo, 'fromId' | 'toId' | 'fromCell' | 'toCell'>,
   stations: Record<StationId, Station>,
   lineCircles: Record<string, LineCircle>,
 ): SegCircleFit {

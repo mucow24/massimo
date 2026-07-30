@@ -216,24 +216,23 @@ describe('joint markers (arc meets octolinear at one stop)', () => {
     const m1 = markers.find((m) => m.stationId === 's1');
     // Primary frame: the exact tangent (90° at the east point).
     expect(m1?.rotationDeg).toBeCloseTo(90, 9);
-    // Joint frame: the octant travel axis (auto-vertical at rotation 0 → 90°
-    // ... which the flip below distinguishes from; use a non-octant angle).
-    expect(m1?.jointRotationDeg).not.toBeUndefined();
+    // Joint frame: the octant travel axis, present only at the joint.
+    expect(m1?.jointRotationDeg).not.toBeNull();
   });
 
   it('a pure ring stop (every edge arcs) has NO joint frame', () => {
     const doc = ringDoc();
     const bands = buildBandGeometry(doc.stations, doc.lines, doc.lineCircles);
     const markers = buildStopMarkers(doc.stations, doc.lines, ['l1'], bands, doc.lineCircles);
-    expect(markers.find((m) => m.stationId === 's1')?.jointRotationDeg).toBeUndefined();
-    expect(markers.find((m) => m.stationId === 's2')?.jointRotationDeg).toBeUndefined();
+    expect(markers.find((m) => m.stationId === 's1')?.jointRotationDeg).toBeNull();
+    expect(markers.find((m) => m.stationId === 's2')?.jointRotationDeg).toBeNull();
   });
 
   it('a normal stop off the circle has no joint frame either', () => {
     const doc = jointDoc();
     const bands = buildBandGeometry(doc.stations, doc.lines, doc.lineCircles);
     const markers = buildStopMarkers(doc.stations, doc.lines, ['l1'], bands, doc.lineCircles);
-    expect(markers.find((m) => m.stationId === 'n1')?.jointRotationDeg).toBeUndefined();
+    expect(markers.find((m) => m.stationId === 'n1')?.jointRotationDeg).toBeNull();
   });
 });
 

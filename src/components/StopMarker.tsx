@@ -154,11 +154,22 @@ export const StopMarker = memo(function StopMarker({
         })()
       )
     ) : null;
+  // A joint stop (arc meets octolinear — see StopMarkerSpec.jointRotationDeg)
+  // paints a SECOND square at the octant frame; the union of the two covers
+  // the wedge where the straight band's butt end crosses the tangent square.
+  // Body ink only — the casing rails stay on the primary (tangent) frame.
+  const jointDeg = endShape ? null : spec.jointRotationDeg;
   if (spec.style === 'hatched' || spec.style === 'hatched-mirror') {
     const fill = `url(#${hatchPatternId(color, spec.style)})`;
     const pts = rotatedSquareCorners(spec.cx, spec.cy, half, spec.rotationDeg)
       .map((p) => `${p.x},${p.y}`)
       .join(' ');
+    const jointPts =
+      jointDeg !== null
+        ? rotatedSquareCorners(spec.cx, spec.cy, half, jointDeg)
+            .map((p) => `${p.x},${p.y}`)
+            .join(' ')
+        : null;
     return (
       <>
         {endShape && ow ? (
@@ -166,6 +177,7 @@ export const StopMarker = memo(function StopMarker({
         ) : (
           <polygon points={pts} fill={fill} pointerEvents="none" />
         )}
+        {jointPts && <polygon points={jointPts} fill={fill} pointerEvents="none" />}
         {rails}
         {cap}
       </>
@@ -245,6 +257,18 @@ export const StopMarker = memo(function StopMarker({
           height={spec.width}
           fill={color}
           transform={`translate(${spec.cx} ${spec.cy}) rotate(${spec.rotationDeg})`}
+          pointerEvents="none"
+        />
+      )}
+      {jointDeg !== null && (
+        <rect
+          data-marker-joint={spec.stationId}
+          x={-half}
+          y={-half}
+          width={spec.width}
+          height={spec.width}
+          fill={color}
+          transform={`translate(${spec.cx} ${spec.cy}) rotate(${jointDeg})`}
           pointerEvents="none"
         />
       )}

@@ -481,7 +481,12 @@ polygon** (`arcTangentPolygon`, [geometry/lineCircle.ts](src/geometry/lineCircle
 on the tangent lines, filleted at exactly the circle's radius, so the router's own fillet walk
 reproduces the TRUE arc and offsets are exactly concentric. A circle band is therefore an
 ordinary `SegmentBandSpec` (no new fields; every consumer, the region hash and PDF export work
-unchanged). `sanitizeLineCircles` (serialize.ts) enforces the binding invariants on both load
+unchanged). Ring-stop markers rotate to the EXACT tangent (continuous, not octant), and a
+JOINT stop — where an arc band meets an octolinear one — paints a second marker square at the
+octant frame (`StopMarkerSpec.jointRotationDeg`; the union covers the wedge where the straight
+band's butt end crosses the tangent square, which otherwise notches by up to `(w/2)·tan 22.5°`).
+Like `end`, the joint frame reshapes the painted footprint, so it joins `markerBodyRings` and
+the incremental-region unit hash. `sanitizeLineCircles` (serialize.ts) enforces the binding invariants on both load
 paths: malformed circles drop, dangling `circleId`s and orphaned `viaCircle` flags strip, and a
 bound station that drifted off its circle reprojects.
 

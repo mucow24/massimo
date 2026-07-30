@@ -169,7 +169,15 @@ function markerBodyRingsUncached(spec: StopMarkerSpec): Ring[] {
   if (spec.style === 'solid' || spec.style === 'hatched' || spec.style === 'hatched-mirror') {
     if (endShape && spec.outward) return [markerEndRing(center, spec.outward, half, endShape)];
     const rad = (spec.rotationDeg * Math.PI) / 180;
-    return [Array.from(rotatedRectCorners(center, half, half, rad))];
+    const rings = [Array.from(rotatedRectCorners(center, half, half, rad))];
+    // A joint stop's second square (see StopMarkerSpec.jointRotationDeg) is
+    // painted ink, so the cover is the paint here too; the union downstream
+    // merges the overlap.
+    if (spec.jointRotationDeg !== null) {
+      const jointRad = (spec.jointRotationDeg * Math.PI) / 180;
+      rings.push(Array.from(rotatedRectCorners(center, half, half, jointRad)));
+    }
+    return rings;
   }
   // Patterned (dashed/dotted/dashed-open): nothing at interior stops; a
   // width/2-long, width-wide stub continuing outward at a terminus — and
