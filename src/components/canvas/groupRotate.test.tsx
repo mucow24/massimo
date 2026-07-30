@@ -2,7 +2,14 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { rotateItemOnContextMenu } from './groupRotate';
 import { useDoc, useSelection } from '../../state/store';
 import { DEFAULT_DOC } from '../../model/transforms';
-import { makeDoc, makePolygon, makeStation, makeSvgImage } from '../../test/fixtures';
+import {
+  makeDoc,
+  makeLineCircle,
+  makePolygon,
+  makeStation,
+  makeStop,
+  makeSvgImage,
+} from '../../test/fixtures';
 
 // Reset both stores; clear every selection id list so each test sets exactly
 // what it needs.
@@ -13,6 +20,7 @@ const blankSelection = () =>
     selectedLabelIds: [],
     selectedPolygonIds: [],
     selectedSvgImageIds: [],
+    selectedLineCircleIds: [],
   });
 
 beforeEach(() => {
@@ -90,6 +98,69 @@ describe('rotateItemOnContextMenu', () => {
     // Pivot image stays put; its rotation steps 10 → 55. The station orbits it.
     expect(doc.svgImages.i0).toMatchObject({ x: 0, y: 0, rotation: 55 });
     expect(doc.stations.a.x).toBeCloseTo(100 * Math.cos(Math.PI / 4), 6);
+  });
+
+  it('group-rotates when the pivot is a line circle (its ring carries bound stations)', () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', x: 100, y: 0, rotation: 0 }),
+          // Bound to c1, on its east point.
+          makeStation({
+            id: 's1',
+            x: 70,
+            y: 0,
+            rotation: 0,
+            circleId: 'c1',
+            stops: [makeStop('l1', { viaCircle: true })],
+          }),
+        ],
+        lineCircles: [makeLineCircle({ id: 'c1', x: 0, y: 0, radius: 70 })],
+      }),
+    });
+    useSelection.setState({ selectedStationIds: ['a'], selectedLineCircleIds: ['c1'] });
+
+    const rotateSingle = vi.fn();
+    rotateItemOnContextMenu({ type: 'lineCircle', id: 'c1' }, rotateSingle);
+
+    // A circle counts toward the multi-selection, so this is the group path.
+    expect(rotateSingle).not.toHaveBeenCalled();
+    const doc = useDoc.getState();
+    // Pivot ring holds its center; the co-selected station orbits it.
+    expect(doc.lineCircles.c1).toMatchObject({ x: 0, y: 0, radius: 70 });
+    expect(doc.stations.a.x).toBeCloseTo(100 / Math.SQRT2, 6);
+    expect(doc.stations.a.y).toBeCloseTo(100 / Math.SQRT2, 6);
+    // The ring's own passenger swings 45° round the rim (it is not selected —
+    // it rides because its circle is).
+    expect(doc.stations.s1.x).toBeCloseTo(70 / Math.SQRT2, 6);
+    expect(doc.stations.s1.y).toBeCloseTo(70 / Math.SQRT2, 6);
+  });
+
+  it('does not rotate a locked line circle right-clicked on its own', () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({
+            id: 's1',
+            x: 70,
+            y: 0,
+            rotation: 0,
+            circleId: 'c1',
+            stops: [makeStop('l1', { viaCircle: true })],
+          }),
+        ],
+        lineCircles: [makeLineCircle({ id: 'c1', x: 0, y: 0, radius: 70, locked: true })],
+      }),
+    });
+    blankSelection();
+
+    const rotateSingle = vi.fn();
+    rotateItemOnContextMenu({ type: 'lineCircle', id: 'c1' }, rotateSingle);
+
+    expect(rotateSingle).not.toHaveBeenCalled();
+    expect(useDoc.getState().stations.s1).toMatchObject({ x: 70, y: 0, rotation: 0 });
   });
 
   it('rotates just the clicked item (rotateSingle) when nothing is selected', () => {

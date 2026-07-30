@@ -5,8 +5,17 @@ import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
 import { snapToleranceAt, type SnapGuide, snapGuidesEqual } from '../../geometry/snap';
 import { snapPolygonPoint } from '../../geometry/polygonSnap';
+import type { Vec2 } from '../../geometry/vec';
 import { liveAlignTargets } from './snapTargets';
 import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
+import {
+  collectGroupSiblings,
+  emptyGroupSiblings,
+  groupAlignExclude,
+  hasGroupSiblings,
+  translateSiblings,
+  type GroupSiblings,
+} from './groupDrag';
 import type { LineCirclePart } from '../LineCircleView';
 
 export interface LineCircleDragApi {
@@ -28,6 +37,9 @@ export interface LineCircleDragApi {
  * reference point and snaps through the point snapper against the shared pool
  * (like an unbound bullet); the radius snaps only to its quarter-unit grid
  * (inside the transform). Shift bypasses snapping, matching every other drag.
+ *
+ * A rim drag also tows the rest of a multi-selection, like every other master
+ * kind (groupDrag). A knob drag never does — a resize isn't a translation.
  */
 export function useLineCircleDrag(
   svgRef: RefObject<SVGSVGElement | null>,
@@ -49,13 +61,27 @@ export function useLineCircleDrag(
     startMX: number;
     startMY: number;
     moved: boolean;
+    // Rim drags only: the rest of the multi-selection, towed by the center's
+    // delta, and the snap pool with those movers excluded. Empty for a knob.
+    siblings: GroupSiblings;
+    allTargets: Vec2[];
     history: ReturnType<typeof beginHistoryGroup>;
   } | null>(null);
 
   const onStartDrag = useCallback((id: string, part: LineCirclePart, e: React.PointerEvent) => {
     const circle = useDoc.getState().lineCircles[id];
     if (!circle || circle.locked) return;
-    useSelection.getState().selectLineCircle(id);
+    // Selecting at pointer-down is this kind's convention (the resize knob and
+    // the diameter popover appear as you grab it). Two grabs must NOT re-select,
+    // or the gesture destroys the selection it should be acting on —
+    // selectLineCircle clears every other list:
+    //   - a ring already IN the selection: that would kill the group drag
+    //     before collectGroupSiblings ever sees the siblings;
+    //   - a Shift-grab: the click's shift-toggle owns adding/removing a ring,
+    //     exactly as it does for every other item.
+    const sel = useSelection.getState();
+    if (!e.shiftKey && !sel.selectedLineCircleIds.includes(id)) sel.selectLineCircle(id);
+    const siblings = part === 'rim' ? collectGroupSiblings('lineCircle', id) : emptyGroupSiblings();
     dragRef.current = {
       id,
       part,
@@ -65,6 +91,12 @@ export function useLineCircleDrag(
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
+      siblings,
+      // Snapshotted at pointer-down like every other drag: everything in the
+      // pool is stationary for the gesture, and the movers (the ring's own
+      // passengers, plus any towed sibling) are excluded — a target that moves
+      // with the grab drags the snap along with it.
+      allTargets: liveAlignTargets(groupAlignExclude('lineCircle', id, siblings)),
       history: beginHistoryGroup({ deferPersist: true }),
     };
   }, []);
@@ -92,7 +124,7 @@ export function useLineCircleDrag(
       const snap = snapPolygonPoint({
         proposed: { x: nx, y: ny },
         lineTargets: [],
-        allTargets: liveAlignTargets(),
+        allTargets: ds.allTargets,
         modes: snapModes,
         tolerance: snapToleranceAt(viewportZoom),
         gridInterval: gridSize,
@@ -104,6 +136,9 @@ export function useLineCircleDrag(
       setSnapGuides([]);
     }
     moveLineCircle(ds.id, nx, ny);
+    if (hasGroupSiblings(ds.siblings)) {
+      translateSiblings(ds.siblings, nx - ds.startWX, ny - ds.startWY);
+    }
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
