@@ -481,6 +481,17 @@ circle). The painted arcs come from line edges. The concept splits in two, on pu
   re-homes the survivors (`rehomeCircleStops`: translate stops + label + hosted anchors rigidly
   so the nearest stop lands back at the origin — the move a user would make by hand).
 
+  A stop spawned by a CONNECT or SPLICE inherits its LANE from the station it is wired from
+  (`spawnStopCellAt`'s `from`), when both sit on the same ring and the source stop rides it.
+  Without that, a line already running a lane out from the rim drops its next stop back ON the
+  rim, leaving the corridor's two ends at different radii — `segCircleFit`'s `blocked` arm, so a
+  chord plus the routing warning, on a layout the app placed itself. What carries across is the
+  source stop's world RADIUS: not its cell, since the two seats need not share a frame, and not a
+  lane INDEX, since pitch is `tangentGap` and index k is a different radius wherever the inner
+  neighbours differ in width. A target spot within a `tangentGap` of an existing stop is occupied
+  and falls back to the outward stack. `appendSpawnSource` names the same source station for the
+  Edit Stops hover ring, so the preview cannot promise a lane the click will not use.
+
   A bound station's cells resolve through the **ring frame**, not `rotation`: `stationFrameRad`
   returns the quarter-turn of the radial frame nearest `rotation · 45°`, and `stationCellToWorld`
   rotates by that. The rounded angle is up to 22.5° off the true tangent, so resolving through it
