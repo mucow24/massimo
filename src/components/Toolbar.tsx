@@ -125,10 +125,15 @@ export function Toolbar() {
   const toggleMode = (
     kind: Exclude<
       UiMode['kind'],
-      // placing-svg and editing-station-layout carry payloads, so they can't
-      // be toggled into via a bare `{ kind }` — they're entered by the
-      // file-import handler / the inspector's Edit-layout button instead.
-      'idle' | 'appending-to-line' | 'creating-transfer' | 'placing-svg' | 'editing-station-layout'
+      // Modes that carry payloads can't be toggled into via a bare `{ kind }` —
+      // they get dedicated handlers (transfer / line circle below; placing-svg
+      // via the file-import handler; layout edit via the inspector's button).
+      | 'idle'
+      | 'appending-to-line'
+      | 'creating-transfer'
+      | 'placing-svg'
+      | 'editing-station-layout'
+      | 'placing-line-circle'
     >,
   ) => {
     selection.setUiMode(selection.uiMode.kind === kind ? { kind: 'idle' } : { kind });
@@ -146,6 +151,15 @@ export function Toolbar() {
   const onAddLabel = () => toggleMode('placing-label');
   const onAddAnchor = () => toggleMode('placing-anchor');
   const onAddPolygon = () => toggleMode('creating-polygon');
+  const onAddLineCircle = () => {
+    // Carries the two-click payload, so it can't go through the bare-{kind}
+    // toggle above (same shape as onAddTransfer).
+    selection.setUiMode(
+      selection.uiMode.kind === 'placing-line-circle'
+        ? { kind: 'idle' }
+        : { kind: 'placing-line-circle', center: null },
+    );
+  };
   const onAddLine = () => {
     // Exit any active Edit Stops FIRST: the placeholder GC (the mode-exit
     // subscription in store.ts) rolls lineCounter back, which is only sound
@@ -619,6 +633,7 @@ export function Toolbar() {
         <MenuItem onClick={onAddAnchor}>Transfer anchor</MenuItem>
         <MenuItem onClick={onAddLabel}>Label</MenuItem>
         <MenuItem onClick={onAddPolygon}>Polygon</MenuItem>
+        <MenuItem onClick={onAddLineCircle}>Line circle</MenuItem>
         <MenuItem onClick={onAddImage}>Image / SVG…</MenuItem>
       </Menu>
       <ToolButtons />

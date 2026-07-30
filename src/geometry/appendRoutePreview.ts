@@ -43,12 +43,13 @@ export function appendRoutePreviewStripes(
   lineId: LineId,
   cursor: AppendCursor,
   stationId: StationId,
+  lineCircles: Record<string, import('../model/types').LineCircle> = {},
 ): RoutePreviewStripe[] {
   const line = lines[lineId];
   if (!line) return [];
   const added = appendRoutePreviewEdges(line, cursor, stationId);
   if (added.length === 0) return [];
-  const doc: MapDoc = { ...DEFAULT_DOC, lines, stations };
+  const doc: MapDoc = { ...DEFAULT_DOC, lines, stations, lineCircles };
   // `added` is non-empty, so the decision is a connect or a splice — the two
   // arms that put a station on the line.
   const d = decideStationClick(line, cursor, stationId);
@@ -62,7 +63,7 @@ export function appendRoutePreviewStripes(
   // there is nothing to preview.
   if (next === doc) return [];
   const stripes: RoutePreviewStripe[] = [];
-  for (const band of buildBandGeometry(next.stations, next.lines)) {
+  for (const band of buildBandGeometry(next.stations, next.lines, next.lineCircles)) {
     if (!added.includes(band.pairKey)) continue;
     const stripeIndex = band.lines.findIndex((l) => l.id === lineId);
     if (stripeIndex >= 0) stripes.push({ band, stripeIndex });

@@ -43,6 +43,9 @@ import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
 import { overdrawnViewBox, panSurfaceViewBox } from './canvas/viewportMath';
 import { useStationDrag } from './canvas/useStationDrag';
+import { useLineCircleDrag } from './canvas/useLineCircleDrag';
+import { LineCircleView } from './LineCircleView';
+import { CircleDiameterLabel, LineCirclePlacingPreview } from './canvas/LineCirclePlacingPreview';
 import { useStationLayoutDrag } from './canvas/useStationLayoutDrag';
 import { StationLayoutEditor } from './canvas/StationLayoutEditor';
 import { GhostLattice } from './canvas/GhostLattice';
@@ -130,6 +133,7 @@ export function MapCanvas() {
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
   const lineOrder = useDoc((s) => s.lineOrder);
+  const lineCircles = useDoc((s) => s.lineCircles);
   const seamEdges = useDoc((s) => s.seamEdges);
   const addLineTag = useDoc((s) => s.addLineTag);
   const assignRegions = useDoc((s) => s.assignRegions);
@@ -200,6 +204,7 @@ export function MapCanvas() {
   const surface = panSurfaceViewBox(view);
   const placement = usePlacementDispatch(view);
   const drag = useStationDrag(svgRef, view.viewport.zoom);
+  const circleDrag = useLineCircleDrag(svgRef, view.viewport.zoom);
   const rectSelect = useRectSelect(svgRef, view.screenToWorld);
   // While a rect-select drag is in flight, render selection visuals
   // (station wash/stroke and bullet ring) over the previewed result
@@ -296,16 +301,30 @@ export function MapCanvas() {
     const parts: string[] = [];
     for (const id of Object.keys(stations)) {
       const st = stations[id];
-      parts.push(id, String(st.x), String(st.y), String(st.rotation));
-      for (const c of st.stops) parts.push(c.lineId, String(c.row), String(c.col), c.orientation);
+      parts.push(id, String(st.x), String(st.y), String(st.rotation), st.circleId ?? '');
+      for (const c of st.stops)
+        parts.push(c.lineId, String(c.row), String(c.col), c.orientation, c.viaCircle ? '~' : '');
     }
     return parts.join('|');
   }, [stations]);
 
+  // Line circles are geometry too: a viaCircle edge's arc reads the bound
+  // circle's center + radius. (In practice every circle move/resize also moves
+  // its bound stations, which changes the stations sig — but the hash must not
+  // rely on that coupling, same rule as the interline gap above.)
+  const circlesGeometrySig = useMemo(() => {
+    const parts: string[] = [];
+    for (const id of Object.keys(lineCircles)) {
+      const c = lineCircles[id];
+      parts.push(id, String(c.x), String(c.y), String(c.radius));
+    }
+    return parts.join('|');
+  }, [lineCircles]);
+
   const bandsGeometry = useMemo(
-    () => buildBandGeometry(stations, lines),
+    () => buildBandGeometry(stations, lines, lineCircles),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [stationsGeometrySig, linesGeometrySig],
+    [stationsGeometrySig, linesGeometrySig, circlesGeometrySig],
   );
 
   const bands = useMemo(() => {
@@ -378,12 +397,12 @@ export function MapCanvas() {
   // casing rails need no entries of their own — they paint inside their
   // body within SegmentBand/StopMarker.
   const stopMarkers = useMemo(
-    () => buildStopMarkers(stations, lines, lineOrder, bands),
+    () => buildStopMarkers(stations, lines, lineOrder, bands, lineCircles),
     // buildStopMarkers reads the same station fields the signature hashes,
     // so keying on it (not the stations reference) lets label/dot edits
     // skip the marker rebuild along with band routing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [bands, stationsGeometrySig, lines, lineOrder],
+    [bands, stationsGeometrySig, circlesGeometrySig, lines, lineOrder],
   );
   const renderables = useMemo(
     () => buildOrderedRenderables(bands, stopMarkers),
@@ -418,7 +437,7 @@ export function MapCanvas() {
     () =>
       needRegions
         ? regionsFor(
-            { stations, lines },
+            { stations, lines, lineCircles },
             { bands: bandsGeometry, markers: stopMarkers },
             // Mid-gesture frames are never revisited, so the sig string and
             // LRU bookkeeping are pure waste there — and skipping the inserts
@@ -427,7 +446,7 @@ export function MapCanvas() {
             { transient: isHistoryGrouping() },
           )
         : null,
-    [needRegions, stations, lines, bandsGeometry, stopMarkers],
+    [needRegions, stations, lines, lineCircles, bandsGeometry, stopMarkers],
   );
   const regionWinners = useMemo(
     () =>
@@ -559,6 +578,7 @@ export function MapCanvas() {
       mode.kind === 'placing-label' ||
       mode.kind === 'placing-anchor' ||
       mode.kind === 'creating-polygon' ||
+      mode.kind === 'placing-line-circle' ||
       mode.kind === 'placing-svg' ||
       // Edit Stops tracks the cursor only while Alt is held (the create-ghost)
       // so the mode's ordinary pointer traffic never re-renders the canvas.
@@ -586,6 +606,7 @@ export function MapCanvas() {
     polyDrag.onPointerMove(e);
     svgDrag.onPointerMove(e);
     layoutDrag.onPointerMove(e);
+    circleDrag.onPointerMove(e);
   };
   const onPointerUp = (e: React.PointerEvent) => {
     view.onPointerUp(e);
@@ -595,6 +616,7 @@ export function MapCanvas() {
     polyDrag.onPointerUp(e);
     svgDrag.onPointerUp(e);
     layoutDrag.onPointerUp(e);
+    circleDrag.onPointerUp(e);
   };
   // A browser pointercancel (pen palm rejection, window switch, capture loss)
   // voids an in-flight gesture with no matching pointerup. Fan it out to every
@@ -615,6 +637,7 @@ export function MapCanvas() {
     polyDrag.onPointerCancel();
     svgDrag.onPointerCancel();
     layoutDrag.onPointerCancel();
+    circleDrag.onPointerCancel();
   };
 
   // Run a DOM hit-test (`element(s)FromPoint`) with the drag-proxy layer hidden,
@@ -1251,6 +1274,29 @@ export function MapCanvas() {
             );
           })}
 
+          {/* Line circles: dashed guide rings stations bind to. Editor
+            scaffolding, never map ink (export-excluded); painted above the
+            background band so a polygon can't hide the guide, below all map
+            content. Selection happens at pointer-down inside the drag hook. */}
+          <g data-export-exclude="1">
+            {Object.keys(lineCircles).map((cid) => (
+              <LineCircleView
+                key={cid}
+                circle={lineCircles[cid]}
+                zoom={view.viewport.zoom}
+                guideColor={theme.guide}
+                accentColor={theme.accent}
+                selected={(
+                  rectSelect.previewLineCircleIds ?? selection.selectedLineCircleIds
+                ).includes(cid)}
+                interactive={polygonsInteractive}
+                inHandMode={inHandMode}
+                onPointerDown={(e, id, part) => circleDrag.onStartDrag(id, part, e)}
+                onClick={(id) => selection.selectLineCircle(id)}
+              />
+            ))}
+          </g>
+
           {/* selection wash: painted before bands so the wash sits behind
             line segments, markers, dots, and labels — all the way in the
             background. One per selected station (or per previewed station
@@ -1600,6 +1646,26 @@ export function MapCanvas() {
               world={selection.uiMode.kind === 'creating-polygon' ? cursorWorld : null}
               style={defaultStyleProps({ styles, styleDefaults }, 'polygon')}
             />
+            {/* Line-circle two-click ghost: a center cross before the first
+              click; the dashed ring + diameter readout tracking the cursor
+              between the clicks. */}
+            {selection.uiMode.kind === 'placing-line-circle' && (
+              <LineCirclePlacingPreview
+                center={selection.uiMode.center}
+                world={cursorWorld}
+                zoom={view.viewport.zoom}
+              />
+            )}
+            {/* Diameter readout while the resize knob is being dragged — the
+              same measurement chip the placement ghost shows. */}
+            {circleDrag.resizingId && lineCircles[circleDrag.resizingId] && (
+              <CircleDiameterLabel
+                cx={lineCircles[circleDrag.resizingId].x}
+                cy={lineCircles[circleDrag.resizingId].y}
+                radius={lineCircles[circleDrag.resizingId].radius}
+                zoom={view.viewport.zoom}
+              />
+            )}
             {/* Svg-image-placing ghost: the imported graphic at 50% opacity
               following the cursor, centered, until the click drops it. */}
             <SvgImagePlacingPreview
@@ -1681,6 +1747,7 @@ export function MapCanvas() {
                 highlightLineId={highlightLineId}
                 lines={lines}
                 stations={stations}
+                lineCircles={lineCircles}
                 renderables={renderables}
                 underlayColor={underlayColor}
                 seamEdges={seamEdges}
@@ -2086,6 +2153,7 @@ export function MapCanvas() {
                 ...itemDrag.itemSnapGuides,
                 ...polyDrag.polygonSnapGuides,
                 ...svgDrag.svgImageSnapGuides,
+                ...circleDrag.snapGuides,
                 ...placementGuides,
               ]}
               zoom={view.viewport.zoom}

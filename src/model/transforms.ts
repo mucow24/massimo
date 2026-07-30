@@ -1,4 +1,11 @@
-import { autoOrientNewStation } from './autoOrient';
+import { autoOrientNewStation, uprightTangentRotation } from './autoOrient';
+import { LINE_CIRCLE_RADIUS_DEFAULT, canonicalLineCircleRadius } from './lineCircle';
+import {
+  circleAngleAt,
+  pointAtAngle,
+  projectToCircle,
+  tangentAtAngle,
+} from '../geometry/lineCircle';
 import {
   endStationId,
   isAnchorEnd,
@@ -66,7 +73,13 @@ import {
   removeEdge,
   shortestPathOnLine,
 } from './lineTopology';
-import { STOP_SIZE, rotateBy, stopCenterAt, tangentGap } from '../geometry/orientation';
+import {
+  STOP_SIZE,
+  rotateBy,
+  stopCenterAt,
+  tangentGap,
+  worldDirToLocal,
+} from '../geometry/orientation';
 import { CELL_EPS, sameCell } from '../geometry/lattice';
 import { GRID_INTERVAL, snapPointToGrid, type GridSnap } from '../geometry/snap';
 import { polygonCentroid, edgeMidpoint } from '../geometry/polygon';
@@ -84,6 +97,7 @@ import type {
   LabelCell,
   LabelValign,
   Line,
+  LineCircle,
   LineEndStyle,
   LineId,
   LineStyle,
@@ -306,7 +320,8 @@ type RecordCollectionKey =
   | 'svgImages'
   | 'lineTags'
   | 'transferAnchors'
-  | 'transfers';
+  | 'transfers'
+  | 'lineCircles';
 
 function updateRecord<K extends RecordCollectionKey>(
   doc: MapDoc,
@@ -405,7 +420,18 @@ export function renameStation(doc: MapDoc, id: StationId, name: string): MapDoc 
 }
 
 export function moveStation(doc: MapDoc, id: StationId, x: number, y: number): MapDoc {
-  return updateStation(doc, id, (st) => ({ ...st, x, y }));
+  return updateStation(doc, id, (st) => {
+    const circle = st.circleId !== undefined ? doc.lineCircles[st.circleId] : undefined;
+    if (!circle) return { ...st, x, y };
+    // Bound stations move ALONG their circle: the target projects onto the
+    // circumference and the rotation tracks the tangent octant there (label
+    // kept right-side-up). Detaching is the caller's move (unbind first) —
+    // see the drag hysteresis in the interaction layer.
+    const theta = circleAngleAt(circle, { x, y });
+    const p = pointAtAngle(circle, theta);
+    const t = tangentAtAngle(theta);
+    return { ...st, x: p.x, y: p.y, rotation: uprightTangentRotation(t.x, t.y, st.label.rotation) };
+  });
 }
 
 /**
@@ -1464,15 +1490,50 @@ export const AXIS_CYCLE: StopOrientation[] = [
   'auto-nw-se', // 3 — NW/SE
 ];
 
+/**
+ * Can this stop's direction cycle offer the CIRCLE state? True when the
+ * station is bound to a line circle AND at least one of the line's neighbors
+ * at this station sits on the same circle — i.e. opting in could actually
+ * form a circular connection. Deliberately reads the neighbor STATION's
+ * binding, never its stop's viaCircle flag: eligibility must not depend on
+ * the neighbor's own opt-in, or two opted-out stops would deadlock each
+ * other with no way back. Drives the five-state rotateStop cycle and the
+ * direction control's circle glyph.
+ */
+export function stopCanRideCircle(doc: MapDoc, stationId: StationId, lineId: LineId): boolean {
+  const st = doc.stations[stationId];
+  const cid = st?.circleId;
+  if (cid === undefined || !doc.lineCircles[cid]) return false;
+  const line = doc.lines[lineId];
+  if (!line) return false;
+  return edgeNeighbors(line.edges, stationId).some((nid) => doc.stations[nid]?.circleId === cid);
+}
+
 export function rotateStop(doc: MapDoc, stationId: StationId, lineId: LineId): MapDoc {
   return updateStation(doc, stationId, (st) => {
     const i = st.stops.findIndex((c) => c.lineId === lineId);
     if (i < 0) return st;
     const cur = st.stops[i];
+    const newStops = st.stops.slice();
+    // Stops that can form a circular connection cycle through FIVE states:
+    // Circle → V → NE → H → NW → Circle. The Circle state is the viaCircle
+    // flag (the stored octant is pinned to auto-vertical, the quantized
+    // tangent on a bound station, so every travel-axis consumer keeps a
+    // coherent fallback). Everything else keeps the plain four-axis wrap —
+    // and leaving the Circle state clears the flag either way (the opt-out
+    // gesture).
+    if (cur.viaCircle) {
+      const { viaCircle: _via, ...rest } = cur;
+      newStops[i] = { ...rest, orientation: 'auto-vertical' };
+      return { ...st, stops: newStops };
+    }
     const idx = AXIS_CYCLE.indexOf(cur.orientation);
+    if (idx === 3 && stopCanRideCircle(doc, stationId, lineId)) {
+      newStops[i] = { ...cur, orientation: 'auto-vertical', viaCircle: true };
+      return { ...st, stops: newStops };
+    }
     const next = AXIS_CYCLE[(idx + 1) % 4];
     if (next === cur.orientation) return st;
-    const newStops = st.stops.slice();
     newStops[i] = { ...cur, orientation: next };
     return { ...st, stops: newStops };
   });
@@ -1710,7 +1771,49 @@ export function spawnStopCellAt(
   st: Station,
   lineId: LineId,
   lines: Record<LineId, Line>,
+  lineCircles: Record<string, LineCircle> = {},
 ): StopCell {
+  const circle = st.circleId !== undefined ? lineCircles[st.circleId] : undefined;
+  // On a circle-bound station, new stops stack RADIALLY OUTWARD from the
+  // ring. The naive "east of the rightmost" step below has no consistent
+  // radial meaning — local +x points radially IN at some angles and OUT at
+  // others (the label-uprightness flip alone inverts it), so two stations on
+  // the same ring would spawn a second line's stops on opposite sides and the
+  // concentric-arc gate could never hold. Radial-out is the one direction
+  // that means the same thing at every angle.
+  if (circle && st.stops.length > 0) {
+    const wx = st.x - circle.x;
+    const wy = st.y - circle.y;
+    const local = worldDirToLocal({ x: wx, y: wy }, st.rotation);
+    // Dominant local axis of radial-out → a lattice step. On a tangent-
+    // rotated bound station this is always ±x (within 22.5° of it), but the
+    // row arm keeps a hand-rotated station sane.
+    const step =
+      Math.abs(local.x) >= Math.abs(local.y)
+        ? { dRow: 0, dCol: local.x >= 0 ? 1 : -1 }
+        : { dRow: local.y >= 0 ? 1 : -1, dCol: 0 };
+    // Anchor on the radially-OUTERMOST existing stop and step one tangent
+    // gap further out.
+    const anchor = st.stops.reduce((best, c) =>
+      c.row * step.dRow + c.col * step.dCol > best.row * step.dRow + best.col * step.dCol
+        ? c
+        : best,
+    );
+    const gapCells =
+      tangentGap(
+        lineWidthOf(lines[lineId]),
+        lineWidthOf(lines[anchor.lineId]),
+        lineInterlineGapOf(lines[lineId]),
+        lineInterlineGapOf(lines[anchor.lineId]),
+      ) / STOP_SIZE;
+    return {
+      lineId,
+      row: anchor.row + step.dRow * gapCells,
+      col: anchor.col + step.dCol * gapCells,
+      orientation: 'auto-vertical',
+      viaCircle: true,
+    };
+  }
   const anchor =
     st.stops.length === 0
       ? null
@@ -1726,7 +1829,16 @@ export function spawnStopCellAt(
       ) /
         STOP_SIZE
     : 0;
-  return { lineId, row: newRow, col: newCol, orientation: 'auto-vertical' };
+  return {
+    lineId,
+    row: newRow,
+    col: newCol,
+    orientation: 'auto-vertical',
+    // A stop born on a circle-bound station defaults to riding the circle —
+    // the always-arc default; explicitly flipping the orientation is the
+    // opt-out (rotateStop clears the flag).
+    ...(st.circleId !== undefined ? { viaCircle: true } : {}),
+  };
 }
 
 // Spawn a stop cell for `lineId` on station `st` when it doesn't have one
@@ -1737,9 +1849,10 @@ function spawnStopCell(
   st: Station,
   lineId: LineId,
   lines: Record<LineId, Line>,
+  lineCircles: Record<string, LineCircle> = {},
 ): { stops: StopCell[]; label: LabelCell } {
   if (st.stops.some((c) => c.lineId === lineId)) return { stops: st.stops, label: st.label };
-  const newCell = spawnStopCellAt(st, lineId, lines);
+  const newCell = spawnStopCellAt(st, lineId, lines, lineCircles);
   const { row: newRow, col: newCol } = newCell;
   const stops = [...st.stops, newCell];
   let label = st.label;
@@ -1764,7 +1877,12 @@ export function addStationToLine(doc: MapDoc, lineId: LineId, stationId: Station
   const ln = doc.lines[lineId];
   const st = doc.stations[stationId];
   if (!ln || !st || ln.stations.includes(stationId)) return doc;
-  const { stops: newStops, label: newLabel } = spawnStopCell(st, lineId, doc.lines);
+  const { stops: newStops, label: newLabel } = spawnStopCell(
+    st,
+    lineId,
+    doc.lines,
+    doc.lineCircles,
+  );
   const newStations = [...ln.stations, stationId];
   const stationsAfter = {
     ...doc.stations,
@@ -1773,8 +1891,11 @@ export function addStationToLine(doc: MapDoc, lineId: LineId, stationId: Station
   return {
     ...doc,
     lines: { ...doc.lines, [lineId]: { ...ln, stations: newStations } },
+    // A bound station skips the first-line auto-orientation: the circle owns
+    // its rotation (the tangent octant), and the neighbor-derived travel
+    // direction would swing it off the ring's tangent.
     stations:
-      st.stops.length === 0
+      st.stops.length === 0 && st.circleId === undefined
         ? autoOrientNewStation(stationsAfter, newStations, stationId)
         : stationsAfter,
   };
@@ -1793,7 +1914,10 @@ export function removeStationFromLine(doc: MapDoc, lineId: LineId, idx: number):
     const st = stations[removedStationId];
     stations = {
       ...stations,
-      [removedStationId]: { ...st, stops: st.stops.filter((c) => c.lineId !== lineId) },
+      [removedStationId]: rehomeCircleStops({
+        ...st,
+        stops: st.stops.filter((c) => c.lineId !== lineId),
+      }),
     };
     // The (station, line) stop is gone — delete transfers anchored at it. Stop
     // ends only: the station itself survives, so its hosted anchors do too.
@@ -1870,7 +1994,7 @@ export function connectStationsOnLine(
   let stationsAfter = doc.stations;
   let newStations = ln.stations;
   if (!isMember) {
-    const { stops, label } = spawnStopCell(to, lineId, doc.lines);
+    const { stops, label } = spawnStopCell(to, lineId, doc.lines, doc.lineCircles);
     newStations = [...ln.stations, toStationId];
     stationsAfter = { ...doc.stations, [toStationId]: { ...to, stops, label } };
   }
@@ -1885,9 +2009,10 @@ export function connectStationsOnLine(
       [lineId]: pruneOrphanLineOverrides({ ...ln, stations: newStations, edges }),
     },
     // Only a station gaining its first line is auto-oriented; anything already
-    // served keeps the rotation the user gave it.
+    // served keeps the rotation the user gave it. Circle-bound stations skip
+    // it too — the circle owns their rotation (the tangent octant).
     stations:
-      !isMember && to.stops.length === 0
+      !isMember && to.stops.length === 0 && to.circleId === undefined
         ? autoOrientNewStation(stationsAfter, [fromStationId, toStationId], toStationId)
         : stationsAfter,
   };
@@ -1918,7 +2043,7 @@ export function spliceStationIntoEdge(
   let stationsAfter = doc.stations;
   let newStations = ln.stations;
   if (!isMember) {
-    const { stops, label } = spawnStopCell(st, lineId, doc.lines);
+    const { stops, label } = spawnStopCell(st, lineId, doc.lines, doc.lineCircles);
     newStations = [...ln.stations, stationId];
     stationsAfter = { ...doc.stations, [stationId]: { ...st, stops, label } };
   }
@@ -1930,7 +2055,8 @@ export function spliceStationIntoEdge(
     ...doc,
     lines: { ...doc.lines, [lineId]: updatedLine },
     stations:
-      !isMember && st.stops.length === 0
+      // Circle-bound stations keep the tangent octant (see connect above).
+      !isMember && st.stops.length === 0 && st.circleId === undefined
         ? autoOrientNewStation(stationsAfter, [fromStationId, stationId, toStationId], stationId)
         : stationsAfter,
   });
@@ -1941,7 +2067,8 @@ export function deleteLine(doc: MapDoc, id: LineId): MapDoc {
   const stations: Record<StationId, Station> = {};
   for (const sid of Object.keys(doc.stations)) {
     const st = doc.stations[sid];
-    stations[sid] = { ...st, stops: st.stops.filter((c) => c.lineId !== id) };
+    const stops = st.stops.filter((c) => c.lineId !== id);
+    stations[sid] = stops.length === st.stops.length ? st : rehomeCircleStops({ ...st, stops });
   }
   const order = effectiveLineOrder(doc.lineOrder, doc.lines).filter((x) => x !== id);
   // Drop tags whose lineId matches; the rest are valid by construction.
@@ -2071,6 +2198,7 @@ export interface LockableItemIds {
   labels?: readonly string[];
   polygons?: readonly string[];
   svgImages?: readonly string[];
+  lineCircles?: readonly string[];
 }
 
 // Flip `locked` on the listed members of one collection, allocating a new
@@ -2111,16 +2239,18 @@ export function setItemsLocked(doc: MapDoc, ids: LockableItemIds, locked: boolea
   const textLabels = setLockedIn(doc.textLabels, ids.labels, locked);
   const polygons = setLockedIn(doc.polygons, ids.polygons, locked);
   const svgImages = setLockedIn(doc.svgImages, ids.svgImages, locked);
+  const lineCircles = setLockedIn(doc.lineCircles, ids.lineCircles, locked);
   if (
     stations === doc.stations &&
     routeBullets === doc.routeBullets &&
     textLabels === doc.textLabels &&
     polygons === doc.polygons &&
-    svgImages === doc.svgImages
+    svgImages === doc.svgImages &&
+    lineCircles === doc.lineCircles
   ) {
     return doc;
   }
-  return { ...doc, stations, routeBullets, textLabels, polygons, svgImages };
+  return { ...doc, stations, routeBullets, textLabels, polygons, svgImages, lineCircles };
 }
 
 // The covered per-station typography fields a station style controls. The patch
@@ -2907,6 +3037,196 @@ export function deleteTransferAnchor(doc: MapDoc, id: string): MapDoc {
 }
 
 /** Park a new anchor cell in a station's grid. */
+// ---------- Line circles ----------
+//
+// A LineCircle is a dumb guide circle (see types.ts). The binding invariants
+// these transforms maintain:
+//   - a bound station (Station.circleId) sits ON its circle's circumference,
+//     rotated to the nearest-octant tangent (label kept right-side-up);
+//   - `StopCell.viaCircle` only ever appears on stops of bound stations;
+//   - deleting a circle strips bindings and leaves stations where they stand.
+
+export function addLineCircle(
+  doc: MapDoc,
+  id: string,
+  x: number,
+  y: number,
+  radius: number = LINE_CIRCLE_RADIUS_DEFAULT,
+): MapDoc {
+  const circle: LineCircle = { id, x, y, radius: canonicalLineCircleRadius(radius) };
+  return { ...doc, lineCircles: { ...doc.lineCircles, [id]: circle } };
+}
+
+// Rewrite every station bound to `circleId` through `fn`, allocating only if
+// one actually changed. The shared walk behind circle move/resize/delete.
+function mapBoundStations(
+  doc: MapDoc,
+  circleId: string,
+  fn: (st: Station) => Station,
+): Record<StationId, Station> | null {
+  let out: Record<StationId, Station> | null = null;
+  for (const sid of Object.keys(doc.stations)) {
+    const st = doc.stations[sid];
+    if (st.circleId !== circleId) continue;
+    const next = fn(st);
+    if (next === st) continue;
+    if (!out) out = { ...doc.stations };
+    out[sid] = next;
+  }
+  return out;
+}
+
+export function moveLineCircle(doc: MapDoc, id: string, x: number, y: number): MapDoc {
+  const cur = doc.lineCircles[id];
+  if (!cur || (cur.x === x && cur.y === y)) return doc;
+  const dx = x - cur.x;
+  const dy = y - cur.y;
+  // Bound stations ride the center rigidly: angle (and so tangent rotation)
+  // is preserved by a pure translation.
+  const stations = mapBoundStations(doc, id, (st) => ({ ...st, x: st.x + dx, y: st.y + dy }));
+  return {
+    ...doc,
+    lineCircles: { ...doc.lineCircles, [id]: { ...cur, x, y } },
+    ...(stations ? { stations } : {}),
+  };
+}
+
+export function setLineCircleRadius(doc: MapDoc, id: string, radius: number): MapDoc {
+  const cur = doc.lineCircles[id];
+  if (!cur || !Number.isFinite(radius)) return doc;
+  const r = canonicalLineCircleRadius(radius);
+  if (r === cur.radius) return doc;
+  const next = { ...cur, radius: r };
+  // Reproject members radially — angle preserved, so the tangent (and the
+  // station's rotation) is unchanged.
+  const stations = mapBoundStations(doc, id, (st) => {
+    const p = projectToCircle(next, st);
+    return p.x === st.x && p.y === st.y ? st : { ...st, x: p.x, y: p.y };
+  });
+  return {
+    ...doc,
+    lineCircles: { ...doc.lineCircles, [id]: next },
+    ...(stations ? { stations } : {}),
+  };
+}
+
+// Thin wrapper over the canonical multi-item setItemsLocked (see
+// setStationLocked) so single- and multi-select locking can't drift apart.
+export function setLineCircleLocked(doc: MapDoc, id: string, locked: boolean): MapDoc {
+  return setItemsLocked(doc, { lineCircles: [id] }, locked);
+}
+
+/**
+ * Keep a circle-bound station's layout HOMED: at least one stop touches the
+ * origin cell, which is the one point of the local grid that sits ON the ring
+ * (the station anchor is projected onto the circumference). When a stop
+ * removal leaves the survivors floating radially off the ring — the removed
+ * ring line was at the origin, the rest packed outward — translate the WHOLE
+ * layout (stops, label, hosted anchors) rigidly so the nearest stop lands
+ * back at the origin, exactly the move a user would make by hand on a normal
+ * station. Unbound stations are left alone: off-anchor layouts there are a
+ * legitimate manual choice.
+ */
+function rehomeCircleStops(st: Station): Station {
+  if (st.circleId === undefined || st.stops.length === 0) return st;
+  const nearest = st.stops.reduce((best, c) =>
+    Math.hypot(c.row, c.col) < Math.hypot(best.row, best.col) ? c : best,
+  );
+  if (Math.hypot(nearest.row, nearest.col) < CELL_EPS) return st;
+  const dRow = -nearest.row;
+  const dCol = -nearest.col;
+  const shift = <T extends { row: number; col: number }>(cell: T): T => ({
+    ...cell,
+    row: cell.row + dRow,
+    col: cell.col + dCol,
+  });
+  return {
+    ...st,
+    stops: st.stops.map(shift),
+    label: shift(st.label),
+    ...(st.transferAnchors ? { transferAnchors: st.transferAnchors.map(shift) } : {}),
+  };
+}
+
+// Strip a station's circle binding: drop `circleId` and every stop's
+// `viaCircle` flag (the flag is only meaningful on a bound station). Position
+// and rotation stay — the station stands where it stood.
+function withoutCircleBinding(st: Station): Station {
+  const { circleId: _gone, ...rest } = st;
+  const stops = st.stops.some((c) => c.viaCircle)
+    ? st.stops.map((c) => {
+        if (!c.viaCircle) return c;
+        const { viaCircle: _via, ...cellRest } = c;
+        return cellRest;
+      })
+    : st.stops;
+  return { ...rest, stops };
+}
+
+export function deleteLineCircle(doc: MapDoc, id: string): MapDoc {
+  if (!doc.lineCircles[id]) return doc;
+  const { [id]: _gone, ...rest } = doc.lineCircles;
+  const stations = mapBoundStations(doc, id, withoutCircleBinding);
+  return { ...doc, lineCircles: rest, ...(stations ? { stations } : {}) };
+}
+
+export function bindStationToCircle(doc: MapDoc, stationId: StationId, circleId: string): MapDoc {
+  const circle = doc.lineCircles[circleId];
+  if (!circle) return doc;
+  return updateStation(doc, stationId, (st) => {
+    const theta = circleAngleAt(circle, st);
+    const p = pointAtAngle(circle, theta);
+    const t = tangentAtAngle(theta);
+    const rotation = uprightTangentRotation(t.x, t.y, st.label.rotation);
+    // Binding defaults every stop to riding the circle (the always-arc
+    // default the ring exists for); flipping a stop's orientation opts it
+    // back out per line.
+    const stops = st.stops.every((c) => c.viaCircle)
+      ? st.stops
+      : st.stops.map((c) => (c.viaCircle ? c : { ...c, viaCircle: true }));
+    if (
+      st.circleId === circleId &&
+      st.x === p.x &&
+      st.y === p.y &&
+      st.rotation === rotation &&
+      stops === st.stops
+    )
+      return st;
+    return { ...st, circleId, x: p.x, y: p.y, rotation, stops };
+  });
+}
+
+export function unbindStationFromCircle(doc: MapDoc, stationId: StationId): MapDoc {
+  return updateStation(doc, stationId, (st) =>
+    st.circleId === undefined ? st : withoutCircleBinding(st),
+  );
+}
+
+export function setStopViaCircle(
+  doc: MapDoc,
+  stationId: StationId,
+  lineId: LineId,
+  via: boolean,
+): MapDoc {
+  return updateStation(doc, stationId, (st) => {
+    const idx = st.stops.findIndex((c) => c.lineId === lineId);
+    if (idx === -1) return st;
+    const cell = st.stops[idx];
+    if (via) {
+      // Invariant: the flag only lives on stops of BOUND stations.
+      if (st.circleId === undefined || cell.viaCircle) return st;
+      const stops = st.stops.slice();
+      stops[idx] = { ...cell, viaCircle: true };
+      return { ...st, stops };
+    }
+    if (cell.viaCircle === undefined) return st;
+    const { viaCircle: _off, ...cellRest } = cell;
+    const stops = st.stops.slice();
+    stops[idx] = cellRest;
+    return { ...st, stops };
+  });
+}
+
 export function addStationAnchor(
   doc: MapDoc,
   stationId: StationId,
@@ -3194,6 +3514,7 @@ export const DEFAULT_DOC: MapDoc = {
   backgroundOrder: [],
   regionAssignments: {},
   svgImages: {},
+  lineCircles: {},
   styles: DEFAULT_STYLES,
   styleDefaults: FACTORY_STYLE_DEFAULTS,
   activePalettes: ['mta'],

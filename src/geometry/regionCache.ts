@@ -5,7 +5,7 @@
  * the pre-edit entry usually fell out of any per-render memo, so this cache
  * is the one place both sides read.
  */
-import type { Line, LineId, Station, StationId } from '../model/types';
+import type { Line, LineCircle, LineId, Station, StationId } from '../model/types';
 import {
   buildBandGeometry,
   buildStopMarkers,
@@ -18,14 +18,16 @@ import { buildRegionsIncremental, type RegionIncrementalState } from './regionIn
 export interface GeometrySlice {
   stations: Record<StationId, Station>;
   lines: Record<LineId, Line>;
+  lineCircles: Record<string, LineCircle>;
 }
 
 /**
  * Hash of everything region geometry depends on: station positions/rotations
- * and stop cells, line edge sets, widths, interline gaps and curve radii,
- * and segment style VALUES (they flip marker footprints between full-square
- * and stub/none). Deliberately excludes colors, casing, seams, lineOrder —
- * presentation.
+ * and stop cells (including circle bindings and viaCircle flags), line edge
+ * sets, widths, interline gaps and curve radii, line circles (their arcs ARE
+ * band geometry), and segment style VALUES (they flip marker footprints
+ * between full-square and stub/none). Deliberately excludes colors, casing,
+ * seams, lineOrder — presentation.
  */
 export function regionGeometrySig(g: GeometrySlice): string {
   const parts: string[] = [];
@@ -43,11 +45,19 @@ export function regionGeometrySig(g: GeometrySlice): string {
   for (const id of Object.keys(g.stations)) {
     const st = g.stations[id];
     if (!st.stops.length) continue; // stopless stations carry no band geometry
-    parts.push(id, String(st.x), String(st.y), String(st.rotation));
+    parts.push(id, String(st.x), String(st.y), String(st.rotation), st.circleId ?? '');
     for (const c of st.stops) {
-      parts.push(c.lineId, String(c.row), String(c.col), c.orientation);
+      parts.push(c.lineId, String(c.row), String(c.col), c.orientation, c.viaCircle ? '~' : '');
       stoppedLines.add(c.lineId);
     }
+  }
+  // Line circles: a bound edge's arc reads the circle's center + radius, so
+  // they are geometry. Hashed unconditionally (bound or not) — a key that
+  // over-invalidates costs one rebuild; one that under-invalidates is a stale
+  // arrangement.
+  for (const id of Object.keys(g.lineCircles)) {
+    const c = g.lineCircles[id];
+    parts.push(id, String(c.x), String(c.y), String(c.radius));
   }
   for (const id of Object.keys(g.lines)) {
     const ln = g.lines[id];
@@ -140,8 +150,9 @@ export function regionsFor(
       return hit;
     }
   }
-  const bands = prebuilt?.bands ?? buildBandGeometry(g.stations, g.lines);
-  const markers = prebuilt?.markers ?? buildStopMarkers(g.stations, g.lines, [], bands);
+  const bands = prebuilt?.bands ?? buildBandGeometry(g.stations, g.lines, g.lineCircles);
+  const markers =
+    prebuilt?.markers ?? buildStopMarkers(g.stations, g.lines, [], bands, g.lineCircles);
   // Seeded from whatever we built last. During a drag that is the previous
   // frame, which is exactly the comparison the incremental builder wants; the
   // reconcile step's old-then-new pair chains the same way. A mismatched seed

@@ -33,6 +33,7 @@ const renderLayer = (
         highlightLineId="L1"
         lines={lines}
         stations={stations}
+        lineCircles={{}}
         renderables={opts.renderables ?? []}
         underlayColor="#ffffff"
         seamEdges="both"

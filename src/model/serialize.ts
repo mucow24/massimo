@@ -25,6 +25,8 @@ import {
   legacyColorToDayNight,
 } from './transferStyle';
 import { canonicalLineLabelGap, canonicalLineWidth } from './lineWidth';
+import { canonicalLineCircleRadius } from './lineCircle';
+import { projectToCircle } from '../geometry/lineCircle';
 import { clamp } from '../util/grid';
 import {
   LINE_CURVE_RADIUS_DEFAULT,
@@ -72,6 +74,7 @@ import type {
   DotStyle,
   LabelValign,
   Line,
+  LineCircle,
   LineEndStyle,
   LineStyle,
   MapDoc,
@@ -166,6 +169,100 @@ export function sanitizeStations(stations: Record<string, Station>): {
     }
   }
   return { stations: out, changed };
+}
+
+// A bound station this far off its circle's circumference (world units) is
+// repaired by reprojection; anything closer is float dust from the projection
+// arithmetic itself and must NOT rewrite the station, or every load of a
+// well-formed save would read dirty.
+const CIRCLE_DRIFT_TOL = 1e-6;
+
+/**
+ * Enforce the line-circle binding invariants on a loaded doc. Shared by
+ * `parse()` (file import) and the zustand persist `migrate` hook (localStorage
+ * rehydration); idempotent, so both run it unconditionally.
+ *
+ *  - a malformed circle (non-finite center/radius) is dropped; a legal one
+ *    gets its radius canonicalized (quarter grid, floored at the minimum);
+ *  - a station whose `circleId` no longer resolves loses the binding (and its
+ *    stops' `viaCircle` flags — the flag only lives on bound stations);
+ *  - `viaCircle` on a stop of an unbound station is stripped, and a stored
+ *    `false` collapses to the omitted form;
+ *  - a bound station that drifted off its circle is reprojected onto it.
+ */
+export function sanitizeLineCircles(
+  lineCirclesIn: Record<string, LineCircle>,
+  stationsIn: Record<string, Station>,
+): {
+  lineCircles: Record<string, LineCircle>;
+  stations: Record<string, Station>;
+  changed: boolean;
+} {
+  let changed = false;
+
+  let lineCircles = lineCirclesIn;
+  const cleanedCircles: Record<string, LineCircle> = {};
+  let circlesChanged = false;
+  for (const id of Object.keys(lineCirclesIn)) {
+    const c = lineCirclesIn[id];
+    if (!Number.isFinite(c.x) || !Number.isFinite(c.y) || !Number.isFinite(c.radius)) {
+      circlesChanged = true;
+      continue;
+    }
+    const radius = canonicalLineCircleRadius(c.radius);
+    if (radius !== c.radius) {
+      circlesChanged = true;
+      cleanedCircles[id] = { ...c, radius };
+    } else {
+      cleanedCircles[id] = c;
+    }
+  }
+  if (circlesChanged) {
+    lineCircles = cleanedCircles;
+    changed = true;
+  }
+
+  let stations = stationsIn;
+  const cleanedStations: Record<string, Station> = {};
+  let stationsChanged = false;
+  for (const id of Object.keys(stationsIn)) {
+    const st = stationsIn[id];
+    const circle = st.circleId !== undefined ? lineCircles[st.circleId] : undefined;
+    const bound = circle !== undefined;
+
+    // `viaCircle` keeps only the canonical form: `true`, on a bound station.
+    let stopsChanged = false;
+    const stops = st.stops.map((c) => {
+      if (c.viaCircle === undefined || (bound && c.viaCircle === true)) return c;
+      stopsChanged = true;
+      const { viaCircle: _via, ...rest } = c;
+      return rest;
+    });
+
+    let next = st;
+    if (st.circleId !== undefined && !bound) {
+      const { circleId: _gone, ...rest } = st;
+      next = { ...rest, stops };
+      stationsChanged = true;
+    } else if (stopsChanged) {
+      next = { ...st, stops };
+      stationsChanged = true;
+    }
+    if (circle) {
+      const p = projectToCircle(circle, next);
+      if (Math.abs(p.x - next.x) > CIRCLE_DRIFT_TOL || Math.abs(p.y - next.y) > CIRCLE_DRIFT_TOL) {
+        next = { ...next, x: p.x, y: p.y };
+        stationsChanged = true;
+      }
+    }
+    cleanedStations[id] = next;
+  }
+  if (stationsChanged) {
+    stations = cleanedStations;
+    changed = true;
+  }
+
+  return { lineCircles, stations, changed };
 }
 
 /**
@@ -382,6 +479,13 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   // the file version — see `snapStationCells`.
   const snapped = snapStationCells(merged.stations);
   if (snapped.changed) merged.stations = snapped.stations;
+  // Line-circle binding invariants: drop malformed circles, strip dangling
+  // bindings / orphaned viaCircle flags, reproject drifted bound stations.
+  const circles = sanitizeLineCircles(merged.lineCircles, merged.stations);
+  if (circles.changed) {
+    merged.lineCircles = circles.lineCircles;
+    merged.stations = circles.stations;
+  }
   // Region assignments validate against the CLEANED lines (dangling ids drop
   // the assignment; dangling pairKey anchors survive for reconcile).
   const cleanedAssignments = sanitizeRegionAssignments(merged.regionAssignments, merged.lines);

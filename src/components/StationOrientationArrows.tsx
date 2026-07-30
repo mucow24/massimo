@@ -70,6 +70,8 @@ export function orientationArrowPath(size: number): string {
  * One stop's axis arrow, drawn at (x, y) in the station's rotated frame.
  * `outline` adds the two-tone contrast halo the map hover badges use; the
  * layout editor omits it (its ring scrim already darkens the dot underneath).
+ * `viaCircle` swaps the arrow for a ring — the direction cycle's Circle state
+ * (the stop rides its station's line circle), which has no axis to point.
  */
 export function OrientationArrow({
   x,
@@ -79,6 +81,7 @@ export function OrientationArrow({
   lineId,
   fill,
   outline,
+  viaCircle,
 }: {
   x: number;
   y: number;
@@ -87,7 +90,20 @@ export function OrientationArrow({
   lineId: string;
   fill: string;
   outline?: string;
+  viaCircle?: boolean;
 }) {
+  if (viaCircle) {
+    const r = round(size * 0.33);
+    const w = round(size / 8);
+    return (
+      <g data-arrow-line={lineId} data-arrow-axis="circle" pointerEvents="none">
+        {outline && (
+          <circle cx={x} cy={y} r={r} fill="none" stroke={outline} strokeWidth={w * 2.4} />
+        )}
+        <circle cx={x} cy={y} r={r} fill="none" stroke={fill} strokeWidth={w} />
+      </g>
+    );
+  }
   return (
     <path
       data-arrow-line={lineId}
@@ -141,6 +157,7 @@ export function StationOrientationArrows({
             lineId={s.lineId}
             fill="#fff"
             outline="#000"
+            viaCircle={s.viaCircle}
           />
         );
       })}

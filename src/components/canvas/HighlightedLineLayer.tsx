@@ -46,6 +46,9 @@ interface Props {
   highlightLineId: LineId;
   lines: Record<LineId, Line>;
   stations: Record<StationId, Station>;
+  // Line circles, threaded to the route preview's band rebuild so a
+  // prospective viaCircle edge previews as its real arc.
+  lineCircles: Record<string, import('../../model/types').LineCircle>;
   renderables: OrderedRenderable[];
   underlayColor: string;
   // Global branch-seam inner-edge mode, forwarded to the overlay's seam bands
@@ -84,6 +87,7 @@ export function HighlightedLineLayer({
   highlightLineId,
   lines,
   stations,
+  lineCircles,
   renderables,
   underlayColor,
   seamEdges,
@@ -132,9 +136,10 @@ export function HighlightedLineLayer({
             highlightLineId,
             append?.cursor ?? null,
             secondStationId,
+            lineCircles,
           )
         : [],
-    [stations, lines, highlightLineId, append, secondStationId],
+    [stations, lines, lineCircles, highlightLineId, append, secondStationId],
   );
   return (
     <>
@@ -500,7 +505,7 @@ export function HighlightedLineLayer({
               if (st) {
                 const cell =
                   st.stops.find((c) => c.lineId === highlightLineId) ??
-                  spawnStopCellAt(st, highlightLineId, lines);
+                  spawnStopCellAt(st, highlightLineId, lines, lineCircles);
                 const p = stopPosWorld(cell, st);
                 hoverRing = twoToneRing(p.x, p.y, {
                   dataAttr: 'data-append-hover-ring',

@@ -11,6 +11,7 @@ import {
   transferAnchorsForRect,
   textLabelsForRect,
 } from '../../geometry/stationBoundary';
+import { lineCirclesForRect } from '../../geometry/lineCircle';
 import { stopMetricsOf } from '../../model/stopMetrics';
 import type { MapDoc, StationId } from '../../model/types';
 import type { Pt } from '../../geometry/polygonUnion';
@@ -69,6 +70,8 @@ export interface RectSelectApi {
   previewPolygonIds: string[] | null;
   /** Svg images the selection WILL contain on release. Null when not dragging. */
   previewSvgImageIds: string[] | null;
+  /** Line circles the selection WILL contain on release. Null when not dragging. */
+  previewLineCircleIds: string[] | null;
   onPointerDown: (e: React.PointerEvent) => void;
   onPointerMove: (e: React.PointerEvent) => void;
   onPointerUp: (e: React.PointerEvent) => void;
@@ -143,6 +146,7 @@ export function useRectSelect(
   const [previewPolygonIds, setPreviewPolygonIds] = useState<string[] | null>(null);
   const [previewSvgImageIds, setPreviewSvgImageIds] = useState<string[] | null>(null);
   const [previewAnchorIds, setPreviewAnchorIds] = useState<string[] | null>(null);
+  const [previewLineCircleIds, setPreviewLineCircleIds] = useState<string[] | null>(null);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -181,6 +185,7 @@ export function useRectSelect(
     setPreviewPolygonIds(null);
     setPreviewSvgImageIds(null);
     setPreviewAnchorIds(null);
+    setPreviewLineCircleIds(null);
   };
 
   // A browser pointercancel voids the marquee with no pointerup: disarm and
@@ -239,6 +244,13 @@ export function useRectSelect(
     setPreviewAnchorIds(
       applyMode(sel.selectedAnchorIds, anchorsForRectVisible(doc, nextRect), mode),
     );
+    setPreviewLineCircleIds(
+      applyMode(
+        sel.selectedLineCircleIds,
+        lineCirclesForRect(doc.lineCircles, nextRect, includeLocked),
+        mode,
+      ),
+    );
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
@@ -267,6 +279,7 @@ export function useRectSelect(
     const polygonHits = polygonsForRect(doc.polygons, finalRect, includeLocked);
     const svgImageHits = svgImagesForRect(doc.svgImages, finalRect, includeLocked);
     const anchorHits = anchorsForRectVisible(doc, finalRect);
+    const lineCircleHits = lineCirclesForRect(doc.lineCircles, finalRect, includeLocked);
 
     const sel = useSelection.getState();
     const mode = modeFromEvent(e);
@@ -277,6 +290,7 @@ export function useRectSelect(
       sel.xorPolygonsToSelection(polygonHits);
       sel.xorSvgImagesToSelection(svgImageHits);
       sel.xorAnchorsToSelection(anchorHits);
+      sel.xorLineCirclesToSelection(lineCircleHits);
     } else if (mode === 'add') {
       sel.addStationsToSelection(stationHits);
       sel.addRouteBulletsToSelection(bulletHits);
@@ -284,6 +298,7 @@ export function useRectSelect(
       sel.addPolygonsToSelection(polygonHits);
       sel.addSvgImagesToSelection(svgImageHits);
       sel.addAnchorsToSelection(anchorHits);
+      sel.addLineCirclesToSelection(lineCircleHits);
     } else {
       sel.setStationSelection(stationHits);
       sel.setRouteBulletSelection(bulletHits);
@@ -291,6 +306,7 @@ export function useRectSelect(
       sel.setPolygonSelection(polygonHits);
       sel.setSvgImageSelection(svgImageHits);
       sel.setAnchorSelection(anchorHits);
+      sel.setLineCircleSelection(lineCircleHits);
     }
 
     releaseDragCapture(e, svgRef);
@@ -304,6 +320,7 @@ export function useRectSelect(
     previewLabelIds,
     previewPolygonIds,
     previewSvgImageIds,
+    previewLineCircleIds,
     onPointerDown,
     onPointerMove,
     onPointerUp,

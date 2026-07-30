@@ -25,6 +25,7 @@ const geom = (w2: number): GeometrySlice => ({
     L1: makeLine({ id: 'L1', stations: ['s1', 's2'], width: 14 }),
     L2: makeLine({ id: 'L2', stations: ['s3'], edges: [], width: w2 }),
   },
+  lineCircles: {},
 });
 
 /** What regionsFor WOULD compute with no cache — the ground truth. */
@@ -70,11 +71,15 @@ describe('regionGeometrySig: edgeless line with a stop', () => {
       lineOrder: ['L1', 'L2'],
     });
     // Render/reconcile has already cached the pre-edit faces.
-    regionsFor({ stations: useDoc.getState().stations, lines: useDoc.getState().lines });
+    regionsFor({
+      stations: useDoc.getState().stations,
+      lines: useDoc.getState().lines,
+      lineCircles: {},
+    });
     useDoc.getState().setLineWidth('L2', 28);
     const s = useDoc.getState();
     expect(s.lines.L2.width).toBe(28); // the edit really landed
-    const served = regionsFor({ stations: s.stations, lines: s.lines });
+    const served = regionsFor({ stations: s.stations, lines: s.lines, lineCircles: {} });
     expect(served.faces[0].area).toBeCloseTo(392, 0);
   });
 });

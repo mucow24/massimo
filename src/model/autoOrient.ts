@@ -15,6 +15,18 @@ function tangentRotation(wx: number, wy: number): Rotation {
 const LABEL_UPSIDE_DOWN = new Set<number>([3, 4, 5]);
 
 /**
+ * The station rotation for a world travel tangent, label kept right-side-up:
+ * nearest octant whose local +y runs along (wx, wy), flipped 180° (same axis,
+ * identical geometry) when that octant would render the label upside down.
+ * The shared derivation behind `autoOrientNewStation` and the line-circle
+ * binding (a bound station rides the circle at the tangent octant).
+ */
+export function uprightTangentRotation(wx: number, wy: number, labelRotation: Rotation): Rotation {
+  const r = tangentRotation(wx, wy);
+  return LABEL_UPSIDE_DOWN.has((r + labelRotation) % 8) ? (((r + 4) % 8) as Rotation) : r;
+}
+
+/**
  * Orient the one station that was just added to a line so the line travels
  * cleanly through it — its local +y points along the line's world travel
  * direction at that station. Returns the dict unchanged if the station has no
@@ -59,12 +71,9 @@ export function autoOrientNewStation(
   }
   if (wx === 0 && wy === 0) return stationsIn;
 
-  const r = tangentRotation(wx, wy);
   // Prefer a right-side-up label: if the tangent would land the label in the
   // upside-down band, flip 180° to the axis-equivalent rotation.
-  const rot: Rotation = LABEL_UPSIDE_DOWN.has((r + st.label.rotation) % 8)
-    ? (((r + 4) % 8) as Rotation)
-    : r;
+  const rot = uprightTangentRotation(wx, wy, st.label.rotation);
   return st.rotation === rot
     ? stationsIn
     : { ...stationsIn, [stationId]: { ...st, rotation: rot } };

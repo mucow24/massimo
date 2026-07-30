@@ -270,6 +270,7 @@ export function StationLayoutEditor({
               orientation={s.orientation}
               lineId={s.lineId}
               fill="#fff"
+              viaCircle={s.viaCircle}
             />
           </g>
         );

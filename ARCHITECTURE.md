@@ -121,6 +121,7 @@ src/
     transferAnchors.ts          # the ONLY place a TransferEnd's three-arm union is narrowed (all four guards)
     lineWidth.ts lineStroke.ts  # stripe width (GEOMETRY) + casing rails (PRESENTATION)
     lineCurve.ts                # per-line corner radius resolution (the fillet the router turns by)
+    lineCircle.ts               # line-circle radius floor + canonicalizer (quarter grid)
     lineEnd.ts                  # line END style resolution (line default → per-terminus pin) + the round→short degrade
     stopMetrics.ts              # stopMetricsOf: the production StopMetrics lookup — everything the
                                 #   label geometry knows about one PAINTED stop, resolved through the
@@ -145,6 +146,8 @@ src/
     interlining.ts              # THE band algorithm: merge lines into parallel stripes
     appendRoutePreview.ts       # Edit Stops route preview: run the REAL connect/splice on a scratch doc, rebuild bands, keep the ADDED corridors
     snap.ts                     # the snap engine (line/equidistant/tens/all/grid modes)
+    lineCircle.ts               # circle math: project/tangent, rim capture, shorter-arc sweep,
+                                #   arc tangent polygons (the fillet-walk-exact arc trick)
     lattice.ts                  # stop-placement lattice (orthogonal/diagonal)
     stationBoundary.ts          # selection silhouette + marquee hit rects
     stationDash.ts              # TfL-tick ('dash' stop) geometry: per-stop tick anchor/angle/length (label-side aware; emergent notched composite)
@@ -326,6 +329,7 @@ interface MapDoc {
   backgroundOrder: string[]; // polygons + svgImages in ONE stack; LATER = top (opposite of lineOrder)
   regionAssignments: Record<string, RegionAssignment>; // region paint choices ("paint by numbers")
   svgImages: Record<string, SvgImage>;
+  lineCircles: Record<string, LineCircle>; // dashed guide circles stations bind to (never exported)
   activePalettes: PaletteId[]; // INVARIANT: never empty
   seamEdges: SeamEdges; // global branch-seam inner-edge mode: 'both' | 'straight' | 'curved'
   darkMode: boolean; // is this a NIGHT map? false = day. Travels in the saved/exported file
@@ -383,6 +387,10 @@ kind. See [styles.ts](src/model/styles.ts).
 - `isWaypoint?` — a "routing point": hide name + all bullet glyphs + drop the label hit rect;
   the station stays selectable/draggable via its stop-cell hit rect. Per-stop styles are **not**
   mutated when this toggles.
+- `circleId?` — binds the station onto a line circle's circumference (see Line circles below).
+  Bound stations sit ON the circle, drag ALONG it (`moveStation` projects), and keep `rotation`
+  at the nearest-octant tangent with the label held right-side-up (`uprightTangentRotation`,
+  shared with autoOrient). Dangling ids strip on load.
 - `fontSize? / weight? / italic? / leading? / tracking?` — **per-station name typography**, each
   omitted at its `LABEL_*` default (fontSize→`LABEL_FONT_SIZE_DEFAULT`, weight→`LABEL_WEIGHT_DEFAULT`,
   italic→false, leading→`LABEL_LEADING_DEFAULT`, tracking→`LABEL_TRACKING_DEFAULT`). These are the
@@ -415,19 +423,81 @@ kind. See [styles.ts](src/model/styles.ts).
   selection is visible without inviting edits. Polygon, RouteBullet, TextLabel and SvgImage
   share the same canvas protections, but their popovers **disable every editing control
   except the lock toggle** while locked. **Bulk lock/unlock**: a multi-selection (≥2 items,
-  any mix of the six selectable kinds) mounts one shared `SelectionPopover` with Lock all /
+  any mix of the seven selectable kinds) mounts one shared `SelectionPopover` with Lock all /
   Unlock all / Delete all (`setItemsLocked` — one undo entry; delete shares the Delete key's
   unlocked-subset semantics via `state/selectionOps.ts`), so **Alt+marquee → Unlock all** is
-  the mass-unlock path (and Lock all the mass-lock). Free transfer anchors are the sixth kind
-  and the one with **no `locked` field at all**, so Lock all counts them out (`lockableTotal`)
-  while Delete all still counts them in.
+  the mass-unlock path (and Lock all the mass-lock). Free transfer anchors are the one kind
+  with **no `locked` field at all**, so Lock all counts them out (`lockableTotal`)
+  while Delete all still counts them in. Line circles (the seventh kind) do lock — a locked
+  circle refuses drag/resize/delete and is click-through while unselected.
 
 **`StopCell`** — one line's stop on a station. `lineId, row, col` (station-local grid;
 **`row`/`col` are floats now**, since diagonal moves use ±√2/2 — equality uses `CELL_EPS=1e-4`),
 `orientation: StopOrientation`. Optional, **dropped when equal to the line's effective default**:
 `dotStyle?: DotStyle`, `dotSize?: number` (dot **diameter** in px), plus `dotStyleId?: string` —
 the stopDot-library link whose stamped shadow is `dotStyle`, exactly analogous to `Line`'s
-`singletonDotStyleId`/`multiDotStyleId`.
+`singletonDotStyleId`/`multiDotStyleId`. `viaCircle?: boolean` (omitted when false) marks the
+stop as "routed via the circle" its station is bound to — see Line circles below. It is the
+FIFTH state of the stop's direction cycle: on a stop that can form a circular connection
+(`stopCanRideCircle` — station bound AND a line-neighbor on the same circle, read off the
+neighbor STATION's binding so two opted-out stops can't deadlock), `rotateStop` walks
+Circle → V → NE/SW → H → NW/SE → Circle; ineligible stops keep the plain four-axis wrap, and
+leaving the Circle state clears the flag either way. Shown as a ring where the axes show
+arrows (stop rows, layout editor, hover badges).
+
+**`LineCircle`** (`MapDoc.lineCircles`) — a perfect-circle guide: `id, x, y` (center),
+`radius` (quarter-unit grid, ≥ `LINE_CIRCLE_RADIUS_MIN`, [model/lineCircle.ts](src/model/lineCircle.ts)),
+`locked?`. **Editor scaffolding, never map ink**: rendered as a dashed guide ring
+([LineCircleView.tsx](src/components/LineCircleView.tsx), `theme.guide`, export-excluded); the
+painted arcs come from line edges. The concept splits in two, on purpose:
+
+- **"On the circle geometrically"** is the STATION binding (`Station.circleId`): bind projects
+  the station onto the circumference, rotates it to the tangent octant, and defaults every stop
+  to `viaCircle` (binding happens by dragging/placing a station onto the rim — capture at the
+  standard snap tolerance; a bound station escapes by being pulled `3×` tolerance off the rim, or
+  instantly with Shift — see `useStationDrag`). Moving/resizing a circle carries bound stations
+  rigidly/radially (`moveLineCircle`/`setLineCircleRadius`); deleting it strips bindings and
+  leaves the stations standing (arcs simply re-route octolinearly — nothing moves, one undo
+  restores). A bound station's LOCAL GRID is managed radially: the origin cell is the one point
+  that sits ON the ring, so new stops stack radially OUTWARD (`spawnStopCellAt`'s bound branch —
+  the naive "east of the rightmost" step points radially in at some angles and out at others, so
+  two ring stations would spawn a second line's stops on opposite sides), and a stop removal
+  re-homes the survivors (`rehomeCircleStops`: translate stops + label + hosted anchors rigidly
+  so the nearest stop lands back at the origin — the move a user would make by hand).
+- **"Routed via the circle"** is the per-stop `viaCircle` flag. An EDGE renders as a circular
+  arc iff BOTH endpoint stops carry it, both stations bind to the SAME circle, and the stops sit
+  at matching radial offsets. A deliberate opt-out (one end unflagged) degrades SILENTLY to the
+  normal octolinear route — a crosstown chord is one direction-cycle step away, and the cycle
+  wraps back to Circle — but an edge whose both stops ASKED to ride and can't (mismatched radial
+  offsets, one stop a lattice cell off the ring) flags the band's routing WARNING
+  (`segCircleFit`'s `blocked` arm), because the silent version reads as "circle routing is
+  broken". **Always the SHORTER arc**
+  (`wrapAngleToPi`; antipodal ties sweep clockwise). The longer way around is expressed by
+  splicing a bound waypoint onto the circle, which splits the edge into two shorter arcs — the
+  ordinary routing-override idiom, no stored sweep state.
+
+The rendering trick that keeps this cheap: a circle band's centerline is the arc's **tangent
+polygon** (`arcTangentPolygon`, [geometry/lineCircle.ts](src/geometry/lineCircle.ts)) — vertices
+on the tangent lines, filleted at exactly the circle's radius, so the router's own fillet walk
+reproduces the TRUE arc and offsets are exactly concentric. A circle band is therefore an
+ordinary `SegmentBandSpec` (no new fields; every consumer, the region hash and PDF export work
+unchanged). Ring-stop markers rotate to the EXACT tangent (continuous, not octant); a stop
+that opted in but has NO ridable edge reverts to the plain octant square. A JOINT stop — where
+an arc band meets an octolinear one — is the one place two band frames cross (octolinearity
+puts every other station's corridors on one axis; turns happen mid-corridor), and a single
+full square cannot stay flush with both: whichever frame it takes, its other half runs at the
+wrong angle through the other band (a poking corner on one side, a bite on the other — both
+up to `(w/2)·tan 22.5°`). So a joint marker is SPLIT BY SIDE
+(`StopMarkerSpec.jointRotationDeg` + `jointArcOut`): the arc-side HALF-square in the tangent
+frame, the straight-side half-square in the octant frame (`jointHalfSquareCorners` /
+`jointStraightOut`), and the cap-plane WEDGE between them (`jointWedgeCorners` — the bowtie
+between the two butt-cap lines, corners exactly ON the band edges). Each piece is flush with
+its own band; the residual is the ~`(w/2)²/2r` chord-vs-arc nub at the arc half's corners.
+Like `end`, the joint fields reshape the painted footprint, so they join `markerBodyRings`
+(halves as rects, the wedge as its two simple triangle lobes) and the incremental-region unit
+hash. `sanitizeLineCircles` (serialize.ts) enforces the binding invariants on both load
+paths: malformed circles drop, dangling `circleId`s and orphaned `viaCircle` flags strip, and a
+bound station that drifted off its circle reprojects.
 
 **`LabelCell`** — the station name's grid cell + placement. `row, col, rotation: Rotation`,
 `offset` (px forward along reading direction), `offsetPerp?` (cross-axis, default 0 — back-compat
@@ -1378,11 +1448,13 @@ accent for placement modes, the line's color for appending, orange for layering;
 `switch` over the union with a compile-time `never` guard, so a new mode that forgets its banner
 fails the build).
 
-**Selection** — **six parallel id-list fields** (multi-select; order meaningful; **last entry =
+**Selection** — **seven parallel id-list fields** (multi-select; order meaningful; **last entry =
 anchor**, in the "anchor of a multi-select" sense — not a transfer anchor):
 `selectedStationIds` + `selectedRouteBulletIds`/`selectedLabelIds`/`selectedPolygonIds`/
-`selectedSvgImageIds`/`selectedAnchorIds` (the last being FREE transfer anchors; hosted ones are
-station internals and never appear here). The five generic lists' `select/toggle/set/add/xor`
+`selectedSvgImageIds`/`selectedAnchorIds`/`selectedLineCircleIds` (anchors are FREE transfer
+anchors; hosted ones are station internals and never appear here; line circles join a marquee
+when the rect touches their RIM — `lineCirclesForRect`, a marquee wholly inside the ring grabs
+nothing). The six generic lists' `select/toggle/set/add/xor`
 actions are generated by one `makeIdListActions` factory (hand-copying them is exactly how a
 cross-clear matrix drifted and caused a stale-line-highlight bug). Single primaries:
 `selectedLineId`, `selectedLineTagId`, `selectedTransferId`, `selectedStopLineId`, plus
@@ -1391,9 +1463,9 @@ in/out; independent of the polygon selection so the polygon stays selected while
 handles are active) and `selectedAnchorCellId` (the station-HOSTED anchor armed inside the layout
 editor — the third arm of the mutually-exclusive `selectedStopLineId`/`labelSelected` group, and
 a different thing entirely from `selectedAnchorIds`). Selectors:
-`soleSelection(s)` (non-null only when total across all six lists === 1 — every list needs an
-explicit arm; the tail is a bare `return null`, since the old unguarded svgImage fallthrough
-would have answered `{svgImage, id: undefined}` for a new list) and
+`soleSelection(s)` (non-null only when total across all seven lists === 1 — every list needs an
+explicit arm; the tail is a bare `return null`, since the old unguarded svgImage
+fallthrough would have answered `{svgImage, id: undefined}` for a new list) and
 `getCopyableSelection(s)` (everything **except stations and anchors** — the clipboard has no
 station payload, and `ClipPayload` has no transfer kind, so a pasted anchor could never carry
 the transfer that gives it meaning).
@@ -1550,24 +1622,30 @@ This produces the Vignelli parallel-stripe look. `buildBandGeometry` (the heart)
    canonical pair key, so the `SegInfo` is stored canon-first (`edgeEndpoints`) with no ternary
    shuffling, plus cell coords + a world direction hint. (Not "consecutive station pairs" — that
    is the pre-loops/branches model; `buildBandGeometry` never calls `pairKeyOf`.)
-2. **Bucket by axis** (`dirIndex % 4`) — lines traversing the corridor in **opposite** directions
+2. **Circle fork**: segs whose both stops are `viaCircle` on stations bound to the same line
+   circle (radially consistent between the ends, `segRidesCircle`) leave the pipeline here and
+   build **concentric-arc bands** instead — same radial sort + `tangentGap` merge with "perp" ≡
+   radial and "parallel" ≡ arc position, centerline = the arc's tangent polygon at the stripes'
+   mean radial distance. No marker-fit cap and no inner-stripe radius bump: the circle dictates
+   the geometry. Everything else continues below.
+3. **Bucket by axis** (`dirIndex % 4`) — lines traversing the corridor in **opposite** directions
    share an axis and can merge.
-3. **Reference frame**: sign-flip so the band flows canonFrom→canonTo (else the router sees a
+4. **Reference frame**: sign-flip so the band flows canonFrom→canonTo (else the router sees a
    U-turn).
-4. **Enrich & sort** ascending by perpendicular projection — this assigns low indices to the
+5. **Enrich & sort** ascending by perpendicular projection — this assigns low indices to the
    right-of-motion side, matching `stripeOffsetsForWidths` order.
-5. **Greedy adjacency merge**: two consecutive segments merge iff they are **exactly tangent** at
+6. **Greedy adjacency merge**: two consecutive segments merge iff they are **exactly tangent** at
    both ends (perp step ≈ `tangentGap(prevW, w, prevGap, gap)` within `BAND_MERGE_TOL` = 0.5 —
    the gap widens the tangent step by `max(prevGap, gap)`) and their parallel positions
    match. Otherwise flush and start a new band. (Mixed-width pairs at the legacy unit gap stay
    separate — they'd overlap.)
-6. **`buildBandSpec`**: centerline endpoints = centroid of the group's stop positions;
+7. **`buildBandSpec`**: centerline endpoints = centroid of the group's stop positions;
    `stripeOffsets = stripeOffsetsForWidths(widths, gaps)` (mean-centered tangency positions —
    bit-exactly `(k−(n−1)/2)·STOP_SIZE` for uniform width 14); **radius bump** (`idealR = R +
 maxAbsOffset` so the innermost stripe still curves at ≥ R); **marker-fit cap** (cap R so the
    post-fillet straight run ≥ the widest marker half-width — single-stripe bands may cap _below_
    R, multi-stripe bands floor _at_ R); then `offsetFilletPath` per stripe.
-7. `assignLinePriorities` fills per-stripe z-priority from `lineOrder` **only** (per-segment layer
+8. `assignLinePriorities` fills per-stripe z-priority from `lineOrder` **only** (per-segment layer
    overrides are gone — region assignments override the covering line per-face at render time
    instead, see Region layering); `buildOrderedRenderables` flattens to per-stripe + marker
    renderables sorted back-to-front, so a perpendicular middle-layer line can interleave _between_
@@ -1681,6 +1759,15 @@ click apply the same snap. Alignment is by **cross-section**, not fraction-of-ow
 the neighbor's rendered point is projected onto the dragged stripe (closest point between
 concentric/parallel offsets lies along the shared normal), so two aligned tags sit directly
 across the corridor even where the band curves and the stripes differ in length.
+
+**Line circles sit OUTSIDE both snappers**, as a hard constraint with its own capture rule
+(`lineCircleAtPoint`, shared by the station drag, station placement and the Edit Stops
+alt-create so "close enough to snap onto the ring" is one number): a free station carried
+within the standard tolerance of a rim binds and projects onto it — the ring then owns the
+position and the engine + grid are bypassed — and a bound station stays constrained until
+pulled `3×` tolerance off the rim (escape hysteresis; Shift detaches instantly, the same
+bypass convention as everything else). Guides don't fire while captured: the ring itself is
+the feedback.
 
 **Deliberately unsnapped** (documented, not bugs): arrow-key nudges (raw 1 / Shift 5 world
 units — free fine-positioning); 45° group rotate (re-snapping would distort shapes); snapping
@@ -2306,11 +2393,16 @@ through `withLinePriorities`, which clones per pristine spec and caches the clon
 identity stays stable across frames.
 
 The stations side works the same way: `stationsGeometrySig` hashes only the station fields
-`buildBandGeometry` / `buildStopMarkers` read (x, y, rotation, per-stop lineId/row/col/orientation)
-and keys both the `bandsGeometry` and `renderables` memos — NOT the raw `stations` reference. Label
+`buildBandGeometry` / `buildStopMarkers` read (x, y, rotation, circleId, per-stop
+lineId/row/col/orientation/viaCircle) and keys both the `bandsGeometry` and `renderables` memos —
+NOT the raw `stations` reference. Label
 edits (the whole `label` block) and per-stop `dotStyle`/`dotSize` are absent from the hash, so an
 Alt label fine-drag streaming `setLabelOffset` per pointermove repaints the label without re-running
-band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`.
+band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`. A third sig,
+`circlesGeometrySig` (id/x/y/radius per line circle), joins the deps for the same reason the
+interline gap is hashed: a viaCircle arc reads the circle's center + radius, and the hash must not
+lean on the coupling that circle edits also move bound stations. `regionGeometrySig` hashes the
+same three additions.
 
 ---
 

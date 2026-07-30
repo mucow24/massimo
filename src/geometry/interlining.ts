@@ -1,5 +1,6 @@
 import {
   Line,
+  LineCircle,
   LineEndStyle,
   LineId,
   LineStyle,
@@ -7,6 +8,7 @@ import {
   StationId,
   StopCell,
 } from '../model/types';
+import { arcTangentPolygon, circleAngleAt, tangentAtAngle, wrapAngleToPi } from './lineCircle';
 import { pairKeyOf } from '../model/pairKey';
 import { edgeEndpoints, incidentEdges, neighborsOf } from '../model/lineTopology';
 import { LINE_END_STYLE_DEFAULT, resolveEndStyle, stationEndStyleOf } from '../model/lineEnd';
@@ -116,7 +118,28 @@ export interface StopMarkerSpec {
   color: string;
   lineId: LineId;
   stationId: StationId;
-  rotationDeg: number; // station rotation in degrees CW
+  // The stop's world travel-axis angle in degrees CW — octant-derived for
+  // normal stops, the EXACT circle tangent (continuous) for viaCircle stops.
+  rotationDeg: number;
+  // Second frame for a JOINT stop — a viaCircle stop where an arc band meets
+  // an octolinear one. The two band ends cross the stop at different angles
+  // (exact tangent vs. octant, up to 22.5° apart), and a single full square
+  // can only stay flush with ONE of them (whichever frame it takes, its other
+  // half runs at the wrong angle through the other band — a poking corner on
+  // one side, a bite on the other). A joint marker is therefore SPLIT BY
+  // SIDE: the arc-side HALF-square in the tangent frame (`rotationDeg`,
+  // extending along `jointArcOut`), the straight-side half-square in this
+  // octant frame (extending the other way), and the cap-plane wedge between
+  // them (`jointWedgeCorners`). Null everywhere else (pure ring stops, normal
+  // stops, termini — one edge has one frame; null-not-optional so the
+  // field-drift guard sees it on every built spec, like `outward`). Reshapes
+  // the painted footprint, so both joint fields join markerBodyRings AND
+  // regionIncremental's unit hash (the `end` precedent).
+  jointRotationDeg: number | null;
+  // Unit vector along the tangent axis pointing toward the ARC neighbor —
+  // which side of the joint the tangent half-square covers. Non-null exactly
+  // when jointRotationDeg is.
+  jointArcOut: Vec2 | null;
   priority: number;
   style: LineStyle;
   outward: Vec2 | null;
@@ -188,6 +211,8 @@ export const MARKER_SPEC_FIELDS = {
   lineId: 'compared',
   stationId: 'compared',
   rotationDeg: 'compared',
+  jointRotationDeg: 'compared',
+  jointArcOut: 'compared',
   priority: 'compared',
   style: 'compared',
   outward: 'compared',
@@ -241,6 +266,12 @@ function markerSpecEqual(a: StopMarkerSpec, b: StopMarkerSpec): boolean {
     a.lineId === b.lineId &&
     a.stationId === b.stationId &&
     a.rotationDeg === b.rotationDeg &&
+    a.jointRotationDeg === b.jointRotationDeg &&
+    (a.jointArcOut === b.jointArcOut ||
+      (a.jointArcOut !== null &&
+        b.jointArcOut !== null &&
+        a.jointArcOut.x === b.jointArcOut.x &&
+        a.jointArcOut.y === b.jointArcOut.y)) &&
     a.priority === b.priority &&
     a.style === b.style &&
     (a.outward === b.outward ||
@@ -367,11 +398,12 @@ export function buildBands(
   stations: Record<StationId, Station>,
   lines: Record<LineId, Line>,
   lineOrder: LineId[] = [],
+  lineCircles: Record<string, LineCircle> = {},
 ): SegmentBandSpec[] {
   // Clone before stamping: buildBandGeometry's output objects are shared with
   // the reuse slot (and through it with every other caller across frames), so
   // an in-place stamp here would leak priorities onto cached pristine specs.
-  const bands = buildBandGeometry(stations, lines).map((b) => ({ ...b }));
+  const bands = buildBandGeometry(stations, lines, lineCircles).map((b) => ({ ...b }));
   assignLinePriorities(bands, lines, lineOrder);
   return bands;
 }
@@ -397,6 +429,7 @@ export function buildBands(
 export function buildBandGeometry(
   stations: Record<StationId, Station>,
   lines: Record<LineId, Line>,
+  lineCircles: Record<string, LineCircle> = {},
 ): SegmentBandSpec[] {
   // 1. Collect per-line segments keyed by sorted station pair, with stop cells.
   const groups: Record<string, SegInfo[]> = {};
@@ -431,13 +464,35 @@ export function buildBandGeometry(
   const bands: SegmentBandSpec[] = [];
 
   for (const [pairKey, segs] of Object.entries(groups)) {
+    // Circle-riding segs — both stops opted in (viaCircle) on stations bound
+    // to the SAME circle, radially consistent between the ends — render as
+    // concentric arcs of that circle. Everything else (including a seg that
+    // fails the radial gate) takes the octolinear path below, so a chord
+    // between two ring stations that did NOT opt in routes like any other
+    // edge. A seg that ASKED for the arc but is blocked by mismatched radial
+    // offsets flags its band's routing warning (see segCircleFit).
+    const circleGroups: Record<string, SegInfo[]> = {};
+    const normalSegs: SegInfo[] = [];
+    const blockedSegs = new Set<SegInfo>();
+    for (const s of segs) {
+      const fit = segCircleFit(s, stations, lineCircles);
+      if (fit?.kind === 'rides') (circleGroups[fit.circle.id] ||= []).push(s);
+      else {
+        if (fit?.kind === 'blocked') blockedSegs.add(s);
+        normalSegs.push(s);
+      }
+    }
+    for (const cid of Object.keys(circleGroups)) {
+      buildCircleBands(circleGroups[cid], lineCircles[cid], pairKey, stations, lines, bands);
+    }
+
     // Bucket by world travel AXIS at each end (mod 4). Two lines on the same
     // station-pair that share an axis can render as a single band — even if
     // they traverse the corridor in opposite directions. Their stops are at
     // the same world positions either way; the band's flow direction is
     // metadata that doesn't affect the rendered shape.
     const buckets: Record<string, SegInfo[]> = {};
-    for (const s of segs) {
+    for (const s of normalSegs) {
       const fromS = stations[s.fromId];
       const toS = stations[s.toId];
       if (!fromS || !toS) continue;
@@ -512,23 +567,26 @@ export function buildBandGeometry(
       let group: Enriched[] = [];
       const flush = () => {
         if (group.length === 0) return;
-        bands.push(
-          buildBandSpec(
-            group.map((e) => e.seg),
-            group.map((e) => e.width),
-            group.map((e) => e.gap),
-            // Interlined lines may disagree on curve radius; the shared
-            // centerline curves at the LARGEST member radius, so no line
-            // curves tighter than it asked for (the smaller-radius lines
-            // just ride along — same trade as the inner-stripe bump).
-            Math.max(...group.map((e) => lineCurveRadiusOf(lines[e.seg.lineId]))),
-            pairKey,
-            fDir,
-            tDir,
-            fromS,
-            toS,
-          ),
+        const spec = buildBandSpec(
+          group.map((e) => e.seg),
+          group.map((e) => e.width),
+          group.map((e) => e.gap),
+          // Interlined lines may disagree on curve radius; the shared
+          // centerline curves at the LARGEST member radius, so no line
+          // curves tighter than it asked for (the smaller-radius lines
+          // just ride along — same trade as the inner-stripe bump).
+          Math.max(...group.map((e) => lineCurveRadiusOf(lines[e.seg.lineId]))),
+          pairKey,
+          fDir,
+          tDir,
+          fromS,
+          toS,
         );
+        // A member that asked to ride a circle but couldn't (mismatched
+        // radial offsets — see segCircleFit) lights the routing warning, so
+        // the degrade is visible instead of reading as "arcs are broken".
+        if (group.some((e) => blockedSegs.has(e.seg))) spec.warning = true;
+        bands.push(spec);
         group = [];
       };
       const TOL = BAND_MERGE_TOL;
@@ -715,6 +773,7 @@ export function buildStopMarkers(
   lines: Record<LineId, Line>,
   lineOrder: LineId[],
   bands: SegmentBandSpec[] = [],
+  lineCircles: Record<string, LineCircle> = {},
 ): StopMarkerSpec[] {
   const lineIndex = buildLineIndex(lineOrder, lines);
   const fallback = Object.keys(lineIndex).length;
@@ -735,12 +794,60 @@ export function buildStopMarkers(
       // the stop's world-frame travel axis. For cardinal-axis stops this is
       // equivalent to station.rotation * 45 (mod 90, which the square's
       // 4-fold symmetry makes invisible); for diagonal stops it adds the
-      // extra 45° needed to keep the square flush with the band edges.
-      const worldTangent = rotateBy(travelDirLocal(cell.orientation), station.rotation);
-      const rotationDeg = angleDeg(worldTangent);
+      // extra 45° needed to keep the square flush with the band edges. A
+      // circle-riding stop instead takes the EXACT tangent of its circle at
+      // the stop's angle — continuous, not octant — so the square sits flush
+      // with the arc band (rotationDeg is already in the marker unit hash, so
+      // the region cache invalidates on it like any other rotation).
+      const viaCircle =
+        cell.viaCircle && station.circleId !== undefined
+          ? lineCircles[station.circleId]
+          : undefined;
+      const octantTangent = rotateBy(travelDirLocal(cell.orientation), station.rotation);
+      let worldTangent = viaCircle
+        ? tangentAtAngle(circleAngleAt(viaCircle, { x: cx, y: cy }))
+        : octantTangent;
       const style = stationMarkerStyle(line, station.id);
       const basePriority = lineIndex[cell.lineId] ?? fallback;
       const outward = terminusOutwardFromBand(line, station.id, bandsByPair);
+      // Which frame(s) does this stop's marker paint? A viaCircle stop:
+      //  - every incident edge arcs → the plain TANGENT square;
+      //  - NO incident edge arcs (opted in but blocked/alone) → the plain
+      //    OCTANT square — no arc meets this stop, so a tangent square would
+      //    poke out of the octolinear bands for nothing;
+      //  - mixed → a JOINT: arc-side tangent half + straight-side octant half
+      //    + the cap-plane wedge (see StopMarkerSpec.jointRotationDeg).
+      // Termini are exempt: one edge, one frame, and the end-style machinery
+      // owns their outward half.
+      let jointRotationDeg: number | null = null;
+      let jointArcOut: Vec2 | null = null;
+      if (viaCircle && !outward) {
+        let arcNbrPos: Vec2 | null = null;
+        let hasStraight = false;
+        for (const edge of incidentEdges(line, station.id)) {
+          const [a, b] = edgeEndpoints(edge);
+          const nid = a === station.id ? b : a;
+          const nSt = stations[nid];
+          const nCell = nSt?.stops.find((c) => c.lineId === cell.lineId);
+          if (!nSt || !nCell) continue; // no rendered band, no joint
+          const fit = segCircleFit(
+            { fromId: station.id, toId: nid, fromCell: cell, toCell: nCell },
+            stations,
+            lineCircles,
+          );
+          if (fit?.kind === 'rides') arcNbrPos ??= stopPosWorld(nCell, nSt);
+          else hasStraight = true;
+        }
+        if (!arcNbrPos) {
+          worldTangent = octantTangent;
+        } else if (hasStraight) {
+          jointRotationDeg = angleDeg(octantTangent);
+          const toArc = { x: arcNbrPos.x - cx, y: arcNbrPos.y - cy };
+          const along = worldTangent.x * toArc.x + worldTangent.y * toArc.y;
+          jointArcOut = along >= 0 ? worldTangent : { x: -worldTangent.x, y: -worldTangent.y };
+        }
+      }
+      const rotationDeg = angleDeg(worldTangent);
       markers.push({
         cx,
         cy,
@@ -748,6 +855,8 @@ export function buildStopMarkers(
         lineId: cell.lineId,
         stationId: station.id,
         rotationDeg,
+        jointRotationDeg,
+        jointArcOut,
         priority: basePriority,
         style,
         outward,
@@ -849,6 +958,184 @@ export function cornerCapRadius(
   const usable = edgeLen - markerHalf;
   if (usable <= 0) return 0;
   return usable / tanHalf(theta);
+}
+
+// How one seg relates to the line circles: 'rides' (both stops carry
+// `viaCircle` on stations bound to the same existing circle, at matching
+// radial offsets — a concentric arc has one radius), 'blocked' (both stops
+// ASKED to ride that circle but the radial offsets disagree between the ends,
+// so the arc is impossible — the seg routes octolinearly AND flags the band's
+// routing warning, because a silent degrade here reads as "circle routing is
+// broken" while the actual problem is one stop sitting a lattice cell off the
+// ring), or null (no circle intent — the ordinary octolinear path).
+type SegCircleFit = { kind: 'rides'; circle: LineCircle } | { kind: 'blocked' } | null;
+
+function segCircleFit(
+  // Narrowed so buildStopMarkers can probe an edge with a hand-built pair
+  // (worldHint and lineId play no part in the fit).
+  s: Pick<SegInfo, 'fromId' | 'toId' | 'fromCell' | 'toCell'>,
+  stations: Record<StationId, Station>,
+  lineCircles: Record<string, LineCircle>,
+): SegCircleFit {
+  if (!s.fromCell.viaCircle || !s.toCell.viaCircle) return null;
+  const fromS = stations[s.fromId];
+  const toS = stations[s.toId];
+  const cid = fromS?.circleId;
+  if (cid === undefined || toS?.circleId !== cid) return null;
+  const circle = lineCircles[cid];
+  if (!circle) return null;
+  const fp = stopPosWorld(s.fromCell, fromS);
+  const tp = stopPosWorld(s.toCell, toS);
+  const rf = Math.hypot(fp.x - circle.x, fp.y - circle.y);
+  const rt = Math.hypot(tp.x - circle.x, tp.y - circle.y);
+  return Math.abs(rf - rt) < BAND_MERGE_TOL ? { kind: 'rides', circle } : { kind: 'blocked' };
+}
+
+/**
+ * The circle analogue of the axis-bucket loop: sort one pairKey's
+ * circle-riding segs by signed radial position, greedily merge exactly-packed
+ * runs (the same tangentGap gate as the straight case, with "perpendicular" ≡
+ * radial and "parallel" ≡ arc position), and emit one band per run.
+ */
+function buildCircleBands(
+  segs: SegInfo[],
+  circle: LineCircle,
+  pairKey: string,
+  stations: Record<StationId, Station>,
+  lines: Record<LineId, Line>,
+  out: SegmentBandSpec[],
+): void {
+  const fromS = stations[segs[0].fromId];
+  const toS = stations[segs[0].toId];
+  // The band flows canonFrom → canonTo; its sweep sign orients the radial
+  // axis so that ascending "perp" matches ascending stripe offsets (positive
+  // offset = left of motion = radially OUT on a clockwise sweep).
+  const sample = segs[0];
+  const aFrom0 = circleAngleAt(circle, stopPosWorld(sample.fromCell, fromS));
+  const aTo0 = circleAngleAt(circle, stopPosWorld(sample.toCell, toS));
+  const sgn = wrapAngleToPi(aTo0 - aFrom0) >= 0 ? 1 : -1;
+
+  type Enriched = {
+    seg: SegInfo;
+    width: number;
+    gap: number;
+    fPerpPos: number;
+    fParPos: number;
+    tPerpPos: number;
+    tParPos: number;
+  };
+  const enriched: Enriched[] = segs.map((s) => {
+    const fp = stopPosWorld(s.fromCell, fromS);
+    const tp = stopPosWorld(s.toCell, toS);
+    return {
+      seg: s,
+      width: lineWidthOf(lines[s.lineId]),
+      gap: lineInterlineGapOf(lines[s.lineId]),
+      fPerpPos: sgn * Math.hypot(fp.x - circle.x, fp.y - circle.y),
+      tPerpPos: sgn * Math.hypot(tp.x - circle.x, tp.y - circle.y),
+      // Arc position relative to the sample's endpoint angle (wrapped
+      // difference, so stops straddling the ±π seam still compare locally).
+      fParPos: wrapAngleToPi(circleAngleAt(circle, fp) - aFrom0) * circle.radius,
+      tParPos: wrapAngleToPi(circleAngleAt(circle, tp) - aTo0) * circle.radius,
+    };
+  });
+  enriched.sort((a, b) => a.fPerpPos - b.fPerpPos);
+
+  let group: Enriched[] = [];
+  const flush = () => {
+    if (group.length === 0) return;
+    out.push(
+      buildCircleBandSpec(
+        group.map((e) => e.seg),
+        group.map((e) => e.width),
+        group.map((e) => e.gap),
+        circle,
+        pairKey,
+        fromS,
+        toS,
+      ),
+    );
+    group = [];
+  };
+  const TOL = BAND_MERGE_TOL;
+  for (const e of enriched) {
+    if (group.length === 0) {
+      group.push(e);
+      continue;
+    }
+    const prev = group[group.length - 1];
+    const tangent = tangentGap(prev.width, e.width, prev.gap, e.gap);
+    if (
+      Math.abs(e.fPerpPos - prev.fPerpPos - tangent) < TOL &&
+      Math.abs(e.tPerpPos - prev.tPerpPos - tangent) < TOL &&
+      Math.abs(e.fParPos - prev.fParPos) < TOL &&
+      Math.abs(e.tParPos - prev.tParPos) < TOL
+    ) {
+      group.push(e);
+    } else {
+      flush();
+      group.push(e);
+    }
+  }
+  flush();
+}
+
+function buildCircleBandSpec(
+  group: SegInfo[],
+  widths: number[],
+  gaps: number[],
+  circle: LineCircle,
+  pairKey: string,
+  fromStation: Station,
+  toStation: Station,
+): SegmentBandSpec {
+  const fromWorlds = group.map((g) => stopPosWorld(g.fromCell, fromStation));
+  const toWorlds = group.map((g) => stopPosWorld(g.toCell, toStation));
+  const fromMean = centroid(fromWorlds);
+  const toMean = centroid(toWorlds);
+  const aFrom = circleAngleAt(circle, fromMean);
+  const aTo = circleAngleAt(circle, toMean);
+  // ALWAYS the shorter arc (antipodal ties sweep clockwise) — the whole
+  // routing rule. The longer way around is expressed by splicing a bound
+  // waypoint onto the circle, which splits the edge into two shorter arcs.
+  const delta = wrapAngleToPi(aTo - aFrom);
+  // The band's ride radius is the stripes' mean radial distance (the merge
+  // gate pinned every stripe to one radial position; the ends agree within
+  // tolerance by segRidesCircle). The offsets then land each stripe at its
+  // packed radial position: positive offset = left of motion = radially out
+  // on a clockwise (delta > 0) sweep — matching buildCircleBands' sort sign.
+  const bandR =
+    (Math.hypot(fromMean.x - circle.x, fromMean.y - circle.y) +
+      Math.hypot(toMean.x - circle.x, toMean.y - circle.y)) /
+    2;
+  // The centerline is the arc's tangent polygon: the plain fillet walk at
+  // radius bandR reproduces EXACTLY this arc, so every consumer of
+  // (centerline, radius, offset) — paint, outlines, samplers, region
+  // flattening, the incremental hash — sees the true circle through the code
+  // paths it already has. No marker-fit cap and no inner-stripe bump: the
+  // geometry is dictated by the circle, not by the corner-styling trade-offs.
+  const centerline = arcTangentPolygon({ x: circle.x, y: circle.y, radius: bandR }, aFrom, delta);
+  const offsets = stripeOffsetsForWidths(widths, gaps);
+  const linesArr = group.map((g) => ({ id: g.lineId }));
+  const paths = offsets.map((o) => offsetFilletPath(centerline, bandR, o));
+  const sortedLineIds = linesArr
+    .map((l) => l.id)
+    .slice()
+    .sort();
+  return {
+    pairKey,
+    bandKey: `${pairKey}#${sortedLineIds.join(',')}`,
+    fromId: group[0].fromId,
+    toId: group[0].toId,
+    lines: linesArr,
+    paths,
+    warning: false,
+    centerline,
+    radius: bandR,
+    linePriorities: [], // filled in by assignLinePriorities
+    stripeOffsets: offsets,
+    stripeWidths: widths,
+  };
 }
 
 function buildBandSpec(
