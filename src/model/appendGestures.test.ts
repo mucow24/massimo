@@ -3,6 +3,7 @@ import { makeLine } from '../test/fixtures';
 import {
   appendRoutePreviewEdges,
   appendSegmentHoverPreview,
+  appendSpawnSource,
   appendStationCursor,
   appendStationHoverPreview,
   decideCanvasClick,
@@ -486,6 +487,32 @@ describe('appendRoutePreviewEdges', () => {
     expect(appendRoutePreviewEdges(line(), null, 'zzz')).toEqual([]);
     // A seed draws no corridor — there is no first station to route from.
     expect(appendRoutePreviewEdges(makeLine({ id: 'L1', stations: [] }), null, 'x')).toEqual([]);
+  });
+});
+
+// The station a click's new stop inherits its ring lane from — the same
+// `from` the connect/splice transform will hand spawnStopCellAt, so the hover
+// ring and the committed stop can never land on different lanes.
+describe('appendSpawnSource', () => {
+  it('is the pen for a connect and the near endpoint for a splice', () => {
+    expect(appendSpawnSource(line(), stationCursor('a'), 'n')).toBe('a');
+    expect(appendSpawnSource(line(), edgeCursor('a', 'b'), 'n')).toBe('a');
+    expect(appendSpawnSource(line(), edgeCursor('b', 'a'), 'n')).toBe('b');
+  });
+
+  it('is null for a click that adds no corridor', () => {
+    expect(appendSpawnSource(line(), null, 'b')).toBeNull(); // arms
+    expect(appendSpawnSource(line(), stationCursor('b'), 'b')).toBeNull(); // disarms
+    expect(appendSpawnSource(line(), edgeCursor('a', 'b'), 'a')).toBeNull(); // jumps
+    expect(appendSpawnSource(line(), null, 'zzz')).toBeNull(); // dead
+    expect(appendSpawnSource(makeLine({ id: 'L1', stations: [] }), null, 'x')).toBeNull(); // seed
+  });
+
+  it('still names the pen when the connect only walks it forward', () => {
+    // a–b already exists, so the doc no-ops — but `b` is a member with a stop
+    // already, so nothing spawns either. Naming the pen is harmless and keeps
+    // this a pure read of the decision's `from`.
+    expect(appendSpawnSource(line(), stationCursor('a'), 'b')).toBe('a');
   });
 });
 

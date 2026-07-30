@@ -192,6 +192,34 @@ describe('the whole flow: bind, connect, arc', () => {
     expect(bands[0].paths[0]).toContain('A ');
     for (const d of bandArcSamples(bands[0], 0)) expect(d).toBeCloseTo(R, 3);
   });
+
+  it('extending the OUTER line of an interlined ring arcs too, with no warning', () => {
+    // The real failure: l1 rides the rim and l2 sits one lane out, both drawn
+    // a→b. Extending l2 alone to c used to spawn its stop back on the rim, so
+    // the b→c radii disagreed, segCircleFit returned 'blocked' and the band
+    // degraded to a chord AND lit the routing warning — on a map the user had
+    // built entirely through the app's own placement.
+    let doc = makeDoc({
+      stations: [
+        ringStation('a', 0, { extraStop: true }),
+        ringStation('b', Math.PI / 2, { rotation: 2, extraStop: true }),
+        makeStation({ id: 'c', x: CX - R, y: CY, rotation: 0, circleId: 'c1' }),
+      ],
+      lines: [
+        makeLine({ id: 'l1', stations: ['a', 'b'] }),
+        makeLine({ id: 'l2', stations: ['a', 'b'] }),
+      ],
+      lineCircles: [makeLineCircle({ id: 'c1', x: CX, y: CY, radius: R })],
+    });
+    doc = T.connectStationsOnLine(doc, 'l2', 'b', 'c');
+    const bands = buildBandGeometry(doc.stations, doc.lines, doc.lineCircles);
+    const bc = bands.find((s) => s.fromId === 'c' || s.toId === 'c');
+    expect(bc).toBeDefined();
+    expect(bc!.warning).toBe(false);
+    expect(bc!.paths[0]).toContain('A ');
+    // l2's lane is one stop out from the rim at BOTH ends of the new corridor.
+    for (const d of bandArcSamples(bc!, 0)) expect(d).toBeCloseTo(R + STOP_SIZE, 3);
+  });
 });
 
 describe('joint markers (arc meets octolinear at one stop)', () => {

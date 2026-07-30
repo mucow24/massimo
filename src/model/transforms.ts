@@ -4,6 +4,7 @@ import {
   circleAngleAt,
   pointAtAngle,
   projectToCircle,
+  stationCircle,
   tangentAtAngle,
   type CircleSpec,
 } from '../geometry/lineCircle';
@@ -75,12 +76,13 @@ import {
   shortestPathOnLine,
 } from './lineTopology';
 import {
+  BAND_MERGE_TOL,
   STOP_SIZE,
   radialLocalTurn,
   rotateBy,
+  stationCellToWorld,
   stopCenterAt,
   tangentGap,
-  worldDirToLocal,
 } from '../geometry/orientation';
 import { CELL_EPS, sameCell } from '../geometry/lattice';
 import { GRID_INTERVAL, snapPointToGrid, type GridSnap } from '../geometry/snap';
@@ -1857,6 +1859,29 @@ function edgesAfterRemoveStation(edges: string[], stationId: StationId): string[
   return nbrs.length === 2 ? addEdge(e, nbrs[0], nbrs[1]) : e;
 }
 
+// Collapse a signed zero, so a cell never carries -0 (see `nz` in orientation).
+const nz = (n: number): number => (n === 0 ? 0 : n);
+
+// Unit cell-space step pointing radially OUT of `circle` at bound station
+// `st` — the axis every ring LANE is measured along. Derived from
+// `radialLocalTurn` (the ring frame) rather than the raw octant, so spawn and
+// the renderer can't disagree about which way "out" is at a given seat.
+function radialOutCell(
+  st: { x: number; y: number; rotation: Rotation },
+  circle: CircleSpec,
+): { dRow: number; dCol: number } {
+  switch (radialLocalTurn(st, circle)) {
+    case 0:
+      return { dRow: 0, dCol: 1 };
+    case 1:
+      return { dRow: 1, dCol: 0 };
+    case 2:
+      return { dRow: 0, dCol: -1 };
+    default:
+      return { dRow: -1, dCol: 0 };
+  }
+}
+
 // The lattice cell a fresh stop for `lineId` would occupy on station `st`: one
 // tangent gap east of the rightmost existing stop (exactly one column at
 // default widths), or the origin (0,0) when the station has no stops yet.
@@ -1867,13 +1892,66 @@ function edgesAfterRemoveStation(edges: string[], stationId: StationId): string[
 // an orphan. Pure and side-effect-free, so the Edit Stops hover preview can
 // call it to ring exactly where a connect/splice would drop the stop — the
 // promised spot can't drift from the committed one (spawnStopCell below).
+//
+// `from` is the station the new stop is being wired FROM (the connect pen, or
+// a splice endpoint); pass null where there is none. It only matters on a
+// ring — see the lane inheritance below.
 export function spawnStopCellAt(
   st: Station,
   lineId: LineId,
   lines: Record<LineId, Line>,
   lineCircles: Record<string, LineCircle> = {},
+  from: Station | null = null,
 ): StopCell {
-  const circle = st.circleId !== undefined ? lineCircles[st.circleId] : undefined;
+  const circle = stationCircle(st, lineCircles);
+  // LANE INHERITANCE. A ring's lanes are radii, and `segCircleFit` only lets a
+  // seg ride the circle when both its ends sit on the SAME one (within
+  // BAND_MERGE_TOL). So extending a line that already runs a lane out from the
+  // rim must land the new stop on that lane: dropping it on the rim instead —
+  // which is what a bare station with no stops used to get — leaves the two
+  // ends a lane apart, and the corridor degrades to a chord AND lights the
+  // band's routing warning, on a layout the app placed itself.
+  //
+  // What carries across is the source stop's world RADIUS, not its cell: the
+  // gate measures radii, and the two seats need not share a frame — the
+  // uprightness flip in `circleSeat` inverts `radialLocalTurn` over part of
+  // the ring, so the same lane is `col: +1` at one station and `col: -1` at
+  // another. Reproducing an integer lane INDEX would be wrong for a second
+  // reason: lane pitch is `tangentGap`, so index k is a different radius
+  // wherever the inner neighbours differ in width.
+  const src =
+    circle && from && from.circleId === st.circleId
+      ? from.stops.find((c) => c.lineId === lineId)
+      : undefined;
+  if (circle && from && src?.viaCircle) {
+    const out = radialOutCell(st, circle);
+    const p = stationCellToWorld(stopCenterAt(src.row, src.col), from, circle);
+    const cells = (Math.hypot(p.x - circle.x, p.y - circle.y) - circle.radius) / STOP_SIZE;
+    // `nz`, as in the rotation matrices: a rim-lane source on a negative
+    // radial axis multiplies out to -0, which is numerically fine everywhere
+    // but compares unequal to 0 under Object.is.
+    const row = nz(out.dRow * cells);
+    const col = nz(out.dCol * cells);
+    // Only when the spot is free. "Free" is a real collision test, not cell
+    // equality: a stop a fraction of a lane off would pass an equality check
+    // and then paint through the new dot. Two stops are packed at exactly
+    // `tangentGap`, so anything closer than that overlaps — less the shared
+    // BAND_MERGE_TOL slack, or float drift in the radius above would read an
+    // exactly-packed neighbour as a blocker. Occupied ⇒ fall through and
+    // stack outward, which routes no worse than before.
+    const taken = st.stops.some(
+      (c) =>
+        Math.hypot(c.row - row, c.col - col) * STOP_SIZE <
+        tangentGap(
+          lineWidthOf(lines[lineId]),
+          lineWidthOf(lines[c.lineId]),
+          lineInterlineGapOf(lines[lineId]),
+          lineInterlineGapOf(lines[c.lineId]),
+        ) -
+          BAND_MERGE_TOL,
+    );
+    if (!taken) return { lineId, row, col, orientation: 'auto-vertical', viaCircle: true };
+  }
   // On a circle-bound station, new stops stack RADIALLY OUTWARD from the
   // ring. The naive "east of the rightmost" step below has no consistent
   // radial meaning — local +x points radially IN at some angles and OUT at
@@ -1882,16 +1960,7 @@ export function spawnStopCellAt(
   // concentric-arc gate could never hold. Radial-out is the one direction
   // that means the same thing at every angle.
   if (circle && st.stops.length > 0) {
-    const wx = st.x - circle.x;
-    const wy = st.y - circle.y;
-    const local = worldDirToLocal({ x: wx, y: wy }, st.rotation);
-    // Dominant local axis of radial-out → a lattice step. On a tangent-
-    // rotated bound station this is always ±x (within 22.5° of it), but the
-    // row arm keeps a hand-rotated station sane.
-    const step =
-      Math.abs(local.x) >= Math.abs(local.y)
-        ? { dRow: 0, dCol: local.x >= 0 ? 1 : -1 }
-        : { dRow: local.y >= 0 ? 1 : -1, dCol: 0 };
+    const step = radialOutCell(st, circle);
     // Anchor on the radially-OUTERMOST existing stop and step one tangent
     // gap further out.
     const anchor = st.stops.reduce((best, c) =>
@@ -1950,9 +2019,10 @@ function spawnStopCell(
   lineId: LineId,
   lines: Record<LineId, Line>,
   lineCircles: Record<string, LineCircle> = {},
+  from: Station | null = null,
 ): { stops: StopCell[]; label: LabelCell } {
   if (st.stops.some((c) => c.lineId === lineId)) return { stops: st.stops, label: st.label };
-  const newCell = spawnStopCellAt(st, lineId, lines, lineCircles);
+  const newCell = spawnStopCellAt(st, lineId, lines, lineCircles, from);
   const { row: newRow, col: newCol } = newCell;
   const stops = [...st.stops, newCell];
   let label = st.label;
@@ -2094,7 +2164,14 @@ export function connectStationsOnLine(
   let stationsAfter = doc.stations;
   let newStations = ln.stations;
   if (!isMember) {
-    const { stops, label } = spawnStopCell(to, lineId, doc.lines, doc.lineCircles);
+    // The pen station seeds the new stop's ring lane (see spawnStopCellAt).
+    const { stops, label } = spawnStopCell(
+      to,
+      lineId,
+      doc.lines,
+      doc.lineCircles,
+      doc.stations[fromStationId] ?? null,
+    );
     newStations = [...ln.stations, toStationId];
     stationsAfter = { ...doc.stations, [toStationId]: { ...to, stops, label } };
   }
@@ -2143,7 +2220,21 @@ export function spliceStationIntoEdge(
   let stationsAfter = doc.stations;
   let newStations = ln.stations;
   if (!isMember) {
-    const { stops, label } = spawnStopCell(st, lineId, doc.lines, doc.lineCircles);
+    // Ring lane seed (see spawnStopCellAt): the edge's `from` end — the pen
+    // side, exactly as for a connect. Deliberately NOT "whichever endpoint is
+    // on the same ring": `appendSpawnSource` has to name this station without
+    // knowing the target's binding, and a preview that rings a lane the click
+    // then declines to use is worse than not inheriting. A corridor that
+    // already ARCS has both ends at one radius anyway, so the two endpoints
+    // only differ where the edge has a foot off the ring — and there the
+    // fallback is the old placement, no worse than before.
+    const { stops, label } = spawnStopCell(
+      st,
+      lineId,
+      doc.lines,
+      doc.lineCircles,
+      doc.stations[fromStationId] ?? null,
+    );
     newStations = [...ln.stations, stationId];
     stationsAfter = { ...doc.stations, [stationId]: { ...st, stops, label } };
   }

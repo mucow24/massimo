@@ -5,6 +5,7 @@ import {
   addStationToLine,
   bindStationToCircle,
   buildRotateMembers,
+  connectStationsOnLine,
   deleteLine,
   deleteLineCircle,
   moveLineCircle,
@@ -17,6 +18,7 @@ import {
   setLineCircleRadius,
   setStopViaCircle,
   spawnStopCellAt,
+  spliceStationIntoEdge,
   stopCanRideCircle,
   unbindStationFromCircle,
 } from './transforms';
@@ -696,5 +698,182 @@ describe('a re-seat keeps the layout on its side of the ring', () => {
     // The name still flips right-side-up: label.rotation is untouched, so the
     // 180° lands on the label's WORLD angle, which is what the flip is for.
     expect(moved.stations.s.label.rotation).toBe(doc.stations.s.label.rotation);
+  });
+});
+
+// Extending a line along a ring must land the new stop on the lane the line
+// already occupies — a lane-1 line spawning at lane 0 leaves the corridor's
+// two ends on different radii, which segCircleFit rejects outright.
+describe('a connect/splice along a ring inherits the line lane', () => {
+  const radiusOf = (doc: MapDoc, stationId: string, lineId: string): number => {
+    const st = doc.stations[stationId];
+    const p = stopPosWorld(st.stops.find((c) => c.lineId === lineId)!, st, doc.lineCircles);
+    return Math.hypot(p.x - CIRCLE.x, p.y - CIRCLE.y);
+  };
+
+  // s1 on c1's east point carrying l1 on the rim and l2 one lane out, plus
+  // whatever bare bound stations the case needs. Lines list s1 only, so a
+  // connect from s1 is always the gesture under test.
+  function laneDoc(extra: Parameters<typeof makeStation>[0][] = [], srcCol = 1): MapDoc {
+    return makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          x: 170,
+          y: 100,
+          rotation: 0,
+          circleId: 'c1',
+          stops: [
+            makeStop('l1', { viaCircle: true }),
+            makeStop('l2', { col: srcCol, viaCircle: true }),
+          ],
+        }),
+        ...extra.map(makeStation),
+      ],
+      lines: [makeLine({ id: 'l1', stations: ['s1'] }), makeLine({ id: 'l2', stations: ['s1'] })],
+      lineCircles: [CIRCLE],
+    });
+  }
+
+  // The circle's south point (100, 170) at its tangent octant — radial-out is
+  // local +x there, same as the east seat.
+  const south = { id: 's2', x: 100, y: 170, rotation: 2 as const, circleId: 'c1' };
+  // The WEST point at rotation 0: radial-out is local −x. Same lane, opposite
+  // cell sign — copying s1's cell across would send this stop inside the ring.
+  const west = { id: 'w', x: 30, y: 100, rotation: 0 as const, circleId: 'c1' };
+
+  it('connect drops the new stop on the source lane, not on the rim', () => {
+    const out = connectStationsOnLine(laneDoc([south]), 'l2', 's1', 's2');
+    expect(out.stations.s2.stops[0]).toMatchObject({ lineId: 'l2', row: 0, col: 1 });
+    expect(out.stations.s2.stops[0].viaCircle).toBe(true);
+    // What actually matters to segCircleFit: one radius across the corridor.
+    expect(radiusOf(out, 's2', 'l2')).toBeCloseTo(radiusOf(out, 's1', 'l2'), 9);
+  });
+
+  it('resolves the lane through the TARGET frame, not the source cell', () => {
+    const out = connectStationsOnLine(laneDoc([west]), 'l2', 's1', 'w');
+    // radialLocalTurn is 2 at this seat, so the same lane is col −1 here.
+    expect(out.stations.w.stops[0]).toMatchObject({ lineId: 'l2', row: 0, col: -1 });
+    expect(radiusOf(out, 'w', 'l2')).toBeCloseTo(radiusOf(out, 's1', 'l2'), 9);
+    expect(radiusOf(out, 'w', 'l2')).toBeCloseTo(CIRCLE.radius + STOP_SIZE, 9);
+  });
+
+  it('reproduces the source RADIUS, not an integer lane index', () => {
+    // A half-cell offset is what a non-default line width repacks to; the gate
+    // compares radii, so the landing cell has to be fractional too.
+    const out = connectStationsOnLine(laneDoc([south], 1.5), 'l2', 's1', 's2');
+    expect(out.stations.s2.stops[0]).toMatchObject({ row: 0, col: 1.5 });
+    expect(radiusOf(out, 's2', 'l2')).toBeCloseTo(CIRCLE.radius + 1.5 * STOP_SIZE, 9);
+  });
+
+  it('splices the same lane into an existing arc', () => {
+    // s1 and s3 both run l2 one lane out; s2 splices into that corridor.
+    let doc = laneDoc([
+      south,
+      {
+        id: 's3',
+        x: 100,
+        y: 30,
+        rotation: 2 as const,
+        circleId: 'c1',
+        stops: [makeStop('l2', { col: -1, viaCircle: true })],
+      },
+    ]);
+    doc = {
+      ...doc,
+      lines: {
+        ...doc.lines,
+        l2: { ...doc.lines.l2, stations: ['s1', 's3'], edges: ['s1|s3'] },
+      },
+    };
+    const out = spliceStationIntoEdge(doc, 'l2', 's1', 's3', 's2');
+    expect(out.stations.s2.stops[0]).toMatchObject({ lineId: 'l2', row: 0, col: 1 });
+    expect(radiusOf(out, 's2', 'l2')).toBeCloseTo(radiusOf(out, 's1', 'l2'), 9);
+  });
+
+  it('a splice reads the PEN end of the armed edge, not the far one', () => {
+    // The edge's two ends are on different lanes — only possible by hand, but
+    // it is the one case that can tell the two apart. `from` wins, because
+    // appendSpawnSource has to name the source for the hover ring without
+    // knowing the target's binding, and the ring must not promise a lane the
+    // click declines to use.
+    let doc = laneDoc([
+      south,
+      // North seat: radial-out is local −x here, so lane 2 is col −2.
+      {
+        id: 's3',
+        x: 100,
+        y: 30,
+        rotation: 2 as const,
+        circleId: 'c1',
+        stops: [makeStop('l2', { col: -2, viaCircle: true })],
+      },
+    ]);
+    doc = {
+      ...doc,
+      lines: {
+        ...doc.lines,
+        l2: { ...doc.lines.l2, stations: ['s1', 's3'], edges: ['s1|s3'] },
+      },
+    };
+    expect(spliceStationIntoEdge(doc, 'l2', 's1', 's3', 's2').stations.s2.stops[0]).toMatchObject({
+      col: 1,
+    });
+    expect(spliceStationIntoEdge(doc, 'l2', 's3', 's1', 's2').stations.s2.stops[0]).toMatchObject({
+      col: 2,
+    });
+  });
+
+  it('falls back to stacking outward when the lane is already taken', () => {
+    const out = connectStationsOnLine(
+      laneDoc([{ ...south, stops: [makeStop('l3', { col: 1, viaCircle: true })] }]),
+      'l2',
+      's1',
+      's2',
+    );
+    const cell = out.stations.s2.stops.find((c) => c.lineId === 'l2')!;
+    expect(cell).toMatchObject({ row: 0, col: 2 });
+  });
+
+  it('does not inherit from a source that is not riding the circle', () => {
+    // l2's stop at s1 was rotated off the ring: its corridor is octolinear, so
+    // its radial offset means nothing to the target's placement.
+    const doc = laneDoc([south]);
+    const s1 = doc.stations.s1;
+    const off = {
+      ...doc,
+      stations: {
+        ...doc.stations,
+        s1: {
+          ...s1,
+          stops: s1.stops.map((c) => {
+            if (c.lineId !== 'l2') return c;
+            const { viaCircle: _v, ...rest } = c;
+            return rest;
+          }),
+        },
+      },
+    };
+    const out = connectStationsOnLine(off, 'l2', 's1', 's2');
+    expect(out.stations.s2.stops[0]).toMatchObject({ row: 0, col: 0 });
+  });
+
+  it('does not inherit across a different circle, or from an unbound source', () => {
+    // Same geometry, but the source station is free-floating.
+    const doc = laneDoc([south]);
+    const { circleId: _c, ...unbound } = doc.stations.s1;
+    const out = connectStationsOnLine(
+      { ...doc, stations: { ...doc.stations, s1: unbound } },
+      'l2',
+      's1',
+      's2',
+    );
+    expect(out.stations.s2.stops[0]).toMatchObject({ row: 0, col: 0 });
+  });
+
+  it('leaves a rim-lane source exactly where it landed before', () => {
+    // l1 already rides the rim, so inheritance and the old default agree.
+    const out = connectStationsOnLine(laneDoc([south]), 'l1', 's1', 's2');
+    expect(out.stations.s2.stops[0]).toMatchObject({ lineId: 'l1', row: 0, col: 0 });
   });
 });
