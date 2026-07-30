@@ -22,11 +22,14 @@ import type { Line, Station, StopOrientation } from '../../model/types';
 import type { Vec2 } from '../../geometry/vec';
 export { sameCell, CELL_EPS } from '../../geometry/lattice';
 
-// Snap rules shared by every ghost-lattice drag surface — same numbers as the
-// old StopGrid: the cursor→ghost snap radius and the candidate-lattice extent,
-// both in (row, col) units.
+// Snap rules shared by every ghost-lattice drag surface: the cursor→ghost snap
+// radius and the candidate-lattice extent, both in (row, col) units. The reach
+// is measured from the node being MOVED (see computeGhosts' `center`), so it is
+// the distance a single drag or arrow press can cover — a bigger station needs
+// more than a couple of cells of it, and a move longer than the reach is walked
+// out one window at a time.
 export const GHOST_SNAP_RADIUS = 1.0;
-export const GRID_RADIUS = 2;
+export const GRID_RADIUS = 4;
 
 const dist = (a: RowCol, b: RowCol): number => Math.hypot(a.row - b.row, a.col - b.col);
 
@@ -230,15 +233,22 @@ export interface GhostSpec {
   otherNodes: readonly WidthNode[];
   basis: LatticeBasis;
   stationRotation: Rotation;
-  /** Lattice reach from the anchor, in rings. */
+  /** Lattice reach, in rings, from `center` (or from the anchor without one). */
   gridRadius: number;
+  /**
+   * The moving node's CURRENT cell — the window of slots is centered there
+   * rather than on the anchor. Omit when there is no node yet to center on
+   * (spawnAnchorCell placing a brand-new anchor).
+   */
+  center?: RowCol;
 }
 
 /**
- * Candidate drop slots around `anchor`: the unit lattice scaled by the
- * drag-pair tangency factor — ring-1 ghosts land where the source's body
- * exactly touches the anchor's (1 for two default-width nodes, e.g. 1.5 for
- * a width-28 stop against a default one; farther rings scale uniformly).
+ * Candidate drop slots on `anchor`'s lattice, windowed around `center`: the
+ * unit lattice scaled by the drag-pair tangency factor — ring-1 ghosts land
+ * where the source's body exactly touches the anchor's (1 for two
+ * default-width nodes, e.g. 1.5 for a width-28 stop against a default one;
+ * farther rings scale uniformly).
  * The basis is chosen in SCREEN terms and read back in the station's unrotated
  * local frame (`localLatticeOffsets`), so the user-facing slot directions are
  * identical at any station rotation. Slots closer to another node than their
@@ -249,9 +259,21 @@ export interface GhostSpec {
  * edge reaches that point.
  */
 export function computeGhosts(spec: GhostSpec): RowCol[] {
-  const { wSrc, gSrc, srcIsPoint, anchor, otherNodes, basis, stationRotation, gridRadius } = spec;
+  const { wSrc, gSrc, srcIsPoint, anchor, otherNodes, basis, stationRotation, gridRadius, center } =
+    spec;
   const t = tangentGap(wSrc, anchor.w, gSrc ?? 0, anchor.g ?? 0) / STOP_SIZE;
-  const localOffsets = localLatticeOffsets(basis, gridRadius, stationRotation);
+  // The window of rings rides on `center` while the lattice keeps hanging off
+  // `anchor` — same pitch, same phase, so ring-1 tangency and the anchor's
+  // axes survive; what changes is that a node walked out to the rim gets a
+  // fresh `gridRadius` of reach next time it's grabbed, instead of being stuck
+  // inside one window nailed to the cluster. Offsets are scaled by `t` below,
+  // so the anchor-relative delta is divided by it here.
+  const localOffsets = localLatticeOffsets(
+    basis,
+    gridRadius,
+    stationRotation,
+    center && { row: (center.row - anchor.row) / t, col: (center.col - anchor.col) / t },
+  );
   const ghosts: RowCol[] = [];
   for (const o of localOffsets) {
     const g = { row: anchor.row + o.row * t, col: anchor.col + o.col * t };
@@ -299,13 +321,17 @@ export function anchorPool<T extends WidthNode>(nodes: readonly T[]): readonly T
 
 /**
  * The in-flight drag's candidate lattice: anchor = nearest anchorable node
- * to the CURSOR, ghosts = computeGhosts around it. Pure twin of the drag
- * hook's per-frame step (useStationLayoutDrag), kept here so the
- * reachable-slot rule stays unit-testable alongside nudgeTarget (its
- * keyboard twin) and can never diverge from it.
+ * to the CURSOR, ghosts = computeGhosts on its lattice, windowed on the
+ * dragged node's own cell (`source`) so the reach is measured from where that
+ * node is NOW. Pure twin of the drag hook's per-frame step
+ * (useStationLayoutDrag), kept here so the reachable-slot rule stays
+ * unit-testable alongside nudgeTarget (its keyboard twin) and can never
+ * diverge from it.
  */
 export function dragLattice(spec: {
   cursor: RowCol;
+  /** The dragged node's current cell — the window center. */
+  source: RowCol;
   wSrc: number;
   /** See GhostSpec.gSrc. */
   gSrc?: number;
@@ -315,7 +341,7 @@ export function dragLattice(spec: {
   basis: LatticeBasis;
   stationRotation: Rotation;
 }): { anchor: WidthNode | null; ghosts: RowCol[] } {
-  const { cursor, wSrc, gSrc, srcIsPoint, otherNodes, basis, stationRotation } = spec;
+  const { cursor, source, wSrc, gSrc, srcIsPoint, otherNodes, basis, stationRotation } = spec;
   const anchor = nearestNode(cursor, anchorPool(otherNodes));
   if (!anchor) return { anchor: null, ghosts: [] };
   const ghosts = computeGhosts({
@@ -327,6 +353,7 @@ export function dragLattice(spec: {
     basis,
     stationRotation,
     gridRadius: GRID_RADIUS,
+    center: source,
   });
   return { anchor, ghosts };
 }
@@ -335,8 +362,10 @@ export function dragLattice(spec: {
  * Keyboard-nudge slot resolution: the ghost slot the `source` node should
  * hop to for a SCREEN-direction arrow press (row +1 = down, col +1 = right).
  * Anchor = nearest anchorPool node (deterministic, cursor-free twin of the
- * drag flow), candidates = the same computeGhosts lattice — so keyboard
- * positions are exactly the positions a drag could reach.
+ * drag flow), candidates = the same computeGhosts lattice at the same
+ * GRID_RADIUS, windowed on `source` exactly as the drag windows on the node it
+ * carries — so keyboard positions are exactly the positions a drag could
+ * reach, including for a node walked out past the cluster.
  *
  * Selection: candidates within ±67.5° of the arrow (so a diagonal slot still
  * answers a cardinal press when nothing straighter survives the overlap
@@ -367,7 +396,8 @@ export function nudgeTarget(spec: {
     otherNodes,
     basis,
     stationRotation,
-    gridRadius: 2,
+    gridRadius: GRID_RADIUS,
+    center: source,
   });
 
   // Accept candidates within ±67.5° of the arrow: strictly wider than the

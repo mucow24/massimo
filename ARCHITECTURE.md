@@ -2647,7 +2647,14 @@ same three additions.
   retired in favor of these two surfaces; its pure drag/ghost math lives on in
   [inspector/stopGridDrag.ts](src/components/inspector/stopGridDrag.ts) — `computeGhosts`,
   `findDropTarget`, `nudgeTarget`, all choosing their lattice in screen terms and reading it back
-  in station-local cells via `localLatticeOffsets`):
+  in station-local cells via `localLatticeOffsets`). Slots hang off an **anchor** node for pitch
+  and phase, but the WINDOW of `GRID_RADIUS` rings rides on the MOVING node's own cell
+  (`computeGhosts`' `center`, `latticeOffsets`' window shift): reach is measured from where that
+  node is now, not from the cluster, so a move longer than the radius is walked out a window at a
+  time — drop at the rim, grab again, and the next window is centered on the cell it landed in.
+  Sliding the window never moves the lattice, so ring-1 tangency and the anchor's axes survive,
+  and a node sitting off-lattice heals when the window snaps to the nearest lattice point. The
+  anchor's own cell is never a slot, however far the window has walked over it. Two surfaces:
   1. **`editing-station-layout` mode** ([canvas/StationLayoutEditor.tsx](src/components/canvas/StationLayoutEditor.tsx)
      - [useStationLayoutDrag.ts](src/components/canvas/useStationLayoutDrag.ts)): entered via the
        inspector's **Edit layout** button (`startEditingStationLayout` preserves selection + mirror

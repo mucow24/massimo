@@ -6,9 +6,11 @@ import {
   dragLattice,
   nudgeTarget,
   sameCell,
+  GRID_RADIUS,
   type WidthNode,
 } from './stopGridDrag';
 import { STOP_SIZE } from '../../geometry/orientation';
+import type { RowCol } from '../../geometry/lattice';
 
 describe('nearestNode', () => {
   it('returns null for an empty list', () => {
@@ -284,6 +286,89 @@ describe('computeGhosts', () => {
   });
 });
 
+// The window is centered on the node being moved, not on the anchor it hangs
+// off. Same infinite lattice either way — same pitch, same phase — but a node
+// that has walked out to the rim gets a fresh GRID_RADIUS of reach every time
+// it is grabbed, instead of being stuck inside one window nailed to the
+// cluster. That is what makes a long move walkable: drag out, release, drag
+// out again.
+describe('the ghost window follows the node being moved', () => {
+  const ANCHOR: WidthNode[] = [{ row: 0, col: 0, w: W }];
+  const walk = (
+    source: RowCol,
+    cursor: RowCol,
+    over: Partial<Parameters<typeof dragLattice>[0]> = {},
+  ) =>
+    dragLattice({
+      cursor,
+      source,
+      wSrc: W,
+      otherNodes: ANCHOR,
+      basis: 'orthogonal',
+      stationRotation: 0,
+      ...over,
+    }).ghosts;
+
+  it('reaches GRID_RADIUS cells out from the node, not from the anchor', () => {
+    const ghosts = walk({ row: 0, col: 1 }, { row: 0, col: 5 });
+    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 1 + GRID_RADIUS }))).toBe(true);
+    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 2 + GRID_RADIUS }))).toBe(false);
+  });
+
+  it('a node walked out to the rim gets a fresh window from where it now sits', () => {
+    const ghosts = walk({ row: 0, col: 4 }, { row: 0, col: 8 });
+    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 8 }))).toBe(true);
+  });
+
+  it('a body-less node — the label, a transfer anchor — walks out the same way', () => {
+    const ghosts = walk(
+      { row: 0, col: 4 },
+      { row: 0, col: 8 },
+      {
+        wSrc: STOP_SIZE,
+        gSrc: 0,
+        srcIsPoint: true,
+      },
+    );
+    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 8 }))).toBe(true);
+  });
+
+  it('keeps the anchor lattice phase, healing a node that drifted off it', () => {
+    // Source parked 0.15 of a cell off-lattice: the window centers on the
+    // nearest lattice POINT, so every slot it offers is still the anchor's,
+    // and the drifted node can step back onto the axis.
+    const ghosts = walk({ row: 0.15, col: 3.15 }, { row: 0, col: 3 });
+    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 3 }))).toBe(true);
+    expect(ghosts.every((g) => Number.isInteger(g.row) && Number.isInteger(g.col))).toBe(true);
+  });
+
+  it('never offers the anchor cell, even once the window has walked past it', () => {
+    // The window now covers the anchor, where the origin exclusion used to be
+    // the only thing standing between a drag and a drop straight onto it.
+    expect(walk({ row: 0, col: 2 }, { row: 0, col: 0 }).some((g) => sameCell(g, ANCHOR[0]))).toBe(
+      false,
+    );
+  });
+
+  it('still offers the node its own cell, so a wandering drag can come home', () => {
+    expect(
+      walk({ row: 0, col: 2 }, { row: 0, col: 3 }).some((g) => sameCell(g, { row: 0, col: 2 })),
+    ).toBe(true);
+  });
+
+  it('nudgeTarget walks a node out too — the keyboard reaches what the drag does', () => {
+    const target = nudgeTarget({
+      source: { row: 0, col: 4 },
+      wSrc: W,
+      otherNodes: ANCHOR,
+      basis: 'orthogonal',
+      stationRotation: 0,
+      arrow: { row: 0, col: 1 },
+    });
+    expect(target && sameCell(target, { row: 0, col: 5 })).toBe(true);
+  });
+});
+
 describe('dragLattice — stop drags anchor to stops, not the label', () => {
   // Live regression (Furdome Arena): width-12 stops at 12/14 pitch, station
   // rotation 6, label parked one cell from the stops. The label's tangency
@@ -309,6 +394,7 @@ describe('dragLattice — stop drags anchor to stops, not the label', () => {
     const cursor = { row: 13 / 14, col: 69 / 14 };
     const { ghosts } = dragLattice({
       cursor,
+      source: { row: 13 / 14, col: 55 / 14 }, // the T stop
       wSrc: 12,
       otherNodes: [U, M, label],
       basis: 'orthogonal',
@@ -332,6 +418,7 @@ describe('dragLattice — stop drags anchor to stops, not the label', () => {
     const cursor = { row: 13 / 14, col: 56 / 14 };
     const { ghosts } = dragLattice({
       cursor,
+      source: { row: 12 / 14, col: 69 / 14 }, // T, stranded off-axis
       wSrc: 12,
       otherNodes: [U, M, label],
       basis: 'orthogonal',
@@ -487,12 +574,13 @@ describe('ghost slots are exact at every station rotation', () => {
     { row: 0, col: 1 },
   ];
 
-  // Exactly an integer, or exactly an integer multiple of √2/2 — the two
-  // families `latticeOffsets` generates. Anything else is drift.
-  const isExactCell = (v: number) => {
-    if (Object.is(v, -0)) return false;
-    return Number.isInteger(v) || Number.isInteger(v / Math.SQRT1_2);
-  };
+  // Exactly an integer, or bit-identical to `k · √2/2` for an integer k — the
+  // two families `latticeOffsets` generates. Anything else is drift. Compared
+  // against the canonical PRODUCT rather than by dividing back out: the
+  // division misses the integer for |k| ∈ {7, 13, 14}, which a window reaching
+  // GRID_RADIUS out from the node now gets to.
+  const isExactCell = (v: number) =>
+    !Object.is(v, -0) && (Number.isInteger(v) || v === Math.round(v / Math.SQRT1_2) * Math.SQRT1_2);
 
   it.each([0, 1, 2, 3, 4, 5, 6, 7] as const)('nudgeTarget at rotation %i', (stationRotation) => {
     for (const arrow of ARROWS) {
@@ -519,6 +607,7 @@ describe('ghost slots are exact at every station rotation', () => {
     for (const basis of ['orthogonal', 'diagonal'] as const) {
       const { ghosts } = dragLattice({
         cursor: SOURCE,
+        source: SOURCE,
         wSrc: STOP_SIZE,
         gSrc: 0,
         otherNodes: ANCHOR,
