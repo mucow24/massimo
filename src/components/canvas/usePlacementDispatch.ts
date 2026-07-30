@@ -17,7 +17,7 @@ import {
   type SnapModes,
 } from '../../geometry/snap';
 import { snapPolygonPoint } from '../../geometry/polygonSnap';
-import { lineCircleAtPoint, projectToCircle } from '../../geometry/lineCircle';
+import { lineCircleAtPoint, snapPointToCircle } from '../../geometry/lineCircle';
 import { polygonSnapAnchor } from '../../geometry/polygon';
 import type { Vec2 } from '../../geometry/vec';
 import type { LineId } from '../../model/types';
@@ -94,11 +94,15 @@ export function snapPlacement(
   // Ring capture: a station placed (or alt-created in Edit Stops) within snap
   // tolerance of a line circle's rim projects ONTO the rim — the drop then
   // binds it (see bindDroppedStation). Runs before the engine so the ring, a
-  // hard constraint like the grid, wins over alignment candidates.
+  // hard constraint like the grid, wins over alignment candidates. Under "Snap
+  // to circle cardinals" the seat is also pulled to the nearest of the ring's
+  // eight cardinals — same rule as the drag, so placing and then nudging a
+  // station agree. The seat stays exactly on the rim either way, which is what
+  // lets `bindDroppedStation` recognize it at a 0.5-unit tolerance.
   const viaCircleRim = (): PlacementSnap | null => {
     const circle = lineCircleAtPoint(doc.lineCircles, world, tolerance);
     if (!circle) return null;
-    const p = projectToCircle(circle, world);
+    const p = snapPointToCircle(circle, world, modes.circle ? tolerance : null);
     return { x: p.x, y: p.y, guides: [] };
   };
 

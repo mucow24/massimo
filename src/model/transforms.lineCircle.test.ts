@@ -75,6 +75,54 @@ describe('moveLineCircle', () => {
   });
 });
 
+describe('a cardinal seat survives ring edits', () => {
+  // The point of snapping to cardinals is that the arrangement STAYS square:
+  // park two stations on opposite cardinals to bisect the ring, then resize and
+  // move it, and they must still be exactly antipodal. Both transforms preserve
+  // the polar angle by construction, so this pins the composition rather than
+  // either one — and it uses a DIAGONAL cardinal, where the seat coordinates are
+  // irrational (r/√2) and a sloppy reprojection would drift visibly. The east
+  // point the other suites use is the one angle that can't catch that.
+  const diagonalDoc = (): MapDoc =>
+    makeDoc({
+      stations: [
+        // 45° (SE) and 225° (NW) on c1 — a diameter through the diagonal.
+        makeStation({
+          id: 'se',
+          x: 100 + 70 / Math.SQRT2,
+          y: 100 + 70 / Math.SQRT2,
+          circleId: 'c1',
+        }),
+        makeStation({
+          id: 'nw',
+          x: 100 - 70 / Math.SQRT2,
+          y: 100 - 70 / Math.SQRT2,
+          circleId: 'c1',
+        }),
+      ],
+      lineCircles: [CIRCLE],
+    });
+
+  const angleOf = (st: { x: number; y: number }, cx = 100, cy = 100) =>
+    Math.atan2(st.y - cy, st.x - cx);
+
+  it('keeps both stations on their diagonal cardinals through a resize', () => {
+    const out = setLineCircleRadius(diagonalDoc(), 'c1', 120);
+    expect(angleOf(out.stations.se)).toBeCloseTo(Math.PI / 4, 12);
+    expect(angleOf(out.stations.nw)).toBeCloseTo(-3 * (Math.PI / 4), 12);
+    // Still antipodal, and now on the new rim.
+    expect(Math.hypot(out.stations.se.x - 100, out.stations.se.y - 100)).toBeCloseTo(120, 9);
+    expect(out.stations.se.x - 100).toBeCloseTo(100 - out.stations.nw.x, 9);
+    expect(out.stations.se.y - 100).toBeCloseTo(100 - out.stations.nw.y, 9);
+  });
+
+  it('keeps them there through a move of the whole ring', () => {
+    const out = moveLineCircle(diagonalDoc(), 'c1', 400, 250);
+    expect(angleOf(out.stations.se, 400, 250)).toBeCloseTo(Math.PI / 4, 12);
+    expect(angleOf(out.stations.nw, 400, 250)).toBeCloseTo(-3 * (Math.PI / 4), 12);
+  });
+});
+
 describe('setLineCircleRadius', () => {
   it('reprojects bound stations radially, preserving their angle', () => {
     const doc = boundDoc();
