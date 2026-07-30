@@ -10,6 +10,7 @@ import { PolygonPopover } from '../PolygonPopover';
 import { SvgImagePopover } from '../SvgImagePopover';
 import { StationPopover } from '../StationPopover';
 import { TransferPopover } from '../TransferPopover';
+import { LineCirclePopover } from '../LineCirclePopover';
 
 /**
  * Mounts the single popover for the current sole selection — a station, route
@@ -34,6 +35,7 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
   const textLabels = useDoc((s) => s.textLabels);
   const polygons = useDoc((s) => s.polygons);
   const svgImages = useDoc((s) => s.svgImages);
+  const lineCircles = useDoc((s) => s.lineCircles);
   const lines = useDoc((s) => s.lines);
   const transfers = useDoc((s) => s.transfers);
   // These panels are DOM overlays, not canvas content, so the lines/stations
@@ -71,6 +73,7 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
       polygons: selection.selectedPolygonIds,
       svgImages: selection.selectedSvgImageIds,
       anchors: selection.selectedAnchorIds,
+      lineCircles: selection.selectedLineCircleIds,
     };
     if (itemIdCount(multiIds) >= 2 && selection.uiMode.kind === 'idle') {
       return <SelectionPopover ids={multiIds} hostW={hostW} />;
@@ -141,6 +144,17 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
     if (!im) return null;
     return (
       <SvgImagePopover image={im} hostW={hostW} onClose={() => selection.selectSvgImage(null)} />
+    );
+  }
+  if (sole.type === 'lineCircle') {
+    const c = lineCircles[sole.id];
+    if (!c) return null;
+    return (
+      <LineCirclePopover
+        circle={c}
+        hostW={hostW}
+        onClose={() => selection.selectLineCircle(null)}
+      />
     );
   }
   return null;

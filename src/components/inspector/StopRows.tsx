@@ -89,6 +89,24 @@ function AnchorRow({ station, anchorId }: { station: Station; anchorId: string }
 // are 45° CW apart, matching the station rotation step).
 const AXIS_ANGLE = 45;
 
+/** The Circle state of the direction cycle: the stop rides its station's
+ *  line circle (StopCell.viaCircle). A ring, where the axes are arrows. */
+function CircleDirIcon() {
+  return (
+    <svg width={15} height={15} viewBox="0 0 15 15" aria-hidden="true" style={{ display: 'block' }}>
+      <circle
+        cx="7.5"
+        cy="7.5"
+        r="4.7"
+        stroke="currentColor"
+        strokeWidth={1.4}
+        strokeDasharray="2.2 1.6"
+        fill="none"
+      />
+    </svg>
+  );
+}
+
 /** Double-headed arrow along the given world axis — one glyph rotated to the
  *  four angles, so the straight and diagonal states are pixel-identical. */
 function OrientationArrowIcon({ angleDeg }: { angleDeg: number }) {
@@ -156,7 +174,11 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
   // Orientation axes live in the station's LOCAL frame; show the WORLD-true
   // axis so the control never contradicts the canvas.
   const worldIdx = (AXIS_CYCLE.indexOf(stop.orientation) + rotation) % 4;
-  const worldName = ORIENTATION_NAME[AXIS_CYCLE[worldIdx]];
+  // The direction cycle's fifth state: this stop rides its station's line
+  // circle. Shown as a ring; clicking steps into the four axes (and, where a
+  // circular connection is possible, the axes wrap back to Circle).
+  const isCircleDir = !!stop.viaCircle;
+  const worldName = isCircleDir ? 'Circle' : ORIENTATION_NAME[AXIS_CYCLE[worldIdx]];
 
   // The dot highlight rides NATIVE mouseenter/mouseleave, not React's synthetic
   // pair. React's follows the REACT tree, where the end-style panel — portaled
@@ -264,10 +286,18 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
         type="button"
         className="chip-btn orient-btn"
         aria-label={`Stop orientation (line ${line?.service ?? '?'}): ${worldName}`}
-        title={`Stop axis ${worldName} — click to rotate 45°`}
+        title={
+          isCircleDir
+            ? 'Riding the line circle — click to rotate to an axis instead'
+            : `Stop axis ${worldName} — click to rotate 45°`
+        }
         onClick={() => dispatchMirrored(stationId, (sid) => rotateStop(sid, lineId))}
       >
-        <OrientationArrowIcon angleDeg={worldIdx * AXIS_ANGLE} />
+        {isCircleDir ? (
+          <CircleDirIcon />
+        ) : (
+          <OrientationArrowIcon angleDeg={worldIdx * AXIS_ANGLE} />
+        )}
       </button>
     </div>
   );

@@ -40,7 +40,12 @@ export type HitKind =
   | 'label'
   | 'polygon'
   | 'svgImage'
-  | 'anchor';
+  | 'anchor'
+  // Line circles cycle via their rim hit stroke. LOCKED circles are the one
+  // exception to the locked-geometry merge below: a locked, unselected circle
+  // renders no rim element to dispatch to, so its recovery path is the
+  // Alt-marquee, not the deep-pick.
+  | 'lineCircle';
 
 export interface HitRef {
   kind: HitKind;
@@ -76,6 +81,8 @@ const RESOLVERS: { selector: string; kind: HitKind; attr: string }[] = [
   // pointer-events none and no id, so they never enter the snapshot at all and
   // an alt-click reaches whatever sits beneath them.
   { selector: '[data-anchor-id]', kind: 'anchor', attr: 'data-anchor-id' },
+  // The rim hit stroke; a locked circle renders none (see HitKind).
+  { selector: '[data-line-circle-rim]', kind: 'lineCircle', attr: 'data-line-circle-rim' },
 ];
 
 // Selected-item drag proxies re-assert footprints at top z; they must never

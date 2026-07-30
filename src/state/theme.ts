@@ -30,6 +30,12 @@ export interface ThemeColors {
   /** Background grid lines. */
   grid: string;
   /**
+   * Editor guide geometry — the line-circle's dashed ring. Stronger than
+   * `grid` (a guide is an object you grab and bind stations to, not wallpaper)
+   * but clearly not map ink.
+   */
+  guide: string;
+  /**
    * Opaque "off"-position fill for dashed/hatched line styles (the dashed
    * underlay stroke and the hatch-tile gap), and the interior of unfilled
    * inline route bullets. Matches the canvas so the gaps read as empty map,
@@ -76,6 +82,7 @@ const LIGHT: ThemeColors = {
   label: '#111111',
   selectionStroke: '#000000',
   grid: '#eeeeee',
+  guide: '#b5b5b5',
   underlay: '#ffffff',
   editorBg: '#ffffff',
   editorText: '#111111',
@@ -92,6 +99,7 @@ const DARK: ThemeColors = {
   label: '#ffffff',
   selectionStroke: '#ffffff',
   grid: '#222222',
+  guide: '#5a5a5a',
   underlay: '#000000',
   editorBg: '#000000',
   editorText: '#ffffff',

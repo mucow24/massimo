@@ -21,6 +21,7 @@ const crossing = (dx = 0): GeometrySlice => ({
     H: makeLine({ id: 'H', stations: ['w', 'e'], width: 14 }),
     V: makeLine({ id: 'V', stations: ['n', 's'], width: 14 }),
   },
+  lineCircles: {},
 });
 
 const prebuiltFor = (g: GeometrySlice, lineOrder: string[] = []) => {

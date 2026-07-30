@@ -12,6 +12,8 @@ function spec(over: Partial<StopMarkerSpec> = {}): StopMarkerSpec {
     lineId: 'L1' as LineId,
     stationId: 'S' as StationId,
     rotationDeg: 0,
+    jointRotationDeg: null,
+    jointArcOut: null,
     priority: 0,
     style: 'solid' as LineStyle,
     end: 'square' as LineEndStyle,
@@ -28,6 +30,58 @@ function renderMarker(props: Parameters<typeof StopMarker>[0]) {
     </svg>,
   );
 }
+
+describe('StopMarker — joint pieces (arc meets octolinear)', () => {
+  const parse = (el: Element | null) =>
+    (el?.getAttribute('points') ?? '').split(' ').map((p) => p.split(',').map(Number));
+
+  it('splits by side: each half-square stays FLUSH with its own band', () => {
+    // Tangent axis 90° (vertical travel, arc side pointing down +y), octant
+    // frame 135°. A full square in either frame would poke past the other
+    // band's edge by up to w/√2 − w/2; the halves must not.
+    const { container } = renderMarker({
+      spec: spec({ rotationDeg: 90, jointRotationDeg: 135, jointArcOut: { x: 0, y: 1 } }),
+    });
+    const arc = container.querySelector('polygon[data-marker-half="arc"]');
+    const straight = container.querySelector('polygon[data-marker-half="straight"]');
+    const wedge = container.querySelector('polygon[data-marker-joint]');
+    expect(arc && straight && wedge).toBeTruthy();
+    // Arc half: extends only DOWN (+y toward the arc), width across x.
+    for (const [x, y] of parse(arc)) {
+      expect(Math.abs(x - 10)).toBeLessThanOrEqual(7 + 1e-9); // flush across
+      expect(y).toBeGreaterThanOrEqual(20 - 1e-9); // never upstream
+      expect(y).toBeLessThanOrEqual(27 + 1e-9);
+    }
+    // Straight half: extends only along the octant direction AWAY from the
+    // arc (135° axis, sign with dot(o, arcOut) <= 0 → up-right), staying
+    // within w/2 of the 135° axis (flush with the straight stripe).
+    const o = { x: Math.cos((135 * Math.PI) / 180), y: Math.sin((135 * Math.PI) / 180) };
+    const d = o.y <= 0 ? o : { x: -o.x, y: -o.y }; // away from arcOut (0,1)
+    for (const [x, y] of parse(straight)) {
+      const vx = x - 10;
+      const vy = y - 20;
+      const along = vx * d.x + vy * d.y;
+      const across = Math.abs(vx * -d.y + vy * d.x);
+      expect(along).toBeGreaterThanOrEqual(-1e-9); // never on the arc side
+      expect(along).toBeLessThanOrEqual(7 + 1e-9);
+      expect(across).toBeLessThanOrEqual(7 + 1e-9); // flush with the stripe
+    }
+    // Wedge corners sit exactly ON the band edges (w/2 from the center).
+    const wpts = parse(wedge);
+    expect(wpts).toHaveLength(4);
+    for (const [x, y] of wpts) {
+      expect(Math.hypot(x - 10, y - 20)).toBeCloseTo(7, 6);
+    }
+  });
+
+  it('paints no joint pieces on a plain stop', () => {
+    const plain = renderMarker({ spec: spec({ rotationDeg: 90 }) });
+    expect(plain.container.querySelector('[data-marker-joint]')).toBeNull();
+    expect(plain.container.querySelector('[data-marker-half]')).toBeNull();
+    // A plain stop keeps the classic full square.
+    expect(plain.container.querySelector('rect[fill="#ff0000"]')).not.toBeNull();
+  });
+});
 
 const strokedLines = (strokeWidth: number, strokeColor?: string) => ({
   L1: { strokeWidth: strokeWidth > 0 ? strokeWidth : undefined, strokeColor },

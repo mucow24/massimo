@@ -258,6 +258,11 @@ export function hashUnits(
     // goes dirty and the previous frame's footprint is reused under a cache key
     // that claims to be current.
     h = mixString(h, m.end);
+    // The joint pieces (arc-meets-octolinear stops) reshape the footprint —
+    // same trap as `end`, so both joint fields join the hash (1e9 = "absent";
+    // real angles are degrees in (−180, 180], real vectors unit-length).
+    h = mixNum(h, m.jointRotationDeg ?? 1e9);
+    h = m.jointArcOut ? mixNum(mixNum(mix(h, 1), m.jointArcOut.x), m.jointArcOut.y) : mix(h, 0);
     h = m.outward ? mixNum(mixNum(mix(h, 1), m.outward.x), m.outward.y) : mix(h, 0);
     const pad = m.width; // > half-diagonal (w·0.707) for any rotation
     const unit: GeomUnit = {

@@ -8,6 +8,7 @@ import type {
   LabelAlign,
   LabelValign,
   Line,
+  LineCircle,
   LineEndStyle,
   LineId,
   LineStyle,
@@ -37,6 +38,7 @@ import * as T from '../model/transforms';
 import { cyclingColors, FALLBACK_LINE_COLOR, type PaletteId } from '../model/palettes';
 import { useCustomPalettes } from './customPalettes';
 import {
+  sanitizeLineCircles,
   sanitizeStations,
   snapStationCells,
   backfillLineNames,
@@ -126,6 +128,9 @@ const DOC_FIELDS = [
   // older saves, backfilled to {} by the shallow merge on both load paths.
   'regionAssignments',
   'svgImages',
+  // Line circles (dashed guide circles stations bind to). New field: absent in
+  // older saves, backfilled to {} by the shallow merge on both load paths.
+  'lineCircles',
   // Named style presets + the per-kind default designations. Pre-styles saves
   // lack the keys, so zustand's shallow merge (and parse()'s DEFAULT_DOC
   // merge) backfills the factory set; docs persisted by earlier builds get
@@ -379,6 +384,7 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     styles?: Record<string, StyleDef>;
     styleDefaults?: Record<StyleKind, string>;
     regionAssignments?: Record<string, RegionAssignment>;
+    lineCircles?: Record<string, LineCircle>;
     labelBold?: boolean;
     labelWeight?: TextLabelWeight;
     activePalettes?: PaletteId[];
@@ -601,6 +607,19 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     const snapped = snapStationCells(out.stations);
     if (snapped.changed) out = { ...out, stations: snapped.stations };
   }
+  // Non-version-gated invariant: line-circle bindings resolve, viaCircle flags
+  // only live on bound stations, bound stations sit on their circle. Idempotent
+  // and value-keyed; shared with the file-import path via `sanitizeLineCircles`.
+  if (out.stations || out.lineCircles) {
+    const circles = sanitizeLineCircles(out.lineCircles ?? {}, out.stations ?? {});
+    if (circles.changed) {
+      out = {
+        ...out,
+        ...(out.lineCircles ? { lineCircles: circles.lineCircles } : {}),
+        ...(out.stations ? { stations: circles.stations } : {}),
+      };
+    }
+  }
   // Non-version-gated invariant: at least one VALID active palette. Unlike the
   // migrations above, this isn't tied to a schema bump — a persisted doc with
   // an explicit empty / all-unknown `activePalettes` (tampering, or a
@@ -773,6 +792,15 @@ interface DocState extends MapDoc {
   updateSvgImage: (id: string, patch: SvgImageStylePatch) => void;
   rotateSvgImage45: (id: string) => void;
   deleteSvgImage: (id: string) => void;
+
+  addLineCircle: (x: number, y: number, radius?: number) => string;
+  moveLineCircle: (id: string, x: number, y: number) => void;
+  setLineCircleRadius: (id: string, radius: number) => void;
+  setLineCircleLocked: (id: string, locked: boolean) => void;
+  deleteLineCircle: (id: string) => void;
+  bindStationToCircle: (stationId: StationId, circleId: string) => void;
+  unbindStationFromCircle: (stationId: StationId) => void;
+  setStopViaCircle: (stationId: StationId, lineId: LineId, via: boolean) => void;
 
   /** Restack a background item — polygon OR svg image — within the shared
    *  background z-stack (`backgroundOrder`): one step up/down, or all the way
@@ -1204,6 +1232,27 @@ export const useDoc = create<DocState>()(
           set((s) => T.updateSvgImage(s, id, { rotation: (s.svgImages[id]?.rotation ?? 0) + 45 })),
         deleteSvgImage: (id) => set((s) => T.deleteSvgImage(s, id)),
 
+        // Line circles. A bare circle carries no painted geometry, so add /
+        // lock skip the region reconcile; everything that moves bound stations
+        // or flips an edge between arc and octolinear routing reconciles.
+        addLineCircle: (x, y, radius) => {
+          const id = ids.lineCircleId();
+          set((s) => T.addLineCircle(s, id, x, y, radius));
+          return id;
+        },
+        moveLineCircle: (id, x, y) =>
+          set(withRegionReconcile((s) => T.moveLineCircle(s, id, x, y))),
+        setLineCircleRadius: (id, radius) =>
+          set(withRegionReconcile((s) => T.setLineCircleRadius(s, id, radius))),
+        setLineCircleLocked: (id, locked) => set((s) => T.setLineCircleLocked(s, id, locked)),
+        deleteLineCircle: (id) => set(withRegionReconcile((s) => T.deleteLineCircle(s, id))),
+        bindStationToCircle: (stationId, circleId) =>
+          set(withRegionReconcile((s) => T.bindStationToCircle(s, stationId, circleId))),
+        unbindStationFromCircle: (stationId) =>
+          set(withRegionReconcile((s) => T.unbindStationFromCircle(s, stationId))),
+        setStopViaCircle: (stationId, lineId, via) =>
+          set(withRegionReconcile((s) => T.setStopViaCircle(s, stationId, lineId, via))),
+
         moveBackgroundUp: (id) => set((s) => T.moveBackgroundUp(s, id)),
         moveBackgroundDown: (id) => set((s) => T.moveBackgroundDown(s, id)),
         moveBackgroundToTop: (id) => set((s) => T.moveBackgroundToTop(s, id)),
@@ -1370,8 +1419,16 @@ function applyRegionReconcile<T extends MapDoc>(prev: GeometrySlice, next: T): T
   if (prev.stations === next.stations && prev.lines === next.lines) {
     return next;
   }
-  const oldGeom: GeometrySlice = { stations: prev.stations, lines: prev.lines };
-  const newGeom: GeometrySlice = { stations: next.stations, lines: next.lines };
+  const oldGeom: GeometrySlice = {
+    stations: prev.stations,
+    lines: prev.lines,
+    lineCircles: prev.lineCircles,
+  };
+  const newGeom: GeometrySlice = {
+    stations: next.stations,
+    lines: next.lines,
+    lineCircles: next.lineCircles,
+  };
   if (regionGeometrySig(oldGeom) === regionGeometrySig(newGeom)) return next;
   const reconciled = reconcileRegionAssignments(oldGeom, newGeom, assignments, () =>
     ids.regionAssignmentId(),

@@ -57,6 +57,17 @@ export function EditingBanner() {
           </div>
         </>
       );
+    case 'placing-line-circle':
+      return (
+        <>
+          <div className="append-frame" />
+          <div className="append-banner placing">
+            {uiMode.center
+              ? `Click to set the circle's radius — stations dropped on its rim snap onto it. ${CANCEL_HINT}`
+              : `Click on the canvas to place the line circle's CENTER. ${CANCEL_HINT}`}
+          </div>
+        </>
+      );
     case 'creating-transfer':
       return (
         <>

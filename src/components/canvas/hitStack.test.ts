@@ -331,6 +331,7 @@ describe('currentHitEntity', () => {
       selectedPolygonIds: [],
       selectedSvgImageIds: [],
       selectedAnchorIds: [],
+      selectedLineCircleIds: [],
       selectedLineId: null,
       selectedTransferId: null,
       selectedLineTagId: null,

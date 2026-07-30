@@ -20,6 +20,7 @@ export interface SelectionItemIds {
   polygons: string[];
   svgImages: string[];
   anchors: string[];
+  lineCircles: string[];
 }
 
 // The selection minus locked members — locked items resist Delete, arrow-nudge
@@ -37,6 +38,7 @@ export function unlockedSelectedItemIds(): SelectionItemIds {
     // lines above is the honest spelling — a `.filter(() => true)` would read
     // like a lock check that happens to pass.
     anchors: sel.selectedAnchorIds,
+    lineCircles: sel.selectedLineCircleIds.filter((id) => !doc.lineCircles[id]?.locked),
   };
 }
 
@@ -49,7 +51,8 @@ export function itemIdCount(ids: SelectionItemIds): number {
     ids.svgImages.length +
     // MANDATORY: both bulk gestures gate on this count being non-zero, so an
     // anchor-only selection would silently ignore Delete and the arrow keys.
-    ids.anchors.length
+    ids.anchors.length +
+    ids.lineCircles.length
   );
 }
 
@@ -78,6 +81,9 @@ export function deleteUnlockedSelection(): boolean {
   // Inside the same group, so a mixed station+anchor delete stays ONE undo
   // entry. deleteTransferAnchor also cascades the transfers bound to it.
   for (const id of ids.anchors) doc.deleteTransferAnchor(id);
+  // Deleting a circle strips its stations' bindings in place (they stay put;
+  // their edges just re-route octolinearly).
+  for (const id of ids.lineCircles) doc.deleteLineCircle(id);
   group?.commit();
   return true;
 }

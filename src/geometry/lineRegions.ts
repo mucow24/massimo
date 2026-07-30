@@ -14,6 +14,7 @@ import type { LineId, RegionAnchor, RegionAssignment } from '../model/types';
 import type { SegmentBandSpec, StopMarkerSpec } from './interlining';
 import type { OffsetPathSegment } from './router';
 import { emitOffsetSegments } from './router';
+import { jointHalfSquareCorners, jointStraightOut, jointWedgeCorners } from './lineCircle';
 import { clamp } from '../util/grid';
 import { closestParamOnOffsetPath, sampleOffsetPathByArcLength } from './lineTagGeometry';
 import { leftNormal, perp, rotatedRectCorners, type Vec2 } from './vec';
@@ -168,6 +169,27 @@ function markerBodyRingsUncached(spec: StopMarkerSpec): Ring[] {
   const endShape = spec.outward && spec.end !== 'square' ? spec.end : null;
   if (spec.style === 'solid' || spec.style === 'hatched' || spec.style === 'hatched-mirror') {
     if (endShape && spec.outward) return [markerEndRing(center, spec.outward, half, endShape)];
+    // A joint stop (see StopMarkerSpec.jointRotationDeg) is painted as the
+    // side-split pieces, so the cover is the paint here too: the two
+    // half-squares plus the cap-plane wedge — the painter draws the wedge as
+    // one crossed "bowtie" polygon; the clipper gets the same region as its
+    // two SIMPLE triangle lobes (corner order [pA+, pB+, pA−, pB−]: lobes are
+    // (c, pA+, pB+) and (c, pA−, pB−)).
+    if (spec.jointRotationDeg !== null && spec.jointArcOut !== null) {
+      const rings: Ring[] = [
+        Array.from(jointHalfSquareCorners(center, spec.jointArcOut, spec.width)),
+        Array.from(
+          jointHalfSquareCorners(
+            center,
+            jointStraightOut(spec.jointRotationDeg, spec.jointArcOut),
+            spec.width,
+          ),
+        ),
+      ];
+      const wedge = jointWedgeCorners(center, spec.rotationDeg, spec.jointRotationDeg, spec.width);
+      if (wedge) rings.push([center, wedge[0], wedge[1]], [center, wedge[2], wedge[3]]);
+      return rings;
+    }
     const rad = (spec.rotationDeg * Math.PI) / 180;
     return [Array.from(rotatedRectCorners(center, half, half, rad))];
   }

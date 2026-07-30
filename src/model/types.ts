@@ -116,6 +116,16 @@ export interface StopCell {
   row: number;
   col: number;
   orientation: StopOrientation;
+  // "Routed via the circle": this line, at this station, travels along the
+  // line circle the station is bound to (Station.circleId). An edge whose BOTH
+  // endpoint stops carry this flag — on stations bound to the SAME circle —
+  // renders as the shorter circular arc between them instead of an octolinear
+  // route. Only meaningful on a bound station (sanitized away otherwise);
+  // omitted when false. The stop's `orientation` stays a real octant axis (the
+  // quantized tangent) so every travel-axis consumer keeps working; explicitly
+  // editing the orientation clears this flag (the covered-field-detach idiom) —
+  // that IS the opt-out gesture for "on the circle but routed straight".
+  viaCircle?: boolean;
   // Per-stop style override. `undefined` defers to the line's
   // `defaultDotStyle`; setters drop the field when the chosen style equals
   // the line's effective default so persisted state stays clean. Legacy
@@ -245,6 +255,16 @@ export interface Station {
   // simply treats all bullets as hidden while the flag is on. Omitted/false
   // means "regular station".
   isWaypoint?: boolean;
+  // Binds this station to a line circle (MapDoc.lineCircles): the station sits
+  // ON the circle's circumference ("on the circle geometrically"). Bound
+  // stations drag ALONG the circle (moveStation projects onto it) and ride
+  // circle moves/resizes rigidly; binding and every projected move also keep
+  // `rotation` at the nearest-octant tangent (label kept right-side-up, the
+  // autoOrient flip). Whether an EDGE actually routes along the circle is the
+  // per-stop `StopCell.viaCircle` flag, deliberately separate. Deleting the
+  // circle strips the binding and leaves the station where it stands. Omitted
+  // ⇒ free station; dangling ids are stripped on load.
+  circleId?: string;
   // Per-station name typography. All optional with collapse-at-default: an
   // absent field means "the LABEL_* default" (fontSize→LABEL_FONT_SIZE_DEFAULT,
   // weight→LABEL_WEIGHT_DEFAULT, italic→false, leading→LABEL_LEADING_DEFAULT,
@@ -681,6 +701,29 @@ export type SvgImageStylePatch = Partial<
   Pick<SvgImage, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'opacity' | 'locked'>
 >;
 
+// A "line circle": a perfect-circle guide on the canvas (the JFK-AirTrain
+// look). It is EDITOR SCAFFOLDING, never map ink — rendered as a dashed guide
+// circle and excluded from every export; the painted arcs come from line
+// edges whose stops opt in (see StopCell.viaCircle). Stations bind to it via
+// Station.circleId and are then constrained to its circumference. Deleting a
+// circle strips the bindings and leaves its stations in place (their
+// positions are real world coords; the arcs simply re-route octolinearly).
+export interface LineCircle {
+  id: string;
+  // World coords of the circle CENTER.
+  x: number;
+  y: number;
+  // Radius in world units, on the quarter-unit grid, ≥ LINE_CIRCLE_RADIUS_MIN
+  // (see model/lineCircle.ts). Editing it reprojects bound stations radially
+  // (angle preserved); moving the center translates them rigidly.
+  radius: number;
+  // When locked, the circle can't be dragged, resized, deleted, or
+  // marquee-selected, and is click-through while unselected. It can still be
+  // Alt-click selected so the user can unlock it. Optional; missing ⇒
+  // unlocked. Mirrors Polygon.locked.
+  locked?: boolean;
+}
+
 // How the branch seam's "inner edges" are drawn (see MapDoc.seamEdges). A seam
 // edge path is a mix of straight (`line`) and curved (fillet `arc`) pieces; this
 // picks which to keep — 'both' is the full notch, 'straight'/'curved' hint the
@@ -742,6 +785,12 @@ export interface MapDoc {
   // background band (under all other map content). Keyed by image id. Their
   // z-order lives in `backgroundOrder`, shared with polygons.
   svgImages: Record<string, SvgImage>;
+  // Line circles (see LineCircle): dashed guide circles stations bind to.
+  // Keyed by circle id. Editor scaffolding — never exported — but part of the
+  // DOC (they define geometry and travel in the saved file). No z-order:
+  // guides are outlines and don't meaningfully stack. Absent in older saves,
+  // backfilled to {} by the shallow merge on both load paths — no migration.
+  lineCircles: Record<string, LineCircle>;
   // Named, reusable formatting presets, keyed by style id (see StyleDef at the
   // bottom of this file and model/styles.ts). Doc-scoped on purpose: styles
   // travel inside the saved file and every edit to them is undoable. Absent in

@@ -262,6 +262,8 @@ describe('spec reuse — field-drift guard', () => {
       'cx',
       'cy',
       'end',
+      'jointArcOut',
+      'jointRotationDeg',
       'lineId',
       'outward',
       'priority',

@@ -1,6 +1,11 @@
 import { memo } from 'react';
 import { rotatedRectCorners, v } from '../geometry/vec';
 import {
+  jointHalfSquareCorners,
+  jointStraightOut,
+  jointWedgeCorners,
+} from '../geometry/lineCircle';
+import {
   markerEndCapCenter,
   markerEndPath,
   markerEndRailArc,
@@ -154,6 +159,30 @@ export const StopMarker = memo(function StopMarker({
         })()
       )
     ) : null;
+  // A joint stop (arc meets octolinear — see StopMarkerSpec.jointRotationDeg)
+  // paints SPLIT BY SIDE: the arc-side half-square in the tangent frame, the
+  // straight-side half-square in the octant frame, and the cap-plane WEDGE
+  // between them (corners exactly on the stripes' edges) — each piece flush
+  // with its own band, so nothing pokes past a silhouette and nothing gaps.
+  // Body ink only — the casing rails stay on the primary (tangent) frame.
+  const isJoint = spec.jointRotationDeg !== null && spec.jointArcOut !== null && !endShape;
+  const toPoints = (corners: readonly { x: number; y: number }[] | null) =>
+    corners ? corners.map((p) => `${p.x},${p.y}`).join(' ') : null;
+  const jointPoints = isJoint
+    ? toPoints(jointWedgeCorners(center, spec.rotationDeg, spec.jointRotationDeg!, spec.width))
+    : null;
+  const arcHalfPoints = isJoint
+    ? toPoints(jointHalfSquareCorners(center, spec.jointArcOut!, spec.width))
+    : null;
+  const straightHalfPoints = isJoint
+    ? toPoints(
+        jointHalfSquareCorners(
+          center,
+          jointStraightOut(spec.jointRotationDeg!, spec.jointArcOut!),
+          spec.width,
+        ),
+      )
+    : null;
   if (spec.style === 'hatched' || spec.style === 'hatched-mirror') {
     const fill = `url(#${hatchPatternId(color, spec.style)})`;
     const pts = rotatedSquareCorners(spec.cx, spec.cy, half, spec.rotationDeg)
@@ -163,6 +192,27 @@ export const StopMarker = memo(function StopMarker({
       <>
         {endShape && ow ? (
           <path d={markerEndPath(center, ow, half, endShape)} fill={fill} pointerEvents="none" />
+        ) : isJoint ? (
+          <>
+            <polygon
+              data-marker-half="arc"
+              points={arcHalfPoints!}
+              fill={fill}
+              pointerEvents="none"
+            />
+            <polygon
+              data-marker-half="straight"
+              points={straightHalfPoints!}
+              fill={fill}
+              pointerEvents="none"
+            />
+            <polygon
+              data-marker-joint={spec.stationId}
+              points={jointPoints!}
+              fill={fill}
+              pointerEvents="none"
+            />
+          </>
         ) : (
           <polygon points={pts} fill={fill} pointerEvents="none" />
         )}
@@ -237,6 +287,27 @@ export const StopMarker = memo(function StopMarker({
     <>
       {endShape && ow ? (
         <path d={markerEndPath(center, ow, half, endShape)} fill={color} pointerEvents="none" />
+      ) : isJoint ? (
+        <>
+          <polygon
+            data-marker-half="arc"
+            points={arcHalfPoints!}
+            fill={color}
+            pointerEvents="none"
+          />
+          <polygon
+            data-marker-half="straight"
+            points={straightHalfPoints!}
+            fill={color}
+            pointerEvents="none"
+          />
+          <polygon
+            data-marker-joint={spec.stationId}
+            points={jointPoints!}
+            fill={color}
+            pointerEvents="none"
+          />
+        </>
       ) : (
         <rect
           x={-half}

@@ -32,6 +32,7 @@ const geom = (): GeometrySlice => ({
     B: makeLine({ id: 'B', stations: ['bn', 'bs'], width: 14 }),
     C: makeLine({ id: 'C', stations: ['cn', 'cs'], width: 14 }),
   },
+  lineCircles: {},
 });
 
 const facesFor = (g: GeometrySlice) => {
