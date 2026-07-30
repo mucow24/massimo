@@ -430,6 +430,13 @@ export function renameStation(doc: MapDoc, id: StationId, name: string): MapDoc 
  * and moving a bound station both go through it, so the seat a bind produces
  * and the seat a drag produces can never disagree. (Circle move/resize preserve
  * the polar angle by construction and so reproject without re-deriving it.)
+ *
+ * `theta` IS the un-flipped seat's ring frame: `stationFrameRad` takes the
+ * quarter-turn of the radial nearest the octant, and with the octant sitting on
+ * the tangent that is the radial itself. So it goes to `uprightTangentRotation`
+ * as the angle the name will really be painted at — the flip is a typographic
+ * judgement about painted glyphs, and the rounded octant is up to 22.5° away
+ * from them.
  */
 function circleSeat(
   circle: CircleSpec,
@@ -439,7 +446,7 @@ function circleSeat(
   const theta = circleAngleAt(circle, at);
   const p = pointAtAngle(circle, theta);
   const t = tangentAtAngle(theta);
-  return { x: p.x, y: p.y, rotation: uprightTangentRotation(t.x, t.y, labelRotation) };
+  return { x: p.x, y: p.y, rotation: uprightTangentRotation(t.x, t.y, labelRotation, theta) };
 }
 
 export function moveStation(doc: MapDoc, id: StationId, x: number, y: number): MapDoc {

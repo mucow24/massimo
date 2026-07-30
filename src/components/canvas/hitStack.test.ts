@@ -224,6 +224,7 @@ describe('lockedHitsAt', () => {
     textLabels: {},
     routeBullets: {},
     transfers: {},
+    lineCircles: {},
     ...over,
   });
 

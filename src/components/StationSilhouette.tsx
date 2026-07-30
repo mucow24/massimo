@@ -4,6 +4,8 @@ import { useViewportStore } from '../state/viewportStore';
 import type { Station } from '../model/types';
 import { effectiveStationLabelStyle } from '../model/transforms';
 import { stationBoundaryRectsLocal } from '../geometry/stationBoundary';
+import { stationFrameDeg } from '../geometry/orientation';
+import { stationCircle } from '../geometry/lineCircle';
 import { useStopMetrics } from './useStopMetrics';
 import { polygonsToPath, unionConvex } from '../geometry/polygonUnion';
 import {
@@ -56,6 +58,7 @@ export function StationSilhouette({
 }) {
   const lines = useDoc((s) => s.lines);
   const metrics = useStopMetrics(lines);
+  const lineCircles = useDoc((s) => s.lineCircles);
   const editingStationId = useSelection((s) => s.editingStationId);
   const themeColors = useThemeColors();
   // Paint toggle: reveal waypoint stations (widens the silhouette to wrap the
@@ -65,7 +68,9 @@ export function StationSilhouette({
 
   if (editingStationId === station.id) return null;
 
-  const angle = station.rotation * 45;
+  // The silhouette wraps the cells and the name, so it turns with the frame
+  // that placed them (the RING's on a bound station — see `stationFrameRad`).
+  const angle = stationFrameDeg(station, stationCircle(station, lineCircles));
   // Smooth the union of the cells rect + (rotated) label rect; smoothing
   // applies to the outer-boundary corners only, so the rects meet cleanly. A
   // revealed waypoint gets its label rect (its name is painted, so the ring

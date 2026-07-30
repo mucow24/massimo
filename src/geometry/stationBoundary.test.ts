@@ -121,11 +121,12 @@ describe('stationsForRect — per-stop widths', () => {
     // is 9. A rect spanning x ∈ [10, 12] touches only the widened margin.
     const st = makeStation({ id: 'A', stops: [makeStop('L1', { row: 0, col: 0 })] });
     const rect = { x0: 10, y0: -2, x1: 12, y1: 2 };
-    expect(stationsForRect({ A: st }, rect)).toEqual([]);
+    expect(stationsForRect({ A: st }, rect, {})).toEqual([]);
     expect(
       stationsForRect(
         { A: st },
         rect,
+        {},
         stopMetricsOf({
           lines: { L1: makeLine({ id: 'L1', width: 28 }) },
           transfers: {},
@@ -298,20 +299,20 @@ describe('stationBoundaryRectsLocal', () => {
 describe('stationLocalToWorld', () => {
   it('translates by station.x/y when rotation is 0', () => {
     const st = makeStation({ id: 'A', x: 100, y: 50, rotation: 0 });
-    expect(stationLocalToWorld(st, { x: 5, y: 7 })).toEqual({ x: 105, y: 57 });
+    expect(stationLocalToWorld(st, { x: 5, y: 7 }, null)).toEqual({ x: 105, y: 57 });
   });
 
   it('rotates about station origin then translates for rotation=2 (90°)', () => {
     // Rotation index 2 = 90° clockwise (rotation*45° = 90°).
     const st = makeStation({ id: 'A', x: 0, y: 0, rotation: 2 });
-    const out = stationLocalToWorld(st, { x: 10, y: 0 });
+    const out = stationLocalToWorld(st, { x: 10, y: 0 }, null);
     expect(out.x).toBeCloseTo(0, 5);
     expect(out.y).toBeCloseTo(10, 5);
   });
 
   it('combines rotation and translation', () => {
     const st = makeStation({ id: 'A', x: 100, y: 50, rotation: 2 });
-    const out = stationLocalToWorld(st, { x: 10, y: 0 });
+    const out = stationLocalToWorld(st, { x: 10, y: 0 }, null);
     expect(out.x).toBeCloseTo(100, 5);
     expect(out.y).toBeCloseTo(60, 5);
   });
@@ -323,7 +324,7 @@ describe('stationsForRect', () => {
     const b = stationWithStop('B', 'L1', { x: 1000, y: 1000 });
     const stations = { A: a, B: b };
     const rect = { x0: -100, y0: -100, x1: 100, y1: 100 };
-    expect(stationsForRect(stations, rect)).toEqual(['A']);
+    expect(stationsForRect(stations, rect, {})).toEqual(['A']);
   });
 
   it('detects a station via its label rect when the marquee misses the cells rect', () => {
@@ -344,14 +345,14 @@ describe('stationsForRect', () => {
     // It genuinely misses the cells rect — so a hit can ONLY come from the
     // label branch.
     expect(rectIntersectsPolygon(rect, rects.cells)).toBe(false);
-    expect(stationsForRect(stations, rect)).toEqual(['A']);
+    expect(stationsForRect(stations, rect, {})).toEqual(['A']);
   });
 
   it('returns empty when no station overlaps', () => {
     const a = stationWithStop('A', 'L1', { x: 0, y: 0 });
     const stations = { A: a };
     const rect = { x0: 1000, y0: 1000, x1: 2000, y1: 2000 };
-    expect(stationsForRect(stations, rect)).toEqual([]);
+    expect(stationsForRect(stations, rect, {})).toEqual([]);
   });
 
   it('excludes locked stations from marquee selection', () => {
@@ -359,14 +360,14 @@ describe('stationsForRect', () => {
     const b = stationWithStop('B', 'L1', { x: 10, y: 10 });
     const stations = { A: a, B: b };
     const rect = { x0: -100, y0: -100, x1: 100, y1: 100 };
-    expect(stationsForRect(stations, rect)).toEqual(['B']);
+    expect(stationsForRect(stations, rect, {})).toEqual(['B']);
   });
 
   it('includes locked stations when includeLocked is set (alt-marquee recovery)', () => {
     const a = { ...stationWithStop('A', 'L1', { x: 0, y: 0 }), locked: true };
     const stations = { A: a };
     const rect = { x0: -100, y0: -100, x1: 100, y1: 100 };
-    expect(stationsForRect(stations, rect, undefined, true)).toEqual(['A']);
+    expect(stationsForRect(stations, rect, {}, undefined, true)).toEqual(['A']);
   });
 
   it('a waypoint station does NOT match a rect that only overlaps where the label would be', () => {
@@ -380,7 +381,7 @@ describe('stationsForRect', () => {
     });
     const stations = { A: st };
     const rect = { x0: -30, y0: -7, x1: -10, y1: 7 };
-    expect(stationsForRect(stations, rect)).toEqual([]);
+    expect(stationsForRect(stations, rect, {})).toEqual([]);
   });
 });
 
