@@ -2,9 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, fireEvent } from '@testing-library/react';
 import { HighlightedLineLayer } from './HighlightedLineLayer';
 import { makeBandSpec, makeDoc, makeLine, makeStation, makeStop } from '../../test/fixtures';
-import { connectStationsOnLine } from '../../model/transforms';
+import { connectStationsOnLine, spliceStationIntoEdge } from '../../model/transforms';
 import { stopPosWorld } from '../../geometry/interlining';
-import type { Line, Station } from '../../model/types';
+import type { Line, LineCircle, Station } from '../../model/types';
 import type { OrderedRenderable } from '../../geometry/interlining';
 import type { UiMode } from '../../state/selection';
 import type { AppendCursor, AppendHover } from '../../model/appendGestures';
@@ -25,6 +25,7 @@ const renderLayer = (
     onCycleCursorEdgeStyle?: (from: string, to: string) => void;
     renderables?: OrderedRenderable[];
     appendHover?: AppendHover;
+    lineCircles?: Record<string, LineCircle>;
   } = {},
 ) =>
   render(
@@ -33,7 +34,7 @@ const renderLayer = (
         highlightLineId="L1"
         lines={lines}
         stations={stations}
-        lineCircles={{}}
+        lineCircles={opts.lineCircles ?? {}}
         renderables={opts.renderables ?? []}
         underlayColor="#ffffff"
         seamEdges="both"
@@ -300,6 +301,105 @@ describe('<HighlightedLineLayer /> — Edit Stops hover preview', () => {
     expect(truth.x).not.toBeCloseTo(200); // the stop really moves off the anchor
     expect(Number(ring!.getAttribute('cx'))).toBeCloseTo(truth.x);
     expect(Number(ring!.getAttribute('cy'))).toBeCloseTo(truth.y);
+  });
+
+  it('rings the inherited RING LANE on a bound station, not the rim', () => {
+    // Pen on s1, which runs L1 one lane outside a circle. Hovering the bare
+    // bound station s2: the connect will inherit that lane, so the promise
+    // ring has to sit on it too — ringing the rim would point at a spot the
+    // click never uses.
+    const circle: LineCircle = { id: 'c1', x: 100, y: 100, radius: 70 };
+    const circleLines = {
+      L1: makeLine({ id: 'L1', service: 'A', color: '#cc0000', stations: ['s1'] }),
+      L2: makeLine({ id: 'L2', service: 'B', color: '#0000cc', stations: ['s1'] }),
+    };
+    const circleStations = {
+      s1: makeStation({
+        id: 's1',
+        x: 170,
+        y: 100,
+        rotation: 0,
+        circleId: 'c1',
+        stops: [makeStop('L2', { viaCircle: true }), makeStop('L1', { col: 1, viaCircle: true })],
+      }),
+      s2: makeStation({ id: 's2', x: 100, y: 170, rotation: 2, circleId: 'c1' }),
+    };
+    const { container } = renderLayer(
+      circleLines,
+      circleStations,
+      appending({ kind: 'station', stationId: 's1' }),
+      { appendHover: { kind: 'station', stationId: 's2' }, lineCircles: { c1: circle } },
+    );
+    const ring = container.querySelector('[data-append-hover-ring="s2"] circle');
+    expect(ring).not.toBeNull();
+
+    const doc = makeDoc({
+      lines: Object.values(circleLines),
+      stations: Object.values(circleStations),
+      lineCircles: [circle],
+    });
+    const after = connectStationsOnLine(doc, 'L1', 's1', 's2');
+    const cell = after.stations.s2.stops.find((c) => c.lineId === 'L1')!;
+    const truth = stopPosWorld(cell, after.stations.s2, { c1: circle });
+
+    // The lane really is off the rim — otherwise this test proves nothing.
+    expect(Math.hypot(truth.x - 100, truth.y - 100)).toBeCloseTo(84);
+    expect(Number(ring!.getAttribute('cx'))).toBeCloseTo(truth.x);
+    expect(Number(ring!.getAttribute('cy'))).toBeCloseTo(truth.y);
+  });
+
+  it('rings the SPLICE lane from the same end the transform splices from', () => {
+    // An armed edge whose two ends sit on different lanes. appendSpawnSource
+    // names `from`, and spliceStationIntoEdge must read `from` too — the one
+    // pairing that keeps the promise ring and the committed stop together.
+    const circle: LineCircle = { id: 'c1', x: 100, y: 100, radius: 70 };
+    const circleLines = {
+      L1: makeLine({ id: 'L1', service: 'A', color: '#cc0000', stations: ['s1', 's3'] }),
+    };
+    const circleStations = {
+      s1: makeStation({
+        id: 's1',
+        x: 170,
+        y: 100,
+        rotation: 0,
+        circleId: 'c1',
+        stops: [makeStop('L1', { col: 1, viaCircle: true })],
+      }),
+      // North seat: radial-out is local −x, so this is lane 2.
+      s3: makeStation({
+        id: 's3',
+        x: 100,
+        y: 30,
+        rotation: 2,
+        circleId: 'c1',
+        stops: [makeStop('L1', { col: -2, viaCircle: true })],
+      }),
+      s2: makeStation({ id: 's2', x: 100, y: 170, rotation: 2, circleId: 'c1' }),
+    };
+    const doc = makeDoc({
+      lines: Object.values(circleLines),
+      stations: Object.values(circleStations),
+      lineCircles: [circle],
+    });
+
+    for (const [from, to] of [
+      ['s1', 's3'],
+      ['s3', 's1'],
+    ]) {
+      const { container } = renderLayer(
+        circleLines,
+        circleStations,
+        { kind: 'appending-to-line', lineId: 'L1', cursor: { kind: 'edge', from, to } },
+        { appendHover: { kind: 'station', stationId: 's2' }, lineCircles: { c1: circle } },
+      );
+      const ring = container.querySelector('[data-append-hover-ring="s2"] circle');
+      expect(ring).not.toBeNull();
+      const after = spliceStationIntoEdge(doc, 'L1', from, to, 's2');
+      const cell = after.stations.s2.stops.find((c) => c.lineId === 'L1')!;
+      const truth = stopPosWorld(cell, after.stations.s2, { c1: circle });
+      expect(Number(ring!.getAttribute('cx'))).toBeCloseTo(truth.x);
+      expect(Number(ring!.getAttribute('cy'))).toBeCloseTo(truth.y);
+    }
   });
 
   it('does not ring a non-member when a click there is a dead click (null cursor)', () => {

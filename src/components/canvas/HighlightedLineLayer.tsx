@@ -22,6 +22,7 @@ import { useThemeColors } from '../../state/theme';
 import {
   appendRoutePreviewEdges,
   appendSegmentHoverPreview,
+  appendSpawnSource,
   appendStationHoverPreview,
   validCursor,
   type AppendHover,
@@ -504,9 +505,18 @@ export function HighlightedLineLayer({
             ) {
               const st = stations[appendHover.stationId];
               if (st) {
+                // The same source station the click will wire from, so a ring
+                // lane inherited on commit is the lane the ring promises.
+                const srcId = appendSpawnSource(ln, append.cursor, appendHover.stationId);
                 const cell =
                   st.stops.find((c) => c.lineId === highlightLineId) ??
-                  spawnStopCellAt(st, highlightLineId, lines, lineCircles);
+                  spawnStopCellAt(
+                    st,
+                    highlightLineId,
+                    lines,
+                    lineCircles,
+                    (srcId && stations[srcId]) || null,
+                  );
                 const p = stopPosWorld(cell, st, lineCircles);
                 hoverRing = twoToneRing(p.x, p.y, {
                   dataAttr: 'data-append-hover-ring',

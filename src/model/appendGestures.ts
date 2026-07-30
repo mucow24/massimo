@@ -281,6 +281,23 @@ export function appendRoutePreviewEdges(
 }
 
 /**
+ * The station a click on `stationId` would wire FROM — the pen for a connect,
+ * the near end of the armed edge for a splice, null for a click that adds no
+ * corridor. This is what `spawnStopCellAt` reads to inherit a ring LANE, so it
+ * exists to keep the hover preview and the committed transform on one answer:
+ * the preview rings `spawnStopCellAt(hovered, …, appendSpawnSource(…))` and the
+ * dispatch hands the same station to connect/splice.
+ */
+export function appendSpawnSource(
+  line: Line,
+  cursor: AppendCursor,
+  stationId: StationId,
+): StationId | null {
+  const d = decideStationClick(line, cursor, stationId);
+  return d.kind === 'connect' || d.kind === 'splice' ? d.from : null;
+}
+
+/**
  * The CSS cursor for a station while editing a line's stops, derived from the
  * click matrix above so the cursor never promises an action the click
  * wouldn't take: 'copy' (the OS arrow-with-plus) when the click would put the
