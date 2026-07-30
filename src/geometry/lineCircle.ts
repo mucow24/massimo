@@ -44,10 +44,12 @@ export function tangentAtAngle(theta: number): Vec2 {
 }
 
 /**
- * The first line circle whose RIM lies within `tolerance` of `p`, or null.
- * The capture test for binding gestures: station drags, station placement and
- * the Edit Stops create-click all share it, so "close enough to snap onto the
- * ring" can never mean different things in different modes.
+ * The line circle whose RIM lies NEAREST `p`, within `tolerance`, or null —
+ * nearest, not first found, so overlapping rings capture the one actually under
+ * the cursor (ties go to the last in key order). The capture test for binding
+ * gestures: station drags, station placement and the Edit Stops create-click all
+ * share it, so "close enough to snap onto the ring" can never mean different
+ * things in different modes.
  */
 export function lineCircleAtPoint<C extends CircleSpec & { id: string }>(
   lineCircles: Record<string, C>,
@@ -134,6 +136,48 @@ export function jointStraightOut(jointRotationDeg: number, jointArcOut: Vec2): V
   const rad = (jointRotationDeg * Math.PI) / 180;
   const o = { x: Math.cos(rad), y: Math.sin(rad) };
   return o.x * jointArcOut.x + o.y * jointArcOut.y <= 0 ? o : { x: -o.x, y: -o.y };
+}
+
+/** The joint-marker fields of a `StopMarkerSpec`, taken structurally. */
+export interface JointMarkerSpec {
+  cx: number;
+  cy: number;
+  width: number;
+  rotationDeg: number;
+  jointRotationDeg: number | null;
+  jointArcOut: Vec2 | null;
+}
+
+/**
+ * The three pieces a JOINT stop is made of — arc-side half-square, straight-side
+ * half-square, and the cap-plane wedge between them — or null when `spec` is not
+ * a joint stop at all. `wedge` is null on its own when the two frames are
+ * (nearly) parallel and there is nothing between them.
+ *
+ * One owner for the decomposition, because the painter and the region cover BOTH
+ * need it and must agree exactly: the region footprint is what masks the paint,
+ * so a piece present in one and absent from the other shows up as a sliver of
+ * the wrong line's color at the joint. (They still differ downstream, and
+ * legitimately: the painter draws `wedge` as one crossed "bowtie" polygon, while
+ * the clipper wants its two SIMPLE triangle lobes.)
+ */
+export function jointMarkerPieces(spec: JointMarkerSpec): {
+  arcHalf: [Vec2, Vec2, Vec2, Vec2];
+  straightHalf: [Vec2, Vec2, Vec2, Vec2];
+  wedge: [Vec2, Vec2, Vec2, Vec2] | null;
+} | null {
+  const { jointRotationDeg, jointArcOut } = spec;
+  if (jointRotationDeg === null || jointArcOut === null) return null;
+  const center = { x: spec.cx, y: spec.cy };
+  return {
+    arcHalf: jointHalfSquareCorners(center, jointArcOut, spec.width),
+    straightHalf: jointHalfSquareCorners(
+      center,
+      jointStraightOut(jointRotationDeg, jointArcOut),
+      spec.width,
+    ),
+    wedge: jointWedgeCorners(center, spec.rotationDeg, jointRotationDeg, spec.width),
+  };
 }
 
 /**
