@@ -1291,6 +1291,7 @@ export function MapCanvas() {
                 ).includes(cid)}
                 interactive={polygonsInteractive}
                 inHandMode={inHandMode}
+                showCardinals={snapModes.circle}
                 onPointerDown={(e, id, part) => circleDrag.onStartDrag(id, part, e)}
                 onClick={(id) => selection.selectLineCircle(id)}
               />

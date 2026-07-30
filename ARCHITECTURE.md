@@ -145,8 +145,10 @@ src/
     router.ts                   # octolinear path solver + arc fillets + offset paths
     interlining.ts              # THE band algorithm: merge lines into parallel stripes
     appendRoutePreview.ts       # Edit Stops route preview: run the REAL connect/splice on a scratch doc, rebuild bands, keep the ADDED corridors
-    snap.ts                     # the snap engine (line/equidistant/tens/all/grid modes)
-    lineCircle.ts               # circle math: project/tangent, rim capture, shorter-arc sweep,
+    snap.ts                     # the snap engine (line/equidistant/tens/all/grid modes) + the
+                                #   SnapModes pref shape, whose `circle` mode the engine never reads
+    lineCircle.ts               # circle math: project/tangent, rim capture, cardinal seats,
+                                #   shorter-arc sweep,
                                 #   arc tangent polygons (the fillet-walk-exact arc trick)
     lattice.ts                  # stop-placement lattice (orthogonal/diagonal)
     stationBoundary.ts          # selection silhouette + marquee hit rects
@@ -447,9 +449,11 @@ arrows (stop rows, layout editor, hover badges).
 
 **`LineCircle`** (`MapDoc.lineCircles`) — a perfect-circle guide: `id, x, y` (center),
 `radius` (quarter-unit grid, ≥ `LINE_CIRCLE_RADIUS_MIN`, [model/lineCircle.ts](src/model/lineCircle.ts)),
-`locked?`. **Editor scaffolding, never map ink**: rendered as a dashed guide ring
-([LineCircleView.tsx](src/components/LineCircleView.tsx), `theme.guide`, export-excluded); the
-painted arcs come from line edges. The concept splits in two, on purpose:
+`locked?`. **Editor scaffolding, never map ink**: rendered as a dashed guide ring — plus a resize
+knob on its east point while selected, and eight radial cardinal ticks while the `circle` snap
+mode is on ([LineCircleView.tsx](src/components/LineCircleView.tsx), `theme.guide`,
+export-excluded; the ticks come in as a prop, since the snap mode is a UI pref and no part of the
+circle). The painted arcs come from line edges. The concept splits in two, on purpose:
 
 - **"On the circle geometrically"** is the STATION binding (`Station.circleId`): bind projects
   the station onto the circumference, rotates it to the tangent octant, and defaults every stop
@@ -1580,12 +1584,16 @@ Three seams cover it, and a fourth rule governs anything new:
   The split: **definitions are global; the active set (`activePalettes`) is per-map in the doc.**
   Resolution helpers take the custom palettes as an **explicit param** (the pure model never
   reaches into a store); `deleteCustomPalette` is the cross-store coordinator.
-- [snapPrefs.ts](src/state/snapPrefs.ts) — `useSnapPrefs`: snap-mode toggles, with a v0→v1
-  boolean→enum migration. Number keys **1–5** (and Numpad1–5, via `e.code` so they fire with
-  NumLock off) each advance one toggle a single step, in toolbar order — the keyboard twin of a
-  click on that button. Both paths route through the pure `advanceSnapToggle(modes, index)`
+- [snapPrefs.ts](src/state/snapPrefs.ts) — `useSnapPrefs`: snap-mode toggles, migrated on
+  rehydrate (v0's boolean `all`/`grid` become the directional enums, and **any key the blob
+  predates is filled from `DEFAULT_SNAP_MODES`** — zustand's default merge replaces `modes`
+  wholesale, so without that a mode added later reads `undefined` at runtime). Number keys
+  **1–6** (and Numpad1–6, via `e.code` so they fire with NumLock off) each advance one toggle a
+  single step, in toolbar order — the keyboard twin of a click on that button. Both paths route
+  through the pure `advanceSnapToggle(modes, index)`
   ([SnapToggleBar.tsx](src/components/SnapToggleBar.tsx)) so a keypress is exactly one click
-  (multi-state toggles cycle over repeated presses; a disabled toggle is a no-op).
+  (multi-state toggles cycle over repeated presses; a disabled toggle is a no-op). The bound key
+  range is `SNAP_TOGGLE_COUNT`, derived from the toggle list, so a new toggle wires its own key.
 
 ---
 
@@ -1772,6 +1780,21 @@ position and the engine + grid are bypassed — and a bound station stays constr
 pulled `3×` tolerance off the rim (escape hysteresis; Shift detaches instantly, the same
 bypass convention as everything else). Guides don't fire while captured: the ring itself is
 the feedback.
+
+Which seat on the rim is `snapPointToCircle`'s call, the angular half of that constraint and the
+one owner of it across all three entry points. Plain rim by default; under the **`circle` snap
+mode** ("Snap to circle cardinals") the seat is also pulled to the nearest of the ring's eight
+**cardinals** — 45° apart from due east — and the guide grows tick marks there. Two independent
+axes, deliberately: radial distance is the capture/release test, angular distance the cardinal
+one, and the cardinal window is an arc LENGTH measured against the same tolerance, so it spans a
+constant number of screen px and a tight ring is far more magnetic than a huge one. There is no
+"circle off" state — a ring always captures, and Shift is how you decline. The pull travels
+ALONG the rim, so it never disturbs the projection every downstream consumer depends on:
+`circleSeat` reprojects whatever it is handed, the drop-side `bindDroppedStation` still
+recognizes the seat at its tight tolerance, and circle move/resize preserve the polar angle — so
+a bisected ring stays bisected through both. Cardinal-to-cardinal chords are octolinear only for
+EVEN steps (diameters and quarter chords); odd steps come out at 22.5° and the router doglegs
+them.
 
 **Deliberately unsnapped** (documented, not bugs): arrow-key nudges (raw 1 / Shift 5 world
 units — free fine-positioning); 45° group rotate (re-snapping would distort shapes); snapping

@@ -1,5 +1,6 @@
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { LineCircle } from '../model/types';
+import { CIRCLE_CARDINAL_ANGLES } from '../geometry/lineCircle';
 
 // Rim affordance sizes, all in SCREEN px (÷ zoom at use), matching the
 // selection-chrome convention (selectionStyle.ts): the guide reads the same
@@ -8,6 +9,11 @@ const GUIDE_STROKE_PX = 1.25;
 const GUIDE_DASH_PX = 5;
 const RIM_HIT_PX = 12;
 const KNOB_HALF_PX = 4;
+// Cardinal ticks: solid and a touch heavier than the dashed ring, so they read
+// as marks ON the guide rather than more of it, and straddling the rim so the
+// mark is legible whether it lands on a dash or in a gap.
+const CARDINAL_TICK_PX = 4;
+const CARDINAL_STROKE_PX = 1.5;
 
 export type LineCirclePart = 'rim' | 'knob';
 
@@ -21,6 +27,10 @@ interface Props {
   // the guide stays visible but takes no pointer events.
   interactive: boolean;
   inHandMode: boolean;
+  // "Snap to circle cardinals" is on: mark the eight seats the snap will pull
+  // to. Passed in rather than read here so the view stays dumb — and because
+  // the mode is a UI pref, never part of the circle.
+  showCardinals: boolean;
   // Selection happens at pointer-down (the drag hook selects before arming).
   onPointerDown?: (e: ReactPointerEvent, id: string, part: LineCirclePart) => void;
   // Real clicks are redundant with the pointer-down selection above; this
@@ -45,12 +55,15 @@ export function LineCircleView({
   selected,
   interactive,
   inHandMode,
+  showCardinals,
   onPointerDown,
   onClick,
 }: Props) {
   const px = (v: number) => v / zoom;
   const clickThrough = !interactive || inHandMode || (circle.locked && !selected);
   const knobHalf = px(KNOB_HALF_PX);
+  const strokeColor = selected ? accentColor : guideColor;
+  const tick = px(CARDINAL_TICK_PX);
   return (
     <g data-line-circle={circle.id}>
       <circle
@@ -58,11 +71,30 @@ export function LineCircleView({
         cy={circle.y}
         r={circle.radius}
         fill="none"
-        stroke={selected ? accentColor : guideColor}
+        stroke={strokeColor}
         strokeWidth={px(GUIDE_STROKE_PX)}
         strokeDasharray={`${px(GUIDE_DASH_PX)} ${px(GUIDE_DASH_PX)}`}
         pointerEvents="none"
       />
+      {showCardinals && (
+        <g data-line-circle-cardinals={circle.id} pointerEvents="none">
+          {CIRCLE_CARDINAL_ANGLES.map((t, k) => {
+            const ux = Math.cos(t);
+            const uy = Math.sin(t);
+            return (
+              <line
+                key={k}
+                x1={circle.x + (circle.radius - tick) * ux}
+                y1={circle.y + (circle.radius - tick) * uy}
+                x2={circle.x + (circle.radius + tick) * ux}
+                y2={circle.y + (circle.radius + tick) * uy}
+                stroke={strokeColor}
+                strokeWidth={px(CARDINAL_STROKE_PX)}
+              />
+            );
+          })}
+        </g>
+      )}
       {!clickThrough && (
         <circle
           data-line-circle-rim={circle.id}

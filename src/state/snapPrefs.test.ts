@@ -55,6 +55,25 @@ describe('useSnapPrefs', () => {
     expect(modes.grid).toBe('both');
   });
 
+  it('fills a key the persisted blob predates, rather than leaving it undefined', () => {
+    // A v1 blob has no `circle`. Zustand's default merge replaces `modes`
+    // WHOLESALE, so without a version bump the store would run with a required
+    // field missing — benign today only because `undefined` happens to be
+    // falsey, which is not the invariant we want to rest on.
+    localStorage.setItem(
+      'massimo-snap-prefs-v1',
+      JSON.stringify({
+        state: { modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' } },
+        version: 1,
+      }),
+    );
+    useSnapPrefs.persist.rehydrate();
+    const modes = useSnapPrefs.getState().modes;
+    expect(modes.circle).toBe(false);
+    // ...without trampling what the user had actually set.
+    expect(modes.grid).toBe('both');
+  });
+
   it('migrates legacy false flags to off', () => {
     localStorage.setItem(
       'massimo-snap-prefs-v1',

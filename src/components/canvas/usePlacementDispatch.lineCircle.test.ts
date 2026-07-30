@@ -5,6 +5,7 @@ import { useDoc, useSelection } from '../../state/store';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { DEFAULT_SNAP_MODES } from '../../geometry/snap';
 import { makeLineCircle } from '../../test/fixtures';
+import { pointAtAngle } from '../../geometry/lineCircle';
 import { pointerEvent } from '../../test/interaction';
 import { useSnapPrefs } from '../../state/snapPrefs';
 import type { ViewportApi } from './useViewport';
@@ -63,6 +64,67 @@ describe('snapPlacement — line-circle rim capture', () => {
     );
     expect(r.x).toBe(175);
     expect(r.y).toBe(100);
+  });
+});
+
+describe('snapPlacement — cardinal magnetism on the rim', () => {
+  const CARDINALS = { ...DEFAULT_SNAP_MODES, circle: true };
+  const RIM = { x: 100, y: 100, radius: 70 };
+  // Cursor points are derived, not tabulated: a point 5 units OUTSIDE the rim
+  // at polar angle θ (captured, since 5 < 10) whose projection therefore lands
+  // at exactly θ on the rim.
+  const outside = (theta: number) => pointAtAngle({ ...RIM, radius: 75 }, theta);
+  const onRim = (theta: number) => pointAtAngle(RIM, theta);
+  // 0.06 rad shy of due west = 4.2 units of arc, inside the 10-unit window.
+  const NEAR_WEST = outside(Math.PI - 0.06);
+  const place = (world: { x: number; y: number }, modes = CARDINALS, shift = false) =>
+    snapPlacement({ kind: 'placing-station' }, world, shift, modes, 25, 1);
+
+  it('pulls a placed station onto the 9 o’clock cardinal', () => {
+    const r = place(NEAR_WEST);
+    expect(r.x).toBeCloseTo(30, 6);
+    expect(r.y).toBeCloseTo(100, 6);
+  });
+
+  it('stops at the plain rim seat when cardinals are off', () => {
+    const r = place(NEAR_WEST, DEFAULT_SNAP_MODES);
+    const want = onRim(Math.PI - 0.06);
+    expect(r.x).toBeCloseTo(want.x, 9);
+    expect(r.y).toBeCloseTo(want.y, 9);
+  });
+
+  it('applies to the Edit Stops create-click too, not just placing-station', () => {
+    const r = snapPlacement(
+      { kind: 'appending-to-line', lineId: 'L1', cursor: null },
+      NEAR_WEST,
+      false,
+      CARDINALS,
+      25,
+      1,
+    );
+    expect(r.x).toBeCloseTo(30, 6);
+    expect(r.y).toBeCloseTo(100, 6);
+  });
+
+  it('leaves a rim seat far from every cardinal alone', () => {
+    // θ = 0.4 rad — 27 units of arc from the nearest cardinal.
+    const r = place(outside(0.4));
+    const want = onRim(0.4);
+    expect(r.x).toBeCloseTo(want.x, 9);
+    expect(r.y).toBeCloseTo(want.y, 9);
+  });
+
+  it('Shift still bypasses with cardinals on', () => {
+    const r = place(NEAR_WEST, CARDINALS, true);
+    expect(r.x).toBe(NEAR_WEST.x);
+    expect(r.y).toBe(NEAR_WEST.y);
+  });
+
+  it('keeps the seat exactly on the rim, so the drop still binds', () => {
+    // bindDroppedStation re-captures at a 0.5-unit tolerance; a cardinal pull
+    // travels ALONG the rim, so that recognition must be untouched.
+    const r = place(NEAR_WEST);
+    expect(Math.hypot(r.x - 100, r.y - 100)).toBeCloseTo(70, 9);
   });
 });
 
