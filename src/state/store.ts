@@ -16,6 +16,7 @@ import type {
   Polygon,
   PolygonStylePatch,
   RegionAssignment,
+  Rotation,
   RouteBullet,
   SeamEdges,
   StationId,
@@ -799,7 +800,11 @@ interface DocState extends MapDoc {
   setLineCircleRadius: (id: string, radius: number) => void;
   setLineCircleLocked: (id: string, locked: boolean) => void;
   deleteLineCircle: (id: string) => void;
-  bindStationToCircle: (stationId: StationId, circleId: string) => void;
+  bindStationToCircle: (
+    stationId: StationId,
+    circleId: string,
+    seatFrom?: { x: number; y: number; rotation: Rotation },
+  ) => void;
   unbindStationFromCircle: (stationId: StationId) => void;
   setStopViaCircle: (stationId: StationId, lineId: LineId, via: boolean) => void;
 
@@ -1250,8 +1255,8 @@ export const useDoc = create<DocState>()(
           set(withRegionReconcile((s) => T.setLineCircleRadius(s, id, radius))),
         setLineCircleLocked: (id, locked) => set((s) => T.setLineCircleLocked(s, id, locked)),
         deleteLineCircle: (id) => set(withRegionReconcile((s) => T.deleteLineCircle(s, id))),
-        bindStationToCircle: (stationId, circleId) =>
-          set(withRegionReconcile((s) => T.bindStationToCircle(s, stationId, circleId))),
+        bindStationToCircle: (stationId, circleId, seatFrom) =>
+          set(withRegionReconcile((s) => T.bindStationToCircle(s, stationId, circleId, seatFrom))),
         unbindStationFromCircle: (stationId) =>
           set(withRegionReconcile((s) => T.unbindStationFromCircle(s, stationId))),
         setStopViaCircle: (stationId, lineId, via) =>

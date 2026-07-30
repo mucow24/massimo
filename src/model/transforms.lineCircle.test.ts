@@ -699,6 +699,33 @@ describe('a re-seat keeps the layout on its side of the ring', () => {
     // 180° lands on the label's WORLD angle, which is what the flip is for.
     expect(moved.stations.s.label.rotation).toBe(doc.stations.s.label.rotation);
   });
+
+  it('a re-bind handed the seat it left reproduces the uninterrupted slide', () => {
+    // The drag's escape hysteresis pops a station OFF the rim mid-gesture (a
+    // straight cursor path across a wide arc leaves the release band) and
+    // re-captures it moments later. Its cells never changed, but the rotation
+    // it carries is the seat it LEFT, so a plain bind re-reads the layout
+    // through a frame a quarter turn out and the outer lane lands inside.
+    const doc = twoLaneRing();
+    const seat = doc.stations.s;
+    const rad = (150 * Math.PI) / 180;
+    const to = {
+      x: CIRCLE.x + CIRCLE.radius * Math.cos(rad),
+      y: CIRCLE.y + CIRCLE.radius * Math.sin(rad),
+    };
+    const escaped = moveStation(unbindStationFromCircle(doc, 's'), 's', to.x, to.y);
+    // The control: with no seat to resume from this IS a fresh bind, and the
+    // outer lane crosses to the inside — the bug, and still the right answer
+    // for a station that was never on the ring.
+    expect(laneRadius(bindStationToCircle(escaped, 's', 'c1'), 'l2')).toBeCloseTo(
+      CIRCLE.radius - STOP_SIZE,
+      9,
+    );
+    const rebound = bindStationToCircle(escaped, 's', 'c1', seat);
+    expect(laneRadius(rebound, 'l2')).toBeCloseTo(CIRCLE.radius + STOP_SIZE, 9);
+    // Not just "outside" — the same cells the unbroken slide would have left.
+    expect(rebound.stations.s.stops).toEqual(moveStation(doc, 's', to.x, to.y).stations.s.stops);
+  });
 });
 
 // Extending a line along a ring must land the new stop on the lane the line
