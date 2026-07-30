@@ -24,7 +24,13 @@ export interface AlignExclude {
  *  object; the live store state satisfies it. */
 export type AlignDoc = Pick<
   MapDoc,
-  'stations' | 'polygons' | 'svgImages' | 'textLabels' | 'routeBullets' | 'transferAnchors'
+  | 'stations'
+  | 'polygons'
+  | 'svgImages'
+  | 'textLabels'
+  | 'routeBullets'
+  | 'transferAnchors'
+  | 'lineCircles'
 >;
 
 /**
@@ -52,10 +58,11 @@ export function alignTargets(doc: AlignDoc, exclude: AlignExclude = {}): Vec2[] 
     if (exclude.stationIds?.has(id)) continue;
     const st = doc.stations[id];
     if (st.stops.length === 0) out.push({ x: st.x, y: st.y });
-    else for (const c of st.stops) out.push(stopPosWorld(c, st));
+    else for (const c of st.stops) out.push(stopPosWorld(c, st, doc.lineCircles));
     // Hosted anchors ride along with their station, so the one `stationIds`
     // check above covers them in a group drag too.
-    for (const cell of st.transferAnchors ?? []) out.push(stationAnchorWorld(st, cell));
+    for (const cell of st.transferAnchors ?? [])
+      out.push(stationAnchorWorld(st, cell, doc.lineCircles));
   }
   for (const id of Object.keys(doc.polygons)) {
     if (exclude.polygonIds?.has(id)) continue;

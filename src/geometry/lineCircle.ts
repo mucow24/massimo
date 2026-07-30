@@ -10,6 +10,19 @@ export interface CircleSpec {
 }
 
 /**
+ * The line circle a station is bound to, or null when it is free (or its
+ * `circleId` dangles). The single lookup every frame-resolving caller goes
+ * through — a station's cell frame depends on it (see `stationFrameRad`), so
+ * "is this station on a ring" must read the same way everywhere.
+ */
+export function stationCircle<C extends CircleSpec>(
+  station: { circleId?: string },
+  lineCircles: Record<string, C>,
+): C | null {
+  return station.circleId !== undefined ? (lineCircles[station.circleId] ?? null) : null;
+}
+
+/**
  * Polar angle of `p` as seen from the circle's center, in radians. Screen
  * y-down frame: angle 0 is EAST of center, increasing angles sweep
  * east → south → west → north (visually clockwise). A point AT the center has

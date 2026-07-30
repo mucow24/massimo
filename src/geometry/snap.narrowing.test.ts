@@ -129,6 +129,7 @@ function makeScenario(seed: number): SnapInput {
     draggedStops,
     stations: stationsRec(...stations),
     lines: linesRec(...lines),
+    lineCircles: {},
     excludedIds,
     redistributeAnchor,
     modes,
@@ -179,6 +180,7 @@ describe('snapDraggedStation — narrowing equivalence against the full-scan ora
             dStops,
             t,
             input.lines,
+            {},
             true,
           ),
         ).toEqual([]);
@@ -200,6 +202,7 @@ describe('snapDraggedStation — preserved corner cases of the line-mode pool', 
       draggedStops: [],
       stations: stationsRec(d, t),
       lines: {},
+      lineCircles: {},
     });
     expect(r.x).toBeCloseTo(100, 5);
     expect(r.y).toBeCloseTo(50, 5);
@@ -218,6 +221,7 @@ describe('snapDraggedStation — preserved corner cases of the line-mode pool', 
       draggedStops: d.stops,
       stations: stationsRec(d, t),
       lines: linesRec(L1),
+      lineCircles: {},
     });
     expect(r.x).toBeCloseTo(97, 5); // no snap
   });
@@ -245,6 +249,7 @@ describe('snapDraggedStation — preserved corner cases of the line-mode pool', 
       draggedStops: a.stops,
       stations: stationsRec(a, b, c, dd),
       lines: linesRec(L1),
+      lineCircles: {},
     });
     expect(r.x).toBeCloseTo(100, 5); // snapped onto d's axis via the wrap edge
   });
@@ -262,6 +267,7 @@ describe('snapDraggedStation — preserved corner cases of the line-mode pool', 
       draggedStops: a.stops,
       stations: stationsRec(a, b, c),
       lines: linesRec(L1),
+      lineCircles: {},
     });
     expect(r.x).toBeCloseTo(97, 5); // no snap
   });
@@ -279,6 +285,7 @@ describe('snapDraggedStation — preserved corner cases of the line-mode pool', 
       draggedStops: b.stops,
       stations: stationsRec(a, m, b),
       lines: linesRec(L1),
+      lineCircles: {},
       redistributeAnchor: 'a' as StationId,
     });
     expect(r.x).toBeCloseTo(100, 5);
@@ -296,6 +303,7 @@ describe('snapDraggedStation — preserved corner cases of the line-mode pool', 
       draggedStops: a.stops,
       stations: stationsRec(a, b),
       lines: linesRec(L1),
+      lineCircles: {},
     };
     expect(snapDraggedStation(base).x).toBeCloseTo(100, 5);
     expect(snapDraggedStation({ ...base, excludedIds: new Set(['b' as StationId]) }).x).toBeCloseTo(

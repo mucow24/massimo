@@ -295,7 +295,7 @@ describe('<HighlightedLineLayer /> — Edit Stops hover preview', () => {
     });
     const after = connectStationsOnLine(doc, 'L1', 's1', 's3');
     const cell = after.stations.s3.stops.find((c) => c.lineId === 'L1')!;
-    const truth = stopPosWorld(cell, after.stations.s3);
+    const truth = stopPosWorld(cell, after.stations.s3, {});
 
     expect(truth.x).not.toBeCloseTo(200); // the stop really moves off the anchor
     expect(Number(ring!.getAttribute('cx'))).toBeCloseTo(truth.x);

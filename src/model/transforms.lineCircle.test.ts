@@ -19,6 +19,8 @@ import {
 } from './transforms';
 import { LINE_CIRCLE_RADIUS_DEFAULT, LINE_CIRCLE_RADIUS_MIN } from './lineCircle';
 import type { MapDoc } from './types';
+import { stopPosWorld } from '../geometry/interlining';
+import { STOP_SIZE } from '../geometry/orientation';
 
 const CIRCLE = makeLineCircle({ id: 'c1', x: 100, y: 100, radius: 70 });
 
@@ -446,5 +448,72 @@ describe('moveStation on a bound station', () => {
     const doc = boundDoc();
     const out = moveStation(doc, 'free', 123, 456);
     expect(out.stations.free).toMatchObject({ x: 123, y: 456 });
+  });
+});
+
+// `circleSeat` turns `rotation` a full 180° where the label would otherwise
+// read upside-down. Cells are expressed in that frame, so without compensation
+// the turn silently mirrors the layout through the anchor and every lane
+// crosses to the other side of the rim.
+describe('a re-seat keeps the layout on its side of the ring', () => {
+  // Two lanes: l1 on the rim, l2 one lane out.
+  function twoLaneRing(): MapDoc {
+    return makeDoc({
+      stations: [
+        makeStation({
+          id: 's',
+          x: 170,
+          y: 100,
+          rotation: 0,
+          circleId: 'c1',
+          stops: [makeStop('l1', { viaCircle: true }), makeStop('l2', { col: 1, viaCircle: true })],
+        }),
+      ],
+      lines: [makeLine({ id: 'l1', stations: ['s'] }), makeLine({ id: 'l2', stations: ['s'] })],
+      lineCircles: [CIRCLE],
+    });
+  }
+
+  const laneRadius = (doc: MapDoc, lineId: string): number => {
+    const st = doc.stations.s;
+    const p = stopPosWorld(st.stops.find((c) => c.lineId === lineId)!, st, doc.lineCircles);
+    return Math.hypot(p.x - CIRCLE.x, p.y - CIRCLE.y);
+  };
+
+  it('keeps the outer lane OUTSIDE at every angle around the circle', () => {
+    const doc = twoLaneRing();
+    const inside: number[] = [];
+    for (let deg = 0; deg < 360; deg += 5) {
+      const rad = (deg * Math.PI) / 180;
+      const moved = moveStation(
+        doc,
+        's',
+        CIRCLE.x + CIRCLE.radius * Math.cos(rad),
+        CIRCLE.y + CIRCLE.radius * Math.sin(rad),
+      );
+      expect(laneRadius(moved, 'l1')).toBeCloseTo(CIRCLE.radius, 9);
+      if (laneRadius(moved, 'l2') < CIRCLE.radius) inside.push(deg);
+    }
+    expect(inside).toEqual([]);
+  });
+
+  it('preserves stop world positions across the uprightness flip', () => {
+    // 150° is inside the flipped band: the seat there turns rotation by 180°
+    // relative to the east seat, so this is the compensation under test.
+    const doc = twoLaneRing();
+    const rad = (150 * Math.PI) / 180;
+    const moved = moveStation(
+      doc,
+      's',
+      CIRCLE.x + CIRCLE.radius * Math.cos(rad),
+      CIRCLE.y + CIRCLE.radius * Math.sin(rad),
+    );
+    // The flip really happened — otherwise this test proves nothing.
+    expect((moved.stations.s.rotation - doc.stations.s.rotation + 8) % 8).not.toBe(0);
+    // Cells negated, so the lane is still one step radially OUT.
+    expect(laneRadius(moved, 'l2')).toBeCloseTo(CIRCLE.radius + STOP_SIZE, 9);
+    // The name still flips right-side-up: label.rotation is untouched, so the
+    // 180° lands on the label's WORLD angle, which is what the flip is for.
+    expect(moved.stations.s.label.rotation).toBe(doc.stations.s.label.rotation);
   });
 });

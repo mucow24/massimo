@@ -1,9 +1,10 @@
-import type { Line, LineId, Station, StationId, StopCell } from '../model/types';
+import type { Line, LineCircle, LineId, Station, StationId, StopCell } from '../model/types';
 import type { Vec2 } from './vec';
 import { cross, SQRT2_2 } from './vec';
-import { rotateBy, stopCenterAt, travelDirLocal } from './orientation';
+import { rotateBy, stationDirToWorld, stopCenterAt, travelDirLocal } from './orientation';
 import type { Rotation } from './orientation';
 import { stopPosWorld } from './interlining';
+import { stationCircle } from './lineCircle';
 import { lineHasEdge, neighborsOf, shortestPathOnLine } from '../model/lineTopology';
 
 /**
@@ -194,6 +195,10 @@ export interface SnapInput {
   /** Required for line-adjacency filtering — only line-adjacent stations on
    *  a shared line emit a snap pair. */
   lines: Record<LineId, Line>;
+  /** The doc's line circles. A bound station resolves its stop cells through
+   *  the RING frame (see `stationFrameRad`), so a snapper that skipped them
+   *  would aim at a stop position nothing actually paints. */
+  lineCircles: Record<string, LineCircle>;
   /** World-units perpendicular tolerance for engaging a snap. */
   tolerance?: number;
   /** Ctrl-drag (redistribute) mode: the fixed end of the redistribute. Line
@@ -243,6 +248,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     draggedStops,
     stations,
     lines,
+    lineCircles,
     excludedIds,
     tolerance = SNAP_PERP_TOLERANCE,
     redistributeAnchor,
@@ -333,18 +339,19 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     const linePairs: AlignmentPair[] =
       lineModeOn && lineTargetIds.has(t.id) && lineTargetEligible(t)
         ? bulletLineId
-          ? bulletAlignmentPairs(t, bulletLineId)
+          ? bulletAlignmentPairs(t, bulletLineId, lineCircles)
           : alignmentPairs(
               draggedId as StationId,
               draggedRotation as Rotation,
               dStops,
               t,
               lines,
+              lineCircles,
               requireAdjacency,
             )
         : [];
     const allPairs: AlignmentPair[] = allTargetIds.has(t.id)
-      ? allAxesPairs(dStops, (draggedRotation ?? 0) as Rotation, t, modes.all)
+      ? allAxesPairs(dStops, (draggedRotation ?? 0) as Rotation, t, lineCircles, modes.all)
       : [];
     type TaggedPair = AlignmentPair & { kind: 'line' | 'all' };
     const pairs: TaggedPair[] = [
@@ -569,6 +576,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
       draggedStops: draggedStops ?? [],
       lines,
       stationsRec: stations,
+      lineCircles,
       modes,
       tolerance,
       gridInterval,
@@ -908,10 +916,14 @@ export interface AlignmentPair {
  * adjacency doesn't apply: a bullet labeling a line cares about every
  * stop on that line, not just neighbors.
  */
-export function bulletAlignmentPairs(target: Station, lineId: LineId): AlignmentPair[] {
+export function bulletAlignmentPairs(
+  target: Station,
+  lineId: LineId,
+  lineCircles: Record<string, LineCircle>,
+): AlignmentPair[] {
   const cell = target.stops.find((c) => c.lineId === lineId);
   if (!cell) return [];
-  const tWorld = stopPosWorld(cell, target);
+  const tWorld = stopPosWorld(cell, target, lineCircles);
   return [
     {
       dOff: { x: 0, y: 0 },
@@ -962,10 +974,39 @@ export function axesForAllSnap(mode: AllSnap): Vec2[] {
   }
 }
 
+/**
+ * A TARGET stop's offset from its station anchor, resolved through that
+ * station's frame — the ring's on a bound station, the octant otherwise (see
+ * `stationFrameRad`). A snap promises "your stop will line up with THAT dot",
+ * so it has to aim at where the dot actually paints. Re-deriving the offset as
+ * `rotateBy(cell, rotation)` reads the octant position, which on a ring station
+ * misses an outer lane by up to 5.46 world units; the dragged station then
+ * lands that far off the axis, and an octolinear router with no notion of
+ * "nearly aligned" has no route left to draw for a pair the user just snapped.
+ *
+ * Only the TARGET side goes through here. The dragged side keeps `rotateBy`:
+ * unbound, that IS its frame, and bound it would be circular — the frame
+ * depends on where the station lands on the ring, which is the very thing the
+ * snap is solving for. A bound station's anchor is re-projected onto the rim by
+ * `moveStation` afterwards regardless.
+ */
+function stopOffsetInFrame(
+  cell: StopCell,
+  station: Station,
+  lineCircles: Record<string, LineCircle>,
+): Vec2 {
+  return stationDirToWorld(
+    stopCenterAt(cell.row, cell.col),
+    station,
+    stationCircle(station, lineCircles),
+  );
+}
+
 export function allAxesPairs(
   draggedStops: StopCell[],
   draggedRotation: Rotation,
   target: Station,
+  lineCircles: Record<string, LineCircle>,
   mode: AllSnap = 'all',
 ): AlignmentPair[] {
   const axes = axesForAllSnap(mode);
@@ -979,7 +1020,7 @@ export function allAxesPairs(
   const tOffs: Vec2[] =
     target.stops.length === 0
       ? [{ x: 0, y: 0 }]
-      : target.stops.map((c) => rotateBy(stopCenterAt(c.row, c.col), target.rotation));
+      : target.stops.map((c) => stopOffsetInFrame(c, target, lineCircles));
   const out: AlignmentPair[] = [];
   for (const tOff of tOffs) {
     for (const dOff of dOffs) {
@@ -1034,6 +1075,7 @@ function refineAlongAxis(args: {
   draggedStops: StopCell[];
   lines: Record<LineId, Line>;
   stationsRec: Record<StationId, Station>;
+  lineCircles: Record<string, LineCircle>;
   modes: SnapModes;
   tolerance: number;
   /** Active grid size — the cadence "Snap to grid length" notches to. */
@@ -1083,7 +1125,7 @@ function refineAlongAxis(args: {
   ): { x: number; y: number; axisOk: boolean } | null => {
     const cell = st.stops.find((c) => c.lineId === lineId);
     if (!cell) return null;
-    const w = stopPosWorld(cell, st);
+    const w = stopPosWorld(cell, st, args.lineCircles);
     const stopAxis = rotateBy(travelDirLocal(cell.orientation), st.rotation);
     return { x: w.x, y: w.y, axisOk: parallel(stopAxis, axis) };
   };
@@ -1267,6 +1309,7 @@ export function alignmentPairs(
   draggedStops: StopCell[],
   target: Station,
   lines: Record<LineId, Line>,
+  lineCircles: Record<string, LineCircle>,
   // When false, skip the line-adjacency check and emit a pair on every
   // shared line where the travel directions are parallel. Used by the
   // Ctrl-drag (redistribute) snap path to align with a non-adjacent anchor.
@@ -1294,7 +1337,7 @@ export function alignmentPairs(
     const tWorldDir = rotateBy(travelDirLocal(tCell.orientation), target.rotation);
     if (!parallel(dWorldDir, tWorldDir)) continue;
     const dOff: Vec2 = rotateBy(stopCenterAt(dCell.row, dCell.col), draggedRotation);
-    const tOff: Vec2 = rotateBy(stopCenterAt(tCell.row, tCell.col), target.rotation);
+    const tOff: Vec2 = stopOffsetInFrame(tCell, target, lineCircles);
     out.push({ dOff, tOff, axis: dWorldDir });
   }
   return out;

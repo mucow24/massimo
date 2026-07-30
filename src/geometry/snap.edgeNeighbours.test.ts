@@ -61,6 +61,7 @@ describe('refineAlongAxis equidistant: neighbours must come from the edge graph'
       draggedStops: b.stops,
       stations: stationsRec(a, b, c, d),
       lines: linesRec(l1),
+      lineCircles: {},
       modes: equidistantOnly,
     });
 
@@ -91,6 +92,7 @@ describe('refineAlongAxis equidistant: neighbours must come from the edge graph'
       draggedStops: b.stops,
       stations: stationsRec(a, b, c, d),
       lines: linesRec(l1),
+      lineCircles: {},
       modes: equidistantOnly,
     });
 

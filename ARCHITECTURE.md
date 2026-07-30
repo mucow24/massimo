@@ -140,6 +140,7 @@ src/
 
   geometry/                     # PURE math — world coordinates, no React/store
     vec.ts orientation.ts       # vector primitives; rotation/local↔world; STOP_SIZE=14;
+                                #   the station FRAME (stationFrameRad: octant, or a ring's own);
                                 #   ORIENTATION_ANGLE (the drawn stop arrow's rotation, parallel
                                 #   to travelDirLocal) + ANCHOR_HALF (a free anchor's footprint)
     router.ts                   # octolinear path solver + arc fillets + offset paths
@@ -390,7 +391,8 @@ kind. See [styles.ts](src/model/styles.ts).
 - `circleId?` — binds the station onto a line circle's circumference (see Line circles below).
   Bound stations sit ON the circle, drag ALONG it (`moveStation` projects), and keep `rotation`
   at the nearest-octant tangent with the label held right-side-up (`uprightTangentRotation`,
-  shared with autoOrient). Dangling ids strip on load.
+  shared with autoOrient). Their STOP cells do NOT resolve through that rounded angle — see the
+  ring frame under Line circles. Dangling ids strip on load.
 - `fontSize? / weight? / italic? / leading? / tracking?` — **per-station name typography**, each
   omitted at its `LABEL_*` default (fontSize→`LABEL_FONT_SIZE_DEFAULT`, weight→`LABEL_WEIGHT_DEFAULT`,
   italic→false, leading→`LABEL_LEADING_DEFAULT`, tracking→`LABEL_TRACKING_DEFAULT`). These are the
@@ -464,6 +466,27 @@ painted arcs come from line edges. The concept splits in two, on purpose:
   two ring stations would spawn a second line's stops on opposite sides), and a stop removal
   re-homes the survivors (`rehomeCircleStops`: translate stops + label + hosted anchors rigidly
   so the nearest stop lands back at the origin — the move a user would make by hand).
+
+  A bound station's cells resolve through the **ring frame**, not `rotation`: `stationFrameRad`
+  returns the quarter-turn of the radial frame nearest `rotation · 45°`, and `stationCellToWorld`
+  rotates by that. The rounded angle is up to 22.5° off the true tangent, so resolving through it
+  would put a lane-k stop at `R + k·pitch·cos(err)` — the same lane on a different radius at
+  every angle around the ring, which BOTH concentric gates (`segCircleFit` for "does this edge arc",
+  `forEachPackedRun` for "are these two lanes one band") then reject against `BAND_MERGE_TOL`.
+  Lane 0 is immune, having no offset to foreshorten, which is why a single-line ring never showed
+  it. Through the ring frame a lane sits at exactly `R + k·pitch` anywhere. Off a ring — and on
+  one at an octant angle — the frame IS `rotation · 45°` and the bit-exact `rotateBy` path is
+  taken, so nothing else moves. Hence `stopPosWorld` takes `lineCircles` as a REQUIRED param (the
+  `tangentGap` idiom): a call site that skipped it would place a ring stop a lane off its own arc.
+  The station LABEL deliberately stays in the octant frame — its angle is typography, and the
+  autoAlign octant model owns it.
+
+  Re-seating compensates for the uprightness flip. `circleSeat` turns `rotation` a full 180° where
+  the name would otherwise read upside-down, and cells are expressed in that frame, so the turn
+  would mirror the whole layout through the anchor and send every lane across the rim. So
+  `moveStation` negates the cells whenever `radialLocalTurn` inverts: stops, hosted anchors and
+  the label CELL keep their world positions while `label.rotation` is left alone, which is what
+  lets the 180° land on the name — the one thing the flip is for.
 - **"Routed via the circle"** is the per-stop `viaCircle` flag. An EDGE renders as a circular
   arc iff BOTH endpoint stops carry it, both stations bind to the SAME circle, and the stops sit
   at matching radial offsets. A deliberate opt-out (one end unflagged) degrades SILENTLY to the
@@ -1691,7 +1714,11 @@ of them:
   here too — but the flag is now shared with the point snapper, below). Flow: pick a target pool → generate candidate
   alignment pairs per target (line-mode requires a shared line + parallel travel dirs +
   adjacency; all-mode ignores topology; a stopless station participates via its anchor on
-  either side) keeping those whose perpendicular distance is within tolerance → **consolidate
+  either side; the pair's TARGET offset resolves through that station's frame — the ring's on a
+  bound station, see Line circles — since the snap promises alignment with the dot that PAINTS,
+  while the DRAGGED offset stays on the plain octant rotation, which IS its frame when unbound
+  and would be circular when not, the frame depending on where the ring seats it) keeping those
+  whose perpendicular distance is within tolerance → **consolidate
   interlined candidates by MEDIAN** offset (not mean — keeps the guide on a real stripe) → pick
   a primary + a non-parallel secondary axis → solve (2×2 intersection or projection) → apply
   grid as a **hard constraint** (when on, the result is always on-grid; an alignment fires only

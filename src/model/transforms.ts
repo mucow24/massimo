@@ -76,6 +76,7 @@ import {
 } from './lineTopology';
 import {
   STOP_SIZE,
+  radialLocalTurn,
   rotateBy,
   stopCenterAt,
   tangentGap,
@@ -445,8 +446,47 @@ export function moveStation(doc: MapDoc, id: StationId, x: number, y: number): M
     if (!circle) return { ...st, x, y };
     // Bound stations move ALONG their circle. Detaching is the caller's move
     // (unbind first) — see the drag hysteresis in the interaction layer.
-    return { ...st, ...circleSeat(circle, { x, y }, st.label.rotation) };
+    return reseatCircleLayout(
+      st,
+      { ...st, ...circleSeat(circle, { x, y }, st.label.rotation) },
+      circle,
+    );
   });
+}
+
+/**
+ * Keep a re-seated station's layout on the SAME SIDE of its ring.
+ *
+ * `circleSeat` turns `rotation` a full 180° when the label would otherwise read
+ * upside-down, and the cell frame turns with it (see `radialLocalTurn`). Cells
+ * are unchanged by that turn, so their radial meaning inverts underneath them:
+ * a `col: 1` lane painted OUTSIDE the ring lands inside it the moment a drag
+ * crosses an uprightness boundary. Every stop of that station jumps a lane
+ * across the rim, which reads as the arc breaking (its far end is still on the
+ * old radius, so the concentric-arc gate rejects the pair) — the label flip is
+ * supposed to be about type, not geometry.
+ *
+ * Negating the cells restores exactly what the turn took: stops, hosted anchors
+ * and the label cell all keep their world positions, while `rotation` keeps the
+ * seat's choice — so the NAME still flips right-side-up, which is the one thing
+ * the flip exists to do. `label.rotation` is deliberately untouched: the label's
+ * world angle is `rotation + label.rotation`, so leaving it is what lets the
+ * 180° land on the type. Stop orientations are axes, invariant under 180°.
+ */
+function reseatCircleLayout(before: Station, after: Station, circle: CircleSpec): Station {
+  if (radialLocalTurn(before, circle) === radialLocalTurn(after, circle)) return after;
+  const flip = <T extends { row: number; col: number }>(cell: T): T => ({
+    ...cell,
+    // Normalize -0 → 0: it stringifies as "0" but loses every strict compare.
+    row: cell.row === 0 ? 0 : -cell.row,
+    col: cell.col === 0 ? 0 : -cell.col,
+  });
+  return {
+    ...after,
+    stops: after.stops.map(flip),
+    label: flip(after.label),
+    ...(after.transferAnchors ? { transferAnchors: after.transferAnchors.map(flip) } : {}),
+  };
 }
 
 /**

@@ -8,7 +8,13 @@ import {
   StationId,
   StopCell,
 } from '../model/types';
-import { arcTangentPolygon, circleAngleAt, tangentAtAngle, wrapAngleToPi } from './lineCircle';
+import {
+  arcTangentPolygon,
+  circleAngleAt,
+  stationCircle,
+  tangentAtAngle,
+  wrapAngleToPi,
+} from './lineCircle';
 import { pairKeyOf } from '../model/pairKey';
 import { edgeEndpoints, incidentEdges, neighborsOf } from '../model/lineTopology';
 import { LINE_END_STYLE_DEFAULT, resolveEndStyle, stationEndStyleOf } from '../model/lineEnd';
@@ -28,7 +34,7 @@ import {
 import { dirIndex, offsetFilletPath, route } from './router';
 import {
   BAND_MERGE_TOL,
-  localToWorld,
+  stationCellToWorld,
   rotateBy,
   STOP_SIZE,
   stopCenterAt,
@@ -348,13 +354,28 @@ interface SegInfo {
   worldHint: Vec2;
 }
 
-// Stop center in WORLD coords (anchor + cell offset rotated by station rotation).
-// This IS the rendered position — every visual consumer (markers, bands,
+// Stop center in WORLD coords (anchor + cell offset rotated into the station's
+// frame). This IS the rendered position — every visual consumer (markers, bands,
 // transfers, snap candidates) reads world positions through here. Moving a
 // stop's (row, col) is the ONLY way to change its on-screen location;
 // neighboring stops have no effect.
-export function stopPosWorld(cell: StopCell, station: Station): Vec2 {
-  return localToWorld(stopCenterAt(cell.row, cell.col), station);
+//
+// `lineCircles` is REQUIRED, not defaulted, for the same reason `tangentGap`'s
+// gap params are: a station bound to a ring resolves its cells through the ring
+// frame (see `stationFrameRad`), and a call site that quietly fell back to the
+// octant frame would place that stop a lane off its own arc — visible as a
+// dot sitting beside its stripe, or a "can't route" on a perfectly good
+// interline. An empty record is the honest way to say "no rings here".
+export function stopPosWorld(
+  cell: StopCell,
+  station: Station,
+  lineCircles: Record<string, LineCircle>,
+): Vec2 {
+  return stationCellToWorld(
+    stopCenterAt(cell.row, cell.col),
+    station,
+    stationCircle(station, lineCircles),
+  );
 }
 
 export function travelDirWorld(cell: StopCell, station: Station, worldHint: Vec2 | null): Vec2 {
@@ -537,7 +558,15 @@ export function buildBandGeometry(
       }
     }
     for (const cid of Object.keys(circleGroups)) {
-      buildCircleBands(circleGroups[cid], lineCircles[cid], pairKey, stations, lines, bands);
+      buildCircleBands(
+        circleGroups[cid],
+        lineCircles[cid],
+        pairKey,
+        stations,
+        lines,
+        lineCircles,
+        bands,
+      );
     }
 
     // Bucket by world travel AXIS at each end (mod 4). Two lines on the same
@@ -588,8 +617,8 @@ export function buildBandGeometry(
       // so the endpoint stations are fixed across the bucket — pull them
       // off the sample once.
       const placed: PackedSeg[] = bucket.map((s) => {
-        const fp = stopPosWorld(s.fromCell, fromS);
-        const tp = stopPosWorld(s.toCell, toS);
+        const fp = stopPosWorld(s.fromCell, fromS, lineCircles);
+        const tp = stopPosWorld(s.toCell, toS, lineCircles);
         return {
           seg: s,
           width: lineWidthOf(lines[s.lineId]),
@@ -616,6 +645,7 @@ export function buildBandGeometry(
           tDir,
           fromS,
           toS,
+          lineCircles,
         );
         // A member that asked to ride a circle but couldn't (mismatched
         // radial offsets — see segCircleFit) lights the routing warning, so
@@ -798,7 +828,7 @@ export function buildStopMarkers(
     for (const cell of station.stops) {
       const line = lines[cell.lineId];
       if (!line) continue;
-      const { x: cx, y: cy } = stopPosWorld(cell, station);
+      const { x: cx, y: cy } = stopPosWorld(cell, station, lineCircles);
       // Rotate the marker square so its edges run parallel/perpendicular to
       // the stop's world-frame travel axis. For cardinal-axis stops this is
       // equivalent to station.rotation * 45 (mod 90, which the square's
@@ -844,7 +874,7 @@ export function buildStopMarkers(
             stations,
             lineCircles,
           );
-          if (fit?.kind === 'rides') arcNbrPos ??= stopPosWorld(nCell, nSt);
+          if (fit?.kind === 'rides') arcNbrPos ??= stopPosWorld(nCell, nSt, lineCircles);
           else hasStraight = true;
         }
         if (!arcNbrPos) {
@@ -993,8 +1023,8 @@ function segCircleFit(
   if (cid === undefined || toS?.circleId !== cid) return null;
   const circle = lineCircles[cid];
   if (!circle) return null;
-  const fp = stopPosWorld(s.fromCell, fromS);
-  const tp = stopPosWorld(s.toCell, toS);
+  const fp = stopPosWorld(s.fromCell, fromS, lineCircles);
+  const tp = stopPosWorld(s.toCell, toS, lineCircles);
   const rf = Math.hypot(fp.x - circle.x, fp.y - circle.y);
   const rt = Math.hypot(tp.x - circle.x, tp.y - circle.y);
   return Math.abs(rf - rt) < BAND_MERGE_TOL ? { kind: 'rides', circle } : { kind: 'blocked' };
@@ -1012,6 +1042,7 @@ function buildCircleBands(
   pairKey: string,
   stations: Record<StationId, Station>,
   lines: Record<LineId, Line>,
+  lineCircles: Record<string, LineCircle>,
   out: SegmentBandSpec[],
 ): void {
   const fromS = stations[segs[0].fromId];
@@ -1020,13 +1051,13 @@ function buildCircleBands(
   // axis so that ascending "perp" matches ascending stripe offsets (positive
   // offset = left of motion = radially OUT on a clockwise sweep).
   const sample = segs[0];
-  const aFrom0 = circleAngleAt(circle, stopPosWorld(sample.fromCell, fromS));
-  const aTo0 = circleAngleAt(circle, stopPosWorld(sample.toCell, toS));
+  const aFrom0 = circleAngleAt(circle, stopPosWorld(sample.fromCell, fromS, lineCircles));
+  const aTo0 = circleAngleAt(circle, stopPosWorld(sample.toCell, toS, lineCircles));
   const sgn = wrapAngleToPi(aTo0 - aFrom0) >= 0 ? 1 : -1;
 
   const placed: PackedSeg[] = segs.map((s) => {
-    const fp = stopPosWorld(s.fromCell, fromS);
-    const tp = stopPosWorld(s.toCell, toS);
+    const fp = stopPosWorld(s.fromCell, fromS, lineCircles);
+    const tp = stopPosWorld(s.toCell, toS, lineCircles);
     return {
       seg: s,
       width: lineWidthOf(lines[s.lineId]),
@@ -1050,6 +1081,7 @@ function buildCircleBands(
         pairKey,
         fromS,
         toS,
+        lineCircles,
       ),
     );
   });
@@ -1063,9 +1095,10 @@ function buildCircleBandSpec(
   pairKey: string,
   fromStation: Station,
   toStation: Station,
+  lineCircles: Record<string, LineCircle>,
 ): SegmentBandSpec {
-  const fromWorlds = group.map((g) => stopPosWorld(g.fromCell, fromStation));
-  const toWorlds = group.map((g) => stopPosWorld(g.toCell, toStation));
+  const fromWorlds = group.map((g) => stopPosWorld(g.fromCell, fromStation, lineCircles));
+  const toWorlds = group.map((g) => stopPosWorld(g.toCell, toStation, lineCircles));
   const fromMean = centroid(fromWorlds);
   const toMean = centroid(toWorlds);
   const aFrom = circleAngleAt(circle, fromMean);
@@ -1130,11 +1163,12 @@ function buildBandSpec(
   // share these IDs by construction (a band is one pairKey + one bucket).
   fromStation: Station,
   toStation: Station,
+  lineCircles: Record<string, LineCircle>,
 ): SegmentBandSpec {
   // Centerline endpoints are the mean of the band's per-line stop world
   // positions — i.e. the centroid of the contributing stop cells at each end.
-  const fromWorlds = group.map((g) => stopPosWorld(g.fromCell, fromStation));
-  const toWorlds = group.map((g) => stopPosWorld(g.toCell, toStation));
+  const fromWorlds = group.map((g) => stopPosWorld(g.fromCell, fromStation, lineCircles));
+  const toWorlds = group.map((g) => stopPosWorld(g.toCell, toStation, lineCircles));
   const fromMeanWorld = centroid(fromWorlds);
   const toMeanWorld = centroid(toWorlds);
 

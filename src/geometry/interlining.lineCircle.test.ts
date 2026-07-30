@@ -4,8 +4,10 @@ import {
   __resetSpecReuse,
   buildBandGeometry,
   buildStopMarkers,
+  stopPosWorld,
   type SegmentBandSpec,
 } from './interlining';
+import { STOP_SIZE } from './orientation';
 import { offsetPathLength, sampleOffsetPath } from './lineTagGeometry';
 import * as T from '../model/transforms';
 import type { MapDoc, Rotation, Station } from '../model/types';
@@ -301,5 +303,143 @@ describe('viaCircle stop markers', () => {
     // angleDeg(tangentAtAngle(0.6)) = atan2(cos 0.6, −sin 0.6) in degrees.
     const expected = (Math.atan2(Math.cos(theta), -Math.sin(theta)) * 180) / Math.PI;
     expect(m1?.rotationDeg).toBeCloseTo(expected, 6);
+  });
+});
+
+// A ring's lanes are RADIAL, but a bound station's cell lattice is rotated to
+// the nearest OCTANT — up to 22.5° apart. A lane-1 stop therefore lands at
+// R + 14·cos(err), so the same lane index resolves to a different radius at
+// every angle, and both circle gates (the segCircleFit arc test and the
+// forEachPackedRun merge test) compare those radii against BAND_MERGE_TOL.
+// Lane 0 is immune (zero offset, nothing to quantize) — which is why single-
+// line rings always worked and hid this.
+describe('interlined rings hold their lanes at ANY angle, not just the octants', () => {
+  // Two bound stations carrying the same two lines, built only through public
+  // transforms so the stops are placed by the app's own spawn logic.
+  function twoLineRing(deg1: number, deg2: number): MapDoc {
+    const rad = (d: number) => (d * Math.PI) / 180;
+    const at = (d: number) => ({
+      x: CX + R * Math.cos(rad(d)),
+      y: CY + R * Math.sin(rad(d)),
+    });
+    let doc = makeDoc({
+      stations: [
+        makeStation({ id: 'a', ...at(deg1), stops: [] }),
+        makeStation({ id: 'b', ...at(deg2), stops: [] }),
+      ],
+      lines: [makeLine({ id: 'l1', stations: [] }), makeLine({ id: 'l2', stations: [] })],
+      lineCircles: [makeLineCircle({ id: 'c1', x: CX, y: CY, radius: R })],
+    });
+    doc = T.bindStationToCircle(doc, 'a', 'c1');
+    doc = T.bindStationToCircle(doc, 'b', 'c1');
+    doc = T.addStationToLine(doc, 'l1', 'a');
+    doc = T.connectStationsOnLine(doc, 'l1', 'a', 'b');
+    doc = T.addStationToLine(doc, 'l2', 'a');
+    doc = T.connectStationsOnLine(doc, 'l2', 'a', 'b');
+    return doc;
+  }
+
+  const stopRadius = (doc: MapDoc, sid: string, lid: string): number => {
+    const st = doc.stations[sid];
+    return distFromCenter(
+      stopPosWorld(st.stops.find((c) => c.lineId === lid)!, st, doc.lineCircles),
+    );
+  };
+
+  it('puts both ends of a lane on ONE radius at a non-octant angle', () => {
+    // 22° is the worst case: its tangent quantizes a full 22° away, shrinking
+    // the radial step from 14 to 14·cos 22° while the 0° end keeps the full 14.
+    const doc = twoLineRing(0, 22);
+    expect(stopRadius(doc, 'a', 'l1')).toBeCloseTo(R, 9);
+    expect(stopRadius(doc, 'b', 'l1')).toBeCloseTo(R, 9);
+    expect(stopRadius(doc, 'a', 'l2')).toBeCloseTo(R + STOP_SIZE, 9);
+    expect(stopRadius(doc, 'b', 'l2')).toBeCloseTo(R + STOP_SIZE, 9);
+  });
+
+  it('routes the lane-1 arc instead of warning', () => {
+    const doc = twoLineRing(0, 22);
+    const bands = buildBandGeometry(doc.stations, doc.lines, doc.lineCircles);
+    expect(bands.some((b) => b.warning)).toBe(false);
+  });
+
+  it('still MERGES the two lanes into one packed band off the octants', () => {
+    // 10°/100° passes the arc gate today (both ends quantize identically) but
+    // fails the packing gate — the radial step is 13.81, not 14 — so the pair
+    // silently renders as two independent single-stripe bands.
+    const doc = twoLineRing(10, 100);
+    const bands = buildBandGeometry(doc.stations, doc.lines, doc.lineCircles);
+    expect(bands).toHaveLength(1);
+    expect(bands[0].lines.map((l) => l.id)).toEqual(['l1', 'l2']);
+    expect(bands[0].stripeOffsets).toEqual([-7, 7]);
+    for (const d of bandArcSamples(bands[0], -7)) expect(d).toBeCloseTo(R, 3);
+    for (const d of bandArcSamples(bands[0], 7)) expect(d).toBeCloseTo(R + STOP_SIZE, 3);
+  });
+
+  it('survives dragging a bound station all the way around the ring', () => {
+    const base = twoLineRing(0, 90);
+    const broken: number[] = [];
+    for (let deg = 0; deg < 360; deg += 5) {
+      const p = {
+        x: CX + R * Math.cos((deg * Math.PI) / 180),
+        y: CY + R * Math.sin((deg * Math.PI) / 180),
+      };
+      const doc = T.moveStation(base, 'b', p.x, p.y);
+      __resetSpecReuse();
+      if (buildBandGeometry(doc.stations, doc.lines, doc.lineCircles).some((x) => x.warning)) {
+        broken.push(deg);
+      }
+    }
+    expect(broken).toEqual([]);
+  });
+});
+
+// Geometry reduced from a real broken map: two ring stations whose seats put
+// radial-out on OPPOSITE local axes (rotation 1 with the lane at col −1,
+// rotation 7 with it at col +1), and whose tangents quantize by different
+// amounts (5.1° vs 17.0°). Under the octant frame that spread the lane across
+// two radii 0.52 apart — just past BAND_MERGE_TOL, so the arc was refused.
+describe('a lane spanning opposite radial-local turns still rides one radius', () => {
+  const RC = { x: -24.665771504350346, y: -69.64362260937475, radius: 186.25 };
+
+  it('resolves both ends onto R + one lane and routes the arc', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 'university',
+          x: -167.3781613179745,
+          y: -189.31916853954456,
+          rotation: 1,
+          circleId: 'c1',
+          stops: [makeStop('B', { viaCircle: true }), makeStop('A', { col: -1, viaCircle: true })],
+        }),
+        makeStation({
+          id: 'russell',
+          x: 62.73827473927592,
+          y: -234.11123401126153,
+          rotation: 7,
+          circleId: 'c1',
+          stops: [makeStop('B', { viaCircle: true }), makeStop('A', { col: 1, viaCircle: true })],
+        }),
+      ],
+      lines: [
+        makeLine({ id: 'B', stations: ['university', 'russell'] }),
+        makeLine({ id: 'A', stations: ['university', 'russell'] }),
+      ],
+      lineCircles: [makeLineCircle({ id: 'c1', ...RC })],
+    });
+    const radius = (sid: string, lid: string): number => {
+      const st = doc.stations[sid];
+      const p = stopPosWorld(st.stops.find((c) => c.lineId === lid)!, st, doc.lineCircles);
+      return Math.hypot(p.x - RC.x, p.y - RC.y);
+    };
+    expect(radius('university', 'B')).toBeCloseTo(RC.radius, 9);
+    expect(radius('russell', 'B')).toBeCloseTo(RC.radius, 9);
+    expect(radius('university', 'A')).toBeCloseTo(RC.radius + STOP_SIZE, 9);
+    expect(radius('russell', 'A')).toBeCloseTo(RC.radius + STOP_SIZE, 9);
+
+    const bands = buildBandGeometry(doc.stations, doc.lines, doc.lineCircles);
+    expect(bands.some((b) => b.warning)).toBe(false);
+    expect(bands).toHaveLength(1);
+    expect(bands[0].stripeOffsets).toEqual([-7, 7]);
   });
 });

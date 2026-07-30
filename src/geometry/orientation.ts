@@ -1,4 +1,5 @@
 import { Vec2, SQRT2_2 } from './vec';
+import { wrapAngleToPi } from './lineCircle';
 import type { StopOrientation } from '../model/types';
 
 export const STOP_SIZE = 14;
@@ -272,6 +273,131 @@ export const localToWorld = (
 ): Vec2 => {
   const r = rotateBy(local, station.rotation);
   return { x: r.x + station.x, y: r.y + station.y };
+};
+
+/**
+ * The angle (radians, clockwise in the y-down frame) that carries a station's
+ * unrotated local axes into the world. This is the frame every STOP cell is
+ * resolved through — {@link stationCellToWorld}.
+ *
+ * An unbound station's frame is exactly its octant `rotation`, and this returns
+ * that. A CIRCLE-BOUND station's is not, and that difference is the whole point
+ * of this function: its lattice has to carry the ring's lanes, and those are
+ * RADIAL — continuous — while `rotation` is quantized to the nearest octant, up
+ * to 22.5° away. Resolve cells through the quantized angle and a lane-k stop
+ * lands at R + k·pitch·cos(err) rather than R + k·pitch, so the SAME lane sits
+ * on a different radius at every angle around the ring. Both concentric-arc
+ * gates compare those radii against BAND_MERGE_TOL (`segCircleFit` to decide the
+ * edge arcs at all, `forEachPackedRun` to decide two lanes are one band), so an
+ * ordinary two-line interline fails to route, or silently stops interlining,
+ * depending on where its stations happen to sit. Lane 0 is immune — zero offset,
+ * nothing to quantize — which is why a single-line ring always worked and hid
+ * this.
+ *
+ * So a bound station's frame is the RING's: the multiple-of-90° turn of the
+ * radial frame lying nearest the station's octant rotation. Nearest, rather than
+ * "the radial one", because which local axis points radially out depends on the
+ * seat (the label-uprightness flip in `circleSeat` alone inverts it) and the
+ * frame must stay the one `rotation` already names — exact instead of rounded.
+ * Lane k then lands at exactly R + k·pitch at every angle.
+ *
+ * At the eight octant angles the ring frame IS `rotation · 45°`, and the
+ * bit-exact `rotateBy` path is taken there, so a ring built on the axes — and
+ * everything off a ring — stays byte-identical.
+ */
+export function stationFrameRad(
+  station: { x: number; y: number; rotation: Rotation },
+  circle: { x: number; y: number } | null,
+): number {
+  const octant = rotRad(station.rotation);
+  if (!circle) return octant;
+  const dx = station.x - circle.x;
+  const dy = station.y - circle.y;
+  // A station AT the center has no radial direction; fall back to the octant
+  // (the same degenerate reading `circleAngleAt` takes).
+  if (dx === 0 && dy === 0) return octant;
+  const radial = Math.atan2(dy, dx);
+  let best = radial;
+  let bestOff = Infinity;
+  for (let k = 0; k < 4; k++) {
+    const cand = radial + (k * Math.PI) / 2;
+    // Wrapped, so the comparison is true angular distance and not a winding
+    // count — the candidates run to 270° past a radial that can be negative.
+    const d = Math.abs(wrapAngleToPi(cand - octant));
+    if (d < bestOff) {
+      bestOff = d;
+      best = cand;
+    }
+  }
+  return best;
+}
+
+/**
+ * Which quarter-turn of a bound station's local frame points radially OUT,
+ * as 0..3 (0 = local +x is outward, 1 = +y, 2 = −x, 3 = −y). This is what a
+ * stop cell's radial MEANING rests on: `col: 1` is a lane outside the ring at
+ * turn 0 and a lane inside it at turn 2.
+ *
+ * It is not constant around a ring. `circleSeat` picks the tangent octant OR
+ * its opposite, whichever leaves the label right-side-up, so `rotation` turns
+ * a full 180° at the uprightness boundaries — and the frame, which tracks
+ * `rotation`, turns with it. Only those two readings are reachable (the frame
+ * is always the tangent or the tangent reversed, and radial is a quarter turn
+ * off either), so the value only ever flips between one pair of opposites;
+ * a seat can never leave a layout a quarter-turn out.
+ */
+export function radialLocalTurn(
+  station: { x: number; y: number; rotation: Rotation },
+  circle: { x: number; y: number },
+): number {
+  const radial = Math.atan2(station.y - circle.y, station.x - circle.x);
+  const d = wrapAngleToPi(radial - stationFrameRad(station, circle));
+  return ((Math.round(d / (Math.PI / 2)) % 4) + 4) % 4;
+}
+
+/**
+ * A station-local point in WORLD coords, resolved through the station's frame
+ * (see {@link stationFrameRad}) rather than its raw octant rotation. `circle` is
+ * the line circle the station is bound to, or null.
+ *
+ * The octant case delegates to {@link localToWorld} so it keeps `rotateBy`'s
+ * exact matrix entries — a station off a ring, or on one at an octant angle,
+ * must not pick up the 6.1e-17 drift a trig rotation carries (see `rotateBy`).
+ */
+export const stationCellToWorld = (
+  local: Vec2,
+  station: { x: number; y: number; rotation: Rotation },
+  circle: { x: number; y: number } | null,
+): Vec2 => {
+  const r = stationDirToWorld(local, station, circle);
+  return { x: r.x + station.x, y: r.y + station.y };
+};
+
+/**
+ * A station-local DIRECTION (or offset) rotated into world, through the
+ * station's frame — {@link stationCellToWorld} without the translation. What a
+ * consumer wants when it needs which WAY a local axis points rather than where
+ * a cell lands (the dash tick's outward axis, for one).
+ *
+ * The octant case delegates to `rotateBy` so it keeps that function's exact
+ * matrix entries — a station off a ring, or on one at an octant angle, must not
+ * pick up the 6.1e-17 drift a trig rotation carries (see `rotateBy`).
+ */
+export const stationDirToWorld = (
+  local: Vec2,
+  station: { rotation: Rotation; x: number; y: number },
+  circle: { x: number; y: number } | null,
+): Vec2 => {
+  // Off a ring there is nothing to resolve, and this is the hot path — every
+  // stop of every station, rebuilt per drag frame. Take it before any trig.
+  if (!circle) return rotateBy(local, station.rotation);
+  const a = stationFrameRad(station, circle);
+  if (Math.abs(wrapAngleToPi(a - rotRad(station.rotation))) < 1e-12) {
+    return rotateBy(local, station.rotation);
+  }
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  return { x: local.x * c - local.y * s, y: local.x * s + local.y * c };
 };
 
 // Rotate a world-frame direction back into a station's unrotated local frame

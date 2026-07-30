@@ -691,7 +691,7 @@ export function MapCanvas() {
   const stopPosOf = (lineId: LineId) => (sid: string) => {
     const st = stations[sid];
     const cell = st?.stops.find((c) => c.lineId === lineId);
-    return st && cell ? stopPosWorld(cell, st) : null;
+    return st && cell ? stopPosWorld(cell, st, lineCircles) : null;
   };
 
   // Alt+click deep-pick: cycle the selection through the stack of selectable
@@ -1510,7 +1510,7 @@ export function MapCanvas() {
               if (!anchor) return null;
               // Resolved through the union-aware helper, same as both paint
               // passes — the first-picked end may be a stop or an anchor.
-              const anchorWorld = transferEndWorld(anchor, stations, transferAnchors);
+              const anchorWorld = transferEndWorld(anchor, stations, transferAnchors, lineCircles);
               if (!anchorWorld) return null;
               // The dropped transfer will wear the designated default transfer
               // style, so the preview reads it too (a loaded doc always has
@@ -1561,6 +1561,7 @@ export function MapCanvas() {
           {showNetwork && (
             <g data-export-exclude="1">
               <AnchorLayer
+                lineCircles={lineCircles}
                 // Two ways in. With the anchor toggle on (or a mode that forces
                 // it) the whole network paints. With it off, only the hovered or
                 // selected stations' HOSTED anchors do — and no free ones, since

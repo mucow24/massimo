@@ -19,6 +19,7 @@ export function AnchorPlacingPreview({ world }: { world: Vec2 | null }) {
       <AnchorLayer
         transferAnchors={{ __preview: { id: '__preview', x: world.x, y: world.y } }}
         stations={{}}
+        lineCircles={{}}
         selectedIds={[]}
         hoveredKey={null}
         onHover={noop}
