@@ -9,6 +9,7 @@ import {
   collectGroupSiblings,
   groupAlignExclude,
   hasGroupSiblings,
+  movingStationIds,
   translateSiblings,
   type GroupSiblings,
 } from './groupDrag';
@@ -26,9 +27,9 @@ type ItemDragState = {
   startMY: number;
   moved: boolean;
   siblings: GroupSiblings;
-  // Co-selected stations, excluded from the bullet snap engine's candidate
-  // pool — they move with the group, so they're unstable targets. Mirrors
-  // useStationDrag's siblingIdSet.
+  // Every station moving with the group (towed siblings + the passengers a
+  // towed ring carries), excluded from the bullet snap engine's candidate
+  // pool — they're unstable targets. Mirrors useStationDrag's siblingIdSet.
   siblingStationIds: ReadonlySet<string>;
   // Label drags only: offset from the label center to its snap anchor (the
   // topmost-then-leftmost visible rotated corner) and the "Snap to all" pool,
@@ -121,7 +122,7 @@ export function useItemDrag(
       startMY: e.clientY,
       moved: false,
       siblings,
-      siblingStationIds: new Set(siblings.stations.map((s) => s.id)),
+      siblingStationIds: movingStationIds(siblings),
       anchorOff,
       allTargets,
       history: beginHistoryGroup({ deferPersist: true }),

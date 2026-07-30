@@ -4,11 +4,14 @@ import {
   addLineCircle,
   addStationToLine,
   bindStationToCircle,
+  buildRotateMembers,
   deleteLine,
   deleteLineCircle,
   moveLineCircle,
   moveStation,
   removeStationFromLine,
+  rotateItemsAround,
+  rotateLineCircle,
   rotateStop,
   setLineCircleLocked,
   setLineCircleRadius,
@@ -87,6 +90,121 @@ describe('setLineCircleRadius', () => {
     const doc = boundDoc();
     expect(setLineCircleRadius(doc, 'c1', 70)).toBe(doc);
     expect(setLineCircleRadius(doc, 'c1', NaN)).toBe(doc);
+  });
+});
+
+describe('rotateLineCircle', () => {
+  // The ring is rotationally symmetric, so a circle's rotation IS the angular
+  // position of its bound stations: one 45° step around the rim.
+  const R45 = 70 / Math.SQRT2;
+
+  it('orbits bound stations one 45° step around the rim, leaving the ring put', () => {
+    const doc = boundDoc();
+    const out = rotateLineCircle(doc, 'c1');
+    expect(out.lineCircles.c1).toEqual(CIRCLE);
+    // s1 was on the east point (angle 0) and slides to the 45° seat, still
+    // exactly ON the rim; its tangent octant steps with it (0 → 1).
+    expect(out.stations.s1.x).toBeCloseTo(100 + R45, 9);
+    expect(out.stations.s1.y).toBeCloseTo(100 + R45, 9);
+    expect(out.stations.s1.rotation).toBe(1);
+    // Unbound stations are none of the circle's business.
+    expect(out.stations.free).toBe(doc.stations.free);
+  });
+
+  it('comes full circle in eight steps', () => {
+    let doc = boundDoc();
+    for (let i = 0; i < 8; i++) doc = rotateLineCircle(doc, 'c1');
+    expect(doc.stations.s1.x).toBeCloseTo(170, 6);
+    expect(doc.stations.s1.y).toBeCloseTo(100, 6);
+    expect(doc.stations.s1.rotation).toBe(0);
+  });
+
+  it('no-ops on an unknown id and on a ring with no bound stations', () => {
+    const doc = boundDoc();
+    expect(rotateLineCircle(doc, 'nope')).toBe(doc);
+    const bare = makeDoc({ lineCircles: [CIRCLE] });
+    // Nothing to move: the same doc back, so an empty ring can't pile up undo
+    // entries that change nothing.
+    expect(rotateLineCircle(bare, 'c1')).toBe(bare);
+  });
+});
+
+describe('rotateItemsAround with a line circle', () => {
+  it('rotates the whole assembly rigidly about an outside pivot', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 'pivot', x: 0, y: 0, rotation: 0 }),
+        // Bound to c1 at its east point.
+        makeStation({
+          id: 's1',
+          x: 170,
+          y: 100,
+          rotation: 0,
+          circleId: 'c1',
+          stops: [makeStop('l1', { viaCircle: true })],
+        }),
+      ],
+      lineCircles: [makeLineCircle({ id: 'c1', x: 100, y: 100, radius: 70 })],
+    });
+    const out = rotateItemsAround(
+      doc,
+      { type: 'station', id: 'pivot' },
+      buildRotateMembers(['pivot'], [], [], [], [], [], ['c1']),
+    );
+    // The center orbits the pivot 45° CW...
+    const cw = (p: { x: number; y: number }) => ({
+      x: (p.x - p.y) / Math.SQRT2,
+      y: (p.x + p.y) / Math.SQRT2,
+    });
+    const c = cw({ x: 100, y: 100 });
+    expect(out.lineCircles.c1.x).toBeCloseTo(c.x, 9);
+    expect(out.lineCircles.c1.y).toBeCloseTo(c.y, 9);
+    expect(out.lineCircles.c1.radius).toBe(70);
+    // ...and the bound station rides it: same rigid rotation, so it stays on
+    // the rim at the same angle it always had, one octant further round.
+    const s = cw({ x: 170, y: 100 });
+    expect(out.stations.s1.x).toBeCloseTo(s.x, 9);
+    expect(out.stations.s1.y).toBeCloseTo(s.y, 9);
+    expect(out.stations.s1.rotation).toBe(1);
+  });
+
+  it('rotates a bound station ONCE when both it and its circle are members', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 'pivot', x: 0, y: 0, rotation: 0 }),
+        makeStation({
+          id: 's1',
+          x: 170,
+          y: 100,
+          rotation: 0,
+          circleId: 'c1',
+          stops: [makeStop('l1', { viaCircle: true })],
+        }),
+      ],
+      lineCircles: [makeLineCircle({ id: 'c1', x: 100, y: 100, radius: 70 })],
+    });
+    const out = rotateItemsAround(
+      doc,
+      { type: 'station', id: 'pivot' },
+      buildRotateMembers(['pivot', 's1'], [], [], [], [], [], ['c1']),
+    );
+    // 45°, not 90°: the circle carries its passengers, so the station branch
+    // must not rotate this one a second time.
+    expect(out.stations.s1.x).toBeCloseTo((170 - 100) / Math.SQRT2, 9);
+    expect(out.stations.s1.y).toBeCloseTo((170 + 100) / Math.SQRT2, 9);
+    expect(out.stations.s1.rotation).toBe(1);
+  });
+
+  it('holds the center and spins the members when the circle IS the pivot', () => {
+    const doc = boundDoc();
+    const out = rotateItemsAround(
+      doc,
+      { type: 'lineCircle', id: 'c1' },
+      buildRotateMembers([], [], [], [], [], [], ['c1']),
+    );
+    expect(out.lineCircles.c1).toEqual(CIRCLE);
+    expect(out.stations.s1.x).toBeCloseTo(100 + 70 / Math.SQRT2, 9);
+    expect(out.stations.s1.y).toBeCloseTo(100 + 70 / Math.SQRT2, 9);
   });
 });
 
