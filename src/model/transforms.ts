@@ -5,6 +5,7 @@ import {
   pointAtAngle,
   projectToCircle,
   tangentAtAngle,
+  type CircleSpec,
 } from '../geometry/lineCircle';
 import {
   endStationId,
@@ -419,18 +420,32 @@ export function renameStation(doc: MapDoc, id: StationId, name: string): MapDoc 
   return updateStation(doc, id, (st) => ({ ...st, name }));
 }
 
+/**
+ * Where a station BOUND to `circle` sits when aimed at `at`: projected onto the
+ * circumference, rotated to the tangent octant there, with the label kept
+ * right-side-up. THE one statement of "on the ring" as a station pose — binding
+ * and moving a bound station both go through it, so the seat a bind produces
+ * and the seat a drag produces can never disagree. (Circle move/resize preserve
+ * the polar angle by construction and so reproject without re-deriving it.)
+ */
+function circleSeat(
+  circle: CircleSpec,
+  at: Vec2,
+  labelRotation: Rotation,
+): { x: number; y: number; rotation: Rotation } {
+  const theta = circleAngleAt(circle, at);
+  const p = pointAtAngle(circle, theta);
+  const t = tangentAtAngle(theta);
+  return { x: p.x, y: p.y, rotation: uprightTangentRotation(t.x, t.y, labelRotation) };
+}
+
 export function moveStation(doc: MapDoc, id: StationId, x: number, y: number): MapDoc {
   return updateStation(doc, id, (st) => {
     const circle = st.circleId !== undefined ? doc.lineCircles[st.circleId] : undefined;
     if (!circle) return { ...st, x, y };
-    // Bound stations move ALONG their circle: the target projects onto the
-    // circumference and the rotation tracks the tangent octant there (label
-    // kept right-side-up). Detaching is the caller's move (unbind first) —
-    // see the drag hysteresis in the interaction layer.
-    const theta = circleAngleAt(circle, { x, y });
-    const p = pointAtAngle(circle, theta);
-    const t = tangentAtAngle(theta);
-    return { ...st, x: p.x, y: p.y, rotation: uprightTangentRotation(t.x, t.y, st.label.rotation) };
+    // Bound stations move ALONG their circle. Detaching is the caller's move
+    // (unbind first) — see the drag hysteresis in the interaction layer.
+    return { ...st, ...circleSeat(circle, { x, y }, st.label.rotation) };
   });
 }
 
@@ -3174,10 +3189,7 @@ export function bindStationToCircle(doc: MapDoc, stationId: StationId, circleId:
   const circle = doc.lineCircles[circleId];
   if (!circle) return doc;
   return updateStation(doc, stationId, (st) => {
-    const theta = circleAngleAt(circle, st);
-    const p = pointAtAngle(circle, theta);
-    const t = tangentAtAngle(theta);
-    const rotation = uprightTangentRotation(t.x, t.y, st.label.rotation);
+    const seat = circleSeat(circle, st, st.label.rotation);
     // Binding defaults every stop to riding the circle (the always-arc
     // default the ring exists for); flipping a stop's orientation opts it
     // back out per line.
@@ -3186,13 +3198,13 @@ export function bindStationToCircle(doc: MapDoc, stationId: StationId, circleId:
       : st.stops.map((c) => (c.viaCircle ? c : { ...c, viaCircle: true }));
     if (
       st.circleId === circleId &&
-      st.x === p.x &&
-      st.y === p.y &&
-      st.rotation === rotation &&
+      st.x === seat.x &&
+      st.y === seat.y &&
+      st.rotation === seat.rotation &&
       stops === st.stops
     )
       return st;
-    return { ...st, circleId, x: p.x, y: p.y, rotation, stops };
+    return { ...st, circleId, ...seat, stops };
   });
 }
 
