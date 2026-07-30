@@ -198,6 +198,34 @@ describe('buildLineBodies', () => {
     expect(inWithout).toBe(false);
   });
 
+  it('covers a JOINT stop with the same three pieces the painter draws', () => {
+    // The region body is what masks the paint, so its joint footprint has to be
+    // the painter's exactly (StopMarker.test.tsx pins the other half of this):
+    // arc-side half-square, straight-side half-square, cap-plane wedge. A body
+    // that kept only one frame leaves a sliver of the neighbouring line showing
+    // at every ring/straight junction. Same frames as the painter's fixture:
+    // tangent axis 90° with the arc pointing +y, octant frame 135°.
+    const joint = marker('l1', 100, 0, {
+      rotationDeg: 90,
+      jointRotationDeg: 135,
+      jointArcOut: { x: 0, y: 1 },
+    });
+    const faces = splitIntoFaces(buildLineBodies([], [joint]).get('l1')!);
+    const covers = (p: Vec2) => faces.some((f) => pointInFace(p, f));
+    // Straight side: 5 units out along the octant axis AWAY from the arc.
+    // Nothing but the straight half-square reaches here — the wedge's lobe on
+    // this side of the cap plane sits at +y.
+    expect(covers({ x: 103.54, y: -3.54 })).toBe(true);
+    // Arc side: 5 units along the tangent, toward the arc.
+    expect(covers({ x: 100, y: 5 })).toBe(true);
+    // Wedge: the lobe on the far side of the cap plane from both half-squares —
+    // the only ink that fills the bowtie the two butt caps leave uncovered.
+    expect(covers({ x: 96, y: -1.6 })).toBe(true);
+    // And nothing pokes past: a full square in the tangent frame would swallow
+    // this corner, which lies outside every one of the three pieces.
+    expect(covers({ x: 106.5, y: -5 })).toBe(false);
+  });
+
   it('gives a loop line a body with a hole', () => {
     const bands = [
       hBand('l1', 's1|s2', 0, 100, 0),

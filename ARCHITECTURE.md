@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `8180b7f` (2026-07-29, #385) — verified against the live source.** This
+**Up to date as of commit `cf61f84` (2026-07-30, #390) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -107,7 +107,7 @@ src/
 
   model/                        # PURE domain logic — no React, no store
     types.ts                    # MapDoc + every entity type (the canonical data shape)
-    transforms.ts               # ~3250 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
+    transforms.ts               # ~3500 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
     serialize.ts                # serialize()/parse() + shared backfill/sanitize helpers
     styles.ts                   # named per-kind formatting presets (StyleDef) + styleId tag/stamp
     ids.ts                      # IdFactory: crypto UUIDs (prod) / counter ids (tests)
@@ -489,15 +489,17 @@ full square cannot stay flush with both: whichever frame it takes, its other hal
 wrong angle through the other band (a poking corner on one side, a bite on the other — both
 up to `(w/2)·tan 22.5°`). So a joint marker is SPLIT BY SIDE
 (`StopMarkerSpec.jointRotationDeg` + `jointArcOut`): the arc-side HALF-square in the tangent
-frame, the straight-side half-square in the octant frame (`jointHalfSquareCorners` /
-`jointStraightOut`), and the cap-plane WEDGE between them (`jointWedgeCorners` — the bowtie
-between the two butt-cap lines, corners exactly ON the band edges). Each piece is flush with
-its own band; the residual is the ~`(w/2)²/2r` chord-vs-arc nub at the arc half's corners.
-Like `end`, the joint fields reshape the painted footprint, so they join `markerBodyRings`
-(halves as rects, the wedge as its two simple triangle lobes) and the incremental-region unit
-hash. `sanitizeLineCircles` (serialize.ts) enforces the binding invariants on both load
-paths: malformed circles drop, dangling `circleId`s and orphaned `viaCircle` flags strip, and a
-bound station that drifted off its circle reprojects.
+frame, the straight-side half-square in the octant frame, and the cap-plane WEDGE between them
+(the bowtie between the two butt-cap lines, corners exactly ON the band edges). Each piece is
+flush with its own band; the residual is the ~`(w/2)²/2r` chord-vs-arc nub at the arc half's
+corners. Like `end`, the joint fields reshape the painted footprint, so they join
+`markerBodyRings` (halves as rects, the wedge as its two simple triangle lobes) and the
+incremental-region unit hash. `jointMarkerPieces` is the one owner of the decomposition —
+painter and region cover both call it, because a piece present in one and missing from the
+other is a sliver of the neighbouring line showing through at every junction.
+`sanitizeLineCircles` (serialize.ts) enforces the binding invariants on both load paths:
+malformed circles drop, dangling `circleId`s and orphaned `viaCircle` flags strip, and a bound
+station that drifted off its circle reprojects.
 
 **`LabelCell`** — the station name's grid cell + placement. `row, col, rotation: Rotation`,
 `offset` (px forward along reading direction), `offsetPerp?` (cross-axis, default 0 — back-compat
@@ -797,7 +799,7 @@ sizes to content and honors manual `\n`; `>0` = a fixed-width column that word-w
 darkColor` (day/night; **defaults DIFFER**: `#111111` / `#ffffff` for legibility — unlike a
 polygon whose dark default equals its light; backfilled on load), `locked?`, plus optional
 per-label `leading` (line-spacing multiplier) / `tracking` (em letter-spacing) — station labels
-carry their own per-station `leading`/`tracking` (see `Station`), no longer any doc-global.
+carry their own per-station `leading`/`tracking` (see `Station`); there is no doc-global pair.
 
 **`RouteBullet`** — a free-floating route badge showing one line's service code in its color.
 `id, x, y, rotation: Rotation, lineId: LineId | null` (null = unset placeholder), `shape:
@@ -1623,22 +1625,24 @@ This produces the Vignelli parallel-stripe look. `buildBandGeometry` (the heart)
    shuffling, plus cell coords + a world direction hint. (Not "consecutive station pairs" — that
    is the pre-loops/branches model; `buildBandGeometry` never calls `pairKeyOf`.)
 2. **Circle fork**: segs whose both stops are `viaCircle` on stations bound to the same line
-   circle (radially consistent between the ends, `segRidesCircle`) leave the pipeline here and
-   build **concentric-arc bands** instead — same radial sort + `tangentGap` merge with "perp" ≡
-   radial and "parallel" ≡ arc position, centerline = the arc's tangent polygon at the stripes'
-   mean radial distance. No marker-fit cap and no inner-stripe radius bump: the circle dictates
-   the geometry. Everything else continues below.
+   circle (radially consistent between the ends, `segCircleFit`) leave the pipeline here and
+   build **concentric-arc bands** instead — the SAME sort + merge as the straight case (step 6,
+   `forEachPackedRun`), reading "perp" ≡ radial and "parallel" ≡ arc position; centerline = the
+   arc's tangent polygon at the stripes' mean radial distance. No marker-fit cap and no
+   inner-stripe radius bump: the circle dictates the geometry. Everything else continues below.
 3. **Bucket by axis** (`dirIndex % 4`) — lines traversing the corridor in **opposite** directions
    share an axis and can merge.
 4. **Reference frame**: sign-flip so the band flows canonFrom→canonTo (else the router sees a
    U-turn).
-5. **Enrich & sort** ascending by perpendicular projection — this assigns low indices to the
-   right-of-motion side, matching `stripeOffsetsForWidths` order.
-6. **Greedy adjacency merge**: two consecutive segments merge iff they are **exactly tangent** at
-   both ends (perp step ≈ `tangentGap(prevW, w, prevGap, gap)` within `BAND_MERGE_TOL` = 0.5 —
-   the gap widens the tangent step by `max(prevGap, gap)`) and their parallel positions
-   match. Otherwise flush and start a new band. (Mixed-width pairs at the legacy unit gap stay
-   separate — they'd overlap.)
+5. **Project into the band frame** (`PackedSeg`): each seg's perpendicular and parallel position
+   at both ends, plus its width and interline gap.
+6. **Sort & greedy adjacency merge** (`forEachPackedRun` — one owner, shared with the circle fork
+   at step 2). Sorting ascending by perpendicular projection assigns low indices to the
+   right-of-motion side, matching `stripeOffsetsForWidths` order. Then two consecutive segments
+   merge iff they are **exactly tangent** at both ends (perp step ≈
+   `tangentGap(prevW, w, prevGap, gap)` within `BAND_MERGE_TOL` = 0.5 — the gap widens the tangent
+   step by `max(prevGap, gap)`) and their parallel positions match. Otherwise flush and start a
+   new band. (Mixed-width pairs at the legacy unit gap stay separate — they'd overlap.)
 7. **`buildBandSpec`**: centerline endpoints = centroid of the group's stop positions;
    `stripeOffsets = stripeOffsetsForWidths(widths, gaps)` (mean-centered tangency positions —
    bit-exactly `(k−(n−1)/2)·STOP_SIZE` for uniform width 14); **radius bump** (`idealR = R +
@@ -2473,8 +2477,8 @@ same three additions.
   (`startEditingStationLayout`) — the mode's answer to "this stop's dots are wrong"; a station NOT
   on the line has no dblclick at all. The two clicks underneath still run the append gesture, so a
   pen armed elsewhere connects first (deliberate: the click matrix means what it always means, and
-  it stays undoable). (This replaced the old in-sidebar git-graph tree editor,
-  `StationGraph`/`lineGraphLayout`, both retired.)
+  it stays undoable). Editing a line's topology happens HERE, on the canvas — there is no
+  tree/graph editor in the sidebar.
 - **[LinePopover.tsx](src/components/LinePopover.tsx)** — the line editor's home: mounted by
   `ItemPopovers` for the whole `appending-to-line` mode, hosting `LineInspector` (name, service
   code, color palette, style row, default dot type + **two** separate sizes — singleton and

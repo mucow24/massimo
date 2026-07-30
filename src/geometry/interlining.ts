@@ -409,6 +409,60 @@ export function buildBands(
 }
 
 /**
+ * One seg placed in its band's local frame: the width and interline gap that
+ * set its packed distance to a neighbour, plus its position at each end
+ * resolved into "perp" (across the corridor, the axis stripe offsets run along)
+ * and "par" (along it). The straight case reads those off the travel axis; the
+ * circle case reads radius and arc length. Both then compare them identically —
+ * see {@link forEachPackedRun}.
+ */
+interface PackedSeg {
+  seg: SegInfo;
+  width: number;
+  gap: number;
+  fPerpPos: number;
+  fParPos: number;
+  tPerpPos: number;
+  tParPos: number;
+}
+
+/**
+ * THE interlining merge rule, for straight bands and circle bands alike: sort
+ * by perpendicular position and hand `emit` each maximal run of EXACTLY-packed
+ * segs. "Adjacent" means the perp step between consecutive stop centers equals
+ * `tangentGap(width, width, gap, gap)` (= STOP_SIZE for two default-width
+ * zero-gap lines) at BOTH ends, with matching parallel position at both ends.
+ * Stops that are not packed — including mixed-width pairs still at the legacy
+ * unit spacing — land in separate bands.
+ *
+ * One owner, because the two callers differ only in how they PROJECT a seg into
+ * {@link PackedSeg} and what they build from a run; the packing gate itself is
+ * the same rule and must stay one number in one place. Sorts `segs` in place.
+ */
+function forEachPackedRun(segs: PackedSeg[], emit: (run: PackedSeg[]) => void): void {
+  segs.sort((a, b) => a.fPerpPos - b.fPerpPos);
+  const TOL = BAND_MERGE_TOL;
+  let run: PackedSeg[] = [];
+  for (const e of segs) {
+    if (run.length > 0) {
+      const prev = run[run.length - 1];
+      const tangent = tangentGap(prev.width, e.width, prev.gap, e.gap);
+      const packed =
+        Math.abs(e.fPerpPos - prev.fPerpPos - tangent) < TOL &&
+        Math.abs(e.tPerpPos - prev.tPerpPos - tangent) < TOL &&
+        Math.abs(e.fParPos - prev.fParPos) < TOL &&
+        Math.abs(e.tParPos - prev.tParPos) < TOL;
+      if (!packed) {
+        emit(run);
+        run = [];
+      }
+    }
+    run.push(e);
+  }
+  if (run.length > 0) emit(run);
+}
+
+/**
  * Geometric half of {@link buildBands}: groups lines by canonical
  * station-pair, buckets by world travel axis, merges perpendicular-
  * adjacency runs, and computes the routed centerline + per-stripe paths.
@@ -527,22 +581,13 @@ export function buildBandGeometry(
       const fPerp: Vec2 = leftNormal(fDir);
       const tPerp: Vec2 = leftNormal(tDir);
 
-      // Enrich with world perp/parallel positions at each end for sorting and
-      // adjacency comparison, plus the line's effective width and interline
-      // gap (which together set the pairwise packed distance below).
-      type Enriched = {
-        seg: SegInfo;
-        width: number;
-        gap: number;
-        fPerpPos: number;
-        fParPos: number;
-        tPerpPos: number;
-        tParPos: number;
-      };
+      // Project into the band frame: perp/parallel positions in WORLD coords
+      // at each end, plus the line's effective width and interline gap (which
+      // together set the pairwise packed distance the merge gate tests).
       // All SegInfo in a bucket share the canonical from/to station IDs,
       // so the endpoint stations are fixed across the bucket — pull them
       // off the sample once.
-      const enriched: Enriched[] = bucket.map((s) => {
+      const placed: PackedSeg[] = bucket.map((s) => {
         const fp = stopPosWorld(s.fromCell, fromS);
         const tp = stopPosWorld(s.toCell, toS);
         return {
@@ -555,27 +600,17 @@ export function buildBandGeometry(
           tParPos: dot(tp, tDir),
         };
       });
-      enriched.sort((a, b) => a.fPerpPos - b.fPerpPos);
 
-      // Greedily merge contiguous perp-adjacency in WORLD coords at both
-      // ends, with matching parallel position at both ends. "Adjacent" =
-      // EXACTLY packed: the perp step between consecutive stop centers must
-      // equal tangentGap(width, width, gap, gap) (= STOP_SIZE for two
-      // default-width zero-gap lines). Stops that are not packed — including
-      // mixed-width pairs still at the legacy unit spacing — stay in
-      // separate bands.
-      let group: Enriched[] = [];
-      const flush = () => {
-        if (group.length === 0) return;
+      forEachPackedRun(placed, (run) => {
         const spec = buildBandSpec(
-          group.map((e) => e.seg),
-          group.map((e) => e.width),
-          group.map((e) => e.gap),
+          run.map((e) => e.seg),
+          run.map((e) => e.width),
+          run.map((e) => e.gap),
           // Interlined lines may disagree on curve radius; the shared
           // centerline curves at the LARGEST member radius, so no line
           // curves tighter than it asked for (the smaller-radius lines
           // just ride along — same trade as the inner-stripe bump).
-          Math.max(...group.map((e) => lineCurveRadiusOf(lines[e.seg.lineId]))),
+          Math.max(...run.map((e) => lineCurveRadiusOf(lines[e.seg.lineId]))),
           pairKey,
           fDir,
           tDir,
@@ -585,35 +620,9 @@ export function buildBandGeometry(
         // A member that asked to ride a circle but couldn't (mismatched
         // radial offsets — see segCircleFit) lights the routing warning, so
         // the degrade is visible instead of reading as "arcs are broken".
-        if (group.some((e) => blockedSegs.has(e.seg))) spec.warning = true;
+        if (run.some((e) => blockedSegs.has(e.seg))) spec.warning = true;
         bands.push(spec);
-        group = [];
-      };
-      const TOL = BAND_MERGE_TOL;
-      for (const e of enriched) {
-        if (group.length === 0) {
-          group.push(e);
-          continue;
-        }
-        const prev = group[group.length - 1];
-        const dFromPerp = e.fPerpPos - prev.fPerpPos;
-        const dToPerp = e.tPerpPos - prev.tPerpPos;
-        const tangent = tangentGap(prev.width, e.width, prev.gap, e.gap);
-        const sameParA = Math.abs(e.fParPos - prev.fParPos) < TOL;
-        const sameParB = Math.abs(e.tParPos - prev.tParPos) < TOL;
-        if (
-          Math.abs(dFromPerp - tangent) < TOL &&
-          Math.abs(dToPerp - tangent) < TOL &&
-          sameParA &&
-          sameParB
-        ) {
-          group.push(e);
-        } else {
-          flush();
-          group.push(e);
-        }
-      }
-      flush();
+      });
     }
   }
 
@@ -992,10 +1001,10 @@ function segCircleFit(
 }
 
 /**
- * The circle analogue of the axis-bucket loop: sort one pairKey's
- * circle-riding segs by signed radial position, greedily merge exactly-packed
- * runs (the same tangentGap gate as the straight case, with "perpendicular" ≡
- * radial and "parallel" ≡ arc position), and emit one band per run.
+ * The circle analogue of the axis-bucket loop: project one pairKey's
+ * circle-riding segs into the ring's frame — "perpendicular" ≡ radial,
+ * "parallel" ≡ arc position — and emit one band per exactly-packed run, off
+ * the same {@link forEachPackedRun} gate the straight case uses.
  */
 function buildCircleBands(
   segs: SegInfo[],
@@ -1015,16 +1024,7 @@ function buildCircleBands(
   const aTo0 = circleAngleAt(circle, stopPosWorld(sample.toCell, toS));
   const sgn = wrapAngleToPi(aTo0 - aFrom0) >= 0 ? 1 : -1;
 
-  type Enriched = {
-    seg: SegInfo;
-    width: number;
-    gap: number;
-    fPerpPos: number;
-    fParPos: number;
-    tPerpPos: number;
-    tParPos: number;
-  };
-  const enriched: Enriched[] = segs.map((s) => {
+  const placed: PackedSeg[] = segs.map((s) => {
     const fp = stopPosWorld(s.fromCell, fromS);
     const tp = stopPosWorld(s.toCell, toS);
     return {
@@ -1039,45 +1039,20 @@ function buildCircleBands(
       tParPos: wrapAngleToPi(circleAngleAt(circle, tp) - aTo0) * circle.radius,
     };
   });
-  enriched.sort((a, b) => a.fPerpPos - b.fPerpPos);
 
-  let group: Enriched[] = [];
-  const flush = () => {
-    if (group.length === 0) return;
+  forEachPackedRun(placed, (run) => {
     out.push(
       buildCircleBandSpec(
-        group.map((e) => e.seg),
-        group.map((e) => e.width),
-        group.map((e) => e.gap),
+        run.map((e) => e.seg),
+        run.map((e) => e.width),
+        run.map((e) => e.gap),
         circle,
         pairKey,
         fromS,
         toS,
       ),
     );
-    group = [];
-  };
-  const TOL = BAND_MERGE_TOL;
-  for (const e of enriched) {
-    if (group.length === 0) {
-      group.push(e);
-      continue;
-    }
-    const prev = group[group.length - 1];
-    const tangent = tangentGap(prev.width, e.width, prev.gap, e.gap);
-    if (
-      Math.abs(e.fPerpPos - prev.fPerpPos - tangent) < TOL &&
-      Math.abs(e.tPerpPos - prev.tPerpPos - tangent) < TOL &&
-      Math.abs(e.fParPos - prev.fParPos) < TOL &&
-      Math.abs(e.tParPos - prev.tParPos) < TOL
-    ) {
-      group.push(e);
-    } else {
-      flush();
-      group.push(e);
-    }
-  }
-  flush();
+  });
 }
 
 function buildCircleBandSpec(
@@ -1101,7 +1076,7 @@ function buildCircleBandSpec(
   const delta = wrapAngleToPi(aTo - aFrom);
   // The band's ride radius is the stripes' mean radial distance (the merge
   // gate pinned every stripe to one radial position; the ends agree within
-  // tolerance by segRidesCircle). The offsets then land each stripe at its
+  // tolerance by segCircleFit). The offsets then land each stripe at its
   // packed radial position: positive offset = left of motion = radially out
   // on a clockwise (delta > 0) sweep — matching buildCircleBands' sort sign.
   const bandR =
