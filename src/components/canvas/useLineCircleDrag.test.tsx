@@ -138,6 +138,113 @@ describe('useLineCircleDrag — rim drag moves the circle', () => {
   });
 });
 
+describe('useLineCircleDrag — group drag', () => {
+  // A ring in a multi-selection tows the rest of it, like every other master
+  // kind. Its own pointer-down selection is the thing that used to make this
+  // impossible: selectLineCircle clears every other list.
+  const seedWithFreeStation = () => {
+    seedCircle();
+    useDoc.setState({
+      ...useDoc.getState(),
+      stations: { free: makeStation({ id: 'free', x: 500, y: 500 }) },
+    });
+  };
+
+  it('tows the co-selected rest of the map by the rim delta', () => {
+    seedWithFreeStation();
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['free'],
+      selectedLineCircleIds: ['c1'],
+    });
+    const r = render();
+    act(() => r.current.onStartDrag('c1', 'rim', pointerEvent({ clientX: 0, clientY: 0 })));
+    // Grabbing a ring already in the selection must leave the selection alone.
+    expect(useSelection.getState().selectedStationIds).toEqual(['free']);
+    act(() => {
+      r.current.onPointerMove(pointerEvent({ clientX: 30, clientY: -10, shiftKey: true }));
+      r.current.onPointerUp(pointerEvent({ clientX: 30, clientY: -10 }));
+    });
+    const doc = useDoc.getState();
+    expect(doc.lineCircles.c1).toMatchObject({ x: 130, y: 90 });
+    expect(doc.stations.free).toMatchObject({ x: 530, y: 490 });
+    // One undo for the whole group gesture.
+    act(() => useDoc.temporal.getState().undo());
+    expect(useDoc.getState().stations.free).toMatchObject({ x: 500, y: 500 });
+  });
+
+  it('still claims the selection when the grabbed ring was not in it', () => {
+    seedWithFreeStation();
+    useSelection.setState({ ...useSelection.getState(), selectedStationIds: ['free'] });
+    const r = render();
+    act(() => r.current.onStartDrag('c1', 'rim', pointerEvent({ clientX: 0, clientY: 0 })));
+    expect(useSelection.getState().selectedLineCircleIds).toEqual(['c1']);
+    expect(useSelection.getState().selectedStationIds).toEqual([]);
+    act(() => {
+      r.current.onPointerMove(pointerEvent({ clientX: 30, clientY: 0, shiftKey: true }));
+      r.current.onPointerUp(pointerEvent({ clientX: 30, clientY: 0 }));
+    });
+    // Nothing towed: the ring wasn't part of the selection when grabbed.
+    expect(useDoc.getState().stations.free).toMatchObject({ x: 500, y: 500 });
+  });
+
+  it('leaves the selection alone on a Shift-grab (the click owns the toggle)', () => {
+    seedWithFreeStation();
+    useSelection.setState({ ...useSelection.getState(), selectedStationIds: ['free'] });
+    const r = render();
+    act(() =>
+      r.current.onStartDrag('c1', 'rim', pointerEvent({ clientX: 0, clientY: 0, shiftKey: true })),
+    );
+    expect(useSelection.getState().selectedStationIds).toEqual(['free']);
+    expect(useSelection.getState().selectedLineCircleIds).toEqual([]);
+  });
+
+  it('does not tow anything while the KNOB resizes', () => {
+    seedWithFreeStation();
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['free'],
+      selectedLineCircleIds: ['c1'],
+    });
+    const r = render();
+    act(() => r.current.onStartDrag('c1', 'knob', pointerEvent({ clientX: 170, clientY: 100 })));
+    act(() => {
+      r.current.onPointerMove(pointerEvent({ clientX: 200, clientY: 100 }));
+      r.current.onPointerUp(pointerEvent({ clientX: 200, clientY: 100 }));
+    });
+    expect(useDoc.getState().lineCircles.c1.radius).toBe(100);
+    expect(useDoc.getState().stations.free).toMatchObject({ x: 500, y: 500 });
+  });
+
+  it('excludes towed passengers from the snap pool', () => {
+    // A ring whose passenger sits due north of where the center is heading: with
+    // the passenger in the pool, "snap to all" would lock the center onto the
+    // station it is carrying and the ring would stick.
+    setModes({ all: 'all' });
+    seedCircle();
+    useDoc.setState({
+      ...useDoc.getState(),
+      stations: {
+        s1: makeStation({
+          id: 's1',
+          x: 170,
+          y: 100,
+          circleId: 'c1',
+          stops: [makeStop('l1', { viaCircle: true })],
+        }),
+      },
+    });
+    useSelection.setState({ ...useSelection.getState(), selectedLineCircleIds: ['c1'] });
+    const r = render();
+    act(() => r.current.onStartDrag('c1', 'rim', pointerEvent({ clientX: 0, clientY: 0 })));
+    // Center proposes x 168 — 2 off the passenger's start x of 170, well inside
+    // the 10-unit tolerance.
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 68, clientY: 0 })));
+    expect(useDoc.getState().lineCircles.c1.x).toBe(168);
+    expect(r.current.snapGuides).toEqual([]);
+  });
+});
+
 describe('useLineCircleDrag — knob drag resizes', () => {
   it("takes the radius from the pointer's horizontal world distance, on the quarter grid", () => {
     seedCircle();

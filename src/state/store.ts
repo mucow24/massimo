@@ -795,6 +795,7 @@ interface DocState extends MapDoc {
 
   addLineCircle: (x: number, y: number, radius?: number) => string;
   moveLineCircle: (id: string, x: number, y: number) => void;
+  rotateLineCircle: (id: string) => void;
   setLineCircleRadius: (id: string, radius: number) => void;
   setLineCircleLocked: (id: string, locked: boolean) => void;
   deleteLineCircle: (id: string) => void;
@@ -1242,6 +1243,9 @@ export const useDoc = create<DocState>()(
         },
         moveLineCircle: (id, x, y) =>
           set(withRegionReconcile((s) => T.moveLineCircle(s, id, x, y))),
+        // The single-item half of the right-click rotate: bound stations swing
+        // 45° round the rim (the ring itself has no orientation to advance).
+        rotateLineCircle: (id) => set(withRegionReconcile((s) => T.rotateLineCircle(s, id))),
         setLineCircleRadius: (id, radius) =>
           set(withRegionReconcile((s) => T.setLineCircleRadius(s, id, radius))),
         setLineCircleLocked: (id, locked) => set((s) => T.setLineCircleLocked(s, id, locked)),

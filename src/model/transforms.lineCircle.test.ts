@@ -4,11 +4,14 @@ import {
   addLineCircle,
   addStationToLine,
   bindStationToCircle,
+  buildRotateMembers,
   deleteLine,
   deleteLineCircle,
   moveLineCircle,
   moveStation,
   removeStationFromLine,
+  rotateItemsAround,
+  rotateLineCircle,
   rotateStop,
   setLineCircleLocked,
   setLineCircleRadius,
@@ -74,6 +77,54 @@ describe('moveLineCircle', () => {
   });
 });
 
+describe('a cardinal seat survives ring edits', () => {
+  // The point of snapping to cardinals is that the arrangement STAYS square:
+  // park two stations on opposite cardinals to bisect the ring, then resize and
+  // move it, and they must still be exactly antipodal. Both transforms preserve
+  // the polar angle by construction, so this pins the composition rather than
+  // either one — and it uses a DIAGONAL cardinal, where the seat coordinates are
+  // irrational (r/√2) and a sloppy reprojection would drift visibly. The east
+  // point the other suites use is the one angle that can't catch that.
+  const diagonalDoc = (): MapDoc =>
+    makeDoc({
+      stations: [
+        // 45° (SE) and 225° (NW) on c1 — a diameter through the diagonal.
+        makeStation({
+          id: 'se',
+          x: 100 + 70 / Math.SQRT2,
+          y: 100 + 70 / Math.SQRT2,
+          circleId: 'c1',
+        }),
+        makeStation({
+          id: 'nw',
+          x: 100 - 70 / Math.SQRT2,
+          y: 100 - 70 / Math.SQRT2,
+          circleId: 'c1',
+        }),
+      ],
+      lineCircles: [CIRCLE],
+    });
+
+  const angleOf = (st: { x: number; y: number }, cx = 100, cy = 100) =>
+    Math.atan2(st.y - cy, st.x - cx);
+
+  it('keeps both stations on their diagonal cardinals through a resize', () => {
+    const out = setLineCircleRadius(diagonalDoc(), 'c1', 120);
+    expect(angleOf(out.stations.se)).toBeCloseTo(Math.PI / 4, 12);
+    expect(angleOf(out.stations.nw)).toBeCloseTo(-3 * (Math.PI / 4), 12);
+    // Still antipodal, and now on the new rim.
+    expect(Math.hypot(out.stations.se.x - 100, out.stations.se.y - 100)).toBeCloseTo(120, 9);
+    expect(out.stations.se.x - 100).toBeCloseTo(100 - out.stations.nw.x, 9);
+    expect(out.stations.se.y - 100).toBeCloseTo(100 - out.stations.nw.y, 9);
+  });
+
+  it('keeps them there through a move of the whole ring', () => {
+    const out = moveLineCircle(diagonalDoc(), 'c1', 400, 250);
+    expect(angleOf(out.stations.se, 400, 250)).toBeCloseTo(Math.PI / 4, 12);
+    expect(angleOf(out.stations.nw, 400, 250)).toBeCloseTo(-3 * (Math.PI / 4), 12);
+  });
+});
+
 describe('setLineCircleRadius', () => {
   it('reprojects bound stations radially, preserving their angle', () => {
     const doc = boundDoc();
@@ -89,6 +140,121 @@ describe('setLineCircleRadius', () => {
     const doc = boundDoc();
     expect(setLineCircleRadius(doc, 'c1', 70)).toBe(doc);
     expect(setLineCircleRadius(doc, 'c1', NaN)).toBe(doc);
+  });
+});
+
+describe('rotateLineCircle', () => {
+  // The ring is rotationally symmetric, so a circle's rotation IS the angular
+  // position of its bound stations: one 45° step around the rim.
+  const R45 = 70 / Math.SQRT2;
+
+  it('orbits bound stations one 45° step around the rim, leaving the ring put', () => {
+    const doc = boundDoc();
+    const out = rotateLineCircle(doc, 'c1');
+    expect(out.lineCircles.c1).toEqual(CIRCLE);
+    // s1 was on the east point (angle 0) and slides to the 45° seat, still
+    // exactly ON the rim; its tangent octant steps with it (0 → 1).
+    expect(out.stations.s1.x).toBeCloseTo(100 + R45, 9);
+    expect(out.stations.s1.y).toBeCloseTo(100 + R45, 9);
+    expect(out.stations.s1.rotation).toBe(1);
+    // Unbound stations are none of the circle's business.
+    expect(out.stations.free).toBe(doc.stations.free);
+  });
+
+  it('comes full circle in eight steps', () => {
+    let doc = boundDoc();
+    for (let i = 0; i < 8; i++) doc = rotateLineCircle(doc, 'c1');
+    expect(doc.stations.s1.x).toBeCloseTo(170, 6);
+    expect(doc.stations.s1.y).toBeCloseTo(100, 6);
+    expect(doc.stations.s1.rotation).toBe(0);
+  });
+
+  it('no-ops on an unknown id and on a ring with no bound stations', () => {
+    const doc = boundDoc();
+    expect(rotateLineCircle(doc, 'nope')).toBe(doc);
+    const bare = makeDoc({ lineCircles: [CIRCLE] });
+    // Nothing to move: the same doc back, so an empty ring can't pile up undo
+    // entries that change nothing.
+    expect(rotateLineCircle(bare, 'c1')).toBe(bare);
+  });
+});
+
+describe('rotateItemsAround with a line circle', () => {
+  it('rotates the whole assembly rigidly about an outside pivot', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 'pivot', x: 0, y: 0, rotation: 0 }),
+        // Bound to c1 at its east point.
+        makeStation({
+          id: 's1',
+          x: 170,
+          y: 100,
+          rotation: 0,
+          circleId: 'c1',
+          stops: [makeStop('l1', { viaCircle: true })],
+        }),
+      ],
+      lineCircles: [makeLineCircle({ id: 'c1', x: 100, y: 100, radius: 70 })],
+    });
+    const out = rotateItemsAround(
+      doc,
+      { type: 'station', id: 'pivot' },
+      buildRotateMembers(['pivot'], [], [], [], [], [], ['c1']),
+    );
+    // The center orbits the pivot 45° CW...
+    const cw = (p: { x: number; y: number }) => ({
+      x: (p.x - p.y) / Math.SQRT2,
+      y: (p.x + p.y) / Math.SQRT2,
+    });
+    const c = cw({ x: 100, y: 100 });
+    expect(out.lineCircles.c1.x).toBeCloseTo(c.x, 9);
+    expect(out.lineCircles.c1.y).toBeCloseTo(c.y, 9);
+    expect(out.lineCircles.c1.radius).toBe(70);
+    // ...and the bound station rides it: same rigid rotation, so it stays on
+    // the rim at the same angle it always had, one octant further round.
+    const s = cw({ x: 170, y: 100 });
+    expect(out.stations.s1.x).toBeCloseTo(s.x, 9);
+    expect(out.stations.s1.y).toBeCloseTo(s.y, 9);
+    expect(out.stations.s1.rotation).toBe(1);
+  });
+
+  it('rotates a bound station ONCE when both it and its circle are members', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 'pivot', x: 0, y: 0, rotation: 0 }),
+        makeStation({
+          id: 's1',
+          x: 170,
+          y: 100,
+          rotation: 0,
+          circleId: 'c1',
+          stops: [makeStop('l1', { viaCircle: true })],
+        }),
+      ],
+      lineCircles: [makeLineCircle({ id: 'c1', x: 100, y: 100, radius: 70 })],
+    });
+    const out = rotateItemsAround(
+      doc,
+      { type: 'station', id: 'pivot' },
+      buildRotateMembers(['pivot', 's1'], [], [], [], [], [], ['c1']),
+    );
+    // 45°, not 90°: the circle carries its passengers, so the station branch
+    // must not rotate this one a second time.
+    expect(out.stations.s1.x).toBeCloseTo((170 - 100) / Math.SQRT2, 9);
+    expect(out.stations.s1.y).toBeCloseTo((170 + 100) / Math.SQRT2, 9);
+    expect(out.stations.s1.rotation).toBe(1);
+  });
+
+  it('holds the center and spins the members when the circle IS the pivot', () => {
+    const doc = boundDoc();
+    const out = rotateItemsAround(
+      doc,
+      { type: 'lineCircle', id: 'c1' },
+      buildRotateMembers([], [], [], [], [], [], ['c1']),
+    );
+    expect(out.lineCircles.c1).toEqual(CIRCLE);
+    expect(out.stations.s1.x).toBeCloseTo(100 + 70 / Math.SQRT2, 9);
+    expect(out.stations.s1.y).toBeCloseTo(100 + 70 / Math.SQRT2, 9);
   });
 });
 
@@ -493,6 +659,21 @@ describe('a re-seat keeps the layout on its side of the ring', () => {
       );
       expect(laneRadius(moved, 'l1')).toBeCloseTo(CIRCLE.radius, 9);
       if (laneRadius(moved, 'l2') < CIRCLE.radius) inside.push(deg);
+    }
+    expect(inside).toEqual([]);
+  });
+
+  it('keeps the outer lane OUTSIDE when the CIRCLE is rotated', () => {
+    // rotateLineCircle reseats every member through circleSeat too, so it is a
+    // second door onto the same flip: 45° advances the tangent octant by one,
+    // but the label flip can add another 180° on top, turning the cell frame
+    // under a layout that did not move.
+    let doc = twoLaneRing();
+    const inside: number[] = [];
+    for (let step = 1; step <= 8; step++) {
+      doc = rotateLineCircle(doc, 'c1');
+      expect(laneRadius(doc, 'l1')).toBeCloseTo(CIRCLE.radius, 9);
+      if (laneRadius(doc, 'l2') < CIRCLE.radius) inside.push(step);
     }
     expect(inside).toEqual([]);
   });

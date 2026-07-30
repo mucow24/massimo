@@ -1234,7 +1234,7 @@ const ORBIT_STEP_RAD = Math.PI / 4;
  * callers to pre-split by type.
  */
 export interface ItemRef {
-  type: 'station' | 'bullet' | 'label' | 'polygon' | 'svgImage' | 'anchor';
+  type: 'station' | 'bullet' | 'label' | 'polygon' | 'svgImage' | 'anchor' | 'lineCircle';
   id: string;
 }
 
@@ -1250,14 +1250,16 @@ function assertNeverItemType(t: never): never {
 }
 
 /**
- * Rotate a mixed station/bullet/label/polygon/svgImage selection 45° clockwise
- * about the pivot. Non-pivot members orbit the pivot's world position; each
- * type also advances its own orientation: stations/bullets/labels step their
- * rotation field by one 45° index, svg images add 45° to their continuous
- * rotation, and polygons carry no rotation field (orbiting every vertex about
- * the pivot IS their rotation). The pivot may be any of the five types.
- * Members whose ids are missing from the doc are silently skipped — selection
- * state can outlive a doc edit (undo).
+ * Rotate a mixed station/bullet/label/polygon/svgImage/anchor/lineCircle
+ * selection 45° clockwise about the pivot. Non-pivot members orbit the pivot's
+ * world position; each type also advances its own orientation:
+ * stations/bullets/labels step their rotation field by one 45° index, svg images
+ * add 45° to their continuous rotation, and polygons carry no rotation field
+ * (orbiting every vertex about the pivot IS their rotation). A line circle is
+ * the polygon case with passengers: the ring is rotationally symmetric, so
+ * rotating it means orbiting its bound stations (see `rotateBoundStations`).
+ * The pivot may be any of the seven types. Members whose ids are missing from
+ * the doc are silently skipped — selection state can outlive a doc edit (undo).
  */
 export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[]): MapDoc {
   // Pivot world point. Stations/bullets/labels carry an (x, y); a polygon
@@ -1277,6 +1279,11 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
     py = pv.y;
   } else if (pivot.type === 'anchor') {
     const pv = doc.transferAnchors[pivot.id];
+    if (!pv) return doc;
+    px = pv.x;
+    py = pv.y;
+  } else if (pivot.type === 'lineCircle') {
+    const pv = doc.lineCircles[pivot.id];
     if (!pv) return doc;
     px = pv.x;
     py = pv.y;
@@ -1305,10 +1312,24 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
   let polygons = doc.polygons;
   let svgImages = doc.svgImages;
   let transferAnchors = doc.transferAnchors;
+  let lineCircles = doc.lineCircles;
+
+  // Stations carried by a co-selected line circle: the lineCircle branch below
+  // rotates them (keeping them ON their ring), so the station branch must leave
+  // them alone. Without this a station that is BOTH a member and a ring
+  // passenger would be rotated twice — 90° instead of 45°.
+  const carriedByCircle = new Set<string>();
+  for (const m of members) {
+    if (m.type !== 'lineCircle') continue;
+    for (const sid of Object.keys(doc.stations)) {
+      if (doc.stations[sid].circleId === m.id) carriedByCircle.add(sid);
+    }
+  }
 
   for (const m of members) {
     const isPivot = m.type === pivot.type && m.id === pivot.id;
     if (m.type === 'station') {
+      if (carriedByCircle.has(m.id)) continue;
       const cur = stations[m.id];
       if (!cur) continue;
       const p = isPivot ? cur : rotateAround({ x: cur.x, y: cur.y }, pivotPt, ORBIT_STEP_RAD);
@@ -1363,17 +1384,39 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
         ...svgImages,
         [m.id]: { ...cur, x: p.x, y: p.y, rotation: normalizeRotation(cur.rotation + 45) },
       };
+    } else if (m.type === 'lineCircle') {
+      // Line circle: orbit the center (held fixed when it IS the pivot) and
+      // carry its bound stations through the SAME rotation, so ring and
+      // passengers stay one rigid body. A circle-as-pivot is not a no-op like
+      // an anchor's: the center holds still while the members swing round it.
+      const cur = lineCircles[m.id];
+      if (!cur) continue;
+      const c = isPivot
+        ? { x: cur.x, y: cur.y }
+        : rotateAround({ x: cur.x, y: cur.y }, pivotPt, ORBIT_STEP_RAD);
+      const moved = { ...cur, x: c.x, y: c.y };
+      lineCircles = { ...lineCircles, [m.id]: moved };
+      stations = rotateBoundStations(stations, moved, pivotPt) ?? stations;
     } else {
       assertNeverItemType(m.type);
     }
   }
-  return { ...doc, stations, routeBullets, textLabels, polygons, svgImages, transferAnchors };
+  return {
+    ...doc,
+    stations,
+    routeBullets,
+    textLabels,
+    polygons,
+    svgImages,
+    transferAnchors,
+    lineCircles,
+  };
 }
 
 /**
  * Flatten the selection id lists into the ItemRef[] that `rotateItemsAround`
- * consumes. Order is irrelevant to the rotation result. `polygonIds` and
- * `svgImageIds` are optional so call sites that never select those types can
+ * consumes. Order is irrelevant to the rotation result. Everything past
+ * `labelIds` is optional so call sites that never select those types can
  * omit them.
  */
 export function buildRotateMembers(
@@ -1383,6 +1426,7 @@ export function buildRotateMembers(
   polygonIds: string[] = [],
   svgImageIds: string[] = [],
   anchorIds: string[] = [],
+  lineCircleIds: string[] = [],
 ): ItemRef[] {
   return [
     ...stationIds.map((id): ItemRef => ({ type: 'station', id })),
@@ -1391,6 +1435,7 @@ export function buildRotateMembers(
     ...polygonIds.map((id): ItemRef => ({ type: 'polygon', id })),
     ...svgImageIds.map((id): ItemRef => ({ type: 'svgImage', id })),
     ...anchorIds.map((id): ItemRef => ({ type: 'anchor', id })),
+    ...lineCircleIds.map((id): ItemRef => ({ type: 'lineCircle', id })),
   ];
 }
 
@@ -3113,22 +3158,49 @@ export function addLineCircle(
 }
 
 // Rewrite every station bound to `circleId` through `fn`, allocating only if
-// one actually changed. The shared walk behind circle move/resize/delete.
+// one actually changed. The shared walk behind circle move/resize/rotate/delete.
 function mapBoundStations(
-  doc: MapDoc,
+  stations: Record<StationId, Station>,
   circleId: string,
   fn: (st: Station) => Station,
 ): Record<StationId, Station> | null {
   let out: Record<StationId, Station> | null = null;
-  for (const sid of Object.keys(doc.stations)) {
-    const st = doc.stations[sid];
+  for (const sid of Object.keys(stations)) {
+    const st = stations[sid];
     if (st.circleId !== circleId) continue;
     const next = fn(st);
     if (next === st) continue;
-    if (!out) out = { ...doc.stations };
+    if (!out) out = { ...stations };
     out[sid] = next;
   }
   return out;
+}
+
+/**
+ * Rotate `circle`'s bound stations one 45° step about `pivotPt` and reseat them
+ * on the (possibly already moved) ring. THE statement of "a circle's rotation
+ * is the angular position of its members": the ring itself is rotationally
+ * symmetric, so there is nothing else to turn. A rotation preserves each
+ * station's distance from the center, so orbiting about ANY pivot that the ring
+ * turned about too lands it back exactly on the rim; `circleSeat` then
+ * re-derives the tangent octant and the label flip rather than guessing them —
+ * and 45° is exactly one octant, so a seated station stays seated. Null when the
+ * ring carries nobody (see mapBoundStations).
+ */
+function rotateBoundStations(
+  stations: Record<StationId, Station>,
+  circle: LineCircle,
+  pivotPt: Vec2,
+): Record<StationId, Station> | null {
+  return mapBoundStations(stations, circle.id, (st) => {
+    const p = rotateAround({ x: st.x, y: st.y }, pivotPt, ORBIT_STEP_RAD);
+    // Through reseatCircleLayout for the same reason moveStation is: one 45°
+    // step advances the tangent octant by one, but the label flip can add
+    // another 180° on top, and that turns the cell frame under a layout that
+    // did not move. Uncompensated, a rotation mirrors the station's lanes
+    // across the rim.
+    return reseatCircleLayout(st, { ...st, ...circleSeat(circle, p, st.label.rotation) }, circle);
+  });
 }
 
 export function moveLineCircle(doc: MapDoc, id: string, x: number, y: number): MapDoc {
@@ -3138,7 +3210,11 @@ export function moveLineCircle(doc: MapDoc, id: string, x: number, y: number): M
   const dy = y - cur.y;
   // Bound stations ride the center rigidly: angle (and so tangent rotation)
   // is preserved by a pure translation.
-  const stations = mapBoundStations(doc, id, (st) => ({ ...st, x: st.x + dx, y: st.y + dy }));
+  const stations = mapBoundStations(doc.stations, id, (st) => ({
+    ...st,
+    x: st.x + dx,
+    y: st.y + dy,
+  }));
   return {
     ...doc,
     lineCircles: { ...doc.lineCircles, [id]: { ...cur, x, y } },
@@ -3154,7 +3230,7 @@ export function setLineCircleRadius(doc: MapDoc, id: string, radius: number): Ma
   const next = { ...cur, radius: r };
   // Reproject members radially — angle preserved, so the tangent (and the
   // station's rotation) is unchanged.
-  const stations = mapBoundStations(doc, id, (st) => {
+  const stations = mapBoundStations(doc.stations, id, (st) => {
     const p = projectToCircle(next, st);
     return p.x === st.x && p.y === st.y ? st : { ...st, x: p.x, y: p.y };
   });
@@ -3163,6 +3239,21 @@ export function setLineCircleRadius(doc: MapDoc, id: string, radius: number): Ma
     lineCircles: { ...doc.lineCircles, [id]: next },
     ...(stations ? { stations } : {}),
   };
+}
+
+/**
+ * Rotate a circle in place: its bound stations swing one 45° step around the
+ * rim (the ring is rotationally symmetric, so that IS its rotation), each
+ * reseated at the tangent octant it lands on. The single-item half of the
+ * shared right-click rotate gesture, exactly as `rotateItemsAround` treats a
+ * line circle that is its own pivot. Returns the same doc when the ring carries
+ * nobody — there is genuinely nothing to turn.
+ */
+export function rotateLineCircle(doc: MapDoc, id: string): MapDoc {
+  const circle = doc.lineCircles[id];
+  if (!circle) return doc;
+  const stations = rotateBoundStations(doc.stations, circle, { x: circle.x, y: circle.y });
+  return stations ? { ...doc, stations } : doc;
 }
 
 // Thin wrapper over the canonical multi-item setItemsLocked (see
@@ -3221,7 +3312,7 @@ function withoutCircleBinding(st: Station): Station {
 export function deleteLineCircle(doc: MapDoc, id: string): MapDoc {
   if (!doc.lineCircles[id]) return doc;
   const { [id]: _gone, ...rest } = doc.lineCircles;
-  const stations = mapBoundStations(doc, id, withoutCircleBinding);
+  const stations = mapBoundStations(doc.stations, id, withoutCircleBinding);
   return { ...doc, lineCircles: rest, ...(stations ? { stations } : {}) };
 }
 

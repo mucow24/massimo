@@ -2036,10 +2036,11 @@ export function migrateV9Styles(styles: Record<string, StyleDef>): Record<string
 }
 
 /**
- * Enforce the two structural style invariants every loaded doc must satisfy
+ * Enforce the three structural style invariants every loaded doc must satisfy
  * (see MapDoc): every kind has ≥ 1 style — kinds with none get their factory
- * Default injected — and `styleDefaults` maps every kind to one of its
- * styles. A valid incoming designation is kept verbatim; a missing, dangling
+ * Default injected — `styleDefaults` maps every kind to one of its
+ * styles, and every line style's dot-TYPE ids name live stopDot styles. A
+ * valid incoming designation is kept verbatim; a missing, dangling
  * or wrong-kind one is repaired to the kind's style named "Default" when one
  * exists (what pre-designation builds treated as the default), else its
  * first style in name order. Non-version-gated, like the active-palettes
@@ -2090,6 +2091,35 @@ export function ensureStyleInvariants(
       ).id;
       changed = true;
     }
+  }
+  // Dot TYPE is a COVERED line-style field, so a line style def naming a stopDot
+  // style the doc doesn't have is UNMATCHABLE: `stampStyle`'s dot setters no-op
+  // on an id that doesn't resolve, so applying the style leaves the line tagged
+  // over diverged values, and the next load's `pruneDanglingStyleRefs` strips
+  // the tag — the style reads "Custom" again after every save/load and
+  // re-picking it never sticks. Repoint at the designated default dot, the same
+  // fallback a new line gets (`applyDefaultStopDotToLine`). Only a PRESENT id is
+  // judged; an absent one is the pre-v20 shape `bakeLineStyleDotIds` owns.
+  const resolvesToDot = (id: unknown): boolean =>
+    typeof id === 'string' && nextStyles[id]?.kind === 'stopDot';
+  for (const def of Object.values(nextStyles)) {
+    if (def.kind !== 'line') continue;
+    const props = def.props;
+    const single = 'singletonDotStyleId' in props && !resolvesToDot(props.singletonDotStyleId);
+    const multi = 'multiDotStyleId' in props && !resolvesToDot(props.multiDotStyleId);
+    if (!single && !multi) continue;
+    nextStyles = {
+      ...nextStyles,
+      [def.id]: {
+        ...def,
+        props: {
+          ...props,
+          ...(single ? { singletonDotStyleId: nextDefaults.stopDot } : {}),
+          ...(multi ? { multiDotStyleId: nextDefaults.stopDot } : {}),
+        },
+      },
+    };
+    changed = true;
   }
   // Unknown extra keys in a hand-edited record are dropped by the rebuild —
   // flag the change even when all five real entries were valid.

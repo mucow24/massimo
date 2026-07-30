@@ -293,7 +293,7 @@ describe('App keyboard shortcuts: inForm guard routing', () => {
   });
 });
 
-describe('App keyboard shortcuts: 1–5 snap toggles', () => {
+describe('App keyboard shortcuts: 1–6 snap toggles', () => {
   beforeEach(() => {
     useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES } });
   });
@@ -373,10 +373,19 @@ describe('App keyboard shortcuts: 1–5 snap toggles', () => {
     }
   });
 
-  it('6 is unbound (only five toggles exist)', () => {
+  it('6 flips Snap to circle cardinals', () => {
+    render(<App />);
+    expect(useSnapPrefs.getState().modes.circle).toBe(false);
+    fireEvent.keyDown(window, { key: '6' });
+    expect(useSnapPrefs.getState().modes.circle).toBe(true);
+    fireEvent.keyDown(window, { key: '6' });
+    expect(useSnapPrefs.getState().modes.circle).toBe(false);
+  });
+
+  it('7 is unbound (only six toggles exist)', () => {
     render(<App />);
     const before = { ...useSnapPrefs.getState().modes };
-    fireEvent.keyDown(window, { key: '6' });
+    fireEvent.keyDown(window, { key: '7' });
     expect(useSnapPrefs.getState().modes).toEqual(before);
   });
 });

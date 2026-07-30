@@ -106,9 +106,9 @@ const SECTIONS: HelpSection[] = [
     title: 'Snap',
     rows: [
       {
-        k: '1 – 5',
+        k: '1 – 6',
         effect:
-          'Toggle the snap options (line, equidistant, grid length, all, grid) — press again to cycle direction',
+          'Toggle the snap options (line, equidistant, grid length, all, grid, circle cardinals) — press again to cycle direction',
       },
     ],
   },

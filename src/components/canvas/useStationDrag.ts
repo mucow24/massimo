@@ -10,12 +10,13 @@ import {
   snapGuidesEqual,
   snapToleranceAt,
 } from '../../geometry/snap';
-import { lineCircleAtPoint, projectToCircle } from '../../geometry/lineCircle';
+import { lineCircleAtPoint, snapPointToCircle } from '../../geometry/lineCircle';
 import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
 import {
   collectGroupSiblings,
   emptyGroupSiblings,
   hasGroupSiblings,
+  movingStationIds,
   translateSiblings,
   type GroupSiblings,
 } from './groupDrag';
@@ -109,7 +110,7 @@ export function useStationDrag(
         moved: false,
         redistributeAnchor: redistributeAnchor ?? null,
         siblings,
-        siblingIdSet: new Set(siblings.stations.map((s) => s.id)),
+        siblingIdSet: movingStationIds(siblings),
         // Snapshot the doc + pause history; commit one entry on drag, cancel on a
         // pure click. Pointer capture is deferred to first movement (trackDragMove)
         // so the synthesized click still lands on the station's rect.
@@ -140,6 +141,16 @@ export function useStationDrag(
     const redistributeAnchor = e.ctrlKey || e.metaKey ? ds.redistributeAnchor : null;
     // Snap is on by default; Shift bypasses it.
     const shouldSnap = !e.shiftKey;
+    // A bound station whose own RING is towed with it (both co-selected). The
+    // ring travels with the station, so there is no constraint left to enforce:
+    // the drag is a plain translation of the whole assembly. The station's
+    // position comes ENTIRELY from `moveLineCircle` carrying it (below) — writing
+    // it directly as well would reseat it on the ring's not-yet-moved center and
+    // slide it round the rim as you drag. Neither the slide nor the Shift/
+    // out-of-band detach applies: you asked to move the ring too.
+    const ringTowed =
+      draggedSt?.circleId !== undefined &&
+      ds.siblings.lineCircles.some((c) => c.id === draggedSt.circleId);
     // Line-circle binding (skipped during a redistribute — that modal gesture
     // owns its own constraint). A BOUND station slides along its circle while
     // the cursor stays within the release band, and detaches when pulled past
@@ -147,13 +158,20 @@ export function useStationDrag(
     // station carried within capture tolerance of a rim binds onto it —
     // projection, tangent rotation and the viaCircle stop defaults all live
     // in the transforms; everything here is just the capture/release call.
-    if (!redistributeAnchor) {
+    if (!redistributeAnchor && !ringTowed) {
       const tolerance = snapToleranceAt(viewportZoom);
       const circle =
         draggedSt?.circleId !== undefined ? lineCircles[draggedSt.circleId] : undefined;
+      // "Snap to circle cardinals" adds angular magnetism to the seat, measured
+      // as arc length against the same tolerance as the capture. Null = rim only.
+      const cardinalTolerance = snapModes.circle ? tolerance : null;
       const moveConstrained = (c: { x: number; y: number; radius: number }) => {
-        const p = projectToCircle(c, { x: nx, y: ny });
-        moveStation(ds.id, nx, ny);
+        // ONE point for both the master and the tow: `moveStation` reprojects
+        // whatever it is handed (idempotent on an already-seated point), so
+        // passing the seat rather than the raw cursor keeps a group drag from
+        // shearing by however far the cardinal pull moved the master.
+        const p = snapPointToCircle(c, { x: nx, y: ny }, cardinalTolerance);
+        moveStation(ds.id, p.x, p.y);
         if (hasGroupSiblings(ds.siblings)) {
           translateSiblings(ds.siblings, p.x - ds.startWX, p.y - ds.startWY);
         }
@@ -201,7 +219,7 @@ export function useStationDrag(
     } else if (snapGuides.length > 0) {
       setSnapGuides([]);
     }
-    moveStation(ds.id, nx, ny);
+    if (!ringTowed) moveStation(ds.id, nx, ny);
     if (hasGroupSiblings(ds.siblings)) {
       translateSiblings(ds.siblings, nx - ds.startWX, ny - ds.startWY);
     }

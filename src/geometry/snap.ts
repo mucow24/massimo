@@ -138,6 +138,12 @@ export interface SnapModes {
    *  line/all/corner/cadence alignment can't be reconciled with the grid it
    *  simply doesn't fire (no guide). `'off'` disables it. */
   grid: GridSnap;
+  /** Also snap a station seating on a line circle to the nearest of the ring's
+   *  eight CARDINAL points, and paint their tick marks. Read by the interaction
+   *  layer only (`snapPointToCircle`), never by the engine below: line circles
+   *  are a constraint outside both snappers. There is deliberately no "circle
+   *  off" state — a ring always captures, and Shift is how you decline. */
+  circle: boolean;
 }
 
 export const DEFAULT_SNAP_MODES: SnapModes = {
@@ -146,6 +152,7 @@ export const DEFAULT_SNAP_MODES: SnapModes = {
   tens: false,
   all: 'off',
   grid: 'off',
+  circle: false,
 };
 
 export interface SnapGuide {

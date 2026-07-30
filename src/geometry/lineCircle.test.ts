@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CIRCLE_CARDINAL_STEP,
   arcTangentPolygon,
   circleAngleAt,
   lineCirclesForRect,
   pointAtAngle,
   projectToCircle,
+  snapPointToCircle,
   tangentAtAngle,
   wrapAngleToPi,
   type CircleSpec,
@@ -152,5 +154,79 @@ describe('lineCirclesForRect (marquee membership)', () => {
     const rect = { x0: 300, y0: 300, x1: 500, y1: 500 };
     expect(lineCirclesForRect(circles, rect, false)).toEqual([]);
     expect(lineCirclesForRect(circles, rect, true)).toEqual(['locked']);
+  });
+});
+
+describe('snapPointToCircle (cardinal magnetism)', () => {
+  // The eight cardinals of C, indexed by 45° step from due east.
+  const cardinal = (k: number): Vec2 => pointAtAngle(C, k * CIRCLE_CARDINAL_STEP);
+  const near = (a: Vec2, b: Vec2, digits = 9) => {
+    expect(a.x).toBeCloseTo(b.x, digits);
+    expect(a.y).toBeCloseTo(b.y, digits);
+  };
+
+  it('is exactly the plain rim projection when cardinals are off', () => {
+    for (const p of [
+      { x: 300, y: 100 },
+      { x: 100, y: 400 },
+      { x: 12, y: 34 },
+      { x: 100, y: 100 },
+    ])
+      expect(snapPointToCircle(C, p, null)).toEqual(projectToCircle(C, p));
+  });
+
+  it('pulls a near-miss at 9 o’clock onto the west cardinal exactly', () => {
+    // 0.05 rad shy of due west ⇒ 3.5 world units of arc at r=70, well inside 10.
+    const p = pointAtAngle(C, Math.PI - 0.05);
+    near(snapPointToCircle(C, p, 10), { x: 30, y: 100 });
+  });
+
+  it('reaches all eight cardinals, and only lands ON one when engaged', () => {
+    for (let k = 0; k < 8; k++) {
+      const target = cardinal(k);
+      const askew = pointAtAngle(C, k * CIRCLE_CARDINAL_STEP + 0.06);
+      near(snapPointToCircle(C, askew, 10), target);
+    }
+  });
+
+  it('leaves the midpoint between two cardinals alone', () => {
+    // 22.5° is the farthest possible from any cardinal: 27.5 units of arc here.
+    const p = pointAtAngle(C, CIRCLE_CARDINAL_STEP / 2);
+    near(snapPointToCircle(C, p, 10), p);
+  });
+
+  it('engages just inside the arc tolerance and not just outside', () => {
+    const inside = pointAtAngle(C, (10 - 0.1) / C.radius);
+    const outside = pointAtAngle(C, (10 + 0.1) / C.radius);
+    near(snapPointToCircle(C, inside, 10), cardinal(0));
+    near(snapPointToCircle(C, outside, 10), outside);
+  });
+
+  it('measures the window as ARC, so a tight ring is magnetic where a huge one is not', () => {
+    // Same angular offset (0.1 rad), same tolerance — opposite outcomes.
+    const small = { x: 0, y: 0, radius: 40 };
+    const huge = { x: 0, y: 0, radius: 400 };
+    near(snapPointToCircle(small, pointAtAngle(small, 0.1), 10), pointAtAngle(small, 0));
+    near(snapPointToCircle(huge, pointAtAngle(huge, 0.1), 10), pointAtAngle(huge, 0.1));
+  });
+
+  it('treats angles either side of ±π as the same west cardinal', () => {
+    near(snapPointToCircle(C, pointAtAngle(C, Math.PI - 0.02), 10), { x: 30, y: 100 });
+    near(snapPointToCircle(C, pointAtAngle(C, -Math.PI + 0.02), 10), { x: 30, y: 100 });
+  });
+
+  it('is idempotent — re-seating a seated point does not drift', () => {
+    // moveStation re-projects whatever the drag hands it, so a seat that moved
+    // on a second pass would creep along the rim for free.
+    for (const theta of [0.06, 1.3, -2.9, Math.PI - 0.01]) {
+      const once = snapPointToCircle(C, pointAtAngle(C, theta), 10);
+      near(snapPointToCircle(C, once, 10), once, 12);
+    }
+  });
+
+  it('survives a degenerate radius instead of emitting NaN', () => {
+    const p = snapPointToCircle({ x: 5, y: 5, radius: 0 }, { x: 9, y: 9 }, 10);
+    expect(Number.isFinite(p.x)).toBe(true);
+    expect(Number.isFinite(p.y)).toBe(true);
   });
 });

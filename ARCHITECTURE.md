@@ -146,8 +146,10 @@ src/
     router.ts                   # octolinear path solver + arc fillets + offset paths
     interlining.ts              # THE band algorithm: merge lines into parallel stripes
     appendRoutePreview.ts       # Edit Stops route preview: run the REAL connect/splice on a scratch doc, rebuild bands, keep the ADDED corridors
-    snap.ts                     # the snap engine (line/equidistant/tens/all/grid modes)
-    lineCircle.ts               # circle math: project/tangent, rim capture, shorter-arc sweep,
+    snap.ts                     # the snap engine (line/equidistant/tens/all/grid modes) + the
+                                #   SnapModes pref shape, whose `circle` mode the engine never reads
+    lineCircle.ts               # circle math: project/tangent, rim capture, cardinal seats,
+                                #   shorter-arc sweep,
                                 #   arc tangent polygons (the fillet-walk-exact arc trick)
     lattice.ts                  # stop-placement lattice (orthogonal/diagonal)
     stationBoundary.ts          # selection silhouette + marquee hit rects
@@ -374,11 +376,17 @@ the item back to "Custom"; redefining a style (Styles-panel editor or "Save styl
 same name) re-stamps its tagged users in the same undo entry; new items are stamped with their
 kind's DESIGNATED default style on creation. Defaultness is explicit and id-keyed, never
 name-derived: `styleDefaults` maps each kind to one of its styles (`setDefaultStyle` re-assigns
-it — the panel's star), with two structural invariants enforced on both load paths by
+it — the panel's star), with three structural invariants enforced on both load paths by
 `ensureStyleInvariants` (serialize.ts): every kind has >= 1 style (empty kinds get their
 factory Default injected; `deleteStyle` refuses last-of-kind and re-points the designation when
-the default itself is deleted), and every `styleDefaults` entry resolves to a style of its
-kind. See [styles.ts](src/model/styles.ts).
+the default itself is deleted), every `styleDefaults` entry resolves to a style of its
+kind, and every line style's dot-TYPE ids (`singleton`/`multiDotStyleId`) name live `stopDot`
+styles. That last one is what keeps dot type STAMPABLE: the setters no-op on an id that doesn't
+resolve, so a def naming a deleted dot style is unmatchable — applying it leaves the line tagged
+over diverged values and the next load strips the tag, i.e. the style silently reads "Custom"
+again after every save/load. A present-but-dangling (or wrong-kind) id is re-pointed at the
+designated default dot; `deleteStyle` re-points the defs it can see at delete time.
+See [styles.ts](src/model/styles.ts).
 
 ### Entities (field-level)
 
@@ -431,7 +439,7 @@ kind. See [styles.ts](src/model/styles.ts).
   the mass-unlock path (and Lock all the mass-lock). Free transfer anchors are the one kind
   with **no `locked` field at all**, so Lock all counts them out (`lockableTotal`)
   while Delete all still counts them in. Line circles (the seventh kind) do lock — a locked
-  circle refuses drag/resize/delete and is click-through while unselected.
+  circle refuses drag/resize/rotate/group-tow/delete and is click-through while unselected.
 
 **`StopCell`** — one line's stop on a station. `lineId, row, col` (station-local grid;
 **`row`/`col` are floats now**, since diagonal moves use ±√2/2 — equality uses `CELL_EPS=1e-4`),
@@ -449,16 +457,22 @@ arrows (stop rows, layout editor, hover badges).
 
 **`LineCircle`** (`MapDoc.lineCircles`) — a perfect-circle guide: `id, x, y` (center),
 `radius` (quarter-unit grid, ≥ `LINE_CIRCLE_RADIUS_MIN`, [model/lineCircle.ts](src/model/lineCircle.ts)),
-`locked?`. **Editor scaffolding, never map ink**: rendered as a dashed guide ring
-([LineCircleView.tsx](src/components/LineCircleView.tsx), `theme.guide`, export-excluded); the
-painted arcs come from line edges. The concept splits in two, on purpose:
+`locked?`. **Editor scaffolding, never map ink**: rendered as a dashed guide ring — plus a resize
+knob on its east point while selected, and eight radial cardinal ticks while the `circle` snap
+mode is on ([LineCircleView.tsx](src/components/LineCircleView.tsx), `theme.guide`,
+export-excluded; the ticks come in as a prop, since the snap mode is a UI pref and no part of the
+circle). The painted arcs come from line edges. The concept splits in two, on purpose:
 
 - **"On the circle geometrically"** is the STATION binding (`Station.circleId`): bind projects
   the station onto the circumference, rotates it to the tangent octant, and defaults every stop
   to `viaCircle` (binding happens by dragging/placing a station onto the rim — capture at the
   standard snap tolerance; a bound station escapes by being pulled `3×` tolerance off the rim, or
   instantly with Shift — see `useStationDrag`). Moving/resizing a circle carries bound stations
-  rigidly/radially (`moveLineCircle`/`setLineCircleRadius`); deleting it strips bindings and
+  rigidly/radially (`moveLineCircle`/`setLineCircleRadius`), and right-click ROTATES it: the ring
+  is rotationally symmetric, so a circle's rotation IS its members' angular position —
+  `rotateLineCircle` swings every bound station one 45° step round the rim and reseats it through
+  `circleSeat` (45° is exactly one octant, so a seated station stays seated; a ring carrying
+  nobody is a genuine no-op, same doc back). Deleting it strips bindings and
   leaves the stations standing (arcs simply re-route octolinearly — nothing moves, one undo
   restores). A bound station's LOCAL GRID is managed radially: the origin cell is the one point
   that sits ON the ring, so new stops stack radially OUTWARD (`spawnStopCellAt`'s bound branch —
@@ -483,10 +497,13 @@ painted arcs come from line edges. The concept splits in two, on purpose:
 
   Re-seating compensates for the uprightness flip. `circleSeat` turns `rotation` a full 180° where
   the name would otherwise read upside-down, and cells are expressed in that frame, so the turn
-  would mirror the whole layout through the anchor and send every lane across the rim. So
-  `moveStation` negates the cells whenever `radialLocalTurn` inverts: stops, hosted anchors and
-  the label CELL keep their world positions while `label.rotation` is left alone, which is what
-  lets the 180° land on the name — the one thing the flip is for.
+  would mirror the whole layout through the anchor and send every lane across the rim. So every
+  path that re-seats — `moveStation` for a drag, `rotateBoundStations` for a circle rotation —
+  goes through `reseatCircleLayout`, which negates the cells whenever `radialLocalTurn` inverts:
+  stops, hosted anchors and the label CELL keep their world positions while `label.rotation` is
+  left alone, which is what lets the 180° land on the name — the one thing the flip is for. The
+  other two member mutators need no compensation, both preserving each station's polar angle and
+  so its frame: `moveLineCircle` translates rigidly, `setLineCircleRadius` reprojects radially.
 - **"Routed via the circle"** is the per-stop `viaCircle` flag. An EDGE renders as a circular
   arc iff BOTH endpoint stops carry it, both stations bind to the SAME circle, and the stops sit
   at matching radial offsets. A deliberate opt-out (one end unflagged) degrades SILENTLY to the
@@ -1024,8 +1041,11 @@ by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}`:
 10. `sanitizeStyles` (validate/clamp style defs, per-kind name dedupe, id ← record key; its
     per-dot `sanitizeDotStyle` also defaults an absent `strokeAlign` to `'center'`) then
     `ensureStyleInvariants` (≥ 1 style per kind — factory Defaults injected into empty kinds —
-    and a `styleDefaults` entry resolving per kind). **Before** the transfer bake, which seeds
-    the _designated_ default transfer style.
+    a `styleDefaults` entry resolving per kind, and every line style's dot-TYPE ids naming live
+    `stopDot` styles). **Before** the transfer bake, which seeds the _designated_ default
+    transfer style. Order matters for the third: `sanitizeStyles` runs first and heals an
+    ABSENT dot id to the module constant `stop-filled-black`, which a map whose library no
+    longer holds that preset would otherwise carry away as a dangling ref.
 11. `bakeLegacyTransferSettings` (retired doc-level transfer settings → per-transfer overrides;
     idempotent, keyed off field presence) then `sanitizeTransferStyles`, then
     `bakeLegacyLabelSettings` (retired doc-level station-label settings → per-station typography +
@@ -1603,12 +1623,16 @@ Three seams cover it, and a fourth rule governs anything new:
   The split: **definitions are global; the active set (`activePalettes`) is per-map in the doc.**
   Resolution helpers take the custom palettes as an **explicit param** (the pure model never
   reaches into a store); `deleteCustomPalette` is the cross-store coordinator.
-- [snapPrefs.ts](src/state/snapPrefs.ts) — `useSnapPrefs`: snap-mode toggles, with a v0→v1
-  boolean→enum migration. Number keys **1–5** (and Numpad1–5, via `e.code` so they fire with
-  NumLock off) each advance one toggle a single step, in toolbar order — the keyboard twin of a
-  click on that button. Both paths route through the pure `advanceSnapToggle(modes, index)`
+- [snapPrefs.ts](src/state/snapPrefs.ts) — `useSnapPrefs`: snap-mode toggles, migrated on
+  rehydrate (v0's boolean `all`/`grid` become the directional enums, and **any key the blob
+  predates is filled from `DEFAULT_SNAP_MODES`** — zustand's default merge replaces `modes`
+  wholesale, so without that a mode added later reads `undefined` at runtime). Number keys
+  **1–6** (and Numpad1–6, via `e.code` so they fire with NumLock off) each advance one toggle a
+  single step, in toolbar order — the keyboard twin of a click on that button. Both paths route
+  through the pure `advanceSnapToggle(modes, index)`
   ([SnapToggleBar.tsx](src/components/SnapToggleBar.tsx)) so a keypress is exactly one click
-  (multi-state toggles cycle over repeated presses; a disabled toggle is a no-op).
+  (multi-state toggles cycle over repeated presses; a disabled toggle is a no-op). The bound key
+  range is `SNAP_TOGGLE_COUNT`, derived from the toggle list, so a new toggle wires its own key.
 
 ---
 
@@ -1799,6 +1823,23 @@ position and the engine + grid are bypassed — and a bound station stays constr
 pulled `3×` tolerance off the rim (escape hysteresis; Shift detaches instantly, the same
 bypass convention as everything else). Guides don't fire while captured: the ring itself is
 the feedback.
+
+Which seat on the rim is `snapPointToCircle`'s call, the angular half of that constraint and the
+one owner of it across all three entry points. Plain rim by default; under the **`circle` snap
+mode** ("Snap to circle cardinals") the seat is also pulled to the nearest of the ring's eight
+**cardinals** — 45° apart from due east — and the guide grows tick marks there. Two independent
+axes, deliberately: radial distance is the capture/release test, angular distance the cardinal
+one, and the cardinal window is an arc LENGTH measured against the same tolerance, so it spans a
+constant number of screen px and a tight ring is far more magnetic than a huge one. There is no
+"circle off" state — a ring always captures, and Shift is how you decline. Cardinals are part of
+the rim constraint, not a layer on top, so whatever suspends that suspends them too: a `ringTowed`
+drag (below) seats nothing at all. The pull travels
+ALONG the rim, so it never disturbs the projection every downstream consumer depends on:
+`circleSeat` reprojects whatever it is handed, the drop-side `bindDroppedStation` still
+recognizes the seat at its tight tolerance, and circle move/resize preserve the polar angle — so
+a bisected ring stays bisected through both. Cardinal-to-cardinal chords are octolinear only for
+EVEN steps (diameters and quarter chords); odd steps come out at 22.5° and the router doglegs
+them.
 
 **Deliberately unsnapped** (documented, not bugs): arrow-key nudges (raw 1 / Shift 5 world
 units — free fine-positioning); 45° group rotate (re-snapping would distort shapes); snapping
@@ -2318,14 +2359,32 @@ correct until you zoom.
 `collectGroupSiblings` snapshots every _other_ selected item — but only if the grabbed item is
 itself selected (dragging an unselected item never tows; locked items never tow). Snap during a
 group drag is **one rule for every master type**: the grabbed item snaps with its usual engine
-against everything stationary, excluding only itself + the co-selected siblings
+against everything stationary, excluding only itself + everything MOVING with it
 (`excludedIds` for the station engine, `groupAlignExclude` → `alignTargets` for the point
 snapper); siblings then translate rigidly by the post-snap delta. Grid acts on the master's
 reference point only — towed siblings keep their offsets verbatim.
+A **line circle is a FRAME**, and that makes it the one member with a second list. It tows by its
+center (`moveLineCircle`), which carries the stations bound to it — so those passengers go in
+`carriedStations` (ids only, every station on a moving ring, selected or not) instead of
+`stations`: they are excluded from the snap pools via `movingStationIds`, because they move, but
+never translated, because a bound station's `moveStation` reseats it on its ring and the second
+write would drift it round the rim. Same reason as `rotateItemsAround`'s `carriedByCircle`. The
+mirror case lives in `useStationDrag`: grabbing a bound station whose ring is co-selected (`ringTowed`)
+suspends the ring constraint entirely — no slide along the rim, no Shift/out-of-band detach — and
+skips the station's own `moveStation`, because the towed ring is what carries it. A LOCKED ring
+stays put, so its passengers tow normally and slide along the stationary rim.
+A ring's rim ALSO selects at pointer-down (its own convention, so the resize knob and the
+diameter popover appear as you grab it) — which must stand down for a ring already in the
+selection, or a `selectLineCircle` that clears every other list would destroy the group drag
+before it began, and for a Shift-grab, which the click's toggle owns.
 **Group rotate** ([groupRotate.ts](src/components/canvas/groupRotate.ts)): right-click rotates the
 whole multi-selection rigidly about the pivot via `rotateItemsAround` (fixed the bug where
 per-type handlers omitted other types). Locked items are exempt: a locked pivot makes the
-right-click a no-op, and locked co-selected members stay put while the rest rotate.
+right-click a no-op, and locked co-selected members stay put while the rest rotate. A co-selected
+line circle rotates as one rigid body with its passengers — center and bound stations take the
+same rotation about the pivot — so a station that is BOTH a member and a ring passenger is skipped
+by the station branch (rotating it twice would swing it 90°); the drag's `carriedStations` is the
+same rule for translation.
 
 ### Placement & popovers
 

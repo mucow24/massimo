@@ -7,12 +7,52 @@ import {
   HeightIcon,
   SizeIcon,
   GridIcon,
+  CircleIcon,
   ViewHorizontalIcon,
   ViewVerticalIcon,
 } from '@radix-ui/react-icons';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useViewportStore } from '../state/viewportStore';
 import type { SnapModes } from '../geometry/snap';
+import { CIRCLE_CARDINAL_ANGLES } from '../geometry/lineCircle';
+
+// Radix's CircleIcon is a 15×15 annulus centred on (7.5, 7.5), inner radius
+// 5.673 and outer 6.623 — so a 0.95-wide stroke on radius 6.148 reproduces it
+// exactly. Matching it matters: the cardinals glyph must read as that SAME ring
+// with marks added, nothing else moving.
+const ICON_RING_R = 6.148;
+const ICON_RING_STROKE = 0.95;
+const ICON_DOT_R = 1.1;
+
+/**
+ * The "off" glyph (Radix `CircleIcon`) with a dot on each cardinal. Local rather
+ * than vendored because there is no Radix icon for it; the ring geometry above
+ * is Radix's own, and the dot ANGLES come from the geometry module, so the
+ * button can't claim a cardinal the snap doesn't honour.
+ */
+function CircleCardinalsIcon() {
+  return (
+    <svg width={15} height={15} viewBox="0 0 15 15" aria-hidden="true" style={{ display: 'block' }}>
+      <circle
+        cx={7.5}
+        cy={7.5}
+        r={ICON_RING_R}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={ICON_RING_STROKE}
+      />
+      {CIRCLE_CARDINAL_ANGLES.map((t, k) => (
+        <circle
+          key={k}
+          cx={7.5 + ICON_RING_R * Math.cos(t)}
+          cy={7.5 + ICON_RING_R * Math.sin(t)}
+          r={ICON_DOT_R}
+          fill="currentColor"
+        />
+      ))}
+    </svg>
+  );
+}
 
 /** One state in a toggle's cycle. Index 0 is always the "off" state. */
 interface SnapState {
@@ -82,6 +122,19 @@ const TOGGLES: ToggleSpec[] = [
       { value: 'horizontal', Icon: ViewHorizontalIcon, name: 'Horizontal lines' },
       { value: 'vertical', Icon: ViewVerticalIcon, name: 'Vertical lines' },
       { value: 'both', Icon: GridIcon, name: 'Both' },
+    ],
+  },
+  {
+    key: 'circle',
+    label: 'Snap to circle cardinals',
+    hint: 'Also snap onto a line circle’s 8 cardinal points, and show their ticks',
+    // Not `boolStates` — this is the one toggle whose two states want DIFFERENT
+    // glyphs, because the off glyph is load-bearing: a plain ring says circles
+    // capture regardless (only Shift declines), and the dots say the cardinals
+    // are live on top of that.
+    states: [
+      { value: false, Icon: CircleIcon, name: 'Off' },
+      { value: true, Icon: CircleCardinalsIcon, name: 'On' },
     ],
   },
 ];

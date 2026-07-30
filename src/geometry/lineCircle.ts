@@ -47,6 +47,56 @@ export function projectToCircle(c: CircleSpec, p: Vec2): Vec2 {
 }
 
 /**
+ * Angular spacing of a circle's CARDINAL points — the eight marks at 45° from
+ * due east (E, SE, S, SW, W, NW, N, NE in the y-down frame).
+ */
+export const CIRCLE_CARDINAL_STEP = Math.PI / 4;
+
+/**
+ * Those eight angles, E → SE → S → … → NE (clockwise in the y-down frame).
+ * One owner, so the toolbar glyph, the on-canvas ticks and the snap can't
+ * disagree about where a cardinal is or how many there are.
+ */
+export const CIRCLE_CARDINAL_ANGLES: readonly number[] = Array.from(
+  { length: Math.round((2 * Math.PI) / CIRCLE_CARDINAL_STEP) },
+  (_, k) => k * CIRCLE_CARDINAL_STEP,
+);
+
+/**
+ * Where a station seats on `c` when aimed at `p`: the radial projection of
+ * {@link projectToCircle}, pulled onto the nearest CARDINAL point when
+ * `cardinalTolerance` is non-null and the projection lands within that much
+ * ARC of one. Pass `null` to seat on the rim only.
+ *
+ * The tolerance is an arc LENGTH in world units, not an angle, so the magnetic
+ * window spans a constant number of screen px at any radius and zoom — the
+ * same feel as every other snap (callers pass `snapToleranceAt(zoom)`). It
+ * follows that a tight ring is strongly cardinal and a huge one barely is,
+ * which is the useful direction: cardinals matter most where the ring is too
+ * small to eyeball a quarter turn.
+ *
+ * One owner of "which ANGLE on the ring does this cursor mean", shared by the
+ * station drag, station placement and the Edit Stops create-click so they can
+ * never disagree — the same reason `lineCircleAtPoint` owns the capture test.
+ * The resulting POSE (position plus tangent rotation) is still `circleSeat`'s
+ * in the model layer, which reprojects whatever point it is handed; these two
+ * compose, and the composition is only sound because this function is
+ * idempotent on a point already on the rim.
+ */
+export function snapPointToCircle(c: CircleSpec, p: Vec2, cardinalTolerance: number | null): Vec2 {
+  const theta = circleAngleAt(c, p);
+  // A degenerate radius has no arc to measure a tolerance against, so there is
+  // nothing to quantize toward — seat radially and let the caller's rim
+  // capture decide whether that point was reachable at all.
+  if (cardinalTolerance === null || !(c.radius > 0)) return pointAtAngle(c, theta);
+  const nearest = Math.round(theta / CIRCLE_CARDINAL_STEP) * CIRCLE_CARDINAL_STEP;
+  // |nearest − theta| ≤ half a step by construction, so this never wraps and
+  // needs no `wrapAngleToPi`. (θ near ±π rounds to ∓π's twin, the same point.)
+  const arc = Math.abs(nearest - theta) * c.radius;
+  return pointAtAngle(c, arc <= cardinalTolerance ? nearest : theta);
+}
+
+/**
  * Unit tangent of the circle at polar angle `theta` — the direction of travel
  * for increasing theta (visually clockwise in the y-down frame). Its sign is
  * immaterial to station orientation (a travel axis is symmetric under 180°);
