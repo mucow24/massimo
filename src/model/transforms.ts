@@ -73,7 +73,13 @@ import {
   removeEdge,
   shortestPathOnLine,
 } from './lineTopology';
-import { STOP_SIZE, rotateBy, stopCenterAt, tangentGap } from '../geometry/orientation';
+import {
+  STOP_SIZE,
+  rotateBy,
+  stopCenterAt,
+  tangentGap,
+  worldDirToLocal,
+} from '../geometry/orientation';
 import { CELL_EPS, sameCell } from '../geometry/lattice';
 import { GRID_INTERVAL, snapPointToGrid, type GridSnap } from '../geometry/snap';
 import { polygonCentroid, edgeMidpoint } from '../geometry/polygon';
@@ -1765,7 +1771,49 @@ export function spawnStopCellAt(
   st: Station,
   lineId: LineId,
   lines: Record<LineId, Line>,
+  lineCircles: Record<string, LineCircle> = {},
 ): StopCell {
+  const circle = st.circleId !== undefined ? lineCircles[st.circleId] : undefined;
+  // On a circle-bound station, new stops stack RADIALLY OUTWARD from the
+  // ring. The naive "east of the rightmost" step below has no consistent
+  // radial meaning — local +x points radially IN at some angles and OUT at
+  // others (the label-uprightness flip alone inverts it), so two stations on
+  // the same ring would spawn a second line's stops on opposite sides and the
+  // concentric-arc gate could never hold. Radial-out is the one direction
+  // that means the same thing at every angle.
+  if (circle && st.stops.length > 0) {
+    const wx = st.x - circle.x;
+    const wy = st.y - circle.y;
+    const local = worldDirToLocal({ x: wx, y: wy }, st.rotation);
+    // Dominant local axis of radial-out → a lattice step. On a tangent-
+    // rotated bound station this is always ±x (within 22.5° of it), but the
+    // row arm keeps a hand-rotated station sane.
+    const step =
+      Math.abs(local.x) >= Math.abs(local.y)
+        ? { dRow: 0, dCol: local.x >= 0 ? 1 : -1 }
+        : { dRow: local.y >= 0 ? 1 : -1, dCol: 0 };
+    // Anchor on the radially-OUTERMOST existing stop and step one tangent
+    // gap further out.
+    const anchor = st.stops.reduce((best, c) =>
+      c.row * step.dRow + c.col * step.dCol > best.row * step.dRow + best.col * step.dCol
+        ? c
+        : best,
+    );
+    const gapCells =
+      tangentGap(
+        lineWidthOf(lines[lineId]),
+        lineWidthOf(lines[anchor.lineId]),
+        lineInterlineGapOf(lines[lineId]),
+        lineInterlineGapOf(lines[anchor.lineId]),
+      ) / STOP_SIZE;
+    return {
+      lineId,
+      row: anchor.row + step.dRow * gapCells,
+      col: anchor.col + step.dCol * gapCells,
+      orientation: 'auto-vertical',
+      viaCircle: true,
+    };
+  }
   const anchor =
     st.stops.length === 0
       ? null
@@ -1801,9 +1849,10 @@ function spawnStopCell(
   st: Station,
   lineId: LineId,
   lines: Record<LineId, Line>,
+  lineCircles: Record<string, LineCircle> = {},
 ): { stops: StopCell[]; label: LabelCell } {
   if (st.stops.some((c) => c.lineId === lineId)) return { stops: st.stops, label: st.label };
-  const newCell = spawnStopCellAt(st, lineId, lines);
+  const newCell = spawnStopCellAt(st, lineId, lines, lineCircles);
   const { row: newRow, col: newCol } = newCell;
   const stops = [...st.stops, newCell];
   let label = st.label;
@@ -1828,7 +1877,12 @@ export function addStationToLine(doc: MapDoc, lineId: LineId, stationId: Station
   const ln = doc.lines[lineId];
   const st = doc.stations[stationId];
   if (!ln || !st || ln.stations.includes(stationId)) return doc;
-  const { stops: newStops, label: newLabel } = spawnStopCell(st, lineId, doc.lines);
+  const { stops: newStops, label: newLabel } = spawnStopCell(
+    st,
+    lineId,
+    doc.lines,
+    doc.lineCircles,
+  );
   const newStations = [...ln.stations, stationId];
   const stationsAfter = {
     ...doc.stations,
@@ -1860,7 +1914,10 @@ export function removeStationFromLine(doc: MapDoc, lineId: LineId, idx: number):
     const st = stations[removedStationId];
     stations = {
       ...stations,
-      [removedStationId]: { ...st, stops: st.stops.filter((c) => c.lineId !== lineId) },
+      [removedStationId]: rehomeCircleStops({
+        ...st,
+        stops: st.stops.filter((c) => c.lineId !== lineId),
+      }),
     };
     // The (station, line) stop is gone — delete transfers anchored at it. Stop
     // ends only: the station itself survives, so its hosted anchors do too.
@@ -1937,7 +1994,7 @@ export function connectStationsOnLine(
   let stationsAfter = doc.stations;
   let newStations = ln.stations;
   if (!isMember) {
-    const { stops, label } = spawnStopCell(to, lineId, doc.lines);
+    const { stops, label } = spawnStopCell(to, lineId, doc.lines, doc.lineCircles);
     newStations = [...ln.stations, toStationId];
     stationsAfter = { ...doc.stations, [toStationId]: { ...to, stops, label } };
   }
@@ -1986,7 +2043,7 @@ export function spliceStationIntoEdge(
   let stationsAfter = doc.stations;
   let newStations = ln.stations;
   if (!isMember) {
-    const { stops, label } = spawnStopCell(st, lineId, doc.lines);
+    const { stops, label } = spawnStopCell(st, lineId, doc.lines, doc.lineCircles);
     newStations = [...ln.stations, stationId];
     stationsAfter = { ...doc.stations, [stationId]: { ...st, stops, label } };
   }
@@ -2010,7 +2067,8 @@ export function deleteLine(doc: MapDoc, id: LineId): MapDoc {
   const stations: Record<StationId, Station> = {};
   for (const sid of Object.keys(doc.stations)) {
     const st = doc.stations[sid];
-    stations[sid] = { ...st, stops: st.stops.filter((c) => c.lineId !== id) };
+    const stops = st.stops.filter((c) => c.lineId !== id);
+    stations[sid] = stops.length === st.stops.length ? st : rehomeCircleStops({ ...st, stops });
   }
   const order = effectiveLineOrder(doc.lineOrder, doc.lines).filter((x) => x !== id);
   // Drop tags whose lineId matches; the rest are valid by construction.
@@ -3056,6 +3114,38 @@ export function setLineCircleRadius(doc: MapDoc, id: string, radius: number): Ma
 // setStationLocked) so single- and multi-select locking can't drift apart.
 export function setLineCircleLocked(doc: MapDoc, id: string, locked: boolean): MapDoc {
   return setItemsLocked(doc, { lineCircles: [id] }, locked);
+}
+
+/**
+ * Keep a circle-bound station's layout HOMED: at least one stop touches the
+ * origin cell, which is the one point of the local grid that sits ON the ring
+ * (the station anchor is projected onto the circumference). When a stop
+ * removal leaves the survivors floating radially off the ring — the removed
+ * ring line was at the origin, the rest packed outward — translate the WHOLE
+ * layout (stops, label, hosted anchors) rigidly so the nearest stop lands
+ * back at the origin, exactly the move a user would make by hand on a normal
+ * station. Unbound stations are left alone: off-anchor layouts there are a
+ * legitimate manual choice.
+ */
+function rehomeCircleStops(st: Station): Station {
+  if (st.circleId === undefined || st.stops.length === 0) return st;
+  const nearest = st.stops.reduce((best, c) =>
+    Math.hypot(c.row, c.col) < Math.hypot(best.row, best.col) ? c : best,
+  );
+  if (Math.hypot(nearest.row, nearest.col) < CELL_EPS) return st;
+  const dRow = -nearest.row;
+  const dCol = -nearest.col;
+  const shift = <T extends { row: number; col: number }>(cell: T): T => ({
+    ...cell,
+    row: cell.row + dRow,
+    col: cell.col + dCol,
+  });
+  return {
+    ...st,
+    stops: st.stops.map(shift),
+    label: shift(st.label),
+    ...(st.transferAnchors ? { transferAnchors: st.transferAnchors.map(shift) } : {}),
+  };
 }
 
 // Strip a station's circle binding: drop `circleId` and every stop's

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   arcTangentPolygon,
   circleAngleAt,
+  lineCirclesForRect,
   pointAtAngle,
   projectToCircle,
   tangentAtAngle,
@@ -122,5 +123,34 @@ describe('arcTangentPolygon', () => {
   it('degenerates to the chord for a ~zero sweep', () => {
     const verts = arcTangentPolygon(C, 1, 1e-9);
     expect(verts.length).toBe(2);
+  });
+});
+
+describe('lineCirclesForRect (marquee membership)', () => {
+  const circles = {
+    c1: { id: 'c1', x: 100, y: 100, radius: 70 },
+    locked: { id: 'locked', x: 400, y: 400, radius: 70, locked: true },
+  };
+
+  it('hits when the rect touches the RIM, not the empty interior', () => {
+    // A box over the east rim segment.
+    expect(lineCirclesForRect(circles, { x0: 160, y0: 80, x1: 200, y1: 120 }, false)).toEqual([
+      'c1',
+    ]);
+    // A box wholly inside the ring touches no rim — a marquee dragged inside
+    // the circle must not grab the guide.
+    expect(lineCirclesForRect(circles, { x0: 90, y0: 90, x1: 110, y1: 110 }, false)).toEqual([]);
+    // A box around the whole circle hits.
+    expect(lineCirclesForRect(circles, { x0: 0, y0: 0, x1: 200, y1: 200 }, false)).toEqual(['c1']);
+    // Inverted corners normalize (drags go in any direction).
+    expect(lineCirclesForRect(circles, { x0: 200, y0: 120, x1: 160, y1: 80 }, false)).toEqual([
+      'c1',
+    ]);
+  });
+
+  it('skips locked circles unless asked (the Alt-marquee recovery path)', () => {
+    const rect = { x0: 300, y0: 300, x1: 500, y1: 500 };
+    expect(lineCirclesForRect(circles, rect, false)).toEqual([]);
+    expect(lineCirclesForRect(circles, rect, true)).toEqual(['locked']);
   });
 });

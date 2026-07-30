@@ -21,9 +21,12 @@ interface Props {
   // the guide stays visible but takes no pointer events.
   interactive: boolean;
   inHandMode: boolean;
-  // Selection happens at pointer-down (the drag hook selects before arming),
-  // so there is no separate click handler.
+  // Selection happens at pointer-down (the drag hook selects before arming).
   onPointerDown?: (e: ReactPointerEvent, id: string, part: LineCirclePart) => void;
+  // Real clicks are redundant with the pointer-down selection above; this
+  // exists for the alt-click deep-pick, whose synthetic click dispatch is how
+  // a buried rim gets selected (see hitStack RESOLVERS).
+  onClick?: (id: string) => void;
 }
 
 /**
@@ -43,6 +46,7 @@ export function LineCircleView({
   interactive,
   inHandMode,
   onPointerDown,
+  onClick,
 }: Props) {
   const px = (v: number) => v / zoom;
   const clickThrough = !interactive || inHandMode || (circle.locked && !selected);
@@ -70,6 +74,7 @@ export function LineCircleView({
           strokeWidth={px(RIM_HIT_PX)}
           style={{ cursor: 'move' }}
           onPointerDown={(e) => onPointerDown?.(e, circle.id, 'rim')}
+          onClick={() => onClick?.(circle.id)}
         />
       )}
       {selected && !circle.locked && (

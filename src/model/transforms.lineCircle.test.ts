@@ -4,9 +4,11 @@ import {
   addLineCircle,
   addStationToLine,
   bindStationToCircle,
+  deleteLine,
   deleteLineCircle,
   moveLineCircle,
   moveStation,
+  removeStationFromLine,
   rotateStop,
   setLineCircleLocked,
   setLineCircleRadius,
@@ -288,10 +290,44 @@ describe('rotateStop — the five-state direction cycle on circle stops', () => 
 describe('stop spawn + line add on a bound station', () => {
   it('a stop spawned on a bound station defaults to riding the circle', () => {
     const doc = boundDoc();
-    const cell = spawnStopCellAt(doc.stations.s1, 'l2', {});
+    const cell = spawnStopCellAt(doc.stations.s1, 'l2', {}, doc.lineCircles);
     expect(cell.viaCircle).toBe(true);
     const free = spawnStopCellAt(doc.stations.free, 'l2', {});
     expect('viaCircle' in free).toBe(false);
+  });
+
+  it('stacks new stops RADIALLY OUTWARD on a bound station, at every angle', () => {
+    // East point (angle 0, rotation 0): radial-out is world +x = local +x.
+    const doc = boundDoc();
+    const east = spawnStopCellAt(doc.stations.s1, 'l2', {}, doc.lineCircles);
+    expect(east).toMatchObject({ row: 0, col: 1 });
+    // West point with the label-flip rotation 0: radial-out is world −x =
+    // local −x — the naive "east of rightmost" spawn would land radially IN.
+    const west = makeStation({
+      id: 'w',
+      x: 30,
+      y: 100,
+      rotation: 0,
+      circleId: 'c1',
+      stops: [makeStop('l1', { viaCircle: true })],
+    });
+    const wCell = spawnStopCellAt(west, 'l2', {}, { c1: CIRCLE });
+    expect(wCell).toMatchObject({ row: 0, col: -1 });
+    // South point at rotation 2: radial-out is world +y = local +x again.
+    const south = makeStation({
+      id: 's',
+      x: 100,
+      y: 170,
+      rotation: 2,
+      circleId: 'c1',
+      stops: [makeStop('l1', { viaCircle: true })],
+    });
+    const sCell = spawnStopCellAt(south, 'l2', {}, { c1: CIRCLE });
+    expect(sCell).toMatchObject({ row: 0, col: 1 });
+    // A third line continues outward past the outermost stop.
+    const eastTwo = { ...doc.stations.s1, stops: [...doc.stations.s1.stops, east] };
+    const third = spawnStopCellAt(eastTwo, 'l3', {}, doc.lineCircles);
+    expect(third).toMatchObject({ row: 0, col: 2 });
   });
 
   it('addStationToLine keeps a bound station at its tangent rotation', () => {
@@ -310,6 +346,68 @@ describe('stop spawn + line add on a bound station', () => {
     const out = addStationToLine(doc, 'l1', 's1');
     expect(out.stations.s1.rotation).toBe(0);
     expect(out.stations.s1.stops[0].viaCircle).toBe(true);
+  });
+});
+
+describe('re-homing a bound station after a stop removal', () => {
+  // A bound interchange whose ring line (l1) sits at the origin cell and
+  // whose second line (l2) is packed one cell radially out, label beside.
+  function interchangeDoc(): MapDoc {
+    return makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          x: 170,
+          y: 100,
+          rotation: 0,
+          circleId: 'c1',
+          stops: [makeStop('l1', { viaCircle: true }), makeStop('l2', { col: 1, viaCircle: true })],
+          label: { row: 0, col: 2, rotation: 0, offset: 0, align: 'auto', valign: 'auto-down' },
+        }),
+        makeStation({ id: 'n1', x: 400, y: 100, stops: [makeStop('l1'), makeStop('l2')] }),
+      ],
+      lines: [
+        makeLine({ id: 'l1', stations: ['s1', 'n1'] }),
+        makeLine({ id: 'l2', stations: ['s1', 'n1'] }),
+      ],
+      lineCircles: [CIRCLE],
+    });
+  }
+
+  it('removing the origin stop slides the survivors back onto the ring (label rides)', () => {
+    const doc = interchangeDoc();
+    const idx = doc.lines.l1.stations.indexOf('s1');
+    const out = removeStationFromLine(doc, 'l1', idx);
+    const s1 = out.stations.s1;
+    expect(s1.stops).toHaveLength(1);
+    // The surviving l2 stop is HOME now — its dot sits on the circle again.
+    expect(s1.stops[0]).toMatchObject({ lineId: 'l2', row: 0, col: 0 });
+    // The label translated with the layout, keeping its relative spot.
+    expect(s1.label).toMatchObject({ row: 0, col: 1 });
+  });
+
+  it('deleting a line re-homes its bound stations the same way', () => {
+    const doc = interchangeDoc();
+    const out = deleteLine(doc, 'l1');
+    expect(out.stations.s1.stops[0]).toMatchObject({ lineId: 'l2', row: 0, col: 0 });
+  });
+
+  it('leaves unbound stations alone (manual repacking stays manual)', () => {
+    const doc = interchangeDoc();
+    const idx = doc.lines.l1.stations.indexOf('n1');
+    const out = removeStationFromLine(doc, 'l1', idx);
+    // n1's surviving stop keeps its cell — no silent reflow off the circle path.
+    expect(out.stations.n1.stops[0]).toMatchObject({ lineId: 'l2', row: 0, col: 0 });
+    const shifted = {
+      ...doc,
+      stations: {
+        ...doc.stations,
+        n1: { ...doc.stations.n1, stops: [doc.stations.n1.stops[0], makeStop('l2', { col: 3 })] },
+      },
+    };
+    const idx2 = shifted.lines.l1.stations.indexOf('n1');
+    const out2 = removeStationFromLine(shifted, 'l1', idx2);
+    expect(out2.stations.n1.stops[0]).toMatchObject({ lineId: 'l2', col: 3 });
   });
 });
 

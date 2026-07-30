@@ -254,10 +254,11 @@ export interface SelectionState {
   // paste that would carry its transfer) while still answering Delete, the
   // arrow keys, the marquee, and group drag/rotate.
   selectedAnchorIds: string[];
-  // Line-circle selection (the dashed guide rings). Multi-selection list for
-  // consistency with the other kinds, though the canvas only single-selects
-  // them today (no marquee membership — a guide caught in every box-select
-  // would be noise). No popover; absent from getCopyableSelection.
+  // Line-circle selection (the dashed guide rings). A marquee picks one up
+  // only when the rect touches its RIM (lineCirclesForRect) — a box-select
+  // dragged inside the ring must not grab the guide. Sole selection opens the
+  // tiny LineCirclePopover (diameter + lock/delete); absent from
+  // getCopyableSelection.
   selectedLineCircleIds: string[];
   // When true (the inspector's Select Similar toggle), layout edits (stop
   // layout + label + station rotation) mirror to every station sharing a
@@ -1049,6 +1050,7 @@ export type SoleSelection =
   // popover", it means the deep-pick can't find the current entry and stops
   // cycling entirely.
   | { type: 'anchor'; id: string }
+  | { type: 'lineCircle'; id: string }
   | null;
 
 export function soleSelection(s: SelectionState): SoleSelection {
@@ -1059,10 +1061,6 @@ export function soleSelection(s: SelectionState): SoleSelection {
     s.selectedPolygonIds.length +
     s.selectedSvgImageIds.length +
     s.selectedAnchorIds.length +
-    // Line circles count toward the total (a circle+item pair is NOT a sole
-    // selection) but deliberately have no arm below: no popover, and they are
-    // not part of the alt-click deep-pick stack — a sole circle degrades to
-    // null, which both consumers treat as "nothing to show/cycle".
     s.selectedLineCircleIds.length;
   if (total !== 1) return null;
   if (s.selectedStationIds.length === 1) return { type: 'station', id: s.selectedStationIds[0] };
@@ -1072,6 +1070,8 @@ export function soleSelection(s: SelectionState): SoleSelection {
   if (s.selectedPolygonIds.length === 1) return { type: 'polygon', id: s.selectedPolygonIds[0] };
   if (s.selectedSvgImageIds.length === 1) return { type: 'svgImage', id: s.selectedSvgImageIds[0] };
   if (s.selectedAnchorIds.length === 1) return { type: 'anchor', id: s.selectedAnchorIds[0] };
+  if (s.selectedLineCircleIds.length === 1)
+    return { type: 'lineCircle', id: s.selectedLineCircleIds[0] };
   // Every list checked explicitly, then null. This used to END in an unguarded
   // `return { type: 'svgImage', id: s.selectedSvgImageIds[0] }`. The `total`
   // guard kept that honest while svgImages was the last list — but it was a

@@ -68,6 +68,43 @@ export function lineCircleAtPoint<C extends CircleSpec & { id: string }>(
 }
 
 /**
+ * Line circles swept up by a marquee rect: hit iff the rect touches the RIM
+ * (nearest point of the rect to the center is inside the radius, farthest
+ * corner outside) — a marquee dragged wholly inside the ring grabs nothing,
+ * matching how the rim is also the only click surface. Locked circles are
+ * skipped unless `includeLocked` (the Alt-marquee recovery path, same as
+ * every other kind).
+ */
+export function lineCirclesForRect(
+  lineCircles: Record<string, CircleSpec & { id: string; locked?: boolean }>,
+  rect: { x0: number; y0: number; x1: number; y1: number },
+  includeLocked: boolean,
+): string[] {
+  const minX = Math.min(rect.x0, rect.x1);
+  const maxX = Math.max(rect.x0, rect.x1);
+  const minY = Math.min(rect.y0, rect.y1);
+  const maxY = Math.max(rect.y0, rect.y1);
+  const out: string[] = [];
+  for (const id of Object.keys(lineCircles)) {
+    const c = lineCircles[id];
+    if (c.locked && !includeLocked) continue;
+    const nearest = Math.hypot(
+      c.x - Math.max(minX, Math.min(maxX, c.x)),
+      c.y - Math.max(minY, Math.min(maxY, c.y)),
+    );
+    if (nearest > c.radius) continue;
+    const farthest = Math.max(
+      Math.hypot(c.x - minX, c.y - minY),
+      Math.hypot(c.x - maxX, c.y - minY),
+      Math.hypot(c.x - minX, c.y - maxY),
+      Math.hypot(c.x - maxX, c.y - maxY),
+    );
+    if (farthest >= c.radius) out.push(id);
+  }
+  return out;
+}
+
+/**
  * Normalize an angle difference into (−π, π] — the SHORTER way around, with
  * the antipodal tie broken deterministically toward +π (increasing theta =
  * visually clockwise in the y-down frame). This is the whole "which arc?"

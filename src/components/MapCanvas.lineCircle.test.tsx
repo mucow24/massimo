@@ -76,6 +76,35 @@ describe('MapCanvas — line-circle guide rendering', () => {
   });
 });
 
+describe('line-circle popover', () => {
+  it('a sole selected circle opens the tiny popover; lock disables the diameter', () => {
+    render(<App />);
+    seedCircle();
+    act(() => useSelection.getState().selectLineCircle('c1'));
+    const spin = document.querySelector<HTMLInputElement>(
+      '.line-circle-popover input[type="number"]',
+    );
+    expect(spin).not.toBeNull();
+    // Diameter, not radius (the field formats to the 0.5 step, e.g. "140.0").
+    expect(Number(spin!.value)).toBe(140);
+    act(() => useDoc.getState().setLineCircleLocked('c1', true));
+    expect(
+      document.querySelector<HTMLInputElement>('.line-circle-popover input[type="number"]')!
+        .disabled,
+    ).toBe(true);
+  });
+
+  it('does not open for a circle co-selected with another item', () => {
+    render(<App />);
+    seedCircle();
+    act(() => {
+      useSelection.getState().selectLineCircle('c1');
+      useSelection.getState().addStationsToSelection(['s1']);
+    });
+    expect(document.querySelector('.line-circle-popover')).toBeNull();
+  });
+});
+
 describe('line-circle deletion via the selection ops', () => {
   it('Delete unbinds the stations and removes the guide, one undo restores both', () => {
     render(<App />);

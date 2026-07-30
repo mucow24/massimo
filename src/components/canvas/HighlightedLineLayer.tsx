@@ -505,7 +505,7 @@ export function HighlightedLineLayer({
               if (st) {
                 const cell =
                   st.stops.find((c) => c.lineId === highlightLineId) ??
-                  spawnStopCellAt(st, highlightLineId, lines);
+                  spawnStopCellAt(st, highlightLineId, lines, lineCircles);
                 const p = stopPosWorld(cell, st);
                 hoverRing = twoToneRing(p.x, p.y, {
                   dataAttr: 'data-append-hover-ring',

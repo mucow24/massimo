@@ -1286,10 +1286,13 @@ export function MapCanvas() {
                 zoom={view.viewport.zoom}
                 guideColor={theme.guide}
                 accentColor={theme.accent}
-                selected={selection.selectedLineCircleIds.includes(cid)}
+                selected={(
+                  rectSelect.previewLineCircleIds ?? selection.selectedLineCircleIds
+                ).includes(cid)}
                 interactive={polygonsInteractive}
                 inHandMode={inHandMode}
                 onPointerDown={(e, id, part) => circleDrag.onStartDrag(id, part, e)}
+                onClick={(id) => selection.selectLineCircle(id)}
               />
             ))}
           </g>

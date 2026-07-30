@@ -106,9 +106,11 @@ describe('viaCircle edges render as circular arcs', () => {
     expect(bands[0].paths).toEqual(without[0].paths);
   });
 
-  it('falls back to octolinear when the radial offsets disagree between the ends', () => {
+  it('falls back to octolinear when the radial offsets disagree — and WARNS', () => {
     // s2's stop is pushed one cell radially outward (col 1 at rotation 2 =
     // world +y = radially out at the south point); s1's stays on the circle.
+    // Both stops asked to ride (viaCircle), so the silent-degrade would be a
+    // lie — the band flags the routing warning instead.
     const doc = ringDoc();
     const s2 = doc.stations.s2;
     const stations = {
@@ -119,6 +121,16 @@ describe('viaCircle edges render as circular arcs', () => {
     __resetSpecReuse();
     const without = buildBandGeometry(stations, doc.lines, {});
     expect(bands[0].paths).toEqual(without[0].paths);
+    expect(bands[0].warning).toBe(true);
+    expect(without[0].warning).toBe(false);
+  });
+
+  it('does NOT warn when a stop deliberately opted out (one end unflagged)', () => {
+    const doc = ringDoc({
+      stations: [ringStation('s1', 0), ringStation('s2', Math.PI / 2, { viaCircle: false })],
+    });
+    const bands = buildBandGeometry(doc.stations, doc.lines, doc.lineCircles);
+    expect(bands[0].warning).toBe(false);
   });
 
   it('interlines two packed lines as exactly concentric stripes', () => {
@@ -177,6 +189,51 @@ describe('the whole flow: bind, connect, arc', () => {
     expect(bands).toHaveLength(1);
     expect(bands[0].paths[0]).toContain('A ');
     for (const d of bandArcSamples(bands[0], 0)) expect(d).toBeCloseTo(R, 3);
+  });
+});
+
+describe('joint markers (arc meets octolinear at one stop)', () => {
+  // s1 on the ring with an arc to s2 AND a straight edge east to n1: its
+  // marker must paint BOTH travel frames — the exact tangent square (the arc
+  // side) plus the octant square (the octolinear side) — or the joint shows a
+  // wedge notch of up to (w/2)·tan 22.5° where the two band ends meet.
+  function jointDoc(): MapDoc {
+    return makeDoc({
+      stations: [
+        ringStation('s1', 0),
+        ringStation('s2', Math.PI / 2, { rotation: 2 }),
+        makeStation({ id: 'n1', x: 400, y: 100, stops: [makeStop('l1')] }),
+      ],
+      lines: [makeLine({ id: 'l1', stations: ['s2', 's1', 'n1'] })],
+      lineCircles: [makeLineCircle({ id: 'c1', x: CX, y: CY, radius: R })],
+    });
+  }
+
+  it('a stop with an arc AND a straight edge carries the octant joint frame', () => {
+    const doc = jointDoc();
+    const bands = buildBandGeometry(doc.stations, doc.lines, doc.lineCircles);
+    const markers = buildStopMarkers(doc.stations, doc.lines, ['l1'], bands, doc.lineCircles);
+    const m1 = markers.find((m) => m.stationId === 's1');
+    // Primary frame: the exact tangent (90° at the east point).
+    expect(m1?.rotationDeg).toBeCloseTo(90, 9);
+    // Joint frame: the octant travel axis (auto-vertical at rotation 0 → 90°
+    // ... which the flip below distinguishes from; use a non-octant angle).
+    expect(m1?.jointRotationDeg).not.toBeUndefined();
+  });
+
+  it('a pure ring stop (every edge arcs) has NO joint frame', () => {
+    const doc = ringDoc();
+    const bands = buildBandGeometry(doc.stations, doc.lines, doc.lineCircles);
+    const markers = buildStopMarkers(doc.stations, doc.lines, ['l1'], bands, doc.lineCircles);
+    expect(markers.find((m) => m.stationId === 's1')?.jointRotationDeg).toBeUndefined();
+    expect(markers.find((m) => m.stationId === 's2')?.jointRotationDeg).toBeUndefined();
+  });
+
+  it('a normal stop off the circle has no joint frame either', () => {
+    const doc = jointDoc();
+    const bands = buildBandGeometry(doc.stations, doc.lines, doc.lineCircles);
+    const markers = buildStopMarkers(doc.stations, doc.lines, ['l1'], bands, doc.lineCircles);
+    expect(markers.find((m) => m.stationId === 'n1')?.jointRotationDeg).toBeUndefined();
   });
 });
 

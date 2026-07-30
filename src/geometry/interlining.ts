@@ -442,13 +442,18 @@ export function buildBandGeometry(
     // concentric arcs of that circle. Everything else (including a seg that
     // fails the radial gate) takes the octolinear path below, so a chord
     // between two ring stations that did NOT opt in routes like any other
-    // edge.
+    // edge. A seg that ASKED for the arc but is blocked by mismatched radial
+    // offsets flags its band's routing warning (see segCircleFit).
     const circleGroups: Record<string, SegInfo[]> = {};
     const normalSegs: SegInfo[] = [];
+    const blockedSegs = new Set<SegInfo>();
     for (const s of segs) {
-      const circle = segRidesCircle(s, stations, lineCircles);
-      if (circle) (circleGroups[circle.id] ||= []).push(s);
-      else normalSegs.push(s);
+      const fit = segCircleFit(s, stations, lineCircles);
+      if (fit?.kind === 'rides') (circleGroups[fit.circle.id] ||= []).push(s);
+      else {
+        if (fit?.kind === 'blocked') blockedSegs.add(s);
+        normalSegs.push(s);
+      }
     }
     for (const cid of Object.keys(circleGroups)) {
       buildCircleBands(circleGroups[cid], lineCircles[cid], pairKey, stations, lines, bands);
@@ -535,23 +540,26 @@ export function buildBandGeometry(
       let group: Enriched[] = [];
       const flush = () => {
         if (group.length === 0) return;
-        bands.push(
-          buildBandSpec(
-            group.map((e) => e.seg),
-            group.map((e) => e.width),
-            group.map((e) => e.gap),
-            // Interlined lines may disagree on curve radius; the shared
-            // centerline curves at the LARGEST member radius, so no line
-            // curves tighter than it asked for (the smaller-radius lines
-            // just ride along — same trade as the inner-stripe bump).
-            Math.max(...group.map((e) => lineCurveRadiusOf(lines[e.seg.lineId]))),
-            pairKey,
-            fDir,
-            tDir,
-            fromS,
-            toS,
-          ),
+        const spec = buildBandSpec(
+          group.map((e) => e.seg),
+          group.map((e) => e.width),
+          group.map((e) => e.gap),
+          // Interlined lines may disagree on curve radius; the shared
+          // centerline curves at the LARGEST member radius, so no line
+          // curves tighter than it asked for (the smaller-radius lines
+          // just ride along — same trade as the inner-stripe bump).
+          Math.max(...group.map((e) => lineCurveRadiusOf(lines[e.seg.lineId]))),
+          pairKey,
+          fDir,
+          tDir,
+          fromS,
+          toS,
         );
+        // A member that asked to ride a circle but couldn't (mismatched
+        // radial offsets — see segCircleFit) lights the routing warning, so
+        // the degrade is visible instead of reading as "arcs are broken".
+        if (group.some((e) => blockedSegs.has(e.seg))) spec.warning = true;
+        bands.push(spec);
         group = [];
       };
       const TOL = BAND_MERGE_TOL;
@@ -885,16 +893,21 @@ export function cornerCapRadius(
   return usable / tanHalf(theta);
 }
 
-// The circle a seg rides, or null for the octolinear path: both stops carry
-// `viaCircle`, both stations are bound to the same existing circle, and the
-// stops sit at matching radial offsets at the two ends (a concentric arc has
-// one radius — mismatched ends can't ride it, so they degrade to a normal
-// route rather than to a spiral-ish lie).
-function segRidesCircle(
+// How one seg relates to the line circles: 'rides' (both stops carry
+// `viaCircle` on stations bound to the same existing circle, at matching
+// radial offsets — a concentric arc has one radius), 'blocked' (both stops
+// ASKED to ride that circle but the radial offsets disagree between the ends,
+// so the arc is impossible — the seg routes octolinearly AND flags the band's
+// routing warning, because a silent degrade here reads as "circle routing is
+// broken" while the actual problem is one stop sitting a lattice cell off the
+// ring), or null (no circle intent — the ordinary octolinear path).
+type SegCircleFit = { kind: 'rides'; circle: LineCircle } | { kind: 'blocked' } | null;
+
+function segCircleFit(
   s: SegInfo,
   stations: Record<StationId, Station>,
   lineCircles: Record<string, LineCircle>,
-): LineCircle | null {
+): SegCircleFit {
   if (!s.fromCell.viaCircle || !s.toCell.viaCircle) return null;
   const fromS = stations[s.fromId];
   const toS = stations[s.toId];
@@ -906,7 +919,7 @@ function segRidesCircle(
   const tp = stopPosWorld(s.toCell, toS);
   const rf = Math.hypot(fp.x - circle.x, fp.y - circle.y);
   const rt = Math.hypot(tp.x - circle.x, tp.y - circle.y);
-  return Math.abs(rf - rt) < BAND_MERGE_TOL ? circle : null;
+  return Math.abs(rf - rt) < BAND_MERGE_TOL ? { kind: 'rides', circle } : { kind: 'blocked' };
 }
 
 /**
