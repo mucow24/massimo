@@ -797,7 +797,11 @@ export interface MapDoc {
   // saves predating the feature — backfilled to the per-kind factory styles
   // (DEFAULT_STYLES) via the DEFAULT_DOC merge. INVARIANT: every kind has at
   // least one style (deleteStyle refuses the last; the load paths inject the
-  // factory one for an empty kind).
+  // factory one for an empty kind). INVARIANT: a line style's dot-TYPE ids
+  // (singleton/multiDotStyleId) name live stopDot styles — dot type is a
+  // COVERED field, so a def naming a missing one is unmatchable and its wearers
+  // can never stay tagged (repaired on load, re-pointed when the dot style is
+  // deleted).
   styles: Record<string, StyleDef>;
   // Which style is THE default of each kind — new items are stamped with it
   // on creation, and legacy loads adopt matching items into it. Explicit and

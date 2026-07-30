@@ -3,9 +3,10 @@
 // grids, and dangling / wrong-kind styleId tags are pruned.
 import { describe, it, expect } from 'vitest';
 import { bakeLegacyLabelSettings, parse, serialize } from './serialize';
-import { applyStyleToItem } from './styles';
+import { applyStyleToItem, captureStyleProps } from './styles';
+import { STOP_DOT_FACTORY_STYLES } from './dotStyle';
 import { DEFAULT_STYLES, FACTORY_STYLE_DEFAULTS } from './transforms';
-import type { MapDoc, TextLabelStyleProps } from './types';
+import type { MapDoc, StyleDef, TextLabelStyleProps } from './types';
 import {
   makeDoc,
   makeLine,
@@ -302,6 +303,75 @@ describe('ensureStyleInvariants via parse', () => {
     expect(out.styleDefaults.line).toBe('default-line');
     expect(out.styleDefaults.routeBullet).toBe('default-routeBullet');
     expect(out.styleDefaults.transfer).toBe('default-transfer');
+  });
+});
+
+describe("ensureStyleInvariants via parse — a line style def's dot-TYPE refs", () => {
+  // Dot type is a COVERED line-style field, so a def naming a stopDot style the
+  // doc doesn't have is unmatchable: stampStyle's setters no-op on the dangling
+  // id, leaving the line tagged over diverged values, and the next load prunes
+  // the tag. The style reads "Custom" again after every single save/load, and
+  // re-picking it never sticks. Repoint the def at the designated default dot.
+  const LIVE = 'stop-filled-white-black-stroke';
+
+  // A doc whose one line wears LIVE and matches its line style def in every
+  // covered field — except the def's two dot-type ids, set to `defDotId`.
+  const docWithDefDotId = (defDotId: string, extraStyles: StyleDef[] = []) => {
+    const base = makeDoc({
+      stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
+      lines: [makeLine({ id: 'l1', singletonDotStyleId: LIVE, multiDotStyleId: LIVE })],
+      styles: [
+        STOP_DOT_FACTORY_STYLES[LIVE],
+        makeStyle('line', 'ls', { name: 'Metro' }),
+        ...extraStyles,
+      ],
+      styleDefaults: { stopDot: LIVE, line: 'ls' },
+    });
+    const props = captureStyleProps(base, 'line', 'l1')!;
+    return {
+      ...base,
+      lines: { ...base.lines, l1: { ...base.lines.l1, styleId: 'ls' } },
+      styles: {
+        ...base.styles,
+        ls: {
+          ...base.styles.ls,
+          props: { ...props, singletonDotStyleId: defDotId, multiDotStyleId: defDotId },
+        },
+      },
+    };
+  };
+
+  it('keeps a line tagged when its style def named a since-deleted stop-dot style', () => {
+    const out = parsed(docWithDefDotId('stop-gone'));
+    expect(out.styles.ls.props).toMatchObject({
+      singletonDotStyleId: LIVE,
+      multiDotStyleId: LIVE,
+    });
+    // The whole point: the tag survives the load instead of reading "Custom".
+    expect(out.lines.l1.styleId).toBe('ls');
+  });
+
+  it('repoints a ref that resolves to a def of the wrong kind', () => {
+    const out = parsed(docWithDefDotId('y9', [makeStyle('polygon', 'y9', { name: 'Zone' })]));
+    expect(out.styles.ls.props).toMatchObject({
+      singletonDotStyleId: LIVE,
+      multiDotStyleId: LIVE,
+    });
+    expect(out.lines.l1.styleId).toBe('ls');
+  });
+
+  it('leaves a ref that resolves alone — no gratuitous rewrite to the designation', () => {
+    // The line wears LIVE but its style says "Filled black"; both resolve, so
+    // the def keeps its own choice and the MISMATCH is what prunes the tag.
+    const doc = docWithDefDotId('stop-filled-black', [
+      STOP_DOT_FACTORY_STYLES['stop-filled-black'],
+    ]);
+    const out = parsed(doc);
+    expect(out.styles.ls.props).toMatchObject({
+      singletonDotStyleId: 'stop-filled-black',
+      multiDotStyleId: 'stop-filled-black',
+    });
+    expect(out.lines.l1.styleId).toBeUndefined();
   });
 });
 
