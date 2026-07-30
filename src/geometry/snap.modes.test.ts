@@ -36,6 +36,7 @@ const NO_MODES: SnapModes = {
   tens: false,
   all: 'off',
   grid: 'off',
+  circle: false,
 };
 const LINE_ONLY: SnapModes = {
   line: true,
@@ -43,6 +44,7 @@ const LINE_ONLY: SnapModes = {
   tens: false,
   all: 'off',
   grid: 'off',
+  circle: false,
 };
 
 // All horizontal-axis fixtures use auto-horizontal stops at rotation 0, so
@@ -433,7 +435,7 @@ describe('snapDraggedStation: excludedIds reach the along-axis refinement', () =
       stations: stations(a, b, c),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c'])),
       excludedIds: new Set(['a']),
-      modes: { line: true, equidistant: true, tens: false, all: 'off', grid: 'off' },
+      modes: { ...LINE_ONLY, equidistant: true },
     });
     // Line snap holds y = 0; equidistant would pull x to the A↔C midpoint 50,
     // but A is excluded → x stays at the proposed 48.
@@ -454,7 +456,7 @@ describe('snapDraggedStation: excludedIds reach the along-axis refinement', () =
       lines: linesOf(lineOf('L1', ['a', 'b'])),
       bulletLineId: 'L1',
       excludedIds: new Set(['a']),
-      modes: { line: true, equidistant: false, tens: true, all: 'off', grid: 'off' },
+      modes: { ...LINE_ONLY, tens: true },
     });
     expect(r.y).toBeCloseTo(0, 5);
     // Without the exclusion guard, tens would round 47 → 50 from A's anchor.
@@ -672,7 +674,7 @@ describe('snapDraggedStation: tens tracks the active grid interval', () => {
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
       bulletLineId: 'L1',
-      modes: { line: true, equidistant: false, tens: true, all: 'off', grid: 'off' },
+      modes: { ...LINE_ONLY, tens: true },
       gridInterval: 5,
     });
     expect(r.x).toBeCloseTo(0, 5);
@@ -695,7 +697,7 @@ describe('snapDraggedStation: equidistant + tens together', () => {
       draggedStops: b.stops,
       stations: stations(a, b, c),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c'])),
-      modes: { line: true, equidistant: true, tens: true, all: 'off', grid: 'off' },
+      modes: { ...LINE_ONLY, equidistant: true, tens: true },
     });
     expect(r.x).toBeCloseTo(47, 5);
     expect(r.y).toBeCloseTo(0, 5);
@@ -718,7 +720,7 @@ describe('snapDraggedStation: equidistant + tens together', () => {
       draggedStops: d.stops,
       stations: stations(a, b, c, d),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
-      modes: { line: true, equidistant: true, tens: true, all: 'off', grid: 'off' },
+      modes: { ...LINE_ONLY, equidistant: true, tens: true },
     });
     expect(r.x).toBeCloseTo(111, 5);
     expect(r.y).toBeCloseTo(0, 5);
@@ -739,7 +741,7 @@ describe('snapDraggedStation: snap-to-all mode', () => {
       stations: stations(a, b),
       // Different lines so line mode wouldn't help here even if on.
       lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['b'])),
-      modes: { line: false, equidistant: false, tens: false, all: 'all', grid: 'off' },
+      modes: { ...NO_MODES, all: 'all' },
     });
     expect(r.x).toBeCloseTo(100, 5);
     expect(r.y).toBeCloseTo(200, 5);
@@ -756,7 +758,7 @@ describe('snapDraggedStation: snap-to-all mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['b'])),
-      modes: { line: false, equidistant: false, tens: false, all: 'all', grid: 'off' },
+      modes: { ...NO_MODES, all: 'all' },
     });
     expect(r.x).toBeCloseTo(300, 5);
     expect(r.y).toBeCloseTo(100, 5);
@@ -774,7 +776,7 @@ describe('snapDraggedStation: snap-to-all mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['b'])),
-      modes: { line: false, equidistant: false, tens: false, all: 'all', grid: 'off' },
+      modes: { ...NO_MODES, all: 'all' },
     });
     expect(r.x).toBeCloseTo(50.5, 3);
     expect(r.y).toBeCloseTo(50.5, 3);
@@ -792,7 +794,7 @@ describe('snapDraggedStation: snap-to-all mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['b'])),
-      modes: { line: false, equidistant: false, tens: false, all: 'all', grid: 'off' },
+      modes: { ...NO_MODES, all: 'all' },
     });
     expect(r.x).toBeCloseTo(50.5, 3);
     expect(r.y).toBeCloseTo(-50.5, 3);
@@ -813,7 +815,7 @@ describe('snapDraggedStation: snap-to-all mode', () => {
       draggedStops: b.stops,
       stations: stations(t, b),
       lines: linesOf(lineOf('L1', ['b'])),
-      modes: { line: false, equidistant: false, tens: false, all: 'all', grid: 'off' },
+      modes: { ...NO_MODES, all: 'all' },
     });
     expect(r.x).toBeCloseTo(100, 5);
     expect(r.y).toBeCloseTo(50, 5);
@@ -836,7 +838,7 @@ describe('snapDraggedStation: snap-to-all mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b, c),
       lines: linesOf(lineOf('L1', ['a', 'b']), lineOf('L2', ['c'])),
-      modes: { line: true, equidistant: false, tens: false, all: 'all', grid: 'off' },
+      modes: { ...LINE_ONLY, all: 'all' },
     });
     expect(r.x).toBeCloseTo(100, 3);
     expect(r.y).toBeCloseTo(100, 3);
@@ -844,13 +846,7 @@ describe('snapDraggedStation: snap-to-all mode', () => {
 });
 
 describe('snapDraggedStation: snap-to-all during Ctrl-drag (redistribute)', () => {
-  const ALL_ONLY: SnapModes = {
-    line: true,
-    equidistant: false,
-    tens: false,
-    all: 'all',
-    grid: 'off',
-  };
+  const ALL_ONLY: SnapModes = { ...LINE_ONLY, all: 'all' };
 
   it('aligns the dragged endpoint with an unrelated stationary station', () => {
     // L1 corridor a — m — d at y=0; Ctrl-drag d with a as the anchor. `u` is
@@ -1000,7 +996,7 @@ describe('snapDraggedStation: directional snap-to-all', () => {
       ...baseInput,
       proposedX: 101,
       proposedY: 99,
-      modes: { line: false, equidistant: false, tens: false, all: 'horizontal', grid: 'off' },
+      modes: { ...NO_MODES, all: 'horizontal' },
     });
     // Y snaps onto the horizontal line through h (y=100); X stays free (101).
     expect(r.y).toBeCloseTo(100, 5);
@@ -1012,7 +1008,7 @@ describe('snapDraggedStation: directional snap-to-all', () => {
       ...baseInput,
       proposedX: 101,
       proposedY: 99,
-      modes: { line: false, equidistant: false, tens: false, all: 'vertical', grid: 'off' },
+      modes: { ...NO_MODES, all: 'vertical' },
     });
     // X snaps onto the vertical line through v (x=100); Y stays free (99).
     expect(r.x).toBeCloseTo(100, 5);
@@ -1026,7 +1022,7 @@ describe('snapDraggedStation: directional snap-to-all', () => {
       ...baseInput,
       proposedX: 101,
       proposedY: 99,
-      modes: { line: false, equidistant: false, tens: false, all: 'diagonal', grid: 'off' },
+      modes: { ...NO_MODES, all: 'diagonal' },
     });
     expect(cardinal.x).toBeCloseTo(101, 5);
     expect(cardinal.y).toBeCloseTo(99, 5);
@@ -1044,7 +1040,7 @@ describe('snapDraggedStation: directional snap-to-all', () => {
       lines: linesOf(lineOf('LO', ['o']), lineOf('L3', ['b'])),
       proposedX: 50,
       proposedY: 51,
-      modes: { line: false, equidistant: false, tens: false, all: 'diagonal', grid: 'off' },
+      modes: { ...NO_MODES, all: 'diagonal' },
     });
     expect(diag.x).toBeCloseTo(50.5, 3);
     expect(diag.y).toBeCloseTo(50.5, 3);
@@ -1055,7 +1051,7 @@ describe('snapDraggedStation: directional snap-to-all', () => {
       ...baseInput,
       proposedX: 101,
       proposedY: 99,
-      modes: { line: false, equidistant: false, tens: false, all: 'off', grid: 'off' },
+      modes: NO_MODES,
     });
     expect(r.x).toBeCloseTo(101, 5);
     expect(r.y).toBeCloseTo(99, 5);
@@ -1091,7 +1087,7 @@ describe('snapDraggedStation: bullet mode + snap modes', () => {
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
       bulletLineId: 'L1',
-      modes: { line: true, equidistant: true, tens: false, all: 'off', grid: 'off' },
+      modes: { ...LINE_ONLY, equidistant: true },
     });
     const baseline = snapDraggedStation({
       proposedX: 5,
@@ -1118,7 +1114,7 @@ describe('snapDraggedStation: bullet mode + snap modes', () => {
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
       bulletLineId: 'L1',
-      modes: { line: true, equidistant: false, tens: true, all: 'off', grid: 'off' },
+      modes: { ...LINE_ONLY, tens: true },
     });
     expect(r.x).toBeCloseTo(0, 5);
     expect(r.y).toBeCloseTo(50, 5);
@@ -1138,7 +1134,7 @@ describe('snapDraggedStation: bullet mode + snap modes', () => {
       bulletLineId: 'L1',
       // Line off so the bullet can't latch onto a's vertical axis at x=0;
       // the only thing that can engage is all-mode horizontal alignment.
-      modes: { line: false, equidistant: false, tens: false, all: 'all', grid: 'off' },
+      modes: { ...NO_MODES, all: 'all' },
     });
     expect(r.x).toBeCloseTo(200, 5);
     expect(r.y).toBeCloseTo(0, 5);
@@ -1195,13 +1191,7 @@ describe('grid interval: 5px grid', () => {
   });
 
   it('maybeSnapToGrid threads the interval', () => {
-    const modes: SnapModes = {
-      line: false,
-      equidistant: false,
-      tens: false,
-      all: 'off',
-      grid: 'both',
-    };
+    const modes: SnapModes = { ...NO_MODES, grid: 'both' };
     expect(maybeSnapToGrid({ x: 7, y: 7 }, modes, 5)).toEqual({ x: 5, y: 5 });
   });
 
@@ -1215,7 +1205,7 @@ describe('grid interval: 5px grid', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged),
       lines: linesOf(lineOf('L1', ['d'])),
-      modes: { line: false, equidistant: false, tens: false, all: 'off', grid: 'both' },
+      modes: { ...NO_MODES, grid: 'both' },
       gridInterval: 5,
     });
     expect(r.x).toBe(5);
@@ -1236,7 +1226,7 @@ describe('grid interval: 5px grid', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
-      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
+      modes: { ...LINE_ONLY, grid: 'both' },
       gridInterval: 5,
     });
     expect(r.y).toBeCloseTo(0, 5);
@@ -1245,13 +1235,7 @@ describe('grid interval: 5px grid', () => {
 });
 
 describe('maybeSnapToGrid', () => {
-  const ALL_OFF: SnapModes = {
-    line: false,
-    equidistant: false,
-    tens: false,
-    all: 'off',
-    grid: 'off',
-  };
+  const ALL_OFF: SnapModes = { ...NO_MODES };
   it('returns the input unchanged when grid mode is off', () => {
     expect(maybeSnapToGrid({ x: 27, y: 43 }, ALL_OFF)).toEqual({ x: 27, y: 43 });
   });
@@ -1289,7 +1273,7 @@ describe('snapDraggedStation: grid mode', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged),
       lines: linesOf(lineOf('L1', ['d'])),
-      modes: { line: false, equidistant: false, tens: false, all: 'off', grid: 'both' },
+      modes: { ...NO_MODES, grid: 'both' },
     });
     expect(r.x).toBe(30);
     expect(r.y).toBe(40);
@@ -1327,7 +1311,7 @@ describe('snapDraggedStation: grid mode', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
-      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
+      modes: { ...LINE_ONLY, grid: 'both' },
     });
     expect(r.y).toBeCloseTo(0, 5);
     expect(r.x).toBeCloseTo(30, 5);
@@ -1346,7 +1330,7 @@ describe('snapDraggedStation: grid mode', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged),
       lines: linesOf(lineOf('L1', ['d'])),
-      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
+      modes: { ...LINE_ONLY, grid: 'both' },
     });
     expect(r.x).toBe(30);
     expect(r.y).toBe(40);
@@ -1362,7 +1346,7 @@ describe('snapDraggedStation: grid mode', () => {
       stations: stations(a),
       lines: linesOf(lineOf('L1', []), lineOf('L2', ['a'])),
       bulletLineId: 'L1',
-      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
+      modes: { ...LINE_ONLY, grid: 'both' },
     });
     expect(r.x).toBe(30);
     expect(r.y).toBe(40);
@@ -1378,7 +1362,7 @@ describe('snapDraggedStation: grid mode', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged),
       lines: linesOf(lineOf('L1', ['d'])),
-      modes: { line: false, equidistant: false, tens: false, all: 'off', grid: 'horizontal' },
+      modes: { ...NO_MODES, grid: 'horizontal' },
     });
     // 'horizontal' locks Y to 40, leaves X at 27.
     expect(horizontal.x).toBe(27);
@@ -1392,7 +1376,7 @@ describe('snapDraggedStation: grid mode', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged),
       lines: linesOf(lineOf('L1', ['d'])),
-      modes: { line: false, equidistant: false, tens: false, all: 'off', grid: 'vertical' },
+      modes: { ...NO_MODES, grid: 'vertical' },
     });
     expect(vertical.x).toBe(30);
     expect(vertical.y).toBe(43);
@@ -1417,7 +1401,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
-      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'vertical' },
+      modes: { ...LINE_ONLY, grid: 'vertical' },
     });
     expect(r.x).toBeCloseTo(30, 5);
     expect(r.y).toBeCloseTo(0, 5);
@@ -1437,7 +1421,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
-      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'horizontal' },
+      modes: { ...LINE_ONLY, grid: 'horizontal' },
     });
     expect(r.x).toBeCloseTo(27, 5);
     expect(r.y).toBeCloseTo(0, 5);
@@ -1456,7 +1440,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
-      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'horizontal' },
+      modes: { ...LINE_ONLY, grid: 'horizontal' },
     });
     expect(r.x).toBeCloseTo(0, 5);
     expect(r.y).toBeCloseTo(30, 5);
@@ -1473,7 +1457,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
-      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'vertical' },
+      modes: { ...LINE_ONLY, grid: 'vertical' },
     });
     expect(r.x).toBeCloseTo(0, 5);
     expect(r.y).toBeCloseTo(27, 5);
@@ -1494,7 +1478,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
-      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
+      modes: { ...LINE_ONLY, grid: 'both' },
     });
     expect(r.x).toBeCloseTo(30, 5);
     expect(r.y).toBeCloseTo(10, 5);
@@ -1515,7 +1499,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
-      modes: { line: true, equidistant: false, tens: true, all: 'off', grid: 'vertical' },
+      modes: { ...LINE_ONLY, tens: true, grid: 'vertical' },
     });
     expect(r.x).toBeCloseTo(50, 5);
     expect(r.y).toBeCloseTo(0, 5);
@@ -1539,7 +1523,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       stations: stations(a, b, c, d),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
       redistributeAnchor: 'a',
-      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'vertical' },
+      modes: { ...LINE_ONLY, grid: 'vertical' },
     });
     expect(r.x).toBeCloseTo(130, 5);
     expect(r.y).toBeCloseTo(0, 5);
@@ -1558,7 +1542,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
       bulletLineId: 'L1',
-      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'horizontal' },
+      modes: { ...LINE_ONLY, grid: 'horizontal' },
     });
     expect(r.x).toBeCloseTo(0, 5);
     expect(r.y).toBeCloseTo(50, 5);
@@ -1577,7 +1561,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['b'])),
-      modes: { line: false, equidistant: false, tens: false, all: 'vertical', grid: 'horizontal' },
+      modes: { ...NO_MODES, all: 'vertical', grid: 'horizontal' },
     });
     expect(r.x).toBeCloseTo(100, 5);
     expect(r.y).toBeCloseTo(50, 5);
@@ -1597,7 +1581,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
-      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'vertical' },
+      modes: { ...LINE_ONLY, grid: 'vertical' },
     });
     expect(r.x).toBeCloseTo(30, 5);
     expect(r.y).toBeCloseTo(5, 5);
@@ -1615,7 +1599,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
-      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
+      modes: { ...LINE_ONLY, grid: 'both' },
     });
     expect(r.x).toBeCloseTo(30, 5);
     expect(r.y).toBeCloseTo(0, 5);
@@ -1633,7 +1617,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
-      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
+      modes: { ...LINE_ONLY, grid: 'both' },
     });
     expect(r.x).toBeCloseTo(0, 5);
     expect(r.y).toBeCloseTo(30, 5);
@@ -1653,7 +1637,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
-      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'vertical' },
+      modes: { ...LINE_ONLY, grid: 'vertical' },
     });
     expect(r.x).toBeCloseTo(10, 5);
     expect(r.y).toBeCloseTo(27, 5);
@@ -1673,7 +1657,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
-      modes: { line: true, equidistant: false, tens: true, all: 'off', grid: 'horizontal' },
+      modes: { ...LINE_ONLY, tens: true, grid: 'horizontal' },
     });
     expect(r.x).toBeCloseTo(43, 5);
     expect(r.y).toBeCloseTo(0, 5);
@@ -1707,7 +1691,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, t1, t2),
       lines: linesOf(lineOf('L1', ['d', 't1']), lineOf('L2', ['d', 't2'])),
-      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
+      modes: { ...LINE_ONLY, grid: 'both' },
     });
     expect(r.x).toBeCloseTo(10, 3);
     expect(r.y).toBeCloseTo(0, 3);
@@ -1744,7 +1728,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, t1, t2),
       lines: linesOf(lineOf('L1', ['d', 't1']), lineOf('L2', ['d', 't2'])),
-      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
+      modes: { ...LINE_ONLY, grid: 'both' },
     });
     expect(r.x).toBeCloseTo(10, 3);
     expect(r.y).toBeCloseTo(0, 3);
@@ -1762,7 +1746,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
       bulletLineId: 'L1',
-      modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
+      modes: { ...LINE_ONLY, grid: 'both' },
     });
     expect(r.x).toBeCloseTo(10, 5);
     expect(r.y).toBeCloseTo(50, 5);

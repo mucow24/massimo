@@ -10,7 +10,7 @@ import {
   snapGuidesEqual,
   snapToleranceAt,
 } from '../../geometry/snap';
-import { lineCircleAtPoint, projectToCircle } from '../../geometry/lineCircle';
+import { lineCircleAtPoint, snapPointToCircle } from '../../geometry/lineCircle';
 import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
 import {
   collectGroupSiblings,
@@ -162,9 +162,16 @@ export function useStationDrag(
       const tolerance = snapToleranceAt(viewportZoom);
       const circle =
         draggedSt?.circleId !== undefined ? lineCircles[draggedSt.circleId] : undefined;
+      // "Snap to circle cardinals" adds angular magnetism to the seat, measured
+      // as arc length against the same tolerance as the capture. Null = rim only.
+      const cardinalTolerance = snapModes.circle ? tolerance : null;
       const moveConstrained = (c: { x: number; y: number; radius: number }) => {
-        const p = projectToCircle(c, { x: nx, y: ny });
-        moveStation(ds.id, nx, ny);
+        // ONE point for both the master and the tow: `moveStation` reprojects
+        // whatever it is handed (idempotent on an already-seated point), so
+        // passing the seat rather than the raw cursor keeps a group drag from
+        // shearing by however far the cardinal pull moved the master.
+        const p = snapPointToCircle(c, { x: nx, y: ny }, cardinalTolerance);
+        moveStation(ds.id, p.x, p.y);
         if (hasGroupSiblings(ds.siblings)) {
           translateSiblings(ds.siblings, p.x - ds.startWX, p.y - ds.startWY);
         }

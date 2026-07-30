@@ -14,13 +14,32 @@ describe('<SnapToggleBar />', () => {
     useViewportStore.setState({ gridSize: 10 });
   });
 
-  it('renders five toggles labeled Line, Equidistant, Grid length, All, Grid', () => {
+  it('renders six toggles labeled Line, Equidistant, Grid length, All, Grid, Circle cardinals', () => {
     render(<SnapToggleBar />);
     expect(screen.getByRole('button', { name: 'Snap to line' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Snap to equidistant' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Snap to grid length' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Snap to all' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Snap to grid' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Snap to circle cardinals' })).toBeInTheDocument();
+  });
+
+  it('renders Circle cardinals last, off by default, and toggles it', async () => {
+    const user = userEvent.setup();
+    render(<SnapToggleBar />);
+    const names = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'));
+    expect(names.indexOf('Snap to circle cardinals')).toBe(names.length - 1);
+    const circle = screen.getByRole('button', { name: 'Snap to circle cardinals' });
+    // Cardinals are opt-in: today's behaviour is rim capture with no cardinals,
+    // so a fresh install must look exactly like it did.
+    expect(circle).toHaveAttribute('data-snap-state', 'false');
+    expect(circle).toHaveAttribute('aria-pressed', 'false');
+    expect(circle).toHaveAttribute('aria-disabled', 'false');
+    await user.click(circle);
+    expect(useSnapPrefs.getState().modes.circle).toBe(true);
+    expect(circle).toHaveAttribute('aria-pressed', 'true');
+    await user.click(circle);
+    expect(useSnapPrefs.getState().modes.circle).toBe(false);
   });
 
   it('shows the active grid size in the grid-length tooltip (10)', () => {
@@ -94,7 +113,14 @@ describe('<SnapToggleBar />', () => {
   it('re-enabling Line restores Equidistant interactability without changing its value', async () => {
     const user = userEvent.setup();
     useSnapPrefs.setState({
-      modes: { line: false, equidistant: true, tens: false, all: 'off', grid: 'off' },
+      modes: {
+        line: false,
+        equidistant: true,
+        tens: false,
+        all: 'off',
+        grid: 'off',
+        circle: false,
+      },
     });
     render(<SnapToggleBar />);
     const line = screen.getByRole('button', { name: 'Snap to line' });
@@ -237,8 +263,20 @@ describe('advanceSnapToggle', () => {
     });
   });
 
+  it('toggle 5 (circle) flips the cardinals boolean', () => {
+    expect(advanceSnapToggle(modes({ circle: false }), 5)).toEqual({ key: 'circle', value: true });
+    expect(advanceSnapToggle(modes({ circle: true }), 5)).toEqual({ key: 'circle', value: false });
+  });
+
+  it('toggle 5 (circle) is independent of line', () => {
+    expect(advanceSnapToggle(modes({ line: false, circle: false }), 5)).toEqual({
+      key: 'circle',
+      value: true,
+    });
+  });
+
   it('returns null for an out-of-range index', () => {
-    expect(advanceSnapToggle(modes(), 5)).toBeNull();
+    expect(advanceSnapToggle(modes(), 6)).toBeNull();
     expect(advanceSnapToggle(modes(), -1)).toBeNull();
   });
 });

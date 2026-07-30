@@ -4,6 +4,8 @@ import App from '../App';
 import { useDoc } from '../state/store';
 import { useSelection } from '../state/selection';
 import { useViewportStore } from '../state/viewportStore';
+import { useSnapPrefs } from '../state/snapPrefs';
+import { DEFAULT_SNAP_MODES } from '../geometry/snap';
 import { DEFAULT_DOC } from '../model/transforms';
 import { deleteUnlockedSelection } from '../state/selectionOps';
 import { makeLineCircle, makeStation, makeStop } from '../test/fixtures';
@@ -24,6 +26,9 @@ beforeEach(() => {
   useSelection.getState().clearAllSelections();
   useSelection.getState().setUiMode({ kind: 'idle' });
   useViewportStore.setState({ x: 0, y: 0, zoom: 1 });
+  // Cardinal ticks are a snap pref, so a test that flips it must not leak into
+  // the popover / deletion suites below.
+  useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES } });
 });
 afterEach(() => {
   for (const prop of sizeProps) {
@@ -73,6 +78,40 @@ describe('MapCanvas — line-circle guide rendering', () => {
     expect(document.querySelector('[data-line-circle-knob="c1"]')).toBeNull();
     act(() => useSelection.getState().selectLineCircle('c1'));
     expect(document.querySelector('[data-line-circle-knob="c1"]')).not.toBeNull();
+  });
+
+  it('paints the eight cardinal ticks only while the snap mode is on', () => {
+    render(<App />);
+    seedCircle();
+    expect(document.querySelector('[data-line-circle-cardinals="c1"]')).toBeNull();
+    act(() => useSnapPrefs.getState().setMode('circle', true));
+    const ticks = document.querySelector('[data-line-circle-cardinals="c1"]');
+    expect(ticks).not.toBeNull();
+    expect(ticks!.querySelectorAll('line')).toHaveLength(8);
+    // Scaffolding, like the ring it marks: never printed.
+    expect(ticks!.closest('[data-export-exclude]')).not.toBeNull();
+    act(() => useSnapPrefs.getState().setMode('circle', false));
+    expect(document.querySelector('[data-line-circle-cardinals="c1"]')).toBeNull();
+  });
+
+  it('straddles the rim at due east and due south', () => {
+    render(<App />);
+    seedCircle();
+    act(() => useSnapPrefs.getState().setMode('circle', true));
+    const lines = Array.from(document.querySelectorAll('[data-line-circle-cardinals="c1"] line'));
+    const at = (x: number, y: number) =>
+      lines.find(
+        (l) =>
+          Math.abs(Number(l.getAttribute('x1')) - x) < 1e-6 &&
+          Math.abs(Number(l.getAttribute('y1')) - y) < 1e-6,
+      );
+    // Circle (100,100) r70, zoom 1, tick half-length 4: the east tick runs
+    // 166→174 along y=100, the south tick 166→174 along x=100.
+    expect(at(166, 100)).toBeDefined();
+    expect(Number(at(166, 100)!.getAttribute('x2'))).toBeCloseTo(174, 6);
+    const south = lines.find((l) => Math.abs(Number(l.getAttribute('y1')) - 166) < 1e-6);
+    expect(south).toBeDefined();
+    expect(Number(south!.getAttribute('y2'))).toBeCloseTo(174, 6);
   });
 });
 

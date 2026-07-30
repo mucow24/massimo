@@ -12,8 +12,17 @@ interface SnapPrefsState {
 }
 
 /**
- * Upgrade a persisted v0 blob (when `all`/`grid` were booleans) to the v1
- * directional enums: `all: true → 'all'`, `grid: true → 'both'`, falsey → off.
+ * Bring a persisted blob up to the current shape. Two jobs, and the second is
+ * the one that matters on every future bump:
+ *
+ *  - v0 stored `all`/`grid` as booleans; they become the directional enums
+ *    (`all: true → 'all'`, `grid: true → 'both'`, falsey → off). Idempotent for
+ *    a v1 blob, whose values are already strings.
+ *  - any key the blob PREDATES is filled from {@link DEFAULT_SNAP_MODES}. This
+ *    is not optional politeness: zustand's default merge replaces `modes`
+ *    wholesale, so a blob written before a mode existed would otherwise leave
+ *    that mode `undefined` — a required field missing at runtime, with the
+ *    toolbar reading one thing and the snap code another.
  */
 function migrateSnapPrefs(persisted: unknown): { modes: SnapModes } {
   const modes = (persisted as { modes?: Partial<Record<keyof SnapModes, unknown>> })?.modes ?? {};
@@ -47,9 +56,9 @@ export const useSnapPrefs = create<SnapPrefsState>()(
     }),
     {
       name: 'massimo-snap-prefs-v1',
-      version: 1,
+      version: 2,
       migrate: (persisted, version) =>
-        version < 1 ? migrateSnapPrefs(persisted) : (persisted as { modes: SnapModes }),
+        version < 2 ? migrateSnapPrefs(persisted) : (persisted as { modes: SnapModes }),
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({ modes: s.modes }),
     },
