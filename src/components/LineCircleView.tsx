@@ -1,4 +1,4 @@
-import type { PointerEvent as ReactPointerEvent } from 'react';
+import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import type { LineCircle } from '../model/types';
 import { CIRCLE_CARDINAL_ANGLES } from '../geometry/lineCircle';
 
@@ -33,10 +33,15 @@ interface Props {
   showCardinals: boolean;
   // Selection happens at pointer-down (the drag hook selects before arming).
   onPointerDown?: (e: ReactPointerEvent, id: string, part: LineCirclePart) => void;
-  // Real clicks are redundant with the pointer-down selection above; this
-  // exists for the alt-click deep-pick, whose synthetic click dispatch is how
-  // a buried rim gets selected (see hitStack RESOLVERS).
-  onClick?: (id: string) => void;
+  // The shared item click contract (Shift toggles multi-selection membership,
+  // a plain click replaces it, a click synthesized after a drag is ignored).
+  // Mostly redundant with the pointer-down selection above — but not entirely:
+  // it carries the Shift-toggle, and it is how the alt-click deep-pick selects
+  // a buried rim (its synthetic click dispatch; see hitStack RESOLVERS).
+  onClick?: (id: string, e: ReactMouseEvent) => void;
+  // Right-click = rotate, the same gesture every other canvas item has. Wired
+  // on the knob as well as the rim so the knob isn't a dead spot on the ring.
+  onContextMenu?: (id: string, e: ReactMouseEvent) => void;
 }
 
 /**
@@ -58,6 +63,7 @@ export function LineCircleView({
   showCardinals,
   onPointerDown,
   onClick,
+  onContextMenu,
 }: Props) {
   const px = (v: number) => v / zoom;
   const clickThrough = !interactive || inHandMode || (circle.locked && !selected);
@@ -106,7 +112,8 @@ export function LineCircleView({
           strokeWidth={px(RIM_HIT_PX)}
           style={{ cursor: 'move' }}
           onPointerDown={(e) => onPointerDown?.(e, circle.id, 'rim')}
-          onClick={() => onClick?.(circle.id)}
+          onClick={(e) => onClick?.(circle.id, e)}
+          onContextMenu={(e) => onContextMenu?.(circle.id, e)}
         />
       )}
       {selected && !circle.locked && (
@@ -122,6 +129,7 @@ export function LineCircleView({
           style={{ cursor: 'ew-resize' }}
           pointerEvents={clickThrough ? 'none' : 'all'}
           onPointerDown={(e) => onPointerDown?.(e, circle.id, 'knob')}
+          onContextMenu={(e) => onContextMenu?.(circle.id, e)}
         />
       )}
     </g>

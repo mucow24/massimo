@@ -431,7 +431,7 @@ kind. See [styles.ts](src/model/styles.ts).
   the mass-unlock path (and Lock all the mass-lock). Free transfer anchors are the one kind
   with **no `locked` field at all**, so Lock all counts them out (`lockableTotal`)
   while Delete all still counts them in. Line circles (the seventh kind) do lock — a locked
-  circle refuses drag/resize/delete and is click-through while unselected.
+  circle refuses drag/resize/rotate/group-tow/delete and is click-through while unselected.
 
 **`StopCell`** — one line's stop on a station. `lineId, row, col` (station-local grid;
 **`row`/`col` are floats now**, since diagonal moves use ±√2/2 — equality uses `CELL_EPS=1e-4`),
@@ -460,7 +460,11 @@ circle). The painted arcs come from line edges. The concept splits in two, on pu
   to `viaCircle` (binding happens by dragging/placing a station onto the rim — capture at the
   standard snap tolerance; a bound station escapes by being pulled `3×` tolerance off the rim, or
   instantly with Shift — see `useStationDrag`). Moving/resizing a circle carries bound stations
-  rigidly/radially (`moveLineCircle`/`setLineCircleRadius`); deleting it strips bindings and
+  rigidly/radially (`moveLineCircle`/`setLineCircleRadius`), and right-click ROTATES it: the ring
+  is rotationally symmetric, so a circle's rotation IS its members' angular position —
+  `rotateLineCircle` swings every bound station one 45° step round the rim and reseats it through
+  `circleSeat` (45° is exactly one octant, so a seated station stays seated; a ring carrying
+  nobody is a genuine no-op, same doc back). Deleting it strips bindings and
   leaves the stations standing (arcs simply re-route octolinearly — nothing moves, one undo
   restores). A bound station's LOCAL GRID is managed radially: the origin cell is the one point
   that sits ON the ring, so new stops stack radially OUTWARD (`spawnStopCellAt`'s bound branch —
@@ -1788,7 +1792,9 @@ mode** ("Snap to circle cardinals") the seat is also pulled to the nearest of th
 axes, deliberately: radial distance is the capture/release test, angular distance the cardinal
 one, and the cardinal window is an arc LENGTH measured against the same tolerance, so it spans a
 constant number of screen px and a tight ring is far more magnetic than a huge one. There is no
-"circle off" state — a ring always captures, and Shift is how you decline. The pull travels
+"circle off" state — a ring always captures, and Shift is how you decline. Cardinals are part of
+the rim constraint, not a layer on top, so whatever suspends that suspends them too: a `ringTowed`
+drag (below) seats nothing at all. The pull travels
 ALONG the rim, so it never disturbs the projection every downstream consumer depends on:
 `circleSeat` reprojects whatever it is handed, the drop-side `bindDroppedStation` still
 recognizes the seat at its tight tolerance, and circle move/resize preserve the polar angle — so
@@ -2314,14 +2320,32 @@ correct until you zoom.
 `collectGroupSiblings` snapshots every _other_ selected item — but only if the grabbed item is
 itself selected (dragging an unselected item never tows; locked items never tow). Snap during a
 group drag is **one rule for every master type**: the grabbed item snaps with its usual engine
-against everything stationary, excluding only itself + the co-selected siblings
+against everything stationary, excluding only itself + everything MOVING with it
 (`excludedIds` for the station engine, `groupAlignExclude` → `alignTargets` for the point
 snapper); siblings then translate rigidly by the post-snap delta. Grid acts on the master's
 reference point only — towed siblings keep their offsets verbatim.
+A **line circle is a FRAME**, and that makes it the one member with a second list. It tows by its
+center (`moveLineCircle`), which carries the stations bound to it — so those passengers go in
+`carriedStations` (ids only, every station on a moving ring, selected or not) instead of
+`stations`: they are excluded from the snap pools via `movingStationIds`, because they move, but
+never translated, because a bound station's `moveStation` reseats it on its ring and the second
+write would drift it round the rim. Same reason as `rotateItemsAround`'s `carriedByCircle`. The
+mirror case lives in `useStationDrag`: grabbing a bound station whose ring is co-selected (`ringTowed`)
+suspends the ring constraint entirely — no slide along the rim, no Shift/out-of-band detach — and
+skips the station's own `moveStation`, because the towed ring is what carries it. A LOCKED ring
+stays put, so its passengers tow normally and slide along the stationary rim.
+A ring's rim ALSO selects at pointer-down (its own convention, so the resize knob and the
+diameter popover appear as you grab it) — which must stand down for a ring already in the
+selection, or a `selectLineCircle` that clears every other list would destroy the group drag
+before it began, and for a Shift-grab, which the click's toggle owns.
 **Group rotate** ([groupRotate.ts](src/components/canvas/groupRotate.ts)): right-click rotates the
 whole multi-selection rigidly about the pivot via `rotateItemsAround` (fixed the bug where
 per-type handlers omitted other types). Locked items are exempt: a locked pivot makes the
-right-click a no-op, and locked co-selected members stay put while the rest rotate.
+right-click a no-op, and locked co-selected members stay put while the rest rotate. A co-selected
+line circle rotates as one rigid body with its passengers — center and bound stations take the
+same rotation about the pivot — so a station that is BOTH a member and a ring passenger is skipped
+by the station branch (rotating it twice would swing it 90°); the drag's `carriedStations` is the
+same rule for translation.
 
 ### Placement & popovers
 

@@ -51,7 +51,11 @@ const distFromCenter = (st: { x: number; y: number }) =>
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useDoc.temporal.getState().clear();
-  useSelection.setState({ ...useSelection.getState(), selectedStationIds: [] });
+  useSelection.setState({
+    ...useSelection.getState(),
+    selectedStationIds: [],
+    selectedLineCircleIds: [],
+  });
   // Every alignment mode off: the ring capture is what's under test.
   useSnapPrefs.setState({
     modes: { ...DEFAULT_SNAP_MODES, line: false, all: 'off', grid: 'off' },
@@ -219,6 +223,70 @@ describe('useStationDrag — line-circle binding', () => {
       expect(doc.stations['T'].x).toBeCloseTo(330, 6);
       expect(doc.stations['T'].y).toBeCloseTo(470, 6);
     });
+
+    it('stands down entirely when the ring itself is towed', () => {
+      // `ringTowed` skips the whole circle block, cardinals included: with the
+      // ring travelling too there is no rim to seat against, so the assembly
+      // translates rigidly even though the drag ends near a cardinal.
+      cardinalsOn();
+      seed(makeStation({ id: 'S', x: 170, y: 100, rotation: 0, circleId: 'c1' }));
+      useSelection.setState({
+        ...useSelection.getState(),
+        selectedStationIds: ['S' as StationId],
+        selectedLineCircleIds: ['c1'],
+      });
+      const result = dragHook();
+      result.current.onStartDrag('S' as StationId, pointerEvent({ clientX: 300, clientY: 300 }));
+      result.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 260 }));
+      result.current.onPointerUp(pointerEvent({ clientX: 300, clientY: 260 }));
+      const doc = useDoc.getState();
+      // Straight up by 40, NOT pulled to a cardinal of the moved ring.
+      expect(doc.lineCircles.c1).toMatchObject({ x: 100, y: 60 });
+      expect(doc.stations['S'].x).toBeCloseTo(170, 6);
+      expect(doc.stations['S'].y).toBeCloseTo(60, 6);
+    });
+  });
+
+  it('a bound station co-selected WITH its ring drags the whole assembly rigidly', () => {
+    seed(makeStation({ id: 'S', x: 170, y: 100, rotation: 0, circleId: 'c1' }));
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['S'],
+      selectedLineCircleIds: ['c1'],
+    });
+    const result = dragHook();
+    // Straight up: on a lone bound station this would slide it round the rim
+    // (the constraint). With the ring towed there is nothing to slide against —
+    // the ring travels too, so station and center both move by (0, -40).
+    result.current.onStartDrag('S' as StationId, pointerEvent({ clientX: 300, clientY: 300 }));
+    result.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 260 }));
+    result.current.onPointerUp(pointerEvent({ clientX: 300, clientY: 260 }));
+    const doc = useDoc.getState();
+    expect(doc.lineCircles.c1).toMatchObject({ x: 100, y: 60 });
+    expect(doc.stations['S'].x).toBeCloseTo(170, 6);
+    expect(doc.stations['S'].y).toBeCloseTo(60, 6);
+    // Still bound, still seated on the rim at its original angle.
+    expect(doc.stations['S'].circleId).toBe('c1');
+    expect(doc.stations['S'].rotation).toBe(0);
+  });
+
+  it('keeps the towed assembly bound even when Shift bypasses snapping', () => {
+    // Shift on a lone bound station detaches it; with the ring coming along
+    // there is no constraint to bypass, so the binding survives.
+    seed(makeStation({ id: 'S', x: 170, y: 100, rotation: 0, circleId: 'c1' }));
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['S'],
+      selectedLineCircleIds: ['c1'],
+    });
+    const result = dragHook();
+    result.current.onStartDrag('S' as StationId, pointerEvent({ clientX: 300, clientY: 300 }));
+    result.current.onPointerMove(pointerEvent({ clientX: 320, clientY: 300, shiftKey: true }));
+    result.current.onPointerUp(pointerEvent({ clientX: 320, clientY: 300, shiftKey: true }));
+    const doc = useDoc.getState();
+    expect(doc.stations['S'].circleId).toBe('c1');
+    expect(doc.lineCircles.c1).toMatchObject({ x: 120, y: 100 });
+    expect(doc.stations['S'].x).toBeCloseTo(190, 6);
   });
 
   it('one undo reverts a bind-drag entirely (binding included)', () => {

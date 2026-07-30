@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 import App from '../App';
 import { useDoc } from '../state/store';
 import { useSelection } from '../state/selection';
@@ -112,6 +112,67 @@ describe('MapCanvas — line-circle guide rendering', () => {
     const south = lines.find((l) => Math.abs(Number(l.getAttribute('y1')) - 166) < 1e-6);
     expect(south).toBeDefined();
     expect(Number(south!.getAttribute('y2'))).toBeCloseTo(174, 6);
+  });
+});
+
+describe('line-circle rim clicks follow the shared item contract', () => {
+  it('Shift-click adds the ring to a multi-selection instead of replacing it', () => {
+    render(<App />);
+    seedCircle();
+    act(() => useSelection.getState().addStationsToSelection(['s1']));
+    const rim = document.querySelector('[data-line-circle-rim="c1"]');
+    act(() => {
+      fireEvent.click(rim!, { shiftKey: true });
+    });
+    // Both kinds selected — the group a ring drag can then tow.
+    expect(useSelection.getState().selectedLineCircleIds).toEqual(['c1']);
+    expect(useSelection.getState().selectedStationIds).toEqual(['s1']);
+  });
+
+  it('a plain click still narrows the selection to the ring', () => {
+    render(<App />);
+    seedCircle();
+    act(() => useSelection.getState().addStationsToSelection(['s1']));
+    const rim = document.querySelector('[data-line-circle-rim="c1"]');
+    act(() => {
+      fireEvent.click(rim!);
+    });
+    expect(useSelection.getState().selectedLineCircleIds).toEqual(['c1']);
+    expect(useSelection.getState().selectedStationIds).toEqual([]);
+  });
+});
+
+describe('right-click rotates a line circle', () => {
+  // Right-click is the rotate gesture for every canvas item; on a ring that
+  // means its bound stations swing one 45° step around the rim.
+  const seat45 = 100 + 70 / Math.SQRT2;
+
+  it('rotates from the rim, the grab surface the move gesture uses', () => {
+    render(<App />);
+    seedCircle();
+    const rim = document.querySelector('[data-line-circle-rim="c1"]');
+    expect(rim).not.toBeNull();
+    act(() => {
+      fireEvent.contextMenu(rim!);
+    });
+    const s1 = useDoc.getState().stations.s1;
+    expect(s1.x).toBeCloseTo(seat45, 6);
+    expect(s1.y).toBeCloseTo(seat45, 6);
+    // One undo puts the ring back where it was.
+    act(() => useDoc.temporal.getState().undo());
+    expect(useDoc.getState().stations.s1).toMatchObject({ x: 170, y: 100 });
+  });
+
+  it('rotates from the resize knob too — no dead spot on the ring', () => {
+    render(<App />);
+    seedCircle();
+    act(() => useSelection.getState().selectLineCircle('c1'));
+    const knob = document.querySelector('[data-line-circle-knob="c1"]');
+    expect(knob).not.toBeNull();
+    act(() => {
+      fireEvent.contextMenu(knob!);
+    });
+    expect(useDoc.getState().stations.s1.x).toBeCloseTo(seat45, 6);
   });
 });
 

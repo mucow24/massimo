@@ -15,6 +15,8 @@ function isItemLocked(doc: MapDoc, ref: ItemRef): boolean {
       return !!doc.polygons[ref.id]?.locked;
     case 'svgImage':
       return !!doc.svgImages[ref.id]?.locked;
+    case 'lineCircle':
+      return !!doc.lineCircles[ref.id]?.locked;
     case 'anchor':
       // Anchors have no `locked` field at all — the first canvas kind without
       // one. They always rotate and always tow.
@@ -26,11 +28,11 @@ function isItemLocked(doc: MapDoc, ref: ItemRef): boolean {
  * Shared right-click "rotate" gesture for any selectable canvas item.
  *
  * When the clicked item is part of a multi-selection (more than one item across
- * stations, route bullets, labels, polygons, AND svg images), rotate the whole
- * group rigidly around it via `rotateItemsAround` — every type participates, so
- * a co-selected item is never silently left behind (the bug the per-type copies
- * had: the bullet/label/station handlers omitted polygon ids). Otherwise rotate
- * just this one item via `rotateSingle`.
+ * every selectable kind), rotate the whole group rigidly around it via
+ * `rotateItemsAround` — every type participates, so a co-selected item is never
+ * silently left behind (the bug the per-type copies had: the bullet/label/station
+ * handlers omitted polygon ids). Otherwise rotate just this one item via
+ * `rotateSingle`.
  */
 export function rotateItemOnContextMenu(pivot: ItemRef, rotateSingle: () => void): void {
   const doc = useDoc.getState();
@@ -45,7 +47,8 @@ export function rotateItemOnContextMenu(pivot: ItemRef, rotateSingle: () => void
   const pg = sel.selectedPolygonIds;
   const sg = sel.selectedSvgImageIds;
   const an = sel.selectedAnchorIds;
-  const total = st.length + bl.length + lb.length + pg.length + sg.length + an.length;
+  const lc = sel.selectedLineCircleIds;
+  const total = st.length + bl.length + lb.length + pg.length + sg.length + an.length + lc.length;
   // Exhaustive switch, not a ternary chain with a catch-all tail: the tail was a
   // bare `: sg.includes(pivot.id)`, so a new ItemRef type would have been tested
   // against the svg-image selection and read as "not in the selection".
@@ -63,6 +66,8 @@ export function rotateItemOnContextMenu(pivot: ItemRef, rotateSingle: () => void
         return sg;
       case 'anchor':
         return an;
+      case 'lineCircle':
+        return lc;
       default: {
         const unhandled: never = type;
         return unhandled;
@@ -74,7 +79,9 @@ export function rotateItemOnContextMenu(pivot: ItemRef, rotateSingle: () => void
     // Skip locked co-selected members so they aren't rotated (mirrors
     // collectGroupSiblings towing only unlocked items during a group drag).
     // The pivot is guaranteed unlocked by the guard above, so it survives.
-    const members = buildRotateMembers(st, bl, lb, pg, sg, an).filter((m) => !isItemLocked(doc, m));
+    const members = buildRotateMembers(st, bl, lb, pg, sg, an, lc).filter(
+      (m) => !isItemLocked(doc, m),
+    );
     useDoc.getState().rotateItemsAround(pivot, members);
     return;
   }

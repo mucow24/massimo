@@ -134,6 +134,7 @@ export function MapCanvas() {
   const lines = useDoc((s) => s.lines);
   const lineOrder = useDoc((s) => s.lineOrder);
   const lineCircles = useDoc((s) => s.lineCircles);
+  const rotateLineCircle = useDoc((s) => s.rotateLineCircle);
   const seamEdges = useDoc((s) => s.seamEdges);
   const addLineTag = useDoc((s) => s.addLineTag);
   const assignRegions = useDoc((s) => s.assignRegions);
@@ -903,6 +904,17 @@ export function MapCanvas() {
       rotate: rotateSvgImage45,
     },
   );
+  // Line circles take the same contract as the four free kinds. Their rim also
+  // selects at pointer-down (see useLineCircleDrag) — the click half still
+  // matters: it carries the Shift-toggle, ignores the click synthesized after a
+  // drag (which would otherwise collapse a group selection the drag just moved),
+  // and is the deep-pick's way in.
+  const { onClick: onLineCircleClick, onContextMenu: onLineCircleContextMenu } =
+    makeItemClickHandlers('lineCircle', {
+      select: selection.selectLineCircle,
+      toggle: selection.toggleLineCircleSelection,
+      rotate: rotateLineCircle,
+    });
   const onVertexClick = (id: string, index: number, e: React.MouseEvent) => {
     if (dragState.suppressClick) return;
     if (inHandMode) return;
@@ -1293,7 +1305,8 @@ export function MapCanvas() {
                 inHandMode={inHandMode}
                 showCardinals={snapModes.circle}
                 onPointerDown={(e, id, part) => circleDrag.onStartDrag(id, part, e)}
-                onClick={(id) => selection.selectLineCircle(id)}
+                onClick={onLineCircleClick}
+                onContextMenu={onLineCircleContextMenu}
               />
             ))}
           </g>
