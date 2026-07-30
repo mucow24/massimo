@@ -8,6 +8,7 @@ import {
 } from '../../geometry/interlining';
 import { pairKeyOf } from '../../model/pairKey';
 import { resolveDotStyle, spawnStopCellAt, stationIsSingleton } from '../../model/transforms';
+import { stationCircle } from '../../geometry/lineCircle';
 import { STOP_SIZE } from '../../geometry/orientation';
 import { SegmentBand } from '../SegmentBand';
 import { dotSizeOverride } from '../../model/dotSize';
@@ -226,7 +227,7 @@ export function HighlightedLineLayer({
                 nodes.push(
                   <DashGlyph
                     key={`${keyPrefix}-d:${sid}`}
-                    spec={dashSpec(st, cell, line)}
+                    spec={dashSpec(st, cell, line, stationCircle(st, lineCircles))}
                     style={style}
                     lineColor={line.color}
                     line={line}
@@ -236,7 +237,7 @@ export function HighlightedLineLayer({
                 );
                 continue;
               }
-              const { x: cx, y: cy } = stopPosWorld(cell, st);
+              const { x: cx, y: cy } = stopPosWorld(cell, st, lineCircles);
               nodes.push(
                 <StopGlyph
                   key={`${keyPrefix}-d:${sid}`}
@@ -457,7 +458,7 @@ export function HighlightedLineLayer({
               const st = stations[cursor.stationId];
               const cell = st.stops.find((c) => c.lineId === highlightLineId);
               if (cell) {
-                const p = stopPosWorld(cell, st);
+                const p = stopPosWorld(cell, st, lineCircles);
                 ring = twoToneRing(p.x, p.y, {
                   dataAttr: 'data-append-cursor',
                   id: cursor.stationId,
@@ -506,7 +507,7 @@ export function HighlightedLineLayer({
                 const cell =
                   st.stops.find((c) => c.lineId === highlightLineId) ??
                   spawnStopCellAt(st, highlightLineId, lines, lineCircles);
-                const p = stopPosWorld(cell, st);
+                const p = stopPosWorld(cell, st, lineCircles);
                 hoverRing = twoToneRing(p.x, p.y, {
                   dataAttr: 'data-append-hover-ring',
                   id: appendHover.stationId,
@@ -557,7 +558,7 @@ export function HighlightedLineLayer({
             const st = stations[cursor.stationId];
             const cell = st?.stops.find((c) => c.lineId === highlightLineId);
             if (!st || !cell) return null;
-            const p = stopPosWorld(cell, st);
+            const p = stopPosWorld(cell, st, lineCircles);
             return (
               <g
                 data-append-remove-stop={cursor.stationId}

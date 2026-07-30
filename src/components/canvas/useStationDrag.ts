@@ -200,6 +200,7 @@ export function useStationDrag(
         draggedStops,
         stations,
         lines,
+        lineCircles,
         tolerance: snapToleranceAt(viewportZoom),
         // Ctrl-drag: snap exclusively to the anchor (the originally selected
         // station). Intermediates are moving with the redistribute.

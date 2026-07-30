@@ -50,7 +50,7 @@ describe('alignTargets', () => {
     const withStop = makeStation({ id: 'b', x: 100, y: 50, stops: [makeStop('L1')] });
     const out = alignTargets(makeDoc({ stations: [bare, withStop] }));
     expect(out).toContainEqual({ x: 12, y: -7 });
-    expect(out).toContainEqual(stopPosWorld(withStop.stops[0], withStop));
+    expect(out).toContainEqual(stopPosWorld(withStop.stops[0], withStop, {}));
     expect(out).toHaveLength(2);
   });
 
@@ -63,7 +63,7 @@ describe('alignTargets', () => {
       transferAnchors: [{ id: 'an0', row: 0, col: 2 }],
     });
     const out = alignTargets(makeDoc({ stations: [st] }));
-    expect(out).toContainEqual(stopPosWorld(st.stops[0], st));
+    expect(out).toContainEqual(stopPosWorld(st.stops[0], st, {}));
     expect(out).toContainEqual({ x: 100 + 2 * STOP_SIZE, y: 50 });
     expect(out).toHaveLength(2);
   });
@@ -171,7 +171,7 @@ describe('liveAlignTargets — the lines/stations toggle', () => {
 
   it('offers station stops as targets while the network is shown', () => {
     const out = liveAlignTargets();
-    expect(out).toContainEqual(stopPosWorld(station.stops[0], station));
+    expect(out).toContainEqual(stopPosWorld(station.stops[0], station, {}));
     expect(out).toContainEqual({ x: 10, y: 10 });
   });
 
@@ -181,7 +181,7 @@ describe('liveAlignTargets — the lines/stations toggle', () => {
     // snaps to itself, so only the station points go.
     useViewportStore.setState({ showNetwork: false });
     const out = liveAlignTargets();
-    expect(out).not.toContainEqual(stopPosWorld(station.stops[0], station));
+    expect(out).not.toContainEqual(stopPosWorld(station.stops[0], station, {}));
     expect(out).toEqual(polygon.vertices);
   });
 
@@ -222,6 +222,6 @@ describe('liveAlignTargets — the anchor toggle', () => {
     // an anchor that isn't on the canvas is a guide pointing at bare canvas.
     // Only the anchor points go — the station's stops are still visible.
     useViewportStore.setState({ showAnchors: false });
-    expect(liveAlignTargets()).toEqual([stopPosWorld(station.stops[0], station)]);
+    expect(liveAlignTargets()).toEqual([stopPosWorld(station.stops[0], station, {})]);
   });
 });

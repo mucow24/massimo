@@ -69,6 +69,7 @@ export function useItemDrag(
   const transferAnchors = useDoc((s) => s.transferAnchors);
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
+  const lineCircles = useDoc((s) => s.lineCircles);
   const moveRouteBullet = useDoc((s) => s.moveRouteBullet);
   const moveTextLabel = useDoc((s) => s.moveTextLabel);
   const moveTransferAnchor = useDoc((s) => s.moveTransferAnchor);
@@ -176,6 +177,7 @@ export function useItemDrag(
           // and must not align to stations that aren't on the canvas.
           stations: liveSnapStations(stations),
           lines,
+          lineCircles,
           tolerance: snapToleranceAt(zoom),
           bulletLineId: lineId,
           excludedIds: ds.siblingStationIds.size > 0 ? ds.siblingStationIds : undefined,

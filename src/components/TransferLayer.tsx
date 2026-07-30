@@ -109,6 +109,8 @@ export function TransferLayer({
   // Transfer colors are theme-aware (day/night); resolve to the concrete hex
   // for the active canvas theme, same source as the dots + polygons.
   const darkMode = useDoc((s) => s.darkMode);
+  // Stop/anchor cells on a ring-bound station resolve through the ring frame.
+  const lineCircles = useDoc((s) => s.lineCircles);
   const list = Object.values(transfers);
   if (list.length === 0) return null;
 
@@ -117,8 +119,8 @@ export function TransferLayer({
   // the user stroke and the body. Colors are resolved to hex here so both
   // passes just emit strings.
   const drawable = list.flatMap((t) => {
-    const a = transferEndWorld(t.a, stations, transferAnchors);
-    const b = transferEndWorld(t.b, stations, transferAnchors);
+    const a = transferEndWorld(t.a, stations, transferAnchors, lineCircles);
+    const b = transferEndWorld(t.b, stations, transferAnchors, lineCircles);
     // Both ends must resolve for there to be a segment. A dangling end (deleted
     // station, removed anchor) drops the whole transfer quietly — which is why
     // neither load path needs a transfer-endpoint sanitizer.
@@ -200,10 +202,11 @@ export function TransferSelectionOutline({
 }: Omit<Props, 'onSelect'>) {
   // Two-tone ring flips with the theme (WBW on light, BWB on dark).
   const themeColors = useThemeColors();
+  const lineCircles = useDoc((s) => s.lineCircles);
   const t = selectedId ? transfers[selectedId] : undefined;
   if (!t) return null;
-  const a = transferEndWorld(t.a, stations, transferAnchors);
-  const b = transferEndWorld(t.b, stations, transferAnchors);
+  const a = transferEndWorld(t.a, stations, transferAnchors, lineCircles);
+  const b = transferEndWorld(t.b, stations, transferAnchors, lineCircles);
   if (!a || !b) return null;
   const style = resolveTransferStyle(t, defaults);
   const visibleExtent = style.thickness + 2 * style.strokeWidth;

@@ -27,6 +27,7 @@ function renderLayer(props: Partial<Parameters<typeof AnchorLayer>[0]> = {}): SV
       <AnchorLayer
         transferAnchors={FREE}
         stations={HOSTED}
+        lineCircles={{}}
         selectedIds={[]}
         hoveredKey={null}
         onHover={vi.fn()}

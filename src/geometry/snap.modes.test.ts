@@ -64,6 +64,7 @@ describe('snapDraggedStation: snap mode gating', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
+      lineCircles: {},
       modes: NO_MODES,
     });
     expect(r.x).toBe(105);
@@ -83,6 +84,7 @@ describe('snapDraggedStation: snap mode gating', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
+      lineCircles: {},
       // modes intentionally omitted.
     });
     expect(r.x).toBeCloseTo(100, 5);
@@ -105,6 +107,7 @@ describe('snapDraggedStation: equidistant mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b, c),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c'])),
+      lineCircles: {},
       modes,
     });
   };
@@ -137,6 +140,7 @@ describe('snapDraggedStation: equidistant mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, equidistant: true },
     });
     // Only line snap fires — projects onto y=0 through A's axis line.
@@ -174,6 +178,7 @@ describe('snapDraggedStation: equidistant mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b, c),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, equidistant: true },
     });
     // Just line snap to A's axis — equidistant must skip.
@@ -196,6 +201,7 @@ describe('snapDraggedStation: equidistant mode', () => {
       draggedStops: d.stops,
       stations: stations(a, b, c, d),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, equidistant: true },
     });
     expect(r.x).toBeCloseTo(120, 5);
@@ -219,6 +225,7 @@ describe('snapDraggedStation: equidistant mode', () => {
       draggedStops: a.stops,
       stations: stations(a, b, c, d),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, equidistant: true },
     });
     expect(r.x).toBeCloseTo(0, 5);
@@ -240,6 +247,7 @@ describe('snapDraggedStation: equidistant mode', () => {
       draggedStops: c.stops,
       stations: stations(a, b, c),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, equidistant: true },
     });
     // A↔B = 30, so C snaps to B + 30 = 60.
@@ -263,6 +271,7 @@ describe('snapDraggedStation: equidistant mode', () => {
       draggedStops: d.stops,
       stations: stations(a, b, c, d),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, equidistant: true },
     });
     expect(r.x).toBeCloseTo(60, 5);
@@ -290,6 +299,7 @@ describe('snapDraggedStation: equidistant mode', () => {
       draggedStops: d.stops,
       stations: stations(a, b, c, d),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, equidistant: true },
     });
     // Only line snap fires — projects onto y=0 through C's horizontal axis.
@@ -314,6 +324,7 @@ describe('snapDraggedStation: equidistant mode', () => {
       draggedStops: d.stops,
       stations: stations(a, b, c, d),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      lineCircles: {},
       // Ctrl-drag: snap exclusively to anchor A. The new branch would
       // otherwise pull x from 125 → 120 (extrapolated B↔C cadence).
       redistributeAnchor: 'a',
@@ -342,6 +353,7 @@ describe('snapDraggedStation: equidistant mode', () => {
       draggedStops: d.stops,
       stations: stations(a, b, c, d),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, equidistant: true },
     });
     expect(r.x).toBeCloseTo(120, 5);
@@ -372,6 +384,7 @@ describe('snapDraggedStation: equidistant mode', () => {
       draggedStops: a.stops,
       stations: stations(a, b, c, d),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, equidistant: true },
     });
     expect(r.x).toBeCloseTo(0, 5);
@@ -406,6 +419,7 @@ describe('snapDraggedStation: equidistant mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b, c),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, equidistant: true },
     });
     expect(r.x).toBeCloseTo(50, 5);
@@ -434,6 +448,7 @@ describe('snapDraggedStation: excludedIds reach the along-axis refinement', () =
       draggedStops: b.stops,
       stations: stations(a, b, c),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c'])),
+      lineCircles: {},
       excludedIds: new Set(['a']),
       modes: { ...LINE_ONLY, equidistant: true },
     });
@@ -454,6 +469,7 @@ describe('snapDraggedStation: excludedIds reach the along-axis refinement', () =
       proposedY: 3,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       bulletLineId: 'L1',
       excludedIds: new Set(['a']),
       modes: { ...LINE_ONLY, tens: true },
@@ -476,6 +492,7 @@ describe('snapDraggedStation: tens mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, tens: true },
     });
     expect(r.x).toBeCloseTo(50, 5);
@@ -493,6 +510,7 @@ describe('snapDraggedStation: tens mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, tens: true },
     });
     expect(r.x).toBeCloseTo(40, 5);
@@ -512,6 +530,7 @@ describe('snapDraggedStation: tens mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, tens: true },
       tolerance: 5,
     });
@@ -532,6 +551,7 @@ describe('snapDraggedStation: tens mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, tens: true },
       tolerance: 3,
     });
@@ -553,6 +573,7 @@ describe('snapDraggedStation: tens mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b, c),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, tens: true },
     });
     // Multiple of 10 from A=(0,0) closest to 47 is 50. (From C=(100,0) the
@@ -576,6 +597,7 @@ describe('snapDraggedStation: tens mode', () => {
       draggedStops: b.stops,
       stations: stations(b, c),
       lines: linesOf(lineOf('L1', ['b', 'c'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, tens: true },
     });
     // Anchor at C=(100, 0); 7 is 93 from C. Nearest multiple of 10 is 90,
@@ -598,6 +620,7 @@ describe('snapDraggedStation: tens mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, tens: true },
     });
     expect(r.x).toBeCloseTo(90, 5);
@@ -615,6 +638,7 @@ describe('snapDraggedStation: tens mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       modes: { ...NO_MODES, tens: true },
     });
     expect(r.x).toBe(47);
@@ -637,6 +661,7 @@ describe('snapDraggedStation: tens tracks the active grid interval', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, tens: true },
     };
     expect(snapDraggedStation({ ...input, gridInterval: 5 }).x).toBeCloseTo(15, 5);
@@ -656,6 +681,7 @@ describe('snapDraggedStation: tens tracks the active grid interval', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, tens: true },
       gridInterval: 20,
     });
@@ -673,6 +699,7 @@ describe('snapDraggedStation: tens tracks the active grid interval', () => {
       proposedY: 13,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       bulletLineId: 'L1',
       modes: { ...LINE_ONLY, tens: true },
       gridInterval: 5,
@@ -697,6 +724,7 @@ describe('snapDraggedStation: equidistant + tens together', () => {
       draggedStops: b.stops,
       stations: stations(a, b, c),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, equidistant: true, tens: true },
     });
     expect(r.x).toBeCloseTo(47, 5);
@@ -720,6 +748,7 @@ describe('snapDraggedStation: equidistant + tens together', () => {
       draggedStops: d.stops,
       stations: stations(a, b, c, d),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, equidistant: true, tens: true },
     });
     expect(r.x).toBeCloseTo(111, 5);
@@ -741,6 +770,7 @@ describe('snapDraggedStation: snap-to-all mode', () => {
       stations: stations(a, b),
       // Different lines so line mode wouldn't help here even if on.
       lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['b'])),
+      lineCircles: {},
       modes: { ...NO_MODES, all: 'all' },
     });
     expect(r.x).toBeCloseTo(100, 5);
@@ -758,6 +788,7 @@ describe('snapDraggedStation: snap-to-all mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['b'])),
+      lineCircles: {},
       modes: { ...NO_MODES, all: 'all' },
     });
     expect(r.x).toBeCloseTo(300, 5);
@@ -776,6 +807,7 @@ describe('snapDraggedStation: snap-to-all mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['b'])),
+      lineCircles: {},
       modes: { ...NO_MODES, all: 'all' },
     });
     expect(r.x).toBeCloseTo(50.5, 3);
@@ -794,6 +826,7 @@ describe('snapDraggedStation: snap-to-all mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['b'])),
+      lineCircles: {},
       modes: { ...NO_MODES, all: 'all' },
     });
     expect(r.x).toBeCloseTo(50.5, 3);
@@ -815,6 +848,7 @@ describe('snapDraggedStation: snap-to-all mode', () => {
       draggedStops: b.stops,
       stations: stations(t, b),
       lines: linesOf(lineOf('L1', ['b'])),
+      lineCircles: {},
       modes: { ...NO_MODES, all: 'all' },
     });
     expect(r.x).toBeCloseTo(100, 5);
@@ -838,6 +872,7 @@ describe('snapDraggedStation: snap-to-all mode', () => {
       draggedStops: b.stops,
       stations: stations(a, b, c),
       lines: linesOf(lineOf('L1', ['a', 'b']), lineOf('L2', ['c'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, all: 'all' },
     });
     expect(r.x).toBeCloseTo(100, 3);
@@ -865,6 +900,7 @@ describe('snapDraggedStation: snap-to-all during Ctrl-drag (redistribute)', () =
       draggedStops: d.stops,
       stations: stations(a, m, d, u),
       lines: linesOf(lineOf('L1', ['a', 'm', 'd']), lineOf('L2', ['u'])),
+      lineCircles: {},
       redistributeAnchor: 'a',
       modes: ALL_ONLY,
     });
@@ -887,6 +923,7 @@ describe('snapDraggedStation: snap-to-all during Ctrl-drag (redistribute)', () =
       draggedStops: d.stops,
       stations: stations(a, d),
       lines: linesOf(lineOf('L1', ['a', 'd'])),
+      lineCircles: {},
       redistributeAnchor: 'a',
       modes: ALL_ONLY,
     });
@@ -908,6 +945,7 @@ describe('snapDraggedStation: snap-to-all during Ctrl-drag (redistribute)', () =
       draggedStops: d.stops,
       stations: stations(a, m, d),
       lines: linesOf(lineOf('L1', ['a', 'm', 'd'])),
+      lineCircles: {},
       redistributeAnchor: 'a',
       modes: ALL_ONLY,
     });
@@ -931,6 +969,7 @@ describe('snapDraggedStation: snap-to-all during Ctrl-drag (redistribute)', () =
       draggedStops: d.stops,
       stations: stations(u, a, m, d),
       lines: linesOf(lineOf('L1', ['u', 'a', 'm', 'd'])),
+      lineCircles: {},
       redistributeAnchor: 'a',
       modes: ALL_ONLY,
     });
@@ -950,6 +989,7 @@ describe('snapDraggedStation: snap-to-all during Ctrl-drag (redistribute)', () =
       draggedStops: d.stops,
       stations: stations(a, d, u),
       lines: linesOf(lineOf('L1', ['a', 'd']), lineOf('L2', ['u'])),
+      lineCircles: {},
       redistributeAnchor: 'a',
       modes: LINE_ONLY,
     });
@@ -989,6 +1029,7 @@ describe('snapDraggedStation: directional snap-to-all', () => {
     draggedStops: dragB.stops,
     stations: stations(vTarget, hTarget, dragB),
     lines: linesOf(lineOf('L1', ['v']), lineOf('L2', ['h']), lineOf('L3', ['b'])),
+    lineCircles: {},
   };
 
   it("'horizontal' snaps Y to a horizontal target and ignores the vertical one", () => {
@@ -1038,6 +1079,7 @@ describe('snapDraggedStation: directional snap-to-all', () => {
       draggedStops: dragB.stops,
       stations: stations(origin, dragB),
       lines: linesOf(lineOf('LO', ['o']), lineOf('L3', ['b'])),
+      lineCircles: {},
       proposedX: 50,
       proposedY: 51,
       modes: { ...NO_MODES, all: 'diagonal' },
@@ -1068,6 +1110,7 @@ describe('snapDraggedStation: bullet mode + snap modes', () => {
       proposedY: 50,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       bulletLineId: 'L1',
       modes: NO_MODES,
     });
@@ -1086,6 +1129,7 @@ describe('snapDraggedStation: bullet mode + snap modes', () => {
       proposedY: 50,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       bulletLineId: 'L1',
       modes: { ...LINE_ONLY, equidistant: true },
     });
@@ -1094,6 +1138,7 @@ describe('snapDraggedStation: bullet mode + snap modes', () => {
       proposedY: 50,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       bulletLineId: 'L1',
       modes: LINE_ONLY,
     });
@@ -1113,6 +1158,7 @@ describe('snapDraggedStation: bullet mode + snap modes', () => {
       proposedY: 47,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       bulletLineId: 'L1',
       modes: { ...LINE_ONLY, tens: true },
     });
@@ -1131,6 +1177,7 @@ describe('snapDraggedStation: bullet mode + snap modes', () => {
       proposedY: 1,
       stations: stations(a, c),
       lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['c'])),
+      lineCircles: {},
       bulletLineId: 'L1',
       // Line off so the bullet can't latch onto a's vertical axis at x=0;
       // the only thing that can engage is all-mode horizontal alignment.
@@ -1205,6 +1252,7 @@ describe('grid interval: 5px grid', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged),
       lines: linesOf(lineOf('L1', ['d'])),
+      lineCircles: {},
       modes: { ...NO_MODES, grid: 'both' },
       gridInterval: 5,
     });
@@ -1226,6 +1274,7 @@ describe('grid interval: 5px grid', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, grid: 'both' },
       gridInterval: 5,
     });
@@ -1273,6 +1322,7 @@ describe('snapDraggedStation: grid mode', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged),
       lines: linesOf(lineOf('L1', ['d'])),
+      lineCircles: {},
       modes: { ...NO_MODES, grid: 'both' },
     });
     expect(r.x).toBe(30);
@@ -1290,6 +1340,7 @@ describe('snapDraggedStation: grid mode', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged),
       lines: linesOf(lineOf('L1', ['d'])),
+      lineCircles: {},
       modes: NO_MODES,
     });
     expect(r.x).toBe(27);
@@ -1311,6 +1362,7 @@ describe('snapDraggedStation: grid mode', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, grid: 'both' },
     });
     expect(r.y).toBeCloseTo(0, 5);
@@ -1330,6 +1382,7 @@ describe('snapDraggedStation: grid mode', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged),
       lines: linesOf(lineOf('L1', ['d'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, grid: 'both' },
     });
     expect(r.x).toBe(30);
@@ -1345,6 +1398,7 @@ describe('snapDraggedStation: grid mode', () => {
       proposedY: 43,
       stations: stations(a),
       lines: linesOf(lineOf('L1', []), lineOf('L2', ['a'])),
+      lineCircles: {},
       bulletLineId: 'L1',
       modes: { ...LINE_ONLY, grid: 'both' },
     });
@@ -1362,6 +1416,7 @@ describe('snapDraggedStation: grid mode', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged),
       lines: linesOf(lineOf('L1', ['d'])),
+      lineCircles: {},
       modes: { ...NO_MODES, grid: 'horizontal' },
     });
     // 'horizontal' locks Y to 40, leaves X at 27.
@@ -1376,6 +1431,7 @@ describe('snapDraggedStation: grid mode', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged),
       lines: linesOf(lineOf('L1', ['d'])),
+      lineCircles: {},
       modes: { ...NO_MODES, grid: 'vertical' },
     });
     expect(vertical.x).toBe(30);
@@ -1401,6 +1457,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, grid: 'vertical' },
     });
     expect(r.x).toBeCloseTo(30, 5);
@@ -1421,6 +1478,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, grid: 'horizontal' },
     });
     expect(r.x).toBeCloseTo(27, 5);
@@ -1440,6 +1498,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, grid: 'horizontal' },
     });
     expect(r.x).toBeCloseTo(0, 5);
@@ -1457,6 +1516,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, grid: 'vertical' },
     });
     expect(r.x).toBeCloseTo(0, 5);
@@ -1478,6 +1538,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, grid: 'both' },
     });
     expect(r.x).toBeCloseTo(30, 5);
@@ -1499,6 +1560,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, tens: true, grid: 'vertical' },
     });
     expect(r.x).toBeCloseTo(50, 5);
@@ -1522,6 +1584,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: d.stops,
       stations: stations(a, b, c, d),
       lines: linesOf(lineOf('L1', ['a', 'b', 'c', 'd'])),
+      lineCircles: {},
       redistributeAnchor: 'a',
       modes: { ...LINE_ONLY, grid: 'vertical' },
     });
@@ -1541,6 +1604,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       proposedY: 47,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       bulletLineId: 'L1',
       modes: { ...LINE_ONLY, grid: 'horizontal' },
     });
@@ -1561,6 +1625,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a']), lineOf('L2', ['b'])),
+      lineCircles: {},
       modes: { ...NO_MODES, all: 'vertical', grid: 'horizontal' },
     });
     expect(r.x).toBeCloseTo(100, 5);
@@ -1581,6 +1646,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, grid: 'vertical' },
     });
     expect(r.x).toBeCloseTo(30, 5);
@@ -1599,6 +1665,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, grid: 'both' },
     });
     expect(r.x).toBeCloseTo(30, 5);
@@ -1617,6 +1684,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, grid: 'both' },
     });
     expect(r.x).toBeCloseTo(0, 5);
@@ -1637,6 +1705,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, target),
       lines: linesOf(lineOf('L1', ['d', 't'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, grid: 'vertical' },
     });
     expect(r.x).toBeCloseTo(10, 5);
@@ -1657,6 +1726,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: b.stops,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, tens: true, grid: 'horizontal' },
     });
     expect(r.x).toBeCloseTo(43, 5);
@@ -1691,6 +1761,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, t1, t2),
       lines: linesOf(lineOf('L1', ['d', 't1']), lineOf('L2', ['d', 't2'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, grid: 'both' },
     });
     expect(r.x).toBeCloseTo(10, 3);
@@ -1728,6 +1799,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       draggedStops: dragged.stops,
       stations: stations(dragged, t1, t2),
       lines: linesOf(lineOf('L1', ['d', 't1']), lineOf('L2', ['d', 't2'])),
+      lineCircles: {},
       modes: { ...LINE_ONLY, grid: 'both' },
     });
     expect(r.x).toBeCloseTo(10, 3);
@@ -1745,6 +1817,7 @@ describe('snapDraggedStation: line + grid compose along the axis', () => {
       proposedY: 47,
       stations: stations(a, b),
       lines: linesOf(lineOf('L1', ['a', 'b'])),
+      lineCircles: {},
       bulletLineId: 'L1',
       modes: { ...LINE_ONLY, grid: 'both' },
     });

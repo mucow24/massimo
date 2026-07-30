@@ -1,8 +1,9 @@
 import { Line, Station } from '../model/types';
-import { useSelection } from '../state/store';
+import { useDoc, useSelection } from '../state/store';
 import { useThemeColors } from '../state/theme';
 import { useViewportStore } from '../state/viewportStore';
-import { STOP_DOT_RADIUS, stopCenterAt } from '../geometry/orientation';
+import { STOP_DOT_RADIUS, stationFrameRad, stopCenterAt } from '../geometry/orientation';
+import { stationCircle } from '../geometry/lineCircle';
 import { stopPosWorld } from '../geometry/interlining';
 import { resolveDotStyle, stationIsSingleton } from '../model/transforms';
 import { DOT_SHAPE_PRESETS } from '../model/dotStyle';
@@ -48,6 +49,10 @@ export function StationDots({
   onStartDrag: (id: string, ev: React.PointerEvent, redistributeAnchor?: string) => void;
 }) {
   const hoveredStop = useSelection((s) => s.hoveredLineStop);
+  // Stop cells on a circle-bound station resolve through the RING frame, so the
+  // dot lands on its own arc (see `stationFrameRad`). Reference-stable, so this
+  // subscription only re-renders a station when the circles themselves change.
+  const lineCircles = useDoc((s) => s.lineCircles);
   const { handlers, cursor, hitless } = useStationInteraction(station, onStartDrag, lines);
   const themeColors = useThemeColors();
   const showWaypoints = useViewportStore((s) => s.showWaypoints);
@@ -55,7 +60,10 @@ export function StationDots({
   // paint in the fixed black/white overlay style rather than their own.
   if (station.isWaypoint && !showWaypoints) return null;
   const wpOverride = station.isWaypoint ? WAYPOINT_OVERLAY_STYLE : null;
-  const angle = station.rotation * 45;
+  // The phantom preview is a STOP, so its group turns with the stop frame —
+  // on a ring-bound station that is the ring's, not the octant (stationFrameRad).
+  const circle = stationCircle(station, lineCircles);
+  const angle = (stationFrameRad(station, circle) * 180) / Math.PI;
   // Singleton vs. shared drives which split default each stop resolves — a
   // per-station property (every stop here shares it), recomputed each render so
   // a station reduced to one line immediately adopts its singleton default.
@@ -71,7 +79,7 @@ export function StationDots({
   }));
   const dashStops = resolvedStops
     .filter((r) => r.style.shape === 'dash')
-    .map((r) => ({ ...r, spec: dashSpec(station, r.cell, lines[r.cell.lineId]) }))
+    .map((r) => ({ ...r, spec: dashSpec(station, r.cell, lines[r.cell.lineId], circle) }))
     .sort(
       (a, b) => b.spec.labelDist - a.spec.labelDist || a.cell.lineId.localeCompare(b.cell.lineId),
     );
@@ -117,7 +125,7 @@ export function StationDots({
           neighbor's border. */}
       {(['stroke', 'fill'] as const).map((pass) =>
         dotStops.map(({ cell, style }) => {
-          const w = stopPosWorld(cell, station);
+          const w = stopPosWorld(cell, station, lineCircles);
           const isHovered =
             hoveredStop?.stationId === station.id && hoveredStop?.lineId === cell.lineId;
           return (

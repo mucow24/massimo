@@ -41,7 +41,7 @@ const stopOf = (st: Station, lineId = 'L0'): StopCell => st.stops.find((c) => c.
 describe('dashSpec — side pick', () => {
   it('vertical line, label east ⇒ tick points east from the stripe edge', () => {
     const st = makeStation({ x: 100, y: 50, stops: [{}], label: { row: 0, col: 2 } });
-    const spec = dashSpec(st, stopOf(st), undefined);
+    const spec = dashSpec(st, stopOf(st), undefined, null);
     // Default width 14: anchor sits half a width east of the stop center.
     expect(spec.ax).toBeCloseTo(107);
     expect(spec.ay).toBeCloseTo(50);
@@ -52,7 +52,7 @@ describe('dashSpec — side pick', () => {
 
   it('vertical line, label west ⇒ tick points west', () => {
     const st = makeStation({ stops: [{}], label: { row: 0, col: -2 } });
-    const spec = dashSpec(st, stopOf(st), undefined);
+    const spec = dashSpec(st, stopOf(st), undefined, null);
     expect(spec.ax).toBeCloseTo(-7);
     expect(Math.abs(spec.angleDeg)).toBeCloseTo(180);
   });
@@ -62,7 +62,7 @@ describe('dashSpec — side pick', () => {
       stops: [{ orientation: 'auto-horizontal' }],
       label: { row: -1, col: 0 },
     });
-    const spec = dashSpec(st, stopOf(st), undefined);
+    const spec = dashSpec(st, stopOf(st), undefined, null);
     expect(spec.ay).toBeCloseTo(-7);
     expect(spec.angleDeg).toBeCloseTo(-90);
   });
@@ -72,7 +72,7 @@ describe('dashSpec — side pick', () => {
       stops: [{ orientation: 'auto-ne-sw' }],
       label: { row: -1, col: -1 },
     });
-    const spec = dashSpec(st, stopOf(st), undefined);
+    const spec = dashSpec(st, stopOf(st), undefined, null);
     expect(spec.angleDeg).toBeCloseTo(-135);
   });
 });
@@ -82,7 +82,7 @@ describe('dashSpec — offset-aware side tracking (Option B)', () => {
     // Label CELL is east (col 1), but offset −30 along the E reading axis
     // drags the painted anchor 16px west of the line ⇒ tick points west.
     const st = makeStation({ stops: [{}], label: { row: 0, col: 1, offset: -30 } });
-    const spec = dashSpec(st, stopOf(st), undefined);
+    const spec = dashSpec(st, stopOf(st), undefined, null);
     expect(spec.ax).toBeCloseTo(-7);
   });
 
@@ -93,7 +93,7 @@ describe('dashSpec — offset-aware side tracking (Option B)', () => {
       stops: [{}],
       label: { row: 0, col: 2, rotation: 2, offsetPerp: 40 },
     });
-    const spec = dashSpec(st, stopOf(st), undefined);
+    const spec = dashSpec(st, stopOf(st), undefined, null);
     expect(spec.ax).toBeCloseTo(-7);
   });
 });
@@ -101,7 +101,7 @@ describe('dashSpec — offset-aware side tracking (Option B)', () => {
 describe('dashSpec — tie fallback (label on the travel axis)', () => {
   it('vertical line, label dead south ⇒ deterministic west tick', () => {
     const st = makeStation({ stops: [{}], label: { row: 2, col: 0 } });
-    const spec = dashSpec(st, stopOf(st), undefined);
+    const spec = dashSpec(st, stopOf(st), undefined, null);
     expect(spec.ax).toBeCloseTo(-7);
     expect(Math.abs(spec.angleDeg)).toBeCloseTo(180);
   });
@@ -111,7 +111,7 @@ describe('dashSpec — tie fallback (label on the travel axis)', () => {
       stops: [{ orientation: 'auto-horizontal' }],
       label: { row: 0, col: 2 },
     });
-    const spec = dashSpec(st, stopOf(st), undefined);
+    const spec = dashSpec(st, stopOf(st), undefined, null);
     expect(spec.ay).toBeCloseTo(-7);
     expect(spec.angleDeg).toBeCloseTo(-90);
   });
@@ -125,7 +125,7 @@ describe('dashSpec — tie fallback is evaluated in world space', () => {
     // exactly like the rotation-0 tie above. A local-space fallback (dropping
     // the rotateBy) would flip it to +7 here while passing every rotation-0 test.
     const st = makeStation({ rotation: 4, stops: [{}], label: { row: 2, col: 0 } });
-    const spec = dashSpec(st, stopOf(st), undefined);
+    const spec = dashSpec(st, stopOf(st), undefined, null);
     expect(spec.ax).toBeCloseTo(-7);
     expect(Math.abs(spec.angleDeg)).toBeCloseTo(180);
   });
@@ -141,7 +141,7 @@ describe('dashSpec — station rotation', () => {
       stops: [{}],
       label: { row: 0, col: 2 },
     });
-    const spec = dashSpec(st, stopOf(st), undefined);
+    const spec = dashSpec(st, stopOf(st), undefined, null);
     expect(spec.ax).toBeCloseTo(10);
     expect(spec.ay).toBeCloseTo(27);
     expect(spec.angleDeg).toBeCloseTo(90);
@@ -151,11 +151,11 @@ describe('dashSpec — station rotation', () => {
 describe('dashSpec — dimensions', () => {
   it('derives from the line width; explicit dash dims win', () => {
     const st = makeStation({ stops: [{}], label: { row: 0, col: 2 } });
-    const wide = dashSpec(st, stopOf(st), { width: 20 });
+    const wide = dashSpec(st, stopOf(st), { width: 20 }, null);
     expect(wide.ax).toBeCloseTo(10); // anchored at the wider stripe's edge
     expect(wide.length).toBeCloseTo(20);
     expect(wide.width).toBeCloseTo(10);
-    const custom = dashSpec(st, stopOf(st), { width: 20, dashLength: 5, dashWidth: 3 });
+    const custom = dashSpec(st, stopOf(st), { width: 20, dashLength: 5, dashWidth: 3 }, null);
     expect(custom.length).toBeCloseTo(5);
     expect(custom.width).toBeCloseTo(3);
   });
@@ -171,8 +171,8 @@ describe('dashSpec — interlined tiling + paint order', () => {
       ],
       label: { row: 0, col: 3 },
     });
-    const inner = dashSpec(st, stopOf(st, 'A'), undefined);
-    const outer = dashSpec(st, stopOf(st, 'B'), undefined);
+    const inner = dashSpec(st, stopOf(st, 'A'), undefined, null);
+    const outer = dashSpec(st, stopOf(st, 'B'), undefined, null);
     // Inner tick spans [7, 21] — exactly covering the outer stripe — and the
     // outer tick takes over at its own edge, x = 21.
     expect(inner.ax).toBeCloseTo(7);
