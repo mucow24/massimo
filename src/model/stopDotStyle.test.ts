@@ -217,3 +217,24 @@ describe('stopDot styles — serviceCodeColor persistence', () => {
     }
   });
 });
+
+describe('stopDot styles — first-letter-only service codes', () => {
+  it('round-trips the flag, and turning it off drops the field entirely', () => {
+    let doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    doc = updateStyleProps(doc, DEFAULT_STOP_DOT_STYLE_ID, {
+      showServiceCode: true,
+      serviceCodeFirstLetterOnly: true,
+    });
+    const parsed = parse(serialize(doc));
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      const p = parsed.doc.styles[DEFAULT_STOP_DOT_STYLE_ID].props as DotStyle;
+      expect(p.serviceCodeFirstLetterOnly).toBe(true);
+      expect(resolveDotRender(p, '#0039a6', '6X', false)!.code!.text).toBe('6');
+    }
+
+    // Off ⇒ absent, never a stored `false` (canonical styles stay byte-clean).
+    doc = updateStyleProps(doc, DEFAULT_STOP_DOT_STYLE_ID, { serviceCodeFirstLetterOnly: false });
+    expect('serviceCodeFirstLetterOnly' in doc.styles[DEFAULT_STOP_DOT_STYLE_ID].props).toBe(false);
+  });
+});

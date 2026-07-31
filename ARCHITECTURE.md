@@ -818,11 +818,16 @@ fields (a deliberate divergence from the optional-field convention) let plain de
 DotFill` (`DayNightColor | 'line' | 'none'`), `strokeWidth` (0 = no stroke), `strokeColor:
 DotStrokeColor` (`DayNightColor | 'line'`; **no `'none'`** — strokeWidth 0 expresses "no
 stroke"), `strokeAlign: DotStrokeAlign` (`center|inside|outside` — where the stroke sits relative
-to the dot's edge; persist v21 backfills the historical `'center'`), and `showServiceCode`. The
-one **optional** field is `serviceCodeColor?: DotServiceCodeColor` (`DayNightColor | 'line'`, only
-meaningful when `showServiceCode`): **absent ⇒ B/W auto-contrast** (pick whichever of black/white
-is legible on the resolved fill), `'line'` paints the code in the owning line's color, a pair
-gives an explicit per-theme color — kept optional so every preset stays byte-identical.
+to the dot's edge; persist v21 backfills the historical `'center'`), and `showServiceCode`. Two
+**optional** fields refine the code, both meaningful only when `showServiceCode` and both kept
+optional so every preset stays byte-identical. `serviceCodeColor?: DotServiceCodeColor`
+(`DayNightColor | 'line'`): **absent ⇒ B/W auto-contrast** (pick whichever of black/white is
+legible on the resolved fill), `'line'` paints the code in the owning line's color, a pair gives
+an explicit per-theme color. `serviceCodeFirstLetterOnly?: boolean`: **absent ⇒ the whole code**,
+`true` prints only its first character — a local/express pair (`"6"` / `"6X"`) drawn as variants
+of one line then reads `"6"` on both — leaving the disc at its full code-disc size. Stored only
+when ON, so `dotStylesEqual` reads its absence as `false` — the same absent-as-default rule
+`strokeAlign` needs so the migration bakes keep value-matching legacy dots.
 **Size is deliberately NOT part of style** — it is the orthogonal
 `dotSize` / `singletonDotSize` / `multiDotSize` set, so picking a shape preset never clobbers a
 size. **`dash` is the outlier shape** — a TfL-style tick protruding from the stripe edge toward

@@ -1246,6 +1246,10 @@ function sanitizeDotStyle(raw: unknown): DotStyle | undefined {
     showServiceCode: o.showServiceCode,
   };
   if (serviceCodeColor !== undefined) out.serviceCodeColor = serviceCodeColor;
+  // Also optional, and stored only when ON — anything but a literal `true` is
+  // the (absent) off state, so a garbage value degrades to the whole code
+  // rather than invalidating the style.
+  if (o.serviceCodeFirstLetterOnly === true) out.serviceCodeFirstLetterOnly = true;
   return out;
 }
 
