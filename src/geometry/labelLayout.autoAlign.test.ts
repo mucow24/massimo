@@ -938,6 +938,82 @@ describe('labelLayoutLocal — autoAlign beside a stop beats centering over it',
     expect(lay.anchorY).toBeCloseTo(SIT, 6);
   });
 
+  // One line stack (fontSize 12 × LINE_HEIGHT 1.2), the step extra lines take.
+  const STACK = FS * 1.2;
+
+  it('a two-line name stacks AWAY from the stop below, not into it', () => {
+    // The whole point of the re-anchor is to dodge a marker; growing the block
+    // into the OTHER one would just trade which stop the text lands on. The
+    // bottom line takes the beside pin and earlier lines lift off it.
+    const lay = labelLayoutLocal(
+      autoStation({
+        name: 'Foo\nBar',
+        stops: [
+          { dRow: 0, dCol: -1, orientation: 'auto-vertical', lineId: 'L1' },
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L2' },
+        ],
+      }),
+    );
+    expect(lay.textAnchor).toBe('start');
+    expect(lay.firstLineDyPx).toBeCloseTo(-STACK, 6);
+    // The LAST line lands exactly where a single-line name would, so a name
+    // gaining a line never moves the line that reads level with the dot.
+    expect(lay.firstLineCenterY + STACK).toBeCloseTo(CTR, 6);
+    // ...and its deepest ink still clears the stripe below (top edge at 7).
+    expect(lay.firstLineCenterY + STACK + CB + DESC).toBeLessThan(STOP_SIZE - HALF);
+  });
+
+  it('the stop ABOVE mirror keeps growing DOWN, away from that one', () => {
+    const lay = labelLayoutLocal(
+      autoStation({
+        name: 'Foo\nBar',
+        stops: [
+          { dRow: 0, dCol: -1, orientation: 'auto-vertical', lineId: 'L1' },
+          { dRow: -1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L2' },
+        ],
+      }),
+    );
+    expect(lay.textAnchor).toBe('start');
+    expect(lay.firstLineDyPx).toBeCloseTo(0, 6);
+    expect(lay.firstLineCenterY).toBeCloseTo(CTR, 6);
+  });
+
+  it('a plain beside label (no stop below) still grows DOWN', () => {
+    const lay = labelLayoutLocal(
+      autoStation({
+        name: 'Foo\nBar',
+        stops: [{ dRow: 0, dCol: -1, orientation: 'auto-vertical', lineId: 'L1' }],
+      }),
+    );
+    expect(lay.firstLineDyPx).toBeCloseTo(0, 6);
+  });
+
+  it('the ink window follows the stacking side, not the default one', () => {
+    // The window is what the pin clears, so it must span the ink that actually
+    // exists. A NE–SW stripe's edge advances as it goes UP — exactly where a
+    // corner-park block stacks — so the extra line is a real charge. Measured
+    // against the DOWN side (the ordinary beside default) the same stripe has
+    // retreated and the line costs nothing, leaving the text on it.
+    const at = (name: string) =>
+      labelLayoutLocal(
+        autoStation({
+          name,
+          stops: [
+            { dRow: 0, dCol: -1, orientation: 'auto-ne-sw', lineId: 'L1' },
+            { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L2' },
+          ],
+        }),
+      ).anchorX;
+    // Single line: the stripe edge at the block's cap-top corner.
+    expect(at('Foo')).toBeCloseTo(-STOP_SIZE + (HALF * Math.SQRT2 + CAP / 2) + LABEL_GAP, 6);
+    // Two lines stacking UP: the corner moves a whole line-stack higher, where
+    // the edge has advanced that much further east.
+    expect(at('Foo\nBar')).toBeCloseTo(
+      -STOP_SIZE + (HALF * Math.SQRT2 + CAP / 2 + STACK) + LABEL_GAP,
+      6,
+    );
+  });
+
   it('rotation 2 (S-reading) corner = the rotation-0 corner rotated 90°', () => {
     // Oracle: 'start' at (−4, CTR). Rotate the config 90° CW (y-down:
     // (x, y) → (−y, x)); cells rotate row′ = col, col′ = −row.

@@ -8939,6 +8939,141 @@
         },
         "isWaypoint": true
       },
+      "corner-NE-2line-v1": {
+        "id": "corner-NE-2line-v1",
+        "name": "WP",
+        "x": 1600,
+        "y": 7657.350647362942,
+        "rotation": 0,
+        "stops": [
+          {
+            "lineId": "corner-NE-2line-v",
+            "row": 0,
+            "col": 0,
+            "orientation": "auto-vertical"
+          }
+        ],
+        "label": {
+          "row": 0,
+          "col": -1,
+          "rotation": 0,
+          "offset": 0,
+          "offsetPerp": 0,
+          "align": "auto",
+          "valign": "auto-down",
+          "autoAlign": true
+        },
+        "isWaypoint": true
+      },
+      "corner-NE-2line": {
+        "id": "corner-NE-2line",
+        "name": "Corner\ntwo lines",
+        "x": 1600,
+        "y": 7727.350647362942,
+        "rotation": 0,
+        "stops": [
+          {
+            "lineId": "corner-NE-2line-v",
+            "row": 0,
+            "col": 0,
+            "orientation": "auto-vertical"
+          },
+          {
+            "lineId": "corner-NE-2line-h",
+            "row": 1,
+            "col": 1,
+            "orientation": "auto-horizontal"
+          }
+        ],
+        "label": {
+          "row": 0,
+          "col": 1,
+          "rotation": 0,
+          "offset": 0,
+          "offsetPerp": 0,
+          "align": "auto",
+          "valign": "auto-down",
+          "autoAlign": true
+        }
+      },
+      "corner-NE-2line-v2": {
+        "id": "corner-NE-2line-v2",
+        "name": "WP",
+        "x": 1600,
+        "y": 7797.350647362942,
+        "rotation": 0,
+        "stops": [
+          {
+            "lineId": "corner-NE-2line-v",
+            "row": 0,
+            "col": 0,
+            "orientation": "auto-vertical"
+          }
+        ],
+        "label": {
+          "row": 0,
+          "col": -1,
+          "rotation": 0,
+          "offset": 0,
+          "offsetPerp": 0,
+          "align": "auto",
+          "valign": "auto-down",
+          "autoAlign": true
+        },
+        "isWaypoint": true
+      },
+      "corner-NE-2line-h1": {
+        "id": "corner-NE-2line-h1",
+        "name": "WP",
+        "x": 1544,
+        "y": 7741.350647362942,
+        "rotation": 0,
+        "stops": [
+          {
+            "lineId": "corner-NE-2line-h",
+            "row": 0,
+            "col": 0,
+            "orientation": "auto-horizontal"
+          }
+        ],
+        "label": {
+          "row": 0,
+          "col": -1,
+          "rotation": 0,
+          "offset": 0,
+          "offsetPerp": 0,
+          "align": "auto",
+          "valign": "auto-down",
+          "autoAlign": true
+        },
+        "isWaypoint": true
+      },
+      "corner-NE-2line-h2": {
+        "id": "corner-NE-2line-h2",
+        "name": "WP",
+        "x": 1684,
+        "y": 7741.350647362942,
+        "rotation": 0,
+        "stops": [
+          {
+            "lineId": "corner-NE-2line-h",
+            "row": 0,
+            "col": 0,
+            "orientation": "auto-horizontal"
+          }
+        ],
+        "label": {
+          "row": 0,
+          "col": -1,
+          "rotation": 0,
+          "offset": 0,
+          "offsetPerp": 0,
+          "align": "auto",
+          "valign": "auto-down",
+          "autoAlign": true
+        },
+        "isWaypoint": true
+      },
       "misc-capA": {
         "id": "misc-capA",
         "name": "WP",
@@ -10617,11 +10752,41 @@
           "corner-NE-xfer|corner-NE-xfer-h2"
         ]
       },
+      "corner-NE-2line-v": {
+        "id": "corner-NE-2line-v",
+        "service": "87",
+        "name": "Corner cross 6",
+        "color": "#A7A9AC",
+        "stations": [
+          "corner-NE-2line-v1",
+          "corner-NE-2line",
+          "corner-NE-2line-v2"
+        ],
+        "edges": [
+          "corner-NE-2line|corner-NE-2line-v1",
+          "corner-NE-2line|corner-NE-2line-v2"
+        ]
+      },
+      "corner-NE-2line-h": {
+        "id": "corner-NE-2line-h",
+        "service": "88",
+        "name": "Corner host 6",
+        "color": "#FCCC0A",
+        "stations": [
+          "corner-NE-2line-h1",
+          "corner-NE-2line",
+          "corner-NE-2line-h2"
+        ],
+        "edges": [
+          "corner-NE-2line|corner-NE-2line-h1",
+          "corner-NE-2line|corner-NE-2line-h2"
+        ]
+      },
       "M1": {
         "id": "M1",
-        "service": "87",
+        "service": "89",
         "name": "Misc line",
-        "color": "#A7A9AC",
+        "color": "#00A1DE",
         "stations": [
           "misc-capA",
           "multiN",
@@ -10726,9 +10891,11 @@
       "corner-SW-h",
       "corner-NE-xfer-v",
       "corner-NE-xfer-h",
+      "corner-NE-2line-v",
+      "corner-NE-2line-h",
       "M1"
     ],
-    "lineCounter": 87,
+    "lineCounter": 89,
     "lineTags": {},
     "routeBullets": {},
     "transferAnchors": {},

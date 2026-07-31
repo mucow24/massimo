@@ -29,7 +29,8 @@ import type { Vec2 } from '../geometry/vec';
  *  - crossings: H×V (all four octant × side combos), H×diagonal and
  *    diagonal×diagonal representatives = 12;
  *  - corner parks: the label in a cross's quadrant, both beside-sides × both
- *    host sides, plus the thick transfer that closes the corner = 5;
+ *    host sides, plus the thick transfer that closes the corner and a two-line
+ *    name that has to stack away from the stop below = 6;
  *  - plus multi-line stacking (3), the detached-label fallback, and the
  *    stop-less phantom station.
  *
@@ -472,22 +473,25 @@ export function wandGalleryDoc(): WandGallery {
   // stop straight below (or above) it, the crossing line's stop BESIDE it, in
   // the label's own row. Centering on the near stop would run the text through
   // that beside marker, so the beside stop takes the anchor and the text reads
-  // away from it. The last scene adds the thick transfer that closes the corner
-  // off diagonally, which the pin has to clear along its straight side.
+  // away from it. One scene adds the thick transfer that closes the corner off
+  // diagonally, which the pin has to clear along its straight side; the last
+  // takes a two-line name, whose block must stack AWAY from the stop below
+  // rather than growing into the marker the re-anchor exists to dodge.
   y += 20;
   header('corner-hdr', 0, y, 'Corner parks · the beside stop takes the anchor');
-  const cornerConfigs: [side: 1 | -1, down: 1 | -1, transfer: boolean][] = [
+  const cornerConfigs: [side: 1 | -1, down: 1 | -1, transfer: boolean, lines2?: true][] = [
     [-1, 1, false],
     [1, 1, false],
     [-1, -1, false],
     [1, -1, false],
     [-1, 1, true],
+    [-1, 1, false, true],
   ];
-  cornerConfigs.forEach(([side, down, withTransfer], i) => {
+  cornerConfigs.forEach(([side, down, withTransfer, lines2], i) => {
     const cx = 200 + i * 280;
     const cy = y + 170;
     const dirName = side === -1 ? 'east' : 'west';
-    const id = `corner-${down === 1 ? 'N' : 'S'}${side === -1 ? 'E' : 'W'}${withTransfer ? '-xfer' : ''}`;
+    const id = `corner-${down === 1 ? 'N' : 'S'}${side === -1 ? 'E' : 'W'}${withTransfer ? '-xfer' : ''}${lines2 ? '-2line' : ''}`;
     // Beside stop (the crossing line's) at cell (0,0), the label one cell
     // toward −side, and the host line's stop straight below/above the label —
     // so the two stops sit DIAGONAL to each other and the label fills the
@@ -498,7 +502,11 @@ export function wandGalleryDoc(): WandGallery {
       waypoint(`${id}-v1`, cx, cy - ARM, [stop(`${id}-v`, 'auto-vertical')]),
       station(
         id,
-        withTransfer ? 'Corner transfer' : `Corner ${down === 1 ? 'N' : 'S'} ${dirName}`,
+        withTransfer
+          ? 'Corner transfer'
+          : lines2
+            ? 'Corner\ntwo lines'
+            : `Corner ${down === 1 ? 'N' : 'S'} ${dirName}`,
         cx,
         cy,
         [stop(`${id}-v`, 'auto-vertical'), stop(`${id}-h`, 'auto-horizontal', down, -side)],

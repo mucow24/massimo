@@ -63,7 +63,7 @@ describe('wand gallery', () => {
     // Corner parks: the beside stop on either side × the host stop above or
     // below, plus the transfer scene.
     const corner = cases.filter((c) => c.family === 'corner');
-    expect(new Set(corner.map((c) => c.stationId)).size).toBe(5);
+    expect(new Set(corner.map((c) => c.stationId)).size).toBe(6);
     expect(new Set(corner.map((c) => `${c.octant}:${c.expect.textAnchor}`))).toEqual(
       new Set(['0:start', '4:end']),
     );
@@ -73,7 +73,7 @@ describe('wand gallery', () => {
         family,
       ).toBe(true);
     }
-    expect(cases.length).toBe(160 + 64 + 12 + 5 + 3 + 1 + 1);
+    expect(cases.length).toBe(160 + 64 + 12 + 6 + 3 + 1 + 1);
   });
 
   it('every case claiming a terminality has it in the line topology', () => {
@@ -119,6 +119,10 @@ describe('wand gallery', () => {
     // Below and beside: the FIRST line pins, the block grows down.
     expect(byId('multiS').firstLineDyPx).toBe(0);
     expect(byId('multiE').firstLineDyPx).toBe(0);
+    // A corner park is beside too, but its block stacks UP: the stop it
+    // re-anchored away from sits below, and growing into it would only trade
+    // which marker the text lands on.
+    expect(byId('corner-NE-2line').firstLineDyPx).toBeLessThan(0);
   });
 
   it('clears a diagonal stripe further than a parallel one beside it', () => {

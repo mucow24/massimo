@@ -559,6 +559,21 @@ interface AutoAlignInfo {
 const ANCHOR_FRACTION = { start: 0, middle: 0.5, end: 1 } as const;
 
 /**
+ * Which line of a multi-line block takes the anchor, once `label.autoVAlign`
+ * has had its say over the octant-derived default.
+ *
+ * Resolved in TWO places that must agree: the block behavior itself, and the
+ * beside slant window — which side of the stop's row the block's ink spans.
+ * A window charged on the side the lines do NOT stack onto measures the pin
+ * against ink that is not there.
+ */
+const autoValign = (
+  label: Station['label'],
+  fallback: AutoAlignInfo['valign'],
+): AutoAlignInfo['valign'] =>
+  label.autoVAlign === 'up' ? 'auto-up' : label.autoVAlign === 'down' ? 'auto-down' : fallback;
+
+/**
  * Apply the user's optional H/V overrides to the octant-derived defaults.
  * `autoVAlign` picks which line is the anchor line ('down' = top line,
  * block grows down; 'up' = bottom line, grows up) — the octant's
@@ -576,12 +591,7 @@ function applyAutoOverrides(
   anchorPerp: number,
   lineAdvances: number[],
 ): AutoAlignInfo {
-  const valign =
-    label.autoVAlign === 'up'
-      ? 'auto-up'
-      : label.autoVAlign === 'down'
-        ? 'auto-down'
-        : valignDefault;
+  const valign = autoValign(label, valignDefault);
   const textAnchor = label.autoHAlign ?? textAnchorDefault;
   if (textAnchor !== textAnchorDefault) {
     const anchorLineIdx = valign === 'auto-up' ? lineAdvances.length - 1 : 0;
@@ -832,13 +842,31 @@ function autoAlignInfo(
   const refOctant = dirIndex({ x: -ref.proj, y: -ref.perp });
   const aside =
     refOctant === 2 || refOctant === 6
-      ? // The label's OWN cell row and column: what the centered text overruns.
+      ? // ANY marker in the label's OWN row and column — what the centered text
+        // overruns — not only a crossing line's, and deliberately so. A stop
+        // whose stripe runs ALONG the reading row qualifies too: if its line
+        // continues toward the label then the label CELL already sits on that
+        // stripe and centering is no escape either, and if it does not (a
+        // terminus facing away) reading off it is exactly right — the
+        // east-end-of-a-row park, now reached without the label having to be
+        // the only thing adjacent.
         oneSidedInRow(gated, 0, 0, () => true)
       : null;
   if (aside) ref = aside;
 
   const o = aside ? dirIndex({ x: -aside.proj, y: -aside.perp }) : refOctant;
   const u = DIRS_8[o]; // approach unit vector, stop → label, reading frame
+
+  // Which way a multi-line block stacks once it lands in a BESIDE octant.
+  // Normally down: the first line reads level with the dot and extra lines grow
+  // below it, so adding a line never moves the one that sits level. But a
+  // corner park got here to dodge a marker that is STILL THERE — stacking
+  // toward it would just trade which stop the text lands on — so a park entered
+  // from octant 6 (the host stop BELOW the label) anchors the BOTTOM line and
+  // lifts earlier ones away from it. From octant 2 the host is above and the
+  // ordinary default already grows away. Read by the ink window below as well
+  // as the block itself, which is why it is resolved here and only once.
+  const besideDefault: AutoAlignInfo['valign'] = aside && refOctant === 6 ? 'auto-up' : 'auto-down';
 
   /**
    * Where a straight-sided obstacle's near edge cuts the approach.
@@ -987,7 +1015,7 @@ function autoAlignInfo(
     // already, and a label centered above/below a diagonal line is not a
     // layout the octant model serves (the corners are). A diagonal CROSSING
     // stripe gets the same window treatment at the butt below.
-    const growsUp = label.autoVAlign === 'up';
+    const growsUp = autoValign(label, besideDefault) === 'auto-up';
     const tUp = capCenterDy(fontSize) + (growsUp ? stacked : 0);
     const tDown =
       capCenterDy(fontSize) + 0.5 * DESCENDER_FRACTION * fontSize + (growsUp ? 0 : stacked);
@@ -1069,13 +1097,13 @@ function autoAlignInfo(
     anchorPerp = pinPerp + (CAP_FRACTION * fontSize - cb);
     valign = 'auto-down';
   } else {
-    // Beside: the FIRST line's Core Type Area centers on the stop's row and
-    // extra lines grow down, keeping the first line level with the dot. The
-    // half-cap step is `capCenterDy` — literally the rule every badge glyph
+    // Beside: the ANCHOR line's Core Type Area centers on the stop's row and
+    // the rest stack away from it (`besideDefault` picks which line that is).
+    // The half-cap step is `capCenterDy` — literally the rule every badge glyph
     // centers by — so an inline route bullet in a beside-aligned name lands on
     // the stop's row by construction rather than by two constants agreeing.
     anchorPerp = pinPerp + (capCenterDy(fontSize) - cb);
-    valign = 'auto-down';
+    valign = besideDefault;
   }
   return applyAutoOverrides(label, textAnchorDefault, valign, pinRead, anchorPerp, lineAdvances);
 }

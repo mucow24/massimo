@@ -1986,22 +1986,21 @@ which are a separate slot-based system where Shift flips the lattice basis.
   silhouette, the `transfers` landing on it — resolved together by
   `stopMetricsOf({ lines, transfers, stations })` ([model/stopMetrics.ts](src/model/stopMetrics.ts))
   and threaded to `labelLayoutLocal`, `stationBoundaryRectsLocal`, `cellsAABBLocal`,
-  `stationsForRect` and `stationWorldAABB`. It is
-  ONE bundle rather than a lookup per field precisely so a call site cannot pass four of five and
-  drift off the paint; on the canvas it comes from `useStopMetrics(lines)`, which adds the
-  transfers so no component has to know they are part of the answer. That hook runs once per
-  STATION component (label, hit rect, drag proxy, silhouette) while the builder indexes every
-  transfer eagerly, so `stopMetricsOf` keeps a **last-result cache** keyed on the identity of its
-  three slices — every canvas consumer reads the same slices from the same store, so they all miss
-  and all hit together, and a station write costs one build rather than one per station. (Same
-  bargain `measureTextLabel` makes: the builder is pure, so reusing the previous function is
-  invisible.) The lookup takes the whole
-  **station**, not just the stop: the split singleton/interchange dot default is a property of the
-  station's stop SET, and a transfer end names its station. A waypoint's `dash` and `dot` are
-  neutralized inside `labelLayoutLocal` — hidden it paints nothing, revealed the overlay replaces
-  every style with a fixed circle, so layout must not shift with Show-waypoints. `cellsAABBLocal`
-  deliberately reads only `half`: growing it by the dot would move marquee hits, washes and
-  Reset-view framing, which is a different change from where the label parks.
+  `stationsForRect` and `stationWorldAABB`. It is ONE bundle rather than a lookup per field
+  precisely so a call site cannot pass four of five and drift off the paint; on the canvas it comes
+  from `useStopMetrics(lines)`, which adds the transfers so no component has to know they are part
+  of the answer. That hook runs once per STATION component (label, hit rect, drag proxy,
+  silhouette) while the builder indexes every transfer eagerly, so `stopMetricsOf` keeps a
+  **last-result cache** keyed on the identity of its three slices — every canvas consumer reads the
+  same slices from the same store, so they all miss and all hit together, and a station write costs
+  one build rather than one per station. (Same bargain `measureTextLabel` makes: the builder is
+  pure, so reusing the previous function is invisible.) The lookup takes the whole **station**, not
+  just the stop: the split singleton/interchange dot default is a property of the station's stop
+  SET, and a transfer end names its station. A waypoint's `dash` and `dot` are neutralized inside
+  `labelLayoutLocal` — hidden it paints nothing, revealed the overlay replaces every style with a
+  fixed circle, so layout must not shift with Show-waypoints. `cellsAABBLocal` deliberately reads
+  only `half`: growing it by the dot would move marquee hits, washes and Reset-view framing, which
+  is a different change from where the label parks.
 - **`labelLayoutLocal`** is the single source of truth for a station name's `<text>`
   anchor/baseline/hit-rect, all in **unrotated station-local** coords (the `label.rotation` is
   applied around the anchor at render). `'auto'` align snaps the text against an adjacent stop;
@@ -2061,29 +2060,35 @@ which are a separate slot-based system where Shift flips the lattice basis.
   lattice, and any other end needs the world resolver this lookup does not hold. All stop-relative
   on both axes.
   **Cross stations** break "the octant decides everything" twice, both times because a centering
-  octant runs the text straight through a stripe. First, when the label
-  parks squarely across the line from its stop (the centering octants) and a **crossing** line's
-  stop is packed beside it — same reading-frame row within `BAND_MERGE_TOL`, different travel
-  axis, on one side only (`crossingStop`) — the READING axis re-anchors against that crossing
-  stop, so the text butts up to its stripe (`end`/`start`) instead of straddling it. Each axis
-  stays measured against the stop that actually blocks it — extent AND `labelGap` alike: the
-  perpendicular pin still comes from the label's own stop, so the baseline holds that line's gap
-  off the line it labels (a row of labels stays level) no matter how wide the crossing line gets,
-  while the butt clears by the crossing line's own gap. A DIAGONAL crossing stripe is measured
-  where the text is, not on the stop row: the block sits wholly above/below the row, so the butt
-  runs the same slant window over the block's ink (the above pin is already the half-descender
-  ink bottom; the below pin the hanging cap line) and the nearest ink corner butts at the gap —
-  pulled inward past the row-level support when the stripe retreats from the text, pushed out
-  when it advances over it, with the same `continues` gate. Parallel neighbours are not
-  crossings, and a label boxed in on both sides keeps centering.
-  Second, the **corner park** — the commonest interchange label there is: the label sits in a
-  quadrant of the cross, its own line's stop below it and the crossing line's stop BESIDE it, in
-  the label's OWN reading row rather than `ref`'s. Centering would run the text through that beside
+  octant runs the text straight through a stripe. First, when the label parks squarely across the
+  line from its stop (the centering octants) and a **crossing** line's stop is packed beside it —
+  same reading-frame row within `BAND_MERGE_TOL`, different travel axis, on one side only
+  (`crossingStop`) — the READING axis re-anchors against that crossing stop, so the text butts up
+  to its stripe (`end`/`start`) instead of straddling it. Each axis stays measured against the stop
+  that actually blocks it — extent AND `labelGap` alike: the perpendicular pin still comes from the
+  label's own stop, so the baseline holds that line's gap off the line it labels (a row of labels
+  stays level) no matter how wide the crossing line gets, while the butt clears by the crossing
+  line's own gap. A DIAGONAL crossing stripe is measured where the text is, not on the stop row:
+  the block sits wholly above/below the row, so the butt runs the same slant window over the
+  block's ink (the above pin is already the half-descender ink bottom; the below pin the hanging
+  cap line) and the nearest ink corner butts at the gap — pulled inward past the row-level support
+  when the stripe retreats from the text, pushed out when it advances over it, with the same
+  `continues` gate. Parallel neighbours are not crossings, and a label boxed in on both sides keeps
+  centering. Second, the **corner park** — the commonest interchange label there is: the label sits
+  in a quadrant of the cross, its own line's stop below it and another stop BESIDE it, in the
+  label's OWN reading row rather than `ref`'s. Centering would run the text through that beside
   marker, so it takes the reference instead and the label reads AWAY from it, beside-pinned at its
   edge. Only the centering octants ask — every other octant already pins an END of the text rather
   than its middle — and distance never enters it, which is why this is not a tie-break in the
   reference pick: a wide beside line packs FURTHER out than the stop below, and centering on the
-  nearer stop is exactly what puts the text over the further one. Both breaks ask
+  nearer stop is exactly what puts the text over the further one. ANY marker in that row qualifies,
+  not just a crossing line's: a stop whose stripe runs ALONG the reading row counts too, because if
+  its line continues toward the label then the label CELL is already on that stripe and centering
+  escapes nothing, and if it does not (a terminus facing away) reading off it is exactly right. A
+  multi-line block then stacks AWAY from the stop the park dodged — entered from the N octant the
+  BOTTOM line takes the beside pin and earlier lines lift off it — since growing into that stop
+  would only trade which marker the text lands on; the same resolved default feeds the beside ink
+  window, or the pin would be measured against ink on the wrong side of the row. Both breaks ask
   `oneSidedInRow` the same question — which single marker is in the way, and which way to read off
   it — and both take its null (boxed in on both sides, no side to escape to) as "keep centering".
 
