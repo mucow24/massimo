@@ -59,6 +59,13 @@ export interface HitEntry extends HitRef {
   element: Element;
 }
 
+// A band stripe's pointer surface. Normally that IS the painted stripe, but a
+// gappy style (dashed/dotted/dashed-open) hit-tests only its painted pieces, so
+// those stripes hand hit-testing to a continuous transparent `data-band-hitbox`
+// stroke instead (see SegmentBand). Both carry the same identity attributes, and
+// only one of them is ever hit-testable, so either resolves the same stripe.
+const BAND_STRIPE_SELECTOR = '[data-band-stripe],[data-band-hitbox]';
+
 // Selector → entity resolution table, tried in order per element. Each hit
 // surface either carries its identity attribute itself (band stripes, tag
 // rects) or sits inside a group that does (station rects, bullet/label/image
@@ -71,7 +78,7 @@ const RESOLVERS: { selector: string; kind: HitKind; attr: string }[] = [
   { selector: '[data-stop-station]', kind: 'station', attr: 'data-stop-station' },
   { selector: '[data-stop-stroke]', kind: 'station', attr: 'data-stop-stroke' },
   { selector: '[data-station-id]', kind: 'station', attr: 'data-station-id' },
-  { selector: '[data-band-stripe]', kind: 'line', attr: 'data-line-id' },
+  { selector: BAND_STRIPE_SELECTOR, kind: 'line', attr: 'data-line-id' },
   { selector: '[data-transfer-id]', kind: 'transfer', attr: 'data-transfer-id' },
   { selector: '[data-line-tag-id]', kind: 'lineTag', attr: 'data-line-tag-id' },
   { selector: '[data-bullet-id]', kind: 'bullet', attr: 'data-bullet-id' },
@@ -171,7 +178,7 @@ export function resolveAppendStack(
       push('station', station);
       continue;
     }
-    const stripe = el.closest('[data-band-stripe]');
+    const stripe = el.closest(BAND_STRIPE_SELECTOR);
     if (stripe && stripe.getAttribute('data-line-id') === editedLineId) {
       const pk = stripe.getAttribute('data-pair-key');
       if (pk) push('segment', pk);
