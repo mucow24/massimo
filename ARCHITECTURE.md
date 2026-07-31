@@ -1773,6 +1773,17 @@ draw — `'both'` (default), `'straight'` only (`'line'` edges), or `'curved'` o
 `SegmentBand` keeps just the matching edge kind. All three passes read the same `lineStroke`
 helpers as the highlight overlay so they can't drift.
 
+**The hit box.** A stripe's pointer surface is normally the painted path itself, but the styles
+that paint with GAPS (the dasharray ones — `dashed`, `dotted`, `dashed-open`) hit-test only their
+painted pieces under `pointer-events: stroke`, which made half of such a segment dead to clicks.
+An interactive/selectable stripe in one of those styles emits a fourth element: a
+`data-band-hitbox` path tracing the same `d` at the same width as ONE continuous transparent
+stroke, carrying the stripe's identity attributes and its whole pointer wiring. It is then the
+stripe's only hit surface — the painted path drops to `pointer-events: none` but KEEPS its
+handlers, since pointer-events blocks hit-testing, not dispatch — so `hitStack.ts` resolves band
+stripes through `[data-band-stripe],[data-band-hitbox]`, and `data-export-exclude` keeps the
+invisible stroke out of SVG/PNG/PDF.
+
 ### Snapping — `snap.ts`, `polygonSnap.ts`
 
 **The contract.** Two snappers exist, on purpose, and everything positional routes through one

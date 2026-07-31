@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import type { ComponentProps } from 'react';
+import { fireEvent, render } from '@testing-library/react';
 import { BandWarning, SegmentBand } from './SegmentBand';
 import { hatchPatternId } from './HatchPatterns';
 import type { SegmentBandSpec } from '../geometry/interlining';
@@ -182,6 +183,97 @@ describe('<SegmentBand> — single-stripe renderer', () => {
     expect(paths).toHaveLength(2); // dashed → underlay + foreground
     expect(paths[0].getAttribute('stroke-width')).toBe('28');
     expect(paths[1].getAttribute('stroke-width')).toBe('28');
+  });
+});
+
+describe('<SegmentBand> — hit surface for gappy styles', () => {
+  // The three styles whose paint has GAPS along the stroke (a dasharray).
+  // `pointer-events: stroke` on the painted path would hit only the painted
+  // pieces, so half of every such segment is dead to the pointer.
+  const gappy: StripeStyle[] = ['dashed', 'dotted', 'dashed-open'];
+
+  const renderBand = (style: StripeStyle, props: Partial<ComponentProps<typeof SegmentBand>>) =>
+    render(
+      <svg>
+        <SegmentBand
+          spec={baseSpec(['L1'])}
+          stripeIndex={0}
+          pass="body"
+          lines={linesFor([style])}
+          {...props}
+        />
+      </svg>,
+    );
+
+  it.each(gappy)('covers the WHOLE %s segment with a continuous hit stroke', (style) => {
+    const { container } = renderBand(style, { interactive: true, onLineClick: () => {} });
+    const hit = container.querySelector('[data-band-hitbox]')!;
+    expect(hit).not.toBeNull();
+    // Continuous: the gaps are part of the hit box, so no dasharray…
+    expect(hit.getAttribute('stroke-dasharray')).toBeNull();
+    // …and it traces the painted stripe exactly — same path, same width, so
+    // the hit box never spills onto a neighboring stripe.
+    const stripe = container.querySelector('[data-band-stripe]')!;
+    expect(hit.getAttribute('d')).toBe(stripe.getAttribute('d'));
+    expect(hit.getAttribute('stroke-width')).toBe(stripe.getAttribute('stroke-width'));
+    expect(hit.getAttribute('pointer-events')).toBe('stroke');
+    // It is the ONLY hit surface: the painted stripe stops hit-testing (its
+    // handlers stay wired for synthetic dispatch).
+    expect(stripe.getAttribute('pointer-events')).toBe('none');
+    // Invisible ink, and never printed.
+    expect(hit.getAttribute('stroke')).toBe('transparent');
+    expect(hit.getAttribute('data-export-exclude')).toBe('1');
+  });
+
+  it('carries the stripe’s identity so the deep-pick resolves it', () => {
+    const { container } = renderBand('dashed', { interactive: true, onLineClick: () => {} });
+    const hit = container.querySelector('[data-band-hitbox]')!;
+    expect(hit.getAttribute('data-line-id')).toBe('L1');
+    expect(hit.getAttribute('data-pair-key')).toBe('s1|s2');
+  });
+
+  it('runs the interactive handlers — clicking a GAP is a click on the segment', () => {
+    const onLineClick = vi.fn();
+    const onLineHover = vi.fn();
+    const { container } = renderBand('dashed', {
+      interactive: true,
+      interactiveCursor: 'pointer',
+      onLineClick,
+      onLineHover,
+    });
+    const hit = container.querySelector('[data-band-hitbox]')!;
+    fireEvent.pointerMove(hit);
+    fireEvent.click(hit);
+    expect(onLineHover).toHaveBeenCalledWith('L1', expect.anything());
+    expect(onLineClick).toHaveBeenCalledWith('L1', expect.anything());
+    expect((hit as SVGPathElement).style.cursor).toBe('pointer');
+  });
+
+  it('selects the line in default mode too (same 50/50 gap problem)', () => {
+    const onLineSelect = vi.fn();
+    const { container } = renderBand('dashed', { onLineSelect });
+    fireEvent.click(container.querySelector('[data-band-hitbox]')!);
+    expect(onLineSelect).toHaveBeenCalledWith('L1', expect.anything(), 's1|s2');
+  });
+
+  it('adds nothing for a CONTINUOUS style — its painted stroke is already the hit box', () => {
+    for (const style of ['solid', 'hatched'] as StripeStyle[]) {
+      const { container } = renderBand(style, { interactive: true, onLineClick: () => {} });
+      expect(container.querySelector('[data-band-hitbox]')).toBeNull();
+      expect(container.querySelector('[data-band-stripe]')!.getAttribute('pointer-events')).toBe(
+        'stroke',
+      );
+    }
+  });
+
+  it('adds nothing when the band is inert (plain paint, or a decorative copy)', () => {
+    expect(renderBand('dashed', {}).container.querySelector('[data-band-hitbox]')).toBeNull();
+    const decorative = renderBand('dashed', {
+      decorative: true,
+      interactive: true,
+      onLineClick: () => {},
+    });
+    expect(decorative.container.querySelector('[data-band-hitbox]')).toBeNull();
   });
 });
 

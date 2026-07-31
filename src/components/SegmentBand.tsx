@@ -186,6 +186,28 @@ export const SegmentBand = memo(function SegmentBand({
   const selectable = !interactive && !decorative && !!onLineSelect;
   const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(style, color, bodyWidth);
   const underlay = lineStyleUnderlayAttrs(style, underlayColor);
+  // Pointer wiring, shared VERBATIM by the painted stripe and the hit box below
+  // so the two can never disagree about what a click on this stripe does.
+  const pointer: React.SVGProps<SVGPathElement> = {
+    style: active ? { cursor: interactiveCursor } : selectable ? { cursor: 'pointer' } : undefined,
+    onPointerMove: active && onLineHover ? (e) => onLineHover(lineId, e) : undefined,
+    onPointerLeave: active && onLineLeave ? (e) => onLineLeave(lineId, e) : undefined,
+    onClick:
+      active && onLineClick
+        ? (e) => onLineClick(lineId, e)
+        : selectable
+          ? (e) => onLineSelect!(lineId, e, spec.pairKey)
+          : undefined,
+  };
+  // A "gappy" style (the dasharray ones: dashed, dotted, dashed-open) paints a
+  // run of separate pieces, and `pointer-events: stroke` hit-tests that same
+  // dashed geometry — the gaps between the pieces were dead to the pointer, so
+  // clicking such a segment was a coin flip. Give it ONE continuous transparent
+  // stroke over its full footprint as its hit surface instead, and take the
+  // painted pieces out of hit-testing. Continuous styles (solid, hatched — the
+  // hatch is a pattern PAINT on an unbroken stroke) need none of this and keep
+  // the single path they always had.
+  const hitBox = !decorative && (active || selectable) && strokeDasharray !== undefined;
   return (
     <Fragment>
       {underlay && (
@@ -211,19 +233,12 @@ export const SegmentBand = memo(function SegmentBand({
         strokeLinecap={strokeLinecap}
         strokeLinejoin="round"
         strokeDasharray={strokeDasharray}
-        pointerEvents={decorative ? 'none' : active || selectable ? 'stroke' : undefined}
-        style={
-          active ? { cursor: interactiveCursor } : selectable ? { cursor: 'pointer' } : undefined
-        }
-        onPointerMove={active && onLineHover ? (e) => onLineHover(lineId, e) : undefined}
-        onPointerLeave={active && onLineLeave ? (e) => onLineLeave(lineId, e) : undefined}
-        onClick={
-          active && onLineClick
-            ? (e) => onLineClick(lineId, e)
-            : selectable
-              ? (e) => onLineSelect!(lineId, e, spec.pairKey)
-              : undefined
-        }
+        // The handlers stay wired even when the hit box takes over hit-testing:
+        // pointer-events blocks HIT-TESTING, not dispatch, so a synthetic click
+        // aimed at the stripe still runs them (same contract locked items rely
+        // on — see lockedDispatchTarget).
+        pointerEvents={decorative || hitBox ? 'none' : active || selectable ? 'stroke' : undefined}
+        {...pointer}
       />
       {/* Open styles keep centered casing rails inline (a silhouette would
           bleed through their transparent gaps); opaque styles get the merged
@@ -237,6 +252,29 @@ export const SegmentBand = memo(function SegmentBand({
           railW={railW}
           color={lineCasingColor(live, color)}
           lineId={decorative ? undefined : lineId}
+        />
+      )}
+      {/* The gappy styles' hit box (see `hitBox`): the stripe's full painted
+          footprint — same path, same width, so it never spills onto a neighbor
+          stripe — as one unbroken invisible stroke, on top of this band's own
+          paint. It carries the stripe's identity attributes because it, not the
+          dashes, is what `elementsFromPoint` reports (hitStack.ts resolves both),
+          and it is editing chrome: `data-export-exclude` keeps it out of SVG/PDF. */}
+      {hitBox && (
+        <path
+          d={d}
+          data-band-hitbox=""
+          data-band-key={spec.bandKey}
+          data-pair-key={spec.pairKey}
+          data-line-id={lineId}
+          data-export-exclude="1"
+          fill="none"
+          stroke="transparent"
+          strokeWidth={bodyWidth}
+          strokeLinecap="butt"
+          strokeLinejoin="round"
+          pointerEvents="stroke"
+          {...pointer}
         />
       )}
     </Fragment>
