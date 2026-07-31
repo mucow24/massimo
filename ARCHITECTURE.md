@@ -187,7 +187,8 @@ src/
     saveBaseline.ts             # useSaveBaseline: baseline + tri-state clean/dirty/unsaved signal
                                 #   (gates Save version + the toolbar dot; hash survives refresh)
     toastStore.ts               # useToasts: stacking status toasts (pushToast from anywhere)
-    snapPrefs.ts                # useSnapPrefs: snap toggles (+ v0→v1 migration)
+    snapPrefs.ts                # useSnapPrefs: snap toggles + digit-keyed preset slots
+                                #   (+ v0→v1 migration)
     labelEditorPrefs.ts         # useLabelEditorPrefs: text-label editor UI prefs (wrapText)
     lineEditorPrefs.ts          # useLineEditorPrefs: line-popover style-detail collapsed?
     stationEditorPrefs.ts       # useStationEditorPrefs: station-popover typography detail

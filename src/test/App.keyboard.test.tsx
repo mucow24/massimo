@@ -9,6 +9,7 @@ import { beginHistoryGroup, useDoc, useSelection } from '../state/store';
 import { useLineEditorPrefs } from '../state/lineEditorPrefs';
 import { historyDepth, isHistoryGrouping, redoDepth } from '../state/history';
 import { useSnapPrefs } from '../state/snapPrefs';
+import { useToasts } from '../state/toastStore';
 import { DEFAULT_SNAP_MODES } from '../geometry/snap';
 import { DEFAULT_DOC } from '../model/transforms';
 import { readClipboard, writeClipboard, type ClipPayload } from '../model/clipboard';
@@ -387,6 +388,96 @@ describe('App keyboard shortcuts: 1–6 snap toggles', () => {
     const before = { ...useSnapPrefs.getState().modes };
     fireEvent.keyDown(window, { key: '7' });
     expect(useSnapPrefs.getState().modes).toEqual(before);
+  });
+});
+
+describe('App keyboard shortcuts: snapping presets', () => {
+  beforeEach(() => {
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES }, presets: {} });
+    useToasts.setState({ toasts: [] });
+  });
+
+  const toastTexts = () => useToasts.getState().toasts.map((t) => t.text);
+
+  // Shift+3 reports key '#' on a US layout (and something else again on every
+  // other layout) — the digit is only legible in e.code, so that is what these
+  // press.
+  const press = (code: string, extra: Record<string, unknown> = {}) =>
+    fireEvent.keyDown(window, { key: '#', code, shiftKey: true, ...extra });
+
+  it('Ctrl+Shift+digit saves the live modes to that preset', () => {
+    render(<App />);
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, grid: 'both' } });
+    press('Digit3', { ctrlKey: true });
+    expect(useSnapPrefs.getState().presets[3]).toEqual({ ...DEFAULT_SNAP_MODES, grid: 'both' });
+    expect(toastTexts()).toEqual(['Snapping preset 3 saved']);
+  });
+
+  it('Shift+digit recalls the preset and names it', () => {
+    render(<App />);
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, grid: 'both', circle: true } });
+    press('Digit3', { ctrlKey: true });
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES } });
+    useToasts.setState({ toasts: [] });
+    press('Digit3');
+    expect(useSnapPrefs.getState().modes).toEqual({
+      ...DEFAULT_SNAP_MODES,
+      grid: 'both',
+      circle: true,
+    });
+    expect(toastTexts()).toEqual(['Snapping preset 3']);
+  });
+
+  it('slot 0 is bound too (the plain digit keys stop at 6)', () => {
+    render(<App />);
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, all: 'diagonal' } });
+    press('Digit0', { ctrlKey: true });
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES } });
+    press('Digit0');
+    expect(useSnapPrefs.getState().modes.all).toBe('diagonal');
+  });
+
+  it('recalling an unsaved preset leaves the modes alone and says the slot is empty', () => {
+    render(<App />);
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, tens: true } });
+    press('Digit9');
+    expect(useSnapPrefs.getState().modes).toEqual({ ...DEFAULT_SNAP_MODES, tens: true });
+    expect(toastTexts()).toEqual(['Snapping preset 9 is empty']);
+  });
+
+  it('key auto-repeat does not re-fire (holding the key stacks no toasts)', () => {
+    render(<App />);
+    press('Digit3', { ctrlKey: true });
+    press('Digit3', { ctrlKey: true, repeat: true });
+    press('Digit3', { repeat: true });
+    expect(toastTexts()).toEqual(['Snapping preset 3 saved']);
+  });
+
+  it('is suppressed while a text input has focus', () => {
+    render(<App />);
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, grid: 'both' } });
+    useSnapPrefs.getState().savePreset(3);
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES } });
+    const input = document.createElement('input');
+    input.type = 'text';
+    document.body.appendChild(input);
+    input.focus();
+    try {
+      fireEvent.keyDown(input, { key: '#', code: 'Digit3', shiftKey: true });
+      fireEvent.keyDown(input, { key: '#', code: 'Digit4', shiftKey: true, ctrlKey: true });
+      expect(useSnapPrefs.getState().modes.grid).toBe('off');
+      expect(useSnapPrefs.getState().presets[4]).toBeUndefined();
+      expect(toastTexts()).toEqual([]);
+    } finally {
+      document.body.removeChild(input);
+    }
+  });
+
+  it('leaves the unshifted digit toggling its snap mode', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: '3', code: 'Digit3' });
+    expect(useSnapPrefs.getState().modes.tens).toBe(true);
+    expect(toastTexts()).toEqual([]);
   });
 });
 

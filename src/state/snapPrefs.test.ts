@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useSnapPrefs } from './snapPrefs';
-import { DEFAULT_SNAP_MODES } from '../geometry/snap';
+import { DEFAULT_SNAP_MODES, type SnapModes } from '../geometry/snap';
 
 describe('useSnapPrefs', () => {
   beforeEach(() => {
     // Reset both the in-memory state and the localStorage backing so each
     // test starts clean.
     localStorage.clear();
-    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES } });
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES }, presets: {} });
   });
 
   it('initializes with the default snap modes', () => {
@@ -72,6 +72,69 @@ describe('useSnapPrefs', () => {
     expect(modes.circle).toBe(false);
     // ...without trampling what the user had actually set.
     expect(modes.grid).toBe('both');
+  });
+
+  describe('presets', () => {
+    it('savePreset snapshots the live modes into the slot', () => {
+      useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, all: 'diagonal', circle: true } });
+      useSnapPrefs.getState().savePreset(3);
+      // A copy, not a live reference: editing the modes afterwards must not
+      // rewrite what the slot holds.
+      useSnapPrefs.getState().setMode('all', 'off');
+      expect(useSnapPrefs.getState().presets[3]).toEqual({
+        ...DEFAULT_SNAP_MODES,
+        all: 'diagonal',
+        circle: true,
+      });
+    });
+
+    it('recallPreset applies a saved slot and reports the hit', () => {
+      useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, grid: 'both' } });
+      useSnapPrefs.getState().savePreset(7);
+      useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES } });
+      expect(useSnapPrefs.getState().recallPreset(7)).toBe(true);
+      expect(useSnapPrefs.getState().modes).toEqual({ ...DEFAULT_SNAP_MODES, grid: 'both' });
+    });
+
+    it('recallPreset on an unsaved slot changes nothing and reports the miss', () => {
+      useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, tens: true } });
+      expect(useSnapPrefs.getState().recallPreset(4)).toBe(false);
+      expect(useSnapPrefs.getState().modes).toEqual({ ...DEFAULT_SNAP_MODES, tens: true });
+    });
+
+    it('savePreset overwrites its own slot and leaves the others alone', () => {
+      useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, grid: 'both' } });
+      useSnapPrefs.getState().savePreset(1);
+      useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, all: 'all' } });
+      useSnapPrefs.getState().savePreset(2);
+      useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, circle: true } });
+      useSnapPrefs.getState().savePreset(2);
+      expect(useSnapPrefs.getState().presets[1]?.grid).toBe('both');
+      expect(useSnapPrefs.getState().presets[2]).toEqual({ ...DEFAULT_SNAP_MODES, circle: true });
+    });
+
+    it('persists presets to localStorage', () => {
+      useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, all: 'diagonal' } });
+      useSnapPrefs.getState().savePreset(0);
+      const parsed = JSON.parse(localStorage.getItem('massimo-snap-prefs-v1') as string);
+      expect(parsed.state.presets['0'].all).toBe('diagonal');
+    });
+
+    it('recall fills a mode the saved preset predates, rather than leaving it undefined', () => {
+      // A preset written before `circle` existed has no key for it. The persist
+      // migration can't help — it only reshapes `modes` — so recall must fill
+      // from the defaults, or the mode lands `undefined` at runtime (and, worse,
+      // silently keeps whatever the live modes happened to have).
+      useSnapPrefs.setState({
+        modes: { ...DEFAULT_SNAP_MODES, circle: true },
+        presets: {
+          5: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' } as SnapModes,
+        },
+      });
+      useSnapPrefs.getState().recallPreset(5);
+      expect(useSnapPrefs.getState().modes.circle).toBe(false);
+      expect(useSnapPrefs.getState().modes.grid).toBe('both');
+    });
   });
 
   it('migrates legacy false flags to off', () => {
