@@ -231,6 +231,32 @@ describe('<StyleEditor> — stopDot', () => {
     expect(screen.queryByRole('slider', { name: 'Stroke width' })).toBeNull();
     expect(screen.queryByText('Stroke color')).toBeNull();
     expect(screen.queryByText('Service code')).toBeNull();
+    expect(screen.queryByText('First letter only')).toBeNull();
+  });
+
+  it('greys out "First letter only" until the service code is shown', () => {
+    render(<StyleEditor def={makeStyle('stopDot', 'y1', { props: { shape: 'circle' } })} />);
+    // Visible (so the option is discoverable) but inert with no code to trim.
+    expect(screen.getByLabelText('Show first letter of the service code only')).toBeDisabled();
+  });
+
+  it('ticking "First letter only" writes serviceCodeFirstLetterOnly', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      styles: {
+        ...useDoc.getState().styles,
+        'sd-code': makeStyle('stopDot', 'sd-code', {
+          props: { shape: 'circle', showServiceCode: true },
+        }),
+      },
+    });
+    render(<StyleEditor def={useDoc.getState().styles['sd-code']} />);
+    const box = screen.getByLabelText('Show first letter of the service code only');
+    expect(box).toBeEnabled();
+    fireEvent.click(box);
+    expect((useDoc.getState().styles['sd-code'].props as DotStyle).serviceCodeFirstLetterOnly).toBe(
+      true,
+    );
   });
 
   it('offers a B/W / Line / Custom service-code color toggle; auto-contrast selects B/W', () => {

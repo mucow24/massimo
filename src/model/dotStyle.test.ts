@@ -201,6 +201,20 @@ describe('resolveDotRender', () => {
       const s = style({ showServiceCode: true, serviceCodeColor: 'line' });
       expect(resolveDotRender(s, undefined, 'A', false)!.code!.color).toBe('#000');
     });
+
+    it('paints only the first letter when serviceCodeFirstLetterOnly is set', () => {
+      // The local/express case: "6" and "6X" share one dot look on the map.
+      const s = style({ showServiceCode: true, serviceCodeFirstLetterOnly: true });
+      const out = resolveDotRender(s, undefined, '6X', false)!;
+      expect(out.code!.text).toBe('6');
+      // Still a code disc — the truncation is text-only, not a size change.
+      expect(out.r).toBe(SERVICE_CODE_DOT_RADIUS);
+    });
+
+    it('paints the whole code without the flag', () => {
+      const s = style({ showServiceCode: true });
+      expect(resolveDotRender(s, undefined, '6X', false)!.code!.text).toBe('6X');
+    });
   });
 });
 
@@ -270,6 +284,19 @@ describe('dotStylesEqual', () => {
       dotStylesEqual(style({ serviceCodeColor: K }), style({ serviceCodeColor: { ...K } })),
     ).toBe(true);
     expect(dotStylesEqual(style(), style())).toBe(true);
+  });
+
+  it('compares serviceCodeFirstLetterOnly, reading absent as off', () => {
+    expect(dotStylesEqual(style({ serviceCodeFirstLetterOnly: true }), style())).toBe(false);
+    expect(
+      dotStylesEqual(
+        style({ serviceCodeFirstLetterOnly: true }),
+        style({ serviceCodeFirstLetterOnly: true }),
+      ),
+    ).toBe(true);
+    // A raw `false` must value-match an absent field, so the migration bakes
+    // still recognize legacy dots against the factory presets (as strokeAlign).
+    expect(dotStylesEqual(style({ serviceCodeFirstLetterOnly: false }), style())).toBe(true);
   });
 
   it("distinguishes a 'line' serviceCodeColor from a pair and from absent", () => {

@@ -109,6 +109,12 @@ export interface DotStyle {
   // color, a day/night pair in that explicit per-theme color. Optional so
   // untouched styles (and every preset) stay byte-identical.
   serviceCodeColor?: DotServiceCodeColor;
+  // Print only the first character of the service code. For a local/express
+  // pair drawn as variants of ONE line ("6" and "6X"), so both their dots read
+  // "6". Only meaningful when `showServiceCode` is true; the disc keeps its
+  // full SERVICE_CODE_DOT_RADIUS size. Optional, absent ⇒ the whole code, and
+  // dropped when off so presets and untouched styles stay byte-identical.
+  serviceCodeFirstLetterOnly?: boolean;
 }
 
 export interface StopCell {
