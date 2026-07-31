@@ -889,6 +889,17 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
               onCheckedChange={(showServiceCode) => patch({ showServiceCode })}
             />
           </div>
+          <div className={'row' + (p.showServiceCode ? '' : ' disabled')}>
+            <label htmlFor={`style-${id}-first-letter`}>First letter only</label>
+            <FieldCheckbox
+              id={`style-${id}-first-letter`}
+              ariaLabel="Show first letter of the service code only"
+              title="Print only the code's first letter — a local/express pair reads as one line"
+              checked={p.serviceCodeFirstLetterOnly ?? false}
+              disabled={!p.showServiceCode}
+              onCheckedChange={(v) => patch({ serviceCodeFirstLetterOnly: v })}
+            />
+          </div>
           {p.showServiceCode && (
             <>
               <div className="row">

@@ -426,7 +426,11 @@ export function resolveDotRender(
       scc !== undefined
         ? resolveLineOrPairColor(scc, lineColor, darkMode)
         : legibleTextOn(fill === 'none' ? (darkMode ? '#000000' : '#ffffff') : fill);
-    out.code = { text: serviceCode ?? '?', color };
+    // `serviceCodeFirstLetterOnly` trims the code to its first character — a
+    // local/express pair ("6" / "6X") shown as variants of one line reads "6"
+    // on both. The '?' fallback is already one character.
+    const text = serviceCode ?? '?';
+    out.code = { text: style.serviceCodeFirstLetterOnly ? text.slice(0, 1) : text, color };
   }
   return out;
 }
@@ -475,6 +479,9 @@ export function canonicalDotStyle(s: DotStyle): DotStyle {
   };
   // lcStroke passes the 'line' sentinel through and lowercases a day/night pair.
   if (s.serviceCodeColor !== undefined) out.serviceCodeColor = lcStroke(s.serviceCodeColor);
+  // Default-collapse: only the ON state is stored (a `false` would be noise in
+  // every preset and save), which is why dotStylesEqual reads absent as off.
+  if (s.serviceCodeFirstLetterOnly) out.serviceCodeFirstLetterOnly = true;
   return out;
 }
 
@@ -492,6 +499,10 @@ export function dotStylesEqual(a: DotStyle, b: DotStyle): boolean {
     // app every style is canonical, so this never fires.
     (a.strokeAlign ?? 'center') === (b.strokeAlign ?? 'center') &&
     a.showServiceCode === b.showServiceCode &&
-    optDotColorEqual(a.serviceCodeColor, b.serviceCodeColor)
+    optDotColorEqual(a.serviceCodeColor, b.serviceCodeColor) &&
+    // Absent means off (the canonical form drops a `false`), so a raw legacy
+    // dot still value-matches the factory presets during the migration bakes —
+    // the same absent-as-default rule strokeAlign needs above.
+    (a.serviceCodeFirstLetterOnly ?? false) === (b.serviceCodeFirstLetterOnly ?? false)
   );
 }
