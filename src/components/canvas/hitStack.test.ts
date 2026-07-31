@@ -25,6 +25,7 @@ function buildDom() {
       <path data-polygon-id="p0" id="poly"></path>
       <g data-svg-image-id="i0"><image id="img"></image></g>
       <path data-band-stripe="" data-band-key="k" data-line-id="L1" id="stripe"></path>
+      <path data-band-hitbox="" data-band-key="k2" data-line-id="L9" data-pair-key="a|b" id="hitbox"></path>
       <g data-station-id="s1"><rect id="cells"></rect><rect id="labelRect"></rect></g>
       <line data-transfer-id="t1" id="transfer"></line>
       <g><circle data-stop-station="s1" data-stop-line="L1" id="dot"></circle></g>
@@ -86,6 +87,15 @@ describe('resolveHitStack', () => {
     expect(stack[0].element).toBe(el('dotStroke'));
   });
 
+  it("resolves a gappy stripe's continuous hit box to its line", () => {
+    const el = buildDom();
+    // A dashed/dotted stripe's pointer surface is a separate transparent path
+    // (the painted one has gaps); it is the only band element in the snapshot
+    // when the point lands in a gap.
+    const stack = resolveHitStack([el('hitbox'), el('bg')]);
+    expect(stack.map((e) => `${e.kind}:${e.id}`)).toEqual(['line:L9']);
+  });
+
   it('skips drag-proxy surfaces (data-*-hit) even when fed directly', () => {
     const el = buildDom();
     const stack = resolveHitStack([el('proxyPoly'), el('proxyStationRect'), el('poly')]);
@@ -110,6 +120,8 @@ describe('resolveAppendStack (Edit Stops alt-pick)', () => {
         <path data-band-stripe="" data-band-key="k1" data-line-id="L1" data-pair-key="a|b" id="segAB"></path>
         <path data-band-stripe="" data-band-key="k2" data-line-id="L1" data-pair-key="b|c" id="segBC"></path>
         <path data-band-stripe="" data-band-key="k3" data-line-id="L2" data-pair-key="a|b" id="otherLine"></path>
+        <path data-band-hitbox="" data-band-key="k4" data-line-id="L1" data-pair-key="c|d" id="gappyCD"></path>
+        <path data-band-hitbox="" data-band-key="k5" data-line-id="L2" data-pair-key="c|d" id="otherGappy"></path>
         <g data-station-id="s1"><rect id="cellsS1"></rect></g>
         <g><circle data-stop-station="s2" id="dotS2"></circle></g>
         <g data-bullet-id="bl1"><circle id="bullet"></circle></g>
@@ -146,6 +158,15 @@ describe('resolveAppendStack (Edit Stops alt-pick)', () => {
     expect(resolveAppendStack([el('segBC'), el('segAB'), el('segBC')], 'L1')).toEqual([
       { kind: 'segment', id: 'b|c' },
       { kind: 'segment', id: 'a|b' },
+    ]);
+  });
+
+  it('cycles a gappy segment through its hit box, still scoped to the edited line', () => {
+    const el = buildAppendDom();
+    // A dashed segment's pointer surface is the transparent hit box, not the
+    // painted stripe — alt-pick must reach it, and only for the edited line.
+    expect(resolveAppendStack([el('gappyCD'), el('otherGappy')], 'L1')).toEqual([
+      { kind: 'segment', id: 'c|d' },
     ]);
   });
 
