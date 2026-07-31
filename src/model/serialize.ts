@@ -26,7 +26,7 @@ import {
 } from './transferStyle';
 import { canonicalLineLabelGap, canonicalLineWidth } from './lineWidth';
 import { canonicalLineCircleRadius } from './lineCircle';
-import { projectToCircle } from '../geometry/lineCircle';
+import { projectToCircle, stationCircle } from '../geometry/lineCircle';
 import { clamp } from '../util/grid';
 import {
   LINE_CURVE_RADIUS_DEFAULT,
@@ -227,8 +227,10 @@ export function sanitizeLineCircles(
   let stationsChanged = false;
   for (const id of Object.keys(stationsIn)) {
     const st = stationsIn[id];
-    const circle = st.circleId !== undefined ? lineCircles[st.circleId] : undefined;
-    const bound = circle !== undefined;
+    const circle = stationCircle(st, lineCircles);
+    // `stationCircle` reads a dangling `circleId` as null, which is exactly the
+    // question this sanitizer asks — a station is bound only if its id resolves.
+    const bound = circle !== null;
 
     // `viaCircle` keeps only the canonical form: `true`, on a bound station.
     let stopsChanged = false;

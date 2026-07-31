@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `cf61f84` (2026-07-30, #390) — verified against the live source.** This
+**Up to date as of commit `34ded09` (2026-07-31, #399) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -107,7 +107,7 @@ src/
 
   model/                        # PURE domain logic — no React, no store
     types.ts                    # MapDoc + every entity type (the canonical data shape)
-    transforms.ts               # ~3500 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
+    transforms.ts               # ~3800 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
     serialize.ts                # serialize()/parse() + shared backfill/sanitize helpers
     styles.ts                   # named per-kind formatting presets (StyleDef) + styleId tag/stamp
     ids.ts                      # IdFactory: crypto UUIDs (prod) / counter ids (tests)
@@ -503,6 +503,11 @@ circle). The painted arcs come from line edges. The concept splits in two, on pu
   one at an octant angle — the frame IS `rotation · 45°` and the bit-exact `rotateBy` path is
   taken, so nothing else moves. Hence `stopPosWorld` takes `lineCircles` as a REQUIRED param (the
   `tangentGap` idiom): a call site that skipped it would place a ring stop a lane off its own arc.
+  The angle comes back UNWRAPPED — the candidates are `radial + k·90°` off a radial that may be
+  negative, so the winner can name the octant's own direction from a full turn away. Compare it
+  through `wrapAngleToPi`, never raw: that is how the module's own consumers read it
+  (`stationDirToWorld`'s exactness gate, `radialLocalTurn`'s quarter-turn count), and a `===
+  rotRad(rotation)` would be wrong over a quarter of the ring without looking it.
 
   EVERY cell of a station resolves through that one frame — stops, hosted anchors, and the name's
   label cell alike, along with everything derived from them: the painted label, its hit rect, the
