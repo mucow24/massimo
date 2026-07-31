@@ -162,7 +162,7 @@ describe('stationBoundaryRectsLocal — dash tick clearance parity', () => {
       gap: 0,
       dash: { length: 14, width: 7 },
       dot: null,
-      transferRadius: 0,
+      transfers: [],
       labelGap: 3,
       continues: { plus: true, minus: true },
     })).label!;
@@ -200,7 +200,7 @@ describe('stationBoundaryRectsLocal — interline gap parity', () => {
       gap: 4.25,
       dash: null,
       dot: null,
-      transferRadius: 0,
+      transfers: [],
       labelGap: 3,
       continues: { plus: true, minus: true },
     })).label!;

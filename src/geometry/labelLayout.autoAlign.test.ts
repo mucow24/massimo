@@ -21,7 +21,7 @@ const metrics = (
     gap: 0,
     dash: null,
     dot: null,
-    transferRadius: 0,
+    transfers: [],
     labelGap: LABEL_GAP,
     continues: { plus: true, minus: true },
     ...(typeof over === 'function' ? over(stop) : over),
@@ -839,6 +839,123 @@ describe('labelLayoutLocal — autoAlign at a crossing (cross station)', () => {
   });
 });
 
+describe('labelLayoutLocal — autoAlign beside a stop beats centering over it', () => {
+  // The other very common interchange park: the label sits in the CORNER of a
+  // cross — one stop beside it (the crossing line's), one below it (its own
+  // line's). Centering on the stop below runs the text straight through the
+  // stop beside, so the beside stop takes the anchor instead.
+  const SIT = STOP_SIZE - (HALF + LABEL_GAP) - CB - DESC_N; // −0.8 — the plain-N anchorY
+
+  it('a stop below AND one to the west: reads east off the west marker, not centered', () => {
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: 0, dCol: -1, orientation: 'auto-vertical', lineId: 'L1' },
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L2' },
+        ],
+      }),
+    );
+    expect(lay.textAnchor).toBe('start');
+    expect(lay.anchorX).toBeCloseTo(-STOP_SIZE + HALF + LABEL_GAP, 6); // −4
+    expect(lay.anchorY).toBeCloseTo(CTR, 6);
+  });
+
+  it('the east mirror: reads west off the east marker', () => {
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: 0, dCol: 1, orientation: 'auto-vertical', lineId: 'L1' },
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L2' },
+        ],
+      }),
+    );
+    expect(lay.textAnchor).toBe('end');
+    expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (HALF + LABEL_GAP), 6); // 4
+    expect(lay.anchorY).toBeCloseTo(CTR, 6);
+  });
+
+  it('the stop ABOVE mirror already preferred beside, and still does', () => {
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: 0, dCol: -1, orientation: 'auto-vertical', lineId: 'L1' },
+          { dRow: -1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L2' },
+        ],
+      }),
+    );
+    expect(lay.textAnchor).toBe('start');
+    expect(lay.anchorX).toBeCloseTo(-STOP_SIZE + HALF + LABEL_GAP, 6);
+    expect(lay.anchorY).toBeCloseTo(CTR, 6);
+  });
+
+  it('a beside stop the text does not tie with still takes it: a WIDE line packed 1.5 cells out', () => {
+    // Not a tie-break: the below stop is strictly nearer (1 vs 1.5 cells) and
+    // still loses, because centering on it is what puts the text over the
+    // wide marker. The pin is stop-relative, so the text starts at the wide
+    // stripe's own east edge.
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: 0, dCol: -1.5, orientation: 'auto-vertical', lineId: 'L1' },
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L2' },
+        ],
+      }),
+      DEFAULT_LABEL_STYLE,
+      undefined,
+      metrics((stop) => ({ half: stop.lineId === 'L1' ? STOP_SIZE : HALF })),
+    );
+    expect(lay.textAnchor).toBe('start');
+    expect(lay.anchorX).toBeCloseTo(-1.5 * STOP_SIZE + STOP_SIZE + LABEL_GAP, 6); // −4
+    expect(lay.anchorY).toBeCloseTo(CTR, 6);
+  });
+
+  it('boxed in on BOTH sides: no side to escape to, stays centered', () => {
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: 0, dCol: -1, orientation: 'auto-vertical', lineId: 'L1' },
+          { dRow: 0, dCol: 1, orientation: 'auto-vertical', lineId: 'L2' },
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L3' },
+        ],
+      }),
+    );
+    expect(lay.textAnchor).toBe('middle');
+    expect(lay.anchorX).toBeCloseTo(0, 6);
+    expect(lay.anchorY).toBeCloseTo(SIT, 6);
+  });
+
+  it('a beside stop OUTSIDE the adjacency gate is not in the way: stays centered', () => {
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: 0, dCol: -2, orientation: 'auto-vertical', lineId: 'L1' },
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L2' },
+        ],
+      }),
+    );
+    expect(lay.textAnchor).toBe('middle');
+    expect(lay.anchorX).toBeCloseTo(0, 6);
+    expect(lay.anchorY).toBeCloseTo(SIT, 6);
+  });
+
+  it('rotation 2 (S-reading) corner = the rotation-0 corner rotated 90°', () => {
+    // Oracle: 'start' at (−4, CTR). Rotate the config 90° CW (y-down:
+    // (x, y) → (−y, x)); cells rotate row′ = col, col′ = −row.
+    const lay = labelLayoutLocal(
+      autoStation({
+        rotation: 2,
+        stops: [
+          { dRow: -1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L1' },
+          { dRow: 0, dCol: -1, orientation: 'auto-vertical', lineId: 'L2' },
+        ],
+      }),
+    );
+    expect(lay.textAnchor).toBe('start');
+    expect(lay.anchorX).toBeCloseTo(-CTR, 6);
+    expect(lay.anchorY).toBeCloseTo(-STOP_SIZE + HALF + LABEL_GAP, 6);
+  });
+});
+
 describe('labelLayoutLocal — autoAlign at a DIAGONAL crossing', () => {
   // The butt measures the crossing stripe where the TEXT is, not on the stop
   // row: the block sits wholly above/below the row, and a 45° stripe has
@@ -1424,15 +1541,16 @@ describe('labelLayoutLocal — autoAlign clears the stop DOT', () => {
 });
 
 describe('labelLayoutLocal — autoAlign clears a TRANSFER cap', () => {
-  // A transfer is a round-capped capsule, so at the stop it ends in a disc of
-  // its half-width — isotropic, and often fatter than the line it lands on.
+  // A transfer is a round-capped capsule: at the stop it ends in a disc of its
+  // half-width — often fatter than the line it lands on — and its BODY leaves
+  // toward the other end, which is what the `dir`-carrying cases below pin.
 
   it('a fat transfer stub pushes the text out', () => {
     const lay = labelLayoutLocal(
       autoStation({ stops: [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' }] }),
       undefined,
       undefined,
-      metrics({ transferRadius: 12 }),
+      metrics({ transfers: [{ r: 12, dir: null }] }),
     );
     expect(lay.anchorX).toBeCloseTo(-STOP_SIZE + 12 + LABEL_GAP, 6);
   });
@@ -1442,7 +1560,7 @@ describe('labelLayoutLocal — autoAlign clears a TRANSFER cap', () => {
       autoStation({ stops: [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' }] }),
       undefined,
       undefined,
-      metrics({ dot: { r: 10, shape: 'circle' }, transferRadius: 6 }),
+      metrics({ dot: { r: 10, shape: 'circle' }, transfers: [{ r: 6, dir: null }] }),
     );
     expect(lay.anchorX).toBeCloseTo(-STOP_SIZE + 10 + LABEL_GAP, 6);
   });
@@ -1460,11 +1578,124 @@ describe('labelLayoutLocal — autoAlign clears a TRANSFER cap', () => {
       }),
       undefined,
       undefined,
-      metrics((stop) => (stop.lineId === 'L2' ? { transferRadius: 11 } : {})),
+      metrics((stop) => (stop.lineId === 'L2' ? { transfers: [{ r: 11, dir: null }] } : {})),
     );
     expect(lay.textAnchor).toBe('end');
     expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (11 + LABEL_GAP), 6);
     expect(lay.anchorY).toBeCloseTo(STOP_SIZE - (HALF + LABEL_GAP) - CB - DESC_N, 6);
+  });
+});
+
+describe('labelLayoutLocal — a transfer BODY leaning into the approach', () => {
+  // The disc is only the capsule's END. A transfer leaving the stop at an
+  // angle passes UNDER the approach, and its straight side reaches r/sin θ
+  // along it — √2·r at 45°, the corner a thick transfer closes off between two
+  // stops of a cross. Measured over the text's ink window, exactly like a
+  // diagonal stripe's, and floored at r: the cap is always there.
+  const R = 12;
+  const SE = { x: S2, y: S2 };
+  const besideR = (dir: { x: number; y: number } | null) =>
+    labelLayoutLocal(
+      autoStation({ stops: [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' }] }),
+      undefined,
+      undefined,
+      metrics({ transfers: [{ r: R, dir }] }),
+    ).anchorX +
+    STOP_SIZE -
+    LABEL_GAP; // the reach the pin cleared, back out of the anchor
+
+  it('leaving SE under an east-reading label: the ink BOTTOM corner binds', () => {
+    // The edge advances east by 1 per unit down (45°), so the window's lowest
+    // ink — the half-descender below the CTA — is the corner that must clear.
+    expect(besideR(SE)).toBeCloseTo(R * Math.SQRT2 + CAP / 2 + DESC / 2, 6);
+  });
+
+  it('leaving NE instead: the mirror corner binds — the ink TOP, half a descender nearer', () => {
+    // The window straddles the stop's row, so a body slanting either way leans
+    // into one of its corners; only WHICH corner changes. The top one sits
+    // closer to the row (no descender hangs off it), so this charges less.
+    expect(besideR({ x: S2, y: -S2 })).toBeCloseTo(R * Math.SQRT2 + CAP / 2, 6);
+    expect(besideR({ x: S2, y: -S2 })).toBeCloseTo(besideR(SE) - DESC / 2, 6);
+  });
+
+  it('leaving SW — away from the label — is just the cap, not the edge line', () => {
+    // The edge LINE still crosses the approach at √2·r, but the body does not
+    // live there: it is behind the cap. Charging it would push every label off
+    // a transfer that runs the other way.
+    expect(besideR({ x: -S2, y: S2 })).toBeCloseTo(R, 6);
+  });
+
+  it('a transfer running straight at the label has no slant, so the cap stands', () => {
+    expect(besideR({ x: 1, y: 0 })).toBeCloseTo(R, 6);
+  });
+
+  it('no direction (an end this lookup cannot resolve) keeps the plain disc', () => {
+    expect(besideR(null)).toBeCloseTo(R, 6);
+  });
+
+  it('two transfers on one stop: the DEEPEST reach wins, each measured its own way', () => {
+    // Not "largest r then a direction": a slim slanted transfer can out-reach a
+    // fatter square-on one.
+    const lay = labelLayoutLocal(
+      autoStation({ stops: [{ dRow: 0, dCol: -1, orientation: 'auto-vertical' }] }),
+      undefined,
+      undefined,
+      metrics({
+        transfers: [
+          { r: 12, dir: null },
+          { r: 6, dir: SE },
+        ],
+      }),
+    );
+    expect(lay.anchorX).toBeCloseTo(
+      -STOP_SIZE + (6 * Math.SQRT2 + CAP / 2 + DESC / 2) + LABEL_GAP,
+      6,
+    );
+  });
+
+  it('at a crossing butt the reach is measured on the stop ROW, no ink window', () => {
+    // Octant 6 pins the block's middle, not a corner: the reading axis butts
+    // against the crossing stop's capsule at row level, where a 45° body
+    // reaches exactly √2·r.
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L1' },
+          { dRow: 1, dCol: 1, orientation: 'auto-vertical', lineId: 'L2' },
+        ],
+      }),
+      undefined,
+      undefined,
+      metrics((stop) =>
+        stop.lineId === 'L2' ? { transfers: [{ r: 11, dir: { x: -S2, y: S2 } }] } : {},
+      ),
+    );
+    expect(lay.textAnchor).toBe('end');
+    expect(lay.anchorX).toBeCloseTo(STOP_SIZE - (11 * Math.SQRT2 + LABEL_GAP), 6);
+  });
+
+  it('the corner repro: the label reads off the stop the transfer leaves, clearing its body', () => {
+    // Screenshot 3 — a thick transfer runs SE from the vertical line's stop to
+    // the horizontal line's stop below the label, closing off the corner the
+    // label parks in. The corner re-anchor puts the text beside the vertical
+    // stop; the capsule then pushes it clear of the diagonal.
+    const lay = labelLayoutLocal(
+      autoStation({
+        stops: [
+          { dRow: 0, dCol: -1, orientation: 'auto-vertical', lineId: 'L1' },
+          { dRow: 1, dCol: 0, orientation: 'auto-horizontal', lineId: 'L2' },
+        ],
+      }),
+      undefined,
+      undefined,
+      metrics((stop) => (stop.lineId === 'L1' ? { transfers: [{ r: R, dir: SE }] } : {})),
+    );
+    expect(lay.textAnchor).toBe('start');
+    expect(lay.anchorX).toBeCloseTo(
+      -STOP_SIZE + (R * Math.SQRT2 + CAP / 2 + DESC / 2) + LABEL_GAP,
+      6,
+    );
+    expect(lay.anchorY).toBeCloseTo(CTR, 6);
   });
 });
 

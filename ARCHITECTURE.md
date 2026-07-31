@@ -1983,9 +1983,10 @@ which are a separate slot-based system where Shift flips the lattice basis.
   baseline for the same reason.
 - **`StopMetrics`** ([geometry/labelLayout.ts](src/geometry/labelLayout.ts)) is everything the
   label geometry knows about one painted stop — stripe `half`, interline `gap`, `dash` tick, `dot`
-  silhouette, `transferRadius` — resolved together by `stopMetricsOf({ lines, transfers, stations })`
-  ([model/stopMetrics.ts](src/model/stopMetrics.ts)) and threaded to `labelLayoutLocal`,
-  `stationBoundaryRectsLocal`, `cellsAABBLocal`, `stationsForRect` and `stationWorldAABB`. It is
+  silhouette, the `transfers` landing on it — resolved together by
+  `stopMetricsOf({ lines, transfers, stations })` ([model/stopMetrics.ts](src/model/stopMetrics.ts))
+  and threaded to `labelLayoutLocal`, `stationBoundaryRectsLocal`, `cellsAABBLocal`,
+  `stationsForRect` and `stationWorldAABB`. It is
   ONE bundle rather than a lookup per field precisely so a call site cannot pass four of five and
   drift off the paint; on the canvas it comes from `useStopMetrics(lines)`, which adds the
   transfers so no component has to know they are part of the answer. That hook runs once per
@@ -2048,9 +2049,19 @@ which are a separate slot-based system where Shift flips the lattice basis.
   axis-aligned in the **world** frame — `StationDots` paints real dots at `stopPosWorld` inside an
   untransformed group, so only the phantom drag preview is station-rotated — and its support is per shape
   rather than by one circumscribing radius: a square is narrow on the cardinals and a diamond on
-  the diagonals, so a single radius would over-clear one of them by √2. All stop-relative on both
-  axes.
-  **Cross stations** are the one exception to "the octant decides everything": when the label
+  the diagonals, so a single radius would over-clear one of them by √2. A **transfer** counts as
+  the capsule it paints, not just the disc it ends in: its body is a band of the cap's half-width
+  leaving the stop toward the other end, and an approach leaning into that band is cut at
+  `r / sin θ` — √2·r at 45°, the corner a thick transfer closes off in a cross. The cap floors
+  that (`slantHit` models a band, which is endless; the half the body does NOT occupy is edge
+  line with no transfer on it), so a body running the other way charges the bare disc, as does an
+  end whose heading is unknown. `StopMetrics.transfers` carries one entry per END, never merged to
+  the fattest, because a slim slanted transfer can out-reach a fat square-on one; the heading
+  resolves only when the other end is a stop of the SAME station, whose cell sits in the same
+  lattice, and any other end needs the world resolver this lookup does not hold. All stop-relative
+  on both axes.
+  **Cross stations** break "the octant decides everything" twice, both times because a centering
+  octant runs the text straight through a stripe. First, when the label
   parks squarely across the line from its stop (the centering octants) and a **crossing** line's
   stop is packed beside it — same reading-frame row within `BAND_MERGE_TOL`, different travel
   axis, on one side only (`crossingStop`) — the READING axis re-anchors against that crossing
@@ -2065,6 +2076,16 @@ which are a separate slot-based system where Shift flips the lattice basis.
   pulled inward past the row-level support when the stripe retreats from the text, pushed out
   when it advances over it, with the same `continues` gate. Parallel neighbours are not
   crossings, and a label boxed in on both sides keeps centering.
+  Second, the **corner park** — the commonest interchange label there is: the label sits in a
+  quadrant of the cross, its own line's stop below it and the crossing line's stop BESIDE it, in
+  the label's OWN reading row rather than `ref`'s. Centering would run the text through that beside
+  marker, so it takes the reference instead and the label reads AWAY from it, beside-pinned at its
+  edge. Only the centering octants ask — every other octant already pins an END of the text rather
+  than its middle — and distance never enters it, which is why this is not a tie-break in the
+  reference pick: a wide beside line packs FURTHER out than the stop below, and centering on the
+  nearer stop is exactly what puts the text over the further one. Both breaks ask
+  `oneSidedInRow` the same question — which single marker is in the way, and which way to read off
+  it — and both take its null (boxed in on both sides, no side to escape to) as "keep centering".
 
 ### Polygons — `polygon.ts`, `polygonUnion.ts`, `rectPolygon.ts`, `polygonSnap.ts`
 
