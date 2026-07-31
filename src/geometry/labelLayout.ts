@@ -59,10 +59,16 @@ export interface StopMetrics {
    *  is a real obstacle and not a subset of `half`. Its axes are the WORLD's,
    *  not the station's and not the travel axis's — see `dotSupport`. */
   dot: { r: number; shape: DotBaseShape } | null;
-  /** Radius of the largest transfer cap landing on this stop, 0 when none. A
-   *  transfer is a round-capped capsule of uniform half-width, so at its end it
-   *  is exactly a disc — isotropic, needing no direction. */
-  transferRadius: number;
+  /** The transfers landing on this stop, one entry per END — kept apart rather
+   *  than merged to the fattest, because each reaches its own way. `r` is the
+   *  cap radius: a transfer is a round-capped capsule of uniform half-width, so
+   *  where it ENDS it is exactly a disc of that radius. `dir` is the unit
+   *  direction its BODY leaves the stop in, station-local — the capsule's
+   *  straight side passes under any approach leaning toward it and cuts it at
+   *  r/sin θ, √2·r at 45°, which is the corner a thick transfer closes off
+   *  between two stops of a cross. Null when the other end is not a stop of the
+   *  same station (see `bodyDir`), and the cap disc stands alone. */
+  transfers: { r: number; dir: Vec2 | null }[];
   /** Clearance a label keeps from this stop's marker (Line.labelGap, default
    *  3). Rides the LINE, not the label, so a row of labels along one corridor
    *  stays consistent; at a cross each axis uses the gap of the stop that
@@ -96,7 +102,7 @@ export const DEFAULT_STOP_METRICS: StopMetricsFn = () => ({
   gap: 0,
   dash: null,
   dot: null,
-  transferRadius: 0,
+  transfers: [],
   labelGap: LABEL_GAP,
   // The historical infinite-stripe assumption — non-doc callers have no
   // topology to consult, and assuming body on both sides only ever over-clears.
@@ -553,6 +559,21 @@ interface AutoAlignInfo {
 const ANCHOR_FRACTION = { start: 0, middle: 0.5, end: 1 } as const;
 
 /**
+ * Which line of a multi-line block takes the anchor, once `label.autoVAlign`
+ * has had its say over the octant-derived default.
+ *
+ * Resolved in TWO places that must agree: the block behavior itself, and the
+ * beside slant window — which side of the stop's row the block's ink spans.
+ * A window charged on the side the lines do NOT stack onto measures the pin
+ * against ink that is not there.
+ */
+const autoValign = (
+  label: Station['label'],
+  fallback: AutoAlignInfo['valign'],
+): AutoAlignInfo['valign'] =>
+  label.autoVAlign === 'up' ? 'auto-up' : label.autoVAlign === 'down' ? 'auto-down' : fallback;
+
+/**
  * Apply the user's optional H/V overrides to the octant-derived defaults.
  * `autoVAlign` picks which line is the anchor line ('down' = top line,
  * block grows down; 'up' = bottom line, grows up) — the octant's
@@ -570,12 +591,7 @@ function applyAutoOverrides(
   anchorPerp: number,
   lineAdvances: number[],
 ): AutoAlignInfo {
-  const valign =
-    label.autoVAlign === 'up'
-      ? 'auto-up'
-      : label.autoVAlign === 'down'
-        ? 'auto-down'
-        : valignDefault;
+  const valign = autoValign(label, valignDefault);
   const textAnchor = label.autoHAlign ?? textAnchorDefault;
   if (textAnchor !== textAnchorDefault) {
     const anchorLineIdx = valign === 'auto-up' ? lineAdvances.length - 1 : 0;
@@ -642,35 +658,56 @@ function dotSupport(
 }
 
 /**
- * The stop of a CROSSING line packed beside `ref` — same reading-frame row
- * (within CROSS_PERP_TOL), a different travel axis, on one side only. Its
- * stripe is what blocks a label centered on `ref`; see the call site.
+ * The candidate nearest `proj` along reading within ONE reading-frame row
+ * (`perp`, within CROSS_PERP_TOL) and on ONE side of it — null when both sides
+ * are occupied, or neither is. `keep` narrows which candidates count.
+ *
+ * Both placements that dodge a stripe ask exactly this: which single marker is
+ * in the way, and which way do I read off it. Boxed in on BOTH sides there is
+ * no side to read into, and the null sends the caller back to centering.
+ * Distance needs no gate of its own — every candidate here already passed
+ * `labelAdjacencyGate` against the label cell.
+ */
+function oneSidedInRow<T extends { proj: number; perp: number }>(
+  gated: T[],
+  perp: number,
+  proj: number,
+  keep: (c: T) => boolean,
+): T | null {
+  let ahead: T | null = null;
+  let behind: T | null = null;
+  for (const c of gated) {
+    if (!keep(c)) continue;
+    if (Math.abs(c.perp - perp) > CROSS_PERP_TOL) continue;
+    const d = c.proj - proj;
+    if (d > 1e-9) {
+      if (!ahead || d < ahead.proj - proj) ahead = c;
+    } else if (d < -1e-9) {
+      if (!behind || d > behind.proj - proj) behind = c;
+    }
+  }
+  if (ahead && behind) return null;
+  return ahead ?? behind;
+}
+
+/**
+ * The stop of a CROSSING line packed beside `ref` — same reading-frame row, a
+ * different travel axis, on one side only. Its stripe is what blocks a label
+ * centered on `ref`; see the call site.
  *
  * A neighbor on the same axis is a parallel line of the same corridor, not a
- * crossing, and never triggers this. Boxed in on BOTH sides (a label between
- * two crossing stripes) returns null: centering on the stop is the only
- * placement left. Distance needs no gate of its own — every candidate here
- * already passed `labelAdjacencyGate` against the label cell, which is a
- * cell-and-change away from `ref`.
+ * crossing, and never triggers this.
  */
 function crossingStop<
   T extends { proj: number; perp: number; orientation: StopOrientation | null },
 >(ref: T, gated: T[]): T | null {
   if (!ref.orientation) return null;
-  let ahead: T | null = null;
-  let behind: T | null = null;
-  for (const c of gated) {
-    if (c === ref || !c.orientation || c.orientation === ref.orientation) continue;
-    if (Math.abs(c.perp - ref.perp) > CROSS_PERP_TOL) continue;
-    const d = c.proj - ref.proj;
-    if (d > 1e-9) {
-      if (!ahead || d < ahead.proj - ref.proj) ahead = c;
-    } else if (d < -1e-9) {
-      if (!behind || d > behind.proj - ref.proj) behind = c;
-    }
-  }
-  if (ahead && behind) return null;
-  return ahead ?? behind;
+  return oneSidedInRow(
+    gated,
+    ref.perp,
+    ref.proj,
+    (c) => c !== ref && !!c.orientation && c.orientation !== ref.orientation,
+  );
 }
 
 /**
@@ -731,7 +768,7 @@ function autoAlignInfo(
       gap: 0,
       dash: null,
       dot: null,
-      transferRadius: 0,
+      transfers: [],
       labelGap: LABEL_GAP,
       continues: { plus: false, minus: false },
       dRow: phantomDot.row - label.row,
@@ -787,8 +824,117 @@ function autoAlignInfo(
     );
   }
 
-  const o = dirIndex({ x: -ref.proj, y: -ref.perp });
+  // The CORNER park — the other half of the Vignelli cross, and the commonest
+  // interchange label there is: the label sits in the quadrant between its own
+  // line's stop BELOW it and the crossing line's stop BESIDE it. The centering
+  // octants put the text's middle on the label cell, which runs it straight
+  // through that beside marker — a stop one cell away sits well inside any
+  // name's span. Re-anchor on the beside stop instead: beside placement pins
+  // the text at that marker's edge and reads AWAY from it, clearing the stripe
+  // outright. Boxed in on both sides there is no side to read into, so
+  // centering stands (the same resolution the crossing butt makes below).
+  //
+  // Distance does not enter it, which is why this is not a tie-break in the
+  // reference pick above: a wide beside line packs further out than the stop
+  // below, and it is precisely centering on the nearer stop that puts the text
+  // over the further one. Only the centering octants ask — every other octant
+  // already pins an end of the text rather than its middle.
+  const refOctant = dirIndex({ x: -ref.proj, y: -ref.perp });
+  const aside =
+    refOctant === 2 || refOctant === 6
+      ? // ANY marker in the label's OWN row and column — what the centered text
+        // overruns — not only a crossing line's, and deliberately so. A stop
+        // whose stripe runs ALONG the reading row qualifies too: if its line
+        // continues toward the label then the label CELL already sits on that
+        // stripe and centering is no escape either, and if it does not (a
+        // terminus facing away) reading off it is exactly right — the
+        // east-end-of-a-row park, now reached without the label having to be
+        // the only thing adjacent.
+        oneSidedInRow(gated, 0, 0, () => true)
+      : null;
+  if (aside) ref = aside;
+
+  const o = aside ? dirIndex({ x: -aside.proj, y: -aside.perp }) : refOctant;
   const u = DIRS_8[o]; // approach unit vector, stop → label, reading frame
+
+  // Which way a multi-line block stacks once it lands in a BESIDE octant.
+  // Normally down: the first line reads level with the dot and extra lines grow
+  // below it, so adding a line never moves the one that sits level. But a
+  // corner park got here to dodge a marker that is STILL THERE — stacking
+  // toward it would just trade which stop the text lands on — so a park entered
+  // from octant 6 (the host stop BELOW the label) anchors the BOTTOM line and
+  // lifts earlier ones away from it. From octant 2 the host is above and the
+  // ordinary default already grows away. Read by the ink window below as well
+  // as the block itself, which is why it is resolved here and only once.
+  const besideDefault: AutoAlignInfo['valign'] = aside && refOctant === 6 ? 'auto-up' : 'auto-down';
+
+  /**
+   * Where a straight-sided obstacle's near edge cuts the approach.
+   *
+   * The obstacle is a band of half-width `r` running along `axis` (station-local
+   * unit vector) through the stop; `dir` is the approach in the reading frame,
+   * and `[t1, t2]` the reading-perp window (offsets from the stop's row, +down)
+   * the caller's ink spans. The row-level ray support is exact for a band
+   * PERPENDICULAR to the approach, but a slanted one's edge moves by
+   * |along/cross| per unit of that offset, so the block's nearest ink corner is
+   * what actually has to clear — a CHARGE when the window leans into the
+   * advance, a CREDIT when the whole window sits where the edge has retreated.
+   * Null for a band PARALLEL to the approach: there is no edge to cut, and each
+   * caller has its own honest fallback for that.
+   *
+   * A line's stripe and a transfer's capsule are the same band; they differ only
+   * in what lives at the ends of it, which `sAxis` — which half of the band the
+   * binding contact sits on — lets each caller decide.
+   */
+  const slantHit = (
+    r: number,
+    axis: Vec2,
+    dir: Vec2,
+    t1: number,
+    t2: number,
+  ): { base: number; reach: number; sAxis: number } | null => {
+    const uLocX = dir.x * readCos - dir.y * readSin;
+    const uLocY = dir.x * readSin + dir.y * readCos;
+    // Label-side edge: normal = axis⊥, signed toward the approach.
+    const un = uLocX * -axis.y + uLocY * axis.x;
+    if (Math.abs(un) < 1e-6) return null;
+    const pn = (-readSin * -axis.y + readCos * axis.x) * Math.sign(un);
+    // Edge advance along the approach per unit of +perp (the stacking side).
+    const k = -pn / Math.abs(un);
+    const base = r / Math.abs(un);
+    // Binding corner: the window end the edge reaches furthest toward (or
+    // retreats least from).
+    const t = k * t1 >= k * t2 ? t1 : t2;
+    const reach = base + k * t;
+    const along = uLocX * axis.x + uLocY * axis.y;
+    return {
+      base,
+      reach,
+      sAxis: t * (-readSin * axis.x + readCos * axis.y) + reach * along,
+    };
+  };
+
+  /**
+   * How far the transfers landing on `c` reach along `dir` over the ink window
+   * `[t1, t2]`.
+   *
+   * Each is a capsule: a band leaving the stop toward `dir` (measured by
+   * `slantHit`) closed by a round cap of `r` that is ALWAYS there — so the reach
+   * floors at `r`, which is exactly what a direction-less end charges, and the
+   * pin can never come in tighter than the plain disc. `sAxis > 0` is what tells
+   * body from cap: the capsule occupies only the `dir` half of the band, and a
+   * contact behind the stop sits on the edge LINE but on no painted transfer.
+   * (Past the FAR cap it over-clears — the length is not carried, and generous
+   * only ever spaces the text further out.)
+   */
+  const transferExtent = (c: Gated, dir: Vec2, t1: number, t2: number): number => {
+    let extent = 0;
+    for (const tr of c.transfers) {
+      const hit = tr.dir ? slantHit(tr.r, tr.dir, dir, t1, t2) : null;
+      extent = Math.max(extent, hit && hit.sAxis > 0 ? Math.max(tr.r, hit.reach) : tr.r);
+    }
+    return extent;
+  };
 
   // Marker extent along a reading-frame unit direction, via the rotated
   // square's support function in the LOCAL frame. The phantom dot has no
@@ -817,7 +963,7 @@ function autoAlignInfo(
     // axes rather than the station's (see dotSupport).
     let extent = stripe;
     if (c.dot) extent = Math.max(extent, dotSupport(c.dot, uLocX, uLocY, stationRotation));
-    if (c.transferRadius > 0) extent = Math.max(extent, c.transferRadius);
+    if (c.transfers.length) extent = Math.max(extent, transferExtent(c, dir, 0, 0));
     if (!c.dash || !c.orientation) return extent;
     // A dash stop's tick is a second obstacle: a rect from the stripe edge
     // (± half on the label-signed perpendicular) reaching `length` toward
@@ -841,44 +987,23 @@ function autoAlignInfo(
   };
 
   /**
-   * Stripe reach along an approach measured over the text's perpendicular
-   * WINDOW `[t1, t2]` (reading-perp offsets from the stop's row, +down), not
-   * just the row-level ray. The ray support is exact for a stripe
-   * perpendicular to the approach, but a DIAGONAL stripe's edge moves by
-   * |along/cross| per unit of that offset, so the block's nearest ink corner
-   * is what actually has to clear — a CHARGE when the window leans into the
-   * advance (beside octants straddle the row; the cross butt's mirror case),
-   * a CREDIT when the whole window sits where the edge has retreated (the
-   * cross butt's screenshots). Returns null for a stripe PARALLEL to the
-   * approach — no slant model; the finite marker square is the deliberate
-   * obstacle there (it is what lets a terminus label read along its own
-   * line) — and for the stripeless phantom dot.
+   * Stripe reach along an approach over the text's ink window (see `slantHit`,
+   * whose CHARGE case is the beside octants straddling the row and the cross
+   * butt's mirror, and whose CREDIT case is the cross butt's screenshots).
+   * Null for a stripe PARALLEL to the approach — the finite marker square is
+   * the deliberate obstacle there, and it is what lets a terminus label read
+   * along its own line — and for the stripeless phantom dot.
    */
   const stripeSlantExtent = (c: Gated, dir: Vec2, t1: number, t2: number): number | null => {
     if (!c.orientation) return null; // phantom dot paints no stripe
-    const uLocX = dir.x * readCos - dir.y * readSin;
-    const uLocY = dir.x * readSin + dir.y * readCos;
-    const axis = travelDirLocal(c.orientation);
-    // Label-side stripe edge: normal = axis⊥, signed toward the approach.
-    const un = uLocX * -axis.y + uLocY * axis.x;
-    if (Math.abs(un) < 1e-6) return null;
-    const pn = (-readSin * -axis.y + readCos * axis.x) * Math.sign(un);
-    // Edge advance along the approach per unit of +perp (the stacking side).
-    const k = -pn / Math.abs(un);
-    const base = c.half / Math.abs(un);
-    // Binding corner: the window end the edge reaches furthest toward (or
-    // retreats least from).
-    const t = k * t1 >= k * t2 ? t1 : t2;
-    if (k * t === 0) return base;
+    const hit = slantHit(c.half, travelDirLocal(c.orientation), dir, t1, t2);
+    if (!hit) return null;
     // The window reads stripe BODY away from the row; it counts only when
     // the line actually continues on the axis half the binding corner's
     // contact point sits on — at a terminus facing the other way there is
     // nothing there, and the row-level ray (≡ the finite marker square along
     // this approach) is the honest obstacle.
-    const reach = base + k * t;
-    const along = uLocX * axis.x + uLocY * axis.y;
-    const sAxis = t * (-readSin * axis.x + readCos * axis.y) + reach * along;
-    return (sAxis > 0 ? c.continues.plus : c.continues.minus) ? reach : base;
+    return (hit.sAxis > 0 ? c.continues.plus : c.continues.minus) ? hit.reach : hit.base;
   };
 
   // Pin point: marker edge + LABEL_GAP along the approach, stop-relative on
@@ -890,11 +1015,17 @@ function autoAlignInfo(
     // already, and a label centered above/below a diagonal line is not a
     // layout the octant model serves (the corners are). A diagonal CROSSING
     // stripe gets the same window treatment at the butt below.
-    const growsUp = label.autoVAlign === 'up';
+    const growsUp = autoValign(label, besideDefault) === 'auto-up';
     const tUp = capCenterDy(fontSize) + (growsUp ? stacked : 0);
     const tDown =
       capCenterDy(fontSize) + 0.5 * DESCENDER_FRACTION * fontSize + (growsUp ? 0 : stacked);
-    extent = Math.max(extent, stripeSlantExtent(ref, u, -tUp, tDown) ?? 0);
+    // The stop's own transfer capsules slant across the window the same way,
+    // and against a beside label they are the corner-closing obstacle.
+    extent = Math.max(
+      extent,
+      stripeSlantExtent(ref, u, -tUp, tDown) ?? 0,
+      transferExtent(ref, u, -tUp, tDown),
+    );
   }
   let pinRead = ref.proj * STOP_SIZE + u.x * (extent + ref.labelGap);
   const pinPerp = ref.perp * STOP_SIZE + u.y * (extent + ref.labelGap);
@@ -966,13 +1097,13 @@ function autoAlignInfo(
     anchorPerp = pinPerp + (CAP_FRACTION * fontSize - cb);
     valign = 'auto-down';
   } else {
-    // Beside: the FIRST line's Core Type Area centers on the stop's row and
-    // extra lines grow down, keeping the first line level with the dot. The
-    // half-cap step is `capCenterDy` — literally the rule every badge glyph
+    // Beside: the ANCHOR line's Core Type Area centers on the stop's row and
+    // the rest stack away from it (`besideDefault` picks which line that is).
+    // The half-cap step is `capCenterDy` — literally the rule every badge glyph
     // centers by — so an inline route bullet in a beside-aligned name lands on
     // the stop's row by construction rather than by two constants agreeing.
     anchorPerp = pinPerp + (capCenterDy(fontSize) - cb);
-    valign = 'auto-down';
+    valign = besideDefault;
   }
   return applyAutoOverrides(label, textAnchorDefault, valign, pinRead, anchorPerp, lineAdvances);
 }

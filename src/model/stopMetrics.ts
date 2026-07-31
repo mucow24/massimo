@@ -3,12 +3,13 @@ import { dotSizeOverride } from './dotSize';
 import { defaultDotDiameter, dotStrokeRadiusDeltas, isBlankDotStyle } from './dotStyle';
 import { lineInterlineGapOf, lineLabelGapOf, lineWidthOf } from './lineWidth';
 import { neighborsOf } from './lineTopology';
-import { isStopEnd } from './transferAnchors';
+import { isStopEnd, type StopEnd } from './transferAnchors';
 import { resolveTransferStyle } from './transferStyle';
 import { resolveDotStyle, stationIsSingleton } from './transforms';
-import type { DotStyle, Line, Station, StopCell, Transfer } from './types';
+import type { DotStyle, Line, Station, StopCell, Transfer, TransferEnd } from './types';
 import type { StopMetrics, StopMetricsFn } from '../geometry/labelLayout';
 import { rotateBy, travelDirLocal } from '../geometry/orientation';
+import type { Vec2 } from '../geometry/vec';
 
 /**
  * The doc slice `stopMetricsOf` resolves against. A `MapDoc` satisfies it
@@ -38,27 +39,65 @@ const transferCapRadius = (t: Transfer): number => {
 
 const stopKey = (stationId: string, lineId: string): string => `${stationId} ${lineId}`;
 
+/** Shared empty list, so the common stop allocates nothing for its transfers. */
+const NO_TRANSFERS: StopMetrics['transfers'] = [];
+
 /**
- * Per-(station, line) largest transfer cap, built ONCE per source. Only ends
- * naming a specific stop count: an end with no `lineId`, or one bound to a
- * transfer anchor (free or station-hosted), sits at the station's own anchor
- * point rather than on a dot, so no stop's label should clear it. The two ends
- * of a transfer are indexed independently — one joining two stops of the SAME
- * station contributes a cap to each.
+ * The unit direction a transfer's BODY leaves `end`'s stop in, in the station's
+ * LOCAL cell frame — or null unless `other` is a stop of the SAME station.
+ *
+ * Both cells then live in that one lattice, so the heading is a plain cell
+ * delta needing no doc slice to place (`stopCenterAt` scales row/col
+ * uniformly, so normalizing the raw delta gives the same unit vector). Any
+ * other end — a different station, a free or hosted anchor, the station's own
+ * anchor point — would need the world resolver and the lineCircles/anchors it
+ * reads, which this lookup does not hold. The cap disc stands alone there.
  */
-const transferCapsByStop = (transfers: Record<string, Transfer>): Map<string, number> => {
-  const caps = new Map<string, number>();
+const bodyDir = (
+  end: StopEnd,
+  other: TransferEnd,
+  stations: Record<string, Station | undefined>,
+): Vec2 | null => {
+  if (!isStopEnd(other) || !other.lineId || other.stationId !== end.stationId) return null;
+  const stops = stations[end.stationId]?.stops;
+  const from = stops?.find((s) => s.lineId === end.lineId);
+  const to = stops?.find((s) => s.lineId === other.lineId);
+  if (!from || !to) return null;
+  const dx = to.col - from.col;
+  const dy = to.row - from.row;
+  const len = Math.hypot(dx, dy);
+  return len < 1e-6 ? null : { x: dx / len, y: dy / len };
+};
+
+/**
+ * Per-(station, line) transfer ends, built ONCE per source. Only ends naming a
+ * specific stop count: an end with no `lineId`, or one bound to a transfer
+ * anchor (free or station-hosted), sits at the station's own anchor point
+ * rather than on a dot, so no stop's label should clear it. The two ends of a
+ * transfer are indexed independently — one joining two stops of the SAME
+ * station lands on each, and each reads the body heading for the OTHER.
+ */
+const transfersByStop = (
+  transfers: Record<string, Transfer>,
+  stations: Record<string, Station | undefined>,
+): Map<string, StopMetrics['transfers']> => {
+  const byStop = new Map<string, StopMetrics['transfers']>();
   for (const id in transfers) {
     const t = transfers[id];
     const r = transferCapRadius(t);
-    for (const end of [t.a, t.b]) {
+    for (const [end, other] of [
+      [t.a, t.b],
+      [t.b, t.a],
+    ]) {
       if (!isStopEnd(end) || !end.lineId) continue;
+      const entry = { r, dir: bodyDir(end, other, stations) };
       const key = stopKey(end.stationId, end.lineId);
-      const prev = caps.get(key);
-      if (prev === undefined || r > prev) caps.set(key, r);
+      const list = byStop.get(key);
+      if (list) list.push(entry);
+      else byStop.set(key, [entry]);
     }
   }
-  return caps;
+  return byStop;
 };
 
 /**
@@ -121,7 +160,7 @@ const cachedBuild = (src: StopMetricsSource): StopMetricsFn | null => {
 export const stopMetricsOf = (src: StopMetricsSource): StopMetricsFn => {
   const hit = cachedBuild(src);
   if (hit) return hit;
-  const caps = transferCapsByStop(src.transfers);
+  const transfers = transfersByStop(src.transfers, src.stations);
   // Which signed halves of the stop's travel axis carry line body away from
   // the station: project each edge-neighbour's world delta onto the canonical
   // world axis. A perpendicular neighbour (the line bends away AT the
@@ -165,7 +204,7 @@ export const stopMetricsOf = (src: StopMetricsSource): StopMetricsFn => {
         isDash || isBlankDotStyle(style)
           ? null
           : { r: dotOuterRadius(baseR, style), shape: style.shape },
-      transferRadius: caps.get(stopKey(station.id, stop.lineId)) ?? 0,
+      transfers: transfers.get(stopKey(station.id, stop.lineId)) ?? NO_TRANSFERS,
       continues: continuesOf(station, stop, line),
     };
   };

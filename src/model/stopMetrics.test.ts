@@ -173,30 +173,35 @@ describe('stopMetricsOf — transfer caps', () => {
 
   it('a cap is half the transfer’s full painted width, halo included', () => {
     // TransferLayer paints thickness over a thickness + 2*strokeWidth halo.
-    expect(metricsFor({}, { t1: t({ thickness: 8, strokeWidth: 2 }) }).transferRadius).toBe(6);
+    expect(metricsFor({}, { t1: t({ thickness: 8, strokeWidth: 2 }) }).transfers).toEqual([
+      { r: 6, dir: null },
+    ]);
   });
 
-  it('takes the LARGEST of several transfers landing on the same stop', () => {
+  it('keeps EVERY transfer landing on the stop — each reaches its own way', () => {
     const transfers = {
       t1: t({ thickness: 4, strokeWidth: 0 }),
       t2: t({ id: 't2', thickness: 10, strokeWidth: 0 }),
     };
-    expect(metricsFor({}, transfers).transferRadius).toBe(5);
+    expect(metricsFor({}, transfers).transfers).toEqual([
+      { r: 2, dir: null },
+      { r: 5, dir: null },
+    ]);
   });
 
   it('ignores a transfer landing on a DIFFERENT stop of the same station', () => {
     const other = t({ a: { stationId: 's1', lineId: 'L9' }, thickness: 20 });
-    expect(metricsFor({}, { t1: other }).transferRadius).toBe(0);
+    expect(metricsFor({}, { t1: other }).transfers).toEqual([]);
   });
 
   it('ignores an end with no lineId — it sits on the station anchor, not a dot', () => {
     const anchored = t({ a: { stationId: 's1', lineId: null }, thickness: 20 });
-    expect(metricsFor({}, { t1: anchored }).transferRadius).toBe(0);
+    expect(metricsFor({}, { t1: anchored }).transfers).toEqual([]);
   });
 
   it('ignores an end bound to a transfer ANCHOR rather than a stop', () => {
     const anchored = t({ a: { stationId: 's1', anchorId: 'a1' }, thickness: 20 });
-    expect(metricsFor({}, { t1: anchored }).transferRadius).toBe(0);
+    expect(metricsFor({}, { t1: anchored }).transfers).toEqual([]);
   });
 
   it('counts BOTH ends, so a transfer between two stops of one station caps each', () => {
@@ -210,10 +215,39 @@ describe('stopMetricsOf — transfer caps', () => {
     const fn = stopMetricsOf({
       lines: { L1: makeLine({ id: 'L1' }), L2: makeLine({ id: 'L2' }) },
       transfers: { t1: selfLink },
-      stations: {},
+      stations: { s1: st },
     });
-    expect(fn(st, st.stops[0]).transferRadius).toBe(6);
-    expect(fn(st, st.stops[1]).transferRadius).toBe(6);
+    // Each end reads the body leaving toward the OTHER stop — opposite headings.
+    expect(fn(st, st.stops[0]).transfers).toEqual([{ r: 6, dir: { x: 1, y: 0 } }]);
+    expect(fn(st, st.stops[1]).transfers).toEqual([{ r: 6, dir: { x: -1, y: 0 } }]);
+  });
+
+  it('a DIAGONAL self-link reports the unit direction its body leaves in', () => {
+    const selfLink = t({
+      a: { stationId: 's1', lineId: 'L1' },
+      b: { stationId: 's1', lineId: 'L2' },
+      thickness: 12,
+      strokeWidth: 0,
+    });
+    const st = makeStation({
+      id: 's1',
+      stops: [makeStop('L1'), makeStop('L2', { row: 1, col: 1 })],
+    });
+    const [{ dir }] = stopMetricsOf({
+      lines: { L1: makeLine({ id: 'L1' }), L2: makeLine({ id: 'L2' }) },
+      transfers: { t1: selfLink },
+      stations: { s1: st },
+    })(st, st.stops[0]).transfers;
+    expect(dir?.x).toBeCloseTo(Math.SQRT1_2, 6);
+    expect(dir?.y).toBeCloseTo(Math.SQRT1_2, 6);
+  });
+
+  it('a transfer to ANOTHER station has no direction in this station’s frame', () => {
+    // Resolving it would need the doc slices this lookup does not hold; the cap
+    // disc stands alone, as it always has.
+    expect(metricsFor({}, { t1: t({ thickness: 12, strokeWidth: 0 }) }).transfers).toEqual([
+      { r: 6, dir: null },
+    ]);
   });
 });
 

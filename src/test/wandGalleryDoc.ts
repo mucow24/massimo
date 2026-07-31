@@ -6,6 +6,7 @@ import type {
   StopCell,
   StopOrientation,
   TextLabel,
+  Transfer,
 } from '../model/types';
 import { DEFAULT_DOC, makeStation } from '../model/transforms';
 import { edgesFromStations } from '../model/lineTopology';
@@ -27,6 +28,9 @@ import type { Vec2 } from '../geometry/vec';
  *  - terminals: every exit ray (8) × octant (8) = 64, horizontal labels;
  *  - crossings: H×V (all four octant × side combos), H×diagonal and
  *    diagonal×diagonal representatives = 12;
+ *  - corner parks: the label in a cross's quadrant, both beside-sides × both
+ *    host sides, plus the thick transfer that closes the corner and a two-line
+ *    name that has to stack away from the stop below = 6;
  *  - plus multi-line stacking (3), the detached-label fallback, and the
  *    stop-less phantom station.
  *
@@ -45,6 +49,7 @@ export type WandGalleryFamily =
   | 'mid' // mid-line station: rotation × axis corridors, one octant each
   | 'terminal' // line terminus: exit ray × octant scenes
   | 'cross' // centering octant with a crossing stop re-anchoring the reading axis
+  | 'corner' // label in a cross's quadrant: the stop BESIDE it takes the anchor
   | 'multiline' // two-line names pinning the stacking direction per family
   | 'fallback' // label dragged beyond the adjacency gate: centered on its cell
   | 'phantom'; // station with no stops: aligns against the phantom dot
@@ -216,6 +221,7 @@ export interface WandGallery {
 export function wandGalleryDoc(): WandGallery {
   const stations: Station[] = [];
   const lines: Line[] = [];
+  const transfers: Transfer[] = [];
   const cases: WandGalleryCase[] = [];
   const textLabels: TextLabel[] = [];
   let colorIdx = 0;
@@ -463,6 +469,77 @@ export function wandGalleryDoc(): WandGallery {
   });
   y += 160 + 270 + 130;
 
+  // ── Corner parks: the label sits in a QUADRANT of a cross — its own line's
+  // stop straight below (or above) it, the crossing line's stop BESIDE it, in
+  // the label's own row. Centering on the near stop would run the text through
+  // that beside marker, so the beside stop takes the anchor and the text reads
+  // away from it. One scene adds the thick transfer that closes the corner off
+  // diagonally, which the pin has to clear along its straight side; the last
+  // takes a two-line name, whose block must stack AWAY from the stop below
+  // rather than growing into the marker the re-anchor exists to dodge.
+  y += 20;
+  header('corner-hdr', 0, y, 'Corner parks · the beside stop takes the anchor');
+  const cornerConfigs: [side: 1 | -1, down: 1 | -1, transfer: boolean, lines2?: true][] = [
+    [-1, 1, false],
+    [1, 1, false],
+    [-1, -1, false],
+    [1, -1, false],
+    [-1, 1, true],
+    [-1, 1, false, true],
+  ];
+  cornerConfigs.forEach(([side, down, withTransfer, lines2], i) => {
+    const cx = 200 + i * 280;
+    const cy = y + 170;
+    const dirName = side === -1 ? 'east' : 'west';
+    const id = `corner-${down === 1 ? 'N' : 'S'}${side === -1 ? 'E' : 'W'}${withTransfer ? '-xfer' : ''}${lines2 ? '-2line' : ''}`;
+    // Beside stop (the crossing line's) at cell (0,0), the label one cell
+    // toward −side, and the host line's stop straight below/above the label —
+    // so the two stops sit DIAGONAL to each other and the label fills the
+    // quadrant between them.
+    const hx = cx - 14 * side;
+    const hy = cy + 14 * down;
+    stations.push(
+      waypoint(`${id}-v1`, cx, cy - ARM, [stop(`${id}-v`, 'auto-vertical')]),
+      station(
+        id,
+        withTransfer
+          ? 'Corner transfer'
+          : lines2
+            ? 'Corner\ntwo lines'
+            : `Corner ${down === 1 ? 'N' : 'S'} ${dirName}`,
+        cx,
+        cy,
+        [stop(`${id}-v`, 'auto-vertical'), stop(`${id}-h`, 'auto-horizontal', down, -side)],
+        [0, -side],
+      ),
+      waypoint(`${id}-v2`, cx, cy + ARM, [stop(`${id}-v`, 'auto-vertical')]),
+      waypoint(`${id}-h1`, hx - ARM, hy, [stop(`${id}-h`, 'auto-horizontal')]),
+      waypoint(`${id}-h2`, hx + ARM, hy, [stop(`${id}-h`, 'auto-horizontal')]),
+    );
+    line(`${id}-v`, `Corner cross ${i + 1}`, [`${id}-v1`, id, `${id}-v2`]);
+    line(`${id}-h`, `Corner host ${i + 1}`, [`${id}-h1`, id, `${id}-h2`]);
+    if (withTransfer)
+      transfers.push({
+        id: `${id}-t`,
+        a: { stationId: id, lineId: `${id}-v` },
+        b: { stationId: id, lineId: `${id}-h` },
+        thickness: 20,
+      });
+    cases.push({
+      stationId: id,
+      family: 'corner',
+      // The label's octant against the stop that WON it — the beside one,
+      // which is this station's first stop.
+      octant: side === -1 ? 0 : 4,
+      labelRotation: 0,
+      axis: 'V',
+      ray: null,
+      terminal: false,
+      expect: { textAnchor: side === -1 ? 'start' : 'end', anchorSide: 'level' },
+    });
+  });
+  y += 170 + 130;
+
   // ── Multi-line stacking, the detached-label fallback, and the stop-less
   // phantom station.
   header('misc-hdr', 0, y, 'Multi-line stacking · detached-label fallback · stop-less station');
@@ -530,6 +607,7 @@ export function wandGalleryDoc(): WandGallery {
     lines: Object.fromEntries(lines.map((l) => [l.id, l])),
     lineOrder: lines.map((l) => l.id),
     lineCounter: lines.length,
+    transfers: Object.fromEntries(transfers.map((t) => [t.id, t])),
     textLabels: Object.fromEntries(textLabels.map((t) => [t.id, t])),
   };
   return { doc, cases };
