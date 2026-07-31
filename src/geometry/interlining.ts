@@ -838,10 +838,7 @@ export function buildStopMarkers(
       // the stop's angle — continuous, not octant — so the square sits flush
       // with the arc band (rotationDeg is already in the marker unit hash, so
       // the region cache invalidates on it like any other rotation).
-      const viaCircle =
-        cell.viaCircle && station.circleId !== undefined
-          ? lineCircles[station.circleId]
-          : undefined;
+      const viaCircle = cell.viaCircle ? stationCircle(station, lineCircles) : null;
       const octantTangent = rotateBy(travelDirLocal(cell.orientation), station.rotation);
       let worldTangent = viaCircle
         ? tangentAtAngle(circleAngleAt(viaCircle, { x: cx, y: cy }))
