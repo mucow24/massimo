@@ -55,11 +55,11 @@ describe('useStopMetrics', () => {
   it('reports the live transfer cap after a transfer is added', () => {
     const { result, rerender } = renderHook(() => useStopMetrics(lines));
     const st = useDoc.getState().stations.s1;
-    const before = result.current(st, st.stops[0]).transferRadius;
-    expect(before).toBeGreaterThan(0);
+    const before = result.current(st, st.stops[0]).transfers;
+    expect(before.length).toBeGreaterThan(0);
 
     useDoc.setState({ transfers: {} });
     rerender();
-    expect(result.current(st, st.stops[0]).transferRadius).toBe(0);
+    expect(result.current(st, st.stops[0]).transfers).toEqual([]);
   });
 });
