@@ -78,6 +78,7 @@ import {
 import {
   BAND_MERGE_TOL,
   STOP_SIZE,
+  nz,
   radialLocalTurn,
   rotateBy,
   stationCellToWorld,
@@ -451,7 +452,7 @@ function circleSeat(
 
 export function moveStation(doc: MapDoc, id: StationId, x: number, y: number): MapDoc {
   return updateStation(doc, id, (st) => {
-    const circle = st.circleId !== undefined ? doc.lineCircles[st.circleId] : undefined;
+    const circle = stationCircle(st, doc.lineCircles);
     if (!circle) return { ...st, x, y };
     // Bound stations move ALONG their circle. Detaching is the caller's move
     // (unbind first) — see the drag hysteresis in the interaction layer.
@@ -494,9 +495,8 @@ function reseatCircleLayout(before: Station, after: Station, circle: CircleSpec)
   if (((turn % 4) + 4) % 4 !== 2) return after;
   const flip = <T extends { row: number; col: number }>(cell: T): T => ({
     ...cell,
-    // Normalize -0 → 0: it stringifies as "0" but loses every strict compare.
-    row: cell.row === 0 ? 0 : -cell.row,
-    col: cell.col === 0 ? 0 : -cell.col,
+    row: nz(-cell.row),
+    col: nz(-cell.col),
   });
   return {
     ...after,
@@ -1873,9 +1873,6 @@ function edgesAfterRemoveStation(edges: string[], stationId: StationId): string[
   const e = edgesWithout(edges, stationId);
   return nbrs.length === 2 ? addEdge(e, nbrs[0], nbrs[1]) : e;
 }
-
-// Collapse a signed zero, so a cell never carries -0 (see `nz` in orientation).
-const nz = (n: number): number => (n === 0 ? 0 : n);
 
 // Unit cell-space step pointing radially OUT of `circle` at bound station
 // `st` — the axis every ring LANE is measured along. Derived from

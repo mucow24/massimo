@@ -10,7 +10,7 @@ import {
   snapGuidesEqual,
   snapToleranceAt,
 } from '../../geometry/snap';
-import { lineCircleAtPoint, snapPointToCircle } from '../../geometry/lineCircle';
+import { lineCircleAtPoint, snapPointToCircle, stationCircle } from '../../geometry/lineCircle';
 import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
 import {
   collectGroupSiblings,
@@ -167,8 +167,7 @@ export function useStationDrag(
     // in the transforms; everything here is just the capture/release call.
     if (!redistributeAnchor && !ringTowed) {
       const tolerance = snapToleranceAt(viewportZoom);
-      const circle =
-        draggedSt?.circleId !== undefined ? lineCircles[draggedSt.circleId] : undefined;
+      const circle = draggedSt ? stationCircle(draggedSt, lineCircles) : null;
       // "Snap to circle cardinals" adds angular magnetism to the seat, measured
       // as arc length against the same tolerance as the capture. Null = rim only.
       const cardinalTolerance = snapModes.circle ? tolerance : null;

@@ -51,9 +51,13 @@ import { intersect } from './clip';
 import {
   boxesOverlap,
   buildLineBodies,
+  clipperQuant,
   compKeyOf,
   extractFaces,
   finalizeFaces,
+  FNV_OFFSET,
+  fnvMix,
+  fnvMixNum,
   restrictBodiesToZone,
   ringsBbox,
   subdivideCells,
@@ -124,16 +128,15 @@ export interface RegionIncrementalResult {
   zoneUnionParts: number;
 }
 
-// FNV-1a over coordinates quantized to clipper's own 1e-3 resolution, so the
-// hash cannot distinguish inputs clipper itself would treat as identical.
-const FNV_OFFSET = 0x811c9dc5;
-const FNV_PRIME = 0x01000193;
-const mix = (h: number, v: number): number => Math.imul(h ^ (v | 0), FNV_PRIME) >>> 0;
-const mixNum = (h: number, v: number): number => mix(h, Math.round(v * 1000));
-
+// The hashes below share lineRegions' FNV-1a primitives and its clipper-
+// resolution quantizer (`clipperQuant` / `fnvMixNum`) — see the block that
+// declares them. The unit hashes here, the ring content compare below, and the
+// ring-set keys there must round world coordinates the same way, or one cache
+// reuses geometry another has decided has moved. Strings have no quantization
+// to share, so their mixer is local.
 function mixString(h: number, s: string): number {
   let out = h;
-  for (let i = 0; i < s.length; i++) out = mix(out, s.charCodeAt(i));
+  for (let i = 0; i < s.length; i++) out = fnvMix(out, s.charCodeAt(i));
   return out;
 }
 
@@ -202,13 +205,11 @@ export function hashUnits(
     let cy0 = Infinity;
     let cx1 = -Infinity;
     let cy1 = -Infinity;
-    let ch = mix(FNV_OFFSET, band.centerline.length);
+    let ch = fnvMix(FNV_OFFSET, band.centerline.length);
     for (let i = 0; i < band.centerline.length; i++) {
       const p = band.centerline[i];
-      const qx = Math.round(p.x * 1000);
-      const qy = Math.round(p.y * 1000);
-      ch = mix(ch, qx);
-      ch = mix(ch, qy);
+      ch = fnvMixNum(ch, p.x);
+      ch = fnvMixNum(ch, p.y);
       cx0 = Math.min(cx0, p.x);
       cy0 = Math.min(cy0, p.y);
       cx1 = Math.max(cx1, p.x);
@@ -216,9 +217,9 @@ export function hashUnits(
     }
     for (let k = 0; k < band.lines.length; k++) {
       const key = `b:${band.bandKey}#${k}`;
-      let h = mixNum(ch, band.radius);
-      h = mixNum(h, band.stripeOffsets[k]);
-      h = mixNum(h, band.stripeWidths[k]);
+      let h = fnvMixNum(ch, band.radius);
+      h = fnvMixNum(h, band.stripeOffsets[k]);
+      h = fnvMixNum(h, band.stripeWidths[k]);
       // WHICH line owns this slot is part of the unit, not just bookkeeping:
       // `bandKey` is built from SORTED ids, so two lines swapping stripe slots
       // leaves every key and every geometric field identical while inverting
@@ -247,10 +248,10 @@ export function hashUnits(
       continue;
     }
     const key = `m:${m.lineId}#${m.stationId}`;
-    let h = mixNum(FNV_OFFSET, m.cx);
-    h = mixNum(h, m.cy);
-    h = mixNum(h, m.rotationDeg);
-    h = mixNum(h, m.width);
+    let h = fnvMixNum(FNV_OFFSET, m.cx);
+    h = fnvMixNum(h, m.cy);
+    h = fnvMixNum(h, m.rotationDeg);
+    h = fnvMixNum(h, m.width);
     h = mixString(h, m.style);
     // The line END reshapes the marker's painted footprint (markerBodyRings)
     // while every other field here stays put — it is the ONLY thing that moves
@@ -261,9 +262,11 @@ export function hashUnits(
     // The joint pieces (arc-meets-octolinear stops) reshape the footprint —
     // same trap as `end`, so both joint fields join the hash (1e9 = "absent";
     // real angles are degrees in (−180, 180], real vectors unit-length).
-    h = mixNum(h, m.jointRotationDeg ?? 1e9);
-    h = m.jointArcOut ? mixNum(mixNum(mix(h, 1), m.jointArcOut.x), m.jointArcOut.y) : mix(h, 0);
-    h = m.outward ? mixNum(mixNum(mix(h, 1), m.outward.x), m.outward.y) : mix(h, 0);
+    h = fnvMixNum(h, m.jointRotationDeg ?? 1e9);
+    h = m.jointArcOut
+      ? fnvMixNum(fnvMixNum(fnvMix(h, 1), m.jointArcOut.x), m.jointArcOut.y)
+      : fnvMix(h, 0);
+    h = m.outward ? fnvMixNum(fnvMixNum(fnvMix(h, 1), m.outward.x), m.outward.y) : fnvMix(h, 0);
     const pad = m.width; // > half-diagonal (w·0.707) for any rotation
     const unit: GeomUnit = {
       hash: h,
@@ -285,7 +288,7 @@ export function hashUnits(
  */
 function ringsContentEqual(a: Ring[], b: Ring[]): boolean {
   if (a.length !== b.length) return false;
-  const q = (v: number) => Math.round(v * 1000);
+  const q = clipperQuant;
   for (let r = 0; r < a.length; r++) {
     const ra = a[r];
     const rb = b[r];
@@ -648,7 +651,7 @@ export function buildRegionsIncremental(
   const lineHash = new Map<LineId, number>();
   for (const [key, u] of units) {
     const id = lineOf.get(key)!;
-    lineHash.set(id, mix(lineHash.get(id) ?? FNV_OFFSET, u.hash));
+    lineHash.set(id, fnvMix(lineHash.get(id) ?? FNV_OFFSET, u.hash));
   }
   for (const [id, h] of lineHash) if (prev?.lineHash.get(id) !== h) dirtyLines.add(id);
   for (const id of prev?.lineHash.keys() ?? []) if (!lineHash.has(id)) dirtyLines.add(id);

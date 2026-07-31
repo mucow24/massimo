@@ -318,14 +318,28 @@ export const boxesOverlap = (
 ) => a.x0 <= b.x1 + pad && b.x0 <= a.x1 + pad && a.y0 <= b.y1 + pad && b.y0 <= a.y1 + pad;
 
 // ---------------------------------------------------------------------------
-// Ring-set content identity (FNV-1a over coordinates quantized to clipper's
-// own 1e-3 resolution, so the key cannot distinguish inputs clipper itself
-// would treat as identical). Shared by the incremental builder's component
-// cache and the exclusion-hole cache's face identity.
+// Ring-set content identity: FNV-1a over coordinates quantized to clipper's own
+// 1e-3 resolution, so a key cannot distinguish inputs clipper itself would treat
+// as identical.
+//
+// The primitives below are THE owner of that rule, for the exclusion-hole
+// cache's face identity here AND the incremental builder's component and unit
+// caches (regionIncremental, which imports them). One owner because the
+// quantization is the load-bearing half: a cache that rounded to a different
+// resolution than clipper works at would either re-hash geometry clipper calls
+// identical (reuse silently stops firing, and the only symptom is frame time)
+// or, rounded coarser, hand back the WRONG cached faces.
 
-const FNV_OFFSET = 0x811c9dc5;
+export const FNV_OFFSET = 0x811c9dc5;
 const FNV_PRIME = 0x01000193;
-const fnvMix = (h: number, v: number): number => Math.imul(h ^ (v | 0), FNV_PRIME) >>> 0;
+export const fnvMix = (h: number, v: number): number => Math.imul(h ^ (v | 0), FNV_PRIME) >>> 0;
+
+/** A world coordinate at clipper's 1e-3 resolution — the quantization every
+ *  region cache key is built on. */
+export const clipperQuant = (v: number): number => Math.round(v * 1000);
+
+/** `fnvMix` of a quantized world coordinate. */
+export const fnvMixNum = (h: number, v: number): number => fnvMix(h, clipperQuant(v));
 
 /**
  * Hash one ring independently of where its vertex list starts. Clipper is free
@@ -335,8 +349,8 @@ const fnvMix = (h: number, v: number): number => Math.imul(h ^ (v | 0), FNV_PRIM
 function hashRingCanonical(ring: Ring): number {
   const n = ring.length;
   if (!n) return FNV_OFFSET;
-  const qx = (i: number) => Math.round(ring[i].x * 1000);
-  const qy = (i: number) => Math.round(ring[i].y * 1000);
+  const qx = (i: number) => clipperQuant(ring[i].x);
+  const qy = (i: number) => clipperQuant(ring[i].y);
   let start = 0;
   for (let i = 1; i < n; i++) {
     const dx = qx(i) - qx(start);
@@ -373,7 +387,7 @@ export function ringSetKey(
 ): string {
   let verts = 0;
   for (const ring of rings) verts += ring.length;
-  const q = (v: number) => Math.round(v * 1000);
+  const q = clipperQuant;
   return (
     `${hashRings(rings)}|${rings.length}|${verts}|` +
     `${q(box.x0)},${q(box.y0)},${q(box.x1)},${q(box.y1)}`

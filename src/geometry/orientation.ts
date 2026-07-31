@@ -31,9 +31,18 @@ const HALF = STOP_SIZE / 2;
 
 export const rotRad = (r: Rotation) => (r * Math.PI) / 4;
 
-// Normalize -0 to +0. Same reason as `rotateGridDelta` below: -0 stringifies as
-// "0" but loses every Object.is / toBe / toEqual comparison against 0.
-const nz = (n: number): number => (n === 0 ? 0 : n);
+/**
+ * Normalize -0 to +0. -0 stringifies as "0" but loses every Object.is / toBe /
+ * toEqual comparison against 0, so a cell or offset carrying one reads right in
+ * a saved file and still fails an equality test — the shape of bug that hides
+ * until something compares exactly.
+ *
+ * Exported because it is a RULE, not a convenience: every producer of a cell
+ * coordinate owes it (the rotation matrices below, `rotateGridDelta`, and the
+ * ring-lane spawn and re-seat in transforms), and a copy per producer is how
+ * one of them quietly stops applying it.
+ */
+export const nz = (n: number): number => (n === 0 ? 0 : n);
 
 /**
  * Rotate a point by a Rotation step (r × 45°) — same clockwise, y-down frame as
@@ -245,8 +254,7 @@ export const rotateGridDelta = (
     r = nr;
     c = nc;
   }
-  // Normalize -0 to +0 so callers can compare with strict equality / toEqual.
-  return { dRow: r === 0 ? 0 : r, dCol: c === 0 ? 0 : c };
+  return { dRow: nz(r), dCol: nz(c) };
 };
 
 /**

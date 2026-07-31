@@ -3,6 +3,7 @@ import { add, scale, sub, dot, cross } from './vec';
 import {
   axesForAllSnap,
   GRID_INTERVAL,
+  projectOntoAxis,
   reconcileCorner,
   reconcileLockWithGrid,
   snapPointToGrid,
@@ -46,12 +47,12 @@ const ALL_AXES = axesForAllSnap('all');
 
 type Candidate = { target: Vec2; axis: Vec2 };
 
-// Project P onto the line through `t` with unit direction `a`; return the foot
-// and the perpendicular distance.
-function projectOntoAxis(p: Vec2, t: Vec2, a: Vec2): { foot: Vec2; perpDist: number } {
-  const rel = sub(p, t);
-  const foot = add(t, scale(a, dot(rel, a)));
-  return { foot, perpDist: Math.abs(cross(rel, a)) };
+// The foot of P on the line through `t` with unit direction `a`, plus how far
+// off that line P sits. The foot is snap.ts's `projectOntoAxis` — the same
+// projection the stop-snap engine runs, not a second copy of it; only the
+// perpendicular distance (which the stop engine has no use for) is added here.
+function axisFoot(p: Vec2, t: Vec2, a: Vec2): { foot: Vec2; perpDist: number } {
+  return { foot: projectOntoAxis(p, t, a), perpDist: Math.abs(cross(sub(p, t), a)) };
 }
 
 /**
@@ -119,7 +120,7 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   let bestD: { foot: Vec2; perp: number; target: Vec2; axis: Vec2 } | null = null;
 
   for (const { target, axis } of candidates) {
-    const { foot, perpDist } = projectOntoAxis(proposed, target, axis);
+    const { foot, perpDist } = axisFoot(proposed, target, axis);
     if (perpDist > tol) continue;
     if (axis.x === 0) {
       // vertical line -> aligns X
