@@ -37,6 +37,7 @@ import {
 } from './components/inspector/stopGridDrag';
 import { dispatchMirrored, fanOutMirrored } from './state/mirrorDispatch';
 import { useSnapPrefs } from './state/snapPrefs';
+import { pushToast } from './state/toastStore';
 import { advanceSnapToggle, SNAP_TOGGLE_COUNT } from './components/SnapToggleBar';
 import {
   deleteUnlockedSelection,
@@ -627,6 +628,28 @@ export default function App() {
             if (sel.labelSelected) doc.rotateLabel(sid);
             else if (stopLineId) doc.rotateStop(sid, stopLineId);
           });
+        }
+        return;
+      }
+      // Snapping presets: Shift+digit recalls slot 0–9, Ctrl/Cmd+Shift+digit
+      // saves the live snap modes into it. Read off e.code, not e.key: with
+      // Shift held a US layout reports '!'/'@'/'#'…, so the digit is only
+      // legible in the code. Above the plain-digit toggles below so the preset
+      // wins on any layout where both could match, and repeats are dropped —
+      // holding the key would otherwise re-fire (and re-toast) at auto-repeat
+      // rate for no gain, since saving/recalling twice does nothing new.
+      if (!inFormControl && e.shiftKey && !e.repeat && /^Digit\d$/.test(e.code)) {
+        e.preventDefault();
+        const slot = Number(e.code.slice(5));
+        if (mod) {
+          useSnapPrefs.getState().savePreset(slot);
+          pushToast('info', `Snapping preset ${slot} saved`);
+        } else {
+          // An unsaved slot leaves the modes alone: recall shouldn't reset the
+          // user's snapping just because they reached for a slot they never
+          // filled. Say so rather than looking broken.
+          const hit = useSnapPrefs.getState().recallPreset(slot);
+          pushToast('info', hit ? `Snapping preset ${slot}` : `Snapping preset ${slot} is empty`);
         }
         return;
       }

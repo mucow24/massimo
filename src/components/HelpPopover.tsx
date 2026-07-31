@@ -110,6 +110,8 @@ const SECTIONS: HelpSection[] = [
         effect:
           'Toggle the snap options (line, equidistant, grid length, all, grid, circle cardinals) — press again to cycle direction',
       },
+      { k: 'Ctrl+Shift+0 – 9', effect: 'Save the current snap options as that preset' },
+      { k: 'Shift+0 – 9', effect: 'Recall that snap preset' },
     ],
   },
   {
