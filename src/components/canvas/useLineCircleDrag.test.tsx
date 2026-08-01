@@ -93,6 +93,37 @@ describe('useLineCircleDrag — rim drag moves the circle', () => {
     expect(useDoc.getState().lineCircles.c1).toMatchObject({ x: 114, y: 113 });
   });
 
+  it('converts the align tolerance for the camera zoom', () => {
+    // The engage radius is a constant number of SCREEN pixels, so at 2× the
+    // world-space reach halves. A site that passed the raw world constant
+    // would snap from twice as far out here and nowhere else — which is the
+    // whole reason the tolerance has one home (snapToleranceAt, via
+    // useDragSnap) rather than a copy per drag hook.
+    setModes({ all: 'all' });
+    useDoc.setState({
+      ...useDoc.getState(),
+      lineCircles: { c1: makeLineCircle({ id: 'c1', x: 100, y: 100, radius: 70 }) },
+      stations: { s1: makeStation({ id: 's1', x: 200, y: 400, stops: [makeStop('L1')] }) },
+    });
+    /** Drag the rim east by `screenDx` px and report where the center landed. */
+    const dragTo = (zoom: number, screenDx: number) => {
+      useDoc.setState({
+        ...useDoc.getState(),
+        lineCircles: { c1: makeLineCircle({ id: 'c1', x: 100, y: 100, radius: 70 }) },
+      });
+      const r = render(zoom);
+      act(() => r.current.onStartDrag('c1', 'rim', pointerEvent({ clientX: 200, clientY: 200 })));
+      act(() => r.current.onPointerMove(pointerEvent({ clientX: 200 + screenDx, clientY: 200 })));
+      return useDoc.getState().lineCircles.c1.x;
+    };
+    // At zoom 1 the reach is 10 world units: a center proposed at 193 locks
+    // onto the station's x 200.
+    expect(dragTo(1, 93)).toBe(200);
+    // The same 7-unit world gap at zoom 2 (center proposed at 193 again, from
+    // 186 screen px) is outside the 5-unit reach, so nothing engages.
+    expect(dragTo(2, 186)).toBe(193);
+  });
+
   it('clears the alignment guides when Shift takes over', () => {
     // Align-to-everything (not the grid, which needs no guide of its own):
     // a station at x 300 gives the dragged center a vertical to lock onto.

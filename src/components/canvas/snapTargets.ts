@@ -6,7 +6,6 @@ import { type Vec2 } from '../../geometry/vec';
 import { useDoc } from '../../state/store';
 import { useViewportStore } from '../../state/viewportStore';
 import { kindVisibleNow } from '../../state/visibility';
-import { anchorsVisibleNow } from '../../state/anchorVisibility';
 import type { MapDoc, Station, TextLabel, TransferAnchor } from '../../model/types';
 
 /** Per-kind id sets excluded from the pool — the dragged item itself plus, in a
@@ -163,7 +162,7 @@ export function liveCaptureCircles<C>(lineCircles: Record<string, C>): Record<st
 export function liveSnapAnchors(
   transferAnchors: Record<string, TransferAnchor>,
 ): Record<string, TransferAnchor> {
-  return anchorsVisibleNow() ? transferAnchors : {};
+  return kindVisibleNow('showAnchors') ? transferAnchors : {};
 }
 
 /**
@@ -178,7 +177,7 @@ export function liveSnapAnchors(
  * opinion about anchors.
  */
 export function liveSnapHostedAnchors(stations: Record<string, Station>): Record<string, Station> {
-  if (anchorsVisibleNow()) return stations;
+  if (kindVisibleNow('showAnchors')) return stations;
   const out: Record<string, Station> = {};
   for (const id of Object.keys(stations)) {
     const st = stations[id];

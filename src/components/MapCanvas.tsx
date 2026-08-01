@@ -91,7 +91,7 @@ import { snapPlacement, usePlacementDispatch } from './canvas/usePlacementDispat
 import { TransferLayer, TransferSelectionOutline } from './TransferLayer';
 import { AnchorLayer } from './canvas/AnchorLayer';
 import { pickTransferEnd } from '../state/transferPick';
-import { revealedAnchorStations, useAnchorsVisible } from '../state/anchorVisibility';
+import { revealedAnchorStations } from '../state/anchorVisibility';
 import { kindVisible, type VisibilityKey } from '../state/visibility';
 import { isFreeAnchorEnd } from '../model/transferAnchors';
 import { transferEndWorld } from '../geometry/transferEnds';
@@ -171,9 +171,6 @@ export function MapCanvas() {
   // self-gate inside StationView (one chokepoint for ~15 call sites); lines and
   // everything anchored to them are gated at the blocks below.
   const showNetwork = useViewportStore((s) => s.showNetwork);
-  // Derived, not the raw toggle: transfer-picking and anchor-placing reveal
-  // anchors whatever the toolbar says (anchorVisibility.ts).
-  const anchorsVisible = useAnchorsVisible();
   // The narrow View-menu toggles (state/visibility.ts). The four free-item kinds
   // are gated by EMPTYING their record here rather than at each paint: every one
   // of them renders across a body pass, a hover preview, a selection overlay and
@@ -185,9 +182,11 @@ export function MapCanvas() {
   // (band routing and stop metrics respectively), so hiding either by emptying
   // would move ink that is still on screen; those two are gated at their paints.
   // `kindVisible` folds in the placing-mode reveal, so hiding a layer and then
-  // reaching for its own tool still shows what the click drops.
+  // reaching for its own tool still shows what the click drops — and the
+  // nesting under `showNetwork`, so the kinds that ride with the stations go
+  // when they do without a `showNetwork &&` written out at each of their sites.
   const shows = (key: VisibilityKey, flag: boolean) =>
-    kindVisible(key, flag, selection.uiMode.kind);
+    kindVisible(key, { flag, showNetwork, modeKind: selection.uiMode.kind });
   const showPolygons = shows(
     'showPolygons',
     useViewportStore((s) => s.showPolygons),
@@ -208,20 +207,21 @@ export function MapCanvas() {
     'showLineCircles',
     useViewportStore((s) => s.showLineCircles),
   );
-  // Read BEFORE the `&&` below: a store hook on the right of a short-circuit is
-  // a conditional hook, and the render order breaks the moment the left side
-  // goes false.
-  const showTransfers = shows(
+  // Transfers and anchors ride with the network — a transfer runs between
+  // stations and an anchor hangs off one — and `shows` carries that nesting, so
+  // neither needs a `showNetwork &&` of its own here.
+  const transfersVisible = shows(
     'showTransfers',
     useViewportStore((s) => s.showTransfers),
+  );
+  const anchorsVisible = shows(
+    'showAnchors',
+    useViewportStore((s) => s.showAnchors),
   );
   const polygons = showPolygons ? polygonsAll : EMPTY_RECORD;
   const svgImages = showSvgImages ? svgImagesAll : EMPTY_RECORD;
   const textLabels = showTextLabels ? textLabelsAll : EMPTY_RECORD;
   const routeBullets = showRouteBullets ? routeBulletsAll : EMPTY_RECORD;
-  // Transfers ride with the network too — a transfer runs between stations, so
-  // it goes when they do (the nesting anchors already have).
-  const transfersVisible = showNetwork && showTransfers;
   // Re-render (and therefore re-measure) the whole canvas when the web fonts
   // land. The epoch lives in a store rather than in App state so it can also
   // punch through StationView's memo; MapCanvas subscribes too so the layers it
