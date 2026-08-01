@@ -192,6 +192,72 @@ describe('liveAlignTargets — the lines/stations toggle', () => {
   });
 });
 
+describe('liveAlignTargets — the per-kind View toggles', () => {
+  // One of each snapping kind, at points nothing else occupies, so a missing
+  // gate shows up as a specific leftover rather than a count.
+  const station = makeStation({ id: 'a', x: 300, y: 300, stops: [makeStop('L1')] });
+  const polygon = makePolygon({
+    id: 'p1',
+    vertices: [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+    ],
+  });
+  const bullet = makeRouteBullet({ id: 'b1', x: 700, y: 700 });
+  const label = makeTextLabel({ id: 'g1', x: 900, y: 900 });
+  const image = makeSvgImage({ id: 'i1', x: 1200, y: 1200 });
+
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...makeDoc({
+        stations: [station],
+        polygons: [polygon],
+        routeBullets: [bullet],
+        textLabels: [label],
+        svgImages: [image],
+      }),
+    });
+    useViewportStore.setState({
+      showNetwork: true,
+      showAnchors: false,
+      showPolygons: true,
+      showRouteBullets: true,
+      showTextLabels: true,
+      showSvgImages: true,
+    });
+  });
+
+  it('offers every visible kind as a target', () => {
+    const out = liveAlignTargets();
+    expect(out).toContainEqual({ x: 10, y: 10 }); // polygon vertex
+    expect(out).toContainEqual({ x: 700, y: 700 }); // bullet centre
+    expect(out).toContainEqual({ x: 900, y: 900 }); // label centre
+    expect(out).toContainEqual(svgImageCorners(image)[0]);
+  });
+
+  it.each([
+    ['showPolygons' as const, { x: 10, y: 10 }],
+    ['showRouteBullets' as const, { x: 700, y: 700 }],
+    ['showTextLabels' as const, { x: 900, y: 900 }],
+  ])('drops %s targets while that kind is hidden', (flag, point) => {
+    // The pool is geometric, straight off the doc, so hiding a kind doesn't
+    // remove it by itself — snapping to one draws a guide pointing at bare
+    // canvas.
+    useViewportStore.setState({ [flag]: false });
+    expect(liveAlignTargets()).not.toContainEqual(point);
+    // The other kinds stay: a gate wired too broadly shows up here.
+    expect(liveAlignTargets()).toContainEqual(stopPosWorld(station.stops[0], station, {}));
+  });
+
+  it('drops image corners while images are hidden', () => {
+    expect(liveAlignTargets()).toContainEqual(svgImageCorners(image)[0]); // precondition
+    useViewportStore.setState({ showSvgImages: false });
+    expect(liveAlignTargets()).not.toContainEqual(svgImageCorners(image)[0]);
+  });
+});
+
 describe('liveAlignTargets — the anchor toggle', () => {
   const station = makeStation({
     id: 'a',

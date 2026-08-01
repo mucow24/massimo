@@ -5,6 +5,7 @@ import {
   stationCenter,
   fourInLine,
   fourInLineWithBulletsAndLabel,
+  toggleViewLayer,
   type Seed,
 } from './fixtures';
 
@@ -112,7 +113,7 @@ test.describe('Canvas export', () => {
     const b = await stationCenter(page, 'B');
     await page.mouse.click(b.x, b.y);
     await page.getByRole('button', { name: 'Waypoint', exact: true }).click();
-    await page.getByRole('button', { name: 'Toggle waypoints' }).click();
+    await toggleViewLayer(page, 'Waypoints');
 
     // Sanity: the overlay is genuinely showing B's chrome on the live canvas.
     await expect(page.locator('[data-waypoint-lozenge]')).toHaveCount(1);

@@ -160,6 +160,54 @@ describe('Toolbar — export is independent of the lines/stations toggle', () =>
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
   });
 
+  it('exports every layer the View menu can hide, and restores each toggle', async () => {
+    // The trap this guards: the force-on pass used to be one hand-written line
+    // per flag, so a new toggle silently shipped exports missing its layer. The
+    // registry drives it now (exportVisibilityOverrides) — this is the check
+    // that the wiring reaches all of them.
+    render(<App />);
+    seed();
+    act(() => {
+      useViewportStore.setState({
+        showNetwork: false,
+        showPolygons: false,
+        showTransfers: false,
+        showTextLabels: false,
+        showSvgImages: false,
+        showRouteBullets: false,
+      });
+    });
+    expect(liveStripes()).toBe(0); // precondition: the live canvas really is bare
+    expect(document.querySelectorAll('[data-polygon-id]').length).toBe(0);
+
+    const captured = await exportSvg();
+    expect(captured.querySelectorAll('[data-band-stripe]').length).toBeGreaterThan(0);
+    expect(captured.querySelectorAll('[data-polygon-id]').length).toBeGreaterThan(0);
+
+    // ...and every toggle is exactly where the user left it.
+    const vp = useViewportStore.getState();
+    expect(vp.showNetwork).toBe(false);
+    expect(vp.showPolygons).toBe(false);
+    expect(vp.showTransfers).toBe(false);
+    expect(vp.showTextLabels).toBe(false);
+    expect(vp.showSvgImages).toBe(false);
+    expect(vp.showRouteBullets).toBe(false);
+    expect(liveStripes()).toBe(0);
+  });
+
+  it('leaves revealed waypoints out of the export, and never forces them on', async () => {
+    // showWaypoints REVEALS scaffolding; the overlay is export-excluded, so the
+    // file is clean either way — but forcing it on would be asking for ink the
+    // pipeline then strips, and would flip a flag the user set.
+    render(<App />);
+    seed();
+    act(() => {
+      useViewportStore.getState().setShowWaypoints(true);
+    });
+    await exportSvg();
+    expect(useViewportStore.getState().showWaypoints).toBe(true);
+  });
+
   it('keeps a selected line selected, and still captures it undesaturated', async () => {
     // Same contract as the toggle, and the reason the snapshot is taken
     // synchronously: a selected line desaturates the others on the live canvas,

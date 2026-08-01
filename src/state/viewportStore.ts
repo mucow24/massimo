@@ -68,6 +68,34 @@ interface ViewportState extends Viewport {
    *  aren't there) and liveAlignTargets (no snapping to invisible targets). */
   showNetwork: boolean;
   setShowNetwork: (show: boolean) => void;
+  /** Render toggle: paint the dashed line-circle guides. Deliberately NOT nested
+   *  under `showNetwork` — hiding the network to reach a ring a line is sitting
+   *  on is the case this exists for, so the master switch must not take the
+   *  rings with it. Guides are export-excluded either way. */
+  showLineCircles: boolean;
+  setShowLineCircles: (show: boolean) => void;
+  /** Render toggle: paint transfers. Nested under `showNetwork` (a transfer runs
+   *  between stations, so it goes when they do) — this narrows that to transfers
+   *  alone, the same relationship `showAnchors` already has. */
+  showTransfers: boolean;
+  setShowTransfers: (show: boolean) => void;
+  /** Render toggle: paint imported images/SVGs. Background art, so independent
+   *  of `showNetwork` — which exists precisely to expose this layer. */
+  showSvgImages: boolean;
+  setShowSvgImages: (show: boolean) => void;
+  /** Render toggle: paint free-floating canvas labels (`MapDoc.textLabels`) —
+   *  NOT station names, which belong to their stations and go with
+   *  `showNetwork`. */
+  showTextLabels: boolean;
+  setShowTextLabels: (show: boolean) => void;
+  /** Render toggle: paint polygons. Background art, like `showSvgImages`. */
+  showPolygons: boolean;
+  setShowPolygons: (show: boolean) => void;
+  /** Render toggle: paint route bullets. Independent of `showNetwork`: a bound
+   *  bullet stays visible and draggable with the network hidden (see
+   *  liveSnapStations), so its own toggle is the only way to clear it. */
+  showRouteBullets: boolean;
+  setShowRouteBullets: (show: boolean) => void;
   /** Day-mode paper color (see DayCanvasColor). A persisted local preference so
    *  a glare-averse user reopens the app to the same dimmed canvas, NOT a doc
    *  property — it never touches the map, so switching it isn't a dirty change
@@ -156,6 +184,18 @@ export const useViewportStore = create<ViewportState>()(
       setShowAnchors: (showAnchors) => set({ showAnchors }),
       showNetwork: true,
       setShowNetwork: (showNetwork) => set({ showNetwork }),
+      showLineCircles: true,
+      setShowLineCircles: (showLineCircles) => set({ showLineCircles }),
+      showTransfers: true,
+      setShowTransfers: (showTransfers) => set({ showTransfers }),
+      showSvgImages: true,
+      setShowSvgImages: (showSvgImages) => set({ showSvgImages }),
+      showTextLabels: true,
+      setShowTextLabels: (showTextLabels) => set({ showTextLabels }),
+      showPolygons: true,
+      setShowPolygons: (showPolygons) => set({ showPolygons }),
+      showRouteBullets: true,
+      setShowRouteBullets: (showRouteBullets) => set({ showRouteBullets }),
       dayCanvasColor: 'white',
       setDayCanvasColor: (dayCanvasColor) => set({ dayCanvasColor }),
       darkUiInDay: false,
@@ -174,12 +214,23 @@ export const useViewportStore = create<ViewportState>()(
         // Persisted (unlike showNetwork): hiding anchors is a durable "I'm done
         // routing transfers" preference, not a momentary get-out-of-my-way.
         showAnchors: s.showAnchors,
+        // The narrow kind toggles persist for the same reason, and because the
+        // View button carries a hidden-content mark (see anyLayerHidden)
+        // that answers "where did my polygons go" on the next launch.
+        showLineCircles: s.showLineCircles,
+        showTransfers: s.showTransfers,
+        showSvgImages: s.showSvgImages,
+        showTextLabels: s.showTextLabels,
+        showPolygons: s.showPolygons,
+        showRouteBullets: s.showRouteBullets,
         dayCanvasColor: s.dayCanvasColor,
         darkUiInDay: s.darkUiInDay,
-        // showNetwork is deliberately absent: hiding the network is a momentary
-        // "get out of my way" toggle, not a saved preference. Persisting it
-        // would let a reload open onto an apparently empty map, with only the
-        // toolbar button's state to explain where everything went.
+        // showNetwork is deliberately absent, alone among the visibility flags:
+        // it is the broad one, and hiding it blanks most of a map. That makes it
+        // a momentary "get out of my way" toggle rather than a saved preference
+        // — persisting it would let a reload open onto an apparently empty map.
+        // The narrow toggles above each clear one kind, so a reload under them
+        // still shows a recognisable map.
       }),
     },
   ),

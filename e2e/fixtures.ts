@@ -342,6 +342,21 @@ export async function closeSidebar(page: Page): Promise<void> {
 }
 
 /**
+ * Flip one layer's visibility from the toolbar's View menu, closing the menu
+ * again so it can't sit over whatever the test asserts next. `label` is the
+ * menu's own wording — "Waypoints", "Line circles", "Lines and stations" — see
+ * VISIBILITY_ITEMS.
+ */
+export async function toggleViewLayer(page: Page, label: string): Promise<void> {
+  // `exact` matters: Playwright's name match is a substring, so a bare 'View'
+  // also picks up the Reset view button further along the toolbar.
+  await page.getByRole('button', { name: 'View', exact: true }).click();
+  await page.getByRole('checkbox', { name: label }).click();
+  await page.keyboard.press('Escape');
+  await page.locator('.view-popover').waitFor({ state: 'detached' });
+}
+
+/**
  * Expand the line popover's collapsed style detail (Line width → Seam color).
  * The disclosure is remembered per browser profile, but every spec starts on
  * fresh storage, so it opens collapsed — call this before driving any of the

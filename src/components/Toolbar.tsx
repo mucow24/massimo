@@ -3,10 +3,10 @@ import { flushSync } from 'react-dom';
 import { pickDocSnapshot, useDoc, useSelection, type UiMode } from '../state/store';
 import type { MapDoc } from '../model/types';
 import { useViewportStore, nextGridSize } from '../state/viewportStore';
+import { exportVisibilityOverrides } from '../state/visibility';
 import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
 import { computeContentBounds } from '../geometry/contentBounds';
-import { AnchorGlyph } from './AnchorGlyph';
 import { fitViewport } from './canvas/viewportMath';
 import { clearHistory } from '../state/history';
 import { parseSvgIntrinsicSize, rasterFileToImage, svgTextToDataUri } from '../model/svgImport';
@@ -37,8 +37,6 @@ import {
   CursorArrowIcon,
   DoubleArrowLeftIcon,
   DoubleArrowRightIcon,
-  EyeNoneIcon,
-  EyeOpenIcon,
   FrameIcon,
   HandIcon,
   LayersIcon,
@@ -47,6 +45,7 @@ import {
 } from '@radix-ui/react-icons';
 import { SnapToggleBar } from './SnapToggleBar';
 import { OptionsPopover } from './OptionsPopover';
+import { ViewPopover } from './ViewPopover';
 import { HelpPopover } from './HelpPopover';
 import { MapNameField } from './MapNameField';
 import { MapVersionPill } from './MapVersionPill';
@@ -89,12 +88,6 @@ export function Toolbar() {
   const setGridSize = useViewportStore((s) => s.setGridSize);
   const darkMode = useDoc((s) => s.darkMode);
   const setDarkMode = useDoc((s) => s.setDarkMode);
-  const showWaypoints = useViewportStore((s) => s.showWaypoints);
-  const setShowWaypoints = useViewportStore((s) => s.setShowWaypoints);
-  const showAnchors = useViewportStore((s) => s.showAnchors);
-  const setShowAnchors = useViewportStore((s) => s.setShowAnchors);
-  const showNetwork = useViewportStore((s) => s.showNetwork);
-  const setShowNetwork = useViewportStore((s) => s.setShowNetwork);
   const setDayCanvasColor = useViewportStore((s) => s.setDayCanvasColor);
   const darkUiInDay = useViewportStore((s) => s.darkUiInDay);
   const setDarkUiInDay = useViewportStore((s) => s.setDarkUiInDay);
@@ -288,7 +281,12 @@ export function Toolbar() {
    */
   const captureExportSnapshot = (svg: SVGSVGElement): SVGSVGElement => {
     const prevLineId = useSelection.getState().selectedLineId;
-    const prevShowNetwork = useViewportStore.getState().showNetwork;
+    // Every View-menu layer that gates EXPORTED ink goes on for the capture: an
+    // export renders the finished map, never the view someone happened to be
+    // working in. Derived from the registry rather than written out per flag —
+    // the hand-written version silently shipped a map missing whatever layer a
+    // later toggle added (see state/visibility.ts).
+    const visibility = exportVisibilityOverrides(useViewportStore.getState());
     // Layering mode fades labels, bullets and line tags to 25% to focus the
     // bands. That fade is an `opacity` on content groups, not chrome carrying
     // data-export-exclude, so it CLONES — every export and every library
@@ -303,7 +301,7 @@ export function Toolbar() {
       // selectLine ACTION would kick the mode back to idle.
       if (prevLineId) useSelection.getState().selectLine(null);
       if (wasLayering) useSelection.setState({ uiMode: { kind: 'idle' } });
-      if (!prevShowNetwork) useViewportStore.getState().setShowNetwork(true);
+      useViewportStore.setState(visibility.apply);
     });
     try {
       return svg.cloneNode(true) as SVGSVGElement;
@@ -313,7 +311,7 @@ export function Toolbar() {
         // Bare setState again: setUiMode would wipe the selection on the way
         // back in, so the user's layering session must be restored, not re-entered.
         if (wasLayering) useSelection.setState({ uiMode: prevUiMode });
-        if (!prevShowNetwork) useViewportStore.getState().setShowNetwork(false);
+        useViewportStore.setState(visibility.restore);
       });
     }
   };
@@ -690,40 +688,7 @@ export function Toolbar() {
         >
           {darkMode ? <SunIcon /> : <MoonIcon />}
         </button>
-        <button
-          type="button"
-          className={'tool-btn tool-btn-text' + (showWaypoints ? ' active' : '')}
-          title={showWaypoints ? 'Hide waypoints' : 'Show waypoints'}
-          aria-label="Toggle waypoints"
-          aria-pressed={showWaypoints}
-          onClick={() => setShowWaypoints(!showWaypoints)}
-        >
-          WP
-        </button>
-        <button
-          type="button"
-          className={'tool-btn' + (showAnchors ? ' active' : '')}
-          title={showAnchors ? 'Hide transfer anchors' : 'Show transfer anchors'}
-          aria-label="Toggle transfer anchors"
-          aria-pressed={showAnchors}
-          onClick={() => setShowAnchors(!showAnchors)}
-        >
-          <AnchorGlyph />
-        </button>
-        <button
-          type="button"
-          className={'tool-btn' + (showNetwork ? ' active' : '')}
-          title={
-            showNetwork
-              ? 'Hide lines & stations — work on the background beneath them'
-              : 'Show lines & stations'
-          }
-          aria-label="Toggle lines and stations"
-          aria-pressed={showNetwork}
-          onClick={() => setShowNetwork(!showNetwork)}
-        >
-          {showNetwork ? <EyeOpenIcon /> : <EyeNoneIcon />}
-        </button>
+        <ViewPopover />
         <HelpPopover />
       </div>
       <input
