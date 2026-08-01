@@ -49,7 +49,12 @@ const seedStyled = (style: LineStyle) => {
   });
 };
 
-const hitbox = () => document.querySelector('[data-band-hitbox][data-pair-key="A|B"]');
+// The band's OWN hit box. Edit Stops also lifts a `data-band-lift` copy of the
+// edited line's pointer surface above the band layer (see MapCanvas); that one
+// is mounted for every style, so it must not be mistaken for the gappy-style
+// hit box this file is about.
+const hitbox = () =>
+  document.querySelector('[data-band-hitbox]:not([data-band-lift])[data-pair-key="A|B"]');
 
 describe('Edit Stops — a gappy segment is clickable across its whole length', () => {
   it.each(['dashed', 'dotted', 'dashed-open'] as LineStyle[])(
