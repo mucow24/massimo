@@ -4,7 +4,13 @@ import { useRectSelect, type RectSelectApi } from './useRectSelect';
 import { useDoc, useSelection, dragState } from '../../state/store';
 import { useViewportStore } from '../../state/viewportStore';
 import { DEFAULT_DOC } from '../../model/transforms';
-import { makeLine, makePolygon, makeTextLabel, stationWithStop } from '../../test/fixtures';
+import {
+  makeLine,
+  makeLineCircle,
+  makePolygon,
+  makeTextLabel,
+  stationWithStop,
+} from '../../test/fixtures';
 import { fakeSvgRef, pointerEvent } from '../../test/interaction';
 import type { Pt } from '../../geometry/polygonUnion';
 import type { StationId } from '../../model/types';
@@ -38,7 +44,14 @@ function resetSelection(over: Record<string, unknown> = {}) {
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   resetSelection();
-  useViewportStore.setState({ showNetwork: true });
+  useViewportStore.setState({
+    showNetwork: true,
+    showPolygons: true,
+    showTextLabels: true,
+    showSvgImages: true,
+    showRouteBullets: true,
+    showLineCircles: true,
+  });
   dragState.suppressClick = false;
 });
 
@@ -339,6 +352,72 @@ describe('useRectSelect — a hidden network stays out of the marquee', () => {
     up(result, pointerEvent({ clientX: 150, clientY: 150 }));
     expect(useSelection.getState().selectedStationIds).toEqual([]);
     expect(useSelection.getState().selectedPolygonIds).toContain('p1');
+  });
+});
+
+describe('useRectSelect — a hidden KIND stays out of the marquee', () => {
+  // Same rule as the hidden network above, one kind at a time: hits come from
+  // doc geometry, so a hidden polygon would still join a band thrown over it —
+  // an invisible selection that then answers Delete.
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      polygons: {
+        p1: makePolygon({
+          id: 'p1',
+          vertices: [
+            { x: 30, y: 30 },
+            { x: 70, y: 30 },
+            { x: 70, y: 70 },
+            { x: 30, y: 70 },
+          ],
+        }),
+      },
+      backgroundOrder: ['p1'],
+      textLabels: { g1: makeTextLabel({ id: 'g1', x: 60, y: 60 }) },
+      lineCircles: { c1: makeLineCircle({ id: 'c1', x: 60, y: 60, radius: 30 }) },
+    });
+  });
+
+  const band = (result: Result, ref: ReturnType<typeof render>['ref']) => {
+    down(result, pointerEvent({ clientX: 0, clientY: 0, target: ref.current }));
+    move(result, pointerEvent({ clientX: 150, clientY: 150 }));
+  };
+
+  it('grabs every kind when all are shown (baseline)', () => {
+    const { result, ref } = render();
+    band(result, ref);
+    expect(result.current.previewPolygonIds).toContain('p1');
+    expect(result.current.previewLabelIds).toContain('g1');
+    expect(result.current.previewLineCircleIds).toContain('c1');
+  });
+
+  it('leaves a hidden polygon out, on both the preview and the commit', () => {
+    useViewportStore.setState({ showPolygons: false });
+    const { result, ref } = render();
+    band(result, ref);
+    expect(result.current.previewPolygonIds).toEqual([]);
+    // The commit path builds its own hit lists — a gate applied only to the
+    // preview would look right mid-drag and select the invisible thing anyway.
+    up(result, pointerEvent({ clientX: 150, clientY: 150 }));
+    expect(useSelection.getState().selectedPolygonIds).toEqual([]);
+    expect(useSelection.getState().selectedLabelIds).toContain('g1');
+  });
+
+  it('leaves a hidden canvas label out', () => {
+    useViewportStore.setState({ showTextLabels: false });
+    const { result, ref } = render();
+    band(result, ref);
+    expect(result.current.previewLabelIds).toEqual([]);
+    expect(result.current.previewPolygonIds).toContain('p1');
+  });
+
+  it('leaves a hidden line circle out', () => {
+    useViewportStore.setState({ showLineCircles: false });
+    const { result, ref } = render();
+    band(result, ref);
+    expect(result.current.previewLineCircleIds).toEqual([]);
+    expect(result.current.previewPolygonIds).toContain('p1');
   });
 });
 

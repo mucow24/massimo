@@ -92,6 +92,7 @@ import { TransferLayer, TransferSelectionOutline } from './TransferLayer';
 import { AnchorLayer } from './canvas/AnchorLayer';
 import { pickTransferEnd } from '../state/transferPick';
 import { revealedAnchorStations, useAnchorsVisible } from '../state/anchorVisibility';
+import { kindVisible, type VisibilityKey } from '../state/visibility';
 import { isFreeAnchorEnd } from '../model/transferAnchors';
 import { transferEndWorld } from '../geometry/transferEnds';
 import {
@@ -130,6 +131,11 @@ const NO_VERTEX_INDICES: ReadonlySet<number> = new Set();
 // own anchors only, so it hands AnchorLayer nothing for the free home.
 const NO_FREE_ANCHORS: Record<string, never> = {};
 
+// What a View-menu-hidden collection resolves to. One frozen instance so a
+// hidden kind's `useMemo` deps (backgroundRenderOrder) stay reference-stable
+// across renders instead of invalidating on every pan.
+const EMPTY_RECORD: Record<string, never> = {};
+
 export function MapCanvas() {
   const stations = useDoc((s) => s.stations);
   const lines = useDoc((s) => s.lines);
@@ -142,19 +148,19 @@ export function MapCanvas() {
   const setLineSegmentStyle = useDoc((s) => s.setLineSegmentStyle);
   const toggleEdgeOnLine = useDoc((s) => s.toggleEdgeOnLine);
   const removeStationFromLine = useDoc((s) => s.removeStationFromLine);
-  const routeBullets = useDoc((s) => s.routeBullets);
+  const routeBulletsAll = useDoc((s) => s.routeBullets);
   const rotateRouteBullet = useDoc((s) => s.rotateRouteBullet);
   const transfers = useDoc((s) => s.transfers);
   const transferAnchors = useDoc((s) => s.transferAnchors);
   const styles = useDoc((s) => s.styles);
   const styleDefaults = useDoc((s) => s.styleDefaults);
-  const textLabels = useDoc((s) => s.textLabels);
+  const textLabelsAll = useDoc((s) => s.textLabels);
   const rotateTextLabel = useDoc((s) => s.rotateTextLabel);
-  const polygons = useDoc((s) => s.polygons);
+  const polygonsAll = useDoc((s) => s.polygons);
   const backgroundOrder = useDoc((s) => s.backgroundOrder);
   const rotatePolygon = useDoc((s) => s.rotatePolygon);
   const regionAssignments = useDoc((s) => s.regionAssignments);
-  const svgImages = useDoc((s) => s.svgImages);
+  const svgImagesAll = useDoc((s) => s.svgImages);
   const rotateSvgImage45 = useDoc((s) => s.rotateSvgImage45);
   const selection = useSelection();
   const snapModes = useSnapPrefs((s) => s.modes);
@@ -168,6 +174,54 @@ export function MapCanvas() {
   // Derived, not the raw toggle: transfer-picking and anchor-placing reveal
   // anchors whatever the toolbar says (anchorVisibility.ts).
   const anchorsVisible = useAnchorsVisible();
+  // The narrow View-menu toggles (state/visibility.ts). The four free-item kinds
+  // are gated by EMPTYING their record here rather than at each paint: every one
+  // of them renders across a body pass, a hover preview, a selection overlay and
+  // a top-z drag proxy, and a gate written four times is a gate that gets missed
+  // once. Emptying also takes the pointer surface with it, which is the point —
+  // "hidden" has to mean click-through, not merely invisible.
+  //
+  // Only these four can be emptied. `lineCircles` and `transfers` feed GEOMETRY
+  // (band routing and stop metrics respectively), so hiding either by emptying
+  // would move ink that is still on screen; those two are gated at their paints.
+  // `kindVisible` folds in the placing-mode reveal, so hiding a layer and then
+  // reaching for its own tool still shows what the click drops.
+  const shows = (key: VisibilityKey, flag: boolean) =>
+    kindVisible(key, flag, selection.uiMode.kind);
+  const showPolygons = shows(
+    'showPolygons',
+    useViewportStore((s) => s.showPolygons),
+  );
+  const showSvgImages = shows(
+    'showSvgImages',
+    useViewportStore((s) => s.showSvgImages),
+  );
+  const showTextLabels = shows(
+    'showTextLabels',
+    useViewportStore((s) => s.showTextLabels),
+  );
+  const showRouteBullets = shows(
+    'showRouteBullets',
+    useViewportStore((s) => s.showRouteBullets),
+  );
+  const showLineCircles = shows(
+    'showLineCircles',
+    useViewportStore((s) => s.showLineCircles),
+  );
+  // Read BEFORE the `&&` below: a store hook on the right of a short-circuit is
+  // a conditional hook, and the render order breaks the moment the left side
+  // goes false.
+  const showTransfers = shows(
+    'showTransfers',
+    useViewportStore((s) => s.showTransfers),
+  );
+  const polygons = showPolygons ? polygonsAll : EMPTY_RECORD;
+  const svgImages = showSvgImages ? svgImagesAll : EMPTY_RECORD;
+  const textLabels = showTextLabels ? textLabelsAll : EMPTY_RECORD;
+  const routeBullets = showRouteBullets ? routeBulletsAll : EMPTY_RECORD;
+  // Transfers ride with the network too — a transfer runs between stations, so
+  // it goes when they do (the nesting anchors already have).
+  const transfersVisible = showNetwork && showTransfers;
   // Re-render (and therefore re-measure) the whole canvas when the web fonts
   // land. The epoch lives in a store rather than in App state so it can also
   // punch through StationView's memo; MapCanvas subscribes too so the layers it
@@ -1290,27 +1344,33 @@ export function MapCanvas() {
           {/* Line circles: dashed guide rings stations bind to. Editor
             scaffolding, never map ink (export-excluded); painted above the
             background band so a polygon can't hide the guide, below all map
-            content. Selection happens at pointer-down inside the drag hook. */}
-          <g data-export-exclude="1">
-            {Object.keys(lineCircles).map((cid) => (
-              <LineCircleView
-                key={cid}
-                circle={lineCircles[cid]}
-                zoom={view.viewport.zoom}
-                guideColor={theme.guide}
-                accentColor={theme.accent}
-                selected={(
-                  rectSelect.previewLineCircleIds ?? selection.selectedLineCircleIds
-                ).includes(cid)}
-                interactive={polygonsInteractive}
-                inHandMode={inHandMode}
-                showCardinals={snapModes.circle}
-                onPointerDown={(e, id, part) => circleDrag.onStartDrag(id, part, e)}
-                onClick={onLineCircleClick}
-                onContextMenu={onLineCircleContextMenu}
-              />
-            ))}
-          </g>
+            content. Selection happens at pointer-down inside the drag hook.
+
+            Gated on its OWN toggle and not on showNetwork: reaching a ring a
+            line is sitting on means clearing the lines, so the master switch
+            has to leave the guides standing. */}
+          {showLineCircles && (
+            <g data-export-exclude="1">
+              {Object.keys(lineCircles).map((cid) => (
+                <LineCircleView
+                  key={cid}
+                  circle={lineCircles[cid]}
+                  zoom={view.viewport.zoom}
+                  guideColor={theme.guide}
+                  accentColor={theme.accent}
+                  selected={(
+                    rectSelect.previewLineCircleIds ?? selection.selectedLineCircleIds
+                  ).includes(cid)}
+                  interactive={polygonsInteractive}
+                  inHandMode={inHandMode}
+                  showCardinals={snapModes.circle}
+                  onPointerDown={(e, id, part) => circleDrag.onStartDrag(id, part, e)}
+                  onClick={onLineCircleClick}
+                  onContextMenu={onLineCircleContextMenu}
+                />
+              ))}
+            </g>
+          )}
 
           {/* selection wash: painted before bands so the wash sits behind
             line segments, markers, dots, and labels — all the way in the
@@ -1495,7 +1555,7 @@ export function MapCanvas() {
             obscures the dot it's connecting. Stay at full opacity in
             layering mode (they ride between line stops so they're part of
             the route-network reading, not background annotation). */}
-          {showNetwork && (
+          {transfersVisible && (
             <TransferLayer
               transfers={transfers}
               stations={stations}
@@ -1616,7 +1676,7 @@ export function MapCanvas() {
           {/* Selected-transfer outline: above the dots (unlike TransferLayer)
             so the connected dots — and any crossing transfer — can't cover
             the selection chrome. */}
-          {showNetwork && (
+          {transfersVisible && (
             <TransferSelectionOutline
               transfers={transfers}
               stations={stations}
@@ -1628,7 +1688,7 @@ export function MapCanvas() {
 
           {/* Mouseover preview: the hovered (unselected) transfer's selection
             outline at 50% opacity — the same ring, reused, just fainter. */}
-          {showNetwork && hoverTransferId && (
+          {transfersVisible && hoverTransferId && (
             <g data-export-exclude="1" opacity={0.5}>
               <TransferSelectionOutline
                 transfers={transfers}

@@ -8,6 +8,7 @@ import { makeLineCircle } from '../../test/fixtures';
 import { pointAtAngle } from '../../geometry/lineCircle';
 import { pointerEvent } from '../../test/interaction';
 import { useSnapPrefs } from '../../state/snapPrefs';
+import { useViewportStore } from '../../state/viewportStore';
 import type { ViewportApi } from './useViewport';
 
 // Identity screen→world so a click at (cx, cy) lands at world (cx, cy).
@@ -25,6 +26,8 @@ beforeEach(() => {
   useDoc.temporal.getState().clear();
   useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES, grid: 'off' } });
   useSelection.getState().clearAllSelections();
+  useSelection.getState().setUiMode({ kind: 'idle' });
+  useViewportStore.setState({ showLineCircles: true });
 });
 
 describe('snapPlacement — line-circle rim capture', () => {
@@ -64,6 +67,65 @@ describe('snapPlacement — line-circle rim capture', () => {
     );
     expect(r.x).toBe(175);
     expect(r.y).toBe(100);
+  });
+});
+
+describe('snapPlacement — a hidden ring cannot capture', () => {
+  // Ring capture reads doc.lineCircles straight off the doc, so hiding the
+  // guides does not remove it: a station dropped near an INVISIBLE rim would
+  // snap onto it and `bindDroppedStation` would bind it there, leaving the map
+  // attached to a guide the user cannot see and never chose.
+  it('leaves the drop where the engine puts it while Line circles are hidden', () => {
+    useViewportStore.setState({ showLineCircles: false });
+    const r = snapPlacement(
+      { kind: 'placing-station' },
+      { x: 175, y: 100 }, // 5 world units outside the rim — inside tolerance
+      false,
+      DEFAULT_SNAP_MODES,
+      25,
+      1,
+    );
+    // Not projected onto the rim at x=170.
+    expect(Math.hypot(r.x - 100, r.y - 100)).not.toBeCloseTo(70, 6);
+  });
+
+  it('captures again the moment the rings come back', () => {
+    useViewportStore.setState({ showLineCircles: false });
+    const hidden = snapPlacement(
+      { kind: 'placing-station' },
+      { x: 175, y: 100 },
+      false,
+      DEFAULT_SNAP_MODES,
+      25,
+      1,
+    );
+    useViewportStore.setState({ showLineCircles: true });
+    const shown = snapPlacement(
+      { kind: 'placing-station' },
+      { x: 175, y: 100 },
+      false,
+      DEFAULT_SNAP_MODES,
+      25,
+      1,
+    );
+    expect(shown.x).toBeCloseTo(170, 9);
+    expect(shown.x).not.toBeCloseTo(hidden.x, 6);
+  });
+
+  it('captures while the placing-line-circle mode has the rings revealed', () => {
+    // The reveal is the point of kindVisibleNow: rings are on screen during
+    // their own placing mode, so they must still capture.
+    useViewportStore.setState({ showLineCircles: false });
+    useSelection.getState().setUiMode({ kind: 'placing-line-circle', center: null });
+    const r = snapPlacement(
+      { kind: 'placing-station' },
+      { x: 175, y: 100 },
+      false,
+      DEFAULT_SNAP_MODES,
+      25,
+      1,
+    );
+    expect(r.x).toBeCloseTo(170, 9);
   });
 });
 

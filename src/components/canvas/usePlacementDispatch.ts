@@ -25,7 +25,7 @@ import { textLabelCorners } from '../../geometry/stationBoundary';
 import { starterPolygonVertices } from '../../model/transforms';
 import { defaultStyleProps } from '../../model/styles';
 import { makePreviewTextLabel } from './LabelPlacingPreview';
-import { liveAlignTargets, liveSnapStations } from './snapTargets';
+import { liveAlignTargets, liveCaptureCircles, liveSnapStations } from './snapTargets';
 import type { ViewportApi } from './useViewport';
 
 export interface PlacementSnap {
@@ -101,7 +101,10 @@ export function snapPlacement(
   // station agree. The seat stays exactly on the rim either way, which is what
   // lets `bindDroppedStation` recognize it at a 0.5-unit tolerance.
   const viaCircleRim = (): PlacementSnap | null => {
-    const circle = lineCircleAtPoint(doc.lineCircles, world, tolerance);
+    // liveCaptureCircles, not the raw record: a ring the View menu is hiding
+    // must not capture a placed station — and bindDroppedStation must not then
+    // bind it to a guide nobody can see.
+    const circle = lineCircleAtPoint(liveCaptureCircles(doc.lineCircles), world, tolerance);
     if (!circle) return null;
     const p = snapPointToCircle(circle, world, modes.circle ? tolerance : null);
     return { x: p.x, y: p.y, guides: [] };
@@ -163,7 +166,7 @@ export function snapPlacement(
  */
 function bindDroppedStation(stationId: string, w: { x: number; y: number }): void {
   const doc = useDoc.getState();
-  const circle = lineCircleAtPoint(doc.lineCircles, w, 0.5);
+  const circle = lineCircleAtPoint(liveCaptureCircles(doc.lineCircles), w, 0.5);
   if (circle) doc.bindStationToCircle(stationId, circle.id);
 }
 

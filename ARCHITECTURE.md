@@ -176,6 +176,8 @@ src/
     selectionOps.ts             # bulk selection gestures (delete/lock the unlocked subset)
     transferPick.ts             # pure transfer-endpoint pick/commit rules (no store)
     anchorVisibility.ts         # anchorsRevealedByMode / revealedAnchorStations (no store)
+    visibility.ts               # VISIBILITY_ITEMS registry: the View menu's layer toggles,
+                                #   which of them gate exported ink, non-default detection
     mirrorDispatch.ts           # mirror-matching fan-out shared by every layout-edit surface
     viewportStore.ts            # useViewportStore (committed) + useLiveViewportStore (in-flight)
     fontEpoch.ts                # useFontEpoch: web-font load counter — a STORE so it crosses memo
@@ -913,7 +915,7 @@ as scaffolding beside the stop dots while a near-miss still selects.
 
 Anchors are **editor chrome, never map ink**: `AnchorLayer` mounts inside a `data-export-exclude`
 subtree, so an anchor is absent from every SVG/PNG/PDF export while the transfer bound to it still
-prints. The toolbar's anchor button (`useViewportStore.showAnchors`) shows them; it **defaults OFF**
+prints. The View menu's Anchors row (`useViewportStore.showAnchors`) shows them; it **defaults OFF**
 (like `showWaypoints`, and persisted) so a finished map isn't cluttered, gated together with
 `showNetwork` since anchors are part of the transfer network. The two gestures that are ABOUT anchors
 — picking a transfer end (`creating-transfer`) and placing one (`placing-anchor`) — **reveal** them
@@ -1601,18 +1603,21 @@ on any mode exit.
 **Two stores, intentionally:**
 
 - `useViewportStore` — the **committed** camera (`x, y, zoom`) + `gridVisible`, `gridSize`
-  (`GRID_SIZES = [5,10,20]`, default 10), `showWaypoints` (default
-  false — a pure paint toggle that reveals waypoint stations), `showAnchors` (default false,
-  persisted — the transfer-anchor toggle; see `TransferAnchor`), `showNetwork` (default true — see
-  below), plus two **local chrome** preferences: `dayCanvasColor: DayCanvasColor`
+  (`GRID_SIZES = [5,10,20]`, default 10), the **nine layer-visibility flags** behind the View menu
+  (`showNetwork` default true — see below; `showWaypoints` and `showAnchors` default false;
+  `showLineCircles`, `showTransfers`, `showSvgImages`, `showTextLabels`, `showPolygons`,
+  `showRouteBullets` default true), plus two **local chrome** preferences:
+  `dayCanvasColor: DayCanvasColor`
   (`'white'|'gray'|'black'`, default white — the day-mode paper color, dimming glare without
   touching the map) and `darkUiInDay: boolean` (default false — a chrome-only dark UI while the
   **map** is still in day mode). The map's own day/night is **not** here — that is `MapDoc.darkMode`
   (a stale `darkMode` key in an existing persisted blob is ignored); `darkUiInDay` is orthogonal
   to it, so `App` drives `data-theme` off `chromeDark = darkMode || darkUiInDay`. **Persisted** as
-  `'massimo-viewport'` (per-browser, **not** per-file) — except
-  `showNetwork`, which `partialize` deliberately omits so a reload never opens onto an
-  apparently-empty map. The giant SVG tree subscribes here and is re-rendered only on commit.
+  `'massimo-viewport'` (per-browser, **not** per-file) — except `showNetwork`, alone among the
+  visibility flags, which `partialize` deliberately omits so a reload never opens onto an
+  apparently-empty map. It is the broad one; the narrow toggles each clear a single kind, so a
+  reload under them still shows a recognisable map. The giant SVG tree subscribes here and is
+  re-rendered only on commit.
 - `useLiveViewportStore` — the **in-flight** gesture viewport (`pending: Viewport | null`).
   **Not persisted, not undoable.** Only a small set of overlays subscribes — the selected-item
   handle overlays (`PolygonView`, `SvgImageView`) via the `useLiveZoom` selector — never the giant
@@ -1621,12 +1626,48 @@ on any mode exit.
   [Interaction layer](#canvas-interaction-layer) for how the gestures move the world imperatively
   (pan: composited pan-layer translate; zoom: viewBox write).
 
-**`showNetwork` — the lines/stations toggle** (toolbar eye button; the toggle row runs `WP` →
-anchors → eye). Off leaves only
+**Layer visibility — the View menu** ([ViewPopover.tsx](src/components/ViewPopover.tsx), one eye
+button in the toolbar). Nine checkboxes in three groups: Lines and stations · Anchors, Line
+circles, Transfers, Waypoints · Images / SVGs, Canvas labels, Polygons, Route bullets. The **grid**
+is
+deliberately not among them — a drawing aid rather than map content, and its button pairs with the
+grid-size cycler beside it.
+
+[visibility.ts](src/state/visibility.ts) holds the set as one `VISIBILITY_ITEMS` registry, because
+three consumers have to agree about it and each used to spell it out by hand: the menu, the export
+snapshot's force-everything-on pass, and the button's hidden-content mark. A flag added to two of
+the three fails silently — most cruelly at the export, which would ship a map missing whatever the
+user had toggled off. Each entry carries `gatesExportedInk`, since only some of them do:
+`exportVisibilityOverrides` forces those on around the capture and leaves the rest alone, their
+layers being `data-export-exclude` anyway. `showWaypoints` is the one it would be actively WRONG to
+force — it REVEALS scaffolding the export then strips. `setVisibility` derives the setter name
+from the key rather than consulting a second table, and `anyLayerHidden` marks the toolbar button
+whenever a layer that defaults to VISIBLE is switched off. Both of the obvious alternatives are
+wrong: "some flag is false" marks a pristine canvas forever (anchors and waypoints default to
+hidden), and "differs from the defaults" marks a menu with **every box ticked**, since checking
+those same two departs from the default. Turning a reveal on hides nothing, so it never marks.
+
+Every kind whose own tool can place one carries a `revealedBy` mode, folded in by `kindVisible`
+(render) and its non-reactive twin `kindVisibleNow` (pointer handlers and doc-geometric pools).
+Every consumer goes through one of the two, so the canvas, the marquee, the snap pools and the
+popovers cannot drift into different opinions. Hiding a layer and then reaching for its own
+tool still shows what the click drops, instead of the tool reading as broken. Generalised from
+`anchorsRevealedByMode`, and a DERIVATION for the same reason: a temporary write to the flag would
+need a matching revert on every exit path. Anchors keep their own module (two modes reveal them),
+and `showNetwork` has no `revealedBy` at all — it is the deliberate get-out-of-my-way switch, and
+lifting the whole network back for one station placement would undo what the user asked for.
+
+`showTransfers` additionally nests under `showNetwork` — a transfer runs between stations, so it
+goes when they do, the nesting anchors already have. `showLineCircles` deliberately does NOT nest:
+reaching a ring a line is sitting on top of means clearing the lines, so the master switch has to
+leave the guides standing. That is the whole reason the menu is finer-grained than the button it
+replaced.
+
+**`showNetwork` — the lines/stations toggle.** Off leaves only
 the background art (polygons, svg images) and the grid on the canvas, so art buried under the
 network can be clicked and dragged. Hidden content is **not rendered** rather than made invisible —
 an invisible-but-present hit rect would still swallow the clicks the toggle exists to let through.
-Three seams cover it, and a fourth rule governs anything new:
+Four seams cover it, and a fifth rule governs anything new:
 
 - **Stations** self-gate inside [StationView.tsx](src/components/StationView.tsx). That dispatcher
   is the chokepoint every station pass (wash, hit area, dots, labels, stroke, drag proxy) funnels
@@ -1638,17 +1679,42 @@ Three seams cover it, and a fourth rule governs anything new:
   that last one matters most, because it paints a **full-viewport dim** that would otherwise black
   out the background art with the network gone. `needRegions` folds in `showNetwork` too, which
   also skips the app's most expensive computation while hidden.
+- **The four free kinds gate by EMPTYING their record** in `MapCanvas` (`polygons`, `svgImages`,
+  `textLabels`, `routeBullets` — the `…All` reads are the ungated originals). Each renders
+  across a
+  body pass, a hover preview, a selection overlay and a top-z drag proxy, and a gate written four
+  times is a gate that gets missed once. Only these four can be: `lineCircles` and `transfers` feed
+  **geometry** (band routing and stop metrics respectively), so emptying either would move ink that
+  is still on screen — those two gate at their paints instead.
 - **Doc-geometric code must opt in by hand.** Not rendering kills DOM hit-testing, but anything
   reading geometry straight off the doc never notices: `useRectSelect` would sweep hidden stations
   into a marquee (an invisible selection that answers Delete), and the snap pool would align art
-  to stations that aren't on screen. There are **five** such gates, not two:
-  `stationsForRectVisible` (marquee), `liveAlignTargets` (the point-snapper pool, wrapping the
-  still-pure `alignTargets`), `liveSnapStations` (the station record handed to the snap **engine** —
-  a bound route bullet stays draggable while the network is hidden, and without this it would align
+  to stations that aren't on screen. `hitsForRect` is the marquee's single gate — one function for
+  both the per-frame preview and the commit on release, which ran as two copies of the same seven
+  calls (a gate the preview honours and the commit does not looks right for the whole drag and
+  selects the invisible thing anyway). It folds in `stationsForRectVisible` and
+  `anchorsForRectVisible`. The snap side has three named gates: `liveAlignTargets` (the
+  point-snapper pool, wrapping the still-pure `alignTargets`, emptying the four free kinds exactly
+  as the canvas does), `liveSnapStations` (the station record handed to the snap **engine** — a
+  bound route bullet stays draggable while the network is hidden, and without this it would align
   to invisible stops), `liveSnapAnchors` (free anchors, gated on `showNetwork` **and**
   `showAnchors`), and `liveSnapHostedAnchors` (the same anchor gate over the cells a station
   carries — it empties those, leaving the station's stops in the pool).
-  **Any new feature that reads `doc.stations`/`doc.lines` for interaction needs the same gate.**
+  Ring capture is the third: `liveCaptureCircles` gates the placement snap, its drop-side
+  `bindDroppedStation`, and the drag-side capture in `useStationDrag`. Ungated, a station dropped
+  near a hidden rim snaps onto it AND gets **bound** to it — the map acquires a binding to a guide
+  nobody can see. Rings are a hard constraint rather than an align target, which is why they take a
+  helper of their own instead of a slice in the pool.
+  **Any new feature that reads the doc for interaction needs the same gate.** The one place that
+  needs none is the locked-item deep-pick: `lockedHitsAt` probes geometry with no visibility
+  opinion, but `lockedDispatchTarget` resolves through `document.querySelector`, so a hidden kind
+  has no element and drops out before it can join the cycle.
+- **Item popovers gate too, and they are not canvas content.** A panel is a DOM overlay, so
+  hiding a layer does not take its editor away — it hangs there offering to edit, and Delete, an
+  item no longer on screen. `ItemPopovers` gates every kind (the station's panel is HIDDEN rather
+  than unmounted, keeping its measured width and scroll position across the excursion), and the
+  multi-select `SelectionPopover` drops hidden kinds from its count and its bulk lock/delete.
+  Items stay SELECTED throughout — hiding is a peek — so unhiding restores the same group.
 
 ### Preferences
 
@@ -2589,11 +2655,11 @@ same three additions.
   / Clear), Add-item menu
   (toggles `uiMode`; includes **Image / SVG…** — imports `.svg`, `.png`, or `.jpg/.jpeg` via
   `svgImport.ts` into an `SvgImage`), tool buttons (arrow/hand), grid-size + grid-visible +
-  dark-mode toggles, the **view-toggle row** (`WP` → anchors → network eye), the layering-mode
-  button, Reset view, and the sidebar toggle. The Canvas menu also carries the two local chrome
-  preferences — the **Dark UI in day** checkbox and the **Day canvas color** submenu
+  dark-mode toggles, the **View menu** (`ViewPopover` — the eye button; see Viewport), the
+  layering-mode button, Reset view, and the sidebar toggle. The Canvas menu also carries the two
+  local chrome preferences — the **Dark UI in day** checkbox and the **Day canvas color** submenu
   (white/gray/black paper) — which live in `useViewportStore`, not the doc.
-  Embeds `MapNameField`, `MapVersionPill`, `SnapToggleBar`, `OptionsPopover`,
+  Embeds `MapNameField`, `MapVersionPill`, `SnapToggleBar`, `OptionsPopover`, `ViewPopover`,
   and the **`?` `HelpPopover`**
   ([HelpPopover.tsx](src/components/HelpPopover.tsx) — a quick-reference interaction guide, also
   opened by the `?` key). Owns **`captureExportSnapshot`** — a detached clone of the canvas as the
@@ -2602,7 +2668,9 @@ same three additions.
   1. a **selected line** desaturates every other line;
   2. **layering mode** fades labels, bullets and line tags to 25% — and that fade is an `opacity`
      on content groups, not chrome carrying `data-export-exclude`, so it CLONES;
-  3. **`showNetwork` off** takes the whole network off the canvas.
+  3. any **hidden layer** that gates exported ink, restored from the `VISIBILITY_ITEMS` registry
+     via `exportVisibilityOverrides` rather than one hand-written line per flag — the hand-written
+     version silently shipped exports missing whatever layer a later toggle added.
 
   Apply → clone → revert all happen inside **one synchronous task**: `flushSync` commits each
   repaint to the DOM immediately but the browser gets no frame in between, so nothing the user set
@@ -2994,9 +3062,10 @@ Each is confirmed in source/tests; file pointers included.
   station changes its layout and dissolves the match, so a per-move `findMatchingStations` would
   find nothing after the first frame. One-shot controls (`dispatchMirrored`) compute at dispatch
   time, which is BEFORE their single write — equivalent and correct.
-- **Export desaturation race** — `captureExportSnapshot` uses `flushSync` to drop/restore three
-  transient view states (selected-line dim, layering's 25% content fade, hidden network)
-  synchronously so none is baked into the clone. The layering fade is the easy one to miss: it is
+- **Export desaturation race** — `captureExportSnapshot` uses `flushSync` to drop/restore the
+  transient view states (selected-line dim, layering's 25% content fade, every hidden layer that
+  gates exported ink) synchronously so none is baked into the clone. The layering fade is the easy
+  one to miss: it is
   an `opacity` on real content groups, not `data-export-exclude` chrome, so the strip pass does not
   catch it and every export **and library thumbnail** taken in layering mode came out
   quarter-strength. ([Toolbar.tsx](src/components/Toolbar.tsx))

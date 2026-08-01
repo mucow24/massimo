@@ -11,6 +11,7 @@ import {
   snapToleranceAt,
 } from '../../geometry/snap';
 import { lineCircleAtPoint, snapPointToCircle, stationCircle } from '../../geometry/lineCircle';
+import { liveCaptureCircles } from './snapTargets';
 import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
 import {
   collectGroupSiblings,
@@ -204,7 +205,13 @@ export function useStationDrag(
         if (rimDist <= tolerance * CIRCLE_RELEASE_FACTOR) return moveConstrained(circle);
         release();
       } else if (shouldSnap) {
-        const captured = lineCircleAtPoint(lineCircles, { x: nx, y: ny }, tolerance);
+        // liveCaptureCircles, not the raw record: a ring the View menu is
+        // hiding must not capture — and BIND — a station dragged past it.
+        const captured = lineCircleAtPoint(
+          liveCaptureCircles(lineCircles),
+          { x: nx, y: ny },
+          tolerance,
+        );
         if (captured) {
           const escaped = ds.escapedFrom;
           bindStationToCircle(

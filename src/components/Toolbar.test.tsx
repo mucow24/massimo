@@ -215,31 +215,17 @@ describe('Toolbar — tool + view toggles', () => {
     expect(useDoc.getState().darkMode).toBe(true);
   });
 
-  it('toggles waypoint visibility via the WP button', async () => {
+  it('drives layer visibility from the View menu, not standalone toggles', async () => {
+    // The WP / anchor / eye buttons are gone: every visibility flag lives behind
+    // the one View button now (see ViewPopover, which owns the menu's own tests).
     const user = userEvent.setup();
     renderToolbar();
-    const btn = () => screen.getByLabelText('Toggle waypoints');
-    expect(btn()).toHaveTextContent('WP');
-    expect(btn()).toHaveAttribute('aria-pressed', 'false');
-    await user.click(btn());
-    expect(useViewportStore.getState().showWaypoints).toBe(true);
-    expect(btn()).toHaveAttribute('aria-pressed', 'true');
-    await user.click(btn());
-    expect(useViewportStore.getState().showWaypoints).toBe(false);
-  });
-
-  it('toggles lines + stations via the eye button', async () => {
-    const user = userEvent.setup();
-    renderToolbar();
-    const btn = () => screen.getByLabelText('Toggle lines and stations');
-    // Starts pressed: unlike the WP button, this one is ON in the normal case —
-    // the map is drawn, and clicking is what takes it away.
-    expect(btn()).toHaveAttribute('aria-pressed', 'true');
-    await user.click(btn());
+    expect(screen.queryByLabelText('Toggle waypoints')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Toggle transfer anchors')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Toggle lines and stations')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'View' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Lines and stations' }));
     expect(useViewportStore.getState().showNetwork).toBe(false);
-    expect(btn()).toHaveAttribute('aria-pressed', 'false');
-    await user.click(btn());
-    expect(useViewportStore.getState().showNetwork).toBe(true);
   });
 
   it('Reset view fits the camera to the map content', async () => {
@@ -301,7 +287,7 @@ describe('Toolbar — help guide', () => {
     // the two. The invariant that matters is Help coming last; naming a
     // neighbour re-breaks this for every future button.
     expect(help.parentElement!.lastElementChild).toBe(help);
-    expect(help.parentElement).toContainElement(screen.getByLabelText('Toggle waypoints'));
+    expect(help.parentElement).toContainElement(screen.getByRole('button', { name: 'View' }));
   });
 
   it('opens the quick-reference overlay on click and closes on a second click', async () => {
@@ -1562,17 +1548,18 @@ describe('Toolbar — status toasts', () => {
 });
 
 describe('Toolbar — transfer anchors toggle', () => {
-  it('toggles anchor visibility, and starts OFF', async () => {
+  it('toggles anchor visibility from the View menu, and starts OFF', async () => {
     const user = userEvent.setup();
     renderToolbar();
-    const btn = () => screen.getByLabelText('Toggle transfer anchors');
-    // Same default as the WP button beside it: anchors are scaffolding, shown
-    // on demand. The transfer/place gestures reveal them on their own.
-    expect(btn()).toHaveAttribute('aria-pressed', 'false');
-    await user.click(btn());
+    await user.click(screen.getByRole('button', { name: 'View' }));
+    const box = () => screen.getByRole('checkbox', { name: 'Anchors' });
+    // Anchors are scaffolding, shown on demand — the transfer/place gestures
+    // reveal them on their own, so the stored flag stays off by default.
+    expect(box()).toHaveAttribute('aria-checked', 'false');
+    await user.click(box());
     expect(useViewportStore.getState().showAnchors).toBe(true);
-    expect(btn()).toHaveAttribute('aria-pressed', 'true');
-    await user.click(btn());
+    expect(box()).toHaveAttribute('aria-checked', 'true');
+    await user.click(box());
     expect(useViewportStore.getState().showAnchors).toBe(false);
   });
 });

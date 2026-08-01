@@ -1,5 +1,7 @@
 import { soleSelection, useDoc, useSelection } from '../../state/store';
 import { useViewportStore } from '../../state/viewportStore';
+import { kindVisible } from '../../state/visibility';
+import { useAnchorsVisible } from '../../state/anchorVisibility';
 import { itemIdCount, type SelectionItemIds } from '../../state/selectionOps';
 import { SIDEBAR_WIDTH, sidebarVisible } from '../Sidebar';
 import { LinePopover } from '../LinePopover';
@@ -38,10 +40,54 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
   const lineCircles = useDoc((s) => s.lineCircles);
   const lines = useDoc((s) => s.lines);
   const transfers = useDoc((s) => s.transfers);
-  // These panels are DOM overlays, not canvas content, so the lines/stations
-  // toggle doesn't take the station/transfer ones with it — they'd hang there
-  // offering to edit what the user can't see.
+  // These panels are DOM overlays, not canvas content, so NOTHING about hiding a
+  // layer takes them away on its own — a panel would hang there offering to edit,
+  // and Delete, an item that is no longer on screen. Every View-menu kind needs
+  // its own gate for the reason the lines/stations one has always had.
+  //
+  // Through `kindVisible` so this agrees with the canvas by construction rather
+  // than by two lists staying in step. Its reveal half is inert HERE — entering
+  // any non-idle mode runs `clearedSelections`, so there is never a selection
+  // left for a placing mode to keep an editor open for — but reading the same
+  // helper as every other consumer is what makes "one entry point" true.
+  // Anchors ride on `useAnchorsVisible` (two modes reveal them, and that module
+  // owns the rule); stations stay on the raw `showNetwork` because their panel
+  // is HIDDEN rather than unmounted below.
   const showNetwork = useViewportStore((s) => s.showNetwork);
+  const modeKind = selection.uiMode.kind;
+  // Read BEFORE the `&&` that nests transfers under the network: a store hook on
+  // the right of a short-circuit is a CONDITIONAL hook, and the render order
+  // breaks the moment the left side goes false.
+  const showTransfers = useViewportStore((s) => s.showTransfers);
+  const vis = {
+    bullet: kindVisible(
+      'showRouteBullets',
+      useViewportStore((s) => s.showRouteBullets),
+      modeKind,
+    ),
+    label: kindVisible(
+      'showTextLabels',
+      useViewportStore((s) => s.showTextLabels),
+      modeKind,
+    ),
+    polygon: kindVisible(
+      'showPolygons',
+      useViewportStore((s) => s.showPolygons),
+      modeKind,
+    ),
+    svgImage: kindVisible(
+      'showSvgImages',
+      useViewportStore((s) => s.showSvgImages),
+      modeKind,
+    ),
+    lineCircle: kindVisible(
+      'showLineCircles',
+      useViewportStore((s) => s.showLineCircles),
+      modeKind,
+    ),
+    transfer: showNetwork && kindVisible('showTransfers', showTransfers, modeKind),
+    anchor: useAnchorsVisible(),
+  };
 
   // A zero-size host (first paint, before the ResizeObserver measures) has no
   // corner to dock into yet; waiting for a real box keeps the panel from
@@ -66,20 +112,27 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
     // that preserve a selection (placing-label's marquee) shouldn't pop a
     // group editor under their placement clicks, mirroring the station gate
     // below.
+    // Hidden kinds drop OUT of the group: its count and its bulk
+    // lock/unlock/delete must describe what is on screen, not a tally that
+    // silently includes items the user cannot see. They stay SELECTED — hiding
+    // is a peek — so unhiding brings them back into the same group. Falling
+    // below two visible items shows no group panel rather than promoting the
+    // survivor to its own: a selection quietly narrowing under a toggle should
+    // not also change which editor is open.
     const multiIds: SelectionItemIds = {
-      stations: selection.selectedStationIds,
-      bullets: selection.selectedRouteBulletIds,
-      labels: selection.selectedLabelIds,
-      polygons: selection.selectedPolygonIds,
-      svgImages: selection.selectedSvgImageIds,
-      anchors: selection.selectedAnchorIds,
-      lineCircles: selection.selectedLineCircleIds,
+      stations: showNetwork ? selection.selectedStationIds : [],
+      bullets: vis.bullet ? selection.selectedRouteBulletIds : [],
+      labels: vis.label ? selection.selectedLabelIds : [],
+      polygons: vis.polygon ? selection.selectedPolygonIds : [],
+      svgImages: vis.svgImage ? selection.selectedSvgImageIds : [],
+      anchors: vis.anchor ? selection.selectedAnchorIds : [],
+      lineCircles: vis.lineCircle ? selection.selectedLineCircleIds : [],
     };
     if (itemIdCount(multiIds) >= 2 && selection.uiMode.kind === 'idle') {
       return <SelectionPopover ids={multiIds} hostW={hostW} />;
     }
     const t = selection.selectedTransferId ? transfers[selection.selectedTransferId] : undefined;
-    if (!t || !showNetwork) return null;
+    if (!t || !vis.transfer) return null;
     return (
       <TransferPopover transfer={t} hostW={hostW} onClose={() => selection.selectTransfer(null)} />
     );
@@ -118,7 +171,7 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
 
   if (sole.type === 'bullet') {
     const b = routeBullets[sole.id];
-    if (!b) return null;
+    if (!b || !vis.bullet) return null;
     return (
       <RouteBulletPopover
         bullet={b}
@@ -129,26 +182,26 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
   }
   if (sole.type === 'label') {
     const g = textLabels[sole.id];
-    if (!g) return null;
+    if (!g || !vis.label) return null;
     return <TextLabelPopover label={g} hostW={hostW} onClose={() => selection.selectLabel(null)} />;
   }
   if (sole.type === 'polygon') {
     const p = polygons[sole.id];
-    if (!p) return null;
+    if (!p || !vis.polygon) return null;
     return (
       <PolygonPopover polygon={p} hostW={hostW} onClose={() => selection.selectPolygon(null)} />
     );
   }
   if (sole.type === 'svgImage') {
     const im = svgImages[sole.id];
-    if (!im) return null;
+    if (!im || !vis.svgImage) return null;
     return (
       <SvgImagePopover image={im} hostW={hostW} onClose={() => selection.selectSvgImage(null)} />
     );
   }
   if (sole.type === 'lineCircle') {
     const c = lineCircles[sole.id];
-    if (!c) return null;
+    if (!c || !vis.lineCircle) return null;
     return (
       <LineCirclePopover
         circle={c}
