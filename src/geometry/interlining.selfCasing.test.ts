@@ -50,7 +50,7 @@ interface PaintEl {
 // the stops the dots cover.
 function paintSequence(bands: SegmentBandSpec[], line: Line): PaintEl[] {
   const els: PaintEl[] = [];
-  for (const r of buildOrderedRenderables(bands, [])) {
+  for (const r of buildOrderedRenderables(bands, [], { [line.id]: line })) {
     // Markers and the (opt-in, clipped) branch seam don't participate in the
     // casing-vs-body merge invariant; these fixtures set no seamColor.
     if (r.kind === 'marker' || r.kind === 'seam') continue;

@@ -103,9 +103,11 @@ export interface SegmentBandSpec {
 // stop square doesn't paint over a front-stack line's band passing through.
 //
 // `style` is derived from this line's segmentStyles at the incident
-// adjacencies: a uniform non-solid style across every adjacency wins (so
-// the pattern visually flows through the station); any mix resolves to
-// solid (see stationMarkerStyle).
+// adjacencies: the PLURALITY style wins (so the pattern visually flows through
+// the station along its through-route), ties broken by canonical LineStyle
+// order — see stationMarkerStyle. It is therefore always a style some incident
+// segment actually has, and at a branch it is also the reference that decides
+// which segments paint in front (see branchSubOrder).
 //
 // `outward` is set when this stop is a TERMINUS for the line (single
 // adjacency, band available): the unit vector pointing out of the line's
@@ -761,29 +763,61 @@ export const SEAM_EPS = 0.25;
 // top-most overlay (see <BandWarning> in MapCanvas) so the ⚠ marker and its
 // red frame sit above every stripe, dot, and label rather than at a stripe's
 // z-priority.
+// `subOrder` is the WITHIN-line tie-break (see {@link branchSubOrder}), in the
+// same sense as `priority`: higher sorts further back. It is a separate sort key
+// rather than a fractional nudge to `priority` on purpose — the CASING_EPS
+// safety argument above is written as valid only because base priorities are
+// integers, and a fractional offset would land inside that ±0.5 band.
 export type OrderedRenderable =
-  | { kind: 'stripe'; band: SegmentBandSpec; stripeIndex: number; priority: number }
-  | { kind: 'casing'; band: SegmentBandSpec; stripeIndex: number; priority: number }
-  | { kind: 'seam'; band: SegmentBandSpec; stripeIndex: number; priority: number }
-  | { kind: 'marker'; spec: StopMarkerSpec; priority: number };
+  | {
+      kind: 'stripe';
+      band: SegmentBandSpec;
+      stripeIndex: number;
+      priority: number;
+      subOrder: number;
+    }
+  | {
+      kind: 'casing';
+      band: SegmentBandSpec;
+      stripeIndex: number;
+      priority: number;
+      subOrder: number;
+    }
+  | { kind: 'seam'; band: SegmentBandSpec; stripeIndex: number; priority: number; subOrder: number }
+  | { kind: 'marker'; spec: StopMarkerSpec; priority: number; subOrder: number };
 
 export function buildOrderedRenderables(
   bands: SegmentBandSpec[],
   markers: StopMarkerSpec[],
+  lines: Record<LineId, Line>,
 ): OrderedRenderable[] {
   const list: OrderedRenderable[] = [];
   for (const band of bands) {
     for (let i = 0; i < band.lines.length; i++) {
       const priority = band.linePriorities[i];
-      list.push({ kind: 'stripe', band, stripeIndex: i, priority });
-      list.push({ kind: 'casing', band, stripeIndex: i, priority: priority + CASING_EPS });
-      list.push({ kind: 'seam', band, stripeIndex: i, priority: priority - SEAM_EPS });
+      // A stripe carries its own line's within-line rank on all three of its
+      // passes, so a demoted body takes its casing and seam back with it.
+      const line = lines[band.lines[i].id];
+      const subOrder = line ? stopDotSubOrder(band, line) : 0;
+      list.push({ kind: 'stripe', band, stripeIndex: i, priority, subOrder });
+      list.push({
+        kind: 'casing',
+        band,
+        stripeIndex: i,
+        priority: priority + CASING_EPS,
+        subOrder,
+      });
+      list.push({ kind: 'seam', band, stripeIndex: i, priority: priority - SEAM_EPS, subOrder });
     }
   }
   for (const m of markers) {
-    list.push({ kind: 'marker', spec: m, priority: m.priority });
+    list.push({ kind: 'marker', spec: m, priority: m.priority, subOrder: 0 });
   }
-  list.sort((a, b) => b.priority - a.priority);
+  // Descending priority, then descending subOrder — a demoted stripe sorts
+  // EARLIER (further back) exactly as a higher priority does. Ties on both keys
+  // keep insertion order (stable sort), which is what holds markers behind
+  // stripes and leaves an unbranched line in its historical edges-array order.
+  list.sort((a, b) => b.priority - a.priority || b.subOrder - a.subOrder);
   return list;
 }
 
@@ -951,21 +985,81 @@ function terminusOutwardFromBand(
   return { x: dx / len, y: dy / len };
 }
 
+// Canonical LineStyle order, used ONLY to break a plurality tie below. `solid`
+// is first, so any tie it takes part in still resolves to solid — a one-in
+// one-out style change keeps the plain square that covers the inner half of the
+// patterned segment, making the pattern start past the dot's edge. `satisfies`
+// makes a newly added LineStyle a build error rather than a silent gap here.
+const LINE_STYLE_TIE_RANK = {
+  solid: 0,
+  dashed: 1,
+  hatched: 2,
+  'hatched-mirror': 3,
+  dotted: 4,
+  'dashed-open': 5,
+} as const satisfies Record<LineStyle, number>;
+
 // Derive the marker style from this line's segment styles at the adjacencies
-// incident to `stationId`. Rule: if every adjacency shares the same non-solid
-// style (dashed, hatched/-mirror, dotted, dashed-open), the dot inherits that
-// style; otherwise it's solid. A mixed junction (e.g. one hatched + one solid, or
-// hatched + hatched-mirror) resolves to solid so the dot covers the inner half
-// of the patterned segment and the pattern visually starts past the dot's edge.
+// incident to `stationId`. Rule: the PLURALITY style wins, ties broken by
+// LINE_STYLE_TIE_RANK. The dot therefore always shows a style some incident
+// segment actually HAS — a junction of hatched + hatched + dotted reads hatched
+// rather than inventing a solid square for a line with no solid anywhere.
+//
+// Order-invariant by construction: a strict count comparison decides the
+// winner, and equal counts fall to a rank that does not depend on which edge
+// the adjacency walk saw first.
+//
+// At a branch this resolves to the THROUGH-ROUTE's style, which is what
+// {@link branchSubOrder} then uses to keep the through-route painting in front.
 function stationMarkerStyle(line: Line, stationId: StationId): LineStyle {
   const styles = line.segmentStyles;
   if (!styles) return 'solid';
   // Every edge incident to this station on this line (its key IS the style key).
   const adjacencies: LineStyle[] = incidentEdges(line, stationId).map((e) => styles[e] ?? 'solid');
   if (adjacencies.length === 0) return 'solid';
-  const first = adjacencies[0];
-  if (first !== 'solid' && adjacencies.every((s) => s === first)) return first;
-  return 'solid';
+  const counts = new Map<LineStyle, number>();
+  for (const s of adjacencies) counts.set(s, (counts.get(s) ?? 0) + 1);
+  let best: LineStyle = 'solid';
+  let bestCount = 0;
+  for (const [style, n] of counts) {
+    if (
+      n > bestCount ||
+      (n === bestCount && LINE_STYLE_TIE_RANK[style] < LINE_STYLE_TIE_RANK[best])
+    ) {
+      best = style;
+      bestCount = n;
+    }
+  }
+  return best;
+}
+
+// Within-line paint order, enforcing one invariant: A STOP DOT'S STYLE IS THE
+// STYLE OF THE TOPMOST SEGMENT OF THAT LINE AT THAT STATION. A segment whose
+// style differs from a station's resolved marker style (see
+// {@link stationMarkerStyle}) paints BEHIND its siblings there, so the square
+// and the stripe that covers it can never disagree.
+//
+// That is what keeps a through-route continuous wherever a line's own stripes
+// coincide — a branch whose route runs up its own trunk corridor, and equally a
+// plain degree-2 station where the line DOUBLES BACK (both edges leave in the
+// same direction, stripes overlap, degree still 2). Applied at every station
+// for that reason: at a station the line merely passes through, consecutive
+// bands abut rather than overlap, so a demotion there is inert.
+//
+// Differing at EITHER end demotes — the conservative direction (a segment is
+// never RAISED over a sibling), and it makes the answer independent of which
+// endpoint is inspected first. One consequence is inherent to a single scalar
+// per stripe: an edge pulled the opposite way by its two stations can only obey
+// one of them, so the invariant is guaranteed per-station only while each edge
+// gets a consistent verdict at both ends.
+//
+// Returns a value with the same sense as `priority`: HIGHER sorts further back.
+function stopDotSubOrder(band: SegmentBandSpec, line: Line): number {
+  const style = resolveSegmentStyle(line, band.pairKey);
+  for (const stationId of [band.fromId, band.toId]) {
+    if (stationMarkerStyle(line, stationId) !== style) return 1;
+  }
+  return 0;
 }
 
 // Centerline radius bumped so the INNERMOST stripe of a band still has
