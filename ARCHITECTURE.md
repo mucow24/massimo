@@ -1880,6 +1880,28 @@ identity. The band specs are pinned by a **byte-exact golden snapshot**
 (`interlining.golden.test.ts`) guarding the zero-visual-change-for-legacy-docs invariant; never
 update it without understanding why every painted path on every map would move.
 
+**Where a new stop lands.** The merge gate is a rule about BOTH ends at once, so placing a new stop
+has to be too. `spawnStopCellAt` ([transforms.ts](src/model/transforms.ts)) reproduces, at the
+station a connect/splice extends INTO, the arrangement the line already has at the station it comes
+FROM — and does it entirely in **world vectors**, converting back to a cell exactly once at the end
+(`cellAtWorldPos`). That is the whole point: row/col name different world directions at every
+station rotation, so any rule phrased as "a column over" changes answer depending on how the target
+station happens to be turned. Two stations 180° apart (a hand rotation, or `autoOrient` flipping to
+keep a label upright) put the stop on the wrong side of the band; two a QUARTER turn apart — a
+station framed for an east–west corridor receiving a north–south line — put it along the corridor
+instead of across it, which the router then cannot route at all.
+
+Each line running that same corridor and stopping at both ends is a **peer**, and each proposes one
+spot: its own position here, plus the world offset from it to the new line back at the source. Peers
+usually agree, and a proposal satisfying every peer reproduces the arrangement exactly. Ranked by
+peers reproduced, then not landing on an existing stop, then leaving the corridor routable (the
+**router**'s own "can't route" verdict, not a proxy for it), then the nearest peer at the source. A
+proposal within a `tangentGap` of an existing stop slides outward until clear. The new stop's
+**travel axis** is matched the same way — the orientation naming, in the target's local frame, the
+world axis the line runs at the source, since the four orientations name local axes and a station
+framed the other way calls north–south travel `'auto-horizontal'`. With no peer there is nothing to
+reproduce, and placement falls back to one tangent gap east of the rightmost stop.
+
 **Casing & seam passes.** [SegmentBand.tsx](src/components/SegmentBand.tsx) emits **three
 renderables per stripe**, interleaved by z-priority: a `'silhouette'` pass (the fat under-stroke
 just behind the body, `priority + CASING_EPS`), the `'body'` pass (the inset colored stripe), and

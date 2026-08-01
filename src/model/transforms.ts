@@ -82,6 +82,7 @@ import {
   radialLocalTurn,
   rotateBy,
   stationCellToWorld,
+  stationDirToLocal,
   stopCenterAt,
   tangentGap,
 } from '../geometry/orientation';
@@ -92,7 +93,8 @@ import { clampSize as clampSvgImageSize, normalizeRotation } from '../geometry/s
 import { measureTextLabel } from '../geometry/textMeasure';
 import { isBulletCode } from '../geometry/labelTokens';
 import type { LabelStyle } from '../geometry/labelLayout';
-import { rotateAround, type Vec2 } from '../geometry/vec';
+import { add, dot, eq, leftNormal, len, norm, rotateAround, sub, type Vec2 } from '../geometry/vec';
+import { buildBandGeometry, travelDirWorld } from '../geometry/interlining';
 import { normalizePaletteIds, type Palette, type PaletteId } from './palettes';
 import type {
   AutoHAlign,
@@ -1894,6 +1896,234 @@ function radialOutCell(
   }
 }
 
+// The stop already occupying (row, col) on `st`, if any. "Occupied" is a real
+// collision test, not cell equality: a stop a fraction of a lane off would
+// pass an equality check and then paint through the new dot. Two stops are
+// packed at exactly `tangentGap`, so anything closer overlaps — less the
+// shared BAND_MERGE_TOL slack, or float drift in a computed lane would read an
+// exactly-packed neighbour as a blocker.
+function blockingStopAt(
+  st: Station,
+  lineId: LineId,
+  lines: Record<LineId, Line>,
+  row: number,
+  col: number,
+): StopCell | undefined {
+  return st.stops.find(
+    (c) =>
+      Math.hypot(c.row - row, c.col - col) * STOP_SIZE <
+      tangentGap(
+        lineWidthOf(lines[lineId]),
+        lineWidthOf(lines[c.lineId]),
+        lineInterlineGapOf(lines[lineId]),
+        lineInterlineGapOf(lines[c.lineId]),
+      ) -
+        BAND_MERGE_TOL,
+  );
+}
+
+// A stop centre in WORLD coordinates, and its inverse: the cell whose centre
+// lands on a world point. Station rotation is undone in ONE place — here — so
+// everything reasoning about where a stop goes relative to another can work in
+// world vectors and never touch a local axis.
+const stopWorldPos = (cell: { row: number; col: number }, st: Station, circle: CircleSpec | null) =>
+  stationCellToWorld(stopCenterAt(cell.row, cell.col), st, circle);
+
+function cellAtWorldPos(
+  world: Vec2,
+  st: Station,
+  circle: CircleSpec | null,
+): { row: number; col: number } {
+  const local = stationDirToLocal(sub(world, st), st, circle);
+  return { row: nz(local.y / STOP_SIZE), col: nz(local.x / STOP_SIZE) };
+}
+
+// Push `start` along `dir` until no existing stop overlaps it, clearing each
+// blocker by exactly the step that packs against it — so the walk comes to rest
+// tangent to whatever it ends up beside rather than at an arbitrary distance.
+// Each hop clears a stop strictly further along `dir` than the last, so it
+// terminates within one hop per existing stop.
+function slideClearOfStops(
+  st: Station,
+  lineId: LineId,
+  lines: Record<LineId, Line>,
+  circle: CircleSpec | null,
+  start: Vec2,
+  dir: Vec2,
+): Vec2 {
+  const packedAgainst = (other: LineId) =>
+    tangentGap(
+      lineWidthOf(lines[lineId]),
+      lineWidthOf(lines[other]),
+      lineInterlineGapOf(lines[lineId]),
+      lineInterlineGapOf(lines[other]),
+    );
+  let at = start;
+  for (let i = 0; i <= st.stops.length; i++) {
+    const hit = st.stops.find(
+      (c) => len(sub(stopWorldPos(c, st, circle), at)) < packedAgainst(c.lineId) - BAND_MERGE_TOL,
+    );
+    if (!hit) break;
+    const gap = packedAgainst(hit.lineId);
+    at = add(stopWorldPos(hit, st, circle), { x: dir.x * gap, y: dir.y * gap });
+  }
+  return at;
+}
+
+// The orientation at `st` that travels the same WORLD axis `ref` travels at
+// `from`. The four orientations name the same four axes at every station, but
+// they name them in the station's LOCAL frame, so carrying "which way this line
+// runs" across a corridor means matching the world axis rather than copying the
+// enum — a station framed for an east–west corridor calls north–south travel
+// 'auto-horizontal'. Sign is irrelevant (an axis has no direction), hence the
+// absolute value; with both frames on 45° steps one of the four always matches
+// exactly.
+function travelAxisMatching(
+  ref: StopCell,
+  from: Station,
+  st: Station,
+  hint: Vec2,
+): StopOrientation {
+  const want = travelDirWorld(ref, from, hint);
+  let best: StopOrientation = 'auto-vertical';
+  let bestDot = -Infinity;
+  for (const orientation of AXIS_CYCLE) {
+    const d = Math.abs(dot(travelDirWorld({ ...ref, orientation }, st, hint), want));
+    if (d > bestDot) {
+      bestDot = d;
+      best = orientation;
+    }
+  }
+  return best;
+}
+
+// Would the corridor still route with `cell` in place? Builds the real band
+// for just this station pair through the real pipeline, so the answer is the
+// same "can't route" the canvas would paint — the router flags an unsolvable
+// route, a bend past 135°, or a fillet squeezed under half the radius, and any
+// of those is what the user sees as the red frame. The edge is not wired yet
+// (spawn runs before `addEdge`), so it is added here or the line has no
+// segment to build.
+function corridorWarnsWith(
+  st: Station,
+  lineId: LineId,
+  lines: Record<LineId, Line>,
+  lineCircles: Record<string, LineCircle>,
+  from: Station,
+  cell: StopCell,
+): boolean {
+  const stations: Record<StationId, Station> = {
+    [from.id]: from,
+    [st.id]: { ...st, stops: [...st.stops, cell] },
+  };
+  const wired: Record<LineId, Line> = {
+    ...lines,
+    [lineId]: { ...lines[lineId], edges: addEdge(lines[lineId].edges, from.id, st.id) },
+  };
+  return buildBandGeometry(stations, wired, lineCircles).some(
+    (b) => b.warning && b.lines.some((l) => l.id === lineId),
+  );
+}
+
+// Place `lineId`'s new stop on `st` by reproducing, in WORLD terms, the
+// arrangement it already has at `from` — the station it is being extended from.
+//
+// Everything here is world vectors, converted back to a cell exactly once at
+// the end (`cellAtWorldPos`). That is the whole point: a cell's row/col mean
+// different world directions at every station rotation, so any rule phrased as
+// "a column over" is a rule that changes answer depending on how the target
+// station happens to be turned. Two stations 180° apart put the new stop on the
+// wrong side of the band; two a quarter turn apart — a station framed for an
+// east–west corridor receiving a north–south line — put it along the corridor
+// instead of across it, which the router then can't route at all.
+//
+// Each line running this SAME corridor and stopping at both ends is a PEER, and
+// each proposes one spot: its own position here, plus the world offset from it
+// to `lineId` back at `from`. Peers usually agree, and a proposal that satisfies
+// every peer reproduces the whole arrangement exactly. Ranking:
+//
+//   1. most peers whose world offset it reproduces,
+//   2. does not sit on top of an existing stop — a backstop, since each
+//      proposal is already slid clear, but that walk is iteration-bounded,
+//   3. leaves the corridor routable (no "can't route" frame),
+//   4. the nearest peer at `from`, which keeps the tightest relationship.
+//
+// Returns null when there is nothing to reproduce — no stop at `from`, or no
+// peer — leaving the caller's fallback in charge.
+function corridorOrderCell(
+  st: Station,
+  lineId: LineId,
+  lines: Record<LineId, Line>,
+  lineCircles: Record<string, LineCircle>,
+  from: Station,
+): StopCell | null {
+  const mine = from.stops.find((c) => c.lineId === lineId);
+  const canon = sub(st, from);
+  if (!mine || (canon.x === 0 && canon.y === 0)) return null;
+
+  const fromCircle = stationCircle(from, lineCircles);
+  const stCircle = stationCircle(st, lineCircles);
+  const mineWorld = stopWorldPos(mine, from, fromCircle);
+
+  const peers = st.stops
+    .filter(
+      (here) =>
+        here.lineId !== lineId &&
+        lines[here.lineId] !== undefined &&
+        lineHasEdge(lines[here.lineId], from.id, st.id),
+    )
+    .map((here) => ({ here, there: from.stops.find((f) => f.lineId === here.lineId) }))
+    .filter((p): p is { here: StopCell; there: StopCell } => p.there !== undefined)
+    // Nearest peer at `from` first, so it wins any tie left at the end.
+    .map((p) => ({ ...p, want: sub(mineWorld, stopWorldPos(p.there, from, fromCircle)) }))
+    .sort((a, b) => len(a.want) - len(b.want));
+  if (peers.length === 0) return null;
+
+  const orientation = travelAxisMatching(mine, from, st, norm(canon));
+  const proposals = peers.map((p) => {
+    const anchor = stopWorldPos(p.here, st, stCircle);
+    const target = add(anchor, p.want);
+    // Away from the proposing peer — the direction that keeps the new stop on
+    // the side it was proposed for if the spot has to give way.
+    const away = len(p.want) > 0 ? norm(p.want) : norm(leftNormal(canon));
+    return slideClearOfStops(st, lineId, lines, stCircle, target, away);
+  });
+
+  const reproduced = (at: Vec2) =>
+    peers.filter((p) => eq(sub(at, stopWorldPos(p.here, st, stCircle)), p.want, BAND_MERGE_TOL))
+      .length;
+  const clear = (at: Vec2) =>
+    !st.stops.some(
+      (c) =>
+        len(sub(stopWorldPos(c, st, stCircle), at)) <
+        tangentGap(
+          lineWidthOf(lines[lineId]),
+          lineWidthOf(lines[c.lineId]),
+          lineInterlineGapOf(lines[lineId]),
+          lineInterlineGapOf(lines[c.lineId]),
+        ) -
+          BAND_MERGE_TOL,
+    );
+  const cellOf = (at: Vec2): StopCell => ({
+    lineId,
+    ...cellAtWorldPos(at, st, stCircle),
+    orientation,
+  });
+
+  // Rank 1 and 2 are cheap; only narrow by the router (which builds real band
+  // geometry) if they leave more than one proposal standing.
+  const best = Math.max(...proposals.map(reproduced));
+  let short = proposals.filter((at) => reproduced(at) === best);
+  if (short.some(clear)) short = short.filter(clear);
+  if (short.length > 1) {
+    const routable = short.filter(
+      (at) => !corridorWarnsWith(st, lineId, lines, lineCircles, from, cellOf(at)),
+    );
+    if (routable.length > 0) short = routable;
+  }
+  return cellOf(short[0]);
+}
+
 // The lattice cell a fresh stop for `lineId` would occupy on station `st`: one
 // tangent gap east of the rightmost existing stop (exactly one column at
 // default widths), or the origin (0,0) when the station has no stops yet.
@@ -1944,25 +2174,12 @@ export function spawnStopCellAt(
     // but compares unequal to 0 under Object.is.
     const row = nz(out.dRow * cells);
     const col = nz(out.dCol * cells);
-    // Only when the spot is free. "Free" is a real collision test, not cell
-    // equality: a stop a fraction of a lane off would pass an equality check
-    // and then paint through the new dot. Two stops are packed at exactly
-    // `tangentGap`, so anything closer than that overlaps — less the shared
-    // BAND_MERGE_TOL slack, or float drift in the radius above would read an
-    // exactly-packed neighbour as a blocker. Occupied ⇒ fall through and
+    // Only when the spot is free (see `blockingStopAt` for why "free" is a
+    // collision test rather than cell equality). Occupied ⇒ fall through and
     // stack outward, which routes no worse than before.
-    const taken = st.stops.some(
-      (c) =>
-        Math.hypot(c.row - row, c.col - col) * STOP_SIZE <
-        tangentGap(
-          lineWidthOf(lines[lineId]),
-          lineWidthOf(lines[c.lineId]),
-          lineInterlineGapOf(lines[lineId]),
-          lineInterlineGapOf(lines[c.lineId]),
-        ) -
-          BAND_MERGE_TOL,
-    );
-    if (!taken) return { lineId, row, col, orientation: 'auto-vertical', viaCircle: true };
+    if (!blockingStopAt(st, lineId, lines, row, col)) {
+      return { lineId, row, col, orientation: 'auto-vertical', viaCircle: true };
+    }
   }
   // On a circle-bound station, new stops stack RADIALLY OUTWARD from the
   // ring. The naive "east of the rightmost" step below has no consistent
@@ -1995,6 +2212,13 @@ export function spawnStopCellAt(
       viaCircle: true,
     };
   }
+  // Off a ring, a station already served by this corridor has an arrangement
+  // worth reproducing — see `corridorOrderCell`. It answers null when there
+  // isn't one, and the plain step east below takes over.
+  if (!circle && from) {
+    const ordered = corridorOrderCell(st, lineId, lines, lineCircles, from);
+    if (ordered) return ordered;
+  }
   const anchor =
     st.stops.length === 0
       ? null
@@ -2010,11 +2234,25 @@ export function spawnStopCellAt(
       ) /
         STOP_SIZE
     : 0;
+  // Even with no arrangement to reproduce, the travel axis still has to be
+  // named in THIS station's frame: a station already carrying stops keeps its
+  // rotation (autoOrient only fires on one gaining its first line), so a
+  // station framed for a crossing corridor calls this line's axis something
+  // other than 'auto-vertical'. On an EMPTY station the rotation is about to be
+  // set from this very edge, and 'auto-vertical' is the axis it is chosen to
+  // make correct — matching against the frame it is about to leave behind would
+  // be reading the wrong frame.
+  const source = from?.stops.find((c) => c.lineId === lineId);
+  const canon = from ? sub(st, from) : null;
+  const orientation: StopOrientation =
+    source && from && canon && st.stops.length > 0 && (canon.x !== 0 || canon.y !== 0)
+      ? travelAxisMatching(source, from, st, norm(canon))
+      : 'auto-vertical';
   return {
     lineId,
     row: newRow,
     col: newCol,
-    orientation: 'auto-vertical',
+    orientation,
     // A stop born on a circle-bound station defaults to riding the circle —
     // the always-arc default; explicitly flipping the orientation is the
     // opt-out (rotateStop clears the flag).
