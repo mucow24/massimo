@@ -235,6 +235,11 @@ export function MapCanvas() {
   // background so the "off" stripes read as empty canvas, not stale white.
   const underlayColor = theme.underlay;
   const highlightLineId = selection.selectedLineId;
+  // The line Edit Stops is editing, or null outside the mode. Always equals
+  // highlightLineId while the mode runs (entering it selects the line), but the
+  // MODE is what the editor's chrome and its lifted hit layer key off.
+  const appendLineId =
+    selection.uiMode.kind === 'appending-to-line' ? selection.uiMode.lineId : null;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
   // The selected-item drag-proxy layer. Proxies sit on top so a SELECTED item
@@ -1509,6 +1514,37 @@ export function MapCanvas() {
                 />,
               );
             })}
+
+          {/* Edit Stops: the edited line's pointer surface, LIFTED above every
+            band renderable. The mode dims the map and repaints this line on
+            top of the dim, so its z-priority down in the band layer — and the
+            region overrides that clip pieces of it away — are invisible to the
+            user, yet they were what hit-testing followed: over a crossing
+            where another line painted in front, hovering the line being
+            edited highlighted THAT line and a click switched the editor to it.
+            One transparent stroke per stripe at the full painted width
+            (casing rim included, which the inset body never covered) makes
+            every pixel the editor paints as this line answer as this line.
+            Mounted BELOW the station hit areas, so the pen still wins on a
+            stop and a buried segment is still reached by the alt-pick. */}
+          {showNetwork && appendLineId && (
+            <g data-append-hit-layer={appendLineId}>
+              {renderables.map((r) =>
+                r.kind === 'stripe' && r.band.lines[r.stripeIndex].id === appendLineId ? (
+                  <SegmentBand
+                    key={'ah:' + r.band.bandKey}
+                    spec={r.band}
+                    stripeIndex={r.stripeIndex}
+                    pass="hit"
+                    interactive
+                    interactiveCursor="pointer"
+                    lines={lines}
+                    {...makeAppendBandHandlers(r.band)}
+                  />
+                ) : null,
+              )}
+            </g>
+          )}
 
           {/* station backgrounds: hit areas, names, colored stop squares */}
           {Object.values(stations).map((st) => (

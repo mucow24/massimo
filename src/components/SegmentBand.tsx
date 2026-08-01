@@ -39,7 +39,13 @@ interface Props {
   // front (priority − SEAM_EPS). The 'silhouette' pass paints the fat
   // under-stroke that becomes the casing; the 'body' pass paints the (inset)
   // colored body; the 'seam' pass paints the interior overlap indicator.
-  pass: 'silhouette' | 'body' | 'seam';
+  //
+  // 'hit' paints NO ink: just this stripe's pointer surface, so a caller can
+  // mount it at a z of its own (see the Edit Stops lift in MapCanvas). It is a
+  // `data-band-hitbox` like the gappy-style one below, additionally tagged
+  // `data-band-lift` because it is a SECOND surface for a stripe that already
+  // has one.
+  pass: 'silhouette' | 'body' | 'seam' | 'hit';
   // When `interactive` is true, the stripe captures pointer events on its
   // stroke and forwards them via the per-line callbacks. Used to wire up
   // hover-to-preview and click-to-insert in add-line-tag mode. (Body pass only;
@@ -113,6 +119,51 @@ export const SegmentBand = memo(function SegmentBand({
   const fullWidth = spec.stripeWidths[stripeIndex];
   const railW = lineStrokeRailWidth(lineStrokeWidthOf(live), fullWidth);
   const opaque = styleHasOpaqueInterior(style);
+  // A decorative copy is fully inert: it never wires pointer handlers nor
+  // becomes selectable, whatever interactive/onLineSelect say.
+  const active = interactive && !decorative;
+  const selectable = !interactive && !decorative && !!onLineSelect;
+  // Pointer wiring, shared VERBATIM by the painted stripe, the gappy-style hit
+  // box, and the lifted 'hit' pass, so they can never disagree about what a
+  // click on this stripe does.
+  const pointer: React.SVGProps<SVGPathElement> = {
+    style: active ? { cursor: interactiveCursor } : selectable ? { cursor: 'pointer' } : undefined,
+    onPointerMove: active && onLineHover ? (e) => onLineHover(lineId, e) : undefined,
+    onPointerLeave: active && onLineLeave ? (e) => onLineLeave(lineId, e) : undefined,
+    onClick:
+      active && onLineClick
+        ? (e) => onLineClick(lineId, e)
+        : selectable
+          ? (e) => onLineSelect!(lineId, e, spec.pairKey)
+          : undefined,
+  };
+
+  // Hit pass: this stripe's pointer surface alone, as one continuous
+  // transparent stroke over its whole PAINTED extent — the casing silhouette's
+  // width, not the inset body's, so the rim the casing paints is grabbable too.
+  // The caller mounts it wherever it wants the stripe to hit-test from; the
+  // stripe's own surface below stays where it is.
+  if (pass === 'hit') {
+    if (!active && !selectable) return null;
+    return (
+      <path
+        d={d}
+        data-band-hitbox=""
+        data-band-lift=""
+        data-band-key={spec.bandKey}
+        data-pair-key={spec.pairKey}
+        data-line-id={lineId}
+        data-export-exclude="1"
+        fill="none"
+        stroke="transparent"
+        strokeWidth={casingSilhouetteWidth(fullWidth, railW)}
+        strokeLinecap="butt"
+        strokeLinejoin="round"
+        pointerEvents="stroke"
+        {...pointer}
+      />
+    );
+  }
 
   // Seam pass: the interior branch/loop overlap indicator — two strokes CENTERED
   // on the body edges (exactly where the casing sits, so the seam aligns with
@@ -180,25 +231,8 @@ export const SegmentBand = memo(function SegmentBand({
   // shows exactly railW of casing at each edge; open styles keep the full body
   // width and carry their casing as inline centered rails (unchanged).
   const bodyWidth = opaque ? casingInsetBodyWidth(fullWidth, railW) : fullWidth;
-  // A decorative copy is fully inert: it never wires pointer handlers nor
-  // becomes selectable, whatever interactive/onLineSelect say.
-  const active = interactive && !decorative;
-  const selectable = !interactive && !decorative && !!onLineSelect;
   const { stroke, strokeDasharray, strokeLinecap } = lineStyleStrokeAttrs(style, color, bodyWidth);
   const underlay = lineStyleUnderlayAttrs(style, underlayColor);
-  // Pointer wiring, shared VERBATIM by the painted stripe and the hit box below
-  // so the two can never disagree about what a click on this stripe does.
-  const pointer: React.SVGProps<SVGPathElement> = {
-    style: active ? { cursor: interactiveCursor } : selectable ? { cursor: 'pointer' } : undefined,
-    onPointerMove: active && onLineHover ? (e) => onLineHover(lineId, e) : undefined,
-    onPointerLeave: active && onLineLeave ? (e) => onLineLeave(lineId, e) : undefined,
-    onClick:
-      active && onLineClick
-        ? (e) => onLineClick(lineId, e)
-        : selectable
-          ? (e) => onLineSelect!(lineId, e, spec.pairKey)
-          : undefined,
-  };
   // A "gappy" style (the dasharray ones: dashed, dotted, dashed-open) paints a
   // run of separate pieces, and `pointer-events: stroke` hit-tests that same
   // dashed geometry — the gaps between the pieces were dead to the pointer, so

@@ -1904,6 +1904,19 @@ handlers, since pointer-events blocks hit-testing, not dispatch — so `hitStack
 stripes through `[data-band-stripe],[data-band-hitbox]`, and `data-export-exclude` keeps the
 invisible stroke out of SVG/PNG/PDF.
 
+**The Edit Stops lift.** While a line's stops are being edited, that line gets a SECOND pointer
+surface: `SegmentBand`'s `pass="hit"` — one transparent stroke per stripe, carrying the same
+`data-band-hitbox` identity plus `data-band-lift` — mounted in its own layer above the whole band
+layer (paint-order step 3c). The mode dims the map and repaints the edited line over the dim, so
+neither that line's z-priority nor the region overrides that clip pieces of it away are visible to
+the user, yet both were what hit-testing followed: over a crossing where another line painted in
+front, hovering the line being edited highlighted THAT line, and a click switched the editor to it.
+The lift is drawn at `casingSilhouetteWidth`, the stripe's outer PAINTED extent, so the casing rim —
+which the inset body never covered — answers as the line too. It stays BELOW the station hit areas,
+so the pen still wins on a stop and a segment buried under its endpoints is still alt-pick territory.
+An interlined NEIGHBOR's stripe is untouched by all this: it is a different line, and hovering it
+still previews the switch (see `makeAppendBandHandlers`).
+
 ### Snapping — `snap.ts`, `polygonSnap.ts`
 
 **The contract.** Two snappers exist, on purpose, and everything positional routes through one
@@ -2281,6 +2294,10 @@ of their own, and are omitted below to keep it readable:
     overridden overlap face paints through an exclusion clipPath (RegionExcludeClips,
     holes over the faces it loses — see buildExclusionHoles), so the winner shows
     through as its own continuous base stroke. Real map paint (exported).
+3c. **Edit Stops hit lift** (`appending-to-line` only) — the edited line's pointer surface
+    repeated as transparent `data-band-lift` strokes over the whole band layer, so the line being
+    edited wins the pointer over anything painted in front of it (see The hit box). Chrome:
+    `data-export-exclude`.
 4. Station `bg` (transparent hit areas).
 5. Station `label` (after bg, so a selected wash never covers a neighbor's name).
 6. `RegionModeOverlay layer="outlines"` (layering mode only — dashed overlap-face footprints).
