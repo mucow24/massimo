@@ -178,13 +178,17 @@ describe('mapLibrary', () => {
       ...over,
     });
 
-    it('pins starred maps above the rest in every mode', () => {
+    // A star is a tag the dialog's star filter reads, not a position: the
+    // row it marks sorts exactly where the chosen mode puts it. The fixture is
+    // rigged so a surviving pin would be visible in every mode — 'z' is last by
+    // name, oldest by both timestamps.
+    it('does not move a starred map, in any mode', () => {
       const rows = [
         summary({ id: 'a', updatedAt: 3, createdAt: 3 }),
         summary({ id: 'z', updatedAt: 1, createdAt: 1, starred: true }),
       ];
       for (const mode of ['updated', 'created', 'name'] as const) {
-        expect(lib.sortMaps(rows, mode).map((m) => m.id)).toEqual(['z', 'a']);
+        expect(lib.sortMaps(rows, mode).map((m) => m.id)).toEqual(['a', 'z']);
       }
     });
 
@@ -425,15 +429,16 @@ describe('mapLibrary', () => {
       expect((await lib.listVersions('m1'))[0].starred).toBeUndefined();
     });
 
-    it('sorts starred versions above the rest, newest-first within each group', async () => {
+    // The star shields a version from the prune policy and answers the dialog's
+    // star filter. It does not reorder the list: the oldest version stays
+    // at the bottom however loudly it is marked.
+    it('leaves the order newest-first however the stars fall', async () => {
       const a = await lib.saveVersion('m1', 'A', json('1'), 'user');
       await lib.saveVersion('m1', 'A', json('2'), 'user');
       const c = await lib.saveVersion('m1', 'A', json('3'), 'user');
       await lib.setVersionStarred(a.id, true);
       await lib.setVersionStarred(c.id, true);
-      // Unsorted (newest-first) would be 3,2,1 — so a passing 3,1,2 can only
-      // come from the star grouping, not from insertion order.
-      expect((await lib.listVersions('m1')).map((r) => r.version)).toEqual([3, 1, 2]);
+      expect((await lib.listVersions('m1')).map((r) => r.version)).toEqual([3, 2, 1]);
     });
 
     it('leaves a name and star on a version the map rename does not touch', async () => {

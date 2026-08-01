@@ -2356,9 +2356,10 @@ button.field-select {
 .map-library-maps {
   border-right: 1px solid var(--border-soft);
 }
-/* Column headers: the sidebar's list-header wash. The left one carries the
-   sort control; the right names the selected map. A shared min-height keeps
-   the two seams level whether or not a head holds a control. */
+/* Column headers: the sidebar's list-header wash. Each names its column — the
+   left one "Maps", the right the selected map — and each carries that column's
+   star filter, the left one the sort control besides. A shared min-height keeps
+   the two seams level whatever a head is holding. */
 .map-library-colhead {
   display: flex;
   align-items: center;
@@ -2381,10 +2382,70 @@ button.field-select {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Each head's right-hand group: the "starred only" note, the star filter, and
+   (on the left) the sort. Kept whole so space-between still pushes the set
+   right and the squeeze in a narrow dialog lands on the heading's ellipsis
+   instead of the controls. */
+.map-library-colhead-controls {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 6px;
+}
+/* The filter's state in words. The named empty message only speaks when
+   NOTHING survives the filter, which is the case that needs it least — five
+   rows showing where twelve were is what reads as a library that lost
+   something, and a 24px toggle is not enough to answer it. */
+.map-library-filter-note {
+  flex: none;
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  white-space: nowrap;
+}
 button.map-library-sort {
   flex: none;
   width: 112px;
   font-weight: 500;
+}
+/* The star filter: field-shaped like the sort control beside it, because it is
+   a command about the list rather than a mark on a row (the bare .star-btn
+   below). Deliberately NOT wearing .field-select as well: that recipe's
+   :hover:not(:disabled) is (0,3,1) and would outrank the toggled-on rules
+   here — the same specificity trap called out on .btn-mini above. Half a dozen
+   duplicated declarations beat qualifying every rule below with `button.`. */
+.map-library-filter {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 3px 5px;
+  background: var(--input-bg);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+.map-library-filter:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+/* No list to filter yet (no map selected). */
+.map-library-filter:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* The accent, not the star's amber: this is the app's toggled-on language, and
+   #b8770a on --accent-bg measures 2.89:1 — under the 3:1 the --star token's own
+   comment says a state indicator owes. The filled star carries the "star" half
+   of the meaning; the accent carries the "on" half. */
+.map-library-filter.active,
+.map-library-filter.active:hover {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: var(--accent);
 }
 .map-library-list {
   flex: 1;
@@ -2397,15 +2458,6 @@ button.map-library-sort {
   gap: 10px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border-soft);
-}
-/* The starred block runs to the top of both lists; this is the seam below the
-   last of them. A heavier rule than the hairline between rows, so the two
-   groups read as two groups without needing a heading for a list that is
-   usually one item long. Carried on the first UNSTARRED row (not the last
-   starred one) so it collapses on its own when nothing is starred. */
-.map-row.after-starred,
-.version-row.after-starred {
-  border-top: 2px solid var(--border-strong);
 }
 .map-row {
   cursor: pointer;
@@ -2514,7 +2566,8 @@ button.map-library-sort {
 }
 /* The star is a state, not a command, so it reads as an icon rather than a
    button until you go near it — quiet among the row's real buttons. Shared by
-   both columns: maps pin, versions pin AND dodge the prune policy. */
+   both columns: it marks the row for the head's filter, and a version's star
+   also shields it from the prune policy. */
 .map-library .star-btn {
   display: inline-flex;
   align-items: center;
