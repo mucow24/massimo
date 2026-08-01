@@ -981,7 +981,7 @@ describe('buildOrderedRenderables — cross-band layering', () => {
     });
     const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     const markers = buildStopMarkers(doc.stations, doc.lines, doc.lineOrder, bands);
-    const list = buildOrderedRenderables(bands, markers);
+    const list = buildOrderedRenderables(bands, markers, doc.lines);
 
     const stripeIds = list
       .filter((r): r is Extract<typeof r, { kind: 'stripe' }> => r.kind === 'stripe')
@@ -1007,7 +1007,7 @@ describe('buildOrderedRenderables — cross-band layering', () => {
       lines: [makeLine({ id: 'A', stations: ['s1', 's2'] })],
     });
     const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
-    const list = buildOrderedRenderables(bands, []);
+    const list = buildOrderedRenderables(bands, [], doc.lines);
     const body = list.find((r) => r.kind === 'stripe')!;
     const casing = list.find((r) => r.kind === 'casing')!;
     const seam = list.find((r) => r.kind === 'seam')!;
@@ -1202,9 +1202,12 @@ describe('buildStopMarkers', () => {
       expect(markerForStation(doc, 's1')?.style).toBe('hatched');
     });
 
-    it('solid at a junction with one hatched and one dashed adjacency', () => {
+    // A tie with no solid in it resolves by canonical LineStyle order rather
+    // than falling back to solid: the square must show a style some incident
+    // segment actually has, never invent one the line doesn't use anywhere.
+    it('dashed at a junction with one hatched and one dashed adjacency', () => {
       const doc = docWith({ 's1|s2': 'hatched', 's2|s3': 'dashed' });
-      expect(markerForStation(doc, 's2')?.style).toBe('solid');
+      expect(markerForStation(doc, 's2')?.style).toBe('dashed');
     });
 
     it('hatched only when EVERY adjacency is hatched (interior between two hatched)', () => {
@@ -1222,9 +1225,9 @@ describe('buildStopMarkers', () => {
       expect(markerForStation(doc, 's1')?.style).toBe('hatched-mirror');
     });
 
-    it('solid at a junction with one hatched and one hatched-mirror adjacency', () => {
+    it('hatched at a junction with one hatched and one hatched-mirror adjacency', () => {
       const doc = docWith({ 's1|s2': 'hatched', 's2|s3': 'hatched-mirror' });
-      expect(markerForStation(doc, 's2')?.style).toBe('solid');
+      expect(markerForStation(doc, 's2')?.style).toBe('hatched');
     });
 
     it('dashed only when EVERY adjacency is dashed (interior between two dashed)', () => {
