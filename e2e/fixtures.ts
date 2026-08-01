@@ -12,7 +12,19 @@ export interface SeedStation {
   rotation?: number;
   // dotSize: per-stop dot diameter override in px. Omit to simulate a stop
   // saved before the field existed (tracks the line default).
-  stops: { lineId: string; row: number; col: number; orientation?: string; dotSize?: number }[];
+  stops: {
+    lineId: string;
+    row: number;
+    col: number;
+    orientation?: string;
+    dotSize?: number;
+    // Route this stop's segments ALONG the ring the station is bound to,
+    // instead of straight to the neighbour. Meaningless without `circleId`.
+    viaCircle?: boolean;
+  }[];
+  // Bind the station to a line circle: its stops resolve through the RING
+  // frame and its segments can arc along the rim.
+  circleId?: string;
   label?: {
     row: number;
     col: number;
@@ -21,6 +33,14 @@ export interface SeedStation {
     align?: 'auto' | 'start' | 'middle' | 'end';
     valign?: 'auto-down' | 'top' | 'middle' | 'bottom' | 'auto-up';
   };
+}
+
+export interface SeedLineCircle {
+  id: string;
+  x: number;
+  y: number;
+  radius: number;
+  locked?: boolean;
 }
 
 export interface SeedLine {
@@ -87,6 +107,7 @@ export interface Seed {
   routeBullets?: SeedRouteBullet[];
   textLabels?: SeedTextLabel[];
   polygons?: SeedPolygon[];
+  lineCircles?: SeedLineCircle[];
   // Seed a NIGHT map. Omit to persist a doc without the field at all — a save
   // predating it, which must rehydrate to day via the DEFAULT_DOC merge.
   darkMode?: boolean;
@@ -121,6 +142,7 @@ export async function seedAndOpen(
       x: s.x,
       y: s.y,
       rotation: s.rotation ?? 0,
+      ...(s.circleId !== undefined ? { circleId: s.circleId } : {}),
       stops: s.stops.map((c) => ({
         lineId: c.lineId,
         row: c.row,
@@ -129,6 +151,7 @@ export async function seedAndOpen(
         // Only include dotSize when provided, so an omitted value persists
         // as a pre-dot-size (legacy) stop.
         ...(c.dotSize !== undefined ? { dotSize: c.dotSize } : {}),
+        ...(c.viaCircle !== undefined ? { viaCircle: c.viaCircle } : {}),
       })),
       label: s.label
         ? { align: 'auto', valign: 'middle', ...s.label }
@@ -197,6 +220,17 @@ export async function seedAndOpen(
     };
   }
 
+  const lineCircles: Record<string, unknown> = {};
+  for (const c of seed.lineCircles ?? []) {
+    lineCircles[c.id] = {
+      id: c.id,
+      x: c.x,
+      y: c.y,
+      radius: c.radius,
+      ...(c.locked !== undefined ? { locked: c.locked } : {}),
+    };
+  }
+
   // `version` must be a number below the store's current persist version, or
   // zustand skips `migrate` entirely (it only migrates a numeric, mismatched
   // version). 4 == the last version shipped before dark-mode colors, so every
@@ -215,6 +249,7 @@ export async function seedAndOpen(
       textLabels,
       polygons,
       polygonOrder: (seed.polygons ?? []).map((p) => p.id),
+      lineCircles,
       ...(seed.darkMode !== undefined ? { darkMode: seed.darkMode } : {}),
       // Seeding stopDot styles makes bakeStopDotLibrary a no-op (it only seeds
       // when none exist), so the full catalog survives migration; the invariant
