@@ -1,11 +1,9 @@
 import { RefObject, useCallback, useRef, useState } from 'react';
 import { beginHistoryGroup, useDoc } from '../../state/store';
 import { useSelection } from '../../state/selection';
-import { useSnapPrefs } from '../../state/snapPrefs';
-import { useViewportStore } from '../../state/viewportStore';
-import { snapToleranceAt, type SnapGuide, snapGuidesEqual } from '../../geometry/snap';
-import { snapPolygonPoint } from '../../geometry/polygonSnap';
+import { type SnapGuide, snapGuidesEqual } from '../../geometry/snap';
 import type { Vec2 } from '../../geometry/vec';
+import { useDragSnap } from './useDragSnap';
 import { liveAlignTargets } from './snapTargets';
 import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
 import {
@@ -48,8 +46,11 @@ export function useLineCircleDrag(
 ): LineCircleDragApi {
   const moveLineCircle = useDoc((s) => s.moveLineCircle);
   const setLineCircleRadius = useDoc((s) => s.setLineCircleRadius);
-  const snapModes = useSnapPrefs((s) => s.modes);
-  const gridSize = useViewportStore((s) => s.gridSize);
+  // The point snapper already bound to the live prefs, grid and zoom — the same
+  // one the polygon, svg-image and item drags reach for. The zoom conversion is
+  // why: a site that re-threaded the raw world-unit tolerance would snap from
+  // twice as far out at 2×.
+  const { snapPoint } = useDragSnap(viewportZoom);
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
   const [resizingId, setResizingId] = useState<string | null>(null);
 
@@ -128,14 +129,7 @@ export function useLineCircleDrag(
     let nx = ds.startWX + dx;
     let ny = ds.startWY + dy;
     if (!e.shiftKey) {
-      const snap = snapPolygonPoint({
-        proposed: { x: nx, y: ny },
-        lineTargets: [],
-        allTargets: ds.allTargets,
-        modes: snapModes,
-        tolerance: snapToleranceAt(viewportZoom),
-        gridInterval: gridSize,
-      });
+      const snap = snapPoint({ x: nx, y: ny }, { allTargets: ds.allTargets });
       nx = snap.x;
       ny = snap.y;
       setSnapGuides((prev) => (snapGuidesEqual(prev, snap.guides) ? prev : snap.guides));
