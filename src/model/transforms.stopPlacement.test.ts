@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as T from './transforms';
-import { buildBandGeometry } from '../geometry/interlining';
+import { AXIS_CYCLE } from './transforms';
+import { buildBandGeometry, travelDirWorld } from '../geometry/interlining';
 import { makeDoc, makeStation, makeStop, makeLine } from '../test/fixtures';
 import type { LineId, MapDoc, StationId } from './types';
 
@@ -198,12 +199,11 @@ describe('the far station is framed for a different corridor', () => {
   });
 });
 
-// Two neighbours at S1 can disagree about where L belongs at S2 — they are
-// packed differently at the two ends. Each votes for a cell; when the votes
-// differ, the ROUTER breaks the tie: whichever candidate does not leave the
-// band flagged "can't route" wins. Only when that says nothing (both fine, or
-// both bad) does the nearer neighbour's vote carry.
-describe('two neighbours voting for different cells', () => {
+// Two peers at S1 can disagree about where L belongs at S2 — they are packed
+// differently at the two ends, so each proposes a different spot. The nearest
+// peer at S1 wins: that is the one L is most likely actually interlined with,
+// and following it preserves the band they already share.
+describe('two peers proposing different cells', () => {
   // At b: LA, L2, LB across the band with L2 two cells off LA and one off LB.
   // At c the same two lines sit far apart, so reproducing L2's offset from LB
   // flings it clear across the station while reproducing its offset from LA
@@ -233,22 +233,113 @@ describe('two neighbours voting for different cells', () => {
       ],
     });
 
-  it('takes the routable vote over the nearer neighbour', () => {
-    // LB is the nearer neighbour at b (one cell vs two), so it would win by
-    // default — but its vote (col 19) drags L2 238 units sideways over a
-    // 60-unit corridor and the router gives up. LA's vote (col 2) is straight.
+  it('follows the nearest peer even when the other proposes a closer spot', () => {
+    // LA proposes col 2 (straight above where L2 already is); LB proposes col
+    // 19, way across the station. LB wins because it is packed against L2 at b
+    // and LA is not — so L2 stays in the band it already shares with LB, which
+    // is off doing something drastic on this corridor with or without L2.
     const doc = T.connectStationsOnLine(seed(20), 'L2', 'b', 'c');
-    expect(stopOn(doc, 'c', 'L2')).toMatchObject({ row: 0, col: 2 });
-    expect(bandWith(doc, 'L2').warning).toBe(false);
+    expect(stopOn(doc, 'c', 'L2')).toMatchObject({ row: 0, col: 19 });
+    expect(
+      bandWith(doc, 'L2')
+        .lines.map((l) => l.id)
+        .sort(),
+    ).toEqual(['L2', 'LB']);
   });
 
-  it('falls back to the nearer neighbour when both votes route', () => {
-    // With LB five cells off LA at c, both votes are free cells and both are
-    // ordinary short steps the router handles, so neither is disqualified:
-    // LA votes col 2, LB votes col 4, and LB — one cell from L2 at b against
-    // LA's two — decides.
+  it('reproduces the packed relationship rather than the nearer cell', () => {
+    // The same rule with nothing drastic going on: LA proposes col 2, LB col 4,
+    // and LB — one cell from L2 at b against LA's two — decides. L2 and LB stay
+    // one cell apart at both ends, so they interline.
     const doc = T.connectStationsOnLine(seed(5), 'L2', 'b', 'c');
     expect(stopOn(doc, 'c', 'L2')).toMatchObject({ row: 0, col: 4 });
-    expect(bandWith(doc, 'L2').warning).toBe(false);
+    expect(
+      bandWith(doc, 'L2')
+        .lines.map((l) => l.id)
+        .sort(),
+    ).toEqual(['L2', 'LB']);
+  });
+});
+
+// The orientation carried across is computed by re-indexing AXIS_CYCLE rather
+// than by searching the four axes, so pin the identity against the thing it
+// claims: the world travel axis the renderer actually resolves.
+describe('travel axis survives every pair of station rotations', () => {
+  const ROTATIONS = [0, 1, 2, 3, 4, 5, 6, 7] as const;
+
+  it('the placed stop travels the same world axis it travels at the source', () => {
+    for (const fromRot of ROTATIONS) {
+      for (const stRot of ROTATIONS) {
+        for (const orientation of AXIS_CYCLE) {
+          const b = makeStation({
+            id: 'b',
+            x: 0,
+            y: 0,
+            rotation: fromRot,
+            stops: [makeStop('L1'), makeStop('L2', { col: 1, orientation })],
+          });
+          const c = makeStation({
+            id: 'c',
+            x: 0,
+            y: 100,
+            rotation: stRot,
+            stops: [makeStop('L1')],
+          });
+          const doc = T.connectStationsOnLine(
+            makeDoc({
+              stations: [b, c],
+              lines: [
+                makeLine({ id: 'L1', stations: ['b', 'c'] }),
+                makeLine({ id: 'L2', stations: ['b'] }),
+              ],
+            }),
+            'L2',
+            'b',
+            'c',
+          );
+          const placed = stopOn(doc, 'c', 'L2');
+          const at = travelDirWorld(b.stops[1], b, null);
+          const to = travelDirWorld(placed, doc.stations.c, null);
+          // An axis has no direction, so agreement is |dot| === 1.
+          expect(Math.abs(at.x * to.x + at.y * to.y)).toBeCloseTo(1, 12);
+        }
+      }
+    }
+  });
+});
+
+// A 45° frame mismatch cannot land on the lattice: reproducing a world offset
+// exactly means the cell coordinates come out at ±√2/2 multiples. That is
+// correct — world-exact placement is the point — but it is a stop the app
+// placed itself sitting off-grid, so it is pinned here rather than discovered.
+describe('a 45° frame mismatch leaves the lattice', () => {
+  it('lands the stop on a half-diagonal cell, world-exact', () => {
+    const doc = T.connectStationsOnLine(
+      makeDoc({
+        stations: [
+          makeStation({
+            id: 'b',
+            x: 0,
+            y: 0,
+            rotation: 0,
+            stops: [makeStop('L1'), makeStop('L2', { col: 1 })],
+          }),
+          makeStation({ id: 'c', x: -100, y: 100, rotation: 1, stops: [makeStop('L1')] }),
+        ],
+        lines: [
+          makeLine({ id: 'L1', stations: ['b', 'c'] }),
+          makeLine({ id: 'L2', stations: ['b'] }),
+        ],
+      }),
+      'L2',
+      'b',
+      'c',
+    );
+    const stop = stopOn(doc, 'c', 'L2');
+    expect(stop.col).toBeCloseTo(Math.SQRT1_2, 12);
+    expect(stop.row).toBeCloseTo(-Math.SQRT1_2, 12);
+    // Still exactly one cell of world distance east of L1 — the offset it has
+    // at b — which is the whole reason the cell is off-lattice.
+    expect(stop.orientation).toBe('auto-nw-se');
   });
 });

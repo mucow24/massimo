@@ -1894,13 +1894,19 @@ instead of across it, which the router then cannot route at all.
 Each line running that same corridor and stopping at both ends is a **peer**, and each proposes one
 spot: its own position here, plus the world offset from it to the new line back at the source. Peers
 usually agree, and a proposal satisfying every peer reproduces the arrangement exactly. Ranked by
-peers reproduced, then not landing on an existing stop, then leaving the corridor routable (the
-**router**'s own "can't route" verdict, not a proxy for it), then the nearest peer at the source. A
-proposal within a `tangentGap` of an existing stop slides outward until clear. The new stop's
-**travel axis** is matched the same way — the orientation naming, in the target's local frame, the
-world axis the line runs at the source, since the four orientations name local axes and a station
-framed the other way calls north–south travel `'auto-horizontal'`. With no peer there is nothing to
-reproduce, and placement falls back to one tangent gap east of the rightmost stop.
+peers reproduced, then not landing on an existing stop, then the NEAREST peer at the source — that
+being the peer the new line is most likely already interlined with, so following it preserves the
+band they share. A proposal within a `tangentGap` of an existing stop slides outward until clear.
+The new stop's **travel axis** carries across the same way, by re-indexing `AXIS_CYCLE` through the
+two rotations: the four orientations name local axes, so a station framed east–west calls
+north–south travel `'auto-horizontal'`, and copying the enum would turn the line 90°. With no peer
+there is nothing to reproduce and placement falls back to one tangent gap east of the rightmost
+stop — but the travel axis still carries, since that needs no peer.
+
+A consequence worth knowing: two stations whose frames differ by **45°** cannot both hold the stop
+on the lattice. Reproducing a world offset exactly puts the new cell at `±√2/2` multiples — the same
+real coordinates the diagonal lattice generates, correct but off-grid, and the only stops the app
+itself places there.
 
 **Casing & seam passes.** [SegmentBand.tsx](src/components/SegmentBand.tsx) emits **three
 renderables per stripe**, interleaved by z-priority: a `'silhouette'` pass (the fat under-stroke
