@@ -2381,10 +2381,50 @@ button.field-select {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The left head's right-hand group: the star filter, then the sort. Kept
+   whole so space-between still pushes the pair right and the squeeze in a
+   narrow dialog lands on the heading's ellipsis instead of the controls. */
+.map-library-colhead-controls {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 6px;
+}
 button.map-library-sort {
   flex: none;
   width: 112px;
   font-weight: 500;
+}
+/* The star filter: field-shaped like the sort control beside it, because
+   it is a command about the list rather than a mark on a row (the bare
+   .star-btn below). It wears the toggled-on fill while it is filtering — a
+   filtered list must never read as a list that lost its rows. */
+.map-library-filter {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  padding: 3px 5px;
+  background: var(--input-bg);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+.map-library-filter:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+/* Amber, not the accent's blue: the star means the same thing here as on a
+   row, and the fill behind it is what says "filtering". */
+.map-library-filter.active,
+.map-library-filter.active:hover {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: var(--star);
 }
 .map-library-list {
   flex: 1;
@@ -2397,15 +2437,6 @@ button.map-library-sort {
   gap: 10px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border-soft);
-}
-/* The starred block runs to the top of both lists; this is the seam below the
-   last of them. A heavier rule than the hairline between rows, so the two
-   groups read as two groups without needing a heading for a list that is
-   usually one item long. Carried on the first UNSTARRED row (not the last
-   starred one) so it collapses on its own when nothing is starred. */
-.map-row.after-starred,
-.version-row.after-starred {
-  border-top: 2px solid var(--border-strong);
 }
 .map-row {
   cursor: pointer;

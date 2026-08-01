@@ -186,7 +186,7 @@ src/
     theme.ts                    # themeColors(darkMode, dayCanvasColor) table (no store; reads doc.darkMode)
     customPalettes.ts           # useCustomPalettes: imported palettes (global localStorage)
     mapLibrary.ts               # saved maps + versions in IndexedDB (no store; opaque JSON)
-    libraryPrefs.ts             # useLibraryPrefs: map-library UI prefs (list sort mode)
+    libraryPrefs.ts             # useLibraryPrefs: map-library UI prefs (sort mode; two star filters)
     libraryPointer.ts           # useLibraryPointer: which map + version the live doc came from
     saveBaseline.ts             # useSaveBaseline: baseline + tri-state clean/dirty/unsaved signal
                                 #   (gates Save version + the toolbar dot; hash survives refresh)
@@ -1250,15 +1250,18 @@ via Canvas → Save version and Canvas → Load → From library…
 - **Star / name** (`setVersionStarred` / `setVersionName` / `setMapStarred`): read-modify-write on
   the row; a row that's gone is not an error (the dialog can be looking at a list a delete has moved
   past). All are **absent-when-off**, never `false`/`''` — a blank name is *deleted*, which keeps the
-  row honest and is what `isPrunable` reads. `listVersions` sorts **starred first, then newest-first
-  within each group** (`id` breaking a same-millisecond tie, so the order is total). That order is
-  the list's own structure, not a view preference: the dialog draws its `.after-starred` divider at
-  the boundary it creates. A **map's** star is a pin only (maps are never pruned).
-- **Map ordering** is split the same way: the pure `sortMaps(rows, sort)` owns what each mode means
-  (`'updated' | 'created' | 'name'`, starred block always first, ties → newest-edited), while the
-  chosen mode is a view preference in `useLibraryPrefs`
+  row honest and is what `isPrunable` reads. **A star is a tag, never a position**: `listVersions`
+  sorts plain **newest-first** (`id` breaking a same-millisecond tie, so the order is total), and a
+  starred row sits wherever the order puts it. What the tag buys you is the dialog's per-column
+  **star filter**, plus — for a version — the shield from the prune policy. A **map's** star is the
+  filter alone (maps are never pruned).
+- **Map ordering**: the pure `sortMaps(rows, sort)` owns what each mode means
+  (`'updated' | 'created' | 'name'`, ties → newest-edited), while the chosen mode **and each
+  column's star filter** are view preferences in `useLibraryPrefs`
   ([libraryPrefs.ts](src/state/libraryPrefs.ts), persisted localStorage — the labelEditorPrefs
-  pattern). `listMaps` itself keeps returning newest-touched first; the dialog applies `sortMaps`.
+  pattern). `listMaps` itself keeps returning newest-touched first; the dialog applies `sortMaps`,
+  then the filter — so a filtered list keeps the chosen order. The selected map is looked up
+  **before** the filter, so hiding its row never blanks the versions column beside it.
 - **The pointer lives outside both** ([libraryPointer.ts](src/state/libraryPointer.ts)).
   `useLibraryPointer` holds `{ mapId, version }` — which library map the live doc belongs to, and
   which version it **came from** (not a claim about the canvas now: edit after opening v32 and it

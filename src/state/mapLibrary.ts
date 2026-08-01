@@ -48,7 +48,7 @@ export interface MapSummary {
   thumb?: string;
 }
 
-/** How the library list is ordered. Starred maps pin to the top regardless. */
+/** How the library list is ordered. A star never enters into it. */
 export type MapSort = 'updated' | 'created' | 'name';
 
 export interface VersionMeta {
@@ -387,10 +387,13 @@ export async function listMaps(): Promise<MapSummary[]> {
 }
 
 /**
- * Order maps for the library list: the starred block first — the same
- * structure `listVersions` gives versions — then the chosen sort within each
- * group. Name ties (two "Untitled map"s) and same-millisecond timestamps fall
- * back to newest-edited first.
+ * Order maps for the library list: the chosen sort, with name ties (two
+ * "Untitled map"s) and same-millisecond timestamps falling back to
+ * newest-edited first.
+ *
+ * A star is not a position. It is a tag the dialog's star filter reads, so a
+ * starred map sorts exactly where the chosen mode puts it — the same rule
+ * `listVersions` follows.
  */
 export function sortMaps(rows: MapSummary[], sort: MapSort): MapSummary[] {
   const byMode = (a: MapSummary, b: MapSummary): number =>
@@ -399,12 +402,7 @@ export function sortMaps(rows: MapSummary[], sort: MapSort): MapSummary[] {
       : sort === 'created'
         ? b.createdAt - a.createdAt
         : 0;
-  return [...rows].sort(
-    (a, b) =>
-      Number(b.starred ?? false) - Number(a.starred ?? false) ||
-      byMode(a, b) ||
-      b.updatedAt - a.updatedAt,
-  );
+  return [...rows].sort((a, b) => byMode(a, b) || b.updatedAt - a.updatedAt);
 }
 
 function countVersions(db: IDBDatabase, mapId: string): Promise<number> {
@@ -430,10 +428,9 @@ function latestThumb(db: IDBDatabase, mapId: string): Promise<string | undefined
 }
 
 /**
- * One map's versions: starred first, then newest-first within each group.
- *
- * The starred block is the list's own structure, not a view preference — the
- * dialog draws its divider at the boundary this order creates.
+ * One map's versions, newest-first. A star does not move a row here either —
+ * it shields the version from the prune policy, and answers the dialog's star
+ * filter.
  */
 export async function listVersions(mapId: string): Promise<VersionMeta[]> {
   const db = await openDb();
@@ -441,12 +438,7 @@ export async function listVersions(mapId: string): Promise<VersionMeta[]> {
   const rows = await reqDone<VersionMeta[]>(index.getAll(IDBKeyRange.only(mapId)));
   // Two saves can land in the same millisecond; the id breaks the tie in the
   // same direction, so the order is total.
-  return rows.sort(
-    (a, b) =>
-      Number(b.starred ?? false) - Number(a.starred ?? false) ||
-      b.savedAt - a.savedAt ||
-      b.id - a.id,
-  );
+  return rows.sort((a, b) => b.savedAt - a.savedAt || b.id - a.id);
 }
 
 export async function getPayload(versionId: number): Promise<string | undefined> {
@@ -520,7 +512,7 @@ export function renameMap(mapId: string, name: string): Promise<void> {
   });
 }
 
-/** Star a map — pinning it to the top of the library list — or un-star it. */
+/** Star a map — a tag its list can be filtered down to — or un-star it. */
 export function setMapStarred(mapId: string, starred: boolean): Promise<void> {
   return patchMap(mapId, (row) => {
     if (starred) row.starred = true;

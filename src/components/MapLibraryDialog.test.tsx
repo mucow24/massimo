@@ -59,22 +59,27 @@ const MAPS: MapSummary[] = [
 ];
 
 /**
- * Mirrors `listVersions`'s contract: the starred block first, newest-first
- * within each group. A fixture in plain newest-first order would let the
- * dialog's divider logic pass while disagreeing with every real list.
+ * Mirrors `listVersions`'s contract: newest-first, stars and all. A fixture
+ * with the starred row hoisted would agree with no real list, and would let a
+ * dialog that still sorts by star pass.
  */
-const VERSIONS: VersionMeta[] = [
-  {
-    id: 6,
-    mapId: 'm1',
-    savedAt: Date.parse('2026-07-13T09:00:00Z'),
-    source: 'auto',
-    version: 2,
-    starred: true,
-    name: 'beta 1 — needs work',
-  },
-  { id: 7, mapId: 'm1', savedAt: Date.parse('2026-07-14T10:00:00Z'), source: 'user', version: 3 },
-];
+const V3: VersionMeta = {
+  id: 7,
+  mapId: 'm1',
+  savedAt: Date.parse('2026-07-14T10:00:00Z'),
+  source: 'user',
+  version: 3,
+};
+const V2: VersionMeta = {
+  id: 6,
+  mapId: 'm1',
+  savedAt: Date.parse('2026-07-13T09:00:00Z'),
+  source: 'auto',
+  version: 2,
+  starred: true,
+  name: 'beta 1 — needs work',
+};
+const VERSIONS: VersionMeta[] = [V3, V2];
 
 const onClose = vi.fn();
 const onOpenVersion = vi.fn(async () => {});
@@ -96,10 +101,16 @@ const openCanalLine = async (user: ReturnType<typeof userEvent.setup>) => {
   await waitFor(() => expect(listVersions).toHaveBeenCalledWith('m1'));
 };
 
+// The dialog portals into document.body, so the render container is empty.
+const mapNames = () =>
+  [...document.querySelectorAll('.map-row strong')].map((el) => el.textContent);
+const versionNumbers = () =>
+  [...document.querySelectorAll('.version-number')].map((el) => el.textContent);
+
 beforeEach(() => {
   localStorage.clear();
   useLibraryPointer.setState({ mapId: null, version: null });
-  useLibraryPrefs.setState({ sort: 'updated' });
+  useLibraryPrefs.setState({ sort: 'updated', starredMapsOnly: false, starredVersionsOnly: false });
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   vi.mocked(listMaps).mockReset().mockResolvedValue(MAPS);
   vi.mocked(listVersions).mockReset().mockResolvedValue(VERSIONS);
@@ -143,7 +154,7 @@ describe('MapLibraryDialog', () => {
     renderDialog();
     await openCanalLine(user);
     await user.click(screen.getByRole('button', { name: 'Open version 3' }));
-    await waitFor(() => expect(onOpenVersion).toHaveBeenCalledWith(VERSIONS[1]));
+    await waitFor(() => expect(onOpenVersion).toHaveBeenCalledWith(V3));
   });
 
   it('shows a failed open inside the dialog and keeps it mounted', async () => {
@@ -345,7 +356,9 @@ describe('MapLibraryDialog', () => {
       await waitFor(() => expect(setVersionStarred).toHaveBeenCalledWith(6, false));
     });
 
-    it('re-reads the list so the newly starred version sorts up', async () => {
+    // The row has to come back with its new flag: the filled star, and whether
+    // it still belongs in a list filtered to starred rows.
+    it('re-reads the list after starring a version', async () => {
       const user = userEvent.setup();
       renderDialog();
       await openCanalLine(user);
@@ -370,64 +383,127 @@ describe('MapLibraryDialog', () => {
   });
 
   /**
-   * The divider marks where the starred block ends. It hangs off the first
-   * UNSTARRED row, so it collapses on its own at both degenerate ends.
+   * Each column's head carries its own star filter. It replaces the block of
+   * starred rows that used to be pinned above each list: a star now tags a row
+   * where it sits, and the filter is how you go and look at only those.
    */
-  describe('the starred divider', () => {
-    // The dialog portals into document.body, so the render container is empty.
-    const rowClasses = () => [...document.querySelectorAll('.version-row')].map((r) => r.className);
+  describe('the star filter', () => {
+    const mapFilter = () => screen.getByRole('button', { name: 'Show starred maps only' });
+    const versionFilter = () => screen.getByRole('button', { name: 'Show starred versions only' });
 
-    it('marks the first unstarred row when a starred block sits above it', async () => {
+    /**
+     * One test for both halves on purpose. A filter that quietly re-sorted its
+     * survivors (dropping back to insertion order, say) would pass a
+     * membership-only check — so the third map is both the newest-edited and
+     * the alphabetically first, and must be absent under either mode.
+     */
+    it('filters the map list to starred maps, still honouring the chosen sort', async () => {
+      const user = userEvent.setup();
+      vi.mocked(listMaps).mockResolvedValue([
+        { ...MAPS[0], starred: true }, // Canal Line, edited 7-14
+        { ...MAPS[1], starred: true }, // Broadway, edited 7-13
+        {
+          id: 'm3',
+          name: 'Archive',
+          updatedAt: Date.parse('2026-07-15T10:00:00Z'),
+          createdAt: Date.parse('2026-07-02T10:00:00Z'),
+          versionCount: 1,
+        },
+      ]);
+      renderDialog();
+      await screen.findByText('Archive');
+
+      await user.click(mapFilter());
+      await waitFor(() => expect(mapNames()).toEqual(['Canal Line', 'Broadway']));
+
+      await chooseOption(user, 'Sort maps', 'Name');
+      await waitFor(() => expect(mapNames()).toEqual(['Broadway', 'Canal Line']));
+    });
+
+    it('depresses while it is filtering, and releases the list again', async () => {
       const user = userEvent.setup();
       renderDialog();
-      await openCanalLine(user);
-      await waitFor(() => expect(rowClasses()).toHaveLength(2));
-      const classes = rowClasses();
-      expect(classes[0]).not.toContain('after-starred'); // the starred one
-      expect(classes[1]).toContain('after-starred');
+      await screen.findByText('Canal Line');
+      expect(mapFilter()).toHaveAttribute('aria-pressed', 'false');
+
+      await user.click(mapFilter());
+      expect(mapFilter()).toHaveAttribute('aria-pressed', 'true');
+
+      await user.click(mapFilter());
+      expect(mapFilter()).toHaveAttribute('aria-pressed', 'false');
+      await waitFor(() => expect(mapNames()).toEqual(['Canal Line', 'Broadway']));
+    });
+
+    // Not "No saved maps yet." — the library is full, you are just looking
+    // through a filter nothing has been marked for.
+    it('says No starred maps rather than No saved maps when nothing is starred', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await screen.findByText('Canal Line');
+      await user.click(mapFilter());
+      expect(await screen.findByText('No starred maps.')).toBeInTheDocument();
+      expect(screen.queryByText('No saved maps yet.')).toBeNull();
     });
 
     /**
-     * Three rows, TWO of them unstarred — the two-row fixture above cannot tell
-     * "the first unstarred row" from "every unstarred row", because they are the
-     * same row. A divider under every unstarred entry is just a list of boxes.
+     * The right column answers for the map you clicked, not for the left
+     * column's current filter — filtering a selected map's row out of sight must
+     * not empty the versions beside it.
      */
-    it('marks only the FIRST unstarred row, not every one below it', async () => {
+    it('keeps the selected map’s versions when the filter hides its row', async () => {
       const user = userEvent.setup();
-      vi.mocked(listVersions).mockResolvedValue([
-        VERSIONS[0],
-        VERSIONS[1],
-        { ...VERSIONS[1], id: 8, version: 1, savedAt: Date.parse('2026-07-12T09:00:00Z') },
-      ]);
       renderDialog();
       await openCanalLine(user);
-      await waitFor(() => expect(rowClasses()).toHaveLength(3));
-      const classes = rowClasses();
-      expect(classes[0]).not.toContain('after-starred');
-      expect(classes[1]).toContain('after-starred');
-      expect(classes[2]).not.toContain('after-starred');
+      await user.click(mapFilter());
+      await waitFor(() => expect(mapNames()).toEqual([]));
+
+      const versions = screen.getByRole('region', { name: 'Versions' });
+      expect(within(versions).getByText('Canal Line')).toBeInTheDocument();
+      expect(versionNumbers()).toEqual(['v3', 'v2']);
     });
 
-    it('marks nothing when no version is starred', async () => {
+    it('filters the version list to starred versions', async () => {
       const user = userEvent.setup();
-      vi.mocked(listVersions).mockResolvedValue(
-        VERSIONS.map((v) => ({ ...v, starred: undefined })),
-      );
       renderDialog();
       await openCanalLine(user);
-      await waitFor(() => expect(rowClasses()).toHaveLength(2));
-      expect(rowClasses().join(' ')).not.toContain('after-starred');
+      expect(versionNumbers()).toEqual(['v3', 'v2']);
+      await user.click(versionFilter());
+      await waitFor(() => expect(versionNumbers()).toEqual(['v2']));
     });
 
-    it('marks nothing when every version is starred', async () => {
+    it('says No starred versions when the map has versions but none is starred', async () => {
       const user = userEvent.setup();
-      vi.mocked(listVersions).mockResolvedValue(
-        VERSIONS.map((v) => ({ ...v, starred: true as const })),
-      );
+      vi.mocked(listVersions).mockResolvedValue([V3]);
       renderDialog();
       await openCanalLine(user);
-      await waitFor(() => expect(rowClasses()).toHaveLength(2));
-      expect(rowClasses().join(' ')).not.toContain('after-starred');
+      await user.click(versionFilter());
+      expect(await screen.findByText('No starred versions.')).toBeInTheDocument();
+      expect(screen.queryByText('No versions.')).toBeNull();
+    });
+
+    // Two separate controls over two separate lists; one must not reach across
+    // and thin out the other.
+    it('filters each column independently', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await openCanalLine(user);
+      await user.click(versionFilter());
+      await waitFor(() => expect(versionNumbers()).toEqual(['v2']));
+      expect(mapNames()).toEqual(['Canal Line', 'Broadway']);
+    });
+
+    // A view preference, like the sort beside it: the next open opens the way
+    // you left it.
+    it('remembers both filters across sessions', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await openCanalLine(user);
+      await user.click(mapFilter());
+      await user.click(versionFilter());
+      expect(useLibraryPrefs.getState()).toMatchObject({
+        starredMapsOnly: true,
+        starredVersionsOnly: true,
+      });
     });
   });
 
@@ -578,9 +654,6 @@ describe('MapLibraryDialog', () => {
   });
 
   describe('map sorting', () => {
-    const mapNames = () =>
-      [...document.querySelectorAll('.map-row strong')].map((el) => el.textContent);
-
     it('orders by last edited by default', async () => {
       renderDialog();
       await screen.findByText('Canal Line');
@@ -606,20 +679,13 @@ describe('MapLibraryDialog', () => {
       await waitFor(() => expect(useLibraryPrefs.getState().sort).toBe('created'));
     });
 
-    it('pins a starred map to the top, above newer-edited ones', async () => {
+    // The star is a tag, not a rank: an unfiltered list shows it exactly where
+    // the sort put it, rather than hoisting it into a block of its own.
+    it('leaves a starred map where the sort puts it', async () => {
       vi.mocked(listMaps).mockResolvedValue([MAPS[0], { ...MAPS[1], starred: true }]);
       renderDialog();
       await screen.findByText('Canal Line');
-      expect(mapNames()).toEqual(['Broadway', 'Canal Line']);
-    });
-
-    it('draws the divider under the starred block, mirroring the version list', async () => {
-      vi.mocked(listMaps).mockResolvedValue([MAPS[0], { ...MAPS[1], starred: true }]);
-      renderDialog();
-      await screen.findByText('Canal Line');
-      const classes = [...document.querySelectorAll('.map-row')].map((r) => r.className);
-      expect(classes[0]).not.toContain('after-starred');
-      expect(classes[1]).toContain('after-starred');
+      expect(mapNames()).toEqual(['Canal Line', 'Broadway']);
     });
   });
 
@@ -643,7 +709,7 @@ describe('MapLibraryDialog', () => {
 
     // A star is an edit to a list you are looking at (the version-star rule):
     // the re-read must not blank the column into "Loading…" under the cursor.
-    it('re-reads the list so the starred map pins up, without flashing loading', async () => {
+    it('re-reads the list after starring a map, without flashing loading', async () => {
       const user = userEvent.setup();
       renderDialog();
       await screen.findByText('Canal Line');
@@ -666,9 +732,7 @@ describe('MapLibraryDialog', () => {
   describe('thumb hover preview', () => {
     it('raises the full-size capture while hovering a version thumb', async () => {
       const user = userEvent.setup();
-      vi.mocked(listVersions).mockResolvedValue([
-        { ...VERSIONS[1], thumb: 'data:image/png;base64,LARGE' },
-      ]);
+      vi.mocked(listVersions).mockResolvedValue([{ ...V3, thumb: 'data:image/png;base64,LARGE' }]);
       renderDialog();
       await openCanalLine(user);
       const thumb = document.querySelector('.map-library-versions img.map-thumb');
