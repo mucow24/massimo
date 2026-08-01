@@ -40,13 +40,51 @@ const SORT_LABELS: { value: MapSort; label: string }[] = [
 
 const isMapSort = (v: string): v is MapSort => v === 'updated' || v === 'created' || v === 'name';
 
+/** Apply a column's star filter. Null (still loading) passes through. */
+const starredOnly = <T extends { starred?: true }>(rows: T[] | null, on: boolean): T[] | null =>
+  rows && on ? rows.filter((r) => r.starred) : rows;
+
 /**
- * Both lists put their starred block first, so the boundary is simply the
- * first unstarred row — and only when there is a block above it to divide
- * from. -1 when every row is starred, or none is.
+ * A column's star filter, in the head beside the list it filters, with the
+ * state also in words: a filtered list of five where there were twelve is what
+ * reads as a library that lost something, and the named empty message only
+ * speaks when nothing at all survives.
+ *
+ * Field-shaped rather than the rows' bare star, because this one is a command
+ * about the list rather than a mark on a row.
+ *
+ * Un-starring the last marked row while the filter is on takes that row out
+ * from under the cursor. That is honest — it no longer matches — and library
+ * writes are outside zundo, so the empty message is the whole of the
+ * reassurance; it names the filter rather than claiming the list is empty.
  */
-const afterStarredIndex = (rows: { starred?: true }[] | null): number =>
-  rows && rows[0]?.starred ? rows.findIndex((r) => !r.starred) : -1;
+function StarFilterToggle({
+  on,
+  label,
+  disabled,
+  onToggle,
+}: {
+  on: boolean;
+  label: string;
+  disabled?: boolean;
+  onToggle: (on: boolean) => void;
+}) {
+  return (
+    <>
+      {on && <span className="map-library-filter-note">starred only</span>}
+      <Toggle.Root
+        className={'map-library-filter' + (on ? ' active' : '')}
+        pressed={on}
+        disabled={disabled}
+        onPressedChange={onToggle}
+        aria-label={label}
+        title={label}
+      >
+        {on ? <StarFilledIcon /> : <StarIcon />}
+      </Toggle.Root>
+    </>
+  );
+}
 
 /**
  * A star as it appears in both columns: state first, command on approach.
@@ -127,6 +165,10 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
   const [namingVersionId, setNamingVersionId] = useState<number | null>(null);
   const sort = useLibraryPrefs((s) => s.sort);
   const setSort = useLibraryPrefs((s) => s.setSort);
+  const starredMapsOnly = useLibraryPrefs((s) => s.starredMapsOnly);
+  const setStarredMapsOnly = useLibraryPrefs((s) => s.setStarredMapsOnly);
+  const starredVersionsOnly = useLibraryPrefs((s) => s.starredVersionsOnly);
+  const setStarredVersionsOnly = useLibraryPrefs((s) => s.setStarredVersionsOnly);
 
   const refreshMaps = useCallback(async () => {
     try {
@@ -300,10 +342,12 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
     );
 
   const sortedMaps = maps === null ? null : sortMaps(maps, sort);
+  // The selected map is looked up BEFORE the filter: the right column answers
+  // for the map you clicked, so filtering its row out of the left column must
+  // not blank the versions beside it.
   const selectedMap = sortedMaps?.find((m) => m.id === selectedMapId) ?? null;
-  const mapDividerIndex = afterStarredIndex(sortedMaps);
-  // `listVersions` returns the starred block first, matching sortMaps's shape.
-  const versionDividerIndex = afterStarredIndex(versions);
+  const visibleMaps = starredOnly(sortedMaps, starredMapsOnly);
+  const visibleVersions = starredOnly(versions, starredVersionsOnly);
 
   return (
     <Dialog.Root
@@ -346,48 +390,59 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
               <section className="map-library-maps" aria-label="Saved maps">
                 <div className="map-library-colhead">
                   <h3>Maps</h3>
-                  <Select.Root
-                    value={sort}
-                    onValueChange={(v) => {
-                      if (isMapSort(v)) setSort(v);
-                    }}
-                  >
-                    <Select.Trigger
-                      className="field-select map-library-sort"
-                      aria-label="Sort maps"
+                  <div className="map-library-colhead-controls">
+                    <StarFilterToggle
+                      on={starredMapsOnly}
+                      label="Show starred maps only"
+                      onToggle={setStarredMapsOnly}
+                    />
+                    <Select.Root
+                      value={sort}
+                      onValueChange={(v) => {
+                        if (isMapSort(v)) setSort(v);
+                      }}
                     >
-                      <Select.Value />
-                      <Select.Icon className="field-select-caret" aria-hidden="true">
-                        <ChevronDownIcon />
-                      </Select.Icon>
-                    </Select.Trigger>
-                    <Select.Content
-                      className="field-select-panel"
-                      position="popper"
-                      sideOffset={4}
-                      align="end"
-                    >
-                      <Select.Viewport>
-                        {SORT_LABELS.map((s) => (
-                          <Select.Item key={s.value} value={s.value} className="field-select-item">
-                            <Select.ItemText>{s.label}</Select.ItemText>
-                          </Select.Item>
-                        ))}
-                      </Select.Viewport>
-                    </Select.Content>
-                  </Select.Root>
+                      <Select.Trigger
+                        className="field-select map-library-sort"
+                        aria-label="Sort maps"
+                      >
+                        <Select.Value />
+                        <Select.Icon className="field-select-caret" aria-hidden="true">
+                          <ChevronDownIcon />
+                        </Select.Icon>
+                      </Select.Trigger>
+                      <Select.Content
+                        className="field-select-panel"
+                        position="popper"
+                        sideOffset={4}
+                        align="end"
+                      >
+                        <Select.Viewport>
+                          {SORT_LABELS.map((s) => (
+                            <Select.Item
+                              key={s.value}
+                              value={s.value}
+                              className="field-select-item"
+                            >
+                              <Select.ItemText>{s.label}</Select.ItemText>
+                            </Select.Item>
+                          ))}
+                        </Select.Viewport>
+                      </Select.Content>
+                    </Select.Root>
+                  </div>
                 </div>
                 <div className="map-library-list">
-                  {sortedMaps === null && <div className="empty">Loading…</div>}
-                  {sortedMaps?.length === 0 && <div className="empty">No saved maps yet.</div>}
-                  {sortedMaps?.map((m, i) => (
+                  {visibleMaps === null && <div className="empty">Loading…</div>}
+                  {visibleMaps?.length === 0 && (
+                    <div className="empty">
+                      {starredMapsOnly ? 'No starred maps.' : 'No saved maps yet.'}
+                    </div>
+                  )}
+                  {visibleMaps?.map((m) => (
                     <div
                       key={m.id}
-                      className={
-                        'map-row' +
-                        (m.id === selectedMapId ? ' selected' : '') +
-                        (i === mapDividerIndex ? ' after-starred' : '')
-                      }
+                      className={'map-row' + (m.id === selectedMapId ? ' selected' : '')}
                       onClick={() => void selectMap(m.id)}
                     >
                       <Thumb src={m.thumb} />
@@ -423,8 +478,8 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
                           label={`${m.starred ? 'Unstar' : 'Star'} ${m.name}`}
                           title={
                             m.starred
-                              ? 'Starred — kept to the top of the list'
-                              : 'Star this map: keeps it to the top of the list'
+                              ? 'Starred — kept by the head’s star filter'
+                              : 'Star this map: the head’s star filter keeps it'
                           }
                           onToggle={() => void onToggleMapStar(m)}
                         />
@@ -449,22 +504,32 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
               <section className="map-library-versions" aria-label="Versions">
                 <div className="map-library-colhead">
                   <h3>{selectedMap ? selectedMap.name : 'Versions'}</h3>
+                  <div className="map-library-colhead-controls">
+                    {/* Nothing to filter until a map is chosen, and the flag is
+                        persisted — a press over an empty column would write a
+                        preference you never see take effect. */}
+                    <StarFilterToggle
+                      on={starredVersionsOnly}
+                      label="Show starred versions only"
+                      disabled={selectedMapId === null}
+                      onToggle={setStarredVersionsOnly}
+                    />
+                  </div>
                 </div>
                 <div className="map-library-list">
                   {selectedMapId === null && (
                     <div className="empty">Select a map to see its versions.</div>
                   )}
-                  {selectedMapId !== null && versions === null && (
+                  {selectedMapId !== null && visibleVersions === null && (
                     <div className="empty">Loading…</div>
                   )}
-                  {versions?.length === 0 && <div className="empty">No versions.</div>}
-                  {versions?.map((r, i) => (
-                    <div
-                      key={r.id}
-                      className={
-                        'version-row' + (i === versionDividerIndex ? ' after-starred' : '')
-                      }
-                    >
+                  {visibleVersions?.length === 0 && (
+                    <div className="empty">
+                      {starredVersionsOnly ? 'No starred versions.' : 'No versions.'}
+                    </div>
+                  )}
+                  {visibleVersions?.map((r) => (
+                    <div key={r.id} className="version-row">
                       <Thumb src={r.thumb} />
                       <div className="map-row-body">
                         {namingVersionId === r.id ? (
@@ -499,8 +564,8 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
                           label={`${r.starred ? 'Unstar' : 'Star'} version ${r.version}`}
                           title={
                             r.starred
-                              ? 'Starred — kept to the top, and never pruned'
-                              : 'Star this version: keeps it to the top, and safe from pruning'
+                              ? 'Starred — never pruned, and kept by the star filter'
+                              : 'Star this version: safe from pruning, and kept by the filter'
                           }
                           onToggle={() => void onToggleStar(r)}
                         />
