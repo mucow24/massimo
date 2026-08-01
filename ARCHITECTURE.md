@@ -1880,6 +1880,34 @@ identity. The band specs are pinned by a **byte-exact golden snapshot**
 (`interlining.golden.test.ts`) guarding the zero-visual-change-for-legacy-docs invariant; never
 update it without understanding why every painted path on every map would move.
 
+**Where a new stop lands.** The merge gate is a rule about BOTH ends at once, so placing a new stop
+has to be too. `spawnStopCellAt` ([transforms.ts](src/model/transforms.ts)) reproduces, at the
+station a connect/splice extends INTO, the arrangement the line already has at the station it comes
+FROM — and does it entirely in **world vectors**, converting back to a cell exactly once at the end
+(`cellAtWorldPos`). That is the whole point: row/col name different world directions at every
+station rotation, so any rule phrased as "a column over" changes answer depending on how the target
+station happens to be turned. Two stations 180° apart (a hand rotation, or `autoOrient` flipping to
+keep a label upright) put the stop on the wrong side of the band; two a QUARTER turn apart — a
+station framed for an east–west corridor receiving a north–south line — put it along the corridor
+instead of across it, which the router then cannot route at all.
+
+Each line running that same corridor and stopping at both ends is a **peer**, and each proposes one
+spot: its own position here, plus the world offset from it to the new line back at the source. Peers
+usually agree, and a proposal satisfying every peer reproduces the arrangement exactly. Ranked by
+peers reproduced, then not landing on an existing stop, then the NEAREST peer at the source — that
+being the peer the new line is most likely already interlined with, so following it preserves the
+band they share. A proposal within a `tangentGap` of an existing stop slides outward until clear.
+The new stop's **travel axis** carries across the same way, by re-indexing `AXIS_CYCLE` through the
+two rotations: the four orientations name local axes, so a station framed east–west calls
+north–south travel `'auto-horizontal'`, and copying the enum would turn the line 90°. With no peer
+there is nothing to reproduce and placement falls back to one tangent gap east of the rightmost
+stop — but the travel axis still carries, since that needs no peer.
+
+A consequence worth knowing: two stations whose frames differ by **45°** cannot both hold the stop
+on the lattice. Reproducing a world offset exactly puts the new cell at `±√2/2` multiples — the same
+real coordinates the diagonal lattice generates, correct but off-grid, and the only stops the app
+itself places there.
+
 **Casing & seam passes.** [SegmentBand.tsx](src/components/SegmentBand.tsx) emits **three
 renderables per stripe**, interleaved by z-priority: a `'silhouette'` pass (the fat under-stroke
 just behind the body, `priority + CASING_EPS`), the `'body'` pass (the inset colored stripe), and
