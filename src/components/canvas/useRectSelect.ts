@@ -1,7 +1,6 @@
 import { RefObject, useRef, useState } from 'react';
 import { useDoc, useSelection } from '../../state/store';
 import { useViewportStore } from '../../state/viewportStore';
-import { anchorsVisibleNow } from '../../state/anchorVisibility';
 import { pointerLost, releaseDragCapture, trackDragMove } from './dragGesture';
 import {
   polygonsForRect,
@@ -44,7 +43,7 @@ function anchorsForRectVisible(
   doc: Pick<MapDoc, 'transferAnchors'>,
   rect: RectSelectRect,
 ): string[] {
-  if (!anchorsVisibleNow()) return [];
+  if (!kindVisibleNow('showAnchors')) return [];
   return transferAnchorsForRect(doc.transferAnchors, rect);
 }
 

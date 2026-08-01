@@ -62,8 +62,9 @@ function migrateSnapPrefs(persisted: unknown): SnapPrefsPersisted {
 /**
  * User-toggleable snap modes. UI preference, not document state — kept in a
  * separate store so opening a different map doesn't clobber the user's snap
- * choices. Persisted to localStorage so toggles — and the preset slots the
- * Shift+digit shortcuts save into — stick across reloads.
+ * choices. Persisted to localStorage so toggles — and the preset slots
+ * Ctrl/Cmd+Shift+digit saves into and Shift+digit recalls — stick across
+ * reloads.
  */
 export const useSnapPrefs = create<SnapPrefsState>()(
   persist(

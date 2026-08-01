@@ -13,6 +13,12 @@ import { useSelection, type UiMode } from './selection';
  *
  * The grid is NOT here. It is a drawing aid rather than map content, and its
  * button is paired with the grid-size cycler next to it in the toolbar.
+ *
+ * For the same reason, every rule a kind's visibility depends on is a FIELD on
+ * the entry rather than a line of code beside the call: the placing-mode reveal
+ * (`revealedBy`) and the nesting under the master lines/stations switch
+ * (`nestsUnderNetwork`). A rule spelled out at four call sites is a rule three
+ * of them will keep.
  */
 export type VisibilityKey =
   | 'showNetwork'
@@ -47,39 +53,60 @@ export interface VisibilityItem {
    */
   gatesExportedInk: boolean;
   /**
-   * The mode that REVEALS this kind whatever the menu says — the one that places
-   * it. Without this, hiding a layer and then reaching for its own tool drops an
-   * item onto the canvas that cannot be seen, which reads as the tool being
-   * broken. A DERIVATION, never a write to the user's toggle: a temporary write
-   * would need a matching revert on every exit path (commit, Esc, right-click,
-   * mode switch, undo-driven reconcile) and one missed would strand the
-   * preference — the reasoning `anchorsRevealedByMode` sets out at length.
+   * True when this kind rides with the master lines/stations switch: it goes
+   * when the network goes, whatever its own box says. A transfer runs between
+   * stations and an anchor hangs off one, so neither has anywhere to be with
+   * the stations gone.
    *
-   * Anchors are absent because two modes reveal them and their own module
-   * ([anchorVisibility.ts](src/state/anchorVisibility.ts)) already owns the rule.
-   * `showNetwork` is absent on purpose: it is the deliberate get-out-of-my-way
+   * `showLineCircles` deliberately does NOT nest. Reaching a ring a line is
+   * sitting on top of means clearing the lines, so the master switch has to
+   * leave the guides standing — that is the whole reason the menu is
+   * finer-grained than the button it replaced.
+   */
+  nestsUnderNetwork?: boolean;
+  /**
+   * The modes that REVEAL this kind whatever the menu says — the ones that are
+   * ABOUT it. Without this, hiding a layer and then reaching for its own tool
+   * drops an item onto the canvas that cannot be seen, which reads as the tool
+   * being broken. A DERIVATION, never a write to the user's toggle: a temporary
+   * write would need a matching revert on every exit path (commit, Esc,
+   * right-click, mode switch, undo-driven reconcile) and one missed would
+   * strand the preference.
+   *
+   * `showNetwork` has none on purpose: it is the deliberate get-out-of-my-way
    * switch, and lifting the WHOLE network back for a station placement would
    * undo exactly what the user asked for.
    */
-  revealedBy?: UiMode['kind'];
+  revealedBy?: readonly UiMode['kind'][];
 }
 
 export const VISIBILITY_ITEMS: readonly VisibilityItem[] = [
   { key: 'showNetwork', label: 'Lines and stations', group: 0, gatesExportedInk: true },
-  { key: 'showAnchors', label: 'Anchors', group: 1, gatesExportedInk: false },
+  {
+    key: 'showAnchors',
+    label: 'Anchors',
+    group: 1,
+    gatesExportedInk: false,
+    nestsUnderNetwork: true,
+    // Two modes, both ABOUT anchors: creating-transfer picks one as an
+    // endpoint (the whole reason anchors exist), and placing-anchor needs the
+    // existing ones on screen to place the next one sensibly.
+    revealedBy: ['creating-transfer', 'placing-anchor'],
+  },
   {
     key: 'showLineCircles',
     label: 'Line circles',
     group: 1,
     gatesExportedInk: false,
-    revealedBy: 'placing-line-circle',
+    revealedBy: ['placing-line-circle'],
   },
   {
     key: 'showTransfers',
     label: 'Transfers',
     group: 1,
     gatesExportedInk: true,
-    revealedBy: 'creating-transfer',
+    nestsUnderNetwork: true,
+    revealedBy: ['creating-transfer'],
   },
   { key: 'showWaypoints', label: 'Waypoints', group: 1, gatesExportedInk: false },
   {
@@ -87,42 +114,58 @@ export const VISIBILITY_ITEMS: readonly VisibilityItem[] = [
     label: 'Images / SVGs',
     group: 2,
     gatesExportedInk: true,
-    revealedBy: 'placing-svg',
+    revealedBy: ['placing-svg'],
   },
   {
     key: 'showTextLabels',
     label: 'Canvas labels',
     group: 2,
     gatesExportedInk: true,
-    revealedBy: 'placing-label',
+    revealedBy: ['placing-label'],
   },
   {
     key: 'showPolygons',
     label: 'Polygons',
     group: 2,
     gatesExportedInk: true,
-    revealedBy: 'creating-polygon',
+    revealedBy: ['creating-polygon'],
   },
   {
     key: 'showRouteBullets',
     label: 'Route bullets',
     group: 2,
     gatesExportedInk: true,
-    revealedBy: 'creating-route-bullet',
+    revealedBy: ['creating-route-bullet'],
   },
 ];
 
+/** The live inputs a visibility answer is resolved against. */
+export interface VisibilityInputs {
+  /** The kind's own View-menu flag. */
+  flag: boolean;
+  /** The master lines/stations switch, for the kinds that nest under it. */
+  showNetwork: boolean;
+  /** The current UI mode, for the placing-mode reveal. */
+  modeKind: UiMode['kind'];
+}
+
 /**
- * Is this kind on screen right now — its toggle, OR the mode that places it?
+ * Is this kind on screen right now — its toggle, OR the mode that reveals it,
+ * and does the master switch still allow it at all?
  *
  * The render-path entry point (canvas, item popovers); `kindVisibleNow` is the
  * same question for code outside render. Everything that has an opinion about a
  * kind being visible goes through one of the two, so no consumer can acquire a
- * menu row without its reveal, and none can drift from the canvas.
+ * menu row without its reveal or its nesting, and none can drift from the
+ * canvas. The nesting is checked FIRST: a mode reveal lifts a kind's own box,
+ * never the master switch above it, so hiding the network with a transfer half
+ * drawn does not put the anchors back.
  */
-export function kindVisible(key: VisibilityKey, flag: boolean, modeKind: UiMode['kind']): boolean {
-  if (flag) return true;
-  return VISIBILITY_ITEMS.find((i) => i.key === key)?.revealedBy === modeKind;
+export function kindVisible(key: VisibilityKey, inputs: VisibilityInputs): boolean {
+  const item = VISIBILITY_ITEMS.find((i) => i.key === key);
+  if (item?.nestsUnderNetwork && !inputs.showNetwork) return false;
+  if (inputs.flag) return true;
+  return item?.revealedBy?.includes(inputs.modeKind) ?? false;
 }
 
 /**
@@ -133,11 +176,15 @@ export function kindVisible(key: VisibilityKey, flag: boolean, modeKind: UiMode[
  * Those paths read geometry straight off the doc, so nothing about hiding a kind
  * removes it from them; each has to opt in, and each opting in through THIS
  * function is what keeps the canvas, the marquee and the snappers from drifting
- * into three different opinions about what is on screen. Mirrors
- * `anchorsVisibleNow`, which owns the same rule for anchors.
+ * into three different opinions about what is on screen.
  */
 export function kindVisibleNow(key: VisibilityKey): boolean {
-  return kindVisible(key, useViewportStore.getState()[key], useSelection.getState().uiMode.kind);
+  const vp = useViewportStore.getState();
+  return kindVisible(key, {
+    flag: vp[key],
+    showNetwork: vp.showNetwork,
+    modeKind: useSelection.getState().uiMode.kind,
+  });
 }
 
 /**

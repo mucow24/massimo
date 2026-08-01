@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `34ded09` (2026-07-31, #399) — verified against the live source.** This
+**Up to date as of commit `014df54` (2026-07-31, #406) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -175,9 +175,11 @@ src/
     selection.ts                # useSelection: UiMode union + multi-select + reconcileWithDoc
     selectionOps.ts             # bulk selection gestures (delete/lock the unlocked subset)
     transferPick.ts             # pure transfer-endpoint pick/commit rules (no store)
-    anchorVisibility.ts         # anchorsRevealedByMode / revealedAnchorStations (no store)
-    visibility.ts               # VISIBILITY_ITEMS registry: the View menu's layer toggles,
-                                #   which of them gate exported ink, non-default detection
+    anchorVisibility.ts         # revealedAnchorStations: the hover/selection-scoped anchor
+                                #   reveal that has no menu row of its own (no store)
+    visibility.ts               # VISIBILITY_ITEMS registry: the View menu's layer toggles, which
+                                #   of them gate exported ink, which nest under the network,
+                                #   which modes reveal them, non-default detection
     mirrorDispatch.ts           # mirror-matching fan-out shared by every layout-edit surface
     viewportStore.ts            # useViewportStore (committed) + useLiveViewportStore (in-flight)
     fontEpoch.ts                # useFontEpoch: web-font load counter — a STORE so it crosses memo
@@ -189,8 +191,9 @@ src/
     saveBaseline.ts             # useSaveBaseline: baseline + tri-state clean/dirty/unsaved signal
                                 #   (gates Save version + the toolbar dot; hash survives refresh)
     toastStore.ts               # useToasts: stacking status toasts (pushToast from anywhere)
-    snapPrefs.ts                # useSnapPrefs: snap toggles + digit-keyed preset slots
-                                #   (+ v0→v1 migration)
+    snapPrefs.ts                # useSnapPrefs: snap toggles + the ten digit-keyed preset slots
+                                #   (persist v2; migrates v0's boolean all/grid + fills modes
+                                #   a blob predates)
     labelEditorPrefs.ts         # useLabelEditorPrefs: text-label editor UI prefs (wrapText)
     lineEditorPrefs.ts          # useLineEditorPrefs: line-popover style-detail collapsed?
     stationEditorPrefs.ts       # useStationEditorPrefs: station-popover typography detail
@@ -916,16 +919,20 @@ as scaffolding beside the stop dots while a near-miss still selects.
 Anchors are **editor chrome, never map ink**: `AnchorLayer` mounts inside a `data-export-exclude`
 subtree, so an anchor is absent from every SVG/PNG/PDF export while the transfer bound to it still
 prints. The View menu's Anchors row (`useViewportStore.showAnchors`) shows them; it **defaults OFF**
-(like `showWaypoints`, and persisted) so a finished map isn't cluttered, gated together with
-`showNetwork` since anchors are part of the transfer network. The two gestures that are ABOUT anchors
-— picking a transfer end (`creating-transfer`) and placing one (`placing-anchor`) — **reveal** them
-regardless of the toggle by DERIVATION (`anchorsRevealedByMode`), never by writing the flag: a
-temporary write would need a matching revert on every exit path, and a missed one would strand the
-user's own preference. The three doc-geometric consumers opt in by hand through `anchorsVisibleNow`
-exactly as they do for `showNetwork` (`anchorsForRectVisible`, `liveSnapAnchors`, and
-`liveSnapHostedAnchors` for the cells a station carries).
+(like `showWaypoints`, and persisted) so a finished map isn't cluttered, and its registry entry
+carries `nestsUnderNetwork` since anchors are part of the transfer network. The two gestures that
+are ABOUT anchors — picking a transfer end (`creating-transfer`) and placing one
+(`placing-anchor`) — are its `revealedBy` modes, so they **reveal** anchors regardless of the
+toggle by DERIVATION, never by writing the flag: a temporary write would need a matching revert on
+every exit path, and a missed one would strand the user's own preference. Anchors are an ordinary
+registry citizen in all of this — the reveal and the nesting are entries in `VISIBILITY_ITEMS`,
+not a second module's private rule, so `kindVisible`/`kindVisibleNow` answer for them exactly as
+for every other kind. The three doc-geometric consumers opt in by hand through
+`kindVisibleNow('showAnchors')` exactly as they do for `showNetwork` (`anchorsForRectVisible`,
+`liveSnapAnchors`, and `liveSnapHostedAnchors` for the cells a station carries).
 
-There is a **third, narrower reveal** (`revealedAnchorStations`, [anchorVisibility.ts](src/state/anchorVisibility.ts)):
+There is a **third, narrower reveal** — the one with no menu row, which is why it is the sole
+occupant of [anchorVisibility.ts](src/state/anchorVisibility.ts) (`revealedAnchorStations`):
 pointing at a station — or selecting it — shows **that station's own** hosted anchors with the
 toggle off, so you can see what a station carries without flipping the global switch and back.
 Scoped to those stations on purpose; the rest of the network stays clean, and FREE anchors are
@@ -1402,9 +1409,10 @@ state — `useDoc`, `useSelection`, `useViewportStore` (+ its in-flight twin `us
 `useCustomPalettes`, `useSaveBaseline`, `useLibraryPointer`, `useToasts`, `useFontEpoch`, and four
 persisted UI-preference stores that exist only so a panel's disclosure state survives a reload
 (`useLabelEditorPrefs`, `useLineEditorPrefs`, `useStationEditorPrefs`, `useLibraryPrefs`). Files in
-[src/state/](src/state/). Three modules sit alongside them **without** being stores — they own no
+[src/state/](src/state/). Four modules sit alongside them **without** being stores — they own no
 React state: `mapLibrary.ts` (IndexedDB; see the map-library section below), `theme.ts` (a pure
-table), and `anchorVisibility.ts` (pure derivation).
+table), and `visibility.ts` / `anchorVisibility.ts` (derivations over the viewport and selection
+stores).
 
 **`useFontEpoch` is a store for one specific reason** — see the memo gotcha: a re-render signal
 that must cross a `memo` boundary cannot live in App-local `useState`, because `StationView`'s
@@ -1647,21 +1655,29 @@ wrong: "some flag is false" marks a pristine canvas forever (anchors and waypoin
 hidden), and "differs from the defaults" marks a menu with **every box ticked**, since checking
 those same two departs from the default. Turning a reveal on hides nothing, so it never marks.
 
-Every kind whose own tool can place one carries a `revealedBy` mode, folded in by `kindVisible`
-(render) and its non-reactive twin `kindVisibleNow` (pointer handlers and doc-geometric pools).
-Every consumer goes through one of the two, so the canvas, the marquee, the snap pools and the
-popovers cannot drift into different opinions. Hiding a layer and then reaching for its own
-tool still shows what the click drops, instead of the tool reading as broken. Generalised from
-`anchorsRevealedByMode`, and a DERIVATION for the same reason: a temporary write to the flag would
-need a matching revert on every exit path. Anchors keep their own module (two modes reveal them),
-and `showNetwork` has no `revealedBy` at all — it is the deliberate get-out-of-my-way switch, and
-lifting the whole network back for one station placement would undo what the user asked for.
+**Every rule a kind's visibility depends on is a FIELD on its entry**, never a line of code beside
+the call — that is what makes "one entry point" true rather than aspirational, because a rule
+spelled out at four call sites is a rule three of them will keep. Two such rules, both folded in
+by `kindVisible` (render) and its non-reactive twin `kindVisibleNow` (pointer handlers and
+doc-geometric pools):
 
-`showTransfers` additionally nests under `showNetwork` — a transfer runs between stations, so it
-goes when they do, the nesting anchors already have. `showLineCircles` deliberately does NOT nest:
-reaching a ring a line is sitting on top of means clearing the lines, so the master switch has to
-leave the guides standing. That is the whole reason the menu is finer-grained than the button it
-replaced.
+- `revealedBy` — the modes that are ABOUT this kind, which show it whatever the menu says. Hiding
+  a layer and then reaching for its own tool still shows what the click drops, instead of the tool
+  reading as broken. A DERIVATION, never a write to the user's flag: a temporary write would need a
+  matching revert on every exit path. It is a LIST because `showAnchors` has two
+  (`creating-transfer` picks an anchor as a transfer end, `placing-anchor` needs the existing ones
+  on screen); the rest name the single mode that places them. `showNetwork` has none at all — it
+  is the deliberate get-out-of-my-way switch, and lifting the whole network back for one station
+  placement would undo what the user asked for.
+- `nestsUnderNetwork` — `showTransfers` and `showAnchors` ride with the master switch, a transfer
+  running between stations and an anchor hanging off one. Checked FIRST, so a mode reveal lifts a
+  kind's own box and never the master switch above it. `showLineCircles` deliberately does NOT
+  nest: reaching a ring a line is sitting on top of means clearing the lines, so the master switch
+  has to leave the guides standing. That is the whole reason the menu is finer-grained than the
+  button it replaced.
+
+Every consumer goes through `kindVisible` or `kindVisibleNow`, so the canvas, the marquee, the snap
+pools and the popovers cannot drift into different opinions about what is on screen.
 
 **`showNetwork` — the lines/stations toggle.** Off leaves only
 the background art (polygons, svg images) and the grid on the canvas, so art buried under the
@@ -1736,16 +1752,28 @@ Four seams cover it, and a fifth rule governs anything new:
   The split: **definitions are global; the active set (`activePalettes`) is per-map in the doc.**
   Resolution helpers take the custom palettes as an **explicit param** (the pure model never
   reaches into a store); `deleteCustomPalette` is the cross-store coordinator.
-- [snapPrefs.ts](src/state/snapPrefs.ts) — `useSnapPrefs`: snap-mode toggles, migrated on
-  rehydrate (v0's boolean `all`/`grid` become the directional enums, and **any key the blob
-  predates is filled from `DEFAULT_SNAP_MODES`** — zustand's default merge replaces `modes`
-  wholesale, so without that a mode added later reads `undefined` at runtime). Number keys
-  **1–6** (and Numpad1–6, via `e.code` so they fire with NumLock off) each advance one toggle a
-  single step, in toolbar order — the keyboard twin of a click on that button. Both paths route
-  through the pure `advanceSnapToggle(modes, index)`
+- [snapPrefs.ts](src/state/snapPrefs.ts) — `useSnapPrefs`: snap-mode toggles plus the preset
+  slots, persisted at **version 2** and migrated on rehydrate (v0's boolean `all`/`grid` become the
+  directional enums, and **any key the blob predates is filled from `DEFAULT_SNAP_MODES`** —
+  zustand's default merge replaces `modes` wholesale, so without that a mode added later reads
+  `undefined` at runtime). Number keys **1–6** (and Numpad1–6, via `e.code` so they fire with
+  NumLock off) each advance one toggle a single step, in toolbar order — the keyboard twin of a
+  click on that button. Both paths route through the pure `advanceSnapToggle(modes, index)`
   ([SnapToggleBar.tsx](src/components/SnapToggleBar.tsx)) so a keypress is exactly one click
   (multi-state toggles cycle over repeated presses; a disabled toggle is a no-op). The bound key
   range is `SNAP_TOGGLE_COUNT`, derived from the toggle list, so a new toggle wires its own key.
+  **Ten preset slots** (`presets`, keyed 0–9) snapshot the whole `modes` object: **Shift+digit**
+  recalls a slot, **Ctrl/Cmd+Shift+digit** saves the live modes into it, both toasting what they
+  did. Read off `e.code`, never `e.key` — with Shift held a US layout reports `!`/`@`/`#`, so the
+  digit is only legible in the code — and matched **above** the plain-digit toggles so the preset
+  wins wherever both could, with auto-repeats dropped (saving or recalling twice does nothing new).
+  The map is **sparse on purpose**: a slot never saved is absent, which is how `recallPreset`
+  knows to leave the live modes alone and return `false` for the caller to say so, rather than
+  silently resetting someone's snapping because they reached for an empty slot. A recall spreads
+  over `DEFAULT_SNAP_MODES` on the way out for the reason the migration exists at all — the
+  persist migration cannot reach a value nested inside a preset, so a slot saved before a mode
+  existed would otherwise land that mode `undefined`, or (worse) leave whatever the live modes
+  held, making a recall depend on what it replaced.
 
 ---
 
@@ -2238,8 +2266,8 @@ of their own, and are omitted below to keep it readable:
     export while the transfer bound to it still prints. The whole block is gated on
     `showNetwork` (anchors are part of the transfer network); WHICH anchors it gets is the
     visibility rule described under `TransferAnchor` above — the full network when
-    `useAnchorsVisible()`, otherwise just `revealedAnchorStations(...)`'s hosted ones and no
-    free ones at all.
+    `kindVisible('showAnchors', …)`, otherwise just `revealedAnchorStations(...)`'s hosted ones
+    and no free ones at all.
 9. Placement previews (`*PlacingPreview` ghosts), route bullets, free text labels
    (`LabelView layer="bg"`).
 10. `HighlightedLineLayer` (line-edit dim wash + the selected line repainted above it; in Edit
