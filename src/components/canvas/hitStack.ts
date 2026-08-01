@@ -89,8 +89,13 @@ const RESOLVERS: { selector: string; kind: HitKind; attr: string }[] = [
   // pointer-events none and no id, so they never enter the snapshot at all and
   // an alt-click reaches whatever sits beneath them.
   { selector: '[data-anchor-id]', kind: 'anchor', attr: 'data-anchor-id' },
-  // The rim hit stroke; a locked circle renders none (see HitKind).
+  // A circle's two grab surfaces — the rim stroke and the centre handle's disc.
+  // Both resolve to the same entity, and the dedupe keeps whichever the cursor
+  // met first, so a ring under the pointer appears once in the cycle however
+  // many of its surfaces are stacked there. A locked circle renders neither
+  // (see HitKind).
   { selector: '[data-line-circle-rim]', kind: 'lineCircle', attr: 'data-line-circle-rim' },
+  { selector: '[data-line-circle-center]', kind: 'lineCircle', attr: 'data-line-circle-center' },
 ];
 
 // Selected-item drag proxies re-assert footprints at top z; they must never

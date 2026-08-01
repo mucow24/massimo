@@ -460,11 +460,22 @@ arrows (stop rows, layout editor, hover badges).
 
 **`LineCircle`** (`MapDoc.lineCircles`) — a perfect-circle guide: `id, x, y` (center),
 `radius` (quarter-unit grid, ≥ `LINE_CIRCLE_RADIUS_MIN`, [model/lineCircle.ts](src/model/lineCircle.ts)),
-`locked?`. **Editor scaffolding, never map ink**: rendered as a dashed guide ring — plus a resize
-knob on its east point while selected, and eight radial cardinal ticks while the `circle` snap
-mode is on ([LineCircleView.tsx](src/components/LineCircleView.tsx), `theme.guide`,
-export-excluded; the ticks come in as a prop, since the snap mode is a UI pref and no part of the
-circle). The painted arcs come from line edges. The concept splits in two, on purpose:
+`locked?`. **Editor scaffolding, never map ink**: rendered as a dashed guide ring with a ⊕ handle
+at its centre — plus a resize knob on its east point while selected, and eight radial cardinal
+ticks while the `circle` snap mode is on ([LineCircleView.tsx](src/components/LineCircleView.tsx),
+`theme.guide`, export-excluded; the ticks come in as a prop, since the snap mode is a UI pref and
+no part of the circle). The painted arcs come from line edges.
+
+The centre handle is a **second grab for the same select+move** the rim gives, and it is there
+because everything ON the rim is reachable only while the rim is: this layer paints below all map
+content, so a line riding the ring's first lane buries the grab stroke and the resize knob
+together and the circle becomes uneditable without deleting a segment. A ring's interior is empty
+by construction, so the centre is the one part ink essentially never covers. It is not a cure-all
+— another line across the middle, or a hub station parked on it, buries the handle exactly as it
+buries the rim, which is what the View menu's **Line circles** toggle is for. Both surfaces carry
+a `lineCircle` identity for the alt-click deep-pick and dedupe to one entry.
+
+The concept splits in two, on purpose:
 
 - **"On the circle geometrically"** is the STATION binding (`Station.circleId`): bind projects
   the station onto the circumference, rotates it to the tangent octant, and defaults every stop
@@ -2523,10 +2534,12 @@ mirror case lives in `useStationDrag`: grabbing a bound station whose ring is co
 suspends the ring constraint entirely — no slide along the rim, no Shift/out-of-band detach — and
 skips the station's own `moveStation`, because the towed ring is what carries it. A LOCKED ring
 stays put, so its passengers tow normally and slide along the stationary rim.
-A ring's rim ALSO selects at pointer-down (its own convention, so the resize knob and the
-diameter popover appear as you grab it) — which must stand down for a ring already in the
+A ring's rim and centre handle BOTH select at pointer-down (its own convention, so the resize knob
+and the diameter popover appear as you grab it) — which must stand down for a ring already in the
 selection, or a `selectLineCircle` that clears every other list would destroy the group drag
-before it began, and for a Shift-grab, which the click's toggle owns.
+before it began, and for a Shift-grab, which the click's toggle owns. Every part except the knob
+is a translation and tows the group; the hook spells that as "not the knob" rather than listing
+the movers, so a grab added later tows by default instead of silently not.
 **Group rotate** ([groupRotate.ts](src/components/canvas/groupRotate.ts)): right-click rotates the
 whole multi-selection rigidly about the pivot via `rotateItemsAround` (fixed the bug where
 per-type handlers omitted other types). Locked items are exempt: a locked pivot makes the

@@ -14,8 +14,17 @@ const KNOB_HALF_PX = 4;
 // mark is legible whether it lands on a dash or in a gap.
 const CARDINAL_TICK_PX = 4;
 const CARDINAL_STROKE_PX = 1.5;
+// Centre handle: a small ⊕ — ring plus crossing arms — at the circle's centre,
+// and the transparent disc that grabs it. Drawn at the cardinals' weight so it
+// reads as one more mark on the guide rather than a new kind of object. The hit
+// disc is deliberately wider than the glyph: the mark wants to stay small and
+// quiet, the target wants to be catchable.
+const CENTER_RING_PX = 3.5;
+const CENTER_ARM_PX = 5.5;
+const CENTER_STROKE_PX = 1.5;
+const CENTER_HIT_PX = 8;
 
-export type LineCirclePart = 'rim' | 'knob';
+export type LineCirclePart = 'rim' | 'knob' | 'center';
 
 interface Props {
   circle: LineCircle;
@@ -51,6 +60,16 @@ interface Props {
  * the rim's east point; the invisible fat rim stroke is the grab surface for
  * select + move. A locked, unselected circle is click-through, like every
  * other locked kind.
+ *
+ * The ⊕ at the centre is a SECOND grab for the same two things, and it exists
+ * because everything on the rim is reachable only while the rim is. This layer
+ * paints below all map content, so a line riding the ring's first lane buries
+ * the grab stroke and the resize knob together, and the circle becomes
+ * uneditable without deleting a segment to expose it. A ring's interior is empty
+ * by construction, so the centre is the one part that ink essentially never
+ * covers. Not a cure-all: another line crossing the middle, or a hub station
+ * parked on it, buries the handle exactly as it buries the rim — that is what
+ * the View menu's Line circles toggle is for.
  */
 export function LineCircleView({
   circle,
@@ -112,6 +131,35 @@ export function LineCircleView({
           strokeWidth={px(RIM_HIT_PX)}
           style={{ cursor: 'move' }}
           onPointerDown={(e) => onPointerDown?.(e, circle.id, 'rim')}
+          onClick={(e) => onClick?.(circle.id, e)}
+          onContextMenu={(e) => onContextMenu?.(circle.id, e)}
+        />
+      )}
+      {/* The ⊕ itself: one translate carries the whole glyph, so the centre is
+          stated once. Never takes pointer events — it sits over its own grab
+          disc, and a mark that ate the press would leave the disc inert. */}
+      <g
+        data-line-circle-center-mark={circle.id}
+        transform={`translate(${circle.x} ${circle.y})`}
+        fill="none"
+        stroke={strokeColor}
+        strokeWidth={px(CENTER_STROKE_PX)}
+        pointerEvents="none"
+      >
+        <circle r={px(CENTER_RING_PX)} />
+        <line x1={-px(CENTER_ARM_PX)} y1={0} x2={px(CENTER_ARM_PX)} y2={0} />
+        <line x1={0} y1={-px(CENTER_ARM_PX)} x2={0} y2={px(CENTER_ARM_PX)} />
+      </g>
+      {!clickThrough && (
+        <circle
+          data-line-circle-center={circle.id}
+          cx={circle.x}
+          cy={circle.y}
+          r={px(CENTER_HIT_PX)}
+          fill="transparent"
+          stroke="none"
+          style={{ cursor: 'move' }}
+          onPointerDown={(e) => onPointerDown?.(e, circle.id, 'center')}
           onClick={(e) => onClick?.(circle.id, e)}
           onContextMenu={(e) => onContextMenu?.(circle.id, e)}
         />

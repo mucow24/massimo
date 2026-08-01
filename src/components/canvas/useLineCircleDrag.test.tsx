@@ -245,6 +245,55 @@ describe('useLineCircleDrag — group drag', () => {
   });
 });
 
+describe('useLineCircleDrag — centre drag', () => {
+  // The centre handle is a second grab for the same gesture the rim gives, and
+  // it exists because a line riding lane 0 buries the rim outright. It must
+  // therefore behave as a MOVE in every respect the rim does — the hook
+  // branches on the part, so "same by accident" is one edit away from wrong.
+  it('moves the circle, leaving the radius alone', () => {
+    seedCircle();
+    const r = render();
+    act(() => r.current.onStartDrag('c1', 'center', pointerEvent({ clientX: 100, clientY: 100 })));
+    act(() => {
+      r.current.onPointerMove(pointerEvent({ clientX: 140, clientY: 130, shiftKey: true }));
+      r.current.onPointerUp(pointerEvent({ clientX: 140, clientY: 130 }));
+    });
+    const c = useDoc.getState().lineCircles.c1;
+    expect(c).toMatchObject({ x: 140, y: 130 });
+    expect(c.radius).toBe(70);
+  });
+
+  it('tows the co-selected rest of the map, exactly as the rim does', () => {
+    seedCircle();
+    useDoc.setState({
+      ...useDoc.getState(),
+      stations: { free: makeStation({ id: 'free', x: 500, y: 500 }) },
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['free'],
+      selectedLineCircleIds: ['c1'],
+    });
+    const r = render();
+    act(() => r.current.onStartDrag('c1', 'center', pointerEvent({ clientX: 0, clientY: 0 })));
+    act(() => {
+      r.current.onPointerMove(pointerEvent({ clientX: 30, clientY: -10, shiftKey: true }));
+      r.current.onPointerUp(pointerEvent({ clientX: 30, clientY: -10 }));
+    });
+    expect(useDoc.getState().stations.free).toMatchObject({ x: 530, y: 490 });
+  });
+
+  it('never arms the diameter readout — that belongs to the resize', () => {
+    seedCircle();
+    const r = render();
+    act(() => r.current.onStartDrag('c1', 'center', pointerEvent({ clientX: 100, clientY: 100 })));
+    act(() =>
+      r.current.onPointerMove(pointerEvent({ clientX: 140, clientY: 100, shiftKey: true })),
+    );
+    expect(r.current.resizingId).toBeNull();
+  });
+});
+
 describe('useLineCircleDrag — knob drag resizes', () => {
   it("takes the radius from the pointer's horizontal world distance, on the quarter grid", () => {
     seedCircle();
