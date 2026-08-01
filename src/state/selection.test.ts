@@ -889,6 +889,7 @@ describe('reconcileWithDoc', () => {
     routeBullets?: string[];
     textLabels?: string[];
     svgImages?: string[];
+    lineCircles?: string[];
     polygons?: Record<string, { vertices: unknown[] }>;
   }): MapDoc => {
     const fill = (ids?: string[]) => Object.fromEntries((ids ?? []).map((id) => [id, {} as never]));
@@ -901,6 +902,7 @@ describe('reconcileWithDoc', () => {
       routeBullets: fill(present.routeBullets),
       textLabels: fill(present.textLabels),
       svgImages: fill(present.svgImages),
+      lineCircles: fill(present.lineCircles),
       polygons: (present.polygons ?? {}) as never,
     } as MapDoc;
   };
@@ -939,6 +941,14 @@ describe('reconcileWithDoc', () => {
     useSelection.setState({ hoveredCanvasItem: { kind: 'station', id: 's1' } });
     useSelection.getState().reconcileWithDoc(docWith({ stations: ['s1'] }));
     expect(useSelection.getState().hoveredCanvasItem).toEqual({ kind: 'station', id: 's1' });
+
+    // A kind with no arm in hoverTargetExists reads as "gone" and gets pruned
+    // on every reconcile — the hover would blink out under any undo/redo.
+    useSelection.setState({ hoveredCanvasItem: { kind: 'lineCircle', id: 'c1' } });
+    useSelection.getState().reconcileWithDoc(docWith({ lineCircles: ['c1'] }));
+    expect(useSelection.getState().hoveredCanvasItem).toEqual({ kind: 'lineCircle', id: 'c1' });
+    useSelection.getState().reconcileWithDoc(docWith({}));
+    expect(useSelection.getState().hoveredCanvasItem).toBeNull();
 
     useSelection.setState({
       hoveredLineStop: { stationId: 'ghost' as StationId, lineId: 'L1' as LineId },

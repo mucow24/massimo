@@ -271,7 +271,9 @@ export function MapCanvas() {
   // chrome at 50% opacity (a "clickable" affordance). The selector already
   // gates on idle-mode / not-panning / not-already-selected; each render block
   // below picks off the kind it draws. Line tags handle their own hover inside
-  // LineTagsLayer (their chrome isn't reachable from here).
+  // LineTagsLayer (their chrome isn't reachable from here), and a line circle
+  // paints its own in place: its chrome is a recolour of the guide, which must
+  // stay down in the guide layer rather than surface over the map content.
   const hover = hoveredChrome(selection);
   const hoverStationId = hover?.kind === 'station' ? hover.id : null;
   const hoverTransferId = hover?.kind === 'transfer' ? hover.id : null;
@@ -279,6 +281,7 @@ export function MapCanvas() {
   const hoverLabelId = hover?.kind === 'label' ? hover.id : null;
   const hoverPolygonId = hover?.kind === 'polygon' ? hover.id : null;
   const hoverSvgImageId = hover?.kind === 'svgImage' ? hover.id : null;
+  const hoverLineCircleId = hover?.kind === 'lineCircle' ? hover.id : null;
   // Small helper for the enter/leave handlers each item's body wires up: set on
   // enter, clear on leave only if THIS item is still the hovered one (fresh
   // read, so a fast cross to a neighbor can't wipe the neighbor).
@@ -1361,12 +1364,15 @@ export function MapCanvas() {
                   selected={(
                     rectSelect.previewLineCircleIds ?? selection.selectedLineCircleIds
                   ).includes(cid)}
+                  hovered={hoverLineCircleId === cid}
                   interactive={polygonsInteractive}
                   inHandMode={inHandMode}
                   showCardinals={snapModes.circle}
                   onPointerDown={(e, id, part) => circleDrag.onStartDrag(id, part, e)}
                   onClick={onLineCircleClick}
                   onContextMenu={onLineCircleContextMenu}
+                  onHoverEnter={(id) => setHover({ kind: 'lineCircle', id })}
+                  onHoverLeave={(id) => clearHoverIf('lineCircle', id)}
                 />
               ))}
             </g>

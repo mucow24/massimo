@@ -472,9 +472,10 @@ no part of the circle). The painted arcs come from line edges.
 A circle has **two grab surfaces** — the rim's fat transparent stroke and the centre handle's
 disc — because the rim is covered by construction (carrying a line is what a ring is for, and
 this layer paints below all map content). Both select+move, both carry a `lineCircle` identity so
-the alt-click deep-pick sees them, and they dedupe to one entry in its cycle. The resize knob is
-rim-only. Every part except that knob is a translation and tows the group. See the
-`LineCircleView` doc comment for what the handle does and does not buy.
+the alt-click deep-pick sees them, and they dedupe to one entry in its cycle — and to one hover,
+wired on the wrapper `<g>` rather than per surface. The resize knob is rim-only. Every part
+except that knob is a translation and tows the group. See the `LineCircleView` doc comment for
+what the handle does and does not buy.
 
 The concept splits in two, on purpose:
 
@@ -2259,7 +2260,11 @@ of their own, and are omitted below to keep it readable:
 - **Mouseover-preview twins.** Almost every selection-chrome layer has a hover twin mounted
   immediately after it — same component, `preview`, `opacity 0.5`, gated by `hoveredChrome` (so it
   stays quiet mid-pan). There are seven: station `wash` and `stroke`, transfer outline, route-bullet
-  ring, label stroke, polygon outline, svg-image box.
+  ring, label stroke, polygon outline, svg-image box. An eighth, the line circle's, is painted
+  INSIDE `LineCircleView` instead: its selection chrome is a RECOLOUR of a guide that is always
+  painted, not an outline added beside one, so a twin would have to re-render the whole component
+  in a stripped `preview` variant — no grab surfaces, no knob, no `data-*` ids — where a second
+  copy of the marks in place costs one `<g>`.
 - **Mode-transient previews.** The in-progress transfer rubber-band `<line data-transfer-preview>`
   (between steps 7 and 8) and the Edit Stops alt-create ghost `StopGlyph`
   (`data-append-create-ghost`, between `HighlightedLineLayer` and `LineTagsLayer` — i.e. splitting

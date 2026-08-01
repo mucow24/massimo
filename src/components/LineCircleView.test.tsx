@@ -20,6 +20,7 @@ const renderCircle = (
         guideColor="#b5b5b5"
         accentColor="#1a4ea8"
         selected={false}
+        hovered={false}
         interactive
         inHandMode={false}
         showCardinals={false}
@@ -33,6 +34,8 @@ const renderCircle = (
 
 const mark = (svg: SVGSVGElement) => svg.querySelector('[data-line-circle-center-mark]');
 const hit = (svg: SVGSVGElement) => svg.querySelector('[data-line-circle-center]');
+const rim = (svg: SVGSVGElement) => svg.querySelector('[data-line-circle-rim]');
+const hoverCopy = (svg: SVGSVGElement) => svg.querySelector('[data-line-circle-hover]');
 
 describe('LineCircleView — centre handle', () => {
   it('paints the mark at the circle centre', () => {
@@ -111,5 +114,65 @@ describe('LineCircleView — centre handle', () => {
   it('keeps the mark clear of pointer events so it cannot shadow its own grab', () => {
     const { svg } = renderCircle();
     expect(mark(svg)!.getAttribute('pointer-events')).toBe('none');
+  });
+});
+
+describe('LineCircleView — mouseover preview', () => {
+  it('paints nothing extra when the pointer is elsewhere', () => {
+    expect(hoverCopy(renderCircle().svg)).toBeNull();
+  });
+
+  it('previews the selection colour at half strength, over the guide-coloured marks', () => {
+    const { svg } = renderCircle({ hovered: true, showCardinals: true });
+    const copy = hoverCopy(svg);
+    expect(copy).not.toBeNull();
+    expect(copy!.getAttribute('opacity')).toBe('0.5');
+    // The whole guide — ring, cardinal ticks, ⊕ — repeats in the accent, so the
+    // mouseover reads as half-way to selected everywhere the selection would
+    // recolour. Not a recolour of the marks themselves: the guide-coloured set
+    // stays underneath, or hovering would make a ring FAINTER than at rest.
+    const ring = copy!.querySelector('circle[stroke-dasharray]');
+    expect(ring!.getAttribute('stroke')).toBe('#1a4ea8');
+    expect(copy!.querySelectorAll('line')).toHaveLength(8 + 2);
+    expect(mark(svg)!.getAttribute('stroke')).toBe('#b5b5b5');
+  });
+
+  it('leaves the addressable marks unduplicated — the copy is anonymous', () => {
+    const { svg } = renderCircle({ hovered: true, showCardinals: true });
+    expect(svg.querySelectorAll('[data-line-circle-center-mark]')).toHaveLength(1);
+    expect(svg.querySelectorAll('[data-line-circle-cardinals]')).toHaveLength(1);
+  });
+
+  it('keeps the preview clear of pointer events, like every other painted mark', () => {
+    const { svg } = renderCircle({ hovered: true });
+    expect(hoverCopy(svg)!.getAttribute('pointer-events')).toBe('none');
+  });
+
+  it('reports the pointer arriving on either grab surface, and leaving', () => {
+    const onHoverEnter = vi.fn();
+    const onHoverLeave = vi.fn();
+    const { svg } = renderCircle({ onHoverEnter, onHoverLeave });
+    fireEvent.pointerOver(rim(svg)!);
+    expect(onHoverEnter).toHaveBeenCalledWith('c1');
+    fireEvent.pointerOut(rim(svg)!);
+    expect(onHoverLeave).toHaveBeenCalledWith('c1');
+    onHoverEnter.mockClear();
+    fireEvent.pointerOver(hit(svg)!);
+    expect(onHoverEnter).toHaveBeenCalledWith('c1');
+  });
+
+  it('does not report a leave when the pointer crosses from the rim to the centre', () => {
+    // Pins the WIRING — one hover on the wrapper, not one per grab surface —
+    // rather than a user-visible difference. The two surfaces only touch at an
+    // on-screen radius ≤ 14px (RIM_HIT_PX/2 + CENTER_HIT_PX), and React
+    // dispatches the leave and the enter chains in a single batch, so
+    // per-surface handlers would settle on the same hover with nothing painted
+    // in between. The wrapper is still the one to keep: three wiring points is
+    // three chances to miss one.
+    const onHoverLeave = vi.fn();
+    const { svg } = renderCircle({ onHoverLeave });
+    fireEvent.pointerOver(rim(svg)!);
+    fireEvent.pointerOut(rim(svg)!, { relatedTarget: hit(svg)! });
+    expect(onHoverLeave).not.toHaveBeenCalled();
   });
 });

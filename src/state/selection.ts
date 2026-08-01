@@ -76,7 +76,8 @@ export type HoverKind =
   | 'label'
   | 'polygon'
   | 'svgImage'
-  | 'lineTag';
+  | 'lineTag'
+  | 'lineCircle';
 
 export interface HoveredCanvasItem {
   kind: HoverKind;
@@ -997,6 +998,8 @@ function hoverTargetExists(doc: MapDoc, h: HoveredCanvasItem): boolean {
       return !!doc.svgImages[h.id];
     case 'lineTag':
       return !!doc.lineTags[h.id];
+    case 'lineCircle':
+      return !!doc.lineCircles[h.id];
   }
 }
 
@@ -1018,6 +1021,8 @@ function isHoverSelected(s: SelectionState, h: HoveredCanvasItem): boolean {
       return s.selectedSvgImageIds.includes(h.id);
     case 'lineTag':
       return s.selectedLineTagId === h.id;
+    case 'lineCircle':
+      return s.selectedLineCircleIds.includes(h.id);
   }
 }
 
