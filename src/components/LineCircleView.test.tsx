@@ -162,8 +162,13 @@ describe('LineCircleView — mouseover preview', () => {
   });
 
   it('does not report a leave when the pointer crosses from the rim to the centre', () => {
-    // The rim and the ⊕ are two grabs for ONE object, so the hover lives on the
-    // wrapper: crossing between them must not flicker the preview off and on.
+    // Pins the WIRING — one hover on the wrapper, not one per grab surface —
+    // rather than a user-visible difference. The two surfaces only touch at an
+    // on-screen radius ≤ 14px (RIM_HIT_PX/2 + CENTER_HIT_PX), and React
+    // dispatches the leave and the enter chains in a single batch, so
+    // per-surface handlers would settle on the same hover with nothing painted
+    // in between. The wrapper is still the one to keep: three wiring points is
+    // three chances to miss one.
     const onHoverLeave = vi.fn();
     const { svg } = renderCircle({ onHoverLeave });
     fireEvent.pointerOver(rim(svg)!);

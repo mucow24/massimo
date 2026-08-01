@@ -208,10 +208,13 @@ export function LineCircleView({
     <g
       data-line-circle={circle.id}
       // Enter/leave on the WRAPPER rather than on each grab surface: the rim
-      // and the ⊕ are two grabs for one object, so crossing between them must
-      // not read as leaving the circle. Nothing else in here is hittable (every
-      // painted mark is pointerEvents="none"), so the group is entered exactly
-      // when a grab surface is, and a click-through circle never fires at all.
+      // and the ⊕ are two grabs for one object, so this is one wiring point
+      // instead of three, with no chance of missing one. The knob is the only
+      // other hittable child and it does fire this pair — harmlessly, since it
+      // exists only while the circle is selected, which is exactly where
+      // hoveredChrome suppresses the preview. Every painted mark is
+      // pointerEvents="none", and a click-through circle has no grab surface at
+      // all, so neither can raise a hover.
       onPointerEnter={onHoverEnter ? () => onHoverEnter(circle.id) : undefined}
       onPointerLeave={onHoverLeave ? () => onHoverLeave(circle.id) : undefined}
     >
