@@ -455,7 +455,7 @@ describe('Toolbar — Add menu mode commands', () => {
   };
 
   it.each<[string, string]>([
-    ['Line tags', 'creating-line-tag'],
+    ['Line tags / chevrons', 'creating-line-tag'],
     ['Route bullets', 'creating-route-bullet'],
     ['Label', 'placing-label'],
     ['Polygon', 'creating-polygon'],
