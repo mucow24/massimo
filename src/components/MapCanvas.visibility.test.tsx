@@ -86,6 +86,7 @@ const seed = () =>
         textLabels: [makeTextLabel({ id: 'g1', x: 500, y: 100 })],
         routeBullets: [makeRouteBullet({ id: 'b1', x: 300, y: 300 })],
         lineCircles: [makeLineCircle({ id: 'c1', x: -300, y: -300, radius: 80 })],
+        transferAnchors: [{ id: 'a1', x: -100, y: 250 }],
       }),
     });
   });
@@ -98,6 +99,15 @@ const PAINTED: Partial<Record<VisibilityKey, string>> = {
   showTextLabels: '[data-text-label-id="g1"]',
   showPolygons: '[data-polygon-id="p1"]',
   showRouteBullets: '[data-bullet-id="b1"]',
+};
+
+/**
+ * The same hooks for the reveal cases, which turn a kind ON — so this one also
+ * covers the kinds that default to HIDDEN and therefore can't join `PAINTED`.
+ */
+const PAINTED_WHEN_SHOWN: Partial<Record<VisibilityKey, string>> = {
+  ...PAINTED,
+  showAnchors: '[data-anchor-id="a1"]',
 };
 
 const count = (selector: string) => document.querySelectorAll(selector).length;
@@ -163,37 +173,58 @@ describe('MapCanvas — per-kind visibility', () => {
   // members carry a required payload, so a bare `{ kind }` doesn't type — and
   // the entry-coverage check below fails loudly if a new `revealedBy` lands here
   // without one, rather than silently skipping its case.
-  const MODE_FOR: Partial<Record<NonNullable<VisibilityItem['revealedBy']>, UiMode>> = {
+  const MODE_FOR: Partial<Record<NonNullable<VisibilityItem['revealedBy']>[number], UiMode>> = {
     'placing-line-circle': { kind: 'placing-line-circle', center: null },
     'creating-transfer': { kind: 'creating-transfer', firstEnd: null },
+    'placing-anchor': { kind: 'placing-anchor' },
     'placing-svg': { kind: 'placing-svg', image: { href: 'data:,', width: 10, height: 10 } },
     'placing-label': { kind: 'placing-label' },
     'creating-polygon': { kind: 'creating-polygon' },
     'creating-route-bullet': { kind: 'creating-route-bullet' },
   };
 
-  it('has a test mode for every reveal the registry declares', () => {
-    const missing = VISIBILITY_ITEMS.filter((i) => i.revealedBy && !MODE_FOR[i.revealedBy]);
-    expect(missing.map((i) => i.key)).toEqual([]);
+  /** Every (kind, revealing mode) pair the registry declares, flattened. */
+  const REVEALS = VISIBILITY_ITEMS.flatMap((i) =>
+    (i.revealedBy ?? []).map((mode) => [i.key, mode] as const),
+  );
+
+  it('has a test mode and a DOM hook for every reveal the registry declares', () => {
+    // Both halves, or a new `revealedBy` would silently skip its case rather
+    // than fail: a missing mode can't be entered, a missing selector can't be
+    // counted.
+    expect(REVEALS.filter(([, mode]) => !MODE_FOR[mode]).map(([key]) => key)).toEqual([]);
+    expect(REVEALS.filter(([key]) => !PAINTED_WHEN_SHOWN[key]).map(([key]) => key)).toEqual([]);
   });
 
   // The mode that PLACES a kind must reveal it, or the tool drops an item the
-  // user cannot see — the same rule anchorsRevealedByMode already applies, and
-  // for the same reason. Registry-driven so a new kind can't miss it.
-  it.each(VISIBILITY_ITEMS.filter((i) => i.revealedBy).map((i) => [i.key, i.revealedBy!] as const))(
-    '%s is revealed while its placing mode (%s) is active',
-    (key, mode) => {
+  // user cannot see. Registry-driven so a new kind can't miss it.
+  it.each(REVEALS)('%s is revealed while its placing mode (%s) is active', (key, mode) => {
+    const painted = PAINTED_WHEN_SHOWN[key]!;
+    render(<App />);
+    seed();
+    act(() => setVisibility(key, false));
+    expect(count(painted), `${key} should be hidden while idle`).toBe(0);
+    act(() => useSelection.getState().setUiMode(MODE_FOR[mode]!));
+    expect(count(painted), `${key} stayed hidden in ${mode}`).toBeGreaterThan(0);
+    // ...and goes away again on exit: the reveal is a derivation, never a
+    // write to the user's own toggle.
+    act(() => useSelection.getState().setUiMode({ kind: 'idle' }));
+    expect(count(painted), `${key} survived the mode exit`).toBe(0);
+    expect(useViewportStore.getState()[key], `${key} flag was written`).toBe(false);
+  });
+
+  // The nesting, from the registry's own list: a kind that rides with the
+  // network goes when the network goes, checked box or not.
+  it.each(VISIBILITY_ITEMS.filter((i) => i.nestsUnderNetwork).map((i) => i.key))(
+    '%s goes with the network even with its own box ticked',
+    (key) => {
+      const painted = PAINTED_WHEN_SHOWN[key]!;
       render(<App />);
       seed();
-      act(() => setVisibility(key, false));
-      expect(count(PAINTED[key]!), `${key} should be hidden while idle`).toBe(0);
-      act(() => useSelection.getState().setUiMode(MODE_FOR[mode]!));
-      expect(count(PAINTED[key]!), `${key} stayed hidden in ${mode}`).toBeGreaterThan(0);
-      // ...and goes away again on exit: the reveal is a derivation, never a
-      // write to the user's own toggle.
-      act(() => useSelection.getState().setUiMode({ kind: 'idle' }));
-      expect(count(PAINTED[key]!), `${key} survived the mode exit`).toBe(0);
-      expect(useViewportStore.getState()[key], `${key} flag was written`).toBe(false);
+      act(() => setVisibility(key, true));
+      expect(count(painted), `${key} should paint with the network up`).toBeGreaterThan(0);
+      act(() => setVisibility('showNetwork', false));
+      expect(count(painted), `${key} survived the network going`).toBe(0);
     },
   );
 

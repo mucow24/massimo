@@ -1,7 +1,6 @@
 import { soleSelection, useDoc, useSelection } from '../../state/store';
 import { useViewportStore } from '../../state/viewportStore';
-import { kindVisible } from '../../state/visibility';
-import { useAnchorsVisible } from '../../state/anchorVisibility';
+import { kindVisible, type VisibilityKey } from '../../state/visibility';
 import { itemIdCount, type SelectionItemIds } from '../../state/selectionOps';
 import { SIDEBAR_WIDTH, sidebarVisible } from '../Sidebar';
 import { LinePopover } from '../LinePopover';
@@ -46,47 +45,47 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
   // its own gate for the reason the lines/stations one has always had.
   //
   // Through `kindVisible` so this agrees with the canvas by construction rather
-  // than by two lists staying in step. Its reveal half is inert HERE — entering
-  // any non-idle mode runs `clearedSelections`, so there is never a selection
-  // left for a placing mode to keep an editor open for — but reading the same
-  // helper as every other consumer is what makes "one entry point" true.
-  // Anchors ride on `useAnchorsVisible` (two modes reveal them, and that module
-  // owns the rule); stations stay on the raw `showNetwork` because their panel
-  // is HIDDEN rather than unmounted below.
+  // than by two lists staying in step — the registry carries both the reveal
+  // and the nesting under `showNetwork`, so transfers and anchors need no
+  // hand-written `showNetwork &&` here. The reveal half is inert HERE —
+  // entering any non-idle mode runs `clearedSelections`, so there is never a
+  // selection left for a placing mode to keep an editor open for — but reading
+  // the same helper as every other consumer is what makes "one entry point"
+  // true. Stations stay on the raw `showNetwork` because their panel is HIDDEN
+  // rather than unmounted below.
   const showNetwork = useViewportStore((s) => s.showNetwork);
   const modeKind = selection.uiMode.kind;
-  // Read BEFORE the `&&` that nests transfers under the network: a store hook on
-  // the right of a short-circuit is a CONDITIONAL hook, and the render order
-  // breaks the moment the left side goes false.
-  const showTransfers = useViewportStore((s) => s.showTransfers);
+  const shows = (key: VisibilityKey, flag: boolean) =>
+    kindVisible(key, { flag, showNetwork, modeKind });
   const vis = {
-    bullet: kindVisible(
+    bullet: shows(
       'showRouteBullets',
       useViewportStore((s) => s.showRouteBullets),
-      modeKind,
     ),
-    label: kindVisible(
+    label: shows(
       'showTextLabels',
       useViewportStore((s) => s.showTextLabels),
-      modeKind,
     ),
-    polygon: kindVisible(
+    polygon: shows(
       'showPolygons',
       useViewportStore((s) => s.showPolygons),
-      modeKind,
     ),
-    svgImage: kindVisible(
+    svgImage: shows(
       'showSvgImages',
       useViewportStore((s) => s.showSvgImages),
-      modeKind,
     ),
-    lineCircle: kindVisible(
+    lineCircle: shows(
       'showLineCircles',
       useViewportStore((s) => s.showLineCircles),
-      modeKind,
     ),
-    transfer: showNetwork && kindVisible('showTransfers', showTransfers, modeKind),
-    anchor: useAnchorsVisible(),
+    transfer: shows(
+      'showTransfers',
+      useViewportStore((s) => s.showTransfers),
+    ),
+    anchor: shows(
+      'showAnchors',
+      useViewportStore((s) => s.showAnchors),
+    ),
   };
 
   // A zero-size host (first paint, before the ResizeObserver measures) has no
