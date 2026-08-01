@@ -625,7 +625,7 @@ export function Toolbar() {
       <Menu label="Add">
         <MenuItem onClick={onAddStation}>Stations</MenuItem>
         <MenuItem onClick={onAddLine}>Line</MenuItem>
-        <MenuItem onClick={onAddLineTag}>Line tags</MenuItem>
+        <MenuItem onClick={onAddLineTag}>Line tags / chevrons</MenuItem>
         <MenuItem onClick={onAddRouteBullet}>Route bullets</MenuItem>
         <MenuItem onClick={onAddTransfer}>Transfer</MenuItem>
         <MenuItem onClick={onAddAnchor}>Transfer anchor</MenuItem>
