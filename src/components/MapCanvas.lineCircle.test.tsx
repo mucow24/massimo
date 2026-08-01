@@ -115,6 +115,31 @@ describe('MapCanvas — line-circle guide rendering', () => {
   });
 });
 
+describe('line-circle mouseover preview', () => {
+  const hoverCopy = () => document.querySelector('[data-line-circle-hover="c1"]');
+
+  it('previews the ring on mouseover and drops it again on leave', () => {
+    render(<App />);
+    seedCircle();
+    expect(hoverCopy()).toBeNull();
+    const rim = document.querySelector('[data-line-circle-rim="c1"]')!;
+    fireEvent.pointerOver(rim);
+    expect(useSelection.getState().hoveredCanvasItem).toEqual({ kind: 'lineCircle', id: 'c1' });
+    expect(hoverCopy()).not.toBeNull();
+    fireEvent.pointerOut(rim);
+    expect(useSelection.getState().hoveredCanvasItem).toBeNull();
+    expect(hoverCopy()).toBeNull();
+  });
+
+  it('stays quiet on a ring that is already selected — its full chrome is up', () => {
+    render(<App />);
+    seedCircle();
+    act(() => useSelection.getState().selectLineCircle('c1'));
+    fireEvent.pointerOver(document.querySelector('[data-line-circle-rim="c1"]')!);
+    expect(hoverCopy()).toBeNull();
+  });
+});
+
 describe('line-circle rim clicks follow the shared item contract', () => {
   it('Shift-click adds the ring to a multi-selection instead of replacing it', () => {
     render(<App />);

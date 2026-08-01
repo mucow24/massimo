@@ -32,6 +32,10 @@ interface Props {
   guideColor: string;
   accentColor: string;
   selected: boolean;
+  // The pointer is on one of this circle's grab surfaces, and the shared
+  // hoveredChrome gate has cleared the preview (idle mode, not panning, not
+  // already selected) — so paint the "you can click this" half-selection.
+  hovered: boolean;
   // False while another mode owns the canvas (placement, append, layout edit):
   // the guide stays visible but takes no pointer events.
   interactive: boolean;
@@ -51,15 +55,92 @@ interface Props {
   // Right-click = rotate, the same gesture every other canvas item has. Wired
   // on the knob as well as the rim so the knob isn't a dead spot on the ring.
   onContextMenu?: (id: string, e: ReactMouseEvent) => void;
+  onHoverEnter?: (id: string) => void;
+  onHoverLeave?: (id: string) => void;
+}
+
+/**
+ * The painted guide — dashed ring, optional cardinal ticks, centre ⊕ — in one
+ * stroke colour. Its own component because the mouseover affordance is a SECOND
+ * copy of exactly this set in the accent (see below), and the geometry is worth
+ * stating once. Never takes pointer events: the grab surfaces are separate,
+ * invisible, and drawn after these, so no mark can shadow a grab.
+ */
+function GuideMarks({
+  circle,
+  zoom,
+  stroke,
+  showCardinals,
+  markId,
+}: {
+  circle: LineCircle;
+  zoom: number;
+  stroke: string;
+  showCardinals: boolean;
+  // Stamped on the individually addressable marks. Omitted for the hover copy,
+  // so each data attribute keeps naming exactly one element.
+  markId?: string;
+}) {
+  const px = (v: number) => v / zoom;
+  const tick = px(CARDINAL_TICK_PX);
+  return (
+    <>
+      <circle
+        cx={circle.x}
+        cy={circle.y}
+        r={circle.radius}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={px(GUIDE_STROKE_PX)}
+        strokeDasharray={`${px(GUIDE_DASH_PX)} ${px(GUIDE_DASH_PX)}`}
+        pointerEvents="none"
+      />
+      {showCardinals && (
+        <g data-line-circle-cardinals={markId} pointerEvents="none">
+          {CIRCLE_CARDINAL_ANGLES.map((t, k) => {
+            const ux = Math.cos(t);
+            const uy = Math.sin(t);
+            return (
+              <line
+                key={k}
+                x1={circle.x + (circle.radius - tick) * ux}
+                y1={circle.y + (circle.radius - tick) * uy}
+                x2={circle.x + (circle.radius + tick) * ux}
+                y2={circle.y + (circle.radius + tick) * uy}
+                stroke={stroke}
+                strokeWidth={px(CARDINAL_STROKE_PX)}
+              />
+            );
+          })}
+        </g>
+      )}
+      {/* The ⊕ itself: one translate carries the whole glyph, so the centre is
+          stated once. */}
+      <g
+        data-line-circle-center-mark={markId}
+        transform={`translate(${circle.x} ${circle.y})`}
+        fill="none"
+        stroke={stroke}
+        strokeWidth={px(CENTER_STROKE_PX)}
+        pointerEvents="none"
+      >
+        <circle r={px(CENTER_RING_PX)} />
+        <line x1={-px(CENTER_ARM_PX)} y1={0} x2={px(CENTER_ARM_PX)} y2={0} />
+        <line x1={0} y1={-px(CENTER_ARM_PX)} x2={0} y2={px(CENTER_ARM_PX)} />
+      </g>
+    </>
+  );
 }
 
 /**
  * One line circle: a dashed guide ring (editor scaffolding — the layer that
  * mounts this carries `data-export-exclude`, so it never prints). Selection
  * paints the ring in the interaction accent and grows a square resize knob on
- * the rim's east point; the invisible fat rim stroke is the grab surface for
- * select + move. A locked, unselected circle is click-through, like every
- * other locked kind.
+ * the rim's east point, and a mouseover previews that recolour at half strength
+ * (the canvas-wide affordance, gated by `hoveredChrome`); the invisible fat rim
+ * stroke is the grab surface for select + move. A locked, unselected circle is
+ * click-through, like every other locked kind — and, having no grab surface,
+ * cannot be hovered either.
  *
  * The ⊕ at the centre is a SECOND grab for the same select+move, because the rim
  * is covered BY CONSTRUCTION: carrying a line is what a ring is for, this layer
@@ -109,47 +190,51 @@ export function LineCircleView({
   guideColor,
   accentColor,
   selected,
+  hovered,
   interactive,
   inHandMode,
   showCardinals,
   onPointerDown,
   onClick,
   onContextMenu,
+  onHoverEnter,
+  onHoverLeave,
 }: Props) {
   const px = (v: number) => v / zoom;
   const clickThrough = !interactive || inHandMode || (circle.locked && !selected);
   const knobHalf = px(KNOB_HALF_PX);
   const strokeColor = selected ? accentColor : guideColor;
-  const tick = px(CARDINAL_TICK_PX);
   return (
-    <g data-line-circle={circle.id}>
-      <circle
-        cx={circle.x}
-        cy={circle.y}
-        r={circle.radius}
-        fill="none"
+    <g
+      data-line-circle={circle.id}
+      // Enter/leave on the WRAPPER rather than on each grab surface: the rim
+      // and the ⊕ are two grabs for one object, so crossing between them must
+      // not read as leaving the circle. Nothing else in here is hittable (every
+      // painted mark is pointerEvents="none"), so the group is entered exactly
+      // when a grab surface is, and a click-through circle never fires at all.
+      onPointerEnter={onHoverEnter ? () => onHoverEnter(circle.id) : undefined}
+      onPointerLeave={onHoverLeave ? () => onHoverLeave(circle.id) : undefined}
+    >
+      <GuideMarks
+        circle={circle}
+        zoom={zoom}
         stroke={strokeColor}
-        strokeWidth={px(GUIDE_STROKE_PX)}
-        strokeDasharray={`${px(GUIDE_DASH_PX)} ${px(GUIDE_DASH_PX)}`}
-        pointerEvents="none"
+        showCardinals={showCardinals}
+        markId={circle.id}
       />
-      {showCardinals && (
-        <g data-line-circle-cardinals={circle.id} pointerEvents="none">
-          {CIRCLE_CARDINAL_ANGLES.map((t, k) => {
-            const ux = Math.cos(t);
-            const uy = Math.sin(t);
-            return (
-              <line
-                key={k}
-                x1={circle.x + (circle.radius - tick) * ux}
-                y1={circle.y + (circle.radius - tick) * uy}
-                x2={circle.x + (circle.radius + tick) * ux}
-                y2={circle.y + (circle.radius + tick) * uy}
-                stroke={strokeColor}
-                strokeWidth={px(CARDINAL_STROKE_PX)}
-              />
-            );
-          })}
+      {/* Mouseover preview: the SAME marks in the accent at half opacity, over
+          the guide-coloured set rather than instead of it — the selection here
+          is a recolour, so a hover that merely restroked would leave the ring
+          fainter than at rest. Composited, it reads as half-way to selected.
+          The resize knob is excluded, like every other item's manipulators. */}
+      {hovered && (
+        <g data-line-circle-hover={circle.id} opacity={0.5} pointerEvents="none">
+          <GuideMarks
+            circle={circle}
+            zoom={zoom}
+            stroke={accentColor}
+            showCardinals={showCardinals}
+          />
         </g>
       )}
       {!clickThrough && (
@@ -167,21 +252,9 @@ export function LineCircleView({
           onContextMenu={(e) => onContextMenu?.(circle.id, e)}
         />
       )}
-      {/* The ⊕ itself: one translate carries the whole glyph, so the centre is
-          stated once. Never takes pointer events — it sits over its own grab
-          disc, and a mark that ate the press would leave the disc inert. */}
-      <g
-        data-line-circle-center-mark={circle.id}
-        transform={`translate(${circle.x} ${circle.y})`}
-        fill="none"
-        stroke={strokeColor}
-        strokeWidth={px(CENTER_STROKE_PX)}
-        pointerEvents="none"
-      >
-        <circle r={px(CENTER_RING_PX)} />
-        <line x1={-px(CENTER_ARM_PX)} y1={0} x2={px(CENTER_ARM_PX)} y2={0} />
-        <line x1={0} y1={-px(CENTER_ARM_PX)} x2={0} y2={px(CENTER_ARM_PX)} />
-      </g>
+      {/* The ⊕'s grab disc. The glyph over it is painted above, with the rest
+          of the guide, and takes no pointer events — a mark that ate the press
+          would leave the disc inert. */}
       {!clickThrough && (
         <circle
           data-line-circle-center={circle.id}

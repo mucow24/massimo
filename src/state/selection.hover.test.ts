@@ -102,6 +102,7 @@ describe('hoveredChrome — passes the hovered item through when idle and unsele
     { kind: 'polygon', id: 'p1' },
     { kind: 'svgImage', id: 'i1' },
     { kind: 'lineTag', id: 'g1' },
+    { kind: 'lineCircle', id: 'c1' },
   ];
   for (const item of cases) {
     it(`kind=${item.kind}`, () => {
@@ -158,6 +159,13 @@ describe('hoveredChrome — suppression', () => {
       selectedPolygonIds: [],
       selectedLineTagId: 'g1',
       hoveredCanvasItem: { kind: 'lineTag', id: 'g1' },
+    });
+    expect(hoveredChrome(useSelection.getState())).toBeNull();
+
+    useSelection.setState({
+      selectedLineTagId: null,
+      selectedLineCircleIds: ['c1'],
+      hoveredCanvasItem: { kind: 'lineCircle', id: 'c1' },
     });
     expect(hoveredChrome(useSelection.getState())).toBeNull();
   });
