@@ -253,6 +253,38 @@ describe('paint order follows the stop square', () => {
     });
   });
 
+  // KNOWN LIMIT, pinned so any change to it is deliberate. `subOrder` is one
+  // scalar per stripe, so an edge that matches its dot at one station but
+  // differs at the other can only obey one of them. Here BOTH of S's segments
+  // are demoted — a|s because it differs at A (dashed x2 beats solid x1), b|s
+  // because it differs at S — so they tie again and `edges` order decides,
+  // leaving S's solid dot with a dashed segment on top. Not a regression: main
+  // has no within-line order at all.
+  it('cannot satisfy a station whose every segment is demoted elsewhere', () => {
+    const coords = {
+      a: { x: 400, y: 800 },
+      s: { x: 400, y: 400 },
+      b: { x: 400, y: 100 },
+      z1: { x: 100, y: 800 },
+      z2: { x: 700, y: 800 },
+    };
+    const AS = pairKeyOf('a', 's');
+    const BS = pairKeyOf('b', 's');
+    const edges = [AS, BS, pairKeyOf('a', 'z1'), pairKeyOf('a', 'z2')];
+    const styles: Record<string, LineStyle> = {
+      [BS]: 'dashed',
+      [pairKeyOf('a', 'z1')]: 'dashed',
+      [pairKeyOf('a', 'z2')]: 'dashed',
+    };
+    // A's plurality is dashed (2 v 1); S's is a 1-1 tie, so solid takes it.
+    expect(markerStyleAt(coords, edges, styles, 'a')).toBe('dashed');
+    expect(markerStyleAt(coords, edges, styles, 's')).toBe('solid');
+    // Both of S's segments demoted => tie => edges order puts the dashed one on
+    // top, so the dot and the topmost segment disagree at S.
+    const order = stripeOrder(coords, edges, styles);
+    expect(order.indexOf(AS)).toBeLessThan(order.indexOf(BS));
+  });
+
   it('keeps every silhouette behind every body of the same line', () => {
     // The self-casing merge (CASING_EPS) must survive a within-line reorder:
     // a line's own overlapping bands merge into ONE outer casing only if every

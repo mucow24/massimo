@@ -1853,21 +1853,20 @@ maxAbsOffset` so the innermost stripe still curves at ≥ R); **marker-fit cap**
    overrides are gone — region assignments override the covering line per-face at render time
    instead, see Region layering); `buildOrderedRenderables` flattens to per-stripe + marker
    renderables sorted back-to-front, so a perpendicular middle-layer line can interleave _between_
-   another band's stripes. Two stripes of ONE line tie on that priority; the tie is broken by a
-   second key, `subOrder`, which enforces one invariant: **a stop dot's style is the style of the
-   topmost segment of that line at that station**. A segment whose style differs from a station's
-   resolved marker style paints BEHIND its siblings there, so the square and the stripe covering it
-   can never disagree — which is what keeps a through-route continuous wherever a line's own
-   stripes coincide: a branch whose route runs up its own trunk corridor, and equally a degree-2
-   station where the line DOUBLES BACK (both edges leaving the same way). Applied at every station,
-   since where a line merely passes through, consecutive bands abut rather than overlap and the
-   demotion is inert. Differing at EITHER end demotes (a segment is never raised), so one scalar
-   per stripe guarantees the invariant per-station only while each edge gets a consistent verdict at
-   both ends. It is a separate sort key and never a fractional nudge to `priority` — the casing/seam
-   epsilons below are safe only because base priorities are integers; equal on both keys keeps
-   `edges`-array order. The reference, `stationMarkerStyle`, is the **plurality** of the segment
-   styles incident to that station, ties broken by canonical `LineStyle` order (so `solid` wins any
-   tie it is part of); the square therefore always shows a style some incident segment actually has.
+   another band's stripes. Two stripes of ONE line tie on that priority, broken by a second key
+   `subOrder` pursuing one goal: **a stop dot's style should be the style of the topmost segment of
+   that line at that station**. A segment differing from a station's dot paints BEHIND its siblings
+   there, keeping a through-route continuous wherever a line's own stripes coincide — a branch
+   routed up its own trunk corridor, and equally a degree-2 station where the line DOUBLES BACK. It
+   applies everywhere, being inert where consecutive bands merely abut. Differing at EITHER end
+   demotes, so nothing is wrongly raised, but one scalar per stripe cannot serve two disagreeing
+   stations: where every segment at a station is demoted by some OTHER station they tie again and
+   `edges` order decides, so the goal holds only while each edge gets a consistent verdict at both
+   ends. A separate key, never a fractional nudge to `priority` — the casing/seam epsilons below are
+   safe only because base priorities are integers; equal on both keys keeps `edges` order. The dot
+   itself (`stationMarkerStyle`) is the **plurality** of the segment styles incident to that
+   station, ties by canonical `LineStyle` order (`LINE_STYLES`, so `solid` wins any tie it is in),
+   and therefore always a style some incident segment actually has.
 
 A `SegmentBandSpec` carries **parallel arrays** (`lines`, `paths`, `stripeOffsets`,
 `stripeWidths`, `linePriorities` — index k = same stripe). `stripeOffsets`/`stripeWidths`/`radius`
