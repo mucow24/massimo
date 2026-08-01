@@ -45,31 +45,44 @@ const starredOnly = <T extends { starred?: true }>(rows: T[] | null, on: boolean
   rows && on ? rows.filter((r) => r.starred) : rows;
 
 /**
- * A column's star filter, in the head beside the list it filters.
+ * A column's star filter, in the head beside the list it filters, with the
+ * state also in words: a filtered list of five where there were twelve is what
+ * reads as a library that lost something, and the named empty message only
+ * speaks when nothing at all survives.
  *
- * Field-shaped rather than the rows' bare star: this one is a command about
- * the list, and it has to read as pressed from across the dialog — a short
- * list is otherwise indistinguishable from a lost one.
+ * Field-shaped rather than the rows' bare star, because this one is a command
+ * about the list rather than a mark on a row.
+ *
+ * Un-starring the last marked row while the filter is on takes that row out
+ * from under the cursor. That is honest — it no longer matches — and library
+ * writes are outside zundo, so the empty message is the whole of the
+ * reassurance; it names the filter rather than claiming the list is empty.
  */
 function StarFilterToggle({
   on,
   label,
+  disabled,
   onToggle,
 }: {
   on: boolean;
   label: string;
+  disabled?: boolean;
   onToggle: (on: boolean) => void;
 }) {
   return (
-    <Toggle.Root
-      className={'map-library-filter' + (on ? ' active' : '')}
-      pressed={on}
-      onPressedChange={onToggle}
-      aria-label={label}
-      title={label}
-    >
-      {on ? <StarFilledIcon /> : <StarIcon />}
-    </Toggle.Root>
+    <>
+      {on && <span className="map-library-filter-note">starred only</span>}
+      <Toggle.Root
+        className={'map-library-filter' + (on ? ' active' : '')}
+        pressed={on}
+        disabled={disabled}
+        onPressedChange={onToggle}
+        aria-label={label}
+        title={label}
+      >
+        {on ? <StarFilledIcon /> : <StarIcon />}
+      </Toggle.Root>
+    </>
   );
 }
 
@@ -491,11 +504,17 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
               <section className="map-library-versions" aria-label="Versions">
                 <div className="map-library-colhead">
                   <h3>{selectedMap ? selectedMap.name : 'Versions'}</h3>
-                  <StarFilterToggle
-                    on={starredVersionsOnly}
-                    label="Show starred versions only"
-                    onToggle={setStarredVersionsOnly}
-                  />
+                  <div className="map-library-colhead-controls">
+                    {/* Nothing to filter until a map is chosen, and the flag is
+                        persisted — a press over an empty column would write a
+                        preference you never see take effect. */}
+                    <StarFilterToggle
+                      on={starredVersionsOnly}
+                      label="Show starred versions only"
+                      disabled={selectedMapId === null}
+                      onToggle={setStarredVersionsOnly}
+                    />
+                  </div>
                 </div>
                 <div className="map-library-list">
                   {selectedMapId === null && (

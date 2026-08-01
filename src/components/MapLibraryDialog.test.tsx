@@ -492,18 +492,80 @@ describe('MapLibraryDialog', () => {
       expect(mapNames()).toEqual(['Canal Line', 'Broadway']);
     });
 
-    // A view preference, like the sort beside it: the next open opens the way
-    // you left it.
-    it('remembers both filters across sessions', async () => {
+    /**
+     * View preferences, like the sort beside them: the next open opens the way
+     * you left it. Asserted against the STORED bytes, not the store — reading
+     * `useLibraryPrefs.getState()` back tests the setter, and would pass just
+     * as happily if the keys never reached `partialize`.
+     */
+    it('persists both filters, and the sort, for the next session', async () => {
       const user = userEvent.setup();
       renderDialog();
       await openCanalLine(user);
       await user.click(mapFilter());
       await user.click(versionFilter());
-      expect(useLibraryPrefs.getState()).toMatchObject({
-        starredMapsOnly: true,
-        starredVersionsOnly: true,
+      await chooseOption(user, 'Sort maps', 'Name');
+      await waitFor(() => {
+        const stored = JSON.parse(localStorage.getItem('massimo-library-prefs-v1') ?? '{}') as {
+          state?: Record<string, unknown>;
+        };
+        expect(stored.state).toMatchObject({
+          sort: 'name',
+          starredMapsOnly: true,
+          starredVersionsOnly: true,
+        });
       });
+    });
+
+    /**
+     * The cue has to survive the case it exists for. The named empty message
+     * only speaks when NOTHING survives the filter — a list of one where there
+     * were three is the reading that needs answering, and the toggle alone is
+     * 24px of it.
+     */
+    it('says "starred only" in the head while a non-empty list is filtered', async () => {
+      const user = userEvent.setup();
+      vi.mocked(listMaps).mockResolvedValue([MAPS[0], { ...MAPS[1], starred: true }]);
+      renderDialog();
+      await screen.findByText('Canal Line');
+      const maps = screen.getByRole('region', { name: 'Saved maps' });
+      expect(within(maps).queryByText('starred only')).toBeNull();
+
+      await user.click(mapFilter());
+      await waitFor(() => expect(mapNames()).toEqual(['Broadway']));
+      expect(within(maps).getByText('starred only')).toBeInTheDocument();
+    });
+
+    // Nothing to filter yet, and the flag is persisted: a press here would
+    // write a preference whose effect you never see, and find the next column
+    // you open already thinned out.
+    it('will not filter versions before a map is chosen', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await screen.findByText('Canal Line');
+      expect(versionFilter()).toBeDisabled();
+
+      await user.click(versionFilter());
+      expect(useLibraryPrefs.getState().starredVersionsOnly).toBe(false);
+    });
+
+    /**
+     * Un-starring the last marked row while filtering takes it out from under
+     * the cursor. The list must say which of the two things happened — the
+     * filter emptied, not the map's history — because the write is outside
+     * zundo and there is nothing else to reassure with.
+     */
+    it('names the filter, not the map, when the last starred version is un-starred', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await openCanalLine(user);
+      await user.click(versionFilter());
+      await waitFor(() => expect(versionNumbers()).toEqual(['v2']));
+
+      vi.mocked(listVersions).mockResolvedValue([V3, { ...V2, starred: undefined }]);
+      await user.click(screen.getByRole('button', { name: 'Unstar version 2' }));
+      expect(await screen.findByText('No starred versions.')).toBeInTheDocument();
+      expect(screen.queryByText('No versions.')).toBeNull();
     });
   });
 
