@@ -94,7 +94,7 @@ describe('<HighlightedLineLayer /> — Edit Stops cursor chrome', () => {
   // One stripe renderable in the s1–s2 corridor, so the armed-segment halo
   // and its × chip have real band geometry to anchor to.
   const stripeRenderables = (): OrderedRenderable[] => [
-    { kind: 'stripe', band: makeBandSpec(['L1']), stripeIndex: 0, priority: 0 },
+    { kind: 'stripe', band: makeBandSpec(['L1']), stripeIndex: 0, priority: 0, subOrder: 0 },
   ];
 
   it('renders no cursor chrome while nothing is armed', () => {
@@ -215,7 +215,7 @@ describe('<HighlightedLineLayer /> — Edit Stops hover preview', () => {
     cursor,
   });
   const stripeRenderables = (): OrderedRenderable[] => [
-    { kind: 'stripe', band: makeBandSpec(['L1']), stripeIndex: 0, priority: 0 },
+    { kind: 'stripe', band: makeBandSpec(['L1']), stripeIndex: 0, priority: 0, subOrder: 0 },
   ];
 
   it('rings the hovered station a click would act on', () => {
@@ -484,12 +484,13 @@ describe('<HighlightedLineLayer /> — Edit Stops hover preview', () => {
       }),
     };
     const renderables: OrderedRenderable[] = [
-      { kind: 'stripe', band: makeBandSpec(['L1']), stripeIndex: 0, priority: 0 },
+      { kind: 'stripe', band: makeBandSpec(['L1']), stripeIndex: 0, priority: 0, subOrder: 0 },
       {
         kind: 'stripe',
         band: makeBandSpec(['L2'], { pairKey: 's3|s4', fromId: 's3', toId: 's4' }),
         stripeIndex: 0,
         priority: 1,
+        subOrder: 0,
       },
     ];
     const { container } = renderLayer(twoLines, withL2, appending(null), {
@@ -517,6 +518,7 @@ describe('<HighlightedLineLayer /> — Edit Stops hover preview', () => {
         band: makeBandSpec(['L2'], { pairKey: 's3|s4', fromId: 's3', toId: 's4' }),
         stripeIndex: 0,
         priority: 0,
+        subOrder: 0,
       },
     ];
     const { container } = renderLayer(

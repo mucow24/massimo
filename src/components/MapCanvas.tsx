@@ -461,8 +461,8 @@ export function MapCanvas() {
     [bands, stationsGeometrySig, circlesGeometrySig, lines, lineOrder],
   );
   const renderables = useMemo(
-    () => buildOrderedRenderables(bands, stopMarkers),
-    [bands, stopMarkers],
+    () => buildOrderedRenderables(bands, stopMarkers, lines),
+    [bands, stopMarkers, lines],
   );
 
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
