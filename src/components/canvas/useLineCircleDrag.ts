@@ -29,15 +29,16 @@ export interface LineCircleDragApi {
 }
 
 /**
- * Line-circle drags: grabbing the rim MOVES the circle (its bound stations
- * ride along rigidly inside moveLineCircle); grabbing the resize knob drags
- * the RADIUS (bound stations reproject radially). The center is the drag
- * reference point and snaps through the point snapper against the shared pool
- * (like an unbound bullet); the radius snaps only to its quarter-unit grid
- * (inside the transform). Shift bypasses snapping, matching every other drag.
+ * Line-circle drags: grabbing the rim OR the centre handle MOVES the circle (its
+ * bound stations ride along rigidly inside moveLineCircle); grabbing the resize
+ * knob drags the RADIUS (bound stations reproject radially). The circle's centre
+ * is the drag reference point for both moves and snaps through the point snapper
+ * against the shared pool (like an unbound bullet); the radius snaps only to its
+ * quarter-unit grid (inside the transform). Shift bypasses snapping, matching
+ * every other drag.
  *
- * A rim drag also tows the rest of a multi-selection, like every other master
- * kind (groupDrag). A knob drag never does — a resize isn't a translation.
+ * A move also tows the rest of a multi-selection, like every other master kind
+ * (groupDrag). A knob drag never does — a resize isn't a translation.
  */
 export function useLineCircleDrag(
   svgRef: RefObject<SVGSVGElement | null>,
@@ -62,8 +63,9 @@ export function useLineCircleDrag(
     startMX: number;
     startMY: number;
     moved: boolean;
-    // Rim drags only: the rest of the multi-selection, towed by the center's
-    // delta, and the snap pool with those movers excluded. Empty for a knob.
+    // Move drags only (rim or centre handle): the rest of the multi-selection,
+    // towed by the delta the circle's centre travels, and the snap pool with
+    // those movers excluded. Empty for a knob.
     siblings: GroupSiblings;
     allTargets: Vec2[];
     history: ReturnType<typeof beginHistoryGroup>;
@@ -82,7 +84,12 @@ export function useLineCircleDrag(
     //     exactly as it does for every other item.
     const sel = useSelection.getState();
     if (!e.shiftKey && !sel.selectedLineCircleIds.includes(id)) sel.selectLineCircle(id);
-    const siblings = part === 'rim' ? collectGroupSiblings('lineCircle', id) : emptyGroupSiblings();
+    // Every part EXCEPT the knob is a translation, so every one of them tows the
+    // group. Spelled as "not the knob" rather than a list of movers: a new grab
+    // added to the ring is a move until proven otherwise, and the failure of
+    // forgetting it — a group that silently stops following — is silent.
+    const siblings =
+      part === 'knob' ? emptyGroupSiblings() : collectGroupSiblings('lineCircle', id);
     dragRef.current = {
       id,
       part,
