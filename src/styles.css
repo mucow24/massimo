@@ -296,14 +296,21 @@ select option {
   flex-shrink: 0;
 }
 
-.toolbar button {
+/* `:not(.field-checkbox)` on both: the toolbar's generic button chrome must not
+   dress a checkbox sitting inside one of its PANELS (View, Options). It was
+   doing so at a specificity the shared `.field-checkbox` rules could not beat,
+   and the padding stretched a 16px square into a 21×16 oblong. Excluded here
+   rather than out-specified per property, because the whole recipe — control
+   face, button radius, padding, hover wash — is wrong for a checkbox, not one
+   declaration of it. Pinned by e2e/viewMenu.spec.ts. */
+.toolbar button:not(.field-checkbox) {
   background: var(--control-bg);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
   padding: 4px 10px;
   cursor: pointer;
 }
-.toolbar button:hover {
+.toolbar button:not(.field-checkbox):hover {
   background: var(--control-hover);
 }
 
@@ -558,10 +565,54 @@ select option {
   overflow-y: auto;
 }
 .options-palette-separator,
-.options-popover-divider {
+.options-popover-divider,
+.view-popover-divider {
   border: 0;
   border-top: 1px solid var(--border);
   margin: 4px 0;
+}
+/* View menu: the canvas layer checklist. Same panel chrome as Options, narrower
+   — every row is one checkbox and a short name. */
+.view-popover-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.view-popover {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  z-index: 100;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: var(--shadow-pop);
+  padding: 8px 12px;
+  min-width: 168px;
+  font-size: var(--fs-small);
+  color: var(--text);
+}
+.view-popover-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  cursor: pointer;
+}
+/* Something is hidden (or revealed) — the view is not the default one. A filled
+   face rather than the accent one: `.active` already means "this panel is open"
+   on the same button, and the two have to be told apart at a glance. Reads as a
+   darkened face on the light chrome and a raised one on the dark, which is the
+   way round each theme carries emphasis.
+
+   `:not(.active)` so an OPEN menu keeps the accent every other popover trigger
+   in this toolbar wears — the mark has nothing to say while the panel listing
+   the layers is on screen. Spelled out rather than left to cascade order, which
+   would decide it silently and flip if either rule moved. */
+.toolbar button.tool-btn.has-hidden:not(.active) {
+  background: var(--border-strong);
+  border-color: var(--border-strong);
+  color: var(--text);
 }
 .options-palette-card {
   display: flex;
@@ -969,12 +1020,16 @@ select option {
 /* Radix checkbox (currently the label popover's Wrap): drawn in-app so it
    matches the chrome exactly — hairline box, accent fill + white check when
    on. */
+/* `flex: none` so a long row label can never shrink the box off square — the
+   rest of the recipe assumes 16×16. (Toolbar panels used to override this whole
+   block; see the `:not(.field-checkbox)` note on `.toolbar button`.) */
 .field-checkbox {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 16px;
   height: 16px;
+  flex: none;
   padding: 0;
   background: var(--input-bg);
   border: 1px solid var(--border-strong);

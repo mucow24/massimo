@@ -15,6 +15,12 @@ beforeEach(() => {
     // previous test left behind instead of the initializer's default.
     showAnchors: false,
     showNetwork: true,
+    showLineCircles: true,
+    showTransfers: true,
+    showSvgImages: true,
+    showTextLabels: true,
+    showPolygons: true,
+    showRouteBullets: true,
     darkUiInDay: false,
   });
 });

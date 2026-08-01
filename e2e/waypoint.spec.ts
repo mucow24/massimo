@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedAndOpen, stationCenter, fourInLine } from './fixtures';
+import { seedAndOpen, stationCenter, fourInLine, toggleViewLayer } from './fixtures';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -88,14 +88,14 @@ test.describe('Waypoint toggle', () => {
 
     // Turn on Show-waypoints from the toolbar: B's stop returns as a
     // black-stroke/white-fill dot, and a "WP" lozenge is painted before its name.
-    await page.getByRole('button', { name: 'Toggle waypoints' }).click();
+    await toggleViewLayer(page, 'Waypoints');
     await expect(
       page.locator('[data-stop-station="B"][data-stop-shape="circle"]'),
     ).toBeVisible();
     await expect(page.locator('[data-waypoint-lozenge]')).toHaveCount(1);
 
     // Turn it back off: B is hidden again (the overlay is non-destructive).
-    await page.getByRole('button', { name: 'Toggle waypoints' }).click();
+    await toggleViewLayer(page, 'Waypoints');
     await expect(page.locator('[data-stop-station="B"][data-stop-shape]')).toHaveCount(0);
     await expect(page.locator('[data-waypoint-lozenge]')).toHaveCount(0);
   });

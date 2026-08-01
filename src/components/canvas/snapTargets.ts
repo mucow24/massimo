@@ -99,23 +99,33 @@ export function alignTargets(doc: AlignDoc, exclude: AlignExclude = {}): Vec2[] 
  * placement path uses to build its pool, so none of them can miss the rule
  * below.
  *
- * Stations drop out of the pool while the lines/stations toggle hides them.
- * The pool is geometric (straight off the doc), so hiding the network doesn't
- * remove them by itself: without this, dragging the background art the toggle
- * just exposed would align it against stations that aren't on the canvas, and
- * draw snap guides pointing at empty space. Everything else is untouched — that
- * art still snaps to itself.
+ * Every kind the View menu can hide drops out of the pool while it is hidden.
+ * The pool is geometric (straight off the doc), so hiding a kind doesn't remove
+ * it by itself: without this, dragging the background art the lines/stations
+ * toggle just exposed would align it against stations that aren't on the canvas,
+ * and draw snap guides pointing at empty space. Whatever is still on screen goes
+ * on snapping to itself.
+ *
+ * Emptying the record is the whole gate for the four free kinds, because that is
+ * how they leave the canvas too (MapCanvas). Stations and anchors keep their own
+ * named helpers below: `showNetwork` is not the only thing that reveals an
+ * anchor, and the snap ENGINE shares the station one.
  *
  * `alignTargets` stays pure (and separately tested) so it can be exercised over
  * a hand-built doc with no stores in play.
  */
 export function liveAlignTargets(exclude: AlignExclude = {}): Vec2[] {
   const doc = useDoc.getState();
+  const vp = useViewportStore.getState();
   return alignTargets(
     {
       ...doc,
       stations: liveSnapHostedAnchors(liveSnapStations(doc.stations)),
       transferAnchors: liveSnapAnchors(doc.transferAnchors),
+      polygons: vp.showPolygons ? doc.polygons : {},
+      svgImages: vp.showSvgImages ? doc.svgImages : {},
+      textLabels: vp.showTextLabels ? doc.textLabels : {},
+      routeBullets: vp.showRouteBullets ? doc.routeBullets : {},
     },
     exclude,
   );

@@ -54,6 +54,53 @@ export interface RectSelectRect {
   y1: number;
 }
 
+/** Everything one marquee rect sweeps up, per kind. */
+interface RectHits {
+  stations: StationId[];
+  bullets: string[];
+  labels: string[];
+  polygons: string[];
+  svgImages: string[];
+  anchors: string[];
+  lineCircles: string[];
+}
+
+/**
+ * The kinds a rect sweeps up, with every hidden one left out.
+ *
+ * Hits are geometric — straight off the doc — so hiding a kind does NOT take it
+ * out of a marquee by itself: without this, a band thrown around the background
+ * art the View menu just exposed would also grab the layers it crossed, an
+ * invisible selection that then answers Delete and the nudge keys. Hiding stays
+ * a PEEK: an already-selected item is not deselected, only kept out of NEW
+ * marquees.
+ *
+ * ONE function for both the per-frame preview and the commit on release. They
+ * ran as two copies of the same seven calls, which is two places for a gate to
+ * be added to only one of — and a gate the preview honours but the commit does
+ * not looks right for the whole drag and selects the invisible thing anyway.
+ */
+function hitsForRect(
+  doc: Parameters<typeof stationsForRectVisible>[0] &
+    Pick<
+      MapDoc,
+      'routeBullets' | 'textLabels' | 'polygons' | 'svgImages' | 'transferAnchors' | 'lineCircles'
+    >,
+  rect: RectSelectRect,
+  includeLocked: boolean,
+): RectHits {
+  const vp = useViewportStore.getState();
+  return {
+    stations: stationsForRectVisible(doc, rect, includeLocked),
+    bullets: vp.showRouteBullets ? routeBulletsForRect(doc.routeBullets, rect, includeLocked) : [],
+    labels: vp.showTextLabels ? textLabelsForRect(doc.textLabels, rect, includeLocked) : [],
+    polygons: vp.showPolygons ? polygonsForRect(doc.polygons, rect, includeLocked) : [],
+    svgImages: vp.showSvgImages ? svgImagesForRect(doc.svgImages, rect, includeLocked) : [],
+    anchors: anchorsForRectVisible(doc, rect),
+    lineCircles: vp.showLineCircles ? lineCirclesForRect(doc.lineCircles, rect, includeLocked) : [],
+  };
+}
+
 export interface RectSelectApi {
   /** Active rubber-band rect in world coords, or null if not dragging. */
   rect: RectSelectRect | null;
@@ -227,30 +274,16 @@ export function useRectSelect(
     // from this pointer event, so changing shift/ctrl/alt mid-drag updates
     // the preview on the next move. Alt = include locked items (they're
     // click-through on the canvas, so this marquee is their recovery path).
-    const doc = useDoc.getState();
     const sel = useSelection.getState();
     const mode = modeFromEvent(e);
-    const includeLocked = e.altKey;
-    const stationHits = stationsForRectVisible(doc, nextRect, includeLocked);
-    const bulletHits = routeBulletsForRect(doc.routeBullets, nextRect, includeLocked);
-    const labelHits = textLabelsForRect(doc.textLabels, nextRect, includeLocked);
-    const polygonHits = polygonsForRect(doc.polygons, nextRect, includeLocked);
-    const svgImageHits = svgImagesForRect(doc.svgImages, nextRect, includeLocked);
-    setPreviewStationIds(applyMode(sel.selectedStationIds, stationHits, mode));
-    setPreviewBulletIds(applyMode(sel.selectedRouteBulletIds, bulletHits, mode));
-    setPreviewLabelIds(applyMode(sel.selectedLabelIds, labelHits, mode));
-    setPreviewPolygonIds(applyMode(sel.selectedPolygonIds, polygonHits, mode));
-    setPreviewSvgImageIds(applyMode(sel.selectedSvgImageIds, svgImageHits, mode));
-    setPreviewAnchorIds(
-      applyMode(sel.selectedAnchorIds, anchorsForRectVisible(doc, nextRect), mode),
-    );
-    setPreviewLineCircleIds(
-      applyMode(
-        sel.selectedLineCircleIds,
-        lineCirclesForRect(doc.lineCircles, nextRect, includeLocked),
-        mode,
-      ),
-    );
+    const hits = hitsForRect(useDoc.getState(), nextRect, e.altKey);
+    setPreviewStationIds(applyMode(sel.selectedStationIds, hits.stations, mode));
+    setPreviewBulletIds(applyMode(sel.selectedRouteBulletIds, hits.bullets, mode));
+    setPreviewLabelIds(applyMode(sel.selectedLabelIds, hits.labels, mode));
+    setPreviewPolygonIds(applyMode(sel.selectedPolygonIds, hits.polygons, mode));
+    setPreviewSvgImageIds(applyMode(sel.selectedSvgImageIds, hits.svgImages, mode));
+    setPreviewAnchorIds(applyMode(sel.selectedAnchorIds, hits.anchors, mode));
+    setPreviewLineCircleIds(applyMode(sel.selectedLineCircleIds, hits.lineCircles, mode));
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
@@ -271,42 +304,33 @@ export function useRectSelect(
     };
     clearOverlay();
 
-    const doc = useDoc.getState();
-    const includeLocked = e.altKey;
-    const stationHits = stationsForRectVisible(doc, finalRect, includeLocked);
-    const bulletHits = routeBulletsForRect(doc.routeBullets, finalRect, includeLocked);
-    const labelHits = textLabelsForRect(doc.textLabels, finalRect, includeLocked);
-    const polygonHits = polygonsForRect(doc.polygons, finalRect, includeLocked);
-    const svgImageHits = svgImagesForRect(doc.svgImages, finalRect, includeLocked);
-    const anchorHits = anchorsForRectVisible(doc, finalRect);
-    const lineCircleHits = lineCirclesForRect(doc.lineCircles, finalRect, includeLocked);
-
+    const hits = hitsForRect(useDoc.getState(), finalRect, e.altKey);
     const sel = useSelection.getState();
     const mode = modeFromEvent(e);
     if (mode === 'xor') {
-      sel.xorStationsToSelection(stationHits);
-      sel.xorRouteBulletsToSelection(bulletHits);
-      sel.xorLabelsToSelection(labelHits);
-      sel.xorPolygonsToSelection(polygonHits);
-      sel.xorSvgImagesToSelection(svgImageHits);
-      sel.xorAnchorsToSelection(anchorHits);
-      sel.xorLineCirclesToSelection(lineCircleHits);
+      sel.xorStationsToSelection(hits.stations);
+      sel.xorRouteBulletsToSelection(hits.bullets);
+      sel.xorLabelsToSelection(hits.labels);
+      sel.xorPolygonsToSelection(hits.polygons);
+      sel.xorSvgImagesToSelection(hits.svgImages);
+      sel.xorAnchorsToSelection(hits.anchors);
+      sel.xorLineCirclesToSelection(hits.lineCircles);
     } else if (mode === 'add') {
-      sel.addStationsToSelection(stationHits);
-      sel.addRouteBulletsToSelection(bulletHits);
-      sel.addLabelsToSelection(labelHits);
-      sel.addPolygonsToSelection(polygonHits);
-      sel.addSvgImagesToSelection(svgImageHits);
-      sel.addAnchorsToSelection(anchorHits);
-      sel.addLineCirclesToSelection(lineCircleHits);
+      sel.addStationsToSelection(hits.stations);
+      sel.addRouteBulletsToSelection(hits.bullets);
+      sel.addLabelsToSelection(hits.labels);
+      sel.addPolygonsToSelection(hits.polygons);
+      sel.addSvgImagesToSelection(hits.svgImages);
+      sel.addAnchorsToSelection(hits.anchors);
+      sel.addLineCirclesToSelection(hits.lineCircles);
     } else {
-      sel.setStationSelection(stationHits);
-      sel.setRouteBulletSelection(bulletHits);
-      sel.setLabelSelection(labelHits);
-      sel.setPolygonSelection(polygonHits);
-      sel.setSvgImageSelection(svgImageHits);
-      sel.setAnchorSelection(anchorHits);
-      sel.setLineCircleSelection(lineCircleHits);
+      sel.setStationSelection(hits.stations);
+      sel.setRouteBulletSelection(hits.bullets);
+      sel.setLabelSelection(hits.labels);
+      sel.setPolygonSelection(hits.polygons);
+      sel.setSvgImageSelection(hits.svgImages);
+      sel.setAnchorSelection(hits.anchors);
+      sel.setLineCircleSelection(hits.lineCircles);
     }
 
     releaseDragCapture(e, svgRef);
