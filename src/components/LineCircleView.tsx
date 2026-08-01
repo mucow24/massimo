@@ -61,15 +61,47 @@ interface Props {
  * select + move. A locked, unselected circle is click-through, like every
  * other locked kind.
  *
- * The ⊕ at the centre is a SECOND grab for the same two things, and it exists
- * because everything on the rim is reachable only while the rim is. This layer
- * paints below all map content, so a line riding the ring's first lane buries
- * the grab stroke and the resize knob together, and the circle becomes
- * uneditable without deleting a segment to expose it. A ring's interior is empty
- * by construction, so the centre is the one part that ink essentially never
- * covers. Not a cure-all: another line crossing the middle, or a hub station
- * parked on it, buries the handle exactly as it buries the rim — that is what
- * the View menu's Line circles toggle is for.
+ * The ⊕ at the centre is a SECOND grab for the same select+move, because the rim
+ * is covered BY CONSTRUCTION: carrying a line is what a ring is for, this layer
+ * paints below all map content, and so a line riding the first lane puts the
+ * grab stroke and the resize knob under the band together. The centre is not
+ * empty by construction — a ring drawn round a city centre encloses the densest
+ * ink on the map — it is merely the part that usually is not covered, and that
+ * asymmetry is the whole argument.
+ *
+ * A buried ring was already SELECTABLE before this handle: the alt-click
+ * deep-pick resolves `data-line-circle-rim` and `elementsFromPoint` reports the
+ * whole stack regardless of overlap, so alt-clicking the band cycles line →
+ * lineCircle and opens the popover, which carries radius and lock. What the
+ * handle adds is narrower and real:
+ *
+ *   - a PLAIN-CLICK grab, discoverable and aimed at something visible — the
+ *     deep-pick needs the alt-cycle habit and a cursor within the rim's 12px
+ *     grab stroke, i.e. ±6 screen px of a circumference you cannot see;
+ *   - DRAG, which the deep-pick genuinely cannot do: it re-dispatches a click,
+ *     never a gesture (see MapCanvas), so a buried ring could be selected but
+ *     not moved.
+ *
+ * It does NOT unbury the resize knob, which stays on the rim's east point and
+ * stays under the band. Under a line, resize is popover-only.
+ *
+ * Three ways the handle is itself unreachable, all of them recoverable by
+ * alt-click (every surface keeps its own id, so both stay in the cycle):
+ *   - another line crossing the middle, or a hub station parked on the centre,
+ *     buries it exactly as the band buries the rim;
+ *   - CONCENTRIC rings put their discs and their ⊕ glyphs at the same point:
+ *     DOM order picks the winner, and the loser is both unclickable and
+ *     invisible, since the two glyphs draw on top of each other;
+ *   - the View menu's Line circles toggle, which is the deliberate escape.
+ *
+ * Two deliberate divergences from the rest of the canvas. The glyph keeps
+ * painting when it cannot be grabbed (locked, hand mode, another mode owning the
+ * canvas) — every other handle in the app, e.g. SvgImageView's, appears only on
+ * selection; this one is scaffolding first, like the dashed ring it sits inside.
+ * And because this layer paints ABOVE the background band, each ring now puts a
+ * 16px screen-px dead spot over any polygon or image beneath its centre: clicks
+ * and marquee-starts there take the ring. The rim already does this along its
+ * whole circumference, so it is more of the same rather than new in kind.
  */
 export function LineCircleView({
   circle,

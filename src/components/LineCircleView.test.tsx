@@ -3,13 +3,10 @@ import { fireEvent, render } from '@testing-library/react';
 import { LineCircleView, type LineCirclePart } from './LineCircleView';
 import { makeLineCircle } from '../test/fixtures';
 
-/**
- * The centre handle exists because a line riding the ring's first lane buries
- * every affordance ON the rim — the grab stroke and the resize knob both paint
- * below map content. A ring's INTERIOR is empty by construction, so the centre
- * is the one part of a circle that ink essentially never covers, and a mark
- * there is a grab that does not compete with the band.
- */
+/** The ⊕ at a line circle's centre — see the LineCircleView doc comment for
+ *  what it is, what it buys over the alt-click deep-pick, and what it doesn't.
+ *  Reachability under a real band is pinned in e2e/lineCircleCenter.spec.ts,
+ *  since jsdom has no hit-testing. */
 
 const renderCircle = (
   props: Partial<Parameters<typeof LineCircleView>[0]> = {},
@@ -86,21 +83,28 @@ describe('LineCircleView — centre handle', () => {
     expect(Number(four)).toBeCloseTo(Number(one) / 4, 9);
   });
 
-  it.each([
-    ['locked and unselected', { locked: true, selected: false }],
-    ['in hand mode', { inHandMode: true }],
-    ['while another mode owns the canvas', { interactive: false }],
-  ])('drops the grab surface when %s, but keeps the mark painted', (_, over) => {
-    const { locked, ...rest } = over as { locked?: boolean } & Record<string, unknown>;
+  // The three click-through cases, one plain `it` each. Both halves matter every
+  // time: the grab must go (a locked circle must not swallow clicks meant for
+  // whatever is under it), and the glyph must STAY — it is scaffolding, like the
+  // dashed ring, which paints whether or not it can be grabbed.
+  it('drops the grab surface when locked and unselected, keeping the mark', () => {
     const { svg } = renderCircle({
-      circle: makeLineCircle({ id: 'c1', x: 100, y: 50, radius: 60, locked }),
-      ...rest,
+      circle: makeLineCircle({ id: 'c1', x: 100, y: 50, radius: 60, locked: true }),
+      selected: false,
     });
-    // Click-through exactly like the rim — a locked circle must not swallow the
-    // clicks meant for whatever is underneath.
     expect(hit(svg)).toBeNull();
-    // ...but the glyph stays: it is scaffolding, like the dashed ring, which
-    // paints whether or not it can be grabbed.
+    expect(mark(svg)).not.toBeNull();
+  });
+
+  it('drops the grab surface in hand mode, keeping the mark', () => {
+    const { svg } = renderCircle({ inHandMode: true });
+    expect(hit(svg)).toBeNull();
+    expect(mark(svg)).not.toBeNull();
+  });
+
+  it('drops the grab surface while another mode owns the canvas, keeping the mark', () => {
+    const { svg } = renderCircle({ interactive: false });
+    expect(hit(svg)).toBeNull();
     expect(mark(svg)).not.toBeNull();
   });
 

@@ -64,8 +64,8 @@ export function useLineCircleDrag(
     startMY: number;
     moved: boolean;
     // Move drags only (rim or centre handle): the rest of the multi-selection,
-    // towed by the center's delta, and the snap pool with those movers
-    // excluded. Empty for a knob.
+    // towed by the delta the circle's centre travels, and the snap pool with
+    // those movers excluded. Empty for a knob.
     siblings: GroupSiblings;
     allTargets: Vec2[];
     history: ReturnType<typeof beginHistoryGroup>;

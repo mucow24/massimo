@@ -469,14 +469,12 @@ ticks while the `circle` snap mode is on ([LineCircleView.tsx](src/components/Li
 `theme.guide`, export-excluded; the ticks come in as a prop, since the snap mode is a UI pref and
 no part of the circle). The painted arcs come from line edges.
 
-The centre handle is a **second grab for the same select+move** the rim gives, and it is there
-because everything ON the rim is reachable only while the rim is: this layer paints below all map
-content, so a line riding the ring's first lane buries the grab stroke and the resize knob
-together and the circle becomes uneditable without deleting a segment. A ring's interior is empty
-by construction, so the centre is the one part ink essentially never covers. It is not a cure-all
-— another line across the middle, or a hub station parked on it, buries the handle exactly as it
-buries the rim, which is what the View menu's **Line circles** toggle is for. Both surfaces carry
-a `lineCircle` identity for the alt-click deep-pick and dedupe to one entry.
+A circle has **two grab surfaces** — the rim's fat transparent stroke and the centre handle's
+disc — because the rim is covered by construction (carrying a line is what a ring is for, and
+this layer paints below all map content). Both select+move, both carry a `lineCircle` identity so
+the alt-click deep-pick sees them, and they dedupe to one entry in its cycle. The resize knob is
+rim-only. Every part except that knob is a translation and tows the group. See the
+`LineCircleView` doc comment for what the handle does and does not buy.
 
 The concept splits in two, on purpose:
 

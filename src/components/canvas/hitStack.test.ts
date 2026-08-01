@@ -123,11 +123,19 @@ describe('resolveHitStack — both grab surfaces of a line circle', () => {
 
   it('reports one entry when both surfaces of a ring are under the cursor', () => {
     // The centre disc overlaps the rim stroke only on a very small ring, but the
-    // cycle must not offer the same circle twice when it does.
+    // cycle must not offer the same circle twice when it does. Fed TOPMOST-FIRST
+    // as `elementsFromPoint` returns it: LineCircleView paints the disc after
+    // the rim, so the disc is the element the cursor meets, and the one the
+    // dedupe keeps.
     const [rim, centre] = el(
       '<circle data-line-circle-rim="c1" id="rim"></circle>' +
         '<circle data-line-circle-center="c1" id="centre"></circle>',
     );
+    expect(resolveHitStack([centre, rim])).toEqual([
+      { kind: 'lineCircle', id: 'c1', element: centre },
+    ]);
+    // Order-agnostic in the mechanism, so the reverse keeps the other one — but
+    // the case above is the one that actually happens.
     expect(resolveHitStack([rim, centre])).toEqual([
       { kind: 'lineCircle', id: 'c1', element: rim },
     ]);
