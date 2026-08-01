@@ -5,6 +5,7 @@ import { svgImageCorners } from '../../geometry/svgImage';
 import { type Vec2 } from '../../geometry/vec';
 import { useDoc } from '../../state/store';
 import { useViewportStore } from '../../state/viewportStore';
+import { kindVisibleNow } from '../../state/visibility';
 import { anchorsVisibleNow } from '../../state/anchorVisibility';
 import type { MapDoc, Station, TextLabel, TransferAnchor } from '../../model/types';
 
@@ -116,19 +117,37 @@ export function alignTargets(doc: AlignDoc, exclude: AlignExclude = {}): Vec2[] 
  */
 export function liveAlignTargets(exclude: AlignExclude = {}): Vec2[] {
   const doc = useDoc.getState();
-  const vp = useViewportStore.getState();
+  // Through `kindVisibleNow`, not the raw flags: a kind its placing mode has
+  // REVEALED is on the canvas, and a target you can see must be a target you can
+  // snap to — dragging the thing you just placed toward a sibling of the same
+  // kind is precisely when the pool matters.
   return alignTargets(
     {
       ...doc,
       stations: liveSnapHostedAnchors(liveSnapStations(doc.stations)),
       transferAnchors: liveSnapAnchors(doc.transferAnchors),
-      polygons: vp.showPolygons ? doc.polygons : {},
-      svgImages: vp.showSvgImages ? doc.svgImages : {},
-      textLabels: vp.showTextLabels ? doc.textLabels : {},
-      routeBullets: vp.showRouteBullets ? doc.routeBullets : {},
+      polygons: kindVisibleNow('showPolygons') ? doc.polygons : {},
+      svgImages: kindVisibleNow('showSvgImages') ? doc.svgImages : {},
+      textLabels: kindVisibleNow('showTextLabels') ? doc.textLabels : {},
+      routeBullets: kindVisibleNow('showRouteBullets') ? doc.routeBullets : {},
     },
     exclude,
   );
+}
+
+/**
+ * The line circles a placement or drag may CAPTURE a station onto — `{}` while
+ * the View menu hides the rings.
+ *
+ * Ring capture is doc-geometric like everything else here: without this a
+ * station dropped near an invisible rim snaps onto it AND gets bound to it
+ * (`bindDroppedStation`), so the map acquires a binding to a guide the user
+ * cannot see and never chose. Rings are not align TARGETS — they are a hard
+ * constraint, closer to the grid — which is why they take a helper of their own
+ * rather than a slice in the pool above.
+ */
+export function liveCaptureCircles<C>(lineCircles: Record<string, C>): Record<string, C> {
+  return kindVisibleNow('showLineCircles') ? lineCircles : {};
 }
 
 /**

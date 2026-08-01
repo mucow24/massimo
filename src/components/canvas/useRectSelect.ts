@@ -12,6 +12,7 @@ import {
   textLabelsForRect,
 } from '../../geometry/stationBoundary';
 import { lineCirclesForRect } from '../../geometry/lineCircle';
+import { kindVisibleNow } from '../../state/visibility';
 import { stopMetricsOf } from '../../model/stopMetrics';
 import type { MapDoc, StationId } from '../../model/types';
 import type { Pt } from '../../geometry/polygonUnion';
@@ -89,15 +90,26 @@ function hitsForRect(
   rect: RectSelectRect,
   includeLocked: boolean,
 ): RectHits {
-  const vp = useViewportStore.getState();
+  // Through `kindVisibleNow`, not the raw flags: a kind its placing mode has
+  // REVEALED is on the canvas, so a marquee has to be able to sweep it up.
   return {
     stations: stationsForRectVisible(doc, rect, includeLocked),
-    bullets: vp.showRouteBullets ? routeBulletsForRect(doc.routeBullets, rect, includeLocked) : [],
-    labels: vp.showTextLabels ? textLabelsForRect(doc.textLabels, rect, includeLocked) : [],
-    polygons: vp.showPolygons ? polygonsForRect(doc.polygons, rect, includeLocked) : [],
-    svgImages: vp.showSvgImages ? svgImagesForRect(doc.svgImages, rect, includeLocked) : [],
+    bullets: kindVisibleNow('showRouteBullets')
+      ? routeBulletsForRect(doc.routeBullets, rect, includeLocked)
+      : [],
+    labels: kindVisibleNow('showTextLabels')
+      ? textLabelsForRect(doc.textLabels, rect, includeLocked)
+      : [],
+    polygons: kindVisibleNow('showPolygons')
+      ? polygonsForRect(doc.polygons, rect, includeLocked)
+      : [],
+    svgImages: kindVisibleNow('showSvgImages')
+      ? svgImagesForRect(doc.svgImages, rect, includeLocked)
+      : [],
     anchors: anchorsForRectVisible(doc, rect),
-    lineCircles: vp.showLineCircles ? lineCirclesForRect(doc.lineCircles, rect, includeLocked) : [],
+    lineCircles: kindVisibleNow('showLineCircles')
+      ? lineCirclesForRect(doc.lineCircles, rect, includeLocked)
+      : [],
   };
 }
 

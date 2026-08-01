@@ -1606,7 +1606,8 @@ on any mode exit.
   (`GRID_SIZES = [5,10,20]`, default 10), the **nine layer-visibility flags** behind the View menu
   (`showNetwork` default true — see below; `showWaypoints` and `showAnchors` default false;
   `showLineCircles`, `showTransfers`, `showSvgImages`, `showTextLabels`, `showPolygons`,
-  `showRouteBullets` default true), plus two **local chrome** preferences: `dayCanvasColor: DayCanvasColor`
+  `showRouteBullets` default true), plus two **local chrome** preferences:
+  `dayCanvasColor: DayCanvasColor`
   (`'white'|'gray'|'black'`, default white — the day-mode paper color, dimming glare without
   touching the map) and `darkUiInDay: boolean` (default false — a chrome-only dark UI while the
   **map** is still in day mode). The map's own day/night is **not** here — that is `MapDoc.darkMode`
@@ -1626,8 +1627,9 @@ on any mode exit.
   (pan: composited pan-layer translate; zoom: viewBox write).
 
 **Layer visibility — the View menu** ([ViewPopover.tsx](src/components/ViewPopover.tsx), one eye
-button in the toolbar). Nine checkboxes in three groups: Lines and stations · Anchors, Line circles,
-Transfers, Waypoints · Images / SVGs, Canvas labels, Polygons, Route bullets. The **grid** is
+button in the toolbar). Nine checkboxes in three groups: Lines and stations · Anchors, Line
+circles, Transfers, Waypoints · Images / SVGs, Canvas labels, Polygons, Route bullets. The **grid**
+is
 deliberately not among them — a drawing aid rather than map content, and its button pairs with the
 grid-size cycler beside it.
 
@@ -1638,15 +1640,17 @@ the three fails silently — most cruelly at the export, which would ship a map 
 user had toggled off. Each entry carries `gatesExportedInk`, since only some of them do:
 `exportVisibilityOverrides` forces those on around the capture and leaves the rest alone, their
 layers being `data-export-exclude` anyway. `showWaypoints` is the one it would be actively WRONG to
-force — it REVEALS scaffolding the export then strips. `setVisibility` derives the setter name from
-the key rather than consulting a second table, and `anyLayerHidden` marks the toolbar button
+force — it REVEALS scaffolding the export then strips. `setVisibility` derives the setter name
+from the key rather than consulting a second table, and `anyLayerHidden` marks the toolbar button
 whenever a layer that defaults to VISIBLE is switched off. Both of the obvious alternatives are
 wrong: "some flag is false" marks a pristine canvas forever (anchors and waypoints default to
 hidden), and "differs from the defaults" marks a menu with **every box ticked**, since checking
 those same two departs from the default. Turning a reveal on hides nothing, so it never marks.
 
-Every kind whose own tool can place one carries a `revealedBy` mode, and `kindVisible` — the single
-entry point the canvas gates through — folds it in: hiding a layer and then reaching for its own
+Every kind whose own tool can place one carries a `revealedBy` mode, folded in by `kindVisible`
+(render) and its non-reactive twin `kindVisibleNow` (pointer handlers and doc-geometric pools).
+Every consumer goes through one of the two, so the canvas, the marquee, the snap pools and the
+popovers cannot drift into different opinions. Hiding a layer and then reaching for its own
 tool still shows what the click drops, instead of the tool reading as broken. Generalised from
 `anchorsRevealedByMode`, and a DERIVATION for the same reason: a temporary write to the flag would
 need a matching revert on every exit path. Anchors keep their own module (two modes reveal them),
@@ -1676,7 +1680,8 @@ Four seams cover it, and a fifth rule governs anything new:
   out the background art with the network gone. `needRegions` folds in `showNetwork` too, which
   also skips the app's most expensive computation while hidden.
 - **The four free kinds gate by EMPTYING their record** in `MapCanvas` (`polygons`, `svgImages`,
-  `textLabels`, `routeBullets` — the `…All` reads are the ungated originals). Each renders across a
+  `textLabels`, `routeBullets` — the `…All` reads are the ungated originals). Each renders
+  across a
   body pass, a hover preview, a selection overlay and a top-z drag proxy, and a gate written four
   times is a gate that gets missed once. Only these four can be: `lineCircles` and `transfers` feed
   **geometry** (band routing and stop metrics respectively), so emptying either would move ink that
@@ -1695,10 +1700,21 @@ Four seams cover it, and a fifth rule governs anything new:
   to invisible stops), `liveSnapAnchors` (free anchors, gated on `showNetwork` **and**
   `showAnchors`), and `liveSnapHostedAnchors` (the same anchor gate over the cells a station
   carries — it empties those, leaving the station's stops in the pool).
+  Ring capture is the third: `liveCaptureCircles` gates the placement snap, its drop-side
+  `bindDroppedStation`, and the drag-side capture in `useStationDrag`. Ungated, a station dropped
+  near a hidden rim snaps onto it AND gets **bound** to it — the map acquires a binding to a guide
+  nobody can see. Rings are a hard constraint rather than an align target, which is why they take a
+  helper of their own instead of a slice in the pool.
   **Any new feature that reads the doc for interaction needs the same gate.** The one place that
   needs none is the locked-item deep-pick: `lockedHitsAt` probes geometry with no visibility
   opinion, but `lockedDispatchTarget` resolves through `document.querySelector`, so a hidden kind
   has no element and drops out before it can join the cycle.
+- **Item popovers gate too, and they are not canvas content.** A panel is a DOM overlay, so
+  hiding a layer does not take its editor away — it hangs there offering to edit, and Delete, an
+  item no longer on screen. `ItemPopovers` gates every kind (the station's panel is HIDDEN rather
+  than unmounted, keeping its measured width and scroll position across the excursion), and the
+  multi-select `SelectionPopover` drops hidden kinds from its count and its bulk lock/delete.
+  Items stay SELECTED throughout — hiding is a peek — so unhiding restores the same group.
 
 ### Preferences
 
@@ -2640,8 +2656,8 @@ same three additions.
   (toggles `uiMode`; includes **Image / SVG…** — imports `.svg`, `.png`, or `.jpg/.jpeg` via
   `svgImport.ts` into an `SvgImage`), tool buttons (arrow/hand), grid-size + grid-visible +
   dark-mode toggles, the **View menu** (`ViewPopover` — the eye button; see Viewport), the
-  layering-mode button, Reset view, and the sidebar toggle. The Canvas menu also carries the two local chrome
-  preferences — the **Dark UI in day** checkbox and the **Day canvas color** submenu
+  layering-mode button, Reset view, and the sidebar toggle. The Canvas menu also carries the two
+  local chrome preferences — the **Dark UI in day** checkbox and the **Day canvas color** submenu
   (white/gray/black paper) — which live in `useViewportStore`, not the doc.
   Embeds `MapNameField`, `MapVersionPill`, `SnapToggleBar`, `OptionsPopover`, `ViewPopover`,
   and the **`?` `HelpPopover`**
@@ -3048,7 +3064,8 @@ Each is confirmed in source/tests; file pointers included.
   time, which is BEFORE their single write — equivalent and correct.
 - **Export desaturation race** — `captureExportSnapshot` uses `flushSync` to drop/restore the
   transient view states (selected-line dim, layering's 25% content fade, every hidden layer that
-  gates exported ink) synchronously so none is baked into the clone. The layering fade is the easy one to miss: it is
+  gates exported ink) synchronously so none is baked into the clone. The layering fade is the easy
+  one to miss: it is
   an `opacity` on real content groups, not `data-export-exclude` chrome, so the strip pass does not
   catch it and every export **and library thumbnail** taken in layering mode came out
   quarter-strength. ([Toolbar.tsx](src/components/Toolbar.tsx))

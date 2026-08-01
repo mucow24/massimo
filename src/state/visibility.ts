@@ -1,5 +1,5 @@
 import { useViewportStore } from './viewportStore';
-import type { UiMode } from './selection';
+import { useSelection, type UiMode } from './selection';
 
 /**
  * The canvas visibility toggles, in one registry.
@@ -114,12 +114,30 @@ export const VISIBILITY_ITEMS: readonly VisibilityItem[] = [
 
 /**
  * Is this kind on screen right now — its toggle, OR the mode that places it?
- * The one entry point the canvas gates through, so no kind can acquire a menu
- * row without also acquiring its reveal.
+ *
+ * The render-path entry point (canvas, item popovers); `kindVisibleNow` is the
+ * same question for code outside render. Everything that has an opinion about a
+ * kind being visible goes through one of the two, so no consumer can acquire a
+ * menu row without its reveal, and none can drift from the canvas.
  */
 export function kindVisible(key: VisibilityKey, flag: boolean, modeKind: UiMode['kind']): boolean {
   if (flag) return true;
   return VISIBILITY_ITEMS.find((i) => i.key === key)?.revealedBy === modeKind;
+}
+
+/**
+ * {@link kindVisible} over the LIVE stores — non-reactive, for the pointer
+ * handlers and doc-geometric pools that run outside render (the marquee, the
+ * snap pools, ring capture on placement and drag).
+ *
+ * Those paths read geometry straight off the doc, so nothing about hiding a kind
+ * removes it from them; each has to opt in, and each opting in through THIS
+ * function is what keeps the canvas, the marquee and the snappers from drifting
+ * into three different opinions about what is on screen. Mirrors
+ * `anchorsVisibleNow`, which owns the same rule for anchors.
+ */
+export function kindVisibleNow(key: VisibilityKey): boolean {
+  return kindVisible(key, useViewportStore.getState()[key], useSelection.getState().uiMode.kind);
 }
 
 /**
