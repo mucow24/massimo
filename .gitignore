@@ -19,3 +19,9 @@ playwright-report/
 
 # Source archive for fonts (extracted into public/fonts/)
 helvetica-neue-*.zip
+
+# Station-drag perf scratch: benchmark harnesses, the map they run against, and
+# their Playwright config. Gated behind PERF=1 (vitest) or run through
+# .perf/e2e (Playwright), so neither suite picks them up.
+.perf/
+src/perf/
