@@ -45,7 +45,7 @@ const seed = () => {
   });
 };
 
-const renderEditor = () => {
+const renderEditor = (extra: Partial<Parameters<typeof StationLayoutEditor>[0]> = {}) => {
   const onStartNodeDrag = vi.fn();
   const station = useDoc.getState().stations.a;
   const lines = useDoc.getState().lines;
@@ -56,6 +56,7 @@ const renderEditor = () => {
         lines={lines}
         onStartNodeDrag={onStartNodeDrag}
         swapTarget={null}
+        {...extra}
       />
     </svg>,
   );
@@ -350,6 +351,40 @@ describe('<StationLayoutEditor /> — map-fixed chrome', () => {
     expect(ring.getAttribute('vector-effect')).toBeNull();
     const glyph = container.querySelector('[data-cell-kind="label"] text') as Element;
     expect(glyph.getAttribute('font-size')).toBe('12');
+  });
+});
+
+describe('<StationLayoutEditor /> — live-drag chrome', () => {
+  it('hides the dragged stop handle — it rides the cursor as ghosts instead', () => {
+    seed();
+    const { container } = renderEditor({ draggingSource: { kind: 'stop', lineId: 'L1' } });
+    expect(container.querySelector('[data-cell-kind="stop"][data-line-id="L1"]')).toBeNull();
+    // The other stop stays put.
+    expect(container.querySelector('[data-cell-kind="stop"][data-line-id="L2"]')).not.toBeNull();
+  });
+
+  it('hides the label handle while the label is being dragged', () => {
+    seed();
+    const { container } = renderEditor({ draggingSource: { kind: 'label' } });
+    expect(container.querySelector('[data-cell-kind="label"]')).toBeNull();
+  });
+
+  it('haloes the projection-anchor stop so it reads as the drop reference', () => {
+    seed();
+    // Grid projected from L2 at (0,1): it wears the amber halo; L1 does not.
+    const { container } = renderEditor({ anchorCell: { row: 0, col: 1 } });
+    const l2 = container.querySelector('[data-cell-kind="stop"][data-line-id="L2"]')!;
+    const l1 = container.querySelector('[data-cell-kind="stop"][data-line-id="L1"]')!;
+    expect(l2.querySelector('[data-cell-role="projection-anchor"]')).not.toBeNull();
+    expect(l1.querySelector('[data-cell-role="projection-anchor"]')).toBeNull();
+  });
+
+  it('haloes the label when the grid is projected from it (lone-stop drag)', () => {
+    seed();
+    // hubStation's label sits at (0,-1); anchoring there haloes the label cell.
+    const { container } = renderEditor({ anchorCell: { row: 0, col: -1 } });
+    const label = container.querySelector('[data-cell-kind="label"]')!;
+    expect(label.querySelector('[data-cell-role="projection-anchor"]')).not.toBeNull();
   });
 });
 

@@ -23,13 +23,19 @@ import type { Vec2 } from '../../geometry/vec';
 export { sameCell, CELL_EPS } from '../../geometry/lattice';
 
 // Snap rules shared by every ghost-lattice drag surface: the cursor→ghost snap
-// radius and the candidate-lattice extent, both in (row, col) units. The reach
-// is measured from the node being MOVED (see computeGhosts' `center`), so it is
-// the distance a single drag or arrow press can cover — a bigger station needs
-// more than a couple of cells of it, and a move longer than the reach is walked
-// out one window at a time.
+// radius and the candidate-lattice extent, both in (row, col) units.
+//
+// The lattice window is a (2·r+1)² block of slots. A DRAG windows it on the
+// CURSOR (dragLattice) at DRAG_GRID_RADIUS — the 5×5 grid the editor shows — so
+// the slots surround the pointer and a move of any length lands in one gesture;
+// a small radius suffices because the window already sits where the pointer is.
+// A keyboard NUDGE (nudgeTarget) and a fresh anchor SPAWN (spawnAnchorCell) have
+// no pointer, so they window on a fixed cell at the wider GRID_RADIUS — the
+// reach one press or placement can search, which has to clear a run of packed
+// neighbors (a label hops past two tangent stops to the free slot beyond).
 export const GHOST_SNAP_RADIUS = 1.0;
 export const GRID_RADIUS = 4;
+export const DRAG_GRID_RADIUS = 2;
 
 const dist = (a: RowCol, b: RowCol): number => Math.hypot(a.row - b.row, a.col - b.col);
 
@@ -243,9 +249,11 @@ export interface GhostSpec {
   /** Lattice reach, in rings, from `center` (or from the anchor without one). */
   gridRadius: number;
   /**
-   * The moving node's CURRENT cell — the window of slots is centered there
-   * rather than on the anchor. Omit when there is no node yet to center on
-   * (spawnAnchorCell placing a brand-new anchor).
+   * Where the window of slots is centered — snapped to the nearest lattice
+   * point, then that block of rings is offered. A DRAG passes the CURSOR (so
+   * slots follow the pointer); a keyboard NUDGE passes the moving node's own
+   * cell. Omit when there is nothing to center on (spawnAnchorCell placing a
+   * brand-new anchor), and the window hangs on the anchor itself.
    */
   center?: RowCol;
 }
@@ -327,18 +335,16 @@ export function anchorPool<T extends WidthNode>(nodes: readonly T[]): readonly T
 }
 
 /**
- * The in-flight drag's candidate lattice: anchor = nearest anchorable node
- * to the CURSOR, ghosts = computeGhosts on its lattice, windowed on the
- * dragged node's own cell (`source`) so the reach is measured from where that
- * node is NOW. Pure twin of the drag hook's per-frame step
- * (useStationLayoutDrag), kept here so the reachable-slot rule stays
- * unit-testable alongside nudgeTarget (its keyboard twin) and can never
- * diverge from it.
+ * The in-flight drag's candidate lattice: anchor = nearest anchorable node to
+ * the CURSOR (pitch, phase and axes hang off it), ghosts = computeGhosts on
+ * that lattice, windowed on the CURSOR so the slots always surround the pointer
+ * and a move of any length lands in one gesture. Returns the anchor too, so the
+ * editor can highlight the node the grid is projected from. Pure core of the
+ * drag hook's per-frame step (useStationLayoutDrag), kept here so the
+ * reachable-slot rule stays unit-testable.
  */
 export function dragLattice(spec: {
   cursor: RowCol;
-  /** The dragged node's current cell — the window center. */
-  source: RowCol;
   wSrc: number;
   /** See GhostSpec.gSrc. */
   gSrc?: number;
@@ -348,7 +354,7 @@ export function dragLattice(spec: {
   basis: LatticeBasis;
   stationRotation: Rotation;
 }): { anchor: WidthNode | null; ghosts: RowCol[] } {
-  const { cursor, source, wSrc, gSrc, srcIsPoint, otherNodes, basis, stationRotation } = spec;
+  const { cursor, wSrc, gSrc, srcIsPoint, otherNodes, basis, stationRotation } = spec;
   const anchor = nearestNode(cursor, anchorPool(otherNodes));
   if (!anchor) return { anchor: null, ghosts: [] };
   const ghosts = computeGhosts({
@@ -359,8 +365,8 @@ export function dragLattice(spec: {
     otherNodes,
     basis,
     stationRotation,
-    gridRadius: GRID_RADIUS,
-    center: source,
+    gridRadius: DRAG_GRID_RADIUS,
+    center: cursor,
   });
   return { anchor, ghosts };
 }
@@ -368,11 +374,10 @@ export function dragLattice(spec: {
 /**
  * Keyboard-nudge slot resolution: the ghost slot the `source` node should
  * hop to for a SCREEN-direction arrow press (row +1 = down, col +1 = right).
- * Anchor = nearest anchorPool node (deterministic, cursor-free twin of the
- * drag flow), candidates = the same computeGhosts lattice at the same
- * GRID_RADIUS, windowed on `source` exactly as the drag windows on the node it
- * carries — so keyboard positions are exactly the positions a drag could
- * reach, including for a node walked out past the cluster.
+ * Anchor = nearest anchorPool node to the source (deterministic, cursor-free),
+ * candidates = the same computeGhosts lattice at the same GRID_RADIUS, but
+ * windowed on `source` — a keypress has no pointer to follow, so it reaches one
+ * radius out from the node it carries (the drag windows on the cursor instead).
  *
  * Selection: candidates within ±67.5° of the arrow (so a diagonal slot still
  * answers a cardinal press when nothing straighter survives the overlap
