@@ -19,7 +19,8 @@ import type { Line } from '../model/types';
 // s1 — s2 as a real edge, with horizontal stops: that is what makes the
 // terminus-aware `continues` bits responsive to a move at all, and so what
 // lets the tests below tell "a move that changes nothing" apart from "a move
-// that changes the answer".
+// that changes the answer". The hook reads `lines` from the store itself, so
+// this only seeds the doc.
 const lines: Record<string, Line> = { L1: makeLine({ id: 'L1', stations: ['s1', 's2'] }) };
 
 beforeEach(() => {
@@ -47,8 +48,8 @@ beforeEach(() => {
 
 describe('useStopMetrics', () => {
   it('hands every component the same build for one doc state', () => {
-    const a = renderHook(() => useStopMetrics(lines));
-    const b = renderHook(() => useStopMetrics(lines));
+    const a = renderHook(() => useStopMetrics());
+    const b = renderHook(() => useStopMetrics());
     expect(a.result.current).toBe(b.result.current);
   });
 
@@ -58,7 +59,7 @@ describe('useStopMetrics', () => {
     // the lookup's answer is identical for every station on the map, and a
     // fresh function here would re-render all of them (this hook is called
     // inside StationView, past its memo).
-    const { result, rerender } = renderHook(() => useStopMetrics(lines));
+    const { result, rerender } = renderHook(() => useStopMetrics());
     const before = result.current;
     useDoc.getState().moveStation('s2', 140, 0);
     rerender();
@@ -66,7 +67,7 @@ describe('useStopMetrics', () => {
   });
 
   it('…but a move that DOES change the answer rebuilds', () => {
-    const { result, rerender } = renderHook(() => useStopMetrics(lines));
+    const { result, rerender } = renderHook(() => useStopMetrics());
     const st = useDoc.getState().stations.s1;
     expect(result.current(st, st.stops[0]).continues).toEqual({ plus: true, minus: false });
     const before = result.current;
@@ -79,7 +80,7 @@ describe('useStopMetrics', () => {
   });
 
   it('reports the live transfer cap after a transfer is added', () => {
-    const { result, rerender } = renderHook(() => useStopMetrics(lines));
+    const { result, rerender } = renderHook(() => useStopMetrics());
     const st = useDoc.getState().stations.s1;
     const before = result.current(st, st.stops[0]).transfers;
     expect(before.length).toBeGreaterThan(0);

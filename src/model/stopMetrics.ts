@@ -259,11 +259,15 @@ export const stopMetricsOf = (src: StopMetricsSource): StopMetricsFn => {
 
   // The content level. `continues` is resolved eagerly for every stop the
   // document holds — the same walk `continuesOf` does lazily, ~2 projections
-  // per stop — so this build can be compared with the last one. It is a
-  // comparison pass, not a replacement: `fn` keeps computing `continues` live,
-  // so a caller handing in a station the record does not contain (there is no
-  // such caller today, and the boundary is worth keeping) still gets the
-  // answer for the station it passed.
+  // per stop — so this build can be compared with the last one.
+  //
+  // It is a comparison pass, not a replacement: `fn` keeps computing
+  // `continues` live from the station it is HANDED, which is what keeps the
+  // reuse honest for a caller passing a station the record does not contain.
+  // There is one — `StationPlacingPreview` renders the drag ghost through
+  // StationView with a synthetic `__placing_preview__` station — and it is
+  // doubly safe: that station carries no stops, so this lookup is never
+  // invoked for it at all.
   const derived: Derived = { transfers, continues: new Map() };
   for (const id in src.stations) {
     const st = src.stations[id];
