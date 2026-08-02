@@ -163,7 +163,7 @@ src/
     regionIncremental.ts        # the live region builder: per-component reuse across frames
     regionCache.ts              # sig-keyed cache of bands+markers+faces (render + reconcile)
     bodyMask.ts                 # per-body occupancy grid: the reject a whole-map bbox cannot give,
-                                #   plus the cross-frame dirty-reach test (only skips provable empties)
+                                #   plus the cross-frame dirty-reach test (skips provable empties)
     regionReconcile.ts          # carries regionAssignments across geometry edits
     labelTokens.ts textMeasure.ts labelLayout.ts labelJustify.ts  # name → tokens → measured → placed
     lineTagGeometry.ts          # offset-path arc-length sampling for in-band tags
@@ -816,20 +816,23 @@ inside a blob), so `masksMeet` returning false proves the intersection is empty.
 carries the same reasoning across frames — outside the dirty region both bodies equal last
 frame's, so their intersection can only differ at a cell that is dirty AND in both bodies, and
 callers must ask this of the OLD masks too or an overlap that VACATED a dirty cell goes unseen.
-Both claims are property-tested against the clipper itself, and both are mutation-tested:
-deleting the fill, or dropping the old-mask term, each fails its own property.
+Both claims are property-tested against the clipper itself and mutation-tested — deleting the
+fill, or dropping the old-mask term, each fails its own property — and the old-mask term is
+pinned at its CALL SITE too, by a fixture where a crossing moves fully away: the phantom that
+survives without it is single-cover, so it emits no face and only the zone state can see it.
+
 `buildOverlapRegions` composes exactly those phases and is the full-rebuild reference the
 incremental builder is tested against — **production goes through
 `regionIncremental.buildRegionsIncremental`**, which reuses three tiers across frames, each an
 identity-proof pure memo: per-line bodies and per-pair zone intersections (a dirty pair whose
 intersect comes out content-equal at clipper resolution keeps the cached array and does not
 count as changed, and a dirty pair the DIRTY-REACH test clears never runs the intersect at all
-— see the occupancy masks below); the zone's component split (a frame re-unions only the
-super-region its
-changed pairs touch, via a per-ring membership index over EVERY component including sub-sliver
-ones — membership upkeep is skipped when a frame changes more than a dozen pairs, since a
-hub-scale frame unions most of the zone regardless); and per-component faces, seeded from a
-module-level slot in `regionCache.ts`. A component is reused only when its own ring hash matches
+— see the occupancy masks above); the zone's component split (a frame re-unions only the
+super-region its changed pairs touch, via a per-ring membership index over EVERY component
+including sub-sliver ones — membership upkeep is skipped when a frame changes more than a dozen
+pairs, since a hub-scale frame unions most of the zone regardless, and forcing it on measures
+2x SLOWER at a hub); and per-component faces, seeded from a module-level slot in
+`regionCache.ts`. A component is reused only when its own ring hash matches
 AND nothing that moved this frame lies near it; the second condition is load-bearing, because a
 component's faces depend on the bodies restricted to it and not just on its outline. Face
 **spans** are arc-length intervals of stripe-BODY overlap (not center-path containment — a
@@ -2175,8 +2178,11 @@ which are a separate slot-based system where Shift flips the lattice basis.
   and threaded to `labelLayoutLocal`, `stationBoundaryRectsLocal`, `cellsAABBLocal`,
   `stationsForRect` and `stationWorldAABB`. It is ONE bundle rather than a lookup per field
   precisely so a call site cannot pass four of five and drift off the paint; on the canvas it comes
-  from `useStopMetrics(lines)`, which adds the transfers so no component has to know they are part
-  of the answer. That hook runs once per STATION component (label, hit rect, drag proxy,
+  from `useStopMetrics()`, which reads the whole slice itself so no component has to know which
+  parts are part of the answer — and so that `stopMetricsOf` can BE the selector, a module-level
+  constant rather than a closure minted per render per component, with no way to hand it a `lines`
+  that is not the store's (its cache holds one entry, so a foreign one would miss on every station
+  on every frame). That hook runs once per STATION component (label, hit rect, drag proxy,
   silhouette) and it reaches the store from INSIDE `StationView`'s memo, so its SUBSCRIPTION, not
   just its build, is the cost. `stopMetricsOf` therefore keeps a **two-level cache**: first on the
   identity of its three slices, then on the derived CONTENT they produce. Identity serves every
@@ -2188,9 +2194,9 @@ which are a separate slot-based system where Shift flips the lattice basis.
   new slices, so `Object.is` bails inside zustand and no station re-renders. The hook selects the
   LOOKUP rather than the slices precisely so that bail-out is reachable; `StationView.decoupling`
   pins the outcome. (Same bargain `measureTextLabel` makes: the builder is pure, so reusing the
-  previous function is invisible.) The lookup takes the whole **station**, not
-  just the stop: the split singleton/interchange dot default is a property of the station's stop
-  SET, and a transfer end names its station. A waypoint's `dash` and `dot` are neutralized inside
+  previous function is invisible.) The lookup takes the whole **station**, not just the stop: the
+  split singleton/interchange dot default is a property of the station's stop SET, and a transfer
+  end names its station. A waypoint's `dash` and `dot` are neutralized inside
   `labelLayoutLocal` — hidden it paints nothing, revealed the overlay replaces every style with a
   fixed circle, so layout must not shift with Show-waypoints. `cellsAABBLocal` deliberately reads
   only `half`: growing it by the dot would move marquee hits, washes and Reset-view framing, which

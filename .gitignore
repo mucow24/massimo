@@ -21,7 +21,6 @@ playwright-report/
 helvetica-neue-*.zip
 
 # Station-drag perf scratch: benchmark harnesses, the map they run against, and
-# their Playwright config. Gated behind PERF=1 (vitest) or run through
-# .perf/e2e (Playwright), so neither suite picks them up.
+# their Playwright config. All under .perf/ — deliberately NOT inside src/,
+# where an ignore rule would silently untrack a future real module.
 .perf/
-src/perf/
