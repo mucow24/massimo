@@ -621,4 +621,40 @@ describe('buildRegionsIncremental', () => {
     expect(keyA.split('|')[0]).toBe(keyB.split('|')[0]);
     expect(keyA).not.toBe(keyB);
   });
+
+  /**
+   * A crossing that VACATES.
+   *
+   * The dirty-reach test lets a cached pair intersection stand when no dirty
+   * cell lies inside both bodies. Asking that of the NEW masks alone is not
+   * enough: when an overlap moves AWAY, the new geometry is nowhere near the
+   * dirty cells it left behind, so the new masks report "no reach" and the
+   * stale intersection survives as a phantom overlap. Only the OLD masks can
+   * see territory that was vacated.
+   *
+   * The faces cannot catch this on their own — the phantom is a single-cover
+   * component, and single-cover cells emit no face (`extractFaces` skips
+   * `cover.length < 2`). The zone state is where it shows.
+   */
+  it('an overlap that moves AWAY leaves no phantom behind', () => {
+    const vShort = (y0: number): SegmentBandSpec =>
+      makeBandSpec(['vX'], {
+        pairKey: 'vX|vXb',
+        bandKey: 'b-vX',
+        centerline: [
+          { x: 100, y: y0 },
+          { x: 100, y: y0 + 60 },
+        ],
+      });
+    // Frame 1: the vertical band crosses hA at (100, 0).
+    const bands1 = [hBand('hA', 0), vShort(-30)];
+    const f1 = buildRegionsIncremental(bands1, [], null);
+    expect(f1.state.zone.length).toBeGreaterThan(0); // fixture guard: they DO cross
+
+    // Frame 2: it has moved far clear. Nothing overlaps anything.
+    const bands2 = [hBand('hA', 0), vShort(400)];
+    const f2 = buildRegionsIncremental(bands2, [], f1.state);
+    expectEqualsFull(f2, bands2);
+    expect(f2.state.zone.length).toBe(0);
+  });
 });

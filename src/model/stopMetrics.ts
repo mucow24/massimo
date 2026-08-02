@@ -117,16 +117,63 @@ const dotOuterRadius = (r: number, style: DotStyle): number =>
   r + dotStrokeRadiusDeltas(style.strokeWidth, style.shape, style.strokeAlign).silhouette;
 
 /**
- * Last build, keyed by the identity of the three slices it reads. The builder
- * is pure and its result is deterministic, so handing back the previous
- * function is invisible to callers — the same module-level-cache bargain
- * `measureTextLabel` makes, and for the same reason: this runs once per STATION
- * component on the canvas (see `useStopMetrics`), while the eager transfer
- * index inside costs O(transfers) per build. One entry is enough because every
- * canvas consumer reads the same three slices from the same store, so they all
- * miss and all hit together.
+ * Everything the returned function closes over from `stations`, extracted so
+ * two builds can be compared for CONTENT rather than for the identity of the
+ * record they came from.
+ *
+ * There are exactly two such reads, and neither responds to a station MOVE:
+ * `bodyDir` resolves a transfer's body heading from stop CELLS, and
+ * `continuesOf` reduces neighbour world positions to two BOOLEANS via the sign
+ * of a projection. Everything else `fn` needs arrives as an argument or comes
+ * from `lines`.
  */
-let lastBuild: { src: StopMetricsSource; fn: StopMetricsFn } | null = null;
+interface Derived {
+  transfers: Map<string, StopMetrics['transfers']>;
+  /** stopKey → the terminus-aware continuation bits. */
+  continues: Map<string, StopMetrics['continues']>;
+}
+
+const derivedEqual = (a: Derived, b: Derived): boolean => {
+  if (a.continues.size !== b.continues.size || a.transfers.size !== b.transfers.size) return false;
+  for (const [k, v] of a.continues) {
+    const o = b.continues.get(k);
+    if (!o || o.plus !== v.plus || o.minus !== v.minus) return false;
+  }
+  for (const [k, v] of a.transfers) {
+    const o = b.transfers.get(k);
+    if (!o || o.length !== v.length) return false;
+    for (let i = 0; i < v.length; i++) {
+      const p = v[i];
+      const q = o[i];
+      if (p.r !== q.r) return false;
+      if (!p.dir !== !q.dir) return false;
+      if (p.dir && q.dir && (p.dir.x !== q.dir.x || p.dir.y !== q.dir.y)) return false;
+    }
+  }
+  return true;
+};
+
+/**
+ * Last build, with the derived content it was built from.
+ *
+ * Two levels. The IDENTITY level is the fast path: the same three slices give
+ * back the same function, which is what makes one build serve every canvas
+ * consumer in a frame. The CONTENT level is what makes a drag cheap — a station
+ * move mints a new `stations` record every pointermove, so the identity level
+ * can never hit mid-gesture, and without the second level every
+ * `StationHitArea`, `StationLabel` and `StationSilhouette` on the map
+ * re-renders (they subscribe through `useStopMetrics`, inside StationView's
+ * memo, so the memo cannot stop them). When the derived content matches, the
+ * previous function is handed back and the cache re-binds to the new slice
+ * identities, so the frame's first caller pays the comparison and the rest hit
+ * level one.
+ *
+ * Handing back the OLD closure is sound precisely because {@link Derived} is
+ * the whole of what it captured from `stations`: same content ⇒ same answers,
+ * for the moved station as much as for any other. `lines` must still match by
+ * identity — `fn` reads it directly, per call, for every non-station field.
+ */
+let lastBuild: { src: StopMetricsSource; fn: StopMetricsFn; derived: Derived } | null = null;
 
 const cachedBuild = (src: StopMetricsSource): StopMetricsFn | null => {
   const prev = lastBuild;
@@ -151,11 +198,12 @@ const cachedBuild = (src: StopMetricsSource): StopMetricsFn | null => {
  * nothing, and a `'dash'` paints a tick rather than a dot: that one is already
  * described by `dash`, and counting it here too would clear it twice.
  *
- * The build is cached on the IDENTITY of the three slices (see `lastBuild`),
- * which is sound because every producer of them is a pure transform — a doc
- * edit yields new objects. A caller that mutated a slice in place would get the
- * stale answer, but that caller is already breaking the same-reference-on-no-op
- * rule the whole render pipeline memoizes on.
+ * The build is cached on the IDENTITY of the three slices, then on their
+ * derived CONTENT (see `lastBuild`), which is sound because every producer of
+ * them is a pure transform — a doc edit yields new objects. A caller that
+ * mutated a slice in place would get the stale answer, but that caller is
+ * already breaking the same-reference-on-no-op rule the whole render pipeline
+ * memoizes on.
  */
 export const stopMetricsOf = (src: StopMetricsSource): StopMetricsFn => {
   const hit = cachedBuild(src);
@@ -208,6 +256,36 @@ export const stopMetricsOf = (src: StopMetricsSource): StopMetricsFn => {
       continues: continuesOf(station, stop, line),
     };
   };
-  lastBuild = { src, fn };
+
+  // The content level. `continues` is resolved eagerly for every stop the
+  // document holds — the same walk `continuesOf` does lazily, ~2 projections
+  // per stop — so this build can be compared with the last one.
+  //
+  // It is a comparison pass, not a replacement: `fn` keeps computing
+  // `continues` live from the station it is HANDED, which is what keeps the
+  // reuse honest for a caller passing a station the record does not contain.
+  // There is one — `StationPlacingPreview` renders the drag ghost through
+  // StationView with a synthetic `__placing_preview__` station — and it is
+  // doubly safe: that station carries no stops, so this lookup is never
+  // invoked for it at all.
+  const derived: Derived = { transfers, continues: new Map() };
+  for (const id in src.stations) {
+    const st = src.stations[id];
+    if (!st) continue;
+    for (const stop of st.stops) {
+      derived.continues.set(
+        stopKey(id, stop.lineId),
+        continuesOf(st, stop, src.lines[stop.lineId]),
+      );
+    }
+  }
+  const prev = lastBuild;
+  if (prev && prev.src.lines === src.lines && derivedEqual(prev.derived, derived)) {
+    // Re-bind to the new identities so the rest of this frame's callers take
+    // the identity path, and hand back the function they already hold.
+    lastBuild = { src, fn: prev.fn, derived: prev.derived };
+    return prev.fn;
+  }
+  lastBuild = { src, fn, derived };
   return fn;
 };

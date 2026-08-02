@@ -125,7 +125,7 @@ function OverlayLabelFrame({
  */
 function useStationLabelLayout(station: Station, lines: Record<string, Line>) {
   const hovered = useSelection((s) => s.hoveredStationId === station.id);
-  const metrics = useStopMetrics(lines);
+  const metrics = useStopMetrics();
   // The label cell is a cell of the same lattice the stops sit in, so it
   // resolves through the same frame they do — the RING's on a bound station,
   // not the rounded octant (see `stationFrameRad`). Reference-stable, so this

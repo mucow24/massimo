@@ -41,7 +41,7 @@ export function StationHitArea({
   proxy?: boolean;
 }) {
   const { handlers, cursor, hitless } = useStationInteraction(station, onStartDrag, lines);
-  const metrics = useStopMetrics(lines);
+  const metrics = useStopMetrics();
   const lineCircles = useDoc((s) => s.lineCircles);
   const showWaypoints = useViewportStore((s) => s.showWaypoints);
 
