@@ -19,6 +19,7 @@ import { clamp } from '../util/grid';
 import { closestParamOnOffsetPath, sampleOffsetPathByArcLength } from './lineTagGeometry';
 import { leftNormal, perp, rotatedRectCorners, type Vec2 } from './vec';
 import { markerEndRing } from './markerEnd';
+import { bodyMask, masksMeet } from './bodyMask';
 import {
   type Face,
   type Ring,
@@ -605,9 +606,15 @@ export function restrictBodiesToZone(
   // Most lines are nowhere near any one component; a bbox reject is far cheaper
   // than asking clipper for an empty intersection.
   const zoneBox = ringsBbox(zone);
+  // A body's bbox spans ~26% of the world, so the bbox reject lets most lines
+  // through to a whole-body boolean against a small component. The occupancy
+  // mask is a strict refinement: cell-disjoint means the intersection is empty,
+  // which is the same branch the empty result takes below.
+  const zoneMask = bodyMask(zone);
   for (const id of ids) {
     const body = bodies.get(id)!;
     if (!boxesOverlap(ringsBbox(body), zoneBox)) continue;
+    if (!masksMeet(bodyMask(body), zoneMask)) continue;
     const rings = intersect(body, zone);
     if (rings.length) out.push({ id, rings });
   }

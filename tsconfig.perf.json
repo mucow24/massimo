@@ -1,0 +1,18 @@
+{
+  // Typecheck for the benchmark harnesses in .perf/. NOT part of `tsc -b` —
+  // `npm run build` includes `src` only, so nothing here can ever block a
+  // build or CI. Run it on demand (`npm run perf:check`) after refactoring the
+  // geometry these reach into: they import deep internals deliberately, so
+  // they rot silently, and the last set of harnesses was lost that way.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // Relaxed against the base for scratch code: a benchmark keeps values
+    // around to look at, and failing on that would make the check something
+    // people stop running.
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": [".perf/**/*.ts", "src"],
+  "references": []
+}

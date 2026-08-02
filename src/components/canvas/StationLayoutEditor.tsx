@@ -133,7 +133,7 @@ export function StationLayoutEditor({
   // Singleton vs. shared picks each stop's split default (dot style + size);
   // it's a per-station property, so resolve it once for this editor.
   const isSingleton = stationIsSingleton(station);
-  const metrics = useStopMetrics(lines);
+  const metrics = useStopMetrics();
   const cellsBox = cellsAABBLocal(station, metrics);
   // Halo reach past the cells AABB: at least one cell, and at least the
   // biggest dot's painted radius — an oversized per-stop dotSize override is

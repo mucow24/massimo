@@ -56,8 +56,7 @@ export function StationSilhouette({
    *  / `data-station-stroke` stay pure "this station is selected" markers. */
   preview?: boolean;
 }) {
-  const lines = useDoc((s) => s.lines);
-  const metrics = useStopMetrics(lines);
+  const metrics = useStopMetrics();
   const lineCircles = useDoc((s) => s.lineCircles);
   const editingStationId = useSelection((s) => s.editingStationId);
   const themeColors = useThemeColors();
