@@ -49,7 +49,6 @@ import { CircleDiameterLabel, LineCirclePlacingPreview } from './canvas/LineCirc
 import { useStationLayoutDrag } from './canvas/useStationLayoutDrag';
 import { StationLayoutEditor } from './canvas/StationLayoutEditor';
 import { GhostLattice } from './canvas/GhostLattice';
-import { STOP_SIZE } from '../geometry/orientation';
 import { stationCircle } from '../geometry/lineCircle';
 import { lineWidthOf } from '../model/lineWidth';
 import { lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
@@ -2419,18 +2418,10 @@ export function MapCanvas() {
                       layoutDrag.overlay.over?.kind === 'ghost' ? layoutDrag.overlay.over : null
                     }
                     station={stations[layoutDrag.overlay.stationId]}
+                    lines={lines}
+                    source={layoutDrag.overlay.source}
                     circle={stationCircle(stations[layoutDrag.overlay.stationId], lineCircles)}
                     zoom={view.viewport.zoom}
-                    // A stop's drop radius is its stripe's half-width; every
-                    // POINT-like source (the label cell, and any future one)
-                    // takes the unit cell's half — which is what the tail means,
-                    // not "label" specifically. Safe as a catch-all for that
-                    // reason; a source needing its own radius must branch above.
-                    dropR={
-                      layoutDrag.overlay.source.kind === 'stop'
-                        ? lineWidthOf(lines[layoutDrag.overlay.source.lineId]) / 2
-                        : STOP_SIZE / 2
-                    }
                   />
                 </g>
               )}
