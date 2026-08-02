@@ -26,6 +26,22 @@ const rect = (x: number, y: number, w: number, h: number): Ring => [
   { x, y: y + h },
 ];
 
+/** A rect rotated about its own centre. Real bodies are arc-flattened stroke
+ *  outlines — overwhelmingly short DIAGONAL edges — so a generator that only
+ *  emits axis-aligned ones would leave the fill's crossing arithmetic and the
+ *  edge pass's bbox cover untested on the geometry they actually meet. */
+const rotRect = (x: number, y: number, w: number, h: number, deg: number): Ring => {
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  const t = (deg * Math.PI) / 180;
+  const c = Math.cos(t);
+  const s = Math.sin(t);
+  return rect(x, y, w, h).map((p) => ({
+    x: cx + (p.x - cx) * c - (p.y - cy) * s,
+    y: cy + (p.x - cx) * s + (p.y - cy) * c,
+  }));
+};
+
 /** A blob: several overlapping rectangles unioned, i.e. the same shape of
  *  input a line body is — clipper output, non-self-intersecting, possibly
  *  holed, and much wider than one cell. */
@@ -37,10 +53,16 @@ const blobArb = (cx: number, cy: number, spread: number) =>
         dy: fc.integer({ min: -spread, max: spread }),
         w: fc.integer({ min: 4, max: 120 }),
         h: fc.integer({ min: 4, max: 120 }),
+        // Half axis-aligned, half rotated, deliberately. Rotated parts are
+        // what a real arc-flattened body looks like; axis-aligned ones are
+        // what produce cells with NO boundary in them, which is the only
+        // thing that exercises the scanline fill. A generator that is all
+        // diagonals stops catching a deleted fill.
+        rot: fc.oneof(fc.constant(0), fc.integer({ min: 1, max: 89 })),
       }),
       { minLength: 1, maxLength: 6 },
     )
-    .map((parts) => unionAll(parts.map((p) => rect(cx + p.dx, cy + p.dy, p.w, p.h))));
+    .map((parts) => unionAll(parts.map((p) => rotRect(cx + p.dx, cy + p.dy, p.w, p.h, p.rot))));
 
 const cellsOf = (b: { x0: number; y0: number; x1: number; y1: number }) => {
   const s = new Set<number>();
