@@ -2188,6 +2188,11 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       const dashWidth = finiteNum(o.dashWidth);
       const interlineGap = finiteNum(o.interlineGap);
       const labelGap = finiteNum(o.labelGap);
+      // Passed straight through, undefined and all: `canonicalStyleProps`
+      // rebuilds rather than spreading, so an optional that arrives undefined
+      // comes back a missing key — see its test. Re-spelling the omission here
+      // would be a second copy of a rule the funnel already owns, and one a
+      // seventh optional field could be added to only one of.
       return canonicalStyleProps('line', {
         singletonDotStyleId,
         multiDotStyleId,
@@ -2198,12 +2203,12 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
         endStyle,
         strokeWidth,
         strokeColor,
-        ...(seamColor !== undefined ? { seamColor } : {}),
-        ...(seamWidth !== undefined ? { seamWidth } : {}),
-        ...(dashLength !== undefined ? { dashLength } : {}),
-        ...(dashWidth !== undefined ? { dashWidth } : {}),
-        ...(interlineGap !== undefined ? { interlineGap } : {}),
-        ...(labelGap !== undefined ? { labelGap } : {}),
+        seamColor,
+        seamWidth,
+        dashLength,
+        dashWidth,
+        interlineGap,
+        labelGap,
       });
     }
     case 'stopDot': {

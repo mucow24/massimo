@@ -534,11 +534,6 @@ select option {
 .field-slider[data-disabled] .field-slider-range {
   cursor: default;
 }
-.options-popover-value {
-  width: 24px;
-  text-align: right;
-  color: var(--text-muted);
-}
 .options-popover-spin {
   /* Wide enough for the widest mirror PLUS the native stepper arrows, which
      Chromium overlays inside the input's right edge. Two cases set the floor:
@@ -2012,19 +2007,14 @@ button.field-select {
 .chip-btn:hover:not(:disabled) {
   background: var(--control-hover);
 }
-/* One "toggle is on" treatment (B/I, waypoint, lock): the shared accent
-   pair. The wp/lock class names stay on the JSX so tests and semantics are
-   untouched; they just all paint the same. */
-.chip-btn.active,
-.chip-btn.wp-on,
-.chip-btn.lock-on {
+/* One "toggle is on" treatment for every chip (B/I, waypoint, lock): the
+   shared accent pair, under the one `.active` class they all wear. */
+.chip-btn.active {
   background: var(--accent-bg);
   border-color: var(--accent-border);
   font-weight: 600;
 }
-.chip-btn.active:hover:not(:disabled),
-.chip-btn.wp-on:hover:not(:disabled),
-.chip-btn.lock-on:hover:not(:disabled) {
+.chip-btn.active:hover:not(:disabled) {
   background: var(--accent-bg);
 }
 
@@ -2081,21 +2071,10 @@ button.field-select {
 /* Section headers: same bold-black label typography as the other item
    popovers' rows (.bullet-popover / .text-label-popover), so every panel in
    the app reads with one hierarchy — bold headers, muted caption hints. */
-.inspector .field > label,
-.inspector .field-header > label {
+.inspector .field > label {
   font-size: var(--fs-small);
   font-weight: 700;
   color: var(--text);
-}
-/* Header row variant: the section label plus right-aligned controls (WP +
-   lock in the top row, Edit layout on the stop list). */
-.inspector .field-header {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.inspector .field-header > label {
-  margin-right: auto;
 }
 /* Inline strip of controls under a section header. */
 .inspector .field-row {
@@ -3012,7 +2991,6 @@ body:has(.app[data-theme='dark']) {
    sidebar line inspector keeps its own bolder look — these override the
    `.inspector` rules by coming later at equal specificity). */
 .station-popover .field > label,
-.station-popover .field-header > label,
 .station-popover .field-row > label,
 .station-popover .style-row label {
   color: var(--text-muted);
