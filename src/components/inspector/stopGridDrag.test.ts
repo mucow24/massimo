@@ -6,7 +6,7 @@ import {
   dragLattice,
   nudgeTarget,
   sameCell,
-  GRID_RADIUS,
+  DRAG_GRID_RADIUS,
   type WidthNode,
 } from './stopGridDrag';
 import { STOP_SIZE } from '../../geometry/orientation';
@@ -286,22 +286,15 @@ describe('computeGhosts', () => {
   });
 });
 
-// The window is centered on the node being moved, not on the anchor it hangs
-// off. Same infinite lattice either way — same pitch, same phase — but a node
-// that has walked out to the rim gets a fresh GRID_RADIUS of reach every time
-// it is grabbed, instead of being stuck inside one window nailed to the
-// cluster. That is what makes a long move walkable: drag out, release, drag
-// out again.
-describe('the ghost window follows the node being moved', () => {
+// The ghost window rides the CURSOR, not the node being dragged: the lattice
+// still hangs off the anchor (same pitch, same phase), but the block of slots
+// is centered on the pointer, so wherever the cursor goes there are slots under
+// it and a move of any length lands in a single gesture.
+describe('the ghost window follows the cursor', () => {
   const ANCHOR: WidthNode[] = [{ row: 0, col: 0, w: W }];
-  const walk = (
-    source: RowCol,
-    cursor: RowCol,
-    over: Partial<Parameters<typeof dragLattice>[0]> = {},
-  ) =>
+  const at = (cursor: RowCol, over: Partial<Parameters<typeof dragLattice>[0]> = {}) =>
     dragLattice({
       cursor,
-      source,
       wSrc: W,
       otherNodes: ANCHOR,
       basis: 'orthogonal',
@@ -309,54 +302,62 @@ describe('the ghost window follows the node being moved', () => {
       ...over,
     }).ghosts;
 
-  it('reaches GRID_RADIUS cells out from the node, not from the anchor', () => {
-    const ghosts = walk({ row: 0, col: 1 }, { row: 0, col: 5 });
-    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 1 + GRID_RADIUS }))).toBe(true);
-    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 2 + GRID_RADIUS }))).toBe(false);
+  it('centers DRAG_GRID_RADIUS cells of slots on the cursor, not on the anchor', () => {
+    // Cursor at col 5: the block spans col 5 ± DRAG_GRID_RADIUS, centered on it
+    // — nothing reaches out from the anchor at col 0.
+    const ghosts = at({ row: 0, col: 5 });
+    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 5 + DRAG_GRID_RADIUS }))).toBe(true);
+    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 5 - DRAG_GRID_RADIUS }))).toBe(true);
+    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 5 + DRAG_GRID_RADIUS + 1 }))).toBe(false);
   });
 
-  it('a node walked out to the rim gets a fresh window from where it now sits', () => {
-    const ghosts = walk({ row: 0, col: 4 }, { row: 0, col: 8 });
+  it('offers a slot right at the cursor however far it is dragged from the anchor', () => {
+    // The whole point of the change: a long move — cursor 8 cells out — still
+    // has a slot under the pointer, so the drop lands in one gesture with no
+    // drag-step-drag. Under the old node-centered window (radius 4) there was
+    // no slot within snap range out here and the release dropped nothing.
+    expect(at({ row: 0, col: 8 }).some((g) => sameCell(g, { row: 0, col: 8 }))).toBe(true);
+  });
+
+  it('a body-less node — the label, a transfer anchor — behaves the same', () => {
+    const ghosts = at({ row: 0, col: 8 }, { wSrc: STOP_SIZE, gSrc: 0, srcIsPoint: true });
     expect(ghosts.some((g) => sameCell(g, { row: 0, col: 8 }))).toBe(true);
   });
 
-  it('a body-less node — the label, a transfer anchor — walks out the same way', () => {
-    const ghosts = walk(
-      { row: 0, col: 4 },
-      { row: 0, col: 8 },
-      {
-        wSrc: STOP_SIZE,
-        gSrc: 0,
-        srcIsPoint: true,
-      },
-    );
-    expect(ghosts.some((g) => sameCell(g, { row: 0, col: 8 }))).toBe(true);
-  });
-
-  it('keeps the anchor lattice phase, healing a node that drifted off it', () => {
-    // Source parked 0.15 of a cell off-lattice: the window centers on the
-    // nearest lattice POINT, so every slot it offers is still the anchor's,
-    // and the drifted node can step back onto the axis.
-    const ghosts = walk({ row: 0.15, col: 3.15 }, { row: 0, col: 3 });
+  it('snaps the window to the anchor lattice, so every slot it offers is exact', () => {
+    // Cursor 0.15 of a cell off-lattice: the window centers on the nearest
+    // lattice POINT, so the slots stay the anchor's integer cells.
+    const ghosts = at({ row: 0.15, col: 3.15 });
     expect(ghosts.some((g) => sameCell(g, { row: 0, col: 3 }))).toBe(true);
     expect(ghosts.every((g) => Number.isInteger(g.row) && Number.isInteger(g.col))).toBe(true);
   });
 
-  it('never offers the anchor cell, even once the window has walked past it', () => {
-    // The window now covers the anchor, where the origin exclusion used to be
-    // the only thing standing between a drag and a drop straight onto it.
-    expect(walk({ row: 0, col: 2 }, { row: 0, col: 0 }).some((g) => sameCell(g, ANCHOR[0]))).toBe(
-      false,
-    );
+  it('never offers the anchor cell, even when the cursor sits on it', () => {
+    expect(at({ row: 0, col: 0 }).some((g) => sameCell(g, ANCHOR[0]))).toBe(false);
   });
 
-  it('still offers the node its own cell, so a wandering drag can come home', () => {
-    expect(
-      walk({ row: 0, col: 2 }, { row: 0, col: 3 }).some((g) => sameCell(g, { row: 0, col: 2 })),
-    ).toBe(true);
+  it('returns the anchor it projected from — nearest node to the cursor — for the editor to highlight', () => {
+    const nodes: WidthNode[] = [
+      { row: 0, col: 0, w: W },
+      { row: 0, col: 4, w: W },
+    ];
+    const common = {
+      wSrc: W,
+      otherNodes: nodes,
+      basis: 'orthogonal' as const,
+      stationRotation: 0 as const,
+    };
+    expect(dragLattice({ cursor: { row: 0, col: 1 }, ...common }).anchor).toMatchObject({
+      row: 0,
+      col: 0,
+    });
+    expect(dragLattice({ cursor: { row: 0, col: 3 }, ...common }).anchor).toMatchObject({
+      row: 0,
+      col: 4,
+    });
   });
 
-  it('nudgeTarget walks a node out too — the keyboard reaches what the drag does', () => {
+  it('nudgeTarget still rides the node — a keypress reaches one radius from where it sits', () => {
     const target = nudgeTarget({
       source: { row: 0, col: 4 },
       wSrc: W,
@@ -394,7 +395,6 @@ describe('dragLattice — stop drags anchor to stops, not the label', () => {
     const cursor = { row: 13 / 14, col: 69 / 14 };
     const { ghosts } = dragLattice({
       cursor,
-      source: { row: 13 / 14, col: 55 / 14 }, // the T stop
       wSrc: 12,
       otherNodes: [U, M, label],
       basis: 'orthogonal',
@@ -418,7 +418,6 @@ describe('dragLattice — stop drags anchor to stops, not the label', () => {
     const cursor = { row: 13 / 14, col: 56 / 14 };
     const { ghosts } = dragLattice({
       cursor,
-      source: { row: 12 / 14, col: 69 / 14 }, // T, stranded off-axis
       wSrc: 12,
       otherNodes: [U, M, label],
       basis: 'orthogonal',
@@ -607,7 +606,6 @@ describe('ghost slots are exact at every station rotation', () => {
     for (const basis of ['orthogonal', 'diagonal'] as const) {
       const { ghosts } = dragLattice({
         cursor: SOURCE,
-        source: SOURCE,
         wSrc: STOP_SIZE,
         gSrc: 0,
         otherNodes: ANCHOR,

@@ -124,36 +124,28 @@ describe('useStationLayoutDrag — stop drag', () => {
     expect(historyDepth()).toBe(0);
   });
 
-  it('walks a stop out one window at a time — the second grab re-centers on where it landed', () => {
-    // A move longer than GRID_RADIUS is made in stages: each grab windows its
-    // slots on the cell the stop is in NOW, so dropping at the rim and picking
-    // it up again carries it another full radius. Windowed on the CLUSTER
-    // instead, the second drag has no slot within snap range and drops nothing.
+  it('lands a long move in ONE drag — the window rides the cursor', () => {
+    // The payoff of cursor-centered windowing: a stop dragged 8 cells up in a
+    // single gesture drops right where the pointer is. Under the old
+    // node-centered window (radius 4) the cursor sat beyond every slot's snap
+    // range out here, so the release dropped nothing and the move had to be
+    // walked out in stages.
     seed({ a: hubStation() });
     const { ref } = fakeSvgRef();
     const { result } = renderHook(() => useStationLayoutDrag(ref, identity));
 
-    // Grab L1 at (100, 100) and take it 4 cells up: world y = 100 − 4·14 = 44.
+    // Grab L1 at (100, 100) and take it 8 cells up: world y = 100 − 8·14 = −12.
     down(result, 'a', { kind: 'stop', lineId: 'L1' }, pointerEvent({ clientX: 100, clientY: 100 }));
-    move(result, pointerEvent({ clientX: 100, clientY: 44 }));
-    up(result, pointerEvent({ clientX: 100, clientY: 44 }));
-    expect(useDoc.getState().stations.a.stops.find((s) => s.lineId === 'L1')!.row).toBeCloseTo(
-      -4,
-      3,
-    );
-
-    // Grab it where it now sits and take it 4 more: world y = 100 − 8·14 = −12.
-    down(result, 'a', { kind: 'stop', lineId: 'L1' }, pointerEvent({ clientX: 100, clientY: 44 }));
     move(result, pointerEvent({ clientX: 100, clientY: -12 }));
     up(result, pointerEvent({ clientX: 100, clientY: -12 }));
 
     const stop = useDoc.getState().stations.a.stops.find((s) => s.lineId === 'L1')!;
     expect(stop.row).toBeCloseTo(-8, 3);
     expect(stop.col).toBeCloseTo(0, 3);
-    expect(historyDepth()).toBe(2); // one entry per grab, not one per window
+    expect(historyDepth()).toBe(1); // one gesture, one entry
   });
 
-  it('publishes ghosts + the resolved drop target while dragging', () => {
+  it('publishes ghosts, the resolved drop target, and the projection anchor while dragging', () => {
     seed({ a: hubStation() });
     const { ref } = fakeSvgRef();
     const { result } = renderHook(() => useStationLayoutDrag(ref, identity));
@@ -165,6 +157,9 @@ describe('useStationLayoutDrag — stop drag', () => {
     expect(ov?.source).toEqual({ kind: 'stop', lineId: 'L1' });
     expect(ov && ov.ghosts.length).toBeGreaterThan(0);
     expect(ov?.over).toMatchObject({ kind: 'ghost', row: -1, col: 0 });
+    // The grid is projected from the OTHER stop (L2 at (0,1)) — nearest to the
+    // cursor — so that's the node the editor highlights.
+    expect(ov?.anchor).toEqual({ row: 0, col: 1 });
     up(result, pointerEvent({ clientX: 100, clientY: 86 }));
     expect(result.current.overlay).toBeNull();
   });
@@ -263,21 +258,25 @@ describe('useStationLayoutDrag — rotated station', () => {
   });
 });
 
-describe('useStationLayoutDrag — whiffed drop', () => {
-  it('a moved drag released away from any slot changes nothing and records no history', () => {
+describe('useStationLayoutDrag — no-op drag', () => {
+  it('a drag that resolves back onto the source cell changes nothing and records no history', () => {
+    // The window follows the cursor, so a moved drag always has a slot under
+    // it — there is no "released into the void" whiff any more. The remaining
+    // no-op is a drag that comes home: move off the origin (registering the
+    // gesture) then back onto it, and the nearest slot is the source's own
+    // cell, so the drop commits nothing and burns no undo entry.
     seed({ a: hubStation() });
     const { ref } = fakeSvgRef();
     const { result } = renderHook(() => useStationLayoutDrag(ref, identity));
 
-    // Drag L1 far outside the ghost lattice's reach and release.
     down(result, 'a', { kind: 'stop', lineId: 'L1' }, pointerEvent({ clientX: 100, clientY: 100 }));
-    move(result, pointerEvent({ clientX: 400, clientY: 400 }));
-    up(result, pointerEvent({ clientX: 400, clientY: 400 }));
+    move(result, pointerEvent({ clientX: 100, clientY: 86 }));
+    move(result, pointerEvent({ clientX: 100, clientY: 100 }));
+    up(result, pointerEvent({ clientX: 100, clientY: 100 }));
 
     const stop = useDoc.getState().stations.a.stops.find((s) => s.lineId === 'L1')!;
     expect(stop.row).toBeCloseTo(0, 3);
     expect(stop.col).toBeCloseTo(0, 3);
-    // The gesture's history group must commit as a no-op, not litter undo.
     expect(historyDepth()).toBe(0);
   });
 });
@@ -306,6 +305,36 @@ describe('useStationLayoutDrag — stationary Shift flips the lattice basis', ()
     });
     expect(hasCell(-1, 0)).toBe(false);
     expect(hasCell(-Math.SQRT1_2, 1 - Math.SQRT1_2)).toBe(true);
+    up(result, pointerEvent({ clientX: 100, clientY: 86, shiftKey: true }));
+  });
+
+  it('ignores OS key-repeat while Shift is HELD — no recompute per repeat', () => {
+    // Holding Shift fires keydown continuously (auto-repeat). Each one used to
+    // recompute + publish a fresh overlay, re-rendering the whole map for an
+    // identical result — a storm that drops a heavy map to seconds-per-frame.
+    // Only the leading press changes the basis; repeats must be no-ops.
+    seed({ a: hubStation() });
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useStationLayoutDrag(ref, identity));
+
+    down(result, 'a', { kind: 'stop', lineId: 'L1' }, pointerEvent({ clientX: 100, clientY: 100 }));
+    move(result, pointerEvent({ clientX: 100, clientY: 86 }));
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true }));
+    });
+    const afterPress = result.current.overlay;
+
+    // Auto-repeat keydowns (repeat: true) must not recompute: the published
+    // overlay stays the SAME object reference, so React re-renders nothing.
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true, repeat: true }),
+      );
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true, repeat: true }),
+      );
+    });
+    expect(result.current.overlay).toBe(afterPress);
     up(result, pointerEvent({ clientX: 100, clientY: 86, shiftKey: true }));
   });
 });

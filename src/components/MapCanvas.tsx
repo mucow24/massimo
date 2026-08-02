@@ -2405,6 +2405,8 @@ export function MapCanvas() {
                   swapTarget={
                     layoutDrag.overlay?.over?.kind === 'stop' ? layoutDrag.overlay.over : null
                   }
+                  anchorCell={layoutDrag.overlay?.anchor ?? null}
+                  draggingSource={layoutDrag.overlay?.source ?? null}
                 />
               </g>
               {/* Ghost lattice during a layout drag, above the dots so drop
