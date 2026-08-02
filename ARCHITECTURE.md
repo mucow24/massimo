@@ -2950,9 +2950,9 @@ same three additions.
        [LayoutNodeHandle.tsx](src/components/canvas/LayoutNodeHandle.tsx), which the editor and the
        drag's drop preview both paint through (`idle` white / `active` blue / `project` amber), so
        the two surfaces can't drift. A stop ring wraps its own line's STRIPE — half `lineWidthOf`,
-       floored by the dot it covers and by `STOP_DOT_RADIUS` so a hairline line stays grabbable —
-       not the lattice cell, which gave a thin line a default-width ring that crowded its
-       neighbours. Each grab handle carries a native `<title>` — a stop ring names the
+       never inside the dot it covers, floored only at half `LINE_WIDTH_MIN` — not the lattice
+       cell, which gave every thin line a DEFAULT-width ring: a 3-wide line with 3-wide dots wore
+       a 14-wide handle that buried the stops it was there to grab. Each grab handle carries a native `<title>` — a stop ring names the
        line it serves, an anchor ring reads "Transfer anchor" — so an interchange's identical
        rings are distinguishable on hover without a legend. The stop tooltip is
        `lineDisplayName(line)`, the **same** helper the sidebar's line row and the inspector's
