@@ -1,17 +1,12 @@
 import type { Line, LineId, Station } from '../../model/types';
 import { useDoc, useSelection } from '../../state/store';
 import { dispatchMirrored } from '../../state/mirrorDispatch';
-import {
-  STOP_DOT_RADIUS,
-  STOP_SIZE,
-  stationFrameDeg,
-  stopCenterAt,
-} from '../../geometry/orientation';
+import { STOP_SIZE, stationFrameDeg, stopCenterAt } from '../../geometry/orientation';
 import { stationCircle } from '../../geometry/lineCircle';
 import { anchorOvershootLocal, cellsAABBLocal } from '../../geometry/stationBoundary';
 import { labelLayoutLocal } from '../../geometry/labelLayout';
 import { capCenterDy } from '../../geometry/textMeasure';
-import { lineWidthOf } from '../../model/lineWidth';
+import { LINE_WIDTH_MIN, lineWidthOf } from '../../model/lineWidth';
 import { useStopMetrics } from '../useStopMetrics';
 import { lineDisplayName } from '../../model/lineNaming';
 import { useThemeColors } from '../../state/theme';
@@ -38,12 +33,11 @@ const RING_WIDTH = 0.5;
 // The active (selected / swap-target) ring reads a half-step heavier.
 const RING_ACTIVE_WIDTH = RING_WIDTH * 1.5;
 
-// Smallest stop grab ring, world units. A stop ring tracks its own line's
-// stripe width, and a hairline line (widths go down to 1) would leave a speck
-// nobody can hit; STOP_DOT_RADIUS is the smallest thing the map itself paints,
-// so it's the floor here too. Only bites when the dot is shrunk as well — a
-// default dot already asks for this radius.
-const RING_MIN_R = STOP_DOT_RADIUS;
+// Smallest stop grab ring, world units — half LINE_WIDTH_MIN, i.e. the ring
+// for the thinnest line the app can draw. Only a guard against a zero radius:
+// a 3-wide line with 3-wide dots gets a 3-wide ring, because a handle bigger
+// than the thing it grabs is what this whole ring sizing exists to avoid.
+const RING_MIN_R = LINE_WIDTH_MIN / 2;
 
 // Arrow length as a fraction of its ring's DIAMETER. In here the arrow has to
 // live inside the ring, so it takes its size from the ring — not from the dot

@@ -319,7 +319,28 @@ describe('<StationLayoutEditor /> — map-fixed chrome', () => {
     expect(stop.querySelector('path')!.getAttribute('d')).toBe(orientationArrowPath(5 * 2 * 0.88));
   });
 
-  it('floors the ring at the dot radius so a hairline line stays grabbable', () => {
+  it('gives a 3-wide line with 3-wide dots a 3-wide ring — no oversized minimum', () => {
+    // The case the sizing exists for: a thin line drawn with matching dots gets
+    // a handle the size of what it grabs, not a floor set at some other line's
+    // width. Nothing here may impose a radius above the stripe's own half-width.
+    seed();
+    const station = useDoc.getState().stations.a;
+    useDoc.setState({
+      lines: {
+        ...useDoc.getState().lines,
+        L1: { ...useDoc.getState().lines.L1, width: 3 },
+      },
+      stations: {
+        a: { ...station, stops: station.stops.map((s) => ({ ...s, dotSize: 3 })) },
+      },
+    });
+    const { container } = renderEditor();
+    const stop = container.querySelector('[data-cell-kind="stop"][data-line-id="L1"]') as Element;
+    expect(stop.querySelector('circle')!.getAttribute('r')).toBe('1.5');
+    expect(stop.querySelector('path')!.getAttribute('d')).toBe(orientationArrowPath(1.5 * 2 * 0.88));
+  });
+
+  it('floors the ring at the thinnest line the app can draw', () => {
     seed();
     const station = useDoc.getState().stations.a;
     useDoc.setState({
@@ -335,7 +356,7 @@ describe('<StationLayoutEditor /> — map-fixed chrome', () => {
     const ring = container.querySelector(
       '[data-cell-kind="stop"][data-line-id="L1"] circle',
     ) as Element;
-    expect(ring.getAttribute('r')).toBe('4');
+    expect(ring.getAttribute('r')).toBe('0.5');
   });
 
   it('keeps the active ring solid, one step heavier', () => {
