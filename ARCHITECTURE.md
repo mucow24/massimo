@@ -2946,7 +2946,13 @@ same three additions.
        multi/empty selection exits to idle). Grab rings over each real dot (each wearing the
        drawn orientation arrow, sized to fit its own ring — not off the dot like the map's hover
        badge, where a service-code disc would scale the arrow past the ring it has to live in) +
-       a label-cell ring. Each grab handle carries a native `<title>` — a stop ring names the
+       a label-cell ring. One node's ring + glyph is
+       [LayoutNodeHandle.tsx](src/components/canvas/LayoutNodeHandle.tsx), which the editor and the
+       drag's drop preview both paint through (`idle` white / `active` blue / `project` amber), so
+       the two surfaces can't drift. A stop ring wraps its own line's STRIPE — half `lineWidthOf`,
+       floored by the dot it covers and by `STOP_DOT_RADIUS` so a hairline line stays grabbable —
+       not the lattice cell, which gave a thin line a default-width ring that crowded its
+       neighbours. Each grab handle carries a native `<title>` — a stop ring names the
        line it serves, an anchor ring reads "Transfer anchor" — so an interchange's identical
        rings are distinguishable on hover without a legend. The stop tooltip is
        `lineDisplayName(line)`, the **same** helper the sidebar's line row and the inspector's

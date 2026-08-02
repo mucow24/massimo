@@ -298,6 +298,47 @@ describe('<StationLayoutEditor /> — map-fixed chrome', () => {
     expect(ring.getAttribute('fill')).toBe('rgba(0, 0, 0, 0.8)');
   });
 
+  it('shrinks the ring AND its arrow to a thin line’s stripe width', () => {
+    // A thin line's stops sit on the same 14-unit lattice as a fat one's, but
+    // its ring has no reason to be as wide as the default stripe: at r=7 two
+    // neighbouring rings touch, and the scrim swallows the thin dots between
+    // them. Dot zeroed so the dot term can't be what's under test.
+    seed();
+    const station = useDoc.getState().stations.a;
+    useDoc.setState({
+      lines: {
+        ...useDoc.getState().lines,
+        L1: { ...useDoc.getState().lines.L1, width: 10 },
+      },
+      stations: {
+        a: { ...station, stops: station.stops.map((s) => ({ ...s, dotSize: 0 })) },
+      },
+    });
+    const { container } = renderEditor();
+    const stop = container.querySelector('[data-cell-kind="stop"][data-line-id="L1"]') as Element;
+    expect(stop.querySelector('circle')!.getAttribute('r')).toBe('5');
+    expect(stop.querySelector('path')!.getAttribute('d')).toBe(orientationArrowPath(5 * 2 * 0.88));
+  });
+
+  it('floors the ring at the dot radius so a hairline line stays grabbable', () => {
+    seed();
+    const station = useDoc.getState().stations.a;
+    useDoc.setState({
+      lines: {
+        ...useDoc.getState().lines,
+        L1: { ...useDoc.getState().lines.L1, width: 1 },
+      },
+      stations: {
+        a: { ...station, stops: station.stops.map((s) => ({ ...s, dotSize: 0 })) },
+      },
+    });
+    const { container } = renderEditor();
+    const ring = container.querySelector(
+      '[data-cell-kind="stop"][data-line-id="L1"] circle',
+    ) as Element;
+    expect(ring.getAttribute('r')).toBe('4');
+  });
+
   it('keeps the active ring solid, one step heavier', () => {
     seed();
     useSelection.setState({ ...useSelection.getState(), selectedStopLineId: 'L1' });

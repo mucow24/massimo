@@ -1,5 +1,5 @@
 import type { Line, Station } from '../../model/types';
-import { STOP_SIZE, stopCenterAt } from '../../geometry/orientation';
+import { STOP_DOT_RADIUS, STOP_SIZE, stopCenterAt } from '../../geometry/orientation';
 import type { RowCol } from '../../geometry/lattice';
 import { lineWidthOf } from '../../model/lineWidth';
 import { lineDisplayName } from '../../model/lineNaming';
@@ -23,6 +23,13 @@ export const RING_WIDTH = 0.5;
 // The active (selected / swap-target / drop-preview) ring reads a half-step
 // heavier.
 export const RING_ACTIVE_WIDTH = RING_WIDTH * 1.5;
+
+// Smallest stop grab ring, world units. A stop ring tracks its own line's
+// stripe width, and a hairline line (widths go down to 1) would leave a speck
+// nobody can hit; STOP_DOT_RADIUS is the smallest thing the map itself paints,
+// so it's the floor here too. Only bites when the dot is shrunk as well — a
+// default dot already asks for this radius.
+const RING_MIN_R = STOP_DOT_RADIUS;
 
 // Arrow length as a fraction of its ring's DIAMETER. In here the arrow has to
 // live inside the ring, so it takes its size from the ring — not from the dot
@@ -105,13 +112,15 @@ export function LayoutNodeHandle({
     const line = lines[source.lineId];
     // Singleton vs. shared picks the stop's split default (dot style + size).
     const isSingleton = stationIsSingleton(station);
-    // The ring wraps the stop cell: half the stripe width, never inside an
-    // oversized dot (same reason the shield pads by maxDotR), never below
-    // the lattice cell a thin line's stop still occupies.
+    // The ring wraps the STRIPE, not the lattice cell: half this line's
+    // width, never inside an oversized dot (same reason the shield pads by
+    // maxDotR), never below the grabbable floor. Holding it at the lattice
+    // cell instead put a default-width ring on a thin line, so neighbouring
+    // rings touched and their scrims swallowed the thin dots between them.
     const r = Math.max(
       lineWidthOf(line) / 2,
       resolveDotSize(line, stop, isSingleton) / 2,
-      STOP_SIZE / 2,
+      RING_MIN_R,
     );
     return (
       <>
