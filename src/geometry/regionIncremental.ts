@@ -48,6 +48,7 @@ import type { LineId } from '../model/types';
 import type { SegmentBandSpec, StopMarkerSpec } from './interlining';
 import type { Face, Ring } from './clip';
 import { intersect } from './clip';
+import { bodyMask, cellsOfBox, dirtyReaches, masksMeet } from './bodyMask';
 import {
   boxesOverlap,
   buildLineBodies,
@@ -417,11 +418,17 @@ function buildZoneCached(
   bodies: Map<LineId, Ring[]>,
   dirtyLines: ReadonlySet<LineId>,
   prev: RegionIncrementalState | null,
+  dirtyCells: Set<number> | null,
 ): ZoneBuild {
   const boxes = new Map(ids.map((id) => [id, ringsBbox(bodies.get(id)!)]));
   const pairParts = new Map<string, Ring[]>();
   const parts: Ring[] = [];
   const changed = new Set<string>();
+  const maskFor = (id: LineId) => bodyMask(bodies.get(id)!);
+  const prevMaskFor = (id: LineId) => {
+    const old = prev?.bodies.get(id);
+    return old ? bodyMask(old) : null;
+  };
 
   for (let i = 0; i < ids.length; i++) {
     for (let j = i + 1; j < ids.length; j++) {
@@ -434,9 +441,30 @@ function buildZoneCached(
         parts.push(...cached);
         continue;
       }
-      const rings = boxesOverlap(boxes.get(a)!, boxes.get(b)!)
-        ? intersect(bodies.get(a)!, bodies.get(b)!)
-        : [];
+      // DIRTY-REACH. Outside the dirty region both bodies are identical to
+      // last frame's, so A n B can only differ at a point lying in BOTH
+      // bodies AND in a dirty cell — tested against the old masks as well as
+      // the new, since either frame's overlap there would have to move. No
+      // such cell ⇒ the cached rings are still exactly the answer.
+      if (cached && dirtyCells) {
+        const ma = maskFor(a);
+        const mb = maskFor(b);
+        const pa = prevMaskFor(a);
+        const pb = prevMaskFor(b);
+        const reaches =
+          dirtyReaches(dirtyCells, ma, mb) || (pa && pb ? dirtyReaches(dirtyCells, pa, pb) : true);
+        if (!reaches) {
+          pairParts.set(key, cached);
+          parts.push(...cached);
+          continue;
+        }
+      }
+      // MASK REJECT. A strict refinement of the bbox reject: cell-disjoint
+      // bodies cannot intersect, so [] is exactly what clipper would return.
+      const rings =
+        !boxesOverlap(boxes.get(a)!, boxes.get(b)!) || !masksMeet(maskFor(a), maskFor(b))
+          ? []
+          : intersect(bodies.get(a)!, bodies.get(b)!);
       if (cached && ringsContentEqual(cached, rings)) {
         // Clean after all: the intersect had to run to learn it, but the
         // answer is engine-indistinguishable from the cached one.
@@ -695,7 +723,9 @@ export function buildRegionsIncremental(
     };
   }
 
-  const zb = buildZoneCached(ids, bodies, dirtyLines, prev);
+  const dirtyCells = new Set<number>();
+  for (const b of dirtyBoxes) cellsOfBox(b, dirtyCells);
+  const zb = buildZoneCached(ids, bodies, dirtyLines, prev, prev ? dirtyCells : null);
   const { zone, zoneComps, pairParts } = zb;
   if (!zone.length) {
     return {

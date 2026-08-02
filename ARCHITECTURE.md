@@ -125,7 +125,8 @@ src/
     lineEnd.ts                  # line END style resolution (line default → per-terminus pin) + the round→short degrade
     stopMetrics.ts              # stopMetricsOf: the production StopMetrics lookup — everything the
                                 #   label geometry knows about one PAINTED stop, resolved through the
-                                #   helpers the canvas paints by (last-result cached)
+                                #   helpers the canvas paints by (cached on slice identity, then on
+                                #   derived content, so a drag frame re-renders no station)
     stationPacking.ts           # width-edit repack: keeps tangent stop chains packed
     lineOrder.ts                # z-order reconcile (lineOrder = the default stacking)
     lineNaming.ts               # nameForIndex/pickNextLineName + lineDisplayName (the ONE
@@ -161,6 +162,8 @@ src/
     lineRegions.ts              # overlap-face PHASES (zone → components → cells → faces) + anchor binding + exclusion holes
     regionIncremental.ts        # the live region builder: per-component reuse across frames
     regionCache.ts              # sig-keyed cache of bands+markers+faces (render + reconcile)
+    bodyMask.ts                 # per-body occupancy grid: the reject a whole-map bbox cannot give,
+                                #   plus the cross-frame dirty-reach test (only skips provable empties)
     regionReconcile.ts          # carries regionAssignments across geometry edits
     labelTokens.ts textMeasure.ts labelLayout.ts labelJustify.ts  # name → tokens → measured → placed
     lineTagGeometry.ts          # offset-path arc-length sampling for in-band tags
@@ -789,7 +792,8 @@ yielding the merged zone rings and its connected components in canonical content
 iteration order is output-visible through per-component sliver emission, so it must be a pure
 function of geometry; sub-`SLIVER_MIN_AREA` components — ~95% of them by count — are dropped
 from the significant set, and `significantComponents` is the comps-only view of the same call) →
-per component `restrictBodiesToZone` → `subdivideCells` (each cell carries its bbox;
+per component `restrictBodiesToZone` (a body's bbox spans most of the map, so the reject
+that matters is its OCCUPANCY MASK — below) → `subdivideCells` (each cell carries its bbox;
 strictly-disjoint cell/rings pairs skip the provably-empty clipper intersect) → `extractFaces` →
 one `finalizeFaces` over the merged set. A cell can never span two components, so per-component
 subdivision is equivalent to one global pass while keeping every clipper operand down to one
@@ -799,12 +803,29 @@ a window a sample is provably rejected by `pointNearFace`'s own bbox gate, so th
 the interval output byte-for-byte. Stripe bodies, marker footprints and flattened stripe paths
 all memoize per SPEC OBJECT, which is sound because interlining's reuse layer hands back the
 same spec only when value-identical (see the Memo contract).
+
+**Occupancy masks** ([geometry/bodyMask.ts](src/geometry/bodyMask.ts)) are the reject the
+whole-map body shape forces. A line body is one polygon covering everywhere that line runs, so
+its bounding box is a large fraction of the drawing and every test built on it waves through
+operands that share a box and no territory — each one a thousand-vertex clipper call to learn
+nothing. `bodyMask` is the set of `MASK_CELL`-sized grid cells a body occupies, memoized per
+ring-ARRAY identity so a clean line never re-masks. It never changes what an operation returns,
+only whether one that would have returned empty runs at all: the mask is a conservative SUPERSET
+of its body (an edge pass for cells holding boundary, an even-odd scanline fill for cells wholly
+inside a blob), so `masksMeet` returning false proves the intersection is empty. `dirtyReaches`
+carries the same reasoning across frames — outside the dirty region both bodies equal last
+frame's, so their intersection can only differ at a cell that is dirty AND in both bodies, and
+callers must ask this of the OLD masks too or an overlap that VACATED a dirty cell goes unseen.
+Both claims are property-tested against the clipper itself, and both are mutation-tested:
+deleting the fill, or dropping the old-mask term, each fails its own property.
 `buildOverlapRegions` composes exactly those phases and is the full-rebuild reference the
 incremental builder is tested against — **production goes through
 `regionIncremental.buildRegionsIncremental`**, which reuses three tiers across frames, each an
 identity-proof pure memo: per-line bodies and per-pair zone intersections (a dirty pair whose
 intersect comes out content-equal at clipper resolution keeps the cached array and does not
-count as changed); the zone's component split (a frame re-unions only the super-region its
+count as changed, and a dirty pair the DIRTY-REACH test clears never runs the intersect at all
+— see the occupancy masks below); the zone's component split (a frame re-unions only the
+super-region its
 changed pairs touch, via a per-ring membership index over EVERY component including sub-sliver
 ones — membership upkeep is skipped when a frame changes more than a dozen pairs, since a
 hub-scale frame unions most of the zone regardless); and per-component faces, seeded from a
