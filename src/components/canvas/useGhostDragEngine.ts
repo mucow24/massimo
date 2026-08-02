@@ -75,6 +75,12 @@ export function useGhostDragEngine<TDrag extends GhostDragCore, TOverlay>(
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Shift') return;
+      // Ignore OS key-repeat: holding Shift fires keydown continuously, and each
+      // one would recompute + publish a fresh overlay, re-rendering the whole
+      // map for an unchanged result — a storm that drops a heavy map to
+      // seconds-per-frame. Only the leading press and the release (never a
+      // repeat) actually change the basis; the held middle is a no-op.
+      if (e.repeat) return;
       const ds = dragRef.current;
       if (!ds || !ds.moved) return;
       updateRef.current(ds.lastMX, ds.lastMY, { altKey: e.altKey, shiftKey: e.shiftKey });

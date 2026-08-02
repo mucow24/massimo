@@ -2889,14 +2889,18 @@ same three additions.
   retired in favor of these two surfaces; its pure drag/ghost math lives on in
   [inspector/stopGridDrag.ts](src/components/inspector/stopGridDrag.ts) — `computeGhosts`,
   `findDropTarget`, `nudgeTarget`, all choosing their lattice in screen terms and reading it back
-  in station-local cells via `localLatticeOffsets`). Slots hang off an **anchor** node for pitch
-  and phase, but the WINDOW of `GRID_RADIUS` rings rides on the MOVING node's own cell
-  (`computeGhosts`' `center`, `latticeOffsets`' window shift): reach is measured from where that
-  node is now, not from the cluster, so a move longer than the radius is walked out a window at a
-  time — drop at the rim, grab again, and the next window is centered on the cell it landed in.
-  Sliding the window never moves the lattice, so ring-1 tangency and the anchor's axes survive,
-  and a node sitting off-lattice heals when the window snaps to the nearest lattice point. The
-  anchor's own cell is never a slot, however far the window has walked over it. Two surfaces:
+  in station-local cells via `localLatticeOffsets`). Slots hang off an **anchor** node — the
+  station node nearest the cursor — for pitch and phase. During a drag the WINDOW of slots rides
+  on the CURSOR at `DRAG_GRID_RADIUS` (a 5×5 block; `computeGhosts`' `center`, `latticeOffsets`'
+  window shift), so the slots always surround the pointer and a move of any length lands in one
+  gesture. A keyboard nudge has no pointer, so it rides the moving node's own cell at the wider
+  `GRID_RADIUS`, far enough for one press to clear a run of packed neighbors (a label hops past two
+  tangent stops to the free slot beyond). Sliding the window never moves the lattice, so ring-1
+  tangency and the anchor's axes survive, and a node sitting off-lattice heals when the window
+  snaps to the nearest lattice point. The anchor's own cell is never a slot. While a drag is live
+  the moving node's static handle is HIDDEN (it rides the cursor as ghosts + a true-size drop
+  preview) and the projection anchor wears an amber halo, so it's clear what a drop aligns to.
+  Two surfaces:
   1. **`editing-station-layout` mode** ([canvas/StationLayoutEditor.tsx](src/components/canvas/StationLayoutEditor.tsx)
      - [useStationLayoutDrag.ts](src/components/canvas/useStationLayoutDrag.ts)): entered via the
        inspector's **Edit layout** button (`startEditingStationLayout` preserves selection + mirror

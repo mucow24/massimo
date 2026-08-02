@@ -38,6 +38,10 @@ export type LayoutDragSource =
 export interface LayoutDragOverlay {
   stationId: StationId;
   source: LayoutDragSource;
+  /** The lattice node the ghosts are projected from — nearest to the cursor,
+   *  in station-local cells. The editor highlights it. Null only when the
+   *  station has no anchorable node. */
+  anchor: RowCol | null;
   ghosts: RowCol[];
   over: DropTarget | null;
 }
@@ -133,8 +137,9 @@ export function useStationLayoutDrag(
       stationCircle(st, doc.lineCircles),
     );
 
-    const sourceCell = sourceCellOf(st, ds.source);
-    if (!sourceCell) return;
+    // Existence guard only — bail the frame if the node vanished mid-gesture.
+    // The window no longer hangs off this cell (it rides the cursor below).
+    if (!sourceCellOf(st, ds.source)) return;
     // A hosted anchor takes the LABEL's parameters exactly: unit nominal width
     // (so ring-1 lands a full cell out from a default-width stop) and no
     // interline gap, with srcIsPoint making it body-less for the overlap check.
@@ -146,12 +151,8 @@ export function useStationLayoutDrag(
       // Anchors block slots without being lattice nodes (see anchorBlockerNodes).
       ...anchorBlockerNodes(st, ds.source.kind === 'anchor' ? ds.source.anchorId : undefined),
     ];
-    const { ghosts } = dragLattice({
+    const { anchor, ghosts } = dragLattice({
       cursor,
-      // Slots are windowed on where the node IS, so a move longer than
-      // GRID_RADIUS is walked out: drop at the rim, grab it again, and the
-      // next window is centered on the cell it just landed in.
-      source: sourceCell,
       wSrc,
       gSrc,
       srcIsPoint: isPoint,
@@ -175,7 +176,14 @@ export function useStationLayoutDrag(
         swapRadiusFor: (s) => lineWidthOf(doc.lines[s.lineId]) / (2 * STOP_SIZE) + 0.1,
       },
     );
-    setOverlay({ stationId: ds.id, source: ds.source, ghosts, over });
+    setOverlay({
+      stationId: ds.id,
+      source: ds.source,
+      // The node the grid is projected from — the editor highlights it.
+      anchor: anchor && { row: anchor.row, col: anchor.col },
+      ghosts,
+      over,
+    });
   };
   useEffect(() => {
     updateRef.current = update;

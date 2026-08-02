@@ -52,6 +52,31 @@ const RING_SCRIM = 'rgba(0, 0, 0, 0.8)';
 const LAYOUT_RING = 'rgba(255, 255, 255, 0.92)';
 const LAYOUT_RING_ACTIVE = '#5b9dff';
 
+// The node the ghost grid is projected from during a drag wears an amber halo
+// just outside its grab ring — distinct from the blue selected/swap ring, since
+// the projection anchor is the REFERENCE a drop aligns to, not the drop target.
+const LAYOUT_RING_PROJECT = '#ffc24b';
+const PROJECT_HALO_GAP = 2.5;
+const PROJECT_HALO_WIDTH = RING_WIDTH * 2;
+
+/** The amber halo marking the node the ghost grid is projected from — drawn
+ *  just outside that node's grab ring. One home for the halo, shared by the
+ *  stop, transfer-anchor, and label handles so the styling can't drift. */
+function ProjectionHalo({ cx, cy, r }: { cx: number; cy: number; r: number }) {
+  return (
+    <circle
+      data-cell-role="projection-anchor"
+      cx={cx}
+      cy={cy}
+      r={r + PROJECT_HALO_GAP}
+      fill="none"
+      stroke={LAYOUT_RING_PROJECT}
+      strokeWidth={PROJECT_HALO_WIDTH}
+      pointerEvents="none"
+    />
+  );
+}
+
 /**
  * The on-canvas station layout editor (editing-station-layout mode): a grab
  * ring over each REAL stop dot + the label cell, at world scale, above the
@@ -77,12 +102,20 @@ export function StationLayoutEditor({
   lines,
   onStartNodeDrag,
   swapTarget,
+  anchorCell = null,
+  draggingSource = null,
 }: {
   station: Station;
   lines: Record<string, Line>;
   onStartNodeDrag: (id: string, source: LayoutDragSource, e: React.PointerEvent) => void;
   /** The stop currently resolved as a swap drop target, if any. */
   swapTarget: { row: number; col: number } | null;
+  /** The node the ghost grid is projected from, in station-local cells —
+   *  highlighted so it's clear what a drop aligns to. */
+  anchorCell?: { row: number; col: number } | null;
+  /** The node being dragged right now — hidden here, since while the gesture is
+   *  live it rides the cursor as ghosts + a true-size drop preview. */
+  draggingSource?: LayoutDragSource | null;
 }) {
   const selection = useSelection();
   const rotateStop = useDoc((s) => s.rotateStop);
@@ -232,9 +265,13 @@ export function StationLayoutEditor({
       {/* Stop handles: a ring around each real dot, sized in world units, with
           the drawn orientation arrow as a badge. */}
       {station.stops.map((s) => {
+        // The dragged stop rides the cursor as ghosts + drop preview; hide the
+        // static handle so it isn't painted in two places at once.
+        if (draggingSource?.kind === 'stop' && draggingSource.lineId === s.lineId) return null;
         const c = stopCenterAt(s.row, s.col);
         const selected = selection.selectedStopLineId === s.lineId;
         const isSwap = !!swapTarget && sameCell(swapTarget, s);
+        const isAnchor = !!anchorCell && sameCell(anchorCell, s);
         const line = lines[s.lineId];
         // The ring wraps the stop cell: half the stripe width, never inside an
         // oversized dot (same reason the shield pads by maxDotR), never below
@@ -259,6 +296,7 @@ export function StationLayoutEditor({
             {...handleFor({ kind: 'stop', lineId: s.lineId as LineId })}
           >
             <title>{lineLabel}</title>
+            {isAnchor && <ProjectionHalo cx={c.x} cy={c.y} r={r} />}
             <circle
               cx={c.x}
               cy={c.y}
@@ -285,9 +323,12 @@ export function StationLayoutEditor({
           anchor mark instead of an orientation arrow (an anchor has no axis).
           Drags on the same ghost lattice as the label — a body-less point. */}
       {(station.transferAnchors ?? []).map((a) => {
+        // The dragged anchor rides the cursor; hide its static handle.
+        if (draggingSource?.kind === 'anchor' && draggingSource.anchorId === a.id) return null;
         const c = stopCenterAt(a.row, a.col);
         const r = STOP_SIZE / 2;
         const selected = selection.selectedAnchorCellId === a.id;
+        const isAnchor = !!anchorCell && sameCell(anchorCell, a);
         return (
           <g
             key={`a-${a.id}`}
@@ -300,6 +341,7 @@ export function StationLayoutEditor({
             {...handleFor({ kind: 'anchor', anchorId: a.id })}
           >
             <title>Transfer anchor</title>
+            {isAnchor && <ProjectionHalo cx={c.x} cy={c.y} r={r} />}
             <circle
               cx={c.x}
               cy={c.y}
@@ -322,45 +364,48 @@ export function StationLayoutEditor({
 
       {/* Label-cell handle. Marks the CELL anchor — the painted text may sit
           offset from it via offset/offsetPerp/align. */}
-      {(() => {
-        const c = stopCenterAt(station.label.row, station.label.col);
-        const r = STOP_SIZE / 2;
-        const selected = selection.labelSelected;
-        return (
-          <g
-            data-cell-kind="label"
-            data-cell-row={station.label.row}
-            data-cell-col={station.label.col}
-            data-selected={selected || undefined}
-            style={{ cursor: inHandMode ? undefined : 'grab' }}
-            {...handleFor({ kind: 'label' })}
-          >
-            <circle
-              cx={c.x}
-              cy={c.y}
-              r={r}
-              fill="rgba(255,255,255,0.65)"
-              pointerEvents={inHandMode ? 'none' : 'all'}
-              stroke={selected ? theme.selectionStroke : 'rgba(0,0,0,0.45)'}
-              strokeWidth={RING_WIDTH}
-            />
-            <text
-              x={c.x}
-              // Cap-centered on the alphabetic baseline — NOT dominantBaseline="central",
-              // which resolves from platform-specific font metrics (see capCenterDy).
-              y={c.y + capCenterDy(LABEL_FONT_SIZE_DEFAULT)}
-              transform={`rotate(${station.label.rotation * 45} ${c.x} ${c.y})`}
-              textAnchor="middle"
-              fontSize={LABEL_FONT_SIZE_DEFAULT}
-              fontWeight={700}
-              fill="#222"
-              style={{ pointerEvents: 'none', userSelect: 'none' }}
+      {draggingSource?.kind !== 'label' &&
+        (() => {
+          const c = stopCenterAt(station.label.row, station.label.col);
+          const r = STOP_SIZE / 2;
+          const selected = selection.labelSelected;
+          const isAnchor = !!anchorCell && sameCell(anchorCell, station.label);
+          return (
+            <g
+              data-cell-kind="label"
+              data-cell-row={station.label.row}
+              data-cell-col={station.label.col}
+              data-selected={selected || undefined}
+              style={{ cursor: inHandMode ? undefined : 'grab' }}
+              {...handleFor({ kind: 'label' })}
             >
-              L
-            </text>
-          </g>
-        );
-      })()}
+              {isAnchor && <ProjectionHalo cx={c.x} cy={c.y} r={r} />}
+              <circle
+                cx={c.x}
+                cy={c.y}
+                r={r}
+                fill="rgba(255,255,255,0.65)"
+                pointerEvents={inHandMode ? 'none' : 'all'}
+                stroke={selected ? theme.selectionStroke : 'rgba(0,0,0,0.45)'}
+                strokeWidth={RING_WIDTH}
+              />
+              <text
+                x={c.x}
+                // Cap-centered on the alphabetic baseline — NOT dominantBaseline="central",
+                // which resolves from platform-specific font metrics (see capCenterDy).
+                y={c.y + capCenterDy(LABEL_FONT_SIZE_DEFAULT)}
+                transform={`rotate(${station.label.rotation * 45} ${c.x} ${c.y})`}
+                textAnchor="middle"
+                fontSize={LABEL_FONT_SIZE_DEFAULT}
+                fontWeight={700}
+                fill="#222"
+                style={{ pointerEvents: 'none', userSelect: 'none' }}
+              >
+                L
+              </text>
+            </g>
+          );
+        })()}
     </g>
   );
 }
