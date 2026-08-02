@@ -2932,8 +2932,11 @@ same three additions.
   tangent stops to the free slot beyond). Sliding the window never moves the lattice, so ring-1
   tangency and the anchor's axes survive, and a node sitting off-lattice heals when the window
   snaps to the nearest lattice point. The anchor's own cell is never a slot. While a drag is live
-  the moving node's static handle is HIDDEN (it rides the cursor as ghosts + a true-size drop
-  preview) and the projection anchor wears an amber halo, so it's clear what a drop aligns to.
+  the moving node's static handle is HIDDEN — it rides the cursor as the amber ghost lattice plus,
+  on the snapped slot, its OWN handle in the selected state (`LayoutNodeHandle`, the one component
+  both the editor and the drop preview paint every node with, so the preview is the node as it will
+  land). The projection anchor the lattice comes from is painted amber instead of white, tying the
+  slots to their origin.
   Two surfaces:
   1. **`editing-station-layout` mode** ([canvas/StationLayoutEditor.tsx](src/components/canvas/StationLayoutEditor.tsx)
      - [useStationLayoutDrag.ts](src/components/canvas/useStationLayoutDrag.ts)): entered via the

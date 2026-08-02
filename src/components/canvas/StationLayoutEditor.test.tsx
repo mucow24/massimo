@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { StationLayoutEditor } from './StationLayoutEditor';
+import { LAYOUT_RING_PROJECT } from './LayoutNodeHandle';
 import { StationOrientationArrows, orientationArrowPath } from '../StationOrientationArrows';
 import { useDoc, useSelection, dragState } from '../../state/store';
 import { DEFAULT_DOC } from '../../model/transforms';
@@ -369,22 +370,27 @@ describe('<StationLayoutEditor /> — live-drag chrome', () => {
     expect(container.querySelector('[data-cell-kind="label"]')).toBeNull();
   });
 
-  it('haloes the projection-anchor stop so it reads as the drop reference', () => {
+  it('golds the projection-anchor stop so it reads as the drop reference', () => {
     seed();
-    // Grid projected from L2 at (0,1): it wears the amber halo; L1 does not.
+    // Grid projected from L2 at (0,1): its ring and arrow go gold; L1 stays white.
     const { container } = renderEditor({ anchorCell: { row: 0, col: 1 } });
     const l2 = container.querySelector('[data-cell-kind="stop"][data-line-id="L2"]')!;
     const l1 = container.querySelector('[data-cell-kind="stop"][data-line-id="L1"]')!;
-    expect(l2.querySelector('[data-cell-role="projection-anchor"]')).not.toBeNull();
-    expect(l1.querySelector('[data-cell-role="projection-anchor"]')).toBeNull();
+    expect(l2.querySelector('circle')!.getAttribute('stroke')).toBe(LAYOUT_RING_PROJECT);
+    expect(l2.querySelector('path')!.getAttribute('fill')).toBe(LAYOUT_RING_PROJECT);
+    expect(l1.querySelector('circle')!.getAttribute('stroke')).not.toBe(LAYOUT_RING_PROJECT);
+    expect(l1.querySelector('path')!.getAttribute('fill')).not.toBe(LAYOUT_RING_PROJECT);
+    // No extra ring around it — the colour IS the highlight.
+    expect(container.querySelector('[data-cell-role="projection-anchor"]')).toBeNull();
   });
 
-  it('haloes the label when the grid is projected from it (lone-stop drag)', () => {
+  it('golds the label when the grid is projected from it (lone-stop drag)', () => {
     seed();
-    // hubStation's label sits at (0,-1); anchoring there haloes the label cell.
+    // hubStation's label sits at (0,-1); anchoring there golds the label cell.
     const { container } = renderEditor({ anchorCell: { row: 0, col: -1 } });
     const label = container.querySelector('[data-cell-kind="label"]')!;
-    expect(label.querySelector('[data-cell-role="projection-anchor"]')).not.toBeNull();
+    expect(label.querySelector('circle')!.getAttribute('fill')).toBe(LAYOUT_RING_PROJECT);
+    expect(container.querySelector('[data-cell-role="projection-anchor"]')).toBeNull();
   });
 
   it('hides the dragged transfer-anchor handle', () => {
@@ -404,7 +410,7 @@ describe('<StationLayoutEditor /> — live-drag chrome', () => {
     expect(container.querySelector('[data-cell-kind="label"]')).not.toBeNull();
   });
 
-  it('haloes a transfer anchor when the grid is projected from it', () => {
+  it('golds a transfer anchor when the grid is projected from it', () => {
     seed();
     useDoc.setState((s) => ({
       stations: {
@@ -414,7 +420,9 @@ describe('<StationLayoutEditor /> — live-drag chrome', () => {
     }));
     const { container } = renderEditor({ anchorCell: { row: 1, col: 0 } });
     const anchor = container.querySelector('[data-cell-kind="anchor"][data-anchor-cell-id="k1"]')!;
-    expect(anchor.querySelector('[data-cell-role="projection-anchor"]')).not.toBeNull();
+    expect(anchor.querySelector('circle')!.getAttribute('stroke')).toBe(LAYOUT_RING_PROJECT);
+    expect(anchor.querySelector('g')!.getAttribute('color')).toBe(LAYOUT_RING_PROJECT);
+    expect(container.querySelector('[data-cell-role="projection-anchor"]')).toBeNull();
   });
 });
 

@@ -1,72 +1,79 @@
-import type { Station } from '../../model/types';
-import { stationCellToWorld, stopCenterAt } from '../../geometry/orientation';
+import type { Line, Station } from '../../model/types';
+import { stationCellToWorld, stationFrameDeg, stopCenterAt } from '../../geometry/orientation';
 import { sameCell, type RowCol } from '../../geometry/lattice';
-import { useThemeColors } from '../../state/theme';
-import { withAlpha } from '../../util/color';
+import { LayoutNodeHandle, LAYOUT_RING_PROJECT } from './LayoutNodeHandle';
+import type { LayoutDragSource } from './useStationLayoutDrag';
 
 /**
- * Ghost-lattice overlay shared by the on-canvas label drag and the station
- * layout editor: candidate slots rendered AT the real station in world
- * coordinates. Same visual language as the StopGrid — small zoom-invariant
- * dots for candidates, and a filled ring at the dragged node's true size on
- * the snapped slot so the drop target reads at actual scale. Pure chrome:
- * pointer-events none, excluded from export by the parent group.
+ * Ghost-lattice overlay for a station-layout drag: candidate slots rendered AT
+ * the real station in world coordinates. Small zoom-invariant dots for
+ * candidates, in the projection anchor's gold (`LAYOUT_RING_PROJECT`) so the
+ * lattice reads as belonging to the node it is projected from; on the snapped
+ * slot, the dragged node's OWN handle in its selected state, so the drop
+ * target is the thing that will land there rather than a stand-in circle.
+ * Pure chrome: pointer-events none, excluded from export by the parent group.
  */
 export function GhostLattice({
   ghosts,
   over,
   station,
+  lines,
+  source,
   circle,
   zoom,
-  dropR,
 }: {
   ghosts: RowCol[];
-  /** The snapped slot, if any — drawn as a true-size drop preview ring. */
+  /** The snapped slot, if any — drawn as a true-size drop preview. */
   over: RowCol | null;
   station: Station;
+  lines: Record<string, Line>;
+  /** The node being dragged — what the drop preview paints. */
+  source: LayoutDragSource;
   /** The ring the station is bound to, or null. Slots are lattice CELLS, so
    *  they resolve through the station's frame — a ring's, not its rounded
    *  octant — or the targets paint off the slots the drop actually lands in. */
   circle: { x: number; y: number } | null;
   zoom: number;
-  /** World radius of the node that will land on the snapped slot. */
-  dropR: number;
 }) {
-  // Accent flips with the theme so the drop targets stay visible on the
-  // dark canvas (matches the marquee / mode frames / snap guides).
-  const theme = useThemeColors();
   const toWorld = (cell: RowCol) =>
     stationCellToWorld(stopCenterAt(cell.row, cell.col), station, circle);
   return (
     <g pointerEvents="none">
       {ghosts.map((g) => {
+        // The snapped slot carries the drop preview instead of a dot; that one
+        // is drawn below, in the station's own frame.
+        if (over && sameCell(over, g)) return null;
         const p = toWorld(g);
-        const isOver = !!over && sameCell(over, g);
-        if (isOver) {
-          return (
-            <circle
-              key={`gl-${g.row.toFixed(6)},${g.col.toFixed(6)}`}
-              cx={p.x}
-              cy={p.y}
-              r={dropR}
-              fill={withAlpha(theme.accent, 0.18)}
-              stroke={theme.accent}
-              strokeWidth={2 / zoom}
-            />
-          );
-        }
         return (
           <circle
             key={`gl-${g.row.toFixed(6)},${g.col.toFixed(6)}`}
             cx={p.x}
             cy={p.y}
             r={3 / zoom}
-            fill="rgba(255,255,255,0.85)"
+            fill={LAYOUT_RING_PROJECT}
             stroke="rgba(0,0,0,0.4)"
             strokeWidth={1.25 / zoom}
           />
         );
       })}
+      {over && (
+        // The handle draws in station-LOCAL cells (and a stop's arrow points
+        // along the station's axes), so the preview rides the same frame the
+        // editor's handles do.
+        <g
+          data-drop-preview="1"
+          transform={`translate(${station.x} ${station.y}) rotate(${stationFrameDeg(station, circle)})`}
+        >
+          <LayoutNodeHandle
+            station={station}
+            lines={lines}
+            source={source}
+            cell={over}
+            state="active"
+            pointerEvents="none"
+          />
+        </g>
+      )}
     </g>
   );
 }
