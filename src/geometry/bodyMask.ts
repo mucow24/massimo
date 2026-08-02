@@ -98,6 +98,10 @@ function build(rings: Ring[]): Set<number> {
   let minY = Infinity;
   let maxY = -Infinity;
   for (const r of rings) {
+    // A ring with fewer than three vertices bounds no area, so it contributes
+    // no cells — and letting one through would leave minY/maxY at +/-Infinity
+    // and size the fill's bucket array from that.
+    if (r.length < 3) continue;
     for (let i = 0; i < r.length; i++) {
       const p = r[i];
       const q = r[(i + 1) % r.length];
@@ -110,12 +114,16 @@ function build(rings: Ring[]): Set<number> {
       if (p.y > maxY) maxY = p.y;
     }
   }
+  // Every ring was degenerate, so there is nothing to fill and no row range to
+  // derive one from.
+  if (!Number.isFinite(minY)) return cells;
   const rowLo = Math.floor(minY / MASK_CELL);
   const rowHi = Math.floor(maxY / MASK_CELL);
   const buckets: { py: number; px: number; qy: number; qx: number }[][] = new Array(
     rowHi - rowLo + 1,
   );
   for (const r of rings) {
+    if (r.length < 3) continue;
     for (let i = 0; i < r.length; i++) {
       const p = r[i];
       const q = r[(i + 1) % r.length];

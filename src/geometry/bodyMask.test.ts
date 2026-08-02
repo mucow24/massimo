@@ -231,6 +231,27 @@ describe('bodyMask — caching', () => {
     expect([...bodyMask(copy)].sort()).toEqual([...bodyMask(A)].sort());
   });
 
+  it('degenerate rings are skipped, not fatal', () => {
+    // An empty or sub-triangular ring bounds no area. Before the guard these
+    // left minY/maxY at +/-Infinity and the fill sized its bucket array from
+    // that, throwing RangeError deep inside a drag frame.
+    expect(() => bodyMask([[]])).not.toThrow();
+    expect(bodyMask([[]]).size).toBe(0);
+    expect(() => bodyMask([[{ x: 1, y: 2 }]])).not.toThrow();
+    expect(() =>
+      bodyMask([
+        [
+          { x: 1, y: 2 },
+          { x: 3, y: 4 },
+        ],
+      ]),
+    ).not.toThrow();
+    // A degenerate ring alongside a real one leaves the real one's mask intact.
+    const real = unionAll([rect(0, 0, 40, 40)]);
+    const withJunk: Ring[] = [[], ...real];
+    expect([...bodyMask(withJunk)].sort()).toEqual([...bodyMask(real)].sort());
+  });
+
   it('an empty body has an empty mask and meets nothing', () => {
     expect(bodyMask([]).size).toBe(0);
     expect(masksMeet(bodyMask([]), bodyMask(unionAll([rect(0, 0, 10, 10)])))).toBe(false);
