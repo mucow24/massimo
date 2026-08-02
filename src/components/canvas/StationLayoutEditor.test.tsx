@@ -338,7 +338,9 @@ describe('<StationLayoutEditor /> — map-fixed chrome', () => {
     const { container } = renderEditor();
     const stop = container.querySelector('[data-cell-kind="stop"][data-line-id="L1"]') as Element;
     expect(stop.querySelector('circle')!.getAttribute('r')).toBe('1.5');
-    expect(stop.querySelector('path')!.getAttribute('d')).toBe(orientationArrowPath(1.5 * 2 * 0.88));
+    expect(stop.querySelector('path')!.getAttribute('d')).toBe(
+      orientationArrowPath(1.5 * 2 * 0.88),
+    );
   });
 
   it('floors the ring at the thinnest line the app can draw', () => {
