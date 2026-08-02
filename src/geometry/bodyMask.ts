@@ -31,6 +31,18 @@
  * VACATED a dirty cell changes the result just as much as one that arrived,
  * and only the old masks can see it.
  *
+ * "Exactly the answer" means the same REGION, at the same resolution — which
+ * is the equivalence the region caches already run on, not a byte compare. A
+ * body is re-unioned whole when its line is dirty, and clipper is free to emit
+ * an unchanged polygon rotated to a different first vertex when unrelated
+ * input moved, so a reused pair result can differ from a fresh intersect by a
+ * ring rotation. That is precisely what `hashRingCanonical` was written to
+ * absorb, and it is strictly on the safe side here: the alternative is
+ * `ringsContentEqual`'s rotation-SENSITIVE compare marking the pair changed,
+ * which its own note calls out as only ever costing a missed reuse. The pair
+ * parts are unioned by `zoneComponents` and the components are ordered by
+ * content key, so no downstream boolean can see the difference.
+ *
  * Cell keys pack two signed cell indices into one number. That packing can
  * alias for absurd coordinates, and aliasing is harmless by construction: it
  * can only make two distinct cells look like one, which adds spurious

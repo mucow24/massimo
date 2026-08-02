@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { bodyMask, cellsOfBox, dirtyReaches, masksMeet, MASK_CELL } from './bodyMask';
 import { intersect, unionAll, type Ring } from './clip';
+import { ringSetKey, ringsBbox } from './lineRegions';
 
 /**
  * The mask is only allowed to skip work that would have returned nothing. Two
@@ -47,7 +48,20 @@ const cellsOf = (b: { x0: number; y0: number; x1: number; y1: number }) => {
   return s;
 };
 
-const same = (a: Ring[], b: Ring[]) => JSON.stringify(a) === JSON.stringify(b);
+/**
+ * The codebase's own notion of "the same rings": `ringSetKey`, which hashes
+ * each ring from a canonical starting vertex. That canonicalization is not a
+ * convenience — clipper is free to emit the same polygon rotated to a
+ * different first vertex when UNRELATED input moved, which is exactly the
+ * situation a reused pair result is in. A raw byte compare here reports those
+ * rotations as differences; `ringSetKey` is the equivalence every region cache
+ * in this codebase already keys on, so it is the one the reuse must satisfy.
+ * (Found the hard way: the byte compare produced a counterexample whose
+ * symmetric difference was empty and whose ring counts matched — only the
+ * start vertex had moved.)
+ */
+const same = (a: Ring[], b: Ring[]) =>
+  a.length === b.length && ringSetKey(a, ringsBbox(a)) === ringSetKey(b, ringsBbox(b));
 
 describe('bodyMask — the reject is exact', () => {
   it('mask-disjoint bodies never intersect (100 runs)', () => {
