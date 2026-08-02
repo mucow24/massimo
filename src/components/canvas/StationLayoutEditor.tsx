@@ -59,6 +59,24 @@ const LAYOUT_RING_PROJECT = '#ffc24b';
 const PROJECT_HALO_GAP = 2.5;
 const PROJECT_HALO_WIDTH = RING_WIDTH * 2;
 
+/** The amber halo marking the node the ghost grid is projected from — drawn
+ *  just outside that node's grab ring. One home for the halo, shared by the
+ *  stop, transfer-anchor, and label handles so the styling can't drift. */
+function ProjectionHalo({ cx, cy, r }: { cx: number; cy: number; r: number }) {
+  return (
+    <circle
+      data-cell-role="projection-anchor"
+      cx={cx}
+      cy={cy}
+      r={r + PROJECT_HALO_GAP}
+      fill="none"
+      stroke={LAYOUT_RING_PROJECT}
+      strokeWidth={PROJECT_HALO_WIDTH}
+      pointerEvents="none"
+    />
+  );
+}
+
 /**
  * The on-canvas station layout editor (editing-station-layout mode): a grab
  * ring over each REAL stop dot + the label cell, at world scale, above the
@@ -278,18 +296,7 @@ export function StationLayoutEditor({
             {...handleFor({ kind: 'stop', lineId: s.lineId as LineId })}
           >
             <title>{lineLabel}</title>
-            {isAnchor && (
-              <circle
-                data-cell-role="projection-anchor"
-                cx={c.x}
-                cy={c.y}
-                r={r + PROJECT_HALO_GAP}
-                fill="none"
-                stroke={LAYOUT_RING_PROJECT}
-                strokeWidth={PROJECT_HALO_WIDTH}
-                pointerEvents="none"
-              />
-            )}
+            {isAnchor && <ProjectionHalo cx={c.x} cy={c.y} r={r} />}
             <circle
               cx={c.x}
               cy={c.y}
@@ -334,18 +341,7 @@ export function StationLayoutEditor({
             {...handleFor({ kind: 'anchor', anchorId: a.id })}
           >
             <title>Transfer anchor</title>
-            {isAnchor && (
-              <circle
-                data-cell-role="projection-anchor"
-                cx={c.x}
-                cy={c.y}
-                r={r + PROJECT_HALO_GAP}
-                fill="none"
-                stroke={LAYOUT_RING_PROJECT}
-                strokeWidth={PROJECT_HALO_WIDTH}
-                pointerEvents="none"
-              />
-            )}
+            {isAnchor && <ProjectionHalo cx={c.x} cy={c.y} r={r} />}
             <circle
               cx={c.x}
               cy={c.y}
@@ -383,18 +379,7 @@ export function StationLayoutEditor({
               style={{ cursor: inHandMode ? undefined : 'grab' }}
               {...handleFor({ kind: 'label' })}
             >
-              {isAnchor && (
-                <circle
-                  data-cell-role="projection-anchor"
-                  cx={c.x}
-                  cy={c.y}
-                  r={r + PROJECT_HALO_GAP}
-                  fill="none"
-                  stroke={LAYOUT_RING_PROJECT}
-                  strokeWidth={PROJECT_HALO_WIDTH}
-                  pointerEvents="none"
-                />
-              )}
+              {isAnchor && <ProjectionHalo cx={c.x} cy={c.y} r={r} />}
               <circle
                 cx={c.x}
                 cy={c.y}

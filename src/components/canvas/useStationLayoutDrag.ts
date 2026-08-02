@@ -137,8 +137,9 @@ export function useStationLayoutDrag(
       stationCircle(st, doc.lineCircles),
     );
 
-    const sourceCell = sourceCellOf(st, ds.source);
-    if (!sourceCell) return;
+    // Existence guard only — bail the frame if the node vanished mid-gesture.
+    // The window no longer hangs off this cell (it rides the cursor below).
+    if (!sourceCellOf(st, ds.source)) return;
     // A hosted anchor takes the LABEL's parameters exactly: unit nominal width
     // (so ring-1 lands a full cell out from a default-width stop) and no
     // interline gap, with srcIsPoint making it body-less for the overlap check.
@@ -152,8 +153,6 @@ export function useStationLayoutDrag(
     ];
     const { anchor, ghosts } = dragLattice({
       cursor,
-      // Slots are windowed on the CURSOR, so wherever the pointer goes there
-      // are slots under it — a move of any length lands in one gesture.
       wSrc,
       gSrc,
       srcIsPoint: isPoint,

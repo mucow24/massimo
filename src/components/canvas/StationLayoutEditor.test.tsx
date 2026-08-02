@@ -386,6 +386,36 @@ describe('<StationLayoutEditor /> — live-drag chrome', () => {
     const label = container.querySelector('[data-cell-kind="label"]')!;
     expect(label.querySelector('[data-cell-role="projection-anchor"]')).not.toBeNull();
   });
+
+  it('hides the dragged transfer-anchor handle', () => {
+    seed();
+    useDoc.setState((s) => ({
+      stations: {
+        ...s.stations,
+        a: { ...s.stations.a, transferAnchors: [{ id: 'k1', row: 1, col: 0 }] },
+      },
+    }));
+    const { container } = renderEditor({ draggingSource: { kind: 'anchor', anchorId: 'k1' } });
+    expect(
+      container.querySelector('[data-cell-kind="anchor"][data-anchor-cell-id="k1"]'),
+    ).toBeNull();
+    // The stops and label stay put.
+    expect(container.querySelector('[data-cell-kind="stop"][data-line-id="L1"]')).not.toBeNull();
+    expect(container.querySelector('[data-cell-kind="label"]')).not.toBeNull();
+  });
+
+  it('haloes a transfer anchor when the grid is projected from it', () => {
+    seed();
+    useDoc.setState((s) => ({
+      stations: {
+        ...s.stations,
+        a: { ...s.stations.a, transferAnchors: [{ id: 'k1', row: 1, col: 0 }] },
+      },
+    }));
+    const { container } = renderEditor({ anchorCell: { row: 1, col: 0 } });
+    const anchor = container.querySelector('[data-cell-kind="anchor"][data-anchor-cell-id="k1"]')!;
+    expect(anchor.querySelector('[data-cell-role="projection-anchor"]')).not.toBeNull();
+  });
 });
 
 describe('<StationLayoutEditor /> — hand mode passes through', () => {
