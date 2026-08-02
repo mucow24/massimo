@@ -2156,11 +2156,18 @@ which are a separate slot-based system where Shift flips the lattice basis.
   precisely so a call site cannot pass four of five and drift off the paint; on the canvas it comes
   from `useStopMetrics(lines)`, which adds the transfers so no component has to know they are part
   of the answer. That hook runs once per STATION component (label, hit rect, drag proxy,
-  silhouette) while the builder indexes every transfer eagerly, so `stopMetricsOf` keeps a
-  **last-result cache** keyed on the identity of its three slices — every canvas consumer reads the
-  same slices from the same store, so they all miss and all hit together, and a station write costs
-  one build rather than one per station. (Same bargain `measureTextLabel` makes: the builder is
-  pure, so reusing the previous function is invisible.) The lookup takes the whole **station**, not
+  silhouette) and it reaches the store from INSIDE `StationView`'s memo, so its SUBSCRIPTION, not
+  just its build, is the cost. `stopMetricsOf` therefore keeps a **two-level cache**: first on the
+  identity of its three slices, then on the derived CONTENT they produce. Identity serves every
+  consumer in a frame off one build. Content is what makes a drag cheap — a station move mints a
+  new `stations` record every pointermove, so identity can never hit mid-gesture, yet the only
+  things the lookup reads out of `stations` are stop CELLS (which a move leaves alone) and the two
+  booleans of `continues` (the SIGN of a neighbour projection, which a drag essentially never
+  flips). Content-equal hands the previous function back by reference and re-binds the cache to the
+  new slices, so `Object.is` bails inside zustand and no station re-renders. The hook selects the
+  LOOKUP rather than the slices precisely so that bail-out is reachable; `StationView.decoupling`
+  pins the outcome. (Same bargain `measureTextLabel` makes: the builder is pure, so reusing the
+  previous function is invisible.) The lookup takes the whole **station**, not
   just the stop: the split singleton/interchange dot default is a property of the station's stop
   SET, and a transfer end names its station. A waypoint's `dash` and `dot` are neutralized inside
   `labelLayoutLocal` — hidden it paints nothing, revealed the overlay replaces every style with a

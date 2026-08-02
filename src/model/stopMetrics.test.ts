@@ -328,11 +328,30 @@ describe('stopMetricsOf — the last-result cache', () => {
     expect(stopMetricsOf(s)).toBe(stopMetricsOf({ ...s }));
   });
 
-  it('rebuilds when any one slice changes, so it can never answer stale', () => {
-    const s = src();
-    const first = stopMetricsOf(s);
-    expect(stopMetricsOf({ ...s, transfers: {} })).not.toBe(first);
-    expect(stopMetricsOf({ ...s, stations: {} })).not.toBe(first);
-    expect(stopMetricsOf({ ...s, lines: { L1: makeLine({ id: 'L1' }) } })).not.toBe(first);
+  it('rebuilds when any one slice changes its CONTENT, so it can never answer stale', () => {
+    // Slice IDENTITY is the fast path, not the contract: a fresh record whose
+    // derived content matches reuses on purpose (that is what keeps a drag
+    // from re-rendering every station — see stopMetrics.identity.test.ts).
+    // What must never survive is a change to something the lookup answers with.
+    const withStop = {
+      lines: { L1: makeLine({ id: 'L1' }) },
+      transfers: {},
+      stations: { s1: makeStation({ id: 's1', stops: [makeStop('L1')] }) },
+    };
+    const first = stopMetricsOf(withStop);
+    expect(
+      stopMetricsOf({
+        ...withStop,
+        transfers: {
+          t: makeTransfer({
+            id: 't',
+            a: { stationId: 's1', lineId: 'L1' },
+            b: { stationId: 's2', lineId: 'L1' },
+          }),
+        },
+      }),
+    ).not.toBe(first);
+    expect(stopMetricsOf({ ...withStop, stations: {} })).not.toBe(first);
+    expect(stopMetricsOf({ ...withStop, lines: { L1: makeLine({ id: 'L1' }) } })).not.toBe(first);
   });
 });
