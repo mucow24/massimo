@@ -20,7 +20,10 @@ playwright-report/
 # Source archive for fonts (extracted into public/fonts/)
 helvetica-neue-*.zip
 
-# Station-drag perf scratch: benchmark harnesses, the map they run against, and
-# their Playwright config. All under .perf/ — deliberately NOT inside src/,
-# where an ignore rule would silently untrack a future real module.
-.perf/
+# Drag-perf harnesses live in .perf/ and ARE tracked (see .perf/README.md) —
+# no npm gate or CI job can see them, and the last set was lost by being
+# untracked. What stays out: the maps they measure (drawings, not fixtures, and
+# megabytes each) and the digests they emit.
+.perf/*.massimo.json
+.perf/*.txt
+.perf/*.local.*
