@@ -1039,9 +1039,9 @@ export function hoveredChrome(s: SelectionState): HoveredCanvasItem | null {
 
 // ---- derived-selection selectors: one named home for "what is selected" ----
 
-// The single selected item across ALL four item-type lists, or null when the
-// total count isn't exactly one. Lets the inspector + item popovers gate on one
-// shared notion instead of each hand-checking the other three lists' lengths
+// The single selected item across EVERY multi-select item list, or null when
+// the total count isn't exactly one. Lets the inspector + item popovers gate on
+// one shared notion instead of each hand-checking the other lists' lengths
 // (which had drifted — a co-selected bullet used to leak its popover open).
 export type SoleSelection =
   | { type: 'station'; id: StationId }

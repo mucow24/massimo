@@ -328,8 +328,8 @@ export function mergeLockedIntoStack(stack: HitEntry[], locked: HitEntry[]): Hit
 
 /**
  * The current selection as a deep-pick cursor, or null when there is no sole
- * selected entity. Extends `soleSelection` (the five multi-select item types)
- * with the single-id primaries it doesn't cover: line, transfer, line tag —
+ * selected entity. Extends `soleSelection` (the multi-select item lists) with
+ * the single-id primaries it doesn't cover: line, transfer, line tag —
  * without those, cycling would restart at the top every time it passed
  * through a line.
  */

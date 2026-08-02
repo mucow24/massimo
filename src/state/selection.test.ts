@@ -834,6 +834,39 @@ describe('soleSelection', () => {
     });
     expect(soleSelection(useSelection.getState())).toBeNull();
   });
+
+  // The whole set at once, derived from the production wipe helper rather than
+  // hand-listed — the same reason this file's beforeEach resets through it. The
+  // arms above pin the kinds whose failure had a story; this pins the RULE they
+  // are instances of, and a list added to `clearedSelections` joins it for free.
+  //
+  // The rule is load-bearing because `total` sums EVERY list while the arms are
+  // written out one by one: a list that joins the sum without an arm makes its
+  // lone selection fall through to soleSelection's closing `return null`, and
+  // neither consumer says so — ItemPopovers just draws nothing, and the
+  // alt-click deep-pick (hitStack.currentHitEntity) silently loses its cycle
+  // cursor and restarts from the top. Anchors shipped exactly that way once.
+  describe('every multi-select list has an arm of its own', () => {
+    const listFields = Object.entries(clearedSelections())
+      .filter(([, v]) => Array.isArray(v))
+      .map(([k]) => k);
+
+    it('resolves a lone selection in each, under a type no other list claims', () => {
+      // Guards the derivation itself: a shape change that matched nothing here
+      // would leave the loop below vacuously green.
+      expect(listFields.length).toBeGreaterThan(0);
+      const types = listFields.map((field) => {
+        useSelection.setState({ ...clearedSelections(), [field]: ['x1'] });
+        const sole = soleSelection(useSelection.getState());
+        expect(sole, `${field} has no soleSelection arm`).not.toBeNull();
+        // Catches an arm that reads the WRONG list — the shape the missing-arm
+        // bug actually took, which was `{ svgImage, id: undefined }`.
+        expect(sole?.id, `${field}'s arm read another list`).toBe('x1');
+        return sole?.type;
+      });
+      expect(new Set(types).size, 'two lists share one arm').toBe(listFields.length);
+    });
+  });
 });
 
 describe('replace/set selection drops a stale sibling primary (transfer + line)', () => {
