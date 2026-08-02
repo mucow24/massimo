@@ -1,7 +1,12 @@
 import type { Line, LineId, Station } from '../../model/types';
 import { useDoc, useSelection } from '../../state/store';
 import { dispatchMirrored } from '../../state/mirrorDispatch';
-import { STOP_SIZE, stationFrameDeg, stopCenterAt } from '../../geometry/orientation';
+import {
+  STOP_DOT_RADIUS,
+  STOP_SIZE,
+  stationFrameDeg,
+  stopCenterAt,
+} from '../../geometry/orientation';
 import { stationCircle } from '../../geometry/lineCircle';
 import { anchorOvershootLocal, cellsAABBLocal } from '../../geometry/stationBoundary';
 import { labelLayoutLocal } from '../../geometry/labelLayout';
@@ -32,6 +37,13 @@ import type { LayoutDragSource } from './useStationLayoutDrag';
 const RING_WIDTH = 0.5;
 // The active (selected / swap-target) ring reads a half-step heavier.
 const RING_ACTIVE_WIDTH = RING_WIDTH * 1.5;
+
+// Smallest stop grab ring, world units. A stop ring tracks its own line's
+// stripe width, and a hairline line (widths go down to 1) would leave a speck
+// nobody can hit; STOP_DOT_RADIUS is the smallest thing the map itself paints,
+// so it's the floor here too. Only bites when the dot is shrunk as well — a
+// default dot already asks for this radius.
+const RING_MIN_R = STOP_DOT_RADIUS;
 
 // Arrow length as a fraction of its ring's DIAMETER. In here the arrow has to
 // live inside the ring, so it takes its size from the ring — not from the dot
@@ -273,13 +285,15 @@ export function StationLayoutEditor({
         const isSwap = !!swapTarget && sameCell(swapTarget, s);
         const isAnchor = !!anchorCell && sameCell(anchorCell, s);
         const line = lines[s.lineId];
-        // The ring wraps the stop cell: half the stripe width, never inside an
-        // oversized dot (same reason the shield pads by maxDotR), never below
-        // the lattice cell a thin line's stop still occupies.
+        // The ring wraps the STRIPE, not the lattice cell: half this line's
+        // width, never inside an oversized dot (same reason the shield pads by
+        // maxDotR), never below the grabbable floor. Holding it at the lattice
+        // cell instead put a default-width ring on a thin line, so neighbouring
+        // rings touched and their scrims swallowed the thin dots between them.
         const r = Math.max(
           lineWidthOf(line) / 2,
           resolveDotSize(line, s, isSingleton) / 2,
-          STOP_SIZE / 2,
+          RING_MIN_R,
         );
         // Native tooltip naming the line this stop serves — the shared
         // user-facing line name, same as the sidebar row and the inspector badge.
