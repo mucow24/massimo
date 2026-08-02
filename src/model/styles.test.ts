@@ -1037,6 +1037,40 @@ describe('canonicalStyleProps — quarter-unit grids', () => {
     const out = canonicalStyleProps('transfer', { ...base, thickness: 4.25 });
     expect(out.thickness).toBe(4.25);
   });
+
+  // The single owner of "an absent optional stays ABSENT" for line props, and
+  // the reason its callers don't each re-implement the omission: it rebuilds
+  // rather than spreading, so a key handed in EXPLICITLY undefined comes back
+  // missing, not present-and-undefined. serialize's sanitizeStyleProps leans on
+  // exactly that — it reads six optionals off untyped JSON, where a malformed
+  // or absent one IS undefined, and passes them straight through.
+  //
+  // The distinction is not cosmetic. A present-but-undefined key survives the
+  // structural clone into localStorage as an explicit `null` and comes back a
+  // real value, and `stylePropsEqual` compares absence, so a tagged line would
+  // stop matching the style it wears and read as "Custom".
+  it('omits an optional handed in as an explicit undefined, rather than keeping the key', () => {
+    const base = defaultStyleProps(DEFAULT_DOC, 'line')!;
+    const out = canonicalStyleProps('line', {
+      ...base,
+      seamColor: undefined,
+      seamWidth: undefined,
+      dashLength: undefined,
+      dashWidth: undefined,
+      interlineGap: undefined,
+      labelGap: undefined,
+    });
+    for (const key of [
+      'seamColor',
+      'seamWidth',
+      'dashLength',
+      'dashWidth',
+      'interlineGap',
+      'labelGap',
+    ]) {
+      expect(out, `${key} survived as a present key`).not.toHaveProperty(key);
+    }
+  });
 });
 
 describe('updateStyleProps', () => {
