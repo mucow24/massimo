@@ -183,9 +183,9 @@ function applyMode(
  *                      so the alt-marquee is how one gets re-selected to
  *                      reach its popover's unlock toggle.
  *
- * All five selectable item types (stations, route bullets, text labels,
- * polygons, svg images) participate; the same mode applies independently
- * to each type.
+ * Every marquee-selectable item type participates — stations, route bullets,
+ * text labels, polygons, svg images, free transfer anchors and line circles
+ * (see `hitsForRect`) — and the same mode applies independently to each.
  */
 export function useRectSelect(
   svgRef: RefObject<SVGSVGElement | null>,

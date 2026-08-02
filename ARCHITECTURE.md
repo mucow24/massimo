@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `014df54` (2026-07-31, #406) — verified against the live source.** This
+**Up to date as of commit `6404cfb` (2026-08-01, #414) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -380,16 +380,21 @@ stamps its props onto the item through the canonical setters and tags it (`style
 tagged => the item's covered values equal the style's props); editing a covered field detaches
 the item back to "Custom"; redefining a style (Styles-panel editor or "Save style..." over the
 same name) re-stamps its tagged users in the same undo entry; new items are stamped with their
-kind's DESIGNATED default style on creation. Defaultness is explicit and id-keyed, never
-name-derived: `styleDefaults` maps each kind to one of its styles (`setDefaultStyle` re-assigns
-it — the panel's star), with three structural invariants enforced on both load paths by
-`ensureStyleInvariants` (serialize.ts): every kind has >= 1 style (empty kinds get their
-factory Default injected; `deleteStyle` refuses last-of-kind and re-points the designation when
-the default itself is deleted), every `styleDefaults` entry resolves to a style of its
-kind, and every line style's dot-TYPE ids (`singleton`/`multiDotStyleId`) name live `stopDot`
-styles. That last one is what keeps dot type STAMPABLE: the setters no-op on an id that doesn't
-resolve, so a def naming a deleted dot style is unmatchable — applying it leaves the line tagged
-over diverged values and the next load strips the tag, i.e. the style silently reads "Custom"
+kind's DESIGNATED default style on creation. An optional prop that is OFF is **absent**, never
+present-and-undefined, and `canonicalStyleProps` is the sole owner of that rule — it rebuilds a
+props object field by field, so every producer (capture, the panel's edits, `sanitizeStyleProps`
+over untyped file data) hands it an undefined and gets a missing key back rather than re-spelling
+the omission. That matters because the tagged invariant is compared by `stylePropsEqual`, which
+reads ABSENCE: one stray present-and-undefined key would read every wearer as "Custom" on load.
+Defaultness is explicit and id-keyed, never name-derived: `styleDefaults` maps each kind to one of
+its styles (`setDefaultStyle` re-assigns it — the panel's star), with three structural invariants
+enforced on both load paths by `ensureStyleInvariants` (serialize.ts): every kind has >= 1 style
+(empty kinds get their factory Default injected; `deleteStyle` refuses last-of-kind and re-points
+the designation when the default itself is deleted), every `styleDefaults` entry resolves to a
+style of its kind, and every line style's dot-TYPE ids (`singleton`/`multiDotStyleId`) name live
+`stopDot` styles. That last one is what keeps dot type STAMPABLE: the setters no-op on an id that
+doesn't resolve, so a def naming a deleted dot style is unmatchable — applying it leaves the line
+tagged over diverged values and the next load strips the tag, i.e. the style silently reads "Custom"
 again after every save/load. A present-but-dangling (or wrong-kind) id is re-pointed at the
 designated default dot; `deleteStyle` re-points the defs it can see at delete time.
 See [styles.ts](src/model/styles.ts).
@@ -2656,8 +2661,8 @@ popover/handles). Cursor-following ghost previews (`*PlacingPreview`, all `opaci
 `ItemPopovers` mounts the single popover for the sole selection — including the station editor
 (see UI chrome) and the transfer popover (whose selection is the single-id
 `selectedTransferId` primary outside `soleSelection`) — plus the one shared `SelectionPopover`
-when **≥2 items** are selected across the six lists (idle only): a count summary + Lock all /
-Unlock all / Delete all over the whole group.
+when **≥2 items** are selected across the seven multi-select lists (idle only): a count summary +
+Lock all / Unlock all / Delete all over the whole group.
 Every panel — those, the line editor and the station layout editor — is **docked to the
 top-right corner of what's visible of the host** by `usePinnedPopover`, right-aligned on the
 panel's own measured width (248 for the item popovers, 320 for the station/line editors) 8px

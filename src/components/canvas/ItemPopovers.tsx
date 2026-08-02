@@ -15,11 +15,12 @@ import { LineCirclePopover } from '../LineCirclePopover';
 
 /**
  * Mounts the single popover for the current sole selection — a station, route
- * bullet, text label, polygon, svg image, or transfer. Driven by
- * `soleSelection` for the five multi-select types, so a popover only shows
- * when exactly one item across every type is selected (a co-selected item of
- * another type can't leak one open); transfers are a single-id primary outside
- * `soleSelection`, mutually exclusive with the list selections via
+ * bullet, text label, polygon, svg image, line circle, or transfer (a free
+ * anchor is selectable but deliberately has none). Driven by `soleSelection`
+ * for the multi-select lists, so a popover only shows when exactly one item
+ * across every list is selected (a co-selected item of another kind can't leak
+ * one open); transfers are a single-id primary outside `soleSelection`,
+ * mutually exclusive with the list selections via
  * SIBLING_PRIMARY_CLEAR. Peeled out of MapCanvas so the canvas no longer
  * carries the near-identical gating blocks + their popover imports.
  *
@@ -106,7 +107,7 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
 
   const sole = soleSelection(selection);
   if (!sole) {
-    // ≥2 items across the six multi-select lists: ONE popover for the whole
+    // ≥2 items across the multi-select lists: ONE popover for the whole
     // group (count summary + bulk lock/unlock/delete). Idle-only — the modes
     // that preserve a selection (placing-label's marquee) shouldn't pop a
     // group editor under their placement clicks, mirroring the station gate
