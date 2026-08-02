@@ -1,93 +1,22 @@
 import type { Line, LineId, Station } from '../../model/types';
 import { useDoc, useSelection } from '../../state/store';
 import { dispatchMirrored } from '../../state/mirrorDispatch';
-import {
-  STOP_DOT_RADIUS,
-  STOP_SIZE,
-  stationFrameDeg,
-  stopCenterAt,
-} from '../../geometry/orientation';
+import { STOP_SIZE, stationFrameDeg } from '../../geometry/orientation';
 import { stationCircle } from '../../geometry/lineCircle';
 import { anchorOvershootLocal, cellsAABBLocal } from '../../geometry/stationBoundary';
 import { labelLayoutLocal } from '../../geometry/labelLayout';
-import { capCenterDy } from '../../geometry/textMeasure';
-import { lineWidthOf } from '../../model/lineWidth';
 import { useStopMetrics } from '../useStopMetrics';
-import { lineDisplayName } from '../../model/lineNaming';
-import { useThemeColors } from '../../state/theme';
 import { resolveDotSize } from '../../model/dotSize';
-import {
-  effectiveStationLabelStyle,
-  LABEL_FONT_SIZE_DEFAULT,
-  stationIsSingleton,
-} from '../../model/transforms';
+import { effectiveStationLabelStyle, stationIsSingleton } from '../../model/transforms';
 import { sameCell } from '../inspector/stopGridDrag';
-import { OrientationArrow } from '../StationOrientationArrows';
-import { AnchorMark, ANCHOR_ICON_BOX } from '../AnchorGlyph';
+import { LayoutNodeHandle, type LayoutHandleState } from './LayoutNodeHandle';
 import type { LayoutDragSource } from './useStationLayoutDrag';
 
-// Every handle is sized in WORLD units — geometry AND stroke weight — so it
-// grows and shrinks with the map, like the station it wraps, and reads exactly
-// the same at every zoom. Sizing off the COMMITTED zoom (`X / zoom`) held a
-// screen size that went stale mid-gesture and snapped when the camera
-// committed; holding only the WEIGHT screen-constant (vector-effect, the
-// selection ring's recipe) leaves the weight fighting world-sized geometry as
-// you zoom. Read the number against the ring it draws, not against a screen
-// weight: 0.5 on the default r=7 ring is a fine hairline.
-const RING_WIDTH = 0.5;
-// The active (selected / swap-target) ring reads a half-step heavier.
-const RING_ACTIVE_WIDTH = RING_WIDTH * 1.5;
-
-// Smallest stop grab ring, world units. A stop ring tracks its own line's
-// stripe width, and a hairline line (widths go down to 1) would leave a speck
-// nobody can hit; STOP_DOT_RADIUS is the smallest thing the map itself paints,
-// so it's the floor here too. Only bites when the dot is shrunk as well — a
-// default dot already asks for this radius.
-const RING_MIN_R = STOP_DOT_RADIUS;
-
-// Arrow length as a fraction of its ring's DIAMETER. In here the arrow has to
-// live inside the ring, so it takes its size from the ring — not from the dot
-// like the map's hover badge, where a service-code disc (12) scaled the arrow
-// past the ring it would have to fit in.
-const ARROW_FIT = 0.88;
-
-// Scrim inside each stop ring. A dot carrying the line's service code puts text
-// directly under the orientation glyph, where the two compete and neither
-// reads; a wash over the dot settles it in the arrow's favor.
-const RING_SCRIM = 'rgba(0, 0, 0, 0.8)';
-
-// The editor dims the whole map behind it (see MapCanvas), so its rings read
-// against a DARK backdrop in BOTH themes: a light ring for idle stops, a
-// bright accent for the active/swap stop. High contrast on the dim is the
-// whole point — the old thin, theme-accent (dark-blue in light mode) ring is
-// exactly what the redesign replaces.
-const LAYOUT_RING = 'rgba(255, 255, 255, 0.92)';
-const LAYOUT_RING_ACTIVE = '#5b9dff';
-
-// The node the ghost grid is projected from during a drag wears an amber halo
-// just outside its grab ring — distinct from the blue selected/swap ring, since
-// the projection anchor is the REFERENCE a drop aligns to, not the drop target.
-const LAYOUT_RING_PROJECT = '#ffc24b';
-const PROJECT_HALO_GAP = 2.5;
-const PROJECT_HALO_WIDTH = RING_WIDTH * 2;
-
-/** The amber halo marking the node the ghost grid is projected from — drawn
- *  just outside that node's grab ring. One home for the halo, shared by the
- *  stop, transfer-anchor, and label handles so the styling can't drift. */
-function ProjectionHalo({ cx, cy, r }: { cx: number; cy: number; r: number }) {
-  return (
-    <circle
-      data-cell-role="projection-anchor"
-      cx={cx}
-      cy={cy}
-      r={r + PROJECT_HALO_GAP}
-      fill="none"
-      stroke={LAYOUT_RING_PROJECT}
-      strokeWidth={PROJECT_HALO_WIDTH}
-      pointerEvents="none"
-    />
-  );
-}
+/** Amber for the ghost lattice's origin, blue for selected / swap / drop —
+ *  the projection anchor wins, since it says where the whole lattice came
+ *  from and the blue only marks one node. */
+const handleState = (isProjectionAnchor: boolean, isActive: boolean): LayoutHandleState =>
+  isProjectionAnchor ? 'project' : isActive ? 'active' : 'idle';
 
 /**
  * The on-canvas station layout editor (editing-station-layout mode): a grab
@@ -133,9 +62,6 @@ export function StationLayoutEditor({
   const rotateStop = useDoc((s) => s.rotateStop);
   const rotateLabel = useDoc((s) => s.rotateLabel);
 
-  // Theme drives the label-handle stroke. Nothing here reads the dot's COLOR
-  // any more — the ring scrim darkens every dot, so the arrow is always white.
-  const theme = useThemeColors();
   const inHandMode = selection.toolMode === 'hand' || selection.spaceHeld;
   // Every handle here is drawn at a lattice CELL, so the editor turns with the
   // frame that resolves those cells — a bound station's ring, not its rounded
@@ -280,24 +206,9 @@ export function StationLayoutEditor({
         // The dragged stop rides the cursor as ghosts + drop preview; hide the
         // static handle so it isn't painted in two places at once.
         if (draggingSource?.kind === 'stop' && draggingSource.lineId === s.lineId) return null;
-        const c = stopCenterAt(s.row, s.col);
         const selected = selection.selectedStopLineId === s.lineId;
         const isSwap = !!swapTarget && sameCell(swapTarget, s);
         const isAnchor = !!anchorCell && sameCell(anchorCell, s);
-        const line = lines[s.lineId];
-        // The ring wraps the STRIPE, not the lattice cell: half this line's
-        // width, never inside an oversized dot (same reason the shield pads by
-        // maxDotR), never below the grabbable floor. Holding it at the lattice
-        // cell instead put a default-width ring on a thin line, so neighbouring
-        // rings touched and their scrims swallowed the thin dots between them.
-        const r = Math.max(
-          lineWidthOf(line) / 2,
-          resolveDotSize(line, s, isSingleton) / 2,
-          RING_MIN_R,
-        );
-        // Native tooltip naming the line this stop serves — the shared
-        // user-facing line name, same as the sidebar row and the inspector badge.
-        const lineLabel = lineDisplayName(line);
         return (
           <g
             key={`h-${s.lineId}`}
@@ -309,25 +220,13 @@ export function StationLayoutEditor({
             style={{ cursor: inHandMode ? undefined : 'grab' }}
             {...handleFor({ kind: 'stop', lineId: s.lineId as LineId })}
           >
-            <title>{lineLabel}</title>
-            {isAnchor && <ProjectionHalo cx={c.x} cy={c.y} r={r} />}
-            <circle
-              cx={c.x}
-              cy={c.y}
-              r={r}
-              fill={RING_SCRIM}
+            <LayoutNodeHandle
+              station={station}
+              lines={lines}
+              source={{ kind: 'stop', lineId: s.lineId as LineId }}
+              cell={s}
+              state={handleState(isAnchor, selected || isSwap)}
               pointerEvents={inHandMode ? 'none' : 'all'}
-              stroke={selected || isSwap ? LAYOUT_RING_ACTIVE : LAYOUT_RING}
-              strokeWidth={selected || isSwap ? RING_ACTIVE_WIDTH : RING_WIDTH}
-            />
-            <OrientationArrow
-              x={c.x}
-              y={c.y}
-              size={r * 2 * ARROW_FIT}
-              orientation={s.orientation}
-              lineId={s.lineId}
-              fill="#fff"
-              viaCircle={s.viaCircle}
             />
           </g>
         );
@@ -339,8 +238,6 @@ export function StationLayoutEditor({
       {(station.transferAnchors ?? []).map((a) => {
         // The dragged anchor rides the cursor; hide its static handle.
         if (draggingSource?.kind === 'anchor' && draggingSource.anchorId === a.id) return null;
-        const c = stopCenterAt(a.row, a.col);
-        const r = STOP_SIZE / 2;
         const selected = selection.selectedAnchorCellId === a.id;
         const isAnchor = !!anchorCell && sameCell(anchorCell, a);
         return (
@@ -354,24 +251,14 @@ export function StationLayoutEditor({
             style={{ cursor: inHandMode ? undefined : 'grab' }}
             {...handleFor({ kind: 'anchor', anchorId: a.id })}
           >
-            <title>Transfer anchor</title>
-            {isAnchor && <ProjectionHalo cx={c.x} cy={c.y} r={r} />}
-            <circle
-              cx={c.x}
-              cy={c.y}
-              r={r}
-              fill={RING_SCRIM}
+            <LayoutNodeHandle
+              station={station}
+              lines={lines}
+              source={{ kind: 'anchor', anchorId: a.id }}
+              cell={a}
+              state={handleState(isAnchor, selected)}
               pointerEvents={inHandMode ? 'none' : 'all'}
-              stroke={selected ? LAYOUT_RING_ACTIVE : LAYOUT_RING}
-              strokeWidth={selected ? RING_ACTIVE_WIDTH : RING_WIDTH}
             />
-            <g
-              transform={`translate(${c.x - r} ${c.y - r}) scale(${(r * 2) / ANCHOR_ICON_BOX})`}
-              color="#fff"
-              pointerEvents="none"
-            >
-              <AnchorMark strokeWidth={1.6} />
-            </g>
           </g>
         );
       })}
@@ -380,8 +267,6 @@ export function StationLayoutEditor({
           offset from it via offset/offsetPerp/align. */}
       {draggingSource?.kind !== 'label' &&
         (() => {
-          const c = stopCenterAt(station.label.row, station.label.col);
-          const r = STOP_SIZE / 2;
           const selected = selection.labelSelected;
           const isAnchor = !!anchorCell && sameCell(anchorCell, station.label);
           return (
@@ -393,30 +278,14 @@ export function StationLayoutEditor({
               style={{ cursor: inHandMode ? undefined : 'grab' }}
               {...handleFor({ kind: 'label' })}
             >
-              {isAnchor && <ProjectionHalo cx={c.x} cy={c.y} r={r} />}
-              <circle
-                cx={c.x}
-                cy={c.y}
-                r={r}
-                fill="rgba(255,255,255,0.65)"
+              <LayoutNodeHandle
+                station={station}
+                lines={lines}
+                source={{ kind: 'label' }}
+                cell={station.label}
+                state={handleState(isAnchor, selected)}
                 pointerEvents={inHandMode ? 'none' : 'all'}
-                stroke={selected ? theme.selectionStroke : 'rgba(0,0,0,0.45)'}
-                strokeWidth={RING_WIDTH}
               />
-              <text
-                x={c.x}
-                // Cap-centered on the alphabetic baseline — NOT dominantBaseline="central",
-                // which resolves from platform-specific font metrics (see capCenterDy).
-                y={c.y + capCenterDy(LABEL_FONT_SIZE_DEFAULT)}
-                transform={`rotate(${station.label.rotation * 45} ${c.x} ${c.y})`}
-                textAnchor="middle"
-                fontSize={LABEL_FONT_SIZE_DEFAULT}
-                fontWeight={700}
-                fill="#222"
-                style={{ pointerEvents: 'none', userSelect: 'none' }}
-              >
-                L
-              </text>
             </g>
           );
         })()}
