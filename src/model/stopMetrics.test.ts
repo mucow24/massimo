@@ -222,6 +222,32 @@ describe('stopMetricsOf — transfer caps', () => {
     expect(fn(st, st.stops[1]).transfers).toEqual([{ r: 6, dir: { x: -1, y: 0 } }]);
   });
 
+  it('a SELF-transfer caps its own stop, with no body direction to lean', () => {
+    // Both ends name the one dot, so the transfer is a plain disc there: each
+    // end indexes the stop, and neither has anywhere to leave toward. Two
+    // identical entries rather than one — harmless, since the extent joins by
+    // max — and the label must clear the disc it actually paints.
+    const self = t({
+      a: { stationId: 's1', lineId: 'L1' },
+      b: { stationId: 's1', lineId: 'L1' },
+      thickness: 12,
+      strokeWidth: 2,
+    });
+    // The station record is REAL here (not the empty one `metricsFor` passes):
+    // `dir` has to be null because the two ends are the same cell, not because
+    // the lookup came up empty.
+    const st = makeStation({ id: 's1', stops: [makeStop('L1')] });
+    const m = stopMetricsOf({
+      lines: { L1: makeLine({ id: 'L1' }) },
+      transfers: { t1: self },
+      stations: { s1: st },
+    })(st, st.stops[0]);
+    expect(m.transfers).toEqual([
+      { r: 8, dir: null },
+      { r: 8, dir: null },
+    ]);
+  });
+
   it('a DIAGONAL self-link reports the unit direction its body leaves in', () => {
     const selfLink = t({
       a: { stationId: 's1', lineId: 'L1' },
