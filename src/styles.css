@@ -1619,10 +1619,10 @@ button.field-select {
 /* Knocked loose by the easter egg (BouncingBullet). Opacity, not visibility or
    display: the slot has to keep its box or the whole bar shifts left as the ball
    falls, and a transition needs two ends to run between — this is the fade-in
-   half of the crossfade home. The duration matches DEFAULT_PARAMS.dimMs; retune
-   that far and this wants updating with it. */
+   half of the crossfade home. --fun-ms comes off `.app` (App.tsx sets it from
+   DEFAULT_PARAMS.dimMs) so this half can't drift from the ball fading out. */
 .brand-bullet {
-  transition: opacity 450ms ease;
+  transition: opacity var(--fun-ms, 450ms) ease;
 }
 .brand-bullet[data-away] {
   opacity: 0;
@@ -3204,7 +3204,7 @@ body:has(.app[data-theme='dark']) {
   inset: 0;
   background: #000;
   opacity: var(--fun-dim);
-  animation: fun-scrim-in var(--fun-ms) ease;
+  animation: fun-scrim-in var(--fun-ms, 450ms) ease;
   pointer-events: auto;
 }
 @keyframes fun-scrim-in {
@@ -3221,7 +3221,7 @@ body:has(.app[data-theme='dark']) {
 .fun-root[data-phase='exiting'] .fun-ball {
   animation: none;
   opacity: 0;
-  transition: opacity var(--fun-ms) ease;
+  transition: opacity var(--fun-ms, 450ms) ease;
   pointer-events: none;
 }
 

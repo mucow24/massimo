@@ -209,7 +209,9 @@ export function BouncingBullet() {
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (phase !== 'live' || e.button !== 0) return;
-    // Keep it off the scrim behind, which would dismiss the mode.
+    // NOT what keeps the press off the scrim — that's the tree shape: the scrim
+    // is a SIBLING, so React's bubble path never visits it. This just stops the
+    // press carrying on up to `.app`-level handlers.
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
     const s = ball.current;
@@ -265,13 +267,14 @@ export function BouncingBullet() {
   };
 
   return (
-    // Both crossfades live in CSS, reading the dim and its duration off these
-    // custom properties so the params stay the one place those are set.
+    // The crossfades live in CSS. --fun-ms is inherited from `.app`, which is
+    // also where the toolbar badge's half of the same crossfade reads it, so the
+    // two cannot drift; only the dim is local.
     <div
       className="fun-root"
       ref={rootEl}
       data-phase={phase}
-      style={{ '--fun-dim': P.dimOpacity, '--fun-ms': `${P.dimMs}ms` } as CSSProperties}
+      style={{ '--fun-dim': P.dimOpacity } as CSSProperties}
     >
       {/* The dimmer, and the way out: anything that isn't the ball ends it. */}
       <div className="fun-scrim" onPointerDown={beginExit} />

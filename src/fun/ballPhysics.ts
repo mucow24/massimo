@@ -92,7 +92,19 @@ export interface BallParams {
   dimMs: number;
 }
 
-/** Tuned by hand against the running thing — these are feel, not derivation. */
+/**
+ * Tuned by hand against the running thing — these are feel, not derivation.
+ *
+ * Two of them are zero, and that is a result rather than an oversight: spin in
+ * flight was better left undamped (the ball keeps turning until something it
+ * touches slows it), and the extra flick-torque on release turned out to be
+ * noise on top of the swing a held ball already carries. They stay as dials
+ * because they are members of a coherent set — dropping just these two would
+ * leave the odd question of why flight spin cannot decay when rolling spin can
+ * — and because zero records that they were tried. The terms cost a multiply by
+ * one. Tests that pin either MECHANISM dial it in explicitly rather than reading
+ * these values.
+ */
 export const DEFAULT_PARAMS: BallParams = {
   radius: 50,
   grabRadius: 125,

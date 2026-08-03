@@ -91,6 +91,9 @@ beforeEach(() => {
   // Module state, so it outlives component mounts: without a reset, one test's
   // save vouches for the next test's doc.
   useSaveBaseline.setState({ baselineSnap: null, baselineJson: null, backed: false });
+  // Same hazard: the easter egg empties the badge slot and makes Ctrl+S inert,
+  // so a test that left it open would quietly disarm every test after it.
+  useFunMode.setState({ phase: 'off', origin: { x: 0, y: 0 } });
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useSelection.setState({
     ...useSelection.getState(),
@@ -189,7 +192,6 @@ describe('Toolbar — wordmark', () => {
   });
 
   it('knocks the badge loose on alt-click, from its own place in the bar', () => {
-    useFunMode.setState({ phase: 'off', origin: { x: 0, y: 0 } });
     renderToolbar();
     const mark = screen.getByRole('img', { name: 'Massimo' });
     fireEvent.pointerDown(mark, { button: 0, altKey: true });
@@ -206,7 +208,6 @@ describe('Toolbar — wordmark', () => {
 
   it('leaves a plain click on the badge alone', () => {
     // It is a wordmark first and a secret second: clicking it must do nothing.
-    useFunMode.setState({ phase: 'off', origin: { x: 0, y: 0 } });
     renderToolbar();
     fireEvent.pointerDown(screen.getByRole('img', { name: 'Massimo' }), { button: 0 });
     expect(useFunMode.getState().phase).toBe('off');
@@ -1442,6 +1443,27 @@ describe('Toolbar — Ctrl+S saves a version', () => {
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
     expect(useDoc.getState().name).toBe('Renamed');
     expect(vi.mocked(saveVersion).mock.calls[0][1]).toBe('Renamed');
+  });
+
+  it('goes inert while the badge is loose, like every other shortcut', async () => {
+    // The easter egg is modal — the map is dimmed and unreachable behind the
+    // scrim, so minting a version of it is the one thing that could still
+    // happen without the user seeing the map they saved.
+    seedMap('Canal Line'); // dirty → this WOULD save
+    vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
+    renderToolbar();
+
+    useFunMode.setState({ phase: 'live', origin: { x: 0, y: 0 } });
+    const notPrevented = fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    // Nothing was handled, so the browser's own dialog is no longer suppressed
+    // either — correct: the app has stopped claiming the key.
+    expect(notPrevented).toBe(true);
+    expect(saveVersion).not.toHaveBeenCalled();
+
+    // Closed again, the same press saves — the half that lets this go red.
+    useFunMode.setState({ phase: 'off', origin: { x: 0, y: 0 } });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
   });
 
   it('the Save version menu item advertises its Ctrl+S accelerator (name stays clean)', async () => {

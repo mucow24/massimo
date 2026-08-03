@@ -27,7 +27,16 @@ interface FunModeState {
 export const useFunMode = create<FunModeState>((set) => ({
   phase: 'off',
   origin: { x: 0, y: 0 },
-  enter: (origin) => set({ phase: 'live', origin }),
+  enter: (origin) => {
+    // Drop focus on the way in, or the mode isn't really modal: the scrim eats
+    // pointers but not keys, so a map-name or rename field that kept focus would
+    // still take everything typed at the bouncing ball — and would swallow the
+    // Escape meant to end it. The badge's own pointerdown preventDefault (which
+    // stops the browser dragging it as an image) suppresses the compat mousedown
+    // that would otherwise have moved focus, so nothing else does this for us.
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    set({ phase: 'live', origin });
+  },
   beginExit: () => set((s) => (s.phase === 'live' ? { phase: 'exiting' } : s)),
   finishExit: () => set((s) => (s.phase === 'exiting' ? { phase: 'off' } : s)),
 }));

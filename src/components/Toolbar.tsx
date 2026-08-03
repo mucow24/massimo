@@ -52,7 +52,7 @@ import { MapNameField } from './MapNameField';
 import { MapVersionPill } from './MapVersionPill';
 import { pushToast } from '../state/toastStore';
 import { BrandBullet } from './BrandBullet';
-import { useFunMode } from '../state/funMode';
+import { isFunModeActive, useFunMode } from '../state/funMode';
 
 const errorText = (err: unknown, fallback: string): string =>
   err instanceof Error ? err.message : fallback;
@@ -423,6 +423,10 @@ export function Toolbar() {
   });
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Inert while the easter egg holds the window, like App's global handler:
+      // the map is dimmed and unreachable, so saving a version of it behind the
+      // scrim would be the one thing that could still surprise you.
+      if (isFunModeActive()) return;
       if (!(e.metaKey || e.ctrlKey) || (e.key !== 's' && e.key !== 'S')) return;
       e.preventDefault();
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();

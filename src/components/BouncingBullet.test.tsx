@@ -18,6 +18,11 @@ const enter = () => act(() => useFunMode.getState().enter({ x: 100, y: 20 }));
 
 const scrim = () => document.querySelector('.fun-scrim')!;
 const ball = () => document.querySelector('.fun-ball')!;
+const transformOf = (el: Element) => (el as HTMLElement).style.transform;
+
+/** The ball's node is the grab circle, so its transform offsets by the reach
+ *  rather than the ball's own radius. */
+const REACH = Math.max(DEFAULT_PARAMS.radius, DEFAULT_PARAMS.grabRadius);
 
 describe('BouncingBullet', () => {
   beforeEach(() => {
@@ -41,10 +46,22 @@ describe('BouncingBullet', () => {
     // Painted in a layout effect before the first frame, so it is never briefly
     // in the window's corner. The node is the grab circle, hence the reach
     // offset rather than the ball's own radius.
-    const reach = Math.max(DEFAULT_PARAMS.radius, DEFAULT_PARAMS.grabRadius);
-    expect((ball() as HTMLElement).style.transform).toContain(
-      `translate(${100 - reach}px, ${20 - reach}px)`,
-    );
+    expect(transformOf(ball())).toContain(`translate(${100 - REACH}px, ${20 - REACH}px)`);
+  });
+
+  it('drops focus on the way in, so keystrokes cannot reach a field behind it', () => {
+    // The scrim eats pointers but not keys. Whatever was focused when the badge
+    // came loose would otherwise take everything typed at the bouncing ball —
+    // and would eat the Escape meant to end it.
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+    input.focus();
+    expect(document.activeElement).toBe(input);
+
+    render(<BouncingBullet />);
+    enter();
+    expect(document.activeElement).not.toBe(input);
+    input.remove();
   });
 
   it('does not name itself Massimo a second time while loose', () => {
@@ -53,6 +70,39 @@ describe('BouncingBullet', () => {
     render(<BouncingBullet />);
     enter();
     expect(screen.queryByRole('img', { name: 'Massimo' })).toBeNull();
+  });
+
+  it('takes its walls from the overlay box, not window.innerHeight', () => {
+    // innerHeight COUNTS the classic scrollbar, so a floor measured from it sits
+    // below the visible bottom and the ball rolls away underneath a horizontal
+    // scrollbar. Staged here as the two disagreeing: the overlay is the shorter,
+    // right answer, and the ball must come to rest on ITS floor.
+    const overlayH = 400;
+    window.innerHeight = 600;
+    window.innerWidth = 800;
+    const proto = Object.getPrototypeOf(document.createElement('div')) as HTMLElement;
+    const spy = vi.spyOn(proto, 'clientHeight', 'get').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return this.classList.contains('fun-root') ? overlayH : 0;
+    });
+    const wSpy = vi.spyOn(proto, 'clientWidth', 'get').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return this.classList.contains('fun-root') ? 800 : 0;
+    });
+
+    render(<BouncingBullet />);
+    enter();
+    // Long enough to fall, bounce out, and settle.
+    act(() => vi.advanceTimersByTime(8000));
+
+    const y = Number(/translate\([^,]+,\s*(-?[\d.]+)px/.exec(transformOf(ball()))![1]) + REACH;
+    expect(y).toBeLessThanOrEqual(overlayH - DEFAULT_PARAMS.radius + 1);
+    expect(y).toBeGreaterThan(overlayH / 2); // it really did fall, not hover
+
+    spy.mockRestore();
+    wSpy.mockRestore();
   });
 
   it('closes on a click anywhere on the map, then hands the badge back', () => {
@@ -74,6 +124,9 @@ describe('BouncingBullet', () => {
     expect(useFunMode.getState().phase).toBe('exiting');
   });
 
+  // Holds because the scrim is a SIBLING of the ball, not an ancestor, so the
+  // press never bubbles through it — not because of the stopPropagation in the
+  // handler, which is only keeping the press off `.app`.
   it('keeps the ball out of it: pressing the ball must not close the mode', () => {
     render(<BouncingBullet />);
     enter();
