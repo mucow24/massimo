@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -56,6 +57,7 @@ vi.mock('../state/mapLibrary', () => ({
 
 import { Toolbar } from './Toolbar';
 import { StatusToasts } from './StatusToasts';
+import { useFunMode } from '../state/funMode';
 import { useToasts } from '../state/toastStore';
 import {
   downloadBlob,
@@ -89,6 +91,9 @@ beforeEach(() => {
   // Module state, so it outlives component mounts: without a reset, one test's
   // save vouches for the next test's doc.
   useSaveBaseline.setState({ baselineSnap: null, baselineJson: null, backed: false });
+  // Same hazard: the easter egg empties the badge slot and makes Ctrl+S inert,
+  // so a test that left it open would quietly disarm every test after it.
+  useFunMode.setState({ phase: 'off', origin: { x: 0, y: 0 } });
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useSelection.setState({
     ...useSelection.getState(),
@@ -184,6 +189,37 @@ describe('Toolbar — wordmark', () => {
     expect(glyph).not.toHaveAttribute('dominant-baseline');
     const fontSize = Number(glyph.getAttribute('font-size'));
     expect(Number(glyph.getAttribute('y'))).toBeCloseTo(capCenterDy(fontSize));
+  });
+
+  it('knocks the badge loose on alt-click, from its own place in the bar', () => {
+    renderToolbar();
+    const mark = screen.getByRole('img', { name: 'Massimo' });
+    fireEvent.pointerDown(mark, { button: 0, altKey: true });
+    expect(useFunMode.getState().phase).toBe('live');
+    // The ball has to start where the badge sits or the drop is a teleport.
+    // jsdom measures everything as zero, so this only pins that the origin comes
+    // from the element's own box rather than a constant.
+    const box = mark.getBoundingClientRect();
+    expect(useFunMode.getState().origin).toEqual({
+      x: box.left + box.width / 2,
+      y: box.top + box.height / 2,
+    });
+  });
+
+  it('leaves a plain click on the badge alone', () => {
+    // It is a wordmark first and a secret second: clicking it must do nothing.
+    renderToolbar();
+    fireEvent.pointerDown(screen.getByRole('img', { name: 'Massimo' }), { button: 0 });
+    expect(useFunMode.getState().phase).toBe('off');
+  });
+
+  it('empties the badge slot while the ball is loose, without collapsing it', () => {
+    // Opacity rather than display, so the bar doesn't shift left mid-drop.
+    renderToolbar();
+    const mark = screen.getByRole('img', { name: 'Massimo' });
+    expect(mark).not.toHaveAttribute('data-away');
+    act(() => useFunMode.getState().enter({ x: 1, y: 1 }));
+    expect(mark).toHaveAttribute('data-away');
   });
 });
 
@@ -1407,6 +1443,27 @@ describe('Toolbar — Ctrl+S saves a version', () => {
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
     expect(useDoc.getState().name).toBe('Renamed');
     expect(vi.mocked(saveVersion).mock.calls[0][1]).toBe('Renamed');
+  });
+
+  it('goes inert while the badge is loose, like every other shortcut', async () => {
+    // The easter egg is modal — the map is dimmed and unreachable behind the
+    // scrim, so minting a version of it is the one thing that could still
+    // happen without the user seeing the map they saved.
+    seedMap('Canal Line'); // dirty → this WOULD save
+    vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
+    renderToolbar();
+
+    useFunMode.setState({ phase: 'live', origin: { x: 0, y: 0 } });
+    const notPrevented = fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    // Nothing was handled, so the browser's own dialog is no longer suppressed
+    // either — correct: the app has stopped claiming the key.
+    expect(notPrevented).toBe(true);
+    expect(saveVersion).not.toHaveBeenCalled();
+
+    // Closed again, the same press saves — the half that lets this go red.
+    useFunMode.setState({ phase: 'off', origin: { x: 0, y: 0 } });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
   });
 
   it('the Save version menu item advertises its Ctrl+S accelerator (name stays clean)', async () => {
