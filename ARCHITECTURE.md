@@ -1945,9 +1945,10 @@ maxAbsOffset` so the innermost stripe still curves at ≥ R); **marker-fit cap**
    and therefore always a style some incident segment actually has.
 
 A `SegmentBandSpec` carries **parallel arrays** (`lines`, `paths`, `stripeOffsets`,
-`stripeWidths`, `linePriorities` — index k = same stripe). `stripeOffsets`/`stripeWidths`/`radius`
-are the **single source of truth**: every consumer (band paint, stripe outline, label/tag
-placement, hit sampling) **must read them, never re-derive**, and must use **`band.radius`** (the
+`stripeWidths`, `linePriorities`, `seamArms` — index k = same stripe).
+`stripeOffsets`/`stripeWidths`/`radius` are the **single source of truth**: every consumer (band
+paint, stripe outline, label/tag placement, hit sampling) **must read them, never re-derive**, and
+must use **`band.radius`** (the
 bumped/capped effective radius), **not** any line's raw `curveRadius` (the configured R is the
 LARGEST member line's radius). `bandKey` (= `pairKey#sortedLineIds`)
 is unique and stable regardless of input order — used for React keys and as the "which band"
@@ -1993,16 +1994,26 @@ casing; `CasingRails` centered rails for the two transparent "open" styles). The
 edge-centered strokes CLIPPED to the line's OTHER band corridors (`SeamClips.tsx`), so it only
 shows where a line crosses itself. The notch at a branch is two arms, one per band — the band
 running STRAIGHT through and the band that TURNS away — and each line's own `seamEdges` picks
-which of the two draws. `router.polylineTurns` classifies a WHOLE band off its centerline, and
-the chosen arm then draws whole. Both halves of that matter: filtering by PIECE cuts a bent
-edge's straight lead-in off its fillet and leaves a gap where the branch clears the other
+which of the two draws. Which of the two a stripe IS gets decided at build time and baked into
+`band.seamArms[k]` (`assignSeamArms`, per stripe because two lines sharing a corridor can have
+different topology); the chosen arm then draws WHOLE. Both halves matter: filtering by PIECE cuts
+a bent edge's straight lead-in off its fillet and leaves a gap where the branch clears the other
 corridor, and classifying per EDGE splits one band's verdict once a fillet is tighter than the
 seam offset (`emitOffsetSegments` degenerates the inside corner to a straight), painting half a
-notch. The test is per BAND while arm identity is per JUNCTION, so it is a heuristic: a through
-corridor that doglegs anywhere along its length also reads as turning, and at that junction
-`'straight'` paints nothing while `'curved'` equals `'both'`. `SegmentBand` reads the mode off
-the live line, like the seam's color and width, so two lines sharing a band can differ. All three
-passes read the same `lineStroke` helpers as the highlight overlay so they can't drift.
+notch. `SegmentBand` reads the MODE off the live line, like the seam's color and width, so two
+lines sharing a band can differ. All three passes read the same `lineStroke` helpers as the
+highlight overlay so they can't drift.
+
+**Which arm.** `assignSeamArms` reads it off the JUNCTION, never off the band's own shape. At each
+station where a line has three or more band ends, the pair of ends that most nearly OPPOSE each
+other is the through-run and every other end there is a branch; a station with two ends is a plain
+joint or a corner, whichever way its bands bend. Ties go to the longer straight run, which is what
+a real fork needs: two arms can leave a junction along the SAME axis — dead opposite the incoming
+corridor either way — and diverge only further on, so the one that peels off first is the branch
+(the A at Broad Channel). Asking the band's own polyline instead is the trap: a through corridor
+whose next station sits off-axis doglegs to reach it, and answers "branch" from 300 units away —
+painting a straight stroke clean across the branch mouth. A band has two ends and one verdict, so
+a band that branches at one end and runs through at the other still reads as a branch at both.
 
 **The hit box.** A stripe's pointer surface is normally the painted path itself, but the styles
 that paint with GAPS (the dasharray ones — `dashed`, `dotted`, `dashed-open`) hit-test only their
@@ -3241,8 +3252,8 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   `Object.keys(DEFAULT_DOC)`; keep them in sync (a field in `DEFAULT_DOC` but not `DOC_FIELDS`
   would default but never persist/undo).
 - **Parallel arrays in a band** (`lines`, `paths`, `stripeOffsets`, `stripeWidths`,
-  `linePriorities`) are index-aligned; `stripeOffsets`/`stripeWidths`/`radius` are the single
-  source of truth — read them, never re-derive; sample with `band.radius`, not a line's raw
+  `linePriorities`, `seamArms`) are index-aligned; `stripeOffsets`/`stripeWidths`/`radius` are the
+  single source of truth — read them, never re-derive; sample with `band.radius`, not a line's raw
   `curveRadius`.
 - **One history entry per gesture**; the selection store is reconciled (not restored) after
   undo/redo.

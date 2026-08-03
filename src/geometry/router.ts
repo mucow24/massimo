@@ -364,26 +364,6 @@ export function computeArcRadii(verts: Vec2[], R: number): { rs: number[]; angle
 }
 
 /**
- * Does this polyline change direction anywhere? Same corner test the fillet
- * emitters use (`angleBetween > EPS`), so the two can't drift.
- *
- * Read off the CENTERLINE, never an offset edge: a fillet tighter than the
- * offset (`radius < |offset|`) degenerates that edge's corner to a straight, so
- * an offset-derived answer would call the inside of a bend "straight" while the
- * outside of the same bend is "bent". The branch seam classifies a whole band
- * with this, and a band that turns is still a branch when its fillet is
- * squeezed to nothing.
- */
-export function polylineTurns(verts: Vec2[]): boolean {
-  for (let i = 1; i < verts.length - 1; i++) {
-    const inDir = norm(sub(verts[i], verts[i - 1]));
-    const outDir = norm(sub(verts[i + 1], verts[i]));
-    if (angleBetween(inDir, outDir) > EPS) return true;
-  }
-  return false;
-}
-
-/**
  * Build an SVG path string from a polyline, replacing each interior vertex
  * with a circular-arc fillet tangent to both adjacent edges. Radius is taken
  * from `computeArcRadii`, which honors per-edge tangent budget so an arc that

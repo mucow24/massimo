@@ -124,6 +124,9 @@ export function makeBandSpec(
     ],
     radius: 24,
     linePriorities: lineIds.map((_, i) => i),
+    // A hand-built band is nobody's branch until a test says so — the arm is
+    // read off the junction by assignSeamArms, which only real builds run.
+    seamArms: lineIds.map(() => 'straight' as const),
     ...overrides,
     stripeWidths,
     // Band fixtures are zero-gap: gapped bands are built through the real

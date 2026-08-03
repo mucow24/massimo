@@ -97,7 +97,21 @@ export interface SegmentBandSpec {
   // moves `paths`, so the band is rebuilt anyway and baking the widths
   // costs no repaint flexibility.
   stripeWidths: number[];
+  // Which ARM of a branch notch each stripe is, parallel to `lines` — see
+  // {@link assignSeamArms}. Per STRIPE, not per band: two lines sharing a
+  // corridor can have different topology, so one may branch here while the
+  // other runs through. Read only by the branch-seam pass; it moves no ink of
+  // its own, so unlike the fields above it stays out of regionIncremental's
+  // hashUnits (which hashes painted BODIES).
+  seamArms: SeamArm[];
 }
+
+/**
+ * The two arms of a branch notch, named as the seam modes name them
+ * (`SeamEdges` minus its 'both'): the corridor running THROUGH the junction,
+ * and the one that TURNS AWAY from it.
+ */
+export type SeamArm = 'straight' | 'curved';
 
 // A single colored stop square for one line at one station, with its
 // per-line priority. Rendered alongside bands so that a back-stack line's
@@ -210,6 +224,11 @@ export const BAND_SPEC_FIELDS = {
   // Always [] on pristine builder output; stamped only onto CLONES
   // (withLinePriorities / buildBands), never onto the cached objects.
   linePriorities: 'excluded',
+  // Stamped on pristine output (assignSeamArms runs inside buildBandGeometry,
+  // before the reuse swap), and derived from the WHOLE band set — a band whose
+  // own geometry is unchanged can still change arm when a sibling corridor
+  // appears or moves. So it must be compared, not derived from this band.
+  seamArms: 'compared',
 } as const satisfies Record<keyof SegmentBandSpec, SpecFieldPolicy>;
 
 // Markers are NOT presentation-free (color and priority are baked at build),
@@ -263,6 +282,8 @@ function bandSpecEqual(a: SegmentBandSpec, b: SegmentBandSpec): boolean {
       return false;
     }
   }
+  if (a.seamArms.length !== b.seamArms.length) return false;
+  for (let i = 0; i < a.seamArms.length; i++) if (a.seamArms[i] !== b.seamArms[i]) return false;
   return (
     sameNumbers(a.stripeOffsets, b.stripeOffsets) && sameNumbers(a.stripeWidths, b.stripeWidths)
   );
@@ -736,11 +757,132 @@ export function buildBandGeometry(
     }
   }
 
+  // Before the reuse swap, so the arms take part in the value equality.
+  assignSeamArms(bands);
+
   // Swap value-identical specs for the previous build's objects so identity
   // survives a rebuild wherever geometry didn't change (see the reuse layer
   // above). The array itself is fresh every call — only per-spec identity is
   // stabilized, which is what the downstream memos and caches key on.
   return reuseBandSpecs(bands);
+}
+
+// Corner test for the junction arms (radians), the same tolerance the fillet
+// emitters use — a narrower turn than this is not a bend, and neither is it
+// one to them. Doubles as the tie window on the opposition score below, a DOT
+// product: 1e-6 there is ~0.08°, wide enough for the float noise off exact-45°
+// geometry and far narrower than any fork a map could draw.
+const SEAM_ARM_EPS = 1e-6;
+
+// One end of one stripe at one station: the direction it leaves the station,
+// and how far it runs before its first bend.
+interface JunctionArm {
+  band: SegmentBandSpec;
+  stripeIndex: number;
+  out: Vec2;
+  run: number;
+}
+
+/**
+ * The initial straight run of a centerline, walked from one end: the distance
+ * to the first corner, in world units, with the outgoing unit direction. Runs
+ * PAST collinear vertices (the `angleBetween > SEAM_ARM_EPS` corner test the
+ * fillet emitters use), so a joint that doesn't actually bend can't shorten it.
+ *
+ * Read off the CENTERLINE, never an offset edge: a fillet tighter than the
+ * offset (`radius < |offset|`) degenerates that edge's corner to a straight, so
+ * an offset-derived answer would call the inside of a bend straight while the
+ * outside of the same bend is bent.
+ */
+function straightRunFrom(verts: Vec2[], fromStart: boolean): { out: Vec2; run: number } {
+  const n = verts.length;
+  // Walk from whichever end was asked for, without copying the array — this
+  // runs over every band on every geometry rebuild.
+  const at = (i: number) => (fromStart ? verts[i] : verts[n - 1 - i]);
+  const first = sub(at(1), at(0));
+  const out = norm(first);
+  let run = len(first);
+  for (let i = 2; i < n; i++) {
+    const step = sub(at(i), at(i - 1));
+    if (angleBetween(out, norm(step)) > SEAM_ARM_EPS) break;
+    run += len(step);
+  }
+  return { out, run };
+}
+
+/**
+ * Fills `band.seamArms`: which arm of a branch notch each stripe is.
+ *
+ * The notch at a branch has two arms — the corridor running THROUGH the
+ * junction (whose casing carries on across the branch mouth) and the one that
+ * TURNS AWAY (whose own casing curls into it) — and the seam's `seamEdges`
+ * mode picks which draws. That is a fact about the JUNCTION, so it is read off
+ * the junction: at each station where a line has three or more band ends, the
+ * pair of ends that most nearly OPPOSE each other is the through-run, and
+ * every other end there is a branch. Nothing else is: a station with two ends
+ * is a plain joint (or a corner), whichever way its bands bend.
+ *
+ * Ties are broken by the longer straight run, which is what a real branch
+ * needs: two arms can leave a junction along the SAME axis — dead opposite the
+ * incoming corridor either way — and only diverge further on. The one that
+ * peels off first is the branch, and the one that stays straight longer is the
+ * through-run, whatever their stations' names suggest.
+ *
+ * Reading it off the band's own shape instead (does this polyline bend?) is
+ * what this replaces: a through corridor whose next station sits off-axis
+ * doglegs to reach it, and read that way it claims to be the branch — painting
+ * a straight stroke clean across the branch mouth.
+ *
+ * KNOWN LIMIT: a band has two ends and one verdict, so a band that branches at
+ * one end and runs through at the other reads as a branch at both.
+ */
+function assignSeamArms(bands: SegmentBandSpec[]): void {
+  // Every band end of every line, grouped by the line + station it meets at.
+  const byJunction = new Map<string, JunctionArm[]>();
+  for (const band of bands) {
+    band.seamArms = band.lines.map(() => 'straight');
+    const v = band.centerline;
+    if (v.length < 2) continue;
+    for (const [stationId, fromStart] of [
+      [band.fromId, true],
+      [band.toId, false],
+    ] as const) {
+      const { out, run } = straightRunFrom(v, fromStart);
+      band.lines.forEach((line, stripeIndex) => {
+        const key = `${line.id}#${stationId}`;
+        const arms = byJunction.get(key);
+        const arm = { band, stripeIndex, out, run };
+        if (arms) arms.push(arm);
+        else byJunction.set(key, [arm]);
+      });
+    }
+  }
+
+  for (const arms of byJunction.values()) {
+    if (arms.length < 3) continue;
+    // The through pair: most opposed (dot = −1 is dead straight through),
+    // ties to the longer straight run. n is 3–4, so the pairwise walk is free.
+    let bestOpposition = -Infinity;
+    let bestRun = -Infinity;
+    let through: [number, number] = [0, 1];
+    for (let i = 0; i < arms.length; i++) {
+      for (let j = i + 1; j < arms.length; j++) {
+        const opposition = -dot(arms[i].out, arms[j].out);
+        const run = Math.min(arms[i].run, arms[j].run);
+        if (
+          opposition > bestOpposition + SEAM_ARM_EPS ||
+          (opposition > bestOpposition - SEAM_ARM_EPS && run > bestRun)
+        ) {
+          bestOpposition = Math.max(bestOpposition, opposition);
+          bestRun = run;
+          through = [i, j];
+        }
+      }
+    }
+    arms.forEach((arm, i) => {
+      if (i !== through[0] && i !== through[1]) arm.band.seamArms[arm.stripeIndex] = 'curved';
+    });
+  }
 }
 
 /**
@@ -1347,6 +1489,7 @@ function buildCircleBandSpec(
     centerline,
     radius: bandR,
     linePriorities: [], // filled in by assignLinePriorities
+    seamArms: [], // filled in by assignSeamArms
     stripeOffsets: offsets,
     stripeWidths: widths,
   };
@@ -1463,6 +1606,7 @@ function buildBandSpec(
     centerline: result.vertices,
     radius: centerlineR,
     linePriorities: [], // filled in by assignLinePriorities
+    seamArms: [], // filled in by assignSeamArms
     stripeOffsets: offsets,
     stripeWidths: widths,
   };
