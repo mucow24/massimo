@@ -49,6 +49,7 @@ import { CircleDiameterLabel, LineCirclePlacingPreview } from './canvas/LineCirc
 import { useStationLayoutDrag } from './canvas/useStationLayoutDrag';
 import { StationLayoutEditor } from './canvas/StationLayoutEditor';
 import { GhostLattice } from './canvas/GhostLattice';
+import { SwapPreview } from './canvas/SwapPreview';
 import { stationCircle } from '../geometry/lineCircle';
 import { lineWidthOf } from '../model/lineWidth';
 import { lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
@@ -554,6 +555,11 @@ export function MapCanvas() {
   const layoutEditStationId =
     selection.uiMode.kind === 'editing-station-layout' ? selection.uiMode.stationId : null;
   const layoutEditStation = layoutEditStationId ? stations[layoutEditStationId] : undefined;
+  // A layout drag resolved onto another STOP is a swap, and a swap is its own
+  // picture (SwapPreview): the candidate slots have already lost, so the ghost
+  // lattice and the amber projection anchor both stand down.
+  const layoutSwapTarget =
+    layoutDrag.overlay?.over?.kind === 'stop' ? layoutDrag.overlay.over : null;
   const setUiModeAction = selection.setUiMode;
   useEffect(() => {
     if (layoutEditStationId && !stations[layoutEditStationId]) {
@@ -2401,30 +2407,41 @@ export function MapCanvas() {
                   station={layoutEditStation}
                   lines={lines}
                   onStartNodeDrag={layoutDrag.onStartNodeDrag}
-                  swapTarget={
-                    layoutDrag.overlay?.over?.kind === 'stop' ? layoutDrag.overlay.over : null
-                  }
+                  swapTarget={layoutSwapTarget}
                   anchorCell={layoutDrag.overlay?.anchor ?? null}
                   draggingSource={layoutDrag.overlay?.source ?? null}
                 />
               </g>
-              {/* Ghost lattice during a layout drag, above the dots so drop
-                targets stay readable. */}
-              {layoutDrag.overlay && stations[layoutDrag.overlay.stationId] && (
-                <g data-export-exclude="1">
-                  <GhostLattice
-                    ghosts={layoutDrag.overlay.ghosts}
-                    over={
-                      layoutDrag.overlay.over?.kind === 'ghost' ? layoutDrag.overlay.over : null
-                    }
-                    station={stations[layoutDrag.overlay.stationId]}
-                    lines={lines}
-                    source={layoutDrag.overlay.source}
-                    circle={stationCircle(stations[layoutDrag.overlay.stationId], lineCircles)}
-                    zoom={view.viewport.zoom}
-                  />
-                </g>
-              )}
+              {/* Drop preview during a layout drag, above the dots so targets
+                stay readable: the swap picture when the drop landed on another
+                stop, the ghost lattice otherwise. */}
+              {layoutDrag.overlay &&
+                stations[layoutDrag.overlay.stationId] &&
+                (layoutSwapTarget ? (
+                  <g data-export-exclude="1">
+                    <SwapPreview
+                      station={stations[layoutDrag.overlay.stationId]}
+                      lines={lines}
+                      source={layoutDrag.overlay.source}
+                      target={layoutSwapTarget}
+                      circle={stationCircle(stations[layoutDrag.overlay.stationId], lineCircles)}
+                    />
+                  </g>
+                ) : (
+                  <g data-export-exclude="1">
+                    <GhostLattice
+                      ghosts={layoutDrag.overlay.ghosts}
+                      over={
+                        layoutDrag.overlay.over?.kind === 'ghost' ? layoutDrag.overlay.over : null
+                      }
+                      station={stations[layoutDrag.overlay.stationId]}
+                      lines={lines}
+                      source={layoutDrag.overlay.source}
+                      circle={stationCircle(stations[layoutDrag.overlay.stationId], lineCircles)}
+                      zoom={view.viewport.zoom}
+                    />
+                  </g>
+                ))}
             </>
           )}
         </svg>

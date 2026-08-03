@@ -57,6 +57,36 @@ export const LAYOUT_RING_ACTIVE = '#5b9dff';
 export const LAYOUT_RING_PROJECT = '#ffc24b';
 
 /**
+ * The radius a node's grab ring draws at. A stop ring wraps its own line's
+ * STRIPE — half this line's width, never inside an oversized dot (same reason
+ * the editor's shield pads by maxDotR), never below the grabbable floor.
+ * Holding it at the lattice cell instead put a default-width ring on a thin
+ * line, so neighbouring rings touched and their scrims swallowed the thin dots
+ * between them. Point-like nodes (the label cell, a transfer anchor) have no
+ * stripe and take the unit cell.
+ *
+ * Exported because chrome drawn BETWEEN handles — the swap arrows — has to
+ * clear the rings it runs past, and re-deriving this rule there is exactly how
+ * the two would drift apart.
+ */
+export function layoutHandleRadius(
+  station: Station,
+  lines: Record<string, Line>,
+  source: LayoutDragSource,
+): number {
+  if (source.kind !== 'stop') return STOP_SIZE / 2;
+  const stop = station.stops.find((s) => s.lineId === source.lineId);
+  if (!stop) return STOP_SIZE / 2;
+  const line = lines[source.lineId];
+  return Math.max(
+    lineWidthOf(line) / 2,
+    // Singleton vs. shared picks the stop's split default (dot style + size).
+    resolveDotSize(line, stop, stationIsSingleton(station)) / 2,
+    RING_MIN_R,
+  );
+}
+
+/**
  * How a handle reads:
  * - `idle` — white ink, hairline ring.
  * - `active` — selected, swap target, or the live drop preview: blue ring, a
@@ -109,18 +139,7 @@ export function LayoutNodeHandle({
     const stop = station.stops.find((s) => s.lineId === source.lineId);
     if (!stop) return null;
     const line = lines[source.lineId];
-    // Singleton vs. shared picks the stop's split default (dot style + size).
-    const isSingleton = stationIsSingleton(station);
-    // The ring wraps the STRIPE, not the lattice cell: half this line's
-    // width, never inside an oversized dot (same reason the shield pads by
-    // maxDotR), never below the grabbable floor. Holding it at the lattice
-    // cell instead put a default-width ring on a thin line, so neighbouring
-    // rings touched and their scrims swallowed the thin dots between them.
-    const r = Math.max(
-      lineWidthOf(line) / 2,
-      resolveDotSize(line, stop, isSingleton) / 2,
-      RING_MIN_R,
-    );
+    const r = layoutHandleRadius(station, lines, source);
     return (
       <>
         {/* Native tooltip naming the line this stop serves — the shared
