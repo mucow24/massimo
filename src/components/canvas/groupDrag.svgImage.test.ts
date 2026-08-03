@@ -1,10 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { collectGroupSiblings, hasGroupSiblings, translateSiblings } from './groupDrag';
 import { useDoc, useSelection } from '../../state/store';
+import { useViewportStore } from '../../state/viewportStore';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { makeSvgImage, makeTextLabel } from '../../test/fixtures';
 
 beforeEach(() => {
+  useViewportStore.setState({ showSvgImages: true, showTextLabels: true });
   useDoc.setState({
     ...useDoc.getState(),
     ...DEFAULT_DOC,
@@ -43,5 +45,16 @@ describe('group drag with svg images', () => {
     const siblings = collectGroupSiblings('svgImage', 'i0');
     expect(siblings.labels).toEqual([{ id: 'g0', startX: 5, startY: 5 }]);
     expect(siblings.svgImages).toEqual([]); // the grabbed image is excluded
+  });
+
+  // A tow is an edit to the towed item, so it follows the same rule as Delete
+  // and the arrow keys: a kind the View menu is hiding does not answer. The
+  // item stays selected — hiding is a peek — it just doesn't move.
+  it('does not tow an svg image whose layer is hidden', () => {
+    useViewportStore.setState({ showSvgImages: false });
+    const siblings = collectGroupSiblings('label', 'g0');
+    expect(siblings.svgImages).toEqual([]);
+    translateSiblings(siblings, 40, 0);
+    expect(useDoc.getState().svgImages.i0.x).toBe(0);
   });
 });

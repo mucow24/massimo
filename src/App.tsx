@@ -7,7 +7,7 @@ import { BouncingBullet } from './components/BouncingBullet';
 import { isFunModeActive } from './state/funMode';
 import { DEFAULT_PARAMS } from './fun/ballPhysics';
 import { nextGridSize, useViewportStore } from './state/viewportStore';
-import { setVisibility } from './state/visibility';
+import { kindVisibleNow, setVisibility } from './state/visibility';
 import {
   beginHistoryGroup,
   cancelAppendMode,
@@ -46,6 +46,7 @@ import { advanceSnapToggle, SNAP_TOGGLE_COUNT } from './components/SnapToggleBar
 import {
   deleteUnlockedSelection,
   itemIdCount,
+  stationsCarriedByCircles,
   unlockedSelectedItemIds,
 } from './state/selectionOps';
 import { isHistoryGrouping, redo, undo } from './state/history';
@@ -296,7 +297,7 @@ export default function App() {
         // Selected polygon vertices take top priority: remove them (the
         // transform no-ops if the removal would breach the 3-vertex floor) and
         // keep the polygon selected so the user can keep editing.
-        if (sel.selectedVertices) {
+        if (sel.selectedVertices && kindVisibleNow('showPolygons')) {
           const { polygonId, indices } = sel.selectedVertices;
           // Locked polygons can't be edited; ignore the vertex delete.
           if (!useDoc.getState().polygons[polygonId]?.locked) {
@@ -329,8 +330,11 @@ export default function App() {
           e.preventDefault();
           return;
         }
+        // Same visibility rule as the multi-selection above (selectionOps):
+        // a transfer on a hidden layer is off screen, so Delete doesn't reach
+        // it. The selection survives — hiding is a peek.
         const transferId = sel.selectedTransferId;
-        if (transferId) {
+        if (transferId && kindVisibleNow('showTransfers')) {
           e.preventDefault();
           sel.selectTransfer(null);
           useDoc.getState().deleteTransfer(transferId);
@@ -364,7 +368,7 @@ export default function App() {
         const doc = useDoc.getState();
         // Selected polygon vertices take top priority (mirrors Delete): nudge
         // just those handles together, leaving the rest of the polygon put.
-        if (sel.selectedVertices) {
+        if (sel.selectedVertices && kindVisibleNow('showPolygons')) {
           const { polygonId, indices } = sel.selectedVertices;
           const poly = doc.polygons[polygonId];
           if (poly && !poly.locked) {
@@ -464,13 +468,24 @@ export default function App() {
           });
           return;
         }
-        // Locked stations, bullets, labels, and polygons don't move.
+        // Locked stations, bullets, labels, and polygons don't move — nor does
+        // anything on a hidden layer (selectionOps).
         const ids = unlockedSelectedItemIds();
         if (itemIdCount(ids) > 0) {
           e.preventDefault();
           // Same open-group fold-in as the vertex nudge above.
           const group = isHistoryGrouping() ? null : beginHistoryGroup();
+          // Rings first, and their passengers filed out of the station loop:
+          // moveLineCircle carries a bound station, and moveStation would
+          // RESEAT it on the (already moved) rim rather than translate it — the
+          // group would arrive in pieces. Same partition groupDrag makes.
+          const carried = stationsCarriedByCircles(ids.lineCircles);
+          for (const id of ids.lineCircles) {
+            const c = doc.lineCircles[id];
+            if (c) doc.moveLineCircle(id, c.x + dx, c.y + dy);
+          }
           for (const id of ids.stations) {
+            if (carried.has(id)) continue;
             const s = doc.stations[id];
             if (s) doc.moveStation(id, s.x + dx, s.y + dy);
           }

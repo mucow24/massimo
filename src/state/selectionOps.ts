@@ -1,6 +1,8 @@
 import type { StationId } from '../model/types';
 import { isHistoryGrouping } from './history';
 import { beginHistoryGroup, useDoc, useSelection } from './store';
+import { useViewportStore } from './viewportStore';
+import { kindVisibleNow, type VisibilityKey } from './visibility';
 
 /**
  * The current selection's ids across every multi-selectable kind, one concrete
@@ -23,23 +25,79 @@ export interface SelectionItemIds {
   lineCircles: string[];
 }
 
-// The selection minus locked members — locked items resist Delete, arrow-nudge
-// and cut, so every bulk gesture filters through here the same way.
+/**
+ * The selection an edit may actually act on: minus locked members, and minus
+ * every kind the View menu is currently hiding.
+ *
+ * Lock is the obvious half — locked items resist Delete, arrow-nudge and cut,
+ * so every bulk gesture filters through here the same way. Visibility is the
+ * other half, and for the same reason `hitsForRect` keeps hidden kinds out of a
+ * marquee: an item on a switched-off layer is not on screen, so a Delete aimed
+ * at "the selection" would remove something the user cannot see, with nothing
+ * to show for the keypress. Hidden members stay SELECTED — hiding is a peek, so
+ * unhiding brings the whole group back — they simply do not answer. That is
+ * deliberately SILENT: these gestures repeat (hold an arrow key down), so a
+ * notice per press would be noise, and the group popover already reports the
+ * visible tally rather than the raw one.
+ *
+ * Through `kindVisibleNow` — the same entry point the marquee and the snap pools
+ * use — so a kind its placing mode has revealed still counts as on screen.
+ * Stations read `showNetwork` directly: they nest under it and have no row of
+ * their own, exactly as `stationsForRectVisible` spells it.
+ */
 export function unlockedSelectedItemIds(): SelectionItemIds {
   const doc = useDoc.getState();
   const sel = useSelection.getState();
+  const network = useViewportStore.getState().showNetwork;
+  const shown = (key: VisibilityKey, ids: string[]): string[] => (kindVisibleNow(key) ? ids : []);
   return {
-    stations: sel.selectedStationIds.filter((id) => !doc.stations[id]?.locked),
-    bullets: sel.selectedRouteBulletIds.filter((id) => !doc.routeBullets[id]?.locked),
-    labels: sel.selectedLabelIds.filter((id) => !doc.textLabels[id]?.locked),
-    polygons: sel.selectedPolygonIds.filter((id) => !doc.polygons[id]?.locked),
-    svgImages: sel.selectedSvgImageIds.filter((id) => !doc.svgImages[id]?.locked),
+    stations: network ? sel.selectedStationIds.filter((id) => !doc.stations[id]?.locked) : [],
+    bullets: shown(
+      'showRouteBullets',
+      sel.selectedRouteBulletIds.filter((id) => !doc.routeBullets[id]?.locked),
+    ),
+    labels: shown(
+      'showTextLabels',
+      sel.selectedLabelIds.filter((id) => !doc.textLabels[id]?.locked),
+    ),
+    polygons: shown(
+      'showPolygons',
+      sel.selectedPolygonIds.filter((id) => !doc.polygons[id]?.locked),
+    ),
+    svgImages: shown(
+      'showSvgImages',
+      sel.selectedSvgImageIds.filter((id) => !doc.svgImages[id]?.locked),
+    ),
     // No lock filter: anchors have none. Breaking the visual symmetry of the
     // lines above is the honest spelling — a `.filter(() => true)` would read
-    // like a lock check that happens to pass.
-    anchors: sel.selectedAnchorIds,
-    lineCircles: sel.selectedLineCircleIds.filter((id) => !doc.lineCircles[id]?.locked),
+    // like a lock check that happens to pass. They do have visibility.
+    anchors: shown('showAnchors', sel.selectedAnchorIds),
+    lineCircles: shown(
+      'showLineCircles',
+      sel.selectedLineCircleIds.filter((id) => !doc.lineCircles[id]?.locked),
+    ),
   };
+}
+
+/**
+ * The stations a set of MOVING line circles carries. `moveLineCircle` takes its
+ * bound stations with it, so a gesture that translates a ring must not also
+ * write those stations: `T.moveStation` RESEATS a ring-bound station onto its
+ * circle rather than translating it, so the second write would slide it round a
+ * rim that has already moved, and the group would visibly come apart. Neither
+ * selection nor lock has a say — a ring carries every passenger either way.
+ * The keyboard twin of groupDrag's `carriedStations`.
+ */
+export function stationsCarriedByCircles(circleIds: readonly string[]): ReadonlySet<string> {
+  const out = new Set<string>();
+  if (circleIds.length === 0) return out;
+  const moving = new Set(circleIds);
+  const { stations } = useDoc.getState();
+  for (const id of Object.keys(stations)) {
+    const cid = stations[id].circleId;
+    if (cid !== undefined && moving.has(cid)) out.add(id);
+  }
+  return out;
 }
 
 export function itemIdCount(ids: SelectionItemIds): number {

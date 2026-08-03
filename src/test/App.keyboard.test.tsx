@@ -10,6 +10,7 @@ import { useLineEditorPrefs } from '../state/lineEditorPrefs';
 import { historyDepth, isHistoryGrouping, redoDepth } from '../state/history';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useViewportStore } from '../state/viewportStore';
+import { VISIBILITY_ITEMS } from '../state/visibility';
 import { useFunMode } from '../state/funMode';
 import { useToasts } from '../state/toastStore';
 import { DEFAULT_SNAP_MODES } from '../geometry/snap';
@@ -45,6 +46,11 @@ beforeEach(() => {
   // The easter egg makes every shortcut below it inert, so a test that left it
   // open would silently disarm the whole rest of the file.
   useFunMode.setState({ phase: 'off', origin: { x: 0, y: 0 } });
+  // View-menu flags are module state, and a hidden kind answers no destructive
+  // gesture (selectionOps) — so a test that switches a layer off would silently
+  // disarm Delete and the arrow keys for every test after it.
+  const init = useViewportStore.getInitialState();
+  useViewportStore.setState(Object.fromEntries(VISIBILITY_ITEMS.map((i) => [i.key, init[i.key]])));
 });
 
 describe('App keyboard shortcuts: Escape', () => {
@@ -1023,6 +1029,164 @@ describe('App keyboard: locked stations resist Delete and arrow-nudge', () => {
   });
 });
 
+describe('App keyboard: hidden items are not actionable', () => {
+  // A layer switched off in the View menu is off SCREEN — so a Delete or a
+  // nudge aimed at "the selection" must not reach it. Selection survives the
+  // toggle (hiding is a peek, and unhiding brings the group back), but a
+  // destructive edit with nothing on screen to show for it is a trap.
+  const seedPolygon = () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      polygons: { p1: makePolygon({ id: 'p1' }) },
+      backgroundOrder: ['p1'],
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedPolygonIds: ['p1'],
+      selectedVertices: null,
+    });
+  };
+
+  it('Delete spares a polygon on a hidden layer', () => {
+    render(<App />);
+    seedPolygon();
+    useViewportStore.setState({ showPolygons: false });
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(useDoc.getState().polygons['p1']).toBeDefined();
+  });
+
+  it('Delete still removes it while the layer is shown', () => {
+    render(<App />);
+    seedPolygon();
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(useDoc.getState().polygons['p1']).toBeUndefined();
+  });
+
+  it('Arrow nudge leaves a hidden polygon put', () => {
+    render(<App />);
+    seedPolygon();
+    const before = useDoc.getState().polygons['p1'].vertices[0].x;
+    useViewportStore.setState({ showPolygons: false });
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(useDoc.getState().polygons['p1'].vertices[0].x).toBe(before);
+  });
+
+  it('Ctrl+X leaves a hidden polygon in the doc', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+    render(<App />);
+    seedPolygon();
+    useViewportStore.setState({ showPolygons: false });
+    fireEvent.keyDown(window, { key: 'x', ctrlKey: true });
+    await waitFor(() => expect(useDoc.getState().polygons['p1']).toBeDefined());
+    vi.unstubAllGlobals();
+  });
+
+  it('Delete spares a station while the network is hidden', () => {
+    render(<App />);
+    const id = useDoc.getState().addStation(0, 0);
+    useSelection.setState({ ...useSelection.getState(), selectedStationIds: [id] });
+    useViewportStore.setState({ showNetwork: false });
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(useDoc.getState().stations[id]).toBeDefined();
+  });
+
+  it('Delete spares a hidden transfer', () => {
+    render(<App />);
+    const a = useDoc.getState().addStation(0, 0);
+    const b = useDoc.getState().addStation(100, 0);
+    const tid = useDoc
+      .getState()
+      .addTransfer({ stationId: a, lineId: null }, { stationId: b, lineId: null });
+    useSelection.getState().selectTransfer(tid!);
+    useViewportStore.setState({ showTransfers: false });
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(useDoc.getState().transfers[tid!]).toBeDefined();
+  });
+
+  it('Delete spares the vertices of a hidden polygon', () => {
+    render(<App />);
+    useDoc.setState({
+      ...useDoc.getState(),
+      polygons: {
+        p1: makePolygon({
+          id: 'p1',
+          vertices: [
+            { x: 0, y: 0 },
+            { x: 10, y: 0 },
+            { x: 10, y: 10 },
+            { x: 0, y: 10 },
+          ],
+        }),
+      },
+      backgroundOrder: ['p1'],
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedPolygonIds: ['p1'],
+      selectedVertices: { polygonId: 'p1', indices: [0] },
+    });
+    useViewportStore.setState({ showPolygons: false });
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(useDoc.getState().polygons['p1'].vertices).toHaveLength(4);
+  });
+});
+
+describe('App keyboard: arrow keys nudge a selected line circle', () => {
+  const seedCircle = () => {
+    const id = useDoc.getState().addLineCircle(100, 100);
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: [],
+      selectedPolygonIds: [],
+      selectedVertices: null,
+      selectedLineCircleIds: [id],
+    });
+    return id;
+  };
+
+  afterEach(() => {
+    useSelection.setState({ ...useSelection.getState(), selectedLineCircleIds: [] });
+  });
+
+  it('moves the ring by the step, like every other first-class canvas object', () => {
+    render(<App />);
+    const id = seedCircle();
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(useDoc.getState().lineCircles[id].x).toBe(101);
+    fireEvent.keyDown(window, { key: 'ArrowDown', shiftKey: true });
+    expect(useDoc.getState().lineCircles[id].y).toBe(105);
+  });
+
+  it('translates a ring and its bound stations together, not apart', () => {
+    // moveLineCircle carries its passengers; T.moveStation RESEATS a bound
+    // station on its circle rather than translating it, so writing both would
+    // slide the station round a rim that has already moved. The group has to
+    // arrive intact.
+    render(<App />);
+    const id = seedCircle();
+    const sid = useDoc.getState().addStation(170, 100);
+    useDoc.getState().bindStationToCircle(sid, id);
+    const before = useDoc.getState().stations[sid];
+    useSelection.setState({ ...useSelection.getState(), selectedStationIds: [sid] });
+
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+
+    const doc = useDoc.getState();
+    expect(doc.lineCircles[id].x).toBe(101);
+    expect(doc.stations[sid].x).toBeCloseTo(before.x + 1, 9);
+    expect(doc.stations[sid].y).toBeCloseTo(before.y, 9);
+  });
+
+  it('leaves a locked ring alone', () => {
+    render(<App />);
+    const id = seedCircle();
+    useDoc.getState().setLineCircleLocked(id, true);
+    fireEvent.keyDown(window, { key: 'ArrowRight' });
+    expect(useDoc.getState().lineCircles[id].x).toBe(100);
+  });
+});
+
 describe('App keyboard: polygon vertices (multi-select)', () => {
   // A pentagon so two vertices can be deleted while staying above the 3-floor.
   const seedPentagon = (indices: number[], locked = false) => {
@@ -1758,6 +1922,9 @@ describe('App keyboard: transfer anchors are first-class canvas objects', () => 
     const a = doc.addTransferAnchor(100, 50);
     const s = doc.addStation(0, 0);
     useSelection.getState().setAnchorSelection([a]);
+    // Anchors default to HIDDEN, and a hidden kind answers nothing (see
+    // selectionOps) — so the state under test here is a user with the layer on.
+    useViewportStore.setState({ showAnchors: true });
     return { a, s };
   };
 
