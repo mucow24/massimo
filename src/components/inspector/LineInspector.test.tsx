@@ -505,11 +505,17 @@ describe('<LineInspector /> — stroke controls', () => {
   it('the stroke color writes the seam’s too while the inner strokes are on', async () => {
     const user = userEvent.setup();
     seed({ strokeWidth: 4, strokeColor: '#ff0000', seamColor: '#abcdef80' });
+    useDoc.temporal.getState().clear();
     render(<LineInspector id="L1" />);
     const input = await openColorField(user, 'Stroke color');
+    const before = historyDepth();
     fireEvent.change(input, { target: { value: '#00aa55' } });
     expect(useDoc.getState().lines.L1.strokeColor).toBe('#00aa55');
     expect(useDoc.getState().lines.L1.seamColor).toBe('#00aa55');
+    // ColorField owns open→commit grouping, so the PAIR still costs one entry
+    // (this needs no group of its own, unlike the width and arm rows).
+    await user.keyboard('{Escape}');
+    expect(historyDepth()).toBe(before + 1);
   });
 
   // The seam's COLOR is its on/off switch, so mirroring it unconditionally
@@ -637,6 +643,41 @@ describe('<LineInspector /> — stroke controls', () => {
     expect(historyDepth()).toBe(before + 1);
     useDoc.temporal.getState().undo();
     expect('strokeWidth' in useDoc.getState().lines.L1).toBe(false);
+  });
+
+  // A unified control's paired writes must land as ONE entry, or an undo stops
+  // in a state the user never picked — half an arm pick is inner strokes ON in
+  // Both, with no arm stored.
+  it('one arm pick is a single undo entry, and undoing it restores the whole seam', async () => {
+    const user = userEvent.setup();
+    seed({ strokeWidth: 3, strokeColor: '#123456' });
+    useDoc.temporal.getState().clear();
+    render(<LineInspector id="L1" />);
+    const group = screen.getByRole('radiogroup', { name: 'Inner strokes' });
+    const before = historyDepth();
+    await user.click(within(group).getByRole('radio', { name: 'Branch' }));
+    expect(historyDepth()).toBe(before + 1);
+    useDoc.temporal.getState().undo();
+    const line = useDoc.getState().lines.L1;
+    expect('seamColor' in line).toBe(false);
+    expect('seamWidth' in line).toBe(false);
+    expect('seamEdges' in line).toBe(false);
+  });
+
+  // Unfocused wheel ticks land outside any field group, and withCoalescedHistory
+  // folds a BURST into one entry but only ever one deep — so the width's paired
+  // writes need a group of their own even here.
+  it('one wheel tick on the stroke width is a single undo entry', () => {
+    seed({ seamColor: '#abcdef80' });
+    useDoc.temporal.getState().clear();
+    render(<LineInspector id="L1" />);
+    const row = screen
+      .getByRole('slider', { name: 'Stroke width' })
+      .closest('.options-popover-row');
+    const before = historyDepth();
+    fireEvent.wheel(row!, { deltaY: -1 });
+    expect(useDoc.getState().lines.L1.strokeWidth).toBe(0.25);
+    expect(historyDepth()).toBe(before + 1);
   });
 });
 

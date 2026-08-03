@@ -62,11 +62,12 @@ export function SeamEdgesGlyph({ mode }: { mode: InnerStrokesMode }) {
 }
 
 /**
- * The branch inner-edge control for the two line editors (the line inspector
- * and the line style editor): a three-segment icon group, one segment per mode.
- * Sits with the seam width/color rows, whose seam it picks arms of. Ungated, like
- * those two: the seam is switched on by dragging its color's alpha up, so
- * hiding its controls while it is off would hide the way back on.
+ * The branch inner-edge control for the LINE STYLE editor: a three-segment icon
+ * group, one segment per mode. Sits with the seam width/color rows, whose seam
+ * it picks arms of. Ungated, like those two: there the seam is switched on by
+ * dragging its color's alpha up, so hiding its controls while it is off would
+ * hide the way back on. The line inspector unifies those rows instead, and uses
+ * {@link InnerStrokesSegmented} below.
  */
 export function SeamEdgesSegmented({
   value,

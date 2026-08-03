@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ChevronDownIcon, ChevronRightIcon } from '@radix-ui/react-icons';
-import { useDoc } from '../../state/store';
+import { beginHistoryGroup, useDoc } from '../../state/store';
+import { isHistoryGrouping } from '../../state/history';
 import { useLineEditorPrefs } from '../../state/lineEditorPrefs';
 import type { LineId } from '../../model/types';
 import { DEFAULT_DOT_STYLE } from '../../model/dotStyle';
@@ -329,9 +330,21 @@ export function LineInspector({ id }: { id: LineId }) {
             // strokes at a junction stay separate DOC fields — a line style
             // carries both, and the style editor still dials them apart — but
             // this editor writes them together.
+            //
+            // NB a nudge that RETURNS to the starting width still detaches a
+            // line whose stored seam width differed: strokeWidth no-ops, but
+            // seamWidth really did move onto it. That is the unification being
+            // honest — the width shown is now the seam's too.
             onChange={(n) => {
+              // Two writes, one edit. Gated because the focused slider or
+              // spinbutton already holds a group and groups don't nest; an
+              // UNFOCUSED wheel tick holds none, and would otherwise undo in
+              // two halves (withCoalescedHistory folds a burst, but only ever
+              // one entry deep).
+              const group = isHistoryGrouping() ? null : beginHistoryGroup();
               setLineStrokeWidth(line.id, n);
               setLineSeamWidth(line.id, n);
+              group?.commit();
             }}
             getCurrent={() => lineStrokeWidthOf(useDoc.getState().lines[id])}
             textboxAllowAboveMax
@@ -373,18 +386,24 @@ export function LineInspector({ id }: { id: LineId }) {
                 <InnerStrokesSegmented
                   value={innerStrokes}
                   onSelect={(v) => {
+                    // A segmented toggle carries no history group of its own, so
+                    // this opens one: up to three writes, and an undo that
+                    // stopped between them would land on inner strokes the user
+                    // never picked. Gated like the width row above.
+                    const group = isHistoryGrouping() ? null : beginHistoryGroup();
                     if (v === 'none') {
                       // A fully transparent seam color canonicalizes to "no
                       // seam": the field is dropped, not stored as clear.
                       setLineSeamColor(line.id, withHexAlpha(lineCasingColor(line, line.color), 0));
-                      return;
+                    } else {
+                      // STORED, not resolved: a casing that follows the line's
+                      // own color hands the seam that same sentinel, so the two
+                      // track the line together.
+                      setLineSeamColor(line.id, lineStrokeColorStored(line));
+                      setLineSeamWidth(line.id, lineStrokeWidthOf(line));
+                      setLineSeamEdges(line.id, v);
                     }
-                    // STORED, not resolved: a casing that follows the line's own
-                    // color hands the seam that same sentinel, so the two track
-                    // the line together.
-                    setLineSeamColor(line.id, lineStrokeColorStored(line));
-                    setLineSeamWidth(line.id, lineStrokeWidthOf(line));
-                    setLineSeamEdges(line.id, v);
+                    group?.commit();
                   }}
                 />
               </div>

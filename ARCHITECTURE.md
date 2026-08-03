@@ -378,7 +378,8 @@ v16). Where interlined lines disagree, the shared band curves at the LARGEST mem
 Nor is there a doc-level **`seamEdges`** — which arm of a branch seam gets painted is per-line
 (`Line.seamEdges`, missing ⇒ `'both'`, the full notch, [lineStroke.ts](src/model/lineStroke.ts)),
 covered by line styles, and edited as the line inspector's **Inner strokes** four-way / beside the
-seam's own width and color in the line style presets. Legacy saves carried the doc field; both load paths bake it onto every line and fill
+seam's own width and color in the line style presets. Legacy saves carried the doc field; both
+load paths bake it onto every line and fill
 line style defs that predate the covered field (`bakeDocSeamEdges`, persist v23) — a doc old
 enough to carry the field can have no def carrying one, so lines and defs take the same legacy
 value and no tag can drift.
@@ -2908,10 +2909,11 @@ same three additions.
   width row writes `strokeWidth` AND `seamWidth`, its color row writes `strokeColor` and — only
   while the seam is on, since its color is its on/off switch — `seamColor`; and **Inner strokes**
   is a four-way (None / Branch / Mainline / Both) whose None is a cleared `seamColor`, not a
-  `seamEdges` value. The six fields stay separate in the doc, and the line style editor still
-  edits them apart. Stroke color and inner strokes render only while the stroke width is
-  non-zero. Identity (name/service/color) and the Style picker
-  always show; everything from **Line width → Inner strokes** collapses into a style-detail section
+  `seamEdges` value. All five fields stay separate in the doc, and the line style editor still
+  edits them apart. Stroke color and inner strokes render only while the stroke width is non-zero,
+  and each paired write opens its own `isHistoryGrouping`-gated group so one edit is one undo.
+  Identity (name/service/color) and the Style picker always show; everything from
+  **Line width → Inner strokes** collapses into a style-detail section
   so the panel stays compact while editing stops, and that open/closed choice is a persisted UI
   preference (`useLineEditorPrefs`, defaulting to collapsed) rather than document state — it
   sticks across lines and reloads, mirroring `useStationEditorPrefs`.
