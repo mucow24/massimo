@@ -2950,8 +2950,9 @@ same three additions.
   origin the slots hang off.
   Two surfaces:
   1. **`editing-station-layout` mode** ([canvas/StationLayoutEditor.tsx](src/components/canvas/StationLayoutEditor.tsx)
-     - [useStationLayoutDrag.ts](src/components/canvas/useStationLayoutDrag.ts)): entered via the
-       inspector's **Edit layout** button (`startEditingStationLayout` preserves selection + mirror
+     - [useStationLayoutDrag.ts](src/components/canvas/useStationLayoutDrag.ts)): entered by
+       **double-clicking the station** on the canvas, or via the inspector's **Edit layout** button
+       (`startEditingStationLayout` preserves selection + mirror
        state; frames the camera if the station is off-screen). Clicking another station RETARGETS
        the mode to it (`layoutEditReconcile`: the mode follows the sole-selected station; a
        multi/empty selection exits to idle). Grab rings over each real dot (each wearing the
@@ -2990,7 +2991,8 @@ same three additions.
   unmount, as a safety net); `useNumericField` wraps it with a local text mirror, a focus guard,
   and wheel-to-increment off the live value. `NumericFieldRow` pairs a slider + spinbutton sharing
   one group so a drag + typing collapse to one undo entry.
-- **`StationNameEditor`** intercepts Ctrl+Z itself — native input undo would creep the doc back
+- **`StationNameEditor`** opens on **shift+double-click** on the canvas (plain double-click is the
+  layout editor), and intercepts Ctrl+Z itself — native input undo would creep the doc back
   one char per press; it commits the rename group, runs doc-level undo/redo, then closes.
 
 ---

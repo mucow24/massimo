@@ -56,7 +56,8 @@ const SECTIONS: HelpSection[] = [
   {
     title: 'Stations',
     rows: [
-      { k: 'Double-click', effect: 'Rename' },
+      { k: 'Double-click', effect: 'Edit this station’s layout (dots + name placement)' },
+      { k: 'Shift+double-click', effect: 'Rename' },
       {
         k: 'Ctrl+click',
         effect: 'Even out stop spacing from the selected station to the clicked one',
@@ -69,7 +70,7 @@ const SECTIONS: HelpSection[] = [
       {
         k: 'Edit layout',
         effect:
-          'In the station popover: drag dots/label between slots — R or right-click rotates, arrows hop, Alt+arrows fine-nudge the label',
+          'While editing a layout: drag dots/label between slots — R or right-click rotates, arrows hop, Alt+arrows fine-nudge the label',
       },
     ],
   },

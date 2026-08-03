@@ -191,7 +191,7 @@ describe('MapCanvas — Alt+click deep-picks through the under-cursor stack', ()
     expect(useSelection.getState().selectedLineId).toBeNull();
   });
 
-  it('alt+double-click never opens the rename editor (dblclick is two cycling clicks)', () => {
+  it('alt+double-click never opens the layout editor (dblclick is two cycling clicks)', () => {
     render(<App />);
     seed();
     stubStack();
@@ -204,17 +204,21 @@ describe('MapCanvas — Alt+click deep-picks through the under-cursor stack', ()
       fireEvent.dblClick(rect, { button: 0, altKey: true, clientX: 10, clientY: 10 });
     });
     expect(useSelection.getState().editingStationId).toBeNull();
-    // The deep-picked selection survives.
+    expect(useSelection.getState().uiMode.kind).not.toBe('editing-station-layout');
+    // The deep-picked selection survives (picking the line IS Edit Stops).
     expect(useSelection.getState().selectedLineId).toBe('L1');
   });
 
-  it('a plain double-click still opens the rename editor (the dblclick gate is alt-only)', () => {
+  it('a plain double-click still opens the layout editor (the dblclick gate is alt-only)', () => {
     render(<App />);
     seed();
     act(() => {
       fireEvent.dblClick(stackEls()[0], { button: 0, clientX: 10, clientY: 10 });
     });
-    expect(useSelection.getState().editingStationId).toBe('s1');
+    expect(useSelection.getState().uiMode).toEqual({
+      kind: 'editing-station-layout',
+      stationId: 's1',
+    });
   });
 
   it('preserves shift on the re-dispatch: the deep-picked station joins the multi-selection', () => {
