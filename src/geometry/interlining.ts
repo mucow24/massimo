@@ -110,13 +110,15 @@ export interface SegmentBandSpec {
 // segment actually has, and at a branch it is also the reference that decides
 // which segments paint in front (see stopDotSubOrder).
 //
-// `outward` is set when this stop is a TERMINUS for the line (single
-// adjacency, band available): the unit vector pointing out of the line's
-// end along the band's tangent. Dashed/dotted/dashed-open termini use it to
-// paint the cap-extension stub (so the pattern fills the outer half of the
+// `outward` is set when the line's ink ENDS at this stop — every band incident
+// to it leaves the same way, whether that is a single adjacency or a branch
+// that forks off down one shared corridor: the unit vector pointing out of the
+// line's end along the bands' tangent. Dashed/dotted/dashed-open termini use it
+// to paint the cap-extension stub (so the pattern fills the outer half of the
 // dot — without it the patterned line would visually end mid-dot); stroked
 // lines of any style use it to place the casing's end-cap rail across the
-// line's end. Null at interior stations and when bands aren't supplied.
+// line's end. Null where a band leaves the other way too, and when bands aren't
+// supplied.
 //
 // A new field that changes the marker's painted footprint (markerBodyRings)
 // must also be folded into regionIncremental's hashUnits — `end` is the
@@ -957,25 +959,52 @@ export function buildStopMarkers(
   return reuseMarkerSpecs(markers);
 }
 
-// Unit vector pointing outward from `stationId` along the band's actual
-// tangent at the terminus, iff this station is a TERMINUS for the line
-// (single adjacency) AND the corresponding band is in `bandByPair`. Returns
-// null otherwise.
+// Two outward tangents count as the SAME heading down to float noise. Both
+// bands out of a stop run along its travel axis, so the real dot product is +1
+// or −1 and nothing lands in between; this is the guard against the last bit,
+// not a tolerance for bands that nearly agree.
+const SAME_HEADING_DOT = 1 - 1e-9;
+
+// Unit vector pointing outward from `stationId` along the bands' actual
+// tangent there, iff the line's ink ENDS at this station — every band incident
+// to it leaves the SAME way, so nothing covers the marker's other half. Null
+// otherwise.
 //
-// Using the band's centerline (rather than a station-to-station direction)
-// is what makes the cap-extension stub align with the rendered band path,
-// even when the band routes through a fillet or has its endpoint shifted
+// Degree 1 is the usual shape but it is not the rule: a line that BRANCHES at
+// its own end sends two edges (or more) off down the SAME corridor, and the end
+// behind them is every bit as open — the casing has to close around it there
+// too. What disqualifies a station is a band leaving the other way: a through
+// stop, a corner, a loop, a fork that splits both ways. An edge with no band in
+// `bandsByPair` paints nothing, so it covers nothing and is skipped — which
+// leaves a lone bandless edge returning null, as before.
+//
+// Using the bands' centerlines (rather than station-to-station directions) is
+// what makes the cap and the cap-extension stub align with the rendered band
+// path, even when a band routes through a fillet or has its endpoint shifted
 // off the station's geometric center for interlining.
 function terminusOutwardFromBand(
   line: Line,
   stationId: StationId,
   bandsByPair: Record<string, SegmentBandSpec[]>,
 ): Vec2 | null {
-  // A terminus is a degree-1 station: exactly one incident edge. Loops
-  // (degree 2) and junctions (degree ≥ 3) correctly get no cap stub.
-  const nbrs = neighborsOf(line, stationId);
-  if (nbrs.length !== 1) return null;
-  const neighbourId = nbrs[0];
+  let outward: Vec2 | null = null;
+  for (const neighbourId of neighborsOf(line, stationId)) {
+    const o = bandOutwardAt(line, stationId, neighbourId, bandsByPair);
+    if (!o) continue;
+    if (!outward) outward = o;
+    else if (outward.x * o.x + outward.y * o.y < SAME_HEADING_DOT) return null;
+  }
+  return outward;
+}
+
+// The outward tangent of ONE incident band — the `stationId`→`neighbourId`
+// edge — at `stationId`, or null when that edge has no band to read.
+function bandOutwardAt(
+  line: Line,
+  stationId: StationId,
+  neighbourId: StationId,
+  bandsByPair: Record<string, SegmentBandSpec[]>,
+): Vec2 | null {
   // Disambiguate siblings on line membership — the cap must follow the band
   // THIS line actually rides, the way LineTagsLayer and lineRegions already do
   // at their equivalent lookups.
@@ -984,7 +1013,7 @@ function terminusOutwardFromBand(
   );
   if (!band || band.centerline.length < 2) return null;
   // Centerline goes canonFrom → canonTo. Pick the endpoint matching our
-  // terminus station and read the tangent pointing OUT of the band there.
+  // station and read the tangent pointing OUT of the band there.
   const v = band.centerline;
   const atFrom = band.fromId === stationId;
   const atTo = band.toId === stationId;

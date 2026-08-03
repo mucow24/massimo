@@ -2510,6 +2510,14 @@ circular dot), sized to the line `width`, with casing rails centered on the trav
 patterns would re-rotate the stripes). Dashed/dotted markers render nothing at interior stops
 (the pattern flows through) and a half-width stub at termini.
 
+**Where a line ENDS** is geometric, not topological: a stop is an end wherever every band incident
+to it leaves the SAME way, so nothing covers the other half of its marker. Degree 1 is the usual
+shape, but a line that BRANCHES at its own end sends two edges off down one shared corridor and is
+exposed behind them in exactly the same way — as is a cusp in a loop — and each gets the same end
+cap and the same end style. A band leaving the other way disqualifies a stop: a through stop, a
+corner, a fork that splits both ways. The per-station PIN is stricter (`stationEndStyles` keys stay
+degree-1, above), so a branch end wears the line's own `endStyle`.
+
 **The marker's outward half at a terminus IS the line's painted end** — the stripe itself stops
 dead at the stop center (butt cap), so `spec.end` reshapes exactly that half, and the three ends
 are precisely SVG's three line caps taken there. `'short'` drops it, `'round'` replaces it with a
@@ -3420,7 +3428,7 @@ Each is confirmed in source/tests; file pointers included.
 - **Casing / rail** — the thin outline ("stroke") along a line's body edges, MTA-style.
 - **Dot vs marker** — the circular **dot** (`StopGlyph`) is the stop indicator; the **marker**
   (`StopMarker`) is the colored square sitting in the band at the same stop.
-- **Line end** — how a line's paint terminates at a degree-1 station: the marker's outward half,
+- **Line end** — how a line's paint terminates where its ink stops: the marker's outward half,
   kept (`square`), dropped (`short`) or rounded (`round`).
 - **Wash / silhouette** — the soft selection-highlight fill behind a selected station.
 - **Waypoint** — a routing-point station with name + bullets hidden.

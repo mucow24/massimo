@@ -70,6 +70,46 @@ describe('buildStopMarkers — baked line end', () => {
   });
 
   it('gives a loop no ends at all', () => {
+    // A ring with a stop mid-way along each side, so every stop is a through
+    // stop: its two bands leave on opposite headings and neither half of its
+    // marker is ever exposed.
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 'N',
+          x: 100,
+          y: 0,
+          stops: [makeStop('L1', { orientation: 'auto-horizontal' })],
+        }),
+        makeStation({ id: 'E', x: 200, y: 100, stops: [makeStop('L1')] }),
+        makeStation({
+          id: 'S',
+          x: 100,
+          y: 200,
+          stops: [makeStop('L1', { orientation: 'auto-horizontal' })],
+        }),
+        makeStation({ id: 'W', x: 0, y: 100, stops: [makeStop('L1')] }),
+      ],
+      lines: [
+        makeLine({
+          id: 'L1',
+          stations: ['N', 'E', 'S', 'W'],
+          edges: ['E|N', 'E|S', 'S|W', 'N|W'],
+          endStyle: 'round',
+        }),
+      ],
+    });
+    for (const m of markers(doc)) {
+      expect(m.outward).toBeNull();
+      expect(m.end).toBe('square');
+    }
+  });
+
+  it('ends a CUSP, loop or not — both bands leave the same way, so the ink stops there', () => {
+    // A triangle whose apex A is a hairpin: the A—B and A—C corridors both
+    // leave A southward and only part company further down, so the north half
+    // of A's marker is exposed ink like any terminus. Degree 2 and no
+    // topological end in sight, but the casing still has to close around it.
     const doc = makeDoc({
       stations: [
         makeStation({ id: 'A', x: 0, y: 0, stops: [makeStop('L1')] }),
@@ -85,10 +125,12 @@ describe('buildStopMarkers — baked line end', () => {
         }),
       ],
     });
-    for (const m of markers(doc)) {
-      expect(m.outward).toBeNull();
-      expect(m.end).toBe('square');
-    }
+    const at = (id: string) => markers(doc).find((m) => m.stationId === id)!;
+    expect(at('A').outward).toEqual({ x: 0, y: -1 });
+    expect(at('A').end).toBe('round');
+    // B and C are ordinary through stops of the same triangle.
+    expect(at('B').outward).toBeNull();
+    expect(at('C').outward).toBeNull();
   });
 
   it('gives a lone stop no end — it has no direction to end along', () => {
