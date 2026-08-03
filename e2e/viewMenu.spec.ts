@@ -14,8 +14,8 @@ import { fourInLine, seedAndOpen } from './fixtures';
  *    as unchecked. That is what made it impossible to tell whether a click had
  *    registered.
  *
- * Options' palette checkboxes wore both long before this menu existed; a list of
- * nine is what made them impossible to miss.
+ * The retired palette checkboxes wore both long before this menu existed; a
+ * list of nine is what made them impossible to miss.
  *
  * jsdom has no cascade and no layout, so only a real browser catches this class
  * of defect — and a real browser needs `settle()` below to catch the second one.

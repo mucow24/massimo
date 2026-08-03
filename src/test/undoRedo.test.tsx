@@ -321,10 +321,12 @@ describe('beginHistoryGroup', () => {
       expect(historyDepth() - before).toBe(1);
     });
 
-    it('activePalettes', () => {
+    it('palettes', () => {
       const before = historyDepth();
       const group = beginHistoryGroup();
-      useDoc.getState().setActivePalettes(['mta', 'tokyo-subway']);
+      useDoc
+        .getState()
+        .addPaletteToMap({ name: 'frrf', swatches: [{ name: '1', color: '#c1272d' }] });
       group.commit();
       expect(historyDepth() - before).toBe(1);
     });

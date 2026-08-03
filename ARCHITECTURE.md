@@ -113,8 +113,8 @@ src/
     ids.ts                      # IdFactory: crypto UUIDs (prod) / counter ids (tests)
     pairKey.ts                  # pairKeyOf(a,b): canonical station-pair key
     recordOrder.ts              # reconcileOrder/moveInOrder: shared z-order algebra
-    palettes.ts                 # built-in PALETTES + resolution; PaletteId = open string
-    customPalette.ts            # parse imported palette JSON; makeCustomPaletteId
+    palettes.ts                 # built-in PALETTES (name-keyed) + library assembly/sorting
+    customPalette.ts            # parse / serialize imported palette JSON (the "frrf" format)
     dotStyle.ts dotSize.ts      # procedural stop-dot style + size resolution
     dashSize.ts                 # TfL-tick ('dash' stop) length/thickness resolution (derive from line width)
     transferStyle.ts            # TRANSFER_STYLE_DEFAULTS + per-transfer override resolution
@@ -187,7 +187,7 @@ src/
     viewportStore.ts            # useViewportStore (committed) + useLiveViewportStore (in-flight)
     fontEpoch.ts                # useFontEpoch: web-font load counter — a STORE so it crosses memo
     theme.ts                    # themeColors(darkMode, dayCanvasColor) table (no store; reads doc.darkMode)
-    customPalettes.ts           # useCustomPalettes: imported palettes (global localStorage)
+    customPalettes.ts           # useCustomPalettes: the library's user half + stars + sort
     mapLibrary.ts               # saved maps + versions in IndexedDB (no store; opaque JSON)
     libraryPrefs.ts             # useLibraryPrefs: map-library UI prefs (sort mode; two star filters)
     libraryPointer.ts           # useLibraryPointer: which map + version the live doc came from
@@ -209,6 +209,7 @@ src/
     selectionStyle.ts           # shared selection stroke/dash/wash constants (screen-px; ÷ zoom)
     Toolbar.tsx Sidebar.tsx Menu.tsx  # chrome
     MapLibraryDialog.tsx        # the library manager (maps | versions; Radix Dialog)
+    PalettesDialog.tsx          # the palette manager (library | in this map; same Dialog shell)
     MapVersionPill.tsx          # the live doc's version + save-status dot, beside the map name
     *Popover.tsx                # on-canvas item editors
     DayNightColorRow.tsx        # shared label + light/dark ColorField pair (every themed-color row)
@@ -249,7 +250,7 @@ Internalize these six and the rest of the codebase reads cleanly.
 ### 1. The document is everything saveable; nothing else is
 
 `MapDoc` is the **only** thing that is undoable and persisted-per-file. Selection, camera
-(viewport), grid size, snap prefs, and custom-palette **definitions** all live in
+(viewport), grid size, snap prefs, and the palette **library** all live in
 **separate Zustand stores** and are explicitly excluded from history and from saved files. A
 saved `.massimo.json` is camera-agnostic and selection-agnostic.
 
@@ -351,7 +352,7 @@ interface MapDoc {
   regionAssignments: Record<string, RegionAssignment>; // region paint choices ("paint by numbers")
   svgImages: Record<string, SvgImage>;
   lineCircles: Record<string, LineCircle>; // dashed guide circles stations bind to (never exported)
-  activePalettes: PaletteId[]; // INVARIANT: never empty
+  palettes: Palette[]; // COPIES the map paints with, in picker/color-cycle order; may be empty
   darkMode: boolean; // is this a NIGHT map? false = day. Travels in the saved/exported file
   styles: Record<string, StyleDef>; // named per-kind formatting presets ("Styles")
   styleDefaults: Record<StyleKind, string>; // per-kind DEFAULT designation (style id)
@@ -374,10 +375,10 @@ mirroring the transfer retirement.
 
 And there is **no doc-level `curveRadius`** anymore — corner rounding is per-line
 (`Line.curveRadius`, missing ⇒ `LINE_CURVE_RADIUS_DEFAULT` = 24, [lineCurve.ts](src/model/lineCurve.ts)),
-covered by line styles, and edited in the line inspector / line style presets (the Options popover
-holds palettes and nothing else). Legacy saves carried the doc field; both load paths bake it onto
-every line and fill line style defs that predate the covered field (`bakeDocCurveRadius`, persist
-v16). Where interlined lines disagree, the shared band curves at the LARGEST member radius.
+covered by line styles, and edited in the line inspector / line style presets. Legacy saves carried
+the doc field; both load paths bake it onto every line and fill line style defs that predate the
+covered field (`bakeDocCurveRadius`, persist v16). Where interlined lines disagree, the shared band
+curves at the LARGEST member radius.
 
 Nor is there a doc-level **`seamEdges`** — which arm of a branch seam gets painted is per-line
 (`Line.seamEdges`, missing ⇒ `'both'`, the full notch, [lineStroke.ts](src/model/lineStroke.ts)),
@@ -388,9 +389,9 @@ the field can have no def carrying one, so lines and defs take the same legacy v
 can drift.
 
 `DEFAULT_DOC` (in [transforms.ts](src/model/transforms.ts)) is the merge baseline: empty
-collections, `name: 'Untitled map'`, `lineCounter: 0`, `activePalettes:
-['mta']`, `styles: DEFAULT_STYLES` — the six factory "Default" presets (one per styleable kind:
-line, textLabel, polygon, routeBullet, transfer, station) **plus** the two seeded "Stop dots"
+collections, `name: 'Untitled map'`, `lineCounter: 0`, `palettes:
+[a copy of MTA]`, `styles: DEFAULT_STYLES` — the six factory "Default" presets (one per styleable
+kind: line, textLabel, polygon, routeBullet, transfer, station) **plus** the two seeded "Stop dots"
 library styles (`stop-filled-black`, `stop-none`), since `stopDot` is a 7th styleable kind whose
 styles live in a small doc-scoped library rather than as a single Default — and
 `styleDefaults: FACTORY_STYLE_DEFAULTS` designating one per kind (`stopDot` → `stop-filled-black`). Styles are doc-scoped: applying one
@@ -1114,8 +1115,15 @@ value-level fixups are **shared exported functions** — `sanitizeStations`, `ba
 `backfillPolygonDarkColors`, `backfillTextLabelColors`, `convertLegacyDotShapes` — each returning
 `{...cleaned, changed}`, where the **`changed` flag is the signal** callers use (`migrateDoc`
 re-spreads a field only when `changed` is true), and each called by **both** load paths.
-(`validActivePalettes` is the exception — it returns a bare `PaletteId[]` that both callers assign
-unconditionally.) Most dict-level backfills allocate a fresh container even on a no-op, so don't
+(The two palette fixups are the exceptions, and neither returns a `changed` flag: both callers
+assign `bakeActivePalettes`' bare `Palette[]` outright, each under its own presence gate — parse
+when the file has `activePalettes` and no `palettes`, `migrateDoc` at `v<24` with `palettes` absent.
+`sanitizePalettes` is **file-import only**, deliberately: it exists to keep a hand-edited or
+foreign `.massimo.json` from reaching the renderer as garbage, and localStorage has no such author
+— the app is its only writer, and the "≥1 valid palette" repair that used to run there
+unconditionally was guarding dangling _ids_, which copies cannot have. Adding it to `migrateDoc`
+would not close the gap either: a doc already at v24 never reaches `migrate` at all.)
+Most dict-level backfills allocate a fresh container even on a no-op, so don't
 rely on their reference identity — but not all: `convertLegacyDotShapes` hands back its **input**
 references when `changed` is false. (The per-line / per-dot sanitizers _do_ return the same element
 ref when unchanged — distinct from the transform "same-reference-on-no-op" invariant.)
@@ -1136,10 +1144,12 @@ by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}`:
    `backgroundOrder: []`, and the bake is keyed off field presence, so afterwards it would find a
    `backgroundOrder` already there and discard the legacy stacking.
 3. `merged = { ...DEFAULT_DOC, ...doc }` — the entire defaulting mechanism.
-4. `validActivePalettes` (enforce ≥1 valid palette), then `bakeDocCurveRadius` (retired doc-level
-   `curveRadius` → per-line `Line.curveRadius` + fill line style defs; idempotent, keyed off field
-   presence) and `bakeDocSeamEdges` (the same route for the retired doc-level `seamEdges`) —
-   **before** the per-line clean and style validation below, which expect the per-line/per-def form.
+4. `sanitizePalettes` if the file carries `palettes`, else `bakeActivePalettes` if it carries the
+   retired `activePalettes` ids — a file with neither keeps the `DEFAULT_DOC` seed. Then
+   `bakeDocCurveRadius` (retired doc-level `curveRadius` → per-line `Line.curveRadius` + fill line
+   style defs; idempotent, keyed off field presence) and `bakeDocSeamEdges` (the same route for the
+   retired doc-level `seamEdges`) — **before** the per-line clean and style validation below,
+   which expect the per-line/per-def form.
 5. Per-line clean — `backfillLineEdges` (derive `edges` from the legacy `stations` order for
    pre-topology saves — unconditional, since a missing `edges` white-screens the renderer) →
    `sanitizeSegments` (drop segment keys that aren't real adjacencies) → `sanitizeLineWidth` →
@@ -1227,14 +1237,14 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | `v<23`      | `bakeDocSeamEdges` (retired doc-level `seamEdges` → per-line `Line.seamEdges` + line-style-def fill). Ordered beside the `v<16` radius bake and **before** the `v<10` style hygiene, for the same reason: a def missing `seamEdges` would otherwise heal to `'both'` instead of the doc's legacy mode. No tag prune follows — lines and defs take the same legacy value. Idempotent, keyed off field presence |
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array. **But see the `merge` hook** — this call alone is not "every rehydrate" |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
-| (not gated) | `validActivePalettes` whenever `activePalettes !== undefined`                                                                              |
+| `v<24`      | `bakeActivePalettes` (retired `activePalettes` ids → the palette COPIES the map carries). Built-in ids resolve through `LEGACY_BUILTIN_IDS`; `custom:` ids resolve against the palette library by slugged name, the only place those definitions ever lived. Ids resolving to neither are dropped, and a map left carrying none is a legitimate outcome. Gated on `palettes` being absent as well, so it can never overwrite real palettes |
 | (not gated) | `snapStationCells` whenever `stations !== undefined` — cell drift is not tied to a schema bump, so a gate could never catch it. **But see the `merge` hook** — for this repair that caveat is the main event, not a footnote |
 
-A **corrupt/missing version is treated as v0** (all migrations run). The four non-gated repairs
-(`backfillLinesEdges`, `ensureStyleInvariants`, `validActivePalettes`, `snapStationCells`) are
-**not** tied to a schema bump — they run any time their field is present (an absent field is left
-for the persist-merge). `validActivePalettes` reads `useCustomPalettes.getState().palettes` to
-validate custom ids.
+A **corrupt/missing version is treated as v0** (all migrations run). The three non-gated repairs
+(`backfillLinesEdges`, `ensureStyleInvariants`, `snapStationCells`) are **not** tied to a schema
+bump — they run any time their field is present (an absent field is left for the persist-merge).
+`bakeActivePalettes`, which is gated, reads `useCustomPalettes.getState().palettes` to resolve
+legacy `custom:` ids — the only place in either load path that reaches into a store.
 
 > **`migrateDoc` does not run on every rehydrate** — zustand calls `migrate` only when the STORED
 > version DIFFERS from the config version. A doc stranded at 14 by that intermediate build is
@@ -1261,7 +1271,9 @@ validate custom ids.
   set).
 - **Startup**: no explicit load in `App.tsx` — zustand `persist` rehydrates from localStorage on
   boot, running `migrateDoc`.
-- **Load → JSON…**: `parse(text, customPalettes)` then `adoptParsedDoc()` (below).
+- **Load → JSON…**: `parse(text, libraryPalettes)` then `adoptParsedDoc()` (below). The library
+  is consulted only to resolve a LEGACY file's `custom:` palette ids; a current file is
+  self-describing.
 - File basename: `${sanitizedName} - v${version}` (clean) or `${sanitizedName} - v${version}d`
   (dirty — edited since that library version was saved), shared by every export via
   `mapFileBasename(name, version, dirty)` ([exportCanvas.ts](src/export/exportCanvas.ts)). A map
@@ -1469,7 +1481,7 @@ through both, so none can drift:
     out while the doc is `clean`**, so an unchanged doc can never mint a duplicate version.
 - **Clear** is the exception: it stays in the *same* document, so it neither auto-saves nor clears
   history (Ctrl+Z is the backstop), and `clearAll` preserves everything that isn't drawn content:
-  name / styles / styleDefaults / activePalettes / **darkMode** (a night map stays a night map
+  name / styles / styleDefaults / palettes / **darkMode** (a night map stays a night map
   when you empty it).
 - Known gap: work that lives only in the undo stack (Clear → New) is lost — the gate sees an empty
   doc and `clearHistory()` then discards the stack. Pre-existing in kind.
@@ -1834,12 +1846,14 @@ Four seams cover it, and a fifth rule governs anything new:
   token-reassignment block), **canvas SVG** paint comes from this table. `accent` therefore exists
   as **two hand-maintained copies** — `ThemeColors.accent` and the `--accent` CSS token — pinned
   in sync by a test in [theme.test.ts](src/state/theme.test.ts) that reads styles.css off disk.
-- [customPalettes.ts](src/state/customPalettes.ts) — `useCustomPalettes`: imported palette
-  **definitions** in **global** localStorage (`'massimo-custom-palettes-v1'`), available to every
-  map. `addPalette` upserts by exact name (reusing id + position so active state survives reload).
-  The split: **definitions are global; the active set (`activePalettes`) is per-map in the doc.**
-  Resolution helpers take the custom palettes as an **explicit param** (the pure model never
-  reaches into a store); `deleteCustomPalette` is the cross-store coordinator.
+- [customPalettes.ts](src/state/customPalettes.ts) — `useCustomPalettes`: the user's half of the
+  palette **library** in **global** localStorage (`'massimo-custom-palettes-v1'`, version 1) —
+  imported definitions, the starred NAMES (built-ins included, so a star outlives a list they
+  aren't in), and the library column's sort. `addPalette` upserts by exact name and refuses a
+  built-in's name; the library is keyed by name, so nothing may appear twice.
+  The split: **the library is global; what a map paints with is a set of COPIES in the doc.**
+  Nothing crosses between them except by an explicit command in the palette manager, so deleting a
+  palette here can never disturb a map.
 - [snapPrefs.ts](src/state/snapPrefs.ts) — `useSnapPrefs`: snap-mode toggles plus the preset
   slots, persisted at **version 2** and migrated on rehydrate (v0's boolean `all`/`grid` become the
   directional enums, and **any key the blob predates is filled from `DEFAULT_SNAP_MODES`** —
@@ -2908,7 +2922,7 @@ same three additions.
   layering-mode button, Reset view, and the sidebar toggle. The Canvas menu also carries the two
   local chrome preferences — the **Dark UI in day** checkbox and the **Day canvas color** submenu
   (white/gray/black paper) — which live in `useViewportStore`, not the doc.
-  Embeds `MapNameField`, `MapVersionPill`, `SnapToggleBar`, `OptionsPopover`, `ViewPopover`,
+  Embeds `MapNameField`, `MapVersionPill`, `SnapToggleBar`, `PalettesDialog`, `ViewPopover`,
   the **`⚡` `PerfPopover`**
   ([PerfPopover.tsx](src/components/PerfPopover.tsx) — a one-shot snapshot of `devCounters()`
   taken when it opens, for diagnosing a session that has grown slow; see the `debug/` folder),
@@ -2934,6 +2948,18 @@ same three additions.
   selection on the way back in — the user's layering session must be restored, not re-entered. The
   same helper backs the library **thumbnail**, so a version saved with a line selected still
   pictures the finished map.
+- **[PalettesDialog.tsx](src/components/PalettesDialog.tsx)** — the palette manager, opened by the
+  toolbar's colour-wheel button: your **library** on the left, the palettes **this map** paints
+  with on the right. Unlike the map library the two columns are independent lists rather than a
+  master and its detail, so nothing is selected and every command lives in the row it acts on, as a
+  fixed grid of icon slots — a built-in's missing rename and delete leave their slots open, which
+  is what keeps the colour strips ending at one edge. The two transfer arrows are outermost in
+  their rows, each against the column it points into. The manager and the map library share one
+  **`.dialog-*`** shell in styles.css (backdrop, panel, black title band, column heads, lists,
+  rows); what stays per-dialog is only what one list has and the other doesn't.
+  Commands that undo can reach go on one click; the ones it can't — anything writing the library,
+  and any add that would replace a palette of that name — take the map library's in-place speed
+  bump, here the same glyph washed red with a title naming what the second click will cost.
 - **[StatusToasts.tsx](src/components/StatusToasts.tsx)** — the status-message surface (Radix
   toasts sliding in over the canvas, lower-left). Actions report outcomes by calling `pushToast`
   ([state/toastStore.ts](src/state/toastStore.ts)) — a plain Zustand store (`useToasts`) so any
@@ -3241,8 +3267,9 @@ downstream luminance / `rgba()` math.
 
 ## Conventions & invariants (consolidated)
 
-- **`activePalettes` is never empty** — enforced on both load paths, in transforms, and in
-  `deleteCustomPalette`'s fallback.
+- **A palette is identified by its NAME** — in the library and in a map alike. Both upsert by
+  name, so an add or a save that lands on an existing name REPLACES it (the manager asks first);
+  built-in names are reserved against imports. A map carrying no palettes at all is legitimate.
 - **Transforms return the same reference on no-op** — the foundation of undo grouping
   (`docSnapshotsEqual` is reference equality). A mutate-in-place transform would silently break
   history.
@@ -3342,8 +3369,8 @@ Each is confirmed in source/tests; file pointers included.
   placeholder is the last-added line, which is why Toolbar's Add→Line exits any active append
   before creating the next one. **Real line deletion does not touch `lineCounter`.**
   ([store.ts](src/state/store.ts))
-- **`addLine` guards the empty color cycle** — if every active palette is a dangling custom
-  reference, `cyclingColors` returns `[]` and `n % 0` is NaN; it falls back to `FALLBACK_LINE_COLOR`.
+- **`addLine` guards the empty color cycle** — a map carrying no palettes makes `cyclingColors`
+  return `[]`, and `n % 0` is NaN; it falls back to `FALLBACK_LINE_COLOR`.
 - **`finishDrag`'s cancel branch does NOT reset `suppressClick`** — a never-moved gesture never set
   it; cross-gesture stranding is handled by the capture-phase self-heal instead.
 - **Line-tag drag uses window listeners** — the only hook off the shared React-handler path,

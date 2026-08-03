@@ -1,4 +1,4 @@
-import type { PaletteSwatch } from './palettes';
+import type { Palette, PaletteSwatch } from './palettes';
 
 export type ParsedCustomPalette =
   | { ok: true; name: string; swatches: PaletteSwatch[] }
@@ -47,20 +47,18 @@ export function parseCustomPalette(json: string): ParsedCustomPalette {
 }
 
 /**
- * Derive a unique `custom:<slug>` id for a custom palette name, suffixing
- * (`-2`, `-3`, …) to avoid collisions with `existingIds` (which should include
- * both built-in and existing custom ids). Falls back to `custom:palette` when
- * the name has no slug-able characters.
+ * Write a palette back out in the same "frrf" format `parseCustomPalette`
+ * reads, so an exported palette re-imports as itself. Only the two fields that
+ * survive a parse are written — `cat` / `locked` were never read, so a palette
+ * that came from such a file exports without them.
  */
-export function makeCustomPaletteId(name: string, existingIds: Set<string>): string {
-  const slug = name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  const base = `custom:${slug || 'palette'}`;
-  if (!existingIds.has(base)) return base;
-  for (let n = 2; ; n++) {
-    const candidate = `${base}-${n}`;
-    if (!existingIds.has(candidate)) return candidate;
-  }
+export function serializeCustomPalette({ name, swatches }: Palette): string {
+  return JSON.stringify(
+    {
+      name,
+      colors: swatches.map((s) => ({ line: s.name, human: s.color.toLowerCase() })),
+    },
+    null,
+    2,
+  );
 }
