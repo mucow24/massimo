@@ -511,40 +511,15 @@ export function emitOffsetSegments(verts: Vec2[], R: number, offset: number): Of
 }
 
 /**
- * Like filletPath but emits a translated path offset perpendicular to the
- * local direction by `offset` (constant signed distance). Used for interlining
- * bands that share a centerline.
+ * Emit an offset-segment chain as one continuous SVG path. Callers that want
+ * the chain itself (the branch seam, which decides whether to draw an edge at
+ * all by looking for an arc in it) walk `emitOffsetSegments` and come here,
+ * rather than re-deriving the geometry from the vertices.
  */
-export function offsetFilletPath(
-  verts: Vec2[],
-  R: number,
-  offset: number,
-  keep: 'both' | 'line' | 'arc' = 'both',
-): string {
-  // Fast path only for the unfiltered offset≈0 case (byte-identical to before);
-  // a filtered call always walks the segments so it can drop pieces by kind.
-  if (keep === 'both' && Math.abs(offset) < EPS) return filletPath(verts, R);
-  if (verts.length < 2) return '';
-
-  const segs = emitOffsetSegments(verts, R, offset);
+export function offsetSegmentsPath(segs: OffsetPathSegment[]): string {
   if (segs.length === 0) return '';
-
-  // Emit the retained pieces, breaking into a fresh sub-path (a new `M`)
-  // wherever a piece is dropped — so non-adjacent kept pieces are never bridged
-  // by a phantom straight edge. With `keep === 'both'` nothing is dropped, so a
-  // single `M` leads and the output is byte-identical to the original loop.
-  let d = '';
-  let penDown = false;
+  let d = `M ${fmt(segs[0].from)}`;
   for (const s of segs) {
-    const kept = keep === 'both' || (keep === 'line' ? s.kind === 'line' : s.kind === 'arc');
-    if (!kept) {
-      penDown = false;
-      continue;
-    }
-    if (!penDown) {
-      d += `${d ? ' ' : ''}M ${fmt(s.from)}`;
-      penDown = true;
-    }
     if (s.kind === 'line') {
       d += ` L ${fmt(s.to)}`;
     } else {
@@ -553,4 +528,15 @@ export function offsetFilletPath(
     }
   }
   return d;
+}
+
+/**
+ * Like filletPath but emits a translated path offset perpendicular to the
+ * local direction by `offset` (constant signed distance). Used for interlining
+ * bands that share a centerline.
+ */
+export function offsetFilletPath(verts: Vec2[], R: number, offset: number): string {
+  if (Math.abs(offset) < EPS) return filletPath(verts, R);
+  if (verts.length < 2) return '';
+  return offsetSegmentsPath(emitOffsetSegments(verts, R, offset));
 }

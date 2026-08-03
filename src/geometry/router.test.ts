@@ -5,6 +5,8 @@ import {
   route,
   filletPath,
   offsetFilletPath,
+  emitOffsetSegments,
+  offsetSegmentsPath,
   computeArcRadii,
   DIRS_8,
 } from './router';
@@ -311,37 +313,23 @@ describe('offsetFilletPath', () => {
     expect(d).not.toContain('A 14.00 14.00');
   });
 
-  // The `keep` filter drives the "branch inner edge" setting: a seam can draw
-  // only its straight pieces, only its curved (fillet) pieces, or both. It
-  // splits the offset path into sub-paths so dropped pieces don't get bridged.
-  describe('keep filter', () => {
-    it("keep='both' is the default and matches an unfiltered call", () => {
-      expect(offsetFilletPath(bendVerts, 24, 10, 'both')).toBe(offsetFilletPath(bendVerts, 24, 10));
+  // `offsetSegmentsPath` is the same emitter offsetFilletPath uses, exposed for
+  // callers that walk the chain first (the branch seam, which decides whether
+  // to draw an edge at all by looking for an arc in it).
+  describe('offsetSegmentsPath', () => {
+    it('emits the same path offsetFilletPath does for the same chain', () => {
+      const segs = emitOffsetSegments(bendVerts, 24, 10);
+      expect(offsetSegmentsPath(segs)).toBe(offsetFilletPath(bendVerts, 24, 10));
     });
 
-    it("keep='arc' emits only the fillet arc — no straight (L) pieces", () => {
-      const d = offsetFilletPath(bendVerts, 24, 10, 'arc');
+    it('emits one continuous sub-path — a single leading M, never a pen lift', () => {
+      const d = offsetSegmentsPath(emitOffsetSegments(bendVerts, 24, 10));
+      expect(d.match(/M /g)!.length).toBe(1);
       expect(d).toContain('A 34.00 34.00');
-      expect(d).not.toContain('L');
-      // The retained arc starts a fresh sub-path at its own start point.
-      expect(d.startsWith('M ')).toBe(true);
     });
 
-    it("keep='line' emits only the straight pieces — no arc (A) commands", () => {
-      const d = offsetFilletPath(bendVerts, 24, 10, 'line');
-      expect(d).toContain('L');
-      expect(d).not.toContain('A');
-      // Two disjoint straight runs (before and after the dropped arc), so the
-      // pen lifts and re-moves between them: a second M appears.
-      expect(d.match(/M /g)!.length).toBe(2);
-    });
-
-    it("keep='arc' on a purely straight run yields an empty path", () => {
-      const straight = [
-        { x: 0, y: 0 },
-        { x: 100, y: 0 },
-      ];
-      expect(offsetFilletPath(straight, 24, 10, 'arc')).toBe('');
+    it('yields an empty path for an empty chain', () => {
+      expect(offsetSegmentsPath([])).toBe('');
     });
   });
 });
