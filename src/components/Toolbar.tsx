@@ -91,7 +91,7 @@ function ToolButtons() {
     <div className="tool-group">
       <button
         className={'tool-btn' + (effective === 'arrow' ? ' active' : '')}
-        title="Arrow (A)"
+        title="Arrow (V)"
         onClick={() => setToolMode('arrow')}
       >
         <CursorArrowIcon />
@@ -675,7 +675,7 @@ export function Toolbar() {
         <button
           type="button"
           className={'tool-btn' + (gridVisible ? ' active' : '')}
-          title={gridVisible ? 'Hide grid' : 'Show grid'}
+          title={gridVisible ? 'Hide grid (G)' : 'Show grid (G)'}
           aria-label="Toggle grid"
           aria-pressed={gridVisible}
           onClick={() => setGridVisible(!gridVisible)}
@@ -685,7 +685,7 @@ export function Toolbar() {
         <button
           type="button"
           className="tool-btn tool-btn-text"
-          title={`Grid: ${gridSize} world units — click for ${nextGridSize(gridSize)}`}
+          title={`Grid: ${gridSize} world units — click for ${nextGridSize(gridSize)} (Shift+G)`}
           aria-label="Cycle grid size"
           data-grid-size={gridSize}
           onClick={() => setGridSize(nextGridSize(gridSize))}

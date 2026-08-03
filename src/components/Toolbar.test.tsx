@@ -229,7 +229,7 @@ describe('Toolbar — tool + view toggles', () => {
     renderToolbar();
     await user.click(screen.getByTitle('Hand (H) — hold Space'));
     expect(useSelection.getState().toolMode).toBe('hand');
-    await user.click(screen.getByTitle('Arrow (A)'));
+    await user.click(screen.getByTitle('Arrow (V)'));
     expect(useSelection.getState().toolMode).toBe('arrow');
   });
 

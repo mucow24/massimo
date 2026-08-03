@@ -1713,6 +1713,12 @@ is
 deliberately not among them — a drawing aid rather than map content, and its button pairs with the
 grid-size cycler beside it.
 
+The two layers that default to hidden also answer to the keyboard: `A` flips anchors and `W`
+waypoints (App.tsx, writing through `setVisibility` exactly as the checkboxes do — no second
+opinion about where a flag lives), and the letter is a `shortcut` field on the registry entry so
+the menu row can advertise it. `G` toggles the grid and `Shift+G` cycles its size, both straight
+to the setters — the grid is not registry content.
+
 [visibility.ts](src/state/visibility.ts) holds the set as one `VISIBILITY_ITEMS` registry, because
 three consumers have to agree about it and each used to spell it out by hand: the menu, the export
 snapshot's force-everything-on pass, and the button's hidden-content mark. A flag added to two of

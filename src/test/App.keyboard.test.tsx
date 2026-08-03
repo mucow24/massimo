@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../App';
@@ -9,6 +9,7 @@ import { beginHistoryGroup, useDoc, useSelection } from '../state/store';
 import { useLineEditorPrefs } from '../state/lineEditorPrefs';
 import { historyDepth, isHistoryGrouping, redoDepth } from '../state/history';
 import { useSnapPrefs } from '../state/snapPrefs';
+import { useViewportStore } from '../state/viewportStore';
 import { useFunMode } from '../state/funMode';
 import { useToasts } from '../state/toastStore';
 import { DEFAULT_SNAP_MODES } from '../geometry/snap';
@@ -1372,6 +1373,134 @@ describe('App keyboard: station-editor Escape step-out ladder', () => {
     // Rung 3: the global wipe deselects (closing the popover).
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(useSelection.getState().selectedStationIds).toEqual([]);
+  });
+});
+
+// The view keys stand in for a toolbar click: A/W flip a layer's View-menu
+// flag, G the grid, Shift+G its size. Unlike every other letter shortcut here,
+// g is CASE-SENSITIVE — the shift decides toggle vs. cycle — so both halves are
+// pinned, and both are read off e.shiftKey rather than the letter's case so
+// CapsLock doesn't silently swap them.
+describe('App keyboard shortcuts: view + grid toggles', () => {
+  // The viewport store persists and nothing resets it between files, so seed
+  // the flags this block asserts on rather than inheriting whatever an earlier
+  // test left behind — and put them back, or the size cycled below would be
+  // every later describe's starting grid.
+  const seedFlags = (over: Partial<ReturnType<typeof useViewportStore.getState>> = {}) =>
+    useViewportStore.setState({
+      showAnchors: false,
+      showWaypoints: false,
+      gridVisible: true,
+      gridSize: 10,
+      ...over,
+    });
+  beforeEach(() => seedFlags());
+  afterEach(() => {
+    const init = useViewportStore.getInitialState();
+    seedFlags({
+      showAnchors: init.showAnchors,
+      showWaypoints: init.showWaypoints,
+      gridVisible: init.gridVisible,
+      gridSize: init.gridSize,
+    });
+  });
+
+  it('A toggles anchor visibility both ways', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(useViewportStore.getState().showAnchors).toBe(true);
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(useViewportStore.getState().showAnchors).toBe(false);
+  });
+
+  it('W toggles waypoint visibility both ways', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: 'w' });
+    expect(useViewportStore.getState().showWaypoints).toBe(true);
+    fireEvent.keyDown(window, { key: 'w' });
+    expect(useViewportStore.getState().showWaypoints).toBe(false);
+  });
+
+  it('g toggles the grid without touching its size', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: 'g' });
+    expect(useViewportStore.getState().gridVisible).toBe(false);
+    expect(useViewportStore.getState().gridSize).toBe(10);
+    fireEvent.keyDown(window, { key: 'g' });
+    expect(useViewportStore.getState().gridVisible).toBe(true);
+  });
+
+  it('Shift+G cycles the grid size and leaves the grid switched on', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: 'G', shiftKey: true });
+    expect(useViewportStore.getState().gridSize).toBe(20);
+    expect(useViewportStore.getState().gridVisible).toBe(true);
+    // 5 → 10 → 20 → 5 (GRID_SIZES), same wrap as the toolbar cycler.
+    fireEvent.keyDown(window, { key: 'G', shiftKey: true });
+    expect(useViewportStore.getState().gridSize).toBe(5);
+  });
+
+  // CapsLock reports e.key 'G' with e.shiftKey false — that is a plain g press
+  // and must toggle, not cycle.
+  it('reads the shift, not the letter case (CapsLock G still toggles)', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: 'G', shiftKey: false });
+    expect(useViewportStore.getState().gridVisible).toBe(false);
+    expect(useViewportStore.getState().gridSize).toBe(10);
+  });
+
+  // Holding the key would otherwise toggle at auto-repeat rate — a store write
+  // and a full canvas re-render per repeat, landing wherever the user let go.
+  it('ignores auto-repeat, so a held key toggles exactly once', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: 'a' });
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { key: 'a', repeat: true });
+    expect(useViewportStore.getState().showAnchors).toBe(true);
+    fireEvent.keyDown(window, { key: 'g' });
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { key: 'g', repeat: true });
+    expect(useViewportStore.getState().gridVisible).toBe(false);
+    for (let i = 0; i < 5; i++)
+      fireEvent.keyDown(window, { key: 'G', shiftKey: true, repeat: true });
+    expect(useViewportStore.getState().gridSize).toBe(10);
+  });
+
+  it('leaves the flags alone while a text field is focused', () => {
+    render(<App />);
+    const input = document.createElement('input');
+    input.type = 'text';
+    document.body.appendChild(input);
+    input.focus();
+    try {
+      for (const key of ['a', 'w', 'g']) fireEvent.keyDown(input, { key });
+      fireEvent.keyDown(input, { key: 'G', shiftKey: true });
+      expect(useViewportStore.getState()).toMatchObject({
+        showAnchors: false,
+        showWaypoints: false,
+        gridVisible: true,
+        gridSize: 10,
+      });
+    } finally {
+      document.body.removeChild(input);
+    }
+  });
+});
+
+// A moved off arrow-tool duty to free the letter for the anchors toggle above.
+describe('App keyboard shortcuts: tool mode', () => {
+  it('V picks the arrow tool and H the hand tool', () => {
+    render(<App />);
+    useSelection.setState({ ...useSelection.getState(), toolMode: 'arrow' });
+    fireEvent.keyDown(window, { key: 'h' });
+    expect(useSelection.getState().toolMode).toBe('hand');
+    fireEvent.keyDown(window, { key: 'v' });
+    expect(useSelection.getState().toolMode).toBe('arrow');
+  });
+
+  it('A no longer switches tool mode', () => {
+    render(<App />);
+    useSelection.setState({ ...useSelection.getState(), toolMode: 'hand' });
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(useSelection.getState().toolMode).toBe('hand');
   });
 });
 

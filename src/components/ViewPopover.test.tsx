@@ -87,6 +87,20 @@ describe('ViewPopover', () => {
     }
   });
 
+  // A key nobody can find is not a feature: the two layers that answer to a
+  // bare letter say so on their own row, and the letter comes off the registry
+  // entry rather than being spelled out a second time here.
+  it('shows the accelerator hint on the rows that have one, and only those', async () => {
+    await openMenu();
+    const panel = screen.getByRole('dialog', { name: 'View' });
+    const rows = [...panel.querySelectorAll('.view-popover-row')];
+    const hinted = rows.map((row) => row.querySelector('.menu-shortcut')?.textContent ?? null);
+    expect(hinted).toEqual(VISIBILITY_ITEMS.map((i) => i.shortcut ?? null));
+    // Guard against the registry losing both letters and the assertion above
+    // passing on two all-null lists.
+    expect(hinted.filter(Boolean)).toEqual(['A', 'W']);
+  });
+
   it('marks the button when a layer is hidden, and clears the mark when restored', async () => {
     const user = await openMenu();
     const btn = () => screen.getByRole('button', { name: 'View' });
