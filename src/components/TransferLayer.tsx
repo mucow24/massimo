@@ -138,11 +138,13 @@ export function TransferLayer({
     // Total visible width of the transfer ignoring the selection ring.
     const visibleExtent = style.thickness + 2 * style.strokeWidth;
     // A SELF-transfer's two ends coincide, so the capsule is a disc. Painted as
-    // a real <circle> rather than left to a zero-length round-capped <line>:
-    // that renders as a dot per spec, but the paths that matter most here don't
-    // all honor it (the exports go through other renderers), and a zero-length
-    // stroke has NO hit area at all — which would put a self-transfer beyond
-    // even the alt-click deep-pick when its own stop dot covers it.
+    // a real <circle> rather than left to a zero-length round-capped <line>.
+    // The spec says that line IS a dot of the stroke width, and Blink draws it,
+    // but everything else about it is a degenerate case: whether the exports'
+    // other renderers agree, and whether a stroke of no length hit-tests, are
+    // both questions this shape doesn't need to have. A circle paints and hits
+    // by its fill everywhere, which is what keeps a self-transfer reachable by
+    // the alt-click deep-pick when its own stop dot covers it.
     const disc = Math.hypot(b.x - a.x, b.y - a.y) < 1e-9 ? { cx: a.x, cy: a.y } : null;
     return [{ t, lineEnds, disc, style, color, strokeColor, visibleExtent }];
   });
