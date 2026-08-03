@@ -2425,7 +2425,13 @@ of their own, and are omitted below to keep it readable:
 18. **Layout-editor focus content** (editing-station-layout mode only) — painted last of all,
     _above_ the warnings, so the station being edited stays reachable: a white selection
     re-stroke over the focus dim (step 14b), its stops re-painted at full strength,
-    `StationLayoutEditor` grab rings + direction arrows, then `GhostLattice` during a drag.
+    `StationLayoutEditor` grab rings + direction arrows, then the drag's drop preview. That
+    preview is one of two, never both: `GhostLattice` for a lattice drop (amber candidate slots
+    hung off the amber projection anchor), or `SwapPreview` once the drop resolves onto another
+    stop — the dragged stop drawn standing at the target cell, its partner ghosted back at the
+    cell being vacated, and a pair of blue arrows flanking the axis. A swap has already picked its
+    winner, so the amber goes away entirely: the lattice, and the editor's own projection-anchor
+    gold with it.
 
 Outside the `<svg>`, `WarningToasts` renders one clickable HTML toast per router-flagged band;
 clicking it jumps the viewport to the band's center. It takes MapCanvas's memoized `bands`

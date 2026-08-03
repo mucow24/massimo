@@ -12,9 +12,9 @@ import { sameCell } from '../inspector/stopGridDrag';
 import { LayoutNodeHandle, type LayoutHandleState } from './LayoutNodeHandle';
 import type { LayoutDragSource } from './useStationLayoutDrag';
 
-/** Amber for the ghost lattice's origin, blue for selected / swap / drop —
- *  the projection anchor wins, since it says where the whole lattice came
- *  from and the blue only marks one node. */
+/** Amber for the ghost lattice's origin, blue for selected — the projection
+ *  anchor wins, since it says where the whole lattice came from and the blue
+ *  only marks one node. */
 const handleState = (isProjectionAnchor: boolean, isActive: boolean): LayoutHandleState =>
   isProjectionAnchor ? 'project' : isActive ? 'active' : 'idle';
 
@@ -43,14 +43,16 @@ export function StationLayoutEditor({
   lines,
   onStartNodeDrag,
   swapTarget,
-  anchorCell = null,
+  anchorCell: anchorCellProp = null,
   draggingSource = null,
 }: {
   station: Station;
   lines: Record<string, Line>;
   onStartNodeDrag: (id: string, source: LayoutDragSource, e: React.PointerEvent) => void;
-  /** The stop currently resolved as a swap drop target, if any. */
-  swapTarget: { row: number; col: number } | null;
+  /** The stop currently resolved as a swap drop target, if any. Both partners
+   *  are painted by SwapPreview while it is set, so their handles stand down
+   *  here. */
+  swapTarget: { row: number; col: number; lineId: string } | null;
   /** The node the ghost grid is projected from, in station-local cells —
    *  highlighted so it's clear what a drop aligns to. */
   anchorCell?: { row: number; col: number } | null;
@@ -58,6 +60,11 @@ export function StationLayoutEditor({
    *  live it rides the cursor as ghosts + a true-size drop preview. */
   draggingSource?: LayoutDragSource | null;
 }) {
+  // Once the drop has resolved to a SWAP, the ghost lattice is gone and the
+  // amber "the grid hangs off here" mark has nothing left to explain — it just
+  // paints a third colour beside the two nodes actually trading places. No
+  // gold anywhere in the swap case; SwapPreview says the whole story.
+  const anchorCell = swapTarget ? null : anchorCellProp;
   const selection = useSelection();
   const rotateStop = useDoc((s) => s.rotateStop);
   const rotateLabel = useDoc((s) => s.rotateLabel);
@@ -204,10 +211,12 @@ export function StationLayoutEditor({
           the drawn orientation arrow as a badge. */}
       {station.stops.map((s) => {
         // The dragged stop rides the cursor as ghosts + drop preview; hide the
-        // static handle so it isn't painted in two places at once.
+        // static handle so it isn't painted in two places at once. Its swap
+        // PARTNER hides for the same reason: SwapPreview paints it ghosted
+        // back at the source cell, which is where it's headed.
         if (draggingSource?.kind === 'stop' && draggingSource.lineId === s.lineId) return null;
+        if (swapTarget?.lineId === s.lineId) return null;
         const selected = selection.selectedStopLineId === s.lineId;
-        const isSwap = !!swapTarget && sameCell(swapTarget, s);
         const isAnchor = !!anchorCell && sameCell(anchorCell, s);
         return (
           <g
@@ -225,7 +234,7 @@ export function StationLayoutEditor({
               lines={lines}
               source={{ kind: 'stop', lineId: s.lineId as LineId }}
               cell={s}
-              state={handleState(isAnchor, selected || isSwap)}
+              state={handleState(isAnchor, selected)}
               pointerEvents={inHandMode ? 'none' : 'all'}
             />
           </g>

@@ -490,6 +490,37 @@ describe('<StationLayoutEditor /> — live-drag chrome', () => {
   });
 });
 
+describe('<StationLayoutEditor /> — swap feedback', () => {
+  // A drag resolved onto another stop is a SWAP, and SwapPreview paints both
+  // halves of it (the dragged stop at the target cell, a ghosted target back
+  // at the source). The editor's static handles for those two nodes stand
+  // down, and nothing gold survives — the amber projection anchor says "the
+  // grid hangs off here", which is noise once the drop is a swap.
+  it('hides the swap partner’s handle too — SwapPreview paints both halves', () => {
+    seed();
+    const { container } = renderEditor({
+      draggingSource: { kind: 'stop', lineId: 'L1' },
+      swapTarget: { row: 0, col: 1, lineId: 'L2' },
+    });
+    expect(container.querySelector('[data-cell-kind="stop"][data-line-id="L1"]')).toBeNull();
+    expect(container.querySelector('[data-cell-kind="stop"][data-line-id="L2"]')).toBeNull();
+  });
+
+  it('drops the gold projection anchor while a swap is resolved', () => {
+    seed();
+    // Grid projected from the label cell (0,-1) — the one node that isn't a
+    // swap partner, so this isolates the gold suppression from the hiding.
+    const { container } = renderEditor({
+      draggingSource: { kind: 'stop', lineId: 'L1' },
+      swapTarget: { row: 0, col: 1, lineId: 'L2' },
+      anchorCell: { row: 0, col: -1 },
+    });
+    const label = container.querySelector('[data-cell-kind="label"]')!;
+    expect(label.querySelector('circle')!.getAttribute('fill')).not.toBe(LAYOUT_RING_PROJECT);
+    expect(container.innerHTML).not.toContain(LAYOUT_RING_PROJECT);
+  });
+});
+
 describe('<StationLayoutEditor /> — hand mode passes through', () => {
   it('handles and shield drop pointer events so drag-to-pan works', () => {
     seed();
