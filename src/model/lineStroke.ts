@@ -16,6 +16,7 @@
 // without a geometry rebuild.
 
 import { roundClamp } from '../util/grid';
+import type { SeamEdges } from './types';
 
 // 0 = no casing; the field is dropped at the default so it is never stored.
 export const LINE_STROKE_WIDTH_DEFAULT = 0;
@@ -146,6 +147,35 @@ export const canonicalSeamColor = (c: string): string | undefined => {
 export const lineSeamWidthOf = (
   line: { seamWidth?: number } | null | undefined,
 ): number | undefined => line?.seamWidth;
+
+// The three seam edge modes, in editor order (the full notch first). Exported
+// as the list the pickers iterate, so a fourth mode would reach every control.
+export const SEAM_EDGES_MODES = ['both', 'straight', 'curved'] as const;
+
+// 'both' — the full notch. Dropped at this value, so it is never stored.
+export const LINE_SEAM_EDGES_DEFAULT: SeamEdges = 'both';
+
+/** Type guard over the three modes — validates hand-edited file data. */
+export const isSeamEdges = (v: unknown): v is SeamEdges =>
+  (SEAM_EDGES_MODES as readonly string[]).includes(v as string);
+
+/**
+ * The canonical STORED form of a seam edge mode: collapsed to `undefined` at
+ * 'both' (never stored), and for anything that isn't one of the three modes —
+ * garbage heals to the default, which is also the historical look. Shared by
+ * `setLineSeamEdges` and the `sanitizeLineStroke` file cleaner.
+ */
+export const canonicalSeamEdges = (v: unknown): SeamEdges | undefined =>
+  isSeamEdges(v) && v !== LINE_SEAM_EDGES_DEFAULT ? v : undefined;
+
+/**
+ * Effective seam edge mode of a line. Missing field ⇒ 'both', the full notch —
+ * saves from before the field existed need no migration (same idiom as
+ * `lineStrokeWidthOf`). Structural parameter so narrowed line shapes and style
+ * props both pass through.
+ */
+export const lineSeamEdgesOf = (line: { seamEdges?: SeamEdges } | null | undefined): SeamEdges =>
+  line?.seamEdges ?? LINE_SEAM_EDGES_DEFAULT;
 
 /**
  * The rendered seam stroke width for a stripe of `bandWidth`. The seam sits

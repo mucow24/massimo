@@ -1664,6 +1664,78 @@ describe('parse — legacy doc-level curveRadius bake', () => {
     expect(second.ok).toBe(true);
     if (second.ok) expect(second.doc).toEqual(first.doc);
   });
+
+  // The branch-seam edge filter took the same route as the radius above: a
+  // doc-global prototype setting became a per-line style field, so the legacy
+  // doc value has to land on every line for an old map to keep its seams.
+  describe('legacy doc-level seamEdges bake', () => {
+    it('stamps a non-default legacy mode onto every line and drops the doc field', () => {
+      const r = parse(buildFile({ seamEdges: 'curved' }));
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.doc.lines.L1.seamEdges).toBe('curved');
+      expect('seamEdges' in r.doc).toBe(false);
+    });
+
+    it("leaves lines unstamped for the legacy default 'both' (never stored)", () => {
+      const r = parse(buildFile({ seamEdges: 'both' }));
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect('seamEdges' in r.doc.lines.L1).toBe(false);
+      expect('seamEdges' in r.doc).toBe(false);
+    });
+
+    it("a line's own seamEdges wins over the legacy doc value", () => {
+      const withOwn = buildFile({ seamEdges: 'curved' }).replace(
+        '"color":"#ee352e"',
+        '"color":"#ee352e","seamEdges":"straight"',
+      );
+      const r = parse(withOwn);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.doc.lines.L1.seamEdges).toBe('straight');
+    });
+
+    it('fills line style defs that predate the field from the legacy mode', () => {
+      const r = parse(
+        buildFile({ seamEdges: 'straight', styles: { 'default-line': lineStyleDef({}) } }),
+      );
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect((r.doc.styles['default-line'].props as { seamEdges?: string }).seamEdges).toBe(
+        'straight',
+      );
+    });
+
+    it("fills a field-less line style def with 'both' when no legacy doc field exists", () => {
+      const r = parse(buildFile({ styles: { 'default-line': lineStyleDef({}) } }));
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect((r.doc.styles['default-line'].props as { seamEdges?: string }).seamEdges).toBe('both');
+    });
+
+    it('sanitizes per-line seamEdges: drops the default and any garbage value', () => {
+      const stamped = (v: string) => {
+        const r = parse(
+          buildFile({}).replace('"color":"#ee352e"', `"color":"#ee352e","seamEdges":${v}`),
+        );
+        expect(r.ok).toBe(true);
+        return r.ok ? r.doc.lines.L1.seamEdges : undefined;
+      };
+      expect(stamped('"curved"')).toBe('curved');
+      expect(stamped('"both"')).toBe(undefined); // default is never stored
+      expect(stamped('"junk"')).toBe(undefined); // garbage heals to the default
+      expect(stamped('7')).toBe(undefined); // wrong type dropped
+    });
+
+    it('is idempotent: a re-serialized baked doc parses back unchanged', () => {
+      const first = parse(buildFile({ seamEdges: 'curved' }));
+      expect(first.ok).toBe(true);
+      if (!first.ok) return;
+      const second = parse(serialize(first.doc));
+      expect(second.ok).toBe(true);
+      if (second.ok) expect(second.doc).toEqual(first.doc);
+    });
+  });
 });
 
 // Line ends on disk: the line's own style is a plain drop-at-default field; the

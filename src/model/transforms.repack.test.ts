@@ -299,6 +299,7 @@ describe('style-driven width changes repack through the same path', () => {
             endStyle: 'square',
             strokeWidth: 0,
             strokeColor: '#ffffff',
+            seamEdges: 'both',
           },
         },
       },

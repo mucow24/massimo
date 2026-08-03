@@ -11298,7 +11298,8 @@
           "curveRadius": 24,
           "endStyle": "square",
           "strokeWidth": 0,
-          "strokeColor": "#ffffff"
+          "strokeColor": "#ffffff",
+          "seamEdges": "both"
         }
       },
       "default-textLabel": {
@@ -11414,7 +11415,6 @@
     "activePalettes": [
       "mta"
     ],
-    "seamEdges": "both",
     "darkMode": false
   }
 }

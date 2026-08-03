@@ -1,5 +1,5 @@
 import { useMemo, type ComponentProps, type ReactNode } from 'react';
-import type { Line, LineId, SeamEdges, Station, StationId } from '../../model/types';
+import type { Line, LineId, Station, StationId } from '../../model/types';
 import type { UiMode } from '../../state/selection';
 import {
   stopPosWorld,
@@ -53,9 +53,6 @@ interface Props {
   lineCircles: Record<string, import('../../model/types').LineCircle>;
   renderables: OrderedRenderable[];
   underlayColor: string;
-  // Global branch-seam inner-edge mode, forwarded to the overlay's seam bands
-  // so the highlighted line's seam matches the main layer.
-  seamEdges: SeamEdges;
   uiMode: UiMode;
   // Edit Stops mouseover target (already pan-suppressed by the caller — null
   // while panning). Drives the 50%-opacity preview of the ring/halo a click
@@ -92,7 +89,6 @@ export function HighlightedLineLayer({
   lineCircles,
   renderables,
   underlayColor,
-  seamEdges,
   uiMode,
   appendHover,
   zoom,
@@ -196,7 +192,6 @@ export function HighlightedLineLayer({
                   pass={pass}
                   lines={lines}
                   underlayColor={underlayColor}
-                  seamEdges={seamEdges}
                 />
               )),
             );

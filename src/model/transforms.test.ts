@@ -20,7 +20,7 @@ import {
   makeTransfer,
   stationWithStop,
 } from '../test/fixtures';
-import type { MapDoc, RouteBullet, Station, TextLabel } from './types';
+import type { LineStyleProps, MapDoc, RouteBullet, Station, TextLabel } from './types';
 
 describe('clampRouteBulletSize', () => {
   it('snaps to the quarter-unit grid and clamps to the floor ROUTE_BULLET_SIZE_MIN', () => {
@@ -1446,7 +1446,6 @@ describe('clearAll', () => {
       stations: [makeStation({ id: 's1' })],
       lines: [makeLine({ id: 'L1' })],
       activePalettes: ['mta', 'custom-x'],
-      seamEdges: 'straight',
       darkMode: true,
     });
     const styled = {
@@ -1457,7 +1456,6 @@ describe('clearAll', () => {
     const cleared = T.clearAll(styled);
     expect(cleared.name).toBe('My Map');
     expect(cleared.activePalettes).toEqual(['mta', 'custom-x']);
-    expect(cleared.seamEdges).toBe('straight');
     // Clearing a night map leaves a night map — Clear empties the canvas, it
     // doesn't reset what kind of map this is.
     expect(cleared.darkMode).toBe(true);
@@ -1751,20 +1749,37 @@ describe('activePalettes', () => {
   });
 });
 
-describe('setSeamEdges (branch inner-edge mode)', () => {
-  it("DEFAULT_DOC.seamEdges defaults to 'both'", () => {
-    expect(T.DEFAULT_DOC.seamEdges).toBe('both');
+describe('setLineSeamEdges (branch inner-edge mode)', () => {
+  const doc = () => makeDoc({ lines: [makeLine({ id: 'L1', styleId: 'sty' })] });
+
+  it('the factory line style paints both edge kinds, and the doc carries no mode of its own', () => {
+    expect((T.DEFAULT_STYLES['default-line'].props as LineStyleProps).seamEdges).toBe('both');
+    expect('seamEdges' in T.DEFAULT_DOC).toBe(false);
   });
 
-  it('stores the chosen mode', () => {
-    const doc = makeDoc({});
-    expect(T.setSeamEdges(doc, 'curved').seamEdges).toBe('curved');
-    expect(T.setSeamEdges(doc, 'straight').seamEdges).toBe('straight');
+  it("stores a non-default mode and drops the field at 'both'", () => {
+    const curved = T.setLineSeamEdges(doc(), 'L1', 'curved');
+    expect(curved.lines.L1.seamEdges).toBe('curved');
+    const back = T.setLineSeamEdges(curved, 'L1', 'both');
+    expect('seamEdges' in back.lines.L1).toBe(false);
   });
 
-  it('returns the input doc unchanged when the mode is unchanged (no undo no-op)', () => {
-    const doc = T.setSeamEdges(makeDoc({}), 'curved');
-    expect(T.setSeamEdges(doc, 'curved')).toBe(doc);
+  it('detaches from the style preset — the seam edge mode is a covered field', () => {
+    expect(T.setLineSeamEdges(doc(), 'L1', 'straight').lines.L1.styleId).toBeUndefined();
+  });
+
+  it('is a reference no-op when the stored value would not change', () => {
+    const d = doc();
+    expect(T.setLineSeamEdges(d, 'L1', 'both')).toBe(d);
+    const curved = T.setLineSeamEdges(d, 'L1', 'curved');
+    expect(T.setLineSeamEdges(curved, 'L1', 'curved')).toBe(curved);
+    // …so a no-op re-write cannot silently strip the tag either.
+    expect(T.setLineSeamEdges(d, 'L1', 'both').lines.L1.styleId).toBe('sty');
+  });
+
+  it('no-ops on an unknown line', () => {
+    const d = doc();
+    expect(T.setLineSeamEdges(d, 'nope' as never, 'curved')).toBe(d);
   });
 });
 

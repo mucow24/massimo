@@ -12,6 +12,7 @@ import { withHexAlpha } from '../../util/color';
 import { NumericFieldRow } from '../NumericFieldRow';
 import { StyleRow } from '../StyleRow';
 import { LineEndSegmented } from '../LineEndPicker';
+import { SeamEdgesSegmented } from '../SeamEdgesPicker';
 import { lineEndStyleOf } from '../../model/lineEnd';
 import {
   LINE_INTERLINE_GAP_MAX,
@@ -51,6 +52,7 @@ import {
   LINE_STROKE_WIDTH_MIN,
   lineCasingColor,
   lineSeamColor,
+  lineSeamEdgesOf,
   lineSeamWidthOf,
   lineStrokeRailWidth,
   lineStrokeWidthOf,
@@ -85,6 +87,7 @@ export function LineInspector({ id }: { id: LineId }) {
   const setLineStrokeColor = useDoc((s) => s.setLineStrokeColor);
   const setLineSeamColor = useDoc((s) => s.setLineSeamColor);
   const setLineSeamWidth = useDoc((s) => s.setLineSeamWidth);
+  const setLineSeamEdges = useDoc((s) => s.setLineSeamEdges);
   const setLineDashLength = useDoc((s) => s.setLineDashLength);
   const setLineDashWidth = useDoc((s) => s.setLineDashWidth);
   const styleExpanded = useLineEditorPrefs((s) => s.styleExpanded);
@@ -374,6 +377,15 @@ export function LineInspector({ id }: { id: LineId }) {
                 withHexAlpha(lineCasingColor(line, line.color), 0)
               }
               onChange={(c) => setLineSeamColor(line.id, c)}
+            />
+          </div>
+          {/* Which pieces of the seam edge to keep — the full notch, or just the
+              straight runs / fillet arcs so a branch reads as a single hint. */}
+          <div className="options-popover-row">
+            <label className="options-popover-label">Inner edges</label>
+            <SeamEdgesSegmented
+              value={lineSeamEdgesOf(line)}
+              onSelect={(v) => setLineSeamEdges(line.id, v)}
             />
           </div>
         </>

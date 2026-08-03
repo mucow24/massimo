@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { chooseOption } from '../test/interaction';
 import { Toolbar } from './Toolbar';
 import { useDoc } from '../state/store';
 import { useCustomPalettes } from '../state/customPalettes';
@@ -99,26 +98,14 @@ describe('<OptionsPopover />', () => {
     expect(screen.queryByRole('slider', { name: /tracking/i })).toBeNull();
   });
 
-  describe('branch inner edges', () => {
-    it("defaults to 'both' (shown on the field-select trigger)", async () => {
-      const user = userEvent.setup();
-      render(<Toolbar />);
-      await user.click(screen.getByRole('button', { name: 'Options' }));
-      // Radix Select trigger is a combobox button; the current value shows as its
-      // text (Select.Value), not a native <select> value.
-      const select = screen.getByRole('combobox', { name: /branch inner edges/i });
-      expect(select).toHaveTextContent('Both');
-    });
-
-    it('selecting a mode writes it to the doc', async () => {
-      const user = userEvent.setup();
-      render(<Toolbar />);
-      await user.click(screen.getByRole('button', { name: 'Options' }));
-      await chooseOption(user, /branch inner edges/i, 'Curved only');
-      expect(useDoc.getState().seamEdges).toBe('curved');
-      await chooseOption(user, /branch inner edges/i, 'Straight only');
-      expect(useDoc.getState().seamEdges).toBe('straight');
-    });
+  it('no longer exposes a branch inner-edge picker (it moved to per-line styles)', async () => {
+    // The seam edge filter is a per-line style field now — edited in the line
+    // inspector and line style presets, not as a map-wide option.
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    await user.click(screen.getByRole('button', { name: 'Options' }));
+    expect(screen.queryByRole('combobox', { name: /branch inner edges/i })).toBeNull();
+    expect(screen.queryByRole('radiogroup', { name: /branch inner edges/i })).toBeNull();
   });
 
   describe('color palettes', () => {

@@ -411,7 +411,7 @@ describe('<SegmentBand> — casing (silhouette + inset body)', () => {
 describe('<SegmentBand> — branch seam (pass="seam")', () => {
   const seamLines = (
     seamColor: string | undefined,
-    opts: { strokeWidth?: number; seamWidth?: number } = {},
+    opts: { strokeWidth?: number; seamWidth?: number; seamEdges?: SeamEdges } = {},
   ): Record<LineId, Line> => {
     const strokeWidth = opts.strokeWidth ?? 4;
     return {
@@ -421,6 +421,7 @@ describe('<SegmentBand> — branch seam (pass="seam")', () => {
         ...(strokeWidth > 0 ? { strokeWidth } : {}),
         ...(seamColor ? { seamColor } : {}),
         ...(opts.seamWidth !== undefined ? { seamWidth: opts.seamWidth } : {}),
+        ...(opts.seamEdges !== undefined ? { seamEdges: opts.seamEdges } : {}),
       }),
     };
   };
@@ -476,7 +477,7 @@ describe('<SegmentBand> — branch seam (pass="seam")', () => {
 
   describe('seamEdges filter (branch inner edges)', () => {
     // A bent centerline so each seam edge carries BOTH a straight (L) run and a
-    // fillet arc (A) — the two kinds the global setting picks between.
+    // fillet arc (A) — the two kinds the LINE's own setting picks between.
     const bentSeam = (seamEdges?: SeamEdges) => {
       const spec = baseSpec(['L1']);
       spec.centerline = [
@@ -491,8 +492,7 @@ describe('<SegmentBand> — branch seam (pass="seam")', () => {
             spec={spec}
             stripeIndex={0}
             pass="seam"
-            lines={seamLines('#ff000080')}
-            seamEdges={seamEdges}
+            lines={seamLines('#ff000080', { seamEdges })}
           />
         </svg>,
       );
@@ -502,7 +502,7 @@ describe('<SegmentBand> — branch seam (pass="seam")', () => {
         .map((p) => p.getAttribute('d') ?? '')
         .join(' ');
 
-    it("default ('both') draws both the straight and the curved seam pieces", () => {
+    it('a line storing no mode draws both the straight and the curved seam pieces', () => {
       const d = seamPaths(bentSeam().container);
       expect(d).toContain('L');
       expect(d).toContain('A');
@@ -521,18 +521,45 @@ describe('<SegmentBand> — branch seam (pass="seam")', () => {
     });
 
     it("'curved' on a fully straight band emits no seam paths (skips the empty edge)", () => {
-      const { container } = render(
-        <svg>
-          <SegmentBand
-            spec={baseSpec(['L1'])}
-            stripeIndex={0}
-            pass="seam"
-            lines={seamLines('#ff000080')}
-            seamEdges="curved"
-          />
-        </svg>,
-      );
+      const { container } = renderSeam(seamLines('#ff000080', { seamEdges: 'curved' }));
       expect(container.querySelectorAll('[data-band-seam]').length).toBe(0);
+    });
+
+    // The mode is per LINE now, so two lines sharing a band can disagree — the
+    // whole point of moving it off the doc.
+    it('reads each line’s own mode, so two lines in one band can differ', () => {
+      const lines: Record<LineId, Line> = {
+        L1: makeLine({
+          id: 'L1',
+          stations: ['s1', 's2'],
+          strokeWidth: 4,
+          seamColor: '#ff000080',
+          seamEdges: 'curved',
+        }),
+        L2: makeLine({
+          id: 'L2',
+          stations: ['s1', 's2'],
+          strokeWidth: 4,
+          seamColor: '#ff000080',
+        }),
+      };
+      const spec = baseSpec(['L1', 'L2']);
+      spec.centerline = [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 100 },
+      ];
+      spec.radius = 24;
+      const at = (stripeIndex: number) =>
+        seamPaths(
+          render(
+            <svg>
+              <SegmentBand spec={spec} stripeIndex={stripeIndex} pass="seam" lines={lines} />
+            </svg>,
+          ).container,
+        );
+      expect(at(0)).not.toContain('L'); // L1: curved only
+      expect(at(1)).toContain('L'); // L2: the full notch
     });
   });
 });

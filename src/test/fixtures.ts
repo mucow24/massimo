@@ -248,6 +248,7 @@ const STYLE_PROPS_DEFAULTS: StylePropsByKind = {
     width: LINE_WIDTH_DEFAULT,
     curveRadius: LINE_CURVE_RADIUS_DEFAULT,
     endStyle: 'square',
+    seamEdges: 'both',
     strokeWidth: 0,
     strokeColor: '#ffffff',
   },
@@ -315,7 +316,6 @@ export function makeDoc(parts: {
   styles?: StyleDef[];
   styleDefaults?: Partial<Record<StyleKind, string>>;
   activePalettes?: import('../model/palettes').PaletteId[];
-  seamEdges?: import('../model/types').SeamEdges;
   darkMode?: boolean;
 }): MapDoc {
   const stations: Record<StationId, Station> = {};
@@ -386,7 +386,6 @@ export function makeDoc(parts: {
     styles,
     styleDefaults,
     activePalettes: parts.activePalettes ?? ['mta'],
-    seamEdges: parts.seamEdges ?? 'both',
     darkMode: parts.darkMode ?? false,
   };
 }
