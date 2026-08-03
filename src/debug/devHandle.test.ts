@@ -1,10 +1,19 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { devCounters, makeDevHandle, roundTripDoc } from './devHandle';
 import { regionsFor, regionCacheSize, resetRegionCache } from '../geometry/regionCache';
+import {
+  buildExclusionHolesCached,
+  resetExclusionHoleCache,
+  type HoleCacheStats,
+  type HoleChain,
+  type RegionFace,
+} from '../geometry/lineRegions';
+import { buildRegionsIncremental } from '../geometry/regionIncremental';
 import { clearHistory, historyDepth } from '../state/history';
 import { useDoc } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
-import { makeLine, makeStation, makeStop } from '../test/fixtures';
+import { makeBandSpec, makeLine, makeStation, makeStop } from '../test/fixtures';
+import type { LineId } from '../model/types';
 
 const seedDoc = () =>
   useDoc.setState({
@@ -21,7 +30,84 @@ beforeEach(() => {
   seedDoc();
   clearHistory();
   resetRegionCache();
+  resetExclusionHoleCache();
 });
+
+// --- exclusion-hole cache probe --------------------------------------------
+// The hole cache has no size accessor; its only observable is that a second,
+// identical build REUSES its entries (`stats.reused > 0`) while an empty cache
+// RECOMPUTES them. `fillHoleCache` seeds it from a two-crossing grid;
+// `reuseFires` reports whether those entries are still warm — the difference is
+// how a test sees whether `resetExclusionHoleCache` actually ran.
+const hBand = (lineId: string, y: number) =>
+  makeBandSpec([lineId], {
+    pairKey: `${lineId}|p`,
+    bandKey: `${lineId}#b`,
+    centerline: [
+      { x: -40, y },
+      { x: 260, y },
+    ],
+  });
+const vBand = (lineId: string, x: number) =>
+  makeBandSpec([lineId], {
+    pairKey: `${lineId}|p`,
+    bandKey: `${lineId}#b`,
+    centerline: [
+      { x, y: -40 },
+      { x, y: 260 },
+    ],
+  });
+const HOLE_BANDS = [hBand('hA', 0), hBand('hB', 110), vBand('vA', 0), vBand('vB', 110)];
+const HOLE_ORDER: LineId[] = ['hA', 'hB', 'vA', 'vB'];
+
+/** Override every multi-cover face to its lowest-ranked cover line, so the
+ *  build actually produces hole entries worth caching. */
+const overrideAll = (faces: RegionFace[], lineOrder: LineId[]) => {
+  const rank = new Map(lineOrder.map((id, i) => [id, i]));
+  return faces.map((f) => {
+    const sorted = [...f.lineIds].sort((a, b) => (rank.get(a) ?? 99) - (rank.get(b) ?? 99));
+    const def = sorted[0];
+    const winner = sorted[sorted.length - 1];
+    return winner !== def ? { winner, assignmentId: 'r' } : { winner: def, assignmentId: null };
+  });
+};
+
+const fillHoleCache = () => {
+  const built = buildRegionsIncremental(HOLE_BANDS, [], null);
+  const winners = overrideAll(built.faces, HOLE_ORDER);
+  const chain: HoleChain = { state: built.state, prevState: null, dirtyBoxes: built.dirtyBoxes };
+  buildExclusionHolesCached(
+    built.faces,
+    winners,
+    HOLE_ORDER,
+    HOLE_BANDS,
+    [],
+    () => 0,
+    built.slivers,
+    chain,
+  );
+  return { built, winners };
+};
+
+const reuseFires = (
+  built: ReturnType<typeof buildRegionsIncremental>,
+  winners: ReturnType<typeof overrideAll>,
+): boolean => {
+  const stats: HoleCacheStats = { reused: 0, recomputed: 0 };
+  const sameState: HoleChain = { state: built.state, prevState: null, dirtyBoxes: [] };
+  buildExclusionHolesCached(
+    built.faces,
+    winners,
+    HOLE_ORDER,
+    HOLE_BANDS,
+    [],
+    () => 0,
+    built.slivers,
+    sameState,
+    stats,
+  );
+  return stats.reused > 0;
+};
 
 describe('devCounters', () => {
   it('reports the live doc size', () => {
@@ -103,15 +189,45 @@ describe('the handle wiring', () => {
     expect(historyDepth()).toBe(0);
   });
 
-  it('reset.regions empties the region cache', () => {
+  it('reset.regions empties both the region LRU and the exclusion-hole cache', () => {
     regionsFor({
       stations: useDoc.getState().stations,
       lines: useDoc.getState().lines,
       lineCircles: {},
     });
+    const { built, winners } = fillHoleCache();
     expect(regionCacheSize()).toBeGreaterThan(0);
+    expect(reuseFires(built, winners)).toBe(true); // both caches warm
+
     makeDevHandle().reset.regions();
+
+    // Both caches, not just the region LRU — dropping the hole-cache reset
+    // would leave stale exclusion geometry behind and this would catch it.
     expect(regionCacheSize()).toBe(0);
+    expect(reuseFires(built, winners)).toBe(false);
+  });
+
+  it('reset.all drops history, both region caches, and re-parses the doc', () => {
+    useDoc.getState().addStation(50, 50, 'New');
+    regionsFor({
+      stations: useDoc.getState().stations,
+      lines: useDoc.getState().lines,
+      lineCircles: {},
+    });
+    const { built, winners } = fillHoleCache();
+    expect(historyDepth()).toBeGreaterThan(0);
+    expect(regionCacheSize()).toBeGreaterThan(0);
+    expect(reuseFires(built, winners)).toBe(true);
+    const beforeStations = useDoc.getState().stations;
+
+    makeDevHandle().reset.all();
+
+    // Each of the four things a reload resets; a fan-out that dropped any one
+    // of them would leave its assertion standing.
+    expect(historyDepth()).toBe(0);
+    expect(regionCacheSize()).toBe(0);
+    expect(reuseFires(built, winners)).toBe(false);
+    expect(useDoc.getState().stations).not.toBe(beforeStations); // doc re-parsed in place
   });
 });
 
@@ -119,4 +235,5 @@ afterEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   clearHistory();
   resetRegionCache();
+  resetExclusionHoleCache();
 });

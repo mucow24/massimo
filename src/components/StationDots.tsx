@@ -2,7 +2,7 @@ import { Line, Station } from '../model/types';
 import { useDoc, useSelection } from '../state/store';
 import { useThemeColors } from '../state/theme';
 import { useViewportStore } from '../state/viewportStore';
-import { STOP_DOT_RADIUS, stationFrameRad, stopCenterAt } from '../geometry/orientation';
+import { STOP_DOT_RADIUS, stationFrameDeg, stopCenterAt } from '../geometry/orientation';
 import { stationCircle } from '../geometry/lineCircle';
 import { stopPosWorld } from '../geometry/interlining';
 import { resolveDotStyle, stationIsSingleton } from '../model/transforms';
@@ -63,7 +63,7 @@ export function StationDots({
   // The phantom preview is a STOP, so its group turns with the stop frame —
   // on a ring-bound station that is the ring's, not the octant (stationFrameRad).
   const circle = stationCircle(station, lineCircles);
-  const angle = (stationFrameRad(station, circle) * 180) / Math.PI;
+  const angle = stationFrameDeg(station, circle);
   // Singleton vs. shared drives which split default each stop resolves — a
   // per-station property (every stop here shares it), recomputed each render so
   // a station reduced to one line immediately adopts its singleton default.
