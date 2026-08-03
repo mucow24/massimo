@@ -318,10 +318,13 @@ describe('<StopRows />', () => {
     expect(useSelection.getState().selectedLineId).toBe('L2');
   });
 
-  it('every row has an ENABLED shape picker (no selection ritual)', () => {
+  it('every row has exactly one ENABLED shape picker (no selection ritual)', () => {
     seed({ a: hub() });
     renderRows();
     const rows = screen.getAllByTestId('stop-row');
+    // One per stop row, not one for the station — the count carried the
+    // StationInspector-level copy of this test that used to live next door.
+    expect(screen.getAllByRole('button', { name: 'Stop shape' })).toHaveLength(rows.length);
     for (const row of rows) {
       expect(within(row).getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
         'aria-disabled',

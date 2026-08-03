@@ -88,12 +88,9 @@ describe('save/load round-trip', () => {
     expect(r.ok).toBe(false);
   });
 
-  it('round-trip envelope matches the canonical format', () => {
-    const json = serialize(makeDoc({}));
-    const obj = JSON.parse(json);
-    expect(obj.format).toBe(SCHEMA_FORMAT);
-    expect(obj.doc).toBeDefined();
-  });
+  // The envelope shape rides the round-trip test at the top of this describe;
+  // asserting `obj.format === SCHEMA_FORMAT` on output that serialize() stamped
+  // from that same constant compared the constant against itself.
 
   it('round-trips per-station typography', () => {
     const fixture = makeDoc({
@@ -287,24 +284,7 @@ describe('save/load round-trip', () => {
     }
   });
 
-  it('load strips the retired segmentLayers field from legacy files', () => {
-    // Files saved before the region-paint rework carry per-line segmentLayers.
-    // The field is retired (regionAssignments replaced it); the load sanitizer
-    // must strip it so dead data never re-enters the doc.
-    const fixture = makeDoc({
-      stations: [makeStation({ id: 'a' }), makeStation({ id: 'b' })],
-      lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
-    });
-    fixture.lines.L1 = {
-      ...fixture.lines.L1,
-      segmentLayers: { 'a|b': 2 },
-    } as (typeof fixture.lines)['L1'];
-    const result = parse(JSON.stringify({ format: SCHEMA_FORMAT, doc: fixture }));
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect('segmentLayers' in result.doc.lines.L1).toBe(false);
-    }
-  });
+  // The retired-segmentLayers strip is pinned by serialize.test.ts:351.
 });
 
 describe('localStorage rehydrate — line edge backfill', () => {

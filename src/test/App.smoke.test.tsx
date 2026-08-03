@@ -13,13 +13,15 @@ describe('App smoke', () => {
     expect(screen.getByRole('img', { name: 'Massimo' })).toBeInTheDocument();
   });
 
-  it('shows toolbar menus', () => {
-    render(<App />);
-    expect(screen.getByRole('button', { name: /Canvas/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Add/ })).toBeInTheDocument();
-  });
+  // The Canvas and Add menus are driven in depth by Toolbar.test.tsx (see its
+  // "Canvas menu" describe and the Add-menu cases), which opens them rather
+  // than just checking they exist — a presence check here could not fail
+  // without taking that whole file down with it.
 
   it('exposes a Manage palettes button in the toolbar', () => {
+    // Kept: this is the ONLY assertion in the suite that the button is in the
+    // toolbar at all. PalettesDialog.test.tsx covers the dialog's behaviour but
+    // never names its trigger.
     render(<App />);
     expect(screen.getByRole('button', { name: 'Manage palettes' })).toBeInTheDocument();
   });
