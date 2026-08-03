@@ -3,7 +3,7 @@
  * Attributes every clipper call to its SOURCE LINE via stack capture, so the
  * per-frame clipper bill can be split by call site rather than by op name.
  *
- *   PERF=1 npx vitest run src/perf/clipAttribution.perf.test.ts --disableConsoleIntercept
+ *   PERF=1 npx vitest run -c .perf/vitest.bench.config.ts .perf/bench/clipAttribution.perf.test.ts --disableConsoleIntercept
  */
 import { describe, it, expect, vi } from 'vitest';
 import { readPerfMap } from '../perfMap';
@@ -54,7 +54,10 @@ const { siteStats, resetSites, armed, timedSite } = vi.hoisted(() => {
   return { siteStats, resetSites, armed, timedSite };
 });
 
-vi.mock('../geometry/clip', async (importOriginal) => {
+// The specifier is resolved relative to THIS file, so it must carry the same
+// `../../src/` prefix as the real imports above — `../geometry/clip` resolves to
+// nothing, and vitest no-ops an unresolvable mock silently rather than throwing.
+vi.mock('../../src/geometry/clip', async (importOriginal) => {
   const orig = (await importOriginal()) as Record<string, unknown>;
   const out: Record<string, unknown> = { ...orig };
   for (const name of Object.keys(orig)) {
@@ -131,6 +134,13 @@ describe.runIf(PERF)('clip attribution', () => {
             `${(wall / FRAMES).toFixed(1)}ms/frame (instrumented)`,
         );
         const rows = Object.entries(siteStats).sort((a, b) => b[1].ms - a[1].ms);
+        // PROBE VALIDATION: an inert mock leaves every counter at zero, and the
+        // per-call-site table below then bills the clipper at 0% of the frame —
+        // the exact inverse of the finding — while still passing green.
+        const totalCalls = rows.reduce((a, [, c]) => a + c.n, 0);
+        expect(totalCalls, 'clip.ts mock never intercepted — attribution is void').toBeGreaterThan(
+          0,
+        );
         let tot = 0;
         for (const [, c] of rows) tot += c.ms;
         for (const [k, c] of rows.slice(0, 14)) {
@@ -140,8 +150,14 @@ describe.runIf(PERF)('clip attribution', () => {
               `${Math.round(c.verts / c.n)} verts/call`,
           );
         }
+        // The % column is share of the INSTRUMENTED frame, and per-call-site
+        // timing costs roughly 10x the frame it measures (571ms/f here vs
+        // ~59ms real), so it understates badly — read the ms/f and calls/f
+        // columns, and take the clipper's true frame share from
+        // dragPerf.perf.test.ts's coarser whole-module attribution.
         console.log(
-          `  --- clip total ${(tot / FRAMES).toFixed(1)}ms/f (${((tot / wall) * 100).toFixed(0)}%)`,
+          `  --- clip total ${(tot / FRAMES).toFixed(1)}ms/f ` +
+            `(${((tot / wall) * 100).toFixed(0)}% of the INSTRUMENTED frame — see note above)`,
         );
       }
       expect(true).toBe(true);

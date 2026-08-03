@@ -15,7 +15,7 @@
  * The open question is whether clipper's integer arithmetic agrees. This test
  * answers it by comparing canonical content keys of the resulting components.
  *
- *   PERF=1 npx vitest run src/perf/chunkExact.perf.test.ts --disableConsoleIntercept
+ *   PERF=1 npx vitest run -c .perf/vitest.bench.config.ts .perf/bench/chunkExact.perf.test.ts --disableConsoleIntercept
  */
 import { describe, it, expect } from 'vitest';
 import { readPerfMap } from '../perfMap';
