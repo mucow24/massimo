@@ -47,6 +47,7 @@ import { SnapToggleBar } from './SnapToggleBar';
 import { OptionsPopover } from './OptionsPopover';
 import { ViewPopover } from './ViewPopover';
 import { HelpPopover } from './HelpPopover';
+import { PerfPopover } from './PerfPopover';
 import { MapNameField } from './MapNameField';
 import { MapVersionPill } from './MapVersionPill';
 import { pushToast } from '../state/toastStore';
@@ -689,6 +690,7 @@ export function Toolbar() {
           {darkMode ? <SunIcon /> : <MoonIcon />}
         </button>
         <ViewPopover />
+        <PerfPopover />
         <HelpPopover />
       </div>
       <input

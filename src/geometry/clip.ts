@@ -114,6 +114,33 @@ export function __resetClipper(): void {
   libPromise = null;
 }
 
+/**
+ * Bytes of wasm linear memory the engine is holding, or 0 if it has not
+ * loaded. Instrumentation only — the emscripten heap GROWS and never shrinks,
+ * so this is the number that says whether a session's slowdown lives on the
+ * wasm side. The property is off-contract (emscripten's, not the wrapper's),
+ * hence the defensive probe rather than a typed read.
+ */
+export function clipperHeapBytes(): number {
+  const native = lib?.instance as unknown as
+    | { HEAPU8?: { buffer?: ArrayBuffer }; wasmMemory?: { buffer?: ArrayBuffer } }
+    | undefined;
+  return native?.HEAPU8?.buffer?.byteLength ?? native?.wasmMemory?.buffer?.byteLength ?? 0;
+}
+
+/**
+ * Instrumentation seam: the raw emscripten module behind the wrapper, or null
+ * before it loads. Exposed ONLY so a harness can probe the allocator — heap
+ * SIZE (above) cannot tell a leak from fragmentation, and answering that needs
+ * `_malloc`/`_free` directly. Nothing in the app may use this.
+ */
+export function __clipperNativeInstance(): {
+  _malloc?: (n: number) => number;
+  _free?: (p: number) => void;
+} | null {
+  return (lib?.instance as unknown as { _malloc?: (n: number) => number } | undefined) ?? null;
+}
+
 function engine(): ClipperLibWrapper {
   if (!lib) {
     throw new ClipperUnavailableError('clip.ts was used before loadClipper() resolved');
