@@ -959,7 +959,10 @@ describe('migrateDoc', () => {
           },
         },
       };
-      const out = run(input, 18);
+      // Read the live persist version — the original literal 18 was current
+      // when this was written, and every bump since has meant this ran the
+      // 19..N migrations rather than the no-migration path it names.
+      const out = run(input, useDoc.persist.getOptions().version);
       // No migration applies at the current version → same reference passes
       // straight through. (No `styles` key either, so the style-invariant
       // pass leaves it alone.)

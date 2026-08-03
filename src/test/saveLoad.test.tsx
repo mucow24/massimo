@@ -314,14 +314,19 @@ describe('localStorage rehydrate — line edge backfill', () => {
   });
 
   it('backfills edges when rehydrating a doc stranded at the current version with edge-less lines', async () => {
-    // The exact shape an intermediate build persisted: version 14 (== the
-    // current persist version, so zustand SKIPS `migrate`) with lines that
-    // predate the `edges` field. Without a rehydrate-time backfill the renderer
-    // reads `ln.edges.join(...)` on undefined and the whole app white-screens.
+    // The exact shape an intermediate build persisted: stamped at the CURRENT
+    // persist version (so zustand SKIPS `migrate`) with lines that predate the
+    // `edges` field. Without a rehydrate-time backfill the renderer reads
+    // `ln.edges.join(...)` on undefined and the whole app white-screens.
+    //
+    // Read the version off the live config — the original literal 14 was the
+    // current version when this was written, and once it bumped the test
+    // quietly started exercising `migrate` instead of the `merge` hook it
+    // exists to guard.
     localStorage.setItem(
       'vignelli-map-doc-v1',
       JSON.stringify({
-        version: 14,
+        version: useDoc.persist.getOptions().version,
         state: {
           lines: {
             L1: {
