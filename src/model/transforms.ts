@@ -72,7 +72,6 @@ import {
   degreeOf,
   edgeNeighbors,
   edgesWithout,
-  isLineTerminus,
   lineHasEdge,
   removeEdge,
   shortestPathOnLine,
@@ -89,6 +88,7 @@ import {
   tangentGap,
 } from '../geometry/orientation';
 import { CELL_EPS, sameCell } from '../geometry/lattice';
+import { lineEndsAt } from '../geometry/interlining';
 import { GRID_INTERVAL, snapPointToGrid, type GridSnap } from '../geometry/snap';
 import { polygonCentroid, edgeMidpoint } from '../geometry/polygon';
 import { clampSize as clampSvgImageSize, normalizeRotation } from '../geometry/svgImage';
@@ -981,7 +981,7 @@ export function setStationEndStyle(
   end: LineEndStyle,
 ): MapDoc {
   const line = doc.lines[lineId];
-  if (!line || !isLineTerminus(line, stationId)) return doc;
+  if (!line || !lineEndsAt(doc.stations, line, stationId)) return doc;
   const cur = line.stationEndStyles;
   const stored = end === lineEndStyleOf(line) ? undefined : end;
   if ((cur?.[stationId] ?? undefined) === stored) return doc;
@@ -3811,15 +3811,21 @@ function pruneOrphanLineTags(doc: MapDoc): MapDoc {
   return changed ? { ...doc, lineTags: next } : doc;
 }
 
-// Drop the line's TOPOLOGY-SCOPED overrides that its current edge set no longer
+// Drop the line's TOPOLOGY-SCOPED overrides that its current shape no longer
 // admits. Two maps qualify, and they share this one choke point because they
 // share a lifetime — an override outlives the thing it overrides for exactly as
 // long as nobody looks:
 //
 //   segmentStyles     — keyed by pair-key; valid while that pair is an edge.
-//   stationEndStyles  — keyed by station; valid while that station is an END
-//                       (degree 1). Appending past a terminus, closing a loop,
-//                       branching at it, or dropping the stop all revoke it.
+//   stationEndStyles  — keyed by station; valid while that station is still ON
+//                       the line. Removing the stop, or the station, revokes it.
+//
+// A pin is NOT judged on whether the line currently ends there. That is
+// geometric (`lineEndsAt`), and geometry moves under a station drag, a rotation
+// or an orientation cycle — none of which come through here, so a pin pruned on
+// endedness would be one the next such edit could no longer restore. It sits
+// inert instead: nothing paints an end style where the line does not end (see
+// `buildStopMarkers`), and it comes back the moment the stop does.
 //
 // Returns the input line unchanged when nothing needed dropping (the
 // reference-on-no-op contract undo grouping relies on).
@@ -3839,10 +3845,11 @@ function pruneOrphanLineOverrides(line: Line): Line {
   }
   const ends = next.stationEndStyles;
   if (ends) {
+    const members = new Set<StationId>(next.stations);
     const filtered: Record<StationId, LineEndStyle> = {};
     let changed = false;
     for (const stationId of Object.keys(ends)) {
-      if (isLineTerminus(next, stationId)) filtered[stationId] = ends[stationId];
+      if (members.has(stationId)) filtered[stationId] = ends[stationId];
       else changed = true;
     }
     if (changed) next = withStationEndStyles(next, filtered);

@@ -6,7 +6,7 @@ import { labelLayoutLocal, type LabelLayout } from '../geometry/labelLayout';
 import { STOP_SIZE } from '../geometry/orientation';
 import { stopMetricsOf } from '../model/stopMetrics';
 import { serialize, parse } from '../model/serialize';
-import { isLineTerminus } from '../model/lineTopology';
+import { degreeOf } from '../model/lineTopology';
 import {
   AXES,
   OCTANT_NAME,
@@ -83,8 +83,10 @@ describe('wand gallery', () => {
       const hosts = station.stops.map((s) => doc.lines[s.lineId]);
       expect(hosts.length, c.stationId).toBeGreaterThan(0);
       // The station's PRIMARY line (first stop) decides mid vs. terminus; the
-      // cross stations' crossing lines run through, keeping them mid-line.
-      expect(isLineTerminus(hosts[0], c.stationId), c.stationId).toBe(c.terminal);
+      // cross stations' crossing lines run through, keeping them mid-line. A
+      // gallery tip is a plain degree-1 one — the gallery holds no line that
+      // branches at its own end, where degree stops telling you this.
+      expect(degreeOf(hosts[0], c.stationId) === 1, c.stationId).toBe(c.terminal);
     }
   });
 

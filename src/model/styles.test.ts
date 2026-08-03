@@ -1266,11 +1266,13 @@ describe('stylesOfKind', () => {
 // stamping forces them (including back to square), and a manual edit detaches.
 // The per-terminus pins are deliberately outside all of this.
 describe('line style — end style coverage', () => {
+  // Real coordinates: where a line ENDS is geometric (see lineEndsAt), so two
+  // stops on top of each other would end nowhere.
   const lineDoc = (patch = {}) =>
     makeDoc({
       stations: [
-        makeStation({ id: 'a', stops: [makeStop('l1')] }),
-        makeStation({ id: 'b', stops: [makeStop('l1')] }),
+        makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('l1')] }),
+        makeStation({ id: 'b', x: 0, y: 300, stops: [makeStop('l1')] }),
       ],
       lines: [makeLine({ id: 'l1', stations: ['a', 'b'], ...patch })],
     });
@@ -1342,8 +1344,8 @@ describe('line style — seam edge coverage', () => {
   const lineDoc = (patch = {}) =>
     makeDoc({
       stations: [
-        makeStation({ id: 'a', stops: [makeStop('l1')] }),
-        makeStation({ id: 'b', stops: [makeStop('l1')] }),
+        makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('l1')] }),
+        makeStation({ id: 'b', x: 0, y: 300, stops: [makeStop('l1')] }),
       ],
       lines: [makeLine({ id: 'l1', stations: ['a', 'b'], ...patch })],
     });

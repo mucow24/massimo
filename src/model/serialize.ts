@@ -59,7 +59,7 @@ import {
   isReservedStyleName,
   stylePropsEqual,
 } from './styles';
-import { edgesFromStations, isLineTerminus } from './lineTopology';
+import { edgesFromStations } from './lineTopology';
 import {
   LINE_END_STYLE_DEFAULT,
   isLineEndStyle,
@@ -2527,17 +2527,25 @@ export function backfillLinesEdges(lines: Record<string, Line>): {
 }
 
 // The load-time twin of transforms' pruneOrphanLineOverrides: validate the
-// line's topology-scoped overrides against the edge set a file actually
-// carries. Same two maps, same rules — a segment style needs its pair to be an
-// edge, an end-style pin needs its station to be a degree-1 END — plus the
-// value validation a hand-edited file makes necessary.
+// line's topology-scoped overrides against what the file actually carries. A
+// segment style needs its pair to be an edge; an end-style pin needs its
+// station to still be ON the line — plus the value validation a hand-edited
+// file makes necessary.
 function sanitizeLineOverrides(line: Line): Line {
   return sanitizeLineEnds(sanitizeSegments(line));
 }
 
-// Per-line END style + per-terminus pins. Both are dropped at their default so
+// Per-line END style + per-station pins. Both are dropped at their default so
 // the "never store a default" invariant survives a hand-edited file, and a pin
-// on anything that isn't currently an end is dropped outright.
+// on a station that has left the line is dropped outright.
+//
+// LIVENESS, not endedness. Whether a line ENDS at a station is geometric
+// (`lineEndsAt`) and so moves with a station drag, a rotation, an orientation
+// cycle — none of which pass through here or through any prune. Judging a
+// STORED pin that way would make a save/reload delete what the user set while
+// the geometry happened to be elsewhere. So a pin whose station is still on the
+// line is kept however that station currently reads: inert while it is not an
+// end (nothing paints it — see StopMarkerSpec.end), live again the moment it is.
 function sanitizeLineEnds(line: Line): Line {
   const rawEnd = (line as Line & { endStyle?: unknown }).endStyle;
   const hasEnd = rawEnd !== undefined;
@@ -2559,13 +2567,14 @@ function sanitizeLineEnds(line: Line): Line {
     // Read the line's own end from the CLEANED value above, so a pin is judged
     // redundant against what the line will actually paint.
     const lineEnd = lineEndStyleOf(next);
+    const members = new Set<StationId>(next.stations);
     // `typeof null === 'object'`, and so is an array — a bare non-object guard
     // lets both ride along as a stored map holding no pin at all.
     const isPinMap = pins !== null && typeof pins === 'object' && !Array.isArray(pins);
     const valid = isPinMap ? pins : {};
     for (const stationId of Object.keys(valid)) {
       const pin = valid[stationId];
-      if (!isLineEndStyle(pin) || pin === lineEnd || !isLineTerminus(next, stationId)) {
+      if (!isLineEndStyle(pin) || pin === lineEnd || !members.has(stationId)) {
         pinsChanged = true;
         continue;
       }

@@ -11,7 +11,7 @@ import { AnchorGlyph } from '../AnchorGlyph';
 import { StationShapePicker } from '../StationShapePicker';
 import { LineEndSelect } from '../LineEndPicker';
 import { stationEndStyleOf } from '../../model/lineEnd';
-import { isLineTerminus } from '../../model/lineTopology';
+import { lineEndsAt } from '../../geometry/interlining';
 import { useNumericField } from '../useNumericField';
 import { ORIENTATION_NAME } from './stopGridDrag';
 import type { Rotation } from '../../geometry/orientation';
@@ -145,8 +145,12 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
   // in the line inspector); the per-stop dot size is inert for them.
   const isDash = resolveDotStyle(line, stop, isSingleton).shape === 'dash';
   // Is this stop one of the line's ENDS? Only there does an end style mean
-  // anything — and only there will a pin survive the next topology change.
-  const isTerminus = !!line && isLineTerminus(line, stationId);
+  // anything — and only there will a pin survive the next topology change. The
+  // question is geometric, not a matter of degree: a line that branches at its
+  // own end still ends there (see lineEndsAt), and the control has to follow the
+  // paint or it would hide the only way to dress an end the map plainly shows.
+  const stations = useDoc((d) => d.stations);
+  const isTerminus = !!line && lineEndsAt(stations, line, stationId);
 
   const {
     text: sizeText,

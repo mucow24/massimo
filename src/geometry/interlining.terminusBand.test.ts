@@ -8,7 +8,7 @@ import { makeDoc, makeStation, makeStop, makeLine } from '../test/fixtures';
 // `buildBands — bandKey identity`, interlining.test.ts:842).
 //
 // Each line's single edge makes both stations degree-1 termini, so every
-// marker asks terminusOutwardFromBand for a tangent.
+// marker asks endOutwardFromBands for a tangent.
 //
 //   L1 band centerline: (0,0) -> (185.94,0) -> (200,14.06) -> (200,200)
 //     leaves s1 heading EAST   => outward at s1 = (-1, 0)

@@ -71,7 +71,7 @@ Topology enumerators to switch from consecutive-pairs → `edges`:
 | interlining collect loop | `geometry/interlining.ts` |
 | `pruneOrphanSegmentStyles`, `isLineEdge` | `model/transforms.ts` |
 | `sanitizeSegments` | `model/serialize.ts` |
-| `terminusOutwardFromBand`, `stationMarkerStyle` | `geometry/interlining.ts` |
+| `endOutwardFromBands`, `stationMarkerStyle` | `geometry/interlining.ts` |
 | `incidentLayers` / adjacency | `model/layerPriority.ts` |
 | `lineTraversesForwardCanon` | `geometry/lineTagGeometry.ts` |
 | `alignmentPairs`, terminus extrapolation | `geometry/snap.ts` |
