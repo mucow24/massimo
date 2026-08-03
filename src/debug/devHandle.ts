@@ -120,10 +120,14 @@ export function makeDevHandle(): DevHandle {
       },
       doc: roundTripDoc,
       all: () => {
-        clearHistory();
         resetRegionCache();
         resetExclusionHoleCache();
+        // Last, because `roundTripDoc`'s in-place `setState` is itself recorded
+        // as an undo step — clearing before it would leave the round-trip on
+        // the stack, and `reset.all` is meant to land where a reload does, with
+        // an empty history.
         roundTripDoc();
+        clearHistory();
       },
     },
   };
