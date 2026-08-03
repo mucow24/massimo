@@ -33,13 +33,8 @@ describe('counterIdFactory', () => {
 });
 
 describe('defaultIdFactory', () => {
-  it('produces unique ids', () => {
-    const f = defaultIdFactory();
-    const ids = new Set<string>();
-    for (let i = 0; i < 100; i++) ids.add(f.stationId());
-    expect(ids.size).toBe(100);
-  });
-
+  // Uniqueness over 100 ids is subsumed by the 1000-id test below, which
+  // asserts it at ten times the sample size.
   it('produces fixed-width ids that do not depend on the call millisecond', () => {
     // 1000 ids in a tight synchronous loop all share one Date.now ms; the old
     // Math.random+Date.now form leaned on the random part (which could be <6

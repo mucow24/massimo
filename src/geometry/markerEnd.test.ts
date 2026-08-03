@@ -27,8 +27,10 @@ describe('markerEndRing — short', () => {
   it('never reaches past the stop center, in any direction', () => {
     for (const ow of DIRECTIONS) {
       const ring = markerEndRing(C, ow, HALF, 'short');
-      for (const p of ring)
-        expect(outwardReach(p, ow)).toBeCloseTo(Math.min(0, outwardReach(p, ow)), 9);
+      // Say it directly: every corner is at or behind the stop center.
+      // `toBeCloseTo(Math.min(0, x))` compared the value against a function of
+      // itself, which reads as a tautology even though it is not quite one.
+      for (const p of ring) expect(outwardReach(p, ow)).toBeLessThanOrEqual(1e-9);
       expect(Math.max(...ring.map((p) => outwardReach(p, ow)))).toBeCloseTo(0, 9);
     }
   });
