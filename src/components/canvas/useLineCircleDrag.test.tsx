@@ -16,6 +16,7 @@ function pointerEvent(opts: {
   pointerId?: number;
   shiftKey?: boolean;
   buttons?: number;
+  button?: number;
 }): React.PointerEvent {
   return {
     clientX: opts.clientX,
@@ -23,7 +24,7 @@ function pointerEvent(opts: {
     pointerId: opts.pointerId ?? 1,
     shiftKey: opts.shiftKey ?? false,
     buttons: opts.buttons ?? 1,
-    button: 0,
+    button: opts.button ?? 0,
     stopPropagation: () => {},
   } as unknown as React.PointerEvent;
 }
@@ -52,6 +53,35 @@ function render(zoom = 1) {
   const svgRef = createRef<SVGSVGElement>() as RefObject<SVGSVGElement | null>;
   return renderHook(() => useLineCircleDrag(svgRef, zoom)).result;
 }
+
+describe('useLineCircleDrag — non-left buttons', () => {
+  // A middle-button press on the rim bubbles to MapCanvas and starts a pan. If
+  // it also armed the ring drag, both move handlers would run per frame: the map
+  // pans AND the ring travels with the cursor, committing a moveLineCircle on
+  // release. pointerLost is no rescue — buttons===4 is a live contact.
+  it.each([
+    ['middle', 1, 4],
+    ['right', 2, 2],
+  ])('ignores a %s-button press on the rim', (_name, button, buttons) => {
+    seedCircle();
+    const r = render();
+    act(() =>
+      r.current.onStartDrag(
+        'c1',
+        'rim',
+        pointerEvent({ clientX: 200, clientY: 200, button, buttons }),
+      ),
+    );
+    act(() => {
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 260, clientY: 260, buttons, shiftKey: true }),
+      );
+      r.current.onPointerUp(pointerEvent({ clientX: 260, clientY: 260, buttons }));
+    });
+    expect(useDoc.getState().lineCircles.c1).toMatchObject({ x: 100, y: 100 });
+    expect(useSelection.getState().selectedLineCircleIds).toEqual([]);
+  });
+});
 
 describe('useLineCircleDrag — rim drag moves the circle', () => {
   it('translates the center by the world delta and selects the circle', () => {

@@ -1,12 +1,19 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { act, render } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { ItemPopovers } from './ItemPopovers';
 import { useDoc } from '../../state/store';
 import { useSelection } from '../../state/selection';
 import { useLiveViewportStore } from '../../state/viewportStore';
+import { historyDepth, undo } from '../../state/history';
 import { DEFAULT_DOC } from '../../model/transforms';
 import type { RouteBullet } from '../../model/types';
-import { makeLine } from '../../test/fixtures';
+import {
+  makeLine,
+  makeLineCircle,
+  makePolygon,
+  makeSvgImage,
+  makeTextLabel,
+} from '../../test/fixtures';
 
 // zoom 1, centered on the world origin: world (0,0) projects to screen (400,300).
 const committedView = { vbX: -400, vbY: -300, vbW: 800, vbH: 600, size: { w: 800, h: 600 } };
@@ -292,6 +299,157 @@ describe('ItemPopovers — line popover (Edit Stops)', () => {
     );
     render(<ItemPopovers hostSize={committedView.size} />);
     expect(document.querySelector('.line-popover')).toBeNull();
+  });
+});
+
+describe('ItemPopovers — sole-item popovers are idle-only', () => {
+  // placing-label is the one non-idle mode where the marquee still runs
+  // (useRectSelect's deliberate exemption), so a sweep CAN leave a sole item
+  // selected mid-placement. The group panel gates on idle for exactly that
+  // reason; each sole-item panel needs the same gate, or sweeping one item
+  // opens an editor — offering Delete — under the armed placement.
+  const cases: Array<[string, string, () => void]> = [
+    [
+      'polygon',
+      '.polygon-popover',
+      () => {
+        useDoc.setState({
+          ...useDoc.getState(),
+          ...DEFAULT_DOC,
+          polygons: { p1: makePolygon({ id: 'p1' }) },
+          backgroundOrder: ['p1'],
+        });
+        useSelection.getState().clearAllSelections();
+        useSelection.setState({ ...useSelection.getState(), selectedPolygonIds: ['p1'] });
+      },
+    ],
+    [
+      'text label',
+      '.text-label-popover',
+      () => {
+        useDoc.setState({
+          ...useDoc.getState(),
+          ...DEFAULT_DOC,
+          textLabels: { t1: makeTextLabel({ id: 't1' }) },
+        });
+        useSelection.getState().clearAllSelections();
+        useSelection.setState({ ...useSelection.getState(), selectedLabelIds: ['t1'] });
+      },
+    ],
+    [
+      'svg image',
+      '.svg-image-popover',
+      () => {
+        useDoc.setState({
+          ...useDoc.getState(),
+          ...DEFAULT_DOC,
+          svgImages: { i1: makeSvgImage({ id: 'i1' }) },
+          backgroundOrder: ['i1'],
+        });
+        useSelection.getState().clearAllSelections();
+        useSelection.setState({ ...useSelection.getState(), selectedSvgImageIds: ['i1'] });
+      },
+    ],
+    [
+      'line circle',
+      '.line-circle-popover',
+      () => {
+        useDoc.setState({
+          ...useDoc.getState(),
+          ...DEFAULT_DOC,
+          lineCircles: { c1: makeLineCircle({ id: 'c1' }) },
+        });
+        useSelection.getState().clearAllSelections();
+        useSelection.setState({ ...useSelection.getState(), selectedLineCircleIds: ['c1'] });
+      },
+    ],
+    [
+      'route bullet',
+      '.bullet-popover',
+      () => {
+        useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC, routeBullets: { b1: bullet } });
+        useSelection.getState().clearAllSelections();
+        useSelection.setState({ ...useSelection.getState(), selectedRouteBulletIds: ['b1'] });
+      },
+    ],
+  ];
+
+  afterEach(() => {
+    act(() => useSelection.getState().clearAllSelections());
+    act(() => useSelection.setState({ uiMode: { kind: 'idle' } }));
+  });
+
+  it.each(cases)('mounts the %s popover in idle', (_kind, sel, seed) => {
+    act(seed);
+    render(<ItemPopovers hostSize={committedView.size} />);
+    expect(document.querySelector(sel)).not.toBeNull();
+  });
+
+  it.each(cases)('does NOT mount the %s popover while placing a label', (_kind, sel, seed) => {
+    act(seed);
+    // Set the mode directly: setUiMode wipes selections on entry, and the state
+    // under test is exactly "marquee hit during placing-label".
+    act(() => useSelection.setState({ uiMode: { kind: 'placing-label' } }));
+    render(<ItemPopovers hostSize={committedView.size} />);
+    expect(document.querySelector(sel)).toBeNull();
+  });
+});
+
+describe('ItemPopovers — one popover instance per item', () => {
+  // Nothing about a selection change pushes a history entry, so the wheel-burst
+  // window survives it — and the burst key is the FIELD SLOT (a per-instance
+  // ref). Reconciling one polygon's popover into the next polygon's therefore
+  // handed the second item's edit the first item's undo entry, and one Ctrl+Z
+  // reverted both. Keying each popover by item id makes a different item a
+  // different instance, so the slot ref (and every other per-target scrap of
+  // component state) starts fresh.
+  const seedPolygons = () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      polygons: {
+        p1: makePolygon({ id: 'p1', strokeWidth: 2 }),
+        p2: makePolygon({ id: 'p2', strokeWidth: 2 }),
+      },
+      backgroundOrder: ['p1', 'p2'],
+    });
+    useDoc.temporal.getState().clear();
+  };
+
+  const wheelStrokeWidth = () =>
+    fireEvent.wheel(screen.getByRole('spinbutton', { name: 'Stroke width' }), { deltaY: -1 });
+
+  afterEach(() => {
+    useSelection.getState().selectPolygon(null);
+  });
+
+  it('gives a wheel edit on each of two polygons its own undo entry', () => {
+    seedPolygons();
+    act(() => useSelection.getState().selectPolygon('p1'));
+    const { rerender } = render(<ItemPopovers hostSize={committedView.size} />);
+    wheelStrokeWidth();
+    expect(historyDepth()).toBe(1);
+
+    act(() => useSelection.getState().selectPolygon('p2'));
+    rerender(<ItemPopovers hostSize={committedView.size} />);
+    wheelStrokeWidth();
+    expect(historyDepth()).toBe(2);
+
+    // And one Ctrl+Z leaves the FIRST polygon's edit standing.
+    undo();
+    expect(useDoc.getState().polygons.p2.strokeWidth).toBeCloseTo(2, 9);
+    expect(useDoc.getState().polygons.p1.strokeWidth).toBeCloseTo(2.25, 9);
+  });
+
+  it('still folds a burst on ONE polygon into a single entry', () => {
+    seedPolygons();
+    act(() => useSelection.getState().selectPolygon('p1'));
+    render(<ItemPopovers hostSize={committedView.size} />);
+    wheelStrokeWidth();
+    wheelStrokeWidth();
+    wheelStrokeWidth();
+    expect(useDoc.getState().polygons.p1.strokeWidth).toBeCloseTo(2.75, 9);
+    expect(historyDepth()).toBe(1);
   });
 });
 
