@@ -199,9 +199,21 @@ export function useStationInteraction(
       }
       return;
     }
-    // Shift-click toggles membership in the multi-selection. Plain click
-    // (no modifier) replaces the selection with this station.
+    // Shift-click toggles membership in the multi-selection — except for the
+    // SECOND click of a shift double-click, which opens the inline rename
+    // editor (and re-selects this station alone, undoing the first click's
+    // toggle). The gesture is counted here, off the browser's own click count
+    // (`detail`), rather than off a dblclick handler: the first click flips this
+    // station's selection, which mounts or unmounts its top-z drag proxy, so the
+    // two clicks land on DIFFERENT elements and the native dblclick is
+    // dispatched at a node that is no longer in the document. Rename by
+    // dblclick was unreachable that way.
     if (e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+      if (e.detail >= 2) {
+        selection.selectStation(station.id);
+        selection.setEditingStationId(station.id);
+        return;
+      }
       selection.toggleStationSelection(station.id);
       return;
     }
@@ -227,17 +239,26 @@ export function useStationInteraction(
     });
   };
 
+  // Double-click opens the station's layout editor — the thing you actually
+  // want off a station most of the time, and the same hop Edit Stops makes.
+  // Renaming is the SHIFT variant, but it is handled on the click path (see
+  // onClick) because a shift double-click's native dblclick often never lands;
+  // all this one owes it is to stay out of the way. Plain double-click is
+  // reliable by comparison: both of its clicks leave the station sole-selected,
+  // so the proxy the second click hits is still mounted when dblclick fires.
   const onDoubleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    selection.selectStation(station.id);
-    selection.setEditingStationId(station.id);
+    if (e.shiftKey) return;
+    selection.startEditingStationLayout(station.id);
   };
 
   // Edit Stops' own double-click: hop from "where does this line stop" to
   // "how does this station lay its stops out", for a station already ON the
-  // line. Not the rename editor (that stays the idle-mode gesture) — renaming
-  // mid-mode would null selectedLineId while appending-to-line stayed armed.
+  // line. The same destination as the idle double-click, but unconditional —
+  // shift is spoken for in the mode (it cycles a segment's style), so there is
+  // no rename gesture here; renaming mid-mode would null selectedLineId while
+  // appending-to-line stayed armed.
   //
   // The two clicks underneath still run the append gesture, so a pen armed
   // elsewhere CONNECTS to this station before the hop lands. That's the click
@@ -361,7 +382,8 @@ export function useStationInteraction(
     if (h?.kind === 'station' && h.stationId === station.id) selection.setAppendHover(null);
   };
   // In Edit Stops a member hops to the layout editor and a foreign station has
-  // no double-click at all; everywhere else it opens the rename editor.
+  // no double-click at all; everywhere else it's the layout editor (rename on
+  // shift).
   const dblClickForMode = inAppend
     ? appendMember
       ? onAppendDoubleClick
@@ -376,11 +398,12 @@ export function useStationInteraction(
     // where it exits the mode; to move or rotate a station, exit first.
     onPointerDown: modeInert || inAppend ? undefined : onPointerDown,
     onClick: modeInert || inHandMode ? undefined : onClick,
-    // Two different double-clicks: rename when idle, the layout-editor hop in
-    // Edit Stops (members only — see onAppendDoubleClick). The rename one must
-    // NOT run in the mode: its selectStation spreads clearedSelections(), which
-    // would null selectedLineId while the mode stays armed — highlight and dim
-    // wash gone, invisible line still routing station clicks to connect/splice.
+    // Both double-clicks land in the layout editor; they differ in what else
+    // they allow. Edit Stops uses its own (members only — see
+    // onAppendDoubleClick) because the idle one's shift branch must NOT run in
+    // the mode: its selectStation spreads clearedSelections(), which would null
+    // selectedLineId while the mode stays armed — highlight and dim wash gone,
+    // invisible line still routing station clicks to connect/splice.
     onDoubleClick: modeInert || inHandMode ? undefined : dblClickForMode,
     onContextMenu: modeInert || inAppend ? undefined : onContextMenu,
     onPointerEnter: inIdle ? onHoverEnter : inAppend ? onAppendHoverEnter : undefined,

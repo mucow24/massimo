@@ -749,6 +749,10 @@ export function MapCanvas() {
         ctrlKey: e.ctrlKey,
         metaKey: e.metaKey,
         altKey: e.altKey,
+        // The click COUNT rides along: gestures that count clicks themselves
+        // (the station's shift+double-click rename) see the second click as a
+        // second click even though it landed on a proxy and arrives synthetic.
+        detail: e.detail,
         button: type === 'contextmenu' ? 2 : 0,
       }),
     );
@@ -1244,8 +1248,8 @@ export function MapCanvas() {
           }}
           // Two rapid alt+clicks (deep-pick cycling) also synthesize a native
           // dblclick on the topmost element — which would open the station
-          // rename editor and clobber the deep-picked selection. Swallow
-          // alt-dblclicks; plain double-click rename is untouched.
+          // layout editor and clobber the deep-picked selection. Swallow
+          // alt-dblclicks; the plain double-click is untouched.
           onDoubleClickCapture={(e) => {
             if (e.altKey) e.stopPropagation();
           }}

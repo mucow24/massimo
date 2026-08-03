@@ -90,10 +90,21 @@ describe('StationHitArea — the name rect drags the station', () => {
     expect(useSelection.getState().labelSelected).toBe(false);
   });
 
-  it('double-click on the label rect opens the rename editor', () => {
+  it('double-click on the label rect opens the layout editor', () => {
     seed();
     const { container } = renderHitArea();
     fireEvent.doubleClick(labelRect(container));
+    expect(useSelection.getState().uiMode).toEqual({
+      kind: 'editing-station-layout',
+      stationId: 'a',
+    });
+  });
+
+  it('a second shift-click on the label rect opens the rename editor', () => {
+    seed();
+    const { container } = renderHitArea();
+    fireEvent.click(labelRect(container), { button: 0, shiftKey: true, detail: 1 });
+    fireEvent.click(labelRect(container), { button: 0, shiftKey: true, detail: 2 });
     expect(useSelection.getState().editingStationId).toBe('a');
   });
 
