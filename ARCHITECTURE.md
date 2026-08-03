@@ -172,7 +172,7 @@ src/
     waypointLozenge.ts          # WP-lozenge pill geometry (shared drawn glyph + hit/selection box)
     itemBounds.ts contentBounds.ts  # per-item + whole-map world AABBs (camera fit)
 
-  state/                        # Zustand stores (14 of them) + history
+  state/                        # Zustand stores (15 of them) + history
     store.ts                    # useDoc: temporal(persist(...)) + ~125 actions + migrateDoc
     history.ts                  # the ONLY module touching zundo internals
     selection.ts                # useSelection: UiMode union + multi-select + reconcileWithDoc
@@ -201,6 +201,7 @@ src/
     lineEditorPrefs.ts          # useLineEditorPrefs: line-popover style-detail collapsed?
     stationEditorPrefs.ts       # useStationEditorPrefs: station-popover typography detail
     stationNames.ts             # random station-name word lists
+    funMode.ts                  # useFunMode: easter-egg phase off|live|exiting + the drop origin
 
   components/                   # React + SVG rendering and UI chrome
     MapCanvas.tsx               # the canvas hub: paint order + all pointer wiring
@@ -223,6 +224,9 @@ src/
   export/                       # exportCanvas.ts (SVG/PNG), fonts.ts, exportCanvasPdf.ts
                                 #   + pure PDF-gap modules pdfHatch/pdfText/pdfGlyphs/
                                 #   pdfDropShadow/pdfMask/pdfAlpha + embeddedSvg (shared image-href plumbing)
+  fun/                          # ballPhysics.ts: the easter egg's rigid-disc simulation — bounce,
+                                #   roll, kick, throw, and the pendulum a held ball hangs from.
+                                #   Pure, in window pixels; no React, no store (BouncingBullet.tsx)
   util/                         # color.ts (hex math), fonts.ts (font stack + weight math),
                                 #   grid.ts (clamp / roundClamp / snapToStep — the quarter-grid
                                 #   canonicalizer primitives every dimensional setter shares)
@@ -2900,6 +2904,17 @@ same three additions.
   **stack** (one failure never hides another): `push` appends with a unique incrementing id;
   `dismiss(id)` drops exactly that one. `error` persists until clicked; `info` self-expires
   (StatusToasts owns the timing). Distinct from `WarningToasts` (the router band-warning strip).
+- **[BouncingBullet.tsx](src/components/BouncingBullet.tsx)** — an easter egg, and the only layer
+  above the toasts (z-index 2000). Alt-clicking the toolbar's "M" badge knocks it loose as a ball
+  that falls, bounces off the window edges and rolls, until a click on the map (or Escape) puts it
+  back. **Modal**: a full-window scrim dims and swallows the app, and App's global key handler
+  early-returns for the whole stretch, so nothing behind it can be reached. Its
+  [state/funMode.ts](src/state/funMode.ts) store is `off | live | exiting` — three phases because
+  both ends are crossfades — and is deliberately NOT a `useSelection` ui mode, whose mode-exit
+  subscriptions a toy has no business entangling. The simulation is a pure module,
+  [fun/ballPhysics.ts](src/fun/ballPhysics.ts), whose `DEFAULT_PARAMS` are hand-tuned feel rather
+  than derivation: a test pinning a mechanism dials that param in explicitly instead of reading the
+  tuned value, which may well be zero.
 - **[Sidebar.tsx](src/components/Sidebar.tsx)** — Stations/Lines/**Styles** tabs (each showing a
   count; the reserved "None" stop-dot is hidden from the Styles list and excluded from its count),
   the third hosting `StylesPanel`; a sortable station list

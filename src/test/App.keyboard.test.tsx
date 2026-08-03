@@ -9,6 +9,7 @@ import { beginHistoryGroup, useDoc, useSelection } from '../state/store';
 import { useLineEditorPrefs } from '../state/lineEditorPrefs';
 import { historyDepth, isHistoryGrouping, redoDepth } from '../state/history';
 import { useSnapPrefs } from '../state/snapPrefs';
+import { useFunMode } from '../state/funMode';
 import { useToasts } from '../state/toastStore';
 import { DEFAULT_SNAP_MODES } from '../geometry/snap';
 import { DEFAULT_DOC } from '../model/transforms';
@@ -40,6 +41,9 @@ beforeEach(() => {
   // The slider-guard tests below drive the line popover's Curve radius
   // slider, which lives inside the collapsed (remembered) style detail.
   useLineEditorPrefs.setState({ styleExpanded: true });
+  // The easter egg makes every shortcut below it inert, so a test that left it
+  // open would silently disarm the whole rest of the file.
+  useFunMode.setState({ phase: 'off', origin: { x: 0, y: 0 } });
 });
 
 describe('App keyboard shortcuts: Escape', () => {
@@ -1694,5 +1698,40 @@ describe('App keyboard: transfer anchors are first-class canvas objects', () => 
     const doc = useDoc.getState();
     expect(doc.transferAnchors[a].y).toBe(51);
     expect(doc.stations[s].y).toBe(1);
+  });
+});
+
+describe('App keyboard shortcuts: the bouncing-badge easter egg is modal', () => {
+  // The egg dims the map and swallows the window, and the ONE edit it makes to
+  // load-bearing code is the early return in App's global keydown that makes
+  // that true. It is placement-sensitive — after the Alt block, before the form
+  // guards — so it gets pinned here rather than left to a future reorder.
+  it('swallows Delete, which would otherwise hit the selection behind the scrim', () => {
+    render(<App />);
+    const doc = useDoc.getState();
+    const s = doc.addStation(0, 0);
+    useSelection.getState().selectStation(s);
+
+    useFunMode.setState({ phase: 'live', origin: { x: 0, y: 0 } });
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(useDoc.getState().stations[s]).toBeDefined();
+
+    // The same press with the egg closed DOES delete — without this half the
+    // assertion above would hold for any reason at all.
+    useFunMode.setState({ phase: 'off', origin: { x: 0, y: 0 } });
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(useDoc.getState().stations[s]).toBeUndefined();
+  });
+
+  it('still tracks Alt, so the key that opened it cannot latch on', () => {
+    // The gate sits AFTER the Alt block on purpose: alt-clicking the badge
+    // leaves Alt held, and a swallowed keyup would strand altHeld true and
+    // arm the Edit Stops create-ghost once the map came back.
+    render(<App />);
+    useFunMode.setState({ phase: 'live', origin: { x: 0, y: 0 } });
+    fireEvent.keyDown(window, { key: 'Alt' });
+    expect(useSelection.getState().altHeld).toBe(true);
+    fireEvent.keyUp(window, { key: 'Alt' });
+    expect(useSelection.getState().altHeld).toBe(false);
   });
 });
