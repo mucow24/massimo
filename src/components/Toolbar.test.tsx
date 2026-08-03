@@ -75,6 +75,7 @@ import { serialize } from '../model/serialize';
 import { markAdopted, markSaved, saveStatusOf, useSaveBaseline } from '../state/saveBaseline';
 import { historyDepth } from '../state/history';
 import { computeContentBounds } from '../geometry/contentBounds';
+import { capCenterDy } from '../geometry/textMeasure';
 import { fitViewport } from './canvas/viewportMath';
 import { makeDoc, makeLine, makeStation, makeStop, stationWithStop } from '../test/fixtures';
 import type { LineId, StationId } from '../model/types';
@@ -166,6 +167,25 @@ const anchor = (mark: typeof markSaved) => {
   const snap = pickDocSnapshot(useDoc.getState());
   mark(serialize(snap), snap);
 };
+
+describe('Toolbar — wordmark', () => {
+  it('is an "M" route bullet named Massimo', () => {
+    renderToolbar();
+    const mark = screen.getByRole('img', { name: 'Massimo' });
+    expect(mark.querySelector('circle')).toBeInTheDocument();
+    expect(mark.querySelector('text')).toHaveTextContent('M');
+  });
+
+  it('cap-centers the M on the alphabetic baseline, not dominant-baseline', () => {
+    renderToolbar();
+    // dominantBaseline resolves from platform-specific font metrics (see
+    // capCenterDy), which shifts the glyph off-center on Windows.
+    const glyph = screen.getByRole('img', { name: 'Massimo' }).querySelector('text')!;
+    expect(glyph).not.toHaveAttribute('dominant-baseline');
+    const fontSize = Number(glyph.getAttribute('font-size'));
+    expect(Number(glyph.getAttribute('y'))).toBeCloseTo(capCenterDy(fontSize));
+  });
+});
 
 describe('Toolbar — tool + view toggles', () => {
   it('switches to hand mode and back to arrow', async () => {

@@ -13,8 +13,10 @@ test.describe('unselectable chrome', () => {
   }) => {
     await seedAndOpen(page, fourInLine);
 
-    // Always-present chrome text: the wordmark and the map-name button caption.
-    await expect(page.locator('.toolbar strong')).toHaveCSS('user-select', 'none');
+    // Always-present chrome text: the wordmark's "M" (the badge is an SVG, and
+    // its glyph inherits the rule like any other chrome text) and the map-name
+    // button caption.
+    await expect(page.locator('.toolbar .brand-bullet text')).toHaveCSS('user-select', 'none');
     await expect(page.locator('.toolbar button.map-name')).toHaveCSS('user-select', 'none');
 
     // Menu entries are UI text too — open Canvas and check a live item.
