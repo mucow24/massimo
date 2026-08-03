@@ -32,6 +32,15 @@ describe('useCustomPalettes', () => {
     expect(useCustomPalettes.getState().palettes).toEqual([]);
   });
 
+  // The library and a map are meant to be independent, and saving a map's
+  // palette back here is the one call that hands over a live document array.
+  it('stores a COPY — the caller’s swatch array cannot reach the library', () => {
+    const source = { name: 'a', swatches: [{ name: '1', color: '#111111' }] };
+    useCustomPalettes.getState().addPalette(source);
+    source.swatches.push({ name: '2', color: '#222222' });
+    expect(useCustomPalettes.getState().palettes[0].swatches).toHaveLength(1);
+  });
+
   it('removes a palette by name', () => {
     add('a');
     useCustomPalettes.getState().removePalette('a');

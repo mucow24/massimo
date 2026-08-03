@@ -211,10 +211,21 @@ describe('<PalettesDialog /> built-ins are fixed', () => {
     expect(screen.getByRole('button', { name: 'Delete frrf' })).toBeInTheDocument();
   });
 
-  it('a map palette under a built-in’s name can’t be saved over it', () => {
-    useDoc.setState({ ...useDoc.getState(), palettes: [{ name: 'MTA', swatches: [] }] });
+  it('an untouched built-in in the map reads as already in the library', () => {
+    useDoc.setState({ ...useDoc.getState(), palettes: named('MTA') });
     renderDialog();
     expect(screen.getByRole('button', { name: 'MTA is in the library' })).toBeDisabled();
+  });
+
+  // …but a DIVERGED copy under a built-in's name is not in the library, and
+  // saying it is would be a lie with no way out of it.
+  it('a diverged copy under a built-in’s name says to rename it', () => {
+    useDoc.setState({ ...useDoc.getState(), palettes: [{ name: 'MTA', swatches: [] }] });
+    renderDialog();
+    expect(screen.queryByRole('button', { name: 'MTA is in the library' })).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'Rename MTA to save it — the library’s is built in' }),
+    ).toBeDisabled();
   });
 });
 
@@ -261,16 +272,50 @@ describe('<PalettesDialog /> Load…', () => {
   });
 
   // A load is the one collision that can't be warned about first — the name
-  // arrives with the file — so it reports what it displaced.
+  // arrives with the file — so it reports what it displaced. It lands in BOTH
+  // destinations, so it has to account for both.
   it('says so when the load replaced a library palette', async () => {
     const user = userEvent.setup();
     useCustomPalettes.setState({ palettes: [FRRF], starred: [], sort: 'name' });
+    useDoc.setState({ ...useDoc.getState(), palettes: [] });
     renderDialog();
     await user.upload(loadInput(), file({ name: 'frrf', colors: [{ line: 1, human: '#00ff00' }] }));
-    expect(screen.getByRole('alert')).toHaveTextContent('replacing the one in your library');
+    expect(screen.getByRole('status')).toHaveTextContent('your library');
+    expect(screen.getByRole('status')).not.toHaveTextContent('this map');
     expect(useCustomPalettes.getState().palettes[0].swatches).toEqual([
       { name: '1', color: '#00ff00' },
     ]);
+  });
+
+  it('says so when the load replaced a palette the MAP was carrying', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({ ...useDoc.getState(), palettes: [FRRF] });
+    renderDialog();
+    await user.upload(loadInput(), file({ name: 'frrf', colors: [{ line: 1, human: '#00ff00' }] }));
+    expect(screen.getByRole('status')).toHaveTextContent('this map');
+    expect(useDoc.getState().palettes[0].swatches).toEqual([{ name: '1', color: '#00ff00' }]);
+  });
+
+  it('names both when the load replaced one in each', async () => {
+    const user = userEvent.setup();
+    useCustomPalettes.setState({ palettes: [FRRF], starred: [], sort: 'name' });
+    useDoc.setState({ ...useDoc.getState(), palettes: [FRRF] });
+    renderDialog();
+    await user.upload(loadInput(), file({ name: 'frrf', colors: [{ line: 1, human: '#00ff00' }] }));
+    const said = screen.getByRole('status').textContent ?? '';
+    expect(said).toContain('your library');
+    expect(said).toContain('this map');
+  });
+
+  // A load that displaced nothing is not a failure, and must not wear the red
+  // band that a rejected file does.
+  it('reports a plain load as a notice, never as an alert', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({ ...useDoc.getState(), palettes: [] });
+    renderDialog();
+    await user.upload(loadInput(), file({ name: 'frrf', colors: [{ line: 1, human: '#c1272d' }] }));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent('frrf');
   });
 
   it('refuses a file named after a built-in, changing nothing', async () => {
@@ -321,16 +366,29 @@ describe('<PalettesDialog /> export', () => {
     expect(vi.mocked(downloadBlob).mock.calls[0][1]).toBe('house style.palette.json');
   });
 
-  // The map's copy can have diverged from the library's — renamed, or replaced
-  // from a file — so it is exportable in its own right.
-  it('exports the MAP’s copy, diverged name and all', async () => {
+  // Palette names come out of imported files, so they reach the filename with
+  // whatever the author put in them.
+  it('strips filename-illegal characters from the download name', async () => {
     const user = userEvent.setup();
-    useDoc.setState({
-      ...useDoc.getState(),
-      palettes: [{ name: 'house style', swatches: [{ name: '1', color: '#c1272d' }] }],
+    useCustomPalettes.setState({
+      palettes: [{ name: 'a/b:c*d', swatches: [{ name: '1', color: '#111111' }] }],
+      starred: [],
+      sort: 'name',
     });
     renderDialog();
-    await user.click(screen.getByRole('button', { name: 'Export house style from the map' }));
-    expect(vi.mocked(downloadBlob).mock.calls[0][1]).toBe('house style.palette.json');
+    await user.click(screen.getByRole('button', { name: 'Export a/b:c*d' }));
+    expect(vi.mocked(downloadBlob).mock.calls[0][1]).toBe('abcd.palette.json');
+  });
+
+  it('falls back to a usable name when every character is illegal', async () => {
+    const user = userEvent.setup();
+    useCustomPalettes.setState({
+      palettes: [{ name: '///', swatches: [{ name: '1', color: '#111111' }] }],
+      starred: [],
+      sort: 'name',
+    });
+    renderDialog();
+    await user.click(screen.getByRole('button', { name: 'Export ///' }));
+    expect(vi.mocked(downloadBlob).mock.calls[0][1]).toBe('palette.palette.json');
   });
 });

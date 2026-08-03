@@ -20,10 +20,11 @@ import { parseCustomPalette, serializeCustomPalette } from '../model/customPalet
 import {
   BUILTIN_PALETTE_NAMES,
   libraryPalettes,
+  PALETTES,
   type Palette,
   type PaletteSort,
 } from '../model/palettes';
-import { downloadBlob } from '../export/exportCanvas';
+import { downloadBlob, sanitizeBasename } from '../export/exportCanvas';
 
 const SORT_LABELS: { value: PaletteSort; label: string }[] = [
   { value: 'name', label: 'Name' },
@@ -180,7 +181,12 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
   const removeFromLibrary = useCustomPalettes((s) => s.removePalette);
   const renameInLibrary = useCustomPalettes((s) => s.renamePalette);
 
-  const [error, setError] = useState<string | null>(null);
+  // One message line, but a load that displaced something is NOT a failure and
+  // must not wear the red band a rejected file does.
+  const [message, setMessage] = useState<{ text: string; tone: 'error' | 'notice' } | null>(null);
+  const setError = (text: string | null) =>
+    setMessage(text === null ? null : { text, tone: 'error' });
+  const setNotice = (text: string) => setMessage({ text, tone: 'notice' });
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -200,21 +206,33 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
     }
     const palette = { name: result.name, swatches: result.swatches };
     // A load is the one place a name collision can't be shown before the fact —
-    // the name arrives with the file. Report what it displaced instead.
+    // the name arrives with the file, and it lands in BOTH destinations. So it
+    // reports afterwards, naming every palette it displaced.
+    const held = inMap.get(palette.name);
+    const replacedMap = held !== undefined && !sameSwatches(held, palette);
     const replacedLibrary = inLibrary.has(palette.name);
     if (!addToLibrary(palette)) {
       setError(`“${palette.name}” is a built-in palette’s name. Rename it in the file and retry.`);
       return;
     }
     addPaletteToMap(palette);
-    setError(
-      replacedLibrary ? `Loaded “${palette.name}”, replacing the one in your library.` : null,
+    const displaced = [
+      replacedLibrary && 'the one in your library',
+      replacedMap && 'the one in this map',
+    ].filter(Boolean);
+    setNotice(
+      displaced.length
+        ? `Loaded “${palette.name}”, replacing ${displaced.join(' and ')}.`
+        : `Loaded “${palette.name}” into your library and this map.`,
     );
   };
 
   const onExport = (palette: Palette) => {
     const blob = new Blob([serializeCustomPalette(palette)], { type: 'application/json' });
-    downloadBlob(blob, `${palette.name}.palette.json`);
+    // Palette names arrive from imported files, so they reach the filename with
+    // whatever the author put in them — through the same sanitizer every other
+    // export uses.
+    downloadBlob(blob, `${sanitizeBasename(palette.name) || 'palette'}.palette.json`);
   };
 
   /** Save a map palette back to the library, overwriting by name. */
@@ -305,9 +323,12 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
               </Dialog.Close>
             </header>
 
-            {error && (
-              <div role="alert" className="dialog-error">
-                {error}
+            {message && (
+              <div
+                role={message.tone === 'error' ? 'alert' : 'status'}
+                className={message.tone === 'error' ? 'dialog-error' : 'dialog-notice'}
+              >
+                {message.text}
               </div>
             )}
 
@@ -471,15 +492,28 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                   )}
                   {mapPalettes.map((p, i) => {
                     const library = inLibrary.get(p.name);
-                    const identical = library !== undefined && sameSwatches(library, p);
+                    // A built-in counts as "in the library" only while the map's
+                    // copy still matches it — rename or replace that copy and
+                    // the library holds something else under the name.
+                    const builtin = PALETTES.find((b) => b.name === p.name);
+                    const alreadyThere =
+                      (library !== undefined && sameSwatches(library, p)) ||
+                      (builtin !== undefined && sameSwatches(builtin, p));
                     const saveKey = `map:${p.name}`;
                     return (
                       <div key={p.name} className="dialog-row palette-row">
                         {/* Mirror of the library's arrow: against the column it
                             points into, and asking first when it overwrites. */}
-                        {identical || BUILTIN_PALETTE_NAMES.has(p.name) ? (
+                        {alreadyThere ? (
                           <IconButton label={`${p.name} is in the library`} disabled>
                             <CheckIcon />
+                          </IconButton>
+                        ) : BUILTIN_PALETTE_NAMES.has(p.name) ? (
+                          <IconButton
+                            label={`Rename ${p.name} to save it — the library’s is built in`}
+                            disabled
+                          >
+                            <ArrowLeftIcon />
                           </IconButton>
                         ) : library ? (
                           speedBump(

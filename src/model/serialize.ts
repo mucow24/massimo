@@ -378,9 +378,12 @@ export function sanitizePalettes(value: unknown): Palette[] {
 }
 
 // Custom palettes of the id era were `custom:<slug-of-name>`, so slugging the
-// library's names back down is what matches one to its definition. Two names
-// slugging alike is the one case this can't tell apart; it takes the first,
-// exactly as the id generator's `-2` suffixes did not survive into the name.
+// library's names back down is what matches one to its definition. Where two
+// names slugged alike the id generator disambiguated with `-2`, `-3` suffixes
+// that no name carries: the unsuffixed id matches whichever of them comes
+// first, and a suffixed one matches nothing and is dropped like any other
+// unresolvable id. Both are rare and both degrade the same way a dangling
+// custom id always did.
 const legacySlug = (name: string): string =>
   name
     .toLowerCase()

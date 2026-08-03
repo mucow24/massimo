@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { BUILTIN_PALETTE_NAMES, type Palette, type PaletteSort } from '../model/palettes';
+import {
+  BUILTIN_PALETTE_NAMES,
+  copyPalette,
+  type Palette,
+  type PaletteSort,
+} from '../model/palettes';
 
 interface CustomPalettesState {
   /** The user's imported palettes — the half of the library that isn't built in. */
@@ -45,16 +50,20 @@ export const useCustomPalettes = create<CustomPalettesState>()(
       palettes: [],
       starred: [],
       sort: 'name',
-      addPalette: ({ name, swatches }) => {
-        if (BUILTIN_PALETTE_NAMES.has(name)) return false;
+      addPalette: (input) => {
+        if (BUILTIN_PALETTE_NAMES.has(input.name)) return false;
+        // A COPY, for the same reason the doc takes one: saving a map's palette
+        // back here hands over a live document array, and the two are supposed
+        // to be independent from that moment on.
+        const palette = copyPalette(input);
         set((s) => {
-          const idx = s.palettes.findIndex((p) => p.name === name);
+          const idx = s.palettes.findIndex((p) => p.name === palette.name);
           if (idx >= 0) {
             const next = s.palettes.slice();
-            next[idx] = { name, swatches };
+            next[idx] = palette;
             return { palettes: next };
           }
-          return { palettes: [...s.palettes, { name, swatches }] };
+          return { palettes: [...s.palettes, palette] };
         });
         return true;
       },

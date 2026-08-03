@@ -373,7 +373,8 @@ And there is **no doc-level `curveRadius`** anymore — corner rounding is per-l
 (`Line.curveRadius`, missing ⇒ `LINE_CURVE_RADIUS_DEFAULT` = 24, [lineCurve.ts](src/model/lineCurve.ts)),
 covered by line styles, and edited in the line inspector / line style presets. Legacy saves carried
 the doc field; both load paths bake it onto every line and fill line style defs that predate the
-covered field (`bakeDocCurveRadius`, persist v16). Where interlined lines disagree, the shared band curves at the LARGEST member radius.
+covered field (`bakeDocCurveRadius`, persist v16). Where interlined lines disagree, the shared band
+curves at the LARGEST member radius.
 
 Nor is there a doc-level **`seamEdges`** — which arm of a branch seam gets painted is per-line
 (`Line.seamEdges`, missing ⇒ `'both'`, the full notch, [lineStroke.ts](src/model/lineStroke.ts)),
@@ -1095,8 +1096,15 @@ value-level fixups are **shared exported functions** — `sanitizeStations`, `ba
 `backfillPolygonDarkColors`, `backfillTextLabelColors`, `convertLegacyDotShapes` — each returning
 `{...cleaned, changed}`, where the **`changed` flag is the signal** callers use (`migrateDoc`
 re-spreads a field only when `changed` is true), and each called by **both** load paths.
-(`bakeActivePalettes` is the exception — it returns a bare `Palette[]` that both callers assign
-unconditionally.) Most dict-level backfills allocate a fresh container even on a no-op, so don't
+(The two palette fixups are the exceptions, and neither returns a `changed` flag: both callers
+assign `bakeActivePalettes`' bare `Palette[]` outright, each under its own presence gate — parse
+when the file has `activePalettes` and no `palettes`, `migrateDoc` at `v<24` with `palettes` absent.
+`sanitizePalettes` is **file-import only**, deliberately: it exists to keep a hand-edited or
+foreign `.massimo.json` from reaching the renderer as garbage, and localStorage has no such author
+— the app is its only writer, and the "≥1 valid palette" repair that used to run there
+unconditionally was guarding dangling _ids_, which copies cannot have. Adding it to `migrateDoc`
+would not close the gap either: a doc already at v24 never reaches `migrate` at all.)
+Most dict-level backfills allocate a fresh container even on a no-op, so don't
 rely on their reference identity — but not all: `convertLegacyDotShapes` hands back its **input**
 references when `changed` is false. (The per-line / per-dot sanitizers _do_ return the same element
 ref when unchanged — distinct from the transform "same-reference-on-no-op" invariant.)
@@ -1118,11 +1126,11 @@ by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}`:
    `backgroundOrder` already there and discard the legacy stacking.
 3. `merged = { ...DEFAULT_DOC, ...doc }` — the entire defaulting mechanism.
 4. `sanitizePalettes` if the file carries `palettes`, else `bakeActivePalettes` if it carries the
-   retired `activePalettes` ids (a file with neither keeps the `DEFAULT_DOC` seed), then
-   `bakeDocCurveRadius` (retired doc-level
-   `curveRadius` → per-line `Line.curveRadius` + fill line style defs; idempotent, keyed off field
-   presence) and `bakeDocSeamEdges` (the same route for the retired doc-level `seamEdges`) —
-   **before** the per-line clean and style validation below, which expect the per-line/per-def form.
+   retired `activePalettes` ids — a file with neither keeps the `DEFAULT_DOC` seed. Then
+   `bakeDocCurveRadius` (retired doc-level `curveRadius` → per-line `Line.curveRadius` + fill line
+   style defs; idempotent, keyed off field presence) and `bakeDocSeamEdges` (the same route for the
+   retired doc-level `seamEdges`) — **before** the per-line clean and style validation below,
+   which expect the per-line/per-def form.
 5. Per-line clean — `backfillLineEdges` (derive `edges` from the legacy `stations` order for
    pre-topology saves — unconditional, since a missing `edges` white-screens the renderer) →
    `sanitizeSegments` (drop segment keys that aren't real adjacencies) → `sanitizeLineWidth` →
@@ -1214,10 +1222,10 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | (not gated) | `snapStationCells` whenever `stations !== undefined` — cell drift is not tied to a schema bump, so a gate could never catch it. **But see the `merge` hook** — for this repair that caveat is the main event, not a footnote |
 
 A **corrupt/missing version is treated as v0** (all migrations run). The three non-gated repairs
-(`backfillLinesEdges`, `ensureStyleInvariants`, `snapStationCells`) are
-**not** tied to a schema bump — they run any time their field is present (an absent field is left
-for the persist-merge). `bakeActivePalettes` reads `useCustomPalettes.getState().palettes` to
-resolve legacy `custom:` ids.
+(`backfillLinesEdges`, `ensureStyleInvariants`, `snapStationCells`) are **not** tied to a schema
+bump — they run any time their field is present (an absent field is left for the persist-merge).
+`bakeActivePalettes`, which is gated, reads `useCustomPalettes.getState().palettes` to resolve
+legacy `custom:` ids — the only place in either load path that reaches into a store.
 
 > **`migrateDoc` does not run on every rehydrate** — zustand calls `migrate` only when the STORED
 > version DIFFERS from the config version. A doc stranded at 14 by that intermediate build is
