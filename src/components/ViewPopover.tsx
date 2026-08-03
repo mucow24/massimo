@@ -22,6 +22,9 @@ import {
  *
  * The grid deliberately keeps its own button: it is a drawing aid rather than
  * map content, and it pairs with the grid-size cycler beside it.
+ *
+ * A row whose layer also answers to a bare letter shows it, reusing the Menu's
+ * muted accelerator hint — the same job, so the same chrome.
  */
 export function ViewPopover() {
   const { open, setOpen, wrapRef } = usePopover();
@@ -75,6 +78,7 @@ export function ViewPopover() {
                     onCheckedChange={(checked) => setVisibility(item.key, checked)}
                   />
                   <span>{item.label}</span>
+                  {item.shortcut && <kbd className="menu-shortcut">{item.shortcut}</kbd>}
                 </label>
               </Fragment>
             );

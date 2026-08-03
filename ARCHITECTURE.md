@@ -1715,9 +1715,9 @@ grid-size cycler beside it.
 
 The two layers that default to hidden also answer to the keyboard: `A` flips anchors and `W`
 waypoints (App.tsx, writing through `setVisibility` exactly as the checkboxes do — no second
-opinion about where a flag lives). `G` toggles the grid and `Shift+G` cycles its size; `G` is the
-one letter shortcut that reads its Shift, and it reads `e.shiftKey` rather than the letter's case
-so CapsLock cannot swap the two.
+opinion about where a flag lives), and the letter is a `shortcut` field on the registry entry so
+the menu row can advertise it. `G` toggles the grid and `Shift+G` cycles its size, both straight
+to the setters — the grid is not registry content.
 
 [visibility.ts](src/state/visibility.ts) holds the set as one `VISIBILITY_ITEMS` registry, because
 three consumers have to agree about it and each used to spell it out by hand: the menu, the export

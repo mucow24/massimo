@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from '../App';
@@ -1382,14 +1382,26 @@ describe('App keyboard: station-editor Escape step-out ladder', () => {
 // pinned, and both are read off e.shiftKey rather than the letter's case so
 // CapsLock doesn't silently swap them.
 describe('App keyboard shortcuts: view + grid toggles', () => {
-  beforeEach(() => {
-    // The viewport store persists, so seed the flags this block asserts on
-    // rather than inheriting whatever an earlier test left behind.
+  // The viewport store persists and nothing resets it between files, so seed
+  // the flags this block asserts on rather than inheriting whatever an earlier
+  // test left behind — and put them back, or the size cycled below would be
+  // every later describe's starting grid.
+  const seedFlags = (over: Partial<ReturnType<typeof useViewportStore.getState>> = {}) =>
     useViewportStore.setState({
       showAnchors: false,
       showWaypoints: false,
       gridVisible: true,
       gridSize: 10,
+      ...over,
+    });
+  beforeEach(() => seedFlags());
+  afterEach(() => {
+    const init = useViewportStore.getInitialState();
+    seedFlags({
+      showAnchors: init.showAnchors,
+      showWaypoints: init.showWaypoints,
+      gridVisible: init.gridVisible,
+      gridSize: init.gridSize,
     });
   });
 
@@ -1434,6 +1446,21 @@ describe('App keyboard shortcuts: view + grid toggles', () => {
     render(<App />);
     fireEvent.keyDown(window, { key: 'G', shiftKey: false });
     expect(useViewportStore.getState().gridVisible).toBe(false);
+    expect(useViewportStore.getState().gridSize).toBe(10);
+  });
+
+  // Holding the key would otherwise toggle at auto-repeat rate — a store write
+  // and a full canvas re-render per repeat, landing wherever the user let go.
+  it('ignores auto-repeat, so a held key toggles exactly once', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: 'a' });
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { key: 'a', repeat: true });
+    expect(useViewportStore.getState().showAnchors).toBe(true);
+    fireEvent.keyDown(window, { key: 'g' });
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { key: 'g', repeat: true });
+    expect(useViewportStore.getState().gridVisible).toBe(false);
+    for (let i = 0; i < 5; i++)
+      fireEvent.keyDown(window, { key: 'G', shiftKey: true, repeat: true });
     expect(useViewportStore.getState().gridSize).toBe(10);
   });
 

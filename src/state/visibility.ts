@@ -78,6 +78,14 @@ export interface VisibilityItem {
    * undo exactly what the user asked for.
    */
   revealedBy?: readonly UiMode['kind'][];
+  /**
+   * The bare letter that flips this flag from the canvas, shown as a muted hint
+   * on the menu row. Only the two layers worked hardest have one — a keyboard
+   * shortcut nobody can find is not a feature, so the letter lives HERE, beside
+   * the row that advertises it, rather than being spelled out a second time in
+   * the menu component where it could drift from the handler.
+   */
+  shortcut?: string;
 }
 
 export const VISIBILITY_ITEMS: readonly VisibilityItem[] = [
@@ -92,6 +100,7 @@ export const VISIBILITY_ITEMS: readonly VisibilityItem[] = [
     // endpoint (the whole reason anchors exist), and placing-anchor needs the
     // existing ones on screen to place the next one sensibly.
     revealedBy: ['creating-transfer', 'placing-anchor'],
+    shortcut: 'A',
   },
   {
     key: 'showLineCircles',
@@ -108,7 +117,13 @@ export const VISIBILITY_ITEMS: readonly VisibilityItem[] = [
     nestsUnderNetwork: true,
     revealedBy: ['creating-transfer'],
   },
-  { key: 'showWaypoints', label: 'Waypoints', group: 1, gatesExportedInk: false },
+  {
+    key: 'showWaypoints',
+    label: 'Waypoints',
+    group: 1,
+    gatesExportedInk: false,
+    shortcut: 'W',
+  },
   {
     key: 'showSvgImages',
     label: 'Images / SVGs',

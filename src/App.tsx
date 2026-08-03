@@ -689,12 +689,23 @@ export default function App() {
       // scaffolding layers that default to hidden and get flipped constantly
       // while working, so they get the letters; the rest stay a View-menu
       // click away. The write goes through setVisibility, never a store setter
-      // by hand, so the registry stays the one place a flag's name lives.
-      if (!inFormControl && !mod && (e.key === 'a' || e.key === 'A')) {
+      // by hand, so the registry stays the one place a flag's name lives, and
+      // the letter is a FIELD on the registry entry so the menu row can show
+      // it. Repeats are dropped throughout this block: a held key would
+      // otherwise toggle at auto-repeat rate, each press a store write and a
+      // full canvas re-render, landing wherever the user happened to let go.
+      //
+      // A press can be a no-op on screen: anchors nest under showNetwork and
+      // are force-revealed by creating-transfer/placing-anchor, so toggling
+      // under either is a preference change the canvas cannot show until the
+      // mode ends. That is the reveal working as designed — the alternative, a
+      // temporary write to the flag, needs a matching revert on every exit path
+      // and strands the preference the first time one is missed.
+      if (!inFormControl && !mod && !e.repeat && (e.key === 'a' || e.key === 'A')) {
         setVisibility('showAnchors', !useViewportStore.getState().showAnchors);
         return;
       }
-      if (!inFormControl && !mod && (e.key === 'w' || e.key === 'W')) {
+      if (!inFormControl && !mod && !e.repeat && (e.key === 'w' || e.key === 'W')) {
         setVisibility('showWaypoints', !useViewportStore.getState().showWaypoints);
         return;
       }
@@ -704,7 +715,7 @@ export default function App() {
       // the letter's case, or CapsLock would swap them (it reports 'G' with no
       // shift held). The grid is NOT in the visibility registry — it is a
       // drawing aid rather than map content — hence the direct setters.
-      if (!inFormControl && !mod && (e.key === 'g' || e.key === 'G')) {
+      if (!inFormControl && !mod && !e.repeat && (e.key === 'g' || e.key === 'G')) {
         const vp = useViewportStore.getState();
         if (e.shiftKey) vp.setGridSize(nextGridSize(vp.gridSize));
         else vp.setGridVisible(!vp.gridVisible);
