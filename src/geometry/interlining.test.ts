@@ -1312,6 +1312,58 @@ describe('buildStopMarkers', () => {
       const m = ms.find((x) => x.lineId === 'L1' && Math.abs(x.cx) < 1);
       expect(m?.outward).toBeNull();
     });
+
+    // A line that BRANCHES at its own end: both edges leave s1 southward down
+    // the same corridor, one carrying straight on to s2 and one peeling off to
+    // s3. Degree 2, but nothing is north of s1 — the ink ends there and the
+    // casing has to close around it.
+    //
+    //   s1 (0,0) ┬──── to s2 (0,600), straight south
+    //            └──── to s3 (200,400), south then 45° south-east
+    const branchEndDoc = () =>
+      makeDoc({
+        stations: [
+          stationWithStop('s1', 'L1', { x: 0, y: 0 }),
+          stationWithStop('s2', 'L1', { x: 0, y: 600 }),
+          stationWithStop('s3', 'L1', { x: 200, y: 400 }, { orientation: 'auto-nw-se' }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'], edges: ['s1|s2', 's1|s3'] })],
+      });
+
+    it('outward is set where a line branches at its END (both edges leave the same way)', () => {
+      const doc = branchEndDoc();
+      // Precondition: this really is the shared-corridor shape — if the router
+      // ever sends the two bands out of s1 on different headings the case
+      // below stops being the one this test is about.
+      const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+      for (const b of bands) {
+        expect(b.centerline[0]).toEqual({ x: 0, y: 0 });
+        expect(b.centerline[1].x).toBe(0);
+        expect(b.centerline[1].y).toBeGreaterThan(0);
+      }
+      expect(findMarker(doc, 's1')?.outward).toEqual({ x: 0, y: -1 });
+    });
+
+    it('outward stays null where the two edges leave a station on different headings', () => {
+      // Same three stations, but s1 is a THROUGH stop: s2 leaves west, s3
+      // leaves east and bends away south further along. Both halves of the
+      // marker are covered by a band, so there is no end to cap.
+      const doc = makeDoc({
+        stations: [
+          stationWithStop('s1', 'L1', { x: 0, y: 0 }, { orientation: 'auto-horizontal' }),
+          stationWithStop('s2', 'L1', { x: -600, y: 0 }, { orientation: 'auto-horizontal' }),
+          stationWithStop('s3', 'L1', { x: 600, y: 600 }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'], edges: ['s1|s2', 's1|s3'] })],
+      });
+      // Not vacuous by way of a band the router gave up on: both really route,
+      // so the null below is about their HEADINGS disagreeing.
+      expect(buildBands(doc.stations, doc.lines, doc.lineOrder).map((b) => b.warning)).toEqual([
+        false,
+        false,
+      ]);
+      expect(findMarker(doc, 's1')?.outward).toBeNull();
+    });
   });
 });
 

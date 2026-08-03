@@ -8,7 +8,6 @@ import {
   stationEndStyleOf,
   withStationEndStyles,
 } from './lineEnd';
-import { isLineTerminus } from './lineTopology';
 import type { Line } from './types';
 
 const line = (patch: Partial<Line> = {}): Line => ({
@@ -115,26 +114,6 @@ describe('withStationEndStyles', () => {
   });
 });
 
-describe('isLineTerminus', () => {
-  const l = line({ stations: ['A', 'B', 'C'], edges: ['A|B', 'B|C'] });
-
-  it('is true at a degree-1 station', () => {
-    expect(isLineTerminus(l, 'A')).toBe(true);
-    expect(isLineTerminus(l, 'C')).toBe(true);
-  });
-
-  it('is false in the middle of a chain', () => {
-    expect(isLineTerminus(l, 'B')).toBe(false);
-  });
-
-  it('is false at a junction and on a loop', () => {
-    const branched = line({ edges: ['A|B', 'B|C', 'B|D'] });
-    expect(isLineTerminus(branched, 'B')).toBe(false);
-    const loop = line({ edges: ['A|B', 'B|C', 'A|C'] });
-    expect(isLineTerminus(loop, 'A')).toBe(false);
-  });
-
-  it('is false for a lone stop with no edges', () => {
-    expect(isLineTerminus(line({ stations: ['A'] }), 'A')).toBe(false);
-  });
-});
+// Where a line's paint ENDS is not a question about degree — see `lineEndsAt`
+// (geometry/interlining.ts) and its suite. `degreeOf` still counts edges, and
+// nothing here reads it.

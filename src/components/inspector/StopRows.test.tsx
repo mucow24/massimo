@@ -258,10 +258,23 @@ describe('<StopRows />', () => {
 describe('<StopRows /> — line ends', () => {
   const endCombo = (service: string) => `Line end (line ${service})`;
 
+  // Where a line ENDS is geometric, so these seeds carry real neighbours at
+  // real coordinates: `a` sits at the origin and the line runs south from it.
+  const southOf = (id: string, x: number, y: number): Station => ({
+    id,
+    name: id,
+    x,
+    y,
+    rotation: 0,
+    stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+    label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
+  });
+
   // a—b for L1 (so `a` is an end); L2 runs a—b—c, so `b` is interior for it.
   const chain = () => {
     seed({
       a: hub({ stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }] }),
+      b: southOf('b', 0, 300),
     });
     useDoc.setState({
       lines: {
@@ -271,8 +284,39 @@ describe('<StopRows /> — line ends', () => {
     });
   };
 
+  // The same line BRANCHING at `a`: both edges leave it south down one
+  // corridor, `d` peeling off south-east. Degree 2, still where the ink stops.
+  const branchedAtA = () => {
+    seed({
+      a: hub({ stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }] }),
+      b: southOf('b', 0, 600),
+      d: {
+        ...southOf('d', 200, 400),
+        stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-nw-se' }],
+      },
+    });
+    useDoc.setState({
+      lines: {
+        ...useDoc.getState().lines,
+        L1: makeLine({
+          id: 'L1',
+          service: '1',
+          color: '#c60c30',
+          stations: ['a', 'b', 'd'],
+          edges: ['a|b', 'a|d'],
+        }),
+      },
+    });
+  };
+
   it('offers the end control at a terminus', () => {
     chain();
+    renderRows();
+    expect(screen.getByRole('combobox', { name: endCombo('1') })).toBeTruthy();
+  });
+
+  it('offers it where the line BRANCHES at that end, degree 2 and all', () => {
+    branchedAtA();
     renderRows();
     expect(screen.getByRole('combobox', { name: endCombo('1') })).toBeTruthy();
   });
@@ -346,7 +390,10 @@ describe('<StopRows /> — line ends', () => {
     // Dot type and size fan out across mirror matches; an end is topology, not
     // a look, so it stays put — pinned deliberately.
     seed(
-      { a: hub({ stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }] }) },
+      {
+        a: hub({ stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }] }),
+        b: southOf('b', 0, 300),
+      },
       { mirrorMatching: true, matchedStationIds: ['a', 'z'] },
     );
     useDoc.setState({
