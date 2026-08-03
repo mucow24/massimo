@@ -441,6 +441,12 @@ export interface Line {
   // so a seam-color-only line still shows a seam. Only takes effect alongside a
   // non-transparent seamColor.
   seamWidth?: number;
+  // Which pieces of this line's seam edges to paint (see SeamEdges). Missing ⇒
+  // 'both', the full notch — legacy saves carried a doc-level `seamEdges`
+  // instead, baked onto lines on load (see bakeDocSeamEdges in serialize.ts).
+  // PRESENTATION, like the seam color it filters: it never moves a band path.
+  // The setter drops the field at 'both' so the default is never stored.
+  seamEdges?: SeamEdges;
   // TfL-tick dimensions for this line's 'dash' stops, world units. Both are
   // stored like `seamWidth` (quarter-unit grid, drop at 0 = "auto"); an UNSET
   // value derives from the line width at render time (length = width,
@@ -478,7 +484,7 @@ export interface Line {
   // Live link to a StyleDef of kind 'line' (see MapDoc.styles). INVARIANT:
   // when present, this line's covered style fields (singletonDotStyle,
   // multiDotStyle, singletonDotSize, multiDotSize, width, interlineGap, labelGap,
-  // strokeWidth, strokeColor, seamColor, seamWidth, dashLength, dashWidth, curveRadius —
+  // strokeWidth, strokeColor, seamColor, seamWidth, seamEdges, dashLength, dashWidth, curveRadius —
   // NOT color) equal the style's props. Transforms maintain it: editing any covered field clears
   // the tag ("detach to Custom"), editing the style re-stamps its users,
   // deleting the style untags. Absent ⇒ no style ("Custom" in the UI).
@@ -730,7 +736,7 @@ export interface LineCircle {
   locked?: boolean;
 }
 
-// How the branch seam's "inner edges" are drawn (see MapDoc.seamEdges). A seam
+// How the branch seam's "inner edges" are drawn (see Line.seamEdges). A seam
 // edge path is a mix of straight (`line`) and curved (fillet `arc`) pieces; this
 // picks which to keep — 'both' is the full notch, 'straight'/'curved' hint the
 // branch with just one edge.
@@ -827,13 +833,10 @@ export interface MapDoc {
   // Which color palettes are available in the line editor. Invariant:
   // never empty (enforced by transforms / parse sanitiser).
   activePalettes: PaletteId[];
-  // How to render every line's branch/loop "inner edges" — the seam painted
-  // where a line's own bands overlap at a junction. 'both' draws the full notch
-  // (every seam edge), 'straight' keeps only the straight pieces, 'curved' only
-  // the fillet arcs, so a branch can be hinted with a single edge instead of the
-  // whole overlap. Global for now (all lines share it). Absent in older saves
-  // ⇒ 'both' via the DEFAULT_DOC merge — no migration needed.
-  seamEdges: SeamEdges;
+  // NOTE: there is no doc-level `seamEdges` anymore — which pieces of a branch
+  // seam get painted is a per-line style field (Line.seamEdges). Legacy saves
+  // that carry the old doc field get it baked onto their lines on load
+  // (bakeDocSeamEdges).
   // Whether the map is a NIGHT map: false = day (light), true = night (dark).
   // A property of the document, not of the session viewing it — so it travels
   // in the saved file, an exported .massimo.json reopens in the mode it was
@@ -842,7 +845,7 @@ export interface MapDoc {
   // this as a plain boolean parameter, so the model stays theme-agnostic: this
   // field is only ever the SOURCE, read once per component from the store.
   // Absent in older saves ⇒ false via the DEFAULT_DOC merge — no migration
-  // needed, same route seamEdges took.
+  // needed, the plain scalar-backfill route.
   darkMode: boolean;
   // NOTE: there are no doc-level transfer settings anymore. Transfers fall
   // back to the constant TRANSFER_STYLE_DEFAULTS (transferStyle.ts); map-wide
@@ -1029,12 +1032,15 @@ export interface LineStyleProps {
   width: number;
   // Corner-rounding radius, world units.
   curveRadius: number;
-  // What the wearer's painted ENDS look like (see Line.endStyle). Required, not
-  // optional: a style has to be able to force 'square' back onto a line that
-  // was set to round, which an absent-means-inherit field could not do. Defs
-  // from saves that predate it heal to 'square' in canonicalStyleProps. The
-  // per-TERMINUS pins (Line.stationEndStyles) are deliberately NOT covered —
-  // they are per-topology overrides, like the per-stop dot overrides.
+  // What the wearer's painted ENDS look like (see Line.endStyle). Required
+  // rather than optional: every def then stores a concrete end, so no reader —
+  // stamping, the equality check, the editors — has an absent case to resolve.
+  // (Optional would also work: the optionals below are all forced back onto a
+  // wearer by stampStyle's `?? <default>`. This is a uniformity choice, not a
+  // capability one.) Defs from saves that predate it heal to 'square' in
+  // canonicalStyleProps. The per-TERMINUS pins (Line.stationEndStyles) are
+  // deliberately NOT covered — they are per-topology overrides, like the
+  // per-stop dot overrides.
   endStyle: LineEndStyle;
   // Casing width per side, world units (0 = no casing).
   strokeWidth: number;
@@ -1048,6 +1054,11 @@ export interface LineStyleProps {
   // Seam width per side (world units). Optional: absent ⇒ inherit the casing
   // width (see Line.seamWidth).
   seamWidth?: number;
+  // Which pieces of the seam edges to paint (see Line.seamEdges). Required
+  // rather than optional, matching `endStyle` above — the same uniformity
+  // choice, for the same reason. Defs from saves that predate it heal to 'both'
+  // in canonicalStyleProps.
+  seamEdges: SeamEdges;
   // TfL-tick dimensions (world units). Optional: absent ⇒ derive from the
   // line width at render time (see Line.dashLength / Line.dashWidth).
   dashLength?: number;

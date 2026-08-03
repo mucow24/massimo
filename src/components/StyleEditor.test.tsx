@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { act, cleanup, render, screen, fireEvent } from '@testing-library/react';
+import { act, cleanup, render, screen, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StyleEditor } from './StyleEditor';
 import { useDoc } from '../state/store';
@@ -64,6 +64,20 @@ describe('<StyleEditor> — line', () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole('radio', { name: 'Round' }));
     expect((useDoc.getState().styles.y1.props as LineStyleProps).endStyle).toBe('round');
+  });
+
+  it('renders the branch inner-edge group at the def value and writes a pick through', async () => {
+    const def = makeStyle('line', 'y1', { props: { seamEdges: 'straight' } });
+    useDoc.setState({ styles: { ...useDoc.getState().styles, y1: def } });
+    render(<StyleEditor def={def} />);
+    const group = screen.getByRole('radiogroup', { name: 'Branch inner edges' });
+    expect(within(group).getByRole('radio', { name: 'Straight' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    const user = userEvent.setup();
+    await user.click(within(group).getByRole('radio', { name: 'Curved' }));
+    expect((useDoc.getState().styles.y1.props as LineStyleProps).seamEdges).toBe('curved');
   });
 
   it('renders the interline gap row at the def value, 0 when the def has none', () => {

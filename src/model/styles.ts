@@ -32,6 +32,7 @@ import {
   setLineMultiDotSize,
   setLineStrokeColor,
   setLineSeamColor,
+  setLineSeamEdges,
   setLineSeamWidth,
   setLineStrokeWidth,
   setLineWidth,
@@ -65,11 +66,14 @@ import {
   lineCurveRadiusOf,
 } from './lineCurve';
 import {
+  LINE_SEAM_EDGES_DEFAULT,
   LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_MIN,
   canonicalSeamColor,
   canonicalStrokeWidth,
+  isSeamEdges,
   lineSeamColorStored,
+  lineSeamEdgesOf,
   lineSeamWidthOf,
   lineStrokeColorStored,
   lineStrokeWidthOf,
@@ -156,6 +160,7 @@ export function captureStyleProps<K extends StyleKind>(
         endStyle: lineEndStyleOf(l),
         strokeWidth: lineStrokeWidthOf(l),
         strokeColor: lineStrokeColorStored(l),
+        seamEdges: lineSeamEdgesOf(l),
         // Optional: omitted when unset, so a captured style compares equal to
         // one that never had the key.
         ...(seamColor !== undefined ? { seamColor } : {}),
@@ -251,6 +256,7 @@ export function stylePropsEqual(
       la.strokeColor === lb.strokeColor &&
       la.seamColor === lb.seamColor &&
       la.seamWidth === lb.seamWidth &&
+      la.seamEdges === lb.seamEdges &&
       la.dashLength === lb.dashLength &&
       la.dashWidth === lb.dashWidth &&
       la.interlineGap === lb.interlineGap &&
@@ -325,6 +331,10 @@ export function canonicalStyleProps<K extends StyleKind>(
         endStyle: isLineEndStyle(p.endStyle) ? p.endStyle : LINE_END_STYLE_DEFAULT,
         strokeWidth: snapToStep(p.strokeWidth, LINE_STROKE_STEP, LINE_STROKE_WIDTH_MIN),
         strokeColor: p.strokeColor.toLowerCase(),
+        // Same `?? DEFAULT` healing as endStyle, for defs written before the
+        // seam edge filter was a covered field (it was a doc-global then, and
+        // 'both' is the look those defs' wearers already paint).
+        seamEdges: isSeamEdges(p.seamEdges) ? p.seamEdges : LINE_SEAM_EDGES_DEFAULT,
         ...(seamColor !== undefined ? { seamColor } : {}),
         ...(seamWidth !== undefined ? { seamWidth } : {}),
         ...(dashLength !== undefined ? { dashLength } : {}),
@@ -423,6 +433,7 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
       next = setLineSeamColor(next, itemId, p.seamColor ?? '#00000000');
       // undefined ⇒ 0 ⇒ dropped, so the stamped line inherits the casing width.
       next = setLineSeamWidth(next, itemId, p.seamWidth ?? 0);
+      next = setLineSeamEdges(next, itemId, p.seamEdges);
       // undefined ⇒ 0 ⇒ dropped, so the stamped line derives from its width.
       next = setLineDashLength(next, itemId, p.dashLength ?? 0);
       next = setLineDashWidth(next, itemId, p.dashWidth ?? 0);

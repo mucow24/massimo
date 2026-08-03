@@ -142,7 +142,6 @@ export function MapCanvas() {
   const lineOrder = useDoc((s) => s.lineOrder);
   const lineCircles = useDoc((s) => s.lineCircles);
   const rotateLineCircle = useDoc((s) => s.rotateLineCircle);
-  const seamEdges = useDoc((s) => s.seamEdges);
   const addLineTag = useDoc((s) => s.addLineTag);
   const assignRegions = useDoc((s) => s.assignRegions);
   const setLineSegmentStyle = useDoc((s) => s.setLineSegmentStyle);
@@ -1476,7 +1475,6 @@ export function MapCanvas() {
                     lines={lines}
                     colorMap={colorMap}
                     underlayColor={underlayColor}
-                    seamEdges={seamEdges}
                   />,
                 );
               }
@@ -1877,7 +1875,6 @@ export function MapCanvas() {
                 lineCircles={lineCircles}
                 renderables={renderables}
                 underlayColor={underlayColor}
-                seamEdges={seamEdges}
                 uiMode={selection.uiMode}
                 // Pan-suppress the hover preview the same way hoveredChrome does
                 // for idle mode — a lingering ring/halo mid-pan reads as stale.

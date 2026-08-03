@@ -9,6 +9,7 @@ import { ColorField } from './ColorField';
 import { DayNightColorRow } from './DayNightColorRow';
 import { NumericFieldRow } from './NumericFieldRow';
 import { LineEndSegmented } from './LineEndPicker';
+import { SeamEdgesSegmented } from './SeamEdgesPicker';
 import { WeightSelect, ItalicButton } from './WeightItalicControls';
 import { StopGlyph } from './StopGlyph';
 import { StationShapePicker } from './StationShapePicker';
@@ -341,6 +342,17 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
           />
         </div>
       )}
+      {/* Which pieces of the seam edge to keep. Covered like every other field
+          here, so a style can force the full notch back onto a line someone set
+          to curved-only. */}
+      <div className="row">
+        <label>Inner edges</label>
+        <SeamEdgesSegmented
+          value={props.seamEdges}
+          onSelect={(seamEdges) => patch({ seamEdges })}
+        />
+      </div>
+
       <div className="style-section">Stop dots</div>
       {/* Dot TYPE + SIZE per station case, split by singleton (only line at the
           station) vs. interchange (shared). The picker points the split default

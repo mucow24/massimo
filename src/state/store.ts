@@ -50,6 +50,7 @@ import {
   backfillDotStrokeAlign,
   backfillLineStyleEndStyle,
   bakeDocCurveRadius,
+  bakeDocSeamEdges,
   bakeLegacyBackgroundOrder,
   bakeLegacyLabelSettings,
   bakeLegacyTransferSettings,
@@ -139,9 +140,6 @@ const DOC_FIELDS = [
   'styles',
   'styleDefaults',
   'activePalettes',
-  // Global branch-seam inner-edge mode. Absent in older saves, backfilled to
-  // 'both' by the shallow merge on both load paths.
-  'seamEdges',
   // Whether this is a night map. Lived in useViewportStore (session state)
   // until it became clear a night map is a property of the MAP: it has to
   // travel in the exported file. Absent in older saves, backfilled to false by
@@ -374,6 +372,13 @@ if (typeof window !== 'undefined') {
  *   heal absent/garbage values to 'square' (the historical full marker square)
  *   via `backfillLineStyleEndStyle`. No tag prune follows it — a line from those
  *   saves carries no end of its own, so it already paints what the heal writes.
+ * - v22 → v23: retire the doc-level `seamEdges` — bake it onto every line
+ *   (`Line.seamEdges`, dropped at the historical default 'both') and fill line
+ *   style defs that predate the covered field, via the shared
+ *   `bakeDocSeamEdges`. Idempotent (keyed off field presence), so `parse()` runs
+ *   it unconditionally. Ordered BESIDE the v<16 curveRadius bake, and BEFORE the
+ *   v<10 style hygiene, for the same reason its gate gives. No tag prune
+ *   follows: lines and defs take the same legacy value.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -449,6 +454,13 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     // `curveRadius` would heal to the constant default instead of the doc's
     // legacy value.
     out = bakeDocCurveRadius(out);
+  }
+  if (v < 23) {
+    // Retired doc-level seamEdges → per-line fields, plus the line-style-def
+    // fill. Same ordering requirement as bakeDocCurveRadius above: it must
+    // precede the v<10 style hygiene, or a def missing `seamEdges` would heal
+    // to 'both' instead of the doc's legacy mode.
+    out = bakeDocSeamEdges(out);
   }
   if (v < 18) {
     // Split the retired single `defaultDotStyle` / `defaultDotSize` into the
@@ -706,6 +718,9 @@ interface DocState extends MapDoc {
   setLineStrokeColor: (lineId: LineId, c: string) => void;
   setLineSeamColor: (lineId: LineId, c: string) => void;
   setLineSeamWidth: (lineId: LineId, w: number) => void;
+  /** Which pieces of this line's branch seam get painted: both edge kinds,
+   *  only the straight pieces, or only the curved (fillet) ones. */
+  setLineSeamEdges: (lineId: LineId, v: SeamEdges) => void;
   setLineDashLength: (lineId: LineId, v: number) => void;
   setLineDashWidth: (lineId: LineId, v: number) => void;
   deleteLine: (id: LineId) => void;
@@ -857,9 +872,6 @@ interface DocState extends MapDoc {
   updateStationLabelStyle: (stationId: StationId, patch: T.StationLabelPatch) => void;
   setActivePalettes: (ids: PaletteId[]) => void;
   togglePalette: (id: PaletteId) => void;
-  /** Global branch-seam inner-edge mode: draw both edges, only the straight
-   *  pieces, or only the curved (fillet) pieces of every line's seam. */
-  setSeamEdges: (seamEdges: SeamEdges) => void;
   /** Make this a night map (or a day map again). A document edit like any
    *  other — undoable, and saved with the file. */
   setDarkMode: (darkMode: boolean) => void;
@@ -1010,6 +1022,7 @@ export const useDoc = create<DocState>()(
         setLineStrokeColor: (lineId, c) => set((s) => T.setLineStrokeColor(s, lineId, c)),
         setLineSeamColor: (lineId, c) => set((s) => T.setLineSeamColor(s, lineId, c)),
         setLineSeamWidth: (lineId, w) => set((s) => T.setLineSeamWidth(s, lineId, w)),
+        setLineSeamEdges: (lineId, v) => set((s) => T.setLineSeamEdges(s, lineId, v)),
         setLineDashLength: (lineId, v) => set((s) => T.setLineDashLength(s, lineId, v)),
         setLineDashWidth: (lineId, v) => set((s) => T.setLineDashWidth(s, lineId, v)),
         deleteLine: (id) => set(withRegionReconcile((s) => T.deleteLine(s, id))),
@@ -1327,7 +1340,6 @@ export const useDoc = create<DocState>()(
           set((s) => T.setActivePalettes(s, idsArr, useCustomPalettes.getState().palettes)),
         togglePalette: (id) =>
           set((s) => T.togglePalette(s, id, useCustomPalettes.getState().palettes)),
-        setSeamEdges: (seamEdges) => set((s) => T.setSeamEdges(s, seamEdges)),
         setDarkMode: (darkMode) => set((s) => T.setDarkMode(s, darkMode)),
         deleteCustomPalette: (id) => {
           useCustomPalettes.getState().removePalette(id);
@@ -1348,8 +1360,8 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: debouncedDocStorage,
-        version: 22,
-        // Version migration chain v0 → v22 lives in `migrateDoc` (above), which
+        version: 23,
+        // Version migration chain v0 → v23 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         // `migrate` only runs when the STORED version differs from the config

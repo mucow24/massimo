@@ -348,7 +348,6 @@ interface MapDoc {
   svgImages: Record<string, SvgImage>;
   lineCircles: Record<string, LineCircle>; // dashed guide circles stations bind to (never exported)
   activePalettes: PaletteId[]; // INVARIANT: never empty
-  seamEdges: SeamEdges; // global branch-seam inner-edge mode: 'both' | 'straight' | 'curved'
   darkMode: boolean; // is this a NIGHT map? false = day. Travels in the saved/exported file
   styles: Record<string, StyleDef>; // named per-kind formatting presets ("Styles")
   styleDefaults: Record<StyleKind, string>; // per-kind DEFAULT designation (style id)
@@ -372,10 +371,17 @@ mirroring the transfer retirement.
 And there is **no doc-level `curveRadius`** anymore — corner rounding is per-line
 (`Line.curveRadius`, missing ⇒ `LINE_CURVE_RADIUS_DEFAULT` = 24, [lineCurve.ts](src/model/lineCurve.ts)),
 covered by line styles, and edited in the line inspector / line style presets (the Options popover
-holds palettes and the global branch-seam-edge control, not curve radius). Legacy saves carried the
-doc field; both load paths bake it onto every line
-and fill line style defs that predate the covered field (`bakeDocCurveRadius`, persist v16).
-Where interlined lines disagree, the shared band curves at the LARGEST member radius.
+holds palettes and nothing else). Legacy saves carried the doc field; both load paths bake it onto
+every line and fill line style defs that predate the covered field (`bakeDocCurveRadius`, persist
+v16). Where interlined lines disagree, the shared band curves at the LARGEST member radius.
+
+Nor is there a doc-level **`seamEdges`** — which pieces of a branch seam get painted is per-line
+(`Line.seamEdges`, missing ⇒ `'both'`, the full notch, [lineStroke.ts](src/model/lineStroke.ts)),
+covered by line styles, and edited beside the seam's width and color in the line inspector / line
+style presets. Legacy saves carried the doc field; both load paths bake it onto every line and fill
+line style defs that predate the covered field (`bakeDocSeamEdges`, persist v23) — a doc old
+enough to carry the field can have no def carrying one, so lines and defs take the same legacy
+value and no tag can drift.
 
 `DEFAULT_DOC` (in [transforms.ts](src/model/transforms.ts)) is the merge baseline: empty
 collections, `name: 'Untitled map'`, `lineCounter: 0`, `activePalettes:
@@ -725,6 +731,13 @@ All remaining fields optional and **never stored at default**:
 - `seamWidth?: number` — seam width per side, world units. Stored like `strokeWidth` (drop at 0),
   but an **unset** value inherits the casing width at render time (`seamRenderWidth`) so a
   seam-color-only line still shows a seam. Only takes effect alongside a non-transparent `seamColor`.
+- `seamEdges?: SeamEdges` — which pieces of the seam edges to paint: `'both'` (the full notch),
+  `'straight'` (the straight runs only) or `'curved'` (the fillet arcs only), so a branch can be
+  hinted with one edge. Missing ⇒ `'both'`, and the setter drops the field there. PRESENTATION,
+  like the seam it filters. In `LineStyleProps` it is REQUIRED, like `endStyle` — every def stores
+  a concrete mode, so no reader has an absent case to resolve. That is a uniformity choice, not a
+  capability one: the optional props are all forced back onto a wearer too, by `stampStyle`'s
+  `?? <default>`.
 - `dashLength?` / `dashWidth?: number` — **TfL-tick dimensions for this line's `dash` stops**,
   world units. PRESENTATION (never moves band geometry, resolved at render). Both **unset** ⇒
   derive from the stripe width (`dashLength = width`, `dashWidth = width/2` — the TfL proportions;
@@ -858,8 +871,9 @@ for both: a hash here must cover every input `markerBodyRings` and `stripeBodyPo
 not merely every input that moves geometry.
 
 > **Width is GEOMETRY, stroke/seam are PRESENTATION.** A `width` edit rebuilds band geometry; a
-> `strokeWidth`/`strokeColor`/`seamColor`/`seamWidth`/color/style edit is resolved at render time
-> and never rebuilds. This split is exploited by the band-geometry memo (see Interaction layer).
+> `strokeWidth`/`strokeColor`/`seamColor`/`seamWidth`/`seamEdges`/color/style edit is resolved at
+> render time and never rebuilds. This split is exploited by the band-geometry memo (see
+> Interaction layer).
 
 **`DotStyle`** ([dotStyle.ts](src/model/dotStyle.ts)) — a procedural stop dot. Its **required**
 fields (a deliberate divergence from the optional-field convention) let plain deep equality
@@ -1104,8 +1118,8 @@ by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}`:
 3. `merged = { ...DEFAULT_DOC, ...doc }` — the entire defaulting mechanism.
 4. `validActivePalettes` (enforce ≥1 valid palette), then `bakeDocCurveRadius` (retired doc-level
    `curveRadius` → per-line `Line.curveRadius` + fill line style defs; idempotent, keyed off field
-   presence) — **before** the per-line clean and style validation below, which expect the
-   per-line/per-def form.
+   presence) and `bakeDocSeamEdges` (the same route for the retired doc-level `seamEdges`) —
+   **before** the per-line clean and style validation below, which expect the per-line/per-def form.
 5. Per-line clean — `backfillLineEdges` (derive `edges` from the legacy `stations` order for
    pre-topology saves — unconditional, since a missing `edges` white-screens the renderer) →
    `sanitizeSegments` (drop segment keys that aren't real adjacencies) → `sanitizeLineWidth` →
@@ -1162,7 +1176,7 @@ Path A does **more** than Path B because hand-edited files can be non-canonical 
 sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for this).
 
 **Path B — localStorage rehydration: `migrateDoc(persisted, version)`** ([store.ts](src/state/store.ts)).
-The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 22`, `migrate:
+The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 23`, `migrate:
 migrateDoc`, `partialize: pickDocSnapshot`, plus a **custom `merge` hook** (below). Because the persist-merge already fills absent fields
 from the initial state, `migrateDoc` only does **value-level legacy fixups, version-gated**, on
 disjoint fields (order immaterial except where noted), never mutating the input:
@@ -1190,6 +1204,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | `v<20`      | dot **type** became a covered `LineStyleProps` field: `bakeLineStyleDotIds` (backfill `singletonDotStyleId`/`multiDotStyleId` on line style defs, absent ⇒ the `stopDot` ⭐ default), then `pruneLineDotTypeTagMismatches` (untag any line whose split dot type differs from its now-fuller line style — keeping "tagged ⇒ matches"). Ordered **after** the `v<19` library bake; Path A prunes this via `pruneDanglingStyleRefs` instead |
 | `v<21`      | `backfillDotStrokeAlign` (`DotStyle.strokeAlign` became a required field: backfill `'center'`, the historical SVG-native placement, across every dot-style home). Path A covers this via `sanitizeDotStyle` |
 | `v<22`      | `backfillLineStyleEndStyle` (the line **end** became a required covered `LineStyleProps` field: heal absent/garbage `endStyle` on line defs to `'square'`, the historical full marker square, so nothing repaints). No tag prune follows — a line from those saves carries no end of its own, so it already paints what the heal writes. Path A covers this via `sanitizeStyleProps` |
+| `v<23`      | `bakeDocSeamEdges` (retired doc-level `seamEdges` → per-line `Line.seamEdges` + line-style-def fill). Ordered beside the `v<16` radius bake and **before** the `v<10` style hygiene, for the same reason: a def missing `seamEdges` would otherwise heal to `'both'` instead of the doc's legacy mode. No tag prune follows — lines and defs take the same legacy value. Idempotent, keyed off field presence |
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array. **But see the `merge` hook** — this call alone is not "every rehydrate" |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `validActivePalettes` whenever `activePalettes !== undefined`                                                                              |
@@ -1434,8 +1449,8 @@ through both, so none can drift:
     out while the doc is `clean`**, so an unchanged doc can never mint a duplicate version.
 - **Clear** is the exception: it stays in the *same* document, so it neither auto-saves nor clears
   history (Ctrl+Z is the backstop), and `clearAll` preserves everything that isn't drawn content:
-  name / styles / styleDefaults / activePalettes / seamEdges / **darkMode** (a night map stays a
-  night map when you empty it).
+  name / styles / styleDefaults / activePalettes / **darkMode** (a night map stays a night map
+  when you empty it).
 - Known gap: work that lives only in the undo stack (Clear → New) is lost — the gate sees an empty
   doc and `clearHistory()` then discards the stack. Pre-existing in kind.
 
@@ -1950,10 +1965,11 @@ casing widths come from [lineStroke.ts](src/model/lineStroke.ts) (`casingSilhoue
 `casingInsetBodyWidth` for opaque styles so a line's own overlapping bands merge into ONE outer
 casing; `CasingRails` centered rails for the two transparent "open" styles). The seam is two
 edge-centered strokes CLIPPED to the line's OTHER band corridors (`SeamClips.tsx`), so it only
-shows where a line crosses itself. The global `MapDoc.seamEdges` mode filters which seam edges
-draw — `'both'` (default), `'straight'` only (`'line'` edges), or `'curved'` only (`'arc'` edges);
-`SegmentBand` keeps just the matching edge kind. All three passes read the same `lineStroke`
-helpers as the highlight overlay so they can't drift.
+shows where a line crosses itself. Each line's own `seamEdges` filters which seam edges draw —
+`'both'` (default), `'straight'` only (`'line'` edges), or `'curved'` only (`'arc'` edges);
+`SegmentBand` reads it off the live line, like the seam's color and width, so two lines sharing a
+band can differ. All three passes read the same `lineStroke` helpers as the highlight overlay so
+they can't drift.
 
 **The hit box.** A stripe's pointer surface is normally the painted path itself, but the styles
 that paint with GAPS (the dasharray ones — `dashed`, `dotted`, `dashed-open`) hit-test only their

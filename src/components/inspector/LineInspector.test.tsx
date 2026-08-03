@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LineInspector } from './LineInspector';
 import { useDoc, useSelection } from '../../state/store';
@@ -8,6 +8,7 @@ import { historyDepth } from '../../state/history';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { makeDoc, makeLine, makeStation, makeStop, makeStyle } from '../../test/fixtures';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
+import type { SeamEdges } from '../../model/types';
 import { openColorField } from '../../test/colorField';
 import { chooseOption, stepSlider } from '../../test/interaction';
 
@@ -418,6 +419,7 @@ describe('<LineInspector /> — stroke controls', () => {
       strokeColor?: string;
       seamColor?: string;
       seamWidth?: number;
+      seamEdges?: SeamEdges;
     } = {},
   ) => {
     useDoc.setState({
@@ -526,6 +528,34 @@ describe('<LineInspector /> — stroke controls', () => {
     // Back to 0 drops the field → inherits the casing width again.
     stepSlider(slider, -8);
     expect('seamWidth' in useDoc.getState().lines.L1).toBe(false);
+  });
+
+  // The branch inner-edge filter is a per-line style field now (it used to be a
+  // doc-global in the Options panel), so it lives with the rest of the seam.
+  it('the branch inner-edge group shows the line’s mode and writes a pick through', async () => {
+    const user = userEvent.setup();
+    seed({ strokeWidth: 4, seamColor: '#abcdef80', seamEdges: 'straight' });
+    render(<LineInspector id="L1" />);
+    const group = screen.getByRole('radiogroup', { name: 'Branch inner edges' });
+    expect(within(group).getByRole('radio', { name: 'Straight' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    await user.click(within(group).getByRole('radio', { name: 'Curved' }));
+    expect(useDoc.getState().lines.L1.seamEdges).toBe('curved');
+    // Back to the full notch drops the field — the default is never stored.
+    await user.click(within(group).getByRole('radio', { name: 'Both' }));
+    expect('seamEdges' in useDoc.getState().lines.L1).toBe(false);
+  });
+
+  it('a line storing no mode shows the full notch selected', () => {
+    seed({ strokeWidth: 4, seamColor: '#abcdef80' });
+    render(<LineInspector id="L1" />);
+    const group = screen.getByRole('radiogroup', { name: 'Branch inner edges' });
+    expect(within(group).getByRole('radio', { name: 'Both' })).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
   });
 
   it('one slider focus-arc collapses to a single undo entry', () => {
