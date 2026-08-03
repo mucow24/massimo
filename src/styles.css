@@ -552,9 +552,6 @@ select option {
   align-items: stretch;
   gap: 4px;
 }
-.options-popover-block-label {
-  color: var(--text-muted);
-}
 .options-palettes {
   display: flex;
   flex-direction: column;
@@ -564,7 +561,6 @@ select option {
   overflow-y: auto;
 }
 .options-palette-separator,
-.options-popover-divider,
 .view-popover-divider {
   border: 0;
   border-top: 1px solid var(--border);

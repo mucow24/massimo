@@ -578,45 +578,58 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   return { ok: true, doc: final };
 }
 
+// Loose shape both retirement bakes below operate on: a whole MapDoc on the
+// file path, a partial persisted doc on the rehydrate path.
+type LinesAndStyles = { lines?: Record<string, Line>; styles?: Record<string, StyleDef> };
+
 /**
- * Bake the RETIRED doc-level `curveRadius` into per-line fields, and fill
- * line style defs saved before `curveRadius` was a covered field. Corner
- * rounding is per-line now (`Line.curveRadius`, missing ⇒ the old doc-global
- * default 24), so a legacy file's map-wide radius must land on every line to
- * keep its rendered curves; the doc field is then dropped. A line (or style
- * def) that somehow carries its own value keeps it. Keyed off field presence
- * (idempotent), so parse() runs it unconditionally and the localStorage
- * rehydrate gates it at v<16. Garbage legacy values read as the default.
- * Must run BEFORE style-def validation on both paths — `sanitizeStyleProps`
- * requires `curveRadius` on line defs, and this bake is what guarantees it
- * for defs written by older builds.
+ * The shared body of a "this doc-global became a covered line-style field"
+ * bake. Two fields have taken that route (`curveRadius`, `seamEdges`) and the
+ * mechanics are identical every time:
+ *
+ *   1. Read the legacy doc value, healing garbage/absent to the field's default.
+ *   2. If the doc CARRIES the field, drop it and stamp the per-line STORED form
+ *      onto every line that has none — a line with its own value keeps it. The
+ *      stored form is undefined at the default (never stored), in which case
+ *      there is nothing to stamp.
+ *   3. Fill every LINE style def that lacks the field with the concrete DEF
+ *      form — defs always store a resolved value. This half runs whether or not
+ *      the doc carried the field, so a def written by an older build is healed
+ *      either way.
+ *
+ * Keyed off field presence throughout, so it is idempotent: `parse()` runs each
+ * bake unconditionally and the localStorage rehydrate gates it on its version.
+ * Reference-stable (returns the input doc) when nothing changed.
+ *
+ * Only the three per-field pieces vary, so callers pass them: `read` validates
+ * the raw legacy value, `storedOf` gives the per-line form, `defOf` the per-def
+ * one. Each bake stays its own exported function — the ORDERING constraints and
+ * migration invariants differ per field, and those live in their doc comments.
  */
-export function bakeDocCurveRadius<
-  T extends { lines?: Record<string, Line>; styles?: Record<string, StyleDef> },
->(doc: T): T {
+function bakeRetiredLineField<T extends LinesAndStyles, V>(
+  doc: T,
+  field: string,
+  read: (rawValue: unknown) => V,
+  storedOf: (legacy: V) => V | undefined,
+  defOf: (legacy: V) => V,
+): T {
   const raw = doc as Record<string, unknown>;
-  const hasLegacy = 'curveRadius' in raw;
-  const legacyR =
-    typeof raw.curveRadius === 'number' && Number.isFinite(raw.curveRadius)
-      ? (raw.curveRadius as number)
-      : LINE_CURVE_RADIUS_DEFAULT;
-  // Per-line stored form (undefined at the default — never stored) vs. the
-  // concrete style-def form (defs always store the resolved value).
-  const stored = canonicalLineCurveRadius(legacyR);
-  const defR = Math.max(LINE_CURVE_RADIUS_MIN, Math.round(legacyR));
+  const hasLegacy = field in raw;
+  const legacy = read(raw[field]);
+  const stored = storedOf(legacy);
 
   let out = doc;
   let changed = false;
 
   if (hasLegacy) {
-    const { curveRadius: _retired, ...rest } = raw;
+    const { [field]: _retired, ...rest } = raw;
     out = rest as unknown as T;
     changed = true;
     if (stored !== undefined && out.lines) {
       const lines: Record<string, Line> = {};
       for (const id of Object.keys(out.lines)) {
         const ln = out.lines[id];
-        lines[id] = 'curveRadius' in ln ? ln : { ...ln, curveRadius: stored };
+        lines[id] = field in ln ? ln : ({ ...ln, [field]: stored } as Line);
       }
       out = { ...out, lines };
     }
@@ -632,12 +645,17 @@ export function bakeDocCurveRadius<
         def.kind === 'line' &&
         def.props &&
         typeof def.props === 'object' &&
-        !('curveRadius' in def.props)
+        !(field in def.props)
       ) {
-        // Raw persisted props — spread via a loose view (the def predates the
-        // field, so it isn't a valid LineStyleProps yet).
+        // Raw persisted props — spread via a loose view, and cast back through
+        // `unknown`: the def predates the field, so it is not a valid
+        // LineStyleProps until this write lands. (The computed key widens the
+        // spread to an index signature, which is why the cast needs the hop.)
         const props = def.props as unknown as Record<string, unknown>;
-        styles[id] = { ...def, props: { ...props, curveRadius: defR } } as StyleDef;
+        styles[id] = {
+          ...def,
+          props: { ...props, [field]: defOf(legacy) },
+        } as unknown as StyleDef;
         stylesChanged = true;
       } else {
         styles[id] = def;
@@ -650,6 +668,29 @@ export function bakeDocCurveRadius<
   }
 
   return changed ? out : doc;
+}
+
+/**
+ * Bake the RETIRED doc-level `curveRadius` into per-line fields, and fill
+ * line style defs saved before `curveRadius` was a covered field. Corner
+ * rounding is per-line now (`Line.curveRadius`, missing ⇒ the old doc-global
+ * default 24), so a legacy file's map-wide radius must land on every line to
+ * keep its rendered curves; the doc field is then dropped. A line (or style
+ * def) that somehow carries its own value keeps it. Keyed off field presence
+ * (idempotent), so parse() runs it unconditionally and the localStorage
+ * rehydrate gates it at v<16. Garbage legacy values read as the default.
+ * Must run BEFORE style-def validation on both paths — `sanitizeStyleProps`
+ * requires `curveRadius` on line defs, and this bake is what guarantees it
+ * for defs written by older builds.
+ */
+export function bakeDocCurveRadius<T extends LinesAndStyles>(doc: T): T {
+  return bakeRetiredLineField(
+    doc,
+    'curveRadius',
+    (v) => (typeof v === 'number' && Number.isFinite(v) ? v : LINE_CURVE_RADIUS_DEFAULT),
+    canonicalLineCurveRadius,
+    (r) => Math.max(LINE_CURVE_RADIUS_MIN, Math.round(r)),
+  );
 }
 
 /**
@@ -668,62 +709,18 @@ export function bakeDocCurveRadius<
  * A doc old enough to carry the field can have no def carrying one, so every
  * line and every line def take the same value and no tag can drift: unlike the
  * dot-type rollout, no mismatch prune follows.
+ *
+ * The def form is the legacy mode verbatim — unlike the radius, an enum has no
+ * grid to snap to or floor to clamp against.
  */
-export function bakeDocSeamEdges<
-  T extends { lines?: Record<string, Line>; styles?: Record<string, StyleDef> },
->(doc: T): T {
-  const raw = doc as Record<string, unknown>;
-  const hasLegacy = 'seamEdges' in raw;
-  const legacy = isSeamEdges(raw.seamEdges) ? raw.seamEdges : LINE_SEAM_EDGES_DEFAULT;
-  // Per-line stored form (undefined at 'both' — never stored) vs. the concrete
-  // style-def form (defs always store the resolved value).
-  const stored = canonicalSeamEdges(legacy);
-
-  let out = doc;
-  let changed = false;
-
-  if (hasLegacy) {
-    const { seamEdges: _retired, ...rest } = raw;
-    out = rest as unknown as T;
-    changed = true;
-    if (stored !== undefined && out.lines) {
-      const lines: Record<string, Line> = {};
-      for (const id of Object.keys(out.lines)) {
-        const ln = out.lines[id];
-        lines[id] = 'seamEdges' in ln ? ln : { ...ln, seamEdges: stored };
-      }
-      out = { ...out, lines };
-    }
-  }
-
-  if (out.styles) {
-    let stylesChanged = false;
-    const styles: Record<string, StyleDef> = {};
-    for (const id of Object.keys(out.styles)) {
-      const def = out.styles[id];
-      if (
-        def &&
-        def.kind === 'line' &&
-        def.props &&
-        typeof def.props === 'object' &&
-        !('seamEdges' in def.props)
-      ) {
-        // Raw persisted props — spread via a loose view (the def predates the
-        // field, so it isn't a valid LineStyleProps yet).
-        const props = def.props as unknown as Record<string, unknown>;
-        styles[id] = { ...def, props: { ...props, seamEdges: legacy } } as StyleDef;
-        stylesChanged = true;
-      } else {
-        styles[id] = def;
-      }
-    }
-    if (stylesChanged) {
-      out = out === doc ? ({ ...doc, styles } as T) : { ...out, styles };
-      changed = true;
-    }
-  }
-
-  return changed ? out : doc;
+export function bakeDocSeamEdges<T extends LinesAndStyles>(doc: T): T {
+  return bakeRetiredLineField(
+    doc,
+    'seamEdges',
+    (v) => (isSeamEdges(v) ? v : LINE_SEAM_EDGES_DEFAULT),
+    canonicalSeamEdges,
+    (m) => m,
+  );
 }
 
 /**

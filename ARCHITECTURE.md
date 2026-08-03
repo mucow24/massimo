@@ -371,10 +371,9 @@ mirroring the transfer retirement.
 And there is **no doc-level `curveRadius`** anymore — corner rounding is per-line
 (`Line.curveRadius`, missing ⇒ `LINE_CURVE_RADIUS_DEFAULT` = 24, [lineCurve.ts](src/model/lineCurve.ts)),
 covered by line styles, and edited in the line inspector / line style presets (the Options popover
-holds palettes and nothing else). Legacy saves carried the
-doc field; both load paths bake it onto every line
-and fill line style defs that predate the covered field (`bakeDocCurveRadius`, persist v16).
-Where interlined lines disagree, the shared band curves at the LARGEST member radius.
+holds palettes and nothing else). Legacy saves carried the doc field; both load paths bake it onto
+every line and fill line style defs that predate the covered field (`bakeDocCurveRadius`, persist
+v16). Where interlined lines disagree, the shared band curves at the LARGEST member radius.
 
 Nor is there a doc-level **`seamEdges`** — which pieces of a branch seam get painted is per-line
 (`Line.seamEdges`, missing ⇒ `'both'`, the full notch, [lineStroke.ts](src/model/lineStroke.ts)),
@@ -735,8 +734,10 @@ All remaining fields optional and **never stored at default**:
 - `seamEdges?: SeamEdges` — which pieces of the seam edges to paint: `'both'` (the full notch),
   `'straight'` (the straight runs only) or `'curved'` (the fillet arcs only), so a branch can be
   hinted with one edge. Missing ⇒ `'both'`, and the setter drops the field there. PRESENTATION,
-  like the seam it filters. In `LineStyleProps` it is REQUIRED (like `endStyle`) — a style has to
-  be able to force the full notch back onto a line set to curved-only.
+  like the seam it filters. In `LineStyleProps` it is REQUIRED, like `endStyle` — every def stores
+  a concrete mode, so no reader has an absent case to resolve. That is a uniformity choice, not a
+  capability one: the optional props are all forced back onto a wearer too, by `stampStyle`'s
+  `?? <default>`.
 - `dashLength?` / `dashWidth?: number` — **TfL-tick dimensions for this line's `dash` stops**,
   world units. PRESENTATION (never moves band geometry, resolved at render). Both **unset** ⇒
   derive from the stripe width (`dashLength = width`, `dashWidth = width/2` — the TfL proportions;
@@ -1448,8 +1449,8 @@ through both, so none can drift:
     out while the doc is `clean`**, so an unchanged doc can never mint a duplicate version.
 - **Clear** is the exception: it stays in the *same* document, so it neither auto-saves nor clears
   history (Ctrl+Z is the backstop), and `clearAll` preserves everything that isn't drawn content:
-  name / styles / styleDefaults / activePalettes / **darkMode** (a night map stays a
-  night map when you empty it).
+  name / styles / styleDefaults / activePalettes / **darkMode** (a night map stays a night map
+  when you empty it).
 - Known gap: work that lives only in the undo stack (Clear → New) is lost — the gate sees an empty
   doc and `clearHistory()` then discards the stack. Pre-existing in kind.
 

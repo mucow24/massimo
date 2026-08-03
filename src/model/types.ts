@@ -1032,12 +1032,15 @@ export interface LineStyleProps {
   width: number;
   // Corner-rounding radius, world units.
   curveRadius: number;
-  // What the wearer's painted ENDS look like (see Line.endStyle). Required, not
-  // optional: a style has to be able to force 'square' back onto a line that
-  // was set to round, which an absent-means-inherit field could not do. Defs
-  // from saves that predate it heal to 'square' in canonicalStyleProps. The
-  // per-TERMINUS pins (Line.stationEndStyles) are deliberately NOT covered —
-  // they are per-topology overrides, like the per-stop dot overrides.
+  // What the wearer's painted ENDS look like (see Line.endStyle). Required
+  // rather than optional: every def then stores a concrete end, so no reader —
+  // stamping, the equality check, the editors — has an absent case to resolve.
+  // (Optional would also work: the optionals below are all forced back onto a
+  // wearer by stampStyle's `?? <default>`. This is a uniformity choice, not a
+  // capability one.) Defs from saves that predate it heal to 'square' in
+  // canonicalStyleProps. The per-TERMINUS pins (Line.stationEndStyles) are
+  // deliberately NOT covered — they are per-topology overrides, like the
+  // per-stop dot overrides.
   endStyle: LineEndStyle;
   // Casing width per side, world units (0 = no casing).
   strokeWidth: number;
@@ -1051,11 +1054,10 @@ export interface LineStyleProps {
   // Seam width per side (world units). Optional: absent ⇒ inherit the casing
   // width (see Line.seamWidth).
   seamWidth?: number;
-  // Which pieces of the seam edges to paint (see Line.seamEdges). Required, not
-  // optional, for the same reason as `endStyle`: a style has to be able to force
-  // the full notch back onto a line someone set to curved-only, which an
-  // absent-means-inherit field could not do. Defs from saves that predate it
-  // heal to 'both' in canonicalStyleProps.
+  // Which pieces of the seam edges to paint (see Line.seamEdges). Required
+  // rather than optional, matching `endStyle` above — the same uniformity
+  // choice, for the same reason. Defs from saves that predate it heal to 'both'
+  // in canonicalStyleProps.
   seamEdges: SeamEdges;
   // TfL-tick dimensions (world units). Optional: absent ⇒ derive from the
   // line width at render time (see Line.dashLength / Line.dashWidth).

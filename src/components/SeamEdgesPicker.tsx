@@ -2,7 +2,7 @@ import type { SeamEdges } from '../model/types';
 import { SEAM_EDGES_MODES } from '../model/lineStroke';
 import { SegmentedToggle } from './SegmentedToggle';
 
-export const SEAM_EDGES_LABELS: Record<SeamEdges, string> = {
+const SEAM_EDGES_LABELS: Record<SeamEdges, string> = {
   both: 'Both',
   straight: 'Straight',
   curved: 'Curved',
