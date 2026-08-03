@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -56,6 +57,7 @@ vi.mock('../state/mapLibrary', () => ({
 
 import { Toolbar } from './Toolbar';
 import { StatusToasts } from './StatusToasts';
+import { useFunMode } from '../state/funMode';
 import { useToasts } from '../state/toastStore';
 import {
   downloadBlob,
@@ -184,6 +186,39 @@ describe('Toolbar — wordmark', () => {
     expect(glyph).not.toHaveAttribute('dominant-baseline');
     const fontSize = Number(glyph.getAttribute('font-size'));
     expect(Number(glyph.getAttribute('y'))).toBeCloseTo(capCenterDy(fontSize));
+  });
+
+  it('knocks the badge loose on alt-click, from its own place in the bar', () => {
+    useFunMode.setState({ phase: 'off', origin: { x: 0, y: 0 } });
+    renderToolbar();
+    const mark = screen.getByRole('img', { name: 'Massimo' });
+    fireEvent.pointerDown(mark, { button: 0, altKey: true });
+    expect(useFunMode.getState().phase).toBe('live');
+    // The ball has to start where the badge sits or the drop is a teleport.
+    // jsdom measures everything as zero, so this only pins that the origin comes
+    // from the element's own box rather than a constant.
+    const box = mark.getBoundingClientRect();
+    expect(useFunMode.getState().origin).toEqual({
+      x: box.left + box.width / 2,
+      y: box.top + box.height / 2,
+    });
+  });
+
+  it('leaves a plain click on the badge alone', () => {
+    // It is a wordmark first and a secret second: clicking it must do nothing.
+    useFunMode.setState({ phase: 'off', origin: { x: 0, y: 0 } });
+    renderToolbar();
+    fireEvent.pointerDown(screen.getByRole('img', { name: 'Massimo' }), { button: 0 });
+    expect(useFunMode.getState().phase).toBe('off');
+  });
+
+  it('empties the badge slot while the ball is loose, without collapsing it', () => {
+    // Opacity rather than display, so the bar doesn't shift left mid-drop.
+    renderToolbar();
+    const mark = screen.getByRole('img', { name: 'Massimo' });
+    expect(mark).not.toHaveAttribute('data-away');
+    act(() => useFunMode.getState().enter({ x: 1, y: 1 }));
+    expect(mark).toHaveAttribute('data-away');
   });
 });
 

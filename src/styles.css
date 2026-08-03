@@ -1616,6 +1616,19 @@ button.field-select {
   display: block;
 }
 
+/* Knocked loose by the easter egg (BouncingBullet). Opacity, not visibility or
+   display: the slot has to keep its box or the whole bar shifts left as the ball
+   falls, and a transition needs two ends to run between — this is the fade-in
+   half of the crossfade home. The duration matches DEFAULT_PARAMS.dimMs; retune
+   that far and this wants updating with it. */
+.brand-bullet {
+  transition: opacity 450ms ease;
+}
+.brand-bullet[data-away] {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* The disc sits 12px from the window edge (the toolbar's padding), so drop the
    divider's usual 8px lead here and let the plain 12px flex gap carry it —
    otherwise the badge reads 12px in and 20px out, off-center in a way the long
@@ -3169,4 +3182,83 @@ body:has(.app[data-theme='dark']) {
   font-size: var(--fs-small);
   font-weight: 600;
   color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------- easter egg */
+
+/* The bouncing "M" (BouncingBullet), reached by alt-clicking the wordmark badge.
+   Above every other layer — the status toasts at 1400 are the previous ceiling —
+   because for as long as it's loose it IS the app. The root doesn't take hits
+   itself; the scrim under it does, and that's what dismisses the mode. */
+.fun-root {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  pointer-events: none;
+}
+/* Dims to --fun-dim over --fun-ms, both set inline from the tuning params. The
+   from-only keyframe animates up from transparent to whatever the element's own
+   opacity resolves to, which is what lets the dial stay in CSS. */
+.fun-scrim {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: var(--fun-dim);
+  animation: fun-scrim-in var(--fun-ms) ease;
+  pointer-events: auto;
+}
+@keyframes fun-scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Leaving: the map comes back up as the ball fades out, over the same beat the
+   toolbar badge uses to fade in. `animation: none` releases the entry keyframe,
+   which would otherwise outrank the transition on an early exit. Nothing is
+   grabbable on the way out — those clicks belong to the map again. */
+.fun-root[data-phase='exiting'] .fun-scrim,
+.fun-root[data-phase='exiting'] .fun-ball {
+  animation: none;
+  opacity: 0;
+  transition: opacity var(--fun-ms) ease;
+  pointer-events: none;
+}
+
+/* Painted after the scrim, so the badge keeps full brightness over the dimmed
+   map with no compositing tricks. The shadow is what sells it as being out in
+   front rather than printed on the dark. Size and per-frame transform are set
+   from script; transform-origin stays at the element's center so the rotation is
+   about the ball's middle.
+
+   The box is the GRAB circle, which is wider than the badge — the 18px disc is a
+   miserable thing to catch mid-bounce. Hence the flex centering (the visible
+   bullet sits in the middle of it) and the radius (a square hit area would grab
+   from noticeably further away on the diagonals). Transparent, so all of that is
+   felt rather than seen. */
+.fun-ball {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+  will-change: transform;
+  filter: drop-shadow(0 2px 6px rgb(0 0 0 / 0.45));
+}
+.fun-ball:active {
+  cursor: grabbing;
+}
+
+/* Carries the grow-in as the badge comes loose. A separate node from .fun-ball
+   so the scale doesn't shrink the grab circle with it — the ball is at its
+   hardest to catch exactly while it is still small. Script writes the scale each
+   frame from the same radius the collisions use, so it can't drift from them. */
+.fun-ball-grow {
+  display: flex;
+  transform-origin: center;
 }

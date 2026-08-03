@@ -51,48 +51,34 @@ import { PerfPopover } from './PerfPopover';
 import { MapNameField } from './MapNameField';
 import { MapVersionPill } from './MapVersionPill';
 import { pushToast } from '../state/toastStore';
-import { FONT_STACK } from '../util/fonts';
-import { capCenterDy } from '../geometry/textMeasure';
+import { BrandBullet } from './BrandBullet';
+import { useFunMode } from '../state/funMode';
 
 const errorText = (err: unknown, fallback: string): string =>
   err instanceof Error ? err.message : fallback;
 
-/** Diameter of the brand bullet, matching the height the "Massimo" wordmark
- *  occupied (13px text in its em box). */
-const BRAND_BULLET_SIZE = 18;
-
-/** The app's wordmark: an "M" route bullet, drawn the way the canvas draws
- *  inline bullets — cap-centered on the alphabetic baseline rather than
- *  `dominantBaseline`, whose metrics are platform-dependent. The two colors are
- *  CSS vars so dark mode swaps them: black disc / white M by day, the inverse
- *  by night. */
-function BrandBullet() {
-  const r = BRAND_BULLET_SIZE / 2;
-  const fontSize = r * 1.1;
+/**
+ * The wordmark badge, plus its one secret: alt-click knocks it loose and it
+ * bounces around the window until you click the map (see funMode / BouncingBullet).
+ * `data-away` empties the slot without collapsing it — the badge keeps its
+ * layout box, so the bar doesn't shift left as the ball falls, and the opacity
+ * transition crossfades it back in on the way out.
+ */
+function BrandBadge() {
+  const phase = useFunMode((s) => s.phase);
+  const enterFunMode = useFunMode((s) => s.enter);
   return (
-    <svg
-      className="brand-bullet"
-      width={BRAND_BULLET_SIZE}
-      height={BRAND_BULLET_SIZE}
-      viewBox={`${-r} ${-r} ${BRAND_BULLET_SIZE} ${BRAND_BULLET_SIZE}`}
-      role="img"
-    >
-      {/* Both the hover tooltip and the accessible name — the badge is the only
-          place the app's name still appears in the bar. */}
-      <title>Massimo</title>
-      <circle r={r} fill="var(--brand-disc)" />
-      <text
-        x={0}
-        y={capCenterDy(fontSize)}
-        textAnchor="middle"
-        fontFamily={FONT_STACK}
-        fontSize={fontSize}
-        fontWeight={700}
-        fill="var(--brand-glyph)"
-      >
-        M
-      </text>
-    </svg>
+    <BrandBullet
+      data-away={phase === 'live' || undefined}
+      // pointerdown, not click: it fires before the browser can start its own
+      // alt-drag, and preventDefault keeps the badge from being dragged as an image.
+      onPointerDown={(e) => {
+        if (!e.altKey || e.button !== 0) return;
+        e.preventDefault();
+        const r = e.currentTarget.getBoundingClientRect();
+        enterFunMode({ x: r.left + r.width / 2, y: r.top + r.height / 2 });
+      }}
+    />
   );
 }
 
@@ -614,7 +600,7 @@ export function Toolbar() {
 
   return (
     <div className="toolbar">
-      <BrandBullet />
+      <BrandBadge />
       <span className="tool-group-divider" aria-hidden="true" />
       <MapNameField />
       <MapVersionPill />

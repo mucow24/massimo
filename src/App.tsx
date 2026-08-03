@@ -3,6 +3,8 @@ import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
 import { MapCanvas } from './components/MapCanvas';
 import { StatusToasts } from './components/StatusToasts';
+import { BouncingBullet } from './components/BouncingBullet';
+import { isFunModeActive } from './state/funMode';
 import { useViewportStore } from './state/viewportStore';
 import {
   beginHistoryGroup,
@@ -163,6 +165,12 @@ export default function App() {
         if (!e.repeat) setAltHeld(true);
         return;
       }
+      // The bouncing-badge easter egg is modal: the map is dimmed and inert, so
+      // every shortcut below it stays inert too — Delete must not reach the
+      // selection behind the scrim. Sits AFTER the Alt block on purpose, so the
+      // Alt that opened the egg still clears on keyup instead of latching.
+      // BouncingBullet owns Escape for the whole stretch.
+      if (isFunModeActive()) return;
       // Two-tier form-field guard.
       //
       // `inForm` excludes range sliders and color pickers so the Ctrl-combos
@@ -756,6 +764,9 @@ export default function App() {
       {/* Inside .app (not portalled) so the design tokens and data-theme
           apply; position:fixed puts it over the canvas regardless. */}
       <StatusToasts />
+      {/* Easter egg. Inside .app for the same reason: the loose ball is the same
+          themed badge the toolbar renders. */}
+      <BouncingBullet />
     </div>
   );
 }
