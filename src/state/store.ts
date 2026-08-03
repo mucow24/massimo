@@ -776,6 +776,11 @@ interface DocState extends MapDoc {
   deleteStationAnchor: (stationId: StationId, anchorId: string) => void;
 
   addTransfer: (a: TransferEnd, b: TransferEnd) => string;
+  /** The station popover's transfer picker: give one stop dot its SELF-transfer
+   *  (a disc of the chosen style, centered on the dot), restyle the one it
+   *  already has, or — with `null`, the picker's "None" — remove it. At most
+   *  one per stop, and this is the only path that makes one. */
+  setStopSelfTransfer: (stationId: StationId, lineId: LineId, styleId: string | null) => void;
   updateTransferStyle: (id: string, patch: TransferStylePatch) => void;
   deleteTransfer: (id: string) => void;
 
@@ -1126,6 +1131,26 @@ export const useDoc = create<DocState>()(
           // addTransfer can refuse (self-transfer); the stamp no-ops then.
           set((s) => S.applyDefaultStyle(T.addTransfer(s, id, a, b), 'transfer', id));
           return id;
+        },
+
+        // One set() per pick, so create-and-stamp is a single undo entry (same
+        // shape as addTransfer above). The id is minted outside the updater
+        // like every other add; on the reuse and remove paths it simply goes
+        // unused, which costs nothing but a counter tick.
+        setStopSelfTransfer: (stationId, lineId, styleId) => {
+          const newId = ids.transferId();
+          set((s) => {
+            const existing = T.selfTransferAt(s, stationId, lineId);
+            if (styleId === null) return existing ? T.deleteTransfer(s, existing.id) : s;
+            if (existing) return S.applyStyleToItem(s, styleId, existing.id);
+            // addSelfTransfer refuses an absent stop; the stamp then no-ops on
+            // the missing item, exactly as addTransfer's does.
+            return S.applyStyleToItem(
+              T.addSelfTransfer(s, newId, stationId, lineId),
+              styleId,
+              newId,
+            );
+          });
         },
 
         updateTransferStyle: (id, patch) => set((s) => T.updateTransferStyle(s, id, patch)),

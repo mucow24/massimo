@@ -121,13 +121,16 @@ test.describe('Line ends — the line editor', () => {
 });
 
 test.describe('Line ends — the per-terminus override', () => {
-  test('the stop row pins one end, and offers no control at an interior stop', async ({ page }) => {
+  test('the stop row pins one end, and greys the control out at an interior stop', async ({
+    page,
+  }) => {
     await seedAndOpen(page, fourInLine);
 
-    // B is interior for L1 — no end to style there.
+    // B is interior for L1 — nothing to style there, so the control is present
+    // (the columns hold their places) but disabled.
     const b = await stationCenter(page, 'B');
     await page.mouse.click(b.x, b.y);
-    await expect(page.getByRole('combobox', { name: /^Line end/ })).toHaveCount(0);
+    await expect(page.getByRole('combobox', { name: /^Line end/ })).toBeDisabled();
     // B's docked editor sits in the host's top-right corner, clear of A.
 
     // A is a terminus.

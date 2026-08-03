@@ -4,11 +4,12 @@ import userEvent from '@testing-library/user-event';
 import { StopRows } from './StopRows';
 import { useDoc, useSelection } from '../../state/store';
 import { historyDepth } from '../../state/history';
-import { DEFAULT_DOC } from '../../model/transforms';
+import { DEFAULT_DOC, selfTransferAt } from '../../model/transforms';
 import { DOT_SIZE_DEFAULT } from '../../model/dotSize';
 import { STOP_DOT_FACTORY_STYLES } from '../../model/dotStyle';
+import { resolveTransferStyle } from '../../model/transferStyle';
 import type { Station } from '../../model/types';
-import { makeLine } from '../../test/fixtures';
+import { makeLine, makeStyle } from '../../test/fixtures';
 import { chooseOption } from '../../test/interaction';
 
 const hub = (over: Partial<Station> = {}): Station => ({
@@ -69,6 +70,134 @@ beforeEach(() => {
   localStorage.clear();
   useDoc.setState({ ...DEFAULT_DOC });
   useDoc.temporal.getState().clear();
+});
+
+describe('<StopRows /> — column order', () => {
+  it('reads bullet, type, transfer, end, size, direction across the row', () => {
+    // The three glyph pickers cluster, then the number box, then the
+    // right-hugging direction button. Every control but the line bullet
+    // carries an aria-label, so the row's labels ARE the column order.
+    seed({ a: hub({ stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }] }) });
+    renderRows();
+    const labels = Array.from(screen.getByTestId('stop-row').querySelectorAll('[aria-label]')).map(
+      (el) => el.getAttribute('aria-label'),
+    );
+    expect(labels).toEqual([
+      'Stop shape',
+      'Transfer (line 1)',
+      'Line end (line 1)',
+      'Stop dot size',
+      'Stop orientation (line 1): vertical',
+    ]);
+  });
+});
+
+// The per-stop SELF-transfer: a disc of a chosen transfer style painted around
+// the stop dot, created and cleared ONLY here (the two-click flow refuses a
+// zero-length transfer, and a tiny one on canvas is easy to lose).
+describe('<StopRows /> — transfer picker', () => {
+  const xferCombo = (service: string) => `Transfer (line ${service})`;
+
+  const seedWithStyles = () => {
+    seed({ a: hub({ stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }] }) });
+    useDoc.setState({
+      styles: {
+        ...useDoc.getState().styles,
+        'y-fat': makeStyle('transfer', 'y-fat', { name: 'Fat', props: { thickness: 12 } }),
+      },
+    });
+  };
+
+  const selfTransfer = () => selfTransferAt(useDoc.getState(), 'a', 'L1');
+
+  it('starts at None with nothing on the stop', () => {
+    seedWithStyles();
+    renderRows();
+    expect(screen.getByRole('combobox', { name: xferCombo('1') })).toBeTruthy();
+    expect(selfTransfer()).toBeUndefined();
+  });
+
+  it('picking a style wraps the stop dot in that transfer', async () => {
+    seedWithStyles();
+    const user = userEvent.setup();
+    renderRows();
+    await chooseOption(user, xferCombo('1'), 'Fat');
+    expect(selfTransfer()?.styleId).toBe('y-fat');
+    expect(resolveTransferStyle(selfTransfer()!).thickness).toBe(12);
+  });
+
+  it('picking None takes it away again', async () => {
+    seedWithStyles();
+    const user = userEvent.setup();
+    renderRows();
+    await chooseOption(user, xferCombo('1'), 'Fat');
+    await chooseOption(user, xferCombo('1'), 'None');
+    expect(selfTransfer()).toBeUndefined();
+    expect(useDoc.getState().transfers).toEqual({});
+  });
+
+  it('offers None plus every transfer style, and marks a hand-tuned one Custom', async () => {
+    seedWithStyles();
+    const user = userEvent.setup();
+    renderRows();
+    await user.click(screen.getByRole('combobox', { name: xferCombo('1') }));
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'None',
+      'Default',
+      'Fat',
+    ]);
+    await user.click(screen.getByRole('option', { name: 'Fat' }));
+    // Editing the transfer itself detaches it from the preset (updateTransferStyle's
+    // contract) — the picker has to admit that rather than keep claiming "Fat".
+    useDoc.getState().updateTransferStyle(selfTransfer()!.id, { thickness: 9 });
+    expect(selfTransfer()!.styleId).toBeUndefined();
+    await user.click(screen.getByRole('combobox', { name: xferCombo('1') }));
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'None',
+      'Custom',
+      'Default',
+      'Fat',
+    ]);
+  });
+
+  it('does NOT mirror to matching stations — a self transfer is one station’s business', async () => {
+    // A LIVE match: `z` renders identically to `a` and shares L1 with it, which
+    // is the whole of what findMatchingStations asks. The dot-type pick below
+    // proves the fan-out really is armed — without that, "z got nothing" would
+    // pass just as well against a match that never existed.
+    seedWithStyles();
+    const oneStop = [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' as const }];
+    useDoc.setState({
+      stations: {
+        a: hub({ stops: oneStop }),
+        z: hub({ id: 'z', x: 500, stops: oneStop }),
+      },
+      lines: {
+        ...useDoc.getState().lines,
+        L1: makeLine({ id: 'L1', service: '1', color: '#c60c30', stations: ['a', 'z'] }),
+      },
+    });
+    useSelection.setState({ mirrorMatching: true });
+    const user = userEvent.setup();
+    renderRows();
+
+    await user.click(screen.getByRole('button', { name: 'Stop shape' }));
+    await user.click(screen.getByRole('menuitem', { name: 'None' }));
+    expect(useDoc.getState().stations.z.stops[0].dotStyleId).toBe('stop-none');
+
+    await chooseOption(user, xferCombo('1'), 'Fat');
+    expect(Object.keys(useDoc.getState().transfers)).toHaveLength(1);
+    expect(selfTransferAt(useDoc.getState(), 'z', 'L1')).toBeUndefined();
+  });
+
+  it('each pick is one undo step', async () => {
+    seedWithStyles();
+    const user = userEvent.setup();
+    renderRows();
+    const before = historyDepth();
+    await chooseOption(user, xferCombo('1'), 'Fat');
+    expect(historyDepth()).toBe(before + 1);
+  });
 });
 
 describe('<StopRows />', () => {
@@ -312,7 +441,9 @@ describe('<StopRows /> — line ends', () => {
   it('offers the end control at a terminus', () => {
     chain();
     renderRows();
-    expect(screen.getByRole('combobox', { name: endCombo('1') })).toBeTruthy();
+    const combo = screen.getByRole('combobox', { name: endCombo('1') });
+    expect(combo).toBeTruthy();
+    expect(combo).not.toHaveProperty('disabled', true);
   });
 
   it('offers it where the line BRANCHES at that end, degree 2 and all', () => {
@@ -321,7 +452,10 @@ describe('<StopRows /> — line ends', () => {
     expect(screen.getByRole('combobox', { name: endCombo('1') })).toBeTruthy();
   });
 
-  it('hides it at an interior stop, keeping the row’s columns aligned', () => {
+  it('greys it out at an interior stop rather than vanishing', () => {
+    // An empty slot read as a rendering glitch; a disabled control says "an
+    // end style is a thing here, just not at THIS stop" — and the columns
+    // stay put either way.
     seed({ a: hub({ stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }] }) });
     useDoc.setState({
       lines: {
@@ -329,10 +463,8 @@ describe('<StopRows /> — line ends', () => {
         L1: makeLine({ id: 'L1', service: '1', color: '#c60c30', stations: ['x', 'a', 'b'] }),
       },
     });
-    const { container } = renderRows();
-    expect(screen.queryByRole('combobox', { name: endCombo('1') })).toBeNull();
-    // The slot is still held, so Direction doesn't slide left on this row.
-    expect(container.querySelector('.end-style-placeholder')).not.toBeNull();
+    renderRows();
+    expect(screen.getByRole('combobox', { name: endCombo('1') })).toHaveProperty('disabled', true);
   });
 
   it('pins this terminus without touching the line default', async () => {
@@ -388,23 +520,17 @@ describe('<StopRows /> — line ends', () => {
 
   it('does NOT mirror to matching stations', async () => {
     // Dot type and size fan out across mirror matches; an end is topology, not
-    // a look, so it stays put — pinned deliberately.
+    // a look, so it stays put — pinned deliberately. `b` renders identically to
+    // `a` and shares L1, so the fan-out really is armed; the dot-type pick
+    // proves it before the end pick asserts the negative.
     seed(
       {
         a: hub({ stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }] }),
         b: southOf('b', 0, 300),
       },
-      { mirrorMatching: true, matchedStationIds: ['a', 'z'] },
+      { mirrorMatching: true },
     );
     useDoc.setState({
-      stations: {
-        ...useDoc.getState().stations,
-        z: hub({
-          id: 'z',
-          x: 500,
-          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
-        }),
-      },
       lines: {
         ...useDoc.getState().lines,
         L1: makeLine({ id: 'L1', service: '1', color: '#c60c30', stations: ['a', 'b'] }),
@@ -412,6 +538,11 @@ describe('<StopRows /> — line ends', () => {
     });
     const user = userEvent.setup();
     renderRows();
+
+    await user.click(screen.getByRole('button', { name: 'Stop shape' }));
+    await user.click(screen.getByRole('menuitem', { name: 'None' }));
+    expect(useDoc.getState().stations.b.stops[0].dotStyleId).toBe('stop-none');
+
     await chooseOption(user, endCombo('1'), 'Short');
     expect(useDoc.getState().lines.L1.stationEndStyles).toEqual({ a: 'short' });
   });

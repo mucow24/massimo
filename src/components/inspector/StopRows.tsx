@@ -2,13 +2,19 @@ import { useEffect, useRef } from 'react';
 import type { Line, LineId, Station, StopCell } from '../../model/types';
 import { useDoc, useSelection } from '../../state/store';
 import { dispatchMirrored } from '../../state/mirrorDispatch';
-import { AXIS_CYCLE, resolveDotStyle, stationIsSingleton } from '../../model/transforms';
+import {
+  AXIS_CYCLE,
+  resolveDotStyle,
+  selfTransferAt,
+  stationIsSingleton,
+} from '../../model/transforms';
 import { DOT_SIZE_MIN, DOT_SIZE_STEP, resolveDotSize } from '../../model/dotSize';
 import { lineDisplayName } from '../../model/lineNaming';
 import { legibleTextOn } from '../../util/color';
 import { Cross2Icon } from '@radix-ui/react-icons';
 import { AnchorGlyph } from '../AnchorGlyph';
 import { StationShapePicker } from '../StationShapePicker';
+import { StopTransferSelect } from '../TransferPicker';
 import { LineEndSelect } from '../LineEndPicker';
 import { stationEndStyleOf } from '../../model/lineEnd';
 import { lineEndsAt } from '../../geometry/interlining';
@@ -17,16 +23,19 @@ import { ORIENTATION_NAME } from './stopGridDrag';
 import type { Rotation } from '../../geometry/orientation';
 
 /**
- * One editor row per stop: [service badge | shape picker | dot size | line-end
- * picker | orientation cycle button] — matching the
- * Line/Type/Size/End/Direction header the station inspector puts above them.
- * The end slot is the one that isn't always filled: only a TERMINUS can pin an
- * end, so elsewhere the row holds the column open with a placeholder so the
- * columns stay aligned down the list. Always enabled otherwise —
- * no click-a-dot-first ritual; the row IS the per-stop control surface.
- * Clicking a row also selects its stop (lighting the canvas layout-editor ring
- * + arming keyboard nudge), and hovering highlights the corresponding dot on
- * the map via the same hoveredLineStop channel the line inspector uses.
+ * One editor row per stop: [service badge | shape picker | transfer picker |
+ * line-end picker | dot size | orientation cycle button] — matching the
+ * Line/Type/Xfer/End/Size/Direction header the station inspector puts above
+ * them. The three glyph dropdowns cluster on the left, so a row reads as a
+ * little strip of what this dot LOOKS like before the numbers start.
+ *
+ * Every control renders on every row, so the columns hold their positions down
+ * the list; the end picker is disabled where the stop isn't a terminus rather
+ * than being dropped. No click-a-dot-first ritual — the row IS the per-stop
+ * control surface. Clicking a row also selects its stop (lighting the canvas
+ * layout-editor ring + arming keyboard nudge), and hovering highlights the
+ * corresponding dot on the map via the same hoveredLineStop channel the line
+ * inspector uses.
  */
 export function StopRows({ station, lines }: { station: Station; lines: Record<string, Line> }) {
   const rows = station.stops
@@ -134,8 +143,13 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
   const setDotSize = useDoc((d) => d.setDotSize);
   const rotateStop = useDoc((d) => d.rotateStop);
   const setStationEndStyle = useDoc((d) => d.setStationEndStyle);
+  const setStopSelfTransfer = useDoc((d) => d.setStopSelfTransfer);
   const lineId = stop.lineId as LineId;
   const stationId = station.id;
+  // The stop's self-transfer (at most one). Subscribes to the doc rather than
+  // taking a prop: the record entry is reference-stable across unrelated edits,
+  // so this re-renders the row only when THIS stop's transfer changes.
+  const selfTransfer = useDoc((d) => selfTransferAt(d, stationId, lineId));
   const selected = selection.selectedStopLineId === lineId;
   const rotation = (station.rotation % 4) as Rotation;
   // The row shows what this stop actually renders — its singleton or shared
@@ -244,6 +258,29 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
           dispatchMirrored(stationId, (sid) => setDotStyle(sid, lineId, styleId))
         }
       />
+      {/* The stop's SELF-transfer: one or none, chosen by style. Deliberately
+          NOT mirrored, for the same reason as the end below — it is a fix for
+          how THIS interchange meets a particular transfer bar, not a look to
+          spread across matching stations. */}
+      <StopTransferSelect
+        transfer={selfTransfer}
+        ariaLabel={`Transfer (line ${line?.service ?? '?'})`}
+        onSelect={(styleId) => setStopSelfTransfer(stationId, lineId, styleId)}
+      />
+      {/* Per-terminus END style. Only a terminus can pin one, so elsewhere the
+          control is DISABLED rather than absent — the column holds its place
+          and still says what it is. Shows the RESOLVED end, so picking the
+          line's own value clears the pin rather than storing it
+          (setStationEndStyle's contract, same as the size box below).
+          Deliberately NOT mirrored: unlike dot type and size, an end is a
+          property of this line's topology here, not a look to spread across
+          matching stations. */}
+      <LineEndSelect
+        value={stationEndStyleOf(line, stationId)}
+        ariaLabel={`Line end (line ${line?.service ?? '?'})`}
+        disabled={!isTerminus}
+        onSelect={(end) => setStationEndStyle(lineId, stationId, end)}
+      />
       <input
         type="number"
         aria-label="Stop dot size"
@@ -264,23 +301,7 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
         onChange={onSizeChange}
         onBlur={onSizeBlur}
       />
-      {/* Per-terminus END style, only where this stop IS one of the line's
-          ends — the slot is held open (but empty) elsewhere so the row's
-          columns stay aligned down the list. Shows the RESOLVED end, so
-          picking the line's own value clears the pin rather than storing it
-          (setStationEndStyle's contract, same as the size box above).
-          Deliberately NOT mirrored: unlike dot type and size, an end is a
-          property of this line's topology here, not a look to spread across
-          matching stations. */}
-      {isTerminus ? (
-        <LineEndSelect
-          value={stationEndStyleOf(line, stationId)}
-          ariaLabel={`Line end (line ${line?.service ?? '?'})`}
-          onSelect={(end) => setStationEndStyle(lineId, stationId, end)}
-        />
-      ) : (
-        <span className="end-style-placeholder" aria-hidden="true" />
-      )}
+
       {/* One-step cycle, like right-click / R on the canvas handle. Cycling
           is frame-invariant across mirror matches (each steps from its OWN
           current axis), so a rotated match keeps its world-equivalent

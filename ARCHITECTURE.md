@@ -1064,7 +1064,18 @@ hosted anchors together. World resolution for all three is `geometry/transferEnd
 which returns null for a dangling end — both paint passes and the in-progress preview all go
 through it, and dropping the transfer on null is why neither load path needs a
 transfer-endpoint sanitizer. **Cascade-deleted** when either endpoint's stop is removed (by
-deleting the station/line or removing that line's stop). Default styling (thickness, color,
+deleting the station/line or removing that line's stop).
+
+A transfer whose two ends are the SAME stop is a **self-transfer**: a zero-length capsule, so it
+paints as a disc of the transfer's full width centred on that dot. That is how a stop is folded
+smoothly into a thick transfer bar arriving from elsewhere, and it is a real shape with no other
+spelling. `addTransfer` still REFUSES the pair (`sameTransferEnd`) — in the two-click flow a repeat
+click on the first dot must stay inert — so `addSelfTransfer` is the one deliberate way in, and the
+station popover's Xfer picker is its one caller. At most one per stop, by construction: the picker
+restyles or deletes whatever `selfTransferAt` finds instead of adding a second. Everything
+downstream already reads it correctly — the cascade prunes it with its stop, `capsuleOutlinePath`
+degenerates to a circle for the selection ring, and `stopMetrics` indexes both ends onto the one
+stop (`bodyDir` null, so the label clears the plain disc). Default styling (thickness, color,
 optional halo) comes from the constant `TRANSFER_STYLE_DEFAULTS` — there are **no doc-level
 transfer settings** (see the MapDoc note above); the four optional fields are per-transfer
 overrides with the dot-style contract — absent ⇒ track the default, and `updateTransferStyle`
@@ -2562,7 +2573,11 @@ straight back, and one line can round at a solid end while stopping short at a d
 
 **`TransferLayer`** renders all transfers in **two flat passes** (user stroke halos → bodies) so
 overlapping thick transfers trace one outer union. Bodies + halos are click targets
-(`pointer-events="stroke"`). The selected transfer's ring is **not** in this layer: it renders in a
+(`pointer-events="stroke"`). A transfer whose ends COINCIDE — a self-transfer — emits a `<circle>`
+in each pass instead, hit by its `fill`: a zero-length round-capped `<line>` is a dot by spec but
+not through every renderer an export goes out by, and it has no hit area at all, which would put a
+self-transfer beyond even the alt-click deep-pick when its own stop dot covers it. The selected
+transfer's ring is **not** in this layer: it renders in a
 separate `TransferSelectionOutline` mounted **above** the station dots (step 8), so a connected or
 crossing dot can't cover it; `TransferLayer` itself sits below the dots so a dot click routes to the
 station, not the transfer.
@@ -2970,17 +2985,22 @@ same three additions.
   (**Edit layout** button, then the **Select Similar** mirror-matching toggle, then a
   right-justified **WP** toggle; lock lives in the footer), then the Name field on its own row,
   labeled X/Y + a mirrored ±45° rotate icon pair, a **Stop dots** section (a
-  Line/Type/Size/End/Direction column header over the per-stop rows —
-  [inspector/StopRows.tsx](src/components/inspector/StopRows.tsx): service badge + always-enabled
-  shape picker + dot size + a per-end **line-end** picker + a world-true orientation cycle
-  button per stop. The end slot is the one conditional column — only a stop the line ENDS at can
-  pin an end, so an interior row holds it open with a placeholder rather than closing up and
-  breaking the column alignment down the list; it shows the RESOLVED end, so picking the line's own
-  value clears the pin instead of storing a redundant one, and it is deliberately NOT
-  mirror-dispatched (an end belongs to this line's shape here, not to a look worth spreading across
-  matching stations).
+  Line/Type/Xfer/End/Size/Direction column header over the per-stop rows —
+  [inspector/StopRows.tsx](src/components/inspector/StopRows.tsx): service badge + shape picker +
+  **transfer** picker + **line-end** picker + dot size + a world-true orientation cycle button per
+  stop. The three glyph pickers cluster first, so a row reads as a strip of what the dot LOOKS like
+  before the numbers start; every control renders on every row, so the columns hold their positions
+  down the list. The **Xfer** picker ([TransferPicker.tsx](src/components/TransferPicker.tsx)) is
+  the ONLY way to give a stop a self-transfer or take it away: "None" plus every transfer style,
+  each with a true-scale disc preview, over a glyph trigger that shows what is actually on the dot
+  (`Custom` when the transfer has been hand-tuned off its preset). The **End** picker is DISABLED
+  where the stop isn't one of its line's ends rather than absent (an empty slot read as a rendering
+  fault); it shows the RESOLVED end, so picking the line's own value clears the pin instead of
+  storing a redundant one. Neither is mirror-dispatched, unlike dot type and size — an end belongs
+  to this line's shape here and a self-transfer to this interchange, not to a look worth spreading
+  across matching stations.
   Hover cross-highlights the dot via `hoveredLineStop` — on NATIVE mouseenter/mouseleave, not
-  React's synthetic pair, because the end picker's panel portals out to `.app` and so counts as
+  React's synthetic pair, because the pickers' panels portal out to `.app` and so count as
   inside the row in the REACT tree: the pointer walking into it would re-enter rather than leave,
   and the panel then unmounts under the cursor with no leave left to fire, stranding a highlight on
   the canvas for good. **Double-clicking the badge** jumps to that line's editor

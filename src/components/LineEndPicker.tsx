@@ -1,4 +1,3 @@
-import { ChevronDownIcon } from '@radix-ui/react-icons';
 import * as Select from '@radix-ui/react-select';
 import type { LineEndStyle } from '../model/types';
 import { LINE_END_STYLES } from '../model/lineEnd';
@@ -74,10 +73,15 @@ export function LineEndSegmented({
 
 /**
  * The same three ends as a compact dropdown, for the per-stop row in the
- * station editor — one 26px slot alongside the type/size/direction controls,
- * where a three-segment group would not fit. Shows the RESOLVED end (what the
- * stop actually paints), so picking the line's own value clears the pin rather
- * than storing a redundant one — the contract the dot size box already uses.
+ * station editor — one square glyph slot alongside the type/transfer/size/
+ * direction controls, where a three-segment group would not fit. Shows the
+ * RESOLVED end (what the stop actually paints), so picking the line's own value
+ * clears the pin rather than storing a redundant one — the contract the dot
+ * size box already uses.
+ *
+ * Only a terminus can pin an end, but the control renders on every row and goes
+ * DISABLED elsewhere rather than vanishing: an empty slot read as a rendering
+ * fault, and the columns have to hold their positions down the list either way.
  */
 export function LineEndSelect({
   value,
@@ -95,18 +99,15 @@ export function LineEndSelect({
       <Select.Trigger
         className="field-select end-style-select"
         aria-label={ariaLabel}
-        title={LINE_END_TITLES[value]}
+        title={disabled ? `${ariaLabel} — only a line's END can pin one` : LINE_END_TITLES[value]}
         disabled={disabled}
       >
         <LineEndGlyph end={value} />
-        <Select.Icon className="field-select-caret" aria-hidden="true">
-          <ChevronDownIcon />
-        </Select.Icon>
       </Select.Trigger>
       <FieldSelectContent>
         {LINE_END_STYLES.map((end) => (
           <Select.Item key={end} value={end} className="field-select-item">
-            <span className="end-style-item">
+            <span className="glyph-item">
               <LineEndGlyph end={end} />
               <Select.ItemText>{LINE_END_LABELS[end]}</Select.ItemText>
             </span>
