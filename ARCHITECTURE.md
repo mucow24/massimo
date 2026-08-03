@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `6404cfb` (2026-08-01, #414) — verified against the live source.** This
+**Up to date as of commit `d8eefcc` (2026-08-03, #425) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -2426,12 +2426,12 @@ of their own, and are omitted below to keep it readable:
     _above_ the warnings, so the station being edited stays reachable: a white selection
     re-stroke over the focus dim (step 14b), its stops re-painted at full strength,
     `StationLayoutEditor` grab rings + direction arrows, then the drag's drop preview. That
-    preview is one of two, never both: `GhostLattice` for a lattice drop (amber candidate slots
+    preview is one of two, never both: `GhostLattice` for a lattice drop (white candidate slots
     hung off the amber projection anchor), or `SwapPreview` once the drop resolves onto another
     stop — the dragged stop drawn standing at the target cell, its partner ghosted back at the
     cell being vacated, and a pair of blue arrows flanking the axis. A swap has already picked its
-    winner, so the amber goes away entirely: the lattice, and the editor's own projection-anchor
-    gold with it.
+    winner, so all the highlight goes away entirely: the ghost lattice, and the editor's own amber
+    projection-anchor gold with it.
 
 Outside the `<svg>`, `WarningToasts` renders one clickable HTML toast per router-flagged band;
 clicking it jumps the viewport to the band's center. It takes MapCanvas's memoized `bands`
@@ -2815,6 +2815,9 @@ same three additions.
   local chrome preferences — the **Dark UI in day** checkbox and the **Day canvas color** submenu
   (white/gray/black paper) — which live in `useViewportStore`, not the doc.
   Embeds `MapNameField`, `MapVersionPill`, `SnapToggleBar`, `OptionsPopover`, `ViewPopover`,
+  the **`⚡` `PerfPopover`**
+  ([PerfPopover.tsx](src/components/PerfPopover.tsx) — a one-shot snapshot of `devCounters()`
+  taken when it opens, for diagnosing a session that has grown slow; see the `debug/` folder),
   and the **`?` `HelpPopover`**
   ([HelpPopover.tsx](src/components/HelpPopover.tsx) — a quick-reference interaction guide, also
   opened by the `?` key). Owns **`captureExportSnapshot`** — a detached clone of the canvas as the
@@ -3338,6 +3341,18 @@ Each is confirmed in source/tests; file pointers included.
   the exported SVG is chrome-free with embedded `@font-face` and that PNG is genuinely 4× (reads
   IHDR bytes); `exportPdf.spec.ts` exports a hatch+text+image map and asserts the PDF embeds a
   TrueType CID font (`/FontFile2` + `/Type0`) rather than falling back to standard Helvetica.
+- **Perf harness** ([.perf/](.perf/)) — a tracked-but-**ungated** performance layer, invisible to
+  every `npm`/CI gate because `lint`/`test`/`build`/`e2e` are all scoped to `src/` and `e2e/`. It
+  holds Vitest micro-benchmarks (`.perf/bench/*.perf.test.ts` under `.perf/vitest.bench.config.ts`)
+  and Playwright production-build specs (`.perf/e2e/*.spec.ts` under
+  `.perf/playwright.perf-prod.config.ts`), each driven against one committed real drawing
+  (`.perf/mta-v23.massimo.json`, 464 stations — the single exception to the no-maps-in-repo rule,
+  because the numbers cannot be reproduced without a real map's crossing density; override with
+  `PERF_MAP`). `npm run perf:check` (`tsc -p tsconfig.perf.json`) type-checks the harness and is the
+  only thing about it a gate touches. It is carried in the repo because the previous optimization
+  run's harnesses died untracked with their worktree and cost more to rebuild than the optimization
+  itself; `.perf/README.md` + `RESULTS.md` record what each measures and the still-open wasm-leak
+  investigation behind the Perf popover.
 - **Known gaps** (per the deep-dive): no pixel/visual golden for the merged-dot-border result;
   `MapCanvas`'s full pointer fan-out is only tested per-hook. (`Transfer`/`RouteBullet`/`LineTag`
   round-trips now live in `serialize.entities.test.ts`.)
