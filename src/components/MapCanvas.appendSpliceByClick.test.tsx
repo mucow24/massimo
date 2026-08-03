@@ -8,6 +8,7 @@ import { DEFAULT_DOC } from '../model/transforms';
 import { makeLine, makeStation, makeStop } from '../test/fixtures';
 import { pairKeyOf } from '../model/pairKey';
 import type { LineId, StationId } from '../model/types';
+import { stubCanvasHostSize } from '../test/interaction';
 
 // Edit Stops: alt-click ON the armed segment splices a new station into it at
 // the click point (the "drop a stop mid-segment" gesture). Previously the
@@ -18,14 +19,9 @@ import type { LineId, StationId } from '../model/types';
 
 // jsdom reports clientWidth/clientHeight as 0, collapsing the viewBox to 0×0.
 // Give the canvas a real size (mirrors MapCanvas.deepPick.test.tsx).
-const sizeProps = ['clientWidth', 'clientHeight'] as const;
-const originals: Partial<Record<(typeof sizeProps)[number], PropertyDescriptor>> = {};
+stubCanvasHostSize();
+
 beforeEach(() => {
-  for (const prop of sizeProps) {
-    originals[prop] = Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop);
-  }
-  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 800 });
-  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: 600 });
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useDoc.temporal.getState().clear();
   useSelection.setState({
@@ -40,11 +36,6 @@ beforeEach(() => {
   dragState.suppressClick = false;
 });
 afterEach(() => {
-  for (const prop of sizeProps) {
-    const d = originals[prop];
-    if (d) Object.defineProperty(HTMLElement.prototype, prop, d);
-    else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[prop];
-  }
   delete (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;
 });
 

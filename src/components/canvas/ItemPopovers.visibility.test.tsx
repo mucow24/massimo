@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { act, render } from '@testing-library/react';
 import App from '../../App';
 import { useDoc } from '../../state/store';
@@ -18,6 +18,7 @@ import {
   stationWithStop,
 } from '../../test/fixtures';
 import type { LineId, StationId } from '../../model/types';
+import { stubCanvasHostSize } from '../../test/interaction';
 
 /**
  * A popover is a DOM overlay, not canvas content, so hiding a layer does not
@@ -27,14 +28,9 @@ import type { LineId, StationId } from '../../model/types';
  * the View menu can hide.
  */
 
-const sizeProps = ['clientWidth', 'clientHeight'] as const;
-const originals: Partial<Record<(typeof sizeProps)[number], PropertyDescriptor>> = {};
+stubCanvasHostSize();
+
 beforeEach(() => {
-  for (const prop of sizeProps) {
-    originals[prop] = Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop);
-  }
-  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 800 });
-  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: 600 });
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useDoc.temporal.getState().clear();
   useViewportStore.setState({
@@ -62,13 +58,6 @@ beforeEach(() => {
     selectedTransferId: null,
     uiMode: { kind: 'idle' },
   });
-});
-afterEach(() => {
-  for (const prop of sizeProps) {
-    const d = originals[prop];
-    if (d) Object.defineProperty(HTMLElement.prototype, prop, d);
-    else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[prop];
-  }
 });
 
 const seed = () =>

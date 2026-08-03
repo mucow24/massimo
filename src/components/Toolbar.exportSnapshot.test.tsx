@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -42,15 +42,11 @@ import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makeDoc, makeLine, makePolygon, stationWithStop } from '../test/fixtures';
 import type { LineId, StationId } from '../model/types';
+import { stubCanvasHostSize } from '../test/interaction';
 
-const sizeProps = ['clientWidth', 'clientHeight'] as const;
-const originals: Partial<Record<(typeof sizeProps)[number], PropertyDescriptor>> = {};
+stubCanvasHostSize();
+
 beforeEach(() => {
-  for (const prop of sizeProps) {
-    originals[prop] = Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop);
-  }
-  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 800 });
-  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: 600 });
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useDoc.temporal.getState().clear();
   useViewportStore.setState({ x: 0, y: 0, zoom: 1, showNetwork: true });
@@ -59,13 +55,6 @@ beforeEach(() => {
   vi.mocked(captureThumbnail).mockClear();
   vi.mocked(saveVersion).mockClear();
   useLibraryPointer.setState({ mapId: null, version: null });
-});
-afterEach(() => {
-  for (const prop of sizeProps) {
-    const d = originals[prop];
-    if (d) Object.defineProperty(HTMLElement.prototype, prop, d);
-    else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[prop];
-  }
 });
 
 const seed = () =>

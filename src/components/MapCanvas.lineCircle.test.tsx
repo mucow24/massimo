@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/react';
 import App from '../App';
 import { useDoc } from '../state/store';
@@ -9,18 +9,14 @@ import { DEFAULT_SNAP_MODES } from '../geometry/snap';
 import { DEFAULT_DOC } from '../model/transforms';
 import { deleteUnlockedSelection } from '../state/selectionOps';
 import { makeLineCircle, makeStation, makeStop } from '../test/fixtures';
+import { stubCanvasHostSize } from '../test/interaction';
 
 // jsdom reports clientWidth/clientHeight as 0, which collapses the viewBox to
 // 0×0. Give the canvas a real size for the duration (mirrors the hit-proxy
 // suite).
-const sizeProps = ['clientWidth', 'clientHeight'] as const;
-const originals: Partial<Record<(typeof sizeProps)[number], PropertyDescriptor>> = {};
+stubCanvasHostSize();
+
 beforeEach(() => {
-  for (const prop of sizeProps) {
-    originals[prop] = Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop);
-  }
-  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 800 });
-  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: 600 });
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useDoc.temporal.getState().clear();
   useSelection.getState().clearAllSelections();
@@ -29,13 +25,6 @@ beforeEach(() => {
   // Cardinal ticks are a snap pref, so a test that flips it must not leak into
   // the popover / deletion suites below.
   useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES } });
-});
-afterEach(() => {
-  for (const prop of sizeProps) {
-    const d = originals[prop];
-    if (d) Object.defineProperty(HTMLElement.prototype, prop, d);
-    else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[prop];
-  }
 });
 
 function seedCircle() {

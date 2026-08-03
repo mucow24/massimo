@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { act, render, fireEvent } from '@testing-library/react';
 import App from '../App';
 import { dragState, useDoc } from '../state/store';
@@ -14,29 +14,18 @@ import {
   makeTextLabel,
 } from '../test/fixtures';
 import type { RouteBullet } from '../model/types';
+import { stubCanvasHostSize } from '../test/interaction';
 
 // jsdom reports clientWidth/clientHeight as 0, which collapses the viewBox to
 // 0×0. Give the canvas a real size for the duration of these tests (mirrors
 // MapCanvas.dim.test.tsx).
-const sizeProps = ['clientWidth', 'clientHeight'] as const;
-const originals: Partial<Record<(typeof sizeProps)[number], PropertyDescriptor>> = {};
+stubCanvasHostSize();
+
 beforeEach(() => {
-  for (const prop of sizeProps) {
-    originals[prop] = Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop);
-  }
-  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 800 });
-  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: 600 });
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useDoc.temporal.getState().clear();
   useSelection.setState({ ...useSelection.getState(), ...clearSel() });
   useViewportStore.setState({ x: 0, y: 0, zoom: 1 });
-});
-afterEach(() => {
-  for (const prop of sizeProps) {
-    const d = originals[prop];
-    if (d) Object.defineProperty(HTMLElement.prototype, prop, d);
-    else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[prop];
-  }
 });
 
 const clearSel = () => ({
