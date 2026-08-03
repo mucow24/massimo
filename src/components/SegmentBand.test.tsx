@@ -3,9 +3,9 @@ import type { ComponentProps } from 'react';
 import { fireEvent, render } from '@testing-library/react';
 import { BandWarning, SegmentBand } from './SegmentBand';
 import { hatchPatternId } from './HatchPatterns';
-import type { SegmentBandSpec } from '../geometry/interlining';
+import { buildBands, type SegmentBandSpec } from '../geometry/interlining';
 import type { Line, LineId, SeamEdges } from '../model/types';
-import { makeBandSpec, makeLine } from '../test/fixtures';
+import { makeBandSpec, makeDoc, makeLine, makeStation, makeStop } from '../test/fixtures';
 
 type StripeStyle = 'solid' | 'dashed' | 'hatched' | 'dotted' | 'dashed-open';
 
@@ -476,10 +476,10 @@ describe('<SegmentBand> — branch seam (pass="seam")', () => {
   });
 
   describe('seamEdges — which arm of the notch draws (branch inner edges)', () => {
-    // A BENT band — the branching one at a self-overlap. Its seam edges carry a
-    // fillet arc, so they are what 'curved' keeps and 'straight' drops. The
-    // plain `renderSeam` spec is the straight (through-running) band: the
-    // opposite verdict under both modes.
+    // The BRANCH arm at a self-overlap, as the build classified it (see
+    // assignSeamArms) — bent, so its seam edges carry a fillet arc, and that is
+    // what 'curved' keeps and 'straight' drops. The plain `renderSeam` spec is
+    // the through-running arm: the opposite verdict under both modes.
     const bentSeam = (seamEdges?: SeamEdges, radius = 24) => {
       const spec = baseSpec(['L1']);
       spec.centerline = [
@@ -488,6 +488,7 @@ describe('<SegmentBand> — branch seam (pass="seam")', () => {
         { x: 100, y: 100 },
       ];
       spec.radius = radius;
+      spec.seamArms = ['curved'];
       return render(
         <svg>
           <SegmentBand
@@ -532,12 +533,13 @@ describe('<SegmentBand> — branch seam (pass="seam")', () => {
       expect(seamPaths(bentSeam('straight').container)).toBe('');
     });
 
-    // The verdict is the BAND's, not each edge's. A fillet tighter than the seam
-    // offset (`radius < width/2`, which the marker-fit cap can produce on a short
-    // branch lead-in) degenerates the INNER edge's corner to a straight — so an
-    // edge-by-edge test would call one side of the same band a branch and the
-    // other a through-runner, and each mode would paint half a notch.
-    it('classifies the whole band, so a fillet tighter than the seam offset still reads as bent', () => {
+    // The verdict is the STRIPE's, and it covers BOTH its edges. A fillet
+    // tighter than the seam offset (`radius < width/2`, which the marker-fit cap
+    // can produce on a short branch lead-in) degenerates the INNER edge's corner
+    // to a straight — an edge-by-edge test would then call one side of the same
+    // stripe a branch and the other a through-runner, and each mode would paint
+    // half a notch.
+    it('applies one verdict to both edges, even where a tight fillet flattens one', () => {
       expect(bentSeam('curved', 4).container.querySelectorAll('[data-band-seam]').length).toBe(2);
       expect(bentSeam('straight', 4).container.querySelectorAll('[data-band-seam]').length).toBe(0);
     });
@@ -574,6 +576,7 @@ describe('<SegmentBand> — branch seam (pass="seam")', () => {
         { x: 100, y: 100 },
       ];
       spec.radius = 24;
+      spec.seamArms = ['curved', 'curved'];
       const at = (stripeIndex: number) =>
         seamPaths(
           render(
@@ -584,6 +587,79 @@ describe('<SegmentBand> — branch seam (pass="seam")', () => {
         );
       expect(at(0)).toBe(''); // L1: straight only, and this band bends
       expect(at(1)).toContain('A'); // L2: every edge, bent ones included
+    });
+
+    // Which arm a band is, is a fact about the JUNCTION — not about the band's
+    // own shape. A through corridor whose next station sits off-axis doglegs
+    // there, and a branch can leave the junction along the very SAME axis as
+    // the through-run and only peel away further on. Both happen at once on a
+    // real map (the A line at Broad Channel), so these bands are built through
+    // the real router rather than hand-shaped.
+    describe('at a real branch junction', () => {
+      // n —— j —— m runs through on the NW/SE diagonal; b branches off it,
+      // leaving j along that same diagonal and turning away 85 units on. m's
+      // own far end is off-axis, so the THROUGH band j|m doglegs at the end
+      // away from the junction.
+      const branchBands = () => {
+        const doc = makeDoc({
+          stations: [
+            makeStation({
+              id: 'j',
+              x: 0,
+              y: 0,
+              stops: [makeStop('L1', { orientation: 'auto-nw-se' })],
+            }),
+            makeStation({
+              id: 'n',
+              x: -200,
+              y: -200,
+              stops: [makeStop('L1', { orientation: 'auto-nw-se' })],
+            }),
+            makeStation({
+              id: 'm',
+              x: 200,
+              y: 260,
+              stops: [makeStop('L1', { orientation: 'auto-vertical' })],
+            }),
+            makeStation({
+              id: 'b',
+              x: 140,
+              y: 60,
+              stops: [makeStop('L1', { orientation: 'auto-horizontal' })],
+            }),
+          ],
+          lines: [makeLine({ id: 'L1', edges: ['j|n', 'j|m', 'b|j'] })],
+        });
+        const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+        const at = (pairKey: string) => bands.find((x) => x.pairKey === pairKey)!;
+        return { incoming: at('j|n'), through: at('j|m'), branch: at('b|j') };
+      };
+
+      const seamCount = (spec: SegmentBandSpec, seamEdges: SeamEdges) =>
+        render(
+          <svg>
+            <SegmentBand
+              spec={spec}
+              stripeIndex={0}
+              pass="seam"
+              lines={seamLines('#ff000080', { seamEdges })}
+            />
+          </svg>,
+        ).container.querySelectorAll('[data-band-seam]').length;
+
+      it("'curved' draws the branch only — the through band's far dogleg is not a branch", () => {
+        const { incoming, through, branch } = branchBands();
+        expect(seamCount(branch, 'curved')).toBe(2);
+        expect(seamCount(through, 'curved')).toBe(0);
+        expect(seamCount(incoming, 'curved')).toBe(0);
+      });
+
+      it("'straight' draws the through arms only — including the one that doglegs", () => {
+        const { incoming, through, branch } = branchBands();
+        expect(seamCount(through, 'straight')).toBe(2);
+        expect(seamCount(incoming, 'straight')).toBe(2);
+        expect(seamCount(branch, 'straight')).toBe(0);
+      });
     });
   });
 });

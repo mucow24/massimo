@@ -1945,13 +1945,13 @@ maxAbsOffset` so the innermost stripe still curves at ≥ R); **marker-fit cap**
    and therefore always a style some incident segment actually has.
 
 A `SegmentBandSpec` carries **parallel arrays** (`lines`, `paths`, `stripeOffsets`,
-`stripeWidths`, `linePriorities` — index k = same stripe). `stripeOffsets`/`stripeWidths`/`radius`
-are the **single source of truth**: every consumer (band paint, stripe outline, label/tag
-placement, hit sampling) **must read them, never re-derive**, and must use **`band.radius`** (the
-bumped/capped effective radius), **not** any line's raw `curveRadius` (the configured R is the
-LARGEST member line's radius). `bandKey` (= `pairKey#sortedLineIds`)
-is unique and stable regardless of input order — used for React keys and as the "which band"
-identity. The band specs are pinned by a **byte-exact golden snapshot**
+`stripeWidths`, `linePriorities`, `seamArms` — index k = same stripe).
+`stripeOffsets`/`stripeWidths`/`radius` are the **single source of truth**: every consumer (band
+paint, stripe outline, label/tag placement, hit sampling) **must read them, never re-derive**, and
+must use **`band.radius`** (the bumped/capped effective radius), **not** any line's raw
+`curveRadius` (the configured R is the LARGEST member line's radius). `bandKey` (=
+`pairKey#sortedLineIds`) is unique and stable regardless of input order — used for React keys and
+as the "which band" identity. The band specs are pinned by a **byte-exact golden snapshot**
 (`interlining.golden.test.ts`) guarding the zero-visual-change-for-legacy-docs invariant; never
 update it without understanding why every painted path on every map would move.
 
@@ -1993,16 +1993,35 @@ casing; `CasingRails` centered rails for the two transparent "open" styles). The
 edge-centered strokes CLIPPED to the line's OTHER band corridors (`SeamClips.tsx`), so it only
 shows where a line crosses itself. The notch at a branch is two arms, one per band — the band
 running STRAIGHT through and the band that TURNS away — and each line's own `seamEdges` picks
-which of the two draws. `router.polylineTurns` classifies a WHOLE band off its centerline, and
-the chosen arm then draws whole. Both halves of that matter: filtering by PIECE cuts a bent
-edge's straight lead-in off its fillet and leaves a gap where the branch clears the other
+which of the two draws. Which of the two a stripe IS gets decided at build time and baked into
+`band.seamArms[k]` (`assignSeamArms`, per stripe because two lines sharing a corridor can have
+different topology); the chosen arm then draws WHOLE. Both halves matter: filtering by PIECE cuts
+a bent edge's straight lead-in off its fillet and leaves a gap where the branch clears the other
 corridor, and classifying per EDGE splits one band's verdict once a fillet is tighter than the
 seam offset (`emitOffsetSegments` degenerates the inside corner to a straight), painting half a
-notch. The test is per BAND while arm identity is per JUNCTION, so it is a heuristic: a through
-corridor that doglegs anywhere along its length also reads as turning, and at that junction
-`'straight'` paints nothing while `'curved'` equals `'both'`. `SegmentBand` reads the mode off
-the live line, like the seam's color and width, so two lines sharing a band can differ. All three
-passes read the same `lineStroke` helpers as the highlight overlay so they can't drift.
+notch. `SegmentBand` reads the MODE off the live line, like the seam's color and width, so two
+lines sharing a band can differ. All three passes read the same `lineStroke` helpers as the
+highlight overlay so they can't drift.
+
+**Which arm.** `assignSeamArms` reads it off the JUNCTION, never off the band's own shape. At each
+station, the line's band ends there are matched into THROUGH-RUNS, most opposed first, and anything
+left over is a branch. A station with two ends is a plain joint or a corner and always pairs up,
+whichever way its bands bend; a lone end is a terminus and pairs with nothing, which is not the
+same as branching. Matching continues past the first run only while a remaining pair is DEAD
+opposed — a line that crosses itself at a station has two through-runs and no branch, and stopping
+at one would paint half an X — while a second pair that is merely the best of what's left is a
+fork, not a crossing.
+
+A run scores on how nearly its arms oppose each other, then on their COMBINED straight length: the
+length of the straight corridor they make through the station. That second term is what a real
+fork needs, because two arms can leave a junction along the SAME axis — dead opposite the incoming
+corridor either way — and diverge only further on, so the one that peels off first is the branch
+(the A at Broad Channel). Scoring a pair by its SHORTER arm instead saturates on the arm both
+candidate pairs share, ties them, and hands the verdict to whatever order `line.edges` happens to
+be in. Asking the band's own polyline instead of the junction is the older trap: a through corridor
+whose next station sits off-axis doglegs to reach it, and answers "branch" from 300 units away —
+painting a straight stroke clean across the branch mouth. A band has two ends and one verdict, so
+a band that branches at one end and runs through at the other still reads as a branch at both.
 
 **The hit box.** A stripe's pointer surface is normally the painted path itself, but the styles
 that paint with GAPS (the dasharray ones — `dashed`, `dotted`, `dashed-open`) hit-test only their
@@ -3241,8 +3260,8 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   `Object.keys(DEFAULT_DOC)`; keep them in sync (a field in `DEFAULT_DOC` but not `DOC_FIELDS`
   would default but never persist/undo).
 - **Parallel arrays in a band** (`lines`, `paths`, `stripeOffsets`, `stripeWidths`,
-  `linePriorities`) are index-aligned; `stripeOffsets`/`stripeWidths`/`radius` are the single
-  source of truth — read them, never re-derive; sample with `band.radius`, not a line's raw
+  `linePriorities`, `seamArms`) are index-aligned; `stripeOffsets`/`stripeWidths`/`radius` are the
+  single source of truth — read them, never re-derive; sample with `band.radius`, not a line's raw
   `curveRadius`.
 - **One history entry per gesture**; the selection store is reconciled (not restored) after
   undo/redo.
