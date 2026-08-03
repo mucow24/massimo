@@ -3,6 +3,7 @@ import { act, cleanup, render, screen, fireEvent, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { StyleEditor } from './StyleEditor';
 import { useDoc } from '../state/store';
+import { historyDepth } from '../state/history';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makeStyle } from '../test/fixtures';
 import type { DotStyle, LineStyleProps } from '../model/types';
@@ -50,16 +51,28 @@ describe('<StyleEditor> — line', () => {
     expect(screen.queryByRole('radiogroup', { name: 'Inner strokes' })).toBeNull();
   });
 
-  it('the stroke width writes the seam’s width too, in one entry', () => {
-    const def = makeStyle('line', 'y1', { props: { strokeWidth: 2, seamColor: '#abcdef80' } });
+  // Several props in ONE patch is one store write — which is why these rows need
+  // no history group, unlike the line inspector's separate setters. Pinned, not
+  // assumed: it is the whole reason the group is absent.
+  it('the stroke width writes the seam’s width too, in a single undo entry', () => {
+    const def = makeStyle('line', 'y1', {
+      props: { strokeWidth: 2, seamWidth: 2, seamColor: '#abcdef80' },
+    });
     useDoc.setState({ styles: { ...useDoc.getState().styles, y1: def } });
+    useDoc.temporal.getState().clear();
     render(<StyleEditor def={def} />);
+    const before = historyDepth();
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Stroke width' }), {
       target: { value: '5' },
     });
-    const props = useDoc.getState().styles.y1.props as LineStyleProps;
-    expect(props.strokeWidth).toBe(5);
-    expect(props.seamWidth).toBe(5);
+    const props = () => useDoc.getState().styles.y1.props as LineStyleProps;
+    expect(props().strokeWidth).toBe(5);
+    expect(props().seamWidth).toBe(5);
+    expect(historyDepth()).toBe(before + 1);
+    // Both halves revert together — no undo stops between them.
+    useDoc.temporal.getState().undo();
+    expect(props().strokeWidth).toBe(2);
+    expect(props().seamWidth).toBe(2);
   });
 
   it('renders the line-ends group at the def value and writes a pick through', async () => {
@@ -102,20 +115,28 @@ describe('<StyleEditor> — line', () => {
     );
   });
 
-  it('picking an arm hands the seam the stroke’s own color and width', async () => {
+  it('picking an arm hands the seam the stroke’s own color and width, in one entry', async () => {
     const def = makeStyle('line', 'y1', { props: { strokeWidth: 3, strokeColor: '#123456' } });
     useDoc.setState({ styles: { ...useDoc.getState().styles, y1: def } });
+    useDoc.temporal.getState().clear();
     render(<StyleEditor def={def} />);
     const user = userEvent.setup();
+    const before = historyDepth();
     await user.click(
       within(screen.getByRole('radiogroup', { name: 'Inner strokes' })).getByRole('radio', {
         name: 'Branch',
       }),
     );
-    const props = useDoc.getState().styles.y1.props as LineStyleProps;
-    expect(props.seamColor).toBe('#123456');
-    expect(props.seamWidth).toBe(3);
-    expect(props.seamEdges).toBe('curved');
+    const props = () => useDoc.getState().styles.y1.props as LineStyleProps;
+    expect(props().seamColor).toBe('#123456');
+    expect(props().seamWidth).toBe(3);
+    expect(props().seamEdges).toBe('curved');
+    // Three props, one patch, one entry — and one undo takes all three back.
+    expect(historyDepth()).toBe(before + 1);
+    useDoc.temporal.getState().undo();
+    expect(props().seamColor).toBeUndefined();
+    expect(props().seamWidth).toBeUndefined();
+    expect(props().seamEdges).toBe('both');
   });
 
   it('None switches the seam off, keeping the arm for the way back', async () => {

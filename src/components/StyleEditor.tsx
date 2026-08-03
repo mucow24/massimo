@@ -9,7 +9,7 @@ import { ColorField } from './ColorField';
 import { DayNightColorRow } from './DayNightColorRow';
 import { NumericFieldRow } from './NumericFieldRow';
 import { LineEndSegmented } from './LineEndPicker';
-import { InnerStrokesSegmented, type InnerStrokesMode } from './InnerStrokesPicker';
+import { InnerStrokesSegmented, innerStrokesOf } from './InnerStrokesPicker';
 import { WeightSelect, ItalicButton } from './WeightItalicControls';
 import { StopGlyph } from './StopGlyph';
 import { StationShapePicker } from './StationShapePicker';
@@ -44,7 +44,6 @@ import {
   LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_MAX,
   LINE_STROKE_WIDTH_MIN,
-  lineSeamEdgesOf,
 } from '../model/lineStroke';
 import {
   TRANSFER_STROKE_WIDTH_MAX,
@@ -209,10 +208,16 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
   // and Inner strokes is a four-way whose None is a CLEARED seam color rather
   // than a `seamEdges` value. The props stay five separate fields; a patch
   // carrying several is still one store write, so one edit is one undo entry.
-  const innerStrokes: InnerStrokesMode =
-    props.seamColor === undefined ? 'none' : lineSeamEdgesOf(props);
+  const innerStrokes = innerStrokesOf(props);
   // Both halves of a color pick, so the seam tracks the casing without being
   // switched on behind the user.
+  //
+  // Corollary worth knowing: with inner strokes ON, dragging this color's alpha
+  // to 00 hands the seam a transparent color, which canonicalizes to "no seam" —
+  // the segment jumps to None, and raising the alpha again does NOT bring it
+  // back, since the row stops mirroring once the state reads 'none'. A fully
+  // transparent casing paints nothing either, so the two agree; but the arm is
+  // the way back, not the alpha.
   const patchStrokeColor = (strokeColor: string) =>
     patch(innerStrokes === 'none' ? { strokeColor } : { strokeColor, seamColor: strokeColor });
   return (
@@ -324,8 +329,10 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
               onSelect={(v) =>
                 patch(
                   v === 'none'
-                    ? // Absent IS the off state; the patch merge drops the key
-                      // rather than storing a cleared color.
+                    ? // Absent IS the off state. The spread carries the explicit
+                      // undefined through, and `canonicalStyleProps` — which
+                      // REBUILDS the props rather than copying them — omits the
+                      // key, so the def never stores a cleared color.
                       { seamColor: undefined }
                     : // The seam takes the casing's own color (sentinel included)
                       // and width — what makes the two rows above cover it.

@@ -2961,7 +2961,11 @@ same three additions.
   whose None is a cleared seam color, not a `seamEdges` value. Picking an arm hands the seam the
   casing's color and width. The five props stay separate in the doc, so a style still covers them
   independently; only the editors fuse. Stroke color and inner strokes render only while the
-  stroke width is non-zero. The inspector's paired writes go through separate setters, so each
+  stroke width is non-zero — which leaves one state the UI cannot reach: an explicit `seamWidth`
+  with a `seamColor` and `strokeWidth: 0` still PAINTS a seam (`seamRenderWidth` falls back to the
+  casing rail only when the seam's own width is unset), but every control for it is hidden. Only a
+  hand-edited file or a line/def written before the fusion can hold it; raising the stroke width
+  brings the controls back. The inspector's paired writes go through separate setters, so each
   opens an `isHistoryGrouping`-gated group to stay one undo entry; the style editor's are one
   `updateStyleProps` patch and need none. Identity (name/service/color) and the Style picker
   always show; everything from **Line width → Inner strokes** collapses into a style-detail

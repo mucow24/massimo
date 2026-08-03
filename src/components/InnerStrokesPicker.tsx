@@ -1,4 +1,5 @@
 import type { SeamEdges } from '../model/types';
+import { lineSeamColorStored, lineSeamEdgesOf } from '../model/lineStroke';
 import { SegmentedToggle } from './SegmentedToggle';
 
 /**
@@ -8,6 +9,22 @@ import { SegmentedToggle } from './SegmentedToggle';
  * instead of a `seamEdges` value. See LineInspector for the full reading.
  */
 export type InnerStrokesMode = SeamEdges | 'none';
+
+/**
+ * Which segment to show for a line, or for a line style's props. Neither
+ * carries a 'none' of its own — the seam is off when it has no color — so the
+ * off state is read off that, and the arm underneath stays REMEMBERED while
+ * off: switching off only clears the color, so switching back lands on the arm
+ * the user left rather than the default.
+ *
+ * Lives here rather than in the model because 'none' is this control's idea,
+ * not the document's. Structural parameter, so a `Line` and a `LineStyleProps`
+ * both pass — which is what keeps the two editors from spelling the rule twice.
+ */
+export const innerStrokesOf = (
+  seamed: { seamColor?: string; seamEdges?: SeamEdges } | null | undefined,
+): InnerStrokesMode =>
+  lineSeamColorStored(seamed) === undefined ? 'none' : lineSeamEdgesOf(seamed);
 
 // Editor order, and the arms under their user-facing names: 'curved' is the
 // BRANCH's own stroke curling in, 'straight' the MAINLINE's carrying on
@@ -36,7 +53,7 @@ const INNER_STROKES_TITLES: Record<InnerStrokesMode, string> = {
 // shape stays put across the segments and only the kept ink moves, which is
 // exactly the choice being made ('none' drops both arms). Same
 // one-stroke-tells-the-story idea as LineEndGlyph, and the same 15px box.
-export function InnerStrokesGlyph({ mode }: { mode: InnerStrokesMode }) {
+function InnerStrokesGlyph({ mode }: { mode: InnerStrokesMode }) {
   const through = 'M 11 1 L 11 14';
   const branch = 'M 1 11 L 4 11 A 7 7 0 0 0 11 4';
   const faint = 0.25;
@@ -60,15 +77,13 @@ export function InnerStrokesGlyph({ mode }: { mode: InnerStrokesMode }) {
 export function InnerStrokesSegmented({
   value,
   onSelect,
-  ariaLabel = 'Inner strokes',
 }: {
   value: InnerStrokesMode;
   onSelect: (mode: InnerStrokesMode) => void;
-  ariaLabel?: string;
 }) {
   return (
     <SegmentedToggle
-      ariaLabel={ariaLabel}
+      ariaLabel="Inner strokes"
       value={value}
       onSelect={(v) => onSelect(v as InnerStrokesMode)}
       options={INNER_STROKES_MODES.map((mode) => ({
