@@ -219,6 +219,28 @@ describe('MapCanvas — selected-item hit proxies win pointer hit-testing', () =
     expect(useSelection.getState().selectedPolygonIds).toEqual([]);
   });
 
+  it('carries the click COUNT through the re-route (gestures that count clicks still work)', () => {
+    // `detail` is the browser's own click counter, and it is how the station's
+    // shift+double-click rename knows it is the second click. A re-dispatch that
+    // dropped it would make that gesture unreachable on any selected item —
+    // whose proxy is exactly what the second click lands on.
+    render(<App />);
+    seedAll();
+    act(() => useSelection.getState().setPolygonSelection(['p0']));
+    const proxyEl = document.querySelector('[data-polygon-hit="p0"]')!;
+    const beneath = document.querySelector('[data-text-label-id="g1"] rect')!;
+    (document as unknown as { elementFromPoint: () => Element }).elementFromPoint = () => beneath;
+    let seen: number | null = null;
+    beneath.addEventListener('click', (e) => {
+      seen = (e as MouseEvent).detail;
+    });
+    act(() => {
+      fireEvent.click(proxyEl, { button: 0, clientX: 10, clientY: 10, detail: 2 });
+    });
+    delete (document as unknown as { elementFromPoint?: unknown }).elementFromPoint;
+    expect(seen).toBe(2);
+  });
+
   it('does not re-route after a drag (suppressed click leaves selection alone)', () => {
     render(<App />);
     seedAll();

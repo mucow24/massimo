@@ -235,14 +235,45 @@ describe('useStationInteraction — context menu rotation under mirror matching'
 });
 
 describe('useStationInteraction — double click', () => {
-  it('enters station-name edit mode', () => {
+  it('opens the station layout editor', () => {
     const { result } = setup();
     act(() =>
       result.current.handlers.onDoubleClick?.(pointerEvent({}) as unknown as React.MouseEvent),
     );
     const sel = useSelection.getState();
+    expect(sel.uiMode).toEqual({ kind: 'editing-station-layout', stationId: 'S' });
+    expect(sel.selectedStationIds).toEqual(['S']);
+    expect(sel.editingStationId).toBeNull();
+  });
+
+  it('the SECOND shift-click on a station enters station-name edit mode', () => {
+    // The rename gesture is counted on the CLICK path, off the browser's own
+    // click count, because the native dblclick cannot be relied on here: the
+    // first shift-click flips this station's selection, which mounts/unmounts
+    // its drag proxy — so the two clicks land on different elements and the
+    // dblclick is dispatched at a node that no longer exists.
+    const { result } = setup();
+    click(result.current.handlers, pointerEvent({ shiftKey: true }) as unknown as React.MouseEvent);
+    click(
+      result.current.handlers,
+      pointerEvent({ shiftKey: true, detail: 2 }) as unknown as React.MouseEvent,
+    );
+    const sel = useSelection.getState();
     expect(sel.selectedStationIds).toEqual(['S']);
     expect(sel.editingStationId).toBe('S');
+    expect(sel.uiMode.kind).toBe('idle');
+  });
+
+  it('a shift double-click never opens the LAYOUT editor (rename owns the gesture)', () => {
+    // Whether the native dblclick survives the proxy churn is luck; when it does
+    // arrive it must not fling the user into the layout editor over the rename.
+    const { result } = setup();
+    act(() =>
+      result.current.handlers.onDoubleClick?.(
+        pointerEvent({ shiftKey: true, detail: 2 }) as unknown as React.MouseEvent,
+      ),
+    );
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
   });
 
   it('during Edit Stops, a member station jumps straight into its layout editor', () => {
