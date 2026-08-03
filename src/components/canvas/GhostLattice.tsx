@@ -1,16 +1,15 @@
 import type { Line, Station } from '../../model/types';
 import { stationCellToWorld, stationFrameDeg, stopCenterAt } from '../../geometry/orientation';
 import { sameCell, type RowCol } from '../../geometry/lattice';
-import { LayoutNodeHandle, LAYOUT_RING_PROJECT } from './LayoutNodeHandle';
+import { LayoutNodeHandle } from './LayoutNodeHandle';
 import type { LayoutDragSource } from './useStationLayoutDrag';
 
 /**
  * Ghost-lattice overlay for a station-layout drag: candidate slots rendered AT
- * the real station in world coordinates. Small zoom-invariant dots for
- * candidates, in the projection anchor's gold (`LAYOUT_RING_PROJECT`) so the
- * lattice reads as belonging to the node it is projected from; on the snapped
- * slot, the dragged node's OWN handle in its selected state, so the drop
- * target is the thing that will land there rather than a stand-in circle.
+ * the real station in world coordinates. Small zoom-invariant white dots for
+ * candidates; on the snapped slot, the dragged node's OWN handle in its
+ * selected state, so the drop target is the thing that will land there rather
+ * than a stand-in circle.
  * Pure chrome: pointer-events none, excluded from export by the parent group.
  */
 export function GhostLattice({
@@ -50,7 +49,7 @@ export function GhostLattice({
             cx={p.x}
             cy={p.y}
             r={3 / zoom}
-            fill={LAYOUT_RING_PROJECT}
+            fill="#fff"
             stroke="rgba(0,0,0,0.4)"
             strokeWidth={1.25 / zoom}
           />

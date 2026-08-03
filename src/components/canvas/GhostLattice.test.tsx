@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { GhostLattice } from './GhostLattice';
-import { LAYOUT_RING_ACTIVE, LAYOUT_RING_PROJECT, RING_SCRIM } from './LayoutNodeHandle';
+import { LAYOUT_RING_ACTIVE, RING_SCRIM } from './LayoutNodeHandle';
 import { useDoc } from '../../state/store';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { makeLine } from '../../test/fixtures';
@@ -48,11 +48,11 @@ beforeEach(() => {
 });
 
 describe('<GhostLattice />', () => {
-  it('paints candidate slots in the projection-anchor gold, tying them to the anchor', () => {
+  it('paints candidate slots in white', () => {
     const { container } = renderLattice();
     const dots = [...container.querySelectorAll('circle')];
     expect(dots).toHaveLength(2);
-    for (const d of dots) expect(d.getAttribute('fill')).toBe(LAYOUT_RING_PROJECT);
+    for (const d of dots) expect(d.getAttribute('fill')).toBe('#fff');
   });
 
   it('draws the dragged stop on the snapped slot as its own selected handle', () => {
@@ -64,10 +64,8 @@ describe('<GhostLattice />', () => {
     // The stop's own axis arrow, in white — the node exactly as it will land.
     const arrow = preview.querySelector('path[data-arrow-line="L1"]')!;
     expect(arrow.getAttribute('fill')).toBe('#fff');
-    // The slot it occupies no longer carries a gold dot.
-    expect(container.querySelectorAll('circle[fill="' + LAYOUT_RING_PROJECT + '"]')).toHaveLength(
-      1,
-    );
+    // The slot it occupies no longer carries a lattice dot.
+    expect(container.querySelectorAll('circle[fill="#fff"]')).toHaveLength(1);
   });
 
   it('draws the dragged label on the snapped slot as the selected label handle', () => {
