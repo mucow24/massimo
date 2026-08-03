@@ -547,20 +547,6 @@ select option {
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
-.options-popover-row-block {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 4px;
-}
-.options-palettes {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin-top: 2px;
-  max-height: 360px;
-  overflow-y: auto;
-}
-.options-palette-separator,
 .view-popover-divider {
   border: 0;
   border-top: 1px solid var(--border);
@@ -657,52 +643,6 @@ select option {
   background: var(--border-strong);
   border-color: var(--border-strong);
   color: var(--text);
-}
-.options-palette-card {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 3px 6px 4px;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius);
-  cursor: pointer;
-}
-.options-palette-card[aria-disabled='true'] {
-  opacity: 0.85;
-  cursor: default;
-}
-.options-palette-card-row {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  line-height: 1;
-}
-.options-palette-card-row input[type='checkbox'] {
-  margin: 0;
-}
-/* Load-palette button sits at the top of the list, left-aligned. */
-.options-palette-load {
-  align-self: flex-start;
-}
-/* Red delete button on custom palette cards, pushed to the far right. */
-.options-palette-delete {
-  margin-left: auto;
-}
-.options-palette-error {
-  color: var(--danger);
-  font-size: var(--fs-caption);
-}
-.options-palette-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-}
-.options-palette-strip > span {
-  width: 12px;
-  height: 12px;
-  border-radius: 2px;
-  border: 1px solid var(--swatch-border);
-  box-sizing: border-box;
 }
 .color-palette-section-label {
   color: var(--text-muted);
@@ -2312,10 +2252,13 @@ button.field-select {
   transition: transform 150ms ease-out;
 }
 
-/* Map library dialog. NOTE: no bare `.toast`/`.row` selectors here — the canvas
-   warning toasts are `.warning-toasts .toast`, and an unscoped class would leak
-   straight into them. */
-.map-library-backdrop {
+/* The two-column dialog shell, shared by the map library and the palette
+   manager: backdrop, panel, title band, column heads, lists and rows. What
+   stays per-dialog below it is only what one list has and the other doesn't.
+   NOTE: no bare `.toast`/`.row` selectors here — the canvas warning toasts are
+   `.warning-toasts .toast`, and an unscoped class would leak straight into
+   them. */
+.dialog-backdrop {
   position: fixed;
   inset: 0;
   background: rgb(0 0 0 / 35%);
@@ -2325,9 +2268,9 @@ button.field-select {
   z-index: 50;
 }
 /* The shell wears the item popovers' signature — white body, black title band,
-   soft corners, the same three-layer shadow. The library is chrome of the same
-   family, just bigger. */
-.map-library {
+   soft corners, the same three-layer shadow. These dialogs are chrome of the
+   same family, just bigger. */
+.dialog {
   background: var(--surface);
   border: 1px solid var(--border-soft);
   border-radius: 10px;
@@ -2343,7 +2286,7 @@ button.field-select {
 }
 /* Same swap the popovers make: the dark ring separates the panel edge where
    the light-mode shadow vanishes on black. */
-.app[data-theme='dark'] .map-library {
+.app[data-theme='dark'] .dialog {
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.07),
     0 16px 40px rgba(0, 0, 0, 0.6);
@@ -2351,7 +2294,7 @@ button.field-select {
 /* The signature black band (the popover-header recipe: same black in both
    themes — it's the brand, not a surface), nesting flush inside the 1px
    border via the 9px top radius. */
-.map-library header {
+.dialog header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2361,13 +2304,13 @@ button.field-select {
   border-radius: 9px 9px 0 0;
   flex-shrink: 0;
 }
-.map-library header h2 {
+.dialog header h2 {
   margin: 0;
   font-size: var(--fs-ui);
   font-weight: 700;
 }
 /* Ghost close, white-on-black — the OptionsPopover close idiom in band colors. */
-.map-library-close {
+.dialog-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2380,37 +2323,46 @@ button.field-select {
   color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
 }
-.map-library-close:hover {
+.dialog-close:hover {
   color: #fff;
   background: rgba(255, 255, 255, 0.18);
 }
-.map-library-error {
+.dialog-error {
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 8%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
   padding: 6px 16px;
 }
-.map-library-columns {
+/* The same band for an outcome that is not a failure — a load reporting what it
+   displaced. The head's muted wash rather than the danger one, because red is
+   how this dialog says "nothing happened". */
+.dialog-notice {
+  color: var(--text-muted);
+  background: var(--inset-bg);
+  border-bottom: 1px solid var(--inset-border);
+  padding: 6px 16px;
+}
+.dialog-columns {
   display: grid;
   grid-template-columns: 1fr 1fr;
   flex: 1;
   min-height: 0;
 }
-.map-library-maps,
-.map-library-versions {
+/* Structural, so a two-column dialog only has to be two sections. */
+.dialog-columns > section {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
 }
-.map-library-maps {
+.dialog-columns > section:first-child {
   border-right: 1px solid var(--border-soft);
 }
-/* Column headers: the sidebar's list-header wash. Each names its column — the
-   left one "Maps", the right the selected map — and each carries that column's
-   star filter, the left one the sort control besides. A shared min-height keeps
-   the two seams level whatever a head is holding. */
-.map-library-colhead {
+/* Column headers: the sidebar's list-header wash. Each names its column, and
+   carries whatever commands act on that column as a whole — a star filter, a
+   sort, a load. A shared min-height keeps the two seams level whatever a head
+   is holding. */
+.dialog-colhead {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2425,7 +2377,7 @@ button.field-select {
   color: var(--text-muted);
   flex-shrink: 0;
 }
-.map-library-colhead h3 {
+.dialog-colhead h3 {
   margin: 0;
   font: inherit;
   overflow: hidden;
@@ -2436,7 +2388,7 @@ button.field-select {
    (on the left) the sort. Kept whole so space-between still pushes the set
    right and the squeeze in a narrow dialog lands on the heading's ellipsis
    instead of the controls. */
-.map-library-colhead-controls {
+.dialog-colhead-controls {
   display: flex;
   align-items: center;
   flex: none;
@@ -2452,7 +2404,8 @@ button.field-select {
   font-weight: 500;
   white-space: nowrap;
 }
-button.map-library-sort {
+button.map-library-sort,
+button.dialog-sort {
   flex: none;
   width: 112px;
   font-weight: 500;
@@ -2497,18 +2450,19 @@ button.map-library-sort {
   border-color: var(--accent-border);
   color: var(--accent);
 }
-.map-library-list {
+.dialog-list {
   flex: 1;
   overflow-y: auto;
 }
-.map-row,
-.version-row {
+.dialog-row {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--border-soft);
 }
+/* The map column's rows are also a choice — they drive the column beside them,
+   so unlike every other row in these dialogs they hover and hold a selection. */
 .map-row {
   cursor: pointer;
   transition: background-color 120ms ease;
@@ -2519,25 +2473,29 @@ button.map-library-sort {
 .map-row.selected {
   background: var(--row-selected);
 }
-.map-row-body {
+.dialog-row-body {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
   gap: 2px;
 }
-.map-row-meta {
+.dialog-row-meta {
   color: var(--text-muted);
   font-size: var(--fs-caption);
 }
-.map-row-actions {
+.dialog-row-actions {
   display: flex;
   align-items: center;
   gap: 4px;
 }
 /* Row commands on the popovers' small-button recipe: hairline, quiet until
-   approached. (The star opts back out below — it is a state, not a command.) */
-.map-row-actions button {
+   approached. (The star opts back out below — it is a state, not a command.)
+   The column head's own commands take the same recipe, so a "Load…" beside a
+   row of Adds doesn't read as the disabled one. */
+.dialog-row-actions button,
+.palette-row > .icon-btn,
+.dialog-colhead-btn {
   height: 24px;
   padding: 0 8px;
   background: var(--control-bg);
@@ -2551,15 +2509,25 @@ button.map-library-sort {
     border-color 120ms ease,
     color 120ms ease;
 }
-.map-row-actions button:hover {
+.dialog-row-actions button:hover:not(:disabled),
+.palette-row > .icon-btn:hover:not(:disabled),
+.dialog-colhead-btn:hover {
   background: var(--control-hover);
   border-color: var(--border-strong);
 }
-.map-row-actions .danger {
+/* The head's wash is the muted one; its buttons are not, so they say the same
+   thing there as in a row. */
+.dialog-colhead-btn {
+  flex: none;
+  color: var(--text);
+}
+.dialog-row-actions .danger,
+.palette-row > .icon-btn.danger {
   color: var(--danger);
   border-color: var(--danger);
 }
-.map-row-actions .danger:hover {
+.dialog-row-actions .danger:hover,
+.palette-row > .icon-btn.danger:hover {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 .map-thumb {
@@ -2615,10 +2583,10 @@ button.map-library-sort {
   white-space: nowrap;
 }
 /* The star is a state, not a command, so it reads as an icon rather than a
-   button until you go near it — quiet among the row's real buttons. Shared by
-   both columns: it marks the row for the head's filter, and a version's star
-   also shields it from the prune policy. */
-.map-library .star-btn {
+   button until you go near it — quiet among the row's real buttons. It marks
+   the row for the head's filter (or, in the palette manager, for the Starred
+   sort); a version's star also shields it from the prune policy. */
+.dialog .star-btn {
   display: inline-flex;
   align-items: center;
   padding: 4px;
@@ -2627,13 +2595,113 @@ button.map-library-sort {
   border: 1px solid transparent;
   color: var(--text-faint);
 }
-.map-library .star-btn:hover {
+.dialog .star-btn:hover {
   background: transparent;
   border-color: transparent;
   color: var(--text);
 }
-.map-library .star-btn.starred {
+.dialog .star-btn.starred {
   color: var(--star);
+}
+
+/* Palette manager. Shorter than the map library — palette rows are two lines of
+   nothing but a name and a color strip, so a full-height panel would be mostly
+   air. */
+.palette-manager {
+  width: min(860px, 90vw);
+  height: min(500px, 80vh);
+}
+/* The strip IS the palette: you recognise one by its colors long before its
+   name. Swatches share the row's width rather than tiling at a fixed size, so a
+   3-color palette and a 19-color one both read as one band. The 2px gap is what
+   keeps two near-identical neighbours from reading as one wide swatch — a
+   hairline border round each would be too much ink at this height. */
+.palette-strip {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+}
+.palette-strip span {
+  flex: 1;
+  min-width: 2px;
+  border-radius: 2px;
+}
+/* Reorder arrows, stacked in the left gutter of a map-palette row: half-height
+   each, so the pair occupies one row's worth of height. */
+.palette-move {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  gap: 2px;
+}
+.palette-move button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 16px;
+  padding: 0;
+  background: var(--control-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.palette-move button:hover:not(:disabled) {
+  background: var(--control-hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.palette-move button:disabled,
+.dialog-row-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* A palette row is a touch tighter than a map row — no thumbnail to clear. */
+.palette-row {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+/* The commands are a FIXED grid of icon slots, not a row of text buttons that
+   grows and shrinks with what a palette happens to support. A built-in has no
+   rename and no delete; its slots stay open (.palette-action-blank) so every
+   strip in the column ends at the same edge and the icons read down in
+   columns. Text buttons were what made the list ragged.
+
+   Each row also carries ONE command outside that grid, ahead of the name: the
+   library's star, and the map's save-back arrow. The two transfer arrows are
+   the outermost thing in their row on purpose — each sits against the column it
+   points into, so they face each other across the divider. */
+.palette-row .dialog-row-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 24px);
+  gap: 3px;
+  flex: none;
+}
+/* The leading slot: a fixed width, so the names below each other line up. */
+.palette-row > .icon-btn,
+.palette-row > .star-btn {
+  flex: none;
+}
+.palette-row .icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  padding: 0;
+}
+.dialog .palette-row > .star-btn {
+  width: 24px;
+  justify-content: center;
+}
+.palette-action-blank {
+  display: block;
+}
+/* Armed by a first click, awaiting the second: the same glyph, but washed red
+   so it cannot be mistaken for the idle command it was a moment ago. */
+.dialog-row-actions .danger.armed,
+.palette-row > .danger.armed {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
 }
 
 /* Styles panel (sidebar): an expanded style row's editor body — the style's

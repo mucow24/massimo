@@ -359,9 +359,9 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
       {/* `.app` is absent in standalone component tests; Radix then portals to
           document.body, exactly as the hand-rolled portal did. */}
       <Dialog.Portal container={document.querySelector<HTMLElement>('.app') ?? undefined}>
-        <Dialog.Overlay className="map-library-backdrop">
+        <Dialog.Overlay className="dialog-backdrop">
           <Dialog.Content
-            className="map-library"
+            className="dialog map-library"
             aria-describedby={undefined}
             onEscapeKeyDown={(e) => {
               // Mid-rename, Escape belongs to the input (which cancels the
@@ -374,23 +374,23 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
                 <h2>Map library</h2>
               </Dialog.Title>
               <Dialog.Close asChild>
-                <button type="button" className="map-library-close" aria-label="Close map library">
+                <button type="button" className="dialog-close" aria-label="Close map library">
                   <Cross2Icon />
                 </button>
               </Dialog.Close>
             </header>
 
             {error && (
-              <div role="alert" className="map-library-error">
+              <div role="alert" className="dialog-error">
                 {error}
               </div>
             )}
 
-            <div className="map-library-columns">
+            <div className="dialog-columns">
               <section className="map-library-maps" aria-label="Saved maps">
-                <div className="map-library-colhead">
+                <div className="dialog-colhead">
                   <h3>Maps</h3>
-                  <div className="map-library-colhead-controls">
+                  <div className="dialog-colhead-controls">
                     <StarFilterToggle
                       on={starredMapsOnly}
                       label="Show starred maps only"
@@ -432,7 +432,7 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
                     </Select.Root>
                   </div>
                 </div>
-                <div className="map-library-list">
+                <div className="dialog-list">
                   {visibleMaps === null && <div className="empty">Loading…</div>}
                   {visibleMaps?.length === 0 && (
                     <div className="empty">
@@ -442,11 +442,11 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
                   {visibleMaps?.map((m) => (
                     <div
                       key={m.id}
-                      className={'map-row' + (m.id === selectedMapId ? ' selected' : '')}
+                      className={'dialog-row map-row' + (m.id === selectedMapId ? ' selected' : '')}
                       onClick={() => void selectMap(m.id)}
                     >
                       <Thumb src={m.thumb} />
-                      <div className="map-row-body">
+                      <div className="dialog-row-body">
                         {renamingId === m.id ? (
                           <input
                             autoFocus
@@ -467,12 +467,12 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
                         ) : (
                           <strong>{m.name}</strong>
                         )}
-                        <span className="map-row-meta">
+                        <span className="dialog-row-meta">
                           {m.versionCount} version{m.versionCount === 1 ? '' : 's'} ·{' '}
                           {when(m.updatedAt)}
                         </span>
                       </div>
-                      <div className="map-row-actions" onClick={(e) => e.stopPropagation()}>
+                      <div className="dialog-row-actions" onClick={(e) => e.stopPropagation()}>
                         <StarToggle
                           starred={m.starred ?? false}
                           label={`${m.starred ? 'Unstar' : 'Star'} ${m.name}`}
@@ -502,9 +502,9 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
               </section>
 
               <section className="map-library-versions" aria-label="Versions">
-                <div className="map-library-colhead">
+                <div className="dialog-colhead">
                   <h3>{selectedMap ? selectedMap.name : 'Versions'}</h3>
-                  <div className="map-library-colhead-controls">
+                  <div className="dialog-colhead-controls">
                     {/* Nothing to filter until a map is chosen, and the flag is
                         persisted — a press over an empty column would write a
                         preference you never see take effect. */}
@@ -516,7 +516,7 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
                     />
                   </div>
                 </div>
-                <div className="map-library-list">
+                <div className="dialog-list">
                   {selectedMapId === null && (
                     <div className="empty">Select a map to see its versions.</div>
                   )}
@@ -529,9 +529,9 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
                     </div>
                   )}
                   {visibleVersions?.map((r) => (
-                    <div key={r.id} className="version-row">
+                    <div key={r.id} className="dialog-row version-row">
                       <Thumb src={r.thumb} />
-                      <div className="map-row-body">
+                      <div className="dialog-row-body">
                         {namingVersionId === r.id ? (
                           <input
                             autoFocus
@@ -554,11 +554,11 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
                             {r.name && <span className="version-name">{r.name}</span>}
                           </span>
                         )}
-                        <span className="map-row-meta">
+                        <span className="dialog-row-meta">
                           <span className="version-source">{r.source}</span> · {when(r.savedAt)}
                         </span>
                       </div>
-                      <div className="map-row-actions">
+                      <div className="dialog-row-actions">
                         <StarToggle
                           starred={r.starred ?? false}
                           label={`${r.starred ? 'Unstar' : 'Star'} version ${r.version}`}

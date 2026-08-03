@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCustomPalette, makeCustomPaletteId } from './customPalette';
+import { parseCustomPalette, serializeCustomPalette } from './customPalette';
 
 const FRRF = JSON.stringify({
   name: 'frrf',
@@ -73,19 +73,38 @@ describe('parseCustomPalette', () => {
   });
 });
 
-describe('makeCustomPaletteId', () => {
-  it('slugifies the name into a custom: id', () => {
-    expect(makeCustomPaletteId('My Palette!', new Set())).toBe('custom:my-palette');
+describe('serializeCustomPalette', () => {
+  it('writes the format the parser reads', () => {
+    const palette = {
+      name: 'frrf',
+      swatches: [
+        { name: '1', color: '#c1272d' },
+        { name: 'Red', color: '#0061a8' },
+      ],
+    };
+    expect(JSON.parse(serializeCustomPalette(palette))).toEqual({
+      name: 'frrf',
+      colors: [
+        { line: '1', human: '#c1272d' },
+        { line: 'Red', human: '#0061a8' },
+      ],
+    });
   });
 
-  it('falls back to custom:palette when the slug would be empty', () => {
-    expect(makeCustomPaletteId('!!!', new Set())).toBe('custom:palette');
+  it('round-trips through the parser', () => {
+    const palette = { name: 'x', swatches: [{ name: 'Red', color: '#aabbcc' }] };
+    const r = parseCustomPalette(serializeCustomPalette(palette));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect({ name: r.name, swatches: r.swatches }).toEqual(palette);
   });
 
-  it('suffixes to avoid collisions with existing ids', () => {
-    expect(makeCustomPaletteId('frrf', new Set(['custom:frrf']))).toBe('custom:frrf-2');
-    expect(makeCustomPaletteId('frrf', new Set(['custom:frrf', 'custom:frrf-2']))).toBe(
-      'custom:frrf-3',
-    );
+  // A built-in's swatches carry upper-case hex; the parser lowercases, so an
+  // exported built-in has to come back the same shape it went out as.
+  it('lower-cases so an exported built-in round-trips unchanged', () => {
+    const palette = { name: 'BART', swatches: [{ name: 'Yellow Line', color: '#FFE800' }] };
+    const r = parseCustomPalette(serializeCustomPalette(palette));
+    expect(r.ok && r.swatches).toEqual([{ name: 'Yellow Line', color: '#ffe800' }]);
+    expect(JSON.parse(serializeCustomPalette(palette)).colors[0].human).toBe('#ffe800');
   });
 });

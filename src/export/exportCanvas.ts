@@ -37,9 +37,10 @@ export function getCanvasSvg(): SVGSVGElement | null {
 }
 
 // Strip the characters Windows/macOS/Linux collectively reject in filenames
-// (< > : " / \ | ? *) and trim surrounding whitespace, so a map name can be
-// folded into a download basename safely.
-function sanitizeBasename(name: string): string {
+// (< > : " / \ | ? *) and trim surrounding whitespace, so a user-supplied name
+// can be folded into a download basename safely. Callers supply their own
+// fallback for the all-illegal case, which this returns empty.
+export function sanitizeBasename(name: string): string {
   return name.replace(/[<>:"/\\|?*]/g, '').trim();
 }
 

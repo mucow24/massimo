@@ -11412,8 +11412,56 @@
       "station": "default-station",
       "stopDot": "stop-filled-black"
     },
-    "activePalettes": [
-      "mta"
+    "palettes": [
+      {
+        "name": "MTA",
+        "swatches": [
+          {
+            "name": "Blue (A·C·E)",
+            "color": "#0039A6"
+          },
+          {
+            "name": "Orange (B·D·F·M)",
+            "color": "#FF6319"
+          },
+          {
+            "name": "Lime (G)",
+            "color": "#6CBE45"
+          },
+          {
+            "name": "Gray (L)",
+            "color": "#A7A9AC"
+          },
+          {
+            "name": "Brown (J·Z)",
+            "color": "#996633"
+          },
+          {
+            "name": "Yellow (N·Q·R·W)",
+            "color": "#FCCC0A"
+          },
+          {
+            "name": "Red (1·2·3)",
+            "color": "#EE352E"
+          },
+          {
+            "name": "Green (4·5·6)",
+            "color": "#00933C"
+          },
+          {
+            "name": "Purple (7)",
+            "color": "#B933AD"
+          },
+          {
+            "name": "Turquoise (T)",
+            "color": "#00ADD0"
+          },
+          {
+            "name": "Dark Gray (S)",
+            "color": "#808183"
+          }
+        ]
+      }
     ],
     "darkMode": false
   }

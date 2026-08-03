@@ -1,71 +1,42 @@
 import { describe, it, expect } from 'vitest';
 import {
   PALETTES,
-  activePalettes,
+  BUILTIN_PALETTE_NAMES,
+  LEGACY_BUILTIN_IDS,
   cyclingColors,
   customLineColors,
-  normalizePaletteIds,
+  libraryPalettes,
   type Palette,
 } from './palettes';
 
+const builtin = (name: string): Palette => {
+  const p = PALETTES.find((x) => x.name === name);
+  if (!p) throw new Error(`no built-in palette named ${name}`);
+  return p;
+};
+
+const MTA = builtin('MTA');
+const BART = builtin('BART');
+
+const FRRF: Palette = {
+  name: 'frrf',
+  swatches: [
+    { name: '1', color: '#c1272d' },
+    { name: '2', color: '#0061a8' },
+  ],
+};
+
 describe('PALETTES catalog', () => {
-  it('lists palettes in alphabetical order, grouped by continent (asia → europe → na)', () => {
-    expect(PALETTES.map((p) => p.id)).toEqual([
-      // Asia, alphabetical
-      'beijing-subway',
-      'mtr',
-      'shanghai-metro',
-      'tokyo-subway',
-      // Europe, alphabetical
-      'berlin-ubahn',
-      'paris-ratp',
-      'tfl',
-      // North America, alphabetical
-      'bart',
-      'caltrain',
-      'cta',
-      'la-metro',
-      'mbta',
-      'mta',
-      'muni',
-      'wmata',
-    ]);
-  });
-
-  it('every continent group is internally sorted by display name (case-insensitive)', () => {
-    const byContinent: Record<string, string[]> = {};
-    for (const p of PALETTES) {
-      // Built-in catalog palettes always declare a continent (only custom
-      // palettes omit it).
-      (byContinent[p.continent!] ??= []).push(p.name);
-    }
-    for (const names of Object.values(byContinent)) {
-      const sorted = [...names].sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
-      expect(names).toEqual(sorted);
-    }
-  });
-
-  it('continent groups appear in alphabetical continent order, contiguously', () => {
-    const continents = PALETTES.map((p) => p.continent!);
-    // Each continent appears in one contiguous block.
-    const seen = new Set<string>();
-    let prev: string | null = null;
-    for (const c of continents) {
-      if (c !== prev) {
-        expect(seen.has(c)).toBe(false);
-        seen.add(c);
-        prev = c;
-      }
-    }
-    // And the block order is alphabetical.
-    expect([...seen]).toEqual([...seen].sort());
+  // Names are the library's key — a duplicate would make one of the two
+  // unreachable, and `BUILTIN_PALETTE_NAMES` would silently under-count.
+  it('every built-in name is distinct', () => {
+    expect(BUILTIN_PALETTE_NAMES.size).toBe(PALETTES.length);
   });
 
   it('preserves the existing per-palette swatch counts', () => {
-    const byId = Object.fromEntries(PALETTES.map((p) => [p.id, p]));
-    expect(byId.mta.swatches).toHaveLength(11);
-    expect(byId.bart.swatches).toHaveLength(5);
-    expect(byId.caltrain.swatches).toHaveLength(3);
+    expect(MTA.swatches).toHaveLength(11);
+    expect(BART.swatches).toHaveLength(5);
+    expect(builtin('Caltrain').swatches).toHaveLength(3);
   });
 
   it('every swatch has a non-empty name and a 6-digit hex color', () => {
@@ -76,134 +47,111 @@ describe('PALETTES catalog', () => {
       }
     }
   });
+
+  it('every retired id names a palette that still exists', () => {
+    for (const name of Object.values(LEGACY_BUILTIN_IDS)) {
+      expect(BUILTIN_PALETTE_NAMES.has(name)).toBe(true);
+    }
+    expect(Object.keys(LEGACY_BUILTIN_IDS)).toHaveLength(PALETTES.length);
+  });
+});
+
+describe('libraryPalettes', () => {
+  it('lists built-ins and imports together, by name', () => {
+    const rows = libraryPalettes([FRRF], [], 'name');
+    expect(rows).toHaveLength(PALETTES.length + 1);
+    const names = rows.map((p) => p.name);
+    expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+    expect(names).toContain('frrf');
+  });
+
+  it('marks built-ins, and leaves imports unmarked', () => {
+    const rows = libraryPalettes([FRRF], [], 'name');
+    expect(rows.find((p) => p.name === 'MTA')?.builtin).toBe(true);
+    expect(rows.find((p) => p.name === 'frrf')?.builtin).toBeUndefined();
+  });
+
+  it('marks starred rows, built-in or imported', () => {
+    const rows = libraryPalettes([FRRF], ['MTA', 'frrf'], 'name');
+    expect(rows.find((p) => p.name === 'MTA')?.starred).toBe(true);
+    expect(rows.find((p) => p.name === 'frrf')?.starred).toBe(true);
+    expect(rows.find((p) => p.name === 'BART')?.starred).toBeUndefined();
+  });
+
+  // Case-insensitively, as an A–Z list reads: lowercase `frrf` sits between
+  // BART and MTA rather than after both.
+  it('the starred sort shows ONLY starred rows, by name', () => {
+    const rows = libraryPalettes([FRRF], ['MTA', 'frrf', 'BART'], 'starred');
+    expect(rows.map((p) => p.name)).toEqual(['BART', 'frrf', 'MTA']);
+  });
+
+  it('the starred sort over nothing starred is empty', () => {
+    expect(libraryPalettes([FRRF], [], 'starred')).toEqual([]);
+  });
+
+  it('a star on a name the library no longer holds lists nothing', () => {
+    expect(libraryPalettes([], ['deleted'], 'starred')).toEqual([]);
+  });
 });
 
 describe('cyclingColors', () => {
-  it('returns an empty list for no active palettes', () => {
-    expect(cyclingColors([], [])).toEqual([]);
+  it('returns an empty list for a map with no palettes', () => {
+    expect(cyclingColors([])).toEqual([]);
   });
 
-  it('returns all 11 MTA colors when only MTA is active', () => {
-    const colors = cyclingColors(['mta'], []);
+  it('returns all 11 MTA colors for a map holding only MTA', () => {
+    const colors = cyclingColors([MTA]);
     expect(colors).toHaveLength(11);
     expect(colors[0]).toBe('#0039A6'); // MTA Blue, the historical first entry
   });
 
-  it('concatenates active palettes in PALETTES declaration order, not input order', () => {
-    // BART comes before MTA in the new ordering (alphabetical within
-    // North America), so a [mta, bart] input still produces a [bart..., mta...]
-    // output.
-    const a = cyclingColors(['mta', 'bart'], []);
-    const b = cyclingColors(['bart', 'mta'], []);
-    expect(a).toEqual(b);
-    expect(a).toHaveLength(16); // 11 MTA + 5 BART
-    expect(a.slice(0, 5)).toEqual(cyclingColors(['bart'], []));
-    expect(a.slice(5)).toEqual(cyclingColors(['mta'], []));
+  it('concatenates in the MAP’s palette order', () => {
+    expect(cyclingColors([BART, MTA])).toEqual([...cyclingColors([BART]), ...cyclingColors([MTA])]);
+    expect(cyclingColors([MTA, BART])).toEqual([...cyclingColors([MTA]), ...cyclingColors([BART])]);
   });
 
-  it('drops unknown ids silently', () => {
-    expect(cyclingColors(['mta', 'nope'], [])).toEqual(cyclingColors(['mta'], []));
-  });
-});
-
-describe('activePalettes', () => {
-  it('returns palettes in PALETTES declaration order regardless of input order', () => {
-    // BART comes before MTA in N. America (alphabetical).
-    expect(activePalettes(['mta', 'bart'], []).map((p) => p.id)).toEqual(['bart', 'mta']);
-  });
-
-  it('drops unknown ids silently', () => {
-    expect(activePalettes(['unknown'], [])).toEqual([]);
-  });
-});
-
-describe('custom palettes', () => {
-  const CUSTOM: Palette = {
-    id: 'custom:frrf',
-    name: 'frrf',
-    swatches: [
-      { name: '1', color: '#c1272d' },
-      { name: '2', color: '#0061a8' },
-    ],
-  };
-
-  it('activePalettes includes an active custom palette, before built-ins', () => {
-    expect(activePalettes(['mta', 'custom:frrf'], [CUSTOM]).map((p) => p.id)).toEqual([
-      'custom:frrf',
-      'mta',
-    ]);
-  });
-
-  it('activePalettes ignores a custom palette that is not active', () => {
-    expect(activePalettes(['mta'], [CUSTOM]).map((p) => p.id)).toEqual(['mta']);
-  });
-
-  it('activePalettes drops ids that are neither built-in nor a known custom palette', () => {
-    expect(activePalettes(['custom:frrf', 'nope'], [CUSTOM]).map((p) => p.id)).toEqual([
-      'custom:frrf',
-    ]);
-  });
-
-  it('cyclingColors puts the custom palette colors first, then built-ins', () => {
-    const colors = cyclingColors(['mta', 'custom:frrf'], [CUSTOM]);
+  it('includes an imported palette’s colors like any other', () => {
+    const colors = cyclingColors([FRRF, MTA]);
     expect(colors.slice(0, 2)).toEqual(['#c1272d', '#0061a8']);
     expect(colors).toHaveLength(2 + 11);
-  });
-
-  it('normalizePaletteIds keeps active custom ids (custom-first) and drops truly-unknown ones', () => {
-    expect(normalizePaletteIds(['mta', 'custom:frrf', 'nope'], [CUSTOM])).toEqual([
-      'custom:frrf',
-      'mta',
-    ]);
-  });
-
-  it('normalizePaletteIds with no custom arg drops custom ids (built-in-only behavior)', () => {
-    expect(normalizePaletteIds(['mta', 'custom:frrf'])).toEqual(['mta']);
   });
 });
 
 describe('customLineColors', () => {
-  // Only MTA active (11 swatches, incl. Blue #0039A6).
-  const active = activePalettes(['mta'], []);
+  const inMap = [MTA]; // 11 swatches, incl. Blue #0039A6
 
   it('returns [] when there are no line colors', () => {
-    expect(customLineColors([], active)).toEqual([]);
+    expect(customLineColors([], inMap)).toEqual([]);
   });
 
-  it('excludes colors that are a swatch in an active palette', () => {
-    expect(customLineColors(['#0039A6'], active)).toEqual([]); // MTA Blue is active
+  it('excludes colors that are a swatch in one of the map’s palettes', () => {
+    expect(customLineColors(['#0039A6'], inMap)).toEqual([]);
   });
 
-  it('matches active-palette colors case-insensitively', () => {
-    expect(customLineColors(['#0039a6'], active)).toEqual([]); // lowercase MTA Blue still excluded
+  it('matches the map’s palette colors case-insensitively', () => {
+    expect(customLineColors(['#0039a6'], inMap)).toEqual([]);
   });
 
-  it('keeps colors not present in any active palette', () => {
-    expect(customLineColors(['#123456'], active)).toEqual(['#123456']);
+  it('keeps colors not present in any of the map’s palettes', () => {
+    expect(customLineColors(['#123456'], inMap)).toEqual(['#123456']);
   });
 
   it('dedupes, keeping first-seen order and the original spelling', () => {
-    expect(customLineColors(['#123456', '#ABCDEF', '#123456', '#abcdef'], active)).toEqual([
+    expect(customLineColors(['#123456', '#ABCDEF', '#123456', '#abcdef'], inMap)).toEqual([
       '#123456',
       '#ABCDEF',
     ]);
   });
 
-  it('is scoped to ACTIVE palettes — a known color from an inactive palette counts as custom', () => {
-    // #FFE800 is BART's Yellow Line, but with only MTA active it is not a
-    // visible swatch, so it reads as custom.
-    expect(customLineColors(['#FFE800'], active)).toEqual(['#FFE800']);
+  it('is scoped to the map — a color from a palette the map lacks reads as custom', () => {
+    // #FFE800 is BART's Yellow Line, but a map holding only MTA never shows it
+    // as a swatch.
+    expect(customLineColors(['#FFE800'], inMap)).toEqual(['#FFE800']);
   });
 
-  it('excludes colors from an active imported (custom) palette', () => {
-    const CUSTOM: Palette = {
-      id: 'custom:frrf',
-      name: 'frrf',
-      swatches: [{ name: '1', color: '#c1272d' }],
-    };
-    const withCustom = activePalettes(['mta', 'custom:frrf'], [CUSTOM]);
-    expect(customLineColors(['#c1272d'], withCustom)).toEqual([]);
-    // …but with frrf inactive, that same color is custom again.
-    expect(customLineColors(['#c1272d'], active)).toEqual(['#c1272d']);
+  it('excludes colors from an imported palette the map holds', () => {
+    expect(customLineColors(['#c1272d'], [MTA, FRRF])).toEqual([]);
+    // …and with frrf removed from the map, that color is custom again.
+    expect(customLineColors(['#c1272d'], inMap)).toEqual(['#c1272d']);
   });
 });
