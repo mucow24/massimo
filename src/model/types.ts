@@ -473,10 +473,12 @@ export interface Line {
   // hashes it (see regionGeometrySig).
   endStyle?: LineEndStyle;
   // Per-END overrides of `endStyle`, keyed by station id. INVARIANT: every key
-  // is a station this line ENDS at — which is geometric, not a matter of degree
-  // (see `lineEndsAt`): branching off an end keeps the pin, since the line still
-  // ends there, while appending past it or closing a loop revokes it (pruned by
-  // pruneOrphanLineOverrides on every topology change, and by the file loader).
+  // is a station this line still STOPS at (pruned by pruneOrphanLineOverrides
+  // and by the file loader when the stop goes). Deliberately weaker than the
+  // rule that decides where a pin PAINTS — that one is geometric (`lineEndsAt`)
+  // and moves under a station drag, which no prune sees, so scoping the stored
+  // key to it would let a save/reload eat what the user set. A pin whose stop is
+  // not currently an end sits inert and revives when it is one again.
   // Lives on the LINE rather than the StopCell
   // precisely so it prunes alongside `segmentStyles`: both are per-topology
   // overrides with the same lifetime. NOT a covered style field — a line style

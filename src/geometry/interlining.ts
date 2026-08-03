@@ -390,6 +390,15 @@ export function travelDirWorld(cell: StopCell, station: Station, worldHint: Vec2
   return rotateBy(travelDirLocal(cell.orientation, localHint), station.rotation);
 }
 
+// Two outward tangents count as the SAME heading. Octolinear bands out of a
+// stop run along its travel axis, so their real dot product is +1 or −1 and
+// this is a guard against the last bit — but an ARC band's centerline is a
+// sampled polyline whose first chord is a hair off the true tangent, so an arc
+// leaving alongside a straight can land anywhere just short of 1. Those fall
+// through to "not an end", which is what they got before any of this:
+// deliberately conservative, and the reason not to loosen the constant.
+const SAME_HEADING_DOT = 1 - 1e-9;
+
 /**
  * A band's canonical heading (canonFrom → canonTo) at ONE of its endpoints: the
  * stop's travel axis, sign-flipped to run ALONG the corridor rather than back
@@ -412,9 +421,15 @@ function canonTravelDir(cell: StopCell, station: Station, canon: Vec2, hint: Vec
  *
  * The doc-side twin of {@link StopMarkerSpec.outward}, which the renderer reads
  * off built band centerlines. This one asks before any band exists, which is
- * what the editors and the file loader need: it decides where a per-station end
- * pin is meaningful (`stationEndStyles`). Both walk `canonTravelDir`, and
- * `interlining.lineEnds.test.ts` demands the two agree stop for stop.
+ * what the EDITORS need: it decides where offering a per-station end pin means
+ * anything (`stationEndStyles`). Both walk `canonTravelDir`, and
+ * `interlining.lineEnds.test.ts` demands the two agree stop for stop — arcs
+ * included, whose sampled centerline is nobody's travel axis.
+ *
+ * Not for judging STORED data. A pin outlives the geometry that made it
+ * meaningful, on purpose: this answer moves under a station drag, and a prune
+ * keyed off it would delete what the user set the last time the stop was an end
+ * (see `pruneOrphanLineOverrides`).
  *
  * An edge that renders NO band is skipped, exactly as the renderer skips one: a
  * missing neighbour, a neighbour with no stop of this line, or one sitting on
@@ -1021,15 +1036,6 @@ export function buildStopMarkers(
   // identity (see the reuse layer above).
   return reuseMarkerSpecs(markers);
 }
-
-// Two outward tangents count as the SAME heading. Octolinear bands out of a
-// stop run along its travel axis, so their real dot product is +1 or −1 and
-// this is a guard against the last bit — but an ARC band's centerline is a
-// sampled polyline whose first chord is a hair off the true tangent, so an
-// arc leaving alongside a straight can land anywhere just short of 1. Those
-// fall through to "not an end", which is what they got before any of this:
-// deliberately conservative, and the reason not to loosen the constant.
-const SAME_HEADING_DOT = 1 - 1e-9;
 
 // Unit vector pointing outward from `stationId` along the bands' actual
 // tangent there, iff the line's ink ENDS at this station — every band incident

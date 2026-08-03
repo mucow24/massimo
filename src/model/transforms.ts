@@ -1568,14 +1568,11 @@ export function deleteStation(doc: MapDoc, id: StationId): MapDoc {
     // Drop the station from the line (healing a degree-2 gap so the line stays
     // connected), then prune any segment style/layer override whose pair-key is
     // no longer an edge — same contract as removeStationFromLine / deleteLine.
-    lines[lid] = pruneOrphanLineOverrides(
-      {
-        ...ln,
-        stations: ln.stations.filter((x) => x !== id),
-        edges: edgesAfterRemoveStation(ln.edges, id),
-      },
-      rest,
-    );
+    lines[lid] = pruneOrphanLineOverrides({
+      ...ln,
+      stations: ln.stations.filter((x) => x !== id),
+      edges: edgesAfterRemoveStation(ln.edges, id),
+    });
   }
   // Cascade-delete transfers that referenced the removed station.
   // One predicate covers both station-keyed end shapes: the station's stops AND
@@ -2307,14 +2304,11 @@ export function removeStationFromLine(doc: MapDoc, lineId: LineId, idx: number):
       (e) => isStopEnd(e) && e.stationId === removedStationId && e.lineId === lineId,
     );
   }
-  const updatedLine = pruneOrphanLineOverrides(
-    {
-      ...ln,
-      stations: newStations,
-      edges: edgesAfterRemoveStation(ln.edges, removedStationId),
-    },
-    stations,
-  );
+  const updatedLine = pruneOrphanLineOverrides({
+    ...ln,
+    stations: newStations,
+    edges: edgesAfterRemoveStation(ln.edges, removedStationId),
+  });
   return pruneOrphanLineTags({
     ...doc,
     lines: { ...doc.lines, [lineId]: updatedLine },
@@ -2342,7 +2336,7 @@ export function toggleEdgeOnLine(doc: MapDoc, lineId: LineId, a: StationId, b: S
   const removing = lineHasEdge(ln, a, b);
   const nextEdges = removing ? removeEdge(ln.edges, a, b) : addEdge(ln.edges, a, b);
   if (nextEdges === ln.edges) return doc;
-  const updatedLine = pruneOrphanLineOverrides({ ...ln, edges: nextEdges }, doc.stations);
+  const updatedLine = pruneOrphanLineOverrides({ ...ln, edges: nextEdges });
   let out = pruneOrphanLineTags({ ...doc, lines: { ...doc.lines, [lineId]: updatedLine } });
   if (removing) {
     for (const endpoint of [a, b]) {
@@ -2397,7 +2391,7 @@ export function connectStationsOnLine(
     // override goes with it.
     lines: {
       ...doc.lines,
-      [lineId]: pruneOrphanLineOverrides({ ...ln, stations: newStations, edges }, stationsAfter),
+      [lineId]: pruneOrphanLineOverrides({ ...ln, stations: newStations, edges }),
     },
     // Only a station gaining its first line is auto-oriented; anything already
     // served keeps the rotation the user gave it. Circle-bound stations skip
@@ -2455,10 +2449,7 @@ export function spliceStationIntoEdge(
   let edges = removeEdge(ln.edges, fromStationId, toStationId);
   edges = addEdge(edges, fromStationId, stationId);
   edges = addEdge(edges, stationId, toStationId);
-  const updatedLine = pruneOrphanLineOverrides(
-    { ...ln, stations: newStations, edges },
-    stationsAfter,
-  );
+  const updatedLine = pruneOrphanLineOverrides({ ...ln, stations: newStations, edges });
   return pruneOrphanLineTags({
     ...doc,
     lines: { ...doc.lines, [lineId]: updatedLine },
@@ -3820,19 +3811,25 @@ function pruneOrphanLineTags(doc: MapDoc): MapDoc {
   return changed ? { ...doc, lineTags: next } : doc;
 }
 
-// Drop the line's TOPOLOGY-SCOPED overrides that its current edge set no longer
+// Drop the line's TOPOLOGY-SCOPED overrides that its current shape no longer
 // admits. Two maps qualify, and they share this one choke point because they
 // share a lifetime — an override outlives the thing it overrides for exactly as
 // long as nobody looks:
 //
 //   segmentStyles     — keyed by pair-key; valid while that pair is an edge.
-//   stationEndStyles  — keyed by station; valid while that station is an END
-//                       (degree 1). Appending past a terminus, closing a loop,
-//                       branching at it, or dropping the stop all revoke it.
+//   stationEndStyles  — keyed by station; valid while that station is still ON
+//                       the line. Removing the stop, or the station, revokes it.
+//
+// A pin is NOT judged on whether the line currently ends there. That is
+// geometric (`lineEndsAt`), and geometry moves under a station drag, a rotation
+// or an orientation cycle — none of which come through here, so a pin pruned on
+// endedness would be one the next such edit could no longer restore. It sits
+// inert instead: nothing paints an end style where the line does not end (see
+// `buildStopMarkers`), and it comes back the moment the stop does.
 //
 // Returns the input line unchanged when nothing needed dropping (the
 // reference-on-no-op contract undo grouping relies on).
-function pruneOrphanLineOverrides(line: Line, stations: Record<StationId, Station>): Line {
+function pruneOrphanLineOverrides(line: Line): Line {
   let next = line;
   const styles = next.segmentStyles;
   if (styles) {
@@ -3848,10 +3845,11 @@ function pruneOrphanLineOverrides(line: Line, stations: Record<StationId, Statio
   }
   const ends = next.stationEndStyles;
   if (ends) {
+    const members = new Set<StationId>(next.stations);
     const filtered: Record<StationId, LineEndStyle> = {};
     let changed = false;
     for (const stationId of Object.keys(ends)) {
-      if (lineEndsAt(stations, next, stationId)) filtered[stationId] = ends[stationId];
+      if (members.has(stationId)) filtered[stationId] = ends[stationId];
       else changed = true;
     }
     if (changed) next = withStationEndStyles(next, filtered);

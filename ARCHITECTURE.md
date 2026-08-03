@@ -131,7 +131,7 @@ src/
     lineOrder.ts                # z-order reconcile (lineOrder = the default stacking)
     lineNaming.ts               # nameForIndex/pickNextLineName + lineDisplayName (the ONE
                                 #   user-facing name for a line, shared by every surface)
-    lineTopology.ts             # the single owner of a Line's edge-set adjacency (degree/neighbours/incidence, isLineTerminus, add/remove edge, edgesFromStations, shortestPathOnLine)
+    lineTopology.ts             # the single owner of a Line's edge-set adjacency (degree/neighbours/incidence, add/remove edge, edgesFromStations, shortestPathOnLine); where a line ENDS is NOT here, it is geometric — see lineEndsAt
     appendGestures.ts           # pure Edit Stops gesture decisions ((line, cursor, click/delete target) → next doc edit); no React/store, so state/ and canvas/ both consume it
     matching.ts pathSelect.ts   # interlining-group matching + shortest-path selection
     autoOrient.ts               # rotate a just-added station to the line tangent (flipping 180° when the tangent would render its label upside down — same axis, right-side-up text)
@@ -753,15 +753,17 @@ All remaining fields optional and **never stored at default**:
   it does change the marker's painted FOOTPRINT, so `regionGeometrySig` hashes it and the store
   actions reconcile regions. Covered by line styles. See [lineEnd.ts](src/model/lineEnd.ts).
 - `stationEndStyles?: Record<StationId, LineEndStyle>` — per-END overrides of `endStyle`, edited in
-  the station editor's stop row. **Valid keys are exactly the stations this line ENDS at**
-  (`lineEndsAt` — see Where a line ENDS), the end-style twin of `segmentStyles`' edge rule:
-  appending past an end, closing a loop or dropping the stop revoke the pin, while branching off an
-  end keeps it, since the line still ends there. Both maps prune in `pruneOrphanLineOverrides`
-  (transforms); on load the segment half rides with them while the end pins wait for
-  `sanitizeLineEnds`, which cannot run until the stations are cleaned and snapped. A pin equal to
-  the line's own `endStyle` is redundant and never stored. **Not** covered by line styles: a style
-  carries the line's own end, never its per-station pins — the same split the per-stop dot
-  overrides have.
+  the station editor's stop row, and offered only where the line ENDS (`lineEndsAt` — see Where a
+  line ENDS). **Valid keys are the stations this line still stops at** — LIVENESS, deliberately
+  weaker than the rule that decides where a pin paints. That rule is geometric, so it moves under a
+  station drag, a rotation or an orientation cycle, none of which pass through a prune; scoping the
+  stored key to it would let a save/reload delete what the user set while the end was momentarily
+  elsewhere. A pin whose station is no longer an end therefore sits INERT — nothing paints an end
+  style where the line does not end — and revives when the stop does. Removing the stop or the
+  station revokes it, in `pruneOrphanLineOverrides` (transforms) / `sanitizeLineEnds` (load),
+  alongside `segmentStyles`' edge rule. A pin equal to the line's own `endStyle` is redundant and
+  never stored. **Not** covered by line styles: a style carries the line's own end, never its
+  per-station pins — the same split the per-stop dot overrides have.
 - `styleId?` — live link to a StyleDef of kind `'line'` (covers the style fields above, not
   identity/topology).
 
@@ -2522,12 +2524,19 @@ corner, a fork that splits both ways.
 Two predicates answer that question, on purpose. `endOutwardFromBands` reads it off built band
 CENTERLINES, which is what the paint needs (an end cap must sit on the path actually drawn, fillets
 and interlining offsets included). `lineEndsAt` answers it from the DOC — before any band exists —
-which is what the editors, the transforms and the file loader need to know where a
-`stationEndStyles` pin is meaningful. They cannot drift: both take the heading from
-`canonTravelDir`, the same vector `buildBands` hands the router, and a test walks a set of shapes
-demanding they agree stop for stop. One case is exempt: a band the router gave up on paints a
-straight from station to station regardless of travel axis, so at such a stop the doc-side answer
-may differ and the pin it offers is inert — the ⚠ over that band is the fix being asked for.
+which is what the EDITORS need to know where offering a `stationEndStyles` pin means anything. They
+cannot drift: both take the heading from `canonTravelDir`, the same vector `buildBands` hands the
+router, and a test walks five shapes demanding they agree stop for stop, arcs included (an arc's
+sampled centerline is nobody's travel axis, so it is the family most likely to come apart). One
+case is exempt: a band the router gave up on paints a straight from station to station regardless
+of travel axis, so at such a stop the doc-side answer may differ and the pin it offers is inert —
+the ⚠ over that band is the fix being asked for.
+
+Neither predicate is allowed to judge STORED data. Where a line ends moves under a station drag, a
+rotation or an orientation cycle, and none of those pass through a prune — so a `stationEndStyles`
+key scoped to endedness would be one a save/reload deletes behind the user's back. The stored key
+is scoped to LIVENESS instead (is this station still on the line), and a pin whose stop is not
+currently an end sits inert rather than dying. See `Line.stationEndStyles`.
 
 **The marker's outward half at an end IS the line's painted end** — the stripe itself stops
 dead at the stop center (butt cap), so `spec.end` reshapes exactly that half, and the three ends
@@ -2942,10 +2951,11 @@ same three additions.
   [inspector/StopRows.tsx](src/components/inspector/StopRows.tsx): service badge + always-enabled
   shape picker + dot size + a per-end **line-end** picker + a world-true orientation cycle
   button per stop. The end slot is the one conditional column — only a stop the line ENDS at can
-  pin an end, so an interior row holds it open with a placeholder rather than closing up and breaking the
-  column alignment down the list; it shows the RESOLVED end, so picking the line's own value clears
-  the pin instead of storing a redundant one, and it is deliberately NOT mirror-dispatched (an end
-  belongs to this line's topology here, not to a look worth spreading across matching stations).
+  pin an end, so an interior row holds it open with a placeholder rather than closing up and
+  breaking the column alignment down the list; it shows the RESOLVED end, so picking the line's own
+  value clears the pin instead of storing a redundant one, and it is deliberately NOT
+  mirror-dispatched (an end belongs to this line's shape here, not to a look worth spreading across
+  matching stations).
   Hover cross-highlights the dot via `hoveredLineStop` — on NATIVE mouseenter/mouseleave, not
   React's synthetic pair, because the end picker's panel portals out to `.app` and so counts as
   inside the row in the REACT tree: the pointer walking into it would re-enter rather than leave,
@@ -3169,7 +3179,8 @@ downstream luminance / `rgba()` math.
   so `JSON.stringify` equality is exact for app-written docs.
 - **Referential integrity after every action**: `line.stations[i] ∈ stations`; `stop.lineId ∈
 lines`; every `segmentStyles` key is a real, non-default adjacency; every `stationEndStyles`
-  key is a station its line still ENDS at (and never repeats the line's own end); every
+  key is a station its line still STOPS at (liveness, not endedness — see
+  `Line.stationEndStyles`; it never repeats the line's own end either); every
   tag/transfer endpoint and `routeBullet.lineId` resolves live-or-null. Maintained by cascade
   prunes after structural edits (`deleteStation`/`deleteLine`/`removeStationFromLine`/…).
 - **`LineTag.fromStationId < toStationId`** always (canonical/alphabetic, = `pairKeyOf`).

@@ -1,7 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { buildBands, buildStopMarkers, lineEndsAt } from './interlining';
-import { makeDoc, makeLine, stationWithStop } from '../test/fixtures';
-import type { MapDoc } from '../model/types';
+import {
+  makeDoc,
+  makeLine,
+  makeLineCircle,
+  makeStation,
+  makeStop,
+  stationWithStop,
+} from '../test/fixtures';
+import type { MapDoc, Rotation } from '../model/types';
 
 // `lineEndsAt` answers "does this line's ink END here" from the DOC alone, for
 // the editors and the file loader — the same question `buildStopMarkers` asks
@@ -54,6 +61,32 @@ const through = (): MapDoc =>
         edges: ['mid|west', 'mid|southeast'],
       }),
     ],
+  });
+
+// An ARC family: three stations bound to a line circle, riding it. Their bands
+// are circular arcs, so the painted centerline is a sampled polyline whose
+// first chord is NOT the travel axis this rule reads — the one band family
+// where the two answers could come apart on healthy geometry. `east` and
+// `south` are the ends; `southeast` between them is a through stop.
+const RING = { x: 100, y: 100, r: 70 };
+const onRing = (id: string, theta: number, rotation: Rotation) =>
+  makeStation({
+    id,
+    x: RING.x + RING.r * Math.cos(theta),
+    y: RING.y + RING.r * Math.sin(theta),
+    rotation,
+    circleId: 'c1',
+    stops: [makeStop('L1', { viaCircle: true })],
+  });
+const arcs = (): MapDoc =>
+  makeDoc({
+    stations: [
+      onRing('east', 0, 0),
+      onRing('southeast', Math.PI / 4, 1),
+      onRing('south', Math.PI / 2, 2),
+    ],
+    lines: [makeLine({ id: 'L1', stations: ['east', 'southeast', 'south'] })],
+    lineCircles: [makeLineCircle({ id: 'c1', x: RING.x, y: RING.y, radius: RING.r })],
   });
 
 // A triangle whose apex is a hairpin — both corridors leave it the same way.
@@ -113,6 +146,19 @@ describe('lineEndsAt', () => {
     expect(endsAt(doc, 'side')).toBe(true);
   });
 
+  it('ends a ring the same way, though an arc leaves along a chord', () => {
+    const doc = arcs();
+    // Precondition: these really are ARCS. A straight band would make the
+    // agreement below the same one the octolinear shapes already prove.
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder, doc.lineCircles);
+    expect(bands).toHaveLength(2);
+    for (const b of bands) expect(b.centerline.length).toBeGreaterThan(2);
+    const ends = (id: string) => lineEndsAt(doc.stations, doc.lines.L1, id);
+    expect(ends('east')).toBe(true);
+    expect(ends('south')).toBe(true);
+    expect(ends('southeast')).toBe(false);
+  });
+
   it('ends nothing with no edge to end along', () => {
     const lone = makeDoc({
       stations: [stationWithStop('A', 'L1', { x: 0, y: 0 })],
@@ -140,12 +186,19 @@ describe('lineEndsAt', () => {
       chain: chain(),
       branchEnd: branchEnd(),
       through: through(),
+      arcs: arcs(),
       cuspLoop: cuspLoop(),
     })) {
-      const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+      const bands = buildBands(doc.stations, doc.lines, doc.lineOrder, doc.lineCircles);
       const unroutable = new Set<string>();
       for (const b of bands) if (b.warning) unroutable.add(b.fromId).add(b.toId);
-      const markers = buildStopMarkers(doc.stations, doc.lines, doc.lineOrder, bands);
+      const markers = buildStopMarkers(
+        doc.stations,
+        doc.lines,
+        doc.lineOrder,
+        bands,
+        doc.lineCircles,
+      );
       expect(markers.length, `${name} built no markers`).toBeGreaterThan(0);
       for (const m of markers) {
         if (unroutable.has(m.stationId)) continue;
@@ -157,6 +210,6 @@ describe('lineEndsAt', () => {
       }
     }
     // Not vacuous: every shape above contributed stops to the comparison.
-    expect(checked).toBe(10);
+    expect(checked).toBe(13);
   });
 });

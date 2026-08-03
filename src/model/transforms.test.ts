@@ -2251,9 +2251,11 @@ describe('setStationEndStyle', () => {
   });
 });
 
-// A per-terminus end override is only meaningful while that station IS an end.
-// The moment topology says otherwise the key is dropped — the same lifetime
-// `segmentStyles` keys have, which is why both prune together.
+// A per-station end override PAINTS only while the line ends at that station,
+// which is geometric — so the stored key is scoped to something a prune can
+// actually keep up with: liveness on the line. It survives, inert, whenever the
+// geometry moves the end elsewhere, and dies with the stop itself. `segmentStyles`
+// keys prune alongside it against the edge set, which topology edits do own.
 describe('line end overrides — topology cascade', () => {
   // a—b—c straight down, with `d` off to the south-east: appending c|d extends
   // the line past c, while a|d BRANCHES off a's end down its own corridor.
@@ -2268,73 +2270,33 @@ describe('line end overrides — topology cascade', () => {
       lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'], stationEndStyles })],
     });
 
-  it('drops the override when appending past a terminus (degree 1 → 2)', () => {
+  it('keeps the override INERT when appending past a terminus', () => {
+    // c stops being an end, so nothing paints its pin — but c is still on the
+    // line, and detaching d again would make it an end once more. Pruning here
+    // would mean the user's choice could not survive a change of mind.
     const doc = chain({ c: 'round' });
     const next = T.connectStationsOnLine(doc, 'L1', 'c', 'd');
     expect(next.lines.L1.edges).toContain('c|d');
-    expect(next.lines.L1.stationEndStyles ?? {}).toEqual({});
+    expect(next.lines.L1.stationEndStyles).toEqual({ c: 'round' });
   });
 
-  it('keeps the override at the terminus that is STILL a terminus', () => {
-    const doc = chain({ a: 'round', c: 'round' });
-    const next = T.connectStationsOnLine(doc, 'L1', 'c', 'd');
-    expect(next.lines.L1.stationEndStyles).toEqual({ a: 'round' });
-  });
-
-  it('KEEPS the override where a branch leaves that end still an end', () => {
+  it('keeps the override where a branch leaves that end still an end', () => {
     // Branching off `a` sends both its edges down the SAME corridor, so a is
     // still where the line's ink stops — degree 2 now, but no less an end, and
-    // the pin that dressed it has no reason to die.
+    // its pin goes on painting.
     const doc = chain({ a: 'round' });
     const next = T.connectStationsOnLine(doc, 'L1', 'a', 'd');
     expect(next.lines.L1.edges).toContain('a|d');
     expect(next.lines.L1.stationEndStyles).toEqual({ a: 'round' });
   });
 
-  it('drops the override when closing a loop leaves no ends at all', () => {
-    // A RING — a stop mid-way along each side, so closing it leaves every stop
-    // a through stop. (Closing `chain` above would not: a, b and c are
-    // collinear, so the extra edge doubles the corridor rather than enclosing
-    // anything, and a and c stay exactly as much the ends as they were.)
-    const ring = makeDoc({
-      stations: [
-        makeStation({
-          id: 'N',
-          x: 100,
-          y: 0,
-          stops: [makeStop('L1', { orientation: 'auto-horizontal' })],
-        }),
-        makeStation({ id: 'E', x: 200, y: 100, stops: [makeStop('L1')] }),
-        makeStation({
-          id: 'S',
-          x: 100,
-          y: 200,
-          stops: [makeStop('L1', { orientation: 'auto-horizontal' })],
-        }),
-        makeStation({ id: 'W', x: 0, y: 100, stops: [makeStop('L1')] }),
-      ],
-      lines: [
-        makeLine({
-          id: 'L1',
-          stations: ['N', 'E', 'S', 'W'],
-          edges: ['E|N', 'E|S', 'S|W'],
-          stationEndStyles: { N: 'short', W: 'short' },
-        }),
-      ],
-    });
-    const next = T.toggleEdgeOnLine(ring, 'L1', 'N', 'W');
-    expect(next.lines.L1.edges).toContain('N|W');
-    expect(next.lines.L1.stationEndStyles ?? {}).toEqual({});
-  });
-
-  it('drops the override at a station that becomes a branch junction', () => {
-    let doc = chain({ b: 'round', c: 'round' });
-    // b is interior already (its key is inert), but after branching to d it is
-    // degree 3 — and c stays an end throughout.
-    doc = T.addStationToLine(doc, 'L1', 'd');
-    const next = T.toggleEdgeOnLine(doc, 'L1', 'b', 'd');
-    expect(next.lines.L1.edges.filter((e) => e.split('|').includes('b'))).toHaveLength(3);
-    expect(next.lines.L1.stationEndStyles).toEqual({ c: 'round' });
+  it('keeps the overrides when closing a loop leaves no ends at all', () => {
+    // Every stop becomes a through stop, so every pin goes quiet — and stays,
+    // for the same reason: cutting the edge again brings both ends back.
+    const doc = chain({ a: 'short', c: 'short' });
+    const next = T.toggleEdgeOnLine(doc, 'L1', 'a', 'c');
+    expect(next.lines.L1.edges).toContain('a|c');
+    expect(next.lines.L1.stationEndStyles).toEqual({ a: 'short', c: 'short' });
   });
 
   it('drops the override when the station is deleted outright', () => {

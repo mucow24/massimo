@@ -1776,9 +1776,19 @@ describe('line ends — file hygiene', () => {
     expect('endStyle' in line).toBe(false);
   });
 
-  it('drops a pin on a station that is not an end', () => {
-    // b is interior; c really is an end and survives.
+  it('KEEPS a pin whose station is not currently an end — it may be one again', () => {
+    // b is interior, so its pin paints nothing today. It is not garbage
+    // though: where a line ends moves with the geometry, and dropping the pin
+    // here would mean a save/reload silently ate what the user set the last
+    // time b WAS an end. Inert, stored, revived when b ends again.
     const line = load(chain({ stationEndStyles: { b: 'round', c: 'round' } }));
+    expect(line.stationEndStyles).toEqual({ b: 'round', c: 'round' });
+  });
+
+  it('drops a pin on a station that has left the line', () => {
+    // Liveness is what the loader validates: `z` is not a member, so no edit
+    // can ever bring its pin back into play.
+    const line = load(chain({ stationEndStyles: { z: 'round', c: 'round' } }));
     expect(line.stationEndStyles).toEqual({ c: 'round' });
   });
 
