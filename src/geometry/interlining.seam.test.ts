@@ -85,12 +85,145 @@ describe('branch seam is localized to self-overlaps', () => {
   it('a plain collinear through-station shows NO seam (an end-to-end joint is not an overlap)', () => {
     const doc = makeDoc({
       stations: [
-        makeStation({ id: 'a', x: -120, y: 0, stops: [hStop()] }),
         makeStation({ id: 'b', x: 0, y: 0, stops: [hStop()] }),
+        makeStation({ id: 'a', x: -120, y: 0, stops: [hStop()] }),
         makeStation({ id: 'c', x: 120, y: 0, stops: [hStop()] }),
       ],
       lines: [seamLine(['a|b', 'b|c'])],
     });
     expect(visibleSeamPoints(doc, 'l1')).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Which ARM of the notch each band is — the verdict `seamEdges` selects on.
+// Read off the JUNCTION (assignSeamArms), never off the band's own shape.
+// ---------------------------------------------------------------------------
+
+describe('branch arms are read off the junction', () => {
+  const armsByPair = (doc: MapDoc): Record<string, string[]> => {
+    const out: Record<string, string[]> = {};
+    for (const b of buildBands(doc.stations, doc.lines, doc.lineOrder)) out[b.pairKey] = b.seamArms;
+    return out;
+  };
+  const stopAt = (orientation: 'auto-horizontal' | 'auto-vertical' | 'auto-nw-se') =>
+    makeStop('l1', { orientation });
+
+  it('a degree-3 junction: the opposed pair runs through, the odd arm is the branch', () => {
+    const arms = armsByPair(
+      makeDoc({
+        stations: [
+          makeStation({ id: 'j', x: 0, y: 0, stops: [hStop()] }),
+          makeStation({ id: 'a', x: -120, y: 0, stops: [hStop()] }),
+          makeStation({ id: 'c', x: 120, y: 0, stops: [hStop()] }),
+          makeStation({ id: 'd', x: 120, y: -120, stops: [stopAt('auto-vertical')] }),
+        ],
+        lines: [seamLine(['a|j', 'c|j', 'd|j'])],
+      }),
+    );
+    expect(arms['a|j']).toEqual(['straight']);
+    expect(arms['c|j']).toEqual(['straight']);
+    expect(arms['d|j']).toEqual(['curved']);
+  });
+
+  it('a two-band station is no junction, however its bands bend', () => {
+    // A corner: one band arrives horizontally, the next leaves vertically.
+    // Nothing turns AWAY from anything here, so neither band is a branch.
+    const arms = armsByPair(
+      makeDoc({
+        stations: [
+          makeStation({ id: 'b', x: 0, y: 0, stops: [hStop()] }),
+          makeStation({ id: 'a', x: -120, y: 0, stops: [hStop()] }),
+          makeStation({ id: 'c', x: 120, y: -120, stops: [stopAt('auto-vertical')] }),
+        ],
+        lines: [seamLine(['a|b', 'b|c'])],
+      }),
+    );
+    expect(arms['a|b']).toEqual(['straight']);
+    expect(arms['b|c']).toEqual(['straight']);
+  });
+
+  // The shape that exposed this: the A line at Broad Channel. n — j — m runs
+  // through on the NW/SE diagonal; b branches off it, leaving j along that SAME
+  // diagonal and only turning away 85 units on. So the junction has TWO arms
+  // dead opposite the incoming one, and the through-run is the one that stays
+  // straight longer. Meanwhile m sits off-axis, so the through band j|m doglegs
+  // to reach it — 280 units from the junction, and no business of the notch.
+  const broadChannel = (nAt = -200, edges = ['j|n', 'j|m', 'b|j']) =>
+    makeDoc({
+      stations: [
+        makeStation({ id: 'j', x: 0, y: 0, stops: [stopAt('auto-nw-se')] }),
+        makeStation({ id: 'n', x: nAt, y: nAt, stops: [stopAt('auto-nw-se')] }),
+        makeStation({ id: 'm', x: 200, y: 260, stops: [stopAt('auto-vertical')] }),
+        makeStation({ id: 'b', x: 140, y: 60, stops: [stopAt('auto-horizontal')] }),
+      ],
+      lines: [seamLine(edges)],
+    });
+
+  // Every permutation of the same three edges: `line.edges` order is the user's,
+  // and the arms must not be.
+  const EDGE_ORDERS = [
+    ['j|n', 'j|m', 'b|j'],
+    ['j|n', 'b|j', 'j|m'],
+    ['b|j', 'j|m', 'j|n'],
+    ['j|m', 'b|j', 'j|n'],
+  ];
+
+  it('the arm that peels off first is the branch, when two leave on the same axis', () => {
+    for (const edges of EDGE_ORDERS) {
+      const arms = armsByPair(broadChannel(-200, edges));
+      expect(arms['b|j']).toEqual(['curved']);
+      expect(arms['j|m']).toEqual(['straight']);
+      expect(arms['j|n']).toEqual(['straight']);
+    }
+  });
+
+  // Same junction, but the INCOMING arm is now the shortest of the three. Both
+  // candidate through-pairs contain it, so scoring a pair by its SHORTER run
+  // saturates on it and calls them equal — and the verdict falls to whatever
+  // order the edges happen to be declared in. A through-run's length is the
+  // length of BOTH its arms, so the pairs score 353 and 155 and never tie.
+  it('scores a through-run by both its arms, not the shorter one', () => {
+    for (const edges of EDGE_ORDERS) {
+      const arms = armsByPair(broadChannel(-50, edges));
+      expect(arms['b|j']).toEqual(['curved']);
+      expect(arms['j|m']).toEqual(['straight']);
+      expect(arms['j|n']).toEqual(['straight']);
+    }
+  });
+
+  it('a self-crossing has TWO through-runs, and neither is a branch', () => {
+    // The line reaches j twice and crosses itself there: four band ends, two
+    // dead-opposed pairs. Picking one pair and calling the rest branches would
+    // paint half an X.
+    const arms = armsByPair(
+      makeDoc({
+        stations: [
+          makeStation({ id: 'j', x: 0, y: 0, stops: [hStop()] }),
+          makeStation({ id: 'w', x: -200, y: 0, stops: [hStop()] }),
+          makeStation({ id: 'e', x: 200, y: 0, stops: [hStop()] }),
+          makeStation({ id: 'n', x: 0, y: -200, stops: [stopAt('auto-vertical')] }),
+          makeStation({ id: 's', x: 0, y: 200, stops: [stopAt('auto-vertical')] }),
+        ],
+        lines: [seamLine(['j|w', 'e|j', 'j|n', 'j|s'])],
+      }),
+    );
+    expect(arms['j|w']).toEqual(['straight']);
+    expect(arms['e|j']).toEqual(['straight']);
+    expect(arms['j|n']).toEqual(['straight']);
+    expect(arms['j|s']).toEqual(['straight']);
+  });
+
+  it("a through band's far-end dogleg does not make it a branch", () => {
+    const doc = broadChannel();
+    const through = buildBands(doc.stations, doc.lines, doc.lineOrder).find(
+      (b) => b.pairKey === 'j|m',
+    )!;
+    // It really does bend — the vertex between its two runs — and that bend is
+    // 280 units from the junction, the whole length of the corridor away.
+    const [j, bend] = through.centerline;
+    expect(through.centerline.length).toBe(3);
+    expect(Math.hypot(bend.x - j.x, bend.y - j.y)).toBeGreaterThan(250);
+    expect(through.seamArms).toEqual(['straight']);
   });
 });

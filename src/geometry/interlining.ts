@@ -4,6 +4,7 @@ import {
   LineEndStyle,
   LineId,
   LineStyle,
+  SeamEdges,
   Station,
   StationId,
   StopCell,
@@ -31,7 +32,7 @@ import {
   angleDeg,
   centroid,
 } from './vec';
-import { dirIndex, offsetFilletPath, route } from './router';
+import { dirIndex, offsetFilletPath, route, straightRunFrom } from './router';
 import {
   BAND_MERGE_TOL,
   stationCellToWorld,
@@ -97,7 +98,22 @@ export interface SegmentBandSpec {
   // moves `paths`, so the band is rebuilt anyway and baking the widths
   // costs no repaint flexibility.
   stripeWidths: number[];
+  // Which ARM of a branch notch each stripe is, parallel to `lines` — see
+  // {@link assignSeamArms}. Per STRIPE, not per band: two lines sharing a
+  // corridor can have different topology, so one may branch here while the
+  // other runs through. Read only by the branch-seam pass; it moves no ink of
+  // its own, so unlike the fields above it stays out of regionIncremental's
+  // hashUnits (which hashes painted BODIES).
+  seamArms: SeamArm[];
 }
+
+/**
+ * The two arms of a branch notch: the corridor running THROUGH the junction,
+ * and the one that TURNS AWAY from it. Literally the seam modes minus their
+ * 'both', so the two unions cannot drift and `seamEdges` can be compared to an
+ * arm directly.
+ */
+export type SeamArm = Exclude<SeamEdges, 'both'>;
 
 // A single colored stop square for one line at one station, with its
 // per-line priority. Rendered alongside bands so that a back-stack line's
@@ -210,6 +226,11 @@ export const BAND_SPEC_FIELDS = {
   // Always [] on pristine builder output; stamped only onto CLONES
   // (withLinePriorities / buildBands), never onto the cached objects.
   linePriorities: 'excluded',
+  // Stamped on pristine output (assignSeamArms runs inside buildBandGeometry,
+  // before the reuse swap), and derived from the WHOLE band set — a band whose
+  // own geometry is unchanged can still change arm when a sibling corridor
+  // appears or moves. So it must be compared, not derived from this band.
+  seamArms: 'compared',
 } as const satisfies Record<keyof SegmentBandSpec, SpecFieldPolicy>;
 
 // Markers are NOT presentation-free (color and priority are baked at build),
@@ -263,6 +284,8 @@ function bandSpecEqual(a: SegmentBandSpec, b: SegmentBandSpec): boolean {
       return false;
     }
   }
+  if (a.seamArms.length !== b.seamArms.length) return false;
+  for (let i = 0; i < a.seamArms.length; i++) if (a.seamArms[i] !== b.seamArms[i]) return false;
   return (
     sameNumbers(a.stripeOffsets, b.stripeOffsets) && sameNumbers(a.stripeWidths, b.stripeWidths)
   );
@@ -736,11 +759,130 @@ export function buildBandGeometry(
     }
   }
 
+  // Before the reuse swap, so the arms take part in the value equality.
+  assignSeamArms(bands);
+
   // Swap value-identical specs for the previous build's objects so identity
   // survives a rebuild wherever geometry didn't change (see the reuse layer
   // above). The array itself is fresh every call — only per-spec identity is
   // stabilized, which is what the downstream memos and caches key on.
   return reuseBandSpecs(bands);
+}
+
+// Tie window on a junction pair's OPPOSITION score, which is a dot product:
+// 1e-6 is ~0.08° of angle either side of dead-straight, wide enough for the
+// float noise off exact-45° geometry and far narrower than any fork a map
+// could draw. The corner test that goes with it lives in `straightRunFrom`,
+// on the router's own epsilon.
+const OPPOSITION_TIE = 1e-6;
+
+// One end of one stripe at one station: the direction it leaves the station,
+// and how far it runs before its first bend.
+interface JunctionArm {
+  band: SegmentBandSpec;
+  stripeIndex: number;
+  out: Vec2;
+  run: number;
+}
+
+/**
+ * Fills `band.seamArms`: which arm of a branch notch each stripe is.
+ *
+ * The notch at a branch has two arms — the corridor running THROUGH the
+ * junction (whose casing carries on across the branch mouth) and the one that
+ * TURNS AWAY (whose own casing curls into it) — and the seam's `seamEdges`
+ * mode picks which draws. That is a fact about the JUNCTION, so it is read off
+ * the junction: at each station, the line's band ends there are matched into
+ * THROUGH-RUNS, most opposed first, and anything left over is a branch. A
+ * station with two ends is a plain joint (or a corner) and always pairs up,
+ * whichever way its bands bend; a lone end is a terminus and pairs with
+ * nothing, which is not the same as branching.
+ *
+ * A run is scored by how nearly its two arms oppose each other, then by their
+ * COMBINED straight length — which is just the length of the straight corridor
+ * they make through the station, and the scoring that a real branch needs: two
+ * arms can leave a junction along the SAME axis, dead opposite the incoming
+ * corridor either way, and diverge only further on. Scoring the pair by its
+ * shorter arm would saturate on the one they share and tie, leaving the verdict
+ * to the order the edges happen to be declared in. Summed, the one that peels
+ * off first is the branch and the one that stays straight longer runs through,
+ * whatever their stations' names suggest.
+ *
+ * After the first run, matching CONTINUES only while a remaining pair is dead
+ * opposed: a line that crosses itself at a station has two through-runs and no
+ * branch at all, and stopping at one would paint half an X. A second run that
+ * is merely the best of what's left is a fork, not a crossing.
+ *
+ * Reading any of this off the band's own shape instead (does this polyline
+ * bend?) is what this replaces: a through corridor whose next station sits
+ * off-axis doglegs to reach it, and read that way it claims to be the branch —
+ * painting a straight stroke clean across the branch mouth.
+ *
+ * KNOWN LIMIT: a band has two ends and one verdict, so a band that branches at
+ * one end and runs through at the other reads as a branch at both.
+ */
+function assignSeamArms(bands: SegmentBandSpec[]): void {
+  // Every band end of every line, grouped by the line + station it meets at.
+  const byJunction = new Map<string, JunctionArm[]>();
+  for (const band of bands) {
+    band.seamArms = band.lines.map(() => 'straight');
+    for (const [stationId, fromStart] of [
+      [band.fromId, true],
+      [band.toId, false],
+    ] as const) {
+      const end = straightRunFrom(band.centerline, fromStart);
+      if (!end) continue;
+      const { out, run } = end;
+      band.lines.forEach((line, stripeIndex) => {
+        const key = `${line.id}#${stationId}`;
+        const arms = byJunction.get(key);
+        const arm = { band, stripeIndex, out, run };
+        if (arms) arms.push(arm);
+        else byJunction.set(key, [arm]);
+      });
+    }
+  }
+
+  for (const arms of byJunction.values()) {
+    // A lone end is a TERMINUS: nothing to pair with and nothing to turn away
+    // from, so it is no more a branch than a plain joint is.
+    if (arms.length < 2) continue;
+    // Match ends into through-runs, best first. n is 3–4 at any junction worth
+    // the name, so the repeated pairwise walk is free.
+    let pool = arms.map((_, i) => i);
+    const through = new Set<number>();
+    while (pool.length >= 2) {
+      // Most opposed (dot = −1 is dead straight through), then the longest
+      // combined straight run.
+      let bestOpposition = -Infinity;
+      let bestRun = -Infinity;
+      let pair: [number, number] = [pool[0], pool[1]];
+      for (const i of pool) {
+        for (const j of pool) {
+          if (j <= i) continue;
+          const opposition = -dot(arms[i].out, arms[j].out);
+          const run = arms[i].run + arms[j].run;
+          if (
+            opposition > bestOpposition + OPPOSITION_TIE ||
+            (opposition > bestOpposition - OPPOSITION_TIE && run > bestRun)
+          ) {
+            bestOpposition = Math.max(bestOpposition, opposition);
+            bestRun = run;
+            pair = [i, j];
+          }
+        }
+      }
+      // The FIRST run is the through-run whatever its angle — a fork's arms
+      // need not be exactly opposite. Every run after it must be dead straight,
+      // or the leftovers of a fork would pair up as a second one.
+      if (through.size > 0 && bestOpposition < 1 - OPPOSITION_TIE) break;
+      through.add(pair[0]).add(pair[1]);
+      pool = pool.filter((i) => i !== pair[0] && i !== pair[1]);
+    }
+    arms.forEach((arm, i) => {
+      if (!through.has(i)) arm.band.seamArms[arm.stripeIndex] = 'curved';
+    });
+  }
 }
 
 /**
@@ -1347,6 +1489,7 @@ function buildCircleBandSpec(
     centerline,
     radius: bandR,
     linePriorities: [], // filled in by assignLinePriorities
+    seamArms: [], // filled in by assignSeamArms
     stripeOffsets: offsets,
     stripeWidths: widths,
   };
@@ -1463,6 +1606,7 @@ function buildBandSpec(
     centerline: result.vertices,
     radius: centerlineR,
     linePriorities: [], // filled in by assignLinePriorities
+    seamArms: [], // filled in by assignSeamArms
     stripeOffsets: offsets,
     stripeWidths: widths,
   };
