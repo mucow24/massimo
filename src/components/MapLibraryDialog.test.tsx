@@ -251,8 +251,6 @@ describe('MapLibraryDialog', () => {
     expect(baselineWiped()).toBe(false);
   });
 
-  // The failed delete must not report a loss that did not happen: the map, and
-  // the document's claim on it, are both still there.
   /**
    * The same loss through a smaller door, and the one the map-level fix misses:
    * delete just the version the live doc came from and its bytes are equally
@@ -806,7 +804,7 @@ describe('MapLibraryDialog', () => {
       });
     });
 
-    it('shows no preview for a thumb-less row', async () => {
+    it('renders no thumb image for a thumb-less row', async () => {
       const user = userEvent.setup();
       renderDialog();
       await openCanalLine(user);

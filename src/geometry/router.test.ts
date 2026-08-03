@@ -71,18 +71,11 @@ describe('route — straight', () => {
   });
 });
 
-describe('route — 1-bend', () => {
-  it('emits a single corner when start and end share a column', () => {
-    // Start east, end south at (100, 100): the 1-bend solution has a single
-    // corner at (100, 0). The router sometimes picks a 2-bend chamfer because
-    // a diagonal middle segment is shorter — accept either as long as
-    // endpoints are right and no warning fires.
-    const r = route({ x: 0, y: 0 }, east, { x: 100, y: 100 }, south, 24);
-    expect(r.warning).toBe(false);
-    expect(r.vertices.length).toBeGreaterThanOrEqual(3);
-    expect(r.vertices[0]).toEqual({ x: 0, y: 0 });
-    expect(r.vertices[r.vertices.length - 1]).toEqual({ x: 100, y: 100 });
-  });
+describe('route — quarter turn', () => {
+  // The 'emits a single corner' case that used to open this describe asserted
+  // neither a single corner nor the shared column its name claimed — only the
+  // endpoints and a >=3 vertex count, all of which the chamfer test below pins
+  // exactly.
 
   it('pins the chamfered 2-bend corner for an east→south quarter turn', () => {
     // The router prefers a 2-bend chamfer over a clean L here because the

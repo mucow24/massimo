@@ -127,8 +127,10 @@ describe('MapCanvas — selected-item hit proxies win pointer hit-testing', () =
     const pHit = idx('[data-polygon-hit="p0"]');
     const iHit = idx('[data-svg-image-hit="i0"]');
     expect(pHit).toBeGreaterThanOrEqual(0);
-    // svg image bodies paint above polygon bodies, so the svg proxy must paint
-    // last to keep "visually on top among the selection also wins the grab".
+    // There is no kind-based rule here: the seeded `backgroundOrder` puts the
+    // image above the polygon (see MapCanvas.backgroundOrder.test.tsx for the
+    // mirrored fixture), so the svg proxy must paint last to keep "visually on
+    // top among the selection also wins the grab".
     expect(iHit).toBeGreaterThan(pHit);
   });
 

@@ -76,13 +76,13 @@ describe('background-order transforms', () => {
     expect(moveBackgroundUp(deep(), 'p0').backgroundOrder).toEqual(['p1', 'p0', 'i0']);
   });
 
-  it('no-ops at either end return the same doc reference', () => {
+  it('to-top/to-bottom no-op at either end returns the same doc reference', () => {
     const doc = deep();
     expect(moveBackgroundToTop(doc, 'i0')).toBe(doc); // already top
     expect(moveBackgroundToBottom(doc, 'p0')).toBe(doc); // already bottom
   });
 
-  it('no-ops for an id that is neither a polygon nor an image', () => {
+  it('to-top/to-bottom no-op for an id that is neither a polygon nor an image', () => {
     const doc = deep();
     expect(moveBackgroundToTop(doc, 'nope')).toBe(doc);
     expect(moveBackgroundToBottom(doc, 'nope')).toBe(doc);
