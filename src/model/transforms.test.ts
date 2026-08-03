@@ -2179,15 +2179,34 @@ describe('setLineEndStyle', () => {
   });
 });
 
+// Where a line ENDS is geometric (see lineEndsAt), so these fixtures carry real
+// coordinates: a—b—c straight down, `a` and `c` the ends.
 describe('setStationEndStyle', () => {
   const doc = (linePatch = {}) =>
     makeDoc({
       stations: [
-        makeStation({ id: 'a', stops: [makeStop('L1')] }),
-        makeStation({ id: 'b', stops: [makeStop('L1')] }),
-        makeStation({ id: 'c', stops: [makeStop('L1')] }),
+        makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', x: 0, y: 300, stops: [makeStop('L1')] }),
+        makeStation({ id: 'c', x: 0, y: 600, stops: [makeStop('L1')] }),
       ],
       lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'], styleId: 'sty', ...linePatch })],
+    });
+
+  // The same line branching AT `a`: both edges leave it south down one
+  // corridor, `d` peeling off south-east. `a` is degree 2 and still an end.
+  const branchedDoc = () =>
+    makeDoc({
+      stations: [
+        makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', x: 0, y: 600, stops: [makeStop('L1')] }),
+        makeStation({
+          id: 'd',
+          x: 200,
+          y: 400,
+          stops: [makeStop('L1', { orientation: 'auto-nw-se' })],
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'd'], edges: ['a|b', 'a|d'] })],
     });
 
   it('pins one terminus without touching the other', () => {
@@ -2215,6 +2234,11 @@ describe('setStationEndStyle', () => {
     expect(T.setStationEndStyle(d, 'L1', 'nope', 'round')).toBe(d); // not a member
   });
 
+  it('pins an end the line BRANCHES at — degree 2, both edges leaving south', () => {
+    const next = T.setStationEndStyle(branchedDoc(), 'L1', 'a', 'round');
+    expect(next.lines.L1.stationEndStyles).toEqual({ a: 'round' });
+  });
+
   it('keeps the line attached to its style preset — pins are not covered', () => {
     expect(T.setStationEndStyle(doc(), 'L1', 'a', 'round').lines.L1.styleId).toBe('sty');
   });
@@ -2231,13 +2255,15 @@ describe('setStationEndStyle', () => {
 // The moment topology says otherwise the key is dropped — the same lifetime
 // `segmentStyles` keys have, which is why both prune together.
 describe('line end overrides — topology cascade', () => {
+  // a—b—c straight down, with `d` off to the south-east: appending c|d extends
+  // the line past c, while a|d BRANCHES off a's end down its own corridor.
   const chain = (stationEndStyles: Record<string, 'square' | 'short' | 'round'>) =>
     makeDoc({
       stations: [
-        makeStation({ id: 'a', stops: [makeStop('L1')] }),
-        makeStation({ id: 'b', stops: [makeStop('L1')] }),
-        makeStation({ id: 'c', stops: [makeStop('L1')] }),
-        makeStation({ id: 'd', stops: [] }),
+        makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', x: 0, y: 300, stops: [makeStop('L1')] }),
+        makeStation({ id: 'c', x: 0, y: 600, stops: [makeStop('L1')] }),
+        makeStation({ id: 'd', x: 200, y: 800, stops: [] }),
       ],
       lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'], stationEndStyles })],
     });
@@ -2255,9 +2281,49 @@ describe('line end overrides — topology cascade', () => {
     expect(next.lines.L1.stationEndStyles).toEqual({ a: 'round' });
   });
 
+  it('KEEPS the override where a branch leaves that end still an end', () => {
+    // Branching off `a` sends both its edges down the SAME corridor, so a is
+    // still where the line's ink stops — degree 2 now, but no less an end, and
+    // the pin that dressed it has no reason to die.
+    const doc = chain({ a: 'round' });
+    const next = T.connectStationsOnLine(doc, 'L1', 'a', 'd');
+    expect(next.lines.L1.edges).toContain('a|d');
+    expect(next.lines.L1.stationEndStyles).toEqual({ a: 'round' });
+  });
+
   it('drops the override when closing a loop leaves no ends at all', () => {
-    const doc = chain({ a: 'short', c: 'short' });
-    const next = T.toggleEdgeOnLine(doc, 'L1', 'a', 'c');
+    // A RING — a stop mid-way along each side, so closing it leaves every stop
+    // a through stop. (Closing `chain` above would not: a, b and c are
+    // collinear, so the extra edge doubles the corridor rather than enclosing
+    // anything, and a and c stay exactly as much the ends as they were.)
+    const ring = makeDoc({
+      stations: [
+        makeStation({
+          id: 'N',
+          x: 100,
+          y: 0,
+          stops: [makeStop('L1', { orientation: 'auto-horizontal' })],
+        }),
+        makeStation({ id: 'E', x: 200, y: 100, stops: [makeStop('L1')] }),
+        makeStation({
+          id: 'S',
+          x: 100,
+          y: 200,
+          stops: [makeStop('L1', { orientation: 'auto-horizontal' })],
+        }),
+        makeStation({ id: 'W', x: 0, y: 100, stops: [makeStop('L1')] }),
+      ],
+      lines: [
+        makeLine({
+          id: 'L1',
+          stations: ['N', 'E', 'S', 'W'],
+          edges: ['E|N', 'E|S', 'S|W'],
+          stationEndStyles: { N: 'short', W: 'short' },
+        }),
+      ],
+    });
+    const next = T.toggleEdgeOnLine(ring, 'L1', 'N', 'W');
+    expect(next.lines.L1.edges).toContain('N|W');
     expect(next.lines.L1.stationEndStyles ?? {}).toEqual({});
   });
 

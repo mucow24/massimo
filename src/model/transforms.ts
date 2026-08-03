@@ -72,7 +72,6 @@ import {
   degreeOf,
   edgeNeighbors,
   edgesWithout,
-  isLineTerminus,
   lineHasEdge,
   removeEdge,
   shortestPathOnLine,
@@ -89,6 +88,7 @@ import {
   tangentGap,
 } from '../geometry/orientation';
 import { CELL_EPS, sameCell } from '../geometry/lattice';
+import { lineEndsAt } from '../geometry/interlining';
 import { GRID_INTERVAL, snapPointToGrid, type GridSnap } from '../geometry/snap';
 import { polygonCentroid, edgeMidpoint } from '../geometry/polygon';
 import { clampSize as clampSvgImageSize, normalizeRotation } from '../geometry/svgImage';
@@ -981,7 +981,7 @@ export function setStationEndStyle(
   end: LineEndStyle,
 ): MapDoc {
   const line = doc.lines[lineId];
-  if (!line || !isLineTerminus(line, stationId)) return doc;
+  if (!line || !lineEndsAt(doc.stations, line, stationId)) return doc;
   const cur = line.stationEndStyles;
   const stored = end === lineEndStyleOf(line) ? undefined : end;
   if ((cur?.[stationId] ?? undefined) === stored) return doc;
@@ -1568,11 +1568,14 @@ export function deleteStation(doc: MapDoc, id: StationId): MapDoc {
     // Drop the station from the line (healing a degree-2 gap so the line stays
     // connected), then prune any segment style/layer override whose pair-key is
     // no longer an edge — same contract as removeStationFromLine / deleteLine.
-    lines[lid] = pruneOrphanLineOverrides({
-      ...ln,
-      stations: ln.stations.filter((x) => x !== id),
-      edges: edgesAfterRemoveStation(ln.edges, id),
-    });
+    lines[lid] = pruneOrphanLineOverrides(
+      {
+        ...ln,
+        stations: ln.stations.filter((x) => x !== id),
+        edges: edgesAfterRemoveStation(ln.edges, id),
+      },
+      rest,
+    );
   }
   // Cascade-delete transfers that referenced the removed station.
   // One predicate covers both station-keyed end shapes: the station's stops AND
@@ -2304,11 +2307,14 @@ export function removeStationFromLine(doc: MapDoc, lineId: LineId, idx: number):
       (e) => isStopEnd(e) && e.stationId === removedStationId && e.lineId === lineId,
     );
   }
-  const updatedLine = pruneOrphanLineOverrides({
-    ...ln,
-    stations: newStations,
-    edges: edgesAfterRemoveStation(ln.edges, removedStationId),
-  });
+  const updatedLine = pruneOrphanLineOverrides(
+    {
+      ...ln,
+      stations: newStations,
+      edges: edgesAfterRemoveStation(ln.edges, removedStationId),
+    },
+    stations,
+  );
   return pruneOrphanLineTags({
     ...doc,
     lines: { ...doc.lines, [lineId]: updatedLine },
@@ -2336,7 +2342,7 @@ export function toggleEdgeOnLine(doc: MapDoc, lineId: LineId, a: StationId, b: S
   const removing = lineHasEdge(ln, a, b);
   const nextEdges = removing ? removeEdge(ln.edges, a, b) : addEdge(ln.edges, a, b);
   if (nextEdges === ln.edges) return doc;
-  const updatedLine = pruneOrphanLineOverrides({ ...ln, edges: nextEdges });
+  const updatedLine = pruneOrphanLineOverrides({ ...ln, edges: nextEdges }, doc.stations);
   let out = pruneOrphanLineTags({ ...doc, lines: { ...doc.lines, [lineId]: updatedLine } });
   if (removing) {
     for (const endpoint of [a, b]) {
@@ -2391,7 +2397,7 @@ export function connectStationsOnLine(
     // override goes with it.
     lines: {
       ...doc.lines,
-      [lineId]: pruneOrphanLineOverrides({ ...ln, stations: newStations, edges }),
+      [lineId]: pruneOrphanLineOverrides({ ...ln, stations: newStations, edges }, stationsAfter),
     },
     // Only a station gaining its first line is auto-oriented; anything already
     // served keeps the rotation the user gave it. Circle-bound stations skip
@@ -2449,7 +2455,10 @@ export function spliceStationIntoEdge(
   let edges = removeEdge(ln.edges, fromStationId, toStationId);
   edges = addEdge(edges, fromStationId, stationId);
   edges = addEdge(edges, stationId, toStationId);
-  const updatedLine = pruneOrphanLineOverrides({ ...ln, stations: newStations, edges });
+  const updatedLine = pruneOrphanLineOverrides(
+    { ...ln, stations: newStations, edges },
+    stationsAfter,
+  );
   return pruneOrphanLineTags({
     ...doc,
     lines: { ...doc.lines, [lineId]: updatedLine },
@@ -3823,7 +3832,7 @@ function pruneOrphanLineTags(doc: MapDoc): MapDoc {
 //
 // Returns the input line unchanged when nothing needed dropping (the
 // reference-on-no-op contract undo grouping relies on).
-function pruneOrphanLineOverrides(line: Line): Line {
+function pruneOrphanLineOverrides(line: Line, stations: Record<StationId, Station>): Line {
   let next = line;
   const styles = next.segmentStyles;
   if (styles) {
@@ -3842,7 +3851,7 @@ function pruneOrphanLineOverrides(line: Line): Line {
     const filtered: Record<StationId, LineEndStyle> = {};
     let changed = false;
     for (const stationId of Object.keys(ends)) {
-      if (isLineTerminus(next, stationId)) filtered[stationId] = ends[stationId];
+      if (lineEndsAt(stations, next, stationId)) filtered[stationId] = ends[stationId];
       else changed = true;
     }
     if (changed) next = withStationEndStyles(next, filtered);

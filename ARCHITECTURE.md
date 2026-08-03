@@ -122,7 +122,7 @@ src/
     lineWidth.ts lineStroke.ts  # stripe width (GEOMETRY) + casing rails (PRESENTATION)
     lineCurve.ts                # per-line corner radius resolution (the fillet the router turns by)
     lineCircle.ts               # line-circle radius floor + canonicalizer (quarter grid)
-    lineEnd.ts                  # line END style resolution (line default → per-terminus pin) + the round→short degrade
+    lineEnd.ts                  # line END style resolution (line default → per-end pin) + the round→short degrade
     stopMetrics.ts              # stopMetricsOf: the production StopMetrics lookup — everything the
                                 #   label geometry knows about one PAINTED stop, resolved through the
                                 #   helpers the canvas paints by (cached on slice identity, then on
@@ -746,18 +746,20 @@ All remaining fields optional and **never stored at default**:
   casing width's quarter-unit grid with drop-at-0 (0 = "auto" ⇒ field dropped, derivation takes
   over). `dashLength` is how far the tick protrudes from the stripe edge toward the label;
   `dashWidth` is its thickness along the travel axis. Covered by line styles.
-- `endStyle?: LineEndStyle` — how the line's ends are PAINTED at every terminus: `'square'` (the
-  full stop-marker square, missing ⇒ this), `'short'` (only the inward half, so the line stops
-  flush at the stop center) or `'round'` (the outward half replaced by a half-disc of radius
-  `width/2`). PRESENTATION — it never moves a band path — but unlike the casing it does change
-  the marker's painted FOOTPRINT, so `regionGeometrySig` hashes it and the store actions
-  reconcile regions. Covered by line styles. See [lineEnd.ts](src/model/lineEnd.ts).
-- `stationEndStyles?: Record<StationId, LineEndStyle>` — per-TERMINUS overrides of `endStyle`,
-  edited in the station editor's stop row. **Valid keys are exactly this line's degree-1
-  stations**, the end-style twin of `segmentStyles`' edge rule — appending past an end, closing a
-  loop, branching at it or dropping the stop all revoke the pin, and both maps prune together in
-  `pruneOrphanLineOverrides` (transforms) / `sanitizeLineOverrides` (load). A pin equal to the
-  line's own `endStyle` is redundant and never stored. **Not** covered by line styles: a style
+- `endStyle?: LineEndStyle` — how the line is PAINTED wherever its ink stops (see **Where a line
+  ENDS**): `'square'` (the full stop-marker square, missing ⇒ this), `'short'` (only the inward
+  half, so the line stops flush at the stop center) or `'round'` (the outward half replaced by a
+  half-disc of radius `width/2`). PRESENTATION — it never moves a band path — but unlike the casing
+  it does change the marker's painted FOOTPRINT, so `regionGeometrySig` hashes it and the store
+  actions reconcile regions. Covered by line styles. See [lineEnd.ts](src/model/lineEnd.ts).
+- `stationEndStyles?: Record<StationId, LineEndStyle>` — per-END overrides of `endStyle`, edited in
+  the station editor's stop row. **Valid keys are exactly the stations this line ENDS at**
+  (`lineEndsAt` — see Where a line ENDS), the end-style twin of `segmentStyles`' edge rule:
+  appending past an end, closing a loop or dropping the stop revoke the pin, while branching off an
+  end keeps it, since the line still ends there. Both maps prune in `pruneOrphanLineOverrides`
+  (transforms); on load the segment half rides with them while the end pins wait for
+  `sanitizeLineEnds`, which cannot run until the stations are cleaned and snapped. A pin equal to
+  the line's own `endStyle` is redundant and never stored. **Not** covered by line styles: a style
   carries the line's own end, never its per-station pins — the same split the per-stop dot
   overrides have.
 - `styleId?` — live link to a StyleDef of kind `'line'` (covers the style fields above, not
@@ -2508,17 +2510,26 @@ circular dot), sized to the line `width`, with casing rails centered on the trav
 (so tangent neighbors' rails coincide into one separator) and a terminus end-cap. Hatched markers
 **pre-rotate their corners into world space** (can't reuse the rotated `<rect>` — `userSpaceOnUse`
 patterns would re-rotate the stripes). Dashed/dotted markers render nothing at interior stops
-(the pattern flows through) and a half-width stub at termini.
+(the pattern flows through) and a half-width stub at an end.
 
 **Where a line ENDS** is geometric, not topological: a stop is an end wherever every band incident
 to it leaves the SAME way, so nothing covers the other half of its marker. Degree 1 is the usual
 shape, but a line that BRANCHES at its own end sends two edges off down one shared corridor and is
 exposed behind them in exactly the same way — as is a cusp in a loop — and each gets the same end
 cap and the same end style. A band leaving the other way disqualifies a stop: a through stop, a
-corner, a fork that splits both ways. The per-station PIN is stricter (`stationEndStyles` keys stay
-degree-1, above), so a branch end wears the line's own `endStyle`.
+corner, a fork that splits both ways.
 
-**The marker's outward half at a terminus IS the line's painted end** — the stripe itself stops
+Two predicates answer that question, on purpose. `endOutwardFromBands` reads it off built band
+CENTERLINES, which is what the paint needs (an end cap must sit on the path actually drawn, fillets
+and interlining offsets included). `lineEndsAt` answers it from the DOC — before any band exists —
+which is what the editors, the transforms and the file loader need to know where a
+`stationEndStyles` pin is meaningful. They cannot drift: both take the heading from
+`canonTravelDir`, the same vector `buildBands` hands the router, and a test walks a set of shapes
+demanding they agree stop for stop. One case is exempt: a band the router gave up on paints a
+straight from station to station regardless of travel axis, so at such a stop the doc-side answer
+may differ and the pin it offers is inert — the ⚠ over that band is the fix being asked for.
+
+**The marker's outward half at an end IS the line's painted end** — the stripe itself stops
 dead at the stop center (butt cap), so `spec.end` reshapes exactly that half, and the three ends
 are precisely SVG's three line caps taken there. `'short'` drops it, `'round'` replaces it with a
 half-disc; both are one filled `<path>` from [markerEnd.ts](src/geometry/markerEnd.ts), never a
@@ -2929,9 +2940,9 @@ same three additions.
   labeled X/Y + a mirrored ±45° rotate icon pair, a **Stop dots** section (a
   Line/Type/Size/End/Direction column header over the per-stop rows —
   [inspector/StopRows.tsx](src/components/inspector/StopRows.tsx): service badge + always-enabled
-  shape picker + dot size + a per-terminus **line-end** picker + a world-true orientation cycle
-  button per stop. The end slot is the one conditional column — only a degree-1 stop can pin an
-  end, so an interior row holds it open with a placeholder rather than closing up and breaking the
+  shape picker + dot size + a per-end **line-end** picker + a world-true orientation cycle
+  button per stop. The end slot is the one conditional column — only a stop the line ENDS at can
+  pin an end, so an interior row holds it open with a placeholder rather than closing up and breaking the
   column alignment down the list; it shows the RESOLVED end, so picking the line's own value clears
   the pin instead of storing a redundant one, and it is deliberately NOT mirror-dispatched (an end
   belongs to this line's topology here, not to a look worth spreading across matching stations).
@@ -3158,7 +3169,7 @@ downstream luminance / `rgba()` math.
   so `JSON.stringify` equality is exact for app-written docs.
 - **Referential integrity after every action**: `line.stations[i] ∈ stations`; `stop.lineId ∈
 lines`; every `segmentStyles` key is a real, non-default adjacency; every `stationEndStyles`
-  key is a live degree-1 TERMINUS of its line (and never repeats the line's own end); every
+  key is a station its line still ENDS at (and never repeats the line's own end); every
   tag/transfer endpoint and `routeBullet.lineId` resolves live-or-null. Maintained by cascade
   prunes after structural edits (`deleteStation`/`deleteLine`/`removeStationFromLine`/…).
 - **`LineTag.fromStationId < toStationId`** always (canonical/alphabetic, = `pairKeyOf`).

@@ -1345,17 +1345,23 @@ describe('buildStopMarkers', () => {
     });
 
     it('outward stays null where the two edges leave a station on different headings', () => {
-      // Same three stations, but s1 is now a CORNER of the line: west to s2,
-      // south to s3. Both halves of the marker are covered by a band, so there
-      // is no end to cap.
+      // Same three stations, but s1 is a THROUGH stop: s2 leaves west, s3
+      // leaves east and bends away south further along. Both halves of the
+      // marker are covered by a band, so there is no end to cap.
       const doc = makeDoc({
         stations: [
           stationWithStop('s1', 'L1', { x: 0, y: 0 }, { orientation: 'auto-horizontal' }),
           stationWithStop('s2', 'L1', { x: -600, y: 0 }, { orientation: 'auto-horizontal' }),
-          stationWithStop('s3', 'L1', { x: 0, y: 600 }),
+          stationWithStop('s3', 'L1', { x: 600, y: 600 }),
         ],
         lines: [makeLine({ id: 'L1', stations: ['s1', 's2', 's3'], edges: ['s1|s2', 's1|s3'] })],
       });
+      // Not vacuous by way of a band the router gave up on: both really route,
+      // so the null below is about their HEADINGS disagreeing.
+      expect(buildBands(doc.stations, doc.lines, doc.lineOrder).map((b) => b.warning)).toEqual([
+        false,
+        false,
+      ]);
       expect(findMarker(doc, 's1')?.outward).toBeNull();
     });
   });

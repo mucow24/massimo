@@ -472,10 +472,12 @@ export interface Line {
   // DOES change the marker's painted footprint, so the region arrangement
   // hashes it (see regionGeometrySig).
   endStyle?: LineEndStyle;
-  // Per-terminus overrides of `endStyle`, keyed by station id. INVARIANT: every
-  // key is a degree-1 station on this line — an end that stops being an end
-  // loses its override (pruned by pruneOrphanLineOverrides on every topology
-  // change, and by the file loader). Lives on the LINE rather than the StopCell
+  // Per-END overrides of `endStyle`, keyed by station id. INVARIANT: every key
+  // is a station this line ENDS at — which is geometric, not a matter of degree
+  // (see `lineEndsAt`): branching off an end keeps the pin, since the line still
+  // ends there, while appending past it or closing a loop revokes it (pruned by
+  // pruneOrphanLineOverrides on every topology change, and by the file loader).
+  // Lives on the LINE rather than the StopCell
   // precisely so it prunes alongside `segmentStyles`: both are per-topology
   // overrides with the same lifetime. NOT a covered style field — a line style
   // carries the line's own `endStyle`, never these pins (same split as the

@@ -59,7 +59,8 @@ import {
   isReservedStyleName,
   stylePropsEqual,
 } from './styles';
-import { edgesFromStations, isLineTerminus } from './lineTopology';
+import { edgesFromStations } from './lineTopology';
+import { lineEndsAt } from '../geometry/interlining';
 import {
   LINE_END_STYLE_DEFAULT,
   isLineEndStyle,
@@ -482,6 +483,11 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   // the file version — see `snapStationCells`.
   const snapped = snapStationCells(merged.stations);
   if (snapped.changed) merged.stations = snapped.stations;
+  // NOW the per-station end pins can be judged: where a line ends is geometric,
+  // so this is the first point in the load where the stops are where they will
+  // finally be.
+  const pinned = sanitizeLineEnds(merged.lines, merged.stations);
+  if (pinned.changed) merged.lines = pinned.lines;
   // Line-circle binding invariants: drop malformed circles, strip dangling
   // bindings / orphaned viaCircle flags, reproject drifted bound stations.
   const circles = sanitizeLineCircles(merged.lineCircles, merged.stations);
@@ -2529,43 +2535,59 @@ export function backfillLinesEdges(lines: Record<string, Line>): {
 // The load-time twin of transforms' pruneOrphanLineOverrides: validate the
 // line's topology-scoped overrides against the edge set a file actually
 // carries. Same two maps, same rules — a segment style needs its pair to be an
-// edge, an end-style pin needs its station to be a degree-1 END — plus the
-// value validation a hand-edited file makes necessary.
+// edge, an end-style pin needs its station to be one of the line's ENDS — plus
+// the value validation a hand-edited file makes necessary.
+//
+// The two halves run at different points in the load, so they are separate
+// exports rather than one call: a pin's validity is GEOMETRIC (`lineEndsAt`), so
+// it cannot be judged until the stations are cleaned and back on the lattice —
+// see `sanitizeLineEnds` at its call site.
 function sanitizeLineOverrides(line: Line): Line {
-  return sanitizeLineEnds(sanitizeSegments(line));
+  return sanitizeLineEndStyle(sanitizeSegments(line));
 }
 
-// Per-line END style + per-terminus pins. Both are dropped at their default so
-// the "never store a default" invariant survives a hand-edited file, and a pin
-// on anything that isn't currently an end is dropped outright.
-function sanitizeLineEnds(line: Line): Line {
+// The line's own END style: dropped at its default so the "never store a
+// default" invariant survives a hand-edited file. Pins are judged separately,
+// below.
+function sanitizeLineEndStyle(line: Line): Line {
   const rawEnd = (line as Line & { endStyle?: unknown }).endStyle;
-  const hasEnd = rawEnd !== undefined;
-  const keepEnd = isLineEndStyle(rawEnd) && rawEnd !== LINE_END_STYLE_DEFAULT;
-  const pins = line.stationEndStyles;
-  const hasPins = pins !== undefined;
-  if (!hasEnd && !hasPins) return line;
+  if (rawEnd === undefined) return line;
+  if (isLineEndStyle(rawEnd) && rawEnd !== LINE_END_STYLE_DEFAULT) return line;
+  const { endStyle: _gone, ...rest } = line;
+  return rest as Line;
+}
 
-  let next = line;
+// The per-station END pins, for every line at once. Split out of
+// `sanitizeLineOverrides` and run LATER in the load because a pin's validity is
+// geometric — `lineEndsAt` reads stop cells and station positions, so it has to
+// wait until `sanitizeStations` and `snapStationCells` have settled both. A pin
+// is kept when its value parses, its station is one of the line's ends, and it
+// says something the line's own end does not.
+//
+// Same-record-on-no-op, like the other load-time cleaners.
+function sanitizeLineEnds(
+  lines: Record<string, Line>,
+  stations: Record<StationId, Station>,
+): { lines: Record<string, Line>; changed: boolean } {
+  const out: Record<string, Line> = {};
   let changed = false;
-  if (hasEnd && !keepEnd) {
-    const { endStyle: _gone, ...rest } = next;
-    next = rest as Line;
-    changed = true;
-  }
-  if (hasPins) {
+  for (const id of Object.keys(lines)) {
+    const line = lines[id];
+    const pins = line.stationEndStyles;
+    out[id] = line;
+    if (pins === undefined) continue;
     const kept: Record<StationId, LineEndStyle> = {};
     let pinsChanged = false;
-    // Read the line's own end from the CLEANED value above, so a pin is judged
-    // redundant against what the line will actually paint.
-    const lineEnd = lineEndStyleOf(next);
+    // The line's own end is already cleaned (sanitizeLineEndStyle, above), so a
+    // pin is judged redundant against what the line will actually paint.
+    const lineEnd = lineEndStyleOf(line);
     // `typeof null === 'object'`, and so is an array — a bare non-object guard
     // lets both ride along as a stored map holding no pin at all.
     const isPinMap = pins !== null && typeof pins === 'object' && !Array.isArray(pins);
     const valid = isPinMap ? pins : {};
     for (const stationId of Object.keys(valid)) {
       const pin = valid[stationId];
-      if (!isLineEndStyle(pin) || pin === lineEnd || !isLineTerminus(next, stationId)) {
+      if (!isLineEndStyle(pin) || pin === lineEnd || !lineEndsAt(stations, line, stationId)) {
         pinsChanged = true;
         continue;
       }
@@ -2576,10 +2598,10 @@ function sanitizeLineEnds(line: Line): Line {
     // overrides" keeps its single field-absent representation.
     if (!isPinMap || pinsChanged || Object.keys(valid).length === 0) {
       changed = true;
-      next = withStationEndStyles(next, kept);
+      out[id] = withStationEndStyles(line, kept);
     }
   }
-  return changed ? next : line;
+  return { lines: changed ? out : lines, changed };
 }
 
 function sanitizeSegments(line: Line): Line {

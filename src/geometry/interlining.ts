@@ -391,6 +391,70 @@ export function travelDirWorld(cell: StopCell, station: Station, worldHint: Vec2
 }
 
 /**
+ * A band's canonical heading (canonFrom → canonTo) at ONE of its endpoints: the
+ * stop's travel axis, sign-flipped to run ALONG the corridor rather than back
+ * up it. `canon` is the raw canonFrom→canonTo delta, `hint` its unit form.
+ *
+ * The single answer to "which way does a band leave a station". `buildBands`
+ * hands exactly this to the router as `fromDir`/`toDir`, so the first step of
+ * the centerline IS this vector; {@link lineEndsAt} re-derives it from the doc
+ * to answer the same question before any band exists. One function, so the two
+ * cannot come to different conclusions.
+ */
+function canonTravelDir(cell: StopCell, station: Station, canon: Vec2, hint: Vec2): Vec2 {
+  const axis = travelDirWorld(cell, station, hint);
+  return dot(axis, canon) >= 0 ? axis : { x: -axis.x, y: -axis.y };
+}
+
+/**
+ * Does this line's ink END at `stationId` — every edge incident to it leaving
+ * the SAME way, so nothing covers the other half of its stop marker?
+ *
+ * The doc-side twin of {@link StopMarkerSpec.outward}, which the renderer reads
+ * off built band centerlines. This one asks before any band exists, which is
+ * what the editors and the file loader need: it decides where a per-station end
+ * pin is meaningful (`stationEndStyles`). Both walk `canonTravelDir`, and
+ * `interlining.lineEnds.test.ts` demands the two agree stop for stop.
+ *
+ * An edge that renders NO band is skipped, exactly as the renderer skips one: a
+ * missing neighbour, a neighbour with no stop of this line, or one sitting on
+ * top of this station covers nothing and offers no heading. A stop reached only
+ * by such edges is therefore not an end — like a lone stop, it has no direction
+ * to end along.
+ *
+ * ONE thing it cannot see: a band the router gave up on paints a straight from
+ * station to station (see `route`'s warning), which need not leave along the
+ * travel axis at all. At such a stop the two answers may differ and the pin
+ * this one offers is inert — the red frame and ⚠ over that band are already
+ * asking for the fix that settles it.
+ */
+export function lineEndsAt(
+  stations: Record<StationId, Station>,
+  line: Line,
+  stationId: StationId,
+): boolean {
+  const station = stations[stationId];
+  const cell = station?.stops.find((c) => c.lineId === line.id);
+  if (!cell) return false;
+  let leave: Vec2 | null = null;
+  for (const neighbourId of neighborsOf(line, stationId)) {
+    const nbr = stations[neighbourId];
+    if (!nbr || !nbr.stops.some((c) => c.lineId === line.id)) continue;
+    // pairKeyOf's canonical order, so `canon` points the way the band's own
+    // centerline runs and `canonTravelDir` can be read straight off it.
+    const atFrom = stationId < neighbourId;
+    const canon = atFrom ? sub(nbr, station) : sub(station, nbr);
+    if (canon.x === 0 && canon.y === 0) continue;
+    const dir = canonTravelDir(cell, station, canon, norm(canon));
+    // At canonTo the band ARRIVES along `dir`, so it leaves the other way.
+    const out = atFrom ? dir : { x: -dir.x, y: -dir.y };
+    if (!leave) leave = out;
+    else if (dot(leave, out) < SAME_HEADING_DOT) return false;
+  }
+  return leave !== null;
+}
+
+/**
  * Resolve the rendered style of one line on one segment (identified by its
  * canonical {@link pairKeyOf} key). Per-segment overrides live in
  * `line.segmentStyles`; absent an override, a segment is solid.
@@ -600,13 +664,9 @@ export function buildBandGeometry(
       // needed so the band's flow points canonFrom → canonTo. Without this,
       // if `bucket[0]` happens to be a line traversing the corridor in
       // reverse alphabetic order, the router gets a U-turn input.
-      const sampleFDir = travelDirWorld(sample.fromCell, fromS, sample.worldHint);
-      const sampleTDir = travelDirWorld(sample.toCell, toS, sample.worldHint);
       const canon = sub(toS, fromS);
-      const fSign = dot(sampleFDir, canon) >= 0 ? 1 : -1;
-      const tSign = dot(sampleTDir, canon) >= 0 ? 1 : -1;
-      const fDir: Vec2 = { x: sampleFDir.x * fSign, y: sampleFDir.y * fSign };
-      const tDir: Vec2 = { x: sampleTDir.x * tSign, y: sampleTDir.y * tSign };
+      const fDir = canonTravelDir(sample.fromCell, fromS, canon, sample.worldHint);
+      const tDir = canonTravelDir(sample.toCell, toS, canon, sample.worldHint);
       // leftOf(motion) — must match the perpendicular convention used by
       // offsetFilletPath. With this, sorting ascending by perp-projection
       // assigns lower-k indices to lines on the negative-offset (right of
@@ -894,7 +954,7 @@ export function buildStopMarkers(
         : octantTangent;
       const style = stationMarkerStyle(line, station.id);
       const basePriority = lineIndex[cell.lineId] ?? fallback;
-      const outward = terminusOutwardFromBand(line, station.id, bandsByPair);
+      const outward = endOutwardFromBands(line, station.id, bandsByPair);
       // Which frame(s) does this stop's marker paint? A viaCircle stop:
       //  - every incident edge arcs → the plain TANGENT square;
       //  - NO incident edge arcs (opted in but blocked/alone) → the plain
@@ -902,8 +962,11 @@ export function buildStopMarkers(
       //    poke out of the octolinear bands for nothing;
       //  - mixed → a JOINT: arc-side tangent half + straight-side octant half
       //    + the cap-plane wedge (see StopMarkerSpec.jointRotationDeg).
-      // Termini are exempt: one edge, one frame, and the end-style machinery
-      // owns their outward half.
+      // An END (outward set) is exempt: the end-style machinery owns its
+      // outward half. That holds however many edges it has — a stop only reads
+      // as an end when its bands agree to SAME_HEADING_DOT, and an arc and a
+      // straight that agree that closely are already on one frame, so there is
+      // no joint to build.
       let jointRotationDeg: number | null = null;
       let jointArcOut: Vec2 | null = null;
       if (viaCircle && !outward) {
@@ -959,10 +1022,13 @@ export function buildStopMarkers(
   return reuseMarkerSpecs(markers);
 }
 
-// Two outward tangents count as the SAME heading down to float noise. Both
-// bands out of a stop run along its travel axis, so the real dot product is +1
-// or −1 and nothing lands in between; this is the guard against the last bit,
-// not a tolerance for bands that nearly agree.
+// Two outward tangents count as the SAME heading. Octolinear bands out of a
+// stop run along its travel axis, so their real dot product is +1 or −1 and
+// this is a guard against the last bit — but an ARC band's centerline is a
+// sampled polyline whose first chord is a hair off the true tangent, so an
+// arc leaving alongside a straight can land anywhere just short of 1. Those
+// fall through to "not an end", which is what they got before any of this:
+// deliberately conservative, and the reason not to loosen the constant.
 const SAME_HEADING_DOT = 1 - 1e-9;
 
 // Unit vector pointing outward from `stationId` along the bands' actual
@@ -976,13 +1042,14 @@ const SAME_HEADING_DOT = 1 - 1e-9;
 // too. What disqualifies a station is a band leaving the other way: a through
 // stop, a corner, a loop, a fork that splits both ways. An edge with no band in
 // `bandsByPair` paints nothing, so it covers nothing and is skipped — which
-// leaves a lone bandless edge returning null, as before.
+// both leaves a lone bandless edge returning null, as before, and ends a stop
+// whose only other edge never rendered.
 //
 // Using the bands' centerlines (rather than station-to-station directions) is
 // what makes the cap and the cap-extension stub align with the rendered band
 // path, even when a band routes through a fillet or has its endpoint shifted
 // off the station's geometric center for interlining.
-function terminusOutwardFromBand(
+function endOutwardFromBands(
   line: Line,
   stationId: StationId,
   bandsByPair: Record<string, SegmentBandSpec[]>,

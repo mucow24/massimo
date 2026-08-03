@@ -1739,16 +1739,17 @@ describe('parse — legacy doc-level curveRadius bake', () => {
 });
 
 // Line ends on disk: the line's own style is a plain drop-at-default field; the
-// per-terminus pins are topology-scoped, so the loader re-validates them
-// against the edge set the file actually carries (a hand-edited or
-// concurrently-edited file can disagree with itself).
+// per-station pins are scoped to where the line ENDS, so the loader
+// re-validates them against the shape the file actually carries (a hand-edited
+// or concurrently-edited file can disagree with itself). That question is
+// geometric, hence the real coordinates below — a—b—c running straight down.
 describe('line ends — file hygiene', () => {
   const chain = (linePatch: object) =>
     makeDoc({
       stations: [
-        makeStation({ id: 'a', stops: [makeStop('L1')] }),
-        makeStation({ id: 'b', stops: [makeStop('L1')] }),
-        makeStation({ id: 'c', stops: [makeStop('L1')] }),
+        makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1')] }),
+        makeStation({ id: 'b', x: 0, y: 300, stops: [makeStop('L1')] }),
+        makeStation({ id: 'c', x: 0, y: 600, stops: [makeStop('L1')] }),
       ],
       lines: [makeLine({ id: 'L1', stations: ['a', 'b', 'c'], ...linePatch })],
       styles: Object.values(T.DEFAULT_STYLES),

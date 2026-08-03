@@ -109,18 +109,15 @@ export function neighborsOf(line: Line, stationId: StationId): StationId[] {
 }
 
 // Number of incident edges. Since edges are unique, this equals the neighbour
-// count. Degree 1 = a terminus; degree ≥ 3 = a branch junction.
+// count. Degree 1 = a tip; degree ≥ 3 = a branch junction.
+//
+// Note what degree does NOT answer: where the line's ink ENDS. That is
+// geometric — a line branching at its own end leaves two edges down one
+// corridor and ends there all the same — so it is asked of the stops and their
+// positions, by `lineEndsAt` (geometry/interlining.ts). Everything about
+// painted ends and their per-station pins goes through that, not through this.
 export function degreeOf(line: Line, stationId: StationId): number {
   return neighborsOf(line, stationId).length;
-}
-
-// Is this station one of the line's ENDS? Degree 1 exactly: a loop (degree 2
-// throughout) has no end, a junction has none at the fork, and a lone stop
-// (degree 0) has no direction to end along. A branching line has one per branch
-// tip. This is the predicate the painted end style and its per-station override
-// key off.
-export function isLineTerminus(line: Line, stationId: StationId): boolean {
-  return degreeOf(line, stationId) === 1;
 }
 
 // Shortest hop path (BFS) over one line's edge graph from `fromId` to `toId`,

@@ -3,7 +3,7 @@
 //
 // Everything here is built in the OUTWARD frame: the unit vector `ow` pointing
 // out of the line at that terminus (read from the band's own centerline tangent
-// — see terminusOutwardFromBand), and its perpendicular. NOT the marker
+// — see endOutwardFromBands), and its perpendicular. NOT the marker
 // square's rotation frame: the square is squared to the STOP's travel axis,
 // which a user can set independently of the corridor the band actually runs
 // along. A rounded end has to continue the stripe's edges, so it must follow the
