@@ -149,22 +149,69 @@ describe('branch arms are read off the junction', () => {
   // dead opposite the incoming one, and the through-run is the one that stays
   // straight longer. Meanwhile m sits off-axis, so the through band j|m doglegs
   // to reach it — 280 units from the junction, and no business of the notch.
-  const broadChannel = () =>
+  const broadChannel = (nAt = -200, edges = ['j|n', 'j|m', 'b|j']) =>
     makeDoc({
       stations: [
         makeStation({ id: 'j', x: 0, y: 0, stops: [stopAt('auto-nw-se')] }),
-        makeStation({ id: 'n', x: -200, y: -200, stops: [stopAt('auto-nw-se')] }),
+        makeStation({ id: 'n', x: nAt, y: nAt, stops: [stopAt('auto-nw-se')] }),
         makeStation({ id: 'm', x: 200, y: 260, stops: [stopAt('auto-vertical')] }),
         makeStation({ id: 'b', x: 140, y: 60, stops: [stopAt('auto-horizontal')] }),
       ],
-      lines: [seamLine(['j|n', 'j|m', 'b|j'])],
+      lines: [seamLine(edges)],
     });
 
+  // Every permutation of the same three edges: `line.edges` order is the user's,
+  // and the arms must not be.
+  const EDGE_ORDERS = [
+    ['j|n', 'j|m', 'b|j'],
+    ['j|n', 'b|j', 'j|m'],
+    ['b|j', 'j|m', 'j|n'],
+    ['j|m', 'b|j', 'j|n'],
+  ];
+
   it('the arm that peels off first is the branch, when two leave on the same axis', () => {
-    const arms = armsByPair(broadChannel());
-    expect(arms['b|j']).toEqual(['curved']);
-    expect(arms['j|m']).toEqual(['straight']);
+    for (const edges of EDGE_ORDERS) {
+      const arms = armsByPair(broadChannel(-200, edges));
+      expect(arms['b|j']).toEqual(['curved']);
+      expect(arms['j|m']).toEqual(['straight']);
+      expect(arms['j|n']).toEqual(['straight']);
+    }
+  });
+
+  // Same junction, but the INCOMING arm is now the shortest of the three. Both
+  // candidate through-pairs contain it, so scoring a pair by its SHORTER run
+  // saturates on it and calls them equal — and the verdict falls to whatever
+  // order the edges happen to be declared in. A through-run's length is the
+  // length of BOTH its arms, so the pairs score 353 and 155 and never tie.
+  it('scores a through-run by both its arms, not the shorter one', () => {
+    for (const edges of EDGE_ORDERS) {
+      const arms = armsByPair(broadChannel(-50, edges));
+      expect(arms['b|j']).toEqual(['curved']);
+      expect(arms['j|m']).toEqual(['straight']);
+      expect(arms['j|n']).toEqual(['straight']);
+    }
+  });
+
+  it('a self-crossing has TWO through-runs, and neither is a branch', () => {
+    // The line reaches j twice and crosses itself there: four band ends, two
+    // dead-opposed pairs. Picking one pair and calling the rest branches would
+    // paint half an X.
+    const arms = armsByPair(
+      makeDoc({
+        stations: [
+          makeStation({ id: 'j', x: 0, y: 0, stops: [hStop()] }),
+          makeStation({ id: 'w', x: -200, y: 0, stops: [hStop()] }),
+          makeStation({ id: 'e', x: 200, y: 0, stops: [hStop()] }),
+          makeStation({ id: 'n', x: 0, y: -200, stops: [stopAt('auto-vertical')] }),
+          makeStation({ id: 's', x: 0, y: 200, stops: [stopAt('auto-vertical')] }),
+        ],
+        lines: [seamLine(['j|w', 'e|j', 'j|n', 'j|s'])],
+      }),
+    );
+    expect(arms['j|w']).toEqual(['straight']);
+    expect(arms['e|j']).toEqual(['straight']);
     expect(arms['j|n']).toEqual(['straight']);
+    expect(arms['j|s']).toEqual(['straight']);
   });
 
   it("a through band's far-end dogleg does not make it a branch", () => {

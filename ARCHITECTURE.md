@@ -1948,11 +1948,10 @@ A `SegmentBandSpec` carries **parallel arrays** (`lines`, `paths`, `stripeOffset
 `stripeWidths`, `linePriorities`, `seamArms` — index k = same stripe).
 `stripeOffsets`/`stripeWidths`/`radius` are the **single source of truth**: every consumer (band
 paint, stripe outline, label/tag placement, hit sampling) **must read them, never re-derive**, and
-must use **`band.radius`** (the
-bumped/capped effective radius), **not** any line's raw `curveRadius` (the configured R is the
-LARGEST member line's radius). `bandKey` (= `pairKey#sortedLineIds`)
-is unique and stable regardless of input order — used for React keys and as the "which band"
-identity. The band specs are pinned by a **byte-exact golden snapshot**
+must use **`band.radius`** (the bumped/capped effective radius), **not** any line's raw
+`curveRadius` (the configured R is the LARGEST member line's radius). `bandKey` (=
+`pairKey#sortedLineIds`) is unique and stable regardless of input order — used for React keys and
+as the "which band" identity. The band specs are pinned by a **byte-exact golden snapshot**
 (`interlining.golden.test.ts`) guarding the zero-visual-change-for-legacy-docs invariant; never
 update it without understanding why every painted path on every map would move.
 
@@ -2005,12 +2004,21 @@ lines sharing a band can differ. All three passes read the same `lineStroke` hel
 highlight overlay so they can't drift.
 
 **Which arm.** `assignSeamArms` reads it off the JUNCTION, never off the band's own shape. At each
-station where a line has three or more band ends, the pair of ends that most nearly OPPOSE each
-other is the through-run and every other end there is a branch; a station with two ends is a plain
-joint or a corner, whichever way its bands bend. Ties go to the longer straight run, which is what
-a real fork needs: two arms can leave a junction along the SAME axis — dead opposite the incoming
+station, the line's band ends there are matched into THROUGH-RUNS, most opposed first, and anything
+left over is a branch. A station with two ends is a plain joint or a corner and always pairs up,
+whichever way its bands bend; a lone end is a terminus and pairs with nothing, which is not the
+same as branching. Matching continues past the first run only while a remaining pair is DEAD
+opposed — a line that crosses itself at a station has two through-runs and no branch, and stopping
+at one would paint half an X — while a second pair that is merely the best of what's left is a
+fork, not a crossing.
+
+A run scores on how nearly its arms oppose each other, then on their COMBINED straight length: the
+length of the straight corridor they make through the station. That second term is what a real
+fork needs, because two arms can leave a junction along the SAME axis — dead opposite the incoming
 corridor either way — and diverge only further on, so the one that peels off first is the branch
-(the A at Broad Channel). Asking the band's own polyline instead is the trap: a through corridor
+(the A at Broad Channel). Scoring a pair by its SHORTER arm instead saturates on the arm both
+candidate pairs share, ties them, and hands the verdict to whatever order `line.edges` happens to
+be in. Asking the band's own polyline instead of the junction is the older trap: a through corridor
 whose next station sits off-axis doglegs to reach it, and answers "branch" from 300 units away —
 painting a straight stroke clean across the branch mouth. A band has two ends and one verdict, so
 a band that branches at one end and runs through at the other still reads as a branch at both.

@@ -364,6 +364,39 @@ export function computeArcRadii(verts: Vec2[], R: number): { rs: number[]; angle
 }
 
 /**
+ * The initial STRAIGHT RUN of a polyline, walked from one end: the distance to
+ * its first corner, in world units, with the unit direction it leaves that end
+ * in. Runs PAST collinear vertices — same `angleBetween > EPS` corner test the
+ * fillet emitters use, so a joint that doesn't actually bend can't shorten it
+ * and the two can't drift.
+ *
+ * Read off the CENTERLINE, never an offset edge: a fillet tighter than the
+ * offset (`radius < |offset|`) degenerates that edge's corner to a straight, so
+ * an offset-derived answer would call the inside of a bend straight while the
+ * outside of the same bend is bent. The branch seam pairs a junction's band
+ * ends with this (see `assignSeamArms`).
+ */
+export function straightRunFrom(
+  verts: Vec2[],
+  fromStart: boolean,
+): { out: Vec2; run: number } | null {
+  const n = verts.length;
+  if (n < 2) return null;
+  // Walk from whichever end was asked for, without copying the array — this
+  // runs over every band on every geometry rebuild.
+  const at = (i: number) => (fromStart ? verts[i] : verts[n - 1 - i]);
+  const first = sub(at(1), at(0));
+  const out = norm(first);
+  let run = len(first);
+  for (let i = 2; i < n; i++) {
+    const step = sub(at(i), at(i - 1));
+    if (angleBetween(out, norm(step)) > EPS) break;
+    run += len(step);
+  }
+  return { out, run };
+}
+
+/**
  * Build an SVG path string from a polyline, replacing each interior vertex
  * with a circular-arc fillet tangent to both adjacent edges. Radius is taken
  * from `computeArcRadii`, which honors per-edge tangent budget so an arc that
