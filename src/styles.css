@@ -318,8 +318,8 @@ select option {
   background: var(--control-hover);
 }
 
-/* Menus: underlined Helvetica Neue triggers, weight lighter than "Massimo"
-   (which is 700) but still substantial enough to read as a control.
+/* Menus: underlined Helvetica Neue triggers at weight 500 — lighter than the
+   bold chrome around them, but still substantial enough to read as a control.
    Structure is Radix DropdownMenu: the panel is positioned by Radix's popper
    (a fixed-position wrapper), so .menu-panel carries only the visuals — no
    position/top/left. Its z-index is real, though: Radix copies the content's
