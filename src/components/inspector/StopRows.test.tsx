@@ -474,7 +474,11 @@ describe('<StopRows /> — line ends', () => {
   it('offers it where the line BRANCHES at that end, degree 2 and all', () => {
     branchedAtA();
     renderRows();
-    expect(screen.getByRole('combobox', { name: endCombo('1') })).toBeTruthy();
+    // Must be ENABLED, not merely present: the picker renders at every stop and
+    // is only `disabled={!isTerminus}`, so a regression to the degree-1 rule
+    // (the one a2eee69 fixed) leaves it rendered-but-greyed — which getByRole
+    // still finds. `toBeTruthy` on the query alone could not tell those apart.
+    expect(screen.getByRole('combobox', { name: endCombo('1') })).toBeEnabled();
   });
 
   it('greys it out at an interior stop rather than vanishing', () => {

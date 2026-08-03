@@ -71,10 +71,17 @@ describe('viewportStore — gridSize', () => {
     expect(GRID_SIZES).toEqual([5, 10, 20]);
   });
 
-  it('rehydrates a persisted blob without gridSize back to the default 10', async () => {
-    // A viewport saved before gridSize existed: present keys must still apply,
-    // but the missing gridSize must fall back to the initializer (not undefined
-    // / NaN, which would poison every snap).
+  it('rehydrating a blob without gridSize leaves the live gridSize untouched', async () => {
+    // A viewport saved before gridSize existed. There is no custom `merge`, so
+    // zustand shallow-spreads the blob over live state: a key the blob omits is
+    // not written at all, which on a real boot leaves the initializer's value
+    // standing. What must never happen is the key arriving as undefined/NaN,
+    // which would poison every snap.
+    //
+    // Seeded to a NON-default 20 on purpose. Asserting the default 10 here
+    // would re-read what `beforeEach` just wrote and could not fail — and the
+    // boot default is already pinned by the getInitialState test above.
+    useViewportStore.setState({ gridSize: 20 });
     localStorage.setItem(
       'massimo-viewport',
       JSON.stringify({
@@ -84,10 +91,10 @@ describe('viewportStore — gridSize', () => {
     );
     await useViewportStore.persist.rehydrate();
     const s = useViewportStore.getState();
-    expect(s.gridSize).toBe(10);
+    expect(s.gridSize).toBe(20);
     expect(Number.isNaN(s.gridSize)).toBe(false);
-    // A key the blob DOES carry still applies — so the line above is gridSize
-    // falling back to the initializer, not the whole rehydrate being ignored.
+    // A key the blob DOES carry still applies — so the line above is the
+    // omitted key being preserved, not the whole rehydrate being ignored.
     expect(s.gridVisible).toBe(false);
   });
 });
@@ -111,9 +118,12 @@ describe('viewportStore — showWaypoints', () => {
     expect(JSON.parse(raw!).state.showWaypoints).toBe(true);
   });
 
-  it('rehydrates a persisted blob without showWaypoints back to the default off', async () => {
-    // A viewport saved before showWaypoints existed: the missing key must fall
-    // back to the initializer (off), not undefined.
+  it('rehydrating a blob without showWaypoints leaves the live value untouched', async () => {
+    // A viewport saved before showWaypoints existed. Seeded ON (the non-default)
+    // so this observes the omitted key being preserved rather than re-reading
+    // the `false` beforeEach already wrote; the boot default is pinned by the
+    // getInitialState test above.
+    useViewportStore.setState({ showWaypoints: true });
     localStorage.setItem(
       'massimo-viewport',
       JSON.stringify({
@@ -122,7 +132,10 @@ describe('viewportStore — showWaypoints', () => {
       }),
     );
     await useViewportStore.persist.rehydrate();
-    expect(useViewportStore.getState().showWaypoints).toBe(false);
+    const s = useViewportStore.getState();
+    expect(s.showWaypoints).toBe(true);
+    expect(s.showWaypoints).not.toBeUndefined();
+    expect(s.gridVisible).toBe(false); // control: the rehydrate did apply
   });
 });
 
@@ -145,9 +158,12 @@ describe('viewportStore — darkUiInDay', () => {
     expect(JSON.parse(raw!).state.darkUiInDay).toBe(true);
   });
 
-  it('rehydrates a persisted blob without darkUiInDay back to the default off', async () => {
-    // A viewport saved before darkUiInDay existed: the missing key must fall
-    // back to the initializer (off), not undefined.
+  it('rehydrating a blob without darkUiInDay leaves the live value untouched', async () => {
+    // A viewport saved before darkUiInDay existed. Seeded ON (the non-default)
+    // so this observes the omitted key being preserved rather than re-reading
+    // the `false` beforeEach already wrote; the boot default is pinned by the
+    // getInitialState test above.
+    useViewportStore.setState({ darkUiInDay: true });
     localStorage.setItem(
       'massimo-viewport',
       JSON.stringify({
@@ -156,7 +172,10 @@ describe('viewportStore — darkUiInDay', () => {
       }),
     );
     await useViewportStore.persist.rehydrate();
-    expect(useViewportStore.getState().darkUiInDay).toBe(false);
+    const s = useViewportStore.getState();
+    expect(s.darkUiInDay).toBe(true);
+    expect(s.darkUiInDay).not.toBeUndefined();
+    expect(s.gridVisible).toBe(false); // control: the rehydrate did apply
   });
 });
 
@@ -208,7 +227,11 @@ describe('viewportStore — showAnchors', () => {
     expect(JSON.parse(raw!).state.showAnchors).toBe(true);
   });
 
-  it('rehydrates a persisted blob without showAnchors back to the default OFF', async () => {
+  it('rehydrating a blob without showAnchors leaves the live value untouched', async () => {
+    // Seeded ON (the non-default) so this observes the omitted key being
+    // preserved rather than re-reading the `false` beforeEach already wrote;
+    // the boot default is pinned by the getInitialState test above.
+    useViewportStore.setState({ showAnchors: true });
     localStorage.setItem(
       'massimo-viewport',
       JSON.stringify({
@@ -217,6 +240,9 @@ describe('viewportStore — showAnchors', () => {
       }),
     );
     await useViewportStore.persist.rehydrate();
-    expect(useViewportStore.getState().showAnchors).toBe(false);
+    const s = useViewportStore.getState();
+    expect(s.showAnchors).toBe(true);
+    expect(s.showAnchors).not.toBeUndefined();
+    expect(s.gridVisible).toBe(false); // control: the rehydrate did apply
   });
 });

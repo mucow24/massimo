@@ -180,17 +180,33 @@ describe('undo / redo — persistence flush', () => {
     expect(persistedName()).toBe(DEFAULT_DOC.name);
   });
 
-  it("an undo's write is never overtaken by a stale pending write", async () => {
+  it("an undo's write is never overtaken by a stale pending write", () => {
     // The edit arms a debounced write of 'Edited'; undo must both write the
     // reverted doc synchronously AND cancel that pending write — otherwise the
     // stale timer fires ~300ms later and resurrects the undone edit on disk.
-    useDoc.getState().setDocName('Edited');
-    undo();
-    expect(persistedName()).toBe(DEFAULT_DOC.name);
+    //
+    // Driven on fake timers. The original waited out 350ms of wall clock, which
+    // made this the slowest test in the file and — with no assertion that a
+    // write was ever actually pending — indistinguishable from a path that
+    // arms no timer at all.
+    vi.useFakeTimers();
+    try {
+      useDoc.getState().setDocName('Edited');
+      // Precondition: there IS a debounced write in flight to be overtaken by.
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
 
-    // Give a leaked timer every chance to fire.
-    await new Promise((r) => setTimeout(r, 350));
-    expect(persistedName()).toBe(DEFAULT_DOC.name);
+      undo();
+      expect(persistedName()).toBe(DEFAULT_DOC.name);
+
+      // Give a leaked timer every chance to fire: nothing may write again, and
+      // the reverted name must survive the whole debounce window.
+      const spy = vi.spyOn(window.Storage.prototype, 'setItem');
+      vi.advanceTimersByTime(1000);
+      expect(spy).not.toHaveBeenCalled();
+      expect(persistedName()).toBe(DEFAULT_DOC.name);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('redo writes the reapplied doc through to localStorage', () => {
