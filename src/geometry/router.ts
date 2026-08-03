@@ -364,6 +364,26 @@ export function computeArcRadii(verts: Vec2[], R: number): { rs: number[]; angle
 }
 
 /**
+ * Does this polyline change direction anywhere? Same corner test the fillet
+ * emitters use (`angleBetween > EPS`), so the two can't drift.
+ *
+ * Read off the CENTERLINE, never an offset edge: a fillet tighter than the
+ * offset (`radius < |offset|`) degenerates that edge's corner to a straight, so
+ * an offset-derived answer would call the inside of a bend "straight" while the
+ * outside of the same bend is "bent". The branch seam classifies a whole band
+ * with this, and a band that turns is still a branch when its fillet is
+ * squeezed to nothing.
+ */
+export function polylineTurns(verts: Vec2[]): boolean {
+  for (let i = 1; i < verts.length - 1; i++) {
+    const inDir = norm(sub(verts[i], verts[i - 1]));
+    const outDir = norm(sub(verts[i + 1], verts[i]));
+    if (angleBetween(inDir, outDir) > EPS) return true;
+  }
+  return false;
+}
+
+/**
  * Build an SVG path string from a polyline, replacing each interior vertex
  * with a circular-arc fillet tangent to both adjacent edges. Radius is taken
  * from `computeArcRadii`, which honors per-edge tangent budget so an arc that
@@ -511,13 +531,17 @@ export function emitOffsetSegments(verts: Vec2[], R: number, offset: number): Of
 }
 
 /**
- * Emit an offset-segment chain as one continuous SVG path. Callers that want
- * the chain itself (the branch seam, which decides whether to draw an edge at
- * all by looking for an arc in it) walk `emitOffsetSegments` and come here,
- * rather than re-deriving the geometry from the vertices.
+ * Like filletPath but emits a translated path offset perpendicular to the
+ * local direction by `offset` (constant signed distance). Used for interlining
+ * bands that share a centerline.
  */
-export function offsetSegmentsPath(segs: OffsetPathSegment[]): string {
+export function offsetFilletPath(verts: Vec2[], R: number, offset: number): string {
+  if (Math.abs(offset) < EPS) return filletPath(verts, R);
+  if (verts.length < 2) return '';
+
+  const segs = emitOffsetSegments(verts, R, offset);
   if (segs.length === 0) return '';
+
   let d = `M ${fmt(segs[0].from)}`;
   for (const s of segs) {
     if (s.kind === 'line') {
@@ -528,15 +552,4 @@ export function offsetSegmentsPath(segs: OffsetPathSegment[]): string {
     }
   }
   return d;
-}
-
-/**
- * Like filletPath but emits a translated path offset perpendicular to the
- * local direction by `offset` (constant signed distance). Used for interlining
- * bands that share a centerline.
- */
-export function offsetFilletPath(verts: Vec2[], R: number, offset: number): string {
-  if (Math.abs(offset) < EPS) return filletPath(verts, R);
-  if (verts.length < 2) return '';
-  return offsetSegmentsPath(emitOffsetSegments(verts, R, offset));
 }

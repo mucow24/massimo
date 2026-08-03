@@ -342,7 +342,7 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
           />
         </div>
       )}
-      {/* Which pieces of the seam edge to keep. Covered like every other field
+      {/* Which arm of the branch notch draws. Covered like every other field
           here, so a style can force the full notch back onto a line someone set
           to curved-only. */}
       <div className="row">

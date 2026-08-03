@@ -475,19 +475,19 @@ describe('<SegmentBand> — branch seam (pass="seam")', () => {
     expect(container.querySelector('[data-band-seam]')).toBeNull();
   });
 
-  describe('seamEdges filter (branch inner edges)', () => {
+  describe('seamEdges — which arm of the notch draws (branch inner edges)', () => {
     // A BENT band — the branching one at a self-overlap. Its seam edges carry a
     // fillet arc, so they are what 'curved' keeps and 'straight' drops. The
     // plain `renderSeam` spec is the straight (through-running) band: the
     // opposite verdict under both modes.
-    const bentSeam = (seamEdges?: SeamEdges) => {
+    const bentSeam = (seamEdges?: SeamEdges, radius = 24) => {
       const spec = baseSpec(['L1']);
       spec.centerline = [
         { x: 0, y: 0 },
         { x: 100, y: 0 },
         { x: 100, y: 100 },
       ];
-      spec.radius = 24;
+      spec.radius = radius;
       return render(
         <svg>
           <SegmentBand
@@ -530,6 +530,16 @@ describe('<SegmentBand> — branch seam (pass="seam")', () => {
 
     it("'straight' drops a bent edge — the branch's own stroke stays out of the notch", () => {
       expect(seamPaths(bentSeam('straight').container)).toBe('');
+    });
+
+    // The verdict is the BAND's, not each edge's. A fillet tighter than the seam
+    // offset (`radius < width/2`, which the marker-fit cap can produce on a short
+    // branch lead-in) degenerates the INNER edge's corner to a straight — so an
+    // edge-by-edge test would call one side of the same band a branch and the
+    // other a through-runner, and each mode would paint half a notch.
+    it('classifies the whole band, so a fillet tighter than the seam offset still reads as bent', () => {
+      expect(bentSeam('curved', 4).container.querySelectorAll('[data-band-seam]').length).toBe(2);
+      expect(bentSeam('straight', 4).container.querySelectorAll('[data-band-seam]').length).toBe(0);
     });
 
     it("'straight' keeps a straight band's edges whole, so the main line's stroke carries through", () => {

@@ -1026,11 +1026,11 @@ export function setLineSeamWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
   return setLineStyleField(doc, id, 'seamWidth', canonicalStrokeWidth(w));
 }
 
-// Which pieces of this line's seam edges get painted (see model/lineStroke.ts).
+// Which arm of this line's branch notch gets painted (see model/lineStroke.ts).
 // Same contract as the other plain style setters: the field is dropped at
 // 'both' (the full notch) so the default is never stored, and a real change
-// detaches the line from its preset. PRESENTATION — the filter only picks
-// which seam pieces a band emits, so no region reconcile is needed.
+// detaches the line from its preset. PRESENTATION — it only picks which of a
+// band's seam edges draw, so no region reconcile is needed.
 export function setLineSeamEdges(doc: MapDoc, id: LineId, v: SeamEdges): MapDoc {
   return setLineStyleField(doc, id, 'seamEdges', canonicalSeamEdges(v));
 }

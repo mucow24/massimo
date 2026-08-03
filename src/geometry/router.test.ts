@@ -6,7 +6,7 @@ import {
   filletPath,
   offsetFilletPath,
   emitOffsetSegments,
-  offsetSegmentsPath,
+  polylineTurns,
   computeArcRadii,
   DIRS_8,
 } from './router';
@@ -313,24 +313,53 @@ describe('offsetFilletPath', () => {
     expect(d).not.toContain('A 14.00 14.00');
   });
 
-  // `offsetSegmentsPath` is the same emitter offsetFilletPath uses, exposed for
-  // callers that walk the chain first (the branch seam, which decides whether
-  // to draw an edge at all by looking for an arc in it).
-  describe('offsetSegmentsPath', () => {
-    it('emits the same path offsetFilletPath does for the same chain', () => {
-      const segs = emitOffsetSegments(bendVerts, 24, 10);
-      expect(offsetSegmentsPath(segs)).toBe(offsetFilletPath(bendVerts, 24, 10));
-    });
+  it('emits one continuous sub-path — a single leading M, never a pen lift', () => {
+    expect(offsetFilletPath(bendVerts, 24, 10).match(/M /g)!.length).toBe(1);
+  });
+});
 
-    it('emits one continuous sub-path — a single leading M, never a pen lift', () => {
-      const d = offsetSegmentsPath(emitOffsetSegments(bendVerts, 24, 10));
-      expect(d.match(/M /g)!.length).toBe(1);
-      expect(d).toContain('A 34.00 34.00');
-    });
+// The branch seam classifies a whole band with this: a band that turns is the
+// branch, one that runs through is the main line.
+describe('polylineTurns', () => {
+  const straight = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+  ];
+  // East then south, edges long enough that a full R=24 fillet fits.
+  const bend = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { x: 100, y: 100 },
+  ];
 
-    it('yields an empty path for an empty chain', () => {
-      expect(offsetSegmentsPath([])).toBe('');
-    });
+  it('is false for a two-vertex run', () => {
+    expect(polylineTurns(straight)).toBe(false);
+  });
+
+  it('is false for a collinear through-vertex — a joint is not a turn', () => {
+    expect(
+      polylineTurns([
+        { x: 0, y: 0 },
+        { x: 50, y: 0 },
+        { x: 100, y: 0 },
+      ]),
+    ).toBe(false);
+  });
+
+  it('is true at a bend', () => {
+    expect(polylineTurns(bend)).toBe(true);
+  });
+
+  it('reads the CENTERLINE, so a fillet tighter than the offset still counts as a turn', () => {
+    // radius 4 < offset 7: emitOffsetSegments degenerates the INSIDE edge's
+    // corner to a straight, so an offset-derived answer would disagree with the
+    // outside edge about the very same bend.
+    const inside = emitOffsetSegments(bend, 4, -7);
+    const outside = emitOffsetSegments(bend, 4, 7);
+    expect(inside.some((s) => s.kind === 'arc')).toBe(false);
+    expect(outside.some((s) => s.kind === 'arc')).toBe(true);
+    // The band itself turns regardless — one verdict, both edges.
+    expect(polylineTurns(bend)).toBe(true);
   });
 });
 

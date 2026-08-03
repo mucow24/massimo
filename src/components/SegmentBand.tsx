@@ -15,7 +15,7 @@ import { CasingRails } from './CasingRails';
 import { seamClipId } from './canvas/SeamClips';
 import type { Line, LineId, LineStyle } from '../model/types';
 import { leftNormal, midpoint, norm, sub } from '../geometry/vec';
-import { emitOffsetSegments, offsetSegmentsPath } from '../geometry/router';
+import { offsetFilletPath, polylineTurns } from '../geometry/router';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
 
 // A style's interior is "opaque" when its body fully covers its own footprint
@@ -173,27 +173,36 @@ export const SegmentBand = memo(function SegmentBand({
     if (!seamColor || seamW <= 0) return null;
     const off = spec.stripeOffsets[stripeIndex];
     const edge = fullWidth / 2;
-    // WHICH edge of a self-overlap carries the seam, per THIS line's own
+    // WHICH arm of a self-overlap carries the seam, per THIS line's own
     // setting — so two lines sharing a band can differ. Resolved live off
     // `live`, like the seam's color and width.
     //
     // The notch at a branch is two arms, one per band: the band that runs
     // STRAIGHT through (its casing carries on across the branch mouth) and the
     // band that TURNS away (its own casing curls into the junction). A band
-    // that bends is the branch, so an arc anywhere in an edge classifies it —
-    // and the chosen arm then draws WHOLE. Filtering by piece instead would
-    // cut a bent edge's straight lead-in off its fillet and leave a gap where
-    // the branch clears the other corridor.
+    // that bends is the branch, so `polylineTurns` classifies the WHOLE band —
+    // both its edges together, off the centerline — and the chosen arm then
+    // draws whole. Filtering by piece instead would cut a bent edge's straight
+    // lead-in off its fillet and leave a gap where the branch clears the other
+    // corridor; classifying edge-by-edge would split one band's verdict once a
+    // fillet is tighter than the seam offset, and paint half a notch.
+    //
+    // KNOWN LIMIT: arm identity is per JUNCTION, this test is per BAND. A band
+    // spans one station pair and may dogleg for reasons nothing to do with the
+    // branch, so a through corridor that bends anywhere along its length also
+    // reads as turning — at that junction 'straight' paints nothing and
+    // 'curved' equals 'both'. A band that runs through at one end and branches
+    // at the other likewise gets one verdict for both.
     const seamEdges = lineSeamEdgesOf(live);
+    if (seamEdges !== 'both' && polylineTurns(spec.centerline) !== (seamEdges === 'curved')) {
+      return null;
+    }
     return (
       <g clipPath={`url(#${seamClipId(lineId, spec.bandKey)})`} pointerEvents="none">
         {[-1, 1].map((side) => {
-          const segs = emitOffsetSegments(spec.centerline, spec.radius, off + side * edge);
-          const turns = segs.some((s) => s.kind === 'arc');
-          if (seamEdges !== 'both' && turns !== (seamEdges === 'curved')) return null;
           // An empty chain (a degenerate centerline) would emit `d=""` — inert
           // on-canvas, but a needless snag for the PDF exporter.
-          const d = offsetSegmentsPath(segs);
+          const d = offsetFilletPath(spec.centerline, spec.radius, off + side * edge);
           if (!d) return null;
           return (
             <path
