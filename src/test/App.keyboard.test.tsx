@@ -118,6 +118,34 @@ describe('App keyboard shortcuts: Escape', () => {
     }
   });
 
+  // Escape steps out of ONE thing. A useDismiss popover and App's global ladder
+  // were both bubble-phase listeners with no stopPropagation between them, so a
+  // single press closed the panel AND cancelled the mode behind it — state the
+  // user never asked to discard. The per-component tests can't see this: they
+  // render in isolation with no App mounted.
+  it('closing a popover with Escape leaves the active mode alone', async () => {
+    render(<App />);
+    useSelection.getState().setUiMode({ kind: 'creating-transfer', firstEnd: null });
+    const trigger = screen.getByRole('button', { name: 'Help' });
+    fireEvent.click(trigger);
+    await screen.findByRole('dialog', { name: 'Quick reference' });
+
+    fireEvent.keyDown(trigger, { key: 'Escape' });
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Quick reference' })).toBeNull(),
+    );
+    expect(useSelection.getState().uiMode.kind).toBe('creating-transfer');
+    useSelection.getState().setUiMode({ kind: 'idle' });
+  });
+
+  it('with no popover open, Escape still drops the mode to idle', () => {
+    render(<App />);
+    useSelection.getState().setUiMode({ kind: 'creating-transfer', firstEnd: null });
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+
   // The guard deliberately excludes range/color inputs (like the Ctrl-combos):
   // they have no in-progress edit to protect, so Esc mid-slider still works.
   it('falls through on a focused range slider (Esc still deselects)', () => {

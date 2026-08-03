@@ -39,6 +39,7 @@ import * as T from '../model/transforms';
 import { cyclingColors, FALLBACK_LINE_COLOR, type Palette } from '../model/palettes';
 import { useCustomPalettes } from './customPalettes';
 import {
+  sanitizeImageHrefs,
   sanitizeLineCircles,
   sanitizeStations,
   snapStationCells,
@@ -401,6 +402,8 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     styleDefaults?: Record<StyleKind, string>;
     regionAssignments?: Record<string, RegionAssignment>;
     lineCircles?: Record<string, LineCircle>;
+    svgImages?: Record<string, SvgImage>;
+    backgroundOrder?: string[];
     labelBold?: boolean;
     labelWeight?: TextLabelWeight;
     activePalettes?: string[];
@@ -641,6 +644,21 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
         ...out,
         ...(out.lineCircles ? { lineCircles: circles.lineCircles } : {}),
         ...(out.stations ? { stations: circles.stations } : {}),
+      };
+    }
+  }
+  // Non-version-gated invariant: every svg image's href is inline data. The
+  // guard had one caller (the clipboard) and neither doc-load path, so a doc
+  // persisted at ANY store version can carry a remote href that fetches on
+  // every paint and rides into every export. Idempotent and value-keyed; shared
+  // with the file-import path via `sanitizeImageHrefs`.
+  if (out.svgImages) {
+    const hrefs = sanitizeImageHrefs(out.svgImages, out.backgroundOrder ?? []);
+    if (hrefs.changed) {
+      out = {
+        ...out,
+        svgImages: hrefs.svgImages,
+        ...(out.backgroundOrder ? { backgroundOrder: hrefs.backgroundOrder } : {}),
       };
     }
   }

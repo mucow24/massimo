@@ -199,7 +199,7 @@ describe('the reserved "None" stop-dot style', () => {
 
   const openWhite = makeStyle('stopDot', 'sd-open', {
     name: 'Open white',
-    props: { shape: 'open-white' },
+    props: props(OPEN_WHITE),
   });
 
   it('is never chosen as the fallback when the kind default is deleted', () => {

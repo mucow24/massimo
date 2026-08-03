@@ -95,7 +95,10 @@ const stationDefaultProps = (out: AnyDoc): Record<string, unknown> =>
 describe('migrateDoc', () => {
   describe('v16 → v17: polygonOrder + svgImageOrder → backgroundOrder', () => {
     const polygons = { p0: {}, p1: {} };
-    const svgImages = { i0: {} };
+    // A real inline data URI: an image whose href is outside the allowlist is
+    // DROPPED (sanitizeImageHrefs), which would take it out of the order these
+    // cases are about.
+    const svgImages = { i0: { href: 'data:image/svg+xml;base64,PHN2Zy8+' } };
 
     it('merges the two retired orders, polygons first, and drops the old keys', () => {
       const out = run(

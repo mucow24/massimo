@@ -70,6 +70,7 @@ import { reconcileOrder } from './recordOrder';
 import { parseHexA, withHexAlpha } from '../util/color';
 import { migrateLegacyInlineTokens } from '../geometry/labelTokens';
 import { copyPalette, LEGACY_BUILTIN_IDS, PALETTES, type Palette } from './palettes';
+import { isAllowedImageHref } from './svgImport';
 import type {
   DayNightColor,
   DotBaseShape,
@@ -96,6 +97,7 @@ import type {
   StopOrientation,
   StyleDef,
   StyleKind,
+  SvgImage,
   TextLabel,
   TextLabelAlign,
   TextLabelWeight,
@@ -550,6 +552,14 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   // the file version — see `snapStationCells`.
   const snapped = snapStationCells(merged.stations);
   if (snapped.changed) merged.stations = snapped.stations;
+  // Drop images whose href is outside the inline-data allowlist. Idempotent and
+  // shared with the rehydrate path via `sanitizeImageHrefs` — the two doc loads
+  // must repair identically, or a persisted doc keeps its remote href forever.
+  const hrefs = sanitizeImageHrefs(merged.svgImages, merged.backgroundOrder);
+  if (hrefs.changed) {
+    merged.svgImages = hrefs.svgImages;
+    merged.backgroundOrder = hrefs.backgroundOrder;
+  }
   // Line-circle binding invariants: drop malformed circles, strip dangling
   // bindings / orphaned viaCircle flags, reproject drifted bound stations.
   const circles = sanitizeLineCircles(merged.lineCircles, merged.stations);
@@ -1219,6 +1229,47 @@ export function bakeLegacyBackgroundOrder<
         ...reconcileOrder(doc.svgImages ?? {}, legacy('svgImageOrder')),
       ];
   return { ...rest, backgroundOrder: merged } as unknown as T;
+}
+
+/**
+ * Drop every svg image whose `href` is outside the inline-data allowlist, and
+ * its `backgroundOrder` entry with it.
+ *
+ * The allowlist ({@link isAllowedImageHref}) is what makes an image opaque:
+ * every image a map carries is inline bytes, so a map paints without reaching
+ * the network and an exported SVG/PNG/PDF is genuinely self-contained. The
+ * clipboard paste path checked it; the two DOC LOAD paths did not, so a
+ * hand-edited file with a remote `https://` href was accepted verbatim, fetched
+ * on every paint, and re-serialized into library payloads and every export.
+ *
+ * Dropping is the same repair every sibling sanitizer in this file makes for
+ * data it cannot honour (a malformed line circle, a region assignment with a
+ * dangling line id) — silently, and by removing the record rather than leaving
+ * a half-valid one behind.
+ *
+ * Non-version-gated: the hole existed at every store version, so a gate would
+ * skip exactly the docs most likely to carry it. Idempotent and value-keyed;
+ * returns its inputs by reference when nothing is wrong.
+ */
+export function sanitizeImageHrefs(
+  svgImages: Record<string, SvgImage>,
+  backgroundOrder: readonly string[],
+): { svgImages: Record<string, SvgImage>; backgroundOrder: string[]; changed: boolean } {
+  const dropped = new Set<string>();
+  for (const id of Object.keys(svgImages)) {
+    const href = svgImages[id]?.href;
+    if (typeof href !== 'string' || !isAllowedImageHref(href)) dropped.add(id);
+  }
+  if (dropped.size === 0) {
+    return { svgImages, backgroundOrder: backgroundOrder as string[], changed: false };
+  }
+  const kept: Record<string, SvgImage> = {};
+  for (const id of Object.keys(svgImages)) if (!dropped.has(id)) kept[id] = svgImages[id];
+  return {
+    svgImages: kept,
+    backgroundOrder: backgroundOrder.filter((id) => !dropped.has(id)),
+    changed: true,
+  };
 }
 
 // Backfill `line.name` for legacy files saved before the field existed, using
