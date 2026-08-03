@@ -10,7 +10,7 @@ beforeEach(() => {
 describe('App smoke', () => {
   it('renders without crashing', () => {
     render(<App />);
-    expect(screen.getByText('Massimo')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Massimo' })).toBeInTheDocument();
   });
 
   it('shows toolbar menus', () => {
