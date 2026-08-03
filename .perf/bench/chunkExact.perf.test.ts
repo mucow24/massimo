@@ -129,6 +129,10 @@ describe.runIf(PERF)('chunked zone exactness', () => {
         }
       }
 
+      // Recorded outcome across every tile tried. Chunking does NOT reproduce
+      // production's components byte for byte, so this must stay false; if it
+      // ever flips, the negative result below is stale and worth revisiting.
+      let anyMismatch = false;
       for (const TILE of [250, 400]) {
         let allMatch = true;
         const detail: string[] = [];
@@ -164,7 +168,10 @@ describe.runIf(PERF)('chunked zone exactness', () => {
           const a = compKeys(prod.comps);
           const b = compKeys(chunk.comps);
           const same = a.length === b.length && a.every((k, i) => k === b[i]);
-          if (!same) allMatch = false;
+          if (!same) {
+            allMatch = false;
+            anyMismatch = true;
+          }
           detail.push(
             `    ${c.label.padEnd(24)} prod comps=${String(prod.comps.length).padStart(3)} ` +
               `chunk comps=${String(chunk.comps.length).padStart(3)} ` +
@@ -174,7 +181,14 @@ describe.runIf(PERF)('chunked zone exactness', () => {
         }
         console.log(`\nTILE=${TILE}: ${allMatch ? 'ALL IDENTICAL' : 'MISMATCH'}\n` + detail.join('\n'));
       }
-      expect(true).toBe(true);
+      // The point of this harness is a NEGATIVE result: chunk seams fall in
+      // different places under clipper rounding, so component counts change.
+      // Asserting it keeps the idea from being quietly re-proposed, and turns a
+      // silently-broken harness into a failure instead of a reassuring log.
+      expect(
+        anyMismatch,
+        'chunked bodies now match production byte for byte — the chunking negative result no longer holds',
+      ).toBe(true);
     },
     LONG,
   );

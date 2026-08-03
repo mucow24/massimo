@@ -63,7 +63,7 @@ describe('dispatchMirrored — history grouping', () => {
     expect(historyDepth()).toBe(1);
   });
 
-  it('writes directly with no group for a single target (matching off)', () => {
+  it('does not fan out to the match when matching is off', () => {
     loadMatchingPair();
     // mirrorMatching stays off → captureMirrorTargets returns just the source.
     clearHistory();

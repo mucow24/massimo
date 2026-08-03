@@ -15,9 +15,11 @@ import type { TextLabel } from '../model/types';
  * trailing letter-spacing step past the last glyph (that is how CSS/Chromium
  * letter-spacing works, and the measurer models it on purpose — see the
  * `d + letterSpacingPx` bullet advance and `approximateLineWidth`). Runs are
- * drawn with textAnchor="start" at an explicit x, so that trailing step is dead
- * space: with tracking on, a right/center-aligned line's glyphs slide out of
- * their own bbox by (about) one tracking step.
+ * drawn with textAnchor="start" at an explicit x, so that trailing step would
+ * be dead space if alignment measured ink. Alignment uses the ADVANCE on both
+ * sides (alignAdvance), so the trailing step cancels and a right/center-aligned
+ * line's tracked glyphs stay inside their own measured bbox — which is what the
+ * assertions below pin.
  */
 
 // ---------------------------------------------------------------------------

@@ -64,8 +64,9 @@ describe('editing a stopDot style vs. the tagged ⇒ matches invariant on LINE s
     const r = parse(serialize(doc));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    // L2 (stamped AFTER the stopDot edit, so it stored an explicit 8) survives
-    // the prune; L1 is the one whose tag is silently stripped.
+    // BOTH lines keep the tag through parse's style prune: L2 because it was
+    // stamped after the stopDot edit and stored an explicit 8, and L1 despite
+    // carrying no explicit dot size at all.
     expect(r.doc.lines.L2.styleId).toBe('default-line');
     expect(r.doc.lines.L1.styleId).toBe('default-line');
   });

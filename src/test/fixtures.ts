@@ -106,8 +106,11 @@ export function makeLine(overrides: Partial<Line> & { id: LineId }): Line {
 export function makeBandSpec(
   lineIds: string[],
   // `stripeOffsets` is NOT overridable: it always derives from
-  // `stripeWidths`, so a fixture can never encode an impossible band
-  // (offsets that disagree with the widths' tangency positions).
+  // `stripeWidths`, so offsets can never disagree with the widths' tangency
+  // positions. Note this does NOT make the whole spec self-consistent —
+  // `paths` are placeholders, every stripe getting the centerline rather than
+  // its own offset path — so a DOM assertion about where a stripe sits is
+  // measuring the fixture, not the builder.
   overrides: Partial<Omit<SegmentBandSpec, 'lines' | 'stripeOffsets'>> = {},
 ): SegmentBandSpec {
   const stripeWidths = overrides.stripeWidths ?? lineIds.map(() => STOP_SIZE);

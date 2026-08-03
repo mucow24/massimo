@@ -23,7 +23,8 @@ class NoopResizeObserver {
   (globalThis as any).ResizeObserver ?? NoopResizeObserver;
 
 // jsdom's SVGElement doesn't implement pointer-capture methods either, and it
-// has no scrollIntoView (the sidebar scrolls the selected station row into view).
+// has no scrollIntoView — Radix's menu/select primitives call it when moving
+// the active item, alongside the pointer-capture methods stubbed below.
 if (typeof Element !== 'undefined') {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const proto = Element.prototype as any;

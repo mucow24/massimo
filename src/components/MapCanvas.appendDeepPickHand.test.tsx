@@ -12,8 +12,10 @@ import type { LineId, StationId } from '../model/types';
 // is gated on it (onCanvasClick's `if (inHandMode) return`,
 // useStationInteraction's `onClick: modeInert || inHandMode ? undefined`,
 // LineTagsLayer's tag pointerdown, and the sibling idle deep-pick's
-// `if (inHandMode || uiMode.kind !== 'idle') return false`). appendDeepPick has
-// no such guard, and since the splice-by-alt-click change it MUTATES the doc.
+// `if (inHandMode || uiMode.kind !== 'idle') return false`). appendDeepPick
+// carries the same guard, which is what these tests pin: it mutates the doc
+// (since the splice-by-alt-click change), so going inert in hand mode is the
+// difference between panning over a line and silently splicing it.
 //
 // Harness mirrors src/components/MapCanvas.appendSpliceByClick.test.tsx.
 const sizeProps = ['clientWidth', 'clientHeight'] as const;

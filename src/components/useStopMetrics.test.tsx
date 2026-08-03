@@ -79,7 +79,7 @@ describe('useStopMetrics', () => {
     expect(result.current(after, after.stops[0]).continues).toEqual({ plus: false, minus: true });
   });
 
-  it('reports the live transfer cap after a transfer is added', () => {
+  it('reports the live transfer cap after a transfer is removed', () => {
     const { result, rerender } = renderHook(() => useStopMetrics());
     const st = useDoc.getState().stations.s1;
     const before = result.current(st, st.stops[0]).transfers;
