@@ -364,6 +364,26 @@ export function computeArcRadii(verts: Vec2[], R: number): { rs: number[]; angle
 }
 
 /**
+ * Does this polyline change direction anywhere? Same corner test the fillet
+ * emitters use (`angleBetween > EPS`), so the two can't drift.
+ *
+ * Read off the CENTERLINE, never an offset edge: a fillet tighter than the
+ * offset (`radius < |offset|`) degenerates that edge's corner to a straight, so
+ * an offset-derived answer would call the inside of a bend "straight" while the
+ * outside of the same bend is "bent". The branch seam classifies a whole band
+ * with this, and a band that turns is still a branch when its fillet is
+ * squeezed to nothing.
+ */
+export function polylineTurns(verts: Vec2[]): boolean {
+  for (let i = 1; i < verts.length - 1; i++) {
+    const inDir = norm(sub(verts[i], verts[i - 1]));
+    const outDir = norm(sub(verts[i + 1], verts[i]));
+    if (angleBetween(inDir, outDir) > EPS) return true;
+  }
+  return false;
+}
+
+/**
  * Build an SVG path string from a polyline, replacing each interior vertex
  * with a circular-arc fillet tangent to both adjacent edges. Radius is taken
  * from `computeArcRadii`, which honors per-edge tangent budget so an arc that
@@ -515,36 +535,15 @@ export function emitOffsetSegments(verts: Vec2[], R: number, offset: number): Of
  * local direction by `offset` (constant signed distance). Used for interlining
  * bands that share a centerline.
  */
-export function offsetFilletPath(
-  verts: Vec2[],
-  R: number,
-  offset: number,
-  keep: 'both' | 'line' | 'arc' = 'both',
-): string {
-  // Fast path only for the unfiltered offset≈0 case (byte-identical to before);
-  // a filtered call always walks the segments so it can drop pieces by kind.
-  if (keep === 'both' && Math.abs(offset) < EPS) return filletPath(verts, R);
+export function offsetFilletPath(verts: Vec2[], R: number, offset: number): string {
+  if (Math.abs(offset) < EPS) return filletPath(verts, R);
   if (verts.length < 2) return '';
 
   const segs = emitOffsetSegments(verts, R, offset);
   if (segs.length === 0) return '';
 
-  // Emit the retained pieces, breaking into a fresh sub-path (a new `M`)
-  // wherever a piece is dropped — so non-adjacent kept pieces are never bridged
-  // by a phantom straight edge. With `keep === 'both'` nothing is dropped, so a
-  // single `M` leads and the output is byte-identical to the original loop.
-  let d = '';
-  let penDown = false;
+  let d = `M ${fmt(segs[0].from)}`;
   for (const s of segs) {
-    const kept = keep === 'both' || (keep === 'line' ? s.kind === 'line' : s.kind === 'arc');
-    if (!kept) {
-      penDown = false;
-      continue;
-    }
-    if (!penDown) {
-      d += `${d ? ' ' : ''}M ${fmt(s.from)}`;
-      penDown = true;
-    }
     if (s.kind === 'line') {
       d += ` L ${fmt(s.to)}`;
     } else {

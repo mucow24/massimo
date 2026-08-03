@@ -441,10 +441,10 @@ export interface Line {
   // so a seam-color-only line still shows a seam. Only takes effect alongside a
   // non-transparent seamColor.
   seamWidth?: number;
-  // Which pieces of this line's seam edges to paint (see SeamEdges). Missing ⇒
+  // Which arm of this line's branch notch to paint (see SeamEdges). Missing ⇒
   // 'both', the full notch — legacy saves carried a doc-level `seamEdges`
   // instead, baked onto lines on load (see bakeDocSeamEdges in serialize.ts).
-  // PRESENTATION, like the seam color it filters: it never moves a band path.
+  // PRESENTATION, like the seam color it picks arms of: it never moves a band path.
   // The setter drops the field at 'both' so the default is never stored.
   seamEdges?: SeamEdges;
   // TfL-tick dimensions for this line's 'dash' stops, world units. Both are
@@ -736,10 +736,11 @@ export interface LineCircle {
   locked?: boolean;
 }
 
-// How the branch seam's "inner edges" are drawn (see Line.seamEdges). A seam
-// edge path is a mix of straight (`line`) and curved (fillet `arc`) pieces; this
-// picks which to keep — 'both' is the full notch, 'straight'/'curved' hint the
-// branch with just one edge.
+// How the branch seam's "inner edges" are drawn (see Line.seamEdges). The notch
+// at a branch is two arms, one per band — the band running STRAIGHT through and
+// the band that TURNS away — and this picks which of them draws: 'both' is the
+// full notch, 'straight' carries the main line's stroke on unbroken across the
+// branch mouth, 'curved' brings the branch's own stroke into the junction.
 export type SeamEdges = 'both' | 'straight' | 'curved';
 
 export interface MapDoc {
@@ -833,8 +834,8 @@ export interface MapDoc {
   // Which color palettes are available in the line editor. Invariant:
   // never empty (enforced by transforms / parse sanitiser).
   activePalettes: PaletteId[];
-  // NOTE: there is no doc-level `seamEdges` anymore — which pieces of a branch
-  // seam get painted is a per-line style field (Line.seamEdges). Legacy saves
+  // NOTE: there is no doc-level `seamEdges` anymore — which arm of a branch
+  // seam gets painted is a per-line style field (Line.seamEdges). Legacy saves
   // that carry the old doc field get it baked onto their lines on load
   // (bakeDocSeamEdges).
   // Whether the map is a NIGHT map: false = day (light), true = night (dark).

@@ -9,25 +9,26 @@ const SEAM_EDGES_LABELS: Record<SeamEdges, string> = {
 };
 
 const SEAM_EDGES_TITLES: Record<SeamEdges, string> = {
-  both: 'Both — the full notch, every piece of the seam edge',
-  straight: 'Straight — only the straight runs, so the bend itself stays merged',
-  curved: 'Curved — only the fillet arcs, hinting the branch at the corner alone',
+  both: 'Both — the full notch, every edge that meets at the branch',
+  straight: 'Straight — the main line runs on through, its stroke unbroken across the branch',
+  curved: 'Curved — the branch carries its own stroke into the junction',
 };
 
-// A seam edge is a mix of straight runs and fillet arcs, so the glyph is a
-// single rounded corner with the pieces this mode DROPS drawn faint: the shape
-// stays put across the three segments and only the kept ink moves, which is
-// exactly the choice being made. Same one-stroke-tells-the-story idea as
+// The notch at a branch is two arms: the line running STRAIGHT through, and the
+// one that TURNS away. So the glyph is the junction itself — a through-run with
+// a branch curving into it — with the arm this mode drops drawn faint: the
+// shape stays put across the three segments and only the kept ink moves, which
+// is exactly the choice being made. Same one-stroke-tells-the-story idea as
 // LineEndGlyph, and the same 15px box.
 export function SeamEdgesGlyph({ mode }: { mode: SeamEdges }) {
-  const legs = 'M 1.5 3.5 L 6 3.5 M 11 8.5 L 11 13.5';
-  const arc = 'M 6 3.5 A 5 5 0 0 1 11 8.5';
+  const through = 'M 11 1 L 11 14';
+  const branch = 'M 1 11 L 4 11 A 7 7 0 0 0 11 4';
   const faint = 0.25;
   return (
     <svg width={15} height={15} viewBox="0 0 15 15" aria-hidden="true" style={{ display: 'block' }}>
       <g fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="butt">
-        <path d={legs} opacity={mode === 'curved' ? faint : 1} />
-        <path d={arc} opacity={mode === 'straight' ? faint : 1} />
+        <path d={through} opacity={mode === 'curved' ? faint : 1} />
+        <path d={branch} opacity={mode === 'straight' ? faint : 1} />
       </g>
     </svg>
   );
@@ -36,7 +37,7 @@ export function SeamEdgesGlyph({ mode }: { mode: SeamEdges }) {
 /**
  * The branch inner-edge control for the two line editors (the line inspector
  * and the line style editor): a three-segment icon group, one segment per mode.
- * Sits with the seam width/color rows, whose seam it filters. Ungated, like
+ * Sits with the seam width/color rows, whose seam it picks arms of. Ungated, like
  * those two: the seam is switched on by dragging its color's alpha up, so
  * hiding its controls while it is off would hide the way back on.
  */
