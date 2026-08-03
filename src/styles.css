@@ -570,6 +570,45 @@ select option {
   border-top: 1px solid var(--border);
   margin: 4px 0;
 }
+/* Perf menu: a read-only snapshot of the counters worth having when the map
+   feels slow. Same panel chrome as Options; wider, because these labels are
+   words rather than the 72px control column Options uses. */
+.perf-popover {
+  min-width: 270px;
+}
+.perf-group + .perf-group {
+  margin-top: 10px;
+}
+.perf-group-title {
+  margin: 0 0 4px;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.perf-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 1px 0;
+}
+.perf-row-label {
+  color: var(--text);
+}
+.perf-row-value {
+  /* Tabular figures so the column of numbers lines up on its digits. */
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+}
+.perf-note {
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
 /* View menu: the canvas layer checklist. Same panel chrome as Options, narrower
    — every row is one checkbox and a short name. */
 .view-popover-wrap {

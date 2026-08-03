@@ -1,15 +1,24 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { installDevHandle } from './debug/devHandle';
 import { loadClipper } from './geometry/clip';
 import './styles.css';
 
-const mount = () =>
-  ReactDOM.createRoot(document.getElementById('root')!).render(
+const mount = () => {
+  // window.__massimo: the same counters the toolbar's Perf panel shows, plus
+  // the in-place resets that let a slowed-down session be bisected without the
+  // reload that cures it. Installed in EVERY build, not just dev — the browser
+  // perf harnesses measure the production build (dev carries its own tax, see
+  // .perf/README.md), and a slowdown that takes an hour to appear has to be
+  // catchable in whichever build is actually open.
+  installDevHandle();
+  return ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <App />
     </React.StrictMode>,
   );
+};
 
 // Resolve the clipper engine before the first paint: every geometry consumer
 // is synchronous, and there is no second implementation to draw with while it

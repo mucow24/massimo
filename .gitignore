@@ -27,3 +27,9 @@ helvetica-neue-*.zip
 .perf/*.massimo.json
 .perf/*.txt
 .perf/*.local.*
+
+# Exception: one known-slow map, tracked on purpose. Every harness needs a real
+# drawing with real crossing density, and this is the one the session-aging
+# numbers in .perf/README.md were taken on — without it those numbers cannot be
+# reproduced or re-checked after a fix.
+!.perf/mta-v23.massimo.json

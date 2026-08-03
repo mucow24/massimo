@@ -226,6 +226,11 @@ src/
   util/                         # color.ts (hex math), fonts.ts (font stack + weight math),
                                 #   grid.ts (clamp / roundClamp / snapToStep — the quarter-grid
                                 #   canonicalizer primitives every dimensional setter shares)
+  debug/                        # devHandle.ts: counters + the in-place resets (history / region
+                                #   caches / doc round-trip) that let a slowed-down session be
+                                #   bisected without the reload that cures it. Read three ways: the
+                                #   toolbar's Perf popover, window.__massimo, and the .perf browser
+                                #   harnesses. Installed in EVERY build, not just dev.
   test/                         # fixtures, jsdom setup, integration tests
 e2e/                            # Playwright specs + seedAndOpen harness
 public/fonts/                   # 16 Helvetica Neue .ttf faces + DejaVuSans.ttf (symbol fallback)
