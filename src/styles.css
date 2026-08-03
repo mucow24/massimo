@@ -2930,6 +2930,7 @@ body:has(.app[data-theme='dark']) {
    beside them and read as one strip of glyph pickers. Both render on EVERY
    row (the end one disabled off a terminus): a control that appeared on some
    rows and not others made the whole column jitter down the list. */
+.stop-row .end-style-slot,
 .stop-row .end-style-select,
 .stop-row .transfer-select {
   width: 26px;
@@ -2939,17 +2940,18 @@ body:has(.app[data-theme='dark']) {
   gap: 0;
   justify-content: center;
 }
+/* The end trigger fills its wrapper — the wrapper exists only to carry a
+   hoverable title while the trigger inside is disabled. */
+.stop-row .end-style-slot {
+  display: inline-flex;
+}
+.stop-row .end-style-slot .end-style-select {
+  width: 100%;
+  height: 100%;
+}
 .stop-row .field-select:disabled {
   opacity: 0.45;
   cursor: not-allowed;
-}
-/* An empty transfer slot: the glyph box with nothing in it, the same way a
-   "None" stop dot paints nothing. Sized to the glyph so the trigger doesn't
-   collapse. */
-.transfer-none-glyph {
-  display: block;
-  width: 15px;
-  height: 15px;
 }
 /* Glyph + name inside an open end-style / transfer panel. */
 .glyph-item {

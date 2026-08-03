@@ -471,10 +471,7 @@ describe('TransferLayer — DOM rendering', () => {
   });
 
   // A SELF-transfer (both ends on one stop dot) is a zero-length capsule — a
-  // disc. It paints as an explicit <circle> rather than a zero-length <line>
-  // with round caps: the circle is unambiguous in every renderer and every
-  // export, and it has a FILL to hit-test, which is what lets the alt-click
-  // deep-pick reach one buried under its own stop dot.
+  // disc, painted as an explicit <circle> with a fill to hit-test.
   describe('self-transfer disc', () => {
     const seedSelfTransfer = (overrides: Partial<Transfer> = {}) => {
       seedTwoStationsWithTransfer();

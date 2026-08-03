@@ -91,9 +91,10 @@ export function capsuleOutlinePath(
  * outside of their union — one transfer's halo never cuts across another's
  * body, preserving the continuous-capsule look.
  *
- * Both the body and the user stroke (when present) are click targets via
- * `pointerEvents="stroke"`, so the click region matches the perceived width
- * of the transfer. Dot-click priority is preserved by the dots layer above:
+ * Both the body and the user stroke (when present) are click targets, hit by
+ * the stroke of a capsule or the fill of a self-transfer's disc — either way
+ * the click region matches the painted shape. Dot-click priority is preserved
+ * by the dots layer above:
  * dot pixels absorb clicks and route to the station instead of passing
  * through to the transfer underneath.
  */
@@ -137,23 +138,19 @@ export function TransferLayer({
     const strokeColor = resolveDayNight(style.strokeColor, darkMode);
     // Total visible width of the transfer ignoring the selection ring.
     const visibleExtent = style.thickness + 2 * style.strokeWidth;
-    // A SELF-transfer's two ends coincide, so the capsule is a disc. Painted as
-    // a real <circle> rather than left to a zero-length round-capped <line>.
-    // The spec says that line IS a dot of the stroke width, and Blink draws it,
-    // but everything else about it is a degenerate case: whether the exports'
-    // other renderers agree, and whether a stroke of no length hit-tests, are
-    // both questions this shape doesn't need to have. A circle paints and hits
-    // by its fill everywhere, which is what keeps a self-transfer reachable by
-    // the alt-click deep-pick when its own stop dot covers it.
+    // A SELF-transfer's two ends coincide, so the capsule is a disc — painted
+    // as a real <circle>, not left to a zero-length round-capped <line>, whose
+    // rendering and hit-testing are degenerate cases nothing here needs to
+    // depend on (see addSelfTransfer).
     const disc = Math.hypot(b.x - a.x, b.y - a.y) < 1e-9 ? { cx: a.x, cy: a.y } : null;
     return [{ t, lineEnds, disc, style, color, strokeColor, visibleExtent }];
   });
 
   // Shared between each body and user stroke: both are click targets that
-  // select their transfer. A capsule is hit by its STROKE, a disc by its FILL —
-  // either way the click region is exactly the painted shape.
-  const clickProps = (id: string, disc: boolean) => ({
-    pointerEvents: (disc ? 'fill' : 'stroke') as 'fill' | 'stroke',
+  // select their transfer. The hit region is exactly the painted shape either
+  // way — a capsule by its STROKE, a disc by its FILL.
+  const clickProps = (id: string, pointerEvents: 'fill' | 'stroke') => ({
+    pointerEvents,
     style: { cursor: 'pointer' },
     onClick: (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -163,52 +160,42 @@ export function TransferLayer({
     onPointerLeave: () => onHoverLeave(id),
   });
 
+  // One painted shape of a transfer, at `width` in `paint` — the body in each
+  // pass, or the halo in the other. Both passes go through here so the disc
+  // case can never diverge between them.
+  const shape = (
+    d: (typeof drawable)[number],
+    key: string,
+    width: number,
+    paint: string,
+  ): React.ReactElement =>
+    d.disc ? (
+      <circle
+        key={key}
+        data-transfer-id={d.t.id}
+        {...d.disc}
+        r={width / 2}
+        fill={paint}
+        {...clickProps(d.t.id, 'fill')}
+      />
+    ) : (
+      <line
+        key={key}
+        data-transfer-id={d.t.id}
+        {...d.lineEnds}
+        stroke={paint}
+        strokeWidth={width}
+        {...clickProps(d.t.id, 'stroke')}
+      />
+    );
+
   return (
     <g>
       {drawable.map(
-        ({ t, lineEnds, disc, style, strokeColor, visibleExtent }) =>
-          style.strokeWidth > 0 &&
-          (disc ? (
-            <circle
-              key={`halo-${t.id}`}
-              data-transfer-id={t.id}
-              {...disc}
-              r={visibleExtent / 2}
-              fill={strokeColor}
-              {...clickProps(t.id, true)}
-            />
-          ) : (
-            <line
-              key={`halo-${t.id}`}
-              data-transfer-id={t.id}
-              {...lineEnds}
-              stroke={strokeColor}
-              strokeWidth={visibleExtent}
-              {...clickProps(t.id, false)}
-            />
-          )),
+        (d) =>
+          d.style.strokeWidth > 0 && shape(d, `halo-${d.t.id}`, d.visibleExtent, d.strokeColor),
       )}
-      {drawable.map(({ t, lineEnds, disc, style, color }) =>
-        disc ? (
-          <circle
-            key={t.id}
-            data-transfer-id={t.id}
-            {...disc}
-            r={style.thickness / 2}
-            fill={color}
-            {...clickProps(t.id, true)}
-          />
-        ) : (
-          <line
-            key={t.id}
-            data-transfer-id={t.id}
-            {...lineEnds}
-            stroke={color}
-            strokeWidth={style.thickness}
-            {...clickProps(t.id, false)}
-          />
-        ),
-      )}
+      {drawable.map((d) => shape(d, d.t.id, d.style.thickness, d.color))}
     </g>
   );
 }

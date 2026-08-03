@@ -777,9 +777,8 @@ interface DocState extends MapDoc {
 
   addTransfer: (a: TransferEnd, b: TransferEnd) => string;
   /** The station popover's transfer picker: give one stop dot its SELF-transfer
-   *  (a disc of the chosen style, centered on the dot), restyle the one it
-   *  already has, or — with `null`, the picker's "None" — remove it. At most
-   *  one per stop, and this is the only path that makes one. */
+   *  (see `addSelfTransfer`), restyle the one it already has, or — with `null`,
+   *  the picker's "None" — remove it. */
   setStopSelfTransfer: (stationId: StationId, lineId: LineId, styleId: string | null) => void;
   updateTransferStyle: (id: string, patch: TransferStylePatch) => void;
   deleteTransfer: (id: string) => void;

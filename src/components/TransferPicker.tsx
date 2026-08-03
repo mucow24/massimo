@@ -15,6 +15,36 @@ const CUSTOM = '__custom__';
 const GLYPH = 15;
 
 /**
+ * The empty slot: a hollow ring where a transfer's disc would be. It has to be
+ * a MARK rather than blank space, because the glyph beside it is drawn to
+ * scale — and the factory transfer style is 2px, a speck an empty box would
+ * pass for. (The dot picker gets away with a blank "None" precisely because no
+ * dot is ever that small.)
+ */
+function NoTransferGlyph() {
+  return (
+    <svg
+      width={GLYPH}
+      height={GLYPH}
+      viewBox={`${-GLYPH / 2} ${-GLYPH / 2} ${GLYPH} ${GLYPH}`}
+      aria-hidden="true"
+      style={{ display: 'block' }}
+    >
+      <circle
+        cx={0}
+        cy={0}
+        r={GLYPH / 2 - 1.5}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1}
+        strokeDasharray="2 2"
+        opacity={0.5}
+      />
+    </svg>
+  );
+}
+
+/**
  * A transfer style as the disc a SELF-transfer paints: the body over its halo,
  * drawn at TRUE world scale (1 unit = 1 glyph px) so the 2px factory default
  * reads as the near-invisible speck it is and a 12px one fills the box. An
@@ -46,15 +76,9 @@ export function TransferGlyph({ props }: { props: TransferStyleProps }) {
 /**
  * The per-stop SELF-transfer control in the station editor's stop rows: a 26px
  * glyph trigger over a dropdown of "None" plus every transfer style in the doc.
- *
  * Picking a style wraps the stop dot in a transfer of that style; picking None
- * removes it. That indirection is the point — a self transfer is a legitimate
- * but unobvious thing to want (it rounds a stop off into a thick transfer bar
- * arriving from elsewhere), and creating one by clicking the same dot twice
- * would be indistinguishable from cancelling the two-click flow, leaving behind
- * a speck the user never meant to place and can barely find. Here it is an
- * explicit, per-stop, one-or-none choice, and a non-empty slot shows up as a
- * filled glyph right in the row.
+ * removes it. This is the only way in or out — see `addSelfTransfer` for why it
+ * isn't just a second click on the dot.
  *
  * A transfer hand-tuned in its own popover detaches from its preset
  * (`updateTransferStyle`), so the list grows a `Custom` entry then — the same
@@ -103,12 +127,12 @@ export function StopTransferSelect({
       >
         {/* Empty when there is none, exactly like a "None" stop dot: the slot
             reads as unfilled at a glance down the list. */}
-        {resolved ? <TransferGlyph props={resolved} /> : <span className="transfer-none-glyph" />}
+        {resolved ? <TransferGlyph props={resolved} /> : <NoTransferGlyph />}
       </Select.Trigger>
       <FieldSelectContent>
         <Select.Item value={NONE} className="field-select-item">
           <span className="glyph-item">
-            <span className="transfer-none-glyph" />
+            <NoTransferGlyph />
             <Select.ItemText>None</Select.ItemText>
           </span>
         </Select.Item>

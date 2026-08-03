@@ -463,8 +463,16 @@ describe('<StopRows /> — line ends', () => {
         L1: makeLine({ id: 'L1', service: '1', color: '#c60c30', stations: ['x', 'a', 'b'] }),
       },
     });
-    renderRows();
-    expect(screen.getByRole('combobox', { name: endCombo('1') })).toHaveProperty('disabled', true);
+    const { container } = renderRows();
+    const combo = screen.getByRole('combobox', { name: endCombo('1') });
+    expect(combo).toHaveProperty('disabled', true);
+    // …and it can still SAY why. The explanation has to hang off the enabled
+    // wrapper: a disabled button gets no hover events, so a title on the
+    // trigger itself would never surface.
+    expect(combo.getAttribute('title')).toBeNull();
+    expect(container.querySelector('.end-style-slot')?.getAttribute('title')).toContain(
+      'end of the line',
+    );
   });
 
   it('pins this terminus without touching the line default', async () => {

@@ -2574,11 +2574,8 @@ straight back, and one line can round at a solid end while stopping short at a d
 **`TransferLayer`** renders all transfers in **two flat passes** (user stroke halos → bodies) so
 overlapping thick transfers trace one outer union. Bodies + halos are click targets
 (`pointer-events="stroke"`). A transfer whose ends COINCIDE — a self-transfer — emits a `<circle>`
-in each pass instead, hit by its `fill`. A zero-length round-capped `<line>` is a dot by spec and
-Blink draws it, but whether the exports' other renderers agree and whether a stroke of no length
-hit-tests are both open questions the shape doesn't need to have — and the hit half is what keeps a
-self-transfer reachable by the alt-click deep-pick under its own stop dot. The selected
-transfer's ring is **not** in this layer: it renders in a
+in each pass instead, hit by its `fill`, so it stays reachable by the alt-click deep-pick under its
+own stop dot. The selected transfer's ring is **not** in this layer: it renders in a
 separate `TransferSelectionOutline` mounted **above** the station dots (step 8), so a connected or
 crossing dot can't cover it; `TransferLayer` itself sits below the dots so a dot click routes to the
 station, not the transfer.
