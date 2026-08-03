@@ -375,7 +375,7 @@ holds palettes and nothing else). Legacy saves carried the doc field; both load 
 every line and fill line style defs that predate the covered field (`bakeDocCurveRadius`, persist
 v16). Where interlined lines disagree, the shared band curves at the LARGEST member radius.
 
-Nor is there a doc-level **`seamEdges`** — which pieces of a branch seam get painted is per-line
+Nor is there a doc-level **`seamEdges`** — which arm of a branch seam gets painted is per-line
 (`Line.seamEdges`, missing ⇒ `'both'`, the full notch, [lineStroke.ts](src/model/lineStroke.ts)),
 covered by line styles, and edited beside the seam's width and color in the line inspector / line
 style presets. Legacy saves carried the doc field; both load paths bake it onto every line and fill
@@ -731,13 +731,14 @@ All remaining fields optional and **never stored at default**:
 - `seamWidth?: number` — seam width per side, world units. Stored like `strokeWidth` (drop at 0),
   but an **unset** value inherits the casing width at render time (`seamRenderWidth`) so a
   seam-color-only line still shows a seam. Only takes effect alongside a non-transparent `seamColor`.
-- `seamEdges?: SeamEdges` — which pieces of the seam edges to paint: `'both'` (the full notch),
-  `'straight'` (the straight runs only) or `'curved'` (the fillet arcs only), so a branch can be
-  hinted with one edge. Missing ⇒ `'both'`, and the setter drops the field there. PRESENTATION,
-  like the seam it filters. In `LineStyleProps` it is REQUIRED, like `endStyle` — every def stores
-  a concrete mode, so no reader has an absent case to resolve. That is a uniformity choice, not a
-  capability one: the optional props are all forced back onto a wearer too, by `stampStyle`'s
-  `?? <default>`.
+- `seamEdges?: SeamEdges` — which ARM of the notch to paint: `'both'` (the full notch),
+  `'straight'` (only the band running through, so the main line's stroke carries on unbroken
+  across the branch mouth) or `'curved'` (only the band that turns away, so the branch carries
+  its own stroke into the junction). Missing ⇒ `'both'`, and the setter drops the field there.
+  PRESENTATION, like the seam whose arms it picks. In `LineStyleProps` it is REQUIRED, like
+  `endStyle` — every def stores a concrete mode, so no reader has an absent case to resolve.
+  That is a uniformity choice, not a capability one: the optional props are all forced back onto
+  a wearer too, by `stampStyle`'s `?? <default>`.
 - `dashLength?` / `dashWidth?: number` — **TfL-tick dimensions for this line's `dash` stops**,
   world units. PRESENTATION (never moves band geometry, resolved at render). Both **unset** ⇒
   derive from the stripe width (`dashLength = width`, `dashWidth = width/2` — the TfL proportions;
@@ -1965,11 +1966,18 @@ casing widths come from [lineStroke.ts](src/model/lineStroke.ts) (`casingSilhoue
 `casingInsetBodyWidth` for opaque styles so a line's own overlapping bands merge into ONE outer
 casing; `CasingRails` centered rails for the two transparent "open" styles). The seam is two
 edge-centered strokes CLIPPED to the line's OTHER band corridors (`SeamClips.tsx`), so it only
-shows where a line crosses itself. Each line's own `seamEdges` filters which seam edges draw —
-`'both'` (default), `'straight'` only (`'line'` edges), or `'curved'` only (`'arc'` edges);
-`SegmentBand` reads it off the live line, like the seam's color and width, so two lines sharing a
-band can differ. All three passes read the same `lineStroke` helpers as the highlight overlay so
-they can't drift.
+shows where a line crosses itself. The notch at a branch is two arms, one per band — the band
+running STRAIGHT through and the band that TURNS away — and each line's own `seamEdges` picks
+which of the two draws. `router.polylineTurns` classifies a WHOLE band off its centerline, and
+the chosen arm then draws whole. Both halves of that matter: filtering by PIECE cuts a bent
+edge's straight lead-in off its fillet and leaves a gap where the branch clears the other
+corridor, and classifying per EDGE splits one band's verdict once a fillet is tighter than the
+seam offset (`emitOffsetSegments` degenerates the inside corner to a straight), painting half a
+notch. The test is per BAND while arm identity is per JUNCTION, so it is a heuristic: a through
+corridor that doglegs anywhere along its length also reads as turning, and at that junction
+`'straight'` paints nothing while `'curved'` equals `'both'`. `SegmentBand` reads the mode off
+the live line, like the seam's color and width, so two lines sharing a band can differ. All three
+passes read the same `lineStroke` helpers as the highlight overlay so they can't drift.
 
 **The hit box.** A stripe's pointer surface is normally the painted path itself, but the styles
 that paint with GAPS (the dasharray ones — `dashed`, `dotted`, `dashed-open`) hit-test only their

@@ -148,8 +148,11 @@ export const lineSeamWidthOf = (
   line: { seamWidth?: number } | null | undefined,
 ): number | undefined => line?.seamWidth;
 
-// The three seam edge modes, in editor order (the full notch first). Exported
-// as the list the pickers iterate, so a fourth mode would reach every control.
+// Which ARM of a branch notch the seam draws: 'both', the STRAIGHT arm (the
+// band running through, whose casing then carries on unbroken across the
+// branch mouth) or the CURVED one (the band that turns away, whose own casing
+// curls into the junction). In editor order, the full notch first. Exported as
+// the list the pickers iterate, so a fourth mode would reach every control.
 export const SEAM_EDGES_MODES = ['both', 'straight', 'curved'] as const;
 
 // 'both' — the full notch. Dropped at this value, so it is never stored.

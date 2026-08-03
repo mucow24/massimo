@@ -475,17 +475,19 @@ describe('<SegmentBand> — branch seam (pass="seam")', () => {
     expect(container.querySelector('[data-band-seam]')).toBeNull();
   });
 
-  describe('seamEdges filter (branch inner edges)', () => {
-    // A bent centerline so each seam edge carries BOTH a straight (L) run and a
-    // fillet arc (A) — the two kinds the LINE's own setting picks between.
-    const bentSeam = (seamEdges?: SeamEdges) => {
+  describe('seamEdges — which arm of the notch draws (branch inner edges)', () => {
+    // A BENT band — the branching one at a self-overlap. Its seam edges carry a
+    // fillet arc, so they are what 'curved' keeps and 'straight' drops. The
+    // plain `renderSeam` spec is the straight (through-running) band: the
+    // opposite verdict under both modes.
+    const bentSeam = (seamEdges?: SeamEdges, radius = 24) => {
       const spec = baseSpec(['L1']);
       spec.centerline = [
         { x: 0, y: 0 },
         { x: 100, y: 0 },
         { x: 100, y: 100 },
       ];
-      spec.radius = 24;
+      spec.radius = radius;
       return render(
         <svg>
           <SegmentBand
@@ -502,27 +504,49 @@ describe('<SegmentBand> — branch seam (pass="seam")', () => {
         .map((p) => p.getAttribute('d') ?? '')
         .join(' ');
 
-    it('a line storing no mode draws both the straight and the curved seam pieces', () => {
+    it('a line storing no mode draws every seam edge, bent or straight', () => {
       const d = seamPaths(bentSeam().container);
       expect(d).toContain('L');
       expect(d).toContain('A');
+      expect(
+        renderSeam(seamLines('#ff000080')).container.querySelectorAll('[data-band-seam]').length,
+      ).toBe(2);
     });
 
-    it("'straight' keeps only the straight seam pieces (no fillet arcs)", () => {
-      const d = seamPaths(bentSeam('straight').container);
-      expect(d).toContain('L');
-      expect(d).not.toContain('A');
-    });
-
-    it("'curved' keeps only the curved fillet pieces (no straight runs)", () => {
+    it("'curved' keeps a bent edge WHOLE — the fillet's straight lead-in comes with it", () => {
       const d = seamPaths(bentSeam('curved').container);
       expect(d).toContain('A');
-      expect(d).not.toContain('L');
+      // The lead-in is what closes the branch mouth: dropping it leaves a gap
+      // between the fillet and where the branch clears the trunk's corridor.
+      expect(d).toContain('L');
+      // One unbroken sub-path per edge — the seam never lifts the pen mid-edge.
+      expect(d.match(/M /g)!.length).toBe(2);
     });
 
-    it("'curved' on a fully straight band emits no seam paths (skips the empty edge)", () => {
+    it("'curved' drops a straight band's seam — it is the through-runner, not the branch", () => {
       const { container } = renderSeam(seamLines('#ff000080', { seamEdges: 'curved' }));
       expect(container.querySelectorAll('[data-band-seam]').length).toBe(0);
+    });
+
+    it("'straight' drops a bent edge — the branch's own stroke stays out of the notch", () => {
+      expect(seamPaths(bentSeam('straight').container)).toBe('');
+    });
+
+    // The verdict is the BAND's, not each edge's. A fillet tighter than the seam
+    // offset (`radius < width/2`, which the marker-fit cap can produce on a short
+    // branch lead-in) degenerates the INNER edge's corner to a straight — so an
+    // edge-by-edge test would call one side of the same band a branch and the
+    // other a through-runner, and each mode would paint half a notch.
+    it('classifies the whole band, so a fillet tighter than the seam offset still reads as bent', () => {
+      expect(bentSeam('curved', 4).container.querySelectorAll('[data-band-seam]').length).toBe(2);
+      expect(bentSeam('straight', 4).container.querySelectorAll('[data-band-seam]').length).toBe(0);
+    });
+
+    it("'straight' keeps a straight band's edges whole, so the main line's stroke carries through", () => {
+      const { container } = renderSeam(seamLines('#ff000080', { seamEdges: 'straight' }));
+      const rings = Array.from(container.querySelectorAll('[data-band-seam]'));
+      expect(rings.length).toBe(2);
+      for (const r of rings) expect(r.getAttribute('d')).toContain('L');
     });
 
     // The mode is per LINE now, so two lines sharing a band can disagree — the
@@ -534,7 +558,7 @@ describe('<SegmentBand> — branch seam (pass="seam")', () => {
           stations: ['s1', 's2'],
           strokeWidth: 4,
           seamColor: '#ff000080',
-          seamEdges: 'curved',
+          seamEdges: 'straight',
         }),
         L2: makeLine({
           id: 'L2',
@@ -558,8 +582,8 @@ describe('<SegmentBand> — branch seam (pass="seam")', () => {
             </svg>,
           ).container,
         );
-      expect(at(0)).not.toContain('L'); // L1: curved only
-      expect(at(1)).toContain('L'); // L2: the full notch
+      expect(at(0)).toBe(''); // L1: straight only, and this band bends
+      expect(at(1)).toContain('A'); // L2: every edge, bent ones included
     });
   });
 });

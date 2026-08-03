@@ -695,8 +695,8 @@ export function bakeDocCurveRadius<T extends LinesAndStyles>(doc: T): T {
 
 /**
  * Bake the RETIRED doc-level `seamEdges` into per-line fields, and fill line
- * style defs saved before `seamEdges` was a covered field. Which pieces of a
- * branch seam get painted is per-line now (`Line.seamEdges`, missing ⇒ 'both',
+ * style defs saved before `seamEdges` was a covered field. Which arm of a
+ * branch seam gets painted is per-line now (`Line.seamEdges`, missing ⇒ 'both',
  * the full notch), so a legacy file's map-wide choice must land on every line
  * to keep its rendered seams; the doc field is then dropped. A line (or style
  * def) that somehow carries its own value keeps it. Keyed off field presence
