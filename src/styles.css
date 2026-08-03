@@ -633,6 +633,12 @@ select option {
   padding: 3px 0;
   cursor: pointer;
 }
+/* The accelerator hint on the rows that have one (see VISIBILITY_ITEMS.shortcut):
+   the Menu's muted key chrome, pushed to the row's right edge. */
+.view-popover-row .menu-shortcut {
+  margin-left: auto;
+  padding-left: 16px;
+}
 /* A layer that normally paints is switched off (see anyLayerHidden — REVEALING a
    normally-hidden layer never marks, since it hides nothing). A filled face
    rather than the accent one: `.active` already means "this panel is open" on

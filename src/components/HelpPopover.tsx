@@ -20,7 +20,7 @@ const SECTIONS: HelpSection[] = [
     title: 'Navigate',
     rows: [
       { k: 'Wheel', effect: 'Zoom at the cursor' },
-      { k: 'Space / middle-drag', effect: 'Pan — H hand tool, A arrow tool' },
+      { k: 'Space / middle-drag', effect: 'Pan — H hand tool, V arrow tool' },
     ],
   },
   {
@@ -113,6 +113,13 @@ const SECTIONS: HelpSection[] = [
       },
       { k: 'Ctrl+Shift+0 – 9', effect: 'Save the current snap options as that preset' },
       { k: 'Shift+0 – 9', effect: 'Recall that snap preset' },
+    ],
+  },
+  {
+    title: 'View',
+    rows: [
+      { k: 'A · W', effect: 'Show / hide anchors · waypoints (the View menu holds the rest)' },
+      { k: 'G · Shift+G', effect: 'Toggle the grid · cycle its size' },
     ],
   },
   {
