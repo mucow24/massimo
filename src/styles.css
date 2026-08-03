@@ -1611,7 +1611,24 @@ button.field-select {
   vertical-align: middle;
 }
 
-/* Click-to-edit map name, sitting between two dividers after "Massimo".
+/* The wordmark: an "M" route bullet (Toolbar's BrandBullet). Pure black/white
+   rather than the theme's --text/--surface, so the badge reads as ink on paper
+   in either theme; the dark rule at the end of the file swaps them. */
+.brand-bullet {
+  --brand-disc: #000;
+  --brand-glyph: #fff;
+  display: block;
+}
+
+/* The disc sits 12px from the window edge (the toolbar's padding), so drop the
+   divider's usual 8px lead here and let the plain 12px flex gap carry it —
+   otherwise the badge reads 12px in and 20px out, off-center in a way the long
+   wordmark hid. */
+.brand-bullet + .tool-group-divider {
+  margin-left: 0;
+}
+
+/* Click-to-edit map name, sitting between two dividers after the wordmark.
    The resting state reads like a label (transparent, underline-on-hover);
    clicking swaps in the input below. */
 .toolbar button.map-name {
@@ -2823,6 +2840,12 @@ button.map-library-sort {
 body:has(.app[data-theme='dark']) {
   background: #141414;
   color: #e4e4e4;
+}
+
+/* Wordmark bullet: white disc, black M against the dark bar. */
+.app[data-theme='dark'] .brand-bullet {
+  --brand-disc: #fff;
+  --brand-glyph: #000;
 }
 
 /* The toasts' yellow warning palette has no token — restate it darker. */
