@@ -33,6 +33,7 @@ export default [
         clearInterval: 'readonly',
         requestAnimationFrame: 'readonly',
         cancelAnimationFrame: 'readonly',
+        performance: 'readonly',
         ResizeObserver: 'readonly',
         HTMLElement: 'readonly',
         HTMLInputElement: 'readonly',

@@ -108,6 +108,22 @@ const cache = new Map<string, RegionGeometry>();
 let lastIncremental: RegionIncrementalState | null = null;
 
 /**
+ * Forget every cached build, as at app start: the sig LRU and the incremental
+ * seed both. A test hook, and the reset the dev handle offers for bisecting a
+ * session that has slowed down (src/debug/devHandle.ts) — this is one of the
+ * things a page reload does, made available without one.
+ */
+export function resetRegionCache(): void {
+  cache.clear();
+  lastIncremental = null;
+}
+
+/** How many builds the sig LRU is holding. Instrumentation only. */
+export function regionCacheSize(): number {
+  return cache.size;
+}
+
+/**
  * Bands + markers built by the caller from the SAME geometry slice passed to
  * {@link regionsFor} — the render layer's memos already hold this frame's
  * build, and rebuilding it here was pure duplicate work. Priority fields may
