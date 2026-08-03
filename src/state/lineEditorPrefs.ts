@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 
 interface LineEditorPrefsState {
-  /** Whether the style-detail section (Line width → Seam color) is expanded in
+  /** Whether the style-detail section (Line width → Inner strokes) is expanded in
    *  the pinned line popover. Identity (name/service/color) and the Style
    *  picker always show; the full parameter stack collapses so the Edit Stops
    *  panel stays compact. A UI preference, not document state — persisted so

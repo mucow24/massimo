@@ -392,7 +392,7 @@ export async function toggleViewLayer(page: Page, label: string): Promise<void> 
 }
 
 /**
- * Expand the line popover's collapsed style detail (Line width → Seam color).
+ * Expand the line popover's collapsed style detail (Line width → Inner strokes).
  * The disclosure is remembered per browser profile, but every spec starts on
  * fresh storage, so it opens collapsed — call this before driving any of the
  * style-parameter controls.

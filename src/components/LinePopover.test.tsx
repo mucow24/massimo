@@ -37,7 +37,7 @@ describe('<LinePopover />', () => {
     expect(screen.getByLabelText('Line name')).toBeInTheDocument();
     expect(document.querySelector('.color-palette')).not.toBeNull();
     expect(screen.getByRole('spinbutton', { name: 'Line width' })).toBeInTheDocument();
-    expect(screen.getByRole('spinbutton', { name: 'Seam width' })).toBeInTheDocument();
+    expect(screen.getByRole('spinbutton', { name: 'Stroke width' })).toBeInTheDocument();
   });
 
   it('edits write through to the doc (name field)', async () => {
