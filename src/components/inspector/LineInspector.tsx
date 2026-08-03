@@ -13,7 +13,7 @@ import { withHexAlpha } from '../../util/color';
 import { NumericFieldRow } from '../NumericFieldRow';
 import { StyleRow } from '../StyleRow';
 import { LineEndSegmented } from '../LineEndPicker';
-import { InnerStrokesSegmented, type InnerStrokesMode } from '../SeamEdgesPicker';
+import { InnerStrokesSegmented, type InnerStrokesMode } from '../InnerStrokesPicker';
 import { lineEndStyleOf } from '../../model/lineEnd';
 import {
   LINE_INTERLINE_GAP_MAX,

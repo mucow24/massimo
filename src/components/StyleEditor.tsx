@@ -9,7 +9,7 @@ import { ColorField } from './ColorField';
 import { DayNightColorRow } from './DayNightColorRow';
 import { NumericFieldRow } from './NumericFieldRow';
 import { LineEndSegmented } from './LineEndPicker';
-import { SeamEdgesSegmented } from './SeamEdgesPicker';
+import { InnerStrokesSegmented, type InnerStrokesMode } from './InnerStrokesPicker';
 import { WeightSelect, ItalicButton } from './WeightItalicControls';
 import { StopGlyph } from './StopGlyph';
 import { StationShapePicker } from './StationShapePicker';
@@ -44,9 +44,8 @@ import {
   LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_MAX,
   LINE_STROKE_WIDTH_MIN,
-  lineStrokeRailWidth,
+  lineSeamEdgesOf,
 } from '../model/lineStroke';
-import { withHexAlpha } from '../util/color';
 import {
   TRANSFER_STROKE_WIDTH_MAX,
   TRANSFER_STROKE_WIDTH_MIN,
@@ -187,8 +186,6 @@ function LineOrCustomToggle({
 function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
   const patch = usePatch(id);
   const styles = useDoc((s) => s.styles);
-  // Seam controls inherit the casing when unset (see Line.seamWidth / seamColor).
-  const railW = lineStrokeRailWidth(props.strokeWidth, props.width);
   // Resolve each split default's stopDot library entry — drives the type
   // picker's trigger preview and the dash-only gating below (a dot renders TfL
   // ticks iff its shape is 'dash'). A since-deleted id falls back to the factory
@@ -202,16 +199,22 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
   // Dash length/width only bite on 'dash' stops, so grey them out unless one of
   // the split defaults is a dash dot.
   const dashActive = singletonDot.shape === 'dash' || multiDot.shape === 'dash';
-  // Casing and seam each carry either a hex or the LINE_OWN_COLOR sentinel, so
-  // one style can give differently-colored lines a casing in their own hue. An
-  // UNSET seam is Custom, not Line: absent is the seam's off state, and the
-  // swatch shows it as transparent (the same "drag the alpha up to enable" flow
-  // the Line inspector has).
+  // The casing color carries either a hex or the LINE_OWN_COLOR sentinel, so one
+  // style can give differently-colored lines a casing in their own hue.
   const strokeMode: 'line' | 'custom' = props.strokeColor === LINE_OWN_COLOR ? 'line' : 'custom';
-  const seamMode: 'line' | 'custom' = props.seamColor === LINE_OWN_COLOR ? 'line' : 'custom';
-  // The hue the seam's off/transparent swatch is seeded from: the casing, unless
-  // that's the sentinel — 'line' is not a hex and would poison the alpha math.
-  const seamSeedHex = strokeMode === 'custom' ? props.strokeColor : LINE_STROKE_COLOR_DEFAULT;
+  // This editor presents the stroke as ONE thing, exactly as the line inspector
+  // does (see LineInspector for the full reading): the width row writes
+  // `strokeWidth` AND `seamWidth`, the color row writes `strokeColor` and — only
+  // while the seam is on, since its color is its on/off switch — `seamColor`,
+  // and Inner strokes is a four-way whose None is a CLEARED seam color rather
+  // than a `seamEdges` value. The props stay five separate fields; a patch
+  // carrying several is still one store write, so one edit is one undo entry.
+  const innerStrokes: InnerStrokesMode =
+    props.seamColor === undefined ? 'none' : lineSeamEdgesOf(props);
+  // Both halves of a color pick, so the seam tracks the casing without being
+  // switched on behind the user.
+  const patchStrokeColor = (strokeColor: string) =>
+    patch(innerStrokes === 'none' ? { strokeColor } : { strokeColor, seamColor: strokeColor });
   return (
     <div className="style-editor">
       <NumericFieldRow
@@ -278,80 +281,65 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
         max={LINE_STROKE_WIDTH_MAX}
         step={LINE_STROKE_STEP}
         value={props.strokeWidth}
-        onChange={(strokeWidth) => patch({ strokeWidth })}
+        // One width for the whole stroke — the casing and the inner strokes it
+        // continues into. Both props in ONE patch, so it stays one store write.
+        onChange={(strokeWidth) => patch({ strokeWidth, seamWidth: strokeWidth })}
         getCurrent={liveNumberProp(id, 'strokeWidth', props.strokeWidth)}
         textboxAllowAboveMax
       />
-      <div className="row">
-        <label>Stroke color</label>
-        <LineOrCustomToggle
-          mode={strokeMode}
-          ariaPrefix="Stroke color"
-          // Leaving Line lands on the casing default rather than some remembered
-          // hue — a style has no line of its own to take a color from.
-          onSelect={(m) =>
-            patch({ strokeColor: m === 'line' ? LINE_OWN_COLOR : LINE_STROKE_COLOR_DEFAULT })
-          }
-        />
-      </div>
-      {strokeMode === 'custom' && (
-        <div className="row">
-          <label htmlFor={`style-${id}-stroke-color`}>Stroke</label>
-          <ColorField
-            id={`style-${id}-stroke-color`}
-            ariaLabel="Stroke color"
-            value={props.strokeColor}
-            onChange={(strokeColor) => patch({ strokeColor })}
-          />
-        </div>
+      {/* Only while the casing is on — a 0-width stroke has no color to pick
+          and no ink to carry into a junction. */}
+      {props.strokeWidth > 0 && (
+        <>
+          <div className="row">
+            <label>Stroke color</label>
+            <LineOrCustomToggle
+              mode={strokeMode}
+              ariaPrefix="Stroke color"
+              // Leaving Line lands on the casing default rather than some remembered
+              // hue — a style has no line of its own to take a color from.
+              onSelect={(m) =>
+                patchStrokeColor(m === 'line' ? LINE_OWN_COLOR : LINE_STROKE_COLOR_DEFAULT)
+              }
+            />
+          </div>
+          {strokeMode === 'custom' && (
+            <div className="row">
+              <label htmlFor={`style-${id}-stroke-color`}>Stroke</label>
+              <ColorField
+                id={`style-${id}-stroke-color`}
+                ariaLabel="Stroke color"
+                value={props.strokeColor}
+                onChange={patchStrokeColor}
+              />
+            </div>
+          )}
+          {/* Which arm of the branch notch draws, or none at all. Covered like
+              every other field here, so a style can force the full notch back
+              onto a line someone set to branch-only. */}
+          <div className="row">
+            <label>Inner strokes</label>
+            <InnerStrokesSegmented
+              value={innerStrokes}
+              onSelect={(v) =>
+                patch(
+                  v === 'none'
+                    ? // Absent IS the off state; the patch merge drops the key
+                      // rather than storing a cleared color.
+                      { seamColor: undefined }
+                    : // The seam takes the casing's own color (sentinel included)
+                      // and width — what makes the two rows above cover it.
+                      {
+                        seamColor: props.strokeColor,
+                        seamWidth: props.strokeWidth,
+                        seamEdges: v,
+                      },
+                )
+              }
+            />
+          </div>
+        </>
       )}
-      <div className="style-divider" />
-      <NumericFieldRow
-        id={`style-${id}-seam`}
-        label="Seam width"
-        min={LINE_STROKE_WIDTH_MIN}
-        max={LINE_STROKE_WIDTH_MAX}
-        step={LINE_STROKE_STEP}
-        value={props.seamWidth ?? railW}
-        onChange={(seamWidth) => patch({ seamWidth })}
-        getCurrent={liveNumberProp(id, 'seamWidth', (p) =>
-          lineStrokeRailWidth(p.strokeWidth as number, p.width as number),
-        )}
-        textboxAllowAboveMax
-      />
-      <div className="row">
-        <label>Seam color</label>
-        <LineOrCustomToggle
-          mode={seamMode}
-          ariaPrefix="Seam color"
-          // Leaving Line drops to the transparent seed — which is never stored,
-          // so the seam returns to plain OFF, exactly where a fresh style sits.
-          onSelect={(m) =>
-            patch({ seamColor: m === 'line' ? LINE_OWN_COLOR : withHexAlpha(seamSeedHex, 0) })
-          }
-        />
-      </div>
-      {seamMode === 'custom' && (
-        <div className="row">
-          <label htmlFor={`style-${id}-seam-color`}>Seam</label>
-          <ColorField
-            id={`style-${id}-seam-color`}
-            ariaLabel="Seam color"
-            value={props.seamColor ?? withHexAlpha(seamSeedHex, 0)}
-            onChange={(seamColor) => patch({ seamColor })}
-          />
-        </div>
-      )}
-      {/* Which arm of the branch notch draws. Covered like every other field
-          here, so a style can force the full notch back onto a line someone set
-          to curved-only. */}
-      <div className="row">
-        <label>Inner edges</label>
-        <SeamEdgesSegmented
-          value={props.seamEdges}
-          onSelect={(seamEdges) => patch({ seamEdges })}
-        />
-      </div>
 
       <div className="style-section">Stop dots</div>
       {/* Dot TYPE + SIZE per station case, split by singleton (only line at the
