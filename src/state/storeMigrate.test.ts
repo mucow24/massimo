@@ -1099,6 +1099,87 @@ describe('migrateDoc', () => {
     });
   });
 
+  describe('v22 → v23: retire the doc-level seamEdges', () => {
+    const linesIn = () => ({
+      L1: { service: 'A', name: 'A line', stations: ['s1', 's2'], edges: ['s1|s2'] },
+      L2: { service: 'B', name: 'B line', stations: ['s1'], edges: [] },
+    });
+    const modeOf = (out: AnyDoc, id: string) =>
+      (out.lines![id] as { seamEdges?: string }).seamEdges;
+
+    it('stamps a non-default legacy mode onto every line and drops the doc field', () => {
+      const out = run({ lines: linesIn(), seamEdges: 'curved' }, 22);
+      expect(modeOf(out, 'L1')).toBe('curved');
+      expect(modeOf(out, 'L2')).toBe('curved');
+      expect('seamEdges' in out).toBe(false);
+    });
+
+    it("leaves lines unstamped for the legacy default 'both' (never stored)", () => {
+      const out = run({ lines: linesIn(), seamEdges: 'both' }, 22);
+      expect(modeOf(out, 'L1')).toBeUndefined();
+      expect('seamEdges' in out).toBe(false);
+    });
+
+    it('fills line style defs that predate the covered field from the legacy mode', () => {
+      const { seamEdges: _s, ...oldProps } = DEFAULT_STYLES['default-line'].props as LineStyleProps;
+      const out = run(
+        {
+          lines: {},
+          seamEdges: 'straight',
+          styles: { 'default-line': { ...DEFAULT_STYLES['default-line'], props: oldProps } },
+          styleDefaults: FACTORY_STYLE_DEFAULTS,
+        },
+        22,
+      );
+      expect(out.styles!['default-line'].props.seamEdges).toBe('straight');
+    });
+
+    it("runs BEFORE the v<10 style hygiene, so old defs heal to the doc value, not 'both'", () => {
+      const { seamEdges: _s, ...oldProps } = DEFAULT_STYLES['default-line'].props as LineStyleProps;
+      const out = run(
+        {
+          lines: {},
+          seamEdges: 'straight',
+          styles: { 'default-line': { ...DEFAULT_STYLES['default-line'], props: oldProps } },
+          styleDefaults: FACTORY_STYLE_DEFAULTS,
+        },
+        9,
+      );
+      expect(out.styles!['default-line'].props.seamEdges).toBe('straight');
+    });
+
+    it('keeps a tagged line matching its style through the bake', () => {
+      // Both halves take the SAME legacy value, so "tagged ⇒ matches" survives
+      // with no mismatch prune (unlike the v20 dot-type rollout).
+      const { seamEdges: _s, ...oldProps } = DEFAULT_STYLES['default-line'].props as LineStyleProps;
+      const out = run(
+        {
+          lines: {
+            L1: {
+              service: 'A',
+              name: 'A line',
+              stations: [],
+              edges: [],
+              styleId: 'default-line',
+            },
+          },
+          seamEdges: 'curved',
+          styles: { 'default-line': { ...DEFAULT_STYLES['default-line'], props: oldProps } },
+          styleDefaults: FACTORY_STYLE_DEFAULTS,
+        },
+        22,
+      );
+      expect(modeOf(out, 'L1')).toBe('curved');
+      expect(out.styles!['default-line'].props.seamEdges).toBe('curved');
+      expect((out.lines!.L1 as { styleId?: string }).styleId).toBe('default-line');
+    });
+
+    it('does not bake at version >= 23', () => {
+      const out = run({ lines: linesIn(), seamEdges: 'curved' }, 23);
+      expect(modeOf(out, 'L1')).toBeUndefined(); // not stamped
+    });
+  });
+
   describe('v19 → v20: dot TYPE becomes a covered line-style field', () => {
     // A line style def that predates the covered dot-type ids (strip them off
     // the factory default to simulate an old persisted def).

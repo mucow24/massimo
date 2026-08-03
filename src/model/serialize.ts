@@ -34,7 +34,14 @@ import {
   canonicalLineCurveRadius,
 } from './lineCurve';
 import { canonicalDotSize } from './dotSize';
-import { canonicalStrokeColor, canonicalStrokeWidth, canonicalSeamColor } from './lineStroke';
+import {
+  LINE_SEAM_EDGES_DEFAULT,
+  canonicalSeamColor,
+  canonicalSeamEdges,
+  canonicalStrokeColor,
+  canonicalStrokeWidth,
+  isSeamEdges,
+} from './lineStroke';
 import {
   DEFAULT_DOT_STYLE,
   DEFAULT_STOP_DOT_STYLE_ID,
@@ -449,6 +456,8 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   // style defs that predate the covered field) BEFORE the per-line clean and
   // the style validation below — both expect the per-line/per-def form.
   merged = bakeDocCurveRadius(merged);
+  // Same route, same ordering reason, for the retired doc-level seamEdges.
+  merged = bakeDocSeamEdges(merged);
   // Sanitize per-line segment styles AND layers: drop unknown style values,
   // drop the never-persisted defaults ('solid' / layer 0), and drop any entry
   // whose pair-key isn't a station-pair adjacency on the line. Also backfill
@@ -629,6 +638,80 @@ export function bakeDocCurveRadius<
         // field, so it isn't a valid LineStyleProps yet).
         const props = def.props as unknown as Record<string, unknown>;
         styles[id] = { ...def, props: { ...props, curveRadius: defR } } as StyleDef;
+        stylesChanged = true;
+      } else {
+        styles[id] = def;
+      }
+    }
+    if (stylesChanged) {
+      out = out === doc ? ({ ...doc, styles } as T) : { ...out, styles };
+      changed = true;
+    }
+  }
+
+  return changed ? out : doc;
+}
+
+/**
+ * Bake the RETIRED doc-level `seamEdges` into per-line fields, and fill line
+ * style defs saved before `seamEdges` was a covered field. Which pieces of a
+ * branch seam get painted is per-line now (`Line.seamEdges`, missing ⇒ 'both',
+ * the full notch), so a legacy file's map-wide choice must land on every line
+ * to keep its rendered seams; the doc field is then dropped. A line (or style
+ * def) that somehow carries its own value keeps it. Keyed off field presence
+ * (idempotent), so parse() runs it unconditionally and the localStorage
+ * rehydrate gates it at v<23. Garbage legacy values read as the default.
+ *
+ * Must run BEFORE style-def validation on both paths — `sanitizeStyleProps`
+ * requires `seamEdges` on line defs, and this bake is what guarantees the
+ * legacy VALUE (rather than the healed default) reaches defs from older builds.
+ * A doc old enough to carry the field can have no def carrying one, so every
+ * line and every line def take the same value and no tag can drift: unlike the
+ * dot-type rollout, no mismatch prune follows.
+ */
+export function bakeDocSeamEdges<
+  T extends { lines?: Record<string, Line>; styles?: Record<string, StyleDef> },
+>(doc: T): T {
+  const raw = doc as Record<string, unknown>;
+  const hasLegacy = 'seamEdges' in raw;
+  const legacy = isSeamEdges(raw.seamEdges) ? raw.seamEdges : LINE_SEAM_EDGES_DEFAULT;
+  // Per-line stored form (undefined at 'both' — never stored) vs. the concrete
+  // style-def form (defs always store the resolved value).
+  const stored = canonicalSeamEdges(legacy);
+
+  let out = doc;
+  let changed = false;
+
+  if (hasLegacy) {
+    const { seamEdges: _retired, ...rest } = raw;
+    out = rest as unknown as T;
+    changed = true;
+    if (stored !== undefined && out.lines) {
+      const lines: Record<string, Line> = {};
+      for (const id of Object.keys(out.lines)) {
+        const ln = out.lines[id];
+        lines[id] = 'seamEdges' in ln ? ln : { ...ln, seamEdges: stored };
+      }
+      out = { ...out, lines };
+    }
+  }
+
+  if (out.styles) {
+    let stylesChanged = false;
+    const styles: Record<string, StyleDef> = {};
+    for (const id of Object.keys(out.styles)) {
+      const def = out.styles[id];
+      if (
+        def &&
+        def.kind === 'line' &&
+        def.props &&
+        typeof def.props === 'object' &&
+        !('seamEdges' in def.props)
+      ) {
+        // Raw persisted props — spread via a loose view (the def predates the
+        // field, so it isn't a valid LineStyleProps yet).
+        const props = def.props as unknown as Record<string, unknown>;
+        styles[id] = { ...def, props: { ...props, seamEdges: legacy } } as StyleDef;
         stylesChanged = true;
       } else {
         styles[id] = def;
@@ -1572,6 +1655,18 @@ function sanitizeLineStroke(line: Line): Line {
       next = { ...next, seamColor: stored };
     }
   }
+  // The seam edge filter is an enum, not a number or color: `canonicalSeamEdges`
+  // both validates and collapses at the default, so garbage and 'both' alike
+  // leave the field absent.
+  if ('seamEdges' in line) {
+    const stored = canonicalSeamEdges(line.seamEdges);
+    if (stored === undefined) {
+      const { seamEdges: _gone, ...rest } = next;
+      next = rest;
+    } else if (stored !== next.seamEdges) {
+      next = { ...next, seamEdges: stored };
+    }
+  }
   return next;
 }
 
@@ -2172,6 +2267,10 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       // hand-edited garbage value — it is the historical look, so healing to it
       // can never change how an older file paints.
       const endStyle = isLineEndStyle(o.endStyle) ? o.endStyle : LINE_END_STYLE_DEFAULT;
+      // Seam edge filter: 'both' (the full notch) for defs written while it was
+      // still a doc-global, and for a hand-edited garbage value — the legacy
+      // VALUE has already been baked in by bakeDocSeamEdges where one existed.
+      const seamEdges = isSeamEdges(o.seamEdges) ? o.seamEdges : LINE_SEAM_EDGES_DEFAULT;
       const strokeWidth = finiteNum(o.strokeWidth);
       const strokeColor = asString(o.strokeColor);
       if (width === undefined) return undefined;
@@ -2205,6 +2304,7 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
         strokeColor,
         seamColor,
         seamWidth,
+        seamEdges,
         dashLength,
         dashWidth,
         interlineGap,

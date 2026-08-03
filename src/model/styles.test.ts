@@ -30,6 +30,7 @@ import { LINE_CURVE_RADIUS_DEFAULT } from './lineCurve';
 import type {
   LineEndStyle,
   RouteBulletStyleProps,
+  SeamEdges,
   TextLabelStyleProps,
   TransferStyleProps,
 } from './types';
@@ -59,6 +60,7 @@ describe('captureStyleProps', () => {
       endStyle: 'square' as const,
       strokeWidth: 0,
       strokeColor: '#ffffff',
+      seamEdges: 'both' as const,
     });
   });
 
@@ -88,6 +90,7 @@ describe('captureStyleProps', () => {
       endStyle: 'square' as const,
       strokeWidth: 1.5,
       strokeColor: '#123456',
+      seamEdges: 'both' as const,
     });
   });
 
@@ -267,6 +270,7 @@ describe('stylePropsEqual — line covered fields', () => {
       endStyle: 'square' as const,
       strokeWidth: 0,
       strokeColor: '#ffffff',
+      seamEdges: 'both' as const,
     };
     expect(stylePropsEqual('line', base, { ...base })).toBe(true);
     expect(stylePropsEqual('line', base, { ...base, curveRadius: 40 })).toBe(false);
@@ -293,6 +297,7 @@ describe('stylePropsEqual — line covered fields', () => {
       endStyle: 'square' as const,
       strokeWidth: 0,
       strokeColor: '#ffffff',
+      seamEdges: 'both' as const,
     };
     expect(stylePropsEqual('line', base, { ...base, interlineGap: 2 })).toBe(false);
     expect(
@@ -311,6 +316,7 @@ describe('stylePropsEqual — line covered fields', () => {
       endStyle: 'square' as const,
       strokeWidth: 0,
       strokeColor: '#ffffff',
+      seamEdges: 'both' as const,
     };
     expect(stylePropsEqual('line', base, { ...base, labelGap: 2 })).toBe(false);
     expect(stylePropsEqual('line', { ...base, labelGap: 2 }, { ...base, labelGap: 2 })).toBe(true);
@@ -1326,5 +1332,68 @@ describe('line style — end style coverage', () => {
     doc = T.setStationEndStyle(doc, 'l1', 'a', 'round');
     expect(doc.lines.l1.styleId).toBe(styleId);
     expect(doc.lines.l1.stationEndStyles).toEqual({ a: 'round' });
+  });
+});
+
+// The branch-seam edge filter is a covered style field on the same terms as the
+// line end: required in the props (so a style can force the full notch back),
+// captured by example, and detaching when edited by hand.
+describe('line style — seam edge coverage', () => {
+  const lineDoc = (patch = {}) =>
+    makeDoc({
+      stations: [
+        makeStation({ id: 'a', stops: [makeStop('l1')] }),
+        makeStation({ id: 'b', stops: [makeStop('l1')] }),
+      ],
+      lines: [makeLine({ id: 'l1', stations: ['a', 'b'], ...patch })],
+    });
+
+  it("captures the line's seam edge mode, and 'both' from a line that stores none", () => {
+    expect(captureStyleProps(lineDoc({ seamEdges: 'curved' }), 'line', 'l1')!).toMatchObject({
+      seamEdges: 'curved',
+    });
+    expect(captureStyleProps(lineDoc(), 'line', 'l1')!).toMatchObject({ seamEdges: 'both' });
+  });
+
+  it('separates two styles that differ only by seam edge mode', () => {
+    const base = captureStyleProps(lineDoc(), 'line', 'l1')!;
+    expect(stylePropsEqual('line', base, { ...base, seamEdges: 'straight' })).toBe(false);
+    expect(
+      stylePropsEqual(
+        'line',
+        { ...base, seamEdges: 'straight' },
+        { ...base, seamEdges: 'straight' },
+      ),
+    ).toBe(true);
+  });
+
+  it("heals a def written before the field existed to 'both'", () => {
+    const captured = captureStyleProps(lineDoc(), 'line', 'l1')!;
+    const legacy = { ...captured, seamEdges: undefined as unknown as SeamEdges };
+    expect(canonicalStyleProps('line', legacy).seamEdges).toBe('both');
+  });
+
+  it("stamps the seam edge mode onto a wearer, 'both' included", () => {
+    let doc = lineDoc({ seamEdges: 'curved' });
+    const styleId = 'sty-curved';
+    doc = saveStyleFromItem(doc, styleId, 'line', 'Curved seam', 'l1');
+    doc = {
+      ...doc,
+      lines: { ...doc.lines, l2: makeLine({ id: 'l2', stations: ['a', 'b'] }) },
+    };
+    doc = applyStyleToItem(doc, styleId, 'l2');
+    expect(doc.lines.l2.seamEdges).toBe('curved');
+    // …and a full-notch style puts it back, rather than leaving it curved-only.
+    doc = updateStyleProps(doc, styleId, { seamEdges: 'both' });
+    expect('seamEdges' in doc.lines.l2).toBe(false);
+    expect(doc.lines.l2.styleId).toBe(styleId);
+  });
+
+  it('detaches the line when the seam edge mode is edited by hand', () => {
+    let doc = lineDoc();
+    doc = saveStyleFromItem(doc, 'sty-plain', 'line', 'Plain', 'l1');
+    expect(doc.lines.l1.styleId).toBeDefined();
+    doc = T.setLineSeamEdges(doc, 'l1', 'straight');
+    expect(doc.lines.l1.styleId).toBeUndefined();
   });
 });

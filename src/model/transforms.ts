@@ -30,10 +30,12 @@ import { LINE_END_STYLE_DEFAULT, lineEndStyleOf, withStationEndStyles } from './
 import { repackStationForSpacing } from './stationPacking';
 import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
 import {
+  LINE_SEAM_EDGES_DEFAULT,
   LINE_STROKE_COLOR_DEFAULT,
   LINE_STROKE_WIDTH_DEFAULT,
   canonicalStrokeColor,
   canonicalSeamColor,
+  canonicalSeamEdges,
   canonicalStrokeWidth,
 } from './lineStroke';
 import {
@@ -1022,6 +1024,15 @@ export function setLineSeamColor(doc: MapDoc, id: LineId, c: string): MapDoc {
 export function setLineSeamWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
   if (!Number.isFinite(w)) return doc;
   return setLineStyleField(doc, id, 'seamWidth', canonicalStrokeWidth(w));
+}
+
+// Which pieces of this line's seam edges get painted (see model/lineStroke.ts).
+// Same contract as the other plain style setters: the field is dropped at
+// 'both' (the full notch) so the default is never stored, and a real change
+// detaches the line from its preset. PRESENTATION — the filter only picks
+// which seam pieces a band emits, so no region reconcile is needed.
+export function setLineSeamEdges(doc: MapDoc, id: LineId, v: SeamEdges): MapDoc {
+  return setLineStyleField(doc, id, 'seamEdges', canonicalSeamEdges(v));
 }
 
 // Per-line tick length for 'dash' stops. Shares the casing width's canonical
@@ -2747,16 +2758,6 @@ export function togglePalette(doc: MapDoc, id: PaletteId, custom: readonly Palet
 }
 
 /**
- * Set the global branch-seam inner-edge mode (see MapDoc.seamEdges). Returns
- * the input doc unchanged when the value is unchanged (so undo doesn't record a
- * no-op).
- */
-export function setSeamEdges(doc: MapDoc, seamEdges: SeamEdges): MapDoc {
-  if (doc.seamEdges === seamEdges) return doc;
-  return { ...doc, seamEdges };
-}
-
-/**
  * Make this a night map (or a day map again) — see MapDoc.darkMode. Returns the
  * input doc unchanged when the value is unchanged (so undo doesn't record a
  * no-op).
@@ -2769,9 +2770,9 @@ export function setDarkMode(doc: MapDoc, darkMode: boolean): MapDoc {
 /**
  * Empty the canvas, keeping the document. Clear is not New: it stays in the
  * same map, so everything that isn't drawn content survives — the title, the
- * define-by-example styles, which palettes are switched on, the seam mode, and
- * whether this is a night map. DEFAULT_DOC supplies the emptied collections;
- * the spread below re-imposes the settings on top of them.
+ * define-by-example styles, which palettes are switched on, and whether this is
+ * a night map. DEFAULT_DOC supplies the emptied collections; the spread below
+ * re-imposes the settings on top of them.
  */
 export function clearAll(doc: MapDoc): MapDoc {
   return {
@@ -2780,7 +2781,6 @@ export function clearAll(doc: MapDoc): MapDoc {
     styles: doc.styles,
     styleDefaults: doc.styleDefaults,
     activePalettes: doc.activePalettes,
-    seamEdges: doc.seamEdges,
     darkMode: doc.darkMode,
   };
 }
@@ -3883,6 +3883,7 @@ export const DEFAULT_STYLES: Record<string, StyleDef> = {
       endStyle: LINE_END_STYLE_DEFAULT,
       strokeWidth: LINE_STROKE_WIDTH_DEFAULT,
       strokeColor: LINE_STROKE_COLOR_DEFAULT,
+      seamEdges: LINE_SEAM_EDGES_DEFAULT,
     },
   },
   'default-textLabel': {
@@ -3974,6 +3975,5 @@ export const DEFAULT_DOC: MapDoc = {
   styles: DEFAULT_STYLES,
   styleDefaults: FACTORY_STYLE_DEFAULTS,
   activePalettes: ['mta'],
-  seamEdges: 'both',
   darkMode: false,
 };

@@ -1,21 +1,18 @@
 import { Fragment, useId, useRef, useState } from 'react';
-import { ChevronDownIcon, Cross2Icon, MixerHorizontalIcon } from '@radix-ui/react-icons';
-import * as Select from '@radix-ui/react-select';
+import { Cross2Icon, MixerHorizontalIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
-import type { SeamEdges } from '../model/types';
 import { PALETTES } from '../model/palettes';
 import { parseCustomPalette } from '../model/customPalette';
 import { useCustomPalettes } from '../state/customPalettes';
 import { usePopover } from './usePopover';
 import { FieldCheckbox } from './FieldCheckbox';
-import { FieldSelectContent } from './FieldSelectContent';
 
 /**
- * Toolbar "Options" button. The panel holds the global branch-seam inner-edge
- * mode selector (`seamEdges`) and the color-palette picker. Per-line curve
- * radius moved to the line style (line inspector / line style presets) and
- * station-label typography lives on per-station styles, so neither appears
- * here. Mirrors `Menu`'s open/close via `usePopover`.
+ * Toolbar "Options" button. The panel holds the color-palette picker, and
+ * nothing else: per-line curve radius and the branch-seam inner-edge mode both
+ * moved to the line style (line inspector / line style presets), and
+ * station-label typography lives on per-station styles.
+ * Mirrors `Menu`'s open/close via `usePopover`.
  */
 export function OptionsPopover() {
   const { open, setOpen, wrapRef } = usePopover();
@@ -23,10 +20,6 @@ export function OptionsPopover() {
 
   const activePalettes = useDoc((s) => s.activePalettes);
   const togglePalette = useDoc((s) => s.togglePalette);
-  const seamEdges = useDoc((s) => s.seamEdges);
-  const setSeamEdges = useDoc((s) => s.setSeamEdges);
-  const seamEdgesId = useId();
-
   const customPalettes = useCustomPalettes((s) => s.palettes);
   const addPalette = useCustomPalettes((s) => s.addPalette);
   const deleteCustomPalette = useDoc((s) => s.deleteCustomPalette);
@@ -68,37 +61,6 @@ export function OptionsPopover() {
       </button>
       {open && (
         <div className="options-popover" id={panelId} role="dialog" aria-label="Options">
-          <div className="options-popover-row options-popover-row-block">
-            <label htmlFor={seamEdgesId} className="options-popover-block-label">
-              Branch inner edges
-            </label>
-            {/* Radix field-select — the same dropdown chrome as the Style /
-                Weight / Line pickers, not a native <select>. */}
-            <Select.Root value={seamEdges} onValueChange={(v) => setSeamEdges(v as SeamEdges)}>
-              <Select.Trigger
-                id={seamEdgesId}
-                className="field-select"
-                aria-label="Branch inner edges"
-              >
-                <Select.Value />
-                <Select.Icon className="field-select-caret" aria-hidden="true">
-                  <ChevronDownIcon />
-                </Select.Icon>
-              </Select.Trigger>
-              <FieldSelectContent>
-                <Select.Item value="both" className="field-select-item">
-                  <Select.ItemText>Both</Select.ItemText>
-                </Select.Item>
-                <Select.Item value="straight" className="field-select-item">
-                  <Select.ItemText>Straight only</Select.ItemText>
-                </Select.Item>
-                <Select.Item value="curved" className="field-select-item">
-                  <Select.ItemText>Curved only</Select.ItemText>
-                </Select.Item>
-              </FieldSelectContent>
-            </Select.Root>
-          </div>
-          <hr className="options-popover-divider" aria-hidden="true" />
           <div className="options-popover-row options-popover-row-block">
             <div className="options-palettes">
               <button

@@ -37,7 +37,6 @@ const renderLayer = (
         lineCircles={opts.lineCircles ?? {}}
         renderables={opts.renderables ?? []}
         underlayColor="#ffffff"
-        seamEdges="both"
         uiMode={uiMode}
         appendHover={opts.appendHover}
         zoom={1}
