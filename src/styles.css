@@ -3132,7 +3132,7 @@ body:has(.app[data-theme='dark']) {
 
 /* Disclosure that collapses a popover's style detail: the station popover's
    manual typography overrides (Size → Tracking) and the line popover's full
-   parameter stack (Line width → Seam color). A quiet full-width sub-header:
+   parameter stack (Line width → Inner strokes). A quiet full-width sub-header:
    muted caret + label, warms to full text color on hover. The style picker
    above it always stays visible. */
 .station-popover .style-collapse-toggle,
