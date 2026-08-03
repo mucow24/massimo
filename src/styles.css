@@ -2931,24 +2931,36 @@ body:has(.app[data-theme='dark']) {
      values like "20.00". */
   width: 76px;
 }
-/* Per-terminus line-end dropdown: a 26px trigger showing just the end glyph,
-   sized to sit in the same rhythm as the type picker. Non-terminus rows render
-   the placeholder instead so the Direction column stays put down the list —
-   a control that appears on some rows and not others would otherwise make the
-   whole column jitter. */
-.stop-row .end-style-select {
-  width: 42px;
+/* The row's two glyph dropdowns — the stop's self-transfer and its line end.
+   Square and caret-free, so they sit in the same rhythm as the type picker
+   beside them and read as one strip of glyph pickers. Both render on EVERY
+   row (the end one disabled off a terminus): a control that appeared on some
+   rows and not others made the whole column jitter down the list. */
+.stop-row .end-style-slot,
+.stop-row .end-style-select,
+.stop-row .transfer-select {
+  width: 26px;
   height: 26px;
-  padding: 0 2px 0 4px;
+  padding: 0;
   flex: none;
   gap: 0;
+  justify-content: center;
 }
-.stop-row .end-style-placeholder {
-  width: 42px;
-  flex: none;
+/* The end trigger fills its wrapper — the wrapper exists only to carry a
+   hoverable title while the trigger inside is disabled. */
+.stop-row .end-style-slot {
+  display: inline-flex;
 }
-/* Glyph + name inside an open end-style panel. */
-.end-style-item {
+.stop-row .end-style-slot .end-style-select {
+  width: 100%;
+  height: 100%;
+}
+.stop-row .field-select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+/* Glyph + name inside an open end-style / transfer panel. */
+.glyph-item {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -3114,10 +3126,10 @@ body:has(.app[data-theme='dark']) {
 
 /* Column captions over the stop rows. Mirror the .stop-row flex rhythm so each
    caption sits roughly over the control it names: Line over the service badge,
-   Type over the shape picker, Size over the size box, Direction over the
-   right-hugging orientation button. Widths are approximate — the captions are
-   wider than the 26px controls — but the left cluster + right Direction read
-   the columns clearly. */
+   then the three glyph pickers (Type, Xfer, End), Size over the size box, and
+   Direction over the right-hugging orientation button. Widths are approximate —
+   the captions are wider than the 26px controls — but the left cluster + right
+   Direction read the columns clearly. */
 .station-popover .stop-rows-header {
   display: flex;
   align-items: center;
@@ -3130,18 +3142,15 @@ body:has(.app[data-theme='dark']) {
   flex: none;
   width: 24px;
 }
-.station-popover .stop-rows-header .col-type {
+.station-popover .stop-rows-header .col-type,
+.station-popover .stop-rows-header .col-xfer,
+.station-popover .stop-rows-header .col-end {
   flex: none;
   width: 26px;
 }
 .station-popover .stop-rows-header .col-size {
   flex: none;
   width: 76px;
-  text-align: center;
-}
-.station-popover .stop-rows-header .col-end {
-  flex: none;
-  width: 42px;
   text-align: center;
 }
 .station-popover .stop-rows-header .col-dir {

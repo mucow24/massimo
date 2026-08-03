@@ -470,6 +470,75 @@ describe('TransferLayer — DOM rendering', () => {
     });
   });
 
+  // A SELF-transfer (both ends on one stop dot) is a zero-length capsule — a
+  // disc, painted as an explicit <circle> with a fill to hit-test.
+  describe('self-transfer disc', () => {
+    const seedSelfTransfer = (overrides: Partial<Transfer> = {}) => {
+      seedTwoStationsWithTransfer();
+      act(() => {
+        useDoc.setState({
+          ...useDoc.getState(),
+          transfers: {
+            self: {
+              id: 'self',
+              a: { stationId: 's1', lineId: 'L1' },
+              b: { stationId: 's1', lineId: 'L1' },
+              ...overrides,
+            },
+          },
+        });
+      });
+    };
+    const discs = (id: string) =>
+      Array.from(document.querySelectorAll(`circle[data-transfer-id="${id}"]`));
+
+    it('paints a filled <circle> at the stop, sized to the body thickness', () => {
+      seedSelfTransfer({ thickness: 12, color: { day: '#ff8800', night: '#ff8800' } });
+      render(<App />);
+      expect(transferLines('self')).toHaveLength(0);
+      const els = discs('self');
+      expect(els).toHaveLength(1);
+      expect(els[0].getAttribute('cx')).toBe('0');
+      expect(els[0].getAttribute('cy')).toBe('0');
+      expect(Number(els[0].getAttribute('r'))).toBe(6);
+      expect(els[0].getAttribute('fill')).toBe('#ff8800');
+      // No stroke on the disc — the halo is its own, wider circle below.
+      expect(els[0].getAttribute('stroke')).toBeNull();
+    });
+
+    it('is hit-testable by its FILL, so an alt-click can reach it under the dot', () => {
+      seedSelfTransfer({ thickness: 12 });
+      render(<App />);
+      expect(discs('self')[0].getAttribute('pointer-events')).toBe('fill');
+      fireEvent.click(discs('self')[0]);
+      expect(useSelection.getState().selectedTransferId).toBe('self');
+    });
+
+    it('renders the halo as a wider disc, still in the halo pass (before the body)', () => {
+      seedSelfTransfer({ thickness: 12, strokeWidth: 3 });
+      render(<App />);
+      const els = discs('self');
+      expect(els).toHaveLength(2);
+      const [halo, body] = els;
+      // visibleExtent = 12 + 2*3 = 18 → r 9; body r 6.
+      expect(Number(halo.getAttribute('r'))).toBe(9);
+      expect(Number(body.getAttribute('r'))).toBe(6);
+      const PRECEDING = Node.DOCUMENT_POSITION_PRECEDING;
+      expect(body.compareDocumentPosition(halo) & PRECEDING).toBeTruthy();
+    });
+
+    it('selects with a circular ring (the capsule degenerates)', () => {
+      seedSelfTransfer({ thickness: 12 });
+      render(<App />);
+      act(() => {
+        useSelection.getState().selectTransfer('self');
+      });
+      const ring = document.querySelector('path[data-transfer-id="self"]')!;
+      // Radius = visibleExtent/2 (6) + pad 2.5 = 8.5, as a two-arc circle.
+      expect(ring.getAttribute('d')).toContain('A 8.5 8.5');
+    });
+  });
+
   // The creation rubber band must read as PROVISIONAL — dashed + translucent —
   // not like an already-placed transfer at full color and weight.
   describe('creating-transfer rubber band', () => {

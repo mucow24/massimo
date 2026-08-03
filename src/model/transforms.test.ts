@@ -545,6 +545,66 @@ describe('addTransfer', () => {
   });
 });
 
+describe('self-transfers', () => {
+  const withStop = (over: Partial<Station> = {}) =>
+    makeDoc({
+      stations: [makeStation({ id: 's1', stops: [makeStop('L1')], ...over })],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] })],
+    });
+
+  it('adds a transfer whose two ends are the SAME stop', () => {
+    const next = T.addSelfTransfer(withStop(), 'x1', 's1', 'L1');
+    expect(next.transfers.x1).toEqual({
+      id: 'x1',
+      a: { stationId: 's1', lineId: 'L1' },
+      b: { stationId: 's1', lineId: 'L1' },
+    });
+  });
+
+  it('refuses when the station has no stop for that line', () => {
+    const doc = withStop({ stops: [] });
+    expect(T.addSelfTransfer(doc, 'x1', 's1', 'L1')).toBe(doc);
+  });
+
+  it('refuses when the station is gone', () => {
+    const doc = withStop();
+    expect(T.addSelfTransfer(doc, 'x1', 'ghost', 'L1')).toBe(doc);
+  });
+
+  it('refuses a SECOND self-transfer on the same stop — it is a singleton', () => {
+    const doc = T.addSelfTransfer(withStop(), 'x1', 's1', 'L1');
+    expect(T.addSelfTransfer(doc, 'x2', 's1', 'L1')).toBe(doc);
+  });
+
+  it('selfTransferAt finds it, and ignores a same-station transfer between two DOTS', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1', stops: [makeStop('L1'), makeStop('L2', { col: 1 })] })],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] }), makeLine({ id: 'L2', stations: ['s1'] })],
+      transfers: [
+        { id: 'pair', a: { stationId: 's1', lineId: 'L1' }, b: { stationId: 's1', lineId: 'L2' } },
+      ],
+    });
+    expect(T.selfTransferAt(doc, 's1', 'L1')).toBeUndefined();
+    const next = T.addSelfTransfer(doc, 'x1', 's1', 'L1');
+    expect(T.selfTransferAt(next, 's1', 'L1')?.id).toBe('x1');
+    // …and it is scoped to the stop it was made on, not the whole station.
+    expect(T.selfTransferAt(next, 's1', 'L2')).toBeUndefined();
+  });
+
+  it('cascade-deletes with its stop, its line and its station', () => {
+    const doc = T.addSelfTransfer(withStop(), 'x1', 's1', 'L1');
+    expect(T.removeStationFromLine(doc, 'L1', 0).transfers.x1).toBeUndefined();
+    expect(T.deleteLine(doc, 'L1').transfers.x1).toBeUndefined();
+    expect(T.deleteStation(doc, 's1').transfers.x1).toBeUndefined();
+  });
+
+  it('leaves the two-click flow alone: addTransfer still refuses a zero-length pair', () => {
+    const doc = withStop();
+    const end = { stationId: 's1', lineId: 'L1' as const };
+    expect(T.addTransfer(doc, 'x1', end, { ...end })).toBe(doc);
+  });
+});
+
 describe('deleteTransfer', () => {
   it('removes a transfer by id', () => {
     const doc = makeDoc({

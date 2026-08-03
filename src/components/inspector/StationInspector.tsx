@@ -279,8 +279,9 @@ export function StationInspector({ id }: { id: StationId }) {
             <div className="stop-rows-header" aria-hidden="true">
               <span className="col-line">Line</span>
               <span className="col-type">Type</span>
-              <span className="col-size">Size</span>
+              <span className="col-xfer">Xfer</span>
               <span className="col-end">End</span>
+              <span className="col-size">Size</span>
               <span className="col-dir">Direction</span>
             </div>
           )}

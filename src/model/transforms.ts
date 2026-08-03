@@ -3367,7 +3367,8 @@ export function deleteSvgImage(doc: MapDoc, id: string): MapDoc {
 
 // ---------- Transfers ----------
 
-/** Do two ends name the exact same point? A zero-length transfer is rejected. */
+/** Do two ends name the exact same point? `addTransfer` rejects the pair; the
+ *  deliberate zero-length transfer is `addSelfTransfer`, below. */
 export function sameTransferEnd(a: TransferEnd, b: TransferEnd): boolean {
   const aAnchor = isAnchorEnd(a);
   const bAnchor = isAnchorEnd(b);
@@ -3387,6 +3388,60 @@ export function addTransfer(doc: MapDoc, id: string, a: TransferEnd, b: Transfer
   if (sameTransferEnd(a, b)) return doc;
   if (!transferEndResolves(doc, a) || !transferEndResolves(doc, b)) return doc;
   const transfer: Transfer = { id, a, b };
+  return { ...doc, transfers: { ...doc.transfers, [id]: transfer } };
+}
+
+/**
+ * The SELF-transfer at one stop, or undefined. At most one exists — see
+ * `addSelfTransfer`, whose singleton guard this backs.
+ */
+export function selfTransferAt(
+  doc: Pick<MapDoc, 'transfers'>,
+  stationId: StationId,
+  lineId: LineId,
+): Transfer | undefined {
+  // `for…in`, not Object.keys: this is a per-stop-row zustand selector, so it
+  // re-runs on every store tick — including every frame of a station drag —
+  // and there is no reason to allocate a key array each time (the same idiom
+  // as transfersByStop, which walks this record for the label geometry).
+  for (const id in doc.transfers) {
+    const t = doc.transfers[id];
+    if (!isStopEnd(t.a) || t.a.stationId !== stationId || t.a.lineId !== lineId) continue;
+    if (sameTransferEnd(t.a, t.b)) return t;
+  }
+  return undefined;
+}
+
+/**
+ * The deliberate zero-length transfer: both ends on ONE stop dot. The paint is
+ * a disc (`TransferLayer` emits a real `<circle>` for it), so a fat transfer
+ * style gives the dot the same rounded cap the transfer's other end has — the
+ * only way to fold a stop smoothly into a thick transfer bar arriving from
+ * elsewhere.
+ *
+ * Why this exists rather than just letting the two-click flow accept the same
+ * dot twice: that click is indistinguishable from cancelling the flow, and away
+ * from the fat-bar case it leaves a speck the user never meant to place and can
+ * barely find again. So `addTransfer` still refuses the pair (see
+ * `sameTransferEnd`) and this is the one way in — called only from the station
+ * popover's transfer picker, which is equally the way back out. That single
+ * caller is what makes the self-transfer a findable singleton: it restyles or
+ * deletes whatever `selfTransferAt` returns instead of adding a second, and the
+ * guard below refuses one anyway.
+ *
+ * Refuses a stop the station doesn't actually have, too — a self transfer at an
+ * absent stop would sit on the station's anchor point with no row in the picker
+ * to ever reach it again.
+ */
+export function addSelfTransfer(
+  doc: MapDoc,
+  id: string,
+  stationId: StationId,
+  lineId: LineId,
+): MapDoc {
+  if (!doc.stations[stationId]?.stops.some((s) => s.lineId === lineId)) return doc;
+  if (selfTransferAt(doc, stationId, lineId)) return doc;
+  const transfer: Transfer = { id, a: { stationId, lineId }, b: { stationId, lineId } };
   return { ...doc, transfers: { ...doc.transfers, [id]: transfer } };
 }
 

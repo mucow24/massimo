@@ -1,4 +1,3 @@
-import { ChevronDownIcon } from '@radix-ui/react-icons';
 import * as Select from '@radix-ui/react-select';
 import type { LineEndStyle } from '../model/types';
 import { LINE_END_STYLES } from '../model/lineEnd';
@@ -10,6 +9,10 @@ export const LINE_END_LABELS: Record<LineEndStyle, string> = {
   short: 'Short',
   round: 'Round',
 };
+
+// Why the per-stop control is greyed out on most rows: only a stop the line
+// actually ENDS at has an end to dress.
+const DISABLED_TITLE = 'Only a stop at the end of the line can pin an end style';
 
 const LINE_END_TITLES: Record<LineEndStyle, string> = {
   square: 'Square — the full stop square, corners and all',
@@ -74,10 +77,15 @@ export function LineEndSegmented({
 
 /**
  * The same three ends as a compact dropdown, for the per-stop row in the
- * station editor — one 26px slot alongside the type/size/direction controls,
- * where a three-segment group would not fit. Shows the RESOLVED end (what the
- * stop actually paints), so picking the line's own value clears the pin rather
- * than storing a redundant one — the contract the dot size box already uses.
+ * station editor — one square glyph slot alongside the type/transfer/size/
+ * direction controls, where a three-segment group would not fit. Shows the
+ * RESOLVED end (what the stop actually paints), so picking the line's own value
+ * clears the pin rather than storing a redundant one — the contract the dot
+ * size box already uses.
+ *
+ * Only a terminus can pin an end, but the control renders on every row and goes
+ * DISABLED elsewhere rather than vanishing: an empty slot read as a rendering
+ * fault, and the columns have to hold their positions down the list either way.
  */
 export function LineEndSelect({
   value,
@@ -92,21 +100,24 @@ export function LineEndSelect({
 }) {
   return (
     <Select.Root value={value} onValueChange={(v) => onSelect(v as LineEndStyle)}>
-      <Select.Trigger
-        className="field-select end-style-select"
-        aria-label={ariaLabel}
-        title={LINE_END_TITLES[value]}
-        disabled={disabled}
-      >
-        <LineEndGlyph end={value} />
-        <Select.Icon className="field-select-caret" aria-hidden="true">
-          <ChevronDownIcon />
-        </Select.Icon>
-      </Select.Trigger>
+      {/* The disabled explanation rides the WRAPPER, not the trigger: a
+          disabled button gets no hover events, so a title on it would never
+          surface — and a greyed control that can't say why is the same puzzle
+          as the empty slot it replaced. The span hovers fine. */}
+      <span className="end-style-slot" title={disabled ? DISABLED_TITLE : undefined}>
+        <Select.Trigger
+          className="field-select end-style-select"
+          aria-label={ariaLabel}
+          title={disabled ? undefined : LINE_END_TITLES[value]}
+          disabled={disabled}
+        >
+          <LineEndGlyph end={value} />
+        </Select.Trigger>
+      </span>
       <FieldSelectContent>
         {LINE_END_STYLES.map((end) => (
           <Select.Item key={end} value={end} className="field-select-item">
-            <span className="end-style-item">
+            <span className="glyph-item">
               <LineEndGlyph end={end} />
               <Select.ItemText>{LINE_END_LABELS[end]}</Select.ItemText>
             </span>
