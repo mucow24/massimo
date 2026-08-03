@@ -151,10 +151,10 @@ export const lineSeamWidthOf = (
 // Which ARM of a branch notch the seam draws: 'both', the STRAIGHT arm (the
 // band running through, whose casing then carries on unbroken across the
 // branch mouth) or the CURVED one (the band that turns away, whose own casing
-// curls into the junction). In editor order, the full notch first. Exported as
-// the list the STYLE editor's picker iterates; the line inspector runs its own
-// parallel list (it adds an editor-only "off" segment and reorders), so a
-// fourth mode has to be added there by hand — see SeamEdgesPicker.tsx.
+// curls into the junction). The full notch first. Backs `isSeamEdges`, so this
+// is the VALIDATION list; both line editors iterate a parallel one of their own
+// (INNER_STROKES_MODES in InnerStrokesPicker.tsx) that reorders these and adds
+// an editor-only "off" segment — a fourth mode has to be added in both places.
 export const SEAM_EDGES_MODES = ['both', 'straight', 'curved'] as const;
 
 // 'both' — the full notch. Dropped at this value, so it is never stored.

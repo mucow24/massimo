@@ -13,7 +13,7 @@ import { withHexAlpha } from '../../util/color';
 import { NumericFieldRow } from '../NumericFieldRow';
 import { StyleRow } from '../StyleRow';
 import { LineEndSegmented } from '../LineEndPicker';
-import { InnerStrokesSegmented, type InnerStrokesMode } from '../SeamEdgesPicker';
+import { InnerStrokesSegmented, innerStrokesOf } from '../InnerStrokesPicker';
 import { lineEndStyleOf } from '../../model/lineEnd';
 import {
   LINE_INTERLINE_GAP_MAX,
@@ -52,8 +52,6 @@ import {
   LINE_STROKE_WIDTH_MAX,
   LINE_STROKE_WIDTH_MIN,
   lineCasingColor,
-  lineSeamColorStored,
-  lineSeamEdgesOf,
   lineStrokeColorStored,
   lineStrokeWidthOf,
 } from '../../model/lineStroke';
@@ -74,7 +72,9 @@ import {
 // The stroke is presented as ONE thing here — a width and a color that the
 // outer casing and the inner strokes at a junction share — even though the doc
 // keeps the seam's width and color as their own fields. Every write below that
-// crosses that line is marked; the line style editor still edits them apart.
+// crosses that line is marked. The line STYLE editor presents the same three
+// rows over the same five props (see LineStyleEditor); what differs is only the
+// write path, separate setters here against one patch there.
 export function LineInspector({ id }: { id: LineId }) {
   const line = useDoc((s) => s.lines[id]);
   const stations = useDoc((s) => s.stations);
@@ -109,13 +109,9 @@ export function LineInspector({ id }: { id: LineId }) {
 
   if (!line) return null;
 
-  // The four-way this editor shows for the line's inner strokes. The doc has no
-  // 'none' — the seam is off when it has no color — so the off state is read off
-  // that, and the arm underneath is remembered while off (picking None only
-  // clears the color, so switching back restores the arm rather than the
-  // default).
-  const innerStrokes: InnerStrokesMode =
-    lineSeamColorStored(line) === undefined ? 'none' : lineSeamEdgesOf(line);
+  // The four-way this editor shows for the line's inner strokes — the same
+  // derivation the style editor reads off a def's props (see innerStrokesOf).
+  const innerStrokes = innerStrokesOf(line);
 
   return (
     <section className="inspector">
