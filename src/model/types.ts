@@ -1,5 +1,5 @@
 import type { Vec2 } from '../geometry/vec';
-import type { PaletteId } from './palettes';
+import type { Palette } from './palettes';
 
 export type StationId = string;
 export type LineId = string;
@@ -831,9 +831,15 @@ export interface MapDoc {
   // the five label* fields — baked into per-station values on load
   // (bakeLegacyLabelSettings / persist v13), mirroring the transfer-settings
   // retirement below.
-  // Which color palettes are available in the line editor. Invariant:
-  // never empty (enforced by transforms / parse sanitiser).
-  activePalettes: PaletteId[];
+  // The color palettes this map paints with — the swatch sections of the line
+  // color picker, and the color cycle `addLine` walks, in this order. Full
+  // COPIES, taken from the palette library when the palette was added: a map
+  // carries its own definitions, so it opens with the right colors on a machine
+  // that has never seen the library it came from. Keyed by name (nothing may
+  // appear twice); may be empty — a map that picks every color by hand is a
+  // legitimate map. Legacy saves carry an `activePalettes` id list instead,
+  // resolved to copies on load by `bakeActivePalettes`.
+  palettes: Palette[];
   // NOTE: there is no doc-level `seamEdges` anymore — which arm of a branch
   // seam gets painted is a per-line style field (Line.seamEdges). Legacy saves
   // that carry the old doc field get it baked onto their lines on load

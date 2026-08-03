@@ -96,7 +96,7 @@ import { measureTextLabel } from '../geometry/textMeasure';
 import { isBulletCode } from '../geometry/labelTokens';
 import type { LabelStyle } from '../geometry/labelLayout';
 import { add, dot, eq, leftNormal, len, norm, rotateAround, sub, type Vec2 } from '../geometry/vec';
-import { normalizePaletteIds, type Palette, type PaletteId } from './palettes';
+import { copyPalette, PALETTES, type Palette } from './palettes';
 import type {
   AutoHAlign,
   AutoVAlign,
@@ -2724,37 +2724,63 @@ export function setStationEditorHeight(doc: MapDoc, stationId: StationId, height
   );
 }
 
-function arraysEqual<T>(a: readonly T[], b: readonly T[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
-  return true;
+function palettesEqual(a: Palette, b: Palette): boolean {
+  if (a.name !== b.name || a.swatches.length !== b.swatches.length) return false;
+  return a.swatches.every(
+    (s, i) => s.name === b.swatches[i].name && s.color === b.swatches[i].color,
+  );
 }
 
 /**
- * Replace the active palette set. Empty input (or input containing only
- * unknown ids) is rejected — the doc must always have at least one active
- * palette. Input is deduplicated and normalised to PALETTES declaration order.
+ * Add a palette to the map, upserting by name: adding a name the map already
+ * holds replaces its swatches where it stands, which is also how a map picks up
+ * a corrected palette from the library. Adding what the map already has changes
+ * nothing.
  */
-export function setActivePalettes(
-  doc: MapDoc,
-  ids: readonly PaletteId[],
-  custom: readonly Palette[] = [],
-): MapDoc {
-  const next = normalizePaletteIds(ids, custom);
-  if (next.length === 0) return doc;
-  if (arraysEqual(next, doc.activePalettes)) return doc;
-  return { ...doc, activePalettes: next };
+export function addPaletteToMap(doc: MapDoc, palette: Palette): MapDoc {
+  const next = copyPalette(palette);
+  const idx = doc.palettes.findIndex((p) => p.name === next.name);
+  if (idx < 0) return { ...doc, palettes: [...doc.palettes, next] };
+  if (palettesEqual(doc.palettes[idx], next)) return doc;
+  const palettes = doc.palettes.slice();
+  palettes[idx] = next;
+  return { ...doc, palettes };
+}
+
+/** Drop a palette from the map. The map may end up holding none. */
+export function removePaletteFromMap(doc: MapDoc, name: string): MapDoc {
+  const palettes = doc.palettes.filter((p) => p.name !== name);
+  if (palettes.length === doc.palettes.length) return doc;
+  return { ...doc, palettes };
 }
 
 /**
- * Toggle a single palette in/out of the active set. Refuses to remove the
- * last active palette (returns input doc unchanged), preserving the
- * "non-empty" invariant in one place.
+ * Rename one of the map's palettes. Free to do — the map holds a copy, so a
+ * built-in renamed here leaves the library's untouched. Refuses a name the map
+ * already uses, since name is the key.
  */
-export function togglePalette(doc: MapDoc, id: PaletteId, custom: readonly Palette[] = []): MapDoc {
-  const present = doc.activePalettes.includes(id);
-  const next = present ? doc.activePalettes.filter((x) => x !== id) : [...doc.activePalettes, id];
-  return setActivePalettes(doc, next, custom);
+export function renameMapPalette(doc: MapDoc, from: string, to: string): MapDoc {
+  const name = to.trim();
+  if (!name || name === from) return doc;
+  if (doc.palettes.some((p) => p.name === name)) return doc;
+  const idx = doc.palettes.findIndex((p) => p.name === from);
+  if (idx < 0) return doc;
+  const palettes = doc.palettes.slice();
+  palettes[idx] = { ...palettes[idx], name };
+  return { ...doc, palettes };
+}
+
+/**
+ * Move a palette one place up (-1) or down (+1) the map's list — the order the
+ * color picker sections and the `addLine` color cycle follow.
+ */
+export function movePaletteInMap(doc: MapDoc, name: string, delta: -1 | 1): MapDoc {
+  const idx = doc.palettes.findIndex((p) => p.name === name);
+  const to = idx + delta;
+  if (idx < 0 || to < 0 || to >= doc.palettes.length) return doc;
+  const palettes = doc.palettes.slice();
+  [palettes[idx], palettes[to]] = [palettes[to], palettes[idx]];
+  return { ...doc, palettes };
 }
 
 /**
@@ -2770,7 +2796,7 @@ export function setDarkMode(doc: MapDoc, darkMode: boolean): MapDoc {
 /**
  * Empty the canvas, keeping the document. Clear is not New: it stays in the
  * same map, so everything that isn't drawn content survives — the title, the
- * define-by-example styles, which palettes are switched on, and whether this is
+ * define-by-example styles, the palettes it paints with, and whether this is
  * a night map. DEFAULT_DOC supplies the emptied collections; the spread below
  * re-imposes the settings on top of them.
  */
@@ -2780,7 +2806,7 @@ export function clearAll(doc: MapDoc): MapDoc {
     name: doc.name,
     styles: doc.styles,
     styleDefaults: doc.styleDefaults,
-    activePalettes: doc.activePalettes,
+    palettes: doc.palettes,
     darkMode: doc.darkMode,
   };
 }
@@ -3974,6 +4000,7 @@ export const DEFAULT_DOC: MapDoc = {
   lineCircles: {},
   styles: DEFAULT_STYLES,
   styleDefaults: FACTORY_STYLE_DEFAULTS,
-  activePalettes: ['mta'],
+  // A fresh map is seeded with MTA — copied in, like every palette in a map.
+  palettes: PALETTES.filter((p) => p.name === 'MTA').map(copyPalette),
   darkMode: false,
 };

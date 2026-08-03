@@ -36,7 +36,7 @@ import { pickNextLineName } from '../model/lineNaming';
 import { defaultIdFactory, IdFactory } from '../model/ids';
 import { DEFAULT_DOC } from '../model/transforms';
 import * as T from '../model/transforms';
-import { cyclingColors, FALLBACK_LINE_COLOR, type PaletteId } from '../model/palettes';
+import { cyclingColors, FALLBACK_LINE_COLOR, type Palette } from '../model/palettes';
 import { useCustomPalettes } from './customPalettes';
 import {
   sanitizeLineCircles,
@@ -65,7 +65,7 @@ import {
   migrateV9Styles,
   sanitizeRegionAssignments,
   stripLegacySegmentLayers,
-  validActivePalettes,
+  bakeActivePalettes,
 } from '../model/serialize';
 import type { Station, Transfer } from '../model/types';
 import { randomStationName } from './stationNames';
@@ -139,7 +139,10 @@ const DOC_FIELDS = [
   // theirs repaired by the style-invariant pass in migrateDoc.
   'styles',
   'styleDefaults',
-  'activePalettes',
+  // The palette COPIES the map paints with. Replaced the `activePalettes` id
+  // list (persist v24); both load paths resolve the retired ids to copies via
+  // `bakeActivePalettes`.
+  'palettes',
   // Whether this is a night map. Lived in useViewportStore (session state)
   // until it became clear a night map is a property of the MAP: it has to
   // travel in the exported file. Absent in older saves, backfilled to false by
@@ -379,6 +382,13 @@ if (typeof window !== 'undefined') {
  *   it unconditionally. Ordered BESIDE the v<16 curveRadius bake, and BEFORE the
  *   v<10 style hygiene, for the same reason its gate gives. No tag prune
  *   follows: lines and defs take the same legacy value.
+ * - v23 → v24: retire `activePalettes` — the id list of which palettes were
+ *   switched on becomes the palette COPIES the map carries (`MapDoc.palettes`),
+ *   so a map needs no companion library to open with the right colors. Built-in
+ *   ids resolve through the retired-id table, `custom:` ids against the palette
+ *   library, via the shared `bakeActivePalettes`; ids resolving to neither are
+ *   dropped, and a map carrying no palettes is a legitimate outcome. Gated on
+ *   the new field being ABSENT as well, so it can never overwrite real palettes.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -393,7 +403,8 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     lineCircles?: Record<string, LineCircle>;
     labelBold?: boolean;
     labelWeight?: TextLabelWeight;
-    activePalettes?: PaletteId[];
+    activePalettes?: string[];
+    palettes?: Palette[];
   };
   // Corrupt or missing version is treated as v0 so all migrations run —
   // preferable to silently rendering with stale data.
@@ -633,20 +644,11 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
       };
     }
   }
-  // Non-version-gated invariant: at least one VALID active palette. Unlike the
-  // migrations above, this isn't tied to a schema bump — a persisted doc with
-  // an explicit empty / all-unknown `activePalettes` (tampering, or a
-  // pre-invariant build) would otherwise rehydrate into the unreachable-from-UI
-  // empty-palette state that `parse()` already guards on the file-import path,
-  // via the shared `validActivePalettes`. An ABSENT field is left untouched —
-  // zustand's persist merge fills it from the initial state.
-  if (out.activePalettes !== undefined) {
+  if (v < 24 && out.palettes === undefined && out.activePalettes !== undefined) {
+    const { activePalettes, ...rest } = out;
     out = {
-      ...out,
-      activePalettes: validActivePalettes(
-        out.activePalettes,
-        useCustomPalettes.getState().palettes,
-      ),
+      ...rest,
+      palettes: bakeActivePalettes(activePalettes, useCustomPalettes.getState().palettes),
     };
   }
   return out as DocState;
@@ -870,15 +872,17 @@ interface DocState extends MapDoc {
    *  typography (fontSize/weight/italic/leading/tracking), detaching its style
    *  tag when a covered value actually changes. */
   updateStationLabelStyle: (stationId: StationId, patch: T.StationLabelPatch) => void;
-  setActivePalettes: (ids: PaletteId[]) => void;
-  togglePalette: (id: PaletteId) => void;
+  /** Take a palette into the map — a copy, upserted by name. Also how a map
+   *  picks up a palette corrected in the library. */
+  addPaletteToMap: (palette: Palette) => void;
+  removePaletteFromMap: (name: string) => void;
+  renameMapPalette: (from: string, to: string) => void;
+  /** Move a palette one place up (-1) or down (+1) the map's list — the order
+   *  the picker's sections and the `addLine` color cycle follow. */
+  movePaletteInMap: (name: string, delta: -1 | 1) => void;
   /** Make this a night map (or a day map again). A document edit like any
    *  other — undoable, and saved with the file. */
   setDarkMode: (darkMode: boolean) => void;
-  /** Delete a custom palette definition (from the custom-palette store) and
-   *  prune it from this doc's active set, falling back to the default set if it
-   *  was the only active palette. */
-  deleteCustomPalette: (id: PaletteId) => void;
   clearAll: () => void;
 }
 
@@ -951,9 +955,9 @@ export const useDoc = create<DocState>()(
         addLine: () => {
           const id = ids.lineId();
           set((s) => {
-            const cycle = cyclingColors(s.activePalettes, useCustomPalettes.getState().palettes);
-            // Guard the empty cycle (e.g. every active id is a dangling custom
-            // reference): `n % 0` is NaN, which would index `undefined`.
+            const cycle = cyclingColors(s.palettes);
+            // Guard the empty cycle (a map may carry no palettes at all):
+            // `n % 0` is NaN, which would index `undefined`.
             const color = cycle.length ? cycle[s.lineCounter % cycle.length] : FALLBACK_LINE_COLOR;
             const service = pickNextLineName(s.lines);
             // New items wear the kind's "Default" style (composed into the
@@ -1336,32 +1340,18 @@ export const useDoc = create<DocState>()(
         setDocName: (name) => set((s) => T.setDocName(s, name)),
         updateStationLabelStyle: (stationId, patch) =>
           set((s) => T.updateStationLabelStyle(s, stationId, patch)),
-        setActivePalettes: (idsArr) =>
-          set((s) => T.setActivePalettes(s, idsArr, useCustomPalettes.getState().palettes)),
-        togglePalette: (id) =>
-          set((s) => T.togglePalette(s, id, useCustomPalettes.getState().palettes)),
+        addPaletteToMap: (palette) => set((s) => T.addPaletteToMap(s, palette)),
+        removePaletteFromMap: (name) => set((s) => T.removePaletteFromMap(s, name)),
+        renameMapPalette: (from, to) => set((s) => T.renameMapPalette(s, from, to)),
+        movePaletteInMap: (name, delta) => set((s) => T.movePaletteInMap(s, name, delta)),
         setDarkMode: (darkMode) => set((s) => T.setDarkMode(s, darkMode)),
-        deleteCustomPalette: (id) => {
-          useCustomPalettes.getState().removePalette(id);
-          set((s) => {
-            const custom = useCustomPalettes.getState().palettes;
-            const next = s.activePalettes.filter((x) => x !== id);
-            // Keep the "≥1 active palette" invariant: if deleting the sole active
-            // palette would empty the set, fall back to the default.
-            return T.setActivePalettes(
-              s,
-              next.length ? next : [...DEFAULT_DOC.activePalettes],
-              custom,
-            );
-          });
-        },
         clearAll: () => set((s) => T.clearAll(s)),
       }),
       {
         name: 'vignelli-map-doc-v1',
         storage: debouncedDocStorage,
-        version: 23,
-        // Version migration chain v0 → v23 lives in `migrateDoc` (above), which
+        version: 24,
+        // Version migration chain v0 → v24 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         // `migrate` only runs when the STORED version differs from the config

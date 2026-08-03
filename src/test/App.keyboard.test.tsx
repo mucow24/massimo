@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import App from '../App';
 import { LinePopover } from '../components/LinePopover';
 import { NumericFieldRow } from '../components/NumericFieldRow';
+import { FieldCheckbox } from '../components/FieldCheckbox';
 import { WeightSelect } from '../components/WeightItalicControls';
 import { beginHistoryGroup, useDoc, useSelection } from '../state/store';
 import { useLineEditorPrefs } from '../state/lineEditorPrefs';
@@ -193,14 +193,19 @@ describe('App keyboard shortcuts: inForm guard routing', () => {
   // Regression for an a11y concern caught in self-review: an earlier draft of
   // the inForm narrowing included checkbox/radio/button-likes in the denylist,
   // which let the global Space handler preempt native checkbox toggling.
-  it('Space on a focused palette checkbox does not trigger pan mode', async () => {
-    const user = userEvent.setup();
-    render(<App />);
-    await user.click(screen.getByRole('button', { name: 'Options' }));
-    const bart = screen.getByRole('checkbox', { name: 'BART' });
-    bart.focus();
+  it('Space on a focused checkbox does not trigger pan mode', () => {
+    // The FieldCheckbox stands in for any of the chrome's checkboxes, the way
+    // the slider below stands in for a NumericFieldRow.
+    render(
+      <>
+        <App />
+        <FieldCheckbox ariaLabel="Probe" checked={false} onCheckedChange={() => {}} />
+      </>,
+    );
+    const probe = screen.getByRole('checkbox', { name: 'Probe' });
+    probe.focus();
 
-    fireEvent.keyDown(bart, { key: ' ' });
+    fireEvent.keyDown(probe, { key: ' ' });
 
     expect(useSelection.getState().spaceHeld).toBe(false);
   });

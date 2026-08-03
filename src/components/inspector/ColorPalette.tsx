@@ -1,6 +1,5 @@
 import { useDoc } from '../../state/store';
-import { useCustomPalettes } from '../../state/customPalettes';
-import { activePalettes as activePalettesOf, customLineColors } from '../../model/palettes';
+import { customLineColors } from '../../model/palettes';
 import { ColorField } from '../ColorField';
 import { normalizeHex } from '../../util/color';
 
@@ -11,12 +10,10 @@ export function ColorPalette({
   value: string;
   onChange: (c: string) => void;
 }) {
-  const activeIds = useDoc((s) => s.activePalettes);
+  const palettes = useDoc((s) => s.palettes);
   const lines = useDoc((s) => s.lines);
-  const custom = useCustomPalettes((s) => s.palettes);
-  const palettes = activePalettesOf(activeIds, custom);
-  // Every distinct line color that isn't a swatch in an active palette — the
-  // contents of the always-present "Custom" section (see customLineColors).
+  // Every distinct line color that isn't a swatch in one of the map's palettes
+  // — the contents of the always-present "Custom" section (see customLineColors).
   const customColors = customLineColors(
     Object.values(lines).map((l) => l.color),
     palettes,
@@ -28,7 +25,7 @@ export function ColorPalette({
   return (
     <div className="color-palette">
       {palettes.map((palette, i) => (
-        <div key={palette.id} className="color-palette-section">
+        <div key={palette.name} className="color-palette-section">
           <div
             className="color-palette-section-label"
             style={i === 0 ? { marginTop: 0 } : undefined}

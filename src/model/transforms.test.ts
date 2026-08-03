@@ -1445,7 +1445,7 @@ describe('clearAll', () => {
       name: 'My Map',
       stations: [makeStation({ id: 's1' })],
       lines: [makeLine({ id: 'L1' })],
-      activePalettes: ['mta', 'custom-x'],
+      palettes: [{ name: 'frrf', swatches: [{ name: '1', color: '#c1272d' }] }],
       darkMode: true,
     });
     const styled = {
@@ -1455,7 +1455,9 @@ describe('clearAll', () => {
 
     const cleared = T.clearAll(styled);
     expect(cleared.name).toBe('My Map');
-    expect(cleared.activePalettes).toEqual(['mta', 'custom-x']);
+    expect(cleared.palettes).toEqual([
+      { name: 'frrf', swatches: [{ name: '1', color: '#c1272d' }] },
+    ]);
     // Clearing a night map leaves a night map — Clear empties the canvas, it
     // doesn't reset what kind of map this is.
     expect(cleared.darkMode).toBe(true);
@@ -1703,49 +1705,98 @@ describe('setStationEditorHeight', () => {
   });
 });
 
-describe('activePalettes', () => {
-  it('DEFAULT_DOC.activePalettes is exactly [mta]', () => {
-    expect(T.DEFAULT_DOC.activePalettes).toEqual(['mta']);
+describe('the map’s palettes', () => {
+  const FRRF = { name: 'frrf', swatches: [{ name: '1', color: '#c1272d' }] };
+  const OTHER = { name: 'other', swatches: [{ name: '1', color: '#222222' }] };
+
+  it('a fresh map holds a copy of MTA', () => {
+    expect(T.DEFAULT_DOC.palettes.map((p) => p.name)).toEqual(['MTA']);
+    expect(T.DEFAULT_DOC.palettes[0].swatches).toHaveLength(11);
   });
 
-  it('setActivePalettes accepts a list and stores it in PALETTES declaration order', () => {
-    const doc = makeDoc({});
-    // BART precedes MTA alphabetically within North America.
-    expect(T.setActivePalettes(doc, ['mta', 'bart']).activePalettes).toEqual(['bart', 'mta']);
+  it('adds a palette to the end', () => {
+    const doc = T.addPaletteToMap(makeDoc({}), FRRF);
+    expect(doc.palettes.map((p) => p.name)).toEqual(['MTA', 'frrf']);
   });
 
-  it('setActivePalettes deduplicates input', () => {
+  it('stores a COPY — editing the library’s swatch array cannot reach the map', () => {
+    const source = { name: 'src', swatches: [{ name: '1', color: '#111111' }] };
+    const doc = T.addPaletteToMap(makeDoc({}), source);
+    source.swatches.push({ name: '2', color: '#222222' });
+    expect(doc.palettes.find((p) => p.name === 'src')?.swatches).toHaveLength(1);
+  });
+
+  it('stores nothing but the name and swatches — no library-only fields ride along', () => {
+    const doc = T.addPaletteToMap(makeDoc({}), { ...FRRF, builtin: true, starred: true } as never);
+    expect(Object.keys(doc.palettes[1])).toEqual(['name', 'swatches']);
+  });
+
+  it('re-adding a name replaces its swatches in place, keeping its position', () => {
+    let doc = T.addPaletteToMap(makeDoc({}), FRRF);
+    doc = T.addPaletteToMap(doc, OTHER);
+    doc = T.addPaletteToMap(doc, { name: 'frrf', swatches: [{ name: 'X', color: '#999999' }] });
+    expect(doc.palettes.map((p) => p.name)).toEqual(['MTA', 'frrf', 'other']);
+    expect(doc.palettes[1].swatches).toEqual([{ name: 'X', color: '#999999' }]);
+  });
+
+  it('re-adding an identical palette is a reference no-op (no undo entry)', () => {
+    const doc = T.addPaletteToMap(makeDoc({}), FRRF);
+    expect(T.addPaletteToMap(doc, FRRF)).toBe(doc);
+  });
+
+  it('removes a palette by name', () => {
+    const doc = T.addPaletteToMap(makeDoc({}), FRRF);
+    expect(T.removePaletteFromMap(doc, 'frrf').palettes.map((p) => p.name)).toEqual(['MTA']);
+  });
+
+  // No "at least one" invariant: a map with no palettes still picks colors by
+  // hand through the picker's Custom section.
+  it('allows the map to hold no palettes at all', () => {
+    expect(T.removePaletteFromMap(makeDoc({}), 'MTA').palettes).toEqual([]);
+  });
+
+  it('removing an absent name is a reference no-op', () => {
     const doc = makeDoc({});
-    expect(T.setActivePalettes(doc, ['bart', 'mta', 'mta', 'bart']).activePalettes).toEqual([
-      'bart',
-      'mta',
+    expect(T.removePaletteFromMap(doc, 'nope')).toBe(doc);
+  });
+
+  it('renames a palette in place', () => {
+    const doc = T.renameMapPalette(makeDoc({}), 'MTA', 'Subway');
+    expect(doc.palettes.map((p) => p.name)).toEqual(['Subway']);
+    expect(doc.palettes[0].swatches).toHaveLength(11); // a copy, so renaming it is free
+  });
+
+  it('refuses a rename onto another palette in the map', () => {
+    const doc = T.addPaletteToMap(makeDoc({}), FRRF);
+    expect(T.renameMapPalette(doc, 'frrf', 'MTA')).toBe(doc);
+  });
+
+  it('refuses an empty rename, and no-ops on an unknown name', () => {
+    const doc = makeDoc({});
+    expect(T.renameMapPalette(doc, 'MTA', '  ')).toBe(doc);
+    expect(T.renameMapPalette(doc, 'nope', 'x')).toBe(doc);
+  });
+
+  it('moves a palette up and down the list', () => {
+    let doc = T.addPaletteToMap(makeDoc({}), FRRF);
+    doc = T.addPaletteToMap(doc, OTHER);
+    expect(T.movePaletteInMap(doc, 'frrf', -1).palettes.map((p) => p.name)).toEqual([
+      'frrf',
+      'MTA',
+      'other',
+    ]);
+    expect(T.movePaletteInMap(doc, 'frrf', 1).palettes.map((p) => p.name)).toEqual([
+      'MTA',
+      'other',
+      'frrf',
     ]);
   });
 
-  it('setActivePalettes returns the input doc unchanged when the input is empty', () => {
-    const doc = T.setActivePalettes(makeDoc({}), ['mta', 'bart']);
-    expect(T.setActivePalettes(doc, [])).toBe(doc);
-  });
-
-  it('setActivePalettes returns the input doc unchanged when only unknown ids are given', () => {
-    const doc = T.setActivePalettes(makeDoc({}), ['mta', 'bart']);
-    expect(T.setActivePalettes(doc, ['nope'])).toBe(doc);
-  });
-
-  it('togglePalette adds an absent id', () => {
-    const doc = T.setActivePalettes(makeDoc({}), ['mta']);
-    // Result is normalised to PALETTES order — BART precedes MTA in N. America.
-    expect(T.togglePalette(doc, 'bart').activePalettes).toEqual(['bart', 'mta']);
-  });
-
-  it('togglePalette removes a present id', () => {
-    const doc = T.setActivePalettes(makeDoc({}), ['mta', 'bart']);
-    expect(T.togglePalette(doc, 'bart').activePalettes).toEqual(['mta']);
-  });
-
-  it('togglePalette refuses to remove the last palette (invariant)', () => {
-    const doc = T.setActivePalettes(makeDoc({}), ['mta']);
-    expect(T.togglePalette(doc, 'mta')).toBe(doc);
+  it('is a reference no-op at either end, and for an unknown name', () => {
+    const doc = T.addPaletteToMap(makeDoc({}), FRRF);
+    expect(T.movePaletteInMap(doc, 'MTA', -1)).toBe(doc);
+    expect(T.movePaletteInMap(doc, 'frrf', 1)).toBe(doc);
+    expect(T.movePaletteInMap(doc, 'nope', 1)).toBe(doc);
   });
 });
 
@@ -1799,26 +1850,6 @@ describe('setDarkMode (night map)', () => {
     expect(T.setDarkMode(night, true)).toBe(night);
     const day = makeDoc({});
     expect(T.setDarkMode(day, false)).toBe(day);
-  });
-});
-
-describe('activePalettes — custom palettes', () => {
-  const custom = [{ id: 'custom:frrf', name: 'frrf', swatches: [{ name: '1', color: '#c1272d' }] }];
-
-  it('setActivePalettes keeps an active custom id when given the custom list', () => {
-    const doc = T.setActivePalettes(makeDoc({}), ['mta', 'custom:frrf'], custom);
-    // Custom palettes sort before built-ins.
-    expect(doc.activePalettes).toEqual(['custom:frrf', 'mta']);
-  });
-
-  it('togglePalette toggling a built-in does not drop an active custom palette', () => {
-    const doc = T.setActivePalettes(makeDoc({}), ['custom:frrf'], custom);
-    expect(T.togglePalette(doc, 'mta', custom).activePalettes).toEqual(['custom:frrf', 'mta']);
-  });
-
-  it('togglePalette removes a present custom id', () => {
-    const doc = T.setActivePalettes(makeDoc({}), ['mta', 'custom:frrf'], custom);
-    expect(T.togglePalette(doc, 'custom:frrf', custom).activePalettes).toEqual(['mta']);
   });
 });
 

@@ -89,52 +89,102 @@ describe('serialize / parse round-trip', () => {
   });
 });
 
-describe('parse — active palette invariant', () => {
-  // Symmetric with the migrate-path coverage in storeMigrate.test.ts: both load
-  // paths route through the shared validActivePalettes helper.
-  const fileWith = (activePalettes: unknown): string =>
-    JSON.stringify({ format: 'massimo-map', doc: { ...T.DEFAULT_DOC, activePalettes } });
+describe('parse — the map’s palettes', () => {
+  const fileWith = (palettes: unknown): string =>
+    JSON.stringify({ format: 'massimo-map', doc: { ...T.DEFAULT_DOC, palettes } });
 
-  it('replaces an explicit empty activePalettes with the default set', () => {
+  it('round-trips the palettes a map carries', () => {
+    const frrf = { name: 'frrf', swatches: [{ name: '1', color: '#c1272d' }] };
+    const r = parse(fileWith([frrf]));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.palettes).toEqual([frrf]);
+  });
+
+  it('keeps an explicitly empty list — a map may carry no palettes', () => {
     const r = parse(fileWith([]));
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.doc.activePalettes).toEqual(T.DEFAULT_DOC.activePalettes);
+    if (r.ok) expect(r.doc.palettes).toEqual([]);
   });
 
-  it('falls back to the default set when no id is valid', () => {
-    const r = parse(fileWith(['bogus']));
+  it('a file predating the field gets the default seed', () => {
+    const { palettes: _drop, ...doc } = T.DEFAULT_DOC;
+    const r = parse(JSON.stringify({ format: 'massimo-map', doc }));
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.doc.activePalettes).toEqual(T.DEFAULT_DOC.activePalettes);
+    if (r.ok) expect(r.doc.palettes).toEqual(T.DEFAULT_DOC.palettes);
   });
 
-  it('keeps the valid ids, dropping unknowns', () => {
-    const r = parse(fileWith(['mta', 'bogus']));
+  it('drops malformed entries and de-duplicates by name', () => {
+    const good = { name: 'a', swatches: [{ name: '1', color: '#111111' }] };
+    const r = parse(
+      fileWith([good, { name: '', swatches: [] }, { swatches: [] }, 'nope', { ...good }]),
+    );
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.doc.activePalettes).toEqual(['mta']);
+    if (r.ok) expect(r.doc.palettes).toEqual([good]);
   });
 });
 
-describe('parse — custom palettes', () => {
-  const custom = [{ id: 'custom:frrf', name: 'frrf', swatches: [{ name: '1', color: '#c1272d' }] }];
-  const fileWith = (activePalettes: unknown): string =>
-    JSON.stringify({ format: 'massimo-map', doc: { ...T.DEFAULT_DOC, activePalettes } });
+describe('parse — legacy activePalettes', () => {
+  // Symmetric with the migrate-path coverage in storeMigrate.test.ts: both load
+  // paths route through the shared bakeActivePalettes helper.
+  const library = [{ name: 'frrf', swatches: [{ name: '1', color: '#c1272d' }] }];
+  const fileWith = (activePalettes: unknown): string => {
+    const { palettes: _drop, ...doc } = T.DEFAULT_DOC;
+    return JSON.stringify({ format: 'massimo-map', doc: { ...doc, activePalettes } });
+  };
 
-  it('keeps a custom active id when its palette is supplied', () => {
-    const r = parse(fileWith(['mta', 'custom:frrf']), custom);
+  it('resolves a built-in id to a COPY of that palette', () => {
+    const r = parse(fileWith(['bart']));
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.doc.activePalettes).toEqual(['mta', 'custom:frrf']);
+    if (r.ok) {
+      expect(r.doc.palettes.map((p) => p.name)).toEqual(['BART']);
+      expect(r.doc.palettes[0].swatches).toHaveLength(5);
+    }
   });
 
-  it('drops a dangling custom id whose palette is not supplied', () => {
-    const r = parse(fileWith(['mta', 'custom:gone']), custom);
+  it('keeps the order the ids were stored in', () => {
+    const r = parse(fileWith(['mta', 'bart']));
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.doc.activePalettes).toEqual(['mta']);
+    if (r.ok) expect(r.doc.palettes.map((p) => p.name)).toEqual(['MTA', 'BART']);
   });
 
-  it('falls back to the default set when only a dangling custom id is present', () => {
-    const r = parse(fileWith(['custom:gone']), custom);
+  // A custom id was `custom:<slug-of-name>`, so the name it came from is what
+  // matches it against the library.
+  it('resolves a custom id against the library by slugged name', () => {
+    const r = parse(fileWith(['mta', 'custom:frrf']), library);
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.doc.activePalettes).toEqual(T.DEFAULT_DOC.activePalettes);
+    if (r.ok) expect(r.doc.palettes.map((p) => p.name)).toEqual(['MTA', 'frrf']);
+  });
+
+  it('drops a custom id the library no longer holds', () => {
+    const r = parse(fileWith(['mta', 'custom:gone']), library);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.palettes.map((p) => p.name)).toEqual(['MTA']);
+  });
+
+  it('drops unknown ids, and leaves the map with none if that empties it', () => {
+    const r = parse(fileWith(['bogus']));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.palettes).toEqual([]);
+  });
+
+  it('retires the legacy field', () => {
+    const r = parse(fileWith(['mta']));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect('activePalettes' in r.doc).toBe(false);
+  });
+
+  // A file already holding `palettes` is current: its own list wins outright,
+  // and a stale id list beside it is ignored rather than merged.
+  it('ignores activePalettes when the file already carries palettes', () => {
+    const frrf = { name: 'frrf', swatches: [{ name: '1', color: '#c1272d' }] };
+    const r = parse(
+      JSON.stringify({
+        format: 'massimo-map',
+        doc: { ...T.DEFAULT_DOC, palettes: [frrf], activePalettes: ['bart'] },
+      }),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.palettes).toEqual([frrf]);
   });
 });
 

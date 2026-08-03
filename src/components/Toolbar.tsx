@@ -37,6 +37,7 @@ import {
   CursorArrowIcon,
   DoubleArrowLeftIcon,
   DoubleArrowRightIcon,
+  ColorWheelIcon,
   FrameIcon,
   HandIcon,
   LayersIcon,
@@ -44,7 +45,7 @@ import {
   SunIcon,
 } from '@radix-ui/react-icons';
 import { SnapToggleBar } from './SnapToggleBar';
-import { OptionsPopover } from './OptionsPopover';
+import { PalettesDialog } from './PalettesDialog';
 import { ViewPopover } from './ViewPopover';
 import { HelpPopover } from './HelpPopover';
 import { PerfPopover } from './PerfPopover';
@@ -140,6 +141,7 @@ export function Toolbar() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [palettesOpen, setPalettesOpen] = useState(false);
   /**
    * The tri-state save signal (saveBaseline.ts). 'clean' greys out Save
    * version — the doc byte-for-byte matches a library version, so a save
@@ -681,7 +683,17 @@ export function Toolbar() {
       <SnapToggleBar />
       <span className="tool-group-divider" aria-hidden="true" />
       <div className="tool-group">
-        <OptionsPopover />
+        <button
+          type="button"
+          className={'tool-btn' + (palettesOpen ? ' active' : '')}
+          title="Manage palettes"
+          aria-label="Manage palettes"
+          aria-haspopup="dialog"
+          aria-expanded={palettesOpen}
+          onClick={() => setPalettesOpen(true)}
+        >
+          <ColorWheelIcon />
+        </button>
         <button
           type="button"
           className={'tool-btn' + (gridVisible ? ' active' : '')}
@@ -769,6 +781,7 @@ export function Toolbar() {
       {libraryOpen && (
         <MapLibraryDialog onClose={() => setLibraryOpen(false)} onOpenVersion={onOpenVersion} />
       )}
+      {palettesOpen && <PalettesDialog onClose={() => setPalettesOpen(false)} />}
     </div>
   );
 }

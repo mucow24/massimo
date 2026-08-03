@@ -1,20 +1,18 @@
-// Color palettes available to the line editor. The active set is stored
-// per-document on `MapDoc.activePalettes`, with the invariant that at least
-// one palette must always be active (enforced in transforms).
+// The built-in half of the palette library. A palette is a name and a list of
+// swatches, and nothing else: the library keys palettes BY NAME, so a name is
+// an identity rather than a label, and the built-in names below are reserved
+// against the user's imported palettes (useCustomPalettes).
 //
-// PALETTES is ordered alphabetically by continent, then alphabetically by
-// display name within each continent. The popover renders a horizontal
-// separator between continent groups.
+// Adding a palette to a map COPIES it into `MapDoc.palettes`, so a map is
+// self-describing — it carries the definitions it paints with and opens on
+// another machine with no companion palette file. The corollary: correcting a
+// swatch here does NOT reach maps already holding a copy. Re-adding from the
+// library is the refresh.
+//
+// Declaration order below groups by continent for reading only; the library
+// lists palettes by name.
 
 import { normalizeHex } from '../util/color';
-
-// A palette id. Built-in palettes use the stable slugs declared in PALETTES
-// below; user-imported custom palettes use arbitrary `custom:<slug>` ids, so the
-// type is an open string rather than a closed union. KNOWN_PALETTE_IDS is the
-// runtime source of truth for which built-in ids exist.
-export type PaletteId = string;
-
-export type Continent = 'asia' | 'europe' | 'na';
 
 export interface PaletteSwatch {
   name: string;
@@ -22,23 +20,14 @@ export interface PaletteSwatch {
 }
 
 export interface Palette {
-  id: PaletteId;
   name: string;
-  // Built-in palettes are grouped by continent in the options popover. Custom
-  // (user-imported) palettes have no continent and render in their own group.
-  continent?: Continent;
   swatches: PaletteSwatch[];
 }
 
-// Order here is the canonical declaration order — used for storage normalisation,
-// UI section order, and the addLine auto-cycle order. Continents in alphabetical
-// order (asia → europe → na); palettes in alphabetical order within each.
 export const PALETTES: readonly Palette[] = [
   // ---- Asia ----
   {
-    id: 'beijing-subway',
     name: 'Beijing Subway',
-    continent: 'asia',
     swatches: [
       { name: 'Line 1', color: '#A4343A' },
       { name: 'Line 2', color: '#004B87' },
@@ -62,9 +51,7 @@ export const PALETTES: readonly Palette[] = [
     ],
   },
   {
-    id: 'mtr',
     name: 'MTR',
-    continent: 'asia',
     swatches: [
       { name: 'Airport Express', color: '#00888A' },
       { name: 'Disneyland Resort', color: '#F173AC' },
@@ -79,9 +66,7 @@ export const PALETTES: readonly Palette[] = [
     ],
   },
   {
-    id: 'shanghai-metro',
     name: 'Shanghai Metro',
-    continent: 'asia',
     swatches: [
       { name: 'Line 1', color: '#E3002B' },
       { name: 'Line 2', color: '#82BF25' },
@@ -104,9 +89,7 @@ export const PALETTES: readonly Palette[] = [
     ],
   },
   {
-    id: 'tokyo-subway',
     name: 'Tokyo Subway',
-    continent: 'asia',
     // Tokyo Metro (9 lines) + Toei Subway (4 lines), as a single combined
     // palette since both networks share the same city core.
     swatches: [
@@ -128,9 +111,7 @@ export const PALETTES: readonly Palette[] = [
 
   // ---- Europe ----
   {
-    id: 'berlin-ubahn',
     name: 'Berlin U-Bahn',
-    continent: 'europe',
     swatches: [
       { name: 'U1', color: '#7DAD4C' },
       { name: 'U2', color: '#DA421E' },
@@ -144,9 +125,7 @@ export const PALETTES: readonly Palette[] = [
     ],
   },
   {
-    id: 'paris-ratp',
     name: 'Paris (RATP)',
-    continent: 'europe',
     // Paris Métro lines 1–14 plus the four trams whose colors don't
     // duplicate a Métro line (T6, T9, T12, T14).
     swatches: [
@@ -171,9 +150,7 @@ export const PALETTES: readonly Palette[] = [
     ],
   },
   {
-    id: 'tfl',
     name: 'TfL (London)',
-    continent: 'europe',
     // London Underground (11) + Overground (6) + DLR.
     swatches: [
       { name: 'Bakerloo', color: '#A45A2A' },
@@ -199,9 +176,7 @@ export const PALETTES: readonly Palette[] = [
 
   // ---- North America ----
   {
-    id: 'bart',
     name: 'BART',
-    continent: 'na',
     swatches: [
       { name: 'Yellow Line', color: '#FFE800' },
       { name: 'Blue Line', color: '#00AEEF' },
@@ -211,9 +186,7 @@ export const PALETTES: readonly Palette[] = [
     ],
   },
   {
-    id: 'caltrain',
     name: 'Caltrain',
-    continent: 'na',
     // Most actual Caltrain service-type colors are near-white and unusable
     // as line strokes; we use brand-adjacent colors for the three tiers.
     swatches: [
@@ -223,9 +196,7 @@ export const PALETTES: readonly Palette[] = [
     ],
   },
   {
-    id: 'cta',
     name: 'CTA',
-    continent: 'na',
     swatches: [
       { name: 'Red', color: '#C60C30' },
       { name: 'Blue', color: '#00A1DE' },
@@ -238,9 +209,7 @@ export const PALETTES: readonly Palette[] = [
     ],
   },
   {
-    id: 'la-metro',
     name: 'LA Metro',
-    continent: 'na',
     swatches: [
       { name: 'A Line', color: '#0072BC' },
       { name: 'B Line', color: '#E3131B' },
@@ -251,9 +220,7 @@ export const PALETTES: readonly Palette[] = [
     ],
   },
   {
-    id: 'mbta',
     name: 'MBTA',
-    continent: 'na',
     swatches: [
       { name: 'Red', color: '#DA291C' },
       { name: 'Orange', color: '#ED8B00' },
@@ -263,9 +230,7 @@ export const PALETTES: readonly Palette[] = [
     ],
   },
   {
-    id: 'mta',
     name: 'MTA',
-    continent: 'na',
     // Official MTA NYC subway line trunk colors. Per the MTA developer
     // resources / NYC Subway nomenclature: each service's color corresponds
     // to the trunk line it primarily uses below 60th Street in Manhattan.
@@ -284,9 +249,7 @@ export const PALETTES: readonly Palette[] = [
     ],
   },
   {
-    id: 'muni',
     name: 'MUNI',
-    continent: 'na',
     swatches: [
       { name: 'J Church', color: '#E18813' },
       { name: 'K Ingleside', color: '#549DBF' },
@@ -298,9 +261,7 @@ export const PALETTES: readonly Palette[] = [
     ],
   },
   {
-    id: 'wmata',
     name: 'WMATA',
-    continent: 'na',
     swatches: [
       { name: 'Red', color: '#E51636' },
       { name: 'Orange', color: '#F68712' },
@@ -312,64 +273,90 @@ export const PALETTES: readonly Palette[] = [
   },
 ] as const;
 
-// The single source of truth for "which built-in palette ids exist". Custom
-// palettes live in a separate store, so resolution takes the active custom
-// palettes as an explicit argument rather than this module reaching into state.
-export const KNOWN_PALETTE_IDS = new Set<string>(PALETTES.map((p) => p.id));
+/**
+ * Reserved names: a built-in can be neither renamed nor deleted, so an imported
+ * palette may not take one of these — the library would then hold two rows
+ * under one key.
+ */
+export const BUILTIN_PALETTE_NAMES = new Set<string>(PALETTES.map((p) => p.name));
 
-// Resolve active ids to palette objects: active custom palettes first (in the
-// order supplied), then active built-ins in canonical (PALETTES) order. Ids that
-// match neither a custom palette nor a built-in are dropped. Because a custom id
-// can never collide with a built-in id (see makeCustomPaletteId), the result is
-// already deduplicated.
-function orderedActive(active: readonly PaletteId[], custom: readonly Palette[]): Palette[] {
-  const set = new Set(active);
-  const customHits = custom.filter((p) => set.has(p.id));
-  const builtinHits = PALETTES.filter((p) => set.has(p.id));
-  return [...customHits, ...builtinHits];
+/**
+ * Palettes stored under the retired id scheme, by id. Read only by the
+ * `activePalettes` → `palettes` migration, which has nothing but an id to go on.
+ * Custom palettes of that era used `custom:<slug-of-name>` ids instead.
+ */
+export const LEGACY_BUILTIN_IDS: Readonly<Record<string, string>> = {
+  'beijing-subway': 'Beijing Subway',
+  mtr: 'MTR',
+  'shanghai-metro': 'Shanghai Metro',
+  'tokyo-subway': 'Tokyo Subway',
+  'berlin-ubahn': 'Berlin U-Bahn',
+  'paris-ratp': 'Paris (RATP)',
+  tfl: 'TfL (London)',
+  bart: 'BART',
+  caltrain: 'Caltrain',
+  cta: 'CTA',
+  'la-metro': 'LA Metro',
+  mbta: 'MBTA',
+  mta: 'MTA',
+  muni: 'MUNI',
+  wmata: 'WMATA',
+};
+
+/**
+ * Take a palette into a map — the one place a definition is COPIED out of the
+ * library, so nothing library-only (a star, the built-in mark) and no shared
+ * array reference can ride along into a document.
+ */
+export function copyPalette({ name, swatches }: Palette): Palette {
+  return { name, swatches: swatches.map((s) => ({ ...s })) };
+}
+
+/** How the library column is listed. `starred` also FILTERS to starred rows. */
+export type PaletteSort = 'name' | 'starred';
+
+/** A library row: a palette plus the two things only the library knows. */
+export interface LibraryPalette extends Palette {
+  builtin?: true;
+  starred?: true;
 }
 
 /**
- * Dedupe + drop ids that are neither a built-in nor a supplied custom palette,
- * returning custom-first then canonical (PALETTES) order. The storage normaliser
- * for `MapDoc.activePalettes`.
+ * The palette library as the manager lists it: the built-ins and the user's
+ * imported palettes in one name-ordered list, stars applied. `starred` sort
+ * shows only the starred rows — the whole point of a star being to keep a
+ * handful of palettes to hand.
  */
-export function normalizePaletteIds(
-  ids: readonly PaletteId[],
-  custom: readonly Palette[] = [],
-): PaletteId[] {
-  return orderedActive(ids, custom).map((p) => p.id);
-}
-
-/**
- * Return the active palettes — custom first, then built-ins in canonical order —
- * silently dropping ids that resolve to neither.
- */
-export function activePalettes(
-  active: readonly PaletteId[],
+export function libraryPalettes(
   custom: readonly Palette[],
-): Palette[] {
-  return orderedActive(active, custom);
+  starred: readonly string[],
+  sort: PaletteSort,
+): LibraryPalette[] {
+  const isStarred = new Set(starred);
+  const rows: LibraryPalette[] = [
+    ...PALETTES.map((p): LibraryPalette => ({ ...p, builtin: true })),
+    ...custom.map((p): LibraryPalette => ({ ...p })),
+  ].map((p) => (isStarred.has(p.name) ? { ...p, starred: true } : p));
+  const visible = sort === 'starred' ? rows.filter((p) => p.starred) : rows;
+  return visible.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
- * Flat list of colors from the active palettes (custom first) — used by
- * `addLine` to auto-pick the next color.
+ * Flat list of colors from the map's palettes, in the map's palette order —
+ * used by `addLine` to auto-pick the next color.
  */
-export function cyclingColors(active: readonly PaletteId[], custom: readonly Palette[]): string[] {
-  return activePalettes(active, custom).flatMap((p) => p.swatches.map((s) => s.color));
+export function cyclingColors(palettes: readonly Palette[]): string[] {
+  return palettes.flatMap((p) => p.swatches.map((s) => s.color));
 }
 
 /**
  * The distinct "custom" colors used by lines in the map: line colors that are
- * NOT a swatch in any of the given (active) palettes. These populate the
- * always-present "Custom" section of the line color picker.
+ * NOT a swatch in any of the map's palettes. These populate the always-present
+ * "Custom" section of the line color picker, so removing a palette from the map
+ * moves its colors into Custom and adding it back takes them out again.
  *
- * Scoped to the ACTIVE palettes — mirroring the picker's "is this color a
- * visible swatch?" rule — so toggling a palette off moves its colors into
- * Custom and toggling it back on removes them. Colors are compared via
- * `normalizeHex` (case-insensitive, alpha-normalized); the first spelling of
- * each distinct color is kept, in first-seen order.
+ * Colors are compared via `normalizeHex` (case-insensitive, alpha-normalized);
+ * the first spelling of each distinct color is kept, in first-seen order.
  */
 export function customLineColors(
   lineColors: readonly string[],
@@ -388,7 +375,7 @@ export function customLineColors(
   return out;
 }
 
-// Fallback line color when the active palettes yield no colors at all (e.g. every
-// active id is a dangling custom reference). Keeps `addLine` from selecting
-// `undefined` out of an empty cycle.
+// Fallback line color when the map's palettes yield no colors at all (a map
+// carrying no palettes is a legitimate state — you can still pick colors by
+// hand). Keeps `addLine` from selecting `undefined` out of an empty cycle.
 export const FALLBACK_LINE_COLOR = '#888888';

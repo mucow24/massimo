@@ -25,6 +25,7 @@ import {
   DEFAULT_STOP_DOT_STYLE_ID,
   STOP_DOT_FACTORY_STYLES,
 } from '../model/dotStyle';
+import { DEFAULT_DOC } from '../model/transforms';
 import { DOT_SIZE_DEFAULT } from '../model/dotSize';
 import { LINE_WIDTH_DEFAULT } from '../model/lineWidth';
 import { LINE_CURVE_RADIUS_DEFAULT } from '../model/lineCurve';
@@ -315,7 +316,7 @@ export function makeDoc(parts: {
   lineCircles?: import('../model/types').LineCircle[];
   styles?: StyleDef[];
   styleDefaults?: Partial<Record<StyleKind, string>>;
-  activePalettes?: import('../model/palettes').PaletteId[];
+  palettes?: import('../model/palettes').Palette[];
   darkMode?: boolean;
 }): MapDoc {
   const stations: Record<StationId, Station> = {};
@@ -385,7 +386,7 @@ export function makeDoc(parts: {
     lineCircles,
     styles,
     styleDefaults,
-    activePalettes: parts.activePalettes ?? ['mta'],
+    palettes: parts.palettes ?? DEFAULT_DOC.palettes,
     darkMode: parts.darkMode ?? false,
   };
 }
