@@ -13,10 +13,11 @@ import {
   DEFAULT_STOP_DOT_STYLE_ID,
   NONE_STOP_DOT_STYLE_ID,
   STOP_DOT_FACTORY_STYLES,
+  STOP_DOT_SEED_STYLES,
   resolveDotRender,
 } from './dotStyle';
 import { makeDoc, makeLine, makeStation, makeStop, makeStyle } from '../test/fixtures';
-import type { DotStyle, LineStyleProps } from './types';
+import type { DotStyle, LineStyleProps, StyleDef } from './types';
 
 const OPEN_WHITE = 'stop-open-white';
 const DIAMOND = 'stop-filled-black-diamond';
@@ -177,6 +178,70 @@ describe('the reserved "None" stop-dot style', () => {
     // But it's reserved: rename and delete are no-ops (reference-stable).
     expect(renameStyle(doc, NONE_STOP_DOT_STYLE_ID, 'Blank')).toBe(doc);
     expect(deleteStyle(doc, NONE_STOP_DOT_STYLE_ID)).toBe(doc);
+  });
+
+  // …and being reserved means it is never the FALLBACK either. The delete
+  // fallback used to be "the kind's first remaining style by name", which put
+  // "None" ahead of anything sorting after it — making blank dots the kind's
+  // default AND re-pointing every line style def that referenced the deleted
+  // entry, after which the restamp blanked every dot on the map from one click.
+  // A doc whose stop-dot library is exactly the fresh-map seed (Filled black +
+  // None) plus whatever `extra` adds — makeDoc otherwise seeds the whole factory
+  // library, which has plenty of names sorting ahead of "None" and hides this.
+  const seedLibrary = (...extra: StyleDef[]) => {
+    const base = makeDoc({});
+    const styles: Record<string, StyleDef> = {};
+    for (const d of Object.values(base.styles)) if (d.kind !== 'stopDot') styles[d.id] = d;
+    for (const d of Object.values(STOP_DOT_SEED_STYLES)) styles[d.id] = d;
+    for (const d of extra) styles[d.id] = d;
+    return { ...base, styles };
+  };
+
+  const openWhite = makeStyle('stopDot', 'sd-open', {
+    name: 'Open white',
+    props: props(OPEN_WHITE),
+  });
+
+  it('is never chosen as the fallback when the kind default is deleted', () => {
+    // Library: "Filled black" (deleted), "None" (reserved), "Open white".
+    // "None" sorts first of the two survivors.
+    let doc = seedLibrary(openWhite);
+    doc = setDefaultStyle(doc, DEFAULT_STOP_DOT_STYLE_ID);
+    const next = deleteStyle(doc, DEFAULT_STOP_DOT_STYLE_ID);
+    expect(next.styleDefaults.stopDot).not.toBe(NONE_STOP_DOT_STYLE_ID);
+    expect(next.styleDefaults.stopDot).toBe('sd-open');
+  });
+
+  it('is never chosen as the fallback for a line style def either', () => {
+    const doc = seedLibrary(
+      openWhite,
+      makeStyle('line', 'ln', {
+        props: {
+          singletonDotStyleId: DEFAULT_STOP_DOT_STYLE_ID,
+          multiDotStyleId: DEFAULT_STOP_DOT_STYLE_ID,
+        },
+      }),
+    );
+    const next = deleteStyle(doc, DEFAULT_STOP_DOT_STYLE_ID);
+    const props = next.styles.ln.props as LineStyleProps;
+    expect(props.singletonDotStyleId).toBe('sd-open');
+    expect(props.multiDotStyleId).toBe('sd-open');
+  });
+
+  it('does not disturb a fallback that legitimately sorts first', () => {
+    let doc = seedLibrary(
+      makeStyle('stopDot', 'sd-aaa', { name: 'AAA dots', props: { shape: 'square' } }),
+    );
+    doc = setDefaultStyle(doc, DEFAULT_STOP_DOT_STYLE_ID);
+    expect(deleteStyle(doc, DEFAULT_STOP_DOT_STYLE_ID).styleDefaults.stopDot).toBe('sd-aaa');
+  });
+
+  it('refuses the delete when excluding it would leave the kind with nothing', () => {
+    // A seed map's stop-dot library is exactly {Filled black, None}. Deleting
+    // Filled black is the "last style of a kind" case the panel already greys
+    // out — the model must agree rather than fall through to "None".
+    const doc = seedLibrary();
+    expect(deleteStyle(doc, DEFAULT_STOP_DOT_STYLE_ID)).toBe(doc);
   });
 });
 

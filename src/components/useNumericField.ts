@@ -57,6 +57,14 @@ export function useNumericField(
   // native listener calling the latest closure (fresh step/getCurrent) without
   // rebinding. Same pattern as the canvas wheel-zoom in useViewport.
   const onWheel = (e: WheelEvent) => {
+    // Only a mostly-VERTICAL wheel is a step on this field. A horizontal swipe
+    // (two fingers sideways, or Shift+wheel) carries deltaY 0 — or, on a
+    // diagonal flick, a deltaY dwarfed by deltaX — and reading "not scrolling
+    // up" as "scrolling down" walked the value steadily down on a gesture meant
+    // to scroll. Before preventDefault, so the horizontal scroll still reaches
+    // the page: the toolbar's min-width floors the app wider than a narrow
+    // window, and that scroll is the only way to reach the far end.
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX || 0)) return;
     e.preventDefault();
     // One undo entry per SCROLL, not per tick: a trackpad flick over this field
     // fires dozens of these, and unfocused they land outside any field-history

@@ -153,6 +153,36 @@ describe('useNumericField — wheel binding', () => {
     expect(onChange).toHaveBeenLastCalledWith(10);
   });
 
+  // A HORIZONTAL wheel — a two-finger trackpad swipe, or Shift+wheel — carries
+  // deltaY 0 (or a deltaY dwarfed by deltaX on a diagonal flick). Treating "not
+  // scrolling up" as "scrolling down" walked every numeric field steadily
+  // downward on a gesture the user meant as a page scroll. And the page scroll
+  // is real: the toolbar's min-width floors the app wider than a narrow window,
+  // so the handler must not preventDefault one it isn't acting on.
+  it.each([
+    ['a pure horizontal swipe', { deltaY: 0, deltaX: -30 }],
+    ['a mostly-horizontal diagonal', { deltaY: 1, deltaX: -30 }],
+    ['a null wheel event', { deltaY: 0, deltaX: 0 }],
+  ])('ignores %s, leaving the scroll to the page', (_name, delta) => {
+    const onChange = vi.fn();
+    const { result } = renderHook(() => useNumericField(9, onChange, () => 9));
+    const target = fakeWheelTarget();
+    act(() => result.current.attachWheel(target.el));
+    const preventDefault = vi.fn();
+    act(() => target.entry!.listener({ ...delta, preventDefault }));
+    expect(onChange).not.toHaveBeenCalled();
+    expect(preventDefault).not.toHaveBeenCalled();
+  });
+
+  it('still steps on a mostly-vertical diagonal', () => {
+    const onChange = vi.fn();
+    const { result } = renderHook(() => useNumericField(9, onChange, () => 9));
+    const target = fakeWheelTarget();
+    act(() => result.current.attachWheel(target.el));
+    act(() => target.entry!.listener({ deltaY: -30, deltaX: 1, preventDefault() {} }));
+    expect(onChange).toHaveBeenLastCalledWith(10);
+  });
+
   it('removes the wheel listener when the ref detaches', () => {
     const { result } = renderHook(() => useNumericField(9, vi.fn(), () => 9));
     const target = fakeWheelTarget();

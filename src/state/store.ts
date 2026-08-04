@@ -39,6 +39,7 @@ import * as T from '../model/transforms';
 import { cyclingColors, FALLBACK_LINE_COLOR, type Palette } from '../model/palettes';
 import { useCustomPalettes } from './customPalettes';
 import {
+  sanitizeImageHrefs,
   sanitizeLineCircles,
   sanitizeStations,
   snapStationCells,
@@ -401,6 +402,8 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     styleDefaults?: Record<StyleKind, string>;
     regionAssignments?: Record<string, RegionAssignment>;
     lineCircles?: Record<string, LineCircle>;
+    svgImages?: Record<string, SvgImage>;
+    backgroundOrder?: string[];
     labelBold?: boolean;
     labelWeight?: TextLabelWeight;
     activePalettes?: string[];
@@ -641,6 +644,21 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
         ...out,
         ...(out.lineCircles ? { lineCircles: circles.lineCircles } : {}),
         ...(out.stations ? { stations: circles.stations } : {}),
+      };
+    }
+  }
+  // Non-version-gated invariant: every svg image's href is inline data. The
+  // guard had one caller (the clipboard) and neither doc-load path, so a doc
+  // persisted at ANY store version can carry a remote href that fetches on
+  // every paint and rides into every export. Idempotent and value-keyed; shared
+  // with the file-import path via `sanitizeImageHrefs`.
+  if (out.svgImages) {
+    const hrefs = sanitizeImageHrefs(out.svgImages, out.backgroundOrder ?? []);
+    if (hrefs.changed) {
+      out = {
+        ...out,
+        svgImages: hrefs.svgImages,
+        ...(out.backgroundOrder ? { backgroundOrder: hrefs.backgroundOrder } : {}),
       };
     }
   }
@@ -1388,7 +1406,9 @@ export const useDoc = create<DocState>()(
         //
         // Cell-dust snapping needs `merge` for a sharper reason than `edges`
         // does: the drift is still being carried by docs saved at the CURRENT
-        // version, which by definition never reach `migrate` at all.
+        // version, which by definition never reach `migrate` at all. The image
+        // href guard is the same shape — a remote href could be persisted by
+        // any build, this one included.
         merge: (persisted, current) => {
           const doc = (persisted ?? {}) as Partial<DocState>;
           const patch: Partial<DocState> = {};
@@ -1399,6 +1419,13 @@ export const useDoc = create<DocState>()(
           if (doc.stations) {
             const { stations, changed } = snapStationCells(doc.stations);
             if (changed) patch.stations = stations;
+          }
+          if (doc.svgImages) {
+            const hrefs = sanitizeImageHrefs(doc.svgImages, doc.backgroundOrder ?? []);
+            if (hrefs.changed) {
+              patch.svgImages = hrefs.svgImages;
+              if (doc.backgroundOrder) patch.backgroundOrder = hrefs.backgroundOrder;
+            }
           }
           return { ...current, ...doc, ...patch };
         },
@@ -1613,14 +1640,56 @@ export function cancelAppendMode(): void {
   useSelection.getState().setAppending(null);
 }
 
+// The line "Add → Line" committed eagerly, still awaiting its first stop — the
+// ONLY line the GC below may collect. Placeholder-ness is a fact about how a
+// line came into being, so it is marked at the creation site rather than
+// inferred from the doc: an empty `stations[]` looks the same whether the line
+// was never used or was emptied on purpose, and toggleEdgeOnLine empties a
+// two-station line whenever its only edge goes (it drops endpoints that fall to
+// degree 0). Held here rather than on the appending-to-line UiMode payload,
+// which is constructed and compared in a dozen places that have no opinion
+// about this.
+let pendingPlaceholderLineId: LineId | null = null;
+
+// The placeholder stops being one the instant it holds a station: from then on
+// it is a line the user built, and emptying it again must not hand it back to
+// the GC. Costs one null compare per doc write, and the marker is non-null only
+// between Add → Line and that mode's first exit.
+useDoc.subscribe((s) => {
+  const id = pendingPlaceholderLineId;
+  if (id !== null && (s.lines[id]?.stations.length ?? 0) > 0) pendingPlaceholderLineId = null;
+});
+
+/**
+ * Add → Line: commit the placeholder and open Edit Stops on it. The whole
+ * placeholder lifecycle lives in this module — created here, collected by the
+ * mode-exit subscription below — so the ordering the lineCounter rollback
+ * depends on can't drift away from the GC that relies on it.
+ */
+export function startNewLineAppend(): LineId {
+  const sel = useSelection.getState();
+  // Exit any active Edit Stops FIRST: the GC rolls lineCounter back, which is
+  // only sound while the placeholder it collects is still the last-added line.
+  sel.setAppending(null);
+  const id = useDoc.getState().addLine();
+  pendingPlaceholderLineId = id;
+  sel.startAppend(id);
+  return id;
+}
+
 // GC a still-empty append placeholder. The placeholder was committed eagerly
 // by addLine, which also advanced lineCounter to pick its color; discarding it
 // must undo BOTH in one atomic set, so repeated Add→Esc doesn't walk the color
 // cycle forward. (Real line deletion via T.deleteLine leaves lineCounter
 // alone, which is why the rollback lives here.) The rollback is only sound
-// while the placeholder is the last-added line — Toolbar's Add→Line exits any
-// active append BEFORE creating the next line to preserve that ordering.
+// while the placeholder is the last-added line, which is exactly what the
+// creation-site marker guarantees — startNewLineAppend exits any active append
+// before creating the next line.
 function collectAppendPlaceholder(lineId: LineId): void {
+  if (lineId !== pendingPlaceholderLineId) return;
+  // One shot: whatever happens below, this line has now had its exit, and a
+  // later visit to Edit Stops must find an ordinary line.
+  pendingPlaceholderLineId = null;
   const line = useDoc.getState().lines[lineId];
   if (!line || line.stations.length !== 0) return;
   useDoc.setState((s) => ({

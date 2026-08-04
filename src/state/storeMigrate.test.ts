@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { migrateDoc, beginHistoryGroup, cancelAppendMode, useDoc, useSelection } from './store';
+import {
+  migrateDoc,
+  beginHistoryGroup,
+  cancelAppendMode,
+  startNewLineAppend,
+  useDoc,
+  useSelection,
+} from './store';
 import { useCustomPalettes } from './customPalettes';
 import { historyDepth } from './history';
 import {
@@ -88,7 +95,10 @@ const stationDefaultProps = (out: AnyDoc): Record<string, unknown> =>
 describe('migrateDoc', () => {
   describe('v16 → v17: polygonOrder + svgImageOrder → backgroundOrder', () => {
     const polygons = { p0: {}, p1: {} };
-    const svgImages = { i0: {} };
+    // A real inline data URI: an image whose href is outside the allowlist is
+    // DROPPED (sanitizeImageHrefs), which would take it out of the order these
+    // cases are about.
+    const svgImages = { i0: { href: 'data:image/svg+xml;base64,PHN2Zy8+' } };
 
     it('merges the two retired orders, polygons first, and drops the old keys', () => {
       const out = run(
@@ -1395,16 +1405,11 @@ describe('cancelAppendMode', () => {
   });
 
   it('deletes a freshly-created empty line and returns to idle', () => {
-    useDoc.setState({
-      ...useDoc.getState(),
-      lines: { L1: makeLine({ id: 'L1' as LineId, stations: [] }) },
-      lineOrder: ['L1' as LineId],
-    });
-    useSelection.getState().setAppending('L1' as LineId);
+    const id = startNewLineAppend();
 
     cancelAppendMode();
 
-    expect(useDoc.getState().lines['L1' as LineId]).toBeUndefined();
+    expect(useDoc.getState().lines[id]).toBeUndefined();
     expect(useSelection.getState().uiMode.kind).toBe('idle');
   });
 
@@ -1412,17 +1417,13 @@ describe('cancelAppendMode', () => {
     // addLine eagerly commits the placeholder AND advances lineCounter to pick
     // its color; cancelling before any station is placed must undo both so
     // repeated Add→Esc doesn't walk the color cycle forward.
-    useDoc.setState({
-      ...useDoc.getState(),
-      lines: { L1: makeLine({ id: 'L1' as LineId, stations: [] }) },
-      lineOrder: ['L1' as LineId],
-      lineCounter: 3, // addLine bumped it (2 → 3) for this placeholder
-    });
-    useSelection.getState().setAppending('L1' as LineId);
+    useDoc.setState({ ...useDoc.getState(), lineCounter: 2 });
+    const id = startNewLineAppend();
+    expect(useDoc.getState().lineCounter).toBe(3);
 
     cancelAppendMode();
 
-    expect(useDoc.getState().lines['L1' as LineId]).toBeUndefined();
+    expect(useDoc.getState().lines[id]).toBeUndefined();
     expect(useDoc.getState().lineCounter).toBe(2);
   });
 
@@ -1474,18 +1475,13 @@ describe('append-mode placeholder GC on bypass exits', () => {
   });
 
   it('collects the empty placeholder when the mode exits WITHOUT cancelAppendMode', () => {
-    useDoc.setState({
-      ...useDoc.getState(),
-      lines: { L1: makeLine({ id: 'L1' as LineId, stations: [] }) },
-      lineOrder: ['L1' as LineId],
-      lineCounter: 3,
-    });
-    useSelection.getState().startAppend('L1' as LineId);
+    useDoc.setState({ ...useDoc.getState(), lineCounter: 2 });
+    const id = startNewLineAppend();
 
     // The T-shortcut path: setUiMode directly, no cancelAppendMode call.
     useSelection.getState().setUiMode({ kind: 'creating-transfer', firstEnd: null });
 
-    expect(useDoc.getState().lines['L1' as LineId]).toBeUndefined();
+    expect(useDoc.getState().lines[id]).toBeUndefined();
     expect(useDoc.getState().lineCounter).toBe(2);
     expect(useSelection.getState().uiMode.kind).toBe('creating-transfer');
   });
@@ -1493,19 +1489,16 @@ describe('append-mode placeholder GC on bypass exits', () => {
   it('collects the elder placeholder when switching straight to editing another line', () => {
     useDoc.setState({
       ...useDoc.getState(),
-      lines: {
-        L1: makeLine({ id: 'L1' as LineId, stations: [] }),
-        L2: makeLine({ id: 'L2' as LineId, stations: ['A' as StationId] }),
-      },
-      lineOrder: ['L1' as LineId, 'L2' as LineId],
+      lines: { L2: makeLine({ id: 'L2' as LineId, stations: ['A' as StationId] }) },
+      lineOrder: ['L2' as LineId],
       stations: { A: stationWithStop('A' as StationId, 'L2' as LineId, { x: 0, y: 0 }) },
-      lineCounter: 3,
+      lineCounter: 2,
     });
-    useSelection.getState().startAppend('L1' as LineId);
+    const id = startNewLineAppend();
 
     useSelection.getState().startAppend('L2' as LineId);
 
-    expect(useDoc.getState().lines['L1' as LineId]).toBeUndefined();
+    expect(useDoc.getState().lines[id]).toBeUndefined();
     expect(useDoc.getState().lines['L2' as LineId]).toBeDefined();
     expect(useSelection.getState().uiMode).toMatchObject({
       kind: 'appending-to-line',
@@ -1516,16 +1509,88 @@ describe('append-mode placeholder GC on bypass exits', () => {
   it('keeps a placeholder that gained stations, whatever the exit', () => {
     useDoc.setState({
       ...useDoc.getState(),
-      lines: { L1: makeLine({ id: 'L1' as LineId, stations: ['A' as StationId] }) },
-      lineOrder: ['L1' as LineId],
       stations: { A: stationWithStop('A' as StationId, 'L1' as LineId, { x: 0, y: 0 }) },
-      lineCounter: 5,
+      lineCounter: 4,
     });
-    useSelection.getState().startAppend('L1' as LineId);
+    const id = startNewLineAppend();
+    useDoc.getState().addStationToLine(id, 'A' as StationId);
 
     useSelection.getState().setUiMode({ kind: 'layering' });
 
+    expect(useDoc.getState().lines[id]).toBeDefined();
+    expect(useDoc.getState().lineCounter).toBe(5);
+  });
+});
+
+// An EMPTY line is no longer proof of an abandoned placeholder. toggleEdgeOnLine
+// drops endpoints that fall to degree 0, so deleting a two-station line's only
+// edge in Edit Stops empties its stations[] — and collecting that deletes a real
+// line outright (its sidebar row, its tags, its region assignments, every route
+// bullet pointing at it) with nothing on screen to say so.
+describe('append-mode placeholder GC — only the line Add ▸ Line made', () => {
+  const seedPair = () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      lines: {
+        L1: makeLine({
+          id: 'L1' as LineId,
+          stations: ['A' as StationId, 'B' as StationId],
+          edges: ['A|B'],
+        }),
+      },
+      lineOrder: ['L1' as LineId],
+      stations: {
+        A: stationWithStop('A' as StationId, 'L1' as LineId, { x: 0, y: 0 }),
+        B: stationWithStop('B' as StationId, 'L1' as LineId, { x: 100, y: 0 }),
+      },
+      lineCounter: 5,
+    });
+    useDoc.temporal.getState().clear();
+  };
+
+  beforeEach(() => {
+    useSelection.setState({ ...useSelection.getState(), uiMode: { kind: 'idle' } });
+  });
+
+  it('keeps a pre-existing line emptied by deleting its only edge', () => {
+    seedPair();
+    useSelection.getState().startAppend('L1' as LineId);
+
+    useDoc.getState().toggleEdgeOnLine('L1' as LineId, 'A' as StationId, 'B' as StationId);
+    expect(useDoc.getState().lines['L1' as LineId].stations).toEqual([]);
+
+    useSelection.getState().setUiMode({ kind: 'idle' });
+
     expect(useDoc.getState().lines['L1' as LineId]).toBeDefined();
+    expect(useDoc.getState().lineOrder).toEqual(['L1']);
+    expect(useDoc.getState().lineCounter).toBe(5);
+  });
+
+  it('keeps a line Add ▸ Line made that gained stations and was then emptied', () => {
+    // Same session as the creation, so the id still matches the pending marker
+    // — but it stopped being a placeholder the moment it held a station.
+    seedPair();
+    const id = startNewLineAppend();
+    useDoc.getState().addStationToLine(id, 'A' as StationId);
+    useDoc.getState().addStationToLine(id, 'B' as StationId);
+    useDoc.getState().toggleEdgeOnLine(id, 'A' as StationId, 'B' as StationId);
+    useDoc.getState().toggleEdgeOnLine(id, 'A' as StationId, 'B' as StationId);
+    expect(useDoc.getState().lines[id].stations).toEqual([]);
+
+    cancelAppendMode();
+
+    expect(useDoc.getState().lines[id]).toBeDefined();
+  });
+
+  it('still collects the untouched placeholder Add ▸ Line just made', () => {
+    seedPair();
+    const id = startNewLineAppend();
+    expect(useDoc.getState().lines[id]).toBeDefined();
+
+    cancelAppendMode();
+
+    expect(useDoc.getState().lines[id]).toBeUndefined();
     expect(useDoc.getState().lineCounter).toBe(5);
   });
 });

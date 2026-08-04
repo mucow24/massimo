@@ -9,8 +9,7 @@ import {
   StarIcon,
 } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
-import { stylesOfKind } from '../model/styles';
-import { NONE_STOP_DOT_STYLE_ID } from '../model/dotStyle';
+import { selectableStylesOfKind } from '../model/styles';
 import { StyleEditor } from './StyleEditor';
 import { StopGlyph } from './StopGlyph';
 import { useInlineRename } from './useInlineRename';
@@ -142,7 +141,9 @@ export function StylesPanel() {
       {KIND_ORDER.map((kind) => {
         // The reserved "None" stop-dot is offered in the picker but hidden from
         // the editable list (nothing to edit; protected from rename/delete).
-        const defs = stylesOfKind(styles, kind).filter((d) => d.id !== NONE_STOP_DOT_STYLE_ID);
+        // Same helper the model's delete uses, so the list, the last-style
+        // guard below, and the fallback a delete picks cannot disagree.
+        const defs = selectableStylesOfKind(styles, kind);
         const collapsed = collapsedKinds.has(kind);
         return (
           <Fragment key={kind}>

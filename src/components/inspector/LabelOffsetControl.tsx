@@ -1,5 +1,6 @@
 import * as Slider from '@radix-ui/react-slider';
 import { useFieldHistory } from '../useFieldHistory';
+import { useNumericField } from '../useNumericField';
 import { clamp } from '../../util/grid';
 
 export function LabelOffsetControl({
@@ -17,7 +18,18 @@ export function LabelOffsetControl({
   // Snap to 0 when the slider sits within ±2 of zero.
   const clampedSlider = clamp(value, -100, 100);
   const sliderField = useFieldHistory();
-  const numberField = useFieldHistory();
+  // The textbox goes through the shared numeric field for its TEXT MIRROR, which
+  // is what makes the negative half of the slider's range typeable. A lone "-"
+  // is not a valid floating-point number, so a number input reports '' while
+  // holding it in its raw buffer; bound straight to a number, React saw ''≠"0",
+  // wrote "0" back, and "-5" came out as "05". The mirror stores the reported ''
+  // and re-renders the same '', which React leaves alone — so the raw "-"
+  // survives until the next digit makes it parse.
+  const { text, onNumberFocus, onNumberChange, onNumberBlur } = useNumericField(
+    value,
+    onChange,
+    () => value,
+  );
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
       <Slider.Root
@@ -37,20 +49,19 @@ export function LabelOffsetControl({
         </Slider.Track>
         <Slider.Thumb className="field-slider-thumb" aria-label="Offset" {...sliderField} />
       </Slider.Root>
+      {/* No wheel ref: unlike the Options rows, these boxes have never taken a
+          wheel tick, and the reading-direction offsets are not something to
+          nudge past by scrolling over the inspector. */}
       <input
         type="number"
         aria-label="Offset value"
         className="options-popover-spin"
-        value={indeterminate ? '' : value}
+        value={indeterminate ? '' : text}
         placeholder={indeterminate ? '—' : undefined}
-        onChange={(e) => {
-          const raw = e.target.value;
-          if (raw === '') return; // ignore empty mid-edit (Number('') === 0)
-          const n = Number(raw);
-          if (Number.isFinite(n)) onChange(n);
-        }}
+        onFocus={onNumberFocus}
+        onChange={onNumberChange}
+        onBlur={onNumberBlur}
         style={{ width: 56 }}
-        {...numberField}
       />
     </div>
   );

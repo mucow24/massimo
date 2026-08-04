@@ -1,4 +1,6 @@
 import { useDoc, useSelection } from '../../state/store';
+import { useViewportStore } from '../../state/viewportStore';
+import { kindVisibleNow } from '../../state/visibility';
 import type { Vec2 } from '../../geometry/vec';
 import type { AlignExclude } from './snapTargets';
 
@@ -54,10 +56,24 @@ export function emptyGroupSiblings(): GroupSiblings {
  * Snapshot the multi-selection siblings of the grabbed item (every type except
  * the grabbed item itself) at pointer-down. Returns no siblings unless the
  * grabbed item is itself part of the selection — dragging an unselected item
- * never tows the selection. Locked items (bullets, labels, polygons) never tow.
+ * never tows the selection. Locked items (bullets, labels, polygons) never tow,
+ * and neither does anything on a layer the View menu is hiding: a tow is an edit
+ * to the towed item, so the same rule the Delete key and the arrow keys follow
+ * (`unlockedSelectedItemIds`) applies here. The grabbed item needs no such check
+ * — a hidden one has no grab surface to press.
  */
 export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string): GroupSiblings {
   const sel = useSelection.getState();
+  const network = useViewportStore.getState().showNetwork;
+  const shows = {
+    stations: network,
+    bullets: kindVisibleNow('showRouteBullets'),
+    labels: kindVisibleNow('showTextLabels'),
+    polygons: kindVisibleNow('showPolygons'),
+    svgImages: kindVisibleNow('showSvgImages'),
+    anchors: kindVisibleNow('showAnchors'),
+    lineCircles: kindVisibleNow('showLineCircles'),
+  };
   // Spelled out as an exhaustive switch rather than a ternary chain ending in a
   // catch-all: the tail used to be a bare `: sel.selectedSvgImageIds`, so a new
   // GrabbedKind would have been silently tested against the svg-image selection
@@ -93,11 +109,15 @@ export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string
   // passengers ride along inside `moveLineCircle`, so the station loop files
   // them under `carriedStations` instead of towing them. A LOCKED ring stays
   // put, so its passengers are towed normally (and slide along the stationary
-  // rim, exactly as a lone bound-station drag does).
+  // rim, exactly as a lone bound-station drag does) — as does a HIDDEN one, so
+  // this set and the towed list below must read the same visibility flag or a
+  // passenger would be filed as carried by a ring that never moves.
   const movingCircleIds = new Set<string>();
-  for (const id of sel.selectedLineCircleIds) {
-    const c = doc.lineCircles[id];
-    if (c && !c.locked) movingCircleIds.add(id);
+  if (shows.lineCircles) {
+    for (const id of sel.selectedLineCircleIds) {
+      const c = doc.lineCircles[id];
+      if (c && !c.locked) movingCircleIds.add(id);
+    }
   }
   // Every station bound to a moving ring, SELECTED OR NOT: the ring takes its
   // passengers with it either way, so selection has no say here. Lock has none
@@ -108,7 +128,7 @@ export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string
       if (cid !== undefined && movingCircleIds.has(cid)) out.carriedStations.push(id);
     }
   }
-  for (const id of sel.selectedStationIds) {
+  for (const id of shows.stations ? sel.selectedStationIds : []) {
     if (grabbedKind === 'station' && id === grabbedId) continue;
     const s = doc.stations[id];
     if (!s) continue;
@@ -118,27 +138,27 @@ export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string
     // Locked stations never tow (mirrors locked polygons below).
     if (!s.locked) out.stations.push({ id, startX: s.x, startY: s.y });
   }
-  for (const id of sel.selectedRouteBulletIds) {
+  for (const id of shows.bullets ? sel.selectedRouteBulletIds : []) {
     if (grabbedKind === 'bullet' && id === grabbedId) continue;
     const b = doc.routeBullets[id];
     if (b && !b.locked) out.bullets.push({ id, startX: b.x, startY: b.y });
   }
-  for (const id of sel.selectedLabelIds) {
+  for (const id of shows.labels ? sel.selectedLabelIds : []) {
     if (grabbedKind === 'label' && id === grabbedId) continue;
     const l = doc.textLabels[id];
     if (l && !l.locked) out.labels.push({ id, startX: l.x, startY: l.y });
   }
-  for (const id of sel.selectedPolygonIds) {
+  for (const id of shows.polygons ? sel.selectedPolygonIds : []) {
     if (grabbedKind === 'polygon' && id === grabbedId) continue;
     const p = doc.polygons[id];
     if (p && !p.locked) out.polygons.push({ id, startVerts: p.vertices.map((v) => ({ ...v })) });
   }
-  for (const id of sel.selectedSvgImageIds) {
+  for (const id of shows.svgImages ? sel.selectedSvgImageIds : []) {
     if (grabbedKind === 'svgImage' && id === grabbedId) continue;
     const im = doc.svgImages[id];
     if (im && !im.locked) out.svgImages.push({ id, startX: im.x, startY: im.y });
   }
-  for (const id of sel.selectedAnchorIds) {
+  for (const id of shows.anchors ? sel.selectedAnchorIds : []) {
     if (grabbedKind === 'anchor' && id === grabbedId) continue;
     const a = doc.transferAnchors[id];
     // No `!a.locked` guard — anchors have no lock, so they always tow. This is

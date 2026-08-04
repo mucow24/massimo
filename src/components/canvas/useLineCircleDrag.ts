@@ -72,6 +72,14 @@ export function useLineCircleDrag(
   } | null>(null);
 
   const onStartDrag = useCallback((id: string, part: LineCirclePart, e: React.PointerEvent) => {
+    // Left button only, like every sibling drag hook. A middle-button press
+    // bubbles through to MapCanvas's pan, and without this gate BOTH move
+    // handlers would run per frame — the map pans and the ring travels with the
+    // cursor, committing a displacement from a gesture meant as a pan. The right
+    // button is excluded for the same reason, plus the trailing contextmenu.
+    // Hand mode needs no gate here: LineCircleView makes the rim and the ⊕
+    // click-through while the hand tool is up, so no press reaches this.
+    if (e.button !== 0) return;
     const circle = useDoc.getState().lineCircles[id];
     if (!circle || circle.locked) return;
     // Selecting at pointer-down is this kind's convention (the resize knob and
