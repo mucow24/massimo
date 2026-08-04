@@ -809,9 +809,15 @@ interface JunctionArm {
  * whatever their stations' names suggest.
  *
  * After the first run, matching CONTINUES only while a remaining pair is dead
- * opposed: a line that crosses itself at a station has two through-runs and no
- * branch at all, and stopping at one would paint half an X. A second run that
- * is merely the best of what's left is a fork, not a crossing.
+ * opposed AND on an axis no run has taken yet — the two conditions a CROSSING
+ * meets and a fork does not. A line that crosses itself at a station has two
+ * through-runs and no branch at all, and stopping at one would paint half an X;
+ * but a pair that is merely the best of what's left is a fork, and so is a
+ * dead-opposed pair lying along an axis already spoken for. That second one is
+ * the AirTrain at Federal Circle: four ends, all on one diagonal, so every
+ * SW/NE pair is dead opposed and opposition alone would call the whole fork a
+ * pair of crossings. Two corridors sharing an axis at a station do not cross —
+ * they lie on top of each other, which is the overlap the seam exists to draw.
  *
  * Reading any of this off the band's own shape instead (does this polyline
  * bend?) is what this replaces: a through corridor whose next station sits
@@ -851,16 +857,24 @@ function assignSeamArms(bands: SegmentBandSpec[]): void {
     // the name, so the repeated pairwise walk is free.
     let pool = arms.map((_, i) => i);
     const through = new Set<number>();
-    while (pool.length >= 2) {
+    const takenAxes: Vec2[] = [];
+    for (;;) {
       // Most opposed (dot = −1 is dead straight through), then the longest
       // combined straight run.
       let bestOpposition = -Infinity;
       let bestRun = -Infinity;
-      let pair: [number, number] = [pool[0], pool[1]];
+      let pair: [number, number] | null = null;
       for (const i of pool) {
         for (const j of pool) {
           if (j <= i) continue;
           const opposition = -dot(arms[i].out, arms[j].out);
+          // The FIRST run is the through-run whatever its angle — a fork's
+          // arms need not be exactly opposite. A LATER one has to be a real
+          // crossing: dead straight, and across an axis still free.
+          if (through.size > 0) {
+            if (opposition < 1 - OPPOSITION_TIE) continue;
+            if (takenAxes.some((a) => Math.abs(dot(a, arms[i].out)) > 1 - OPPOSITION_TIE)) continue;
+          }
           const run = arms[i].run + arms[j].run;
           if (
             opposition > bestOpposition + OPPOSITION_TIE ||
@@ -872,11 +886,11 @@ function assignSeamArms(bands: SegmentBandSpec[]): void {
           }
         }
       }
-      // The FIRST run is the through-run whatever its angle — a fork's arms
-      // need not be exactly opposite. Every run after it must be dead straight,
-      // or the leftovers of a fork would pair up as a second one.
-      if (through.size > 0 && bestOpposition < 1 - OPPOSITION_TIE) break;
+      if (!pair) break;
       through.add(pair[0]).add(pair[1]);
+      // BOTH arms: a dead-opposed run's two are the same axis either way, but
+      // the first run may be bent, and then it occupies one corridor per arm.
+      takenAxes.push(arms[pair[0]].out, arms[pair[1]].out);
       pool = pool.filter((i) => i !== pair[0] && i !== pair[1]);
     }
     arms.forEach((arm, i) => {

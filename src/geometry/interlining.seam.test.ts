@@ -3,7 +3,7 @@ import { buildBands } from './interlining';
 import { closestParamOnOffsetPath, sampleOffsetPath } from './lineTagGeometry';
 import { lineWidthOf } from '../model/lineWidth';
 import { makeDoc, makeLine, makeStation, makeStop } from '../test/fixtures';
-import type { MapDoc } from '../model/types';
+import type { MapDoc, StopOrientation } from '../model/types';
 
 // ---------------------------------------------------------------------------
 // The branch seam shows ONLY where a line overlaps itself.
@@ -106,8 +106,7 @@ describe('branch arms are read off the junction', () => {
     for (const b of buildBands(doc.stations, doc.lines, doc.lineOrder)) out[b.pairKey] = b.seamArms;
     return out;
   };
-  const stopAt = (orientation: 'auto-horizontal' | 'auto-vertical' | 'auto-nw-se') =>
-    makeStop('l1', { orientation });
+  const stopAt = (orientation: StopOrientation) => makeStop('l1', { orientation });
 
   it('a degree-3 junction: the opposed pair runs through, the odd arm is the branch', () => {
     const arms = armsByPair(
@@ -212,6 +211,40 @@ describe('branch arms are read off the junction', () => {
     expect(arms['e|j']).toEqual(['straight']);
     expect(arms['j|n']).toEqual(['straight']);
     expect(arms['j|s']).toEqual(['straight']);
+  });
+
+  // Four ends again, but every one of them on the SAME axis: the AirTrain at
+  // Federal Circle, where the trunk arrives from the SW, one branch doubles
+  // back SW and two more leave NE for the terminal loop. Every SW/NE pair is
+  // dead opposed, so a second run taken on opposition alone pairs the leftovers
+  // up and calls all four a through-run — nothing under Branch, and the fork
+  // painted over itself under Mainline.
+  const federalCircle = (edges = ['j|trunk', 'back|j', 'j|up', 'j|right']) =>
+    makeDoc({
+      stations: [
+        makeStation({ id: 'j', x: 0, y: 0, stops: [stopAt('auto-ne-sw')] }),
+        makeStation({ id: 'trunk', x: -200, y: 200, stops: [stopAt('auto-ne-sw')] }),
+        makeStation({ id: 'back', x: -100, y: 60, stops: [hStop()] }),
+        makeStation({ id: 'up', x: 70, y: -180, stops: [stopAt('auto-vertical')] }),
+        makeStation({ id: 'right', x: 180, y: -60, stops: [hStop()] }),
+      ],
+      lines: [seamLine(edges)],
+    });
+
+  it('two runs on ONE axis are a fork, not a crossing', () => {
+    for (const edges of [
+      ['j|trunk', 'back|j', 'j|up', 'j|right'],
+      ['j|right', 'j|up', 'back|j', 'j|trunk'],
+      ['back|j', 'j|right', 'j|trunk', 'j|up'],
+    ]) {
+      const arms = armsByPair(federalCircle(edges));
+      // The trunk and the arm that stays straight longest run through.
+      expect(arms['j|trunk']).toEqual(['straight']);
+      expect(arms['j|up']).toEqual(['straight']);
+      // The other two leave along the same axis and peel away: both branches.
+      expect(arms['back|j']).toEqual(['curved']);
+      expect(arms['j|right']).toEqual(['curved']);
+    }
   });
 
   it("a through band's far-end dogleg does not make it a branch", () => {

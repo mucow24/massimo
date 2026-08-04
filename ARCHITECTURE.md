@@ -2042,9 +2042,14 @@ station, the line's band ends there are matched into THROUGH-RUNS, most opposed 
 left over is a branch. A station with two ends is a plain joint or a corner and always pairs up,
 whichever way its bands bend; a lone end is a terminus and pairs with nothing, which is not the
 same as branching. Matching continues past the first run only while a remaining pair is DEAD
-opposed — a line that crosses itself at a station has two through-runs and no branch, and stopping
-at one would paint half an X — while a second pair that is merely the best of what's left is a
-fork, not a crossing.
+opposed AND on an axis no run has taken — the two conditions a CROSSING meets and a fork does not.
+A line that crosses itself at a station has two through-runs and no branch, and stopping at one
+would paint half an X; but a pair that is merely the best of what's left is a fork, and so is a
+dead-opposed pair along an axis already spoken for. That second one is the AirTrain at Federal
+Circle: four ends, all on one diagonal, so every SW/NE pair is dead opposed and opposition alone
+calls the whole fork a pair of crossings — nothing under Branch, and the fork painted over itself
+under Mainline. Two corridors sharing an axis at a station do not cross; they lie on top of each
+other, which is the overlap the seam exists to draw.
 
 A run scores on how nearly its arms oppose each other, then on their COMBINED straight length: the
 length of the straight corridor they make through the station. That second term is what a real
