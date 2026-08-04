@@ -101,10 +101,16 @@ const clearTimer = (): void => {
   timeoutId = null;
 };
 
+/** False from a worker's creation until its first accepted RESULT: the boot
+ *  (spawn + wasm compile) may still be in progress no matter how current the
+ *  mirror is, so the watchdog budget keys on THIS, not on `lastPosted`. */
+let workerWarm = false;
+
 const ensureWorker = (): WorkerLike => {
   if (worker) return worker;
   worker = factory();
   lastPosted = null;
+  workerWarm = false;
   worker.onmessage = (e) => handleMessage(e.data);
   worker.onerror = () => fallback();
   worker.postMessage({ kind: 'warm' });
@@ -122,11 +128,6 @@ const postSync = (s: MirrorSource): void => {
 };
 
 const sendFrame = (): void => {
-  // A cold frame — fresh worker and/or empty mirror — carries worker fetch,
-  // wasm compile, the full slice, and a full (not incremental) build; the
-  // warm-frame watchdog would declare it dead and terminate the half-booted
-  // worker. Give it a boot-sized budget instead.
-  const cold = worker === null || lastPosted === null;
   const w = ensureWorker();
   const s = useDoc.getState();
   const cur = mirrorOf(s);
@@ -137,11 +138,33 @@ const sendFrame = (): void => {
   lastSentAt = performance.now();
   w.postMessage({ kind: 'frame', gen, seq, sync });
   clearTimer();
-  const budget = cold ? 5000 : Math.min(5000, Math.max(500, 2.5 * emaMs));
+  // A frame sent to a worker that has never answered may still be paying
+  // spawn + wasm compile + a full build (a warm mirror proves nothing — the
+  // begin-time sync posts before the boot finishes); the warm-frame watchdog
+  // would declare it dead and terminate the half-booted worker. Boot-sized
+  // budget until the worker's first accepted RESULT.
+  const budget = workerWarm ? Math.min(5000, Math.max(500, 2.5 * emaMs)) : 5000;
   const frameGen = gen;
   timeoutId = setTimeout(() => {
     if (gen === frameGen && inFlight) fallback();
   }, budget);
+};
+
+/** The idle-path frame send, deferred one microtask so it captures the input
+ *  handler's END state. A pointermove often writes the doc more than once
+ *  (moveStation then translateSiblings; a capture then its slide) and
+ *  publishes guides AFTER the writes — a send fired synchronously from
+ *  inside the first write would snapshot a half-applied input carrying the
+ *  previous input's guides. Mirrors the `armQueued` pattern.
+ */
+let sendQueued = false;
+const queueSend = (): void => {
+  if (sendQueued) return;
+  sendQueued = true;
+  queueMicrotask(() => {
+    sendQueued = false;
+    if (armed && !inFlight) sendFrame();
+  });
 };
 
 /** When the in-flight frame was posted (depth-1: one frame, one stamp). */
@@ -192,6 +215,7 @@ const handleResult = (msg: FrameResult): void => {
   if (msg.gen !== gen || !armed) return; // a drained gesture's leftovers
   if (!inFlight || msg.seq !== inFlight.seq) return;
   clearTimer();
+  workerWarm = true;
   emaMs = 0.7 * emaMs + 0.3 * (performance.now() - lastSentAt);
   const holes = unpackHoles({ index: msg.index, coords: msg.coords });
   // One synchronous block ⇒ one React render: the snapshot these holes were
@@ -317,6 +341,20 @@ export function initRegionPipeline(workerFactory?: () => WorkerLike): void {
       if (e.kind === 'begin') {
         anyGroupOpen = true;
         deferGroupOpen = e.deferPersist;
+        // Boot at pointerdown on a map that could arm: worker spawn + wasm
+        // compile + the full-slice sync all overlap the gesture's cheap
+        // early frames, so by the time a slow build reports, the mirror is
+        // warm and the first pipelined frame is an incremental diff.
+        // (Assignments-exist is the pipeline-side proxy for needRegions;
+        // repeat begins are ~free — the identity diff no-ops.)
+        if (
+          e.deferPersist &&
+          enabled &&
+          Object.keys(useDoc.getState().regionAssignments).length > 0
+        ) {
+          ensureWorker();
+          postSync(useDoc.getState());
+        }
       } else {
         anyGroupOpen = false;
         deferGroupOpen = false;
@@ -329,7 +367,7 @@ export function initRegionPipeline(workerFactory?: () => WorkerLike): void {
     useDoc.subscribe((s) => {
       if (armed) {
         if (inFlight) pending = true;
-        else sendFrame();
+        else queueSend();
         return;
       }
       // At-rest mirror warmth: post commit-cadence diffs, never per-frame —

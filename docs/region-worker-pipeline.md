@@ -102,9 +102,10 @@ Registered as the from-scratch shape, not the retrofit.
    calling `regionsFor`. Everything downstream — bands (via the identity-reuse layer, which
    is what makes rendering a snapshot cheap), markers, renderables, SeamClips,
    RegionExcludeClips, warnings — just works, because it all flows from that one fix-point.
-   **The arming frame is seeded** with the pre-drag slice + the current at-rest holes, so
-   doc-slice and holes can never resolve from different sources while the first RESULT is
-   in flight (amendment 5).
+   **Arming needs no seeded hand-off**: freezing the render source at the current slice
+   also freezes the canvas's own region memos, which keep serving that slice's synchronous
+   holes until the first RESULT lands — doc-slice and holes resolve from one source in
+   every frame bar none, with nothing to seed and therefore nothing to get wrong.
 5. **Live-read leak migrations** (the audit's ~8): each one moves a component from "reads the
    store directly" to "reads the same source MapCanvas renders from" — generalizing the
    AnchorLayer precedent (which already takes all three records as props and is the one layer
@@ -201,10 +202,11 @@ sees the break and flushes to a full hole rebuild — over-invalidation, never s
 (existing behavior). The worker's mirror then syncs from the COMMIT message and both sides
 are warm again.
 
-Worker lifecycle: created at app start after main's clipper resolves (or lazily on first
-arm); restarted on idle timer or via the dev handle when its wasm heap crosses a bound —
-which converts the "won't stop growing" counter from a page-reload problem into a
-transparent background restart.
+Worker lifecycle: booted at the first deferPersist gesture on a map with assignments (so
+spawn + wasm compile + the full-slice sync overlap the gesture's cheap early frames), and
+terminated/recreated across fallbacks and the kill switch. Its wasm heap only grows for
+the session; a restart policy (idle timer, or a heap bound via the dev handle) is a
+registered follow-up, not shipped.
 
 ## 3. The four questions, answered
 
