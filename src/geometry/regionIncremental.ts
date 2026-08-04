@@ -54,17 +54,26 @@ import {
   buildLineBodies,
   clipperQuant,
   compKeyOf,
+  crossingCompPlans,
   extractFaces,
   finalizeFaces,
   FNV_OFFSET,
   fnvMix,
   fnvMixNum,
+  makeSliceEntrySource,
+  multiArmLineIds,
   restrictBodiesToZone,
+  ringHomes,
   ringsBbox,
+  selfCrossingParts,
+  selfOverlapParts,
+  selfPartCompHomes,
+  sliceSplitForComp,
   subdivideCells,
   zoneComponents,
   type RegionFace,
   type RegionSliver,
+  type SelfCrossingPart,
 } from './lineRegions';
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
@@ -91,8 +100,13 @@ export interface RegionIncrementalState {
   /** Per band-stripe / per marker geometry unit, for locating what moved. */
   units: Map<string, GeomUnit>;
   bodies: Map<LineId, Ring[]>;
-  /** `a|b` → that pair's body intersection, reusable while both bodies are. */
+  /** `a|b` → that pair's body intersection, reusable while both bodies are.
+   *  Self families ride the same map under impossible-for-pairs keys:
+   *  `a|a` (arm parts) and `a|a|x` (mid-edge crossing parts, flattened). */
   pairParts: Map<string, Ring[]>;
+  /** Structured mid-edge crossing parts per line (the pair identities the
+   *  component planner needs), reusable while the line's body is. */
+  crossParts: Map<LineId, SelfCrossingPart[]>;
   zone: Ring[];
   /** Significant components of `zone`, in canonical (content-key) order. */
   zoneComps: Face[];
@@ -226,6 +240,11 @@ export function hashUnits(
       // leaves every key and every geometric field identical while inverting
       // the cover of every face the band crosses.
       h = mixString(h, band.lines[k].id);
+      // The stripe's ARM moves ink now — self-overlap parts and per-arm cell
+      // covers are built from it — so it joins the hash. (Arm assignment is a
+      // pure function of the line's own hashed geometry, so this should be
+      // redundant; it is insurance against that purity ever loosening.)
+      h = fnvMix(h, band.arms[k] ?? 0);
       // The offset path stays within the centerline's box grown by the stripe
       // offset (corner fillets cut INWARD, so the radius adds nothing), and the
       // stroke adds half a width. +1 of slack covers flattening chord error.
@@ -313,72 +332,17 @@ interface ZoneBuild {
 }
 
 /**
- * Pure-JS nonzero-winding containment tester over a comp's rings (outer +
- * holes), with edges y-bucketed so one probe scans only the edges whose
- * y-range can cross its scanline — membership probes hundreds of part rings
- * per frame, and the biggest comp carries thousands of vertices. Built
- * lazily per comp entry and carried with it across frames.
+ * A zone component in the cross-frame index: the shared {@link CompHomeEntry}
+ * shape (rings + box + lazily built winding tester — see lineRegions'
+ * makeFaceTester/ringHomes, which regionIncremental shares with the reference
+ * builder so membership verdicts cannot drift between the two), plus the
+ * significance bit the output filter needs.
  */
 interface CompEntry {
   rings: Face;
   box: Box;
   significant: boolean;
   tester?: (p: { x: number; y: number }) => boolean;
-}
-
-function makeFaceTester(rings: Face, box: Box): (p: { x: number; y: number }) => boolean {
-  const H = 64;
-  const yMin = box.y0;
-  const span = Math.max(box.y1 - box.y0, 1e-9);
-  const bucketOf = (y: number) => Math.min(H - 1, Math.max(0, Math.floor(((y - yMin) / span) * H)));
-  const buckets: { ax: number; ay: number; bx: number; by: number }[][] = Array.from(
-    { length: H },
-    () => [],
-  );
-  for (const ring of rings) {
-    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-      const a = ring[j];
-      const b = ring[i];
-      const lo = bucketOf(Math.min(a.y, b.y));
-      const hi = bucketOf(Math.max(a.y, b.y));
-      for (let k = lo; k <= hi; k++) buckets[k].push({ ax: a.x, ay: a.y, bx: b.x, by: b.y });
-    }
-  }
-  return (p) => {
-    let winding = 0;
-    for (const e of buckets[bucketOf(p.y)]) {
-      if (e.ay <= p.y) {
-        if (e.by > p.y && (e.bx - e.ax) * (p.y - e.ay) - (p.x - e.ax) * (e.by - e.ay) > 0) {
-          winding++;
-        }
-      } else if (e.by <= p.y && (e.bx - e.ax) * (p.y - e.ay) - (p.x - e.ax) * (e.by - e.ay) < 0) {
-        winding--;
-      }
-    }
-    return winding !== 0;
-  };
-}
-
-/** All home comp ids of one part ring: every candidate comp whose bbox admits
- *  it AND whose polygon winds around the ring's probe vertex. A vertex ON a
- *  shared boundary can test inside several comps — or, with the strict
- *  winding test, inside NONE — so an empty result falls back to every comp
- *  whose bbox contains the vertex (a superset of the true home): membership
- *  only decides what seeds and what joins the re-union, and over-seeding is
- *  exact where a silent miss would drop territory. */
-function ringHomes(ring: Ring, candidates: Iterable<[number, CompEntry]>): number[] {
-  const p = ring[0];
-  const homes: number[] = [];
-  const boxed: number[] = [];
-  for (const [id, comp] of candidates) {
-    if (p.x < comp.box.x0 || p.x > comp.box.x1 || p.y < comp.box.y0 || p.y > comp.box.y1) {
-      continue;
-    }
-    boxed.push(id);
-    comp.tester ??= makeFaceTester(comp.rings, comp.box);
-    if (comp.tester(p)) homes.push(id);
-  }
-  return homes.length ? homes : boxed;
 }
 
 /**
@@ -419,6 +383,11 @@ function buildZoneCached(
   dirtyLines: ReadonlySet<LineId>,
   prev: RegionIncrementalState | null,
   dirtyCells: Set<number> | null,
+  // Self-part families, precomputed by the caller (which owns their reuse):
+  // entries ride `pairParts` under impossible-for-pairs keys (`id|id` for arm
+  // parts, `id|id|x` for crossing parts), so the splice machinery
+  // (changed/removed/partHome/seeds) treats them like any pair.
+  selfEntries: { key: string; rings: Ring[] }[] = [],
 ): ZoneBuild {
   const boxes = new Map(ids.map((id) => [id, ringsBbox(bodies.get(id)!)]));
   const pairParts = new Map<string, Ring[]>();
@@ -476,6 +445,22 @@ function buildZoneCached(
       pairParts.set(key, rings);
       parts.push(...rings);
     }
+  }
+  // Self entries, appended after the pairs (union input order stays a pure
+  // function of geometry: sorted-ids i<j loop, then the caller's sorted self
+  // keys). The caller reuses a clean line's cached arrays by identity; a
+  // recomputed-but-identical result still dodges `changed` via the content
+  // compare, exactly like a pair.
+  for (const { key, rings } of selfEntries) {
+    const cached = prev?.pairParts.get(key);
+    if (cached && (cached === rings || ringsContentEqual(cached, rings))) {
+      pairParts.set(key, cached);
+      parts.push(...cached);
+      continue;
+    }
+    if (cached || rings.length) changed.add(key);
+    pairParts.set(key, rings);
+    parts.push(...rings);
   }
   const removed: string[] = [];
   for (const key of prev?.pairParts.keys() ?? []) {
@@ -698,7 +683,18 @@ export function buildRegionsIncremental(
   // of the build, discarded because the cheap half came out empty.
   const bodies = buildLineBodies(bands, markers, reuse);
   const ids = [...bodies.keys()].sort();
-  if (ids.length < 2) {
+  const selfIds = [...multiArmLineIds(bands)].sort();
+  // Mid-edge crossing parts for EVERY line (a single-arm chain can still
+  // cross itself), reused from the previous frame while the line is clean.
+  const crossParts = new Map<LineId, SelfCrossingPart[]>();
+  for (const id of ids) {
+    const parts =
+      prev && !dirtyLines.has(id) ? (prev.crossParts.get(id) ?? []) : selfCrossingParts(bands, id);
+    if (parts.length) crossParts.set(id, parts);
+  }
+  // A single line can no longer short-circuit unconditionally: alone on the
+  // map, its branch mouths and self-crossings are still an arrangement.
+  if (ids.length < 2 && !selfIds.length && !crossParts.size) {
     return {
       faces: [],
       slivers: [],
@@ -708,6 +704,7 @@ export function buildRegionsIncremental(
         units,
         bodies,
         pairParts: new Map(),
+        crossParts,
         zone: [],
         zoneComps: [],
         zoneIndex: new Map(),
@@ -725,7 +722,24 @@ export function buildRegionsIncremental(
 
   const dirtyCells = new Set<number>();
   for (const b of dirtyBoxes) cellsOfBox(b, dirtyCells);
-  const zb = buildZoneCached(ids, bodies, dirtyLines, prev, prev ? dirtyCells : null);
+  const selfEntries: { key: string; rings: Ring[] }[] = [];
+  for (const id of selfIds) {
+    const key = `${id}|${id}`;
+    const cached = prev?.pairParts.get(key);
+    selfEntries.push({
+      key,
+      rings: cached !== undefined && !dirtyLines.has(id) ? cached : selfOverlapParts(bands, id),
+    });
+  }
+  for (const [id, parts] of crossParts) {
+    const key = `${id}|${id}|x`;
+    const cached = prev?.pairParts.get(key);
+    selfEntries.push({
+      key,
+      rings: cached !== undefined && !dirtyLines.has(id) ? cached : parts.flatMap((p) => p.rings),
+    });
+  }
+  const zb = buildZoneCached(ids, bodies, dirtyLines, prev, prev ? dirtyCells : null, selfEntries);
   const { zone, zoneComps, pairParts } = zb;
   if (!zone.length) {
     return {
@@ -736,6 +750,7 @@ export function buildRegionsIncremental(
         units,
         bodies,
         pairParts,
+        crossParts,
         zone,
         zoneComps,
         zoneIndex: zb.zoneIndex,
@@ -757,6 +772,20 @@ export function buildRegionsIncremental(
   const slivers: RegionSliver[] = [];
   let rebuilt = 0;
 
+  // Which comps must subdivide a line PER SLICE (its self parts live there)
+  // — the same shared predicates the reference build uses, over the same
+  // significant comps, so the two cannot drift. Self parts changing dirties
+  // their line, whose unit boxes cover every self ring, so a comp with stale
+  // slice membership can never pass the `untouched` reuse test below.
+  const selfArmEntries: [LineId, Ring[]][] = [];
+  for (const id of selfIds) {
+    const p = pairParts.get(`${id}|${id}`);
+    if (p?.length) selfArmEntries.push([id, p]);
+  }
+  const selfHomes = selfArmEntries.length ? selfPartCompHomes(selfArmEntries, comps) : null;
+  const crossPlans = crossParts.size ? crossingCompPlans(crossParts, comps) : null;
+  const sliceEntriesOf = makeSliceEntrySource(bands, markers);
+
   for (const comp of comps) {
     const box = ringsBbox(comp);
     const key = compCacheKey(comp, box);
@@ -776,9 +805,14 @@ export function buildRegionsIncremental(
     }
 
     rebuilt++;
+    const sliceSplit = sliceSplitForComp(
+      selfHomes?.get(comp),
+      crossPlans?.get(comp),
+      sliceEntriesOf,
+    );
     const compSlivers: RegionSliver[] = [];
     const built = extractFaces(
-      subdivideCells(restrictBodiesToZone(ids, bodies, comp)),
+      subdivideCells(restrictBodiesToZone(ids, bodies, comp, sliceSplit)),
       bands,
       compSlivers,
     );
@@ -796,6 +830,7 @@ export function buildRegionsIncremental(
       units,
       bodies,
       pairParts,
+      crossParts,
       zone,
       zoneComps,
       zoneIndex: zb.zoneIndex,

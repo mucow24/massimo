@@ -373,13 +373,13 @@ export function computeArcRadii(verts: Vec2[], R: number): { rs: number[]; angle
  * Read off the CENTERLINE, never an offset edge: a fillet tighter than the
  * offset (`radius < |offset|`) degenerates that edge's corner to a straight, so
  * an offset-derived answer would call the inside of a bend straight while the
- * outside of the same bend is bent. The branch seam pairs a junction's band
- * ends with this (see `assignSeamArms`).
+ * outside of the same bend is bent. The line-arm partition pairs a junction's
+ * band ends with this (see `assignLineArms` in interlining.ts).
  */
 export function straightRunFrom(
   verts: Vec2[],
   fromStart: boolean,
-): { out: Vec2; run: number } | null {
+): { out: Vec2; run: number; bent: boolean } | null {
   const n = verts.length;
   if (n < 2) return null;
   // Walk from whichever end was asked for, without copying the array — this
@@ -388,12 +388,19 @@ export function straightRunFrom(
   const first = sub(at(1), at(0));
   const out = norm(first);
   let run = len(first);
+  // Whether the run ended AT A BEND (true) or reached the polyline's far end
+  // without one (false) — how the arm partition tells a genuinely straight
+  // corridor from a tangent curve's straight lead-in.
+  let bent = false;
   for (let i = 2; i < n; i++) {
     const step = sub(at(i), at(i - 1));
-    if (angleBetween(out, norm(step)) > EPS) break;
+    if (angleBetween(out, norm(step)) > EPS) {
+      bent = true;
+      break;
+    }
     run += len(step);
   }
-  return { out, run };
+  return { out, run, bent };
 }
 
 /**

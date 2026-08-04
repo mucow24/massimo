@@ -31,9 +31,6 @@ import {
   setLineSingletonDotSize,
   setLineMultiDotSize,
   setLineStrokeColor,
-  setLineSeamColor,
-  setLineSeamEdges,
-  setLineSeamWidth,
   setLineStrokeWidth,
   setLineWidth,
   snapToStep,
@@ -66,15 +63,9 @@ import {
   lineCurveRadiusOf,
 } from './lineCurve';
 import {
-  LINE_SEAM_EDGES_DEFAULT,
   LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_MIN,
-  canonicalSeamColor,
   canonicalStrokeWidth,
-  isSeamEdges,
-  lineSeamColorStored,
-  lineSeamEdgesOf,
-  lineSeamWidthOf,
   lineStrokeColorStored,
   lineStrokeWidthOf,
 } from './lineStroke';
@@ -138,12 +129,10 @@ export function captureStyleProps<K extends StyleKind>(
     case 'line': {
       const l = doc.lines[itemId];
       if (!l) return null;
-      // STORED, not resolved: a casing/seam set to the line's own color must
+      // STORED, not resolved: a casing set to the line's own color must
       // capture as the 'line' sentinel, so the style hands every wearer ITS
       // color instead of baking the example line's hue (and so a tagged line
       // still compares equal to its style).
-      const seamColor = lineSeamColorStored(l);
-      const seamWidth = lineSeamWidthOf(l);
       const dashLength = lineDashLengthOf(l);
       const dashWidth = lineDashWidthOf(l);
       const interlineGap = l.interlineGap;
@@ -160,11 +149,8 @@ export function captureStyleProps<K extends StyleKind>(
         endStyle: lineEndStyleOf(l),
         strokeWidth: lineStrokeWidthOf(l),
         strokeColor: lineStrokeColorStored(l),
-        seamEdges: lineSeamEdgesOf(l),
         // Optional: omitted when unset, so a captured style compares equal to
         // one that never had the key.
-        ...(seamColor !== undefined ? { seamColor } : {}),
-        ...(seamWidth !== undefined ? { seamWidth } : {}),
         ...(dashLength !== undefined ? { dashLength } : {}),
         ...(dashWidth !== undefined ? { dashWidth } : {}),
         ...(interlineGap !== undefined ? { interlineGap } : {}),
@@ -254,9 +240,6 @@ export function stylePropsEqual(
       la.endStyle === lb.endStyle &&
       la.strokeWidth === lb.strokeWidth &&
       la.strokeColor === lb.strokeColor &&
-      la.seamColor === lb.seamColor &&
-      la.seamWidth === lb.seamWidth &&
-      la.seamEdges === lb.seamEdges &&
       la.dashLength === lb.dashLength &&
       la.dashWidth === lb.dashWidth &&
       la.interlineGap === lb.interlineGap &&
@@ -297,10 +280,8 @@ export function canonicalStyleProps<K extends StyleKind>(
   switch (kind as StyleKind) {
     case 'line': {
       const p = props as LineStyleProps;
-      // Canonical seam: off (transparent color / 0 width) collapses to omitted,
-      // mirroring the line fields. Dash dims collapse the same way (0 = derive).
-      const seamColor = p.seamColor == null ? undefined : canonicalSeamColor(p.seamColor);
-      const seamWidth = p.seamWidth == null ? undefined : canonicalStrokeWidth(p.seamWidth);
+      // Dash dims collapse to omitted at 0 (= derive), mirroring the line
+      // fields.
       const dashLength = p.dashLength == null ? undefined : canonicalStrokeWidth(p.dashLength);
       const dashWidth = p.dashWidth == null ? undefined : canonicalStrokeWidth(p.dashWidth);
       const interlineGap =
@@ -331,12 +312,6 @@ export function canonicalStyleProps<K extends StyleKind>(
         endStyle: isLineEndStyle(p.endStyle) ? p.endStyle : LINE_END_STYLE_DEFAULT,
         strokeWidth: snapToStep(p.strokeWidth, LINE_STROKE_STEP, LINE_STROKE_WIDTH_MIN),
         strokeColor: p.strokeColor.toLowerCase(),
-        // Same `?? DEFAULT` healing as endStyle, for defs written before the
-        // seam edge filter was a covered field (it was a doc-global then, and
-        // 'both' is the look those defs' wearers already paint).
-        seamEdges: isSeamEdges(p.seamEdges) ? p.seamEdges : LINE_SEAM_EDGES_DEFAULT,
-        ...(seamColor !== undefined ? { seamColor } : {}),
-        ...(seamWidth !== undefined ? { seamWidth } : {}),
         ...(dashLength !== undefined ? { dashLength } : {}),
         ...(dashWidth !== undefined ? { dashWidth } : {}),
         ...(interlineGap !== undefined ? { interlineGap } : {}),
@@ -429,11 +404,6 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
       next = setLineEndStyle(next, itemId, p.endStyle);
       next = setLineStrokeWidth(next, itemId, p.strokeWidth);
       next = setLineStrokeColor(next, itemId, p.strokeColor);
-      // undefined ⇒ fully transparent ⇒ removes any prior seam (stamp "off").
-      next = setLineSeamColor(next, itemId, p.seamColor ?? '#00000000');
-      // undefined ⇒ 0 ⇒ dropped, so the stamped line inherits the casing width.
-      next = setLineSeamWidth(next, itemId, p.seamWidth ?? 0);
-      next = setLineSeamEdges(next, itemId, p.seamEdges);
       // undefined ⇒ 0 ⇒ dropped, so the stamped line derives from its width.
       next = setLineDashLength(next, itemId, p.dashLength ?? 0);
       next = setLineDashWidth(next, itemId, p.dashWidth ?? 0);

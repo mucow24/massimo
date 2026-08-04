@@ -32,13 +32,14 @@ import { BandWarning, SegmentBand } from './SegmentBand';
 import { RegionExcludeClips, regionExcludeClipId } from './canvas/RegionExcludeClips';
 import { regionsFor } from '../geometry/regionCache';
 import {
+  armCoverId,
   buildExclusionHolesCached,
+  edgeCoverId,
   regionClipBounds,
   regionPaintPlan,
   resolveRegionWinners,
 } from '../geometry/lineRegions';
 import { HatchPatterns } from './HatchPatterns';
-import { SeamClips } from './canvas/SeamClips';
 import { StopMarker } from './StopMarker';
 import { StopGlyph } from './StopGlyph';
 import { resolveDotStyle } from '../model/dotStyle';
@@ -488,7 +489,9 @@ export function MapCanvas() {
   // Region paint machinery: overlap faces + per-face winners + the exclusion
   // clips that realize overrides (see buildExclusionHoles — losers are
   // clipped, winners are never repainted). Computed only when it can matter
-  // (layering mode active, or stored assignments exist); regionsFor's
+  // (layering mode active, stored assignments exist, or some line has
+  // multiple ARMS — an unpainted branch mouth clips its through arm by
+  // DEFAULT, with no assignment anywhere); regionsFor's
   // sig-keyed cache dedupes against the reconcile step's builds. SYNCHRONOUS
   // on purpose: the clips attach to the LIVE base strokes, so they must be
   // derived from the same geometry the strokes render — a deferred snapshot
@@ -497,9 +500,15 @@ export function MapCanvas() {
   // clips attach to base strokes that don't exist, and the clickable faces would
   // float over bands the user can't see. Skipping also spares the app its most
   // expensive pure computation for the duration.
+  const hasMultiArmLine = useMemo(
+    () => bandsGeometry.some((b) => b.arms.some((a) => (a ?? 0) > 0)),
+    [bandsGeometry],
+  );
   const needRegions =
     showNetwork &&
-    (selection.uiMode.kind === 'layering' || Object.keys(regionAssignments).length > 0);
+    (selection.uiMode.kind === 'layering' ||
+      Object.keys(regionAssignments).length > 0 ||
+      hasMultiArmLine);
   // The prebuilt pair hands regionsFor this render's own bands + markers so a
   // cache miss doesn't rebuild them: bandsGeometry is the PRISTINE geometry
   // (not the priority-stamped clones), and the markers' stamped priorities are
@@ -1298,8 +1307,6 @@ export function MapCanvas() {
         >
           <defs>
             <HatchPatterns colors={hatchedColors} underlayColor={underlayColor} />
-            {/* Per-line corridor clips for the branch seam (see SeamClips). */}
-            <SeamClips bands={bands} lines={lines} />
             {regionExcludeHoles && regionClipOuter && (
               <RegionExcludeClips holes={regionExcludeHoles} bounds={regionClipOuter} />
             )}
@@ -1468,13 +1475,28 @@ export function MapCanvas() {
           {showNetwork &&
             renderables.map((r) => {
               const lineId = r.kind === 'marker' ? r.spec.lineId : r.band.lines[r.stripeIndex].id;
-              const clipped = regionExcludeHoles?.has(lineId) ?? false;
+              // A stripe that loses a face AS A SLICE references its slice's
+              // def, finest spelling first — its band (a mid-edge crossing),
+              // then its arm (a branch mouth) — each of which also carries
+              // the line-level holes (see mergeArmHoleKeys). Markers always
+              // take the line def: they are the line's shared paint, never
+              // one slice's.
+              const sliceKeys =
+                r.kind === 'marker'
+                  ? []
+                  : [
+                      edgeCoverId(lineId, r.band.pairKey),
+                      armCoverId(lineId, r.band.arms[r.stripeIndex] ?? 0),
+                    ];
+              const clipKey =
+                sliceKeys.find((k) => regionExcludeHoles?.has(k)) ??
+                ((regionExcludeHoles?.has(lineId) ?? false) ? lineId : null);
               const withExcludeClip = (key: string, node: React.ReactNode) =>
-                clipped ? (
+                clipKey ? (
                   <g
                     key={key}
-                    data-region-excluded={lineId}
-                    clipPath={`url(#${regionExcludeClipId(lineId)})`}
+                    data-region-excluded={clipKey}
+                    clipPath={`url(#${regionExcludeClipId(clipKey)})`}
                   >
                     {node}
                   </g>
@@ -1489,20 +1511,6 @@ export function MapCanvas() {
                     spec={r.band}
                     stripeIndex={r.stripeIndex}
                     pass="silhouette"
-                    lines={lines}
-                    colorMap={colorMap}
-                    underlayColor={underlayColor}
-                  />,
-                );
-              }
-              if (r.kind === 'seam') {
-                return withExcludeClip(
-                  'seam:' + r.band.bandKey + ':' + lineId,
-                  <SegmentBand
-                    key={'seam:' + r.band.bandKey + ':' + lineId}
-                    spec={r.band}
-                    stripeIndex={r.stripeIndex}
-                    pass="seam"
                     lines={lines}
                     colorMap={colorMap}
                     underlayColor={underlayColor}

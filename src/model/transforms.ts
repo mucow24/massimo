@@ -30,12 +30,9 @@ import { LINE_END_STYLE_DEFAULT, lineEndStyleOf, withStationEndStyles } from './
 import { repackStationForSpacing } from './stationPacking';
 import { DOT_SIZE_DEFAULT, canonicalDotSize } from './dotSize';
 import {
-  LINE_SEAM_EDGES_DEFAULT,
   LINE_STROKE_COLOR_DEFAULT,
   LINE_STROKE_WIDTH_DEFAULT,
   canonicalStrokeColor,
-  canonicalSeamColor,
-  canonicalSeamEdges,
   canonicalStrokeWidth,
 } from './lineStroke';
 import {
@@ -118,7 +115,6 @@ import type {
   SvgImageStylePatch,
   Rotation,
   RouteBullet,
-  SeamEdges,
   Station,
   StationId,
   StationStyleProps,
@@ -1008,31 +1004,6 @@ export function setLineStrokeWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
 // invariant is "stored color is lowercase and never the default".
 export function setLineStrokeColor(doc: MapDoc, id: LineId, c: string): MapDoc {
   return setLineStyleField(doc, id, 'strokeColor', canonicalStrokeColor(c));
-}
-
-// Per-line seam color (the interior branch/loop overlap indicator). Like the
-// casing color it is normalized to lowercase and dropped at the "off" state
-// (unset / fully transparent) so it is never stored; a change detaches the line
-// from its preset.
-export function setLineSeamColor(doc: MapDoc, id: LineId, c: string): MapDoc {
-  return setLineStyleField(doc, id, 'seamColor', canonicalSeamColor(c));
-}
-
-// Per-line seam width. Shares the casing width's canonical grid/floor and
-// drop-at-0 (`canonicalStrokeWidth`); an unset (dropped) value inherits the
-// casing width at render time. A change detaches the line from its preset.
-export function setLineSeamWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
-  if (!Number.isFinite(w)) return doc;
-  return setLineStyleField(doc, id, 'seamWidth', canonicalStrokeWidth(w));
-}
-
-// Which arm of this line's branch notch gets painted (see model/lineStroke.ts).
-// Same contract as the other plain style setters: the field is dropped at
-// 'both' (the full notch) so the default is never stored, and a real change
-// detaches the line from its preset. PRESENTATION — it only picks which of a
-// band's seam edges draw, so no region reconcile is needed.
-export function setLineSeamEdges(doc: MapDoc, id: LineId, v: SeamEdges): MapDoc {
-  return setLineStyleField(doc, id, 'seamEdges', canonicalSeamEdges(v));
 }
 
 // Per-line tick length for 'dash' stops. Shares the casing width's canonical
@@ -2554,7 +2525,9 @@ function pruneRegionAssignmentsForLine(
     }
     const lines = a.lines.filter((l) => l !== lineId);
     const anchors = a.anchors.filter((anchor) => anchor.lineId !== lineId);
-    if (lines.length < 2 || anchors.length === 0) {
+    // One cover line arbitrates nothing — unless the choice is an ARM of it
+    // (a self-overlap face), where one line is the whole point.
+    if ((lines.length < 2 && a.winnerPairKey === undefined) || anchors.length === 0) {
       changed = true;
       continue;
     }
@@ -3971,7 +3944,6 @@ export const DEFAULT_STYLES: Record<string, StyleDef> = {
       endStyle: LINE_END_STYLE_DEFAULT,
       strokeWidth: LINE_STROKE_WIDTH_DEFAULT,
       strokeColor: LINE_STROKE_COLOR_DEFAULT,
-      seamEdges: LINE_SEAM_EDGES_DEFAULT,
     },
   },
   'default-textLabel': {

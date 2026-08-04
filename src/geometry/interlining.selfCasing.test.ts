@@ -51,9 +51,8 @@ interface PaintEl {
 function paintSequence(bands: SegmentBandSpec[], line: Line): PaintEl[] {
   const els: PaintEl[] = [];
   for (const r of buildOrderedRenderables(bands, [], { [line.id]: line })) {
-    // Markers and the (opt-in, clipped) branch seam don't participate in the
-    // casing-vs-body merge invariant; these fixtures set no seamColor.
-    if (r.kind === 'marker' || r.kind === 'seam') continue;
+    // Markers don't participate in the casing-vs-body merge invariant.
+    if (r.kind === 'marker') continue;
     const w = r.band.stripeWidths[r.stripeIndex];
     const railW = lineStrokeRailWidth(line.strokeWidth ?? 0, w);
     const offset = r.band.stripeOffsets[r.stripeIndex];

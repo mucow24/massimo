@@ -199,8 +199,8 @@ describe('sanitizeStyles via parse', () => {
   });
 
   // The end of the chain the canonicalStyleProps omission test guards: a file
-  // whose line def simply has no seam / dash / gap keys must come back with no
-  // seam / dash / gap keys. Present-and-undefined would look harmless in the
+  // whose line def simply has no dash / gap keys must come back with no
+  // dash / gap keys. Present-and-undefined would look harmless in the
   // debugger and then break tagging — `stylePropsEqual` compares ABSENCE, so
   // every line wearing the style would read as "Custom" the moment it loaded.
   // A malformed value takes the same route as an absent one (both arrive
@@ -212,17 +212,10 @@ describe('sanitizeStyles via parse', () => {
     const base = makeStyle('line', 'y1', { name: 'L' });
     const doc = {
       ...makeDoc({}),
-      styles: { y1: { ...base, props: { ...base.props, seamWidth: 'wide', dashLength: null } } },
+      styles: { y1: { ...base, props: { ...base.props, dashLength: null } } },
     };
     const props = parsed(doc).styles.y1.props;
-    for (const key of [
-      'seamColor',
-      'seamWidth',
-      'dashLength',
-      'dashWidth',
-      'interlineGap',
-      'labelGap',
-    ]) {
+    for (const key of ['dashLength', 'dashWidth', 'interlineGap', 'labelGap']) {
       expect(props, `${key} came back as a present key`).not.toHaveProperty(key);
     }
   });

@@ -12,7 +12,9 @@ const scaleRings = (rings: Ring[], k: number): Ring[] =>
   rings.map((r) => r.map((p) => ({ x: p.x * k, y: p.y * k })));
 
 export interface RegionExcludeClipsProps {
-  /** lineId → exclusion hole rings (see buildExclusionHoles). */
+  /** Hole key → exclusion hole rings (see buildExclusionHoles). Keys are
+   *  bare line ids OR slice cover ids (`arm:`/`edge:` spellings) — one def
+   *  per key; slice defs already carry their coarser holes merged in. */
   holes: Map<LineId, Ring[]>;
   /** World AABB the clips must PASS — the padded extent of everything the
    *  clipped lines paint (see regionClipBounds). Deliberately TIGHT: the

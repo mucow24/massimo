@@ -104,7 +104,7 @@ describe('regionGeometrySig', () => {
     expect(regionGeometrySig(pinnedElsewhere)).not.toBe(regionGeometrySig(pinned));
   });
 
-  it('is stable across presentation-only changes (color, casing, seam)', () => {
+  it('is stable across presentation-only changes (color, casing)', () => {
     const base = crossGeom(50);
     const sig = regionGeometrySig(base);
     const repainted = {
@@ -115,8 +115,7 @@ describe('regionGeometrySig', () => {
           ...base.lines.l1,
           color: '#ff0000',
           strokeWidth: 4,
-          strokeColor: '#000000',
-          seamColor: '#123456',
+          strokeColor: '#123456',
         },
       },
     };

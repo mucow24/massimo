@@ -9,7 +9,14 @@ import type { LineId, RegionAnchor, RegionAssignment } from '../model/types';
 import { pairKeyOf } from '../model/pairKey';
 import { edgeEndpoints, lineHasEdge, neighborsOf } from '../model/lineTopology';
 import { intersect, offsetClosed, type Ring } from './clip';
-import { bindAssignments, mintAnchors, stripeArcLength, type RegionFace } from './lineRegions';
+import {
+  armOfLinePairKey,
+  bindAssignments,
+  distinctCoverLines,
+  mintAnchors,
+  stripeArcLength,
+  type RegionFace,
+} from './lineRegions';
 import { regionsFor, type GeometrySlice, type RegionGeometry } from './regionCache';
 import type { SegmentBandSpec } from './interlining';
 
@@ -147,6 +154,7 @@ const anchorsEqual = (a: RegionAnchor[], b: RegionAnchor[]): boolean =>
 const assignmentsEqual = (a: RegionAssignment, b: RegionAssignment): boolean =>
   a.id === b.id &&
   a.lineId === b.lineId &&
+  a.winnerPairKey === b.winnerPairKey &&
   a.lines.length === b.lines.length &&
   a.lines.every((l, i) => l === b.lines[i]) &&
   anchorsEqual(a.anchors, b.anchors);
@@ -185,10 +193,32 @@ export function reconcileRegionAssignments(
     const a = assignments[id];
     if (!newLive.has(a.lineId)) continue;
     const lines = a.lines.filter((l) => newLive.has(l));
-    if (lines.length < 2) continue;
-    const anchors = a.anchors
-      .map((anchor) => translateAnchor(anchor, oldGeom, newGeom, oldR.bands, newR.bands))
-      .filter((x): x is RegionAnchor => x !== null);
+    // One cover line arbitrates nothing when it got that way by SHRINKING —
+    // a cross-line choice whose other lines died says nothing anymore. BORN
+    // single-line assignments are real: an arm choice (winnerPairKey) or an
+    // explicit MERGED mouth (no winnerPairKey — the non-default now that
+    // unpainted mouths show the branch arm), both kept.
+    if (lines.length < 2 && a.winnerPairKey === undefined && a.lines.length >= 2) continue;
+    // The arm choice rides its own anchor: winnerPairKey is by construction
+    // the pairKey of one of the winner line's anchors, so translating that
+    // anchor translates the choice. Untranslatable ⇒ kept verbatim, like a
+    // dormant anchor — the remint below re-derives or degrades it.
+    let winnerPairKey = a.winnerPairKey;
+    const anchors: RegionAnchor[] = [];
+    for (const anchor of a.anchors) {
+      const t = translateAnchor(anchor, oldGeom, newGeom, oldR.bands, newR.bands);
+      if (t) {
+        if (
+          a.winnerPairKey !== undefined &&
+          winnerPairKey === a.winnerPairKey &&
+          anchor.lineId === a.lineId &&
+          anchor.pairKey === a.winnerPairKey
+        ) {
+          winnerPairKey = t.pairKey;
+        }
+        anchors.push(t);
+      }
+    }
     // Zero translatable anchors: keep the originals verbatim — the assignment
     // is dormant, and future reconciles may find geometry they fit again.
     if (!anchors.length) {
@@ -196,9 +226,16 @@ export function reconcileRegionAssignments(
       continue;
     }
     const next =
-      lines.length === a.lines.length && anchorsEqual(anchors, a.anchors)
+      lines.length === a.lines.length &&
+      anchorsEqual(anchors, a.anchors) &&
+      winnerPairKey === a.winnerPairKey
         ? a
-        : { ...a, lines, anchors };
+        : {
+            ...a,
+            lines,
+            anchors,
+            ...(winnerPairKey !== undefined ? { winnerPairKey } : {}),
+          };
     translated[id] = next;
   }
 
@@ -236,11 +273,28 @@ export function reconcileRegionAssignments(
   for (const [id, faceIndex] of newBound) {
     const a = translated[id];
     const face = newR.faces[faceIndex];
+    const anchors = mintAnchors(face, newR.bands);
+    // Re-derive the arm choice against the fresh anchors: the translated key
+    // names the arm; the arm's own new anchor re-spells it. An arm that no
+    // longer resolves drops the field — merged, never a wrong clip.
+    let winnerPairKey: string | undefined;
+    if (a.winnerPairKey !== undefined) {
+      const arm = armOfLinePairKey(newR.bands, a.lineId, a.winnerPairKey);
+      if (arm !== null) {
+        winnerPairKey = anchors.find(
+          (an) =>
+            an.lineId === a.lineId && armOfLinePairKey(newR.bands, a.lineId, an.pairKey) === arm,
+        )?.pairKey;
+      }
+    }
     const reminted: RegionAssignment = {
       id,
       lineId: a.lineId,
-      lines: [...face.lineIds],
-      anchors: mintAnchors(face, newR.bands),
+      // Distinct LINES whatever the face's cover spelling — arm ids are
+      // build-local and must never persist.
+      lines: distinctCoverLines(face.lineIds).sort(),
+      anchors,
+      ...(winnerPairKey !== undefined ? { winnerPairKey } : {}),
     };
     const same = assignmentsEqual(reminted, assignments[id] ?? reminted) && assignments[id];
     out[id] = same ? assignments[id] : reminted;
@@ -280,11 +334,25 @@ export function reconcileRegionAssignments(
       if (!translatedCoverCompatible(a, f)) continue;
       if (!facesOverlap(f, seed)) continue;
       const dupId = mintId();
+      const dupAnchors = mintAnchors(f, newR.bands);
+      // A split sibling inherits the arm choice too, re-spelled against its
+      // own anchors — same derivation as the remint above.
+      let dupWinnerPairKey: string | undefined;
+      if (a.winnerPairKey !== undefined) {
+        const arm = armOfLinePairKey(newR.bands, a.lineId, a.winnerPairKey);
+        if (arm !== null) {
+          dupWinnerPairKey = dupAnchors.find(
+            (an) =>
+              an.lineId === a.lineId && armOfLinePairKey(newR.bands, a.lineId, an.pairKey) === arm,
+          )?.pairKey;
+        }
+      }
       out[dupId] = {
         id: dupId,
         lineId: a.lineId,
-        lines: [...f.lineIds],
-        anchors: mintAnchors(f, newR.bands),
+        lines: distinctCoverLines(f.lineIds).sort(),
+        anchors: dupAnchors,
+        ...(dupWinnerPairKey !== undefined ? { winnerPairKey: dupWinnerPairKey } : {}),
       };
       claimedFaces.add(i);
       changed = true;
@@ -297,5 +365,6 @@ export function reconcileRegionAssignments(
 
 /** The inheriting face must still cover every line the assignment arbitrates. */
 function translatedCoverCompatible(a: RegionAssignment, face: RegionFace): boolean {
-  return face.lineIds.includes(a.lineId) && a.lines.every((l) => face.lineIds.includes(l));
+  const cover = distinctCoverLines(face.lineIds);
+  return cover.includes(a.lineId) && a.lines.every((l) => cover.includes(l));
 }

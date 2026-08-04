@@ -18,7 +18,6 @@ import type {
   RegionAssignment,
   Rotation,
   RouteBullet,
-  SeamEdges,
   StationId,
   StyleDef,
   StyleKind,
@@ -51,7 +50,6 @@ import {
   backfillDotStrokeAlign,
   backfillLineStyleEndStyle,
   bakeDocCurveRadius,
-  bakeDocSeamEdges,
   bakeLegacyBackgroundOrder,
   bakeLegacyLabelSettings,
   bakeLegacyTransferSettings,
@@ -66,6 +64,7 @@ import {
   migrateV9Styles,
   sanitizeRegionAssignments,
   stripLegacySegmentLayers,
+  stripRetiredSeamFields,
   bakeActivePalettes,
 } from '../model/serialize';
 import type { Station, Transfer } from '../model/types';
@@ -376,13 +375,10 @@ if (typeof window !== 'undefined') {
  *   heal absent/garbage values to 'square' (the historical full marker square)
  *   via `backfillLineStyleEndStyle`. No tag prune follows it — a line from those
  *   saves carries no end of its own, so it already paints what the heal writes.
- * - v22 → v23: retire the doc-level `seamEdges` — bake it onto every line
- *   (`Line.seamEdges`, dropped at the historical default 'both') and fill line
- *   style defs that predate the covered field, via the shared
- *   `bakeDocSeamEdges`. Idempotent (keyed off field presence), so `parse()` runs
- *   it unconditionally. Ordered BESIDE the v<16 curveRadius bake, and BEFORE the
- *   v<10 style hygiene, for the same reason its gate gives. No tag prune
- *   follows: lines and defs take the same legacy value.
+ * - v22 → v23: (superseded by v25) the doc-level `seamEdges` was baked onto
+ *   lines when the seam went per-line; the whole seam has since retired, so
+ *   the v<25 strip below removes every seam field wherever this bake would
+ *   have written one — the gate itself is gone.
  * - v23 → v24: retire `activePalettes` — the id list of which palettes were
  *   switched on becomes the palette COPIES the map carries (`MapDoc.palettes`),
  *   so a map needs no companion library to open with the right colors. Built-in
@@ -390,6 +386,12 @@ if (typeof window !== 'undefined') {
  *   library, via the shared `bakeActivePalettes`; ids resolving to neither are
  *   dropped, and a map carrying no palettes is a legitimate outcome. Gated on
  *   the new field being ABSENT as well, so it can never overwrite real palettes.
+ * - v24 → v25: the branch seam retired outright — self-overlaps are region
+ *   faces painted per junction now — so strip `seamColor`/`seamWidth`/
+ *   `seamEdges` from lines AND line style defs (plus any doc-level remnant)
+ *   via the shared `stripRetiredSeamFields`. Both sides lose the fields
+ *   together, so tagged wearers stay tagged; `parse()` runs the same strip
+ *   unconditionally.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -469,12 +471,12 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     // legacy value.
     out = bakeDocCurveRadius(out);
   }
-  if (v < 23) {
-    // Retired doc-level seamEdges → per-line fields, plus the line-style-def
-    // fill. Same ordering requirement as bakeDocCurveRadius above: it must
-    // precede the v<10 style hygiene, or a def missing `seamEdges` would heal
-    // to 'both' instead of the doc's legacy mode.
-    out = bakeDocSeamEdges(out);
+  if (v < 25) {
+    // The branch seam retired outright (self-overlaps are region faces now):
+    // strip seamColor/seamWidth/seamEdges from lines AND line style defs,
+    // plus the even older doc-level seamEdges the v<23 bake used to spread.
+    // Lines and defs lose the fields together, so tagged wearers stay tagged.
+    out = stripRetiredSeamFields(out);
   }
   if (v < 18) {
     // Split the retired single `defaultDotStyle` / `defaultDotSize` into the
@@ -736,11 +738,6 @@ interface DocState extends MapDoc {
   setStationEndStyle: (lineId: LineId, stationId: StationId, end: LineEndStyle) => void;
   setLineStrokeWidth: (lineId: LineId, w: number) => void;
   setLineStrokeColor: (lineId: LineId, c: string) => void;
-  setLineSeamColor: (lineId: LineId, c: string) => void;
-  setLineSeamWidth: (lineId: LineId, w: number) => void;
-  /** Which pieces of this line's branch seam get painted: both edge kinds,
-   *  only the straight pieces, or only the curved (fillet) ones. */
-  setLineSeamEdges: (lineId: LineId, v: SeamEdges) => void;
   setLineDashLength: (lineId: LineId, v: number) => void;
   setLineDashWidth: (lineId: LineId, v: number) => void;
   deleteLine: (id: LineId) => void;
@@ -1046,9 +1043,6 @@ export const useDoc = create<DocState>()(
           set(withRegionReconcile((s) => T.setStationEndStyle(s, lineId, stationId, end))),
         setLineStrokeWidth: (lineId, w) => set((s) => T.setLineStrokeWidth(s, lineId, w)),
         setLineStrokeColor: (lineId, c) => set((s) => T.setLineStrokeColor(s, lineId, c)),
-        setLineSeamColor: (lineId, c) => set((s) => T.setLineSeamColor(s, lineId, c)),
-        setLineSeamWidth: (lineId, w) => set((s) => T.setLineSeamWidth(s, lineId, w)),
-        setLineSeamEdges: (lineId, v) => set((s) => T.setLineSeamEdges(s, lineId, v)),
         setLineDashLength: (lineId, v) => set((s) => T.setLineDashLength(s, lineId, v)),
         setLineDashWidth: (lineId, v) => set((s) => T.setLineDashWidth(s, lineId, v)),
         deleteLine: (id) => set(withRegionReconcile((s) => T.deleteLine(s, id))),
@@ -1392,8 +1386,8 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: debouncedDocStorage,
-        version: 24,
-        // Version migration chain v0 → v24 lives in `migrateDoc` (above), which
+        version: 25,
+        // Version migration chain v0 → v25 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         // `migrate` only runs when the STORED version differs from the config
