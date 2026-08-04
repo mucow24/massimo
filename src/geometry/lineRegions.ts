@@ -1817,7 +1817,12 @@ export const EXCLUSION_INSET = 0.00625;
  * that corridor's color instead of W's rail; found on the CTA map as a blue
  * sliver notched out of an orange column under a pink bridge). Same-winner
  * neighbors are deliberately not shielded, so adjacent faces assigned to
- * one winner merge seamlessly.
+ * one winner merge seamlessly — and "same winner" spans slice spellings: a
+ * face won by one ARM of a line tiles with a neighbor plainly showing that
+ * line (by default or by paint), or the loser's rail-half poking across the
+ * joint survives as a notch exactly where the reveal crosses a face
+ * boundary. Two DIFFERENT slices of one line do still shield each other;
+ * their reveals differ exactly at the rails.
  *
  * Before dilating, F's reveal region absorbs any adjacent dropped `slivers`
  * (see {@link RegionSliver}): at a near-tangent inner fillet the arrangement
@@ -2117,7 +2122,20 @@ function makeHoleContext(
       0.5;
     const shield: Ring[] = [];
     for (const j of facesNear(regionBbox, maxReach * 3)) {
-      if (j === i || winners[j]?.winner === w.winner) continue;
+      const nw = winners[j]?.winner;
+      if (j === i || nw === w.winner) continue;
+      // Same-LINE neighbors with either side MERGED show the same paint —
+      // an arm reveal beside a face plainly showing its line (default or
+      // painted) must tile with it, or the loser's rail-half poking across
+      // the joint survives as a notch. Two DIFFERENT slices of one line do
+      // still shield each other: their reveals differ exactly at the rails.
+      if (
+        nw !== undefined &&
+        lineOfCover(nw) === winnerLine &&
+        (!isSliceCoverId(nw) || winnerSlice === null)
+      ) {
+        continue;
+      }
       shield.push(...faces[j].face);
     }
     // Within one face, losers sharing a railW dilate the same region by the

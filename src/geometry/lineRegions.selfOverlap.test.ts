@@ -19,7 +19,15 @@ import {
 import { buildRegionsIncremental } from './regionIncremental';
 import { reconcileRegionAssignments } from './regionReconcile';
 import { sanitizeRegionAssignments } from '../model/serialize';
-import { faceArea, type Ring } from './clip';
+import {
+  faceArea,
+  interiorPoint,
+  intersect,
+  offsetClosed,
+  pointInFace,
+  splitIntoFaces,
+  type Ring,
+} from './clip';
 import { makeDoc, makeLine, makeStation, makeStop } from '../test/fixtures';
 import type { MapDoc, RegionAssignment } from '../model/types';
 
@@ -456,6 +464,102 @@ describe('self-overlap faces (branch mouths)', () => {
     // neighbor whose rail rides the shared boundary through the reveal.
     expect(holes.get(armCoverId('gr', trunkArm))?.length).toBeGreaterThan(0);
     expect(holes.get('oa')?.length, "orange's coincident rail must be holed").toBeGreaterThan(0);
+  });
+
+  it('a merged-line neighbor face does not shield an arm reveal of the same line', () => {
+    // Grey FRONT-MOST this time: the face where grey's curve crosses orange
+    // shows plain `gr` by z-default, right next to the mouth face painted
+    // `arm:curve gr`. The shield compares winner strings, so without the
+    // same-line exemption each face shields the other and the trunk's upper
+    // rail-half — which pokes past the stripe boundary into the neighbor's
+    // territory — survives unclipped exactly at the joint: the pixel-peeped
+    // notches. The trunk-arm hole must reach through a same-line merged
+    // neighbor.
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 'a',
+          x: -400,
+          y: 0,
+          stops: [
+            makeStop('oa', { row: 0, orientation: 'auto-horizontal' }),
+            makeStop('gr', { row: 1, orientation: 'auto-horizontal' }),
+          ],
+        }),
+        makeStation({
+          id: 'j',
+          x: 0,
+          y: 0,
+          stops: [
+            makeStop('oa', { row: 0, orientation: 'auto-horizontal' }),
+            makeStop('gr', { row: 1, orientation: 'auto-horizontal' }),
+          ],
+        }),
+        makeStation({
+          id: 'c',
+          x: 400,
+          y: 0,
+          stops: [
+            makeStop('oa', { row: 0, orientation: 'auto-horizontal' }),
+            makeStop('gr', { row: 1, orientation: 'auto-horizontal' }),
+          ],
+        }),
+        makeStation({ id: 'd', x: 500, y: -500, stops: [vStop('gr')] }),
+      ],
+      lines: [
+        makeLine({ id: 'oa', color: '#f60', edges: ['a|j', 'c|j'], strokeWidth: 2 }),
+        makeLine({
+          id: 'gr',
+          color: '#999',
+          edges: ['a|j', 'c|j', 'd|j'],
+          strokeWidth: 2,
+          curveRadius: 200,
+        }),
+      ],
+    });
+    const lineOrder = ['gr', 'oa']; // grey front-most
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+    const faces = buildOverlapRegions(bands, []);
+    const trunkArm = armOfLinePairKey(bands, 'gr', 'a|j')!;
+    const branchArm = armOfLinePairKey(bands, 'gr', 'd|j')!;
+    const mouthIdx = faces.findIndex(
+      (f) =>
+        f.lineIds.includes(armCoverId('gr', trunkArm)) &&
+        f.lineIds.includes(armCoverId('gr', branchArm)),
+    );
+    const crossIdx = faces.findIndex((f) => f.lineIds.includes('gr') && f.lineIds.includes('oa'));
+    expect(mouthIdx).toBeGreaterThanOrEqual(0);
+    expect(crossIdx).toBeGreaterThanOrEqual(0);
+    const set = regionPaintPlan({
+      faces,
+      winners: resolveRegionWinners(faces, {}, bands, lineOrder),
+      assignments: {},
+      faceIndex: mouthIdx,
+      dir: -1,
+      flood: false,
+      lineOrder,
+      bands,
+    })[0].assignment!;
+    expect(armOfLinePairKey(bands, 'gr', set.winnerPairKey!)).toBe(branchArm);
+    const withSet = { r1: { ...set, id: 'r1' } };
+    const winners = resolveRegionWinners(faces, withSet, bands, lineOrder);
+    // The neighbor shows plain grey by default — same LINE, merged spelling.
+    expect(winners[crossIdx]).toEqual({ winner: 'gr', assignmentId: null });
+    const holes = buildExclusionHoles(faces, winners, lineOrder, bands, [], () => 2, []);
+    const trunkRings = holes.get(armCoverId('gr', trunkArm))!;
+    expect(trunkRings?.length).toBeGreaterThan(0);
+    // Probe: a point INSIDE the merged neighbor face within the mouth's
+    // dilation reach — where the trunk's rail-half crosses the joint. The
+    // trunk hole must cover it, or the rail notches there.
+    const overlap = intersect(
+      offsetClosed(faces[mouthIdx].face, 2.5, 'miter'),
+      faces[crossIdx].face,
+    );
+    expect(overlap.length).toBeGreaterThan(0);
+    const probe = interiorPoint(splitIntoFaces(overlap)[0])!;
+    expect(probe).toBeTruthy();
+    const covered = splitIntoFaces(trunkRings).some((f) => pointInFace(probe, f));
+    expect(covered, 'trunk hole must reach through the same-line neighbor').toBe(true);
   });
 
   it('stop markers do not manufacture extra self faces', () => {
