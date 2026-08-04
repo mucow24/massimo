@@ -111,6 +111,7 @@ test.describe('palette manager', () => {
     await openManager(page);
     await loadFrrf(page);
     await mapRow(page, 'frrf').getByRole('button', { name: 'Remove frrf from the map' }).click();
+    await page.getByRole('button', { name: 'Confirm removing frrf from the map' }).click();
     await expect(mapRow(page, 'frrf')).toHaveCount(0);
     await closeManager(page);
 
