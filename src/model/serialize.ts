@@ -34,14 +34,7 @@ import {
   canonicalLineCurveRadius,
 } from './lineCurve';
 import { canonicalDotSize } from './dotSize';
-import {
-  LINE_SEAM_EDGES_DEFAULT,
-  canonicalSeamColor,
-  canonicalSeamEdges,
-  canonicalStrokeColor,
-  canonicalStrokeWidth,
-  isSeamEdges,
-} from './lineStroke';
+import { canonicalStrokeColor, canonicalStrokeWidth } from './lineStroke';
 import {
   DEFAULT_DOT_STYLE,
   DEFAULT_STOP_DOT_STYLE_ID,
@@ -567,8 +560,9 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
   // style defs that predate the covered field) BEFORE the per-line clean and
   // the style validation below — both expect the per-line/per-def form.
   merged = bakeDocCurveRadius(merged);
-  // Same route, same ordering reason, for the retired doc-level seamEdges.
-  merged = bakeDocSeamEdges(merged);
+  // The retired seam fields strip whole (lines, defs, and the even older
+  // doc-level seamEdges) — see stripRetiredSeamFields.
+  merged = stripRetiredSeamFields(merged);
   // Normalize each line's OWN topology first — canonical edge keys are what
   // the linkage closure below joins on. The override clean (segments + end
   // pins) deliberately does NOT run here: it must judge against the REPAIRED
@@ -726,8 +720,9 @@ type LinesAndStyles = { lines?: Record<string, Line>; styles?: Record<string, St
 
 /**
  * The shared body of a "this doc-global became a covered line-style field"
- * bake. Two fields have taken that route (`curveRadius`, `seamEdges`) and the
- * mechanics are identical every time:
+ * bake. `curveRadius` is the one live user (the retired `seamEdges` took the
+ * same route until the whole seam retired — see stripRetiredSeamFields) and
+ * the mechanics are identical every time:
  *
  *   1. Read the legacy doc value, healing garbage/absent to the field's default.
  *   2. If the doc CARRIES the field, drop it and stamp the per-line STORED form
@@ -836,33 +831,70 @@ export function bakeDocCurveRadius<T extends LinesAndStyles>(doc: T): T {
 }
 
 /**
- * Bake the RETIRED doc-level `seamEdges` into per-line fields, and fill line
- * style defs saved before `seamEdges` was a covered field. Which arm of a
- * branch seam gets painted is per-line now (`Line.seamEdges`, missing ⇒ 'both',
- * the full notch), so a legacy file's map-wide choice must land on every line
- * to keep its rendered seams; the doc field is then dropped. A line (or style
- * def) that somehow carries its own value keeps it. Keyed off field presence
- * (idempotent), so parse() runs it unconditionally and the localStorage
- * rehydrate gates it at v<23. Garbage legacy values read as the default.
- *
- * Must run BEFORE style-def validation on both paths — `sanitizeStyleProps`
- * requires `seamEdges` on line defs, and this bake is what guarantees the
- * legacy VALUE (rather than the healed default) reaches defs from older builds.
- * A doc old enough to carry the field can have no def carrying one, so every
- * line and every line def take the same value and no tag can drift: unlike the
- * dot-type rollout, no mismatch prune follows.
- *
- * The def form is the legacy mode verbatim — unlike the radius, an enum has no
- * grid to snap to or floor to clamp against.
+ * Strip the RETIRED seam fields: `seamColor`/`seamWidth`/`seamEdges` on lines
+ * and line style defs, plus the even older doc-level `seamEdges`. The branch
+ * seam retired when self-overlaps became real region faces — a branch mouth
+ * is painted per junction in Layering mode now, not styled per line — so a
+ * save that carried a seam renders merged at its junctions after this strip,
+ * and the look is re-created (where wanted) as region assignments by hand.
+ * Fields leave LINES and DEFS together, so `stylePropsEqual` still holds and
+ * no tagged wearer detaches. Reference-stable when nothing changed; parse()
+ * runs it unconditionally and the localStorage rehydrate gates it at v<25.
  */
-export function bakeDocSeamEdges<T extends LinesAndStyles>(doc: T): T {
-  return bakeRetiredLineField(
-    doc,
-    'seamEdges',
-    (v) => (isSeamEdges(v) ? v : LINE_SEAM_EDGES_DEFAULT),
-    canonicalSeamEdges,
-    (m) => m,
-  );
+export function stripRetiredSeamFields<T extends LinesAndStyles>(doc: T): T {
+  const raw = doc as Record<string, unknown>;
+  let out = doc;
+  let changed = false;
+  if ('seamEdges' in raw) {
+    const { seamEdges: _retired, ...rest } = raw;
+    out = rest as unknown as T;
+    changed = true;
+  }
+  const hasSeam = (o: object): boolean => 'seamColor' in o || 'seamWidth' in o || 'seamEdges' in o;
+  if (out.lines) {
+    let linesChanged = false;
+    const lines: Record<string, Line> = {};
+    for (const id of Object.keys(out.lines)) {
+      const ln = out.lines[id] as Line & Record<string, unknown>;
+      if (ln && typeof ln === 'object' && hasSeam(ln)) {
+        const { seamColor: _c, seamWidth: _w, seamEdges: _e, ...restLn } = ln;
+        lines[id] = restLn as unknown as Line;
+        linesChanged = true;
+      } else {
+        lines[id] = ln;
+      }
+    }
+    if (linesChanged) {
+      out = out === doc ? ({ ...doc, lines } as T) : { ...out, lines };
+      changed = true;
+    }
+  }
+  if (out.styles) {
+    let stylesChanged = false;
+    const styles: Record<string, StyleDef> = {};
+    for (const id of Object.keys(out.styles)) {
+      const def = out.styles[id];
+      if (
+        def &&
+        def.kind === 'line' &&
+        def.props &&
+        typeof def.props === 'object' &&
+        hasSeam(def.props)
+      ) {
+        const props = def.props as unknown as Record<string, unknown>;
+        const { seamColor: _c, seamWidth: _w, seamEdges: _e, ...restProps } = props;
+        styles[id] = { ...def, props: restProps } as unknown as StyleDef;
+        stylesChanged = true;
+      } else {
+        styles[id] = def;
+      }
+    }
+    if (stylesChanged) {
+      out = out === doc ? ({ ...doc, styles } as T) : { ...out, styles };
+      changed = true;
+    }
+  }
+  return changed ? out : doc;
 }
 
 /**
@@ -1780,17 +1812,11 @@ export function sanitizeStopDotSizes(
 function sanitizeLineStroke(line: Line): Line {
   let next = line;
   // Every numeric width field shares one contract — canonicalStrokeWidth
-  // (casing grid/floor) + drop-at-0: strokeWidth/seamWidth are the casing rails,
+  // (casing grid/floor) + drop-at-0: strokeWidth is the casing rails,
   // dashLength/dashWidth the TfL-tick dims (0 / absent = derive from the line
   // width at render), interlineGap the packed spacing bump (0 / absent =
   // plain tangency). One loop keeps them from drifting apart.
-  for (const field of [
-    'strokeWidth',
-    'seamWidth',
-    'dashLength',
-    'dashWidth',
-    'interlineGap',
-  ] as const) {
+  for (const field of ['strokeWidth', 'dashLength', 'dashWidth', 'interlineGap'] as const) {
     if (!(field in line)) continue;
     const raw = line[field] as unknown;
     const stored =
@@ -1825,28 +1851,6 @@ function sanitizeLineStroke(line: Line): Line {
       next = { ...next, strokeColor: stored };
     }
   }
-  if ('seamColor' in line) {
-    const raw = line.seamColor as unknown;
-    const stored = typeof raw === 'string' ? canonicalSeamColor(raw) : undefined;
-    if (stored === undefined) {
-      const { seamColor: _gone, ...rest } = next;
-      next = rest;
-    } else if (stored !== next.seamColor) {
-      next = { ...next, seamColor: stored };
-    }
-  }
-  // The seam edge filter is an enum, not a number or color: `canonicalSeamEdges`
-  // both validates and collapses at the default, so garbage and 'both' alike
-  // leave the field absent.
-  if ('seamEdges' in line) {
-    const stored = canonicalSeamEdges(line.seamEdges);
-    if (stored === undefined) {
-      const { seamEdges: _gone, ...rest } = next;
-      next = rest;
-    } else if (stored !== next.seamEdges) {
-      next = { ...next, seamEdges: stored };
-    }
-  }
   return next;
 }
 
@@ -1878,8 +1882,8 @@ export function stripLegacySegmentLayers(lines: Record<string, Line>): {
 // whose pairKey is no longer among the line's edges are deliberately KEPT:
 // reconcile's topology-translation step maps them across edge splits/heals,
 // and the binding falls back to the assignment's other anchors meanwhile.
-// File-only hygiene (parse); the localStorage path gets the same strip via
-// the persist migration gate.
+// File-only hygiene (parse) — the localStorage path never sees uncanonical
+// values because every write goes through the store's own writers.
 export function sanitizeRegionAssignments(
   assignments: Record<string, RegionAssignment>,
   lines: Record<string, Line>,
@@ -1918,6 +1922,13 @@ export function sanitizeRegionAssignments(
     }
     let cleaned = anchors.length === a.anchors.length ? a : { ...a, anchors };
     if (cleaned.id !== id) cleaned = { ...cleaned, id };
+    // A malformed arm choice strips to the merged-line winner; a string one
+    // is kept even when it names no current edge — reconcile translates
+    // pairKeys, same policy as the anchors above.
+    if ('winnerPairKey' in cleaned && typeof cleaned.winnerPairKey !== 'string') {
+      const { winnerPairKey: _bad, ...rest } = cleaned;
+      cleaned = rest;
+    }
     if (cleaned !== a) changed = true;
     next[id] = cleaned;
   }
@@ -2447,22 +2458,17 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       // hand-edited garbage value — it is the historical look, so healing to it
       // can never change how an older file paints.
       const endStyle = isLineEndStyle(o.endStyle) ? o.endStyle : LINE_END_STYLE_DEFAULT;
-      // Seam edge filter: 'both' (the full notch) for defs written while it was
-      // still a doc-global, and for a hand-edited garbage value — the legacy
-      // VALUE has already been baked in by bakeDocSeamEdges where one existed.
-      const seamEdges = isSeamEdges(o.seamEdges) ? o.seamEdges : LINE_SEAM_EDGES_DEFAULT;
       const strokeWidth = finiteNum(o.strokeWidth);
       const strokeColor = asString(o.strokeColor);
       if (width === undefined) return undefined;
       if (singletonDotSize === undefined || multiDotSize === undefined) return undefined;
       if (curveRadius === undefined) return undefined;
       if (strokeWidth === undefined || strokeColor === undefined) return undefined;
-      // seamColor / seamWidth / dashLength / dashWidth / interlineGap are
-      // OPTIONAL — absent ⇒ no seam / inherit / derive / plain tangency; a
-      // malformed value is dropped (treated as absent) rather than
-      // invalidating the whole def.
-      const seamColor = asString(o.seamColor);
-      const seamWidth = finiteNum(o.seamWidth);
+      // dashLength / dashWidth / interlineGap / labelGap are OPTIONAL —
+      // absent ⇒ derive / plain tangency / stock clearance; a malformed value
+      // is dropped (treated as absent) rather than invalidating the whole
+      // def. (Since-dropped keys — the retired seam trio among them — are
+      // silently discarded by this rebuild.)
       const dashLength = finiteNum(o.dashLength);
       const dashWidth = finiteNum(o.dashWidth);
       const interlineGap = finiteNum(o.interlineGap);
@@ -2482,9 +2488,6 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
         endStyle,
         strokeWidth,
         strokeColor,
-        seamColor,
-        seamWidth,
-        seamEdges,
         dashLength,
         dashWidth,
         interlineGap,

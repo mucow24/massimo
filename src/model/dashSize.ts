@@ -20,7 +20,7 @@ export const DASH_WIDTH_MAX = 20;
 /**
  * Stored dash length — the RAW field (undefined when unset = derive from the
  * line width at render). Structural parameter so narrowed line shapes pass
- * through (same convention as lineSeamWidthOf).
+ * through (same convention as lineStrokeWidthOf).
  */
 export const lineDashLengthOf = (
   line: { dashLength?: number } | null | undefined,

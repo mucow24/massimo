@@ -1113,59 +1113,46 @@ describe('migrateDoc', () => {
     });
   });
 
-  describe('v22 → v23: retire the doc-level seamEdges', () => {
-    const linesIn = () => ({
-      L1: { service: 'A', name: 'A line', stations: ['s1', 's2'], edges: ['s1|s2'] },
-      L2: { service: 'B', name: 'B line', stations: ['s1'], edges: [] },
-    });
-    const modeOf = (out: AnyDoc, id: string) =>
-      (out.lines![id] as { seamEdges?: string }).seamEdges;
-
-    it('stamps a non-default legacy mode onto every line and drops the doc field', () => {
-      const out = run({ lines: linesIn(), seamEdges: 'curved' }, 22);
-      expect(modeOf(out, 'L1')).toBe('curved');
-      expect(modeOf(out, 'L2')).toBe('curved');
-      expect('seamEdges' in out).toBe(false);
+  describe('v<25: strip the retired seam fields', () => {
+    // A v24 line style def still carrying the seam keys the model has since
+    // retired.
+    const oldDefProps = () => ({
+      ...(DEFAULT_STYLES['default-line'].props as LineStyleProps),
+      seamEdges: 'curved',
+      seamColor: '#abcdef80',
+      seamWidth: 3,
     });
 
-    it("leaves lines unstamped for the legacy default 'both' (never stored)", () => {
-      const out = run({ lines: linesIn(), seamEdges: 'both' }, 22);
-      expect(modeOf(out, 'L1')).toBeUndefined();
-      expect('seamEdges' in out).toBe(false);
-    });
-
-    it('fills line style defs that predate the covered field from the legacy mode', () => {
-      const { seamEdges: _s, ...oldProps } = DEFAULT_STYLES['default-line'].props as LineStyleProps;
+    it('drops seamColor/seamWidth/seamEdges from lines, line style defs, AND the doc root', () => {
       const out = run(
         {
-          lines: {},
+          // A pre-v23 doc that never got the v23 bake carries the retired
+          // DOC-LEVEL field at the root — the strip removes that remnant too.
           seamEdges: 'straight',
-          styles: { 'default-line': { ...DEFAULT_STYLES['default-line'], props: oldProps } },
+          lines: {
+            L1: {
+              service: 'A',
+              name: 'A line',
+              stations: [],
+              edges: [],
+              seamColor: '#abcdef80',
+              seamWidth: 3,
+              seamEdges: 'curved',
+            },
+          },
+          styles: { 'default-line': { ...DEFAULT_STYLES['default-line'], props: oldDefProps() } },
           styleDefaults: FACTORY_STYLE_DEFAULTS,
         },
-        22,
+        24,
       );
-      expect(out.styles!['default-line'].props.seamEdges).toBe('straight');
+      expect('seamEdges' in out, 'doc-level seamEdges survived').toBe(false);
+      for (const key of ['seamColor', 'seamWidth', 'seamEdges']) {
+        expect(key in out.lines!.L1, `${key} survived on the line`).toBe(false);
+        expect(key in out.styles!['default-line'].props, `${key} survived on the def`).toBe(false);
+      }
     });
 
-    it("runs BEFORE the v<10 style hygiene, so old defs heal to the doc value, not 'both'", () => {
-      const { seamEdges: _s, ...oldProps } = DEFAULT_STYLES['default-line'].props as LineStyleProps;
-      const out = run(
-        {
-          lines: {},
-          seamEdges: 'straight',
-          styles: { 'default-line': { ...DEFAULT_STYLES['default-line'], props: oldProps } },
-          styleDefaults: FACTORY_STYLE_DEFAULTS,
-        },
-        9,
-      );
-      expect(out.styles!['default-line'].props.seamEdges).toBe('straight');
-    });
-
-    it('keeps a tagged line matching its style through the bake', () => {
-      // Both halves take the SAME legacy value, so "tagged ⇒ matches" survives
-      // with no mismatch prune (unlike the v20 dot-type rollout).
-      const { seamEdges: _s, ...oldProps } = DEFAULT_STYLES['default-line'].props as LineStyleProps;
+    it('keeps a tagged line tagged — both sides lose the fields, so equality holds', () => {
       const out = run(
         {
           lines: {
@@ -1175,22 +1162,19 @@ describe('migrateDoc', () => {
               stations: [],
               edges: [],
               styleId: 'default-line',
+              seamColor: '#abcdef80',
+              seamWidth: 3,
+              seamEdges: 'curved',
             },
           },
-          seamEdges: 'curved',
-          styles: { 'default-line': { ...DEFAULT_STYLES['default-line'], props: oldProps } },
+          styles: { 'default-line': { ...DEFAULT_STYLES['default-line'], props: oldDefProps() } },
           styleDefaults: FACTORY_STYLE_DEFAULTS,
         },
-        22,
+        24,
       );
-      expect(modeOf(out, 'L1')).toBe('curved');
-      expect(out.styles!['default-line'].props.seamEdges).toBe('curved');
       expect((out.lines!.L1 as { styleId?: string }).styleId).toBe('default-line');
-    });
-
-    it('does not bake at version >= 23', () => {
-      const out = run({ lines: linesIn(), seamEdges: 'curved' }, 23);
-      expect(modeOf(out, 'L1')).toBeUndefined(); // not stamped
+      expect('seamEdges' in out.lines!.L1).toBe(false);
+      expect('seamEdges' in out.styles!['default-line'].props).toBe(false);
     });
   });
 

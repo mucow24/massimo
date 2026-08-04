@@ -400,13 +400,13 @@ the doc field; both load paths bake it onto every line and fill line style defs 
 covered field (`bakeDocCurveRadius`, persist v16). Where interlined lines disagree, the shared band
 curves at the LARGEST member radius.
 
-Nor is there a doc-level **`seamEdges`** — which arm of a branch seam gets painted is per-line
-(`Line.seamEdges`, missing ⇒ `'both'`, the full notch, [lineStroke.ts](src/model/lineStroke.ts)),
-covered by line styles, and edited as the **Inner strokes** four-way both line editors share.
-Legacy saves carried the doc field; both load paths bake it onto every line and fill line style
-defs that predate the covered field (`bakeDocSeamEdges`, persist v23) — a doc old enough to carry
-the field can have no def carrying one, so lines and defs take the same legacy value and no tag
-can drift.
+There is no branch-seam ("inner strokes") setting at all — which casing shows inside a branch
+mouth or a self-crossing is a per-junction REGION choice (see Region layering below), not a line
+style. Legacy saves carried per-line `seamColor`/`seamWidth`/`seamEdges` (and an even older
+doc-level `seamEdges`); both load paths strip all of them from lines AND line style defs together
+(`stripRetiredSeamFields`, persist v25 — both sides lose the fields at once, so tagged wearers
+stay tagged). Unpainted junctions render with the BRANCH ARM in front by default — the old
+"Branch" seam look — so stripped saves come back looking like themselves without repainting.
 
 `DEFAULT_DOC` (in [transforms.ts](src/model/transforms.ts)) is the merge baseline: empty
 collections, `name: 'Untitled map'`, `lineCounter: 0`, `palettes:
@@ -753,22 +753,6 @@ All remaining fields optional and **never stored at default**:
   a dot style's `'line'` fill/stroke. `lineStrokeColorStored` reads the raw value (capture-by-example
   and the editors' mode pickers); `lineCasingColor(line, lineColor)` resolves it for paint, taking
   the EFFECTIVE color so a line-colored casing desaturates with the body.
-- `seamColor?: string` — **interior seam** for a branch/loop: where a line's OWN bands overlap (a
-  self-junction) the casing normally merges away; set this to paint a subtle stroke there so the
-  overlap still reads as two tracks. Lowercase hex, may carry alpha (`#rrggbbaa`), or `'line'` (see
-  `strokeColor`; raw = `lineSeamColorStored`, resolved = `lineSeamColor`). Missing ⇒ no
-  seam; dropped when unset or fully transparent (the "off" state). PRESENTATION, like the casing.
-- `seamWidth?: number` — seam width per side, world units. Stored like `strokeWidth` (drop at 0),
-  but an **unset** value inherits the casing width at render time (`seamRenderWidth`) so a
-  seam-color-only line still shows a seam. Only takes effect alongside a non-transparent `seamColor`.
-- `seamEdges?: SeamEdges` — which ARM of the notch to paint: `'both'` (the full notch),
-  `'straight'` (only the band running through, so the main line's stroke carries on unbroken
-  across the branch mouth) or `'curved'` (only the band that turns away, so the branch carries
-  its own stroke into the junction). Missing ⇒ `'both'`, and the setter drops the field there.
-  PRESENTATION, like the seam whose arms it picks. In `LineStyleProps` it is REQUIRED, like
-  `endStyle` — every def stores a concrete mode, so no reader has an absent case to resolve.
-  That is a uniformity choice, not a capability one: the optional props are all forced back onto
-  a wearer too, by `stampStyle`'s `?? <default>`.
 - `dashLength?` / `dashWidth?: number` — **TfL-tick dimensions for this line's `dash` stops**,
   world units. PRESENTATION (never moves band geometry, resolved at render). Both **unset** ⇒
   derive from the stripe width (`dashLength = width`, `dashWidth = width/2` — the TfL proportions;
@@ -797,10 +781,11 @@ All remaining fields optional and **never stored at default**:
 - `styleId?` — live link to a StyleDef of kind `'line'` (covers the style fields above, not
   identity/topology).
 
-**Region layering ("paint by numbers").** There is no per-segment z-order. Where line bodies
-overlap, the planar arrangement's faces are derived live (`regionIncremental.buildRegionsIncremental`,
-clipper-backed via `clip.ts`, cached in `regionCache.ts`); each face shows one covering line —
-by default the `lineOrder` front-most, overridable per face via `MapDoc.regionAssignments`
+**Region layering ("paint by numbers").** There is no per-segment z-order. Where painted bodies
+overlap — another line's, or the line's OWN at a branch mouth or self-crossing (below) — the
+planar arrangement's faces are derived live (`regionIncremental.buildRegionsIncremental`,
+clipper-backed via `clip.ts`, cached in `regionCache.ts`); each face shows one coverer —
+by default the `lineOrder` front-most LINE, overridable per face via `MapDoc.regionAssignments`
 (Layering mode, `L`: click a face to cycle, right-click backward, landing on the default
 deletes). **Shift-click floods instead of cycling**: it spreads the winner the clicked face
 ALREADY shows out to its neighbours (`lineRegions.regionFloodTargets`), leaving the clicked
@@ -814,7 +799,8 @@ along each stripe seam), and stops at any face that either can't legally show th
 isn't in the cover) or already shows it — the latter is what keeps a flood from running away
 along a line's whole length. All of it writes through the list-taking `assignRegions` so a
 flood costs exactly one undo. An assignment is anchored IN THE LINES' OWN FRAME (`RegionAnchor`:
-corridor + arc position + side offset per covering line) and is carried across every geometry
+corridor + arc position + side offset per cover slice — a self face mints one anchor PER ARM,
+pinned to that arm's own corridor) and is carried across every geometry
 edit by `regionReconcile.ts` — rebinding corridor-identity-first (a face must run the anchors'
 own corridors, so same-cover sibling crossings are not interchangeable; `bindAssignments` is
 shared with rendering, whose per-frame re-binds during a drag see anchors whose arc positions
@@ -828,15 +814,56 @@ the SAME undo entry as the edit. Rendering is SUBTRACTIVE (`buildExclusionHoles`
 repainted (repainting doubles antialiased edges; clip-abutting seams are impossible when the
 winner is one continuous base stroke). Cased lines: the hole runs through the winner's white
 ring (its rails are already painted beneath — uncovering them gives the natural bridges-over
-look) and swallows the losers' fringes near the face. Clipped areas take no pointer events,
-so idle clicks land on the visible winner natively. Zero assignments ⇒ zero cost and
-byte-identical output. `buildExclusionHoles` is the cache-free reference; production renders go
+look) and swallows the losers' fringes near the face. Only lines whose bodies cover the face
+ever lose — an interlined neighbor's rail riding the shared boundary is the neighbor's own
+crossing's business: painted for this winner, that crossing's holes punch the shared rail zone
+and tile with the reveal; unpainted, the winner slides under it and the boundary stroke runs on
+intact. Clipped areas take no pointer events,
+so idle clicks land on the visible winner natively. Holes exist wherever a face's winner
+differs from the raw base paint — assignment-free branch-arm DEFAULTS included — so a doc with
+zero assignments still clips its unpainted mouths; a branch-free map pays nothing.
+`buildExclusionHoles` is the cache-free reference; production renders go
 through `buildExclusionHolesCached`, a per-face cross-frame cache whose entries are reused only
 when every input is provably unchanged (face content key, no dirty geometry within a
 conservative reach, winner/railW signature, shield-neighborhood signature, per-sliver
 absorb-gate outcomes) — its output is pinned byte-equal to the reference by
 `lineRegions.holeCache.test.ts`, and an unverifiable frame chain (an undo served from the
 geometry LRU) flushes it to a full rebuild.
+
+**Self-overlap: a line against itself.** A line's body is ONE unioned polygon, so the pairwise
+stage cannot see the line overlapping itself — arms are what make it visible. The junction
+pairing (`assignLineArms` in interlining.ts: at each station a line's band ends match into
+through-runs, most opposed first then longest combined straight run, continuing past the first
+run only while dead-opposed) doubles as a union-find gluing the line's bands into ARMS, baked
+per stripe as `SegmentBandSpec.arms` (hashed by `hashUnits` — arms move ink). Arm-pair stripe
+intersections join the zone as `a|a` pairParts entries, and the BAND-PAIR RULE adds `a|a|x`
+ones: two bands of the SAME arm sharing no station cannot be corner-adjacent, so their overlap
+is a genuine mid-edge self-crossing (the P-shape). Components hosting self parts subdivide that
+line per SLICE — per-arm bodies at a mouth (each marker riding its smallest incident arm), per
+involved band plus the bare-id rest at a crossing, arm partition winning when one component
+hosts both — and lone slices collapse back to bare line ids, so every face outside a genuine
+self-overlap keeps exactly its historical cover. Slice cover ids (`arm:`/`edge:` spellings,
+`lineRegions.armCoverId`/`edgeCoverId`) are BUILD-LOCAL; the winner domain becomes "a line,
+slices merged" or one slice of it. An unpainted MOUTH defaults to the BRANCH ARM in front
+(`makeDefaultWinner`): at the junction the arms share, the glued through-run lands two band
+ends and a branch exactly one, so the fewest-ends arm is the branch (smallest arm number on a
+tie; all-through crossings, mid-edge crossings — edge-spelled covers — and multi-line faces
+keep the front-most-line default). The boundary strokes then break in one piece wherever a
+reveal crosses them — leaving a mouth merged beside painted reveals is what produced
+half-width strokes, since the fused row arm kept co-painting boundaries its neighbors'
+clipped rails had left to it. MERGED is a real stored choice instead of the resting state: a
+single-line assignment with no `winnerPairKey` (reconcile keeps born-single assignments and
+drops only covers SHRUNK to one line). The cycle offers distinct lines then slices, stepping
+from the on-screen default, deleting on landing back on it; a slice choice persists as
+`RegionAssignment.winnerPairKey` — an EDGE name, always
+copied from the winning slice's own minted anchor, translated across splits/heals with the
+anchors, re-spelled at every remint, and degrading to the merged line whenever it stops
+resolving. Slice winners hole their sibling slices too (same z — either paint order must clip),
+with the winner's footprint filtered to its own slice's stripes; hole keys are cover ids, so
+`RegionExcludeClips` emits slice defs (each merged with its line-level holes — one clipPath per
+element) that stripes reference finest-first (band, arm, line) while markers always take the
+line def. All of it is pinned against the older workaround it replaces: modeling the branch as
+a second line produces byte-identical faces and reveals (`lineRegions.selfOverlap.test.ts`).
 
 **How the faces are actually built.** `lineRegions.ts` holds the pipeline as separable phases —
 `buildLineBodies` → `overlapZoneParts` (pairwise body intersections; any ≥2-cover point is in one
@@ -905,8 +932,8 @@ edit — the stale arrangement is then memoized under a cache key that says it i
 for both: a hash here must cover every input `markerBodyRings` and `stripeBodyPolys` branch on,
 not merely every input that moves geometry.
 
-> **Width is GEOMETRY, stroke/seam are PRESENTATION.** A `width` edit rebuilds band geometry; a
-> `strokeWidth`/`strokeColor`/`seamColor`/`seamWidth`/`seamEdges`/color/style edit is resolved at
+> **Width is GEOMETRY, the stroke is PRESENTATION.** A `width` edit rebuilds band geometry; a
+> `strokeWidth`/`strokeColor`/color/style edit is resolved at
 > render time and never rebuilds. This split is exploited by the band-geometry memo (see
 > Interaction layer).
 
@@ -1185,9 +1212,9 @@ the file itself carries (steps 3, 5, 6b/6c) — repair over guesswork, error ove
 4. `sanitizePalettes` if the file carries `palettes`, else `bakeActivePalettes` if it carries the
    retired `activePalettes` ids — a file with neither keeps the `DEFAULT_DOC` seed. Then
    `bakeDocCurveRadius` (retired doc-level `curveRadius` → per-line `Line.curveRadius` + fill line
-   style defs; idempotent, keyed off field presence) and `bakeDocSeamEdges` (the same route for the
-   retired doc-level `seamEdges`) — **before** the per-line clean and style validation below,
-   which expect the per-line/per-def form.
+   style defs; idempotent, keyed off field presence) and `stripRetiredSeamFields` (the retired
+   seam trio leaves lines, line style defs and the doc key together) — **before** the per-line
+   clean and style validation below, which expect the per-line/per-def form.
 5. Per-line topology normalize — `backfillLineEdges` (derive `edges` from the legacy `stations`
    order for pre-topology saves — unconditional, since a missing `edges` white-screens the
    renderer) → `sanitizeLineTopology` (canonicalize hand-written edge keys to `pairKeyOf` order
@@ -1296,7 +1323,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | `v<20`      | dot **type** became a covered `LineStyleProps` field: `bakeLineStyleDotIds` (backfill `singletonDotStyleId`/`multiDotStyleId` on line style defs, absent ⇒ the `stopDot` ⭐ default), then `pruneLineDotTypeTagMismatches` (untag any line whose split dot type differs from its now-fuller line style — keeping "tagged ⇒ matches"). Ordered **after** the `v<19` library bake; Path A prunes this via `pruneDanglingStyleRefs` instead |
 | `v<21`      | `backfillDotStrokeAlign` (`DotStyle.strokeAlign` became a required field: backfill `'center'`, the historical SVG-native placement, across every dot-style home). Path A covers this via `sanitizeDotStyle` |
 | `v<22`      | `backfillLineStyleEndStyle` (the line **end** became a required covered `LineStyleProps` field: heal absent/garbage `endStyle` on line defs to `'square'`, the historical full marker square, so nothing repaints). No tag prune follows — a line from those saves carries no end of its own, so it already paints what the heal writes. Path A covers this via `sanitizeStyleProps` |
-| `v<23`      | `bakeDocSeamEdges` (retired doc-level `seamEdges` → per-line `Line.seamEdges` + line-style-def fill). Ordered beside the `v<16` radius bake and **before** the `v<10` style hygiene, for the same reason: a def missing `seamEdges` would otherwise heal to `'both'` instead of the doc's legacy mode. No tag prune follows — lines and defs take the same legacy value. Idempotent, keyed off field presence |
+| `v<25`      | `stripRetiredSeamFields` (the branch seam retired outright — self-overlaps are region faces now): `seamColor`/`seamWidth`/`seamEdges` leave every line AND every line style def together, plus any doc-level `seamEdges` remnant, so tagged wearers stay tagged; junctions come back with the branch-arm default in front — the old "Branch" seam look |
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array. **But see the `merge` hook** — this call alone is not "every rehydrate" |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | `v<24`      | `bakeActivePalettes` (retired `activePalettes` ids → the palette COPIES the map carries). Built-in ids resolve through `LEGACY_BUILTIN_IDS`; `custom:` ids resolve against the palette library by slugged name, the only place those definitions ever lived. Ids resolving to neither are dropped, and a map left carrying none is a legitimate outcome. Gated on `palettes` being absent as well, so it can never overwrite real palettes |
@@ -1754,7 +1781,7 @@ painted once, not stacked), and the corridor(s) themselves preview at `ROUTE_PRE
 = 0.5. That route is built by running the REAL `connectStationsOnLine`/`spliceStationIntoEdge`
 and rebuilding bands ([appendRoutePreview.ts](src/geometry/appendRoutePreview.ts)), so it
 carries the actual stop-cell spawn, auto-orientation, fillets and interlining; a splice previews
-BOTH halves, and the seam pass is skipped (its clip is keyed on a real band — see `SeamClips`).
+BOTH halves.
 The predicate is empty for a click that merely walks the pen, including onto an
 **already-connected** neighbour, where the connect transform no-ops — the ring still shows there
 (the cursor does advance), but no route is drawn. A hovered STATION also gets the map-consistent `hover-zone` silhouette —
@@ -1861,7 +1888,7 @@ Six seams cover it, and a seventh rule governs anything new:
   through, in `MapCanvas` and the highlight/placing overlays alike — so one `return null` covers
   ~15 call sites and no future pass can miss it.
 - **Lines** are already consolidated into `MapCanvas`'s single `renderables.map` block (stripes,
-  casings, seams, stop markers), so they gate at that one call site. Line tags, transfers, band
+  casings, stop markers), so they gate at that one call site. Line tags, transfers, band
   warnings, the warning toasts, the layout editor, and `HighlightedLineLayer` gate beside it —
   that last one matters most, because it paints a **full-viewport dim** that would otherwise black
   out the background art with the network gone. `needRegions` folds in `showNetwork` too, which
@@ -2034,14 +2061,14 @@ maxAbsOffset` so the innermost stripe still curves at ≥ R); **marker-fit cap**
    demotes, so nothing is wrongly raised, but one scalar per stripe cannot serve two disagreeing
    stations: where every segment at a station is demoted by some OTHER station they tie again and
    `edges` order decides, so the goal holds only while each edge gets a consistent verdict at both
-   ends. A separate key, never a fractional nudge to `priority` — the casing/seam epsilons below are
+   ends. A separate key, never a fractional nudge to `priority` — the casing epsilon below is
    safe only because base priorities are integers; equal on both keys keeps `edges` order. The dot
    itself (`stationMarkerStyle`) is the **plurality** of the segment styles incident to that
    station, ties by canonical `LineStyle` order (`LINE_STYLES`, so `solid` wins any tie it is in),
    and therefore always a style some incident segment actually has.
 
 A `SegmentBandSpec` carries **parallel arrays** (`lines`, `paths`, `stripeOffsets`,
-`stripeWidths`, `linePriorities`, `seamArms` — index k = same stripe).
+`stripeWidths`, `linePriorities`, `arms` — index k = same stripe).
 `stripeOffsets`/`stripeWidths`/`radius` are the **single source of truth**: every consumer (band
 paint, stripe outline, label/tag placement, hit sampling) **must read them, never re-derive**, and
 must use **`band.radius`** (the bumped/capped effective radius), **not** any line's raw
@@ -2079,45 +2106,38 @@ on the lattice. Reproducing a world offset exactly puts the new cell at `±√2/
 real coordinates the diagonal lattice generates, correct but off-grid, and the only stops the app
 itself places there.
 
-**Casing & seam passes.** [SegmentBand.tsx](src/components/SegmentBand.tsx) emits **three
-renderables per stripe**, interleaved by z-priority: a `'silhouette'` pass (the fat under-stroke
-just behind the body, `priority + CASING_EPS`), the `'body'` pass (the inset colored stripe), and
-a `'seam'` pass (the branch/loop overlap indicator just in front, `priority − SEAM_EPS`). The
-casing widths come from [lineStroke.ts](src/model/lineStroke.ts) (`casingSilhouetteWidth` /
+**Casing passes.** [SegmentBand.tsx](src/components/SegmentBand.tsx) emits **two renderables per
+stripe**, interleaved by z-priority: a `'silhouette'` pass (the fat under-stroke just behind the
+body, `priority + CASING_EPS`) and the `'body'` pass (the inset colored stripe). The casing
+widths come from [lineStroke.ts](src/model/lineStroke.ts) (`casingSilhouetteWidth` /
 `casingInsetBodyWidth` for opaque styles so a line's own overlapping bands merge into ONE outer
-casing; `CasingRails` centered rails for the two transparent "open" styles). The seam is two
-edge-centered strokes CLIPPED to the line's OTHER band corridors (`SeamClips.tsx`), so it only
-shows where a line crosses itself. The notch at a branch is two arms, one per band — the band
-running STRAIGHT through and the band that TURNS away — and each line's own `seamEdges` picks
-which of the two draws. Which of the two a stripe IS gets decided at build time and baked into
-`band.seamArms[k]` (`assignSeamArms`, per stripe because two lines sharing a corridor can have
-different topology); the chosen arm then draws WHOLE. Both halves matter: filtering by PIECE cuts
-a bent edge's straight lead-in off its fillet and leaves a gap where the branch clears the other
-corridor, and classifying per EDGE splits one band's verdict once a fillet is tighter than the
-seam offset (`emitOffsetSegments` degenerates the inside corner to a straight), painting half a
-notch. `SegmentBand` reads the MODE off the live line, like the seam's color and width, so two
-lines sharing a band can differ. All three passes read the same `lineStroke` helpers as the
+casing; `CasingRails` centered rails for the two transparent "open" styles). Which casing shows
+INSIDE a self-overlap — a branch mouth, a loop crossing — is not a paint pass at all: those are
+region faces (see Region layering), and painting one clips the losing slice so the winner's
+already-painted rails show through. Both passes read the same `lineStroke` helpers as the
 highlight overlay so they can't drift.
 
-**Which arm.** `assignSeamArms` reads it off the JUNCTION, never off the band's own shape. At each
-station, the line's band ends there are matched into THROUGH-RUNS, most opposed first, and anything
-left over is a branch. A station with two ends is a plain joint or a corner and always pairs up,
-whichever way its bands bend; a lone end is a terminus and pairs with nothing, which is not the
-same as branching. Matching continues past the first run only while a remaining pair is DEAD
-opposed — a line that crosses itself at a station has two through-runs and no branch, and stopping
-at one would paint half an X — while a second pair that is merely the best of what's left is a
-fork, not a crossing.
+**Which arm.** `assignLineArms` (interlining.ts) reads a line's arm partition off its JUNCTIONS,
+never off a band's own shape: at each station the line's band ends are matched into THROUGH-RUNS,
+most opposed first, and the pairs glue bands into arms (union-find), so anything left over — a
+branch — starts an arm of its own. A station with two ends is a plain joint or a corner and
+always pairs up, whichever way its bands bend; a lone end is a terminus and pairs with nothing,
+which is not the same as branching. Matching continues past the first run only while a remaining
+pair is DEAD opposed — a line that crosses itself at a station has two through-runs, two arms
+crossing — while a second pair that is merely the best of what's left is a fork, not a crossing.
 
-A run scores on how nearly its arms oppose each other, then on their COMBINED straight length: the
-length of the straight corridor they make through the station. That second term is what a real
-fork needs, because two arms can leave a junction along the SAME axis — dead opposite the incoming
-corridor either way — and diverge only further on, so the one that peels off first is the branch
-(the A at Broad Channel). Scoring a pair by its SHORTER arm instead saturates on the arm both
-candidate pairs share, ties them, and hands the verdict to whatever order `line.edges` happens to
-be in. Asking the band's own polyline instead of the junction is the older trap: a through corridor
-whose next station sits off-axis doglegs to reach it, and answers "branch" from 300 units away —
-painting a straight stroke clean across the branch mouth. A band has two ends and one verdict, so
-a band that branches at one end and runs through at the other still reads as a branch at both.
+A run scores on how nearly its arms oppose each other; ties prefer a pair of BEND-FREE arms
+(each straight all the way to its far station) over one containing an arm that curves away, then
+the longest COMBINED straight length — the straight corridor the pair makes through the station.
+The bend-free preference is what keeps a TANGENT branch out of the through-run: its departure is
+dead opposite the far trunk too, and with a long enough lead-in (or a short enough trunk side)
+the run sum alone would weld curve to trunk, making "curve on top" unpaintable at the mouth. The
+run term is still what a real fork needs, because two arms can leave a junction along the SAME
+axis and diverge only further on, so the one that peels off first is the branch (the A at Broad
+Channel). Scoring a pair by its SHORTER arm instead saturates on the arm both candidate pairs
+share, ties them, and hands the verdict to whatever order `line.edges` happens to be in. Asking
+the band's own polyline instead of the junction is the older trap: a through corridor whose next
+station sits off-axis doglegs to reach it, and answers "branch" from 300 units away.
 
 **The hit box.** A stripe's pointer surface is normally the painted path itself, but the styles
 that paint with GAPS (the dasharray ones — `dashed`, `dotted`, `dashed-open`) hit-test only their
@@ -2524,8 +2544,8 @@ of their own, and are omitted below to keep it readable:
    structurally above the other; see the z-order gotcha). Under all map content.
 2. Station `wash` (selection silhouette fill, behind bands).
 3. Interleaved band renderables, ordered by per-stripe z-priority via `buildOrderedRenderables`,
-   which emits **four** kinds: `casing` (at `priority + CASING_EPS`), `body` stripe, `seam`
-   (at `priority − SEAM_EPS`), and `marker` (the `StopMarker` squares).
+   which emits **three** kinds: `casing` (at `priority + CASING_EPS`), `body` stripe, and
+   `marker` (the `StopMarker` squares).
 3b. Region overrides render SUBTRACTIVELY inside pass 3: a line that loses an
     overridden overlap face paints through an exclusion clipPath (RegionExcludeClips,
     holes over the faces it loses — see buildExclusionHoles), so the winner shows
@@ -3126,26 +3146,15 @@ same three additions.
   `ItemPopovers` for the whole `appending-to-line` mode, hosting `LineInspector` (name, service
   code, color palette, style row, default dot type + **two** separate sizes — singleton and
   interchange, line width, **interline gap**, curve radius, **line ends**, stroke width/color,
-  **inner strokes**, **dash length/width**) over a Delete-only `PopoverFooter` (lines have no
-  `locked` field; Delete also exits the mode). **Both line editors — this one and the line style
-  editor — present the stroke as ONE thing**, in the same three rows: the width row writes
-  `strokeWidth` AND `seamWidth`, the color row writes `strokeColor` and — only while the seam is
-  on, since its color is its on/off switch — `seamColor`, and **Inner strokes**
-  (`InnerStrokesPicker.tsx`, shared verbatim) is a four-way (None / Branch / Mainline / Both)
-  whose None is a cleared seam color, not a `seamEdges` value. Picking an arm hands the seam the
-  casing's color and width. The five props stay separate in the doc, so a style still covers them
-  independently; only the editors fuse. Stroke color and inner strokes render only while the
-  stroke width is non-zero — which leaves one state the UI cannot reach: an explicit `seamWidth`
-  with a `seamColor` and `strokeWidth: 0` still PAINTS a seam (`seamRenderWidth` falls back to the
-  casing rail only when the seam's own width is unset), but every control for it is hidden. Only a
-  hand-edited file or a line/def written before the fusion can hold it; raising the stroke width
-  brings the controls back. The inspector's paired writes go through separate setters, so each
-  opens an `isHistoryGrouping`-gated group to stay one undo entry; the style editor's are one
-  `updateStyleProps` patch and need none. Identity (name/service/color) and the Style picker
-  always show; everything from **Line width → Inner strokes** collapses into a style-detail
-  section so the panel stays compact while editing stops, and that open/closed choice is a
-  persisted UI preference (`useLineEditorPrefs`, defaulting to collapsed) rather than document
-  state — it sticks across lines and reloads, mirroring `useStationEditorPrefs`.
+  **dash length/width**) over a Delete-only `PopoverFooter` (lines have no `locked` field;
+  Delete also exits the mode). The stroke color renders only while the stroke width is non-zero
+  — a 0-width casing has no color to pick. (What shows inside a branch mouth is not here at
+  all: that is a per-junction region choice, painted in Layering mode.) Identity
+  (name/service/color) and the Style picker always show; everything from **Line width → Stroke
+  color** collapses into a style-detail section so the panel stays compact while editing stops,
+  and that open/closed choice is a persisted UI preference (`useLineEditorPrefs`, defaulting to
+  collapsed) rather than document state — it sticks across lines and reloads, mirroring
+  `useStationEditorPrefs`.
   Docked top-right like every other canvas panel
   ([usePinnedPopover.ts](src/components/canvas/usePinnedPopover.ts)); the sidebar cedes the
   corner for the whole mode. `reconcileWithDoc` exits the mode if undo removes the edited line.
@@ -3403,7 +3412,7 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   `Object.keys(DEFAULT_DOC)`; keep them in sync (a field in `DEFAULT_DOC` but not `DOC_FIELDS`
   would default but never persist/undo).
 - **Parallel arrays in a band** (`lines`, `paths`, `stripeOffsets`, `stripeWidths`,
-  `linePriorities`, `seamArms`) are index-aligned; `stripeOffsets`/`stripeWidths`/`radius` are the
+  `linePriorities`, `arms`) are index-aligned; `stripeOffsets`/`stripeWidths`/`radius` are the
   single source of truth — read them, never re-derive; sample with `band.radius`, not a line's raw
   `curveRadius`.
 - **One history entry per gesture**; the selection store is reconciled (not restored) after
@@ -3444,11 +3453,11 @@ Each is confirmed in source/tests; file pointers included.
   ([router.ts](src/geometry/router.ts))
 - **`clipPath`/`mask` content is raster-snapped by Blink** — the browser rasterizes clip _resource_
   content on a ~1-unit grid in its local user space (zoom-independent), so a world-coordinate clip
-  edge can snap by up to a whole world unit and erase the clipped line over exposed background. Both
-  `SeamClips` and `RegionExcludeClips` defend by emitting clip content in ×64 local coords under
+  edge can snap by up to a whole world unit and erase the clipped line over exposed background.
+  `RegionExcludeClips` defends by emitting clip content in ×64 local coords under
   `transform="scale(1/64)"` — the shared `CLIP_RASTER_SCALE`/inverse in
   [clipRaster.ts](src/components/canvas/clipRaster.ts) — shrinking the snap to 1/64 unit. Invisible
-  under full tangency; the interline gap (which exposes bare background at hole/seam edges) is what
+  under full tangency; the interline gap (which exposes bare background at hole edges) is what
   surfaced it. Relatedly, the region-exclude outer ring is a **content-sized AABB**
   (`regionClipBounds`, bands + markers, padded), not the old `±500000` constant whose device-space
   magnitude was itself a deep-zoom precision hazard; and `EXCLUSION_INSET` (the hole's retreat

@@ -13,7 +13,6 @@ import {
   setLineMultiDotStyle,
   setLineLabelGap,
   setLineStrokeColor,
-  setLineSeamColor,
   setLineStrokeWidth,
   setLineWidth,
   setStationEditorHeight,
@@ -56,17 +55,6 @@ describe('detach on covered-field edits — lines', () => {
     expect(setLineStrokeWidth(doc, 'l1', 3).lines.l1.styleId).toBeUndefined();
     expect(setLineStrokeColor(doc, 'l1', '#123456')).toBe(doc);
     expect(setLineStrokeColor(doc, 'l1', '#654321').lines.l1.styleId).toBeUndefined();
-  });
-
-  it('setLineSeamColor detaches on change only', () => {
-    const doc = makeDoc({
-      lines: [makeLine({ id: 'l1', seamColor: '#abcdef80', styleId: 'y1' })],
-      styles: [makeStyle('line', 'y1', { props: { seamColor: '#abcdef80' } })],
-    });
-    expect(setLineSeamColor(doc, 'l1', '#abcdef80')).toBe(doc); // no-op keeps the tag
-    expect(setLineSeamColor(doc, 'l1', '#ff000080').lines.l1.styleId).toBeUndefined();
-    // Turning the seam OFF (transparent) is also a change → detaches.
-    expect(setLineSeamColor(doc, 'l1', '#00000000').lines.l1.styleId).toBeUndefined();
   });
 
   it('the split dot SIZE and TYPE setters detach on change only', () => {

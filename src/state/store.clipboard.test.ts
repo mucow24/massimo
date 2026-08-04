@@ -7,8 +7,8 @@ const OFFSET = 15;
 
 beforeEach(() => {
   localStorage.clear();
-  // Not clearAll() — that deliberately preserves the name, styles, palettes and
-  // seam mode, so it would leak them between tests rather than reset the doc.
+  // Not clearAll() — that deliberately preserves the name, styles and palettes,
+  // so it would leak them between tests rather than reset the doc.
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
 });
 

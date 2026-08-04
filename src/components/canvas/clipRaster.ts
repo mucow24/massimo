@@ -12,7 +12,7 @@
  * practical zoom. Verified live: the notch reproduces with plain world
  * coordinates (clip AND mask, nonzero AND evenodd) and vanishes with the
  * scaled form. Applies to every clipPath whose content is world geometry
- * (region exclusion holes, branch-seam corridors).
+ * (region exclusion holes).
  */
 export const CLIP_RASTER_SCALE = 64;
 

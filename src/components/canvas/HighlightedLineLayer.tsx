@@ -159,30 +159,26 @@ export function HighlightedLineLayer({
           const armedPairKey = cursor?.kind === 'edge' ? pairKeyOf(cursor.from, cursor.to) : null;
           const parts: ReactNode[] = [];
           const push = (node: ReactNode) => parts.push(node);
-          // Repaint a line's bands with the SAME three-pass renderer the main
+          // Repaint a line's bands with the SAME two-pass renderer the main
           // layer uses (SegmentBand), rendered `decorative` so the overlay
           // copies carry no DOM identity tags (see SegmentBand). Each pass is
-          // its OWN sweep — every silhouette, then every body, then every seam —
-          // so a line's own overlapping bands (loops/branches) merge into one
-          // outer casing / one seam instead of a later stripe overdrawing an
-          // earlier one. Color, per-segment style, casing, and seam are all
-          // resolved live inside SegmentBand from the `lines` map. Shared by the
-          // edited line and a hovered foreign line, so both "light up" above the
-          // dim identically — bright and cased, not a faint casing-less overlay.
+          // its OWN sweep — every silhouette, then every body — so a line's
+          // own overlapping bands (loops/branches) merge into one outer
+          // casing instead of a later stripe overdrawing an earlier one.
+          // Color, per-segment style, and casing are all resolved live inside
+          // SegmentBand from the `lines` map. Shared by the edited line and a
+          // hovered foreign line, so both "light up" above the dim
+          // identically — bright and cased, not a faint casing-less overlay.
           const stripesOf = (lineId: string) =>
             renderables.filter(
               (r): r is Extract<OrderedRenderable, { kind: 'stripe' }> =>
                 r.kind === 'stripe' && r.band.lines[r.stripeIndex].id === lineId,
             );
-          // `passes` defaults to the full three; the route preview drops the
-          // seam, whose clip-path is keyed on a REAL band (see SeamClips) that
-          // a not-yet-drawn corridor has no entry for.
           const lineRepaintNodes = (
             stripes: { band: SegmentBandSpec; stripeIndex: number }[],
             keyPrefix: string,
-            passes: readonly ('silhouette' | 'body' | 'seam')[] = ['silhouette', 'body', 'seam'],
           ): ReactNode[] =>
-            passes.flatMap((pass) =>
+            (['silhouette', 'body'] as const).flatMap((pass) =>
               stripes.map((r, i) => (
                 <SegmentBand
                   key={`${keyPrefix}:${pass}:${i}`}
@@ -265,7 +261,7 @@ export function HighlightedLineLayer({
                 data-append-route-preview={secondStationId}
                 opacity={ROUTE_PREVIEW_OPACITY}
               >
-                {lineRepaintNodes(routePreview, 'route-preview', ['silhouette', 'body'])}
+                {lineRepaintNodes(routePreview, 'route-preview')}
               </g>,
             );
           // A two-tone halo (black edge / white core, the selection-ring

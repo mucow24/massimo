@@ -20,7 +20,7 @@ import {
   makeTransfer,
   stationWithStop,
 } from '../test/fixtures';
-import type { LineStyleProps, MapDoc, RouteBullet, Station, TextLabel } from './types';
+import type { MapDoc, RouteBullet, Station, TextLabel } from './types';
 
 describe('clampRouteBulletSize', () => {
   it('snaps to the quarter-unit grid and clamps to the floor ROUTE_BULLET_SIZE_MIN', () => {
@@ -1142,68 +1142,6 @@ describe('setLineStrokeColor', () => {
   });
 });
 
-describe('setLineSeamColor', () => {
-  it('stores a seam color, preserving alpha, lowercased', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
-    expect(T.setLineSeamColor(doc, 'L1', '#FF0000').lines.L1.seamColor).toBe('#ff0000');
-    expect(T.setLineSeamColor(doc, 'L1', '#AB12CD80').lines.L1.seamColor).toBe('#ab12cd80');
-  });
-
-  it('drops the field when set fully transparent (the "off" state)', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'L1', seamColor: '#ff000080' })] });
-    const next = T.setLineSeamColor(doc, 'L1', '#00000000');
-    expect('seamColor' in next.lines.L1).toBe(false);
-  });
-
-  it('returns the input doc unchanged when the seam color is already stored', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'L1', seamColor: '#ff000080' })] });
-    expect(T.setLineSeamColor(doc, 'L1', '#ff000080')).toBe(doc);
-  });
-
-  it('returns the input doc unchanged when turning off an already-off (unset) line', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
-    expect(T.setLineSeamColor(doc, 'L1', '#12345600')).toBe(doc);
-  });
-
-  it('detaches the line from its style preset on change', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'L1', styleId: 'some-style' })] });
-    const next = T.setLineSeamColor(doc, 'L1', '#ff000080');
-    expect('styleId' in next.lines.L1).toBe(false);
-  });
-
-  it('returns the input doc for an unknown line id', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
-    expect(T.setLineSeamColor(doc, 'ghost', '#ff0000')).toBe(doc);
-  });
-});
-
-describe('setLineSeamWidth', () => {
-  it('stores a seam width on the quarter-unit grid, dropping the field at 0 (unset ⇒ inherit)', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
-    expect(T.setLineSeamWidth(doc, 'L1', 3).lines.L1.seamWidth).toBe(3);
-    expect(T.setLineSeamWidth(doc, 'L1', 2.2).lines.L1.seamWidth).toBe(2.25);
-    const off = T.setLineSeamWidth(
-      makeDoc({ lines: [makeLine({ id: 'L1', seamWidth: 3 })] }),
-      'L1',
-      0,
-    );
-    expect('seamWidth' in off.lines.L1).toBe(false);
-  });
-
-  it('returns the input doc unchanged on a no-op / non-finite input', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'L1', seamWidth: 3 })] });
-    expect(T.setLineSeamWidth(doc, 'L1', 3)).toBe(doc);
-    expect(T.setLineSeamWidth(doc, 'L1', NaN)).toBe(doc);
-    const unset = makeDoc({ lines: [makeLine({ id: 'L1' })] });
-    expect(T.setLineSeamWidth(unset, 'L1', 0)).toBe(unset); // 0 on an unset line = no-op
-  });
-
-  it('detaches the line from its style preset on change', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'L1', styleId: 'some-style' })] });
-    expect('styleId' in T.setLineSeamWidth(doc, 'L1', 3).lines.L1).toBe(false);
-  });
-});
-
 describe('setLineDashLength / setLineDashWidth', () => {
   it('stores dash dims on the quarter-unit grid, dropping the field at 0 (unset ⇒ derive from width)', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
@@ -1857,40 +1795,6 @@ describe('the map’s palettes', () => {
     expect(T.movePaletteInMap(doc, 'MTA', -1)).toBe(doc);
     expect(T.movePaletteInMap(doc, 'frrf', 1)).toBe(doc);
     expect(T.movePaletteInMap(doc, 'nope', 1)).toBe(doc);
-  });
-});
-
-describe('setLineSeamEdges (branch inner-edge mode)', () => {
-  const doc = () => makeDoc({ lines: [makeLine({ id: 'L1', styleId: 'sty' })] });
-
-  it('the factory line style paints both edge kinds, and the doc carries no mode of its own', () => {
-    expect((T.DEFAULT_STYLES['default-line'].props as LineStyleProps).seamEdges).toBe('both');
-    expect('seamEdges' in T.DEFAULT_DOC).toBe(false);
-  });
-
-  it("stores a non-default mode and drops the field at 'both'", () => {
-    const curved = T.setLineSeamEdges(doc(), 'L1', 'curved');
-    expect(curved.lines.L1.seamEdges).toBe('curved');
-    const back = T.setLineSeamEdges(curved, 'L1', 'both');
-    expect('seamEdges' in back.lines.L1).toBe(false);
-  });
-
-  it('detaches from the style preset — the seam edge mode is a covered field', () => {
-    expect(T.setLineSeamEdges(doc(), 'L1', 'straight').lines.L1.styleId).toBeUndefined();
-  });
-
-  it('is a reference no-op when the stored value would not change', () => {
-    const d = doc();
-    expect(T.setLineSeamEdges(d, 'L1', 'both')).toBe(d);
-    const curved = T.setLineSeamEdges(d, 'L1', 'curved');
-    expect(T.setLineSeamEdges(curved, 'L1', 'curved')).toBe(curved);
-    // …so a no-op re-write cannot silently strip the tag either.
-    expect(T.setLineSeamEdges(d, 'L1', 'both').lines.L1.styleId).toBe('sty');
-  });
-
-  it('no-ops on an unknown line', () => {
-    const d = doc();
-    expect(T.setLineSeamEdges(d, 'nope' as never, 'curved')).toBe(d);
   });
 });
 

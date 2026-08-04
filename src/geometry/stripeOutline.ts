@@ -10,7 +10,7 @@ import { leftNormal, norm, sub, type Vec2 } from './vec';
  *
  * Reversal rule: each arc keeps its radius but flips its sweep flag, and
  * `from`/`to` swap; line segments just swap `from`/`to`. Shared by the
- * layering-mode hovered outline and the branch-seam clip corridor.
+ * layering-mode hovered outline.
  */
 export function closedPerimeterPath(
   segsA: OffsetPathSegment[],

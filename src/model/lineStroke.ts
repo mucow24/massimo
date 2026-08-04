@@ -16,7 +16,6 @@
 // without a geometry rebuild.
 
 import { roundClamp } from '../util/grid';
-import type { SeamEdges } from './types';
 
 // 0 = no casing; the field is dropped at the default so it is never stored.
 export const LINE_STROKE_WIDTH_DEFAULT = 0;
@@ -34,14 +33,14 @@ export const LINE_STROKE_STEP = 0.25;
 export const LINE_STROKE_COLOR_DEFAULT = '#ffffff';
 
 /**
- * Sentinel stored in place of a hex in `Line.strokeColor` / `Line.seamColor`:
- * "paint this in the LINE'S OWN color", resolved at render time. Same word and
- * same meaning as the dot styles' 'line' fill/stroke (see DotFill /
- * DotStrokeColor in types.ts), so the two color systems read alike.
+ * Sentinel stored in place of a hex in `Line.strokeColor`: "paint this in the
+ * LINE'S OWN color", resolved at render time. Same word and same meaning as
+ * the dot styles' 'line' fill/stroke (see DotFill / DotStrokeColor in
+ * types.ts), so the two color systems read alike.
  *
- * It survives both canonicalizers untouched — lowercase already, and neither
- * the white-casing default nor the transparent-seam "off" test matches it — so
- * it stores, round-trips, and stamps like any other color value.
+ * It survives the canonicalizer untouched — lowercase already, and the
+ * white-casing default doesn't match it — so it stores, round-trips, and
+ * stamps like any other color value.
  */
 export const LINE_OWN_COLOR = 'line';
 
@@ -89,18 +88,7 @@ export const lineStrokeColorStored = (line: { strokeColor?: string } | null | un
   line?.strokeColor ?? LINE_STROKE_COLOR_DEFAULT;
 
 /**
- * The STORED seam color. Unlike the casing there is NO default color: absent ⇒
- * NO seam (the overlaps stay merged), so this returns undefined when unset —
- * which is also how callers test "does this line have a seam at all" (the
- * sentinel counts as one). Raw like {@link lineStrokeColorStored}; renderers
- * want {@link lineSeamColor}.
- */
-export const lineSeamColorStored = (
-  line: { seamColor?: string } | null | undefined,
-): string | undefined => line?.seamColor;
-
-/**
- * Resolve a stored casing/seam color to a paintable one: the
+ * Resolve a stored casing color to a paintable one: the
  * {@link LINE_OWN_COLOR} sentinel becomes `lineColor`, anything else passes
  * through. `lineColor` is the EFFECTIVE body color, so a line-colored casing
  * tracks the selection desaturation with the body instead of popping at full
@@ -116,85 +104,6 @@ export const lineCasingColor = (
   line: { strokeColor?: string } | null | undefined,
   lineColor: string | undefined,
 ): string => resolveOwnColor(lineStrokeColorStored(line), lineColor);
-
-/** Paintable seam color, or undefined when the line has no seam. */
-export const lineSeamColor = (
-  line: { seamColor?: string } | null | undefined,
-  lineColor: string | undefined,
-): string | undefined => {
-  const stored = lineSeamColorStored(line);
-  return stored === undefined ? undefined : resolveOwnColor(stored, lineColor);
-};
-
-/**
- * Canonical STORED form of a seam color: lowercased, and collapsed to
- * `undefined` when fully transparent (alpha `00`) — the "off" state — so a
- * disabled seam is never stored. Mirrors {@link canonicalStrokeColor} (the
- * picker already normalizes shorthand/opaque via normalizeHex; hand-edited
- * files may carry uppercase). Shared by `setLineSeamColor` and the file cleaner.
- */
-export const canonicalSeamColor = (c: string): string | undefined => {
-  const norm = c.toLowerCase();
-  return /^#[0-9a-f]{6}00$/.test(norm) ? undefined : norm;
-};
-
-/**
- * Stored seam width, per side, in world units — the RAW field (undefined when
- * unset). Stored/canonicalized exactly like the casing width (drop at 0 via
- * {@link canonicalStrokeWidth}), so an UNSET seam width is `undefined`, not 0.
- * The render distinguishes the two (see {@link seamRenderWidth}).
- */
-export const lineSeamWidthOf = (
-  line: { seamWidth?: number } | null | undefined,
-): number | undefined => line?.seamWidth;
-
-// Which ARM of a branch notch the seam draws: 'both', the STRAIGHT arm (the
-// band running through, whose casing then carries on unbroken across the
-// branch mouth) or the CURVED one (the band that turns away, whose own casing
-// curls into the junction). The full notch first. Backs `isSeamEdges`, so this
-// is the VALIDATION list; both line editors iterate a parallel one of their own
-// (INNER_STROKES_MODES in InnerStrokesPicker.tsx) that reorders these and adds
-// an editor-only "off" segment — a fourth mode has to be added in both places.
-export const SEAM_EDGES_MODES = ['both', 'straight', 'curved'] as const;
-
-// 'both' — the full notch. Dropped at this value, so it is never stored.
-export const LINE_SEAM_EDGES_DEFAULT: SeamEdges = 'both';
-
-/** Type guard over the three modes — validates hand-edited file data. */
-export const isSeamEdges = (v: unknown): v is SeamEdges =>
-  (SEAM_EDGES_MODES as readonly string[]).includes(v as string);
-
-/**
- * The canonical STORED form of a seam edge mode: collapsed to `undefined` at
- * 'both' (never stored), and for anything that isn't one of the three modes —
- * garbage heals to the default, which is also the historical look. Shared by
- * `setLineSeamEdges` and the `sanitizeLineStroke` file cleaner.
- */
-export const canonicalSeamEdges = (v: unknown): SeamEdges | undefined =>
-  isSeamEdges(v) && v !== LINE_SEAM_EDGES_DEFAULT ? v : undefined;
-
-/**
- * Effective seam edge mode of a line. Missing field ⇒ 'both', the full notch —
- * saves from before the field existed need no migration (same idiom as
- * `lineStrokeWidthOf`). Structural parameter so narrowed line shapes and style
- * props both pass through.
- */
-export const lineSeamEdgesOf = (line: { seamEdges?: SeamEdges } | null | undefined): SeamEdges =>
-  line?.seamEdges ?? LINE_SEAM_EDGES_DEFAULT;
-
-/**
- * The rendered seam stroke width for a stripe of `bandWidth`. The seam sits
- * CENTERED on the body edge (like the casing), so an UNSET seam width inherits
- * the casing rail width `railW` — a seam-color-only line still shows a seam
- * matched to its casing — while an explicit width overrides it. Clamped to the
- * band width so the two edge seams never cross at the centerline. Returns 0
- * (no seam) only when both the stored width is unset AND there is no casing.
- */
-export const seamRenderWidth = (
-  seamWidth: number | undefined,
-  railW: number,
-  bandWidth: number,
-): number => Math.min(seamWidth ?? railW, bandWidth);
 
 /**
  * The rendered rail width for a stripe of the given body width: each rail

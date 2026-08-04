@@ -237,6 +237,7 @@ describe('spec reuse — field-drift guard', () => {
     const d = twoCorridors();
     const band = buildBandGeometry(d.stations, d.lines)[0];
     const expected = [
+      'arms',
       'bandKey',
       'centerline',
       'fromId',
@@ -245,7 +246,6 @@ describe('spec reuse — field-drift guard', () => {
       'pairKey',
       'paths',
       'radius',
-      'seamArms',
       'stripeOffsets',
       'stripeWidths',
       'toId',

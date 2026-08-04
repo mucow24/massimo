@@ -4,18 +4,12 @@ import {
   casingInsetBodyWidth,
   casingSilhouetteWidth,
   lineCasingColor,
-  lineSeamColor,
-  lineSeamEdgesOf,
-  lineSeamWidthOf,
   lineStrokeRailWidth,
   lineStrokeWidthOf,
-  seamRenderWidth,
 } from '../model/lineStroke';
 import { CasingRails } from './CasingRails';
-import { seamClipId } from './canvas/SeamClips';
 import type { Line, LineId, LineStyle } from '../model/types';
 import { leftNormal, midpoint, norm, sub } from '../geometry/vec';
-import { offsetFilletPath } from '../geometry/router';
 import { lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
 
 // A style's interior is "opaque" when its body fully covers its own footprint
@@ -34,19 +28,18 @@ interface Props {
   // emitted as one renderable per stripe so each can paint at its own line's
   // z-priority — see buildOrderedRenderables.
   stripeIndex: number;
-  // Which pass to paint (mirrors StopGlyph's `pass`). A band emits three
+  // Which pass to paint (mirrors StopGlyph's `pass`). A band emits two
   // renderables per stripe: the 'casing' silhouette just behind its body
-  // (priority + CASING_EPS), the 'stripe' body, and the branch 'seam' just in
-  // front (priority − SEAM_EPS). The 'silhouette' pass paints the fat
-  // under-stroke that becomes the casing; the 'body' pass paints the (inset)
-  // colored body; the 'seam' pass paints the interior overlap indicator.
+  // (priority + CASING_EPS) and the 'stripe' body. The 'silhouette' pass
+  // paints the fat under-stroke that becomes the casing; the 'body' pass
+  // paints the (inset) colored body.
   //
   // 'hit' paints NO ink: just this stripe's pointer surface, so a caller can
   // mount it at a z of its own (see the Edit Stops lift in MapCanvas). It is a
   // `data-band-hitbox` like the gappy-style one below, additionally tagged
   // `data-band-lift` because it is a SECOND surface for a stripe that already
   // has one.
-  pass: 'silhouette' | 'body' | 'seam' | 'hit';
+  pass: 'silhouette' | 'body' | 'hit';
   // When `interactive` is true, the stripe captures pointer events on its
   // stroke and forwards them via the per-line callbacks. Used to wire up
   // hover-to-preview and click-to-insert in add-line-tag mode. (Body pass only;
@@ -158,59 +151,6 @@ export const SegmentBand = memo(function SegmentBand({
         pointerEvents="stroke"
         {...pointer}
       />
-    );
-  }
-
-  // Seam pass: the interior branch/loop overlap indicator — two strokes CENTERED
-  // on the body edges (exactly where the casing sits, so the seam aligns with
-  // it), in the seam color, CLIPPED to the line's OTHER band corridors (see
-  // SeamClips) so it shows only where this band overlaps another of the line's
-  // own bands and vanishes on a plain segment and the outer boundary. Width is
-  // independent (seamWidth), inheriting the casing width when unset.
-  if (pass === 'seam') {
-    const seamColor = lineSeamColor(live, color);
-    const seamW = seamRenderWidth(lineSeamWidthOf(live), railW, fullWidth);
-    if (!seamColor || seamW <= 0) return null;
-    const off = spec.stripeOffsets[stripeIndex];
-    const edge = fullWidth / 2;
-    // WHICH arm of a self-overlap carries the seam, per THIS line's own
-    // setting — so two lines sharing a band can differ. Resolved live off
-    // `live`, like the seam's color and width.
-    //
-    // The notch at a branch is two arms, one per band: the band that runs
-    // STRAIGHT through (its casing carries on across the branch mouth) and the
-    // band that TURNS away (its own casing curls into the junction). Which one
-    // this stripe is was decided at build time off the JUNCTION it meets, not
-    // off its own shape (`spec.seamArms` — see assignSeamArms); the chosen arm
-    // then draws WHOLE. Filtering by piece instead would cut a bent edge's
-    // straight lead-in off its fillet and leave a gap where the branch clears
-    // the other corridor; classifying edge-by-edge would split one band's
-    // verdict once a fillet is tighter than the seam offset, and paint half a
-    // notch.
-    const seamEdges = lineSeamEdgesOf(live);
-    if (seamEdges !== 'both' && spec.seamArms[stripeIndex] !== seamEdges) return null;
-    return (
-      <g clipPath={`url(#${seamClipId(lineId, spec.bandKey)})`} pointerEvents="none">
-        {[-1, 1].map((side) => {
-          // An empty chain (a degenerate centerline) would emit `d=""` — inert
-          // on-canvas, but a needless snag for the PDF exporter.
-          const d = offsetFilletPath(spec.centerline, spec.radius, off + side * edge);
-          if (!d) return null;
-          return (
-            <path
-              key={side}
-              d={d}
-              data-band-seam={decorative ? undefined : ''}
-              data-line-id={decorative ? undefined : lineId}
-              fill="none"
-              stroke={seamColor}
-              strokeWidth={seamW}
-              strokeLinecap="butt"
-              strokeLinejoin="round"
-            />
-          );
-        })}
-      </g>
     );
   }
 

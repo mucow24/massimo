@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { act, cleanup, render, screen, fireEvent, within } from '@testing-library/react';
+import { act, cleanup, render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StyleEditor } from './StyleEditor';
 import { useDoc } from '../state/store';
@@ -28,36 +28,17 @@ beforeEach(() => {
 });
 
 describe('<StyleEditor> — line', () => {
-  // The stroke reads as ONE thing here, exactly as it does in the line
-  // inspector: a width and a color the casing and the inner strokes share, with
-  // no seam rows of their own.
-  it('presents one stroke — width, color, inner strokes — and no seam rows', () => {
-    render(
-      <StyleEditor
-        def={makeStyle('line', 'y1', { props: { strokeWidth: 3, seamColor: '#abcdef80' } })}
-      />,
-    );
-    expect(screen.getByText('Stroke color')).toBeTruthy();
-    expect(screen.getByRole('slider', { name: 'Stroke width' })).toBeTruthy();
-    expect(screen.getByRole('radiogroup', { name: 'Inner strokes' })).toBeTruthy();
-    expect(screen.queryByRole('slider', { name: 'Seam width' })).toBeNull();
-    expect(screen.queryByText('Seam color')).toBeNull();
-  });
-
-  it('hides the stroke color and inner strokes until the def has a stroke', () => {
+  it('hides the stroke color until the def has a stroke', () => {
     render(<StyleEditor def={makeStyle('line', 'y1', { props: { strokeWidth: 0 } })} />);
     expect(screen.getByRole('slider', { name: 'Stroke width' })).toBeTruthy();
     expect(screen.queryByText('Stroke color')).toBeNull();
-    expect(screen.queryByRole('radiogroup', { name: 'Inner strokes' })).toBeNull();
   });
 
-  // Several props in ONE patch is one store write — which is why these rows need
-  // no history group, unlike the line inspector's separate setters. Pinned, not
-  // assumed: it is the whole reason the group is absent.
-  it('the stroke width writes the seam’s width too, in a single undo entry', () => {
-    const def = makeStyle('line', 'y1', {
-      props: { strokeWidth: 2, seamWidth: 2, seamColor: '#abcdef80' },
-    });
+  // A patch is one store write — which is why this row needs no history group,
+  // unlike the line inspector's separate setters. Pinned, not assumed: it is
+  // the whole reason the group is absent.
+  it('the stroke width writes strokeWidth only, in a single undo entry', () => {
+    const def = makeStyle('line', 'y1', { props: { strokeWidth: 2 } });
     useDoc.setState({ styles: { ...useDoc.getState().styles, y1: def } });
     useDoc.temporal.getState().clear();
     render(<StyleEditor def={def} />);
@@ -67,12 +48,9 @@ describe('<StyleEditor> — line', () => {
     });
     const props = () => useDoc.getState().styles.y1.props as LineStyleProps;
     expect(props().strokeWidth).toBe(5);
-    expect(props().seamWidth).toBe(5);
     expect(historyDepth()).toBe(before + 1);
-    // Both halves revert together — no undo stops between them.
     useDoc.temporal.getState().undo();
     expect(props().strokeWidth).toBe(2);
-    expect(props().seamWidth).toBe(2);
   });
 
   it('renders the line-ends group at the def value and writes a pick through', async () => {
@@ -83,77 +61,6 @@ describe('<StyleEditor> — line', () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole('radio', { name: 'Round' }));
     expect((useDoc.getState().styles.y1.props as LineStyleProps).endStyle).toBe('round');
-  });
-
-  it('renders the inner-strokes group at the def value and writes a pick through', async () => {
-    const def = makeStyle('line', 'y1', {
-      props: { strokeWidth: 3, seamColor: '#abcdef80', seamEdges: 'straight' },
-    });
-    useDoc.setState({ styles: { ...useDoc.getState().styles, y1: def } });
-    render(<StyleEditor def={def} />);
-    const group = screen.getByRole('radiogroup', { name: 'Inner strokes' });
-    expect(within(group).getByRole('radio', { name: 'Mainline' })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
-    const user = userEvent.setup();
-    await user.click(within(group).getByRole('radio', { name: 'Branch' }));
-    expect((useDoc.getState().styles.y1.props as LineStyleProps).seamEdges).toBe('curved');
-  });
-
-  // A def has no 'none' either — the seam is off when it carries no seamColor.
-  it('reads None off a def with no seam, whatever arm it stores', () => {
-    render(
-      <StyleEditor
-        def={makeStyle('line', 'y1', { props: { strokeWidth: 3, seamEdges: 'curved' } })}
-      />,
-    );
-    const group = screen.getByRole('radiogroup', { name: 'Inner strokes' });
-    expect(within(group).getByRole('radio', { name: 'None' })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
-  });
-
-  it('picking an arm hands the seam the stroke’s own color and width, in one entry', async () => {
-    const def = makeStyle('line', 'y1', { props: { strokeWidth: 3, strokeColor: '#123456' } });
-    useDoc.setState({ styles: { ...useDoc.getState().styles, y1: def } });
-    useDoc.temporal.getState().clear();
-    render(<StyleEditor def={def} />);
-    const user = userEvent.setup();
-    const before = historyDepth();
-    await user.click(
-      within(screen.getByRole('radiogroup', { name: 'Inner strokes' })).getByRole('radio', {
-        name: 'Branch',
-      }),
-    );
-    const props = () => useDoc.getState().styles.y1.props as LineStyleProps;
-    expect(props().seamColor).toBe('#123456');
-    expect(props().seamWidth).toBe(3);
-    expect(props().seamEdges).toBe('curved');
-    // Three props, one patch, one entry — and one undo takes all three back.
-    expect(historyDepth()).toBe(before + 1);
-    useDoc.temporal.getState().undo();
-    expect(props().seamColor).toBeUndefined();
-    expect(props().seamWidth).toBeUndefined();
-    expect(props().seamEdges).toBe('both');
-  });
-
-  it('None switches the seam off, keeping the arm for the way back', async () => {
-    const def = makeStyle('line', 'y1', {
-      props: { strokeWidth: 3, seamColor: '#123456', seamWidth: 3, seamEdges: 'curved' },
-    });
-    useDoc.setState({ styles: { ...useDoc.getState().styles, y1: def } });
-    render(<StyleEditor def={def} />);
-    const user = userEvent.setup();
-    await user.click(
-      within(screen.getByRole('radiogroup', { name: 'Inner strokes' })).getByRole('radio', {
-        name: 'None',
-      }),
-    );
-    const props = useDoc.getState().styles.y1.props as LineStyleProps;
-    expect(props.seamColor).toBeUndefined();
-    expect(props.seamEdges).toBe('curved');
   });
 
   it('renders the interline gap row at the def value, 0 when the def has none', () => {
@@ -266,40 +173,6 @@ describe('<StyleEditor> — line', () => {
 
     fireEvent.click(screen.getByLabelText('Stroke color custom'));
     expect(propsOf().strokeColor).toBe('#ffffff');
-  });
-
-  it('the casing mode carries the seam’s color with it while inner strokes are on', () => {
-    useDoc.setState({
-      ...useDoc.getState(),
-      styles: {
-        ...useDoc.getState().styles,
-        'ln-1': makeStyle('line', 'ln-1', {
-          props: { strokeWidth: 3, strokeColor: '#ff0000', seamColor: '#ff0000' },
-        }),
-      },
-    });
-    const propsOf = () => useDoc.getState().styles['ln-1'].props as LineStyleProps;
-    render(<StyleEditor def={useDoc.getState().styles['ln-1']} />);
-    fireEvent.click(screen.getByLabelText('Stroke color line'));
-    expect(propsOf().strokeColor).toBe('line');
-    expect(propsOf().seamColor).toBe('line');
-  });
-
-  it('leaves the seam off when the casing mode changes with inner strokes off', () => {
-    useDoc.setState({
-      ...useDoc.getState(),
-      styles: {
-        ...useDoc.getState().styles,
-        'ln-1': makeStyle('line', 'ln-1', {
-          props: { strokeWidth: 3, strokeColor: '#ff0000' /* no seam */ },
-        }),
-      },
-    });
-    const propsOf = () => useDoc.getState().styles['ln-1'].props as LineStyleProps;
-    render(<StyleEditor def={useDoc.getState().styles['ln-1']} />);
-    fireEvent.click(screen.getByLabelText('Stroke color line'));
-    expect(propsOf().strokeColor).toBe('line');
-    expect(propsOf().seamColor).toBeUndefined();
   });
 
   it('greys out Dash length/width unless a split default is a dash dot', () => {
