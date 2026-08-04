@@ -6,6 +6,7 @@ import {
   RotateCounterClockwiseIcon,
 } from '@radix-ui/react-icons';
 import { useDoc, useSelection } from '../../state/store';
+import { useRenderDoc } from '../../state/renderDoc';
 import { useStationEditorPrefs } from '../../state/stationEditorPrefs';
 import { dispatchMirrored } from '../../state/mirrorDispatch';
 import type { StationId } from '../../model/types';
@@ -44,8 +45,12 @@ import {
 } from '../../model/transforms';
 
 export function StationInspector({ id }: { id: StationId }) {
-  const station = useDoc((s) => s.stations[id]);
-  const stationsAll = useDoc((s) => s.stations);
+  // Render source, not live doc: the x/y fields display the coordinates the
+  // canvas is painting, and during a pipelined drag the live doc runs a frame
+  // ahead — the number must never lead the picture. Write callbacks still
+  // compose against useDoc.getState(), the state the write applies to.
+  const station = useRenderDoc((s) => s.stations[id]);
+  const stationsAll = useRenderDoc((s) => s.stations);
   const linesAll = useDoc((s) => s.lines);
   const renameStation = useDoc((s) => s.renameStation);
   const addStationAnchor = useDoc((s) => s.addStationAnchor);

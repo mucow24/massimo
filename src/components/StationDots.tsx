@@ -1,5 +1,6 @@
 import { Line, Station } from '../model/types';
-import { useDoc, useSelection } from '../state/store';
+import { useSelection } from '../state/store';
+import { useRenderDoc } from '../state/renderDoc';
 import { useThemeColors } from '../state/theme';
 import { useViewportStore } from '../state/viewportStore';
 import { STOP_DOT_RADIUS, stationFrameDeg, stopCenterAt } from '../geometry/orientation';
@@ -52,7 +53,7 @@ export function StationDots({
   // Stop cells on a circle-bound station resolve through the RING frame, so the
   // dot lands on its own arc (see `stationFrameRad`). Reference-stable, so this
   // subscription only re-renders a station when the circles themselves change.
-  const lineCircles = useDoc((s) => s.lineCircles);
+  const lineCircles = useRenderDoc((s) => s.lineCircles);
   const { handlers, cursor, hitless } = useStationInteraction(station, onStartDrag, lines);
   const themeColors = useThemeColors();
   const showWaypoints = useViewportStore((s) => s.showWaypoints);

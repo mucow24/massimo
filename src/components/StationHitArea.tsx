@@ -6,7 +6,7 @@ import { stationFrameDeg } from '../geometry/orientation';
 import { stationCircle } from '../geometry/lineCircle';
 import { useStopMetrics } from './useStopMetrics';
 import { effectiveStationLabelStyle } from '../model/transforms';
-import { useDoc } from '../state/store';
+import { useRenderDoc } from '../state/renderDoc';
 import { useViewportStore } from '../state/viewportStore';
 import { useStationInteraction } from './useStationInteraction';
 
@@ -42,7 +42,7 @@ export function StationHitArea({
 }) {
   const { handlers, cursor, hitless } = useStationInteraction(station, onStartDrag, lines);
   const metrics = useStopMetrics();
-  const lineCircles = useDoc((s) => s.lineCircles);
+  const lineCircles = useRenderDoc((s) => s.lineCircles);
   const showWaypoints = useViewportStore((s) => s.showWaypoints);
 
   // Same frame the dots and the painted name resolve through, or the grab

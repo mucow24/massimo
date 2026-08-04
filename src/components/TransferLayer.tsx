@@ -3,6 +3,7 @@ import { resolveDayNight, resolveTransferStyle, type TransferStyle } from '../mo
 import { transferEndWorld } from '../geometry/transferEnds';
 import { useThemeColors } from '../state/theme';
 import { useDoc } from '../state/store';
+import { useRenderDoc } from '../state/renderDoc';
 import { selectionOutlineTones } from './selectionStyle';
 
 // World-unit gap between a selected transfer's visible edge and its outline,
@@ -111,7 +112,10 @@ export function TransferLayer({
   // for the active canvas theme, same source as the dots + polygons.
   const darkMode = useDoc((s) => s.darkMode);
   // Stop/anchor cells on a ring-bound station resolve through the ring frame.
-  const lineCircles = useDoc((s) => s.lineCircles);
+  // Render source, not live doc: the stations/anchors props come from the
+  // render source via MapCanvas, and a ring mid-capture must resolve against
+  // the same frame or a transfer end tears off its station.
+  const lineCircles = useRenderDoc((s) => s.lineCircles);
   const list = Object.values(transfers);
   if (list.length === 0) return null;
 
@@ -220,7 +224,7 @@ export function TransferSelectionOutline({
 }: Omit<Props, 'onSelect'>) {
   // Two-tone ring flips with the theme (WBW on light, BWB on dark).
   const themeColors = useThemeColors();
-  const lineCircles = useDoc((s) => s.lineCircles);
+  const lineCircles = useRenderDoc((s) => s.lineCircles);
   const t = selectedId ? transfers[selectedId] : undefined;
   if (!t) return null;
   const a = transferEndWorld(t.a, stations, transferAnchors, lineCircles);
