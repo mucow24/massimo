@@ -282,6 +282,78 @@ describe('snap guides ride the frame', () => {
   });
 });
 
+describe('input atomicity', () => {
+  it('a multi-write input lands as ONE frame, snapshotted at end of handler', async () => {
+    // A single pointermove often writes more than once (moveStation then
+    // translateSiblings; bindStationToCircle then the slide) and publishes
+    // its guides AFTER the writes. A frame sent synchronously from inside
+    // the FIRST write would paint a half-applied input with the previous
+    // input's guides — an arrangement the user never made.
+    const g = await armMidGesture(10);
+    fake.deliver(resultFor(fake.frames()[0], holesOf('l1', 100))); // pipeline idle
+    const before = fake.frames().length;
+    const guides: SnapGuide[] = [{ from: { x: 2, y: 0 }, to: { x: 2, y: 100 } }];
+
+    // One input: two writes, then the guide publish.
+    useDoc.getState().moveStation('s1', 30, 0);
+    useDoc.getState().moveStation('s1', 40, 0);
+    routeSnapGuides('station', guides);
+    // Nothing may cross mid-handler.
+    expect(fake.frames().length).toBe(before);
+
+    await flushMicrotasks();
+    expect(fake.frames().length).toBe(before + 1);
+    const f = fake.frames()[before];
+    // The frame carries the input's FINAL state, not the first write's.
+    expect(f.sync?.stations?.['s1'].x).toBe(40);
+    fake.deliver(resultFor(f, holesOf('l1', 200)));
+    expect(useDragFrame.getState().frame?.guides).toEqual(guides);
+    expect(useRenderDoc.getState().stations['s1'].x).toBe(40);
+    g.commit();
+  });
+});
+
+describe('worker warm-up at gesture begin', () => {
+  const seedAssignment = () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      regionAssignments: { r1: { id: 'r1', lineId: 'l1', lines: ['l1'], anchors: [] } },
+    });
+  };
+
+  it('a deferPersist begin on a regions map boots and syncs the worker before any arm', () => {
+    seedAssignment();
+    expect(created).toBe(0);
+    const g = beginHistoryGroup({ deferPersist: true });
+    // Boot starts at pointerdown: worker exists, mirror synced, no frame.
+    expect(created).toBe(1);
+    expect(fake.posts.some((p) => p.kind === 'sync')).toBe(true);
+    expect(fake.frames().length).toBe(0);
+    g.commit();
+  });
+
+  it('a begin-warmed worker still gets the boot-sized budget for its first frame', async () => {
+    // The trap: after warm-at-begin, `worker` and `lastPosted` are both
+    // non-null at the first send — but the worker may STILL be compiling
+    // wasm. Coldness is per-worker (until its first accepted RESULT), not
+    // per-mirror.
+    vi.useFakeTimers();
+    try {
+      seedAssignment();
+      const g = await armMidGesture(10);
+      expect(created).toBe(1); // the begin-created worker, not a new one
+      vi.advanceTimersByTime(4000);
+      expect(regionPipelineStatus().armed).toBe(true);
+      expect(fake.terminated).toBe(false);
+      vi.advanceTimersByTime(1500);
+      expect(regionPipelineStatus().armed).toBe(false);
+      g.commit();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('snap guides — clears and carry-forward', () => {
   const guideAt = (x: number): SnapGuide => ({ from: { x, y: 0 }, to: { x, y: 100 } });
 
