@@ -53,6 +53,10 @@ with meanwhile — a failure to load is reported instead of degraded.
 - **Performance spine:** gestures never re-render the SVG tree mid-flight. A pan translates a
   **composited wrapper div** (compositor-only — no layout/paint/raster, whatever the map size); a
   wheel zoom writes the SVG `viewBox` **imperatively and synchronously** (not via React, not rAF).
+  Heavy geometry drags pipeline: when a synchronous region build crosses ~30ms mid-gesture, a
+  worker with its own clipper computes frame N while the canvas paints frame N−1 from a coherent
+  lagged snapshot (`state/renderDoc.ts` + `worker/`), converging through the ordinary commit at
+  pointerup.
 - **Persistence has two load paths that must stay in sync:** `parse()` (file import) and
   `migrateDoc()` (localStorage rehydration). There is **no `normalizeDoc()`** — absent fields
   fill from `DEFAULT_DOC`; legacy fixups are shared exported "backfill"/"sanitize" functions
@@ -172,9 +176,12 @@ src/
     waypointLozenge.ts          # WP-lozenge pill geometry (shared drawn glyph + hit/selection box)
     itemBounds.ts contentBounds.ts  # per-item + whole-map world AABBs (camera fit)
 
-  state/                        # Zustand stores (15 of them) + history
+  state/                        # Zustand stores (17 of them) + history
     store.ts                    # useDoc: temporal(persist(...)) + ~125 actions + migrateDoc
     history.ts                  # the ONLY module touching zundo internals
+    renderDoc.ts                # useRenderDoc: the doc slice the canvas PAINTS from — mirrors
+                                #   useDoc at rest, serves the pipelined drag frame while armed
+    dragFrame.ts                # useDragFrame: the landed pipelined frame's holes + snap guides
     selection.ts                # useSelection: UiMode union + multi-select + reconcileWithDoc
     selectionOps.ts             # bulk selection gestures (delete/lock the unlocked subset)
     transferPick.ts             # pure transfer-endpoint pick/commit rules (no store)
@@ -222,6 +229,13 @@ src/
                                 #   appendGestures.ts) + StationInspector (hosted by the on-canvas
                                 #   StationPopover) + pure math: stopGridDrag.ts, stationBandGeometry.ts
 
+  worker/                       # the pipelined region worker (see Rendering: pipelined drags)
+    regionFrame.ts              # the pure frame protocol: mirror identity-diffs, computeMirrorHoles
+                                #   (byte-equal to the sync path), packed-hole codec
+    regionWorker.ts             # the worker shell: own clipper WASM + region caches; SYNC/FRAME/ping
+    regionPipeline.ts           # main-thread controller: arming, depth-1 coalescing, drain on every
+                                #   gesture exit, timeout/error fallback to the synchronous path
+
   export/                       # exportCanvas.ts (SVG/PNG), fonts.ts, exportCanvasPdf.ts
                                 #   + pure PDF-gap modules pdfHatch/pdfText/pdfGlyphs/
                                 #   pdfDropShadow/pdfMask/pdfAlpha + embeddedSvg (shared image-href plumbing)
@@ -233,9 +247,11 @@ src/
                                 #   canonicalizer primitives every dimensional setter shares)
   debug/                        # devHandle.ts: counters + the in-place resets (history / region
                                 #   caches / doc round-trip) that let a slowed-down session be
-                                #   bisected without the reload that cures it. Read three ways: the
-                                #   toolbar's Perf popover, window.__massimo, and the .perf browser
-                                #   harnesses. Installed in EVERY build, not just dev.
+                                #   bisected without the reload that cures it, plus the region
+                                #   pipeline's flag/status/kill and the worker health probe. Read
+                                #   three ways: the toolbar's Perf popover, window.__massimo, and
+                                #   the .perf browser harnesses. Installed in EVERY build, not
+                                #   just dev.
   test/                         # fixtures, jsdom setup, integration tests
 e2e/                            # Playwright specs + seedAndOpen harness
 public/fonts/                   # 16 Helvetica Neue .ttf faces + DejaVuSans.ttf (symbol fallback)
@@ -2883,6 +2899,28 @@ geometry, which is what makes entries built from either side of the cache interc
 `regionsFor` a `transient` flag: mid-drag frames are never revisited, so the sig string and LRU
 bookkeeping are skipped — which also preserves the pre-gesture entry for the commit reconcile's
 old-geometry lookup instead of evicting it.
+
+**Pipelined drags.** Everything that paints map positions reads through `useRenderDoc`
+(`state/renderDoc.ts`), not `useDoc` — at rest the two are reference-identical, so this is free.
+When a synchronous region build reports over ~30ms while a `deferPersist` gesture is open (and
+the `__massimo.regionPipeline` flag is on), `worker/regionPipeline.ts` arms: the render source
+freezes at the current slice, and a persistent module worker — its own clipper WASM, its own
+incremental region state and hole cache (`worker/regionWorker.ts`, all logic in the pure
+`worker/regionFrame.ts`) — computes frame N's exclusion holes while the canvas paints frame N−1.
+The gesture keeps writing `moveStation` per pointermove exactly as always; the worker's mirror is
+kept current by identity-diffing the geometry slice and posting changed records whole (which is
+what makes a mid-drag ring capture correct without the protocol knowing captures exist). Depth-1
+with latest-wins coalescing: one frame in flight, newer input folds into the next. Each RESULT
+lands the frame's doc slice, its packed holes, and the snap guides captured with its input in one
+synchronous block — one React render, so strokes, clips and guides can never paint from different
+frames (`state/dragFrame.ts`; the five drag hooks publish guides through `useRoutedSnapGuides`).
+While holes are being served, MapCanvas's synchronous region build stands down entirely. Every
+gesture exit — commit, cancel, rollback, and the steal — drains via the store's `onHistoryGroup`
+events: disarm, bump the generation (late RESULTs are dropped), snap the render source back to
+the live doc, resync the mirror. Worker errors and frame timeouts fall back to the synchronous
+path mid-gesture; that path is never deleted — it is the at-rest path, the small-map path, and
+the reference the worker's output is pinned byte-equal to (`regionFrame.test.ts`, plus an e2e
+that replays sampled mid-drag frames at rest and requires identical paint).
 
 **Specs are identity-stable.** Both interlining builders finish through a single-slot reuse
 layer: a band/marker spec whose every compared field equals the previous build's comes back as
