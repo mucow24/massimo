@@ -81,6 +81,16 @@ describe('auditDoc', () => {
       /styleId "ghost"/,
     ],
     [
+      'segment style keyed off a non-edge',
+      (d) => (d.lines.l1 = { ...d.lines.l1, segmentStyles: { 'ghost|s1': 'dashed' } }),
+      /segment style/,
+    ],
+    [
+      'end-style pin for a non-member',
+      (d) => (d.lines.l1 = { ...d.lines.l1, stationEndStyles: { ghost: 'round' } }),
+      /end-style pin/,
+    ],
+    [
       'dangling circle binding',
       (d) => (d.stations.s1 = { ...d.stations.s1, circleId: 'ghost' }),
       /dangling circleId/,

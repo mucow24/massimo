@@ -79,6 +79,15 @@ export function auditDoc(doc: MapDoc): string[] {
       if (id !== undefined && doc.styles[id]?.kind !== 'stopDot')
         v.push(`line "${key}": dot style id "${id}" is not a stopDot style`);
     }
+    // Topology-scoped overrides: the app prunes both alongside topology edits
+    // (pruneOrphanLineOverrides), so an orphan here is a writer or load bug.
+    const edgeSet = new Set(ln.edges);
+    for (const k of Object.keys(ln.segmentStyles ?? {})) {
+      if (!edgeSet.has(k)) v.push(`line "${key}": segment style keyed off a non-edge "${k}"`);
+    }
+    for (const sid of Object.keys(ln.stationEndStyles ?? {})) {
+      if (!members.has(sid)) v.push(`line "${key}": end-style pin for a non-member "${sid}"`);
+    }
   }
 
   const orderCheck = (label: string, order: string[], records: Record<string, unknown>) => {

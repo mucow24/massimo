@@ -254,6 +254,49 @@ describe('parse — membership/stops/edges closure (the Opus case)', () => {
     expect(doc.lines.L1.edges).toEqual(['s1|s2']);
   });
 
+  it('keeps an end-style pin the membership rebuild legitimizes', () => {
+    // The pin's station is a member only AFTER the closure rebuilds
+    // membership — judging pins before the repair silently ate them on
+    // exactly the files the closure exists to save.
+    const doc = okDoc(
+      fileWith({
+        stations: { s1: st('s1', 0), s2: st('s2', 100) },
+        lines: {
+          L1: {
+            ...goodLine,
+            stations: [],
+            edges: ['s1|s2'],
+            stationEndStyles: { s1: 'round' },
+          },
+        },
+        lineOrder: ['L1'],
+      }),
+    );
+    expect(doc.lines.L1.stationEndStyles).toEqual({ s1: 'round' });
+  });
+
+  it('drops segment styles orphaned by a dead-endpoint edge drop, idempotently', () => {
+    // The dead edge goes in the closure; its segment style must go WITH it in
+    // the same parse, not on the next one.
+    const first = okDoc(
+      fileWith({
+        stations: { s1: st('s1', 0), s2: st('s2', 100) },
+        lines: {
+          L1: {
+            ...goodLine,
+            stations: ['s1', 's2'],
+            edges: ['s1|s2', 'dead|s1'],
+            segmentStyles: { 's1|s2': 'dashed', 'dead|s1': 'dashed' },
+          },
+        },
+        lineOrder: ['L1'],
+      }),
+    );
+    expect(first.lines.L1.segmentStyles).toEqual({ 's1|s2': 'dashed' });
+    const second = okDoc(serialize(first));
+    expect(second).toEqual(first);
+  });
+
   it('is idempotent: a repaired doc re-serializes and parses back unchanged', () => {
     const first = okDoc(
       fileWith({
@@ -392,6 +435,21 @@ describe('parse — doc-wide reference sweep', () => {
     expect(healed.routeBullets.rb1.lineId).toBeNull();
     const dropped = okDoc(fileWith(docWith({ routeBullets: { rb1: bullet({ x: 'nan' }) } })));
     expect(dropped.routeBullets).toEqual({});
+  });
+
+  it('drops a null or non-object decoration entry instead of refusing the file', () => {
+    const doc = okDoc(
+      fileWith(
+        docWith({
+          transfers: { x1: null },
+          lineTags: { t1: null },
+          textLabels: { g1: 'garbage' },
+        }),
+      ),
+    );
+    expect(doc.transfers).toEqual({});
+    expect(doc.lineTags).toEqual({});
+    expect(doc.textLabels).toEqual({});
   });
 
   it('drops decorations whose substance cannot be honoured', () => {

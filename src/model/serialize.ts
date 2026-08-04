@@ -569,26 +569,20 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
   merged = bakeDocCurveRadius(merged);
   // Same route, same ordering reason, for the retired doc-level seamEdges.
   merged = bakeDocSeamEdges(merged);
-  // Sanitize per-line segment styles AND layers: drop unknown style values,
-  // drop the never-persisted defaults ('solid' / layer 0), and drop any entry
-  // whose pair-key isn't a station-pair adjacency on the line. Also backfill
-  // `name` for legacy files saved before the field existed.
-  const cleanedLines: Record<string, Line> = {};
-  let linesChanged = false;
+  // Normalize each line's OWN topology first — canonical edge keys are what
+  // the linkage closure below joins on. The override clean (segments + end
+  // pins) deliberately does NOT run here: it must judge against the REPAIRED
+  // topology/membership, so it runs after repairLineLinkages — a pre-repair
+  // judgment ate pins the closure was about to legitimize and kept segment
+  // styles on edges it was about to drop.
+  const topoLines: Record<string, Line> = {};
+  let topoChanged = false;
   for (const id of Object.keys(merged.lines)) {
-    const line = merged.lines[id];
-    // NB: dot-SIZE cleaning is deferred to after bakeLineDotDefaults — its
-    // drop-at default is style-aware, so it must see the baked split dot styles.
-    const cleaned = sanitizeLineStroke(
-      sanitizeLineCurve(
-        sanitizeLineWidth(sanitizeLineOverrides(sanitizeLineTopology(backfillLineEdges(line)))),
-      ),
-    );
-    if (cleaned !== line) linesChanged = true;
-    cleanedLines[id] = cleaned;
+    const cleaned = sanitizeLineTopology(backfillLineEdges(merged.lines[id]));
+    if (cleaned !== merged.lines[id]) topoChanged = true;
+    topoLines[id] = cleaned;
   }
-  const named = backfillLineNames(cleanedLines);
-  if (linesChanged || named.changed) merged.lines = named.lines;
+  if (topoChanged) merged.lines = topoLines;
   const sanitized = sanitizeStations(merged.stations);
   if (sanitized.changed) merged.stations = sanitized.stations;
   // Pull cells that drifted off the integer lattice back onto it. Not gated on
@@ -604,6 +598,24 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
     merged.lines = linked.lines;
   }
   merged = sanitizeDocReferences(merged);
+  // Per-line override + value clean, now that topology and membership are
+  // final: drop segment styles whose pair-key isn't a live adjacency, end
+  // pins whose station isn't a member, and clamp the numeric fields. Also
+  // backfill `name` for legacy files saved before the field existed.
+  const cleanedLines: Record<string, Line> = {};
+  let linesChanged = false;
+  for (const id of Object.keys(merged.lines)) {
+    const line = merged.lines[id];
+    // NB: dot-SIZE cleaning is deferred to after bakeLineDotDefaults — its
+    // drop-at default is style-aware, so it must see the baked split dot styles.
+    const cleaned = sanitizeLineStroke(
+      sanitizeLineCurve(sanitizeLineWidth(sanitizeLineOverrides(line))),
+    );
+    if (cleaned !== line) linesChanged = true;
+    cleanedLines[id] = cleaned;
+  }
+  const named = backfillLineNames(cleanedLines);
+  if (linesChanged || named.changed) merged.lines = named.lines;
   // Drop images whose href is outside the inline-data allowlist. Idempotent and
   // shared with the rehydrate path via `sanitizeImageHrefs` — the two doc loads
   // must repair identically, or a persisted doc keeps its remote href forever.
@@ -3067,13 +3079,17 @@ function repairLineLinkages(
 
 // Rewrite each record entry's `id` to its key — the key IS the identity every
 // reference resolves through, so a divergent inner id is always the wrong one.
-// Same precedent as sanitizeStyles / sanitizeRegionAssignments.
+// Same precedent as sanitizeStyles / sanitizeRegionAssignments. A non-object
+// entry (a decoration collection can carry `null` or a bare string from a
+// hand-written file) passes through untouched: each collection's own filter
+// below drops it — reading `.id` here would throw the whole file into parse's
+// catch-all instead.
 function withIdsFromKeys<T extends { id: string }>(coll: Record<string, T>): Record<string, T> {
   let changed = false;
   const next: Record<string, T> = {};
   for (const key of Object.keys(coll)) {
     const item = coll[key];
-    if (item.id !== key) {
+    if (isRecord(item) && item.id !== key) {
       next[key] = { ...item, id: key };
       changed = true;
     } else {

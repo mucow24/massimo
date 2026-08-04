@@ -1188,17 +1188,14 @@ the file itself carries (steps 3, 5, 6b/6c) — repair over guesswork, error ove
    style defs; idempotent, keyed off field presence) and `bakeDocSeamEdges` (the same route for the
    retired doc-level `seamEdges`) — **before** the per-line clean and style validation below,
    which expect the per-line/per-def form.
-5. Per-line clean — `backfillLineEdges` (derive `edges` from the legacy `stations` order for
-   pre-topology saves — unconditional, since a missing `edges` white-screens the renderer) →
-   `sanitizeLineTopology` (canonicalize hand-written edge keys to `pairKeyOf` order and drop
-   malformed/self/duplicate edges and non-string/duplicate members — `segmentStyles` keys ride
-   the rewrites, so a style keyed backwards survives the next step) →
-   `sanitizeSegments` (drop segment keys that aren't real adjacencies) → `sanitizeLineWidth` →
-   `sanitizeLineCurve` → `sanitizeLineStroke`, each clamping to the canonical grid and dropping
-   never-stored defaults — then `backfillLineNames`. **Dot size is deliberately NOT cleaned here**:
-   its drop-at default is style-aware (a service-code disc defaults to 12, not 8), so it needs the
-   baked split dot styles and runs as a **second per-line loop** (`sanitizeLineDotSize`) after
-   step 7 — see step 7b.
+5. Per-line topology normalize — `backfillLineEdges` (derive `edges` from the legacy `stations`
+   order for pre-topology saves — unconditional, since a missing `edges` white-screens the
+   renderer) → `sanitizeLineTopology` (canonicalize hand-written edge keys to `pairKeyOf` order
+   and drop malformed/self/duplicate edges and non-string/duplicate members — `segmentStyles`
+   keys ride the rewrites). ONLY topology: the override + value clean waits until step 6d, so
+   segment styles and end pins are judged against the REPAIRED topology/membership rather than
+   the pre-closure one — which ate pins the closure was about to legitimize, and kept styles on
+   edges it was about to drop (a non-idempotent parse).
 6. `sanitizeStations` (legacy orientations + `valign:'auto'`→`'auto-down'`) → `snapStationCells`
    (stop/label/anchor cells within 1e-9 of an integer snap onto it — the drift the old
    trig-rotated ghost lattice wrote; ±k·√2/2 and width-derived pitches are real coordinates and
@@ -1216,6 +1213,14 @@ the file itself carries (steps 3, 5, 6b/6c) — repair over guesswork, error ove
      heals where a legitimate "unset" state exists (a route bullet's or transfer end's dead line
      → null; reversed tag endpoints → canonical order with `anchorEnd` flipped); wrong-typed doc
      scalars take their DEFAULT_DOC value.
+   - 6d. The per-line override + value clean, now judged against the final topology/membership:
+     `sanitizeSegments` (drop segment keys that aren't real adjacencies) → `sanitizeLineEnds`
+     (drop pins for non-members and values at the line's own end default) → `sanitizeLineWidth` →
+     `sanitizeLineCurve` → `sanitizeLineStroke`, each clamping to the canonical grid and dropping
+     never-stored defaults — then `backfillLineNames`. **Dot size is deliberately NOT cleaned
+     here**: its drop-at default is style-aware (a service-code disc defaults to 12, not 8), so it
+     needs the baked split dot styles and runs as a **second per-line loop**
+     (`sanitizeLineDotSize`) after step 7 — see step 7b.
 
    Then `sanitizeImageHrefs` (drop every svg image whose `href` is outside the inline-data
    allow-list, and its `backgroundOrder` entry with it — see "Every image href is inline data"),
