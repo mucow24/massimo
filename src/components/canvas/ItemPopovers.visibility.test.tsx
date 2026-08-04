@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { act, render } from '@testing-library/react';
-import App from '../../App';
+import { ItemPopovers } from './ItemPopovers';
 import { useDoc } from '../../state/store';
 import { useSelection } from '../../state/selection';
 import { useViewportStore } from '../../state/viewportStore';
@@ -18,7 +18,6 @@ import {
   stationWithStop,
 } from '../../test/fixtures';
 import type { LineId, StationId } from '../../model/types';
-import { stubCanvasHostSize } from '../../test/interaction';
 
 /**
  * A popover is a DOM overlay, not canvas content, so hiding a layer does not
@@ -26,9 +25,14 @@ import { stubCanvasHostSize } from '../../test/interaction';
  * item that is no longer on screen. ItemPopovers' own comment has always named
  * that failure for the lines/stations toggle; these pin it for every other kind
  * the View menu can hide.
+ *
+ * Rendered directly, like the sibling ItemPopovers.test.tsx. The gate under
+ * test reads the visibility store, so a full <App /> mount bought nothing here
+ * beyond a host box — which is now just the hostSize prop.
  */
 
-stubCanvasHostSize();
+// zoom 1, centered on the world origin, matching ItemPopovers.test.tsx.
+const HOST = { w: 800, h: 600 };
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -57,6 +61,7 @@ beforeEach(() => {
     selectedLineCircleIds: [],
     selectedTransferId: null,
     uiMode: { kind: 'idle' },
+    sidebarOpen: false,
   });
 });
 
@@ -123,7 +128,7 @@ const count = (sel: string) => document.querySelectorAll(sel).length;
 
 describe('ItemPopovers — a hidden kind takes its editor with it', () => {
   it.each(CASES)('$key closes the $panel', ({ key, select, panel }) => {
-    render(<App />);
+    render(<ItemPopovers hostSize={HOST} />);
     seed();
     act(select);
     // Guards the assertion below from passing vacuously.
@@ -139,7 +144,7 @@ describe('ItemPopovers — a hidden kind takes its editor with it', () => {
   it('drops hidden items from the multi-select group count', () => {
     // The bulk panel offers Delete all: a tally that silently includes items
     // the user cannot see makes that a trap.
-    render(<App />);
+    render(<ItemPopovers hostSize={HOST} />);
     seed();
     act(() => {
       useSelection.setState({
