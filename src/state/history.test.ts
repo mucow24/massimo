@@ -190,6 +190,9 @@ describe('undo / redo — persistence flush', () => {
     // write was ever actually pending — indistinguishable from a path that
     // arms no timer at all.
     vi.useFakeTimers();
+    // Declared out here so the finally can restore it: a passthrough spy left
+    // installed would follow every later test in this file.
+    let spy: ReturnType<typeof vi.spyOn> | undefined;
     try {
       useDoc.getState().setDocName('Edited');
       // Precondition: there IS a debounced write in flight to be overtaken by.
@@ -200,11 +203,12 @@ describe('undo / redo — persistence flush', () => {
 
       // Give a leaked timer every chance to fire: nothing may write again, and
       // the reverted name must survive the whole debounce window.
-      const spy = vi.spyOn(window.Storage.prototype, 'setItem');
+      spy = vi.spyOn(window.Storage.prototype, 'setItem');
       vi.advanceTimersByTime(1000);
       expect(spy).not.toHaveBeenCalled();
       expect(persistedName()).toBe(DEFAULT_DOC.name);
     } finally {
+      spy?.mockRestore();
       vi.useRealTimers();
     }
   });
