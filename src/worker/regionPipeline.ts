@@ -27,7 +27,12 @@ import { pickDragFrameDoc, setRenderDocOverlay } from '../state/renderDoc';
 import { setDragFrame } from '../state/dragFrame';
 import type { SnapGuide } from '../geometry/snap';
 import { diffMirror, unpackHoles, type RegionMirror } from './regionFrame';
-import type { FrameResult, WorkerErrorResponse, WorkerRequest, WorkerResponse } from './regionWorker';
+import type {
+  FrameResult,
+  WorkerErrorResponse,
+  WorkerRequest,
+  WorkerResponse,
+} from './regionWorker';
 
 /** A pipelined frame must beat this (ms of synchronous region build) to be
  *  worth the messaging; below it the sync path is already smooth. */

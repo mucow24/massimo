@@ -42,7 +42,12 @@ const seedCrossingWithAssignment = () => {
       lines,
       lineOrder: ['l1', 'l2'],
       regionAssignments: {
-        r1: { id: 'r1', lineId: 'l2', lines: faces[0].lineIds, anchors: mintAnchors(faces[0], bands) },
+        r1: {
+          id: 'r1',
+          lineId: 'l2',
+          lines: faces[0].lineIds,
+          anchors: mintAnchors(faces[0], bands),
+        },
       },
     });
   });

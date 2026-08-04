@@ -515,6 +515,10 @@ export function MapCanvas() {
   const pipelineHoles = pipelineFrame?.holes ?? null;
   const regionGeom = useMemo(() => {
     if (!needRegions || pipelineHoles) return null;
+    // Deliberate impurity: the pipeline's arming signal must measure THIS
+    // build, which lives in this memo by design; the report defers its store
+    // writes to a microtask, so render stays write-free.
+    // eslint-disable-next-line react-hooks/purity
     const t0 = performance.now();
     const geom = regionsFor(
       { stations, lines, lineCircles },
@@ -527,6 +531,7 @@ export function MapCanvas() {
     );
     // The pipeline's arming signal: a build this expensive during a gesture
     // is worth moving off-thread from the next frame on.
+    // eslint-disable-next-line react-hooks/purity
     reportSyncRegionCost(performance.now() - t0);
     return geom;
   }, [needRegions, pipelineHoles, stations, lines, lineCircles, bandsGeometry, stopMarkers]);

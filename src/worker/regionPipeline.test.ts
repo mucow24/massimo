@@ -61,7 +61,13 @@ const holesOf = (lineId: string, x: number): Map<LineId, Ring[]> =>
 
 const resultFor = (frame: FrameRequest, holes: Map<LineId, Ring[]>): WorkerResponse => {
   const packed = packHoles(holes);
-  return { kind: 'result', gen: frame.gen, seq: frame.seq, index: packed.index, coords: packed.coords };
+  return {
+    kind: 'result',
+    gen: frame.gen,
+    seq: frame.seq,
+    index: packed.index,
+    coords: packed.coords,
+  };
 };
 
 const flushMicrotasks = () => Promise.resolve();

@@ -15,7 +15,14 @@
  * delta can express — and the diff sees all of it because the records changed,
  * no matter who changed them.
  */
-import type { Line, LineCircle, LineId, RegionAssignment, Station, StationId } from '../model/types';
+import type {
+  Line,
+  LineCircle,
+  LineId,
+  RegionAssignment,
+  Station,
+  StationId,
+} from '../model/types';
 import type { Ring } from '../geometry/clip';
 import { regionsFor, type GeometrySlice } from '../geometry/regionCache';
 import { buildExclusionHolesCached, resolveRegionWinners } from '../geometry/lineRegions';
