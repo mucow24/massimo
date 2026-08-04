@@ -95,8 +95,63 @@ export function roundTripDoc(): boolean {
   return true;
 }
 
+/**
+ * Spawn the region worker, run its health probe, and byte-compare its rings
+ * against the main-thread engine's answer to the same op. This is the S1
+ * feasibility gate made permanent: it exercises the exact packaging chain a
+ * pipelined drag depends on (module-worker construction relative to
+ * `import.meta.url`, the clipper's dynamic import + WASM fetch inside the
+ * worker chunk, structured-clone across the boundary) in whichever build is
+ * open — the dev server's untransformed URLs and the prod build's relative
+ * base fail in DIFFERENT ways, so the e2e suite runs it in both.
+ */
+export async function workerPing(): Promise<{
+  ok: boolean;
+  identical: boolean;
+  workerRings?: unknown;
+  mainRings?: unknown;
+  wasmBytes?: number;
+  error?: string;
+}> {
+  const { pingRings } = await import('../worker/regionWorker');
+  const worker = new Worker(new URL('../worker/regionWorker.ts', import.meta.url), {
+    type: 'module',
+  });
+  try {
+    const response = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('worker ping timed out (10s)')), 10000);
+      worker.onmessage = (e) => {
+        clearTimeout(timeout);
+        resolve(e.data as Record<string, unknown>);
+      };
+      worker.onerror = (e) => {
+        clearTimeout(timeout);
+        reject(new Error(`worker failed to load: ${e.message}`));
+      };
+      worker.postMessage({ kind: 'ping' });
+    });
+    if (response.kind === 'error') {
+      return { ok: false, identical: false, error: String(response.message) };
+    }
+    const mainRings = pingRings();
+    return {
+      ok: true,
+      identical: JSON.stringify(response.rings) === JSON.stringify(mainRings),
+      workerRings: response.rings,
+      mainRings,
+      wasmBytes: response.wasmBytes as number,
+    };
+  } catch (err) {
+    return { ok: false, identical: false, error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    worker.terminate();
+  }
+}
+
 export interface DevHandle {
   counters: () => DevCounters;
+  /** The region worker's health probe (see {@link workerPing}). */
+  workerPing: () => ReturnType<typeof workerPing>;
   reset: {
     /** Drop the undo/redo stacks. */
     history: () => void;
@@ -112,6 +167,7 @@ export interface DevHandle {
 export function makeDevHandle(): DevHandle {
   return {
     counters: devCounters,
+    workerPing,
     reset: {
       history: clearHistory,
       regions: () => {
