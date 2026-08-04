@@ -1840,8 +1840,11 @@ Four seams cover it, and a fifth rule governs anything new:
   Ctrl+X, the group tow (`collectGroupSiblings`) and the group panel's Delete all. Without it,
   hiding Polygons and pressing Delete removed one with nothing on screen to show a selection ever
   existed. The single-primary paths App owns take the same test by hand (a selected transfer, a
-  polygon's vertex handles), since they never reach the shared helper. Skipping is deliberately
-  SILENT: these gestures repeat under a held key, so a notice per press would be noise.
+  polygon's vertex handles), since they never reach the shared helper, and Ctrl+D reads
+  `visibleCopyableSelection` — duplicating a hidden item would mint an invisible clone that
+  selects itself, which the Delete gate then refuses to remove. Ctrl+C stays unfiltered: copying
+  is a read. Skipping is deliberately SILENT: these gestures repeat under a held key, so a notice
+  per press would be noise.
 - **Item popovers gate too, and they are not canvas content.** A panel is a DOM overlay, so
   hiding a layer does not take its editor away — it hangs there offering to edit, and Delete, an
   item no longer on screen. `ItemPopovers` gates every kind (the station's panel is HIDDEN rather

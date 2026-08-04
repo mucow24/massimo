@@ -1110,6 +1110,24 @@ describe('App keyboard: hidden items are not actionable', () => {
     vi.unstubAllGlobals();
   });
 
+  it('Ctrl+D does not duplicate a hidden polygon', () => {
+    // Worse than a stray clone: the duplicate selects itself, and Delete now
+    // refuses hidden items — so the invisible copy couldn't even be removed
+    // until the layer came back. (Ctrl+C stays unfiltered: copying is a read.)
+    render(<App />);
+    seedPolygon();
+    useViewportStore.setState({ showPolygons: false });
+    fireEvent.keyDown(window, { key: 'd', ctrlKey: true });
+    expect(Object.keys(useDoc.getState().polygons)).toEqual(['p1']);
+  });
+
+  it('Ctrl+D still duplicates while the layer is shown', () => {
+    render(<App />);
+    seedPolygon();
+    fireEvent.keyDown(window, { key: 'd', ctrlKey: true });
+    expect(Object.keys(useDoc.getState().polygons)).toHaveLength(2);
+  });
+
   it('Delete spares a station while the network is hidden', () => {
     render(<App />);
     const id = useDoc.getState().addStation(0, 0);

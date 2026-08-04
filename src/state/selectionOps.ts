@@ -1,6 +1,6 @@
 import type { StationId } from '../model/types';
 import { isHistoryGrouping } from './history';
-import { beginHistoryGroup, useDoc, useSelection } from './store';
+import { beginHistoryGroup, getCopyableSelection, useDoc, useSelection } from './store';
 import { useViewportStore } from './viewportStore';
 import { kindVisibleNow, type VisibilityKey } from './visibility';
 
@@ -76,6 +76,25 @@ export function unlockedSelectedItemIds(): SelectionItemIds {
       'showLineCircles',
       sel.selectedLineCircleIds.filter((id) => !doc.lineCircles[id]?.locked),
     ),
+  };
+}
+
+/**
+ * {@link getCopyableSelection} minus every kind the View menu is hiding — the
+ * DUPLICATE gesture's read. Duplicate is a write with a sting the other writes
+ * don't have: the clone selects itself, and Delete refuses hidden items, so an
+ * invisible copy couldn't even be removed until the layer came back. Ctrl+C
+ * stays on the unfiltered helper — copying is a read, and pasting is an act on
+ * the paste-time doc. No lock filter, matching duplicate's existing behaviour:
+ * a locked item may be duplicated (the copy is born unlocked).
+ */
+export function visibleCopyableSelection(): ReturnType<typeof getCopyableSelection> {
+  const raw = getCopyableSelection(useSelection.getState());
+  return {
+    bullets: kindVisibleNow('showRouteBullets') ? raw.bullets : [],
+    labels: kindVisibleNow('showTextLabels') ? raw.labels : [],
+    polygons: kindVisibleNow('showPolygons') ? raw.polygons : [],
+    svgImages: kindVisibleNow('showSvgImages') ? raw.svgImages : [],
   };
 }
 

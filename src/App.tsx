@@ -48,6 +48,7 @@ import {
   itemIdCount,
   stationsCarriedByCircles,
   unlockedSelectedItemIds,
+  visibleCopyableSelection,
 } from './state/selectionOps';
 import { isHistoryGrouping, redo, undo } from './state/history';
 import { decideDeleteKey } from './model/appendGestures';
@@ -571,12 +572,16 @@ export default function App() {
         return;
       }
       if (mod && !inForm && (e.key === 'd' || e.key === 'D')) {
+        // Visible kinds only (selectionOps): duplicating a hidden item would
+        // mint an invisible clone that selects itself — and Delete refuses
+        // hidden items, so it couldn't even be removed until the layer came
+        // back. Ctrl+C above stays unfiltered: copying is a read.
         const {
           bullets: bulletIds,
           labels: labelIds,
           polygons: polygonIds,
           svgImages: svgImageIds,
-        } = getCopyableSelection(useSelection.getState());
+        } = visibleCopyableSelection();
         if (bulletIds.length + labelIds.length + polygonIds.length + svgImageIds.length === 0)
           return;
         e.preventDefault();

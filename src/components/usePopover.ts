@@ -56,7 +56,11 @@ export function useDismiss(
     //
     // The phases also order the nesting: ColorField's picker binds WINDOW
     // capture, which is upstream of this, so an open picker inside one of these
-    // panels still takes Escape first and the panel stays put.
+    // panels still takes Escape first and the panel stays put. Radix's
+    // DismissableLayer binds document-capture keydown too — SAME phase, same
+    // target — so against a Radix select/dialog the winner is whichever
+    // listener registered first. No useDismiss panel hosts one today; the
+    // first that grows one must revisit this.
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       // Escape inside a field belongs to the field, and running first must not

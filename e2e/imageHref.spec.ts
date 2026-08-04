@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { test, expect, type Page } from '@playwright/test';
 
 // Every image a map carries is inline bytes — that is what lets a map paint
@@ -13,6 +15,22 @@ import { test, expect, type Page } from '@playwright/test';
 
 const REMOTE = 'https://tracker.example/px.png';
 const INLINE = 'data:image/svg+xml;base64,PHN2Zy8+';
+
+// MUST equal the persist config's `version` in src/state/store.ts. The whole
+// point of this spec is that a doc at the CURRENT version skips migrateDoc, so
+// only the merge hook can repair it — seeded one version behind, the test would
+// silently degrade to exercising `migrate` instead and keep passing. Pinned by
+// reading the config off disk (same pattern as theme.test.ts and styles.css),
+// so a version bump goes red here instead of quietly retargeting the spec.
+const CURRENT_PERSIST_VERSION = 24;
+
+test('the seeded version IS the persist config version (drift guard)', () => {
+  const storePath = fileURLToPath(new URL('../src/state/store.ts', import.meta.url));
+  const store = readFileSync(storePath, 'utf8');
+  const m = /name: 'vignelli-map-doc-v1',[\s\S]*?version: (\d+),/.exec(store);
+  expect(m, 'persist config not found in store.ts').not.toBeNull();
+  expect(Number(m![1])).toBe(CURRENT_PERSIST_VERSION);
+});
 
 const image = (id: string, href: string) => ({
   id,
@@ -43,8 +61,9 @@ async function bootWith(page: Page, hrefs: Record<string, string>): Promise<void
           ),
           backgroundOrder: Object.keys(hrefs),
         },
-        // The CURRENT persist version: migrateDoc is skipped entirely.
-        version: 24,
+        // The CURRENT persist version (drift-guarded above): migrateDoc is
+        // skipped entirely.
+        version: CURRENT_PERSIST_VERSION,
       }),
       'massimo-viewport',
       JSON.stringify({ state: { x: 0, y: 0, zoom: 1 }, version: 0 }),
