@@ -25,7 +25,18 @@ const poly = (id: string) => ({
   darkStroke: '#000000',
   strokeWidth: 1,
 });
-const img = (id: string) => ({ id, x: 0, y: 0, width: 10, height: 10, rotation: 0, href: 'd' });
+// A real inline data URI, not a placeholder string: an href outside the
+// allowlist is DROPPED on load (sanitizeImageHrefs), which would take the
+// image out of the very order under test.
+const img = (id: string) => ({
+  id,
+  x: 0,
+  y: 0,
+  width: 10,
+  height: 10,
+  rotation: 0,
+  href: 'data:image/svg+xml;base64,PHN2Zy8+',
+});
 
 describe('parse — legacy polygonOrder/svgImageOrder → backgroundOrder', () => {
   it('concatenates the two legacy orders, polygons first, and drops the retired keys', () => {

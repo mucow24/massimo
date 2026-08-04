@@ -207,6 +207,12 @@ export function LineCircleView({
   return (
     <g
       data-line-circle={circle.id}
+      // On the wrapper, not on each grab surface: the rect-select gate keys off
+      // closest('[data-locked]'), so one mark covers the rim and the ⊕ alike.
+      // A locked SELECTED ring keeps both grabs, the drag hook then refuses,
+      // and without this the press would be dead rather than rubber-banding —
+      // the recovery path every other lockable kind offers.
+      data-locked={circle.locked || undefined}
       // Enter/leave on the WRAPPER rather than on each grab surface: the rim
       // and the ⊕ are two grabs for one object, so this is one wiring point
       // instead of three, with no chance of missing one. The knob is the only

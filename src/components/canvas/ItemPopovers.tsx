@@ -29,6 +29,14 @@ import { LineCirclePopover } from '../LineCirclePopover';
  * sidebar's strip, since the sidebar overlays — and paints above — the host's
  * right edge. No camera state reaches the popovers at all; a pan or zoom moves
  * the map under a panel that stays put.
+ *
+ * Every mount below is KEYED by its item's id. Selecting a different item of the
+ * same kind would otherwise reconcile into the same component instance, so
+ * per-instance state written for one item would carry over to the next — and
+ * some of that state is load-bearing. The wheel-burst token in useNumericField
+ * is a per-instance ref, and a selection change pushes no history entry to end
+ * the burst, so a wheel on polygon A followed by a wheel on polygon B collapsed
+ * both edits into A's single undo entry. A different item is a different panel.
  */
 export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } }) {
   const selection = useSelection();
@@ -48,12 +56,11 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
   // Through `kindVisible` so this agrees with the canvas by construction rather
   // than by two lists staying in step — the registry carries both the reveal
   // and the nesting under `showNetwork`, so transfers and anchors need no
-  // hand-written `showNetwork &&` here. The reveal half is inert HERE —
-  // entering any non-idle mode runs `clearedSelections`, so there is never a
-  // selection left for a placing mode to keep an editor open for — but reading
-  // the same helper as every other consumer is what makes "one entry point"
-  // true. Stations stay on the raw `showNetwork` because their panel is HIDDEN
-  // rather than unmounted below.
+  // hand-written `showNetwork &&` here. Entering a mode runs `clearedSelections`,
+  // but that does NOT make the reveal half moot: `placing-label` keeps the
+  // marquee live, so a selection CAN exist under a placing mode (see the idle
+  // gate below). Stations stay on the raw `showNetwork` because their panel is
+  // HIDDEN rather than unmounted below.
   const showNetwork = useViewportStore((s) => s.showNetwork);
   const modeKind = selection.uiMode.kind;
   const shows = (key: VisibilityKey, flag: boolean) =>
@@ -102,16 +109,21 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
   if (selection.uiMode.kind === 'appending-to-line') {
     const ln = lines[selection.uiMode.lineId];
     if (!ln || !showNetwork) return null;
-    return <LinePopover line={ln} hostW={hostW} />;
+    return <LinePopover key={ln.id} line={ln} hostW={hostW} />;
   }
+
+  // Every editor below is idle-only. `placing-label` is the one non-idle mode
+  // where the marquee still runs (useRectSelect's deliberate exemption), so it
+  // is the mode that can leave a selection standing — sweeping one item would
+  // otherwise open its editor, Delete button and all, under an armed placement.
+  // The station branch has its own version of this test: its layout-edit mode
+  // needs the panel, since the per-stop pickers live in it.
+  const idle = selection.uiMode.kind === 'idle';
 
   const sole = soleSelection(selection);
   if (!sole) {
     // ≥2 items across the multi-select lists: ONE popover for the whole
-    // group (count summary + bulk lock/unlock/delete). Idle-only — the modes
-    // that preserve a selection (placing-label's marquee) shouldn't pop a
-    // group editor under their placement clicks, mirroring the station gate
-    // below.
+    // group (count summary + bulk lock/unlock/delete).
     // Hidden kinds drop OUT of the group: its count and its bulk
     // lock/unlock/delete must describe what is on screen, not a tally that
     // silently includes items the user cannot see. They stay SELECTED — hiding
@@ -128,13 +140,18 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
       anchors: vis.anchor ? selection.selectedAnchorIds : [],
       lineCircles: vis.lineCircle ? selection.selectedLineCircleIds : [],
     };
-    if (itemIdCount(multiIds) >= 2 && selection.uiMode.kind === 'idle') {
+    if (itemIdCount(multiIds) >= 2 && idle) {
       return <SelectionPopover ids={multiIds} hostW={hostW} />;
     }
     const t = selection.selectedTransferId ? transfers[selection.selectedTransferId] : undefined;
-    if (!t || !vis.transfer) return null;
+    if (!t || !vis.transfer || !idle) return null;
     return (
-      <TransferPopover transfer={t} hostW={hostW} onClose={() => selection.selectTransfer(null)} />
+      <TransferPopover
+        key={t.id}
+        transfer={t}
+        hostW={hostW}
+        onClose={() => selection.selectTransfer(null)}
+      />
     );
   }
 
@@ -161,6 +178,7 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
         (mode.kind === 'editing-station-layout' && mode.stationId === sole.id));
     return (
       <StationPopover
+        key={st.id}
         station={st}
         hostW={hostW}
         hidden={!show}
@@ -171,9 +189,10 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
 
   if (sole.type === 'bullet') {
     const b = routeBullets[sole.id];
-    if (!b || !vis.bullet) return null;
+    if (!b || !vis.bullet || !idle) return null;
     return (
       <RouteBulletPopover
+        key={b.id}
         bullet={b}
         hostW={hostW}
         onClose={() => selection.selectRouteBullet(null)}
@@ -182,28 +201,46 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
   }
   if (sole.type === 'label') {
     const g = textLabels[sole.id];
-    if (!g || !vis.label) return null;
-    return <TextLabelPopover label={g} hostW={hostW} onClose={() => selection.selectLabel(null)} />;
+    if (!g || !vis.label || !idle) return null;
+    return (
+      <TextLabelPopover
+        key={g.id}
+        label={g}
+        hostW={hostW}
+        onClose={() => selection.selectLabel(null)}
+      />
+    );
   }
   if (sole.type === 'polygon') {
     const p = polygons[sole.id];
-    if (!p || !vis.polygon) return null;
+    if (!p || !vis.polygon || !idle) return null;
     return (
-      <PolygonPopover polygon={p} hostW={hostW} onClose={() => selection.selectPolygon(null)} />
+      <PolygonPopover
+        key={p.id}
+        polygon={p}
+        hostW={hostW}
+        onClose={() => selection.selectPolygon(null)}
+      />
     );
   }
   if (sole.type === 'svgImage') {
     const im = svgImages[sole.id];
-    if (!im || !vis.svgImage) return null;
+    if (!im || !vis.svgImage || !idle) return null;
     return (
-      <SvgImagePopover image={im} hostW={hostW} onClose={() => selection.selectSvgImage(null)} />
+      <SvgImagePopover
+        key={im.id}
+        image={im}
+        hostW={hostW}
+        onClose={() => selection.selectSvgImage(null)}
+      />
     );
   }
   if (sole.type === 'lineCircle') {
     const c = lineCircles[sole.id];
-    if (!c || !vis.lineCircle) return null;
+    if (!c || !vis.lineCircle || !idle) return null;
     return (
       <LineCirclePopover
+        key={c.id}
         circle={c}
         hostW={hostW}
         onClose={() => selection.selectLineCircle(null)}

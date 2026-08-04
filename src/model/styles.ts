@@ -692,13 +692,17 @@ export function renameStyle(doc: MapDoc, styleId: string, name: string): MapDoc 
  * default designation always has somewhere to point. Deleting the current
  * default re-points the designation at the kind's first remaining style
  * (name order).
+ *
+ * "Remaining" is the SELECTABLE list, so the reserved "None" stop dot is
+ * neither a fallback nor the thing that keeps a kind non-empty — the same
+ * opinion the Styles panel's list and its last-style delete guard hold.
  */
 export function deleteStyle(doc: MapDoc, styleId: string): MapDoc {
   if (styleId === NONE_STOP_DOT_STYLE_ID) return doc; // reserved built-in
   const def = doc.styles[styleId];
   if (!def) return doc;
   const { [styleId]: _gone, ...styles } = doc.styles;
-  const remaining = stylesOfKind(styles, def.kind);
+  const remaining = selectableStylesOfKind(styles, def.kind);
   if (remaining.length === 0) return doc;
   if (def.kind === 'stopDot') return deleteStopDotStyle(doc, styleId, styles, remaining[0].id);
   const key = STYLE_COLLECTION_OF[def.kind];
@@ -846,6 +850,24 @@ export function stylesOfKind(styles: Record<string, StyleDef>, kind: StyleKind):
   return Object.values(styles)
     .filter((d) => d.kind === kind)
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * {@link stylesOfKind} minus the reserved built-in "None" stop dot — the kind's
+ * styles as a LIBRARY ENTRY: what the Styles panel lists, what the "last style
+ * of a kind" guard counts, and what a delete may fall back on. "None" is a
+ * primitive the picker always offers but nobody chose, so promoting it to a
+ * kind's default (or to a line style def's dot type) blanks dots the user never
+ * asked to blank. The dot picker itself reads `stylesOfKind` — it is the one
+ * consumer that wants the reserved entry.
+ *
+ * The filter is unconditional because no other kind can hold that id.
+ */
+export function selectableStylesOfKind(
+  styles: Record<string, StyleDef>,
+  kind: StyleKind,
+): StyleDef[] {
+  return stylesOfKind(styles, kind).filter((d) => d.id !== NONE_STOP_DOT_STYLE_ID);
 }
 
 /**

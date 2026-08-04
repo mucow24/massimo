@@ -151,6 +151,20 @@ describe('selection — array model', () => {
       expect(s.selectedTransferId).toBeNull();
       expect(s.mirrorMatching).toBe(false);
     });
+
+    it('switches to the Stations tab for a non-empty selection', () => {
+      useSelection.setState({ activeTab: 'lines' });
+      useSelection.getState().setStationSelection(['A'] as StationId[]);
+      expect(useSelection.getState().activeTab).toBe('stations');
+    });
+
+    // Every marquee commits all seven kinds, so a rubber-band that caught no
+    // station still lands here — it must not yank the sidebar off Lines/Styles.
+    it('leaves the active tab alone when the incoming list is empty', () => {
+      useSelection.setState({ activeTab: 'lines' });
+      useSelection.getState().setStationSelection([]);
+      expect(useSelection.getState().activeTab).toBe('lines');
+    });
   });
 
   describe('addStationsToSelection', () => {
