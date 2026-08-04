@@ -121,12 +121,28 @@ describe('<PalettesDialog /> library → map', () => {
 });
 
 describe('<PalettesDialog /> the map column', () => {
-  it('removes a palette from the map on one click — undo can reach it', async () => {
+  // Every destructive command in this window arms first, wherever it points:
+  // one Delete, one gesture, in both columns.
+  it('arms before removing a palette from the map', async () => {
     const user = userEvent.setup();
     useDoc.setState({ ...useDoc.getState(), palettes: named('MTA', 'BART') });
     renderDialog();
     await user.click(screen.getByRole('button', { name: 'Remove BART from the map' }));
+    // Armed, not done.
+    expect(useDoc.getState().palettes.map((p) => p.name)).toEqual(['MTA', 'BART']);
+    await user.click(screen.getByRole('button', { name: 'Confirm removing BART from the map' }));
     expect(useDoc.getState().palettes.map((p) => p.name)).toEqual(['MTA']);
+  });
+
+  // The unarmed state must look like the library's Delete, not like a warning:
+  // the red is what the SECOND click wears.
+  it('the unarmed remove is dressed exactly like the library’s Delete', () => {
+    useCustomPalettes.setState({ palettes: [FRRF], starred: [], sort: 'name' });
+    useDoc.setState({ ...useDoc.getState(), palettes: named('MTA', 'BART') });
+    renderDialog();
+    const remove = screen.getByRole('button', { name: 'Remove BART from the map' });
+    expect(remove.classList.contains('danger')).toBe(false);
+    expect(remove.className).toBe(screen.getByRole('button', { name: 'Delete frrf' }).className);
   });
 
   it('moves a palette up and down', async () => {

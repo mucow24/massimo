@@ -160,10 +160,12 @@ function RowName({
  * renaming a map's copy never touches the library's.
  *
  * Both destinations are keyed by NAME, so anything landing on a name already
- * there REPLACES it. Every such command takes the map library's in-place speed
- * bump — the same glyph washed red, its tooltip naming what the second click
- * will cost. The commands that displace nothing, and the one removal undo can
- * reach (taking a palette out of the map), go on a single click.
+ * there REPLACES it. Every command that destroys or displaces a palette — in
+ * either column, whether or not undo could reach it — takes the map library's
+ * in-place speed bump: the same glyph washed red, its tooltip naming what the
+ * second click will cost. One gesture for the whole window; a Delete that
+ * needed a confirmation beside a Remove that didn't taught the wrong thing
+ * about both. Only the commands that displace nothing go on a single click.
  */
 export function PalettesDialog({ onClose }: { onClose: () => void }) {
   const mapPalettes = useDoc((s) => s.palettes);
@@ -268,11 +270,11 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
   };
 
   /**
-   * A command that would destroy something: the first click arms it, the second
-   * runs it. Both destinations key by NAME, so every overwrite here replaces a
-   * palette you can't get back by undoing — the library's are outside undo
-   * entirely, and a map palette overwritten from the library takes its own
-   * edits with it.
+   * A command that would destroy or displace a palette: the first click arms
+   * it, the second runs it. Undo-reachability is deliberately NOT the test —
+   * these buttons sit in one window, several of them side by side in a row, and
+   * a gesture that changed meaning between two adjacent glyphs would be worse
+   * than a redundant click on the one the user could have undone.
    */
   const speedBump = (
     key: string,
@@ -558,14 +560,17 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                           >
                             <Pencil1Icon />
                           </IconButton>
-                          {/* Undo reaches this one, so it goes on one click. */}
-                          <IconButton
-                            label={`Remove ${p.name} from the map`}
-                            danger
-                            onClick={() => removePaletteFromMap(p.name)}
-                          >
-                            <Cross2Icon />
-                          </IconButton>
+                          {speedBump(
+                            `rm:${p.name}`,
+                            `Remove ${p.name} from the map`,
+                            `Confirm removing ${p.name} from the map`,
+                            'Will take this palette out of this map',
+                            <Cross2Icon />,
+                            () => {
+                              setConfirmKey(null);
+                              removePaletteFromMap(p.name);
+                            },
+                          )}
                           <div className="palette-move">
                             <button
                               type="button"
