@@ -66,6 +66,7 @@ npm run perf:check
 | `bench/chunkSpike.perf.test.ts` | chunk census and pair-intersect cost |
 | `bench/marshalling.perf.test.ts` | toInt / clipToPaths / fromInt split |
 | `e2e/perf-drag.spec.ts` | real-drag browser cost. `PERF_NO_REGIONS=1` isolates the render floor; `PERF_KEEP=n` trims the map to test tree-size scaling |
+| `e2e/perf-drag-age.spec.ts` | paint-time staleness: how far (ms, px) the painted station trails the cursor, and post-stop convergence (travel paints, settle time), pipeline on vs off. `PERF_SNAP=1` runs the real per-event snap; `PERF_POPOVER=1` drags with the popover open; `PERF_SPEED`, `PERF_EVENTS_PER_TICK` scale cursor speed and input rate. Run it against `playwright.perf-dev.config.ts` too: the dev server is where the pipelined arm goes STALER than sync (Aug 2026 finding), and a prod-only run hides that |
 | `e2e/perf-profile.spec.ts` | CDP CPU profile, bucketed by file and function |
 | `e2e/perf-ab.spec.ts` | in-page interleaved A/B of a toggleable change |
 | `e2e/perf-aging.spec.ts` | does a session get slower the longer it is edited, and which quantity grows. `PERF_PLANT_LEAK=1` proves the instrument; the RESET test says which reload-equivalent gives the time back. **Has never produced a valid run** — see below |

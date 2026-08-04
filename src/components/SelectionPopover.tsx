@@ -1,5 +1,6 @@
 import { LockClosedIcon, LockOpen1Icon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
+import { useRenderDoc } from '../state/renderDoc';
 import { PopoverShell } from './PopoverShell';
 import { usePinnedPopover } from './canvas/usePinnedPopover';
 import { deleteUnlockedSelection, itemIdCount, type SelectionItemIds } from '../state/selectionOps';
@@ -24,12 +25,17 @@ interface Props {
 export function SelectionPopover({ ids, hostW }: Props) {
   const { anchor, shellRef } = usePinnedPopover(hostW);
   const setItemsLocked = useDoc((s) => s.setItemsLocked);
-  const stations = useDoc((s) => s.stations);
-  const routeBullets = useDoc((s) => s.routeBullets);
-  const textLabels = useDoc((s) => s.textLabels);
-  const polygons = useDoc((s) => s.polygons);
-  const svgImages = useDoc((s) => s.svgImages);
-  const lineCircles = useDoc((s) => s.lineCircles);
+  // Render source, not the live doc: a group drag rewrites these per
+  // pointermove, and this panel's output (counts + locked flags) is
+  // position-independent — a live subscription would re-render it at input
+  // cadence for nothing. The render source freezes with the canvas mid-drag;
+  // at rest the two stores are identical.
+  const stations = useRenderDoc((s) => s.stations);
+  const routeBullets = useRenderDoc((s) => s.routeBullets);
+  const textLabels = useRenderDoc((s) => s.textLabels);
+  const polygons = useRenderDoc((s) => s.polygons);
+  const svgImages = useRenderDoc((s) => s.svgImages);
+  const lineCircles = useRenderDoc((s) => s.lineCircles);
 
   const total = itemIdCount(ids);
   // Transfer anchors have no `locked` field, so they can never be counted as

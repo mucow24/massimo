@@ -1,4 +1,4 @@
-import { RefObject, useCallback, useEffect, useRef } from 'react';
+import { RefObject, useCallback, useRef } from 'react';
 import { beginHistoryGroup, useDoc } from '../../state/store';
 import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
@@ -47,9 +47,13 @@ export function useStationDrag(
   svgRef: RefObject<SVGSVGElement | null>,
   viewportZoom: number,
 ): StationDragApi {
-  const stations = useDoc((s) => s.stations);
-  const lines = useDoc((s) => s.lines);
-  const lineCircles = useDoc((s) => s.lineCircles);
+  // No reactive subscriptions to the towed collections here — they change on
+  // EVERY pointermove, and a subscription would re-run MapCanvas (this hook's
+  // host) per input event while the pipeline's render source is frozen, which
+  // is precisely the no-op render tax the freeze exists to eliminate. The
+  // handlers ask the store at event time instead (which is also fresher: a
+  // closure would be one render stale). Actions are stable references, so
+  // subscribing to them never re-renders.
   const moveStation = useDoc((s) => s.moveStation);
   const bindStationToCircle = useDoc((s) => s.bindStationToCircle);
   const unbindStationFromCircle = useDoc((s) => s.unbindStationFromCircle);
@@ -82,15 +86,10 @@ export function useStationDrag(
 
   // onStartDrag is passed to every (memoized) StationView; keep it referentially
   // stable so a pan/zoom — or any unrelated edit — doesn't re-render every
-  // station. Read the live station map through a ref instead of closing over it.
-  const stationsRef = useRef(stations);
-  useEffect(() => {
-    stationsRef.current = stations;
-  }, [stations]);
-
+  // station. It reads the live station map at call time.
   const onStartDrag = useCallback(
     (id: StationId, e: React.PointerEvent, redistributeAnchor?: StationId) => {
-      const st = stationsRef.current[id];
+      const st = useDoc.getState().stations[id];
       if (!st) return;
       // A locked station can't be dragged. Bail without capturing a gesture;
       // the pointerdown still bubbles to the canvas (the station's handler
@@ -131,6 +130,8 @@ export function useStationDrag(
     if (pointerLost(e)) return onPointerCancel();
     const { moved, dxScreen, dyScreen } = trackDragMove(ds, e, svgRef);
     if (!moved) return;
+    // Event-time reads (see the note at the top: no reactive subscriptions).
+    const { stations, lines, lineCircles } = useDoc.getState();
     const dx = dxScreen / viewportZoom;
     const dy = dyScreen / viewportZoom;
     let nx = ds.startWX + dx;

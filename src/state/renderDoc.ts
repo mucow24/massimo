@@ -15,7 +15,16 @@
  * (or receive them as props from something that does), never through
  * `useDoc` — that is what makes every painted frame internally coherent:
  * strokes, clips, dots, labels, chrome all resolve from one snapshot.
- * Actions stay on `useDoc`; this store carries data only.
+ *
+ * The rule is stronger than "painters": NOTHING may hold a reactive `useDoc`
+ * subscription to the seven towed collections. Non-painting chrome (sidebar,
+ * popovers, banner) subscribes HERE as a re-render damper — at rest identical,
+ * mid-drag frozen with the canvas — and input hooks read `useDoc.getState()`
+ * at event time. Otherwise every pointermove (60-125Hz) re-runs the
+ * subscriber for byte-identical output, taxing the thread the worker's
+ * frames land on (pinned by the zero-commits test in
+ * MapCanvas.renderSource.test.tsx). Actions stay on `useDoc`; this store
+ * carries data only.
  */
 import { create } from 'zustand';
 import { pickDocSnapshot, useDoc, type DocSnapshot } from './store';
