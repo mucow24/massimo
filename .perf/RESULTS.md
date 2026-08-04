@@ -146,3 +146,38 @@ Times Sq, prod, roughly: ~25 ms render floor + ~50-75 ms geometry.
   and it is not output-identical for export or hit-testing.
 
 How to run any of this, and how not to fool yourself: see `README.md`.
+
+## The pipelined worker (Aug 3 2026)
+
+The two walls above stopped being summed. During a heavy geometry drag a
+worker (its own clipper, its own incremental state) computes frame N's
+exclusion holes while the canvas paints frame N−1 from one coherent lagged
+snapshot; every gesture exit converges through the untouched synchronous
+commit. Exactness is pinned byte-equal to the synchronous path
+(`src/worker/regionFrame.test.ts`) and at the DOM by an e2e that replays
+sampled mid-drag frames at rest and requires identical paint.
+
+Interleaved A/B (`e2e/perf-pipeline-ab.spec.ts`), prod build, six block pairs
+per station in one warm page session, this machine on the iGPU:
+
+| station  | main-thread rAF off → on | ratio  | paints/s off → on |
+| -------- | ------------------------ | ------ | ----------------- |
+| Times Sq | 213.9 → 17.0 ms          | 12.6×  | 4.8 → 4.5 (0.95×) |
+| Atlantic | 158.4 → 17.1 ms          | 9.3×   | 6.7 → 6.8 (1.02×) |
+| Halsey   | 80.4 → 18.2 ms           | 4.4×   | 12.3 → 14.6 (1.19×) |
+
+Read the two columns separately — the pipeline moves cost rather than
+shrinking it. Visual cadence is parity-or-better: the map advances exactly as
+often as the synchronous path could manage, because the same geometry is being
+computed at the same rate, one thread over. The main-thread column is the
+point: input processing sits at the display floor instead of blocking
+80–214 ms per move, which is the difference between CHUG and
+smooth-but-trailing. The off-arm medians run higher than the July quiet-dGPU
+numbers (this is the slower machine, and the per-rAF probe includes event
+dispatch); per the house rule, the paired ratio is the claim, not the
+absolutes.
+
+The flag (`__massimo.regionPipeline`) defaults ON; arming still requires
+regions in play AND a mid-gesture synchronous build over ~30 ms, so small and
+regionless maps never leave the synchronous path. The worker dying mid-drag
+times out and falls back synchronously (e2e-pinned).

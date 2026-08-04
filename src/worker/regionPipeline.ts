@@ -53,7 +53,11 @@ const defaultFactory = (): WorkerLike =>
   }) as unknown as WorkerLike;
 
 let factory: () => WorkerLike = defaultFactory;
-let enabled = false;
+// ON by default since the Aug 3 A/B (4-13x main-thread liveness, visual
+// parity — see .perf/RESULTS.md); __massimo.regionPipeline.enable(false) is
+// the kill switch. Arming is still gated per-gesture, so small and
+// regionless maps never leave the synchronous path.
+let enabled = true;
 let worker: WorkerLike | null = null;
 /** The mirror as of the last message posted — the diff base. Null after a
  *  worker (re)creation: the next sync sends everything. */
