@@ -1,7 +1,8 @@
 import { RefObject, useCallback, useRef, useState } from 'react';
 import { beginHistoryGroup, useDoc } from '../../state/store';
 import { useSelection } from '../../state/selection';
-import { type SnapGuide, snapGuidesEqual } from '../../geometry/snap';
+import { useRoutedSnapGuides } from './useRoutedSnapGuides';
+import { type SnapGuide } from '../../geometry/snap';
 import type { Vec2 } from '../../geometry/vec';
 import { useDragSnap } from './useDragSnap';
 import { liveAlignTargets } from './snapTargets';
@@ -51,7 +52,7 @@ export function useLineCircleDrag(
   // why: a site that re-threaded the raw world-unit tolerance would snap from
   // twice as far out at 2×.
   const { snapPoint } = useDragSnap(viewportZoom);
-  const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
+  const [snapGuides, setSnapGuides] = useRoutedSnapGuides('lineCircle');
   const [resizingId, setResizingId] = useState<string | null>(null);
 
   const dragRef = useRef<{
@@ -132,7 +133,7 @@ export function useLineCircleDrag(
       const snap = snapPoint({ x: nx, y: ny }, { allTargets: ds.allTargets });
       nx = snap.x;
       ny = snap.y;
-      setSnapGuides((prev) => (snapGuidesEqual(prev, snap.guides) ? prev : snap.guides));
+      setSnapGuides(snap.guides);
     } else if (snapGuides.length > 0) {
       setSnapGuides([]);
     }
@@ -146,18 +147,20 @@ export function useLineCircleDrag(
     const ds = dragRef.current;
     if (!ds) return;
     dragRef.current = null;
-    setSnapGuides([]);
     setResizingId(null);
+    // Exit first, clear second: the exit drains the pipeline, so the clear
+    // lands in hook state instead of being routed away (useRoutedSnapGuides).
     finishDrag(ds, e, svgRef);
+    setSnapGuides([]);
   };
 
   const onPointerCancel = () => {
     const ds = dragRef.current;
     if (!ds) return;
     dragRef.current = null;
-    setSnapGuides([]);
     setResizingId(null);
     ds.history.rollback();
+    setSnapGuides([]);
   };
 
   return { snapGuides, resizingId, onStartDrag, onPointerMove, onPointerUp, onPointerCancel };

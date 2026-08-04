@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render } from '@testing-library/react';
 import App from '../App';
 import { beginHistoryGroup, useDoc } from '../state/store';
-import { setDragFrameHoles } from '../state/dragFrame';
+import { setDragFrame } from '../state/dragFrame';
 import { setRenderDocOverlay } from '../state/renderDoc';
 import * as regionCache from '../geometry/regionCache';
 import { mintAnchors } from '../geometry/lineRegions';
@@ -64,14 +64,14 @@ const fakeHoles = (): Map<LineId, Ring[]> =>
   ]);
 
 beforeEach(() => {
-  setDragFrameHoles(null);
+  setDragFrame(null);
   setRenderDocOverlay(null);
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useDoc.temporal.getState().clear();
 });
 
 afterEach(() => {
-  setDragFrameHoles(null);
+  setDragFrame(null);
   setRenderDocOverlay(null);
   vi.restoreAllMocks();
 });
@@ -86,7 +86,7 @@ describe('MapCanvas with pipelined holes armed', () => {
     expect(container.querySelectorAll('clipPath').length).toBeGreaterThan(0);
 
     // A frame lands: holes now come from the pipeline.
-    act(() => setDragFrameHoles(fakeHoles()));
+    act(() => setDragFrame({ holes: fakeHoles(), guides: [] }));
     expect(spy.mock.calls.length).toBe(atRestCalls);
     // The exclude clips still paint — from the frame's holes.
     expect(container.querySelectorAll('clipPath').length).toBeGreaterThan(0);
@@ -101,7 +101,7 @@ describe('MapCanvas with pipelined holes armed', () => {
     act(() => group.rollback());
 
     // Disarm: the synchronous path resumes.
-    act(() => setDragFrameHoles(null));
+    act(() => setDragFrame(null));
     expect(spy.mock.calls.length).toBeGreaterThan(atRestCalls);
   });
 });

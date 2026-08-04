@@ -1,5 +1,6 @@
-import { RefObject, useRef, useState } from 'react';
+import { RefObject, useRef } from 'react';
 import { beginHistoryGroup, useDoc, useSelection } from '../../state/store';
+import { useRoutedSnapGuides } from './useRoutedSnapGuides';
 import { snapDraggedStation, snapToleranceAt, type SnapGuide } from '../../geometry/snap';
 import { polygonSnapAnchor } from '../../geometry/polygon';
 import { textLabelCorners } from '../../geometry/stationBoundary';
@@ -76,7 +77,7 @@ export function useItemDrag(
   const { modes: snapModes, gridInterval: gridSize, snapPoint } = useDragSnap(zoom);
 
   const dragRef = useRef<ItemDragState | null>(null);
-  const [itemSnapGuides, setItemSnapGuides] = useState<SnapGuide[]>([]);
+  const [itemSnapGuides, setItemSnapGuides] = useRoutedSnapGuides('item');
 
   const begin = (
     kind: 'bullet' | 'label' | 'anchor',
@@ -237,8 +238,10 @@ export function useItemDrag(
     const ds = dragRef.current;
     if (!ds) return;
     dragRef.current = null;
-    setItemSnapGuides([]);
+    // Exit first, clear second: the exit drains the pipeline, so the clear
+    // lands in hook state instead of being routed away (useRoutedSnapGuides).
     finishDrag(ds, e, svgRef);
+    setItemSnapGuides([]);
   };
 
   // Browser pointercancel: disarm the drag and roll the doc back to its
@@ -248,8 +251,8 @@ export function useItemDrag(
     const ds = dragRef.current;
     if (!ds) return;
     dragRef.current = null;
-    setItemSnapGuides([]);
     ds.history.rollback();
+    setItemSnapGuides([]);
   };
 
   return {

@@ -511,7 +511,8 @@ export function MapCanvas() {
   // thread, and the inputs here are the FROZEN render-source slice, so the
   // memo would otherwise recompute it per landed frame. Its other consumers
   // are layering-mode-only (never concurrent with a drag) and tolerate null.
-  const pipelineHoles = useDragFrame((s) => s.holes);
+  const pipelineFrame = useDragFrame((s) => s.frame);
+  const pipelineHoles = pipelineFrame?.holes ?? null;
   const regionGeom = useMemo(() => {
     if (!needRegions || pipelineHoles) return null;
     const t0 = performance.now();
@@ -2293,17 +2294,24 @@ export function MapCanvas() {
           )}
 
           {/* Snap guides: rendered last so the dotted lines + measurement
-            labels sit on top of line tags and everything else. */}
+            labels sit on top of line tags and everything else. During a
+            pipelined drag the landed frame carries its own guides — captured
+            with the input that produced it — so the halo always encircles the
+            dot as painted; the hooks' live guides serve every other moment
+            (including the armed-but-not-yet-landed window, where hook state is
+            frozen at the same slice the canvas shows). */}
           <g data-export-exclude="1">
             <SnapGuides
-              guides={[
-                ...drag.snapGuides,
-                ...itemDrag.itemSnapGuides,
-                ...polyDrag.polygonSnapGuides,
-                ...svgDrag.svgImageSnapGuides,
-                ...circleDrag.snapGuides,
-                ...placementGuides,
-              ]}
+              guides={
+                pipelineFrame?.guides ?? [
+                  ...drag.snapGuides,
+                  ...itemDrag.itemSnapGuides,
+                  ...polyDrag.polygonSnapGuides,
+                  ...svgDrag.svgImageSnapGuides,
+                  ...circleDrag.snapGuides,
+                  ...placementGuides,
+                ]
+              }
               zoom={view.viewport.zoom}
             />
           </g>
