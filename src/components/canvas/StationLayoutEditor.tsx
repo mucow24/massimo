@@ -1,5 +1,6 @@
 import type { Line, LineId, Station } from '../../model/types';
 import { useDoc, useSelection } from '../../state/store';
+import { useRenderDoc } from '../../state/renderDoc';
 import { dispatchMirrored } from '../../state/mirrorDispatch';
 import { STOP_SIZE, stationFrameDeg } from '../../geometry/orientation';
 import { stationCircle } from '../../geometry/lineCircle';
@@ -73,7 +74,10 @@ export function StationLayoutEditor({
   // Every handle here is drawn at a lattice CELL, so the editor turns with the
   // frame that resolves those cells — a bound station's ring, not its rounded
   // octant (see `stationFrameRad`), or the grab rings miss their own dots.
-  const lineCircles = useDoc((s) => s.lineCircles);
+  // Render source, matching the `station` prop's origin: these handles PAINT
+  // at ring-resolved positions, so mixing a live ring with a frozen station
+  // would tear them apart mid-drag.
+  const lineCircles = useRenderDoc((s) => s.lineCircles);
   const angle = stationFrameDeg(station, stationCircle(station, lineCircles));
   // Singleton vs. shared picks each stop's split default (dot style + size);
   // it's a per-station property, so resolve it once for this editor.

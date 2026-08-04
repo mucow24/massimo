@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
+import { Profiler } from 'react';
 import App from '../App';
+import { SelectionPopover } from './SelectionPopover';
 import { StationInspector } from './inspector';
-import { useDoc } from '../state/store';
+import { beginHistoryGroup, useDoc, useSelection } from '../state/store';
 import { setRenderDocOverlay, type DragFrameDoc } from '../state/renderDoc';
 import { DEFAULT_DOC } from '../model/transforms';
 import type { Station, StationId } from '../model/types';
@@ -88,6 +90,64 @@ describe('the canvas paints the render source, not the live doc', () => {
     // Gesture exit disarms; the paint stays converged with the doc.
     act(() => setRenderDocOverlay(null));
     expect(stationTransform(container, 's1')).toBe('translate(500 300) rotate(0)');
+  });
+
+  // The other half of the freeze contract: not only must the paint hold
+  // still, but a live doc write at input cadence (60-125Hz) must not re-run
+  // any component at all — a "no-op" render pass across the canvas, the
+  // sidebar's 464-station re-sort, and the popover chrome is exactly the
+  // per-event tax that starves frame landings on slow machines. Nothing may
+  // hold a reactive subscription to the towed collections; input handlers
+  // ask the store at event time instead. Shared by the app-wide pin and the
+  // direct SelectionPopover mount below.
+  const expectZeroCommitsWhileArmed = (ui: React.ReactElement, prepare?: () => void) => {
+    let commits = 0;
+    render(
+      <Profiler id="probe" onRender={() => commits++}>
+        {ui}
+      </Profiler>,
+    );
+    seedPair();
+    if (prepare) act(prepare);
+    // Mirror a real pipelined gesture: grouped history (paused), armed frame.
+    const history = beginHistoryGroup({ deferPersist: true });
+    act(() => setRenderDocOverlay(frameOf()));
+    commits = 0;
+    act(() => useDoc.getState().moveStation('s1', 500, 300));
+    expect(commits).toBe(0);
+    act(() => {
+      history.cancel();
+      setRenderDocOverlay(null);
+    });
+  };
+
+  it('an armed frame absorbs a mid-drag doc write with ZERO React commits', () => {
+    // Covers MapCanvas (via the drag hooks), the sidebar, and ItemPopovers'
+    // own subscriptions. Its PANELS never mount here — the jsdom host
+    // measures 0×0, so ItemPopovers bails before choosing one — which is why
+    // SelectionPopover gets its own direct-mount pin below.
+    expectZeroCommitsWhileArmed(<App />, () =>
+      useSelection.getState().selectStation('s1' as StationId),
+    );
+  });
+
+  it('the multi-selection group popover holds too (its own subscriptions)', () => {
+    // The panel a group drag runs under, mounted directly since ItemPopovers
+    // cannot mount it under jsdom's 0×0 host.
+    expectZeroCommitsWhileArmed(
+      <SelectionPopover
+        ids={{
+          stations: ['s1', 's2'] as StationId[],
+          bullets: [],
+          labels: [],
+          polygons: [],
+          svgImages: [],
+          anchors: [],
+          lineCircles: [],
+        }}
+        hostW={800}
+      />,
+    );
   });
 
   it("the inspector's X/Y readout shows the frame, never ahead of it", () => {

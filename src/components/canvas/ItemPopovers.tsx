@@ -1,4 +1,5 @@
-import { soleSelection, useDoc, useSelection } from '../../state/store';
+import { soleSelection, useSelection } from '../../state/store';
+import { useRenderDoc } from '../../state/renderDoc';
 import { useViewportStore } from '../../state/viewportStore';
 import { kindVisible, type VisibilityKey } from '../../state/visibility';
 import { itemIdCount, type SelectionItemIds } from '../../state/selectionOps';
@@ -40,14 +41,20 @@ import { LineCirclePopover } from '../LineCirclePopover';
  */
 export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } }) {
   const selection = useSelection();
-  const stations = useDoc((s) => s.stations);
-  const routeBullets = useDoc((s) => s.routeBullets);
-  const textLabels = useDoc((s) => s.textLabels);
-  const polygons = useDoc((s) => s.polygons);
-  const svgImages = useDoc((s) => s.svgImages);
-  const lineCircles = useDoc((s) => s.lineCircles);
-  const lines = useDoc((s) => s.lines);
-  const transfers = useDoc((s) => s.transfers);
+  // Render source, not the live doc: mid-drag these collections are rewritten
+  // per pointermove, and a live subscription would rebuild the open panel at
+  // input cadence — and hand it a record AHEAD of the frozen canvas, so its
+  // readouts would lead the picture (the tear the inspector migration fixed).
+  // The render source freezes with the canvas: the panel updates at frame
+  // cadence, always agreeing with the paint. At rest the stores are identical.
+  const stations = useRenderDoc((s) => s.stations);
+  const routeBullets = useRenderDoc((s) => s.routeBullets);
+  const textLabels = useRenderDoc((s) => s.textLabels);
+  const polygons = useRenderDoc((s) => s.polygons);
+  const svgImages = useRenderDoc((s) => s.svgImages);
+  const lineCircles = useRenderDoc((s) => s.lineCircles);
+  const lines = useRenderDoc((s) => s.lines);
+  const transfers = useRenderDoc((s) => s.transfers);
   // These panels are DOM overlays, not canvas content, so NOTHING about hiding a
   // layer takes them away on its own — a panel would hang there offering to edit,
   // and Delete, an item that is no longer on screen. Every View-menu kind needs

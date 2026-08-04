@@ -181,3 +181,41 @@ The flag (`__massimo.regionPipeline`) defaults ON; arming still requires
 regions in play AND a mid-gesture synchronous build over ~30 ms, so small and
 regionless maps never leave the synchronous path. The worker dying mid-drag
 times out and falls back synchronously (e2e-pinned).
+
+## The rubber band, measured — and the freeze's other half (Aug 4 2026)
+
+The "dragging one end of a rubber band" feel got an instrument
+(`e2e/perf-drag-age.spec.ts`): how OLD is each painted position (matched back to the dispatch
+that produced it), how far behind the cursor in px, and how many travel paints after the cursor
+stops. Findings, prod build, MTA map:
+
+- **No queue anywhere.** Post-stop convergence is ≤2 paints in every scenario, both arms. The
+  trail is a delay line — each paint shows the newest COMPLETED frame, sampled one
+  geometry+render wall ago — so trail px = hand speed × (G+R), which is why fast flicks read
+  worst (~250px at 1500px/s vs ~80px at 500px/s, identical age).
+- **Prod was already at the design floor**: age on ≈ off (~100–190 ms), snap / open popover /
+  3× input rate all no-ops. The pipeline changed the trail's CHARACTER (smooth follow under a
+  live cursor), not its magnitude.
+- **Dev had inverted**: the pipelined arm ran 1.29–1.64× STALER than sync (ages 263–338 ms med)
+  with the main thread saturated (rAF med 115–159 ms) — because the freeze contract had a
+  second half nobody enforced. Every pointermove re-ran MapCanvas (the drag hooks' live
+  `stations`/`lines`/`lineCircles` subscriptions), re-sorted the sidebar's full 464-station
+  list (unmemoized, per-compare name cleaning), and rebuilt the open popover from the live
+  record (whose readouts also LED the frozen paint) — 60–125 times a second, for byte-identical
+  output. W1's bug, five more times.
+
+Fixed by making input hooks read the store at event time (no reactive subscriptions to the
+seven towed collections) and pointing the position-independent chrome — sidebar, popovers,
+editing banner — at the render source. Pinned by a zero-commits-while-armed test
+(`MapCanvas.renderSource.test.tsx`). Paired same-run A/B after the fix:
+
+| dev, snap on         | before (on-arm)      | after (on-arm)      |
+| -------------------- | -------------------- | ------------------- |
+| rAF med, Times Sq    | 147 ms               | 17 ms               |
+| rAF med, Atlantic    | 151 ms               | 17 ms               |
+| age ratio on/off     | 1.29–1.64×           | 0.85–1.11×          |
+
+Prod: unchanged (already leak-tolerant at 60Hz input — the ~8 ms/event tax fit in the slack),
+which is exactly why the leak survived the prod-only A/B above. Run the dev config
+(`playwright.perf-dev.config.ts`) before trusting any "no regression" claim about input-path
+changes.

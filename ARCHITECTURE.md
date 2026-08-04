@@ -2968,6 +2968,12 @@ old-geometry lookup instead of evicting it.
 
 **Pipelined drags.** Everything that paints map positions reads through `useRenderDoc`
 (`state/renderDoc.ts`), not `useDoc` — at rest the two are reference-identical, so this is free.
+The rule is stronger than "painters": NO component holds a reactive `useDoc` subscription to the
+seven towed collections at all. Input hooks (the drag hooks, `useStationInteraction`) read the
+store at event time, and position-independent chrome (sidebar, popovers, the editing banner)
+subscribes to the render source, so a mid-drag doc write re-renders nothing anywhere — pinned by
+a zero-commits test in `MapCanvas.renderSource.test.tsx`. That is what keeps 60–125Hz pointer
+input from taxing the same thread the worker's frames must land on.
 When a synchronous region build reports over ~30ms while a `deferPersist` gesture is open (and
 the `__massimo.regionPipeline` flag is on), `worker/regionPipeline.ts` arms: the render source
 freezes at the current slice, and a persistent module worker — its own clipper WASM, its own
