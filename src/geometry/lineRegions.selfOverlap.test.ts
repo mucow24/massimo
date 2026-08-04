@@ -373,6 +373,91 @@ describe('self-overlap faces (branch mouths)', () => {
     expect([...holes.keys()]).toEqual([armCoverId('l1', trunkArm)]);
   });
 
+  it("an interlined neighbor's coincident rail is holed over the reveal (fringe loser)", () => {
+    // Interlined trunk: orange ABOVE grey in z, grey branches tangentially.
+    // The orange|grey boundary stroke is co-painted by BOTH lines' facing
+    // rails (centered on the shared edge), so clipping grey's losing arm
+    // alone leaves orange's half of that stroke crossing the curve's reveal
+    // — the artifact the user's arrows pointed at. An above-winner line
+    // whose CASING hangs into the reveal must be holed even though its body
+    // never covers the face.
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 'a',
+          x: -400,
+          y: 0,
+          stops: [
+            makeStop('oa', { row: 0, orientation: 'auto-horizontal' }),
+            makeStop('gr', { row: 1, orientation: 'auto-horizontal' }),
+          ],
+        }),
+        makeStation({
+          id: 'j',
+          x: 0,
+          y: 0,
+          stops: [
+            makeStop('oa', { row: 0, orientation: 'auto-horizontal' }),
+            makeStop('gr', { row: 1, orientation: 'auto-horizontal' }),
+          ],
+        }),
+        makeStation({
+          id: 'c',
+          x: 400,
+          y: 0,
+          stops: [
+            makeStop('oa', { row: 0, orientation: 'auto-horizontal' }),
+            makeStop('gr', { row: 1, orientation: 'auto-horizontal' }),
+          ],
+        }),
+        makeStation({ id: 'd', x: 500, y: -500, stops: [vStop('gr')] }),
+      ],
+      lines: [
+        makeLine({ id: 'oa', color: '#f60', edges: ['a|j', 'c|j'], strokeWidth: 2 }),
+        makeLine({
+          id: 'gr',
+          color: '#999',
+          edges: ['a|j', 'c|j', 'd|j'],
+          strokeWidth: 2,
+          curveRadius: 200,
+        }),
+      ],
+    });
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+    const faces = buildOverlapRegions(bands, []);
+    const lineOrder = ['oa', 'gr']; // orange front-most = above grey
+    const branchArm = armOfLinePairKey(bands, 'gr', 'd|j')!;
+    const trunkArm = armOfLinePairKey(bands, 'gr', 'a|j')!;
+    expect(branchArm).not.toBe(trunkArm);
+    const mouthIdx = faces.findIndex(
+      (f) =>
+        f.lineIds.includes(armCoverId('gr', trunkArm)) &&
+        f.lineIds.includes(armCoverId('gr', branchArm)),
+    );
+    expect(mouthIdx).toBeGreaterThanOrEqual(0);
+    // The mouth's cover is pure grey — orange's body never overlaps it.
+    expect(faces[mouthIdx].lineIds.some((id) => id.includes('oa'))).toBe(false);
+    // Paint the curve arm on top.
+    const set = regionPaintPlan({
+      faces,
+      winners: resolveRegionWinners(faces, {}, bands, lineOrder),
+      assignments: {},
+      faceIndex: mouthIdx,
+      dir: -1,
+      flood: false,
+      lineOrder,
+      bands,
+    })[0].assignment!;
+    expect(armOfLinePairKey(bands, 'gr', set.winnerPairKey!)).toBe(branchArm);
+    const withSet = { r1: { ...set, id: 'r1' } };
+    const winners = resolveRegionWinners(faces, withSet, bands, lineOrder);
+    const holes = buildExclusionHoles(faces, winners, lineOrder, bands, [], () => 2, []);
+    // The losing trunk arm is holed — and so is ORANGE, the above-winner
+    // neighbor whose rail rides the shared boundary through the reveal.
+    expect(holes.get(armCoverId('gr', trunkArm))?.length).toBeGreaterThan(0);
+    expect(holes.get('oa')?.length, "orange's coincident rail must be holed").toBeGreaterThan(0);
+  });
+
   it('stop markers do not manufacture extra self faces', () => {
     const doc = branchDoc();
     const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
