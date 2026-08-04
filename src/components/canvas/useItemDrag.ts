@@ -65,12 +65,11 @@ export function useItemDrag(
   zoom: number,
   inHandMode: boolean,
 ): ItemDragApi {
-  const routeBullets = useDoc((s) => s.routeBullets);
-  const textLabels = useDoc((s) => s.textLabels);
-  const transferAnchors = useDoc((s) => s.transferAnchors);
-  const stations = useDoc((s) => s.stations);
-  const lines = useDoc((s) => s.lines);
-  const lineCircles = useDoc((s) => s.lineCircles);
+  // No reactive subscriptions to the towed collections — they change per
+  // pointermove, and a subscription re-runs MapCanvas (this hook's host) per
+  // input event while the pipeline's render source is frozen. Handlers ask
+  // the store at event time; actions are stable references (never re-render).
+  // See useStationDrag for the full rationale.
   const moveRouteBullet = useDoc((s) => s.moveRouteBullet);
   const moveTextLabel = useDoc((s) => s.moveTextLabel);
   const moveTransferAnchor = useDoc((s) => s.moveTransferAnchor);
@@ -99,6 +98,7 @@ export function useItemDrag(
     // end would start a drag, set suppressClick, and silently eat the pick.
     if (kind === 'anchor' && useSelection.getState().uiMode.kind !== 'idle') return;
     // Anchors have no `locked` field, so they are never lock-blocked.
+    const { routeBullets, textLabels } = useDoc.getState();
     const item =
       kind === 'bullet' ? routeBullets[id] : kind === 'label' ? textLabels[id] : undefined;
     if (item?.locked) return;
@@ -132,19 +132,19 @@ export function useItemDrag(
   };
 
   const onBulletPointerDown = (id: string, e: React.PointerEvent) => {
-    const b = routeBullets[id];
+    const b = useDoc.getState().routeBullets[id];
     if (!b) return;
     begin('bullet', id, b.x, b.y, e);
   };
 
   const onLabelPointerDown = (id: string, e: React.PointerEvent) => {
-    const lbl = textLabels[id];
+    const lbl = useDoc.getState().textLabels[id];
     if (!lbl) return;
     begin('label', id, lbl.x, lbl.y, e);
   };
 
   const onAnchorPointerDown = (id: string, e: React.PointerEvent) => {
-    const a = transferAnchors[id];
+    const a = useDoc.getState().transferAnchors[id];
     if (!a) return;
     begin('anchor', id, a.x, a.y, e);
   };
@@ -156,6 +156,8 @@ export function useItemDrag(
     if (pointerLost(e)) return onPointerCancel();
     const { moved, dxScreen, dyScreen } = trackDragMove(ds, e, svgRef);
     if (!moved) return;
+    // Event-time reads (see the note at the top: no reactive subscriptions).
+    const { routeBullets, stations, lines, lineCircles } = useDoc.getState();
     let nx = ds.startWX + dxScreen / zoom;
     let ny = ds.startWY + dyScreen / zoom;
     const inGroupDrag = hasGroupSiblings(ds.siblings);

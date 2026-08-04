@@ -1,4 +1,5 @@
-import { useDoc, useSelection } from '../../state/store';
+import { useSelection } from '../../state/store';
+import { useRenderDoc } from '../../state/renderDoc';
 import { legibleTextOn } from '../../util/color';
 import { stationNameListText } from '../../geometry/labelTokens';
 import { validCursor } from '../../model/appendGestures';
@@ -37,8 +38,13 @@ const CANCEL_HINT = 'Esc or right-click to cancel.';
  * placing-svg used to fall out the bottom with no feedback at all).
  */
 export function EditingBanner() {
-  const lines = useDoc((s) => s.lines);
-  const stations = useDoc((s) => s.stations);
+  // Render source, not the live doc: this component is mounted for every
+  // mode (the switch below gates), so a live `stations` subscription would
+  // re-render it on every mid-drag pointermove while the canvas is frozen.
+  // The banner only paints in modes that are never concurrent with a
+  // pipelined drag, so the frame-cadence source changes nothing it shows.
+  const lines = useRenderDoc((s) => s.lines);
+  const stations = useRenderDoc((s) => s.stations);
   const uiMode = useSelection((s) => s.uiMode);
 
   switch (uiMode.kind) {
