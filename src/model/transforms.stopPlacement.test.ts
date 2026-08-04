@@ -336,10 +336,11 @@ describe('a 45° frame mismatch leaves the lattice', () => {
       'c',
     );
     const stop = stopOn(doc, 'c', 'L2');
-    expect(stop.col).toBeCloseTo(Math.SQRT1_2, 12);
-    expect(stop.row).toBeCloseTo(-Math.SQRT1_2, 12);
     // Still exactly one cell of world distance east of L1 — the offset it has
     // at b — which is the whole reason the cell is off-lattice.
+    expect(stop.col).toBeCloseTo(Math.SQRT1_2, 12);
+    expect(stop.row).toBeCloseTo(-Math.SQRT1_2, 12);
+    // ...and the stop keeps the rotated station's diagonal axis.
     expect(stop.orientation).toBe('auto-nw-se');
   });
 });

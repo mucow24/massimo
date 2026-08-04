@@ -145,7 +145,7 @@ describe('measureTextLabel — formatting tags', () => {
     expect(tagged.width).toBeLessThan(literal.width);
   });
 
-  it('substitutes <air>/<xfer> glyphs', () => {
+  it('substitutes the <air> glyph', () => {
     const m = measureTextLabel(makeTextLabel({ id: 'g', text: '<air>' }));
     expect(m.lines[0].segments).toEqual([expect.objectContaining({ kind: 'text', value: '✈' })]);
   });

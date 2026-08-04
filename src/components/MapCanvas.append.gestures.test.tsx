@@ -1,18 +1,11 @@
+import { act, fireEvent, render } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { act, render, fireEvent } from '@testing-library/react';
 import App from '../App';
-import { dragState, useDoc } from '../state/store';
-import { useSelection } from '../state/selection';
 import { DEFAULT_DOC } from '../model/transforms';
-import { makeLine, stationWithStop } from '../test/fixtures';
 import type { LineId, StationId } from '../model/types';
-
-// Right-click during Edit Stops is the mouse-only exit. With station
-// manipulation (drag/rotate) unwired from the mode, EVERY canvas right-click
-// — station, edited-line segment, empty background — leaves the editor
-// through the same cancelAppendMode() path Esc and the exit canvas-click
-// take. The old right-click-removes-edge accelerator is retired (it sat one
-// slip away from the exit gesture); removal is the × chip or the Delete key.
+import { useSelection } from '../state/selection';
+import { dragState, useDoc } from '../state/store';
+import { makeLine, stationWithStop } from '../test/fixtures';
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -27,6 +20,16 @@ beforeEach(() => {
   });
   dragState.suppressClick = false;
 });
+
+// ---------------------------------------------------------------------------
+// from MapCanvas.appendContextMenu.test.tsx
+// ---------------------------------------------------------------------------
+// Right-click during Edit Stops is the mouse-only exit. With station
+// manipulation (drag/rotate) unwired from the mode, EVERY canvas right-click
+// — station, edited-line segment, empty background — leaves the editor
+// through the same cancelAppendMode() path Esc and the exit canvas-click
+// take. The old right-click-removes-edge accelerator is retired (it sat one
+// slip away from the exit gesture); removal is the × chip or the Delete key.
 
 const seedAndEnter = () => {
   act(() => {
@@ -86,5 +89,34 @@ describe('MapCanvas — right-click exits Edit Stops', () => {
     contextMenuOn('[data-band-stripe][data-line-id="L1"]');
     expect(useSelection.getState().uiMode.kind).toBe('idle');
     expect(useDoc.getState().lines.L1.edges).toEqual(['A|B']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// from MapCanvas.appendHoverPan.test.tsx
+// ---------------------------------------------------------------------------
+// The Edit Stops hover preview (ring/halo) must not render mid-pan. A
+// middle-button pan captures the pointer, so the stripes get no enter/leave
+// while the world slides beneath — the frozen appendHover would keep painting
+// a halo under a pointer that is no longer over it. The caller promises
+// HighlightedLineLayer an "already pan-suppressed" target; that must cover an
+// arrow-mode middle-drag pan, not just hand mode.
+
+describe('MapCanvas — append hover preview suppressed while panning', () => {
+  it('a middle-button pan hides the segment hover halo until the pan ends', () => {
+    render(<App />);
+    seedAndEnter();
+    act(() => useSelection.getState().setAppendHover({ kind: 'segment', pairKey: 'A|B' }));
+    expect(document.querySelector('[data-append-hover-segment="A|B"]')).not.toBeNull();
+
+    const bg = document.querySelector('[data-bg]')!;
+    fireEvent.pointerDown(bg, { button: 1, buttons: 4, clientX: 300, clientY: 300, pointerId: 7 });
+    // Sanity: the pan is live (the svg wears the .panning cursor class).
+    expect(document.querySelector('svg.panning')).not.toBeNull();
+    expect(document.querySelector('[data-append-hover-segment="A|B"]')).toBeNull();
+
+    fireEvent.pointerUp(bg, { button: 1, clientX: 320, clientY: 300, pointerId: 7 });
+    expect(document.querySelector('svg.panning')).toBeNull();
+    expect(document.querySelector('[data-append-hover-segment="A|B"]')).not.toBeNull();
   });
 });

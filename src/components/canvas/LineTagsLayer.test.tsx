@@ -315,23 +315,10 @@ describe('<LineTagsLayer> — orientation rotation (E5a)', () => {
     });
   }
 
-  it('the four orientations yield four distinct rotations', () => {
-    const seen = new Set<number>();
-    for (const orientation of [0, 1, 2, 3] as const) {
-      seedTag(orientation);
-      const { ref } = fakeSvgRef();
-      const { container } = render(
-        <svg>
-          <LineTagsLayer
-            bands={[mixedBand()]}
-            zoom={1}
-            svgRef={ref}
-            screenToWorld={identityScreenToWorld}
-          />
-        </svg>,
-      );
-      seen.add(tagRotation(container));
-    }
-    expect(seen.size).toBe(4);
+  it('the four expected offsets are themselves distinct', () => {
+    // With each orientation pinned to its own offset above, four distinct
+    // rendered rotations follow from the table being distinct — so assert that
+    // directly instead of paying four more renders to rediscover it.
+    expect(new Set(Object.values(ORIENTATION_OFFSET_DEG)).size).toBe(4);
   });
 });

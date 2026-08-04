@@ -279,7 +279,10 @@ describe('App keyboard shortcuts: inForm guard routing', () => {
     slider.focus();
     fireEvent.keyDown(slider, { key: 'ArrowRight' });
 
-    expect(useDoc.getState().stations[sid].x).toBe(before); // slider moved, station didn't
+    // The station did not move: the shortcut was swallowed by the focused
+    // slider. (The probe slider is fully controlled with a no-op onChange, so
+    // it does not move either — only the station's stillness is asserted here.)
+    expect(useDoc.getState().stations[sid].x).toBe(before);
   });
 
   it('tool shortcut "t" on a focused Radix select trigger does not switch mode', () => {

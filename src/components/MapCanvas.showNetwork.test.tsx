@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { act, render } from '@testing-library/react';
 import App from '../App';
 import { useDoc } from '../state/store';
@@ -14,18 +14,14 @@ import {
   stationWithStop,
 } from '../test/fixtures';
 import type { LineId, StationId } from '../model/types';
+import { stubCanvasHostSize } from '../test/interaction';
 
 // jsdom reports clientWidth/clientHeight as 0, which would collapse the canvas
 // viewBox to 0×0 and leave every query below matching nothing whether the
 // toggle works or not. Give the canvas host a real size, restoring it after.
-const sizeProps = ['clientWidth', 'clientHeight'] as const;
-const originals: Partial<Record<(typeof sizeProps)[number], PropertyDescriptor>> = {};
+stubCanvasHostSize();
+
 beforeEach(() => {
-  for (const prop of sizeProps) {
-    originals[prop] = Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop);
-  }
-  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 800 });
-  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: 600 });
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useDoc.temporal.getState().clear();
   useViewportStore.setState({ x: 0, y: 0, zoom: 1, showNetwork: true });
@@ -35,13 +31,6 @@ beforeEach(() => {
     selectedPolygonIds: [],
     uiMode: { kind: 'idle' },
   });
-});
-afterEach(() => {
-  for (const prop of sizeProps) {
-    const d = originals[prop];
-    if (d) Object.defineProperty(HTMLElement.prototype, prop, d);
-    else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[prop];
-  }
 });
 
 // Two stops on a line, a tag riding that line's stripe, a transfer joining the

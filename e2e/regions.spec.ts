@@ -116,8 +116,12 @@ test.describe('Region layering — click a face to cycle which line shows', () =
     await page
       .locator('[data-band-stripe][data-line-id="L2"]')
       .click({ force: true, position: undefined });
-    // Selecting a line mounts the highlight overlay for it.
-    await expect(page.locator('[data-highlight-layer]')).toHaveCount(1);
+    // Selecting a line mounts the highlight overlay FOR THAT LINE. The layer
+    // carries the id, so name it: a bare `[data-highlight-layer]` count of 1
+    // holds whichever line got picked, leaving the entire point of the test —
+    // that the clip-excluded loser L1 takes no pointer events and the visible
+    // winner L2 is what gets selected — unasserted.
+    await expect(page.locator('[data-highlight-layer="L2"]')).toHaveCount(1);
   });
 });
 

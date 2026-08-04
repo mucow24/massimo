@@ -153,20 +153,9 @@ describe('localLatticeOffsets', () => {
   const ROTATIONS = [0, 1, 2, 3, 4, 5, 6, 7] as const;
   const BASES = ['orthogonal', 'diagonal'] as const;
 
-  it('is the identity at rotation 0', () => {
-    for (const basis of BASES) {
-      expect(keys(localLatticeOffsets(basis, 2, 0))).toEqual(keys(latticeOffsets(basis, 2)));
-    }
-  });
-
-  it('preserves point count regardless of rotation', () => {
-    for (const basis of BASES) {
-      for (const r of ROTATIONS) {
-        expect(localLatticeOffsets(basis, 2, r)).toHaveLength(latticeOffsets(basis, 2).length);
-      }
-    }
-  });
-
+  // Identity-at-rotation-0 is the r === 0 iteration of the quarter-turn test
+  // below (same comparison, same operands); point-count preservation across
+  // every rotation is asserted by the trig-projection test further down.
   it('leaves the slot set unchanged at the quarter turns', () => {
     // A 90° turn permutes a lattice onto itself, so the reachable slots at
     // rotation 2/4/6 are the very same cells as at rotation 0. Only the

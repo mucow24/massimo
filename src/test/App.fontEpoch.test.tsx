@@ -7,6 +7,7 @@ import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makeStation, makeStop, makeLine, makeTextLabel } from '../test/fixtures';
 import { _clearTextMeasureCache } from '../geometry/textMeasure';
+import { stubCanvasHostSize } from './interaction';
 
 // App.tsx clears the text-measure cache and bumps a font epoch when the
 // web fonts arrive (App.tsx:113-140). ARCHITECTURE.md "Gotchas & footguns"
@@ -66,15 +67,10 @@ function stubFonts() {
 }
 
 // jsdom reports clientWidth/clientHeight as 0, which collapses the viewBox.
-const sizeProps = ['clientWidth', 'clientHeight'] as const;
-const originals: Partial<Record<(typeof sizeProps)[number], PropertyDescriptor>> = {};
+
+stubCanvasHostSize();
 
 beforeEach(() => {
-  for (const prop of sizeProps) {
-    originals[prop] = Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop);
-  }
-  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 800 });
-  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: 600 });
   charWidth = 6;
   measuredTexts.length = 0;
   // The measure cache is module-level and would otherwise leak between tests.
@@ -91,11 +87,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  for (const prop of sizeProps) {
-    const d = originals[prop];
-    if (d) Object.defineProperty(HTMLElement.prototype, prop, d);
-    else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[prop];
-  }
   if (origFontsDescriptor) Object.defineProperty(document, 'fonts', origFontsDescriptor);
   else delete (document as unknown as { fonts?: unknown }).fonts;
 });

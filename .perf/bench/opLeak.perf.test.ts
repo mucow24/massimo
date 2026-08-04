@@ -27,16 +27,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readPerfMap } from '../perfMap';
 import { parse } from '../../src/model/serialize';
-import type { MapDoc, Station, StationId } from '../../src/model/types';
-import {
-  buildBandGeometry,
-  buildStopMarkers,
-  withLinePriorities,
-} from '../../src/geometry/interlining';
-import { buildExclusionHolesCached, resolveRegionWinners } from '../../src/geometry/lineRegions';
-import { regionsFor } from '../../src/geometry/regionCache';
-import { lineStrokeRailWidth, lineStrokeWidthOf } from '../../src/model/lineStroke';
-import { lineWidthOf } from '../../src/model/lineWidth';
+import type { MapDoc } from '../../src/model/types';
+import { runFrame } from '../frame';
 
 type Ring = { x: number; y: number }[];
 type Call = { op: string; args: unknown[] };
@@ -84,28 +76,6 @@ function loadDoc(): MapDoc {
   const res = parse(readPerfMap());
   if (!res.ok) throw new Error(`parse failed: ${res.error}`);
   return res.doc;
-}
-
-function runFrame(doc: MapDoc, stations: Record<StationId, Station>): void {
-  const g = { stations, lines: doc.lines, lineCircles: doc.lineCircles };
-  const bandsGeometry = buildBandGeometry(stations, doc.lines, doc.lineCircles);
-  const bands = withLinePriorities(bandsGeometry, doc.lines, doc.lineOrder);
-  const markers = buildStopMarkers(stations, doc.lines, doc.lineOrder, bands, doc.lineCircles);
-  const geom = regionsFor(g, { bands: bandsGeometry, markers }, { transient: true });
-  const winners = resolveRegionWinners(geom.faces, doc.regionAssignments, geom.bands, doc.lineOrder);
-  buildExclusionHolesCached(
-    geom.faces,
-    winners,
-    doc.lineOrder,
-    geom.bands,
-    geom.markers,
-    (lineId) => {
-      const line = doc.lines[lineId];
-      return line ? lineStrokeRailWidth(lineStrokeWidthOf(line), lineWidthOf(line)) : 0;
-    },
-    geom.slivers,
-    geom.holeChain,
-  );
 }
 
 /** Free space inside the CURRENT heap, at 64 KB resolution. */

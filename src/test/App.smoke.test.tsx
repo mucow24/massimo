@@ -13,13 +13,18 @@ describe('App smoke', () => {
     expect(screen.getByRole('img', { name: 'Massimo' })).toBeInTheDocument();
   });
 
-  it('shows toolbar menus', () => {
-    render(<App />);
-    expect(screen.getByRole('button', { name: /Canvas/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Add/ })).toBeInTheDocument();
-  });
+  // The Canvas and Add menus are driven in depth by Toolbar.test.tsx (see its
+  // "Canvas menu" describe and the Add-menu cases), which opens them rather
+  // than just checking they exist — a presence check here could not fail
+  // without taking that whole file down with it.
 
   it('exposes a Manage palettes button in the toolbar', () => {
+    // Kept, unlike the toolbar-menu check above: PalettesDialog.test.tsx covers
+    // the dialog's behaviour but never names its trigger, so nothing else at
+    // the unit level pins the button's presence. e2e/customPalette.spec.ts does
+    // click it, which would fail if it vanished — but that is one browser spec
+    // away from the fast suite, and its failure would read as a palette bug
+    // rather than a missing toolbar button.
     render(<App />);
     expect(screen.getByRole('button', { name: 'Manage palettes' })).toBeInTheDocument();
   });

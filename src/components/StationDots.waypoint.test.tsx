@@ -57,21 +57,13 @@ describe('StationDots — waypoints under the Show-waypoints overlay', () => {
     const fill = svg.querySelector('[data-stop-station="wp"][data-stop-shape="circle"]')!;
     expect(fill).toBeTruthy();
     expect(fill.getAttribute('fill')).toBe('#ffffff');
-    // Stroke pass: a black silhouette beneath it.
+    // Stroke pass: a black silhouette beneath it, exactly one.
+    // The fixture's stop STORES filled-black (no stroke), so these two
+    // assertions together are also the overlay-overrides-the-stored-style case
+    // that used to sit in its own test below.
+    expect(svg.querySelectorAll('[data-stop-stroke="wp"]')).toHaveLength(1);
     const stroke = svg.querySelector('[data-stop-stroke="wp"]')!;
-    expect(stroke).toBeTruthy();
     expect(stroke.getAttribute('fill')).toBe('#000000');
-  });
-
-  it('forces the overlay style even when the stop stores a different dotStyle (non-destructive)', () => {
-    // The stop's stored style is filled-black (no stroke). The overlay must
-    // override it at render time without depending on / mutating the stored value.
-    useViewportStore.setState({ showWaypoints: true });
-    const svg = renderDots(waypoint(), lines());
-    expect(
-      svg.querySelector('[data-stop-station="wp"][data-stop-shape="circle"]')!.getAttribute('fill'),
-    ).toBe('#ffffff');
-    expect(svg.querySelectorAll('[data-stop-stroke="wp"]').length).toBe(1);
   });
 
   it('leaves ordinary (non-waypoint) stations untouched by the overlay', () => {

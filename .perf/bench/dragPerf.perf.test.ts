@@ -4,7 +4,7 @@
  * Gated behind PERF=1 so it never runs in the suite.
  *
  * Run:
- *   PERF=1 npx vitest run src/perf/dragPerf.perf.test.ts --disableConsoleIntercept
+ *   PERF=1 npx vitest run -c .perf/vitest.bench.config.ts .perf/bench/dragPerf.perf.test.ts --disableConsoleIntercept
  * Map: PERF_MAP=<path>, else the first .massimo.json in .perf/ (see perfMap.ts)
  * Station filter: PERF_ONLY=<name fragment>
  *
@@ -44,7 +44,10 @@ const { opStats, resetOps, timed } = vi.hoisted(() => {
   return { opStats, resetOps, timed };
 });
 
-vi.mock('../geometry/clip', async (importOriginal) => {
+// The specifier is resolved relative to THIS file, so it must carry the same
+// `../../src/` prefix as the real imports above — `../geometry/clip` resolves to
+// nothing, and vitest no-ops an unresolvable mock silently rather than throwing.
+vi.mock('../../src/geometry/clip', async (importOriginal) => {
   const orig = (await importOriginal()) as Record<string, unknown>;
   const out: Record<string, unknown> = { ...orig };
   for (const name of Object.keys(orig)) {
@@ -272,6 +275,13 @@ describe.runIf(PERF)('station drag perf', () => {
             `wall=${wall.toFixed(1)}ms (${(wall / FRAMES).toFixed(1)}ms/frame)`,
         );
         const rows = Object.entries(opStats).sort((a, b) => b[1].ms - a[1].ms);
+        // PROBE VALIDATION: an inert mock leaves every counter at zero, and the
+        // table below then reports "clipper = 0% of frame cost" — the exact
+        // inverse of the finding — while still passing green.
+        const totalCalls = rows.reduce((a, [, c]) => a + c.n, 0);
+        expect(totalCalls, 'clip.ts mock never intercepted — attribution is void').toBeGreaterThan(
+          0,
+        );
         let clipTotal = 0;
         for (const [, c] of rows) clipTotal += c.ms;
         for (const [name, c] of rows.slice(0, 8)) {

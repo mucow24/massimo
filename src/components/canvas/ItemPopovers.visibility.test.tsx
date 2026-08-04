@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { act, render } from '@testing-library/react';
-import App from '../../App';
+import { ItemPopovers } from './ItemPopovers';
 import { useDoc } from '../../state/store';
 import { useSelection } from '../../state/selection';
 import { useViewportStore } from '../../state/viewportStore';
@@ -25,16 +25,16 @@ import type { LineId, StationId } from '../../model/types';
  * item that is no longer on screen. ItemPopovers' own comment has always named
  * that failure for the lines/stations toggle; these pin it for every other kind
  * the View menu can hide.
+ *
+ * Rendered directly, like the sibling ItemPopovers.test.tsx. The gate under
+ * test reads the visibility store, so a full <App /> mount bought nothing here
+ * beyond a host box — which is now just the hostSize prop.
  */
 
-const sizeProps = ['clientWidth', 'clientHeight'] as const;
-const originals: Partial<Record<(typeof sizeProps)[number], PropertyDescriptor>> = {};
+// zoom 1, centered on the world origin, matching ItemPopovers.test.tsx.
+const HOST = { w: 800, h: 600 };
+
 beforeEach(() => {
-  for (const prop of sizeProps) {
-    originals[prop] = Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop);
-  }
-  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 800 });
-  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: 600 });
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useDoc.temporal.getState().clear();
   useViewportStore.setState({
@@ -61,14 +61,8 @@ beforeEach(() => {
     selectedLineCircleIds: [],
     selectedTransferId: null,
     uiMode: { kind: 'idle' },
+    sidebarOpen: false,
   });
-});
-afterEach(() => {
-  for (const prop of sizeProps) {
-    const d = originals[prop];
-    if (d) Object.defineProperty(HTMLElement.prototype, prop, d);
-    else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[prop];
-  }
 });
 
 const seed = () =>
@@ -134,7 +128,7 @@ const count = (sel: string) => document.querySelectorAll(sel).length;
 
 describe('ItemPopovers — a hidden kind takes its editor with it', () => {
   it.each(CASES)('$key closes the $panel', ({ key, select, panel }) => {
-    render(<App />);
+    render(<ItemPopovers hostSize={HOST} />);
     seed();
     act(select);
     // Guards the assertion below from passing vacuously.
@@ -150,7 +144,7 @@ describe('ItemPopovers — a hidden kind takes its editor with it', () => {
   it('drops hidden items from the multi-select group count', () => {
     // The bulk panel offers Delete all: a tally that silently includes items
     // the user cannot see makes that a trap.
-    render(<App />);
+    render(<ItemPopovers hostSize={HOST} />);
     seed();
     act(() => {
       useSelection.setState({

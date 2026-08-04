@@ -998,8 +998,8 @@ describe('duplicateStyle', () => {
     expect(duplicateStyle(doc, 'y3', 'y1', '  ')).toBe(doc); // empty name
     expect(duplicateStyle(doc, 'y3', 'y1', ' custom ')).toBe(doc); // reserved sentinel
     expect(duplicateStyle(doc, 'y3', 'y1', 'Small')).toBe(doc); // same-kind collision
-    // A homonym across kinds is fine.
-    expect(duplicateStyle(doc, 'y3', 'y1', 'Small').styles.y3).toBeUndefined();
+
+    // A homonym across KINDS is fine, though — same name, different kind.
     const withPoly = makeDoc({
       styles: [
         makeStyle('routeBullet', 'y1', { name: 'Big' }),

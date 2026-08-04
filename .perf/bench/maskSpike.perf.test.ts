@@ -18,7 +18,7 @@
  * Third, and the big one: a cached pair is reusable when no DIRTY BOX can reach
  * the region where the two bodies meet. Today dirtiness is line-granular.
  *
- *   PERF=1 npx vitest run src/perf/maskSpike.perf.test.ts --disableConsoleIntercept
+ *   PERF=1 npx vitest run -c .perf/vitest.bench.config.ts .perf/bench/maskSpike.perf.test.ts --disableConsoleIntercept
  */
 import { describe, it, expect } from 'vitest';
 import { readPerfMap } from '../perfMap';

@@ -72,8 +72,8 @@ const BRANCH_EDGES = [TRUNK_LOWER, TRUNK_UPPER, BRANCH];
 
 describe('stationMarkerStyle — plurality', () => {
   it('takes the majority style at a branch, not solid', () => {
-    // dashed x2 vs solid x1 — today this resolves to solid because the junction
-    // is mixed; under plurality the dashed trunk wins.
+    // dashed x2 vs solid x1 — plurality gives the dashed trunk, not solid.
+    // (A mixed junction resolving to solid would be the pre-plurality rule.)
     expect(
       markerStyleAt(
         BRANCH_COORDS,
@@ -134,7 +134,8 @@ describe('stationMarkerStyle — plurality', () => {
 
   it('leaves a plain through-stop and a terminus alone', () => {
     const styles = { [TRUNK_UPPER]: 'dashed' as LineStyle };
-    // s3 is a terminus of a dashed edge -> dashed (unchanged from today).
+    // s3 is a terminus of a dashed edge -> dashed; plurality changes nothing
+    // where there is no branch to take a majority over.
     expect(markerStyleAt(BRANCH_COORDS, BRANCH_EDGES, styles, 's3')).toBe('dashed');
     // s1 is a terminus of a solid edge -> solid.
     expect(markerStyleAt(BRANCH_COORDS, BRANCH_EDGES, styles, 's1')).toBe('solid');

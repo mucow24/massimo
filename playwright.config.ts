@@ -9,8 +9,10 @@ export default defineConfig({
   testDir: './e2e',
   // No retries locally — flake should be fixed, not papered over.
   retries: process.env.CI ? 2 : 0,
-  // Single worker keeps the persisted localStorage fixtures from racing
-  // across tests; the suite is small.
+  // Single worker. Playwright already isolates localStorage per test via a
+  // fresh BrowserContext, so this is NOT about fixture races: the specs measure
+  // drag/pan timing and rendered geometry, which destabilise under CPU
+  // contention. The suite is small enough that serialising is cheap.
   workers: 1,
   reporter: process.env.CI ? 'github' : 'list',
   use: {

@@ -61,7 +61,7 @@ describe('regionGeometrySig: edgeless line with a stop', () => {
     expect(served.faces[0].bbox.x1).toBeCloseTo(truth[0].bbox.x1, 0);
   });
 
-  it('the real setLineWidth store action leaves the served face stale too', () => {
+  it('the real setLineWidth store action invalidates the served face too', () => {
     const g = geom(14);
     useDoc.setState({
       ...useDoc.getState(),

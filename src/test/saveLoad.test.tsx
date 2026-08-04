@@ -88,12 +88,9 @@ describe('save/load round-trip', () => {
     expect(r.ok).toBe(false);
   });
 
-  it('round-trip envelope matches the canonical format', () => {
-    const json = serialize(makeDoc({}));
-    const obj = JSON.parse(json);
-    expect(obj.format).toBe(SCHEMA_FORMAT);
-    expect(obj.doc).toBeDefined();
-  });
+  // The envelope shape rides the round-trip test at the top of this describe;
+  // asserting `obj.format === SCHEMA_FORMAT` on output that serialize() stamped
+  // from that same constant compared the constant against itself.
 
   it('round-trips per-station typography', () => {
     const fixture = makeDoc({
@@ -287,24 +284,7 @@ describe('save/load round-trip', () => {
     }
   });
 
-  it('load strips the retired segmentLayers field from legacy files', () => {
-    // Files saved before the region-paint rework carry per-line segmentLayers.
-    // The field is retired (regionAssignments replaced it); the load sanitizer
-    // must strip it so dead data never re-enters the doc.
-    const fixture = makeDoc({
-      stations: [makeStation({ id: 'a' }), makeStation({ id: 'b' })],
-      lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
-    });
-    fixture.lines.L1 = {
-      ...fixture.lines.L1,
-      segmentLayers: { 'a|b': 2 },
-    } as (typeof fixture.lines)['L1'];
-    const result = parse(JSON.stringify({ format: SCHEMA_FORMAT, doc: fixture }));
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect('segmentLayers' in result.doc.lines.L1).toBe(false);
-    }
-  });
+  // The retired-segmentLayers strip is pinned by serialize.test.ts:351.
 });
 
 describe('localStorage rehydrate — line edge backfill', () => {
@@ -314,14 +294,19 @@ describe('localStorage rehydrate — line edge backfill', () => {
   });
 
   it('backfills edges when rehydrating a doc stranded at the current version with edge-less lines', async () => {
-    // The exact shape an intermediate build persisted: version 14 (== the
-    // current persist version, so zustand SKIPS `migrate`) with lines that
-    // predate the `edges` field. Without a rehydrate-time backfill the renderer
-    // reads `ln.edges.join(...)` on undefined and the whole app white-screens.
+    // The exact shape an intermediate build persisted: stamped at the CURRENT
+    // persist version (so zustand SKIPS `migrate`) with lines that predate the
+    // `edges` field. Without a rehydrate-time backfill the renderer reads
+    // `ln.edges.join(...)` on undefined and the whole app white-screens.
+    //
+    // Read the version off the live config — the original literal 14 was the
+    // current version when this was written, and once it bumped the test
+    // quietly started exercising `migrate` instead of the `merge` hook it
+    // exists to guard.
     localStorage.setItem(
       'vignelli-map-doc-v1',
       JSON.stringify({
-        version: 14,
+        version: useDoc.persist.getOptions().version,
         state: {
           lines: {
             L1: {

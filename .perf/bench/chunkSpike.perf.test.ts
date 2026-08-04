@@ -10,7 +10,7 @@
  * the union of chunk-pair intersections, and checks the result against the
  * production zone.
  *
- *   PERF=1 npx vitest run src/perf/chunkSpike.perf.test.ts --disableConsoleIntercept
+ *   PERF=1 npx vitest run -c .perf/vitest.bench.config.ts .perf/bench/chunkSpike.perf.test.ts --disableConsoleIntercept
  */
 import { describe, it, expect } from 'vitest';
 import { readPerfMap } from '../perfMap';
@@ -94,19 +94,21 @@ function chunkedBodies(
   return out;
 }
 
-/** The marker's body footprint as a ring, from the spec's own geometry. */
+/**
+ * The marker's body footprint as a ring, from the spec's own geometry: a
+ * width x width square at the marker centre - the shape buildLineBodies
+ * contributes for a plain stop.
+ *
+ * Read the fields off StopMarkerSpec directly rather than through an index
+ * signature. An `as Record<string, unknown>` cast here previously reached for
+ * `x`/`y`, which the spec does not have (it carries `cx`/`cy`), so every
+ * marker collapsed to a square at the world origin and both headline numbers
+ * below were computed on corrupt geometry. Typed access makes that a
+ * `perf:check` failure instead of a silent one.
+ */
 function markerFootprint(m: StopMarkerSpec): Ring[] {
-  const anyM = m as unknown as Record<string, unknown>;
-  // Prefer an explicit footprint if the spec exposes one.
-  for (const k of ['bodyRings', 'footprint', 'rings']) {
-    const v = anyM[k];
-    if (Array.isArray(v) && v.length && Array.isArray(v[0])) return v as Ring[];
-  }
-  // Otherwise a width x width square at the marker centre, axis-aligned to its
-  // orientation - the shape buildLineBodies contributes for a plain stop.
-  const cx = Number(anyM.x ?? 0);
-  const cy = Number(anyM.y ?? 0);
-  const w = Number(anyM.width ?? anyM.size ?? 0) / 2;
+  const { cx, cy } = m;
+  const w = m.width / 2;
   if (!w) return [];
   return [
     [
@@ -127,6 +129,28 @@ describe.runIf(PERF)('chunked-body spike', () => {
       const bodies = buildLineBodies(bands, markers);
       const ids = [...bodies.keys()].sort();
       const boxes = new Map(ids.map((id) => [id, ringsBbox(bodies.get(id)!)]));
+
+      // PROBE VALIDATION: the whole census is computed off marker footprints,
+      // and reading a field StopMarkerSpec lacks collapses every one of them to
+      // the same square at the world origin — which this map's bounding box
+      // happens to CONTAIN, so a containment check would not catch it. What
+      // does catch it is the collapse itself: real markers sit at distinct
+      // centres. (The type signature is the primary guard now that
+      // markerFootprint reads m.cx/m.cy directly; this is the runtime backstop.)
+      const centres = new Set(
+        markers.map((m) => {
+          const ring = markerFootprint(m)[0];
+          if (!ring) return 'empty';
+          const b = ringsBbox([ring]);
+          return `${((b.x0 + b.x1) / 2).toFixed(3)},${((b.y0 + b.y1) / 2).toFixed(3)}`;
+        }),
+      );
+      centres.delete('empty');
+      expect(
+        centres.size,
+        `${markers.length} markers produced ${centres.size} distinct footprint centres — ` +
+          `markerFootprint is collapsing them, so every number below is computed on corrupt geometry`,
+      ).toBeGreaterThan(1);
 
       // --- production: whole-body pair intersections -------------------------
       const t0 = performance.now();

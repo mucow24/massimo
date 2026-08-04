@@ -80,6 +80,38 @@ describe('placing-label snap vs. the doc-default label style', () => {
     expect(ghost.y).toBeCloseTo(dropped.y, 5);
   });
 
+  it('the ghost preview lands where the drop lands with ALL snapping off', () => {
+    // The unsnapped arm of the same parity rule: with every mode off the drop
+    // point is the raw cursor, so this catches a ghost/commit divergence that
+    // grid snapping would otherwise round away. (Ported from the former
+    // usePlacementDispatch.labelDrop.test.ts, whose other case was a duplicate
+    // of the parity test above.)
+    useSnapPrefs.setState({
+      modes: { ...DEFAULT_SNAP_MODES, line: false, grid: 'off', all: 'off' },
+    });
+    act(() => {
+      useDoc.getState().updateStyleProps('default-textLabel', { fontSize: 40 });
+    });
+    const style = defaultStyleProps(useDoc.getState(), 'textLabel');
+
+    const snap = snapPlacement(
+      { kind: 'placing-label' },
+      { x: 37, y: 23 },
+      false,
+      useSnapPrefs.getState().modes,
+      useViewportStore.getState().gridSize,
+      1,
+    );
+    const ghost = polygonSnapAnchor(textLabelCorners(makePreviewTextLabel(snap, style)));
+
+    const label = place(37, 23);
+    expect(label.fontSize).toBe(40); // sanity: the drop wears the default style
+    const dropped = polygonSnapAnchor(textLabelCorners(label));
+
+    expect(ghost.x).toBeCloseTo(dropped.x, 5);
+    expect(ghost.y).toBeCloseTo(dropped.y, 5);
+  });
+
   it('a center-aligned default style still drops the label onto the guide it snapped to', () => {
     act(() => {
       useDoc

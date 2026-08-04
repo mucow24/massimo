@@ -284,8 +284,18 @@ describe('polygon transforms', () => {
       expect(resolvePolygonColors(poly, true)).toEqual({ fill: '#111111', stroke: '#222222' });
     });
 
-    it('returns the light colors in dark mode when the dark colors equal them (uncustomized)', () => {
+    it('a new polygon seeds its dark colors FROM its light ones, so dark mode matches until customized', () => {
+      // The fact here is the construction convention, not a rule inside
+      // resolvePolygonColors — that function is an unconditional ternary with no
+      // "dark equals light" branch, so phrasing this as a resolver fallback made
+      // it a re-run of the dark-mode case above with different data. Assert what
+      // actually holds: makePolygon/addPolygon default darkFill/darkStroke to the
+      // light pair.
       const poly = makePolygon({ id: 'p0', fill: '#aaaaaa', stroke: '#bbbbbb' });
+      expect({ darkFill: poly.darkFill, darkStroke: poly.darkStroke }).toEqual({
+        darkFill: '#aaaaaa',
+        darkStroke: '#bbbbbb',
+      });
       expect(resolvePolygonColors(poly, true)).toEqual({ fill: '#aaaaaa', stroke: '#bbbbbb' });
     });
   });

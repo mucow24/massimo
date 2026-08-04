@@ -98,7 +98,7 @@ describe('serialize / parse — regionAssignments', () => {
     expect(roundTrip(doc).regionAssignments).toEqual({});
   });
 
-  it('is reference-stable through parse for an already-clean doc', () => {
+  it('the assignment cleaner is idempotent: a second parse changes nothing', () => {
     const doc = { ...baseDoc(), regionAssignments: { r1: asg() } };
     const out = roundTrip(doc);
     // Not the same object (JSON round-trip), but a second parse of the same
