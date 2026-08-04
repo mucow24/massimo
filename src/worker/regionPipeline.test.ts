@@ -5,9 +5,11 @@ import {
   initRegionPipeline,
   regionPipelineStatus,
   reportSyncRegionCost,
+  routeSnapGuides,
   setRegionPipelineEnabled,
   type WorkerLike,
 } from './regionPipeline';
+import type { SnapGuide } from '../geometry/snap';
 import { packHoles } from './regionFrame';
 import type { FrameRequest, WorkerRequest, WorkerResponse } from './regionWorker';
 import { beginHistoryGroup, useDoc } from '../state/store';
@@ -148,7 +150,7 @@ describe('frame flow', () => {
     // pending write flushes as frame 2 built from the LATEST doc.
     const h1 = holesOf('l1', 100);
     fake.deliver(resultFor(fake.frames()[0], h1));
-    expect(useDragFrame.getState().holes).toEqual(h1);
+    expect(useDragFrame.getState().frame?.holes).toEqual(h1);
     expect(useRenderDoc.getState().stations['s1'].x).toBe(10);
     expect(fake.frames()).toHaveLength(2);
     expect(fake.frames()[1].sync?.stations?.['s1'].x).toBe(30);
@@ -156,12 +158,12 @@ describe('frame flow', () => {
     // RESULT 2: the canvas advances to frame 2's snapshot as one piece.
     const h2 = holesOf('l1', 200);
     fake.deliver(resultFor(fake.frames()[1], h2));
-    expect(useDragFrame.getState().holes).toEqual(h2);
+    expect(useDragFrame.getState().frame?.holes).toEqual(h2);
     expect(useRenderDoc.getState().stations['s1'].x).toBe(30);
 
     g.commit();
     expect(renderDocArmed()).toBe(false);
-    expect(useDragFrame.getState().holes).toBeNull();
+    expect(useDragFrame.getState().frame).toBeNull();
     // Converged: the render source mirrors the committed doc.
     expect(useRenderDoc.getState().stations['s1'].x).toBe(30);
   });
@@ -176,7 +178,7 @@ describe('drain on every exit', () => {
     expect(renderDocArmed()).toBe(false);
 
     fake.deliver(resultFor(frame, holesOf('l1', 100)));
-    expect(useDragFrame.getState().holes).toBeNull();
+    expect(useDragFrame.getState().frame).toBeNull();
     expect(renderDocArmed()).toBe(false);
   });
 
@@ -207,7 +209,7 @@ describe('fallback', () => {
     fake.deliver({ kind: 'error', message: 'wasm exploded' });
     expect(regionPipelineStatus().armed).toBe(false);
     expect(renderDocArmed()).toBe(false);
-    expect(useDragFrame.getState().holes).toBeNull();
+    expect(useDragFrame.getState().frame).toBeNull();
     expect(fake.terminated).toBe(true);
 
     // Still mid-gesture: another slow frame must NOT re-arm a broken pipeline.
@@ -240,6 +242,37 @@ describe('fallback', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('snap guides ride the frame', () => {
+  const guideAt = (x: number): SnapGuide => ({ from: { x, y: 0 }, to: { x, y: 100 } });
+
+  it('unarmed, routing declines and the hook keeps its local behavior', () => {
+    expect(routeSnapGuides('station', [guideAt(1)])).toBe(false);
+  });
+
+  it('guides published with input N surface with frame N, not before', async () => {
+    const g = await armMidGesture(10);
+
+    // Input 2 arrives while frame 1 is in flight: its guides are routed into
+    // the pipeline (the hook must not paint them over frame 0's snapshot).
+    const g2 = [guideAt(20)];
+    expect(routeSnapGuides('station', g2)).toBe(true);
+    useDoc.getState().moveStation('s1', 20, 0);
+    expect(useDragFrame.getState().frame).toBeNull();
+
+    // Frame 1 lands (its input predates g2): no guides yet. The pending
+    // write flushes as frame 2, carrying g2.
+    fake.deliver(resultFor(fake.frames()[0], holesOf('l1', 100)));
+    expect(useDragFrame.getState().frame?.guides).toEqual([]);
+
+    // Frame 2 lands: g2 surfaces exactly when its snapshot paints.
+    fake.deliver(resultFor(fake.frames()[1], holesOf('l1', 200)));
+    expect(useDragFrame.getState().frame?.guides).toEqual(g2);
+
+    g.commit();
+    expect(useDragFrame.getState().frame).toBeNull();
   });
 });
 

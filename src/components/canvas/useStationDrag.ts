@@ -1,15 +1,11 @@
-import { RefObject, useCallback, useEffect, useRef, useState } from 'react';
+import { RefObject, useCallback, useEffect, useRef } from 'react';
 import { beginHistoryGroup, useDoc } from '../../state/store';
 import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
 import type { StationId } from '../../model/types';
 import { Rotation } from '../../geometry/orientation';
-import {
-  snapDraggedStation,
-  SnapGuide,
-  snapGuidesEqual,
-  snapToleranceAt,
-} from '../../geometry/snap';
+import { snapDraggedStation, SnapGuide, snapToleranceAt } from '../../geometry/snap';
+import { useRoutedSnapGuides } from './useRoutedSnapGuides';
 import { lineCircleAtPoint, snapPointToCircle, stationCircle } from '../../geometry/lineCircle';
 import { liveCaptureCircles } from './snapTargets';
 import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
@@ -82,7 +78,7 @@ export function useStationDrag(
     escapedFrom: { circleId: string; x: number; y: number; rotation: Rotation } | null;
     history: ReturnType<typeof beginHistoryGroup>;
   } | null>(null);
-  const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
+  const [snapGuides, setSnapGuides] = useRoutedSnapGuides('station');
 
   // onStartDrag is passed to every (memoized) StationView; keep it referentially
   // stable so a pan/zoom — or any unrelated edit — doesn't re-render every
@@ -244,10 +240,10 @@ export function useStationDrag(
       });
       nx = snap.x;
       ny = snap.y;
-      // Keep the previous array when this move reproduced it (including the
-      // no-guides case) so React bails on the same-reference state instead of
-      // re-rendering for a value-identical fresh array every move.
-      setSnapGuides((prev) => (snapGuidesEqual(prev, snap.guides) ? prev : snap.guides));
+      // The routed setter keeps the previous array when this move reproduced
+      // it (including the no-guides case) so React bails on the same-reference
+      // state instead of re-rendering for a value-identical fresh array.
+      setSnapGuides(snap.guides);
     } else if (snapGuides.length > 0) {
       setSnapGuides([]);
     }
@@ -272,8 +268,10 @@ export function useStationDrag(
     const ds = dragStationRef.current;
     if (!ds) return;
     dragStationRef.current = null;
-    setSnapGuides([]);
+    // Clear AFTER the exit: finishDrag's commit drains the pipeline, and a
+    // clear issued while still armed would be routed away with the gesture.
     finishDrag(ds, e, svgRef);
+    setSnapGuides([]);
   };
 
   // A browser pointercancel (pen palm rejection, window switch, capture loss)
@@ -285,8 +283,10 @@ export function useStationDrag(
     const ds = dragStationRef.current;
     if (!ds) return;
     dragStationRef.current = null;
-    setSnapGuides([]);
+    // Rollback first: it drains the pipeline, so the clear lands in hook
+    // state instead of being routed away (see useRoutedSnapGuides).
     ds.history.rollback();
+    setSnapGuides([]);
   };
 
   return { snapGuides, onStartDrag, onPointerMove, onPointerUp, onPointerCancel };

@@ -24,7 +24,8 @@
  */
 import { onHistoryGroup, useDoc, type DocSnapshot } from '../state/store';
 import { pickDragFrameDoc, setRenderDocOverlay } from '../state/renderDoc';
-import { setDragFrameHoles } from '../state/dragFrame';
+import { setDragFrame } from '../state/dragFrame';
+import type { SnapGuide } from '../geometry/snap';
 import { diffMirror, unpackHoles, type RegionMirror } from './regionFrame';
 import type { FrameResult, WorkerErrorResponse, WorkerRequest, WorkerResponse } from './regionWorker';
 
@@ -62,7 +63,11 @@ let armed = false;
 let armQueued = false;
 /** Worker failed mid-gesture: stay synchronous until the gesture ends. */
 let brokenThisGesture = false;
-let inFlight: { seq: number; snapshot: ReturnType<typeof pickDragFrameDoc> } | null = null;
+let inFlight: {
+  seq: number;
+  snapshot: ReturnType<typeof pickDragFrameDoc>;
+  guides: SnapGuide[];
+} | null = null;
 let pending = false;
 let timeoutId: ReturnType<typeof setTimeout> | null = null;
 /** Exponential average of frame round-trips, for the timeout watchdog. */
@@ -114,7 +119,7 @@ const sendFrame = (): void => {
   const sync = diffMirror(cur, lastPosted);
   lastPosted = cur;
   seq++;
-  inFlight = { seq, snapshot: pickDragFrameDoc(s) };
+  inFlight = { seq, snapshot: pickDragFrameDoc(s), guides: pendingGuidesUnion() };
   lastSentAt = performance.now();
   w.postMessage({ kind: 'frame', gen, seq, sync });
   clearTimer();
@@ -127,6 +132,40 @@ const sendFrame = (): void => {
 
 /** When the in-flight frame was posted (depth-1: one frame, one stamp). */
 let lastSentAt = 0;
+
+/**
+ * The sources a pipelined gesture's snap guides can come from — the five
+ * armable drag hooks. Union order is the paint stacking order, fixed so a
+ * frame's guides render deterministically.
+ */
+const GUIDE_SOURCES = ['station', 'item', 'polygon', 'svgImage', 'lineCircle'] as const;
+export type SnapGuideSource = (typeof GUIDE_SOURCES)[number];
+
+/** Guides published since the last frame send, per source — the input-time
+ *  truth the next frame carries. Meaningful only while armed. */
+let pendingGuides: Partial<Record<SnapGuideSource, SnapGuide[]>> = {};
+
+const pendingGuidesUnion = (): SnapGuide[] => {
+  const union: SnapGuide[] = [];
+  for (const s of GUIDE_SOURCES) {
+    const g = pendingGuides[s];
+    if (g) union.push(...g);
+  }
+  return union;
+};
+
+/**
+ * Drag hooks publish every guide update through here, in the same pointermove
+ * that writes the doc. While armed the guides become the NEXT frame's cargo
+ * (returns true: the hook must not touch its own live state, or a guide from
+ * input N would paint over frame N-1); at rest they stay the hook's business
+ * (returns false).
+ */
+export function routeSnapGuides(source: SnapGuideSource, guides: SnapGuide[]): boolean {
+  if (!armed) return false;
+  pendingGuides[source] = guides;
+  return true;
+}
 
 const handleMessage = (msg: WorkerResponse): void => {
   if (msg.kind === 'result') return handleResult(msg);
@@ -142,8 +181,9 @@ const handleResult = (msg: FrameResult): void => {
   emaMs = 0.7 * emaMs + 0.3 * (performance.now() - lastSentAt);
   const holes = unpackHoles({ index: msg.index, coords: msg.coords });
   // One synchronous block ⇒ one React render: the snapshot these holes were
-  // computed FROM and the holes themselves can never paint apart.
-  setDragFrameHoles(holes);
+  // computed FROM, the guides published with its input, and the holes
+  // themselves can never paint apart.
+  setDragFrame({ holes, guides: inFlight.guides });
   setRenderDocOverlay(inFlight.snapshot);
   inFlight = null;
   if (pending) {
@@ -169,9 +209,10 @@ const fallback = (): void => {
   armed = false;
   pending = false;
   inFlight = null;
+  pendingGuides = {};
   brokenThisGesture = true;
   gen++;
-  setDragFrameHoles(null);
+  setDragFrame(null);
   setRenderDocOverlay(null);
   worker?.terminate();
   worker = null;
@@ -185,9 +226,10 @@ const drain = (): void => {
   armed = false;
   pending = false;
   inFlight = null;
+  pendingGuides = {};
   gen++;
   if (wasArmed) {
-    setDragFrameHoles(null);
+    setDragFrame(null);
     setRenderDocOverlay(null);
   }
   if (worker && enabled) postSync(useDoc.getState());
@@ -280,6 +322,7 @@ export function disposeRegionPipeline(): void {
   armQueued = false;
   pending = false;
   inFlight = null;
+  pendingGuides = {};
   anyGroupOpen = false;
   deferGroupOpen = false;
   brokenThisGesture = false;
@@ -287,6 +330,6 @@ export function disposeRegionPipeline(): void {
   worker = null;
   lastPosted = null;
   factory = defaultFactory;
-  setDragFrameHoles(null);
+  setDragFrame(null);
   setRenderDocOverlay(null);
 }
