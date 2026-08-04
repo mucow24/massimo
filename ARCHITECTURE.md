@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `d8eefcc` (2026-08-03, #425) — verified against the live source.** This
+**Up to date as of commit `a7c6efd` (2026-08-04, #440) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -45,7 +45,7 @@ with meanwhile — a failure to load is reported instead of degraded.
      React components render the doc to SVG and dispatch actions.
 - **Editing = pure transforms.** Store actions are thin wrappers: `set((s) => T.moveStation(s, …))`.
   Transforms return the **same object reference on no-op** — this is load-bearing for undo
-  grouping. ([src/model/transforms.ts](src/model/transforms.ts) is the ~3250-line heart.)
+  grouping. ([src/model/transforms.ts](src/model/transforms.ts) is the ~4050-line heart.)
 - **The Vignelli look comes from "interlining"** ([src/geometry/interlining.ts](src/geometry/interlining.ts)):
   multiple lines sharing a station-pair corridor are merged into mean-centered parallel stripes.
   This is the single most intricate algorithm in the repo and is pinned by a **byte-exact golden
@@ -107,7 +107,7 @@ src/
 
   model/                        # PURE domain logic — no React, no store
     types.ts                    # MapDoc + every entity type (the canonical data shape)
-    transforms.ts               # ~3800 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
+    transforms.ts               # ~4050 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
     serialize.ts                # serialize()/parse() + shared backfill/sanitize helpers
     styles.ts                   # named per-kind formatting presets (StyleDef) + styleId tag/stamp
     ids.ts                      # IdFactory: crypto UUIDs (prod) / counter ids (tests)
@@ -208,6 +208,8 @@ src/
     Station*/Stop*/Label*/...   # per-entity SVG views (see Rendering section)
     selectionStyle.ts           # shared selection stroke/dash/wash constants (screen-px; ÷ zoom)
     Toolbar.tsx Sidebar.tsx Menu.tsx  # chrome
+    BrandBullet.tsx             # the wordmark: an "M" route bullet (black disc/white M; night
+                                #   inverts) — the toolbar badge, reused by the easter-egg ball
     MapLibraryDialog.tsx        # the library manager (maps | versions; Radix Dialog)
     PalettesDialog.tsx          # the palette manager (library | in this map; same Dialog shell)
     MapVersionPill.tsx          # the live doc's version + save-status dot, beside the map name
@@ -1792,7 +1794,7 @@ pools and the popovers cannot drift into different opinions about what is on scr
 the background art (polygons, svg images) and the grid on the canvas, so art buried under the
 network can be clicked and dragged. Hidden content is **not rendered** rather than made invisible —
 an invisible-but-present hit rect would still swallow the clicks the toggle exists to let through.
-Four seams cover it, and a fifth rule governs anything new:
+Six seams cover it, and a seventh rule governs anything new:
 
 - **Stations** self-gate inside [StationView.tsx](src/components/StationView.tsx). That dispatcher
   is the chokepoint every station pass (wash, hit area, dots, labels, stroke, drag proxy) funnels
@@ -2942,7 +2944,10 @@ same three additions.
   layering-mode button, Reset view, and the sidebar toggle. The Canvas menu also carries the two
   local chrome preferences — the **Dark UI in day** checkbox and the **Day canvas color** submenu
   (white/gray/black paper) — which live in `useViewportStore`, not the doc.
-  Embeds `MapNameField`, `MapVersionPill`, `SnapToggleBar`, `PalettesDialog`, `ViewPopover`,
+  Its leftmost element is the **`BrandBadge`** wordmark — the app name drawn as an "M" route
+  bullet (`BrandBullet.tsx`) rather than text; alt-click knocks it loose into the easter egg (see
+  `BouncingBullet`). Also embeds `MapNameField`, `MapVersionPill`, `SnapToggleBar`,
+  `PalettesDialog`, `ViewPopover`,
   the **`⚡` `PerfPopover`**
   ([PerfPopover.tsx](src/components/PerfPopover.tsx) — a one-shot snapshot of `devCounters()`
   taken when it opens, for diagnosing a session that has grown slow; see the `debug/` folder),

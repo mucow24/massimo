@@ -12,9 +12,7 @@ import {
   canonicalTransferThickness,
   canonicalTransferStrokeWidth,
   canonicalTransferColor,
-  dayNightColorsEqual,
   legacyColorToDayNight,
-  resolveDayNight,
   resolveTransferStyle,
 } from './transferStyle';
 
@@ -34,28 +32,6 @@ describe('transfer style constants', () => {
     // legacy look, theme-blind (day === night) so old maps read unchanged.
     expect(TRANSFER_COLOR_DEFAULT).toEqual({ day: '#000000', night: '#000000' });
     expect(TRANSFER_STROKE_COLOR_DEFAULT).toEqual({ day: '#ffffff', night: '#ffffff' });
-  });
-});
-
-describe('dayNightColorsEqual', () => {
-  it('is true only when both halves match', () => {
-    expect(
-      dayNightColorsEqual({ day: '#111', night: '#222' }, { day: '#111', night: '#222' }),
-    ).toBe(true);
-    expect(
-      dayNightColorsEqual({ day: '#111', night: '#222' }, { day: '#111', night: '#999' }),
-    ).toBe(false);
-    expect(
-      dayNightColorsEqual({ day: '#111', night: '#222' }, { day: '#999', night: '#222' }),
-    ).toBe(false);
-  });
-});
-
-describe('resolveDayNight', () => {
-  it('picks night in dark mode, day otherwise', () => {
-    const c = { day: '#ff0000', night: '#00ff00' };
-    expect(resolveDayNight(c, false)).toBe('#ff0000');
-    expect(resolveDayNight(c, true)).toBe('#00ff00');
   });
 });
 

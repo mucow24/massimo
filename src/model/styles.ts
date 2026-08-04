@@ -83,9 +83,9 @@ import {
   TRANSFER_STROKE_WIDTH_STEP,
   TRANSFER_THICKNESS_MIN,
   TRANSFER_THICKNESS_STEP,
-  dayNightColorsEqual,
   resolveTransferStyle,
 } from './transferStyle';
+import { dayNightColorsEqual } from './dayNightColor';
 import type {
   DotStyle,
   Line,
