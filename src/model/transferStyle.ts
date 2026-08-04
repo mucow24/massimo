@@ -6,6 +6,7 @@
 // restyling goes through the "Default" transfer style preset instead (its
 // editor re-stamps every transfer wearing it).
 
+import { dayNightColorsEqual } from './dayNightColor';
 import { roundClamp } from '../util/grid';
 import type { DayNightColor } from './types';
 
@@ -55,18 +56,6 @@ export const TRANSFER_STYLE_DEFAULTS: TransferStyle = {
   strokeWidth: TRANSFER_STROKE_WIDTH_DEFAULT,
   strokeColor: TRANSFER_STROKE_COLOR_DEFAULT,
 };
-
-// Structural equality for a theme-aware color: both halves must match. The
-// `===` of the day/night world, used wherever a transfer override is dropped
-// at a default (mirrors dotStyle's `dotColorsEqual`, minus the sentinels).
-export const dayNightColorsEqual = (a: DayNightColor, b: DayNightColor): boolean =>
-  a.day === b.day && a.night === b.night;
-
-// Resolve a theme-aware color to the concrete hex for the active theme: the
-// night half in dark mode, the day half otherwise. Mirrors dotStyle's private
-// `dayNight` and `resolvePolygonColors`.
-export const resolveDayNight = (c: DayNightColor, darkMode: boolean): string =>
-  darkMode ? c.night : c.day;
 
 // Wrap a legacy single-color string as a theme-aware color: old docs stored
 // one color that applied in both themes, so day AND night both take it (old
