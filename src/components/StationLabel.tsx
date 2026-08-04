@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from 'react';
 import { Line, Station } from '../model/types';
 import { useDoc, useSelection } from '../state/store';
+import { useRenderDoc } from '../state/renderDoc';
 import { useThemeColors } from '../state/theme';
 import { useViewportStore } from '../state/viewportStore';
 import { labelLayoutLocal } from '../geometry/labelLayout';
@@ -130,7 +131,7 @@ function useStationLabelLayout(station: Station, lines: Record<string, Line>) {
   // resolves through the same frame they do — the RING's on a bound station,
   // not the rounded octant (see `stationFrameRad`). Reference-stable, so this
   // subscription only re-renders labels when the circles themselves change.
-  const lineCircles = useDoc((s) => s.lineCircles);
+  const lineCircles = useRenderDoc((s) => s.lineCircles);
   // The station's own effective typography (stored ?? LABEL_* default) — the
   // single source the hit rect / silhouette (via effectiveStationLabelStyle,
   // the same object) and the painted text share. `weight` is a shipped-ladder
