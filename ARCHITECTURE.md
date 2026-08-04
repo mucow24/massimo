@@ -2977,9 +2977,12 @@ same three additions.
   their rows, each against the column it points into. The manager and the map library share one
   **`.dialog-*`** shell in styles.css (backdrop, panel, black title band, column heads, lists,
   rows); what stays per-dialog is only what one list has and the other doesn't.
-  Commands that undo can reach go on one click; the ones it can't — anything writing the library,
-  and any add that would replace a palette of that name — take the map library's in-place speed
-  bump, here the same glyph washed red with a title naming what the second click will cost.
+  Every command that destroys or displaces a palette takes the map library's in-place speed bump —
+  the same glyph washed red, with a title naming what the second click will cost — in **both**
+  columns, whether or not undo could reach it. Undo-reachability is deliberately not the test:
+  these buttons sit side by side in one row, and a gesture that changed meaning between adjacent
+  glyphs would be worse than a redundant click. Only commands that displace nothing act on one
+  click.
 - **[StatusToasts.tsx](src/components/StatusToasts.tsx)** — the status-message surface (Radix
   toasts sliding in over the canvas, lower-left). Actions report outcomes by calling `pushToast`
   ([state/toastStore.ts](src/state/toastStore.ts)) — a plain Zustand store (`useToasts`) so any
