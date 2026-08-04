@@ -69,7 +69,8 @@ import {
 import { reconcileOrder } from './recordOrder';
 import { parseHexA, withHexAlpha } from '../util/color';
 import { migrateLegacyInlineTokens } from '../geometry/labelTokens';
-import { KNOWN_PALETTE_IDS, type Palette, type PaletteId } from './palettes';
+import { copyPalette, LEGACY_BUILTIN_IDS, PALETTES, type Palette } from './palettes';
+import { isAllowedImageHref } from './svgImport';
 import type {
   DayNightColor,
   DotBaseShape,
@@ -96,6 +97,7 @@ import type {
   StopOrientation,
   StyleDef,
   StyleKind,
+  SvgImage,
   TextLabel,
   TextLabelAlign,
   TextLabelWeight,
@@ -352,18 +354,75 @@ export interface SerializedFile {
 
 export type ParseResult = { ok: true; doc: MapDoc } | { ok: false; error: string };
 
-// Enforce the "at least one VALID active palette" invariant: drop unknown ids,
-// and fall back to the default set when nothing valid remains. Shared by
-// `parse()` (file import) and the zustand persist `migrate` hook (localStorage
-// rehydration) so both load paths keep the invariant in step — a doc with an
-// explicit empty / all-unknown `activePalettes` is unreachable from the UI.
-export function validActivePalettes(
-  active: readonly PaletteId[] | undefined,
-  custom: readonly Palette[] = [],
-): PaletteId[] {
-  const customIds = new Set(custom.map((p) => p.id));
-  const valid = (active ?? []).filter((id) => KNOWN_PALETTE_IDS.has(id) || customIds.has(id));
-  return valid.length > 0 ? valid : [...DEFAULT_DOC.activePalettes];
+/**
+ * Keep only well-formed palettes, and only the first under any one name — the
+ * map's list is keyed by name, so a duplicate would leave one of the pair
+ * unreachable. Shared by both load paths.
+ */
+export function sanitizePalettes(value: unknown): Palette[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: Palette[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object') continue;
+    const p = raw as { name?: unknown; swatches?: unknown };
+    if (typeof p.name !== 'string' || !p.name || seen.has(p.name)) continue;
+    if (!Array.isArray(p.swatches)) continue;
+    seen.add(p.name);
+    out.push({
+      name: p.name,
+      swatches: p.swatches
+        .filter((s) => s && typeof s.name === 'string' && typeof s.color === 'string')
+        .map((s) => ({ name: s.name as string, color: s.color as string })),
+    });
+  }
+  return out;
+}
+
+// Custom palettes of the id era were `custom:<slug-of-name>`, so slugging the
+// library's names back down is what matches one to its definition. Where two
+// names slugged alike the id generator disambiguated with `-2`, `-3` suffixes
+// that no name carries: the unsuffixed id matches whichever of them comes
+// first, and a suffixed one matches nothing and is dropped like any other
+// unresolvable id. Both are rare and both degrade the same way a dangling
+// custom id always did.
+const legacySlug = (name: string): string =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+/**
+ * Bake the RETIRED `activePalettes` id list into the palette COPIES a map
+ * carries now (`MapDoc.palettes`). Built-in ids resolve through
+ * `LEGACY_BUILTIN_IDS`; `custom:` ids resolve against the palette library,
+ * which is the only place those definitions ever lived. An id that resolves to
+ * neither is dropped — as a dangling custom id always was — and a map can end
+ * up carrying none, which is a legitimate state.
+ *
+ * Keyed off field presence (`palettes` absent, `activePalettes` present), so
+ * `parse()` runs it unconditionally and the localStorage rehydrate gates it at
+ * v<24. Stored order is kept: it was already normalised, and it is the order
+ * the map's owner last saw.
+ */
+export function bakeActivePalettes(
+  active: readonly string[] | undefined,
+  library: readonly Palette[] = [],
+): Palette[] {
+  const out: Palette[] = [];
+  const seen = new Set<string>();
+  for (const id of active ?? []) {
+    const builtinName = LEGACY_BUILTIN_IDS[id];
+    const found = builtinName
+      ? PALETTES.find((p) => p.name === builtinName)
+      : id.startsWith('custom:')
+        ? library.find((p) => legacySlug(p.name) === id.slice('custom:'.length))
+        : undefined;
+    if (!found || seen.has(found.name)) continue;
+    seen.add(found.name);
+    out.push(copyPalette(found));
+  }
+  return out;
 }
 
 export function serialize(doc: MapDoc): string {
@@ -446,12 +505,23 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   // that happens to resolve would win over the repair-by-name path the
   // rehydrate uses — the two load paths must designate identically.
   const hadStyleDefaults = 'styleDefaults' in (docWithMigratedWeight as Record<string, unknown>);
+  // Which palettes the map carries, by the same presence gate the bake uses:
+  // its own list if it has one, the retired id list resolved against the
+  // library if that's all it has, and the DEFAULT_DOC seed (via the merge
+  // below) if it predates both.
+  const rawPalettes = docWithMigratedWeight as Record<string, unknown>;
+  const hadPalettes = 'palettes' in rawPalettes;
+  const hadActivePalettes = 'activePalettes' in rawPalettes;
   let merged: MapDoc = { ...DEFAULT_DOC, ...(docWithMigratedWeight as Partial<MapDoc>) };
-  // Enforce the "at least one valid palette" invariant on load. A malformed
-  // file with explicit `activePalettes: []` or only unknown ids would
-  // otherwise leave the doc in an unreachable-from-UI state. Shared with the
-  // localStorage rehydration path via `validActivePalettes`.
-  merged.activePalettes = validActivePalettes(merged.activePalettes, custom);
+  if (hadPalettes) {
+    merged.palettes = sanitizePalettes(merged.palettes);
+  } else if (hadActivePalettes) {
+    merged.palettes = bakeActivePalettes(
+      rawPalettes.activePalettes as string[] | undefined,
+      custom,
+    );
+  }
+  delete (merged as { activePalettes?: unknown }).activePalettes;
   // Bake the retired doc-level curveRadius onto the lines (and fill line
   // style defs that predate the covered field) BEFORE the per-line clean and
   // the style validation below — both expect the per-line/per-def form.
@@ -482,6 +552,14 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   // the file version — see `snapStationCells`.
   const snapped = snapStationCells(merged.stations);
   if (snapped.changed) merged.stations = snapped.stations;
+  // Drop images whose href is outside the inline-data allowlist. Idempotent and
+  // shared with the rehydrate path via `sanitizeImageHrefs` — the two doc loads
+  // must repair identically, or a persisted doc keeps its remote href forever.
+  const hrefs = sanitizeImageHrefs(merged.svgImages, merged.backgroundOrder);
+  if (hrefs.changed) {
+    merged.svgImages = hrefs.svgImages;
+    merged.backgroundOrder = hrefs.backgroundOrder;
+  }
   // Line-circle binding invariants: drop malformed circles, strip dangling
   // bindings / orphaned viaCircle flags, reproject drifted bound stations.
   const circles = sanitizeLineCircles(merged.lineCircles, merged.stations);
@@ -1151,6 +1229,47 @@ export function bakeLegacyBackgroundOrder<
         ...reconcileOrder(doc.svgImages ?? {}, legacy('svgImageOrder')),
       ];
   return { ...rest, backgroundOrder: merged } as unknown as T;
+}
+
+/**
+ * Drop every svg image whose `href` is outside the inline-data allowlist, and
+ * its `backgroundOrder` entry with it.
+ *
+ * The allowlist ({@link isAllowedImageHref}) is what makes an image opaque:
+ * every image a map carries is inline bytes, so a map paints without reaching
+ * the network and an exported SVG/PNG/PDF is genuinely self-contained. The
+ * clipboard paste path checked it; the two DOC LOAD paths did not, so a
+ * hand-edited file with a remote `https://` href was accepted verbatim, fetched
+ * on every paint, and re-serialized into library payloads and every export.
+ *
+ * Dropping is the same repair every sibling sanitizer in this file makes for
+ * data it cannot honour (a malformed line circle, a region assignment with a
+ * dangling line id) — silently, and by removing the record rather than leaving
+ * a half-valid one behind.
+ *
+ * Non-version-gated: the hole existed at every store version, so a gate would
+ * skip exactly the docs most likely to carry it. Idempotent and value-keyed;
+ * returns its inputs by reference when nothing is wrong.
+ */
+export function sanitizeImageHrefs(
+  svgImages: Record<string, SvgImage>,
+  backgroundOrder: readonly string[],
+): { svgImages: Record<string, SvgImage>; backgroundOrder: string[]; changed: boolean } {
+  const dropped = new Set<string>();
+  for (const id of Object.keys(svgImages)) {
+    const href = svgImages[id]?.href;
+    if (typeof href !== 'string' || !isAllowedImageHref(href)) dropped.add(id);
+  }
+  if (dropped.size === 0) {
+    return { svgImages, backgroundOrder: backgroundOrder as string[], changed: false };
+  }
+  const kept: Record<string, SvgImage> = {};
+  for (const id of Object.keys(svgImages)) if (!dropped.has(id)) kept[id] = svgImages[id];
+  return {
+    svgImages: kept,
+    backgroundOrder: backgroundOrder.filter((id) => !dropped.has(id)),
+    changed: true,
+  };
 }
 
 // Backfill `line.name` for legacy files saved before the field existed, using

@@ -24,63 +24,70 @@ const FRRF = JSON.stringify({
   ],
 });
 
-async function openPalettes(page: Page): Promise<void> {
-  // The Options popover is palettes-only now — the list renders directly,
-  // no disclosure to expand.
-  await page.getByRole('button', { name: 'Options' }).click();
-}
+const openManager = (page: Page) =>
+  page.getByRole('button', { name: 'Manage palettes' }).click();
 
-async function loadFrrf(page: Page): Promise<void> {
-  await page.getByLabel('Load palette file').setInputFiles({
+const closeManager = (page: Page) => page.getByRole('button', { name: 'Close palettes' }).click();
+
+const loadFrrf = (page: Page) =>
+  page.getByLabel('Load palette file').setInputFiles({
     name: 'frrf.json',
     mimeType: 'application/json',
     buffer: Buffer.from(FRRF),
   });
-}
 
-test.describe('custom palettes', () => {
-  test('load adds an unchecked card; activation survives reload; delete removes it', async ({
+const libraryRow = (page: Page, name: string) =>
+  page.locator('.palette-library .palette-row').filter({ hasText: name });
+const mapRow = (page: Page, name: string) =>
+  page.locator('.palette-in-map .palette-row').filter({ hasText: name });
+
+test.describe('palette manager', () => {
+  test('a loaded palette lands in the library AND the map, and both survive a reload', async ({
     page,
   }) => {
     await seedAndOpen(page, twoStop);
-    await openPalettes(page);
-
+    await openManager(page);
     await loadFrrf(page);
 
-    // An unchecked "frrf" card with 5 swatches appears.
-    const frrf = page.getByRole('checkbox', { name: 'frrf' });
-    await expect(frrf).toBeVisible();
-    await expect(frrf).not.toBeChecked();
-    const card = page.locator('.options-palette-card', { has: frrf });
-    await expect(card.locator('.options-palette-strip > span')).toHaveCount(5);
+    await expect(libraryRow(page, 'frrf')).toBeVisible();
+    await expect(mapRow(page, 'frrf')).toBeVisible();
+    await expect(mapRow(page, 'frrf').locator('.palette-strip > span')).toHaveCount(5);
 
-    // Activate it.
-    await frrf.check();
-    await expect(frrf).toBeChecked();
-
-    // Reload: both the definition (localStorage) and the active state (doc)
-    // survive rehydrate — the custom store hydrates before the doc store's
-    // migrate validates active ids.
+    // The library is localStorage and the map's copy is in the persisted doc:
+    // one reload exercises both rehydrate paths at once.
     await page.reload();
     await page.waitForSelector('.canvas-host svg');
-    await openPalettes(page);
-    const frrfAfter = page.getByRole('checkbox', { name: 'frrf' });
-    await expect(frrfAfter).toBeVisible();
-    await expect(frrfAfter).toBeChecked();
-
-    // Delete via the red ×.
-    await page.getByRole('button', { name: 'Delete frrf' }).click();
-    await expect(page.getByRole('checkbox', { name: 'frrf' })).toHaveCount(0);
+    await openManager(page);
+    await expect(libraryRow(page, 'frrf')).toBeVisible();
+    await expect(mapRow(page, 'frrf')).toBeVisible();
   });
 
-  test('an active custom palette shows in the line color picker with line-name hovers', async ({
+  // The point of the map holding COPIES: a map opened on a machine that has
+  // never seen the palette still paints with it.
+  test('deleting from the library leaves the map’s copy painting', async ({ page }) => {
+    await seedAndOpen(page, twoStop);
+    await openManager(page);
+    await loadFrrf(page);
+
+    await libraryRow(page, 'frrf').getByRole('button', { name: 'Delete frrf' }).click();
+    await page.getByRole('button', { name: 'Confirm deleting frrf' }).click();
+    await expect(libraryRow(page, 'frrf')).toHaveCount(0);
+    await expect(mapRow(page, 'frrf')).toBeVisible();
+
+    await page.reload();
+    await page.waitForSelector('.canvas-host svg');
+    await openManager(page);
+    await expect(libraryRow(page, 'frrf')).toHaveCount(0);
+    await expect(mapRow(page, 'frrf')).toBeVisible();
+  });
+
+  test('a palette in the map shows in the line color picker and repaints a line', async ({
     page,
   }) => {
     await seedAndOpen(page, twoStop);
-    await openPalettes(page);
+    await openManager(page);
     await loadFrrf(page);
-    await page.getByRole('checkbox', { name: 'frrf' }).check();
-    await page.keyboard.press('Escape'); // close the options popover
+    await closeManager(page);
 
     // Select the line → inspector with the color palette.
     await page.locator('[data-band-stripe][data-line-id="L1"]').first().click({ force: true });
@@ -97,5 +104,19 @@ test.describe('custom palettes', () => {
       'stroke',
       '#c1272d',
     );
+  });
+
+  test('removing a palette from the map takes its colors out of the picker', async ({ page }) => {
+    await seedAndOpen(page, twoStop);
+    await openManager(page);
+    await loadFrrf(page);
+    await mapRow(page, 'frrf').getByRole('button', { name: 'Remove frrf from the map' }).click();
+    await page.getByRole('button', { name: 'Confirm removing frrf from the map' }).click();
+    await expect(mapRow(page, 'frrf')).toHaveCount(0);
+    await closeManager(page);
+
+    await page.locator('[data-band-stripe][data-line-id="L1"]').first().click({ force: true });
+    await page.locator('.inspector').waitFor();
+    await expect(page.locator('.inspector').getByTitle('1', { exact: true })).toHaveCount(0);
   });
 });

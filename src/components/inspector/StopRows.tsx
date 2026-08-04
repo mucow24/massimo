@@ -293,10 +293,12 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
         value={sizeText}
         // attachWheel binds a non-passive native wheel listener (React's
         // onWheel is passive, so its preventDefault would warn + no-op).
-        // Omit it while disabled (dash) — browsers still deliver wheel events
-        // to disabled inputs, and the handler writes the doc (same guard as
-        // NumericFieldRow).
-        ref={isDash ? undefined : attachSizeWheel}
+        // Omit it whenever the box can't be typed into — dash stops (disabled
+        // above) and a LOCKED station (greyed by the inspector's whole-panel
+        // fieldset). Browsers still deliver wheel events to disabled inputs and
+        // the handler writes the doc, so the ref is the only gate; same guard
+        // as NumericFieldRow.
+        ref={isDash || station.locked ? undefined : attachSizeWheel}
         onFocus={onSizeFocus}
         onChange={onSizeChange}
         onBlur={onSizeBlur}

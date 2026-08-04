@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { pickDocSnapshot, useDoc } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
 import { parse, serialize, SCHEMA_FORMAT } from '../model/serialize';
+import { PALETTES } from '../model/palettes';
 import { makeDoc, makeLine, makeStation, makeStop, makeTransfer } from './fixtures';
 
 beforeEach(() => {
@@ -191,13 +192,15 @@ describe('save/load round-trip', () => {
     }
   });
 
-  it('round-trips activePalettes', () => {
-    const fixture = makeDoc({ activePalettes: ['mta', 'caltrain'] });
-    const json = serialize(fixture);
-    const result = parse(json);
+  it('round-trips the palettes the map carries', () => {
+    const palettes = [
+      { name: 'frrf', swatches: [{ name: '1', color: '#c1272d' }] },
+      { name: 'MTA', swatches: [{ name: 'Blue (A·C·E)', color: '#0039A6' }] },
+    ];
+    const result = parse(serialize(makeDoc({ palettes })));
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.doc.activePalettes).toEqual(['mta', 'caltrain']);
+      expect(result.doc.palettes).toEqual(palettes);
     }
   });
 
@@ -227,24 +230,12 @@ describe('save/load round-trip', () => {
     }
   });
 
-  it('legacy files (no activePalettes) parse with [mta] from DEFAULT_DOC', () => {
+  it('legacy files (neither palettes nor activePalettes) parse with the DEFAULT_DOC seed', () => {
     const legacy = legacyEnvelope();
     const result = parse(legacy);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.doc.activePalettes).toEqual(['mta']);
-    }
-  });
-
-  it('parse normalises an explicit empty activePalettes to [mta]', () => {
-    const malformed = JSON.stringify({
-      format: SCHEMA_FORMAT,
-      doc: { ...makeDoc({}), activePalettes: [] },
-    });
-    const result = parse(malformed);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.doc.activePalettes).toEqual(['mta']);
+      expect(result.doc.palettes).toEqual(DEFAULT_DOC.palettes);
     }
   });
 
@@ -284,15 +275,15 @@ describe('save/load round-trip', () => {
     }
   });
 
-  it('parse normalises activePalettes containing only unknown ids to [mta]', () => {
+  it('parse drops malformed palette entries', () => {
     const malformed = JSON.stringify({
       format: SCHEMA_FORMAT,
-      doc: { ...makeDoc({}), activePalettes: ['nope', 'still-nope'] },
+      doc: { ...makeDoc({}), palettes: ['nope', { swatches: [] }] },
     });
     const result = parse(malformed);
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.doc.activePalettes).toEqual(['mta']);
+      expect(result.doc.palettes).toEqual([]);
     }
   });
 
@@ -355,10 +346,13 @@ describe('localStorage rehydrate — line edge backfill', () => {
 });
 
 describe('addLine auto-cycle across palettes', () => {
-  it('cycles through every active palette’s colors in PALETTES order, then wraps', () => {
-    // Note: BART precedes MTA alphabetically within North America, so the
-    // concatenated cycle puts BART's 5 colors first, then MTA's 11.
-    useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC, activePalettes: ['bart', 'mta'] });
+  it('cycles through every palette the map carries, in the map’s order, then wraps', () => {
+    const named = (name: string) => PALETTES.filter((p) => p.name === name);
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      palettes: [...named('BART'), ...named('MTA')],
+    });
     const expected = [
       // BART, in order:
       '#FFE800',

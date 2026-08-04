@@ -36,9 +36,10 @@ import { pickNextLineName } from '../model/lineNaming';
 import { defaultIdFactory, IdFactory } from '../model/ids';
 import { DEFAULT_DOC } from '../model/transforms';
 import * as T from '../model/transforms';
-import { cyclingColors, FALLBACK_LINE_COLOR, type PaletteId } from '../model/palettes';
+import { cyclingColors, FALLBACK_LINE_COLOR, type Palette } from '../model/palettes';
 import { useCustomPalettes } from './customPalettes';
 import {
+  sanitizeImageHrefs,
   sanitizeLineCircles,
   sanitizeStations,
   snapStationCells,
@@ -65,7 +66,7 @@ import {
   migrateV9Styles,
   sanitizeRegionAssignments,
   stripLegacySegmentLayers,
-  validActivePalettes,
+  bakeActivePalettes,
 } from '../model/serialize';
 import type { Station, Transfer } from '../model/types';
 import { randomStationName } from './stationNames';
@@ -139,7 +140,10 @@ const DOC_FIELDS = [
   // theirs repaired by the style-invariant pass in migrateDoc.
   'styles',
   'styleDefaults',
-  'activePalettes',
+  // The palette COPIES the map paints with. Replaced the `activePalettes` id
+  // list (persist v24); both load paths resolve the retired ids to copies via
+  // `bakeActivePalettes`.
+  'palettes',
   // Whether this is a night map. Lived in useViewportStore (session state)
   // until it became clear a night map is a property of the MAP: it has to
   // travel in the exported file. Absent in older saves, backfilled to false by
@@ -379,6 +383,13 @@ if (typeof window !== 'undefined') {
  *   it unconditionally. Ordered BESIDE the v<16 curveRadius bake, and BEFORE the
  *   v<10 style hygiene, for the same reason its gate gives. No tag prune
  *   follows: lines and defs take the same legacy value.
+ * - v23 → v24: retire `activePalettes` — the id list of which palettes were
+ *   switched on becomes the palette COPIES the map carries (`MapDoc.palettes`),
+ *   so a map needs no companion library to open with the right colors. Built-in
+ *   ids resolve through the retired-id table, `custom:` ids against the palette
+ *   library, via the shared `bakeActivePalettes`; ids resolving to neither are
+ *   dropped, and a map carrying no palettes is a legitimate outcome. Gated on
+ *   the new field being ABSENT as well, so it can never overwrite real palettes.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -391,9 +402,12 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     styleDefaults?: Record<StyleKind, string>;
     regionAssignments?: Record<string, RegionAssignment>;
     lineCircles?: Record<string, LineCircle>;
+    svgImages?: Record<string, SvgImage>;
+    backgroundOrder?: string[];
     labelBold?: boolean;
     labelWeight?: TextLabelWeight;
-    activePalettes?: PaletteId[];
+    activePalettes?: string[];
+    palettes?: Palette[];
   };
   // Corrupt or missing version is treated as v0 so all migrations run —
   // preferable to silently rendering with stale data.
@@ -633,20 +647,26 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
       };
     }
   }
-  // Non-version-gated invariant: at least one VALID active palette. Unlike the
-  // migrations above, this isn't tied to a schema bump — a persisted doc with
-  // an explicit empty / all-unknown `activePalettes` (tampering, or a
-  // pre-invariant build) would otherwise rehydrate into the unreachable-from-UI
-  // empty-palette state that `parse()` already guards on the file-import path,
-  // via the shared `validActivePalettes`. An ABSENT field is left untouched —
-  // zustand's persist merge fills it from the initial state.
-  if (out.activePalettes !== undefined) {
+  // Non-version-gated invariant: every svg image's href is inline data. The
+  // guard had one caller (the clipboard) and neither doc-load path, so a doc
+  // persisted at ANY store version can carry a remote href that fetches on
+  // every paint and rides into every export. Idempotent and value-keyed; shared
+  // with the file-import path via `sanitizeImageHrefs`.
+  if (out.svgImages) {
+    const hrefs = sanitizeImageHrefs(out.svgImages, out.backgroundOrder ?? []);
+    if (hrefs.changed) {
+      out = {
+        ...out,
+        svgImages: hrefs.svgImages,
+        ...(out.backgroundOrder ? { backgroundOrder: hrefs.backgroundOrder } : {}),
+      };
+    }
+  }
+  if (v < 24 && out.palettes === undefined && out.activePalettes !== undefined) {
+    const { activePalettes, ...rest } = out;
     out = {
-      ...out,
-      activePalettes: validActivePalettes(
-        out.activePalettes,
-        useCustomPalettes.getState().palettes,
-      ),
+      ...rest,
+      palettes: bakeActivePalettes(activePalettes, useCustomPalettes.getState().palettes),
     };
   }
   return out as DocState;
@@ -874,15 +894,17 @@ interface DocState extends MapDoc {
    *  typography (fontSize/weight/italic/leading/tracking), detaching its style
    *  tag when a covered value actually changes. */
   updateStationLabelStyle: (stationId: StationId, patch: T.StationLabelPatch) => void;
-  setActivePalettes: (ids: PaletteId[]) => void;
-  togglePalette: (id: PaletteId) => void;
+  /** Take a palette into the map — a copy, upserted by name. Also how a map
+   *  picks up a palette corrected in the library. */
+  addPaletteToMap: (palette: Palette) => void;
+  removePaletteFromMap: (name: string) => void;
+  renameMapPalette: (from: string, to: string) => void;
+  /** Move a palette one place up (-1) or down (+1) the map's list — the order
+   *  the picker's sections and the `addLine` color cycle follow. */
+  movePaletteInMap: (name: string, delta: -1 | 1) => void;
   /** Make this a night map (or a day map again). A document edit like any
    *  other — undoable, and saved with the file. */
   setDarkMode: (darkMode: boolean) => void;
-  /** Delete a custom palette definition (from the custom-palette store) and
-   *  prune it from this doc's active set, falling back to the default set if it
-   *  was the only active palette. */
-  deleteCustomPalette: (id: PaletteId) => void;
   clearAll: () => void;
 }
 
@@ -955,9 +977,9 @@ export const useDoc = create<DocState>()(
         addLine: () => {
           const id = ids.lineId();
           set((s) => {
-            const cycle = cyclingColors(s.activePalettes, useCustomPalettes.getState().palettes);
-            // Guard the empty cycle (e.g. every active id is a dangling custom
-            // reference): `n % 0` is NaN, which would index `undefined`.
+            const cycle = cyclingColors(s.palettes);
+            // Guard the empty cycle (a map may carry no palettes at all):
+            // `n % 0` is NaN, which would index `undefined`.
             const color = cycle.length ? cycle[s.lineCounter % cycle.length] : FALLBACK_LINE_COLOR;
             const service = pickNextLineName(s.lines);
             // New items wear the kind's "Default" style (composed into the
@@ -1360,32 +1382,18 @@ export const useDoc = create<DocState>()(
         setDocName: (name) => set((s) => T.setDocName(s, name)),
         updateStationLabelStyle: (stationId, patch) =>
           set((s) => T.updateStationLabelStyle(s, stationId, patch)),
-        setActivePalettes: (idsArr) =>
-          set((s) => T.setActivePalettes(s, idsArr, useCustomPalettes.getState().palettes)),
-        togglePalette: (id) =>
-          set((s) => T.togglePalette(s, id, useCustomPalettes.getState().palettes)),
+        addPaletteToMap: (palette) => set((s) => T.addPaletteToMap(s, palette)),
+        removePaletteFromMap: (name) => set((s) => T.removePaletteFromMap(s, name)),
+        renameMapPalette: (from, to) => set((s) => T.renameMapPalette(s, from, to)),
+        movePaletteInMap: (name, delta) => set((s) => T.movePaletteInMap(s, name, delta)),
         setDarkMode: (darkMode) => set((s) => T.setDarkMode(s, darkMode)),
-        deleteCustomPalette: (id) => {
-          useCustomPalettes.getState().removePalette(id);
-          set((s) => {
-            const custom = useCustomPalettes.getState().palettes;
-            const next = s.activePalettes.filter((x) => x !== id);
-            // Keep the "≥1 active palette" invariant: if deleting the sole active
-            // palette would empty the set, fall back to the default.
-            return T.setActivePalettes(
-              s,
-              next.length ? next : [...DEFAULT_DOC.activePalettes],
-              custom,
-            );
-          });
-        },
         clearAll: () => set((s) => T.clearAll(s)),
       }),
       {
         name: 'vignelli-map-doc-v1',
         storage: debouncedDocStorage,
-        version: 23,
-        // Version migration chain v0 → v23 lives in `migrateDoc` (above), which
+        version: 24,
+        // Version migration chain v0 → v24 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         // `migrate` only runs when the STORED version differs from the config
@@ -1398,7 +1406,9 @@ export const useDoc = create<DocState>()(
         //
         // Cell-dust snapping needs `merge` for a sharper reason than `edges`
         // does: the drift is still being carried by docs saved at the CURRENT
-        // version, which by definition never reach `migrate` at all.
+        // version, which by definition never reach `migrate` at all. The image
+        // href guard is the same shape — a remote href could be persisted by
+        // any build, this one included.
         merge: (persisted, current) => {
           const doc = (persisted ?? {}) as Partial<DocState>;
           const patch: Partial<DocState> = {};
@@ -1409,6 +1419,13 @@ export const useDoc = create<DocState>()(
           if (doc.stations) {
             const { stations, changed } = snapStationCells(doc.stations);
             if (changed) patch.stations = stations;
+          }
+          if (doc.svgImages) {
+            const hrefs = sanitizeImageHrefs(doc.svgImages, doc.backgroundOrder ?? []);
+            if (hrefs.changed) {
+              patch.svgImages = hrefs.svgImages;
+              if (doc.backgroundOrder) patch.backgroundOrder = hrefs.backgroundOrder;
+            }
           }
           return { ...current, ...doc, ...patch };
         },
@@ -1623,14 +1640,56 @@ export function cancelAppendMode(): void {
   useSelection.getState().setAppending(null);
 }
 
+// The line "Add → Line" committed eagerly, still awaiting its first stop — the
+// ONLY line the GC below may collect. Placeholder-ness is a fact about how a
+// line came into being, so it is marked at the creation site rather than
+// inferred from the doc: an empty `stations[]` looks the same whether the line
+// was never used or was emptied on purpose, and toggleEdgeOnLine empties a
+// two-station line whenever its only edge goes (it drops endpoints that fall to
+// degree 0). Held here rather than on the appending-to-line UiMode payload,
+// which is constructed and compared in a dozen places that have no opinion
+// about this.
+let pendingPlaceholderLineId: LineId | null = null;
+
+// The placeholder stops being one the instant it holds a station: from then on
+// it is a line the user built, and emptying it again must not hand it back to
+// the GC. Costs one null compare per doc write, and the marker is non-null only
+// between Add → Line and that mode's first exit.
+useDoc.subscribe((s) => {
+  const id = pendingPlaceholderLineId;
+  if (id !== null && (s.lines[id]?.stations.length ?? 0) > 0) pendingPlaceholderLineId = null;
+});
+
+/**
+ * Add → Line: commit the placeholder and open Edit Stops on it. The whole
+ * placeholder lifecycle lives in this module — created here, collected by the
+ * mode-exit subscription below — so the ordering the lineCounter rollback
+ * depends on can't drift away from the GC that relies on it.
+ */
+export function startNewLineAppend(): LineId {
+  const sel = useSelection.getState();
+  // Exit any active Edit Stops FIRST: the GC rolls lineCounter back, which is
+  // only sound while the placeholder it collects is still the last-added line.
+  sel.setAppending(null);
+  const id = useDoc.getState().addLine();
+  pendingPlaceholderLineId = id;
+  sel.startAppend(id);
+  return id;
+}
+
 // GC a still-empty append placeholder. The placeholder was committed eagerly
 // by addLine, which also advanced lineCounter to pick its color; discarding it
 // must undo BOTH in one atomic set, so repeated Add→Esc doesn't walk the color
 // cycle forward. (Real line deletion via T.deleteLine leaves lineCounter
 // alone, which is why the rollback lives here.) The rollback is only sound
-// while the placeholder is the last-added line — Toolbar's Add→Line exits any
-// active append BEFORE creating the next line to preserve that ordering.
+// while the placeholder is the last-added line, which is exactly what the
+// creation-site marker guarantees — startNewLineAppend exits any active append
+// before creating the next line.
 function collectAppendPlaceholder(lineId: LineId): void {
+  if (lineId !== pendingPlaceholderLineId) return;
+  // One shot: whatever happens below, this line has now had its exit, and a
+  // later visit to Edit Stops must find an ordinary line.
+  pendingPlaceholderLineId = null;
   const line = useDoc.getState().lines[lineId];
   if (!line || line.stations.length !== 0) return;
   useDoc.setState((s) => ({

@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { pickDocSnapshot, useDoc, useSelection, type UiMode } from '../state/store';
+import {
+  pickDocSnapshot,
+  startNewLineAppend,
+  useDoc,
+  useSelection,
+  type UiMode,
+} from '../state/store';
 import type { MapDoc } from '../model/types';
 import { useViewportStore, nextGridSize } from '../state/viewportStore';
 import { exportVisibilityOverrides } from '../state/visibility';
@@ -37,6 +43,7 @@ import {
   CursorArrowIcon,
   DoubleArrowLeftIcon,
   DoubleArrowRightIcon,
+  ColorWheelIcon,
   FrameIcon,
   HandIcon,
   LayersIcon,
@@ -44,7 +51,7 @@ import {
   SunIcon,
 } from '@radix-ui/react-icons';
 import { SnapToggleBar } from './SnapToggleBar';
-import { OptionsPopover } from './OptionsPopover';
+import { PalettesDialog } from './PalettesDialog';
 import { ViewPopover } from './ViewPopover';
 import { HelpPopover } from './HelpPopover';
 import { PerfPopover } from './PerfPopover';
@@ -120,12 +127,12 @@ export function Toolbar() {
   const darkUiInDay = useViewportStore((s) => s.darkUiInDay);
   const setDarkUiInDay = useViewportStore((s) => s.setDarkUiInDay);
   const clearAll = useDoc((s) => s.clearAll);
-  const addLine = useDoc((s) => s.addLine);
   const selection = useSelection();
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [palettesOpen, setPalettesOpen] = useState(false);
   /**
    * The tri-state save signal (saveBaseline.ts). 'clean' greys out Save
    * version — the doc byte-for-byte matches a library version, so a save
@@ -181,14 +188,10 @@ export function Toolbar() {
         : { kind: 'placing-line-circle', center: null },
     );
   };
-  const onAddLine = () => {
-    // Exit any active Edit Stops FIRST: the placeholder GC (the mode-exit
-    // subscription in store.ts) rolls lineCounter back, which is only sound
-    // while the old placeholder is still the last-added line.
-    selection.setAppending(null);
-    const id = addLine();
-    selection.startAppend(id);
-  };
+  // Creating the placeholder line and opening Edit Stops on it is one operation
+  // owned by store.ts, which also collects the placeholder again — the ordering
+  // its lineCounter rollback depends on belongs next to the GC, not here.
+  const onAddLine = () => startNewLineAppend();
   // Point the camera at a doc's content: center it and zoom to fit, using the
   // live SVG's pixel size (content-independent, so no wait for a render).
   // Returns false — camera untouched — when the map is empty or the canvas
@@ -671,7 +674,17 @@ export function Toolbar() {
       <SnapToggleBar />
       <span className="tool-group-divider" aria-hidden="true" />
       <div className="tool-group">
-        <OptionsPopover />
+        <button
+          type="button"
+          className={'tool-btn' + (palettesOpen ? ' active' : '')}
+          title="Manage palettes"
+          aria-label="Manage palettes"
+          aria-haspopup="dialog"
+          aria-expanded={palettesOpen}
+          onClick={() => setPalettesOpen(true)}
+        >
+          <ColorWheelIcon />
+        </button>
         <button
           type="button"
           className={'tool-btn' + (gridVisible ? ' active' : '')}
@@ -759,6 +772,7 @@ export function Toolbar() {
       {libraryOpen && (
         <MapLibraryDialog onClose={() => setLibraryOpen(false)} onOpenVersion={onOpenVersion} />
       )}
+      {palettesOpen && <PalettesDialog onClose={() => setPalettesOpen(false)} />}
     </div>
   );
 }

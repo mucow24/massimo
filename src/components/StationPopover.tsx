@@ -49,10 +49,10 @@ export function StationPopover({
       shellRef={shellRef}
     >
       <StationInspector id={station.id} />
-      {/* Same footer as every other item popover. Lock protects canvas
-          geometry only — the inspector above stays fully editable while
-          locked (the station-specific rule) — and Delete is disabled while
-          locked, matching the canvas protection. */}
+      {/* Same footer as every other item popover, and OUTSIDE the inspector's
+          whole-panel disabled fieldset so unlocking stays reachable — a locked
+          station's editing controls are all frozen. Delete is disabled while
+          locked too, matching the canvas protection. */}
       <PopoverFooter
         noun="station"
         locked={!!station.locked}

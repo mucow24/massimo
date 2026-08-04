@@ -637,7 +637,11 @@ export const useSelection = create<SelectionState>()(
             selectedStopLineId: null,
             labelSelected: false,
             editingStationId: null,
-            activeTab: 'stations',
+            // Same shape as selectStation: showing the stations is the point of
+            // SELECTING stations, but an empty list isn't a station selection.
+            // The marquee commits all seven kinds on every sweep, so rubber-
+            // banding a polygon would otherwise throw the sidebar off Lines.
+            activeTab: next.length === 0 ? s.activeTab : 'stations',
           };
         }),
       addStationsToSelection: (ids) =>

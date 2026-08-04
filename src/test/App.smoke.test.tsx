@@ -19,9 +19,9 @@ describe('App smoke', () => {
     expect(screen.getByRole('button', { name: /Add/ })).toBeInTheDocument();
   });
 
-  it('exposes an Options button in the toolbar', () => {
+  it('exposes a Manage palettes button in the toolbar', () => {
     render(<App />);
-    expect(screen.getByRole('button', { name: 'Options' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Manage palettes' })).toBeInTheDocument();
   });
 
   it('sets the window title from the map name on mount', () => {

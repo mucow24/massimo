@@ -117,6 +117,27 @@ describe('LineCircleView — centre handle', () => {
   });
 });
 
+describe('LineCircleView — locked marking', () => {
+  // A locked SELECTED ring still paints its grab surfaces (it is the one state
+  // where they survive the click-through rule), so a press lands on them and
+  // the drag hook correctly bails. Without data-locked the marquee gate doesn't
+  // recognise the target as locked either, and the press is simply dead — the
+  // recovery path every other lockable kind offers.
+  it('marks the group [data-locked] when locked, so a press rubber-bands', () => {
+    const { svg } = renderCircle({
+      circle: makeLineCircle({ id: 'c1', x: 100, y: 50, radius: 60, locked: true }),
+      selected: true,
+    });
+    expect(rim(svg)!.closest('[data-locked]')).not.toBeNull();
+    expect(hit(svg)!.closest('[data-locked]')).not.toBeNull();
+  });
+
+  it('omits data-locked when unlocked', () => {
+    const { svg } = renderCircle({ selected: true });
+    expect(svg.querySelector('[data-locked]')).toBeNull();
+  });
+});
+
 describe('LineCircleView — mouseover preview', () => {
   it('paints nothing extra when the pointer is elsewhere', () => {
     expect(hoverCopy(renderCircle().svg)).toBeNull();

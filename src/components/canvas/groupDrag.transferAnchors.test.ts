@@ -7,6 +7,7 @@ import {
 } from './groupDrag';
 import { rotateItemOnContextMenu } from './groupRotate';
 import { useDoc, useSelection } from '../../state/store';
+import { useViewportStore } from '../../state/viewportStore';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { makeStation } from '../../test/fixtures';
 
@@ -17,6 +18,9 @@ import { makeStation } from '../../test/fixtures';
 // the elbow apart.
 
 beforeEach(() => {
+  // Anchors default to HIDDEN, and a hidden kind is never towed (a tow is an
+  // edit) — so every case here is a user with the layer switched on.
+  useViewportStore.setState({ showAnchors: true });
   useDoc.setState({
     ...useDoc.getState(),
     ...DEFAULT_DOC,

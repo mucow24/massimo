@@ -5,7 +5,7 @@ import { StopRows } from './StopRows';
 import { useDoc, useSelection } from '../../state/store';
 import { historyDepth } from '../../state/history';
 import { DEFAULT_DOC, selfTransferAt } from '../../model/transforms';
-import { DOT_SIZE_DEFAULT } from '../../model/dotSize';
+import { DOT_SIZE_DEFAULT, DOT_SIZE_STEP } from '../../model/dotSize';
 import { STOP_DOT_FACTORY_STYLES } from '../../model/dotStyle';
 import { resolveTransferStyle } from '../../model/transferStyle';
 import type { Station } from '../../model/types';
@@ -243,6 +243,31 @@ describe('<StopRows />', () => {
     fireEvent.wheel(input, { deltaY: -1 });
     const stop = useDoc.getState().stations.a.stops.find((s) => s.lineId === 'L1')!;
     expect('dotSize' in stop).toBe(false);
+  });
+
+  // The inspector greys itself out for a locked station via a `disabled`
+  // fieldset — but browsers still deliver wheel events to disabled inputs, and
+  // the size box's native listener is bound outside React. Same rule the dash
+  // case above states: if the box can't be typed into, it can't be scrolled
+  // either. Lock is a guarantee.
+  it('a wheel over a LOCKED station’s size input writes nothing', () => {
+    seed({ a: hub({ locked: true }) });
+    renderRows();
+    fireEvent.wheel(screen.getAllByRole('spinbutton', { name: 'Stop dot size' })[0], {
+      deltaY: -1,
+    });
+    const stop = useDoc.getState().stations.a.stops.find((s) => s.lineId === 'L1')!;
+    expect('dotSize' in stop).toBe(false);
+  });
+
+  it('a wheel over an UNLOCKED station’s size input still writes', () => {
+    seed({ a: hub() });
+    renderRows();
+    fireEvent.wheel(screen.getAllByRole('spinbutton', { name: 'Stop dot size' })[0], {
+      deltaY: -1,
+    });
+    const stop = useDoc.getState().stations.a.stops.find((s) => s.lineId === 'L1')!;
+    expect(stop.dotSize).toBeCloseTo(DOT_SIZE_DEFAULT + DOT_SIZE_STEP, 9);
   });
 
   it('renders one row per stop, sorted row-major, with the service badge', () => {
