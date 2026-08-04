@@ -76,9 +76,6 @@ describe('bound route bullet vs the lines/stations toggle', () => {
     expect(result.current.itemSnapGuides).toEqual([]);
   });
 
-  it('draws no snap guide toward a hidden station', () => {
-    useViewportStore.setState({ showNetwork: false });
-    const result = dragBulletTo4();
-    expect(result.current.itemSnapGuides).toEqual([]);
-  });
+  // "draws no snap guide toward a hidden station" was the same setup and the
+  // same guide assertion as the test above, which also pins the position.
 });

@@ -168,8 +168,7 @@ test.describe('Per-line width', () => {
     const stripes = page.locator('[data-band-stripe]');
     await expect(stripes).toHaveCount(2);
 
-    // One band: both stripes share the band key. (Today the 21-unit gap fails
-    // the uniform-width merge gate, producing two single-stripe bands.)
+    // One band: both stripes share the band key.
     const keys = await stripes.evaluateAll((els) =>
       els.map((el) => el.getAttribute('data-band-key')),
     );

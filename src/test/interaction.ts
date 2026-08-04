@@ -6,6 +6,7 @@
 // under jsdom, which doesn't implement getBoundingClientRect layout, pointer
 // capture, or SVG geometry (createSVGPoint/getScreenCTM).
 
+import { afterEach, beforeEach } from 'vitest';
 import { fireEvent, screen } from '@testing-library/react';
 import type userEvent from '@testing-library/user-event';
 
@@ -62,11 +63,48 @@ export function wheelEvent(opts: {
   } as unknown as React.WheelEvent;
 }
 
+/**
+ * jsdom reports clientWidth/clientHeight as 0, which collapses the canvas host
+ * to a zero box — MapCanvas and ItemPopovers both bail out of laying anything
+ * out at that size, so a test that renders <App /> sees an empty canvas.
+ *
+ * Call at module scope. Installs the patch in `beforeEach` and restores the
+ * original descriptors in `afterEach`, so a file that throws mid-test cannot
+ * leave a patched `HTMLElement.prototype` behind for the rest of the run.
+ */
+export function stubCanvasHostSize({ w = 800, h = 600 }: { w?: number; h?: number } = {}): void {
+  const sizeProps = ['clientWidth', 'clientHeight'] as const;
+  const originals: Partial<Record<(typeof sizeProps)[number], PropertyDescriptor>> = {};
+  beforeEach(() => {
+    for (const prop of sizeProps) {
+      originals[prop] = Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop);
+    }
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: w });
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: h });
+  });
+  afterEach(() => {
+    for (const prop of sizeProps) {
+      const d = originals[prop];
+      if (d) Object.defineProperty(HTMLElement.prototype, prop, d);
+      else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[prop];
+    }
+  });
+}
+
 export interface FakeSvgOpts {
   width?: number;
   height?: number;
   left?: number;
   top?: number;
+  /**
+   * Live translation applied to this svg's client rect, in px. In the real DOM
+   * the svg sits INSIDE `.canvas-pan-layer`, so mid-pan it rides the layer's
+   * composited transform and `getBoundingClientRect()` reports it moved — while
+   * the layer's parent (`.canvas-host`) stays put. `fakeSvgRef` wires this to
+   * the fake pan layer's `style.transform` so the two rects actually differ,
+   * which is the whole distinction `useViewport`'s `hostRect()` exists to make.
+   */
+  panOffset?: () => { dx: number; dy: number };
 }
 
 export interface FakeRect {
@@ -116,17 +154,22 @@ export function fakeSvg(opts: FakeSvgOpts = {}): FakeSvg {
       attrs.set(name, value);
     },
     getAttribute: (name: string) => attrs.get(name) ?? null,
-    getBoundingClientRect: (): FakeRect => ({
-      left,
-      top,
-      right: left + width,
-      bottom: top + height,
-      width,
-      height,
-      x: left,
-      y: top,
-      toJSON: () => ({}),
-    }),
+    getBoundingClientRect: (): FakeRect => {
+      const { dx, dy } = opts.panOffset?.() ?? { dx: 0, dy: 0 };
+      const l = left + dx;
+      const t = top + dy;
+      return {
+        left: l,
+        top: t,
+        right: l + width,
+        bottom: t + height,
+        width,
+        height,
+        x: l,
+        y: t,
+        toJSON: () => ({}),
+      };
+    },
     setPointerCapture: (id: number) => {
       captured.add(id);
     },
@@ -171,21 +214,47 @@ export interface FakePanLayer {
 }
 
 /** A `{ current }` ref wrapping a fake svg, typed for the hooks under test.
- *  Also builds the sibling fake pan layer (same host rect as the svg) for
- *  hooks that take one — consumers that don't can ignore it. */
+ *  Also builds the sibling fake pan layer for hooks that take one — consumers
+ *  that don't can ignore it.
+ *
+ *  The host rect (pan layer's parent) is STATIONARY; the svg's rect rides the
+ *  layer's `style.transform`, exactly as a child element does in a real
+ *  browser. Both used to return the same rect, which made `useViewport`'s
+ *  host-vs-svg choice unobservable: reverting `hostRect()` to measure the svg —
+ *  reintroducing the double-counted-pan bug it documents — left every test in
+ *  useViewport.test.tsx green. */
 export function fakeSvgRef(opts: FakeSvgOpts = {}): {
   ref: { current: SVGSVGElement | null };
   svg: FakeSvg;
   panLayerRef: { current: HTMLDivElement | null };
   panLayer: FakePanLayer;
 } {
-  const svg = fakeSvg(opts);
+  const width = opts.width ?? 800;
+  const height = opts.height ?? 600;
+  const left = opts.left ?? 0;
+  const top = opts.top ?? 0;
+  // useViewport writes `translate(<tx>px, <ty>px)`; anything else reads as 0.
+  const panTranslate = (): { dx: number; dy: number } => {
+    const m = /translate\(\s*(-?[\d.]+)px\s*,\s*(-?[\d.]+)px\s*\)/.exec(panLayer.style.transform);
+    return m ? { dx: Number(m[1]), dy: Number(m[2]) } : { dx: 0, dy: 0 };
+  };
+  const svg = fakeSvg({ ...opts, panOffset: () => panTranslate() });
   const panLayer: FakePanLayer = {
     style: { transform: '', willChange: '' },
     parentElement: {
-      clientWidth: opts.width ?? 800,
-      clientHeight: opts.height ?? 600,
-      getBoundingClientRect: () => svg.getBoundingClientRect(),
+      clientWidth: width,
+      clientHeight: height,
+      getBoundingClientRect: (): FakeRect => ({
+        left,
+        top,
+        right: left + width,
+        bottom: top + height,
+        width,
+        height,
+        x: left,
+        y: top,
+        toJSON: () => ({}),
+      }),
     },
   };
   return {

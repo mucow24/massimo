@@ -203,8 +203,9 @@ test.describe('station drag performance', () => {
                 pointerType: 'mouse',
               }),
             );
-            // Two rAFs: the first resolves at the next frame boundary, the
-            // second guarantees the commit this move caused has been painted.
+            // One rAF: the sample ends at the next frame BOUNDARY, not at
+            // paint. (The file's CONTROL does include paint, so the two are not
+            // directly comparable — see its own note.)
             await new Promise((r) => requestAnimationFrame(() => r(null)));
             per.push(performance.now() - t0);
           }

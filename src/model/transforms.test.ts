@@ -2409,7 +2409,7 @@ describe('line end overrides — topology cascade', () => {
     expect(next.lines.L1.stationEndStyles).toEqual({ a: 'round' });
   });
 
-  it('leaves a line with no overrides untouched (same reference)', () => {
+  it('does not invent a stationEndStyles map on a line that has none', () => {
     const doc = chain({});
     const bare = { ...doc, lines: { L1: { ...doc.lines.L1, stationEndStyles: undefined } } };
     delete (bare.lines.L1 as { stationEndStyles?: unknown }).stationEndStyles;

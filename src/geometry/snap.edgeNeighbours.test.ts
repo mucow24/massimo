@@ -34,9 +34,11 @@ describe('refineAlongAxis equidistant: neighbours must come from the edge graph'
   //     and c(200) = 110. Distance from the drag: 2 (well inside tolerance 10).
   //   • Array-order target = midpoint of stations[0]=a(0) and stations[2]=c(200)
   //     = 100. Distance from the drag: 8 (also inside tolerance).
-  // Current source reads the array, so the drag is pulled to 100 — 10 units
-  // PAST the correct cadence point, onto a midpoint of two stations that are
-  // not both b's neighbours.
+  // The snapper reads the EDGE graph, so the drag lands on 110. Reading
+  // `line.stations` in array order would give 100 instead — 10 units past the
+  // correct cadence point, onto a midpoint of two stations that are not both
+  // b's neighbours. Both candidates sit inside tolerance, so only the value
+  // below separates them.
   it('snaps b to the midpoint of its EDGE neighbours (d, c), not its array neighbours (a, c)', () => {
     const a = makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('L1')] });
     const b = makeStation({ id: 'b', x: 0, y: 108, stops: [makeStop('L1')] });

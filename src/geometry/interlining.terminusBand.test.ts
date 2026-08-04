@@ -79,12 +79,7 @@ describe('terminus outward must come from the marker line OWN band', () => {
     expect(outwardOf(ms, 'L2', 's2')).toEqual({ x: 1, y: 0 });
   });
 
-  it('no two lines with perpendicular approaches share an outward vector', () => {
-    const ms = markersFor();
-    // L1 and L2 approach s1 on perpendicular axes, so their outward vectors
-    // must be perpendicular (dot == 0), never identical.
-    const a = outwardOf(ms, 'L1', 's1')!;
-    const b = outwardOf(ms, 'L2', 's1')!;
-    expect(a.x * b.x + a.y * b.y).toBeCloseTo(0, 9);
-  });
+  // The perpendicularity of L1's and L2's outward vectors at s1 is entailed by
+  // the two tests above, which pin both vectors exactly ((-1,0) and (0,-1)) —
+  // a dot product is the weaker form of the same claim.
 });

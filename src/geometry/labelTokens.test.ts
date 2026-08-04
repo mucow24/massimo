@@ -202,7 +202,7 @@ describe('parseFormattedLine (bullets + escapes + tags)', () => {
     expect(parse('<B>x</B>')).toEqual([{ kind: 'text', value: '<B>x</B>' }]);
   });
 
-  it('parses <color=...> in named, #hex, and 0xhex forms', () => {
+  it('parses <color=...> in named, #hex, and 0xhex forms — and <c> does not cannibalize the opener', () => {
     expect(parse('<color=red>x</color>')).toEqual([
       { kind: 'text', value: 'x', style: { ...style(), color: 'red' } },
     ]);
@@ -240,12 +240,6 @@ describe('parseFormattedLine (bullets + escapes + tags)', () => {
     expect(parse('Acme<c> 2026')).toEqual([{ kind: 'text', value: 'Acme© 2026' }]);
     expect(parse('<tm>')).toEqual([{ kind: 'text', value: '™' }]);
     expect(parse('<b><c></b>')).toEqual([{ kind: 'text', value: '©', style: style('bold') }]);
-  });
-
-  it('does not let <c> cannibalize the <color=…> tag', () => {
-    expect(parse('<color=red>x</color>')).toEqual([
-      { kind: 'text', value: 'x', style: { ...style(), color: 'red' } },
-    ]);
   });
 
   it('escapes tags with a backslash', () => {

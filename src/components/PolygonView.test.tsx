@@ -479,12 +479,28 @@ describe('<PolygonView /> hit proxy (selected-on-top drag target)', () => {
     // break the e2e [data-polygon-id] document-order + strict-mode locators.
     expect(el.getAttribute('data-polygon-id')).toBeNull();
     // Same body geometry (rounded path data) so the grab footprint matches.
-    expect(el.getAttribute('d')).toBe(c.querySelector('[data-polygon-hit]')!.getAttribute('d'));
+    // Compare against the BODY layer: the right-hand side used to be another
+    // `[data-polygon-hit]` query, i.e. this same node, so it compared `d`
+    // against itself and held however the proxy was built.
+    const poly = makePolygon({ id: 'p0', fill: '#112233' });
+    expect(el.getAttribute('d')).toBe(body(renderBody(poly).container).getAttribute('d'));
     // Also covers the stroke BAND (transparent stroke of the body's width) so
     // the outer rim — grabbable on the body — stays grabbable on the proxy.
     expect(el.getAttribute('stroke')).toBe('transparent');
     // makePolygon defaults strokeWidth: 1.
     expect(Number(el.getAttribute('stroke-width'))).toBe(1);
+  });
+
+  it("the closed proxy's path data tracks the body's CORNER ROUNDING", () => {
+    // The case that actually separates the proxy from a naive re-emit of the
+    // raw points: with curveRadius the body's `d` carries arc segments, and a
+    // proxy that dropped curveRadius (or `closed`) would still look plausible
+    // while grabbing a subtly different footprint at every corner.
+    const poly = makePolygon({ id: 'p0', curveRadius: 12, closed: true });
+    const d = hit(renderHit(poly))!.getAttribute('d')!;
+    expect(d).toBe(body(renderBody(poly).container).getAttribute('d'));
+    // Precondition: rounding really is in play, so this is not two square paths.
+    expect(d).toMatch(/[AaQqCc]/);
   });
 
   it("the closed proxy's stroke band tracks the body's stroke width", () => {

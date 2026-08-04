@@ -28,7 +28,7 @@ const parsed = (doc: unknown): MapDoc => {
 };
 
 describe('styles round-trip', () => {
-  it('a doc with all five kinds of defs and tagged items survives serialize → parse', () => {
+  it('a doc with a def of every item-bearing kind survives serialize → parse (stopDot excluded — it has no item collection)', () => {
     let doc = makeDoc({
       stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
       lines: [makeLine({ id: 'l1' })],

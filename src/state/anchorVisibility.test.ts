@@ -37,7 +37,7 @@ describe('revealedAnchorStations', () => {
     expect(revealed()).toEqual(['s2']);
   });
 
-  it('reveals ONLY those stations, never the whole network', () => {
+  it('unions the selected and hovered halves', () => {
     // The point of the feature: looking at one station shows what IT carries.
     // A second station's anchors staying hidden is the whole contract.
     useSelection.setState({
