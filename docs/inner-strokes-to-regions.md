@@ -18,9 +18,10 @@ the pairwise-overlap pass, erasing self-overlap (lineRegions.ts:209-251, union a
 design: partition each line's edges into **arms** at its branch junctions (reusing the seam
 system's junction classifier), feed the region pipeline per-arm bodies for same-line pairs
 only, let the resulting faces flow through the EXISTING cover/anchor/winner/hole/UI machinery
-with a widened winner type, and delete the entire seam render/model/UI surface. Defaults are
-unchanged everywhere: an unpainted branch mouth stays merged (today's look), and a map with no
-branches/loops produces byte-identical output.
+with a widened winner type, and delete the entire seam render/model/UI surface. An unpainted
+branch mouth defaults to the BRANCH ARM in front — the old "Branch" seam look — with merged as
+a stored per-junction choice (see §2.4); a map with no branches/loops produces byte-identical
+output.
 
 ## 1. Current state (what exists, and the one wall)
 

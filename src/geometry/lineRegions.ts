@@ -2505,7 +2505,7 @@ export function buildExclusionHolesCached(
   return mergeArmHoleKeys(holes, bands);
 }
 
-/** Slack around {@link regionClipBounds}: covers seam strokes, antialiasing,
+/** Slack around {@link regionClipBounds}: covers casing overhang, antialiasing,
  *  and any sub-world-unit overhang the per-band reach bound doesn't model. */
 export const REGION_CLIP_BOUNDS_PAD = 50;
 
@@ -2701,9 +2701,10 @@ export function regionClickAction(args: {
   const orderIdx = orderIndexer(lineOrder);
   // Cycle domain: the cover's distinct LINES first (each meaning "that line,
   // slices merged" — exactly the pre-arm cycle for plain faces), then any
-  // slices the cover distinguishes, by line z then slice id. So a plain face
-  // cycles as it always did, a pure self face cycles merged → slice → slice
-  // → merged (delete), and a mixed face offers lines then slices.
+  // slices the cover distinguishes, by line z then slice id. A plain face
+  // cycles as it always did; a pure self face steps from its branch-arm
+  // default through merged (STORED) and the other slices, deleting on
+  // landing back on the default; a mixed face offers lines then slices.
   const byLineThenId = (a: string, b: string) => {
     const la = lineOfCover(a);
     const lb = lineOfCover(b);
