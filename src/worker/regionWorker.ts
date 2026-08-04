@@ -17,11 +17,12 @@
  * `Error` and drops own properties, so `ClipperUnavailableError.reason` and
  * friends would silently vanish without one.
  */
-import { intersect, loadClipper, type Ring } from '../geometry/clip';
+import { loadClipper, type Ring } from '../geometry/clip';
 import {
   applyMirrorSync,
   computeMirrorHoles,
   packHoles,
+  pingRings,
   type MirrorSync,
   type PackedHoles,
   type RegionMirror,
@@ -81,19 +82,6 @@ export interface WorkerErrorResponse {
 
 export type WorkerRequest = PingRequest | WarmRequest | SyncRequest | FrameRequest;
 export type WorkerResponse = PongResponse | FrameResult | WorkerErrorResponse;
-
-/** The fixed probe op: two overlapping axis-aligned squares. */
-export function pingRings(): Ring[] {
-  const square = (x0: number, y0: number, x1: number, y1: number): Ring[] => [
-    [
-      { x: x0, y: y0 },
-      { x: x1, y: y0 },
-      { x: x1, y: y1 },
-      { x: x0, y: y1 },
-    ],
-  ];
-  return intersect(square(0, 0, 10, 10), square(5, 5, 15, 15));
-}
 
 const toErrorEnvelope = (
   err: unknown,

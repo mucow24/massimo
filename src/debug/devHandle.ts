@@ -118,7 +118,9 @@ export async function workerPing(): Promise<{
   wasmBytes?: number;
   error?: string;
 }> {
-  const { pingRings } = await import('../worker/regionWorker');
+  // The probe op comes from the PURE module — importing the shell here would
+  // execute its top-level `self.onmessage = …` with self === window.
+  const { pingRings } = await import('../worker/regionFrame');
   const worker = new Worker(new URL('../worker/regionWorker.ts', import.meta.url), {
     type: 'module',
   });

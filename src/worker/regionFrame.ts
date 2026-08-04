@@ -23,11 +23,29 @@ import type {
   Station,
   StationId,
 } from '../model/types';
-import type { Ring } from '../geometry/clip';
+import { intersect, type Ring } from '../geometry/clip';
 import { regionsFor, type GeometrySlice } from '../geometry/regionCache';
 import { buildExclusionHolesCached, resolveRegionWinners } from '../geometry/lineRegions';
 import { lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
 import { lineWidthOf } from '../model/lineWidth';
+
+/**
+ * The worker health probe's fixed op: two overlapping axis-aligned squares.
+ * Lives here (not in the worker shell) so the main thread can run the same op
+ * for the byte-compare WITHOUT executing the shell module — whose top-level
+ * `self.onmessage` assignment would land on `window` outside a worker.
+ */
+export function pingRings(): Ring[] {
+  const square = (x0: number, y0: number, x1: number, y1: number): Ring[] => [
+    [
+      { x: x0, y: y0 },
+      { x: x1, y: y0 },
+      { x: x1, y: y1 },
+      { x: x0, y: y1 },
+    ],
+  ];
+  return intersect(square(0, 0, 10, 10), square(5, 5, 15, 15));
+}
 
 /**
  * Everything the region pipeline reads: the geometry slice plus the two
