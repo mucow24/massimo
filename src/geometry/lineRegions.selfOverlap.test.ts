@@ -26,6 +26,7 @@ import {
   offsetClosed,
   pointInFace,
   splitIntoFaces,
+  unionAll,
   type Ring,
 } from './clip';
 import { makeDoc, makeLine, makeStation, makeStop } from '../test/fixtures';
@@ -381,15 +382,11 @@ describe('self-overlap faces (branch mouths)', () => {
     expect([...holes.keys()]).toEqual([armCoverId('l1', trunkArm)]);
   });
 
-  it("an interlined neighbor's coincident rail is holed over the reveal (fringe loser)", () => {
-    // Interlined trunk: orange ABOVE grey in z, grey branches tangentially.
-    // The orange|grey boundary stroke is co-painted by BOTH lines' facing
-    // rails (centered on the shared edge), so clipping grey's losing arm
-    // alone leaves orange's half of that stroke crossing the curve's reveal
-    // — the artifact the user's arrows pointed at. An above-winner line
-    // whose CASING hangs into the reveal must be holed even though its body
-    // never covers the face.
-    const doc = makeDoc({
+  /** Interlined trunk (orange row 0 ABOVE grey row 1 in z), grey branching
+   *  tangentially up through orange's stripe to d. The shape behind the
+   *  boundary-stroke semantics tests below. */
+  const tangentPairDoc = () =>
+    makeDoc({
       stations: [
         makeStation({
           id: 'a',
@@ -431,6 +428,16 @@ describe('self-overlap faces (branch mouths)', () => {
         }),
       ],
     });
+
+  it("an UNPAINTED crossing keeps the neighbor's rail: the curve slides under intact", () => {
+    // Only the mouth is painted; the oa∩curve crossing stays default, so
+    // orange covers the curve above the shared edge. The boundary stroke
+    // must then run intact across the reveal — holing orange's rail eats
+    // the stroke's near half along the whole tangent hug (the "stroke gets
+    // thinner where grey is curving" artifact) and leaves slivers of the
+    // curve's own casing poking past the boundary (the overshoot ticks).
+    // A line the winner slides UNDER is never a loser.
+    const doc = tangentPairDoc();
     const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     const faces = buildOverlapRegions(bands, []);
     const lineOrder = ['oa', 'gr']; // orange front-most = above grey
@@ -460,10 +467,152 @@ describe('self-overlap faces (branch mouths)', () => {
     const withSet = { r1: { ...set, id: 'r1' } };
     const winners = resolveRegionWinners(faces, withSet, bands, lineOrder);
     const holes = buildExclusionHoles(faces, winners, lineOrder, bands, [], () => 2, []);
-    // The losing trunk arm is holed — and so is ORANGE, the above-winner
-    // neighbor whose rail rides the shared boundary through the reveal.
+    // The losing trunk arm is holed; orange is untouched.
     expect(holes.get(armCoverId('gr', trunkArm))?.length).toBeGreaterThan(0);
-    expect(holes.get('oa')?.length, "orange's coincident rail must be holed").toBeGreaterThan(0);
+    expect(holes.has('oa'), "orange's stroke must survive a crossing it wins").toBe(false);
+  });
+
+  it("painting the crossing punches the neighbor's rail at the joint (no white residue)", () => {
+    // Mouth AND the oa∩curve crossing painted for grey: the curve visibly
+    // crosses onto orange, so the boundary stroke must break cleanly. The
+    // crossing face's own cover holes reach the shared rail zone (loser
+    // dilation spans railW past the face) and the mouth reveal tiles with
+    // them through the same-line shield exemption — the original
+    // coincident-rail white line stays dead without any extra mechanism.
+    const doc = tangentPairDoc();
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+    const faces = buildOverlapRegions(bands, []);
+    const lineOrder = ['oa', 'gr'];
+    const branchArm = armOfLinePairKey(bands, 'gr', 'd|j')!;
+    const trunkArm = armOfLinePairKey(bands, 'gr', 'a|j')!;
+    const mouthIdx = faces.findIndex(
+      (f) =>
+        f.lineIds.includes(armCoverId('gr', trunkArm)) &&
+        f.lineIds.includes(armCoverId('gr', branchArm)),
+    );
+    // The crossing sits in its own component (the two overlap zones only
+    // abut at the boundary), so grey's cover there collapses to the merged
+    // line — exactly the spelling the real map stores.
+    const crossIdx = faces.findIndex(
+      (f) => f.lineIds.includes('oa') && f.lineIds.includes('gr'),
+    );
+    expect(mouthIdx).toBeGreaterThanOrEqual(0);
+    expect(crossIdx).toBeGreaterThanOrEqual(0);
+    let assignments: Record<string, RegionAssignment> = {};
+    for (const [rid, idx] of [
+      ['r1', mouthIdx],
+      ['r2', crossIdx],
+    ] as const) {
+      const set = regionPaintPlan({
+        faces,
+        winners: resolveRegionWinners(faces, assignments, bands, lineOrder),
+        assignments,
+        faceIndex: idx,
+        dir: -1,
+        flood: false,
+        lineOrder,
+        bands,
+      })[0].assignment!;
+      expect(set.lineId).toBe('gr');
+      assignments = { ...assignments, [rid]: { ...set, id: rid } };
+    }
+    expect(armOfLinePairKey(bands, 'gr', assignments.r1.winnerPairKey!)).toBe(branchArm);
+    expect(assignments.r2.winnerPairKey).toBeUndefined();
+    const winners = resolveRegionWinners(faces, assignments, bands, lineOrder);
+    const holes = buildExclusionHoles(faces, winners, lineOrder, bands, [], () => 2, []);
+    const oaHoles = holes.get('oa');
+    expect(oaHoles?.length).toBeGreaterThan(0);
+    // The shared boundary sits midway between the two trunk centerlines
+    // (bodies abut; both rails are centered on it). The punch must cover it
+    // at the crossing — and stay LOCAL: left of the crossing the curve is
+    // still under orange and the stroke intact.
+    const trunkBand = bands.find((b) => b.pairKey === 'a|j')!;
+    const kOa = trunkBand.lines.findIndex((l) => l.id === 'oa');
+    const kGr = trunkBand.lines.findIndex((l) => l.id === 'gr');
+    const yBoundary =
+      trunkBand.centerline[0].y +
+      (trunkBand.stripeOffsets[kOa] + trunkBand.stripeOffsets[kGr]) / 2;
+    const cross = faces[crossIdx].bbox;
+    const xMid = (cross.x0 + cross.x1) / 2;
+    // Contributions from different faces may overlap — union before the
+    // point test, or even-odd cancellation reads the joint as un-holed.
+    const oaFaces = splitIntoFaces(unionAll(oaHoles!));
+    const inOa = (p: { x: number; y: number }) => oaFaces.some((f) => pointInFace(p, f));
+    expect(inOa({ x: xMid, y: yBoundary })).toBe(true);
+    expect(inOa({ x: cross.x0 - 12, y: yBoundary })).toBe(false);
+  });
+
+  it('a five-line band: one painted crossing never clips the stripes above it', () => {
+    // Torture-map case 19 distilled: five interlined lines, the bottom one
+    // (x) forks up across the whole band; ONLY its crossing of w is painted
+    // x-over-w. The v/u/t crossings stay default — x slides under them — so
+    // their paint (body AND boundary rails) must stay whole. Clipping v here
+    // is exactly the overshoot-tick / thinned-stroke artifact.
+    const rowStop = (id: string, row: number) =>
+      makeStop(id, { row, orientation: 'auto-horizontal' });
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 'a',
+          x: -400,
+          y: 0,
+          stops: ['t', 'u', 'v', 'w', 'x'].map((id, r) => rowStop(id, r)),
+        }),
+        makeStation({
+          id: 'j',
+          x: 0,
+          y: 0,
+          stops: ['t', 'u', 'v', 'w', 'x'].map((id, r) => rowStop(id, r)),
+        }),
+        makeStation({
+          id: 'c',
+          x: 560,
+          y: 0,
+          stops: ['t', 'u', 'v', 'w', 'x'].map((id, r) => rowStop(id, r)),
+        }),
+        makeStation({ id: 'd', x: 460, y: -440, stops: [vStop('x')] }),
+      ],
+      lines: [
+        makeLine({ id: 't', color: '#039', edges: ['a|j', 'c|j'], strokeWidth: 2 }),
+        makeLine({ id: 'u', color: '#093', edges: ['a|j', 'c|j'], strokeWidth: 2 }),
+        makeLine({ id: 'v', color: '#e32', edges: ['a|j', 'c|j'], strokeWidth: 2 }),
+        makeLine({ id: 'w', color: '#f60', edges: ['a|j', 'c|j'], strokeWidth: 2 }),
+        makeLine({ id: 'x', color: '#aaa', edges: ['a|j', 'c|j', 'd|j'], strokeWidth: 2 }),
+      ],
+    });
+    const lineOrder = ['t', 'u', 'v', 'w', 'x']; // t front-most, x bottom
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+    const faces = buildOverlapRegions(bands, []);
+    const idx = faces.findIndex((f) => {
+      const lines = new Set(f.lineIds.map((id) => id.split(' ').pop() ?? id));
+      return lines.has('w') && lines.has('x') && lines.size === 2;
+    });
+    expect(idx).toBeGreaterThanOrEqual(0);
+    // Cycle the w∩x face until x's line wins it (spelling free).
+    let assignments: Record<string, RegionAssignment> = {};
+    let winners = resolveRegionWinners(faces, assignments, bands, lineOrder);
+    for (let step = 0; step < 8 && !winners[idx].winner.includes('x'); step++) {
+      const set = regionPaintPlan({
+        faces,
+        winners,
+        assignments,
+        faceIndex: idx,
+        dir: 1,
+        flood: false,
+        lineOrder,
+        bands,
+      })[0].assignment;
+      assignments = set ? { r1: { ...set, id: 'r1' } } : {};
+      winners = resolveRegionWinners(faces, assignments, bands, lineOrder);
+    }
+    expect(winners[idx].winner.includes('x')).toBe(true);
+    const holes = buildExclusionHoles(faces, winners, lineOrder, bands, [], () => 2, []);
+    // w loses its face; every line above it that x merely slides under is
+    // untouched, body and rails alike.
+    expect(holes.get('w')?.length).toBeGreaterThan(0);
+    for (const spared of ['t', 'u', 'v']) {
+      expect(holes.has(spared), `${spared} must keep covering the curve`).toBe(false);
+    }
   });
 
   it('a merged-line neighbor face does not shield an arm reveal of the same line', () => {

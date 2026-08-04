@@ -87,9 +87,10 @@ const clipKeysByStripe = (container: HTMLElement): Map<string, Set<string>> => {
 };
 
 describe('MapCanvas — region clip selection (edge → arm → line)', () => {
-  it('a losing ARM clips its stripes with the arm def; the fringe neighbor and its markers take the line def', () => {
-    // The interlined tangent mouth: orange above grey, grey branches. Curve
-    // wins ⇒ grey's trunk arm loses (arm def) and orange is a fringe loser
+  it('a losing ARM clips its stripes with the arm def; a line-level loser and its markers take the line def', () => {
+    // The interlined tangent mouth: orange above grey, grey branches. The
+    // mouth AND the oa∩curve crossing are painted for grey ⇒ grey's trunk
+    // arm loses (arm def) and orange loses its crossing as a whole line
     // (line def) — its stripes AND markers wrap in the 'oa' clip.
     const doc = makeDoc({
       stations: [
@@ -125,6 +126,15 @@ describe('MapCanvas — region clip selection (edge → arm → line)', () => {
         f.lineIds.includes(armCoverId('gr', trunkArm)) &&
         f.lineIds.includes(armCoverId('gr', branchArm)),
     );
+    // The crossing lives in its own component, so both covers are merged
+    // line ids there; painting it makes orange a LINE-level loser.
+    const set2 = paintFace(
+      doc,
+      lineOrder,
+      (f) => f.lineIds.includes('oa') && f.lineIds.includes('gr'),
+      { r1: { ...set, id: 'r1' } },
+    );
+    expect(set2.lineId).toBe('gr');
     const { container } = render(<App />);
     act(() => {
       useDoc.setState({
@@ -132,7 +142,7 @@ describe('MapCanvas — region clip selection (edge → arm → line)', () => {
         stations: doc.stations,
         lines: doc.lines,
         lineOrder,
-        regionAssignments: { r1: { ...set, id: 'r1' } },
+        regionAssignments: { r1: { ...set, id: 'r1' }, r2: { ...set2, id: 'r2' } },
       });
     });
     const byStripe = clipKeysByStripe(container);

@@ -2010,7 +2010,6 @@ function makeHoleContext(
     winnerRank: number;
     lineLosers: LineId[];
     sliceLosers: string[];
-    fringeLosers: LineId[];
   } => {
     const winnerLine = lineOfCover(w.winner);
     const winnerSlice = isSliceCoverId(w.winner) ? w.winner : null;
@@ -2025,42 +2024,16 @@ function makeHoleContext(
         : face.lineIds.filter(
             (id) => isSliceCoverId(id) && id !== w.winner && lineOfCover(id) === winnerLine,
           );
-    // FRINGE losers: above-winner lines whose CASING hangs into the reveal
-    // even though their bodies never cover the face. An interlined
-    // neighbor's facing rail occupies the same pixels as the loser's own
-    // (rails are centered on the shared edge), so clipping cover losers
-    // alone leaves the neighbor's half of that boundary stroke crossing the
-    // reveal. Discovered from the face bbox padded by the largest possible
-    // fringe reach — a candidate whose rail doesn't actually reach just
-    // yields empty rings at the ∩-footprint step below.
-    const fringeLosers: LineId[] = [];
-    if (winnerRank > 0) {
-      const inCover = new Set(coverLines);
-      const seen = new Set<LineId>();
-      for (const band of bands) {
-        for (let k = 0; k < band.lines.length; k++) {
-          const id = band.lines[k].id;
-          if (seen.has(id) || inCover.has(id) || id === winnerLine) continue;
-          if (orderIdx(id) >= winnerRank) continue;
-          const railW = railWOf(id);
-          if (railW <= 0) continue;
-          if (
-            !stripeIntersectsBox(
-              band,
-              k,
-              face.bbox,
-              (band.stripeWidths[k] + railW) / 2 + railW + SLIVER_ABSORB_REACH,
-            )
-          ) {
-            continue;
-          }
-          seen.add(id);
-          fringeLosers.push(id);
-        }
-      }
-      fringeLosers.sort();
-    }
-    return { winnerLine, winnerSlice, winnerRank, lineLosers, sliceLosers, fringeLosers };
+    // A line whose body never covers the face is NEVER a loser here — even
+    // when its rail hangs over the reveal (an interlined neighbor's facing
+    // rail rides the shared boundary). Whether that rail may survive is the
+    // neighbor's own crossing's decision: painted for this winner, the
+    // crossing face's cover holes punch the shared rail zone and tile with
+    // this reveal through the same-line shield exemption; unpainted, the
+    // winner slides UNDER the neighbor and the boundary stroke must run on
+    // intact. Holing it here regardless ate the stroke's near half along
+    // tangent hugs and left ticks of winner casing past the boundary.
+    return { winnerLine, winnerSlice, winnerRank, lineLosers, sliceLosers };
   };
 
   /** The per-face body. Caller has already established `w` is an overridden
@@ -2070,9 +2043,8 @@ function makeHoleContext(
     i: number,
     w: { winner: LineId; assignmentId: string | null },
   ): FaceHoleContribution | null => {
-    const { winnerLine, winnerSlice, winnerRank, lineLosers, sliceLosers, fringeLosers } =
-      loserPlanFor(face, w);
-    if (!lineLosers.length && !sliceLosers.length && !fringeLosers.length) return null;
+    const { winnerLine, winnerSlice, winnerRank, lineLosers, sliceLosers } = loserPlanFor(face, w);
+    if (!lineLosers.length && !sliceLosers.length) return null;
     const railWWinner = railWOf(winnerLine);
 
     // Absorb adjacent dropped slivers into the reveal region (see the doc
@@ -2112,11 +2084,7 @@ function makeHoleContext(
     // the doc comment). Bbox-filtered generously: a miter dilation can poke
     // up to 3× reach (the miter limit) past a corner.
     const maxReach =
-      Math.max(
-        ...lineLosers.map((id) => railWOf(id)),
-        ...fringeLosers.map((id) => railWOf(id)),
-        ...(sliceLosers.length ? [railWWinner] : []),
-      ) /
+      Math.max(...lineLosers.map((id) => railWOf(id)), ...(sliceLosers.length ? [railWWinner] : [])) /
         2 +
       railWWinner / 2 +
       0.5;
@@ -2147,7 +2115,6 @@ function makeHoleContext(
     const loserKeys = [
       ...lineLosers.map((id) => ({ key: id, railW: railWOf(id) })),
       ...sliceLosers.map((id) => ({ key: id, railW: railWWinner })),
-      ...fringeLosers.map((id) => ({ key: id, railW: railWOf(id) })),
     ];
     for (const { key: loserKey, railW } of loserKeys) {
       const reach = railW / 2 + railWWinner / 2 + 0.5;
@@ -2378,17 +2345,13 @@ export function buildExclusionHolesCached(
 
     // The same decomposition contributionFor runs — shared, so the signature
     // captures exactly the inputs the geometry consumed.
-    const { winnerLine, winnerRank, lineLosers, sliceLosers, fringeLosers } = ctx.loserPlanFor(
-      face,
-      w,
-    );
+    const { winnerLine, winnerRank, lineLosers, sliceLosers } = ctx.loserPlanFor(face, w);
     const loserSet = new Set(lineLosers);
     const railWWinner = railWOf(winnerLine);
     const inputSig =
       `${w.winner}|${railWWinner}|${defaultWinner(face, ctx.orderIdx)}|` +
       lineLosers.map((l) => `${l}:${railWOf(l)}`).join(',') +
-      `|${sliceLosers.join(',')}|` +
-      fringeLosers.map((l) => `${l}:${railWOf(l)}`).join(',');
+      `|${sliceLosers.join(',')}`;
     let sliverSig = '';
     for (const s of slivers) {
       if (!boxesOverlap(s.bbox, face.bbox, SLIVER_ABSORB_REACH * 3)) continue;
@@ -2400,10 +2363,9 @@ export function buildExclusionHolesCached(
       sliverSig += `${sliverTokenOf(s)}:${gWinner}${gLosers};`;
     }
     const maxReach =
-      lineLosers.length || sliceLosers.length || fringeLosers.length
+      lineLosers.length || sliceLosers.length
         ? Math.max(
             ...lineLosers.map((id) => railWOf(id)),
-            ...fringeLosers.map((id) => railWOf(id)),
             ...(sliceLosers.length ? [railWWinner] : []),
           ) /
             2 +

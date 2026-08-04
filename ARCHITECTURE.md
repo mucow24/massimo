@@ -811,11 +811,11 @@ the SAME undo entry as the edit. Rendering is SUBTRACTIVE (`buildExclusionHoles`
 repainted (repainting doubles antialiased edges; clip-abutting seams are impossible when the
 winner is one continuous base stroke). Cased lines: the hole runs through the winner's white
 ring (its rails are already painted beneath — uncovering them gives the natural bridges-over
-look) and swallows the losers' fringes near the face — including FRINGE losers: above-winner
-lines whose bodies never cover the face but whose casing hangs into the reveal (an interlined
-neighbor's facing rail occupies the same pixels as the loser's own, so clipping cover losers
-alone would leave the neighbor's half of the boundary stroke crossing the reveal). Clipped
-areas take no pointer events,
+look) and swallows the losers' fringes near the face. Only lines whose bodies cover the face
+ever lose — an interlined neighbor's rail riding the shared boundary is the neighbor's own
+crossing's business: painted for this winner, that crossing's holes punch the shared rail zone
+and tile with the reveal; unpainted, the winner slides under it and the boundary stroke runs on
+intact. Clipped areas take no pointer events,
 so idle clicks land on the visible winner natively. Zero assignments ⇒ zero cost and
 byte-identical output. `buildExclusionHoles` is the cache-free reference; production renders go
 through `buildExclusionHolesCached`, a per-face cross-frame cache whose entries are reused only
