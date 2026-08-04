@@ -157,8 +157,8 @@ export interface DevHandle {
   counters: () => DevCounters;
   /** The region worker's health probe (see {@link workerPing}). */
   workerPing: () => ReturnType<typeof workerPing>;
-  /** The pipelined-drag flag: enable/disable the region worker pipeline and
-   *  inspect its state. Off by default while the A/B is open. */
+  /** The pipelined-drag flag: on by default (see .perf/RESULTS.md);
+   *  enable(false) is the kill switch, status() the inspector. */
   regionPipeline: {
     enable: (on: boolean, opts?: { armThresholdMs?: number }) => void;
     status: () => ReturnType<typeof regionPipelineStatus>;
