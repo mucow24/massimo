@@ -7,6 +7,7 @@ import {
   buildExclusionHolesCached,
   buildOverlapRegions,
   clipperQuant,
+  edgeCoverId,
   mintAnchors,
   regionFloodTargets,
   regionPaintPlan,
@@ -341,5 +342,125 @@ describe('self-overlap faces (branch mouths)', () => {
         expect(f.bbox.x1).toBeGreaterThan(-40);
       }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Mid-edge self-crossings — the band-pair rule. A one-arm chain looping back
+// over its own trunk between stations (the P-shape) has no branch junction,
+// so arms alone cannot see it; two bands of one arm sharing no station that
+// bodily overlap are a genuine crossing, sliced per BAND.
+// ---------------------------------------------------------------------------
+
+describe('mid-edge self-crossings (band-pair rule)', () => {
+  /** The P-shape: stem a—b, around via c and d, then d—e back across the
+   *  stem. The crossing is at the origin, mid-edge on both pieces. */
+  const pDoc = () =>
+    makeDoc({
+      stations: [
+        makeStation({ id: 'a', x: 0, y: 200, stops: [vStop('l1')] }),
+        makeStation({ id: 'b', x: 0, y: -200, stops: [vStop('l1')] }),
+        makeStation({ id: 'c', x: 200, y: -200, stops: [hStop('l1')] }),
+        makeStation({ id: 'd', x: 200, y: 0, stops: [vStop('l1')] }),
+        makeStation({ id: 'e', x: -200, y: 0, stops: [hStop('l1')] }),
+      ],
+      lines: [makeLine({ id: 'l1', color: '#c00', edges: ['a|b', 'b|c', 'c|d', 'd|e'] })],
+    });
+
+  /** The same crossing as two lines. */
+  const xDoc = () =>
+    makeDoc({
+      stations: [
+        makeStation({ id: 'a', x: 0, y: 200, stops: [vStop('lv')] }),
+        makeStation({ id: 'b', x: 0, y: -200, stops: [vStop('lv')] }),
+        makeStation({ id: 'd', x: 200, y: 0, stops: [hStop('lh')] }),
+        makeStation({ id: 'e', x: -200, y: 0, stops: [hStop('lh')] }),
+      ],
+      lines: [
+        makeLine({ id: 'lv', color: '#c00', edges: ['a|b'] }),
+        makeLine({ id: 'lh', color: '#c00', edges: ['d|e'] }),
+      ],
+    });
+
+  it('a one-arm line crossing itself mid-edge yields a face sliced per band', () => {
+    const faces = facesFor(pDoc());
+    expect(faces).toHaveLength(1);
+    expect(faces[0].lineIds).toEqual(
+      [edgeCoverId('l1', 'a|b'), edgeCoverId('l1', 'd|e')].sort(),
+    );
+  });
+
+  it('golden parity: the crossing face equals the two-line X, geometrically', () => {
+    const p = facesFor(pDoc());
+    const x = facesFor(xDoc());
+    expect(p.length).toBe(x.length);
+    expect(p.map(keyOf).sort()).toEqual(x.map(keyOf).sort());
+  });
+
+  it('cycles merged → stem band → crossing band → merged, persisting each pairKey', () => {
+    const doc = pDoc();
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+    const faces = buildOverlapRegions(bands, []);
+    const planFor = (assignments: Record<string, RegionAssignment>) =>
+      regionPaintPlan({
+        faces,
+        winners: resolveRegionWinners(faces, assignments, bands, ['l1']),
+        assignments,
+        faceIndex: 0,
+        dir: 1,
+        flood: false,
+        lineOrder: ['l1'],
+        bands,
+      });
+    const p1 = planFor({});
+    const a1 = p1[0].assignment!;
+    expect(a1.winnerPairKey).toBe('a|b');
+    expect(a1.lines).toEqual(['l1']);
+    const p2 = planFor({ r1: { ...a1, id: 'r1' } });
+    const a2 = p2[0].assignment!;
+    expect(a2.winnerPairKey).toBe('d|e');
+    const p3 = planFor({ r1: { ...a2, id: 'r1' } });
+    expect(p3[0].assignment).toBeNull();
+  });
+
+  it('golden holes parity: the band reveal equals the two-line reveal, byte for byte', () => {
+    const ringKey = (rings: Ring[]): string[] =>
+      rings
+        .map((ring) => {
+          const pts = ring.map((p) => `${clipperQuant(p.x)},${clipperQuant(p.y)}`);
+          const variants: string[] = [];
+          for (const seq of [pts, [...pts].reverse()]) {
+            for (let s = 0; s < seq.length; s++) {
+              variants.push([...seq.slice(s), ...seq.slice(0, s)].join(' '));
+            }
+          }
+          return variants.sort()[0];
+        })
+        .sort();
+    const holesFor = (doc: MapDoc, winner: string, lineOrder: string[]) => {
+      const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+      const slivers: RegionSliver[] = [];
+      const faces = buildOverlapRegions(bands, [], slivers);
+      const winners = faces.map(() => ({ winner, assignmentId: 'r1' }));
+      return buildExclusionHoles(faces, winners, lineOrder, bands, [], () => 0, slivers);
+    };
+    // P-shape: the stem band wins; the crossing band loses.
+    const p = holesFor(pDoc(), edgeCoverId('l1', 'a|b'), ['l1']);
+    expect([...p.keys()]).toEqual([edgeCoverId('l1', 'd|e')]);
+    // Two lines: the vertical wins (an override — lh is the z-default).
+    const x = holesFor(xDoc(), 'lv', ['lh', 'lv']);
+    expect([...x.keys()]).toEqual(['lh']);
+    expect(ringKey(p.get(edgeCoverId('l1', 'd|e'))!)).toEqual(ringKey(x.get('lh')!));
+  });
+
+  it('the incremental build matches the reference on the P-shape, cold and warm', () => {
+    const doc = pDoc();
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+    const ref = buildOverlapRegions(bands, []);
+    const cold = buildRegionsIncremental(bands, [], null);
+    expect(cold.faces.map(keyOf).sort()).toEqual(ref.map(keyOf).sort());
+    const warm = buildRegionsIncremental(bands, [], cold.state);
+    expect(warm.reused).toBe(true);
+    expect(warm.faces.map(keyOf).sort()).toEqual(ref.map(keyOf).sort());
   });
 });

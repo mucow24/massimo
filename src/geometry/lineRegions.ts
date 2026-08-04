@@ -258,24 +258,51 @@ export function buildLineBodies(
 // extra zone parts, and the components those parts live in subdivide the line
 // PER ARM, so a branch mouth becomes a real face covered by two arm cover ids.
 
+// Slice cover-id payloads end with ` <lineId>`, so any line id parses
+// back regardless of its characters. Build-local: slice spellings carry no
+// cross-build identity and never persist — assignments spell them as
+// pairKeys (winnerPairKey).
+const SLICE_SEP = ' ';
+
 /**
  * Cover id of one ARM of a line — used in {@link RegionFace.lineIds} where a
  * face's cover distinguishes the line's arms (its self-overlap faces); bare
- * LineIds everywhere else. Build-local: arm indices carry no cross-build
- * identity, so these never persist — assignments spell arms as pairKeys.
+ * LineIds everywhere else.
  */
-export const armCoverId = (lineId: LineId, arm: number): string => `arm:${arm}:${lineId}`;
+export const armCoverId = (lineId: LineId, arm: number): string =>
+  `arm:${arm}${SLICE_SEP}${lineId}`;
 
-/** Is this cover id an arm spelling (vs a bare LineId)? */
+/**
+ * Cover id of one BAND of a line — the finer slice a mid-edge self-crossing
+ * needs (two bands of ONE arm overlapping; see the band-pair rule in
+ * selfCrossingParts). Spelled by the band's pairKey, which is also exactly
+ * how the choice persists.
+ */
+export const edgeCoverId = (lineId: LineId, pairKey: string): string =>
+  `edge:${pairKey}${SLICE_SEP}${lineId}`;
+
+/** Is this cover id an arm spelling? */
 export const isArmCoverId = (id: string): boolean => id.startsWith('arm:');
 
-/** The line behind a cover id, bare or arm-spelled. */
-export const lineOfCover = (id: string): LineId =>
-  isArmCoverId(id) ? id.slice(id.indexOf(':', 4) + 1) : id;
+/** Is this cover id a band (edge) spelling? */
+export const isEdgeCoverId = (id: string): boolean => id.startsWith('edge:');
 
-/** The arm index of an arm-spelled cover id, or null for a bare LineId. */
+/** Any slice spelling (vs a bare LineId)? */
+export const isSliceCoverId = (id: string): boolean => isArmCoverId(id) || isEdgeCoverId(id);
+
+/** The line behind a cover id, bare or slice-spelled. A bare id passes
+ *  through untouched whatever characters it contains — only the slice
+ *  prefixes are parsed. */
+export const lineOfCover = (id: string): LineId =>
+  isSliceCoverId(id) ? id.slice(id.indexOf(SLICE_SEP) + 1) : id;
+
+/** The arm index of an arm-spelled cover id, or null otherwise. */
 export const armOfCover = (id: string): number | null =>
-  isArmCoverId(id) ? Number(id.slice(4, id.indexOf(':', 4))) : null;
+  isArmCoverId(id) ? Number(id.slice(4, id.indexOf(SLICE_SEP))) : null;
+
+/** The pairKey of a band-spelled cover id, or null otherwise. */
+export const pairKeyOfCover = (id: string): string | null =>
+  isEdgeCoverId(id) ? id.slice(5, id.indexOf(SLICE_SEP)) : null;
 
 /**
  * Arm index of `lineId`'s stripe on the band of `pairKey`, or null when the
@@ -363,6 +390,99 @@ export function selfOverlapParts(bands: SegmentBandSpec[], lineId: LineId): Ring
     }
   }
   return parts;
+}
+
+/**
+ * One mid-edge self-crossing's zone contribution: the overlap of two bands of
+ * ONE arm, with the pair identity the component planner needs to know which
+ * bands to slice where.
+ */
+export interface SelfCrossingPart {
+  pairKeys: [string, string];
+  rings: Ring[];
+}
+
+/**
+ * The BAND-PAIR rule: zone parts where a line crosses itself WITHIN one arm
+ * (the P-shape — a chain looping back over its own trunk between stations).
+ * Two bands of the same arm that share no station cannot be corner-adjacent,
+ * so any bodily overlap between them is a genuine crossing; cross-arm overlap
+ * is already covered (at arm granularity) by {@link selfOverlapParts}, and
+ * pairs sharing a station are exactly the joints and branch mouths the arm
+ * model owns. Stripe bodies only, like the arm parts.
+ */
+export function selfCrossingParts(bands: SegmentBandSpec[], lineId: LineId): SelfCrossingPart[] {
+  const stripes: { band: SegmentBandSpec; k: number }[] = [];
+  for (const band of bands) {
+    for (let k = 0; k < band.lines.length; k++) {
+      if (band.lines[k].id === lineId) stripes.push({ band, k });
+    }
+  }
+  if (stripes.length < 2) return [];
+  const out: SelfCrossingPart[] = [];
+  for (let i = 0; i < stripes.length; i++) {
+    for (let j = i + 1; j < stripes.length; j++) {
+      const a = stripes[i];
+      const b = stripes[j];
+      if ((a.band.arms[a.k] ?? 0) !== (b.band.arms[b.k] ?? 0)) continue;
+      if (
+        a.band.fromId === b.band.fromId ||
+        a.band.fromId === b.band.toId ||
+        a.band.toId === b.band.fromId ||
+        a.band.toId === b.band.toId
+      ) {
+        continue;
+      }
+      const ra = stripeBodyPolys(a.band, a.k);
+      const rb = stripeBodyPolys(b.band, b.k);
+      if (!ra.length || !rb.length) continue;
+      if (!boxesOverlap(ringsBbox(ra), ringsBbox(rb))) continue;
+      if (!masksMeet(bodyMask(ra), bodyMask(rb))) continue;
+      const rings = intersect(ra, rb);
+      if (rings.length) out.push({ pairKeys: [a.band.pairKey, b.band.pairKey], rings });
+    }
+  }
+  return out;
+}
+
+/**
+ * One line's slice bodies for a component hosting its mid-edge crossings:
+ * one entry per involved band (id = {@link edgeCoverId}, its stripe body)
+ * plus the REST of the line under its bare id (all other stripes + markers).
+ * A third piece of the line passing over the crossing keeps its bare
+ * spelling — expressiveness there is deliberately line-level; the crossing
+ * pair itself is what this partitions.
+ */
+export function bandSliceBodiesForRestriction(
+  bands: SegmentBandSpec[],
+  markers: StopMarkerSpec[],
+  lineId: LineId,
+  involved: ReadonlySet<string>,
+): { id: string; rings: Ring[] }[] {
+  const out: { id: string; rings: Ring[] }[] = [];
+  const rest: Ring[] = [];
+  for (const band of bands) {
+    for (let k = 0; k < band.lines.length; k++) {
+      if (band.lines[k].id !== lineId) continue;
+      const rings = stripeBodyPolys(band, k);
+      if (!rings.length) continue;
+      if (involved.has(band.pairKey)) {
+        out.push({ id: edgeCoverId(lineId, band.pairKey), rings: unionAll(rings) });
+      } else {
+        rest.push(...rings);
+      }
+    }
+  }
+  for (const m of markers) {
+    if (m.lineId !== lineId) continue;
+    rest.push(...markerBodyRings(m));
+  }
+  out.sort((a, b) => (a.id < b.id ? -1 : 1));
+  if (rest.length) {
+    const merged = unionAll(rest);
+    if (merged.length) out.push({ id: lineId, rings: merged });
+  }
+  return out;
 }
 
 /**
@@ -724,38 +844,130 @@ export function buildOverlapRegions(
     const parts = selfOverlapParts(bands, id);
     if (parts.length) selfEntries.push([id, parts]);
   }
+  const crossParts = new Map<LineId, SelfCrossingPart[]>();
+  for (const id of ids) {
+    const parts = selfCrossingParts(bands, id);
+    if (parts.length) crossParts.set(id, parts);
+  }
   // A single line can no longer short-circuit unconditionally: alone on the
-  // map, its branch mouths are still an arrangement.
-  if (ids.length < 2 && !selfEntries.length) return [];
+  // map, its branch mouths and self-crossings are still an arrangement.
+  if (ids.length < 2 && !selfEntries.length && !crossParts.size) return [];
   // Component-at-a-time. Cells cannot span components, so this yields the same
   // faces as one global subdivision while keeping every clipper operand down to
   // one crossing's worth of geometry — and it is the seam the incremental
   // builder caches on.
   const parts = overlapZoneParts(ids, bodies);
   for (const [, p] of selfEntries) parts.push(...p);
+  for (const cps of crossParts.values()) for (const cp of cps) parts.push(...cp.rings);
   const comps = significantComponents(parts);
   const selfHomes = selfPartCompHomes(selfEntries, comps);
-  const armBodies = new Map<LineId, Map<number, Ring[]>>();
-  for (const [lineId] of selfEntries) {
-    armBodies.set(lineId, armBodiesForRestriction(bands, markers, lineId));
-  }
+  const crossPlans = crossingCompPlans(crossParts, comps);
+  const sliceEntriesOf = makeSliceEntrySource(bands, markers);
   const faces: RegionFace[] = [];
   for (const comp of comps) {
-    const armLines = selfHomes.get(comp);
-    let armSplit: Map<LineId, Map<number, Ring[]>> | null = null;
-    if (armLines) {
-      armSplit = new Map();
-      for (const l of armLines) armSplit.set(l, armBodies.get(l)!);
-    }
+    const sliceSplit = sliceSplitForComp(
+      selfHomes.get(comp),
+      crossPlans.get(comp),
+      sliceEntriesOf,
+    );
     faces.push(
       ...extractFaces(
-        subdivideCells(restrictBodiesToZone(ids, bodies, comp, armSplit)),
+        subdivideCells(restrictBodiesToZone(ids, bodies, comp, sliceSplit)),
         bands,
         sliverSink,
       ),
     );
   }
   return finalizeFaces(faces);
+}
+
+/**
+ * Which components host a line's mid-edge crossings, with the involved band
+ * pairKeys per line — the planner's input for band-level slicing. Same
+ * membership predicate as {@link selfPartCompHomes}.
+ */
+export function crossingCompPlans(
+  crossParts: ReadonlyMap<LineId, SelfCrossingPart[]>,
+  comps: Face[],
+): Map<Face, Map<LineId, Set<string>>> {
+  const out = new Map<Face, Map<LineId, Set<string>>>();
+  if (!crossParts.size) return out;
+  const entries: [number, CompHomeEntry][] = comps.map((rings, i) => [
+    i,
+    { rings, box: ringsBbox(rings) },
+  ]);
+  for (const [lineId, parts] of crossParts) {
+    for (const part of parts) {
+      for (const ring of part.rings) {
+        for (const i of ringHomes(ring, entries)) {
+          const comp = comps[i];
+          let byLine = out.get(comp);
+          if (!byLine) out.set(comp, (byLine = new Map()));
+          let set = byLine.get(lineId);
+          if (!set) byLine.set(lineId, (set = new Set()));
+          set.add(part.pairKeys[0]);
+          set.add(part.pairKeys[1]);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Per-frame builder of a line's slice entries, memoized so the bbox/mask
+ * memos on the ring arrays hold across components. Arm entries where the
+ * line's branch-mouth parts live; band entries (per involved pairKey + the
+ * bare-id rest) where only mid-edge crossings do. A component hosting BOTH
+ * for one line takes the ARM partition — the crossing goes undistinguished
+ * there (deliberate punt: the merged-with-a-mouth crossing is the rare case
+ * the design doc registers, and arm covers keep the mouth paintable).
+ */
+export function makeSliceEntrySource(
+  bands: SegmentBandSpec[],
+  markers: StopMarkerSpec[],
+): (lineId: LineId, crossPairs: ReadonlySet<string> | null) => { id: string; rings: Ring[] }[] {
+  const armEntries = new Map<LineId, { id: string; rings: Ring[] }[]>();
+  const bandEntries = new Map<string, { id: string; rings: Ring[] }[]>();
+  return (lineId, crossPairs) => {
+    if (crossPairs === null) {
+      let e = armEntries.get(lineId);
+      if (!e) {
+        const byArm = armBodiesForRestriction(bands, markers, lineId);
+        e = [...byArm.keys()]
+          .sort((a, b) => a - b)
+          .map((arm) => ({ id: armCoverId(lineId, arm), rings: byArm.get(arm)! }));
+        armEntries.set(lineId, e);
+      }
+      return e;
+    }
+    const key = `${lineId}|${[...crossPairs].sort().join(',')}`;
+    let e = bandEntries.get(key);
+    if (!e) {
+      e = bandSliceBodiesForRestriction(bands, markers, lineId, crossPairs);
+      bandEntries.set(key, e);
+    }
+    return e;
+  };
+}
+
+/** The slice plan of one component: arm partition where the line's arm parts
+ *  live (crossings punt there), band partition where only crossings do. */
+export function sliceSplitForComp(
+  armLines: ReadonlySet<LineId> | undefined,
+  crossPlan: ReadonlyMap<LineId, Set<string>> | undefined,
+  sliceEntriesOf: (
+    lineId: LineId,
+    crossPairs: ReadonlySet<string> | null,
+  ) => { id: string; rings: Ring[] }[],
+): Map<LineId, { id: string; rings: Ring[] }[]> | null {
+  if (!armLines && !crossPlan) return null;
+  const split = new Map<LineId, { id: string; rings: Ring[] }[]>();
+  const lines = new Set<LineId>([...(armLines ?? []), ...(crossPlan?.keys() ?? [])]);
+  for (const l of [...lines].sort()) {
+    split.set(l, sliceEntriesOf(l, armLines?.has(l) ? null : (crossPlan?.get(l) ?? null)));
+  }
+  return split;
 }
 
 /**
@@ -887,11 +1099,12 @@ export function restrictBodiesToZone(
   ids: LineId[],
   bodies: Map<LineId, Ring[]>,
   zone: Ring[],
-  // Lines to subdivide PER ARM in this component (their self parts live
-  // here): the line's single entry is replaced by one entry per arm, under
-  // arm cover ids. Bodies from {@link armBodiesForRestriction}, built once
-  // per frame so their bbox/mask memos hold across components.
-  armSplit?: Map<LineId, Map<number, Ring[]>> | null,
+  // Lines to subdivide PER SLICE in this component (their self parts live
+  // here): the line's single entry is replaced by the given slice entries —
+  // per-arm bodies at a branch mouth, per-band + rest at a mid-edge
+  // crossing. Entries are built once per frame so their bbox/mask memos hold
+  // across components.
+  sliceSplit?: Map<LineId, { id: string; rings: Ring[] }[]> | null,
 ): { id: LineId; rings: Ring[] }[] {
   const out: { id: LineId; rings: Ring[] }[] = [];
   // Most lines are nowhere near any one component; a bbox reject is far cheaper
@@ -909,11 +1122,9 @@ export function restrictBodiesToZone(
     if (rings.length) out.push({ id, rings });
   };
   for (const id of ids) {
-    const arms = armSplit?.get(id);
-    if (arms) {
-      for (const arm of [...arms.keys()].sort((a, b) => a - b)) {
-        restrict(armCoverId(id, arm), arms.get(arm)!);
-      }
+    const slices = sliceSplit?.get(id);
+    if (slices) {
+      for (const s of slices) restrict(s.id, s.rings);
     } else {
       restrict(id, bodies.get(id)!);
     }
@@ -1045,21 +1256,27 @@ export function finalizeFaces(faces: RegionFace[]): RegionFace[] {
   return faces;
 }
 
-/** Rewrite lone arms back to bare line ids (see the call site below). A cover
- *  never mixes a line's bare id with its arm ids — a component subdivides a
- *  line as arms XOR whole — so the rewrite cannot create duplicates. */
+/** Rewrite lone slices back to bare line ids (see the call site below): a
+ *  cover distinguishes a line's slices only where ≥2 of that line's coverers
+ *  are actually in the cell. A bare id can coexist with EDGE slices (the
+ *  band partition's "rest of the line") and counts as a coverer, so a third
+ *  piece crossing a band pair keeps the pair distinguished — but a bare id
+ *  itself never rewrites, so the rewrite cannot create duplicates. */
 const collapseCover = (cover: readonly string[]): string[] => {
-  let armCount: Map<LineId, number> | null = null;
+  let counts: Map<LineId, number> | null = null;
   for (const id of cover) {
-    if (!isArmCoverId(id)) continue;
-    armCount ??= new Map();
+    if (!isSliceCoverId(id)) continue;
+    counts ??= new Map();
     const line = lineOfCover(id);
-    armCount.set(line, (armCount.get(line) ?? 0) + 1);
+    counts.set(line, (counts.get(line) ?? 0) + 1);
   }
-  if (!armCount) return [...cover];
-  const counts = armCount;
+  if (!counts) return [...cover];
+  const withBare = counts;
+  for (const id of cover) {
+    if (!isSliceCoverId(id) && withBare.has(id)) withBare.set(id, withBare.get(id)! + 1);
+  }
   return cover.map((id) =>
-    isArmCoverId(id) && counts.get(lineOfCover(id))! < 2 ? lineOfCover(id) : id,
+    isSliceCoverId(id) && withBare.get(lineOfCover(id))! < 2 ? lineOfCover(id) : id,
   );
 };
 
@@ -1160,10 +1377,12 @@ export function mintAnchors(face: RegionFace, bands: SegmentBandSpec[]): RegionA
   for (const coverId of face.lineIds) {
     const lineId = lineOfCover(coverId);
     const arm = armOfCover(coverId);
+    const edgePk = pairKeyOfCover(coverId);
     let best: { pairKey: string; mid: number; totalLen: number; size: number } | null = null;
     for (const [key, entry] of face.spans) {
       if (!key.startsWith(`${lineId}|`)) continue;
       const pairKey = key.slice(lineId.length + 1);
+      if (edgePk !== null && pairKey !== edgePk) continue;
       if (arm !== null && armOfLinePairKey(bands, lineId, pairKey) !== arm) continue;
       for (const iv of entry.intervals) {
         const size = iv.d1 - iv.d0;
@@ -1197,11 +1416,11 @@ export function mintAnchors(face: RegionFace, bands: SegmentBandSpec[]): RegionA
         }
       }
     } else {
-      // Arm slices never take the projection fallback: it is arm-blind, and a
-      // wrong-arm pairKey here would break the winnerPairKey↔anchor invariant.
-      // An arm slice with no span simply mints nothing — its sibling anchors
-      // still pin the face.
-      if (arm !== null) continue;
+      // Slices never take the projection fallback: it is slice-blind, and a
+      // wrong-slice pairKey here would break the winnerPairKey↔anchor
+      // invariant. A slice with no span simply mints nothing — its sibling
+      // anchors still pin the face.
+      if (isSliceCoverId(coverId)) continue;
       const projected = projectOntoLineStripe(lineId, target(), bands);
       if (projected) {
         best = projected;
@@ -1657,20 +1876,25 @@ function makeHoleContext(
 
   // A line's painted footprint near one face, at body width (pad 0) or
   // silhouette width (pad railW). Bbox-filtered; markers dilate by pad/2.
-  // `arm` non-null keeps only that arm's stripes — an ARM winner's footprint
-  // — while markers stay included either way: a marker is the LINE's paint,
-  // shared by its arms.
+  // A non-null `slice` (a slice cover id) keeps only that slice's stripes —
+  // a SLICE winner's footprint — while markers stay included either way: a
+  // marker is the LINE's paint, shared by its slices.
+  const sliceHasStripe = (slice: string, band: SegmentBandSpec, k: number): boolean => {
+    const pk = pairKeyOfCover(slice);
+    if (pk !== null) return band.pairKey === pk;
+    return (band.arms[k] ?? 0) === armOfCover(slice);
+  };
   const paintNear = (
     lineId: LineId,
     box: RegionFace['bbox'],
     pad: number,
-    arm: number | null = null,
+    slice: string | null = null,
   ): Ring[] => {
     const rings: Ring[] = [];
     for (const band of bands) {
       for (let k = 0; k < band.lines.length; k++) {
         if (band.lines[k].id !== lineId) continue;
-        if (arm !== null && (band.arms[k] ?? 0) !== arm) continue;
+        if (slice !== null && !sliceHasStripe(slice, band, k)) continue;
         if (!stripeIntersectsBox(band, k, box, (band.stripeWidths[k] + pad) / 2 + pad)) continue;
         let byArgs = stripeSil.get(band);
         if (!byArgs) stripeSil.set(band, (byArgs = new Map()));
@@ -1772,33 +1996,33 @@ function makeHoleContext(
 
   /** The winner/loser decomposition of one overridden face, shared by the
    *  hole build and the cache's input signatures so the two cannot drift.
-   *  LINE domain plus arm slices: a losing line loses with all its arms; an
-   *  ARM winner's sibling arms are additionally losers (same z — both paint
-   *  orders exist, so the mouth must clip whichever sibling paints later),
-   *  while a merged-line winner's own arms never are. */
+   *  LINE domain plus slices: a losing line loses with all its slices; a
+   *  SLICE winner's sibling slices are additionally losers (same z — both
+   *  paint orders exist, so the overlap must clip whichever sibling paints
+   *  later), while a merged-line winner's own slices never are. */
   const loserPlanFor = (
     face: RegionFace,
     w: { winner: LineId; assignmentId: string | null },
   ): {
     winnerLine: LineId;
-    winnerArm: number | null;
+    winnerSlice: string | null;
     winnerRank: number;
     lineLosers: LineId[];
-    armLosers: string[];
+    sliceLosers: string[];
   } => {
     const winnerLine = lineOfCover(w.winner);
-    const winnerArm = armOfCover(w.winner);
+    const winnerSlice = isSliceCoverId(w.winner) ? w.winner : null;
     const winnerRank = orderIdx(winnerLine);
     const lineLosers = distinctCoverLines(face.lineIds).filter(
       (lineId) => lineId !== winnerLine && orderIdx(lineId) < winnerRank,
     );
-    const armLosers =
-      winnerArm === null
+    const sliceLosers =
+      winnerSlice === null
         ? []
         : face.lineIds.filter(
-            (id) => isArmCoverId(id) && id !== w.winner && lineOfCover(id) === winnerLine,
+            (id) => isSliceCoverId(id) && id !== w.winner && lineOfCover(id) === winnerLine,
           );
-    return { winnerLine, winnerArm, winnerRank, lineLosers, armLosers };
+    return { winnerLine, winnerSlice, winnerRank, lineLosers, sliceLosers };
   };
 
   /** The per-face body. Caller has already established `w` is an overridden
@@ -1808,8 +2032,8 @@ function makeHoleContext(
     i: number,
     w: { winner: LineId; assignmentId: string | null },
   ): FaceHoleContribution | null => {
-    const { winnerLine, winnerArm, winnerRank, lineLosers, armLosers } = loserPlanFor(face, w);
-    if (!lineLosers.length && !armLosers.length) return null;
+    const { winnerLine, winnerSlice, winnerRank, lineLosers, sliceLosers } = loserPlanFor(face, w);
+    if (!lineLosers.length && !sliceLosers.length) return null;
     const railWWinner = railWOf(winnerLine);
 
     // Absorb adjacent dropped slivers into the reveal region (see the doc
@@ -1837,13 +2061,13 @@ function makeHoleContext(
       }
     }
 
-    // An ARM winner's footprint is its own arm's paint: the hole then runs
-    // through THAT arm's ring, revealing its rails across the mouth — the
-    // identical bridges-over reveal the inter-line path produces.
+    // A SLICE winner's footprint is its own slice's paint: the hole then
+    // runs through THAT slice's ring, revealing its rails across the overlap
+    // — the identical bridges-over reveal the inter-line path produces.
     const footprint =
       railWWinner > 0
-        ? paintNear(winnerLine, regionBbox, railWWinner, winnerArm)
-        : offsetClosed(paintNear(winnerLine, regionBbox, 0, winnerArm), -EXCLUSION_INSET);
+        ? paintNear(winnerLine, regionBbox, railWWinner, winnerSlice)
+        : offsetClosed(paintNear(winnerLine, regionBbox, 0, winnerSlice), -EXCLUSION_INSET);
     if (!footprint.length) return { contributions: [], regionBbox };
     // Differently-won neighboring faces, to subtract from every hole (see
     // the doc comment). Bbox-filtered generously: a miter dilation can poke
@@ -1851,7 +2075,7 @@ function makeHoleContext(
     const maxReach =
       Math.max(
         ...lineLosers.map((id) => railWOf(id)),
-        ...(armLosers.length ? [railWWinner] : []),
+        ...(sliceLosers.length ? [railWWinner] : []),
       ) /
         2 +
       railWWinner / 2 +
@@ -1869,7 +2093,7 @@ function makeHoleContext(
     const contributions: { lineId: LineId; rings: Ring[] }[] = [];
     const loserKeys = [
       ...lineLosers.map((id) => ({ key: id, railW: railWOf(id) })),
-      ...armLosers.map((id) => ({ key: id, railW: railWWinner })),
+      ...sliceLosers.map((id) => ({ key: id, railW: railWWinner })),
     ];
     for (const { key: loserKey, railW } of loserKeys) {
       const reach = railW / 2 + railWWinner / 2 + 0.5;
@@ -1894,15 +2118,16 @@ function makeHoleContext(
 }
 
 /**
- * Post-pass over an assembled hole map: an arm-keyed def must also carry its
- * line's line-level holes, because a paint element references exactly ONE
- * clipPath — an arm-losing stripe may lose line-level faces too, and it will
- * reference the arm def. Line rings first, then the arm's own, so the merge
- * is order-deterministic. Shared by the reference and cached builders.
+ * Post-pass over an assembled hole map: a slice-keyed def must also carry
+ * its line's line-level holes, because a paint element references exactly
+ * ONE clipPath — a slice-losing stripe may lose line-level faces too, and it
+ * will reference the slice def. Line rings first, then the slice's own, so
+ * the merge is order-deterministic. Shared by the reference and cached
+ * builders.
  */
 function mergeArmHoleKeys(holes: Map<LineId, Ring[]>): Map<LineId, Ring[]> {
   for (const [key, rings] of holes) {
-    if (!isArmCoverId(key)) continue;
+    if (!isSliceCoverId(key)) continue;
     const lineRings = holes.get(lineOfCover(key));
     if (lineRings?.length) holes.set(key, [...lineRings, ...rings]);
   }
@@ -2086,13 +2311,13 @@ export function buildExclusionHolesCached(
 
     // The same decomposition contributionFor runs — shared, so the signature
     // captures exactly the inputs the geometry consumed.
-    const { winnerLine, winnerRank, lineLosers, armLosers } = ctx.loserPlanFor(face, w);
+    const { winnerLine, winnerRank, lineLosers, sliceLosers } = ctx.loserPlanFor(face, w);
     const loserSet = new Set(lineLosers);
     const railWWinner = railWOf(winnerLine);
     const inputSig =
       `${w.winner}|${railWWinner}|${defaultWinner(face, ctx.orderIdx)}|` +
       lineLosers.map((l) => `${l}:${railWOf(l)}`).join(',') +
-      `|${armLosers.join(',')}`;
+      `|${sliceLosers.join(',')}`;
     let sliverSig = '';
     for (const s of slivers) {
       if (!boxesOverlap(s.bbox, face.bbox, SLIVER_ABSORB_REACH * 3)) continue;
@@ -2104,10 +2329,10 @@ export function buildExclusionHolesCached(
       sliverSig += `${sliverTokenOf(s)}:${gWinner}${gLosers};`;
     }
     const maxReach =
-      lineLosers.length || armLosers.length
+      lineLosers.length || sliceLosers.length
         ? Math.max(
             ...lineLosers.map((id) => railWOf(id)),
-            ...(armLosers.length ? [railWWinner] : []),
+            ...(sliceLosers.length ? [railWWinner] : []),
           ) /
             2 +
           railWWinner / 2 +
@@ -2244,9 +2469,16 @@ export function resolveRegionWinners(
     const a = assignments[assignmentId];
     let winner: LineId = a.lineId;
     if (a.winnerPairKey !== undefined) {
-      const arm = armOfLinePairKey(bands, a.lineId, a.winnerPairKey);
-      const armId = arm === null ? null : armCoverId(a.lineId, arm);
-      if (armId && face.lineIds.includes(armId)) winner = armId;
+      // Finest spelling the face distinguishes wins: the band itself at a
+      // mid-edge crossing, else the arm containing it at a branch mouth.
+      const edgeId = edgeCoverId(a.lineId, a.winnerPairKey);
+      if (face.lineIds.includes(edgeId)) {
+        winner = edgeId;
+      } else {
+        const arm = armOfLinePairKey(bands, a.lineId, a.winnerPairKey);
+        const armId = arm === null ? null : armCoverId(a.lineId, arm);
+        if (armId && face.lineIds.includes(armId)) winner = armId;
+      }
     }
     return { winner, assignmentId };
   });
@@ -2294,11 +2526,11 @@ export function regionFloodTargets(
   // Both rules are cheap set tests, so applying them up front leaves only a
   // handful of candidates for the clipper adjacency work below.
   const open = new Set<number>();
-  // Legality: a line target is satisfiable by any spelling of that line; an
-  // arm target needs the cover to distinguish THAT arm (arm indices are
+  // Legality: a line target is satisfiable by any spelling of that line; a
+  // slice target needs the cover to distinguish THAT slice (spellings are
   // consistent within one build, so direct membership is exact).
   const canShow = (i: number): boolean =>
-    isArmCoverId(target)
+    isSliceCoverId(target)
       ? faces[i].lineIds.includes(target)
       : distinctCoverLines(faces[i].lineIds).includes(target);
   for (let i = 0; i < faces.length; i++) {
@@ -2349,27 +2581,29 @@ export function regionClickAction(args: {
   const { face, bound, lineOrder, dir, bands, newId } = args;
   const orderIdx = orderIndexer(lineOrder);
   // Cycle domain: the cover's distinct LINES first (each meaning "that line,
-  // arms merged" — exactly the pre-arm cycle for plain faces), then any arm
-  // slices the cover distinguishes, by line z then arm index. So a plain
-  // face cycles as it always did, a pure self face cycles merged → arm A →
-  // arm B → merged (delete), and a mixed face offers lines then arms.
+  // slices merged" — exactly the pre-arm cycle for plain faces), then any
+  // slices the cover distinguishes, by line z then slice id. So a plain face
+  // cycles as it always did, a pure self face cycles merged → slice → slice
+  // → merged (delete), and a mixed face offers lines then slices.
   const byLineThenId = (a: string, b: string) => {
     const la = lineOfCover(a);
     const lb = lineOfCover(b);
-    return (
-      orderIdx(la) - orderIdx(lb) ||
-      (la < lb ? -1 : la > lb ? 1 : (armOfCover(a) ?? 0) - (armOfCover(b) ?? 0))
-    );
+    return orderIdx(la) - orderIdx(lb) || (la < lb ? -1 : la > lb ? 1 : a < b ? -1 : a > b ? 1 : 0);
   };
   const order = [
     ...distinctCoverLines(face.lineIds).sort((a, b) => orderIdx(a) - orderIdx(b) || (a < b ? -1 : 1)),
-    ...face.lineIds.filter(isArmCoverId).sort(byLineThenId),
+    ...face.lineIds.filter(isSliceCoverId).sort(byLineThenId),
   ];
   let current = bound?.lineId ?? order[0];
-  if (bound?.winnerPairKey !== undefined) {
-    const arm = armOfLinePairKey(bands, bound.lineId, bound.winnerPairKey);
-    const armId = arm === null ? null : armCoverId(bound.lineId, arm);
-    if (armId && face.lineIds.includes(armId)) current = armId;
+  if (bound && bound.winnerPairKey !== undefined) {
+    const edgeId = edgeCoverId(bound.lineId, bound.winnerPairKey);
+    if (face.lineIds.includes(edgeId)) {
+      current = edgeId;
+    } else {
+      const arm = armOfLinePairKey(bands, bound.lineId, bound.winnerPairKey);
+      const armId = arm === null ? null : armCoverId(bound.lineId, arm);
+      if (armId && face.lineIds.includes(armId)) current = armId;
+    }
   }
   const at = Math.max(0, order.indexOf(current));
   const winner = order[(at + dir + order.length) % order.length];
@@ -2399,19 +2633,25 @@ export function regionSetAction(args: {
   const id = boundId ?? newId;
   if (winner === regionDefaultWinner(face, lineOrder)) return { id, assignment: null };
   const lineId = lineOfCover(winner);
-  const arm = armOfCover(winner);
   const anchors = mintAnchors(face, bands);
-  // An arm winner persists as the pairKey of ITS OWN minted anchor — the one
-  // cross-build arm identity (arm indices are build-local). By construction
-  // that anchor exists: an arm slice is in the cover only when its stripes
-  // overlap the face, so it minted from a real span.
-  const winnerPairKey =
-    arm === null
-      ? undefined
-      : anchors.find(
-          (an) => an.lineId === lineId && armOfLinePairKey(bands, lineId, an.pairKey) === arm,
-        )?.pairKey;
-  if (arm !== null && winnerPairKey === undefined) return { id, assignment: null };
+  // A slice winner persists as the pairKey of ITS OWN minted anchor — the
+  // one cross-build slice identity (arm indices and cover spellings are
+  // build-local). By construction that anchor exists: a slice is in the
+  // cover only when its stripes overlap the face, so it minted from a real
+  // span.
+  let winnerPairKey: string | undefined;
+  if (isSliceCoverId(winner)) {
+    const edgePk = pairKeyOfCover(winner);
+    const arm = armOfCover(winner);
+    winnerPairKey = anchors.find(
+      (an) =>
+        an.lineId === lineId &&
+        (edgePk !== null
+          ? an.pairKey === edgePk
+          : armOfLinePairKey(bands, lineId, an.pairKey) === arm),
+    )?.pairKey;
+    if (winnerPairKey === undefined) return { id, assignment: null };
+  }
   return {
     id,
     // The stored cover is DISTINCT LINES whatever the face's spelling — arm

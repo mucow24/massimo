@@ -34,6 +34,7 @@ import { regionsFor } from '../geometry/regionCache';
 import {
   armCoverId,
   buildExclusionHolesCached,
+  edgeCoverId,
   regionClipBounds,
   regionPaintPlan,
   resolveRegionWinners,
@@ -1469,20 +1470,22 @@ export function MapCanvas() {
           {showNetwork &&
             renderables.map((r) => {
               const lineId = r.kind === 'marker' ? r.spec.lineId : r.band.lines[r.stripeIndex].id;
-              // A stripe that loses a face AS AN ARM references its arm's
-              // def (which also carries the line-level holes — see
-              // mergeArmHoleKeys); markers always take the line def: they
-              // are the line's shared paint, never one arm's.
-              const armKey =
+              // A stripe that loses a face AS A SLICE references its slice's
+              // def, finest spelling first — its band (a mid-edge crossing),
+              // then its arm (a branch mouth) — each of which also carries
+              // the line-level holes (see mergeArmHoleKeys). Markers always
+              // take the line def: they are the line's shared paint, never
+              // one slice's.
+              const sliceKeys =
                 r.kind === 'marker'
-                  ? null
-                  : armCoverId(lineId, r.band.arms[r.stripeIndex] ?? 0);
+                  ? []
+                  : [
+                      edgeCoverId(lineId, r.band.pairKey),
+                      armCoverId(lineId, r.band.arms[r.stripeIndex] ?? 0),
+                    ];
               const clipKey =
-                armKey && regionExcludeHoles?.has(armKey)
-                  ? armKey
-                  : (regionExcludeHoles?.has(lineId) ?? false)
-                    ? lineId
-                    : null;
+                sliceKeys.find((k) => regionExcludeHoles?.has(k)) ??
+                ((regionExcludeHoles?.has(lineId) ?? false) ? lineId : null);
               const withExcludeClip = (key: string, node: React.ReactNode) =>
                 clipKey ? (
                   <g

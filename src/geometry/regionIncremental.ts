@@ -50,26 +50,30 @@ import type { Face, Ring } from './clip';
 import { intersect } from './clip';
 import { bodyMask, cellsOfBox, dirtyReaches, masksMeet } from './bodyMask';
 import {
-  armBodiesForRestriction,
   boxesOverlap,
   buildLineBodies,
   clipperQuant,
   compKeyOf,
+  crossingCompPlans,
   extractFaces,
   finalizeFaces,
   FNV_OFFSET,
   fnvMix,
   fnvMixNum,
+  makeSliceEntrySource,
   multiArmLineIds,
   restrictBodiesToZone,
   ringHomes,
   ringsBbox,
+  selfCrossingParts,
   selfOverlapParts,
   selfPartCompHomes,
+  sliceSplitForComp,
   subdivideCells,
   zoneComponents,
   type RegionFace,
   type RegionSliver,
+  type SelfCrossingPart,
 } from './lineRegions';
 
 type Box = { x0: number; y0: number; x1: number; y1: number };
@@ -96,8 +100,13 @@ export interface RegionIncrementalState {
   /** Per band-stripe / per marker geometry unit, for locating what moved. */
   units: Map<string, GeomUnit>;
   bodies: Map<LineId, Ring[]>;
-  /** `a|b` → that pair's body intersection, reusable while both bodies are. */
+  /** `a|b` → that pair's body intersection, reusable while both bodies are.
+   *  Self families ride the same map under impossible-for-pairs keys:
+   *  `a|a` (arm parts) and `a|a|x` (mid-edge crossing parts, flattened). */
   pairParts: Map<string, Ring[]>;
+  /** Structured mid-edge crossing parts per line (the pair identities the
+   *  component planner needs), reusable while the line's body is. */
+  crossParts: Map<LineId, SelfCrossingPart[]>;
   zone: Ring[];
   /** Significant components of `zone`, in canonical (content-key) order. */
   zoneComps: Face[];
@@ -374,11 +383,11 @@ function buildZoneCached(
   dirtyLines: ReadonlySet<LineId>,
   prev: RegionIncrementalState | null,
   dirtyCells: Set<number> | null,
-  // Multi-arm lines (sorted) and their self-part source. Self entries ride
-  // `pairParts` under the impossible-for-pairs key `id|id`, so the splice
-  // machinery (changed/removed/partHome/seeds) treats them like any pair.
-  selfIds: LineId[] = [],
-  selfSource: (id: LineId) => Ring[] = () => [],
+  // Self-part families, precomputed by the caller (which owns their reuse):
+  // entries ride `pairParts` under impossible-for-pairs keys (`id|id` for arm
+  // parts, `id|id|x` for crossing parts), so the splice machinery
+  // (changed/removed/partHome/seeds) treats them like any pair.
+  selfEntries: { key: string; rings: Ring[] }[] = [],
 ): ZoneBuild {
   const boxes = new Map(ids.map((id) => [id, ringsBbox(bodies.get(id)!)]));
   const pairParts = new Map<string, Ring[]>();
@@ -438,19 +447,13 @@ function buildZoneCached(
     }
   }
   // Self entries, appended after the pairs (union input order stays a pure
-  // function of geometry: sorted-ids i<j loop, then sorted self keys). The
-  // reuse discipline is a pair's with both sides the same line; no dirty-reach
-  // level — a dirty multi-arm line recomputes its (cheap, local) self parts.
-  for (const a of selfIds) {
-    const key = `${a}|${a}`;
+  // function of geometry: sorted-ids i<j loop, then the caller's sorted self
+  // keys). The caller reuses a clean line's cached arrays by identity; a
+  // recomputed-but-identical result still dodges `changed` via the content
+  // compare, exactly like a pair.
+  for (const { key, rings } of selfEntries) {
     const cached = prev?.pairParts.get(key);
-    if (cached && !dirtyLines.has(a)) {
-      pairParts.set(key, cached);
-      parts.push(...cached);
-      continue;
-    }
-    const rings = selfSource(a);
-    if (cached && ringsContentEqual(cached, rings)) {
+    if (cached && (cached === rings || ringsContentEqual(cached, rings))) {
       pairParts.set(key, cached);
       parts.push(...cached);
       continue;
@@ -681,9 +684,19 @@ export function buildRegionsIncremental(
   const bodies = buildLineBodies(bands, markers, reuse);
   const ids = [...bodies.keys()].sort();
   const selfIds = [...multiArmLineIds(bands)].sort();
+  // Mid-edge crossing parts for EVERY line (a single-arm chain can still
+  // cross itself), reused from the previous frame while the line is clean.
+  const crossParts = new Map<LineId, SelfCrossingPart[]>();
+  for (const id of ids) {
+    const parts =
+      prev && !dirtyLines.has(id)
+        ? (prev.crossParts.get(id) ?? [])
+        : selfCrossingParts(bands, id);
+    if (parts.length) crossParts.set(id, parts);
+  }
   // A single line can no longer short-circuit unconditionally: alone on the
-  // map, its branch mouths are still an arrangement.
-  if (ids.length < 2 && !selfIds.length) {
+  // map, its branch mouths and self-crossings are still an arrangement.
+  if (ids.length < 2 && !selfIds.length && !crossParts.size) {
     return {
       faces: [],
       slivers: [],
@@ -693,6 +706,7 @@ export function buildRegionsIncremental(
         units,
         bodies,
         pairParts: new Map(),
+        crossParts,
         zone: [],
         zoneComps: [],
         zoneIndex: new Map(),
@@ -710,9 +724,25 @@ export function buildRegionsIncremental(
 
   const dirtyCells = new Set<number>();
   for (const b of dirtyBoxes) cellsOfBox(b, dirtyCells);
-  const zb = buildZoneCached(ids, bodies, dirtyLines, prev, prev ? dirtyCells : null, selfIds, (id) =>
-    selfOverlapParts(bands, id),
-  );
+  const selfEntries: { key: string; rings: Ring[] }[] = [];
+  for (const id of selfIds) {
+    const key = `${id}|${id}`;
+    const cached = prev?.pairParts.get(key);
+    selfEntries.push({
+      key,
+      rings: cached !== undefined && !dirtyLines.has(id) ? cached : selfOverlapParts(bands, id),
+    });
+  }
+  for (const [id, parts] of crossParts) {
+    const key = `${id}|${id}|x`;
+    const cached = prev?.pairParts.get(key);
+    selfEntries.push({
+      key,
+      rings:
+        cached !== undefined && !dirtyLines.has(id) ? cached : parts.flatMap((p) => p.rings),
+    });
+  }
+  const zb = buildZoneCached(ids, bodies, dirtyLines, prev, prev ? dirtyCells : null, selfEntries);
   const { zone, zoneComps, pairParts } = zb;
   if (!zone.length) {
     return {
@@ -723,6 +753,7 @@ export function buildRegionsIncremental(
         units,
         bodies,
         pairParts,
+        crossParts,
         zone,
         zoneComps,
         zoneIndex: zb.zoneIndex,
@@ -744,23 +775,19 @@ export function buildRegionsIncremental(
   const slivers: RegionSliver[] = [];
   let rebuilt = 0;
 
-  // Which comps must subdivide a line PER ARM (its self parts live there) —
-  // the same shared predicate the reference build uses, over the same
+  // Which comps must subdivide a line PER SLICE (its self parts live there)
+  // — the same shared predicates the reference build uses, over the same
   // significant comps, so the two cannot drift. Self parts changing dirties
   // their line, whose unit boxes cover every self ring, so a comp with stale
-  // arm membership can never pass the `untouched` reuse test below.
-  const selfEntries: [LineId, Ring[]][] = [];
+  // slice membership can never pass the `untouched` reuse test below.
+  const selfArmEntries: [LineId, Ring[]][] = [];
   for (const id of selfIds) {
     const p = pairParts.get(`${id}|${id}`);
-    if (p?.length) selfEntries.push([id, p]);
+    if (p?.length) selfArmEntries.push([id, p]);
   }
-  const selfHomes = selfEntries.length ? selfPartCompHomes(selfEntries, comps) : null;
-  const armBodies = new Map<LineId, Map<number, Ring[]>>();
-  const armBodiesOf = (lineId: LineId): Map<number, Ring[]> => {
-    let b = armBodies.get(lineId);
-    if (!b) armBodies.set(lineId, (b = armBodiesForRestriction(bands, markers, lineId)));
-    return b;
-  };
+  const selfHomes = selfArmEntries.length ? selfPartCompHomes(selfArmEntries, comps) : null;
+  const crossPlans = crossParts.size ? crossingCompPlans(crossParts, comps) : null;
+  const sliceEntriesOf = makeSliceEntrySource(bands, markers);
 
   for (const comp of comps) {
     const box = ringsBbox(comp);
@@ -781,15 +808,14 @@ export function buildRegionsIncremental(
     }
 
     rebuilt++;
-    const armLines = selfHomes?.get(comp);
-    let armSplit: Map<LineId, Map<number, Ring[]>> | null = null;
-    if (armLines) {
-      armSplit = new Map();
-      for (const l of armLines) armSplit.set(l, armBodiesOf(l));
-    }
+    const sliceSplit = sliceSplitForComp(
+      selfHomes?.get(comp),
+      crossPlans?.get(comp),
+      sliceEntriesOf,
+    );
     const compSlivers: RegionSliver[] = [];
     const built = extractFaces(
-      subdivideCells(restrictBodiesToZone(ids, bodies, comp, armSplit)),
+      subdivideCells(restrictBodiesToZone(ids, bodies, comp, sliceSplit)),
       bands,
       compSlivers,
     );
@@ -807,6 +833,7 @@ export function buildRegionsIncremental(
       units,
       bodies,
       pairParts,
+      crossParts,
       zone,
       zoneComps,
       zoneIndex: zb.zoneIndex,
