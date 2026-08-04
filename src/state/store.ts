@@ -1406,7 +1406,9 @@ export const useDoc = create<DocState>()(
         //
         // Cell-dust snapping needs `merge` for a sharper reason than `edges`
         // does: the drift is still being carried by docs saved at the CURRENT
-        // version, which by definition never reach `migrate` at all.
+        // version, which by definition never reach `migrate` at all. The image
+        // href guard is the same shape — a remote href could be persisted by
+        // any build, this one included.
         merge: (persisted, current) => {
           const doc = (persisted ?? {}) as Partial<DocState>;
           const patch: Partial<DocState> = {};
@@ -1417,6 +1419,13 @@ export const useDoc = create<DocState>()(
           if (doc.stations) {
             const { stations, changed } = snapStationCells(doc.stations);
             if (changed) patch.stations = stations;
+          }
+          if (doc.svgImages) {
+            const hrefs = sanitizeImageHrefs(doc.svgImages, doc.backgroundOrder ?? []);
+            if (hrefs.changed) {
+              patch.svgImages = hrefs.svgImages;
+              if (doc.backgroundOrder) patch.backgroundOrder = hrefs.backgroundOrder;
+            }
           }
           return { ...current, ...doc, ...patch };
         },

@@ -416,6 +416,11 @@ doesn't resolve, so a def naming a deleted dot style is unmatchable — applying
 tagged over diverged values and the next load strips the tag, i.e. the style silently reads "Custom"
 again after every save/load. A present-but-dangling (or wrong-kind) id is re-pointed at the
 designated default dot; `deleteStyle` re-points the defs it can see at delete time.
+Both halves of a delete — the last-of-kind refusal and the fallback it re-points at — read
+`selectableStylesOfKind`, which is `stylesOfKind` minus the reserved "None" stop dot. "None" is a
+primitive the dot picker always offers but nobody chose, so promoting it to a kind's default (or
+to a line style def's dot type) would stamp blank dots across every wearer. The picker itself
+reads the unfiltered `stylesOfKind` — offering "None" is its job.
 See [styles.ts](src/model/styles.ts).
 
 ### Entities (field-level)
@@ -1162,6 +1167,8 @@ by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}`:
    (stop/label/anchor cells within 1e-9 of an integer snap onto it — the drift the old
    trig-rotated ghost lattice wrote; ±k·√2/2 and width-derived pitches are real coordinates and
    are left alone), then
+   `sanitizeImageHrefs` (drop every svg image whose `href` is outside the inline-data allow-list,
+   and its `backgroundOrder` entry with it — see "Every image href is inline data"), then
    `sanitizeRegionAssignments` (region-assignment hygiene — validates against the **cleaned**
    lines: dangling line ids drop the assignment, dangling pairKey anchors survive for reconcile).
 7. `convertLegacyDotShapes` (preset ids → `DotStyle`) — **runs after** the line/station passes.
@@ -1239,10 +1246,12 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | `v<24`      | `bakeActivePalettes` (retired `activePalettes` ids → the palette COPIES the map carries). Built-in ids resolve through `LEGACY_BUILTIN_IDS`; `custom:` ids resolve against the palette library by slugged name, the only place those definitions ever lived. Ids resolving to neither are dropped, and a map left carrying none is a legitimate outcome. Gated on `palettes` being absent as well, so it can never overwrite real palettes |
 | (not gated) | `snapStationCells` whenever `stations !== undefined` — cell drift is not tied to a schema bump, so a gate could never catch it. **But see the `merge` hook** — for this repair that caveat is the main event, not a footnote |
+| (not gated) | `sanitizeImageHrefs` whenever `svgImages !== undefined` — the guard had one caller (the clipboard) and neither doc load, so a remote href could be persisted at ANY version. **But see the `merge` hook** — same reasoning as `snapStationCells` |
 
-A **corrupt/missing version is treated as v0** (all migrations run). The three non-gated repairs
-(`backfillLinesEdges`, `ensureStyleInvariants`, `snapStationCells`) are **not** tied to a schema
-bump — they run any time their field is present (an absent field is left for the persist-merge).
+A **corrupt/missing version is treated as v0** (all migrations run). The four non-gated repairs
+(`backfillLinesEdges`, `ensureStyleInvariants`, `snapStationCells`, `sanitizeImageHrefs`) are
+**not** tied to a schema bump — they run any time their field is present (an absent field is left
+for the persist-merge).
 `bakeActivePalettes`, which is gated, reads `useCustomPalettes.getState().palettes` to resolve
 legacy `custom:` ids — the only place in either load path that reaches into a store.
 
@@ -1250,14 +1259,14 @@ legacy `custom:` ids — the only place in either load path that reaches into a 
 > version DIFFERS from the config version. A doc stranded at 14 by that intermediate build is
 > already _at_ the version it claims, so it skips `migrateDoc` entirely, ungated repairs included,
 > and the renderer crashes on `ln.edges.join(...)`. That is why the persist config carries a custom
-> **`merge` hook** which runs the must-always-hold repairs — `backfillLinesEdges` and
-> `snapStationCells` — **on every rehydrate**, whatever the version says. `migrateDoc`'s own
-> ungated calls cover the version-changed path; `merge` covers the rest. Both are
-> reference-stable on a canonical doc, so it still passes straight through the default merge.
-> A must-always-hold invariant belongs in that hook, **not** in the ungated block in `migrateDoc`
-> alone. `snapStationCells` shows why the distinction is not academic: the docs carrying cell
-> drift were saved by the CURRENT build at the CURRENT version, so they are precisely the ones
-> `migrate` never sees.
+> **`merge` hook** which runs the must-always-hold repairs — `backfillLinesEdges`,
+> `snapStationCells` and `sanitizeImageHrefs` — **on every rehydrate**, whatever the version says.
+> `migrateDoc`'s own ungated calls cover the version-changed path; `merge` covers the rest. All
+> three are reference-stable on a canonical doc, so it still passes straight through the default
+> merge. A must-always-hold invariant belongs in that hook, **not** in the ungated block in
+> `migrateDoc` alone. `snapStationCells` shows why the distinction is not academic: the docs
+> carrying cell drift were saved by the CURRENT build at the CURRENT version, so they are precisely
+> the ones `migrate` never sees — and a remote image href is the same shape.
 
 > **Do not "simplify" the two paths into one.** `storeMigrate.test.ts` pins reference-equality
 > pass-through for already-canonical docs (`expect(out).toBe(input)`); adding a file-only width
@@ -1825,6 +1834,14 @@ Four seams cover it, and a fifth rule governs anything new:
   needs none is the locked-item deep-pick: `lockedHitsAt` probes geometry with no visibility
   opinion, but `lockedDispatchTarget` resolves through `document.querySelector`, so a hidden kind
   has no element and drops out before it can join the cycle.
+- **Gestures aimed at the SELECTION gate too, and they read no geometry at all.**
+  `unlockedSelectedItemIds` (selectionOps.ts) filters the selection for lock **and** visibility, so
+  every gesture reading it skips members on a switched-off layer: the Delete key, arrow-nudge,
+  Ctrl+X, the group tow (`collectGroupSiblings`) and the group panel's Delete all. Without it,
+  hiding Polygons and pressing Delete removed one with nothing on screen to show a selection ever
+  existed. The single-primary paths App owns take the same test by hand (a selected transfer, a
+  polygon's vertex handles), since they never reach the shared helper. Skipping is deliberately
+  SILENT: these gestures repeat under a held key, so a notice per press would be noise.
 - **Item popovers gate too, and they are not canvas content.** A panel is a DOM overlay, so
   hiding a layer does not take its editor away — it hangs there offering to edit, and Delete, an
   item no longer on screen. `ItemPopovers` gates every kind (the station's panel is HIDDEN rather
@@ -3365,10 +3382,18 @@ Each is confirmed in source/tests; file pointers included.
   station must undo both in one atomic set, else repeated Add→Esc walks the color cycle forward.
   The rollback is **not** in `cancelAppendMode` (a one-liner that just clears the mode) — it lives
   in `collectAppendPlaceholder`, driven by the **mode-exit subscription**, so it fires on _every_
-  exit from `appending-to-line`, not only the named cancel paths. It is sound only while the
-  placeholder is the last-added line, which is why Toolbar's Add→Line exits any active append
-  before creating the next one. **Real line deletion does not touch `lineCounter`.**
-  ([store.ts](src/state/store.ts))
+  exit from `appending-to-line`, not only the named cancel paths. **Real line deletion does not
+  touch `lineCounter`.** ([store.ts](src/state/store.ts))
+- **Placeholder-ness is MARKED at the creation site, never inferred from the doc.** An empty
+  `stations[]` is not evidence: `toggleEdgeOnLine` drops endpoints that fall to degree 0, so
+  deleting a two-station line's only edge in Edit Stops empties it too, and collecting that would
+  delete a real line — its sidebar row, its tags, its region assignments, every route bullet
+  pointing at it — with nothing on screen to say so. `startNewLineAppend` (store.ts, beside the
+  GC) is the one way in: it exits any active append first, adds the line, records its id, and
+  enters the mode. That single ownership is also what keeps the `lineCounter` rollback sound,
+  since it is only correct while the collected placeholder is the last-added line. A doc
+  subscription clears the mark the instant the line holds a station — from then on it is a line
+  the user built, and emptying it again must not hand it back.
 - **`addLine` guards the empty color cycle** — a map carrying no palettes makes `cyclingColors`
   return `[]`, and `n % 0` is NaN; it falls back to `FALLBACK_LINE_COLOR`.
 - **`finishDrag`'s cancel branch does NOT reset `suppressClick`** — a never-moved gesture never set
@@ -3454,11 +3479,16 @@ Each is confirmed in source/tests; file pointers included.
 - **`updateTextLabel` re-anchors on a resize**, so stamping a style onto a freshly created label
   MOVES it. Mint new labels already wearing their default style (`addTextLabelWith`) instead, or the
   drop lands half a size-delta from where the placement ghost and the snap agreed.
-- **Clipboard has an image-href security guard** — `readClipboard` delegates to
-  `isAllowedImageHref`, rejecting any svg-image `href` that doesn't start with one of the three
-  allowed data-URI prefixes `data:image/{svg+xml,png,jpeg}` (a crafted remote/script href would
-  break the opaque sandbox). The same allow-list backs the Add → Image import path, so the two can
-  never drift. ([clipboard.ts](src/model/clipboard.ts), [svgImport.ts](src/model/svgImport.ts))
+- **Every image href is inline data, on every way in** — `isAllowedImageHref` accepts only the
+  three data-URI prefixes `data:image/{svg+xml,png,jpeg}`. That is what makes an image OPAQUE: a
+  map paints without reaching the network, and an exported SVG/PNG/PDF is genuinely
+  self-contained. Four entry points share the one allow-list so they cannot drift — the Add →
+  Image import, `readClipboard`, and both doc loads via `sanitizeImageHrefs`, which DROPS an
+  image (and its `backgroundOrder` entry) exactly as the sibling sanitizers drop a malformed line
+  circle. The load repair also rides the persist **`merge`** hook, not just `migrateDoc`'s ungated
+  block: a doc saved by the current build never reaches `migrate` at all.
+  ([clipboard.ts](src/model/clipboard.ts), [svgImport.ts](src/model/svgImport.ts),
+  [serialize.ts](src/model/serialize.ts))
 
 ---
 
