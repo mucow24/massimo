@@ -157,6 +157,30 @@ describe('line arm partition (band.arms)', () => {
     }
   });
 
+  it('a TANGENT branch never welds into the trunk, even when it out-runs a short trunk side', () => {
+    // The curve departs dead opposite the far trunk too (tangent lead-in),
+    // and its straight run (~250, radius-consumed) beats the short side's
+    // 150 — so the run-sum tiebreak alone would glue curve+trunk as the
+    // through arm, making "curve on top" unpaintable at the mouth. The
+    // bend-free preference is what keeps the two straight-to-their-station
+    // arms glued instead.
+    const arms = armsByPair(
+      makeDoc({
+        stations: [
+          makeStation({ id: 'a', x: -400, y: 0, stops: [hStop()] }),
+          makeStation({ id: 'j', x: 0, y: 0, stops: [hStop()] }),
+          makeStation({ id: 'c', x: 150, y: 0, stops: [hStop()] }),
+          makeStation({ id: 'd', x: 500, y: -500, stops: [vStop()] }),
+        ],
+        lines: [
+          makeLine({ id: 'l1', color: '#c00', edges: ['a|j', 'c|j', 'd|j'], curveRadius: 250 }),
+        ],
+      }),
+    );
+    expect(arms['a|j']).toBe(arms['c|j']);
+    expect(arms['d|j']).not.toBe(arms['a|j']);
+  });
+
   it('arms are per line: a branching line and a through line share a band without sharing verdicts', () => {
     // l1 branches at j; l2 rides the same two trunk corridors and does not.
     const doc = makeDoc({

@@ -2066,14 +2066,18 @@ which is not the same as branching. Matching continues past the first run only w
 pair is DEAD opposed — a line that crosses itself at a station has two through-runs, two arms
 crossing — while a second pair that is merely the best of what's left is a fork, not a crossing.
 
-A run scores on how nearly its arms oppose each other, then on their COMBINED straight length: the
-length of the straight corridor they make through the station. That second term is what a real
-fork needs, because two arms can leave a junction along the SAME axis — dead opposite the incoming
-corridor either way — and diverge only further on, so the one that peels off first is the branch
-(the A at Broad Channel). Scoring a pair by its SHORTER arm instead saturates on the arm both
-candidate pairs share, ties them, and hands the verdict to whatever order `line.edges` happens to
-be in. Asking the band's own polyline instead of the junction is the older trap: a through corridor
-whose next station sits off-axis doglegs to reach it, and answers "branch" from 300 units away.
+A run scores on how nearly its arms oppose each other; ties prefer a pair of BEND-FREE arms
+(each straight all the way to its far station) over one containing an arm that curves away, then
+the longest COMBINED straight length — the straight corridor the pair makes through the station.
+The bend-free preference is what keeps a TANGENT branch out of the through-run: its departure is
+dead opposite the far trunk too, and with a long enough lead-in (or a short enough trunk side)
+the run sum alone would weld curve to trunk, making "curve on top" unpaintable at the mouth. The
+run term is still what a real fork needs, because two arms can leave a junction along the SAME
+axis and diverge only further on, so the one that peels off first is the branch (the A at Broad
+Channel). Scoring a pair by its SHORTER arm instead saturates on the arm both candidate pairs
+share, ties them, and hands the verdict to whatever order `line.edges` happens to be in. Asking
+the band's own polyline instead of the junction is the older trap: a through corridor whose next
+station sits off-axis doglegs to reach it, and answers "branch" from 300 units away.
 
 **The hit box.** A stripe's pointer surface is normally the painted path itself, but the styles
 that paint with GAPS (the dasharray ones — `dashed`, `dotted`, `dashed-open`) hit-test only their

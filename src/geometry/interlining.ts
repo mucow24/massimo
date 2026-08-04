@@ -774,12 +774,14 @@ export function buildBandGeometry(
 const OPPOSITION_TIE = 1e-6;
 
 // One end of one stripe at one station: the direction it leaves the station,
-// and how far it runs before its first bend.
+// how far it runs before its first bend, and whether it bends at all before
+// its far end.
 interface JunctionArm {
   band: SegmentBandSpec;
   stripeIndex: number;
   out: Vec2;
   run: number;
+  bent: boolean;
 }
 
 /**
@@ -848,11 +850,11 @@ function assignLineArms(bands: SegmentBandSpec[]): void {
     ] as const) {
       const end = straightRunFrom(band.centerline, fromStart);
       if (!end) continue;
-      const { out, run } = end;
+      const { out, run, bent } = end;
       band.lines.forEach((line, stripeIndex) => {
         const key = `${line.id}#${stationId}`;
         const arms = byJunction.get(key);
-        const arm = { band, stripeIndex, out, run };
+        const arm = { band, stripeIndex, out, run, bent };
         if (arms) arms.push(arm);
         else byJunction.set(key, [arm]);
       });
@@ -868,21 +870,31 @@ function assignLineArms(bands: SegmentBandSpec[]): void {
     let pool = arms.map((_, i) => i);
     const through = new Set<number>();
     while (pool.length >= 2) {
-      // Most opposed (dot = −1 is dead straight through), then the longest
-      // combined straight run.
+      // Most opposed (dot = −1 is dead straight through); ties prefer a pair
+      // of BEND-FREE arms (each straight all the way to its far station) over
+      // one containing an arm that curves away, then the longest combined
+      // straight run. The bend-free preference is what keeps a TANGENT branch
+      // out of the through-run: its departure is dead opposite the far trunk
+      // too, and with a long enough lead-in (or a short enough trunk side)
+      // the run sum alone would glue curve to trunk — welding the branch into
+      // the trunk's arm, which made "curve on top" unpaintable at the mouth.
       let bestOpposition = -Infinity;
+      let bestFull = -1;
       let bestRun = -Infinity;
       let pair: [number, number] = [pool[0], pool[1]];
       for (const i of pool) {
         for (const j of pool) {
           if (j <= i) continue;
           const opposition = -dot(arms[i].out, arms[j].out);
+          const full = arms[i].bent || arms[j].bent ? 0 : 1;
           const run = arms[i].run + arms[j].run;
           if (
             opposition > bestOpposition + OPPOSITION_TIE ||
-            (opposition > bestOpposition - OPPOSITION_TIE && run > bestRun)
+            (opposition > bestOpposition - OPPOSITION_TIE &&
+              (full > bestFull || (full === bestFull && run > bestRun)))
           ) {
             bestOpposition = Math.max(bestOpposition, opposition);
+            bestFull = full;
             bestRun = run;
             pair = [i, j];
           }

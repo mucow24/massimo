@@ -327,6 +327,52 @@ describe('self-overlap faces (branch mouths)', () => {
     expect('winnerPairKey' in stripped.assignments.r1).toBe(false);
   });
 
+  it('a tangent mouth cycles to CURVE-ONLY: the branch arm is its own slice', () => {
+    // The screenshot shape: the branch hugs the trunk (tangent departure,
+    // large radius) before the arc peels off — the hardest mouth. The trunk
+    // must stay one arm and the curve another, so the third cycle state is
+    // the curve's casing alone, not trunk+curve welded.
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 'a', x: -400, y: 0, stops: [hStop('l1')] }),
+        makeStation({ id: 'j', x: 0, y: 0, stops: [hStop('l1')] }),
+        makeStation({ id: 'c', x: 150, y: 0, stops: [hStop('l1')] }),
+        makeStation({ id: 'd', x: 500, y: -500, stops: [vStop('l1')] }),
+      ],
+      lines: [
+        makeLine({ id: 'l1', color: '#c00', edges: ['a|j', 'c|j', 'd|j'], curveRadius: 250 }),
+      ],
+    });
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+    const faces = buildOverlapRegions(bands, []);
+    const selfFaces = faces.filter((f) => f.lineIds.every((id) => id !== 'l1'));
+    expect(selfFaces.length).toBeGreaterThan(0);
+    const idx = faces.indexOf(selfFaces[0]);
+    // Two clicks from merged land on the CURVE arm — the arm whose pairKey is
+    // the branch edge — with only two arm slices on offer.
+    const w0 = resolveRegionWinners(faces, {}, bands, ['l1']);
+    const p1 = regionPaintPlan({
+      faces,
+      winners: w0,
+      assignments: {},
+      faceIndex: idx,
+      dir: -1, // backward from merged = the LAST slice
+      flood: false,
+      lineOrder: ['l1'],
+      bands,
+    });
+    const a1 = p1[0].assignment!;
+    expect(a1.winnerPairKey).toBe('d|j');
+    // Winning the curve arm holes ONLY the trunk arm — the reveal is the
+    // curve's own casing, nothing welded in.
+    const withA1 = { r1: { ...a1, id: 'r1' } };
+    const w1 = resolveRegionWinners(faces, withA1, bands, ['l1']);
+    expect(w1[idx].winner).toBe(armCoverId('l1', armOfLinePairKey(bands, 'l1', 'd|j')!));
+    const holes = buildExclusionHoles(faces, w1, ['l1'], bands, [], () => 2, []);
+    const trunkArm = armOfLinePairKey(bands, 'l1', 'a|j')!;
+    expect([...holes.keys()]).toEqual([armCoverId('l1', trunkArm)]);
+  });
+
   it('stop markers do not manufacture extra self faces', () => {
     const doc = branchDoc();
     const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
