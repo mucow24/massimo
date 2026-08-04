@@ -95,7 +95,10 @@ export function pingRings(): Ring[] {
   return intersect(square(0, 0, 10, 10), square(5, 5, 15, 15));
 }
 
-const toErrorEnvelope = (err: unknown, frame?: { gen: number; seq: number }): WorkerErrorResponse => ({
+const toErrorEnvelope = (
+  err: unknown,
+  frame?: { gen: number; seq: number },
+): WorkerErrorResponse => ({
   kind: 'error',
   message: err instanceof Error ? err.message : String(err),
   stack: err instanceof Error ? err.stack : undefined,
@@ -134,9 +137,10 @@ scope.onmessage = (e: MessageEvent) => {
         try {
           await loadClipper();
           const packed = packHoles(computeMirrorHoles(mirror));
-          scope.postMessage({ kind: 'result', ...frame, index: packed.index, coords: packed.coords }, [
-            packed.coords.buffer,
-          ]);
+          scope.postMessage(
+            { kind: 'result', ...frame, index: packed.index, coords: packed.coords },
+            [packed.coords.buffer],
+          );
         } catch (err) {
           scope.postMessage(toErrorEnvelope(err, frame));
         }

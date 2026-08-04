@@ -35,7 +35,9 @@ const label: Station['label'] = {
 };
 
 const seedPair = () => {
-  const stops: Station['stops'] = [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-horizontal' }];
+  const stops: Station['stops'] = [
+    { lineId: 'L1', row: 0, col: 0, orientation: 'auto-horizontal' },
+  ];
   const s1: Station = { id: 's1', name: 'S1', x: 0, y: 0, rotation: 0, stops, label };
   const s2: Station = { id: 's2', name: 'S2', x: 200, y: 0, rotation: 0, stops, label };
   act(() => {
