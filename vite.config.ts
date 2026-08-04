@@ -16,6 +16,11 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => ({
   base: mode === 'production' ? './' : '/',
   plugins: [react()],
+  // The region worker dynamically imports the clipper package inside the
+  // worker chunk, and dynamic imports mean code-splitting — which Vite's
+  // default 'iife' worker format refuses at build time. ES-module workers
+  // split fine, and every supported browser (Chromium-family) runs them.
+  worker: { format: 'es' },
   // Honor a harness-assigned port (Claude Code preview servers run several
   // worktrees side by side, each with its own PORT). Without PORT set —
   // plain `npm run dev`, Playwright's webServer — Vite keeps its default.

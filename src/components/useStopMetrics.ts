@@ -1,5 +1,5 @@
 import { stopMetricsOf } from '../model/stopMetrics';
-import { useDoc } from '../state/store';
+import { useRenderDoc } from '../state/renderDoc';
 import type { StopMetricsFn } from '../geometry/labelLayout';
 
 /**
@@ -24,7 +24,7 @@ import type { StopMetricsFn } from '../geometry/labelLayout';
  * (a stop re-celled, a transfer added, a neighbour dragged past a terminus)
  * mints a fresh function and everything re-renders as before.
  *
- * Second, the doc slice is read here rather than passed in. `DocState`
+ * Second, the doc slice is read here rather than passed in. `DocSnapshot`
  * structurally satisfies `StopMetricsSource`, so the selector is a module-level
  * constant instead of a closure minted per render per component. It also
  * closes a trap: the cache behind `stopMetricsOf` holds ONE entry, so a caller
@@ -32,7 +32,11 @@ import type { StopMetricsFn } from '../geometry/labelLayout';
  * station on every frame — and now that the cache is what keeps the canvas from
  * re-rendering, that miss would cost re-renders, not just rebuilds. There is no
  * way to hand one in.
+ *
+ * Reads the RENDER-SOURCE doc, not the live one: metrics feed painted label
+ * geometry, so during a pipelined drag they must resolve from the same frame
+ * snapshot as everything else on the canvas.
  */
 export function useStopMetrics(): StopMetricsFn {
-  return useDoc(stopMetricsOf);
+  return useRenderDoc(stopMetricsOf);
 }

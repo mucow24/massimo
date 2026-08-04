@@ -1469,6 +1469,23 @@ export function cancelOpenHistoryGroup(): void {
 }
 
 /**
+ * Group lifecycle events, for machinery that must track gestures without the
+ * store importing it (the region worker pipeline arms on begin and drains on
+ * end). `end` fires exactly once per group on EVERY exit — commit, cancel,
+ * rollback, and the steal (whose seal routes through the elder's commit) — so
+ * a listener that disarms on `end` can never be stranded by an unusual exit.
+ */
+export type HistoryGroupEvent = { kind: 'begin'; deferPersist: boolean } | { kind: 'end' };
+const historyGroupListeners = new Set<(e: HistoryGroupEvent) => void>();
+export function onHistoryGroup(listener: (e: HistoryGroupEvent) => void): () => void {
+  historyGroupListeners.add(listener);
+  return () => historyGroupListeners.delete(listener);
+}
+const emitHistoryGroup = (e: HistoryGroupEvent): void => {
+  for (const l of [...historyGroupListeners]) l(e);
+};
+
+/**
  * Rewrite region assignments against the post-edit geometry, so the paint
  * choices track their regions through the edit. `prev` supplies the pre-edit
  * geometry (a live state or a history-group snapshot). Cheap gates first:
@@ -1589,43 +1606,55 @@ export function beginHistoryGroup(opts?: {
   const group = {
     commit: () => {
       if (!finish()) return;
-      // Region reconcile fold-in: recording is still paused here, so the
-      // assignment rewrite lands inside this group's single history entry.
-      // The snapshot is the pre-group doc — exactly the "old geometry".
-      const live = useDoc.getState();
-      const reconciled = applyRegionReconcile(snapshot, live);
-      if (reconciled !== live) {
-        useDoc.setState({ regionAssignments: reconciled.regionAssignments });
+      try {
+        // Region reconcile fold-in: recording is still paused here, so the
+        // assignment rewrite lands inside this group's single history entry.
+        // The snapshot is the pre-group doc — exactly the "old geometry".
+        const live = useDoc.getState();
+        const reconciled = applyRegionReconcile(snapshot, live);
+        if (reconciled !== live) {
+          useDoc.setState({ regionAssignments: reconciled.regionAssignments });
+        }
+        resumeHistory();
+        const cur = pickDocSnapshot(useDoc.getState());
+        // Reference-equality check across every tracked doc field. Transforms
+        // produce new objects only when something changes, so this is sound.
+        if (docSnapshotsEqual(cur, snapshot)) return;
+        // One entry covering the whole group; the adapter owns the zundo shape.
+        pushHistory(snapshot);
+        // Persist-debounce flush point: the gesture's result is durable at
+        // pointerup — one storage write per gesture instead of per frame. (A
+        // net-no-change gesture returns above without flushing; its pending
+        // write, if any, equals what a flush would produce and trails in.)
+        flushDocPersist();
+      } finally {
+        // After the reconcile, so an `end` listener resyncing external state
+        // sees the post-commit doc, assignments included.
+        emitHistoryGroup({ kind: 'end' });
       }
-      resumeHistory();
-      const cur = pickDocSnapshot(useDoc.getState());
-      // Reference-equality check across every tracked doc field. Transforms
-      // produce new objects only when something changes, so this is sound.
-      if (docSnapshotsEqual(cur, snapshot)) return;
-      // One entry covering the whole group; the adapter owns the zundo shape.
-      pushHistory(snapshot);
-      // Persist-debounce flush point: the gesture's result is durable at
-      // pointerup — one storage write per gesture instead of per frame. (A
-      // net-no-change gesture returns above without flushing; its pending
-      // write, if any, equals what a flush would produce and trails in.)
-      flushDocPersist();
     },
     cancel: () => {
       if (!finish()) return;
       resumeHistory();
+      emitHistoryGroup({ kind: 'end' });
     },
     rollback: () => {
       if (!finish()) return;
-      // Restore the pre-group doc, then resume WITHOUT pushing. Still paused
-      // here, so the restore itself records nothing (mirrors how zundo's own
-      // undo reapplies a partialized snapshot). Skip the write when nothing
-      // changed — a gesture that only drew overlays leaves the doc untouched.
-      const cur = pickDocSnapshot(useDoc.getState());
-      if (!docSnapshotsEqual(cur, snapshot)) useDoc.setState(snapshot);
-      resumeHistory();
+      try {
+        // Restore the pre-group doc, then resume WITHOUT pushing. Still paused
+        // here, so the restore itself records nothing (mirrors how zundo's own
+        // undo reapplies a partialized snapshot). Skip the write when nothing
+        // changed — a gesture that only drew overlays leaves the doc untouched.
+        const cur = pickDocSnapshot(useDoc.getState());
+        if (!docSnapshotsEqual(cur, snapshot)) useDoc.setState(snapshot);
+        resumeHistory();
+      } finally {
+        emitHistoryGroup({ kind: 'end' });
+      }
     },
   };
   openHistoryGroup = group;
+  emitHistoryGroup({ kind: 'begin', deferPersist: openGroupDefersPersist });
   return group;
 }
 

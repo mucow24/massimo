@@ -1,5 +1,6 @@
-import { RefObject, useRef, useState } from 'react';
+import { RefObject, useRef } from 'react';
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../../state/store';
+import { useRoutedSnapGuides } from './useRoutedSnapGuides';
 import { polygonSnapAnchor } from '../../geometry/polygon';
 import type { SnapGuide } from '../../geometry/snap';
 import type { Vec2 } from '../../geometry/vec';
@@ -92,7 +93,7 @@ export function usePolygonDrag(
 
   const wholeDragRef = useRef<WholeDragState | null>(null);
   const vertexDragRef = useRef<VertexDragState | null>(null);
-  const [polygonSnapGuides, setPolygonSnapGuides] = useState<SnapGuide[]>([]);
+  const [polygonSnapGuides, setPolygonSnapGuides] = useRoutedSnapGuides('polygon');
 
   const onPolygonPointerDown = (id: string, e: React.PointerEvent) => {
     if (e.button !== 0) return;
@@ -265,17 +266,19 @@ export function usePolygonDrag(
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
+    // Exit first, clear second: the exit drains the pipeline, so the clear
+    // lands in hook state instead of being routed away (useRoutedSnapGuides).
     const wd = wholeDragRef.current;
     if (wd) {
       wholeDragRef.current = null;
-      setPolygonSnapGuides([]);
       finishDrag(wd, e, svgRef);
+      setPolygonSnapGuides([]);
     }
     const vd = vertexDragRef.current;
     if (vd) {
       vertexDragRef.current = null;
-      setPolygonSnapGuides([]);
       finishDrag(vd, e, svgRef);
+      setPolygonSnapGuides([]);
     }
   };
 
@@ -289,10 +292,10 @@ export function usePolygonDrag(
     if (!wd && !vd) return;
     wholeDragRef.current = null;
     vertexDragRef.current = null;
-    setPolygonSnapGuides([]);
     if (vd?.forceCommit) useSelection.getState().selectVertices(null);
     wd?.history.rollback();
     vd?.history.rollback();
+    setPolygonSnapGuides([]);
   };
 
   return {
