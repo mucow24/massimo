@@ -2084,7 +2084,10 @@ function makeHoleContext(
     // the doc comment). Bbox-filtered generously: a miter dilation can poke
     // up to 3× reach (the miter limit) past a corner.
     const maxReach =
-      Math.max(...lineLosers.map((id) => railWOf(id)), ...(sliceLosers.length ? [railWWinner] : [])) /
+      Math.max(
+        ...lineLosers.map((id) => railWOf(id)),
+        ...(sliceLosers.length ? [railWWinner] : []),
+      ) /
         2 +
       railWWinner / 2 +
       0.5;

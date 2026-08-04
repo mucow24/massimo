@@ -493,9 +493,7 @@ describe('self-overlap faces (branch mouths)', () => {
     // The crossing sits in its own component (the two overlap zones only
     // abut at the boundary), so grey's cover there collapses to the merged
     // line — exactly the spelling the real map stores.
-    const crossIdx = faces.findIndex(
-      (f) => f.lineIds.includes('oa') && f.lineIds.includes('gr'),
-    );
+    const crossIdx = faces.findIndex((f) => f.lineIds.includes('oa') && f.lineIds.includes('gr'));
     expect(mouthIdx).toBeGreaterThanOrEqual(0);
     expect(crossIdx).toBeGreaterThanOrEqual(0);
     let assignments: Record<string, RegionAssignment> = {};
@@ -530,8 +528,7 @@ describe('self-overlap faces (branch mouths)', () => {
     const kOa = trunkBand.lines.findIndex((l) => l.id === 'oa');
     const kGr = trunkBand.lines.findIndex((l) => l.id === 'gr');
     const yBoundary =
-      trunkBand.centerline[0].y +
-      (trunkBand.stripeOffsets[kOa] + trunkBand.stripeOffsets[kGr]) / 2;
+      trunkBand.centerline[0].y + (trunkBand.stripeOffsets[kOa] + trunkBand.stripeOffsets[kGr]) / 2;
     const cross = faces[crossIdx].bbox;
     const xMid = (cross.x0 + cross.x1) / 2;
     // Contributions from different faces may overlap — union before the
