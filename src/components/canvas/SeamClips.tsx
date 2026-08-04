@@ -74,7 +74,10 @@ export function SeamClips({ bands, lines }: Props) {
           const others = stripes.filter((_, j) => j !== i);
           return (
             <clipPath
-              key={s.bandKey}
+              // The flatMap makes every line's clips SIBLINGS, so the key needs
+              // the line too — two seamed lines sharing an interlined band each
+              // emit a clip for the same bandKey.
+              key={lineId + ':' + s.bandKey}
               id={seamClipId(lineId, s.bandKey)}
               clipPathUnits="userSpaceOnUse"
             >
