@@ -254,12 +254,17 @@ const arm = (): void => {
  */
 export function reportSyncRegionCost(ms: number): void {
   if (!enabled || armed || !deferGroupOpen || brokenThisGesture) return;
-  if (ms <= ARM_THRESHOLD_MS || armQueued) return;
+  if (ms <= (armThresholdOverride ?? ARM_THRESHOLD_MS) || armQueued) return;
   armQueued = true;
   queueMicrotask(arm);
 }
 
-export function setRegionPipelineEnabled(on: boolean): void {
+/** e2e-only: a small map's builds never cross the real threshold, so the
+ *  suite lowers it to exercise arming at all. Null = the real constant. */
+let armThresholdOverride: number | null = null;
+
+export function setRegionPipelineEnabled(on: boolean, opts?: { armThresholdMs?: number }): void {
+  armThresholdOverride = opts?.armThresholdMs ?? null;
   if (enabled === on) return;
   enabled = on;
   if (!on) {
@@ -268,6 +273,12 @@ export function setRegionPipelineEnabled(on: boolean): void {
     worker = null;
     lastPosted = null;
   }
+}
+
+/** e2e fault injection: kill the live worker out from under the pipeline —
+ *  it must notice via the frame timeout and fall back synchronously. */
+export function killRegionPipelineWorkerForTest(): void {
+  worker?.terminate();
 }
 
 export function regionPipelineStatus(): {
@@ -330,6 +341,7 @@ export function disposeRegionPipeline(): void {
   worker = null;
   lastPosted = null;
   factory = defaultFactory;
+  armThresholdOverride = null;
   setDragFrame(null);
   setRenderDocOverlay(null);
 }
