@@ -1691,13 +1691,18 @@ describe('parse — legacy doc-level curveRadius bake', () => {
           seamWidth: 3,
         }),
       },
-    }).replace(
-      '"color":"#ee352e"',
-      '"color":"#ee352e","seamColor":"#abcdef80","seamWidth":3,"seamEdges":"curved"',
-    );
+    })
+      .replace(
+        '"color":"#ee352e"',
+        '"color":"#ee352e","seamColor":"#abcdef80","seamWidth":3,"seamEdges":"curved"',
+      )
+      // A pre-v23 doc that never got the v23 bake still carries the DOC-LEVEL
+      // field at the root — the strip removes that remnant too.
+      .replace('"format":', '"seamEdges":"straight","format":');
     const r = parse(withSeams);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
+    expect('seamEdges' in r.doc).toBe(false);
     for (const line of Object.values(r.doc.lines)) {
       expect('seamColor' in line).toBe(false);
       expect('seamWidth' in line).toBe(false);

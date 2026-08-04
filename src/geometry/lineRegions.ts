@@ -2115,17 +2115,30 @@ function makeHoleContext(
 
 /**
  * Post-pass over an assembled hole map: a slice-keyed def must also carry
- * its line's line-level holes, because a paint element references exactly
- * ONE clipPath — a slice-losing stripe may lose line-level faces too, and it
- * will reference the slice def. Line rings first, then the slice's own, so
- * the merge is order-deterministic. Shared by the reference and cached
- * builders.
+ * every COARSER def's holes for the same paint, because a paint element
+ * references exactly ONE clipPath and it picks its finest def. An ARM def
+ * folds the line-level holes in; an EDGE def folds its ARM's def (already
+ * line-folded — the band belongs to that arm, so an arm-level loss clips
+ * this stripe too), else the line's directly. Coarser rings first, then the
+ * slice's own, so the merge is order-deterministic. Shared by the reference
+ * and cached builders.
  */
-function mergeArmHoleKeys(holes: Map<LineId, Ring[]>): Map<LineId, Ring[]> {
+function mergeArmHoleKeys(
+  holes: Map<LineId, Ring[]>,
+  bands: SegmentBandSpec[],
+): Map<LineId, Ring[]> {
   for (const [key, rings] of holes) {
-    if (!isSliceCoverId(key)) continue;
+    if (!isArmCoverId(key)) continue;
     const lineRings = holes.get(lineOfCover(key));
     if (lineRings?.length) holes.set(key, [...lineRings, ...rings]);
+  }
+  for (const [key, rings] of holes) {
+    if (!isEdgeCoverId(key)) continue;
+    const lineId = lineOfCover(key);
+    const arm = armOfLinePairKey(bands, lineId, pairKeyOfCover(key)!);
+    const armRings = arm === null ? undefined : holes.get(armCoverId(lineId, arm));
+    const base = armRings?.length ? armRings : holes.get(lineId);
+    if (base?.length) holes.set(key, [...base, ...rings]);
   }
   return holes;
 }
@@ -2155,7 +2168,7 @@ export function buildExclusionHoles(
       else holes.set(lineId, [...rings]);
     }
   });
-  return mergeArmHoleKeys(holes);
+  return mergeArmHoleKeys(holes, bands);
 }
 
 // ---------------------------------------------------------------------------
@@ -2380,7 +2393,7 @@ export function buildExclusionHolesCached(
   });
 
   holeCacheSlot = { validForState: chain ? chain.state : {}, entries: nextEntries };
-  return mergeArmHoleKeys(holes);
+  return mergeArmHoleKeys(holes, bands);
 }
 
 /** Slack around {@link regionClipBounds}: covers seam strokes, antialiasing,

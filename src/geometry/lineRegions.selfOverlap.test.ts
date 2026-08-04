@@ -497,6 +497,86 @@ describe('mid-edge self-crossings (band-pair rule)', () => {
     expect(ringKey(p.get(edgeCoverId('l1', 'd|e'))!)).toEqual(ringKey(x.get('lh')!));
   });
 
+  it("an edge def carries its ARM's holes too (stripes prefer the edge def)", () => {
+    // One line with BOTH kinds of self face: a branch mouth at `a` (stem
+    // g—a—b through, branch a—f) and a same-arm mid-edge crossing at the
+    // origin (d|e back over a|b — both stem-arm bands). Paint the mouth so
+    // the STEM ARM loses, and the crossing so band a|b loses. Stripe a|b
+    // references its EDGE def — the finest spelling — so that def must
+    // include the arm's mouth holes or the stripe paints unclipped over the
+    // mouth winner's reveal.
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 'g', x: 0, y: 400, stops: [vStop('l1')] }),
+        makeStation({ id: 'a', x: 0, y: 200, stops: [vStop('l1')] }),
+        makeStation({ id: 'b', x: 0, y: -200, stops: [vStop('l1')] }),
+        makeStation({ id: 'c', x: 200, y: -200, stops: [hStop('l1')] }),
+        makeStation({ id: 'd', x: 200, y: 0, stops: [vStop('l1')] }),
+        makeStation({ id: 'e', x: -200, y: 0, stops: [hStop('l1')] }),
+        makeStation({ id: 'f', x: 200, y: 200, stops: [hStop('l1')] }),
+      ],
+      lines: [
+        makeLine({
+          id: 'l1',
+          color: '#c00',
+          edges: ['g|a', 'a|b', 'b|c', 'c|d', 'd|e', 'a|f'],
+        }),
+      ],
+    });
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+    const faces = buildOverlapRegions(bands, []);
+    const stemArm = armOfLinePairKey(bands, 'l1', 'a|b')!;
+    const branchArm = armOfLinePairKey(bands, 'l1', 'a|f')!;
+    expect(branchArm).not.toBe(stemArm);
+    const mouthIdx = faces.findIndex((f) => f.lineIds.includes(armCoverId('l1', stemArm)));
+    const crossIdx = faces.findIndex((f) => f.lineIds.includes(edgeCoverId('l1', 'a|b')));
+    expect(mouthIdx).toBeGreaterThanOrEqual(0);
+    expect(crossIdx).toBeGreaterThanOrEqual(0);
+    // Mouth: branch arm wins (stem arm loses). Crossing: d|e wins (a|b loses).
+    const mouthSet = regionPaintPlan({
+      faces,
+      winners: resolveRegionWinners(faces, {}, bands, ['l1']),
+      assignments: {},
+      faceIndex: mouthIdx,
+      dir: -1,
+      flood: false,
+      lineOrder: ['l1'],
+      bands,
+    })[0].assignment!;
+    expect(armOfLinePairKey(bands, 'l1', mouthSet.winnerPairKey!)).toBe(branchArm);
+    const withMouth = { r1: { ...mouthSet, id: 'r1' } };
+    const crossSet = regionPaintPlan({
+      faces,
+      winners: resolveRegionWinners(faces, withMouth, bands, ['l1']),
+      assignments: withMouth,
+      faceIndex: crossIdx,
+      dir: -1,
+      flood: false,
+      lineOrder: ['l1'],
+      bands,
+    })[0].assignment!;
+    expect(crossSet.winnerPairKey).toBe('d|e');
+    const both = { r1: withMouth.r1, r2: { ...crossSet, id: 'r2' } };
+    const winners = resolveRegionWinners(faces, both, bands, ['l1']);
+    expect(winners[mouthIdx].winner).toBe(armCoverId('l1', branchArm));
+    expect(winners[crossIdx].winner).toBe(edgeCoverId('l1', 'd|e'));
+    const holes = buildExclusionHoles(faces, winners, ['l1'], bands, [], () => 2, []);
+    const armKey = armCoverId('l1', stemArm);
+    const edgeKey = edgeCoverId('l1', 'a|b');
+    expect(holes.get(armKey)?.length).toBeGreaterThan(0);
+    expect(holes.get(edgeKey)?.length).toBeGreaterThan(0);
+    // The stripe's one clipPath (the edge def) must carry the mouth hole:
+    // every arm-def ring appears in the edge def too.
+    const ringKeySet = (rings: Ring[]) =>
+      new Set(
+        rings.map((r) => r.map((p) => `${clipperQuant(p.x)},${clipperQuant(p.y)}`).join(' ')),
+      );
+    const edgeRings = ringKeySet(holes.get(edgeKey)!);
+    for (const key of ringKeySet(holes.get(armKey)!)) {
+      expect(edgeRings.has(key), 'edge def must include the arm hole ring').toBe(true);
+    }
+  });
+
   it('the incremental build matches the reference on the P-shape, cold and warm', () => {
     const doc = pDoc();
     const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);

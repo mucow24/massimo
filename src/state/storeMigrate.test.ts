@@ -1123,9 +1123,12 @@ describe('migrateDoc', () => {
       seamWidth: 3,
     });
 
-    it('drops seamColor/seamWidth/seamEdges from lines AND line style defs', () => {
+    it('drops seamColor/seamWidth/seamEdges from lines, line style defs, AND the doc root', () => {
       const out = run(
         {
+          // A pre-v23 doc that never got the v23 bake carries the retired
+          // DOC-LEVEL field at the root — the strip removes that remnant too.
+          seamEdges: 'straight',
           lines: {
             L1: {
               service: 'A',
@@ -1142,6 +1145,7 @@ describe('migrateDoc', () => {
         },
         24,
       );
+      expect('seamEdges' in out, 'doc-level seamEdges survived').toBe(false);
       for (const key of ['seamColor', 'seamWidth', 'seamEdges']) {
         expect(key in out.lines!.L1, `${key} survived on the line`).toBe(false);
         expect(key in out.styles!['default-line'].props, `${key} survived on the def`).toBe(false);

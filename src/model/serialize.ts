@@ -1818,8 +1818,8 @@ export function stripLegacySegmentLayers(lines: Record<string, Line>): {
 // whose pairKey is no longer among the line's edges are deliberately KEPT:
 // reconcile's topology-translation step maps them across edge splits/heals,
 // and the binding falls back to the assignment's other anchors meanwhile.
-// File-only hygiene (parse); the localStorage path gets the same strip via
-// the persist migration gate.
+// File-only hygiene (parse) — the localStorage path never sees uncanonical
+// values because every write goes through the store's own writers.
 export function sanitizeRegionAssignments(
   assignments: Record<string, RegionAssignment>,
   lines: Record<string, Line>,
