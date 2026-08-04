@@ -569,6 +569,15 @@ export interface RegionAssignment {
   lineId: LineId;
   lines: LineId[];
   anchors: RegionAnchor[];
+  // Present ⇒ the winner is one ARM of `lineId` (a self-overlap face: branch
+  // mouth, loop crossing) rather than the whole line: the pairKey of an edge
+  // on that arm — always also one of this assignment's own `lineId` anchors'
+  // pairKeys, since regionSetAction copies it from the arm's minted anchor.
+  // An EDGE name because arm indices are build-local; reconcile translates
+  // it across splits/heals like any anchor pairKey, and rendering resolves
+  // it to the current build's arm (degrading to the merged line when it no
+  // longer resolves — never a wrong clip).
+  winnerPairKey?: string;
 }
 
 export interface Viewport {

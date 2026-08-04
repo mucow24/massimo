@@ -2554,7 +2554,9 @@ function pruneRegionAssignmentsForLine(
     }
     const lines = a.lines.filter((l) => l !== lineId);
     const anchors = a.anchors.filter((anchor) => anchor.lineId !== lineId);
-    if (lines.length < 2 || anchors.length === 0) {
+    // One cover line arbitrates nothing — unless the choice is an ARM of it
+    // (a self-overlap face), where one line is the whole point.
+    if ((lines.length < 2 && a.winnerPairKey === undefined) || anchors.length === 0) {
       changed = true;
       continue;
     }

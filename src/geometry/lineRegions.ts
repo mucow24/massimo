@@ -273,6 +273,29 @@ export const isArmCoverId = (id: string): boolean => id.startsWith('arm:');
 export const lineOfCover = (id: string): LineId =>
   isArmCoverId(id) ? id.slice(id.indexOf(':', 4) + 1) : id;
 
+/** The arm index of an arm-spelled cover id, or null for a bare LineId. */
+export const armOfCover = (id: string): number | null =>
+  isArmCoverId(id) ? Number(id.slice(4, id.indexOf(':', 4))) : null;
+
+/**
+ * Arm index of `lineId`'s stripe on the band of `pairKey`, or null when the
+ * line doesn't run that corridor. This is how a persisted arm choice
+ * (`RegionAssignment.winnerPairKey` — an EDGE name, the only cross-build arm
+ * identity) resolves back to this build's arm indices.
+ */
+export function armOfLinePairKey(
+  bands: SegmentBandSpec[],
+  lineId: LineId,
+  pairKey: string,
+): number | null {
+  for (const band of bands) {
+    if (band.pairKey !== pairKey) continue;
+    const k = band.lines.findIndex((l) => l.id === lineId);
+    if (k >= 0) return band.arms[k] ?? 0;
+  }
+  return null;
+}
+
 /** The distinct LINES of a cover, in first-appearance order. */
 export const distinctCoverLines = (cover: readonly string[]): LineId[] => {
   const out: LineId[] = [];
@@ -1117,12 +1140,14 @@ export function extractFaces(
 // Anchors: mint, evaluate, bind
 
 /**
- * Fresh anchors for a face: one per covering LINE, at its span midpoint.
- * Spans record body overlap, so every stripe-covered line has one; a line
- * whose presence in the cover comes from its stop marker alone gets a
- * projection fallback: the arc position on its nearest stripe. Cover ids
- * normalize to lines: a self face gets ONE anchor for its line (arm-scoped
- * anchors arrive with the arm winner domain).
+ * Fresh anchors for a face: one per cover SLICE, at its span midpoint. A
+ * bare cover id yields one anchor for the line (its biggest span interval,
+ * any corridor); an arm-spelled id yields one anchor pinned to a corridor OF
+ * THAT ARM — so a self face mints two same-line anchors with different
+ * pairKeys, and pass-1 binding demands a face running BOTH corridors. Spans
+ * record body overlap, so every stripe-covered slice has one; a line whose
+ * presence comes from its stop marker alone gets a projection fallback: the
+ * arc position on its nearest stripe.
  */
 export function mintAnchors(face: RegionFace, bands: SegmentBandSpec[]): RegionAnchor[] {
   const anchors: RegionAnchor[] = [];
@@ -1132,11 +1157,14 @@ export function mintAnchors(face: RegionFace, bands: SegmentBandSpec[]): RegionA
       x: (face.bbox.x0 + face.bbox.x1) / 2,
       y: (face.bbox.y0 + face.bbox.y1) / 2,
     });
-  for (const lineId of distinctCoverLines(face.lineIds)) {
+  for (const coverId of face.lineIds) {
+    const lineId = lineOfCover(coverId);
+    const arm = armOfCover(coverId);
     let best: { pairKey: string; mid: number; totalLen: number; size: number } | null = null;
     for (const [key, entry] of face.spans) {
       if (!key.startsWith(`${lineId}|`)) continue;
       const pairKey = key.slice(lineId.length + 1);
+      if (arm !== null && armOfLinePairKey(bands, lineId, pairKey) !== arm) continue;
       for (const iv of entry.intervals) {
         const size = iv.d1 - iv.d0;
         if (!best || size > best.size) {
@@ -1169,6 +1197,11 @@ export function mintAnchors(face: RegionFace, bands: SegmentBandSpec[]): RegionA
         }
       }
     } else {
+      // Arm slices never take the projection fallback: it is arm-blind, and a
+      // wrong-arm pairKey here would break the winnerPairKey↔anchor invariant.
+      // An arm slice with no span simply mints nothing — its sibling anchors
+      // still pin the face.
+      if (arm !== null) continue;
       const projected = projectOntoLineStripe(lineId, target(), bands);
       if (projected) {
         best = projected;
@@ -1624,11 +1657,20 @@ function makeHoleContext(
 
   // A line's painted footprint near one face, at body width (pad 0) or
   // silhouette width (pad railW). Bbox-filtered; markers dilate by pad/2.
-  const paintNear = (lineId: LineId, box: RegionFace['bbox'], pad: number): Ring[] => {
+  // `arm` non-null keeps only that arm's stripes — an ARM winner's footprint
+  // — while markers stay included either way: a marker is the LINE's paint,
+  // shared by its arms.
+  const paintNear = (
+    lineId: LineId,
+    box: RegionFace['bbox'],
+    pad: number,
+    arm: number | null = null,
+  ): Ring[] => {
     const rings: Ring[] = [];
     for (const band of bands) {
       for (let k = 0; k < band.lines.length; k++) {
         if (band.lines[k].id !== lineId) continue;
+        if (arm !== null && (band.arms[k] ?? 0) !== arm) continue;
         if (!stripeIntersectsBox(band, k, box, (band.stripeWidths[k] + pad) / 2 + pad)) continue;
         let byArgs = stripeSil.get(band);
         if (!byArgs) stripeSil.set(band, (byArgs = new Map()));
@@ -1728,6 +1770,37 @@ function makeHoleContext(
     return [...seen].filter((j) => boxesOverlap(faces[j].bbox, box, pad)).sort((a, b) => a - b);
   };
 
+  /** The winner/loser decomposition of one overridden face, shared by the
+   *  hole build and the cache's input signatures so the two cannot drift.
+   *  LINE domain plus arm slices: a losing line loses with all its arms; an
+   *  ARM winner's sibling arms are additionally losers (same z — both paint
+   *  orders exist, so the mouth must clip whichever sibling paints later),
+   *  while a merged-line winner's own arms never are. */
+  const loserPlanFor = (
+    face: RegionFace,
+    w: { winner: LineId; assignmentId: string | null },
+  ): {
+    winnerLine: LineId;
+    winnerArm: number | null;
+    winnerRank: number;
+    lineLosers: LineId[];
+    armLosers: string[];
+  } => {
+    const winnerLine = lineOfCover(w.winner);
+    const winnerArm = armOfCover(w.winner);
+    const winnerRank = orderIdx(winnerLine);
+    const lineLosers = distinctCoverLines(face.lineIds).filter(
+      (lineId) => lineId !== winnerLine && orderIdx(lineId) < winnerRank,
+    );
+    const armLosers =
+      winnerArm === null
+        ? []
+        : face.lineIds.filter(
+            (id) => isArmCoverId(id) && id !== w.winner && lineOfCover(id) === winnerLine,
+          );
+    return { winnerLine, winnerArm, winnerRank, lineLosers, armLosers };
+  };
+
   /** The per-face body. Caller has already established `w` is an overridden
    *  non-default winner; returns null when there is nothing to hole. */
   const contributionFor = (
@@ -1735,19 +1808,14 @@ function makeHoleContext(
     i: number,
     w: { winner: LineId; assignmentId: string | null },
   ): FaceHoleContribution | null => {
-    const winnerRank = orderIdx(w.winner);
-    // LINE domain (arm spellings normalize): a losing line loses with all its
-    // arms, and a winner's own arms are never its losers.
-    const losers = distinctCoverLines(face.lineIds).filter(
-      (lineId) => lineId !== w.winner && orderIdx(lineId) < winnerRank,
-    );
-    if (!losers.length) return null;
-    const railWWinner = railWOf(w.winner);
+    const { winnerLine, winnerArm, winnerRank, lineLosers, armLosers } = loserPlanFor(face, w);
+    if (!lineLosers.length && !armLosers.length) return null;
+    const railWWinner = railWOf(winnerLine);
 
     // Absorb adjacent dropped slivers into the reveal region (see the doc
     // comment): take only the part within SLIVER_ABSORB_REACH of this face,
     // and only slivers whose above-winner lines are all losers here.
-    const loserSet = new Set(losers);
+    const loserSet = new Set(lineLosers);
     let region: Ring[] = face.face;
     let regionBbox = face.bbox;
     if (slivers.length) {
@@ -1755,7 +1823,7 @@ function makeHoleContext(
       const absorbed: Ring[] = [];
       for (const s of slivers) {
         const sliverLines = distinctCoverLines(s.lineIds);
-        if (!sliverLines.includes(w.winner)) continue;
+        if (!sliverLines.includes(winnerLine)) continue;
         if (!sliverLines.every((id) => orderIdx(id) >= winnerRank || loserSet.has(id))) continue;
         // Prefilter generously — a miter dilation reaches up to 3× past a
         // corner; `near` is the real gate.
@@ -1769,32 +1837,48 @@ function makeHoleContext(
       }
     }
 
+    // An ARM winner's footprint is its own arm's paint: the hole then runs
+    // through THAT arm's ring, revealing its rails across the mouth — the
+    // identical bridges-over reveal the inter-line path produces.
     const footprint =
       railWWinner > 0
-        ? paintNear(w.winner, regionBbox, railWWinner)
-        : offsetClosed(paintNear(w.winner, regionBbox, 0), -EXCLUSION_INSET);
+        ? paintNear(winnerLine, regionBbox, railWWinner, winnerArm)
+        : offsetClosed(paintNear(winnerLine, regionBbox, 0, winnerArm), -EXCLUSION_INSET);
     if (!footprint.length) return { contributions: [], regionBbox };
     // Differently-won neighboring faces, to subtract from every hole (see
     // the doc comment). Bbox-filtered generously: a miter dilation can poke
     // up to 3× reach (the miter limit) past a corner.
-    const maxReach = Math.max(...losers.map((id) => railWOf(id))) / 2 + railWWinner / 2 + 0.5;
+    const maxReach =
+      Math.max(
+        ...lineLosers.map((id) => railWOf(id)),
+        ...(armLosers.length ? [railWWinner] : []),
+      ) /
+        2 +
+      railWWinner / 2 +
+      0.5;
     const shield: Ring[] = [];
     for (const j of facesNear(regionBbox, maxReach * 3)) {
       if (j === i || winners[j]?.winner === w.winner) continue;
       shield.push(...faces[j].face);
     }
     // Within one face, losers sharing a railW dilate the same region by the
-    // same reach — memo the dilation: pure call, identical arguments.
+    // same reach — memo the dilation: pure call, identical arguments. Loser
+    // holes key by cover id: bare line = the line's whole paint, arm id =
+    // that arm's stripes only (the render maps stripes to arm defs).
     const regionDil = new Map<number, Ring[]>();
     const contributions: { lineId: LineId; rings: Ring[] }[] = [];
-    for (const lineId of losers) {
-      const reach = railWOf(lineId) / 2 + railWWinner / 2 + 0.5;
+    const loserKeys = [
+      ...lineLosers.map((id) => ({ key: id, railW: railWOf(id) })),
+      ...armLosers.map((id) => ({ key: id, railW: railWWinner })),
+    ];
+    for (const { key: loserKey, railW } of loserKeys) {
+      const reach = railW / 2 + railWWinner / 2 + 0.5;
       let dil = regionDil.get(reach);
       if (!dil) regionDil.set(reach, (dil = offsetClosed(region, reach, 'miter')));
       const dilated = intersect(dil, footprint);
       const hole = shield.length ? subtract(dilated, shield) : dilated;
       if (!hole.length) continue;
-      contributions.push({ lineId, rings: hole });
+      contributions.push({ lineId: loserKey, rings: hole });
     }
     return { contributions, regionBbox };
   };
@@ -1806,7 +1890,23 @@ function makeHoleContext(
   ): w is { winner: LineId; assignmentId: string } =>
     !!w && !!w.assignmentId && w.winner !== defaultWinner(face, orderIdx);
 
-  return { orderIdx, contributionFor, overridden, facesNear };
+  return { orderIdx, contributionFor, loserPlanFor, overridden, facesNear };
+}
+
+/**
+ * Post-pass over an assembled hole map: an arm-keyed def must also carry its
+ * line's line-level holes, because a paint element references exactly ONE
+ * clipPath — an arm-losing stripe may lose line-level faces too, and it will
+ * reference the arm def. Line rings first, then the arm's own, so the merge
+ * is order-deterministic. Shared by the reference and cached builders.
+ */
+function mergeArmHoleKeys(holes: Map<LineId, Ring[]>): Map<LineId, Ring[]> {
+  for (const [key, rings] of holes) {
+    if (!isArmCoverId(key)) continue;
+    const lineRings = holes.get(lineOfCover(key));
+    if (lineRings?.length) holes.set(key, [...lineRings, ...rings]);
+  }
+  return holes;
 }
 
 /** See the block comment above. This is the cache-free REFERENCE; production
@@ -1834,7 +1934,7 @@ export function buildExclusionHoles(
       else holes.set(lineId, [...rings]);
     }
   });
-  return holes;
+  return mergeArmHoleKeys(holes);
 }
 
 // ---------------------------------------------------------------------------
@@ -1984,26 +2084,35 @@ export function buildExclusionHolesCached(
     const w = winners[i];
     if (!ctx.overridden(face, w)) return;
 
-    const winnerRank = ctx.orderIdx(w.winner);
-    const losers = face.lineIds.filter(
-      (lineId) => lineId !== w.winner && ctx.orderIdx(lineId) < winnerRank,
-    );
-    const loserSet = new Set(losers);
+    // The same decomposition contributionFor runs — shared, so the signature
+    // captures exactly the inputs the geometry consumed.
+    const { winnerLine, winnerRank, lineLosers, armLosers } = ctx.loserPlanFor(face, w);
+    const loserSet = new Set(lineLosers);
+    const railWWinner = railWOf(winnerLine);
     const inputSig =
-      `${w.winner}|${railWOf(w.winner)}|${defaultWinner(face, ctx.orderIdx)}|` +
-      losers.map((l) => `${l}:${railWOf(l)}`).join(',');
+      `${w.winner}|${railWWinner}|${defaultWinner(face, ctx.orderIdx)}|` +
+      lineLosers.map((l) => `${l}:${railWOf(l)}`).join(',') +
+      `|${armLosers.join(',')}`;
     let sliverSig = '';
     for (const s of slivers) {
       if (!boxesOverlap(s.bbox, face.bbox, SLIVER_ABSORB_REACH * 3)) continue;
-      const gWinner = s.lineIds.includes(w.winner) ? 1 : 0;
-      const gLosers = s.lineIds.every((id) => ctx.orderIdx(id) >= winnerRank || loserSet.has(id))
+      const sliverLines = distinctCoverLines(s.lineIds);
+      const gWinner = sliverLines.includes(winnerLine) ? 1 : 0;
+      const gLosers = sliverLines.every((id) => ctx.orderIdx(id) >= winnerRank || loserSet.has(id))
         ? 1
         : 0;
       sliverSig += `${sliverTokenOf(s)}:${gWinner}${gLosers};`;
     }
-    const maxReach = losers.length
-      ? Math.max(...losers.map((id) => railWOf(id))) / 2 + railWOf(w.winner) / 2 + 0.5
-      : 0;
+    const maxReach =
+      lineLosers.length || armLosers.length
+        ? Math.max(
+            ...lineLosers.map((id) => railWOf(id)),
+            ...(armLosers.length ? [railWWinner] : []),
+          ) /
+            2 +
+          railWWinner / 2 +
+          0.5
+        : 0;
     const neighborSigAround = (box: FaceHoleContribution['regionBbox']): string => {
       let sig = '';
       for (const j of ctx.facesNear(box, maxReach * 3)) {
@@ -2050,7 +2159,7 @@ export function buildExclusionHolesCached(
   });
 
   holeCacheSlot = { validForState: chain ? chain.state : {}, entries: nextEntries };
-  return holes;
+  return mergeArmHoleKeys(holes);
 }
 
 /** Slack around {@link regionClipBounds}: covers seam strokes, antialiasing,
@@ -2109,7 +2218,14 @@ export function regionClipBounds(
   };
 }
 
-/** Per-face effective winner: bound assignment's line, else lineOrder-first. */
+/**
+ * Per-face effective winner: bound assignment's choice, else lineOrder-first.
+ * The winner is a COVER ID: a bare LineId ("this line, arms merged" — the
+ * only spelling plain faces ever produce) or an arm cover id when the
+ * assignment carries `winnerPairKey` and the face's cover distinguishes that
+ * arm. A stale or unresolvable arm choice degrades to the merged line —
+ * never a wrong clip.
+ */
 export function resolveRegionWinners(
   faces: RegionFace[],
   assignments: Record<string, RegionAssignment>,
@@ -2124,9 +2240,15 @@ export function resolveRegionWinners(
   const orderIdx = orderIndexer(lineOrder);
   return faces.map((face, i) => {
     const assignmentId = byFace.get(i) ?? null;
-    return assignmentId
-      ? { winner: assignments[assignmentId].lineId, assignmentId }
-      : { winner: defaultWinner(face, orderIdx), assignmentId: null };
+    if (!assignmentId) return { winner: defaultWinner(face, orderIdx), assignmentId: null };
+    const a = assignments[assignmentId];
+    let winner: LineId = a.lineId;
+    if (a.winnerPairKey !== undefined) {
+      const arm = armOfLinePairKey(bands, a.lineId, a.winnerPairKey);
+      const armId = arm === null ? null : armCoverId(a.lineId, arm);
+      if (armId && face.lineIds.includes(armId)) winner = armId;
+    }
+    return { winner, assignmentId };
   });
 }
 
@@ -2172,9 +2294,16 @@ export function regionFloodTargets(
   // Both rules are cheap set tests, so applying them up front leaves only a
   // handful of candidates for the clipper adjacency work below.
   const open = new Set<number>();
+  // Legality: a line target is satisfiable by any spelling of that line; an
+  // arm target needs the cover to distinguish THAT arm (arm indices are
+  // consistent within one build, so direct membership is exact).
+  const canShow = (i: number): boolean =>
+    isArmCoverId(target)
+      ? faces[i].lineIds.includes(target)
+      : distinctCoverLines(faces[i].lineIds).includes(target);
   for (let i = 0; i < faces.length; i++) {
     if (i === seedIndex) continue;
-    if (!distinctCoverLines(faces[i].lineIds).includes(target)) continue;
+    if (!canShow(i)) continue;
     if (winners[i]?.winner === target) continue;
     open.add(i);
   }
@@ -2219,13 +2348,29 @@ export function regionClickAction(args: {
 }): { id: string; assignment: RegionAssignment | null; winner: LineId } {
   const { face, bound, lineOrder, dir, bands, newId } = args;
   const orderIdx = orderIndexer(lineOrder);
-  // Cycle over the cover's LINES (arm-spelled ids normalize): the winner
-  // domain is lines for now, so a mixed face at a branch mouth cycles its
-  // distinct lines exactly as it did before arms existed.
-  const order = distinctCoverLines(face.lineIds).sort(
-    (a, b) => orderIdx(a) - orderIdx(b) || (a < b ? -1 : 1),
-  );
-  const current = bound?.lineId ?? order[0];
+  // Cycle domain: the cover's distinct LINES first (each meaning "that line,
+  // arms merged" — exactly the pre-arm cycle for plain faces), then any arm
+  // slices the cover distinguishes, by line z then arm index. So a plain
+  // face cycles as it always did, a pure self face cycles merged → arm A →
+  // arm B → merged (delete), and a mixed face offers lines then arms.
+  const byLineThenId = (a: string, b: string) => {
+    const la = lineOfCover(a);
+    const lb = lineOfCover(b);
+    return (
+      orderIdx(la) - orderIdx(lb) ||
+      (la < lb ? -1 : la > lb ? 1 : (armOfCover(a) ?? 0) - (armOfCover(b) ?? 0))
+    );
+  };
+  const order = [
+    ...distinctCoverLines(face.lineIds).sort((a, b) => orderIdx(a) - orderIdx(b) || (a < b ? -1 : 1)),
+    ...face.lineIds.filter(isArmCoverId).sort(byLineThenId),
+  ];
+  let current = bound?.lineId ?? order[0];
+  if (bound?.winnerPairKey !== undefined) {
+    const arm = armOfLinePairKey(bands, bound.lineId, bound.winnerPairKey);
+    const armId = arm === null ? null : armCoverId(bound.lineId, arm);
+    if (armId && face.lineIds.includes(armId)) current = armId;
+  }
   const at = Math.max(0, order.indexOf(current));
   const winner = order[(at + dir + order.length) % order.length];
   return {
@@ -2253,15 +2398,30 @@ export function regionSetAction(args: {
   const { face, boundId, lineOrder, winner, bands, newId } = args;
   const id = boundId ?? newId;
   if (winner === regionDefaultWinner(face, lineOrder)) return { id, assignment: null };
+  const lineId = lineOfCover(winner);
+  const arm = armOfCover(winner);
+  const anchors = mintAnchors(face, bands);
+  // An arm winner persists as the pairKey of ITS OWN minted anchor — the one
+  // cross-build arm identity (arm indices are build-local). By construction
+  // that anchor exists: an arm slice is in the cover only when its stripes
+  // overlap the face, so it minted from a real span.
+  const winnerPairKey =
+    arm === null
+      ? undefined
+      : anchors.find(
+          (an) => an.lineId === lineId && armOfLinePairKey(bands, lineId, an.pairKey) === arm,
+        )?.pairKey;
+  if (arm !== null && winnerPairKey === undefined) return { id, assignment: null };
   return {
     id,
     // The stored cover is DISTINCT LINES whatever the face's spelling — arm
     // ids are build-local and must never persist.
     assignment: {
       id,
-      lineId: winner,
+      lineId,
       lines: distinctCoverLines(face.lineIds).sort(),
-      anchors: mintAnchors(face, bands),
+      anchors,
+      ...(winnerPairKey !== undefined ? { winnerPairKey } : {}),
     },
   };
 }
@@ -2295,10 +2455,6 @@ export function regionPaintPlan(args: {
   const face = faces[faceIndex];
   const w = winners[faceIndex];
   if (!face || !w) return [];
-  // PURE self faces (one line, arm-spelled) are visible but INERT for now:
-  // the winner domain doesn't speak arms yet, and a one-line cycle could only
-  // burn an undo on a no-op. Mixed faces cycle their distinct lines as ever.
-  if (distinctCoverLines(face.lineIds).length < 2) return [];
   if (flood) {
     return regionFloodTargets(faces, winners, faceIndex, w.winner)
       .filter((i) => i !== faceIndex)

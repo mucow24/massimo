@@ -1854,6 +1854,13 @@ export function sanitizeRegionAssignments(
     }
     let cleaned = anchors.length === a.anchors.length ? a : { ...a, anchors };
     if (cleaned.id !== id) cleaned = { ...cleaned, id };
+    // A malformed arm choice strips to the merged-line winner; a string one
+    // is kept even when it names no current edge — reconcile translates
+    // pairKeys, same policy as the anchors above.
+    if ('winnerPairKey' in cleaned && typeof cleaned.winnerPairKey !== 'string') {
+      const { winnerPairKey: _bad, ...rest } = cleaned;
+      cleaned = rest;
+    }
     if (cleaned !== a) changed = true;
     next[id] = cleaned;
   }

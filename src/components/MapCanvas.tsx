@@ -32,6 +32,7 @@ import { BandWarning, SegmentBand } from './SegmentBand';
 import { RegionExcludeClips, regionExcludeClipId } from './canvas/RegionExcludeClips';
 import { regionsFor } from '../geometry/regionCache';
 import {
+  armCoverId,
   buildExclusionHolesCached,
   regionClipBounds,
   regionPaintPlan,
@@ -1468,13 +1469,26 @@ export function MapCanvas() {
           {showNetwork &&
             renderables.map((r) => {
               const lineId = r.kind === 'marker' ? r.spec.lineId : r.band.lines[r.stripeIndex].id;
-              const clipped = regionExcludeHoles?.has(lineId) ?? false;
+              // A stripe that loses a face AS AN ARM references its arm's
+              // def (which also carries the line-level holes — see
+              // mergeArmHoleKeys); markers always take the line def: they
+              // are the line's shared paint, never one arm's.
+              const armKey =
+                r.kind === 'marker'
+                  ? null
+                  : armCoverId(lineId, r.band.arms[r.stripeIndex] ?? 0);
+              const clipKey =
+                armKey && regionExcludeHoles?.has(armKey)
+                  ? armKey
+                  : (regionExcludeHoles?.has(lineId) ?? false)
+                    ? lineId
+                    : null;
               const withExcludeClip = (key: string, node: React.ReactNode) =>
-                clipped ? (
+                clipKey ? (
                   <g
                     key={key}
-                    data-region-excluded={lineId}
-                    clipPath={`url(#${regionExcludeClipId(lineId)})`}
+                    data-region-excluded={clipKey}
+                    clipPath={`url(#${regionExcludeClipId(clipKey)})`}
                   >
                     {node}
                   </g>
