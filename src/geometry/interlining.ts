@@ -105,6 +105,17 @@ export interface SegmentBandSpec {
   // its own, so unlike the fields above it stays out of regionIncremental's
   // hashUnits (which hashes painted BODIES).
   seamArms: SeamArm[];
+  // Which ARM OF ITS LINE each stripe belongs to, parallel to `lines` — also
+  // filled by {@link assignSeamArms}, from the same junction pairing. Arms
+  // partition a line's bands at its branch junctions: two bands glue into one
+  // arm wherever their ends pair as a through-run, so a line with no branch
+  // is a single arm (index 0) end to end, and a branch or a station
+  // self-crossing splits it. Indices are canonical per build (arms ordered by
+  // smallest member pairKey) but carry no cross-build identity — persistence
+  // speaks pairKeys. Unlike `seamArms` this DOES move ink: self-overlap
+  // region faces are built from per-arm bodies (lineRegions.selfOverlapParts),
+  // so it IS mixed into regionIncremental's hashUnits.
+  arms: number[];
 }
 
 /**
@@ -231,6 +242,9 @@ export const BAND_SPEC_FIELDS = {
   // own geometry is unchanged can still change arm when a sibling corridor
   // appears or moves. So it must be compared, not derived from this band.
   seamArms: 'compared',
+  // Same producer and same whole-band-set derivation as seamArms, so the same
+  // policy for the same reason.
+  arms: 'compared',
 } as const satisfies Record<keyof SegmentBandSpec, SpecFieldPolicy>;
 
 // Markers are NOT presentation-free (color and priority are baked at build),
@@ -287,7 +301,9 @@ function bandSpecEqual(a: SegmentBandSpec, b: SegmentBandSpec): boolean {
   if (a.seamArms.length !== b.seamArms.length) return false;
   for (let i = 0; i < a.seamArms.length; i++) if (a.seamArms[i] !== b.seamArms[i]) return false;
   return (
-    sameNumbers(a.stripeOffsets, b.stripeOffsets) && sameNumbers(a.stripeWidths, b.stripeWidths)
+    sameNumbers(a.arms, b.arms) &&
+    sameNumbers(a.stripeOffsets, b.stripeOffsets) &&
+    sameNumbers(a.stripeWidths, b.stripeWidths)
   );
 }
 
@@ -786,7 +802,10 @@ interface JunctionArm {
 }
 
 /**
- * Fills `band.seamArms`: which arm of a branch notch each stripe is.
+ * Fills `band.seamArms` (which arm of a branch notch each stripe is) and
+ * `band.arms` (which arm OF ITS LINE each stripe belongs to — the through-run
+ * pairs below double as the glue of a union-find over each line's bands, so
+ * arms fall out of the same junction verdicts the seam draws by).
  *
  * The notch at a branch has two arms — the corridor running THROUGH the
  * junction (whose casing carries on across the branch mouth) and the one that
@@ -824,8 +843,34 @@ interface JunctionArm {
 function assignSeamArms(bands: SegmentBandSpec[]): void {
   // Every band end of every line, grouped by the line + station it meets at.
   const byJunction = new Map<string, JunctionArm[]>();
+  // Union-find over (line, band) stripe slots, for `band.arms`: two of a
+  // line's bands glue into one ARM wherever the pairing below matches their
+  // ends into a through-run. Keys never leave this function.
+  const parent = new Map<string, string>();
+  const find = (x: string): string => {
+    let r = x;
+    while (parent.get(r)! !== r) r = parent.get(r)!;
+    let c = x;
+    while (c !== r) {
+      const n = parent.get(c)!;
+      parent.set(c, r);
+      c = n;
+    }
+    return r;
+  };
+  const nodeOf = (band: SegmentBandSpec, k: number): string =>
+    `${band.lines[k].id} ${band.bandKey}`;
+  const byLine = new Map<string, { band: SegmentBandSpec; k: number }[]>();
   for (const band of bands) {
     band.seamArms = band.lines.map(() => 'straight');
+    band.arms = band.lines.map(() => 0);
+    for (let k = 0; k < band.lines.length; k++) {
+      const node = nodeOf(band, k);
+      if (!parent.has(node)) parent.set(node, node);
+      const slots = byLine.get(band.lines[k].id);
+      if (slots) slots.push({ band, k });
+      else byLine.set(band.lines[k].id, [{ band, k }]);
+    }
     for (const [stationId, fromStart] of [
       [band.fromId, true],
       [band.toId, false],
@@ -877,10 +922,36 @@ function assignSeamArms(bands: SegmentBandSpec[]): void {
       // or the leftovers of a fork would pair up as a second one.
       if (through.size > 0 && bestOpposition < 1 - OPPOSITION_TIE) break;
       through.add(pair[0]).add(pair[1]);
+      // The through-run glues its two bands into one arm of this line.
+      const a = arms[pair[0]];
+      const b = arms[pair[1]];
+      parent.set(find(nodeOf(a.band, a.stripeIndex)), find(nodeOf(b.band, b.stripeIndex)));
       pool = pool.filter((i) => i !== pair[0] && i !== pair[1]);
     }
     arms.forEach((arm, i) => {
       if (!through.has(i)) arm.band.seamArms[arm.stripeIndex] = 'curved';
+    });
+  }
+
+  // Number each line's arms canonically — components ordered by their
+  // smallest member (pairKey, bandKey), so indices are a pure function of
+  // geometry, never of edge declaration or pairing order.
+  for (const slots of byLine.values()) {
+    const byRoot = new Map<string, { minKey: string; slots: { band: SegmentBandSpec; k: number }[] }>();
+    for (const s of slots) {
+      const root = find(nodeOf(s.band, s.k));
+      const key = `${s.band.pairKey} ${s.band.bandKey}`;
+      const comp = byRoot.get(root);
+      if (comp) {
+        if (key < comp.minKey) comp.minKey = key;
+        comp.slots.push(s);
+      } else {
+        byRoot.set(root, { minKey: key, slots: [s] });
+      }
+    }
+    const comps = [...byRoot.values()].sort((a, b) => (a.minKey < b.minKey ? -1 : 1));
+    comps.forEach((comp, idx) => {
+      for (const s of comp.slots) s.band.arms[s.k] = idx;
     });
   }
 }
@@ -1490,6 +1561,7 @@ function buildCircleBandSpec(
     radius: bandR,
     linePriorities: [], // filled in by assignLinePriorities
     seamArms: [], // filled in by assignSeamArms
+    arms: [], // filled in by assignSeamArms
     stripeOffsets: offsets,
     stripeWidths: widths,
   };
@@ -1607,6 +1679,7 @@ function buildBandSpec(
     radius: centerlineR,
     linePriorities: [], // filled in by assignLinePriorities
     seamArms: [], // filled in by assignSeamArms
+    arms: [], // filled in by assignSeamArms
     stripeOffsets: offsets,
     stripeWidths: widths,
   };

@@ -9,7 +9,13 @@ import type { LineId, RegionAnchor, RegionAssignment } from '../model/types';
 import { pairKeyOf } from '../model/pairKey';
 import { edgeEndpoints, lineHasEdge, neighborsOf } from '../model/lineTopology';
 import { intersect, offsetClosed, type Ring } from './clip';
-import { bindAssignments, mintAnchors, stripeArcLength, type RegionFace } from './lineRegions';
+import {
+  bindAssignments,
+  distinctCoverLines,
+  mintAnchors,
+  stripeArcLength,
+  type RegionFace,
+} from './lineRegions';
 import { regionsFor, type GeometrySlice, type RegionGeometry } from './regionCache';
 import type { SegmentBandSpec } from './interlining';
 
@@ -239,7 +245,9 @@ export function reconcileRegionAssignments(
     const reminted: RegionAssignment = {
       id,
       lineId: a.lineId,
-      lines: [...face.lineIds],
+      // Distinct LINES whatever the face's cover spelling — arm ids are
+      // build-local and must never persist.
+      lines: distinctCoverLines(face.lineIds).sort(),
       anchors: mintAnchors(face, newR.bands),
     };
     const same = assignmentsEqual(reminted, assignments[id] ?? reminted) && assignments[id];
@@ -283,7 +291,7 @@ export function reconcileRegionAssignments(
       out[dupId] = {
         id: dupId,
         lineId: a.lineId,
-        lines: [...f.lineIds],
+        lines: distinctCoverLines(f.lineIds).sort(),
         anchors: mintAnchors(f, newR.bands),
       };
       claimedFaces.add(i);
@@ -297,5 +305,6 @@ export function reconcileRegionAssignments(
 
 /** The inheriting face must still cover every line the assignment arbitrates. */
 function translatedCoverCompatible(a: RegionAssignment, face: RegionFace): boolean {
-  return face.lineIds.includes(a.lineId) && a.lines.every((l) => face.lineIds.includes(l));
+  const cover = distinctCoverLines(face.lineIds);
+  return cover.includes(a.lineId) && a.lines.every((l) => cover.includes(l));
 }

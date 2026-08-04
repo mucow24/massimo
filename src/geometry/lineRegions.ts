@@ -251,6 +251,140 @@ export function buildLineBodies(
 }
 
 // ---------------------------------------------------------------------------
+// Self-overlap (branch mouths, loop crossings). A line's body is ONE unioned
+// polygon, so the pairwise stage cannot see the line overlapping itself. Where
+// a line has ≥2 ARMS (interlining's junction pairing partitions its bands —
+// see SegmentBandSpec.arms), the arms' bodies are intersected pairwise into
+// extra zone parts, and the components those parts live in subdivide the line
+// PER ARM, so a branch mouth becomes a real face covered by two arm cover ids.
+
+/**
+ * Cover id of one ARM of a line — used in {@link RegionFace.lineIds} where a
+ * face's cover distinguishes the line's arms (its self-overlap faces); bare
+ * LineIds everywhere else. Build-local: arm indices carry no cross-build
+ * identity, so these never persist — assignments spell arms as pairKeys.
+ */
+export const armCoverId = (lineId: LineId, arm: number): string => `arm:${arm}:${lineId}`;
+
+/** Is this cover id an arm spelling (vs a bare LineId)? */
+export const isArmCoverId = (id: string): boolean => id.startsWith('arm:');
+
+/** The line behind a cover id, bare or arm-spelled. */
+export const lineOfCover = (id: string): LineId =>
+  isArmCoverId(id) ? id.slice(id.indexOf(':', 4) + 1) : id;
+
+/** The distinct LINES of a cover, in first-appearance order. */
+export const distinctCoverLines = (cover: readonly string[]): LineId[] => {
+  const out: LineId[] = [];
+  const seen = new Set<LineId>();
+  for (const id of cover) {
+    const line = lineOfCover(id);
+    if (!seen.has(line)) {
+      seen.add(line);
+      out.push(line);
+    }
+  }
+  return out;
+};
+
+/** Lines with ≥2 arms in this build (any stripe with arm index > 0). */
+export function multiArmLineIds(bands: SegmentBandSpec[]): Set<LineId> {
+  const out = new Set<LineId>();
+  for (const band of bands) {
+    for (let k = 0; k < band.lines.length; k++) {
+      if ((band.arms[k] ?? 0) > 0) out.add(band.lines[k].id);
+    }
+  }
+  return out;
+}
+
+/** One line's stripe rings grouped per arm — stripe bodies only, no markers. */
+const armStripeRings = (bands: SegmentBandSpec[], lineId: LineId): Map<number, Ring[]> => {
+  const groups = new Map<number, Ring[]>();
+  for (const band of bands) {
+    for (let k = 0; k < band.lines.length; k++) {
+      if (band.lines[k].id !== lineId) continue;
+      const rings = stripeBodyPolys(band, k);
+      if (!rings.length) continue;
+      const arm = band.arms[k] ?? 0;
+      const list = groups.get(arm);
+      if (list) list.push(...rings);
+      else groups.set(arm, [...rings]);
+    }
+  }
+  return groups;
+};
+
+/**
+ * Zone parts where a line overlaps ITSELF: pairwise intersections of its arm
+ * bodies. STRIPE bodies only — a marker belongs to the line, not an arm, so a
+ * marker grazing the other arm is not a self-overlap (and the two-line
+ * construction whose faces these must equal keeps each pseudo-line's marker
+ * out of the wedge for the same reason). Empty for single-arm lines, which is
+ * the plain-corner guarantee: arms split only at branch junctions, so an
+ * ordinary bend can never zone with itself.
+ */
+export function selfOverlapParts(bands: SegmentBandSpec[], lineId: LineId): Ring[] {
+  const groups = armStripeRings(bands, lineId);
+  if (groups.size < 2) return [];
+  const arms = [...groups.keys()].sort((a, b) => a - b);
+  const bodies = arms.map((a) => unionAll(groups.get(a)!));
+  const boxes = bodies.map((b) => ringsBbox(b));
+  const masks = bodies.map((b) => bodyMask(b));
+  const parts: Ring[] = [];
+  for (let i = 0; i < bodies.length; i++) {
+    for (let j = i + 1; j < bodies.length; j++) {
+      if (!boxesOverlap(boxes[i], boxes[j])) continue;
+      if (!masksMeet(masks[i], masks[j])) continue;
+      parts.push(...intersect(bodies[i], bodies[j]));
+    }
+  }
+  return parts;
+}
+
+/**
+ * One line's per-arm bodies for cell subdivision, marker footprints included:
+ * each marker joins its HOST arm — the smallest arm index among the line's
+ * stripes incident to its station — so marker territory keeps the line in a
+ * cell's cover exactly as the whole-line body did. (Which arm hosts is
+ * invisible today: lone-arm covers collapse back to the bare line id, and
+ * markers are never part of the self-overlap zone.) Unioned per arm, like
+ * {@link buildLineBodies} unions per line; build ONCE per frame and reuse
+ * across components, so the body-mask memos hold.
+ */
+export function armBodiesForRestriction(
+  bands: SegmentBandSpec[],
+  markers: StopMarkerSpec[],
+  lineId: LineId,
+): Map<number, Ring[]> {
+  const groups = armStripeRings(bands, lineId);
+  if (groups.size === 0) return groups;
+  const hostAt = new Map<string, number>();
+  for (const band of bands) {
+    for (let k = 0; k < band.lines.length; k++) {
+      if (band.lines[k].id !== lineId) continue;
+      const arm = band.arms[k] ?? 0;
+      for (const st of [band.fromId, band.toId]) {
+        const cur = hostAt.get(st);
+        if (cur === undefined || arm < cur) hostAt.set(st, arm);
+      }
+    }
+  }
+  const fallback = Math.min(...groups.keys());
+  for (const m of markers) {
+    if (m.lineId !== lineId) continue;
+    const rings = markerBodyRings(m);
+    if (!rings.length) continue;
+    const host = hostAt.get(m.stationId) ?? fallback;
+    const list = groups.get(host);
+    if (list) list.push(...rings);
+    else groups.set(host, [...rings]);
+  }
+  for (const [arm, rings] of groups) groups.set(arm, unionAll(rings));
+  return groups;
+}
+
+// ---------------------------------------------------------------------------
 // Stripe-path sampling (flattened once per band spec, WeakMap-cached). The
 // safety argument is owned by interlining's spec-reuse layer: a spec object
 // is reused across frames ONLY when value-identical, so spec identity still
@@ -562,18 +696,147 @@ export function buildOverlapRegions(
 ): RegionFace[] {
   const bodies = buildLineBodies(bands, markers);
   const ids = [...bodies.keys()].sort();
-  if (ids.length < 2) return [];
+  const selfEntries: [LineId, Ring[]][] = [];
+  for (const id of [...multiArmLineIds(bands)].sort()) {
+    const parts = selfOverlapParts(bands, id);
+    if (parts.length) selfEntries.push([id, parts]);
+  }
+  // A single line can no longer short-circuit unconditionally: alone on the
+  // map, its branch mouths are still an arrangement.
+  if (ids.length < 2 && !selfEntries.length) return [];
   // Component-at-a-time. Cells cannot span components, so this yields the same
   // faces as one global subdivision while keeping every clipper operand down to
   // one crossing's worth of geometry — and it is the seam the incremental
   // builder caches on.
+  const parts = overlapZoneParts(ids, bodies);
+  for (const [, p] of selfEntries) parts.push(...p);
+  const comps = significantComponents(parts);
+  const selfHomes = selfPartCompHomes(selfEntries, comps);
+  const armBodies = new Map<LineId, Map<number, Ring[]>>();
+  for (const [lineId] of selfEntries) {
+    armBodies.set(lineId, armBodiesForRestriction(bands, markers, lineId));
+  }
   const faces: RegionFace[] = [];
-  for (const comp of significantComponents(overlapZoneParts(ids, bodies))) {
+  for (const comp of comps) {
+    const armLines = selfHomes.get(comp);
+    let armSplit: Map<LineId, Map<number, Ring[]>> | null = null;
+    if (armLines) {
+      armSplit = new Map();
+      for (const l of armLines) armSplit.set(l, armBodies.get(l)!);
+    }
     faces.push(
-      ...extractFaces(subdivideCells(restrictBodiesToZone(ids, bodies, comp)), bands, sliverSink),
+      ...extractFaces(
+        subdivideCells(restrictBodiesToZone(ids, bodies, comp, armSplit)),
+        bands,
+        sliverSink,
+      ),
     );
   }
   return finalizeFaces(faces);
+}
+
+/**
+ * Which components a line's self parts live in — the comps whose subdivision
+ * must split that line into arms. One membership predicate (nonzero-winding
+ * test on each ring's probe vertex, bbox fallback on boundary ambiguity),
+ * shared by the reference and the incremental builder so the two arm-split
+ * exactly the same cells. Candidates are the SIGNIFICANT comps — the only
+ * ones that subdivide.
+ */
+export function selfPartCompHomes(
+  selfParts: Iterable<[LineId, Ring[]]>,
+  comps: Face[],
+): Map<Face, Set<LineId>> {
+  const entries: [number, CompHomeEntry][] = comps.map((rings, i) => [
+    i,
+    { rings, box: ringsBbox(rings) },
+  ]);
+  const out = new Map<Face, Set<LineId>>();
+  for (const [lineId, parts] of selfParts) {
+    for (const ring of parts) {
+      for (const i of ringHomes(ring, entries)) {
+        const comp = comps[i];
+        const set = out.get(comp);
+        if (set) set.add(lineId);
+        else out.set(comp, new Set([lineId]));
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Pure-JS nonzero-winding containment tester over a comp's rings (outer +
+ * holes), with edges y-bucketed so one probe scans only the edges whose
+ * y-range can cross its scanline — membership probes hundreds of part rings
+ * per frame, and the biggest comp carries thousands of vertices. Built lazily
+ * per entry and carried with it (the incremental zone index caches it across
+ * frames).
+ */
+export function makeFaceTester(
+  rings: Face,
+  box: { x0: number; y0: number; x1: number; y1: number },
+): (p: { x: number; y: number }) => boolean {
+  const H = 64;
+  const yMin = box.y0;
+  const span = Math.max(box.y1 - box.y0, 1e-9);
+  const bucketOf = (y: number) => Math.min(H - 1, Math.max(0, Math.floor(((y - yMin) / span) * H)));
+  const buckets: { ax: number; ay: number; bx: number; by: number }[][] = Array.from(
+    { length: H },
+    () => [],
+  );
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const a = ring[j];
+      const b = ring[i];
+      const lo = bucketOf(Math.min(a.y, b.y));
+      const hi = bucketOf(Math.max(a.y, b.y));
+      for (let k = lo; k <= hi; k++) buckets[k].push({ ax: a.x, ay: a.y, bx: b.x, by: b.y });
+    }
+  }
+  return (p) => {
+    let winding = 0;
+    for (const e of buckets[bucketOf(p.y)]) {
+      if (e.ay <= p.y) {
+        if (e.by > p.y && (e.bx - e.ax) * (p.y - e.ay) - (p.x - e.ax) * (e.by - e.ay) > 0) {
+          winding++;
+        }
+      } else if (e.by <= p.y && (e.bx - e.ax) * (p.y - e.ay) - (p.x - e.ax) * (e.by - e.ay) < 0) {
+        winding--;
+      }
+    }
+    return winding !== 0;
+  };
+}
+
+/** A ring-membership candidate: a comp's rings + bbox, with the tester cached
+ *  on the entry across probes (and, in the incremental index, across frames). */
+export interface CompHomeEntry {
+  rings: Face;
+  box: { x0: number; y0: number; x1: number; y1: number };
+  tester?: (p: { x: number; y: number }) => boolean;
+}
+
+/** All home comp ids of one part ring: every candidate comp whose bbox admits
+ *  it AND whose polygon winds around the ring's probe vertex. A vertex ON a
+ *  shared boundary can test inside several comps — or, with the strict
+ *  winding test, inside NONE — so an empty result falls back to every comp
+ *  whose bbox contains the vertex (a superset of the true home): membership
+ *  only decides what seeds and what joins the re-union, and over-seeding is
+ *  exact where a silent miss would drop territory. */
+export function ringHomes(ring: Ring, candidates: Iterable<[number, CompHomeEntry]>): number[] {
+  const p = ring[0];
+  const homes: number[] = [];
+  const boxed: number[] = [];
+  for (const [id, comp] of candidates) {
+    if (p.x < comp.box.x0 || p.x > comp.box.x1 || p.y < comp.box.y0 || p.y > comp.box.y1) {
+      continue;
+    }
+    boxed.push(id);
+    comp.tester ??= makeFaceTester(comp.rings, comp.box);
+    if (comp.tester(p)) homes.push(id);
+  }
+  return homes.length ? homes : boxed;
 }
 
 /**
@@ -601,6 +864,11 @@ export function restrictBodiesToZone(
   ids: LineId[],
   bodies: Map<LineId, Ring[]>,
   zone: Ring[],
+  // Lines to subdivide PER ARM in this component (their self parts live
+  // here): the line's single entry is replaced by one entry per arm, under
+  // arm cover ids. Bodies from {@link armBodiesForRestriction}, built once
+  // per frame so their bbox/mask memos hold across components.
+  armSplit?: Map<LineId, Map<number, Ring[]>> | null,
 ): { id: LineId; rings: Ring[] }[] {
   const out: { id: LineId; rings: Ring[] }[] = [];
   // Most lines are nowhere near any one component; a bbox reject is far cheaper
@@ -611,12 +879,21 @@ export function restrictBodiesToZone(
   // mask is a strict refinement: cell-disjoint means the intersection is empty,
   // which is the same branch the empty result takes below.
   const zoneMask = bodyMask(zone);
-  for (const id of ids) {
-    const body = bodies.get(id)!;
-    if (!boxesOverlap(ringsBbox(body), zoneBox)) continue;
-    if (!masksMeet(bodyMask(body), zoneMask)) continue;
+  const restrict = (id: LineId, body: Ring[]) => {
+    if (!boxesOverlap(ringsBbox(body), zoneBox)) return;
+    if (!masksMeet(bodyMask(body), zoneMask)) return;
     const rings = intersect(body, zone);
     if (rings.length) out.push({ id, rings });
+  };
+  for (const id of ids) {
+    const arms = armSplit?.get(id);
+    if (arms) {
+      for (const arm of [...arms.keys()].sort((a, b) => a - b)) {
+        restrict(armCoverId(id, arm), arms.get(arm)!);
+      }
+    } else {
+      restrict(id, bodies.get(id)!);
+    }
   }
   return out;
 }
@@ -745,6 +1022,24 @@ export function finalizeFaces(faces: RegionFace[]): RegionFace[] {
   return faces;
 }
 
+/** Rewrite lone arms back to bare line ids (see the call site below). A cover
+ *  never mixes a line's bare id with its arm ids — a component subdivides a
+ *  line as arms XOR whole — so the rewrite cannot create duplicates. */
+const collapseCover = (cover: readonly string[]): string[] => {
+  let armCount: Map<LineId, number> | null = null;
+  for (const id of cover) {
+    if (!isArmCoverId(id)) continue;
+    armCount ??= new Map();
+    const line = lineOfCover(id);
+    armCount.set(line, (armCount.get(line) ?? 0) + 1);
+  }
+  if (!armCount) return [...cover];
+  const counts = armCount;
+  return cover.map((id) =>
+    isArmCoverId(id) && counts.get(lineOfCover(id))! < 2 ? lineOfCover(id) : id,
+  );
+};
+
 /**
  * Split cells into clickable faces, applying the sliver-opening morphology.
  * Returns them UNSORTED and UNKEYED — run {@link finalizeFaces} over the
@@ -765,7 +1060,9 @@ export function extractFaces(
       face,
       bbox,
       area: faceArea(face),
-      spans: computeSpans(face, bbox, lineIds, bands),
+      // Spans are keyed per LINE (`${lineId}|${pairKey}`) whatever the cover
+      // spelling — a self face gets one entry per arm through the pairKeys.
+      spans: computeSpans(face, bbox, distinctCoverLines(lineIds), bands),
     });
   };
   const addSliver = (rings: Ring[], cover: LineId[]) => {
@@ -776,8 +1073,12 @@ export function extractFaces(
       sliverSink.push({ lineIds, face: rf, bbox: ringsBbox([rf[0]]) });
     }
   };
-  for (const cell of cells) {
-    if (cell.cover.length < 2) continue;
+  for (const rawCell of cells) {
+    if (rawCell.cover.length < 2) continue;
+    // Collapse lone arms back to bare line ids: cover distinguishes a line's
+    // arms only where ≥2 of them actually cover the cell, so every face
+    // outside a genuine self-overlap keeps exactly its historical identity.
+    const cell = { ...rawCell, cover: collapseCover(rawCell.cover) };
     // Faces, lobes and pieces below are all splitIntoFaces output, so the
     // normalization-free offset applies throughout this loop.
     for (const face of splitIntoFaces(cell.rings)) {
@@ -816,10 +1117,12 @@ export function extractFaces(
 // Anchors: mint, evaluate, bind
 
 /**
- * Fresh anchors for a face: one per covering line, at its span midpoint.
+ * Fresh anchors for a face: one per covering LINE, at its span midpoint.
  * Spans record body overlap, so every stripe-covered line has one; a line
  * whose presence in the cover comes from its stop marker alone gets a
- * projection fallback: the arc position on its nearest stripe.
+ * projection fallback: the arc position on its nearest stripe. Cover ids
+ * normalize to lines: a self face gets ONE anchor for its line (arm-scoped
+ * anchors arrive with the arm winner domain).
  */
 export function mintAnchors(face: RegionFace, bands: SegmentBandSpec[]): RegionAnchor[] {
   const anchors: RegionAnchor[] = [];
@@ -829,7 +1132,7 @@ export function mintAnchors(face: RegionFace, bands: SegmentBandSpec[]): RegionA
       x: (face.bbox.x0 + face.bbox.x1) / 2,
       y: (face.bbox.y0 + face.bbox.y1) / 2,
     });
-  for (const lineId of face.lineIds) {
+  for (const lineId of distinctCoverLines(face.lineIds)) {
     let best: { pairKey: string; mid: number; totalLen: number; size: number } | null = null;
     for (const [key, entry] of face.spans) {
       if (!key.startsWith(`${lineId}|`)) continue;
@@ -1094,10 +1397,12 @@ export function bindAssignments(
     for (let i = 0; i < words; i++) if ((need[i] & have[i]) !== need[i]) return false;
     return true;
   };
-  const coverMasks = faces.map((f) => maskOf(f.lineIds));
+  // Cover ids normalize to LINES here: an arm-spelled cover satisfies the
+  // same line requirements its bare spelling would.
+  const coverMasks = faces.map((f) => maskOf(distinctCoverLines(f.lineIds)));
   const facesByLine = new Map<LineId, number[]>();
   for (let i = 0; i < faces.length; i++) {
-    for (const id of faces[i].lineIds) {
+    for (const id of distinctCoverLines(faces[i].lineIds)) {
       const list = facesByLine.get(id);
       if (list) list.push(i);
       else facesByLine.set(id, [i]);
@@ -1198,8 +1503,11 @@ export function regionDefaultWinner(face: RegionFace, lineOrder: LineId[]): Line
   return defaultWinner(face, orderIdx);
 }
 
+// LINE domain, whatever the cover spelling: an unassigned face — a self face
+// included — shows its natural paint, and the natural paint's front-most is a
+// line (a line's own arms merge; there is no default arm).
 const defaultWinner = (face: RegionFace, orderIdx: (id: LineId) => number): LineId =>
-  [...face.lineIds].sort((a, b) => orderIdx(a) - orderIdx(b) || (a < b ? -1 : 1))[0];
+  distinctCoverLines(face.lineIds).sort((a, b) => orderIdx(a) - orderIdx(b) || (a < b ? -1 : 1))[0];
 
 /** Does a stripe's flattened path bbox (padded) intersect a box? */
 export function stripeIntersectsBox(
@@ -1428,7 +1736,9 @@ function makeHoleContext(
     w: { winner: LineId; assignmentId: string | null },
   ): FaceHoleContribution | null => {
     const winnerRank = orderIdx(w.winner);
-    const losers = face.lineIds.filter(
+    // LINE domain (arm spellings normalize): a losing line loses with all its
+    // arms, and a winner's own arms are never its losers.
+    const losers = distinctCoverLines(face.lineIds).filter(
       (lineId) => lineId !== w.winner && orderIdx(lineId) < winnerRank,
     );
     if (!losers.length) return null;
@@ -1444,8 +1754,9 @@ function makeHoleContext(
       const near = offsetClosed(face.face, SLIVER_ABSORB_REACH, 'miter');
       const absorbed: Ring[] = [];
       for (const s of slivers) {
-        if (!s.lineIds.includes(w.winner)) continue;
-        if (!s.lineIds.every((id) => orderIdx(id) >= winnerRank || loserSet.has(id))) continue;
+        const sliverLines = distinctCoverLines(s.lineIds);
+        if (!sliverLines.includes(w.winner)) continue;
+        if (!sliverLines.every((id) => orderIdx(id) >= winnerRank || loserSet.has(id))) continue;
         // Prefilter generously — a miter dilation reaches up to 3× past a
         // corner; `near` is the real gate.
         if (!boxesOverlap(s.bbox, face.bbox, SLIVER_ABSORB_REACH * 3)) continue;
@@ -1863,7 +2174,7 @@ export function regionFloodTargets(
   const open = new Set<number>();
   for (let i = 0; i < faces.length; i++) {
     if (i === seedIndex) continue;
-    if (!faces[i].lineIds.includes(target)) continue;
+    if (!distinctCoverLines(faces[i].lineIds).includes(target)) continue;
     if (winners[i]?.winner === target) continue;
     open.add(i);
   }
@@ -1908,7 +2219,12 @@ export function regionClickAction(args: {
 }): { id: string; assignment: RegionAssignment | null; winner: LineId } {
   const { face, bound, lineOrder, dir, bands, newId } = args;
   const orderIdx = orderIndexer(lineOrder);
-  const order = [...face.lineIds].sort((a, b) => orderIdx(a) - orderIdx(b) || (a < b ? -1 : 1));
+  // Cycle over the cover's LINES (arm-spelled ids normalize): the winner
+  // domain is lines for now, so a mixed face at a branch mouth cycles its
+  // distinct lines exactly as it did before arms existed.
+  const order = distinctCoverLines(face.lineIds).sort(
+    (a, b) => orderIdx(a) - orderIdx(b) || (a < b ? -1 : 1),
+  );
   const current = bound?.lineId ?? order[0];
   const at = Math.max(0, order.indexOf(current));
   const winner = order[(at + dir + order.length) % order.length];
@@ -1939,7 +2255,14 @@ export function regionSetAction(args: {
   if (winner === regionDefaultWinner(face, lineOrder)) return { id, assignment: null };
   return {
     id,
-    assignment: { id, lineId: winner, lines: [...face.lineIds], anchors: mintAnchors(face, bands) },
+    // The stored cover is DISTINCT LINES whatever the face's spelling — arm
+    // ids are build-local and must never persist.
+    assignment: {
+      id,
+      lineId: winner,
+      lines: distinctCoverLines(face.lineIds).sort(),
+      anchors: mintAnchors(face, bands),
+    },
   };
 }
 
@@ -1972,6 +2295,10 @@ export function regionPaintPlan(args: {
   const face = faces[faceIndex];
   const w = winners[faceIndex];
   if (!face || !w) return [];
+  // PURE self faces (one line, arm-spelled) are visible but INERT for now:
+  // the winner domain doesn't speak arms yet, and a one-line cycle could only
+  // burn an undo on a no-op. Mixed faces cycle their distinct lines as ever.
+  if (distinctCoverLines(face.lineIds).length < 2) return [];
   if (flood) {
     return regionFloodTargets(faces, winners, faceIndex, w.winner)
       .filter((i) => i !== faceIndex)
