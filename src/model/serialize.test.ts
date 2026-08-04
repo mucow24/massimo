@@ -23,7 +23,10 @@ describe('serialize / parse round-trip', () => {
           ],
           label: { row: 1, col: 2, rotation: 5, offset: 12, align: 'auto', valign: 'middle' },
         }),
-        makeStation({ id: 's2', x: 100, y: 100 }),
+        // s2 is a member of L1 and must carry its stop: parse rebuilds the
+        // membership⇄stops closure, so a stopless member would come back with
+        // a synthesized stop and break the lossless comparison.
+        makeStation({ id: 's2', x: 100, y: 100, stops: [makeStop('L1')] }),
       ],
       lines: [
         // Non-default per-line curve radius must survive the round-trip.
@@ -1304,7 +1307,11 @@ describe('parse — transfer style sanitizing', () => {
     JSON.stringify({
       format: 'massimo-map',
       doc: {
-        ...makeDoc({}),
+        // The endpoints must exist: parse drops a transfer whose station is
+        // dangling (the load-time twin of the app's cascade-delete).
+        ...makeDoc({
+          stations: [makeStation({ id: 's1' }), makeStation({ id: 's2', x: 100 })],
+        }),
         transfers: {
           x1: {
             id: 'x1',

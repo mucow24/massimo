@@ -52,7 +52,8 @@ import {
   isReservedStyleName,
   stylePropsEqual,
 } from './styles';
-import { edgesFromStations } from './lineTopology';
+import { edgeEndpoints, edgesFromStations } from './lineTopology';
+import { pairKeyOf } from './pairKey';
 import {
   LINE_END_STYLE_DEFAULT,
   isLineEndStyle,
@@ -62,7 +63,13 @@ import {
 import { reconcileOrder } from './recordOrder';
 import { parseHexA, withHexAlpha } from '../util/color';
 import { migrateLegacyInlineTokens } from '../geometry/labelTokens';
-import { copyPalette, LEGACY_BUILTIN_IDS, PALETTES, type Palette } from './palettes';
+import {
+  copyPalette,
+  FALLBACK_LINE_COLOR,
+  LEGACY_BUILTIN_IDS,
+  PALETTES,
+  type Palette,
+} from './palettes';
 import { isAllowedImageHref } from './svgImport';
 import type {
   DayNightColor,
@@ -73,8 +80,15 @@ import type {
   DotStrokeAlign,
   DotStrokeColor,
   DotStyle,
+  LabelCell,
   LabelValign,
   Line,
+  LineId,
+  LineTag,
+  Rotation,
+  RouteBullet,
+  TransferAnchor,
+  TransferEnd,
   LineCircle,
   LineEndStyle,
   LineStyle,
@@ -461,7 +475,24 @@ export function migrateLegacyBulletSyntax(
   return { stations: nextStations, textLabels: nextLabels, changed };
 }
 
+/**
+ * Parse a .massimo.json file. NEVER throws: beyond the explicit shape gate
+ * below, any failure inside the pipeline surfaces as `{ok:false}`. The load
+ * handlers only know how to show a ParseResult — a raw throw out of an async
+ * file-input handler reads as a silent no-op load, the worst possible answer
+ * to a malformed file. The explicit gates carry the real messages; this
+ * wrapper is insurance against the sanitizer regression nobody wrote a gate
+ * for yet.
+ */
 export function parse(json: string, custom: readonly Palette[] = []): ParseResult {
+  try {
+    return parseInner(json, custom);
+  } catch (e) {
+    return { ok: false, error: `Malformed map file: ${(e as Error).message}` };
+  }
+}
+
+function parseInner(json: string, custom: readonly Palette[]): ParseResult {
   let raw: unknown;
   try {
     raw = JSON.parse(json);
@@ -481,6 +512,11 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   if (!file.doc || typeof file.doc !== 'object') {
     return { ok: false, error: 'Missing `doc` field' };
   }
+  // Substance shape gate: map substance of the WRONG shape refuses to load,
+  // with a message naming the entity (see docShapeError). Runs on the raw doc
+  // so nothing downstream ever reads an unguarded wrong-typed core field.
+  const shapeError = docShapeError(file.doc as unknown as Record<string, unknown>);
+  if (shapeError) return { ok: false, error: shapeError };
   // Pre-migration: older saves stored `labelBold: boolean`; the schema now
   // uses `labelWeight: TextLabelWeight`. Translate before merging so the
   // typed shape is clean and `labelBold` doesn't leak through.
@@ -515,6 +551,11 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
     );
   }
   delete (merged as { activePalettes?: unknown }).activePalettes;
+  // Fill ABSENT per-entity substance with its defaults — the per-entity twin
+  // of the DEFAULT_DOC merge above, which only reaches top-level fields. After
+  // this, the rest of the pipeline reads `st.stops` / `st.label` /
+  // `ln.stations` unguarded.
+  merged = repairCoreShapes(merged);
   // Bake the retired doc-level curveRadius onto the lines (and fill line
   // style defs that predate the covered field) BEFORE the per-line clean and
   // the style validation below — both expect the per-line/per-def form.
@@ -522,10 +563,39 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
   // The retired seam fields strip whole (lines, defs, and the even older
   // doc-level seamEdges) — see stripRetiredSeamFields.
   merged = stripRetiredSeamFields(merged);
-  // Sanitize per-line segment styles AND layers: drop unknown style values,
-  // drop the never-persisted defaults ('solid' / layer 0), and drop any entry
-  // whose pair-key isn't a station-pair adjacency on the line. Also backfill
-  // `name` for legacy files saved before the field existed.
+  // Normalize each line's OWN topology first — canonical edge keys are what
+  // the linkage closure below joins on. The override clean (segments + end
+  // pins) deliberately does NOT run here: it must judge against the REPAIRED
+  // topology/membership, so it runs after repairLineLinkages — a pre-repair
+  // judgment ate pins the closure was about to legitimize and kept segment
+  // styles on edges it was about to drop.
+  const topoLines: Record<string, Line> = {};
+  let topoChanged = false;
+  for (const id of Object.keys(merged.lines)) {
+    const cleaned = sanitizeLineTopology(backfillLineEdges(merged.lines[id]));
+    if (cleaned !== merged.lines[id]) topoChanged = true;
+    topoLines[id] = cleaned;
+  }
+  if (topoChanged) merged.lines = topoLines;
+  const sanitized = sanitizeStations(merged.stations);
+  if (sanitized.changed) merged.stations = sanitized.stations;
+  // Pull cells that drifted off the integer lattice back onto it. Not gated on
+  // the file version — see `snapStationCells`.
+  const snapped = snapStationCells(merged.stations);
+  if (snapped.changed) merged.stations = snapped.stations;
+  // Referential repairs, BEFORE anything downstream resolves cross-collection
+  // references: the membership/stops/edges closure first (it may add stops the
+  // dot passes below must see), then the reference sweep over everything else.
+  const linked = repairLineLinkages(merged.stations, merged.lines);
+  if (linked.changed) {
+    merged.stations = linked.stations;
+    merged.lines = linked.lines;
+  }
+  merged = sanitizeDocReferences(merged);
+  // Per-line override + value clean, now that topology and membership are
+  // final: drop segment styles whose pair-key isn't a live adjacency, end
+  // pins whose station isn't a member, and clamp the numeric fields. Also
+  // backfill `name` for legacy files saved before the field existed.
   const cleanedLines: Record<string, Line> = {};
   let linesChanged = false;
   for (const id of Object.keys(merged.lines)) {
@@ -533,19 +603,13 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
     // NB: dot-SIZE cleaning is deferred to after bakeLineDotDefaults — its
     // drop-at default is style-aware, so it must see the baked split dot styles.
     const cleaned = sanitizeLineStroke(
-      sanitizeLineCurve(sanitizeLineWidth(sanitizeLineOverrides(backfillLineEdges(line)))),
+      sanitizeLineCurve(sanitizeLineWidth(sanitizeLineOverrides(line))),
     );
     if (cleaned !== line) linesChanged = true;
     cleanedLines[id] = cleaned;
   }
   const named = backfillLineNames(cleanedLines);
   if (linesChanged || named.changed) merged.lines = named.lines;
-  const sanitized = sanitizeStations(merged.stations);
-  if (sanitized.changed) merged.stations = sanitized.stations;
-  // Pull cells that drifted off the integer lattice back onto it. Not gated on
-  // the file version — see `snapStationCells`.
-  const snapped = snapStationCells(merged.stations);
-  if (snapped.changed) merged.stations = snapped.stations;
   // Drop images whose href is outside the inline-data allowlist. Idempotent and
   // shared with the rehydrate path via `sanitizeImageHrefs` — the two doc loads
   // must repair identically, or a persisted doc keeps its remote href forever.
@@ -2646,6 +2710,738 @@ export function backfillLinesEdges(lines: Record<string, Line>): {
     out[id] = next;
   }
   return { lines: changed ? out : lines, changed };
+}
+
+// ---------- Import hardening: shape gate + referential repairs ----------
+//
+// A generated or hand-edited file can violate structure the app maintains by
+// construction. The split of responsibilities:
+//   - `docShapeError` (type-c): map SUBSTANCE of the wrong shape refuses to
+//     load, with a message naming the entity.
+//   - `repairCoreShapes` (type b): ABSENT per-entity substance fills with its
+//     default, the same defaulting-by-merge rule the top-level fields follow.
+//   - `sanitizeLineTopology` / `repairLineLinkages` / `sanitizeDocReferences`
+//     (type b): references that cannot be honoured are dropped or rebuilt from
+//     the redundant encodings the file itself carries — never guessed.
+// All file-import-only; the localStorage rehydrate keeps its own disjoint,
+// version-gated path (its only writer is the app).
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v);
+
+const finiteField = (v: unknown): boolean => typeof v === 'number' && Number.isFinite(v);
+
+// The keyed record collections a doc may carry. `palettes` and `styles` are
+// deliberately absent: sanitizePalettes and sanitizeStyles have always healed
+// a malformed value ([] and the factory set respectively), and that behavior
+// is pinned.
+const RECORD_COLLECTIONS = [
+  'stations',
+  'lines',
+  'lineTags',
+  'routeBullets',
+  'transferAnchors',
+  'transfers',
+  'textLabels',
+  'polygons',
+  'regionAssignments',
+  'svgImages',
+  'lineCircles',
+] as const;
+
+/**
+ * Type-c gate over the RAW doc: substance that is PRESENT but of the wrong
+ * shape refuses the whole file — silently dropping a station or inventing a
+ * coordinate would hand back a plausible-looking map missing content, the
+ * exact failure this gate exists to prevent. Absent fields are not judged
+ * here (they heal — see repairCoreShapes; a sparse legacy stop without cells
+ * heals to the origin cell); dangling references are not judged either (they
+ * drop or rebuild — see repairLineLinkages).
+ */
+function docShapeError(doc: Record<string, unknown>): string | null {
+  for (const field of RECORD_COLLECTIONS) {
+    if (field in doc && !isRecord(doc[field])) return `\`${field}\` is not a keyed record`;
+  }
+  for (const field of ['lineOrder', 'backgroundOrder'] as const) {
+    if (field in doc && !Array.isArray(doc[field])) return `\`${field}\` is not an array`;
+  }
+  if (isRecord(doc.stations)) {
+    for (const id of Object.keys(doc.stations)) {
+      const st = doc.stations[id];
+      if (!isRecord(st)) return `station "${id}" is not an object`;
+      if (!finiteField(st.x)) return `station "${id}": x is not a finite number`;
+      if (!finiteField(st.y)) return `station "${id}": y is not a finite number`;
+      if ('name' in st && typeof st.name !== 'string')
+        return `station "${id}": name is not a string`;
+      if ('rotation' in st && !finiteField(st.rotation))
+        return `station "${id}": rotation is not a finite number`;
+      if ('stops' in st) {
+        if (!Array.isArray(st.stops)) return `station "${id}": stops is not an array`;
+        for (const stop of st.stops) {
+          if (!isRecord(stop)) return `station "${id}": a stop entry is not an object`;
+          for (const f of ['row', 'col'] as const) {
+            if (f in stop && !finiteField(stop[f]))
+              return `station "${id}": a stop ${f} is not a finite number`;
+          }
+        }
+      }
+      if ('label' in st) {
+        if (!isRecord(st.label)) return `station "${id}": label is not an object`;
+        for (const f of ['row', 'col', 'rotation', 'offset'] as const) {
+          if (f in st.label && !finiteField(st.label[f]))
+            return `station "${id}": label ${f} is not a finite number`;
+        }
+      }
+    }
+  }
+  if (isRecord(doc.lines)) {
+    for (const id of Object.keys(doc.lines)) {
+      const ln = doc.lines[id];
+      if (!isRecord(ln)) return `line "${id}" is not an object`;
+      if ('service' in ln && typeof ln.service !== 'string')
+        return `line "${id}": service is not a string`;
+      if ('color' in ln && typeof ln.color !== 'string')
+        return `line "${id}": color is not a string`;
+      if ('stations' in ln && !Array.isArray(ln.stations))
+        return `line "${id}": stations is not an array`;
+      if ('edges' in ln && !Array.isArray(ln.edges)) return `line "${id}": edges is not an array`;
+    }
+  }
+  return null;
+}
+
+// The plain pre-wand label every legacy save carried — the heal target for a
+// station that arrives without one (turning the wand ON for it would change
+// how the file renders).
+const PLAIN_LABEL: LabelCell = {
+  row: 0,
+  col: -1,
+  rotation: 0,
+  offset: 0,
+  align: 'auto',
+  valign: 'auto-down',
+};
+
+// Snap a (gate-guaranteed finite) rotation onto the legal octant ring.
+const asOctant = (v: unknown): Rotation => {
+  const n = typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : 0;
+  return (((n % 8) + 8) % 8) as Rotation;
+};
+
+/**
+ * Fill ABSENT per-entity substance with its default — the per-entity twin of
+ * the `{...DEFAULT_DOC, ...doc}` merge, which only reaches top-level fields.
+ * Wrong-typed values never get here (docShapeError refused the file), so this
+ * pass only materializes what a sparse hand-written entity left out. Rotations
+ * additionally snap onto the octant ring (a finite 45 means nothing to the
+ * 8-step frame; `%8` at least keeps it deterministic).
+ */
+function repairCoreShapes(doc: MapDoc): MapDoc {
+  let changed = false;
+
+  const stations: Record<string, Station> = {};
+  for (const id of Object.keys(doc.stations)) {
+    const st = doc.stations[id] as Station & { label?: LabelCell };
+    const rotation = asOctant(st.rotation);
+    const label = st.label === undefined ? PLAIN_LABEL : { ...PLAIN_LABEL, ...st.label };
+    const labelRotation = asOctant(label.rotation);
+    const needsLabel =
+      st.label === undefined ||
+      labelRotation !== st.label.rotation ||
+      Object.keys(PLAIN_LABEL).some((f) => !(f in st.label!));
+    // A sparse legacy stop may omit its cell; it heals to the origin
+    // (orientation is sanitizeStations' job — its migrate already reads
+    // undefined as 'auto-vertical').
+    const needsStops =
+      st.stops === undefined || st.stops.some((c) => c.row === undefined || c.col === undefined);
+    if (typeof st.name === 'string' && rotation === st.rotation && !needsStops && !needsLabel) {
+      stations[id] = st;
+      continue;
+    }
+    changed = true;
+    stations[id] = {
+      ...st,
+      name: typeof st.name === 'string' ? st.name : '',
+      rotation,
+      stops: needsStops
+        ? (st.stops ?? []).map((c) =>
+            c.row === undefined || c.col === undefined
+              ? { ...c, row: c.row ?? 0, col: c.col ?? 0 }
+              : c,
+          )
+        : st.stops,
+      label: needsLabel ? { ...label, rotation: labelRotation } : st.label!,
+    };
+  }
+
+  const lines: Record<string, Line> = {};
+  for (const id of Object.keys(doc.lines)) {
+    const ln = doc.lines[id];
+    if (typeof ln.service === 'string' && typeof ln.color === 'string' && ln.stations) {
+      lines[id] = ln;
+      continue;
+    }
+    changed = true;
+    lines[id] = {
+      ...ln,
+      // A missing service reads best as the line's own key ("T" stays "T").
+      service: typeof ln.service === 'string' ? ln.service : id,
+      color: typeof ln.color === 'string' ? ln.color : FALLBACK_LINE_COLOR,
+      stations: ln.stations ?? [],
+    };
+  }
+
+  return changed ? { ...doc, stations, lines } : doc;
+}
+
+/**
+ * Canonicalize one line's OWN topology fields from a hand-written file: edge
+ * entries that aren't strings or don't split into two non-empty sides are
+ * dropped, keys rewrite to canonical `pairKeyOf` order, self-loops and
+ * duplicates collapse — and `segmentStyles` keys ride the same rewrites
+ * (first writer wins on a collision), so a style keyed "b|a" survives where
+ * sanitizeSegments (right after this in the chain) would have dropped it as a
+ * non-adjacency. Membership entries that aren't strings drop and duplicates
+ * collapse, order kept. Endpoint LIVENESS is cross-collection and belongs to
+ * repairLineLinkages, not here. Same reference on a no-op, like every sibling
+ * in the per-line clean.
+ */
+function sanitizeLineTopology(line: Line): Line {
+  const members: StationId[] = [];
+  const seenMembers = new Set<StationId>();
+  let membersChanged = false;
+  for (const s of line.stations) {
+    if (typeof s !== 'string' || seenMembers.has(s)) {
+      membersChanged = true;
+      continue;
+    }
+    seenMembers.add(s);
+    members.push(s);
+  }
+
+  const edges: string[] = [];
+  const seenEdges = new Set<string>();
+  const renames = new Map<string, string>();
+  let edgesChanged = false;
+  for (const e of line.edges) {
+    if (typeof e !== 'string') {
+      edgesChanged = true;
+      continue;
+    }
+    const i = e.indexOf('|');
+    if (i <= 0 || i >= e.length - 1) {
+      edgesChanged = true;
+      continue;
+    }
+    const a = e.slice(0, i);
+    const b = e.slice(i + 1);
+    if (a === b) {
+      edgesChanged = true;
+      continue;
+    }
+    const key = pairKeyOf(a, b);
+    if (key !== e) {
+      renames.set(e, key);
+      edgesChanged = true;
+    }
+    if (seenEdges.has(key)) {
+      edgesChanged = true;
+      continue;
+    }
+    seenEdges.add(key);
+    edges.push(key);
+  }
+
+  let segmentStyles = line.segmentStyles;
+  if (segmentStyles && renames.size > 0) {
+    const next: Record<string, LineStyle> = {};
+    for (const k of Object.keys(segmentStyles)) {
+      const nk = renames.get(k) ?? k;
+      if (!(nk in next)) next[nk] = segmentStyles[k];
+    }
+    segmentStyles = next;
+  }
+
+  if (!membersChanged && !edgesChanged && segmentStyles === line.segmentStyles) return line;
+  return {
+    ...line,
+    ...(membersChanged ? { stations: members } : {}),
+    ...(edgesChanged ? { edges } : {}),
+    ...(segmentStyles !== line.segmentStyles ? { segmentStyles } : {}),
+  };
+}
+
+/**
+ * Cross-collection closure over the three encodings of "line L serves station
+ * S" — membership (`Line.stations`), the stop cell (`Station.stops`), and
+ * edge incidence (`Line.edges`). App writers keep the three in step; a
+ * generated file routinely doesn't. The motivating case: every line carrying
+ * a full `edges` set but `stations: []` — bands render off edges while every
+ * editor works off membership, so the map was renderable but not editable.
+ * Repairs, in order:
+ *   1. stops naming a line that doesn't exist drop, as do duplicate same-line
+ *      stops (first wins);
+ *   2. membership entries naming a dead station drop, and edges with a dead
+ *      endpoint drop with them;
+ *   3. membership rebuilds as its closure: surviving order first, then every
+ *      edge endpoint and stop-bearing station not yet a member (a degree-0
+ *      member is legal — deleteLine leaves stopless stations behind — so a
+ *      stop is membership evidence in its own right);
+ *   4. every member station missing a stop for the line gets one synthesized
+ *      at the origin cell with the production defaults — membership without a
+ *      stop cell has no dot and nothing for the packer to place. A collision
+ *      with another stop at (0,0) is cosmetic and editable; a missing stop is
+ *      not.
+ * Silent by design: every repair reconstructs from redundant data the file
+ * itself carries, never a guess.
+ */
+function repairLineLinkages(
+  stationsIn: Record<string, Station>,
+  linesIn: Record<string, Line>,
+): { stations: Record<string, Station>; lines: Record<string, Line>; changed: boolean } {
+  let changed = false;
+
+  const stations: Record<string, Station> = {};
+  for (const sid of Object.keys(stationsIn)) {
+    const st = stationsIn[sid];
+    const seen = new Set<LineId>();
+    const stops = st.stops.filter((c) => {
+      const keep = typeof c.lineId === 'string' && !!linesIn[c.lineId] && !seen.has(c.lineId);
+      if (keep) seen.add(c.lineId);
+      return keep;
+    });
+    if (stops.length !== st.stops.length) {
+      changed = true;
+      stations[sid] = { ...st, stops };
+    } else {
+      stations[sid] = st;
+    }
+  }
+
+  // lineId → stop-bearing stations, in station iteration order.
+  const stopBearers = new Map<LineId, StationId[]>();
+  for (const sid of Object.keys(stations)) {
+    for (const c of stations[sid].stops) {
+      const arr = stopBearers.get(c.lineId);
+      if (arr) arr.push(sid);
+      else stopBearers.set(c.lineId, [sid]);
+    }
+  }
+
+  const lines: Record<string, Line> = {};
+  for (const lid of Object.keys(linesIn)) {
+    const ln = linesIn[lid];
+    const edges = ln.edges.filter((e) => {
+      const [a, b] = edgeEndpoints(e);
+      return !!stations[a] && !!stations[b];
+    });
+
+    const members: StationId[] = [];
+    const seen = new Set<StationId>();
+    const admit = (sid: StationId) => {
+      if (!seen.has(sid) && stations[sid]) {
+        seen.add(sid);
+        members.push(sid);
+      }
+    };
+    for (const s of ln.stations) admit(s);
+    for (const e of edges) {
+      const [a, b] = edgeEndpoints(e);
+      admit(a);
+      admit(b);
+    }
+    for (const s of stopBearers.get(lid) ?? []) admit(s);
+
+    const sameMembers =
+      members.length === ln.stations.length && members.every((m, i) => m === ln.stations[i]);
+    if (edges.length === ln.edges.length && sameMembers) {
+      lines[lid] = ln;
+    } else {
+      changed = true;
+      lines[lid] = {
+        ...ln,
+        ...(sameMembers ? {} : { stations: members }),
+        ...(edges.length === ln.edges.length ? {} : { edges }),
+      };
+    }
+
+    for (const sid of members) {
+      const st = stations[sid];
+      if (!st.stops.some((c) => c.lineId === lid)) {
+        changed = true;
+        stations[sid] = {
+          ...st,
+          stops: [...st.stops, { lineId: lid, row: 0, col: 0, orientation: 'auto-vertical' }],
+        };
+      }
+    }
+  }
+
+  return { stations, lines, changed };
+}
+
+// Rewrite each record entry's `id` to its key — the key IS the identity every
+// reference resolves through, so a divergent inner id is always the wrong one.
+// Same precedent as sanitizeStyles / sanitizeRegionAssignments. A non-object
+// entry (a decoration collection can carry `null` or a bare string from a
+// hand-written file) passes through untouched: each collection's own filter
+// below drops it — reading `.id` here would throw the whole file into parse's
+// catch-all instead.
+function withIdsFromKeys<T extends { id: string }>(coll: Record<string, T>): Record<string, T> {
+  let changed = false;
+  const next: Record<string, T> = {};
+  for (const key of Object.keys(coll)) {
+    const item = coll[key];
+    if (isRecord(item) && item.id !== key) {
+      next[key] = { ...item, id: key };
+      changed = true;
+    } else {
+      next[key] = item;
+    }
+  }
+  return changed ? next : coll;
+}
+
+/**
+ * The doc-wide reference sweep (type b throughout): inner ids rewrite to their
+ * record keys; the two paint orders reconcile against their records; and every
+ * decoration whose references or required numbers cannot be honoured drops —
+ * the same repair sanitizeRegionAssignments and sanitizeImageHrefs have always
+ * made, extended to the collections that had no load-time hygiene at all
+ * (lineTags, transfers, routeBullets, textLabels, polygons, svgImages, free
+ * transfer anchors). A route bullet's dead line is the one healable reference
+ * (`lineId: null` is its legitimate "unset" state); a transfer end's dead
+ * line heals to null the same way. Runs AFTER repairLineLinkages so liveness
+ * is judged against the repaired stations/lines.
+ */
+function sanitizeDocReferences(doc: MapDoc): MapDoc {
+  let changed = false;
+  const out = { ...doc };
+
+  // Inner ids ← record keys, across every id-carrying collection.
+  const sweep = (field: keyof MapDoc) => {
+    const coll = out[field] as unknown as Record<string, { id: string }>;
+    const next = withIdsFromKeys(coll);
+    if (next !== coll) {
+      (out as unknown as Record<string, unknown>)[field] = next;
+      changed = true;
+    }
+  };
+  sweep('stations');
+  sweep('lines');
+  sweep('lineTags');
+  sweep('routeBullets');
+  sweep('transferAnchors');
+  sweep('transfers');
+  sweep('textLabels');
+  sweep('polygons');
+  sweep('svgImages');
+  sweep('lineCircles');
+
+  // Free transfer anchors: a bare {id, x, y} — drop on a non-finite point.
+  // Before transfers, which judge anchor liveness against the survivors.
+  {
+    const next: Record<string, TransferAnchor> = {};
+    let dropped = false;
+    for (const id of Object.keys(out.transferAnchors)) {
+      const a = out.transferAnchors[id];
+      if (isRecord(a) && finiteField(a.x) && finiteField(a.y)) next[id] = a;
+      else dropped = true;
+    }
+    if (dropped) {
+      out.transferAnchors = next;
+      changed = true;
+    }
+  }
+
+  // Line circles: entry must be an object; value hygiene (finite center/radius)
+  // stays with sanitizeLineCircles, which runs later and drops those itself.
+  {
+    const next: Record<string, LineCircle> = {};
+    let dropped = false;
+    for (const id of Object.keys(out.lineCircles)) {
+      const c = out.lineCircles[id];
+      if (isRecord(c)) next[id] = c;
+      else dropped = true;
+    }
+    if (dropped) {
+      out.lineCircles = next;
+      changed = true;
+    }
+  }
+
+  // Line tags: need a live line and a real edge to sit on. Stored endpoints
+  // canonicalize (from < to always) — a swap flips anchorEnd so the tag keeps
+  // measuring from the same physical station.
+  {
+    const next: Record<string, LineTag> = {};
+    let tagsChanged = false;
+    for (const id of Object.keys(out.lineTags)) {
+      const t = out.lineTags[id];
+      if (
+        !isRecord(t) ||
+        typeof t.lineId !== 'string' ||
+        typeof t.fromStationId !== 'string' ||
+        typeof t.toStationId !== 'string' ||
+        !finiteField(t.distance) ||
+        !out.lines[t.lineId]
+      ) {
+        tagsChanged = true;
+        continue;
+      }
+      const swap = t.fromStationId > t.toStationId;
+      const from = swap ? t.toStationId : t.fromStationId;
+      const to = swap ? t.fromStationId : t.toStationId;
+      if (!out.lines[t.lineId].edges.includes(pairKeyOf(from, to))) {
+        tagsChanged = true;
+        continue;
+      }
+      const orientation = (
+        t.orientation === 1 || t.orientation === 2 || t.orientation === 3 ? t.orientation : 0
+      ) as LineTag['orientation'];
+      const kind = t.kind === 'chevron' || t.kind === 'text' ? t.kind : undefined;
+      if (!swap && orientation === t.orientation && kind === t.kind) {
+        next[id] = t;
+        continue;
+      }
+      tagsChanged = true;
+      next[id] = {
+        ...t,
+        fromStationId: from,
+        toStationId: to,
+        anchorEnd: swap ? (t.anchorEnd === 'from' ? 'to' : 'from') : t.anchorEnd,
+        orientation,
+        ...(kind === undefined ? {} : { kind }),
+      };
+      if (kind === undefined) delete (next[id] as { kind?: unknown }).kind;
+    }
+    if (tagsChanged) {
+      out.lineTags = next;
+      changed = true;
+    }
+  }
+
+  // Transfers: both ends must resolve. A dead non-null lineId on a stop end
+  // heals to null (the end's own "no specific line" state); everything else
+  // dangling drops the transfer, matching the app's cascade-delete.
+  {
+    const next: Record<string, Transfer> = {};
+    let transfersChanged = false;
+    const healEnd = (end: unknown): TransferEnd | null => {
+      if (!isRecord(end)) return null;
+      if ('stationId' in end) {
+        if (typeof end.stationId !== 'string' || !out.stations[end.stationId]) return null;
+        if ('anchorId' in end) {
+          const hosted = out.stations[end.stationId].transferAnchors;
+          return typeof end.anchorId === 'string' && hosted?.some((a) => a.id === end.anchorId)
+            ? (end as TransferEnd)
+            : null;
+        }
+        const lineId = end.lineId;
+        if (lineId === null || (typeof lineId === 'string' && out.lines[lineId])) {
+          return end as TransferEnd;
+        }
+        return { stationId: end.stationId, lineId: null };
+      }
+      if ('anchorId' in end) {
+        return typeof end.anchorId === 'string' && out.transferAnchors[end.anchorId]
+          ? (end as TransferEnd)
+          : null;
+      }
+      return null;
+    };
+    for (const id of Object.keys(out.transfers)) {
+      const t = out.transfers[id];
+      if (!isRecord(t)) {
+        transfersChanged = true;
+        continue;
+      }
+      const a = healEnd(t.a);
+      const b = healEnd(t.b);
+      if (a === null || b === null) {
+        transfersChanged = true;
+        continue;
+      }
+      if (a === t.a && b === t.b) {
+        next[id] = t;
+      } else {
+        transfersChanged = true;
+        next[id] = { ...t, a, b };
+      }
+    }
+    if (transfersChanged) {
+      out.transfers = next;
+      changed = true;
+    }
+  }
+
+  // Route bullets: a dead line heals to null (the placeholder state); a
+  // non-finite position or size drops the bullet; an unknown shape heals to
+  // the circle default.
+  {
+    const next: Record<string, RouteBullet> = {};
+    let bulletsChanged = false;
+    for (const id of Object.keys(out.routeBullets)) {
+      const b = out.routeBullets[id];
+      if (!isRecord(b) || !finiteField(b.x) || !finiteField(b.y) || !finiteField(b.size)) {
+        bulletsChanged = true;
+        continue;
+      }
+      const lineId = typeof b.lineId === 'string' && out.lines[b.lineId] ? b.lineId : null;
+      const shape =
+        b.shape === 'circle' || b.shape === 'square' || b.shape === 'diamond' ? b.shape : 'circle';
+      const rotation = asOctant(b.rotation);
+      if (lineId === b.lineId && shape === b.shape && rotation === b.rotation) {
+        next[id] = b;
+      } else {
+        bulletsChanged = true;
+        next[id] = { ...b, lineId, shape, rotation };
+      }
+    }
+    if (bulletsChanged) {
+      out.routeBullets = next;
+      changed = true;
+    }
+  }
+
+  // Text labels: position, size and text are the label's substance — no
+  // faithful repair exists, so a bad one drops (decoration, not map content).
+  {
+    const next: Record<string, TextLabel> = {};
+    let labelsChanged = false;
+    for (const id of Object.keys(out.textLabels)) {
+      const g = out.textLabels[id];
+      if (
+        !isRecord(g) ||
+        !finiteField(g.x) ||
+        !finiteField(g.y) ||
+        !finiteField(g.fontSize) ||
+        typeof g.text !== 'string'
+      ) {
+        labelsChanged = true;
+        continue;
+      }
+      const rotation = asOctant(g.rotation);
+      if (rotation === g.rotation) {
+        next[id] = g;
+      } else {
+        labelsChanged = true;
+        next[id] = { ...g, rotation };
+      }
+    }
+    if (labelsChanged) {
+      out.textLabels = next;
+      changed = true;
+    }
+  }
+
+  // Polygons: at least two finite vertices and real color strings, or the
+  // shape drops; a non-finite strokeWidth heals to 0.
+  {
+    const next: Record<string, Polygon> = {};
+    let polysChanged = false;
+    for (const id of Object.keys(out.polygons)) {
+      const p = out.polygons[id];
+      const verticesOk =
+        isRecord(p) &&
+        Array.isArray(p.vertices) &&
+        p.vertices.length >= 2 &&
+        p.vertices.every((v) => isRecord(v) && finiteField(v.x) && finiteField(v.y));
+      if (!verticesOk || typeof p.fill !== 'string' || typeof p.stroke !== 'string') {
+        polysChanged = true;
+        continue;
+      }
+      if (finiteField(p.strokeWidth)) {
+        next[id] = p;
+      } else {
+        polysChanged = true;
+        next[id] = { ...p, strokeWidth: 0 };
+      }
+    }
+    if (polysChanged) {
+      out.polygons = next;
+      changed = true;
+    }
+  }
+
+  // Svg images: geometry must be finite (the href allowlist runs later); a
+  // malformed optional opacity strips rather than dropping the image.
+  {
+    const next: Record<string, SvgImage> = {};
+    let imagesChanged = false;
+    for (const id of Object.keys(out.svgImages)) {
+      const img = out.svgImages[id];
+      if (
+        !isRecord(img) ||
+        !finiteField(img.x) ||
+        !finiteField(img.y) ||
+        !finiteField(img.width) ||
+        !finiteField(img.height) ||
+        !finiteField(img.rotation)
+      ) {
+        imagesChanged = true;
+        continue;
+      }
+      if ('opacity' in img && !finiteField(img.opacity)) {
+        imagesChanged = true;
+        const { opacity: _gone, ...rest } = img;
+        next[id] = rest;
+      } else {
+        next[id] = img;
+      }
+    }
+    if (imagesChanged) {
+      out.svgImages = next;
+      changed = true;
+    }
+  }
+
+  // Paint orders: dedupe, then reconcile against the surviving records (drop
+  // dead ids, append missed ones) — the same shape effectiveBackgroundOrder /
+  // effectiveLineOrder tolerate at render, made canonical at the door.
+  {
+    const dedupe = (order: string[]): string[] => {
+      const seen = new Set<string>();
+      const next = order.filter((id) => !seen.has(id) && (seen.add(id), true));
+      return next.length === order.length ? order : next;
+    };
+    const lineOrder = reconcileOrder(out.lines, dedupe(out.lineOrder));
+    if (
+      lineOrder.length !== out.lineOrder.length ||
+      lineOrder.some((id, i) => id !== out.lineOrder[i])
+    ) {
+      out.lineOrder = lineOrder;
+      changed = true;
+    }
+    const bg = reconcileOrder({ ...out.polygons, ...out.svgImages }, dedupe(out.backgroundOrder));
+    if (
+      bg.length !== out.backgroundOrder.length ||
+      bg.some((id, i) => id !== out.backgroundOrder[i])
+    ) {
+      out.backgroundOrder = bg;
+      changed = true;
+    }
+  }
+
+  // Doc scalars: wrong-typed values take the DEFAULT_DOC value, the same
+  // answer an absent field gets from the merge.
+  if (typeof out.name !== 'string') {
+    out.name = DEFAULT_DOC.name;
+    changed = true;
+  }
+  if (typeof out.darkMode !== 'boolean') {
+    out.darkMode = false;
+    changed = true;
+  }
+  if (!finiteField(out.lineCounter) || out.lineCounter < 0) {
+    out.lineCounter = 0;
+    changed = true;
+  } else if (!Number.isInteger(out.lineCounter)) {
+    out.lineCounter = Math.round(out.lineCounter);
+    changed = true;
+  }
+
+  return changed ? out : doc;
 }
 
 // The load-time twin of transforms' pruneOrphanLineOverrides: validate the

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ChevronDownIcon, ChevronRightIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../../state/store';
+import { useRenderDoc } from '../../state/renderDoc';
 import { useLineEditorPrefs } from '../../state/lineEditorPrefs';
 import type { LineId } from '../../model/types';
 import { DEFAULT_DOT_STYLE } from '../../model/dotStyle';
@@ -68,7 +69,10 @@ import {
 // per junction in Layering mode.)
 export function LineInspector({ id }: { id: LineId }) {
   const line = useDoc((s) => s.lines[id]);
-  const stations = useDoc((s) => s.stations);
+  // Render source: the stop band below is a readout of painted stations, so it
+  // must agree with the frozen canvas mid-drag, not run a frame ahead of it —
+  // and a live subscription would re-render this panel per pointermove.
+  const stations = useRenderDoc((s) => s.stations);
   const updateLine = useDoc((s) => s.updateLine);
   const setLineSingletonDotStyle = useDoc((s) => s.setLineSingletonDotStyle);
   const setLineMultiDotStyle = useDoc((s) => s.setLineMultiDotStyle);

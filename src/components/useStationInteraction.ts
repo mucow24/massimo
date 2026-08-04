@@ -81,9 +81,11 @@ export function useStationInteraction(
   lines: Record<string, Line>,
 ) {
   const selection = useSelection();
-  // Ring-bound stations resolve their stop cells through the ring frame, so a
-  // click picks the dot the user actually sees (see `stationFrameRad`).
-  const lineCircles = useDoc((s) => s.lineCircles);
+  // No reactive lineCircles subscription: this hook is mounted once per
+  // station hit area (~one per station), and a ring or ring-towed group drag
+  // writes lineCircles per pointermove — a subscription would re-render every
+  // hit area at input cadence while the pipeline's render source is frozen.
+  // The two click-time consumers read the store at event time instead.
   const rotateStation = useDoc((s) => s.rotateStation);
   const addStationToLine = useDoc((s) => s.addStationToLine);
   const connectStationsOnLine = useDoc((s) => s.connectStationsOnLine);
@@ -125,7 +127,7 @@ export function useStationInteraction(
       // now come from one place.
       pickTransferEnd({
         stationId: station.id,
-        lineId: closestStopLineId(station, e, lineCircles),
+        lineId: closestStopLineId(station, e, useDoc.getState().lineCircles),
       });
       return;
     }
@@ -337,7 +339,7 @@ export function useStationInteraction(
   const modeInert = inTagMode || inLayerMode;
   const hitless = modeInert || lockedClickThrough || appendForeignInert;
   const onTransferPointerMove = (e: React.PointerEvent) => {
-    const lineId = closestStopLineId(station, e, lineCircles);
+    const lineId = closestStopLineId(station, e, useDoc.getState().lineCircles);
     if (!lineId) return;
     const first = selection.uiMode.kind === 'creating-transfer' ? selection.uiMode.firstEnd : null;
     if (first && isStopEnd(first) && first.stationId === station.id && first.lineId === lineId) {

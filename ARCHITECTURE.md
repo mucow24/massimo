@@ -113,6 +113,7 @@ src/
     types.ts                    # MapDoc + every entity type (the canonical data shape)
     transforms.ts               # ~4050 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
     serialize.ts                # serialize()/parse() + shared backfill/sanitize helpers
+    docAudit.ts                 # auditDoc(doc): referential audit (tests + the export doors)
     styles.ts                   # named per-kind formatting presets (StyleDef) + styleId tag/stamp
     ids.ts                      # IdFactory: crypto UUIDs (prod) / counter ids (tests)
     pairKey.ts                  # pairKeyOf(a,b): canonical station-pair key
@@ -201,6 +202,7 @@ src/
     saveBaseline.ts             # useSaveBaseline: baseline + tri-state clean/dirty/unsaved signal
                                 #   (gates Save version + the toolbar dot; hash survives refresh)
     toastStore.ts               # useToasts: stacking status toasts (pushToast from anywhere)
+    exportAudit.ts              # auditExportDoc: docAudit at the export doors (no store; toasts)
     snapPrefs.ts                # useSnapPrefs: snap toggles + the ten digit-keyed preset slots
                                 #   (persist v2; migrates v0's boolean all/grid + fills modes
                                 #   a blob predates)
@@ -1173,36 +1175,71 @@ not import it.
 ### Two load paths (keep them in sync)
 
 **Path A — file import: `parse(json, custom)`** ([serialize.ts](src/model/serialize.ts)). Used
-by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}`:
+by the **Load…** menu. Pure, returns `{ok, doc}` or `{ok:false, error}` — and **never throws**:
+the pipeline runs inside a catch that turns any internal failure into `{ok:false}`, because the
+load handlers only surface a ParseResult (a raw throw out of the async file handler reads as a
+silent no-op load). A generated or hand-edited file splits two ways: map SUBSTANCE of the wrong
+shape refuses the whole file with a message naming the entity (step 1's gate), while ABSENT
+fields heal to defaults and broken REFERENCES are dropped or rebuilt from the redundant encodings
+the file itself carries (steps 3, 5, 6b/6c) — repair over guesswork, error over silent loss:
 
-1. `JSON.parse`; reject non-object / `format !== 'massimo-map'` / missing `doc`.
+1. `JSON.parse`; reject non-object / `format !== 'massimo-map'` / missing `doc`. Then the
+   substance shape gate (`docShapeError`): a collection of the wrong container type, a station
+   entry that isn't an object, a non-finite coordinate/rotation/cell, a non-array
+   `stops`/`stations`/`edges` — each refuses the whole file. (`palettes` and `styles` stay out of
+   the gate: their sanitizers have always healed garbage wholesale, and that behavior is pinned.)
 2. Two bakes **before** the merge: `migrateLegacyLabelBold` (so `labelBold` never leaks into the
    typed shape) and `bakeLegacyBackgroundOrder` (retired `polygonOrder` + `svgImageOrder` → the
    single `backgroundOrder`). The second MUST precede the merge — the merge fabricates
    `backgroundOrder: []`, and the bake is keyed off field presence, so afterwards it would find a
    `backgroundOrder` already there and discard the legacy stacking.
-3. `merged = { ...DEFAULT_DOC, ...doc }` — the entire defaulting mechanism.
+3. `merged = { ...DEFAULT_DOC, ...doc }` — the entire defaulting mechanism — then
+   `repairCoreShapes`, its per-entity twin: ABSENT substance fills with defaults (stops `[]`, the
+   plain legacy label, sparse stop cells to the origin, `service` ← the record key, the fallback
+   line color), and rotations snap onto the octant ring.
 4. `sanitizePalettes` if the file carries `palettes`, else `bakeActivePalettes` if it carries the
    retired `activePalettes` ids — a file with neither keeps the `DEFAULT_DOC` seed. Then
    `bakeDocCurveRadius` (retired doc-level `curveRadius` → per-line `Line.curveRadius` + fill line
    style defs; idempotent, keyed off field presence) and `stripRetiredSeamFields` (the retired
    seam trio leaves lines, line style defs and the doc key together) — **before** the per-line
    clean and style validation below, which expect the per-line/per-def form.
-5. Per-line clean — `backfillLineEdges` (derive `edges` from the legacy `stations` order for
-   pre-topology saves — unconditional, since a missing `edges` white-screens the renderer) →
-   `sanitizeSegments` (drop segment keys that aren't real adjacencies) → `sanitizeLineWidth` →
-   `sanitizeLineCurve` → `sanitizeLineStroke`, each clamping to the canonical grid and dropping
-   never-stored defaults — then `backfillLineNames`. **Dot size is deliberately NOT cleaned here**:
-   its drop-at default is style-aware (a service-code disc defaults to 12, not 8), so it needs the
-   baked split dot styles and runs as a **second per-line loop** (`sanitizeLineDotSize`) after
-   step 7 — see step 7b.
+5. Per-line topology normalize — `backfillLineEdges` (derive `edges` from the legacy `stations`
+   order for pre-topology saves — unconditional, since a missing `edges` white-screens the
+   renderer) → `sanitizeLineTopology` (canonicalize hand-written edge keys to `pairKeyOf` order
+   and drop malformed/self/duplicate edges and non-string/duplicate members — `segmentStyles`
+   keys ride the rewrites). ONLY topology: the override + value clean waits until step 6d, so
+   segment styles and end pins are judged against the REPAIRED topology/membership rather than
+   the pre-closure one — which ate pins the closure was about to legitimize, and kept styles on
+   edges it was about to drop (a non-idempotent parse).
 6. `sanitizeStations` (legacy orientations + `valign:'auto'`→`'auto-down'`) → `snapStationCells`
    (stop/label/anchor cells within 1e-9 of an integer snap onto it — the drift the old
    trig-rotated ghost lattice wrote; ±k·√2/2 and width-derived pitches are real coordinates and
-   are left alone), then
-   `sanitizeImageHrefs` (drop every svg image whose `href` is outside the inline-data allow-list,
-   and its `backgroundOrder` entry with it — see "Every image href is inline data"), then
-   `sanitizeRegionAssignments` (region-assignment hygiene — validates against the **cleaned**
+   are left alone), then the two referential repairs:
+   - 6b. `repairLineLinkages` — the closure over the three encodings of "line L serves station
+     S": stops of dead lines and duplicate same-line stops drop; edges with a dead endpoint drop;
+     membership rebuilds as surviving order + edge endpoints + stop-bearing stations; a member
+     station missing its stop gets one synthesized at the origin cell. The motivating case: a
+     generated file with full `edges` but `stations: []` renders (bands key off edges) yet is
+     uneditable (every editor works off membership).
+   - 6c. `sanitizeDocReferences` — inner ids ← record keys everywhere;
+     `lineOrder`/`backgroundOrder` deduped + reconciled against their records; every decoration
+     whose references or required numbers can't be honoured drops (a lineTag off a dead pair, a
+     transfer with a dead end, labels/polygons/images/free anchors with non-finite substance) or
+     heals where a legitimate "unset" state exists (a route bullet's or transfer end's dead line
+     → null; reversed tag endpoints → canonical order with `anchorEnd` flipped); wrong-typed doc
+     scalars take their DEFAULT_DOC value.
+   - 6d. The per-line override + value clean, now judged against the final topology/membership:
+     `sanitizeSegments` (drop segment keys that aren't real adjacencies) → `sanitizeLineEnds`
+     (drop pins for non-members and values at the line's own end default) → `sanitizeLineWidth` →
+     `sanitizeLineCurve` → `sanitizeLineStroke`, each clamping to the canonical grid and dropping
+     never-stored defaults — then `backfillLineNames`. **Dot size is deliberately NOT cleaned
+     here**: its drop-at default is style-aware (a service-code disc defaults to 12, not 8), so it
+     needs the baked split dot styles and runs as a **second per-line loop**
+     (`sanitizeLineDotSize`) after step 7 — see step 7b.
+
+   Then `sanitizeImageHrefs` (drop every svg image whose `href` is outside the inline-data
+   allow-list, and its `backgroundOrder` entry with it — see "Every image href is inline data"),
+   then `sanitizeRegionAssignments` (region-assignment hygiene — validates against the **cleaned**
    lines: dangling line ids drop the assignment, dangling pairKey anchors survive for reconcile).
 7. `convertLegacyDotShapes` (preset ids → `DotStyle`) — **runs after** the line/station passes.
    Then `bakeLineDotDefaults` (retired single `defaultDotStyle`/`defaultDotSize` → the split
@@ -1310,7 +1347,14 @@ legacy `custom:` ids — the only place in either load path that reaches into a 
 - **Export → JSON** = `serialize(pickDocSnapshot(state))` → `${basename}.massimo.json`. A
   download is an export; **Save version** writes to the library instead. `serialize` does **no**
   sanitization (writers are canonical by construction; transforms maintain canonical form on every
-  set).
+  set). Every door where bytes LEAVE the app — this export, Save version, Save a copy, and the
+  auto-save — first runs `auditExportDoc` ([exportAudit.ts](src/state/exportAudit.ts)):
+  `auditDoc`'s referential audit ([docAudit.ts](src/model/docAudit.ts)), where any violation means
+  an app writer corrupted the live doc. The bytes are still written — user work is never held
+  hostage to a bug — but the failure surfaces as a persistent error toast now instead of a mangled
+  file on some future load. Tests hold the complementary contract: `parse()` output always audits
+  clean, and app-legal states (stopless stations, degree-0 members, region anchors awaiting
+  reconcile) are not violations.
 - **Startup**: no explicit load in `App.tsx` — zustand `persist` rehydrates from localStorage on
   boot, running `migrateDoc`.
 - **Load → JSON…**: `parse(text, libraryPalettes)` then `adoptParsedDoc()` (below). The library
@@ -2932,6 +2976,12 @@ old-geometry lookup instead of evicting it.
 
 **Pipelined drags.** Everything that paints map positions reads through `useRenderDoc`
 (`state/renderDoc.ts`), not `useDoc` — at rest the two are reference-identical, so this is free.
+The rule is stronger than "painters": NO component holds a reactive `useDoc` subscription to the
+seven towed collections at all. Input hooks (the drag hooks, `useStationInteraction`) read the
+store at event time, and position-independent chrome (sidebar, popovers, the editing banner)
+subscribes to the render source, so a mid-drag doc write re-renders nothing anywhere — pinned by
+a zero-commits test in `MapCanvas.renderSource.test.tsx`. That is what keeps 60–125Hz pointer
+input from taxing the same thread the worker's frames must land on.
 When a synchronous region build reports over ~30ms while a `deferPersist` gesture is open (and
 the `__massimo.regionPipeline` flag is on), `worker/regionPipeline.ts` arms: the render source
 freezes at the current slice, and a persistent module worker — its own clipper WASM, its own

@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import {
   ChevronDownIcon,
   ChevronUpIcon,
@@ -7,6 +7,7 @@ import {
   TriangleUpIcon,
 } from '@radix-ui/react-icons';
 import { effectiveLineOrder, useDoc, useSelection } from '../state/store';
+import { useRenderDoc } from '../state/renderDoc';
 import { useViewportStore } from '../state/viewportStore';
 import { StylesPanel } from './StylesPanel';
 import { NONE_STOP_DOT_STYLE_ID } from '../model/dotStyle';
@@ -195,9 +196,15 @@ const StationRow = memo(function StationRow({
 });
 
 export function Sidebar() {
-  const stations = useDoc((s) => s.stations);
-  const lines = useDoc((s) => s.lines);
-  const lineOrder = useDoc((s) => s.lineOrder);
+  // Render source, not the live doc: `stations` is rewritten on every
+  // mid-drag pointermove, and a live subscription would re-run this component
+  // (and the full station-list sort below) at input cadence while the
+  // pipeline has the canvas frozen. The render source freezes with it, so
+  // the sidebar re-renders at frame cadence instead. At rest the two stores
+  // are identical.
+  const stations = useRenderDoc((s) => s.stations);
+  const lines = useRenderDoc((s) => s.lines);
+  const lineOrder = useRenderDoc((s) => s.lineOrder);
   // The reserved "None" stop-dot is hidden from the Styles list, so it must not
   // inflate the tab's count either.
   const styleCount = useDoc(
@@ -212,26 +219,36 @@ export function Sidebar() {
 
   const orderedLineIds = effectiveLineOrder(lineOrder, lines);
 
-  const lineIndex = linesByStation(lines);
+  const lineIndex = useMemo(() => linesByStation(lines), [lines]);
 
-  const stationList = Object.values(stations).sort((a, b) => {
-    if (stationSortBy === 'name') {
-      // Sort by the same cleaned text the list shows, so a leading tag or
-      // bullet (`<b>…`, `|A| …`) can't order a row away from its visible name.
-      const na = listNameOf(a);
-      const nb = listNameOf(b);
-      // Empty names and names starting with a nontraditional character (a
-      // symbol/glyph like ✈, not a letter or digit) sink to the bottom in BOTH
-      // directions — the direction toggle only reorders the ordinary names.
-      if (na.rank !== nb.rank) return na.rank - nb.rank;
-      const cmp = na.text.localeCompare(nb.text);
-      return stationSortDir === 'asc' ? cmp : -cmp;
-    }
-    const cmp = (lineIndex.stopsKey.get(a.id) ?? '').localeCompare(
-      lineIndex.stopsKey.get(b.id) ?? '',
-    );
-    return stationSortDir === 'asc' ? cmp : -cmp;
-  });
+  // Memoized: the full-list sort (with per-compare name cleaning) is the
+  // sidebar's one expensive computation, and re-renders that keep `stations`
+  // identical — selection changes, landed drag frames touching other
+  // collections — must not repeat it. (While a drag IS moving stations, the
+  // render source hands out a new map per landed frame, so the sort still
+  // reruns at frame cadence — that's the armed freeze's job to keep rare.)
+  const stationList = useMemo(
+    () =>
+      Object.values(stations).sort((a, b) => {
+        if (stationSortBy === 'name') {
+          // Sort by the same cleaned text the list shows, so a leading tag or
+          // bullet (`<b>…`, `|A| …`) can't order a row away from its visible name.
+          const na = listNameOf(a);
+          const nb = listNameOf(b);
+          // Empty names and names starting with a nontraditional character (a
+          // symbol/glyph like ✈, not a letter or digit) sink to the bottom in BOTH
+          // directions — the direction toggle only reorders the ordinary names.
+          if (na.rank !== nb.rank) return na.rank - nb.rank;
+          const cmp = na.text.localeCompare(nb.text);
+          return stationSortDir === 'asc' ? cmp : -cmp;
+        }
+        const cmp = (lineIndex.stopsKey.get(a.id) ?? '').localeCompare(
+          lineIndex.stopsKey.get(b.id) ?? '',
+        );
+        return stationSortDir === 'asc' ? cmp : -cmp;
+      }),
+    [stations, stationSortBy, stationSortDir, lineIndex],
+  );
 
   const handleStationSortClick = (col: StationSortColumn) => {
     if (stationSortBy === col) {
