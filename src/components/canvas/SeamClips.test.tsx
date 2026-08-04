@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import { SeamClips, seamClipId } from './SeamClips';
 import { CLIP_RASTER_SCALE } from './clipRaster';
@@ -81,5 +81,41 @@ describe('<SeamClips>', () => {
     const { bands, lines } = junctionBandsAndLines(undefined);
     const { container } = renderClips(bands, lines);
     expect(container.querySelector('clipPath')).toBeNull();
+  });
+
+  it('keys clips uniquely when seamed lines share an interlined band', () => {
+    // Two seamed lines tangent-packed on one corridor merge into a single band;
+    // each line still needs its OWN clip for it. Keying those sibling clips by
+    // bandKey alone collides, and React then drops/duplicates clip defs across
+    // re-renders — the seam paints unclipped along the whole segment.
+    const hStop = (lineId: string, row: number) =>
+      makeStop(lineId, { row, orientation: 'auto-horizontal' });
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 'a', x: -120, y: 0, stops: [hStop('l1', 0), hStop('l2', 1)] }),
+        makeStation({ id: 'j', x: 120, y: 0, stops: [hStop('l1', 0), hStop('l2', 1)] }),
+      ],
+      lines: [
+        makeLine({ id: 'l1', edges: ['a|j'], seamColor: '#ff2d55' }),
+        makeLine({ id: 'l2', edges: ['a|j'], seamColor: '#ff2d55' }),
+      ],
+    });
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+    expect(bands.length).toBe(1); // tangent stripes merged: one band, two lines
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { container } = renderClips(bands, doc.lines);
+      // One clip per (line, band), each reachable under its own id.
+      expect(container.querySelectorAll('clipPath').length).toBe(2);
+      expect(container.querySelector(`[id="${seamClipId('l1', bands[0].bandKey)}"]`)).toBeTruthy();
+      expect(container.querySelector(`[id="${seamClipId('l2', bands[0].bandKey)}"]`)).toBeTruthy();
+      // No duplicate-key warning: sibling keys must be unique per (line, band).
+      const dupWarning = errorSpy.mock.calls.find((args) =>
+        String(args[0]).includes('two children with the same key'),
+      );
+      expect(dupWarning).toBeUndefined();
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });

@@ -58,6 +58,7 @@ import { PerfPopover } from './PerfPopover';
 import { MapNameField } from './MapNameField';
 import { MapVersionPill } from './MapVersionPill';
 import { pushToast } from '../state/toastStore';
+import { auditExportDoc } from '../state/exportAudit';
 import { BrandBullet } from './BrandBullet';
 import { isFunModeActive, useFunMode } from '../state/funMode';
 
@@ -287,6 +288,7 @@ export function Toolbar() {
     const json = serialize(snap);
     if (json === EMPTY_DOC_JSON) return; // nothing to lose
     if (json === useSaveBaseline.getState().baselineJson) return; // already saved/loaded, verbatim
+    auditExportDoc(snap); // bytes are leaving for the library — audit at the door
     const thumb = await tryCaptureThumbnail();
     const id = useLibraryPointer.getState().mapId ?? newMapId();
     await saveVersion(id, doc.name, json, 'auto', thumb);
@@ -384,7 +386,9 @@ export function Toolbar() {
   const onExportJson = () => {
     // Serialize the canonical doc slice (DOC_FIELDS) so the file never drifts
     // from the model when a field is added.
-    const json = serialize(pickDocSnapshot(useDoc.getState()));
+    const snap = pickDocSnapshot(useDoc.getState());
+    auditExportDoc(snap);
+    const json = serialize(snap);
     const blob = new Blob([json], { type: 'application/json' });
     downloadBlob(blob, `${currentBasename()}.massimo.json`);
   };
@@ -396,6 +400,7 @@ export function Toolbar() {
     // save is in flight is not vouched for — the doc stays dirty.
     const doc = useDoc.getState();
     const snap = pickDocSnapshot(doc);
+    auditExportDoc(snap);
     const json = serialize(snap);
     try {
       const thumb = await tryCaptureThumbnail();
@@ -483,6 +488,7 @@ export function Toolbar() {
     // failed save leaves the live doc untouched — still the source map.
     const copyName = `Copy of ${useDoc.getState().name}`;
     const snap = { ...pickDocSnapshot(useDoc.getState()), name: copyName };
+    auditExportDoc(snap);
     const json = serialize(snap);
     try {
       const thumb = await tryCaptureThumbnail();
