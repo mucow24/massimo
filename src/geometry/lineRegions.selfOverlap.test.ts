@@ -385,9 +385,7 @@ describe('mid-edge self-crossings (band-pair rule)', () => {
   it('a one-arm line crossing itself mid-edge yields a face sliced per band', () => {
     const faces = facesFor(pDoc());
     expect(faces).toHaveLength(1);
-    expect(faces[0].lineIds).toEqual(
-      [edgeCoverId('l1', 'a|b'), edgeCoverId('l1', 'd|e')].sort(),
-    );
+    expect(faces[0].lineIds).toEqual([edgeCoverId('l1', 'a|b'), edgeCoverId('l1', 'd|e')].sort());
   });
 
   it('golden parity: the crossing face equals the two-line X, geometrically', () => {

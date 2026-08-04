@@ -731,7 +731,6 @@ export interface LineCircle {
   locked?: boolean;
 }
 
-
 export interface MapDoc {
   // User-facing document name. Shown in the toolbar, the window title, and the
   // export/save filename. Never empty at runtime: absent in a loaded file (or

@@ -1280,4 +1280,3 @@ describe('line style — end style coverage', () => {
     expect(doc.lines.l1.stationEndStyles).toEqual({ a: 'round' });
   });
 });
-

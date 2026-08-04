@@ -689,9 +689,7 @@ export function buildRegionsIncremental(
   const crossParts = new Map<LineId, SelfCrossingPart[]>();
   for (const id of ids) {
     const parts =
-      prev && !dirtyLines.has(id)
-        ? (prev.crossParts.get(id) ?? [])
-        : selfCrossingParts(bands, id);
+      prev && !dirtyLines.has(id) ? (prev.crossParts.get(id) ?? []) : selfCrossingParts(bands, id);
     if (parts.length) crossParts.set(id, parts);
   }
   // A single line can no longer short-circuit unconditionally: alone on the
@@ -738,8 +736,7 @@ export function buildRegionsIncremental(
     const cached = prev?.pairParts.get(key);
     selfEntries.push({
       key,
-      rings:
-        cached !== undefined && !dirtyLines.has(id) ? cached : parts.flatMap((p) => p.rings),
+      rings: cached !== undefined && !dirtyLines.has(id) ? cached : parts.flatMap((p) => p.rings),
     });
   }
   const zb = buildZoneCached(ids, bodies, dirtyLines, prev, prev ? dirtyCells : null, selfEntries);

@@ -786,8 +786,7 @@ export function stripRetiredSeamFields<T extends LinesAndStyles>(doc: T): T {
     out = rest as unknown as T;
     changed = true;
   }
-  const hasSeam = (o: object): boolean =>
-    'seamColor' in o || 'seamWidth' in o || 'seamEdges' in o;
+  const hasSeam = (o: object): boolean => 'seamColor' in o || 'seamWidth' in o || 'seamEdges' in o;
   if (out.lines) {
     let linesChanged = false;
     const lines: Record<string, Line> = {};

@@ -865,11 +865,7 @@ export function buildOverlapRegions(
   const sliceEntriesOf = makeSliceEntrySource(bands, markers);
   const faces: RegionFace[] = [];
   for (const comp of comps) {
-    const sliceSplit = sliceSplitForComp(
-      selfHomes.get(comp),
-      crossPlans.get(comp),
-      sliceEntriesOf,
-    );
+    const sliceSplit = sliceSplitForComp(selfHomes.get(comp), crossPlans.get(comp), sliceEntriesOf);
     faces.push(
       ...extractFaces(
         subdivideCells(restrictBodiesToZone(ids, bodies, comp, sliceSplit)),
@@ -2591,7 +2587,9 @@ export function regionClickAction(args: {
     return orderIdx(la) - orderIdx(lb) || (la < lb ? -1 : la > lb ? 1 : a < b ? -1 : a > b ? 1 : 0);
   };
   const order = [
-    ...distinctCoverLines(face.lineIds).sort((a, b) => orderIdx(a) - orderIdx(b) || (a < b ? -1 : 1)),
+    ...distinctCoverLines(face.lineIds).sort(
+      (a, b) => orderIdx(a) - orderIdx(b) || (a < b ? -1 : 1),
+    ),
     ...face.lineIds.filter(isSliceCoverId).sort(byLineThenId),
   ];
   let current = bound?.lineId ?? order[0];

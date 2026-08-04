@@ -112,7 +112,6 @@ export interface SegmentBandSpec {
   arms: number[];
 }
 
-
 // A single colored stop square for one line at one station, with its
 // per-line priority. Rendered alongside bands so that a back-stack line's
 // stop square doesn't paint over a front-stack line's band passing through.
@@ -906,7 +905,10 @@ function assignLineArms(bands: SegmentBandSpec[]): void {
   // smallest member (pairKey, bandKey), so indices are a pure function of
   // geometry, never of edge declaration or pairing order.
   for (const slots of byLine.values()) {
-    const byRoot = new Map<string, { minKey: string; slots: { band: SegmentBandSpec; k: number }[] }>();
+    const byRoot = new Map<
+      string,
+      { minKey: string; slots: { band: SegmentBandSpec; k: number }[] }
+    >();
     for (const s of slots) {
       const root = find(nodeOf(s.band, s.k));
       const key = `${s.band.pairKey} ${s.band.bandKey}`;
