@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeDoc, makeLineCircle, makeStation, makeStop } from '../test/fixtures';
+import { makeDoc, makeLine, makeLineCircle, makeStation, makeStop } from '../test/fixtures';
 import { parse, sanitizeLineCircles, serialize } from './serialize';
 import { LINE_CIRCLE_RADIUS_MIN } from './lineCircle';
 import type { MapDoc } from './types';
@@ -22,6 +22,8 @@ describe('line circles on the load path', () => {
           stops: [makeStop('l1', { viaCircle: true })],
         }),
       ],
+      // The stop's line must be live — parse drops a stop whose line dangles.
+      lines: [makeLine({ id: 'l1', stations: ['s1'] })],
       lineCircles: [makeLineCircle({ id: 'c1', x: 100, y: 100, radius: 70, locked: true })],
     });
     const out = roundTrip(doc);
@@ -50,6 +52,7 @@ describe('line circles on the load path', () => {
           stops: [makeStop('l1', { viaCircle: true })],
         }),
       ],
+      lines: [makeLine({ id: 'l1', stations: ['s1'] })],
     });
     const out = roundTrip(doc);
     expect('circleId' in out.stations.s1).toBe(false);
@@ -59,6 +62,7 @@ describe('line circles on the load path', () => {
   it('strips viaCircle from stops of unbound stations', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 's1', stops: [makeStop('l1', { viaCircle: true })] })],
+      lines: [makeLine({ id: 'l1', stations: ['s1'] })],
       lineCircles: [makeLineCircle({ id: 'c1' })],
     });
     const out = roundTrip(doc);

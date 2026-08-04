@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { serialize, parse } from './serialize';
-import { makeDoc, makeLineTag, makeRouteBullet, makeStation, makeTransfer } from '../test/fixtures';
+import {
+  makeDoc,
+  makeLine,
+  makeLineTag,
+  makeRouteBullet,
+  makeStation,
+  makeStop,
+  makeTransfer,
+} from '../test/fixtures';
 
 // Round-trip guards for the three entities that had no dedicated serialize
 // coverage (Transfer / RouteBullet / LineTag). serialize is pure pass-through,
@@ -15,6 +23,17 @@ const roundTrip = (doc: ReturnType<typeof makeDoc>) => {
   return result.doc;
 };
 
+// Live scaffolding for the references the entity fixture defaults carry
+// (l1 / s1 / s2): parse drops or heals entities whose references dangle, so a
+// round-trip fixture must be as coherent as an app-written doc.
+const liveRefs = {
+  stations: [
+    makeStation({ id: 's1', stops: [makeStop('l1')] }),
+    makeStation({ id: 's2', x: 100, stops: [makeStop('l1')] }),
+  ],
+  lines: [makeLine({ id: 'l1', stations: ['s1', 's2'] })],
+};
+
 describe('LineTag serialization', () => {
   it('round-trips all fields, including the optional kind', () => {
     const tag = makeLineTag({
@@ -27,13 +46,13 @@ describe('LineTag serialization', () => {
       orientation: 3,
       kind: 'chevron',
     });
-    const doc = roundTrip(makeDoc({ lineTags: [tag] }));
+    const doc = roundTrip(makeDoc({ ...liveRefs, lineTags: [tag] }));
     expect(doc.lineTags['t1']).toEqual(tag);
   });
 
   it('preserves a text tag whose kind is omitted (legacy = text)', () => {
     const tag = makeLineTag({ id: 't1', anchorEnd: 'from', distance: 0 });
-    const doc = roundTrip(makeDoc({ lineTags: [tag] }));
+    const doc = roundTrip(makeDoc({ ...liveRefs, lineTags: [tag] }));
     expect(doc.lineTags['t1']).toEqual(tag);
     expect('kind' in doc.lineTags['t1']).toBe(false);
   });
@@ -50,20 +69,20 @@ describe('RouteBullet serialization', () => {
       shape: 'diamond',
       size: 20,
     });
-    const doc = roundTrip(makeDoc({ routeBullets: [rb] }));
+    const doc = roundTrip(makeDoc({ ...liveRefs, routeBullets: [rb] }));
     expect(doc.routeBullets['rb1']).toEqual(rb);
   });
 
   it('preserves a null (unset) lineId', () => {
     const rb = makeRouteBullet({ id: 'rb1', lineId: null, shape: 'square' });
-    const doc = roundTrip(makeDoc({ routeBullets: [rb] }));
+    const doc = roundTrip(makeDoc({ ...liveRefs, routeBullets: [rb] }));
     expect(doc.routeBullets['rb1'].lineId).toBeNull();
     expect(doc.routeBullets['rb1'].shape).toBe('square');
   });
 
   it('preserves the locked flag', () => {
     const rb = makeRouteBullet({ id: 'rb1', locked: true });
-    const doc = roundTrip(makeDoc({ routeBullets: [rb] }));
+    const doc = roundTrip(makeDoc({ ...liveRefs, routeBullets: [rb] }));
     expect(doc.routeBullets['rb1'].locked).toBe(true);
   });
 });
@@ -75,7 +94,7 @@ describe('Transfer serialization', () => {
       a: { stationId: 's1', lineId: 'l1' },
       b: { stationId: 's2', lineId: null },
     });
-    const doc = roundTrip(makeDoc({ transfers: [xfer] }));
+    const doc = roundTrip(makeDoc({ ...liveRefs, transfers: [xfer] }));
     expect(doc.transfers['x1']).toEqual(xfer);
   });
 
@@ -90,7 +109,7 @@ describe('Transfer serialization', () => {
       strokeWidth: 3,
       strokeColor: { day: '#123456', night: '#654321' },
     });
-    const doc = roundTrip(makeDoc({ transfers: [xfer] }));
+    const doc = roundTrip(makeDoc({ ...liveRefs, transfers: [xfer] }));
     expect(doc.transfers['x1']).toEqual(xfer);
   });
 
@@ -100,7 +119,7 @@ describe('Transfer serialization', () => {
     const json = JSON.stringify({
       format: 'massimo-map',
       doc: {
-        ...makeDoc({}),
+        ...makeDoc(liveRefs),
         transfers: {
           x1: {
             id: 'x1',
@@ -120,7 +139,7 @@ describe('Transfer serialization', () => {
   });
 
   it('preserves absence of the style overrides (a tracking transfer stays tracking)', () => {
-    const doc = roundTrip(makeDoc({ transfers: [makeTransfer({ id: 'x1' })] }));
+    const doc = roundTrip(makeDoc({ ...liveRefs, transfers: [makeTransfer({ id: 'x1' })] }));
     for (const field of ['thickness', 'color', 'strokeWidth', 'strokeColor']) {
       expect(field in doc.transfers['x1']).toBe(false);
     }
