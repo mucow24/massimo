@@ -19,9 +19,12 @@ describe('App smoke', () => {
   // without taking that whole file down with it.
 
   it('exposes a Manage palettes button in the toolbar', () => {
-    // Kept: this is the ONLY assertion in the suite that the button is in the
-    // toolbar at all. PalettesDialog.test.tsx covers the dialog's behaviour but
-    // never names its trigger.
+    // Kept, unlike the toolbar-menu check above: PalettesDialog.test.tsx covers
+    // the dialog's behaviour but never names its trigger, so nothing else at
+    // the unit level pins the button's presence. e2e/customPalette.spec.ts does
+    // click it, which would fail if it vanished — but that is one browser spec
+    // away from the fast suite, and its failure would read as a palette bug
+    // rather than a missing toolbar button.
     render(<App />);
     expect(screen.getByRole('button', { name: 'Manage palettes' })).toBeInTheDocument();
   });
