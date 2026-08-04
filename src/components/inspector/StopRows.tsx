@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { Line, LineId, Station, StopCell } from '../../model/types';
 import { useDoc, useSelection } from '../../state/store';
+import { useRenderDoc } from '../../state/renderDoc';
 import { dispatchMirrored } from '../../state/mirrorDispatch';
 import {
   AXIS_CYCLE,
@@ -163,7 +164,7 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
   // question is geometric, not a matter of degree: a line that branches at its
   // own end still ends there (see lineEndsAt), and the control has to follow the
   // paint or it would hide the only way to dress an end the map plainly shows.
-  const stations = useDoc((d) => d.stations);
+  const stations = useRenderDoc((d) => d.stations);
   const isTerminus = !!line && lineEndsAt(stations, line, stationId);
 
   const {

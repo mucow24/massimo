@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { cancelAppendMode, dragState, useDoc, useSelection } from '../state/store';
+import { useRenderDoc } from '../state/renderDoc';
+import { useDragFrame } from '../state/dragFrame';
+import { reportSyncRegionCost } from '../worker/regionPipeline';
 import { isHistoryGrouping } from '../state/history';
 import { hoveredChrome, type HoverKind } from '../state/selection';
 import { useSnapPrefs } from '../state/snapPrefs';
@@ -138,29 +141,36 @@ const NO_FREE_ANCHORS: Record<string, never> = {};
 const EMPTY_RECORD: Record<string, never> = {};
 
 export function MapCanvas() {
-  const stations = useDoc((s) => s.stations);
+  // The seven collections a geometry gesture can move per frame read the
+  // RENDER SOURCE, not the live doc: mid-drag the pipeline serves frame N-1
+  // there while the doc runs ahead, and every painted surface derived from
+  // these bindings lags coherently with it (see state/renderDoc.ts). At rest
+  // the two stores are reference-identical. Everything that cannot change
+  // mid-drag — lines, order, styles, transfers, assignments — and every
+  // ACTION stays on useDoc.
+  const stations = useRenderDoc((s) => s.stations);
+  const lineCircles = useRenderDoc((s) => s.lineCircles);
+  const routeBulletsAll = useRenderDoc((s) => s.routeBullets);
+  const transferAnchors = useRenderDoc((s) => s.transferAnchors);
+  const textLabelsAll = useRenderDoc((s) => s.textLabels);
+  const polygonsAll = useRenderDoc((s) => s.polygons);
+  const svgImagesAll = useRenderDoc((s) => s.svgImages);
   const lines = useDoc((s) => s.lines);
   const lineOrder = useDoc((s) => s.lineOrder);
-  const lineCircles = useDoc((s) => s.lineCircles);
   const rotateLineCircle = useDoc((s) => s.rotateLineCircle);
   const addLineTag = useDoc((s) => s.addLineTag);
   const assignRegions = useDoc((s) => s.assignRegions);
   const setLineSegmentStyle = useDoc((s) => s.setLineSegmentStyle);
   const toggleEdgeOnLine = useDoc((s) => s.toggleEdgeOnLine);
   const removeStationFromLine = useDoc((s) => s.removeStationFromLine);
-  const routeBulletsAll = useDoc((s) => s.routeBullets);
   const rotateRouteBullet = useDoc((s) => s.rotateRouteBullet);
   const transfers = useDoc((s) => s.transfers);
-  const transferAnchors = useDoc((s) => s.transferAnchors);
   const styles = useDoc((s) => s.styles);
   const styleDefaults = useDoc((s) => s.styleDefaults);
-  const textLabelsAll = useDoc((s) => s.textLabels);
   const rotateTextLabel = useDoc((s) => s.rotateTextLabel);
-  const polygonsAll = useDoc((s) => s.polygons);
   const backgroundOrder = useDoc((s) => s.backgroundOrder);
   const rotatePolygon = useDoc((s) => s.rotatePolygon);
   const regionAssignments = useDoc((s) => s.regionAssignments);
-  const svgImagesAll = useDoc((s) => s.svgImages);
   const rotateSvgImage45 = useDoc((s) => s.rotateSvgImage45);
   const selection = useSelection();
   const snapModes = useSnapPrefs((s) => s.modes);
@@ -497,21 +507,35 @@ export function MapCanvas() {
   // Within one render the memos above have already refreshed both for the
   // current stations/lines, so the pair always matches the sig regionsFor
   // computes from them.
-  const regionGeom = useMemo(
-    () =>
-      needRegions
-        ? regionsFor(
-            { stations, lines, lineCircles },
-            { bands: bandsGeometry, markers: stopMarkers },
-            // Mid-gesture frames are never revisited, so the sig string and
-            // LRU bookkeeping are pure waste there — and skipping the inserts
-            // PRESERVES the pre-gesture entry for the commit reconcile's
-            // old-geometry lookup instead of evicting it within four frames.
-            { transient: isHistoryGrouping() },
-          )
-        : null,
-    [needRegions, stations, lines, lineCircles, bandsGeometry, stopMarkers],
-  );
+  // While the worker pipeline serves holes, the synchronous build stands down
+  // entirely — that build is the exact work the pipeline moved off this
+  // thread, and the inputs here are the FROZEN render-source slice, so the
+  // memo would otherwise recompute it per landed frame. Its other consumers
+  // are layering-mode-only (never concurrent with a drag) and tolerate null.
+  const pipelineFrame = useDragFrame((s) => s.frame);
+  const pipelineHoles = pipelineFrame?.holes ?? null;
+  const regionGeom = useMemo(() => {
+    if (!needRegions || pipelineHoles) return null;
+    // Deliberate impurity: the pipeline's arming signal must measure THIS
+    // build, which lives in this memo by design; the report defers its store
+    // writes to a microtask, so render stays write-free.
+    // eslint-disable-next-line react-hooks/purity
+    const t0 = performance.now();
+    const geom = regionsFor(
+      { stations, lines, lineCircles },
+      { bands: bandsGeometry, markers: stopMarkers },
+      // Mid-gesture frames are never revisited, so the sig string and
+      // LRU bookkeeping are pure waste there — and skipping the inserts
+      // PRESERVES the pre-gesture entry for the commit reconcile's
+      // old-geometry lookup instead of evicting it within four frames.
+      { transient: isHistoryGrouping() },
+    );
+    // The pipeline's arming signal: a build this expensive during a gesture
+    // is worth moving off-thread from the next frame on.
+    // eslint-disable-next-line react-hooks/purity
+    reportSyncRegionCost(performance.now() - t0);
+    return geom;
+  }, [needRegions, pipelineHoles, stations, lines, lineCircles, bandsGeometry, stopMarkers]);
   const regionWinners = useMemo(
     () =>
       regionGeom
@@ -519,9 +543,12 @@ export function MapCanvas() {
         : null,
     [regionGeom, regionAssignments, lineOrder],
   );
+  // Mid-pipelined-drag the holes are the worker's answer for the armed slice;
+  // otherwise the synchronous build, exactly as before.
   const regionExcludeHoles = useMemo(
     () =>
-      regionGeom && regionWinners
+      pipelineHoles ??
+      (regionGeom && regionWinners
         ? buildExclusionHolesCached(
             regionGeom.faces,
             regionWinners,
@@ -535,14 +562,17 @@ export function MapCanvas() {
             regionGeom.slivers,
             regionGeom.holeChain,
           )
-        : null,
-    [regionGeom, regionWinners, lineOrder, lines],
+        : null),
+    [pipelineHoles, regionGeom, regionWinners, lineOrder, lines],
   );
   // Tight outer bounds for the exclude clips (see regionClipBounds — a huge
   // constant outer rect breaks GPU clip rasterization precision at deep zoom).
+  // Computed from this render's own bands + markers (regionGeom holds the same
+  // arrays via the prebuilt pair) so it exists while the pipeline serves the
+  // holes and regionGeom stands down.
   const regionClipOuter = useMemo(
-    () => (regionGeom ? regionClipBounds(regionGeom.bands, regionGeom.markers) : null),
-    [regionGeom],
+    () => (needRegions ? regionClipBounds(bandsGeometry, stopMarkers) : null),
+    [needRegions, bandsGeometry, stopMarkers],
   );
 
   const itemDrag = useItemDrag(svgRef, view.viewport.zoom, inHandMode);
@@ -2270,17 +2300,24 @@ export function MapCanvas() {
           )}
 
           {/* Snap guides: rendered last so the dotted lines + measurement
-            labels sit on top of line tags and everything else. */}
+            labels sit on top of line tags and everything else. During a
+            pipelined drag the landed frame carries its own guides — captured
+            with the input that produced it — so the halo always encircles the
+            dot as painted; the hooks' live guides serve every other moment
+            (including the armed-but-not-yet-landed window, where hook state is
+            frozen at the same slice the canvas shows). */}
           <g data-export-exclude="1">
             <SnapGuides
-              guides={[
-                ...drag.snapGuides,
-                ...itemDrag.itemSnapGuides,
-                ...polyDrag.polygonSnapGuides,
-                ...svgDrag.svgImageSnapGuides,
-                ...circleDrag.snapGuides,
-                ...placementGuides,
-              ]}
+              guides={
+                pipelineFrame?.guides ?? [
+                  ...drag.snapGuides,
+                  ...itemDrag.itemSnapGuides,
+                  ...polyDrag.polygonSnapGuides,
+                  ...svgDrag.svgImageSnapGuides,
+                  ...circleDrag.snapGuides,
+                  ...placementGuides,
+                ]
+              }
               zoom={view.viewport.zoom}
             />
           </g>

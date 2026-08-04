@@ -1,5 +1,6 @@
-import { RefObject, useRef, useState } from 'react';
+import { RefObject, useRef } from 'react';
 import { beginHistoryGroup, useDoc } from '../../state/store';
+import { useRoutedSnapGuides } from './useRoutedSnapGuides';
 import type { SnapGuide } from '../../geometry/snap';
 import {
   normalizeRotation,
@@ -114,7 +115,7 @@ export function useSvgImageDrag(
   const moveRef = useRef<MoveState | null>(null);
   const resizeRef = useRef<ResizeState | null>(null);
   const rotateRef = useRef<RotateState | null>(null);
-  const [svgImageSnapGuides, setSvgImageSnapGuides] = useState<SnapGuide[]>([]);
+  const [svgImageSnapGuides, setSvgImageSnapGuides] = useRoutedSnapGuides('svgImage');
 
   const onSvgImagePointerDown = (id: string, e: React.PointerEvent) => {
     if (e.button !== 0 || inHandMode) return;
@@ -272,23 +273,25 @@ export function useSvgImageDrag(
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
+    // Exit first, clear second: the exit drains the pipeline, so the clear
+    // lands in hook state instead of being routed away (useRoutedSnapGuides).
     const mv = moveRef.current;
     if (mv) {
       moveRef.current = null;
-      setSvgImageSnapGuides([]);
       finishDrag(mv, e, svgRef);
+      setSvgImageSnapGuides([]);
     }
     const rz = resizeRef.current;
     if (rz) {
       resizeRef.current = null;
-      setSvgImageSnapGuides([]);
       finishDrag(rz, e, svgRef);
+      setSvgImageSnapGuides([]);
     }
     const rot = rotateRef.current;
     if (rot) {
       rotateRef.current = null;
-      setSvgImageSnapGuides([]);
       finishDrag(rot, e, svgRef);
+      setSvgImageSnapGuides([]);
     }
   };
 
@@ -303,10 +306,10 @@ export function useSvgImageDrag(
     moveRef.current = null;
     resizeRef.current = null;
     rotateRef.current = null;
-    setSvgImageSnapGuides([]);
     mv?.history.rollback();
     rz?.history.rollback();
     rot?.history.rollback();
+    setSvgImageSnapGuides([]);
   };
 
   return {

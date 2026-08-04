@@ -1,4 +1,5 @@
-import { useDoc, useSelection } from '../state/store';
+import { useSelection } from '../state/store';
+import { useRenderDoc } from '../state/renderDoc';
 import { useThemeColors } from '../state/theme';
 import { useViewportStore } from '../state/viewportStore';
 import type { Station } from '../model/types';
@@ -57,7 +58,7 @@ export function StationSilhouette({
   preview?: boolean;
 }) {
   const metrics = useStopMetrics();
-  const lineCircles = useDoc((s) => s.lineCircles);
+  const lineCircles = useRenderDoc((s) => s.lineCircles);
   const editingStationId = useSelection((s) => s.editingStationId);
   const themeColors = useThemeColors();
   // Paint toggle: reveal waypoint stations (widens the silhouette to wrap the

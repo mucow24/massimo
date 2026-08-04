@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { installDevHandle } from './debug/devHandle';
 import { loadClipper } from './geometry/clip';
+import { initRegionPipeline } from './worker/regionPipeline';
 import './styles.css';
 
 const mount = () => {
@@ -13,6 +14,10 @@ const mount = () => {
   // .perf/README.md), and a slowdown that takes an hour to appear has to be
   // catchable in whichever build is actually open.
   installDevHandle();
+  // Wire the region worker pipeline to the stores. On by default; it arms
+  // per-gesture (regions in play AND a slow synchronous build), and the flag
+  // on __massimo.regionPipeline is the kill switch.
+  initRegionPipeline();
   return ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <App />

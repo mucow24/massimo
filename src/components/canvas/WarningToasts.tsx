@@ -1,5 +1,6 @@
 import { useRef } from 'react';
-import { useDoc, useSelection } from '../../state/store';
+import { useSelection } from '../../state/store';
+import { useRenderDoc } from '../../state/renderDoc';
 import { useViewportStore } from '../../state/viewportStore';
 import type { SegmentBandSpec } from '../../geometry/interlining';
 import { SIDEBAR_WIDTH, sidebarVisible } from '../Sidebar';
@@ -28,7 +29,9 @@ export function WarningToasts({
   bands: readonly SegmentBandSpec[];
   hostSize: { w: number; h: number };
 }) {
-  const stations = useDoc((s) => s.stations);
+  // Render source: names only, so a lagged frame is visually identical — but
+  // reading live would re-render the toasts on every mid-drag doc write.
+  const stations = useRenderDoc((s) => s.stations);
   const setViewport = useViewportStore((s) => s.setViewport);
   const zoom = useViewportStore((s) => s.zoom);
   // Re-renders only when the panel toggles (boolean selector), never rebuilding
