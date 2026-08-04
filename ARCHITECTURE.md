@@ -3526,8 +3526,11 @@ Each is confirmed in source/tests; file pointers included.
   and kept in sync with the loadable gallery map `docs/wand-gallery.massimo.json`; regenerate
   with `UPDATE_WAND_GALLERY=1`).
   Shared helpers: `fixtures.ts` (`makeStation`/`makeLine`/…), `interaction.ts` (synthetic pointer/
-  wheel events + a `fakeSvg` with an identity screen↔world CTM), `setup.ts` (jsdom polyfills:
-  ResizeObserver, pointer-capture, scrollIntoView).
+  wheel events; a `fakeSvg` with an identity screen↔world CTM, paired by `fakeSvgRef` with a
+  stationary host rect and an svg rect that rides the pan layer's transform, so `useViewport`'s
+  host-vs-svg measurement is observable; `stubCanvasHostSize()` patches the prototype
+  `clientWidth`/`clientHeight` jsdom reports as 0, which any test rendering the canvas needs),
+  `setup.ts` (jsdom polyfills: ResizeObserver, pointer-capture, scrollIntoView).
 - **E2E (Playwright, [e2e/](e2e/))** — single-worker, no retries locally (2 on CI), honors `PORT` for parallel
   worktrees. `seedAndOpen` seeds a localStorage doc (`Seed*` shapes omit fields to simulate legacy
   saves) and opens the app — **this is the only place the rehydrate/migrate path is exercised**.

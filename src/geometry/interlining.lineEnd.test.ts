@@ -62,11 +62,19 @@ describe('buildStopMarkers — baked line end', () => {
   });
 
   it('keeps the stored round through a dashed excursion', () => {
-    // The degrade is render-time only: the doc still says round, so cycling
-    // the segment back to solid brings the round end straight back.
+    // The degrade is render-time only: building the markers must not write the
+    // downgraded 'short' back onto the doc, so cycling the segment to solid
+    // brings the round end straight back.
+    //
+    // The build has to actually RUN for that to mean anything. This previously
+    // asserted `endStyle === 'round'` on a doc it never passed to markers() —
+    // the fixture echoing its own argument — and then re-checked a fresh
+    // undashed doc, duplicating the both-termini test above.
     const dashed = chain({ endStyle: 'round', segmentStyles: { 'A|B': 'dashed' } });
+    // Precondition: this doc really does degrade at A, or there is no excursion.
+    expect(endAt(dashed, 'A')).toBe('short');
+    // ...and building it left the stored style alone.
     expect(dashed.lines.L1.endStyle).toBe('round');
-    expect(endAt(chain({ endStyle: 'round' }), 'A')).toBe('round');
   });
 
   it('gives a loop no ends at all', () => {

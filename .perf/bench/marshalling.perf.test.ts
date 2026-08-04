@@ -8,7 +8,7 @@
  * each way, on every call. This measures the split on the real per-frame
  * workload.
  *
- *   PERF=1 npx vitest run src/perf/marshalling.perf.test.ts --disableConsoleIntercept
+ *   PERF=1 npx vitest run -c .perf/vitest.bench.config.ts .perf/bench/marshalling.perf.test.ts --disableConsoleIntercept
  */
 import { describe, it, expect } from 'vitest';
 import { readPerfMap } from '../perfMap';

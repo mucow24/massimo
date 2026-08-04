@@ -3,8 +3,8 @@
  * Dumps a digest of every face produced over a real drag sequence on the MTA
  * map, so the masked and unmasked builders can be compared byte for byte:
  *
- *   PERF=1 PERF_MASK=0 npx vitest run src/perf/maskEquality.perf.test.ts --disableConsoleIntercept
- *   PERF=1              npx vitest run src/perf/maskEquality.perf.test.ts --disableConsoleIntercept
+ *   PERF=1 PERF_MASK=0 npx vitest run -c .perf/vitest.bench.config.ts .perf/bench/maskEquality.perf.test.ts --disableConsoleIntercept
+ *   PERF=1              npx vitest run -c .perf/vitest.bench.config.ts .perf/bench/maskEquality.perf.test.ts --disableConsoleIntercept
  *   diff .perf/faces-nomask.txt .perf/faces-mask.txt
  */
 import { describe, it, expect } from 'vitest';

@@ -1,31 +1,18 @@
+import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { act, render, fireEvent } from '@testing-library/react';
 import App from '../App';
-import { dragState, useDoc } from '../state/store';
-import { useSelection } from '../state/selection';
-import { useViewportStore } from '../state/viewportStore';
-import { DEFAULT_DOC } from '../model/transforms';
-import { makeLine, makeStation, makeStop } from '../test/fixtures';
 import { pairKeyOf } from '../model/pairKey';
+import { DEFAULT_DOC } from '../model/transforms';
 import type { LineId, StationId } from '../model/types';
+import { useSelection } from '../state/selection';
+import { dragState, useDoc } from '../state/store';
+import { useViewportStore } from '../state/viewportStore';
+import { makeLine, makeStation, makeStop } from '../test/fixtures';
+import { stubCanvasHostSize } from '../test/interaction';
 
-// Edit Stops: alt-click ON the armed segment splices a new station into it at
-// the click point (the "drop a stop mid-segment" gesture). Previously the
-// alt-click was intercepted by the alt-pick, which only ever RE-ARMED the
-// segment under the cursor — so clicking the middle of the armed segment did
-// nothing. Now the alt-pick, landing back on the already-armed segment,
-// splices instead (the same create the alt-click over empty canvas makes).
+stubCanvasHostSize();
 
-// jsdom reports clientWidth/clientHeight as 0, collapsing the viewBox to 0×0.
-// Give the canvas a real size (mirrors MapCanvas.deepPick.test.tsx).
-const sizeProps = ['clientWidth', 'clientHeight'] as const;
-const originals: Partial<Record<(typeof sizeProps)[number], PropertyDescriptor>> = {};
 beforeEach(() => {
-  for (const prop of sizeProps) {
-    originals[prop] = Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop);
-  }
-  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 800 });
-  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: 600 });
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useDoc.temporal.getState().clear();
   useSelection.setState({
@@ -39,12 +26,20 @@ beforeEach(() => {
   useViewportStore.setState({ x: 0, y: 0, zoom: 1 });
   dragState.suppressClick = false;
 });
+
+// ---------------------------------------------------------------------------
+// from MapCanvas.appendSpliceByClick.test.tsx
+// ---------------------------------------------------------------------------
+// Edit Stops: alt-click ON the armed segment splices a new station into it at
+// the click point (the "drop a stop mid-segment" gesture). Previously the
+// alt-click was intercepted by the alt-pick, which only ever RE-ARMED the
+// segment under the cursor — so clicking the middle of the armed segment did
+// nothing. Now the alt-pick, landing back on the already-armed segment,
+// splices instead (the same create the alt-click over empty canvas makes).
+
+// jsdom reports clientWidth/clientHeight as 0, collapsing the viewBox to 0×0.
+// Give the canvas a real size (mirrors MapCanvas.deepPick.test.tsx).
 afterEach(() => {
-  for (const prop of sizeProps) {
-    const d = originals[prop];
-    if (d) Object.defineProperty(HTMLElement.prototype, prop, d);
-    else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[prop];
-  }
   delete (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;
 });
 
@@ -175,5 +170,72 @@ describe('Edit Stops — alt-click on the armed segment splices a station', () =
     expect(line.stations).toEqual(['A', 'B']); // no station created
     const mode = useSelection.getState().uiMode;
     expect(mode.kind === 'appending-to-line' && mode.cursor?.kind).toBe('edge');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// from MapCanvas.appendDeepPickHand.test.tsx
+// ---------------------------------------------------------------------------
+// hand/pan mode must be pan-only. Every other Edit Stops mutation path
+// is gated on it (onCanvasClick's `if (inHandMode) return`,
+// useStationInteraction's `onClick: modeInert || inHandMode ? undefined`,
+// LineTagsLayer's tag pointerdown, and the sibling idle deep-pick's
+// `if (inHandMode || uiMode.kind !== 'idle') return false`). appendDeepPick
+// carries the same guard, which is what these tests pin: it mutates the doc
+// (since the splice-by-alt-click change), so going inert in hand mode is the
+// difference between panning over a line and silently splicing it.
+//
+// Harness mirrors src/components/MapCanvas.appendSpliceByClick.test.tsx.
+afterEach(() => {
+  delete (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;
+});
+
+const stationCount = () => Object.keys(useDoc.getState().stations).length;
+
+describe('Edit Stops alt-pick must be inert in hand/pan mode', () => {
+  it('space-held: alt-click on the armed segment does NOT splice a station in', () => {
+    render(<App />);
+    seedAndEnter();
+    stubSvgRect();
+    stubStripeOnly();
+    act(() => useSelection.getState().setAppendCursor({ kind: 'edge', from: 'A', to: 'B' }));
+    act(() => useSelection.setState({ ...useSelection.getState(), spaceHeld: true }));
+
+    altClickStripe();
+
+    const line = useDoc.getState().lines.L1;
+    expect(stationCount()).toBe(2);
+    expect(line.stations).toEqual(['A', 'B']);
+    expect(line.edges).toContain('A|B');
+  });
+
+  it('hand tool: alt-click on the armed segment does NOT splice a station in', () => {
+    render(<App />);
+    seedAndEnter();
+    stubSvgRect();
+    stubStripeOnly();
+    act(() => useSelection.getState().setAppendCursor({ kind: 'edge', from: 'A', to: 'B' }));
+    act(() => useSelection.setState({ ...useSelection.getState(), toolMode: 'hand' }));
+
+    altClickStripe();
+
+    const line = useDoc.getState().lines.L1;
+    expect(stationCount()).toBe(2);
+    expect(line.stations).toEqual(['A', 'B']);
+    expect(line.edges).toContain('A|B');
+  });
+
+  it('hand mode alt-click records NO undo entry', () => {
+    render(<App />);
+    seedAndEnter();
+    stubSvgRect();
+    stubStripeOnly();
+    act(() => useSelection.getState().setAppendCursor({ kind: 'edge', from: 'A', to: 'B' }));
+    act(() => useSelection.setState({ ...useSelection.getState(), spaceHeld: true }));
+    useDoc.temporal.getState().clear();
+
+    altClickStripe();
+
+    expect(useDoc.temporal.getState().pastStates.length).toBe(0);
   });
 });

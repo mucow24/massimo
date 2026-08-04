@@ -4,7 +4,7 @@
  * single station moves, and how many pair intersections a spatially chunked
  * body would actually have to compute.
  *
- *   PERF=1 npx vitest run src/perf/bodyStats.perf.test.ts --disableConsoleIntercept
+ *   PERF=1 npx vitest run -c .perf/vitest.bench.config.ts .perf/bench/bodyStats.perf.test.ts --disableConsoleIntercept
  */
 import { describe, it, expect } from 'vitest';
 import { readPerfMap } from '../perfMap';

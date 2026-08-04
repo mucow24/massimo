@@ -34,23 +34,19 @@ vi.mock('../state/mapLibrary', () => ({
 }));
 
 import App from '../App';
-import { exportCanvasSvg, captureThumbnail } from '../export/exportCanvas';
+import { exportCanvasSvg, captureThumbnail, EXPORT_EXCLUDE_ATTR } from '../export/exportCanvas';
 import { saveVersion } from '../state/mapLibrary';
 import { useLibraryPointer } from '../state/libraryPointer';
 import { useDoc, useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
-import { makeDoc, makeLine, makePolygon, stationWithStop } from '../test/fixtures';
+import { makeDoc, makeLine, makePolygon, makeTextLabel, stationWithStop } from '../test/fixtures';
 import type { LineId, StationId } from '../model/types';
+import { stubCanvasHostSize } from '../test/interaction';
 
-const sizeProps = ['clientWidth', 'clientHeight'] as const;
-const originals: Partial<Record<(typeof sizeProps)[number], PropertyDescriptor>> = {};
+stubCanvasHostSize();
+
 beforeEach(() => {
-  for (const prop of sizeProps) {
-    originals[prop] = Object.getOwnPropertyDescriptor(HTMLElement.prototype, prop);
-  }
-  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, value: 800 });
-  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, value: 600 });
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
   useDoc.temporal.getState().clear();
   useViewportStore.setState({ x: 0, y: 0, zoom: 1, showNetwork: true });
@@ -59,13 +55,6 @@ beforeEach(() => {
   vi.mocked(captureThumbnail).mockClear();
   vi.mocked(saveVersion).mockClear();
   useLibraryPointer.setState({ mapId: null, version: null });
-});
-afterEach(() => {
-  for (const prop of sizeProps) {
-    const d = originals[prop];
-    if (d) Object.defineProperty(HTMLElement.prototype, prop, d);
-    else delete (HTMLElement.prototype as unknown as Record<string, unknown>)[prop];
-  }
 });
 
 const seed = () =>
@@ -223,5 +212,102 @@ describe('Toolbar — export is independent of the lines/stations toggle', () =>
     expect(captured.querySelectorAll('[data-dim]').length).toBe(0);
     expect(captured.querySelectorAll('[data-band-stripe]').length).toBeGreaterThan(0);
     expect(useSelection.getState().selectedLineId).toBe('L1');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// from Toolbar.layeringExport.test.tsx — same mocks, same beforeEach, same
+// exportSvg helper; only the seed fixture and the assertions differ.
+// ---------------------------------------------------------------------------
+afterEach(() => {
+  useSelection.setState({ uiMode: { kind: 'idle' } });
+});
+
+const seedLayering = () =>
+  act(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...makeDoc({
+        stations: [
+          stationWithStop('s1' as StationId, 'L1' as LineId, { x: 0, y: 0 }, { name: 'Bond St' }),
+          stationWithStop('s2' as StationId, 'L1' as LineId, { x: 200, y: 0 }, { name: 'Oxford' }),
+        ],
+        lines: [makeLine({ id: 'L1' as LineId, stations: ['s1', 's2'] as StationId[] })],
+        lineOrder: ['L1' as LineId],
+        textLabels: [makeTextLabel({ id: 't1', text: 'River Thames', x: 60, y: 60 })],
+      }),
+    });
+  });
+
+/** buildExportSvg's own strip pass (exportCanvas.ts), applied to a snapshot. */
+const stripChrome = (svg: SVGSVGElement): SVGSVGElement => {
+  svg
+    .querySelectorAll(`[data-bg],[${EXPORT_EXCLUDE_ATTR}],foreignObject`)
+    .forEach((el) => el.remove());
+  return svg;
+};
+
+/** Effective opacity of `el`: the product of every `opacity` attribute from the
+ *  element up to the (detached) root — exactly how SVG composites it. */
+const effectiveOpacity = (el: Element): number => {
+  let o = 1;
+  for (let n: Element | null = el; n; n = n.parentElement) {
+    const a = n.getAttribute('opacity');
+    if (a !== null) o *= Number(a);
+  }
+  return o;
+};
+
+/** The painted <text> carrying `name` in a captured snapshot. */
+const labelTextNamed = (svg: SVGSVGElement, name: string): SVGTextElement => {
+  const hit = Array.from(svg.querySelectorAll('text')).find((t) =>
+    (t.textContent ?? '').includes(name),
+  );
+  if (!hit) throw new Error(`no <text> containing "${name}" in the snapshot`);
+  return hit;
+};
+
+describe('export must not bake layering mode’s focus fade into the file', () => {
+  it('exports station names, text labels at full opacity while layering mode is on', async () => {
+    render(<App />);
+    seedLayering();
+    act(() => {
+      useSelection.getState().setUiMode({ kind: 'layering' });
+    });
+    // Precondition: the mode really is on, so the assertions can't pass vacuously.
+    expect(useSelection.getState().uiMode.kind).toBe('layering');
+
+    const captured = stripChrome(await exportSvg());
+
+    // Layering mode is an editing aid — a focus dim so the eye stays on the
+    // band layers. It is not a decision about the map's content, so, like the
+    // line-selection dim and the lines/stations toggle, it must not reach the
+    // file.
+    expect(effectiveOpacity(labelTextNamed(captured, 'Bond St'))).toBe(1);
+    expect(effectiveOpacity(captured.querySelector('[data-text-label-id="t1"]')!)).toBe(1);
+  });
+
+  it('baseline: exports them at full opacity outside layering mode', async () => {
+    render(<App />);
+    seedLayering();
+    const captured = stripChrome(await exportSvg());
+    expect(effectiveOpacity(labelTextNamed(captured, 'Bond St'))).toBe(1);
+    expect(effectiveOpacity(captured.querySelector('[data-text-label-id="t1"]')!)).toBe(1);
+  });
+
+  it('captures a library thumbnail at full opacity while layering mode is on', async () => {
+    render(<App />);
+    seedLayering();
+    act(() => {
+      useSelection.getState().setUiMode({ kind: 'layering' });
+    });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Save version' }));
+    await waitFor(() => expect(captureThumbnail).toHaveBeenCalledTimes(1));
+
+    const captured = stripChrome(vi.mocked(captureThumbnail).mock.calls[0][0]);
+    expect(effectiveOpacity(labelTextNamed(captured, 'Bond St'))).toBe(1);
   });
 });

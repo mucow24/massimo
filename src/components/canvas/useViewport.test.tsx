@@ -325,6 +325,28 @@ describe('useViewport — panning', () => {
     expect(panLayer.style.transform).toBe('');
   });
 
+  it('anchors screenToWorld to the STATIONARY host mid-pan, not the moving svg', () => {
+    // hostRect() measures the pan layer's parent (.canvas-host) rather than the
+    // svg, because mid-pan the svg rides the layer's composited transform and
+    // getBoundingClientRect() reports it moved. Measuring the svg would shift
+    // the mapping by the very delta liveViewport already carries — the pan gets
+    // counted twice and any cursor-following overlay drifts off the pointer.
+    const { result, svg, panLayer } = render();
+    down(result, pointerEvent({ clientX: 100, clientY: 100, button: 0 }));
+    move(result, pointerEvent({ clientX: 150, clientY: 130 }));
+
+    // Precondition: the two rects genuinely differ, or this test proves nothing.
+    expect(panLayer.style.transform).toBe('translate(50px, 30px)');
+    expect(panLayer.parentElement.getBoundingClientRect().left).toBe(0);
+    expect(svg.getBoundingClientRect().left).toBe(50);
+    expect(svg.getBoundingClientRect().top).toBe(30);
+
+    // Screen centre through the live viewBox (pending centre = -50, -30).
+    // Anchored on the stationary host that is exactly the pending centre;
+    // anchored on the shifted svg it would come back (-100, -60).
+    expect(result.current.screenToWorld(400, 300)).toEqual({ x: -50, y: -30 });
+  });
+
   it('promotes the pan layer on pan start and demotes it when the gesture ends', () => {
     // will-change is gesture-scoped: promotion happens at pointer-down (the
     // one-off layerization raster hides in the press), and the layer is

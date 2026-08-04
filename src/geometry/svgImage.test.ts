@@ -21,10 +21,11 @@ const base = (over: Partial<SvgImageGeom> = {}): SvgImageGeom => ({
   ...over,
 });
 
-const near = (a: { x: number; y: number }, b: { x: number; y: number }, eps = 1e-6) => {
+// Fixed 6-digit tolerance. (It used to advertise an `eps` parameter and then
+// `void` it, so a caller passing 0.5 silently got 6-digit strictness.)
+const near = (a: { x: number; y: number }, b: { x: number; y: number }) => {
   expect(a.x).toBeCloseTo(b.x, 6);
   expect(a.y).toBeCloseTo(b.y, 6);
-  void eps;
 };
 
 describe('normalizeRotation', () => {

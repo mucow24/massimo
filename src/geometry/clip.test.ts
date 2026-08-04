@@ -25,8 +25,11 @@ const totalArea = (rings: Vec2[][]): number =>
   splitIntoFaces(rings).reduce((s, f) => s + faceArea(f), 0);
 
 describe('unionAll', () => {
-  it('merges two overlapping squares into one ring with the combined area', () => {
+  it('merges two overlapping squares into one solid ring (NonZero fill, not EvenOdd)', () => {
     // [-10,10]² and [-2,18]×[-10,10]: overlap 12×20 = 240 → 400+400-240 = 560.
+    // The rings wind the same way, so the overlap has winding number 2: EvenOdd
+    // would punch it out as a hole, NonZero keeps it solid. That is what the
+    // no-holes assertion below is really pinning.
     const out = unionAll([sq(0, 0, 10), sq(8, 0, 10)]);
     const faces = splitIntoFaces(out);
     expect(faces).toHaveLength(1);
@@ -51,16 +54,6 @@ describe('unionAll', () => {
   it('unions exactly coincident squares to a single square', () => {
     const out = unionAll([sq(0, 0, 10), sq(0, 0, 10)]);
     expect(totalArea(out)).toBeCloseTo(400, 0);
-  });
-
-  it('keeps same-winding overlap solid (NonZero fill, not EvenOdd)', () => {
-    // Two same-winding overlapping rings: winding number 2 in the overlap.
-    // EvenOdd would punch the overlap out as a hole; NonZero must keep it solid.
-    const out = unionAll([sq(0, 0, 10), sq(8, 0, 10)]);
-    const faces = splitIntoFaces(out);
-    expect(faces).toHaveLength(1);
-    expect(faces[0].length).toBe(1); // no hole where the rings overlap
-    expect(faceArea(faces[0])).toBeCloseTo(560, 0);
   });
 });
 

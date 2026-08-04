@@ -74,13 +74,11 @@ describe('rasterizeMaskedImages', () => {
     expect(pxH).toBeGreaterThan(80);
   });
 
-  it('decodes URL-encoded svg+xml hrefs too', async () => {
-    const { svg, image } = makeSvgWithImage(`data:image/svg+xml,${encodeURIComponent(MASKED_SVG)}`);
-    const rasterize = vi.fn(async () => 'data:image/png;base64,STUBPNG');
-    await rasterizeMaskedImages(svg, rasterize);
-    expect(image.getAttribute('href')).toBe('data:image/png;base64,STUBPNG');
-  });
-
+  // The href ENCODINGS (base64, URL-encoded, xlink fallback) are
+  // decodeEmbeddedSvgImage's, pinned at embeddedSvg.test.ts:24; re-running them
+  // through this delegator added nothing. The xlink case below stays, because
+  // the write-back target following the attribute form is this function's own
+  // behaviour and embeddedSvg only decodes.
   it('rewrites an xlink:href in place', async () => {
     const { svg, image } = makeSvgWithImage(dataUri(MASKED_SVG), 'xlink');
     const rasterize = vi.fn(async () => 'data:image/png;base64,STUBPNG');

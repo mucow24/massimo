@@ -17,8 +17,11 @@ import type { MapDoc, StopOrientation } from '../model/types';
 //
 // This models the clip geometrically (jsdom doesn't apply SVG clipping): a seam
 // sample on band b's edge is "visible" iff it lies within w/2 of ANOTHER band's
-// centerline. On its own straight run the edge only touches its own corridor
-// boundary, so a lone straight line (and a collinear joint) shows no seam.
+// centerline AND that band's nearest point is interior to its run. The second
+// half carries the collinear cases, where distance alone says nothing: an edge
+// point is exactly w/2 from any collinear centerline whether the bands merely
+// meet end-to-end or genuinely overlap. So a lone straight line and a collinear
+// joint show no seam, while a collinear self-overlap does.
 // ---------------------------------------------------------------------------
 
 function visibleSeamPoints(doc: MapDoc, lineId: string): number {
@@ -37,15 +40,29 @@ function visibleSeamPoints(doc: MapDoc, lineId: string): number {
       for (let i = 0; i <= 40; i++) {
         const { p } = sampleOffsetPath(b.centerline, b.radius, off, i / 40);
         if (nearDot(p)) continue;
-        // Strictly inside a DIFFERENT band's corridor? (The seam's own corridor
-        // is excluded by the clip; a collinear joint only reaches the boundary,
-        // not the interior — the margin keeps that from counting.)
-        const inOther = bands.some(
-          (o) =>
-            o !== b &&
-            closestParamOnOffsetPath(o.centerline, o.radius, o.stripeOffsets[0], p).dist <
-              w / 2 - 0.5,
-        );
+        // Inside a DIFFERENT band's corridor? (The seam's own corridor is
+        // excluded by the clip.)
+        //
+        // Distance alone cannot answer this for collinear bands: a point on b's
+        // edge sits at EXACTLY w/2 from any collinear centerline, whether the
+        // two bands merely meet end-to-end or genuinely overlap. A margin that
+        // excluded the boundary therefore made every collinear case impossible
+        // to count, so the "no seam at a collinear joint" assertion below held
+        // by construction rather than by product behaviour.
+        //
+        // What separates a joint from an overlap is ALONG-track position: at a
+        // joint the nearest point of the neighbouring band is its shared
+        // endpoint (t at 0 or 1); in an overlap it is interior to the run.
+        const inOther = bands.some((o) => {
+          if (o === b) return false;
+          const { t, dist } = closestParamOnOffsetPath(
+            o.centerline,
+            o.radius,
+            o.stripeOffsets[0],
+            p,
+          );
+          return dist <= w / 2 + 1e-6 && t > 0.02 && t < 0.98;
+        });
         if (inOther) visible++;
       }
     }
@@ -79,7 +96,28 @@ describe('branch seam is localized to self-overlaps', () => {
       ],
       lines: [seamLine(['s1|s2'])],
     });
+    // The content is the band count: one edge builds one band, so there is no
+    // OTHER corridor for the seam to survive in. Without this the assertion
+    // below is just `[].some(...)` and holds for any implementation.
+    expect(buildBands(doc.stations, doc.lines, doc.lineOrder)).toHaveLength(1);
     expect(visibleSeamPoints(doc, 'l1')).toBe(0);
+  });
+
+  it('a COLLINEAR self-overlap does show the seam', () => {
+    // The positive counterpart to the collinear-joint case below, on the same
+    // probe: a|b and b|c meet end-to-end, and a|c runs the whole length back
+    // over both. Same headings, same collinearity — the only difference is that
+    // corridors genuinely overlap here, so this is what proves the "no seam at
+    // a collinear joint" assertion is reporting geometry and not a tautology.
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 'a', x: -120, y: 0, stops: [hStop()] }),
+        makeStation({ id: 'b', x: 0, y: 0, stops: [hStop()] }),
+        makeStation({ id: 'c', x: 120, y: 0, stops: [hStop()] }),
+      ],
+      lines: [seamLine(['a|b', 'b|c', 'a|c'])],
+    });
+    expect(visibleSeamPoints(doc, 'l1')).toBeGreaterThan(0);
   });
 
   it('a plain collinear through-station shows NO seam (an end-to-end joint is not an overlap)', () => {

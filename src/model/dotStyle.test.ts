@@ -72,6 +72,8 @@ describe('resolveDotRender', () => {
     expect(out!.code).toEqual({ text: 'A', color: '#000' });
   });
 
+  // Also the no-override pin: passing the size argument as an explicit
+  // `undefined` is the same call as omitting it, as this test does.
   it('uses the standard dot radius without a code and the larger disc with one', () => {
     expect(resolveDotRender(style(), undefined, undefined, false)!.r).toBeCloseTo(
       STOP_DOT_RADIUS,
@@ -117,16 +119,6 @@ describe('resolveDotRender', () => {
       const out = resolveDotRender(withCode, undefined, 'A', false, 8)!;
       expect(out.r).toBe(4);
       expect(out.code).toEqual({ text: 'A', color: '#fff' });
-    });
-
-    it('keeps the per-style fixed radii when no override exists (pin)', () => {
-      expect(resolveDotRender(style(), undefined, undefined, false, undefined)!.r).toBe(
-        STOP_DOT_RADIUS,
-      );
-      const withCode = style({ showServiceCode: true });
-      expect(resolveDotRender(withCode, undefined, 'A', false, undefined)!.r).toBe(
-        SERVICE_CODE_DOT_RADIUS,
-      );
     });
 
     it('size 0 resolves to r 0 (invisible but present)', () => {

@@ -19,17 +19,8 @@ describe('effectiveLineOrder', () => {
     expect(result).toEqual(['l0', 'l1', 'l2']);
   });
 
-  it('filters out ids whose line no longer exists', () => {
-    const lines = linesFrom(['l0', 'l2']);
-    const result = effectiveLineOrder(['l0', 'l1', 'l2'] as LineId[], lines);
-    // l1 is dead — dropped. Surviving ids keep their declared order.
-    expect(result).toEqual(['l0', 'l2']);
-  });
-
-  it('appends line keys missing from the order, after the declared ones', () => {
-    const lines = linesFrom(['l0', 'l1', 'l2']);
-    const result = effectiveLineOrder(['l2', 'l0'] as LineId[], lines);
-    // Declared order preserved (l2, l0), then the missing l1 appended.
-    expect(result).toEqual(['l2', 'l0', 'l1']);
-  });
+  // The filter-dead-ids and append-missing rules are reconcileOrder's, and
+  // effectiveLineOrder is a one-line delegate to it — they are pinned at
+  // recordOrder.test.ts:12 and :16. Only the `?? []` fallback above is this
+  // function's own behaviour.
 });

@@ -318,10 +318,13 @@ describe('<StopRows />', () => {
     expect(useSelection.getState().selectedLineId).toBe('L2');
   });
 
-  it('every row has an ENABLED shape picker (no selection ritual)', () => {
+  it('every row has exactly one ENABLED shape picker (no selection ritual)', () => {
     seed({ a: hub() });
     renderRows();
     const rows = screen.getAllByTestId('stop-row');
+    // One per stop row, not one for the station — the count carried the
+    // StationInspector-level copy of this test that used to live next door.
+    expect(screen.getAllByRole('button', { name: 'Stop shape' })).toHaveLength(rows.length);
     for (const row of rows) {
       expect(within(row).getByRole('button', { name: 'Stop shape' })).toHaveAttribute(
         'aria-disabled',
@@ -474,7 +477,11 @@ describe('<StopRows /> — line ends', () => {
   it('offers it where the line BRANCHES at that end, degree 2 and all', () => {
     branchedAtA();
     renderRows();
-    expect(screen.getByRole('combobox', { name: endCombo('1') })).toBeTruthy();
+    // Must be ENABLED, not merely present: the picker renders at every stop and
+    // is only `disabled={!isTerminus}`, so a regression to the degree-1 rule
+    // (the one a2eee69 fixed) leaves it rendered-but-greyed — which getByRole
+    // still finds. `toBeTruthy` on the query alone could not tell those apart.
+    expect(screen.getByRole('combobox', { name: endCombo('1') })).toBeEnabled();
   });
 
   it('greys it out at an interior stop rather than vanishing', () => {

@@ -167,14 +167,9 @@ describe('MapCanvas — stroke edits repaint without a geometry rebuild', () => 
     // longer suppresses its cap — nothing replaces the line's end anymore.
     expect(markerCasingEls('L1')).toHaveLength(12);
 
-    // No cased terminus arrowhead survives: no fattened underlay copy (18-wide,
-    // 'Z'-closed) in the stroke color.
-    const arrowCasing = Array.from(document.querySelectorAll('path')).filter(
-      (p) =>
-        p.getAttribute('stroke-width') === '18' &&
-        p.getAttribute('stroke') === '#ffffff' &&
-        p.getAttribute('d')?.includes('Z'),
-    );
-    expect(arrowCasing.length).toBe(0);
+    // (The removed terminus arrowheads get their own describe in
+    // HighlightedLineLayer.test.tsx:55, which matches the closed-triangle path
+    // shape directly. A zero-count filter here for an 18-wide '#ffffff' 'Z'
+    // path could not tell "the arrowhead is gone" from "the filter is wrong".)
   });
 });

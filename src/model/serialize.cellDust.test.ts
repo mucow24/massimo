@@ -109,9 +109,16 @@ describe('cell dust is repaired on both load paths', () => {
     // DIFFERS from the config version, and dust is not tied to a schema bump —
     // docs saved by today's build carry it at today's version. So the repair
     // has to ride the `merge` hook, which runs on every rehydrate.
+    // Read the live persist version rather than a literal: the whole point is
+    // that the stored version EQUALS the config version, so zustand skips
+    // `migrate` and only `merge` can do the repair. A hardcoded number silently
+    // stops testing that the day the version bumps.
     localStorage.setItem(
       'vignelli-map-doc-v1',
-      JSON.stringify({ version: 22, state: { stations: { s1: dustyStation() } } }),
+      JSON.stringify({
+        version: useDoc.persist.getOptions().version,
+        state: { stations: { s1: dustyStation() } },
+      }),
     );
     useDoc.persist.rehydrate();
     const st = useDoc.getState().stations.s1;

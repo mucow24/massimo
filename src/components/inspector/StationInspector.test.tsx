@@ -38,26 +38,9 @@ describe('<StationInspector /> — shape picker wiring', () => {
     useSelection.setState(SELECTION_BLANK);
   });
 
-  it('renders one ALWAYS-enabled picker per stop row — no selection ritual', () => {
-    useDoc.setState({
-      ...DEFAULT_DOC,
-      ...makeDoc({
-        stations: [
-          makeStation({
-            id: 'a',
-            stops: [makeStop('L1'), makeStop('L2', { col: 1 })],
-          }),
-        ],
-        lines: [makeLine({ id: 'L1', stations: ['a'] }), makeLine({ id: 'L2', stations: ['a'] })],
-      }),
-    });
-    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
-
-    render(<StationInspector id="a" />);
-    const pickers = screen.getAllByRole('button', { name: 'Stop shape' });
-    expect(pickers).toHaveLength(2);
-    for (const p of pickers) expect(p).toHaveAttribute('aria-disabled', 'false');
-  });
+  // The always-enabled shape picker (and the one-per-stop-row count) belongs to
+  // StopRows and is pinned there — StopRows.test.tsx:296 — for ~1/20th the cost
+  // of mounting the whole inspector.
 
   it('clicking the picker trigger does not deselect the stop (picker stays enabled)', async () => {
     const user = userEvent.setup();
