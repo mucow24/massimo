@@ -1807,7 +1807,10 @@ const makeDefaultWinner = (
     const front = basePaintWinner(face, orderIdx);
     const lines = distinctCoverLines(face.lineIds);
     if (lines.length !== 1) return front;
-    const arms = face.lineIds.filter(isArmCoverId).map(armOfCover);
+    const arms = face.lineIds
+      .filter(isArmCoverId)
+      .map(armOfCover)
+      .filter((a): a is number => a !== null);
     if (arms.length < 2 || arms.length !== face.lineIds.length) return front;
     const byArm = countsFor(front);
     const armStations = arms.map((a) => byArm.get(a) ?? new Map<string, number>());

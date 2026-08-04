@@ -123,7 +123,11 @@ describe('MapCanvas — region clip selection (edge → arm → line)', () => {
     expect(branchArm).not.toBe(trunkArm);
     // The crossing lives in its own component, so both covers are merged
     // line ids there; painting it makes orange a LINE-level loser.
-    const set2 = paintFace(doc, lineOrder, (f) => f.lineIds.includes('oa') && f.lineIds.includes('gr'));
+    const set2 = paintFace(
+      doc,
+      lineOrder,
+      (f) => f.lineIds.includes('oa') && f.lineIds.includes('gr'),
+    );
     expect(set2.lineId).toBe('gr');
     const { container } = render(<App />);
     act(() => {
