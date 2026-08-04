@@ -38,6 +38,19 @@ export type DragFrameDoc = Pick<
   | 'transferAnchors'
 >;
 
+/** The towed collections of a doc state, as an overlay-able frame. */
+export function pickDragFrameDoc(s: DragFrameDoc): DragFrameDoc {
+  return {
+    stations: s.stations,
+    lineCircles: s.lineCircles,
+    polygons: s.polygons,
+    svgImages: s.svgImages,
+    routeBullets: s.routeBullets,
+    textLabels: s.textLabels,
+    transferAnchors: s.transferAnchors,
+  };
+}
+
 export const useRenderDoc = create<DocSnapshot>(() => pickDocSnapshot(useDoc.getState()));
 
 let armedOverlay: DragFrameDoc | null = null;
