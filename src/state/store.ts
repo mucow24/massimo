@@ -275,7 +275,7 @@ if (typeof window !== 'undefined') {
 }
 
 /**
- * Persisted-document version migration (v0 → v21). Exported and pure so it can
+ * Persisted-document version migration (v0 → v24). Exported and pure so it can
  * be unit-tested in isolation; the persist config below just delegates here.
  * Never mutates `persisted` — returns a possibly-new doc snapshot.
  *

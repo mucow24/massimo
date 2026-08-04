@@ -1,5 +1,6 @@
 import type { Station, Transfer, TransferAnchor } from '../model/types';
-import { resolveDayNight, resolveTransferStyle, type TransferStyle } from '../model/transferStyle';
+import { resolveTransferStyle, type TransferStyle } from '../model/transferStyle';
+import { resolveDayNight } from '../model/dayNightColor';
 import { transferEndWorld } from '../geometry/transferEnds';
 import { useThemeColors } from '../state/theme';
 import { useDoc } from '../state/store';

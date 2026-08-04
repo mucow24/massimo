@@ -12,6 +12,7 @@ import type {
 import { STOP_DOT_RADIUS } from '../geometry/orientation';
 import { legibleTextOn } from '../util/color';
 import { snapToStep } from '../util/grid';
+import { dayNightColorsEqual, resolveDayNight } from './dayNightColor';
 
 // A dot showing its service code uses a larger disc than STOP_DOT_RADIUS so
 // the code inside stays legible. (Moved here from StopGlyph — the radius is a
@@ -335,14 +336,12 @@ export function resolveDotStyle(
   );
 }
 
-const dayNight = (c: DayNightColor, darkMode: boolean): string => (darkMode ? c.night : c.day);
-
 function resolveFill(fill: DotFill, lineColor: string | undefined, darkMode: boolean): string {
   if (fill === 'none') return 'none';
   // Fall back to black when the caller has no line in scope (e.g. a picker
   // preview outside any line context) — same convention as badgeColors.
   if (fill === 'line') return lineColor ?? '#000';
-  return dayNight(fill, darkMode);
+  return resolveDayNight(fill, darkMode);
 }
 
 // Resolve a 'line'-or-pair color reference — a dot's stroke, or its service
@@ -355,7 +354,7 @@ function resolveLineOrPairColor(
   darkMode: boolean,
 ): string {
   if (color === 'line') return lineColor ?? '#000';
-  return dayNight(color, darkMode);
+  return resolveDayNight(color, darkMode);
 }
 
 // Concrete per-frame render parameters for one dot. Strings are ready-to-emit
@@ -436,8 +435,10 @@ export function resolveDotRender(
 }
 
 function dotColorsEqual(a: DotFill | DotStrokeColor, b: DotFill | DotStrokeColor): boolean {
+  // A sentinel ('line'/'none') matches only the identical sentinel; two
+  // day/night pairs compare through the shared structural equality.
   if (typeof a === 'string' || typeof b === 'string') return a === b;
-  return a.day === b.day && a.night === b.night;
+  return dayNightColorsEqual(a, b);
 }
 
 // Optional service-code color: absent compares equal only to absent; two

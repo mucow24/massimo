@@ -2,7 +2,8 @@ import * as Select from '@radix-ui/react-select';
 import { FieldSelectContent } from './FieldSelectContent';
 import { useDoc } from '../state/store';
 import { stylesOfKind } from '../model/styles';
-import { resolveDayNight, resolveTransferStyle } from '../model/transferStyle';
+import { resolveTransferStyle } from '../model/transferStyle';
+import { resolveDayNight } from '../model/dayNightColor';
 import type { Transfer, TransferStyleProps } from '../model/types';
 
 // Select sentinels. Real style ids are UUIDs (or `y0`-style counter ids in
