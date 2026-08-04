@@ -21,6 +21,7 @@ import { regionCacheSize, resetRegionCache } from '../geometry/regionCache';
 import { parse, serialize } from '../model/serialize';
 import { clearHistory, historyDepth, redoDepth } from '../state/history';
 import { useDoc } from '../state/store';
+import { regionPipelineStatus, setRegionPipelineEnabled } from '../worker/regionPipeline';
 
 export interface DevCounters {
   /** JS heap in MB. Chrome-only and quantized; absent elsewhere. */
@@ -152,6 +153,12 @@ export interface DevHandle {
   counters: () => DevCounters;
   /** The region worker's health probe (see {@link workerPing}). */
   workerPing: () => ReturnType<typeof workerPing>;
+  /** The pipelined-drag flag: enable/disable the region worker pipeline and
+   *  inspect its state. Off by default while the A/B is open. */
+  regionPipeline: {
+    enable: (on: boolean) => void;
+    status: () => ReturnType<typeof regionPipelineStatus>;
+  };
   reset: {
     /** Drop the undo/redo stacks. */
     history: () => void;
@@ -168,6 +175,10 @@ export function makeDevHandle(): DevHandle {
   return {
     counters: devCounters,
     workerPing,
+    regionPipeline: {
+      enable: setRegionPipelineEnabled,
+      status: regionPipelineStatus,
+    },
     reset: {
       history: clearHistory,
       regions: () => {

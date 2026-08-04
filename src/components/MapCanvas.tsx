@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { cancelAppendMode, dragState, useDoc, useSelection } from '../state/store';
 import { useRenderDoc } from '../state/renderDoc';
+import { useDragFrame } from '../state/dragFrame';
+import { reportSyncRegionCost } from '../worker/regionPipeline';
 import { isHistoryGrouping } from '../state/history';
 import { hoveredChrome, type HoverKind } from '../state/selection';
 import { useSnapPrefs } from '../state/snapPrefs';
@@ -504,21 +506,29 @@ export function MapCanvas() {
   // Within one render the memos above have already refreshed both for the
   // current stations/lines, so the pair always matches the sig regionsFor
   // computes from them.
-  const regionGeom = useMemo(
-    () =>
-      needRegions
-        ? regionsFor(
-            { stations, lines, lineCircles },
-            { bands: bandsGeometry, markers: stopMarkers },
-            // Mid-gesture frames are never revisited, so the sig string and
-            // LRU bookkeeping are pure waste there — and skipping the inserts
-            // PRESERVES the pre-gesture entry for the commit reconcile's
-            // old-geometry lookup instead of evicting it within four frames.
-            { transient: isHistoryGrouping() },
-          )
-        : null,
-    [needRegions, stations, lines, lineCircles, bandsGeometry, stopMarkers],
-  );
+  // While the worker pipeline serves holes, the synchronous build stands down
+  // entirely — that build is the exact work the pipeline moved off this
+  // thread, and the inputs here are the FROZEN render-source slice, so the
+  // memo would otherwise recompute it per landed frame. Its other consumers
+  // are layering-mode-only (never concurrent with a drag) and tolerate null.
+  const pipelineHoles = useDragFrame((s) => s.holes);
+  const regionGeom = useMemo(() => {
+    if (!needRegions || pipelineHoles) return null;
+    const t0 = performance.now();
+    const geom = regionsFor(
+      { stations, lines, lineCircles },
+      { bands: bandsGeometry, markers: stopMarkers },
+      // Mid-gesture frames are never revisited, so the sig string and
+      // LRU bookkeeping are pure waste there — and skipping the inserts
+      // PRESERVES the pre-gesture entry for the commit reconcile's
+      // old-geometry lookup instead of evicting it within four frames.
+      { transient: isHistoryGrouping() },
+    );
+    // The pipeline's arming signal: a build this expensive during a gesture
+    // is worth moving off-thread from the next frame on.
+    reportSyncRegionCost(performance.now() - t0);
+    return geom;
+  }, [needRegions, pipelineHoles, stations, lines, lineCircles, bandsGeometry, stopMarkers]);
   const regionWinners = useMemo(
     () =>
       regionGeom
@@ -526,9 +536,12 @@ export function MapCanvas() {
         : null,
     [regionGeom, regionAssignments, lineOrder],
   );
+  // Mid-pipelined-drag the holes are the worker's answer for the armed slice;
+  // otherwise the synchronous build, exactly as before.
   const regionExcludeHoles = useMemo(
     () =>
-      regionGeom && regionWinners
+      pipelineHoles ??
+      (regionGeom && regionWinners
         ? buildExclusionHolesCached(
             regionGeom.faces,
             regionWinners,
@@ -542,14 +555,17 @@ export function MapCanvas() {
             regionGeom.slivers,
             regionGeom.holeChain,
           )
-        : null,
-    [regionGeom, regionWinners, lineOrder, lines],
+        : null),
+    [pipelineHoles, regionGeom, regionWinners, lineOrder, lines],
   );
   // Tight outer bounds for the exclude clips (see regionClipBounds — a huge
   // constant outer rect breaks GPU clip rasterization precision at deep zoom).
+  // Computed from this render's own bands + markers (regionGeom holds the same
+  // arrays via the prebuilt pair) so it exists while the pipeline serves the
+  // holes and regionGeom stands down.
   const regionClipOuter = useMemo(
-    () => (regionGeom ? regionClipBounds(regionGeom.bands, regionGeom.markers) : null),
-    [regionGeom],
+    () => (needRegions ? regionClipBounds(bandsGeometry, stopMarkers) : null),
+    [needRegions, bandsGeometry, stopMarkers],
   );
 
   const itemDrag = useItemDrag(svgRef, view.viewport.zoom, inHandMode);
