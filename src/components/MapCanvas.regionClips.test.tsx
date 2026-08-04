@@ -89,9 +89,10 @@ const clipKeysByStripe = (container: HTMLElement): Map<string, Set<string>> => {
 describe('MapCanvas — region clip selection (edge → arm → line)', () => {
   it('a losing ARM clips its stripes with the arm def; a line-level loser and its markers take the line def', () => {
     // The interlined tangent mouth: orange above grey, grey branches. The
-    // mouth AND the oa∩curve crossing are painted for grey ⇒ grey's trunk
-    // arm loses (arm def) and orange loses its crossing as a whole line
-    // (line def) — its stripes AND markers wrap in the 'oa' clip.
+    // mouth needs no paint — the curve arm wins by DEFAULT, so grey's trunk
+    // arm loses (arm def) — and the painted oa∩curve crossing makes orange
+    // lose as a whole line (line def): its stripes AND markers wrap in the
+    // 'oa' clip.
     const doc = makeDoc({
       stations: [
         makeStation({ id: 'a', x: -400, y: 0, stops: [hStop('oa', 0), hStop('gr', 1)] }),
@@ -119,21 +120,10 @@ describe('MapCanvas — region clip selection (edge → arm → line)', () => {
     const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
     const trunkArm = armOfLinePairKey(bands, 'gr', 'a|j')!;
     const branchArm = armOfLinePairKey(bands, 'gr', 'd|j')!;
-    const set = paintFace(
-      doc,
-      lineOrder,
-      (f) =>
-        f.lineIds.includes(armCoverId('gr', trunkArm)) &&
-        f.lineIds.includes(armCoverId('gr', branchArm)),
-    );
+    expect(branchArm).not.toBe(trunkArm);
     // The crossing lives in its own component, so both covers are merged
     // line ids there; painting it makes orange a LINE-level loser.
-    const set2 = paintFace(
-      doc,
-      lineOrder,
-      (f) => f.lineIds.includes('oa') && f.lineIds.includes('gr'),
-      { r1: { ...set, id: 'r1' } },
-    );
+    const set2 = paintFace(doc, lineOrder, (f) => f.lineIds.includes('oa') && f.lineIds.includes('gr'));
     expect(set2.lineId).toBe('gr');
     const { container } = render(<App />);
     act(() => {
@@ -142,7 +132,7 @@ describe('MapCanvas — region clip selection (edge → arm → line)', () => {
         stations: doc.stations,
         lines: doc.lines,
         lineOrder,
-        regionAssignments: { r1: { ...set, id: 'r1' }, r2: { ...set2, id: 'r2' } },
+        regionAssignments: { r2: { ...set2, id: 'r2' } },
       });
     });
     const byStripe = clipKeysByStripe(container);
@@ -157,6 +147,45 @@ describe('MapCanvas — region clip selection (edge → arm → line)', () => {
     // unclipped entirely.
     expect(byStripe.get('marker:oa')).toEqual(new Set(['oa']));
     expect(byStripe.has('marker:gr')).toBe(false);
+  });
+
+  it('an unpainted branch mouth clips by default — zero assignments, idle mode', () => {
+    // The branch-arm default must reach the SCREEN without a single
+    // assignment: the region pipeline runs whenever a line has multiple
+    // arms, and the through arm's stripes wrap in the arm def.
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 'a', x: -120, y: 0, stops: [hStop('l1', 0)] }),
+        makeStation({ id: 'j', x: 0, y: 0, stops: [hStop('l1', 0)] }),
+        makeStation({ id: 'c', x: 120, y: 0, stops: [hStop('l1', 0)] }),
+        makeStation({
+          id: 'd',
+          x: 120,
+          y: -120,
+          stops: [makeStop('l1', { orientation: 'auto-vertical' })],
+        }),
+      ],
+      lines: [makeLine({ id: 'l1', color: '#c00', edges: ['a|j', 'c|j', 'd|j'] })],
+    });
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+    const trunkArm = armOfLinePairKey(bands, 'l1', 'a|j')!;
+    const branchArm = armOfLinePairKey(bands, 'l1', 'd|j')!;
+    expect(trunkArm).not.toBe(branchArm);
+    const { container } = render(<App />);
+    act(() => {
+      useDoc.setState({
+        ...useDoc.getState(),
+        stations: doc.stations,
+        lines: doc.lines,
+        lineOrder: ['l1'],
+        regionAssignments: {},
+      });
+    });
+    const byStripe = clipKeysByStripe(container);
+    const armKey = armCoverId('l1', trunkArm);
+    expect(byStripe.get('a|j')).toEqual(new Set([armKey]));
+    expect(byStripe.get('c|j')).toEqual(new Set([armKey]));
+    expect(byStripe.has('d|j')).toBe(false);
   });
 
   it('a losing BAND prefers its edge def over its arm and line defs', () => {
@@ -193,6 +222,8 @@ describe('MapCanvas — region clip selection (edge → arm → line)', () => {
       ],
     });
     const lineOrder = ['l1'];
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+    const stemArm = armOfLinePairKey(bands, 'l1', 'a|b')!;
     const set = paintFace(doc, lineOrder, (f) => f.lineIds.includes(edgeCoverId('l1', 'a|b')));
     expect(set.winnerPairKey).toBe('d|e');
     const { container } = render(<App />);
@@ -206,10 +237,13 @@ describe('MapCanvas — region clip selection (edge → arm → line)', () => {
       });
     });
     const byStripe = clipKeysByStripe(container);
-    // The losing band's stripe wraps in ITS edge def; the winner band and
-    // the stem's other bands stay unclipped.
+    const armKey = armCoverId('l1', stemArm);
+    // The losing band's stripe wraps in ITS edge def — the finest spelling —
+    // while the stem's other bands take the ARM def (the stem arm loses the
+    // unpainted mouth to the branch by default). The branch stays unclipped.
     expect(byStripe.get('a|b')).toEqual(new Set([edgeCoverId('l1', 'a|b')]));
-    expect(byStripe.has('d|e')).toBe(false);
-    expect(byStripe.has('g|a')).toBe(false);
+    expect(byStripe.get('d|e')).toEqual(new Set([armKey]));
+    expect(byStripe.get('g|a')).toEqual(new Set([armKey]));
+    expect(byStripe.has('a|f')).toBe(false);
   });
 });

@@ -489,7 +489,9 @@ export function MapCanvas() {
   // Region paint machinery: overlap faces + per-face winners + the exclusion
   // clips that realize overrides (see buildExclusionHoles — losers are
   // clipped, winners are never repainted). Computed only when it can matter
-  // (layering mode active, or stored assignments exist); regionsFor's
+  // (layering mode active, stored assignments exist, or some line has
+  // multiple ARMS — an unpainted branch mouth clips its through arm by
+  // DEFAULT, with no assignment anywhere); regionsFor's
   // sig-keyed cache dedupes against the reconcile step's builds. SYNCHRONOUS
   // on purpose: the clips attach to the LIVE base strokes, so they must be
   // derived from the same geometry the strokes render — a deferred snapshot
@@ -498,9 +500,15 @@ export function MapCanvas() {
   // clips attach to base strokes that don't exist, and the clickable faces would
   // float over bands the user can't see. Skipping also spares the app its most
   // expensive pure computation for the duration.
+  const hasMultiArmLine = useMemo(
+    () => bandsGeometry.some((b) => b.arms.some((a) => (a ?? 0) > 0)),
+    [bandsGeometry],
+  );
   const needRegions =
     showNetwork &&
-    (selection.uiMode.kind === 'layering' || Object.keys(regionAssignments).length > 0);
+    (selection.uiMode.kind === 'layering' ||
+      Object.keys(regionAssignments).length > 0 ||
+      hasMultiArmLine);
   // The prebuilt pair hands regionsFor this render's own bands + markers so a
   // cache miss doesn't rebuild them: bandsGeometry is the PRISTINE geometry
   // (not the priority-stamped clones), and the markers' stamped priorities are

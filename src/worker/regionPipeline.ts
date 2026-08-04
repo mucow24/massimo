@@ -345,8 +345,11 @@ export function initRegionPipeline(workerFactory?: () => WorkerLike): void {
         // compile + the full-slice sync all overlap the gesture's cheap
         // early frames, so by the time a slow build reports, the mirror is
         // warm and the first pipelined frame is an incremental diff.
-        // (Assignments-exist is the pipeline-side proxy for needRegions;
-        // repeat begins are ~free — the identity diff no-ops.)
+        // (Assignments-exist is a cheap UNDER-approximation of needRegions —
+        // a branchy zero-assignment map clips its default mouths too, but
+        // detecting that needs bands; it just boots the worker a beat later
+        // via the sync-cost arming signal. Repeat begins are ~free — the
+        // identity diff no-ops.)
         if (
           e.deferPersist &&
           enabled &&

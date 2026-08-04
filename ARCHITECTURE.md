@@ -405,7 +405,8 @@ mouth or a self-crossing is a per-junction REGION choice (see Region layering be
 style. Legacy saves carried per-line `seamColor`/`seamWidth`/`seamEdges` (and an even older
 doc-level `seamEdges`); both load paths strip all of them from lines AND line style defs together
 (`stripRetiredSeamFields`, persist v25 — both sides lose the fields at once, so tagged wearers
-stay tagged), and the junctions render merged until repainted.
+stay tagged). Unpainted junctions render with the BRANCH ARM in front by default — the old
+"Branch" seam look — so stripped saves come back looking like themselves without repainting.
 
 `DEFAULT_DOC` (in [transforms.ts](src/model/transforms.ts)) is the merge baseline: empty
 collections, `name: 'Untitled map'`, `lineCounter: 0`, `palettes:
@@ -818,8 +819,10 @@ ever lose — an interlined neighbor's rail riding the shared boundary is the ne
 crossing's business: painted for this winner, that crossing's holes punch the shared rail zone
 and tile with the reveal; unpainted, the winner slides under it and the boundary stroke runs on
 intact. Clipped areas take no pointer events,
-so idle clicks land on the visible winner natively. Zero assignments ⇒ zero cost and
-byte-identical output. `buildExclusionHoles` is the cache-free reference; production renders go
+so idle clicks land on the visible winner natively. Holes exist wherever a face's winner
+differs from the raw base paint — assignment-free branch-arm DEFAULTS included — so a doc with
+zero assignments still clips its unpainted mouths; a branch-free map pays nothing.
+`buildExclusionHoles` is the cache-free reference; production renders go
 through `buildExclusionHolesCached`, a per-face cross-frame cache whose entries are reused only
 when every input is provably unchanged (face content key, no dirty geometry within a
 conservative reach, winner/railW signature, shield-neighborhood signature, per-sliver
@@ -841,9 +844,18 @@ involved band plus the bare-id rest at a crossing, arm partition winning when on
 hosts both — and lone slices collapse back to bare line ids, so every face outside a genuine
 self-overlap keeps exactly its historical cover. Slice cover ids (`arm:`/`edge:` spellings,
 `lineRegions.armCoverId`/`edgeCoverId`) are BUILD-LOCAL; the winner domain becomes "a line,
-slices merged" or one slice of it, the default stays the merged front-most line (an unpainted
-mouth renders merged, byte-identical to the pre-arm look), the cycle offers distinct lines then
-slices, and a slice choice persists as `RegionAssignment.winnerPairKey` — an EDGE name, always
+slices merged" or one slice of it. An unpainted MOUTH defaults to the BRANCH ARM in front
+(`makeDefaultWinner`): at the junction the arms share, the glued through-run lands two band
+ends and a branch exactly one, so the fewest-ends arm is the branch (smallest arm number on a
+tie; all-through crossings, mid-edge crossings — edge-spelled covers — and multi-line faces
+keep the front-most-line default). The boundary strokes then break in one piece wherever a
+reveal crosses them — leaving a mouth merged beside painted reveals is what produced
+half-width strokes, since the fused row arm kept co-painting boundaries its neighbors'
+clipped rails had left to it. MERGED is a real stored choice instead of the resting state: a
+single-line assignment with no `winnerPairKey` (reconcile keeps born-single assignments and
+drops only covers SHRUNK to one line). The cycle offers distinct lines then slices, stepping
+from the on-screen default, deleting on landing back on it; a slice choice persists as
+`RegionAssignment.winnerPairKey` — an EDGE name, always
 copied from the winning slice's own minted anchor, translated across splits/heals with the
 anchors, re-spelled at every remint, and degrading to the merged line whenever it stops
 resolving. Slice winners hole their sibling slices too (same z — either paint order must clip),
@@ -1311,7 +1323,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | `v<20`      | dot **type** became a covered `LineStyleProps` field: `bakeLineStyleDotIds` (backfill `singletonDotStyleId`/`multiDotStyleId` on line style defs, absent ⇒ the `stopDot` ⭐ default), then `pruneLineDotTypeTagMismatches` (untag any line whose split dot type differs from its now-fuller line style — keeping "tagged ⇒ matches"). Ordered **after** the `v<19` library bake; Path A prunes this via `pruneDanglingStyleRefs` instead |
 | `v<21`      | `backfillDotStrokeAlign` (`DotStyle.strokeAlign` became a required field: backfill `'center'`, the historical SVG-native placement, across every dot-style home). Path A covers this via `sanitizeDotStyle` |
 | `v<22`      | `backfillLineStyleEndStyle` (the line **end** became a required covered `LineStyleProps` field: heal absent/garbage `endStyle` on line defs to `'square'`, the historical full marker square, so nothing repaints). No tag prune follows — a line from those saves carries no end of its own, so it already paints what the heal writes. Path A covers this via `sanitizeStyleProps` |
-| `v<25`      | `stripRetiredSeamFields` (the branch seam retired outright — self-overlaps are region faces now): `seamColor`/`seamWidth`/`seamEdges` leave every line AND every line style def together, plus any doc-level `seamEdges` remnant, so tagged wearers stay tagged and old seamed junctions render merged until repainted |
+| `v<25`      | `stripRetiredSeamFields` (the branch seam retired outright — self-overlaps are region faces now): `seamColor`/`seamWidth`/`seamEdges` leave every line AND every line style def together, plus any doc-level `seamEdges` remnant, so tagged wearers stay tagged; junctions come back with the branch-arm default in front — the old "Branch" seam look |
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array. **But see the `merge` hook** — this call alone is not "every rehydrate" |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | `v<24`      | `bakeActivePalettes` (retired `activePalettes` ids → the palette COPIES the map carries). Built-in ids resolve through `LEGACY_BUILTIN_IDS`; `custom:` ids resolve against the palette library by slugged name, the only place those definitions ever lived. Ids resolving to neither are dropped, and a map left carrying none is a legitimate outcome. Gated on `palettes` being absent as well, so it can never overwrite real palettes |

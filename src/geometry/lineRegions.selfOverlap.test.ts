@@ -154,54 +154,6 @@ describe('self-overlap faces (branch mouths)', () => {
     expect(warm.faces.map(keyOf).sort()).toEqual(ref.map(keyOf).sort());
   });
 
-  it('painting: a pure self face cycles merged → trunk arm → branch arm → merged (delete)', () => {
-    const doc = branchDoc();
-    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
-    const faces = buildOverlapRegions(bands, []);
-    expect(faces).toHaveLength(1);
-    const lineOrder = ['l1'];
-    const planFor = (assignments: Record<string, RegionAssignment>) => {
-      const winners = resolveRegionWinners(faces, assignments, bands, lineOrder);
-      return regionPaintPlan({
-        faces,
-        winners,
-        assignments,
-        faceIndex: 0,
-        dir: 1,
-        flood: false,
-        lineOrder,
-        bands,
-      });
-    };
-    // Click 1: merged (default) → first arm. Stores an arm choice.
-    const p1 = planFor({});
-    expect(p1).toHaveLength(1);
-    const a1 = p1[0].assignment!;
-    expect(a1.lineId).toBe('l1');
-    expect(a1.lines).toEqual(['l1']);
-    expect(a1.winnerPairKey).toBeDefined();
-    expect(armOfLinePairKey(bands, 'l1', a1.winnerPairKey!)).toBe(0);
-    // The winner's pairKey is one of its own anchors' — the invariant the
-    // reconcile translation rides on.
-    expect(a1.anchors.some((an) => an.lineId === 'l1' && an.pairKey === a1.winnerPairKey)).toBe(
-      true,
-    );
-    // Click 2: first arm → second arm.
-    const withA1 = { r1: { ...a1, id: 'r1' } };
-    const w1 = resolveRegionWinners(faces, withA1, bands, lineOrder);
-    expect(w1[0]).toEqual({ winner: armCoverId('l1', 0), assignmentId: 'r1' });
-    const p2 = planFor(withA1);
-    expect(p2).toHaveLength(1);
-    expect(p2[0].id).toBe('r1');
-    const a2 = p2[0].assignment!;
-    expect(armOfLinePairKey(bands, 'l1', a2.winnerPairKey!)).toBe(1);
-    // Click 3: second arm → merged = default ⇒ delete.
-    const withA2 = { r1: { ...a2, id: 'r1' } };
-    const p3 = planFor(withA2);
-    expect(p3).toHaveLength(1);
-    expect(p3[0].assignment).toBeNull();
-  });
-
   it('a self face mints one anchor per arm, on different corridors', () => {
     const doc = branchDoc();
     const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
@@ -264,18 +216,15 @@ describe('self-overlap faces (branch mouths)', () => {
     const before = branchDoc();
     const bandsBefore = buildBands(before.stations, before.lines, before.lineOrder);
     const facesBefore = buildOverlapRegions(bandsBefore, []);
-    const winners = resolveRegionWinners(facesBefore, {}, bandsBefore, ['l1']);
-    const plan = regionPaintPlan({
-      faces: facesBefore,
-      winners,
-      assignments: {},
-      faceIndex: 0,
-      dir: -1, // straight to the branch arm
-      flood: false,
-      lineOrder: ['l1'],
-      bands: bandsBefore,
-    });
-    const asg = { ...plan[0].assignment!, id: 'r1' };
+    // A stored BRANCH-arm choice (docs painted before the branch became the
+    // default still carry these); reconcile must translate it all the same.
+    const asg: RegionAssignment = {
+      id: 'r1',
+      lineId: 'l1',
+      lines: ['l1'],
+      anchors: mintAnchors(facesBefore[0], bandsBefore),
+      winnerPairKey: 'd|j',
+    };
     expect(armOfLinePairKey(bandsBefore, 'l1', asg.winnerPairKey!)).toBe(1);
 
     // Drag the branch terminus: same topology, new geometry. (A drag can
@@ -336,10 +285,10 @@ describe('self-overlap faces (branch mouths)', () => {
     expect('winnerPairKey' in stripped.assignments.r1).toBe(false);
   });
 
-  it('a tangent mouth cycles to CURVE-ONLY: the branch arm is its own slice', () => {
+  it('a tangent mouth defaults to CURVE-ONLY: the branch arm is its own slice', () => {
     // The screenshot shape: the branch hugs the trunk (tangent departure,
     // large radius) before the arc peels off — the hardest mouth. The trunk
-    // must stay one arm and the curve another, so the third cycle state is
+    // must stay one arm and the curve another, so the UNPAINTED default is
     // the curve's casing alone, not trunk+curve welded.
     const doc = makeDoc({
       stations: [
@@ -357,27 +306,12 @@ describe('self-overlap faces (branch mouths)', () => {
     const selfFaces = faces.filter((f) => f.lineIds.every((id) => id !== 'l1'));
     expect(selfFaces.length).toBeGreaterThan(0);
     const idx = faces.indexOf(selfFaces[0]);
-    // Two clicks from merged land on the CURVE arm — the arm whose pairKey is
-    // the branch edge — with only two arm slices on offer.
-    const w0 = resolveRegionWinners(faces, {}, bands, ['l1']);
-    const p1 = regionPaintPlan({
-      faces,
-      winners: w0,
-      assignments: {},
-      faceIndex: idx,
-      dir: -1, // backward from merged = the LAST slice
-      flood: false,
-      lineOrder: ['l1'],
-      bands,
-    });
-    const a1 = p1[0].assignment!;
-    expect(a1.winnerPairKey).toBe('d|j');
-    // Winning the curve arm holes ONLY the trunk arm — the reveal is the
+    // The default winner IS the curve arm — the arm whose pairKey is the
+    // branch edge — and it holes ONLY the trunk arm: the reveal is the
     // curve's own casing, nothing welded in.
-    const withA1 = { r1: { ...a1, id: 'r1' } };
-    const w1 = resolveRegionWinners(faces, withA1, bands, ['l1']);
-    expect(w1[idx].winner).toBe(armCoverId('l1', armOfLinePairKey(bands, 'l1', 'd|j')!));
-    const holes = buildExclusionHoles(faces, w1, ['l1'], bands, [], () => 2, []);
+    const w0 = resolveRegionWinners(faces, {}, bands, ['l1']);
+    expect(w0[idx].winner).toBe(armCoverId('l1', armOfLinePairKey(bands, 'l1', 'd|j')!));
+    const holes = buildExclusionHoles(faces, w0, ['l1'], bands, [], () => 2, []);
     const trunkArm = armOfLinePairKey(bands, 'l1', 'a|j')!;
     expect([...holes.keys()]).toEqual([armCoverId('l1', trunkArm)]);
   });
@@ -452,20 +386,9 @@ describe('self-overlap faces (branch mouths)', () => {
     expect(mouthIdx).toBeGreaterThanOrEqual(0);
     // The mouth's cover is pure grey — orange's body never overlaps it.
     expect(faces[mouthIdx].lineIds.some((id) => id.includes('oa'))).toBe(false);
-    // Paint the curve arm on top.
-    const set = regionPaintPlan({
-      faces,
-      winners: resolveRegionWinners(faces, {}, bands, lineOrder),
-      assignments: {},
-      faceIndex: mouthIdx,
-      dir: -1,
-      flood: false,
-      lineOrder,
-      bands,
-    })[0].assignment!;
-    expect(armOfLinePairKey(bands, 'gr', set.winnerPairKey!)).toBe(branchArm);
-    const withSet = { r1: { ...set, id: 'r1' } };
-    const winners = resolveRegionWinners(faces, withSet, bands, lineOrder);
+    // The curve arm wins BY DEFAULT — no assignment anywhere.
+    const winners = resolveRegionWinners(faces, {}, bands, lineOrder);
+    expect(winners[mouthIdx].winner).toBe(armCoverId('gr', branchArm));
     const holes = buildExclusionHoles(faces, winners, lineOrder, bands, [], () => 2, []);
     // The losing trunk arm is holed; orange is untouched.
     expect(holes.get(armCoverId('gr', trunkArm))?.length).toBeGreaterThan(0);
@@ -496,26 +419,23 @@ describe('self-overlap faces (branch mouths)', () => {
     const crossIdx = faces.findIndex((f) => f.lineIds.includes('oa') && f.lineIds.includes('gr'));
     expect(mouthIdx).toBeGreaterThanOrEqual(0);
     expect(crossIdx).toBeGreaterThanOrEqual(0);
-    let assignments: Record<string, RegionAssignment> = {};
-    for (const [rid, idx] of [
-      ['r1', mouthIdx],
-      ['r2', crossIdx],
-    ] as const) {
-      const set = regionPaintPlan({
-        faces,
-        winners: resolveRegionWinners(faces, assignments, bands, lineOrder),
-        assignments,
-        faceIndex: idx,
-        dir: -1,
-        flood: false,
-        lineOrder,
-        bands,
-      })[0].assignment!;
-      expect(set.lineId).toBe('gr');
-      assignments = { ...assignments, [rid]: { ...set, id: rid } };
-    }
-    expect(armOfLinePairKey(bands, 'gr', assignments.r1.winnerPairKey!)).toBe(branchArm);
-    expect(assignments.r2.winnerPairKey).toBeUndefined();
+    // The mouth needs no paint (the curve arm is the default); paint only
+    // the crossing for grey.
+    const winners0 = resolveRegionWinners(faces, {}, bands, lineOrder);
+    expect(winners0[mouthIdx].winner).toBe(armCoverId('gr', branchArm));
+    const set = regionPaintPlan({
+      faces,
+      winners: winners0,
+      assignments: {},
+      faceIndex: crossIdx,
+      dir: -1,
+      flood: false,
+      lineOrder,
+      bands,
+    })[0].assignment!;
+    expect(set.lineId).toBe('gr');
+    expect(set.winnerPairKey).toBeUndefined();
+    const assignments = { r2: { ...set, id: 'r2' } };
     const winners = resolveRegionWinners(faces, assignments, bands, lineOrder);
     const holes = buildExclusionHoles(faces, winners, lineOrder, bands, [], () => 2, []);
     const oaHoles = holes.get('oa');
@@ -676,20 +596,10 @@ describe('self-overlap faces (branch mouths)', () => {
     const crossIdx = faces.findIndex((f) => f.lineIds.includes('gr') && f.lineIds.includes('oa'));
     expect(mouthIdx).toBeGreaterThanOrEqual(0);
     expect(crossIdx).toBeGreaterThanOrEqual(0);
-    const set = regionPaintPlan({
-      faces,
-      winners: resolveRegionWinners(faces, {}, bands, lineOrder),
-      assignments: {},
-      faceIndex: mouthIdx,
-      dir: -1,
-      flood: false,
-      lineOrder,
-      bands,
-    })[0].assignment!;
-    expect(armOfLinePairKey(bands, 'gr', set.winnerPairKey!)).toBe(branchArm);
-    const withSet = { r1: { ...set, id: 'r1' } };
-    const winners = resolveRegionWinners(faces, withSet, bands, lineOrder);
-    // The neighbor shows plain grey by default — same LINE, merged spelling.
+    // No assignments at all: the mouth shows its branch-arm default beside
+    // the crossing's plain-grey default — same LINE, different spellings.
+    const winners = resolveRegionWinners(faces, {}, bands, lineOrder);
+    expect(winners[mouthIdx].winner).toBe(armCoverId('gr', branchArm));
     expect(winners[crossIdx]).toEqual({ winner: 'gr', assignmentId: null });
     const holes = buildExclusionHoles(faces, winners, lineOrder, bands, [], () => 2, []);
     const trunkRings = holes.get(armCoverId('gr', trunkArm))!;
@@ -867,23 +777,14 @@ describe('mid-edge self-crossings (band-pair rule)', () => {
     const crossIdx = faces.findIndex((f) => f.lineIds.includes(edgeCoverId('l1', 'a|b')));
     expect(mouthIdx).toBeGreaterThanOrEqual(0);
     expect(crossIdx).toBeGreaterThanOrEqual(0);
-    // Mouth: branch arm wins (stem arm loses). Crossing: d|e wins (a|b loses).
-    const mouthSet = regionPaintPlan({
-      faces,
-      winners: resolveRegionWinners(faces, {}, bands, ['l1']),
-      assignments: {},
-      faceIndex: mouthIdx,
-      dir: -1,
-      flood: false,
-      lineOrder: ['l1'],
-      bands,
-    })[0].assignment!;
-    expect(armOfLinePairKey(bands, 'l1', mouthSet.winnerPairKey!)).toBe(branchArm);
-    const withMouth = { r1: { ...mouthSet, id: 'r1' } };
+    // Mouth: branch arm wins BY DEFAULT (stem arm loses). Crossing: paint
+    // d|e on top (a|b loses).
+    const winners0 = resolveRegionWinners(faces, {}, bands, ['l1']);
+    expect(winners0[mouthIdx].winner).toBe(armCoverId('l1', branchArm));
     const crossSet = regionPaintPlan({
       faces,
-      winners: resolveRegionWinners(faces, withMouth, bands, ['l1']),
-      assignments: withMouth,
+      winners: winners0,
+      assignments: {},
       faceIndex: crossIdx,
       dir: -1,
       flood: false,
@@ -891,7 +792,7 @@ describe('mid-edge self-crossings (band-pair rule)', () => {
       bands,
     })[0].assignment!;
     expect(crossSet.winnerPairKey).toBe('d|e');
-    const both = { r1: withMouth.r1, r2: { ...crossSet, id: 'r2' } };
+    const both = { r2: { ...crossSet, id: 'r2' } };
     const winners = resolveRegionWinners(faces, both, bands, ['l1']);
     expect(winners[mouthIdx].winner).toBe(armCoverId('l1', branchArm));
     expect(winners[crossIdx].winner).toBe(edgeCoverId('l1', 'd|e'));
@@ -921,5 +822,116 @@ describe('mid-edge self-crossings (band-pair rule)', () => {
     const warm = buildRegionsIncremental(bands, [], cold.state);
     expect(warm.reused).toBe(true);
     expect(warm.faces.map(keyOf).sort()).toEqual(ref.map(keyOf).sort());
+  });
+
+  it('an unpainted crossing stays MERGED: no junction, nothing is a branch', () => {
+    // The branch-arm default is a junction call; a mid-edge crossing has no
+    // junction (the doc's case 11), so the base paint stands and nothing is
+    // clipped until the user paints.
+    const doc = pDoc();
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+    const faces = buildOverlapRegions(bands, []);
+    const winners = resolveRegionWinners(faces, {}, bands, ['l1']);
+    expect(winners[0]).toEqual({ winner: 'l1', assignmentId: null });
+    expect(buildExclusionHoles(faces, winners, ['l1'], bands, [], () => 2, []).size).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The unpainted default. A junction mouth shows the BRANCH ARM in front —
+// the through-run is the base and the spur's casing separates from it, the
+// look the seam system always drew and the state every hand-painted junction
+// converged on. Merged is a real, storable choice now, not the resting state.
+// ---------------------------------------------------------------------------
+
+describe('branch-arm default (unpainted mouths)', () => {
+  it('an unpainted mouth resolves to the branch arm and holes the through arm', () => {
+    const doc = branchDoc();
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+    const faces = buildOverlapRegions(bands, []);
+    expect(faces).toHaveLength(1);
+    const branchArm = armOfLinePairKey(bands, 'l1', 'd|j')!;
+    const trunkArm = armOfLinePairKey(bands, 'l1', 'a|j')!;
+    const winners = resolveRegionWinners(faces, {}, bands, ['l1']);
+    expect(winners[0]).toEqual({ winner: armCoverId('l1', branchArm), assignmentId: null });
+    const holes = buildExclusionHoles(faces, winners, ['l1'], bands, [], () => 2, []);
+    expect(holes.get(armCoverId('l1', trunkArm))?.length).toBeGreaterThan(0);
+    expect(holes.has(armCoverId('l1', branchArm))).toBe(false);
+  });
+
+  it('clicking cycles from the branch default; merged is STORED; the default deletes', () => {
+    const doc = branchDoc();
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+    const faces = buildOverlapRegions(bands, []);
+    const trunkArm = armOfLinePairKey(bands, 'l1', 'a|j')!;
+    let assignments: Record<string, RegionAssignment> = {};
+    const seen: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const winners = resolveRegionWinners(faces, assignments, bands, ['l1']);
+      const plan = regionPaintPlan({
+        faces,
+        winners,
+        assignments,
+        faceIndex: 0,
+        dir: 1,
+        flood: false,
+        lineOrder: ['l1'],
+        bands,
+      })[0];
+      if (plan.assignment) {
+        expect(plan.assignment.lines).toEqual(['l1']);
+        // A stored arm choice's pairKey is one of its own anchors' — the
+        // invariant the reconcile translation rides on.
+        if (plan.assignment.winnerPairKey !== undefined) {
+          const a = plan.assignment;
+          expect(a.anchors.some((an) => an.lineId === 'l1' && an.pairKey === a.winnerPairKey)).toBe(
+            true,
+          );
+        }
+        assignments = { r1: { ...plan.assignment, id: 'r1' } };
+        seen.push(
+          plan.assignment.winnerPairKey === undefined
+            ? 'merged'
+            : `arm ${armOfLinePairKey(bands, 'l1', plan.assignment.winnerPairKey)}`,
+        );
+      } else {
+        assignments = {};
+        seen.push('default');
+      }
+    }
+    // Three states, three clicks, back where we started: the merged stop is
+    // a STORED assignment (no winnerPairKey), the trunk arm stores its edge,
+    // and landing on the branch default deletes.
+    expect([...seen].sort()).toEqual(['default', `arm ${trunkArm}`, 'merged'].sort());
+    expect(seen[2]).toBe('default');
+    expect(Object.keys(assignments)).toHaveLength(0);
+  });
+
+  it('an explicit merged assignment binds, renders holeless, and survives the gates', () => {
+    const doc = branchDoc();
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+    const faces = buildOverlapRegions(bands, []);
+    const asg: RegionAssignment = {
+      id: 'm1',
+      lineId: 'l1',
+      lines: ['l1'],
+      anchors: mintAnchors(faces[0], bands),
+    };
+    // Sanitize passes it through untouched…
+    expect(sanitizeRegionAssignments({ m1: asg }, doc.lines).changed).toBe(false);
+    // …reconcile keeps it across a no-op edit (born single-line is a real
+    // choice; only assignments SHRUNK to one line arbitrate nothing)…
+    const out = reconcileRegionAssignments(
+      { stations: doc.stations, lines: doc.lines, lineCircles: doc.lineCircles },
+      { stations: doc.stations, lines: doc.lines, lineCircles: doc.lineCircles },
+      { m1: asg },
+      () => 'x',
+    );
+    expect(Object.keys(out)).toEqual(['m1']);
+    expect(out.m1.winnerPairKey).toBeUndefined();
+    // …and it binds: the mouth shows merged, nothing is clipped.
+    const winners = resolveRegionWinners(faces, out, bands, ['l1']);
+    expect(winners[0]).toEqual({ winner: 'l1', assignmentId: 'm1' });
+    expect(buildExclusionHoles(faces, winners, ['l1'], bands, [], () => 2, []).size).toBe(0);
   });
 });

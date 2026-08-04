@@ -1745,17 +1745,93 @@ const orderIndexer = (lineOrder: LineId[]) => {
   return (id: LineId) => idx.get(id) ?? lineOrder.length;
 };
 
-/** The line an unassigned face shows: highest in lineOrder among the cover. */
-export function regionDefaultWinner(face: RegionFace, lineOrder: LineId[]): LineId {
-  const orderIdx = orderIndexer(lineOrder);
-  return defaultWinner(face, orderIdx);
+/** The cover id an unassigned face shows — see {@link makeDefaultWinner}. */
+export function regionDefaultWinner(
+  face: RegionFace,
+  bands: SegmentBandSpec[],
+  lineOrder: LineId[],
+): LineId {
+  return makeDefaultWinner(bands, orderIndexer(lineOrder))(face);
 }
 
-// LINE domain, whatever the cover spelling: an unassigned face — a self face
-// included — shows its natural paint, and the natural paint's front-most is a
-// line (a line's own arms merge; there is no default arm).
-const defaultWinner = (face: RegionFace, orderIdx: (id: LineId) => number): LineId =>
+// What the raw base paint shows with NOTHING clipped: the front-most cover
+// LINE, whatever the cover spelling (a line's own arms paint fused). The
+// hole gate compares against THIS — any winner that differs, default or
+// assigned, needs clips to show.
+const basePaintWinner = (face: RegionFace, orderIdx: (id: LineId) => number): LineId =>
   distinctCoverLines(face.lineIds).sort((a, b) => orderIdx(a) - orderIdx(b) || (a < b ? -1 : 1))[0];
+
+/**
+ * The winner an unassigned face shows.
+ *
+ * LINE domain almost everywhere: a multi-line face shows its front-most cover
+ * line, and a mid-edge self-crossing (EDGE-spelled cover — no junction,
+ * nothing is a branch) shows the merged line. A junction MOUTH — a
+ * single-line face spelled as arms — defaults to the BRANCH ARM in front:
+ * the through-run keeps painting as the base and the spur's casing separates
+ * from it, the unpainted look the seam system always drew (and the state
+ * every hand-painted junction converged on; leaving mouths merged fused the
+ * row arm across its own curve and the neighbors' reveals). The branch call
+ * reads the junction the arms share: the glued through-run lands two band
+ * ends there, a branch exactly one, so the arm with the fewest ends at a
+ * shared station is the branch — smallest arm number on a branch tie; arms
+ * that are all through-runs (a crossing of two glued runs) or that share no
+ * station stay merged.
+ */
+const makeDefaultWinner = (
+  bands: SegmentBandSpec[],
+  orderIdx: (id: LineId) => number,
+): ((face: RegionFace) => LineId) => {
+  // Lazy, built once per call site: line -> arm -> station -> band-end count.
+  let endCounts: Map<LineId, Map<number, Map<string, number>>> | null = null;
+  const countsFor = (lineId: LineId): Map<number, Map<string, number>> => {
+    if (!endCounts) {
+      endCounts = new Map();
+      for (const band of bands) {
+        for (let k = 0; k < band.lines.length; k++) {
+          const id = band.lines[k].id;
+          let byArm = endCounts.get(id);
+          if (!byArm) endCounts.set(id, (byArm = new Map()));
+          const arm = band.arms[k] ?? 0;
+          let byStation = byArm.get(arm);
+          if (!byStation) byArm.set(arm, (byStation = new Map()));
+          for (const s of [band.fromId, band.toId]) {
+            byStation.set(s, (byStation.get(s) ?? 0) + 1);
+          }
+        }
+      }
+    }
+    return endCounts.get(lineId) ?? new Map();
+  };
+  return (face: RegionFace): LineId => {
+    const front = basePaintWinner(face, orderIdx);
+    const lines = distinctCoverLines(face.lineIds);
+    if (lines.length !== 1) return front;
+    const arms = face.lineIds.filter(isArmCoverId).map(armOfCover);
+    if (arms.length < 2 || arms.length !== face.lineIds.length) return front;
+    const byArm = countsFor(front);
+    const armStations = arms.map((a) => byArm.get(a) ?? new Map<string, number>());
+    // Junction stations: where at least two of the face's arms land ends.
+    const armsAt = new Map<string, number>();
+    for (const stations of armStations) {
+      for (const s of stations.keys()) armsAt.set(s, (armsAt.get(s) ?? 0) + 1);
+    }
+    let best = -1;
+    let bestScore = Infinity;
+    for (let i = 0; i < arms.length; i++) {
+      let score = Infinity;
+      for (const [s, n] of armStations[i]) {
+        if ((armsAt.get(s) ?? 0) >= 2) score = Math.min(score, n);
+      }
+      if (best < 0 || score < bestScore || (score === bestScore && arms[i] < arms[best])) {
+        best = i;
+        bestScore = score;
+      }
+    }
+    if (bestScore >= 2) return front; // all through-runs, or no shared junction
+    return armCoverId(front, arms[best]);
+  };
+};
 
 /** Does a stripe's flattened path bbox (padded) intersect a box? */
 export function stripeIntersectsBox(
@@ -2131,14 +2207,16 @@ function makeHoleContext(
     return { contributions, regionBbox };
   };
 
-  /** Is this face's winner an override the base paint doesn't already show? */
-  const overridden = (
+  /** Does this face's winner differ from what the raw base paint shows?
+   *  Assignment-free DEFAULT winners count: an unpainted branch mouth clips
+   *  its through arm with no assignment anywhere in the doc. */
+  const needsHoles = (
     face: RegionFace,
     w: { winner: LineId; assignmentId: string | null } | undefined,
-  ): w is { winner: LineId; assignmentId: string } =>
-    !!w && !!w.assignmentId && w.winner !== defaultWinner(face, orderIdx);
+  ): w is { winner: LineId; assignmentId: string | null } =>
+    !!w && w.winner !== basePaintWinner(face, orderIdx);
 
-  return { orderIdx, contributionFor, loserPlanFor, overridden, facesNear };
+  return { orderIdx, contributionFor, loserPlanFor, needsHoles, facesNear };
 }
 
 /**
@@ -2187,7 +2265,7 @@ export function buildExclusionHoles(
   const holes = new Map<LineId, Ring[]>();
   faces.forEach((face, i) => {
     const w = winners[i];
-    if (!ctx.overridden(face, w)) return;
+    if (!ctx.needsHoles(face, w)) return;
     const c = ctx.contributionFor(face, i, w);
     if (!c) return;
     for (const { lineId, rings } of c.contributions) {
@@ -2344,7 +2422,7 @@ export function buildExclusionHolesCached(
 
   faces.forEach((face, i) => {
     const w = winners[i];
-    if (!ctx.overridden(face, w)) return;
+    if (!ctx.needsHoles(face, w)) return;
 
     // The same decomposition contributionFor runs — shared, so the signature
     // captures exactly the inputs the geometry consumed.
@@ -2352,7 +2430,7 @@ export function buildExclusionHolesCached(
     const loserSet = new Set(lineLosers);
     const railWWinner = railWOf(winnerLine);
     const inputSig =
-      `${w.winner}|${railWWinner}|${defaultWinner(face, ctx.orderIdx)}|` +
+      `${w.winner}|${railWWinner}|${basePaintWinner(face, ctx.orderIdx)}|` +
       lineLosers.map((l) => `${l}:${railWOf(l)}`).join(',') +
       `|${sliceLosers.join(',')}`;
     let sliverSig = '';
@@ -2500,9 +2578,10 @@ export function resolveRegionWinners(
   const byFace = new Map<number, string>();
   for (const [id, faceIndex] of bound) byFace.set(faceIndex, id);
   const orderIdx = orderIndexer(lineOrder);
+  const defaultFor = makeDefaultWinner(bands, orderIdx);
   return faces.map((face, i) => {
     const assignmentId = byFace.get(i) ?? null;
-    if (!assignmentId) return { winner: defaultWinner(face, orderIdx), assignmentId: null };
+    if (!assignmentId) return { winner: defaultFor(face), assignmentId: null };
     const a = assignments[assignmentId];
     let winner: LineId = a.lineId;
     if (a.winnerPairKey !== undefined) {
@@ -2633,7 +2712,9 @@ export function regionClickAction(args: {
     ),
     ...face.lineIds.filter(isSliceCoverId).sort(byLineThenId),
   ];
-  let current = bound?.lineId ?? order[0];
+  // Unbound, the face shows its DEFAULT — for a mouth that's the branch arm,
+  // not the merged line — and the cycle must step from what's on screen.
+  let current = bound?.lineId ?? makeDefaultWinner(bands, orderIdx)(face);
   if (bound && bound.winnerPairKey !== undefined) {
     const edgeId = edgeCoverId(bound.lineId, bound.winnerPairKey);
     if (face.lineIds.includes(edgeId)) {
@@ -2670,7 +2751,7 @@ export function regionSetAction(args: {
 }): { id: string; assignment: RegionAssignment | null } {
   const { face, boundId, lineOrder, winner, bands, newId } = args;
   const id = boundId ?? newId;
-  if (winner === regionDefaultWinner(face, lineOrder)) return { id, assignment: null };
+  if (winner === regionDefaultWinner(face, bands, lineOrder)) return { id, assignment: null };
   const lineId = lineOfCover(winner);
   const anchors = mintAnchors(face, bands);
   // A slice winner persists as the pairKey of ITS OWN minted anchor — the

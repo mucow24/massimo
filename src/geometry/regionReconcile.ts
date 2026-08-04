@@ -193,9 +193,12 @@ export function reconcileRegionAssignments(
     const a = assignments[id];
     if (!newLive.has(a.lineId)) continue;
     const lines = a.lines.filter((l) => newLive.has(l));
-    // One cover line arbitrates nothing — unless the choice is an ARM of it
-    // (a self-overlap face), where one line is the whole point.
-    if (lines.length < 2 && a.winnerPairKey === undefined) continue;
+    // One cover line arbitrates nothing when it got that way by SHRINKING —
+    // a cross-line choice whose other lines died says nothing anymore. BORN
+    // single-line assignments are real: an arm choice (winnerPairKey) or an
+    // explicit MERGED mouth (no winnerPairKey — the non-default now that
+    // unpainted mouths show the branch arm), both kept.
+    if (lines.length < 2 && a.winnerPairKey === undefined && a.lines.length >= 2) continue;
     // The arm choice rides its own anchor: winnerPairKey is by construction
     // the pairKey of one of the winner line's anchors, so translating that
     // anchor translates the choice. Untranslatable ⇒ kept verbatim, like a

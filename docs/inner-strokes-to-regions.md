@@ -125,12 +125,16 @@ Per-face winner candidates = **distinct lines of the cover** (each meaning "this
 merged" — today's semantics) **plus each slice present in the cover**. Runtime winner type:
 `{ lineId, armIdx? }`. Rules:
 
-- `regionDefaultWinner` stays LINE-domain: front-most distinct line. A pure self face's
-  default is its only line = merged = no holes. Unpainted branches look exactly like today.
+- `regionDefaultWinner` is LINE-domain everywhere EXCEPT a pure self face spelled as arms: an
+  unpainted mouth defaults to the BRANCH ARM in front (`makeDefaultWinner` — fewest band-ends
+  at the junction the arms share; smallest arm number on a branch tie; all-through crossings,
+  edge-spelled covers and multi-line faces keep the front-most line). Holes therefore build for
+  assignment-free default winners too. MERGED is a stored choice, not the resting state: a
+  single-line assignment with no `winnerPairKey` (reconcile keeps born-single assignments,
+  dropping only covers SHRUNK to one line).
 - `regionClickAction` cycle order: distinct lines by lineOrder (today's order), then slices
-  (by line z, then arm index). Landing on the default still deletes (`regionSetAction`
-  compares in the line domain when the winner is a line, and a slice winner never equals the
-  line-domain default, so it always stores).
+  (by line z, then arm index), stepping from the ON-SCREEN default. Landing back on the
+  default deletes; landing on merged stores.
 - **Persisted schema**: `RegionAssignment` gains ONE optional field, `winnerPairKey?: string`
   — present iff the winner is an arm; it is the pairKey of the winner-slice's own minted
   anchor (so it is always also present in `anchors`). `lines[]` stays DISTINCT LINE ids
@@ -231,14 +235,16 @@ Persistence: bump zustand persist `version` 24 → 25; v<25 gate strips `seamCol
 `seamEdges` from lines and line-style defs (precedent: `stripLegacySegmentLayers` at v<15,
 serialize.ts:1793-1810, wired on both paths). File path: parse's rebuild sanitizers already
 drop unknown def keys; add the explicit line-field strip in `sanitizeLineStroke`'s successor.
-NO synthesis of assignments from old seam settings — existing seamed maps render merged at
-their junctions after upgrade and get repainted by hand (single-user decision, accepted).
+NO synthesis of assignments from old seam settings — the branch-arm DEFAULT stands in for
+them: an unpainted junction renders with the branch arm in front (the old "Branch" look), so
+upgraded maps come back looking like themselves; only non-Branch seam modes need repainting.
 `.perf/mta-v23.massimo.json` / `docs/wand-gallery.massimo.json` need no edits (parse drops).
 
 ## 4. Behavior changes, edge cases, accepted losses
 
-- **Per-junction instead of per-line**: each mouth painted individually; new branches start
-  merged. Styles no longer carry branch appearance. (Accepted; per-area control was the point.)
+- **Per-junction instead of per-line**: each mouth paintable individually; new branches start
+  with the branch arm in front (paint to merge or to flip the arm). Styles no longer carry
+  branch appearance. (Accepted; per-area control was the point.)
 - **'both' (the full notch) is gone** — winner-per-face cannot draw both edges. (Accepted.)
 - **Uncased/custom-color seams are gone** — were UI-unreachable already.
 - **Mid-edge self-crossing within one arm** (P-shape): invisible to arms alone; covered by
