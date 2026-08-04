@@ -4,7 +4,6 @@ import {
   LineEndStyle,
   LineId,
   LineStyle,
-  SeamEdges,
   Station,
   StationId,
   StopCell,
@@ -98,33 +97,21 @@ export interface SegmentBandSpec {
   // moves `paths`, so the band is rebuilt anyway and baking the widths
   // costs no repaint flexibility.
   stripeWidths: number[];
-  // Which ARM of a branch notch each stripe is, parallel to `lines` — see
-  // {@link assignSeamArms}. Per STRIPE, not per band: two lines sharing a
-  // corridor can have different topology, so one may branch here while the
-  // other runs through. Read only by the branch-seam pass; it moves no ink of
-  // its own, so unlike the fields above it stays out of regionIncremental's
-  // hashUnits (which hashes painted BODIES).
-  seamArms: SeamArm[];
-  // Which ARM OF ITS LINE each stripe belongs to, parallel to `lines` — also
-  // filled by {@link assignSeamArms}, from the same junction pairing. Arms
+  // Which ARM OF ITS LINE each stripe belongs to, parallel to `lines` —
+  // filled by {@link assignLineArms} from the junction pairing. Arms
   // partition a line's bands at its branch junctions: two bands glue into one
   // arm wherever their ends pair as a through-run, so a line with no branch
   // is a single arm (index 0) end to end, and a branch or a station
-  // self-crossing splits it. Indices are canonical per build (arms ordered by
+  // self-crossing splits it. Per STRIPE, not per band: two lines sharing a
+  // corridor can have different topology, so one may branch here while the
+  // other runs through. Indices are canonical per build (arms ordered by
   // smallest member pairKey) but carry no cross-build identity — persistence
-  // speaks pairKeys. Unlike `seamArms` this DOES move ink: self-overlap
-  // region faces are built from per-arm bodies (lineRegions.selfOverlapParts),
-  // so it IS mixed into regionIncremental's hashUnits.
+  // speaks pairKeys. Arms move ink: self-overlap region faces are built from
+  // per-arm bodies (lineRegions.selfOverlapParts), so the index IS mixed
+  // into regionIncremental's hashUnits.
   arms: number[];
 }
 
-/**
- * The two arms of a branch notch: the corridor running THROUGH the junction,
- * and the one that TURNS AWAY from it. Literally the seam modes minus their
- * 'both', so the two unions cannot drift and `seamEdges` can be compared to an
- * arm directly.
- */
-export type SeamArm = Exclude<SeamEdges, 'both'>;
 
 // A single colored stop square for one line at one station, with its
 // per-line priority. Rendered alongside bands so that a back-stack line's
@@ -237,13 +224,10 @@ export const BAND_SPEC_FIELDS = {
   // Always [] on pristine builder output; stamped only onto CLONES
   // (withLinePriorities / buildBands), never onto the cached objects.
   linePriorities: 'excluded',
-  // Stamped on pristine output (assignSeamArms runs inside buildBandGeometry,
+  // Stamped on pristine output (assignLineArms runs inside buildBandGeometry,
   // before the reuse swap), and derived from the WHOLE band set — a band whose
   // own geometry is unchanged can still change arm when a sibling corridor
   // appears or moves. So it must be compared, not derived from this band.
-  seamArms: 'compared',
-  // Same producer and same whole-band-set derivation as seamArms, so the same
-  // policy for the same reason.
   arms: 'compared',
 } as const satisfies Record<keyof SegmentBandSpec, SpecFieldPolicy>;
 
@@ -298,8 +282,6 @@ function bandSpecEqual(a: SegmentBandSpec, b: SegmentBandSpec): boolean {
       return false;
     }
   }
-  if (a.seamArms.length !== b.seamArms.length) return false;
-  for (let i = 0; i < a.seamArms.length; i++) if (a.seamArms[i] !== b.seamArms[i]) return false;
   return (
     sameNumbers(a.arms, b.arms) &&
     sameNumbers(a.stripeOffsets, b.stripeOffsets) &&
@@ -776,7 +758,7 @@ export function buildBandGeometry(
   }
 
   // Before the reuse swap, so the arms take part in the value equality.
-  assignSeamArms(bands);
+  assignLineArms(bands);
 
   // Swap value-identical specs for the previous build's objects so identity
   // survives a rebuild wherever geometry didn't change (see the reuse layer
@@ -802,20 +784,15 @@ interface JunctionArm {
 }
 
 /**
- * Fills `band.seamArms` (which arm of a branch notch each stripe is) and
- * `band.arms` (which arm OF ITS LINE each stripe belongs to — the through-run
- * pairs below double as the glue of a union-find over each line's bands, so
- * arms fall out of the same junction verdicts the seam draws by).
- *
- * The notch at a branch has two arms — the corridor running THROUGH the
- * junction (whose casing carries on across the branch mouth) and the one that
- * TURNS AWAY (whose own casing curls into it) — and the seam's `seamEdges`
- * mode picks which draws. That is a fact about the JUNCTION, so it is read off
- * the junction: at each station, the line's band ends there are matched into
- * THROUGH-RUNS, most opposed first, and anything left over is a branch. A
- * station with two ends is a plain joint (or a corner) and always pairs up,
- * whichever way its bands bend; a lone end is a terminus and pairs with
- * nothing, which is not the same as branching.
+ * Fills `band.arms`: which arm OF ITS LINE each stripe belongs to. The
+ * through-run pairing below is the glue of a union-find over each line's
+ * bands, so a line's arm partition falls straight out of its junction
+ * verdicts — and those are facts about the JUNCTION, read off the junction:
+ * at each station, the line's band ends there are matched into THROUGH-RUNS,
+ * most opposed first, and anything left over is a branch. A station with two
+ * ends is a plain joint (or a corner) and always pairs up, whichever way its
+ * bands bend; a lone end is a terminus and pairs with nothing, which is not
+ * the same as branching.
  *
  * A run is scored by how nearly its two arms oppose each other, then by their
  * COMBINED straight length — which is just the length of the straight corridor
@@ -828,19 +805,15 @@ interface JunctionArm {
  * whatever their stations' names suggest.
  *
  * After the first run, matching CONTINUES only while a remaining pair is dead
- * opposed: a line that crosses itself at a station has two through-runs and no
- * branch at all, and stopping at one would paint half an X. A second run that
- * is merely the best of what's left is a fork, not a crossing.
+ * opposed: a line that crosses itself at a station has two through-runs — two
+ * ARMS crossing — and stopping at one would weld half the X into one arm. A
+ * second run that is merely the best of what's left is a fork, not a crossing.
  *
  * Reading any of this off the band's own shape instead (does this polyline
- * bend?) is what this replaces: a through corridor whose next station sits
- * off-axis doglegs to reach it, and read that way it claims to be the branch —
- * painting a straight stroke clean across the branch mouth.
- *
- * KNOWN LIMIT: a band has two ends and one verdict, so a band that branches at
- * one end and runs through at the other reads as a branch at both.
+ * bend?) is the older trap: a through corridor whose next station sits
+ * off-axis doglegs to reach it, and read that way it claims to be the branch.
  */
-function assignSeamArms(bands: SegmentBandSpec[]): void {
+function assignLineArms(bands: SegmentBandSpec[]): void {
   // Every band end of every line, grouped by the line + station it meets at.
   const byJunction = new Map<string, JunctionArm[]>();
   // Union-find over (line, band) stripe slots, for `band.arms`: two of a
@@ -859,10 +832,9 @@ function assignSeamArms(bands: SegmentBandSpec[]): void {
     return r;
   };
   const nodeOf = (band: SegmentBandSpec, k: number): string =>
-    `${band.lines[k].id} ${band.bandKey}`;
+    `${band.lines[k].id} ${band.bandKey}`;
   const byLine = new Map<string, { band: SegmentBandSpec; k: number }[]>();
   for (const band of bands) {
-    band.seamArms = band.lines.map(() => 'straight');
     band.arms = band.lines.map(() => 0);
     for (let k = 0; k < band.lines.length; k++) {
       const node = nodeOf(band, k);
@@ -928,9 +900,6 @@ function assignSeamArms(bands: SegmentBandSpec[]): void {
       parent.set(find(nodeOf(a.band, a.stripeIndex)), find(nodeOf(b.band, b.stripeIndex)));
       pool = pool.filter((i) => i !== pair[0] && i !== pair[1]);
     }
-    arms.forEach((arm, i) => {
-      if (!through.has(i)) arm.band.seamArms[arm.stripeIndex] = 'curved';
-    });
   }
 
   // Number each line's arms canonically — components ordered by their
@@ -940,7 +909,7 @@ function assignSeamArms(bands: SegmentBandSpec[]): void {
     const byRoot = new Map<string, { minKey: string; slots: { band: SegmentBandSpec; k: number }[] }>();
     for (const s of slots) {
       const root = find(nodeOf(s.band, s.k));
-      const key = `${s.band.pairKey} ${s.band.bandKey}`;
+      const key = `${s.band.pairKey} ${s.band.bandKey}`;
       const comp = byRoot.get(root);
       if (comp) {
         if (key < comp.minKey) comp.minKey = key;
@@ -1029,16 +998,6 @@ export function withLinePriorities(
 // in the shared interior — WITHOUT the global "all casing first" reorder that
 // historically erased the between-lines separators.
 export const CASING_EPS = 0.5;
-// The branch seam (interior overlap indicator) paints just IN FRONT of its own
-// body: a stripe emits a `seam` renderable at `priority − SEAM_EPS`. It must
-// clear the body (0 < SEAM_EPS) yet not collide with a neighbour line's casing:
-// with integer base priorities (gap ≥ 1), a neighbour's casing sits at
-// `(p−1) + CASING_EPS = p − 0.5`, so SEAM_EPS ≠ CASING_EPS keeps them distinct
-// (0.25 vs 0.5). Clipped to the line's own corridor (see SeamClips), the seam
-// only shows where the line overlaps itself — so its z only matters versus the
-// line's own bodies, which it correctly sits above.
-export const SEAM_EPS = 0.25;
-
 // Flatten bands + markers into a single list of renderables, sorted
 // back-to-front for paint order. Each stripe in a band ships at its own line's
 // z-priority so a line whose layer falls between two interlined lines correctly
@@ -1047,7 +1006,6 @@ export const SEAM_EPS = 0.25;
 // `kind` distinguishes:
 //   - 'stripe' : one body path of a band, identified by (band, stripeIndex).
 //   - 'casing' : that stripe's casing silhouette, at priority + CASING_EPS.
-//   - 'seam'   : that stripe's branch-seam ring, at priority − SEAM_EPS.
 //   - 'marker' : a stop square for one line at one station.
 //
 // Band routing warnings are NOT emitted here — they paint in a dedicated
@@ -1074,7 +1032,6 @@ export type OrderedRenderable =
       priority: number;
       subOrder: number;
     }
-  | { kind: 'seam'; band: SegmentBandSpec; stripeIndex: number; priority: number; subOrder: number }
   | { kind: 'marker'; spec: StopMarkerSpec; priority: number; subOrder: number };
 
 // `lines` is needed and cannot be read off the band: `SegmentBandSpec.lines` is
@@ -1097,8 +1054,8 @@ export function buildOrderedRenderables(
   for (const band of bands) {
     for (let i = 0; i < band.lines.length; i++) {
       const priority = band.linePriorities[i];
-      // A stripe carries its own line's within-line rank on all three of its
-      // passes, so a demoted body takes its casing and seam back with it.
+      // A stripe carries its own line's within-line rank on both of its
+      // passes, so a demoted body takes its casing back with it.
       const line = lines[band.lines[i].id];
       const subOrder = line ? stopDotSubOrder(band, line, dotStyles) : 0;
       list.push({ kind: 'stripe', band, stripeIndex: i, priority, subOrder });
@@ -1109,7 +1066,6 @@ export function buildOrderedRenderables(
         priority: priority + CASING_EPS,
         subOrder,
       });
-      list.push({ kind: 'seam', band, stripeIndex: i, priority: priority - SEAM_EPS, subOrder });
     }
   }
   for (const m of markers) {
@@ -1560,8 +1516,7 @@ function buildCircleBandSpec(
     centerline,
     radius: bandR,
     linePriorities: [], // filled in by assignLinePriorities
-    seamArms: [], // filled in by assignSeamArms
-    arms: [], // filled in by assignSeamArms
+    arms: [], // filled in by assignLineArms
     stripeOffsets: offsets,
     stripeWidths: widths,
   };
@@ -1678,8 +1633,7 @@ function buildBandSpec(
     centerline: result.vertices,
     radius: centerlineR,
     linePriorities: [], // filled in by assignLinePriorities
-    seamArms: [], // filled in by assignSeamArms
-    arms: [], // filled in by assignSeamArms
+    arms: [], // filled in by assignLineArms
     stripeOffsets: offsets,
     stripeWidths: widths,
   };

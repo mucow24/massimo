@@ -11298,8 +11298,7 @@
           "curveRadius": 24,
           "endStyle": "square",
           "strokeWidth": 0,
-          "strokeColor": "#ffffff",
-          "seamEdges": "both"
+          "strokeColor": "#ffffff"
         }
       },
       "default-textLabel": {

@@ -258,11 +258,11 @@ export function buildLineBodies(
 // extra zone parts, and the components those parts live in subdivide the line
 // PER ARM, so a branch mouth becomes a real face covered by two arm cover ids.
 
-// Slice cover-id payloads end with ` <lineId>`, so any line id parses
+// Slice cover-id payloads end with ` <lineId>`, so any line id parses
 // back regardless of its characters. Build-local: slice spellings carry no
 // cross-build identity and never persist — assignments spell them as
 // pairKeys (winnerPairKey).
-const SLICE_SEP = ' ';
+const SLICE_SEP = ' ';
 
 /**
  * Cover id of one ARM of a line — used in {@link RegionFace.lineIds} where a

@@ -538,7 +538,7 @@ select option {
   /* Wide enough for the widest mirror PLUS the native stepper arrows, which
      Chromium overlays inside the input's right edge. Two cases set the floor:
      a three-decimal signed value ("-0.025", tracking), and — since widths,
-     radii, and stroke/seam widths all step by 0.25 — a two-decimal value whose
+     radii, and stroke widths all step by 0.25 — a two-decimal value whose
      integer part runs to three digits ("140.00", the uncapped line width). At
      64px the arrows clip the last digit of those. */
   width: 76px;
@@ -2760,7 +2760,7 @@ button.dialog-sort {
   border-top: 1px solid var(--inset-border);
 }
 /* Unlabeled hairline between control groups within a section (the Line
-   section's width / stroke / seam trios). Lighter than a .style-section break —
+   section's width / stroke pairs). Lighter than a .style-section break —
    the flex gap supplies the breathing room on each side. */
 .style-editor .style-divider {
   border-top: 1px solid var(--inset-border);
@@ -3228,7 +3228,7 @@ body:has(.app[data-theme='dark']) {
 
 /* Disclosure that collapses a popover's style detail: the station popover's
    manual typography overrides (Size → Tracking) and the line popover's full
-   parameter stack (Line width → Inner strokes). A quiet full-width sub-header:
+   parameter stack (Line width → Stroke color). A quiet full-width sub-header:
    muted caret + label, warms to full text color on hover. The style picker
    above it always stays visible. */
 .station-popover .style-collapse-toggle,

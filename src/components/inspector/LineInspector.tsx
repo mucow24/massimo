@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ChevronDownIcon, ChevronRightIcon } from '@radix-ui/react-icons';
-import { beginHistoryGroup, useDoc } from '../../state/store';
-import { isHistoryGrouping } from '../../state/history';
+import { useDoc } from '../../state/store';
 import { useLineEditorPrefs } from '../../state/lineEditorPrefs';
 import type { LineId } from '../../model/types';
 import { DEFAULT_DOT_STYLE } from '../../model/dotStyle';
@@ -9,11 +8,9 @@ import { ColorPalette } from './ColorPalette';
 import { ColorField } from '../ColorField';
 import { useFieldHistory } from '../useFieldHistory';
 import { StationShapePicker } from '../StationShapePicker';
-import { withHexAlpha } from '../../util/color';
 import { NumericFieldRow } from '../NumericFieldRow';
 import { StyleRow } from '../StyleRow';
 import { LineEndSegmented } from '../LineEndPicker';
-import { InnerStrokesSegmented, innerStrokesOf } from '../InnerStrokesPicker';
 import { lineEndStyleOf } from '../../model/lineEnd';
 import {
   LINE_INTERLINE_GAP_MAX,
@@ -52,7 +49,6 @@ import {
   LINE_STROKE_WIDTH_MAX,
   LINE_STROKE_WIDTH_MIN,
   lineCasingColor,
-  lineStrokeColorStored,
   lineStrokeWidthOf,
 } from '../../model/lineStroke';
 
@@ -66,15 +62,10 @@ import {
 // Identity (name/service/color) and the Style preset row always show; the
 // full parameter stack below them collapses behind a remembered disclosure
 // (useLineEditorPrefs), grouped geometry → stop dots → stroke, with
-// context-dependent rows (dash dims, and the whole stroke tail below its width)
-// rendered only while relevant.
-//
-// The stroke is presented as ONE thing here — a width and a color that the
-// outer casing and the inner strokes at a junction share — even though the doc
-// keeps the seam's width and color as their own fields. Every write below that
-// crosses that line is marked. The line STYLE editor presents the same three
-// rows over the same five props (see LineStyleEditor); what differs is only the
-// write path, separate setters here against one patch there.
+// context-dependent rows (dash dims, and the stroke color below its width)
+// rendered only while relevant. (Which casing shows inside a branch mouth is
+// no longer a line setting at all: self-overlaps are region faces, painted
+// per junction in Layering mode.)
 export function LineInspector({ id }: { id: LineId }) {
   const line = useDoc((s) => s.lines[id]);
   const stations = useDoc((s) => s.stations);
@@ -90,9 +81,6 @@ export function LineInspector({ id }: { id: LineId }) {
   const setLineEndStyle = useDoc((s) => s.setLineEndStyle);
   const setLineStrokeWidth = useDoc((s) => s.setLineStrokeWidth);
   const setLineStrokeColor = useDoc((s) => s.setLineStrokeColor);
-  const setLineSeamColor = useDoc((s) => s.setLineSeamColor);
-  const setLineSeamWidth = useDoc((s) => s.setLineSeamWidth);
-  const setLineSeamEdges = useDoc((s) => s.setLineSeamEdges);
   const setLineDashLength = useDoc((s) => s.setLineDashLength);
   const setLineDashWidth = useDoc((s) => s.setLineDashWidth);
   const styleExpanded = useLineEditorPrefs((s) => s.styleExpanded);
@@ -108,10 +96,6 @@ export function LineInspector({ id }: { id: LineId }) {
   const [serviceDraft, setServiceDraft] = useState<string | null>(null);
 
   if (!line) return null;
-
-  // The four-way this editor shows for the line's inner strokes — the same
-  // derivation the style editor reads off a def's props (see innerStrokesOf).
-  const innerStrokes = innerStrokesOf(line);
 
   return (
     <section className="inspector">
@@ -322,88 +306,30 @@ export function LineInspector({ id }: { id: LineId }) {
             max={LINE_STROKE_WIDTH_MAX}
             step={LINE_STROKE_STEP}
             value={lineStrokeWidthOf(line)}
-            // ONE width for the whole stroke. The outer casing and the inner
-            // strokes at a junction stay separate DOC fields — a line style
-            // carries both, and the style editor still dials them apart — but
-            // this editor writes them together.
-            //
-            // NB a nudge that RETURNS to the starting width still detaches a
-            // line whose stored seam width differed: strokeWidth no-ops, but
-            // seamWidth really did move onto it. That is the unification being
-            // honest — the width shown is now the seam's too.
-            onChange={(n) => {
-              // Two writes, one edit. Gated because the focused slider or
-              // spinbutton already holds a group and groups don't nest; an
-              // UNFOCUSED wheel tick holds none, and would otherwise undo in
-              // two halves (withCoalescedHistory folds a burst, but only ever
-              // one entry deep).
-              const group = isHistoryGrouping() ? null : beginHistoryGroup();
-              setLineStrokeWidth(line.id, n);
-              setLineSeamWidth(line.id, n);
-              group?.commit();
-            }}
+            onChange={(n) => setLineStrokeWidth(line.id, n)}
             getCurrent={() => lineStrokeWidthOf(useDoc.getState().lines[id])}
             textboxAllowAboveMax
           />
-          {/* Only while the casing is on — a 0-width stroke has no color to pick
-              and no ink to carry into a junction. */}
+          {/* Only while the casing is on — a 0-width stroke has no color to
+              pick. */}
           {lineStrokeWidthOf(line) > 0 && (
-            <>
-              <div className="options-popover-row">
-                <label htmlFor={`line-stroke-color-${line.id}`} className="options-popover-label">
-                  Stroke color
-                </label>
-                {/* RESOLVED, not stored: a line style can set the casing to the
-                    line's own color, and that sentinel is not a paintable hex —
-                    the swatch shows what's actually on the canvas. Picking a
-                    color here writes a fixed one (and detaches from the style),
-                    which is exactly what reaching for the swatch means; the
-                    "follow the line" mode itself is chosen in the style editor.
-                    The inner strokes follow this color, but only while they are
-                    ON: the seam color IS their on/off switch, so writing one to
-                    a line set to None would switch them on behind the user. */}
-                <ColorField
-                  id={`line-stroke-color-${line.id}`}
-                  ariaLabel="Stroke color"
-                  value={lineCasingColor(line, line.color)}
-                  onChange={(c) => {
-                    setLineStrokeColor(line.id, c);
-                    if (innerStrokes !== 'none') setLineSeamColor(line.id, c);
-                  }}
-                />
-              </div>
-              {/* Where the line meets ITSELF — a branch or a loop — the casing
-                  merges away; this draws it back through the junction. The full
-                  notch, or just the main line's arm / the branch's own. Picking
-                  an arm hands the seam this stroke's color and width, which is
-                  what makes the two rows above cover it. */}
-              <div className="options-popover-row">
-                <label className="options-popover-label">Inner strokes</label>
-                <InnerStrokesSegmented
-                  value={innerStrokes}
-                  onSelect={(v) => {
-                    // A segmented toggle carries no history group of its own, so
-                    // this opens one: up to three writes, and an undo that
-                    // stopped between them would land on inner strokes the user
-                    // never picked. Gated like the width row above.
-                    const group = isHistoryGrouping() ? null : beginHistoryGroup();
-                    if (v === 'none') {
-                      // A fully transparent seam color canonicalizes to "no
-                      // seam": the field is dropped, not stored as clear.
-                      setLineSeamColor(line.id, withHexAlpha(lineCasingColor(line, line.color), 0));
-                    } else {
-                      // STORED, not resolved: a casing that follows the line's
-                      // own color hands the seam that same sentinel, so the two
-                      // track the line together.
-                      setLineSeamColor(line.id, lineStrokeColorStored(line));
-                      setLineSeamWidth(line.id, lineStrokeWidthOf(line));
-                      setLineSeamEdges(line.id, v);
-                    }
-                    group?.commit();
-                  }}
-                />
-              </div>
-            </>
+            <div className="options-popover-row">
+              <label htmlFor={`line-stroke-color-${line.id}`} className="options-popover-label">
+                Stroke color
+              </label>
+              {/* RESOLVED, not stored: a line style can set the casing to the
+                  line's own color, and that sentinel is not a paintable hex —
+                  the swatch shows what's actually on the canvas. Picking a
+                  color here writes a fixed one (and detaches from the style),
+                  which is exactly what reaching for the swatch means; the
+                  "follow the line" mode itself is chosen in the style editor. */}
+              <ColorField
+                id={`line-stroke-color-${line.id}`}
+                ariaLabel="Stroke color"
+                value={lineCasingColor(line, line.color)}
+                onChange={(c) => setLineStrokeColor(line.id, c)}
+              />
+            </div>
           )}
         </>
       )}

@@ -429,26 +429,8 @@ export interface Line {
   // a dot style's 'line' stroke. Missing ⇒ '#ffffff'. The setter normalizes to
   // lowercase and drops the field at the default.
   strokeColor?: string;
-  // Interior "seam" color for a branch/loop. Where a line's OWN bands overlap
-  // (a self-junction) the casing is normally merged away; set this to paint a
-  // subtle stroke there so the overlap still reads as two tracks. Lowercase
-  // hex, may carry alpha (#rrggbbaa) for a translucent seam, or 'line' (see
-  // `strokeColor`). Missing ⇒ no seam; the setter drops the field when unset or
-  // fully transparent (the "off" state).
-  seamColor?: string;
-  // Seam width per side, world units. Stored like `strokeWidth` (drop at 0), but
-  // an UNSET value inherits the casing width at render time (see seamRenderWidth)
-  // so a seam-color-only line still shows a seam. Only takes effect alongside a
-  // non-transparent seamColor.
-  seamWidth?: number;
-  // Which arm of this line's branch notch to paint (see SeamEdges). Missing ⇒
-  // 'both', the full notch — legacy saves carried a doc-level `seamEdges`
-  // instead, baked onto lines on load (see bakeDocSeamEdges in serialize.ts).
-  // PRESENTATION, like the seam color it picks arms of: it never moves a band path.
-  // The setter drops the field at 'both' so the default is never stored.
-  seamEdges?: SeamEdges;
   // TfL-tick dimensions for this line's 'dash' stops, world units. Both are
-  // stored like `seamWidth` (quarter-unit grid, drop at 0 = "auto"); an UNSET
+  // stored like `strokeWidth` (quarter-unit grid, drop at 0 = "auto"); an UNSET
   // value derives from the line width at render time (length = width,
   // thickness = width / 2 — see dashSize.ts). PRESENTATION: never moves band
   // geometry. `dashLength` is how far the tick protrudes from the stripe edge
@@ -488,7 +470,7 @@ export interface Line {
   // Live link to a StyleDef of kind 'line' (see MapDoc.styles). INVARIANT:
   // when present, this line's covered style fields (singletonDotStyle,
   // multiDotStyle, singletonDotSize, multiDotSize, width, interlineGap, labelGap,
-  // strokeWidth, strokeColor, seamColor, seamWidth, seamEdges, dashLength, dashWidth, curveRadius —
+  // strokeWidth, strokeColor, dashLength, dashWidth, curveRadius —
   // NOT color) equal the style's props. Transforms maintain it: editing any covered field clears
   // the tag ("detach to Custom"), editing the style re-stamps its users,
   // deleting the style untags. Absent ⇒ no style ("Custom" in the UI).
@@ -749,12 +731,6 @@ export interface LineCircle {
   locked?: boolean;
 }
 
-// How the branch seam's "inner edges" are drawn (see Line.seamEdges). The notch
-// at a branch is two arms, one per band — the band running STRAIGHT through and
-// the band that TURNS away — and this picks which of them draws: 'both' is the
-// full notch, 'straight' carries the main line's stroke on unbroken across the
-// branch mouth, 'curved' brings the branch's own stroke into the junction.
-export type SeamEdges = 'both' | 'straight' | 'curved';
 
 export interface MapDoc {
   // User-facing document name. Shown in the toolbar, the window title, and the
@@ -853,10 +829,6 @@ export interface MapDoc {
   // legitimate map. Legacy saves carry an `activePalettes` id list instead,
   // resolved to copies on load by `bakeActivePalettes`.
   palettes: Palette[];
-  // NOTE: there is no doc-level `seamEdges` anymore — which arm of a branch
-  // seam gets painted is a per-line style field (Line.seamEdges). Legacy saves
-  // that carry the old doc field get it baked onto their lines on load
-  // (bakeDocSeamEdges).
   // Whether the map is a NIGHT map: false = day (light), true = night (dark).
   // A property of the document, not of the session viewing it — so it travels
   // in the saved file, an exported .massimo.json reopens in the mode it was
@@ -1068,17 +1040,6 @@ export interface LineStyleProps {
   // Line.strokeColor) — captured and stamped as the sentinel, so one style can
   // give a dozen differently-colored lines a casing in their own hue.
   strokeColor: string;
-  // Interior branch/loop seam color (lowercase hex, may carry alpha, or 'line').
-  // Optional: absent ⇒ the style leaves the seam off (see Line.seamColor).
-  seamColor?: string;
-  // Seam width per side (world units). Optional: absent ⇒ inherit the casing
-  // width (see Line.seamWidth).
-  seamWidth?: number;
-  // Which pieces of the seam edges to paint (see Line.seamEdges). Required
-  // rather than optional, matching `endStyle` above — the same uniformity
-  // choice, for the same reason. Defs from saves that predate it heal to 'both'
-  // in canonicalStyleProps.
-  seamEdges: SeamEdges;
   // TfL-tick dimensions (world units). Optional: absent ⇒ derive from the
   // line width at render time (see Line.dashLength / Line.dashWidth).
   dashLength?: number;

@@ -40,7 +40,6 @@ import {
   resolveRegionWinners,
 } from '../geometry/lineRegions';
 import { HatchPatterns } from './HatchPatterns';
-import { SeamClips } from './canvas/SeamClips';
 import { StopMarker } from './StopMarker';
 import { StopGlyph } from './StopGlyph';
 import { resolveDotStyle } from '../model/dotStyle';
@@ -1300,8 +1299,6 @@ export function MapCanvas() {
         >
           <defs>
             <HatchPatterns colors={hatchedColors} underlayColor={underlayColor} />
-            {/* Per-line corridor clips for the branch seam (see SeamClips). */}
-            <SeamClips bands={bands} lines={lines} />
             {regionExcludeHoles && regionClipOuter && (
               <RegionExcludeClips holes={regionExcludeHoles} bounds={regionClipOuter} />
             )}
@@ -1506,20 +1503,6 @@ export function MapCanvas() {
                     spec={r.band}
                     stripeIndex={r.stripeIndex}
                     pass="silhouette"
-                    lines={lines}
-                    colorMap={colorMap}
-                    underlayColor={underlayColor}
-                  />,
-                );
-              }
-              if (r.kind === 'seam') {
-                return withExcludeClip(
-                  'seam:' + r.band.bandKey + ':' + lineId,
-                  <SegmentBand
-                    key={'seam:' + r.band.bandKey + ':' + lineId}
-                    spec={r.band}
-                    stripeIndex={r.stripeIndex}
-                    pass="seam"
                     lines={lines}
                     colorMap={colorMap}
                     underlayColor={underlayColor}

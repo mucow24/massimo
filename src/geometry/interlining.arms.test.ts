@@ -5,10 +5,10 @@ import type { MapDoc } from '../model/types';
 
 // ---------------------------------------------------------------------------
 // Arm partition: `band.arms[k]` groups a LINE's bands into arms, glued by the
-// same through-run pairing the seam verdicts come from (assignSeamArms). A
-// line with no branch junction is ONE arm end to end — that invariant is what
-// keeps plain corners out of the self-overlap zone (lineRegions builds self
-// parts from ARM PAIRS, so a single-arm line contributes none).
+// junction through-run pairing (assignLineArms). A line with no branch
+// junction is ONE arm end to end — that invariant is what keeps plain corners
+// out of the self-overlap zone (lineRegions builds self parts from ARM PAIRS,
+// so a single-arm line contributes none).
 // ---------------------------------------------------------------------------
 
 const line = (edges: string[]) => makeLine({ id: 'l1', color: '#c00', edges });
@@ -127,7 +127,7 @@ describe('line arm partition (band.arms)', () => {
     expect(new Set(Object.values(arms)).size).toBe(3);
   });
 
-  // The Broad Channel shape (see interlining.seam.test.ts): two arms leave the
+  // The Broad Channel shape (the A train's same-axis fork): two arms leave the
   // junction on the SAME axis, and the through-run is decided by combined
   // straight length — so the arm partition must be identical whatever order
   // the edges are declared in.

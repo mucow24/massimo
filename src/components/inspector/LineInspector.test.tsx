@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LineInspector } from './LineInspector';
 import { useDoc, useSelection } from '../../state/store';
@@ -8,7 +8,6 @@ import { historyDepth } from '../../state/history';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { makeDoc, makeLine, makeStation, makeStop, makeStyle } from '../../test/fixtures';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
-import type { SeamEdges } from '../../model/types';
 import { openColorField } from '../../test/colorField';
 import { chooseOption, stepSlider } from '../../test/interaction';
 
@@ -417,9 +416,6 @@ describe('<LineInspector /> — stroke controls', () => {
       color?: string;
       strokeWidth?: number;
       strokeColor?: string;
-      seamColor?: string;
-      seamWidth?: number;
-      seamEdges?: SeamEdges;
     } = {},
   ) => {
     useDoc.setState({
@@ -487,49 +483,6 @@ describe('<LineInspector /> — stroke controls', () => {
     expect(await openColorField(user, 'Stroke color')).toHaveValue('#ffffff');
   });
 
-  // The editor presents ONE stroke: the width row drives the casing and the
-  // inner strokes at a junction together, even though they stay separate doc
-  // fields (the line style editor still dials them apart).
-  it('the stroke width writes the seam’s width too, and zero drops both keys', () => {
-    seed();
-    render(<LineInspector id="L1" />);
-    const slider = screen.getByRole('slider', { name: 'Stroke width' });
-    stepSlider(slider, 3); // three steps of the 0.25 grid: 0 -> 0.75
-    expect(useDoc.getState().lines.L1.strokeWidth).toBe(0.75);
-    expect(useDoc.getState().lines.L1.seamWidth).toBe(0.75);
-    stepSlider(slider, -3);
-    expect('strokeWidth' in useDoc.getState().lines.L1).toBe(false);
-    expect('seamWidth' in useDoc.getState().lines.L1).toBe(false);
-  });
-
-  it('the stroke color writes the seam’s too while the inner strokes are on', async () => {
-    const user = userEvent.setup();
-    seed({ strokeWidth: 4, strokeColor: '#ff0000', seamColor: '#abcdef80' });
-    useDoc.temporal.getState().clear();
-    render(<LineInspector id="L1" />);
-    const input = await openColorField(user, 'Stroke color');
-    const before = historyDepth();
-    fireEvent.change(input, { target: { value: '#00aa55' } });
-    expect(useDoc.getState().lines.L1.strokeColor).toBe('#00aa55');
-    expect(useDoc.getState().lines.L1.seamColor).toBe('#00aa55');
-    // ColorField owns open→commit grouping, so the PAIR still costs one entry
-    // (this needs no group of its own, unlike the width and arm rows).
-    await user.keyboard('{Escape}');
-    expect(historyDepth()).toBe(before + 1);
-  });
-
-  // The seam's COLOR is its on/off switch, so mirroring it unconditionally
-  // would switch inner strokes on for a line set to None.
-  it('leaves the seam off when the stroke color changes with inner strokes off', async () => {
-    const user = userEvent.setup();
-    seed({ strokeWidth: 4, strokeColor: '#ff0000' }); // no seam
-    render(<LineInspector id="L1" />);
-    const input = await openColorField(user, 'Stroke color');
-    fireEvent.change(input, { target: { value: '#00aa55' } });
-    expect(useDoc.getState().lines.L1.strokeColor).toBe('#00aa55');
-    expect('seamColor' in useDoc.getState().lines.L1).toBe(false);
-  });
-
   // A line style can set the casing to the LINE_OWN_COLOR sentinel and stamp it
   // onto its lines, so the inspector must cope with a stored 'line'. The
   // sentinel is not a color: show what's actually PAINTED, never the word.
@@ -540,96 +493,10 @@ describe('<LineInspector /> — stroke controls', () => {
     expect(await openColorField(user, 'Stroke color')).toHaveValue('#123456');
   });
 
-  it('has no seam width or seam color row of its own', () => {
-    seed({ strokeWidth: 4, seamColor: '#abcdef80' });
-    render(<LineInspector id="L1" />);
-    expect(screen.queryByRole('slider', { name: 'Seam width' })).toBeNull();
-    expect(screen.queryByLabelText('Seam color')).toBeNull();
-  });
-
-  it('hides the stroke color and inner strokes until there is a stroke to draw', () => {
+  it('hides the stroke color until there is a stroke to draw', () => {
     seed(); // width 0
     render(<LineInspector id="L1" />);
     expect(screen.queryByLabelText('Stroke color')).toBeNull();
-    expect(screen.queryByRole('radiogroup', { name: 'Inner strokes' })).toBeNull();
-  });
-
-  // The four-way: None plus the two arms of the branch notch ('curved' is the
-  // BRANCH's own stroke curling in, 'straight' the MAINLINE's carrying through).
-  it('the inner-strokes group shows the line’s arm and writes a pick through', async () => {
-    const user = userEvent.setup();
-    seed({ strokeWidth: 4, seamColor: '#abcdef80', seamEdges: 'straight' });
-    render(<LineInspector id="L1" />);
-    const group = screen.getByRole('radiogroup', { name: 'Inner strokes' });
-    expect(within(group).getByRole('radio', { name: 'Mainline' })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
-    await user.click(within(group).getByRole('radio', { name: 'Branch' }));
-    expect(useDoc.getState().lines.L1.seamEdges).toBe('curved');
-    // Back to the full notch drops the field — the default is never stored.
-    await user.click(within(group).getByRole('radio', { name: 'Both' }));
-    expect('seamEdges' in useDoc.getState().lines.L1).toBe(false);
-  });
-
-  it('a seam with no stored arm shows the full notch selected', () => {
-    seed({ strokeWidth: 4, seamColor: '#abcdef80' });
-    render(<LineInspector id="L1" />);
-    const group = screen.getByRole('radiogroup', { name: 'Inner strokes' });
-    expect(within(group).getByRole('radio', { name: 'Both' })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
-  });
-
-  it('reads None off a line with no seam, whatever arm it remembers', () => {
-    seed({ strokeWidth: 4, seamEdges: 'curved' }); // an arm, but no seam color
-    render(<LineInspector id="L1" />);
-    const group = screen.getByRole('radiogroup', { name: 'Inner strokes' });
-    expect(within(group).getByRole('radio', { name: 'None' })).toHaveAttribute(
-      'aria-checked',
-      'true',
-    );
-  });
-
-  it('picking an arm hands the seam the stroke’s own color and width', async () => {
-    const user = userEvent.setup();
-    seed({ strokeWidth: 3, strokeColor: '#123456' }); // no seam yet
-    render(<LineInspector id="L1" />);
-    const group = screen.getByRole('radiogroup', { name: 'Inner strokes' });
-    await user.click(within(group).getByRole('radio', { name: 'Branch' }));
-    const line = useDoc.getState().lines.L1;
-    expect(line.seamColor).toBe('#123456');
-    expect(line.seamWidth).toBe(3);
-    expect(line.seamEdges).toBe('curved');
-  });
-
-  // A casing following the line's own color hands the seam the SENTINEL, not
-  // the resolved hex, so the two keep tracking the line together.
-  it("passes the 'line' sentinel to the seam when the casing follows the line", async () => {
-    const user = userEvent.setup();
-    seed({ color: '#123456', strokeWidth: 3, strokeColor: 'line' });
-    render(<LineInspector id="L1" />);
-    const group = screen.getByRole('radiogroup', { name: 'Inner strokes' });
-    await user.click(within(group).getByRole('radio', { name: 'Both' }));
-    expect(useDoc.getState().lines.L1.seamColor).toBe('line');
-  });
-
-  it('None switches the inner strokes off, keeping the arm for the way back', async () => {
-    const user = userEvent.setup();
-    seed({ strokeWidth: 4, strokeColor: '#123456', seamColor: '#123456', seamEdges: 'curved' });
-    render(<LineInspector id="L1" />);
-    const group = screen.getByRole('radiogroup', { name: 'Inner strokes' });
-    await user.click(within(group).getByRole('radio', { name: 'None' }));
-    // Off is a dropped seam color — the arm survives, so re-picking one lands
-    // back where the line was.
-    expect('seamColor' in useDoc.getState().lines.L1).toBe(false);
-    expect(useDoc.getState().lines.L1.seamEdges).toBe('curved');
-    expect(
-      within(screen.getByRole('radiogroup', { name: 'Inner strokes' })).getByRole('radio', {
-        name: 'None',
-      }),
-    ).toHaveAttribute('aria-checked', 'true');
   });
 
   it('one slider focus-arc collapses to a single undo entry', () => {
@@ -645,30 +512,10 @@ describe('<LineInspector /> — stroke controls', () => {
     expect('strokeWidth' in useDoc.getState().lines.L1).toBe(false);
   });
 
-  // A unified control's paired writes must land as ONE entry, or an undo stops
-  // in a state the user never picked — half an arm pick is inner strokes ON in
-  // Both, with no arm stored.
-  it('one arm pick is a single undo entry, and undoing it restores the whole seam', async () => {
-    const user = userEvent.setup();
-    seed({ strokeWidth: 3, strokeColor: '#123456' });
-    useDoc.temporal.getState().clear();
-    render(<LineInspector id="L1" />);
-    const group = screen.getByRole('radiogroup', { name: 'Inner strokes' });
-    const before = historyDepth();
-    await user.click(within(group).getByRole('radio', { name: 'Branch' }));
-    expect(historyDepth()).toBe(before + 1);
-    useDoc.temporal.getState().undo();
-    const line = useDoc.getState().lines.L1;
-    expect('seamColor' in line).toBe(false);
-    expect('seamWidth' in line).toBe(false);
-    expect('seamEdges' in line).toBe(false);
-  });
-
-  // Unfocused wheel ticks land outside any field group, and withCoalescedHistory
-  // folds a BURST into one entry but only ever one deep — so the width's paired
-  // writes need a group of their own even here.
-  it('one wheel tick on the stroke width is a single undo entry', () => {
-    seed({ seamColor: '#abcdef80' });
+  // Unfocused wheel ticks land outside any field group; withCoalescedHistory
+  // folds a BURST into one entry — one tick must cost exactly one.
+  it('one wheel tick on the stroke width writes strokeWidth in a single undo entry', () => {
+    seed();
     useDoc.temporal.getState().clear();
     render(<LineInspector id="L1" />);
     const row = screen
@@ -726,7 +573,7 @@ describe('<LineInspector /> — collapsible style detail', () => {
   });
 
   it('orders the expanded stack: geometry, dots (with header), then the stroke', () => {
-    // A casing width, so the stroke's colour + inner-strokes tail renders.
+    // A casing width, so the stroke's colour row renders.
     seed({ strokeWidth: 4 });
     expandStyleDetail();
     render(<LineInspector id="L1" />);
@@ -740,7 +587,6 @@ describe('<LineInspector /> — collapsible style detail', () => {
       screen.getByText('Interchange (Multiple lines stop)'),
       screen.getByRole('slider', { name: 'Stroke width' }),
       screen.getByLabelText('Stroke color'),
-      screen.getByRole('radiogroup', { name: 'Inner strokes' }),
     ];
     for (let i = 0; i + 1 < order.length; i++) {
       // DOCUMENT_POSITION_FOLLOWING = 4: the argument follows the receiver.

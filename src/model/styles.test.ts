@@ -30,7 +30,6 @@ import { LINE_CURVE_RADIUS_DEFAULT } from './lineCurve';
 import type {
   LineEndStyle,
   RouteBulletStyleProps,
-  SeamEdges,
   TextLabelStyleProps,
   TransferStyleProps,
 } from './types';
@@ -60,7 +59,6 @@ describe('captureStyleProps', () => {
       endStyle: 'square' as const,
       strokeWidth: 0,
       strokeColor: '#ffffff',
-      seamEdges: 'both' as const,
     });
   });
 
@@ -90,23 +88,7 @@ describe('captureStyleProps', () => {
       endStyle: 'square' as const,
       strokeWidth: 1.5,
       strokeColor: '#123456',
-      seamEdges: 'both' as const,
     });
-  });
-
-  it('captures the seam color + width when set, and omits both keys when off', () => {
-    const withSeam = makeDoc({
-      lines: [makeLine({ id: 'l1', strokeWidth: 2, seamColor: '#abcdef80', seamWidth: 3 })],
-    });
-    expect(captureStyleProps(withSeam, 'line', 'l1')).toMatchObject({
-      seamColor: '#abcdef80',
-      seamWidth: 3,
-    });
-    // A seamless line captures NEITHER key (so it compares equal to a style that
-    // never had one).
-    const noSeam = captureStyleProps(makeDoc({ lines: [makeLine({ id: 'l1' })] }), 'line', 'l1');
-    expect(noSeam).not.toHaveProperty('seamColor');
-    expect(noSeam).not.toHaveProperty('seamWidth');
   });
 
   // The whole point of the sentinel: a style set to "the line's own color" must
@@ -120,13 +102,11 @@ describe('captureStyleProps', () => {
           color: '#c60c30',
           strokeWidth: 2,
           strokeColor: 'line',
-          seamColor: 'line',
         }),
       ],
     });
     expect(captureStyleProps(doc, 'line', 'l1')).toMatchObject({
       strokeColor: 'line',
-      seamColor: 'line',
     });
   });
 
@@ -270,7 +250,6 @@ describe('stylePropsEqual — line covered fields', () => {
       endStyle: 'square' as const,
       strokeWidth: 0,
       strokeColor: '#ffffff',
-      seamEdges: 'both' as const,
     };
     expect(stylePropsEqual('line', base, { ...base })).toBe(true);
     expect(stylePropsEqual('line', base, { ...base, curveRadius: 40 })).toBe(false);
@@ -297,7 +276,6 @@ describe('stylePropsEqual — line covered fields', () => {
       endStyle: 'square' as const,
       strokeWidth: 0,
       strokeColor: '#ffffff',
-      seamEdges: 'both' as const,
     };
     expect(stylePropsEqual('line', base, { ...base, interlineGap: 2 })).toBe(false);
     expect(
@@ -316,7 +294,6 @@ describe('stylePropsEqual — line covered fields', () => {
       endStyle: 'square' as const,
       strokeWidth: 0,
       strokeColor: '#ffffff',
-      seamEdges: 'both' as const,
     };
     expect(stylePropsEqual('line', base, { ...base, labelGap: 2 })).toBe(false);
     expect(stylePropsEqual('line', { ...base, labelGap: 2 }, { ...base, labelGap: 2 })).toBe(true);
@@ -420,7 +397,7 @@ describe('applyStyleToItem', () => {
 
   it("stamps the 'line' sentinel onto lines of ANY color, keeping them tagged", () => {
     const style = makeStyle('line', 'y1', {
-      props: { strokeWidth: 2, strokeColor: 'line', seamColor: 'line' },
+      props: { strokeWidth: 2, strokeColor: 'line' },
     });
     const doc = makeDoc({
       lines: [makeLine({ id: 'l1', color: '#c60c30' }), makeLine({ id: 'l2', color: '#00933c' })],
@@ -428,40 +405,16 @@ describe('applyStyleToItem', () => {
     });
     let next = applyStyleToItem(doc, 'y1', 'l1');
     next = applyStyleToItem(next, 'y1', 'l2');
-    // Both wearers store the sentinel — each paints its casing/seam in its OWN
+    // Both wearers store the sentinel — each paints its casing in its OWN
     // color at render time (see lineCasingColor), while the STORED values match
     // the style, so the tagged⇒matches invariant holds for both.
     for (const id of ['l1', 'l2'] as const) {
       expect(next.lines[id].strokeColor).toBe('line');
-      expect(next.lines[id].seamColor).toBe('line');
       expect(next.lines[id].styleId).toBe('y1');
       expect(captureStyleProps(next, 'line', id)).toMatchObject({
         strokeColor: 'line',
-        seamColor: 'line',
       });
     }
-  });
-
-  it('stamps a style seam color + width, and stamping a seamless style clears both', () => {
-    const seamStyle = makeStyle('line', 'y1', {
-      props: { strokeWidth: 2, seamColor: '#abcdef80', seamWidth: 3 },
-    });
-    const doc = makeDoc({ lines: [makeLine({ id: 'l1' })], styles: [seamStyle] });
-    const stamped = applyStyleToItem(doc, 'y1', 'l1').lines.l1;
-    expect(stamped.seamColor).toBe('#abcdef80');
-    expect(stamped.seamWidth).toBe(3);
-    expect(stamped.styleId).toBe('y1');
-
-    // A style with NO seam, stamped onto a line that HAS one, removes both.
-    const plainStyle = makeStyle('line', 'y2', { props: { strokeWidth: 2 } });
-    const doc2 = makeDoc({
-      lines: [makeLine({ id: 'l1', seamColor: '#abcdef80', seamWidth: 3 })],
-      styles: [plainStyle],
-    });
-    const cleared = applyStyleToItem(doc2, 'y2', 'l1').lines.l1;
-    expect('seamColor' in cleared).toBe(false);
-    expect('seamWidth' in cleared).toBe(false);
-    expect(cleared.styleId).toBe('y2');
   });
 
   it('stamps dash dimensions, and stamping a style without them clears both', () => {
@@ -1048,7 +1001,7 @@ describe('canonicalStyleProps — quarter-unit grids', () => {
   // the reason its callers don't each re-implement the omission: it rebuilds
   // rather than spreading, so a key handed in EXPLICITLY undefined comes back
   // missing, not present-and-undefined. serialize's sanitizeStyleProps leans on
-  // exactly that — it reads six optionals off untyped JSON, where a malformed
+  // exactly that — it reads four optionals off untyped JSON, where a malformed
   // or absent one IS undefined, and passes them straight through.
   //
   // The distinction is not cosmetic. A present-but-undefined key survives the
@@ -1059,21 +1012,12 @@ describe('canonicalStyleProps — quarter-unit grids', () => {
     const base = defaultStyleProps(DEFAULT_DOC, 'line')!;
     const out = canonicalStyleProps('line', {
       ...base,
-      seamColor: undefined,
-      seamWidth: undefined,
       dashLength: undefined,
       dashWidth: undefined,
       interlineGap: undefined,
       labelGap: undefined,
     });
-    for (const key of [
-      'seamColor',
-      'seamWidth',
-      'dashLength',
-      'dashWidth',
-      'interlineGap',
-      'labelGap',
-    ]) {
+    for (const key of ['dashLength', 'dashWidth', 'interlineGap', 'labelGap']) {
       expect(out, `${key} survived as a present key`).not.toHaveProperty(key);
     }
   });
@@ -1337,65 +1281,3 @@ describe('line style — end style coverage', () => {
   });
 });
 
-// The branch-seam edge filter is a covered style field on the same terms as the
-// line end: required in the props (so a style can force the full notch back),
-// captured by example, and detaching when edited by hand.
-describe('line style — seam edge coverage', () => {
-  const lineDoc = (patch = {}) =>
-    makeDoc({
-      stations: [
-        makeStation({ id: 'a', x: 0, y: 0, stops: [makeStop('l1')] }),
-        makeStation({ id: 'b', x: 0, y: 300, stops: [makeStop('l1')] }),
-      ],
-      lines: [makeLine({ id: 'l1', stations: ['a', 'b'], ...patch })],
-    });
-
-  it("captures the line's seam edge mode, and 'both' from a line that stores none", () => {
-    expect(captureStyleProps(lineDoc({ seamEdges: 'curved' }), 'line', 'l1')!).toMatchObject({
-      seamEdges: 'curved',
-    });
-    expect(captureStyleProps(lineDoc(), 'line', 'l1')!).toMatchObject({ seamEdges: 'both' });
-  });
-
-  it('separates two styles that differ only by seam edge mode', () => {
-    const base = captureStyleProps(lineDoc(), 'line', 'l1')!;
-    expect(stylePropsEqual('line', base, { ...base, seamEdges: 'straight' })).toBe(false);
-    expect(
-      stylePropsEqual(
-        'line',
-        { ...base, seamEdges: 'straight' },
-        { ...base, seamEdges: 'straight' },
-      ),
-    ).toBe(true);
-  });
-
-  it("heals a def written before the field existed to 'both'", () => {
-    const captured = captureStyleProps(lineDoc(), 'line', 'l1')!;
-    const legacy = { ...captured, seamEdges: undefined as unknown as SeamEdges };
-    expect(canonicalStyleProps('line', legacy).seamEdges).toBe('both');
-  });
-
-  it("stamps the seam edge mode onto a wearer, 'both' included", () => {
-    let doc = lineDoc({ seamEdges: 'curved' });
-    const styleId = 'sty-curved';
-    doc = saveStyleFromItem(doc, styleId, 'line', 'Curved seam', 'l1');
-    doc = {
-      ...doc,
-      lines: { ...doc.lines, l2: makeLine({ id: 'l2', stations: ['a', 'b'] }) },
-    };
-    doc = applyStyleToItem(doc, styleId, 'l2');
-    expect(doc.lines.l2.seamEdges).toBe('curved');
-    // …and a full-notch style puts it back, rather than leaving it curved-only.
-    doc = updateStyleProps(doc, styleId, { seamEdges: 'both' });
-    expect('seamEdges' in doc.lines.l2).toBe(false);
-    expect(doc.lines.l2.styleId).toBe(styleId);
-  });
-
-  it('detaches the line when the seam edge mode is edited by hand', () => {
-    let doc = lineDoc();
-    doc = saveStyleFromItem(doc, 'sty-plain', 'line', 'Plain', 'l1');
-    expect(doc.lines.l1.styleId).toBeDefined();
-    doc = T.setLineSeamEdges(doc, 'l1', 'straight');
-    expect(doc.lines.l1.styleId).toBeUndefined();
-  });
-});

@@ -373,8 +373,8 @@ export function computeArcRadii(verts: Vec2[], R: number): { rs: number[]; angle
  * Read off the CENTERLINE, never an offset edge: a fillet tighter than the
  * offset (`radius < |offset|`) degenerates that edge's corner to a straight, so
  * an offset-derived answer would call the inside of a bend straight while the
- * outside of the same bend is bent. The branch seam pairs a junction's band
- * ends with this (see `assignSeamArms`).
+ * outside of the same bend is bent. The line-arm partition pairs a junction's
+ * band ends with this (see `assignLineArms` in interlining.ts).
  */
 export function straightRunFrom(
   verts: Vec2[],

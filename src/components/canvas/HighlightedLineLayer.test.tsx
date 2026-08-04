@@ -448,8 +448,8 @@ describe('<HighlightedLineLayer /> — Edit Stops hover preview', () => {
   });
 
   it('lifts a hovered FOREIGN line above the dim at half strength, cased, with its dots', () => {
-    // Hovering another line lifts the WHOLE line above the dim — the same three-
-    // pass (silhouette/body/seam) repaint the edited line gets PLUS its stop dots
+    // Hovering another line lifts the WHOLE line above the dim — the same two-
+    // pass (silhouette/body) repaint the edited line gets PLUS its stop dots
     // — at HALF strength, so "click here edits L2 instead" reads as a cased line
     // that stands out without competing with the fully-bright edited line (not
     // the old body-only @0.55 smear that mangled dashes and dropped the dots).

@@ -246,7 +246,6 @@ describe('spec reuse — field-drift guard', () => {
       'pairKey',
       'paths',
       'radius',
-      'seamArms',
       'stripeOffsets',
       'stripeWidths',
       'toId',
