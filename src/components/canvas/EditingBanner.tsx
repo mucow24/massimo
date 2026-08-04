@@ -41,8 +41,10 @@ export function EditingBanner() {
   // Render source, not the live doc: this component is mounted for every
   // mode (the switch below gates), so a live `stations` subscription would
   // re-render it on every mid-drag pointermove while the canvas is frozen.
-  // The banner only paints in modes that are never concurrent with a
-  // pipelined drag, so the frame-cadence source changes nothing it shows.
+  // Everything the banner shows is mode-static copy or a name/color lookup —
+  // nothing a drag frame changes — so the frame-cadence source is visually
+  // identical even in the one banner mode that can run an armed drag
+  // (editing-station-layout opens a deferPersist group).
   const lines = useRenderDoc((s) => s.lines);
   const stations = useRenderDoc((s) => s.stations);
   const uiMode = useSelection((s) => s.uiMode);

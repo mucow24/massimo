@@ -222,8 +222,11 @@ export function Sidebar() {
   const lineIndex = useMemo(() => linesByStation(lines), [lines]);
 
   // Memoized: the full-list sort (with per-compare name cleaning) is the
-  // sidebar's one expensive computation, and unrelated re-renders — selection
-  // changes, landed drag frames — must not repeat it.
+  // sidebar's one expensive computation, and re-renders that keep `stations`
+  // identical — selection changes, landed drag frames touching other
+  // collections — must not repeat it. (While a drag IS moving stations, the
+  // render source hands out a new map per landed frame, so the sort still
+  // reruns at frame cadence — that's the armed freeze's job to keep rare.)
   const stationList = useMemo(
     () =>
       Object.values(stations).sort((a, b) => {
