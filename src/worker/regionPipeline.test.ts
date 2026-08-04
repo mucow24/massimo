@@ -282,6 +282,63 @@ describe('snap guides ride the frame', () => {
   });
 });
 
+describe('snap guides — clears and carry-forward', () => {
+  const guideAt = (x: number): SnapGuide => ({ from: { x, y: 0 }, to: { x, y: 100 } });
+
+  it('a clear published while armed reaches the next frame (no stale halo)', async () => {
+    // The stale-guide strand: a hook that guards its clear on FROZEN local
+    // state would skip publishing [] after an unsnap (Shift, ring capture),
+    // and every later frame would keep painting the last guides. The routed
+    // clear must land in the pending cargo.
+    const g = await armMidGesture(10);
+    expect(routeSnapGuides('station', [guideAt(1)])).toBe(true);
+    useDoc.getState().moveStation('s1', 20, 0); // pending write behind frame 1
+    // The unsnap path publishes an unconditional clear.
+    expect(routeSnapGuides('station', [])).toBe(true);
+    useDoc.getState().moveStation('s1', 30, 0);
+
+    fake.deliver(resultFor(fake.frames()[0], holesOf('l1', 100)));
+    fake.deliver(resultFor(fake.frames()[1], holesOf('l1', 200)));
+    expect(useDragFrame.getState().frame?.guides).toEqual([]);
+    g.commit();
+  });
+
+  it('guides published just before arming ride the FIRST frame (no blink-out)', async () => {
+    // At rest the routed setter also records, so arming inherits the guides
+    // the canvas is already showing instead of blanking them for one
+    // compute-frame.
+    const preArm = [guideAt(5)];
+    expect(routeSnapGuides('station', preArm)).toBe(false); // unarmed: hook keeps local state too
+    const g = await armMidGesture(10);
+    fake.deliver(resultFor(fake.frames()[0], holesOf('l1', 100)));
+    expect(useDragFrame.getState().frame?.guides).toEqual(preArm);
+    g.commit();
+  });
+});
+
+describe('cold-boot watchdog', () => {
+  it("the first frame's budget covers worker boot + wasm + a full build", async () => {
+    vi.useFakeTimers();
+    try {
+      const g = await armMidGesture(10);
+      expect(regionPipelineStatus().armed).toBe(true);
+      // 4s in: a cold first frame (worker fetch + wasm compile + full mirror
+      // + full hub build on a slow machine) must NOT be declared dead by the
+      // warm-frame watchdog.
+      vi.advanceTimersByTime(4000);
+      expect(regionPipelineStatus().armed).toBe(true);
+      expect(fake.terminated).toBe(false);
+      // But the cold budget is still a budget.
+      vi.advanceTimersByTime(1500);
+      expect(regionPipelineStatus().armed).toBe(false);
+      expect(fake.terminated).toBe(true);
+      g.commit();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('mirror warmth at rest', () => {
   it('non-grouped doc changes post diffs; grouped writes wait for the exit', async () => {
     // Create the worker via one armed gesture.

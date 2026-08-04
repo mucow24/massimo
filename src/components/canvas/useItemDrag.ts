@@ -164,7 +164,10 @@ export function useItemDrag(
       const cur = routeBullets[ds.id];
       const lineId = cur?.lineId ?? null;
       if (e.shiftKey) {
-        if (itemSnapGuides.length > 0) setItemSnapGuides([]);
+        // Unconditional: frozen local state can't gate a clear while the
+        // pipeline is armed (see useRoutedSnapGuides); the setter's equality
+        // bail keeps the at-rest no-re-render property.
+        setItemSnapGuides([]);
       } else if (lineId) {
         // Bound bullet: reuse the station snap engine in bullet mode — it
         // already handles per-stop axis alignment, two-axis corner snap, and

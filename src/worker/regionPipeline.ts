@@ -122,6 +122,11 @@ const postSync = (s: MirrorSource): void => {
 };
 
 const sendFrame = (): void => {
+  // A cold frame — fresh worker and/or empty mirror — carries worker fetch,
+  // wasm compile, the full slice, and a full (not incremental) build; the
+  // warm-frame watchdog would declare it dead and terminate the half-booted
+  // worker. Give it a boot-sized budget instead.
+  const cold = worker === null || lastPosted === null;
   const w = ensureWorker();
   const s = useDoc.getState();
   const cur = mirrorOf(s);
@@ -132,7 +137,7 @@ const sendFrame = (): void => {
   lastSentAt = performance.now();
   w.postMessage({ kind: 'frame', gen, seq, sync });
   clearTimer();
-  const budget = Math.min(5000, Math.max(500, 2.5 * emaMs));
+  const budget = cold ? 5000 : Math.min(5000, Math.max(500, 2.5 * emaMs));
   const frameGen = gen;
   timeoutId = setTimeout(() => {
     if (gen === frameGen && inFlight) fallback();
@@ -150,8 +155,9 @@ let lastSentAt = 0;
 const GUIDE_SOURCES = ['station', 'item', 'polygon', 'svgImage', 'lineCircle'] as const;
 export type SnapGuideSource = (typeof GUIDE_SOURCES)[number];
 
-/** Guides published since the last frame send, per source — the input-time
- *  truth the next frame carries. Meaningful only while armed. */
+/** The latest guides published per source — the input-time truth the next
+ *  frame carries. Recorded at rest too, so arming inherits the guides the
+ *  canvas is already showing instead of blanking them for one compute-frame. */
 let pendingGuides: Partial<Record<SnapGuideSource, SnapGuide[]>> = {};
 
 const pendingGuidesUnion = (): SnapGuide[] => {
@@ -171,9 +177,8 @@ const pendingGuidesUnion = (): SnapGuide[] => {
  * (returns false).
  */
 export function routeSnapGuides(source: SnapGuideSource, guides: SnapGuide[]): boolean {
-  if (!armed) return false;
   pendingGuides[source] = guides;
-  return true;
+  return armed;
 }
 
 const handleMessage = (msg: WorkerResponse): void => {

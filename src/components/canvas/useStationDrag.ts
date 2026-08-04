@@ -178,7 +178,11 @@ export function useStationDrag(
         if (hasGroupSiblings(ds.siblings)) {
           translateSiblings(ds.siblings, p.x - ds.startWX, p.y - ds.startWY);
         }
-        if (snapGuides.length > 0) setSnapGuides([]);
+        // Unconditional: while the pipeline is armed, local state is frozen
+        // and can't be trusted as a guard — a guarded clear would be skipped
+        // and the last routed guides would keep painting (the setter's
+        // equality bail preserves the at-rest no-re-render property).
+        setSnapGuides([]);
       };
       // Remember the seat as the ring lets go: a straight cursor path across a
       // wide arc dips out of the release band partway and comes back, and that
@@ -244,7 +248,9 @@ export function useStationDrag(
       // it (including the no-guides case) so React bails on the same-reference
       // state instead of re-rendering for a value-identical fresh array.
       setSnapGuides(snap.guides);
-    } else if (snapGuides.length > 0) {
+    } else {
+      // Unconditional for the same reason as moveConstrained's clear: frozen
+      // local state can't gate a clear while the pipeline is armed.
       setSnapGuides([]);
     }
     if (!ringTowed) moveStation(ds.id, nx, ny);

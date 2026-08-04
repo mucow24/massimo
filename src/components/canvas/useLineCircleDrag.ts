@@ -134,7 +134,10 @@ export function useLineCircleDrag(
       nx = snap.x;
       ny = snap.y;
       setSnapGuides(snap.guides);
-    } else if (snapGuides.length > 0) {
+    } else {
+      // Unconditional: frozen local state can't gate a clear while the
+      // pipeline is armed (see useRoutedSnapGuides); the setter's equality
+      // bail keeps the at-rest no-re-render property.
       setSnapGuides([]);
     }
     moveLineCircle(ds.id, nx, ny);
