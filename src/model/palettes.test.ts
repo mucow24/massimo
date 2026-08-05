@@ -3,8 +3,10 @@ import {
   PALETTES,
   BUILTIN_PALETTE_NAMES,
   LEGACY_BUILTIN_IDS,
+  copyPalette,
   cyclingColors,
   customLineColors,
+  freshPaletteName,
   libraryPalettes,
   type Palette,
 } from './palettes';
@@ -53,6 +55,44 @@ describe('PALETTES catalog', () => {
       expect(BUILTIN_PALETTE_NAMES.has(name)).toBe(true);
     }
     expect(Object.keys(LEGACY_BUILTIN_IDS)).toHaveLength(PALETTES.length);
+  });
+});
+
+describe('copyPalette', () => {
+  it('copies swatches without shared references', () => {
+    const source: Palette = { name: 'p', swatches: [{ name: '1', color: '#111111' }] };
+    const copy = copyPalette(source);
+    expect(copy).toEqual(source);
+    copy.swatches[0].color = '#999999';
+    expect(source.swatches[0].color).toBe('#111111');
+  });
+
+  it('carries a description and per-swatch night colors', () => {
+    const source: Palette = {
+      name: 'p',
+      description: 'd',
+      swatches: [{ name: '1', color: '#111111', night: '#222222' }],
+    };
+    expect(copyPalette(source)).toEqual(source);
+  });
+
+  it('omits the description key entirely when absent', () => {
+    expect('description' in copyPalette(FRRF)).toBe(false);
+  });
+});
+
+describe('freshPaletteName', () => {
+  it('is "New palette" when nothing takes it', () => {
+    expect(freshPaletteName(new Set())).toBe('New palette');
+  });
+
+  it('counts up past taken names', () => {
+    expect(freshPaletteName(new Set(['New palette']))).toBe('New palette 2');
+    expect(freshPaletteName(new Set(['New palette', 'New palette 2']))).toBe('New palette 3');
+  });
+
+  it('skips nothing for names that merely resemble the pattern', () => {
+    expect(freshPaletteName(new Set(['New palette 2']))).toBe('New palette');
   });
 });
 

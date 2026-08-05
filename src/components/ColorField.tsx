@@ -116,9 +116,10 @@ export function ColorField({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
-  // The portalled popover mounts here — the swatch's `.app` ancestor, which owns
+  // The portalled popover mounts here — the swatch's nearest `.dialog`/`.app`
+  // ancestor (see the effect below for why the dialog case matters); both own
   // the design tokens (--control-bg etc.) + dark mode. Resolved in the effect
-  // (refs can't be read during render), fallback <body> only if there's no .app.
+  // (refs can't be read during render), fallback <body> only if there's neither.
   const [portalTarget, setPortalTarget] = useState<Element | null>(null);
   const swatchRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
@@ -146,7 +147,11 @@ export function ColorField({
     if (!open) return;
     const r = swatchRef.current?.getBoundingClientRect();
     if (!r) return;
-    setPortalTarget(swatchRef.current?.closest('.app') ?? document.body);
+    // Nearest chrome root that owns both the design tokens and FOCUS: inside a
+    // modal Radix dialog (`.dialog` = Dialog.Content) the popover must mount
+    // within the content subtree, or the dialog's focus trap yanks focus off
+    // the hex field and it can't be typed into. Everywhere else, `.app`.
+    setPortalTarget(swatchRef.current?.closest('.dialog, .app') ?? document.body);
     const below = r.bottom + GAP;
     const top =
       below + POPOVER_H <= window.innerHeight ? below : Math.max(GAP, r.top - GAP - POPOVER_H);

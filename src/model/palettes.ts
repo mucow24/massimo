@@ -16,12 +16,17 @@ import { normalizeHex } from '../util/color';
 
 export interface PaletteSwatch {
   name: string;
+  /** The day color, in canonical `normalizeHex` form. */
   color: string;
+  /** Present ONLY when it differs from `color` — absent means night == day. */
+  night?: string;
 }
 
 export interface Palette {
   name: string;
   swatches: PaletteSwatch[];
+  /** Absent rather than empty — an empty edit collapses the field away. */
+  description?: string;
 }
 
 export const PALETTES: readonly Palette[] = [
@@ -308,8 +313,20 @@ export const LEGACY_BUILTIN_IDS: Readonly<Record<string, string>> = {
  * library, so nothing library-only (a star, the built-in mark) and no shared
  * array reference can ride along into a document.
  */
-export function copyPalette({ name, swatches }: Palette): Palette {
-  return { name, swatches: swatches.map((s) => ({ ...s })) };
+export function copyPalette({ name, swatches, description }: Palette): Palette {
+  return {
+    name,
+    swatches: swatches.map((s) => ({ ...s })),
+    ...(description !== undefined && { description }),
+  };
+}
+
+/** First unused of "New palette", "New palette 2", … against `taken`. */
+export function freshPaletteName(taken: ReadonlySet<string>): string {
+  if (!taken.has('New palette')) return 'New palette';
+  let n = 2;
+  while (taken.has(`New palette ${n}`)) n++;
+  return `New palette ${n}`;
 }
 
 /** How the library column is listed. `starred` also FILTERS to starred rows. */

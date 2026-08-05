@@ -119,7 +119,8 @@ src/
     pairKey.ts                  # pairKeyOf(a,b): canonical station-pair key
     recordOrder.ts              # reconcileOrder/moveInOrder: shared z-order algebra
     palettes.ts                 # built-in PALETTES (name-keyed) + library assembly/sorting
-    customPalette.ts            # parse / serialize imported palette JSON (the "frrf" format)
+    customPalette.ts            # palette files: parse both formats (ours + legacy "frrf"),
+                                #   serialize the massimo-palette format (day/night, description)
     dotStyle.ts dotSize.ts      # procedural stop-dot style + size resolution
     dashSize.ts                 # TfL-tick ('dash' stop) length/thickness resolution (derive from line width)
     transferStyle.ts            # TRANSFER_STYLE_DEFAULTS + per-transfer override resolution
@@ -221,6 +222,9 @@ src/
                                 #   inverts) — the toolbar badge, reused by the easter-egg ball
     MapLibraryDialog.tsx        # the library manager (maps | versions; Radix Dialog)
     PalettesDialog.tsx          # the palette manager (library | in this map; same Dialog shell)
+    PaletteEditor.tsx           # the manager's second view: one palette's title/description/rows
+    dialogRow.tsx               # shared dialog-row chrome: IconButton + the useSpeedBump two-click
+    useRowDragReorder.ts        # pointer drag-to-reorder for fixed-height row lists (editor rows)
     MapVersionPill.tsx          # the live doc's version + save-status dot, beside the map name
     *Popover.tsx                # on-canvas item editors
     DayNightColorRow.tsx        # shared label + light/dark ColorField pair (every themed-color row)
@@ -372,7 +376,9 @@ interface MapDoc {
   regionAssignments: Record<string, RegionAssignment>; // region paint choices ("paint by numbers")
   svgImages: Record<string, SvgImage>;
   lineCircles: Record<string, LineCircle>; // dashed guide circles stations bind to (never exported)
-  palettes: Palette[]; // COPIES the map paints with, in picker/color-cycle order; may be empty
+  palettes: Palette[]; // COPIES the map paints with, in picker/color-cycle order; may be empty.
+  // A palette may carry a description; a swatch a night color (stored ONLY when ≠ its day color —
+  // the collapse invariant — and unused by lines so far: the editor writes day == night)
   darkMode: boolean; // is this a NIGHT map? false = day. Travels in the saved/exported file
   styles: Record<string, StyleDef>; // named per-kind formatting presets ("Styles")
   styleDefaults: Record<StyleKind, string>; // per-kind DEFAULT designation (style id)
@@ -1962,7 +1968,9 @@ Six seams cover it, and a seventh rule governs anything new:
   built-in's name; the library is keyed by name, so nothing may appear twice.
   The split: **the library is global; what a map paints with is a set of COPIES in the doc.**
   Nothing crosses between them except by an explicit command in the palette manager, so deleting a
-  palette here can never disturb a map.
+  palette here can never disturb a map. The palette editor honors the split: it edits exactly ONE
+  copy — a library palette through these actions (outside undo), a map palette through the doc's
+  (undoable) — never both.
 - [snapPrefs.ts](src/state/snapPrefs.ts) — `useSnapPrefs`: snap-mode toggles plus the preset
   slots, persisted at **version 2** and migrated on rehydrate (v0's boolean `all`/`grid` become the
   directional enums, and **any key the blob predates is filled from `DEFAULT_SNAP_MODES`** —
@@ -3085,17 +3093,35 @@ same three additions.
   toolbar's colour-wheel button: your **library** on the left, the palettes **this map** paints
   with on the right. Unlike the map library the two columns are independent lists rather than a
   master and its detail, so nothing is selected and every command lives in the row it acts on, as a
-  fixed grid of icon slots — a built-in's missing rename and delete leave their slots open, which
+  fixed grid of icon slots — a built-in's missing edit and delete leave their slots open, which
   is what keeps the colour strips ending at one edge. The two transfer arrows are outermost in
-  their rows, each against the column it points into. The manager and the map library share one
+  their rows, each against the column it points into; the map rows' last slot is a drag handle —
+  the editor's reorder gesture on the same hook, one `reorderMapPalette` write at the drop. The
+  manager and the map library share one
   **`.dialog-*`** shell in styles.css (backdrop, panel, black title band, column heads, lists,
   rows); what stays per-dialog is only what one list has and the other doesn't.
-  Every command that destroys or displaces a palette takes the map library's in-place speed bump —
-  the same glyph washed red, with a title naming what the second click will cost — in **both**
+  Every command that destroys or displaces a palette takes the in-place speed bump
+  ([dialogRow.tsx](src/components/dialogRow.tsx)'s `useSpeedBump`) — the same glyph washed red,
+  with a title naming what the second click will cost — in **both**
   columns, whether or not undo could reach it. Undo-reachability is deliberately not the test:
   these buttons sit side by side in one row, and a gesture that changed meaning between adjacent
   glyphs would be worse than a redundant click. Only commands that displace nothing act on one
   click.
+  A row's pencil (and the library head's **New…** menu — from empty, or from the map's custom
+  colors, both landing in library and map like Load…) swaps the columns for the
+  **[PaletteEditor](src/components/PaletteEditor.tsx)** view, a back arrow joining the title band:
+  the palette's title and description (double-click to edit — renaming lives here now), then one
+  fixed-height row per color — a drag handle
+  ([useRowDragReorder](src/components/useRowDragReorder.ts), preview local, ONE upsert at the
+  drop), the color as an index route bullet, a ColorField, the
+  name, a speed-bumped delete — under an Add color row. Edits are live against the ONE copy the
+  pencil named (New… opens on the map copy), and recoloring a MAP swatch also repaints the lines
+  wearing the old color in the same write (`recolorMapPaletteColor`, matched via `normalizeHex`
+  exactly as the picker matches) — so the canvas follows a picker drag live. Escape peels name
+  edit → editor → dialog, gated through a ref because Radix hears Escape on a document listener;
+  the dialog owns its own Ctrl+Z/Y (the app's global handler reads role=dialog as a form context),
+  and the black band drags the window (a position:relative offset, never a transform — that would
+  become the containing block for the ColorField popover's position:fixed).
 - **[StatusToasts.tsx](src/components/StatusToasts.tsx)** — the status-message surface (Radix
   toasts sliding in over the canvas, lower-left). Actions report outcomes by calling `pushToast`
   ([state/toastStore.ts](src/state/toastStore.ts)) — a plain Zustand store (`useToasts`) so any
@@ -3394,7 +3420,11 @@ downstream luminance / `rgba()` math.
 
 - **A palette is identified by its NAME** — in the library and in a map alike. Both upsert by
   name, so an add or a save that lands on an existing name REPLACES it (the manager asks first);
-  built-in names are reserved against imports. A map carrying no palettes at all is legitimate.
+  built-in names are reserved against imports. A map carrying no palettes at all is legitimate,
+  and so is a palette carrying no swatches (the editor mints them empty). A swatch's `night` is
+  stored only when it differs from `color` (day) — parse, sanitize, and the editor all collapse
+  the equal pair away — and a `description` is a real string or absent, never `''`. Swatch colors
+  may carry alpha (`#rrggbbaa`, canonical `normalizeHex` form).
 - **Transforms return the same reference on no-op** — the foundation of undo grouping
   (`docSnapshotsEqual` is reference equality). A mutate-in-place transform would silently break
   history.

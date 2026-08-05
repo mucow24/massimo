@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 // Exporting a palette downloads a file; jsdom has no download, and the real
@@ -9,13 +9,14 @@ vi.mock('../export/exportCanvas', async (importOriginal) => ({
   downloadBlob: vi.fn(),
 }));
 
-import { PalettesDialog } from './PalettesDialog';
+import { PalettesDialog, PALETTE_ROW_HEIGHT } from './PalettesDialog';
 import { downloadBlob } from '../export/exportCanvas';
 import { useDoc } from '../state/store';
 import { useCustomPalettes } from '../state/customPalettes';
 import { DEFAULT_DOC } from '../model/transforms';
 import { PALETTES, type Palette } from '../model/palettes';
 import { chooseOption } from '../test/interaction';
+import { makeLine } from '../test/fixtures';
 
 const FRRF: Palette = {
   name: 'frrf',
@@ -145,42 +146,66 @@ describe('<PalettesDialog /> the map column', () => {
     expect(remove.className).toBe(screen.getByRole('button', { name: 'Delete frrf' }).className);
   });
 
-  it('moves a palette up and down', async () => {
-    const user = userEvent.setup();
+  // The map column reorders by dragging a row's handle — the editor's gesture.
+  it('drag-reorders the map’s palettes by the row handle', () => {
     useDoc.setState({ ...useDoc.getState(), palettes: named('MTA', 'BART') });
     renderDialog();
-    await user.click(screen.getByRole('button', { name: 'Move BART up' }));
+    const handle = screen.getByRole('button', { name: 'Reorder BART' });
+    fireEvent.pointerDown(handle, { clientY: 100, pointerId: 1, buttons: 1 });
+    fireEvent.pointerMove(handle, { clientY: 100 - PALETTE_ROW_HEIGHT, pointerId: 1, buttons: 1 });
+    expect(useDoc.getState().palettes.map((p) => p.name)).toEqual(['MTA', 'BART']); // preview only
+    fireEvent.pointerUp(handle, { clientY: 100 - PALETTE_ROW_HEIGHT, pointerId: 1 });
     expect(useDoc.getState().palettes.map((p) => p.name)).toEqual(['BART', 'MTA']);
-    await user.click(screen.getByRole('button', { name: 'Move BART down' }));
-    expect(useDoc.getState().palettes.map((p) => p.name)).toEqual(['MTA', 'BART']);
   });
 
-  it('cannot move the first up or the last down', () => {
+  it('a drag past either end clamps to the list', () => {
     useDoc.setState({ ...useDoc.getState(), palettes: named('MTA', 'BART') });
     renderDialog();
-    expect(screen.getByRole('button', { name: 'Move MTA up' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Move BART down' })).toBeDisabled();
+    const handle = screen.getByRole('button', { name: 'Reorder MTA' });
+    fireEvent.pointerDown(handle, { clientY: 300, pointerId: 1, buttons: 1 });
+    fireEvent.pointerMove(handle, {
+      clientY: 300 - 5 * PALETTE_ROW_HEIGHT,
+      pointerId: 1,
+      buttons: 1,
+    });
+    fireEvent.pointerUp(handle, { clientY: 300 - 5 * PALETTE_ROW_HEIGHT, pointerId: 1 });
+    expect(useDoc.getState().palettes.map((p) => p.name)).toEqual(['MTA', 'BART']);
+    fireEvent.pointerDown(handle, { clientY: 100, pointerId: 1, buttons: 1 });
+    fireEvent.pointerMove(handle, {
+      clientY: 100 + 9 * PALETTE_ROW_HEIGHT,
+      pointerId: 1,
+      buttons: 1,
+    });
+    fireEvent.pointerUp(handle, { clientY: 100 + 9 * PALETTE_ROW_HEIGHT, pointerId: 1 });
+    expect(useDoc.getState().palettes.map((p) => p.name)).toEqual(['BART', 'MTA']);
   });
 
-  it('renames the map’s copy without touching the library', async () => {
+  // Renaming lives in the editor now: the pencil opens it, the title edits.
+  it('renames the map’s copy through the editor without touching the library', async () => {
     const user = userEvent.setup();
     useCustomPalettes.setState({ palettes: [FRRF], starred: [], sort: 'name' });
     useDoc.setState({ ...useDoc.getState(), palettes: [FRRF] });
     renderDialog();
-    await user.click(screen.getByRole('button', { name: 'Rename frrf in the map' }));
-    await user.clear(screen.getByRole('textbox', { name: 'Rename frrf' }));
-    await user.type(screen.getByRole('textbox', { name: 'Rename frrf' }), 'house style{Enter}');
+    await user.click(screen.getByRole('button', { name: 'Edit frrf in the map' }));
+    await user.dblClick(screen.getByRole('heading', { level: 3, name: 'frrf' }));
+    const input = screen.getByRole('textbox', { name: 'Palette name' });
+    await user.clear(input);
+    await user.type(input, 'house style{Enter}');
     expect(useDoc.getState().palettes.map((p) => p.name)).toEqual(['house style']);
     expect(useCustomPalettes.getState().palettes.map((p) => p.name)).toEqual(['frrf']);
+    // The editor stays open on the renamed palette.
+    expect(screen.getByRole('heading', { level: 3, name: 'house style' })).toBeInTheDocument();
   });
 
-  it('refuses a rename onto another of the map’s palettes, and says why', async () => {
+  it('a refused rename surfaces in the dialog’s message band', async () => {
     const user = userEvent.setup();
     useDoc.setState({ ...useDoc.getState(), palettes: named('MTA', 'BART') });
     renderDialog();
-    await user.click(screen.getByRole('button', { name: 'Rename BART in the map' }));
-    await user.clear(screen.getByRole('textbox', { name: 'Rename BART' }));
-    await user.type(screen.getByRole('textbox', { name: 'Rename BART' }), 'MTA{Enter}');
+    await user.click(screen.getByRole('button', { name: 'Edit BART in the map' }));
+    await user.dblClick(screen.getByRole('heading', { level: 3, name: 'BART' }));
+    const input = screen.getByRole('textbox', { name: 'Palette name' });
+    await user.clear(input);
+    await user.type(input, 'MTA{Enter}');
     expect(useDoc.getState().palettes.map((p) => p.name)).toEqual(['MTA', 'BART']);
     expect(screen.getByRole('alert')).toHaveTextContent('already one of this map’s palettes');
   });
@@ -191,6 +216,31 @@ describe('<PalettesDialog /> the map column', () => {
     renderDialog();
     await user.click(screen.getByRole('button', { name: 'Save frrf to the library' }));
     expect(useCustomPalettes.getState().palettes).toEqual([FRRF]);
+  });
+
+  // An armed speed bump must be able to stand down: any press elsewhere or
+  // Escape un-arms it without running anything.
+  it('clicking anywhere else stands an armed delete down', async () => {
+    const user = userEvent.setup();
+    useCustomPalettes.setState({ palettes: [FRRF], starred: [], sort: 'name' });
+    renderDialog();
+    await user.click(screen.getByRole('button', { name: 'Delete frrf' }));
+    expect(screen.getByRole('button', { name: 'Confirm deleting frrf' })).toBeInTheDocument();
+    await user.click(screen.getByRole('heading', { name: 'Library' }));
+    expect(screen.queryByRole('button', { name: 'Confirm deleting frrf' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Delete frrf' })).toBeInTheDocument();
+    expect(useCustomPalettes.getState().palettes.map((p) => p.name)).toEqual(['frrf']);
+  });
+
+  it('Escape stands an armed delete down without closing the dialog', async () => {
+    const user = userEvent.setup();
+    useCustomPalettes.setState({ palettes: [FRRF], starred: [], sort: 'name' });
+    renderDialog();
+    await user.click(screen.getByRole('button', { name: 'Delete frrf' }));
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('button', { name: 'Confirm deleting frrf' })).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('region', { name: 'Palette library' })).toBeInTheDocument();
   });
 
   // localStorage is outside undo, so an overwriting save gets the speed bump.
@@ -214,16 +264,16 @@ describe('<PalettesDialog /> the map column', () => {
 });
 
 describe('<PalettesDialog /> built-ins are fixed', () => {
-  it('cannot be renamed or deleted', () => {
+  it('cannot be edited or deleted', () => {
     renderDialog();
-    expect(screen.queryByRole('button', { name: 'Rename MTA' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Edit MTA' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Delete MTA' })).toBeNull();
   });
 
   it('…while an imported palette can be', () => {
     useCustomPalettes.setState({ palettes: [FRRF], starred: [], sort: 'name' });
     renderDialog();
-    expect(screen.getByRole('button', { name: 'Rename frrf' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit frrf' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Delete frrf' })).toBeInTheDocument();
   });
 
@@ -334,6 +384,24 @@ describe('<PalettesDialog /> Load…', () => {
     expect(screen.getByRole('status')).toHaveTextContent('frrf');
   });
 
+  it('carries a massimo-palette file’s description into both destinations', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({ ...useDoc.getState(), palettes: [] });
+    renderDialog();
+    await user.upload(
+      loadInput(),
+      file({
+        format: 'massimo-palette',
+        version: 1,
+        name: 'described',
+        description: 'weekend reds',
+        colors: [{ name: 'Red', day: '#C1272DFF', night: '#C1272DFF' }],
+      }),
+    );
+    expect(useCustomPalettes.getState().palettes[0].description).toBe('weekend reds');
+    expect(useDoc.getState().palettes[0].description).toBe('weekend reds');
+  });
+
   it('refuses a file named after a built-in, changing nothing', async () => {
     const user = userEvent.setup();
     renderDialog();
@@ -349,6 +417,146 @@ describe('<PalettesDialog /> Load…', () => {
     await user.upload(loadInput(), file({ name: 'x' }));
     expect(screen.getByRole('alert')).toHaveTextContent('colors');
     expect(useCustomPalettes.getState().palettes).toEqual([]);
+  });
+});
+
+describe('<PalettesDialog /> New… and the editor view', () => {
+  const newMenu = async (user: ReturnType<typeof userEvent.setup>, item: string | RegExp) => {
+    await user.click(screen.getByRole('button', { name: 'New…' }));
+    await user.click(await screen.findByRole('menuitem', { name: item }));
+  };
+
+  it('From empty mints a fresh name into BOTH destinations and opens the editor naming it', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await newMenu(user, 'From empty…');
+    expect(useCustomPalettes.getState().palettes.map((p) => p.name)).toEqual(['New palette']);
+    expect(useDoc.getState().palettes.map((p) => p.name)).toEqual(['MTA', 'New palette']);
+    // Editor view, title already editing (it's a fresh palette), no columns.
+    expect(screen.getByRole('textbox', { name: 'Palette name' })).toHaveValue('New palette');
+    expect(screen.queryByRole('region', { name: 'Palette library' })).toBeNull();
+  });
+
+  it('a second From empty counts up past the first', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await newMenu(user, 'From empty…');
+    await user.keyboard('{Escape}'); // cancel the title edit
+    await user.click(screen.getByRole('button', { name: 'Back to palettes' }));
+    await newMenu(user, 'From empty…');
+    expect(useDoc.getState().palettes.map((p) => p.name)).toEqual([
+      'MTA',
+      'New palette',
+      'New palette 2',
+    ]);
+  });
+
+  it('From map’s custom colors seeds the colors no palette covers', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { A: makeLine({ id: 'A', color: '#123456' }) },
+    });
+    renderDialog();
+    await newMenu(user, 'From map’s custom colors…');
+    const palettes = useDoc.getState().palettes;
+    expect(palettes[palettes.length - 1]).toEqual({
+      name: 'New palette',
+      swatches: [{ name: '1', color: '#123456' }],
+    });
+  });
+
+  it('From map’s custom colors is inert when every line color is covered', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({ ...useDoc.getState(), lines: {} });
+    renderDialog();
+    await user.click(screen.getByRole('button', { name: 'New…' }));
+    const item = await screen.findByRole('menuitem', { name: 'From map’s custom colors…' });
+    expect(item).toHaveAttribute('data-disabled');
+    await user.click(item);
+    expect(useDoc.getState().palettes.map((p) => p.name)).toEqual(['MTA']);
+  });
+
+  // The dialog is MODAL: Radix traps focus inside Dialog.Content, so a color
+  // picker portalled outside it (ColorField's default `.app` target) would
+  // have its focus yanked and an untypeable hex field. The popover must mount
+  // INSIDE the dialog.
+  it('a color picker opened from the editor mounts inside the dialog', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({ ...useDoc.getState(), palettes: [FRRF] });
+    renderDialog();
+    await user.click(screen.getByRole('button', { name: 'Edit frrf in the map' }));
+    await user.click(screen.getByRole('button', { name: 'Color 1' }));
+    const picker = screen.getByRole('dialog', { name: 'Color 1 picker' });
+    expect(document.querySelector('.dialog')?.contains(picker)).toBe(true);
+  });
+
+  it('the pencil opens the editor on that palette, and Back restores the columns', async () => {
+    const user = userEvent.setup();
+    useCustomPalettes.setState({ palettes: [FRRF], starred: [], sort: 'name' });
+    renderDialog();
+    await user.click(screen.getByRole('button', { name: 'Edit frrf' }));
+    expect(screen.getByRole('heading', { level: 3, name: 'frrf' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Palette library' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Back to palettes' }));
+    expect(screen.getByRole('region', { name: 'Palette library' })).toBeInTheDocument();
+  });
+
+  it('the title band reads Palette Editor while editing, Palettes otherwise', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({ ...useDoc.getState(), palettes: [FRRF] });
+    renderDialog();
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Palettes');
+    await user.click(screen.getByRole('button', { name: 'Edit frrf in the map' }));
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Palette Editor');
+    await user.click(screen.getByRole('button', { name: 'Back to palettes' }));
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Palettes');
+  });
+
+  // The app's global shortcut handler treats anything inside a role=dialog as
+  // a form context, so the dialog owns its own undo keys.
+  it('Ctrl+Z inside the dialog undoes the last palette edit', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({ ...useDoc.getState(), palettes: [FRRF] });
+    renderDialog();
+    await user.click(screen.getByRole('button', { name: 'Edit frrf in the map' }));
+    await user.click(screen.getByRole('button', { name: 'Add color' }));
+    expect(useDoc.getState().palettes[0].swatches).toHaveLength(3);
+    await user.keyboard('{Control>}z{/Control}');
+    expect(useDoc.getState().palettes[0].swatches).toHaveLength(2);
+    await user.keyboard('{Control>}{Shift>}z{/Shift}{/Control}');
+    expect(useDoc.getState().palettes[0].swatches).toHaveLength(3);
+  });
+
+  it('the dialog drags by its title band', () => {
+    renderDialog();
+    const header = screen.getByRole('heading', { level: 2 }).closest('header')!;
+    fireEvent.pointerDown(header, { clientX: 100, clientY: 100, pointerId: 1, buttons: 1 });
+    fireEvent.pointerMove(header, { clientX: 140, clientY: 130, pointerId: 1, buttons: 1 });
+    fireEvent.pointerUp(header, { pointerId: 1 });
+    const content = document.querySelector('.palette-manager') as HTMLElement;
+    expect(content.style.left).toBe('40px');
+    expect(content.style.top).toBe('30px');
+  });
+
+  it('Escape peels one layer at a time: name edit, then editor, then dialog', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({ ...useDoc.getState(), palettes: [FRRF] });
+    renderDialog();
+    await user.click(screen.getByRole('button', { name: 'Edit frrf in the map' }));
+    await user.dblClick(screen.getByRole('heading', { level: 3, name: 'frrf' }));
+
+    await user.keyboard('{Escape}'); // cancels the edit, stays in the editor
+    expect(screen.queryByRole('textbox', { name: 'Palette name' })).toBeNull();
+    expect(screen.getByRole('heading', { level: 3, name: 'frrf' })).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+
+    await user.keyboard('{Escape}'); // leaves the editor, stays in the dialog
+    expect(screen.getByRole('region', { name: 'Palette library' })).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+
+    await user.keyboard('{Escape}'); // now the dialog itself
+    expect(onClose).toHaveBeenCalled();
   });
 });
 
