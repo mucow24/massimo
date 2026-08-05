@@ -19,6 +19,7 @@ import type {
   Rotation,
   RouteBullet,
   StationId,
+  StationStopType,
   StyleDef,
   StyleKind,
   SvgImage,
@@ -682,6 +683,7 @@ interface DocState extends MapDoc {
   setDotStyle: (stationId: StationId, lineId: LineId, styleId: string) => void;
   setDotSize: (stationId: StationId, lineId: LineId, size: number) => void;
   setStationWaypoint: (stationId: StationId, isWaypoint: boolean) => void;
+  setStationStopType: (stationId: StationId, stopType: StationStopType) => void;
   setStationLocked: (stationId: StationId, locked: boolean) => void;
   // Bulk lock/unlock across every lockable kind — ONE undo entry.
   setItemsLocked: (ids: T.LockableItemIds, locked: boolean) => void;
@@ -929,6 +931,8 @@ export const useDoc = create<DocState>()(
           set((s) => T.setDotSize(s, stationId, lineId, size)),
         setStationWaypoint: (stationId, isWaypoint) =>
           set((s) => T.setStationWaypoint(s, stationId, isWaypoint)),
+        setStationStopType: (stationId, stopType) =>
+          set((s) => T.setStationStopType(s, stationId, stopType)),
         setStationLocked: (stationId, locked) =>
           set((s) => T.setStationLocked(s, stationId, locked)),
         setItemsLocked: (ids, locked) => set((s) => T.setItemsLocked(s, ids, locked)),

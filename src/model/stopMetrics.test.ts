@@ -320,6 +320,23 @@ describe('stopMetricsOf — split singleton/interchange resolution', () => {
     expect(dashOf(line, local, [local, makeStop('EXPRESS', { col: 1 })])).toBeNull();
   });
 
+  it("a station's declared stopType picks the default, whatever its stop count", () => {
+    // The NYC case: nearly every station is shared by the count, so the split
+    // stops meaning anything. A declaration on the station settles it — and it
+    // reaches every stop that isn't pinned, not just the one asked about.
+    const line = makeLine({ id: 'L1', singletonDotStyle: dash, multiDotStyle: circle });
+    const lone = makeStop('L1');
+    const dashOfDeclared = (stops: StopCell[], stopType: 'singleton' | 'interchange') =>
+      stopMetricsOf({ lines: { [line.id]: line }, transfers: {}, stations: {} })(
+        makeStation({ id: 's1', stops, stopType }),
+        stops[0],
+      ).dash;
+    // Alone, but declared an interchange → the circle, not the tick.
+    expect(dashOfDeclared([lone], 'interchange')).toBeNull();
+    // Shared, but declared a singleton → the tick.
+    expect(dashOfDeclared([lone, makeStop('L2', { col: 1 })], 'singleton')).toEqual(TICK);
+  });
+
   it('a per-stop dotStyle override wins over either default', () => {
     const line = makeLine({ id: 'L1', singletonDotStyle: circle, multiDotStyle: circle });
     const pinned = makeStop('L1', { dotStyle: dash });

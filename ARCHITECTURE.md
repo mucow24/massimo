@@ -457,6 +457,15 @@ See [styles.ts](src/model/styles.ts).
 - `isWaypoint?` — a "routing point": hide name + all bullet glyphs + drop the label hit rect;
   the station stays selectable/draggable via its stop-cell hit rect. Per-stop styles are **not**
   mutated when this toggles.
+- `stopType?: 'singleton' | 'interchange'` — the station's OWN answer to which of each line's two
+  split dot defaults its stops take, overriding the visible-stop count (`stationIsSingleton`; see
+  `Line.singletonDotStyle` below). Absent ⇒ `'auto'`, the count. The count is only a proxy for how
+  a station reads, and a poor one on a dense network where nearly everything is shared — so the
+  declaration short-circuits it in both directions, ahead of even the blank-aware skip. Written in
+  the station popover's Stop dots section ("Stop type") and **mirror-dispatched**, like dot type
+  and size — Select Similar stands in for "stations of the same general purpose", which is what a
+  stop type is. Deliberately NOT part of `stationSignature`: two stations that render alike still
+  match while they disagree, which is what lets a broadcast bring them into line.
 - `circleId?` — binds the station onto a line circle's circumference (see Line circles below).
   Bound stations sit ON the circle, drag ALONG it (`moveStation` projects), and keep `rotation`
   at the nearest-octant tangent with the label held right-side-up (`uprightTangentRotation`,
@@ -687,7 +696,9 @@ All remaining fields optional and **never stored at default**:
   a sibling whose EXPLICIT `dotStyle` override is blank (renders nothing) — the express+local
   pattern draws both lines through every station but blanks the express dot at skipped stops, and
   those must still read as singletons for the local line (only explicit overrides are inspected,
-  never resolved defaults — that would be circular). Resolved live per stop
+  never resolved defaults — that would be circular). That count is the DEFAULT answer, not the only
+  one: a station's own `Station.stopType` declaration outranks it outright, checked before the walk.
+  Resolved live per stop
   (`resolveDotStyle(line, stop, isSingleton)`), so a station losing its other visible line adopts
   the singleton default with no rewrite; a per-stop `dotStyle` override always wins. Independent
   (editing one never moves the other); each missing ⇒ `DEFAULT_DOT_STYLE` (filled-black). Legacy
@@ -3233,7 +3244,15 @@ same three additions.
   and the panel then unmounts under the cursor with no leave left to fire, stranding a highlight on
   the canvas for good. **Double-clicking the badge** jumps to that line's editor
   (`startAppend`) — the reverse of the line editor's own station dblclick; an **Add-anchor** ghost
-  button beside the rows parks a transfer anchor in this station's grid), and a Label row whose
+  button beside the rows parks a transfer anchor in this station's grid, and under it a **Stop
+  type** dropdown — Auto / Singleton / Interchange, writing the station's `stopType` declaration
+  (see `Station` above). It closes the loop the line inspector's split defaults open: the line says
+  what each case looks like, this says which case a station IS. Auto reads as **"Auto
+  (Singleton)"** / **"Auto (Interchange)"** — the count is the one thing the control can't show by
+  looking, and it is what a declaration is being weighed against; it is computed with any
+  declaration stripped off, so an override still reports what reverting would buy (a station with
+  no stops has no answer and just says "Auto"). Mirror-dispatched, unlike the End and Xfer
+  pins beside it), and a Label row whose
   **magic-wand** Auto-placement toggle stays
   put and SWAPS the row between the manual align/valign controls (wand off) and the auto H/V tuning
   controls (wand on) — each a segmented select-one (Radix ToggleGroup, `.align-group`); the manual
@@ -3250,8 +3269,8 @@ same three additions.
   `rotateGridDelta`; orientation cycles and station rotation are relative steps so odd-offset
   matches stay world-equivalent). The **Select Similar** chip (button bar, between Edit layout and
   WP) drives `mirrorMatching`: off = every dispatch resolves to the source station alone; on = stop/label
-  edits + station rotation broadcast, while name, X/Y, and the per-station WP / lock /
-  bold / italic flags stay local. Disabled at zero matches unless already on (so the mode can
+  edits + station rotation + the Stop type declaration broadcast, while name, X/Y, and the
+  per-station WP / lock / bold / italic flags stay local. Disabled at zero matches unless already on (so the mode can
   always be exited); MapCanvas highlights the current match set while on.
 - **The painted name on the main canvas is NOT a label handle** — grabbing a selected station
   anywhere on its footprint, name included, drags the whole STATION (StationHitArea gives the name
