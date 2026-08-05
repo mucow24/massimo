@@ -696,6 +696,53 @@ describe('findMatchingStations', () => {
     expect(bWorld.y).toBeCloseTo(aWorld.y, 6);
   });
 
+  it('station rotation broadcasts congruently but SLIDES across a translated match', () => {
+    // The one broadcast translation does not carry, pinned in world terms
+    // because the rotation FIELD stays in lockstep and hides it (which is why
+    // e2e/matching.spec.ts's "rotate in lockstep" test passes either way).
+    //
+    // rotateStation pivots the layout about cell (0,0) — the station's own
+    // anchor. Two translated matches hold that anchor in different places
+    // within their (identical) pictures, so the same relative step swings each
+    // picture on a different radius. A and B below are placed so their
+    // pictures COINCIDE in world at rotation 0 — the strongest statement of
+    // "these render identically" — which makes any post-rotation gap pure drift.
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 'A',
+          x: -14,
+          stops: [makeStop('L1', { col: 1 }), makeStop('L2', { col: 2 })],
+          label: makeLabel({ col: 3 }),
+        }),
+        makeStation({
+          id: 'B',
+          x: 0,
+          stops: [makeStop('L1', { col: 0 }), makeStop('L2', { col: 1 })],
+          label: makeLabel({ col: 2 }),
+        }),
+      ],
+      lines: [
+        makeLine({ id: 'L1', stations: ['A', 'B'] }),
+        makeLine({ id: 'L2', stations: ['A', 'B'] }),
+      ],
+    });
+    const gap = (d: typeof doc) => {
+      const a = stopPosWorld(d.stations.A.stops[0], d.stations.A, d.lineCircles);
+      const b = stopPosWorld(d.stations.B.stops[0], d.stations.B, d.lineCircles);
+      return Math.hypot(b.x - a.x, b.y - a.y);
+    };
+    expect(findMatchingStations(doc, 'A').map((m) => m.id)).toEqual(['B']);
+    expect(gap(doc)).toBeCloseTo(0, 9);
+
+    // What dispatchMirrored does: the same relative step on both.
+    const after = T.rotateStation(T.rotateStation(doc, 'A'), 'B');
+    // 0.77 of a 14-unit cell, from one column of translation.
+    expect(gap(after)).toBeCloseTo(10.715, 3);
+    // And the match survives its own drift — no self-signalling.
+    expect(findMatchingStations(after, 'A').map((m) => m.id)).toEqual(['B']);
+  });
+
   it('matching survives a line being deleted then re-added', () => {
     // Scenario: 3 identical stations on L1. User deletes L1 (which strips
     // every station's L1 stops). User re-adds L1 with the same id and re-

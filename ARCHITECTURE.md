@@ -3249,8 +3249,12 @@ same three additions.
   anchor point and paints nothing, so which cells a layout sits on is not part of its identity,
   only their arrangement: the key is taken against the layout's own corner. An edit broadcasts
   through [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts), rotating local deltas through
-  `rotateGridDelta`; orientation cycles and station rotation are relative steps so odd-offset
-  matches stay world-equivalent). The **Select Similar** chip (button bar, between Edit layout and
+  `rotateGridDelta`; stop-orientation and label-rotation cycles are relative steps, so odd-offset
+  matches stay world-equivalent). **Station rotation is the one broadcast translation does not
+  carry**: it pivots the layout about cell (0,0), whose place within the picture is exactly what
+  the translation-free key no longer pins, so a translated match turns congruently but slides
+  against its source — ~0.77 of a cell per 45° step at one column of translation, and the pair
+  still matches, so nothing signals it. The **Select Similar** chip (button bar, between Edit layout and
   WP) drives `mirrorMatching`: off = every dispatch resolves to the source station alone; on = stop/label
   edits + station rotation broadcast, while name, X/Y, and the per-station WP / lock /
   bold / italic flags stay local. Disabled at zero matches unless already on (so the mode can

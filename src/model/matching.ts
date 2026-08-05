@@ -127,12 +127,10 @@ function layoutOffsetOf(srcKey: string, candKeys: readonly string[]): LayoutOffs
 // Round row/col to a stable string at 4 dp so float drift from diagonal
 // (±√2/2) arithmetic doesn't fragment otherwise-identical layouts. 4 dp is
 // well below the 1-unit cell pitch and well above any plausible cumulative
-// rounding error. Normalize the "-0.0000" that toFixed produces for
-// negative-ulp drift — it must key identically to exact zero.
-const q = (n: number): string => {
-  const s = n.toFixed(4);
-  return s === '-0.0000' ? '0.0000' : s;
-};
+// rounding error. No sign to normalize: every value reaching here is
+// `v − min(set)` with the min a member of that same set, so it is +0 or
+// greater — a negative-ulp "-0.0000" can't arise.
+const q = (n: number): string => n.toFixed(4);
 
 function stopsKey(st: Station, lines: MatchingScope['lines']): string {
   const cells = st.stops.filter((c) => lines[c.lineId]);
