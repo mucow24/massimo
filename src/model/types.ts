@@ -241,6 +241,9 @@ export interface LabelCell {
   autoVAlign?: AutoVAlign;
 }
 
+// The UI form of `Station.stopType` below, where 'auto' is the absent field.
+export type StationStopType = 'auto' | 'singleton' | 'interchange';
+
 export interface Station {
   id: StationId;
   name: string;
@@ -299,10 +302,15 @@ export interface Station {
   // missing ⇒ the box auto-sizes to its content. Clamped to a positive integer
   // by `setStationEditorHeight`. Mirrors `TextLabel.editorHeight`.
   editorHeight?: number;
+  // The station's own answer to "singleton or interchange?" — which of a line's
+  // two split dot defaults its stops take. Omitted ⇒ 'auto', the visible-stop
+  // count. Resolution, and why a declaration outranks the count, live in
+  // `stationIsSingleton` (transforms.ts).
+  stopType?: Exclude<StationStopType, 'auto'>;
   // Live link to a StyleDef of kind 'station' — covered fields are the name
   // typography (fontSize/weight/italic/leading/tracking), NOT identity
-  // (name/position/rotation/stops/label/waypoint/lock/editorHeight). Same
-  // contract as `Line.styleId`.
+  // (name/position/rotation/stops/label/waypoint/lock/editorHeight/stopType).
+  // Same contract as `Line.styleId`.
   styleId?: string;
 }
 

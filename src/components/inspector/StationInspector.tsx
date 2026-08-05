@@ -5,12 +5,14 @@ import {
   MagicWandIcon,
   RotateCounterClockwiseIcon,
 } from '@radix-ui/react-icons';
+import * as Select from '@radix-ui/react-select';
 import { useDoc, useSelection } from '../../state/store';
 import { useRenderDoc } from '../../state/renderDoc';
 import { useStationEditorPrefs } from '../../state/stationEditorPrefs';
 import { dispatchMirrored } from '../../state/mirrorDispatch';
-import type { StationId } from '../../model/types';
+import type { Station, StationId, StationStopType } from '../../model/types';
 import { findMatchingStations, type LayoutOffset } from '../../model/matching';
+import { FieldSelectContent } from '../FieldSelectContent';
 import { LabelOffsetControl } from './LabelOffsetControl';
 import {
   AutoHAlignButtons,
@@ -42,7 +44,30 @@ import {
   effectiveStationStyleProps,
   resolveAutoAlign,
   resolveOffsetPerp,
+  stationIsSingletonByCount,
 } from '../../model/transforms';
+
+// The Stop type dropdown's options. The two explicit names are the ones the
+// line inspector's own split rows use, so the surfaces read as one idea.
+//
+// Auto carries the answer it currently gives, because the count is the one
+// thing this control can't show you by looking. It asks for the count
+// SPECIFICALLY (`stationIsSingletonByCount`), never `stationIsSingleton` — a
+// declared station must report what reverting would buy, not echo its own
+// declaration back. A station with no stops has no answer and just says "Auto".
+function stopTypeOptions(station: Station): { value: StationStopType; name: string }[] {
+  const auto =
+    station.stops.length === 0
+      ? 'Auto'
+      : stationIsSingletonByCount(station.stops)
+        ? 'Auto (Singleton)'
+        : 'Auto (Interchange)';
+  return [
+    { value: 'auto', name: auto },
+    { value: 'singleton', name: 'Singleton' },
+    { value: 'interchange', name: 'Interchange' },
+  ];
+}
 
 export function StationInspector({ id }: { id: StationId }) {
   // Render source, not live doc: the x/y fields display the coordinates the
@@ -65,6 +90,7 @@ export function StationInspector({ id }: { id: StationId }) {
   const setLabelAutoVAlign = useDoc((s) => s.setLabelAutoVAlign);
   const rotateLabel = useDoc((s) => s.rotateLabel);
   const setStationWaypoint = useDoc((s) => s.setStationWaypoint);
+  const setStationStopType = useDoc((s) => s.setStationStopType);
   const setStationEditorHeight = useDoc((s) => s.setStationEditorHeight);
   const updateStationLabelStyle = useDoc((s) => s.updateStationLabelStyle);
   const selection = useSelection();
@@ -177,8 +203,9 @@ export function StationInspector({ id }: { id: StationId }) {
             {inLayoutEdit ? 'Done' : 'Edit layout'}
           </button>
           {/* Mirror-matching toggle. While on, layout edits (stops, label,
-              rotation — not name/position, and not the per-station styling
-              flags WP/lock/bold/italic) broadcast to every station on a
+              rotation) and the Stop type declaration — but not name/position,
+              and not the per-station styling flags WP/lock/bold/italic —
+              broadcast to every station on a
               shared line that renders identically (model/matching.ts).
               Stays clickable while on even at zero matches so the mode can
               always be exited. */}
@@ -306,6 +333,45 @@ export function StationInspector({ id }: { id: StationId }) {
           >
             Add transfer anchor
           </button>
+          {/* Which of each line's two split dot defaults this station's stops
+              take (`stationIsSingleton`). Mirror-dispatched, like dot type and
+              size: Select Similar stands in for "stations of the same general
+              purpose", which is precisely what a stop type is. It is
+              rotation-invariant, so there is no layoutOffset to apply.
+
+              Deliberately live on a station with NO stops: declaring one before
+              wiring it to a line is a real order of work, and the declaration
+              costs nothing until a stop arrives to read it. Auto drops its
+              parenthetical there, since a count over no stops answers nothing. */}
+          <div className="field-row stop-type-row">
+            <label htmlFor={`station-stop-type-${station.id}`}>Stop type</label>
+            <Select.Root
+              value={station.stopType ?? 'auto'}
+              disabled={locked}
+              onValueChange={(v) =>
+                dispatchAll((sid) => setStationStopType(sid, v as StationStopType))
+              }
+            >
+              <Select.Trigger
+                id={`station-stop-type-${station.id}`}
+                className="field-select"
+                aria-label="Stop type"
+                title="Which dot default this station's stops take: Auto counts the stops that paint here, or declare it outright"
+              >
+                <Select.Value />
+                <Select.Icon className="field-select-caret" aria-hidden="true">
+                  <ChevronDownIcon />
+                </Select.Icon>
+              </Select.Trigger>
+              <FieldSelectContent>
+                {stopTypeOptions(station).map((o) => (
+                  <Select.Item key={o.value} value={o.value} className="field-select-item">
+                    <Select.ItemText>{o.name}</Select.ItemText>
+                  </Select.Item>
+                ))}
+              </FieldSelectContent>
+            </Select.Root>
+          </div>
           {(station.stops.length === 0 || inLayoutEdit) && (
             <div className="field-hint">
               {station.stops.length === 0

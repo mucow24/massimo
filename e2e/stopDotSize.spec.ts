@@ -22,7 +22,8 @@ import { seedAndOpen, stationCenter, fourInLine, openLineStyleDetail } from './f
 // "Interchange dot size"; the per-stop control is "Stop dot size". These
 // share the "dot size" substring, so role lookups use exact: true. The
 // fourInLine fixture's stations are single-line (singletons), so the tests
-// drive the SINGLETON line default (the interchange split is unit-tested).
+// drive the SINGLETON line default — except the last describe, which declares
+// a station an interchange to reach the other half of the split.
 
 const DOT = (page: Page, stationId: string, lineId: string) =>
   page.locator(`[data-stop-station="${stationId}"][data-stop-line="${lineId}"]`);
@@ -200,6 +201,102 @@ test.describe('Stop dot size', () => {
     await setLineDotSizeTo(page, '12');
     await expectDotR(page, 'A', 'L1', '6');
 
+    await page.keyboard.press('Control+z');
+    await expectDotR(page, 'A', 'L1', '4');
+  });
+});
+
+// The station popover's "Stop type" dropdown: which SIDE of the split a
+// station's stops read from, when counting the stops that paint there is a
+// poor proxy (a dense network where almost everything is shared). Driven
+// through dot SIZE rather than dot type because the size is assertable as a
+// number — the resolution path is the same `stationIsSingleton` either way.
+test.describe('Station stop type', () => {
+  // Select a station WITHOUT entering its layout editor: the Stop type row is
+  // in the popover itself, one level up from the per-stop controls.
+  async function selectStation(page: Page, stationId: string): Promise<void> {
+    await page.keyboard.press('Escape');
+    const c = await stationCenter(page, stationId);
+    await page.mouse.click(c.x, c.y);
+    await page.getByRole('combobox', { name: 'Stop type' }).waitFor();
+  }
+
+  async function setStopType(page: Page, value: string): Promise<void> {
+    await page.getByRole('combobox', { name: 'Stop type' }).click();
+    await page.getByRole('option', { name: value, exact: true }).click();
+  }
+
+  test('the row label reads on ONE line', async ({ page }) => {
+    // "Stop type" is two words, and the popover's shared label column is sized
+    // for the one-word typography rows — left in it, the label wraps. Counting
+    // the text's line boxes is exact where a height heuristic would guess.
+    await seedAndOpen(page, fourInLine);
+    await selectStation(page, 'A');
+
+    const lineBoxes = await page
+      .locator('label[for^="station-stop-type-"]')
+      .evaluate((el) => {
+        const r = document.createRange();
+        r.selectNodeContents(el);
+        return r.getClientRects().length;
+      });
+    expect(lineBoxes).toBe(1);
+  });
+
+  test('declaring a lone stop an interchange moves it onto the interchange default', async ({
+    page,
+  }) => {
+    await seedAndOpen(page, fourInLine);
+
+    // Give the two sides of the split different sizes. Every station here is
+    // single-line, so the interchange side starts out inert — assert that,
+    // or the flip below could pass on a default nothing ever changed.
+    await selectLine(page, 'L1');
+    await replaceNumber(page, 'Interchange dot size', '16');
+    for (const sid of ['A', 'B', 'C', 'D']) await expectDotR(page, sid, 'L1', '4');
+
+    await selectStation(page, 'A');
+    await setStopType(page, 'Interchange');
+
+    await expectDotR(page, 'A', 'L1', '8');
+    await expectDotR(page, 'B', 'L1', '4');
+    await expectDotR(page, 'C', 'L1', '4');
+    await expectDotR(page, 'D', 'L1', '4');
+  });
+
+  test('Auto returns the station to the count, and the choice survives reload', async ({ page }) => {
+    await seedAndOpen(page, fourInLine);
+
+    await selectLine(page, 'L1');
+    await replaceNumber(page, 'Interchange dot size', '16');
+    await selectStation(page, 'A');
+    await setStopType(page, 'Interchange');
+    await expectDotR(page, 'A', 'L1', '8');
+
+    await page.reload();
+    await page.waitForSelector('.canvas-host svg');
+    await expectDotR(page, 'A', 'L1', '8');
+
+    // Auto names the answer the COUNT gives, which is unchanged by the
+    // declaration standing in its way — A still has exactly one stop.
+    await selectStation(page, 'A');
+    await setStopType(page, 'Auto (Singleton)');
+    await expectDotR(page, 'A', 'L1', '4');
+  });
+
+  test('Ctrl+Z undoes a stop type change', async ({ page }) => {
+    await seedAndOpen(page, fourInLine);
+
+    await selectLine(page, 'L1');
+    await replaceNumber(page, 'Interchange dot size', '16');
+    await selectStation(page, 'A');
+    await setStopType(page, 'Interchange');
+    await expectDotR(page, 'A', 'L1', '8');
+
+    // Radix hands focus back to the trigger, whose `combobox` role puts the
+    // app's keyboard guard in form mode — the same blur-then-undo contract the
+    // spinbutton tests above honour. Blur first, then undo.
+    await page.getByRole('combobox', { name: 'Stop type' }).blur();
     await page.keyboard.press('Control+z');
     await expectDotR(page, 'A', 'L1', '4');
   });
