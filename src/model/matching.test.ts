@@ -3,7 +3,7 @@ import { findMatchingStations } from './matching';
 import * as T from './transforms';
 import { stopPosWorld } from '../geometry/interlining';
 import { rotateGridDelta } from '../geometry/orientation';
-import { makeDoc, makeLine, makeStation, makeStop } from '../test/fixtures';
+import { makeDoc, makeLabel, makeLine, makeStation, makeStop } from '../test/fixtures';
 
 describe('findMatchingStations', () => {
   it('returns every matching station on each line that includes the selected', () => {
@@ -236,6 +236,84 @@ describe('findMatchingStations', () => {
         .map((m) => m.id)
         .sort(),
     ).toEqual(['s2', 's3']);
+  });
+
+  it('matches layouts that differ only by which grid cells they sit on', () => {
+    // The grid origin is the station's own anchor point, and it paints
+    // NOTHING — a layout parked one column over renders exactly the same
+    // picture, with the station's x/y absorbing the shift. s1 and s2 are that
+    // pair: two stops with the label one cell beyond the second, sitting on
+    // cols 1-3 and cols 0-2. (Straight from the attached MTA map: its Q/T
+    // stations are built both ways, and Select Similar found only half of
+    // them.)
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          x: 14,
+          stops: [makeStop('L1', { col: 1 }), makeStop('L2', { col: 2 })],
+          label: makeLabel({ col: 3 }),
+        }),
+        makeStation({
+          id: 's2',
+          x: 0,
+          stops: [makeStop('L1', { col: 0 }), makeStop('L2', { col: 1 })],
+          label: makeLabel({ col: 2 }),
+        }),
+      ],
+      lines: [
+        makeLine({ id: 'L1', stations: ['s1', 's2'] }),
+        makeLine({ id: 'L2', stations: ['s1', 's2'] }),
+      ],
+    });
+    // Same layout, no rotation between them: the delta rotation is 0.
+    expect(findMatchingStations(doc, 's1')).toEqual([{ id: 's2', layoutOffset: 0 }]);
+    expect(findMatchingStations(doc, 's2')).toEqual([{ id: 's1', layoutOffset: 0 }]);
+  });
+
+  it('matches a translated layout across a 90° rotation too', () => {
+    // Translation normalization has to compose with the 4-fold canonicalization,
+    // not just work at k=0: B is A rotated one +step AND parked two cells away.
+    const A = makeStation({
+      id: 'A',
+      stops: [makeStop('L1', { col: 1 }), makeStop('L2', { col: 2 })],
+      label: makeLabel({ col: 3 }),
+    });
+    const rotated = T.rotateStationLayoutBy90(A, 1);
+    const B = {
+      ...rotated,
+      id: 'B',
+      stops: rotated.stops.map((c) => ({ ...c, row: c.row + 2, col: c.col - 5 })),
+      label: { ...rotated.label, row: rotated.label.row + 2, col: rotated.label.col - 5 },
+    };
+    const doc = makeDoc({
+      stations: [A, B],
+      lines: [
+        makeLine({ id: 'L1', stations: ['A', 'B'] }),
+        makeLine({ id: 'L2', stations: ['A', 'B'] }),
+      ],
+    });
+    expect(findMatchingStations(doc, 'A')).toEqual([{ id: 'B', layoutOffset: 1 }]);
+    expect(findMatchingStations(doc, 'B')).toEqual([{ id: 'A', layoutOffset: 3 }]);
+  });
+
+  it('two waypoints match when their stops differ only by translation', () => {
+    // The waypoint key drops the (invisible) label, so the translation anchor
+    // must drop it too — otherwise a stale label cell drags the anchor around
+    // and refragments exactly what the waypoint rule just unified.
+    const wp = (id: string, col: number, labelCol: number) => ({
+      ...makeStation({
+        id,
+        stops: [makeStop('L1', { col })],
+        label: makeLabel({ col: labelCol }),
+      }),
+      isWaypoint: true,
+    });
+    const doc = makeDoc({
+      stations: [wp('s1', 0, -1), wp('s2', 4, 9)],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+    });
+    expect(findMatchingStations(doc, 's1').map((m) => m.id)).toEqual(['s2']);
   });
 
   it('returns empty for a missing station id', () => {
@@ -616,6 +694,52 @@ describe('findMatchingStations', () => {
     const bWorld = stopPosWorld(bStop, { ...B, stops: [bStop] }, {});
     expect(bWorld.x).toBeCloseTo(aWorld.x, 6);
     expect(bWorld.y).toBeCloseTo(aWorld.y, 6);
+  });
+
+  it('station rotation broadcasts with NO drift across a translated match', () => {
+    // Pinned in world terms because the rotation FIELD stays in lockstep and
+    // would hide a drift entirely (which is why e2e/matching.spec.ts's "rotate
+    // in lockstep" test passes either way — it reads only `rotation`).
+    //
+    // rotateStation pivots about the layout's own picture, not cell (0,0), so
+    // it no longer matters that two translated matches hold that cell in
+    // different places. A and B below are placed so their pictures COINCIDE in
+    // world at rotation 0 — the strongest statement of "these render
+    // identically" — which makes any post-rotation gap pure drift.
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 'A',
+          x: -14,
+          stops: [makeStop('L1', { col: 1 }), makeStop('L2', { col: 2 })],
+          label: makeLabel({ col: 3 }),
+        }),
+        makeStation({
+          id: 'B',
+          x: 0,
+          stops: [makeStop('L1', { col: 0 }), makeStop('L2', { col: 1 })],
+          label: makeLabel({ col: 2 }),
+        }),
+      ],
+      lines: [
+        makeLine({ id: 'L1', stations: ['A', 'B'] }),
+        makeLine({ id: 'L2', stations: ['A', 'B'] }),
+      ],
+    });
+    const gap = (d: typeof doc) => {
+      const a = stopPosWorld(d.stations.A.stops[0], d.stations.A, d.lineCircles);
+      const b = stopPosWorld(d.stations.B.stops[0], d.stations.B, d.lineCircles);
+      return Math.hypot(b.x - a.x, b.y - a.y);
+    };
+    expect(findMatchingStations(doc, 'A').map((m) => m.id)).toEqual(['B']);
+    expect(gap(doc)).toBeCloseTo(0, 9);
+
+    // What dispatchMirrored does: the same relative step on both. Before the
+    // pivot moved off cell (0,0) this left them 10.715 units apart — 0.77 of a
+    // 14-unit cell — from one single column of translation.
+    const after = T.rotateStation(T.rotateStation(doc, 'A'), 'B');
+    expect(gap(after)).toBeCloseTo(0, 9);
+    expect(findMatchingStations(after, 'A').map((m) => m.id)).toEqual(['B']);
   });
 
   it('matching survives a line being deleted then re-added', () => {

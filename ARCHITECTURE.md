@@ -3263,11 +3263,21 @@ same three additions.
   controls. The Name typography section keeps its style picker always visible with a collapsible,
   remembered (`useStationEditorPrefs`) Size→Tracking detail. New stations default to Auto placement
   ON (`makeStation` sets `label.autoAlign = true`). Inspectors dispatch transforms directly through **mirror matching**
-  (`findMatchingStations` returns stations sharing a line + a layout under the model's 4-fold
-  mirror symmetry — whole line, not adjacency; an edit broadcasts through
-  [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts), rotating local deltas through
+  (`findMatchingStations` returns stations sharing a line + a layout equal under TRANSLATION and
+  the model's 4-fold mirror symmetry — whole line, not adjacency. Cell (0,0) is the station's own
+  anchor point and paints nothing, so which cells a layout sits on is not part of its identity,
+  only their arrangement: the key is taken against the layout's own corner. An edit broadcasts
+  through [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts), rotating local deltas through
   `rotateGridDelta`; orientation cycles and station rotation are relative steps so odd-offset
-  matches stay world-equivalent). The **Select Similar** chip (button bar, between Edit layout and
+  matches stay world-equivalent). **A station turns about its own picture, not its pin** —
+  `rotateStation` pivots on `layoutPivotCell` (the stop cluster's centre, rounded to a whole cell
+  against the layout's own corner so the rounding is translation-equivariant and a 90° turn still
+  moves the pin by whole cells) and writes x/y to absorb the step, leaving every cell untouched.
+  Pivoting on cell (0,0) instead would swing a layout parked off the pin on an invisible radius,
+  and would turn two translated matches by different amounts under one mirrored step. Ring-bound
+  stations keep the pin pivot: they read their cell frame off the ring (`stationFrameRad`), so
+  moving x/y would change the very frame the correction was measured in. The **Select Similar**
+  chip (button bar, between Edit layout and
   WP) drives `mirrorMatching`: off = every dispatch resolves to the source station alone; on =
   stop/label edits + station rotation + the Stop type declaration broadcast, while name, X/Y, and
   the per-station WP / lock / bold / italic flags stay local. Disabled at zero matches unless
