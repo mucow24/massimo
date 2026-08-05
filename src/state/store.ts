@@ -896,9 +896,12 @@ interface DocState extends MapDoc {
   addPaletteToMap: (palette: Palette) => void;
   removePaletteFromMap: (name: string) => void;
   renameMapPalette: (from: string, to: string) => void;
-  /** Move a palette one place up (-1) or down (+1) the map's list — the order
+  /** Recolor one swatch of a map palette, repainting the lines wearing the
+   *  old color in the same write — the palette editor's recolor gesture. */
+  recolorMapPaletteColor: (name: string, index: number, color: string) => void;
+  /** Move a palette from one slot to another in the map's list — the order
    *  the picker's sections and the `addLine` color cycle follow. */
-  movePaletteInMap: (name: string, delta: -1 | 1) => void;
+  reorderMapPalette: (from: number, to: number) => void;
   /** Make this a night map (or a day map again). A document edit like any
    *  other — undoable, and saved with the file. */
   setDarkMode: (darkMode: boolean) => void;
@@ -1379,7 +1382,9 @@ export const useDoc = create<DocState>()(
         addPaletteToMap: (palette) => set((s) => T.addPaletteToMap(s, palette)),
         removePaletteFromMap: (name) => set((s) => T.removePaletteFromMap(s, name)),
         renameMapPalette: (from, to) => set((s) => T.renameMapPalette(s, from, to)),
-        movePaletteInMap: (name, delta) => set((s) => T.movePaletteInMap(s, name, delta)),
+        recolorMapPaletteColor: (name, index, color) =>
+          set((s) => T.recolorMapPaletteColor(s, name, index, color)),
+        reorderMapPalette: (from, to) => set((s) => T.reorderMapPalette(s, from, to)),
         setDarkMode: (darkMode) => set((s) => T.setDarkMode(s, darkMode)),
         clearAll: () => set((s) => T.clearAll(s)),
       }),

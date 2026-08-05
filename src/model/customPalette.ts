@@ -1,13 +1,30 @@
 import type { Palette, PaletteSwatch } from './palettes';
+import { normalizeHex, parseHexA } from '../util/color';
 
 export type ParsedCustomPalette =
-  | { ok: true; name: string; swatches: PaletteSwatch[] }
+  | { ok: true; name: string; swatches: PaletteSwatch[]; description?: string }
   | { ok: false; error: string };
 
 const HEX6 = /^#[0-9a-fA-F]{6}$/;
+const HEX6OR8 = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/;
 
 /**
- * Parse a user-supplied custom-palette JSON file (the "frrf" format):
+ * Parse a palette file. Two formats land here, told apart by a `format` key:
+ *
+ * The massimo-palette format — ours, what export writes:
+ *
+ *   { "format": "massimo-palette", "version": 1, "name": "My palette",
+ *     "description": "…", "colors": [ { "name": "Line 1",
+ *     "day": "#C1272DFF", "night": "#C1272DFF" } ] }
+ *
+ * Colors are day/night pairs (both `#RRGGBB` or `#RRGGBBAA`); in storage the
+ * night color is kept only when it differs from the day one, and both are
+ * normalized to the canonical `normalizeHex` form. Entries with an invalid
+ * `day` are skipped; a non-empty list surviving as nothing is rejected, but an
+ * explicitly empty palette is legal — the editor creates them. `version` is
+ * ignored on read (forward-tolerant, like the map loader).
+ *
+ * The legacy "frrf" format — no `format` key:
  *
  *   { "name": "frrf", "colors": [ { "line": 1, "human": "#c1272d", ... } ] }
  *
@@ -26,7 +43,58 @@ export function parseCustomPalette(json: string): ParsedCustomPalette {
   if (!raw || typeof raw !== 'object') {
     return { ok: false, error: 'File is not a JSON object' };
   }
-  const obj = raw as { name?: unknown; colors?: unknown };
+  const obj = raw as {
+    format?: unknown;
+    name?: unknown;
+    description?: unknown;
+    colors?: unknown;
+  };
+  if ('format' in obj) {
+    if (obj.format !== 'massimo-palette') {
+      return { ok: false, error: 'Not a massimo palette file' };
+    }
+    return parseMassimoPalette(obj);
+  }
+  return parseLegacyPalette(obj);
+}
+
+function parseMassimoPalette(obj: {
+  name?: unknown;
+  description?: unknown;
+  colors?: unknown;
+}): ParsedCustomPalette {
+  if (typeof obj.name !== 'string' || obj.name.trim().length === 0) {
+    return { ok: false, error: 'Missing a palette `name`' };
+  }
+  if (!Array.isArray(obj.colors)) {
+    return { ok: false, error: 'Missing a `colors` array' };
+  }
+  const swatches: PaletteSwatch[] = [];
+  obj.colors.forEach((entry, i) => {
+    const e = entry as { name?: unknown; day?: unknown; night?: unknown };
+    if (typeof e.day !== 'string' || !HEX6OR8.test(e.day)) return;
+    const color = normalizeHex(e.day);
+    const night =
+      typeof e.night === 'string' && HEX6OR8.test(e.night) ? normalizeHex(e.night) : undefined;
+    const name = e.name == null ? String(i + 1) : String(e.name);
+    swatches.push({ name, color, ...(night !== undefined && night !== color && { night }) });
+  });
+  if (obj.colors.length > 0 && swatches.length === 0) {
+    return { ok: false, error: 'No valid colors found' };
+  }
+  const description =
+    typeof obj.description === 'string' && obj.description.trim().length > 0
+      ? obj.description.trim()
+      : undefined;
+  return {
+    ok: true,
+    name: obj.name.trim(),
+    swatches,
+    ...(description !== undefined && { description }),
+  };
+}
+
+function parseLegacyPalette(obj: { name?: unknown; colors?: unknown }): ParsedCustomPalette {
   if (typeof obj.name !== 'string' || obj.name.trim().length === 0) {
     return { ok: false, error: 'Missing a palette `name`' };
   }
@@ -46,17 +114,32 @@ export function parseCustomPalette(json: string): ParsedCustomPalette {
   return { ok: true, name: obj.name.trim(), swatches };
 }
 
+// The file is the interchange form, so it is explicit where storage is terse:
+// always 8 digits, alpha included, uppercase.
+const fileHex = (hex: string): string => {
+  const [r, g, b, a] = parseHexA(hex);
+  const pair = (n: number) => n.toString(16).padStart(2, '0');
+  return `#${pair(r)}${pair(g)}${pair(b)}${pair(a)}`.toUpperCase();
+};
+
 /**
- * Write a palette back out in the same "frrf" format `parseCustomPalette`
- * reads, so an exported palette re-imports as itself. Only the two fields that
- * survive a parse are written — `cat` / `locked` were never read, so a palette
- * that came from such a file exports without them.
+ * Write a palette out in the massimo-palette format `parseCustomPalette`
+ * reads, so an exported palette re-imports as itself (modulo hex
+ * canonicalization). The night color is backfilled from the day one when the
+ * palette stores none — the file always spells out the pair.
  */
-export function serializeCustomPalette({ name, swatches }: Palette): string {
+export function serializeCustomPalette({ name, swatches, description }: Palette): string {
   return JSON.stringify(
     {
+      format: 'massimo-palette',
+      version: 1,
       name,
-      colors: swatches.map((s) => ({ line: s.name, human: s.color.toLowerCase() })),
+      ...(description !== undefined && { description }),
+      colors: swatches.map((s) => ({
+        name: s.name,
+        day: fileHex(s.color),
+        night: fileHex(s.night ?? s.color),
+      })),
     },
     null,
     2,
