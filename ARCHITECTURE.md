@@ -457,6 +457,16 @@ See [styles.ts](src/model/styles.ts).
 - `isWaypoint?` — a "routing point": hide name + all bullet glyphs + drop the label hit rect;
   the station stays selectable/draggable via its stop-cell hit rect. Per-stop styles are **not**
   mutated when this toggles.
+- `stopType?: 'singleton' | 'interchange'` — the station's OWN answer to which of each line's two
+  split dot defaults its stops take, overriding the visible-stop count (`stationIsSingleton`; see
+  `Line.singletonDotStyle` below). Absent ⇒ `'auto'`, the count. The count is only a proxy for how
+  a station reads, and a poor one on a dense network where nearly everything is shared — so the
+  declaration short-circuits it in both directions, ahead of even the blank-aware skip. Written in
+  the station popover's Stop dots section ("Stop type") and **mirror-dispatched**, like dot type
+  and size — Select Similar stands in for "stations of the same general purpose", which is what a
+  stop type is. Deliberately NOT part of the match key (`stopsKey`, model/matching.ts): two
+  stations that render alike still match while they disagree, which is what lets a broadcast bring
+  them into line.
 - `circleId?` — binds the station onto a line circle's circumference (see Line circles below).
   Bound stations sit ON the circle, drag ALONG it (`moveStation` projects), and keep `rotation`
   at the nearest-octant tangent with the label held right-side-up (`uprightTangentRotation`,
@@ -687,20 +697,21 @@ All remaining fields optional and **never stored at default**:
   a sibling whose EXPLICIT `dotStyle` override is blank (renders nothing) — the express+local
   pattern draws both lines through every station but blanks the express dot at skipped stops, and
   those must still read as singletons for the local line (only explicit overrides are inspected,
-  never resolved defaults — that would be circular). Resolved live per stop
-  (`resolveDotStyle(line, stop, isSingleton)`), so a station losing its other visible line adopts
-  the singleton default with no rewrite; a per-stop `dotStyle` override always wins. Independent
-  (editing one never moves the other); each missing ⇒ `DEFAULT_DOT_STYLE` (filled-black). Legacy
-  saves carried one combined `defaultDotStyle` — baked into both on load (`bakeLineDotDefaults`,
-  persist v18). Since the doc-scoped "Stop dots" library (persist v19) these two raw `DotStyle`
-  fields are the **stamped shadow** of a library link: `singletonDotStyleId?` / `multiDotStyleId?`
-  (persist v20 — also covered `LineStyleProps` fields) name the `'stopDot'` StyleDef, and the raw
-  `DotStyle` here is its stamped props. The renderer reads the raw value; editing the library entry
-  restamps it (same raw-value-plus-tag contract as `styleId`). **An absent id resolves to the module
-  constant `DEFAULT_DOT_STYLE` (filled-black), NOT to the doc's designated default stopDot style** —
-  `resolveDotStyle` never reads `doc.styles`/`doc.styleDefaults`. The two coincide only on a factory
-  doc: re-designating the stopDot default via `setDefaultStyle` does not change what an untagged
-  line draws.
+  never resolved defaults — that would be circular). That count is the DEFAULT answer: a station's
+  own `Station.stopType` declaration outranks it outright, read before the count. Resolved live
+  per stop (`resolveDotStyle(line, stop, isSingleton)`), so a station losing its other visible line
+  adopts the singleton default with no rewrite; a per-stop `dotStyle` override always wins.
+  Independent (editing one never moves the other); each missing ⇒ `DEFAULT_DOT_STYLE`
+  (filled-black). Legacy saves carried one combined `defaultDotStyle` — baked into both on load
+  (`bakeLineDotDefaults`, persist v18). Since the doc-scoped "Stop dots" library (persist v19) these
+  two raw `DotStyle` fields are the **stamped shadow** of a library link: `singletonDotStyleId?` /
+  `multiDotStyleId?` (persist v20 — also covered `LineStyleProps` fields) name the `'stopDot'`
+  StyleDef, and the raw `DotStyle` here is its stamped props. The renderer reads the raw value;
+  editing the library entry restamps it (same raw-value-plus-tag contract as `styleId`). **An absent
+  id resolves to the module constant `DEFAULT_DOT_STYLE` (filled-black), NOT to the doc's designated
+  default stopDot style** — `resolveDotStyle` never reads `doc.styles`/`doc.styleDefaults`. The two
+  coincide only on a factory doc: re-designating the stopDot default via `setDefaultStyle` does not
+  change what an untagged line draws.
 - `singletonDotSize?` / `multiDotSize?: number` — dot diameter px, split the same way. **A missing
   size does NOT mean 8** — the default is **style-dependent**, resolved through
   `defaultDotDiameter(style)` ([dotSize.ts](src/model/dotSize.ts)): a service-code disc renders at
@@ -3233,7 +3244,15 @@ same three additions.
   and the panel then unmounts under the cursor with no leave left to fire, stranding a highlight on
   the canvas for good. **Double-clicking the badge** jumps to that line's editor
   (`startAppend`) — the reverse of the line editor's own station dblclick; an **Add-anchor** ghost
-  button beside the rows parks a transfer anchor in this station's grid), and a Label row whose
+  button beside the rows parks a transfer anchor in this station's grid, and under it a **Stop
+  type** dropdown writing `Station.stopType` (above) — it closes the loop the line inspector's
+  split defaults open: the line says what each case looks like, this says which case a station IS.
+  Auto reads as **"Auto (Singleton)"** / **"Auto (Interchange)"**, the count being the one thing
+  the control can't show by looking; it asks for the count SPECIFICALLY
+  (`stationIsSingletonByCount`), so a declared station reports what reverting would buy instead of
+  echoing its own declaration back, and a station with no stops just says "Auto". Live on a
+  stopless station on purpose — declaring one before wiring it to a line is a real order of work.
+  Mirror-dispatched, unlike the End and Xfer pins beside it), and a Label row whose
   **magic-wand** Auto-placement toggle stays
   put and SWAPS the row between the manual align/valign controls (wand off) and the auto H/V tuning
   controls (wand on) — each a segmented select-one (Radix ToggleGroup, `.align-group`); the manual
@@ -3249,10 +3268,10 @@ same three additions.
   [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts), rotating local deltas through
   `rotateGridDelta`; orientation cycles and station rotation are relative steps so odd-offset
   matches stay world-equivalent). The **Select Similar** chip (button bar, between Edit layout and
-  WP) drives `mirrorMatching`: off = every dispatch resolves to the source station alone; on = stop/label
-  edits + station rotation broadcast, while name, X/Y, and the per-station WP / lock /
-  bold / italic flags stay local. Disabled at zero matches unless already on (so the mode can
-  always be exited); MapCanvas highlights the current match set while on.
+  WP) drives `mirrorMatching`: off = every dispatch resolves to the source station alone; on =
+  stop/label edits + station rotation + the Stop type declaration broadcast, while name, X/Y, and
+  the per-station WP / lock / bold / italic flags stay local. Disabled at zero matches unless
+  already on (so the mode can always be exited); MapCanvas highlights the match set while on.
 - **The painted name on the main canvas is NOT a label handle** — grabbing a selected station
   anywhere on its footprint, name included, drags the whole STATION (StationHitArea gives the name
   rect the same station handlers as the cells rect). The name's own layout (cell / rotation /

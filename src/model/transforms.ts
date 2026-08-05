@@ -118,6 +118,7 @@ import type {
   RouteBullet,
   Station,
   StationId,
+  StationStopType,
   StationStyleProps,
   StopCell,
   StopOrientation,
@@ -507,30 +508,54 @@ function reseatCircleLayout(before: Station, after: Station, circle: CircleSpec)
 }
 
 /**
- * A station is a "singleton" for dot-styling when exactly one stop VISIBLY
- * occupies it — i.e. picks the line's singleton default rather than its
- * interchange default. A stop whose EXPLICIT `dotStyle` override is blank
- * (renders nothing) does NOT count: the express+local pattern draws both lines
- * through every station but blanks the express dot at stops it skips, and those
- * skipped stations should still read as singletons for the local line. Only
- * explicit overrides are inspected, never resolved defaults — resolving a
+ * The COUNT half of the singleton rule: exactly one stop VISIBLY occupies the
+ * station. A stop whose EXPLICIT `dotStyle` override is blank (renders nothing)
+ * does NOT count — the express+local pattern draws both lines through every
+ * station but blanks the express dot at stops it skips, and those skipped
+ * stations should still read as singletons for the local line. Only explicit
+ * overrides are inspected, never resolved defaults — resolving a
  * default-tracking stop's style would itself depend on this result, so counting
- * it would be circular. This is a per-STATION property (every non-blank stop
- * shares it), recomputed live so a station losing its other visible line
- * immediately adopts the singleton default. Zero visible stops is not a
- * singleton (nothing to style).
+ * it would be circular. Zero visible stops is not a singleton (nothing to
+ * style).
+ *
+ * Exported so the one caller that wants the count SPECIFICALLY — the Stop type
+ * dropdown, naming what Auto would give — asks for it by name instead of
+ * dropping `stopType` from a station literal and hoping the omission reads as
+ * intent.
  */
-export function stationIsSingleton(
-  station: { stops: readonly { dotStyle?: DotStyle }[] } | undefined,
-): boolean {
-  const stops = station?.stops;
-  if (!stops) return false;
+export function stationIsSingletonByCount(stops: readonly { dotStyle?: DotStyle }[]): boolean {
   let visible = 0;
   for (const s of stops) {
     if (s.dotStyle !== undefined && isBlankDotStyle(s.dotStyle)) continue;
     if (++visible > 1) return false;
   }
   return visible === 1;
+}
+
+/**
+ * Is this station a "singleton" for dot-styling — does it pick each line's
+ * singleton default rather than its interchange one? A per-STATION property
+ * (every non-blank stop shares it), resolved live so a station losing its other
+ * visible line immediately adopts the singleton default.
+ *
+ * `station.stopType` answers outright when present; absent, the visible-stop
+ * count above does. The count is only ever a proxy for how a station reads, and
+ * a poor one on a dense network where nearly everything is shared — which is
+ * why a station gets to overrule it. The declaration is deliberately read
+ * BEFORE the count, so it outranks the blank-aware rule too: it is the whole
+ * answer, not a tiebreak. Both values are matched by name rather than one being
+ * read as "not the other", so a junk value in a hand-edited file is no vote at
+ * all and the count still answers — the alternative silently declares every
+ * mistyped station an interchange.
+ *
+ * THE one owner of the question, so every consumer — dot style, dot size, the
+ * tick a label has to clear — agrees by construction.
+ */
+export function stationIsSingleton(station: Station | undefined): boolean {
+  if (!station?.stops) return false;
+  if (station.stopType === 'singleton') return true;
+  if (station.stopType === 'interchange') return false;
+  return stationIsSingletonByCount(station.stops);
 }
 
 /**
@@ -1026,6 +1051,28 @@ export function setStationWaypoint(doc: MapDoc, stationId: StationId, isWaypoint
   return updateStation(doc, stationId, (st) =>
     !!st.isWaypoint === isWaypoint ? st : { ...st, isWaypoint },
   );
+}
+
+// The station's declared singleton/interchange reading (see stationIsSingleton).
+// 'auto' is the default, so it DROPS the field rather than storing a sentinel,
+// like every other collapse-at-default setter; reference-equal no-ops keep a
+// re-pick of the current value out of the undo history. Per-stop
+// `dotStyle`/`dotSize` overrides are deliberately untouched — they outrank the
+// line default either way, so a declaration moves exactly the stops that were
+// tracking one, and stays reversible.
+export function setStationStopType(
+  doc: MapDoc,
+  stationId: StationId,
+  stopType: StationStopType,
+): MapDoc {
+  return updateStation(doc, stationId, (st) => {
+    if ((st.stopType ?? 'auto') === stopType) return st;
+    if (stopType === 'auto') {
+      const { stopType: _gone, ...rest } = st;
+      return rest;
+    }
+    return { ...st, stopType };
+  });
 }
 
 // For every line that links both startId and endId, evenly redistribute the
