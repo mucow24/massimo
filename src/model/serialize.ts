@@ -372,7 +372,7 @@ export function sanitizePalettes(value: unknown): Palette[] {
   const out: Palette[] = [];
   for (const raw of value) {
     if (!raw || typeof raw !== 'object') continue;
-    const p = raw as { name?: unknown; swatches?: unknown };
+    const p = raw as { name?: unknown; swatches?: unknown; description?: unknown };
     if (typeof p.name !== 'string' || !p.name || seen.has(p.name)) continue;
     if (!Array.isArray(p.swatches)) continue;
     seen.add(p.name);
@@ -380,7 +380,17 @@ export function sanitizePalettes(value: unknown): Palette[] {
       name: p.name,
       swatches: p.swatches
         .filter((s) => s && typeof s.name === 'string' && typeof s.color === 'string')
-        .map((s) => ({ name: s.name as string, color: s.color as string })),
+        // `night` is kept only when it differs from the day color — the same
+        // collapse invariant the editor and the palette-file parser enforce.
+        .map((s) => ({
+          name: s.name as string,
+          color: s.color as string,
+          ...(typeof s.night === 'string' && s.night !== s.color && { night: s.night as string }),
+        })),
+      ...(typeof p.description === 'string' &&
+        p.description !== '' && {
+          description: p.description,
+        }),
     });
   }
   return out;

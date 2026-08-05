@@ -2495,6 +2495,7 @@ button.dialog-sort {
    row of Adds doesn't read as the disabled one. */
 .dialog-row-actions button,
 .palette-row > .icon-btn,
+.palette-editor-row .icon-btn,
 .dialog-colhead-btn {
   height: 24px;
   padding: 0 8px;
@@ -2511,6 +2512,7 @@ button.dialog-sort {
 }
 .dialog-row-actions button:hover:not(:disabled),
 .palette-row > .icon-btn:hover:not(:disabled),
+.palette-editor-row .icon-btn:hover:not(:disabled),
 .dialog-colhead-btn:hover {
   background: var(--control-hover);
   border-color: var(--border-strong);
@@ -2522,12 +2524,14 @@ button.dialog-sort {
   color: var(--text);
 }
 .dialog-row-actions .danger,
-.palette-row > .icon-btn.danger {
+.palette-row > .icon-btn.danger,
+.palette-editor-row .icon-btn.danger {
   color: var(--danger);
   border-color: var(--danger);
 }
 .dialog-row-actions .danger:hover,
-.palette-row > .icon-btn.danger:hover {
+.palette-row > .icon-btn.danger:hover,
+.palette-editor-row .icon-btn.danger:hover {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 .map-thumb {
@@ -2626,41 +2630,45 @@ button.dialog-sort {
   min-width: 2px;
   border-radius: 2px;
 }
-/* Reorder arrows, stacked in the left gutter of a map-palette row: half-height
-   each, so the pair occupies one row's worth of height. */
-.palette-move {
-  display: flex;
-  flex-direction: column;
-  flex: none;
-  gap: 2px;
-}
-.palette-move button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 16px;
-  padding: 0;
-  background: var(--control-bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-muted);
-  cursor: pointer;
-}
-.palette-move button:hover:not(:disabled) {
-  background: var(--control-hover);
-  border-color: var(--border-strong);
-  color: var(--text);
-}
-.palette-move button:disabled,
 .dialog-row-actions button:disabled {
   opacity: 0.4;
   cursor: default;
 }
-/* A palette row is a touch tighter than a map row — no thumbnail to clear. */
+/* The map rows' drag handle sits in the action grid's last slot but is a
+   GHOST like the editor's, not a boxed command — grabbing it moves the row,
+   it doesn't "do" anything. */
+.dialog-row-actions .palette-drag-handle {
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  cursor: grab;
+  touch-action: none;
+}
+.dialog-row-actions .palette-drag-handle:hover {
+  background: transparent;
+  border: none;
+  color: var(--text);
+}
+/* A palette row is a touch tighter than a map row — no thumbnail to clear.
+   The height is pinned (not content-sized) as the drag hook's row pitch, and
+   it's ONE height for both columns — the map rows' drag handle fits a 24px
+   slot like every other command, so nothing forces them taller. */
 .palette-row {
+  height: 44px;
   padding-top: 6px;
   padding-bottom: 6px;
+}
+/* Mid-drag (map column): rows slide aside only while the drag is live, and
+   the ridden row floats raw over them — same contract as the editor's list. */
+.dialog-list.dragging .palette-row {
+  transition: transform 120ms ease;
+}
+.palette-row.dragging {
+  transition: none;
+  position: relative;
+  z-index: 1;
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
 }
 /* The commands are a FIXED grid of icon slots, not a row of text buttons that
    grows and shrinks with what a palette happens to support. A built-in has no
@@ -2683,12 +2691,14 @@ button.dialog-sort {
 .palette-row > .star-btn {
   flex: none;
 }
-.palette-row .icon-btn {
+.palette-row .icon-btn,
+.palette-editor-row .icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 24px;
   padding: 0;
+  flex: none;
 }
 .dialog .palette-row > .star-btn {
   width: 24px;
@@ -2700,8 +2710,179 @@ button.dialog-sort {
 /* Armed by a first click, awaiting the second: the same glyph, but washed red
    so it cannot be mistaken for the idle command it was a moment ago. */
 .dialog-row-actions .danger.armed,
-.palette-row > .danger.armed {
+.palette-row > .danger.armed,
+.palette-editor-row .danger.armed {
   background: color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+/* ---- Palette editor: the manager's second view --------------------------
+   One palette, opened by a row's pencil or minted by New…: an editable title
+   and description over one row per color. The 40px row height is a contract
+   with useRowDragReorder — the drag preview divides by it — so it is pinned
+   here rather than measured. */
+.palette-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.palette-editor-head {
+  padding: 10px 16px;
+  background: var(--inset-bg);
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+/* The title/description classes ride on the display element AND its edit
+   input, so the swap doesn't jump: the input inherits the font wholesale and
+   carries NO border or padding — its focus ring is an outline, which paints
+   outside layout — so entering an edit never nudges the content below by a
+   pixel, and the glyphs stay exactly where the static text drew them.
+   `:where()` zeroes this rule's specificity: the title/description classes on
+   the input must keep winning the font longhands, or `font: inherit` would
+   reset them to the head's small base size. */
+:where(.palette-editor-head, .palette-editor-row) input {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-radius: 2px;
+  padding: 0;
+  margin: 0;
+  outline: 1px solid var(--border-strong);
+  outline-offset: 1px;
+  min-width: 0;
+}
+.palette-editor-head input {
+  display: block;
+  width: 100%;
+}
+.palette-editor-title {
+  margin: 0;
+  font-size: calc(var(--fs-ui) * 1.5);
+  font-weight: 700;
+  line-height: 1.3;
+}
+/* One voice for the description whether it's real or the double-click invite —
+   the muted italic IS the field's identity. (Not the global `.empty` class:
+   its padding would indent this off the title's left edge.) */
+.palette-editor-desc {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: calc(var(--fs-caption) * 1.5);
+  font-style: italic;
+  line-height: 1.3;
+}
+.palette-editor-list {
+  flex: 1;
+  overflow-y: auto;
+}
+.palette-editor-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border-soft);
+}
+/* Rows slide aside only WHILE a drag is live — on the drop the class leaves
+   with the transforms, so the reordered list snaps into place in one go
+   instead of a ghost row sliding to its slot. */
+.palette-editor-list.dragging .palette-editor-row {
+  transition: transform 120ms ease;
+}
+/* Mid-drag: the ridden row breaks its slide transition (it tracks the pointer
+   raw) and floats over the rows stepping aside beneath it. */
+.palette-editor-row.dragging {
+  transition: none;
+  position: relative;
+  z-index: 1;
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+}
+/* touch-action is load-bearing: without it, a touch drag pans the scroll
+   column and the handle never sees a pointermove. */
+.palette-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  cursor: grab;
+  touch-action: none;
+  flex: none;
+}
+.palette-drag-handle:hover {
+  color: var(--text);
+}
+.palette-editor-row.dragging .palette-drag-handle {
+  cursor: grabbing;
+}
+/* The color as a route bullet, its 1-based position as the "line" number.
+   Background and text color are inline (they ARE the data, like every badge);
+   25px is its own size — this is an index marker, not a .line-badge. */
+.palette-bullet {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  flex: none;
+}
+.palette-color-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-color-name.placeholder {
+  color: var(--text-faint);
+  font-style: italic;
+}
+input.palette-color-name {
+  flex: 1;
+}
+.palette-editor-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  height: 40px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.palette-editor-add:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+/* The header's back affordance (editor view only) sits with the title. */
+.dialog-head-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+/* One palette needs half the window two columns do. */
+.palette-manager.palette-editing {
+  width: min(430px, 90vw);
+}
+/* The black band doubles as the window's drag handle. */
+.palette-manager header {
+  cursor: grab;
 }
 
 /* Styles panel (sidebar): an expanded style row's editor body — the style's

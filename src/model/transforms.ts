@@ -94,6 +94,7 @@ import { isBulletCode } from '../geometry/labelTokens';
 import type { LabelStyle } from '../geometry/labelLayout';
 import { add, dot, eq, leftNormal, len, norm, rotateAround, sub, type Vec2 } from '../geometry/vec';
 import { copyPalette, PALETTES, type Palette } from './palettes';
+import { normalizeHex } from '../util/color';
 import type {
   AutoHAlign,
   AutoVAlign,
@@ -2698,9 +2699,15 @@ export function setStationEditorHeight(doc: MapDoc, stationId: StationId, height
 }
 
 function palettesEqual(a: Palette, b: Palette): boolean {
-  if (a.name !== b.name || a.swatches.length !== b.swatches.length) return false;
+  if (a.name !== b.name || a.description !== b.description) return false;
+  if (a.swatches.length !== b.swatches.length) return false;
+  // `night` compares strictly: it's only ever stored when it differs from
+  // `color` (the collapse invariant), so canonical forms are unique.
   return a.swatches.every(
-    (s, i) => s.name === b.swatches[i].name && s.color === b.swatches[i].color,
+    (s, i) =>
+      s.name === b.swatches[i].name &&
+      s.color === b.swatches[i].color &&
+      s.night === b.swatches[i].night,
   );
 }
 
@@ -2744,15 +2751,50 @@ export function renameMapPalette(doc: MapDoc, from: string, to: string): MapDoc 
 }
 
 /**
- * Move a palette one place up (-1) or down (+1) the map's list — the order the
- * color picker sections and the `addLine` color cycle follow.
+ * Recolor one swatch of a map palette AND repaint every line wearing the old
+ * color — matched via `normalizeHex`, the same equivalence the picker's
+ * selected-swatch ring uses, so "the lines using that palette color" follow it
+ * to the new value in the same doc write (one undo entry). The recolored
+ * swatch drops any stored night (the editor writes day == night).
  */
-export function movePaletteInMap(doc: MapDoc, name: string, delta: -1 | 1): MapDoc {
-  const idx = doc.palettes.findIndex((p) => p.name === name);
-  const to = idx + delta;
-  if (idx < 0 || to < 0 || to >= doc.palettes.length) return doc;
+export function recolorMapPaletteColor(
+  doc: MapDoc,
+  name: string,
+  index: number,
+  color: string,
+): MapDoc {
+  const pi = doc.palettes.findIndex((p) => p.name === name);
+  if (pi < 0) return doc;
+  const swatch = doc.palettes[pi].swatches[index];
+  if (!swatch) return doc;
+  const prev = normalizeHex(swatch.color);
+  const next = normalizeHex(color);
+  if (next === prev && swatch.night === undefined) return doc;
   const palettes = doc.palettes.slice();
-  [palettes[idx], palettes[to]] = [palettes[to], palettes[idx]];
+  const swatches = palettes[pi].swatches.slice();
+  swatches[index] = { name: swatch.name, color: next };
+  palettes[pi] = { ...palettes[pi], swatches };
+  let lines = doc.lines;
+  for (const [id, line] of Object.entries(doc.lines)) {
+    if (normalizeHex(line.color) !== prev) continue;
+    if (lines === doc.lines) lines = { ...doc.lines };
+    lines[id] = { ...line, color: next };
+  }
+  return { ...doc, palettes, lines };
+}
+
+/**
+ * Move a palette from one slot to another in the map's list — the order the
+ * color picker sections and the `addLine` color cycle follow. Drag-reorder's
+ * single commit: the whole gesture is one write, however far the row went.
+ */
+export function reorderMapPalette(doc: MapDoc, from: number, to: number): MapDoc {
+  if (from === to) return doc;
+  const last = doc.palettes.length - 1;
+  if (from < 0 || from > last || to < 0 || to > last) return doc;
+  const palettes = doc.palettes.slice();
+  const [moved] = palettes.splice(from, 1);
+  palettes.splice(to, 0, moved);
   return { ...doc, palettes };
 }
 

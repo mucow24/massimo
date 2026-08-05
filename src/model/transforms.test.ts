@@ -1729,6 +1729,77 @@ describe('the map’s palettes', () => {
     expect(Object.keys(doc.palettes[1])).toEqual(['name', 'swatches']);
   });
 
+  it('keeps a description while still stripping library-only fields', () => {
+    const doc = T.addPaletteToMap(makeDoc({}), {
+      ...FRRF,
+      description: 'side-project reds',
+      builtin: true,
+    } as never);
+    expect(Object.keys(doc.palettes[1])).toEqual(['name', 'swatches', 'description']);
+  });
+
+  it('an upsert that only changes the description is a real change', () => {
+    const doc = T.addPaletteToMap(makeDoc({}), FRRF);
+    const next = T.addPaletteToMap(doc, { ...FRRF, description: 'side-project reds' });
+    expect(next).not.toBe(doc);
+    expect(next.palettes[1].description).toBe('side-project reds');
+  });
+
+  it('an upsert that only changes a swatch night color is a real change', () => {
+    const doc = T.addPaletteToMap(makeDoc({}), FRRF);
+    const next = T.addPaletteToMap(doc, {
+      name: 'frrf',
+      swatches: [{ name: '1', color: '#c1272d', night: '#7a1a1d' }],
+    });
+    expect(next).not.toBe(doc);
+    expect(next.palettes[1].swatches[0].night).toBe('#7a1a1d');
+  });
+
+  it('re-adding an identical described palette is a reference no-op', () => {
+    const described = { ...FRRF, description: 'side-project reds' };
+    const doc = T.addPaletteToMap(makeDoc({}), described);
+    expect(T.addPaletteToMap(doc, described)).toBe(doc);
+  });
+
+  describe('recolorMapPaletteColor', () => {
+    // Line A wears swatch 0's color in a different spelling — the repaint must
+    // match the way the picker does (normalizeHex), not by string equality.
+    const wearing = () =>
+      T.addPaletteToMap(
+        makeDoc({
+          lines: [makeLine({ id: 'A', color: '#C1272D' }), makeLine({ id: 'B', color: '#123456' })],
+        }),
+        FRRF,
+      );
+
+    it('recolors the swatch and repaints the lines wearing the old color', () => {
+      const doc = T.recolorMapPaletteColor(wearing(), 'frrf', 0, '#00ff00');
+      expect(doc.palettes[1].swatches[0]).toEqual({ name: '1', color: '#00ff00' });
+      expect(doc.lines.A.color).toBe('#00ff00');
+      expect(doc.lines.B.color).toBe('#123456');
+    });
+
+    it('drops a stored night from the recolored swatch', () => {
+      let doc = T.addPaletteToMap(makeDoc({}), {
+        name: 'frrf',
+        swatches: [{ name: '1', color: '#c1272d', night: '#7a1a1d' }],
+      });
+      doc = T.recolorMapPaletteColor(doc, 'frrf', 0, '#00ff00');
+      expect(doc.palettes[1].swatches[0]).toEqual({ name: '1', color: '#00ff00' });
+    });
+
+    it('is a no-op for an unknown palette or swatch', () => {
+      const doc = wearing();
+      expect(T.recolorMapPaletteColor(doc, 'nope', 0, '#00ff00')).toBe(doc);
+      expect(T.recolorMapPaletteColor(doc, 'frrf', 5, '#00ff00')).toBe(doc);
+    });
+
+    it('recoloring to the color already worn is a reference no-op', () => {
+      const doc = wearing();
+      expect(T.recolorMapPaletteColor(doc, 'frrf', 0, '#C1272D')).toBe(doc);
+    });
+  });
+
   it('re-adding a name replaces its swatches in place, keeping its position', () => {
     let doc = T.addPaletteToMap(makeDoc({}), FRRF);
     doc = T.addPaletteToMap(doc, OTHER);
@@ -1775,26 +1846,26 @@ describe('the map’s palettes', () => {
     expect(T.renameMapPalette(doc, 'nope', 'x')).toBe(doc);
   });
 
-  it('moves a palette up and down the list', () => {
+  it('reorders a palette from one slot to another, near or far', () => {
     let doc = T.addPaletteToMap(makeDoc({}), FRRF);
-    doc = T.addPaletteToMap(doc, OTHER);
-    expect(T.movePaletteInMap(doc, 'frrf', -1).palettes.map((p) => p.name)).toEqual([
+    doc = T.addPaletteToMap(doc, OTHER); // MTA, frrf, other
+    expect(T.reorderMapPalette(doc, 1, 0).palettes.map((p) => p.name)).toEqual([
       'frrf',
       'MTA',
       'other',
     ]);
-    expect(T.movePaletteInMap(doc, 'frrf', 1).palettes.map((p) => p.name)).toEqual([
-      'MTA',
-      'other',
+    expect(T.reorderMapPalette(doc, 0, 2).palettes.map((p) => p.name)).toEqual([
       'frrf',
+      'other',
+      'MTA',
     ]);
   });
 
-  it('is a reference no-op at either end, and for an unknown name', () => {
+  it('is a reference no-op for a same-slot or out-of-range move', () => {
     const doc = T.addPaletteToMap(makeDoc({}), FRRF);
-    expect(T.movePaletteInMap(doc, 'MTA', -1)).toBe(doc);
-    expect(T.movePaletteInMap(doc, 'frrf', 1)).toBe(doc);
-    expect(T.movePaletteInMap(doc, 'nope', 1)).toBe(doc);
+    expect(T.reorderMapPalette(doc, 0, 0)).toBe(doc);
+    expect(T.reorderMapPalette(doc, -1, 1)).toBe(doc);
+    expect(T.reorderMapPalette(doc, 0, 5)).toBe(doc);
   });
 });
 

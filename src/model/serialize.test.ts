@@ -124,6 +124,48 @@ describe('parse — the map’s palettes', () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.doc.palettes).toEqual([good]);
   });
+
+  it('round-trips a palette description and per-swatch night colors', () => {
+    const p = {
+      name: 'frrf',
+      description: 'side-project reds',
+      swatches: [{ name: '1', color: '#c1272d', night: '#7a1a1d' }],
+    };
+    const r = parse(fileWith([p]));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.palettes).toEqual([p]);
+  });
+
+  // `night` is stored only when it differs from the day color (the collapse
+  // invariant), and a description is either a real string or absent.
+  it('collapses a night equal to its day color and drops malformed extras', () => {
+    const r = parse(
+      fileWith([
+        {
+          name: 'a',
+          description: 7,
+          swatches: [
+            { name: '1', color: '#111111', night: '#111111' },
+            { name: '2', color: '#222222', night: 5 },
+          ],
+        },
+        { name: 'b', description: '', swatches: [] },
+      ]),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.doc.palettes).toEqual([
+        {
+          name: 'a',
+          swatches: [
+            { name: '1', color: '#111111' },
+            { name: '2', color: '#222222' },
+          ],
+        },
+        { name: 'b', swatches: [] },
+      ]);
+    }
+  });
 });
 
 describe('parse — legacy activePalettes', () => {

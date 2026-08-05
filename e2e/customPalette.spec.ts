@@ -106,6 +106,92 @@ test.describe('palette manager', () => {
     );
   });
 
+  // Our own format: name + description + day/night colors. The description
+  // rides the doc's persisted palettes, so the reload proves the sanitize
+  // round-trip keeps the new fields.
+  test('a massimo-palette file loads, and its description survives a reload', async ({ page }) => {
+    const MASSIMO = JSON.stringify({
+      format: 'massimo-palette',
+      version: 1,
+      name: 'inks',
+      description: 'weekend reds',
+      colors: [
+        { name: 'Crimson', day: '#C1272DFF', night: '#7A1A1DFF' },
+        { name: 'Sea', day: '#0061A8FF', night: '#0061A8FF' },
+      ],
+    });
+    await seedAndOpen(page, twoStop);
+    await openManager(page);
+    await page.getByLabel('Load palette file').setInputFiles({
+      name: 'inks.palette.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(MASSIMO),
+    });
+    await expect(libraryRow(page, 'inks')).toBeVisible();
+    await expect(mapRow(page, 'inks').locator('.palette-strip > span')).toHaveCount(2);
+
+    await page.reload();
+    await page.waitForSelector('.canvas-host svg');
+    await openManager(page);
+    await mapRow(page, 'inks').getByRole('button', { name: 'Edit inks in the map' }).click();
+    await expect(page.getByRole('heading', { level: 3, name: 'inks' })).toBeVisible();
+    await expect(page.getByText('weekend reds')).toBeVisible();
+    await expect(page.getByText('Crimson')).toBeVisible();
+  });
+
+  test('a palette built from scratch in the editor paints a line', async ({ page }) => {
+    await seedAndOpen(page, twoStop);
+    await openManager(page);
+    await page.getByRole('button', { name: 'New…' }).click();
+    await page.getByRole('menuitem', { name: 'From empty…' }).click();
+
+    // The fresh palette opens naming itself; keep the minted name.
+    await page.getByRole('textbox', { name: 'Palette name' }).press('Enter');
+    await page.getByRole('button', { name: 'Add color' }).click();
+
+    // Recolor through the real color field: swatch → popover → hex field.
+    // exact — "Reorder color 1" and "Delete color 1" share the substring.
+    await page.getByRole('button', { name: 'Color 1', exact: true }).click();
+    await page.getByLabel('Color 1 hex value').fill('#c1272d');
+    await page.keyboard.press('Escape'); // closes the picker, not the dialog
+    await page.getByRole('button', { name: 'Back to palettes' }).click();
+    await closeManager(page);
+
+    await page.locator('[data-band-stripe][data-line-id="L1"]').first().click({ force: true });
+    await page.locator('.inspector').waitFor();
+    const swatch = page.locator('.inspector').getByTitle('1', { exact: true });
+    await swatch.click();
+    await expect(page.locator('[data-band-stripe][data-line-id="L1"]').first()).toHaveAttribute(
+      'stroke',
+      '#c1272d',
+    );
+  });
+
+  test('dragging a row by its handle reorders the palette, and it sticks', async ({ page }) => {
+    await seedAndOpen(page, twoStop);
+    await openManager(page);
+    await loadFrrf(page);
+    await mapRow(page, 'frrf').getByRole('button', { name: 'Edit frrf in the map' }).click();
+
+    const names = page.locator('.palette-color-name');
+    await expect(names).toHaveText(['1', '2', '3', '4', '5']);
+    const handle = page.getByRole('button', { name: 'Reorder color 1' });
+    const box = (await handle.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    // Two 40px rows down, in steps so pointermoves stream like a real drag.
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 + 80, { steps: 8 });
+    await page.mouse.up();
+    await expect(names).toHaveText(['2', '3', '1', '4', '5']);
+
+    // The reorder is doc state: still there after leaving and reopening.
+    await page.getByRole('button', { name: 'Back to palettes' }).click();
+    await closeManager(page);
+    await openManager(page);
+    await mapRow(page, 'frrf').getByRole('button', { name: 'Edit frrf in the map' }).click();
+    await expect(names).toHaveText(['2', '3', '1', '4', '5']);
+  });
+
   test('removing a palette from the map takes its colors out of the picker', async ({ page }) => {
     await seedAndOpen(page, twoStop);
     await openManager(page);
