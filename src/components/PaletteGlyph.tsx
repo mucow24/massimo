@@ -1,11 +1,20 @@
-// The palettes-button mark: Ionicons' `color-palette-outline` (MIT), inlined
-// rather than pulled in as a dependency for a single glyph.
+// The palettes-button mark: Ionicons' `color-palette-outline`, inlined rather
+// than pulled in as a dependency for a single glyph. The well radii below are
+// modified from upstream; the outline path is verbatim.
+//
+//   Copyright (c) 2015-present Ionic (https://ionic.io/)
+//   Released under the MIT License.
+//   Source: https://github.com/ionic-team/ionicons/blob/main/src/svg/
+//           color-palette-outline.svg
 //
 // Authored in Ionicons' 512×512 box and rendered at 17×17, a notch above the
-// 15×15 @radix-ui/react-icons the rest of the toolbar uses: this mark carries
-// five paint wells inside an outline, so at 15px the interior detail crowds.
-// The 26px button still leaves 4.5px of margin at 17, so it reads as one of the
-// set rather than as an outsized button.
+// 15×15 @radix-ui/react-icons the rest of the toolbar uses. Two reasons: the
+// Ionicons box carries margin around its artwork that the Radix box does not,
+// so matching box sizes would leave this mark visibly smaller than its
+// neighbors; and this one packs five paint wells inside an outline, so at 15px
+// the interior detail crowds. `.tool-btn` is 26px with a 1px border and
+// `box-sizing: border-box`, leaving a 24px content box — so 17 still sits in
+// 3.5px of margin per side and reads as one of the set.
 //
 // Stroked and filled in `currentColor`, so callers control the color the same
 // way they do for the Radix icons.

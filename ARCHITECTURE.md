@@ -79,7 +79,7 @@ with meanwhile — a failure to load is reported instead of degraded.
 | Property tests | fast-check 4 (model/geometry only)                                     |
 | E2E            | Playwright ([playwright.config.ts](playwright.config.ts))              |
 | Lint/format    | ESLint 9 flat config ([eslint.config.js](eslint.config.js)) + Prettier |
-| Icons          | `@radix-ui/react-icons`; hand-inlined SVG for gaps (Ionicons, MIT)     |
+| Icons          | `@radix-ui/react-icons`, plus local SVG marks (one from Ionicons, MIT) |
 
 Scripts ([package.json](package.json)):
 
