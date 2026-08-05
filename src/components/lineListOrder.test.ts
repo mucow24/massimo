@@ -23,10 +23,13 @@ describe('groupLinesForList — ungrouped', () => {
   ];
   const opts = { groupByStyle: false } as const;
 
-  it('returns one unlabelled group holding every line', () => {
+  it('returns one unlabelled, unkeyed group holding every line', () => {
     const out = groupLinesForList(lines, {}, { ...opts, sortBy: 'name' });
     expect(out).toHaveLength(1);
     expect(out[0].label).toBeNull();
+    // A null key, NOT the '' the Custom bucket uses: sharing it would let a
+    // collapsed Custom hide this whole list once grouping went back off.
+    expect(out[0].key).toBeNull();
     expect(out[0].lines).toHaveLength(3);
   });
 
@@ -129,6 +132,14 @@ describe('groupLinesForList — grouped by style', () => {
     // must still appear somewhere rather than vanish from the list.
     const lines = [makeLine({ id: 'ghost', name: 'Ghost', styleId: 'st-deleted' })];
     expect(shape(groupLinesForList(lines, lib, opts))).toEqual(['Custom: ghost']);
+  });
+
+  it('files a line tagged with another KIND of style under Custom', () => {
+    // Wrong-kind tags are pruned on load too. Resolving on existence alone
+    // would title a group of lines with a polygon style's name.
+    const withPolygon = styles(bold, makeStyle('polygon', 'st-poly', { name: 'Shaded' }));
+    const lines = [makeLine({ id: 'odd', name: 'Odd', styleId: 'st-poly' })];
+    expect(shape(groupLinesForList(lines, withPolygon, opts))).toEqual(['Custom: odd']);
   });
 
   it('carries the style id as the group key, and the empty string for Custom', () => {

@@ -3147,8 +3147,10 @@ same three additions.
   that is purely delete / pick-for-editing — clicking a row goes **straight into
   Edit Stops** (there is no selected-but-not-editing state) and the line editor rides in the
   pinned `LinePopover`, not the sidebar. It offers **no z-order control**: which line paints in
-  front where two overlap is settled per overlap by region painting, so stacking is not something
-  the user reorders. The station list sorts by clickable column headers (`SortHeader`, the active
+  front where two *bodies* overlap is settled per overlap by region painting, so stacking is not
+  something the user reorders. `lineOrder` survives as the default winner for an unpainted face
+  and as the source of stop-marker z-priority — it simply has no UI, and new lines land front-most
+  by `addLine`. The station list sorts by clickable column headers (`SortHeader`, the active
   one flipping direction); the Lines list instead carries a sticky `.list-controls` bar — a "Sort
   by" dropdown (Name / # Stops, always ascending) beside a "Group by style" checkbox that files the
   rows under collapsible per-style subheaders, styles alphabetical, the untagged "Custom" bucket
@@ -3156,9 +3158,11 @@ same three additions.
   ([lineListOrder.ts](src/components/lineListOrder.ts) owns that whole ordering as a pure
   function). Those controls ride the TOP of the scroll box rather than a footer: a bar pinned to
   the bottom disappears under the horizontal scrollbar as soon as a long row widens the content.
-  The Lines view state lives in `Sidebar` rather than in the panel (`useLineListView`): clicking a
-  row hides the panel for Edit Stops, which unmounts it, and a sort or grouping must not reset on
-  every edit. The whole panel hides while either pinned
+  Those controls read [lineListPrefs.ts](src/state/lineListPrefs.ts) — a store, not panel state,
+  and the one `*Prefs` store that is deliberately NOT persisted (a collapsed set of style ids
+  restored into a different map would collapse groups at random). It has to outlive the panel:
+  clicking a row hides the sidebar for Edit Stops, which unmounts `LinesPanel`, and a sort or
+  grouping must not reset on every edit. The whole panel hides while either pinned
   top-right editor mode is active (`sidebarVisible`: `editing-station-layout` or
   `appending-to-line`), ceding the corner. Stop/topology editing is **canvas-driven**
   ([appendGestures.ts](src/model/appendGestures.ts)): click stations to connect,

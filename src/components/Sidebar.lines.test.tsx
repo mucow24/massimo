@@ -3,6 +3,7 @@ import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Sidebar } from './Sidebar';
 import { useDoc, useSelection } from '../state/store';
+import { useLineListPrefs } from '../state/lineListPrefs';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makeDoc, makeLine, makeStation, makeStyle } from '../test/fixtures';
 import { chooseOption } from '../test/interaction';
@@ -13,6 +14,9 @@ import { chooseOption } from '../test/interaction';
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
+  // The view prefs are a module-level store now, so they outlive a render —
+  // reset them or one test's grouping leaks into the next.
+  useLineListPrefs.setState({ sortBy: 'name', groupByStyle: false, collapsed: new Set() });
   useSelection.setState({
     ...useSelection.getState(),
     activeTab: 'lines',
@@ -147,13 +151,21 @@ describe('<Sidebar /> lines — the Sort by control', () => {
     expect(lineRows()).toEqual(['ash', 'birch', 'cedar']);
   });
 
-  it('carries no column-header bar and no footer', () => {
+  it('carries controls, not a clickable column-header bar', () => {
     render(<Sidebar />);
-    // The controls replaced both: a bottom-pinned bar lands under the
-    // horizontal scrollbar as soon as a long name widens the list.
-    expect(document.querySelector('.list-footer')).toBeNull();
-    expect(document.querySelector('button.sort-header')).toBeNull();
     expect(document.querySelector('.list-controls')).not.toBeNull();
+    // The stations list still sorts by clicking its column headers; this one
+    // does not, so none of those buttons should be in the Lines tab.
+    expect(document.querySelector('button.sort-header')).toBeNull();
+  });
+
+  it('drops the controls entirely when there are no lines', () => {
+    useDoc.setState({ ...useDoc.getState(), ...makeDoc({}) });
+    render(<Sidebar />);
+    // Nothing to sort or group — the bar would just be dead chrome over the
+    // empty-state message.
+    expect(document.querySelector('.list-controls')).toBeNull();
+    expect(screen.getByText('No lines yet.')).toBeTruthy();
   });
 });
 

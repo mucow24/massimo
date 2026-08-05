@@ -1,18 +1,19 @@
 import { lineDisplayName } from '../model/lineNaming';
+import type { LineSortColumn } from '../state/lineListPrefs';
 import type { Line, StyleDef } from '../model/types';
-
-/** Which column the lines list is ordered by. */
-export type LineSortColumn = 'name' | 'stops';
 
 /** The untagged bucket's subheader. `isReservedStyleName` refuses this name to
  *  real styles, so it can never label two different things at once. */
 export const CUSTOM_GROUP_LABEL = 'Custom';
 
 export interface LineGroup {
-  /** Style id, or `''` for the untagged bucket. The collapse-state key. */
-  key: string;
-  /** Subheader text, or null for the single group of an UNGROUPED list (which
-   *  renders no subheader and no collapse toggle, so its `key` goes unused). */
+  /** Collapse-state key: a style id, `''` for the untagged Custom bucket, or
+   *  null for the single group of an UNGROUPED list. Null rather than sharing
+   *  Custom's `''` — a collapsed Custom would otherwise hide the entire flat
+   *  list the moment grouping went back off. */
+  key: string | null;
+  /** Subheader text, or null for that same ungrouped group (which renders no
+   *  subheader and no collapse toggle). */
   label: string | null;
   lines: Line[];
 }
@@ -52,15 +53,16 @@ export function groupLinesForList(
   opts: { sortBy: LineSortColumn; groupByStyle: boolean },
 ): LineGroup[] {
   const sorted = sortLines(lines, opts.sortBy);
-  if (!opts.groupByStyle) return [{ key: '', label: null, lines: sorted }];
+  if (!opts.groupByStyle) return [{ key: null, label: null, lines: sorted }];
 
   // Bucket the ALREADY-sorted list, so each bucket inherits the column order
   // without a second sort.
   const buckets = new Map<string, Line[]>();
   for (const ln of sorted) {
-    // A tag that doesn't resolve reads as untagged. Dangling ids are pruned on
-    // load, so this is a totality guard — the line still has to appear.
-    const key = ln.styleId && styles[ln.styleId] ? ln.styleId : '';
+    // A tag that doesn't resolve to a LINE style reads as untagged. Dangling
+    // and wrong-kind ids are pruned on load, so this is a totality guard — the
+    // line still has to appear, and never under some other kind's name.
+    const key = ln.styleId && styles[ln.styleId]?.kind === 'line' ? ln.styleId : '';
     const bucket = buckets.get(key);
     if (bucket) bucket.push(ln);
     else buckets.set(key, [ln]);

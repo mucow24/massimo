@@ -1,12 +1,13 @@
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useMemo } from 'react';
 import { ChevronDownIcon, ChevronRightIcon, Cross2Icon } from '@radix-ui/react-icons';
 import * as Select from '@radix-ui/react-select';
 import { useDoc, useSelection } from '../state/store';
 import { useRenderDoc } from '../state/renderDoc';
+import { useLineListPrefs } from '../state/lineListPrefs';
+import type { LineSortColumn } from '../state/lineListPrefs';
 import { FieldCheckbox } from './FieldCheckbox';
 import { FieldSelectContent } from './FieldSelectContent';
 import { groupLinesForList } from './lineListOrder';
-import type { LineSortColumn } from './lineListOrder';
 import { lineDisplayName } from '../model/lineNaming';
 import { legibleTextOn } from '../util/color';
 import type { Line } from '../model/types';
@@ -16,39 +17,6 @@ const SORT_OPTIONS: readonly { value: LineSortColumn; label: string }[] = [
   { value: 'name', label: 'Name' },
   { value: 'stops', label: '# Stops' },
 ];
-
-export interface LineListView {
-  sortBy: LineSortColumn;
-  setSortBy: (col: LineSortColumn) => void;
-  groupByStyle: boolean;
-  setGroupByStyle: (on: boolean) => void;
-  /** Collapsed group keys (style ids, `''` for Custom). */
-  collapsed: ReadonlySet<string>;
-  toggleGroup: (key: string) => void;
-}
-
-/**
- * The Lines list's view state: sort column, group-by-style, collapsed groups.
- * Ephemeral (a fresh session opens sorted by name, ungrouped, all expanded) —
- * but it must live in the SIDEBAR, not in this panel. Clicking a row is the
- * list's primary action and it hides the whole panel for Edit Stops, which
- * unmounts LinesPanel; state held here would reset on every single edit.
- * Sidebar stays mounted through that (it renders null), so its hooks keep it.
- */
-export function useLineListView(): LineListView {
-  const [sortBy, setSortBy] = useState<LineSortColumn>('name');
-  const [groupByStyle, setGroupByStyle] = useState(false);
-  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
-
-  const toggleGroup = (key: string) =>
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (!next.delete(key)) next.add(key);
-      return next;
-    });
-
-  return { sortBy, setSortBy, groupByStyle, setGroupByStyle, collapsed, toggleGroup };
-}
 
 // One line row. Handlers read the stores at event time (getState), like
 // StationRow, so the row needs no callback props. Clicking it goes STRAIGHT
@@ -101,73 +69,79 @@ function LineRow({ line }: { line: Line }) {
  * which line paints in front where two overlap is settled per overlap by region
  * painting (see MapDoc.regionAssignments), so there is no z-order control here.
  */
-export function LinesPanel({ view }: { view: LineListView }) {
+export function LinesPanel() {
   const lines = useRenderDoc((s) => s.lines);
   const styles = useDoc((s) => s.styles);
+  const sortBy = useLineListPrefs((s) => s.sortBy);
+  const setSortBy = useLineListPrefs((s) => s.setSortBy);
+  const groupByStyle = useLineListPrefs((s) => s.groupByStyle);
+  const setGroupByStyle = useLineListPrefs((s) => s.setGroupByStyle);
+  const collapsedGroups = useLineListPrefs((s) => s.collapsed);
+  const toggleGroup = useLineListPrefs((s) => s.toggleGroup);
 
   const groups = useMemo(
-    () =>
-      groupLinesForList(Object.values(lines), styles, {
-        sortBy: view.sortBy,
-        groupByStyle: view.groupByStyle,
-      }),
-    [lines, styles, view.sortBy, view.groupByStyle],
+    () => groupLinesForList(Object.values(lines), styles, { sortBy, groupByStyle }),
+    [lines, styles, sortBy, groupByStyle],
   );
+
+  const isEmpty = Object.keys(lines).length === 0;
 
   return (
     <section>
       {/* The list's controls ride the top of the scroll box. They are NOT a
           footer: a bar pinned to the bottom sits under the horizontal
-          scrollbar the moment a long line name widens the list. */}
-      <div className="list-controls">
-        <label htmlFor="line-sort">Sort by:</label>
-        <Select.Root value={view.sortBy} onValueChange={(v) => view.setSortBy(v as LineSortColumn)}>
-          <Select.Trigger id="line-sort" className="field-select" aria-label="Sort by">
-            <Select.Value />
-            <Select.Icon className="field-select-caret" aria-hidden="true">
-              <ChevronDownIcon />
-            </Select.Icon>
-          </Select.Trigger>
-          <FieldSelectContent>
-            {SORT_OPTIONS.map((o) => (
-              <Select.Item key={o.value} value={o.value} className="field-select-item">
-                <Select.ItemText>{o.label}</Select.ItemText>
-              </Select.Item>
-            ))}
-          </FieldSelectContent>
-        </Select.Root>
-        <label className="control-check">
-          <FieldCheckbox
-            ariaLabel="Group by style"
-            checked={view.groupByStyle}
-            onCheckedChange={view.setGroupByStyle}
-          />
-          Group by style
-        </label>
-      </div>
-      {Object.keys(lines).length === 0 && <div className="empty">No lines yet.</div>}
-      {groups.map((g) => {
-        // Only a real GROUP collapses. Guarding on the label keeps a
-        // collapsed "Custom" (key '') from swallowing the whole ungrouped
-        // list, which shares that key, when the checkbox goes back off.
-        const collapsed = g.label !== null && view.collapsed.has(g.key);
+          scrollbar the moment a long line name widens the list. With no lines
+          there is nothing to sort or group, so the bar goes entirely. */}
+      {!isEmpty && (
+        <div className="list-controls">
+          <label htmlFor="line-sort">Sort by:</label>
+          <Select.Root value={sortBy} onValueChange={(v) => setSortBy(v as LineSortColumn)}>
+            <Select.Trigger id="line-sort" className="field-select" aria-label="Sort by">
+              <Select.Value />
+              <Select.Icon className="field-select-caret" aria-hidden="true">
+                <ChevronDownIcon />
+              </Select.Icon>
+            </Select.Trigger>
+            <FieldSelectContent>
+              {SORT_OPTIONS.map((o) => (
+                <Select.Item key={o.value} value={o.value} className="field-select-item">
+                  <Select.ItemText>{o.label}</Select.ItemText>
+                </Select.Item>
+              ))}
+            </FieldSelectContent>
+          </Select.Root>
+          <label className="control-check">
+            <FieldCheckbox
+              ariaLabel="Group by style"
+              checked={groupByStyle}
+              onCheckedChange={setGroupByStyle}
+            />
+            Group by style
+          </label>
+        </div>
+      )}
+      {isEmpty && <div className="empty">No lines yet.</div>}
+      {groups.map(({ key, label, lines: rows }) => {
+        // Only a real group carries a collapse key — the ungrouped list's is
+        // null, so no leftover entry can ever collapse the whole list.
+        const collapsed = key !== null && collapsedGroups.has(key);
         return (
-          <Fragment key={g.key}>
-            {g.label !== null && (
+          <Fragment key={key ?? 'all'}>
+            {key !== null && label !== null && (
               <div className="list-header group-header">
                 <button
                   type="button"
                   className="section-toggle grow"
                   aria-expanded={!collapsed}
                   title={collapsed ? 'Expand group' : 'Collapse group'}
-                  onClick={() => view.toggleGroup(g.key)}
+                  onClick={() => toggleGroup(key)}
                 >
                   {collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
-                  {g.label}
+                  {label}
                 </button>
               </div>
             )}
-            {!collapsed && g.lines.map((ln) => <LineRow key={ln.id} line={ln} />)}
+            {!collapsed && rows.map((ln) => <LineRow key={ln.id} line={ln} />)}
           </Fragment>
         );
       })}

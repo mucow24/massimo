@@ -4,7 +4,7 @@ import { useDoc, useSelection } from '../state/store';
 import { useRenderDoc } from '../state/renderDoc';
 import { useViewportStore } from '../state/viewportStore';
 import { StylesPanel } from './StylesPanel';
-import { LinesPanel, useLineListView } from './LinesPanel';
+import { LinesPanel } from './LinesPanel';
 import { SortHeader, type SortDirection } from './SortHeader';
 import { NONE_STOP_DOT_STYLE_ID } from '../model/dotStyle';
 import type { Line, LineId, Station, StationId } from '../model/types';
@@ -207,8 +207,6 @@ export function Sidebar() {
 
   const [stationSortBy, setStationSortBy] = useState<StationSortColumn>('name');
   const [stationSortDir, setStationSortDir] = useState<SortDirection>('asc');
-  // Held here, not in LinesPanel — see useLineListView.
-  const lineView = useLineListView();
 
   const lineIndex = useMemo(() => linesByStation(lines), [lines]);
 
@@ -351,7 +349,7 @@ export function Sidebar() {
           </section>
         )}
 
-        {selection.activeTab === 'lines' && <LinesPanel view={lineView} />}
+        {selection.activeTab === 'lines' && <LinesPanel />}
 
         {selection.activeTab === 'styles' && <StylesPanel />}
       </div>
