@@ -1,5 +1,6 @@
 import { rotateStationLayoutBy90 } from './transforms';
 import type { MapDoc, Station, StationId, StopCell } from './types';
+import { rot8 } from '../util/grid';
 
 type MatchingScope = Pick<MapDoc, 'stations' | 'lines'>;
 
@@ -130,10 +131,6 @@ const q = (n: number): string => {
   const s = n.toFixed(4);
   return s === '-0.0000' ? '0.0000' : s;
 };
-
-// Rotations render mod 8 (SVG rotate is periodic); in-app mutators wrap, but
-// hand-edited/persisted docs can carry 8 or −1, which must key like 0 and 7.
-const rot8 = (n: number): number => ((n % 8) + 8) % 8;
 
 function stopsKey(st: Station, lines: MatchingScope['lines']): string {
   const parts: string[] = [];

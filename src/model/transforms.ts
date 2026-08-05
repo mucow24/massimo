@@ -1662,7 +1662,7 @@ export function moveLabel(doc: MapDoc, stationId: StationId, dRow: number, dCol:
 export function rotateLabel(doc: MapDoc, stationId: StationId): MapDoc {
   return updateLabel(doc, stationId, (label) => ({
     ...label,
-    rotation: ((label.rotation + 1) % 8) as Rotation,
+    rotation: stepRotation(label.rotation),
   }));
 }
 
@@ -2906,7 +2906,7 @@ export function moveRouteBullet(doc: MapDoc, id: string, x: number, y: number): 
 export function rotateRouteBullet(doc: MapDoc, id: string): MapDoc {
   return updateRecord(doc, 'routeBullets', id, (cur) => ({
     ...cur,
-    rotation: ((cur.rotation + 1) % 8) as Rotation,
+    rotation: stepRotation(cur.rotation),
   }));
 }
 
@@ -2953,7 +2953,7 @@ export function moveTextLabel(doc: MapDoc, id: string, x: number, y: number): Ma
 export function rotateTextLabel(doc: MapDoc, id: string): MapDoc {
   return updateRecord(doc, 'textLabels', id, (cur) => ({
     ...cur,
-    rotation: ((cur.rotation + 1) % 8) as Rotation,
+    rotation: stepRotation(cur.rotation),
   }));
 }
 

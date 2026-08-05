@@ -1,4 +1,5 @@
 import { add, norm, sub } from '../geometry/vec';
+import { rot8 } from '../util/grid';
 import type { Rotation, Station, StationId } from './types';
 
 /** Rotation 0..7 whose local +y, once applied, points along world vector (wx, wy). */
@@ -6,7 +7,7 @@ function tangentRotation(wx: number, wy: number): Rotation {
   // Derivation: rotateBy((0,1), r·π/4) = (−sin a, cos a); set that equal to the
   // unit travel vector and solve for r.
   const theta = Math.atan2(wy, wx);
-  return (((Math.round((4 * theta) / Math.PI - 2) % 8) + 8) % 8) as Rotation;
+  return rot8(Math.round((4 * theta) / Math.PI - 2)) as Rotation;
 }
 
 // Screen octants that render a label upside down: its glyphs come out rotated

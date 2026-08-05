@@ -27,7 +27,7 @@ import {
 import { canonicalLineLabelGap, canonicalLineWidth } from './lineWidth';
 import { canonicalLineCircleRadius } from './lineCircle';
 import { projectToCircle, stationCircle } from '../geometry/lineCircle';
-import { clamp } from '../util/grid';
+import { clamp, rot8 } from '../util/grid';
 import {
   LINE_CURVE_RADIUS_DEFAULT,
   LINE_CURVE_RADIUS_MIN,
@@ -2825,7 +2825,7 @@ const PLAIN_LABEL: LabelCell = {
 // Snap a (gate-guaranteed finite) rotation onto the legal octant ring.
 const asOctant = (v: unknown): Rotation => {
   const n = typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : 0;
-  return (((n % 8) + 8) % 8) as Rotation;
+  return rot8(n) as Rotation;
 };
 
 /**

@@ -1,7 +1,7 @@
 import type { Station, StopCell } from '../model/types';
 import { dashRenderLength, dashRenderWidth } from '../model/dashSize';
 import { lineWidthOf } from '../model/lineWidth';
-import { dot, leftNormal, type Vec2 } from './vec';
+import { angleDeg, dot, leftNormal, type Vec2 } from './vec';
 import {
   rotateBy,
   stationCellToWorld,
@@ -121,7 +121,7 @@ export function dashSpec(
   return {
     ax: anchor.x,
     ay: anchor.y,
-    angleDeg: (Math.atan2(outWorld.y, outWorld.x) * 180) / Math.PI,
+    angleDeg: angleDeg(outWorld),
     length: dashRenderLength(line),
     width: dashRenderWidth(line),
     // |perp distance to the label| — dot(delta, out) is that distance made
