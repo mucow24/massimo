@@ -1259,13 +1259,63 @@ export function redistributeBetween(
   return { ...doc, stations };
 }
 
+/**
+ * The cell a station turns about: its own picture, NOT cell (0,0).
+ *
+ * (0,0) is the station's pin. It paints nothing, so a layout parked away from
+ * it would swing on a radius nobody can see — and two layouts that render
+ * identically while holding the pin at different cells (which is exactly what
+ * `findMatchingStations` now treats as the same station) would swing by
+ * different amounts under the same mirrored step.
+ *
+ * The pivot is the stop cluster's centre, rounded to a whole cell so a 90°
+ * turn moves the pin by whole cells and keeps its grid alignment. Rounding is
+ * taken RELATIVE to the layout's own corner: `centroid − corner` is
+ * translation-invariant, so rounding it is free, and the result stays
+ * translation-equivariant (`p(C + t) = p(C) + t`) for fractional offsets too —
+ * the diagonal lattice puts real stations on non-integer cells. Rounding the
+ * centroid outright would hold only for whole-cell offsets and silently
+ * reintroduce the swing everywhere else.
+ *
+ * Stops carry the picture, so the label sits this out; a station with no live
+ * stops falls back to it.
+ */
+export function layoutPivotCell(st: Station, lines: MapDoc['lines']): { row: number; col: number } {
+  const live = st.stops.filter((c) => lines[c.lineId]);
+  const cells: readonly { row: number; col: number }[] = live.length ? live : [st.label];
+  const axis = (of: (c: { row: number; col: number }) => number) => {
+    const min = Math.min(...cells.map(of));
+    const mean = cells.reduce((a, c) => a + of(c), 0) / cells.length;
+    return min + Math.round(mean - min);
+  };
+  return { row: axis((c) => c.row), col: axis((c) => c.col) };
+}
+
 // One 45° step of the station's rotation — clockwise by default, counter-
-// clockwise with dir: -1 (wraps 0 → 7).
+// clockwise with dir: -1 (wraps 0 → 7). The layout holds still and the PIN
+// moves to absorb the turn (see `layoutPivotCell`); the cells never change.
 export function rotateStation(doc: MapDoc, id: StationId, dir: -1 | 1 = 1): MapDoc {
   const cur = doc.stations[id];
   if (!cur) return doc;
   const next = ((cur.rotation + dir + 8) % 8) as Rotation;
-  return { ...doc, stations: { ...doc.stations, [id]: { ...cur, rotation: next } } };
+  const turned: Station = { ...cur, rotation: next };
+  // A ring-bound station reads its cell frame off the ring (`stationFrameRad`),
+  // so moving x/y to hold a pivot would slide it along the ring and change the
+  // very frame the correction was measured in. It keeps the pin pivot.
+  if (stationCircle(cur, doc.lineCircles)) {
+    return { ...doc, stations: { ...doc.stations, [id]: turned } };
+  }
+  const pivot = layoutPivotCell(cur, doc.lines);
+  const p = stopCenterAt(pivot.row, pivot.col);
+  const before = stationCellToWorld(p, cur, null);
+  const after = stationCellToWorld(p, turned, null);
+  return {
+    ...doc,
+    stations: {
+      ...doc.stations,
+      [id]: { ...turned, x: cur.x + (before.x - after.x), y: cur.y + (before.y - after.y) },
+    },
+  };
 }
 
 // One 45°-clockwise step of an entity's own rotation field (wraps 7 → 0).

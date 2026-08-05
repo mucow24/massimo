@@ -10,6 +10,7 @@ import {
 import { DOT_SIZE_DEFAULT, dotSizeOverride } from './dotSize';
 import { measureTextLabel } from '../geometry/textMeasure';
 import { localToWorld, stopCenterAt } from '../geometry/orientation';
+import { stopPosWorld } from '../geometry/interlining';
 import {
   makeDoc,
   makeLine,
@@ -193,6 +194,65 @@ describe('rotateStation', () => {
     expect(doc.stations.s1.rotation).toBe(7);
     doc = T.rotateStation(doc, 's1', -1);
     expect(doc.stations.s1.rotation).toBe(6);
+  });
+
+  // A station turns about its own PICTURE. Cell (0,0) is the pin, and it paints
+  // nothing, so a layout parked off it must not swing on a radius nobody can
+  // see. x/y takes up the slack; the cells never move.
+  it('holds the layout still and moves the pin instead', () => {
+    // Stops on cols 1 and 2. Pivot = corner + round(centroid − corner)
+    // = col 1 + round(0.5) = col 2, so the col-2 dot is the fixed point.
+    let doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          stops: [makeStop('L1', { col: 1 }), makeStop('L2', { col: 2 })],
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] }), makeLine({ id: 'L2', stations: ['s1'] })],
+    });
+    const pivotBefore = stopPosWorld(doc.stations.s1.stops[1], doc.stations.s1, doc.lineCircles);
+    doc = T.rotateStation(doc, 's1');
+    const pivotAfter = stopPosWorld(doc.stations.s1.stops[1], doc.stations.s1, doc.lineCircles);
+    expect(pivotAfter.x).toBeCloseTo(pivotBefore.x, 9);
+    expect(pivotAfter.y).toBeCloseTo(pivotBefore.y, 9);
+    // The cells are untouched — only the pin absorbed the turn.
+    expect(doc.stations.s1.stops.map((c) => c.col)).toEqual([1, 2]);
+    expect(doc.stations.s1.x).not.toBe(0);
+  });
+
+  it('leaves a pin-centred layout exactly where it was (no x/y churn)', () => {
+    // Single stop on cell (0,0): pivot IS the pin, so the old behavior must
+    // survive byte-identical rather than pick up a rounding wobble.
+    let doc = makeDoc({
+      stations: [makeStation({ id: 's1', x: 40, y: -10, stops: [makeStop('L1')] })],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] })],
+    });
+    doc = T.rotateStation(doc, 's1');
+    expect(doc.stations.s1.x).toBe(40);
+    expect(doc.stations.s1.y).toBe(-10);
+  });
+
+  it('leaves a ring-bound station on the old pin-pivot path', () => {
+    // A bound station reads its cell frame off the ring (stationFrameRad), so
+    // compensating x/y would move the station along the ring and change the
+    // very frame the compensation was computed in. Left alone deliberately.
+    let doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          x: 100,
+          y: 0,
+          circleId: 'c1',
+          stops: [makeStop('L1', { col: 2 })],
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] })],
+    });
+    doc = { ...doc, lineCircles: { c1: { id: 'c1', x: 0, y: 0, radius: 100 } } };
+    doc = T.rotateStation(doc, 's1');
+    expect(doc.stations.s1.x).toBe(100);
+    expect(doc.stations.s1.y).toBe(0);
   });
 });
 

@@ -118,36 +118,46 @@ function layoutOffsetOf(srcKey: string, candKeys: readonly string[]): LayoutOffs
 /**
  * Canonical string key for a station at its current layout rotation:
  * rotation, the sorted stop set (filtered to lines that still exist), and
- * the label's cell + rotation. `label.offset` is deliberately excluded —
- * stations that are otherwise identical but have slightly different offsets
- * are still "the same kind of station" for mass-editing purposes.
+ * the label's cell + rotation — every cell taken RELATIVE to the layout's own
+ * corner, so where the layout sits in the grid doesn't enter its identity.
+ * `label.offset` is deliberately excluded — stations that are otherwise
+ * identical but have slightly different offsets are still "the same kind of
+ * station" for mass-editing purposes.
  */
 // Round row/col to a stable string at 4 dp so float drift from diagonal
 // (±√2/2) arithmetic doesn't fragment otherwise-identical layouts. 4 dp is
 // well below the 1-unit cell pitch and well above any plausible cumulative
-// rounding error. Normalize the "-0.0000" that toFixed produces for
-// negative-ulp drift — it must key identically to exact zero.
-const q = (n: number): string => {
-  const s = n.toFixed(4);
-  return s === '-0.0000' ? '0.0000' : s;
-};
+// rounding error. No sign to normalize: every value reaching here is
+// `v − min(set)` with the min a member of that same set, so it is +0 or
+// greater — a negative-ulp "-0.0000" can't arise.
+const q = (n: number): string => n.toFixed(4);
 
 function stopsKey(st: Station, lines: MatchingScope['lines']): string {
-  const parts: string[] = [];
-  for (const c of st.stops) {
-    if (!lines[c.lineId]) continue;
-    parts.push(stopKey(c));
-  }
-  parts.sort();
+  const cells = st.stops.filter((c) => lines[c.lineId]);
+  const lab = st.label;
   // A waypoint renders no name and no dots — visually it is only the line
   // routing through its stop cells. Its (invisible) label geometry is not
   // part of its identity, and it can never look like a fully-rendered
   // station, so the label slot doubles as the waypoint marker.
-  const lab = st.label;
-  const labelPart = st.isWaypoint ? 'wp' : `L${q(lab.row)},${q(lab.col)},${rot8(lab.rotation)}`;
+  const wp = !!st.isWaypoint;
+  // Cell (0,0) is the station's own anchor point, and it paints NOTHING: a
+  // layout parked a column over renders the same picture, with the station's
+  // x/y absorbing the shift. So the key is taken against the layout's own
+  // top-left corner, not the origin. Per-axis min is the right anchor because
+  // it is translation-EQUIVARIANT (min(v + t) = min(v) + t) — which is also
+  // why it survives the 4-fold canonicalization above: rotating about the
+  // origin turns a translation t into R(t), and normalizing subtracts it
+  // again. Only the cells the key actually names take part: a waypoint's
+  // stale label cell must not drag the anchor around and refragment the
+  // waypoints the rule above just unified.
+  const anchored = wp ? cells : [...cells, lab];
+  const oRow = anchored.length ? Math.min(...anchored.map((c) => c.row)) : 0;
+  const oCol = anchored.length ? Math.min(...anchored.map((c) => c.col)) : 0;
+  const parts = cells.map((c) => stopKey(c, oRow, oCol)).sort();
+  const labelPart = wp ? 'wp' : `L${q(lab.row - oRow)},${q(lab.col - oCol)},${rot8(lab.rotation)}`;
   return `r${rot8(st.rotation)}|${labelPart}|${parts.join('|')}`;
 }
 
-function stopKey(c: StopCell): string {
-  return `${c.lineId}:${q(c.row)},${q(c.col)}:${c.orientation}`;
+function stopKey(c: StopCell, oRow: number, oCol: number): string {
+  return `${c.lineId}:${q(c.row - oRow)},${q(c.col - oCol)}:${c.orientation}`;
 }
