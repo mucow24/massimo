@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { clamp, roundClamp, snapToStep } from './grid';
+import { clamp, roundClamp, snapToStep, rot8 } from './grid';
 
 describe('clamp', () => {
   it('passes an in-range value through untouched', () => {
@@ -68,5 +68,25 @@ describe('snapToStep', () => {
   it('falls back to min on a non-finite input', () => {
     expect(snapToStep(NaN, 0.25, 3)).toBe(3);
     expect(snapToStep(Infinity, 0.25, 3)).toBe(3);
+  });
+});
+
+describe('rot8', () => {
+  it('passes an already-canonical octant through untouched', () => {
+    for (let n = 0; n <= 7; n++) expect(rot8(n)).toBe(n);
+  });
+
+  it('wraps a negative octant up into 0..7 (unlike bare %)', () => {
+    // The whole reason rot8 exists over `n % 8`: JS `%` keeps the sign, so
+    // -1 % 8 === -1. A hand-edited/persisted −1 must key like 7.
+    expect(rot8(-1)).toBe(7);
+    expect(rot8(-8)).toBe(0);
+    expect(rot8(-9)).toBe(7);
+  });
+
+  it('wraps an over-range octant down into 0..7', () => {
+    expect(rot8(8)).toBe(0);
+    expect(rot8(9)).toBe(1);
+    expect(rot8(15)).toBe(7);
   });
 });

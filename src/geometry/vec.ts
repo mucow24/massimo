@@ -85,3 +85,7 @@ export const angleDeg = (a: Vec2): number => (Math.atan2(a.y, a.x) * 180) / Math
 // The single home for this constant; octolinear direction tables and snap
 // axes all reference it.
 export const SQRT2_2 = Math.SQRT1_2;
+
+// A full turn in radians (2π). The single home for the constant every angle
+// wrap and full-circle sweep references.
+export const TAU = Math.PI * 2;

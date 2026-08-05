@@ -27,3 +27,13 @@ export function snapToStep(v: number, step: number, min: number): number {
   if (!Number.isFinite(v)) return min;
   return roundClamp(v, step, min);
 }
+
+// Normalize an integer onto the 8-step rotation ring (0..7). Rotations render
+// mod 8 (SVG rotate is periodic); in-app mutators wrap, but hand-edited/persisted
+// docs and octant arithmetic (angle deltas, +90° steps) can carry 8 or −1, which
+// must land on 0 and 7. Bare `n % 8` won't do it — JS `%` keeps the sign, so
+// −1 % 8 === −1; the double-mod folds negatives back up. The result is always a
+// valid `Rotation`, so callers producing one cast at their own site.
+export function rot8(n: number): number {
+  return ((n % 8) + 8) % 8;
+}

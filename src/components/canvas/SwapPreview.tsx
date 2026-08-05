@@ -1,6 +1,7 @@
 import type { Line, LineId, Station } from '../../model/types';
 import { stationFrameDeg, stopCenterAt } from '../../geometry/orientation';
 import type { RowCol } from '../../geometry/lattice';
+import { angleDeg } from '../../geometry/vec';
 import { sourceCellOf } from '../inspector/stopGridDrag';
 import { LayoutNodeHandle, LAYOUT_RING_ACTIVE, layoutHandleRadius } from './LayoutNodeHandle';
 import type { LayoutDragSource } from './useStationLayoutDrag';
@@ -89,7 +90,7 @@ export function SwapPreview({
     // Unit axis and its perpendicular: the pair runs one to each side.
     const ux = dx / len;
     const uy = dy / len;
-    const deg = round((Math.atan2(dy, dx) * 180) / Math.PI);
+    const deg = round(angleDeg({ x: dx, y: dy }));
     arrows.push({
       role: 'incoming',
       transform: `translate(${round(a.x - uy * off)} ${round(a.y + ux * off)}) rotate(${deg})`,
