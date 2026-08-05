@@ -1942,6 +1942,54 @@ button.field-select {
   width: 22px;
   flex-shrink: 0;
 }
+/* Lines list, stop-count column: a fixed right-aligned cell so the counts stack
+   against a common edge instead of jittering with the name beside them. Each
+   names its own unit ("3 stops") — there is no column header to do it. */
+.list-row .line-stops {
+  width: 64px;
+  flex: none;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A list's control bar: what orders and groups the rows, wearing the same wash
+   as `.list-header` and sticking to the top alongside it. Deliberately NOT a
+   footer — a bar pinned to the bottom of the scroll box ends up under the
+   horizontal scrollbar as soon as a long row widens the content. */
+.list-controls {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--inset-bg);
+  border-bottom: 1px solid var(--inset-border);
+  font-size: var(--fs-small);
+  color: var(--text-muted);
+}
+/* The field recipe stretches to fill a popover row; here it sizes to its own
+   content so the checkbox can sit right beside it. */
+.list-controls .field-select {
+  flex: 0 1 auto;
+  font-size: var(--fs-small);
+}
+/* Group subheaders scroll with their rows rather than sticking: `.list-header`
+   pins to top 0, which is where the opaque control bar already sits, so a stuck
+   one would just hide behind it. */
+.list-header.group-header {
+  position: static;
+}
+.list-controls .control-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
 
 .list-row {
   display: flex;
