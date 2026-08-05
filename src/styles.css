@@ -3392,6 +3392,13 @@ body:has(.app[data-theme='dark']) {
   width: 52px;
   flex-shrink: 0;
 }
+/* The Stop dots section's own row is not in that band — it sits below the stop
+   list, with nothing above or beneath it to align to — and its label is two
+   words, which the 52px column breaks across two lines. Size it to its text. */
+.station-popover .field-row.stop-type-row > label {
+  width: auto;
+  white-space: nowrap;
+}
 .station-popover .field-row {
   gap: 8px; /* match the .row gap so the bands truly line up */
 }

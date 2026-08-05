@@ -2472,6 +2472,60 @@ describe('stationIsSingleton', () => {
       ),
     ).toBe(false);
   });
+
+  it("an explicit stopType overrides the count in BOTH directions (the user's declaration wins)", () => {
+    // One visible stop, declared an interchange → reads shared.
+    expect(
+      T.stationIsSingleton(
+        makeStation({ id: 'a', stops: [makeStop('L1')], stopType: 'interchange' }),
+      ),
+    ).toBe(false);
+    // Three visible stops, declared a singleton → reads singleton.
+    expect(
+      T.stationIsSingleton(
+        makeStation({
+          id: 'a',
+          stops: [makeStop('L1'), makeStop('L2', { col: 1 }), makeStop('L3', { col: 2 })],
+          stopType: 'singleton',
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('a junk stopType from a hand-edited file falls back to the count', () => {
+    // Only the two legal values are a declaration. Anything else is not a vote
+    // for "interchange" — it is no vote at all, so the historical rule answers.
+    const junk = (stops: ReturnType<typeof makeStop>[]) =>
+      T.stationIsSingleton({
+        ...makeStation({ id: 'a', stops }),
+        stopType: 'banana',
+      } as unknown as Station);
+    expect(junk([makeStop('L1')])).toBe(true);
+    expect(junk([makeStop('L1'), makeStop('L2', { col: 1 })])).toBe(false);
+  });
+
+  it('an explicit stopType outranks the blank-aware count too', () => {
+    // Blanked siblings are what the count exists to skip; a declaration
+    // short-circuits before the walk, so it wins here as well.
+    expect(
+      T.stationIsSingleton(
+        makeStation({
+          id: 'a',
+          stops: [makeStop('LOCAL'), makeStop('EXPRESS', { col: 1, dotStyle: blank })],
+          stopType: 'interchange',
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      T.stationIsSingleton(
+        makeStation({
+          id: 'a',
+          stops: [makeStop('L1', { dotStyle: blank }), makeStop('L2', { col: 1, dotStyle: blank })],
+          stopType: 'singleton',
+        }),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe('resolveDotStyle', () => {
@@ -3190,6 +3244,50 @@ describe('setStationWaypoint', () => {
   it('silently no-ops on unknown station id', () => {
     const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
     expect(T.setStationWaypoint(doc, 'ghost', true)).toBe(doc);
+  });
+});
+
+describe('setStationStopType', () => {
+  it('stores an explicit declaration', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
+    expect(T.setStationStopType(doc, 'a', 'interchange').stations.a.stopType).toBe('interchange');
+    expect(T.setStationStopType(doc, 'a', 'singleton').stations.a.stopType).toBe('singleton');
+  });
+
+  it("drops the field for 'auto' — the default is never stored", () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a', stopType: 'interchange' })] });
+    const next = T.setStationStopType(doc, 'a', 'auto');
+    expect('stopType' in next.stations.a).toBe(false);
+  });
+
+  it('preserves the rest of the station', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 'a',
+          name: 'Anvil',
+          stops: [makeStop('L1', { dotStyle: DOT_SHAPE_PRESETS['filled-white'] })],
+        }),
+      ],
+    });
+    const next = T.setStationStopType(doc, 'a', 'singleton');
+    expect(next.stations.a).toMatchObject({ id: 'a', name: 'Anvil', stopType: 'singleton' });
+    expect(next.stations.a.stops[0].dotStyle).toEqual(DOT_SHAPE_PRESETS['filled-white']);
+  });
+
+  it('returns the same doc reference when the value is unchanged', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a', stopType: 'singleton' })] });
+    expect(T.setStationStopType(doc, 'a', 'singleton')).toBe(doc);
+  });
+
+  it("treats an absent stopType and 'auto' as equivalent for no-op detection", () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
+    expect(T.setStationStopType(doc, 'a', 'auto')).toBe(doc);
+  });
+
+  it('silently no-ops on unknown station id', () => {
+    const doc = makeDoc({ stations: [makeStation({ id: 'a' })] });
+    expect(T.setStationStopType(doc, 'ghost', 'interchange')).toBe(doc);
   });
 });
 

@@ -171,6 +171,189 @@ describe('<StationInspector /> — shape picker wiring', () => {
     expect(wpBtnOff).not.toHaveClass('active');
   });
 
+  describe('Stop type', () => {
+    const oneStop = () => ({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
+        lines: [makeLine({ id: 'L1', stations: ['a'] })],
+      }),
+    });
+
+    // Auto names what it currently resolves to, because that is the one thing
+    // the control can't tell you by looking — and it is what the declaration
+    // is being weighed against.
+    it('reads Auto with the answer the count gives — Singleton for a lone stop', () => {
+      useDoc.setState(oneStop());
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+      expect(screen.getByRole('combobox', { name: 'Stop type' })).toHaveTextContent(
+        'Auto (Singleton)',
+      );
+    });
+
+    it('reads Auto (Interchange) once a second line stops there', () => {
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({
+          stations: [makeStation({ id: 'a', stops: [makeStop('L1'), makeStop('L2', { col: 1 })] })],
+          lines: [makeLine({ id: 'L1', stations: ['a'] }), makeLine({ id: 'L2', stations: ['a'] })],
+        }),
+      });
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+      expect(screen.getByRole('combobox', { name: 'Stop type' })).toHaveTextContent(
+        'Auto (Interchange)',
+      );
+    });
+
+    it('reports the count Auto WOULD give, not the declaration standing in its way', () => {
+      // A lone stop declared an interchange: the trigger reads the declaration,
+      // but the Auto option still offers "Singleton" — what reverting buys you.
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({
+          stations: [makeStation({ id: 'a', stops: [makeStop('L1')], stopType: 'interchange' })],
+          lines: [makeLine({ id: 'L1', stations: ['a'] })],
+        }),
+      });
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+      expect(screen.getByRole('combobox', { name: 'Stop type' })).toHaveTextContent('Interchange');
+      expect(screen.getByRole('combobox', { name: 'Stop type' })).not.toHaveTextContent('Auto');
+    });
+
+    it('drops the parenthetical for a station with no stops — nothing to resolve', () => {
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({ stations: [makeStation({ id: 'a', stops: [] })], lines: [] }),
+      });
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+      expect(screen.getByRole('combobox', { name: 'Stop type' })).toHaveTextContent('Auto');
+      expect(screen.getByRole('combobox', { name: 'Stop type' })).not.toHaveTextContent('(');
+    });
+
+    it('stays live with no stops — declaring one before wiring up a line is allowed', async () => {
+      // Not an oversight: the declaration simply sits inert until a stop
+      // arrives to read it. Pinned so it can't be "tidied" into a disable.
+      const user = userEvent.setup();
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({ stations: [makeStation({ id: 'a', stops: [] })], lines: [] }),
+      });
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+
+      expect(screen.getByRole('combobox', { name: 'Stop type' })).toBeEnabled();
+      await chooseOption(user, 'Stop type', 'Interchange');
+      expect(useDoc.getState().stations.a.stopType).toBe('interchange');
+    });
+
+    it('sits directly below Add transfer anchor, in that section', () => {
+      useDoc.setState(oneStop());
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+      const anchorBtn = screen.getByRole('button', { name: 'Add transfer anchor' });
+      const combo = screen.getByRole('combobox', { name: 'Stop type' });
+      // Same field block as the button, and after it in document order.
+      expect(anchorBtn.closest('.field')).toBe(combo.closest('.field'));
+      expect(
+        anchorBtn.compareDocumentPosition(combo) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it('choosing Interchange declares it, and Auto clears the declaration', async () => {
+      const user = userEvent.setup();
+      useDoc.setState(oneStop());
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+
+      await chooseOption(user, 'Stop type', 'Interchange');
+      expect(useDoc.getState().stations.a.stopType).toBe('interchange');
+      expect(screen.getByRole('combobox', { name: 'Stop type' })).toHaveTextContent('Interchange');
+
+      await chooseOption(user, 'Stop type', 'Auto (Singleton)');
+      expect('stopType' in useDoc.getState().stations.a).toBe(false);
+    });
+
+    it('choosing Singleton declares it', async () => {
+      const user = userEvent.setup();
+      useDoc.setState(oneStop());
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+
+      await chooseOption(user, 'Stop type', 'Singleton');
+      expect(useDoc.getState().stations.a.stopType).toBe('singleton');
+    });
+
+    // Select Similar stands in for "stations of the same general purpose", and
+    // a station's stop type is exactly that kind of fact — so the declaration
+    // rides it, like dot type and size and unlike the End / Xfer pins.
+    const twoMatching = () => ({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', stops: [makeStop('L1')] }),
+          makeStation({ id: 'b', x: 100, stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+      }),
+    });
+
+    it('rides Select Similar — the declaration reaches every matching station', async () => {
+      const user = userEvent.setup();
+      useDoc.setState(twoMatching());
+      useSelection.setState({
+        ...SELECTION_BLANK,
+        selectedStationIds: ['a'],
+        mirrorMatching: true,
+      });
+      render(<StationInspector id="a" />);
+
+      await chooseOption(user, 'Stop type', 'Interchange');
+      expect(useDoc.getState().stations.a.stopType).toBe('interchange');
+      expect(useDoc.getState().stations.b.stopType).toBe('interchange');
+    });
+
+    it('clearing back to Auto reaches them too', async () => {
+      // Both seeded declared, so the clear has something to DO at b — starting
+      // them unset would pass whether or not the broadcast happened.
+      const user = userEvent.setup();
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({
+          stations: [
+            makeStation({ id: 'a', stops: [makeStop('L1')], stopType: 'interchange' }),
+            makeStation({ id: 'b', x: 100, stops: [makeStop('L1')], stopType: 'interchange' }),
+          ],
+          lines: [makeLine({ id: 'L1', stations: ['a', 'b'] })],
+        }),
+      });
+      useSelection.setState({
+        ...SELECTION_BLANK,
+        selectedStationIds: ['a'],
+        mirrorMatching: true,
+      });
+      render(<StationInspector id="a" />);
+
+      await chooseOption(user, 'Stop type', 'Auto (Singleton)');
+      expect('stopType' in useDoc.getState().stations.a).toBe(false);
+      expect('stopType' in useDoc.getState().stations.b).toBe(false);
+    });
+
+    it('with mirror OFF it stays local to the inspected station', async () => {
+      const user = userEvent.setup();
+      useDoc.setState(twoMatching());
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+
+      await chooseOption(user, 'Stop type', 'Interchange');
+      expect(useDoc.getState().stations.a.stopType).toBe('interchange');
+      expect(useDoc.getState().stations.b.stopType).toBeUndefined();
+    });
+  });
+
   it('Lock toggles aria-pressed and writes locked (in the popover footer)', async () => {
     // The lock toggle lives in the StationPopover footer now (beside Delete,
     // like every other item popover) — render the popover, which hosts the
