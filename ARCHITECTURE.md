@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `a7c6efd` (2026-08-04, #440) — verified against the live source.** This
+**Up to date as of commit `5173f7b` (2026-08-04, #445) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and

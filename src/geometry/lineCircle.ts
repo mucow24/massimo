@@ -1,4 +1,4 @@
-import type { Vec2 } from './vec';
+import { TAU, type Vec2 } from './vec';
 
 // Pure line-circle math, shared by the binding transforms, the drag
 // constraint, and the arc-edge renderer. A circle is taken structurally
@@ -289,7 +289,6 @@ export function lineCirclesForRect(
  * circle, which splits the edge into two shorter arcs.
  */
 export function wrapAngleToPi(d: number): number {
-  const TAU = 2 * Math.PI;
   let out = d % TAU;
   if (out > Math.PI) out -= TAU;
   else if (out <= -Math.PI) out += TAU;

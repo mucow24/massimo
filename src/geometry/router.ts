@@ -8,13 +8,12 @@ import {
   len,
   norm,
   SQRT2_2,
+  TAU,
   leftNormal,
   angleBetween,
   tanHalf,
 } from './vec';
-import { clamp } from '../util/grid';
-
-const TAU = Math.PI * 2;
+import { clamp, rot8 } from '../util/grid';
 
 export const DIRS_8: Vec2[] = [
   { x: 1, y: 0 }, // 0: E
@@ -34,7 +33,7 @@ export const dirIndex = (d: Vec2): number => {
 };
 
 export const bendAngle = (i1: number, i2: number): number => {
-  let diff = (((i2 - i1) % 8) + 8) % 8;
+  let diff = rot8(i2 - i1);
   if (diff > 4) diff = 8 - diff;
   return diff * (Math.PI / 4);
 };
