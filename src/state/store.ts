@@ -741,7 +741,6 @@ interface DocState extends MapDoc {
   setLineDashLength: (lineId: LineId, v: number) => void;
   setLineDashWidth: (lineId: LineId, v: number) => void;
   deleteLine: (id: LineId) => void;
-  moveLineInOrder: (id: LineId, dir: -1 | 1) => void;
 
   // Region paint choices. `assignRegions` is the click writer: per entry, id
   // null mints a fresh one and assignment null deletes (back to the lineOrder
@@ -1049,7 +1048,6 @@ export const useDoc = create<DocState>()(
         setLineDashLength: (lineId, v) => set((s) => T.setLineDashLength(s, lineId, v)),
         setLineDashWidth: (lineId, v) => set((s) => T.setLineDashWidth(s, lineId, v)),
         deleteLine: (id) => set(withRegionReconcile((s) => T.deleteLine(s, id))),
-        moveLineInOrder: (id, dir) => set((s) => T.moveLineInOrder(s, id, dir)),
 
         assignRegions: (entries) =>
           set((s) =>

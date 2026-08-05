@@ -1,23 +1,17 @@
 import { memo, useEffect, useMemo, useState } from 'react';
-import {
-  ChevronDownIcon,
-  ChevronUpIcon,
-  Cross2Icon,
-  TriangleDownIcon,
-  TriangleUpIcon,
-} from '@radix-ui/react-icons';
-import { effectiveLineOrder, useDoc, useSelection } from '../state/store';
+import { Cross2Icon } from '@radix-ui/react-icons';
+import { useDoc, useSelection } from '../state/store';
 import { useRenderDoc } from '../state/renderDoc';
 import { useViewportStore } from '../state/viewportStore';
 import { StylesPanel } from './StylesPanel';
+import { LinesPanel, useLineListView } from './LinesPanel';
+import { SortHeader, type SortDirection } from './SortHeader';
 import { NONE_STOP_DOT_STYLE_ID } from '../model/dotStyle';
 import type { Line, LineId, Station, StationId } from '../model/types';
-import { lineDisplayName } from '../model/lineNaming';
 import { legibleTextOn } from '../util/color';
 import { stationNameListText } from '../geometry/labelTokens';
 
 type StationSortColumn = 'name' | 'stops';
-type SortDirection = 'asc' | 'desc';
 
 // Panel width — matches `.sidebar` in styles.css. The sidebar floats OVER the
 // canvas host's right edge and stacks ABOVE the item popovers (.canvas-host
@@ -204,20 +198,17 @@ export function Sidebar() {
   // are identical.
   const stations = useRenderDoc((s) => s.stations);
   const lines = useRenderDoc((s) => s.lines);
-  const lineOrder = useRenderDoc((s) => s.lineOrder);
   // The reserved "None" stop-dot is hidden from the Styles list, so it must not
   // inflate the tab's count either.
   const styleCount = useDoc(
     (s) => Object.keys(s.styles).filter((id) => id !== NONE_STOP_DOT_STYLE_ID).length,
   );
   const selection = useSelection();
-  const deleteLine = useDoc((s) => s.deleteLine);
-  const moveLineInOrder = useDoc((s) => s.moveLineInOrder);
 
   const [stationSortBy, setStationSortBy] = useState<StationSortColumn>('name');
   const [stationSortDir, setStationSortDir] = useState<SortDirection>('asc');
-
-  const orderedLineIds = effectiveLineOrder(lineOrder, lines);
+  // Held here, not in LinesPanel — see useLineListView.
+  const lineView = useLineListView();
 
   const lineIndex = useMemo(() => linesByStation(lines), [lines]);
 
@@ -308,7 +299,7 @@ export function Sidebar() {
           className={'tab' + (selection.activeTab === 'lines' ? ' active' : '')}
           onClick={() => selection.toggleTab('lines')}
         >
-          Lines ({orderedLineIds.length})
+          Lines ({Object.keys(lines).length})
         </button>
         <button
           className={'tab' + (selection.activeTab === 'styles' ? ' active' : '')}
@@ -322,58 +313,19 @@ export function Sidebar() {
         {selection.activeTab === 'stations' && (
           <section>
             <div className="list-header">
-              <button
-                type="button"
-                className={'sort-header grow' + (stationSortBy === 'name' ? ' active' : '')}
+              <SortHeader
+                label="Station"
+                className="grow"
+                active={stationSortBy === 'name'}
+                dir={stationSortDir}
                 onClick={() => handleStationSortClick('name')}
-              >
-                Station
-                {stationSortBy === 'name' && (
-                  <span className="sort-arrow">
-                    {stationSortDir === 'asc' ? (
-                      <TriangleUpIcon
-                        role="img"
-                        aria-label="sorted ascending"
-                        width={12}
-                        height={12}
-                      />
-                    ) : (
-                      <TriangleDownIcon
-                        role="img"
-                        aria-label="sorted descending"
-                        width={12}
-                        height={12}
-                      />
-                    )}
-                  </span>
-                )}
-              </button>
-              <button
-                type="button"
-                className={'sort-header' + (stationSortBy === 'stops' ? ' active' : '')}
+              />
+              <SortHeader
+                label="Lines"
+                active={stationSortBy === 'stops'}
+                dir={stationSortDir}
                 onClick={() => handleStationSortClick('stops')}
-              >
-                Lines
-                {stationSortBy === 'stops' && (
-                  <span className="sort-arrow">
-                    {stationSortDir === 'asc' ? (
-                      <TriangleUpIcon
-                        role="img"
-                        aria-label="sorted ascending"
-                        width={12}
-                        height={12}
-                      />
-                    ) : (
-                      <TriangleDownIcon
-                        role="img"
-                        aria-label="sorted descending"
-                        width={12}
-                        height={12}
-                      />
-                    )}
-                  </span>
-                )}
-              </button>
+              />
               <span className="header-spacer" aria-hidden />
             </div>
             {stationList.length === 0 && <div className="empty">No stations yet.</div>}
@@ -399,79 +351,7 @@ export function Sidebar() {
           </section>
         )}
 
-        {selection.activeTab === 'lines' && (
-          <section>
-            {orderedLineIds.length === 0 && <div className="empty">No lines yet.</div>}
-            {orderedLineIds.map((id, i) => {
-              const ln = lines[id];
-              if (!ln) return null;
-              return (
-                <div key={ln.id} data-line-row={ln.id} style={{ padding: '4px 0' }}>
-                  <div
-                    className="list-row"
-                    // Straight into Edit Stops — there is no selected-but-not-
-                    // editing state. The editor itself is the pinned line
-                    // popover; the whole panel hides while the mode is active
-                    // (see sidebarVisible), so this list never shows a
-                    // selected row.
-                    onClick={() => selection.startAppend(ln.id)}
-                    title="Default stacking: top of list paints front-most where lines overlap (regions can override per overlap). Use ↑/↓ to reorder."
-                  >
-                    <span
-                      className="line-badge"
-                      style={{
-                        background: ln.color,
-                        color: legibleTextOn(ln.color),
-                        width: 24,
-                        height: 24,
-                        fontSize: 12,
-                        fontWeight: 700,
-                      }}
-                    >
-                      {ln.service}
-                    </span>
-                    <span className="grow">
-                      {lineDisplayName(ln)} · {ln.stations.length} stations
-                    </span>
-                    <button
-                      className="btn-mini icon"
-                      disabled={i === 0}
-                      title="Move up (paint further forward)"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        moveLineInOrder(ln.id, -1);
-                      }}
-                    >
-                      <ChevronUpIcon />
-                    </button>
-                    <button
-                      className="btn-mini icon"
-                      disabled={i === orderedLineIds.length - 1}
-                      title="Move down (paint further back)"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        moveLineInOrder(ln.id, 1);
-                      }}
-                    >
-                      <ChevronDownIcon />
-                    </button>
-                    <button
-                      className="btn-mini danger"
-                      aria-label="Delete line"
-                      title="Delete line"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteLine(ln.id);
-                      }}
-                    >
-                      <Cross2Icon />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </section>
-        )}
+        {selection.activeTab === 'lines' && <LinesPanel view={lineView} />}
 
         {selection.activeTab === 'styles' && <StylesPanel />}
       </div>

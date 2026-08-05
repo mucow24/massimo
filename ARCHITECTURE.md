@@ -3142,13 +3142,25 @@ same three additions.
   tuned value, which may well be zero.
 - **[Sidebar.tsx](src/components/Sidebar.tsx)** — Stations/Lines/**Styles** tabs (each showing a
   count; the reserved "None" stop-dot is hidden from the Styles list and excluded from its count),
-  the third hosting `StylesPanel`; a sortable station list
+  the latter two hosting `LinesPanel` and `StylesPanel`; a sortable station list
   (rows select/deselect; the station editor itself is an on-canvas popover), and a Lines list
-  that is purely reorder (↑/↓) / delete / pick-for-editing — clicking a row goes **straight into
+  that is purely delete / pick-for-editing — clicking a row goes **straight into
   Edit Stops** (there is no selected-but-not-editing state) and the line editor rides in the
-  pinned `LinePopover`, not the sidebar. The whole panel hides while either pinned top-right
-  editor mode is active (`sidebarVisible`: `editing-station-layout` or `appending-to-line`),
-  ceding the corner. Stop/topology editing is **canvas-driven**
+  pinned `LinePopover`, not the sidebar. It offers **no z-order control**: which line paints in
+  front where two overlap is settled per overlap by region painting, so stacking is not something
+  the user reorders. The station list sorts by clickable column headers (`SortHeader`, the active
+  one flipping direction); the Lines list instead carries a sticky `.list-controls` bar — a "Sort
+  by" dropdown (Name / # Stops, always ascending) beside a "Group by style" checkbox that files the
+  rows under collapsible per-style subheaders, styles alphabetical, the untagged "Custom" bucket
+  last, the sort applying WITHIN each group
+  ([lineListOrder.ts](src/components/lineListOrder.ts) owns that whole ordering as a pure
+  function). Those controls ride the TOP of the scroll box rather than a footer: a bar pinned to
+  the bottom disappears under the horizontal scrollbar as soon as a long row widens the content.
+  The Lines view state lives in `Sidebar` rather than in the panel (`useLineListView`): clicking a
+  row hides the panel for Edit Stops, which unmounts it, and a sort or grouping must not reset on
+  every edit. The whole panel hides while either pinned
+  top-right editor mode is active (`sidebarVisible`: `editing-station-layout` or
+  `appending-to-line`), ceding the corner. Stop/topology editing is **canvas-driven**
   ([appendGestures.ts](src/model/appendGestures.ts)): click stations to connect,
   click a segment to insert into it, **alt-click** an empty spot — or the already-armed segment —
   to create a fresh station there (splicing it into the segment when that is what's armed)
