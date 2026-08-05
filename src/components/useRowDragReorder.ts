@@ -88,6 +88,10 @@ export function useRowDragReorder({
 
   const handleProps = (index: number) => ({
     onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
+      // Primary button only — a right-button press must not arm (its buttons
+      // bit never trips pointerLost, so it would drive the drag under the
+      // context menu).
+      if (e.button !== 0) return;
       gesture.current = { index, startY: e.clientY, moved: false };
       try {
         e.currentTarget.setPointerCapture(e.pointerId);

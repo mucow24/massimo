@@ -3096,7 +3096,8 @@ same three additions.
   fixed grid of icon slots — a built-in's missing edit and delete leave their slots open, which
   is what keeps the colour strips ending at one edge. The two transfer arrows are outermost in
   their rows, each against the column it points into; the map rows' last slot is a drag handle —
-  the editor's reorder gesture on the same hook, one `reorderMapPalette` write at the drop. The manager and the map library share one
+  the editor's reorder gesture on the same hook, one `reorderMapPalette` write at the drop. The
+  manager and the map library share one
   **`.dialog-*`** shell in styles.css (backdrop, panel, black title band, column heads, lists,
   rows); what stays per-dialog is only what one list has and the other doesn't.
   Every command that destroys or displaces a palette takes the in-place speed bump
@@ -3110,8 +3111,9 @@ same three additions.
   colors, both landing in library and map like Load…) swaps the columns for the
   **[PaletteEditor](src/components/PaletteEditor.tsx)** view, a back arrow joining the title band:
   the palette's title and description (double-click to edit — renaming lives here now), then one
-  fixed-height row per color — a drag handle ([useRowDragReorder](src/components/useRowDragReorder.ts),
-  preview local, ONE upsert at the drop), the color as an index route bullet, a ColorField, the
+  fixed-height row per color — a drag handle
+  ([useRowDragReorder](src/components/useRowDragReorder.ts), preview local, ONE upsert at the
+  drop), the color as an index route bullet, a ColorField, the
   name, a speed-bumped delete — under an Add color row. Edits are live against the ONE copy the
   pencil named (New… opens on the map copy), and recoloring a MAP swatch also repaints the lines
   wearing the old color in the same write (`recolorMapPaletteColor`, matched via `normalizeHex`

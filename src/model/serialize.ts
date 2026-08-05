@@ -388,7 +388,7 @@ export function sanitizePalettes(value: unknown): Palette[] {
           ...(typeof s.night === 'string' && s.night !== s.color && { night: s.night as string }),
         })),
       ...(typeof p.description === 'string' &&
-        p.description !== '' && {
+        p.description.trim() !== '' && {
           description: p.description,
         }),
     });

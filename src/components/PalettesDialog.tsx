@@ -165,7 +165,9 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
   } | null>(null);
   const headerDragProps = {
     onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
-      // The band's buttons (back, close) stay buttons.
+      // Primary button only (the house drag rule), and the band's buttons
+      // (back, close) stay buttons.
+      if (e.button !== 0) return;
       if ((e.target as HTMLElement).closest('button')) return;
       windowDrag.current = {
         startX: e.clientX,

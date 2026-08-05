@@ -29,6 +29,18 @@ const move = (el: HTMLElement, clientY: number, buttons = 1) =>
 const up = (el: HTMLElement, clientY: number) => fireEvent.pointerUp(el, { clientY, pointerId: 1 });
 
 describe('useRowDragReorder', () => {
+  // The house primary-button rule: only button 0 arms a drag. A right-button
+  // press never trips pointerLost (buttons=2), so without the guard it would
+  // drive a reorder under the context menu.
+  it('a non-primary press never arms', () => {
+    const { onCommit, handle, list } = setup();
+    fireEvent.pointerDown(handle(0), { clientY: 100, pointerId: 1, button: 2, buttons: 2 });
+    fireEvent.pointerMove(handle(0), { clientY: 100 + 2 * ROW, pointerId: 1, buttons: 2 });
+    expect(list().dataset.drag).toBe('idle');
+    fireEvent.pointerUp(handle(0), { clientY: 100 + 2 * ROW, pointerId: 1 });
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
   it('a sub-threshold press commits nothing and never previews', () => {
     const { onCommit, handle, list } = setup();
     down(handle(0), 100);

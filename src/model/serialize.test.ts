@@ -150,6 +150,7 @@ describe('parse — the map’s palettes', () => {
           ],
         },
         { name: 'b', description: '', swatches: [] },
+        { name: 'c', description: '   ', swatches: [] },
       ]),
     );
     expect(r.ok).toBe(true);
@@ -163,6 +164,7 @@ describe('parse — the map’s palettes', () => {
           ],
         },
         { name: 'b', swatches: [] },
+        { name: 'c', swatches: [] },
       ]);
     }
   });
