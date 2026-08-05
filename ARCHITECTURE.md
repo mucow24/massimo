@@ -833,15 +833,22 @@ geometry LRU) flushes it to a full rebuild.
 **Self-overlap: a line against itself.** A line's body is ONE unioned polygon, so the pairwise
 stage cannot see the line overlapping itself — arms are what make it visible. The junction
 pairing (`assignLineArms` in interlining.ts: at each station a line's band ends match into
-through-runs, most opposed first then longest combined straight run, continuing past the first
-run only while dead-opposed) doubles as a union-find gluing the line's bands into ARMS, baked
-per stripe as `SegmentBandSpec.arms` (hashed by `hashUnits` — arms move ink). Arm-pair stripe
-intersections join the zone as `a|a` pairParts entries, and the BAND-PAIR RULE adds `a|a|x`
-ones: two bands of the SAME arm sharing no station cannot be corner-adjacent, so their overlap
-is a genuine mid-edge self-crossing (the P-shape). Components hosting self parts subdivide that
+through-runs, most opposed first then longest combined straight run; runs after the first only
+while dead-opposed AND on an axis of their own — a dead-opposed leftover pair lying along an
+already-glued run's axis is two tangent branches hugging that corridor, and gluing it crossed
+the runs at a loop junction and welded the whole line into one arm) doubles as a union-find
+gluing the line's bands into ARMS, baked per stripe as `SegmentBandSpec.arms`, with each end's
+glue partner in `SegmentBandSpec.glues` (both hashed by `hashUnits` — they move faces).
+Arm-pair stripe intersections join the zone as `a|a` pairParts entries, and the BAND-PAIR RULE
+adds `a|a|x` ones — same-arm band pairs whose meeting the pairing did NOT glue: a chain looping
+back over its own trunk between stations (the P-shape, no shared station), and a LOOP's two
+entries at their junction (same arm through the loop's own corners, ends declined). Glued
+meetings are joints (corners stay face-free), and unglued-but-dead-opposed meetings are
+corridor handoffs, not mouths. Components hosting self parts subdivide that
 line per SLICE — per-arm bodies at a mouth (each marker riding its smallest incident arm), per
-involved band plus the bare-id rest at a crossing, arm partition winning when one component
-hosts both — and lone slices collapse back to bare line ids, so every face outside a genuine
+involved band plus the bare-id rest at a crossing, and the HYBRID (arms with the involved
+bands lifted out as edges) when one component hosts both — and lone slices collapse back to
+bare line ids, so every face outside a genuine
 self-overlap keeps exactly its historical cover. Slice cover ids (`arm:`/`edge:` spellings,
 `lineRegions.armCoverId`/`edgeCoverId`) are BUILD-LOCAL; the winner domain becomes "a line,
 slices merged" or one slice of it. An unpainted MOUTH defaults to the BRANCH ARM in front

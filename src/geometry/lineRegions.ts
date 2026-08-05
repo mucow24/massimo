@@ -13,7 +13,7 @@
 import type { LineId, RegionAnchor, RegionAssignment } from '../model/types';
 import type { SegmentBandSpec, StopMarkerSpec } from './interlining';
 import type { OffsetPathSegment } from './router';
-import { emitOffsetSegments } from './router';
+import { emitOffsetSegments, straightRunFrom } from './router';
 import { jointMarkerPieces } from './lineCircle';
 import { clamp } from '../util/grid';
 import { closestParamOnOffsetPath, sampleOffsetPathByArcLength } from './lineTagGeometry';
@@ -403,13 +403,16 @@ export interface SelfCrossingPart {
 }
 
 /**
- * The BAND-PAIR rule: zone parts where a line crosses itself WITHIN one arm
- * (the P-shape — a chain looping back over its own trunk between stations).
- * Two bands of the same arm that share no station cannot be corner-adjacent,
- * so any bodily overlap between them is a genuine crossing; cross-arm overlap
- * is already covered (at arm granularity) by {@link selfOverlapParts}, and
- * pairs sharing a station are exactly the joints and branch mouths the arm
- * model owns. Stripe bodies only, like the arm parts.
+ * The BAND-PAIR rule: zone parts where a line overlaps itself WITHIN one arm.
+ * Two bands of the same arm whose meeting the junction pairing GLUED are a
+ * joint (a corner, a through-run) — excluded, which is what keeps plain
+ * corners face-free. Everything else the arm model cannot see: a chain
+ * looping back over its own trunk between stations (the P-shape — no shared
+ * station at all), and a LOOP's two entries at their junction (same arm
+ * through the loop's own corners, sharing the station, but ends the pairing
+ * DECLINED to glue — a real mouth). Cross-arm overlap is already covered at
+ * arm granularity by {@link selfOverlapParts}. Stripe bodies only, like the
+ * arm parts.
  */
 export function selfCrossingParts(bands: SegmentBandSpec[], lineId: LineId): SelfCrossingPart[] {
   const stripes: { band: SegmentBandSpec; k: number }[] = [];
@@ -419,20 +422,42 @@ export function selfCrossingParts(bands: SegmentBandSpec[], lineId: LineId): Sel
     }
   }
   if (stripes.length < 2) return [];
+  const gluedAt = (
+    x: { band: SegmentBandSpec; k: number },
+    y: { band: SegmentBandSpec; k: number },
+    s: string,
+  ): boolean => x.band.glues?.[x.k]?.[x.band.fromId === s ? 0 : 1] === y.band.bandKey;
   const out: SelfCrossingPart[] = [];
   for (let i = 0; i < stripes.length; i++) {
     for (let j = i + 1; j < stripes.length; j++) {
       const a = stripes[i];
       const b = stripes[j];
       if ((a.band.arms[a.k] ?? 0) !== (b.band.arms[b.k] ?? 0)) continue;
-      if (
-        a.band.fromId === b.band.fromId ||
-        a.band.fromId === b.band.toId ||
-        a.band.toId === b.band.fromId ||
-        a.band.toId === b.band.toId
-      ) {
-        continue;
+      let joint = false;
+      for (const s of [a.band.fromId, a.band.toId]) {
+        if (s !== b.band.fromId && s !== b.band.toId) continue;
+        // No glue data (hand-built test bands): every meeting is a joint —
+        // the pre-glue rule.
+        if (!a.band.glues?.[a.k] || !b.band.glues?.[b.k]) {
+          joint = true;
+          break;
+        }
+        if (gluedAt(a, b, s) && gluedAt(b, a, s)) {
+          joint = true;
+          break;
+        }
+        // Unglued but DEAD-OPPOSED at the shared station: a corridor handoff
+        // the pairing spelled differently (a crossed glue took one of the
+        // ends), abutting cap to cap under the stop marker — not a mouth. A
+        // real mouth's two ends leave a shared station the SAME way (a hug).
+        const ea = straightRunFrom(a.band.centerline, a.band.fromId === s);
+        const eb = straightRunFrom(b.band.centerline, b.band.fromId === s);
+        if (ea && eb && -(ea.out.x * eb.out.x + ea.out.y * eb.out.y) >= 1 - 1e-6) {
+          joint = true;
+          break;
+        }
       }
+      if (joint) continue;
       const ra = stripeBodyPolys(a.band, a.k);
       const rb = stripeBodyPolys(b.band, b.k);
       if (!ra.length || !rb.length) continue;
@@ -502,17 +527,7 @@ export function armBodiesForRestriction(
 ): Map<number, Ring[]> {
   const groups = armStripeRings(bands, lineId);
   if (groups.size === 0) return groups;
-  const hostAt = new Map<string, number>();
-  for (const band of bands) {
-    for (let k = 0; k < band.lines.length; k++) {
-      if (band.lines[k].id !== lineId) continue;
-      const arm = band.arms[k] ?? 0;
-      for (const st of [band.fromId, band.toId]) {
-        const cur = hostAt.get(st);
-        if (cur === undefined || arm < cur) hostAt.set(st, arm);
-      }
-    }
-  }
+  const hostAt = markerHostArms(bands, lineId);
   const fallback = Math.min(...groups.keys());
   for (const m of markers) {
     if (m.lineId !== lineId) continue;
@@ -525,6 +540,74 @@ export function armBodiesForRestriction(
   }
   for (const [arm, rings] of groups) groups.set(arm, unionAll(rings));
   return groups;
+}
+
+/** Which arm hosts each station's marker: the smallest arm index among the
+ *  line's stripes incident there. Shared by the arm and hybrid splits. */
+function markerHostArms(bands: SegmentBandSpec[], lineId: LineId): Map<string, number> {
+  const hostAt = new Map<string, number>();
+  for (const band of bands) {
+    for (let k = 0; k < band.lines.length; k++) {
+      if (band.lines[k].id !== lineId) continue;
+      const arm = band.arms[k] ?? 0;
+      for (const st of [band.fromId, band.toId]) {
+        const cur = hostAt.get(st);
+        if (cur === undefined || arm < cur) hostAt.set(st, arm);
+      }
+    }
+  }
+  return hostAt;
+}
+
+/**
+ * The HYBRID split, for a component hosting BOTH a line's branch-mouth parts
+ * and its crossings: the arm partition with each involved band lifted out as
+ * its own EDGE entry. A loop's mouth needs this — its two entries are one
+ * arm through the loop's own corners, so the arm partition alone cannot
+ * distinguish them, while the sb-style branch mouth in the same component
+ * still needs its arms. Markers stay with their host arm: they are the
+ * line's shared paint, never one band's.
+ */
+export function armBandBodiesForRestriction(
+  bands: SegmentBandSpec[],
+  markers: StopMarkerSpec[],
+  lineId: LineId,
+  involved: ReadonlySet<string>,
+): { id: string; rings: Ring[] }[] {
+  const out: { id: string; rings: Ring[] }[] = [];
+  const rest = new Map<number, Ring[]>();
+  for (const band of bands) {
+    for (let k = 0; k < band.lines.length; k++) {
+      if (band.lines[k].id !== lineId) continue;
+      const rings = stripeBodyPolys(band, k);
+      if (!rings.length) continue;
+      if (involved.has(band.pairKey)) {
+        out.push({ id: edgeCoverId(lineId, band.pairKey), rings: unionAll(rings) });
+      } else {
+        const arm = band.arms[k] ?? 0;
+        const list = rest.get(arm);
+        if (list) list.push(...rings);
+        else rest.set(arm, [...rings]);
+      }
+    }
+  }
+  const hostAt = markerHostArms(bands, lineId);
+  const fallback = rest.size ? Math.min(...rest.keys()) : 0;
+  for (const m of markers) {
+    if (m.lineId !== lineId) continue;
+    const rings = markerBodyRings(m);
+    if (!rings.length) continue;
+    const host = hostAt.get(m.stationId) ?? fallback;
+    const list = rest.get(host);
+    if (list) list.push(...rings);
+    else rest.set(host, [...rings]);
+  }
+  for (const arm of [...rest.keys()].sort((a, b) => a - b)) {
+    const merged = unionAll(rest.get(arm)!);
+    if (merged.length) out.push({ id: armCoverId(lineId, arm), rings: merged });
+  }
+  out.sort((a, b) => (a.id < b.id ? -1 : 1));
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -914,18 +997,22 @@ export function crossingCompPlans(
  * Per-frame builder of a line's slice entries, memoized so the bbox/mask
  * memos on the ring arrays hold across components. Arm entries where the
  * line's branch-mouth parts live; band entries (per involved pairKey + the
- * bare-id rest) where only mid-edge crossings do. A component hosting BOTH
- * for one line takes the ARM partition — the crossing goes undistinguished
- * there (deliberate punt: the merged-with-a-mouth crossing is the rare case
- * the design doc registers, and arm covers keep the mouth paintable).
+ * bare-id rest) where only mid-edge crossings do; and the HYBRID where a
+ * component hosts BOTH — the arm partition with the involved bands lifted
+ * out as edge entries, so a loop mouth (same arm through the loop's own
+ * corners) stays distinguishable beside a branch mouth.
  */
 export function makeSliceEntrySource(
   bands: SegmentBandSpec[],
   markers: StopMarkerSpec[],
-): (lineId: LineId, crossPairs: ReadonlySet<string> | null) => { id: string; rings: Ring[] }[] {
+): (
+  lineId: LineId,
+  armSplit: boolean,
+  crossPairs: ReadonlySet<string> | null,
+) => { id: string; rings: Ring[] }[] {
   const armEntries = new Map<LineId, { id: string; rings: Ring[] }[]>();
   const bandEntries = new Map<string, { id: string; rings: Ring[] }[]>();
-  return (lineId, crossPairs) => {
+  return (lineId, armSplit, crossPairs) => {
     if (crossPairs === null) {
       let e = armEntries.get(lineId);
       if (!e) {
@@ -937,10 +1024,12 @@ export function makeSliceEntrySource(
       }
       return e;
     }
-    const key = `${lineId}|${[...crossPairs].sort().join(',')}`;
+    const key = `${lineId}|${armSplit ? 'A|' : ''}${[...crossPairs].sort().join(',')}`;
     let e = bandEntries.get(key);
     if (!e) {
-      e = bandSliceBodiesForRestriction(bands, markers, lineId, crossPairs);
+      e = armSplit
+        ? armBandBodiesForRestriction(bands, markers, lineId, crossPairs)
+        : bandSliceBodiesForRestriction(bands, markers, lineId, crossPairs);
       bandEntries.set(key, e);
     }
     return e;
@@ -948,12 +1037,14 @@ export function makeSliceEntrySource(
 }
 
 /** The slice plan of one component: arm partition where the line's arm parts
- *  live (crossings punt there), band partition where only crossings do. */
+ *  live, band partition where only crossings do, and the hybrid (arms with
+ *  the involved bands lifted out as edges) where a line has both. */
 export function sliceSplitForComp(
   armLines: ReadonlySet<LineId> | undefined,
   crossPlan: ReadonlyMap<LineId, Set<string>> | undefined,
   sliceEntriesOf: (
     lineId: LineId,
+    armSplit: boolean,
     crossPairs: ReadonlySet<string> | null,
   ) => { id: string; rings: Ring[] }[],
 ): Map<LineId, { id: string; rings: Ring[] }[]> | null {
@@ -961,7 +1052,7 @@ export function sliceSplitForComp(
   const split = new Map<LineId, { id: string; rings: Ring[] }[]>();
   const lines = new Set<LineId>([...(armLines ?? []), ...(crossPlan?.keys() ?? [])]);
   for (const l of [...lines].sort()) {
-    split.set(l, sliceEntriesOf(l, armLines?.has(l) ? null : (crossPlan?.get(l) ?? null)));
+    split.set(l, sliceEntriesOf(l, armLines?.has(l) ?? false, crossPlan?.get(l) ?? null));
   }
   return split;
 }

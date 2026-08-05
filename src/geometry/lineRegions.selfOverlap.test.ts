@@ -838,6 +838,102 @@ describe('mid-edge self-crossings (band-pair rule)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Loop junctions — the JFK shape from the NYC map, verbatim coordinates and
+// rotations. A four-way where the mainline doglegs away on the SAME axis it
+// arrived on and the other two ends are a terminal LOOP's entries. The loop
+// closes through plain corners, so its entries are one arm no matter what
+// the junction decides — the greedy pairing used to glue crossed runs and
+// weld the whole line into one arm: no faces, nothing paintable.
+// ---------------------------------------------------------------------------
+
+describe('loop junctions (JFK)', () => {
+  const jfkDoc = () => {
+    const vStop = (id: string) => makeStop(id, { orientation: 'auto-vertical' });
+    const S = (id: string, x: number, y: number, rotation: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7) =>
+      makeStation({ id, x, y, rotation, stops: [vStop('e')] });
+    return makeDoc({
+      stations: [
+        S('hb', 920.11, -904.87, 1),
+        S('lef', 992.57, -977.32, 1),
+        S('fc', 1085.65, -1070.41, 1),
+        S('t1', 1197.6, -1121.46, 6),
+        S('t4', 1250.78, -1153.48, 5),
+        S('t5', 1233.96, -1229.26, 3),
+        S('t7', 1161.98, -1229.67, 1),
+        S('t8', 1138.28, -1173.13, 4),
+        S('sb', 980.63, -1115.74, 7),
+        S('sut', 1021.79, -1453.36, 1),
+      ],
+      lines: [
+        makeLine({
+          id: 'e',
+          color: '#f5dd4a',
+          strokeWidth: 2,
+          edges: [
+            'hb|lef',
+            'fc|lef',
+            'fc|t1',
+            't1|t4',
+            't4|t5',
+            't5|t7',
+            't7|t8',
+            'fc|t8',
+            'fc|sb',
+            'sb|sut',
+          ],
+        }),
+      ],
+    });
+  };
+
+  it('the mainline dogleg splits off: crossed runs never glue on one axis', () => {
+    // At fc, four ends: toward lef (diagonal, dead straight), toward sb (the
+    // mainline dogleg — SAME diagonal axis, hugging 28 units before it
+    // peels), and the two loop entries toward t1/t8 (both on the diagonal
+    // axis the other way). Everything ties at 180°; a crossed glue plus the
+    // loop's corner closure used to weld all ten edges into one arm.
+    const doc = jfkDoc();
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+    const sbArm = armOfLinePairKey(bands, 'e', 'fc|sb')!;
+    const lefArm = armOfLinePairKey(bands, 'e', 'fc|lef')!;
+    expect(sbArm, 'the dogleg must not weld into the through-run').not.toBe(lefArm);
+    // The loop closes through its corners: both entries are one arm, and it
+    // is the arm the through-run glued into.
+    expect(armOfLinePairKey(bands, 'e', 'fc|t1')).toBe(armOfLinePairKey(bands, 'e', 'fc|t8'));
+    // The dogleg's own chain stays whole.
+    expect(armOfLinePairKey(bands, 'e', 'sb|sut')).toBe(sbArm);
+  });
+
+  it('both circled mouths exist as paintable faces', () => {
+    const doc = jfkDoc();
+    const bands = buildBands(doc.stations, doc.lines, doc.lineOrder);
+    const faces = buildOverlapRegions(bands, []);
+    // The LOWER mouth: the dogleg hugging the through-run southwest of fc —
+    // an ARM-pair face (the dogleg split off as its own arm).
+    const lower = faces.filter(
+      (f) => f.lineIds.length === 2 && f.lineIds.every((id) => id.startsWith('arm:')),
+    );
+    expect(lower.length, 'the dogleg mouth must be a face').toBeGreaterThan(0);
+    // The UPPER mouth: the two loop entries hugging northeast of fc. Same
+    // arm through the loop closure and sharing fc — ends the junction
+    // declined to glue together — so it spells as an EDGE pair (the hybrid
+    // split: arms with the involved bands lifted out).
+    const upper = faces.filter(
+      (f) => f.lineIds.length === 2 && f.lineIds.every((id) => id.startsWith('edge:')),
+    );
+    expect(upper.length, 'the loop mouth must be a face').toBeGreaterThan(0);
+    expect(upper[0].lineIds.sort()).toEqual([edgeCoverId('e', 'fc|t1'), edgeCoverId('e', 'fc|t8')]);
+    // Northeast of the junction, where the entries hug.
+    expect(upper[0].bbox.x1).toBeGreaterThan(1085.65);
+    expect(upper[0].bbox.y0).toBeLessThan(-1070.41);
+    for (const f of [...lower, ...upper]) {
+      expect(new Set(f.lineIds).size).toBe(2);
+      for (const id of f.lineIds) expect(id).toContain('e');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The unpainted default. A junction mouth shows the BRANCH ARM in front —
 // the through-run is the base and the spur's casing separates from it, the
 // look the seam system always drew and the state every hand-painted junction

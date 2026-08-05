@@ -245,6 +245,9 @@ export function hashUnits(
       // pure function of the line's own hashed geometry, so this should be
       // redundant; it is insurance against that purity ever loosening.)
       h = fnvMix(h, band.arms[k] ?? 0);
+      // The end GLUES gate the band-pair rule (a declined loop mouth is a
+      // face; a glued joint is not), so they move faces too — same insurance.
+      h = mixString(h, `${band.glues?.[k]?.[0] ?? ''}|${band.glues?.[k]?.[1] ?? ''}`);
       // The offset path stays within the centerline's box grown by the stripe
       // offset (corner fillets cut INWARD, so the radius adds nothing), and the
       // stroke adds half a width. +1 of slack covers flattening chord error.

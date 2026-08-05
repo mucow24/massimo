@@ -110,6 +110,17 @@ export interface SegmentBandSpec {
   // per-arm bodies (lineRegions.selfOverlapParts), so the index IS mixed
   // into regionIncremental's hashUnits.
   arms: number[];
+  // Per stripe, the bandKey each END glued with in the junction pairing
+  // ([from, to]; null = unglued there) — also from {@link assignLineArms}.
+  // The arm partition alone cannot say whether two same-arm bands MEETING at
+  // a station are a joint (glued — a corner, a through-run) or a mouth the
+  // junction declined to pair (a LOOP's two entries, same arm through the
+  // loop's own corners): the glue records keep that verdict. They gate the
+  // band-pair rule (lineRegions.selfCrossingParts), so they move region
+  // faces and join hashUnits exactly like `arms`. Optional ONLY for
+  // hand-built test bands, which read as "every meeting is a joint" — the
+  // pre-glue rule; every built band carries it.
+  glues?: [string | null, string | null][];
 }
 
 // A single colored stop square for one line at one station, with its
@@ -228,6 +239,8 @@ export const BAND_SPEC_FIELDS = {
   // own geometry is unchanged can still change arm when a sibling corridor
   // appears or moves. So it must be compared, not derived from this band.
   arms: 'compared',
+  // Same provenance and same reasoning as `arms`.
+  glues: 'compared',
 } as const satisfies Record<keyof SegmentBandSpec, SpecFieldPolicy>;
 
 // Markers are NOT presentation-free (color and priority are baked at build),
@@ -280,6 +293,12 @@ function bandSpecEqual(a: SegmentBandSpec, b: SegmentBandSpec): boolean {
     if (a.centerline[i].x !== b.centerline[i].x || a.centerline[i].y !== b.centerline[i].y) {
       return false;
     }
+  }
+  const ga = a.glues ?? [];
+  const gb = b.glues ?? [];
+  if (ga.length !== gb.length) return false;
+  for (let i = 0; i < ga.length; i++) {
+    if (ga[i][0] !== gb[i][0] || ga[i][1] !== gb[i][1]) return false;
   }
   return (
     sameNumbers(a.arms, b.arms) &&
@@ -774,11 +793,12 @@ export function buildBandGeometry(
 const OPPOSITION_TIE = 1e-6;
 
 // One end of one stripe at one station: the direction it leaves the station,
-// how far it runs before its first bend, and whether it bends at all before
-// its far end.
+// how far it runs before its first bend, whether it bends at all before its
+// far end, and WHICH end of the band it is (glue records are per end).
 interface JunctionArm {
   band: SegmentBandSpec;
   stripeIndex: number;
+  end: 0 | 1;
   out: Vec2;
   run: number;
   bent: boolean;
@@ -837,6 +857,7 @@ function assignLineArms(bands: SegmentBandSpec[]): void {
   const byLine = new Map<string, { band: SegmentBandSpec; k: number }[]>();
   for (const band of bands) {
     band.arms = band.lines.map(() => 0);
+    band.glues = band.lines.map(() => [null, null]);
     for (let k = 0; k < band.lines.length; k++) {
       const node = nodeOf(band, k);
       if (!parent.has(node)) parent.set(node, node);
@@ -854,7 +875,7 @@ function assignLineArms(bands: SegmentBandSpec[]): void {
       band.lines.forEach((line, stripeIndex) => {
         const key = `${line.id}#${stationId}`;
         const arms = byJunction.get(key);
-        const arm = { band, stripeIndex, out, run, bent };
+        const arm: JunctionArm = { band, stripeIndex, end: fromStart ? 0 : 1, out, run, bent };
         if (arms) arms.push(arm);
         else byJunction.set(key, [arm]);
       });
@@ -869,6 +890,7 @@ function assignLineArms(bands: SegmentBandSpec[]): void {
     // the name, so the repeated pairwise walk is free.
     let pool = arms.map((_, i) => i);
     const through = new Set<number>();
+    const gluedOuts: Vec2[] = [];
     while (pool.length >= 2) {
       // Most opposed (dot = −1 is dead straight through); ties prefer a pair
       // of BEND-FREE arms (each straight all the way to its far station) over
@@ -878,17 +900,33 @@ function assignLineArms(bands: SegmentBandSpec[]): void {
       // too, and with a long enough lead-in (or a short enough trunk side)
       // the run sum alone would glue curve to trunk — welding the branch into
       // the trunk's arm, which made "curve on top" unpaintable at the mouth.
+      //
+      // Every run after the first must be dead opposed (a fork's leftovers
+      // must not pair up as a second run) AND on an axis of its own: a
+      // dead-opposed pair lying along an already-glued run's axis is two
+      // tangent branches hugging that corridor — at a loop junction (JFK's
+      // Federal Circle: mainline doglegging away on the arrival axis, both
+      // loop entries leaving along it too) gluing it crossed the runs and,
+      // with the loop closing through its own corners, welded the entire
+      // line into ONE arm: no self faces anywhere. A genuine second CROSSING
+      // (an X at a station) comes in on its own axis and still glues.
+      const laterOk = (i: number, j: number, opposition: number): boolean =>
+        opposition >= 1 - OPPOSITION_TIE &&
+        !gluedOuts.some((g) => Math.abs(dot(g, arms[i].out)) > 1 - OPPOSITION_TIE) &&
+        !gluedOuts.some((g) => Math.abs(dot(g, arms[j].out)) > 1 - OPPOSITION_TIE);
       let bestOpposition = -Infinity;
       let bestFull = -1;
       let bestRun = -Infinity;
-      let pair: [number, number] = [pool[0], pool[1]];
+      let pair: [number, number] | null = null;
       for (const i of pool) {
         for (const j of pool) {
           if (j <= i) continue;
           const opposition = -dot(arms[i].out, arms[j].out);
+          if (through.size > 0 && !laterOk(i, j, opposition)) continue;
           const full = arms[i].bent || arms[j].bent ? 0 : 1;
           const run = arms[i].run + arms[j].run;
           if (
+            pair === null ||
             opposition > bestOpposition + OPPOSITION_TIE ||
             (opposition > bestOpposition - OPPOSITION_TIE &&
               (full > bestFull || (full === bestFull && run > bestRun)))
@@ -901,15 +939,19 @@ function assignLineArms(bands: SegmentBandSpec[]): void {
         }
       }
       // The FIRST run is the through-run whatever its angle — a fork's arms
-      // need not be exactly opposite. Every run after it must be dead straight,
-      // or the leftovers of a fork would pair up as a second one.
-      if (through.size > 0 && bestOpposition < 1 - OPPOSITION_TIE) break;
+      // need not be exactly opposite. No qualifying later run ⇒ done.
+      if (pair === null) break;
       through.add(pair[0]).add(pair[1]);
-      // The through-run glues its two bands into one arm of this line.
+      // The through-run glues its two bands into one arm of this line, and
+      // each end records its partner — the mouth-vs-joint verdict the
+      // band-pair rule reads back (see SegmentBandSpec.glues).
       const a = arms[pair[0]];
       const b = arms[pair[1]];
       parent.set(find(nodeOf(a.band, a.stripeIndex)), find(nodeOf(b.band, b.stripeIndex)));
-      pool = pool.filter((i) => i !== pair[0] && i !== pair[1]);
+      a.band.glues![a.stripeIndex][a.end] = b.band.bandKey;
+      b.band.glues![b.stripeIndex][b.end] = a.band.bandKey;
+      gluedOuts.push(a.out, b.out);
+      pool = pool.filter((i) => i !== pair![0] && i !== pair![1]);
     }
   }
 
@@ -1531,6 +1573,7 @@ function buildCircleBandSpec(
     radius: bandR,
     linePriorities: [], // filled in by assignLinePriorities
     arms: [], // filled in by assignLineArms
+    glues: [], // filled in by assignLineArms
     stripeOffsets: offsets,
     stripeWidths: widths,
   };
@@ -1648,6 +1691,7 @@ function buildBandSpec(
     radius: centerlineR,
     linePriorities: [], // filled in by assignLinePriorities
     arms: [], // filled in by assignLineArms
+    glues: [], // filled in by assignLineArms
     stripeOffsets: offsets,
     stripeWidths: widths,
   };

@@ -241,6 +241,7 @@ describe('spec reuse — field-drift guard', () => {
       'bandKey',
       'centerline',
       'fromId',
+      'glues',
       'linePriorities',
       'lines',
       'pairKey',
