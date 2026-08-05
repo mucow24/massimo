@@ -43,7 +43,6 @@ import {
   CursorArrowIcon,
   DoubleArrowLeftIcon,
   DoubleArrowRightIcon,
-  ColorWheelIcon,
   FrameIcon,
   HandIcon,
   LayersIcon,
@@ -51,6 +50,7 @@ import {
   SunIcon,
 } from '@radix-ui/react-icons';
 import { SnapToggleBar } from './SnapToggleBar';
+import { PaletteGlyph } from './PaletteGlyph';
 import { PalettesDialog } from './PalettesDialog';
 import { ViewPopover } from './ViewPopover';
 import { HelpPopover } from './HelpPopover';
@@ -689,7 +689,7 @@ export function Toolbar() {
           aria-expanded={palettesOpen}
           onClick={() => setPalettesOpen(true)}
         >
-          <ColorWheelIcon />
+          <PaletteGlyph />
         </button>
         <button
           type="button"
