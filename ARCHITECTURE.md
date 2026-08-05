@@ -899,13 +899,19 @@ ring-ARRAY identity so a clean line never re-masks. It never changes what an ope
 only whether one that would have returned empty runs at all: the mask is a conservative SUPERSET
 of its body (an edge pass for cells holding boundary, an even-odd scanline fill for cells wholly
 inside a blob), so `masksMeet` returning false proves the intersection is empty. `dirtyReaches`
-carries the same reasoning across frames — outside the dirty region both bodies equal last
-frame's, so their intersection can only differ at a cell that is dirty AND in both bodies, and
-callers must ask this of the OLD masks too or an overlap that VACATED a dirty cell goes unseen.
-Both claims are property-tested against the clipper itself and mutation-tested — deleting the
-fill, or dropping the old-mask term, each fails its own property — and the old-mask term is
-pinned at its CALL SITE too, by a fixture where a crossing moves fully away: the phantom that
-survives without it is single-cover, so it emits no face and only the zone state can see it.
+carries the same reasoning across frames — outside the dirty region both bodies cover what they
+covered last frame, so their intersection can only differ at a cell that is dirty AND in both
+bodies, and callers must ask this of the OLD masks too or an overlap that VACATED a dirty cell
+goes unseen. What survives is the REGION, never the coordinates: clipper's output is a function
+of the input vertex list, not of the region it describes, so a change that splits a boundary
+edge re-rounds the surviving fragment onto the fixed-point grid and moves a crossing far outside
+any dirty cell into the neighbouring integer. Nothing local predicts that, so no spatial reject
+can promise identical rings, and every equivalence downstream is stated at clipper resolution
+for the same reason. Both claims are property-tested against the clipper itself and
+mutation-tested — deleting the fill, or dropping the old-mask term, each fails its own property
+— and the old-mask term is pinned at its CALL SITE too, by a fixture where a crossing moves
+fully away: the phantom that survives without it is single-cover, so it emits no face and only
+the zone state can see it.
 
 `buildOverlapRegions` composes exactly those phases and is the full-rebuild reference the
 incremental builder is tested against — **production goes through

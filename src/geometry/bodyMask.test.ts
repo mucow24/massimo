@@ -1,8 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import { bodyMask, cellsOfBox, dirtyReaches, masksMeet, MASK_CELL } from './bodyMask';
-import { intersect, unionAll, type Ring } from './clip';
-import { ringSetKey, ringsBbox } from './lineRegions';
+import { CLIP_SCALE, intersect, offsetClosed, subtract, unionAll, type Ring } from './clip';
 
 /**
  * The mask is only allowed to skip work that would have returned nothing. Two
@@ -11,7 +10,9 @@ import { ringSetKey, ringsBbox } from './lineRegions';
  *
  *   1. `!masksMeet(A, B)`  ⇒  `intersect(A, B)` is empty.
  *   2. no dirty cell in both masks (old AND new)  ⇒  the pair's intersection
- *      is byte-identical to the previous frame's.
+ *      covers the same REGION as the previous frame's. Not the same
+ *      coordinates — see {@link same} for the difference, which is forced by
+ *      the engine and not by anything the reject does.
  *
  * A mask that under-covers its body breaks (1) immediately: the generators
  * below produce blobs far wider than a cell, so the scanline fill — the half
@@ -42,10 +43,16 @@ const rotRect = (x: number, y: number, w: number, h: number, deg: number): Ring 
   }));
 };
 
-/** A blob: several overlapping rectangles unioned, i.e. the same shape of
- *  input a line body is — clipper output, non-self-intersecting, possibly
- *  holed, and much wider than one cell. */
-const blobArb = (cx: number, cy: number, spread: number) =>
+/**
+ * The PARTS a blob is unioned from, kept reachable because the cross-frame
+ * properties have to build both frames' bodies the way `buildLineBodies` does:
+ * each a fresh union of raw parts. Growing one frame's body out of the OTHER
+ * frame's output is a different operation and one the builder never performs —
+ * `unionAll` is not idempotent on a body whose rings touch along an edge (it
+ * merges them, pinned below), so a generator that did it would manufacture
+ * ring-count differences no frame transition can produce.
+ */
+const partsArb = (cx: number, cy: number, spread: number) =>
   fc
     .array(
       fc.record({
@@ -62,7 +69,12 @@ const blobArb = (cx: number, cy: number, spread: number) =>
       }),
       { minLength: 1, maxLength: 6 },
     )
-    .map((parts) => unionAll(parts.map((p) => rotRect(cx + p.dx, cy + p.dy, p.w, p.h, p.rot))));
+    .map((parts) => parts.map((p) => rotRect(cx + p.dx, cy + p.dy, p.w, p.h, p.rot)));
+
+/** A blob: several overlapping rectangles unioned, i.e. the same shape of
+ *  input a line body is — clipper output, non-self-intersecting, possibly
+ *  holed, and much wider than one cell. */
+const blobArb = (cx: number, cy: number, spread: number) => partsArb(cx, cy, spread).map(unionAll);
 
 const cellsOf = (b: { x0: number; y0: number; x1: number; y1: number }) => {
   const s = new Set<number>();
@@ -71,19 +83,33 @@ const cellsOf = (b: { x0: number; y0: number; x1: number; y1: number }) => {
 };
 
 /**
- * The codebase's own notion of "the same rings": `ringSetKey`, which hashes
- * each ring from a canonical starting vertex. That canonicalization is not a
- * convenience — clipper is free to emit the same polygon rotated to a
- * different first vertex when UNRELATED input moved, which is exactly the
- * situation a reused pair result is in. A raw byte compare here reports those
- * rotations as differences; `ringSetKey` is the equivalence every region cache
- * in this codebase already keys on, so it is the one the reuse must satisfy.
- * (Found the hard way: the byte compare produced a counterexample whose
- * symmetric difference was empty and whose ring counts matched — only the
- * start vertex had moved.)
+ * "The same answer", at the only resolution the engine can express it in.
+ *
+ * A coordinate compare cannot be the oracle here, and not because the reject
+ * is sloppy. Clipper works in fixed point at `CLIP_SCALE`, and its output is a
+ * function of the INPUT VERTEX LIST, not of the region that list describes.
+ * Geometry that changes between frames can SPLIT a body's boundary edge; the
+ * split vertex is rounded onto the integer grid, which tilts the surviving
+ * fragment by a fraction of a unit, and a crossing anywhere along that
+ * fragment — arbitrarily far from the change, in cells the change never
+ * touches — then rounds to a different integer. `a re-split edge moves a far
+ * crossing by one clipper unit` below pins the case that found this: the
+ * change sits at the origin, the vertex that moves is 20 units away. Nothing
+ * local predicts it, so no spatial reject can promise identical coordinates —
+ * this one included, and any replacement for it too.
+ *
+ * What a reject can promise is the REGION, which is what this asks: neither
+ * side holds territory the other lacks, judged by the engine, after eroding by
+ * one `CLIP_SCALE` unit — the last place two coordinates can differ at all.
+ * That is not a tolerance dial. It still fails a real difference: a 0.01-unit
+ * drift is caught, and 0.01 is the magnitude that got the second clipper
+ * engine deleted (see clip.ts). Ring ROTATIONS, which clipper emits freely
+ * when unrelated input moved and which a coordinate compare reports as
+ * differences, have no symmetric difference at all and pass.
  */
 const same = (a: Ring[], b: Ring[]) =>
-  a.length === b.length && ringSetKey(a, ringsBbox(a)) === ringSetKey(b, ringsBbox(b));
+  offsetClosed(subtract(a, b), -1 / CLIP_SCALE).length === 0 &&
+  offsetClosed(subtract(b, a), -1 / CLIP_SCALE).length === 0;
 
 describe('bodyMask — the reject is exact', () => {
   it('mask-disjoint bodies never intersect (100 runs)', () => {
@@ -136,7 +162,7 @@ describe('bodyMask — dirtyReaches is exact across frames', () => {
   it('no reach ⇒ the pair intersection is unchanged (100 runs)', () => {
     fc.assert(
       fc.property(
-        blobArb(0, 0, 150),
+        partsArb(0, 0, 150),
         blobArb(0, 0, 150),
         fc.record({
           x: fc.integer({ min: -600, max: 600 }),
@@ -144,11 +170,13 @@ describe('bodyMask — dirtyReaches is exact across frames', () => {
           w: fc.integer({ min: 8, max: 90 }),
           h: fc.integer({ min: 8, max: 90 }),
         }),
-        (aOld, B, patch) => {
+        (aParts, B, patch) => {
+          const aOld = unionAll(aParts);
           if (!aOld.length || !B.length) return true;
-          // A changes ONLY inside D: a rectangle is added there.
+          // A changes ONLY inside D: a rectangle is added there. Each frame's
+          // body is its own union of raw parts, as the builder makes them.
           const D = { x0: patch.x, y0: patch.y, x1: patch.x + patch.w, y1: patch.y + patch.h };
-          const aNew = unionAll([...aOld, rect(patch.x, patch.y, patch.w, patch.h)]);
+          const aNew = unionAll([...aParts, rect(patch.x, patch.y, patch.w, patch.h)]);
           const dirty = cellsOf(D);
           const mB = bodyMask(B);
           const reaches =
@@ -169,7 +197,7 @@ describe('bodyMask — dirtyReaches is exact across frames', () => {
     // "unchanged". Mutation-tested — dropping the old-mask term fails here.
     fc.assert(
       fc.property(
-        blobArb(0, 0, 150),
+        partsArb(0, 0, 150),
         blobArb(0, 0, 150),
         fc.record({
           x: fc.integer({ min: -400, max: 400 }),
@@ -177,11 +205,12 @@ describe('bodyMask — dirtyReaches is exact across frames', () => {
           w: fc.integer({ min: 8, max: 90 }),
           h: fc.integer({ min: 8, max: 90 }),
         }),
-        (aNew, B, patch) => {
+        (aParts, B, patch) => {
+          const aNew = unionAll(aParts);
           if (!aNew.length || !B.length) return true;
           const D = { x0: patch.x, y0: patch.y, x1: patch.x + patch.w, y1: patch.y + patch.h };
           // aOld carried an extra part in D that aNew no longer has.
-          const aOld = unionAll([...aNew, rect(patch.x, patch.y, patch.w, patch.h)]);
+          const aOld = unionAll([...aParts, rect(patch.x, patch.y, patch.w, patch.h)]);
           const dirty = cellsOf(D);
           const mB = bodyMask(B);
           const reaches =
@@ -192,6 +221,58 @@ describe('bodyMask — dirtyReaches is exact across frames', () => {
       ),
       { numRuns: 100 },
     );
+  });
+
+  it('a re-split edge moves a far crossing by one clipper unit', () => {
+    // The counterexample the property above found, replayed by hand. A is one
+    // long parallelogram; the removed rect overlaps it only in a sliver at the
+    // origin, so the union splits A's long left edge there and rounds the
+    // split vertex onto the CLIP_SCALE grid. That leaves the surviving
+    // fragment a hair off the line it came from — and twenty units away, in a
+    // cell the change never touches, B's crossing of it rounds the other way.
+    const A = unionAll([
+      [
+        { x: 86.606, y: 48.002 },
+        { x: 58.894, y: 64.002 },
+        { x: 10.394, y: -20.002 },
+        { x: 38.106, y: -36.002 },
+      ],
+    ]);
+    const B = unionAll([
+      [
+        { x: 24.315, y: -30.093 },
+        { x: 21.597, y: -4.235 },
+        { x: 5.685, y: -5.907 },
+        { x: 8.403, y: -31.765 },
+      ],
+    ]);
+    const aOld = unionAll([...A, rect(0, 0, 22, 8)]);
+    const dirty = cellsOf({ x0: 0, y0: 0, x1: 22, y1: 8 });
+    // The reject fires, and correctly: B holds no dirty cell in either frame,
+    // and as point sets the removed rect and B are disjoint outright.
+    expect(dirtyReaches(dirty, bodyMask(A), bodyMask(B))).toBe(false);
+    expect(dirtyReaches(dirty, bodyMask(aOld), bodyMask(B))).toBe(false);
+    // The coordinates nonetheless differ, by exactly one unit at one vertex.
+    // This is the whole reason `same` is stated on the region: no reject can
+    // see this coming, because nothing near the overlap changed.
+    expect(intersect(A, B)[0]).toContainEqual({ x: 19.362, y: -4.47 });
+    expect(intersect(aOld, B)[0]).toContainEqual({ x: 19.361, y: -4.47 });
+    expect(same(intersect(A, B), intersect(aOld, B))).toBe(true);
+  });
+
+  it('unionAll is not idempotent, so both frames build from parts', () => {
+    // Three rects: two meeting along y = 0, and a spike crossing the join.
+    // Clipper's union emits the result as two rings that touch along an edge;
+    // unioning THAT output merges them into one. So growing one frame's body
+    // out of the other frame's OUTPUT — which the builder never does, and
+    // which the properties above therefore don't either — invents a ring-count
+    // difference with no cause in the geometry.
+    const parts = [rect(0, 0, 40, 40), rect(-20, -40, 60, 40), rect(-15, -10, 5, 25)];
+    const body = unionAll(parts);
+    expect(body.length).toBe(2);
+    expect(unionAll(body).length).toBe(1);
+    // Same region either way — it is purely how the engine cut it up.
+    expect(same(body, unionAll(body))).toBe(true);
   });
 
   it('a change landing ON the overlap does report reach', () => {

@@ -31,17 +31,23 @@
  * VACATED a dirty cell changes the result just as much as one that arrived,
  * and only the old masks can see it.
  *
- * "Exactly the answer" means the same REGION, at the same resolution — which
- * is the equivalence the region caches already run on, not a byte compare. A
- * body is re-unioned whole when its line is dirty, and clipper is free to emit
- * an unchanged polygon rotated to a different first vertex when unrelated
- * input moved, so a reused pair result can differ from a fresh intersect by a
- * ring rotation. That is precisely what `hashRingCanonical` was written to
- * absorb, and it is strictly on the safe side here: the alternative is
- * `ringsContentEqual`'s rotation-SENSITIVE compare marking the pair changed,
- * which its own note calls out as only ever costing a missed reuse. The pair
- * parts are unioned by `zoneComponents` and the components are ordered by
- * content key, so no downstream boolean can see the difference.
+ * "Exactly the answer" means the same REGION, and it cannot mean the same
+ * COORDINATES — not because the reject is loose, but because clipper's output
+ * is a function of the input vertex list rather than of the region that list
+ * describes. A body is re-unioned whole when its line is dirty, and two
+ * effects follow. Clipper is free to emit an unchanged polygon rotated to a
+ * different first vertex when unrelated input moved, which is what
+ * `hashRingCanonical` was written to absorb. And a frame's change can SPLIT a
+ * boundary edge that runs far past it: the split vertex is rounded onto the
+ * fixed-point grid, tilting the surviving fragment by under a unit, so a
+ * crossing anywhere along that fragment — in cells the change never touched —
+ * lands on a different integer. `bodyMask.test.ts` pins one, twenty units from
+ * its cause. Nothing local predicts it, so no spatial reject could avoid it;
+ * the reused rings and a fresh intersect can differ in their last place while
+ * bounding the same territory. That is strictly on the safe side downstream:
+ * the pair parts are unioned by `zoneComponents`, the components are ordered
+ * by content key, and every region cache keys at clipper's own resolution, so
+ * the cost of the difference is at worst a missed reuse.
  *
  * Cell keys pack two signed cell indices into one number. That packing can
  * alias for absurd coordinates, and aliasing is harmless by construction: it
