@@ -696,17 +696,16 @@ describe('findMatchingStations', () => {
     expect(bWorld.y).toBeCloseTo(aWorld.y, 6);
   });
 
-  it('station rotation broadcasts congruently but SLIDES across a translated match', () => {
-    // The one broadcast translation does not carry, pinned in world terms
-    // because the rotation FIELD stays in lockstep and hides it (which is why
-    // e2e/matching.spec.ts's "rotate in lockstep" test passes either way).
+  it('station rotation broadcasts with NO drift across a translated match', () => {
+    // Pinned in world terms because the rotation FIELD stays in lockstep and
+    // would hide a drift entirely (which is why e2e/matching.spec.ts's "rotate
+    // in lockstep" test passes either way — it reads only `rotation`).
     //
-    // rotateStation pivots the layout about cell (0,0) — the station's own
-    // anchor. Two translated matches hold that anchor in different places
-    // within their (identical) pictures, so the same relative step swings each
-    // picture on a different radius. A and B below are placed so their
-    // pictures COINCIDE in world at rotation 0 — the strongest statement of
-    // "these render identically" — which makes any post-rotation gap pure drift.
+    // rotateStation pivots about the layout's own picture, not cell (0,0), so
+    // it no longer matters that two translated matches hold that cell in
+    // different places. A and B below are placed so their pictures COINCIDE in
+    // world at rotation 0 — the strongest statement of "these render
+    // identically" — which makes any post-rotation gap pure drift.
     const doc = makeDoc({
       stations: [
         makeStation({
@@ -735,11 +734,11 @@ describe('findMatchingStations', () => {
     expect(findMatchingStations(doc, 'A').map((m) => m.id)).toEqual(['B']);
     expect(gap(doc)).toBeCloseTo(0, 9);
 
-    // What dispatchMirrored does: the same relative step on both.
+    // What dispatchMirrored does: the same relative step on both. Before the
+    // pivot moved off cell (0,0) this left them 10.715 units apart — 0.77 of a
+    // 14-unit cell — from one single column of translation.
     const after = T.rotateStation(T.rotateStation(doc, 'A'), 'B');
-    // 0.77 of a 14-unit cell, from one column of translation.
-    expect(gap(after)).toBeCloseTo(10.715, 3);
-    // And the match survives its own drift — no self-signalling.
+    expect(gap(after)).toBeCloseTo(0, 9);
     expect(findMatchingStations(after, 'A').map((m) => m.id)).toEqual(['B']);
   });
 
