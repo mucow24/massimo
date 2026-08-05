@@ -241,11 +241,7 @@ export interface LabelCell {
   autoVAlign?: AutoVAlign;
 }
 
-// Which of a line's two split dot defaults this station's stops take —
-// `singletonDotStyle`/`singletonDotSize` or `multiDotStyle`/`multiDotSize`.
-// 'auto' counts the station's visible stops (the historical rule); the other
-// two are the user's own declaration and settle it outright. The UI form of
-// `Station.stopType`, where 'auto' is the absent field.
+// The UI form of `Station.stopType` below, where 'auto' is the absent field.
 export type StationStopType = 'auto' | 'singleton' | 'interchange';
 
 export interface Station {
@@ -307,13 +303,9 @@ export interface Station {
   // by `setStationEditorHeight`. Mirrors `TextLabel.editorHeight`.
   editorHeight?: number;
   // The station's own answer to "singleton or interchange?" — which of a line's
-  // two split dot defaults its stops take (see `stationIsSingleton`). Omitted ⇒
-  // 'auto', the historical rule: count the visibly-occupied stops. The two
-  // explicit values settle it outright, whatever the count. Written where the
-  // count is a poor proxy for the map's own reading of a station — on a dense
-  // network nearly every station is shared, which leaves the split saying
-  // nothing. Per-stop `dotStyle`/`dotSize` overrides still win over the default
-  // this picks, and a stop with a blank override still paints nothing.
+  // two split dot defaults its stops take. Omitted ⇒ 'auto', the visible-stop
+  // count. Resolution, and why a declaration outranks the count, live in
+  // `stationIsSingleton` (transforms.ts).
   stopType?: Exclude<StationStopType, 'auto'>;
   // Live link to a StyleDef of kind 'station' — covered fields are the name
   // typography (fontSize/weight/italic/leading/tracking), NOT identity

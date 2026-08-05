@@ -234,6 +234,22 @@ describe('<StationInspector /> — shape picker wiring', () => {
       expect(screen.getByRole('combobox', { name: 'Stop type' })).not.toHaveTextContent('(');
     });
 
+    it('stays live with no stops — declaring one before wiring up a line is allowed', async () => {
+      // Not an oversight: the declaration simply sits inert until a stop
+      // arrives to read it. Pinned so it can't be "tidied" into a disable.
+      const user = userEvent.setup();
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({ stations: [makeStation({ id: 'a', stops: [] })], lines: [] }),
+      });
+      useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+      render(<StationInspector id="a" />);
+
+      expect(screen.getByRole('combobox', { name: 'Stop type' })).toBeEnabled();
+      await chooseOption(user, 'Stop type', 'Interchange');
+      expect(useDoc.getState().stations.a.stopType).toBe('interchange');
+    });
+
     it('sits directly below Add transfer anchor, in that section', () => {
       useDoc.setState(oneStop());
       useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });

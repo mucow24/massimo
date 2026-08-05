@@ -44,23 +44,22 @@ import {
   effectiveStationStyleProps,
   resolveAutoAlign,
   resolveOffsetPerp,
-  stationIsSingleton,
+  stationIsSingletonByCount,
 } from '../../model/transforms';
 
-// The Stop type dropdown's options, in escalating specificity. The two explicit
-// names are the ones the line inspector's own split rows already use, so the
-// surfaces read as one idea.
+// The Stop type dropdown's options. The two explicit names are the ones the
+// line inspector's own split rows use, so the surfaces read as one idea.
 //
-// Auto carries the answer it currently gives — the count is the one thing this
-// control can't show you by looking, and it is exactly what a declaration is
-// being weighed against. Read with any declaration stripped off, so an override
-// still reports what reverting would buy. A station with no stops has no answer
-// to report and just says "Auto".
+// Auto carries the answer it currently gives, because the count is the one
+// thing this control can't show you by looking. It asks for the count
+// SPECIFICALLY (`stationIsSingletonByCount`), never `stationIsSingleton` — a
+// declared station must report what reverting would buy, not echo its own
+// declaration back. A station with no stops has no answer and just says "Auto".
 function stopTypeOptions(station: Station): { value: StationStopType; name: string }[] {
   const auto =
     station.stops.length === 0
       ? 'Auto'
-      : stationIsSingleton({ stops: station.stops })
+      : stationIsSingletonByCount(station.stops)
         ? 'Auto (Singleton)'
         : 'Auto (Interchange)';
   return [
@@ -335,13 +334,15 @@ export function StationInspector({ id }: { id: StationId }) {
             Add transfer anchor
           </button>
           {/* Which of each line's two split dot defaults this station's stops
-              take. Auto counts the visibly-occupied stops (the historical
-              rule); the other two are the map's own reading and settle it
-              outright — on a dense network almost every station is shared, so
-              the count alone stops meaning anything. Mirror-dispatched, like
-              dot type and size: Select Similar stands in for "stations of the
-              same general purpose", which is precisely what a stop type is.
-              Rotation-invariant, so the layoutOffset is nothing to apply. */}
+              take (`stationIsSingleton`). Mirror-dispatched, like dot type and
+              size: Select Similar stands in for "stations of the same general
+              purpose", which is precisely what a stop type is. It is
+              rotation-invariant, so there is no layoutOffset to apply.
+
+              Deliberately live on a station with NO stops: declaring one before
+              wiring it to a line is a real order of work, and the declaration
+              costs nothing until a stop arrives to read it. Auto drops its
+              parenthetical there, since a count over no stops answers nothing. */}
           <div className="field-row stop-type-row">
             <label htmlFor={`station-stop-type-${station.id}`}>Stop type</label>
             <Select.Root
