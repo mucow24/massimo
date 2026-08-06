@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { seedAndOpen, type Seed } from './fixtures';
 
 // One line so the inspector (with the color palette) is reachable by clicking
@@ -41,6 +41,16 @@ const libraryRow = (page: Page, name: string) =>
 const mapRow = (page: Page, name: string) =>
   page.locator('.palette-in-map .palette-row').filter({ hasText: name });
 
+// A row keeps two commands and stands the rest in its `…` panel, which portals
+// to the dialog — so the trigger is found in the ROW and the command it opens
+// is found on the page. That the panel is reachable at all is the e2e-only
+// half: it mounts inside a modal Radix dialog, whose focus trap jsdom can't
+// see, and a panel portalled to the wrong root would be unclickable here.
+const rowCommand = async (page: Page, row: Locator, name: string, command: string) => {
+  await row.getByRole('button', { name: `More actions for ${name}` }).click();
+  await page.getByRole('button', { name: command }).click();
+};
+
 test.describe('palette manager', () => {
   test('a loaded palette lands in the library AND the map, and both survive a reload', async ({
     page,
@@ -69,7 +79,7 @@ test.describe('palette manager', () => {
     await openManager(page);
     await loadFrrf(page);
 
-    await libraryRow(page, 'frrf').getByRole('button', { name: 'Delete frrf' }).click();
+    await rowCommand(page, libraryRow(page, 'frrf'), 'frrf', 'Delete frrf');
     await page.getByRole('button', { name: 'Confirm deleting frrf' }).click();
     await expect(libraryRow(page, 'frrf')).toHaveCount(0);
     await expect(mapRow(page, 'frrf')).toBeVisible();
@@ -133,7 +143,7 @@ test.describe('palette manager', () => {
     await page.reload();
     await page.waitForSelector('.canvas-host svg');
     await openManager(page);
-    await mapRow(page, 'inks').getByRole('button', { name: 'Edit inks in the map' }).click();
+    await rowCommand(page, mapRow(page, 'inks'), 'inks in the map', 'Edit inks in the map');
     await expect(page.getByRole('heading', { level: 3, name: 'inks' })).toBeVisible();
     await expect(page.getByText('weekend reds')).toBeVisible();
     await expect(page.getByText('Crimson')).toBeVisible();
@@ -171,7 +181,7 @@ test.describe('palette manager', () => {
     await seedAndOpen(page, twoStop);
     await openManager(page);
     await loadFrrf(page);
-    await mapRow(page, 'frrf').getByRole('button', { name: 'Edit frrf in the map' }).click();
+    await rowCommand(page, mapRow(page, 'frrf'), 'frrf in the map', 'Edit frrf in the map');
 
     const names = page.locator('.palette-color-name');
     await expect(names).toHaveText(['1', '2', '3', '4', '5']);
@@ -188,7 +198,7 @@ test.describe('palette manager', () => {
     await page.getByRole('button', { name: 'Back to palettes' }).click();
     await closeManager(page);
     await openManager(page);
-    await mapRow(page, 'frrf').getByRole('button', { name: 'Edit frrf in the map' }).click();
+    await rowCommand(page, mapRow(page, 'frrf'), 'frrf in the map', 'Edit frrf in the map');
     await expect(names).toHaveText(['2', '3', '1', '4', '5']);
   });
 
@@ -196,7 +206,7 @@ test.describe('palette manager', () => {
     await seedAndOpen(page, twoStop);
     await openManager(page);
     await loadFrrf(page);
-    await mapRow(page, 'frrf').getByRole('button', { name: 'Remove frrf from the map' }).click();
+    await rowCommand(page, mapRow(page, 'frrf'), 'frrf in the map', 'Remove frrf from the map');
     await page.getByRole('button', { name: 'Confirm removing frrf from the map' }).click();
     await expect(mapRow(page, 'frrf')).toHaveCount(0);
     await closeManager(page);

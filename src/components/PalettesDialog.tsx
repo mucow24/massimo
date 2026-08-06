@@ -8,6 +8,7 @@ import {
   ArrowRightIcon,
   CheckIcon,
   ChevronDownIcon,
+  CopyIcon,
   Cross2Icon,
   DownloadIcon,
   DragHandleDots2Icon,
@@ -20,6 +21,7 @@ import { useCustomPalettes } from '../state/customPalettes';
 import { parseCustomPalette, serializeCustomPalette } from '../model/customPalette';
 import {
   BUILTIN_PALETTE_NAMES,
+  copyPalette,
   customLineColors,
   freshPaletteName,
   libraryPalettes,
@@ -31,7 +33,7 @@ import { normalizeHex } from '../util/color';
 import { redo, undo } from '../state/history';
 import { pointerLost } from './canvas/dragGesture';
 import { downloadBlob, sanitizeBasename } from '../export/exportCanvas';
-import { IconButton, useSpeedBump } from './dialogRow';
+import { IconButton, RowCommands, useSpeedBump } from './dialogRow';
 import { rowShiftStyle, useRowDragReorder } from './useRowDragReorder';
 import { PaletteEditor, type PaletteSource } from './PaletteEditor';
 
@@ -65,9 +67,6 @@ function Strip({ palette }: { palette: Palette }) {
     </div>
   );
 }
-
-/** A slot this row has no command for — held open so the columns stay aligned. */
-const Blank = () => <span className="palette-action-blank" aria-hidden="true" />;
 
 /** A star as it appears in the map library: state first, command on approach. */
 function StarToggle({
@@ -104,7 +103,12 @@ function StarToggle({
  * view, where renaming lives too.
  *
  * The two columns are independent lists, not a master and its detail — nothing
- * here is "selected", so every command lives in the row it acts on.
+ * here is "selected", so every command lives in the row it acts on. A row
+ * shows two of them: the star or the transfer arrow, and the map's drag
+ * handle. Those stay out because they are not really commands — two carry
+ * STATE (already in the map; built-in, so unsaveable) and one is a grab
+ * target. Everything else stands in the row's `…` toolbar, which is what
+ * keeps a column of rows from reading as a wall of identical glyphs.
  *
  * Adding a palette to the map COPIES it, which is what makes the two columns
  * genuinely separate: deleting from the library never disturbs a map, and
@@ -139,7 +143,7 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
   const setError = (text: string | null) =>
     setMessage(text === null ? null : { text, tone: 'error' });
   const setNotice = (text: string) => setMessage({ text, tone: 'notice' });
-  const { speedBump } = useSpeedBump();
+  const { speedBump, disarm } = useSpeedBump();
   // Which palette the editor view is open on, or null for the two columns.
   // `fresh` marks a just-created palette, whose title opens already editing.
   const [editing, setEditing] = useState<{
@@ -265,6 +269,26 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
 
   const onDeleteFromLibrary = (name: string) => {
     removeFromLibrary(name);
+  };
+
+  /**
+   * Duplicate a palette into the column it came from, as "<name> copy". The
+   * copy stays on its own side because the arrows are what cross the divider —
+   * a Make copy that also landed one over there would be doing two things.
+   *
+   * Copying is what a BUILT-IN has instead of an edit: the fork is an ordinary
+   * library palette, renameable and deletable like any other. So the library's
+   * taken-names must include the built-ins, or a fork could be minted onto a
+   * name the library is unable to store.
+   */
+  const onCopyInLibrary = (p: Palette) => {
+    const taken = new Set<string>([...BUILTIN_PALETTE_NAMES, ...custom.map((x) => x.name)]);
+    addToLibrary({ ...copyPalette(p), name: freshPaletteName(taken, `${p.name} copy`) });
+  };
+
+  const onCopyInMap = (p: Palette) => {
+    const taken = new Set(mapPalettes.map((x) => x.name));
+    addPaletteToMap({ ...copyPalette(p), name: freshPaletteName(taken, `${p.name} copy`) });
   };
 
   /** Open the editor view on one palette, leaving any stale message behind. */
@@ -503,38 +527,56 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                             <Strip palette={p} />
                           </div>
                           <div className="dialog-row-actions">
-                            <IconButton
-                              label={`Export ${p.name}`}
-                              title={`Export ${p.name} as a palette file`}
-                              onClick={() => onExport(p)}
-                            >
-                              <DownloadIcon />
-                            </IconButton>
-                            {/* Built-ins are the one fixed thing here: edit a
-                              copy in the map instead. */}
-                            {p.builtin ? (
-                              <Blank />
-                            ) : (
-                              <IconButton
-                                label={`Edit ${p.name}`}
-                                title={`Edit ${p.name} — rename it, recolor it, reorder it`}
-                                onClick={() => openEditor('library', p.name)}
-                              >
-                                <Pencil1Icon />
-                              </IconButton>
-                            )}
-                            {p.builtin ? (
-                              <Blank />
-                            ) : (
-                              speedBump(
-                                `lib:${p.name}`,
-                                `Delete ${p.name}`,
-                                `Confirm deleting ${p.name}`,
-                                'Will delete this palette from your library — maps keep their copies',
-                                <Cross2Icon />,
-                                () => onDeleteFromLibrary(p.name),
-                              )
-                            )}
+                            <RowCommands label={`More actions for ${p.name}`} onClose={disarm}>
+                              {(close) => (
+                                <>
+                                  <IconButton
+                                    label={`Export ${p.name}`}
+                                    title={`Export ${p.name} as a palette file`}
+                                    onClick={() => {
+                                      onExport(p);
+                                      close();
+                                    }}
+                                  >
+                                    <DownloadIcon />
+                                  </IconButton>
+                                  {/* Built-ins are the one fixed thing here —
+                                    so Make copy is how you get an editable
+                                    one, without going by way of a map. */}
+                                  {!p.builtin && (
+                                    <IconButton
+                                      label={`Edit ${p.name}`}
+                                      title={`Edit ${p.name} — rename it, recolor it, reorder it`}
+                                      onClick={() => openEditor('library', p.name)}
+                                    >
+                                      <Pencil1Icon />
+                                    </IconButton>
+                                  )}
+                                  <IconButton
+                                    label={`Make a copy of ${p.name}`}
+                                    title={`Copy ${p.name} into your library as “${p.name} copy”`}
+                                    onClick={() => {
+                                      onCopyInLibrary(p);
+                                      close();
+                                    }}
+                                  >
+                                    <CopyIcon />
+                                  </IconButton>
+                                  {!p.builtin &&
+                                    speedBump(
+                                      `lib:${p.name}`,
+                                      `Delete ${p.name}`,
+                                      `Confirm deleting ${p.name}`,
+                                      'Will delete this palette from your library — maps keep their copies',
+                                      <Cross2Icon />,
+                                      () => {
+                                        onDeleteFromLibrary(p.name);
+                                        close();
+                                      },
+                                    )}
+                                </>
+                              )}
+                            </RowCommands>
                             {/* The arrow sits against the map column it points
                               into. Adding over a name the map already uses
                               replaces that palette, so it asks first. */}
@@ -629,31 +671,57 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                             <Strip palette={p} />
                           </div>
                           <div className="dialog-row-actions">
-                            {/* The map's copy is the one that may have been
-                              renamed or replaced since, so it exports on its
-                              own terms rather than through the library. */}
-                            <IconButton
-                              label={`Export ${p.name} from the map`}
-                              title={`Export this map’s ${p.name} as a palette file`}
-                              onClick={() => onExport(p)}
+                            <RowCommands
+                              label={`More actions for ${p.name} in the map`}
+                              onClose={disarm}
                             >
-                              <DownloadIcon />
-                            </IconButton>
-                            <IconButton
-                              label={`Edit ${p.name} in the map`}
-                              title={`Edit this map’s ${p.name} — rename it, recolor it, reorder it`}
-                              onClick={() => openEditor('map', p.name)}
-                            >
-                              <Pencil1Icon />
-                            </IconButton>
-                            {speedBump(
-                              `rm:${p.name}`,
-                              `Remove ${p.name} from the map`,
-                              `Confirm removing ${p.name} from the map`,
-                              'Will take this palette out of this map',
-                              <Cross2Icon />,
-                              () => removePaletteFromMap(p.name),
-                            )}
+                              {(close) => (
+                                <>
+                                  {/* The map's copy is the one that may have
+                                    been renamed or replaced since, so it
+                                    exports — and copies — on its own terms
+                                    rather than through the library. */}
+                                  <IconButton
+                                    label={`Export ${p.name} from the map`}
+                                    title={`Export this map’s ${p.name} as a palette file`}
+                                    onClick={() => {
+                                      onExport(p);
+                                      close();
+                                    }}
+                                  >
+                                    <DownloadIcon />
+                                  </IconButton>
+                                  <IconButton
+                                    label={`Edit ${p.name} in the map`}
+                                    title={`Edit this map’s ${p.name} — rename it, recolor it, reorder it`}
+                                    onClick={() => openEditor('map', p.name)}
+                                  >
+                                    <Pencil1Icon />
+                                  </IconButton>
+                                  <IconButton
+                                    label={`Make a copy of ${p.name} in the map`}
+                                    title={`Copy ${p.name} into this map as “${p.name} copy”`}
+                                    onClick={() => {
+                                      onCopyInMap(p);
+                                      close();
+                                    }}
+                                  >
+                                    <CopyIcon />
+                                  </IconButton>
+                                  {speedBump(
+                                    `rm:${p.name}`,
+                                    `Remove ${p.name} from the map`,
+                                    `Confirm removing ${p.name} from the map`,
+                                    'Will take this palette out of this map',
+                                    <Cross2Icon />,
+                                    () => {
+                                      removePaletteFromMap(p.name);
+                                      close();
+                                    },
+                                  )}
+                                </>
+                              )}
+                            </RowCommands>
                             <button
                               type="button"
                               className="palette-drag-handle"
