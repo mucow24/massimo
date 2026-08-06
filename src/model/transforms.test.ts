@@ -256,6 +256,151 @@ describe('rotateStation', () => {
   });
 });
 
+describe('stationPivotWorld / moveStationPivotTo', () => {
+  it('names the world position of the pivot cell — the same point rotateStation holds', () => {
+    // Single stop on col 2: the pivot cell IS that stop, so the pivot world
+    // point is exactly where the dot paints.
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', x: 40, y: -10, rotation: 3, stops: [makeStop('L1', { col: 2 })] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] })],
+    });
+    const st = doc.stations.s1;
+    const p = T.stationPivotWorld(st, doc.lines, doc.lineCircles);
+    const dot = stopPosWorld(st.stops[0], st, doc.lineCircles);
+    expect(p.x).toBeCloseTo(dot.x, 9);
+    expect(p.y).toBeCloseTo(dot.y, 9);
+  });
+
+  it('a ring-bound station pivots on its PIN, so that is what the coordinate names', () => {
+    // rotateStation keeps the pin pivot on a ring (the cell frame is the
+    // ring's, so a compensating x/y move would change the very frame it was
+    // measured in). The coordinate must name the same point, or the readout
+    // walks around the layout while the station never moves.
+    const base = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          x: 100,
+          y: 0,
+          rotation: 1,
+          circleId: 'c1',
+          stops: [makeStop('L1', { col: 2 })],
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] })],
+    });
+    const doc = { ...base, lineCircles: { c1: { id: 'c1', x: 0, y: 0, radius: 100 } } };
+    const p = T.stationPivotWorld(doc.stations.s1, doc.lines, doc.lineCircles);
+    expect(p).toEqual({ x: 100, y: 0 });
+  });
+
+  it('ring-bound: the coordinate is invariant across all 8 rotate steps', () => {
+    const base = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          x: 100,
+          y: 0,
+          circleId: 'c1',
+          stops: [makeStop('L1', { col: 2 })],
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] })],
+    });
+    let doc: MapDoc = { ...base, lineCircles: { c1: { id: 'c1', x: 0, y: 0, radius: 100 } } };
+    const before = T.stationPivotWorld(doc.stations.s1, doc.lines, doc.lineCircles);
+    for (let i = 0; i < 8; i++) {
+      doc = T.rotateStation(doc, 's1');
+      const p = T.stationPivotWorld(doc.stations.s1, doc.lines, doc.lineCircles);
+      expect(p, `step ${i + 1}`).toEqual(before);
+    }
+  });
+
+  it('is held fixed by rotateStation', () => {
+    let doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          stops: [makeStop('L1', { col: 1 }), makeStop('L2', { row: 2, col: 2 })],
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] }), makeLine({ id: 'L2', stations: ['s1'] })],
+    });
+    const before = T.stationPivotWorld(doc.stations.s1, doc.lines, doc.lineCircles);
+    doc = T.rotateStation(doc, 's1');
+    const after = T.stationPivotWorld(doc.stations.s1, doc.lines, doc.lineCircles);
+    expect(after.x).toBeCloseTo(before.x, 9);
+    expect(after.y).toBeCloseTo(before.y, 9);
+  });
+
+  it('falls back to the label cell when no stop is live', () => {
+    // The label is the only painted thing, so the coordinate names it.
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1', x: 7, y: 9 })],
+    });
+    const st = doc.stations.s1;
+    const p = T.stationPivotWorld(st, doc.lines, doc.lineCircles);
+    const lab = localToWorld(stopCenterAt(st.label.row, st.label.col), st);
+    expect(p.x).toBeCloseTo(lab.x, 9);
+    expect(p.y).toBeCloseTo(lab.y, 9);
+  });
+
+  it('moveStationPivotTo lands the pivot at the requested point, cells untouched', () => {
+    let doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          rotation: 5,
+          stops: [makeStop('L1', { col: 1 }), makeStop('L2', { col: 2 })],
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] }), makeLine({ id: 'L2', stations: ['s1'] })],
+    });
+    doc = T.moveStationPivotTo(doc, 's1', 123, -45);
+    const p = T.stationPivotWorld(doc.stations.s1, doc.lines, doc.lineCircles);
+    expect(p.x).toBeCloseTo(123, 9);
+    expect(p.y).toBeCloseTo(-45, 9);
+    expect(doc.stations.s1.stops.map((c) => c.col)).toEqual([1, 2]);
+  });
+
+  it('no-op (same reference) when the pivot is already there', () => {
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1', stops: [makeStop('L1', { col: 2 })] })],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] })],
+    });
+    const p = T.stationPivotWorld(doc.stations.s1, doc.lines, doc.lineCircles);
+    expect(T.moveStationPivotTo(doc, 's1', p.x, p.y)).toBe(doc);
+    expect(T.moveStationPivotTo(doc, 'nope', 1, 2)).toBe(doc);
+  });
+
+  it('moveStationPivotTo on a ring IS moveStation — same reseat, same landing', () => {
+    // Pivot = pin there, so the delta math collapses to the plain absolute
+    // move. Anything else converges somewhere the user didn't ask for: the
+    // old through-the-ring-frame reading turned the request into an ANGLE
+    // shift, landing (0, 500) at (-7.16, 127.8) instead of the rim point
+    // nearest the request.
+    const base = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          x: 100,
+          y: 0,
+          circleId: 'c1',
+          stops: [makeStop('L1', { col: 2 })],
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] })],
+    });
+    const doc: MapDoc = { ...base, lineCircles: { c1: { id: 'c1', x: 0, y: 0, radius: 100 } } };
+    expect(T.moveStationPivotTo(doc, 's1', 0, 500)).toEqual(T.moveStation(doc, 's1', 0, 500));
+    const st = T.moveStationPivotTo(doc, 's1', 0, 500).stations.s1;
+    expect(st.x).toBeCloseTo(0, 6);
+    expect(st.y).toBeCloseTo(100, 6);
+  });
+});
+
 describe('rotateItemsAround', () => {
   const SQRT2_2 = Math.SQRT2 / 2;
   const st = (id: string): T.ItemRef => ({ type: 'station', id });
