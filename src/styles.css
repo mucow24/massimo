@@ -2544,6 +2544,7 @@ button.dialog-sort {
 .dialog-row-actions button,
 .palette-row > .icon-btn,
 .palette-editor-row .icon-btn,
+.row-commands .icon-btn,
 .dialog-colhead-btn {
   height: 24px;
   padding: 0 8px;
@@ -2561,6 +2562,7 @@ button.dialog-sort {
 .dialog-row-actions button:hover:not(:disabled),
 .palette-row > .icon-btn:hover:not(:disabled),
 .palette-editor-row .icon-btn:hover:not(:disabled),
+.row-commands .icon-btn:hover:not(:disabled),
 .dialog-colhead-btn:hover {
   background: var(--control-hover);
   border-color: var(--border-strong);
@@ -2573,13 +2575,15 @@ button.dialog-sort {
 }
 .dialog-row-actions .danger,
 .palette-row > .icon-btn.danger,
-.palette-editor-row .icon-btn.danger {
+.palette-editor-row .icon-btn.danger,
+.row-commands .icon-btn.danger {
   color: var(--danger);
   border-color: var(--danger);
 }
 .dialog-row-actions .danger:hover,
 .palette-row > .icon-btn.danger:hover,
-.palette-editor-row .icon-btn.danger:hover {
+.palette-editor-row .icon-btn.danger:hover,
+.row-commands .icon-btn.danger:hover {
   background: color-mix(in srgb, var(--danger) 12%, transparent);
 }
 .map-thumb {
@@ -2719,10 +2723,11 @@ button.dialog-sort {
   box-shadow: var(--shadow-pop);
 }
 /* The commands are a FIXED grid of icon slots, not a row of text buttons that
-   grows and shrinks with what a palette happens to support. A built-in has no
-   rename and no delete; its slots stay open (.palette-action-blank) so every
-   strip in the column ends at the same edge and the icons read down in
-   columns. Text buttons were what made the list ragged.
+   grows and shrinks with what a palette happens to support. Both slots are
+   always spent — the `…` toolbar, then the transfer arrow or the drag handle —
+   so every strip in the column ends at the same edge and the icons read down
+   in columns with nothing held open behind them. Text buttons were what made
+   the list ragged; per-palette slots were what made it uneven.
 
    Each row also carries ONE command outside that grid, ahead of the name: the
    library's star, and the map's save-back arrow. The two transfer arrows are
@@ -2730,7 +2735,7 @@ button.dialog-sort {
    points into, so they face each other across the divider. */
 .palette-row .dialog-row-actions {
   display: grid;
-  grid-template-columns: repeat(4, 24px);
+  grid-template-columns: repeat(2, 24px);
   gap: 3px;
   flex: none;
 }
@@ -2740,7 +2745,8 @@ button.dialog-sort {
   flex: none;
 }
 .palette-row .icon-btn,
-.palette-editor-row .icon-btn {
+.palette-editor-row .icon-btn,
+.row-commands .icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2752,14 +2758,28 @@ button.dialog-sort {
   width: 24px;
   justify-content: center;
 }
-.palette-action-blank {
-  display: block;
+/* The `…` panel: the row's action grid CONTINUED, not a menu — the same square
+   buttons at the same 3px pitch, so a command looks the same standing here as
+   it did standing in the row. Only the tray around them is new. */
+.row-commands {
+  display: flex;
+  gap: 3px;
+  padding: 4px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  box-shadow: var(--shadow-pop);
+  z-index: 10;
+}
+.row-commands .icon-btn {
+  flex: none;
 }
 /* Armed by a first click, awaiting the second: the same glyph, but washed red
    so it cannot be mistaken for the idle command it was a moment ago. */
 .dialog-row-actions .danger.armed,
 .palette-row > .danger.armed,
-.palette-editor-row .danger.armed {
+.palette-editor-row .danger.armed,
+.row-commands .danger.armed {
   background: color-mix(in srgb, var(--danger) 18%, transparent);
 }
 
