@@ -3242,7 +3242,10 @@ same three additions.
   station's SHORT name (`stationNameListText`, falling back to "Station"). Layout: a **button bar**
   (**Edit layout** button, then the **Select Similar** mirror-matching toggle, then a
   right-justified **WP** toggle; lock lives in the footer), then the Name field on its own row,
-  labeled X/Y + a mirrored ±45° rotate icon pair, a **Stop dots** section (a
+  labeled X/Y + a mirrored ±45° rotate icon pair (the X/Y fields read and write the PIVOT's world
+  position — `stationPivotWorld` / `moveStationPivotTo`, the same point `rotateStation` turns
+  about, so the coordinates always name a painted cell; the pin stays the storage frame
+  underneath and surfaces nowhere), a **Stop dots** section (a
   Line/Type/Xfer/End/Size/Direction column header over the per-stop rows —
   [inspector/StopRows.tsx](src/components/inspector/StopRows.tsx): service badge + shape picker +
   **transfer** picker + **line-end** picker + dot size + a world-true orientation cycle button per

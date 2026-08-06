@@ -1291,6 +1291,40 @@ export function layoutPivotCell(st: Station, lines: MapDoc['lines']): { row: num
   return { row: axis((c) => c.row), col: axis((c) => c.col) };
 }
 
+/**
+ * The pivot cell's WORLD position — the one point that names a station to the
+ * user. It is both what `rotateStation` turns about and what the inspector's
+ * X/Y fields read and write, so "the coordinates" and "the point it spins on"
+ * can never disagree. The pin (x, y) stays the storage frame underneath; it
+ * paints nothing and no longer surfaces anywhere.
+ *
+ * Resolved through the station's real frame (the ring's for a bound station),
+ * so the point is where the pivot cell actually paints.
+ */
+export function stationPivotWorld(
+  st: Station,
+  lines: MapDoc['lines'],
+  lineCircles: MapDoc['lineCircles'],
+): Vec2 {
+  const pivot = layoutPivotCell(st, lines);
+  return stationCellToWorld(stopCenterAt(pivot.row, pivot.col), st, stationCircle(st, lineCircles));
+}
+
+/**
+ * Move the station so its pivot (see `stationPivotWorld`) lands at (x, y) —
+ * the write half of the inspector's X/Y fields. The pin absorbs the delta;
+ * the layout cells never change. On a ring-bound station `moveStation`
+ * re-seats the pin on the rim, so the pivot lands at the requested point's
+ * angle rather than the point itself — same best-effort the raw fields had.
+ */
+export function moveStationPivotTo(doc: MapDoc, id: StationId, x: number, y: number): MapDoc {
+  const st = doc.stations[id];
+  if (!st) return doc;
+  const cur = stationPivotWorld(st, doc.lines, doc.lineCircles);
+  if (cur.x === x && cur.y === y) return doc;
+  return moveStation(doc, id, st.x + (x - cur.x), st.y + (y - cur.y));
+}
+
 // One 45° step of the station's rotation — clockwise by default, counter-
 // clockwise with dir: -1 (wraps 0 → 7). The layout holds still and the PIN
 // moves to absorb the turn (see `layoutPivotCell`); the cells never change.

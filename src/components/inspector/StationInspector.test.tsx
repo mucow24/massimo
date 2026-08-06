@@ -814,18 +814,21 @@ describe('<StationInspector /> — edit paths that reach the document (E8)', () 
   });
 
   it('the X and Y inputs are labeled and each move the station on their own axis', () => {
+    // The fields speak the PIVOT: this station has no stops, so that is the
+    // label cell, one cell (14) left of the pin. Typing 55 lands the label
+    // at 55, i.e. the pin at 69; the y axis rides along untouched.
     seedStation();
     render(<StationInspector id="a" />);
     const xIn = screen.getByRole('spinbutton', { name: 'X' }) as HTMLInputElement;
     const yIn = screen.getByRole('spinbutton', { name: 'Y' }) as HTMLInputElement;
-    // X input writes x, leaves y.
     fireEvent.change(xIn, { target: { value: '55' } });
-    expect(useDoc.getState().stations.a.x).toBe(55);
+    expect(useDoc.getState().stations.a.x).toBe(69);
     expect(useDoc.getState().stations.a.y).toBe(20);
-    // Y input writes y, leaves x.
+    // Y input writes y, leaves x. The label sits on the pin's row, so here
+    // the pivot and the pin agree.
     fireEvent.change(yIn, { target: { value: '77' } });
     expect(useDoc.getState().stations.a.y).toBe(77);
-    expect(useDoc.getState().stations.a.x).toBe(55);
+    expect(useDoc.getState().stations.a.x).toBe(69);
   });
 
   it('ignores an emptied X/Y input mid-edit instead of teleporting the station to 0', () => {
@@ -1414,6 +1417,49 @@ describe('<StationInspector /> — Stop dots section', () => {
     expect(screen.queryByText('Direction')).toBeNull();
     // The empty-state hint still shows.
     expect(screen.getByText(/No stops yet/i)).toBeInTheDocument();
+  });
+});
+
+describe('<StationInspector /> — X/Y fields speak the pivot, not the pin', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useStationEditorPrefs.setState({ styleExpanded: false });
+    useDoc.setState({ ...DEFAULT_DOC });
+    useSelection.setState(SELECTION_BLANK);
+  });
+
+  // Pin at (40, -10), single stop parked two cells over (col 2, pitch 14):
+  // the picture is at x = 40 + 28 = 68, and 68 is what the field must say.
+  const seedOffsetLayout = () => {
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [makeStation({ id: 'a', x: 40, y: -10, stops: [makeStop('L1', { col: 2 })] })],
+        lines: [makeLine({ id: 'L1', stations: ['a'] })],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+  };
+
+  it('displays the pivot world position for a layout parked off the pin', () => {
+    seedOffsetLayout();
+    render(<StationInspector id="a" />);
+    expect((screen.getByLabelText('X') as HTMLInputElement).value).toBe('68');
+    expect((screen.getByLabelText('Y') as HTMLInputElement).value).toBe('-10');
+  });
+
+  it('typing X moves the station so the pivot lands there, cells untouched', () => {
+    seedOffsetLayout();
+    render(<StationInspector id="a" />);
+    const x = screen.getByLabelText('X') as HTMLInputElement;
+    fireEvent.focus(x);
+    fireEvent.change(x, { target: { value: '100' } });
+    fireEvent.blur(x);
+    const st = useDoc.getState().stations.a;
+    // Pivot at 100 ⇒ pin at 100 − 28; y untouched; the layout cells intact.
+    expect(st.x).toBeCloseTo(72, 9);
+    expect(st.y).toBeCloseTo(-10, 9);
+    expect(st.stops.map((c) => c.col)).toEqual([2]);
   });
 });
 
