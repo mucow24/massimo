@@ -634,9 +634,12 @@ describe('findMatchingStations', () => {
   });
 
   it('negative-zero float drift does not fragment the key', () => {
-    // toFixed(4) renders -1e-16 as "-0.0000" but exact zero as "0.0000" —
-    // the quantizer must normalize the sign so drift from diagonal (±√2/2)
-    // arithmetic can't split visually identical layouts.
+    // Each cell is keyed as `v − min(set)` against its own layout's per-axis
+    // corner, which is translation-equivariant and never negative — so a stop
+    // drifted to -1e-16 by diagonal (±√2/2) arithmetic and an exact-0 stop
+    // land on the same "0.0000" key with no sign normalization in the
+    // quantizer. This pins that: without the anchor, toFixed(4) would render
+    // the two as "-0.0000" vs "0.0000" and split visually identical layouts.
     const doc = makeDoc({
       stations: [
         makeStation({ id: 's1', stops: [makeStop('L1', { row: -1e-16 })] }),
