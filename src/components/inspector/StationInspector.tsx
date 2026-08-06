@@ -45,6 +45,7 @@ import {
   resolveAutoAlign,
   resolveOffsetPerp,
   stationIsSingletonByCount,
+  stationPivotWorld,
 } from '../../model/transforms';
 
 // The Stop type dropdown's options. The two explicit names are the ones the
@@ -76,11 +77,13 @@ export function StationInspector({ id }: { id: StationId }) {
   // compose against useDoc.getState(), the state the write applies to.
   const station = useRenderDoc((s) => s.stations[id]);
   const stationsAll = useRenderDoc((s) => s.stations);
+  const linesRender = useRenderDoc((s) => s.lines);
+  const lineCirclesRender = useRenderDoc((s) => s.lineCircles);
   const linesAll = useDoc((s) => s.lines);
   const renameStation = useDoc((s) => s.renameStation);
   const addStationAnchor = useDoc((s) => s.addStationAnchor);
   const rotateStation = useDoc((s) => s.rotateStation);
-  const moveStation = useDoc((s) => s.moveStation);
+  const moveStationPivotTo = useDoc((s) => s.moveStationPivotTo);
   const setLabelOffset = useDoc((s) => s.setLabelOffset);
   const setLabelOffsetPerp = useDoc((s) => s.setLabelOffsetPerp);
   const setLabelAlign = useDoc((s) => s.setLabelAlign);
@@ -105,17 +108,28 @@ export function StationInspector({ id }: { id: StationId }) {
     station?.editorHeight,
     (h) => setStationEditorHeight(id, h),
   );
+  // The X/Y fields read and write the PIVOT's world position — the point
+  // `rotateStation` turns about — not the raw pin, which drifts off the
+  // picture as a layout evolves and paints nothing.
+  const pivot = station
+    ? stationPivotWorld(station, linesRender, lineCirclesRender)
+    : { x: 0, y: 0 };
+  const livePivot = () => {
+    const s = useDoc.getState();
+    const st = s.stations[id];
+    return st ? stationPivotWorld(st, s.lines, s.lineCircles) : { x: 0, y: 0 };
+  };
   // useNumericField (not bare inputs): its text mirror ignores an emptied
   // field mid-edit — Number('') === 0 would teleport the station to the axis.
   const xField = useNumericField(
-    Math.round(station?.x ?? 0),
-    (n) => moveStation(id, n, useDoc.getState().stations[id].y),
-    () => Math.round(useDoc.getState().stations[id]?.x ?? 0),
+    Math.round(pivot.x),
+    (n) => moveStationPivotTo(id, n, livePivot().y),
+    () => Math.round(livePivot().x),
   );
   const yField = useNumericField(
-    Math.round(station?.y ?? 0),
-    (n) => moveStation(id, useDoc.getState().stations[id].x, n),
-    () => Math.round(useDoc.getState().stations[id]?.y ?? 0),
+    Math.round(pivot.y),
+    (n) => moveStationPivotTo(id, livePivot().x, n),
+    () => Math.round(livePivot().y),
   );
   const stopRowsRef = useRef<HTMLDivElement | null>(null);
 

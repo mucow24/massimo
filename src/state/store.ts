@@ -680,6 +680,9 @@ interface DocState extends MapDoc {
   addStation: (x: number, y: number, name?: string) => StationId;
   renameStation: (id: StationId, name: string) => void;
   moveStation: (id: StationId, x: number, y: number) => void;
+  // Absolute-position edit through the pivot (see `stationPivotWorld`) — what
+  // the inspector's X/Y fields write.
+  moveStationPivotTo: (id: StationId, x: number, y: number) => void;
   setDotStyle: (stationId: StationId, lineId: LineId, styleId: string) => void;
   setDotSize: (stationId: StationId, lineId: LineId, size: number) => void;
   setStationWaypoint: (stationId: StationId, isWaypoint: boolean) => void;
@@ -925,6 +928,8 @@ export const useDoc = create<DocState>()(
         },
         renameStation: (id, name) => set((s) => T.renameStation(s, id, name)),
         moveStation: (id, x, y) => set(withRegionReconcile((s) => T.moveStation(s, id, x, y))),
+        moveStationPivotTo: (id, x, y) =>
+          set(withRegionReconcile((s) => T.moveStationPivotTo(s, id, x, y))),
         setDotStyle: (stationId, lineId, styleId) =>
           set((s) => T.setDotStyle(s, stationId, lineId, styleId)),
         setDotSize: (stationId, lineId, size) =>
