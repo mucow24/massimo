@@ -29,6 +29,25 @@ export interface Palette {
   description?: string;
 }
 
+/**
+ * Do two palettes carry the same CONTENT — swatches and description, but NOT
+ * name? Used to tell whether the map's copy still matches the library's (a
+ * changed copy is "modified"). `night` compares strictly: it is only ever
+ * stored when it differs from `color` (the collapse invariant), so canonical
+ * forms are unique and `===` is exact. Name is compared by callers that care;
+ * keeping it out here is what lets a rename stay "same content".
+ */
+export function paletteContentEqual(a: Palette, b: Palette): boolean {
+  if (a.description !== b.description) return false;
+  if (a.swatches.length !== b.swatches.length) return false;
+  return a.swatches.every(
+    (s, i) =>
+      s.name === b.swatches[i].name &&
+      s.color === b.swatches[i].color &&
+      s.night === b.swatches[i].night,
+  );
+}
+
 export const PALETTES: readonly Palette[] = [
   // ---- Asia ----
   {

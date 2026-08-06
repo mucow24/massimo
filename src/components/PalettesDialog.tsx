@@ -25,6 +25,7 @@ import {
   customLineColors,
   freshPaletteName,
   libraryPalettes,
+  paletteContentEqual,
   PALETTES,
   type Palette,
   type PaletteSort,
@@ -46,16 +47,6 @@ const SORT_LABELS: { value: PaletteSort; label: string }[] = [
 ];
 
 const isPaletteSort = (v: string): v is PaletteSort => v === 'name' || v === 'starred';
-
-const samePaletteContent = (a: Palette, b: Palette): boolean =>
-  a.description === b.description &&
-  a.swatches.length === b.swatches.length &&
-  a.swatches.every(
-    (s, i) =>
-      s.name === b.swatches[i].name &&
-      s.color === b.swatches[i].color &&
-      s.night === b.swatches[i].night,
-  );
 
 /** A palette's colors as a strip — how you recognise one without reading it. */
 function Strip({ palette }: { palette: Palette }) {
@@ -232,7 +223,7 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
     // the name arrives with the file, and it lands in BOTH destinations. So it
     // reports afterwards, naming every palette it displaced.
     const held = inMap.get(palette.name);
-    const replacedMap = held !== undefined && !samePaletteContent(held, palette);
+    const replacedMap = held !== undefined && !paletteContentEqual(held, palette);
     const replacedLibrary = inLibrary.has(palette.name);
     if (!addToLibrary(palette)) {
       setError(`“${palette.name}” is a built-in palette’s name. Rename it in the file and retry.`);
@@ -526,7 +517,7 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                     )}
                     {rows.map((p) => {
                       const held = inMap.get(p.name);
-                      const identical = held !== undefined && samePaletteContent(held, p);
+                      const identical = held !== undefined && paletteContentEqual(held, p);
                       return (
                         <div key={p.name} className="dialog-row palette-row">
                           <StarToggle
@@ -640,8 +631,8 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                       // the library holds something else under the name.
                       const builtin = PALETTES.find((b) => b.name === p.name);
                       const alreadyThere =
-                        (library !== undefined && samePaletteContent(library, p)) ||
-                        (builtin !== undefined && samePaletteContent(builtin, p));
+                        (library !== undefined && paletteContentEqual(library, p)) ||
+                        (builtin !== undefined && paletteContentEqual(builtin, p));
                       const saveKey = `map:${p.name}`;
                       return (
                         <div

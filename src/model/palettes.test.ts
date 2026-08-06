@@ -8,6 +8,7 @@ import {
   customLineColors,
   freshPaletteName,
   libraryPalettes,
+  paletteContentEqual,
   type Palette,
 } from './palettes';
 
@@ -55,6 +56,39 @@ describe('PALETTES catalog', () => {
       expect(BUILTIN_PALETTE_NAMES.has(name)).toBe(true);
     }
     expect(Object.keys(LEGACY_BUILTIN_IDS)).toHaveLength(PALETTES.length);
+  });
+});
+
+describe('paletteContentEqual', () => {
+  const base: Palette = {
+    name: 'a',
+    description: 'desc',
+    swatches: [
+      { name: '1', color: '#c1272d' },
+      { name: '2', color: '#0061a8', night: '#003a66' },
+    ],
+  };
+
+  it('ignores the name — content is swatches + description only', () => {
+    expect(paletteContentEqual(base, { ...base, name: 'renamed' })).toBe(true);
+  });
+
+  it('a differing description breaks equality', () => {
+    expect(paletteContentEqual(base, { ...base, description: 'other' })).toBe(false);
+    // absent vs empty is a real difference (empty collapses away on edit)
+    expect(paletteContentEqual(base, { ...base, description: undefined })).toBe(false);
+  });
+
+  it('compares night strictly — a stored night ≠ its absence', () => {
+    const noNight: Palette = {
+      ...base,
+      swatches: [base.swatches[0], { name: '2', color: '#0061a8' }],
+    };
+    expect(paletteContentEqual(base, noNight)).toBe(false);
+  });
+
+  it('a differing swatch count breaks equality', () => {
+    expect(paletteContentEqual(base, { ...base, swatches: [base.swatches[0]] })).toBe(false);
   });
 });
 

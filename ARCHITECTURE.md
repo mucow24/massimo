@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `5173f7b` (2026-08-04, #445) — verified against the live source.** This
+**Up to date as of commit `91ef9b0` (2026-08-05, #455) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -210,6 +210,8 @@ src/
     labelEditorPrefs.ts         # useLabelEditorPrefs: text-label editor UI prefs (wrapText)
     lineEditorPrefs.ts          # useLineEditorPrefs: line-popover style-detail collapsed?
     stationEditorPrefs.ts       # useStationEditorPrefs: station-popover typography detail
+    lineListPrefs.ts            # useLineListPrefs: lines-list sort col + group-by-style + which
+                                #   style groups are collapsed — the ONE *Prefs store NOT persisted
     stationNames.ts             # random station-name word lists
     funMode.ts                  # useFunMode: easter-egg phase off|live|exiting + the drop origin
 
@@ -217,6 +219,8 @@ src/
     MapCanvas.tsx               # the canvas hub: paint order + all pointer wiring
     Station*/Stop*/Label*/...   # per-entity SVG views (see Rendering section)
     selectionStyle.ts           # shared selection stroke/dash/wash constants (screen-px; ÷ zoom)
+    lineListOrder.ts            # pure lines-list ordering: sort by name/#stops, group by style
+    SortHeader.tsx              # shared clickable sort-column header (the stations list's two)
     Toolbar.tsx Sidebar.tsx Menu.tsx  # chrome
     BrandBullet.tsx             # the wordmark: an "M" route bullet (black disc/white M; night
                                 #   inverts) — the toolbar badge, reused by the easter-egg ball
