@@ -603,6 +603,18 @@ describe('<PalettesDialog /> the row’s … toolbar', () => {
     expect(screen.queryByRole('button', { name: 'Delete MTA' })).toBeNull();
   });
 
+  // The panel must mount INSIDE Dialog.Content: the dialog is modal, and Radix
+  // would yank focus off a panel portalled anywhere else. Same assertion the
+  // editor's color picker carries, for the same reason.
+  it('mounts inside the dialog, not beside it', async () => {
+    const user = userEvent.setup();
+    useCustomPalettes.setState({ palettes: [FRRF], starred: [], sort: 'name' });
+    renderDialog();
+    await openMore(user, 'frrf');
+    const panel = await screen.findByRole('button', { name: 'Delete frrf' });
+    expect(document.querySelector('.dialog')?.contains(panel)).toBe(true);
+  });
+
   it('opening one row’s toolbar closes another’s', async () => {
     const user = userEvent.setup();
     useCustomPalettes.setState({ palettes: [FRRF], starred: [], sort: 'name' });
@@ -676,6 +688,30 @@ describe('<PalettesDialog /> Make copy', () => {
     expect(useCustomPalettes.getState().palettes).toEqual([]);
     await user.keyboard('{Control>}z{/Control}');
     expect(useDoc.getState().palettes.map((p) => p.name)).toEqual(['MTA', 'BART']);
+  });
+
+  // The copy's name is minted, not chosen, and the row can land anywhere in an
+  // A–Z list of seventeen — or, under the Starred sort, nowhere at all, since
+  // that sort FILTERS and a fresh copy is unstarred. Without a word from the
+  // window the command reads as a no-op, and clicking again silently mints
+  // "frrf copy 2".
+  it('names what it minted, even when the sort hides the new row', async () => {
+    const user = userEvent.setup();
+    useCustomPalettes.setState({ palettes: [FRRF], starred: ['frrf'], sort: 'starred' });
+    renderDialog();
+    await rowCommand(user, 'frrf', 'Make a copy of frrf');
+    expect(useCustomPalettes.getState().palettes.map((p) => p.name)).toEqual(['frrf', 'frrf copy']);
+    expect(rowNames(libraryColumn())).toEqual(['frrf']); // the sort hides it
+    expect(screen.getByRole('status')).toHaveTextContent('frrf copy');
+  });
+
+  it('names what it minted in the map too', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({ ...useDoc.getState(), palettes: named('BART') });
+    renderDialog();
+    await rowCommand(user, 'BART in the map', 'Make a copy of BART in the map');
+    expect(screen.getByRole('status')).toHaveTextContent('BART copy');
+    expect(screen.queryByRole('alert')).toBeNull(); // a copy is not a failure
   });
 
   it('carries the description but not the star', async () => {

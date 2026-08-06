@@ -223,7 +223,8 @@ src/
     MapLibraryDialog.tsx        # the library manager (maps | versions; Radix Dialog)
     PalettesDialog.tsx          # the palette manager (library | in this map; same Dialog shell)
     PaletteEditor.tsx           # the manager's second view: one palette's title/description/rows
-    dialogRow.tsx               # shared dialog-row chrome: IconButton + the useSpeedBump two-click
+    dialogRow.tsx               # shared dialog-row chrome: IconButton, RowCommands (the `…`
+                                #   overflow toolbar), the useSpeedBump two-click
     useRowDragReorder.ts        # pointer drag-to-reorder for fixed-height row lists (editor rows)
     MapVersionPill.tsx          # the live doc's version + save-status dot, beside the map name
     *Popover.tsx                # on-canvas item editors
@@ -3122,7 +3123,10 @@ same three additions.
   Both slots are always spent, so nothing is held open and the colour strips end at one edge.
   Make copy duplicates into the column it came from as `<name> copy`
   (`freshPaletteName`'s stem, counting up), landing without opening the editor — and it is what a
-  built-in has instead of an edit, since the fork is an ordinary library palette. The two transfer
+  built-in has instead of an edit, since the fork is an ordinary library palette. It NAMES what it
+  minted in the message band: the caller didn't choose that name, and under the Starred sort —
+  which filters — an unstarred copy renders nowhere, so silence would be indistinguishable from a
+  dead button. The two transfer
   arrows are outermost in their rows, each against the column it points into; the map rows' outer
   slot is a drag handle — the editor's reorder gesture on the same hook, one `reorderMapPalette`
   write at the drop. The manager and the map library share one

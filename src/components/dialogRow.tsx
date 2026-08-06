@@ -3,10 +3,10 @@ import * as Popover from '@radix-ui/react-popover';
 import { DotsHorizontalIcon } from '@radix-ui/react-icons';
 
 /**
- * A dialog-row command button — shared by the palette manager's rows and the
- * palette editor's. Rows spend a fixed set of these slots whether or not they
- * can use them all, so the content beside them ends at one edge instead of
- * stepping in and out with the buttons.
+ * A dialog-row command button — one square glyph, shared by the palette
+ * manager's rows, the palette editor's, and the `…` panel that holds whatever
+ * a row has no slot for. Fixed width wherever it stands, so a column of rows
+ * ends at one edge instead of stepping in and out with the buttons.
  */
 export function IconButton({
   label,
@@ -59,9 +59,13 @@ export function IconButton({
  *
  * `children` is handed a `close`: commands call it when they RUN, which is why
  * a speed bump's arming click leaves the panel open and its second click does
- * not. `onClose` fires whenever the panel shuts, so the caller can stand any
- * bump primed inside it back down — a panel reopening on a red glyph would be
- * offering a confirmation for a question nobody asked.
+ * not. `onClose` fires whenever the panel shuts — by that `close`, or by Radix
+ * dismissing it — so the caller can stand any bump primed inside it back down;
+ * a panel reopening on a red glyph would be offering a confirmation for a
+ * question nobody asked. Both routes go through one `close` deliberately:
+ * `open` is a controlled prop, and Radix calls `onOpenChange` only for
+ * dismissals it initiates, so a bare `setOpen(false)` would shut the panel
+ * without ever telling the caller.
  */
 export function RowCommands({
   label,
@@ -78,18 +82,16 @@ export function RowCommands({
   // yanked off its buttons (the same reason ColorField picks `.dialog` first).
   // Resolved off the trigger, which is committed long before the panel opens.
   const [trigger, setTrigger] = useState<HTMLButtonElement | null>(null);
+  const close = () => {
+    setOpen(false);
+    onClose();
+  };
   return (
-    <Popover.Root
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) onClose();
-      }}
-    >
+    <Popover.Root open={open} onOpenChange={(next) => (next ? setOpen(true) : close())}>
       <Popover.Trigger ref={setTrigger} className="icon-btn" aria-label={label} title={label}>
         <DotsHorizontalIcon />
       </Popover.Trigger>
-      <Popover.Portal container={trigger?.closest<HTMLElement>('.dialog') ?? undefined}>
+      <Popover.Portal container={trigger?.closest<HTMLElement>('.dialog, .app') ?? undefined}>
         <Popover.Content
           className="row-commands"
           align="end"
@@ -97,7 +99,7 @@ export function RowCommands({
           collisionPadding={8}
           aria-label={label}
         >
-          {children(() => setOpen(false))}
+          {children(close)}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

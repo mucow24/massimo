@@ -280,15 +280,27 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
    * library palette, renameable and deletable like any other. So the library's
    * taken-names must include the built-ins, or a fork could be minted onto a
    * name the library is unable to store.
+   *
+   * Both report the name they minted, because the caller didn't choose it and
+   * may not be able to see it: the row lands wherever A–Z puts it, and under
+   * the Starred sort — which FILTERS — an unstarred copy lands nowhere at all.
+   * Silence there is indistinguishable from a dead button, and the next click
+   * would quietly mint "<name> copy 2".
    */
   const onCopyInLibrary = (p: Palette) => {
     const taken = new Set<string>([...BUILTIN_PALETTE_NAMES, ...custom.map((x) => x.name)]);
-    addToLibrary({ ...copyPalette(p), name: freshPaletteName(taken, `${p.name} copy`) });
+    const name = freshPaletteName(taken, `${p.name} copy`);
+    // Never refused: `taken` holds every built-in name, so the minted name is
+    // never one the library declines.
+    addToLibrary({ ...copyPalette(p), name });
+    setNotice(`Copied “${p.name}” as “${name}”.`);
   };
 
   const onCopyInMap = (p: Palette) => {
     const taken = new Set(mapPalettes.map((x) => x.name));
-    addPaletteToMap({ ...copyPalette(p), name: freshPaletteName(taken, `${p.name} copy`) });
+    const name = freshPaletteName(taken, `${p.name} copy`);
+    addPaletteToMap({ ...copyPalette(p), name });
+    setNotice(`Copied “${p.name}” as “${name}”.`);
   };
 
   /** Open the editor view on one palette, leaving any stale message behind. */
@@ -547,7 +559,10 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                                     <IconButton
                                       label={`Edit ${p.name}`}
                                       title={`Edit ${p.name} — rename it, recolor it, reorder it`}
-                                      onClick={() => openEditor('library', p.name)}
+                                      onClick={() => {
+                                        openEditor('library', p.name);
+                                        close();
+                                      }}
                                     >
                                       <Pencil1Icon />
                                     </IconButton>
@@ -694,7 +709,10 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                                   <IconButton
                                     label={`Edit ${p.name} in the map`}
                                     title={`Edit this map’s ${p.name} — rename it, recolor it, reorder it`}
-                                    onClick={() => openEditor('map', p.name)}
+                                    onClick={() => {
+                                      openEditor('map', p.name);
+                                      close();
+                                    }}
                                   >
                                     <Pencil1Icon />
                                   </IconButton>
