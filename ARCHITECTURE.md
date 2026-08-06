@@ -3242,10 +3242,7 @@ same three additions.
   station's SHORT name (`stationNameListText`, falling back to "Station"). Layout: a **button bar**
   (**Edit layout** button, then the **Select Similar** mirror-matching toggle, then a
   right-justified **WP** toggle; lock lives in the footer), then the Name field on its own row,
-  labeled X/Y + a mirrored ±45° rotate icon pair (the X/Y fields read and write the PIVOT's world
-  position — `stationPivotWorld` / `moveStationPivotTo`, the same point `rotateStation` turns
-  about, so the coordinates always name a painted cell; the pin stays the storage frame
-  underneath and surfaces nowhere), a **Stop dots** section (a
+  labeled X/Y + a mirrored ±45° rotate icon pair, a **Stop dots** section (a
   Line/Type/Xfer/End/Size/Direction column header over the per-stop rows —
   [inspector/StopRows.tsx](src/components/inspector/StopRows.tsx): service badge + shape picker +
   **transfer** picker + **line-end** picker + dot size + a world-true orientation cycle button per
@@ -3298,7 +3295,11 @@ same three additions.
   Pivoting on cell (0,0) instead would swing a layout parked off the pin on an invisible radius,
   and would turn two translated matches by different amounts under one mirrored step. Ring-bound
   stations keep the pin pivot: they read their cell frame off the ring (`stationFrameRad`), so
-  moving x/y would change the very frame the correction was measured in. The **Select Similar**
+  moving x/y would change the very frame the correction was measured in. The inspector's X/Y
+  fields read and write that same pivot point (`stationPivotWorld` / `moveStationPivotTo`,
+  branch-matched: pivot cell free, pin ring-bound; a stopless station falls back to its label
+  cell), so the coordinates and the point a station spins on never disagree and the pin itself
+  surfaces nowhere. The **Select Similar**
   chip (button bar, between Edit layout and
   WP) drives `mirrorMatching`: off = every dispatch resolves to the source station alone; on =
   stop/label edits + station rotation + the Stop type declaration broadcast, while name, X/Y, and

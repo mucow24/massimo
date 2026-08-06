@@ -273,7 +273,11 @@ describe('stationPivotWorld / moveStationPivotTo', () => {
     expect(p.y).toBeCloseTo(dot.y, 9);
   });
 
-  it('resolves a ring-bound station through the ring frame, like the painted dot', () => {
+  it('a ring-bound station pivots on its PIN, so that is what the coordinate names', () => {
+    // rotateStation keeps the pin pivot on a ring (the cell frame is the
+    // ring's, so a compensating x/y move would change the very frame it was
+    // measured in). The coordinate must name the same point, or the readout
+    // walks around the layout while the station never moves.
     const base = makeDoc({
       stations: [
         makeStation({
@@ -288,11 +292,30 @@ describe('stationPivotWorld / moveStationPivotTo', () => {
       lines: [makeLine({ id: 'L1', stations: ['s1'] })],
     });
     const doc = { ...base, lineCircles: { c1: { id: 'c1', x: 0, y: 0, radius: 100 } } };
-    const st = doc.stations.s1;
-    const p = T.stationPivotWorld(st, doc.lines, doc.lineCircles);
-    const dot = stopPosWorld(st.stops[0], st, doc.lineCircles);
-    expect(p.x).toBeCloseTo(dot.x, 9);
-    expect(p.y).toBeCloseTo(dot.y, 9);
+    const p = T.stationPivotWorld(doc.stations.s1, doc.lines, doc.lineCircles);
+    expect(p).toEqual({ x: 100, y: 0 });
+  });
+
+  it('ring-bound: the coordinate is invariant across all 8 rotate steps', () => {
+    const base = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          x: 100,
+          y: 0,
+          circleId: 'c1',
+          stops: [makeStop('L1', { col: 2 })],
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1'] })],
+    });
+    let doc: MapDoc = { ...base, lineCircles: { c1: { id: 'c1', x: 0, y: 0, radius: 100 } } };
+    const before = T.stationPivotWorld(doc.stations.s1, doc.lines, doc.lineCircles);
+    for (let i = 0; i < 8; i++) {
+      doc = T.rotateStation(doc, 's1');
+      const p = T.stationPivotWorld(doc.stations.s1, doc.lines, doc.lineCircles);
+      expect(p, `step ${i + 1}`).toEqual(before);
+    }
   });
 
   it('is held fixed by rotateStation', () => {
@@ -352,15 +375,29 @@ describe('stationPivotWorld / moveStationPivotTo', () => {
     expect(T.moveStationPivotTo(doc, 'nope', 1, 2)).toBe(doc);
   });
 
-  it('moveStationPivotTo keeps a ring-bound station seated on its ring', () => {
+  it('moveStationPivotTo on a ring IS moveStation — same reseat, same landing', () => {
+    // Pivot = pin there, so the delta math collapses to the plain absolute
+    // move. Anything else converges somewhere the user didn't ask for: the
+    // old through-the-ring-frame reading turned the request into an ANGLE
+    // shift, landing (0, 500) at (-7.16, 127.8) instead of the rim point
+    // nearest the request.
     const base = makeDoc({
-      stations: [makeStation({ id: 's1', x: 100, y: 0, circleId: 'c1', stops: [makeStop('L1')] })],
+      stations: [
+        makeStation({
+          id: 's1',
+          x: 100,
+          y: 0,
+          circleId: 'c1',
+          stops: [makeStop('L1', { col: 2 })],
+        }),
+      ],
       lines: [makeLine({ id: 'L1', stations: ['s1'] })],
     });
-    let doc: MapDoc = { ...base, lineCircles: { c1: { id: 'c1', x: 0, y: 0, radius: 100 } } };
-    doc = T.moveStationPivotTo(doc, 's1', 0, 500);
-    const st = doc.stations.s1;
-    expect(Math.hypot(st.x - 0, st.y - 0)).toBeCloseTo(100, 6);
+    const doc: MapDoc = { ...base, lineCircles: { c1: { id: 'c1', x: 0, y: 0, radius: 100 } } };
+    expect(T.moveStationPivotTo(doc, 's1', 0, 500)).toEqual(T.moveStation(doc, 's1', 0, 500));
+    const st = T.moveStationPivotTo(doc, 's1', 0, 500).stations.s1;
+    expect(st.x).toBeCloseTo(0, 6);
+    expect(st.y).toBeCloseTo(100, 6);
   });
 });
 
