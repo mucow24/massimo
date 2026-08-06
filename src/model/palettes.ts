@@ -321,12 +321,15 @@ export function copyPalette({ name, swatches, description }: Palette): Palette {
   };
 }
 
-/** First unused of "New palette", "New palette 2", … against `taken`. */
-export function freshPaletteName(taken: ReadonlySet<string>): string {
-  if (!taken.has('New palette')) return 'New palette';
+/**
+ * First unused of `stem`, "`stem` 2", … against `taken`. New… mints its
+ * palettes off the default stem; Make copy hands in "<source> copy".
+ */
+export function freshPaletteName(taken: ReadonlySet<string>, stem = 'New palette'): string {
+  if (!taken.has(stem)) return stem;
   let n = 2;
-  while (taken.has(`New palette ${n}`)) n++;
-  return `New palette ${n}`;
+  while (taken.has(`${stem} ${n}`)) n++;
+  return `${stem} ${n}`;
 }
 
 /** How the library column is listed. `starred` also FILTERS to starred rows. */

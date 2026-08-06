@@ -223,7 +223,8 @@ src/
     MapLibraryDialog.tsx        # the library manager (maps | versions; Radix Dialog)
     PalettesDialog.tsx          # the palette manager (library | in this map; same Dialog shell)
     PaletteEditor.tsx           # the manager's second view: one palette's title/description/rows
-    dialogRow.tsx               # shared dialog-row chrome: IconButton + the useSpeedBump two-click
+    dialogRow.tsx               # shared dialog-row chrome: IconButton, RowCommands (the `…`
+                                #   overflow toolbar), the useSpeedBump two-click
     useRowDragReorder.ts        # pointer drag-to-reorder for fixed-height row lists (editor rows)
     MapVersionPill.tsx          # the live doc's version + save-status dot, beside the map name
     *Popover.tsx                # on-canvas item editors
@@ -3109,23 +3110,37 @@ same three additions.
 - **[PalettesDialog.tsx](src/components/PalettesDialog.tsx)** — the palette manager, opened by the
   toolbar's colour-wheel button: your **library** on the left, the palettes **this map** paints
   with on the right. Unlike the map library the two columns are independent lists rather than a
-  master and its detail, so nothing is selected and every command lives in the row it acts on, as a
-  fixed grid of icon slots — a built-in's missing edit and delete leave their slots open, which
-  is what keeps the colour strips ending at one edge. The two transfer arrows are outermost in
-  their rows, each against the column it points into; the map rows' last slot is a drag handle —
-  the editor's reorder gesture on the same hook, one `reorderMapPalette` write at the drop. The
-  manager and the map library share one
+  master and its detail, so nothing is selected and every command lives in the row it acts on. A
+  row spends two icon slots: the **`…`** toolbar, then the transfer arrow or the drag handle.
+  Those two stay in the row because they are not really commands — the arrows carry STATE (a
+  check when the other column already holds this palette; a disabled arrow when a built-in's name
+  blocks the save back) and the handle is a grab target. Everything else — export, edit, **make
+  copy**, delete/remove — stands in the `…` panel
+  ([dialogRow.tsx](src/components/dialogRow.tsx)'s `RowCommands`), which is a POPOVER OF THE SAME
+  SQUARE BUTTONS rather than a menu: the commands stay `IconButton`s, so a speed-bumped one still
+  arms in place, and the panel reads as the row's grid continued instead of a second vocabulary.
+  It portals into the `.dialog` (not `.app`), or the modal's focus trap would yank focus off it.
+  Both slots are always spent, so nothing is held open and the colour strips end at one edge.
+  Make copy duplicates into the column it came from as `<name> copy`
+  (`freshPaletteName`'s stem, counting up), landing without opening the editor — and it is what a
+  built-in has instead of an edit, since the fork is an ordinary library palette. It NAMES what it
+  minted in the message band: the caller didn't choose that name, and under the Starred sort —
+  which filters — an unstarred copy renders nowhere, so silence would be indistinguishable from a
+  dead button. The two transfer
+  arrows are outermost in their rows, each against the column it points into; the map rows' outer
+  slot is a drag handle — the editor's reorder gesture on the same hook, one `reorderMapPalette`
+  write at the drop. The manager and the map library share one
   **`.dialog-*`** shell in styles.css (backdrop, panel, black title band, column heads, lists,
   rows); what stays per-dialog is only what one list has and the other doesn't.
   Every command that destroys or displaces a palette takes the in-place speed bump
   ([dialogRow.tsx](src/components/dialogRow.tsx)'s `useSpeedBump`) — the same glyph washed red,
   with a title naming what the second click will cost — in **both**
   columns, whether or not undo could reach it. Undo-reachability is deliberately not the test:
-  these buttons sit side by side in one row, and a gesture that changed meaning between adjacent
-  glyphs would be worse than a redundant click. Only commands that displace nothing act on one
-  click.
-  A row's pencil (and the library head's **New…** menu — from empty, or from the map's custom
-  colors, both landing in library and map like Load…) swaps the columns for the
+  these buttons sit side by side — in one `…` panel, or in the row beside its arrow — and a
+  gesture that changed meaning between adjacent glyphs would be worse than a redundant click.
+  Only commands that displace nothing act on one click.
+  A row's pencil, in its `…` (and the library head's **New…** menu — from empty, or from the map's
+  custom colors, both landing in library and map like Load…) swaps the columns for the
   **[PaletteEditor](src/components/PaletteEditor.tsx)** view, a back arrow joining the title band:
   the palette's title and description (double-click to edit — renaming lives here now), then one
   fixed-height row per color — a drag handle

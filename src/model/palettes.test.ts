@@ -94,6 +94,20 @@ describe('freshPaletteName', () => {
   it('skips nothing for names that merely resemble the pattern', () => {
     expect(freshPaletteName(new Set(['New palette 2']))).toBe('New palette');
   });
+
+  // Make copy numbers off the same generator, so a stem it supplies counts up
+  // exactly as "New palette" does.
+  it('counts up from a supplied stem', () => {
+    expect(freshPaletteName(new Set(), 'frrf copy')).toBe('frrf copy');
+    expect(freshPaletteName(new Set(['frrf copy']), 'frrf copy')).toBe('frrf copy 2');
+    expect(freshPaletteName(new Set(['frrf copy', 'frrf copy 2']), 'frrf copy')).toBe(
+      'frrf copy 3',
+    );
+  });
+
+  it('a stem takes nothing from the "New palette" names already out there', () => {
+    expect(freshPaletteName(new Set(['New palette']), 'frrf copy')).toBe('frrf copy');
+  });
 });
 
 describe('libraryPalettes', () => {
