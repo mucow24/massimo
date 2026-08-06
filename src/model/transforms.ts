@@ -61,7 +61,7 @@ export { resolveDotStyle } from './dotStyle';
 // `snapToStep` is a leaf grid util (in util/grid) so lower-level model modules
 // like `dotStyle` can share it without importing `transforms`; keep the
 // historical import path working for its existing callers.
-import { clamp, roundClamp, snapToStep } from '../util/grid';
+import { clamp, roundClamp, rot8, snapToStep } from '../util/grid';
 export { snapToStep };
 import { pairKeyOf } from './pairKey';
 import {
@@ -93,7 +93,7 @@ import { measureTextLabel } from '../geometry/textMeasure';
 import { isBulletCode } from '../geometry/labelTokens';
 import type { LabelStyle } from '../geometry/labelLayout';
 import { add, dot, eq, leftNormal, len, norm, rotateAround, sub, type Vec2 } from '../geometry/vec';
-import { copyPalette, PALETTES, type Palette } from './palettes';
+import { copyPalette, paletteContentEqual, PALETTES, type Palette } from './palettes';
 import { normalizeHex } from '../util/color';
 import type {
   AutoHAlign,
@@ -1297,7 +1297,7 @@ export function layoutPivotCell(st: Station, lines: MapDoc['lines']): { row: num
 export function rotateStation(doc: MapDoc, id: StationId, dir: -1 | 1 = 1): MapDoc {
   const cur = doc.stations[id];
   if (!cur) return doc;
-  const next = ((cur.rotation + dir + 8) % 8) as Rotation;
+  const next = rot8(cur.rotation + dir) as Rotation;
   const turned: Station = { ...cur, rotation: next };
   // A ring-bound station reads its cell frame off the ring (`stationFrameRad`),
   // so moving x/y to hold a pivot would slide it along the ring and change the
@@ -2796,16 +2796,7 @@ export function setStationEditorHeight(doc: MapDoc, stationId: StationId, height
 }
 
 function palettesEqual(a: Palette, b: Palette): boolean {
-  if (a.name !== b.name || a.description !== b.description) return false;
-  if (a.swatches.length !== b.swatches.length) return false;
-  // `night` compares strictly: it's only ever stored when it differs from
-  // `color` (the collapse invariant), so canonical forms are unique.
-  return a.swatches.every(
-    (s, i) =>
-      s.name === b.swatches[i].name &&
-      s.color === b.swatches[i].color &&
-      s.night === b.swatches[i].night,
-  );
+  return a.name === b.name && paletteContentEqual(a, b);
 }
 
 /**

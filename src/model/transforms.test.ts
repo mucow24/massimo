@@ -1858,6 +1858,18 @@ describe('the map’s palettes', () => {
       const doc = wearing();
       expect(T.recolorMapPaletteColor(doc, 'frrf', 0, '#C1272D')).toBe(doc);
     });
+
+    it('recoloring to the SAME color still drops a stored night', () => {
+      // The same-color short-circuit only fires when there is nothing to clean
+      // up (`night === undefined`); a swatch carrying a night must fall through
+      // so the recolor collapses it, even when the day color is unchanged.
+      let doc = T.addPaletteToMap(makeDoc({}), {
+        name: 'frrf',
+        swatches: [{ name: '1', color: '#c1272d', night: '#7a1a1d' }],
+      });
+      doc = T.recolorMapPaletteColor(doc, 'frrf', 0, '#C1272D');
+      expect(doc.palettes[1].swatches[0]).toEqual({ name: '1', color: '#c1272d' });
+    });
   });
 
   it('re-adding a name replaces its swatches in place, keeping its position', () => {
