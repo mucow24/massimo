@@ -28,9 +28,10 @@ beforeEach(() => {
 });
 
 describe('<StyleEditor> — line', () => {
-  it('hides the stroke color until the def has a stroke', () => {
+  it('hides the stroke type and color until the def has a stroke', () => {
     render(<StyleEditor def={makeStyle('line', 'y1', { props: { strokeWidth: 0 } })} />);
     expect(screen.getByRole('slider', { name: 'Stroke width' })).toBeTruthy();
+    expect(screen.queryByText('Stroke')).toBeNull();
     expect(screen.queryByText('Stroke color')).toBeNull();
   });
 
@@ -129,16 +130,18 @@ describe('<StyleEditor> — line', () => {
     expect(screen.getByRole('slider', { name: 'Interchange dot size' })).toBeInTheDocument();
   });
 
-  // The casing can be a fixed hex or the line's OWN color — same Line/Custom
+  // The casing can be a fixed hex or the line's OWN color — same Line/Color
   // idiom the stopDot editor uses for its fill/stroke/code colors, so one style
-  // can give differently-colored lines a casing in their own hue.
-  it('activates Custom and shows the swatch for a hex casing', () => {
+  // can give differently-colored lines a casing in their own hue. The picker row
+  // is named for the field ("Stroke"); "Stroke color" names the swatch row it
+  // reveals, so the segments take a "Stroke type …" name to stay distinct.
+  it('activates Color and shows the swatch for a hex casing', () => {
     render(
       <StyleEditor
         def={makeStyle('line', 'y1', { props: { strokeWidth: 3, strokeColor: '#ff0000' } })}
       />,
     );
-    expect(screen.getByLabelText('Stroke color custom')).toHaveClass('active');
+    expect(screen.getByLabelText('Stroke type color')).toHaveClass('active');
     expect(screen.getByRole('button', { name: 'Stroke color' })).toBeInTheDocument();
   });
 
@@ -148,11 +151,11 @@ describe('<StyleEditor> — line', () => {
         def={makeStyle('line', 'y1', { props: { strokeWidth: 3, strokeColor: 'line' } })}
       />,
     );
-    expect(screen.getByLabelText('Stroke color line')).toHaveClass('active');
+    expect(screen.getByLabelText('Stroke type line')).toHaveClass('active');
     expect(screen.queryByRole('button', { name: 'Stroke color' })).toBeNull();
   });
 
-  it('picking a mode writes the prop: Line sets the sentinel, Custom restores a hex', () => {
+  it('picking a type writes the prop: Line sets the sentinel, Color restores a hex', () => {
     useDoc.setState({
       ...useDoc.getState(),
       styles: {
@@ -164,14 +167,14 @@ describe('<StyleEditor> — line', () => {
     });
     const propsOf = () => useDoc.getState().styles['ln-1'].props as LineStyleProps;
     // Re-render from the store after each pick so the ToggleGroup sees the new
-    // active mode (else Radix reads the next click as a deselect of the stale one).
+    // active type (else Radix reads the next click as a deselect of the stale one).
     const { rerender } = render(<StyleEditor def={useDoc.getState().styles['ln-1']} />);
 
-    fireEvent.click(screen.getByLabelText('Stroke color line'));
+    fireEvent.click(screen.getByLabelText('Stroke type line'));
     expect(propsOf().strokeColor).toBe('line');
     rerender(<StyleEditor def={useDoc.getState().styles['ln-1']} />);
 
-    fireEvent.click(screen.getByLabelText('Stroke color custom'));
+    fireEvent.click(screen.getByLabelText('Stroke type color'));
     expect(propsOf().strokeColor).toBe('#ffffff');
   });
 
@@ -192,10 +195,12 @@ describe('<StyleEditor> — line', () => {
 });
 
 describe('<StyleEditor> — stopDot', () => {
-  it('a non-dash dot exposes stroke width, stroke color, and service code', () => {
+  it('a non-dash dot exposes stroke width, a stroke type, and a service-code type', () => {
     render(<StyleEditor def={makeStyle('stopDot', 'y1', { props: { shape: 'circle' } })} />);
     expect(screen.getByRole('slider', { name: 'Stroke width' })).toBeTruthy();
-    expect(screen.getByText('Stroke color')).toBeTruthy();
+    // The picker rows are named for the FIELD ("Stroke"); "Stroke color" names
+    // the swatch row that the Color type reveals beneath it.
+    expect(screen.getByText('Stroke')).toBeTruthy();
     expect(screen.getByText('Service code')).toBeTruthy();
   });
 
@@ -208,15 +213,9 @@ describe('<StyleEditor> — stopDot', () => {
     // (DashGlyph takes its casing from the line and never draws a code), so the
     // editor must not offer them.
     expect(screen.queryByRole('slider', { name: 'Stroke width' })).toBeNull();
-    expect(screen.queryByText('Stroke color')).toBeNull();
+    expect(screen.queryByText('Stroke')).toBeNull();
     expect(screen.queryByText('Service code')).toBeNull();
     expect(screen.queryByText('First letter only')).toBeNull();
-  });
-
-  it('greys out "First letter only" until the service code is shown', () => {
-    render(<StyleEditor def={makeStyle('stopDot', 'y1', { props: { shape: 'circle' } })} />);
-    // Visible (so the option is discoverable) but inert with no code to trim.
-    expect(screen.getByLabelText('Show first letter of the service code only')).toBeDisabled();
   });
 
   it('ticking "First letter only" writes serviceCodeFirstLetterOnly', () => {
@@ -238,37 +237,145 @@ describe('<StyleEditor> — stopDot', () => {
     );
   });
 
-  it('offers a B/W / Line / Custom service-code color toggle; auto-contrast selects B/W', () => {
+  // ── The three color-TYPE rows ──
+  // Fill, Stroke and Service code all read the same way: a "how is this
+  // colored?" picker, and a swatch row that appears only under Color. These
+  // pin that shared shape per row, so the three can't drift apart again.
+
+  it('offers a None / B/W / Line / Color fill type; no swatch row until Color', () => {
+    render(
+      <StyleEditor def={makeStyle('stopDot', 'y1', { props: { shape: 'circle', fill: 'bw' } })} />,
+    );
+    const group = screen.getByLabelText('Fill type none').closest('.align-group') as HTMLElement;
+    expect(
+      [...group.querySelectorAll('[aria-label^="Fill type "]')].map((b) => b.textContent),
+    ).toEqual(['None', 'B/W', 'Line', 'Color']);
+    // 'bw' is active, and it is NOT a color pair, so no swatch row.
+    expect(screen.getByLabelText('Fill type bw')).toHaveClass('active');
+    expect(screen.queryByRole('button', { name: 'Fill color' })).toBeNull();
+  });
+
+  it('a fill color pair activates Color and reveals the "Fill color" swatch row', () => {
+    render(
+      <StyleEditor
+        def={makeStyle('stopDot', 'y1', {
+          props: { shape: 'circle', fill: { day: '#ff0000', night: '#00ff00' } },
+        })}
+      />,
+    );
+    expect(screen.getByLabelText('Fill type color')).toHaveClass('active');
+    expect(screen.getByRole('button', { name: 'Fill color' })).toBeTruthy();
+  });
+
+  it('picking a fill type writes fill', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      styles: {
+        ...useDoc.getState().styles,
+        'sd-fill4': makeStyle('stopDot', 'sd-fill4', { props: { shape: 'circle' } }),
+      },
+    });
+    const fillOf = () => (useDoc.getState().styles['sd-fill4'].props as DotStyle).fill;
+    const { rerender } = render(<StyleEditor def={useDoc.getState().styles['sd-fill4']} />);
+
+    fireEvent.click(screen.getByLabelText('Fill type bw'));
+    expect(fillOf()).toBe('bw');
+    rerender(<StyleEditor def={useDoc.getState().styles['sd-fill4']} />);
+
+    fireEvent.click(screen.getByLabelText('Fill type none'));
+    expect(fillOf()).toBe('none');
+    rerender(<StyleEditor def={useDoc.getState().styles['sd-fill4']} />);
+
+    fireEvent.click(screen.getByLabelText('Fill type line'));
+    expect(fillOf()).toBe('line');
+    rerender(<StyleEditor def={useDoc.getState().styles['sd-fill4']} />);
+
+    fireEvent.click(screen.getByLabelText('Fill type color'));
+    expect(typeof fillOf()).toBe('object');
+  });
+
+  it('offers a B/W / Line / Color stroke type — no None, since width 0 says that', () => {
+    render(
+      <StyleEditor
+        def={makeStyle('stopDot', 'y1', {
+          props: { shape: 'circle', strokeWidth: 2, strokeColor: 'bw' },
+        })}
+      />,
+    );
+    const group = screen.getByLabelText('Stroke type bw').closest('.align-group') as HTMLElement;
+    expect(
+      [...group.querySelectorAll('[aria-label^="Stroke type "]')].map((b) => b.textContent),
+    ).toEqual(['B/W', 'Line', 'Color']);
+    expect(screen.getByLabelText('Stroke type bw')).toHaveClass('active');
+    expect(screen.queryByRole('button', { name: 'Stroke color' })).toBeNull();
+  });
+
+  it('picking a stroke type writes strokeColor', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      styles: {
+        ...useDoc.getState().styles,
+        'sd-stroke': makeStyle('stopDot', 'sd-stroke', {
+          props: { shape: 'circle', strokeWidth: 2 },
+        }),
+      },
+    });
+    const strokeOf = () => (useDoc.getState().styles['sd-stroke'].props as DotStyle).strokeColor;
+    const { rerender } = render(<StyleEditor def={useDoc.getState().styles['sd-stroke']} />);
+
+    // B/W → the explicit 'bw' sentinel (unlike the code color, the field is
+    // required, so auto-contrast can't be spelled by absence).
+    fireEvent.click(screen.getByLabelText('Stroke type bw'));
+    expect(strokeOf()).toBe('bw');
+    rerender(<StyleEditor def={useDoc.getState().styles['sd-stroke']} />);
+
+    fireEvent.click(screen.getByLabelText('Stroke type line'));
+    expect(strokeOf()).toBe('line');
+    rerender(<StyleEditor def={useDoc.getState().styles['sd-stroke']} />);
+
+    fireEvent.click(screen.getByLabelText('Stroke type color'));
+    expect(typeof strokeOf()).toBe('object');
+  });
+
+  it('folds "show the code" into the service-code type picker: None is the off state', () => {
+    render(<StyleEditor def={makeStyle('stopDot', 'y1', { props: { shape: 'circle' } })} />);
+    const group = screen
+      .getByLabelText('Service code type none')
+      .closest('.align-group') as HTMLElement;
+    expect(
+      [...group.querySelectorAll('[aria-label^="Service code type "]')].map((b) => b.textContent),
+    ).toEqual(['None', 'B/W', 'Line', 'Color']);
+    // A dot that draws no code sits on None — and neither the swatch row nor the
+    // first-letter option is offered, since both only mean something with a code.
+    expect(screen.getByLabelText('Service code type none')).toHaveClass('active');
+    expect(screen.queryByRole('button', { name: 'Service code color' })).toBeNull();
+    expect(screen.queryByLabelText('Show first letter of the service code only')).toBeNull();
+  });
+
+  it('a code with no explicit color sits on B/W and offers "First letter only"', () => {
     render(
       <StyleEditor
         def={makeStyle('stopDot', 'y1', { props: { shape: 'circle', showServiceCode: true } })}
       />,
     );
-    // All three modes are present (ToggleGroup items — queried by label, as the
-    // rest of the suite queries segmented controls) …
-    expect(screen.getByLabelText('Code color bw')).toBeTruthy();
-    expect(screen.getByLabelText('Code color line')).toBeTruthy();
-    expect(screen.getByLabelText('Code color custom')).toBeTruthy();
-    // … and with no explicit color, B/W (auto-contrast) is active, with no
-    // explicit color row (the light swatch carries this accessible name).
-    expect(screen.getByLabelText('Code color bw')).toHaveClass('active');
+    expect(screen.getByLabelText('Service code type bw')).toHaveClass('active');
     expect(screen.queryByRole('button', { name: 'Service code color' })).toBeNull();
+    // Shown rather than greyed out — the type picker already gates it.
+    expect(screen.getByLabelText('Show first letter of the service code only')).toBeEnabled();
   });
 
-  it("'line' service-code color activates the Line mode and hides the custom color row", () => {
-    render(
+  it("a 'line' code color activates Line; an explicit pair activates Color plus its row", () => {
+    const { unmount } = render(
       <StyleEditor
         def={makeStyle('stopDot', 'y1', {
           props: { shape: 'circle', showServiceCode: true, serviceCodeColor: 'line' },
         })}
       />,
     );
-    expect(screen.getByLabelText('Code color line')).toHaveClass('active');
-    // In 'line' mode the explicit color row is gone (like the stroke selector).
+    expect(screen.getByLabelText('Service code type line')).toHaveClass('active');
     expect(screen.queryByRole('button', { name: 'Service code color' })).toBeNull();
-  });
+    unmount();
 
-  it('an explicit color pair activates Custom and shows the color row', () => {
     render(
       <StyleEditor
         def={makeStyle('stopDot', 'y1', {
@@ -280,39 +387,66 @@ describe('<StyleEditor> — stopDot', () => {
         })}
       />,
     );
-    expect(screen.getByLabelText('Code color custom')).toHaveClass('active');
+    expect(screen.getByLabelText('Service code type color')).toHaveClass('active');
     expect(screen.getByRole('button', { name: 'Service code color' })).toBeTruthy();
   });
 
-  it('picking a mode writes serviceCodeColor: Line/Custom set it, B/W drops it', () => {
-    // Seed a code-showing dot in the store so the click's updateStyleProps lands;
-    // re-render from the store after each pick so the ToggleGroup reflects the new
-    // active mode (else Radix reads the next click as a deselect of the stale one).
+  it('picking a service-code type writes showServiceCode and serviceCodeColor together', () => {
+    // Seed in the store so the click's updateStyleProps lands; re-render from the
+    // store after each pick so the ToggleGroup reflects the new active type (else
+    // Radix reads the next click as a deselect of the stale one).
     useDoc.setState({
       ...useDoc.getState(),
       styles: {
         ...useDoc.getState().styles,
-        'sd-code': makeStyle('stopDot', 'sd-code', {
-          props: { shape: 'circle', showServiceCode: true },
+        'sd-code': makeStyle('stopDot', 'sd-code', { props: { shape: 'circle' } }),
+      },
+    });
+    const propsOf = () => useDoc.getState().styles['sd-code'].props as DotStyle;
+    const { rerender } = render(<StyleEditor def={useDoc.getState().styles['sd-code']} />);
+
+    // B/W turns the code ON with no explicit color — absence IS auto-contrast.
+    fireEvent.click(screen.getByLabelText('Service code type bw'));
+    expect(propsOf().showServiceCode).toBe(true);
+    expect(propsOf().serviceCodeColor).toBeUndefined();
+    rerender(<StyleEditor def={useDoc.getState().styles['sd-code']} />);
+
+    fireEvent.click(screen.getByLabelText('Service code type line'));
+    expect(propsOf().serviceCodeColor).toBe('line');
+    rerender(<StyleEditor def={useDoc.getState().styles['sd-code']} />);
+
+    fireEvent.click(screen.getByLabelText('Service code type color'));
+    expect(typeof propsOf().serviceCodeColor).toBe('object');
+    rerender(<StyleEditor def={useDoc.getState().styles['sd-code']} />);
+
+    fireEvent.click(screen.getByLabelText('Service code type none'));
+    expect(propsOf().showServiceCode).toBe(false);
+  });
+
+  it('None clears the code-only fields, so a codeless dot stores nothing inert', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      styles: {
+        ...useDoc.getState().styles,
+        'sd-code2': makeStyle('stopDot', 'sd-code2', {
+          props: {
+            shape: 'circle',
+            showServiceCode: true,
+            serviceCodeColor: { day: '#ff0000', night: '#00ff00' },
+            serviceCodeFirstLetterOnly: true,
+          },
         }),
       },
     });
-    const sccOf = () => (useDoc.getState().styles['sd-code'].props as DotStyle).serviceCodeColor;
-    const { rerender } = render(<StyleEditor def={useDoc.getState().styles['sd-code']} />);
-
-    // Line → the 'line' sentinel.
-    fireEvent.click(screen.getByLabelText('Code color line'));
-    expect(sccOf()).toBe('line');
-    rerender(<StyleEditor def={useDoc.getState().styles['sd-code']} />);
-
-    // Custom → an explicit day/night pair.
-    fireEvent.click(screen.getByLabelText('Code color custom'));
-    expect(typeof sccOf()).toBe('object');
-    rerender(<StyleEditor def={useDoc.getState().styles['sd-code']} />);
-
-    // B/W → the field is dropped entirely (absent ⇒ auto-contrast).
-    fireEvent.click(screen.getByLabelText('Code color bw'));
-    expect(sccOf()).toBeUndefined();
+    render(<StyleEditor def={useDoc.getState().styles['sd-code2']} />);
+    fireEvent.click(screen.getByLabelText('Service code type none'));
+    // Both code-only fields are dropped, not left dangling: a color and a
+    // first-letter flag for a code that isn't drawn would make two identical-
+    // looking dots compare unequal through dotStylesEqual.
+    const props = useDoc.getState().styles['sd-code2'].props as DotStyle;
+    expect(props.showServiceCode).toBe(false);
+    expect('serviceCodeColor' in props).toBe(false);
+    expect('serviceCodeFirstLetterOnly' in props).toBe(false);
   });
 
   it('offers a Center/Inside/Outside stroke-alignment selector that writes strokeAlign', () => {
@@ -338,10 +472,10 @@ describe('<StyleEditor> — stopDot', () => {
         def={makeStyle('stopDot', 'y1', { props: { shape: 'circle', strokeWidth: 0 } })}
       />,
     );
-    // The Line/Custom mode toggle, the custom color swatches, and the
-    // alignment selector are all inert without a stroke to color or place.
-    expect(screen.getByLabelText('Stroke line')).toBeDisabled();
-    expect(screen.getByLabelText('Stroke custom')).toBeDisabled();
+    // The type toggle, the color swatches, and the alignment selector are all
+    // inert without a stroke to color or place.
+    expect(screen.getByLabelText('Stroke type line')).toBeDisabled();
+    expect(screen.getByLabelText('Stroke type color')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Stroke color' })).toBeDisabled();
     expect(screen.getByLabelText('Align center')).toBeDisabled();
     expect(screen.getByLabelText('Align inside')).toBeDisabled();
@@ -354,8 +488,8 @@ describe('<StyleEditor> — stopDot', () => {
         def={makeStyle('stopDot', 'y1', { props: { shape: 'circle', strokeWidth: 2 } })}
       />,
     );
-    expect(screen.getByLabelText('Stroke line')).toBeEnabled();
-    expect(screen.getByLabelText('Stroke custom')).toBeEnabled();
+    expect(screen.getByLabelText('Stroke type line')).toBeEnabled();
+    expect(screen.getByLabelText('Stroke type color')).toBeEnabled();
     expect(screen.getByLabelText('Align inside')).toBeEnabled();
   });
 });
@@ -392,10 +526,10 @@ describe('<StyleEditor> — segmented controls are roving-focus ToggleGroups', (
       },
     });
     render(<StyleEditor def={useDoc.getState().styles['sd-fill']} />);
-    // 'Fill line' is already the active segment; re-clicking it fires Radix's
+    // 'Fill type line' is already the active segment; re-clicking it fires Radix's
     // deselect (onValueChange('')), which the `if (v)` guard must swallow — the
-    // fill must stay 'line', not fall through to a custom day/night pair.
-    await user.click(screen.getByLabelText('Fill line'));
+    // fill must stay 'line', not fall through to a color day/night pair.
+    await user.click(screen.getByLabelText('Fill type line'));
     expect((useDoc.getState().styles['sd-fill'].props as DotStyle).fill).toBe('line');
   });
 });

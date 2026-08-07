@@ -968,12 +968,23 @@ not merely every input that moves geometry.
 **`DotStyle`** ([dotStyle.ts](src/model/dotStyle.ts)) — a procedural stop dot. Its **required**
 fields (a deliberate divergence from the optional-field convention) let plain deep equality
 `dotStylesEqual` work everywhere: `shape: DotBaseShape` (`circle|square|diamond|x|dash`), `fill:
-DotFill` (`DayNightColor | 'line' | 'none'`), `strokeWidth` (0 = no stroke), `strokeColor:
-DotStrokeColor` (`DayNightColor | 'line'`; **no `'none'`** — strokeWidth 0 expresses "no
+DotFill` (`DayNightColor | 'line' | 'none' | 'bw'`), `strokeWidth` (0 = no stroke), `strokeColor:
+DotStrokeColor` (`DayNightColor | 'line' | 'bw'`; **no `'none'`** — strokeWidth 0 expresses "no
 stroke"), `strokeAlign: DotStrokeAlign` (`center|inside|outside` — where the stroke sits relative
-to the dot's edge; persist v21 backfills the historical `'center'`), and `showServiceCode`. Two
-**optional** fields refine the code, both meaningful only when `showServiceCode` and both kept
-optional so every preset stays byte-identical. `serviceCodeColor?: DotServiceCodeColor`
+to the dot's edge; persist v21 backfills the historical `'center'`), and `showServiceCode`.
+
+> **`'bw'` is B/W auto-contrast**, the service code's absent-color rule as an explicit sentinel
+> (these two fields are required, so absence can't carry the meaning). One rule, applied against
+> **whatever sits behind the mark**: a `'bw'` STROKE and the auto service code judge the resolved
+> **fill**; a `'bw'` FILL judges the **line's band**, since that is what shows behind the dot —
+> which is why it earns a slot no fixed day/night pair could fill (one style reading correctly on
+> light and dark lines alike). A **transparent** fill is not a backdrop but the band showing
+> through, so it falls through to the band too — an open, coded dot reads against the line it sits
+> on. Only with **no line in scope** (a picker preview) does the theme's canvas stand in.
+> `autoContrastColor` in [dotStyle.ts](src/model/dotStyle.ts) is the single owner.
+
+Two **optional** fields refine the code, both meaningful only when `showServiceCode` and both
+kept optional so every preset stays byte-identical. `serviceCodeColor?: DotServiceCodeColor`
 (`DayNightColor | 'line'`): **absent ⇒ B/W auto-contrast** (pick whichever of black/white is
 legible on the resolved fill), `'line'` paints the code in the owning line's color, a pair gives
 an explicit per-theme color. `serviceCodeFirstLetterOnly?: boolean`: **absent ⇒ the whole code**,
