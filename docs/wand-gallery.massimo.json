@@ -11351,7 +11351,8 @@
           "strokeColor": {
             "day": "#ffffff",
             "night": "#ffffff"
-          }
+          },
+          "draw": "under"
         }
       },
       "default-station": {

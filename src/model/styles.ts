@@ -70,6 +70,7 @@ import {
   lineStrokeWidthOf,
 } from './lineStroke';
 import {
+  TRANSFER_DRAW_DEFAULT,
   TRANSFER_STROKE_WIDTH_MIN,
   TRANSFER_STROKE_WIDTH_STEP,
   TRANSFER_THICKNESS_MIN,
@@ -256,7 +257,11 @@ export function stylePropsEqual(
       ta.thickness === tb.thickness &&
       ta.strokeWidth === tb.strokeWidth &&
       dayNightColorsEqual(ta.color, tb.color) &&
-      dayNightColorsEqual(ta.strokeColor, tb.strokeColor)
+      dayNightColorsEqual(ta.strokeColor, tb.strokeColor) &&
+      // Absent ≡ 'under': a def from a save that predates the draw axis must
+      // compare equal to one carrying the explicit default, or every legacy
+      // wearer reads as detached on load (the DotStyle strokeAlign trap).
+      (ta.draw ?? TRANSFER_DRAW_DEFAULT) === (tb.draw ?? TRANSFER_DRAW_DEFAULT)
     );
   }
   const ra = a as unknown as Record<string, unknown>;
@@ -356,6 +361,9 @@ export function canonicalStyleProps<K extends StyleKind>(
           TRANSFER_STROKE_WIDTH_MIN,
         ),
         strokeColor: p.strokeColor,
+        // `?? DEFAULT` heals defs written before the draw axis existed — the
+        // keep-canonical-props-concrete backstop, same as line's curveRadius.
+        draw: p.draw ?? TRANSFER_DRAW_DEFAULT,
       } as StylePropsByKind[K];
     }
     case 'station': {

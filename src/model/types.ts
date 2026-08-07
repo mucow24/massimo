@@ -962,6 +962,22 @@ export type TransferEnd =
   | { stationId: StationId; anchorId: string }
   | { anchorId: string };
 
+// Where a transfer sits in the stop-dot stack — the one style axis that is a
+// PAINT ORDER rather than a shape. The dots pass is three sub-passes deep
+// (every dot's stroke silhouette, then every dot's body, then every service
+// code), so a transfer can be slotted at any of the four rungs between and
+// around them, listed bottom-up:
+//
+//   'under'       — beneath the whole dots pass. The historical look: a dot,
+//                   its white casing included, always covers the transfer.
+//   'over-stroke' — over the casings, under the bodies. The bar reads as
+//                   continuous between dots while each dot keeps its white
+//                   ring against a dark line.
+//   'over-dot'    — over the bodies, under the service codes, so a bar can
+//                   cross a dot without swallowing the letter on it.
+//   'over-code'   — over everything, codes included.
+export type TransferDrawOrder = 'under' | 'over-stroke' | 'over-dot' | 'over-code';
+
 // A transfer is a line connecting one station dot to another (thickness and
 // theme-aware color come from the per-transfer overrides below, falling back
 // to the constant TRANSFER_STYLE_DEFAULTS — the classic 2px black body, white
@@ -985,7 +1001,11 @@ export interface Transfer {
   color?: DayNightColor;
   strokeWidth?: number;
   strokeColor?: DayNightColor;
-  // Live link to a StyleDef of kind 'transfer' — covered fields are all four
+  // Which rung of the stop-dot stack this transfer paints on (see
+  // TransferDrawOrder). Same override contract as the four above: absent ⇒
+  // 'under', the legacy behaviour.
+  draw?: TransferDrawOrder;
+  // Live link to a StyleDef of kind 'transfer' — covered fields are all five
   // style overrides above. Same contract as `Line.styleId`.
   styleId?: string;
 }
@@ -997,7 +1017,7 @@ export interface Transfer {
 // patch carries the WHOLE DayNightColor (both halves), even when the popover
 // edits only one theme.
 export type TransferStylePatch = Partial<
-  Pick<Transfer, 'thickness' | 'color' | 'strokeWidth' | 'strokeColor'>
+  Pick<Transfer, 'thickness' | 'color' | 'strokeWidth' | 'strokeColor' | 'draw'>
 >;
 
 // ---------- Styles (named, reusable per-kind formatting presets) ----------
@@ -1105,6 +1125,9 @@ export interface TransferStyleProps {
   color: DayNightColor;
   strokeWidth: number;
   strokeColor: DayNightColor;
+  // Concrete like every other captured prop; defs written before the axis
+  // existed lack it and read as 'under' (see stylePropsEqual's `??`).
+  draw: TransferDrawOrder;
 }
 
 // Per-station name typography. Every value is FULLY-RESOLVED (captured by

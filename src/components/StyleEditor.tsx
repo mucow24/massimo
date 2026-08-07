@@ -14,6 +14,7 @@ import { StopGlyph } from './StopGlyph';
 import { StationShapePicker } from './StationShapePicker';
 import { ShapeIcon } from './RouteBulletPopover';
 import { SegmentedToggle } from './SegmentedToggle';
+import { TransferDrawRow } from './TransferDrawRow';
 import type { StylePropsPatch } from '../model/styles';
 import { DOT_SIZE_MAX, DOT_SIZE_MIN, DOT_SIZE_STEP } from '../model/dotSize';
 import {
@@ -45,6 +46,7 @@ import {
   LINE_STROKE_WIDTH_MIN,
 } from '../model/lineStroke';
 import {
+  TRANSFER_DRAW_DEFAULT,
   TRANSFER_STROKE_WIDTH_MAX,
   TRANSFER_STROKE_WIDTH_MIN,
   TRANSFER_STROKE_WIDTH_STEP,
@@ -597,6 +599,13 @@ function TransferStyleEditor({ id, props }: { id: string; props: TransferStylePr
         darkValue={props.strokeColor.night}
         onChange={(day) => patch({ strokeColor: { day, night: props.strokeColor.night } })}
         onDarkChange={(night) => patch({ strokeColor: { day: props.strokeColor.day, night } })}
+      />
+      {/* `?? DEFAULT` for a def written before the axis existed — the same
+          absent-≡-'under' reading stylePropsEqual applies. */}
+      <TransferDrawRow
+        id={`style-${id}-draw`}
+        value={props.draw ?? TRANSFER_DRAW_DEFAULT}
+        onChange={(draw) => patch({ draw })}
       />
     </div>
   );

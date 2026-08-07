@@ -9,9 +9,12 @@ import {
   TRANSFER_STROKE_WIDTH_MAX,
   TRANSFER_STROKE_WIDTH_DEFAULT,
   TRANSFER_STROKE_COLOR_DEFAULT,
+  TRANSFER_DRAW_DEFAULT,
+  TRANSFER_DRAW_ORDERS,
   canonicalTransferThickness,
   canonicalTransferStrokeWidth,
   canonicalTransferColor,
+  canonicalTransferDraw,
   legacyColorToDayNight,
   resolveTransferStyle,
 } from './transferStyle';
@@ -32,6 +35,22 @@ describe('transfer style constants', () => {
     // legacy look, theme-blind (day === night) so old maps read unchanged.
     expect(TRANSFER_COLOR_DEFAULT).toEqual({ day: '#000000', night: '#000000' });
     expect(TRANSFER_STROKE_COLOR_DEFAULT).toEqual({ day: '#ffffff', night: '#ffffff' });
+  });
+
+  it('pins the draw order ladder, bottom-up, defaulting to the legacy under-the-dots slot', () => {
+    expect(TRANSFER_DRAW_ORDERS).toEqual(['under', 'over-stroke', 'over-dot', 'over-code']);
+    expect(TRANSFER_DRAW_DEFAULT).toBe('under');
+  });
+});
+
+describe('canonicalTransferDraw', () => {
+  it('collapses to undefined at the default and keeps every lifted rung', () => {
+    expect(canonicalTransferDraw('under', TRANSFER_DRAW_DEFAULT)).toBeUndefined();
+    expect(canonicalTransferDraw('over-dot', TRANSFER_DRAW_DEFAULT)).toBe('over-dot');
+    // `dropAt` is the style being tracked, not the constant: a transfer wearing
+    // a lifted default collapses there instead.
+    expect(canonicalTransferDraw('over-dot', 'over-dot')).toBeUndefined();
+    expect(canonicalTransferDraw('under', 'over-dot')).toBe('under');
   });
 });
 
@@ -110,6 +129,7 @@ describe('resolveTransferStyle', () => {
     color: { day: '#000000', night: '#000000' },
     strokeWidth: 0,
     strokeColor: { day: '#ffffff', night: '#ffffff' },
+    draw: 'under' as const,
   };
 
   it('prefers each override over the default, per field independently', () => {
@@ -123,7 +143,13 @@ describe('resolveTransferStyle', () => {
       color: { day: '#000000', night: '#000000' },
       strokeWidth: 0,
       strokeColor: { day: '#123456', night: '#654321' },
+      draw: 'under',
     });
+  });
+
+  it('resolves the draw order like every other field (override, else the default)', () => {
+    expect(resolveTransferStyle({ draw: 'over-code' }, defaults).draw).toBe('over-code');
+    expect(resolveTransferStyle({}, { ...defaults, draw: 'over-stroke' }).draw).toBe('over-stroke');
   });
 
   it('returns the defaults for a fully-tracking transfer', () => {

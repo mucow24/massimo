@@ -7,6 +7,7 @@ import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
 import type { Line, Station, Transfer } from '../model/types';
 import { makeLine } from '../test/fixtures';
+import { resolveHitStack } from './canvas/hitStack';
 
 beforeEach(() => {
   localStorage.clear();
@@ -536,6 +537,138 @@ describe('TransferLayer — DOM rendering', () => {
       const ring = document.querySelector('path[data-transfer-id="self"]')!;
       // Radius = visibleExtent/2 (6) + pad 2.5 = 8.5, as a two-arc circle.
       expect(ring.getAttribute('d')).toContain('A 8.5 8.5');
+    });
+  });
+
+  // The `draw` axis slots a transfer at one of four rungs in the stop-dot
+  // stack. The dots pass is three sub-passes deep — every dot's stroke
+  // silhouette, then every body, then every service code — so each rung is a
+  // gap between two of them (see TransferDrawOrder).
+  describe('draw order', () => {
+    // A stroked, code-bearing dot on s1: the only shape that puts all three
+    // dot sub-passes on the canvas at once, so each rung has both neighbours
+    // to be measured against.
+    const seedRichDot = (draw?: Transfer['draw']) => {
+      seedTwoStationsWithTransfer();
+      act(() => {
+        const s1 = useDoc.getState().stations.s1;
+        useDoc.setState({
+          ...useDoc.getState(),
+          stations: {
+            ...useDoc.getState().stations,
+            s1: {
+              ...s1,
+              stops: [
+                {
+                  ...s1.stops[0],
+                  dotStyle: {
+                    shape: 'circle',
+                    fill: { day: '#000000', night: '#000000' },
+                    strokeWidth: 2,
+                    strokeColor: { day: '#ffffff', night: '#ffffff' },
+                    strokeAlign: 'center',
+                    showServiceCode: true,
+                  },
+                },
+              ],
+            },
+          },
+        });
+        if (draw) useDoc.getState().updateTransferStyle('x1', { draw });
+      });
+    };
+    const one = (sel: string) => {
+      const el = document.querySelector(sel);
+      if (!el) throw new Error(`no element for ${sel}`);
+      return el;
+    };
+    // s1's three dot sub-pass elements, bottom-up.
+    const silhouette = () => one('[data-stop-stroke="s1"][data-stop-line="L1"]');
+    const body = () => one('[data-stop-station="s1"][data-stop-line="L1"]');
+    const code = () => one('[data-stop-code="s1"][data-stop-line="L1"]');
+    // `a` paints before `b` (so b covers a).
+    const under = (a: Element, b: Element) =>
+      Boolean(b.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_PRECEDING);
+
+    it('the dots pass splits into silhouettes → bodies → codes, in that order', () => {
+      seedRichDot();
+      render(<App />);
+      expect(under(silhouette(), body())).toBe(true);
+      expect(under(body(), code())).toBe(true);
+    });
+
+    it('"under" (the default) paints beneath the whole stack, silhouettes included', () => {
+      seedRichDot();
+      render(<App />);
+      expect(useDoc.getState().transfers.x1.draw).toBeUndefined();
+      expect(under(transferBody('x1'), silhouette())).toBe(true);
+    });
+
+    it('"over-stroke" paints over the dot silhouette but under its body', () => {
+      seedRichDot('over-stroke');
+      render(<App />);
+      expect(under(silhouette(), transferBody('x1'))).toBe(true);
+      expect(under(transferBody('x1'), body())).toBe(true);
+    });
+
+    it('"over-dot" paints over the dot body but under the service code', () => {
+      seedRichDot('over-dot');
+      render(<App />);
+      expect(under(body(), transferBody('x1'))).toBe(true);
+      expect(under(transferBody('x1'), code())).toBe(true);
+    });
+
+    it('"over-code" paints over everything the dot draws', () => {
+      seedRichDot('over-code');
+      render(<App />);
+      expect(under(code(), transferBody('x1'))).toBe(true);
+    });
+
+    // Paint order IS hit order in SVG, and this canvas leans on that
+    // everywhere (see the drag-proxy reroute, which exists precisely because
+    // selection must keep following paint order while dragging does not). So
+    // lifting a transfer over a dot lifts its CLICK over that dot too. That is
+    // the deliberate trade, not an oversight — pinned here so it can't change
+    // silently, and reachable the same way every other buried item is.
+    it('an "under" transfer loses the click where it crosses a dot; a lifted one wins it', () => {
+      seedRichDot();
+      render(<App />);
+      // Baseline: the dot is above the 'under' rung, so its pixels absorb.
+      fireEvent.click(body());
+      expect(useSelection.getState().selectedStationIds).toEqual(['s1']);
+      expect(useSelection.getState().selectedTransferId).toBeNull();
+    });
+
+    it('a lifted transfer takes the click over the dot it covers', () => {
+      seedRichDot('over-dot');
+      render(<App />);
+      fireEvent.click(transferBody('x1'));
+      expect(useSelection.getState().selectedTransferId).toBe('x1');
+      // The station underneath stays reachable through the alt+click deep
+      // pick, which resolves the whole hit stack rather than the top element.
+      expect(resolveHitStack([transferBody('x1'), body()]).map((e) => `${e.kind}:${e.id}`)).toEqual(
+        ['transfer:x1', 'station:s1'],
+      );
+    });
+
+    it('rungs are independent: two transfers can sit on opposite sides of one dot', () => {
+      seedRichDot('over-code');
+      act(() => {
+        useDoc.setState({
+          ...useDoc.getState(),
+          transfers: {
+            ...useDoc.getState().transfers,
+            x2: {
+              id: 'x2',
+              a: { stationId: 's1', lineId: 'L1' },
+              b: { stationId: 's2', lineId: 'L2' },
+            },
+          },
+        });
+      });
+      render(<App />);
+      expect(under(transferBody('x2'), silhouette())).toBe(true);
+      expect(under(code(), transferBody('x1'))).toBe(true);
     });
   });
 

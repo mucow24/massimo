@@ -986,3 +986,77 @@ describe('<StationView /> — selection silhouette geometry (E2)', () => {
     }
   });
 });
+
+// The three split dot layers exist so MapCanvas can slot lifted transfers into
+// the gaps; the combined 'dots' layer stays for the one mount that wants the
+// whole stack from one place (the layout editor's lifted station). Their union
+// must BE the combined layer — a split that drops a sub-pass would silently
+// strip service codes from the station being edited.
+describe('<StationView /> — dot sub-pass layers', () => {
+  const codedStation = () =>
+    makeStation({
+      id: 's1',
+      x: 0,
+      y: 0,
+      stops: [
+        makeStop('L1', {
+          dotStyle: {
+            shape: 'circle',
+            fill: { day: '#000000', night: '#000000' },
+            strokeWidth: 2,
+            strokeColor: { day: '#ffffff', night: '#ffffff' },
+            strokeAlign: 'center',
+            showServiceCode: true,
+          },
+        }),
+      ],
+    });
+  const lines = { L1: makeLine({ id: 'L1', service: 'A', stations: ['s1'] }) };
+  const shapesOf = (layer: 'dots' | 'dot-silhouettes' | 'dot-bodies' | 'dot-codes') => {
+    const { container } = render(
+      <svg>
+        <StationView
+          station={codedStation()}
+          lines={lines}
+          zoom={1}
+          onStartDrag={vi.fn()}
+          layer={layer}
+        />
+      </svg>,
+    );
+    return Array.from(container.querySelectorAll('circle, text')).map(
+      (el) => el.tagName.toLowerCase() + ':' + (el.getAttribute('fill') ?? ''),
+    );
+  };
+
+  it('the three split layers concatenate to exactly what the combined layer paints', () => {
+    expect([
+      ...shapesOf('dot-silhouettes'),
+      ...shapesOf('dot-bodies'),
+      ...shapesOf('dot-codes'),
+    ]).toEqual(shapesOf('dots'));
+  });
+
+  it('each split layer paints its own sub-pass and nothing else', () => {
+    // Silhouette (white casing), body (black disc), code (white text).
+    expect(shapesOf('dot-silhouettes')).toEqual(['circle:#ffffff']);
+    expect(shapesOf('dot-bodies')).toEqual(['circle:#000000']);
+    expect(shapesOf('dot-codes')).toEqual(['text:#fff']);
+  });
+
+  it('the codes layer renders nothing for a station whose dots carry no code', () => {
+    const plain = makeStation({ id: 's2', x: 0, y: 0, stops: [makeStop('L1')] });
+    const { container } = render(
+      <svg>
+        <StationView
+          station={plain}
+          lines={lines}
+          zoom={1}
+          onStartDrag={vi.fn()}
+          layer="dot-codes"
+        />
+      </svg>,
+    );
+    expect(container.querySelector('g, circle, text')).toBeNull();
+  });
+});

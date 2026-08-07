@@ -14,6 +14,7 @@ const props = (over: Partial<TransferStyleProps> = {}): TransferStyleProps => ({
   color: { day: '#000000', night: '#000000' },
   strokeWidth: 0,
   strokeColor: { day: '#ffffff', night: '#ffffff' },
+  draw: 'under',
   ...over,
 });
 

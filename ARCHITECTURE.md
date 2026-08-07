@@ -351,9 +351,12 @@ lands on top of the whole band.
 [MapCanvas.tsx](src/components/MapCanvas.tsx) instantiates `StationView` **once per pass** with
 a different `layer` prop and interleaves those passes with bands, markers, transfers, and
 overlays in one fixed paint order (detailed in [Rendering](#rendering-pipeline)). Two motifs
-recur: **stroke-before-fill** (all dot silhouettes drawn before all dot bodies, so overlapping
-dots share one continuous outer border) and **flat passes** (all transfer halos before all
-transfer bodies, so overlapping transfers trace one union outline).
+recur: **stroke-before-fill** (all dot silhouettes drawn before all dot bodies before all service
+codes, so overlapping dots share one continuous outer border and no body lands on a neighbour's
+code) and **flat passes** (all transfer halos before all transfer bodies, so overlapping
+transfers trace one union outline). The two meet at the transfer `draw` rung: the dot stack's
+three sub-passes are exactly the slots a lifted transfer can occupy, so a flat pass runs per rung
+rather than once.
 
 ---
 
@@ -1173,7 +1176,7 @@ downstream already reads it correctly — the cascade prunes it with its stop, `
 degenerates to a circle for the selection ring, and `stopMetrics` indexes both ends onto the one
 stop (`bodyDir` null, so the label clears the plain disc). Default styling (thickness, color,
 optional halo) comes from the constant `TRANSFER_STYLE_DEFAULTS` — there are **no doc-level
-transfer settings** (see the MapDoc note above); the four optional fields are per-transfer
+transfer settings** (see the MapDoc note above); the five optional fields are per-transfer
 overrides with the dot-style contract — absent ⇒ track the default, and `updateTransferStyle`
 drops a value equal to the default. `color`/`strokeColor` are **theme-aware `DayNightColor`s**
 (`{day, night}`, the same abstraction dot fill/stroke use) — day paints on the light canvas,
@@ -1182,6 +1185,23 @@ night on the dark; the whole override drops only when **both** halves match the 
 theme via `resolveDayNight`. Map-wide restyling is the designated **Default** transfer
 style preset in `doc.styles`, not a doc field
 ([transferStyle.ts](src/model/transferStyle.ts), `updateTransferStyle`).
+
+**`draw`** is the fifth override and the odd one out: a **paint order**, not a shape.
+`TransferDrawOrder` names four rungs of the stop-dot stack, bottom-up — `under` (the default and
+the historical look: the whole dots pass, white casings included, covers the transfer),
+`over-stroke` (over the casings, under the bodies, so a bar reads continuous between dots while
+each dot keeps its ring against a dark line), `over-dot` (over the bodies, under the service
+codes) and `over-code` (over everything). The rungs exist because the dots pass is three
+sub-passes deep; MapCanvas resolves every transfer's rung once per render (`transfersByRung`) and
+mounts `TransferLayer` at each rung's slot with that bucket. Two consequences, both load-bearing:
+
+- The flat-pass union holds **within** a rung — two overlapping transfers trace one outline only
+  when they share one.
+- **Paint order is hit order**, so a lifted rung takes the dot's clicks along with its pixels: on
+  `under` the dots layer above wins (dot pixels absorb the click and route to the station), on a
+  lifted rung the transfer does. That is the trade a lifted rung buys, not an oversight — it is
+  the rule the whole canvas selects by — and the station stays reachable underneath through the
+  alt+click deep pick, which resolves the hit STACK rather than its top element.
 
 **Small unions:** `StopOrientation` (`auto-vertical|auto-ne-sw|auto-horizontal|auto-nw-se` —
 pins only the **axis**; the sign falls out of the world tangent from neighbors), `LineStyle`
@@ -2603,12 +2623,18 @@ of their own, and are omitted below to keep it readable:
 4. Station `bg` (transparent hit areas).
 5. Station `label` (after bg, so a selected wash never covers a neighbor's name).
 6. `RegionModeOverlay layer="outlines"` (layering mode only — dashed overlap-face footprints).
-7. `TransferLayer` (before dots).
-8. Station `dots` (over transfers, so a dot click routes to the station — everything below
-   this point still paints above the dots), then `AnchorLayer` (8b, below), then the
-   **selected-transfer outline** (`TransferSelectionOutline`) — mounted just above the dots
-   (unlike `TransferLayer`, step 7, which is below them) so a connected or crossing dot can't
-   cover the selection chrome.
+7. `TransferLayer` at the **`under`** rung (before dots) — the default, and the only rung below
+   the whole dot stack.
+8. Station dots, as **three** `StationView` passes — `dot-silhouettes`, `dot-bodies`,
+   `dot-codes` — each followed immediately by `TransferLayer` at the rung that sits above it
+   (`over-stroke`, `over-dot`, `over-code` respectively; see `Transfer.draw`). A rung with no
+   transfers on it renders nothing, so an untouched map paints exactly the old stack. The union
+   of the three layers IS the single `dots` layer, which still exists for the one mount that
+   wants the whole stack from one place (the layout editor's lifted station, step 18). Dots sit
+   over the `under` rung, so a dot click routes to the station — everything below this point
+   still paints above the dots. Then `AnchorLayer` (8b, below), then the **selected-transfer
+   outline** (`TransferSelectionOutline`) — mounted above every dot pass and every rung, so a
+   connected or crossing dot can't cover the selection chrome.
 8b. `AnchorLayer` — transfer anchors, both homes, between the dots and the transfer outline.
     Above the dots so a free anchor stays grabbable where it overlaps one. Editor chrome, not
     map ink: mounted inside a `data-export-exclude` subtree, so no anchor reaches an SVG/PNG/PDF
@@ -2684,16 +2710,32 @@ pass deliberately keeps its **own** frame — its inline rename editor must win 
 its branch order differs. Drift here is not subtle-but-harmless: the highlight pass paints _over_
 the normal one, so a mismatch reads as a doubled label, and a test pins the cross-pass geometry.
 
-**Stroke-before-fill dots (the headline render motif).** `StationDots` maps `['stroke','fill'] ×
-dotStops` — `dash`-shaped stops are filtered out first and rendered as `DashGlyph` ahead of both
-passes, since a TfL tick is a singleton with no silhouette/body split —
-emitting **all stroke-pass glyphs before all fill-pass glyphs**, so overlapping dots share
-**one continuous outer border** (every silhouette is painted before every body). `StopGlyph`
-implements the split: the stroke pass is the silhouette drawn as a **filled** shape outset by
-`strokeWidth/2` (`× √2` for a diamond); the fill pass is the body **inset** by the same amount and
-carries the canonical `data-stop-*` E2E attributes. **Not split**: open rings (`fill:'none'`), the
-`x` saltire (concave), borderless dots. A lone dot's outer edge is byte-identical to the old
-centered stroke.
+**Stroke-before-fill dots (the headline render motif).** `StationDots` maps
+`['stroke','fill','code'] × dotStops` — `dash`-shaped stops are filtered out first and rendered
+as `DashGlyph` ahead of all three, since a TfL tick is a singleton with no silhouette/body split —
+emitting **all stroke-pass glyphs before all fill-pass glyphs before all codes**, so overlapping
+dots share **one continuous outer border** (every silhouette is painted before every body) and no
+dot's body lands on a neighbour's service code. `StopGlyph` implements the split: the stroke pass
+is the silhouette drawn as a **filled** shape outset by `strokeWidth/2` (`× √2` for a diamond);
+the fill pass is the body **inset** by the same amount and carries the canonical `data-stop-*` E2E
+attributes; the code pass is the `<text>` alone, carrying its station id as the VALUE of
+`data-stop-code` (like `data-stop-stroke`, so there stays exactly one `data-stop-station` per
+dot). **Not split**: open rings (`fill:'none'`), the `x` saltire (concave), borderless dots. A
+lone dot's outer edge is byte-identical to the old centered stroke.
+
+A `sub` prop narrows one mount to one of the three (`silhouettes` / `bodies` / `codes`); MapCanvas
+uses it to mount them as separate `StationView` layers with the lifted transfer rungs slotted
+between (see `Transfer.draw`). Omitting it paints all three in order from one mount — the
+combined render every isolated caller wants, and a test pins that the three split layers
+concatenate to exactly it. The COMBINED `StopGlyph` (no `pass`) still emits body and code inside
+one `<g>` carrying the seam attrs; the split passes put those attrs on the body element directly,
+since there is no shared wrapper to hang them on.
+
+The codes sub-pass renders from its own component (`StationDotCodes`) rather than the shape loop,
+because it is the one pass with **no pointer surface** — its text is `pointer-events: none`, so it
+skips `useStationInteraction` (a selectorless whole-store subscription) and returns `null` outright
+when no stop resolves a code. Both matter: this pass runs once per station per render, and most
+stations on most maps draw nothing in it.
 
 The three radii — silhouette, body, and the midpoint a single native stroke draws at — come from
 `dotStrokeRadiusDeltas` ([model/dotStyle.ts](src/model/dotStyle.ts)), and that is the **one owner**
@@ -2757,14 +2799,16 @@ painter and `lineRegions.markerBodyRings` read it, so a cover can never disagree
 render-time only: the stored value stays `'round'`, so cycling the segment back to solid brings it
 straight back, and one line can round at a solid end while stopping short at a dashed one.
 
-**`TransferLayer`** renders all transfers in **two flat passes** (user stroke halos → bodies) so
-overlapping thick transfers trace one outer union. Bodies + halos are click targets
+**`TransferLayer`** renders **one draw rung's** transfers in **two flat passes** (user stroke
+halos → bodies) so overlapping thick transfers on that rung trace one outer union. It takes the
+rung as a prop and filters to the transfers resolving to it; MapCanvas mounts it four times, at
+the four slots in the stop-dot stack (step 7 and step 8). Bodies + halos are click targets
 (`pointer-events="stroke"`). A transfer whose ends COINCIDE — a self-transfer — emits a `<circle>`
 in each pass instead, hit by its `fill`, so it stays reachable by the alt-click deep-pick under its
 own stop dot. The selected transfer's ring is **not** in this layer: it renders in a
-separate `TransferSelectionOutline` mounted **above** the station dots (step 8), so a connected or
-crossing dot can't cover it; `TransferLayer` itself sits below the dots so a dot click routes to the
-station, not the transfer.
+separate `TransferSelectionOutline` mounted **above** every dot pass and every rung (step 8), so a
+connected or crossing dot can't cover it; the default `under` rung sits below the dots so a dot
+click routes to the station, not the transfer.
 
 ---
 

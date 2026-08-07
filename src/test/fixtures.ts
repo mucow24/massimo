@@ -280,6 +280,7 @@ const STYLE_PROPS_DEFAULTS: StylePropsByKind = {
     color: { day: '#000000', night: '#000000' },
     strokeWidth: 0,
     strokeColor: { day: '#ffffff', night: '#ffffff' },
+    draw: 'under',
   },
   station: { fontSize: 12, weight: 400, italic: false, leading: 1, tracking: 0 },
 };

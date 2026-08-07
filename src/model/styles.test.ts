@@ -187,6 +187,7 @@ describe('captureStyleProps', () => {
       color: { day: '#000000', night: '#000000' },
       strokeWidth: 0,
       strokeColor: { day: '#ffffff', night: '#ffffff' },
+      draw: 'under',
     });
   });
 
@@ -194,7 +195,12 @@ describe('captureStyleProps', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
       transfers: [
-        makeTransfer({ id: 'x1', thickness: 7, color: { day: '#ff0000', night: '#880000' } }),
+        makeTransfer({
+          id: 'x1',
+          thickness: 7,
+          color: { day: '#ff0000', night: '#880000' },
+          draw: 'over-dot',
+        }),
       ],
     });
     expect(captureStyleProps(doc, 'transfer', 'x1')).toEqual({
@@ -202,6 +208,7 @@ describe('captureStyleProps', () => {
       color: { day: '#ff0000', night: '#880000' },
       strokeWidth: 0,
       strokeColor: { day: '#ffffff', night: '#ffffff' },
+      draw: 'over-dot',
     });
   });
 
@@ -308,11 +315,21 @@ describe('stylePropsEqual — transfer day/night colors', () => {
   const props = (
     color: { day: string; night: string },
     strokeColor: { day: string; night: string },
-  ) => ({
+  ): TransferStyleProps => ({
     thickness: 2,
     color,
     strokeWidth: 0,
     strokeColor,
+    draw: 'under',
+  });
+
+  it('treats an absent draw rung as "under" (the pre-axis def must still match)', () => {
+    const base = props({ day: '#000000', night: '#000000' }, { day: '#ffffff', night: '#ffffff' });
+    const { draw: _gone, ...legacy } = base;
+    expect(stylePropsEqual('transfer', legacy as TransferStyleProps, base)).toBe(true);
+    expect(
+      stylePropsEqual('transfer', legacy as TransferStyleProps, { ...base, draw: 'over-dot' }),
+    ).toBe(false);
   });
 
   it('compares transfer colors STRUCTURALLY, not by reference', () => {

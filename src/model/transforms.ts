@@ -37,10 +37,12 @@ import {
 } from './lineStroke';
 import {
   TRANSFER_COLOR_DEFAULT,
+  TRANSFER_DRAW_DEFAULT,
   TRANSFER_STROKE_COLOR_DEFAULT,
   TRANSFER_STROKE_WIDTH_DEFAULT,
   TRANSFER_THICKNESS_DEFAULT,
   canonicalTransferColor,
+  canonicalTransferDraw,
   canonicalTransferStrokeWidth,
   canonicalTransferThickness,
 } from './transferStyle';
@@ -3968,7 +3970,7 @@ export function deleteStationAnchor(doc: MapDoc, stationId: StationId, anchorId:
 // serialize's `sanitizeTransferStyles`, which normalizes hand-edited files
 // to the same stored form.
 export function withTransferOverride<
-  K extends 'thickness' | 'color' | 'strokeWidth' | 'strokeColor',
+  K extends 'thickness' | 'color' | 'strokeWidth' | 'strokeColor' | 'draw',
 >(t: Transfer, field: K, stored: Transfer[K]): Transfer {
   if (t[field] === stored) return t;
   if (stored === undefined) {
@@ -4012,8 +4014,15 @@ export function updateTransferStyle(doc: MapDoc, id: string, patch: TransferStyl
     const stored = canonicalTransferColor(patch.strokeColor, TRANSFER_STROKE_COLOR_DEFAULT);
     next = withTransferOverride(next, 'strokeColor', stored);
   }
+  if (patch.draw !== undefined) {
+    next = withTransferOverride(
+      next,
+      'draw',
+      canonicalTransferDraw(patch.draw, TRANSFER_DRAW_DEFAULT),
+    );
+  }
   if (next === cur) return doc;
-  // Any override actually changed → detach from the style preset (all four
+  // Any override actually changed → detach from the style preset (all five
   // fields are covered).
   return { ...doc, transfers: { ...doc.transfers, [id]: stripStyleId(next) } };
 }
@@ -4161,6 +4170,7 @@ export const DEFAULT_STYLES: Record<string, StyleDef> = {
       color: TRANSFER_COLOR_DEFAULT,
       strokeWidth: TRANSFER_STROKE_WIDTH_DEFAULT,
       strokeColor: TRANSFER_STROKE_COLOR_DEFAULT,
+      draw: TRANSFER_DRAW_DEFAULT,
     },
   },
   'default-station': {
