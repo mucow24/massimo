@@ -311,9 +311,17 @@ export const STOP_DOT_SEED_STYLES: Record<
  * e.g. an express line's skipped stops in the express+local pattern — doesn't
  * count, so the visible stop sharing that station is still treated as a
  * singleton (see `stationIsSingleton`).
+ *
+ * A **dash** reads by its fill alone, because that is the only style field it
+ * honors (`resolveDotRender` inerts the stroke and the code for a tick). The
+ * rule has to live in BOTH places or they disagree about one style: a tick
+ * whose fill was cleared while a stroke or a code sat unreadable behind the
+ * editor's dash caption would paint an accidental casing-only tick and go on
+ * occupying its station.
  */
 export function isBlankDotStyle(style: DotStyle): boolean {
-  return style.fill === 'none' && style.strokeWidth === 0 && !style.showServiceCode;
+  if (style.fill !== 'none') return false;
+  return style.shape === 'dash' || (style.strokeWidth === 0 && !style.showServiceCode);
 }
 
 /**
