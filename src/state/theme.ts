@@ -113,16 +113,21 @@ const DARK: ThemeColors = {
 
 /**
  * Day mode with the paper dimmed — the "reduce glare without going to night
- * mode" preference. Only `canvasBg` moves; day-mode ink, grid, underlay and
- * editor stay put, so it reads as day mode with the lights down, not night.
- * 'gray' (#616161, Material Grey 700) is the middle rung between white and
- * black. Each is a frozen constant so themeColors stays referentially stable
- * per input.
+ * mode" preference. Day-mode ink, underlay and editor stay put, so it reads as
+ * day mode with the lights down, not night. 'gray' (#616161, Material Grey
+ * 700) is the middle rung between white and black.
+ *
+ * The grid is the one exception to "only the paper moves": the day grid is
+ * tuned to whisper against near-white, so on a dimmed paper it reads as a cage
+ * of bright white lines. Gray drops it to Grey 800, one rung below its paper;
+ * black takes DARK's grid outright, since that value is already tuned against
+ * exactly this canvas. Each is a frozen constant so themeColors stays
+ * referentially stable per input.
  */
 const DAY_PAPER: Record<DayCanvasColor, ThemeColors> = {
   white: LIGHT,
-  gray: { ...LIGHT, canvasBg: '#616161' },
-  black: { ...LIGHT, canvasBg: '#000000' },
+  gray: { ...LIGHT, canvasBg: '#616161', grid: '#424242' },
+  black: { ...LIGHT, canvasBg: '#000000', grid: DARK.grid },
 };
 
 /**
