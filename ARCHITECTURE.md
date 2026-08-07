@@ -978,9 +978,10 @@ to the dot's edge; persist v21 backfills the historical `'center'`), and `showSe
 > **whatever sits behind the mark**: a `'bw'` STROKE and the auto service code judge the resolved
 > **fill**; a `'bw'` FILL judges the **line's band**, since that is what shows behind the dot —
 > which is why it earns a slot no fixed day/night pair could fill (one style reading correctly on
-> light and dark lines alike). Where nothing sits behind — a transparent fill, or no line in
-> scope — the theme's canvas background stands in. `autoContrastColor` in
-> [dotStyle.ts](src/model/dotStyle.ts) is the single owner.
+> light and dark lines alike). A **transparent** fill is not a backdrop but the band showing
+> through, so it falls through to the band too — an open, coded dot reads against the line it sits
+> on. Only with **no line in scope** (a picker preview) does the theme's canvas stand in.
+> `autoContrastColor` in [dotStyle.ts](src/model/dotStyle.ts) is the single owner.
 
 Two **optional** fields refine the code, both meaningful only when `showServiceCode` and both
 kept optional so every preset stays byte-identical. `serviceCodeColor?: DotServiceCodeColor`

@@ -99,7 +99,16 @@ describe('resolveDotRender', () => {
     ).toBe('#000');
   });
 
-  it("judges a 'bw' stroke on a transparent fill against the canvas background", () => {
+  it("judges a 'bw' stroke on a TRANSPARENT fill against the line's band", () => {
+    // 'none' means the band shows through (see DotFill), so the band is what
+    // is actually behind the stroke — not the canvas. An open dot on a navy
+    // line needs a white ring; black would vanish into the band.
+    const s = style({ fill: 'none', strokeWidth: 2, strokeColor: 'bw' });
+    expect(resolveDotRender(s, '#0039a6', undefined, false)!.stroke).toBe('#fff');
+    expect(resolveDotRender(s, '#fccc0a', undefined, false)!.stroke).toBe('#000');
+  });
+
+  it("falls a transparent fill's 'bw' stroke back to the canvas with no line in scope", () => {
     const s = style({ fill: 'none', strokeWidth: 2, strokeColor: 'bw' });
     expect(resolveDotRender(s, undefined, undefined, false)!.stroke).toBe('#000');
     expect(resolveDotRender(s, undefined, undefined, true)!.stroke).toBe('#fff');
@@ -211,7 +220,13 @@ describe('resolveDotRender', () => {
       expect(resolveDotRender(s, '#0039a6', 'A', false)!.code!.color).toBe('#fff');
     });
 
-    it("judges legibility against the canvas background for a 'none' fill", () => {
+    it("judges a 'none' fill's code against the line's band — the band shows through", () => {
+      const s = style({ fill: 'none', showServiceCode: true });
+      expect(resolveDotRender(s, '#0039a6', 'A', false)!.code!.color).toBe('#fff');
+      expect(resolveDotRender(s, '#fccc0a', 'A', false)!.code!.color).toBe('#000');
+    });
+
+    it("falls a 'none' fill's code back to the canvas with no line in scope", () => {
       const s = style({ fill: 'none', showServiceCode: true });
       expect(resolveDotRender(s, undefined, 'A', false)!.code!.color).toBe('#000');
       expect(resolveDotRender(s, undefined, 'A', true)!.code!.color).toBe('#fff');

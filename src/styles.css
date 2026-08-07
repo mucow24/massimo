@@ -1243,8 +1243,9 @@ select option {
   font: inherit;
   font-size: var(--fs-small);
   /* The height is fixed, so a wrapped word would spill out of its segment
-     rather than grow the row. The widest split is the dot Fill picker's four
-     (None/B/W/Line/Custom) — "Custom" fits, but only just. */
+     rather than grow the row instead. The tightest split is the four-way Fill
+     and Service code pickers (None/B/W/Line/Color); "Color" clears it with room
+     to spare, and nowrap keeps that true whatever the platform font. */
   white-space: nowrap;
 }
 .bullet-popover .shape-btn svg,

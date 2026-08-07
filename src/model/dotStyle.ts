@@ -343,7 +343,7 @@ function resolveFill(fill: DotFill, lineColor: string | undefined, darkMode: boo
   if (fill === 'line') return lineColor ?? '#000';
   // What sits behind the dot is its line's band, so that is what a B/W fill
   // contrasts against; with no line in scope the canvas shows through instead.
-  if (fill === 'bw') return autoContrastColor(lineColor, darkMode);
+  if (fill === 'bw') return autoContrastColor('none', lineColor, darkMode);
   return resolveDayNight(fill, darkMode);
 }
 
@@ -361,14 +361,20 @@ function resolveLineOrPairColor(
   return resolveDayNight(color, darkMode);
 }
 
-// The B/W rule, shared by a 'bw' fill, a 'bw' stroke and an unset service-code
-// color: whichever of black/white is legible against `behind` — whatever
-// actually sits under the mark. A fill is judged against its line's band, a
-// stroke and the code against the RESOLVED fill. 'none'/absent means nothing
-// is under it but the canvas, so the theme background stands in.
-function autoContrastColor(behind: string | undefined, darkMode: boolean): string {
+/**
+ * The B/W rule, shared by a 'bw' fill, a 'bw' stroke and an unset service-code
+ * color: whichever of black/white is legible against what actually shows behind
+ * the mark. That is the dot's RESOLVED fill — but a transparent fill is not a
+ * backdrop, it's the line's band showing through ('none', see DotFill), so it
+ * falls through to `lineColor`. Only with no line in scope at all (a picker
+ * preview) does the theme's canvas stand in.
+ *
+ * A 'bw' FILL has no fill of its own in front of the band, so it passes 'none'
+ * and lands on exactly that fall-through.
+ */
+function autoContrastColor(fill: string, lineColor: string | undefined, darkMode: boolean): string {
   const canvas = darkMode ? '#000000' : '#ffffff';
-  return legibleTextOn(behind === undefined || behind === 'none' ? canvas : behind);
+  return legibleTextOn(fill === 'none' ? (lineColor ?? canvas) : fill);
 }
 
 // Concrete per-frame render parameters for one dot. Strings are ready-to-emit
@@ -427,7 +433,7 @@ export function resolveDotRender(
   if (style.strokeWidth > 0 && !isDash) {
     out.stroke =
       style.strokeColor === 'bw'
-        ? autoContrastColor(fill, darkMode)
+        ? autoContrastColor(fill, lineColor, darkMode)
         : resolveLineOrPairColor(style.strokeColor, lineColor, darkMode);
     out.strokeWidth = style.strokeWidth;
     out.strokeAlign = style.strokeAlign;
@@ -435,13 +441,13 @@ export function resolveDotRender(
   if (showCode) {
     // An explicit serviceCodeColor overrides the auto-contrast: 'line' → the
     // owning line's color, a day/night pair → that per-theme color. Absent ⇒
-    // judge legibility against what's actually behind the code: the resolved
-    // fill, or the canvas background when the fill is transparent.
+    // judge legibility against what's actually behind the code (see
+    // autoContrastColor).
     const scc = style.serviceCodeColor;
     const color =
       scc !== undefined
         ? resolveLineOrPairColor(scc, lineColor, darkMode)
-        : autoContrastColor(fill, darkMode);
+        : autoContrastColor(fill, lineColor, darkMode);
     // `serviceCodeFirstLetterOnly` trims the code to its first character — a
     // local/express pair ("6" / "6X") shown as variants of one line reads "6"
     // on both. The '?' fallback is already one character.
@@ -452,7 +458,7 @@ export function resolveDotRender(
 }
 
 function dotColorsEqual(a: DotFill | DotStrokeColor, b: DotFill | DotStrokeColor): boolean {
-  // A sentinel ('line'/'none') matches only the identical sentinel; two
+  // A sentinel ('line'/'none'/'bw') matches only the identical sentinel; two
   // day/night pairs compare through the shared structural equality.
   if (typeof a === 'string' || typeof b === 'string') return a === b;
   return dayNightColorsEqual(a, b);
