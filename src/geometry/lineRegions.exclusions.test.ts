@@ -244,6 +244,66 @@ describe("buildExclusionHoles — a shield never eats the winner's rail", () => 
     expect(contains(hole, { x: 50, y: 8.1 })).toBe(false);
     expect(contains(hole, { x: 50, y: 11 })).toBe(false);
   });
+
+  it('gives the rail back when the tangent neighbor is UNCASED', () => {
+    // The annulus is only white as far as the neighbor's own rail reaches.
+    // Drop l3's casing to 0 and its COLORED body starts at the shared edge
+    // y = 7, while l2's silhouette still runs to y = 8 — so the strip that
+    // was l2's rail is now l3's paint, and revealing it would swap white for
+    // l3's color. The exemption clamps to the narrower of the two rails, here
+    // to nothing at all.
+    const bands = tangentPair();
+    const faces = buildOverlapRegions(bands, []);
+    const winners = faces.map((f) =>
+      f.lineIds.includes('l2')
+        ? { winner: 'l2' as LineId, assignmentId: 'r1' }
+        : { winner: 'l1' as LineId, assignmentId: null },
+    );
+    const hole = buildExclusionHoles(faces, winners, ['l1', 'l3', 'l2'], bands, [], (id) =>
+      id === 'l3' ? 0 : 2,
+    ).get('l1');
+    expect(contains(hole, { x: 50, y: 6.9 })).toBe(true);
+    expect(contains(hole, { x: 50, y: 7.1 })).toBe(false);
+    expect(contains(hole, { x: 50, y: 7.9 })).toBe(false);
+    // The FREE side has no neighbor to clamp against, so the rail reveals.
+    expect(contains(hole, { x: 50, y: -7.9 })).toBe(true);
+  });
+});
+
+describe('buildExclusionHoles — the shield still stops a real nick', () => {
+  it("holds the loser's paint where the WINNER'S BODY reaches into a face it lost", () => {
+    // The sliver the shield exists for (the CTA blue-notch): l1 vertical
+    // (loser, front); l2 horizontal (winner by assignment, body y ∈ [-7, 7]);
+    // l3 horizontal OVERLAPPING l2 (body y ∈ [-1, 13]) and painted between
+    // them. The crossing splits into {l1,l2} at y ∈ [-7,-1], {l1,l2,l3} at
+    // y ∈ [-1,7], and {l1,l3} above. Assign only the first to l2.
+    //
+    // The middle face keeps its default winner l1, and l2's own BODY covers
+    // it — so the reveal's dilation reaches in without ever leaving the
+    // winner's footprint. Cutting l1 there exposes l3, which paints above
+    // the winner: the footprint cap cannot see this, and only the shield
+    // holds the line.
+    const bands = [
+      vBand('l1', 's1|s2', -50, 50, 50),
+      hBand('l2', 's3|s4', 0, 100, 0),
+      hBand('l3', 's5|s6', 0, 100, 6),
+    ];
+    const faces = buildOverlapRegions(bands, []);
+    const winners = faces.map((f) =>
+      f.lineIds.join('+') === 'l1+l2'
+        ? { winner: 'l2' as LineId, assignmentId: 'r1' }
+        : { winner: 'l1' as LineId, assignmentId: null },
+    );
+    const hole = buildExclusionHoles(faces, winners, ['l1', 'l3', 'l2'], bands, [], () => 2).get(
+      'l1',
+    );
+    // The assigned face is cut through, rail included on its free side.
+    expect(contains(hole, { x: 50, y: -3 })).toBe(true);
+    expect(contains(hole, { x: 50, y: -7.5 })).toBe(true);
+    // …and stops dead at the face it lost, well inside l2's silhouette.
+    expect(contains(hole, { x: 50, y: -0.5 })).toBe(false);
+    expect(contains(hole, { x: 50, y: 1 })).toBe(false);
+  });
 });
 
 describe('buildExclusionHoles — absorbs dropped slivers into a bridge', () => {

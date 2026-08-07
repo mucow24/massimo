@@ -843,14 +843,16 @@ look) and swallows the losers' fringes near the face. Only lines whose bodies co
 ever lose — an interlined neighbor's rail riding the shared boundary is the neighbor's own
 crossing's business: painted for this winner, that crossing's holes punch the shared rail zone
 and tile with the reveal; unpainted, the winner slides under it and the boundary stroke runs on
-intact. The WINNER's rail is the mirror case and belongs to THIS crossing. Neighboring faces
-won by somebody else are subtracted from every hole so the reveal can't nick them, but only
-where the winner's own BODY covers: the arrangement is cut on nominal bodies while the paint is
-silhouettes, and the difference is exactly the rail-half that hangs over a tangent neighbor's
-territory. Shielding that away prints the promotion's separator at HALF a rail. Inside the
-annulus the only thing over the winner's rail is the neighbor's own rail — the same white — so
-the reveal runs on and the crossing reads like a real `lineOrder` promotion.
-Clipped areas take no pointer events,
+intact. The WINNER's rail is the mirror case and belongs to THIS crossing. Nearby faces won by
+somebody else are subtracted from every hole so the reveal can't nick them, but that
+subtraction stops short of the winner's own rail: faces are cut on nominal bodies while paint
+is silhouettes, and the annulus between them is the rail-half hanging over a tangent neighbor,
+so shielding it prints the promotion's separator at HALF a rail. The exemption reaches only as
+far as the NEIGHBOR's rail — past that the neighbor's colored body has begun and uncovering it
+is the nick again — so it clamps to the narrowest rail painting above the winner among the
+shielders (losers excluded; the hole clips them too). Equal rails, the uniform-map case, clamp
+to the winner's own and the crossing reads like a real `lineOrder` promotion; an UNCASED
+neighbor clamps to nothing and the shield applies whole. Clipped areas take no pointer events,
 so idle clicks land on the visible winner natively. Holes exist wherever a face's winner
 differs from the raw base paint — assignment-free branch-arm DEFAULTS included — so a doc with
 zero assignments still clips its unpainted mouths; a branch-free map pays nothing.
