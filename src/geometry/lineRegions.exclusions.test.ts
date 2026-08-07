@@ -162,15 +162,16 @@ describe('buildExclusionHoles — casings', () => {
 });
 
 describe('buildExclusionHoles — neighboring faces are never nicked', () => {
-  it("stops at a tangent face the LOSER wins (the loser's own territory)", () => {
+  it("stops at the WINNER's silhouette over a tangent face the LOSER wins", () => {
     // l1 vertical (loser, top of lineOrder); l2 horizontal (winner by
     // assignment, body y ∈ [-7, 7]); l3 horizontal TANGENT below l2 (body
     // y ∈ [7, 21]), painted between them. All cased at railW = 0.5, so the
-    // winner's silhouette reaches y = 7.25 — past the face boundary, over
-    // l3's body, where l1 is the DEFAULT winner of the {l1,l3} face. The
-    // hole must not cut l1 there: beneath l1 sits l3's body (painted above
-    // the winner), so the cut would expose an l3-colored sliver instead of
-    // the winner's rail — the loser's paint must run to the boundary.
+    // winner's silhouette reaches y = 7.25 and l3's INSET body starts at the
+    // same 7.25. Past that line sits l3's body, painted above the winner:
+    // cutting l1 there would expose an l3-colored sliver, so the loser's
+    // paint has to run on. Short of it there is only l2's rail under l3's —
+    // both white — and the reveal must reach, or the separator prints at half
+    // width (see the shield/rail describe below).
     const bands = [
       vBand('l1', 's1|s2', -50, 50, 50),
       hBand('l2', 's3|s4', 0, 100, 0),
@@ -186,14 +187,62 @@ describe('buildExclusionHoles — neighboring faces are never nicked', () => {
     );
     const holes = buildExclusionHoles(faces, winners, lineOrder, bands, [], () => 0.5);
     const hole = holes.get('l1');
-    // Inside the tangent {l1,l3} face, just past the shared boundary: the
-    // hole may not reach in, however far the winner's footprint extends.
-    expect(contains(hole, { x: 50, y: 7.1 })).toBe(false);
-    // The face itself stays fully cut, right up to that boundary…
+    // The face itself stays fully cut, right up to its boundary…
     expect(contains(hole, { x: 50, y: 6.9 })).toBe(true);
-    // …and on the FREE side (no neighboring face) the hole still runs
-    // through the winner's rail for the bridges-over reveal.
+    // …on through the winner's rail, inside the tangent {l1,l3} face…
+    expect(contains(hole, { x: 50, y: 7.1 })).toBe(true);
+    // …and dead at l3's body, however far the neighboring face extends.
+    expect(contains(hole, { x: 50, y: 7.3 })).toBe(false);
+    expect(contains(hole, { x: 50, y: 9 })).toBe(false);
+    // On the FREE side (no neighboring face) the hole runs through the
+    // winner's rail for the bridges-over reveal, and stops there too.
     expect(contains(hole, { x: 50, y: -7.1 })).toBe(true);
+    expect(contains(hole, { x: 50, y: -7.3 })).toBe(false);
+  });
+});
+
+describe("buildExclusionHoles — a shield never eats the winner's rail", () => {
+  // The arrangement is cut on nominal BODIES; the paint is SILHOUETTES. The
+  // difference is exactly one rail-half, and it is the half of the winner's
+  // casing that hangs over a tangent neighbor's territory. Shielding it away
+  // paints the promotion's separator at HALF width — the pixel-peeped "outer
+  // stroke too thin" along every crossing where one stripe of an interlined
+  // band is painted forward and its neighbor keeps the default.
+  //
+  // l1 vertical (loser, front of lineOrder); l2 + l3 horizontal and TANGENT
+  // behind it (l2 body y ∈ [-7, 7], l3 body y ∈ [7, 21]). l2 wins its crossing
+  // by assignment; the {l1,l3} face keeps its default winner, l1. railW = 2
+  // puts l2's silhouette at y = 8 and l3's inset body at y = 8 too — so the
+  // strip y ∈ [7, 8] is l2's rail with nothing but l3's rail over it.
+  const tangentPair = () => [
+    vBand('l1', 's1|s2', -50, 50, 50),
+    hBand('l2', 's3|s4', 0, 100, 0),
+    hBand('l3', 's5|s6', 0, 100, 14),
+  ];
+  const holesFor = () => {
+    const bands = tangentPair();
+    const faces = buildOverlapRegions(bands, []);
+    expect(faces.map((f) => f.lineIds.join('+'))).toEqual(['l1+l2', 'l1+l3']);
+    const winners = faces.map((f) =>
+      f.lineIds.includes('l2')
+        ? { winner: 'l2' as LineId, assignmentId: 'r1' }
+        : { winner: 'l1' as LineId, assignmentId: null },
+    );
+    return buildExclusionHoles(faces, winners, ['l1', 'l3', 'l2'], bands, [], () => 2);
+  };
+
+  it("runs the hole out to the winner's silhouette across the neighbor's face", () => {
+    const hole = holesFor().get('l1');
+    // Inside the face, unchanged.
+    expect(contains(hole, { x: 50, y: 6.9 })).toBe(true);
+    // Past the shared l2|l3 edge, still inside l2's rail: the reveal must
+    // reach here, or the separator between l2's body and l1's body comes out
+    // 1 unit wide instead of 2.
+    expect(contains(hole, { x: 50, y: 7.1 })).toBe(true);
+    expect(contains(hole, { x: 50, y: 7.9 })).toBe(true);
+    // Past l2's silhouette l3's own body takes over, and the reveal stops.
+    expect(contains(hole, { x: 50, y: 8.1 })).toBe(false);
+    expect(contains(hole, { x: 50, y: 11 })).toBe(false);
   });
 });
 

@@ -843,7 +843,14 @@ look) and swallows the losers' fringes near the face. Only lines whose bodies co
 ever lose — an interlined neighbor's rail riding the shared boundary is the neighbor's own
 crossing's business: painted for this winner, that crossing's holes punch the shared rail zone
 and tile with the reveal; unpainted, the winner slides under it and the boundary stroke runs on
-intact. Clipped areas take no pointer events,
+intact. The WINNER's rail is the mirror case and belongs to THIS crossing. Neighboring faces
+won by somebody else are subtracted from every hole so the reveal can't nick them, but only
+where the winner's own BODY covers: the arrangement is cut on nominal bodies while the paint is
+silhouettes, and the difference is exactly the rail-half that hangs over a tangent neighbor's
+territory. Shielding that away prints the promotion's separator at HALF a rail. Inside the
+annulus the only thing over the winner's rail is the neighbor's own rail — the same white — so
+the reveal runs on and the crossing reads like a real `lineOrder` promotion.
+Clipped areas take no pointer events,
 so idle clicks land on the visible winner natively. Holes exist wherever a face's winner
 differs from the raw base paint — assignment-free branch-arm DEFAULTS included — so a doc with
 zero assignments still clips its unpainted mouths; a branch-free map pays nothing.

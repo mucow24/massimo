@@ -2192,6 +2192,22 @@ function makeHoleContext(
       }
       shield.push(...faces[j].face);
     }
+    // A neighbor face may shield the loser only where the WINNER'S OWN BODY
+    // would cover the reveal. The arrangement is cut on nominal bodies while
+    // the paint is silhouettes, and the difference — the winner's rail
+    // annulus — is precisely the half of its casing that hangs over a tangent
+    // neighbor's territory. Shielding that half away leaves the promotion's
+    // separator at HALF a rail wherever one stripe of an interlined band is
+    // painted forward and its tangent neighbor keeps the default: the reveal
+    // stops at the shared body edge, and the loser's body paints over the
+    // outer half of the winner's casing. Inside the annulus the only thing
+    // between the loser and the winner's rail is a tangent neighbor's OWN
+    // rail — the same white — so the reveal runs on and the separator comes
+    // out full width, exactly as a real lineOrder promotion draws it.
+    const effShield =
+      shield.length && railWWinner > 0
+        ? intersect(shield, paintNear(winnerLine, regionBbox, 0, winnerSlice))
+        : shield;
     // Within one face, losers sharing a railW dilate the same region by the
     // same reach — memo the dilation: pure call, identical arguments. Loser
     // holes key by cover id: bare line = the line's whole paint, arm id =
@@ -2207,7 +2223,7 @@ function makeHoleContext(
       let dil = regionDil.get(reach);
       if (!dil) regionDil.set(reach, (dil = offsetClosed(region, reach, 'miter')));
       const dilated = intersect(dil, footprint);
-      const hole = shield.length ? subtract(dilated, shield) : dilated;
+      const hole = effShield.length ? subtract(dilated, effShield) : dilated;
       if (!hole.length) continue;
       contributions.push({ lineId: loserKey, rings: hole });
     }
