@@ -666,6 +666,95 @@ const DOT_SHAPES: { shape: DotBaseShape; label: string }[] = [
 // need *some* color to show; the real color comes from each line at paint time.
 const PREVIEW_LINE_COLOR = '#3b7dd8';
 
+/**
+ * The four ways a dot's mark can be colored. Not a model type — it's the
+ * EDITOR's vocabulary, which each row translates to and from its own field(s):
+ * 'none' and 'bw' are the `DotFill` / `DotStrokeColor` sentinels for fill and
+ * stroke, but the service code spells 'none' as `showServiceCode: false` and
+ * 'bw' as an ABSENT `serviceCodeColor`. Rows offer only the types they have a
+ * meaning for — a stroke has no 'none' because `strokeWidth: 0` says that.
+ */
+type DotColorType = 'none' | 'bw' | 'line' | 'color';
+
+const DOT_COLOR_TYPE_LABEL: Record<DotColorType, string> = {
+  none: 'None',
+  bw: 'B/W',
+  line: 'Line',
+  color: 'Color',
+};
+
+/**
+ * One "how is this colored?" row, plus the day/night swatch row that only
+ * 'color' reveals beneath it. Fill, stroke and service code are all this same
+ * shape, so they share one component rather than three near-copies that drift.
+ *
+ * `label` names the FIELD ("Fill"), and the swatch row derives its own label
+ * from it ("Fill color") — which is why the segments are named "<label> type
+ * <type>": "Fill type color" and the "Fill color" swatch must stay distinct
+ * accessible names. Generic in `T` so each caller's `types` narrow what its
+ * `onPickType` has to handle (the stroke never sees 'none').
+ */
+function DotColorTypeRow<T extends DotColorType>({
+  label,
+  idBase,
+  types,
+  type,
+  onPickType,
+  bwTitle,
+  pair,
+  onPair,
+  disabled,
+}: {
+  label: string;
+  /** Swatch ids are `${idBase}-day` / `-night`. */
+  idBase: string;
+  types: readonly T[];
+  type: T;
+  onPickType: (type: T) => void;
+  /** Tooltip for the B/W segment — each row contrasts against something different. */
+  bwTitle?: string;
+  pair: DayNightColor;
+  onPair: (pair: DayNightColor) => void;
+  disabled?: boolean;
+}) {
+  const noun = label.toLowerCase();
+  return (
+    <>
+      <div className={'row' + (disabled ? ' disabled' : '')}>
+        <label>{label}</label>
+        <div className="shape-group">
+          <SegmentedToggle
+            value={type}
+            disabled={disabled}
+            onSelect={(v) => onPickType(v as T)}
+            options={types.map((t) => ({
+              value: t,
+              label: `${label} type ${t}`,
+              title: t === 'bw' ? bwTitle : undefined,
+              content: DOT_COLOR_TYPE_LABEL[t],
+            }))}
+          />
+        </div>
+      </div>
+      {type === 'color' && (
+        <DayNightColorRow
+          label={`${label} color`}
+          id={`${idBase}-day`}
+          darkId={`${idBase}-night`}
+          lightAriaLabel={`${label} color`}
+          darkAriaLabel={`Dark mode ${noun} color`}
+          titleNoun={`${noun} color`}
+          value={pair.day}
+          darkValue={pair.night}
+          disabled={disabled}
+          onChange={(day) => onPair({ day, night: pair.night })}
+          onDarkChange={(night) => onPair({ day: pair.day, night })}
+        />
+      )}
+    </>
+  );
+}
+
 // `viewSize` is the world-unit window; a size larger than it magnifies the
 // glyph (the big Preview row renders at 2×).
 function DotPreview({
@@ -690,27 +779,31 @@ function DotPreview({
 }
 
 /**
- * The editor for one stopDot library style: 5-way shape, fill (none/bw/line/custom
- * day-night pair), stroke width + color (bw/line/custom), show-service-code + its
- * day/night color, and a live preview. Every edit goes through updateStyleProps,
- * which restamps every dot slot wearing the style (Line inspector + per-stop).
+ * The editor for one stopDot library style: 5-way shape, a live preview, stroke
+ * width and alignment, and three DotColorTypeRow rows — Fill (None/B/W/Line/
+ * Color), Stroke (no None; width 0 says that) and Service code (None/B/W/Line/
+ * Color, where None IS `showServiceCode: false`), each revealing its own swatch
+ * row under Color. Every edit goes through updateStyleProps, which restamps
+ * every dot slot wearing the style (Line inspector + per-stop).
  */
 function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
   const patch = usePatch(id);
 
-  const fillMode: 'none' | 'bw' | 'line' | 'custom' =
-    p.fill === 'none' ? 'none' : p.fill === 'bw' ? 'bw' : p.fill === 'line' ? 'line' : 'custom';
-  // Stroke color mirrors the service-code modes: 'bw' (auto-contrast, but as
-  // an explicit sentinel — the field is required, so absence can't mean it),
-  // 'line', or a custom day/night pair.
-  const strokeMode: 'bw' | 'line' | 'custom' =
-    p.strokeColor === 'bw' ? 'bw' : p.strokeColor === 'line' ? 'line' : 'custom';
-  // Service-code color has three modes: 'bw' (absent ⇒ auto-contrast, picks
-  // black or white for legibility on the resolved fill), 'line' (the owning
-  // line's color), or a custom day/night pair. Absent is the historical default,
-  // so a fresh service-code dot lands on B/W.
-  const codeMode: 'bw' | 'line' | 'custom' =
-    p.serviceCodeColor === undefined ? 'bw' : p.serviceCodeColor === 'line' ? 'line' : 'custom';
+  // Each row's model field(s), read back as an editor type (see DotColorType).
+  const fillType: DotColorType =
+    p.fill === 'none' ? 'none' : p.fill === 'bw' ? 'bw' : p.fill === 'line' ? 'line' : 'color';
+  // The stroke has no 'none' — strokeWidth 0 is how a style says that.
+  const strokeType: 'bw' | 'line' | 'color' =
+    p.strokeColor === 'bw' ? 'bw' : p.strokeColor === 'line' ? 'line' : 'color';
+  // The code's off state is showServiceCode, and its B/W is an ABSENT color
+  // (the historical default), so a fresh code dot lands on B/W.
+  const codeType: DotColorType = !p.showServiceCode
+    ? 'none'
+    : p.serviceCodeColor === undefined
+      ? 'bw'
+      : p.serviceCodeColor === 'line'
+        ? 'line'
+        : 'color';
   const fillPair: DayNightColor = typeof p.fill === 'object' ? p.fill : BLACK_PAIR;
   const strokePair: DayNightColor = typeof p.strokeColor === 'object' ? p.strokeColor : WHITE_PAIR;
   const codePair: DayNightColor =
@@ -746,46 +839,16 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
           />
         </div>
       </div>
-      <div className="row">
-        <label>Fill</label>
-        <div className="shape-group">
-          <SegmentedToggle
-            value={fillMode}
-            onSelect={(v) =>
-              patch({
-                fill: v === 'none' ? 'none' : v === 'bw' ? 'bw' : v === 'line' ? 'line' : fillPair,
-              })
-            }
-            options={(['none', 'bw', 'line', 'custom'] as const).map((mode) => ({
-              value: mode,
-              label: `Fill ${mode}`,
-              title: mode === 'bw' ? 'Black or white, whichever reads on the line' : undefined,
-              content:
-                mode === 'none'
-                  ? 'None'
-                  : mode === 'bw'
-                    ? 'B/W'
-                    : mode === 'line'
-                      ? 'Line'
-                      : 'Custom',
-            }))}
-          />
-        </div>
-      </div>
-      {fillMode === 'custom' && (
-        <DayNightColorRow
-          label="Fill color"
-          id={`style-${id}-fill-day`}
-          darkId={`style-${id}-fill-night`}
-          lightAriaLabel="Fill color"
-          darkAriaLabel="Dark mode fill color"
-          titleNoun="fill"
-          value={fillPair.day}
-          darkValue={fillPair.night}
-          onChange={(day) => patch({ fill: { day, night: fillPair.night } })}
-          onDarkChange={(night) => patch({ fill: { day: fillPair.day, night } })}
-        />
-      )}
+      <DotColorTypeRow
+        label="Fill"
+        idBase={`style-${id}-fill`}
+        types={['none', 'bw', 'line', 'color'] as const}
+        type={fillType}
+        onPickType={(t) => patch({ fill: t === 'color' ? fillPair : t })}
+        bwTitle="Black or white, whichever reads on the line"
+        pair={fillPair}
+        onPair={(fill) => patch({ fill })}
+      />
       {isDash ? (
         <div className="style-editor-caption">
           A dash is a tick — it takes its size and outline from the line, so only shape and color
@@ -805,39 +868,17 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
             getCurrent={liveNumberProp(id, 'strokeWidth', p.strokeWidth)}
             textboxAllowAboveMax
           />
-          <div className={'row' + (strokeOff ? ' disabled' : '')}>
-            <label>Stroke color</label>
-            <div className="shape-group">
-              <SegmentedToggle
-                value={strokeMode}
-                disabled={strokeOff}
-                onSelect={(v) =>
-                  patch({ strokeColor: v === 'bw' ? 'bw' : v === 'line' ? 'line' : strokePair })
-                }
-                options={(['bw', 'line', 'custom'] as const).map((mode) => ({
-                  value: mode,
-                  label: `Stroke ${mode}`,
-                  title: mode === 'bw' ? 'Black or white, whichever reads on the fill' : undefined,
-                  content: mode === 'bw' ? 'B/W' : mode === 'line' ? 'Line' : 'Custom',
-                }))}
-              />
-            </div>
-          </div>
-          {strokeMode === 'custom' && (
-            <DayNightColorRow
-              label="Stroke"
-              id={`style-${id}-stroke-day`}
-              darkId={`style-${id}-stroke-night`}
-              lightAriaLabel="Stroke color"
-              darkAriaLabel="Dark mode stroke color"
-              titleNoun="stroke"
-              value={strokePair.day}
-              darkValue={strokePair.night}
-              disabled={strokeOff}
-              onChange={(day) => patch({ strokeColor: { day, night: strokePair.night } })}
-              onDarkChange={(night) => patch({ strokeColor: { day: strokePair.day, night } })}
-            />
-          )}
+          <DotColorTypeRow
+            label="Stroke"
+            idBase={`style-${id}-stroke`}
+            types={['bw', 'line', 'color'] as const}
+            type={strokeType}
+            onPickType={(t) => patch({ strokeColor: t === 'color' ? strokePair : t })}
+            bwTitle="Black or white, whichever reads on the fill"
+            pair={strokePair}
+            onPair={(strokeColor) => patch({ strokeColor })}
+            disabled={strokeOff}
+          />
           <div className={'row' + (strokeOff ? ' disabled' : '')}>
             <label>Stroke align</label>
             <div className="shape-group">
@@ -855,64 +896,44 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
             </div>
           </div>
           <div className="style-divider" />
-          <div className="row">
-            <label htmlFor={`style-${id}-service-code`}>Service code</label>
-            <FieldCheckbox
-              id={`style-${id}-service-code`}
-              ariaLabel="Show service code"
-              title="Show the line's service code on the dot"
-              checked={p.showServiceCode}
-              onCheckedChange={(showServiceCode) => patch({ showServiceCode })}
-            />
-          </div>
-          <div className={'row' + (p.showServiceCode ? '' : ' disabled')}>
-            <label htmlFor={`style-${id}-first-letter`}>First letter only</label>
-            <FieldCheckbox
-              id={`style-${id}-first-letter`}
-              ariaLabel="Show first letter of the service code only"
-              title="Print only the code's first letter — a local/express pair reads as one line"
-              checked={p.serviceCodeFirstLetterOnly ?? false}
-              disabled={!p.showServiceCode}
-              onCheckedChange={(v) => patch({ serviceCodeFirstLetterOnly: v })}
-            />
-          </div>
-          {p.showServiceCode && (
-            <>
-              <div className="row">
-                <label>Code color</label>
-                <div className="shape-group">
-                  <SegmentedToggle
-                    value={codeMode}
-                    onSelect={(v) =>
-                      patch({
-                        serviceCodeColor: v === 'bw' ? undefined : v === 'line' ? 'line' : codePair,
-                      })
+          <DotColorTypeRow
+            label="Service code"
+            idBase={`style-${id}-code`}
+            types={['none', 'bw', 'line', 'color'] as const}
+            type={codeType}
+            // 'none' drops BOTH code-only fields rather than leaving them
+            // dangling: a color and a first-letter flag for a code that isn't
+            // drawn are invisible state that would make two identical-looking
+            // dots compare unequal through dotStylesEqual.
+            onPickType={(t) =>
+              patch(
+                t === 'none'
+                  ? {
+                      showServiceCode: false,
+                      serviceCodeColor: undefined,
+                      serviceCodeFirstLetterOnly: undefined,
                     }
-                    options={(['bw', 'line', 'custom'] as const).map((mode) => ({
-                      value: mode,
-                      label: `Code color ${mode}`,
-                      content: mode === 'bw' ? 'B/W' : mode === 'line' ? 'Line' : 'Custom',
-                    }))}
-                  />
-                </div>
-              </div>
-              {codeMode === 'custom' && (
-                <DayNightColorRow
-                  label="Code"
-                  id={`style-${id}-code-day`}
-                  darkId={`style-${id}-code-night`}
-                  lightAriaLabel="Service code color"
-                  darkAriaLabel="Dark mode service code color"
-                  titleNoun="service-code color"
-                  value={codePair.day}
-                  darkValue={codePair.night}
-                  onChange={(day) => patch({ serviceCodeColor: { day, night: codePair.night } })}
-                  onDarkChange={(night) =>
-                    patch({ serviceCodeColor: { day: codePair.day, night } })
-                  }
-                />
-              )}
-            </>
+                  : {
+                      showServiceCode: true,
+                      serviceCodeColor: t === 'bw' ? undefined : t === 'line' ? 'line' : codePair,
+                    },
+              )
+            }
+            bwTitle="Black or white, whichever reads on the fill"
+            pair={codePair}
+            onPair={(serviceCodeColor) => patch({ serviceCodeColor })}
+          />
+          {codeType !== 'none' && (
+            <div className="row">
+              <label htmlFor={`style-${id}-first-letter`}>First letter only</label>
+              <FieldCheckbox
+                id={`style-${id}-first-letter`}
+                ariaLabel="Show first letter of the service code only"
+                title="Print only the code's first letter — a local/express pair reads as one line"
+                checked={p.serviceCodeFirstLetterOnly ?? false}
+                onCheckedChange={(v) => patch({ serviceCodeFirstLetterOnly: v })}
+              />
+            </div>
           )}
         </>
       )}
