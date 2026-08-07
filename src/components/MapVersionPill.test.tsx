@@ -33,7 +33,7 @@ describe('MapVersionPill — version pill + save-status dot', () => {
     expect(screen.getByText('v32')).toBeInTheDocument();
     // Shown, not a placeholder: no data-empty, and the title claims the version.
     expect(pill()).not.toHaveAttribute('data-empty');
-    expect(pill()).toHaveAttribute('title', 'This map came from version 32');
+    expect(pill()).toHaveAttribute('title', 'Editing map version 32');
     // The box stays (CSS hides the paint): unmounting it changes the
     // toolbar's width, which re-clamps scrollX in a narrow window — the
     // whole page visibly jumped ~18px on every save.
@@ -41,14 +41,14 @@ describe('MapVersionPill — version pill + save-status dot', () => {
     expect(dot()).not.toHaveAttribute('title');
   });
 
-  it('a dirty doc shows a red dot beside the pill, titled "Unsaved changes"', () => {
+  it('a dirty doc shows a red dot beside the pill, titled "Map has unsaved changes"', () => {
     useLibraryPointer.setState({ mapId: 'm1', version: 32 });
     anchor(markSaved);
     useDoc.getState().addStation(0, 0);
     render(<MapVersionPill />);
     expect(screen.getByText('v32')).toBeInTheDocument(); // still "came from v32"
     expect(dot()).toHaveAttribute('data-status', 'dirty');
-    expect(screen.getByTitle('Unsaved changes')).toBeInTheDocument();
+    expect(screen.getByTitle('Map has unsaved changes')).toBeInTheDocument();
   });
 
   it('an unsaved doc (a loaded file) shows a blue dot and the pill claims no version', () => {
@@ -61,7 +61,9 @@ describe('MapVersionPill — version pill + save-status dot', () => {
     expect(pill()).toHaveAttribute('data-empty', '');
     expect(pill()).not.toHaveAttribute('title');
     expect(dot()).toHaveAttribute('data-status', 'unsaved');
-    expect(screen.getByTitle('Not saved to the library yet')).toBeInTheDocument();
+    expect(
+      screen.getByTitle('Map has no changes, but is not saved to the library'),
+    ).toBeInTheDocument();
   });
 
   it('with no version, the pill stays mounted as an empty hidden placeholder (reserves its box)', () => {

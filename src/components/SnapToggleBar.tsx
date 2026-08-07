@@ -65,7 +65,9 @@ interface SnapState {
 interface ToggleSpec {
   key: keyof SnapModes;
   label: string;
-  hint: string;
+  /** The explanatory clause after the em dash. Omit where the label already
+   *  says the whole thing (`tens`), and the tooltip is just the label. */
+  hint?: string;
   /** Ordered cycle of states; clicking advances to the next, wrapping back to
    *  index 0. Boolean toggles are just two-state cycles. */
   states: SnapState[];
@@ -98,7 +100,6 @@ const TOGGLES: ToggleSpec[] = [
   {
     key: 'tens',
     label: 'Snap to grid length',
-    hint: 'Notch to whole grid steps from what you snap to',
     states: boolStates(RulerHorizontalIcon),
   },
   {
@@ -126,8 +127,8 @@ const TOGGLES: ToggleSpec[] = [
   },
   {
     key: 'circle',
-    label: 'Snap to circle cardinals',
-    hint: 'Also snap onto a line circle’s 8 cardinal points, and show their ticks',
+    label: 'Snap to line circle cardinals',
+    hint: 'Snap to the 8 cardinal points of line circles',
     // Not `boolStates` — this is the one toggle whose two states want DIFFERENT
     // glyphs, because the off glyph is load-bearing: a plain ring says circles
     // capture regardless (only Shift declines), and the dots say the cardinals
@@ -184,15 +185,16 @@ export function SnapToggleBar() {
         // aria-pressed; the exact sub-mode lives in title/data-snap-state.
         const active = idx > 0;
         const { Icon } = state;
-        // "Snap to grid length" shows the live grid size in its tooltip (5/10/20)
-        // so the user sees what "one step" currently means. aria-label stays the
-        // bare label for stable a11y/testing.
-        const displayLabel = key === 'tens' ? `${label} (${gridSize}'s)` : label;
+        // "Snap to grid length" names the live grid size in its tooltip (5/10/20)
+        // so the user sees what "one step" currently means — which says the whole
+        // thing, hence no hint clause on that spec. aria-label stays the bare
+        // label for stable a11y/testing.
+        const displayLabel =
+          key === 'tens' ? `Snap to multiples of ${gridSize} (set by grid length)` : label;
+        const stated = active ? `${displayLabel}: ${state.name}` : displayLabel;
         const title = disabled
           ? `${displayLabel} — enable Snap to line first`
-          : active
-            ? `${displayLabel}: ${state.name} — ${hint} · click to cycle`
-            : `${displayLabel} — ${hint} · click to cycle`;
+          : `${hint ? `${stated} — ${hint}` : stated} · click to cycle`;
         return (
           <button
             key={key}

@@ -173,7 +173,7 @@ export function HelpPopover() {
         ref={btnRef}
         type="button"
         className={'tool-btn' + (open ? ' active' : '')}
-        title="Help — quick reference (?)"
+        title="Help (?) — quick reference sheet"
         aria-label="Help"
         aria-haspopup="dialog"
         aria-expanded={open}

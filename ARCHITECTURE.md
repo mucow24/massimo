@@ -2309,7 +2309,7 @@ the feedback.
 
 Which seat on the rim is `snapPointToCircle`'s call, the angular half of that constraint and the
 one owner of it across all three entry points. Plain rim by default; under the **`circle` snap
-mode** ("Snap to circle cardinals") the seat is also pulled to the nearest of the ring's eight
+mode** ("Snap to line circle cardinals") the seat is also pulled to the nearest of the ring's eight
 **cardinals** — 45° apart from due east — and the guide grows tick marks there. Two independent
 axes, deliberately: radial distance is the capture/release test, angular distance the cardinal
 one, and the cardinal window is an arc LENGTH measured against the same tolerance, so it spans a

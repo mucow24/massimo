@@ -1325,7 +1325,7 @@ describe('<StationInspector /> — Select Similar (mirror matching) toggle', () 
     render(<StationInspector id="a" />);
     const btn = screen.getByRole('button', { name: 'Select Similar' });
     expect(btn).toBeDisabled();
-    expect(btn).toHaveAttribute('title', expect.stringMatching(/No other station/i));
+    expect(btn).toHaveAttribute('title', expect.stringMatching(/No matching stations/i));
   });
 
   it('stays clickable while ON with zero matches, so the mode can still be turned off', async () => {

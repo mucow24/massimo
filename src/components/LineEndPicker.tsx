@@ -12,12 +12,12 @@ export const LINE_END_LABELS: Record<LineEndStyle, string> = {
 
 // Why the per-stop control is greyed out on most rows: only a stop the line
 // actually ENDS at has an end to dress.
-const DISABLED_TITLE = 'Only a stop at the end of the line can pin an end style';
+const DISABLED_TITLE = 'End style disabled — only terminal stops need an end style';
 
 const LINE_END_TITLES: Record<LineEndStyle, string> = {
-  square: 'Square — the full stop square, corners and all',
-  short: 'Short — stop at the stop center, so a same-width dot covers the end',
-  round: 'Round — a half-disc end, smooth behind a narrower round dot',
+  square: 'Square — fully encloses final stop',
+  short: 'Short — half-encloses final stop, so a same-width dot covers the end',
+  round: 'Round — a rounded end',
 };
 
 // The three ends ARE SVG's three line caps taken at the stop center, so the

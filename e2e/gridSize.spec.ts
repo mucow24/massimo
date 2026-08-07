@@ -83,7 +83,7 @@ test.describe('grid size toggle', () => {
   test('a station drag snaps to the 5px grid, not the 10px grid', async ({ page }) => {
     await seedAndOpen(page, loneStation);
     // Isolate the grid: turn line off, cycle grid to 'both'.
-    await page.getByRole('button', { name: 'Snap to line' }).click();
+    await page.getByRole('button', { name: 'Snap to line', exact: true }).click();
     const gridBtn = page.getByRole('button', { name: 'Snap to grid', exact: true });
     await gridBtn.click(); // off → horizontal
     await gridBtn.click(); // horizontal → vertical
@@ -134,7 +134,7 @@ test.describe('grid size toggle', () => {
     await expect(page.locator('[data-polygon-vertex="0"]')).toBeVisible();
 
     // Isolate the grid: line off, grid 'both', size 5.
-    await page.getByRole('button', { name: 'Snap to line' }).click();
+    await page.getByRole('button', { name: 'Snap to line', exact: true }).click();
     const gridBtn = page.getByRole('button', { name: 'Snap to grid', exact: true });
     await gridBtn.click();
     await gridBtn.click();

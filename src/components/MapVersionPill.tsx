@@ -34,7 +34,7 @@ export function MapVersionPill() {
       <span
         className="map-version-pill"
         data-empty={version === null ? '' : undefined}
-        title={version !== null ? `This map came from version ${version}` : undefined}
+        title={version !== null ? `Editing map version ${version}` : undefined}
       >
         {version !== null ? `v${version}` : null}
       </span>
@@ -43,9 +43,9 @@ export function MapVersionPill() {
         data-status={status}
         title={
           status === 'dirty'
-            ? 'Unsaved changes'
+            ? 'Map has unsaved changes'
             : status === 'unsaved'
-              ? 'Not saved to the library yet'
+              ? 'Map has no changes, but is not saved to the library'
               : undefined
         }
       />

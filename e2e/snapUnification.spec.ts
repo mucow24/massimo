@@ -237,7 +237,7 @@ test.describe('Placement parity', () => {
       lines: [{ id: 'LB', service: 'B', color: '#A00033', stations: ['B'] }],
     });
     // Isolate the grid: line off, grid 'both'.
-    await page.getByRole('button', { name: 'Snap to line' }).click();
+    await page.getByRole('button', { name: 'Snap to line', exact: true }).click();
     const gridBtn = page.getByRole('button', { name: 'Snap to grid', exact: true });
     await gridBtn.click();
     await gridBtn.click();
