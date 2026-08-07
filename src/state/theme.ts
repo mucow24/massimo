@@ -120,14 +120,23 @@ const DARK: ThemeColors = {
  * The grid is the one exception to "only the paper moves": the day grid is
  * tuned to whisper against near-white, so on a dimmed paper it reads as a cage
  * of bright white lines. Gray drops it to Grey 800, one rung below its paper;
- * black takes DARK's grid outright, since that value is already tuned against
- * exactly this canvas. Each is a frozen constant so themeColors stays
+ * black shares DARK's canvas, so it takes DARK's grid — referenced, not
+ * copied, so the two can't drift apart.
+ *
+ * What licenses that exception is EXPORT REACH, not taste. `canvasBg` is
+ * stripped as `data-bg` and the grid renders inside a `data-export-exclude`
+ * subtree, so both are screen-only and free to follow a local viewing
+ * preference. `underlay` is not: it is real map paint (dash gaps, hollow
+ * bullets), so dimming it here would bake one machine's glare setting into
+ * every SVG/PNG/PDF. Same "it should match the paper" argument, opposite
+ * answer — check which side of the export door a field sits on before adding
+ * to this list. Each entry is a frozen constant so themeColors stays
  * referentially stable per input.
  */
 const DAY_PAPER: Record<DayCanvasColor, ThemeColors> = {
   white: LIGHT,
   gray: { ...LIGHT, canvasBg: '#616161', grid: '#424242' },
-  black: { ...LIGHT, canvasBg: '#000000', grid: DARK.grid },
+  black: { ...LIGHT, canvasBg: DARK.canvasBg, grid: DARK.grid },
 };
 
 /**

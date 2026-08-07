@@ -37,6 +37,10 @@ describe('themeColors', () => {
     it("day mode 'black' dims only the paper, keeping the rest of the day palette", () => {
       const c = themeColors(false, 'black');
       expect(c.canvasBg).toBe('#000000');
+      // Day-black and night paint the SAME canvas. That shared premise is what
+      // lets this entry borrow DARK's grid below, so pin it here: retune one
+      // side alone and the borrowed grid is tuned for a paper it no longer has.
+      expect(c.canvasBg).toBe(themeColors(true).canvasBg);
       // The ink stays day mode — this is glare relief, not night mode.
       expect(c.label).toBe('#111111');
       expect(c.underlay).toBe('#ffffff');
