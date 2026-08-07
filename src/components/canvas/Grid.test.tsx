@@ -29,6 +29,26 @@ describe('Grid rendering', () => {
     expect(verticalLineXs(container)).toEqual([0, 5, 10, 15, 20]);
   });
 
+  // A wheel zoom rewrites the viewBox imperatively and does not re-render until
+  // it settles, so a world-unit stroke width (1/zoom) is stale for the whole
+  // gesture: the hairlines fatten as you zoom in, then SNAP back on commit.
+  // non-scaling-stroke hands the width to the browser's CTM instead, so there
+  // is nothing left for the commit to correct. (The grid lives inside a
+  // data-export-exclude subtree, so this never reaches an SVG/PNG/PDF.)
+  it('sizes its hairlines in screen space, identically at any zoom', () => {
+    const widths = [1, 4].map((zoom) => {
+      const { container } = render(
+        <svg>
+          <Grid vbX={0} vbY={0} vbW={20} vbH={20} zoom={zoom} gridSize={10} />
+        </svg>,
+      );
+      const line = container.querySelector('line')!;
+      return [line.getAttribute('stroke-width'), line.getAttribute('vector-effect')];
+    });
+    expect(widths[0]).toEqual(['1', 'non-scaling-stroke']);
+    expect(widths[1]).toEqual(widths[0]);
+  });
+
   it('coarsens the drawn columns when zoomed out (LOD)', () => {
     // gridSize 10 at zoom 0.4 = 4px on screen → below the 5px floor → the
     // drawn step doubles to 20 world units (8px).

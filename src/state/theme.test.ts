@@ -37,9 +37,12 @@ describe('themeColors', () => {
     it("day mode 'black' dims only the paper, keeping the rest of the day palette", () => {
       const c = themeColors(false, 'black');
       expect(c.canvasBg).toBe('#000000');
-      // Everything else stays day mode — this is glare relief, not night mode.
+      // Day-black and night paint the SAME canvas. That shared premise is what
+      // lets this entry borrow DARK's grid below, so pin it here: retune one
+      // side alone and the borrowed grid is tuned for a paper it no longer has.
+      expect(c.canvasBg).toBe(themeColors(true).canvasBg);
+      // The ink stays day mode — this is glare relief, not night mode.
       expect(c.label).toBe('#111111');
-      expect(c.grid).toBe('#eeeeee');
       expect(c.underlay).toBe('#ffffff');
       expect(c.editorBg).toBe('#ffffff');
       expect(c.accent).toBe('#1a4ea8');
@@ -48,10 +51,20 @@ describe('themeColors', () => {
     it("day mode 'gray' sits between white and black, dimming only the paper", () => {
       const c = themeColors(false, 'gray');
       expect(c.canvasBg).toBe('#616161');
-      // Same rule as 'black': only the paper moves, the day palette holds.
+      // The rest of the day palette holds.
       expect(c.label).toBe('#111111');
       expect(c.underlay).toBe('#ffffff');
       expect(c.editorBg).toBe('#ffffff');
+    });
+
+    it('the dimmed papers darken the grid so it stays wallpaper, not a white cage', () => {
+      // The day grid (#eeeeee) is tuned against near-white paper; on a dimmed
+      // paper it jumps out as bright white lines. Gray drops to Grey 800, one
+      // rung below its Grey 700 paper; black takes the night grid outright —
+      // same paper, so the value already tuned for it is the right one.
+      expect(themeColors(false, 'gray').grid).toBe('#424242');
+      expect(themeColors(false, 'black').grid).toBe(themeColors(true).grid);
+      expect(themeColors(false, 'black').grid).toBe('#222222');
     });
 
     it('night mode ignores the day canvas color', () => {

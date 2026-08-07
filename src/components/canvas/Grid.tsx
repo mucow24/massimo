@@ -34,8 +34,19 @@ export function gridStep(gridSize: number, zoom: number): number {
   return step;
 }
 
-/** Subtle background grid; spacing matches the snap engine's grid interval
- *  (coarsened in powers of two when zoomed out — see {@link gridStep}). */
+/**
+ * Subtle background grid; spacing matches the snap engine's grid interval
+ * (coarsened in powers of two when zoomed out — see {@link gridStep}).
+ *
+ * The hairlines are sized by `vector-effect="non-scaling-stroke"` rather than
+ * the usual world-unit `k / zoom`. A wheel zoom rewrites the viewBox
+ * imperatively and doesn't re-render until it settles, so a world-unit width
+ * is stale for the whole gesture — the grid visibly fattens as you zoom in and
+ * then SNAPS back at the commit. Letting the browser hold the width against
+ * the live CTM leaves nothing for the commit to correct. Only `zoom`'s other
+ * job, choosing the LOD step, still needs the committed value (spacing is
+ * geometry, and it has to agree with what the snap engine uses).
+ */
 export function Grid({ vbX, vbY, vbW, vbH, zoom, gridSize }: Props) {
   const stroke = useThemeColors().grid;
   const step = gridStep(gridSize, zoom);
@@ -51,7 +62,8 @@ export function Grid({ vbX, vbY, vbW, vbH, zoom, gridSize }: Props) {
         x2={x}
         y2={vbY + vbH}
         stroke={stroke}
-        strokeWidth={1 / zoom}
+        strokeWidth={1}
+        vectorEffect="non-scaling-stroke"
       />,
     );
   }
@@ -64,7 +76,8 @@ export function Grid({ vbX, vbY, vbW, vbH, zoom, gridSize }: Props) {
         x2={vbX + vbW}
         y2={y}
         stroke={stroke}
-        strokeWidth={1 / zoom}
+        strokeWidth={1}
+        vectorEffect="non-scaling-stroke"
       />,
     );
   }
