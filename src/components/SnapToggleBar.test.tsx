@@ -21,15 +21,17 @@ describe('<SnapToggleBar />', () => {
     expect(screen.getByRole('button', { name: 'Snap to grid length' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Snap to all' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Snap to grid' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Snap to circle cardinals' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Snap to line circle cardinals' }),
+    ).toBeInTheDocument();
   });
 
   it('renders Circle cardinals last, off by default, and toggles it', async () => {
     const user = userEvent.setup();
     render(<SnapToggleBar />);
     const names = screen.getAllByRole('button').map((b) => b.getAttribute('aria-label'));
-    expect(names.indexOf('Snap to circle cardinals')).toBe(names.length - 1);
-    const circle = screen.getByRole('button', { name: 'Snap to circle cardinals' });
+    expect(names.indexOf('Snap to line circle cardinals')).toBe(names.length - 1);
+    const circle = screen.getByRole('button', { name: 'Snap to line circle cardinals' });
     // Cardinals are opt-in: today's behaviour is rim capture with no cardinals,
     // so a fresh install must look exactly like it did.
     expect(circle).toHaveAttribute('data-snap-state', 'false');

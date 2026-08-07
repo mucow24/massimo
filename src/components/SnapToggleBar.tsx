@@ -126,8 +126,8 @@ const TOGGLES: ToggleSpec[] = [
   },
   {
     key: 'circle',
-    label: 'Snap to circle cardinals',
-    hint: 'Also snap onto a line circle’s 8 cardinal points, and show their ticks',
+    label: 'Snap to line circle cardinals',
+    hint: 'Snap to the 8 cardinal points of line circles',
     // Not `boolStates` — this is the one toggle whose two states want DIFFERENT
     // glyphs, because the off glyph is load-bearing: a plain ring says circles
     // capture regardless (only Shift declines), and the dots say the cardinals

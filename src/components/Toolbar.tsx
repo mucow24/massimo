@@ -106,7 +106,7 @@ function ToolButtons() {
       </button>
       <button
         className={'tool-btn' + (effective === 'hand' ? ' active' : '')}
-        title="Hand (H) — hold Space"
+        title="Hand (hold Space, H to toggle)"
         onClick={() => setToolMode('hand')}
       >
         <HandIcon />
@@ -717,7 +717,7 @@ export function Toolbar() {
           title={
             selection.uiMode.kind === 'layering'
               ? 'Exit layering mode (Esc)'
-              : 'Layering mode: click overlaps to cycle which line shows on top'
+              : 'Layering mode (L) — modify line layering'
           }
           aria-label="Toggle layering mode"
           aria-pressed={selection.uiMode.kind === 'layering'}

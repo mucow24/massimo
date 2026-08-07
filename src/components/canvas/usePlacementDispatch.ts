@@ -96,8 +96,8 @@ export function snapPlacement(
   // tolerance of a line circle's rim projects ONTO the rim — the drop then
   // binds it (see bindDroppedStation). Runs before the engine so the ring, a
   // hard constraint like the grid, wins over alignment candidates. Under "Snap
-  // to circle cardinals" the seat is also pulled to the nearest of the ring's
-  // eight cardinals — same rule as the drag, so placing and then nudging a
+  // to line circle cardinals" the seat is also pulled to the nearest of the
+  // ring's eight cardinals — same rule as the drag, so placing and then nudging a
   // station agree. The seat stays exactly on the rim either way, which is what
   // lets `bindDroppedStation` recognize it at a 0.5-unit tolerance.
   const viaCircleRim = (): PlacementSnap | null => {

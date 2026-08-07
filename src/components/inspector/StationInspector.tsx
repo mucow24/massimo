@@ -203,11 +203,7 @@ export function StationInspector({ id }: { id: StationId }) {
             type="button"
             className={`ghost-btn${inLayoutEdit ? ' active' : ''}`}
             aria-pressed={inLayoutEdit}
-            title={
-              inLayoutEdit
-                ? 'Exit the on-canvas layout editor (Esc)'
-                : 'Edit stops + label on the map: drag between slots, right-click or R rotates, arrows nudge'
-            }
+            title={inLayoutEdit ? 'Exit station layout editor (Esc)' : 'Edit station layout'}
             onClick={() =>
               inLayoutEdit
                 ? selection.setUiMode({ kind: 'idle' })
@@ -229,11 +225,16 @@ export function StationInspector({ id }: { id: StationId }) {
             aria-pressed={mirrorOn}
             disabled={!mirrorAvailable && !mirrorOn}
             title={
-              mirrorOn
-                ? 'Similar stations selected — edits here apply to all of them; click to edit only this station'
-                : mirrorAvailable
-                  ? `Select the ${matches.length} station${matches.length === 1 ? '' : 's'} on this line with this exact layout — edits here will apply to all of them`
-                  : 'No other station on this line has an identical layout'
+              // The ON state counts what it selected — except at zero, which is
+              // reachable (a match can dissolve under an unmirrored edit while
+              // the mode is on) and would otherwise boast of selecting none.
+              mirrorOn && mirrorAvailable
+                ? `${matches.length} similar station${matches.length === 1 ? '' : 's'} selected — edits here apply to all of them; click to edit only this station`
+                : mirrorOn
+                  ? 'No matching stations — click to edit only this station'
+                  : mirrorAvailable
+                    ? `Selects the ${matches.length} station${matches.length === 1 ? '' : 's'} on this line with the same layout — while selected, all edits to this station will apply to the selected stations as well`
+                    : 'No matching stations'
             }
             onClick={() => selection.setMirrorMatching(!mirrorOn)}
           >
@@ -337,7 +338,7 @@ export function StationInspector({ id }: { id: StationId }) {
           <button
             type="button"
             className="ghost-btn add-anchor-btn"
-            title="Park a transfer anchor in this station's grid — a corner a transfer can turn"
+            title="Add a transfer anchor to this station's layout grid — a corner a transfer can turn"
             onClick={() => {
               const [row, col] = spawnAnchorCell(station, linesAll);
               // Arm it immediately so the arrow keys can walk it into place
@@ -370,7 +371,7 @@ export function StationInspector({ id }: { id: StationId }) {
                 id={`station-stop-type-${station.id}`}
                 className="field-select"
                 aria-label="Stop type"
-                title="Which dot default this station's stops take: Auto counts the stops that paint here, or declare it outright"
+                title="Whether this stop counts as a singleton or interchange for the purposes of line style — Auto picks based on the number of non-empty line stops"
               >
                 <Select.Value />
                 <Select.Icon className="field-select-caret" aria-hidden="true">

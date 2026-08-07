@@ -27,6 +27,16 @@ interface Props {
   onClose: () => void;
 }
 
+// How a shape is NAMED to the user, on the chips in this popover and in the
+// Styles panel's route-bullet editor. The model's own values are lowercase
+// tokens, which read as a typo wherever they surface; the stop-dot shape
+// chips already carry proper names (DOT_SHAPES), so these match.
+export const ROUTE_BULLET_SHAPE_LABEL: Record<RouteBulletShape, string> = {
+  circle: 'Circle',
+  square: 'Square',
+  diamond: 'Diamond',
+};
+
 // Exported for the Styles panel editor, which renders the same shape chips.
 export function ShapeIcon({ shape }: { shape: RouteBulletShape }) {
   // currentColor: inherits the button's themed text color, so the glyph stays
@@ -133,8 +143,8 @@ export function RouteBulletPopover({ bullet, hostW, onClose }: Props) {
             onSelect={(v) => onShape(v as RouteBulletShape)}
             options={shapes.map((s) => ({
               value: s,
-              label: s,
-              title: s,
+              label: ROUTE_BULLET_SHAPE_LABEL[s],
+              title: ROUTE_BULLET_SHAPE_LABEL[s],
               content: <ShapeIcon shape={s} />,
             }))}
           />

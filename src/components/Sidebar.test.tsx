@@ -295,7 +295,7 @@ describe('<Sidebar /> — line badge selects the line', () => {
     render(<Sidebar />);
 
     // The badge carries the service code "A" and a "Edit line A" title.
-    const badge = screen.getByTitle('Edit line A');
+    const badge = screen.getByTitle('Edit A line');
     await user.click(badge);
 
     const sel = useSelection.getState();
