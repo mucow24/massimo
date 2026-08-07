@@ -690,17 +690,21 @@ function DotPreview({
 }
 
 /**
- * The editor for one stopDot library style: 5-way shape, fill (none/line/custom
- * day-night pair), stroke width + color (line/custom), show-service-code + its
+ * The editor for one stopDot library style: 5-way shape, fill (none/bw/line/custom
+ * day-night pair), stroke width + color (bw/line/custom), show-service-code + its
  * day/night color, and a live preview. Every edit goes through updateStyleProps,
  * which restamps every dot slot wearing the style (Line inspector + per-stop).
  */
 function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
   const patch = usePatch(id);
 
-  const fillMode: 'none' | 'line' | 'custom' =
-    p.fill === 'none' ? 'none' : p.fill === 'line' ? 'line' : 'custom';
-  const strokeMode: 'line' | 'custom' = p.strokeColor === 'line' ? 'line' : 'custom';
+  const fillMode: 'none' | 'bw' | 'line' | 'custom' =
+    p.fill === 'none' ? 'none' : p.fill === 'bw' ? 'bw' : p.fill === 'line' ? 'line' : 'custom';
+  // Stroke color mirrors the service-code modes: 'bw' (auto-contrast, but as
+  // an explicit sentinel — the field is required, so absence can't mean it),
+  // 'line', or a custom day/night pair.
+  const strokeMode: 'bw' | 'line' | 'custom' =
+    p.strokeColor === 'bw' ? 'bw' : p.strokeColor === 'line' ? 'line' : 'custom';
   // Service-code color has three modes: 'bw' (absent ⇒ auto-contrast, picks
   // black or white for legibility on the resolved fill), 'line' (the owning
   // line's color), or a custom day/night pair. Absent is the historical default,
@@ -748,12 +752,22 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
           <SegmentedToggle
             value={fillMode}
             onSelect={(v) =>
-              patch({ fill: v === 'none' ? 'none' : v === 'line' ? 'line' : fillPair })
+              patch({
+                fill: v === 'none' ? 'none' : v === 'bw' ? 'bw' : v === 'line' ? 'line' : fillPair,
+              })
             }
-            options={(['none', 'line', 'custom'] as const).map((mode) => ({
+            options={(['none', 'bw', 'line', 'custom'] as const).map((mode) => ({
               value: mode,
               label: `Fill ${mode}`,
-              content: mode === 'none' ? 'None' : mode === 'line' ? 'Line' : 'Custom',
+              title: mode === 'bw' ? 'Black or white, whichever reads on the line' : undefined,
+              content:
+                mode === 'none'
+                  ? 'None'
+                  : mode === 'bw'
+                    ? 'B/W'
+                    : mode === 'line'
+                      ? 'Line'
+                      : 'Custom',
             }))}
           />
         </div>
@@ -797,11 +811,14 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
               <SegmentedToggle
                 value={strokeMode}
                 disabled={strokeOff}
-                onSelect={(v) => patch({ strokeColor: v === 'line' ? 'line' : strokePair })}
-                options={(['line', 'custom'] as const).map((mode) => ({
+                onSelect={(v) =>
+                  patch({ strokeColor: v === 'bw' ? 'bw' : v === 'line' ? 'line' : strokePair })
+                }
+                options={(['bw', 'line', 'custom'] as const).map((mode) => ({
                   value: mode,
                   label: `Stroke ${mode}`,
-                  content: mode === 'line' ? 'Line' : 'Custom',
+                  title: mode === 'bw' ? 'Black or white, whichever reads on the fill' : undefined,
+                  content: mode === 'bw' ? 'B/W' : mode === 'line' ? 'Line' : 'Custom',
                 }))}
               />
             </div>

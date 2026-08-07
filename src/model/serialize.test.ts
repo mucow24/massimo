@@ -752,6 +752,43 @@ describe('serialize / parse — dot styles', () => {
     expect(r.doc.lines.L1.multiDotStyle!.strokeAlign).toBe('inside');
   });
 
+  it("keeps the 'bw' (auto-contrast) sentinel on load, for both fill and stroke", () => {
+    const bw = {
+      shape: 'circle',
+      fill: 'bw',
+      strokeWidth: 2,
+      strokeColor: 'bw',
+      strokeAlign: 'center',
+      showServiceCode: false,
+    };
+    const r = parse(buildDotPayload({ dotStyle: bw }, { defaultDotStyle: bw }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.doc.stations.s1.stops[0].dotStyle).toEqual(bw);
+    expect(r.doc.lines.L1.singletonDotStyle).toEqual(bw);
+    expect(r.doc.lines.L1.multiDotStyle).toEqual(bw);
+  });
+
+  it("drops a stray 'bw' serviceCodeColor to absent — which IS auto-contrast", () => {
+    const r = parse(
+      buildDotPayload({
+        dotStyle: {
+          shape: 'circle',
+          fill: { day: '#000000', night: '#000000' },
+          strokeWidth: 0,
+          strokeColor: 'line',
+          strokeAlign: 'center',
+          showServiceCode: true,
+          serviceCodeColor: 'bw',
+        },
+      }),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const style = r.doc.stations.s1.stops[0].dotStyle!;
+    expect('serviceCodeColor' in style).toBe(false);
+  });
+
   it('drops malformed dotStyle objects', () => {
     const junkStyles: unknown[] = [
       'filled-black', // a preset id where an object belongs

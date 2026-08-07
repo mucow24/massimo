@@ -238,6 +238,98 @@ describe('<StyleEditor> — stopDot', () => {
     );
   });
 
+  it("offers a None / B/W / Line / Custom fill toggle; the 'bw' sentinel selects B/W", () => {
+    render(
+      <StyleEditor def={makeStyle('stopDot', 'y1', { props: { shape: 'circle', fill: 'bw' } })} />,
+    );
+    // Four modes, in the picker's own order (None leads; B/W then matches the
+    // stroke and code rows' ordering).
+    const group = screen.getByLabelText('Fill none').closest('.align-group') as HTMLElement;
+    expect([...group.querySelectorAll('[aria-label^="Fill "]')].map((b) => b.textContent)).toEqual([
+      'None',
+      'B/W',
+      'Line',
+      'Custom',
+    ]);
+    // The 'bw' sentinel is active, and it is NOT a custom pair, so no color row.
+    expect(screen.getByLabelText('Fill bw')).toHaveClass('active');
+    expect(screen.queryByRole('button', { name: 'Fill color' })).toBeNull();
+  });
+
+  it('picking a fill mode writes fill: B/W the sentinel, the others as before', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      styles: {
+        ...useDoc.getState().styles,
+        'sd-fill4': makeStyle('stopDot', 'sd-fill4', { props: { shape: 'circle' } }),
+      },
+    });
+    const fillOf = () => (useDoc.getState().styles['sd-fill4'].props as DotStyle).fill;
+    const { rerender } = render(<StyleEditor def={useDoc.getState().styles['sd-fill4']} />);
+
+    fireEvent.click(screen.getByLabelText('Fill bw'));
+    expect(fillOf()).toBe('bw');
+    rerender(<StyleEditor def={useDoc.getState().styles['sd-fill4']} />);
+
+    fireEvent.click(screen.getByLabelText('Fill none'));
+    expect(fillOf()).toBe('none');
+    rerender(<StyleEditor def={useDoc.getState().styles['sd-fill4']} />);
+
+    fireEvent.click(screen.getByLabelText('Fill line'));
+    expect(fillOf()).toBe('line');
+    rerender(<StyleEditor def={useDoc.getState().styles['sd-fill4']} />);
+
+    fireEvent.click(screen.getByLabelText('Fill custom'));
+    expect(typeof fillOf()).toBe('object');
+  });
+
+  it("offers a B/W / Line / Custom stroke-color toggle; the 'bw' sentinel selects B/W", () => {
+    render(
+      <StyleEditor
+        def={makeStyle('stopDot', 'y1', {
+          props: { shape: 'circle', strokeWidth: 2, strokeColor: 'bw' },
+        })}
+      />,
+    );
+    // All three modes are present, in the service-code order (B/W, Line, Custom) …
+    expect(screen.getByLabelText('Stroke bw')).toBeTruthy();
+    expect(screen.getByLabelText('Stroke line')).toBeTruthy();
+    expect(screen.getByLabelText('Stroke custom')).toBeTruthy();
+    // … the 'bw' sentinel is active, and the custom color row is hidden.
+    expect(screen.getByLabelText('Stroke bw')).toHaveClass('active');
+    expect(screen.queryByRole('button', { name: 'Stroke color' })).toBeNull();
+  });
+
+  it('picking a stroke mode writes strokeColor: B/W the sentinel, Line/Custom as before', () => {
+    // Same re-render-from-store dance as the service-code toggle test below.
+    useDoc.setState({
+      ...useDoc.getState(),
+      styles: {
+        ...useDoc.getState().styles,
+        'sd-stroke': makeStyle('stopDot', 'sd-stroke', {
+          props: { shape: 'circle', strokeWidth: 2 },
+        }),
+      },
+    });
+    const strokeOf = () => (useDoc.getState().styles['sd-stroke'].props as DotStyle).strokeColor;
+    const { rerender } = render(<StyleEditor def={useDoc.getState().styles['sd-stroke']} />);
+
+    // B/W → the explicit 'bw' sentinel (unlike the code color, the field is
+    // required, so auto-contrast can't be spelled by absence).
+    fireEvent.click(screen.getByLabelText('Stroke bw'));
+    expect(strokeOf()).toBe('bw');
+    rerender(<StyleEditor def={useDoc.getState().styles['sd-stroke']} />);
+
+    // Line → the 'line' sentinel.
+    fireEvent.click(screen.getByLabelText('Stroke line'));
+    expect(strokeOf()).toBe('line');
+    rerender(<StyleEditor def={useDoc.getState().styles['sd-stroke']} />);
+
+    // Custom → an explicit day/night pair.
+    fireEvent.click(screen.getByLabelText('Stroke custom'));
+    expect(typeof strokeOf()).toBe('object');
+  });
+
   it('offers a B/W / Line / Custom service-code color toggle; auto-contrast selects B/W', () => {
     render(
       <StyleEditor

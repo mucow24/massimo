@@ -58,12 +58,19 @@ export interface DayNightColor {
 export type DotBaseShape = 'circle' | 'square' | 'diamond' | 'x' | 'dash';
 
 // Base color of a dot. 'line' = the owning line's color, resolved at render
-// time; 'none' = transparent (the line band shows through — the "open" dots).
-export type DotFill = DayNightColor | 'line' | 'none';
+// time; 'none' = transparent (the line band shows through — the "open" dots);
+// 'bw' = auto-contrast (see DotStrokeColor) against what sits BEHIND the dot,
+// i.e. the owning line's band — so one style reads on light and dark lines
+// alike, which no fixed day/night pair can do.
+export type DotFill = DayNightColor | 'line' | 'none' | 'bw';
 
 // Stroke color of a dot. No 'none' here — strokeWidth 0 is how a style says
-// "no stroke".
-export type DotStrokeColor = DayNightColor | 'line';
+// "no stroke". 'bw' = auto-contrast: whichever of black/white is legible on
+// whatever sits behind the mark — for a stroke that is the resolved fill (the
+// service code's absent-color rule), falling back to the canvas background when
+// the fill is transparent. A sentinel rather than an absence because, unlike
+// serviceCodeColor, this field is required.
+export type DotStrokeColor = DayNightColor | 'line' | 'bw';
 
 // Color of the service code drawn on a dot. Structurally the same as a stroke
 // color — 'line' = the owning line's color (resolved at render), or an explicit

@@ -341,20 +341,34 @@ function resolveFill(fill: DotFill, lineColor: string | undefined, darkMode: boo
   // Fall back to black when the caller has no line in scope (e.g. a picker
   // preview outside any line context) — same convention as badgeColors.
   if (fill === 'line') return lineColor ?? '#000';
+  // What sits behind the dot is its line's band, so that is what a B/W fill
+  // contrasts against; with no line in scope the canvas shows through instead.
+  if (fill === 'bw') return autoContrastColor(lineColor, darkMode);
   return resolveDayNight(fill, darkMode);
 }
 
 // Resolve a 'line'-or-pair color reference — a dot's stroke, or its service
 // code — to a concrete SVG color: the 'line' sentinel → the owning line's color
 // (black when the caller has no line in scope, matching resolveFill), else the
-// theme-picked side of the day/night pair.
+// theme-picked side of the day/night pair. The 'bw' sentinel resolves through
+// autoContrastColor instead, so it never reaches here.
 function resolveLineOrPairColor(
-  color: DotStrokeColor,
+  color: Exclude<DotStrokeColor, 'bw'>,
   lineColor: string | undefined,
   darkMode: boolean,
 ): string {
   if (color === 'line') return lineColor ?? '#000';
   return resolveDayNight(color, darkMode);
+}
+
+// The B/W rule, shared by a 'bw' fill, a 'bw' stroke and an unset service-code
+// color: whichever of black/white is legible against `behind` — whatever
+// actually sits under the mark. A fill is judged against its line's band, a
+// stroke and the code against the RESOLVED fill. 'none'/absent means nothing
+// is under it but the canvas, so the theme background stands in.
+function autoContrastColor(behind: string | undefined, darkMode: boolean): string {
+  const canvas = darkMode ? '#000000' : '#ffffff';
+  return legibleTextOn(behind === undefined || behind === 'none' ? canvas : behind);
 }
 
 // Concrete per-frame render parameters for one dot. Strings are ready-to-emit
@@ -411,7 +425,10 @@ export function resolveDotRender(
     fill,
   };
   if (style.strokeWidth > 0 && !isDash) {
-    out.stroke = resolveLineOrPairColor(style.strokeColor, lineColor, darkMode);
+    out.stroke =
+      style.strokeColor === 'bw'
+        ? autoContrastColor(fill, darkMode)
+        : resolveLineOrPairColor(style.strokeColor, lineColor, darkMode);
     out.strokeWidth = style.strokeWidth;
     out.strokeAlign = style.strokeAlign;
   }
@@ -424,7 +441,7 @@ export function resolveDotRender(
     const color =
       scc !== undefined
         ? resolveLineOrPairColor(scc, lineColor, darkMode)
-        : legibleTextOn(fill === 'none' ? (darkMode ? '#000000' : '#ffffff') : fill);
+        : autoContrastColor(fill, darkMode);
     // `serviceCodeFirstLetterOnly` trims the code to its first character — a
     // local/express pair ("6" / "6X") shown as variants of one line reads "6"
     // on both. The '?' fallback is already one character.
@@ -461,7 +478,10 @@ const lcDayNight = (c: DayNightColor): DayNightColor => ({
   night: c.night.toLowerCase(),
 });
 const lcFill = (f: DotFill): DotFill => (typeof f === 'string' ? f : lcDayNight(f));
-const lcStroke = (s: DotStrokeColor): DotStrokeColor => (typeof s === 'string' ? s : lcDayNight(s));
+// Generic so a DotStrokeColor stays a DotStrokeColor and a (narrower)
+// DotServiceCodeColor stays one; sentinels pass through, pairs lowercase.
+const lcStroke = <T extends DotStrokeColor>(s: T): T =>
+  (typeof s === 'string' ? s : lcDayNight(s)) as T;
 
 /**
  * Canonicalize a DotStyle onto the grids/casing the setters use, rebuilt in the

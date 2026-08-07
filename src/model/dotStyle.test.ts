@@ -49,6 +49,62 @@ describe('resolveDotRender', () => {
     expect(resolveDotRender(s, '#e6002d', undefined, false)!.stroke).toBe('#e6002d');
   });
 
+  it("resolves a 'bw' fill against the LINE color — what actually sits behind the dot", () => {
+    const s = style({ fill: 'bw' });
+    expect(resolveDotRender(s, '#fccc0a', undefined, false)!.fill).toBe('#000');
+    expect(resolveDotRender(s, '#0039a6', undefined, false)!.fill).toBe('#fff');
+  });
+
+  it("falls a 'bw' fill back to the canvas background when no line is in scope", () => {
+    const s = style({ fill: 'bw' });
+    expect(resolveDotRender(s, undefined, undefined, false)!.fill).toBe('#000');
+    expect(resolveDotRender(s, undefined, undefined, true)!.fill).toBe('#fff');
+  });
+
+  it("stacks a 'bw' stroke on a 'bw' fill — the stroke inverts the fill it sits on", () => {
+    // The fill goes white on a dark line, so its auto-contrast stroke goes black.
+    const out = resolveDotRender(
+      style({ fill: 'bw', strokeWidth: 2, strokeColor: 'bw' }),
+      '#0039a6',
+      undefined,
+      false,
+    )!;
+    expect(out.fill).toBe('#fff');
+    expect(out.stroke).toBe('#000');
+  });
+
+  it("resolves a 'bw' stroke to whichever of black/white is legible on the fill", () => {
+    // Dark fills take a white stroke, light fills a black one — the same
+    // auto-contrast rule the service code uses.
+    expect(
+      resolveDotRender(style({ strokeWidth: 2, strokeColor: 'bw' }), undefined, undefined, false)!
+        .stroke,
+    ).toBe('#fff');
+    expect(
+      resolveDotRender(
+        style({ fill: W, strokeWidth: 2, strokeColor: 'bw' }),
+        undefined,
+        undefined,
+        false,
+      )!.stroke,
+    ).toBe('#000');
+    // A 'line' fill is judged against the resolved line color.
+    expect(
+      resolveDotRender(
+        style({ fill: 'line', strokeWidth: 2, strokeColor: 'bw' }),
+        '#fccc0a',
+        undefined,
+        false,
+      )!.stroke,
+    ).toBe('#000');
+  });
+
+  it("judges a 'bw' stroke on a transparent fill against the canvas background", () => {
+    const s = style({ fill: 'none', strokeWidth: 2, strokeColor: 'bw' });
+    expect(resolveDotRender(s, undefined, undefined, false)!.stroke).toBe('#000');
+    expect(resolveDotRender(s, undefined, undefined, true)!.stroke).toBe('#fff');
+  });
+
   it("passes a 'none' fill through as the SVG keyword", () => {
     const s = style({ fill: 'none', strokeWidth: 1.5, strokeColor: K });
     expect(resolveDotRender(s, undefined, undefined, false)!.fill).toBe('none');

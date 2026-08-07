@@ -1486,11 +1486,18 @@ const sanitizeStrokeAlign = (v: unknown): DotStrokeAlign =>
     : 'center';
 
 // Validate + normalize one raw dot color from a hand-edited file: the 'line'
-// sentinel, the 'none' sentinel (fills only), or a {day, night} string pair
-// (lowercased). Returns undefined when the value doesn't conform.
-function sanitizeDotColor(raw: unknown, allowNone: boolean): DotFill | undefined {
+// sentinel, a {day, night} string pair (lowercased), or whichever of the
+// narrower sentinels the slot accepts — 'none' (fills only) and 'bw'
+// (auto-contrast; fills and strokes, but NOT the service code, where
+// auto-contrast is spelled by ABSENCE). Returns undefined when the value
+// doesn't conform. The return type covers every slot; callers narrow.
+function sanitizeDotColor(
+  raw: unknown,
+  allow: { none?: boolean; bw?: boolean } = {},
+): DotFill | undefined {
   if (raw === 'line') return 'line';
-  if (raw === 'none') return allowNone ? 'none' : undefined;
+  if (raw === 'none') return allow.none ? 'none' : undefined;
+  if (raw === 'bw') return allow.bw ? 'bw' : undefined;
   if (!raw || typeof raw !== 'object') return undefined;
   const o = raw as Record<string, unknown>;
   if (typeof o.day !== 'string' || typeof o.night !== 'string') return undefined;
@@ -1521,19 +1528,21 @@ function sanitizeDotStyle(raw: unknown): DotStyle | undefined {
   if (typeof o.shape !== 'string' || !KNOWN_DOT_BASE_SHAPES.has(o.shape as DotBaseShape)) {
     return undefined;
   }
-  const fill = sanitizeDotColor(o.fill, true);
+  const fill = sanitizeDotColor(o.fill, { none: true, bw: true });
   if (fill === undefined) return undefined;
-  const strokeColor = sanitizeDotColor(o.strokeColor, false) as DotStrokeColor | undefined;
+  const strokeColor = sanitizeDotColor(o.strokeColor, { bw: true }) as DotStrokeColor | undefined;
   if (strokeColor === undefined) return undefined;
   if (typeof o.strokeWidth !== 'number' || !Number.isFinite(o.strokeWidth)) return undefined;
   if (typeof o.showServiceCode !== 'boolean') return undefined;
   // serviceCodeColor is OPTIONAL — absent ⇒ auto-contrast; a malformed value is
-  // dropped (treated as absent) rather than invalidating the whole style. Same
-  // shape as a stroke color: the 'line' sentinel or a day/night pair (no 'none').
+  // dropped (treated as absent) rather than invalidating the whole style. The
+  // 'line' sentinel or a day/night pair (no 'none', and no 'bw' either — here
+  // auto-contrast is spelled by ABSENCE, so a stray 'bw' dropping to absent
+  // lands on exactly the behavior it asked for).
   const serviceCodeColor =
     o.serviceCodeColor === undefined
       ? undefined
-      : (sanitizeDotColor(o.serviceCodeColor, false) as DotServiceCodeColor | undefined);
+      : (sanitizeDotColor(o.serviceCodeColor) as DotServiceCodeColor | undefined);
   const out: DotStyle = {
     shape: o.shape as DotBaseShape,
     fill,
