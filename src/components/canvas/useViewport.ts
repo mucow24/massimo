@@ -15,8 +15,10 @@ const viewBoxStr = (vb: { vbX: number; vbY: number; vbW: number; vbH: number }) 
   `${vb.vbX} ${vb.vbY} ${vb.vbW} ${vb.vbH}`;
 
 // Once a wheel gesture goes quiet for this long, commit the zoom to the store so
-// React re-renders and reprojects zoom-dependent details (stroke widths, which
-// transiently scale during the gesture, and the grid) crisply at the final zoom.
+// React re-renders and reprojects zoom-dependent details crisply at the final
+// zoom: stroke widths, which transiently scale during the gesture, and the
+// grid's level-of-detail spacing (its hairline WIDTH is held by
+// non-scaling-stroke and never waits on this — see Grid.tsx).
 const ZOOM_SETTLE_MS = 90;
 
 // Re-anchor a pan once its transform WOULD exceed this fraction of the
