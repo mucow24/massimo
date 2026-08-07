@@ -28,9 +28,10 @@ beforeEach(() => {
 });
 
 describe('<StyleEditor> — line', () => {
-  it('hides the stroke color until the def has a stroke', () => {
+  it('hides the stroke type and color until the def has a stroke', () => {
     render(<StyleEditor def={makeStyle('line', 'y1', { props: { strokeWidth: 0 } })} />);
     expect(screen.getByRole('slider', { name: 'Stroke width' })).toBeTruthy();
+    expect(screen.queryByText('Stroke')).toBeNull();
     expect(screen.queryByText('Stroke color')).toBeNull();
   });
 
@@ -129,16 +130,18 @@ describe('<StyleEditor> — line', () => {
     expect(screen.getByRole('slider', { name: 'Interchange dot size' })).toBeInTheDocument();
   });
 
-  // The casing can be a fixed hex or the line's OWN color — same Line/Custom
+  // The casing can be a fixed hex or the line's OWN color — same Line/Color
   // idiom the stopDot editor uses for its fill/stroke/code colors, so one style
-  // can give differently-colored lines a casing in their own hue.
-  it('activates Custom and shows the swatch for a hex casing', () => {
+  // can give differently-colored lines a casing in their own hue. The picker row
+  // is named for the field ("Stroke"); "Stroke color" names the swatch row it
+  // reveals, so the segments take a "Stroke type …" name to stay distinct.
+  it('activates Color and shows the swatch for a hex casing', () => {
     render(
       <StyleEditor
         def={makeStyle('line', 'y1', { props: { strokeWidth: 3, strokeColor: '#ff0000' } })}
       />,
     );
-    expect(screen.getByLabelText('Stroke color custom')).toHaveClass('active');
+    expect(screen.getByLabelText('Stroke type color')).toHaveClass('active');
     expect(screen.getByRole('button', { name: 'Stroke color' })).toBeInTheDocument();
   });
 
@@ -148,11 +151,11 @@ describe('<StyleEditor> — line', () => {
         def={makeStyle('line', 'y1', { props: { strokeWidth: 3, strokeColor: 'line' } })}
       />,
     );
-    expect(screen.getByLabelText('Stroke color line')).toHaveClass('active');
+    expect(screen.getByLabelText('Stroke type line')).toHaveClass('active');
     expect(screen.queryByRole('button', { name: 'Stroke color' })).toBeNull();
   });
 
-  it('picking a mode writes the prop: Line sets the sentinel, Custom restores a hex', () => {
+  it('picking a type writes the prop: Line sets the sentinel, Color restores a hex', () => {
     useDoc.setState({
       ...useDoc.getState(),
       styles: {
@@ -164,14 +167,14 @@ describe('<StyleEditor> — line', () => {
     });
     const propsOf = () => useDoc.getState().styles['ln-1'].props as LineStyleProps;
     // Re-render from the store after each pick so the ToggleGroup sees the new
-    // active mode (else Radix reads the next click as a deselect of the stale one).
+    // active type (else Radix reads the next click as a deselect of the stale one).
     const { rerender } = render(<StyleEditor def={useDoc.getState().styles['ln-1']} />);
 
-    fireEvent.click(screen.getByLabelText('Stroke color line'));
+    fireEvent.click(screen.getByLabelText('Stroke type line'));
     expect(propsOf().strokeColor).toBe('line');
     rerender(<StyleEditor def={useDoc.getState().styles['ln-1']} />);
 
-    fireEvent.click(screen.getByLabelText('Stroke color custom'));
+    fireEvent.click(screen.getByLabelText('Stroke type color'));
     expect(propsOf().strokeColor).toBe('#ffffff');
   });
 

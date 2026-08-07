@@ -149,32 +149,33 @@ function usePatch(id: string): (patch: StylePropsPatch) => void {
 
 /**
  * The "follow the line's color, or pick one" two-way switch for the line
- * style's casing row. Same shape and wording as the stopDot editor's
- * fill/stroke/service-code mode pickers, so the two color systems read alike;
- * the caller conditionally renders the swatch row beneath when the mode is
- * 'custom'. `ariaPrefix` names the field the segments belong to ("Stroke color"
- * ⇒ "Stroke color line" / "Stroke color custom"), keeping the two rows'
- * segments distinguishable to tests and screen readers.
+ * style's casing row — the same Line/Color question the stopDot editor's
+ * `DotColorTypeRow` asks, so the two color systems read alike. It stays its own
+ * component because a line's casing is a single hex, not a day/night pair, so
+ * the swatch row it reveals is a plain `ColorField` the caller renders.
+ *
+ * `label` names the FIELD ("Stroke"), and segments take "<label> type <type>"
+ * so they stay distinct from the swatch row's own name ("Stroke color").
  */
-function LineOrCustomToggle({
-  mode,
-  ariaPrefix,
+function LineOrColorToggle({
+  type,
+  label,
   onSelect,
 }: {
-  mode: 'line' | 'custom';
-  ariaPrefix: string;
-  onSelect: (mode: 'line' | 'custom') => void;
+  type: 'line' | 'color';
+  label: string;
+  onSelect: (type: 'line' | 'color') => void;
 }) {
   return (
     <div className="shape-group">
       <SegmentedToggle
-        value={mode}
-        onSelect={(v) => onSelect(v as 'line' | 'custom')}
-        options={(['line', 'custom'] as const).map((m) => ({
-          value: m,
-          label: `${ariaPrefix} ${m}`,
-          title: m === 'line' ? "The line's own color" : 'A fixed color',
-          content: m === 'line' ? 'Line' : 'Custom',
+        value={type}
+        onSelect={(v) => onSelect(v as 'line' | 'color')}
+        options={(['line', 'color'] as const).map((t) => ({
+          value: t,
+          label: `${label} type ${t}`,
+          title: t === 'line' ? "The line's own color" : 'A fixed color',
+          content: t === 'line' ? 'Line' : 'Color',
         }))}
       />
     </div>
@@ -199,7 +200,7 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
   const dashActive = singletonDot.shape === 'dash' || multiDot.shape === 'dash';
   // The casing color carries either a hex or the LINE_OWN_COLOR sentinel, so one
   // style can give differently-colored lines a casing in their own hue.
-  const strokeMode: 'line' | 'custom' = props.strokeColor === LINE_OWN_COLOR ? 'line' : 'custom';
+  const strokeType: 'line' | 'color' = props.strokeColor === LINE_OWN_COLOR ? 'line' : 'color';
   return (
     <div className="style-editor">
       <NumericFieldRow
@@ -275,20 +276,20 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
       {props.strokeWidth > 0 && (
         <>
           <div className="row">
-            <label>Stroke color</label>
-            <LineOrCustomToggle
-              mode={strokeMode}
-              ariaPrefix="Stroke color"
+            <label>Stroke</label>
+            <LineOrColorToggle
+              type={strokeType}
+              label="Stroke"
               // Leaving Line lands on the casing default rather than some remembered
               // hue — a style has no line of its own to take a color from.
-              onSelect={(m) =>
-                patch({ strokeColor: m === 'line' ? LINE_OWN_COLOR : LINE_STROKE_COLOR_DEFAULT })
+              onSelect={(t) =>
+                patch({ strokeColor: t === 'line' ? LINE_OWN_COLOR : LINE_STROKE_COLOR_DEFAULT })
               }
             />
           </div>
-          {strokeMode === 'custom' && (
+          {strokeType === 'color' && (
             <div className="row">
-              <label htmlFor={`style-${id}-stroke-color`}>Stroke</label>
+              <label htmlFor={`style-${id}-stroke-color`}>Stroke color</label>
               <ColorField
                 id={`style-${id}-stroke-color`}
                 ariaLabel="Stroke color"
