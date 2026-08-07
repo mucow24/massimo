@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { cancelAppendMode, dragState, useDoc, useSelection } from '../state/store';
 import { useRenderDoc } from '../state/renderDoc';
@@ -109,9 +109,20 @@ import {
   sampleOffsetPath,
   snapNeighborTag,
 } from '../geometry/lineTagGeometry';
-import type { LineId, StationId, TransferEnd } from '../model/types';
+import type { LineId, StationId, TransferDrawOrder, TransferEnd } from '../model/types';
 import { findMatchingStations } from '../model/matching';
 import { desaturateColor } from '../util/color';
+
+// The three LIFTED transfer rungs, parallel to the three dot sub-passes: each
+// one is mounted immediately AFTER the pass at the same index, so
+// 'dot-silhouettes' → 'over-stroke', 'dot-bodies' → 'over-dot', 'dot-codes' →
+// 'over-code'. The fourth rung, 'under', sits below the whole stack and is
+// mounted on its own. See TransferDrawOrder.
+const LIFTED_TRANSFER_RUNGS = [
+  'over-stroke',
+  'over-dot',
+  'over-code',
+] as const satisfies readonly TransferDrawOrder[];
 
 // 1 = full color, 0 = greyscale.
 const OTHER_LINE_SATURATION = 0.5;
@@ -306,6 +317,29 @@ export function MapCanvas() {
     const h = useSelection.getState().hoveredCanvasItem;
     if (h && h.kind === kind && h.id === id) setHover(null);
   };
+  // One draw rung's transfer bodies. Mounted four times below — once at each
+  // slot in the stop-dot stack (see TransferDrawOrder) — so the whole
+  // interleave stays one expression per rung and the four can't drift in how
+  // they select or hover. Each mount renders nothing when its rung is empty,
+  // which is every rung but 'under' on a map that never touched the axis.
+  const transferRung = (draw: TransferDrawOrder) =>
+    transfersVisible ? (
+      <TransferLayer
+        transfers={transfers}
+        stations={stations}
+        transferAnchors={transferAnchors}
+        defaults={TRANSFER_STYLE_DEFAULTS}
+        draw={draw}
+        onSelect={(id) => {
+          // Same exit-then-select contract as the free items above.
+          const sel = useSelection.getState();
+          if (sel.uiMode.kind === 'appending-to-line') sel.setAppending(null);
+          sel.selectTransfer(id);
+        }}
+        onHoverEnter={(id) => setHover({ kind: 'transfer', id })}
+        onHoverLeave={(id) => clearHoverIf('transfer', id)}
+      />
+    ) : null;
   const bulletSelectedIds = rectSelect.previewBulletIds ?? selection.selectedRouteBulletIds;
   const labelSelectedIds = rectSelect.previewLabelIds ?? selection.selectedLabelIds;
   const polygonSelectedIds = rectSelect.previewPolygonIds ?? selection.selectedPolygonIds;
@@ -1638,27 +1672,14 @@ export function MapCanvas() {
             </g>
           )}
 
-          {/* Transfers: user-styled lines connecting two dots. Rendered BEFORE
-            the station dots so the dots paint on top — a transfer never
-            obscures the dot it's connecting. Stay at full opacity in
-            layering mode (they ride between line stops so they're part of
-            the route-network reading, not background annotation). */}
-          {transfersVisible && (
-            <TransferLayer
-              transfers={transfers}
-              stations={stations}
-              transferAnchors={transferAnchors}
-              defaults={TRANSFER_STYLE_DEFAULTS}
-              onSelect={(id) => {
-                // Same exit-then-select contract as the free items above.
-                const sel = useSelection.getState();
-                if (sel.uiMode.kind === 'appending-to-line') sel.setAppending(null);
-                sel.selectTransfer(id);
-              }}
-              onHoverEnter={(id) => setHover({ kind: 'transfer', id })}
-              onHoverLeave={(id) => clearHoverIf('transfer', id)}
-            />
-          )}
+          {/* Transfers: user-styled lines connecting two dots. This is the
+            'under' rung — the default, and the only one below the whole dots
+            pass, so the dots paint on top and a transfer never obscures the
+            dot it's connecting. The other three rungs are mounted between the
+            dot sub-passes further down. Transfers stay at full opacity in
+            layering mode (they ride between line stops so they're part of the
+            route-network reading, not background annotation). */}
+          {transferRung('under')}
 
           {/* In-progress transfer preview line: from the anchor dot to the
             cursor while waiting for the second click. Dashed + translucent so
@@ -1698,23 +1719,34 @@ export function MapCanvas() {
               );
             })()}
 
-          {/* station dots: above the transfer layer so a dot click routes to
-            the station, not the transfer (overlays below — previews, labels,
-            snap guides — still paint over the dots) */}
-          {Object.values(stations).map((st) =>
-            // The layout-edited station is painted above the focus dim instead,
-            // so it stays bright and its dots keep their true colors; skip it here.
-            st.id === layoutEditStationId ? null : (
-              <StationView
-                key={st.id + ':dots'}
-                station={st}
-                lines={lines}
-                zoom={view.viewport.zoom}
-                onStartDrag={drag.onStartDrag}
-                layer="dots"
-              />
-            ),
-          )}
+          {/* Station dots, in their three z-ordered sub-passes with the three
+            LIFTED transfer rungs slotted between them. Every dot silhouette
+            paints before every body (one continuous border across overlapping
+            dots), and every body before every service code; a transfer can ask
+            to sit in either gap, or above the lot. All of it above the 'under'
+            rung, so a dot click still routes to the station, not the transfer
+            (overlays below — previews, labels, snap guides — still paint over
+            the dots). */}
+          {(['dot-silhouettes', 'dot-bodies', 'dot-codes'] as const).map((layer, i) => (
+            <Fragment key={layer}>
+              {Object.values(stations).map((st) =>
+                // The layout-edited station is painted above the focus dim
+                // instead, so it stays bright and its dots keep their true
+                // colors; skip it here.
+                st.id === layoutEditStationId ? null : (
+                  <StationView
+                    key={st.id + ':' + layer}
+                    station={st}
+                    lines={lines}
+                    zoom={view.viewport.zoom}
+                    onStartDrag={drag.onStartDrag}
+                    layer={layer}
+                  />
+                ),
+              )}
+              {transferRung(LIFTED_TRANSFER_RUNGS[i])}
+            </Fragment>
+          ))}
 
           {/* Transfer anchors. Above the dots so a free anchor stays grabbable
             where it overlaps one, and inside an export-excluded subtree — the

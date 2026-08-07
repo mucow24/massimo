@@ -31,23 +31,42 @@ function phantomDotCell(station: Station, showWaypoints: boolean) {
     : null;
 }
 
+// Which slice of the dot stack one mount paints. `undefined` = all three, in
+// order, from a single mount — what an isolated caller (the layout editor's
+// lifted station) wants. MapCanvas asks for them one at a time instead, so it
+// can slot the lifted transfer passes into the gaps (see TransferDrawOrder).
+export type DotSubPass = 'silhouettes' | 'bodies' | 'codes';
+
 /**
- * A station's stop dots (the default 'dots' pass). Paints above transfers in
- * z-order so transfers never obscure the dots they connect. To preserve
- * dot-click-priority over transfers, the wrapper itself is hit-testable: each
- * visible dot absorbs clicks per-pixel (default `visiblePainted`) and the
- * click bubbles to the wrapper, which forwards to the same station-onClick
- * logic the bg layer uses. `pointer-events: none` in tag-mode keeps
- * band-stripe hover working when the cursor passes over a dot.
+ * A station's stop dots (the 'dots' pass), in three z-ordered sub-passes:
+ *
+ *   1. silhouettes — the TfL ticks, then every dot's stroke silhouette
+ *   2. bodies      — every dot's fill (and the empty-station phantom preview)
+ *   3. codes       — every service code
+ *
+ * Passes 1 and 2 are the stroke-before-fill motif: overlapping dots in one
+ * station share a single continuous outer border, because every silhouette is
+ * painted before every body. Pass 3 exists for the same reason one rung up —
+ * a neighbour's body must not land on a dot's service code.
+ *
+ * Paints above transfers in z-order (a transfer only reaches higher by asking,
+ * via its `draw` rung) so transfers never obscure the dots they connect. To
+ * preserve dot-click-priority over transfers, the wrapper itself is
+ * hit-testable: each visible dot absorbs clicks per-pixel (default
+ * `visiblePainted`) and the click bubbles to the wrapper, which forwards to the
+ * same station-onClick logic the bg layer uses. `pointer-events: none` in
+ * tag-mode keeps band-stripe hover working when the cursor passes over a dot.
  */
 export function StationDots({
   station,
   lines,
   onStartDrag,
+  sub,
 }: {
   station: Station;
   lines: Record<string, Line>;
   onStartDrag: (id: string, ev: React.PointerEvent, redistributeAnchor?: string) => void;
+  sub?: DotSubPass;
 }) {
   const hoveredStop = useSelection((s) => s.hoveredLineStop);
   // Stop cells on a circle-bound station resolve through the RING frame, so the
@@ -85,6 +104,18 @@ export function StationDots({
       (a, b) => b.spec.labelDist - a.spec.labelDist || a.cell.lineId.localeCompare(b.cell.lineId),
     );
   const dotStops = resolvedStops.filter((r) => r.style.shape !== 'dash');
+  // Which glyph passes this mount emits, in paint order. Each sub-pass name
+  // maps to exactly one StopGlyph pass; the ticks and the phantom preview ride
+  // the sub-pass their z-order already put them in.
+  const glyphPasses = (['stroke', 'fill', 'code'] as const).filter(
+    (pass) =>
+      sub === undefined ||
+      (sub === 'silhouettes' && pass === 'stroke') ||
+      (sub === 'bodies' && pass === 'fill') ||
+      (sub === 'codes' && pass === 'code'),
+  );
+  const wantsTicks = sub === undefined || sub === 'silhouettes';
+  const wantsPhantom = sub === undefined || sub === 'bodies';
   return (
     <g
       pointerEvents={hitless ? 'none' : undefined}
@@ -96,8 +127,9 @@ export function StationDots({
       {...handlers}
     >
       {/* Phantom dot is a drag preview — render at cell position, in the
-          station's local frame. */}
-      {phantomDot && (
+          station's local frame. A body, not a silhouette: it is the whole
+          glyph of a station that has no real dot. */}
+      {wantsPhantom && phantomDot && (
         <g transform={`translate(${station.x} ${station.y}) rotate(${angle})`}>
           {(() => {
             const c = stopCenterAt(phantomDot.row, phantomDot.col);
@@ -106,25 +138,24 @@ export function StationDots({
         </g>
       )}
       {/* Ticks first: real map paint, but always beneath the circular dots so
-          an interchange dot on a crossed stripe stays on top of a tick. */}
-      {dashStops.map(({ cell, style, spec }) => (
-        <DashGlyph
-          key={'dash:' + cell.lineId}
-          spec={spec}
-          style={style}
-          lineColor={lines[cell.lineId]?.color}
-          line={lines[cell.lineId]}
-          isHovered={hoveredStop?.stationId === station.id && hoveredStop?.lineId === cell.lineId}
-          stationId={station.id}
-          lineId={cell.lineId}
-        />
-      ))}
-      {/* Two passes so overlapping dots in this station share one continuous
-          outer border: every dot's stroke is painted first, then every dot's
-          fill on top covers the inner half of each stroke beneath it. A single
-          per-dot pass would let a later dot's fill punch a hole in its
-          neighbor's border. */}
-      {(['stroke', 'fill'] as const).map((pass) =>
+          an interchange dot on a crossed stripe stays on top of a tick. They
+          ride the silhouette sub-pass — the bottom of the dot stack — rather
+          than splitting their own casing out, which would put a tick's body
+          above a neighbouring dot's border. */}
+      {wantsTicks &&
+        dashStops.map(({ cell, style, spec }) => (
+          <DashGlyph
+            key={'dash:' + cell.lineId}
+            spec={spec}
+            style={style}
+            lineColor={lines[cell.lineId]?.color}
+            line={lines[cell.lineId]}
+            isHovered={hoveredStop?.stationId === station.id && hoveredStop?.lineId === cell.lineId}
+            stationId={station.id}
+            lineId={cell.lineId}
+          />
+        ))}
+      {glyphPasses.map((pass) =>
         dotStops.map(({ cell, style }) => {
           const w = stopPosWorld(cell, station, lineCircles);
           const isHovered =

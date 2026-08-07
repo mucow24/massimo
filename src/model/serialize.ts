@@ -16,12 +16,15 @@ import {
 } from './transforms';
 import {
   TRANSFER_COLOR_DEFAULT,
+  TRANSFER_DRAW_DEFAULT,
   TRANSFER_STROKE_COLOR_DEFAULT,
   TRANSFER_STROKE_WIDTH_DEFAULT,
   TRANSFER_THICKNESS_DEFAULT,
   canonicalTransferColor,
+  canonicalTransferDraw,
   canonicalTransferStrokeWidth,
   canonicalTransferThickness,
+  isTransferDrawOrder,
   legacyColorToDayNight,
 } from './transferStyle';
 import { canonicalLineLabelGap, canonicalLineWidth } from './lineWidth';
@@ -1998,6 +2001,14 @@ export function sanitizeTransferStyles(transfers: Record<string, Transfer>): {
         dn === undefined ? undefined : canonicalTransferColor(dn, TRANSFER_STROKE_COLOR_DEFAULT);
       cleaned = withTransferOverride(cleaned, 'strokeColor', stored);
     }
+    if ('draw' in cleaned) {
+      // A value outside the ladder is dropped, not healed to 'under' by
+      // storing it: absent IS 'under', so dropping says the same thing.
+      const stored = isTransferDrawOrder(cleaned.draw)
+        ? canonicalTransferDraw(cleaned.draw, TRANSFER_DRAW_DEFAULT)
+        : undefined;
+      cleaned = withTransferOverride(cleaned, 'draw', stored);
+    }
     if (cleaned !== t) changed = true;
     next[id] = cleaned;
   }
@@ -2054,6 +2065,9 @@ export function bakeLegacyTransferSettings<
         ? raw.transferStrokeColor
         : TRANSFER_STROKE_COLOR_DEFAULT.day,
     ),
+    // There was never a doc-level draw setting — pre-retirement maps painted
+    // every transfer beneath the dots, which is what 'under' spells.
+    draw: TRANSFER_DRAW_DEFAULT,
   };
   const transfers: Record<string, Transfer> = {};
   for (const id of Object.keys(doc.transfers ?? {})) {
@@ -2575,7 +2589,11 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       const strokeColor = sanitizeDayNightColor(o.strokeColor);
       if (thickness === undefined || color === undefined) return undefined;
       if (strokeWidth === undefined || strokeColor === undefined) return undefined;
-      return canonicalStyleProps('transfer', { thickness, color, strokeWidth, strokeColor });
+      // The draw rung post-dates the other four, so a missing or out-of-ladder
+      // value heals to 'under' rather than invalidating the whole def (same
+      // treatment as DotStyle's strokeAlign).
+      const draw = isTransferDrawOrder(o.draw) ? o.draw : TRANSFER_DRAW_DEFAULT;
+      return canonicalStyleProps('transfer', { thickness, color, strokeWidth, strokeColor, draw });
     }
     case 'station': {
       // All five typography fields are required in a style def (concrete, even

@@ -32,12 +32,14 @@ interface Props {
   // no element).
   stationId?: string;
   lineId?: string;
-  // Two-pass split. StationDots paints all dot strokes ('stroke') and then all
-  // dot fills ('fill'), so overlapping dots share one continuous outer border
-  // (each fill covers the inner half of every stroke beneath it). Omitted by
-  // isolated callers (pickers/inspector previews) that never overlap — they get
-  // the combined fill+stroke element as before.
-  pass?: 'stroke' | 'fill';
+  // Three-pass split. StationDots paints all dot strokes ('stroke'), then all
+  // dot fills ('fill'), then all service codes ('code'), so overlapping dots
+  // share one continuous outer border (each fill covers the inner half of every
+  // stroke beneath it) and no dot's body ever lands on a neighbour's code. The
+  // split is also what gives a transfer somewhere to sit BETWEEN the passes —
+  // see TransferDrawOrder. Omitted by isolated callers (pickers/inspector
+  // previews) that never overlap — they get the combined element as before.
+  pass?: 'stroke' | 'fill' | 'code';
 }
 
 export const DIAMOND_POINTS = (cx: number, cy: number, r: number) =>
@@ -195,31 +197,51 @@ export function StopGlyph({
   // lower on macOS than on Windows (see capCenterDy for the full story). On a
   // default 12-unit code disc that was over half a world unit.
   const codeBaselineY = cy + capCenterDy(codeFontSize);
+  // `seam` carries the station/line id VALUE the way data-stop-stroke does, so
+  // the code element is addressable without adding a second data-stop-station
+  // per dot (the one-per-dot locators depend on that).
+  const codeText = (seam: boolean) =>
+    !code ? null : (
+      <text
+        x={cx}
+        y={codeBaselineY}
+        textAnchor="middle"
+        fontFamily={FONT_STACK}
+        fontSize={codeFontSize}
+        fontWeight={700}
+        fill={code.color}
+        pointerEvents="none"
+        style={{ userSelect: 'none' }}
+        {...(seam
+          ? {
+              'data-stop-code': stationId ?? '',
+              ...(lineId ? { 'data-stop-line': lineId } : {}),
+            }
+          : {})}
+      >
+        {code.text}
+      </text>
+    );
+
+  // Code pass: the service code alone, painted OVER every body.
+  if (pass === 'code') return codeText(true);
+
   // With a code, the data attrs live on the wrapping <g> so the test seam
-  // stays one element per stop.
+  // stays one element per stop. Only the COMBINED render needs it: the split
+  // passes emit the body and the code as separate elements, and the body
+  // carries the attrs directly.
   const withCode = (el: ReactNode) =>
     !code ? (
       el
     ) : (
       <g {...dataAttrs}>
         {el}
-        <text
-          x={cx}
-          y={codeBaselineY}
-          textAnchor="middle"
-          fontFamily={FONT_STACK}
-          fontSize={codeFontSize}
-          fontWeight={700}
-          fill={code.color}
-          pointerEvents="none"
-          style={{ userSelect: 'none' }}
-        >
-          {code.text}
-        </text>
+        {codeText(false)}
       </g>
     );
 
-  // Fill pass: the body fill (+ service code), painted OVER every stroke.
+  // Fill pass: the body fill only — its code rides the pass above, so this
+  // element carries the canonical seam attrs whether or not the dot has one.
   if (pass === 'fill') {
     // Open ring, stroked X, or a borderless dot: the whole glyph (fill +
     // any outline) stays on this one element — there's no separate silhouette
@@ -228,23 +250,19 @@ export function StopGlyph({
       // A single native-stroke element (open ring / borderless). Its centered
       // stroke is placed by shifting the drawn radius to nativeDelta so the band
       // lands inside / centered / outside per the style (0 for center).
-      return withCode(
-        shapeElement({ ...params, r: params.r + nativeDelta }, cx, cy, {
-          fill: params.fill,
-          ...(strokeAttrs ?? {}),
-          ...(code ? {} : dataAttrs),
-        }),
-      );
+      return shapeElement({ ...params, r: params.r + nativeDelta }, cx, cy, {
+        fill: params.fill,
+        ...(strokeAttrs ?? {}),
+        ...dataAttrs,
+      });
     }
     // Filled dot body, inset so the silhouette beneath shows exactly strokeWidth
     // of outline on the aligned side(s). Clamp at 0 for a thick inside stroke on
     // a small dot (mirrors casingInsetBodyWidth).
-    return withCode(
-      shapeElement({ ...params, r: Math.max(0, params.r + bodyDelta) }, cx, cy, {
-        fill: params.fill,
-        ...(code ? {} : dataAttrs),
-      }),
-    );
+    return shapeElement({ ...params, r: Math.max(0, params.r + bodyDelta) }, cx, cy, {
+      fill: params.fill,
+      ...dataAttrs,
+    });
   }
 
   // Combined (default): one element for the isolated previews that never

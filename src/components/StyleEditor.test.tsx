@@ -6,7 +6,8 @@ import { useDoc } from '../state/store';
 import { historyDepth } from '../state/history';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makeStyle } from '../test/fixtures';
-import type { DotStyle, LineStyleProps } from '../model/types';
+import { chooseOption } from '../test/interaction';
+import type { DotStyle, LineStyleProps, StyleDef, TransferStyleProps } from '../model/types';
 
 // Reset the live store each test and seed two custom stopDot styles the line
 // editor's type pickers resolve against (a dash dot for the dash-gating tests).
@@ -531,5 +532,25 @@ describe('<StyleEditor> — segmented controls are roving-focus ToggleGroups', (
     // fill must stay 'line', not fall through to a color day/night pair.
     await user.click(screen.getByLabelText('Fill type line'));
     expect((useDoc.getState().styles['sd-fill'].props as DotStyle).fill).toBe('line');
+  });
+});
+
+describe('<StyleEditor> — transfer', () => {
+  it('renders the draw rung at the def value and writes a pick through', async () => {
+    const def = makeStyle('transfer', 'y1', { props: { draw: 'over-stroke' } });
+    useDoc.setState({ styles: { ...useDoc.getState().styles, y1: def } });
+    render(<StyleEditor def={def} />);
+    expect(screen.getByRole('combobox', { name: 'Draw' })).toHaveTextContent(
+      'Over stop dot stroke',
+    );
+    await chooseOption(userEvent.setup(), 'Draw', 'Over service code');
+    expect((useDoc.getState().styles.y1.props as TransferStyleProps).draw).toBe('over-code');
+  });
+
+  it('a def written before the axis existed reads as "Under stop dots"', () => {
+    const def = makeStyle('transfer', 'y1');
+    const { draw: _gone, ...legacy } = def.props as TransferStyleProps;
+    render(<StyleEditor def={{ ...def, props: legacy } as StyleDef} />);
+    expect(screen.getByRole('combobox', { name: 'Draw' })).toHaveTextContent('Under stop dots');
   });
 });

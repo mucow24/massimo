@@ -539,6 +539,111 @@ describe('TransferLayer — DOM rendering', () => {
     });
   });
 
+  // The `draw` axis slots a transfer at one of four rungs in the stop-dot
+  // stack. The dots pass is three sub-passes deep — every dot's stroke
+  // silhouette, then every body, then every service code — so each rung is a
+  // gap between two of them (see TransferDrawOrder).
+  describe('draw order', () => {
+    // A stroked, code-bearing dot on s1: the only shape that puts all three
+    // dot sub-passes on the canvas at once, so each rung has both neighbours
+    // to be measured against.
+    const seedRichDot = (draw?: Transfer['draw']) => {
+      seedTwoStationsWithTransfer();
+      act(() => {
+        const s1 = useDoc.getState().stations.s1;
+        useDoc.setState({
+          ...useDoc.getState(),
+          stations: {
+            ...useDoc.getState().stations,
+            s1: {
+              ...s1,
+              stops: [
+                {
+                  ...s1.stops[0],
+                  dotStyle: {
+                    shape: 'circle',
+                    fill: { day: '#000000', night: '#000000' },
+                    strokeWidth: 2,
+                    strokeColor: { day: '#ffffff', night: '#ffffff' },
+                    strokeAlign: 'center',
+                    showServiceCode: true,
+                  },
+                },
+              ],
+            },
+          },
+        });
+        if (draw) useDoc.getState().updateTransferStyle('x1', { draw });
+      });
+    };
+    const one = (sel: string) => {
+      const el = document.querySelector(sel);
+      if (!el) throw new Error(`no element for ${sel}`);
+      return el;
+    };
+    // s1's three dot sub-pass elements, bottom-up.
+    const silhouette = () => one('[data-stop-stroke="s1"][data-stop-line="L1"]');
+    const body = () => one('[data-stop-station="s1"][data-stop-line="L1"]');
+    const code = () => one('[data-stop-code="s1"][data-stop-line="L1"]');
+    // `a` paints before `b` (so b covers a).
+    const under = (a: Element, b: Element) =>
+      Boolean(b.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_PRECEDING);
+
+    it('the dots pass splits into silhouettes → bodies → codes, in that order', () => {
+      seedRichDot();
+      render(<App />);
+      expect(under(silhouette(), body())).toBe(true);
+      expect(under(body(), code())).toBe(true);
+    });
+
+    it('"under" (the default) paints beneath the whole stack, silhouettes included', () => {
+      seedRichDot();
+      render(<App />);
+      expect(useDoc.getState().transfers.x1.draw).toBeUndefined();
+      expect(under(transferBody('x1'), silhouette())).toBe(true);
+    });
+
+    it('"over-stroke" paints over the dot silhouette but under its body', () => {
+      seedRichDot('over-stroke');
+      render(<App />);
+      expect(under(silhouette(), transferBody('x1'))).toBe(true);
+      expect(under(transferBody('x1'), body())).toBe(true);
+    });
+
+    it('"over-dot" paints over the dot body but under the service code', () => {
+      seedRichDot('over-dot');
+      render(<App />);
+      expect(under(body(), transferBody('x1'))).toBe(true);
+      expect(under(transferBody('x1'), code())).toBe(true);
+    });
+
+    it('"over-code" paints over everything the dot draws', () => {
+      seedRichDot('over-code');
+      render(<App />);
+      expect(under(code(), transferBody('x1'))).toBe(true);
+    });
+
+    it('rungs are independent: two transfers can sit on opposite sides of one dot', () => {
+      seedRichDot('over-code');
+      act(() => {
+        useDoc.setState({
+          ...useDoc.getState(),
+          transfers: {
+            ...useDoc.getState().transfers,
+            x2: {
+              id: 'x2',
+              a: { stationId: 's1', lineId: 'L1' },
+              b: { stationId: 's2', lineId: 'L2' },
+            },
+          },
+        });
+      });
+      render(<App />);
+      expect(under(transferBody('x2'), silhouette())).toBe(true);
+      expect(under(code(), transferBody('x1'))).toBe(true);
+    });
+  });
+
   // The creation rubber band must read as PROVISIONAL — dashed + translucent —
   // not like an already-placed transfer at full color and weight.
   describe('creating-transfer rubber band', () => {

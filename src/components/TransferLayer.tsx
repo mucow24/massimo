@@ -1,4 +1,4 @@
-import type { Station, Transfer, TransferAnchor } from '../model/types';
+import type { Station, Transfer, TransferAnchor, TransferDrawOrder } from '../model/types';
 import { resolveTransferStyle, type TransferStyle } from '../model/transferStyle';
 import { resolveDayNight } from '../model/dayNightColor';
 import { transferEndWorld } from '../geometry/transferEnds';
@@ -29,6 +29,14 @@ interface Props {
   defaults: TransferStyle;
   selectedId: string | null;
   onSelect: (id: string) => void;
+}
+
+// Which draw rung this mount paints — MapCanvas mounts the bodies layer once
+// per rung, at that rung's slot in the dot stack (see TransferDrawOrder), and
+// each mount takes only the transfers that resolve to it. The outline pass has
+// no rung: selection chrome always sits on top of everything.
+interface RungProps {
+  draw: TransferDrawOrder;
 }
 
 // Canvas mouseover → preview a transfer's selection outline at 50% (see
@@ -74,12 +82,17 @@ export function capsuleOutlinePath(
 }
 
 /**
- * Renders all inter-station transfers in two flat passes across the whole
- * set (painted in document order so the second pass lays on top):
+ * Renders the inter-station transfers that sit on ONE draw rung (`draw`), in
+ * two flat passes across that rung's set (painted in document order so the
+ * second pass lays on top):
  *
  *   1. User strokes — only for transfers whose effective strokeWidth > 0. A
  *      halo around each body in that transfer's stroke color.
  *   2. Bodies — the colored stroke at each transfer's effective thickness.
+ *
+ * The flat-pass union below therefore holds WITHIN a rung: two overlapping
+ * transfers trace one outline only if they sit on the same rung, which is the
+ * honest reading — they are at different depths in the dot stack otherwise.
  *
  * The selected transfer's outline is NOT here: it renders via
  * TransferSelectionOutline, mounted separately in MapCanvas above the
@@ -105,10 +118,11 @@ export function TransferLayer({
   stations,
   transferAnchors,
   defaults,
+  draw,
   onSelect,
   onHoverEnter,
   onHoverLeave,
-}: Omit<Props, 'selectedId'> & HoverProps) {
+}: Omit<Props, 'selectedId'> & HoverProps & RungProps) {
   // Transfer colors are theme-aware (day/night); resolve to the concrete hex
   // for the active canvas theme, same source as the dots + polygons.
   const darkMode = useDoc((s) => s.darkMode);
@@ -117,7 +131,11 @@ export function TransferLayer({
   // render source via MapCanvas, and a ring mid-capture must resolve against
   // the same frame or a transfer end tears off its station.
   const lineCircles = useRenderDoc((s) => s.lineCircles);
-  const list = Object.values(transfers);
+  // Only this mount's rung, read through the same resolution as every other
+  // style field — an absent override means the default rung, not "no rung".
+  const list = Object.values(transfers).filter(
+    (t) => resolveTransferStyle(t, defaults).draw === draw,
+  );
   if (list.length === 0) return null;
 
   // Resolve endpoints + effective style once; each pass below iterates this

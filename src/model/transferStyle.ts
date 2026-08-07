@@ -8,7 +8,7 @@
 
 import { dayNightColorsEqual } from './dayNightColor';
 import { roundClamp } from '../util/grid';
-import type { DayNightColor } from './types';
+import type { DayNightColor, TransferDrawOrder } from './types';
 
 // Transform clamp floor; the slider min too.
 export const TRANSFER_THICKNESS_MIN = 1;
@@ -38,7 +38,27 @@ export const TRANSFER_STROKE_WIDTH_DEFAULT = 0;
 export const TRANSFER_STROKE_WIDTH_STEP = 0.25;
 export const TRANSFER_STROKE_COLOR_DEFAULT: DayNightColor = { day: '#ffffff', night: '#ffffff' };
 
-// The four style knobs a transfer can override — also the shape of the
+// Every draw rung, BOTTOM-UP — the order the picker lists them in and the
+// order MapCanvas mounts the four transfer passes in. See TransferDrawOrder
+// for what each one sits between.
+export const TRANSFER_DRAW_ORDERS: readonly TransferDrawOrder[] = [
+  'under',
+  'over-stroke',
+  'over-dot',
+  'over-code',
+];
+// The legacy look: the whole dots pass covers the transfer.
+export const TRANSFER_DRAW_DEFAULT: TransferDrawOrder = 'under';
+// Picker copy, one per rung. Lives beside the ladder so the popover and the
+// Styles-panel editor can never label the same value differently.
+export const TRANSFER_DRAW_LABELS: Record<TransferDrawOrder, string> = {
+  under: 'Under stop dots',
+  'over-stroke': 'Over stop dot stroke',
+  'over-dot': 'Over stop dot',
+  'over-code': 'Over service code',
+};
+
+// The five style knobs a transfer can override — also the shape of the
 // constant defaults they fall back to. `color`/`strokeColor` are theme-aware:
 // each paints its `day` half in light mode and `night` half in dark.
 export interface TransferStyle {
@@ -46,6 +66,7 @@ export interface TransferStyle {
   color: DayNightColor;
   strokeWidth: number;
   strokeColor: DayNightColor;
+  draw: TransferDrawOrder;
 }
 
 // The constant fallback for every unset override — the legacy hard-coded
@@ -55,6 +76,7 @@ export const TRANSFER_STYLE_DEFAULTS: TransferStyle = {
   color: TRANSFER_COLOR_DEFAULT,
   strokeWidth: TRANSFER_STROKE_WIDTH_DEFAULT,
   strokeColor: TRANSFER_STROKE_COLOR_DEFAULT,
+  draw: TRANSFER_DRAW_DEFAULT,
 };
 
 // Wrap a legacy single-color string as a theme-aware color: old docs stored
@@ -101,6 +123,24 @@ export const canonicalTransferColor = (
 ): DayNightColor | undefined => (dayNightColorsEqual(c, dropAt) ? undefined : c);
 
 /**
+ * Same collapse-at-`dropAt` contract as the three above, for the draw rung.
+ * No grid to snap to — the value is already one of TRANSFER_DRAW_ORDERS (the
+ * file cleaner validates that before calling).
+ */
+export const canonicalTransferDraw = (
+  d: TransferDrawOrder,
+  dropAt: TransferDrawOrder,
+): TransferDrawOrder | undefined => (d === dropAt ? undefined : d);
+
+/**
+ * Is `v` one of the four known rungs? The file cleaner's gate — a hand-edited
+ * value outside the ladder is dropped rather than painted at a rung that
+ * doesn't exist.
+ */
+export const isTransferDrawOrder = (v: unknown): v is TransferDrawOrder =>
+  typeof v === 'string' && (TRANSFER_DRAW_ORDERS as readonly string[]).includes(v);
+
+/**
  * Fully-resolved style of one transfer: each override when present, else the
  * constant default. Structural transfer parameter so narrowed shapes pass
  * through (same convention as dotSizeOverride). `defaults` stays a parameter
@@ -115,6 +155,7 @@ export const resolveTransferStyle = (
     color?: DayNightColor;
     strokeWidth?: number;
     strokeColor?: DayNightColor;
+    draw?: TransferDrawOrder;
   },
   defaults: TransferStyle = TRANSFER_STYLE_DEFAULTS,
 ): TransferStyle => ({
@@ -122,4 +163,7 @@ export const resolveTransferStyle = (
   color: t.color ?? defaults.color,
   strokeWidth: t.strokeWidth ?? defaults.strokeWidth,
   strokeColor: t.strokeColor ?? defaults.strokeColor,
+  // `?? DEFAULT` on the defaults too: a style def written before the axis
+  // existed reaches here as its own props, one field short.
+  draw: t.draw ?? defaults.draw ?? TRANSFER_DRAW_DEFAULT,
 });
