@@ -1773,6 +1773,24 @@ describe('per-transfer style overrides', () => {
       expect(T.updateTransferStyle(doc, 'x1', { strokeWidth: Number.POSITIVE_INFINITY })).toBe(doc);
     });
 
+    it('stores a lifted draw order and clears it back at the default "under"', () => {
+      const lifted = T.updateTransferStyle(baseDoc(), 'x1', { draw: 'over-dot' });
+      expect(lifted.transfers['x1'].draw).toBe('over-dot');
+      expect('draw' in lifted.transfers['x2']).toBe(false);
+      const cleared = T.updateTransferStyle(lifted, 'x1', { draw: 'under' });
+      expect('draw' in cleared.transfers['x1']).toBe(false);
+    });
+
+    it('detaches from the style preset when the draw order changes (it is a covered field)', () => {
+      const doc = makeDoc({
+        transfers: [makeTransfer({ id: 'x1', styleId: 'y1' })],
+      });
+      const next = T.updateTransferStyle(doc, 'x1', { draw: 'over-code' });
+      expect(next.transfers['x1'].styleId).toBeUndefined();
+      // …but a re-pick of the value already in force is a no-op, tag intact.
+      expect(T.updateTransferStyle(next, 'x1', { draw: 'over-code' })).toBe(next);
+    });
+
     it('is a reference-equal no-op for an unknown id, an empty patch, and unchanged values', () => {
       const doc = baseDoc();
       expect(T.updateTransferStyle(doc, 'nope', { thickness: 5 })).toBe(doc);

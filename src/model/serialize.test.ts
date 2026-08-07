@@ -1405,6 +1405,21 @@ describe('parse — transfer style sanitizing', () => {
       },
     });
 
+  it('carries a lifted draw rung through, drops it at the default, and drops junk', () => {
+    const drawOf = (fields: Record<string, unknown>) => {
+      const r = parse(buildWithTransfer(fields));
+      expect(r.ok).toBe(true);
+      return r.ok ? r.doc.transfers.x1 : undefined;
+    };
+    expect(drawOf({ draw: 'over-code' })!.draw).toBe('over-code');
+    // Absent IS 'under', so an explicit 'under' collapses rather than storing.
+    expect('draw' in drawOf({ draw: 'under' })!).toBe(false);
+    // A value off the ladder is dropped, which reads as 'under' — never
+    // painted at a rung that doesn't exist.
+    expect('draw' in drawOf({ draw: 'over-everything' })!).toBe(false);
+    expect('draw' in drawOf({ draw: 7 })!).toBe(false);
+  });
+
   it('drops explicit overrides equal to the constant defaults (never stored)', () => {
     const result = parse(
       buildWithTransfer({

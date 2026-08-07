@@ -29,6 +29,15 @@ function renderPopover(onClose = () => {}) {
   );
 }
 
+// The real mount (ItemPopovers) passes the LIVE store transfer. Controlled
+// widgets — the Radix selects especially — need that: a static snapshot never
+// re-renders, so a second pick that returns the control to its rendered value
+// looks like a no-op to Radix and fires nothing.
+function LivePopover() {
+  const transfer = useDoc((s) => s.transfers['x1']);
+  return transfer ? <TransferPopover transfer={transfer} hostW={800} onClose={() => {}} /> : null;
+}
+
 describe('<TransferPopover />', () => {
   it('lays out the controls top-to-bottom with a divider between body and stroke', () => {
     const { container } = renderPopover();
@@ -44,8 +53,33 @@ describe('<TransferPopover />', () => {
       'divider',
       'Stroke width',
       'Stroke color',
+      'divider',
+      'Draw',
       'footer',
     ]);
+  });
+
+  it('shows the effective draw rung and lists all four, bottom-up', async () => {
+    const user = userEvent.setup();
+    renderPopover();
+    const combo = screen.getByRole('combobox', { name: 'Draw' });
+    expect(combo).toHaveTextContent('Under stop dots');
+    await user.click(combo);
+    expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Under stop dots',
+      'Over stop dot stroke',
+      'Over stop dot',
+      'Over service code',
+    ]);
+  });
+
+  it('picking a lifted rung writes an override; picking "Under stop dots" clears it', async () => {
+    const user = userEvent.setup();
+    render(<LivePopover />);
+    await chooseOption(user, 'Draw', 'Over stop dot');
+    expect(useDoc.getState().transfers.x1.draw).toBe('over-dot');
+    await chooseOption(user, 'Draw', 'Under stop dots');
+    expect('draw' in useDoc.getState().transfers.x1).toBe(false);
   });
 
   it('shows the EFFECTIVE values — the constant defaults for an override-free transfer', async () => {
@@ -188,13 +222,6 @@ describe('<TransferPopover />', () => {
 });
 
 describe('<TransferPopover /> — style presets', () => {
-  // The real mount (ItemPopovers) passes the live store transfer; mirror that
-  // so the Style row re-derives when an action writes the tag.
-  function LivePopover() {
-    const transfer = useDoc((s) => s.transfers['x1']);
-    return transfer ? <TransferPopover transfer={transfer} hostW={800} onClose={() => {}} /> : null;
-  }
-
   it('applies a preset from the Style row, then flips to Custom on a covered edit', async () => {
     useDoc.setState({
       ...useDoc.getState(),
@@ -207,6 +234,24 @@ describe('<TransferPopover /> — style presets', () => {
     expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Bold link');
     // A covered edit detaches back to Custom.
     stepSlider(screen.getByRole('slider', { name: 'Thickness' }), 1);
+    expect(useDoc.getState().transfers['x1'].styleId).toBeUndefined();
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Custom');
+  });
+
+  it('a preset carries its draw rung, and changing the rung detaches to Custom', async () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      styles: {
+        y1: makeStyle('transfer', 'y1', { name: 'Overlaid', props: { draw: 'over-code' } }),
+      },
+    });
+    const user = userEvent.setup();
+    render(<LivePopover />);
+    await chooseOption(user, 'Style', 'Overlaid');
+    expect(useDoc.getState().transfers['x1'].draw).toBe('over-code');
+    expect(screen.getByRole('combobox', { name: 'Draw' })).toHaveTextContent('Over service code');
+    // The rung is a COVERED field, so re-picking a different one detaches.
+    await chooseOption(user, 'Draw', 'Over stop dot stroke');
     expect(useDoc.getState().transfers['x1'].styleId).toBeUndefined();
     expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Custom');
   });

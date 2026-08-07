@@ -362,10 +362,10 @@ describe('<StopGlyph /> size override', () => {
 // pass renders only its half; the canonical E2E seam (data-stop-shape /
 // -station / -line) lives on the fill pass so it stays one element per dot.
 
-describe('<StopGlyph /> stroke/fill split (pass prop)', () => {
+describe('<StopGlyph /> stroke/fill/code split (pass prop)', () => {
   function renderPass(
     style: DotStyle | undefined,
-    pass: 'stroke' | 'fill',
+    pass: 'stroke' | 'fill' | 'code',
     opts: { isHovered?: boolean; lineColor?: string; serviceCode?: string } = {},
   ) {
     const { container } = render(
@@ -378,7 +378,10 @@ describe('<StopGlyph /> stroke/fill split (pass prop)', () => {
           isHovered={opts.isHovered}
           lineColor={opts.lineColor}
           serviceCode={opts.serviceCode}
-          stationId="A"
+          // NOT 'A': the seam tests pass serviceCode 'A', and a station id that
+          // matched it could not tell "carries the station id" from "carries
+          // the code text".
+          stationId="S9"
           lineId="L1"
         />
       </svg>,
@@ -399,7 +402,7 @@ describe('<StopGlyph /> stroke/fill split (pass prop)', () => {
     // data-stop-station attr must stay one-element-per-dot on the fill pass,
     // but the alt+click deep-pick resolver still needs to map border pixels
     // back to their station).
-    expect(c.getAttribute('data-stop-stroke')).toBe('A');
+    expect(c.getAttribute('data-stop-stroke')).toBe('S9');
     // The canonical seam stays on the fill pass — never on the stroke element.
     expect(c.getAttribute('data-stop-shape')).toBeNull();
     expect(svg.querySelector('text')).toBeNull();
@@ -413,7 +416,7 @@ describe('<StopGlyph /> stroke/fill split (pass prop)', () => {
     // Inset by strokeWidth/2 = 1 so the silhouette below shows exactly 2px.
     expect(parseFloat(c.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS - 1, 5);
     expect(c.getAttribute('data-stop-shape')).toBe('circle');
-    expect(c.getAttribute('data-stop-station')).toBe('A');
+    expect(c.getAttribute('data-stop-station')).toBe('S9');
     expect(c.getAttribute('data-stop-line')).toBe('L1');
     expect(c.hasAttribute('data-stop-stroke')).toBe(false);
   });
@@ -462,22 +465,43 @@ describe('<StopGlyph /> stroke/fill split (pass prop)', () => {
     expect(parseFloat(c.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS + 1.5, 5);
   });
 
-  it('a service-code dot puts the code + disc in the fill pass; an unstroked code dot has an empty stroke pass', () => {
+  it('a service-code dot splits the disc and the code across the fill and code passes', () => {
+    // The code rides its OWN pass so no neighbouring dot's body can land on it
+    // — and so a transfer has a rung to sit on between the two (see
+    // TransferDrawOrder). With the code gone from the fill pass, the disc keeps
+    // the canonical seam attrs directly rather than through a wrapping <g>.
     const fillSvg = renderPass(P['filled-black-service-code'], 'fill', { serviceCode: 'A' });
-    expect(fillSvg.querySelector('text')!.textContent).toBe('A');
-    expect(fillSvg.querySelector('g')!.getAttribute('data-stop-shape')).toBe('circle');
+    expect(fillSvg.querySelector('text')).toBeNull();
+    const disc = fillSvg.querySelector('circle')!;
+    expect(disc.getAttribute('data-stop-shape')).toBe('circle');
+    expect(disc.getAttribute('data-stop-line')).toBe('L1');
+
+    const codeSvg = renderPass(P['filled-black-service-code'], 'code', { serviceCode: 'A' });
+    const text = codeSvg.querySelector('text')!;
+    expect(text.textContent).toBe('A');
+    // Its own seam, carrying the station id as the VALUE — a second
+    // data-stop-station would break the one-element-per-dot locators.
+    expect(text.getAttribute('data-stop-code')).toBe('S9');
+    expect(text.getAttribute('data-stop-line')).toBe('L1');
+    expect(codeSvg.querySelector('circle')).toBeNull();
+
     // filled-black-service-code has strokeWidth 0 → nothing in the stroke pass.
     const strokeSvg = renderPass(P['filled-black-service-code'], 'stroke', { serviceCode: 'A' });
     expect(strokeSvg.querySelector('circle, text')).toBeNull();
   });
 
-  it("'none' renders nothing in either pass", () => {
+  it('a codeless dot renders nothing at all in the code pass', () => {
     expect(
-      renderPass(P['none'], 'stroke').querySelector('circle, rect, polygon, g, text'),
+      renderPass(P['filled-black'], 'code').querySelector('circle, rect, polygon, g, text'),
     ).toBeNull();
-    expect(
-      renderPass(P['none'], 'fill').querySelector('circle, rect, polygon, g, text'),
-    ).toBeNull();
+  });
+
+  it("'none' renders nothing in any pass", () => {
+    for (const pass of ['stroke', 'fill', 'code'] as const) {
+      expect(
+        renderPass(P['none'], pass).querySelector('circle, rect, polygon, g, text'),
+      ).toBeNull();
+    }
   });
 
   // The silhouette/inset distance is in radius units, so it must be shape-aware

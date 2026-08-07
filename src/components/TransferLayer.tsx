@@ -31,6 +31,16 @@ interface Props {
   onSelect: (id: string) => void;
 }
 
+// The bodies layer is mounted once per draw rung, at that rung's slot in the
+// dot stack (see TransferDrawOrder), and takes its rung's transfers ALREADY
+// BUCKETED — MapCanvas resolves every transfer's rung once per render
+// (`transfersByRung`) rather than having each of the four mounts re-filter and
+// re-resolve the whole collection. The outline pass has no rung: selection
+// chrome always sits on top of everything, so it keeps the full record.
+interface RungProps {
+  transfers: Transfer[];
+}
+
 // Canvas mouseover → preview a transfer's selection outline at 50% (see
 // MapCanvas). Only the bodies pass (TransferLayer) needs these; the outline
 // pass (TransferSelectionOutline) shares Props but never hovers, so they live
@@ -74,16 +84,21 @@ export function capsuleOutlinePath(
 }
 
 /**
- * Renders all inter-station transfers in two flat passes across the whole
- * set (painted in document order so the second pass lays on top):
+ * Renders the inter-station transfers that sit on ONE draw rung (`draw`), in
+ * two flat passes across that rung's set (painted in document order so the
+ * second pass lays on top):
  *
  *   1. User strokes — only for transfers whose effective strokeWidth > 0. A
  *      halo around each body in that transfer's stroke color.
  *   2. Bodies — the colored stroke at each transfer's effective thickness.
  *
+ * The flat-pass union below therefore holds WITHIN a rung: two overlapping
+ * transfers trace one outline only if they sit on the same rung, which is the
+ * honest reading — they are at different depths in the dot stack otherwise.
+ *
  * The selected transfer's outline is NOT here: it renders via
- * TransferSelectionOutline, mounted separately in MapCanvas above the
- * station dots (this whole layer paints below them).
+ * TransferSelectionOutline, mounted separately in MapCanvas above every dot
+ * pass AND every rung, so nothing this layer paints can cover it.
  *
  * Styling resolves per transfer: overrides on the Transfer win over the
  * doc-level `defaults` (see resolveTransferStyle).
@@ -95,10 +110,15 @@ export function capsuleOutlinePath(
  *
  * Both the body and the user stroke (when present) are click targets, hit by
  * the stroke of a capsule or the fill of a self-transfer's disc — either way
- * the click region matches the painted shape. Dot-click priority is preserved
- * by the dots layer above:
- * dot pixels absorb clicks and route to the station instead of passing
- * through to the transfer underneath.
+ * the click region matches the painted shape.
+ *
+ * Which means HIT priority follows the rung, because paint order is hit order:
+ * on the default 'under' rung the dots layer above wins (dot pixels absorb the
+ * click and route to the station), and on a lifted rung this layer wins over
+ * the dot pixels it covers. That is the trade a lifted rung buys, not an
+ * oversight — the same rule the whole canvas selects by — and the station
+ * underneath stays reachable through the alt+click deep pick, which resolves
+ * the hit STACK rather than its top element (hitStack.ts).
  */
 export function TransferLayer({
   transfers,
@@ -108,7 +128,7 @@ export function TransferLayer({
   onSelect,
   onHoverEnter,
   onHoverLeave,
-}: Omit<Props, 'selectedId'> & HoverProps) {
+}: Omit<Props, 'selectedId' | 'transfers'> & HoverProps & RungProps) {
   // Transfer colors are theme-aware (day/night); resolve to the concrete hex
   // for the active canvas theme, same source as the dots + polygons.
   const darkMode = useDoc((s) => s.darkMode);
@@ -117,7 +137,7 @@ export function TransferLayer({
   // render source via MapCanvas, and a ring mid-capture must resolve against
   // the same frame or a transfer end tears off its station.
   const lineCircles = useRenderDoc((s) => s.lineCircles);
-  const list = Object.values(transfers);
+  const list = transfers;
   if (list.length === 0) return null;
 
   // Resolve endpoints + effective style once; each pass below iterates this

@@ -5,6 +5,7 @@ import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
 import { DayNightColorRow } from './DayNightColorRow';
 import { StyleRow } from './StyleRow';
+import { TransferDrawRow } from './TransferDrawRow';
 import {
   resolveTransferStyle,
   TRANSFER_STROKE_WIDTH_DEFAULT,
@@ -28,8 +29,8 @@ interface Props {
 
 /**
  * Editing popover for a selected transfer: per-transfer overrides of the
- * constant transfer defaults (thickness, color, stroke width, stroke color),
- * plus delete. Every control shows the EFFECTIVE value (override when
+ * constant transfer defaults (thickness, color, stroke width, stroke color,
+ * draw rung), plus delete. Every control shows the EFFECTIVE value (override when
  * present, else the constant default); choosing the default's own value
  * clears that override — the same default-vs-override contract as per-stop
  * dot styles (see `updateTransferStyle`). Docked to the host's top-right
@@ -122,6 +123,14 @@ export function TransferPopover({ transfer, hostW, onClose }: Props) {
             strokeColor: { day: style.strokeColor.day, night },
           })
         }
+      />
+      {/* Paint order, not paint: its own section at the bottom, below the
+          divider that closes the body/stroke appearance controls. */}
+      <hr className="popover-divider" aria-hidden="true" />
+      <TransferDrawRow
+        id="transfer-draw"
+        value={style.draw}
+        onChange={(draw) => updateTransferStyle(transfer.id, { draw })}
       />
       <PopoverFooter noun="transfer" onDelete={onDelete} />
     </PopoverShell>

@@ -4,9 +4,16 @@ import { useViewportStore } from '../state/viewportStore';
 import { useFontEpochValue } from '../state/fontEpoch';
 import { StationSilhouette } from './StationSilhouette';
 import { StationHitArea } from './StationHitArea';
-import { StationDots } from './StationDots';
+import { StationDots, type DotSubPass } from './StationDots';
 import { StationLabel, StationHighlightLabel, StationStarterLabel } from './StationLabel';
 import { StationOrientationArrows } from './StationOrientationArrows';
+
+// The three split dot layers, each carrying its StationDots sub-pass.
+const DOT_SUB_PASS_OF = {
+  'dot-silhouettes': 'silhouettes',
+  'dot-bodies': 'bodies',
+  'dot-codes': 'codes',
+} as const satisfies Record<string, DotSubPass>;
 
 interface Props {
   station: Station;
@@ -20,7 +27,13 @@ interface Props {
     | 'label'
     | 'highlight-label'
     | 'starter-label'
+    // 'dots' paints the whole dot stack from one mount; the three 'dot-*'
+    // layers cut it into its sub-passes so MapCanvas can slot lifted transfers
+    // into the gaps (see TransferDrawOrder). Their union IS 'dots'.
     | 'dots'
+    | 'dot-silhouettes'
+    | 'dot-bodies'
+    | 'dot-codes'
     | 'stroke'
     | 'match-stroke'
     | 'hover-arrows';
@@ -109,6 +122,17 @@ export const StationView = memo(function StationView({
       return <StationLabel station={station} lines={lines} />;
     case 'dots':
       return <StationDots station={station} lines={lines} onStartDrag={onStartDrag} />;
+    case 'dot-silhouettes':
+    case 'dot-bodies':
+    case 'dot-codes':
+      return (
+        <StationDots
+          station={station}
+          lines={lines}
+          onStartDrag={onStartDrag}
+          sub={DOT_SUB_PASS_OF[layer]}
+        />
+      );
     case 'hover-arrows':
       return <StationOrientationArrows station={station} lines={lines} />;
   }
