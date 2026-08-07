@@ -974,7 +974,10 @@ describe('bindAssignments cross-check vs reference implementation', () => {
     // 2-3 horizontals × 2-3 verticals with distinct corridors per band gives
     // arrangements with sibling same-cover crossings — the case the two-pass
     // corridor logic exists for. Anchor distances are perturbed to simulate
-    // the stale mid-drag values the binder must handle.
+    // the stale mid-drag values the binder must handle. `pad` seats the real
+    // lines at an arbitrary offset in the live-line universe: the reference is
+    // Set-based and so universe-width-agnostic, while the optimized form packs
+    // that universe into 32-bit words, and no packing may show through.
     fc.assert(
       fc.property(
         fc.integer({ min: 2, max: 3 }),
@@ -990,7 +993,8 @@ describe('bindAssignments cross-check vs reference implementation', () => {
         ),
         fc.boolean(),
         fc.boolean(),
-        (nH, nV, seeds, shuffleOrder, dropLive) => {
+        fc.nat({ max: 40 }),
+        (nH, nV, seeds, shuffleOrder, dropLive, pad) => {
           const bands = [
             ...Array.from({ length: nH }, (_, i) =>
               hBand(`h${i}`, `sh${i}|sh${i}b`, -30, 260, i * 90),
@@ -1018,7 +1022,8 @@ describe('bindAssignments cross-check vs reference implementation', () => {
             };
           });
           const allLines = [...new Set(bands.map((b) => b.lines[0].id))];
-          const liveLines = new Set(dropLive ? allLines.slice(1) : allLines);
+          const liveLines = new Set(Array.from({ length: pad }, (_, i) => `pad${i}`));
+          for (const id of dropLive ? allLines.slice(1) : allLines) liveLines.add(id);
           const order = shuffleOrder ? Object.keys(assignments).sort().reverse() : undefined;
 
           const expected = refBindAssignments(faces, assignments, bands, liveLines, order);
@@ -1026,15 +1031,22 @@ describe('bindAssignments cross-check vs reference implementation', () => {
           expect([...actual.entries()].sort()).toEqual([...expected.entries()].sort());
         },
       ),
-      { numRuns: 40 },
+      // Enough runs that `pad` dependably seats a REQUIRED line past bit 31.
+      // The deterministic guard for that boundary is the bit sweep below; a
+      // cross-check that only sometimes reaches the second word guards little.
+      { numRuns: 200 },
     );
   });
+});
 
-  // The cover subset test is a bitmask over the live-line universe, and the
-  // universe is as big as the map's line list — an MTA-sized map puts real
-  // lines past bit 31. A line's position in that universe cannot change
-  // whether its assignments bind.
-  it('binds regardless of where the line falls in the live-line universe', () => {
+/**
+ * The cover subset test packs the live-line universe into 32-bit words, and
+ * that universe is as big as the map's line list — an MTA-sized map seats real
+ * lines past bit 31. Where a line falls in it cannot change whether its
+ * assignments bind.
+ */
+describe('bindAssignments live-line universe width', () => {
+  it('binds at every bit position, across word boundaries', () => {
     const bands = [hBand('h', 'sh|shb', -30, 260), vBand('v', 'sv|svb', -30, 260, 90)];
     const faces = buildOverlapRegions(bands, []);
     expect(faces).toHaveLength(1);
@@ -1045,9 +1057,10 @@ describe('bindAssignments cross-check vs reference implementation', () => {
       anchors: mintAnchors(faces[0], bands),
     };
 
-    // Pad the universe so 'v' lands at each bit in turn. `liveLines` is a Set,
-    // so insertion order is the bit order (see bindAssignments' lineBit map).
-    for (let bit = 0; bit <= 33; bit++) {
+    // Pad the universe so 'v' lands at each bit in turn — past 63 so both
+    // words' sign bits are covered. `liveLines` is a Set, so insertion order
+    // is the bit order (see bindAssignments' lineBit map).
+    for (let bit = 0; bit <= 65; bit++) {
       const liveLines = new Set<string>(Array.from({ length: bit }, (_, i) => `pad${i}`));
       liveLines.add('v');
       liveLines.add('h');
