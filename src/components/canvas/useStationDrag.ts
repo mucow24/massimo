@@ -166,7 +166,7 @@ export function useStationDrag(
     if (!redistributeAnchor && !ringTowed) {
       const tolerance = snapToleranceAt(viewportZoom);
       const circle = draggedSt ? stationCircle(draggedSt, lineCircles) : null;
-      // "Snap to circle cardinals" adds angular magnetism to the seat, measured
+      // "Snap to line circle cardinals" adds angular magnetism to the seat, measured
       // as arc length against the same tolerance as the capture. Null = rim only.
       const cardinalTolerance = snapModes.circle ? tolerance : null;
       const moveConstrained = (c: { x: number; y: number; radius: number }) => {

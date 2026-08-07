@@ -448,7 +448,7 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                             disabled={customColors.length === 0}
                             title={
                               customColors.length === 0
-                                ? 'No line colors outside the map’s palettes right now'
+                                ? 'No custom colors (colors outside a palette) in this map'
                                 : undefined
                             }
                             onSelect={() => createNew(customColors)}

@@ -222,7 +222,9 @@ export function LineInspector({ id }: { id: LineId }) {
               resolved live per stop, and always overridable per-stop in the
               station editor; the label tooltips explain each case. */}
           <div className="field dot-field">
-            <label title="Stations with only one line stop">Singleton (One line stops)</label>
+            <label title="Stations with only one non-empty line stop (by default)">
+              Singleton (One line stops)
+            </label>
             <NumericFieldRow
               id={`line-singleton-dot-size-${line.id}`}
               label="Singleton dot size"
@@ -246,7 +248,7 @@ export function LineInspector({ id }: { id: LineId }) {
             />
           </div>
           <div className="field dot-field">
-            <label title="Stations with more than one line stop">
+            <label title="Stations with more than one non-empty line stop (by default)">
               Interchange (Multiple lines stop)
             </label>
             <NumericFieldRow

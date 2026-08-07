@@ -219,7 +219,7 @@ export function StylesPanel() {
                         title={
                           defs.length === 1
                             ? 'The last style of a kind can’t be deleted'
-                            : 'Delete style (items keep their formatting)'
+                            : `Delete style (existing ${KIND_SINGULAR[kind]}s do not change)`
                         }
                         disabled={defs.length === 1}
                         onClick={() => deleteStyle(d.id)}

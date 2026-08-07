@@ -57,7 +57,7 @@ describe('RouteBulletPopover — line / shape / delete', () => {
 
   it('changes the shape via the shape buttons', () => {
     renderPopover(bulletFixture());
-    fireEvent.click(screen.getByLabelText('square'));
+    fireEvent.click(screen.getByLabelText('Square'));
     expect(useDoc.getState().routeBullets['b1'].shape).toBe('square');
   });
 
@@ -78,7 +78,7 @@ describe('RouteBulletPopover — line / shape / delete', () => {
     renderPopover(bulletFixture({ locked: true }));
     expect(screen.getByRole('combobox', { name: 'Line' })).toBeDisabled();
     expect(screen.getByRole('combobox', { name: 'Style' })).toBeDisabled();
-    expect(screen.getByLabelText('square')).toBeDisabled();
+    expect(screen.getByLabelText('Square')).toBeDisabled();
     // The Radix slider thumb carries data-disabled (no native disabled attr).
     expect(screen.getByRole('slider')).toHaveAttribute('data-disabled');
     expect(screen.getByRole('spinbutton')).toBeDisabled();
@@ -214,7 +214,7 @@ describe('RouteBulletPopover — style presets', () => {
     });
     expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Big');
     // A covered edit (shape) detaches; the Line select stays identity-only.
-    fireEvent.click(screen.getByLabelText('square'));
+    fireEvent.click(screen.getByLabelText('Square'));
     expect(useDoc.getState().routeBullets['b1'].styleId).toBeUndefined();
     expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Custom');
   });

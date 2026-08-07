@@ -35,7 +35,7 @@ test.beforeEach(async ({ page }) => {
 test.describe('Snap mode toolbar', () => {
   test('renders the snap toggles, with Line active by default', async ({ page }) => {
     await seedAndOpen(page, verticalLine);
-    await expect(page.getByRole('button', { name: 'Snap to line' })).toHaveAttribute(
+    await expect(page.getByRole('button', { name: 'Snap to line', exact: true })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -57,7 +57,7 @@ test.describe('Snap mode toolbar', () => {
     page,
   }) => {
     await seedAndOpen(page, verticalLine);
-    await page.getByRole('button', { name: 'Snap to line' }).click();
+    await page.getByRole('button', { name: 'Snap to line', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Snap to equidistant' })).toHaveAttribute(
       'aria-disabled',
       'true',
@@ -161,7 +161,7 @@ test.describe('Snap modes wired through to the engine', () => {
 
     // Turn line off; cycle "Snap to all" to its final "All directions" state
     // (off → horizontal → vertical → diagonal → all = 4 clicks).
-    await page.getByRole('button', { name: 'Snap to line' }).click();
+    await page.getByRole('button', { name: 'Snap to line', exact: true }).click();
     const allBtn = page.getByRole('button', { name: 'Snap to all' });
     for (let i = 0; i < 4; i++) await allBtn.click();
     await expect(allBtn).toHaveAttribute('data-snap-state', 'all');
@@ -198,7 +198,7 @@ test.describe('Snap modes wired through to the engine', () => {
 
   test('Snap-to-all Horizontal-only ignores a vertical alignment', async ({ page }) => {
     await seedAndOpen(page, verticalOnlySeed);
-    await page.getByRole('button', { name: 'Snap to line' }).click();
+    await page.getByRole('button', { name: 'Snap to line', exact: true }).click();
     // One click: off → horizontal.
     const allBtn = page.getByRole('button', { name: 'Snap to all' });
     await allBtn.click();
@@ -218,7 +218,7 @@ test.describe('Snap modes wired through to the engine', () => {
 
   test('Snap-to-all Vertical-only snaps a vertical alignment', async ({ page }) => {
     await seedAndOpen(page, verticalOnlySeed);
-    await page.getByRole('button', { name: 'Snap to line' }).click();
+    await page.getByRole('button', { name: 'Snap to line', exact: true }).click();
     // Two clicks: off → horizontal → vertical.
     const allBtn = page.getByRole('button', { name: 'Snap to all' });
     await allBtn.click();
@@ -243,7 +243,7 @@ test.describe('Snap modes wired through to the engine', () => {
       lines: [{ id: 'LB', service: 'B', color: '#A00033', stations: ['B'] }],
     };
     await seedAndOpen(page, loneSeed);
-    await page.getByRole('button', { name: 'Snap to line' }).click();
+    await page.getByRole('button', { name: 'Snap to line', exact: true }).click();
     // One click: off → horizontal (locks Y).
     const gridBtn = page.getByRole('button', { name: 'Snap to grid', exact: true });
     await gridBtn.click();

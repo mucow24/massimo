@@ -155,7 +155,7 @@ const StationRow = memo(function StationRow({
                   color: legibleTextOn(ln.color),
                   cursor: 'pointer',
                 }}
-                title={`Edit line ${ln.service}`}
+                title={`Edit ${ln.service} line`}
                 onClick={(e) => {
                   e.stopPropagation();
                   const sel = useSelection.getState();

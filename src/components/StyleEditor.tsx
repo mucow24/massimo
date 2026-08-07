@@ -12,7 +12,7 @@ import { LineEndSegmented } from './LineEndPicker';
 import { WeightSelect, ItalicButton } from './WeightItalicControls';
 import { StopGlyph } from './StopGlyph';
 import { StationShapePicker } from './StationShapePicker';
-import { ShapeIcon } from './RouteBulletPopover';
+import { ROUTE_BULLET_SHAPE_LABEL, ShapeIcon } from './RouteBulletPopover';
 import { SegmentedToggle } from './SegmentedToggle';
 import { TransferDrawRow } from './TransferDrawRow';
 import type { StylePropsPatch } from '../model/styles';
@@ -528,8 +528,8 @@ function RouteBulletStyleEditor({ id, props }: { id: string; props: RouteBulletS
             onSelect={(v) => patch({ shape: v as RouteBulletShape })}
             options={shapes.map((s) => ({
               value: s,
-              label: s,
-              title: s,
+              label: ROUTE_BULLET_SHAPE_LABEL[s],
+              title: ROUTE_BULLET_SHAPE_LABEL[s],
               content: <ShapeIcon shape={s} />,
             }))}
           />
