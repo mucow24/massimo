@@ -33,7 +33,7 @@ describe('MapVersionPill — version pill + save-status dot', () => {
     expect(screen.getByText('v32')).toBeInTheDocument();
     // Shown, not a placeholder: no data-empty, and the title claims the version.
     expect(pill()).not.toHaveAttribute('data-empty');
-    expect(pill()).toHaveAttribute('title', 'Editing map version 32');
+    expect(pill()).toHaveAttribute('title', 'This map came from version 32');
     // The box stays (CSS hides the paint): unmounting it changes the
     // toolbar's width, which re-clamps scrollX in a narrow window — the
     // whole page visibly jumped ~18px on every save.

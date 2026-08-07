@@ -1344,6 +1344,10 @@ describe('<StationInspector /> — Select Similar (mirror matching) toggle', () 
     render(<StationInspector id="a" />);
     const btn = screen.getByRole('button', { name: 'Select Similar' });
     expect(btn).toBeEnabled();
+    // …and it must not claim a selection it doesn't have. The ON title counts
+    // its matches, so this corner needs its own wording, not "0 similar
+    // stations selected".
+    expect(btn).toHaveAttribute('title', expect.stringMatching(/^No matching stations/));
     await user.click(btn);
     expect(useSelection.getState().mirrorMatching).toBe(false);
   });

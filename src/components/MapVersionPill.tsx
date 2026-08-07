@@ -34,7 +34,7 @@ export function MapVersionPill() {
       <span
         className="map-version-pill"
         data-empty={version === null ? '' : undefined}
-        title={version !== null ? `Editing map version ${version}` : undefined}
+        title={version !== null ? `This map came from version ${version}` : undefined}
       >
         {version !== null ? `v${version}` : null}
       </span>

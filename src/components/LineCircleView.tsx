@@ -40,7 +40,7 @@ interface Props {
   // the guide stays visible but takes no pointer events.
   interactive: boolean;
   inHandMode: boolean;
-  // "Snap to circle cardinals" is on: mark the eight seats the snap will pull
+  // "Snap to line circle cardinals" is on: mark the eight seats the snap will pull
   // to. Passed in rather than read here so the view stays dumb — and because
   // the mode is a UI pref, never part of the circle.
   showCardinals: boolean;

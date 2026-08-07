@@ -65,9 +65,7 @@ interface SnapState {
 interface ToggleSpec {
   key: keyof SnapModes;
   label: string;
-  /** The explanatory clause after the em dash. Omit where the label already
-   *  says the whole thing (`tens`), and the tooltip is just the label. */
-  hint?: string;
+  hint: string;
   /** Ordered cycle of states; clicking advances to the next, wrapping back to
    *  index 0. Boolean toggles are just two-state cycles. */
   states: SnapState[];
@@ -100,6 +98,7 @@ const TOGGLES: ToggleSpec[] = [
   {
     key: 'tens',
     label: 'Snap to grid length',
+    hint: 'Notch to whole grid steps from what you snap to',
     states: boolStates(RulerHorizontalIcon),
   },
   {
@@ -185,16 +184,15 @@ export function SnapToggleBar() {
         // aria-pressed; the exact sub-mode lives in title/data-snap-state.
         const active = idx > 0;
         const { Icon } = state;
-        // "Snap to grid length" names the live grid size in its tooltip (5/10/20)
-        // so the user sees what "one step" currently means — which says the whole
-        // thing, hence no hint clause on that spec. aria-label stays the bare
-        // label for stable a11y/testing.
-        const displayLabel =
-          key === 'tens' ? `Snap to multiples of ${gridSize} (set by grid length)` : label;
-        const stated = active ? `${displayLabel}: ${state.name}` : displayLabel;
+        // "Snap to grid length" shows the live grid size in its tooltip (5/10/20)
+        // so the user sees what "one step" currently means. aria-label stays the
+        // bare label for stable a11y/testing.
+        const displayLabel = key === 'tens' ? `${label} (${gridSize}'s)` : label;
         const title = disabled
           ? `${displayLabel} — enable Snap to line first`
-          : `${hint ? `${stated} — ${hint}` : stated} · click to cycle`;
+          : active
+            ? `${displayLabel}: ${state.name} — ${hint} · click to cycle`
+            : `${displayLabel} — ${hint} · click to cycle`;
         return (
           <button
             key={key}

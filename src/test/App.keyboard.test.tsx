@@ -421,7 +421,7 @@ describe('App keyboard shortcuts: 1–6 snap toggles', () => {
     }
   });
 
-  it('6 flips Snap to circle cardinals', () => {
+  it('6 flips Snap to line circle cardinals', () => {
     render(<App />);
     expect(useSnapPrefs.getState().modes.circle).toBe(false);
     fireEvent.keyDown(window, { key: '6' });

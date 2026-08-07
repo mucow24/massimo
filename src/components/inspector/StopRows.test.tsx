@@ -503,7 +503,7 @@ describe('<StopRows /> — line ends', () => {
     // trigger itself would never surface.
     expect(combo.getAttribute('title')).toBeNull();
     expect(container.querySelector('.end-style-slot')?.getAttribute('title')).toContain(
-      'only terminal stops',
+      'end of the line',
     );
   });
 

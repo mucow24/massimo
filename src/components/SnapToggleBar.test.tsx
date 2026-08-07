@@ -48,7 +48,7 @@ describe('<SnapToggleBar />', () => {
     render(<SnapToggleBar />);
     expect(
       screen.getByRole('button', { name: 'Snap to grid length' }).getAttribute('title'),
-    ).toContain('Snap to multiples of 10 (set by grid length)');
+    ).toContain("(10's)");
   });
 
   it('reflects a 5px grid in the grid-length tooltip', () => {
@@ -56,17 +56,7 @@ describe('<SnapToggleBar />', () => {
     render(<SnapToggleBar />);
     expect(
       screen.getByRole('button', { name: 'Snap to grid length' }).getAttribute('title'),
-    ).toContain('Snap to multiples of 5 (set by grid length)');
-  });
-
-  // The one spec with no `hint`: its label says the whole thing, so the tooltip
-  // must not carry a dangling em dash where the hint clause used to be.
-  it('the grid-length tooltip has no empty hint clause', () => {
-    render(<SnapToggleBar />);
-    expect(screen.getByRole('button', { name: 'Snap to grid length' })).toHaveAttribute(
-      'title',
-      'Snap to multiples of 10 (set by grid length) · click to cycle',
-    );
+    ).toContain("(5's)");
   });
 
   it('Grid toggle works independently of Line', async () => {

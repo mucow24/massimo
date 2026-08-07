@@ -225,11 +225,16 @@ export function StationInspector({ id }: { id: StationId }) {
             aria-pressed={mirrorOn}
             disabled={!mirrorAvailable && !mirrorOn}
             title={
-              mirrorOn
+              // The ON state counts what it selected — except at zero, which is
+              // reachable (a match can dissolve under an unmirrored edit while
+              // the mode is on) and would otherwise boast of selecting none.
+              mirrorOn && mirrorAvailable
                 ? `${matches.length} similar station${matches.length === 1 ? '' : 's'} selected — edits here apply to all of them; click to edit only this station`
-                : mirrorAvailable
-                  ? `Selects all ${matches.length} station${matches.length === 1 ? '' : 's'} on this line with the same layout — while selected, all edits to this station will apply to the selected stations as well`
-                  : 'No matching stations'
+                : mirrorOn
+                  ? 'No matching stations — click to edit only this station'
+                  : mirrorAvailable
+                    ? `Selects the ${matches.length} station${matches.length === 1 ? '' : 's'} on this line with the same layout — while selected, all edits to this station will apply to the selected stations as well`
+                    : 'No matching stations'
             }
             onClick={() => selection.setMirrorMatching(!mirrorOn)}
           >
@@ -333,7 +338,7 @@ export function StationInspector({ id }: { id: StationId }) {
           <button
             type="button"
             className="ghost-btn add-anchor-btn"
-            title="Add a transfer anchor to this station's layout grid"
+            title="Add a transfer anchor to this station's layout grid — a corner a transfer can turn"
             onClick={() => {
               const [row, col] = spawnAnchorCell(station, linesAll);
               // Arm it immediately so the arrow keys can walk it into place
