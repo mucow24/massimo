@@ -67,8 +67,10 @@ export type DotFill = DayNightColor | 'line' | 'none' | 'bw';
 // Stroke color of a dot. No 'none' here — strokeWidth 0 is how a style says
 // "no stroke". 'bw' = auto-contrast: whichever of black/white is legible on
 // whatever sits behind the mark — for a stroke that is the resolved fill (the
-// service code's absent-color rule), falling back to the canvas background when
-// the fill is transparent. A sentinel rather than an absence because, unlike
+// service code's absent-color rule), except that a TRANSPARENT fill is the
+// line's band showing through, so it falls through to the band; only with no
+// line in scope does the canvas background stand in (`autoContrastColor` owns
+// the whole rule). A sentinel rather than an absence because, unlike
 // serviceCodeColor, this field is required.
 export type DotStrokeColor = DayNightColor | 'line' | 'bw';
 
@@ -92,8 +94,9 @@ export type DotStrokeAlign = 'center' | 'inside' | 'outside';
 // style objects are canonical by construction so plain deep equality
 // (`dotStylesEqual`) works everywhere. The clean-persisted-state convention
 // lives one level up instead, in the presence/absence of `StopCell.dotStyle`
-// and `Line.defaultDotStyle`. Size is intentionally NOT part of the style —
-// it's the orthogonal `StopCell.dotSize` / `Line.defaultDotSize` pair, so
+// and the split line defaults `Line.singletonDotStyle` / `Line.multiDotStyle`.
+// Size is intentionally NOT part of the style — it's the orthogonal
+// `StopCell.dotSize` / `Line.singletonDotSize` / `Line.multiDotSize` set, so
 // picking a shape preset never clobbers a size (and vice versa).
 export interface DotStyle {
   shape: DotBaseShape;
@@ -106,12 +109,13 @@ export interface DotStyle {
   // compare); rehydrated saves that predate it are backfilled to 'center'.
   strokeAlign: DotStrokeAlign;
   // Render the line's service code centered on the dot, in whichever of
-  // black/white is legible on the resolved fill. Implies the larger
-  // SERVICE_CODE_DOT_RADIUS disc so the code stays readable.
+  // black/white reads against what sits behind it (see serviceCodeColor).
+  // Implies the larger SERVICE_CODE_DOT_RADIUS disc so the code stays readable.
   showServiceCode: boolean;
   // Explicit service-code text color. Only meaningful when `showServiceCode`
-  // is true. Absent ⇒ the historical behavior: pick whichever of black/white
-  // is legible on the resolved fill (`legibleTextOn`). Present ⇒ that
+  // is true. Absent ⇒ the historical behavior: B/W auto-contrast against
+  // whatever is behind the code — the resolved fill, or the line's band where
+  // that fill is transparent (`autoContrastColor`). Present ⇒ that
   // auto-contrast is overridden — 'line' paints the code in the owning line's
   // color, a day/night pair in that explicit per-theme color. Optional so
   // untouched styles (and every preset) stay byte-identical.

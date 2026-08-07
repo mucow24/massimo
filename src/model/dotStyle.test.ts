@@ -4,6 +4,7 @@ import {
   DOT_SHAPE_PRESETS,
   SERVICE_CODE_DOT_RADIUS,
   dotStylesEqual,
+  isBlankDotStyle,
   resolveDotRender,
 } from './dotStyle';
 import { STOP_DOT_RADIUS } from '../geometry/orientation';
@@ -278,6 +279,33 @@ describe('resolveDotRender', () => {
       const s = style({ showServiceCode: true });
       expect(resolveDotRender(s, undefined, '6X', false)!.code!.text).toBe('6X');
     });
+  });
+});
+
+describe('isBlankDotStyle', () => {
+  it('is blank only when nothing paints: no fill, no stroke, no code', () => {
+    expect(isBlankDotStyle(style({ fill: 'none' }))).toBe(true);
+    expect(isBlankDotStyle(style())).toBe(false);
+    expect(isBlankDotStyle(style({ fill: 'none', strokeWidth: 1.5 }))).toBe(false);
+    expect(isBlankDotStyle(style({ fill: 'none', showServiceCode: true }))).toBe(false);
+  });
+
+  it('reads a dash by its FILL alone — its stroke and code are inert', () => {
+    // resolveDotRender enforces "of the style fields only `fill` applies" for a
+    // dash; blankness has to read the same rule or the two disagree about the
+    // same style. A transparent-filled dash paints nothing whatever its
+    // (inert) stroke and code say.
+    const dash = (o: Partial<DotStyle> = {}) => style({ shape: 'dash', fill: 'none', ...o });
+    expect(isBlankDotStyle(dash())).toBe(true);
+    expect(isBlankDotStyle(dash({ strokeWidth: 2 }))).toBe(true);
+    expect(isBlankDotStyle(dash({ showServiceCode: true }))).toBe(true);
+    // A dash that HAS a fill paints, stroke and code notwithstanding.
+    expect(isBlankDotStyle(style({ shape: 'dash', fill: 'line' }))).toBe(false);
+  });
+
+  it('the DASH preset paints — only a hand-cleared fill blanks a tick', () => {
+    expect(isBlankDotStyle(DOT_SHAPE_PRESETS['dash'])).toBe(false);
+    expect(isBlankDotStyle({ ...DOT_SHAPE_PRESETS['dash'], fill: 'none' })).toBe(true);
   });
 });
 

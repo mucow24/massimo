@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `91ef9b0` (2026-08-05, #455) — verified against the live source.** This
+**Up to date as of commit `e387426` (2026-08-06, #458) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -45,7 +45,7 @@ with meanwhile — a failure to load is reported instead of degraded.
      React components render the doc to SVG and dispatch actions.
 - **Editing = pure transforms.** Store actions are thin wrappers: `set((s) => T.moveStation(s, …))`.
   Transforms return the **same object reference on no-op** — this is load-bearing for undo
-  grouping. ([src/model/transforms.ts](src/model/transforms.ts) is the ~4050-line heart.)
+  grouping. ([src/model/transforms.ts](src/model/transforms.ts) is the ~4200-line heart.)
 - **The Vignelli look comes from "interlining"** ([src/geometry/interlining.ts](src/geometry/interlining.ts)):
   multiple lines sharing a station-pair corridor are merged into mean-centered parallel stripes.
   This is the single most intricate algorithm in the repo and is pinned by a **byte-exact golden
@@ -111,7 +111,7 @@ src/
 
   model/                        # PURE domain logic — no React, no store
     types.ts                    # MapDoc + every entity type (the canonical data shape)
-    transforms.ts               # ~4050 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
+    transforms.ts               # ~4200 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
     serialize.ts                # serialize()/parse() + shared backfill/sanitize helpers
     docAudit.ts                 # auditDoc(doc): referential audit (tests + the export doors)
     styles.ts                   # named per-kind formatting presets (StyleDef) + styleId tag/stamp
@@ -178,8 +178,8 @@ src/
     waypointLozenge.ts          # WP-lozenge pill geometry (shared drawn glyph + hit/selection box)
     itemBounds.ts contentBounds.ts  # per-item + whole-map world AABBs (camera fit)
 
-  state/                        # Zustand stores (17 of them) + history
-    store.ts                    # useDoc: temporal(persist(...)) + ~125 actions + migrateDoc
+  state/                        # Zustand stores (18 of them) + history
+    store.ts                    # useDoc: temporal(persist(...)) + ~140 actions + migrateDoc
     history.ts                  # the ONLY module touching zundo internals
     renderDoc.ts                # useRenderDoc: the doc slice the canvas PAINTS from — mirrors
                                 #   useDoc at rest, serves the pipelined drag frame while armed
@@ -233,7 +233,7 @@ src/
     MapVersionPill.tsx          # the live doc's version + save-status dot, beside the map name
     *Popover.tsx                # on-canvas item editors
     DayNightColorRow.tsx        # shared label + light/dark ColorField pair (every themed-color row)
-    SegmentedToggle.tsx         # the ONE pick-one control (~13 inline Radix ToggleGroup clusters)
+    SegmentedToggle.tsx         # the ONE pick-one control (~16 inline Radix ToggleGroup clusters)
     FieldSelectContent.tsx      # shared Radix Select panel: portals popover Selects to .app (escapes
                                 #   the .canvas-host isolate layer) + bounds/scrolls a long list
     canvas/                     # interaction layer: drag/placement/viewport hooks + overlay layers
@@ -985,9 +985,12 @@ to the dot's edge; persist v21 backfills the historical `'center'`), and `showSe
 
 Two **optional** fields refine the code, both meaningful only when `showServiceCode` and both
 kept optional so every preset stays byte-identical. `serviceCodeColor?: DotServiceCodeColor`
-(`DayNightColor | 'line'`): **absent ⇒ B/W auto-contrast** (pick whichever of black/white is
-legible on the resolved fill), `'line'` paints the code in the owning line's color, a pair gives
-an explicit per-theme color. `serviceCodeFirstLetterOnly?: boolean`: **absent ⇒ the whole code**,
+(`DayNightColor | 'line'`): **absent ⇒ B/W auto-contrast** (the `'bw'` rule above, judged against
+the resolved fill or — where that fill is transparent — the band behind it), `'line'` paints the
+code in the owning line's color, a pair gives an explicit per-theme color. There is deliberately
+**no `'bw'` sentinel here**: absence already spells auto-contrast, so the file sanitizer drops a
+stray `'bw'` to absent rather than inventing a second spelling of one meaning.
+`serviceCodeFirstLetterOnly?: boolean`: **absent ⇒ the whole code**,
 `true` prints only its first character — a local/express pair (`"6"` / `"6X"`) drawn as variants
 of one line then reads `"6"` on both — leaving the disc at its full code-disc size. Stored only
 when ON, so `dotStylesEqual` reads its absence as `false` — the same absent-as-default rule
@@ -997,7 +1000,9 @@ when ON, so `dotStylesEqual` reads its absence as `false` — the same absent-as
 size. **`dash` is the outlier shape** — a TfL-style tick protruding from the stripe edge toward
 the label rather than a centered glyph. It ignores `dotSize` entirely (its size comes from the
 per-line `dashLength` / `dashWidth`, see `Line` below) and of the style fields only `fill`
-applies (`strokeWidth`/`strokeColor`/`showServiceCode` are inert). The tick is a **singleton** —
+applies (`strokeWidth`/`strokeColor`/`showServiceCode` are inert) — which is why `isBlankDotStyle`
+reads a dash by its **fill alone**: an inert stroke or code must not make an invisible tick paint,
+nor let it occupy its station in the singleton/interchange count. The tick is a **singleton** —
 it knows only its own stripe and the label; on interlined stations the "notched" composite tick
 is emergent (`geometry/stationDash.ts`), since the derived length equals one line width so
 tangent ticks abut exactly. Which side it points is derived from the label anchor
@@ -1334,7 +1339,7 @@ Path A does **more** than Path B because hand-edited files can be non-canonical 
 sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for this).
 
 **Path B — localStorage rehydration: `migrateDoc(persisted, version)`** ([store.ts](src/state/store.ts)).
-The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 23`, `migrate:
+The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 25`, `migrate:
 migrateDoc`, `partialize: pickDocSnapshot`, plus a **custom `merge` hook** (below). Because the persist-merge already fills absent fields
 from the initial state, `migrateDoc` only does **value-level legacy fixups, version-gated**, on
 disjoint fields (order immaterial except where noted), never mutating the input:
@@ -1362,10 +1367,10 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | `v<20`      | dot **type** became a covered `LineStyleProps` field: `bakeLineStyleDotIds` (backfill `singletonDotStyleId`/`multiDotStyleId` on line style defs, absent ⇒ the `stopDot` ⭐ default), then `pruneLineDotTypeTagMismatches` (untag any line whose split dot type differs from its now-fuller line style — keeping "tagged ⇒ matches"). Ordered **after** the `v<19` library bake; Path A prunes this via `pruneDanglingStyleRefs` instead |
 | `v<21`      | `backfillDotStrokeAlign` (`DotStyle.strokeAlign` became a required field: backfill `'center'`, the historical SVG-native placement, across every dot-style home). Path A covers this via `sanitizeDotStyle` |
 | `v<22`      | `backfillLineStyleEndStyle` (the line **end** became a required covered `LineStyleProps` field: heal absent/garbage `endStyle` on line defs to `'square'`, the historical full marker square, so nothing repaints). No tag prune follows — a line from those saves carries no end of its own, so it already paints what the heal writes. Path A covers this via `sanitizeStyleProps` |
+| `v<24`      | `bakeActivePalettes` (retired `activePalettes` ids → the palette COPIES the map carries). Built-in ids resolve through `LEGACY_BUILTIN_IDS`; `custom:` ids resolve against the palette library by slugged name, the only place those definitions ever lived. Ids resolving to neither are dropped, and a map left carrying none is a legitimate outcome. Gated on `palettes` being absent as well, so it can never overwrite real palettes |
 | `v<25`      | `stripRetiredSeamFields` (the branch seam retired outright — self-overlaps are region faces now): `seamColor`/`seamWidth`/`seamEdges` leave every line AND every line style def together, plus any doc-level `seamEdges` remnant, so tagged wearers stay tagged; junctions come back with the branch-arm default in front — the old "Branch" seam look |
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array. **But see the `merge` hook** — this call alone is not "every rehydrate" |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
-| `v<24`      | `bakeActivePalettes` (retired `activePalettes` ids → the palette COPIES the map carries). Built-in ids resolve through `LEGACY_BUILTIN_IDS`; `custom:` ids resolve against the palette library by slugged name, the only place those definitions ever lived. Ids resolving to neither are dropped, and a map left carrying none is a legitimate outcome. Gated on `palettes` being absent as well, so it can never overwrite real palettes |
 | (not gated) | `snapStationCells` whenever `stations !== undefined` — cell drift is not tied to a schema bump, so a gate could never catch it. **But see the `merge` hook** — for this repair that caveat is the main event, not a footnote |
 | (not gated) | `sanitizeImageHrefs` whenever `svgImages !== undefined` — the guard had one caller (the clipboard) and neither doc load, so a remote href could be persisted at ANY version. **But see the `merge` hook** — same reasoning as `snapStationCells` |
 
@@ -1653,7 +1658,7 @@ referentially-stable props make it bail out and keep every label's fallback-font
 
 `create<DocState>()(temporal(persist((set, get) => ({...DEFAULT_DOC, ...actions}), persistCfg),
 temporalCfg))`. **`temporal` is the outer wrapper, `persist` the inner**; both use the same
-`partialize: pickDocSnapshot` over `DOC_FIELDS`. The ~125 actions are thin wrappers delegating to
+`partialize: pickDocSnapshot` over `DOC_FIELDS`. The ~140 actions are thin wrappers delegating to
 pure transforms (`import * as T from '../model/transforms'`). Adders mint an id from the
 module-level `ids` factory, call the transform, and return the id. Note that any action writing
 **geometry** wraps with `withRegionReconcile` so region assignments ride the edit in the same undo

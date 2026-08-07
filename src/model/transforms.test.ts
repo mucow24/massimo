@@ -21,7 +21,7 @@ import {
   makeTransfer,
   stationWithStop,
 } from '../test/fixtures';
-import type { MapDoc, RouteBullet, Station, TextLabel } from './types';
+import type { DotStyle, MapDoc, RouteBullet, Station, TextLabel } from './types';
 
 describe('clampRouteBulletSize', () => {
   it('snaps to the quarter-unit grid and clamps to the floor ROUTE_BULLET_SIZE_MIN', () => {
@@ -2678,6 +2678,30 @@ describe('stationIsSingleton', () => {
         }),
       ),
     ).toBe(false);
+  });
+
+  it("a transparent DASH does not count — a tick's stroke and code are inert", () => {
+    // The stroke and service code do nothing on a dash (only `fill` applies,
+    // see resolveDotRender), so they cannot make an invisible tick occupy the
+    // station. Reachable by switching a stroked, coded style to Dash and then
+    // clearing its fill — the editor hides both controls under Dash, so they
+    // sit there unreadable and used to flip the neighbour's split default.
+    const ghostTick: DotStyle = {
+      shape: 'dash',
+      fill: 'none',
+      strokeWidth: 2,
+      strokeColor: { day: '#ffffff', night: '#ffffff' },
+      strokeAlign: 'center',
+      showServiceCode: true,
+    };
+    expect(
+      T.stationIsSingleton(
+        makeStation({
+          id: 'a',
+          stops: [makeStop('LOCAL'), makeStop('EXPRESS', { col: 1, dotStyle: ghostTick })],
+        }),
+      ),
+    ).toBe(true);
   });
 
   it('a stop TRACKING the default always counts (blank check reads only explicit overrides)', () => {

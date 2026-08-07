@@ -35,7 +35,7 @@ const anchorKey = (end: AnchorEnd): string =>
  * Transfer anchors, in one pass over both homes.
  *
  * BOTH homes are transfer endpoints — that is the entire reason anchors exist,
- * so both must be clickable while picking one (`hostedLive` / `freeLive`). What
+ * so both must be clickable while picking one (`picking` / `freeLive`). What
  * differs is what they do OUTSIDE that gesture:
  *
  *   - FREE anchors are canvas objects: select, drag, marquee, nudge, delete.
