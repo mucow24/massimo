@@ -378,7 +378,10 @@ describe('<StopGlyph /> stroke/fill/code split (pass prop)', () => {
           isHovered={opts.isHovered}
           lineColor={opts.lineColor}
           serviceCode={opts.serviceCode}
-          stationId="A"
+          // NOT 'A': the seam tests pass serviceCode 'A', and a station id that
+          // matched it could not tell "carries the station id" from "carries
+          // the code text".
+          stationId="S9"
           lineId="L1"
         />
       </svg>,
@@ -399,7 +402,7 @@ describe('<StopGlyph /> stroke/fill/code split (pass prop)', () => {
     // data-stop-station attr must stay one-element-per-dot on the fill pass,
     // but the alt+click deep-pick resolver still needs to map border pixels
     // back to their station).
-    expect(c.getAttribute('data-stop-stroke')).toBe('A');
+    expect(c.getAttribute('data-stop-stroke')).toBe('S9');
     // The canonical seam stays on the fill pass — never on the stroke element.
     expect(c.getAttribute('data-stop-shape')).toBeNull();
     expect(svg.querySelector('text')).toBeNull();
@@ -413,7 +416,7 @@ describe('<StopGlyph /> stroke/fill/code split (pass prop)', () => {
     // Inset by strokeWidth/2 = 1 so the silhouette below shows exactly 2px.
     expect(parseFloat(c.getAttribute('r')!)).toBeCloseTo(STOP_DOT_RADIUS - 1, 5);
     expect(c.getAttribute('data-stop-shape')).toBe('circle');
-    expect(c.getAttribute('data-stop-station')).toBe('A');
+    expect(c.getAttribute('data-stop-station')).toBe('S9');
     expect(c.getAttribute('data-stop-line')).toBe('L1');
     expect(c.hasAttribute('data-stop-stroke')).toBe(false);
   });
@@ -478,7 +481,7 @@ describe('<StopGlyph /> stroke/fill/code split (pass prop)', () => {
     expect(text.textContent).toBe('A');
     // Its own seam, carrying the station id as the VALUE — a second
     // data-stop-station would break the one-element-per-dot locators.
-    expect(text.getAttribute('data-stop-code')).toBe('A');
+    expect(text.getAttribute('data-stop-code')).toBe('S9');
     expect(text.getAttribute('data-stop-line')).toBe('L1');
     expect(codeSvg.querySelector('circle')).toBeNull();
 

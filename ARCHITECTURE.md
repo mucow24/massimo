@@ -1192,9 +1192,16 @@ the historical look: the whole dots pass, white casings included, covers the tra
 `over-stroke` (over the casings, under the bodies, so a bar reads continuous between dots while
 each dot keeps its ring against a dark line), `over-dot` (over the bodies, under the service
 codes) and `over-code` (over everything). The rungs exist because the dots pass is three
-sub-passes deep; MapCanvas mounts `TransferLayer` once per rung at that rung's slot, and each
-mount takes only the transfers resolving to it. Consequence: the flat-pass union below holds
-**within** a rung — two overlapping transfers trace one outline only when they share one.
+sub-passes deep; MapCanvas resolves every transfer's rung once per render (`transfersByRung`) and
+mounts `TransferLayer` at each rung's slot with that bucket. Two consequences, both load-bearing:
+
+- The flat-pass union holds **within** a rung — two overlapping transfers trace one outline only
+  when they share one.
+- **Paint order is hit order**, so a lifted rung takes the dot's clicks along with its pixels: on
+  `under` the dots layer above wins (dot pixels absorb the click and route to the station), on a
+  lifted rung the transfer does. That is the trade a lifted rung buys, not an oversight — it is
+  the rule the whole canvas selects by — and the station stays reachable underneath through the
+  alt+click deep pick, which resolves the hit STACK rather than its top element.
 
 **Small unions:** `StopOrientation` (`auto-vertical|auto-ne-sw|auto-horizontal|auto-nw-se` —
 pins only the **axis**; the sign falls out of the world tangent from neighbors), `LineStyle`
@@ -2719,9 +2726,16 @@ lone dot's outer edge is byte-identical to the old centered stroke.
 A `sub` prop narrows one mount to one of the three (`silhouettes` / `bodies` / `codes`); MapCanvas
 uses it to mount them as separate `StationView` layers with the lifted transfer rungs slotted
 between (see `Transfer.draw`). Omitting it paints all three in order from one mount — the
-combined render every isolated caller wants. The COMBINED `StopGlyph` (no `pass`) still emits body
-and code inside one `<g>` carrying the seam attrs; the split passes put those attrs on the body
-element directly, since there is no shared wrapper to hang them on.
+combined render every isolated caller wants, and a test pins that the three split layers
+concatenate to exactly it. The COMBINED `StopGlyph` (no `pass`) still emits body and code inside
+one `<g>` carrying the seam attrs; the split passes put those attrs on the body element directly,
+since there is no shared wrapper to hang them on.
+
+The codes sub-pass renders from its own component (`StationDotCodes`) rather than the shape loop,
+because it is the one pass with **no pointer surface** — its text is `pointer-events: none`, so it
+skips `useStationInteraction` (a selectorless whole-store subscription) and returns `null` outright
+when no stop resolves a code. Both matter: this pass runs once per station per render, and most
+stations on most maps draw nothing in it.
 
 The three radii — silhouette, body, and the midpoint a single native stroke draws at — come from
 `dotStrokeRadiusDeltas` ([model/dotStyle.ts](src/model/dotStyle.ts)), and that is the **one owner**

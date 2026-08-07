@@ -23,7 +23,7 @@ import { edgeEndpoints } from '../model/lineTopology';
 import { pairKeyOf } from '../model/pairKey';
 import { decideCanvasClick, decideSegmentClick, nextSegmentStyle } from '../model/appendGestures';
 import { effectiveBackgroundOrder, type ItemRef } from '../model/transforms';
-import { TRANSFER_STYLE_DEFAULTS } from '../model/transferStyle';
+import { TRANSFER_STYLE_DEFAULTS, resolveTransferStyle } from '../model/transferStyle';
 import { resolveDayNight } from '../model/dayNightColor';
 import { defaultStyleProps } from '../model/styles';
 import { rotateItemOnContextMenu } from './canvas/groupRotate';
@@ -109,20 +109,23 @@ import {
   sampleOffsetPath,
   snapNeighborTag,
 } from '../geometry/lineTagGeometry';
-import type { LineId, StationId, TransferDrawOrder, TransferEnd } from '../model/types';
+import type { LineId, StationId, Transfer, TransferDrawOrder, TransferEnd } from '../model/types';
 import { findMatchingStations } from '../model/matching';
 import { desaturateColor } from '../util/color';
 
-// The three LIFTED transfer rungs, parallel to the three dot sub-passes: each
-// one is mounted immediately AFTER the pass at the same index, so
-// 'dot-silhouettes' → 'over-stroke', 'dot-bodies' → 'over-dot', 'dot-codes' →
-// 'over-code'. The fourth rung, 'under', sits below the whole stack and is
-// mounted on its own. See TransferDrawOrder.
-const LIFTED_TRANSFER_RUNGS = [
-  'over-stroke',
-  'over-dot',
-  'over-code',
-] as const satisfies readonly TransferDrawOrder[];
+// The dot stack, bottom-up: each sub-pass layer paired with the LIFTED transfer
+// rung mounted immediately after it. Pairs rather than two arrays read by
+// index, so a rung can't silently slide onto the wrong pass. The fourth rung,
+// 'under', sits below the whole stack and is mounted on its own. See
+// TransferDrawOrder.
+const DOT_STACK: readonly (readonly [
+  'dot-silhouettes' | 'dot-bodies' | 'dot-codes',
+  TransferDrawOrder,
+])[] = [
+  ['dot-silhouettes', 'over-stroke'],
+  ['dot-bodies', 'over-dot'],
+  ['dot-codes', 'over-code'],
+];
 
 // 1 = full color, 0 = greyscale.
 const OTHER_LINE_SATURATION = 0.5;
@@ -317,6 +320,24 @@ export function MapCanvas() {
     const h = useSelection.getState().hoveredCanvasItem;
     if (h && h.kind === kind && h.id === id) setHover(null);
   };
+  // Every transfer's rung resolved ONCE per render, into the four buckets the
+  // four mounts below take verbatim. The alternative — each mount filtering the
+  // whole collection — resolves a style object per transfer per rung, four
+  // times over, on a per-frame path.
+  const transfersByRung = useMemo(() => {
+    const byRung: Record<TransferDrawOrder, Transfer[]> = {
+      under: [],
+      'over-stroke': [],
+      'over-dot': [],
+      'over-code': [],
+    };
+    for (const t of Object.values(transfers)) {
+      // Resolved, not the raw override: an absent field means the default
+      // rung, not "no rung".
+      byRung[resolveTransferStyle(t, TRANSFER_STYLE_DEFAULTS).draw].push(t);
+    }
+    return byRung;
+  }, [transfers]);
   // One draw rung's transfer bodies. Mounted four times below — once at each
   // slot in the stop-dot stack (see TransferDrawOrder) — so the whole
   // interleave stays one expression per rung and the four can't drift in how
@@ -325,11 +346,10 @@ export function MapCanvas() {
   const transferRung = (draw: TransferDrawOrder) =>
     transfersVisible ? (
       <TransferLayer
-        transfers={transfers}
+        transfers={transfersByRung[draw]}
         stations={stations}
         transferAnchors={transferAnchors}
         defaults={TRANSFER_STYLE_DEFAULTS}
-        draw={draw}
         onSelect={(id) => {
           // Same exit-then-select contract as the free items above.
           const sel = useSelection.getState();
@@ -1727,7 +1747,7 @@ export function MapCanvas() {
             rung, so a dot click still routes to the station, not the transfer
             (overlays below — previews, labels, snap guides — still paint over
             the dots). */}
-          {(['dot-silhouettes', 'dot-bodies', 'dot-codes'] as const).map((layer, i) => (
+          {DOT_STACK.map(([layer, rung]) => (
             <Fragment key={layer}>
               {Object.values(stations).map((st) =>
                 // The layout-edited station is painted above the focus dim
@@ -1744,7 +1764,7 @@ export function MapCanvas() {
                   />
                 ),
               )}
-              {transferRung(LIFTED_TRANSFER_RUNGS[i])}
+              {transferRung(rung)}
             </Fragment>
           ))}
 
@@ -1793,9 +1813,9 @@ export function MapCanvas() {
             </g>
           )}
 
-          {/* Selected-transfer outline: above the dots (unlike TransferLayer)
-            so the connected dots — and any crossing transfer — can't cover
-            the selection chrome. */}
+          {/* Selected-transfer outline: above every dot pass AND every rung,
+            so the connected dots — and any crossing transfer, however high it
+            sits — can't cover the selection chrome. */}
           {transfersVisible && (
             <TransferSelectionOutline
               transfers={transfers}

@@ -7,6 +7,7 @@ import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
 import type { Line, Station, Transfer } from '../model/types';
 import { makeLine } from '../test/fixtures';
+import { resolveHitStack } from './canvas/hitStack';
 
 beforeEach(() => {
   localStorage.clear();
@@ -621,6 +622,33 @@ describe('TransferLayer — DOM rendering', () => {
       seedRichDot('over-code');
       render(<App />);
       expect(under(code(), transferBody('x1'))).toBe(true);
+    });
+
+    // Paint order IS hit order in SVG, and this canvas leans on that
+    // everywhere (see the drag-proxy reroute, which exists precisely because
+    // selection must keep following paint order while dragging does not). So
+    // lifting a transfer over a dot lifts its CLICK over that dot too. That is
+    // the deliberate trade, not an oversight — pinned here so it can't change
+    // silently, and reachable the same way every other buried item is.
+    it('an "under" transfer loses the click where it crosses a dot; a lifted one wins it', () => {
+      seedRichDot();
+      render(<App />);
+      // Baseline: the dot is above the 'under' rung, so its pixels absorb.
+      fireEvent.click(body());
+      expect(useSelection.getState().selectedStationIds).toEqual(['s1']);
+      expect(useSelection.getState().selectedTransferId).toBeNull();
+    });
+
+    it('a lifted transfer takes the click over the dot it covers', () => {
+      seedRichDot('over-dot');
+      render(<App />);
+      fireEvent.click(transferBody('x1'));
+      expect(useSelection.getState().selectedTransferId).toBe('x1');
+      // The station underneath stays reachable through the alt+click deep
+      // pick, which resolves the whole hit stack rather than the top element.
+      expect(resolveHitStack([transferBody('x1'), body()]).map((e) => `${e.kind}:${e.id}`)).toEqual(
+        ['transfer:x1', 'station:s1'],
+      );
     });
 
     it('rungs are independent: two transfers can sit on opposite sides of one dot', () => {
