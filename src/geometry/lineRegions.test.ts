@@ -1029,6 +1029,31 @@ describe('bindAssignments cross-check vs reference implementation', () => {
       { numRuns: 40 },
     );
   });
+
+  // The cover subset test is a bitmask over the live-line universe, and the
+  // universe is as big as the map's line list — an MTA-sized map puts real
+  // lines past bit 31. A line's position in that universe cannot change
+  // whether its assignments bind.
+  it('binds regardless of where the line falls in the live-line universe', () => {
+    const bands = [hBand('h', 'sh|shb', -30, 260), vBand('v', 'sv|svb', -30, 260, 90)];
+    const faces = buildOverlapRegions(bands, []);
+    expect(faces).toHaveLength(1);
+    const asg: RegionAssignment = {
+      id: 'r1',
+      lineId: 'v',
+      lines: ['h', 'v'].sort(),
+      anchors: mintAnchors(faces[0], bands),
+    };
+
+    // Pad the universe so 'v' lands at each bit in turn. `liveLines` is a Set,
+    // so insertion order is the bit order (see bindAssignments' lineBit map).
+    for (let bit = 0; bit <= 33; bit++) {
+      const liveLines = new Set<string>(Array.from({ length: bit }, (_, i) => `pad${i}`));
+      liveLines.add('v');
+      liveLines.add('h');
+      expect(bindAssignments(faces, { r1: asg }, bands, liveLines).get('r1'), `bit ${bit}`).toBe(0);
+    }
+  });
 });
 
 describe('stripeBodyPolys memo', () => {

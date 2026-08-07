@@ -1641,8 +1641,11 @@ export function bindAssignments(
     }
     return m;
   };
+  // `&` yields a SIGNED int32 while a Uint32Array element reads unsigned, so a
+  // word carrying bit 31 (the 32nd live line, and every 32nd after it) would
+  // never compare equal to itself — `>>> 0` puts both sides in the same space.
   const hasAll = (need: Uint32Array, have: Uint32Array): boolean => {
-    for (let i = 0; i < words; i++) if ((need[i] & have[i]) !== need[i]) return false;
+    for (let i = 0; i < words; i++) if ((need[i] & have[i]) >>> 0 !== need[i]) return false;
     return true;
   };
   // Cover ids normalize to LINES here: an arm-spelled cover satisfies the
