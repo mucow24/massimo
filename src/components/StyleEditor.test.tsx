@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { act, cleanup, render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { StyleEditor } from './StyleEditor';
+import { StyleEditor, DOT_BASE_SHAPE_LABELS } from './StyleEditor';
+import { ROUTE_BULLET_SHAPE_LABEL } from './RouteBulletPopover';
+import { TEXT_LABEL_ALIGN_CHIPS } from './TextLabelPopover';
 import { useDoc } from '../state/store';
 import { historyDepth } from '../state/history';
-import { DEFAULT_DOC } from '../model/transforms';
+import { DOT_BASE_SHAPES } from '../model/dotStyle';
+import { DEFAULT_DOC, ROUTE_BULLET_SHAPES, TEXT_LABEL_ALIGNS } from '../model/transforms';
 import { makeStyle } from '../test/fixtures';
 import { chooseOption } from '../test/interaction';
 import type { DotStyle, LineStyleProps, StyleDef, TransferStyleProps } from '../model/types';
@@ -196,6 +199,17 @@ describe('<StyleEditor> — line', () => {
 });
 
 describe('<StyleEditor> — stopDot', () => {
+  // Every base shape must be reachable here: this editor is the only place a
+  // stopDot style's shape can be set, so a shape the file-import gate accepts
+  // but the chips don't offer would be loadable and uneditable. Driven off the
+  // model ladder rather than a list spelled in the test.
+  it('offers a chip for every base shape the model names', () => {
+    render(<StyleEditor def={makeStyle('stopDot', 'y1', { props: { shape: 'circle' } })} />);
+    for (const shape of DOT_BASE_SHAPES) {
+      expect(screen.getByLabelText(DOT_BASE_SHAPE_LABELS[shape]), shape).toBeTruthy();
+    }
+  });
+
   it('a non-dash dot exposes stroke width, a stroke type, and a service-code type', () => {
     render(<StyleEditor def={makeStyle('stopDot', 'y1', { props: { shape: 'circle' } })} />);
     expect(screen.getByRole('slider', { name: 'Stroke width' })).toBeTruthy();
@@ -532,6 +546,34 @@ describe('<StyleEditor> — segmented controls are roving-focus ToggleGroups', (
     // fill must stay 'line', not fall through to a color day/night pair.
     await user.click(screen.getByLabelText('Fill type line'));
     expect((useDoc.getState().styles['sd-fill'].props as DotStyle).fill).toBe('line');
+  });
+});
+
+describe('<StyleEditor> — textLabel', () => {
+  // Twin of the same assertion in TextLabelPopover.test.
+  it('offers exactly the model align ladder, in its order', () => {
+    render(<StyleEditor def={makeStyle('textLabel', 'y1', { props: { align: 'left' } })} />);
+    const titles = Object.values(TEXT_LABEL_ALIGN_CHIPS).map((c) => c.title);
+    const chips = screen
+      .getAllByRole('radio')
+      .map((el) => el.getAttribute('aria-label'))
+      .filter((l): l is string => l !== null && titles.includes(l));
+    expect(chips).toEqual(TEXT_LABEL_ALIGNS.map((a) => TEXT_LABEL_ALIGN_CHIPS[a].title));
+  });
+});
+
+describe('<StyleEditor> — routeBullet', () => {
+  // Twin of the same assertion in RouteBulletPopover.test: the two shape
+  // pickers render one ladder, so neither may offer a set of its own.
+  it('offers exactly the model ladder, in its order', () => {
+    render(<StyleEditor def={makeStyle('routeBullet', 'y1', { props: { shape: 'circle' } })} />);
+    const chips = screen
+      .getAllByRole('radio')
+      .map((el) => el.getAttribute('aria-label'))
+      .filter(
+        (l): l is string => l !== null && Object.values(ROUTE_BULLET_SHAPE_LABEL).includes(l),
+      );
+    expect(chips).toEqual(ROUTE_BULLET_SHAPES.map((s) => ROUTE_BULLET_SHAPE_LABEL[s]));
   });
 });
 

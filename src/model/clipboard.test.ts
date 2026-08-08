@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readClipboard, writeClipboard, type ClipPayload } from './clipboard';
+import { ROUTE_BULLET_SHAPES, TEXT_LABEL_ALIGNS } from './transforms';
+import { LABEL_WEIGHT_NAMES } from '../util/fonts';
 
 const FORMAT = 'massimo-clipboard';
 
@@ -224,6 +226,33 @@ describe('readClipboard drops malformed items, keeps valid ones', () => {
   it('drops a text-label with a bad align', () => {
     const bad = { kind: 'text-label', data: { ...labelItem.data, align: 'block' } };
     expect(readClipboard(envelope([bad]))).toBeNull();
+  });
+
+  // Paste is a THIRD gate on these small unions, behind the file-import
+  // sanitizers and the pickers that offer the values. Walk the model's own
+  // ladders so a value the app can produce but paste would silently drop
+  // fails here rather than on a user's clipboard.
+  describe('paste accepts every value the model ladders name', () => {
+    it('accepts every route-bullet shape', () => {
+      for (const shape of ROUTE_BULLET_SHAPES) {
+        const item = { kind: 'route-bullet', data: { ...bulletItem.data, shape } };
+        expect(readClipboard(envelope([item])), shape).toEqual([item]);
+      }
+    });
+
+    it('accepts every text-label align', () => {
+      for (const align of TEXT_LABEL_ALIGNS) {
+        const item = { kind: 'text-label', data: { ...labelItem.data, align } };
+        expect(readClipboard(envelope([item])), align).toEqual([item]);
+      }
+    });
+
+    it('accepts every shipped label weight', () => {
+      for (const { value } of LABEL_WEIGHT_NAMES) {
+        const item = { kind: 'text-label', data: { ...labelItem.data, weight: value } };
+        expect(readClipboard(envelope([item])), String(value)).toEqual([item]);
+      }
+    });
   });
 
   it('round-trips a justified, fixed-width text-label', () => {
