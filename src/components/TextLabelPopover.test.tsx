@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { TextLabelPopover } from './TextLabelPopover';
+import { TextLabelPopover, TEXT_LABEL_ALIGN_CHIPS } from './TextLabelPopover';
 import { useDoc } from '../state/store';
 import { useLabelEditorPrefs } from '../state/labelEditorPrefs';
-import { DEFAULT_DOC, TEXT_LABEL_WIDTH_MAX } from '../model/transforms';
+import { DEFAULT_DOC, TEXT_LABEL_ALIGNS, TEXT_LABEL_WIDTH_MAX } from '../model/transforms';
 import { makeStyle, makeTextLabel } from '../test/fixtures';
 import { openColorField, setColorField } from '../test/colorField';
 import { chooseOption, stepSlider } from '../test/interaction';
@@ -133,6 +133,20 @@ describe('<TextLabelPopover /> — text / size / align / weight controls', () =>
     expect(useDoc.getState().textLabels['g1'].fontSize).toBe(16.25);
     stepSlider(screen.getByRole('slider', { name: 'Size' }), 1);
     expect(useDoc.getState().textLabels['g1'].fontSize).toBe(16.5);
+  });
+
+  // This popover and the Styles panel's text-label editor are two renders of
+  // ONE ladder. Offering a different set from either would leave an alignment
+  // reachable in one surface and not the other, so both are checked against
+  // the model's ladder rather than against a list spelled here.
+  it('offers exactly the model align ladder, in its order', () => {
+    seedAndRender();
+    const titles = Object.values(TEXT_LABEL_ALIGN_CHIPS).map((c) => c.title);
+    const chips = screen
+      .getAllByRole('radio')
+      .map((el) => el.getAttribute('aria-label'))
+      .filter((l): l is string => l !== null && titles.includes(l));
+    expect(chips).toEqual(TEXT_LABEL_ALIGNS.map((a) => TEXT_LABEL_ALIGN_CHIPS[a].title));
   });
 
   it('changes alignment and toggles italic', () => {

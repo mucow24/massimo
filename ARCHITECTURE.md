@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `e387426` (2026-08-06, #458) — verified against the live source.** This
+**Up to date as of commit `5a8b506` (2026-08-07, #464) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -3581,6 +3581,24 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   tag/transfer endpoint and `routeBullet.lineId` resolves live-or-null. Maintained by cascade
   prunes after structural edits (`deleteStation`/`deleteLine`/`removeStationFromLine`/…).
 - **`LineTag.fromStationId < toStationId`** always (canonical/alphabetic, = `pairKeyOf`).
+- **A small string union has ONE ladder**, in the model module that owns the concept: an ordered
+  array naming every member — `LINE_STYLES`, `LINE_END_STYLES`, `TRANSFER_DRAW_ORDERS`,
+  `ROUTE_BULLET_SHAPES`, `TEXT_LABEL_ALIGNS`, `DOT_BASE_SHAPES`, and `LABEL_WEIGHT_NAMES` (whose
+  rungs carry their display names, since the names ARE the shipped faces) — with a membership
+  guard beside it: `isLineEndStyle`, `isTransferDrawOrder`, `isRouteBulletShape`,
+  `isTextLabelAlign`, `isDotBaseShape`, `isLabelWeight`. **Every gate judges by the guard and every
+  picker takes its order from the array**; no consumer re-spells the members, including the three
+  gates that each judge stored values independently (both load paths and the clipboard's paste
+  validator). The rule earns its keep because a picker and a gate fail in OPPOSITE directions: a
+  picker short a member leaves a stored value uneditable, while a gate short one discards the
+  whole record carrying it — `canonicalStyleProps` refuses a def rather than repairing it, so the
+  user loses a style, not a field. Compile-time exhaustiveness comes from a `Record<Union, …>` the
+  array is paired with: the UI's chip map where the pickers need one (`ROUTE_BULLET_SHAPE_LABEL`,
+  `LINE_END_LABELS`, `TRANSFER_DRAW_LABELS`, `DOT_BASE_SHAPE_LABELS`, `TEXT_LABEL_ALIGN_CHIPS`) or
+  `LINE_STYLE_TIE_RANK` — a member added to the union leaves a missing key there and fails to
+  compile, so the ladder cannot fall behind the type. A user-facing CYCLE is deliberately NOT
+  derived from its ladder (`NEXT_STYLE`, `AXIS_CYCLE`): reordering the ladder must not silently
+  reorder what shift-click does.
 - **`DOC_FIELDS` is the single source of truth** for persisted/undoable fields — it is **not**
   `Object.keys(DEFAULT_DOC)`; keep them in sync (a field in `DEFAULT_DOC` but not `DOC_FIELDS`
   would default but never persist/undo).

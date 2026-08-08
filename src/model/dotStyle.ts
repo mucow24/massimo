@@ -14,6 +14,24 @@ import { legibleTextOn } from '../util/color';
 import { snapToStep } from '../util/grid';
 import { dayNightColorsEqual, resolveDayNight } from './dayNightColor';
 
+// Every DotBaseShape, in the order the Styles panel's shape chips render. THE
+// ladder: the chips read their set from here and the file-import gate judges by
+// it, so a shape can't be loadable-but-unpickable (or the reverse). Its
+// exhaustiveness guard is the chips' label map (`DOT_BASE_SHAPE_LABELS`, a
+// `Record<DotBaseShape, string>`) — a shape added to the union fails to compile
+// until it is named there.
+export const DOT_BASE_SHAPES: readonly DotBaseShape[] = [
+  'circle',
+  'square',
+  'diamond',
+  'x',
+  'dash',
+];
+
+/** Is `v` one of the known base shapes? The gate both load paths judge by. */
+export const isDotBaseShape = (v: unknown): v is DotBaseShape =>
+  typeof v === 'string' && (DOT_BASE_SHAPES as readonly string[]).includes(v);
+
 // A dot showing its service code uses a larger disc than STOP_DOT_RADIUS so
 // the code inside stays legible. (Moved here from StopGlyph — the radius is a
 // styling rule, not an SVG-assembly detail.)

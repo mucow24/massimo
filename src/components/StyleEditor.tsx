@@ -1,9 +1,3 @@
-import {
-  TextAlignCenterIcon,
-  TextAlignJustifyIcon,
-  TextAlignLeftIcon,
-  TextAlignRightIcon,
-} from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { ColorField } from './ColorField';
 import { DayNightColorRow } from './DayNightColorRow';
@@ -13,6 +7,7 @@ import { WeightSelect, ItalicButton } from './WeightItalicControls';
 import { StopGlyph } from './StopGlyph';
 import { StationShapePicker } from './StationShapePicker';
 import { ROUTE_BULLET_SHAPE_LABEL, ShapeIcon } from './RouteBulletPopover';
+import { TEXT_LABEL_ALIGN_CHIPS } from './TextLabelPopover';
 import { SegmentedToggle } from './SegmentedToggle';
 import { TransferDrawRow } from './TransferDrawRow';
 import type { StylePropsPatch } from '../model/styles';
@@ -72,14 +67,22 @@ import {
   POLYGON_STROKE_STEP,
   POLYGON_STROKE_WIDTH_MAX,
   POLYGON_STROKE_WIDTH_MIN,
+  ROUTE_BULLET_SHAPES,
   ROUTE_BULLET_SIZE_MAX,
   ROUTE_BULLET_SIZE_MIN,
   ROUTE_BULLET_SIZE_STEP,
+  TEXT_LABEL_ALIGNS,
   TEXT_LABEL_FONT_SIZE_MAX,
   TEXT_LABEL_FONT_SIZE_MIN,
 } from '../model/transforms';
 import { FieldCheckbox } from './FieldCheckbox';
-import { BLACK_PAIR, DEFAULT_DOT_STYLE, DOT_STROKE_STEP, WHITE_PAIR } from '../model/dotStyle';
+import {
+  BLACK_PAIR,
+  DEFAULT_DOT_STYLE,
+  DOT_BASE_SHAPES,
+  DOT_STROKE_STEP,
+  WHITE_PAIR,
+} from '../model/dotStyle';
 import type {
   DayNightColor,
   DotBaseShape,
@@ -390,12 +393,6 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
 
 function TextLabelStyleEditor({ id, props }: { id: string; props: TextLabelStyleProps }) {
   const patch = usePatch(id);
-  const aligns: { value: TextLabelAlign; label: string; icon: React.ReactNode }[] = [
-    { value: 'left', label: 'Align left', icon: <TextAlignLeftIcon /> },
-    { value: 'center', label: 'Align center', icon: <TextAlignCenterIcon /> },
-    { value: 'right', label: 'Align right', icon: <TextAlignRightIcon /> },
-    { value: 'justify', label: 'Justify', icon: <TextAlignJustifyIcon /> },
-  ];
   return (
     <div className="style-editor">
       <DayNightColorRow
@@ -436,11 +433,11 @@ function TextLabelStyleEditor({ id, props }: { id: string; props: TextLabelStyle
           <SegmentedToggle
             value={props.align}
             onSelect={(v) => patch({ align: v as TextLabelAlign })}
-            options={aligns.map((a) => ({
-              value: a.value,
-              label: a.label,
-              title: a.label,
-              content: a.icon,
+            options={TEXT_LABEL_ALIGNS.map((align) => ({
+              value: align,
+              label: TEXT_LABEL_ALIGN_CHIPS[align].title,
+              title: TEXT_LABEL_ALIGN_CHIPS[align].title,
+              content: TEXT_LABEL_ALIGN_CHIPS[align].icon,
             }))}
           />
         </div>
@@ -516,7 +513,7 @@ function PolygonStyleEditor({ id, props }: { id: string; props: PolygonStyleProp
 
 function RouteBulletStyleEditor({ id, props }: { id: string; props: RouteBulletStyleProps }) {
   const patch = usePatch(id);
-  const shapes: RouteBulletShape[] = ['circle', 'square', 'diamond'];
+  const shapes = ROUTE_BULLET_SHAPES;
   return (
     <div className="style-editor">
       <div className="row">
@@ -664,13 +661,25 @@ function StationStyleEditor({ id, props }: { id: string; props: StationStyleProp
   );
 }
 
-const DOT_SHAPES: { shape: DotBaseShape; label: string }[] = [
-  { shape: 'circle', label: 'Circle' },
-  { shape: 'square', label: 'Square' },
-  { shape: 'diamond', label: 'Diamond' },
-  { shape: 'x', label: 'X' },
-  { shape: 'dash', label: 'Dash (tick)' },
-];
+// How a base shape is NAMED on the chips — the model's values are lowercase
+// tokens, which read as a typo wherever they surface. Also the exhaustiveness
+// guard for `DOT_BASE_SHAPES`: a shape added to the union leaves a missing key
+// here and fails to compile, so the ladder the chips and the import gate read
+// can't fall behind the type. Exported for the test that pins the pairing.
+export const DOT_BASE_SHAPE_LABELS: Record<DotBaseShape, string> = {
+  circle: 'Circle',
+  square: 'Square',
+  diamond: 'Diamond',
+  x: 'X',
+  dash: 'Dash (tick)',
+};
+
+// Chip order comes from the model's ladder, so the picker offers exactly what
+// the file-import gate accepts.
+const DOT_SHAPES = DOT_BASE_SHAPES.map((shape) => ({
+  shape,
+  label: DOT_BASE_SHAPE_LABELS[shape],
+}));
 
 // A stand-in line color for the editor previews — 'line' fills/strokes/dash
 // need *some* color to show; the real color comes from each line at paint time.

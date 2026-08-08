@@ -1,10 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { RouteBulletPopover } from './RouteBulletPopover';
+import { RouteBulletPopover, ROUTE_BULLET_SHAPE_LABEL } from './RouteBulletPopover';
 import { useDoc } from '../state/store';
 import { historyDepth } from '../state/history';
-import { DEFAULT_DOC, ROUTE_BULLET_SIZE_MIN, ROUTE_BULLET_SIZE_STEP } from '../model/transforms';
+import {
+  DEFAULT_DOC,
+  ROUTE_BULLET_SHAPES,
+  ROUTE_BULLET_SIZE_MIN,
+  ROUTE_BULLET_SIZE_STEP,
+} from '../model/transforms';
 import { makeLine, makeStyle } from '../test/fixtures';
 import { chooseOption, stepSlider } from '../test/interaction';
 import type { RouteBullet } from '../model/types';
@@ -59,6 +64,21 @@ describe('RouteBulletPopover — line / shape / delete', () => {
     renderPopover(bulletFixture());
     fireEvent.click(screen.getByLabelText('Square'));
     expect(useDoc.getState().routeBullets['b1'].shape).toBe('square');
+  });
+
+  // The popover and the Styles panel's route-bullet editor are two separate
+  // renders of ONE ladder. Offering a different set from either would leave a
+  // shape reachable in one surface and not the other, so both are checked
+  // against the model's ladder rather than against a list spelled here.
+  it('offers exactly the model ladder, in its order', () => {
+    renderPopover(bulletFixture());
+    const chips = screen
+      .getAllByRole('radio')
+      .map((el) => el.getAttribute('aria-label'))
+      .filter(
+        (l): l is string => l !== null && Object.values(ROUTE_BULLET_SHAPE_LABEL).includes(l),
+      );
+    expect(chips).toEqual(ROUTE_BULLET_SHAPES.map((s) => ROUTE_BULLET_SHAPE_LABEL[s]));
   });
 
   it('deletes the bullet and closes', () => {

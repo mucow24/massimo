@@ -118,6 +118,7 @@ import type {
   SvgImageStylePatch,
   Rotation,
   RouteBullet,
+  RouteBulletShape,
   Station,
   StationId,
   StationStopType,
@@ -127,6 +128,7 @@ import type {
   StyleDef,
   StyleKind,
   TextLabel,
+  TextLabelAlign,
   TextLabelWeight,
   Transfer,
   TransferEnd,
@@ -142,25 +144,20 @@ export const LABEL_FONT_SIZE_DEFAULT = 12;
 // the stroke-width field.
 export const FONT_SIZE_STEP = 0.25;
 
-// Helvetica Neue weights we ship in /public/fonts/. No 600 — we don't have a
-// SemiBold face. Single source of truth for both the text-label popover and
-// the station-label settings dropdown.
-export const LABEL_WEIGHT_VALUES: readonly TextLabelWeight[] = [
-  100, 200, 300, 400, 500, 700, 800, 900,
-] as const;
+// The weight ladder lives with the other font primitives in util/fonts — the
+// names ARE the shipped faces, so the list and the .ttf set stay one thing.
+// Re-exported here so the popovers keep importing weight-related constants from
+// transforms alongside the label style defaults.
+export { LABEL_WEIGHT_NAMES, LABEL_WEIGHT_VALUES } from '../util/fonts';
+import { LABEL_WEIGHT_VALUES, MIN_FONT_SIZE } from '../util/fonts';
 
-// The single membership check for "is this a shippable Helvetica Neue weight"
-// (note: no 600). Used by the serialize migration and the label popover's
-// <select>, neither of which re-derives the 8-way comparison.
+// The one membership check for "is this a shippable Helvetica Neue weight"
+// (note: no 600). Every gate that judges a stored weight — both load paths, the
+// clipboard's paste validator, the label popovers' <select> — goes through
+// here rather than re-deriving the 8-way comparison.
 export function isLabelWeight(v: unknown): v is TextLabelWeight {
   return typeof v === 'number' && (LABEL_WEIGHT_VALUES as readonly number[]).includes(v);
 }
-
-// Weight display names live with the other font primitives in util/fonts (the
-// names ARE the shipped faces); re-exported here so the popovers keep importing
-// weight-related constants from transforms alongside the label style defaults.
-export { LABEL_WEIGHT_NAMES } from '../util/fonts';
-import { MIN_FONT_SIZE } from '../util/fonts';
 
 export const LABEL_WEIGHT_DEFAULT: TextLabelWeight = 400;
 
@@ -275,6 +272,15 @@ export function canonicalStationLabelStyle(props: StationStyleProps): StationSty
 // concept, so they read from one constant.
 export const TEXT_LABEL_FONT_SIZE_MIN = MIN_FONT_SIZE;
 export const TEXT_LABEL_FONT_SIZE_MAX = 96;
+// Every TextLabelAlign, in the order the align cluster renders. Same contract
+// as ROUTE_BULLET_SHAPES: the pickers, the file-import gate and the paste
+// validator all read this list rather than each spelling the four out.
+export const TEXT_LABEL_ALIGNS: readonly TextLabelAlign[] = ['left', 'center', 'right', 'justify'];
+
+/** Is `v` one of the known label alignments? The gate both load paths judge by. */
+export const isTextLabelAlign = (v: unknown): v is TextLabelAlign =>
+  typeof v === 'string' && (TEXT_LABEL_ALIGNS as readonly string[]).includes(v);
+
 // Column-width slider ceiling (world units). 0 = Auto (size to content, manual
 // line breaks). The spinbutton accepts larger values; updateTextLabel clamps
 // only at 0.
@@ -3029,6 +3035,19 @@ export function deleteLineTag(doc: MapDoc, id: string): MapDoc {
 }
 
 // ---------- Route bullets ----------
+
+// Every RouteBulletShape, in the order the shape chips render. THE ladder: the
+// popover's chips, the Styles panel's chips, the file-import gate and the paste
+// validator all walk this one list, so a shape can never be offerable in one
+// surface and refused by another. Its exhaustiveness guard is the chips' label
+// map (`ROUTE_BULLET_SHAPE_LABEL`, a `Record<RouteBulletShape, string>`) — a
+// shape added to the union fails to compile until it is named there, and the
+// pickers then read their set from here.
+export const ROUTE_BULLET_SHAPES: readonly RouteBulletShape[] = ['circle', 'square', 'diamond'];
+
+/** Is `v` one of the known bullet shapes? The gate both load paths judge by. */
+export const isRouteBulletShape = (v: unknown): v is RouteBulletShape =>
+  typeof v === 'string' && (ROUTE_BULLET_SHAPES as readonly string[]).includes(v);
 
 // Half-extent in world units (radius for circle, half-side for square/diamond).
 export const ROUTE_BULLET_SIZE_MIN = 6;

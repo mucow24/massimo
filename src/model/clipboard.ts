@@ -9,6 +9,10 @@ import type {
   TextLabelWeight,
 } from './types';
 import { isAllowedImageHref } from './svgImport';
+// Paste is a THIRD gate on these unions, behind the two load paths' sanitizers.
+// It judges by the model's own ladders rather than re-spelling them, so a value
+// the app can produce can never be one paste silently drops.
+import { isLabelWeight, isRouteBulletShape, isTextLabelAlign } from './transforms';
 import type { Vec2 } from '../geometry/vec';
 
 /**
@@ -28,10 +32,6 @@ const FORMAT = 'massimo-clipboard';
 // string has no `items` and reads back as `null` (paste no-ops) — no fallback.
 const VERSION = 2;
 
-const VALID_SHAPES: ReadonlyArray<RouteBulletShape> = ['circle', 'square', 'diamond'];
-// Helvetica Neue weights we ship — note there is NO 600.
-const VALID_WEIGHTS: ReadonlyArray<TextLabelWeight> = [100, 200, 300, 400, 500, 700, 800, 900];
-const VALID_ALIGNS: ReadonlyArray<TextLabelAlign> = ['left', 'center', 'right', 'justify'];
 // Accepts `#rrggbb` and (since colors carry alpha) `#rrggbbaa`.
 const HEX_COLOR = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/;
 
@@ -155,8 +155,7 @@ function parseRouteBulletData(raw: unknown): Omit<RouteBullet, 'id'> | null {
   if (typeof d.rotation !== 'number') return null;
   if (d.rotation < 0 || d.rotation > 7 || !Number.isInteger(d.rotation)) return null;
   if (d.lineId !== null && typeof d.lineId !== 'string') return null;
-  if (typeof d.shape !== 'string') return null;
-  if (!VALID_SHAPES.includes(d.shape as RouteBulletShape)) return null;
+  if (!isRouteBulletShape(d.shape)) return null;
   // Optional: reject a present-but-wrong type; leave an absent flag absent.
   if (d.locked !== undefined && typeof d.locked !== 'boolean') return null;
   // Optional style tag. Only the type is checked here — whether the id
@@ -184,10 +183,9 @@ function parseTextLabelData(raw: unknown): Omit<TextLabel, 'id'> | null {
   if (d.rotation < 0 || d.rotation > 7 || !Number.isInteger(d.rotation)) return null;
   if (typeof d.text !== 'string') return null;
   if (typeof d.fontSize !== 'number' || !Number.isFinite(d.fontSize)) return null;
-  if (typeof d.weight !== 'number' || !VALID_WEIGHTS.includes(d.weight as TextLabelWeight))
-    return null;
+  if (!isLabelWeight(d.weight)) return null;
   if (typeof d.italic !== 'boolean') return null;
-  if (typeof d.align !== 'string' || !VALID_ALIGNS.includes(d.align as TextLabelAlign)) return null;
+  if (!isTextLabelAlign(d.align)) return null;
   if (typeof d.color !== 'string' || !HEX_COLOR.test(d.color)) return null;
   if (typeof d.darkColor !== 'string' || !HEX_COLOR.test(d.darkColor)) return null;
   // Optional: reject a present-but-wrong type; leave an absent flag absent.

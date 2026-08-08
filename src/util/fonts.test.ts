@@ -5,6 +5,7 @@ import {
   parseWeightToken,
   parseSizeToken,
   normalizeWeight,
+  LABEL_WEIGHT_NAMES,
 } from './fonts';
 
 describe('bolderWeight', () => {
@@ -100,8 +101,8 @@ describe('normalizeWeight', () => {
   });
 
   it('passes through exact table weights', () => {
-    for (const w of [100, 200, 300, 400, 500, 700, 800, 900]) {
-      expect(normalizeWeight(String(w))).toBe(w);
+    for (const { value } of LABEL_WEIGHT_NAMES) {
+      expect(normalizeWeight(String(value))).toBe(value);
     }
   });
 
@@ -110,5 +111,21 @@ describe('normalizeWeight', () => {
     expect(normalizeWeight('600')).toBe(500); // tie -> lower (500 vs 700 both 100 away)
     expect(normalizeWeight('1000')).toBe(900);
     expect(normalizeWeight('50')).toBe(100);
+  });
+});
+
+// The ±1 case at EVERY rung, plus both clamps — the spot checks above cover a
+// handful by hand. Driven off LABEL_WEIGHT_NAMES because that list is what the
+// dropdowns and the `<w=Name>` tag offer: a weight the user can pick that the
+// stepper cannot step from is the failure this rules out.
+describe('stepWeight walks the whole named ladder', () => {
+  it('steps from each rung to its neighbour, and clamps at both ends', () => {
+    const ladder = LABEL_WEIGHT_NAMES.map((w) => w.value);
+    for (let i = 0; i < ladder.length; i++) {
+      expect(stepWeight(ladder[i], 1), `${ladder[i]} +1`).toBe(
+        ladder[Math.min(i + 1, ladder.length - 1)],
+      );
+      expect(stepWeight(ladder[i], -1), `${ladder[i]} -1`).toBe(ladder[Math.max(i - 1, 0)]);
+    }
   });
 });

@@ -4,8 +4,13 @@
 import { describe, it, expect } from 'vitest';
 import { bakeLegacyLabelSettings, parse, serialize } from './serialize';
 import { applyStyleToItem, captureStyleProps } from './styles';
-import { STOP_DOT_FACTORY_STYLES } from './dotStyle';
-import { DEFAULT_STYLES, FACTORY_STYLE_DEFAULTS } from './transforms';
+import { DOT_BASE_SHAPES, STOP_DOT_FACTORY_STYLES } from './dotStyle';
+import {
+  DEFAULT_STYLES,
+  FACTORY_STYLE_DEFAULTS,
+  ROUTE_BULLET_SHAPES,
+  TEXT_LABEL_ALIGNS,
+} from './transforms';
 import type { MapDoc, StyleDef, TextLabelStyleProps } from './types';
 import {
   makeDoc,
@@ -129,6 +134,31 @@ describe('styles round-trip', () => {
 });
 
 describe('sanitizeStyles via parse', () => {
+  // The import gate REFUSES a def whose enum-valued prop it doesn't recognize,
+  // and a refused def is dropped whole — so a value the app can write but the
+  // gate doesn't know loses the user's entire style. Walk the model's own
+  // ladders, not a list spelled here, so widening a union without teaching the
+  // gate fails on this test instead of on a file.
+  it('keeps a def at every value the model ladders name', () => {
+    const defs: Record<string, StyleDef> = {};
+    ROUTE_BULLET_SHAPES.forEach((shape, i) => {
+      defs[`rb${i}`] = makeStyle('routeBullet', `rb${i}`, {
+        name: `RB ${shape}`,
+        props: { shape },
+      });
+    });
+    TEXT_LABEL_ALIGNS.forEach((align, i) => {
+      defs[`tl${i}`] = makeStyle('textLabel', `tl${i}`, { name: `TL ${align}`, props: { align } });
+    });
+    DOT_BASE_SHAPES.forEach((shape, i) => {
+      defs[`sd${i}`] = makeStyle('stopDot', `sd${i}`, { name: `SD ${shape}`, props: { shape } });
+    });
+    const out = parsed({ ...makeDoc({}), styles: defs });
+    for (const id of Object.keys(defs)) {
+      expect(out.styles[id], `${id} (${defs[id].name})`).toBeTruthy();
+    }
+  });
+
   it('drops defs with unknown kind, empty name, or malformed props; keeps valid ones', () => {
     const good = makeStyle('routeBullet', 'y1', { name: 'Big', props: { size: 20 } });
     const doc = {
