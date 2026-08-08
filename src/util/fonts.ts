@@ -29,12 +29,12 @@ export const FONT_STACK = "'Helvetica Neue', 'DejaVu Sans', Helvetica, Arial, sa
  */
 export const MIN_FONT_SIZE = 1;
 
-const AVAILABLE_WEIGHTS = [100, 200, 300, 400, 500, 700, 800, 900];
-
-// Display name ↔ shipped Helvetica Neue weight. Single source of truth for the
-// weight dropdowns (re-exported as `transforms.LABEL_WEIGHT_NAMES`) and the
-// `<w=Name>` inline label tag. The names ARE the shipped faces; no 600 entry —
-// no SemiBold face.
+// Display name ↔ shipped Helvetica Neue weight, ascending. THE weight ladder:
+// the dropdowns, the `<w=Name>` inline label tag, the ±step math below, and the
+// membership check every load path uses (`transforms.isLabelWeight`) all read
+// this one list. The names ARE the shipped faces in /public/fonts, so a rung
+// exists here exactly when there is a .ttf to render it — no 600 entry, because
+// there is no SemiBold face. Re-exported as `transforms.LABEL_WEIGHT_NAMES`.
 export const LABEL_WEIGHT_NAMES: readonly { value: TextLabelWeight; name: string }[] = [
   { value: 100, name: 'UltraLight' },
   { value: 200, name: 'Thin' },
@@ -45,6 +45,12 @@ export const LABEL_WEIGHT_NAMES: readonly { value: TextLabelWeight; name: string
   { value: 800, name: 'Heavy' },
   { value: 900, name: 'Black' },
 ] as const;
+
+// The ladder's values alone — derived, never re-typed, so the rungs the weight
+// math walks are by construction the rungs the dropdowns offer.
+export const LABEL_WEIGHT_VALUES: readonly TextLabelWeight[] = LABEL_WEIGHT_NAMES.map(
+  (w) => w.value,
+);
 
 const WEIGHT_NAME_TO_VALUE = new Map(
   LABEL_WEIGHT_NAMES.map((w) => [w.name.toLowerCase(), w.value]),
@@ -59,9 +65,12 @@ const WEIGHT_NAME_TO_VALUE = new Map(
  * is first normalized to the nearest shipped weight.
  */
 export function stepWeight(weight: number, steps: number): number {
-  const i = AVAILABLE_WEIGHTS.indexOf(weight);
-  const from = i >= 0 ? i : AVAILABLE_WEIGHTS.indexOf(normalizeWeight(String(weight)));
-  return AVAILABLE_WEIGHTS[clamp(from + steps, 0, AVAILABLE_WEIGHTS.length - 1)];
+  // Widened to `number`: the input is a raw CSS/SVG weight, off-ladder until
+  // normalizeWeight has had a look at it.
+  const ladder = LABEL_WEIGHT_VALUES as readonly number[];
+  const i = ladder.indexOf(weight);
+  const from = i >= 0 ? i : ladder.indexOf(normalizeWeight(String(weight)));
+  return ladder[clamp(from + steps, 0, ladder.length - 1)];
 }
 
 /**
@@ -117,8 +126,8 @@ export function normalizeWeight(raw: string | null | undefined): number {
   if (trimmed === 'bold') return 700;
   const n = Number(trimmed);
   if (!Number.isFinite(n)) return 400;
-  let best = AVAILABLE_WEIGHTS[0];
-  for (const w of AVAILABLE_WEIGHTS) {
+  let best = LABEL_WEIGHT_VALUES[0];
+  for (const w of LABEL_WEIGHT_VALUES) {
     if (Math.abs(w - n) < Math.abs(best - n)) best = w;
   }
   return best;

@@ -9,6 +9,7 @@ import { PopoverFooter } from './PopoverFooter';
 import { SegmentedToggle } from './SegmentedToggle';
 import { StyleRow } from './StyleRow';
 import {
+  ROUTE_BULLET_SHAPES,
   ROUTE_BULLET_SIZE_MAX,
   ROUTE_BULLET_SIZE_MIN,
   ROUTE_BULLET_SIZE_STEP,
@@ -30,7 +31,11 @@ interface Props {
 // How a shape is NAMED to the user, on the chips in this popover and in the
 // Styles panel's route-bullet editor. The model's own values are lowercase
 // tokens, which read as a typo wherever they surface; the stop-dot shape
-// chips already carry proper names (DOT_SHAPES), so these match.
+// chips already carry proper names (DOT_BASE_SHAPE_LABELS), so these match.
+//
+// Doubling as the exhaustiveness guard for `ROUTE_BULLET_SHAPES`: a shape added
+// to the union leaves a missing key here and fails to compile, so the ladder
+// the chips and both load-path gates read can't fall behind the type.
 export const ROUTE_BULLET_SHAPE_LABEL: Record<RouteBulletShape, string> = {
   circle: 'Circle',
   square: 'Square',
@@ -83,7 +88,7 @@ export function RouteBulletPopover({ bullet, hostW, onClose }: Props) {
     onClose();
   };
 
-  const shapes: RouteBulletShape[] = ['circle', 'square', 'diamond'];
+  const shapes = ROUTE_BULLET_SHAPES;
 
   return (
     <PopoverShell

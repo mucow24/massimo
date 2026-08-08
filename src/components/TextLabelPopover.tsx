@@ -15,6 +15,7 @@ import { StyleRow } from './StyleRow';
 import { WeightSelect, ItalicButton } from './WeightItalicControls';
 import {
   FONT_SIZE_STEP,
+  TEXT_LABEL_ALIGNS,
   TEXT_LABEL_FONT_SIZE_MAX,
   TEXT_LABEL_FONT_SIZE_MIN,
   TEXT_LABEL_LEADING_DEFAULT,
@@ -42,12 +43,20 @@ interface Props {
   onClose: () => void;
 }
 
-const ALIGNS: { value: TextLabelAlign; icon: ReactNode; title: string }[] = [
-  { value: 'left', icon: <TextAlignLeftIcon />, title: 'Align left' },
-  { value: 'center', icon: <TextAlignCenterIcon />, title: 'Align center' },
-  { value: 'right', icon: <TextAlignRightIcon />, title: 'Align right' },
-  { value: 'justify', icon: <TextAlignJustifyIcon />, title: 'Justify' },
-];
+// The glyph and the name each alignment wears on its chip, shared verbatim by
+// this popover and the Styles panel's text-label editor — one covered field,
+// one look, so the two can never draw or name an alignment differently.
+//
+// Doubling as the exhaustiveness guard for `TEXT_LABEL_ALIGNS`: an alignment
+// added to the union leaves a missing key here and fails to compile, so the
+// ladder the chips and both load-path gates read can't fall behind the type.
+// Chip ORDER comes from the ladder, not from this map.
+export const TEXT_LABEL_ALIGN_CHIPS: Record<TextLabelAlign, { icon: ReactNode; title: string }> = {
+  left: { icon: <TextAlignLeftIcon />, title: 'Align left' },
+  center: { icon: <TextAlignCenterIcon />, title: 'Align center' },
+  right: { icon: <TextAlignRightIcon />, title: 'Align right' },
+  justify: { icon: <TextAlignJustifyIcon />, title: 'Justify' },
+};
 
 export function TextLabelPopover({ label, hostW, onClose }: Props) {
   const updateTextLabel = useDoc((s) => s.updateTextLabel);
@@ -184,11 +193,11 @@ export function TextLabelPopover({ label, hostW, onClose }: Props) {
             value={label.align}
             disabled={locked}
             onSelect={(v) => setAlign(v as TextLabelAlign)}
-            options={ALIGNS.map((a) => ({
-              value: a.value,
-              label: a.title,
-              title: a.title,
-              content: a.icon,
+            options={TEXT_LABEL_ALIGNS.map((align) => ({
+              value: align,
+              label: TEXT_LABEL_ALIGN_CHIPS[align].title,
+              title: TEXT_LABEL_ALIGN_CHIPS[align].title,
+              content: TEXT_LABEL_ALIGN_CHIPS[align].icon,
             }))}
           />
           <ItalicButton

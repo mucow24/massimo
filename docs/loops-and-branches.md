@@ -172,16 +172,21 @@ Topology enumerators to switch from consecutive-pairs → `edges`:
     sits in the blank row above its target.
 
 Casing (the white stroke) is drawn per-band inline, so at a same-line junction/loop one
-segment's casing paints over another segment's body, splitting the color. The clean fix is
-to stroke the UNION of a line's bands (outer boundary only) or a carefully-verified per-line
-casing reorder — deferred pending an approach decision (a naive reorder erased the inter-line
-separators historically). NOT yet fixed.
+segment's casing paints over another segment's body, splitting the color. Neither candidate
+fix — stroking the UNION of a line's bands, or a per-line casing reorder — is what shipped:
+a third approach won, and the problem is closed. A line's self-overlaps are now real overlap
+FACES, cut per arm (`assignLineArms` partitions a line's bands at its junctions, and the
+region pipeline runs same-line pairs per arm), so a junction mouth is a face with a winner
+like any other crossing. An unpainted mouth defaults to the branch arm in front — the look the
+since-retired seam subsystem used to draw — and the loser's casing is clipped away by an
+exclusion hole rather than left to paint over its own line's body. Layering mode repaints any
+mouth. See ARCHITECTURE.md, "Self-overlap: a line against itself".
 
 ## How to draw them (current UX — canvas-only line editing, Jul 2026)
 
 The inspector tree view (`StationGraph` / `lineGraphLayout`) is **deleted**; all stop/topology
 editing happens on the canvas in Edit Stops, driven by a CURSOR
-(`components/canvas/appendGestures.ts` is the tested gesture matrix):
+(`model/appendGestures.ts` is the tested gesture matrix):
 
 1. Place stations (place-station mode) or Alt-click them into existence while editing, then
    **pick the line** (sidebar row/badge or canvas stripe) — picking a line IS entering Edit

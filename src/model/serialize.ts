@@ -11,6 +11,8 @@ import {
   bumpWeightByIndex,
   canonicalStationLabelStyle,
   isLabelWeight,
+  isRouteBulletShape,
+  isTextLabelAlign,
   stationIsSingleton,
   withTransferOverride,
 } from './transforms';
@@ -46,6 +48,7 @@ import {
   STOP_DOT_SEED_STYLES,
   defaultDotDiameter,
   dotStylesEqual,
+  isDotBaseShape,
   resolveDotStyle,
 } from './dotStyle';
 import {
@@ -99,7 +102,6 @@ import type {
   Polygon,
   RegionAnchor,
   RegionAssignment,
-  RouteBulletShape,
   Station,
   StationId,
   StationStyleProps,
@@ -1478,7 +1480,6 @@ export function foldPolygonFillOpacity(polygons: Record<string, Polygon>): {
   return { polygons: next, changed };
 }
 
-const KNOWN_DOT_BASE_SHAPES = new Set<DotBaseShape>(['circle', 'square', 'diamond', 'x', 'dash']);
 const KNOWN_DOT_STROKE_ALIGNS = new Set<DotStrokeAlign>(['center', 'inside', 'outside']);
 // Stroke alignment is REQUIRED on DotStyle but was added after some saves; a
 // missing or malformed value defaults to 'center' (the historical behavior)
@@ -1528,7 +1529,7 @@ function sanitizeDayNightColor(raw: unknown): DayNightColor | undefined {
 function sanitizeDotStyle(raw: unknown): DotStyle | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const o = raw as Record<string, unknown>;
-  if (typeof o.shape !== 'string' || !KNOWN_DOT_BASE_SHAPES.has(o.shape as DotBaseShape)) {
+  if (!isDotBaseShape(o.shape)) {
     return undefined;
   }
   const fill = sanitizeDotColor(o.fill, { none: true, bw: true });
@@ -2457,8 +2458,6 @@ const KNOWN_STYLE_KINDS = new Set<StyleKind>([
   'station',
   'stopDot',
 ]);
-const KNOWN_TEXT_ALIGNS = new Set<TextLabelAlign>(['left', 'center', 'right', 'justify']);
-const KNOWN_BULLET_SHAPES = new Set<RouteBulletShape>(['circle', 'square', 'diamond']);
 
 const finiteNum = (v: unknown): number | undefined =>
   typeof v === 'number' && Number.isFinite(v) ? v : undefined;
@@ -2540,8 +2539,7 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       if (color === undefined || darkColor === undefined || fontSize === undefined)
         return undefined;
       if (!isLabelWeight(o.weight) || italic === undefined) return undefined;
-      if (typeof o.align !== 'string' || !KNOWN_TEXT_ALIGNS.has(o.align as TextLabelAlign))
-        return undefined;
+      if (!isTextLabelAlign(o.align)) return undefined;
       // Since-dropped keys from older saves (width/leading/tracking) are
       // silently discarded by this rebuild.
       return canonicalStyleProps('textLabel', {
@@ -2577,10 +2575,9 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
     }
     case 'routeBullet': {
       const size = finiteNum(o.size);
-      if (typeof o.shape !== 'string' || !KNOWN_BULLET_SHAPES.has(o.shape as RouteBulletShape))
-        return undefined;
+      if (!isRouteBulletShape(o.shape)) return undefined;
       if (size === undefined) return undefined;
-      return canonicalStyleProps('routeBullet', { shape: o.shape as RouteBulletShape, size });
+      return canonicalStyleProps('routeBullet', { shape: o.shape, size });
     }
     case 'transfer': {
       const thickness = finiteNum(o.thickness);
