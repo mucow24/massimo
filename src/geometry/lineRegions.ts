@@ -1907,6 +1907,17 @@ export const EXCLUSION_INSET = 0.00625;
  * boundary. Two DIFFERENT slices of one line do still shield each other;
  * their reveals differ exactly at the rails.
  *
+ * That subtraction stops short of W'S OWN RAIL. Faces are cut on nominal
+ * bodies and paint is silhouettes, so the annulus between them — the half of
+ * W's casing hanging over a tangent neighbor — falls inside the neighbor's
+ * face; shielding it prints the separator at HALF a rail. It is only safe to
+ * reveal as far as the NEIGHBOR's rail reaches, since past that the
+ * neighbor's colored body has begun and uncovering it is the very nick above:
+ * the exemption clamps to `min(railW_W, narrowest rail painting above W in
+ * the shielding neighbors)`, which is the winner's own for a uniform map and
+ * nothing at all beside an UNCASED neighbor. Losers don't count toward that
+ * minimum — this hole clips them too.
+ *
  * Before dilating, F's reveal region absorbs any adjacent dropped `slivers`
  * (see {@link RegionSliver}): at a near-tangent inner fillet the arrangement
  * cell between two bridged faces erodes to a hairline and is dropped, so the
@@ -2175,6 +2186,11 @@ function makeHoleContext(
       railWWinner / 2 +
       0.5;
     const shield: Ring[] = [];
+    // The narrowest rail among the lines that paint ABOVE the winner in the
+    // shielding neighbors — how far the winner's own rail may be revealed
+    // across them (see the railZone below). Losers are exempt: this hole
+    // clips them too, so their bodies can never be what a reveal exposes.
+    let neighborRail = Infinity;
     for (const j of facesNear(regionBbox, maxReach * 3)) {
       const nw = winners[j]?.winner;
       if (j === i || nw === w.winner) continue;
@@ -2191,7 +2207,40 @@ function makeHoleContext(
         continue;
       }
       shield.push(...faces[j].face);
+      for (const id of distinctCoverLines(faces[j].lineIds)) {
+        if (orderIdx(id) < winnerRank && !loserSet.has(id)) {
+          neighborRail = Math.min(neighborRail, railWOf(id));
+        }
+      }
     }
+    // The shield stands down over the WINNER'S OWN RAIL. Faces are cut on
+    // nominal bodies while paint is silhouettes, and the difference — the
+    // winner's rail annulus — is the half of its casing that hangs over a
+    // tangent neighbor's territory. Shielding that away leaves the
+    // promotion's separator at HALF a rail wherever one stripe of an
+    // interlined band is painted forward and its tangent neighbor keeps the
+    // default: the reveal stops at the shared body edge and the loser's body
+    // repaints the outer half of the winner's casing.
+    //
+    // How far it may stand down is bounded by the NEIGHBOR's rail, not the
+    // winner's. A tangent neighbor's own rail straddles the shared edge too,
+    // so out to `neighborRail/2` the annulus holds nothing but white and the
+    // reveal is free; past that the neighbor's colored body has begun, and
+    // uncovering it would swap the winner's white for the neighbor's paint —
+    // the same nick the shield exists for. Equal rails (the usual case, and
+    // every line of a uniform map) clamp to the winner's own, so the whole
+    // annulus reveals and the crossing reads like a real lineOrder promotion;
+    // an UNCASED neighbor clamps to nothing and the shield applies whole.
+    const railZone =
+      shield.length && Math.min(railWWinner, neighborRail) > 0
+        ? subtract(
+            neighborRail >= railWWinner
+              ? footprint
+              : paintNear(winnerLine, regionBbox, neighborRail, winnerSlice),
+            paintNear(winnerLine, regionBbox, 0, winnerSlice),
+          )
+        : [];
+    const effShield = railZone.length ? subtract(shield, railZone) : shield;
     // Within one face, losers sharing a railW dilate the same region by the
     // same reach — memo the dilation: pure call, identical arguments. Loser
     // holes key by cover id: bare line = the line's whole paint, arm id =
@@ -2207,7 +2256,7 @@ function makeHoleContext(
       let dil = regionDil.get(reach);
       if (!dil) regionDil.set(reach, (dil = offsetClosed(region, reach, 'miter')));
       const dilated = intersect(dil, footprint);
-      const hole = shield.length ? subtract(dilated, shield) : dilated;
+      const hole = effShield.length ? subtract(dilated, effShield) : dilated;
       if (!hole.length) continue;
       contributions.push({ lineId: loserKey, rings: hole });
     }
