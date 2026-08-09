@@ -1548,6 +1548,88 @@ describe('App keyboard: dangling stop sub-selection falls back to station nudge'
   });
 });
 
+describe('App keyboard: Delete removes the armed station sub-selection', () => {
+  // The station layout editor's arms — a stop dot, a hosted transfer anchor —
+  // are NODES inside a station, and Delete has to reach the node the user
+  // armed. Before this, an armed stop fell through to the whole-station path
+  // and clicking a dot then pressing Delete wiped the entire station.
+  const seed = () => {
+    const doc = useDoc.getState();
+    const s = doc.addStation(100, 100);
+    const l1 = doc.addLine();
+    const l2 = doc.addLine();
+    useDoc.getState().addStationToLine(l1, s);
+    useDoc.getState().addStationToLine(l2, s);
+    useSelection.getState().selectStation(s);
+    useDoc.temporal.getState().clear();
+    return { s, l1, l2 };
+  };
+
+  it('an armed stop leaves ITS line; the station and its other stops stay', () => {
+    render(<App />);
+    const { s, l1, l2 } = seed();
+    useSelection.getState().setSelectedStopLineId(l1);
+    fireEvent.keyDown(window, { key: 'Delete' });
+    const doc = useDoc.getState();
+    expect(doc.stations[s]).toBeDefined();
+    expect(doc.stations[s].stops.map((c) => c.lineId)).toEqual([l2]);
+    expect(doc.lines[l1].stations).not.toContain(s);
+    expect(doc.lines[l2].stations).toContain(s);
+    // The arm is spent — nothing is left pointing at a stop that's gone.
+    expect(useSelection.getState().selectedStopLineId).toBeNull();
+  });
+
+  it('the removal is one undo entry that puts the stop back', () => {
+    render(<App />);
+    const { s, l1 } = seed();
+    useSelection.getState().setSelectedStopLineId(l1);
+    fireEvent.keyDown(window, { key: 'Delete' });
+    // Precondition, not decoration: without it this reads green under the bug
+    // (deleting the whole station is also one entry, and its undo also brings
+    // the stop back).
+    expect(useDoc.getState().stations[s]).toBeDefined();
+    expect(historyDepth()).toBe(1);
+    useDoc.temporal.getState().undo();
+    expect(useDoc.getState().stations[s].stops.map((c) => c.lineId)).toContain(l1);
+  });
+
+  it('a LOCKED station keeps the armed stop — and is not deleted either', () => {
+    // Lock exists to stop exactly this keypress from destroying things, and
+    // the inspector's stop rows are frozen for the same reason; the fall-
+    // through then hits deleteUnlockedSelection, which protects it too.
+    render(<App />);
+    const { s, l1, l2 } = seed();
+    useDoc.getState().setStationLocked(s, true);
+    useSelection.getState().setSelectedStopLineId(l1);
+    fireEvent.keyDown(window, { key: 'Delete' });
+    const doc = useDoc.getState();
+    expect(doc.stations[s]).toBeDefined();
+    expect(doc.stations[s].stops.map((c) => c.lineId).sort()).toEqual([l1, l2].sort());
+  });
+
+  it('a LOCKED station keeps an armed transfer anchor too', () => {
+    render(<App />);
+    const s = useDoc.getState().addStation(0, 0);
+    const cell = useDoc.getState().addStationAnchor(s, -1, 0);
+    useDoc.getState().setStationLocked(s, true);
+    const sel = useSelection.getState();
+    sel.selectStation(s);
+    sel.setSelectedAnchorCellId(cell);
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(useDoc.getState().stations[s].transferAnchors ?? []).toHaveLength(1);
+  });
+
+  it('a DANGLING stop arm does not claim Delete — the station goes', () => {
+    // Same rule as the arrow-key ladder: an arm pointing at a stop this
+    // station no longer has must not silently eat the press.
+    render(<App />);
+    const { s } = seed();
+    useSelection.getState().setSelectedStopLineId('L9');
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(useDoc.getState().stations[s]).toBeUndefined();
+  });
+});
+
 describe('App keyboard: station-editor Escape step-out ladder', () => {
   const seedStation = () => {
     useDoc.setState({

@@ -1146,7 +1146,9 @@ it meaning). HOSTED anchors are station internals like a stop dot: rendered `poi
 (so alt-click reaches through them), edited only in the layout editor. Removal has two equivalent
 doors: the popover's anchor row (×) and the Delete key while the cell is armed
 (`selectedAnchorCellId` — the state the "Add transfer anchor" button leaves you in); both go
-through `deleteStationAnchor`, which cascades any transfers bound to the cell.
+through `deleteStationAnchor`, which cascades any transfers bound to the cell, and both are gated
+on the station's `locked` (the row by the inspector's whole-panel disabled fieldset, the key by
+its own check).
 
 In the lattice they ride as **passengers**: never in `stationLayoutNodes` (whose node identity is
 `lineId: string | null`, where null already means "the label", and where a non-`isLabel` node would
@@ -3430,10 +3432,15 @@ same three additions.
        stop swaps, right-click/R rotates, click selects the stop/label (arming the shape/size
        pickers). A transparent **shield rect** swallows near-miss presses so nothing falls through
        to the whole-station handlers (the mode is in `RIGHT_CLICK_PASSTHROUGH_MODES`).
-  2. **Keyboard nudge** (App.tsx): with a stop/label selected, arrows hop one lattice slot in the
+  2. **Keyboard** (App.tsx): with a stop/label selected, arrows hop one lattice slot in the
      pressed screen direction (`nudgeTarget`, Shift = diagonal), Alt+arrows fine-nudge label
      offsets (Shift ×5, live-writing `setLabelOffset`/`setLabelOffsetPerp` via
-     `screenDeltaToLabelOffsets` — the inverse of labelLayout's offset axes), R rotates.
+     `screenDeltaToLabelOffsets` — the inverse of labelLayout's offset axes), R rotates, and
+     **Delete removes the armed NODE, not the station**: a stop dot means the station LEAVES that
+     line (`removeStationFromLine`, indexed off the membership list), a hosted anchor goes through
+     `deleteStationAnchor`. The label cell has nothing to delete, so it — like a DANGLING arm —
+     falls through to the whole-station path and the station goes. A LOCKED station falls through
+     too, but `deleteUnlockedSelection` protects it there, so that press is a no-op instead.
      Both surfaces share
      [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts) — `dispatchMirrored` (one-shot
      controls, groups only when fanning out and no group is open — see the isHistoryGrouping

@@ -308,18 +308,48 @@ export default function App() {
             return;
           }
         }
-        // An armed hosted-anchor sub-selection answers Delete before the
-        // whole-station path — parity with the popover row's × button
-        // (deleteStationAnchor cascades any transfers bound to the cell). A
-        // DANGLING arm falls through, same as the arrow-key ladder.
+        // An armed station sub-selection answers Delete before the whole-station
+        // path: the armed NODE goes, not the station hosting it. Both deletable
+        // arms are here — the layout editor's rings are the same click surface,
+        // so a stop dot and a hosted anchor must answer the key the same way.
+        // (The third arm, the label cell, has nothing to delete and falls
+        // through.) A DANGLING arm falls through too, same as the arrow-key
+        // ladder. So does a LOCKED station: lock is what stops this exact
+        // keypress from destroying things, and it already freezes the
+        // equivalent inspector rows — the fall-through then hits
+        // deleteUnlockedSelection, which protects it, so the press is a no-op
+        // rather than a whole-station delete.
         {
           const sid = sel.selectedStationIds.length === 1 ? sel.selectedStationIds[0] : null;
+          const station = sid ? useDoc.getState().stations[sid] : undefined;
           const cellId = sel.selectedAnchorCellId;
-          if (sid && cellId && stationAnchorCell(useDoc.getState().stations[sid], cellId)) {
-            e.preventDefault();
-            sel.setSelectedAnchorCellId(null);
-            useDoc.getState().deleteStationAnchor(sid, cellId);
-            return;
+          const stopLineId = sel.selectedStopLineId;
+          if (station && !station.locked) {
+            if (cellId && stationAnchorCell(station, cellId)) {
+              // Parity with the popover row's × button — deleteStationAnchor
+              // cascades any transfers bound to the cell.
+              e.preventDefault();
+              sel.setSelectedAnchorCellId(null);
+              useDoc.getState().deleteStationAnchor(station.id, cellId);
+              return;
+            }
+            // A stop dot isn't a thing of its own to erase: the station LEAVES
+            // that line, which is what takes the dot with it (plus the edges
+            // through it and any transfers hanging off the stop — see
+            // removeStationFromLine). The arm is only real if the station still
+            // carries the stop AND the line still counts it a member; index off
+            // the membership list, because a -1 would silently drop the last
+            // member instead.
+            const idx =
+              stopLineId && station.stops.some((c) => c.lineId === stopLineId)
+                ? (useDoc.getState().lines[stopLineId]?.stations.indexOf(station.id) ?? -1)
+                : -1;
+            if (stopLineId && idx >= 0) {
+              e.preventDefault();
+              sel.setSelectedStopLineId(null);
+              useDoc.getState().removeStationFromLine(stopLineId, idx);
+              return;
+            }
           }
         }
         // Mixed station + bullet + label + polygon multi-selection takes
