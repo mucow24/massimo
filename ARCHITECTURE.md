@@ -3505,7 +3505,7 @@ from `FONT_TABLE` — don't "sync" it in.) `normalizeWeight` ties go **low** (60
 
 **PDF** ([exportCanvasPdf.ts](src/export/exportCanvasPdf.ts)) reuses `buildExportSvg`, then renders
 that SVG to a true vector PDF with **svg2pdf.js + jsPDF** — selectable text, vector line work,
-embedded SVG graphics kept as vectors (bar mask users, gap 7). Eight gaps svg2pdf/jsPDF can't bridge
+embedded SVG graphics kept as vectors (bar mask users, gap 7). Nine gaps svg2pdf/jsPDF can't bridge
 are closed here:
 
 1. **Fonts** — jsPDF ignores the SVG's `@font-face` and can only embed TrueType, so the map's used
@@ -3565,6 +3565,21 @@ are closed here:
    the SVG/PNG paths need none of it (browser/canvas composite hex8 natively).
    Lazy-loaded on first PDF export (`import()` in the toolbar) so jsPDF + opentype.js stay out of the
    initial bundle.
+9. **Region-exclude clips** — the region-layering exclusion clips defeat Blink's clip-raster
+   snapping by emitting the clip path at ×`CLIP_RASTER_SCALE` and pulling it back with
+   `CLIP_RASTER_INVERSE_TRANSFORM` (`scale(1/64)`) on the clipPath's **child**
+   ([clipRaster.ts](src/components/canvas/clipRaster.ts)). Exact on screen; through svg2pdf it
+   corrupts any clip referenced more than once. svg2pdf memoizes each node's parsed path
+   (`getCachedPath`) and `Path.transform` mutates it **in place**, while `ClipPath.apply`
+   re-renders its children once per referencing element — so the scale compounds against the same
+   cached object: 1st user correct, 2nd at 1/64, 3rd at 1/4096, collapsing to a speck at the origin.
+   One region-exclude def backs many renderables, so all but the first rendered **blank**.
+   `hoistClipPathTransforms` ([pdfClip.ts](src/export/pdfClip.ts)) moves the transform onto the
+   `<clipPath>` element, which svg2pdf folds into the CTM instead of the cached path — stable across
+   unlimited references, clip region and layering unchanged. Hoisting never touches geometry, so it
+   is exact for arcs, rotate/translate/matrix and `<rect>`/`<circle>` children too; a clipPath whose
+   children carry *differing* transforms can't be hoisted and is warned about rather than silently
+   mis-clipped.
 
 [color.ts](src/util/color.ts): pure hex math — `legibleTextOn` (W3C luminance → `#000`/`#fff`),
 `withAlpha`, `blendOver`, `desaturateColor`, plus the RGBA surface added with the react-colorful
