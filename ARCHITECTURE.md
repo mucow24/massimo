@@ -3491,7 +3491,7 @@ from `FONT_TABLE` — don't "sync" it in.) `normalizeWeight` ties go **low** (60
 
 **PDF** ([exportCanvasPdf.ts](src/export/exportCanvasPdf.ts)) reuses `buildExportSvg`, then renders
 that SVG to a true vector PDF with **svg2pdf.js + jsPDF** — selectable text, vector line work,
-embedded SVG graphics kept as vectors (bar mask users, gap 7). Eight gaps svg2pdf/jsPDF can't bridge
+embedded SVG graphics kept as vectors (bar mask users, gap 7). Nine gaps svg2pdf/jsPDF can't bridge
 are closed here:
 
 1. **Fonts** — jsPDF ignores the SVG's `@font-face` and can only embed TrueType, so the map's used
@@ -3551,6 +3551,14 @@ are closed here:
    the SVG/PNG paths need none of it (browser/canvas composite hex8 natively).
    Lazy-loaded on first PDF export (`import()` in the toolbar) so jsPDF + opentype.js stay out of the
    initial bundle.
+9. **Region-exclude clips** — the region-layering exclusion clips defeat Blink's clip-raster snapping
+   by authoring the clip path at ×64 and pulling it back with a `transform="scale(1/64)"` on the
+   clipPath's child `<path>`. Blink honors that transform on screen, but svg2pdf and the PDF viewers
+   that open the result (Edge, poppler, …) do **not** apply a transform on a clipPath child — they
+   collapse the clip and drop everything inside it, so every band under a region-exclude clip renders
+   **blank/white**. `flattenClipPathTransforms` ([pdfClip.ts](src/export/pdfClip.ts)) bakes the scale
+   into the path coordinates: an identical clip region — and identical layering — in a form every
+   renderer honors. Pure/unit-tested; only a uniform `scale` over non-arc paths is baked.
 
 [color.ts](src/util/color.ts): pure hex math — `legibleTextOn` (W3C luminance → `#000`/`#fff`),
 `withAlpha`, `blendOver`, `desaturateColor`, plus the RGBA surface added with the react-colorful

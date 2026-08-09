@@ -50,6 +50,7 @@ import { loadGlyphFonts, needsGlyphOutlining, outlineUnsupportedText } from './p
 import { bakeImageDropShadows } from './pdfDropShadow';
 import { rasterizeMaskedImages } from './pdfMask';
 import { splitAlphaColors } from './pdfAlpha';
+import { flattenClipPathTransforms } from './pdfClip';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -229,6 +230,12 @@ export async function exportCanvasPdf(
   try {
     // Bake hatch pattern paints into stripe geometry svg2pdf can convert (must
     // run while attached — it samples path/shape geometry).
+    // Bake the scale(1/64) transform on region-exclude clip children into their
+    // coordinates: svg2pdf and PDF viewers don't apply a transform on a clipPath
+    // child, so without this every band under a region-exclude clip renders blank
+    // in the PDF. Baking keeps the clip region - and the layering - identical.
+    flattenClipPathTransforms(el);
+
     bakeHatchedPaints(el);
 
     // svg2pdf re-vectorizes svg+xml images and has no <mask> support, so an
