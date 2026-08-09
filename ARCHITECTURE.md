@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `5a8b506` (2026-08-07, #464) — verified against the live source.** This
+**Up to date as of commit `df6f4de` (2026-08-08, #465) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -121,6 +121,8 @@ src/
     palettes.ts                 # built-in PALETTES (name-keyed) + library assembly/sorting
     customPalette.ts            # palette files: parse both formats (ours + legacy "frrf"),
                                 #   serialize the massimo-palette format (day/night, description)
+    lineStyle.ts                # LINE_STYLES (the ladder) + LINE_STYLE_TIE_RANK + KNOWN_LINE_STYLES
+    dayNightColor.ts            # resolve/compare a theme-aware {day,night} color (the ONE ternary)
     dotStyle.ts dotSize.ts      # procedural stop-dot style + size resolution
     dashSize.ts                 # TfL-tick ('dash' stop) length/thickness resolution (derive from line width)
     transferStyle.ts            # TRANSFER_STYLE_DEFAULTS + per-transfer override resolution
@@ -161,7 +163,6 @@ src/
     lattice.ts                  # stop-placement lattice (orthogonal/diagonal)
     stationBoundary.ts          # selection silhouette + marquee hit rects
     stationDash.ts              # TfL-tick ('dash' stop) geometry: per-stop tick anchor/angle/length (label-side aware; emergent notched composite)
-    stripeOutline.ts            # per-stripe edge/cap geometry (stroke-before-fill dots)
     markerEnd.ts                # non-square line-end shapes (path to paint, ring to cover, rails)
     polygon.ts polygonSnap.ts polygonUnion.ts rectPolygon.ts  # polygon geom + union + hit test
     clip.ts                     # typed wasm-clipper wrapper (booleans/offsets, integer-snapped); async load, one engine
@@ -219,6 +220,8 @@ src/
     MapCanvas.tsx               # the canvas hub: paint order + all pointer wiring
     Station*/Stop*/Label*/...   # per-entity SVG views (see Rendering section)
     selectionStyle.ts           # shared selection stroke/dash/wash constants (screen-px; ÷ zoom)
+    textDecoration.tsx          # the inline <u>/<s> rule: offsets + weight off the run's baseline,
+                                #   shared by BOTH label renderers so a tag reads the same anywhere
     lineListOrder.ts            # pure lines-list ordering: sort by name/#stops, group by style
     SortHeader.tsx              # shared clickable sort-column header (the stations list's two)
     Toolbar.tsx Sidebar.tsx Menu.tsx  # chrome
@@ -228,7 +231,8 @@ src/
     PalettesDialog.tsx          # the palette manager (library | in this map; same Dialog shell)
     PaletteEditor.tsx           # the manager's second view: one palette's title/description/rows
     dialogRow.tsx               # shared dialog-row chrome: IconButton, RowCommands (the `…`
-                                #   overflow toolbar), the useSpeedBump two-click
+                                #   overflow toolbar), the useSpeedBump two-click, DialogSortSelect
+                                #   (a library column's sort picker, over the union's own ladder)
     useRowDragReorder.ts        # pointer drag-to-reorder for fixed-height row lists (editor rows)
     MapVersionPill.tsx          # the live doc's version + save-status dot, beside the map name
     *Popover.tsx                # on-canvas item editors
@@ -240,7 +244,7 @@ src/
     inspector/                  # LineInspector (hosted by the pinned on-canvas LinePopover; identity +
                                 #   line-style fields — stop/topology editing is canvas-driven, see
                                 #   appendGestures.ts) + StationInspector (hosted by the on-canvas
-                                #   StationPopover) + pure math: stopGridDrag.ts, stationBandGeometry.ts
+                                #   StationPopover) + pure math: stopGridDrag.ts
 
   worker/                       # the pipelined region worker (see Rendering: pipelined drags)
     regionFrame.ts              # the pure frame protocol: mirror identity-diffs, computeMirrorHoles
@@ -2367,10 +2371,12 @@ which are a separate slot-based system where Shift flips the lattice basis.
   interior by theme). Unclosed/mismatched delimiters and empty codes stay text; a backslash
   before a token escapes it to literal text (`\|a|` renders "|a|").
 - **`parseFormattedLine`** additionally parses HTML-like formatting tags —
-  `<b>` (two steps up the shipped weight ladder), `<i>`, `<u>`/`<s>` (drawn as explicit `<line>`s),
-  `<color=…>` (named / `#hex` / `0xhex`), `<w=…>` font weight (a shipped weight name like
-  `<w=Light>` = absolute, or `<w=+2>`/`<w=-1>` = signed ladder steps from the label's base weight;
-  innermost `<w>` wins, invalid values stay literal — see `resolveRunWeight`/`parseWeightToken`),
+  `<b>` (two steps up the shipped weight ladder), `<i>`, `<u>`/`<s>` (drawn as explicit `<line>`s
+  off the run's baseline, at the offsets and weight both label renderers share — see
+  `textDecoration.tsx`), `<color=…>` (named / `#hex` / `0xhex`), `<w=…>` font weight (a shipped
+  weight name like `<w=Light>` = absolute, or `<w=+2>`/`<w=-1>` = signed ladder steps from the
+  label's base weight; innermost `<w>` wins, invalid values stay literal — see
+  `resolveRunWeight`/`parseWeightToken`),
   `<size=…>` font size (an absolute world-unit size like `<size=6>`, or `<size=+1>`/`<size=-2>` = a
   signed delta from the label's base size; innermost `<size>` wins, floored at the min font size,
   invalid values stay literal — see `resolveRunFontSize`/`parseSizeToken`),
@@ -2572,8 +2578,6 @@ renderers** (one pass rounds convex corners and fillets concave junctions).
   and the `*ForRect` marquee functions (which skip `locked` items unless `includeLocked` is set —
   the Alt-marquee recovery path for click-through locked items). `transferAnchorsForRect` is the
   exception with no such parameter: free anchors carry no `locked` field to skip on.
-- `stripeOutline.ts` — per-stripe edge/cap geometry for the stroke-before-fill dots; reads the
-  **baked** `stripeWidths`/`stripeOffsets`.
 - `lineTagGeometry.ts` — arc-length sampling along an offset path; `snapNeighborTag` snaps a
   dragged tag to a same-corridor neighbor (matched by unordered `pairKeyOf`).
 - `svgImage.ts` — corners, aspect-locked corner resize, single-axis edge resize, rotate-to-pointer
@@ -3581,24 +3585,28 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   tag/transfer endpoint and `routeBullet.lineId` resolves live-or-null. Maintained by cascade
   prunes after structural edits (`deleteStation`/`deleteLine`/`removeStationFromLine`/…).
 - **`LineTag.fromStationId < toStationId`** always (canonical/alphabetic, = `pairKeyOf`).
-- **A small string union has ONE ladder**, in the model module that owns the concept: an ordered
-  array naming every member — `LINE_STYLES`, `LINE_END_STYLES`, `TRANSFER_DRAW_ORDERS`,
-  `ROUTE_BULLET_SHAPES`, `TEXT_LABEL_ALIGNS`, `DOT_BASE_SHAPES`, and `LABEL_WEIGHT_NAMES` (whose
-  rungs carry their display names, since the names ARE the shipped faces) — with a membership
-  guard beside it: `isLineEndStyle`, `isTransferDrawOrder`, `isRouteBulletShape`,
-  `isTextLabelAlign`, `isDotBaseShape`, `isLabelWeight`. **Every gate judges by the guard and every
+- **A small string union has ONE ladder**, in the module that owns the concept — the model module
+  for a stored value, the store's own module for a union that never leaves the app (`MAP_SORTS` in
+  `state/mapLibrary.ts`): an ordered array naming every member — `LINE_STYLES`, `LINE_END_STYLES`,
+  `TRANSFER_DRAW_ORDERS`, `ROUTE_BULLET_SHAPES`, `TEXT_LABEL_ALIGNS`, `DOT_BASE_SHAPES`,
+  `PALETTE_SORTS`, `MAP_SORTS`, and `LABEL_WEIGHT_NAMES` (whose rungs carry their display names,
+  since the names ARE the shipped faces) — with a membership guard beside it: `isLineEndStyle`,
+  `isTransferDrawOrder`, `isRouteBulletShape`, `isTextLabelAlign`, `isDotBaseShape`,
+  `isPaletteSort`, `isMapSort`, `isLabelWeight`. **Every gate judges by the guard and every
   picker takes its order from the array**; no consumer re-spells the members, including the three
   gates that each judge stored values independently (both load paths and the clipboard's paste
   validator). The rule earns its keep because a picker and a gate fail in OPPOSITE directions: a
   picker short a member leaves a stored value uneditable, while a gate short one discards the
   whole record carrying it — `canonicalStyleProps` refuses a def rather than repairing it, so the
-  user loses a style, not a field. Compile-time exhaustiveness comes from a `Record<Union, …>` the
-  array is paired with: the UI's chip map where the pickers need one (`ROUTE_BULLET_SHAPE_LABEL`,
-  `LINE_END_LABELS`, `TRANSFER_DRAW_LABELS`, `DOT_BASE_SHAPE_LABELS`, `TEXT_LABEL_ALIGN_CHIPS`) or
-  `LINE_STYLE_TIE_RANK` — a member added to the union leaves a missing key there and fails to
-  compile, so the ladder cannot fall behind the type. A user-facing CYCLE is deliberately NOT
-  derived from its ladder (`NEXT_STYLE`, `AXIS_CYCLE`): reordering the ladder must not silently
-  reorder what shift-click does.
+  user loses a style, not a field. A persisted PREF fails the same way from the other end: a sort
+  mode the picker no longer offers is stuck, and one the guard no longer accepts is silently
+  ignored on the next boot. Compile-time exhaustiveness comes from a `Record<Union, …>` the array
+  is paired with: the UI's chip or label map where the pickers need one
+  (`ROUTE_BULLET_SHAPE_LABEL`, `LINE_END_LABELS`, `TRANSFER_DRAW_LABELS`, `DOT_BASE_SHAPE_LABELS`,
+  `TEXT_LABEL_ALIGN_CHIPS`, each dialog's `SORT_LABELS`) or `LINE_STYLE_TIE_RANK` — a member added
+  to the union leaves a missing key there and fails to compile, so the ladder cannot fall behind
+  the type. A user-facing CYCLE is deliberately NOT derived from its ladder (`NEXT_STYLE`,
+  `AXIS_CYCLE`): reordering the ladder must not silently reorder what shift-click does.
 - **`DOC_FIELDS` is the single source of truth** for persisted/undoable fields — it is **not**
   `Object.keys(DEFAULT_DOC)`; keep them in sync (a field in `DEFAULT_DOC` but not `DOC_FIELDS`
   would default but never persist/undo).
