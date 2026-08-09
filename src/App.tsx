@@ -308,18 +308,66 @@ export default function App() {
             return;
           }
         }
-        // An armed hosted-anchor sub-selection answers Delete before the
-        // whole-station path — parity with the popover row's × button
-        // (deleteStationAnchor cascades any transfers bound to the cell). A
-        // DANGLING arm falls through, same as the arrow-key ladder.
+        // An armed station sub-selection answers Delete before the whole-station
+        // path: the armed NODE goes, not the station hosting it. All three arms
+        // are here, and they answer from WHEREVER the arm was set — the layout
+        // editor's grab rings and the inspector's rows write the same
+        // sub-selection, and the hosted-anchor arm already answered the key from
+        // either surface. A DANGLING arm (one naming a stop this station no
+        // longer carries) falls through to the whole-station path, same as the
+        // arrow-key ladder.
         {
           const sid = sel.selectedStationIds.length === 1 ? sel.selectedStationIds[0] : null;
+          const station = sid ? useDoc.getState().stations[sid] : undefined;
           const cellId = sel.selectedAnchorCellId;
-          if (sid && cellId && stationAnchorCell(useDoc.getState().stations[sid], cellId)) {
-            e.preventDefault();
-            sel.setSelectedAnchorCellId(null);
-            useDoc.getState().deleteStationAnchor(sid, cellId);
-            return;
+          const stopLineId = sel.selectedStopLineId;
+          if (station) {
+            // The label cell has nothing to delete, so it SWALLOWS the key
+            // rather than falling through — falling through deleted the whole
+            // station, which is the surprise every arm here exists to prevent.
+            // Esc drops the arm (the step-out ladder), and Delete then reaches
+            // the station.
+            if (sel.labelSelected) {
+              e.preventDefault();
+              return;
+            }
+            // Lock DOES close this arm, unlike the stop arm below: a hosted
+            // anchor is station-internal data whose only other door — the
+            // inspector's anchor row × — sits inside the panel's disabled
+            // fieldset. deleteStationAnchor cascades any transfers bound to the
+            // cell.
+            if (cellId && !station.locked && stationAnchorCell(station, cellId)) {
+              e.preventDefault();
+              sel.setSelectedAnchorCellId(null);
+              useDoc.getState().deleteStationAnchor(station.id, cellId);
+              return;
+            }
+            // A stop dot isn't a thing of its own to erase: the station LEAVES
+            // that line, which is what takes the dot with it (plus the edges
+            // through it and any transfers hanging off the stop — see
+            // removeStationFromLine). Deliberately NOT lock-gated: lock protects
+            // geometry and existence, not mode participation, and Edit Stops
+            // already adds and removes a locked station's membership freely —
+            // two doors onto one operation must not disagree. Not fanned out
+            // through dispatchMirrored either, unlike the layout NUDGES: which
+            // lines a station serves is topology, not a look to spread across
+            // matching stations.
+            if (stopLineId && station.stops.some((c) => c.lineId === stopLineId)) {
+              // A LIVE arm claims the key whether or not the write can proceed:
+              // the dot is on screen wearing a ring, so falling through to the
+              // whole-station delete would be the very bug this arm fixes.
+              e.preventDefault();
+              // Index off the MEMBERSHIP list. The stop cell implies membership
+              // (parse closes the two together), but on a doc where it somehow
+              // didn't, a -1 index would splice the member list into a copy of
+              // itself with every entry but the last duplicated.
+              const idx = useDoc.getState().lines[stopLineId]?.stations.indexOf(station.id) ?? -1;
+              if (idx >= 0) {
+                sel.setSelectedStopLineId(null);
+                useDoc.getState().removeStationFromLine(stopLineId, idx);
+              }
+              return;
+            }
           }
         }
         // Mixed station + bullet + label + polygon multi-selection takes

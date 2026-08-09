@@ -500,8 +500,9 @@ See [styles.ts](src/model/styles.ts).
   selected it stays clickable, so the popover's unlock toggle remains reachable right after
   locking. For stations the click-through applies in **idle and layout-edit modes** — lock
   protects geometry, not mode participation, so a locked station is still a transfer endpoint
-  and can still be toggled onto a line in append mode (those non-idle modes wipe the selection
-  on entry, so without the gate locked stations would be unreachable there). The
+  and its line membership stays editable — it can be toggled onto a line in append mode (those
+  non-idle modes wipe the selection on entry, so without the gate locked stations would be
+  unreachable there), and off one by the Delete that removes an armed stop. The
   `editing-station-layout` mode is the exception that also gets click-through: a live locked hit
   rect would route the click to `selectStation`, whose `layoutEditReconcile` **retargets** the
   layout editor onto the locked station rather than letting the click fall through and exit — so
@@ -510,9 +511,11 @@ See [styles.ts](src/model/styles.ts).
   ctrl+shift path-extend) can't target a locked, unselected station — unlock it first.
   Re-selecting a locked, deselected item: **Alt+click** (the deep-pick's geometric fallback
   reaches locked items) or **Alt+marquee** (includes locked items); stations also stay
-  selectable from the sidebar, and the **station inspector stays fully enabled** — only
-  stations get that. A locked, selected polygon/image renders its editing adornments
-  **ghosted** (`data-*-adornments="inactive"`: 0.4 opacity, pointer-events none) so the
+  selectable from the sidebar — only stations get that. A locked station's inspector still
+  RENDERS, but one `disabled` fieldset freezes every editing control in it: the footer's lock
+  toggle sits outside so unlocking stays reachable, and the Style detail force-opens (read-only)
+  because its own disclosure toggle is inside the frozen set. A locked, selected polygon/image
+  renders its editing adornments **ghosted** (`data-*-adornments="inactive"`: 0.4 opacity, pointer-events none) so the
   selection is visible without inviting edits. Polygon, RouteBullet, TextLabel and SvgImage
   share the same canvas protections, but their popovers **disable every editing control
   except the lock toggle** while locked. **Bulk lock/unlock**: a multi-selection (≥2 items,
@@ -1146,7 +1149,9 @@ it meaning). HOSTED anchors are station internals like a stop dot: rendered `poi
 (so alt-click reaches through them), edited only in the layout editor. Removal has two equivalent
 doors: the popover's anchor row (×) and the Delete key while the cell is armed
 (`selectedAnchorCellId` — the state the "Add transfer anchor" button leaves you in); both go
-through `deleteStationAnchor`, which cascades any transfers bound to the cell.
+through `deleteStationAnchor`, which cascades any transfers bound to the cell, and both are gated
+on the station's `locked` (the row by the inspector's whole-panel disabled fieldset, the key by
+its own check).
 
 In the lattice they ride as **passengers**: never in `stationLayoutNodes` (whose node identity is
 `lineId: string | null`, where null already means "the label", and where a non-`isLabel` node would
@@ -3430,10 +3435,19 @@ same three additions.
        stop swaps, right-click/R rotates, click selects the stop/label (arming the shape/size
        pickers). A transparent **shield rect** swallows near-miss presses so nothing falls through
        to the whole-station handlers (the mode is in `RIGHT_CLICK_PASSTHROUGH_MODES`).
-  2. **Keyboard nudge** (App.tsx): with a stop/label selected, arrows hop one lattice slot in the
+  2. **Keyboard** (App.tsx): with a stop/label selected, arrows hop one lattice slot in the
      pressed screen direction (`nudgeTarget`, Shift = diagonal), Alt+arrows fine-nudge label
      offsets (Shift ×5, live-writing `setLabelOffset`/`setLabelOffsetPerp` via
-     `screenDeltaToLabelOffsets` — the inverse of labelLayout's offset axes), R rotates.
+     `screenDeltaToLabelOffsets` — the inverse of labelLayout's offset axes), R rotates, and
+     **Delete removes the armed NODE, not the station**: a stop dot means the station LEAVES that
+     line (`removeStationFromLine`, indexed off the membership list), a hosted anchor goes through
+     `deleteStationAnchor`, and the label cell — nothing to delete — **swallows** the key rather
+     than letting it reach the station. Only a DANGLING arm falls through to the whole-station
+     path. The two destructive arms take **opposite lock policies**, each matching its own other
+     door: the anchor refuses on a locked station (its inspector row sits in the disabled
+     fieldset), the stop does not (lock protects geometry, not mode participation, and Edit Stops
+     already edits a locked station's membership). Delete is also the one op here that does NOT
+     fan out through `dispatchMirrored` — membership is topology, not a look.
      Both surfaces share
      [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts) — `dispatchMirrored` (one-shot
      controls, groups only when fanning out and no group is open — see the isHistoryGrouping
