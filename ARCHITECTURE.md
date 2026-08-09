@@ -1918,8 +1918,10 @@ grid-size cycler beside it.
 The two layers that default to hidden also answer to the keyboard: `A` flips anchors and `W`
 waypoints (App.tsx, writing through `setVisibility` exactly as the checkboxes do — no second
 opinion about where a flag lives), and the letter is a `shortcut` field on the registry entry so
-the menu row can advertise it. `G` toggles the grid and `Shift+G` cycles its size, both straight
-to the setters — the grid is not registry content.
+the menu row can advertise it. Both letters **toast which way the layer went**: the flag can flip
+with nothing changing on screen — anchors held up by the master switch or a mode reveal, waypoints
+simply out of view — so the message is the only confirmation the key landed. `G` toggles the grid
+and `Shift+G` cycles its size, both straight to the setters — the grid is not registry content.
 
 [visibility.ts](src/state/visibility.ts) holds the set as one `VISIBILITY_ITEMS` registry, because
 three consumers have to agree about it and each used to spell it out by hand: the menu, the export

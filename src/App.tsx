@@ -769,12 +769,19 @@ export default function App() {
       // mode ends. That is the reveal working as designed — the alternative, a
       // temporary write to the flag, needs a matching revert on every exit path
       // and strands the preference the first time one is missed.
+      // Which is also why each press toasts: with the layer off-screen, out of
+      // view, or held up by a mode, the message is the only confirmation the
+      // key landed, and it names the direction so a mis-hit is legible.
       if (!inFormControl && !mod && !e.repeat && (e.key === 'a' || e.key === 'A')) {
-        setVisibility('showAnchors', !useViewportStore.getState().showAnchors);
+        const next = !useViewportStore.getState().showAnchors;
+        setVisibility('showAnchors', next);
+        pushToast('info', next ? 'Showing anchors' : 'Hiding anchors');
         return;
       }
       if (!inFormControl && !mod && !e.repeat && (e.key === 'w' || e.key === 'W')) {
-        setVisibility('showWaypoints', !useViewportStore.getState().showWaypoints);
+        const next = !useViewportStore.getState().showWaypoints;
+        setVisibility('showWaypoints', next);
+        pushToast('info', next ? 'Showing waypoints' : 'Hiding waypoints');
         return;
       }
       // G is the one letter here that reads its Shift: plain toggles the grid,
