@@ -168,6 +168,18 @@ describe('mapLibrary', () => {
     });
   });
 
+  // MAP_SORTS is the ladder the picker takes its order from and the guard
+  // judges by, so the two halves cannot disagree: a rung the guard rejected
+  // would leave a persisted pref unusable on the next boot, and one the picker
+  // skipped would leave it unreachable in the UI.
+  describe('MAP_SORTS', () => {
+    it('is exactly what isMapSort accepts', () => {
+      for (const s of lib.MAP_SORTS) expect(lib.isMapSort(s)).toBe(true);
+      expect(lib.isMapSort('starred')).toBe(false);
+      expect(lib.isMapSort('')).toBe(false);
+    });
+  });
+
   describe('sortMaps', () => {
     type Summary = import('./mapLibrary').MapSummary;
     const summary = (over: Partial<Summary> & { id: string }): Summary => ({
@@ -187,7 +199,7 @@ describe('mapLibrary', () => {
         summary({ id: 'a', updatedAt: 3, createdAt: 3 }),
         summary({ id: 'z', updatedAt: 1, createdAt: 1, starred: true }),
       ];
-      for (const mode of ['updated', 'created', 'name'] as const) {
+      for (const mode of lib.MAP_SORTS) {
         expect(lib.sortMaps(rows, mode).map((m) => m.id)).toEqual(['a', 'z']);
       }
     });

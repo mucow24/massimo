@@ -7,7 +7,9 @@ import {
   cyclingColors,
   customLineColors,
   freshPaletteName,
+  isPaletteSort,
   libraryPalettes,
+  PALETTE_SORTS,
   paletteContentEqual,
   type Palette,
 } from './palettes';
@@ -141,6 +143,16 @@ describe('freshPaletteName', () => {
 
   it('a stem takes nothing from the "New palette" names already out there', () => {
     expect(freshPaletteName(new Set(['New palette']), 'frrf copy')).toBe('frrf copy');
+  });
+});
+
+// One ladder, one guard — the picker's set and the gate its value passes
+// through, which cannot disagree while both read PALETTE_SORTS.
+describe('PALETTE_SORTS', () => {
+  it('is exactly what isPaletteSort accepts', () => {
+    for (const s of PALETTE_SORTS) expect(isPaletteSort(s)).toBe(true);
+    expect(isPaletteSort('updated')).toBe(false);
+    expect(isPaletteSort('')).toBe(false);
   });
 });
 

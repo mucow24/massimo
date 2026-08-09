@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as HoverCard from '@radix-ui/react-hover-card';
-import * as Select from '@radix-ui/react-select';
 import * as Toggle from '@radix-ui/react-toggle';
-import { ChevronDownIcon, Cross2Icon, StarIcon, StarFilledIcon } from '@radix-ui/react-icons';
+import { Cross2Icon, StarIcon, StarFilledIcon } from '@radix-ui/react-icons';
 import {
   deleteMap,
   deleteVersion,
@@ -14,6 +13,8 @@ import {
   setVersionName,
   setVersionStarred,
   sortMaps,
+  isMapSort,
+  MAP_SORTS,
   type MapSort,
   type MapSummary,
   type VersionMeta,
@@ -22,6 +23,7 @@ import { useLibraryPointer } from '../state/libraryPointer';
 import { useLibraryPrefs } from '../state/libraryPrefs';
 import { markUnbacked } from '../state/saveBaseline';
 import { useDoc } from '../state/store';
+import { DialogSortSelect } from './dialogRow';
 
 interface Props {
   onClose: () => void;
@@ -32,13 +34,14 @@ interface Props {
 const when = (ms: number) =>
   new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
-const SORT_LABELS: { value: MapSort; label: string }[] = [
-  { value: 'updated', label: 'Last edited' },
-  { value: 'created', label: 'Date created' },
-  { value: 'name', label: 'Name' },
-];
-
-const isMapSort = (v: string): v is MapSort => v === 'updated' || v === 'created' || v === 'name';
+// The picker's wording, one entry per MAP_SORTS rung. Being a Record over the
+// union is the exhaustiveness guard: a mode added to MapSort fails to compile
+// until it is named here, and the picker then reads its order from the ladder.
+const SORT_LABELS: Record<MapSort, string> = {
+  updated: 'Last edited',
+  created: 'Date created',
+  name: 'Name',
+};
 
 /** Apply a column's star filter. Null (still loading) passes through. */
 const starredOnly = <T extends { starred?: true }>(rows: T[] | null, on: boolean): T[] | null =>
@@ -396,40 +399,15 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
                       label="Show starred maps only"
                       onToggle={setStarredMapsOnly}
                     />
-                    <Select.Root
+                    <DialogSortSelect
                       value={sort}
-                      onValueChange={(v) => {
-                        if (isMapSort(v)) setSort(v);
-                      }}
-                    >
-                      <Select.Trigger
-                        className="field-select map-library-sort"
-                        aria-label="Sort maps"
-                      >
-                        <Select.Value />
-                        <Select.Icon className="field-select-caret" aria-hidden="true">
-                          <ChevronDownIcon />
-                        </Select.Icon>
-                      </Select.Trigger>
-                      <Select.Content
-                        className="field-select-panel"
-                        position="popper"
-                        sideOffset={4}
-                        align="end"
-                      >
-                        <Select.Viewport>
-                          {SORT_LABELS.map((s) => (
-                            <Select.Item
-                              key={s.value}
-                              value={s.value}
-                              className="field-select-item"
-                            >
-                              <Select.ItemText>{s.label}</Select.ItemText>
-                            </Select.Item>
-                          ))}
-                        </Select.Viewport>
-                      </Select.Content>
-                    </Select.Root>
+                      sorts={MAP_SORTS}
+                      labels={SORT_LABELS}
+                      isSort={isMapSort}
+                      onChange={setSort}
+                      ariaLabel="Sort maps"
+                      className="map-library-sort"
+                    />
                   </div>
                 </div>
                 <div className="dialog-list">

@@ -39,7 +39,11 @@ vi.mock('../export/exportCanvas', async (importOriginal) => {
  * and assert on its state. beforeEach resets it.
  */
 const libState = vi.hoisted(() => ({ minted: 0 }));
-vi.mock('../state/mapLibrary', () => ({
+// Only the IndexedDB doors are mocked — jsdom has no indexedDB. Everything
+// pure spreads through real (order, the sort ladder and its guard), so a new
+// export can't silently leave this mock a member short.
+vi.mock('../state/mapLibrary', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../state/mapLibrary')>()),
   saveVersion: vi.fn(async () => ({ id: 1, version: 1 })),
   listMaps: vi.fn(async () => []),
   listVersions: vi.fn(async () => []),

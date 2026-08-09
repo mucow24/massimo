@@ -1,6 +1,65 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import * as Popover from '@radix-ui/react-popover';
-import { DotsHorizontalIcon } from '@radix-ui/react-icons';
+import * as Select from '@radix-ui/react-select';
+import { ChevronDownIcon, DotsHorizontalIcon } from '@radix-ui/react-icons';
+
+/**
+ * The sort picker a library dialog puts above its column — the map library's
+ * and the palette manager's are the same control over different ladders.
+ *
+ * Order comes from `sorts` (the union's ONE ladder, e.g. `MAP_SORTS`) and the
+ * wording from `labels`, a `Record<Sort, string>` whose exhaustiveness is what
+ * makes a rung added to the union fail to compile until it is named. `onChange`
+ * only ever sees a value the ladder's own guard accepted, so a dialog never
+ * re-spells its members.
+ *
+ * Unlike `FieldSelectContent` this Content is neither portaled nor collision-
+ * bounded: a dialog already renders inside its own portal, clear of the
+ * canvas-host stacking trap that panel exists to escape.
+ */
+export function DialogSortSelect<Sort extends string>({
+  value,
+  sorts,
+  labels,
+  isSort,
+  onChange,
+  ariaLabel,
+  className,
+}: {
+  value: Sort;
+  sorts: readonly Sort[];
+  labels: Record<Sort, string>;
+  isSort: (v: string) => v is Sort;
+  onChange: (sort: Sort) => void;
+  ariaLabel: string;
+  /** Extra class on the trigger — the two dialogs size theirs differently. */
+  className: string;
+}) {
+  return (
+    <Select.Root
+      value={value}
+      onValueChange={(v) => {
+        if (isSort(v)) onChange(v);
+      }}
+    >
+      <Select.Trigger className={`field-select ${className}`} aria-label={ariaLabel}>
+        <Select.Value />
+        <Select.Icon className="field-select-caret" aria-hidden="true">
+          <ChevronDownIcon />
+        </Select.Icon>
+      </Select.Trigger>
+      <Select.Content className="field-select-panel" position="popper" sideOffset={4} align="end">
+        <Select.Viewport>
+          {sorts.map((s) => (
+            <Select.Item key={s} value={s} className="field-select-item">
+              <Select.ItemText>{labels[s]}</Select.ItemText>
+            </Select.Item>
+          ))}
+        </Select.Viewport>
+      </Select.Content>
+    </Select.Root>
+  );
+}
 
 /**
  * A dialog-row command button — one square glyph, shared by the palette
