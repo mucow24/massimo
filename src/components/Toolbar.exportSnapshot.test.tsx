@@ -18,7 +18,10 @@ vi.mock('../export/exportCanvas', async (importOriginal) => {
 // jsdom has no indexedDB; a partial mock would leave the real module reachable.
 // The library pointer is NOT mocked — it is plain zustand over localStorage,
 // which jsdom has; beforeEach resets it instead.
-vi.mock('../state/mapLibrary', () => ({
+// Only the IndexedDB doors are mocked (jsdom has no indexedDB); the pure
+// exports spread through real.
+vi.mock('../state/mapLibrary', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../state/mapLibrary')>()),
   saveVersion: vi.fn(async () => ({ id: 1, version: 1 })),
   listMaps: vi.fn(async () => []),
   listVersions: vi.fn(async () => []),

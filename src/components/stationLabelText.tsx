@@ -8,6 +8,7 @@ import {
   measureTextLabel,
 } from '../geometry/textMeasure';
 import { InlineBullet } from './InlineBullet';
+import { decorationNodes } from './textDecoration';
 
 export interface RenderLabelTextArgs {
   text: string;
@@ -253,39 +254,22 @@ export function renderStationLabelText({
             // (same reason as the hover underline: svg2pdf ignores
             // text-decoration and Chromium leaks paint on rotated <text>). Tagged
             // with data-text-decoration so they read apart from the hover
-            // underline. Offsets/thickness scale with the RUN's size and hang off
-            // the shared baseline, matching LabelView for cross-label parity.
-            if (st && (st.underline || st.strike) && seg.advance > 0) {
-              const thickness = segFontSize * 0.07;
-              if (st.underline) {
-                nodes.push(
-                  <line
-                    key={`${i}-${j}-tu`}
-                    data-text-decoration="underline"
-                    x1={segCursor}
-                    x2={segCursor + seg.advance}
-                    y1={baselineY + segFontSize * 0.1}
-                    y2={baselineY + segFontSize * 0.1}
-                    stroke={runFill(st)}
-                    strokeWidth={thickness}
-                  />,
-                );
-              }
-              if (st.strike) {
-                nodes.push(
-                  <line
-                    key={`${i}-${j}-ts`}
-                    data-text-decoration="strike"
-                    x1={segCursor}
-                    x2={segCursor + seg.advance}
-                    y1={baselineY - segFontSize * 0.28}
-                    y2={baselineY - segFontSize * 0.28}
-                    stroke={runFill(st)}
-                    strokeWidth={thickness}
-                  />,
-                );
-              }
-            }
+            // underline, which is a whole-line rule at its own offset. The
+            // geometry is the one both label renderers share — see
+            // textDecoration.tsx.
+            nodes.push(
+              ...decorationNodes(
+                {
+                  x: segCursor,
+                  width: seg.advance,
+                  baselineY,
+                  fontSize: segFontSize,
+                  stroke: runFill(st),
+                  key: `${i}-${j}-t`,
+                },
+                st,
+              ),
+            );
           } else {
             const r = seg.diameter / 2;
             nodes.push(
