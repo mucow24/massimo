@@ -115,7 +115,7 @@ describe('regionGeometrySig', () => {
           ...base.lines.l1,
           color: '#ff0000',
           strokeWidth: 4,
-          strokeColor: '#123456',
+          strokeColor: { day: '#123456', night: '#123456' },
         },
       },
     };

@@ -6,7 +6,7 @@ import { useLineEditorPrefs } from '../../state/lineEditorPrefs';
 import type { LineId } from '../../model/types';
 import { DEFAULT_DOT_STYLE } from '../../model/dotStyle';
 import { ColorPalette } from './ColorPalette';
-import { ColorField } from '../ColorField';
+import { DayNightColorRow } from '../DayNightColorRow';
 import { useFieldHistory } from '../useFieldHistory';
 import { StationShapePicker } from '../StationShapePicker';
 import { NumericFieldRow } from '../NumericFieldRow';
@@ -317,25 +317,33 @@ export function LineInspector({ id }: { id: LineId }) {
             textboxAllowAboveMax
           />
           {/* Only while the casing is on — a 0-width stroke has no color to
-              pick. */}
+              pick. RESOLVED, not stored: a line style can set the casing to the
+              line's own color, and that sentinel is not a paintable pair — the
+              swatches show what's actually on each canvas (the same hue twice,
+              a line's body color being theme-blind). Picking a color here
+              writes a fixed pair (and detaches from the style), which is
+              exactly what reaching for a swatch means; the "follow the line"
+              mode itself is chosen in the style editor. */}
           {lineStrokeWidthOf(line) > 0 && (
-            <div className="options-popover-row">
-              <label htmlFor={`line-stroke-color-${line.id}`} className="options-popover-label">
-                Stroke color
-              </label>
-              {/* RESOLVED, not stored: a line style can set the casing to the
-                  line's own color, and that sentinel is not a paintable hex —
-                  the swatch shows what's actually on the canvas. Picking a
-                  color here writes a fixed one (and detaches from the style),
-                  which is exactly what reaching for the swatch means; the
-                  "follow the line" mode itself is chosen in the style editor. */}
-              <ColorField
-                id={`line-stroke-color-${line.id}`}
-                ariaLabel="Stroke color"
-                value={lineCasingColor(line, line.color)}
-                onChange={(c) => setLineStrokeColor(line.id, c)}
-              />
-            </div>
+            <DayNightColorRow
+              label="Stroke color"
+              id={`line-stroke-color-${line.id}`}
+              darkId={`line-dark-stroke-color-${line.id}`}
+              lightAriaLabel="Stroke color"
+              darkAriaLabel="Dark mode stroke color"
+              titleNoun="stroke color"
+              value={lineCasingColor(line, line.color, false)}
+              darkValue={lineCasingColor(line, line.color, true)}
+              onChange={(day) =>
+                setLineStrokeColor(line.id, { day, night: lineCasingColor(line, line.color, true) })
+              }
+              onDarkChange={(night) =>
+                setLineStrokeColor(line.id, {
+                  day: lineCasingColor(line, line.color, false),
+                  night,
+                })
+              }
+            />
           )}
         </>
       )}

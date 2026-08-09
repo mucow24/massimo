@@ -93,7 +93,7 @@ describe('MapCanvas — stroke edits repaint without a geometry rebuild', () => 
 
     // Color edit repaints the casing in place.
     act(() => {
-      useDoc.getState().setLineStrokeColor('L1', '#ff0000');
+      useDoc.getState().setLineStrokeColor('L1', { day: '#ff0000', night: '#ff0000' });
     });
     expect(casingEls('L1')[0].getAttribute('stroke')).toBe('#ff0000');
 

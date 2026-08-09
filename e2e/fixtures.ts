@@ -52,7 +52,10 @@ export interface SeedLine {
   // before the field existed (renders at the default width).
   width?: number;
   // Per-line casing. Omit to simulate a line saved before the fields
-  // existed (renders with no casing / the default white).
+  // existed (renders with no casing / the default white). The color is seeded
+  // in the LEGACY single-string form on purpose — the seed persists below the
+  // current store version, so the day/night migration wraps it into a pair and
+  // every spec here exercises that path for free.
   strokeWidth?: number;
   strokeColor?: string;
   // Default stop dot diameter in px, split by singleton vs. shared station.

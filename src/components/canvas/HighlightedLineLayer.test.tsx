@@ -463,7 +463,7 @@ describe('<HighlightedLineLayer /> — Edit Stops hover preview', () => {
         // A casing so the silhouette pass has something to paint; a distinct
         // color makes that casing path unambiguous to find.
         strokeWidth: 3,
-        strokeColor: '#00ff00',
+        strokeColor: { day: '#00ff00', night: '#00ff00' },
       }),
     };
     // s3/s4 carry L2 stops so the line's dots have geometry to render.

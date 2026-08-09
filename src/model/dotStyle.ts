@@ -12,7 +12,7 @@ import type {
 import { STOP_DOT_RADIUS } from '../geometry/orientation';
 import { legibleTextOn } from '../util/color';
 import { snapToStep } from '../util/grid';
-import { dayNightColorsEqual, resolveDayNight } from './dayNightColor';
+import { resolveDayNight, sentinelOrDayNightEqual } from './dayNightColor';
 
 // Every DotBaseShape, in the order the Styles panel's shape chips render. THE
 // ladder: the chips read their set from here and the file-import gate judges by
@@ -483,12 +483,10 @@ export function resolveDotRender(
   return out;
 }
 
-function dotColorsEqual(a: DotFill | DotStrokeColor, b: DotFill | DotStrokeColor): boolean {
-  // A sentinel ('line'/'none'/'bw') matches only the identical sentinel; two
-  // day/night pairs compare through the shared structural equality.
-  if (typeof a === 'string' || typeof b === 'string') return a === b;
-  return dayNightColorsEqual(a, b);
-}
+// A sentinel ('line'/'none'/'bw') matches only the identical sentinel; two
+// day/night pairs compare structurally — the shared sentinel-or-pair rule.
+const dotColorsEqual = (a: DotFill | DotStrokeColor, b: DotFill | DotStrokeColor): boolean =>
+  sentinelOrDayNightEqual(a, b);
 
 // Optional service-code color: absent compares equal only to absent; two
 // present values (each a 'line' sentinel or a day/night pair) compare via

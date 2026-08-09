@@ -64,6 +64,11 @@ interface Props {
   colorMap?: Record<LineId, string>;
   // Gap/underlay color for non-solid styles; matches the canvas background.
   underlayColor?: string;
+  // Which half of the line's theme-aware casing color to paint. A prop, not a
+  // `useDoc` subscription: a band emits one renderable per stripe, so this is
+  // one of the highest-instance-count components on the canvas — and the value
+  // is constant across a pan, so the memo below still bails out.
+  darkMode?: boolean;
   // Decorative render (the selected-line highlight overlay): repaint the band
   // with NO DOM identity — drops every `data-band-*`/`data-line-id` tag and
   // forces the paths inert (pointer-events: none, no handlers), regardless of
@@ -94,6 +99,7 @@ export const SegmentBand = memo(function SegmentBand({
   lines,
   colorMap,
   underlayColor,
+  darkMode = false,
   decorative = false,
 }: Props) {
   const lineId = spec.lines[stripeIndex].id;
@@ -165,7 +171,7 @@ export const SegmentBand = memo(function SegmentBand({
         data-band-casing={decorative ? undefined : ''}
         data-line-id={decorative ? undefined : lineId}
         fill="none"
-        stroke={lineCasingColor(live, color)}
+        stroke={lineCasingColor(live, color, darkMode)}
         strokeWidth={casingSilhouetteWidth(fullWidth, railW)}
         strokeLinecap="butt"
         strokeLinejoin="round"
@@ -231,7 +237,7 @@ export const SegmentBand = memo(function SegmentBand({
           offset={spec.stripeOffsets[stripeIndex]}
           bodyWidth={fullWidth}
           railW={railW}
-          color={lineCasingColor(live, color)}
+          color={lineCasingColor(live, color, darkMode)}
           lineId={decorative ? undefined : lineId}
         />
       )}

@@ -4,7 +4,7 @@ import { fireEvent, render } from '@testing-library/react';
 import { BandWarning, SegmentBand } from './SegmentBand';
 import { hatchPatternId } from './HatchPatterns';
 import type { SegmentBandSpec } from '../geometry/interlining';
-import type { Line, LineId } from '../model/types';
+import type { Line, LineId, LineStrokeColor } from '../model/types';
 import { makeBandSpec, makeLine } from '../test/fixtures';
 
 type StripeStyle = 'solid' | 'dashed' | 'hatched' | 'dotted' | 'dashed-open';
@@ -278,6 +278,9 @@ describe('<SegmentBand> — hit surface for gappy styles', () => {
 });
 
 describe('<SegmentBand> — casing (silhouette + inset body)', () => {
+  // One hex stands for both halves of the day/night casing color — these cases
+  // are about widths and paint order, not theme resolution (see the day/night
+  // describe below for that).
   const strokedLines = (
     strokeWidth: number,
     strokeColor?: string,
@@ -287,7 +290,7 @@ describe('<SegmentBand> — casing (silhouette + inset body)', () => {
       id: 'L1',
       stations: ['s1', 's2'],
       ...(strokeWidth > 0 ? { strokeWidth } : {}),
-      ...(strokeColor ? { strokeColor } : {}),
+      ...(strokeColor ? { strokeColor: { day: strokeColor, night: strokeColor } } : {}),
       ...(style && style !== 'solid' ? { segmentStyles: { 's1|s2': style } } : {}),
     }),
   });
@@ -405,6 +408,50 @@ describe('<SegmentBand> — casing (silhouette + inset body)', () => {
     );
     expect(sil().getAttribute('stroke')).toBe('#00aa55');
     expect(sil().getAttribute('stroke-width')).toBe('15.5'); // 14 + 1.5
+  });
+});
+
+// The casing color is theme-aware, and `darkMode` reaches the band as a PROP
+// (not a store read) — SegmentBand is memoized and one of the highest-instance
+// components on the canvas.
+describe('<SegmentBand> — day/night casing', () => {
+  const casedLine = (strokeColor: LineStrokeColor): Record<LineId, Line> => ({
+    L1: makeLine({ id: 'L1', stations: ['s1', 's2'], strokeWidth: 4, strokeColor }),
+  });
+  const casingStroke = (lines: Record<LineId, Line>, darkMode: boolean) =>
+    render(
+      <svg>
+        <SegmentBand
+          spec={baseSpec(['L1'])}
+          stripeIndex={0}
+          pass="silhouette"
+          lines={lines}
+          darkMode={darkMode}
+        />
+      </svg>,
+    )
+      .container.querySelector('[data-band-casing]')!
+      .getAttribute('stroke');
+
+  it('paints the day half in light mode and the night half in dark', () => {
+    const lines = casedLine({ day: '#ffffff', night: '#333333' });
+    expect(casingStroke(lines, false)).toBe('#ffffff');
+    expect(casingStroke(lines, true)).toBe('#333333');
+  });
+
+  it("paints the line's own color in both themes for the 'line' sentinel", () => {
+    // A line body has no night half, so the sentinel resolves the same either way.
+    const lines: Record<LineId, Line> = {
+      L1: makeLine({
+        id: 'L1',
+        stations: ['s1', 's2'],
+        color: '#c60c30',
+        strokeWidth: 4,
+        strokeColor: 'line',
+      }),
+    };
+    expect(casingStroke(lines, false)).toBe('#c60c30');
+    expect(casingStroke(lines, true)).toBe('#c60c30');
   });
 });
 

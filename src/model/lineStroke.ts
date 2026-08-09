@@ -16,6 +16,8 @@
 // without a geometry rebuild.
 
 import { roundClamp } from '../util/grid';
+import { resolveDayNight, sentinelOrDayNightEqual } from './dayNightColor';
+import type { DayNightColor, LineStrokeColor } from './types';
 
 // 0 = no casing; the field is dropped at the default so it is never stored.
 export const LINE_STROKE_WIDTH_DEFAULT = 0;
@@ -28,9 +30,11 @@ export const LINE_STROKE_WIDTH_MAX = 10;
 // Stroke widths live on a quarter-unit grid: the slider/steppers move in
 // 0.25 increments and the setters round to the nearest step.
 export const LINE_STROKE_STEP = 0.25;
-// Stored lowercase; the setter normalizes and drops the field at the
-// default so it is never stored.
-export const LINE_STROKE_COLOR_DEFAULT = '#ffffff';
+// The casing's theme-aware default: white on BOTH canvases — the historical
+// single-color look, so a save from before the day/night split repaints
+// identically in either mode. Stored lowercase; the setter normalizes and drops
+// the field when BOTH halves land here, so the default is never stored.
+export const LINE_STROKE_COLOR_DEFAULT: DayNightColor = { day: '#ffffff', night: '#ffffff' };
 
 /**
  * Sentinel stored in place of a hex in `Line.strokeColor`: "paint this in the
@@ -58,13 +62,33 @@ export const canonicalStrokeWidth = (w: number): number | undefined => {
 };
 
 /**
+ * Structural equality for a casing color: the {@link LINE_OWN_COLOR} sentinel
+ * matches only itself, two day/night pairs compare half by half. The `===` of
+ * the casing world — what `stylePropsEqual` and the setters' drop-at-default
+ * read, so neither can regress to comparing pairs by reference.
+ */
+export const lineStrokeColorsEqual = (a: LineStrokeColor, b: LineStrokeColor): boolean =>
+  sentinelOrDayNightEqual(a, b);
+
+/**
+ * Lowercase a casing color without collapsing it — the sentinel passes through,
+ * a pair gets both halves lowercased. The style-def canonicalizer wants this
+ * one (style props are concrete: they store the default rather than dropping
+ * it); the per-line setter wants {@link canonicalStrokeColor} below.
+ */
+export const normalizedStrokeColor = (c: LineStrokeColor): LineStrokeColor =>
+  typeof c === 'string' ? c : { day: c.day.toLowerCase(), night: c.night.toLowerCase() };
+
+/**
  * The canonical STORED form of a casing color: lowercased, and collapsed to
- * `undefined` at the white default (never stored). Shared by
+ * `undefined` when it equals the white default (never stored). The collapse is
+ * all-or-nothing over BOTH halves, like a transfer's theme-aware color — a
+ * white day casing over a black night one is a real override. Shared by
  * `setLineStrokeColor` and `sanitizeLineStroke`.
  */
-export const canonicalStrokeColor = (c: string): string | undefined => {
-  const norm = c.toLowerCase();
-  return norm === LINE_STROKE_COLOR_DEFAULT ? undefined : norm;
+export const canonicalStrokeColor = (c: LineStrokeColor): LineStrokeColor | undefined => {
+  const norm = normalizedStrokeColor(c);
+  return lineStrokeColorsEqual(norm, LINE_STROKE_COLOR_DEFAULT) ? undefined : norm;
 };
 
 /**
@@ -84,26 +108,32 @@ export const lineStrokeWidthOf = (line: { strokeWidth?: number } | null | undefi
  * line-colored casing captures the SENTINEL rather than baking that one line's
  * hue.
  */
-export const lineStrokeColorStored = (line: { strokeColor?: string } | null | undefined): string =>
-  line?.strokeColor ?? LINE_STROKE_COLOR_DEFAULT;
+export const lineStrokeColorStored = (
+  line: { strokeColor?: LineStrokeColor } | null | undefined,
+): LineStrokeColor => line?.strokeColor ?? LINE_STROKE_COLOR_DEFAULT;
 
 /**
- * Resolve a stored casing color to a paintable one: the
- * {@link LINE_OWN_COLOR} sentinel becomes `lineColor`, anything else passes
- * through. `lineColor` is the EFFECTIVE body color, so a line-colored casing
- * tracks the selection desaturation with the body instead of popping at full
- * saturation. Picker-less callers with no line to hand (see DashGlyph) pass
+ * Paintable casing color for the active theme: the {@link LINE_OWN_COLOR}
+ * sentinel becomes `lineColor`, a day/night pair resolves to its day half in
+ * light mode and its night half in dark. `lineColor` is the EFFECTIVE body
+ * color, so a line-colored casing tracks the selection desaturation with the
+ * body instead of popping at full saturation — and it is theme-blind (a line's
+ * body color has no night half), so the sentinel resolves the same on both
+ * canvases. Picker-less callers with no line to hand (see DashGlyph) pass
  * undefined and get the white casing default — the literal word must never
  * reach an SVG paint attribute.
  */
-const resolveOwnColor = (stored: string, lineColor: string | undefined): string =>
-  stored === LINE_OWN_COLOR ? (lineColor ?? LINE_STROKE_COLOR_DEFAULT) : stored;
-
-/** Paintable casing color: {@link lineStrokeColorStored} with the sentinel resolved. */
 export const lineCasingColor = (
-  line: { strokeColor?: string } | null | undefined,
+  line: { strokeColor?: LineStrokeColor } | null | undefined,
   lineColor: string | undefined,
-): string => resolveOwnColor(lineStrokeColorStored(line), lineColor);
+  darkMode: boolean,
+): string => {
+  const stored = lineStrokeColorStored(line);
+  if (stored === LINE_OWN_COLOR) {
+    return lineColor ?? resolveDayNight(LINE_STROKE_COLOR_DEFAULT, darkMode);
+  }
+  return resolveDayNight(stored, darkMode);
+};
 
 /**
  * The rendered rail width for a stripe of the given body width: each rail

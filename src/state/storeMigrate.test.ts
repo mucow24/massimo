@@ -749,6 +749,109 @@ describe('migrateDoc', () => {
     });
   });
 
+  describe('v25 → v26: line casing colors gain day/night halves', () => {
+    // Values here are lowercase because the rehydrate path only ever sees
+    // app-written data, which the setters already canonicalized — the same
+    // reason the transfer conversion above copies its input verbatim rather
+    // than re-normalizing it. Hand-edited case is the FILE path's problem, and
+    // `sanitizeLineStroke` lowercases there.
+    it('wraps a legacy single-color casing on lines AND line style defs together', () => {
+      const out = run(
+        {
+          lines: {
+            L1: { id: 'L1', service: '1', name: 'One', color: '#111111', stations: [], edges: [] },
+            L2: {
+              id: 'L2',
+              service: '2',
+              name: 'Two',
+              color: '#222222',
+              stations: [],
+              edges: [],
+              strokeWidth: 2,
+              strokeColor: '#abcdef',
+              styleId: 'y1',
+            },
+          },
+          styles: {
+            y1: {
+              id: 'y1',
+              name: 'Cased',
+              kind: 'line',
+              props: {
+                singletonDotStyleId: 'stop-filled-black',
+                multiDotStyleId: 'stop-filled-black',
+                singletonDotSize: 8,
+                multiDotSize: 8,
+                width: 14,
+                curveRadius: 24,
+                endStyle: 'square',
+                strokeWidth: 2,
+                strokeColor: '#abcdef',
+              },
+            },
+          },
+        } as Record<string, unknown>,
+        25,
+      );
+      const lines = out.lines as Record<string, Record<string, unknown>>;
+      expect(lines.L2.strokeColor).toEqual({ day: '#abcdef', night: '#abcdef' });
+      // A casing-less line stays clean — no key is materialized.
+      expect('strokeColor' in lines.L1).toBe(false);
+      const styles = out.styles as unknown as Record<string, StyleDef>;
+      expect((styles.y1.props as { strokeColor: unknown }).strokeColor).toEqual({
+        day: '#abcdef',
+        night: '#abcdef',
+      });
+      // Line and def converted together, so the wearer is still tagged.
+      expect(lines.L2.styleId).toBe('y1');
+    });
+
+    it("leaves the 'line' sentinel alone — it is not a color", () => {
+      const out = run(
+        {
+          lines: {
+            L1: {
+              id: 'L1',
+              service: '1',
+              name: 'One',
+              color: '#111111',
+              stations: [],
+              edges: [],
+              strokeWidth: 2,
+              strokeColor: 'line',
+            },
+          },
+        } as Record<string, unknown>,
+        25,
+      );
+      expect((out.lines as Record<string, Record<string, unknown>>).L1.strokeColor).toBe('line');
+    });
+
+    it('leaves an already-converted doc untouched at version >= 26', () => {
+      const out = run(
+        {
+          lines: {
+            L1: {
+              id: 'L1',
+              service: '1',
+              name: 'One',
+              color: '#111111',
+              stations: [],
+              edges: [],
+              strokeWidth: 2,
+              strokeColor: { day: '#ffffff', night: '#000000' },
+            },
+          },
+        } as Record<string, unknown>,
+        26,
+      );
+      expect((out.lines as Record<string, Record<string, unknown>>).L1.strokeColor).toEqual({
+        day: '#ffffff',
+        night: '#000000',
+      });
+    });
+  });
+
   describe('v9 → v10: style-def hygiene (round-1 docs)', () => {
     it('injects the factory Defaults into a round-1 doc with an explicit styles record', () => {
       const out = run({ styles: {} } as Record<string, unknown>, 9) as unknown as {

@@ -9,6 +9,7 @@ import { DEFAULT_DOC } from '../../model/transforms';
 import { makeDoc, makeLine, makeStation, makeStop, makeStyle } from '../../test/fixtures';
 import { DOT_SHAPE_PRESETS } from '../../model/dotStyle';
 import { openColorField } from '../../test/colorField';
+import type { LineStrokeColor } from '../../model/types';
 import { chooseOption, stepSlider } from '../../test/interaction';
 
 // Most style controls live inside the collapsible style-detail section
@@ -415,7 +416,7 @@ describe('<LineInspector /> — stroke controls', () => {
     over: {
       color?: string;
       strokeWidth?: number;
-      strokeColor?: string;
+      strokeColor?: LineStrokeColor;
     } = {},
   ) => {
     useDoc.setState({
@@ -462,41 +463,66 @@ describe('<LineInspector /> — stroke controls', () => {
     expect(useDoc.getState().lines.L1.strokeWidth).toBe(30);
   });
 
-  it('the color picker reflects the effective stroke color and writes edits', async () => {
+  it('the light picker reflects the day half and writes edits', async () => {
     const user = userEvent.setup();
     // A nonzero width: the color row only renders while the casing is on.
-    seed({ strokeWidth: 2, strokeColor: '#ff0000' });
+    seed({ strokeWidth: 2, strokeColor: { day: '#ff0000', night: '#ff0000' } });
     render(<LineInspector id="L1" />);
     const input = await openColorField(user, 'Stroke color');
     expect(input).toHaveValue('#ff0000');
     fireEvent.change(input, { target: { value: '#00aa55' } });
-    expect(useDoc.getState().lines.L1.strokeColor).toBe('#00aa55');
-    // Picking the default drops the key (never stored).
+    expect(useDoc.getState().lines.L1.strokeColor).toEqual({ day: '#00aa55', night: '#ff0000' });
+    // White on ONE side is still a real override — the collapse is
+    // all-or-nothing, so the key survives until the night half joins it.
+    fireEvent.change(input, { target: { value: '#ffffff' } });
+    expect(useDoc.getState().lines.L1.strokeColor).toEqual({ day: '#ffffff', night: '#ff0000' });
+  });
+
+  it('drops the key once BOTH halves are back on the white default', async () => {
+    const user = userEvent.setup();
+    seed({ strokeWidth: 2, strokeColor: { day: '#ff0000', night: '#ffffff' } });
+    render(<LineInspector id="L1" />);
+    const input = await openColorField(user, 'Stroke color');
     fireEvent.change(input, { target: { value: '#ffffff' } });
     expect('strokeColor' in useDoc.getState().lines.L1).toBe(false);
   });
 
-  it('defaults the color picker to white when the casing is on but colorless', async () => {
+  it('the dark picker reflects the night half and writes only it', async () => {
+    const user = userEvent.setup();
+    seed({ strokeWidth: 2, strokeColor: { day: '#ff0000', night: '#0000ff' } });
+    render(<LineInspector id="L1" />);
+    expect(await openColorField(user, 'Stroke color')).toHaveValue('#ff0000');
+    const dark = await openColorField(user, 'Dark mode stroke color');
+    expect(dark).toHaveValue('#0000ff');
+    fireEvent.change(dark, { target: { value: '#00aa55' } });
+    expect(useDoc.getState().lines.L1.strokeColor).toEqual({ day: '#ff0000', night: '#00aa55' });
+  });
+
+  it('defaults both pickers to white when the casing is on but colorless', async () => {
     const user = userEvent.setup();
     seed({ strokeWidth: 4 });
     render(<LineInspector id="L1" />);
     expect(await openColorField(user, 'Stroke color')).toHaveValue('#ffffff');
+    expect(await openColorField(user, 'Dark mode stroke color')).toHaveValue('#ffffff');
   });
 
   // A line style can set the casing to the LINE_OWN_COLOR sentinel and stamp it
   // onto its lines, so the inspector must cope with a stored 'line'. The
-  // sentinel is not a color: show what's actually PAINTED, never the word.
-  it("shows the line's own color in the picker when the casing follows it ('line')", async () => {
+  // sentinel is not a color: show what's actually PAINTED, never the word — and
+  // a line's body color is theme-blind, so both swatches show it.
+  it("shows the line's own color in both pickers when the casing follows it ('line')", async () => {
     const user = userEvent.setup();
     seed({ color: '#123456', strokeWidth: 4, strokeColor: 'line' });
     render(<LineInspector id="L1" />);
     expect(await openColorField(user, 'Stroke color')).toHaveValue('#123456');
+    expect(await openColorField(user, 'Dark mode stroke color')).toHaveValue('#123456');
   });
 
   it('hides the stroke color until there is a stroke to draw', () => {
     seed(); // width 0
     render(<LineInspector id="L1" />);
     expect(screen.queryByLabelText('Stroke color')).toBeNull();
+    expect(screen.queryByLabelText('Dark mode stroke color')).toBeNull();
   });
 
   it('one slider focus-arc collapses to a single undo entry', () => {

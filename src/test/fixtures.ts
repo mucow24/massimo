@@ -254,7 +254,7 @@ const STYLE_PROPS_DEFAULTS: StylePropsByKind = {
     curveRadius: LINE_CURVE_RADIUS_DEFAULT,
     endStyle: 'square',
     strokeWidth: 0,
-    strokeColor: '#ffffff',
+    strokeColor: { day: '#ffffff', night: '#ffffff' },
   },
   stopDot: DEFAULT_DOT_STYLE,
   textLabel: {

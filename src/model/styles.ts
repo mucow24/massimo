@@ -67,7 +67,9 @@ import {
   LINE_STROKE_WIDTH_MIN,
   canonicalStrokeWidth,
   lineStrokeColorStored,
+  lineStrokeColorsEqual,
   lineStrokeWidthOf,
+  normalizedStrokeColor,
 } from './lineStroke';
 import {
   TRANSFER_DRAW_DEFAULT,
@@ -240,7 +242,7 @@ export function stylePropsEqual(
       la.curveRadius === lb.curveRadius &&
       la.endStyle === lb.endStyle &&
       la.strokeWidth === lb.strokeWidth &&
-      la.strokeColor === lb.strokeColor &&
+      lineStrokeColorsEqual(la.strokeColor, lb.strokeColor) &&
       la.dashLength === lb.dashLength &&
       la.dashWidth === lb.dashWidth &&
       la.interlineGap === lb.interlineGap &&
@@ -316,7 +318,9 @@ export function canonicalStyleProps<K extends StyleKind>(
         // line ends were a covered field.
         endStyle: isLineEndStyle(p.endStyle) ? p.endStyle : LINE_END_STYLE_DEFAULT,
         strokeWidth: snapToStep(p.strokeWidth, LINE_STROKE_STEP, LINE_STROKE_WIDTH_MIN),
-        strokeColor: p.strokeColor.toLowerCase(),
+        // Lowercased but NOT collapsed: style props are concrete, so a def
+        // spells out the white default rather than dropping it.
+        strokeColor: normalizedStrokeColor(p.strokeColor),
         ...(dashLength !== undefined ? { dashLength } : {}),
         ...(dashWidth !== undefined ? { dashWidth } : {}),
         ...(interlineGap !== undefined ? { interlineGap } : {}),
@@ -585,10 +589,10 @@ export function duplicateStyle(doc: MapDoc, newId: string, sourceId: string, nam
 // A partial patch of ONE kind's props — the store/panel write shape for
 // updateStyleProps (each editor patches a single kind). A UNION, not a
 // Partial of the intersection: the same-named `color`/`strokeColor` keys no
-// longer share a type across kinds (transfer's are day/night objects,
-// textLabel's/line's are hex strings), so an intersection would collapse them
-// to `never`. canonicalStyleProps' explicit rebuild still discards keys
-// foreign to the def's kind after the spread.
+// longer share a type across kinds (transfer's is a day/night pair, line's is
+// that pair or the 'line' sentinel, textLabel's is a hex string), so an
+// intersection would collapse them to `never`. canonicalStyleProps' explicit
+// rebuild still discards keys foreign to the def's kind after the spread.
 export type StylePropsPatch =
   | Partial<LineStyleProps>
   | Partial<TextLabelStyleProps>
