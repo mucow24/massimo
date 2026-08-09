@@ -500,8 +500,9 @@ See [styles.ts](src/model/styles.ts).
   selected it stays clickable, so the popover's unlock toggle remains reachable right after
   locking. For stations the click-through applies in **idle and layout-edit modes** — lock
   protects geometry, not mode participation, so a locked station is still a transfer endpoint
-  and can still be toggled onto a line in append mode (those non-idle modes wipe the selection
-  on entry, so without the gate locked stations would be unreachable there). The
+  and its line membership stays editable — it can be toggled onto a line in append mode (those
+  non-idle modes wipe the selection on entry, so without the gate locked stations would be
+  unreachable there), and off one by the Delete that removes an armed stop. The
   `editing-station-layout` mode is the exception that also gets click-through: a live locked hit
   rect would route the click to `selectStation`, whose `layoutEditReconcile` **retargets** the
   layout editor onto the locked station rather than letting the click fall through and exit — so
@@ -510,9 +511,11 @@ See [styles.ts](src/model/styles.ts).
   ctrl+shift path-extend) can't target a locked, unselected station — unlock it first.
   Re-selecting a locked, deselected item: **Alt+click** (the deep-pick's geometric fallback
   reaches locked items) or **Alt+marquee** (includes locked items); stations also stay
-  selectable from the sidebar, and the **station inspector stays fully enabled** — only
-  stations get that. A locked, selected polygon/image renders its editing adornments
-  **ghosted** (`data-*-adornments="inactive"`: 0.4 opacity, pointer-events none) so the
+  selectable from the sidebar — only stations get that. A locked station's inspector still
+  RENDERS, but one `disabled` fieldset freezes every editing control in it: the footer's lock
+  toggle sits outside so unlocking stays reachable, and the Style detail force-opens (read-only)
+  because its own disclosure toggle is inside the frozen set. A locked, selected polygon/image
+  renders its editing adornments **ghosted** (`data-*-adornments="inactive"`: 0.4 opacity, pointer-events none) so the
   selection is visible without inviting edits. Polygon, RouteBullet, TextLabel and SvgImage
   share the same canvas protections, but their popovers **disable every editing control
   except the lock toggle** while locked. **Bulk lock/unlock**: a multi-selection (≥2 items,
@@ -3438,9 +3441,13 @@ same three additions.
      `screenDeltaToLabelOffsets` — the inverse of labelLayout's offset axes), R rotates, and
      **Delete removes the armed NODE, not the station**: a stop dot means the station LEAVES that
      line (`removeStationFromLine`, indexed off the membership list), a hosted anchor goes through
-     `deleteStationAnchor`. The label cell has nothing to delete, so it — like a DANGLING arm —
-     falls through to the whole-station path and the station goes. A LOCKED station falls through
-     too, but `deleteUnlockedSelection` protects it there, so that press is a no-op instead.
+     `deleteStationAnchor`, and the label cell — nothing to delete — **swallows** the key rather
+     than letting it reach the station. Only a DANGLING arm falls through to the whole-station
+     path. The two destructive arms take **opposite lock policies**, each matching its own other
+     door: the anchor refuses on a locked station (its inspector row sits in the disabled
+     fieldset), the stop does not (lock protects geometry, not mode participation, and Edit Stops
+     already edits a locked station's membership). Delete is also the one op here that does NOT
+     fan out through `dispatchMirrored` — membership is topology, not a look.
      Both surfaces share
      [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts) — `dispatchMirrored` (one-shot
      controls, groups only when fanning out and no group is open — see the isHistoryGrouping

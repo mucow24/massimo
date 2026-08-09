@@ -1593,10 +1593,10 @@ describe('App keyboard: Delete removes the armed station sub-selection', () => {
     expect(useDoc.getState().stations[s].stops.map((c) => c.lineId)).toContain(l1);
   });
 
-  it('a LOCKED station keeps the armed stop — and is not deleted either', () => {
-    // Lock exists to stop exactly this keypress from destroying things, and
-    // the inspector's stop rows are frozen for the same reason; the fall-
-    // through then hits deleteUnlockedSelection, which protects it too.
+  it("a LOCKED station's armed stop still leaves the line — the station stays", () => {
+    // Lock protects geometry and existence, not mode participation: Edit Stops
+    // already adds and removes a locked station's line membership with no lock
+    // check, and two doors onto one operation must not disagree.
     render(<App />);
     const { s, l1, l2 } = seed();
     useDoc.getState().setStationLocked(s, true);
@@ -1604,10 +1604,10 @@ describe('App keyboard: Delete removes the armed station sub-selection', () => {
     fireEvent.keyDown(window, { key: 'Delete' });
     const doc = useDoc.getState();
     expect(doc.stations[s]).toBeDefined();
-    expect(doc.stations[s].stops.map((c) => c.lineId).sort()).toEqual([l1, l2].sort());
+    expect(doc.stations[s].stops.map((c) => c.lineId)).toEqual([l2]);
   });
 
-  it('a LOCKED station keeps an armed transfer anchor too', () => {
+  it('a LOCKED station keeps an armed transfer anchor — its other door is frozen', () => {
     render(<App />);
     const s = useDoc.getState().addStation(0, 0);
     const cell = useDoc.getState().addStationAnchor(s, -1, 0);
@@ -1619,6 +1619,20 @@ describe('App keyboard: Delete removes the armed station sub-selection', () => {
     expect(useDoc.getState().stations[s].transferAnchors ?? []).toHaveLength(1);
   });
 
+  it('an armed LABEL cell swallows Delete; Esc then reaches the station', () => {
+    // A label has nothing to delete, so falling through wiped the station —
+    // the same surprise the stop arm fixes. Swallowing isn't a dead end: the
+    // step-out ladder drops the arm and the next press lands as usual.
+    render(<App />);
+    const { s } = seed();
+    useSelection.getState().setLabelSelected(true);
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(useDoc.getState().stations[s]).toBeDefined();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.keyDown(window, { key: 'Delete' });
+    expect(useDoc.getState().stations[s]).toBeUndefined();
+  });
+
   it('a DANGLING stop arm does not claim Delete — the station goes', () => {
     // Same rule as the arrow-key ladder: an arm pointing at a stop this
     // station no longer has must not silently eat the press.
@@ -1627,6 +1641,23 @@ describe('App keyboard: Delete removes the armed station sub-selection', () => {
     useSelection.getState().setSelectedStopLineId('L9');
     fireEvent.keyDown(window, { key: 'Delete' });
     expect(useDoc.getState().stations[s]).toBeUndefined();
+  });
+
+  it('a LIVE arm whose line lost the membership swallows the key, station intact', () => {
+    // The stop cell and the line's member list close over each other, so this
+    // doc shouldn't exist — but the arm is LIVE (a ring is painted on that
+    // dot), and falling through would turn the press into the whole-station
+    // delete this block exists to prevent. The -1 index is refused too: it
+    // would splice the member list into a copy of itself.
+    render(<App />);
+    const { s, l1 } = seed();
+    useDoc.setState((d) => ({ lines: { ...d.lines, [l1]: { ...d.lines[l1], stations: [] } } }));
+    useSelection.getState().setSelectedStopLineId(l1);
+    fireEvent.keyDown(window, { key: 'Delete' });
+    const doc = useDoc.getState();
+    expect(doc.stations[s]).toBeDefined();
+    expect(doc.stations[s].stops.map((c) => c.lineId)).toContain(l1);
+    expect(doc.lines[l1].stations).toEqual([]);
   });
 });
 
