@@ -1725,7 +1725,11 @@ describe('App keyboard shortcuts: view + grid toggles', () => {
       gridSize: 10,
       ...over,
     });
-  beforeEach(() => seedFlags());
+  beforeEach(() => {
+    seedFlags();
+    useToasts.setState({ toasts: [] });
+  });
+  const toastTexts = () => useToasts.getState().toasts.map((t) => t.text);
   afterEach(() => {
     const init = useViewportStore.getInitialState();
     seedFlags({
@@ -1750,6 +1754,26 @@ describe('App keyboard shortcuts: view + grid toggles', () => {
     expect(useViewportStore.getState().showWaypoints).toBe(true);
     fireEvent.keyDown(window, { key: 'w' });
     expect(useViewportStore.getState().showWaypoints).toBe(false);
+  });
+
+  // Both letters can flip a flag with nothing on screen changing — anchors nest
+  // under showNetwork and are force-revealed by two modes, waypoints may be
+  // nowhere near the viewport — so the toast is the only confirmation the press
+  // landed at all, and it has to name the direction it went.
+  it('A says which way the anchor layer just went', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(toastTexts()).toEqual(['Showing anchors']);
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(toastTexts()).toEqual(['Showing anchors', 'Hiding anchors']);
+  });
+
+  it('W says which way the waypoint layer just went', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: 'w' });
+    expect(toastTexts()).toEqual(['Showing waypoints']);
+    fireEvent.keyDown(window, { key: 'w' });
+    expect(toastTexts()).toEqual(['Showing waypoints', 'Hiding waypoints']);
   });
 
   it('g toggles the grid without touching its size', () => {
@@ -1787,6 +1811,7 @@ describe('App keyboard shortcuts: view + grid toggles', () => {
     fireEvent.keyDown(window, { key: 'a' });
     for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { key: 'a', repeat: true });
     expect(useViewportStore.getState().showAnchors).toBe(true);
+    expect(toastTexts()).toEqual(['Showing anchors']);
     fireEvent.keyDown(window, { key: 'g' });
     for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { key: 'g', repeat: true });
     expect(useViewportStore.getState().gridVisible).toBe(false);
@@ -1810,6 +1835,7 @@ describe('App keyboard shortcuts: view + grid toggles', () => {
         gridVisible: true,
         gridSize: 10,
       });
+      expect(toastTexts()).toEqual([]);
     } finally {
       document.body.removeChild(input);
     }
