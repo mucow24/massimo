@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { bakeHatchedPaints } from './exportCanvasPdf';
+import { bakeHatchedPaints, prepareSvgForPdf } from './exportCanvasPdf';
+import { CLIP_RASTER_INVERSE_TRANSFORM } from '../components/canvas/clipRaster';
 import { HATCH_STRIPE_WIDTH } from '../components/HatchPatterns';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -177,5 +178,46 @@ describe('bakeHatchedPaints', () => {
 
     // No <defs> inserted, nothing rewritten.
     expect(svg.innerHTML).toBe(before);
+  });
+});
+
+/**
+ * Wiring guard. The clip hoist is only useful if the export pipeline actually
+ * runs it — a correct `pdfClip` module wired to nothing still ships blank
+ * bands. Driving the whole bake sequence (rather than calling the hoist
+ * directly) is what makes deleting the call from `prepareSvgForPdf` go red.
+ *
+ * The fixture carries ONLY a clip, so every other bake in the sequence is a
+ * no-op on it.
+ */
+describe('prepareSvgForPdf — region-exclude clip wiring', () => {
+  it('leaves no transform on a clipPath child', async () => {
+    const svg = new DOMParser().parseFromString(
+      `<svg xmlns="${SVG_NS}" viewBox="0 0 100 100" width="100" height="100">
+         <defs><clipPath id="region-exclude-x" clipPathUnits="userSpaceOnUse">
+           <path transform="${CLIP_RASTER_INVERSE_TRANSFORM}" d="M 0 0 L 640 0 L 640 640 Z"/>
+         </clipPath></defs>
+         <g clip-path="url(#region-exclude-x)"><rect x="0" y="0" width="9" height="9"/></g>
+       </svg>`,
+      'image/svg+xml',
+    ).documentElement as unknown as SVGSVGElement;
+
+    const holder = document.createElement('div');
+    holder.setAttribute('style', 'position:absolute;left:-99999px;top:0;');
+    holder.appendChild(svg);
+    document.body.appendChild(holder);
+    try {
+      await prepareSvgForPdf(svg);
+      const child = svg.querySelector('clipPath > path')!;
+      // Hoisted onto the clipPath, so a reused clip can't compound in svg2pdf.
+      expect(child.hasAttribute('transform')).toBe(false);
+      expect(svg.querySelector('clipPath')!.getAttribute('transform')).toBe(
+        CLIP_RASTER_INVERSE_TRANSFORM,
+      );
+      // Geometry is untouched — hoisting never rewrites coordinates.
+      expect(child.getAttribute('d')).toBe('M 0 0 L 640 0 L 640 640 Z');
+    } finally {
+      document.body.removeChild(holder);
+    }
   });
 });
