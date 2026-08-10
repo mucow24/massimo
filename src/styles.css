@@ -2185,8 +2185,10 @@ button.field-select {
 }
 /* The day/night stroke-color row (DayNightColorRow) is the panel's one `.row`
    control; give it the same rhythm and label column as the shims above so it
-   lines up with the sliders around it. Self-contained (the popover's own `.row`
-   recipe only applies while the inspector is hosted by LinePopover). */
+   lines up with the sliders around it. Declared in full rather than leaning on
+   `.text-label-popover .row` — that recipe reaches the row only because
+   LinePopover happens to carry that class, and its 52px label column is the
+   wrong one here anyway. */
 .inspector .row {
   display: flex;
   align-items: center;

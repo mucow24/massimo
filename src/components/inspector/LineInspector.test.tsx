@@ -518,6 +518,40 @@ describe('<LineInspector /> — stroke controls', () => {
     expect(await openColorField(user, 'Dark mode stroke color')).toHaveValue('#123456');
   });
 
+  // Leaving the sentinel is the one edit that writes BOTH halves: it painted a
+  // single hue on both canvases, so "stop following the line, use this" has one
+  // honest reading. Carrying the line's CURRENT body color into the untouched
+  // half would freeze a hue the user never picked — and silently stop tracking
+  // the line on the canvas they weren't looking at.
+  it("picking either swatch off the 'line' sentinel writes the color into BOTH halves", async () => {
+    const user = userEvent.setup();
+    seed({ color: '#123456', strokeWidth: 4, strokeColor: 'line' });
+    const { unmount } = render(<LineInspector id="L1" />);
+    fireEvent.change(await openColorField(user, 'Stroke color'), {
+      target: { value: '#00aa55' },
+    });
+    expect(useDoc.getState().lines.L1.strokeColor).toEqual({ day: '#00aa55', night: '#00aa55' });
+    unmount();
+
+    // …and the dark swatch is the same door.
+    seed({ color: '#123456', strokeWidth: 4, strokeColor: 'line' });
+    render(<LineInspector id="L1" />);
+    fireEvent.change(await openColorField(user, 'Dark mode stroke color'), {
+      target: { value: '#00aa55' },
+    });
+    expect(useDoc.getState().lines.L1.strokeColor).toEqual({ day: '#00aa55', night: '#00aa55' });
+  });
+
+  it('once it is a real pair, each swatch moves only its own half', async () => {
+    const user = userEvent.setup();
+    seed({ color: '#123456', strokeWidth: 4, strokeColor: { day: '#ff0000', night: '#0000ff' } });
+    render(<LineInspector id="L1" />);
+    fireEvent.change(await openColorField(user, 'Stroke color'), {
+      target: { value: '#00aa55' },
+    });
+    expect(useDoc.getState().lines.L1.strokeColor).toEqual({ day: '#00aa55', night: '#0000ff' });
+  });
+
   it('hides the stroke color until there is a stroke to draw', () => {
     seed(); // width 0
     render(<LineInspector id="L1" />);

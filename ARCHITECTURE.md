@@ -780,17 +780,17 @@ All remaining fields optional and **never stored at default**:
   consistent by construction. Pure label placement — no repack, no region reconcile.
 - `strokeWidth?: number` — **casing rail, PRESENTATION**; centered on the body edges (half in /
   half out), missing ⇒ 0; rounded to a 0.25 grid (`LINE_STROKE_STEP`). Resolved live; never moves paths.
-- `strokeColor?: LineStrokeColor` — casing color: a **theme-aware `DayNightColor`** (`{day, night}`,
-  the same abstraction dot fill/stroke and transfer colors use), or the sentinel `'line'`
+- `strokeColor?: LineStrokeColor` — casing color: a **theme-aware `DayNightColor`** (`{day,
+  night}`, the same abstraction dot fill/stroke and transfer colors use), or the sentinel `'line'`
   (`LINE_OWN_COLOR`) — "the line's OWN color", resolved at render time, mirroring a dot style's
   `'line'` fill/stroke. Missing ⇒ white in BOTH themes; lowercased. The whole override drops only
-  when **both** halves match the default, the same all-or-nothing collapse a transfer color uses, so
-  a white day casing over a black night one survives. `lineStrokeColorStored` reads the raw value
-  (capture-by-example and the editors' mode pickers); `lineCasingColor(line, lineColor, darkMode)`
-  resolves it for paint, taking the EFFECTIVE color so a line-colored casing desaturates with the
-  body. The `'line'` sentinel resolves the same on both canvases — a line's body color has no night
-  half. `darkMode` reaches the painters (`SegmentBand`, `StopMarker`) as a PROP rather than a store
-  read: both are memoized and among the highest-instance components on the canvas.
+  when **both** halves match the default, the same all-or-nothing collapse a transfer color uses,
+  so a white day casing over a black night one survives. `lineStrokeColorStored` reads the raw
+  value (capture-by-example and the editors' mode pickers); `lineCasingColor(line, lineColor,
+  darkMode)` resolves it for paint, taking the EFFECTIVE color so a line-colored casing desaturates
+  with the body. The `'line'` sentinel resolves the same on both canvases — a line's body color
+  has no night half. `darkMode` reaches the painters (`SegmentBand`, `StopMarker`) as a PROP
+  rather than a store read: both are memoized and among the highest-instance components on canvas.
 - `dashLength?` / `dashWidth?: number` — **TfL-tick dimensions for this line's `dash` stops**,
   world units. PRESENTATION (never moves band geometry, resolved at render). Both **unset** ⇒
   derive from the stripe width (`dashLength = width`, `dashWidth = width/2` — the TfL proportions;
@@ -1203,8 +1203,8 @@ optional halo) comes from the constant `TRANSFER_STYLE_DEFAULTS` — there are *
 transfer settings** (see the MapDoc note above); the five optional fields are per-transfer
 overrides with the dot-style contract — absent ⇒ track the default, and `updateTransferStyle`
 drops a value equal to the default. `color`/`strokeColor` are **theme-aware `DayNightColor`s**
-(`{day, night}`, the same abstraction dot fill/stroke and a line's casing use) — day paints on the light canvas,
-night on the dark; the whole override drops only when **both** halves match the default
+(`{day, night}`, the same abstraction dot fill/stroke and a line's casing use) — day paints on
+the light canvas, night on the dark; the whole override drops only when **both** halves match the default
 (black/black body, white/white outline). `TransferLayer` resolves them to hex per the active
 theme via `resolveDayNight`. Map-wide restyling is the designated **Default** transfer
 style preset in `doc.styles`, not a doc field

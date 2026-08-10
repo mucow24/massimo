@@ -1514,27 +1514,35 @@ function sanitizeDotColor(
   return { day: o.day.toLowerCase(), night: o.night.toLowerCase() };
 }
 
+// Validate + normalize one raw LINE CASING color: the 'line' sentinel, a {day,
+// night} string pair, or a legacy single-color string from before the casing
+// gained a night half (wrapped so both halves take it — old colors are day
+// colors). Everything but the sentinel is lowercased, matching the stored form
+// the setters maintain. Returns undefined when the value doesn't conform.
+//
+// A bare string is put to `sanitizeDotColor` FIRST, with every flag allowed, so
+// the dot reader stays the one owner of what a bare word means and the casing
+// can never disagree with it. Whatever it recognizes is a sentinel, and of the
+// three only 'line' means anything for a casing — 'none' and 'bw' are refused
+// rather than wrapped, since neither is a color and `stroke="bw"` would reach
+// an SVG paint attribute. Anything it does NOT recognize is a legacy hex.
+function sanitizeLineStrokeColor(raw: unknown): LineStrokeColor | undefined {
+  if (typeof raw === 'string') {
+    const sentinel = sanitizeDotColor(raw, { none: true, bw: true });
+    if (sentinel !== undefined) return sentinel === LINE_OWN_COLOR ? LINE_OWN_COLOR : undefined;
+    const c = raw.toLowerCase();
+    return { day: c, night: c };
+  }
+  // The pair is exactly the dot colors' shape, so the same reader validates it.
+  return sanitizeDotColor(raw) as LineStrokeColor | undefined;
+}
+
 // Validate + normalize one raw transfer color: a legacy single-color string
 // (wrapped so both halves take it — old colors are day colors) or a {day,
 // night} string pair. Returns undefined when the value doesn't conform.
 // Unlike sanitizeDotColor this has no 'line'/'none' sentinels and does NOT
 // lowercase — transfer colors are compared exactly and legacy strings are
 // preserved verbatim (see legacyColorToDayNight / canonicalTransferColor).
-// Validate + normalize one raw LINE CASING color: the 'line' sentinel, a {day,
-// night} string pair, or a legacy single-color string from before the casing
-// gained a night half (wrapped so both halves take it — old colors are day
-// colors). Everything but the sentinel is lowercased, matching the stored form
-// the setters maintain. Returns undefined when the value doesn't conform.
-function sanitizeLineStrokeColor(raw: unknown): LineStrokeColor | undefined {
-  if (typeof raw === 'string' && raw !== LINE_OWN_COLOR) {
-    const c = raw.toLowerCase();
-    return { day: c, night: c };
-  }
-  // The sentinel and the pair are exactly the dot colors' shape, minus the
-  // narrower sentinels a casing has no meaning for.
-  return sanitizeDotColor(raw) as LineStrokeColor | undefined;
-}
-
 function sanitizeDayNightColor(raw: unknown): DayNightColor | undefined {
   if (typeof raw === 'string') return legacyColorToDayNight(raw);
   if (!raw || typeof raw !== 'object') return undefined;

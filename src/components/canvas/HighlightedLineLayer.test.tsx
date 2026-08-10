@@ -4,6 +4,7 @@ import { HighlightedLineLayer } from './HighlightedLineLayer';
 import { makeBandSpec, makeDoc, makeLine, makeStation, makeStop } from '../../test/fixtures';
 import { connectStationsOnLine, spliceStationIntoEdge } from '../../model/transforms';
 import { stopPosWorld } from '../../geometry/interlining';
+import { useDoc } from '../../state/store';
 import type { Line, LineCircle, Station } from '../../model/types';
 import type { OrderedRenderable } from '../../geometry/interlining';
 import type { UiMode } from '../../state/selection';
@@ -504,6 +505,63 @@ describe('<HighlightedLineLayer /> — Edit Stops hover preview', () => {
     expect(group!.querySelector('path[stroke="#00ff00"]')).not.toBeNull();
     // Its two stop dots ride along inside the same group (they used to vanish).
     expect(group!.querySelectorAll('[data-stop-line="L2"]')).toHaveLength(2);
+  });
+
+  // This layer resolves the theme-aware casing color itself — its own
+  // `useDoc(s => s.darkMode)` read feeding its own SegmentBand/StopMarker
+  // sweep — so the base layer's threading proves nothing about it. Every other
+  // fixture here uses a theme-blind pair (day === night), which cannot tell a
+  // dropped prop from a correct one; this one deliberately differs.
+  it('repaints a lifted line’s casing in the night half in dark mode', () => {
+    const casedL2 = {
+      ...lines(),
+      L2: makeLine({
+        id: 'L2',
+        service: 'B',
+        color: '#0000cc',
+        stations: ['s3', 's4'],
+        strokeWidth: 3,
+        strokeColor: { day: '#00ff00', night: '#ff00ff' },
+      }),
+    };
+    const withL2 = {
+      ...stations(),
+      s3: makeStation({
+        id: 's3',
+        x: 0,
+        y: 100,
+        stops: [makeStop('L2', { orientation: 'auto-horizontal' })],
+      }),
+      s4: makeStation({
+        id: 's4',
+        x: 100,
+        y: 100,
+        stops: [makeStop('L2', { orientation: 'auto-horizontal' })],
+      }),
+    };
+    const renderables: OrderedRenderable[] = [
+      { kind: 'stripe', band: makeBandSpec(['L1']), stripeIndex: 0, priority: 0, subOrder: 0 },
+      {
+        kind: 'stripe',
+        band: makeBandSpec(['L2'], { pairKey: 's3|s4', fromId: 's3', toId: 's4' }),
+        stripeIndex: 0,
+        priority: 1,
+        subOrder: 0,
+      },
+    ];
+    const renderHover = () =>
+      renderLayer(casedL2, withL2, appending(null), {
+        appendHover: { kind: 'line', lineId: 'L2' },
+        renderables,
+      }).container.querySelector('[data-append-hover-line="L2"]')!;
+
+    useDoc.setState({ darkMode: false });
+    expect(renderHover().querySelector('path[stroke="#00ff00"]')).not.toBeNull();
+
+    useDoc.setState({ darkMode: true });
+    const dark = renderHover();
+    expect(dark.querySelector('path[stroke="#ff00ff"]')).not.toBeNull();
+    expect(dark.querySelector('path[stroke="#00ff00"]')).toBeNull();
   });
 
   it('no foreign-line preview outside Edit Stops', () => {

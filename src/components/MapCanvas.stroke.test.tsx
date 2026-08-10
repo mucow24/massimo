@@ -173,3 +173,88 @@ describe('MapCanvas — stroke edits repaint without a geometry rebuild', () => 
     // path could not tell "the arrowhead is gone" from "the filter is wrong".)
   });
 });
+
+// The casing color is a day/night PAIR, and `darkMode` reaches SegmentBand and
+// StopMarker as a PROP (both are memoized and one-per-stripe / one-per-stop, so
+// a per-instance store subscription is the thing being avoided). Nothing else
+// pins that threading: every other fixture in the suite uses a theme-blind pair
+// — day === night — so a dropped prop paints the day half and no assertion
+// anywhere can tell. These cases exist to make that drop go red. Verified by
+// deleting each `darkMode={darkMode}` in MapCanvas: both fail.
+describe('MapCanvas — the casing follows the theme', () => {
+  // Deliberately DIFFERENT halves: a theme-blind pair proves nothing here.
+  const DAY_NIGHT = { day: '#ff0000', night: '#0000ff' };
+  // Rails paint as `fill` (rects), the terminus end cap as `stroke` (a line).
+  const casingPaint = (el: Element) => el.getAttribute('fill') ?? el.getAttribute('stroke');
+
+  // The file-level beforeEach resets the doc but not the SELECTION, and the
+  // overlay case below (like the highlight test above it) leaves a line
+  // selected — which doubles every casing element. Start each case from a
+  // deselected map so the counts below mean what they say.
+  beforeEach(() => {
+    act(() => {
+      useSelection.getState().selectLine(null);
+    });
+  });
+
+  const seedCasedLine = () => {
+    seedInterlinedPair();
+    act(() => {
+      useDoc.getState().setLineStrokeWidth('L1', 4);
+      useDoc.getState().setLineStrokeColor('L1', DAY_NIGHT);
+    });
+  };
+
+  it('paints the band casing in the night half in dark mode, and repaints on a toggle', () => {
+    render(<App />);
+    seedCasedLine();
+    expect(casingEls('L1')[0].getAttribute('stroke')).toBe('#ff0000');
+
+    act(() => {
+      useDoc.getState().setDarkMode(true);
+    });
+    expect(casingEls('L1')[0].getAttribute('stroke')).toBe('#0000ff');
+
+    // …and back, so the assertion can't pass on a one-way constant.
+    act(() => {
+      useDoc.getState().setDarkMode(false);
+    });
+    expect(casingEls('L1')[0].getAttribute('stroke')).toBe('#ff0000');
+  });
+
+  it('paints every stop-marker rail and end cap in the night half in dark mode', () => {
+    render(<App />);
+    seedCasedLine();
+    expect(markerCasingEls('L1').map(casingPaint)).toEqual(Array(6).fill('#ff0000'));
+
+    act(() => {
+      useDoc.getState().setDarkMode(true);
+    });
+    expect(markerCasingEls('L1').map(casingPaint)).toEqual(Array(6).fill('#0000ff'));
+  });
+
+  it('repaints the selected-line overlay copies too', () => {
+    // The highlight layer runs its own SegmentBand/StopMarker sweep above the
+    // dim, so it needs the theme threaded independently of the base layer.
+    render(<App />);
+    seedCasedLine();
+    act(() => {
+      useSelection.getState().selectLine('L1');
+      useDoc.getState().setDarkMode(true);
+    });
+    // Base + overlay: BOTH silhouettes carry the night half. Counting by
+    // signature the way the overlay test above does — the copies carry no
+    // data attributes.
+    const nightSilhouettes = Array.from(document.querySelectorAll('path')).filter(
+      (p) =>
+        p.getAttribute('stroke-width') === '18' &&
+        p.getAttribute('stroke') === '#0000ff' &&
+        !p.getAttribute('d')?.includes('Z'),
+    );
+    expect(nightSilhouettes).toHaveLength(2);
+    // 12 marker casings (both termini, base + overlay), none left on the day half.
+    const markers = markerCasingEls('L1');
+    expect(markers).toHaveLength(12);
+    expect(markers.map(casingPaint)).toEqual(Array(12).fill('#0000ff'));
+  });
+});

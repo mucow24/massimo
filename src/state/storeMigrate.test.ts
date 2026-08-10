@@ -827,7 +827,12 @@ describe('migrateDoc', () => {
       expect((out.lines as Record<string, Record<string, unknown>>).L1.strokeColor).toBe('line');
     });
 
-    it('leaves an already-converted doc untouched at version >= 26', () => {
+    // Run INSIDE the gate (v25), not past it: at 26 the block never executes,
+    // so the pass would prove nothing about the conversion — only that a
+    // migration which never ran left the data alone. A pair reaching the
+    // converter must come back untouched, including the half that equals the
+    // white default (the collapse is the setter's job, not the migration's).
+    it('is a no-op on a pair that is already converted', () => {
       const out = run(
         {
           lines: {
@@ -843,7 +848,7 @@ describe('migrateDoc', () => {
             },
           },
         } as Record<string, unknown>,
-        26,
+        25,
       );
       expect((out.lines as Record<string, Record<string, unknown>>).L1.strokeColor).toEqual({
         day: '#ffffff',

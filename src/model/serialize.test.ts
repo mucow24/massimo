@@ -1311,6 +1311,18 @@ describe('parse — line stroke sanitizing', () => {
     }
   });
 
+  // 'none' and 'bw' are the DOT slots' sentinels — a casing has no fill of its
+  // own to auto-contrast against, so neither means anything here. They must be
+  // refused rather than wrapped like a legacy hex, or `stroke="bw"` reaches an
+  // SVG paint attribute.
+  it("refuses the dot slots' narrower sentinels instead of wrapping them", () => {
+    for (const junk of ['none', 'bw']) {
+      const result = parse(buildWithStroke({ strokeColor: junk }));
+      expect(result.ok).toBe(true);
+      if (result.ok) expect('strokeColor' in result.doc.lines.L1).toBe(false);
+    }
+  });
+
   it('drops malformed stroke colors', () => {
     for (const junk of [5, null, true, {}, { day: '#fff' }, { day: 1, night: 2 }]) {
       const result = parse(buildWithStroke({ strokeColor: junk }));

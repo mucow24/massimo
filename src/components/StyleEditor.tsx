@@ -249,7 +249,7 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
       {props.strokeWidth > 0 && (
         <ColorTypeRow
           label="Stroke"
-          idBase={`style-${id}-stroke-color`}
+          idBase={`style-${id}-stroke`}
           types={['line', 'color'] as const}
           type={strokeType}
           // Leaving Line lands on the casing default rather than some remembered

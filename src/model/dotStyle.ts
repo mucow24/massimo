@@ -483,20 +483,15 @@ export function resolveDotRender(
   return out;
 }
 
-// A sentinel ('line'/'none'/'bw') matches only the identical sentinel; two
-// day/night pairs compare structurally — the shared sentinel-or-pair rule.
-const dotColorsEqual = (a: DotFill | DotStrokeColor, b: DotFill | DotStrokeColor): boolean =>
-  sentinelOrDayNightEqual(a, b);
-
 // Optional service-code color: absent compares equal only to absent; two
-// present values (each a 'line' sentinel or a day/night pair) compare via
-// dotColorsEqual (sentinel-vs-pair never equal).
+// present values (each a 'line' sentinel or a day/night pair) compare through
+// the shared sentinel-or-pair rule (sentinel-vs-pair never equal).
 function optDotColorEqual(
   a: DotServiceCodeColor | undefined,
   b: DotServiceCodeColor | undefined,
 ): boolean {
   if (a === undefined || b === undefined) return a === b;
-  return dotColorsEqual(a, b);
+  return sentinelOrDayNightEqual(a, b);
 }
 
 // Stroke width shares the casing width's quarter-unit grid (same stepper
@@ -541,9 +536,9 @@ export function canonicalDotStyle(s: DotStyle): DotStyle {
 export function dotStylesEqual(a: DotStyle, b: DotStyle): boolean {
   return (
     a.shape === b.shape &&
-    dotColorsEqual(a.fill, b.fill) &&
+    sentinelOrDayNightEqual(a.fill, b.fill) &&
     a.strokeWidth === b.strokeWidth &&
-    dotColorsEqual(a.strokeColor, b.strokeColor) &&
+    sentinelOrDayNightEqual(a.strokeColor, b.strokeColor) &&
     // Absent strokeAlign means 'center' — so a raw pre-strokeAlign dot style
     // still value-matches the (now strokeAlign-bearing) factory presets during
     // migration, where the bakes run before the field is backfilled. In the live

@@ -66,6 +66,11 @@ export const canonicalStrokeWidth = (w: number): number | undefined => {
  * matches only itself, two day/night pairs compare half by half. The `===` of
  * the casing world — what `stylePropsEqual` and the setters' drop-at-default
  * read, so neither can regress to comparing pairs by reference.
+ *
+ * A named re-export of the shared `sentinelOrDayNightEqual` rather than a
+ * second implementation: the dot slots call that one directly, since they are
+ * declared beside it. This module owns the casing vocabulary and four call
+ * sites across three others reach for it, so the name earns its keep here.
  */
 export const lineStrokeColorsEqual = (a: LineStrokeColor, b: LineStrokeColor): boolean =>
   sentinelOrDayNightEqual(a, b);
@@ -75,9 +80,18 @@ export const lineStrokeColorsEqual = (a: LineStrokeColor, b: LineStrokeColor): b
  * a pair gets both halves lowercased. The style-def canonicalizer wants this
  * one (style props are concrete: they store the default rather than dropping
  * it); the per-line setter wants {@link canonicalStrokeColor} below.
+ *
+ * The guard tests for the sentinel by VALUE, not by `typeof 'string'`: a legacy
+ * single-color casing is a string too, and passing one through as "the
+ * sentinel" would strand it all the way to `resolveDayNight`, which reads
+ * `.day` off it and paints `stroke={undefined}` — a blank casing with nothing
+ * anywhere to say why. Both load doors convert legacy strings to pairs before
+ * anything reaches here (`sanitizeLineStrokeColor` on the file path,
+ * `backfillLineCasingDayNightColors` on the rehydrate), so the distinction is
+ * unobservable today; it is written this way so it stays that way.
  */
 export const normalizedStrokeColor = (c: LineStrokeColor): LineStrokeColor =>
-  typeof c === 'string' ? c : { day: c.day.toLowerCase(), night: c.night.toLowerCase() };
+  c === LINE_OWN_COLOR ? c : { day: c.day.toLowerCase(), night: c.night.toLowerCase() };
 
 /**
  * The canonical STORED form of a casing color: lowercased, and collapsed to
