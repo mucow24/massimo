@@ -2389,24 +2389,26 @@ which are a separate slot-based system where Shift flips the lattice basis.
   doubling it (`||CODE||`, …) makes the bullet unfilled (line-color outline on a white/black
   interior by theme). Unclosed/mismatched delimiters and empty codes stay text; a backslash
   before a token escapes it to literal text (`\|a|` renders "|a|").
-- **`parseFormattedLine`** additionally parses HTML-like formatting tags —
-  `<b>` (two steps up the shipped weight ladder), `<i>`, `<u>`/`<s>` (drawn as explicit `<line>`s
+- **`parseFormattedLine`** additionally parses HTML-like formatting tags — the bold-ward trio
+  `<b>`/`<sb>`/`<m>` (3, 2 and 1 rungs bold-ward of the run's ANCHORED weight — the label's base,
+  or an enclosing `<w=…>` — each named for the rung it reaches from Roman; they share one open-tag
+  stack, so the innermost wins and two never sum), `<i>`, `<u>`/`<s>` (drawn as explicit `<line>`s
   off the run's baseline, at the offsets and weight both label renderers share — see
   `textDecoration.tsx`), `<color=…>` (named / `#hex` / `0xhex`), `<w=…>` font weight (a shipped
   weight name like `<w=Light>` = absolute, or `<w=+2>`/`<w=-1>` = signed ladder steps from the
   label's base weight; innermost `<w>` wins, invalid values stay literal — see
-  `resolveRunWeight`/`parseWeightToken`),
-  `<size=…>` font size (an absolute world-unit size like `<size=6>`, or `<size=+1>`/`<size=-2>` = a
-  signed delta from the label's base size; innermost `<size>` wins, floored at the min font size,
-  invalid values stay literal — see `resolveRunFontSize`/`parseSizeToken`),
-  and the glyph shortcuts `<air>` ✈ / `<xfer>` ↔ / `<c>` © / `<tm>` ™ — threading
-  the open-tag state across `\n` lines and column wraps until closed. Unknown tags stay literal
-  text. Both free-floating text labels (`LabelView`) and station labels (`renderStationLabelText`)
-  render these tags; the inline rename editor shows the raw tokens (`literalBullets`). Free-floating
-  labels also carry optional `leading` (line-spacing multiplier) and `tracking` (em letter-spacing)
-  per label; station labels carry the same two per-station (`Station.leading` / `Station.tracking`,
-  collapse-at-default). Both are applied by the measurer. Legacy docs (`<X>` circle bullets, unescaped literal pipes) are
-  rewritten once by `migrateLegacyInlineTokens`, gated by persist v8 / file `version` 2.
+  `resolveRunWeight`/`parseWeightToken`), `<size=…>` font size (an absolute world-unit size like
+  `<size=6>`, or `<size=+1>`/`<size=-2>` = a signed delta from the label's base size; innermost
+  `<size>` wins, floored at the min font size, invalid values stay literal — see
+  `resolveRunFontSize`/`parseSizeToken`), and the glyph shortcuts `<air>` ✈ / `<xfer>` ↔ / `<c>` ©
+  / `<tm>` ™ — threading the open-tag state across `\n` lines and column wraps until closed.
+  Unknown tags stay literal text. Both free-floating text labels (`LabelView`) and station labels
+  (`renderStationLabelText`) render these tags; the inline rename editor shows the raw tokens
+  (`literalBullets`). Free-floating labels also carry optional `leading` (line-spacing multiplier)
+  and `tracking` (em letter-spacing) per label; station labels carry the same two per-station
+  (`Station.leading` / `Station.tracking`, collapse-at-default). Both are applied by the measurer.
+  Legacy docs (`<X>` circle bullets, unescaped literal pipes) are rewritten once by
+  `migrateLegacyInlineTokens`, gated by persist v8 / file `version` 2.
 - **`measureTextLabel`** measures multi-line styled text **without a browser layout**: it lazily
   creates an offscreen 2D canvas and uses `ctx.measureText` (advance + ink bearings). **In jsdom
   there is no canvas backend**, so it falls back to a deliberate over-estimate
@@ -3794,9 +3796,13 @@ Each is confirmed in source/tests; file pointers included.
   start at 200: Söhne's ladder has no UltraLight. A stored 100 is folded onto Thin by
   `bakeLegacyUltraLightWeight` (called by both `parse()` and `migrateDoc`), and `<w=UltraLight>`
   still resolves — otherwise the tag would start rendering as literal text.
-- **Bold-ward is `BOLD_WEIGHT_STEPS` (3) rungs, never a hardcoded 2** — `<b>`, the station-label
+- **Reaching Bold is `BOLD_WEIGHT_STEPS` (3) rungs, never a hardcoded 2** — `<b>`, the station-label
   hover bump, and the legacy `labelBold` migration all read the one constant. The ladder carries a
-  SemiBold at 600, so a literal +2 would quietly demote every bold run to SemiBold.
+  SemiBold at 600, so a literal +2 would quietly demote every bold run to SemiBold. The deliberate
+  2 and 1 belong to `<sb>` and `<m>`, and live in `BOLDWARD_TAG_STEPS` (labelTokens.ts) because they
+  are that grammar's alone. All three are relative for the same reason: no bold-ward tag pins a
+  weight, so each reads the same way on a Light label as on a Roman one. `<w=SemiBold>` and friends
+  are the absolute forms.
 - **Underlines are explicit `<line>` geometry, not `text-decoration`** — Chromium leaves 1px
   residue on rotated `<text>` when `text-decoration` toggles. ([stationLabelText.tsx](src/components/stationLabelText.tsx))
 - **A service code is only safe to migrate when it's a valid bullet `CODE`** — `updateLine` rewrites

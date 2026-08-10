@@ -190,11 +190,13 @@ export const MAP_NAME_DEFAULT = 'Untitled map';
 
 /**
  * Shift a weight `delta` positions along LABEL_WEIGHT_VALUES (clamped at the
- * ends). Used by the per-station bold flag (+2) and the hover bump (+2 from
- * whatever the station currently resolves to).
+ * ends). Both callers — the legacy `labelBold` migration and the hover bump,
+ * the latter from whatever the station currently resolves to — pass
+ * `BOLD_WEIGHT_STEPS`, never a literal.
  *
  * Unknown weights pass through unchanged — keeps the function tolerant if a
- * file ever lands with an out-of-band value.
+ * file ever lands with an out-of-band value. That tolerance is why this is not
+ * `fonts.stepWeight`, which instead normalizes off-ladder input before moving.
  */
 export function bumpWeightByIndex(weight: TextLabelWeight, delta: number): TextLabelWeight {
   const i = LABEL_WEIGHT_VALUES.indexOf(weight);

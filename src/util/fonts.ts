@@ -99,17 +99,14 @@ export function stepWeight(weight: number, steps: number): number {
  * Rungs between a weight and its bold counterpart: Roman → Bold, Medium →
  * Heavy, Light → SemiBold.
  *
- * THREE, not two, because the ladder carries a SemiBold rung at 600. Every
- * bold-ward jump reads this one constant — `<b>`, the station-label hover bump,
- * and the legacy `labelBold` migration — so inserting or retiring a rung can't
- * quietly demote bold text to the neighbour below it.
+ * THREE, not two, because the ladder carries a SemiBold rung at 600. Every jump
+ * that means "make this Bold" reads this one constant — `<b>`, the
+ * station-label hover bump, and the legacy `labelBold` migration — so inserting
+ * or retiring a rung can't quietly demote bold text to the neighbour below it.
+ * The shallower bold-ward tags `<sb>` and `<m>` are a different question and
+ * carry their own counts; see `BOLDWARD_TAG_STEPS` (labelTokens.ts).
  */
 export const BOLD_WEIGHT_STEPS = 3;
-
-/** The `<b>` formatting tag's weight, clamped at Black. */
-export function bolderWeight(weight: number): number {
-  return stepWeight(weight, BOLD_WEIGHT_STEPS);
-}
 
 /**
  * Parse the value of a `<w=…>` inline label tag into either an absolute shipped

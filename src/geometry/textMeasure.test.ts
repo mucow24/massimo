@@ -6,6 +6,7 @@ import {
   measureTextLabel,
 } from './textMeasure';
 import { makeTextLabel } from '../test/fixtures';
+import { BOLD_WEIGHT_STEPS } from '../util/fonts';
 
 describe('measureTextLabel', () => {
   beforeEach(() => {
@@ -125,7 +126,11 @@ describe('measureTextLabel — formatting tags', () => {
     const m = measureTextLabel(makeTextLabel({ id: 'g', text: '<b>Bold</b> plain' }));
     const segs = m.lines[0].segments;
     expect(segs).toHaveLength(2);
-    expect(segs[0]).toMatchObject({ kind: 'text', value: 'Bold', style: { bold: true } });
+    expect(segs[0]).toMatchObject({
+      kind: 'text',
+      value: 'Bold',
+      style: { boldStep: BOLD_WEIGHT_STEPS },
+    });
     expect(segs[1]).toMatchObject({ kind: 'text', value: ' plain' });
     expect((segs[1] as { style?: unknown }).style).toBeUndefined();
   });
@@ -152,11 +157,17 @@ describe('measureTextLabel — formatting tags', () => {
 
   it('carries an open tag across newlines and exposes per-line entry state', () => {
     const m = measureTextLabel(makeTextLabel({ id: 'g', text: '<b>a\nb</b>c' }));
-    expect(m.lines[0].segments[0]).toMatchObject({ value: 'a', style: { bold: true } });
-    expect(m.lines[1].segments[0]).toMatchObject({ value: 'b', style: { bold: true } });
+    expect(m.lines[0].segments[0]).toMatchObject({
+      value: 'a',
+      style: { boldStep: BOLD_WEIGHT_STEPS },
+    });
+    expect(m.lines[1].segments[0]).toMatchObject({
+      value: 'b',
+      style: { boldStep: BOLD_WEIGHT_STEPS },
+    });
     expect(m.lines[1].segments[1]).toMatchObject({ value: 'c' });
-    expect(m.lines[0].entryStyle?.bold).toBe(0);
-    expect(m.lines[1].entryStyle?.bold).toBe(1);
+    expect(m.lines[0].entryStyle?.boldward).toEqual([]);
+    expect(m.lines[1].entryStyle?.boldward).toEqual([BOLD_WEIGHT_STEPS]);
   });
 
   it('carries an open <w=…> weight across newlines and exposes it as entry state', () => {
@@ -179,8 +190,14 @@ describe('measureTextLabel — formatting tags', () => {
       width: 20,
     });
     expect(m.lineCount).toBe(2);
-    expect(m.lines[0].segments[0]).toMatchObject({ value: 'aa', style: { bold: true } });
-    expect(m.lines[1].segments[0]).toMatchObject({ value: 'bb', style: { bold: true } });
+    expect(m.lines[0].segments[0]).toMatchObject({
+      value: 'aa',
+      style: { boldStep: BOLD_WEIGHT_STEPS },
+    });
+    expect(m.lines[1].segments[0]).toMatchObject({
+      value: 'bb',
+      style: { boldStep: BOLD_WEIGHT_STEPS },
+    });
   });
 });
 
