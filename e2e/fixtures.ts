@@ -395,6 +395,15 @@ export async function toggleViewLayer(page: Page, label: string): Promise<void> 
 }
 
 /**
+ * Open the toolbar's Map menu. `exact` matters for the same reason it does in
+ * `toggleViewLayer`: Playwright's name match is a substring, so a bare 'Map'
+ * also picks up the map-name button beside the trigger ("Untitled map").
+ */
+export async function openMapMenu(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Map', exact: true }).click();
+}
+
+/**
  * Expand the line popover's collapsed style detail (Line width → Stroke color).
  * The disclosure is remembered per browser profile, but every spec starts on
  * fresh storage, so it opens collapsed — call this before driving any of the

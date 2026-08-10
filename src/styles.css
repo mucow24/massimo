@@ -409,7 +409,7 @@ select option {
   background: var(--border-soft);
   margin: 4px 6px;
 }
-/* Checkable row (e.g. Canvas → Dark UI in day): a leading check gutter that
+/* Checkable row (e.g. Map → Dark UI in day): a leading check gutter that
    fills in when checked. The fixed gutter width reserves space in both states so
    the label sits at the same x whether or not the tick is showing. */
 .menu-panel .menu-item.menu-checkbox-item {
@@ -425,7 +425,7 @@ select option {
   flex-shrink: 0;
 }
 
-/* Nested flyout submenu (e.g. Canvas → Export → PNG/SVG). */
+/* Nested flyout submenu (e.g. Map → Export → PNG/SVG). */
 .menu-panel .menu-sub-trigger {
   display: flex;
   align-items: center;

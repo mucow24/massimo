@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedAndOpen, fourInLineWithBulletsAndLabel } from './fixtures';
+import { openMapMenu, seedAndOpen, fourInLineWithBulletsAndLabel } from './fixtures';
 
 // The canvas background rect and on-canvas label fills come from the JS theme
 // palette (CSS can't reach SVG attribute paint), and the mode is a field on the
@@ -117,7 +117,7 @@ test.describe('dark UI in day', () => {
     await expect(app).not.toHaveAttribute('data-theme', 'dark');
     await expect(bg).toHaveAttribute('fill', '#fafafa');
 
-    await page.getByRole('button', { name: 'Canvas' }).click();
+    await openMapMenu(page);
     await page.getByRole('menuitemcheckbox', { name: 'Dark UI in day' }).click();
 
     // Chrome flipped dark…
@@ -135,7 +135,7 @@ test.describe('dark UI in day', () => {
     const app = page.locator('.app');
     const bg = page.locator('[data-bg]');
 
-    await page.getByRole('button', { name: 'Canvas' }).click();
+    await openMapMenu(page);
     await page.getByRole('menuitemcheckbox', { name: 'Dark UI in day' }).click();
     await expect(app).toHaveAttribute('data-theme', 'dark');
     await expect(bg).toHaveAttribute('fill', '#fafafa');
@@ -154,7 +154,7 @@ test.describe('dark UI in day', () => {
   test('persists across a reload', async ({ page }) => {
     await seedAndOpen(page, fourInLineWithBulletsAndLabel);
 
-    await page.getByRole('button', { name: 'Canvas' }).click();
+    await openMapMenu(page);
     await page.getByRole('menuitemcheckbox', { name: 'Dark UI in day' }).click();
     await expect(page.locator('.app')).toHaveAttribute('data-theme', 'dark');
 

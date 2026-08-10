@@ -97,13 +97,13 @@ describe('Menu keyboard navigation', () => {
     const user = userEvent.setup();
     const onPng = vi.fn();
     render(
-      <Menu label="Canvas">
+      <Menu label="Map">
         <SubMenu label="Export">
           <MenuItem onClick={onPng}>PNG</MenuItem>
         </SubMenu>
       </Menu>,
     );
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     await user.keyboard('{ArrowDown}');
     expect(screen.getByRole('menuitem', { name: /Export/ })).toHaveFocus();
     await user.keyboard('{ArrowRight}');
@@ -118,14 +118,14 @@ describe('SubMenu', () => {
   it('opens on hover and closes when a sibling item is hovered', async () => {
     const user = userEvent.setup();
     render(
-      <Menu label="Canvas">
+      <Menu label="Map">
         <SubMenu label="Export">
           <MenuItem onClick={() => {}}>PNG</MenuItem>
         </SubMenu>
         <MenuItem onClick={() => {}}>Clear</MenuItem>
       </Menu>,
     );
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     const trigger = screen.getByRole('menuitem', { name: /Export/ });
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
 
@@ -145,13 +145,13 @@ describe('SubMenu', () => {
     const user = userEvent.setup();
     const onPng = vi.fn();
     render(
-      <Menu label="Canvas">
+      <Menu label="Map">
         <SubMenu label="Export">
           <MenuItem onClick={onPng}>PNG</MenuItem>
         </SubMenu>
       </Menu>,
     );
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     const trigger = screen.getByRole('menuitem', { name: /Export/ });
     await user.hover(trigger);
     await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'true'));
