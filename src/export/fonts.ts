@@ -8,8 +8,8 @@
  * TrueType/OpenType `.ttf`/`.otf`, never `.woff2` (Brotli + table transforms it
  * can't decode). `FONT_TABLE` mirrors the `@font-face` blocks in styles.css 1:1
  * — keep the two in sync if the shipped font set changes. (styles.css also
- * declares a DejaVu Sans fallback face, deliberately absent here: pdfGlyphs
- * loads it as the symbol source.)
+ * declares the Massimo Symbols and DejaVu Sans fallback faces, deliberately
+ * absent here: pdfGlyphs loads those as the symbol sources.)
  *
  * File paths are stored base-relative (no leading slash) and prefixed with
  * Vite's `BASE_URL` when fetched (see `fontUrl`). A hardcoded `/fonts/…` 404s

@@ -186,9 +186,13 @@ const TAG_ALTS =
 const BULLET_TOKEN_RE = new RegExp(`(?<esc>\\\\)?(?:${BULLET_ALTS})`, 'g');
 const FORMATTED_TOKEN_RE = new RegExp(`(?<esc>\\\\)?(?:${BULLET_ALTS}|${TAG_ALTS})`, 'g');
 
+// Söhne has no dingbats, so this one is drawn by the shipped Massimo Symbols
+// fallback — a single glyph cut to Söhne's cap height (see its NOTICE in
+// /public/fonts). Screen, PDF (glyph tracer) and PNG all read that same face.
 const AIR_GLYPH = '✈';
-// U+2194 rather than 🡘 (U+1F858): the shipped DejaVu Sans fallback covers
-// U+2194, so screen, PDF (glyph tracer), and PNG all draw the same arrow.
+// U+2194 rather than 🡘 (U+1F858): Söhne covers U+2194 itself, and the shipped
+// fallbacks cover it too, so screen, PDF (glyph tracer), and PNG all draw the
+// same arrow whatever face a run resolves to.
 const XFER_GLYPH = '↔';
 // ©/™ (U+00A9 / U+2122) are covered by the map's own text face, so
 // the PDF export keeps them as selectable HN text (no glyph tracing needed);

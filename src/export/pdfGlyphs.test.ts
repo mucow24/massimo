@@ -9,6 +9,7 @@ import {
   pickFace,
   resolveTextStyle,
   symbolFontFor,
+  SYMBOL_FONT_URLS,
 } from './pdfGlyphs';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -67,7 +68,8 @@ describe('glyphPathData', () => {
 // Guards the glyph-shortcut choices (labelTokens.ts) against a font swap that
 // silently drops a symbol from the export. Söhne carries the arrows as well as
 // © and ™ — unlike Helvetica Neue, which needed the fallback for ↔ — but it has
-// no dingbats, so `<air>` (✈) and its neighbours still ride on DejaVu Sans.
+// no dingbats, so `<air>` (✈) rides on the fallback chain: Massimo Symbols
+// first, DejaVu Sans behind it.
 //
 // Both faces are read straight off /public/fonts. The Söhne .ttf files are
 // git-ignored (licensed, not redistributable), so CI injects them from the
@@ -85,6 +87,8 @@ describe('shipped fonts cover the glyph-shortcut codepoints', () => {
     const buf = readFileSync(`public/fonts/${file}`);
     return opentype.parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
   };
+  /** `fonts/Foo.ttf` (base-relative, as SYMBOL_FONT_URLS stores it) → `Foo.ttf`. */
+  const basename = (url: string): string => url.replace(/^.*\//, '');
   const dejavu = parseFont('DejaVuSans.ttf');
   const covers = (font: opentype.Font, cp: number) =>
     font.charToGlyphIndex(String.fromCodePoint(cp)) !== 0;
@@ -106,6 +110,26 @@ describe('shipped fonts cover the glyph-shortcut codepoints', () => {
     expect(covers(dejavu, AIR)).toBe(true);
     expect(covers(dejavu, COPY)).toBe(true);
     expect(covers(dejavu, TM)).toBe(true);
+  });
+
+  // The chain is ORDERED and `symbolFontFor` takes the first cover, so the face
+  // that wins ✈ is a choice, not an accident: DejaVu's plane is a fussy
+  // side-view that dissolves at label sizes, and the symbols face exists to beat
+  // it. Reordering the list, or dropping the file, would silently hand the glyph
+  // back to DejaVu — visible only by looking at an export.
+  it('resolves ✈ to the symbols face, ahead of DejaVu', () => {
+    const winner = SYMBOL_FONT_URLS.find((url) => covers(parseFont(basename(url)), AIR));
+    expect(winner).toBeDefined();
+    expect(winner).not.toMatch(/DejaVu/);
+    // DejaVu stays in the chain behind it as the coverage net for everything
+    // else Söhne lacks — it is passed over for ✈, not removed.
+    expect(SYMBOL_FONT_URLS.some((url) => /DejaVu/.test(url))).toBe(true);
+  });
+
+  it('traces ✈ from the symbols face to non-empty outline path data', () => {
+    const winner = SYMBOL_FONT_URLS.find((url) => covers(parseFont(basename(url)), AIR))!;
+    const d = glyphPathData(parseFont(basename(winner)).getPath('✈', 0, 0, 1000));
+    expect(d.length).toBeGreaterThan(0);
   });
 
   it('traces © and ™ to non-empty outline path data (tracer fallback works)', () => {
@@ -511,7 +535,8 @@ describe('outlineAllText — glyph prototypes in <defs>, instances as <use>', ()
   it('keeps a symbol-font fallback separate from the same character in a main face', () => {
     // Same codepoint, but the bold face doesn't cover it so it traces from the
     // symbol font instead. Two different faces, therefore two prototypes — the
-    // dingbat case (✈ from DejaVu) sharing a codepoint with a covered glyph.
+    // dingbat case (✈ from the symbols face) sharing a codepoint with a
+    // covered glyph.
     const svg = seedTwoWeights();
     try {
       outlineAllText(svg, {
