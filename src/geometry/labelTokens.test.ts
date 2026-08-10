@@ -320,11 +320,37 @@ describe('parseFormattedLine (bullets + escapes + tags)', () => {
     expect(parse('<b><c></b>')).toEqual([{ kind: 'text', value: '©', style: style('bold') }]);
   });
 
+  it('substitutes one arrow per compass point, clockwise from north', () => {
+    expect(parse('<a_n><a_ne><a_e><a_se><a_s><a_sw><a_w><a_nw>')).toEqual([
+      { kind: 'text', value: '↑↗→↘↓↙←↖' },
+    ]);
+  });
+
+  it('substitutes the two double-headed arrows, <a_ew> being another <xfer>', () => {
+    expect(parse('<a_ns>')).toEqual([{ kind: 'text', value: '↕' }]);
+    expect(parse('<a_ew>')).toEqual([{ kind: 'text', value: '↔' }]);
+    expect(parse('<xfer>')).toEqual(parse('<a_ew>'));
+  });
+
+  it('merges an arrow into its surrounding run and takes the run style', () => {
+    expect(parse('Exit <a_ne> here')).toEqual([{ kind: 'text', value: 'Exit ↗ here' }]);
+    expect(parse('<b><a_s></b>')).toEqual([{ kind: 'text', value: '↓', style: style('bold') }]);
+  });
+
+  it('leaves near-miss arrow tags as literal text', () => {
+    // Only the ten names are tags; anything else keeps the typo visible.
+    expect(parse('<a_>')).toEqual([{ kind: 'text', value: '<a_>' }]);
+    expect(parse('<a_x>')).toEqual([{ kind: 'text', value: '<a_x>' }]);
+    expect(parse('<a_en>')).toEqual([{ kind: 'text', value: '<a_en>' }]);
+    expect(parse('<A_N>')).toEqual([{ kind: 'text', value: '<A_N>' }]);
+  });
+
   it('escapes tags with a backslash', () => {
     expect(parse('\\<b>x')).toEqual([{ kind: 'text', value: '<b>x' }]);
     expect(parse('\\<air>')).toEqual([{ kind: 'text', value: '<air>' }]);
     expect(parse('\\<c>')).toEqual([{ kind: 'text', value: '<c>' }]);
     expect(parse('\\<tm>')).toEqual([{ kind: 'text', value: '<tm>' }]);
+    expect(parse('\\<a_ne>')).toEqual([{ kind: 'text', value: '<a_ne>' }]);
   });
 
   it('styles do not attach to bullets', () => {
@@ -628,6 +654,8 @@ describe('hasFormattedToken', () => {
     expect(hasFormattedToken('go <xfer> across')).toBe(true);
     expect(hasFormattedToken('Acme <c> Inc')).toBe(true);
     expect(hasFormattedToken('brand <tm> here')).toBe(true);
+    expect(hasFormattedToken('exit <a_ne> up')).toBe(true);
+    expect(hasFormattedToken('platform <a_ns> lift')).toBe(true);
   });
 
   it('is false for plain text, unknown tags, and non-token brackets/pipes', () => {
@@ -635,6 +663,7 @@ describe('hasFormattedToken', () => {
     expect(hasFormattedToken('take the <A>')).toBe(false); // uppercase: not a tag name
     expect(hasFormattedToken('a < b')).toBe(false); // stray angle bracket
     expect(hasFormattedToken('<q>hi</q>')).toBe(false); // unknown tag name
+    expect(hasFormattedToken('<a_x>')).toBe(false); // not one of the arrow names
     expect(hasFormattedToken('take the (A)')).toBe(false);
     expect(hasFormattedToken('empty || [] {}')).toBe(false);
     expect(hasFormattedToken('unclosed |A and [B')).toBe(false);
@@ -713,6 +742,13 @@ describe('stationNameListText (compact list display)', () => {
     expect(stationNameListText('Acme<c>')).toBe('Acme©');
     expect(stationNameListText('Union<xfer>')).toBe('Union');
     expect(stationNameListText('A<xfer>B')).toBe('AB');
+  });
+
+  it('omits the ↔ under its other spelling too, and keeps the other arrows', () => {
+    // The rule is about the transfer ARROW, not about how it was typed.
+    expect(stationNameListText('Union<a_ew>')).toBe('Union');
+    expect(stationNameListText('Exit<a_ne>')).toBe('Exit↗');
+    expect(stationNameListText('Lift<a_ns>')).toBe('Lift↕');
   });
 
   it('collapses newlines and whitespace left by removed tokens, and trims', () => {

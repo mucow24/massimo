@@ -2409,13 +2409,17 @@ which are a separate slot-based system where Shift flips the lattice basis.
   `resolveRunWeight`/`parseWeightToken`), `<size=…>` font size (an absolute world-unit size like
   `<size=6>`, or `<size=+1>`/`<size=-2>` = a signed delta from the label's base size; innermost
   `<size>` wins, floored at the min font size, invalid values stay literal — see
-  `resolveRunFontSize`/`parseSizeToken`), and the glyph shortcuts `<air>` ✈ / `<xfer>` ↔ / `<c>` ©
-  / `<tm>` ™ — threading the open-tag state across `\n` lines and column wraps until closed.
-  Unknown tags stay literal text. Both free-floating text labels (`LabelView`) and station labels
-  (`renderStationLabelText`) render these tags; the inline rename editor shows the raw tokens
-  (`literalBullets`). Free-floating labels also carry optional `leading` (line-spacing multiplier)
-  and `tracking` (em letter-spacing) per label; station labels carry the same two per-station
-  (`Station.leading` / `Station.tracking`, collapse-at-default). Both are applied by the measurer.
+  `resolveRunFontSize`/`parseSizeToken`), and the self-closing glyph shortcuts of `GLYPH_TAGS` —
+  `<air>` ✈, `<c>` ©, `<tm>` ™, the eight compass arrows `<a_n>` ↑ … `<a_nw>` ↖, and the
+  double-headed `<a_ns>` ↕ / `<a_ew>` ↔, that last one also spelled `<xfer>` for what it means on a
+  map. A shortcut opens nothing — it substitutes its character into the surrounding run, which then
+  measures and kerns as one piece; every other tag threads its open-tag state across `\n` lines and
+  column wraps until closed. Unknown tags stay literal text. Both free-floating text labels
+  (`LabelView`) and station labels (`renderStationLabelText`) render these tags; the inline rename
+  editor shows the raw tokens (`literalBullets`). Free-floating labels also carry optional `leading`
+  (line-spacing multiplier) and `tracking` (em letter-spacing) per label; station labels carry the
+  same two per-station (`Station.leading` / `Station.tracking`, collapse-at-default). Both are
+  applied by the measurer.
   Legacy docs (`<X>` circle bullets, unescaped literal pipes) are rewritten once by
   `migrateLegacyInlineTokens`, gated by persist v8 / file `version` 2.
 - **`measureTextLabel`** measures multi-line styled text **without a browser layout**: it lazily
