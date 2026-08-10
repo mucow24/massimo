@@ -1144,22 +1144,40 @@ export function MapCanvas() {
         tol: LINE_TAG_SNAP_TOLERANCE / view.viewport.zoom,
       }).canonT;
     };
+    // Where a pointer over this band lands on ONE line's stripe. The hover
+    // ghost and the click must resolve the same drop, so they read it from
+    // here rather than each re-deriving it — a drifted copy would preview the
+    // tag somewhere the click doesn't put it.
+    //
+    // Null on a line the band doesn't carry. That guard is the same `idx < 0`
+    // one `snapTagT` makes above, and it is not decorative: an unguarded
+    // `stripeOffsets[-1]` is `undefined`, which turns every number downstream
+    // into NaN and would commit a tag with a NaN position.
+    const tagDropAt = (
+      lineId: LineId,
+      e: { clientX: number; clientY: number; shiftKey: boolean },
+    ) => {
+      const line = lines[lineId];
+      if (!line) return null;
+      // This stripe's baked offset within the band.
+      const k = spec.lines.findIndex((l) => l.id === lineId);
+      if (k < 0) return null;
+      const offset = spec.stripeOffsets[k];
+      const world = view.screenToWorld(e.clientX, e.clientY);
+      const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
+      // The band's pairKey is canonical, so for this band's stations
+      // fromCanon < toCanon.
+      const [fromCanon, toCanon] = spec.pairKey.split('|');
+      return { line, offset, t: snapTagT(closest.t, offset, e.shiftKey), fromCanon, toCanon };
+    };
     return {
       onLineHover: (lineId: LineId, e: React.PointerEvent) => {
-        const line = lines[lineId];
-        if (!line) return;
-        // Find this stripe's baked offset within the band.
-        const k = spec.lines.findIndex((l) => l.id === lineId);
-        const offset = spec.stripeOffsets[k];
-        const world = view.screenToWorld(e.clientX, e.clientY);
-        const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
-        const t = snapTagT(closest.t, offset, e.shiftKey);
+        const drop = tagDropAt(lineId, e);
+        if (!drop) return;
+        const { line, offset, t, fromCanon, toCanon } = drop;
         const sample = sampleOffsetPath(spec.centerline, spec.radius, offset, t);
-        // Determine canon vs line-traversal: the band's pairKey is canonical.
-        // For this band's stations, fromCanon < toCanon. The line traverses
-        // forward-canon iff line.stations contains (fromCanon, toCanon) as a
-        // consecutive pair.
-        const [fromCanon, toCanon] = spec.pairKey.split('|');
+        // The line traverses forward-canon iff line.stations contains
+        // (fromCanon, toCanon) as a consecutive pair.
         const forward = lineTraversesForwardCanon(line, fromCanon, toCanon);
         selection.setLineTagHoverPreview({
           lineId,
@@ -1177,14 +1195,9 @@ export function MapCanvas() {
       },
       onLineClick: (lineId: LineId, e: React.MouseEvent) => {
         e.stopPropagation();
-        const line = lines[lineId];
-        if (!line) return;
-        const k = spec.lines.findIndex((l) => l.id === lineId);
-        const offset = spec.stripeOffsets[k];
-        const world = view.screenToWorld(e.clientX, e.clientY);
-        const closest = closestParamOnOffsetPath(spec.centerline, spec.radius, offset, world);
-        const t = snapTagT(closest.t, offset, e.shiftKey);
-        const [fromCanon, toCanon] = spec.pairKey.split('|');
+        const drop = tagDropAt(lineId, e);
+        if (!drop) return;
+        const { offset, t, fromCanon, toCanon } = drop;
         const stripeTotal = offsetPathLength(spec.centerline, spec.radius, offset);
         // Anchor to whichever endpoint is nearer at insertion time.
         const { anchorEnd, distance } = anchorFromArcLen(t * stripeTotal, stripeTotal);

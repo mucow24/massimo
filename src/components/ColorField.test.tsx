@@ -21,6 +21,27 @@ describe('<ColorField />', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  // The picker is PORTALED out of the swatch's subtree, so "inside" can't be a
+  // single containment test — it has to name the popover as well. Get that
+  // wrong and the first press on a swatch/slider shuts the picker.
+  it('closes on a press outside, but not on one inside the portaled picker', async () => {
+    const user = userEvent.setup();
+    render(
+      <div>
+        <ColorField value="#112233" onChange={vi.fn()} ariaLabel="Test color" />
+        <button type="button">elsewhere</button>
+      </div>,
+    );
+    await user.click(screen.getByLabelText('Test color'));
+    const picker = screen.getByRole('dialog');
+
+    await user.click(screen.getByLabelText('Test color hex value'));
+    expect(screen.getByRole('dialog')).toBe(picker);
+
+    await user.click(screen.getByRole('button', { name: 'elsewhere' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('does not open when disabled', async () => {
     const user = userEvent.setup();
     render(<ColorField value="#112233" onChange={vi.fn()} ariaLabel="Test color" disabled />);

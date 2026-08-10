@@ -919,6 +919,44 @@ export function stripRetiredSeamFields<T extends LinesAndStyles>(doc: T): T {
 }
 
 /**
+ * The shape every "a line-style field gained a rule" rehydrate backfill walks:
+ * visit each `kind: 'line'` StyleDef, offer its RAW persisted props to `patch`,
+ * and fold whatever comes back over them. `patch` returns `null` for a def that
+ * already conforms.
+ *
+ * Props arrive as a loose `Record<string, unknown>` on purpose — a def from
+ * before the field existed is not a valid `LineStyleProps` yet, which is the
+ * whole reason these backfills run — so the caller reads the one key it owns
+ * and asserts nothing about the rest.
+ *
+ * Reference-stability is the contract, not a nicety: `migrateDoc` is pinned by
+ * `expect(out).toBe(input)` for an already-canonical doc, so a walker that
+ * rebuilt `styles` unconditionally would break every one of those tests. Owned
+ * here once so the three backfills below cannot each get it subtly wrong.
+ */
+function patchLineStyleDefProps<T extends { styles?: Record<string, StyleDef> }>(
+  doc: T,
+  patch: (props: Record<string, unknown>) => Record<string, unknown> | null,
+): T {
+  if (!doc.styles) return doc;
+  let changed = false;
+  const styles: Record<string, StyleDef> = {};
+  for (const id of Object.keys(doc.styles)) {
+    const def = doc.styles[id];
+    if (def && def.kind === 'line' && def.props && typeof def.props === 'object') {
+      const next = patch(def.props as unknown as Record<string, unknown>);
+      if (next) {
+        styles[id] = { ...def, props: { ...def.props, ...next } } as StyleDef;
+        changed = true;
+        continue;
+      }
+    }
+    styles[id] = def;
+  }
+  return changed ? ({ ...doc, styles } as T) : doc;
+}
+
+/**
  * Fill the split dot-TYPE ids (`singletonDotStyleId` / `multiDotStyleId`) on
  * LINE STYLE DEFS saved before dot type became a covered line-style field —
  * absent ⇒ the stopDot ⭐ default id. Only the defs need this: a line's own
@@ -929,33 +967,15 @@ export function stripRetiredSeamFields<T extends LinesAndStyles>(doc: T): T {
  * presence) and reference-stable when every line def already carries both.
  */
 export function bakeLineStyleDotIds<T extends { styles?: Record<string, StyleDef> }>(doc: T): T {
-  if (!doc.styles) return doc;
-  let changed = false;
-  const styles: Record<string, StyleDef> = {};
-  for (const id of Object.keys(doc.styles)) {
-    const def = doc.styles[id];
-    if (def && def.kind === 'line' && def.props && typeof def.props === 'object') {
-      // Raw persisted props — a loose view, since a pre-v20 def isn't a valid
-      // LineStyleProps yet.
-      const props = def.props as unknown as Record<string, unknown>;
-      const missingSingle = !('singletonDotStyleId' in props);
-      const missingMulti = !('multiDotStyleId' in props);
-      if (missingSingle || missingMulti) {
-        styles[id] = {
-          ...def,
-          props: {
-            ...props,
-            ...(missingSingle ? { singletonDotStyleId: DEFAULT_STOP_DOT_STYLE_ID } : {}),
-            ...(missingMulti ? { multiDotStyleId: DEFAULT_STOP_DOT_STYLE_ID } : {}),
-          },
-        } as StyleDef;
-        changed = true;
-        continue;
-      }
-    }
-    styles[id] = def;
-  }
-  return changed ? ({ ...doc, styles } as T) : doc;
+  return patchLineStyleDefProps(doc, (props) => {
+    const missingSingle = !('singletonDotStyleId' in props);
+    const missingMulti = !('multiDotStyleId' in props);
+    if (!missingSingle && !missingMulti) return null;
+    return {
+      ...(missingSingle ? { singletonDotStyleId: DEFAULT_STOP_DOT_STYLE_ID } : {}),
+      ...(missingMulti ? { multiDotStyleId: DEFAULT_STOP_DOT_STYLE_ID } : {}),
+    };
+  });
 }
 
 /**
@@ -973,26 +993,9 @@ export function bakeLineStyleDotIds<T extends { styles?: Record<string, StyleDef
 export function backfillLineStyleEndStyle<T extends { styles?: Record<string, StyleDef> }>(
   doc: T,
 ): T {
-  if (!doc.styles) return doc;
-  let changed = false;
-  const styles: Record<string, StyleDef> = {};
-  for (const id of Object.keys(doc.styles)) {
-    const def = doc.styles[id];
-    if (def && def.kind === 'line' && def.props && typeof def.props === 'object') {
-      // Raw persisted props — a pre-v22 def isn't a valid LineStyleProps yet.
-      const props = def.props as unknown as Record<string, unknown>;
-      if (!isLineEndStyle(props.endStyle)) {
-        styles[id] = {
-          ...def,
-          props: { ...props, endStyle: LINE_END_STYLE_DEFAULT },
-        } as StyleDef;
-        changed = true;
-        continue;
-      }
-    }
-    styles[id] = def;
-  }
-  return changed ? ({ ...doc, styles } as T) : doc;
+  return patchLineStyleDefProps(doc, (props) =>
+    isLineEndStyle(props.endStyle) ? null : { endStyle: LINE_END_STYLE_DEFAULT },
+  );
 }
 
 /**
@@ -2284,24 +2287,11 @@ export function backfillLineCasingDayNightColors<
     if (changed) out = { ...out, lines } as T;
   }
 
-  if (out.styles) {
-    let changed = false;
-    const styles: Record<string, StyleDef> = {};
-    for (const key of Object.keys(out.styles)) {
-      const def = out.styles[key];
-      if (def?.kind === 'line' && def.props && typeof def.props === 'object') {
-        const next = casingColorToDayNight(def.props.strokeColor);
-        if (next !== def.props.strokeColor) {
-          // Style props are always concrete, so the conversion is defined.
-          styles[key] = { ...def, props: { ...def.props, strokeColor: next as LineStrokeColor } };
-          changed = true;
-          continue;
-        }
-      }
-      styles[key] = def;
-    }
-    if (changed) out = { ...out, styles } as T;
-  }
+  out = patchLineStyleDefProps(out, (props) => {
+    const next = casingColorToDayNight(props.strokeColor);
+    // Style props are always concrete, so the conversion is defined.
+    return next === props.strokeColor ? null : { strokeColor: next as LineStrokeColor };
+  });
 
   return out;
 }

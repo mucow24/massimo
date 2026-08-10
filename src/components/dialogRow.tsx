@@ -1,7 +1,8 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import * as Select from '@radix-ui/react-select';
 import { ChevronDownIcon, DotsHorizontalIcon } from '@radix-ui/react-icons';
+import { useDismissOnOutside } from './useDismissOnOutside';
 
 /**
  * The sort picker a library dialog puts above its column — the map library's
@@ -187,28 +188,14 @@ export function useSpeedBump(): {
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
 
   // An armed bump can always stand down: a press anywhere but the armed button
-  // itself, or Escape, un-arms it without running anything. Window capture so
-  // the press still does its own job afterwards — except Escape, which is
-  // consumed: standing the bump down IS that keypress's meaning (the dialog
-  // must not also read it as "close").
-  useEffect(() => {
-    if (confirmKey === null) return;
-    const onDown = (e: PointerEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (!t?.closest?.('button[data-armed]')) setConfirmKey(null);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      setConfirmKey(null);
-    };
-    window.addEventListener('pointerdown', onDown, true);
-    window.addEventListener('keydown', onKey, true);
-    return () => {
-      window.removeEventListener('pointerdown', onDown, true);
-      window.removeEventListener('keydown', onKey, true);
-    };
-  }, [confirmKey]);
+  // itself, or Escape, un-arms it without running anything. "Inside" is the
+  // armed button rather than a ref, because the bump has no element of its own
+  // — the armed `IconButton` marks itself with `data-armed`.
+  useDismissOnOutside(
+    confirmKey !== null,
+    (t) => !!(t as HTMLElement | null)?.closest?.('button[data-armed]'),
+    () => setConfirmKey(null),
+  );
   const speedBump = (
     key: string,
     label: string,

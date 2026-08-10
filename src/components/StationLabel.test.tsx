@@ -74,9 +74,42 @@ const paintedGeometry = (layer: 'label' | 'highlight-label' | 'starter-label') =
   };
 };
 
+// The station's own typography, as the <text> actually carries it. Separate
+// from paintedGeometry because italic changes no anchor or baseline — it is a
+// pure paint attribute, so a pass that dropped it would still match on
+// geometry and print the name in the wrong face.
+const paintedFace = (layer: 'label' | 'highlight-label' | 'starter-label') => {
+  const { container } = render(
+    <svg>
+      <StationView
+        station={{ ...skewed(), italic: true }}
+        lines={lines()}
+        zoom={1}
+        onStartDrag={vi.fn()}
+        layer={layer}
+        highlightColor="#cc0000"
+      />
+    </svg>,
+  );
+  const text = container.querySelector('text');
+  if (!text) throw new Error(`no label painted for ${layer}`);
+  return text.getAttribute('font-style');
+};
+
 describe('station label passes — one shared positioning derivation', () => {
   it('paints the highlight pass at exactly the normal pass geometry', () => {
     expect(paintedGeometry('highlight-label')).toEqual(paintedGeometry('label'));
+  });
+
+  // An italic station is italic in every pass. The layout each pass measures
+  // is computed WITH the italic metrics, so a pass painting upright text is
+  // both the wrong face and glyphs that no longer fill the box reserved for
+  // them. Weight is the one deliberate per-pass difference (the starter is
+  // always bold); the face is not.
+  it('paints an italic station italic in all three passes', () => {
+    expect(paintedFace('label')).toBe('italic');
+    expect(paintedFace('highlight-label')).toBe('italic');
+    expect(paintedFace('starter-label')).toBe('italic');
   });
 
   it('paints the starter pass at exactly the normal pass geometry too', () => {

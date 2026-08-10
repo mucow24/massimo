@@ -844,7 +844,7 @@ export interface MapDoc {
   // fontSize/weight/italic/leading/tracking), and the map-wide default is the
   // DESIGNATED default 'station' style. Saves predating the retirement carry
   // the five label* fields — baked into per-station values on load
-  // (bakeLegacyLabelSettings / persist v13), mirroring the transfer-settings
+  // (bakeLegacyLabelSettings / persist v14), mirroring the transfer-settings
   // retirement below.
   // The color palettes this map paints with — the swatch sections of the line
   // color picker, and the color cycle `addLine` walks, in this order. Full

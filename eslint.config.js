@@ -43,6 +43,7 @@ export default [
         HTMLButtonElement: 'readonly',
         Element: 'readonly',
         Node: 'readonly',
+        EventTarget: 'readonly',
         KeyboardEvent: 'readonly',
         MouseEvent: 'readonly',
         PointerEvent: 'readonly',

@@ -53,10 +53,10 @@ function WaypointLozengeLabel({
  * The positioning half of a label paint: the anchor, the first line's center,
  * and the label rotation — everything that says WHERE the name lands, straight
  * off the shared layout. All three passes paint the same name in the same place
- * and differ only in HOW (fill, size, weight, stroke), so each spreads this and
- * adds its own paint instead of re-listing the positioning fields. The
- * highlight pass is drawn OVER the normal one, so a drifted copy would read as
- * a doubled label.
+ * and differ only in how it is INKED (fill, weight, stroke), so each spreads
+ * this and {@link labelTextTypography} and adds its own paint instead of
+ * re-listing those fields. The highlight pass is drawn OVER the normal one, so
+ * a drifted copy would read as a doubled label.
  *
  * `lay.baseline` / `lay.firstLineDyPx` are deliberately not forwarded: the
  * renderer derives every baseline from `firstLineCenterY` (see
@@ -77,6 +77,31 @@ function labelTextPosition(
     firstLineCenterY: lay.firstLineCenterY,
     rotationDeg,
     lineByService,
+  };
+}
+
+/**
+ * The typographic half of a label paint: the station's own face, size and
+ * spacing, plus the hover underline. Everything that says HOW the name is set,
+ * as opposed to how it is inked.
+ *
+ * All three passes read the station's OWN `effStyle` here — `lay` was measured
+ * at it, so a pass substituting its own size or dropping the italic would print
+ * glyphs that no longer fill the box reserved for them. The only typography a
+ * pass legitimately overrides is `fontWeight` (the starter is always bold, the
+ * hover bump lands on the other two), so weight stays with each caller and
+ * everything else lives here.
+ */
+function labelTextTypography(
+  effStyle: { fontSize: number; italic: boolean; leading: number; tracking: number },
+  hovered: boolean,
+): Pick<RenderLabelTextArgs, 'fontSize' | 'fontStyle' | 'leading' | 'tracking' | 'textDecoration'> {
+  return {
+    fontSize: effStyle.fontSize,
+    fontStyle: effStyle.italic ? 'italic' : undefined,
+    leading: effStyle.leading,
+    tracking: effStyle.tracking,
+    textDecoration: hovered ? 'underline' : 'none',
   };
 }
 
@@ -195,20 +220,15 @@ export function StationStarterLabel({
       fontSize={effStyle.fontSize}
       text={renderStationLabelText({
         ...labelTextPosition(lay, rotationDeg, lineByService),
+        ...labelTextTypography(effStyle, hovered),
         text: station.name,
-        // The station's OWN size — `lay` was computed at it, so a hardcoded
-        // 12 halves the glyphs while keeping the 24px line pitch. Matches
-        // StationHighlightLabel and the waypoint branch above; only the
-        // always-bold weight is deliberate starter styling.
-        fontSize: effStyle.fontSize,
+        // The one deliberate typographic difference: always bold, so the eye
+        // lands on the insertion anchor.
         fontWeight: 700,
-        leading: effStyle.leading,
-        tracking: effStyle.tracking,
         fill: highlightColor,
         stroke: legibleTextOn(highlightColor),
         strokeWidth: 2,
         paintOrder: 'stroke',
-        textDecoration: hovered ? 'underline' : 'none',
       })}
     />
   );
@@ -228,16 +248,8 @@ export function StationHighlightLabel({
   lines: Record<string, Line>;
   highlightColor: string;
 }) {
-  const {
-    angle,
-    rotationDeg,
-    hovered,
-    effStyle,
-    renderedWeight,
-    stationItalic,
-    lineByService,
-    lay,
-  } = useStationLabelLayout(station, lines);
+  const { angle, rotationDeg, hovered, effStyle, renderedWeight, lineByService, lay } =
+    useStationLabelLayout(station, lines);
   return (
     <OverlayLabelFrame
       station={station}
@@ -247,13 +259,9 @@ export function StationHighlightLabel({
       fontSize={effStyle.fontSize}
       text={renderStationLabelText({
         ...labelTextPosition(lay, rotationDeg, lineByService),
+        ...labelTextTypography(effStyle, hovered),
         text: station.name,
-        fontSize: effStyle.fontSize,
         fontWeight: renderedWeight,
-        fontStyle: stationItalic ? 'italic' : undefined,
-        leading: effStyle.leading,
-        tracking: effStyle.tracking,
-        textDecoration: hovered ? 'underline' : 'none',
         fill: highlightColor,
       })}
     />
@@ -344,13 +352,9 @@ export function StationLabel({
       ) : (
         renderStationLabelText({
           ...labelTextPosition(lay, rotationDeg, lineByService),
+          ...labelTextTypography(effStyle, hovered),
           text: station.name,
-          fontSize: effStyle.fontSize,
           fontWeight: renderedWeight,
-          fontStyle: stationItalic ? 'italic' : undefined,
-          leading: effStyle.leading,
-          tracking: effStyle.tracking,
-          textDecoration: hovered ? 'underline' : 'none',
           fill: themeColors.label,
         })
       )}

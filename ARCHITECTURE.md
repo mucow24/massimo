@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `df6f4de` (2026-08-08, #465) — verified against the live source.** This
+**Up to date as of commit `75f3a3b` (2026-08-09, #470) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -1383,7 +1383,7 @@ Path A does **more** than Path B because hand-edited files can be non-canonical 
 sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for this).
 
 **Path B — localStorage rehydration: `migrateDoc(persisted, version)`** ([store.ts](src/state/store.ts)).
-The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 25`, `migrate:
+The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 26`, `migrate:
 migrateDoc`, `partialize: pickDocSnapshot`, plus a **custom `merge` hook** (below). Because the persist-merge already fills absent fields
 from the initial state, `migrateDoc` only does **value-level legacy fixups, version-gated**, on
 disjoint fields (order immaterial except where noted), never mutating the input:
@@ -2728,14 +2728,19 @@ re-render every station subtree.
 
 **A station name paints in three passes** ([StationLabel.tsx](src/components/StationLabel.tsx)) —
 `starter` (the Edit Stops anchor station, in the line color), `highlight` (the selected line's
-stations, above the dim), and `normal` — which paint the **same name in the same place** and differ
-only in _how_ (fill, size, weight, stroke). Two shared helpers keep them from drifting:
-`labelTextPosition` bundles the seven positioning fields read off `labelLayoutLocal`, and
+stations, above the dim), and `normal` — which paint the **same name in the same place, set the
+same way**, and differ only in how it is _inked_ (fill, weight, stroke). Three shared helpers keep
+them from drifting: `labelTextPosition` bundles the seven positioning fields read off
+`labelLayoutLocal`, `labelTextTypography` bundles the station's own face/size/spacing plus the
+hover underline (weight is the one typographic field a pass may override — the starter is always
+bold; a pass that dropped the italic instead would set glyphs the measured box no longer fits), and
 `OverlayLabelFrame` bundles the frame the two above-the-dim passes share (hidden-waypoint skip,
 station-rotated `<g>`, the "WP" lozenge that replaces a revealed waypoint's name). The `normal`
 pass deliberately keeps its **own** frame — its inline rename editor must win over the lozenge, so
 its branch order differs. Drift here is not subtle-but-harmless: the highlight pass paints _over_
-the normal one, so a mismatch reads as a doubled label, and a test pins the cross-pass geometry.
+the normal one, so a mismatch reads as a doubled label, and tests pin the cross-pass geometry and
+face. The face needs its own test because italic moves no anchor or baseline: a pass that dropped
+it would still match on geometry.
 
 **Stroke-before-fill dots (the headline render motif).** `StationDots` maps
 `['stroke','fill','code'] × dotStops` — `dash`-shaped stops are filtered out first and rendered

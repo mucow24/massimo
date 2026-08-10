@@ -4,6 +4,7 @@ import { HexAlphaColorPicker } from 'react-colorful';
 import { clamp } from '../util/grid';
 import { beginHistoryGroup } from '../state/store';
 import { normalizeHex } from '../util/color';
+import { useDismissOnOutside } from './useDismissOnOutside';
 
 interface Props {
   value: string;
@@ -159,31 +160,13 @@ export function ColorField({
     setPos({ left, top });
   }, [open]);
 
-  // Close on outside pointerdown or Escape. Capture phase so it fires before a
-  // click inside a parent popover can act on the stray press.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      const t = e.target as Node;
-      if (popRef.current?.contains(t) || swatchRef.current?.contains(t)) return;
-      closePicker();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        closePicker();
-      }
-    };
-    window.addEventListener('pointerdown', onDown, true);
-    window.addEventListener('keydown', onKey, true);
-    return () => {
-      window.removeEventListener('pointerdown', onDown, true);
-      window.removeEventListener('keydown', onKey, true);
-    };
-    // closePicker is stable enough for this effect's lifetime (recreated each
-    // render, but only `open` gates attach/detach).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  // Close on outside pointerdown or Escape. The picker is portaled out of the
+  // swatch's subtree, so "inside" is either element.
+  useDismissOnOutside(
+    open,
+    (t) => !!popRef.current?.contains(t as Node) || !!swatchRef.current?.contains(t as Node),
+    closePicker,
+  );
 
   // If the field unmounts mid-edit (e.g. the inspector collapses on a selection
   // change while the picker is open), commit the open group so edits aren't lost.
