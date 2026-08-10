@@ -7,13 +7,15 @@
  * line work, outlined text (no font embedded), embedded SVG graphics kept as
  * vectors (except the mask users, which must rasterize — see below).
  *
- * Because `buildExportSvg` already outlines every glyph to a `<path>`, the PDF
- * carries no font data and svg2pdf never touches text: no font registration, no
- * baseline correction, no letter-spacing bake, no glyph fallback — the browser's
- * measured pen positions are baked into the paths. The licence permits the font
- * in output files only when the end user can't edit the fonts in the result, and
- * outlines satisfy that. What remains here are the non-text gaps svg2pdf can't
- * bridge:
+ * Because `buildExportSvg` already outlines every glyph — a `<defs>` prototype
+ * per distinct glyph, a `<use>` per occurrence — the PDF carries no font data and
+ * svg2pdf never touches text: no font registration, no baseline correction, no
+ * letter-spacing bake, no glyph fallback — the browser's measured pen positions
+ * ride on the `<use>` transforms. The licence permits the font in output files
+ * only when the end user can't edit the fonts in the result, and outlines satisfy
+ * that. svg2pdf renders each `<use>` as a PDF Form XObject, so the shared shapes
+ * cost one content stream each however often the map draws them. What remains
+ * here are the non-text gaps svg2pdf can't bridge:
  *
  *   Hatch — svg2pdf can't tile a `<pattern>` along a stroke, so hatched bands and
  *   the stop markers on them are baked into clipped solid stripe geometry

@@ -159,6 +159,12 @@ test('exports a vector PDF with outlined text from a hatch + text + image map', 
   // resources whether or not anything uses it, so its presence proves nothing —
   // the /FontFile2 + /Type0 absence above is what proves no font was embedded.)
 
+  // Glyphs reach the page as Form XObjects: each distinct outline is one shared
+  // content stream, invoked per occurrence. The `Do` differential in the next
+  // test proves the invocations happen; this proves the shared objects exist at
+  // all. Inlining every glyph again would leave the PDF with no /Form in it.
+  expect(raw).toMatch(/\/Subtype\s*\/Form/);
+
   // Mask guard: the masked graphic (img3) can't survive svg2pdf's mask-less
   // re-vectorizing, so the pipeline rasterizes it — landing in the PDF as an
   // embedded image XObject. The rest of the map is pure vector, so this marker
@@ -181,10 +187,17 @@ test('exports a vector PDF with outlined text from a hatch + text + image map', 
  *
  * `compress: true` Flate-encodes the content streams, so operators can't be
  * grepped from the raw bytes — inflate first. Then apply the same differential
- * the SVG spec uses: a label with ten more characters must draw ten more filled
- * glyphs, and a tracer that emitted nothing would produce identical streams.
+ * the SVG spec uses: a label with ten more characters must DRAW ten more glyphs,
+ * and a tracer that emitted nothing would produce identical streams.
+ *
+ * Each glyph reaches the page as a Form XObject invocation (`Do`) rather than a
+ * fresh outline, so the drawing delta lives in the `Do` count. The `f` count is
+ * the other half of the claim: the ten added characters are the same character,
+ * so they share ONE form — its outline is filled once, inside the form's own
+ * stream, no matter how many times it is invoked. A regression that inlined
+ * every glyph again would move the delta back onto `f` and fail here.
  */
-test('outlined glyphs actually reach the PDF', async ({ page }) => {
+test('outlined glyphs actually reach the PDF, once each as a form object', async ({ page }) => {
   /** Inflate every Flate content stream and concatenate the operators. */
   const operators = (pdf: Buffer): string => {
     // Walked by index, not by regex: the payloads are binary.
@@ -206,11 +219,15 @@ test('outlined glyphs actually reach the PDF', async ({ page }) => {
     }
     return out;
   };
-  // A filled path is the `f` operator alone on its line; glyphs are filled paths.
-  const FILL = '\nf\n';
-  const fillOps = (ops: string) => ops.split(FILL).length - 1;
+  // Count whole operator tokens: `f` is the fill operator and `Do` invokes an
+  // XObject. Substring matching would count the `f` in a hex colour or a name.
+  const tokens = (ops: string, op: string): number => {
+    let n = 0;
+    for (const t of ops.split(/\s+/)) if (t === op) n++;
+    return n;
+  };
 
-  const exportWithLabel = async (text: string): Promise<number> => {
+  const exportWithLabel = async (text: string): Promise<{ draws: number; fills: number }> => {
     await seedAndOpen(page, {
       ...fourInLineWithBulletsAndLabel,
       textLabels: [{ id: 'g1', x: 0, y: 200, text, fontSize: 20, weight: 700 }],
@@ -219,14 +236,16 @@ test('outlined glyphs actually reach the PDF', async ({ page }) => {
     if (!path) throw new Error('download has no path');
     const ops = operators(readFileSync(path));
     expect(ops.length, 'content streams should inflate').toBeGreaterThan(0);
-    return fillOps(ops);
+    return { draws: tokens(ops, 'Do'), fills: tokens(ops, 'f') };
   };
 
   const base = await exportWithLabel('Midtown');
-  const grown = await exportWithLabel('MidtownXXXXXXXXXX'); // +10 glyphs
+  const grown = await exportWithLabel('MidtownXXXXXXXXXX'); // +10 glyph occurrences
 
-  expect(base).toBeGreaterThan(0);
-  expect(grown - base).toBe(10);
+  expect(base.draws).toBeGreaterThan(0);
+  expect(grown.draws - base.draws).toBe(10);
+  // Ten more occurrences of ONE glyph fill at most one more outline.
+  expect(grown.fills - base.fills).toBeLessThanOrEqual(1);
 });
 
 
