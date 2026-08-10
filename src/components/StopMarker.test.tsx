@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import { StopMarker } from './StopMarker';
 import type { StopMarkerSpec } from '../geometry/interlining';
-import type { LineEndStyle, LineId, StationId, LineStyle } from '../model/types';
+import type { LineEndStyle, LineId, LineStyle, StationId } from '../model/types';
 
 function spec(over: Partial<StopMarkerSpec> = {}): StopMarkerSpec {
   return {
@@ -83,8 +83,14 @@ describe('StopMarker — joint pieces (arc meets octolinear)', () => {
   });
 });
 
+// The casing color is a day/night pair on the model; these cases are about
+// GEOMETRY, so they name one hex and it stands for both halves. The
+// theme-resolution cases below pass a real pair.
 const strokedLines = (strokeWidth: number, strokeColor?: string) => ({
-  L1: { strokeWidth: strokeWidth > 0 ? strokeWidth : undefined, strokeColor },
+  L1: {
+    strokeWidth: strokeWidth > 0 ? strokeWidth : undefined,
+    strokeColor: strokeColor === undefined ? undefined : { day: strokeColor, night: strokeColor },
+  },
 });
 
 function renderWithStroke(s: StopMarkerSpec, strokeWidth: number, strokeColor?: string) {
@@ -277,6 +283,22 @@ describe('StopMarker — casing rails (centered on the body edges)', () => {
       expect(r.getAttribute('fill')).toBe('#ffffff');
       expect(r.getAttribute('transform')).toContain('rotate(90)');
     }
+  });
+
+  // The rails follow the same theme-aware casing color the bands do, via the
+  // same `darkMode` PROP (the marker is memoized per line per station).
+  it('paints the rails in the day half in light mode and the night half in dark', () => {
+    const lines = { L1: { strokeWidth: 4, strokeColor: { day: '#ffffff', night: '#333333' } } };
+    const railFill = (darkMode: boolean) =>
+      render(
+        <svg>
+          <StopMarker spec={spec()} lines={lines} darkMode={darkMode} />
+        </svg>,
+      )
+        .container.querySelector('[data-marker-casing]')!
+        .getAttribute('fill');
+    expect(railFill(false)).toBe('#ffffff');
+    expect(railFill(true)).toBe('#333333');
   });
 
   it('rails a hatched marker the same way as a solid one', () => {

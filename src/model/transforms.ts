@@ -34,6 +34,7 @@ import {
   LINE_STROKE_WIDTH_DEFAULT,
   canonicalStrokeColor,
   canonicalStrokeWidth,
+  lineStrokeColorsEqual,
 } from './lineStroke';
 import {
   TRANSFER_COLOR_DEFAULT,
@@ -108,6 +109,7 @@ import type {
   LineCircle,
   LineEndStyle,
   LineId,
+  LineStrokeColor,
   LineStyle,
   LineTag,
   MapDoc,
@@ -1032,12 +1034,28 @@ export function setLineStrokeWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
   return setLineStyleField(doc, id, 'strokeWidth', canonicalStrokeWidth(w));
 }
 
-// Per-line casing color. Normalized to lowercase before compare/store (the
-// color input emits lowercase, but hand-edited files may carry `#FFFFFF`),
-// and the field is dropped at the default so it is never stored — the
-// invariant is "stored color is lowercase and never the default".
-export function setLineStrokeColor(doc: MapDoc, id: LineId, c: string): MapDoc {
-  return setLineStyleField(doc, id, 'strokeColor', canonicalStrokeColor(c));
+// Per-line casing color — the whole theme-aware pair (or the 'line' sentinel),
+// even when an editor changed only one half. Normalized to lowercase before
+// compare/store (the color input emits lowercase, but hand-edited files may
+// carry `#FFFFFF`), and the field is dropped when both halves land on the
+// default so it is never stored — the invariant is "stored color is lowercase
+// and never the default".
+export function setLineStrokeColor(doc: MapDoc, id: LineId, c: LineStrokeColor): MapDoc {
+  const cur = doc.lines[id];
+  if (!cur) return doc;
+  const stored = canonicalStrokeColor(c);
+  // The shared field setter's no-op guard is `===`, which a freshly-built pair
+  // can never satisfy — so the "already stored" case is judged here, where the
+  // structural rule lives. Without it every swatch tick would push an undo
+  // entry (and detach the line from its style).
+  if (
+    stored === undefined
+      ? cur.strokeColor === undefined
+      : cur.strokeColor !== undefined && lineStrokeColorsEqual(stored, cur.strokeColor)
+  ) {
+    return doc;
+  }
+  return setLineStyleField(doc, id, 'strokeColor', stored);
 }
 
 // Per-line tick length for 'dash' stops. Shares the casing width's canonical

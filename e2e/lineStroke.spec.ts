@@ -153,7 +153,9 @@ async function setStrokeTo(page: Page, value: string): Promise<void> {
 // Set the stroke color through the ColorField picker: open the swatch, set the
 // value in the picker's hex field (one input event, like a paste), close it.
 async function setStrokeColorTo(page: Page, value: string): Promise<void> {
-  await page.getByLabel('Stroke color').click();
+  // The casing color is a day/night PAIR: exact match so this picks the light
+  // swatch, not "Dark mode stroke color" beside it.
+  await page.getByRole('button', { name: 'Stroke color', exact: true }).click();
   const hex = page.getByLabel('Stroke color hex value');
   await expect(hex).toBeVisible({ timeout: 2000 });
   await hex.fill(value);

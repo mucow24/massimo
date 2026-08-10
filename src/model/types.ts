@@ -80,6 +80,13 @@ export type DotStrokeColor = DayNightColor | 'line' | 'bw';
 // absent serviceCodeColor means auto-contrast (see DotStyle.serviceCodeColor).
 export type DotServiceCodeColor = DayNightColor | 'line';
 
+// Casing color of a LINE (see Line.strokeColor / model/lineStroke.ts). The dot
+// stroke's type minus 'bw': a casing has no fill of its own to auto-contrast
+// against, so the two meaningful answers are "the line's own color" and an
+// explicit per-theme pair. Declared here beside the dot colors precisely so the
+// two color systems stay readable as one.
+export type LineStrokeColor = DayNightColor | 'line';
+
 // Where a dot's stroke sits relative to its silhouette edge, mirroring the
 // Figma/Illustrator "align stroke" control. 'center' straddles the edge (SVG's
 // native behavior — half in, half out); 'inside' keeps the outer edge fixed and
@@ -443,11 +450,12 @@ export interface Line {
   // renderers resolve it live. The setter clamps to ≥ 0, rounds to the
   // 0.25 (quarter-unit) grid, and drops the field at 0 so the default is never stored.
   strokeWidth?: number;
-  // Casing color: a 7-char lowercase hex, or the literal 'line'
-  // (LINE_OWN_COLOR) for "the line's own color", resolved at render time like
-  // a dot style's 'line' stroke. Missing ⇒ '#ffffff'. The setter normalizes to
-  // lowercase and drops the field at the default.
-  strokeColor?: string;
+  // Casing color: a theme-aware {day, night} pair of 7-char lowercase hexes, or
+  // the literal 'line' (LINE_OWN_COLOR) for "the line's own color", resolved at
+  // render time like a dot style's 'line' stroke. Missing ⇒ white in both
+  // themes. The setter normalizes to lowercase and drops the field when BOTH
+  // halves match the default (the transfer colors' all-or-nothing collapse).
+  strokeColor?: LineStrokeColor;
   // TfL-tick dimensions for this line's 'dash' stops, world units. Both are
   // stored like `strokeWidth` (quarter-unit grid, drop at 0 = "auto"); an UNSET
   // value derives from the line width at render time (length = width,
@@ -1074,10 +1082,11 @@ export interface LineStyleProps {
   endStyle: LineEndStyle;
   // Casing width per side, world units (0 = no casing).
   strokeWidth: number;
-  // Casing color: lowercase hex, or 'line' for each wearer's own color (see
-  // Line.strokeColor) — captured and stamped as the sentinel, so one style can
-  // give a dozen differently-colored lines a casing in their own hue.
-  strokeColor: string;
+  // Casing color: a theme-aware {day, night} pair, or 'line' for each wearer's
+  // own color (see Line.strokeColor) — captured and stamped as the sentinel, so
+  // one style can give a dozen differently-colored lines a casing in their own
+  // hue.
+  strokeColor: LineStrokeColor;
   // TfL-tick dimensions (world units). Optional: absent ⇒ derive from the
   // line width at render time (see Line.dashLength / Line.dashWidth).
   dashLength?: number;

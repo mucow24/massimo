@@ -2183,6 +2183,25 @@ button.field-select {
   width: 76px;
   font-size: var(--fs-caption);
 }
+/* The day/night stroke-color row (DayNightColorRow) is the panel's one `.row`
+   control; give it the same rhythm and label column as the shims above so it
+   lines up with the sliders around it. Declared in full rather than leaning on
+   `.text-label-popover .row` — that recipe reaches the row only because
+   LinePopover happens to carry that class, and its 52px label column is the
+   wrong one here anyway. */
+.inspector .row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.inspector .row > label {
+  width: 76px;
+  flex-shrink: 0;
+  font-size: var(--fs-caption);
+  font-weight: 400;
+  color: var(--text-muted);
+}
 
 .inspector input[type='text'],
 .inspector input[type='number'],

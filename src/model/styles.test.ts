@@ -58,7 +58,7 @@ describe('captureStyleProps', () => {
       curveRadius: LINE_CURVE_RADIUS_DEFAULT,
       endStyle: 'square' as const,
       strokeWidth: 0,
-      strokeColor: '#ffffff',
+      strokeColor: { day: '#ffffff', night: '#ffffff' },
     });
   });
 
@@ -74,7 +74,7 @@ describe('captureStyleProps', () => {
           width: 10,
           curveRadius: 40,
           strokeWidth: 1.5,
-          strokeColor: '#123456',
+          strokeColor: { day: '#123456', night: '#123456' },
         }),
       ],
     });
@@ -87,7 +87,7 @@ describe('captureStyleProps', () => {
       curveRadius: 40,
       endStyle: 'square' as const,
       strokeWidth: 1.5,
-      strokeColor: '#123456',
+      strokeColor: { day: '#123456', night: '#123456' },
     });
   });
 
@@ -256,7 +256,7 @@ describe('stylePropsEqual — line covered fields', () => {
       curveRadius: LINE_CURVE_RADIUS_DEFAULT,
       endStyle: 'square' as const,
       strokeWidth: 0,
-      strokeColor: '#ffffff',
+      strokeColor: { day: '#ffffff', night: '#ffffff' },
     };
     expect(stylePropsEqual('line', base, { ...base })).toBe(true);
     expect(stylePropsEqual('line', base, { ...base, curveRadius: 40 })).toBe(false);
@@ -282,7 +282,7 @@ describe('stylePropsEqual — line covered fields', () => {
       curveRadius: LINE_CURVE_RADIUS_DEFAULT,
       endStyle: 'square' as const,
       strokeWidth: 0,
-      strokeColor: '#ffffff',
+      strokeColor: { day: '#ffffff', night: '#ffffff' },
     };
     expect(stylePropsEqual('line', base, { ...base, interlineGap: 2 })).toBe(false);
     expect(
@@ -300,7 +300,7 @@ describe('stylePropsEqual — line covered fields', () => {
       curveRadius: LINE_CURVE_RADIUS_DEFAULT,
       endStyle: 'square' as const,
       strokeWidth: 0,
-      strokeColor: '#ffffff',
+      strokeColor: { day: '#ffffff', night: '#ffffff' },
     };
     expect(stylePropsEqual('line', base, { ...base, labelGap: 2 })).toBe(false);
     expect(stylePropsEqual('line', { ...base, labelGap: 2 }, { ...base, labelGap: 2 })).toBe(true);
@@ -363,7 +363,12 @@ describe('restampStyleTag', () => {
   // the style's CURRENT props onto the survivor.
   it('re-stamps a tagged item whose style was redefined since the copy', () => {
     const style = makeStyle('line', 'y1', {
-      props: { width: 10, curveRadius: 40, strokeWidth: 2, strokeColor: '#123456' },
+      props: {
+        width: 10,
+        curveRadius: 40,
+        strokeWidth: 2,
+        strokeColor: { day: '#123456', night: '#123456' },
+      },
     });
     // A line tagged y1 but carrying STALE props (copied when y1 was thinner).
     const stale = makeLine({ id: 'l1', styleId: 'y1', width: 5, strokeWidth: 1 });
@@ -371,7 +376,7 @@ describe('restampStyleTag', () => {
     const next = restampStyleTag(doc, 'line', 'l1');
     expect(next.lines.l1.width).toBe(10);
     expect(next.lines.l1.strokeWidth).toBe(2);
-    expect(next.lines.l1.strokeColor).toBe('#123456');
+    expect(next.lines.l1.strokeColor).toEqual({ day: '#123456', night: '#123456' });
     // Still tagged — the repair keeps the item wearing its style.
     expect(next.lines.l1.styleId).toBe('y1');
   });
@@ -396,7 +401,7 @@ describe('applyStyleToItem', () => {
         width: 10,
         curveRadius: 40,
         strokeWidth: 2,
-        strokeColor: '#123456',
+        strokeColor: { day: '#123456', night: '#123456' },
       },
     });
     const doc = makeDoc({ lines: [makeLine({ id: 'l1' })], styles: [style] });
@@ -406,7 +411,7 @@ describe('applyStyleToItem', () => {
     expect(line.width).toBe(10);
     expect(line.curveRadius).toBe(40);
     expect(line.strokeWidth).toBe(2);
-    expect(line.strokeColor).toBe('#123456');
+    expect(line.strokeColor).toEqual({ day: '#123456', night: '#123456' });
     // Dot APPEARANCE is not a covered line-style field — only dot SIZE is stamped.
     expect(line.singletonDotSize).toBe(12);
     expect(line.multiDotSize).toBe(16);

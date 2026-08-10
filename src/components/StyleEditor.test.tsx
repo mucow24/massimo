@@ -10,6 +10,7 @@ import { DOT_BASE_SHAPES } from '../model/dotStyle';
 import { DEFAULT_DOC, ROUTE_BULLET_SHAPES, TEXT_LABEL_ALIGNS } from '../model/transforms';
 import { makeStyle } from '../test/fixtures';
 import { chooseOption } from '../test/interaction';
+import { openColorField } from '../test/colorField';
 import type { DotStyle, LineStyleProps, StyleDef, TransferStyleProps } from '../model/types';
 
 // Reset the live store each test and seed two custom stopDot styles the line
@@ -139,14 +140,38 @@ describe('<StyleEditor> — line', () => {
   // can give differently-colored lines a casing in their own hue. The picker row
   // is named for the field ("Stroke"); "Stroke color" names the swatch row it
   // reveals, so the segments take a "Stroke type …" name to stay distinct.
-  it('activates Color and shows the swatch for a hex casing', () => {
+  it('activates Color and shows the day/night swatches for a colored casing', () => {
     render(
       <StyleEditor
-        def={makeStyle('line', 'y1', { props: { strokeWidth: 3, strokeColor: '#ff0000' } })}
+        def={makeStyle('line', 'y1', {
+          props: { strokeWidth: 3, strokeColor: { day: '#ff0000', night: '#0000ff' } },
+        })}
       />,
     );
     expect(screen.getByLabelText('Stroke type color')).toHaveClass('active');
     expect(screen.getByRole('button', { name: 'Stroke color' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dark mode stroke color' })).toBeInTheDocument();
+  });
+
+  it('writes ONE half of the casing pair per swatch', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...useDoc.getState(),
+      styles: {
+        ...useDoc.getState().styles,
+        'ln-2': makeStyle('line', 'ln-2', {
+          props: { strokeWidth: 3, strokeColor: { day: '#ff0000', night: '#0000ff' } },
+        }),
+      },
+    });
+    render(<StyleEditor def={useDoc.getState().styles['ln-2']} />);
+    const dark = await openColorField(user, 'Dark mode stroke color');
+    expect(dark).toHaveValue('#0000ff');
+    fireEvent.change(dark, { target: { value: '#00aa55' } });
+    expect((useDoc.getState().styles['ln-2'].props as LineStyleProps).strokeColor).toEqual({
+      day: '#ff0000',
+      night: '#00aa55',
+    });
   });
 
   it("the 'line' sentinel activates Line and hides the swatch", () => {
@@ -165,7 +190,7 @@ describe('<StyleEditor> — line', () => {
       styles: {
         ...useDoc.getState().styles,
         'ln-1': makeStyle('line', 'ln-1', {
-          props: { strokeWidth: 3, strokeColor: '#ff0000' },
+          props: { strokeWidth: 3, strokeColor: { day: '#ff0000', night: '#0000ff' } },
         }),
       },
     });
@@ -179,7 +204,8 @@ describe('<StyleEditor> — line', () => {
     rerender(<StyleEditor def={useDoc.getState().styles['ln-1']} />);
 
     fireEvent.click(screen.getByLabelText('Stroke type color'));
-    expect(propsOf().strokeColor).toBe('#ffffff');
+    // Leaving Line lands on the white casing default, spelled as a pair.
+    expect(propsOf().strokeColor).toEqual({ day: '#ffffff', night: '#ffffff' });
   });
 
   it('greys out Dash length/width unless a split default is a dash dot', () => {

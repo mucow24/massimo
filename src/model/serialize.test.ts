@@ -1225,7 +1225,9 @@ describe('parse — line stroke sanitizing', () => {
 
   it('round-trips a non-default stroke losslessly', () => {
     const doc = makeDoc({
-      lines: [makeLine({ id: 'L1', strokeWidth: 4, strokeColor: '#ff0000' })],
+      lines: [
+        makeLine({ id: 'L1', strokeWidth: 4, strokeColor: { day: '#ff0000', night: '#ff0000' } }),
+      ],
       styles: Object.values(T.DEFAULT_STYLES),
     });
     const result = parse(serialize(doc));
@@ -1270,22 +1272,59 @@ describe('parse — line stroke sanitizing', () => {
     if (result.ok) expect('strokeWidth' in result.doc.lines.L1).toBe(false);
   });
 
-  it('lowercases stored stroke colors', () => {
-    const result = parse(buildWithStroke({ strokeColor: '#AB12CD' }));
+  it('lowercases both halves of a stored stroke color', () => {
+    const result = parse(buildWithStroke({ strokeColor: { day: '#AB12CD', night: '#12AB34' } }));
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.doc.lines.L1.strokeColor).toBe('#ab12cd');
+    if (result.ok) {
+      expect(result.doc.lines.L1.strokeColor).toEqual({ day: '#ab12cd', night: '#12ab34' });
+    }
   });
 
-  it('drops the default stroke color in any case', () => {
-    for (const def of ['#ffffff', '#FFFFFF']) {
+  // Casings from before the day/night split are single strings; they were day
+  // colors, so both halves take them and the file paints as it always did.
+  it('wraps a LEGACY single-color casing string into a day/night pair', () => {
+    const result = parse(buildWithStroke({ strokeColor: '#AB12CD' }));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.lines.L1.strokeColor).toEqual({ day: '#ab12cd', night: '#ab12cd' });
+    }
+  });
+
+  it('drops the default stroke color in any case, string or pair', () => {
+    for (const def of [
+      '#ffffff',
+      '#FFFFFF',
+      { day: '#ffffff', night: '#ffffff' },
+      { day: '#FFFFFF', night: '#ffffff' },
+    ]) {
       const result = parse(buildWithStroke({ strokeColor: def }));
       expect(result.ok).toBe(true);
       if (result.ok) expect('strokeColor' in result.doc.lines.L1).toBe(false);
     }
   });
 
-  it('drops non-string stroke colors', () => {
-    for (const junk of [5, null, true, {}]) {
+  it('keeps a pair that is white on ONE side only (the collapse is all-or-nothing)', () => {
+    const result = parse(buildWithStroke({ strokeColor: { day: '#ffffff', night: '#000000' } }));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.doc.lines.L1.strokeColor).toEqual({ day: '#ffffff', night: '#000000' });
+    }
+  });
+
+  // 'none' and 'bw' are the DOT slots' sentinels — a casing has no fill of its
+  // own to auto-contrast against, so neither means anything here. They must be
+  // refused rather than wrapped like a legacy hex, or `stroke="bw"` reaches an
+  // SVG paint attribute.
+  it("refuses the dot slots' narrower sentinels instead of wrapping them", () => {
+    for (const junk of ['none', 'bw']) {
+      const result = parse(buildWithStroke({ strokeColor: junk }));
+      expect(result.ok).toBe(true);
+      if (result.ok) expect('strokeColor' in result.doc.lines.L1).toBe(false);
+    }
+  });
+
+  it('drops malformed stroke colors', () => {
+    for (const junk of [5, null, true, {}, { day: '#fff' }, { day: 1, night: 2 }]) {
       const result = parse(buildWithStroke({ strokeColor: junk }));
       expect(result.ok).toBe(true);
       if (result.ok) expect('strokeColor' in result.doc.lines.L1).toBe(false);

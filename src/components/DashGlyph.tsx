@@ -2,7 +2,7 @@ import { resolveDotRender } from '../model/dotStyle';
 import { lineCasingColor, lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
 import { lineWidthOf } from '../model/lineWidth';
 import { useDoc } from '../state/store';
-import type { DotStyle } from '../model/types';
+import type { DotStyle, LineStrokeColor } from '../model/types';
 import type { DashSpec } from '../geometry/stationDash';
 
 // Extra base overlap INTO the line body, world units. Two same-color rects
@@ -44,7 +44,7 @@ export function DashGlyph({
   lineColor?: string;
   // The owning line's casing fields; undefined ⇒ no casing (picker-less
   // callers). Width is the STRIPE width (rail clamp), not the tick's.
-  line?: { width?: number; strokeWidth?: number; strokeColor?: string } | null;
+  line?: { width?: number; strokeWidth?: number; strokeColor?: LineStrokeColor } | null;
   isHovered?: boolean;
   stationId?: string;
   lineId?: string;
@@ -102,7 +102,7 @@ export function DashGlyph({
         y={-halfT - h}
         width={spec.length + railW}
         height={spec.width + railW}
-        fill={lineCasingColor(line, lineColor)}
+        fill={lineCasingColor(line, lineColor, darkMode)}
         transform={transform}
         data-stop-stroke={stationId ?? ''}
         {...(lineId ? { 'data-stop-line': lineId } : {})}

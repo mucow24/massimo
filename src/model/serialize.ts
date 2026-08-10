@@ -39,7 +39,12 @@ import {
   canonicalLineCurveRadius,
 } from './lineCurve';
 import { canonicalDotSize } from './dotSize';
-import { canonicalStrokeColor, canonicalStrokeWidth } from './lineStroke';
+import {
+  LINE_OWN_COLOR,
+  canonicalStrokeColor,
+  canonicalStrokeWidth,
+  lineStrokeColorsEqual,
+} from './lineStroke';
 import {
   DEFAULT_DOT_STYLE,
   DEFAULT_STOP_DOT_STYLE_ID,
@@ -97,6 +102,7 @@ import type {
   TransferEnd,
   LineCircle,
   LineEndStyle,
+  LineStrokeColor,
   LineStyle,
   MapDoc,
   Polygon,
@@ -1508,6 +1514,29 @@ function sanitizeDotColor(
   return { day: o.day.toLowerCase(), night: o.night.toLowerCase() };
 }
 
+// Validate + normalize one raw LINE CASING color: the 'line' sentinel, a {day,
+// night} string pair, or a legacy single-color string from before the casing
+// gained a night half (wrapped so both halves take it — old colors are day
+// colors). Everything but the sentinel is lowercased, matching the stored form
+// the setters maintain. Returns undefined when the value doesn't conform.
+//
+// A bare string is put to `sanitizeDotColor` FIRST, with every flag allowed, so
+// the dot reader stays the one owner of what a bare word means and the casing
+// can never disagree with it. Whatever it recognizes is a sentinel, and of the
+// three only 'line' means anything for a casing — 'none' and 'bw' are refused
+// rather than wrapped, since neither is a color and `stroke="bw"` would reach
+// an SVG paint attribute. Anything it does NOT recognize is a legacy hex.
+function sanitizeLineStrokeColor(raw: unknown): LineStrokeColor | undefined {
+  if (typeof raw === 'string') {
+    const sentinel = sanitizeDotColor(raw, { none: true, bw: true });
+    if (sentinel !== undefined) return sentinel === LINE_OWN_COLOR ? LINE_OWN_COLOR : undefined;
+    const c = raw.toLowerCase();
+    return { day: c, night: c };
+  }
+  // The pair is exactly the dot colors' shape, so the same reader validates it.
+  return sanitizeDotColor(raw) as LineStrokeColor | undefined;
+}
+
 // Validate + normalize one raw transfer color: a legacy single-color string
 // (wrapped so both halves take it — old colors are day colors) or a {day,
 // night} string pair. Returns undefined when the value doesn't conform.
@@ -1826,9 +1855,11 @@ export function sanitizeStopDotSizes(
 
 // Normalize hand-edited / legacy casing fields to the canonical stored form
 // the transforms maintain: strokeWidth on the quarter-unit (0.25) grid and ≥
-// LINE_STROKE_WIDTH_MIN, strokeColor a lowercase string, and each field
-// absent when it equals its default (the app never stores defaults).
-// Non-numbers / non-finite widths and non-string colors are dropped.
+// LINE_STROKE_WIDTH_MIN, strokeColor a lowercase {day, night} pair or the
+// 'line' sentinel, and each field absent when it equals its default (the app
+// never stores defaults). A legacy single-color casing string becomes a pair
+// with both halves set to it. Non-numbers / non-finite widths and malformed
+// colors are dropped.
 // File-import hygiene only — localStorage rehydration never sees
 // uncanonical values because every write goes through the setters'
 // normalization.
@@ -1865,12 +1896,12 @@ function sanitizeLineStroke(line: Line): Line {
     }
   }
   if ('strokeColor' in line) {
-    const raw = line.strokeColor as unknown;
-    const stored = typeof raw === 'string' ? canonicalStrokeColor(raw) : undefined;
+    const raw = sanitizeLineStrokeColor(line.strokeColor);
+    const stored = raw === undefined ? undefined : canonicalStrokeColor(raw);
     if (stored === undefined) {
       const { strokeColor: _gone, ...rest } = next;
       next = rest;
-    } else if (stored !== next.strokeColor) {
+    } else if (next.strokeColor === undefined || !lineStrokeColorsEqual(stored, next.strokeColor)) {
       next = { ...next, strokeColor: stored };
     }
   }
@@ -2207,6 +2238,74 @@ export function backfillTransferDayNightColors(
   return { transfers: nextTransfers, styles: nextStyles, changed };
 }
 
+// Convert one LINE CASING color from the legacy single-color STRING form to the
+// day/night pair (old casings are day colors — night matches). The 'line'
+// sentinel and an already-converted pair return the SAME reference, so callers
+// stay reference-preserving and the conversion is idempotent. Absent stays
+// absent.
+function casingColorToDayNight(c: unknown): LineStrokeColor | undefined {
+  if (typeof c === 'string' && c !== LINE_OWN_COLOR) return legacyColorToDayNight(c);
+  return c as LineStrokeColor | undefined;
+}
+
+/**
+ * v25 → v26 for the localStorage rehydrate: convert LINE CASING colors from the
+ * legacy single-color STRING form to the day/night pair form, for BOTH per-line
+ * `strokeColor` overrides and line StyleDef props. Old app builds stored one
+ * casing color that applied in both themes; each becomes `{day, night}` with
+ * both halves set to it. The 'line' sentinel passes through untouched — it is
+ * not a color. Lines and defs convert TOGETHER, so a tagged wearer still
+ * matches its style and nothing detaches.
+ *
+ * Idempotent and reference-preserving — an already-converted value (or an
+ * absent override) passes straight through, so a converted doc is a no-op. The
+ * file-import path does the same conversion inside its sanitizers
+ * (sanitizeLineStroke / sanitizeStyleProps), so this is the rehydrate-only
+ * counterpart, exactly like `backfillTransferDayNightColors`.
+ */
+export function backfillLineCasingDayNightColors<
+  T extends { lines?: Record<string, Line>; styles?: Record<string, StyleDef> },
+>(doc: T): T {
+  let out = doc;
+
+  if (out.lines) {
+    let changed = false;
+    const lines: Record<string, Line> = {};
+    for (const id of Object.keys(out.lines)) {
+      const ln = out.lines[id];
+      const next = casingColorToDayNight(ln.strokeColor);
+      if (next !== ln.strokeColor) {
+        lines[id] = { ...ln, strokeColor: next };
+        changed = true;
+      } else {
+        lines[id] = ln;
+      }
+    }
+    if (changed) out = { ...out, lines } as T;
+  }
+
+  if (out.styles) {
+    let changed = false;
+    const styles: Record<string, StyleDef> = {};
+    for (const key of Object.keys(out.styles)) {
+      const def = out.styles[key];
+      if (def?.kind === 'line' && def.props && typeof def.props === 'object') {
+        const next = casingColorToDayNight(def.props.strokeColor);
+        if (next !== def.props.strokeColor) {
+          // Style props are always concrete, so the conversion is defined.
+          styles[key] = { ...def, props: { ...def.props, strokeColor: next as LineStrokeColor } };
+          changed = true;
+          continue;
+        }
+      }
+      styles[key] = def;
+    }
+    if (changed) out = { ...out, styles } as T;
+  }
+
+  return out;
+}
+
 /**
  * Fold the retired doc-level station-label font settings (labelFontSize/
  * labelWeight/labelItalic/labelLeading/labelTracking) into per-station
@@ -2491,7 +2590,9 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       // can never change how an older file paints.
       const endStyle = isLineEndStyle(o.endStyle) ? o.endStyle : LINE_END_STYLE_DEFAULT;
       const strokeWidth = finiteNum(o.strokeWidth);
-      const strokeColor = asString(o.strokeColor);
+      // A legacy single-color casing wraps to a day/night pair here, the same
+      // conversion sanitizeLineStroke applies to the per-line field.
+      const strokeColor = sanitizeLineStrokeColor(o.strokeColor);
       if (width === undefined) return undefined;
       if (singletonDotSize === undefined || multiDotSize === undefined) return undefined;
       if (curveRadius === undefined) return undefined;
