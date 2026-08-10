@@ -300,7 +300,7 @@ export interface Station {
   // lands on its default, mirroring the transfer-override and
   // TextLabel.leading/tracking patterns. All five are covered by the station
   // StyleDef; editing any of them detaches the styleId tag. `weight` is one of
-  // the Helvetica Neue ladder values (see TextLabelWeight); the hover bump and
+  // the shipped ladder values (see TextLabelWeight); the hover bump and
   // append-starter styling are applied at paint time, not stored here.
   fontSize?: number;
   weight?: TextLabelWeight;

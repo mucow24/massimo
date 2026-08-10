@@ -77,6 +77,34 @@ test.describe('Canvas export', () => {
     expect(exportViewBox).not.toBe(screenViewBox);
   });
 
+  /**
+   * The positive oracle for outlining. Every other assertion in this file is
+   * satisfied by an export containing ZERO glyphs — "no <text>" and "some
+   * <path>" are both true of a map whose fonts failed to load, and that is
+   * exactly the vacuous green this guards against.
+   *
+   * Same map twice, the label differing by a known glyph count: outlining emits
+   * one <path> per glyph, so the delta must equal the characters added. If the
+   * tracer produces nothing, the delta is 0 and this fails.
+   */
+  test('one path per glyph — outlining is not silently a no-op', async ({ page }) => {
+    const countPaths = (svg: string) => svg.split('<path').length - 1;
+    const exportPaths = async (seed: Parameters<typeof seedAndOpen>[1]) => {
+      await seedAndOpen(page, seed);
+      return countPaths((await readDownload(await exportVia(page, 'SVG'))).toString('utf-8'));
+    };
+
+    const base = await exportPaths(fourInLineWithBulletsAndLabel);
+    const EXTRA = 'XXXXXXXXXX'; // 10 more glyphs, same face, no new geometry
+    const grown = await exportPaths({
+      ...fourInLineWithBulletsAndLabel,
+      textLabels: [{ id: 'g1', x: 0, y: 200, text: `Midtown${EXTRA}`, fontSize: 20, weight: 700 }],
+    });
+
+    expect(grown - base).toBe(EXTRA.length);
+    expect(base).toBeGreaterThan(EXTRA.length); // the base map really does have glyphs
+  });
+
   test('SVG export stays clean with a selection and the grid showing', async ({ page }) => {
     await seedAndOpen(page, fourInLineWithBulletsAndLabel);
 

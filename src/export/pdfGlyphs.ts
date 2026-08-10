@@ -118,8 +118,12 @@ const weightKey = (weight: number, italic: boolean): string => `${weight}:${ital
 /**
  * Fetch + parse every used main face (keyed by weight/style) plus the symbol
  * fallback fonts. Faces come from `collectUsedFontFaces`, so only the
- * weight/style combinations actually on the map are loaded. A face that fails to
- * parse is skipped — its glyphs fall back to a near weight or the symbol fonts.
+ * weight/style combinations actually on the map are loaded. A single face that
+ * fails to parse is skipped — its glyphs fall back to a near weight or the
+ * symbol fonts — but if faces were REQUESTED and every one of them failed, that
+ * is a broken deployment (404s, a wrong BASE_URL), not a degraded one: it
+ * throws, so the export dies loudly instead of quietly producing a map with no
+ * labels on it.
  */
 export async function loadOutlineFonts(
   faces: FontFaceSpec[],
@@ -137,6 +141,12 @@ export async function loadOutlineFonts(
       }
     }),
   );
+  if (faces.length > 0 && loaded.size === 0) {
+    throw new Error(
+      `Export failed: none of the ${faces.length} requested font faces could be loaded. ` +
+        'Check that the licensed .ttf files are present in /public/fonts.',
+    );
+  }
   const symbols = (
     await Promise.all(
       SYMBOL_FONT_URLS.map(async (url) => {
@@ -254,7 +264,18 @@ export function pickFace(
  * vector outline `<path>`s — one per glyph, traced from the matching face at the
  * browser's own measured pen position. Covered glyphs come from the main face for
  * the run's weight/style; glyphs no face covers fall back to the symbol fonts.
- * The result contains no `<text>` and no font data — only paths.
+ *
+ * Two properties worth keeping:
+ *
+ *   - **Measure everything first, mutate after.** Every `getStartPositionOfChar`
+ *     read happens before the first DOM write, so the browser lays the tree out
+ *     ONCE. Interleaving them invalidated layout per `<text>` and made the cost
+ *     quadratic in label count — which SVG and PNG export never used to pay.
+ *   - **A `<text>` is only replaced if it actually produced glyphs.** A face that
+ *     fails to load, or a codepoint nothing covers, leaves the original `<text>`
+ *     in place to render in a fallback face. Deleting it unconditionally turned a
+ *     font hiccup into a map with no labels at all, which nothing downstream can
+ *     detect.
  *
  * Must run while the SVG is in the document (needs `getStartPositionOfChar`) and
  * AFTER `normalizeTextBaselines`, so positions sit on the alphabetic baseline
@@ -262,13 +283,16 @@ export function pickFace(
  * and kerning, so each glyph lands exactly where the browser drew it.
  */
 export function outlineAllText(svg: SVGSVGElement, fonts: OutlineFonts): void {
-  for (const text of [...svg.querySelectorAll('text')]) {
-    const parent = text.parentNode;
-    if (!parent) continue;
-    const paths: SVGPathElement[] = [];
+  const texts = [...svg.querySelectorAll('text')];
+
+  // Pass 1 — READ ONLY. No DOM writes, so layout is computed once for the tree.
+  const measured = texts.map((text) => {
+    const glyphs: { d: string; fill: string }[] = [];
+    let drawable = 0; // chars that SHOULD have produced a glyph
     for (const { cp, index, styleEl } of collectStyledChars(text)) {
       const { weight, italic, fontSize, fill } = resolveTextStyle(styleEl);
       if (fill === 'none') continue;
+      drawable++;
       let p: DOMPoint | null = null;
       try {
         p = text.getStartPositionOfChar(index);
@@ -280,13 +304,25 @@ export function outlineAllText(svg: SVGSVGElement, fonts: OutlineFonts): void {
       const font = face && covers(face, cp) ? face : symbolFontFor(fonts.symbols, cp);
       if (!font) continue;
       const d = glyphPathData(font.getPath(String.fromCodePoint(cp), p.x, p.y, fontSize));
-      if (!d) continue;
-      const path = document.createElementNS(SVG_NS, 'path');
-      path.setAttribute('d', d);
-      path.setAttribute('fill', fill);
-      paths.push(path);
+      if (d) glyphs.push({ d, fill });
     }
-    for (const path of paths) parent.insertBefore(path, text);
+    return { text, glyphs, drawable };
+  });
+
+  // Pass 2 — WRITE ONLY.
+  for (const { text, glyphs, drawable } of measured) {
+    const parent = text.parentNode;
+    if (!parent) continue;
+    // Nothing to draw (whitespace, fill:none) — drop it, it rendered nothing.
+    // Something to draw but nothing traced — keep the <text> so the label
+    // survives in a fallback face rather than vanishing.
+    if (drawable > 0 && glyphs.length === 0) continue;
+    for (const g of glyphs) {
+      const path = document.createElementNS(SVG_NS, 'path');
+      path.setAttribute('d', g.d);
+      path.setAttribute('fill', g.fill);
+      parent.insertBefore(path, text);
+    }
     parent.removeChild(text);
   }
 }

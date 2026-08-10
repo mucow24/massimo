@@ -1,8 +1,8 @@
 /**
  * Low-level font primitives shared across every layer: the canonical font stack,
- * the shipped Helvetica Neue weight ladder, and the pure weight-math helpers that
- * keep screen CSS, canvas text measurement, inline-tag parsing, and PDF face
- * embedding all agreeing on the same set of real faces.
+ * the shipped weight ladder, and the pure weight-math helpers that keep screen
+ * CSS, canvas text measurement, inline-tag parsing, and the export outline
+ * tracer all agreeing on the same set of real faces.
  *
  * These are pure and dependency-free (only the `TextLabelWeight` model type), so
  * they live here rather than in `export/fonts.ts` (font *embedding* — fetch,
@@ -76,12 +76,15 @@ const WEIGHT_NAME_TO_VALUE = new Map(
 
 /**
  * Shift a weight `steps` positions along the SHIPPED weight ladder, clamped at
- * both ends. Stepping the ladder (rather than adding ±100) is what keeps every
- * consumer — screen CSS, canvas measurement, the export outline tracer — on one
- * real face: the ladder is not a uniform 100 apart (it starts at 200), so
- * arithmetic on the number would land between rungs and each consumer would
- * snap it differently. Off-ladder input is first normalized to the nearest
- * shipped weight.
+ * both ends.
+ *
+ * Ordinal, not arithmetic: `steps` counts RUNGS. Adding ±100 to the number would
+ * walk off the ends (900 + 100 is not a face) and would silently start skipping
+ * or landing between rungs the moment the shipped set changes — which it just
+ * did, when Söhne retired UltraLight and added SemiBold. Counting rungs keeps
+ * every consumer — screen CSS, canvas measurement, the export outline tracer —
+ * on the same real face, and makes the clamp at Thin/Black fall out for free.
+ * Off-ladder input is first normalized to the nearest shipped weight.
  */
 export function stepWeight(weight: number, steps: number): number {
   // Widened to `number`: the input is a raw CSS/SVG weight, off-ladder until
@@ -150,7 +153,8 @@ export function parseSizeToken(value: string): { abs: number } | { rel: number }
 /**
  * Normalize a raw SVG/CSS `font-weight` value to the nearest weight the font
  * set actually ships. Keywords map to their canonical numbers; off-table
- * numbers (e.g. 600) round to the nearest available weight, ties going low.
+ * numbers (e.g. 650) round to the nearest available weight, ties going low —
+ * so 650, sitting between the SemiBold and Bold rungs, resolves to SemiBold.
  */
 export function normalizeWeight(raw: string | null | undefined): number {
   if (!raw) return 400;

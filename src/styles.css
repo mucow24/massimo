@@ -150,6 +150,13 @@ body,
   -webkit-user-select: none;
   /* Inherit the page font ('Soehne' loaded from /fonts/). */
   text-rendering: geometricPrecision;
+  /* Söhne ships a `liga` feature and Chrome applies it by default, but the
+     export tracer draws one glyph per CODEPOINT: it would emit `f` then `i`
+     where the browser laid out a single `fi`, at pen positions measured from
+     the ligated run — overlapping ink. Screen and tracer have to agree on the
+     glyph run, so ligatures are off for map text on both sides (see
+     `outlineAllText`). Revisit as a pair if ligatures are ever wanted. */
+  font-variant-ligatures: none;
 }
 
 button,

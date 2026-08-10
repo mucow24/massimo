@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import * as opentype from 'opentype.js';
 import {
   collectStyledChars,
+  loadOutlineFonts,
+  outlineAllText,
   glyphPathData,
   pickFace,
   resolveTextStyle,
@@ -230,5 +232,87 @@ describe('pickFace', () => {
 
   it('returns null for an empty face set', () => {
     expect(pickFace(new Map(), 400, false)).toBeNull();
+  });
+});
+
+describe('loadOutlineFonts — failure is loud, not silent', () => {
+  const face = (weight: number, italic: boolean) => ({
+    weight,
+    italic,
+    file: `fonts/x-${weight}${italic ? 'i' : ''}.ttf`,
+    format: 'truetype' as const,
+  });
+  const dead: typeof fetch = async () => {
+    throw new Error('404');
+  };
+
+  it('throws when faces were requested and every one failed to load', async () => {
+    // The alternative is an export that quietly contains no labels at all —
+    // which nothing downstream (or in e2e) can distinguish from a valid map.
+    await expect(loadOutlineFonts([face(400, false)], dead)).rejects.toThrow(/font faces/i);
+  });
+
+  it('does NOT throw when no faces were requested (a textless map is legitimate)', async () => {
+    const fonts = await loadOutlineFonts([], dead);
+    expect(fonts.faces.size).toBe(0);
+  });
+});
+
+describe('outlineAllText — never silently deletes a label', () => {
+  /** A <text> with stubbed pen positions, attached so querySelectorAll finds it. */
+  function seed(content: string): SVGSVGElement {
+    const svg = document.createElementNS(SVG_NS, 'svg') as SVGSVGElement;
+    const t = document.createElementNS(SVG_NS, 'text') as SVGTextElement;
+    t.setAttribute('fill', '#111');
+    t.textContent = content;
+    (
+      t as unknown as { getStartPositionOfChar: (i: number) => { x: number; y: number } }
+    ).getStartPositionOfChar = (i: number) => ({ x: 10 * i, y: 0 });
+    svg.appendChild(t);
+    document.body.appendChild(svg);
+    return svg;
+  }
+
+  const tracer = (covered: (cp: number) => boolean): opentype.Font =>
+    ({
+      charToGlyphIndex: (ch: string) => (covered(ch.codePointAt(0) ?? -1) ? 7 : 0),
+      getPath: (_t: string, x: number, y: number) => ({
+        commands: [{ type: 'M', x, y }, { type: 'L', x: x + 1, y: y - 1 }, { type: 'Z' }],
+      }),
+    }) as unknown as opentype.Font;
+
+  it('keeps the <text> when no face could trace any of its glyphs', () => {
+    // A font that failed to load must degrade to a fallback face, not erase the
+    // label — the failure mode that turned a font hiccup into a blank map.
+    const svg = seed('Canal St');
+    try {
+      outlineAllText(svg, { faces: new Map(), symbols: [] });
+      expect(svg.querySelectorAll('text')).toHaveLength(1);
+      expect(svg.querySelector('text')!.textContent).toBe('Canal St');
+      expect(svg.querySelectorAll('path')).toHaveLength(0);
+    } finally {
+      document.body.removeChild(svg);
+    }
+  });
+
+  it('replaces the <text> with paths when tracing succeeds', () => {
+    const svg = seed('AB');
+    try {
+      outlineAllText(svg, { faces: new Map([['400:false', tracer(() => true)]]), symbols: [] });
+      expect(svg.querySelectorAll('text')).toHaveLength(0);
+      expect(svg.querySelectorAll('path')).toHaveLength(2);
+    } finally {
+      document.body.removeChild(svg);
+    }
+  });
+
+  it('drops a <text> that had nothing to draw in the first place', () => {
+    const svg = seed('   '); // whitespace only — no drawable glyphs
+    try {
+      outlineAllText(svg, { faces: new Map([['400:false', tracer(() => true)]]), symbols: [] });
+      expect(svg.querySelectorAll('text')).toHaveLength(0);
+    } finally {
+      document.body.removeChild(svg);
+    }
   });
 });

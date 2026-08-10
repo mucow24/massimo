@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { bakeLegacyUltraLightWeight } from './serialize';
-import type { StyleDef } from './types';
+import { bakeLegacyUltraLightWeight, parse } from './serialize';
+import type { MapDoc, StyleDef } from './types';
 
 /**
  * Söhne's ladder starts at 200, so the UltraLight rung (100) retired with it.
@@ -61,5 +61,68 @@ describe('bakeLegacyUltraLightWeight', () => {
   it('leaves a station with no stored weight alone (it inherits the default)', () => {
     const doc = { stations: { s1: station(undefined) } };
     expect(bakeLegacyUltraLightWeight(doc)).toBe(doc);
+  });
+});
+
+/**
+ * Through the REAL file path. Testing the bake in isolation is not enough — it
+ * has to run BEFORE `sanitizeStyles`, which validates style props with
+ * `isLabelWeight` and drops any def still carrying the retired 100 (taking its
+ * wearers' `styleId` with it). Ordering is the whole bug this guards.
+ */
+describe('parse() folds a legacy UltraLight through the file path', () => {
+  const fileWith = (doc: unknown): string =>
+    JSON.stringify({ format: 'massimo-map', version: 2, doc });
+  const parsed = (doc: unknown): MapDoc => {
+    const r = parse(fileWith(doc));
+    if (!r.ok) throw new Error(r.error);
+    return r.doc;
+  };
+
+  it('keeps a weight-100 station style def, folded to Thin, with its wearer still tagged', () => {
+    const doc = parsed({
+      stations: {
+        // The station's EFFECTIVE typography must equal the def's props or the
+        // "tagged ⇒ matches" invariant prunes the tag; fontSize 6 is carried on
+        // both, leading/tracking sit at their defaults on both.
+        s1: {
+          id: 's1',
+          name: 'A',
+          x: 0,
+          y: 0,
+          stops: [],
+          fontSize: 6,
+          weight: 100,
+          italic: false,
+          styleId: 'st1',
+        },
+      },
+      styles: {
+        st1: {
+          id: 'st1',
+          name: 'Feather',
+          kind: 'station',
+          // A full StationStyleProps — an incomplete one is dropped by
+          // sanitizeStyles for reasons unrelated to the weight.
+          props: { fontSize: 6, weight: 100, italic: false, leading: 1, tracking: 0 },
+        },
+      },
+    });
+    const def = doc.styles?.st1;
+    expect(def, 'the def must survive sanitizeStyles').toBeDefined();
+    expect((def!.props as { weight: number }).weight).toBe(200);
+    expect(doc.stations.s1.weight).toBe(200);
+    expect(doc.stations.s1.styleId, 'the tag must not be pruned').toBe('st1');
+  });
+
+  it('folds the retired doc-global labelWeight instead of dropping it to Roman', () => {
+    // bakeLegacyLabelSettings reads the doc-level legacy field through
+    // isLabelWeight; an unfolded 100 lands on the 400 default — the exact
+    // jump-to-Roman this is supposed to prevent.
+    const doc = parsed({
+      stations: { s1: { id: 's1', name: 'A', x: 0, y: 0, stops: [] } },
+      labelWeight: 100,
+    });
+    expect(doc.stations.s1.weight ?? 400).toBe(200);
   });
 });

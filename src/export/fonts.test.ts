@@ -52,15 +52,13 @@ describe('fontUrl', () => {
   it('prefixes the given base to a base-relative path', () => {
     // Subpath prod build (e.g. GitHub Pages): the base must be carried through
     // or the fetch 404s — the bug #135 fixed, now shared by every font fetch.
-    expect(fontUrl('fonts/HelveticaNeueRoman.ttf', '/massimo/')).toBe(
-      '/massimo/fonts/HelveticaNeueRoman.ttf',
-    );
+    expect(fontUrl('fonts/soehne-buch.ttf', '/massimo/')).toBe('/massimo/fonts/soehne-buch.ttf');
     expect(fontUrl('fonts/DejaVuSans.ttf', '/')).toBe('/fonts/DejaVuSans.ttf');
     expect(fontUrl('fonts/DejaVuSans.ttf', './')).toBe('./fonts/DejaVuSans.ttf');
   });
 
   it('defaults to the build-time BASE_URL (root in dev/test)', () => {
-    expect(fontUrl('fonts/HelveticaNeueRoman.ttf')).toBe('/fonts/HelveticaNeueRoman.ttf');
+    expect(fontUrl('fonts/soehne-buch.ttf')).toBe('/fonts/soehne-buch.ttf');
   });
 });
 

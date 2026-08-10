@@ -20,7 +20,9 @@
 import { collectUsedFontFaces } from './fonts';
 import { FONT_STACK } from '../util/fonts';
 import { normalizeTextBaselines } from './pdfText';
-import { loadOutlineFonts, outlineAllText } from './pdfGlyphs';
+// `pdfGlyphs` pulls in opentype.js (~200 KB). It is imported dynamically inside
+// the outlining branch below so it stays out of the entry chunk — the app only
+// needs it when someone exports, and the thumbnail path never needs it at all.
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 /** World-unit margin added around the content bounds (also absorbs the stroke
@@ -158,9 +160,12 @@ export async function buildExportSvg(
     clone.setAttribute('viewBox', `${frameX} ${frameY} ${frameW} ${frameH}`);
     clone.setAttribute('width', String(pxW));
     clone.setAttribute('height', String(pxH));
-    // Only matters when text is left un-outlined (thumbnails); outlined exports
-    // carry no <text> to inherit it.
+    // Both only matter when text is left un-outlined (thumbnails) — an outlined
+    // export carries no <text> to inherit them. A standalone SVG has no page CSS,
+    // so the ligature setting has to be restated here or such an export would
+    // ligate where the screen (and the tracer) did not.
     clone.setAttribute('font-family', FONT_STACK);
+    clone.setAttribute('font-variant-ligatures', 'none');
 
     // Background rect sized to the frame, behind all content.
     const bg = document.createElementNS(SVG_NS, 'rect');
@@ -175,6 +180,7 @@ export async function buildExportSvg(
     // first so getStartPositionOfChar reports the alphabetic baseline the tracer
     // places on. Only the faces actually used are fetched.
     if (opts.outlineText ?? true) {
+      const { loadOutlineFonts, outlineAllText } = await import('./pdfGlyphs');
       normalizeTextBaselines(clone);
       outlineAllText(clone, await loadOutlineFonts(collectUsedFontFaces(clone)));
     }

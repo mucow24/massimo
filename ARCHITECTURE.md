@@ -1234,8 +1234,9 @@ mounts `TransferLayer` at each rung's slot with that bucket. Two consequences, b
 **Small unions:** `StopOrientation` (`auto-vertical|auto-ne-sw|auto-horizontal|auto-nw-se` —
 pins only the **axis**; the sign falls out of the world tangent from neighbors), `LineStyle`
 (`solid|dashed|hatched|hatched-mirror|dotted|dashed-open`), `TextLabelWeight`
-(`200|300|400|500|600|700|800|900` — Söhne's ladder; **no 100**, the retired UltraLight), `DotShape` (16 legacy
-preset ids — **no longer stored**, only the currency of shape pickers and legacy conversion).
+(`200|300|400|500|600|700|800|900` — Söhne's ladder; **no 100**, the retired UltraLight), `DotShape`
+(16 legacy preset ids — **no longer stored**, only the currency of shape pickers and legacy
+conversion).
 
 > **These listings are a map, not a schema dump.** They name the fields that carry a *concept*
 > worth explaining; two things are deliberately elided rather than repeated on every entity.
@@ -3495,8 +3496,8 @@ that don't need the font work, such as the library thumbnail):
    the _live_ DOM, so cloning is the only faithful capture.
 2. **Strip editing chrome**: remove `[data-bg]`, `[data-export-exclude]` (grid, highlights,
    ghosts, guides, handles — tagged in `MapCanvas`), and `foreignObject` (inline editors).
-3. **Measure bounds offscreen** via `getBBox` (needs the element rendered → appended to an off-screen
-   div, kept mounted through the outline pass, removed in `finally`).
+3. **Measure bounds offscreen** via `getBBox` (needs the element rendered → appended to an
+   off-screen div, kept mounted through the outline pass, removed in `finally`).
 4. **Empty guard is an AND** — throws only when _neither_ bbox dim is positive (`!(w>0) && !(h>0)`),
    so a zero-height positive-width strip (a single horizontal line) is still exportable.
 5. **Frame** to content + `PADDING=24`; set `viewBox` to the frame and `width`/`height` to
@@ -3516,29 +3517,29 @@ that don't need the font work, such as the library thumbnail):
 The outline pass is the load-bearing new idea: because it makes the SVG self-contained (paths, no
 `@font-face`), the PNG raster (`<img>` → canvas) and the PDF (svg2pdf) both consume it directly with
 **no font to load** — all three exporters share one outlined SVG, and none of them embed or reformat
-the font file. Per-glyph work in `outlineAllText`: `collectStyledChars` walks the `<text>` pairing each
-codepoint with its UTF-16 index (for `getStartPositionOfChar` on the root) and the `<tspan>` that
-governs it, so a mixed-weight/mixed-colour label outlines each run in its own face and fill;
+the font file. Per-glyph work in `outlineAllText`: `collectStyledChars` walks the `<text>` pairing
+each codepoint with its UTF-16 index (for `getStartPositionOfChar` on the root) and the `<tspan>`
+that governs it, so a mixed-weight/mixed-colour label outlines each run in its own face and fill;
 `resolveTextStyle` reads weight/style/size/fill off the attributes; `pickFace` chooses the face
-(exact, else nearest weight in style, else any) and a glyph no main face covers falls back to a symbol
-font (DejaVu). `glyphPathData` serializes with an explicit space between every coordinate — opentype's
-own `toPathData` can fuse a rounded `-0` into the previous number, a malformed `d` Blink tolerates but
-stricter parsers (some Edge builds) drop.
+(exact, else nearest weight in style, else any) and a glyph no main face covers falls back to a
+symbol font (DejaVu). `glyphPathData` serializes with an explicit space between every coordinate —
+opentype's own `toPathData` can fuse a rounded `-0` into the previous number, a malformed `d` Blink
+tolerates but stricter parsers (some Edge builds) drop.
 
 `FONT_TABLE` (16 faces = 8 weights × {normal, italic}) is the export-side mirror of the `@font-face`
 blocks in [styles.css](src/styles.css) — two hand-maintained copies. `collectUsedFontFaces` returns
 the faces a map uses; `loadOutlineFonts` parses each with **opentype.js**, which reads TrueType/
-OpenType `.ttf`/`.otf` but **not** WOFF2 — so every `FONT_TABLE` face must be a parseable `.ttf`/`.otf`,
-and the on-screen `@font-face` and the tracer must read the **same** files or measured pen positions
-won't line up with the traced glyphs. styles.css also carries the `DejaVu Sans` fallback face, absent
-from `FONT_TABLE` — `pdfGlyphs` loads it separately as the symbol source. `normalizeWeight` ties go
-**low** (600 → 500).
+OpenType `.ttf`/`.otf` but **not** WOFF2 — so every `FONT_TABLE` face must be a parseable
+`.ttf`/`.otf`, and the on-screen `@font-face` and the tracer must read the **same** files or
+measured pen positions won't line up with the traced glyphs. styles.css also carries the `DejaVu
+Sans` fallback face, absent from `FONT_TABLE` — `pdfGlyphs` loads it separately as the symbol
+source. `normalizeWeight` ties go **low** (650 → 600).
 
-The typeface is **Söhne**, licensed per-application from Klim — an app licence rather than a web one,
-which is what permits the glyphs riding along in the files the app exports. The `.ttf` files are
-git-ignored (licensed, not redistributable): they sit on a dev machine, and **both** CI and the Pages
-deploy inject them from the private `mucow24/massimo-fonts` repo. CI needs them too — without the
-fonts the export tests still pass while outlining nothing, a vacuous green.
+The typeface is **Söhne**, licensed per-application from Klim — an app licence rather than a web
+one, which is what permits the glyphs riding along in the files the app exports. The `.ttf` files
+are git-ignored (licensed, not redistributable): they sit on a dev machine, and **both** CI and the
+Pages deploy inject them from the private `mucow24/massimo-fonts` repo. CI needs them too — without
+the fonts the export tests still pass while outlining nothing, a vacuous green.
 
 The UI keeps English rung names over Söhne's German faces (Thin = Extraleicht, Roman = Buch,
 Medium = Kräftig, SemiBold = Halbfett, Bold = Dreiviertelfett, Heavy = Fett, Black = Extrafett), and
@@ -3546,12 +3547,12 @@ the filenames are ASCII-folded from Klim's originals so served URLs need no perc
 Söhne covers ©, ™ and the arrows — unlike Helvetica Neue, which needed the fallback for ↔ — but has
 no dingbats, so `<air>` (✈) and its neighbours still trace from DejaVu Sans.
 
-**PDF** ([exportCanvasPdf.ts](src/export/exportCanvasPdf.ts)) reuses `buildExportSvg` — **including its
-text-outline pass** — then renders that SVG to a true vector PDF with **svg2pdf.js + jsPDF**: outlined
-text (no font embedded, no selectable text), vector line work, embedded SVG graphics kept as vectors
-(bar mask users, gap 4). Because text arrives already outlined, svg2pdf never touches it — no font
-registration, no baseline correction, no letter-spacing bake, no glyph fallback. Five non-text gaps
-svg2pdf/jsPDF can't bridge are closed here:
+**PDF** ([exportCanvasPdf.ts](src/export/exportCanvasPdf.ts)) reuses `buildExportSvg` — **including
+its text-outline pass** — then renders that SVG to a true vector PDF with **svg2pdf.js + jsPDF**:
+outlined text (no font embedded, no selectable text), vector line work, embedded SVG graphics kept
+as vectors (bar mask users, gap 4). Because text arrives already outlined, svg2pdf never touches it
+— no font registration, no baseline correction, no letter-spacing bake, no glyph fallback. Five
+non-text gaps svg2pdf/jsPDF can't bridge are closed here:
 
 1. **Region-exclude clips** — the region-layering exclusion clips defeat Blink's clip-raster
    snapping by emitting the clip path at ×`CLIP_RASTER_SCALE` and pulling it back with
@@ -3587,16 +3588,19 @@ svg2pdf/jsPDF can't bridge are closed here:
    unit-tested; the canvas rasterizer is browser-only (e2e-covered, incl. an `/SMask` guard that the
    mask survived).
 5. **Translucent (hex8) colors** — svg2pdf.js truncates an 8-digit `#rrggbbaa` paint to its first 6
-   digits and drops the alpha, so a translucent fill/stroke would print fully opaque; it _does_ honor
-   a separate `fill-opacity`/`stroke-opacity` (jsPDF writes it as a real PDF `ExtGState /ca /CA`). So
-   `splitAlphaColors` ([pdfAlpha.ts](src/export/pdfAlpha.ts)) rewrites every hex8 paint on the export
-   clone into a 6-digit color plus the matching opacity attribute, composing (multiplying) with any
-   opacity the element already carries. Runs **last**, after the other bakes, so hex8 colors those
-   steps copy forward (a translucent line color baked into a hatch stripe, an outlined glyph
-   inheriting a translucent label color, a drop-shadow flood) are caught too. Pure and unit-tested;
-   the SVG/PNG paths need none of it (browser/canvas composite hex8 natively).
-   Lazy-loaded on first PDF export (`import()` in the toolbar) so jsPDF + opentype.js stay out of the
-   initial bundle.
+   digits and drops the alpha, so a translucent fill/stroke would print fully opaque; it _does_
+   honor a separate `fill-opacity`/`stroke-opacity` (jsPDF writes it as a real PDF `ExtGState /ca
+   /CA`). So `splitAlphaColors` ([pdfAlpha.ts](src/export/pdfAlpha.ts)) rewrites every hex8 paint on
+   the export clone into a 6-digit color plus the matching opacity attribute, composing
+   (multiplying) with any opacity the element already carries. Runs **last**, after the other bakes,
+   so hex8 colors those steps copy forward (a translucent line color baked into a hatch stripe, an
+   outlined glyph inheriting a translucent label color, a drop-shadow flood) are caught too. Pure
+   and unit-tested; the SVG/PNG paths need none of it (browser/canvas composite hex8 natively).
+   Lazy-loaded on first PDF export (`import()` in the toolbar) so jsPDF stays out of the initial
+   bundle; `buildExportSvg` likewise `import()`s `pdfGlyphs` inside its outlining branch, which is
+   what keeps opentype.js out of the entry chunk — a static import there would drag it in via the
+   toolbar, and the thumbnail path never needs it at all.
+
 [color.ts](src/util/color.ts): pure hex math — `legibleTextOn` (W3C luminance → `#000`/`#fff`),
 `withAlpha`, `blendOver`, `desaturateColor`, plus the RGBA surface added with the react-colorful
 picker: `parseHexA` (→ `[r,g,b,a]`, preserving alpha from `#rgba`/`#rrggbbaa`), `withHexAlpha`
@@ -3877,13 +3881,14 @@ Each is confirmed in source/tests; file pointers included.
   host-vs-svg measurement is observable; `stubCanvasHostSize()` patches the prototype
   `clientWidth`/`clientHeight` jsdom reports as 0, which any test rendering the canvas needs),
   `setup.ts` (jsdom polyfills: ResizeObserver, pointer-capture, scrollIntoView).
-- **E2E (Playwright, [e2e/](e2e/))** — single-worker, no retries locally (2 on CI), honors `PORT` for parallel
-  worktrees. `seedAndOpen` seeds a localStorage doc (`Seed*` shapes omit fields to simulate legacy
-  saves) and opens the app — **this is the only place the rehydrate/migrate path is exercised**.
-  `migration.spec.ts` asserts **zero console errors** loading legacy docs; `export.spec.ts` checks
-  the exported SVG is chrome-free with embedded `@font-face` and that PNG is genuinely 4× (reads
-  IHDR bytes); `exportPdf.spec.ts` exports a hatch+text+image map and asserts the PDF embeds NO
-  font at all (`/FontFile2` and `/Type0` both absent) because the text arrives already outlined.
+- **E2E (Playwright, [e2e/](e2e/))** — single-worker, no retries locally (2 on CI), honors `PORT`
+  for parallel worktrees. `seedAndOpen` seeds a localStorage doc (`Seed*` shapes omit fields to
+  simulate legacy saves) and opens the app — **this is the only place the rehydrate/migrate path is
+  exercised**. `migration.spec.ts` asserts **zero console errors** loading legacy docs;
+  `export.spec.ts` checks the exported SVG is chrome-free and text-free (outlined to paths, with a
+  differential glyph count so a tracer that emitted nothing fails) and that PNG is genuinely 4×
+  (reads IHDR bytes); `exportPdf.spec.ts` exports a hatch+text+image map and asserts the PDF embeds
+  NO font at all (`/FontFile2` and `/Type0` both absent) because the text arrives already outlined.
 - **Perf harness** ([.perf/](.perf/)) — a tracked-but-**ungated** performance layer, invisible to
   every `npm`/CI gate because `lint`/`test`/`build`/`e2e` are all scoped to `src/` and `e2e/`. It
   holds Vitest micro-benchmarks (`.perf/bench/*.perf.test.ts` under `.perf/vitest.bench.config.ts`)

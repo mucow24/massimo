@@ -1817,7 +1817,7 @@ describe('per-transfer style overrides', () => {
 });
 
 describe('LABEL_WEIGHT_VALUES', () => {
-  it('lists the Helvetica Neue weights we ship in /public/fonts/, in ascending order', () => {
+  it('lists the weights we ship in /public/fonts/, in ascending order', () => {
     // Söhne's ladder: 200-900, no 100 (UltraLight retired with the move to it).
     expect(T.LABEL_WEIGHT_VALUES).toEqual([200, 300, 400, 500, 600, 700, 800, 900]);
   });

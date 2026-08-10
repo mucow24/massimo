@@ -5,7 +5,7 @@ import { useDoc } from '../state/store';
 import * as textMeasure from '../geometry/textMeasure';
 
 // Regression: label glyph metrics are measured via canvas and cached by
-// text+style. On first paint the web font (Helvetica Neue) usually hasn't
+// text+style. On first paint the web font (Söhne) usually hasn't
 // loaded yet, so those measurements use the fallback font, whose side bearings
 // differ by a pixel or two. The cache was never invalidated when the real font
 // arrived, so labels stayed at the fallback positions until some later edit

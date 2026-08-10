@@ -695,6 +695,14 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
   if (foldedPolygons.changed) merged.polygons = foldedPolygons.polygons;
   const cleanedLabels = backfillTextLabelColors(merged.textLabels);
   if (cleanedLabels.changed) merged.textLabels = cleanedLabels.textLabels;
+  // Fold the retired UltraLight rung (Söhne's ladder starts at 200) onto Thin
+  // BEFORE anything validates a weight. `sanitizeStyles` just below drops a def
+  // whose props fail `isLabelWeight` — which a stored 100 now does — and that
+  // takes its wearers' `styleId` with it; `bakeLegacyLabelSettings` likewise
+  // reads the doc-global `labelWeight` through the same guard and would fall
+  // back to Roman. Nothing above here reads a weight, so this is the first safe
+  // point.
+  merged = bakeLegacyUltraLightWeight(merged);
   // Validate style defs, then enforce the structural style invariants (≥ 1
   // style per kind, styleDefaults resolving per kind) BEFORE the transfer
   // bake below — the bake seeds the DESIGNATED default transfer style, so
@@ -719,8 +727,6 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
   // typography, seeding + adopting the Default station style (runs after the
   // style invariants so styleDefaults.station resolves).
   merged = bakeLegacyLabelSettings(merged);
-  // Retired UltraLight rung (Söhne starts at 200) folded onto Thin.
-  merged = bakeLegacyUltraLightWeight(merged);
   // Version-gated (non-idempotent) rewrite: files saved before the pipe
   // bullet grammar carry `<X>` circle tokens and unescaped literal pipes.
   if ((typeof file.version === 'number' ? file.version : 1) < 2) {
@@ -2310,23 +2316,6 @@ export function backfillLineCasingDayNightColors<
 }
 
 /**
- * Fold the retired doc-level station-label font settings (labelFontSize/
- * labelWeight/labelItalic/labelLeading/labelTracking) into per-station
- * typography, mirroring `bakeLegacyTransferSettings`. For each station the
- * effective look under the OLD model is baked onto its own fields (with the
- * collapse-at-default rule), and the per-station `labelBold` (+2 weight step) /
- * `labelItalic` (OR) flags are consumed and dropped.
- *
- * The settings' MAP-WIDE role moves to the DESIGNATED default station style:
- * while it still wears untouched factory props (backfilled/injected by
- * `ensureStyleInvariants` before this runs), it is seeded from the legacy BASE
- * settings so newly dropped stations keep the old look — and any station whose
- * baked look matches it is TAGGED here, so default-looking stations stay on the
- * Default even on the styles-present load path (where the general
- * `adoptDefaultStyles` is gated off). Guarded by the presence of any legacy
- * field, so it never touches a post-retirement save (idempotent).
- */
-/**
  * Fold the retired UltraLight rung (weight 100) onto Thin (200).
  *
  * Söhne's ladder starts at 200, so 100 is no longer a shipped face. Without this
@@ -2336,14 +2325,22 @@ export function backfillLineCasingDayNightColors<
  * so it catches imported files too, and idempotent: once nothing stores 100 it
  * returns the doc by reference.
  *
- * Only stored weights need this. An inline `<w=UltraLight>` tag is handled by
- * `parseWeightToken`, which still answers to the retired name.
+ * Covers the doc-global legacy `labelWeight` too: `bakeLegacyLabelSettings`
+ * reads it through the same guard, so an unfolded 100 there lands every station
+ * on Roman.
+ *
+ * MUST run before `sanitizeStyles`, which drops a style def whose props fail
+ * `isLabelWeight` — taking its wearers' `styleId` with it.
+ *
+ * Inline `<w=UltraLight>` tags need nothing: `parseWeightToken` still answers to
+ * the retired name.
  */
 export function bakeLegacyUltraLightWeight<
   T extends {
     stations?: Record<string, Station>;
     textLabels?: Record<string, TextLabel>;
     styles?: Record<string, StyleDef>;
+    labelWeight?: unknown;
   },
 >(doc: T): T {
   const LEGACY = RETIRED_ULTRALIGHT_WEIGHT;
@@ -2390,9 +2387,39 @@ export function bakeLegacyUltraLightWeight<
     if (hit) styles = out;
   }
 
-  if (!changed && styles === doc.styles) return doc;
-  return { ...doc, stations, textLabels, styles };
+  // The retired doc-global field, read by `bakeLegacyLabelSettings` below.
+  const raw = doc as { labelWeight?: unknown };
+  const legacyGlobal = raw.labelWeight === LEGACY;
+
+  if (!changed && styles === doc.styles && !legacyGlobal) return doc;
+  // Spread only the collections that were actually present, so an absent one
+  // stays absent instead of becoming an explicit `undefined` key.
+  return {
+    ...doc,
+    ...(doc.stations ? { stations } : {}),
+    ...(doc.textLabels ? { textLabels } : {}),
+    ...(doc.styles ? { styles } : {}),
+    ...(legacyGlobal ? { labelWeight: THIN } : {}),
+  };
 }
+
+/**
+ * Fold the retired doc-level station-label font settings (labelFontSize/
+ * labelWeight/labelItalic/labelLeading/labelTracking) into per-station
+ * typography, mirroring `bakeLegacyTransferSettings`. For each station the
+ * effective look under the OLD model is baked onto its own fields (with the
+ * collapse-at-default rule), and the per-station `labelBold` (+2 weight step) /
+ * `labelItalic` (OR) flags are consumed and dropped.
+ *
+ * The settings' MAP-WIDE role moves to the DESIGNATED default station style:
+ * while it still wears untouched factory props (backfilled/injected by
+ * `ensureStyleInvariants` before this runs), it is seeded from the legacy BASE
+ * settings so newly dropped stations keep the old look — and any station whose
+ * baked look matches it is TAGGED here, so default-looking stations stay on the
+ * Default even on the styles-present load path (where the general
+ * `adoptDefaultStyles` is gated off). Guarded by the presence of any legacy
+ * field, so it never touches a post-retirement save (idempotent).
+ */
 
 export function bakeLegacyLabelSettings<
   T extends {

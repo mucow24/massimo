@@ -173,7 +173,10 @@ export function bakeHatchedPaints(svg: SVGSVGElement): void {
  * several places — can be tested without driving a full render + download.
  *
  * `el` must already be attached to the document: several steps measure geometry
- * (`getBBox` / `getTotalLength` / `getComputedTextLength`).
+ * (`getBBox` / `getTotalLength`).
+ *
+ * Text needs no step here — `buildExportSvg` already outlined it, so nothing is
+ * left for svg2pdf to mis-baseline, mis-track, or fail to embed a font for.
  */
 export async function prepareSvgForPdf(el: SVGSVGElement): Promise<void> {
   // Move the clip-raster scale(1/64) off region-exclude clip CHILDREN onto the
@@ -198,10 +201,6 @@ export async function prepareSvgForPdf(el: SVGSVGElement): Promise<void> {
   // offset geometry — svg2pdf renders those images as vectors but ignores
   // <filter>, so their casing/shadow would otherwise vanish.
   bakeImageDropShadows(el);
-
-  // Text arrived already outlined to paths from buildExportSvg, so there is no
-  // <text> left for svg2pdf to mis-baseline, mis-track, or fail to embed a font
-  // for — the passes that used to handle all three are gone with it.
 
   // svg2pdf drops the alpha of an 8-digit hex color, so split every #rrggbbaa
   // fill/stroke into a 6-digit color + fill-opacity/stroke-opacity (which it
