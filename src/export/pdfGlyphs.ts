@@ -39,6 +39,20 @@ const covers = (font: opentype.Font, cp: number): boolean =>
   font.charToGlyphIndex(String.fromCodePoint(cp)) !== 0;
 
 /**
+ * Round to `decimals` and stringify, never emitting `"-0"`.
+ *
+ * The `-0` guard is load-bearing wherever the result is concatenated into an SVG
+ * attribute — see `glyphPathData` for how a negative that rounds to zero fuses
+ * with the number before it. Shared by the path serializer and the `<use>`
+ * transforms so the two can't drift on it.
+ */
+function num(v: number, decimals: number): string {
+  const factor = 10 ** decimals;
+  const r = Math.round(v * factor) / factor;
+  return Object.is(r, -0) ? '0' : String(r);
+}
+
+/**
  * Serialize an opentype glyph `Path` to SVG path data with explicit separators.
  *
  * We can't use opentype's own `toPathData`: it decides whether to emit a space
@@ -58,11 +72,7 @@ const covers = (font: opentype.Font, cp: number): boolean =>
  * needs the current pen point, so we track it across commands.
  */
 export function glyphPathData(path: opentype.Path, decimals = 2): string {
-  const factor = 10 ** decimals;
-  const n = (v: number): string => {
-    const r = Math.round(v * factor) / factor;
-    return Object.is(r, -0) ? '0' : String(r);
-  };
+  const n = (v: number): string => num(v, decimals);
   let d = '';
   let cx = 0; // current pen point
   let cy = 0;
@@ -281,13 +291,6 @@ export function pickFace(
  */
 const GLYPH_EM = 1000;
 
-/** Round to `decimals` and stringify, never emitting "-0". */
-function fmt(v: number, decimals: number): string {
-  const factor = 10 ** decimals;
-  const r = Math.round(v * factor) / factor;
-  return Object.is(r, -0) ? '0' : String(r);
-}
-
 /** A placed occurrence of a prototype: pen position plus size-to-em scale. */
 interface GlyphUse {
   id: string;
@@ -324,7 +327,21 @@ interface GlyphUse {
  *   - **Instances stay where the `<text>` stood.** Pen positions are in the
  *     `<text>`'s own user space, so the `<use>` has to sit under the same
  *     (rotated, faded) ancestors the label did — exactly as the inline outline
- *     paths did before it.
+ *     paths did before it. Inherited `opacity`/`fill-opacity` survive that move:
+ *     svg2pdf's `applyAttributes` folds both into a gState it sets before
+ *     invoking the form.
+ *
+ * One latent sharp edge comes with the `<use>`: an ancestor `fill="none"`
+ * wrapping a `<text>` that sets its own fill would make the glyphs vanish from
+ * the PDF while still rendering in the SVG and PNG. svg2pdf's use branch does
+ * `fillOpacity *= attributeState.fill ? 1 : 0` (a workaround for symbols reused
+ * at different paints), and the `<use>` inherits that `none` even though the
+ * prototype it points at carries a real fill of its own. The inline paths were
+ * immune because they carried their fill directly and took no such branch.
+ * Nothing on the canvas paints a group `fill="none"` today — every such site is
+ * leaf chrome — and a `<text>` that inherits `fill="none"` itself never reaches
+ * here at all (`resolveTextStyle` reports it and the char is skipped). Worth
+ * knowing before wrapping labels in a group that sets it.
  *
  * Must run while the SVG is in the document (needs `getStartPositionOfChar`) and
  * AFTER `normalizeTextBaselines`, so positions sit on the alphabetic baseline
@@ -418,7 +435,7 @@ export function outlineAllText(svg: SVGSVGElement, fonts: OutlineFonts): void {
       // outline is scaled to its font size FIRST and then moved to the pen.
       use.setAttribute(
         'transform',
-        `translate(${fmt(u.x, 3)},${fmt(u.y, 3)}) scale(${fmt(u.scale, 8)})`,
+        `translate(${num(u.x, 3)},${num(u.y, 3)}) scale(${num(u.scale, 8)})`,
       );
       parent.insertBefore(use, text);
     }

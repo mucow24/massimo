@@ -3536,9 +3536,19 @@ the prototype**, not the `<use>` — svg2pdf builds a `<use>`'s render context f
 print black; the prototype key is therefore (face, codepoint, fill), and one shape in two colours
 is two prototypes. And **instances stay where the `<text>` stood** — pen positions are in the
 `<text>`'s own user space, so a `<use>` must sit under the same rotated ancestors the label did.
-Prototypes are
-only assembled during the read pass and appended in the write pass, preserving the measure-then-
-mutate split that keeps layout to one pass.
+Prototypes are only assembled during the read pass and appended in the write pass, preserving the
+measure-then-mutate split that keeps layout to one pass. Each `<use>` carries `href` AND
+`xlink:href` (declared once on the root): strict SVG 1.1 consumers resolve only the latter, and
+render nothing at all for a reference they cannot follow.
+
+Inherited `opacity`/`fill-opacity` survive the move into a form — svg2pdf's `applyAttributes` folds
+both into a gState it sets before the `/Do`. An ancestor `fill="none"` does NOT: its use branch
+computes `fillOpacity *= attributeState.fill ? 1 : 0` (a workaround for symbols reused at different
+paints), so a `<text>` carrying its own fill inside a `fill="none"` group would draw in the SVG and
+PNG and vanish from the PDF. The inline paths were immune — they carried their fill directly and
+took no such branch. Nothing on the canvas paints a group `fill="none"` today, and a `<text>` that
+inherits it never reaches the tracer at all (`resolveTextStyle` reports it and the character is
+skipped).
 
 `FONT_TABLE` (16 faces = 8 weights × {normal, italic}) is the export-side mirror of the `@font-face`
 blocks in [styles.css](src/styles.css) — two hand-maintained copies. `collectUsedFontFaces` returns

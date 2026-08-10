@@ -450,6 +450,111 @@ describe('outlineAllText — glyph prototypes in <defs>, instances as <use>', ()
     }
   });
 
+  /** A `<text>` whose second character sits in a bold `<tspan>`, so one codepoint
+   *  resolves through two different faces in a single run. */
+  function seedTwoWeights(): SVGSVGElement {
+    const svg = document.createElementNS(SVG_NS, 'svg') as SVGSVGElement;
+    const t = document.createElementNS(SVG_NS, 'text') as SVGTextElement;
+    t.setAttribute('fill', '#111');
+    t.appendChild(document.createTextNode('A'));
+    const bold = document.createElementNS(SVG_NS, 'tspan');
+    bold.setAttribute('font-weight', '700');
+    bold.textContent = 'A';
+    t.appendChild(bold);
+    (
+      t as unknown as { getStartPositionOfChar: (i: number) => { x: number; y: number } }
+    ).getStartPositionOfChar = (i: number) => ({ x: 10 * i, y: 5 });
+    svg.appendChild(t);
+    document.body.appendChild(svg);
+    return svg;
+  }
+
+  /** Like `tracer`, but only claims the codepoints `covered` accepts. */
+  const tracerCovering = (covered: (cp: number) => boolean): opentype.Font =>
+    ({
+      charToGlyphIndex: (ch: string) => (covered(ch.codePointAt(0) ?? -1) ? 7 : 0),
+      getPath: (_t: string, x: number, y: number) => ({
+        commands: [{ type: 'M', x, y }, { type: 'L', x: x + 1, y: y - 1 }, { type: 'Z' }],
+      }),
+    }) as unknown as opentype.Font;
+
+  it('gives one character in two faces a prototype each', () => {
+    // The key spans the FACE, not just the codepoint. Without that, a bold "A"
+    // would silently reuse the regular "A"'s outline — same letter, wrong shape,
+    // and nothing about the output would look obviously broken.
+    const svg = seedTwoWeights();
+    try {
+      outlineAllText(svg, {
+        faces: new Map([
+          ['400:false', tracer()],
+          ['700:false', tracer()],
+        ]),
+        symbols: [],
+      });
+      expect(svg.querySelectorAll('defs > path')).toHaveLength(2);
+      const hrefs = [...svg.querySelectorAll('use')].map((u) => u.getAttribute('href'));
+      expect(hrefs).toHaveLength(2);
+      expect(new Set(hrefs).size).toBe(2); // two distinct prototypes, not one reused
+    } finally {
+      document.body.removeChild(svg);
+    }
+  });
+
+  it('keeps a symbol-font fallback separate from the same character in a main face', () => {
+    // Same codepoint, but the bold face doesn't cover it so it traces from the
+    // symbol font instead. Two different faces, therefore two prototypes — the
+    // dingbat case (✈ from DejaVu) sharing a codepoint with a covered glyph.
+    const svg = seedTwoWeights();
+    try {
+      outlineAllText(svg, {
+        faces: new Map([
+          ['400:false', tracerCovering(() => true)],
+          ['700:false', tracerCovering(() => false)], // forces the fallback
+        ]),
+        symbols: [tracerCovering(() => true)],
+      });
+      expect(svg.querySelectorAll('defs > path')).toHaveLength(2);
+      expect(
+        new Set([...svg.querySelectorAll('use')].map((u) => u.getAttribute('href'))).size,
+      ).toBe(2);
+    } finally {
+      document.body.removeChild(svg);
+    }
+  });
+
+  it('traces the prototype at the em origin, never at the pen position', () => {
+    // The whole scheme rests on the prototype being position- and size-free: the
+    // pen position and the font size ride on the <use> transform instead. Trace
+    // at the pen instead and one prototype can no longer serve every occurrence —
+    // every glyph would land on top of the first one that claimed the key.
+    const calls: { ch: string; x: number; y: number; size: number }[] = [];
+    const recording = {
+      charToGlyphIndex: () => 7,
+      getPath: (ch: string, x: number, y: number, size: number) => {
+        calls.push({ ch, x, y, size });
+        return {
+          commands: [{ type: 'M', x, y }, { type: 'L', x: x + 1, y: y - 1 }, { type: 'Z' }],
+        };
+      },
+    } as unknown as opentype.Font;
+
+    const { svg } = seed('AB', { fontSize: '20' });
+    try {
+      outlineAllText(svg, { faces: new Map([['400:false', recording]]), symbols: [] });
+      // The stub's pen positions are (0,5) and (10,5) — neither may appear here.
+      expect(calls).toEqual([
+        { ch: 'A', x: 0, y: 0, size: 1000 },
+        { ch: 'B', x: 0, y: 0, size: 1000 },
+      ]);
+      // ...and the emitted outline starts at the origin, not at a pen position.
+      for (const p of svg.querySelectorAll('defs > path')) {
+        expect(p.getAttribute('d')).toMatch(/^M0 0/);
+      }
+    } finally {
+      document.body.removeChild(svg);
+    }
+  });
+
   it('still keeps the <text> when nothing could be traced', () => {
     const { svg } = seed('Canal St');
     try {
