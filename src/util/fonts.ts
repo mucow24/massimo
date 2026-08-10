@@ -22,10 +22,19 @@ import { clamp } from './grid';
 // URLs, and none of those gain anything from the umlaut.
 export const FONT_FAMILY = 'Soehne';
 
-// Font stack for all on-screen + exported map text. The map's type first; DejaVu
-// Sans then catches the symbol/dingbat/arrow glyphs it lacks (✈, ↔, ★, ■, …) so
-// they render identically on screen and in exports.
-export const FONT_STACK = "'Soehne', 'DejaVu Sans', Helvetica, Arial, sans-serif";
+// Font stack for all on-screen + exported map text. The map's type first, then
+// two fallbacks in a deliberate order: Massimo Symbols carries the handful of
+// pictograms we care about the LOOK of (today just ✈, drawn to match Söhne's cap
+// height), and DejaVu Sans sits behind it as the broad coverage net for
+// everything else Söhne lacks (★, ■, Greek, Cyrillic, …). Söhne itself covers ↔,
+// © and ™, so those never reach a fallback at all.
+//
+// The order matters twice and must agree in both places: here (canvas text
+// measurement, and the `font-family` the exported SVG carries) and in styles.css
+// (the DOM). `SYMBOL_FONT_URLS` in export/pdfGlyphs.ts is the same chain for the
+// outline tracer — reorder one and exports stop matching the screen.
+export const FONT_STACK =
+  "'Soehne', 'Massimo Symbols', 'DejaVu Sans', Helvetica, Arial, sans-serif";
 
 /**
  * Minimum rendered font size, in world units. The label Size field floors here

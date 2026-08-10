@@ -79,8 +79,11 @@ const persisted = {
     textLabels: {
       gReg: { id: 'gReg', x: -150, y: 160, rotation: 0, text: 'Regular', fontSize: 22, weight: 400, italic: false, align: 'left' },
       gBold: { id: 'gBold', x: -150, y: 210, rotation: 0, text: 'Bold', fontSize: 22, weight: 700, italic: false, align: 'left' },
-      // ✈ (U+2708) and ↔ (U+2194) are not in Helvetica Neue — exercises the
-      // glyph-outline fallback (opentype + DejaVu Sans) without crashing.
+      // Söhne covers ↔ itself but has no dingbats, so ✈ (U+2708) crosses into
+      // the symbol fallback chain — exercising the glyph-outline tracer over two
+      // different faces in one label. At weight 700 on purpose: the fallback
+      // faces declare a full weight range so the browser can't synthesize a bold
+      // the tracer would have no way to reproduce.
       gSym: { id: 'gSym', x: -150, y: 260, rotation: 0, text: '✈ Gate \u{2194}', fontSize: 22, weight: 700, italic: false, align: 'left' },
     },
     polygons: {},

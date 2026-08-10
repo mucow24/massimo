@@ -108,7 +108,7 @@ index.html                      # Vite entry; loads Inter (Google Fonts), mounts
 src/
   main.tsx                      # ReactDOM root, imports styles.css
   App.tsx                       # 3-pane shell + ALL global keyboard/contextmenu/blur wiring
-  styles.css                    # 17 @font-face (16 map faces + 1 DejaVu fallback) + .app CSS grid + tokens
+  styles.css                    # 18 @font-face (16 map faces + 2 fallbacks) + .app CSS grid + tokens
                                 #   (~30 custom props on .app; dark mode = one reassignment block
                                 #   under .app[data-theme='dark'])
 
@@ -275,11 +275,16 @@ src/
                                 #   just dev.
   test/                         # fixtures, jsdom setup, integration tests
 e2e/                            # Playwright specs + seedAndOpen harness
-public/fonts/                   # DejaVuSans.ttf (symbol fallback, committed). The 16 map faces are
-                                #   git-ignored (not redistributable); the export tracer parses them
-                                #   with opentype.js so they must be .ttf/.otf, not .woff2. Staged
-                                #   by scripts/stageFonts.mjs, which every environment runs on
-                                #   postinstall (see "Staging the typeface")
+public/fonts/                   # Two committed fallback faces, tried in this order for any glyph the
+                                #   map face lacks: MassimoSymbols.otf (one glyph, ✈, cut to Söhne's
+                                #   cap height — see its NOTICE) then DejaVuSans.ttf (broad coverage
+                                #   net). That order lives in THREE places that must agree: FONT_STACK
+                                #   (util/fonts.ts), the @font-face blocks in styles.css, and
+                                #   SYMBOL_FONT_URLS (export/pdfGlyphs.ts) for the outline tracer.
+                                #   The 16 map faces are git-ignored (not redistributable); the export
+                                #   tracer parses every face with opentype.js so they must be
+                                #   .ttf/.otf, not .woff2. Staged by scripts/stageFonts.mjs, which
+                                #   every environment runs on postinstall (see "Staging the typeface")
 ```
 
 ---
@@ -3533,10 +3538,10 @@ the font file. Per-glyph work in `outlineAllText`: `collectStyledChars` walks th
 each codepoint with its UTF-16 index (for `getStartPositionOfChar` on the root) and the `<tspan>`
 that governs it, so a mixed-weight/mixed-colour label outlines each run in its own face and fill;
 `resolveTextStyle` reads weight/style/size/fill off the attributes; `pickFace` chooses the face
-(exact, else nearest weight in style, else any) and a glyph no main face covers falls back to a
-symbol font (DejaVu). `glyphPathData` serializes with an explicit space between every coordinate —
-opentype's own `toPathData` can fuse a rounded `-0` into the previous number, a malformed `d` Blink
-tolerates but stricter parsers (some Edge builds) drop.
+(exact, else nearest weight in style, else any) and a glyph no main face covers falls back to the
+first symbol font that covers it. `glyphPathData` serializes with an explicit space between every
+coordinate — opentype's own `toPathData` can fuse a rounded `-0` into the previous number, a
+malformed `d` Blink tolerates but stricter parsers (some Edge builds) drop.
 
 A distinct glyph is traced **once**: a `<path>` prototype in `<defs>` at a fixed 1000-unit em, with
 every occurrence a `<use>` carrying `translate(pen) scale(fontSize/1000)`. A map draws its few dozen
@@ -3567,9 +3572,10 @@ blocks in [styles.css](src/styles.css) — two hand-maintained copies. `collectU
 the faces a map uses; `loadOutlineFonts` parses each with **opentype.js**, which reads TrueType/
 OpenType `.ttf`/`.otf` but **not** WOFF2 — so every `FONT_TABLE` face must be a parseable
 `.ttf`/`.otf`, and the on-screen `@font-face` and the tracer must read the **same** files or
-measured pen positions won't line up with the traced glyphs. styles.css also carries the `DejaVu
-Sans` fallback face, absent from `FONT_TABLE` — `pdfGlyphs` loads it separately as the symbol
-source. `normalizeWeight` ties go **low** (650 → 600).
+measured pen positions won't line up with the traced glyphs. styles.css also carries the two
+fallback faces, absent from `FONT_TABLE` — `pdfGlyphs` loads those separately, in order, as
+`SYMBOL_FONT_URLS`; `symbolFontFor` takes the first that covers the codepoint, so that order is a
+design decision, not an accident. `normalizeWeight` ties go **low** (650 → 600).
 
 The typeface is **Söhne**, licensed per-application from Klim — an app licence rather than a web
 one, which is what permits the glyphs riding along in the files the app exports. The `.ttf` files
@@ -3608,7 +3614,19 @@ The UI keeps English rung names over Söhne's German faces (Thin = Extraleicht, 
 Medium = Kräftig, SemiBold = Halbfett, Bold = Dreiviertelfett, Heavy = Fett, Black = Extrafett), and
 the filenames are ASCII-folded from Klim's originals so served URLs need no percent-encoding.
 Söhne covers ©, ™ and the arrows — unlike Helvetica Neue, which needed the fallback for ↔ — but has
-no dingbats, so `<air>` (✈) and its neighbours still trace from DejaVu Sans.
+no dingbats, so `<air>` (✈) traces from **Massimo Symbols**: a one-glyph face cut from Material
+Symbols Sharp's filled `flight` icon, rescaled to Söhne's cap height and remapped onto U+2708
+(upstream icon fonts address icons by private-use codepoints, which no fallback chain reaches). It
+is committed with a NOTICE recording the Apache-2.0 derivation. DejaVu Sans stays behind it for
+everything else Söhne lacks — ★, ■, ⚠, and every non-Latin script.
+
+Both fallback `@font-face` blocks declare `font-weight: 100 900`, claiming a range neither face
+actually ships. Without it they register at 400 and the browser SYNTHESIZES bold for any run at
+600+ — a fattened glyph the tracer, which draws the face's own outline, has no way to reproduce.
+The general rule: the screen must never be given something to invent, because the export can only
+trace what is really in the file. `e2e/fallbackSynthesis.spec.ts` pins it by ink, not by advance
+width — Chrome's synthetic bold smears the glyph without always widening it, so a metrics-only
+check passes while the pixels differ.
 
 **PDF** ([exportCanvasPdf.ts](src/export/exportCanvasPdf.ts)) reuses `buildExportSvg` — **including
 its text-outline pass** — then renders that SVG to a true vector PDF with **svg2pdf.js + jsPDF**:
