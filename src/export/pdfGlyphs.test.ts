@@ -13,6 +13,7 @@ import {
 } from './pdfGlyphs';
 import { FONT_TABLE } from './fonts';
 import { FONT_STACK } from '../util/fonts';
+import { GLYPH_TAGS } from '../geometry/labelTokens';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -67,11 +68,11 @@ describe('glyphPathData', () => {
   });
 });
 
-// Guards the glyph-shortcut choices (labelTokens.ts) against a font swap that
-// silently drops a symbol from the export. Söhne carries the arrows as well as
-// © and ™ — unlike Helvetica Neue, which needed the fallback for ↔ — but it has
-// no dingbats, so `<air>` (✈) rides on the fallback chain: Massimo Symbols
-// first, DejaVu Sans behind it.
+// Guards the glyph-shortcut choices (`GLYPH_TAGS`, labelTokens.ts) against a
+// font swap that silently drops a symbol from the export. Söhne carries the
+// arrows as well as © and ™ — unlike Helvetica Neue, which needed the fallback
+// for ↔ — but it has no dingbats, so `<air>` (✈) rides on the fallback chain:
+// Massimo Symbols first, DejaVu Sans behind it.
 //
 // Both faces are read straight off /public/fonts. The Söhne .ttf files are
 // git-ignored (licensed, not redistributable), so CI injects them from the
@@ -95,17 +96,35 @@ describe('shipped fonts cover the glyph-shortcut codepoints', () => {
   const covers = (font: opentype.Font, cp: number) =>
     font.charToGlyphIndex(String.fromCodePoint(cp)) !== 0;
 
-  const COPY = 0x00a9; // ©  <c>
-  const TM = 0x2122; // ™  <tm>
-  const XFER = 0x2194; // ↔  <xfer>
   const AIR = 0x2708; // ✈  <air>
+  /** `U+2708`, for reading a sweep's failure without counting list positions. */
+  const hex = (cp: number): string => `U+${cp.toString(16).toUpperCase().padStart(4, '0')}`;
 
-  it.skipIf(onSubstituteFaces)('the text face covers ©, ™ and ↔ — but not the ✈ dingbat', () => {
+  // Read off the grammar table rather than re-listed here, so a shortcut added
+  // there is covered by these assertions the moment it exists — the failure
+  // mode this whole block is for is a symbol nothing on the chain can draw.
+  const shortcutGlyphs = [...new Set(Object.values(GLYPH_TAGS))];
+  const shortcutCps = shortcutGlyphs.map((g) => g.codePointAt(0)!);
+
+  it('every shortcut is exactly one codepoint', () => {
+    // `outlineAllText` walks text per codepoint and traces each one on its own,
+    // so a surrogate pair or a variation-selector sequence would half-trace —
+    // and the coverage sweeps below, which read `codePointAt(0)`, would check
+    // only its first half.
+    for (const g of shortcutGlyphs) expect([...g].length, JSON.stringify(g)).toBe(1);
+  });
+
+  // Shortcuts the text face is NOT expected to draw: the dingbats, which are the
+  // whole reason the fallback chain exists. Everything else — ©, ™, the arrows —
+  // is Söhne's own, which is what lets those tags read in the label's own face
+  // at the label's own weight. Adding a dingbat shortcut belongs here.
+  const CHAIN_OWNED = new Set([AIR]);
+
+  it.skipIf(onSubstituteFaces)('the text face draws every shortcut but the dingbats', () => {
     const text = parseFont('soehne-buch.ttf');
-    expect(covers(text, COPY)).toBe(true);
-    expect(covers(text, TM)).toBe(true);
-    expect(covers(text, XFER)).toBe(true);
-    expect(covers(text, AIR)).toBe(false); // the dingbats are why the fallback exists
+    for (const cp of shortcutCps) {
+      expect(covers(text, cp), hex(cp)).toBe(!CHAIN_OWNED.has(cp));
+    }
   });
 
   // The tracer hardcodes what `calt` does rather than shaping the font, so this
@@ -178,9 +197,7 @@ describe('shipped fonts cover the glyph-shortcut codepoints', () => {
   );
 
   it('DejaVu Sans stays a full coverage net behind the symbols face', () => {
-    expect(covers(dejavu, AIR)).toBe(true);
-    expect(covers(dejavu, COPY)).toBe(true);
-    expect(covers(dejavu, TM)).toBe(true);
+    for (const cp of shortcutCps) expect(covers(dejavu, cp), hex(cp)).toBe(true);
   });
 
   // The chain is ORDERED and `symbolFontFor` takes the first cover, so the face
@@ -240,10 +257,12 @@ describe('shipped fonts cover the glyph-shortcut codepoints', () => {
     });
   });
 
-  it('traces © and ™ to non-empty outline path data (tracer fallback works)', () => {
-    for (const cp of [COPY, TM]) {
+  it('traces every shortcut off the net to non-empty outline path data', () => {
+    // Coverage is a cmap lookup; this is the tracer actually getting contours
+    // out of the face it resolves to.
+    for (const cp of shortcutCps) {
       const d = glyphPathData(dejavu.getPath(String.fromCodePoint(cp), 0, 0, 16));
-      expect(d.length).toBeGreaterThan(0);
+      expect(d.length, hex(cp)).toBeGreaterThan(0);
     }
   });
 });
