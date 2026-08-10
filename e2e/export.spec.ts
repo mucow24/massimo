@@ -78,31 +78,38 @@ test.describe('Canvas export', () => {
   });
 
   /**
-   * The positive oracle for outlining. Every other assertion in this file is
-   * satisfied by an export containing ZERO glyphs — "no <text>" and "some
-   * <path>" are both true of a map whose fonts failed to load, and that is
-   * exactly the vacuous green this guards against.
+   * The positive oracle for outlining, and for the deduplication underneath it.
+   * Every other assertion in this file is satisfied by an export containing ZERO
+   * glyphs — "no <text>" and "some <path>" are both true of a map whose fonts
+   * failed to load, and that is exactly the vacuous green this guards against.
    *
-   * Same map twice, the label differing by a known glyph count: outlining emits
-   * one <path> per glyph, so the delta must equal the characters added. If the
-   * tracer produces nothing, the delta is 0 and this fails.
+   * Same map twice, the label differing by a known glyph count. Outlining emits
+   * one <use> per glyph OCCURRENCE, so the instance delta must equal the
+   * characters added — a tracer producing nothing gives 0 and fails. And because
+   * those ten characters are the SAME character, they must share one traced
+   * outline: the prototype delta is at most 1 (0 if the base map already used an
+   * X). Counting instances alone would still pass if every occurrence carried
+   * its own copy of the outline again.
    */
-  test('one path per glyph — outlining is not silently a no-op', async ({ page }) => {
-    const countPaths = (svg: string) => svg.split('<path').length - 1;
-    const exportPaths = async (seed: Parameters<typeof seedAndOpen>[1]) => {
+  test('one <use> per glyph, one outline per distinct glyph', async ({ page }) => {
+    const count = (svg: string, tag: string) => svg.split(tag).length - 1;
+    const exportCounts = async (seed: Parameters<typeof seedAndOpen>[1]) => {
       await seedAndOpen(page, seed);
-      return countPaths((await readDownload(await exportVia(page, 'SVG'))).toString('utf-8'));
+      const svg = (await readDownload(await exportVia(page, 'SVG'))).toString('utf-8');
+      return { uses: count(svg, '<use'), paths: count(svg, '<path') };
     };
 
-    const base = await exportPaths(fourInLineWithBulletsAndLabel);
-    const EXTRA = 'XXXXXXXXXX'; // 10 more glyphs, same face, no new geometry
-    const grown = await exportPaths({
+    const base = await exportCounts(fourInLineWithBulletsAndLabel);
+    const EXTRA = 'XXXXXXXXXX'; // 10 more glyph occurrences, all the same glyph
+    const grown = await exportCounts({
       ...fourInLineWithBulletsAndLabel,
       textLabels: [{ id: 'g1', x: 0, y: 200, text: `Midtown${EXTRA}`, fontSize: 20, weight: 700 }],
     });
 
-    expect(grown - base).toBe(EXTRA.length);
-    expect(base).toBeGreaterThan(EXTRA.length); // the base map really does have glyphs
+    expect(grown.uses - base.uses).toBe(EXTRA.length);
+    expect(base.uses).toBeGreaterThan(EXTRA.length); // the base map really does have glyphs
+    // Ten more occurrences of one glyph cost at most one more outline.
+    expect(grown.paths - base.paths).toBeLessThanOrEqual(1);
   });
 
   test('SVG export stays clean with a selection and the grid showing', async ({ page }) => {

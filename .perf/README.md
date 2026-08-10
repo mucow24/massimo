@@ -1,11 +1,11 @@
-# Drag-performance harnesses
+# Performance and export harnesses
 
-Benchmarks for the station-drag hot path. **Nothing in here runs in CI or in any
-`npm` gate** — `lint`, `format:check`, `test`, `build` and `e2e` are every one of
-them scoped to `src/` or `e2e/`, so this directory is invisible to them. It is
-carried in the repo because the previous optimization run's harnesses were left
-untracked and died with their worktree, and rebuilding them cost more than the
-optimization did.
+Benchmarks for the station-drag hot path, plus the export/PDF measurement
+harnesses. **Nothing in here runs in CI or in any `npm` gate** — `lint`,
+`format:check`, `test`, `build` and `e2e` are every one of them scoped to `src/`
+or `e2e/`, so this directory is invisible to them. It is carried in the repo
+because the previous optimization run's harnesses were left untracked and died
+with their worktree, and rebuilding them cost more than the optimization did.
 
 ## The map
 
@@ -44,6 +44,21 @@ Browser, production build (run `npm run build` first):
 PORT=5234 npx playwright test -c .perf/playwright.perf-prod.config.ts
 ```
 
+Both playwright configs point `testDir` at all of `.perf/e2e`, so a drag-perf run
+picks the export harnesses up too (and vice versa). Name the spec, or filter with
+`-g`, when you want one family:
+
+```bash
+PORT=5234 npx playwright test -c .perf/playwright.perf-dev.config.ts pdf-glyph-baseline
+```
+
+The export harnesses read their maps from `.perf/*.massimo.json` by filename —
+`mta-v67d` and `furta-v34`, both gitignored — and `test.skip` themselves when the
+file is absent, so a run without them is quiet rather than red. They also write
+their results next to the maps as `.perf/*.local.json`. Never stage inputs or
+results under `test-results/`: that is Playwright's `outputDir` and it is deleted
+recursively before the first test of every run.
+
 Typecheck the harnesses after refactoring the geometry they reach into — they
 import deep internals on purpose, and nothing else will tell you they have
 rotted:
@@ -75,6 +90,9 @@ npm run perf:check
 | `bench/intersectLeak.perf.test.ts` | replays real `intersect` arguments — WRONG ANSWER, kept as a negative; read its header |
 | `bench/wasmLive.perf.test.ts` | live bytes vs free: settles leak against high-water mark. The one that broke the case open |
 | `bench/opLeak.perf.test.ts` | attributes LIVE growth per operation — this is the one that found the leak |
+| `e2e/pdf-glyph-baseline.spec.ts` | PDF size + whole-token operator counts (`m l c f re W q Do`), each map measured as-is and with every station name / label blanked, so text's share of the output falls out of the diff. Tag a run with `PDF_BASELINE_TAG` |
+| `e2e/pdf-glyph-parity.spec.ts` | rasterizes the exported **SVG** to raw RGBA at 2000px so two code versions can be diffed pixel-for-pixel. Tag with `PARITY_TAG`; a same-code control run must come back at 0 differing pixels or the instrument is lying |
+| `e2e/pdf-raster-parity.spec.ts` | rasterizes the exported **PDF** itself via pdf.js — catches a fault svg2pdf introduces downstream of a correct SVG (glyphs misplaced by the form-object `cm`, clipped by a `/BBox`, or missing). Tag with `PDFRASTER_TAG`. Needs `npm i --no-save pdfjs-dist`, which is deliberately NOT a project dependency; skips without it |
 
 ## Read this before trusting a number
 

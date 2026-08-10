@@ -1,12 +1,21 @@
 /**
  * Glyph outlining for the SVG/PNG/PDF exports.
  *
- * Every exported file carries vector `<path>` outlines instead of text plus a
- * font: `outlineAllText` traces each glyph from the same face the browser drew
- * it in, at the browser's own measured pen position, so it lands 1:1 with no
- * measuring, centering, or scaling of our own. Glyphs the text face lacks (the
- * dingbats — ✈, ★, ⚠) trace from the shipped DejaVu Sans fallback, which is the
- * same face `FONT_STACK` puts behind Söhne on screen.
+ * Every exported file carries vector outlines instead of text plus a font:
+ * `outlineAllText` traces each glyph from the same face the browser drew it in,
+ * at the browser's own measured pen position, so it lands 1:1 with no measuring,
+ * centering, or scaling of our own. Glyphs the text face lacks (the dingbats —
+ * ✈, ★, ⚠) trace from the shipped DejaVu Sans fallback, which is the same face
+ * `FONT_STACK` puts behind Söhne on screen.
+ *
+ * Each distinct glyph is traced ONCE, into a `<defs>` prototype at a fixed em
+ * size, and every occurrence becomes a `<use>` that translates it to its pen
+ * position and scales it to its font size. A real map draws its few dozen
+ * shapes thousands of times — the MTA map is 4,751 characters over 71 distinct
+ * (glyph, face, fill) combinations — so this is where the export's bulk lives.
+ * It pays in the PDF as well as the SVG: svg2pdf turns a `<use>` into a PDF Form
+ * XObject, so each shape becomes one shared content stream invoked by a `/Do`
+ * per instance rather than a fresh copy of the outline every time.
  *
  * Runs AFTER `normalizeTextBaselines`, because `getStartPositionOfChar` must
  * report the alphabetic baseline that `getPath` expects. A character in neither
@@ -14,9 +23,11 @@
  */
 import * as opentype from 'opentype.js';
 import { fontUrl, type FontFaceSpec } from './fonts';
+import { XLINK_NS } from './embeddedSvg';
 import { normalizeWeight } from '../util/fonts';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
 // Base-relative paths (prefixed with BASE_URL via `fontUrl` at fetch time, so
 // they resolve under subpath builds like GitHub Pages /massimo/).
 // Outline sources for glyphs the text face lacks (the dingbats), tried in
@@ -26,6 +37,20 @@ const SYMBOL_FONT_URLS = ['fonts/DejaVuSans.ttf'];
 
 const covers = (font: opentype.Font, cp: number): boolean =>
   font.charToGlyphIndex(String.fromCodePoint(cp)) !== 0;
+
+/**
+ * Round to `decimals` and stringify, never emitting `"-0"`.
+ *
+ * The `-0` guard is load-bearing wherever the result is concatenated into an SVG
+ * attribute — see `glyphPathData` for how a negative that rounds to zero fuses
+ * with the number before it. Shared by the path serializer and the `<use>`
+ * transforms so the two can't drift on it.
+ */
+function num(v: number, decimals: number): string {
+  const factor = 10 ** decimals;
+  const r = Math.round(v * factor) / factor;
+  return Object.is(r, -0) ? '0' : String(r);
+}
 
 /**
  * Serialize an opentype glyph `Path` to SVG path data with explicit separators.
@@ -47,11 +72,7 @@ const covers = (font: opentype.Font, cp: number): boolean =>
  * needs the current pen point, so we track it across commands.
  */
 export function glyphPathData(path: opentype.Path, decimals = 2): string {
-  const factor = 10 ** decimals;
-  const n = (v: number): string => {
-    const r = Math.round(v * factor) / factor;
-    return Object.is(r, -0) ? '0' : String(r);
-  };
+  const n = (v: number): string => num(v, decimals);
   let d = '';
   let cx = 0; // current pen point
   let cy = 0;
@@ -260,22 +281,67 @@ export function pickFace(
 }
 
 /**
- * Replace every `<text>` in the (attached, baseline-normalized) export clone with
- * vector outline `<path>`s — one per glyph, traced from the matching face at the
- * browser's own measured pen position. Covered glyphs come from the main face for
- * the run's weight/style; glyphs no face covers fall back to the symbol fonts.
+ * Em size every glyph prototype is traced at. Instances scale by
+ * `fontSize / GLYPH_EM`, so one prototype serves every size the map uses.
  *
- * Two properties worth keeping:
+ * Tracing in em space rather than at each label's own size is what makes the
+ * prototype table small: keyed by size as well, the FURTA map's 275 shapes
+ * become 530. 1000 also buys precision — `glyphPathData`'s two decimals land
+ * ~50× finer here than they did tracing straight at an 8–11pt label size.
+ */
+const GLYPH_EM = 1000;
+
+/** A placed occurrence of a prototype: pen position plus size-to-em scale. */
+interface GlyphUse {
+  id: string;
+  x: number;
+  y: number;
+  scale: number;
+}
+
+/**
+ * Replace every `<text>` in the (attached, baseline-normalized) export clone with
+ * vector outlines — a `<defs>` prototype per distinct glyph, and a `<use>` per
+ * occurrence placed at the browser's own measured pen position. Covered glyphs
+ * come from the main face for the run's weight/style; glyphs no face covers fall
+ * back to the symbol fonts.
+ *
+ * Four properties worth keeping:
  *
  *   - **Measure everything first, mutate after.** Every `getStartPositionOfChar`
  *     read happens before the first DOM write, so the browser lays the tree out
  *     ONCE. Interleaving them invalidated layout per `<text>` and made the cost
  *     quadratic in label count — which SVG and PNG export never used to pay.
+ *     Prototypes are therefore only ASSEMBLED in pass 1; nothing is appended to
+ *     the document until pass 2.
  *   - **A `<text>` is only replaced if it actually produced glyphs.** A face that
  *     fails to load, or a codepoint nothing covers, leaves the original `<text>`
  *     in place to render in a fallback face. Deleting it unconditionally turned a
  *     font hiccup into a map with no labels at all, which nothing downstream can
  *     detect.
+ *   - **The fill is baked onto the prototype, not the `<use>`.** svg2pdf builds a
+ *     `<use>`'s render context from `AttributeState.default()`, so a fill on the
+ *     instance never reaches the form object — every glyph would print black. It
+ *     also means the prototype key spans (face, codepoint, fill): one shape in
+ *     two colours is two prototypes.
+ *   - **Instances stay where the `<text>` stood.** Pen positions are in the
+ *     `<text>`'s own user space, so the `<use>` has to sit under the same
+ *     (rotated, faded) ancestors the label did — exactly as the inline outline
+ *     paths did before it. Inherited `opacity`/`fill-opacity` survive that move:
+ *     svg2pdf's `applyAttributes` folds both into a gState it sets before
+ *     invoking the form.
+ *
+ * One latent sharp edge comes with the `<use>`: an ancestor `fill="none"`
+ * wrapping a `<text>` that sets its own fill would make the glyphs vanish from
+ * the PDF while still rendering in the SVG and PNG. svg2pdf's use branch does
+ * `fillOpacity *= attributeState.fill ? 1 : 0` (a workaround for symbols reused
+ * at different paints), and the `<use>` inherits that `none` even though the
+ * prototype it points at carries a real fill of its own. The inline paths were
+ * immune because they carried their fill directly and took no such branch.
+ * Nothing on the canvas paints a group `fill="none"` today — every such site is
+ * leaf chrome — and a `<text>` that inherits `fill="none"` itself never reaches
+ * here at all (`resolveTextStyle` reports it and the char is skipped). Worth
+ * knowing before wrapping labels in a group that sets it.
  *
  * Must run while the SVG is in the document (needs `getStartPositionOfChar`) and
  * AFTER `normalizeTextBaselines`, so positions sit on the alphabetic baseline
@@ -285,9 +351,23 @@ export function pickFace(
 export function outlineAllText(svg: SVGSVGElement, fonts: OutlineFonts): void {
   const texts = [...svg.querySelectorAll('text')];
 
+  // Prototype registry, keyed by (face, codepoint, fill). An empty id caches a
+  // glyph with no contours (a space) so it is not re-traced on every occurrence.
+  const protoId = new Map<string, string>();
+  const protos: { id: string; d: string; fill: string }[] = [];
+  const faceIds = new Map<opentype.Font, number>();
+  const faceIdOf = (font: opentype.Font): number => {
+    let id = faceIds.get(font);
+    if (id === undefined) {
+      id = faceIds.size;
+      faceIds.set(font, id);
+    }
+    return id;
+  };
+
   // Pass 1 — READ ONLY. No DOM writes, so layout is computed once for the tree.
   const measured = texts.map((text) => {
-    const glyphs: { d: string; fill: string }[] = [];
+    const uses: GlyphUse[] = [];
     let drawable = 0; // chars that SHOULD have produced a glyph
     for (const { cp, index, styleEl } of collectStyledChars(text)) {
       const { weight, italic, fontSize, fill } = resolveTextStyle(styleEl);
@@ -303,25 +383,61 @@ export function outlineAllText(svg: SVGSVGElement, fonts: OutlineFonts): void {
       const face = pickFace(fonts.faces, weight, italic);
       const font = face && covers(face, cp) ? face : symbolFontFor(fonts.symbols, cp);
       if (!font) continue;
-      const d = glyphPathData(font.getPath(String.fromCodePoint(cp), p.x, p.y, fontSize));
-      if (d) glyphs.push({ d, fill });
+      const key = `${faceIdOf(font)}|${cp}|${fill}`;
+      let id = protoId.get(key);
+      if (id === undefined) {
+        const d = glyphPathData(font.getPath(String.fromCodePoint(cp), 0, 0, GLYPH_EM));
+        id = d ? `mgly${protos.length}` : '';
+        protoId.set(key, id);
+        if (d) protos.push({ id, d, fill });
+      }
+      if (!id) continue;
+      uses.push({ id, x: p.x, y: p.y, scale: fontSize / GLYPH_EM });
     }
-    return { text, glyphs, drawable };
+    return { text, uses, drawable };
   });
 
   // Pass 2 — WRITE ONLY.
-  for (const { text, glyphs, drawable } of measured) {
+  if (protos.length > 0) {
+    const defs = document.createElementNS(SVG_NS, 'defs');
+    for (const g of protos) {
+      const path = document.createElementNS(SVG_NS, 'path');
+      path.setAttribute('id', g.id);
+      path.setAttribute('d', g.d);
+      path.setAttribute('fill', g.fill);
+      defs.appendChild(path);
+    }
+    svg.insertBefore(defs, svg.firstChild);
+    // Declare xlink ONCE on the root. Every instance below carries an
+    // `xlink:href` alongside the plain one, and without a root declaration
+    // XMLSerializer would repeat `xmlns:xlink="…"` on all of them — 40+ wasted
+    // bytes per glyph on a map that has thousands.
+    svg.setAttributeNS(XMLNS_NS, 'xmlns:xlink', XLINK_NS);
+  }
+  for (const { text, uses, drawable } of measured) {
     const parent = text.parentNode;
     if (!parent) continue;
     // Nothing to draw (whitespace, fill:none) — drop it, it rendered nothing.
     // Something to draw but nothing traced — keep the <text> so the label
     // survives in a fallback face rather than vanishing.
-    if (drawable > 0 && glyphs.length === 0) continue;
-    for (const g of glyphs) {
-      const path = document.createElementNS(SVG_NS, 'path');
-      path.setAttribute('d', g.d);
-      path.setAttribute('fill', g.fill);
-      parent.insertBefore(path, text);
+    if (drawable > 0 && uses.length === 0) continue;
+    for (const u of uses) {
+      const use = document.createElementNS(SVG_NS, 'use');
+      // BOTH href forms, as the app already does for embedded `<image>`s. The
+      // SVG 2 `href` is what Chrome, the PNG rasterizer and svg2pdf read; the
+      // SVG 1.1 `xlink:href` is the only one strict consumers (Illustrator,
+      // older librsvg) resolve, and a standalone .svg export that reaches one of
+      // those would otherwise render with every label missing.
+      const ref = `#${u.id}`;
+      use.setAttribute('href', ref);
+      use.setAttributeNS(XLINK_NS, 'xlink:href', ref);
+      // translate-then-scale — SVG applies these right to left, so the em-space
+      // outline is scaled to its font size FIRST and then moved to the pen.
+      use.setAttribute(
+        'transform',
+        `translate(${num(u.x, 3)},${num(u.y, 3)}) scale(${num(u.scale, 8)})`,
+      );
+      parent.insertBefore(use, text);
     }
     parent.removeChild(text);
   }

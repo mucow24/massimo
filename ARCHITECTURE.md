@@ -3515,10 +3515,10 @@ that don't need the font work, such as the library thumbnail):
 6. Set root `font-family` (only matters when text is left un-outlined; an outlined export carries no
    `<text>` to inherit it).
 7. Insert the background `<rect>` as `firstChild`.
-8. **Outline text to paths**: `normalizeTextBaselines` re-baselines every `<text>` to alphabetic
+8. **Outline text**: `normalizeTextBaselines` re-baselines every `<text>` to alphabetic
    (`getBBox` delta, browser truth, exact for any baseline mode/font without metrics), then
-   `outlineAllText` ([pdfGlyphs.ts](src/export/pdfGlyphs.ts)) replaces each glyph with a vector
-   `<path>` traced from the matching face at the browser's own measured pen position (which already
+   `outlineAllText` ([pdfGlyphs.ts](src/export/pdfGlyphs.ts)) replaces every `<text>` with vector
+   outlines traced from the matching face at the browser's own measured pen position (which already
    folds in text-anchor, tracking, and kerning). The export carries **no font data** — the licence
    permits the font in output only when the end user can't edit the fonts in the result, and outlines
    satisfy that. Skipped when `outlineText: false`.
@@ -3534,6 +3534,30 @@ that governs it, so a mixed-weight/mixed-colour label outlines each run in its o
 symbol font (DejaVu). `glyphPathData` serializes with an explicit space between every coordinate —
 opentype's own `toPathData` can fuse a rounded `-0` into the previous number, a malformed `d` Blink
 tolerates but stricter parsers (some Edge builds) drop.
+
+A distinct glyph is traced **once**: a `<path>` prototype in `<defs>` at a fixed 1000-unit em, with
+every occurrence a `<use>` carrying `translate(pen) scale(fontSize/1000)`. A map draws its few dozen
+shapes thousands of times, so this is where the export's bulk lives — and it pays in the PDF as much
+as the SVG, because svg2pdf renders a `<use>` as a PDF **Form XObject**: one shared content stream
+per shape, invoked with a `/Do` per instance. Two invariants hold it up. The **fill is baked onto
+the prototype**, not the `<use>` — svg2pdf builds a `<use>`'s render context from
+`AttributeState.default()`, so a fill on the instance never reaches the form and every glyph would
+print black; the prototype key is therefore (face, codepoint, fill), and one shape in two colours
+is two prototypes. And **instances stay where the `<text>` stood** — pen positions are in the
+`<text>`'s own user space, so a `<use>` must sit under the same rotated ancestors the label did.
+Prototypes are only assembled during the read pass and appended in the write pass, preserving the
+measure-then-mutate split that keeps layout to one pass. Each `<use>` carries `href` AND
+`xlink:href` (declared once on the root): strict SVG 1.1 consumers resolve only the latter, and
+render nothing at all for a reference they cannot follow.
+
+Inherited `opacity`/`fill-opacity` survive the move into a form — svg2pdf's `applyAttributes` folds
+both into a gState it sets before the `/Do`. An ancestor `fill="none"` does NOT: its use branch
+computes `fillOpacity *= attributeState.fill ? 1 : 0` (a workaround for symbols reused at different
+paints), so a `<text>` carrying its own fill inside a `fill="none"` group would draw in the SVG and
+PNG and vanish from the PDF. The inline paths were immune — they carried their fill directly and
+took no such branch. Nothing on the canvas paints a group `fill="none"` today, and a `<text>` that
+inherits it never reaches the tracer at all (`resolveTextStyle` reports it and the character is
+skipped).
 
 `FONT_TABLE` (16 faces = 8 weights × {normal, italic}) is the export-side mirror of the `@font-face`
 blocks in [styles.css](src/styles.css) — two hand-maintained copies. `collectUsedFontFaces` returns
