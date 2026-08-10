@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { FONT_TABLE, fontUrl, collectUsedFontFaces, type FontFaceSpec } from './fonts';
+import {
+  FONT_TABLE,
+  fontUrl,
+  collectUsedFontFaces,
+  contextualAlternate,
+  type FontFaceSpec,
+} from './fonts';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -92,5 +98,50 @@ describe('collectUsedFontFaces', () => {
     const faces = collectUsedFontFaces(svg);
     expect(faces).toEqual(expect.arrayContaining([want(700, false), want(600, true)]));
     expect(faces).toHaveLength(2);
+  });
+});
+
+describe('contextualAlternate', () => {
+  const cp = (ch: string) => ch.codePointAt(0)!;
+  /** Substitution for the middle character of a 3-character window. */
+  const mid = (window: string) => contextualAlternate(cp(window[0]), cp(window[1]), cp(window[2]));
+
+  it('raises the colon to figure height between two figures (the time colon)', () => {
+    expect(mid('2:3')).toEqual({ glyphName: 'colon.mid' });
+    expect(mid('0:0')).toEqual({ glyphName: 'colon.mid' });
+    expect(mid('9:9')).toEqual({ glyphName: 'colon.mid' });
+  });
+
+  it('turns x between two figures into a multiplication sign', () => {
+    expect(mid('3x4')).toEqual({ cp: 0x00d7 });
+    expect(mid('7X8')).toEqual({ cp: 0x00d7 }); // the capital substitutes too
+  });
+
+  it('leaves a colon alone when either neighbour is not a figure', () => {
+    expect(mid('a:b')).toBeNull();
+    expect(mid('1:b')).toBeNull();
+    expect(mid('a:1')).toBeNull();
+    expect(mid(' :1')).toBeNull();
+  });
+
+  it('leaves x alone when either neighbour is not a figure', () => {
+    // Notably the SPACED form: the font substitutes there, this deliberately
+    // does not (see the doc comment).
+    expect(mid('1x-')).toBeNull();
+    expect(mid('axb')).toBeNull();
+    expect(contextualAlternate(cp(' '), cp('x'), cp(' '))).toBeNull();
+  });
+
+  it('substitutes nothing at a run edge, where there is no neighbour', () => {
+    expect(contextualAlternate(null, cp(':'), cp('3'))).toBeNull();
+    expect(contextualAlternate(cp('3'), cp(':'), null)).toBeNull();
+    expect(contextualAlternate(null, cp('x'), null)).toBeNull();
+  });
+
+  it('substitutes nothing for characters no rule covers', () => {
+    expect(mid('1y2')).toBeNull();
+    expect(mid('1.2')).toBeNull();
+    expect(mid('1-2')).toBeNull();
+    expect(mid('121')).toBeNull();
   });
 });

@@ -10,6 +10,7 @@ import {
   resolveTextStyle,
   symbolFontFor,
 } from './pdfGlyphs';
+import { FONT_TABLE } from './fonts';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -101,6 +102,75 @@ describe('shipped fonts cover the glyph-shortcut codepoints', () => {
     expect(covers(text, XFER)).toBe(true);
     expect(covers(text, AIR)).toBe(false); // the dingbats are why the fallback exists
   });
+
+  // The tracer hardcodes what `calt` does rather than shaping the font, so this
+  // is the drift guard: it re-reads the shipped GSUB and fails the day the
+  // typeface's contextual alternates stop being the two rules `contextualAlternate`
+  // reproduces — including the day one of them stops being 1:1, which would break
+  // the one-glyph-per-character assumption `outlineAllText` is built on.
+  interface Gsub {
+    features: { tag: string; feature: { lookupListIndexes: number[] } }[];
+    lookups: { lookupType: number; subtables: unknown[] }[];
+  }
+  type ChainSubtable = { chainClassSet?: { lookupRecords: { lookupListIndex: number }[] }[][] };
+  type SingleSubtable = { coverage: { glyphs?: number[] }; substitute: number[] };
+
+  it.skipIf(onSubstituteFaces)('calt is still exactly the two rules the tracer reproduces', () => {
+    const font = parseFont('soehne-buch.ttf');
+    const gsub = (font.tables as unknown as { gsub?: Gsub }).gsub;
+    expect(gsub, 'the face must still carry a GSUB table').toBeTruthy();
+
+    const caltLookups = new Set<number>();
+    for (const f of gsub!.features) {
+      if (f.tag === 'calt') for (const i of f.feature.lookupListIndexes) caltLookups.add(i);
+    }
+    expect(caltLookups.size).toBeGreaterThan(0);
+
+    // Follow each chain-context rule to the substitution lookup it invokes.
+    const substLookups = new Set<number>();
+    for (const i of caltLookups) {
+      for (const st of gsub!.lookups[i].subtables as ChainSubtable[]) {
+        for (const set of st.chainClassSet ?? []) {
+          for (const rule of set)
+            for (const r of rule.lookupRecords) substLookups.add(r.lookupListIndex);
+        }
+      }
+    }
+
+    // An unnamed glyph would be unreachable for the tracer, so surface the raw
+    // id rather than dropping it — it should show up in the diff below.
+    const nameOf = (gid: number): string => font.glyphs.get(gid).name ?? `#${gid}`;
+    const pairs: Record<string, string> = {};
+    for (const i of substLookups) {
+      const lookup = gsub!.lookups[i];
+      // Type 1 is single substitution — one glyph in, one glyph out.
+      expect(lookup.lookupType, 'calt must stay a 1:1 substitution').toBe(1);
+      for (const st of lookup.subtables as SingleSubtable[]) {
+        (st.coverage.glyphs ?? []).forEach((g, n) => {
+          pairs[nameOf(g)] = nameOf(st.substitute[n]);
+        });
+      }
+    }
+    expect(pairs).toEqual({
+      X: 'multiply',
+      x: 'multiply',
+      colon: 'colon.mid',
+      // Only reachable under `tnum`, which the map never enables.
+      'colon.tab': 'colon.mid',
+    });
+  });
+
+  it.skipIf(onSubstituteFaces)(
+    'every face exposes colon.mid by the name the tracer asks for',
+    () => {
+      // The figure-height colon has no codepoint, so the tracer can only reach it
+      // through the `post` table's glyph names.
+      for (const spec of FONT_TABLE) {
+        const face = parseFont(spec.file.replace('fonts/', ''));
+        expect(face.nameToGlyphIndex('colon.mid'), spec.file).toBeGreaterThan(0);
+      }
+    },
+  );
 
   it('DejaVu Sans covers the ✈ dingbat the text face lacks (outline fallback)', () => {
     expect(covers(dejavu, AIR)).toBe(true);
@@ -570,6 +640,154 @@ describe('outlineAllText — glyph prototypes in <defs>, instances as <use>', ()
       expect(svg.querySelectorAll('text')).toHaveLength(1);
       expect(svg.querySelectorAll('use')).toHaveLength(0);
       expect(svg.querySelectorAll('defs')).toHaveLength(0); // no orphan prototypes
+    } finally {
+      document.body.removeChild(svg);
+    }
+  });
+});
+
+// The browser shapes map text with contextual alternates ON, so `12:30` paints a
+// figure-height colon and `3x3` a multiplication sign. The tracer draws one glyph
+// per character at the browser's own pen positions, so it has to reproduce those
+// substitutions or it stamps the wrong shape into every export. Both are 1:1, so
+// the pen positions themselves are untouched.
+describe('outlineAllText — contextual alternates', () => {
+  const COLON_MID_GID = 473;
+
+  /** Records what it was asked to trace: a codepoint's character, or `@gid` for
+   *  a glyph reached by name (the only way to `colon.mid`, which has none). */
+  function recordingFace(opts: { knowsColonMid?: boolean } = {}) {
+    const traced: string[] = [];
+    const tri = (x: number, y: number) => ({
+      commands: [{ type: 'M', x, y }, { type: 'L', x: x + 1, y: y - 1 }, { type: 'Z' }],
+    });
+    const font = {
+      charToGlyphIndex: () => 7,
+      getPath: (t: string, x: number, y: number) => {
+        traced.push(t);
+        return tri(x, y);
+      },
+      nameToGlyphIndex: (name: string) =>
+        opts.knowsColonMid !== false && name === 'colon.mid' ? COLON_MID_GID : -1,
+      glyphs: {
+        get: (gid: number) => ({
+          getPath: (x: number, y: number) => {
+            traced.push(`@${gid}`);
+            return tri(x, y);
+          },
+        }),
+      },
+    } as unknown as opentype.Font;
+    return { font, traced };
+  }
+
+  /** A `<text>` whose content is either a plain string or a list of
+   *  [text, isOwnTspan] chunks, with stubbed pen positions. */
+  function seed(
+    content: string | [string, boolean][],
+    attrs: Record<string, string> = {},
+  ): SVGSVGElement {
+    const svg = document.createElementNS(SVG_NS, 'svg') as SVGSVGElement;
+    const t = document.createElementNS(SVG_NS, 'text') as SVGTextElement;
+    t.setAttribute('fill', '#111');
+    for (const [k, v] of Object.entries(attrs)) t.setAttribute(k, v);
+    for (const [chunk, ownSpan] of typeof content === 'string' ? [[content, false]] : content) {
+      if (ownSpan) {
+        const span = document.createElementNS(SVG_NS, 'tspan');
+        span.textContent = chunk as string;
+        t.appendChild(span);
+      } else {
+        t.appendChild(document.createTextNode(chunk as string));
+      }
+    }
+    (
+      t as unknown as { getStartPositionOfChar: (i: number) => { x: number; y: number } }
+    ).getStartPositionOfChar = (i: number) => ({ x: 10 * i, y: 0 });
+    svg.appendChild(t);
+    document.body.appendChild(svg);
+    return svg;
+  }
+
+  const run = (svg: SVGSVGElement, font: opentype.Font) =>
+    outlineAllText(svg, { faces: new Map([['400:false', font]]), symbols: [] });
+
+  it('traces the figure-height colon for a time, not the colon the character maps to', () => {
+    const { font, traced } = recordingFace();
+    const svg = seed('12:30');
+    try {
+      run(svg, font);
+      expect(traced).toEqual(['1', '2', `@${COLON_MID_GID}`, '3', '0']);
+      // Still one glyph per character — no position shifted, nothing dropped.
+      expect(svg.querySelectorAll('use')).toHaveLength(5);
+    } finally {
+      document.body.removeChild(svg);
+    }
+  });
+
+  it('traces a multiplication sign for x between figures', () => {
+    const { font, traced } = recordingFace();
+    const svg = seed('3x4');
+    try {
+      run(svg, font);
+      expect(traced).toEqual(['3', '×', '4']);
+    } finally {
+      document.body.removeChild(svg);
+    }
+  });
+
+  it('leaves the colon alone when its neighbours are not figures', () => {
+    const { font, traced } = recordingFace();
+    const svg = seed('a:b');
+    try {
+      run(svg, font);
+      expect(traced).toEqual(['a', ':', 'b']);
+    } finally {
+      document.body.removeChild(svg);
+    }
+  });
+
+  it('still substitutes on a tracked run — calt survives tracking via font-feature-settings', () => {
+    // The map requests calt through `font-feature-settings`, which (unlike
+    // `font-variant-ligatures`) stays on under letter-spacing — and every real
+    // label is tracked, so the browser DOES paint the raised colon there. The
+    // tracer has to follow it or the export diverges from the screen.
+    const { font, traced } = recordingFace();
+    const svg = seed('12:30', { 'letter-spacing': '1.2' });
+    try {
+      run(svg, font);
+      expect(traced).toEqual(['1', '2', `@${COLON_MID_GID}`, '3', '0']);
+    } finally {
+      document.body.removeChild(svg);
+    }
+  });
+
+  it('does not reach across a run boundary for its neighbours', () => {
+    // Every renderer emits one <text> per styled run, or one <tspan> per LINE —
+    // so a neighbour in a different element is a different shaping run (or a
+    // different line entirely) and cannot form the context.
+    const { font, traced } = recordingFace();
+    const svg = seed([
+      ['12', false],
+      [':', true],
+      ['30', false],
+    ]);
+    try {
+      run(svg, font);
+      expect(traced).toEqual(['1', '2', ':', '3', '0']);
+    } finally {
+      document.body.removeChild(svg);
+    }
+  });
+
+  it('falls back to the plain glyph when the face has no such alternate', () => {
+    // A stand-in face (or a future typeface without the alternate) must still
+    // export a readable colon rather than dropping the character.
+    const { font, traced } = recordingFace({ knowsColonMid: false });
+    const svg = seed('12:30');
+    try {
+      run(svg, font);
+      expect(traced).toEqual(['1', '2', ':', '3', '0']);
+      expect(svg.querySelectorAll('use')).toHaveLength(5);
     } finally {
       document.body.removeChild(svg);
     }
