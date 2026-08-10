@@ -9,19 +9,18 @@
  * one place that answers "where do the faces come from here", for every
  * environment:
  *
- *   1. `.fonts/`          — a local clone of the private repo, and the layout CI
- *                           itself stages from.
+ *   1. `.fonts/`          — where CI and the Pages deploy check the private font
+ *                           repo out before installing; also works if a dev
+ *                           clones it there by hand.
  *   2. sibling checkout   — the main working tree of this same repo. Git
  *                           worktrees under `.claude/worktrees/` share a `.git`
  *                           but not ignored files, so a fresh worktree finds the
  *                           faces the dev machine already has, with no network.
- *   3. private repo       — cloned with `FONTS_REPO_PAT`, mirroring CI. This is
- *                           the only route a cloud session has: it is a fresh
- *                           clone with no sibling on disk.
- *   4. substitutes        — DejaVu Sans (committed, redistributable) copied under
+ *   3. substitutes        — DejaVu Sans (committed, redistributable) copied under
  *                           each expected filename, so the export pipeline has a
  *                           real parseable face to trace even where the licensed
- *                           ones can never be fetched.
+ *                           ones are unavailable. This is what a cloud session
+ *                           lands on: a fresh clone with no sibling on disk.
  *
  * Substitutes are a LAST resort and they announce themselves: staging them
  * writes `public/fonts/.substitute`, and `pdfGlyphs.test.ts` reads that marker to
@@ -71,10 +70,9 @@ export function facesIn(dir) {
  * probed facts, returns the decision, so the ordering is testable without a
  * filesystem or a network.
  */
-export function chooseStrategy({ dotFontsFaces, siblingFaces, hasToken }) {
+export function chooseStrategy({ dotFontsFaces, siblingFaces }) {
   if (dotFontsFaces > 0) return 'dot-fonts';
   if (siblingFaces > 0) return 'sibling';
-  if (hasToken) return 'clone';
   return 'substitute';
 }
 
@@ -122,14 +120,6 @@ function stageSubstitutes(names) {
   return names.length;
 }
 
-function clonePrivateRepo(token) {
-  const url = `https://x-access-token:${token}@github.com/${PRIVATE_FONTS_REPO}.git`;
-  rmSync(DOT_FONTS, { recursive: true, force: true });
-  execFileSync('git', ['clone', '--depth', '1', '--quiet', url, DOT_FONTS], {
-    stdio: ['ignore', 'ignore', 'pipe'],
-  });
-}
-
 function main() {
   if (!existsSync(FONT_TABLE_SOURCE)) {
     console.warn(`[fonts] ${FONT_TABLE_SOURCE} not found — skipping font staging.`);
@@ -142,24 +132,10 @@ function main() {
   }
 
   const sibling = siblingFontsDir();
-  // The token is read from the environment and passed straight to git; its value
-  // is never logged, and it is not required for any other path.
-  const token = process.env.FONTS_REPO_PAT ?? '';
-  let strategy = chooseStrategy({
+  const strategy = chooseStrategy({
     dotFontsFaces: facesIn(DOT_FONTS).length,
     siblingFaces: facesIn(sibling).length,
-    hasToken: token.length > 0,
   });
-
-  if (strategy === 'clone') {
-    try {
-      clonePrivateRepo(token);
-    } catch {
-      console.warn(`[fonts] could not clone ${PRIVATE_FONTS_REPO} — falling back to substitutes.`);
-      strategy = 'substitute';
-    }
-    if (strategy === 'clone' && facesIn(DOT_FONTS).length === 0) strategy = 'substitute';
-  }
 
   if (strategy === 'substitute') {
     // Real faces already on disk from an earlier run beat any stand-in.
@@ -175,8 +151,7 @@ function main() {
     console.warn(
       `[fonts] licensed faces unavailable — staged ${n} DejaVu Sans substitutes.\n` +
         `[fonts] Rendering and metrics are NOT representative. To get the real faces, clone\n` +
-        `[fonts] ${PRIVATE_FONTS_REPO} into ${DOT_FONTS}/ or set FONTS_REPO_PAT, then re-run:\n` +
-        `[fonts]   npm run fonts`,
+        `[fonts] ${PRIVATE_FONTS_REPO} into ${DOT_FONTS}/ and re-run:  npm run fonts`,
     );
     return;
   }

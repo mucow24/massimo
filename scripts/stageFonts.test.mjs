@@ -35,27 +35,15 @@ describe('expectedFaceNames', () => {
 
 describe('chooseStrategy', () => {
   it('prefers a local .fonts clone over everything else', () => {
-    expect(chooseStrategy({ dotFontsFaces: 16, siblingFaces: 16, hasToken: true })).toBe(
-      'dot-fonts',
-    );
+    expect(chooseStrategy({ dotFontsFaces: 16, siblingFaces: 16 })).toBe('dot-fonts');
   });
 
   it('falls back to the sibling checkout when .fonts is empty', () => {
-    expect(chooseStrategy({ dotFontsFaces: 0, siblingFaces: 16, hasToken: true })).toBe('sibling');
+    expect(chooseStrategy({ dotFontsFaces: 0, siblingFaces: 16 })).toBe('sibling');
   });
 
-  // A cloud session: fresh clone, no sibling working tree on disk, but a token.
-  it('clones the private repo when only a token is available', () => {
-    expect(chooseStrategy({ dotFontsFaces: 0, siblingFaces: 0, hasToken: true })).toBe('clone');
-  });
-
-  it('substitutes only when there is no source and no token', () => {
-    expect(chooseStrategy({ dotFontsFaces: 0, siblingFaces: 0, hasToken: false })).toBe(
-      'substitute',
-    );
-  });
-
-  it('prefers a real source over a token even when both are present', () => {
-    expect(chooseStrategy({ dotFontsFaces: 0, siblingFaces: 1, hasToken: true })).toBe('sibling');
+  // A cloud session: fresh clone, no .fonts, no sibling working tree on disk.
+  it('substitutes when there is no real source', () => {
+    expect(chooseStrategy({ dotFontsFaces: 0, siblingFaces: 0 })).toBe('substitute');
   });
 });
