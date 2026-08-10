@@ -1310,40 +1310,53 @@ describe('setLineCurveRadius', () => {
 });
 
 describe('setLineStrokeColor', () => {
+  const RED = { day: '#ff0000', night: '#ff0000' };
+
   it('stores a non-default stroke color', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
-    const next = T.setLineStrokeColor(doc, 'L1', '#ff0000');
-    expect(next.lines.L1.strokeColor).toBe('#ff0000');
+    const next = T.setLineStrokeColor(doc, 'L1', RED);
+    expect(next.lines.L1.strokeColor).toEqual(RED);
+  });
+
+  it('stores a pair whose halves differ — the whole point of the day/night split', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    const next = T.setLineStrokeColor(doc, 'L1', { day: '#ffffff', night: '#000000' });
+    expect(next.lines.L1.strokeColor).toEqual({ day: '#ffffff', night: '#000000' });
   });
 
   it('normalizes to lowercase before storing', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
-    const next = T.setLineStrokeColor(doc, 'L1', '#AB12CD');
-    expect(next.lines.L1.strokeColor).toBe('#ab12cd');
+    const next = T.setLineStrokeColor(doc, 'L1', { day: '#AB12CD', night: '#12AB34' });
+    expect(next.lines.L1.strokeColor).toEqual({ day: '#ab12cd', night: '#12ab34' });
   });
 
-  it('drops the field when set to the default, in any case', () => {
-    for (const def of ['#ffffff', '#FFFFFF']) {
-      const doc = makeDoc({ lines: [makeLine({ id: 'L1', strokeColor: '#ff0000' })] });
+  it('drops the field when BOTH halves land on the default, in any case', () => {
+    for (const def of [
+      { day: '#ffffff', night: '#ffffff' },
+      { day: '#FFFFFF', night: '#FFFFFF' },
+    ]) {
+      const doc = makeDoc({ lines: [makeLine({ id: 'L1', strokeColor: RED })] });
       const next = T.setLineStrokeColor(doc, 'L1', def);
       expect('strokeColor' in next.lines.L1).toBe(false);
     }
   });
 
   it('returns the input doc unchanged when the color is already stored', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'L1', strokeColor: '#ff0000' })] });
-    expect(T.setLineStrokeColor(doc, 'L1', '#ff0000')).toBe(doc);
-    expect(T.setLineStrokeColor(doc, 'L1', '#FF0000')).toBe(doc);
+    // A structural compare, not `===`: every swatch tick hands over a freshly
+    // built pair, and a reference compare would push an undo entry for each.
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', strokeColor: RED })] });
+    expect(T.setLineStrokeColor(doc, 'L1', { day: '#ff0000', night: '#ff0000' })).toBe(doc);
+    expect(T.setLineStrokeColor(doc, 'L1', { day: '#FF0000', night: '#FF0000' })).toBe(doc);
   });
 
   it('returns the input doc unchanged when setting the default on a bare line', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
-    expect(T.setLineStrokeColor(doc, 'L1', '#ffffff')).toBe(doc);
+    expect(T.setLineStrokeColor(doc, 'L1', { day: '#ffffff', night: '#ffffff' })).toBe(doc);
   });
 
   it('returns the input doc for an unknown line id', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
-    expect(T.setLineStrokeColor(doc, 'ghost', '#ff0000')).toBe(doc);
+    expect(T.setLineStrokeColor(doc, 'ghost', RED)).toBe(doc);
   });
 });
 

@@ -8,6 +8,7 @@ import {
   markerEndSides,
 } from '../geometry/markerEnd';
 import type { StopMarkerSpec } from '../geometry/interlining';
+import type { LineStrokeColor } from '../model/types';
 import { lineCasingColor, lineStrokeRailWidth, lineStrokeWidthOf } from '../model/lineStroke';
 import { hatchPatternId, lineStyleStrokeAttrs, lineStyleUnderlayAttrs } from './HatchPatterns';
 
@@ -23,7 +24,11 @@ interface Props {
   // absent, the marker renders without rails — the spec bakes everything
   // else the marker needs, and stroke is presentation resolved live, like
   // SegmentBand's color.
-  lines?: Record<string, { strokeWidth?: number; strokeColor?: string } | undefined>;
+  lines?: Record<string, { strokeWidth?: number; strokeColor?: LineStrokeColor } | undefined>;
+  // Which half of the line's theme-aware casing color to paint. A prop rather
+  // than a store read, for the same reason SegmentBand takes one: there is a
+  // marker per line per station and the memo below has to keep bailing out.
+  darkMode?: boolean;
   // Suppress the terminus end-cap rail. The highlight layer sets this at
   // the arrow-tip station, where the cased arrowhead replaces the line's
   // end — otherwise the cap would slice between the body and the arrow.
@@ -75,6 +80,7 @@ export const StopMarker = memo(function StopMarker({
   effectiveColor,
   underlayColor,
   lines,
+  darkMode = false,
   noEndCap,
 }: Props) {
   const color = effectiveColor ?? spec.color;
@@ -88,7 +94,7 @@ export const StopMarker = memo(function StopMarker({
   // guard also covers a hand-built spec that pairs one with the other.
   const center = v(spec.cx, spec.cy);
   const endShape = ow && spec.end !== 'square' ? spec.end : null;
-  const casingColor = lineCasingColor(live, color);
+  const casingColor = lineCasingColor(live, color, darkMode);
   // What makes an element part of the casing rather than the body: the
   // marker-casing tag plus its line id (how the rails are picked out of the
   // tree), and no hit area of its own. Shared by every rail and cap below so a

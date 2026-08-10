@@ -1568,6 +1568,7 @@ export function MapCanvas() {
                     lines={lines}
                     colorMap={colorMap}
                     underlayColor={underlayColor}
+                    darkMode={darkMode}
                   />,
                 );
               }
@@ -1589,6 +1590,7 @@ export function MapCanvas() {
                     lines={lines}
                     colorMap={colorMap}
                     underlayColor={underlayColor}
+                    darkMode={darkMode}
                     onLineSelect={inHandMode || inLayeringMode ? undefined : handleLineSelect}
                     {...(selection.uiMode.kind === 'creating-line-tag'
                       ? makeBandHandlers(r.band)
@@ -1611,6 +1613,7 @@ export function MapCanvas() {
                   effectiveColor={effectiveColor}
                   underlayColor={underlayColor}
                   lines={lines}
+                  darkMode={darkMode}
                 />,
               );
             })}

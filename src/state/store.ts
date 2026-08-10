@@ -11,6 +11,7 @@ import type {
   LineCircle,
   LineEndStyle,
   LineId,
+  LineStrokeColor,
   LineStyle,
   MapDoc,
   Polygon,
@@ -49,6 +50,7 @@ import {
   backfillTextLabelColors,
   backfillTransferDayNightColors,
   backfillDotStrokeAlign,
+  backfillLineCasingDayNightColors,
   backfillLineStyleEndStyle,
   bakeDocCurveRadius,
   bakeLegacyBackgroundOrder,
@@ -393,6 +395,13 @@ if (typeof window !== 'undefined') {
  *   via the shared `stripRetiredSeamFields`. Both sides lose the fields
  *   together, so tagged wearers stay tagged; `parse()` runs the same strip
  *   unconditionally.
+ * - v25 → v26: the line CASING color (per-line `strokeColor` AND line StyleDef
+ *   props) gained day/night halves — convert the legacy single-color strings to
+ *   `{day, night}` pairs (old casings are day colors), leaving the 'line'
+ *   sentinel alone, via `backfillLineCasingDayNightColors`. Lines and defs
+ *   convert together, so tagged wearers stay tagged. Ordered BEFORE the v<10
+ *   style hygiene, whose canonicalizer now reads the pair form. Idempotent;
+ *   `parse()` does the same conversion in its sanitizers.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -488,6 +497,16 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     // grids, which now read the split props. Idempotent (keyed off the retired
     // keys' presence).
     out = bakeLineDotDefaults(out);
+  }
+  if (v < 26) {
+    // Line CASING colors gained day/night halves. Convert legacy single-color
+    // string values on BOTH per-line `strokeColor` overrides and line StyleDef
+    // props to `{day, night}` pairs (old casings are day colors, night matches);
+    // the 'line' sentinel passes through. MUST run before the v<10 style
+    // rebuild, whose `canonicalStyleProps` now reads the pair form, and hence
+    // before the v<11 adoption (which compares line props through the same
+    // funnel). No-op (reference-stable) on already-converted docs.
+    out = backfillLineCasingDayNightColors(out);
   }
   if (v < 10) {
     // Style-def hygiene FIRST — strip round-1 defs' since-dropped keys, and
@@ -742,7 +761,7 @@ interface DocState extends MapDoc {
   setLineEndStyle: (lineId: LineId, end: LineEndStyle) => void;
   setStationEndStyle: (lineId: LineId, stationId: StationId, end: LineEndStyle) => void;
   setLineStrokeWidth: (lineId: LineId, w: number) => void;
-  setLineStrokeColor: (lineId: LineId, c: string) => void;
+  setLineStrokeColor: (lineId: LineId, c: LineStrokeColor) => void;
   setLineDashLength: (lineId: LineId, v: number) => void;
   setLineDashWidth: (lineId: LineId, v: number) => void;
   deleteLine: (id: LineId) => void;
@@ -1398,8 +1417,8 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: debouncedDocStorage,
-        version: 25,
-        // Version migration chain v0 → v25 lives in `migrateDoc` (above), which
+        version: 26,
+        // Version migration chain v0 → v26 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         // `migrate` only runs when the STORED version differs from the config

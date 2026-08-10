@@ -780,11 +780,17 @@ All remaining fields optional and **never stored at default**:
   consistent by construction. Pure label placement — no repack, no region reconcile.
 - `strokeWidth?: number` — **casing rail, PRESENTATION**; centered on the body edges (half in /
   half out), missing ⇒ 0; rounded to a 0.25 grid (`LINE_STROKE_STEP`). Resolved live; never moves paths.
-- `strokeColor?: string` — casing color; missing ⇒ `'#ffffff'`; lowercased. May instead be the
-  sentinel `'line'` (`LINE_OWN_COLOR`) — "the line's OWN color", resolved at render time, mirroring
-  a dot style's `'line'` fill/stroke. `lineStrokeColorStored` reads the raw value (capture-by-example
-  and the editors' mode pickers); `lineCasingColor(line, lineColor)` resolves it for paint, taking
-  the EFFECTIVE color so a line-colored casing desaturates with the body.
+- `strokeColor?: LineStrokeColor` — casing color: a **theme-aware `DayNightColor`** (`{day,
+  night}`, the same abstraction dot fill/stroke and transfer colors use), or the sentinel `'line'`
+  (`LINE_OWN_COLOR`) — "the line's OWN color", resolved at render time, mirroring a dot style's
+  `'line'` fill/stroke. Missing ⇒ white in BOTH themes; lowercased. The whole override drops only
+  when **both** halves match the default, the same all-or-nothing collapse a transfer color uses,
+  so a white day casing over a black night one survives. `lineStrokeColorStored` reads the raw
+  value (capture-by-example and the editors' mode pickers); `lineCasingColor(line, lineColor,
+  darkMode)` resolves it for paint, taking the EFFECTIVE color so a line-colored casing desaturates
+  with the body. The `'line'` sentinel resolves the same on both canvases — a line's body color
+  has no night half. `darkMode` reaches the painters (`SegmentBand`, `StopMarker`) as a PROP
+  rather than a store read: both are memoized and among the highest-instance components on canvas.
 - `dashLength?` / `dashWidth?: number` — **TfL-tick dimensions for this line's `dash` stops**,
   world units. PRESENTATION (never moves band geometry, resolved at render). Both **unset** ⇒
   derive from the stripe width (`dashLength = width`, `dashWidth = width/2` — the TfL proportions;
@@ -1197,8 +1203,8 @@ optional halo) comes from the constant `TRANSFER_STYLE_DEFAULTS` — there are *
 transfer settings** (see the MapDoc note above); the five optional fields are per-transfer
 overrides with the dot-style contract — absent ⇒ track the default, and `updateTransferStyle`
 drops a value equal to the default. `color`/`strokeColor` are **theme-aware `DayNightColor`s**
-(`{day, night}`, the same abstraction dot fill/stroke use) — day paints on the light canvas,
-night on the dark; the whole override drops only when **both** halves match the default
+(`{day, night}`, the same abstraction dot fill/stroke and a line's casing use) — day paints on
+the light canvas, night on the dark; the whole override drops only when **both** halves match the default
 (black/black body, white/white outline). `TransferLayer` resolves them to hex per the active
 theme via `resolveDayNight`. Map-wide restyling is the designated **Default** transfer
 style preset in `doc.styles`, not a doc field
@@ -1407,6 +1413,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | `v<22`      | `backfillLineStyleEndStyle` (the line **end** became a required covered `LineStyleProps` field: heal absent/garbage `endStyle` on line defs to `'square'`, the historical full marker square, so nothing repaints). No tag prune follows — a line from those saves carries no end of its own, so it already paints what the heal writes. Path A covers this via `sanitizeStyleProps` |
 | `v<24`      | `bakeActivePalettes` (retired `activePalettes` ids → the palette COPIES the map carries). Built-in ids resolve through `LEGACY_BUILTIN_IDS`; `custom:` ids resolve against the palette library by slugged name, the only place those definitions ever lived. Ids resolving to neither are dropped, and a map left carrying none is a legitimate outcome. Gated on `palettes` being absent as well, so it can never overwrite real palettes |
 | `v<25`      | `stripRetiredSeamFields` (the branch seam retired outright — self-overlaps are region faces now): `seamColor`/`seamWidth`/`seamEdges` leave every line AND every line style def together, plus any doc-level `seamEdges` remnant, so tagged wearers stay tagged; junctions come back with the branch-arm default in front — the old "Branch" seam look |
+| `v<26`      | `backfillLineCasingDayNightColors` (the line **casing** color gained day/night halves: legacy single-color strings → `{day, night}` pairs on per-line `strokeColor` AND line StyleDef props; the `'line'` sentinel passes through, being no color at all). Lines and defs convert together, so tagged wearers stay tagged. Ordered **before** the `v<10` style hygiene, whose canonicalizer now reads the pair form — and hence before the `v<11` adoption. Path A covers this via `sanitizeLineStroke` / `sanitizeStyleProps` |
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array. **But see the `merge` hook** — this call alone is not "every rehydrate" |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `snapStationCells` whenever `stations !== undefined` — cell drift is not tied to a schema bump, so a gate could never catch it. **But see the `merge` hook** — for this repair that caveat is the main event, not a footnote |
