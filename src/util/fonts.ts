@@ -115,6 +115,14 @@ export const BOLD_WEIGHT_STEPS = 3;
 export const SEMIBOLD_WEIGHT_STEPS = 2;
 
 /**
+ * Rungs the `<m>` tag steps: Roman → Medium, the shallowest of the three
+ * bold-ward tags. Each is named for the rung it reaches FROM ROMAN — `<b>`
+ * Bold, `<sb>` SemiBold, `<m>` Medium — while all three stay relative, so the
+ * name describes the common case rather than pinning a weight.
+ */
+export const MEDIUM_WEIGHT_STEPS = 1;
+
+/**
  * Parse the value of a `<w=…>` inline label tag into either an absolute shipped
  * weight (a name from `LABEL_WEIGHT_NAMES`, case-insensitive) or a relative
  * ladder step (`+N` / `-N`, sign required). Anything else — an unknown name, a

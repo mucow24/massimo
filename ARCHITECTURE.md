@@ -2390,9 +2390,10 @@ which are a separate slot-based system where Shift flips the lattice basis.
   interior by theme). Unclosed/mismatched delimiters and empty codes stay text; a backslash
   before a token escapes it to literal text (`\|a|` renders "|a|").
 - **`parseFormattedLine`** additionally parses HTML-like formatting tags —
-  the bold-ward pair `<b>` (3 rungs up the shipped weight ladder) and `<sb>` (2, so Roman reaches
-  SemiBold), which step the run's ANCHORED weight — the label's base, or an enclosing `<w=…>` —
-  and share one open-tag stack, so the innermost of them wins and two never sum;
+  the bold-ward trio `<b>`/`<sb>`/`<m>` — 3, 2 and 1 rungs up the shipped weight ladder, each named
+  for the rung it reaches from Roman (Bold, SemiBold, Medium). They step the run's ANCHORED weight
+  — the label's base, or an enclosing `<w=…>` — and share one open-tag stack, so the innermost of
+  them wins and two never sum;
   `<i>`, `<u>`/`<s>` (drawn as explicit `<line>`s
   off the run's baseline, at the offsets and weight both label renderers share — see
   `textDecoration.tsx`), `<color=…>` (named / `#hex` / `0xhex`), `<w=…>` font weight (a shipped
@@ -3799,9 +3800,10 @@ Each is confirmed in source/tests; file pointers included.
   still resolves — otherwise the tag would start rendering as literal text.
 - **Bold-ward is `BOLD_WEIGHT_STEPS` (3) rungs, never a hardcoded 2** — `<b>`, the station-label
   hover bump, and the legacy `labelBold` migration all read the one constant. The ladder carries a
-  SemiBold at 600, so a literal +2 would quietly demote every bold run to SemiBold. `<sb>` is the
-  deliberate 2 (`SEMIBOLD_WEIGHT_STEPS`), and it too is relative: neither tag pins a weight, so
-  both read the same on a Light label as on a Roman one. `<w=SemiBold>` is the absolute form.
+  SemiBold at 600, so a literal +2 would quietly demote every bold run to SemiBold. The deliberate
+  2 and 1 are `SEMIBOLD_WEIGHT_STEPS` (`<sb>`) and `MEDIUM_WEIGHT_STEPS` (`<m>`), and they are
+  relative for the same reason: no bold-ward tag pins a weight, so all three read the same way on a
+  Light label as on a Roman one. `<w=SemiBold>` and friends are the absolute forms.
 - **Underlines are explicit `<line>` geometry, not `text-decoration`** — Chromium leaves 1px
   residue on rotated `<text>` when `text-decoration` toggles. ([stationLabelText.tsx](src/components/stationLabelText.tsx))
 - **A service code is only safe to migrate when it's a valid bullet `CODE`** — `updateLine` rewrites
