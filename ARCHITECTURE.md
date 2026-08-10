@@ -3539,8 +3539,9 @@ source. `normalizeWeight` ties go **low** (650 → 600).
 The typeface is **Söhne**, licensed per-application from Klim — an app licence rather than a web
 one, which is what permits the glyphs riding along in the files the app exports. The `.ttf` files
 are git-ignored (licensed, not redistributable), so a clean checkout has none, and **both** CI and
-the Pages deploy inject them from the private `mucow24/massimo-fonts` repo. CI needs them too —
-without the fonts the export tests still pass while outlining nothing, a vacuous green.
+the Pages deploy inject them from the private `mucow24/massimo-fonts` repo. CI needs them too: with
+all 16 deleted the unit suite loses one test, but every one of the eight **export e2e** specs fails,
+because `loadOutlineFonts` throws and the export never produces a download.
 
 **Staging the typeface.** [scripts/stageFonts.mjs](scripts/stageFonts.mjs) is the single answer to
 "where do the faces come from here", run on `postinstall` (and by `npm run fonts`). It takes the
@@ -3548,17 +3549,25 @@ first source that has them: `.fonts/`, where CI and the Pages deploy check the p
 before installing; the **sibling main checkout** — worktrees under `.claude/worktrees/` share a
 `.git` but not ignored files, so a fresh one is served from the dev machine's own copy with no
 network; and failing those, **DejaVu Sans copied under each of the 16 filenames**, which is what a
-cloud session lands on (a fresh clone with no sibling on disk). There is no credentialled fetch — CI
-and Pages stage the real faces themselves, so the script only ever copies what is already local. The
-face list is parsed out of `FONT_TABLE` rather than re-typed, so adding or renaming a face needs no
-edit in the script.
+cloud session lands on (a fresh clone with no sibling on disk). There is no credentialled fetch —
+CI and Pages stage the real faces themselves, so the script only ever copies what is already local.
+A source counts only if it is COMPLETE: a half-populated one would stage what it had and leave the
+rest missing with no fallback. The face list is parsed out of `FONT_TABLE` rather than re-typed, so
+adding or renaming a face needs no edit in the script.
 
-Substitutes exist so an environment that can never hold the licence still runs the export pipeline
-against a real parseable face instead of going vacuously green, and they announce themselves:
-staging one writes `public/fonts/.substitute`. Exactly one assertion reads that marker and skips —
-`pdfGlyphs.test.ts` on the text face *lacking* ✈, which is a fact about Söhne that a stand-in
-covering ✈ would invert. Rendering and metrics under substitutes are not representative; nothing
-else about them is faked.
+Substitutes buy the **export e2e specs**, which need a parseable face at those paths and pass
+against DejaVu — including the two counting glyph fill operations, so the outlining is real. They
+announce themselves: staging one writes `public/fonts/.substitute`. Exactly one assertion reads that
+marker and skips — `pdfGlyphs.test.ts` on the text face *lacking* ✈, a fact about Söhne that a
+stand-in covering ✈ would invert. Rendering and metrics under them are not representative, and a
+substituted `public/fonts` is ~12 MB (16 × DejaVu), which a local `npm run build` will ship.
+
+Two invariants keep stand-ins from being mistaken for the real thing, both of which cost licensed
+files that exist in no repo we can reach. Whether to substitute is decided from the **content** of
+`public/fonts`, never from the marker — a marker goes stale the moment someone drops the real faces
+in by hand, and trusting it overwrites them on the next install. A source directory carrying the
+marker counts as empty, so a worktree can never copy its sibling's stand-ins and report them as
+licensed.
 
 The UI keeps English rung names over Söhne's German faces (Thin = Extraleicht, Roman = Buch,
 Medium = Kräftig, SemiBold = Halbfett, Bold = Dreiviertelfett, Heavy = Fett, Black = Extrafett), and
