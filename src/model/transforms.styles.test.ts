@@ -38,7 +38,13 @@ describe('detach on covered-field edits — lines', () => {
   const tagged = () =>
     makeDoc({
       lines: [
-        makeLine({ id: 'l1', width: 10, strokeWidth: 2, strokeColor: '#123456', styleId: 'y1' }),
+        makeLine({
+          id: 'l1',
+          width: 10,
+          strokeWidth: 2,
+          strokeColor: { day: '#123456', night: '#123456' },
+          styleId: 'y1',
+        }),
       ],
       styles: [makeStyle('line', 'y1')],
     });
@@ -53,14 +59,22 @@ describe('detach on covered-field edits — lines', () => {
     const doc = tagged();
     expect(setLineStrokeWidth(doc, 'l1', 2)).toBe(doc);
     expect(setLineStrokeWidth(doc, 'l1', 3).lines.l1.styleId).toBeUndefined();
-    expect(setLineStrokeColor(doc, 'l1', '#123456')).toBe(doc);
-    expect(setLineStrokeColor(doc, 'l1', '#654321').lines.l1.styleId).toBeUndefined();
+    expect(setLineStrokeColor(doc, 'l1', { day: '#123456', night: '#123456' })).toBe(doc);
+    expect(
+      setLineStrokeColor(doc, 'l1', { day: '#654321', night: '#654321' }).lines.l1.styleId,
+    ).toBeUndefined();
   });
 
   it('the split dot SIZE and TYPE setters detach on change only', () => {
     const doc = makeDoc({
       lines: [
-        makeLine({ id: 'l1', width: 10, strokeWidth: 2, strokeColor: '#123456', styleId: 'y1' }),
+        makeLine({
+          id: 'l1',
+          width: 10,
+          strokeWidth: 2,
+          strokeColor: { day: '#123456', night: '#123456' },
+          styleId: 'y1',
+        }),
       ],
       styles: [
         makeStyle('line', 'y1'),

@@ -19,6 +19,7 @@ import { dashSpec } from '../../geometry/stationDash';
 import { StationView } from '../StationView';
 import { StationSilhouette } from '../StationSilhouette';
 import { useThemeColors } from '../../state/theme';
+import { useDoc } from '../../state/store';
 import {
   appendRoutePreviewEdges,
   appendSegmentHoverPreview,
@@ -102,6 +103,9 @@ export function HighlightedLineLayer({
   vbH,
 }: Props) {
   const themeColors = useThemeColors();
+  // The overlay repaints the line's own bands and markers, so it resolves the
+  // same theme-aware casing color the base layer does.
+  const darkMode = useDoc((s) => s.darkMode);
   const ln = lines[highlightLineId];
   // Edit Stops state for THIS line, derived once for all three blocks below
   // (the band/label repaint, the mode chrome, and the clickable chips) rather
@@ -188,6 +192,7 @@ export function HighlightedLineLayer({
                   pass={pass}
                   lines={lines}
                   underlayColor={underlayColor}
+                  darkMode={darkMode}
                 />
               )),
             );
@@ -205,6 +210,7 @@ export function HighlightedLineLayer({
                   spec={r.spec}
                   underlayColor={underlayColor}
                   lines={lines}
+                  darkMode={darkMode}
                 />,
               );
             });
@@ -311,6 +317,7 @@ export function HighlightedLineLayer({
                           pass="body"
                           lines={lines}
                           underlayColor={underlayColor}
+                          darkMode={darkMode}
                         />
                       )}
                     </g>

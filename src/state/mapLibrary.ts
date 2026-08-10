@@ -48,8 +48,17 @@ export interface MapSummary {
   thumb?: string;
 }
 
+// Every way the library list can be ordered, in the order the sort picker
+// offers them. A star never enters into it. Same contract as the model's other
+// ladders (ROUTE_BULLET_SHAPES, DOT_BASE_SHAPES): the picker takes its set from
+// here and the gate below judges by it, so a mode can't be sortable-but-
+// unpickable — or, worse, a persisted pref the guard rejects on next boot.
+export const MAP_SORTS = ['updated', 'created', 'name'] as const;
 /** How the library list is ordered. A star never enters into it. */
-export type MapSort = 'updated' | 'created' | 'name';
+export type MapSort = (typeof MAP_SORTS)[number];
+
+/** Is `v` one of the known sort modes? The gate the picker's value judges by. */
+export const isMapSort = (v: string): v is MapSort => (MAP_SORTS as readonly string[]).includes(v);
 
 export interface VersionMeta {
   id: number;

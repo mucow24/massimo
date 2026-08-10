@@ -298,7 +298,7 @@ describe('style-driven width changes repack through the same path', () => {
             curveRadius: 24,
             endStyle: 'square',
             strokeWidth: 0,
-            strokeColor: '#ffffff',
+            strokeColor: { day: '#ffffff', night: '#ffffff' },
           },
         },
       },

@@ -1,5 +1,4 @@
 import { useDoc } from '../state/store';
-import { ColorField } from './ColorField';
 import { DayNightColorRow } from './DayNightColorRow';
 import { NumericFieldRow } from './NumericFieldRow';
 import { LineEndSegmented } from './LineEndPicker';
@@ -152,41 +151,6 @@ function usePatch(id: string): (patch: StylePropsPatch) => void {
   return (patch) => updateStyleProps(id, patch);
 }
 
-/**
- * The "follow the line's color, or pick one" two-way switch for the line
- * style's casing row — the same Line/Color question the stopDot editor's
- * `DotColorTypeRow` asks, so the two color systems read alike. It stays its own
- * component because a line's casing is a single hex, not a day/night pair, so
- * the swatch row it reveals is a plain `ColorField` the caller renders.
- *
- * `label` names the FIELD ("Stroke"), and segments take "<label> type <type>"
- * so they stay distinct from the swatch row's own name ("Stroke color").
- */
-function LineOrColorToggle({
-  type,
-  label,
-  onSelect,
-}: {
-  type: 'line' | 'color';
-  label: string;
-  onSelect: (type: 'line' | 'color') => void;
-}) {
-  return (
-    <div className="shape-group">
-      <SegmentedToggle
-        value={type}
-        onSelect={(v) => onSelect(v as 'line' | 'color')}
-        options={(['line', 'color'] as const).map((t) => ({
-          value: t,
-          label: `${label} type ${t}`,
-          title: t === 'line' ? "The line's own color" : 'A fixed color',
-          content: t === 'line' ? 'Line' : 'Color',
-        }))}
-      />
-    </div>
-  );
-}
-
 function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
   const patch = usePatch(id);
   const styles = useDoc((s) => s.styles);
@@ -203,9 +167,13 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
   // Dash length/width only bite on 'dash' stops, so grey them out unless one of
   // the split defaults is a dash dot.
   const dashActive = singletonDot.shape === 'dash' || multiDot.shape === 'dash';
-  // The casing color carries either a hex or the LINE_OWN_COLOR sentinel, so one
-  // style can give differently-colored lines a casing in their own hue.
+  // The casing color carries either a day/night pair or the LINE_OWN_COLOR
+  // sentinel, so one style can give differently-colored lines a casing in their
+  // own hue. Same two-field shape (type picker + revealed swatch row) as the
+  // stopDot editor's fill/stroke/code rows, so it uses the same component.
   const strokeType: 'line' | 'color' = props.strokeColor === LINE_OWN_COLOR ? 'line' : 'color';
+  const strokePair: DayNightColor =
+    typeof props.strokeColor === 'object' ? props.strokeColor : LINE_STROKE_COLOR_DEFAULT;
   return (
     <div className="style-editor">
       <NumericFieldRow
@@ -279,31 +247,17 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
       {/* Only while the casing is on — a 0-width stroke has no color to
           pick. */}
       {props.strokeWidth > 0 && (
-        <>
-          <div className="row">
-            <label>Stroke</label>
-            <LineOrColorToggle
-              type={strokeType}
-              label="Stroke"
-              // Leaving Line lands on the casing default rather than some remembered
-              // hue — a style has no line of its own to take a color from.
-              onSelect={(t) =>
-                patch({ strokeColor: t === 'line' ? LINE_OWN_COLOR : LINE_STROKE_COLOR_DEFAULT })
-              }
-            />
-          </div>
-          {strokeType === 'color' && (
-            <div className="row">
-              <label htmlFor={`style-${id}-stroke-color`}>Stroke color</label>
-              <ColorField
-                id={`style-${id}-stroke-color`}
-                ariaLabel="Stroke color"
-                value={props.strokeColor}
-                onChange={(strokeColor) => patch({ strokeColor })}
-              />
-            </div>
-          )}
-        </>
+        <ColorTypeRow
+          label="Stroke"
+          idBase={`style-${id}-stroke`}
+          types={['line', 'color'] as const}
+          type={strokeType}
+          // Leaving Line lands on the casing default rather than some remembered
+          // hue — a style has no line of its own to take a color from.
+          onPickType={(t) => patch({ strokeColor: t === 'line' ? LINE_OWN_COLOR : strokePair })}
+          pair={strokePair}
+          onPair={(strokeColor) => patch({ strokeColor })}
+        />
       )}
 
       <div className="style-section">Stop dots</div>
@@ -686,16 +640,18 @@ const DOT_SHAPES = DOT_BASE_SHAPES.map((shape) => ({
 const PREVIEW_LINE_COLOR = '#3b7dd8';
 
 /**
- * The four ways a dot's mark can be colored. Not a model type — it's the
- * EDITOR's vocabulary, which each row translates to and from its own field(s):
- * 'none' and 'bw' are the `DotFill` / `DotStrokeColor` sentinels for fill and
+ * The four ways a mark can be colored. Not a model type — it's the EDITOR's
+ * vocabulary, which each row translates to and from its own field(s): 'none'
+ * and 'bw' are the `DotFill` / `DotStrokeColor` sentinels for a dot's fill and
  * stroke, but the service code spells 'none' as `showServiceCode: false` and
  * 'bw' as an ABSENT `serviceCodeColor`. Rows offer only the types they have a
- * meaning for — a stroke has no 'none' because `strokeWidth: 0` says that.
+ * meaning for — a dot stroke has no 'none' because `strokeWidth: 0` says that,
+ * and a line's casing has neither ('bw' would have no fill of its own to
+ * contrast against).
  */
-type DotColorType = 'none' | 'bw' | 'line' | 'color';
+type ColorType = 'none' | 'bw' | 'line' | 'color';
 
-const DOT_COLOR_TYPE_LABEL: Record<DotColorType, string> = {
+const COLOR_TYPE_LABEL: Record<ColorType, string> = {
   none: 'None',
   bw: 'B/W',
   line: 'Line',
@@ -704,16 +660,18 @@ const DOT_COLOR_TYPE_LABEL: Record<DotColorType, string> = {
 
 /**
  * One "how is this colored?" row, plus the day/night swatch row that only
- * 'color' reveals beneath it. Fill, stroke and service code are all this same
- * shape, so they share one component rather than three near-copies that drift.
+ * 'color' reveals beneath it. A dot's fill, stroke and service code AND a
+ * line's casing are all this same shape, so they share one component rather
+ * than four near-copies that drift — which is also what keeps the two color
+ * systems reading alike.
  *
  * `label` names the FIELD ("Fill"), and the swatch row derives its own label
  * from it ("Fill color") — which is why the segments are named "<label> type
  * <type>": "Fill type color" and the "Fill color" swatch must stay distinct
  * accessible names. Generic in `T` so each caller's `types` narrow what its
- * `onPickType` has to handle (the stroke never sees 'none').
+ * `onPickType` has to handle (a stroke never sees 'none').
  */
-function DotColorTypeRow<T extends DotColorType>({
+function ColorTypeRow<T extends ColorType>({
   label,
   idBase,
   types,
@@ -750,7 +708,7 @@ function DotColorTypeRow<T extends DotColorType>({
               value: t,
               label: `${label} type ${t}`,
               title: t === 'bw' ? bwTitle : undefined,
-              content: DOT_COLOR_TYPE_LABEL[t],
+              content: COLOR_TYPE_LABEL[t],
             }))}
           />
         </div>
@@ -799,7 +757,7 @@ function DotPreview({
 
 /**
  * The editor for one stopDot library style: 5-way shape, a live preview, stroke
- * width and alignment, and three DotColorTypeRow rows — Fill (None/B/W/Line/
+ * width and alignment, and three ColorTypeRow rows — Fill (None/B/W/Line/
  * Color), Stroke (no None; width 0 says that) and Service code (None/B/W/Line/
  * Color, where None IS `showServiceCode: false`), each revealing its own swatch
  * row under Color. Every edit goes through updateStyleProps, which restamps
@@ -809,14 +767,14 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
   const patch = usePatch(id);
 
   // Each row's model field(s), read back as an editor type (see DotColorType).
-  const fillType: DotColorType =
+  const fillType: ColorType =
     p.fill === 'none' ? 'none' : p.fill === 'bw' ? 'bw' : p.fill === 'line' ? 'line' : 'color';
   // The stroke has no 'none' — strokeWidth 0 is how a style says that.
   const strokeType: 'bw' | 'line' | 'color' =
     p.strokeColor === 'bw' ? 'bw' : p.strokeColor === 'line' ? 'line' : 'color';
   // The code's off state is showServiceCode, and its B/W is an ABSENT color
   // (the historical default), so a fresh code dot lands on B/W.
-  const codeType: DotColorType = !p.showServiceCode
+  const codeType: ColorType = !p.showServiceCode
     ? 'none'
     : p.serviceCodeColor === undefined
       ? 'bw'
@@ -858,7 +816,7 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
           />
         </div>
       </div>
-      <DotColorTypeRow
+      <ColorTypeRow
         label="Fill"
         idBase={`style-${id}-fill`}
         types={['none', 'bw', 'line', 'color'] as const}
@@ -887,7 +845,7 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
             getCurrent={liveNumberProp(id, 'strokeWidth', p.strokeWidth)}
             textboxAllowAboveMax
           />
-          <DotColorTypeRow
+          <ColorTypeRow
             label="Stroke"
             idBase={`style-${id}-stroke`}
             types={['bw', 'line', 'color'] as const}
@@ -915,7 +873,7 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
             </div>
           </div>
           <div className="style-divider" />
-          <DotColorTypeRow
+          <ColorTypeRow
             label="Service code"
             idBase={`style-${id}-code`}
             types={['none', 'bw', 'line', 'color'] as const}

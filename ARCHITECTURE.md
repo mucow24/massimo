@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `5a8b506` (2026-08-07, #464) — verified against the live source.** This
+**Up to date as of commit `df6f4de` (2026-08-08, #465) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -121,6 +121,8 @@ src/
     palettes.ts                 # built-in PALETTES (name-keyed) + library assembly/sorting
     customPalette.ts            # palette files: parse both formats (ours + legacy "frrf"),
                                 #   serialize the massimo-palette format (day/night, description)
+    lineStyle.ts                # LINE_STYLES (the ladder) + LINE_STYLE_TIE_RANK + KNOWN_LINE_STYLES
+    dayNightColor.ts            # resolve/compare a theme-aware {day,night} color (the ONE ternary)
     dotStyle.ts dotSize.ts      # procedural stop-dot style + size resolution
     dashSize.ts                 # TfL-tick ('dash' stop) length/thickness resolution (derive from line width)
     transferStyle.ts            # TRANSFER_STYLE_DEFAULTS + per-transfer override resolution
@@ -161,7 +163,6 @@ src/
     lattice.ts                  # stop-placement lattice (orthogonal/diagonal)
     stationBoundary.ts          # selection silhouette + marquee hit rects
     stationDash.ts              # TfL-tick ('dash' stop) geometry: per-stop tick anchor/angle/length (label-side aware; emergent notched composite)
-    stripeOutline.ts            # per-stripe edge/cap geometry (stroke-before-fill dots)
     markerEnd.ts                # non-square line-end shapes (path to paint, ring to cover, rails)
     polygon.ts polygonSnap.ts polygonUnion.ts rectPolygon.ts  # polygon geom + union + hit test
     clip.ts                     # typed wasm-clipper wrapper (booleans/offsets, integer-snapped); async load, one engine
@@ -219,6 +220,8 @@ src/
     MapCanvas.tsx               # the canvas hub: paint order + all pointer wiring
     Station*/Stop*/Label*/...   # per-entity SVG views (see Rendering section)
     selectionStyle.ts           # shared selection stroke/dash/wash constants (screen-px; ÷ zoom)
+    textDecoration.tsx          # the inline <u>/<s> rule: offsets + weight off the run's baseline,
+                                #   shared by BOTH label renderers so a tag reads the same anywhere
     lineListOrder.ts            # pure lines-list ordering: sort by name/#stops, group by style
     SortHeader.tsx              # shared clickable sort-column header (the stations list's two)
     Toolbar.tsx Sidebar.tsx Menu.tsx  # chrome
@@ -228,7 +231,8 @@ src/
     PalettesDialog.tsx          # the palette manager (library | in this map; same Dialog shell)
     PaletteEditor.tsx           # the manager's second view: one palette's title/description/rows
     dialogRow.tsx               # shared dialog-row chrome: IconButton, RowCommands (the `…`
-                                #   overflow toolbar), the useSpeedBump two-click
+                                #   overflow toolbar), the useSpeedBump two-click, DialogSortSelect
+                                #   (a library column's sort picker, over the union's own ladder)
     useRowDragReorder.ts        # pointer drag-to-reorder for fixed-height row lists (editor rows)
     MapVersionPill.tsx          # the live doc's version + save-status dot, beside the map name
     *Popover.tsx                # on-canvas item editors
@@ -240,7 +244,7 @@ src/
     inspector/                  # LineInspector (hosted by the pinned on-canvas LinePopover; identity +
                                 #   line-style fields — stop/topology editing is canvas-driven, see
                                 #   appendGestures.ts) + StationInspector (hosted by the on-canvas
-                                #   StationPopover) + pure math: stopGridDrag.ts, stationBandGeometry.ts
+                                #   StationPopover) + pure math: stopGridDrag.ts
 
   worker/                       # the pipelined region worker (see Rendering: pipelined drags)
     regionFrame.ts              # the pure frame protocol: mirror identity-diffs, computeMirrorHoles
@@ -500,8 +504,9 @@ See [styles.ts](src/model/styles.ts).
   selected it stays clickable, so the popover's unlock toggle remains reachable right after
   locking. For stations the click-through applies in **idle and layout-edit modes** — lock
   protects geometry, not mode participation, so a locked station is still a transfer endpoint
-  and can still be toggled onto a line in append mode (those non-idle modes wipe the selection
-  on entry, so without the gate locked stations would be unreachable there). The
+  and its line membership stays editable — it can be toggled onto a line in append mode (those
+  non-idle modes wipe the selection on entry, so without the gate locked stations would be
+  unreachable there), and off one by the Delete that removes an armed stop. The
   `editing-station-layout` mode is the exception that also gets click-through: a live locked hit
   rect would route the click to `selectStation`, whose `layoutEditReconcile` **retargets** the
   layout editor onto the locked station rather than letting the click fall through and exit — so
@@ -510,9 +515,11 @@ See [styles.ts](src/model/styles.ts).
   ctrl+shift path-extend) can't target a locked, unselected station — unlock it first.
   Re-selecting a locked, deselected item: **Alt+click** (the deep-pick's geometric fallback
   reaches locked items) or **Alt+marquee** (includes locked items); stations also stay
-  selectable from the sidebar, and the **station inspector stays fully enabled** — only
-  stations get that. A locked, selected polygon/image renders its editing adornments
-  **ghosted** (`data-*-adornments="inactive"`: 0.4 opacity, pointer-events none) so the
+  selectable from the sidebar — only stations get that. A locked station's inspector still
+  RENDERS, but one `disabled` fieldset freezes every editing control in it: the footer's lock
+  toggle sits outside so unlocking stays reachable, and the Style detail force-opens (read-only)
+  because its own disclosure toggle is inside the frozen set. A locked, selected polygon/image
+  renders its editing adornments **ghosted** (`data-*-adornments="inactive"`: 0.4 opacity, pointer-events none) so the
   selection is visible without inviting edits. Polygon, RouteBullet, TextLabel and SvgImage
   share the same canvas protections, but their popovers **disable every editing control
   except the lock toggle** while locked. **Bulk lock/unlock**: a multi-selection (≥2 items,
@@ -777,11 +784,17 @@ All remaining fields optional and **never stored at default**:
   consistent by construction. Pure label placement — no repack, no region reconcile.
 - `strokeWidth?: number` — **casing rail, PRESENTATION**; centered on the body edges (half in /
   half out), missing ⇒ 0; rounded to a 0.25 grid (`LINE_STROKE_STEP`). Resolved live; never moves paths.
-- `strokeColor?: string` — casing color; missing ⇒ `'#ffffff'`; lowercased. May instead be the
-  sentinel `'line'` (`LINE_OWN_COLOR`) — "the line's OWN color", resolved at render time, mirroring
-  a dot style's `'line'` fill/stroke. `lineStrokeColorStored` reads the raw value (capture-by-example
-  and the editors' mode pickers); `lineCasingColor(line, lineColor)` resolves it for paint, taking
-  the EFFECTIVE color so a line-colored casing desaturates with the body.
+- `strokeColor?: LineStrokeColor` — casing color: a **theme-aware `DayNightColor`** (`{day,
+  night}`, the same abstraction dot fill/stroke and transfer colors use), or the sentinel `'line'`
+  (`LINE_OWN_COLOR`) — "the line's OWN color", resolved at render time, mirroring a dot style's
+  `'line'` fill/stroke. Missing ⇒ white in BOTH themes; lowercased. The whole override drops only
+  when **both** halves match the default, the same all-or-nothing collapse a transfer color uses,
+  so a white day casing over a black night one survives. `lineStrokeColorStored` reads the raw
+  value (capture-by-example and the editors' mode pickers); `lineCasingColor(line, lineColor,
+  darkMode)` resolves it for paint, taking the EFFECTIVE color so a line-colored casing desaturates
+  with the body. The `'line'` sentinel resolves the same on both canvases — a line's body color
+  has no night half. `darkMode` reaches the painters (`SegmentBand`, `StopMarker`) as a PROP
+  rather than a store read: both are memoized and among the highest-instance components on canvas.
 - `dashLength?` / `dashWidth?: number` — **TfL-tick dimensions for this line's `dash` stops**,
   world units. PRESENTATION (never moves band geometry, resolved at render). Both **unset** ⇒
   derive from the stripe width (`dashLength = width`, `dashWidth = width/2` — the TfL proportions;
@@ -1146,7 +1159,9 @@ it meaning). HOSTED anchors are station internals like a stop dot: rendered `poi
 (so alt-click reaches through them), edited only in the layout editor. Removal has two equivalent
 doors: the popover's anchor row (×) and the Delete key while the cell is armed
 (`selectedAnchorCellId` — the state the "Add transfer anchor" button leaves you in); both go
-through `deleteStationAnchor`, which cascades any transfers bound to the cell.
+through `deleteStationAnchor`, which cascades any transfers bound to the cell, and both are gated
+on the station's `locked` (the row by the inspector's whole-panel disabled fieldset, the key by
+its own check).
 
 In the lattice they ride as **passengers**: never in `stationLayoutNodes` (whose node identity is
 `lineId: string | null`, where null already means "the label", and where a non-`isLabel` node would
@@ -1192,8 +1207,8 @@ optional halo) comes from the constant `TRANSFER_STYLE_DEFAULTS` — there are *
 transfer settings** (see the MapDoc note above); the five optional fields are per-transfer
 overrides with the dot-style contract — absent ⇒ track the default, and `updateTransferStyle`
 drops a value equal to the default. `color`/`strokeColor` are **theme-aware `DayNightColor`s**
-(`{day, night}`, the same abstraction dot fill/stroke use) — day paints on the light canvas,
-night on the dark; the whole override drops only when **both** halves match the default
+(`{day, night}`, the same abstraction dot fill/stroke and a line's casing use) — day paints on
+the light canvas, night on the dark; the whole override drops only when **both** halves match the default
 (black/black body, white/white outline). `TransferLayer` resolves them to hex per the active
 theme via `resolveDayNight`. Map-wide restyling is the designated **Default** transfer
 style preset in `doc.styles`, not a doc field
@@ -1402,6 +1417,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | `v<22`      | `backfillLineStyleEndStyle` (the line **end** became a required covered `LineStyleProps` field: heal absent/garbage `endStyle` on line defs to `'square'`, the historical full marker square, so nothing repaints). No tag prune follows — a line from those saves carries no end of its own, so it already paints what the heal writes. Path A covers this via `sanitizeStyleProps` |
 | `v<24`      | `bakeActivePalettes` (retired `activePalettes` ids → the palette COPIES the map carries). Built-in ids resolve through `LEGACY_BUILTIN_IDS`; `custom:` ids resolve against the palette library by slugged name, the only place those definitions ever lived. Ids resolving to neither are dropped, and a map left carrying none is a legitimate outcome. Gated on `palettes` being absent as well, so it can never overwrite real palettes |
 | `v<25`      | `stripRetiredSeamFields` (the branch seam retired outright — self-overlaps are region faces now): `seamColor`/`seamWidth`/`seamEdges` leave every line AND every line style def together, plus any doc-level `seamEdges` remnant, so tagged wearers stay tagged; junctions come back with the branch-arm default in front — the old "Branch" seam look |
+| `v<26`      | `backfillLineCasingDayNightColors` (the line **casing** color gained day/night halves: legacy single-color strings → `{day, night}` pairs on per-line `strokeColor` AND line StyleDef props; the `'line'` sentinel passes through, being no color at all). Lines and defs convert together, so tagged wearers stay tagged. Ordered **before** the `v<10` style hygiene, whose canonicalizer now reads the pair form — and hence before the `v<11` adoption. Path A covers this via `sanitizeLineStroke` / `sanitizeStyleProps` |
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array. **But see the `merge` hook** — this call alone is not "every rehydrate" |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `snapStationCells` whenever `stations !== undefined` — cell drift is not tied to a schema bump, so a gate could never catch it. **But see the `merge` hook** — for this repair that caveat is the main event, not a footnote |
@@ -1913,8 +1929,10 @@ grid-size cycler beside it.
 The two layers that default to hidden also answer to the keyboard: `A` flips anchors and `W`
 waypoints (App.tsx, writing through `setVisibility` exactly as the checkboxes do — no second
 opinion about where a flag lives), and the letter is a `shortcut` field on the registry entry so
-the menu row can advertise it. `G` toggles the grid and `Shift+G` cycles its size, both straight
-to the setters — the grid is not registry content.
+the menu row can advertise it. Both letters **toast which way the layer went**: the flag can flip
+with nothing changing on screen — anchors held up by the master switch or a mode reveal, waypoints
+simply out of view — so the message is the only confirmation the key landed. `G` toggles the grid
+and `Shift+G` cycles its size, both straight to the setters — the grid is not registry content.
 
 [visibility.ts](src/state/visibility.ts) holds the set as one `VISIBILITY_ITEMS` registry, because
 three consumers have to agree about it and each used to spell it out by hand: the menu, the export
@@ -2371,10 +2389,12 @@ which are a separate slot-based system where Shift flips the lattice basis.
   interior by theme). Unclosed/mismatched delimiters and empty codes stay text; a backslash
   before a token escapes it to literal text (`\|a|` renders "|a|").
 - **`parseFormattedLine`** additionally parses HTML-like formatting tags —
-  `<b>` (two steps up the shipped weight ladder), `<i>`, `<u>`/`<s>` (drawn as explicit `<line>`s),
-  `<color=…>` (named / `#hex` / `0xhex`), `<w=…>` font weight (a shipped weight name like
-  `<w=Light>` = absolute, or `<w=+2>`/`<w=-1>` = signed ladder steps from the label's base weight;
-  innermost `<w>` wins, invalid values stay literal — see `resolveRunWeight`/`parseWeightToken`),
+  `<b>` (two steps up the shipped weight ladder), `<i>`, `<u>`/`<s>` (drawn as explicit `<line>`s
+  off the run's baseline, at the offsets and weight both label renderers share — see
+  `textDecoration.tsx`), `<color=…>` (named / `#hex` / `0xhex`), `<w=…>` font weight (a shipped
+  weight name like `<w=Light>` = absolute, or `<w=+2>`/`<w=-1>` = signed ladder steps from the
+  label's base weight; innermost `<w>` wins, invalid values stay literal — see
+  `resolveRunWeight`/`parseWeightToken`),
   `<size=…>` font size (an absolute world-unit size like `<size=6>`, or `<size=+1>`/`<size=-2>` = a
   signed delta from the label's base size; innermost `<size>` wins, floored at the min font size,
   invalid values stay literal — see `resolveRunFontSize`/`parseSizeToken`),
@@ -2576,8 +2596,6 @@ renderers** (one pass rounds convex corners and fillets concave junctions).
   and the `*ForRect` marquee functions (which skip `locked` items unless `includeLocked` is set —
   the Alt-marquee recovery path for click-through locked items). `transferAnchorsForRect` is the
   exception with no such parameter: free anchors carry no `locked` field to skip on.
-- `stripeOutline.ts` — per-stripe edge/cap geometry for the stroke-before-fill dots; reads the
-  **baked** `stripeWidths`/`stripeOffsets`.
 - `lineTagGeometry.ts` — arc-length sampling along an offset path; `snapNeighborTag` snaps a
   dragged tag to a same-corridor neighbor (matched by unordered `pairKeyOf`).
 - `svgImage.ts` — corners, aspect-locked corner resize, single-axis edge resize, rotate-to-pointer
@@ -3430,10 +3448,19 @@ same three additions.
        stop swaps, right-click/R rotates, click selects the stop/label (arming the shape/size
        pickers). A transparent **shield rect** swallows near-miss presses so nothing falls through
        to the whole-station handlers (the mode is in `RIGHT_CLICK_PASSTHROUGH_MODES`).
-  2. **Keyboard nudge** (App.tsx): with a stop/label selected, arrows hop one lattice slot in the
+  2. **Keyboard** (App.tsx): with a stop/label selected, arrows hop one lattice slot in the
      pressed screen direction (`nudgeTarget`, Shift = diagonal), Alt+arrows fine-nudge label
      offsets (Shift ×5, live-writing `setLabelOffset`/`setLabelOffsetPerp` via
-     `screenDeltaToLabelOffsets` — the inverse of labelLayout's offset axes), R rotates.
+     `screenDeltaToLabelOffsets` — the inverse of labelLayout's offset axes), R rotates, and
+     **Delete removes the armed NODE, not the station**: a stop dot means the station LEAVES that
+     line (`removeStationFromLine`, indexed off the membership list), a hosted anchor goes through
+     `deleteStationAnchor`, and the label cell — nothing to delete — **swallows** the key rather
+     than letting it reach the station. Only a DANGLING arm falls through to the whole-station
+     path. The two destructive arms take **opposite lock policies**, each matching its own other
+     door: the anchor refuses on a locked station (its inspector row sits in the disabled
+     fieldset), the stop does not (lock protects geometry, not mode participation, and Edit Stops
+     already edits a locked station's membership). Delete is also the one op here that does NOT
+     fan out through `dispatchMirrored` — membership is topology, not a look.
      Both surfaces share
      [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts) — `dispatchMirrored` (one-shot
      controls, groups only when fanning out and no group is open — see the isHistoryGrouping
@@ -3526,15 +3553,21 @@ text (no font embedded, no selectable text), vector line work, embedded SVG grap
 registration, no baseline correction, no letter-spacing bake, no glyph fallback. Five non-text gaps
 svg2pdf/jsPDF can't bridge are closed here:
 
-1. **Region-exclude clips** — the region-layering exclusion clips defeat Blink's clip-raster snapping
-   by authoring the clip path at ×64 and pulling it back with a `transform="scale(1/64)"` on the
-   clipPath's child `<path>`. Blink honors that transform on screen, but svg2pdf and the PDF viewers
-   that open the result (Edge, poppler, …) do **not** apply a transform on a clipPath child — they
-   collapse the clip and drop everything inside it, so every band under a region-exclude clip renders
-   **blank/white**. `flattenClipPathTransforms` ([pdfClip.ts](src/export/pdfClip.ts)) bakes the scale
-   into the path coordinates (removing the transform and the ×64 magnitudes): the clip region — and
-   therefore the layering — is identical, just in a form every renderer honors. Pure/unit-tested;
-   only a uniform `scale` over non-arc paths is baked, anything else is left as-is.
+1. **Region-exclude clips** — the region-layering exclusion clips defeat Blink's clip-raster
+   snapping by emitting the clip path at ×`CLIP_RASTER_SCALE` and pulling it back with
+   `CLIP_RASTER_INVERSE_TRANSFORM` (`scale(1/64)`) on the clipPath's **child**
+   ([clipRaster.ts](src/components/canvas/clipRaster.ts)). Exact on screen; through svg2pdf it
+   corrupts any clip referenced more than once. svg2pdf memoizes each node's parsed path
+   (`getCachedPath`) and `Path.transform` mutates it **in place**, while `ClipPath.apply`
+   re-renders its children once per referencing element — so the scale compounds against the same
+   cached object: 1st user correct, 2nd at 1/64, 3rd at 1/4096, collapsing to a speck at the origin.
+   One region-exclude def backs many renderables, so all but the first rendered **blank**.
+   `hoistClipPathTransforms` ([pdfClip.ts](src/export/pdfClip.ts)) moves the transform onto the
+   `<clipPath>` element, which svg2pdf folds into the CTM instead of the cached path — stable across
+   unlimited references, clip region and layering unchanged. Hoisting never touches geometry, so it
+   is exact for arcs, rotate/translate/matrix and `<rect>`/`<circle>` children too; a clipPath whose
+   children carry *differing* transforms can't be hoisted and is warned about rather than silently
+   mis-clipped.
 2. **Hatch** — svg2pdf can't tile a `<pattern>` along a stroke, so every hatch paint (band strokes
    **and** the stop markers on them) is baked into clipped solid-stripe geometry; the stripe math
    lives in the pure, unit-tested [pdfHatch.ts](src/export/pdfHatch.ts) (`ribbonFromCenterline`,
@@ -3564,7 +3597,6 @@ svg2pdf/jsPDF can't bridge are closed here:
    the SVG/PNG paths need none of it (browser/canvas composite hex8 natively).
    Lazy-loaded on first PDF export (`import()` in the toolbar) so jsPDF + opentype.js stay out of the
    initial bundle.
-
 [color.ts](src/util/color.ts): pure hex math — `legibleTextOn` (W3C luminance → `#000`/`#fff`),
 `withAlpha`, `blendOver`, `desaturateColor`, plus the RGBA surface added with the react-colorful
 picker: `parseHexA` (→ `[r,g,b,a]`, preserving alpha from `#rgba`/`#rrggbbaa`), `withHexAlpha`
@@ -3598,24 +3630,28 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   tag/transfer endpoint and `routeBullet.lineId` resolves live-or-null. Maintained by cascade
   prunes after structural edits (`deleteStation`/`deleteLine`/`removeStationFromLine`/…).
 - **`LineTag.fromStationId < toStationId`** always (canonical/alphabetic, = `pairKeyOf`).
-- **A small string union has ONE ladder**, in the model module that owns the concept: an ordered
-  array naming every member — `LINE_STYLES`, `LINE_END_STYLES`, `TRANSFER_DRAW_ORDERS`,
-  `ROUTE_BULLET_SHAPES`, `TEXT_LABEL_ALIGNS`, `DOT_BASE_SHAPES`, and `LABEL_WEIGHT_NAMES` (whose
-  rungs carry their display names, since the names ARE the shipped faces) — with a membership
-  guard beside it: `isLineEndStyle`, `isTransferDrawOrder`, `isRouteBulletShape`,
-  `isTextLabelAlign`, `isDotBaseShape`, `isLabelWeight`. **Every gate judges by the guard and every
+- **A small string union has ONE ladder**, in the module that owns the concept — the model module
+  for a stored value, the store's own module for a union that never leaves the app (`MAP_SORTS` in
+  `state/mapLibrary.ts`): an ordered array naming every member — `LINE_STYLES`, `LINE_END_STYLES`,
+  `TRANSFER_DRAW_ORDERS`, `ROUTE_BULLET_SHAPES`, `TEXT_LABEL_ALIGNS`, `DOT_BASE_SHAPES`,
+  `PALETTE_SORTS`, `MAP_SORTS`, and `LABEL_WEIGHT_NAMES` (whose rungs carry their display names,
+  since the names ARE the shipped faces) — with a membership guard beside it: `isLineEndStyle`,
+  `isTransferDrawOrder`, `isRouteBulletShape`, `isTextLabelAlign`, `isDotBaseShape`,
+  `isPaletteSort`, `isMapSort`, `isLabelWeight`. **Every gate judges by the guard and every
   picker takes its order from the array**; no consumer re-spells the members, including the three
   gates that each judge stored values independently (both load paths and the clipboard's paste
   validator). The rule earns its keep because a picker and a gate fail in OPPOSITE directions: a
   picker short a member leaves a stored value uneditable, while a gate short one discards the
   whole record carrying it — `canonicalStyleProps` refuses a def rather than repairing it, so the
-  user loses a style, not a field. Compile-time exhaustiveness comes from a `Record<Union, …>` the
-  array is paired with: the UI's chip map where the pickers need one (`ROUTE_BULLET_SHAPE_LABEL`,
-  `LINE_END_LABELS`, `TRANSFER_DRAW_LABELS`, `DOT_BASE_SHAPE_LABELS`, `TEXT_LABEL_ALIGN_CHIPS`) or
-  `LINE_STYLE_TIE_RANK` — a member added to the union leaves a missing key there and fails to
-  compile, so the ladder cannot fall behind the type. A user-facing CYCLE is deliberately NOT
-  derived from its ladder (`NEXT_STYLE`, `AXIS_CYCLE`): reordering the ladder must not silently
-  reorder what shift-click does.
+  user loses a style, not a field. A persisted PREF fails the same way from the other end: a sort
+  mode the picker no longer offers is stuck, and one the guard no longer accepts is silently
+  ignored on the next boot. Compile-time exhaustiveness comes from a `Record<Union, …>` the array
+  is paired with: the UI's chip or label map where the pickers need one
+  (`ROUTE_BULLET_SHAPE_LABEL`, `LINE_END_LABELS`, `TRANSFER_DRAW_LABELS`, `DOT_BASE_SHAPE_LABELS`,
+  `TEXT_LABEL_ALIGN_CHIPS`, each dialog's `SORT_LABELS`) or `LINE_STYLE_TIE_RANK` — a member added
+  to the union leaves a missing key there and fails to compile, so the ladder cannot fall behind
+  the type. A user-facing CYCLE is deliberately NOT derived from its ladder (`NEXT_STYLE`,
+  `AXIS_CYCLE`): reordering the ladder must not silently reorder what shift-click does.
 - **`DOC_FIELDS` is the single source of truth** for persisted/undoable fields — it is **not**
   `Object.keys(DEFAULT_DOC)`; keep them in sync (a field in `DEFAULT_DOC` but not `DOC_FIELDS`
   would default but never persist/undo).

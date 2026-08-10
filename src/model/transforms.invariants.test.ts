@@ -3,11 +3,13 @@ import fc from 'fast-check';
 import * as T from './transforms';
 import { LINE_WIDTH_DEFAULT, LINE_WIDTH_MIN, LINE_WIDTH_STEP } from './lineWidth';
 import {
+  LINE_OWN_COLOR,
   LINE_STROKE_COLOR_DEFAULT,
   LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_DEFAULT,
+  lineStrokeColorsEqual,
 } from './lineStroke';
-import type { LineStyle, MapDoc, TransferEnd } from './types';
+import type { LineStrokeColor, LineStyle, MapDoc, TransferEnd } from './types';
 import { counterIdFactory } from './ids';
 import { isStopEnd, transferEndResolves } from './transferAnchors';
 
@@ -39,7 +41,7 @@ type Action =
   | { kind: 'moveLineInOrder'; idx: number; dir: -1 | 1 }
   | { kind: 'setLineWidth'; idx: number; w: number }
   | { kind: 'setLineStrokeWidth'; idx: number; w: number }
-  | { kind: 'setLineStrokeColor'; idx: number; c: string }
+  | { kind: 'setLineStrokeColor'; idx: number; c: LineStrokeColor }
   | { kind: 'moveStop'; stationIdx: number; lineIdx: number; dRow: number; dCol: number }
   | {
       kind: 'setLineSegmentStyle';
@@ -119,8 +121,15 @@ const actionArb = fc.oneof(
     kind: fc.constant<'setLineStrokeColor'>('setLineStrokeColor'),
     idx: idxArb,
     // Mixed-case defaults and non-defaults to exercise the lowercase
-    // normalization + drop-at-default paths.
-    c: fc.constantFrom('#ffffff', '#FFFFFF', '#ab12cd', '#AB12CD', '#000000'),
+    // normalization + drop-at-default paths, plus a half-default pair (which
+    // must NOT collapse) and the 'line' sentinel.
+    c: fc.constantFrom<LineStrokeColor>(
+      { day: '#ffffff', night: '#ffffff' },
+      { day: '#FFFFFF', night: '#FFFFFF' },
+      { day: '#ab12cd', night: '#AB12CD' },
+      { day: '#ffffff', night: '#000000' },
+      LINE_OWN_COLOR,
+    ),
   }),
   fc.record({
     kind: fc.constant<'moveStop'>('moveStop'),
@@ -456,8 +465,13 @@ describe('transforms invariants (property-based)', () => {
             expect(strokeWidth).toBeGreaterThan(LINE_STROKE_WIDTH_DEFAULT);
           }
           if (strokeColor !== undefined) {
-            expect(strokeColor).toBe(strokeColor.toLowerCase());
-            expect(strokeColor).not.toBe(LINE_STROKE_COLOR_DEFAULT);
+            // The sentinel is storable as-is; a pair is lowercase in both
+            // halves and never the (dropped) all-white default.
+            if (strokeColor !== LINE_OWN_COLOR) {
+              expect(strokeColor.day).toBe(strokeColor.day.toLowerCase());
+              expect(strokeColor.night).toBe(strokeColor.night.toLowerCase());
+              expect(lineStrokeColorsEqual(strokeColor, LINE_STROKE_COLOR_DEFAULT)).toBe(false);
+            }
           }
         }
       }),

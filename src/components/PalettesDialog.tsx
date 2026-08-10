@@ -1,13 +1,11 @@
 import { useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import * as Select from '@radix-ui/react-select';
 import * as Toggle from '@radix-ui/react-toggle';
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
   CheckIcon,
-  ChevronDownIcon,
   CopyIcon,
   Cross2Icon,
   DownloadIcon,
@@ -27,6 +25,8 @@ import {
   libraryPalettes,
   paletteContentEqual,
   PALETTES,
+  PALETTE_SORTS,
+  isPaletteSort,
   type Palette,
   type PaletteSort,
 } from '../model/palettes';
@@ -34,19 +34,19 @@ import { normalizeHex } from '../util/color';
 import { redo, undo } from '../state/history';
 import { pointerLost } from './canvas/dragGesture';
 import { downloadBlob, sanitizeBasename } from '../export/exportCanvas';
-import { IconButton, RowCommands, useSpeedBump } from './dialogRow';
+import { DialogSortSelect, IconButton, RowCommands, useSpeedBump } from './dialogRow';
 import { rowShiftStyle, useRowDragReorder } from './useRowDragReorder';
 import { PaletteEditor, type PaletteSource } from './PaletteEditor';
 
 /** The map column's fixed row height — the drag hook divides by it (CSS pins it). */
 export const PALETTE_ROW_HEIGHT = 44;
 
-const SORT_LABELS: { value: PaletteSort; label: string }[] = [
-  { value: 'name', label: 'Name' },
-  { value: 'starred', label: 'Starred' },
-];
-
-const isPaletteSort = (v: string): v is PaletteSort => v === 'name' || v === 'starred';
+// The picker's wording, one entry per PALETTE_SORTS rung — a Record over the
+// union, so a mode added to PaletteSort fails to compile until it is named here.
+const SORT_LABELS: Record<PaletteSort, string> = {
+  name: 'Name',
+  starred: 'Starred',
+};
 
 /** A palette's colors as a strip — how you recognise one without reading it. */
 function Strip({ palette }: { palette: Palette }) {
@@ -473,40 +473,15 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                         style={{ display: 'none' }}
                         onChange={onLoad}
                       />
-                      <Select.Root
+                      <DialogSortSelect
                         value={sort}
-                        onValueChange={(v) => {
-                          if (isPaletteSort(v)) setSort(v);
-                        }}
-                      >
-                        <Select.Trigger
-                          className="field-select dialog-sort"
-                          aria-label="Sort palettes"
-                        >
-                          <Select.Value />
-                          <Select.Icon className="field-select-caret" aria-hidden="true">
-                            <ChevronDownIcon />
-                          </Select.Icon>
-                        </Select.Trigger>
-                        <Select.Content
-                          className="field-select-panel"
-                          position="popper"
-                          sideOffset={4}
-                          align="end"
-                        >
-                          <Select.Viewport>
-                            {SORT_LABELS.map((s) => (
-                              <Select.Item
-                                key={s.value}
-                                value={s.value}
-                                className="field-select-item"
-                              >
-                                <Select.ItemText>{s.label}</Select.ItemText>
-                              </Select.Item>
-                            ))}
-                          </Select.Viewport>
-                        </Select.Content>
-                      </Select.Root>
+                        sorts={PALETTE_SORTS}
+                        labels={SORT_LABELS}
+                        isSort={isPaletteSort}
+                        onChange={setSort}
+                        ariaLabel="Sort palettes"
+                        className="dialog-sort"
+                      />
                     </div>
                   </div>
                   <div className="dialog-list">

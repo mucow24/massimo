@@ -168,6 +168,48 @@ export function bakeHatchedPaints(svg: SVGSVGElement): void {
 }
 
 /**
+ * Run every SVG-level bake the PDF converter needs, in order, on the attached
+ * export clone. Exported so the sequence — whose ordering is load-bearing in
+ * several places — can be tested without driving a full render + download.
+ *
+ * `el` must already be attached to the document: several steps measure geometry
+ * (`getBBox` / `getTotalLength` / `getComputedTextLength`).
+ */
+export async function prepareSvgForPdf(el: SVGSVGElement): Promise<void> {
+  // Move the clip-raster scale(1/64) off region-exclude clip CHILDREN onto the
+  // clipPath itself. svg2pdf memoizes each node's parsed path and transforms it
+  // in place, so a transform on a clip child compounds once per referencing
+  // element — the 2nd user clips at 1/64, the 3rd at 1/4096 — and every band
+  // under a reused region-exclude clip renders blank. Hoisting leaves the clip
+  // region (and the layering) identical. Runs first, on the cloned canvas.
+  hoistClipPathTransforms(el);
+
+  // Bake hatch pattern paints into stripe geometry svg2pdf can convert (must
+  // run while attached — it samples path/shape geometry).
+  bakeHatchedPaints(el);
+
+  // svg2pdf re-vectorizes svg+xml images and has no <mask> support, so an
+  // imported graphic that uses a mask would export unmasked. Rasterize just
+  // those to a PNG (the browser applies the mask) svg2pdf embeds verbatim.
+  // Must run BEFORE the drop-shadow bake, which then skips them (now PNG).
+  await rasterizeMaskedImages(el);
+
+  // Bake hard drop-shadow filters inside embedded svg+xml logos into real
+  // offset geometry — svg2pdf renders those images as vectors but ignores
+  // <filter>, so their casing/shadow would otherwise vanish.
+  bakeImageDropShadows(el);
+
+  // Text arrived already outlined to paths from buildExportSvg, so there is no
+  // <text> left for svg2pdf to mis-baseline, mis-track, or fail to embed a font
+  // for — the passes that used to handle all three are gone with it.
+
+  // svg2pdf drops the alpha of an 8-digit hex color, so split every #rrggbbaa
+  // fill/stroke into a 6-digit color + fill-opacity/stroke-opacity (which it
+  // honors). Runs LAST so colors the bakes above copied forward are covered.
+  splitAlphaColors(el);
+}
+
+/**
  * Build the standalone export SVG, render it into a vector PDF, and trigger a
  * browser download. Same signature as `exportCanvasSvg`/`exportCanvasPng` so it
  * drops into the toolbar's `runExport` helper unchanged.
@@ -189,37 +231,7 @@ export async function exportCanvasPdf(
   document.body.appendChild(holder);
 
   try {
-    // Move the clip-raster scale(1/64) off region-exclude clip CHILDREN onto the
-    // clipPath itself. svg2pdf memoizes each node's parsed path and transforms it
-    // in place, so a transform on a clip child compounds once per referencing
-    // element — the 2nd user clips at 1/64, the 3rd at 1/4096 — and every band
-    // under a reused region-exclude clip renders blank. Hoisting leaves the clip
-    // region (and the layering) identical. Runs first, on the cloned canvas.
-    hoistClipPathTransforms(el);
-
-    // Bake hatch pattern paints into stripe geometry svg2pdf can convert (must
-    // run while attached — it samples path/shape geometry).
-    bakeHatchedPaints(el);
-
-    // svg2pdf re-vectorizes svg+xml images and has no <mask> support, so an
-    // imported graphic that uses a mask would export unmasked. Rasterize just
-    // those to a PNG (the browser applies the mask) svg2pdf embeds verbatim.
-    // Must run BEFORE the drop-shadow bake, which then skips them (now PNG).
-    await rasterizeMaskedImages(el);
-
-    // Bake hard drop-shadow filters inside embedded svg+xml logos into real
-    // offset geometry — svg2pdf renders those images as vectors but ignores
-    // <filter>, so their casing/shadow would otherwise vanish.
-    bakeImageDropShadows(el);
-
-    // Text is already outlined to paths by buildExportSvg, so there is no <text>
-    // for svg2pdf to mis-baseline, mis-track, or fail to embed a font for — the
-    // steps that used to handle all of that are gone.
-
-    // svg2pdf drops the alpha of an 8-digit hex color, so split every #rrggbbaa
-    // fill/stroke into a 6-digit color + fill-opacity/stroke-opacity (which it
-    // honors). Runs LAST so colors the bakes above copied forward are covered.
-    splitAlphaColors(el);
+    await prepareSvgForPdf(el);
 
     // Page sized to the content. Orientation tracks the aspect so jsPDF doesn't
     // swap the custom [width,height] format on us.

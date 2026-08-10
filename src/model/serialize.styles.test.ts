@@ -208,7 +208,11 @@ describe('sanitizeStyles via parse', () => {
       styles: {
         y1: makeStyle('line', 'y1', {
           name: 'L',
-          props: { width: 9.6, strokeWidth: 1.3, strokeColor: '#ABCDEF' },
+          props: {
+            width: 9.6,
+            strokeWidth: 1.3,
+            strokeColor: { day: '#ABCDEF', night: '#ABCDEF' },
+          },
         }),
         y2: makeStyle('textLabel', 'y2', { name: 'T', props: { fontSize: 12.1 } }),
         y3: makeStyle('polygon', 'y3', { name: 'P', props: { strokeWidth: 2.3, curveRadius: -4 } }),
@@ -220,7 +224,7 @@ describe('sanitizeStyles via parse', () => {
     expect(out.styles.y1.props).toMatchObject({
       width: 9.5,
       strokeWidth: 1.25,
-      strokeColor: '#abcdef',
+      strokeColor: { day: '#abcdef', night: '#abcdef' },
     });
     expect(out.styles.y2.props).toMatchObject({ fontSize: 12 });
     expect(out.styles.y3.props).toMatchObject({ strokeWidth: 2.25, curveRadius: 0 });

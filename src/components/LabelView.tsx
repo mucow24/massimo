@@ -21,6 +21,7 @@ import { resolveTextLabelColor } from '../model/transforms';
 import { InlineBullet } from './InlineBullet';
 import { itemCursor } from './canvas/itemCursor';
 import { SELECTION_DASH, selectionOutlineTones } from './selectionStyle';
+import { decorationLine, decorationNodes, type TextDecorationKind } from './textDecoration';
 
 export type LabelLayer = 'bg' | 'stroke' | 'hit';
 
@@ -238,46 +239,23 @@ export function LabelView({
             {value}
           </text>
         );
-        // <u>/<s> as explicit <line> geometry, matching the station-label
-        // pattern: Chromium mishandles toggling the text-decoration SVG
-        // attribute on rotated <text>, and svg2pdf ignores it outright.
-        // Decoration geometry scales with the RUN's size (offsets + thickness),
-        // so a bigger <size> run gets a proportionally placed, heavier rule.
-        const decorationY = (kind: 'underline' | 'strike', fontSize: number) =>
-          kind === 'underline' ? baselineY + fontSize * 0.1 : baselineY - fontSize * 0.28;
-        const decorationLine = (
-          kind: 'underline' | 'strike',
+        // <u>/<s> rules, from the geometry both label renderers share (see
+        // textDecoration.tsx). Only the span and the run's ink are local.
+        const decoration = (
+          kind: TextDecorationKind,
           x: number,
           width: number,
           key: string,
           fontSize: number,
           style: SegmentStyle,
-        ) => (
-          <line
-            key={`${key}-${kind}`}
-            data-text-decoration={kind}
-            x1={x}
-            x2={x + width}
-            y1={decorationY(kind, fontSize)}
-            y2={decorationY(kind, fontSize)}
-            stroke={runFill(style)}
-            strokeWidth={fontSize * 0.07}
-          />
-        );
-        const decorationNodes = (
+        ) => decorationLine({ kind, x, width, baselineY, fontSize, stroke: runFill(style), key });
+        const decorations = (
           x: number,
           width: number,
           key: string,
           fontSize: number,
           style?: SegmentStyle,
-        ): React.ReactNode[] => {
-          if (!style || (!style.underline && !style.strike) || width <= 0) return [];
-          const out: React.ReactNode[] = [];
-          if (style.underline)
-            out.push(decorationLine('underline', x, width, key, fontSize, style));
-          if (style.strike) out.push(decorationLine('strike', x, width, key, fontSize, style));
-          return out;
-        };
+        ) => decorationNodes({ x, width, baselineY, fontSize, stroke: runFill(style), key }, style);
         // Justify splits each line into per-word atoms, so a single '<u>foo and
         // bar</u>' arrives as several word atoms — decorating each on its own
         // would draw a broken underline per word. Coalesce consecutive atoms
@@ -296,7 +274,7 @@ export function LabelView({
             const flush = () => {
               if (run && run.end > run.x) {
                 out.push(
-                  decorationLine(
+                  decoration(
                     kind,
                     run.x,
                     run.end - run.x,
@@ -398,7 +376,7 @@ export function LabelView({
             if (seg.kind === 'text') {
               nodes.push(textNode(segCursor, seg.value, `${i}-${j}-t`, seg.fontSize, seg.style));
               nodes.push(
-                ...decorationNodes(segCursor, seg.advance, `${i}-${j}`, seg.fontSize, seg.style),
+                ...decorations(segCursor, seg.advance, `${i}-${j}`, seg.fontSize, seg.style),
               );
             } else {
               nodes.push(bulletNode(segCursor, seg, `${i}-${j}-b`));

@@ -15,3 +15,13 @@ export const resolveDayNight = (c: DayNightColor, darkMode: boolean): string =>
 // at a default.
 export const dayNightColorsEqual = (a: DayNightColor, b: DayNightColor): boolean =>
   a.day === b.day && a.night === b.night;
+
+/**
+ * Equality for a color slot that holds EITHER a string sentinel ('line', 'bw',
+ * 'none') or a day/night pair: a sentinel matches only the identical sentinel,
+ * and two pairs compare structurally. Every such slot — a dot's fill, stroke
+ * and service code, a line's casing — reads this one rule, so none of them can
+ * drift into comparing pairs by reference.
+ */
+export const sentinelOrDayNightEqual = <T extends DayNightColor | string>(a: T, b: T): boolean =>
+  typeof a === 'string' || typeof b === 'string' ? a === b : dayNightColorsEqual(a, b);
