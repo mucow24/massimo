@@ -3544,12 +3544,14 @@ without the fonts the export tests still pass while outlining nothing, a vacuous
 
 **Staging the typeface.** [scripts/stageFonts.mjs](scripts/stageFonts.mjs) is the single answer to
 "where do the faces come from here", run on `postinstall` (and by `npm run fonts`). It takes the
-first source that has them: a local `.fonts/` clone; the **sibling main checkout** — worktrees under
-`.claude/worktrees/` share a `.git` but not ignored files, so a fresh one is served from the dev
-machine's own copy with no network; a clone of the private repo using `FONTS_REPO_PAT`, mirroring
-CI and the only route open to a cloud session, which has no sibling on disk; and failing all of
-those, **DejaVu Sans copied under each of the 16 filenames**. The face list is parsed out of
-`FONT_TABLE` rather than re-typed, so adding or renaming a face needs no edit in the script.
+first source that has them: `.fonts/`, where CI and the Pages deploy check the private font repo out
+before installing; the **sibling main checkout** — worktrees under `.claude/worktrees/` share a
+`.git` but not ignored files, so a fresh one is served from the dev machine's own copy with no
+network; and failing those, **DejaVu Sans copied under each of the 16 filenames**, which is what a
+cloud session lands on (a fresh clone with no sibling on disk). There is no credentialled fetch — CI
+and Pages stage the real faces themselves, so the script only ever copies what is already local. The
+face list is parsed out of `FONT_TABLE` rather than re-typed, so adding or renaming a face needs no
+edit in the script.
 
 Substitutes exist so an environment that can never hold the licence still runs the export pipeline
 against a real parseable face instead of going vacuously green, and they announce themselves:
