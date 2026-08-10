@@ -1,6 +1,6 @@
 import { test, expect, type Page, type Download } from '@playwright/test';
 import { readFileSync } from 'node:fs';
-import { openLineStyleDetail, seedAndOpen, type Seed } from './fixtures';
+import { openLineStyleDetail, openMapMenu, seedAndOpen, type Seed } from './fixtures';
 
 // ACCEPTANCE SPEC for per-line stroke (casing) — written red-first
 // (double-loop TDD) with `test.fail()` annotations that were removed once
@@ -184,7 +184,7 @@ async function casingThenBodyOrder(page: Page, lineId: string): Promise<string[]
 
 /** Drive Map → Export → SVG and return the downloaded markup. */
 async function exportSvg(page: Page): Promise<string> {
-  await page.getByRole('button', { name: 'Map', exact: true }).click();
+  await openMapMenu(page);
   await page.getByRole('menuitem', { name: 'Export' }).click();
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('menuitem', { name: 'SVG', exact: true }).click();

@@ -15,7 +15,7 @@
 import { test, expect, type Page, type Download } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { inflateSync } from 'node:zlib';
-import { seedAndOpen, fourInLineWithBulletsAndLabel } from './fixtures';
+import { openMapMenu, seedAndOpen, fourInLineWithBulletsAndLabel } from './fixtures';
 
 // A small self-contained SVG, embedded as the "Add SVG…" feature would store
 // it: an opaque data:image/svg+xml;base64 URI.
@@ -114,7 +114,7 @@ async function seed(page: Page): Promise<void> {
 }
 
 async function exportPdf(page: Page): Promise<Download> {
-  await page.getByRole('button', { name: 'Map', exact: true }).click();
+  await openMapMenu(page);
   await page.getByRole('menuitem', { name: 'Export' }).click();
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('menuitem', { name: 'PDF', exact: true }).click();

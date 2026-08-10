@@ -5,6 +5,7 @@ import {
   stationCenter,
   fourInLine,
   fourInLineWithBulletsAndLabel,
+  openMapMenu,
   toggleViewLayer,
   type Seed,
 } from './fixtures';
@@ -32,7 +33,7 @@ test.beforeEach(async ({ page }) => {
 
 /** Drive Map → Export → <kind> and return the captured download. */
 async function exportVia(page: Page, kind: 'PNG' | 'SVG'): Promise<Download> {
-  await page.getByRole('button', { name: 'Map', exact: true }).click();
+  await openMapMenu(page);
   await page.getByRole('menuitem', { name: 'Export' }).click();
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('menuitem', { name: kind, exact: true }).click();

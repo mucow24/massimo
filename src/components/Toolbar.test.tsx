@@ -1304,7 +1304,7 @@ describe('Toolbar — save gating (clean / dirty / unsaved)', () => {
       stations: { S: stationWithStop('S' as StationId, 'L1' as LineId, { x: 0, y: 0 }) },
     });
 
-  const openCanvasMenu = async (user: ReturnType<typeof userEvent.setup>) => {
+  const openMapMenu = async (user: ReturnType<typeof userEvent.setup>) => {
     await user.click(screen.getByRole('button', { name: 'Map' }));
   };
   const saveItem = () => screen.getByRole('menuitem', { name: 'Save version' });
@@ -1314,7 +1314,7 @@ describe('Toolbar — save gating (clean / dirty / unsaved)', () => {
     seedMap();
     anchor(markSaved);
     renderToolbar();
-    await openCanvasMenu(user);
+    await openMapMenu(user);
     expect(saveItem()).toHaveAttribute('aria-disabled', 'true');
   });
 
@@ -1324,12 +1324,12 @@ describe('Toolbar — save gating (clean / dirty / unsaved)', () => {
     anchor(markSaved);
     useDoc.getState().addStation(200, 0);
     renderToolbar();
-    await openCanvasMenu(user);
+    await openMapMenu(user);
     expect(saveItem()).not.toHaveAttribute('aria-disabled');
     await user.click(saveItem());
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
     expect(statusNow()).toBe('clean');
-    await openCanvasMenu(user);
+    await openMapMenu(user);
     expect(saveItem()).toHaveAttribute('aria-disabled', 'true');
   });
 
@@ -1338,7 +1338,7 @@ describe('Toolbar — save gating (clean / dirty / unsaved)', () => {
     seedMap();
     anchor(markAdopted); // a loaded file: clean bytes, no library copy
     renderToolbar();
-    await openCanvasMenu(user);
+    await openMapMenu(user);
     expect(saveItem()).not.toHaveAttribute('aria-disabled');
     await user.click(saveItem());
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
@@ -1357,7 +1357,7 @@ describe('Toolbar — save gating (clean / dirty / unsaved)', () => {
         }),
     );
     renderToolbar();
-    await openCanvasMenu(user);
+    await openMapMenu(user);
     await user.click(saveItem());
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
     useDoc.getState().addStation(500, 500); // lands while the save is in flight
@@ -1370,14 +1370,14 @@ describe('Toolbar — save gating (clean / dirty / unsaved)', () => {
   it('New leaves a fresh map unsaved — armed to save, but not "changed"', async () => {
     const user = userEvent.setup();
     renderToolbar();
-    await openCanvasMenu(user);
+    await openMapMenu(user);
     await user.click(screen.getByRole('menuitem', { name: 'New' }));
     await waitFor(() => expect(statusNow()).toBe('unsaved'));
   });
 });
 
 /**
- * Ctrl/Cmd+S is a keyboard accelerator for Canvas ▸ Save version — it writes a
+ * Ctrl/Cmd+S is a keyboard accelerator for Map ▸ Save version — it writes a
  * library version, NOT a JSON download, and never lets the browser's Save-page
  * dialog open. It honours the same clean-state gate the menu item's disabled
  * state enforces.

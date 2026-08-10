@@ -414,7 +414,7 @@ export function Toolbar() {
     }
   };
 
-  // Ctrl/Cmd+S is the keyboard accelerator for Canvas ▸ Save version. Always
+  // Ctrl/Cmd+S is the keyboard accelerator for Map ▸ Save version. Always
   // preventDefault so the browser's Save-page dialog never opens, and it is a
   // library save — never the JSON export. Blur first so an in-progress rename
   // in the map-name field (which commits on blur) lands in the doc before it is

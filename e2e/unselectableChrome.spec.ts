@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedAndOpen, fourInLine } from './fixtures';
+import { openMapMenu, seedAndOpen, fourInLine } from './fixtures';
 
 // Chrome text — wordmark, popover titles, field labels, button captions, menu
 // entries — is UI, not content: a drag across the app must not leave a text
@@ -20,7 +20,7 @@ test.describe('unselectable chrome', () => {
     await expect(page.locator('.toolbar button.map-name')).toHaveCSS('user-select', 'none');
 
     // Menu entries are UI text too — open Map and check a live item.
-    await page.getByRole('button', { name: 'Map', exact: true }).click();
+    await openMapMenu(page);
     await expect(page.locator('.menu-panel .menu-item').first()).toHaveCSS('user-select', 'none');
     await page.keyboard.press('Escape');
 
