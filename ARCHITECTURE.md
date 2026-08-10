@@ -2414,7 +2414,10 @@ which are a separate slot-based system where Shift flips the lattice basis.
   double-headed `<a_ns>` ↕ / `<a_ew>` ↔, that last one also spelled `<xfer>` for what it means on a
   map. A shortcut opens nothing — it substitutes its character into the surrounding run, which then
   measures and kerns as one piece; every other tag threads its open-tag state across `\n` lines and
-  column wraps until closed. Unknown tags stay literal text. Both free-floating text labels
+  column wraps until closed. The shortcuts are the one part of this grammar reaching outside a
+  label: `expandGlyphTags` applies `GLYPH_TAGS` and nothing else (no bullets, no style tags, no
+  escape), which is how a SERVICE CODE can be spelled `<air>` — see `serviceCodeDraft`. Unknown tags
+  stay literal text. Both free-floating text labels
   (`LabelView`) and station labels (`renderStationLabelText`) render these tags; the inline rename
   editor shows the raw tokens (`literalBullets`). Free-floating labels also carry optional `leading`
   (line-spacing multiplier) and `tracking` (em letter-spacing) per label; station labels carry the
@@ -4065,6 +4068,7 @@ Each is confirmed in source/tests; file pointers included.
 - **Wash / silhouette** — the soft selection-highlight fill behind a selected station.
 - **Waypoint** — a routing-point station with name + bullets hidden.
 - **Route bullet** — a free-floating badge showing a line's service code.
-- **Service code** — the short route identifier on a line (e.g. `"A"`, `"7"`).
+- **Service code** — the short route identifier on a line (e.g. `"A"`, `"7"`, `"✈"`). At most
+  `SERVICE_CODE_MAX` characters, and typeable as a glyph shortcut (`<air>`).
 - **Day/night color** — a `{day, night}` pair resolved per the dark-mode theme.
 

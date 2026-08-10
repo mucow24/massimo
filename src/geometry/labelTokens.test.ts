@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   BOLDWARD_TAG_STEPS,
+  GLYPH_TAG_MAX_LEN,
   emptyStyleState,
+  expandGlyphTags,
   hasFormattedToken,
   migrateLegacyInlineTokens,
   parseFormattedLine,
@@ -623,6 +625,35 @@ describe('resolveRunFontSize', () => {
   it('floors the resolved size at the minimum label font size (1)', () => {
     expect(resolveRunFontSize(3, { ...style(), sizeStep: -10 })).toBe(1);
     expect(resolveRunFontSize(16, { ...style(), size: 0.5 })).toBe(1);
+  });
+});
+
+// The shortcuts on their own, for callers with no runs, bullets or escapes to
+// think about — the Service code field.
+describe('expandGlyphTags', () => {
+  it('substitutes a shortcut wherever it sits', () => {
+    expect(expandGlyphTags('<air>')).toBe('✈');
+    expect(expandGlyphTags('A<xfer>B')).toBe('A↔B');
+    expect(expandGlyphTags('<a_ne>')).toBe('↗');
+    expect(expandGlyphTags('<c><tm>')).toBe('©™');
+  });
+
+  it('leaves unknown, unclosed and upper-case tags literal, as the grammar does', () => {
+    expect(expandGlyphTags('<q>')).toBe('<q>');
+    expect(expandGlyphTags('<air')).toBe('<air');
+    expect(expandGlyphTags('<AIR>')).toBe('<AIR>');
+    expect(expandGlyphTags('<a_>')).toBe('<a_>');
+  });
+
+  it('leaves everything else in the grammar alone — bullets, tags, escapes', () => {
+    expect(expandGlyphTags('|A| <b>x</b>')).toBe('|A| <b>x</b>');
+    // No escape handling: a service code has nothing an escape could protect.
+    expect(expandGlyphTags('\\<air>')).toBe('\\✈');
+  });
+
+  it('reports the longest raw spelling of a shortcut, brackets included', () => {
+    // `<xfer>` / `<a_ne>` — the field's raw maxLength is sized off this.
+    expect(GLYPH_TAG_MAX_LEN).toBe(6);
   });
 });
 

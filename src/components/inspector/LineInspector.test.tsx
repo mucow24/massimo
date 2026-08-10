@@ -151,6 +151,42 @@ describe('<LineInspector /> — name / service / default-shape (E9)', () => {
       expect(useDoc.getState().lines.L1.service).toBe('B');
     });
 
+    it('a glyph shortcut collapses in the field, but still lands only on blur', () => {
+      seedThree();
+      render(<LineInspector id="L1" />);
+      const input = fieldInput('Service code');
+      fireEvent.focus(input);
+      // Typed one character at a time: the tag stays visible until it closes.
+      for (const partial of ['<', '<a', '<ai', '<air']) {
+        fireEvent.change(input, { target: { value: partial } });
+        expect(input.value).toBe(partial);
+      }
+      fireEvent.change(input, { target: { value: '<air>' } });
+      // Collapsed on screen — the preview — but not yet in the doc.
+      expect(input.value).toBe('✈');
+      expect(useDoc.getState().lines.L1.service).toBe('A');
+      fireEvent.blur(input);
+      expect(useDoc.getState().lines.L1.service).toBe('✈');
+    });
+
+    it('a shortcut renames inline bullets like any other code', () => {
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({
+          stations: [makeStation({ id: 's1', name: '|A| Union', stops: [makeStop('L1')] })],
+          lines: [makeLine({ id: 'L1', service: 'A', stations: ['s1'] })],
+        }),
+      });
+      render(<LineInspector id="L1" />);
+      const input = fieldInput('Service code');
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: '<air>' } });
+      fireEvent.blur(input);
+      // The stored code is the GLYPH, so it is a legal bullet CODE and the
+      // rewrite carries the badge across with the rename.
+      expect(useDoc.getState().stations.s1.name).toBe('|✈| Union');
+    });
+
     it('an emptied field still commits the clear', () => {
       seedThree();
       render(<LineInspector id="L1" />);

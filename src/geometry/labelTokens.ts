@@ -212,6 +212,31 @@ const GLYPH_NAMES = Object.keys(GLYPH_TAGS)
   .sort((a, b) => b.length - a.length)
   .join('|');
 
+const GLYPH_TAG_RE = new RegExp(`<(${GLYPH_NAMES})>`, 'g');
+
+/**
+ * Longest a shortcut can be while it is being typed — the longest tag name plus
+ * its two angle brackets. A field that accepts shortcuts has to allow this much
+ * more raw text than the value it produces, since a code spelled as a shortcut
+ * is briefly longer than the one character it collapses to.
+ */
+export const GLYPH_TAG_MAX_LEN = Math.max(...Object.keys(GLYPH_TAGS).map((n) => n.length)) + 2;
+
+/**
+ * Substitute every glyph shortcut with its character and leave all other text
+ * exactly as it stands. The shortcuts on their own, none of the rest of the
+ * grammar below: no bullets, no style tags, no backslash escape.
+ *
+ * This is what lets a SERVICE CODE be spelled `<air>` (see `serviceCodeDraft`) —
+ * a code is two or three characters printed inside a stop dot, so it has no runs
+ * to style, no bullets to resolve, and nothing an escape could protect. It reads
+ * the same `GLYPH_TAGS` table the label grammar does, so a shortcut can never
+ * mean one thing in a label and another in a code.
+ */
+export function expandGlyphTags(text: string): string {
+  return text.replace(GLYPH_TAG_RE, (_m, name: string) => GLYPH_TAGS[name]);
+}
+
 /**
  * Formatting tag grammar (labels only): the bold-ward trio `<b>`/`<sb>`/`<m>`,
  * `<i>`/`<u>`/`<s>`, all with `</...>` closers, plus `<color=VALUE>`/`</color>`,

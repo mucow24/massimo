@@ -13,6 +13,8 @@ import { NumericFieldRow } from '../NumericFieldRow';
 import { StyleRow } from '../StyleRow';
 import { LineEndSegmented } from '../LineEndPicker';
 import { lineEndStyleOf } from '../../model/lineEnd';
+import { SERVICE_CODE_MAX, serviceCodeDraft } from '../../model/lineNaming';
+import { GLYPH_TAG_MAX_LEN } from '../../geometry/labelTokens';
 import {
   LINE_INTERLINE_GAP_MAX,
   LINE_LABEL_GAP_MAX,
@@ -142,9 +144,17 @@ export function LineInspector({ id }: { id: LineId }) {
         <input
           id={`line-service-${line.id}`}
           type="text"
-          maxLength={3}
+          // The bound on RAW text, not on the code: a shortcut being spelled out
+          // (`<a_ne`) is briefly longer than the one character it becomes, so the
+          // cap itself is enforced by serviceCodeDraft on the expanded value.
+          maxLength={SERVICE_CODE_MAX + GLYPH_TAG_MAX_LEN}
           value={serviceDraft ?? line.service}
-          onChange={(e) => setServiceDraft(e.target.value.toUpperCase())}
+          onChange={(e) => {
+            // null = over the cap; refuse the keystroke and let React restore
+            // the controlled value, exactly as maxLength used to.
+            const next = serviceCodeDraft(e.target.value);
+            if (next !== null) setServiceDraft(next);
+          }}
           onFocus={() => {
             setServiceDraft(line.service);
             serviceField.onFocus();
