@@ -1,11 +1,9 @@
 import type { RouteBulletShape } from '../model/types';
 import {
   BOLD_WEIGHT_STEPS,
-  MEDIUM_WEIGHT_STEPS,
   MIN_FONT_SIZE,
   parseSizeToken,
   parseWeightToken,
-  SEMIBOLD_WEIGHT_STEPS,
   stepWeight,
 } from '../util/fonts';
 
@@ -80,10 +78,10 @@ export type LabelSegment =
 export interface InlineStyleState {
   /**
    * Open bold-ward tags as their ladder steps (`<b>` → 3, `<sb>` → 2, `<m>` →
-   * 1); innermost (top) wins, exactly like `weights`/`sizes`. A stack rather than a
-   * count per tag so nesting two DIFFERENT bold-ward tags resolves by that same
-   * house rule instead of needing a precedence table — and so `<b><b>` still
-   * doesn't compound.
+   * 1); innermost (top) wins, exactly like `weights`/`sizes`. A stack rather
+   * than a count per tag so nesting two DIFFERENT bold-ward tags resolves by
+   * that same house rule instead of needing a precedence table — and so
+   * `<b><b>` still doesn't compound.
    */
   boldward: number[];
   italic: number;
@@ -205,14 +203,20 @@ const TAG_FLAG: Record<string, 'italic' | 'underline' | 'strike'> = {
 };
 
 /**
- * The bold-ward tags and the rungs each one steps. Adding another is a line
- * here plus its name in `TAG_ALTS` — the stack, the innermost-wins rule, and
- * the resolver are already generic over the step count.
+ * The bold-ward tags and the rungs each one steps. Each is named for the rung
+ * it reaches FROM ROMAN — `<b>` Bold, `<sb>` SemiBold, `<m>` Medium — but all
+ * three are RELATIVE, riding the run's anchored weight rather than pinning a
+ * number, so they read the same way on a Light label as on a Roman one.
+ * `<w=SemiBold>` and friends are the absolute forms. `<b>` shares its count
+ * with the station-label hover bump and the legacy `labelBold` migration, so it
+ * reads `BOLD_WEIGHT_STEPS`; 2 and 1 are this grammar's alone. Adding another
+ * tag is a line here plus its name in `TAG_ALTS` — the stack, the
+ * innermost-wins rule, and the resolver are already generic over the count.
  */
-const BOLDWARD_TAG_STEPS: Record<string, number> = {
+export const BOLDWARD_TAG_STEPS: Record<string, number> = {
   b: BOLD_WEIGHT_STEPS,
-  sb: SEMIBOLD_WEIGHT_STEPS,
-  m: MEDIUM_WEIGHT_STEPS,
+  sb: 2,
+  m: 1,
 };
 
 /** Accept CSS named colors, `#hex` (3/6 digits), and `0xhex` (normalized to
@@ -268,10 +272,10 @@ function styleOf(st: InlineStyleState): SegmentStyle | undefined {
 /**
  * Shared scanner for both grammars. Literal text (including escaped tokens,
  * unknown tags, and the glyph shortcuts) accumulates in a buffer that's
- * flushed as ONE segment whenever the style changes (a `<b>`/`<sb>`/`<m>`/`<color=…>`/
- * `<w=…>`/`<size=…>` boundary) or a bullet lands — so `go \(west) now` measures and kerns
- * as a single run, not three. `state` is null in bullets-only mode (the regex
- * then contains no tag groups).
+ * flushed as ONE segment whenever the style changes (a `<b>`/`<sb>`/`<m>`/
+ * `<color=…>`/`<w=…>`/`<size=…>` boundary) or a bullet lands — so
+ * `go \(west) now` measures and kerns as a single run, not three. `state` is
+ * null in bullets-only mode (the regex then contains no tag groups).
  */
 function scanLine(
   line: string,
@@ -422,8 +426,8 @@ export function parseFormattedLine(
 /**
  * Render a station name as compact one-line plain text for list contexts
  * (the sidebar station list and the line editor's per-line station list):
- *  - formatting tags (`<b>`/`<sb>`/`<m>`/`<i>`/`<u>`/`<s>`/`<color>`/`<w>`/`<size>`) are
- *    stripped, keeping only their inner text;
+ *  - formatting tags (`<b>`/`<sb>`/`<m>`/`<i>`/`<u>`/`<s>`/`<color>`/`<w>`/
+ *    `<size>`) are stripped, keeping only their inner text;
  *  - inline route bullets (`|A|`, `[A]`, `{A}`, doubled forms) are removed
  *    entirely — the list shows the routes in its own column, so a bullet in
  *    the name is just noise;
@@ -454,9 +458,10 @@ export function stationNameListText(text: string): string {
  * Resolve the rendered font weight of a styled run against the label's base
  * weight. `<w=Name>` sets an absolute weight; `<w=±N>` steps the base along the
  * shipped ladder; a bold-ward tag — `<b>` (3 rungs), `<sb>` (2), `<m>` (1) —
- * then steps on top of either, clamped at Black. Shared by the renderer (`LabelView`), the
- * station-label renderer (`stationLabelText`), and the measurer (`textMeasure`)
- * so the box always matches the glyphs. No style → the base weight unchanged.
+ * then steps on top of either, clamped at Black. Shared by the renderer
+ * (`LabelView`), the station-label renderer (`stationLabelText`), and the
+ * measurer (`textMeasure`) so the box always matches the glyphs. No style → the
+ * base weight unchanged.
  */
 export function resolveRunWeight(baseWeight: number, style?: SegmentStyle): number {
   if (!style) return baseWeight;
@@ -486,9 +491,9 @@ export function resolveRunFontSize(baseSize: number, style?: SegmentStyle): numb
  * use it to pick the plain fast path over segment-aware layout: anything the
  * segment scanner would rewrite (a bullet circle, a dropped backslash, a
  * `<b>`/`<sb>`/`<m>`/`<color=…>`/`<w=…>`/`<size=…>` style change, an
- * `<air>`/`<xfer>`/`<c>`/`<tm>` glyph) forces the per-segment path. Unknown tags (`<q>`, `<A>`) and stray
- * brackets stay literal and don't trip it, matching what `parseFormattedLine`
- * actually rewrites.
+ * `<air>`/`<xfer>`/`<c>`/`<tm>` glyph) forces the per-segment path. Unknown
+ * tags (`<q>`, `<A>`) and stray brackets stay literal and don't trip it,
+ * matching what `parseFormattedLine` actually rewrites.
  */
 export function hasFormattedToken(text: string): boolean {
   FORMATTED_TOKEN_RE.lastIndex = 0;

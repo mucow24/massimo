@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  BOLDWARD_TAG_STEPS,
   emptyStyleState,
   hasFormattedToken,
   migrateLegacyInlineTokens,
@@ -10,7 +11,6 @@ import {
   stationNameListText,
   type SegmentStyle,
 } from './labelTokens';
-import { BOLD_WEIGHT_STEPS, MEDIUM_WEIGHT_STEPS, SEMIBOLD_WEIGHT_STEPS } from '../util/fonts';
 
 const bullet = (code: string, shape = 'circle', filled = true) => ({
   kind: 'bullet',
@@ -22,13 +22,14 @@ const bullet = (code: string, shape = 'circle', filled = true) => ({
 // Style helper: full SegmentStyle with the named flags on. The bold-ward tags
 // ('bold' = <b>, 'semibold' = <sb>, 'medium' = <m>) resolve to a ladder step
 // rather than a flag, and they're mutually exclusive — innermost wins — so at
-// most one applies. Named by the constant, not the number: these tests pin the
-// GRAMMAR, and the rung counts are pinned in the resolveRunWeight block below.
+// most one applies. Read off the grammar table, not written as numbers: these
+// tests pin WHICH TAG a run came from, and the rung counts each one means are
+// pinned against real weights in the resolveRunWeight block below.
 type StyleFlag = 'bold' | 'semibold' | 'medium' | 'italic' | 'underline' | 'strike';
 const BOLDWARD_FLAGS: { flag: StyleFlag; steps: number }[] = [
-  { flag: 'bold', steps: BOLD_WEIGHT_STEPS },
-  { flag: 'semibold', steps: SEMIBOLD_WEIGHT_STEPS },
-  { flag: 'medium', steps: MEDIUM_WEIGHT_STEPS },
+  { flag: 'bold', steps: BOLDWARD_TAG_STEPS.b },
+  { flag: 'semibold', steps: BOLDWARD_TAG_STEPS.sb },
+  { flag: 'medium', steps: BOLDWARD_TAG_STEPS.m },
 ];
 const style = (...on: StyleFlag[]): SegmentStyle => {
   const boldward = BOLDWARD_FLAGS.find((b) => on.includes(b.flag));
@@ -234,6 +235,27 @@ describe('parseFormattedLine (bullets + escapes + tags)', () => {
       { kind: 'text', value: 'a', style: style('medium') },
       { kind: 'text', value: 'b', style: style('bold') },
       { kind: 'text', value: 'c', style: style('medium') },
+    ]);
+  });
+
+  it('lets any bold-ward closer pop any bold-ward opener (one shared stack)', () => {
+    // The trio shares one stack, so a closer is not matched to its own tag
+    // name — it pops whatever bold-ward tag is on top, the way `</w>` pops
+    // whichever `<w>` opened last.
+    expect(parse('<b>a</sb>b')).toEqual([
+      { kind: 'text', value: 'a', style: style('bold') },
+      { kind: 'text', value: 'b' },
+    ]);
+    expect(parse('<sb>a</b>b')).toEqual([
+      { kind: 'text', value: 'a', style: style('semibold') },
+      { kind: 'text', value: 'b' },
+    ]);
+    // Interleaved rather than nested: `</b>` pops the `<sb>` because that's
+    // what's on top, so `c` falls back to the still-open `<b>`.
+    expect(parse('<b>a<sb>b</b>c</sb>')).toEqual([
+      { kind: 'text', value: 'a', style: style('bold') },
+      { kind: 'text', value: 'b', style: style('semibold') },
+      { kind: 'text', value: 'c', style: style('bold') },
     ]);
   });
 
