@@ -53,11 +53,12 @@ function WaypointLozengeLabel({
 /**
  * The positioning half of a label paint: the anchor, the first line's center,
  * and the label rotation — everything that says WHERE the name lands, straight
- * off the shared layout. All three passes paint the same name in the same place
- * and differ only in how it is INKED (fill, weight, stroke), so each spreads
- * this and {@link labelTextTypography} and adds its own paint instead of
- * re-listing those fields. The highlight pass is drawn OVER the normal one, so
- * a drifted copy would read as a doubled label.
+ * off the shared layout. All three passes paint the same name in the same place,
+ * set the same way, and differ only in how it is INKED (fill, stroke) plus the
+ * starter's deliberate always-bold weight — so each spreads this and
+ * {@link labelTextTypography} and adds its own paint instead of re-listing
+ * those fields. The highlight pass is drawn OVER the normal one, so a drifted
+ * copy would read as a doubled label.
  *
  * `lay.baseline` / `lay.firstLineDyPx` are deliberately not forwarded: the
  * renderer derives every baseline from `firstLineCenterY` (see
