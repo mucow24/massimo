@@ -1,19 +1,21 @@
 /**
  * PDF export regression. Seeds a map that exercises what the PDF pipeline has to
- * get right — selectable text in embedded Helvetica Neue, a hatched line segment
- * (baked to stripe geometry), an embedded SVG image, a logo whose casing is a
- * hard feDropShadow (baked to an offset silhouette), and a graphic with an alpha
- * `<mask>` (rasterized to a PNG, since svg2pdf has no mask support) — then drives
- * Canvas → Export → PDF and asserts on the downloaded bytes.
+ * get right — text outlined to vector paths (no font embedded), a hatched line
+ * segment (baked to stripe geometry), an embedded SVG image, a logo whose casing
+ * is a hard feDropShadow (baked to an offset silhouette), and a graphic with an
+ * alpha `<mask>` (rasterized to a PNG, since svg2pdf has no mask support) — then
+ * drives Canvas → Export → PDF and asserts on the downloaded bytes.
  *
- * The decisive guard is `/FontFile2` + `/Type0`: the original failure mode was
- * jsPDF silently falling back to the standard (non-embedded) Helvetica because
- * it can't embed the PostScript-outline fonts. With the fonts shipped as TTF
- * those markers are present; if a regression reintroduced the OTF path they'd
- * vanish.
+ * The decisive font guard is now the INVERSE of what it once was: text is
+ * outlined before svg2pdf sees it, so the PDF must carry NO embedded font —
+ * no `/FontFile2`, no `/Type0` — and instead be dominated by vector path
+ * operators. The licence permits the font in output only when the end user
+ * can't edit it, and outlines satisfy that.
  */
 import { test, expect, type Page, type Download } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { inflateSync } from 'node:zlib';
+import { seedAndOpen, fourInLineWithBulletsAndLabel } from './fixtures';
 
 // A small self-contained SVG, embedded as the "Add SVG…" feature would store
 // it: an opaque data:image/svg+xml;base64 URI.
@@ -124,7 +126,7 @@ test.beforeEach(async ({ page }) => {
   await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
 });
 
-test('exports a vector PDF with embedded fonts from a hatch + text + image map', async ({
+test('exports a vector PDF with outlined text from a hatch + text + image map', async ({
   page,
 }) => {
   await seed(page);
@@ -145,13 +147,17 @@ test('exports a vector PDF with embedded fonts from a hatch + text + image map',
 
   // Valid, non-trivial PDF.
   expect(bytes.subarray(0, 5).toString('latin1')).toBe('%PDF-');
-  expect(bytes.length).toBeGreaterThan(20_000); // embedded font payload dominates
+  expect(bytes.length).toBeGreaterThan(5_000); // outlined glyph paths + a rasterized image
 
-  // Decisive font-embedding guard: real Helvetica Neue is embedded as a
-  // TrueType CID font, NOT the standard non-embedded Helvetica fallback.
-  expect(raw).toContain('/FontFile2'); // an embedded TrueType outline
-  expect(raw).toContain('/Type0'); // composite (CID) font — how jsPDF embeds TTF
-  expect(raw).toContain('Helvetica Neue'); // registered family, not bare /Helvetica
+  // Decisive font guard, INVERTED: text is outlined to vector paths before
+  // svg2pdf sees it, so the PDF embeds no font at all. A regression that went
+  // back to embedding a font (or fell back to a built-in one) would bring these
+  // markers back.
+  expect(raw).not.toContain('/FontFile2'); // no embedded TrueType outline
+  expect(raw).not.toContain('/Type0'); // no composite (CID) font — svg2pdf drew no text
+  // (jsPDF always lists its built-in standard-14 /BaseFont /Helvetica in the
+  // resources whether or not anything uses it, so its presence proves nothing —
+  // the /FontFile2 + /Type0 absence above is what proves no font was embedded.)
 
   // Mask guard: the masked graphic (img3) can't survive svg2pdf's mask-less
   // re-vectorizing, so the pipeline rasterizes it — landing in the PDF as an
@@ -166,3 +172,61 @@ test('exports a vector PDF with embedded fonts from a hatch + text + image map',
   // unmasked graphic.
   expect(raw).toContain('/SMask');
 });
+
+/**
+ * The positive oracle. Every assertion above is satisfied by a PDF containing no
+ * glyphs at all: `/FontFile2` and `/Type0` are absent precisely BECAUSE nothing
+ * embeds a font, and a byte-size floor is cleared by the line geometry alone. So
+ * prove the glyphs really are in there.
+ *
+ * `compress: true` Flate-encodes the content streams, so operators can't be
+ * grepped from the raw bytes — inflate first. Then apply the same differential
+ * the SVG spec uses: a label with ten more characters must draw ten more filled
+ * glyphs, and a tracer that emitted nothing would produce identical streams.
+ */
+test('outlined glyphs actually reach the PDF', async ({ page }) => {
+  /** Inflate every Flate content stream and concatenate the operators. */
+  const operators = (pdf: Buffer): string => {
+    // Walked by index, not by regex: the payloads are binary.
+    const open = Buffer.from('stream');
+    const close = Buffer.from('endstream');
+    let out = '';
+    for (let i = pdf.indexOf(open); i !== -1; i = pdf.indexOf(open, i + 1)) {
+      if (pdf.subarray(i - 3, i).toString('latin1') === 'end') continue; // 'endstream'
+      let start = i + open.length;
+      if (pdf[start] === 0x0d) start++; // CR
+      if (pdf[start] === 0x0a) start++; // LF
+      const end = pdf.indexOf(close, start);
+      if (end === -1) continue;
+      try {
+        out += inflateSync(pdf.subarray(start, end)).toString('latin1');
+      } catch {
+        // Not a Flate stream (an image XObject, say) — skip it.
+      }
+    }
+    return out;
+  };
+  // A filled path is the `f` operator alone on its line; glyphs are filled paths.
+  const FILL = '\nf\n';
+  const fillOps = (ops: string) => ops.split(FILL).length - 1;
+
+  const exportWithLabel = async (text: string): Promise<number> => {
+    await seedAndOpen(page, {
+      ...fourInLineWithBulletsAndLabel,
+      textLabels: [{ id: 'g1', x: 0, y: 200, text, fontSize: 20, weight: 700 }],
+    });
+    const path = await (await exportPdf(page)).path();
+    if (!path) throw new Error('download has no path');
+    const ops = operators(readFileSync(path));
+    expect(ops.length, 'content streams should inflate').toBeGreaterThan(0);
+    return fillOps(ops);
+  };
+
+  const base = await exportWithLabel('Midtown');
+  const grown = await exportWithLabel('MidtownXXXXXXXXXX'); // +10 glyphs
+
+  expect(base).toBeGreaterThan(0);
+  expect(grown - base).toBe(10);
+});
+
+

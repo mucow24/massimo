@@ -1,123 +1,128 @@
-/* Helvetica Neue — full weight + style coverage of the files shipped in
-   /public/fonts/. The text-label popover lets the user pick any of the 8
-   weights and toggle italic; CSS selects the right file via @font-face
-   matching. */
+/* Söhne — the map's typeface, licensed per-application from Klim, which is what
+   lets its glyphs ride along in the files the app exports. Full weight + style
+   coverage of the .ttf faces in /public/fonts/ (git-ignored: licensed, not
+   redistributable — the Pages build injects them from a private repo).
+
+   The English rung names the UI shows map onto Söhne's German faces: Thin =
+   Extraleicht, Roman = Buch, Medium = Kräftig, SemiBold = Halbfett, Bold =
+   Dreiviertelfett, Heavy = Fett, Black = Extrafett. Must stay 1:1 with
+   FONT_TABLE in src/export/fonts.ts, which the export outline tracer reads. */
 @font-face {
-  font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueUltraLight.ttf') format('truetype');
-  font-weight: 100;
-  font-style: normal;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueThin.ttf') format('truetype');
+  font-family: 'Soehne';
+  src: url('/fonts/soehne-extraleicht.ttf') format('truetype');
   font-weight: 200;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueLight.ttf') format('truetype');
+  font-family: 'Soehne';
+  src: url('/fonts/soehne-leicht.ttf') format('truetype');
   font-weight: 300;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueRoman.ttf') format('truetype');
+  font-family: 'Soehne';
+  src: url('/fonts/soehne-buch.ttf') format('truetype');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueMedium.ttf') format('truetype');
+  font-family: 'Soehne';
+  src: url('/fonts/soehne-kraftig.ttf') format('truetype');
   font-weight: 500;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueBold.ttf') format('truetype');
+  font-family: 'Soehne';
+  src: url('/fonts/soehne-halbfett.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Soehne';
+  src: url('/fonts/soehne-dreiviertelfett.ttf') format('truetype');
   font-weight: 700;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueHeavy.ttf') format('truetype');
+  font-family: 'Soehne';
+  src: url('/fonts/soehne-fett.ttf') format('truetype');
   font-weight: 800;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueBlack.ttf') format('truetype');
+  font-family: 'Soehne';
+  src: url('/fonts/soehne-extrafett.ttf') format('truetype');
   font-weight: 900;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueUltraLightItalic.ttf') format('truetype');
-  font-weight: 100;
-  font-style: italic;
-  font-display: swap;
-}
-@font-face {
-  font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueThinItalic.ttf') format('truetype');
+  font-family: 'Soehne';
+  src: url('/fonts/soehne-extraleicht-kursiv.ttf') format('truetype');
   font-weight: 200;
   font-style: italic;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueLightItalic.ttf') format('truetype');
+  font-family: 'Soehne';
+  src: url('/fonts/soehne-leicht-kursiv.ttf') format('truetype');
   font-weight: 300;
   font-style: italic;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueItalic.ttf') format('truetype');
+  font-family: 'Soehne';
+  src: url('/fonts/soehne-buch-kursiv.ttf') format('truetype');
   font-weight: 400;
   font-style: italic;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueMediumItalic.ttf') format('truetype');
+  font-family: 'Soehne';
+  src: url('/fonts/soehne-kraftig-kursiv.ttf') format('truetype');
   font-weight: 500;
   font-style: italic;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueBoldItalic.ttf') format('truetype');
+  font-family: 'Soehne';
+  src: url('/fonts/soehne-halbfett-kursiv.ttf') format('truetype');
+  font-weight: 600;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Soehne';
+  src: url('/fonts/soehne-dreiviertelfett-kursiv.ttf') format('truetype');
   font-weight: 700;
   font-style: italic;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueHeavyItalic.ttf') format('truetype');
+  font-family: 'Soehne';
+  src: url('/fonts/soehne-fett-kursiv.ttf') format('truetype');
   font-weight: 800;
   font-style: italic;
   font-display: swap;
 }
 @font-face {
-  font-family: 'Helvetica Neue';
-  src: url('/fonts/HelveticaNeueBlackItalic.ttf') format('truetype');
+  font-family: 'Soehne';
+  src: url('/fonts/soehne-extrafett-kursiv.ttf') format('truetype');
   font-weight: 900;
   font-style: italic;
   font-display: swap;
 }
 
-/* Symbol/dingbat/arrow fallback for glyphs Helvetica Neue lacks (✈, ↔, ★, …).
-   Listed after 'Helvetica Neue' in the font stacks, so it only catches the
-   characters HN can't render. */
+/* Symbol/dingbat/arrow fallback for glyphs the map face lacks (✈, ↔, ★, …).
+   Listed after the map face in the font stacks, so it only catches the
+   characters that face can't render. */
 @font-face {
   font-family: 'DejaVu Sans';
   src: url('/fonts/DejaVuSans.ttf') format('truetype');
@@ -134,7 +139,7 @@ body,
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family: 'Helvetica Neue', 'DejaVu Sans', 'Helvetica', 'Inter', 'Arial', sans-serif;
+  font-family: 'Soehne', 'DejaVu Sans', 'Helvetica', 'Inter', 'Arial', sans-serif;
   font-size: 13px;
   color: #111;
   background: #f4f4f4;
@@ -143,8 +148,15 @@ body,
 .canvas-pan-layer > svg text {
   user-select: none;
   -webkit-user-select: none;
-  /* Inherit the page font ('Helvetica Neue' loaded from /fonts/). */
+  /* Inherit the page font ('Soehne' loaded from /fonts/). */
   text-rendering: geometricPrecision;
+  /* Söhne ships a `liga` feature and Chrome applies it by default, but the
+     export tracer draws one glyph per CODEPOINT: it would emit `f` then `i`
+     where the browser laid out a single `fi`, at pen positions measured from
+     the ligated run — overlapping ink. Screen and tracer have to agree on the
+     glyph run, so ligatures are off for map text on both sides (see
+     `outlineAllText`). Revisit as a pair if ligatures are ever wanted. */
+  font-variant-ligatures: none;
 }
 
 button,
@@ -318,7 +330,7 @@ select option {
   background: var(--control-hover);
 }
 
-/* Menus: underlined Helvetica Neue triggers at weight 500 — lighter than the
+/* Menus: underlined Söhne triggers at weight 500 — lighter than the
    bold chrome around them, but still substantial enough to read as a control.
    Structure is Radix DropdownMenu: the panel is positioned by Radix's popper
    (a fixed-position wrapper), so .menu-panel carries only the visuals — no
@@ -938,7 +950,7 @@ select option {
 }
 /* The header is the panel's title band — the panels are docked to the host
    corner, not dragged: the signature black band wearing the panel's rounded
-   top corners, white bold Helvetica doing the chrome's talking. Same black in
+   top corners, white bold Söhne doing the chrome's talking. Same black in
    both themes (it's the brand, not a surface). The top radius is the shell's
    10px minus its 1px border so the band nests flush. */
 .bullet-popover .header,

@@ -1,13 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  FONT_TABLE,
-  fontUrl,
-  collectUsedFontFaces,
-  buildEmbeddedFontCss,
-  bytesToBase64,
-  type FontFaceSpec,
-} from './fonts';
-import { FONT_FAMILY } from '../util/fonts';
+import { FONT_TABLE, fontUrl, collectUsedFontFaces, type FontFaceSpec } from './fonts';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -25,7 +17,7 @@ function svgWithText(specs: { weight?: string; style?: string }[]): SVGSVGElemen
 }
 
 describe('FONT_TABLE', () => {
-  const WEIGHTS = [100, 200, 300, 400, 500, 700, 800, 900];
+  const WEIGHTS = [200, 300, 400, 500, 600, 700, 800, 900];
 
   it('covers all 8 weights in both styles (16 faces)', () => {
     expect(FONT_TABLE).toHaveLength(16);
@@ -46,11 +38,11 @@ describe('FONT_TABLE', () => {
     }
   });
 
-  it('uses .ttf / truetype faces for all 16 entries', () => {
-    const ttf = FONT_TABLE.filter((f) => f.format === 'truetype');
-    expect(ttf).toHaveLength(16);
+  // The outline tracer parses these with opentype.js, which reads TrueType/
+  // OpenType but not WOFF2 — so every face must be a parseable .ttf/.otf.
+  it('uses parseable .ttf / truetype faces for all 16 entries', () => {
+    expect(FONT_TABLE.filter((f) => f.format === 'truetype')).toHaveLength(16);
     for (const f of FONT_TABLE) {
-      expect(f.format).toBe('truetype');
       expect(f.file).toMatch(/\.ttf$/);
     }
   });
@@ -60,15 +52,13 @@ describe('fontUrl', () => {
   it('prefixes the given base to a base-relative path', () => {
     // Subpath prod build (e.g. GitHub Pages): the base must be carried through
     // or the fetch 404s — the bug #135 fixed, now shared by every font fetch.
-    expect(fontUrl('fonts/HelveticaNeueRoman.ttf', '/massimo/')).toBe(
-      '/massimo/fonts/HelveticaNeueRoman.ttf',
-    );
+    expect(fontUrl('fonts/soehne-buch.ttf', '/massimo/')).toBe('/massimo/fonts/soehne-buch.ttf');
     expect(fontUrl('fonts/DejaVuSans.ttf', '/')).toBe('/fonts/DejaVuSans.ttf');
     expect(fontUrl('fonts/DejaVuSans.ttf', './')).toBe('./fonts/DejaVuSans.ttf');
   });
 
   it('defaults to the build-time BASE_URL (root in dev/test)', () => {
-    expect(fontUrl('fonts/HelveticaNeueRoman.ttf')).toBe('/fonts/HelveticaNeueRoman.ttf');
+    expect(fontUrl('fonts/soehne-buch.ttf')).toBe('/fonts/soehne-buch.ttf');
   });
 });
 
@@ -96,72 +86,11 @@ describe('collectUsedFontFaces', () => {
   });
 
   it('normalizes keyword and off-table weights', () => {
+    // 650 sits equidistant between the 600 and 700 rungs; normalizeWeight breaks
+    // the tie low, so it resolves to SemiBold.
     const svg = svgWithText([{ weight: 'bold' }, { weight: '650', style: 'italic' }]);
     const faces = collectUsedFontFaces(svg);
-    expect(faces).toEqual(expect.arrayContaining([want(700, false), want(700, true)]));
+    expect(faces).toEqual(expect.arrayContaining([want(700, false), want(600, true)]));
     expect(faces).toHaveLength(2);
-  });
-});
-
-describe('buildEmbeddedFontCss', () => {
-  it('emits one @font-face per face with base64 data-URI src and matching descriptors', async () => {
-    const faces = [
-      FONT_TABLE.find((f) => f.weight === 400 && !f.italic)!,
-      FONT_TABLE.find((f) => f.weight === 700 && f.italic)!,
-    ];
-    // Stub fetch: each font file returns 4 bytes.
-    const fakeFetch = async () =>
-      ({ ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer }) as Response;
-
-    const css = await buildEmbeddedFontCss(faces, fakeFetch);
-
-    expect(css.match(/@font-face/g) ?? []).toHaveLength(2);
-    expect(css).toContain(`font-family: '${FONT_FAMILY}'`);
-    expect(css).toContain('font-weight: 400');
-    expect(css).toContain('font-style: normal');
-    expect(css).toContain('font-weight: 700');
-    expect(css).toContain('font-style: italic');
-    expect(css).toContain('base64,');
-    expect(css).toContain("format('truetype')");
-  });
-
-  it('fetches each font file under the configured base path (subpath-safe)', async () => {
-    const faces = [FONT_TABLE.find((f) => f.weight === 400 && !f.italic)!];
-    const urls: string[] = [];
-    const recordingFetch: typeof fetch = async (input) => {
-      urls.push(String(input));
-      return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer } as Response;
-    };
-    // Production builds serve from a subpath (e.g. GitHub Pages /massimo/). The
-    // fetched URL must carry that base or it 404s and the face is silently
-    // dropped — the bug that made exports fall back from Helvetica to Arial.
-    await buildEmbeddedFontCss(faces, recordingFetch, '/massimo/');
-    expect(urls).toEqual(['/massimo/fonts/HelveticaNeueRoman.ttf']);
-  });
-
-  it('skips faces whose font file fails to fetch', async () => {
-    const faces = [FONT_TABLE.find((f) => f.weight === 400 && !f.italic)!];
-    const failing = async () => {
-      throw new Error('network');
-    };
-    const css = await buildEmbeddedFontCss(faces, failing);
-    expect(css).toBe('');
-  });
-});
-
-describe('bytesToBase64', () => {
-  it('encodes a short payload', () => {
-    // 'hi' — single chunk, sanity check against btoa.
-    expect(bytesToBase64(new Uint8Array([104, 105]))).toBe('aGk=');
-  });
-
-  it('encodes a payload spanning multiple 0x8000-byte chunks', () => {
-    // The whole reason the function exists: chunking so `String.fromCharCode`
-    // never gets an arg list past the call-stack cap on real (100s-of-KB) font
-    // files. A single 'A'*(0x8000+5) input would blow that cap if spread in one
-    // call; here it must cross >=2 chunks and still equal btoa of the same bytes.
-    const n = 0x8000 + 5;
-    const bytes = new Uint8Array(n).fill(65); // 'A'
-    expect(bytesToBase64(bytes)).toBe(btoa('A'.repeat(n)));
   });
 });

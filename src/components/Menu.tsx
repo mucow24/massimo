@@ -8,7 +8,7 @@ interface MenuProps {
 }
 
 /**
- * Minimal text-button dropdown menu. Trigger is an underlined Helvetica Neue
+ * Minimal text-button dropdown menu. Trigger is an underlined Söhne
  * label; clicking opens a panel of `<MenuItem>` rows beneath it. Radix
  * DropdownMenu supplies the behavior (outside click / Escape close, arrow-key
  * navigation, typeahead, submenu hover intent); the look stays ours via the

@@ -26,6 +26,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The licensed Söhne .ttf faces cannot live in this repo: it is public, and
+      # the licence does not permit redistributing the font files. They are held
+      # in a private repo and copied into public/ here instead, so the deployed
+      # app renders and exports in Söhne while no public checkout ever holds it.
+      #
+      # FONTS_REPO_PAT is a fine-grained token scoped to read-only Contents on
+      # mucow24/massimo-fonts. Fine-grained tokens expire (max one year), and
+      # when it lapses this step fails with a checkout error that does not say
+      # "expired" — check the token first if this job starts 404ing.
+      - name: Fetch licensed fonts
+        uses: actions/checkout@v4
+        with:
+          repository: mucow24/massimo-fonts
+          token: ${{ secrets.FONTS_REPO_PAT }}
+          path: .fonts
+
+      # Deliberately fails the job if the fonts are missing: a deploy that
+      # silently falls back to Arial is worse than one that doesn't happen.
+      - name: Stage fonts into public/
+        run: |
+          mkdir -p public/fonts
+          cp .fonts/*.ttf public/fonts/
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20

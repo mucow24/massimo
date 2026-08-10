@@ -153,7 +153,7 @@ export const FONT_SIZE_STEP = 0.25;
 export { LABEL_WEIGHT_NAMES, LABEL_WEIGHT_VALUES } from '../util/fonts';
 import { LABEL_WEIGHT_VALUES, MIN_FONT_SIZE } from '../util/fonts';
 
-// The one membership check for "is this a shippable Helvetica Neue weight"
+// The one membership check for "is this a shippable weight"
 // (note: no 600). Every gate that judges a stored weight — both load paths, the
 // clipboard's paste validator, the label popovers' <select> — goes through
 // here rather than re-deriving the 8-way comparison.

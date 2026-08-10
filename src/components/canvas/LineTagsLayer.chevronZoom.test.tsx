@@ -91,7 +91,7 @@ describe('a chevron line tag in an export is zoom-independent world geometry', (
 
   const exportAt = async (zoom: number): Promise<number> => {
     const source = renderCanvasAt(zoom);
-    const { svg } = await buildExportSvg(source, { background: '#ffffff', embedFonts: false });
+    const { svg } = await buildExportSvg(source, { background: '#ffffff', outlineText: false });
     return exportedArmHalfHeight(svg);
   };
 

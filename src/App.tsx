@@ -122,7 +122,7 @@ export default function App() {
   }, [docName]);
   // Force a re-measure + re-render once the web fonts finish loading. Label
   // geometry is measured against the canvas and cached by text+style; the very
-  // first paint runs before Helvetica Neue is ready, so those measurements use
+  // first paint runs before Söhne is ready, so those measurements use
   // the fallback font (whose side bearings differ by a pixel or two) and get
   // cached. Without invalidation the labels stay a hair off until the next edit
   // re-measures them — which looked like a line "shifting" when you edited a

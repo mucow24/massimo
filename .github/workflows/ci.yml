@@ -35,6 +35,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The licensed Söhne .ttf faces are git-ignored, so a clean checkout has
+      # none. Without them the export tests still pass while outlining NOTHING —
+      # a vacuous green. Inject them from the private repo, as the Pages deploy
+      # does. FONTS_REPO_PAT is read-only Contents on mucow24/massimo-fonts.
+      - name: Fetch licensed fonts
+        uses: actions/checkout@v4
+        with:
+          repository: mucow24/massimo-fonts
+          token: ${{ secrets.FONTS_REPO_PAT }}
+          path: .fonts
+
+      - name: Stage fonts into public/
+        run: |
+          mkdir -p public/fonts
+          cp .fonts/*.ttf public/fonts/
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -66,6 +82,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # The licensed Söhne .ttf faces are git-ignored, so a clean checkout has
+      # none. Without them the export tests still pass while outlining NOTHING —
+      # a vacuous green. Inject them from the private repo, as the Pages deploy
+      # does. FONTS_REPO_PAT is read-only Contents on mucow24/massimo-fonts.
+      - name: Fetch licensed fonts
+        uses: actions/checkout@v4
+        with:
+          repository: mucow24/massimo-fonts
+          token: ${{ secrets.FONTS_REPO_PAT }}
+          path: .fonts
+
+      - name: Stage fonts into public/
+        run: |
+          mkdir -p public/fonts
+          cp .fonts/*.ttf public/fonts/
 
       - uses: actions/setup-node@v4
         with:

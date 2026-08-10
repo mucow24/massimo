@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { buildExportSvg, mapFileBasename } from './exportCanvas';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -155,37 +155,25 @@ describe('buildExportSvg', () => {
     expect([out.width, out.height]).toEqual([w, h]);
   });
 
-  /**
-   * Both halves need the fetch stub. buildExportSvg calls buildEmbeddedFontCss
-   * with one arg, so the default `fetchFn = fetch` resolves to undici, which
-   * throws on the base-relative URL; the per-face `catch { return '' }` swallows
-   * it and the empty css skips the <style>. Unstubbed, "no <style>" would pass
-   * before embedFonts exists at all, and "default still embeds" could never pass.
-   */
-  describe('embedFonts', () => {
-    const withStubbedFetch = () =>
-      vi.stubGlobal('fetch', async () => ({
-        ok: true,
-        arrayBuffer: async () => new Uint8Array([1, 2, 3, 4]).buffer,
-      }));
-    afterEach(() => vi.unstubAllGlobals());
-
-    it('embeds the used faces by default', async () => {
-      withStubbedFetch();
+  // Fonts are never embedded now: text is outlined to <path> at export. The
+  // glyph→path tracing needs getStartPositionOfChar, which jsdom lacks, so it's
+  // covered by e2e; here we pin the format-level contract that survives jsdom.
+  describe('text outlining', () => {
+    it('leaves text as <text> when outlineText is false (thumbnail path)', async () => {
       restore = stubGetBBox({ x: 0, y: 0, width: 100, height: 80 });
       const svg = makeSourceSvg('<text x="0" y="0">Canal St</text>');
-      const { svg: out } = await buildExportSvg(svg, { background: '#fff' });
-      expect(out).toContain('<style');
-      expect(out).toContain('@font-face');
+      const { svg: out } = await buildExportSvg(svg, { background: '#fff', outlineText: false });
+      expect(out).toContain('Canal St');
+      expect(out).toContain('<text');
+      expect(out).not.toContain('@font-face');
     });
 
-    it('emits no font css when embedFonts is false', async () => {
-      withStubbedFetch();
+    it('never writes an @font-face / <style> block (no font is ever embedded)', async () => {
       restore = stubGetBBox({ x: 0, y: 0, width: 100, height: 80 });
-      const svg = makeSourceSvg('<text x="0" y="0">Canal St</text>');
-      const { svg: out } = await buildExportSvg(svg, { background: '#fff', embedFonts: false });
-      expect(out).not.toContain('<style');
+      const svg = makeSourceSvg('<circle cx="1" cy="1" r="1"></circle>');
+      const { svg: out } = await buildExportSvg(svg, { background: '#fff' });
       expect(out).not.toContain('@font-face');
+      expect(out).not.toContain('<style');
     });
   });
 

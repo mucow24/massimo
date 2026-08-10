@@ -2,16 +2,18 @@
  * Canvas → vector PDF export.
  *
  * Reuses the SVG pipeline (`buildExportSvg`) — same content framing, background,
- * and chrome-stripping as the SVG/PNG paths — then renders that SVG into a true
- * vector PDF with svg2pdf.js + jsPDF: selectable text in the real Helvetica Neue
- * weights, vector line work, embedded SVG graphics kept as vectors (except the
- * mask users, which must rasterize — see below).
+ * and chrome-stripping as the SVG/PNG paths, INCLUDING its text-to-outline pass —
+ * then renders that SVG into a true vector PDF with svg2pdf.js + jsPDF: vector
+ * line work, outlined text (no font embedded), embedded SVG graphics kept as
+ * vectors (except the mask users, which must rasterize — see below).
  *
- * Gaps svg2pdf/jsPDF can't bridge are closed by dedicated steps in the pipeline:
- *
- *   Fonts — jsPDF embeds TrueType (`glyf`) but not PostScript-outline fonts, and
- *   svg2pdf ignores the SVG's own `@font-face` rules. `registerFonts` loads the
- *   map's used faces into jsPDF's VFS (the app ships `.ttf`, so they embed cleanly).
+ * Because `buildExportSvg` already outlines every glyph to a `<path>`, the PDF
+ * carries no font data and svg2pdf never touches text: no font registration, no
+ * baseline correction, no letter-spacing bake, no glyph fallback — the browser's
+ * measured pen positions are baked into the paths. The licence permits the font
+ * in output files only when the end user can't edit the fonts in the result, and
+ * outlines satisfy that. What remains here are the non-text gaps svg2pdf can't
+ * bridge:
  *
  *   Hatch — svg2pdf can't tile a `<pattern>` along a stroke, so hatched bands and
  *   the stop markers on them are baked into clipped solid stripe geometry
@@ -25,16 +27,6 @@
  *   using a mask exports unmasked. A mask has no vector equivalent, so those
  *   graphics (only) are rasterized to a PNG the browser masks correctly
  *   (`rasterizeMaskedImages` in `pdfMask`).
- *
- *   Text baseline — svg2pdf ignores `dominant-baseline`, so text lands too high;
- *   `normalizeTextBaselines` (pdfText) shifts each run onto the alphabetic baseline.
- *
- *   Tracking — svg2pdf ignores `letter-spacing`; `bakeLetterSpacing` (pdfText)
- *   re-expresses tracked label runs as `textLength`, which svg2pdf converts to
- *   PDF charSpace.
- *
- *   Uncovered glyphs — characters Helvetica Neue lacks (✈, ↔, …) are outlined to a
- *   `<path>` from the shipped fallback font (`outlineUnsupportedText`; pdfGlyphs).
  */
 
 import { jsPDF } from 'jspdf';
@@ -42,44 +34,13 @@ import { svg2pdf } from 'svg2pdf.js';
 import { HATCH_GAP_WIDTH, HATCH_STRIPE_WIDTH } from '../components/HatchPatterns';
 import type { Vec2 } from '../geometry/vec';
 import { buildExportSvg, downloadBlob } from './exportCanvas';
-import { bytesToBase64, collectUsedFontFaces, fontUrl, type FontFaceSpec } from './fonts';
-import { FONT_FAMILY } from '../util/fonts';
 import { hatchStripeRects, patternRotation, ribbonFromCenterline, type Bounds } from './pdfHatch';
-import { bakeLetterSpacing, normalizeTextBaselines } from './pdfText';
-import { loadGlyphFonts, needsGlyphOutlining, outlineUnsupportedText } from './pdfGlyphs';
 import { bakeImageDropShadows } from './pdfDropShadow';
 import { rasterizeMaskedImages } from './pdfMask';
 import { splitAlphaColors } from './pdfAlpha';
 import { hoistClipPathTransforms } from './pdfClip';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-
-/**
- * Register the map's used font faces with the jsPDF document so svg2pdf can
- * emit real text instead of falling back to built-in Helvetica. Each face is
- * fetched, base64-encoded, dropped into jsPDF's virtual FS, and bound to the
- * 'Helvetica Neue' family at its weight/style. A face whose file fails to load
- * is skipped (that text will fall back) so the export still produces a PDF.
- */
-async function registerFonts(
-  doc: jsPDF,
-  faces: FontFaceSpec[],
-  fetchFn: typeof fetch = fetch,
-): Promise<void> {
-  for (const face of faces) {
-    try {
-      const res = await fetchFn(fontUrl(face.file));
-      if (!res.ok) continue;
-      const b64 = bytesToBase64(new Uint8Array(await res.arrayBuffer()));
-      // VFS filename just has to be unique per face.
-      const vfsName = face.file.split('/').pop() ?? `${face.weight}-${face.italic}.font`;
-      doc.addFileToVFS(vfsName, b64);
-      doc.addFont(vfsName, FONT_FAMILY, face.italic ? 'italic' : 'normal', face.weight);
-    } catch {
-      // Skip this face; its text falls back to the PDF's default font.
-    }
-  }
-}
 
 /** Sample a path's centerline into ~2px-spaced world points (for ribbon offset). */
 function samplePathCenterline(path: SVGPathElement): Vec2[] {
@@ -212,7 +173,10 @@ export function bakeHatchedPaints(svg: SVGSVGElement): void {
  * several places — can be tested without driving a full render + download.
  *
  * `el` must already be attached to the document: several steps measure geometry
- * (`getBBox` / `getTotalLength` / `getComputedTextLength`).
+ * (`getBBox` / `getTotalLength`).
+ *
+ * Text needs no step here — `buildExportSvg` already outlined it, so nothing is
+ * left for svg2pdf to mis-baseline, mis-track, or fail to embed a font for.
  */
 export async function prepareSvgForPdf(el: SVGSVGElement): Promise<void> {
   // Move the clip-raster scale(1/64) off region-exclude clip CHILDREN onto the
@@ -237,30 +201,6 @@ export async function prepareSvgForPdf(el: SVGSVGElement): Promise<void> {
   // offset geometry — svg2pdf renders those images as vectors but ignores
   // <filter>, so their casing/shadow would otherwise vanish.
   bakeImageDropShadows(el);
-
-  // svg2pdf ignores dominant-baseline and renders every run on the alphabetic
-  // baseline; re-baseline text with a measured y-shift so it lands where the
-  // browser drew it (also needs the attached clone for getBBox).
-  normalizeTextBaselines(el);
-
-  // Outline characters Helvetica Neue can't render (and jsPDF can't encode,
-  // e.g. astral symbols) into vector paths from the fallback font, so they
-  // appear without rasterizing. Runs AFTER normalization so getStartPositionOfChar
-  // gives the alphabetic baseline the outline placement expects — and BEFORE
-  // the tracking bake below, so the char positions it reads still have the
-  // real `letter-spacing` applied.
-  if (needsGlyphOutlining(el)) {
-    outlineUnsupportedText(el, await loadGlyphFonts());
-  }
-
-  // svg2pdf ignores letter-spacing; re-express tracked label text as
-  // textLength (→ PDF charSpace). Needs the attached clone for
-  // getComputedTextLength. Runs AFTER glyph outlining because that step
-  // SPLITS a mixed <text> (an <xfer>/<air> glyph beside ordinary letters)
-  // into an outlined path plus a fresh covered run — baking first would
-  // consume the tracking on the original node and leave the split run
-  // untracked, silently collapsing the spacing of that label in the PDF.
-  bakeLetterSpacing(el);
 
   // svg2pdf drops the alpha of an 8-digit hex color, so split every #rrggbbaa
   // fill/stroke into a 6-digit color + fill-opacity/stroke-opacity (which it
@@ -298,8 +238,10 @@ export async function exportCanvasPdf(
       unit: 'pt',
       format: [width, height],
       orientation: width >= height ? 'landscape' : 'portrait',
+      // FlateDecode the content streams — an outlined map is tens of thousands of
+      // vector ops, uncompressed by default; compression shrinks it several-fold.
+      compress: true,
     });
-    await registerFonts(doc, collectUsedFontFaces(el));
     await svg2pdf(el, doc, { x: 0, y: 0, width, height });
     downloadBlob(doc.output('blob'), `${basename}.pdf`);
   } finally {

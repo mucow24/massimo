@@ -1817,19 +1817,19 @@ describe('per-transfer style overrides', () => {
 });
 
 describe('LABEL_WEIGHT_VALUES', () => {
-  it('lists the Helvetica Neue weights we ship in /public/fonts/, in ascending order', () => {
-    // No 600 — we don't ship a SemiBold face.
-    expect(T.LABEL_WEIGHT_VALUES).toEqual([100, 200, 300, 400, 500, 700, 800, 900]);
+  it('lists the weights we ship in /public/fonts/, in ascending order', () => {
+    // Söhne's ladder: 200-900, no 100 (UltraLight retired with the move to it).
+    expect(T.LABEL_WEIGHT_VALUES).toEqual([200, 300, 400, 500, 600, 700, 800, 900]);
   });
 
   it('LABEL_WEIGHT_NAMES is parallel to LABEL_WEIGHT_VALUES', () => {
     expect(T.LABEL_WEIGHT_NAMES.map((w) => w.value)).toEqual(T.LABEL_WEIGHT_VALUES);
     expect(T.LABEL_WEIGHT_NAMES.map((w) => w.name)).toEqual([
-      'UltraLight',
       'Thin',
       'Light',
       'Roman',
       'Medium',
+      'SemiBold',
       'Bold',
       'Heavy',
       'Black',
@@ -1839,14 +1839,14 @@ describe('LABEL_WEIGHT_VALUES', () => {
 
 describe('bumpWeightByIndex', () => {
   it('walks +N steps through LABEL_WEIGHT_VALUES', () => {
-    expect(T.bumpWeightByIndex(400, 2)).toBe(700); // Regular → Bold
+    expect(T.bumpWeightByIndex(400, 3)).toBe(700); // Roman → Bold
     expect(T.bumpWeightByIndex(300, 1)).toBe(400); // Light → Roman
-    expect(T.bumpWeightByIndex(100, 2)).toBe(300);
-    expect(T.bumpWeightByIndex(500, 2)).toBe(800);
+    expect(T.bumpWeightByIndex(200, 2)).toBe(400);
+    expect(T.bumpWeightByIndex(500, 3)).toBe(800);
   });
 
   it('walks -N steps through LABEL_WEIGHT_VALUES', () => {
-    expect(T.bumpWeightByIndex(700, -2)).toBe(400);
+    expect(T.bumpWeightByIndex(700, -3)).toBe(400);
     expect(T.bumpWeightByIndex(400, -1)).toBe(300);
   });
 
@@ -1856,9 +1856,9 @@ describe('bumpWeightByIndex', () => {
     expect(T.bumpWeightByIndex(900, 10)).toBe(900);
   });
 
-  it('clamps at UltraLight (100) when stepping past the bottom', () => {
-    expect(T.bumpWeightByIndex(200, -5)).toBe(100);
-    expect(T.bumpWeightByIndex(100, -1)).toBe(100);
+  it('clamps at Thin (200) when stepping past the bottom', () => {
+    expect(T.bumpWeightByIndex(300, -5)).toBe(200);
+    expect(T.bumpWeightByIndex(200, -1)).toBe(200);
   });
 
   it('returns the input unchanged for delta=0', () => {

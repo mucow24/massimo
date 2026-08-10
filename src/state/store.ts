@@ -56,6 +56,7 @@ import {
   bakeLegacyBackgroundOrder,
   bakeLegacyLabelSettings,
   bakeLegacyTransferSettings,
+  bakeLegacyUltraLightWeight,
   bakeLineDotDefaults,
   bakeLineStyleDotIds,
   bakeStopDotLibrary,
@@ -691,6 +692,10 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
       palettes: bakeActivePalettes(activePalettes, useCustomPalettes.getState().palettes),
     };
   }
+  // Retired UltraLight rung (Söhne's ladder starts at 200) folded onto Thin.
+  // Non-version-gated: keyed off the legacy value, idempotent, and returns by
+  // reference once nothing stores 100 — same contract as the file path's call.
+  out = bakeLegacyUltraLightWeight(out);
   return out as DocState;
 }
 

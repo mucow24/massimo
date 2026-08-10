@@ -300,7 +300,7 @@ export interface Station {
   // lands on its default, mirroring the transfer-override and
   // TextLabel.leading/tracking patterns. All five are covered by the station
   // StyleDef; editing any of them detaches the styleId tag. `weight` is one of
-  // the Helvetica Neue ladder values (see TextLabelWeight); the hover bump and
+  // the shipped ladder values (see TextLabelWeight); the hover bump and
   // append-starter styling are applied at paint time, not stored here.
   fontSize?: number;
   weight?: TextLabelWeight;
@@ -878,8 +878,9 @@ export interface MapDoc {
 // column when a `width` is set. The other three anchor the text within the box.
 export type TextLabelAlign = 'left' | 'center' | 'right' | 'justify';
 
-// Helvetica Neue weights we ship in /public/fonts/.
-export type TextLabelWeight = 100 | 200 | 300 | 400 | 500 | 700 | 800 | 900;
+// The weights we ship in /public/fonts/ (Söhne, 200–900). A stored legacy 100
+// folds onto 200 — see `bakeLegacyUltraLightWeight`.
+export type TextLabelWeight = 200 | 300 | 400 | 500 | 600 | 700 | 800 | 900;
 
 // A free-floating, rotatable text annotation rendered on top of the map. Used
 // for neighborhood names, river labels, legend headings, etc. Position is the

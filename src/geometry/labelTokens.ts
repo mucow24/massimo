@@ -13,7 +13,7 @@ import {
  * unstyled segments so bullet-only consumers keep their historical shapes.
  */
 export interface SegmentStyle {
-  /** Render two steps up the shipped weight ladder (see fonts.bolderWeight). */
+  /** Render bold-ward on the shipped weight ladder (see fonts.bolderWeight). */
   bold: boolean;
   italic: boolean;
   underline: boolean;
@@ -166,7 +166,7 @@ const AIR_GLYPH = '✈';
 // U+2194 rather than 🡘 (U+1F858): the shipped DejaVu Sans fallback covers
 // U+2194, so screen, PDF (glyph tracer), and PNG all draw the same arrow.
 const XFER_GLYPH = '↔';
-// ©/™ (U+00A9 / U+2122) are covered by the embedded Helvetica Neue itself, so
+// ©/™ (U+00A9 / U+2122) are covered by the map's own text face, so
 // the PDF export keeps them as selectable HN text (no glyph tracing needed);
 // DejaVu Sans covers both too, as the outline fallback for any HN-lacking face.
 const COPY_GLYPH = '©';
