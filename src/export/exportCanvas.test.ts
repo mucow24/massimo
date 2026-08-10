@@ -70,6 +70,22 @@ describe('buildExportSvg', () => {
     await expect(buildExportSvg(svg, { background: '#fff' })).rejects.toThrow(/empty/i);
   });
 
+  it('restates the font-feature-settings as a STYLE, the only form that shapes the clone', async () => {
+    // font-feature-settings is not an SVG presentation attribute, so the
+    // attribute form silently does nothing and the detached clone shapes with
+    // every feature on — disagreeing with the screen it was cloned from and with
+    // the tracer that measures its pen positions. It is also what keeps `calt`
+    // alive under the label tracking the clone inherits, where
+    // `font-variant-ligatures` would be dropped.
+    restore = stubGetBBox({ x: 0, y: 0, width: 100, height: 50 });
+    const svg = makeSourceSvg('<text x="0" y="0">12:30</text>');
+    const { svg: out } = await buildExportSvg(svg, { background: '#fff', outlineText: false });
+    // XMLSerializer escapes the quotes inside the style attribute to &quot;.
+    const unescaped = out.replace(/&quot;/g, '"');
+    expect(unescaped).toMatch(/font-feature-settings:\s*"calt"\s*1/);
+    expect(unescaped).toMatch(/"liga"\s*0/);
+  });
+
   it('does NOT reject a degenerate-but-nonzero box (one dimension zero)', async () => {
     // A zero-height-but-positive-width strip is still exportable (e.g. a single
     // horizontal line). The empty guard is an AND, not an OR.

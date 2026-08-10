@@ -3520,8 +3520,10 @@ that don't need the font work, such as the library thumbnail):
 5. **Frame** to content + `PADDING=24`; set `viewBox` to the frame and `width`/`height` to
    `frame × pixelScale` (**pixels**). For PNG, baking 4× into the SVG's own size rasterizes the
    vector natively at 4× (scaling the canvas context instead would upscale a 1× bitmap — blurry).
-6. Set root `font-family` (only matters when text is left un-outlined; an outlined export carries no
-   `<text>` to inherit it).
+6. Restate the root font declarations — `font-family`, and `font-feature-settings` as a **style**
+   (not an SVG presentation attribute, so the attribute form does nothing). The clone lays out
+   detached from the page stylesheet, so these govern the pen positions the outline pass measures as
+   well as the glyphs a left-as-`<text>` export renders.
 7. Insert the background `<rect>` as `firstChild`.
 8. **Outline text**: `normalizeTextBaselines` re-baselines every `<text>` to alphabetic
    (`getBBox` delta, browser truth, exact for any baseline mode/font without metrics), then
@@ -3543,6 +3545,24 @@ first symbol font that covers it. `glyphPathData` serializes with an explicit sp
 coordinate — opentype's own `toPathData` can fuse a rounded `-0` into the previous number, a
 malformed `d` Blink tolerates but stricter parsers (some Edge builds) drop.
 
+Map text is shaped with **contextual alternates on, ligatures off** (`FONT_FEATURE_SETTINGS`,
+[util/fonts.ts](src/util/fonts.ts), mirrored by `styles.css` and by the export clone). This is
+`font-feature-settings: "calt" 1, "liga" 0`, deliberately NOT `font-variant-ligatures`: Chrome drops
+the latter's effect the moment `letter-spacing` is non-zero, and essentially every label carries a
+little tracking, so it would never fire on a real map. The split — `calt` on, `liga` off — is forced
+by the tracer drawing one glyph per *character*: Söhne's contextual substitutions are all 1:1 — a
+figure-height colon in `12:30`, a multiplication sign in `3x3` — so the tracer can follow them
+without disturbing a pen position, where a many-to-one ligature would put two glyphs over ink the
+browser drew as one. `contextualAlternate` ([export/fonts.ts](src/export/fonts.ts)) hardcodes those
+substitutions rather than shaping the font; a test re-reads the shipped GSUB, so the day the
+typeface's `calt` changes is the day it goes red. One applies only where the neighbouring characters
+share the same governing element — every renderer emits one `<text>` per styled run and one
+`<tspan>` per line, so a neighbour elsewhere was a different shaping run. The figure-height colon has
+no codepoint at all and is reached through the face's glyph names; a face without it falls back to
+the plain glyph, never to nothing. Canvas `measureText` (label box sizing) can't be told to keep
+`calt` under tracking, so an `x` box is sized ~0.1em narrow; the colon is advance-neutral, so times
+measure exactly.
+
 A distinct glyph is traced **once**: a `<path>` prototype in `<defs>` at a fixed 1000-unit em, with
 every occurrence a `<use>` carrying `translate(pen) scale(fontSize/1000)`. A map draws its few dozen
 shapes thousands of times, so this is where the export's bulk lives — and it pays in the PDF as much
@@ -3550,8 +3570,8 @@ as the SVG, because svg2pdf renders a `<use>` as a PDF **Form XObject**: one sha
 per shape, invoked with a `/Do` per instance. Two invariants hold it up. The **fill is baked onto
 the prototype**, not the `<use>` — svg2pdf builds a `<use>`'s render context from
 `AttributeState.default()`, so a fill on the instance never reaches the form and every glyph would
-print black; the prototype key is therefore (face, codepoint, fill), and one shape in two colours
-is two prototypes. And **instances stay where the `<text>` stood** — pen positions are in the
+print black; the prototype key is therefore (face, glyph, fill), and one shape in two colours is
+two prototypes. And **instances stay where the `<text>` stood** — pen positions are in the
 `<text>`'s own user space, so a `<use>` must sit under the same rotated ancestors the label did.
 Prototypes are only assembled during the read pass and appended in the write pass, preserving the
 measure-then-mutate split that keeps layout to one pass. Each `<use>` carries `href` AND

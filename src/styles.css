@@ -172,13 +172,20 @@ body,
   -webkit-user-select: none;
   /* Inherit the page font ('Soehne' loaded from /fonts/). */
   text-rendering: geometricPrecision;
-  /* Söhne ships a `liga` feature and Chrome applies it by default, but the
-     export tracer draws one glyph per CODEPOINT: it would emit `f` then `i`
-     where the browser laid out a single `fi`, at pen positions measured from
-     the ligated run — overlapping ink. Screen and tracer have to agree on the
-     glyph run, so ligatures are off for map text on both sides (see
-     `outlineAllText`). Revisit as a pair if ligatures are ever wanted. */
-  font-variant-ligatures: none;
+  /* Contextual alternates ON, ligatures OFF. Screen and export tracer have to
+     agree on the glyph run, and the tracer draws one glyph per CHARACTER, so
+     only 1:1 substitutions can be followed. Söhne's `calt` is all 1:1 — a
+     figure-height colon in `12:30`, a multiplication sign in `3x3` — and
+     `outlineAllText` reproduces it. Its `liga` is many-to-one, and would have
+     the tracer emit `f` then `ï` over ink the browser drew as one glyph.
+
+     `font-feature-settings`, NOT `font-variant-ligatures`: Chrome drops the
+     latter under any letter-spacing, and map labels are tracked, so it would do
+     nothing on a real map. Mirror of `FONT_FEATURE_SETTINGS` (util/fonts.ts),
+     which the export clone restates because it lays out detached from here. */
+  font-feature-settings:
+    'calt' 1,
+    'liga' 0;
 }
 
 button,

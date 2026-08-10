@@ -18,7 +18,7 @@
  */
 
 import { collectUsedFontFaces } from './fonts';
-import { FONT_STACK } from '../util/fonts';
+import { FONT_STACK, FONT_FEATURE_SETTINGS } from '../util/fonts';
 import { normalizeTextBaselines } from './pdfText';
 // `pdfGlyphs` pulls in opentype.js (~200 KB). It is imported dynamically inside
 // the outlining branch below so it stays out of the entry chunk — the app only
@@ -160,12 +160,18 @@ export async function buildExportSvg(
     clone.setAttribute('viewBox', `${frameX} ${frameY} ${frameW} ${frameH}`);
     clone.setAttribute('width', String(pxW));
     clone.setAttribute('height', String(pxH));
-    // Both only matter when text is left un-outlined (thumbnails) — an outlined
-    // export carries no <text> to inherit them. A standalone SVG has no page CSS,
-    // so the ligature setting has to be restated here or such an export would
-    // ligate where the screen (and the tracer) did not.
+    // The clone lays out detached from the page stylesheet, so the font
+    // declarations it inherited on screen have to be restated here. They govern
+    // the pen positions the outline tracer measures, as well as the glyphs a
+    // left-as-<text> export (the thumbnail) renders.
     clone.setAttribute('font-family', FONT_STACK);
-    clone.setAttribute('font-variant-ligatures', 'none');
+    // A STYLE, not a presentation attribute: font-feature-settings is not one,
+    // so an attribute would silently do nothing and the clone would shape with
+    // every feature on — disagreeing with the screen it was cloned from, and
+    // with the tracer reading its pen positions. font-feature-settings (rather
+    // than font-variant-ligatures) is also what keeps `calt` alive under the
+    // label tracking the clone inherits.
+    clone.style.setProperty('font-feature-settings', FONT_FEATURE_SETTINGS);
 
     // Background rect sized to the frame, behind all content.
     const bg = document.createElementNS(SVG_NS, 'rect');

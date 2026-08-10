@@ -22,7 +22,7 @@
  * the text face nor a fallback is dropped (renders nothing).
  */
 import * as opentype from 'opentype.js';
-import { fontUrl, type FontFaceSpec } from './fonts';
+import { contextualAlternate, fontUrl, type FontFaceSpec } from './fonts';
 import { XLINK_NS } from './embeddedSvg';
 import { normalizeWeight } from '../util/fonts';
 
@@ -293,6 +293,23 @@ export function pickFace(
  */
 const GLYPH_EM = 1000;
 
+/**
+ * Glyph index for a glyph the face exposes only by NAME — `colon.mid`, the
+ * figure-height colon, has no codepoint — or 0 when this face has no such glyph.
+ * A stand-in face, or one whose `post` table carries no names, answers 0 and the
+ * caller traces the character's own glyph instead, so a missing alternate costs
+ * an export the substitution, never the character.
+ */
+function glyphIndexByName(font: opentype.Font | null, name: string): number {
+  if (!font || typeof font.nameToGlyphIndex !== 'function') return 0;
+  try {
+    const gid = font.nameToGlyphIndex(name);
+    return gid > 0 ? gid : 0;
+  } catch {
+    return 0;
+  }
+}
+
 /** A placed occurrence of a prototype: pen position plus size-to-em scale. */
 interface GlyphUse {
   id: string;
@@ -371,7 +388,8 @@ export function outlineAllText(svg: SVGSVGElement, fonts: OutlineFonts): void {
   const measured = texts.map((text) => {
     const uses: GlyphUse[] = [];
     let drawable = 0; // chars that SHOULD have produced a glyph
-    for (const { cp, index, styleEl } of collectStyledChars(text)) {
+    const chars = collectStyledChars(text);
+    for (const [i, { cp, index, styleEl }] of chars.entries()) {
       const { weight, italic, fontSize, fill } = resolveTextStyle(styleEl);
       if (fill === 'none') continue;
       drawable++;
@@ -382,13 +400,38 @@ export function outlineAllText(svg: SVGSVGElement, fonts: OutlineFonts): void {
         p = null;
       }
       if (!p) continue;
+      // Contextual alternates need the characters either side, but only where
+      // the browser shaped them as ONE run: a neighbour under a different
+      // element is a different `<text>`/`<tspan>`, which every renderer here
+      // uses to mark a new styled run or a new LINE. The map requests `calt`
+      // through `font-feature-settings`, which stays on under tracking, so the
+      // feature fires regardless of letter-spacing and there is nothing to gate.
+      const neighbour = (j: number): number | null =>
+        chars[j]?.styleEl === styleEl ? chars[j].cp : null;
+      const alt = contextualAlternate(neighbour(i - 1), cp, neighbour(i + 1));
+      // An alternate that HAS a codepoint (the multiplication sign) just replaces
+      // the character and rides the ordinary path, symbol fallback included.
+      const drawnCp = alt && 'cp' in alt ? alt.cp : cp;
       const face = pickFace(fonts.faces, weight, italic);
-      const font = face && covers(face, cp) ? face : symbolFontFor(fonts.symbols, cp);
+      // A named alternate comes from the face's own tables, so it needs no
+      // coverage check — and 0 here means this face hasn't got it, which falls
+      // straight back to the character's own glyph.
+      const namedGid = alt && 'glyphName' in alt ? glyphIndexByName(face, alt.glyphName) : 0;
+      const font =
+        namedGid > 0
+          ? face!
+          : face && covers(face, drawnCp)
+            ? face
+            : symbolFontFor(fonts.symbols, drawnCp);
       if (!font) continue;
-      const key = `${faceIdOf(font)}|${cp}|${fill}`;
+      const key = `${faceIdOf(font)}|${namedGid > 0 ? `@${namedGid}` : drawnCp}|${fill}`;
       let id = protoId.get(key);
       if (id === undefined) {
-        const d = glyphPathData(font.getPath(String.fromCodePoint(cp), 0, 0, GLYPH_EM));
+        const path =
+          namedGid > 0
+            ? font.glyphs.get(namedGid).getPath(0, 0, GLYPH_EM)
+            : font.getPath(String.fromCodePoint(drawnCp), 0, 0, GLYPH_EM);
+        const d = glyphPathData(path);
         id = d ? `mgly${protos.length}` : '';
         protoId.set(key, id);
         if (d) protos.push({ id, d, fill });

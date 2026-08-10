@@ -37,6 +37,29 @@ export const FONT_STACK =
   "'Soehne', 'Massimo Symbols', 'DejaVu Sans', Helvetica, Arial, sans-serif";
 
 /**
+ * `font-feature-settings` for all map text — contextual alternates ON,
+ * ligatures OFF.
+ *
+ * NOT `font-variant-ligatures`: Chrome silently drops that property's effect the
+ * moment `letter-spacing` is non-zero, and essentially every map label carries a
+ * little tracking. `font-feature-settings` keeps the feature on THROUGH tracking
+ * (measured firing at −0.01em), which is the only reason the substitutions show
+ * up on a real map at all.
+ *
+ * The split — `calt` on, `liga` off — is forced by the export tracer, which
+ * draws one glyph per CHARACTER at the browser's own pen positions. Söhne's
+ * contextual alternates are all 1:1 substitutions (a figure-height colon in
+ * `12:30`, a multiplication sign in `3x3`), so the tracer can reproduce them
+ * character for character — see `contextualAlternate` in `export/fonts.ts`. Its
+ * `liga` feature is many-to-one, and would have the tracer emit two glyphs over
+ * ink the browser drew as one. `styles.css` states the same value for on-screen
+ * map text; the export clone lays out detached from that CSS and restates it.
+ * Keep the two in step, or the screen and the tracer stop agreeing on the glyph
+ * run.
+ */
+export const FONT_FEATURE_SETTINGS = '"calt" 1, "liga" 0';
+
+/**
  * Minimum rendered font size, in world units. The label Size field floors here
  * (re-exported as `transforms.TEXT_LABEL_FONT_SIZE_MIN`), and inline `<size=…>`
  * resolution clamps to it too (see `labelTokens.resolveRunFontSize`), so a tiny

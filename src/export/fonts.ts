@@ -60,6 +60,53 @@ export const FONT_TABLE: FontFaceSpec[] = [
 ];
 
 /**
+ * A glyph the browser's contextual-alternate shaping puts on screen in place of
+ * the one the character maps to. Either a plain codepoint — the multiplication
+ * sign has one — or a glyph the face exposes ONLY by name: `colon.mid`, the
+ * figure-height colon, carries no codepoint at all, which is why the export
+ * tracer cannot reach it the way it reaches every other glyph.
+ */
+export type ContextualAlternate = { cp: number } | { glyphName: string };
+
+// The map can only ever type ASCII figures into Söhne's `calt` context classes.
+// Those classes also list `zero.slash` and the tabular `.lt` figures, but both
+// are reachable only through the `zero`/`tnum` features, which the map never
+// enables — so plain 0–9 is the whole of the context in practice.
+const isFigure = (cp: number | null): boolean => cp !== null && cp >= 0x30 && cp <= 0x39;
+
+const COLON = 0x3a;
+const LOWER_X = 0x78;
+const UPPER_X = 0x58;
+const MULTIPLY = 0x00d7;
+
+/**
+ * The glyph Söhne's `calt` feature substitutes for `cp` between `prev` and
+ * `next` — a figure-height colon in `12:30`, a multiplication sign in `3x3` —
+ * or null where it substitutes nothing. `prev`/`next` are null at a run edge.
+ *
+ * Both rules are 1:1 SINGLE substitutions, and that is the whole reason the
+ * export tracer can follow them: the glyph count still equals the character
+ * count, so `getStartPositionOfChar` keeps reporting one pen position per
+ * character and every position stays where the browser put it. Söhne's `liga`
+ * feature is many-to-one (a single f+ï ligature) and could not be followed this
+ * way, which is why the map turns common ligatures off and leaves contextual
+ * alternates on (see `styles.css`).
+ *
+ * Deliberately narrower than the font in one place: `calt` also raises the
+ * multiplication sign in the SPACED `3 x 3`, which is not reproduced here.
+ */
+export function contextualAlternate(
+  prev: number | null,
+  cp: number,
+  next: number | null,
+): ContextualAlternate | null {
+  if (!isFigure(prev) || !isFigure(next)) return null;
+  if (cp === COLON) return { glyphName: 'colon.mid' };
+  if (cp === LOWER_X || cp === UPPER_X) return { cp: MULTIPLY };
+  return null;
+}
+
+/**
  * Resolve a base-relative font path (e.g. `fonts/Foo.ttf`) to a fetchable URL by
  * prefixing Vite's `BASE_URL`. Every runtime font fetch — the `@font-face` embed
  * and the PDF export's face/glyph loads — goes through here so it resolves under
