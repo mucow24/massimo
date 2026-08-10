@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import * as opentype from 'opentype.js';
 import {
   collectStyledChars,
@@ -72,6 +72,14 @@ describe('glyphPathData', () => {
 // Both faces are read straight off /public/fonts. The Söhne .ttf files are
 // git-ignored (licensed, not redistributable), so CI injects them from the
 // private fonts repo before running this — see .github/workflows/ci.yml.
+//
+// Where they cannot be fetched at all, `scripts/stageFonts.mjs` stages DejaVu
+// Sans under their filenames so the rest of the export pipeline still runs on a
+// real face, and leaves this marker. Only the assertions BELOW that are about
+// Söhne's own coverage skip on it — a stand-in genuinely cannot answer "does the
+// text face lack the ✈ dingbat", and answering from DejaVu would invert it.
+const onSubstituteFaces = existsSync('public/fonts/.substitute');
+
 describe('shipped fonts cover the glyph-shortcut codepoints', () => {
   const parseFont = (file: string): opentype.Font => {
     const buf = readFileSync(`public/fonts/${file}`);
@@ -86,7 +94,7 @@ describe('shipped fonts cover the glyph-shortcut codepoints', () => {
   const XFER = 0x2194; // ↔  <xfer>
   const AIR = 0x2708; // ✈  <air>
 
-  it('the text face covers ©, ™ and ↔ — but not the ✈ dingbat', () => {
+  it.skipIf(onSubstituteFaces)('the text face covers ©, ™ and ↔ — but not the ✈ dingbat', () => {
     const text = parseFont('soehne-buch.ttf');
     expect(covers(text, COPY)).toBe(true);
     expect(covers(text, TM)).toBe(true);

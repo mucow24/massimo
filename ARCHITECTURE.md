@@ -88,6 +88,7 @@ npm run dev          # vite dev server
 npm run build        # tsc -b && vite build
 npm test             # vitest run (unit, jsdom)
 npm run e2e          # playwright test (drives the dev server)
+npm run fonts        # stage the typeface into public/fonts (also runs on postinstall)
 npm run pre-pr       # format → lint → format:check → test → build → e2e  (the PR gate)
 ```
 
@@ -273,9 +274,9 @@ src/
 e2e/                            # Playwright specs + seedAndOpen harness
 public/fonts/                   # DejaVuSans.ttf (symbol fallback, committed). The 16 map faces are
                                 #   git-ignored (not redistributable); the export tracer parses them
-                                #   with opentype.js so they must be .ttf/.otf, not .woff2. Present on
-                                #   a dev machine; the Pages build injects them from a private repo
-                                #   (see .github/workflows/deploy-pages.yml)
+                                #   with opentype.js so they must be .ttf/.otf, not .woff2. Staged
+                                #   by scripts/stageFonts.mjs, which every environment runs on
+                                #   postinstall (see "Staging the typeface")
 ```
 
 ---
@@ -3537,9 +3538,25 @@ source. `normalizeWeight` ties go **low** (650 → 600).
 
 The typeface is **Söhne**, licensed per-application from Klim — an app licence rather than a web
 one, which is what permits the glyphs riding along in the files the app exports. The `.ttf` files
-are git-ignored (licensed, not redistributable): they sit on a dev machine, and **both** CI and the
-Pages deploy inject them from the private `mucow24/massimo-fonts` repo. CI needs them too — without
-the fonts the export tests still pass while outlining nothing, a vacuous green.
+are git-ignored (licensed, not redistributable), so a clean checkout has none, and **both** CI and
+the Pages deploy inject them from the private `mucow24/massimo-fonts` repo. CI needs them too —
+without the fonts the export tests still pass while outlining nothing, a vacuous green.
+
+**Staging the typeface.** [scripts/stageFonts.mjs](scripts/stageFonts.mjs) is the single answer to
+"where do the faces come from here", run on `postinstall` (and by `npm run fonts`). It takes the
+first source that has them: a local `.fonts/` clone; the **sibling main checkout** — worktrees under
+`.claude/worktrees/` share a `.git` but not ignored files, so a fresh one is served from the dev
+machine's own copy with no network; a clone of the private repo using `FONTS_REPO_PAT`, mirroring
+CI and the only route open to a cloud session, which has no sibling on disk; and failing all of
+those, **DejaVu Sans copied under each of the 16 filenames**. The face list is parsed out of
+`FONT_TABLE` rather than re-typed, so adding or renaming a face needs no edit in the script.
+
+Substitutes exist so an environment that can never hold the licence still runs the export pipeline
+against a real parseable face instead of going vacuously green, and they announce themselves:
+staging one writes `public/fonts/.substitute`. Exactly one assertion reads that marker and skips —
+`pdfGlyphs.test.ts` on the text face *lacking* ✈, which is a fact about Söhne that a stand-in
+covering ✈ would invert. Rendering and metrics under substitutes are not representative; nothing
+else about them is faked.
 
 The UI keeps English rung names over Söhne's German faces (Thin = Extraleicht, Roman = Buch,
 Medium = Kräftig, SemiBold = Halbfett, Bold = Dreiviertelfett, Heavy = Fett, Black = Extrafett), and
