@@ -38,7 +38,7 @@ describe('libraryPointer', () => {
   });
 
   /**
-   * A brand-new map (Canvas → New) has an id but nothing saved under it yet, so
+   * A brand-new map (Map → New) has an id but nothing saved under it yet, so
    * there is no version to show. Distinct from a loaded JSON file, which has
    * neither.
    */

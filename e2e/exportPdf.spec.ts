@@ -4,7 +4,7 @@
  * segment (baked to stripe geometry), an embedded SVG image, a logo whose casing
  * is a hard feDropShadow (baked to an offset silhouette), and a graphic with an
  * alpha `<mask>` (rasterized to a PNG, since svg2pdf has no mask support) — then
- * drives Canvas → Export → PDF and asserts on the downloaded bytes.
+ * drives Map → Export → PDF and asserts on the downloaded bytes.
  *
  * The decisive font guard is now the INVERSE of what it once was: text is
  * outlined before svg2pdf sees it, so the PDF must carry NO embedded font —
@@ -114,7 +114,7 @@ async function seed(page: Page): Promise<void> {
 }
 
 async function exportPdf(page: Page): Promise<Download> {
-  await page.getByRole('button', { name: 'Canvas' }).click();
+  await page.getByRole('button', { name: 'Map', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Export' }).click();
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('menuitem', { name: 'PDF', exact: true }).click();

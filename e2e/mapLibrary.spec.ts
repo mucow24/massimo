@@ -29,7 +29,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 const saveToLibrary = async (page: Page) => {
-  await page.getByRole('button', { name: 'Canvas' }).click();
+  await page.getByRole('button', { name: 'Map', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Save version' }).click();
   // .last(): confirmations auto-expire after 5s, so two quick saves can have
   // both toasts up at once — the newest is the one this save minted.
@@ -45,14 +45,14 @@ const saveToLibrary = async (page: Page) => {
 const mapRow = (page: Page, name: string) => page.locator('.map-row').filter({ hasText: name });
 
 const openLibrary = async (page: Page) => {
-  await page.getByRole('button', { name: 'Canvas' }).click();
+  await page.getByRole('button', { name: 'Map', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Load' }).click();
   await page.getByRole('menuitem', { name: 'From library…' }).click();
   await expect(page.getByRole('dialog', { name: 'Map library' })).toBeVisible();
 };
 
 const clickNew = async (page: Page) => {
-  await page.getByRole('button', { name: 'Canvas' }).click();
+  await page.getByRole('button', { name: 'Map', exact: true }).click();
   await page.getByRole('menuitem', { name: 'New' }).click();
 };
 
@@ -107,7 +107,7 @@ test('a saved map survives a Clear and comes back from the library', async ({ pa
   await expect(page.locator('[data-station-id]')).toHaveCount(4);
   await saveToLibrary(page);
 
-  await page.getByRole('button', { name: 'Canvas' }).click();
+  await page.getByRole('button', { name: 'Map', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Clear' }).click();
   // MANDATORY. Without proving the canvas is actually empty first, the doc just
   // rehydrates from the persist slot and the final assertion cannot fail.
@@ -217,12 +217,12 @@ test.describe('version tagging', () => {
   test('Save version greys out when the doc is clean, and an edit re-arms it', async ({ page }) => {
     await seedAndOpen(page, fourInLine);
     await saveToLibrary(page);
-    await page.getByRole('button', { name: 'Canvas' }).click();
+    await page.getByRole('button', { name: 'Map', exact: true }).click();
     await expect(page.getByRole('menuitem', { name: 'Save version' })).toBeDisabled();
     await page.keyboard.press('Escape');
 
     await renameTo(page, 'Untitled map', 'Edited Map');
-    await page.getByRole('button', { name: 'Canvas' }).click();
+    await page.getByRole('button', { name: 'Map', exact: true }).click();
     await expect(page.getByRole('menuitem', { name: 'Save version' })).toBeEnabled();
     await page.keyboard.press('Escape');
 

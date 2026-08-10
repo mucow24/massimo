@@ -618,7 +618,7 @@ export function Toolbar() {
       <MapNameField />
       <MapVersionPill />
       <span className="tool-group-divider" aria-hidden="true" />
-      <Menu label="Canvas">
+      <Menu label="Map">
         <MenuItem onClick={() => void onNew()}>New</MenuItem>
         <MenuItem onClick={() => void onMakeCopy()}>Make a copy</MenuItem>
         <MenuSeparator />

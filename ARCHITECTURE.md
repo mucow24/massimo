@@ -1478,7 +1478,7 @@ legacy `custom:` ids — the only place in either load path that reaches into a 
 ### The map library ([mapLibrary.ts](src/state/mapLibrary.ts))
 
 In-app saved maps with version history, in **IndexedDB** (`massimo-library`, schema **v3**). Reached
-via Canvas → Save version and Canvas → Load → From library…
+via Map → Save version and Map → Load → From library…
 
 - **A row IS a file.** `payloads` holds opaque `serialize()` output, verbatim; loading goes
   through `parse()`. The module imports nothing from the model and knows nothing about `MapDoc` —
@@ -3166,7 +3166,7 @@ same three additions.
 
 ## UI chrome
 
-- **[Toolbar.tsx](src/components/Toolbar.tsx)** — Canvas menu (New / **Make a copy** — forks the
+- **[Toolbar.tsx](src/components/Toolbar.tsx)** — Map menu (New / **Make a copy** — forks the
   live doc into a new library map / Save version — greyed out while the doc is `clean`, see
   saveBaseline.ts / **Revert** — discard unsaved changes back to the last save/load, disabled
   when there's nothing to discard / Load → {JSON…, From library…} / Export → {PNG, SVG, PDF, JSON}
@@ -3174,7 +3174,7 @@ same three additions.
   (toggles `uiMode`; includes **Image / SVG…** — imports `.svg`, `.png`, or `.jpg/.jpeg` via
   `svgImport.ts` into an `SvgImage`), tool buttons (arrow/hand), grid-size + grid-visible +
   dark-mode toggles, the **View menu** (`ViewPopover` — the eye button; see Viewport), the
-  layering-mode button, Reset view, and the sidebar toggle. The Canvas menu also carries the two
+  layering-mode button, Reset view, and the sidebar toggle. The Map menu also carries the two
   local chrome preferences — the **Dark UI in day** checkbox and the **Day canvas color** submenu
   (white/gray/black paper) — which live in `useViewportStore`, not the doc.
   Its leftmost element is the **`BrandBadge`** wordmark — the app name drawn as an "M" route

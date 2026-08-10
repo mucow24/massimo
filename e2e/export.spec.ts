@@ -30,9 +30,9 @@ test.beforeEach(async ({ page }) => {
   await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
 });
 
-/** Drive Canvas → Export → <kind> and return the captured download. */
+/** Drive Map → Export → <kind> and return the captured download. */
 async function exportVia(page: Page, kind: 'PNG' | 'SVG'): Promise<Download> {
-  await page.getByRole('button', { name: 'Canvas' }).click();
+  await page.getByRole('button', { name: 'Map', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Export' }).click();
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('menuitem', { name: kind, exact: true }).click();

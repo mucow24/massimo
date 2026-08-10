@@ -470,11 +470,11 @@ describe('Toolbar — Add menu', () => {
   });
 });
 
-describe('Toolbar — Canvas menu', () => {
+describe('Toolbar — Map menu', () => {
   it('Export → JSON serializes and triggers a download', async () => {
     const user = userEvent.setup();
     renderToolbar();
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     await user.click(screen.getByRole('menuitem', { name: 'Export' }));
     // The leaf flyout is hover-driven; userEvent's pointer movement tears it
     // down before the click lands, so fire the click directly on the leaf.
@@ -493,7 +493,7 @@ describe('Toolbar — Canvas menu', () => {
     });
     useSelection.setState({ ...useSelection.getState(), selectedStationIds: ['S' as StationId] });
     renderToolbar();
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     await user.click(screen.getByRole('menuitem', { name: 'Clear' }));
     expect(Object.keys(useDoc.getState().stations)).toHaveLength(0);
     expect(useSelection.getState().selectedStationIds).toHaveLength(0);
@@ -636,7 +636,7 @@ describe('Toolbar — Load', () => {
     await waitFor(() => expect(useDoc.getState().stations.fromfile).toBeDefined());
     expect(saveVersion).toHaveBeenCalledTimes(1); // the OUTGOING doc, correctly
 
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     await user.click(screen.getByRole('menuitem', { name: 'New' }));
     await waitFor(() => expect(Object.keys(useDoc.getState().stations)).toHaveLength(0));
     // Still just the outgoing doc's version — the untouched file was not copied.
@@ -722,7 +722,7 @@ describe('Toolbar — Load from library', () => {
     );
 
   const clickOpen = async (user: ReturnType<typeof userEvent.setup>) => {
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     await user.click(screen.getByRole('menuitem', { name: 'Load' }));
     // The leaf flyout is hover-driven; userEvent's pointer movement tears it
     // down before the click lands, so fire the click directly on the leaf.
@@ -845,12 +845,12 @@ describe('Toolbar — map library', () => {
     });
 
   const clickNew = async (user: ReturnType<typeof userEvent.setup>) => {
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     await user.click(screen.getByRole('menuitem', { name: 'New' }));
   };
 
   const saveToLibrary = async (user: ReturnType<typeof userEvent.setup>) => {
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     await user.click(screen.getByRole('menuitem', { name: 'Save version' }));
   };
 
@@ -1049,14 +1049,14 @@ describe('Toolbar — Make a copy', () => {
   };
 
   const makeCopy = async (user: ReturnType<typeof userEvent.setup>) => {
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     await user.click(screen.getByRole('menuitem', { name: 'Make a copy' }));
   };
 
-  it('sits directly below New in the Canvas menu', async () => {
+  it('sits directly below New in the Map menu', async () => {
     const user = userEvent.setup();
     renderToolbar();
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     const labels = screen.getAllByRole('menuitem').map((el) => el.textContent);
     expect(labels.slice(0, 2)).toEqual(['New', 'Make a copy']);
   });
@@ -1194,14 +1194,14 @@ describe('Toolbar — Revert', () => {
   };
 
   const clickRevert = async (user: ReturnType<typeof userEvent.setup>) => {
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     await user.click(screen.getByRole('menuitem', { name: 'Revert' }));
   };
 
-  it('sits directly below Save version in the Canvas menu', async () => {
+  it('sits directly below Save version in the Map menu', async () => {
     const user = userEvent.setup();
     renderToolbar();
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     const labels = screen.getAllByRole('menuitem').map((el) => el.textContent);
     const saveIdx = labels.findIndex((l) => l?.startsWith('Save version'));
     expect(labels[saveIdx + 1]).toBe('Revert');
@@ -1249,7 +1249,7 @@ describe('Toolbar — Revert', () => {
     const user = userEvent.setup();
     seedSavedMap(); // clean
     renderToolbar();
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     expect(screen.getByRole('menuitem', { name: 'Revert' })).toHaveAttribute(
       'aria-disabled',
       'true',
@@ -1261,7 +1261,7 @@ describe('Toolbar — Revert', () => {
     seedSavedMap();
     useDoc.getState().addStation(300, 300); // dirty
     renderToolbar();
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     expect(screen.getByRole('menuitem', { name: 'Revert' })).not.toHaveAttribute('aria-disabled');
   });
 
@@ -1275,7 +1275,7 @@ describe('Toolbar — Revert', () => {
     });
     expect(statusNow()).toBe('dirty');
     renderToolbar();
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     expect(screen.getByRole('menuitem', { name: 'Revert' })).toHaveAttribute(
       'aria-disabled',
       'true',
@@ -1305,7 +1305,7 @@ describe('Toolbar — save gating (clean / dirty / unsaved)', () => {
     });
 
   const openCanvasMenu = async (user: ReturnType<typeof userEvent.setup>) => {
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
   };
   const saveItem = () => screen.getByRole('menuitem', { name: 'Save version' });
 
@@ -1474,7 +1474,7 @@ describe('Toolbar — Ctrl+S saves a version', () => {
     const user = userEvent.setup();
     seedMap();
     renderToolbar();
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     // Found by the unpolluted name (the hint is aria-hidden), and it shows the key.
     const item = screen.getByRole('menuitem', { name: 'Save version' });
     expect(item).toHaveTextContent('Ctrl+S');
@@ -1483,7 +1483,7 @@ describe('Toolbar — Ctrl+S saves a version', () => {
 
 describe('Toolbar — Export wiring', () => {
   const openExportSubmenu = async (user: ReturnType<typeof userEvent.setup>) => {
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     await user.click(screen.getByRole('menuitem', { name: 'Export' }));
   };
 
@@ -1546,12 +1546,12 @@ describe('Toolbar — status toasts', () => {
     });
 
   const saveToLibrary = async (user: ReturnType<typeof userEvent.setup>) => {
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     await user.click(screen.getByRole('menuitem', { name: 'Save version' }));
   };
 
   const openExportSubmenu = async (user: ReturnType<typeof userEvent.setup>) => {
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     await user.click(screen.getByRole('menuitem', { name: 'Export' }));
   };
 

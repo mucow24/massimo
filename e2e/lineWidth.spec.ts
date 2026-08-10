@@ -142,9 +142,9 @@ async function dragStopByLocalDelta(
   await page.mouse.up();
 }
 
-/** Drive Canvas → Export → SVG and return the downloaded markup. */
+/** Drive Map → Export → SVG and return the downloaded markup. */
 async function exportSvg(page: Page): Promise<string> {
-  await page.getByRole('button', { name: 'Canvas' }).click();
+  await page.getByRole('button', { name: 'Map', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Export' }).click();
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('menuitem', { name: 'SVG', exact: true }).click();

@@ -13,8 +13,8 @@ describe('App smoke', () => {
     expect(screen.getByRole('img', { name: 'Massimo' })).toBeInTheDocument();
   });
 
-  // The Canvas and Add menus are driven in depth by Toolbar.test.tsx (see its
-  // "Canvas menu" describe and the Add-menu cases), which opens them rather
+  // The Map and Add menus are driven in depth by Toolbar.test.tsx (see its
+  // "Map menu" describe and the Add-menu cases), which opens them rather
   // than just checking they exist — a presence check here could not fail
   // without taking that whole file down with it.
 

@@ -19,8 +19,8 @@ test.describe('unselectable chrome', () => {
     await expect(page.locator('.toolbar .brand-bullet text')).toHaveCSS('user-select', 'none');
     await expect(page.locator('.toolbar button.map-name')).toHaveCSS('user-select', 'none');
 
-    // Menu entries are UI text too — open Canvas and check a live item.
-    await page.getByRole('button', { name: 'Canvas' }).click();
+    // Menu entries are UI text too — open Map and check a live item.
+    await page.getByRole('button', { name: 'Map', exact: true }).click();
     await expect(page.locator('.menu-panel .menu-item').first()).toHaveCSS('user-select', 'none');
     await page.keyboard.press('Escape');
 

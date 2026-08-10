@@ -78,7 +78,7 @@ const seed = () =>
 
 const exportSvg = async () => {
   const user = userEvent.setup();
-  await user.click(screen.getByRole('button', { name: 'Canvas' }));
+  await user.click(screen.getByRole('button', { name: 'Map' }));
   await user.click(screen.getByRole('menuitem', { name: 'Export' }));
   // The leaf flyout is hover-driven; userEvent's pointer movement tears it down
   // before the click lands, so fire the click directly on the leaf.
@@ -139,7 +139,7 @@ describe('Toolbar — export is independent of the lines/stations toggle', () =>
     expect(liveStripes()).toBe(0); // precondition: the live canvas really is bare
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     await user.click(screen.getByRole('menuitem', { name: 'Save version' }));
     await waitFor(() => expect(captureThumbnail).toHaveBeenCalledTimes(1));
 
@@ -306,7 +306,7 @@ describe('export must not bake layering mode’s focus fade into the file', () =
     });
 
     const user = userEvent.setup();
-    await user.click(screen.getByRole('button', { name: 'Canvas' }));
+    await user.click(screen.getByRole('button', { name: 'Map' }));
     await user.click(screen.getByRole('menuitem', { name: 'Save version' }));
     await waitFor(() => expect(captureThumbnail).toHaveBeenCalledTimes(1));
 
