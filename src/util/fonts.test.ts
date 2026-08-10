@@ -1,29 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
-  bolderWeight,
   stepWeight,
   parseWeightToken,
   parseSizeToken,
   normalizeWeight,
   LABEL_WEIGHT_NAMES,
 } from './fonts';
-
-describe('bolderWeight', () => {
-  it('steps bold-ward up the shipped ladder (Roman -> Bold)', () => {
-    // Three rungs, not two: the ladder carries a SemiBold at 600, and <b> has
-    // always meant Roman -> Bold. See BOLD_WEIGHT_STEPS.
-    expect(bolderWeight(200)).toBe(500);
-    expect(bolderWeight(300)).toBe(600);
-    expect(bolderWeight(400)).toBe(700);
-    expect(bolderWeight(500)).toBe(800);
-    expect(bolderWeight(600)).toBe(900);
-  });
-
-  it('clamps at the heaviest shipped weight', () => {
-    expect(bolderWeight(800)).toBe(900);
-    expect(bolderWeight(900)).toBe(900);
-  });
-});
 
 describe('stepWeight', () => {
   it('returns the weight unchanged at zero steps', () => {
@@ -44,7 +26,8 @@ describe('stepWeight', () => {
   });
 
   it('normalizes an off-ladder weight before stepping', () => {
-    // 600 has no face → nearest shipped is 500, then +1 → 700.
+    // 650 sits between the SemiBold and Bold rungs and ties go low → 600,
+    // then +1 → 700.
     expect(stepWeight(650, 1)).toBe(700);
   });
 });

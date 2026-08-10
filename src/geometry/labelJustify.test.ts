@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { justifyLine } from './labelJustify';
 import { emptyStyleState, inlineBulletDiameter } from './labelTokens';
+import { BOLD_WEIGHT_STEPS } from '../util/fonts';
 
 // Deterministic advance: every glyph is 10 wide. Space runs measure by length
 // too, matching how the real measurer treats whitespace advance. Tracking is
@@ -78,7 +79,7 @@ describe('justifyLine', () => {
       { value: 'bb', x: 40 },
       { value: 'cc', x: 80 },
     ]);
-    expect(atoms![0].style).toMatchObject({ bold: true });
+    expect(atoms![0].style).toMatchObject({ boldStep: BOLD_WEIGHT_STEPS });
     expect(atoms![1].style).toBeUndefined();
   });
 

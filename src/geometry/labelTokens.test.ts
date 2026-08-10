@@ -6,9 +6,11 @@ import {
   parseFormattedLine,
   parseLabelLine,
   resolveRunFontSize,
+  resolveRunWeight,
   stationNameListText,
   type SegmentStyle,
 } from './labelTokens';
+import { BOLD_WEIGHT_STEPS, SEMIBOLD_WEIGHT_STEPS } from '../util/fonts';
 
 const bullet = (code: string, shape = 'circle', filled = true) => ({
   kind: 'bullet',
@@ -17,9 +19,18 @@ const bullet = (code: string, shape = 'circle', filled = true) => ({
   filled,
 });
 
-// Style helper: full SegmentStyle with the named flags on.
-const style = (...on: (keyof SegmentStyle)[]): SegmentStyle => ({
-  bold: on.includes('bold'),
+// Style helper: full SegmentStyle with the named flags on. The bold-ward tags
+// ('bold' = <b>, 'semibold' = <sb>) resolve to a ladder step rather than a flag,
+// and they're mutually exclusive — innermost wins — so at most one applies.
+// Named by the constant, not the number: these tests pin the GRAMMAR, and the
+// rung counts themselves are pinned in the resolveRunWeight block below.
+type StyleFlag = 'bold' | 'semibold' | 'italic' | 'underline' | 'strike';
+const style = (...on: StyleFlag[]): SegmentStyle => ({
+  ...(on.includes('bold')
+    ? { boldStep: BOLD_WEIGHT_STEPS }
+    : on.includes('semibold')
+      ? { boldStep: SEMIBOLD_WEIGHT_STEPS }
+      : {}),
   italic: on.includes('italic'),
   underline: on.includes('underline'),
   strike: on.includes('strike'),
@@ -176,10 +187,36 @@ describe('parseFormattedLine (bullets + escapes + tags)', () => {
     expect(parse('<s>x</s>')).toEqual([{ kind: 'text', value: 'x', style: style('strike') }]);
   });
 
+  it('applies <sb> as its own bold-ward run, unconfusable with <s> strike', () => {
+    expect(parse('a <sb>b</sb> c')).toEqual([
+      { kind: 'text', value: 'a ' },
+      { kind: 'text', value: 'b', style: style('semibold') },
+      { kind: 'text', value: ' c' },
+    ]);
+    // <s>/</s> require the char after `s` to be `>`, which <sb> never has — so
+    // neither tag can eat the other's opener or closer.
+    expect(parse('<s><sb>x</sb></s>')).toEqual([
+      { kind: 'text', value: 'x', style: { ...style('semibold'), strike: true } },
+    ]);
+  });
+
   it('combines nested styles', () => {
     expect(parse('<b><i>x</i>y</b>')).toEqual([
       { kind: 'text', value: 'x', style: style('bold', 'italic') },
       { kind: 'text', value: 'y', style: style('bold') },
+    ]);
+  });
+
+  it('lets the innermost bold-ward tag win, like <w> (they do not compound)', () => {
+    expect(parse('<b>a<sb>b</sb>c</b>')).toEqual([
+      { kind: 'text', value: 'a', style: style('bold') },
+      { kind: 'text', value: 'b', style: style('semibold') },
+      { kind: 'text', value: 'c', style: style('bold') },
+    ]);
+    expect(parse('<sb>a<b>b</b>c</sb>')).toEqual([
+      { kind: 'text', value: 'a', style: style('semibold') },
+      { kind: 'text', value: 'b', style: style('bold') },
+      { kind: 'text', value: 'c', style: style('semibold') },
     ]);
   });
 
@@ -193,6 +230,7 @@ describe('parseFormattedLine (bullets + escapes + tags)', () => {
 
   it('ignores a closing tag with no matching opener', () => {
     expect(parse('a</b>b')).toEqual([{ kind: 'text', value: 'ab' }]);
+    expect(parse('a</sb>b')).toEqual([{ kind: 'text', value: 'ab' }]);
   });
 
   it('leaves unknown or malformed tags as literal text', () => {
@@ -455,6 +493,43 @@ describe('parseFormattedLine — <size=...> size tags', () => {
   });
 });
 
+describe('resolveRunWeight', () => {
+  it('returns the base weight with no style or no weight tag', () => {
+    expect(resolveRunWeight(400)).toBe(400);
+    expect(resolveRunWeight(400, undefined)).toBe(400);
+    expect(resolveRunWeight(300, style('italic'))).toBe(300);
+  });
+
+  it('steps <b> three rungs bold-ward from the base (Roman -> Bold)', () => {
+    expect(resolveRunWeight(200, style('bold'))).toBe(500);
+    expect(resolveRunWeight(300, style('bold'))).toBe(600);
+    expect(resolveRunWeight(400, style('bold'))).toBe(700);
+    expect(resolveRunWeight(500, style('bold'))).toBe(800);
+  });
+
+  it('steps <sb> two rungs bold-ward from the base (Roman -> SemiBold)', () => {
+    expect(resolveRunWeight(200, style('semibold'))).toBe(400);
+    expect(resolveRunWeight(300, style('semibold'))).toBe(500);
+    expect(resolveRunWeight(400, style('semibold'))).toBe(600);
+    expect(resolveRunWeight(500, style('semibold'))).toBe(700);
+  });
+
+  it('clamps either bold-ward tag at the heaviest shipped weight', () => {
+    expect(resolveRunWeight(800, style('bold'))).toBe(900);
+    expect(resolveRunWeight(900, style('bold'))).toBe(900);
+    expect(resolveRunWeight(800, style('semibold'))).toBe(900);
+    expect(resolveRunWeight(900, style('semibold'))).toBe(900);
+  });
+
+  it('steps bold-ward from an enclosing <w>, not from the base', () => {
+    // <w=Light><sb> — anchored at Light (300), then two rungs → Medium (500).
+    expect(resolveRunWeight(400, { ...style('semibold'), weight: 300 })).toBe(500);
+    expect(resolveRunWeight(400, { ...style('bold'), weight: 300 })).toBe(600);
+    // A relative <w=+1> anchors off the BASE, then the bold-ward step rides it.
+    expect(resolveRunWeight(400, { ...style('semibold'), weightStep: 1 })).toBe(700);
+  });
+});
+
 describe('resolveRunFontSize', () => {
   it('returns the base size unchanged with no style', () => {
     expect(resolveRunFontSize(16)).toBe(16);
@@ -491,6 +566,7 @@ describe('hasFormattedToken', () => {
 
   it('detects formatting tags and glyph shortcuts (station labels parse them now)', () => {
     expect(hasFormattedToken('<b>bold</b>')).toBe(true);
+    expect(hasFormattedToken('<sb>semibold</sb>')).toBe(true);
     expect(hasFormattedToken('a <i>lean</i> word')).toBe(true);
     expect(hasFormattedToken('<u>u</u>')).toBe(true);
     expect(hasFormattedToken('<s>gone</s>')).toBe(true);
@@ -567,6 +643,7 @@ describe('migrateLegacyInlineTokens', () => {
 describe('stationNameListText (compact list display)', () => {
   it('strips formatting tags but keeps their inner text', () => {
     expect(stationNameListText('<b>Foo</b> <i>Bar</i>')).toBe('Foo Bar');
+    expect(stationNameListText('<sb>Foo</sb> <i>Bar</i>')).toBe('Foo Bar');
     expect(stationNameListText('<u>a</u><s>b</s>')).toBe('ab');
     expect(stationNameListText('<color=red>Red</color> <w=Bold>W</w> <size=20>S</size>')).toBe(
       'Red W S',

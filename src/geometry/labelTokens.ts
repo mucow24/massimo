@@ -1,9 +1,10 @@
 import type { RouteBulletShape } from '../model/types';
 import {
-  bolderWeight,
+  BOLD_WEIGHT_STEPS,
   MIN_FONT_SIZE,
   parseSizeToken,
   parseWeightToken,
+  SEMIBOLD_WEIGHT_STEPS,
   stepWeight,
 } from '../util/fonts';
 
@@ -13,8 +14,14 @@ import {
  * unstyled segments so bullet-only consumers keep their historical shapes.
  */
 export interface SegmentStyle {
-  /** Render bold-ward on the shipped weight ladder (see fonts.bolderWeight). */
-  bold: boolean;
+  /**
+   * Rungs to step bold-ward on the shipped weight ladder, from the innermost
+   * open bold-ward tag — `<b>` (3) or `<sb>` (2). Applied ON TOP of the run's
+   * anchored weight (the label's base, or an enclosing `<w=…>`), so
+   * `<w=Light><b>` is bold-ward of Light rather than of the base. Absent = no
+   * bold-ward tag is open.
+   */
+  boldStep?: number;
   italic: boolean;
   underline: boolean;
   strike: boolean;
@@ -64,13 +71,20 @@ export type LabelSegment =
 
 /**
  * Open-tag state threaded between lines so a tag can span '\n' breaks and
- * column-mode word wraps: counts of open b/i/u/s tags plus the open color,
- * weight, and size stacks. `parseFormattedLine` takes the entry state and
- * returns the exit state; a fresh line of a fresh label starts from
+ * column-mode word wraps: counts of open i/u/s tags plus the open bold-ward,
+ * color, weight, and size stacks. `parseFormattedLine` takes the entry state
+ * and returns the exit state; a fresh line of a fresh label starts from
  * `emptyStyleState()`.
  */
 export interface InlineStyleState {
-  bold: number;
+  /**
+   * Open bold-ward tags as their ladder steps (`<b>` → 3, `<sb>` → 2);
+   * innermost (top) wins, exactly like `weights`/`sizes`. A stack rather than a
+   * count per tag so nesting two DIFFERENT bold-ward tags resolves by that same
+   * house rule instead of needing a precedence table — and so `<b><b>` still
+   * doesn't compound.
+   */
+  boldward: number[];
   italic: number;
   underline: number;
   strike: number;
@@ -80,7 +94,15 @@ export interface InlineStyleState {
 }
 
 export function emptyStyleState(): InlineStyleState {
-  return { bold: 0, italic: 0, underline: 0, strike: 0, colors: [], weights: [], sizes: [] };
+  return {
+    boldward: [],
+    italic: 0,
+    underline: 0,
+    strike: 0,
+    colors: [],
+    weights: [],
+    sizes: [],
+  };
 }
 
 /**
@@ -142,18 +164,21 @@ const BULLET_VARIANTS: Record<string, { shape: RouteBulletShape; filled: boolean
 const BULLET_GROUP_KEYS = Object.keys(BULLET_VARIANTS);
 
 /**
- * Formatting tag grammar (labels only): `<b>`/`<i>`/`<u>`/`<s>` with `</...>`
- * closers, `<color=VALUE>`/`</color>`, `<w=VALUE>`/`</w>` (font weight),
- * `<size=VALUE>`/`</size>` (font size), and the self-closing glyph shortcuts
- * `<air>` (✈), `<xfer>` (↔), `<c>` (©), and `<tm>` (™). Tag names are lowercase;
- * anything else (`<q>`, `<3`, `a < b`) stays literal text. Color, weight, and
- * size values can't contain spaces, angle brackets, or newlines; an invalid
- * weight/size value (see `parseWeightToken`/`parseSizeToken`) keeps the tag as
- * literal text. `<size…>`/`</size>` can't be confused with `<s>`/`</s>` (strike):
- * `<s>` and `</s>` require the char after `s` to be `>`, which `size` never has.
+ * Formatting tag grammar (labels only): the bold-ward pair `<b>`/`<sb>`,
+ * `<i>`/`<u>`/`<s>`, all with `</...>` closers, plus `<color=VALUE>`/`</color>`,
+ * `<w=VALUE>`/`</w>` (font weight), `<size=VALUE>`/`</size>` (font size), and the
+ * self-closing glyph shortcuts `<air>` (✈), `<xfer>` (↔), `<c>` (©), and `<tm>`
+ * (™). Tag names are lowercase; anything else (`<q>`, `<3`, `a < b`) stays
+ * literal text. Color, weight, and size values can't contain spaces, angle
+ * brackets, or newlines; an invalid weight/size value (see
+ * `parseWeightToken`/`parseSizeToken`) keeps the tag as literal text.
+ *
+ * Nothing here can be confused with `<s>`/`</s>` (strike), because those require
+ * the char after `s` to be `>` — which neither `size` nor `sb` has.
  */
 const TAG_ALTS =
-  `<(?<open>[bius])>|<\\/(?<close>[bius])>|` +
+  `<(?<step>sb|b)>|<\\/(?<stepClose>sb|b)>|` +
+  `<(?<open>[ius])>|<\\/(?<close>[ius])>|` +
   `<color=(?<color>[^<> \\n]+)>|(?<colorClose><\\/color>)|` +
   `<w=(?<weight>[^<> \\n]+)>|(?<weightClose><\\/w>)|` +
   `<size=(?<size>[^<> \\n]+)>|(?<sizeClose><\\/size>)|` +
@@ -172,11 +197,20 @@ const XFER_GLYPH = '↔';
 const COPY_GLYPH = '©';
 const TM_GLYPH = '™';
 
-const TAG_FLAG: Record<string, 'bold' | 'italic' | 'underline' | 'strike'> = {
-  b: 'bold',
+const TAG_FLAG: Record<string, 'italic' | 'underline' | 'strike'> = {
   i: 'italic',
   u: 'underline',
   s: 'strike',
+};
+
+/**
+ * The bold-ward tags and the rungs each one steps. Adding another is a line
+ * here plus its name in `TAG_ALTS` — the stack, the innermost-wins rule, and
+ * the resolver are already generic over the step count.
+ */
+const BOLDWARD_TAG_STEPS: Record<string, number> = {
+  b: BOLD_WEIGHT_STEPS,
+  sb: SEMIBOLD_WEIGHT_STEPS,
 };
 
 /** Accept CSS named colors, `#hex` (3/6 digits), and `0xhex` (normalized to
@@ -197,8 +231,11 @@ function styleOf(st: InlineStyleState): SegmentStyle | undefined {
   // enclosing ones.
   const wTop = st.weights.length > 0 ? st.weights[st.weights.length - 1] : undefined;
   const sTop = st.sizes.length > 0 ? st.sizes[st.sizes.length - 1] : undefined;
+  // Innermost open bold-ward tag wins too — `<b>a<sb>b</sb>c</b>` steps b by 2
+  // and a/c by 3, and the two never sum.
+  const bwTop = st.boldward.length > 0 ? st.boldward[st.boldward.length - 1] : undefined;
   if (
-    !st.bold &&
+    bwTop === undefined &&
     !st.italic &&
     !st.underline &&
     !st.strike &&
@@ -209,11 +246,11 @@ function styleOf(st: InlineStyleState): SegmentStyle | undefined {
     return undefined;
   }
   const style: SegmentStyle = {
-    bold: st.bold > 0,
     italic: st.italic > 0,
     underline: st.underline > 0,
     strike: st.strike > 0,
   };
+  if (bwTop !== undefined) style.boldStep = bwTop;
   if (color !== undefined) style.color = color;
   if (wTop !== undefined) {
     if ('abs' in wTop) style.weight = wTop.abs;
@@ -229,8 +266,8 @@ function styleOf(st: InlineStyleState): SegmentStyle | undefined {
 /**
  * Shared scanner for both grammars. Literal text (including escaped tokens,
  * unknown tags, and the glyph shortcuts) accumulates in a buffer that's
- * flushed as ONE segment whenever the style changes (a `<b>`/`<color=…>`/`<w=…>`/
- * `<size=…>` boundary) or a bullet lands — so `go \(west) now` measures and kerns
+ * flushed as ONE segment whenever the style changes (a `<b>`/`<sb>`/`<color=…>`/
+ * `<w=…>`/`<size=…>` boundary) or a bullet lands — so `go \(west) now` measures and kerns
  * as a single run, not three. `state` is null in bullets-only mode (the regex
  * then contains no tag groups).
  */
@@ -243,8 +280,14 @@ function scanLine(
   suppressXfer = false,
 ): { segments: LabelSegment[]; state: InlineStyleState | null } {
   const st = state
-    ? // never mutate the caller's state
-      { ...state, colors: [...state.colors], weights: [...state.weights], sizes: [...state.sizes] }
+    ? // never mutate the caller's state — every stack needs its own copy
+      {
+        ...state,
+        boldward: [...state.boldward],
+        colors: [...state.colors],
+        weights: [...state.weights],
+        sizes: [...state.sizes],
+      }
     : null;
   const segments: LabelSegment[] = [];
   let buffer = '';
@@ -274,7 +317,18 @@ function scanLine(
       continue;
     }
     // Tag groups only exist in the formatted grammar, where st is non-null.
-    if (g.open) {
+    if (g.step) {
+      flush();
+      st!.boldward.push(BOLDWARD_TAG_STEPS[g.step]);
+    } else if (g.stepClose) {
+      // A closer with no matching opener is consumed as a no-op. Any bold-ward
+      // closer pops any bold-ward opener — one stack, so `<b>x</sb>` closes the
+      // `<b>`, matching how `</w>` pops whichever `<w>` is on top.
+      if (st!.boldward.length > 0) {
+        flush();
+        st!.boldward.pop();
+      }
+    } else if (g.open) {
       flush();
       st![TAG_FLAG[g.open]]++;
     } else if (g.close) {
@@ -366,7 +420,7 @@ export function parseFormattedLine(
 /**
  * Render a station name as compact one-line plain text for list contexts
  * (the sidebar station list and the line editor's per-line station list):
- *  - formatting tags (`<b>`/`<i>`/`<u>`/`<s>`/`<color>`/`<w>`/`<size>`) are
+ *  - formatting tags (`<b>`/`<sb>`/`<i>`/`<u>`/`<s>`/`<color>`/`<w>`/`<size>`) are
  *    stripped, keeping only their inner text;
  *  - inline route bullets (`|A|`, `[A]`, `{A}`, doubled forms) are removed
  *    entirely — the list shows the routes in its own column, so a bullet in
@@ -397,17 +451,17 @@ export function stationNameListText(text: string): string {
 /**
  * Resolve the rendered font weight of a styled run against the label's base
  * weight. `<w=Name>` sets an absolute weight; `<w=±N>` steps the base along the
- * shipped ladder; `<b>` adds two steps on top of either. Shared by the renderer
- * (`LabelView`), the station-label renderer (`stationLabelText`), and the
- * measurer (`textMeasure`) so the box always matches the glyphs. No style → the
- * base weight unchanged.
+ * shipped ladder; a bold-ward tag — `<b>` (3 rungs) or `<sb>` (2) — then steps
+ * on top of either, clamped at Black. Shared by the renderer (`LabelView`), the
+ * station-label renderer (`stationLabelText`), and the measurer (`textMeasure`)
+ * so the box always matches the glyphs. No style → the base weight unchanged.
  */
 export function resolveRunWeight(baseWeight: number, style?: SegmentStyle): number {
   if (!style) return baseWeight;
   const anchored =
     style.weight ??
     (style.weightStep !== undefined ? stepWeight(baseWeight, style.weightStep) : baseWeight);
-  return style.bold ? bolderWeight(anchored) : anchored;
+  return style.boldStep !== undefined ? stepWeight(anchored, style.boldStep) : anchored;
 }
 
 /**
@@ -429,8 +483,8 @@ export function resolveRunFontSize(baseSize: number, style?: SegmentStyle): numb
  * a bullet, an escape sequence, or a formatting tag / glyph shortcut? Renderers
  * use it to pick the plain fast path over segment-aware layout: anything the
  * segment scanner would rewrite (a bullet circle, a dropped backslash, a
- * `<b>`/`<color=…>`/`<w=…>`/`<size=…>` style change, an `<air>`/`<xfer>`/`<c>`/`<tm>`
- * glyph) forces the per-segment path. Unknown tags (`<q>`, `<A>`) and stray
+ * `<b>`/`<sb>`/`<color=…>`/`<w=…>`/`<size=…>` style change, an
+ * `<air>`/`<xfer>`/`<c>`/`<tm>` glyph) forces the per-segment path. Unknown tags (`<q>`, `<A>`) and stray
  * brackets stay literal and don't trip it, matching what `parseFormattedLine`
  * actually rewrites.
  */

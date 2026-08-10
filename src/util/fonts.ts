@@ -106,10 +106,13 @@ export function stepWeight(weight: number, steps: number): number {
  */
 export const BOLD_WEIGHT_STEPS = 3;
 
-/** The `<b>` formatting tag's weight, clamped at Black. */
-export function bolderWeight(weight: number): number {
-  return stepWeight(weight, BOLD_WEIGHT_STEPS);
-}
+/**
+ * Rungs the `<sb>` tag steps: Roman → SemiBold, Light → Medium. One rung short
+ * of `BOLD_WEIGHT_STEPS`, and relative for the same reason `<b>` is — it rides
+ * the run's anchored weight instead of pinning 600, so the tag reads the same
+ * way on a Light label as on a Roman one. `<w=SemiBold>` is the absolute form.
+ */
+export const SEMIBOLD_WEIGHT_STEPS = 2;
 
 /**
  * Parse the value of a `<w=…>` inline label tag into either an absolute shipped
