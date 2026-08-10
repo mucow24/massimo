@@ -172,9 +172,15 @@ const XFER_GLYPH = '↔';
  * The self-closing glyph shortcuts: tag name → the character it emits. These
  * open nothing, so they never touch the style stacks — a tag here is pure
  * substitution into the surrounding run, which then measures and kerns as one
- * piece. Adding another is a line here: the grammar below, the scanner,
- * `hasFormattedToken` and the shipped-font coverage guard
- * (`pdfGlyphs.test.ts`) all read this table.
+ * piece. Each value must be exactly ONE codepoint: the export tracer
+ * (`outlineAllText`) walks text per codepoint and would half-trace a pair or a
+ * variation-selector sequence.
+ *
+ * The grammar below, the scanner, `hasFormattedToken` and the shipped-font
+ * coverage guard (`pdfGlyphs.test.ts`) all read this table, so adding a
+ * shortcut is a line here — plus the two prose lists that spell the set out for
+ * a reader: `stationNameListText`'s contract below, and ARCHITECTURE.md's
+ * `parseFormattedLine` bullet.
  *
  * The eight compass arrows are named `a_<direction>`; `<a_ns>` and `<a_ew>` are
  * the double-headed pair. `<xfer>` is a second spelling of `<a_ew>`, kept for
@@ -204,13 +210,10 @@ export const GLYPH_TAGS: Record<string, string> = {
   a_ew: XFER_GLYPH,
 };
 
-// Longest name first so a prefix (`a_n`) can't be tried ahead of the name that
-// contains it (`a_ne`). Alternation is first-match; the trailing `>` would in
-// fact force a backtrack into the longer name, but the sort makes it a
-// non-question. Every name is [a-z_], so none needs escaping.
-const GLYPH_NAMES = Object.keys(GLYPH_TAGS)
-  .sort((a, b) => b.length - a.length)
-  .join('|');
+// Order is irrelevant even where one name prefixes another (`a_n`, `a_ne`): the
+// trailing `>` fails the short branch and backtracks into the long one. Every
+// name is [a-z_], so none needs escaping.
+const GLYPH_NAMES = Object.keys(GLYPH_TAGS).join('|');
 
 /**
  * Formatting tag grammar (labels only): the bold-ward trio `<b>`/`<sb>`/`<m>`,
@@ -321,8 +324,9 @@ function scanLine(
   line: string,
   re: RegExp,
   state: InlineStyleState | null,
-  // Drop the `<xfer>` glyph instead of emitting its arrow. Used by the compact
-  // list renderer (`stationNameListText`); the canvas renderers keep it.
+  // Drop the ↔ arrow however it was spelled (`<xfer>`, `<a_ew>`) instead of
+  // emitting it. Used by the compact list renderer (`stationNameListText`);
+  // the canvas renderers keep it.
   suppressXfer = false,
 ): { segments: LabelSegment[]; state: InlineStyleState | null } {
   const st = state

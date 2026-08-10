@@ -96,22 +96,38 @@ describe('shipped fonts cover the glyph-shortcut codepoints', () => {
     font.charToGlyphIndex(String.fromCodePoint(cp)) !== 0;
 
   const AIR = 0x2708; // ✈  <air>
+  /** `U+2708`, for reading a sweep's failure without counting list positions. */
+  const hex = (cp: number): string => `U+${cp.toString(16).toUpperCase().padStart(4, '0')}`;
 
   // Read off the grammar table rather than re-listed here, so a shortcut added
   // there is covered by these assertions the moment it exists — the failure
   // mode this whole block is for is a symbol nothing on the chain can draw.
-  const shortcutCps = [...new Set(Object.values(GLYPH_TAGS).map((g) => g.codePointAt(0)!))];
+  const shortcutGlyphs = [...new Set(Object.values(GLYPH_TAGS))];
+  const shortcutCps = shortcutGlyphs.map((g) => g.codePointAt(0)!);
 
-  it.skipIf(onSubstituteFaces)('the text face covers every shortcut but the ✈ dingbat', () => {
+  it('every shortcut is exactly one codepoint', () => {
+    // `outlineAllText` walks text per codepoint and traces each one on its own,
+    // so a surrogate pair or a variation-selector sequence would half-trace —
+    // and the coverage sweeps below, which read `codePointAt(0)`, would check
+    // only its first half.
+    for (const g of shortcutGlyphs) expect([...g].length, JSON.stringify(g)).toBe(1);
+  });
+
+  // Shortcuts the text face is NOT expected to draw: the dingbats, which are the
+  // whole reason the fallback chain exists. Everything else — ©, ™, the arrows —
+  // is Söhne's own, which is what lets those tags read in the label's own face
+  // at the label's own weight. Adding a dingbat shortcut belongs here.
+  const CHAIN_OWNED = new Set([AIR]);
+
+  it.skipIf(onSubstituteFaces)('the text face draws every shortcut but the dingbats', () => {
     const text = parseFont('soehne-buch.ttf');
     for (const cp of shortcutCps) {
-      // ©, ™ and the arrows are Söhne's own; the dingbats are why a fallback exists.
-      expect([cp, covers(text, cp)]).toEqual([cp, cp !== AIR]);
+      expect(covers(text, cp), hex(cp)).toBe(!CHAIN_OWNED.has(cp));
     }
   });
 
   it('DejaVu Sans stays a full coverage net behind the symbols face', () => {
-    for (const cp of shortcutCps) expect([cp, covers(dejavu, cp)]).toEqual([cp, true]);
+    for (const cp of shortcutCps) expect(covers(dejavu, cp), hex(cp)).toBe(true);
   });
 
   // The chain is ORDERED and `symbolFontFor` takes the first cover, so the face
@@ -176,7 +192,7 @@ describe('shipped fonts cover the glyph-shortcut codepoints', () => {
     // out of the face it resolves to.
     for (const cp of shortcutCps) {
       const d = glyphPathData(dejavu.getPath(String.fromCodePoint(cp), 0, 0, 16));
-      expect([cp, d.length > 0]).toEqual([cp, true]);
+      expect(d.length, hex(cp)).toBeGreaterThan(0);
     }
   });
 });
