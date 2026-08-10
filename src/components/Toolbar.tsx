@@ -61,9 +61,14 @@ import { pushToast } from '../state/toastStore';
 import { auditExportDoc } from '../state/exportAudit';
 import { BrandBullet } from './BrandBullet';
 import { isFunModeActive, useFunMode } from '../state/funMode';
+import { isStaleChunkError, STALE_BUILD_MESSAGE } from '../util/staleBuild';
 
+// Every toolbar outcome reports through here, so the stale-build case is
+// intercepted once for all of them: the lazy chunks a deploy strands are
+// reached from the export commands, but a fetch failure naming a chunk URL is
+// unhelpful wherever it surfaces.
 const errorText = (err: unknown, fallback: string): string =>
-  err instanceof Error ? err.message : fallback;
+  isStaleChunkError(err) ? STALE_BUILD_MESSAGE : err instanceof Error ? err.message : fallback;
 
 /**
  * The wordmark badge, plus its one secret: alt-click knocks it loose and it

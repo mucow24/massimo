@@ -25,7 +25,9 @@ select, slider, checkbox, toggle, toggle-group, toast, dialog, hover-card, icons
 `react-colorful` for the RGBA color picker. `js-angusj-clipper` (Clipper 6 compiled to WebAssembly;
 integer-snapped polygon booleans/offsets) powers the region-layering geometry. It loads
 asynchronously, so `main.tsx` awaits it before mounting and there is no second engine to draw
-with meanwhile — a failure to load is reported instead of degraded.
+with meanwhile — a failure to load is reported instead of degraded, and the report tells a
+genuinely absent engine apart from a page that has outlived its build
+([staleBuild.ts](src/util/staleBuild.ts)).
 
 ---
 
@@ -262,7 +264,8 @@ src/
                                 #   Pure, in window pixels; no React, no store (BouncingBullet.tsx)
   util/                         # color.ts (hex math), fonts.ts (font stack + weight math),
                                 #   grid.ts (clamp / roundClamp / snapToStep — the quarter-grid
-                                #   canonicalizer primitives every dimensional setter shares)
+                                #   canonicalizer primitives every dimensional setter shares),
+                                #   staleBuild.ts (is this failure just a deploy-stranded chunk?)
   debug/                        # devHandle.ts: counters + the in-place resets (history / region
                                 #   caches / doc round-trip) that let a slowed-down session be
                                 #   bisected without the reload that cures it, plus the region
@@ -3659,7 +3662,9 @@ non-text gaps svg2pdf/jsPDF can't bridge are closed here:
    Lazy-loaded on first PDF export (`import()` in the toolbar) so jsPDF stays out of the initial
    bundle; `buildExportSvg` likewise `import()`s `pdfGlyphs` inside its outlining branch, which is
    what keeps opentype.js out of the entry chunk — a static import there would drag it in via the
-   toolbar, and the thumbnail path never needs it at all.
+   toolbar, and the thumbnail path never needs it at all. The cost of splitting is that a page
+   outliving its build dies at every lazy `import()`, which the toolbar's `errorText` answers with
+   `STALE_BUILD_MESSAGE` ([staleBuild.ts](src/util/staleBuild.ts)).
 
 [color.ts](src/util/color.ts): pure hex math — `legibleTextOn` (W3C luminance → `#000`/`#fff`),
 `withAlpha`, `blendOver`, `desaturateColor`, plus the RGBA surface added with the react-colorful
