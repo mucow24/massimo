@@ -25,6 +25,10 @@ playwright-report/
 # its licence does permit redistribution.
 public/fonts/soehne-*.ttf
 
+# Marker left by scripts/stageFonts.mjs when those faces are DejaVu stand-ins
+# rather than the real thing. Environment-local, like the faces themselves.
+public/fonts/.substitute
+
 # Where the deploy workflow checks that private repo out.
 .fonts/
 

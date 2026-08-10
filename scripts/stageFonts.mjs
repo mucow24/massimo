@@ -1,0 +1,218 @@
+#!/usr/bin/env node
+/**
+ * Stage the map's 16 typeface files into `public/fonts/`.
+ *
+ * The licensed Söhne faces are git-ignored — the app licence covers shipping the
+ * typeface, not redistributing the files — so a clean checkout has none. What
+ * that costs, measured with all 16 deleted: the unit suite loses exactly one
+ * test (`pdfGlyphs.test.ts` on Söhne's own glyph coverage), but all EIGHT export
+ * e2e specs fail, because `loadOutlineFonts` throws and the export never
+ * produces a download at all. This script is the one place that answers "where
+ * do the faces come from here", for every environment:
+ *
+ *   1. `.fonts/`          — where CI and the Pages deploy check the private font
+ *                           repo out before installing; also works if a dev
+ *                           clones it there by hand.
+ *   2. sibling checkout   — the main working tree of this same repo. Git
+ *                           worktrees under `.claude/worktrees/` share a `.git`
+ *                           but not ignored files, so a fresh worktree finds the
+ *                           faces the dev machine already has, with no network.
+ *   3. substitutes        — DejaVu Sans (committed, redistributable) copied under
+ *                           each expected filename, so the export pipeline has a
+ *                           real parseable face to trace even where the licensed
+ *                           ones are unavailable. This is what a cloud session
+ *                           lands on: a fresh clone with no sibling on disk.
+ *
+ * Substitutes are a LAST resort and they announce themselves: staging them
+ * writes `public/fonts/.substitute`, and `pdfGlyphs.test.ts` reads that marker to
+ * skip the one assertion that is about Söhne's own glyph coverage rather than
+ * about the tracer. Everything else runs for real against the stand-ins — with
+ * them staged, all eight export e2e specs pass, including the two that count
+ * glyph fill operations, so the outlining genuinely happens.
+ */
+
+import { execFileSync } from 'node:child_process';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+
+export const FONTS_DIR = join('public', 'fonts');
+export const MARKER_NAME = '.substitute';
+export const SUBSTITUTE_MARKER = join(FONTS_DIR, MARKER_NAME);
+export const SUBSTITUTE_SOURCE = join(FONTS_DIR, 'DejaVuSans.ttf');
+export const FONT_TABLE_SOURCE = join('src', 'export', 'fonts.ts');
+export const PRIVATE_FONTS_REPO = 'mucow24/massimo-fonts';
+export const DOT_FONTS = '.fonts';
+
+/**
+ * The canonical face filenames, read out of `FONT_TABLE` (export/fonts.ts) so
+ * this script can never drift from the list the app actually fetches. Parsing
+ * the source beats re-typing the names: `FONT_TABLE` is TypeScript and this
+ * script must run from `postinstall`, before any build step exists.
+ */
+export function expectedFaceNames(fontTableSource) {
+  const re = /ttf\(\s*\d+\s*,\s*(?:true|false)\s*,\s*'([^']+)'\s*\)/g;
+  return [...fontTableSource.matchAll(re)].map((m) => `${m[1]}.ttf`);
+}
+
+/**
+ * How many of the faces we actually want does this directory hold?
+ *
+ * A directory carrying the substitute marker counts as ZERO however full it
+ * looks: worktrees copy from their sibling main checkout, and a sibling holding
+ * stand-ins would otherwise launder them into a tree that then reports "staged
+ * 16/16 licensed faces" and clears its own marker — leaving every export path
+ * running on DejaVu metrics while believing it has Söhne.
+ */
+export function countFaces(dir, names) {
+  if (!dir || !existsSync(dir)) return 0;
+  if (existsSync(join(dir, MARKER_NAME))) return 0;
+  return names.filter((n) => existsSync(join(dir, n))).length;
+}
+
+/**
+ * Pick where the faces come from, in the documented order. Pure: takes the
+ * probed counts, returns the decision, so the ordering is testable without a
+ * filesystem.
+ *
+ * A source must be COMPLETE. A half-populated `.fonts/` would otherwise win the
+ * vote, stage what it had, clear the marker, and leave the rest missing with no
+ * fallback at all.
+ */
+export function chooseStrategy({ dotFontsFaces, siblingFaces, total }) {
+  if (dotFontsFaces === total) return 'dot-fonts';
+  if (siblingFaces === total) return 'sibling';
+  return 'substitute';
+}
+
+/**
+ * The main working tree of this repo, or null when we are already in it. Git
+ * worktrees share `--git-common-dir`, which always points at the main
+ * checkout's `.git`, so its parent is the main checkout.
+ */
+export function siblingFontsDir(cwd = process.cwd()) {
+  let commonDir;
+  try {
+    commonDir = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return null; // not a git checkout at all
+  }
+  const dir = join(dirname(commonDir), FONTS_DIR);
+  // In the main checkout the sibling IS us — copying a file onto itself throws.
+  return resolve(dir) === resolve(cwd, FONTS_DIR) ? null : dir;
+}
+
+/** Is every expected face present AND byte-for-byte the size of the stand-in? */
+function alreadyStandIns(fontsDir, standIn, names) {
+  if (!existsSync(standIn)) return false;
+  const standInSize = statSync(standIn).size;
+  return names.every((n) => {
+    const p = join(fontsDir, n);
+    return existsSync(p) && statSync(p).size === standInSize;
+  });
+}
+
+/**
+ * Put the faces in place, and own the one decision here that can destroy data.
+ *
+ * The licensed `.ttf` files exist in no git repo we can reach — if this
+ * overwrites them they are gone. So "should I stage stand-ins" is answered from
+ * the CONTENT of `fontsDir`, never from the marker: a marker can go stale the
+ * moment someone drops the real faces in by hand, and trusting it would clobber
+ * them on the next `npm install`. Faces that are all exactly the stand-in's size
+ * are stand-ins; anything else is real and is left alone.
+ *
+ * Exported for testing — every branch below either deletes or preserves files
+ * that cannot be recovered.
+ */
+export function stageInto({ fontsDir, standIn, names, source }) {
+  mkdirSync(fontsDir, { recursive: true });
+  const marker = join(fontsDir, MARKER_NAME);
+
+  if (source) {
+    for (const name of names) {
+      const from = join(source, name);
+      if (existsSync(from)) copyFileSync(from, join(fontsDir, name));
+    }
+    rmSync(marker, { force: true });
+    return 'staged';
+  }
+
+  const complete = names.every((n) => existsSync(join(fontsDir, n)));
+  if (complete && !alreadyStandIns(fontsDir, standIn, names)) {
+    rmSync(marker, { force: true }); // real faces: clear any stale marker, touch nothing else
+    return 'kept-real';
+  }
+
+  if (!existsSync(standIn)) return 'nothing-available';
+
+  for (const name of names) copyFileSync(standIn, join(fontsDir, name));
+  writeFileSync(
+    marker,
+    'DejaVu Sans standing in for the licensed Söhne faces.\n' +
+      'Written by scripts/stageFonts.mjs; delete by staging the real faces.\n',
+  );
+  return 'substituted';
+}
+
+function main() {
+  if (!existsSync(FONT_TABLE_SOURCE)) {
+    console.warn(`[fonts] ${FONT_TABLE_SOURCE} not found — skipping font staging.`);
+    return;
+  }
+  const names = expectedFaceNames(readFileSync(FONT_TABLE_SOURCE, 'utf8'));
+  if (names.length === 0) {
+    console.warn('[fonts] could not read FONT_TABLE — skipping font staging.');
+    return;
+  }
+
+  const sibling = siblingFontsDir();
+  const strategy = chooseStrategy({
+    dotFontsFaces: countFaces(DOT_FONTS, names),
+    siblingFaces: countFaces(sibling, names),
+    total: names.length,
+  });
+  const source = strategy === 'dot-fonts' ? DOT_FONTS : strategy === 'sibling' ? sibling : null;
+
+  const outcome = stageInto({
+    fontsDir: FONTS_DIR,
+    standIn: SUBSTITUTE_SOURCE,
+    names,
+    source,
+  });
+
+  if (outcome === 'staged') {
+    console.log(`[fonts] staged ${names.length} licensed faces from ${source}.`);
+  } else if (outcome === 'kept-real') {
+    console.log('[fonts] licensed faces already staged.');
+  } else if (outcome === 'nothing-available') {
+    console.warn(`[fonts] no faces and no ${SUBSTITUTE_SOURCE} to stand in — exports will fail.`);
+  } else {
+    console.warn(
+      `[fonts] licensed faces unavailable — staged ${names.length} DejaVu Sans substitutes.\n` +
+        `[fonts] Rendering and metrics are NOT representative. To get the real faces, clone\n` +
+        `[fonts] ${PRIVATE_FONTS_REPO} into ${DOT_FONTS}/ and re-run:  npm run fonts`,
+    );
+  }
+}
+
+// Only run when invoked directly, so the helpers above stay importable in tests.
+// Never fail the install over this: a locked font file (Windows, dev server
+// holding one open) would otherwise break `npm install` for a convenience.
+if (process.argv[1] && resolve(process.argv[1]).endsWith('stageFonts.mjs')) {
+  try {
+    main();
+  } catch (err) {
+    console.warn(`[fonts] staging failed (${err.message}) — continuing without it.`);
+  }
+}
