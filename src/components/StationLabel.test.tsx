@@ -7,11 +7,13 @@ import { makeLabel, makeLine, makeStation, makeStop } from '../test/fixtures';
 
 // A station's name is painted by THREE passes — the normal `label` pass, the
 // `highlight-label` pass above the line-edit dim, and the Edit Stops
-// `starter-label` — and they differ ONLY in paint (fill, size, weight, stroke).
-// The positioning is one shared derivation, because a pass that drifted would
-// print the same name twice in two places: the dim overlay is drawn OVER the
-// normal pass, so any disagreement shows up as a visibly doubled label. These
-// tests pin that agreement.
+// `starter-label`. They paint the same name in the same place, SET THE SAME
+// WAY, and differ only in how it is inked (fill, stroke) plus the starter's
+// deliberate always-bold weight override. Both the positioning and the
+// typography are one shared derivation apiece, because a pass that drifted
+// would print the same name twice in two places: the dim overlay is drawn OVER
+// the normal pass, so any disagreement shows up as a visibly doubled label.
+// These tests pin that agreement.
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -28,7 +30,9 @@ beforeEach(() => {
 
 // An off-origin, rotated station with a rotated, offset label cell — every
 // term of the positioning derivation is non-trivial, so a pass that dropped
-// one would land somewhere else.
+// one would land somewhere else. Italic on purpose: the face is a pure paint
+// attribute that moves no anchor or baseline, so a theme-blind upright fixture
+// cannot tell a pass that forwards it from one that drops it.
 const skewed = () =>
   makeStation({
     id: 's1',
@@ -36,15 +40,18 @@ const skewed = () =>
     x: 137,
     y: -84,
     rotation: 1,
+    italic: true,
     stops: [makeStop('L1', { orientation: 'auto-horizontal' })],
     label: makeLabel({ row: -1, col: 2, rotation: 1 }),
   });
 
 const lines = () => ({ L1: makeLine({ id: 'L1', service: 'A', stations: ['s1'] }) });
 
-// The geometry every pass must agree on: the label group's rotation plus the
-// <text> anchor and its baseline/anchoring mode.
-const paintedGeometry = (layer: 'label' | 'highlight-label' | 'starter-label') => {
+// Everything every pass must agree on: the label group's rotation, the <text>
+// anchor and its baseline/anchoring mode, and the station's own typography.
+// Weight is deliberately NOT read — the starter's 700 is a legitimate per-pass
+// override, and pinning it would forbid the one difference that is allowed.
+const paintedShared = (layer: 'label' | 'highlight-label' | 'starter-label') => {
   const { container } = render(
     <svg>
       <StationView
@@ -71,19 +78,29 @@ const paintedGeometry = (layer: 'label' | 'highlight-label' | 'starter-label') =
     baseline: text.getAttribute('dominant-baseline'),
     tspanX: tspan.getAttribute('x'),
     tspanDy: tspan.getAttribute('dy'),
+    fontSize: text.getAttribute('font-size'),
+    fontStyle: text.getAttribute('font-style'),
   };
 };
 
-describe('station label passes — one shared positioning derivation', () => {
-  it('paints the highlight pass at exactly the normal pass geometry', () => {
-    expect(paintedGeometry('highlight-label')).toEqual(paintedGeometry('label'));
+describe('station label passes — one shared derivation for place and face', () => {
+  // Absolute anchor for the two cross-pass comparisons below. Without it they
+  // could pass vacuously: three passes that ALL dropped the face would agree on
+  // `null` and read as agreement.
+  it('paints the fixture station in its own italic face', () => {
+    expect(paintedShared('label').fontStyle).toBe('italic');
   });
 
-  it('paints the starter pass at exactly the normal pass geometry too', () => {
+  it('paints the highlight pass at exactly the normal pass geometry and face', () => {
+    expect(paintedShared('highlight-label')).toEqual(paintedShared('label'));
+  });
+
+  it('paints the starter pass at exactly the normal pass geometry and face too', () => {
     // Since #346 the starter pass also honors the station's own font size, so
-    // nothing about WHERE it paints differs any more — only fill, weight, and
-    // the contrast stroke.
-    expect(paintedGeometry('starter-label')).toEqual(paintedGeometry('label'));
+    // nothing about WHERE it paints differs any more — and nothing about how it
+    // is SET either. Only the fill, the contrast stroke, and the deliberate
+    // always-bold weight.
+    expect(paintedShared('starter-label')).toEqual(paintedShared('label'));
   });
 
   it('paints the starter name bold in the line color, over a legible stroke', () => {

@@ -2736,14 +2736,20 @@ re-render every station subtree.
 
 **A station name paints in three passes** ([StationLabel.tsx](src/components/StationLabel.tsx)) —
 `starter` (the Edit Stops anchor station, in the line color), `highlight` (the selected line's
-stations, above the dim), and `normal` — which paint the **same name in the same place** and differ
-only in _how_ (fill, size, weight, stroke). Two shared helpers keep them from drifting:
-`labelTextPosition` bundles the seven positioning fields read off `labelLayoutLocal`, and
-`OverlayLabelFrame` bundles the frame the two above-the-dim passes share (hidden-waypoint skip,
-station-rotated `<g>`, the "WP" lozenge that replaces a revealed waypoint's name). The `normal`
-pass deliberately keeps its **own** frame — its inline rename editor must win over the lozenge, so
-its branch order differs. Drift here is not subtle-but-harmless: the highlight pass paints _over_
-the normal one, so a mismatch reads as a doubled label, and a test pins the cross-pass geometry.
+stations, above the dim), and `normal` — which paint the **same name in the same place, set the
+same way**, and differ only in how it is _inked_ (fill, stroke) plus the starter's deliberate
+always-bold weight. Three shared helpers keep them from drifting: `labelTextPosition` bundles the
+seven positioning fields read off `labelLayoutLocal`, `labelTextTypography` bundles the station's
+own face/size/spacing plus the hover underline (weight is the one typographic field a pass may
+override), and `OverlayLabelFrame` bundles the frame the two above-the-dim passes share
+(hidden-waypoint skip, station-rotated `<g>`, the "WP" lozenge that replaces a revealed waypoint's
+name). The `normal` pass deliberately keeps its **own** frame — its inline rename editor must win
+over the lozenge, so its branch order differs. Drift here is not subtle-but-harmless: the highlight
+pass paints _over_ the normal one, so a mismatch reads as a doubled label. A pass that dropped the
+italic would additionally set glyphs the measured box no longer fits, since `lay` is computed at
+the station's own style. The cross-pass tests therefore read face alongside geometry, on a fixture
+that is italic — an upright one cannot tell a forwarded face from a dropped one, because italic
+moves no anchor or baseline.
 
 **Stroke-before-fill dots (the headline render motif).** `StationDots` maps
 `['stroke','fill','code'] × dotStops` — `dash`-shaped stops are filtered out first and rendered
