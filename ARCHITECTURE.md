@@ -3914,8 +3914,13 @@ Each is confirmed in source/tests; file pointers included.
   `|code|`/`[code]`/`{code}` tokens across every station name and text label when a line is renamed.
   An EMPTY old code degenerates those patterns to the bare delimiters `||`/`[]`/`{}`, which match
   literal punctuation and both halves of another line's UNFILLED bullet. Gate on `isBulletCode`
-  ([labelTokens.ts](src/geometry/labelTokens.ts) owns the grammar), and keep the inspector's field
-  from writing an empty value through mid-edit.
+  ([labelTokens.ts](src/geometry/labelTokens.ts) owns the grammar).
+- **The Service code field commits ONCE, on blur or Enter** — every value it writes is a
+  document-wide bullet rewrite (above), so a field that wrote per keystroke walked the doc through
+  every INTERMEDIATE spelling of the new code. Retyping `"A1"` as `"A2"` passed through `"A"`,
+  folding that line's bullets onto a line actually CALLED `A` and then carrying that line's bullets
+  along to `"A2"`. The whole edit is held in a local draft and lands as one patch inside the
+  `useFieldHistory` group. ([LineInspector.tsx](src/components/inspector/LineInspector.tsx))
 - **`SIBLING_PRIMARY_CLEAR` must list every selection a foreign selection change invalidates** —
   `selectedVertices` is one: its handles only render for a selected polygon, so a marquee or
   shift-click that leaves it armed leaves it INVISIBLE, and Delete/arrows both give it top priority.

@@ -93,12 +93,15 @@ export function LineInspector({ id }: { id: LineId }) {
   const setStyleExpanded = useLineEditorPrefs((s) => s.setStyleExpanded);
   const nameField = useFieldHistory();
   const serviceField = useFieldHistory();
-  // Mid-edit mirror for the Service code ONLY while it is empty (null = not
-  // mid-edit, show the store value — so no resync effect is needed). The
-  // service code is the search key for updateLine's inline-bullet migration,
-  // and an empty code can neither be searched for nor written, so letting the
-  // empty intermediate of a backspace-then-retype write through would strand
-  // every bullet wearing the old code. Non-empty keystrokes still commit live.
+  // Mid-edit mirror for the Service code, held for the WHOLE edit (null = not
+  // mid-edit, show the store value — so no resync effect is needed). The code
+  // is the search key for updateLine's inline-bullet migration, which rewrites
+  // `|code|` tokens across every station name and text label, so each value the
+  // field writes is a document-wide rewrite. Committing per keystroke walked the
+  // doc through every INTERMEDIATE spelling: retyping "A1" as "A2" passed
+  // through "A", folding this line's bullets onto a line actually CALLED A and
+  // then dragging that line's bullets along to "A2". So the field commits once,
+  // on blur or Enter, and the intermediates never reach the doc.
   const [serviceDraft, setServiceDraft] = useState<string | null>(null);
 
   if (!line) return null;
@@ -141,16 +144,22 @@ export function LineInspector({ id }: { id: LineId }) {
           type="text"
           maxLength={3}
           value={serviceDraft ?? line.service}
-          onChange={(e) => {
-            const v = e.target.value.toUpperCase();
-            setServiceDraft(v === '' ? '' : null);
-            if (v !== '') updateLine(line.id, { service: v });
+          onChange={(e) => setServiceDraft(e.target.value.toUpperCase())}
+          onFocus={() => {
+            setServiceDraft(line.service);
+            serviceField.onFocus();
           }}
-          onFocus={serviceField.onFocus}
+          // Enter commits without needing somewhere else to click, the same way
+          // it does for every other useFieldHistory field: it blurs, and blur is
+          // the one write.
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur();
+          }}
           onBlur={() => {
-            // A deliberate clear still reaches the doc — just once, on blur,
-            // inside the same history group.
-            if (serviceDraft === '') updateLine(line.id, { service: '' });
+            // The single write, inside the history group serviceField opened on
+            // focus. A value-identical patch is a no-op in updateLine, so simply
+            // tabbing through the field costs nothing.
+            if (serviceDraft !== null) updateLine(line.id, { service: serviceDraft });
             setServiceDraft(null);
             serviceField.onBlur();
           }}
