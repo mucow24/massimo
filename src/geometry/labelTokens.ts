@@ -194,9 +194,9 @@ const AIR_GLYPH = '✈';
 // fallbacks cover it too, so screen, PDF (glyph tracer), and PNG all draw the
 // same arrow whatever face a run resolves to.
 const XFER_GLYPH = '↔';
-// ©/™ (U+00A9 / U+2122) are covered by the map's own text face, so
-// the PDF export keeps them as selectable HN text (no glyph tracing needed);
-// DejaVu Sans covers both too, as the outline fallback for any HN-lacking face.
+// ©/™ (U+00A9 / U+2122) are covered by the map's own text face, so they trace
+// from whatever face the run around them is set in and never reach a fallback
+// at all. Both fallbacks carry them anyway, for a text face that lacks them.
 const COPY_GLYPH = '©';
 const TM_GLYPH = '™';
 

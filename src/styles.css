@@ -129,6 +129,12 @@
 @font-face {
   font-family: 'Massimo Symbols';
   src: url('/fonts/MassimoSymbols.otf') format('opentype');
+  /* Claim the whole weight range. Without this the face registers at 400 and
+     Chrome SYNTHESIZES bold for any run at 600+ — measurably, ~27% more ink —
+     while the export tracer draws the face's own outline. Synthesis is exactly
+     the kind of thing the tracer cannot reproduce, so it must never happen.
+     Pinned by e2e/fallbackSynthesis.spec.ts. */
+  font-weight: 100 900;
   font-display: swap;
 }
 
@@ -138,6 +144,9 @@
 @font-face {
   font-family: 'DejaVu Sans';
   src: url('/fonts/DejaVuSans.ttf') format('truetype');
+  /* Same reason as above: one shipped weight, claimed across the range so a
+     bold ★ or ⚠ isn't synthesized into something the tracer won't match. */
+  font-weight: 100 900;
   font-display: swap;
 }
 

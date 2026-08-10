@@ -3620,6 +3620,14 @@ Symbols Sharp's filled `flight` icon, rescaled to Söhne's cap height and remapp
 is committed with a NOTICE recording the Apache-2.0 derivation. DejaVu Sans stays behind it for
 everything else Söhne lacks — ★, ■, ⚠, and every non-Latin script.
 
+Both fallback `@font-face` blocks declare `font-weight: 100 900`, claiming a range neither face
+actually ships. Without it they register at 400 and the browser SYNTHESIZES bold for any run at
+600+ — a fattened glyph the tracer, which draws the face's own outline, has no way to reproduce.
+The general rule: the screen must never be given something to invent, because the export can only
+trace what is really in the file. `e2e/fallbackSynthesis.spec.ts` pins it by ink, not by advance
+width — Chrome's synthetic bold smears the glyph without always widening it, so a metrics-only
+check passes while the pixels differ.
+
 **PDF** ([exportCanvasPdf.ts](src/export/exportCanvasPdf.ts)) reuses `buildExportSvg` — **including
 its text-outline pass** — then renders that SVG to a true vector PDF with **svg2pdf.js + jsPDF**:
 outlined text (no font embedded, no selectable text), vector line work, embedded SVG graphics kept

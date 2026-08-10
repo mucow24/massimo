@@ -21,8 +21,9 @@ playwright-report/
 # what the app exports; it does not cover redistributing the font files, so they
 # never enter this public repo. They sit on disk locally, and the Pages build
 # pulls them from the private mucow24/massimo-fonts repo (see
-# .github/workflows/deploy-pages.yml). DejaVuSans.ttf is committed on purpose —
-# its licence does permit redistribution.
+# .github/workflows/deploy-pages.yml). The two fallback faces are committed on
+# purpose — DejaVuSans.ttf (Bitstream Vera) and MassimoSymbols.otf (Apache 2.0,
+# see its NOTICE) both carry licences that permit redistribution.
 public/fonts/soehne-*.ttf
 
 # Marker left by scripts/stageFonts.mjs when those faces are DejaVu stand-ins
