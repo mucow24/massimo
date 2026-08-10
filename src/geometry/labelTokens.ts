@@ -176,10 +176,11 @@ const XFER_GLYPH = '↔';
  * (`outlineAllText`) walks text per codepoint and would half-trace a pair or a
  * variation-selector sequence.
  *
- * The grammar below, the scanner, `hasFormattedToken` and the shipped-font
- * coverage guard (`pdfGlyphs.test.ts`) all read this table, so adding a
- * shortcut is a line here — plus the two prose lists that spell the set out for
- * a reader: `stationNameListText`'s contract below, and ARCHITECTURE.md's
+ * The grammar below, the scanner, `hasFormattedToken`, `expandGlyphTags` (which
+ * is how a service code can be spelled `<air>`) and the shipped-font coverage
+ * guard (`pdfGlyphs.test.ts`) all read this table, so adding a shortcut is a
+ * line here — plus the two prose lists that spell the set out for a reader:
+ * `stationNameListText`'s contract below, and ARCHITECTURE.md's
  * `parseFormattedLine` bullet.
  *
  * The eight compass arrows are named `a_<direction>`; `<a_ns>` and `<a_ew>` are
@@ -214,6 +215,44 @@ export const GLYPH_TAGS: Record<string, string> = {
 // trailing `>` fails the short branch and backtracks into the long one. Every
 // name is [a-z_], so none needs escaping.
 const GLYPH_NAMES = Object.keys(GLYPH_TAGS).join('|');
+
+// Same shape as the grammar's own glyph branch, and unordered for the same
+// reason — the trailing `>` is what disambiguates the prefixed names.
+const GLYPH_TAG_RE = new RegExp(`<(${GLYPH_NAMES})>`, 'g');
+
+/**
+ * Is `text` a glyph shortcut part-way through being typed — `<`, `<a`, `<air`,
+ * `<x` (on its way to `<xfer>`) — rather than ordinary text that merely holds an
+ * angle bracket, like `<b`, `<q` or `<x1`?
+ *
+ * A field that expands shortcuts live has to leave a half-typed one alone, and
+ * this is what "alone" is allowed to mean. Exempting anything after a `<`
+ * instead reads as a pending tag forever, which in a length-capped field lets
+ * arbitrary text past the cap (see `serviceCodeDraft`).
+ *
+ * A closed or malformed tag is NOT pending: `>` can't appear in a name, so
+ * `<air>` and `<a>b` both fail here and go back to being ordinary text.
+ */
+export function isPendingGlyphTag(text: string): boolean {
+  if (!text.startsWith('<')) return false;
+  const typed = text.slice(1);
+  return Object.keys(GLYPH_TAGS).some((name) => name.startsWith(typed));
+}
+
+/**
+ * Substitute every glyph shortcut with its character and leave all other text
+ * exactly as it stands. The shortcuts on their own, none of the rest of the
+ * grammar below: no bullets, no style tags, no backslash escape.
+ *
+ * This is what lets a SERVICE CODE be spelled `<air>` (see `serviceCodeDraft`) —
+ * a code is two or three characters printed inside a stop dot, so it has no runs
+ * to style, no bullets to resolve, and nothing an escape could protect. It reads
+ * the same `GLYPH_TAGS` table the label grammar does, so a shortcut can never
+ * mean one thing in a label and another in a code.
+ */
+export function expandGlyphTags(text: string): string {
+  return text.replace(GLYPH_TAG_RE, (_m, name: string) => GLYPH_TAGS[name]);
+}
 
 /**
  * Formatting tag grammar (labels only): the bold-ward trio `<b>`/`<sb>`/`<m>`,

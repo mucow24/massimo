@@ -2414,9 +2414,12 @@ which are a separate slot-based system where Shift flips the lattice basis.
   double-headed `<a_ns>` ↕ / `<a_ew>` ↔, that last one also spelled `<xfer>` for what it means on a
   map. A shortcut opens nothing — it substitutes its character into the surrounding run, which then
   measures and kerns as one piece; every other tag threads its open-tag state across `\n` lines and
-  column wraps until closed. Unknown tags stay literal text. Both free-floating text labels
-  (`LabelView`) and station labels (`renderStationLabelText`) render these tags; the inline rename
-  editor shows the raw tokens (`literalBullets`). Free-floating labels also carry optional `leading`
+  column wraps until closed. The shortcuts are the one part of this grammar reaching outside a
+  label: `expandGlyphTags` applies `GLYPH_TAGS` and nothing else (no bullets, no style tags, no
+  escape), which is how a SERVICE CODE can be spelled `<air>` — see `serviceCodeDraft`. Unknown tags
+  stay literal text. Both free-floating text labels (`LabelView`) and station labels
+  (`renderStationLabelText`) render these tags; the inline rename editor shows the raw tokens
+  (`literalBullets`). Free-floating labels also carry optional `leading`
   (line-spacing multiplier) and `tracking` (em letter-spacing) per label; station labels carry the
   same two per-station (`Station.leading` / `Station.tracking`, collapse-at-default). Both are
   applied by the measurer.
@@ -3914,8 +3917,13 @@ Each is confirmed in source/tests; file pointers included.
   `|code|`/`[code]`/`{code}` tokens across every station name and text label when a line is renamed.
   An EMPTY old code degenerates those patterns to the bare delimiters `||`/`[]`/`{}`, which match
   literal punctuation and both halves of another line's UNFILLED bullet. Gate on `isBulletCode`
-  ([labelTokens.ts](src/geometry/labelTokens.ts) owns the grammar), and keep the inspector's field
-  from writing an empty value through mid-edit.
+  ([labelTokens.ts](src/geometry/labelTokens.ts) owns the grammar).
+- **The Service code field commits ONCE, on blur or Enter** — every value it writes is a
+  document-wide bullet rewrite (above), so a field that wrote per keystroke walked the doc through
+  every INTERMEDIATE spelling of the new code. Retyping `"A1"` as `"A2"` passed through `"A"`,
+  folding that line's bullets onto a line actually CALLED `A` and then carrying that line's bullets
+  along to `"A2"`. The whole edit is held in a local draft and lands as one patch inside the
+  `useFieldHistory` group. ([LineInspector.tsx](src/components/inspector/LineInspector.tsx))
 - **`SIBLING_PRIMARY_CLEAR` must list every selection a foreign selection change invalidates** —
   `selectedVertices` is one: its handles only render for a selected polygon, so a marquee or
   shift-click that leaves it armed leaves it INVISIBLE, and Delete/arrows both give it top priority.
@@ -4060,6 +4068,7 @@ Each is confirmed in source/tests; file pointers included.
 - **Wash / silhouette** — the soft selection-highlight fill behind a selected station.
 - **Waypoint** — a routing-point station with name + bullets hidden.
 - **Route bullet** — a free-floating badge showing a line's service code.
-- **Service code** — the short route identifier on a line (e.g. `"A"`, `"7"`).
+- **Service code** — the short route identifier on a line (e.g. `"A"`, `"7"`, `"✈"`). At most
+  `SERVICE_CODE_MAX` characters, and typeable as a glyph shortcut (`<air>`).
 - **Day/night color** — a `{day, night}` pair resolved per the dark-mode theme.
 

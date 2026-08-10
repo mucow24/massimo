@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   BOLDWARD_TAG_STEPS,
   emptyStyleState,
+  expandGlyphTags,
   hasFormattedToken,
+  isPendingGlyphTag,
   migrateLegacyInlineTokens,
   parseFormattedLine,
   parseLabelLine,
@@ -623,6 +625,52 @@ describe('resolveRunFontSize', () => {
   it('floors the resolved size at the minimum label font size (1)', () => {
     expect(resolveRunFontSize(3, { ...style(), sizeStep: -10 })).toBe(1);
     expect(resolveRunFontSize(16, { ...style(), size: 0.5 })).toBe(1);
+  });
+});
+
+// The shortcuts on their own, for callers with no runs, bullets or escapes to
+// think about — the Service code field.
+describe('expandGlyphTags', () => {
+  it('substitutes a shortcut wherever it sits', () => {
+    expect(expandGlyphTags('<air>')).toBe('✈');
+    expect(expandGlyphTags('A<xfer>B')).toBe('A↔B');
+    expect(expandGlyphTags('<a_ne>')).toBe('↗');
+    expect(expandGlyphTags('<c><tm>')).toBe('©™');
+  });
+
+  it('leaves unknown, unclosed and upper-case tags literal, as the grammar does', () => {
+    expect(expandGlyphTags('<q>')).toBe('<q>');
+    expect(expandGlyphTags('<air')).toBe('<air');
+    expect(expandGlyphTags('<AIR>')).toBe('<AIR>');
+    expect(expandGlyphTags('<a_>')).toBe('<a_>');
+  });
+
+  it('leaves everything else in the grammar alone — bullets, tags, escapes', () => {
+    expect(expandGlyphTags('|A| <b>x</b>')).toBe('|A| <b>x</b>');
+    // No escape handling: a service code has nothing an escape could protect.
+    expect(expandGlyphTags('\\<air>')).toBe('\\✈');
+  });
+});
+
+describe('isPendingGlyphTag', () => {
+  it('accepts a shortcut part-way through being typed', () => {
+    for (const partial of ['<', '<a', '<ai', '<air', '<a_', '<a_n', '<a_ne']) {
+      expect(isPendingGlyphTag(partial)).toBe(true);
+    }
+    // A prefix of `<xfer>`, even though `x` names nothing on its own.
+    expect(isPendingGlyphTag('<x')).toBe(true);
+  });
+
+  it('rejects text that merely contains a bracket', () => {
+    for (const text of ['<b', '<q', '<x1', '<zz', 'a<b', '']) {
+      expect(isPendingGlyphTag(text)).toBe(false);
+    }
+  });
+
+  it('rejects a tag that is already closed or malformed', () => {
+    // `>` can't appear in a name, so nothing past the closer is still pending.
+    expect(isPendingGlyphTag('<air>')).toBe(false);
+    expect(isPendingGlyphTag('<a>b')).toBe(false);
   });
 });
 

@@ -13,6 +13,7 @@ import { NumericFieldRow } from '../NumericFieldRow';
 import { StyleRow } from '../StyleRow';
 import { LineEndSegmented } from '../LineEndPicker';
 import { lineEndStyleOf } from '../../model/lineEnd';
+import { serviceCodeCommit, serviceCodeDraft } from '../../model/lineNaming';
 import {
   LINE_INTERLINE_GAP_MAX,
   LINE_LABEL_GAP_MAX,
@@ -93,12 +94,21 @@ export function LineInspector({ id }: { id: LineId }) {
   const setStyleExpanded = useLineEditorPrefs((s) => s.setStyleExpanded);
   const nameField = useFieldHistory();
   const serviceField = useFieldHistory();
-  // Mid-edit mirror for the Service code ONLY while it is empty (null = not
-  // mid-edit, show the store value — so no resync effect is needed). The
-  // service code is the search key for updateLine's inline-bullet migration,
-  // and an empty code can neither be searched for nor written, so letting the
-  // empty intermediate of a backspace-then-retype write through would strand
-  // every bullet wearing the old code. Non-empty keystrokes still commit live.
+  // Mid-edit mirror for the Service code, held for the WHOLE edit (null = not
+  // mid-edit, show the store value — so no resync effect is needed). The code
+  // is the search key for updateLine's inline-bullet migration, which rewrites
+  // `|code|` tokens across every station name and text label, so each value the
+  // field writes is a document-wide rewrite. Committing per keystroke walked the
+  // doc through every INTERMEDIATE spelling: retyping "A1" as "A2" passed
+  // through "A", folding this line's bullets onto a line actually CALLED A and
+  // then dragging that line's bullets along to "A2". So the field commits once,
+  // on blur or Enter, and the intermediates never reach the doc.
+  //
+  // Blur being the only write makes it load-bearing that every way OUT of this
+  // popover blurs first — Escape (App's inForm branch), a canvas background
+  // click, the footer's Delete — because an unmount while focused fires no
+  // React blur and would drop the edit. `useFieldHistory` has its own unmount
+  // net; the draft has none. Don't add an exit that fires on pointerdown.
   const [serviceDraft, setServiceDraft] = useState<string | null>(null);
 
   if (!line) return null;
@@ -139,18 +149,38 @@ export function LineInspector({ id }: { id: LineId }) {
         <input
           id={`line-service-${line.id}`}
           type="text"
-          maxLength={3}
           value={serviceDraft ?? line.service}
+          // No maxLength: it would bound the RAW text, which a shortcut being
+          // spelled out briefly exceeds, and serviceCodeDraft already bounds the
+          // only thing that matters — a pending shortcut is a prefix of a real
+          // tag name, so the draft can't run away. One choke point, and what it
+          // returns is both what the field shows and what blur commits. (An
+          // over-long PASTE is refused whole rather than truncated to fit, which
+          // is what maxLength used to do.)
           onChange={(e) => {
-            const v = e.target.value.toUpperCase();
-            setServiceDraft(v === '' ? '' : null);
-            if (v !== '') updateLine(line.id, { service: v });
+            // null = won't fit; refuse the keystroke and let React restore the
+            // controlled value, exactly as maxLength used to.
+            const next = serviceCodeDraft(e.target.value);
+            if (next !== null) setServiceDraft(next);
           }}
-          onFocus={serviceField.onFocus}
+          onFocus={() => {
+            setServiceDraft(line.service);
+            serviceField.onFocus();
+          }}
+          // Enter commits without needing somewhere else to click: it blurs, and
+          // blur is the one write. The Line name field above needs no such
+          // handler — it still writes on every keystroke, so it has nothing
+          // pending for Enter to flush.
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') e.currentTarget.blur();
+          }}
           onBlur={() => {
-            // A deliberate clear still reaches the doc — just once, on blur,
-            // inside the same history group.
-            if (serviceDraft === '') updateLine(line.id, { service: '' });
+            // The single write, inside the history group serviceField opened on
+            // focus. A value-identical patch is a no-op in updateLine, so simply
+            // tabbing through the field costs nothing — and a draft left
+            // mid-shortcut commits nothing at all (serviceCodeCommit).
+            const next = serviceDraft === null ? null : serviceCodeCommit(serviceDraft);
+            if (next !== null) updateLine(line.id, { service: next });
             setServiceDraft(null);
             serviceField.onBlur();
           }}

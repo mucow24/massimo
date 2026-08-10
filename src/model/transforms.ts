@@ -1956,10 +1956,12 @@ export function updateLine(
   // there is nothing safe to do: a code containing a delimiter can never
   // appear in a token, and an EMPTY one collapses the patterns below to the
   // bare delimiter pairs `||`/`[]`/`{}` — which match literal punctuation and
-  // both halves of another line's UNFILLED bullet, so a single keystroke would
-  // rewrite every station name and text label in the document. An empty
-  // service is one Backspace away, since the inspector's field writes through
-  // on every keystroke. Skip the rewrite; the rename itself still lands.
+  // both halves of another line's UNFILLED bullet, so one such rename would
+  // rewrite every station name and text label in the document. This is a
+  // model-level backstop, not the inspector's guard: the field commits a code
+  // once, on blur, but nothing stops another caller (or a hand-edited file's
+  // rename) arriving here with an empty or delimiter-bearing code. Skip the
+  // rewrite; the rename itself still lands.
   if (!isBulletCode(cur.service) || !isBulletCode(nextLine.service)) {
     return { ...doc, lines };
   }

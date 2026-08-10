@@ -80,9 +80,147 @@ describe('<LineInspector /> — name / service / default-shape (E9)', () => {
   it('the Service code input upper-cases its value before writing', () => {
     seedThree();
     render(<LineInspector id="L1" />);
-    fireEvent.change(fieldInput('Service code'), { target: { value: 'bd' } });
-    // .toUpperCase() normalization (LineInspector.tsx:218).
+    const input = fieldInput('Service code');
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'bd' } });
+    fireEvent.blur(input);
+    // .toUpperCase() normalization, applied live into the draft.
     expect(useDoc.getState().lines.L1.service).toBe('BD');
+  });
+
+  // A service code is the search key for updateLine's inline-bullet rewrite, so
+  // every value the field writes rewrites bullets across the whole document.
+  // Committing per keystroke therefore walks the doc through every INTERMEDIATE
+  // spelling of the new code — and an intermediate that collides with another
+  // line's code drags that line's bullets along with it.
+  describe('commits once, on blur or Enter', () => {
+    // Two lines whose codes are prefixes of one another, each with a bullet.
+    const seedPrefixPair = () => {
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({
+          stations: [
+            makeStation({ id: 's1', name: '|A| Union', stops: [makeStop('LA')] }),
+            makeStation({ id: 's2', name: '|A1| Grand', stops: [makeStop('LA1')] }),
+          ],
+          lines: [
+            makeLine({ id: 'LA', service: 'A', stations: ['s1'] }),
+            makeLine({ id: 'LA1', service: 'A1', stations: ['s2'] }),
+          ],
+        }),
+      });
+    };
+
+    it('renaming A1 to A2 leaves line A’s bullets alone', () => {
+      seedPrefixPair();
+      render(<LineInspector id="LA1" />);
+      const input = fieldInput('Service code');
+      fireEvent.focus(input);
+      // Backspace to 'A' — which is line A's code — then type the '2'.
+      fireEvent.change(input, { target: { value: 'A' } });
+      fireEvent.change(input, { target: { value: 'A2' } });
+      fireEvent.blur(input);
+      const { stations, lines } = useDoc.getState();
+      expect(lines.LA1.service).toBe('A2');
+      expect(stations.s2.name).toBe('|A2| Grand');
+      // The bullet that never belonged to this line must not have moved.
+      expect(stations.s1.name).toBe('|A| Union');
+    });
+
+    it('writes nothing to the doc until the field is left', () => {
+      seedThree();
+      render(<LineInspector id="L1" />);
+      const input = fieldInput('Service code');
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: 'B' } });
+      expect(useDoc.getState().lines.L1.service).toBe('A');
+      fireEvent.blur(input);
+      expect(useDoc.getState().lines.L1.service).toBe('B');
+    });
+
+    // Enter commits by BLURRING (the useFieldHistory convention), so this one
+    // needs real focus — fireEvent.focus never moves document.activeElement, and
+    // blur() on an unfocused element is a no-op.
+    it('Enter commits without waiting for a click elsewhere', async () => {
+      const user = userEvent.setup();
+      seedThree();
+      render(<LineInspector id="L1" />);
+      const input = fieldInput('Service code');
+      await user.clear(input);
+      await user.type(input, 'B{Enter}');
+      expect(useDoc.getState().lines.L1.service).toBe('B');
+    });
+
+    it('a glyph shortcut collapses in the field, but still lands only on blur', () => {
+      seedThree();
+      render(<LineInspector id="L1" />);
+      const input = fieldInput('Service code');
+      fireEvent.focus(input);
+      // Typed one character at a time: the tag stays visible until it closes.
+      for (const partial of ['<', '<a', '<ai', '<air']) {
+        fireEvent.change(input, { target: { value: partial } });
+        expect(input.value).toBe(partial);
+      }
+      fireEvent.change(input, { target: { value: '<air>' } });
+      // Collapsed on screen — the preview — but not yet in the doc.
+      expect(input.value).toBe('✈');
+      expect(useDoc.getState().lines.L1.service).toBe('A');
+      fireEvent.blur(input);
+      expect(useDoc.getState().lines.L1.service).toBe('✈');
+    });
+
+    it('an angle bracket is no way past the length cap', () => {
+      seedThree();
+      render(<LineInspector id="L1" />);
+      const input = fieldInput('Service code');
+      fireEvent.focus(input);
+      // Not a shortcut being typed — just text with a bracket in it. It must be
+      // refused like any other over-long value, not smuggled through as a
+      // "pending tag" and committed on blur.
+      fireEvent.change(input, { target: { value: 'a<bbbbb' } });
+      fireEvent.blur(input);
+      expect(useDoc.getState().lines.L1.service).toBe('A');
+    });
+
+    it('leaving the field mid-shortcut writes nothing', () => {
+      seedThree();
+      render(<LineInspector id="L1" />);
+      const input = fieldInput('Service code');
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: '<air' } });
+      expect(input.value).toBe('<air');
+      fireEvent.blur(input);
+      // An unfinished shortcut is an unfinished edit — the old code stands.
+      expect(useDoc.getState().lines.L1.service).toBe('A');
+    });
+
+    it('a shortcut renames inline bullets like any other code', () => {
+      useDoc.setState({
+        ...DEFAULT_DOC,
+        ...makeDoc({
+          stations: [makeStation({ id: 's1', name: '|A| Union', stops: [makeStop('L1')] })],
+          lines: [makeLine({ id: 'L1', service: 'A', stations: ['s1'] })],
+        }),
+      });
+      render(<LineInspector id="L1" />);
+      const input = fieldInput('Service code');
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: '<air>' } });
+      fireEvent.blur(input);
+      // The stored code is the GLYPH, so it is a legal bullet CODE and the
+      // rewrite carries the badge across with the rename.
+      expect(useDoc.getState().stations.s1.name).toBe('|✈| Union');
+    });
+
+    it('an emptied field still commits the clear', () => {
+      seedThree();
+      render(<LineInspector id="L1" />);
+      const input = fieldInput('Service code');
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: '' } });
+      fireEvent.blur(input);
+      expect(useDoc.getState().lines.L1.service).toBe('');
+    });
   });
 
   it('picking a singleton stop dot shape writes singletonDotStyle only', async () => {
