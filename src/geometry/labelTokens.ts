@@ -162,15 +162,65 @@ const BULLET_VARIANTS: Record<string, { shape: RouteBulletShape; filled: boolean
 };
 const BULLET_GROUP_KEYS = Object.keys(BULLET_VARIANTS);
 
+// U+2194 rather than 🡘 (U+1F858): Söhne covers the U+2190–U+2199 arrows itself,
+// and the shipped fallbacks cover them too, so screen, PDF (glyph tracer), and
+// PNG all draw the same arrow whatever face a run resolves to. Named because
+// `stationNameListText` suppresses this glyph however it was spelled.
+const XFER_GLYPH = '↔';
+
+/**
+ * The self-closing glyph shortcuts: tag name → the character it emits. These
+ * open nothing, so they never touch the style stacks — a tag here is pure
+ * substitution into the surrounding run, which then measures and kerns as one
+ * piece. Adding another is a line here: the grammar below, the scanner,
+ * `hasFormattedToken` and the shipped-font coverage guard
+ * (`pdfGlyphs.test.ts`) all read this table.
+ *
+ * The eight compass arrows are named `a_<direction>`; `<a_ns>` and `<a_ew>` are
+ * the double-headed pair. `<xfer>` is a second spelling of `<a_ew>`, kept for
+ * what the arrow MEANS on a map.
+ *
+ * Everything but ✈ is covered by the map's own text face, so those trace from
+ * whatever face the run around them is set in and never reach a fallback at
+ * all. Söhne has no dingbats, so ✈ comes from the shipped Massimo Symbols
+ * fallback — a single glyph cut to Söhne's cap height (see its NOTICE in
+ * /public/fonts). Screen, PDF and PNG all read that same face. Both fallbacks
+ * carry the rest anyway, for a text face that lacks one.
+ */
+export const GLYPH_TAGS: Record<string, string> = {
+  air: '✈',
+  xfer: XFER_GLYPH,
+  c: '©',
+  tm: '™',
+  a_n: '↑',
+  a_ne: '↗',
+  a_e: '→',
+  a_se: '↘',
+  a_s: '↓',
+  a_sw: '↙',
+  a_w: '←',
+  a_nw: '↖',
+  a_ns: '↕',
+  a_ew: XFER_GLYPH,
+};
+
+// Longest name first so a prefix (`a_n`) can't be tried ahead of the name that
+// contains it (`a_ne`). Alternation is first-match; the trailing `>` would in
+// fact force a backtrack into the longer name, but the sort makes it a
+// non-question. Every name is [a-z_], so none needs escaping.
+const GLYPH_NAMES = Object.keys(GLYPH_TAGS)
+  .sort((a, b) => b.length - a.length)
+  .join('|');
+
 /**
  * Formatting tag grammar (labels only): the bold-ward trio `<b>`/`<sb>`/`<m>`,
  * `<i>`/`<u>`/`<s>`, all with `</...>` closers, plus `<color=VALUE>`/`</color>`,
  * `<w=VALUE>`/`</w>` (font weight), `<size=VALUE>`/`</size>` (font size), and the
- * self-closing glyph shortcuts `<air>` (✈), `<xfer>` (↔), `<c>` (©), and `<tm>`
- * (™). Tag names are lowercase; anything else (`<q>`, `<3`, `a < b`) stays
- * literal text. Color, weight, and size values can't contain spaces, angle
- * brackets, or newlines; an invalid weight/size value (see
- * `parseWeightToken`/`parseSizeToken`) keeps the tag as literal text.
+ * self-closing glyph shortcuts of `GLYPH_TAGS` — `<air>` (✈), `<xfer>` (↔),
+ * `<c>` (©), `<tm>` (™) and the arrows. Tag names are lowercase; anything else
+ * (`<q>`, `<3`, `a < b`) stays literal text. Color, weight, and size values
+ * can't contain spaces, angle brackets, or newlines; an invalid weight/size
+ * value (see `parseWeightToken`/`parseSizeToken`) keeps the tag as literal text.
  *
  * Nothing here can be confused with `<s>`/`</s>` (strike), because those require
  * the char after `s` to be `>` — which neither `size` nor `sb` has.
@@ -181,24 +231,10 @@ const TAG_ALTS =
   `<color=(?<color>[^<> \\n]+)>|(?<colorClose><\\/color>)|` +
   `<w=(?<weight>[^<> \\n]+)>|(?<weightClose><\\/w>)|` +
   `<size=(?<size>[^<> \\n]+)>|(?<sizeClose><\\/size>)|` +
-  `(?<air><air>)|(?<xfer><xfer>)|(?<copy><c>)|(?<tm><tm>)`;
+  `<(?<glyph>${GLYPH_NAMES})>`;
 
 const BULLET_TOKEN_RE = new RegExp(`(?<esc>\\\\)?(?:${BULLET_ALTS})`, 'g');
 const FORMATTED_TOKEN_RE = new RegExp(`(?<esc>\\\\)?(?:${BULLET_ALTS}|${TAG_ALTS})`, 'g');
-
-// Söhne has no dingbats, so this one is drawn by the shipped Massimo Symbols
-// fallback — a single glyph cut to Söhne's cap height (see its NOTICE in
-// /public/fonts). Screen, PDF (glyph tracer) and PNG all read that same face.
-const AIR_GLYPH = '✈';
-// U+2194 rather than 🡘 (U+1F858): Söhne covers U+2194 itself, and the shipped
-// fallbacks cover it too, so screen, PDF (glyph tracer), and PNG all draw the
-// same arrow whatever face a run resolves to.
-const XFER_GLYPH = '↔';
-// ©/™ (U+00A9 / U+2122) are covered by the map's own text face, so they trace
-// from whatever face the run around them is set in and never reach a fallback
-// at all. Both fallbacks carry them anyway, for a text face that lacks them.
-const COPY_GLYPH = '©';
-const TM_GLYPH = '™';
 
 const TAG_FLAG: Record<string, 'italic' | 'underline' | 'strike'> = {
   i: 'italic',
@@ -387,14 +423,11 @@ function scanLine(
         flush();
         st!.sizes.pop();
       }
-    } else if (g.air) {
-      buffer += AIR_GLYPH;
-    } else if (g.xfer) {
-      if (!suppressXfer) buffer += XFER_GLYPH;
-    } else if (g.copy) {
-      buffer += COPY_GLYPH;
-    } else if (g.tm) {
-      buffer += TM_GLYPH;
+    } else if (g.glyph !== undefined) {
+      const glyph = GLYPH_TAGS[g.glyph];
+      // Suppression is by GLYPH, not by tag name: `<a_ew>` is the same arrow
+      // as `<xfer>` and is dropped from list rows on the same grounds.
+      if (!(suppressXfer && glyph === XFER_GLYPH)) buffer += glyph;
     }
   }
   if (lastIndex < line.length) buffer += line.slice(lastIndex);
@@ -436,8 +469,8 @@ export function parseFormattedLine(
  *    entirely — the list shows the routes in its own column, so a bullet in
  *    the name is just noise;
  *  - the glyph shortcuts resolve to their characters (`<tm>`→™, `<air>`→✈,
- *    `<c>`→©) EXCEPT `<xfer>`, which is omitted (list rows don't show the
- *    transfer arrow).
+ *    `<c>`→©, the arrows) EXCEPT the transfer arrow ↔, which is omitted under
+ *    either spelling (`<xfer>`, `<a_ew>`) — list rows don't show it.
  * Newlines collapse to spaces and whitespace left behind by removed tokens is
  * squeezed, so `"Foo |A|  Bar"` reads `"Foo Bar"`.
  */
@@ -494,10 +527,10 @@ export function resolveRunFontSize(baseSize: number, style?: SegmentStyle): numb
  * a bullet, an escape sequence, or a formatting tag / glyph shortcut? Renderers
  * use it to pick the plain fast path over segment-aware layout: anything the
  * segment scanner would rewrite (a bullet circle, a dropped backslash, a
- * `<b>`/`<sb>`/`<m>`/`<color=…>`/`<w=…>`/`<size=…>` style change, an
- * `<air>`/`<xfer>`/`<c>`/`<tm>` glyph) forces the per-segment path. Unknown
- * tags (`<q>`, `<A>`) and stray brackets stay literal and don't trip it,
- * matching what `parseFormattedLine` actually rewrites.
+ * `<b>`/`<sb>`/`<m>`/`<color=…>`/`<w=…>`/`<size=…>` style change, a `GLYPH_TAGS`
+ * shortcut) forces the per-segment path. Unknown tags (`<q>`, `<A>`) and stray
+ * brackets stay literal and don't trip it, matching what `parseFormattedLine`
+ * actually rewrites.
  */
 export function hasFormattedToken(text: string): boolean {
   FORMATTED_TOKEN_RE.lastIndex = 0;
