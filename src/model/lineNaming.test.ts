@@ -5,6 +5,7 @@ import {
   lineDisplayName,
   nameForIndex,
   pickNextLineName,
+  serviceCodeCommit,
   serviceCodeDraft,
 } from './lineNaming';
 
@@ -88,6 +89,24 @@ describe('serviceCodeDraft', () => {
     expect(serviceCodeDraft('ab<a_ne')).toBe('AB<a_ne');
   });
 
+  it('only exempts a fragment that is really a shortcut being typed', () => {
+    // `<b`, `<q`, `<x1` are ordinary text that happens to hold a bracket — they
+    // upper-case and count like anything else. Exempting everything after a `<`
+    // let arbitrary mixed-case text past both rules and onto the document.
+    expect(serviceCodeDraft('a<bbbbb')).toBeNull();
+    expect(serviceCodeDraft('a<b')).toBe('A<B');
+    expect(serviceCodeDraft('<x1>')).toBeNull();
+    // `<x` IS a prefix of `<xfer>`, so it stays pending and keeps its case.
+    expect(serviceCodeDraft('a<x')).toBe('A<x');
+  });
+
+  it('counts a pending shortcut as the one character it becomes', () => {
+    // 'ABC' already fills the cap, so no shortcut can follow it — refused as it
+    // is typed rather than at the `>`, where it would be a dead end.
+    expect(serviceCodeDraft('ABC<x')).toBeNull();
+    expect(serviceCodeDraft('ab<a_ne')).toBe('AB<a_ne');
+  });
+
   it('refuses a keystroke that would exceed the cap', () => {
     expect(serviceCodeDraft('ABCD')).toBeNull();
     // Measured on the EXPANDED value: the arrow is one character, so this fits…
@@ -103,6 +122,26 @@ describe('serviceCodeDraft', () => {
 
   it('allows an empty field (the deliberate clear)', () => {
     expect(serviceCodeDraft('')).toBe('');
+  });
+});
+
+describe('serviceCodeCommit', () => {
+  it('takes a finished draft verbatim', () => {
+    expect(serviceCodeCommit('A✈')).toBe('A✈');
+    expect(serviceCodeCommit('BD')).toBe('BD');
+    // A closed unknown tag is ordinary text, not an unfinished shortcut.
+    expect(serviceCodeCommit('<Q>')).toBe('<Q>');
+    // The deliberate clear.
+    expect(serviceCodeCommit('')).toBe('');
+  });
+
+  it('abandons an edit left mid-shortcut', () => {
+    // `<a_ne` is five characters and not a legal bullet CODE, so committing it
+    // would both break the cap and strand every bullet on the old code. An
+    // unfinished shortcut is an unfinished edit: it writes nothing.
+    for (const partial of ['<', '<a', '<air', '<a_ne', 'A<x']) {
+      expect(serviceCodeCommit(partial)).toBeNull();
+    }
   });
 });
 

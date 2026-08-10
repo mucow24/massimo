@@ -1,4 +1,4 @@
-import { expandGlyphTags } from '../geometry/labelTokens';
+import { expandGlyphTags, isPendingGlyphTag } from '../geometry/labelTokens';
 import type { Line, LineId } from './types';
 
 // Most characters a service code may hold. Counted on the code ITSELF, so a
@@ -14,26 +14,49 @@ export const SERVICE_CODE_MAX = 3;
  *
  * A glyph shortcut collapses the instant it closes, rather than at the commit,
  * so the code previews as the glyph it will actually print. That leaves a
- * half-typed `<air` on screen for a few keystrokes, and both rules below have to
- * step around it:
+ * half-typed `<air` on screen for a few keystrokes, and it gets two allowances:
  *
  *  - it is NOT upper-cased, because tag names are lowercase and `<AIR>` matches
  *    nothing — upper-casing the fragment would make the tag impossible to close;
- *  - it is NOT counted against the cap, because it is on its way to ONE
- *    character. `<a_ne` is five characters that become `↗`.
+ *  - it counts as the ONE character it is about to become, not as its own
+ *    length. `<a_ne` is five characters that become `↗`.
  *
- * Everything else upper-cases and counts as it always did. An unknown tag
- * (`<q>`) is ordinary text here exactly as it is in a label.
+ * Both allowances are gated on `isPendingGlyphTag`, so they reach a shortcut on
+ * its way to closing and nothing else: `<b`, `<q` and `<x1` are ordinary text
+ * that upper-cases and counts in full. Gating on "is there a `<`" instead let
+ * any mixed-case, over-long string through — and since `<` is not a legal bullet
+ * `CODE`, committing one also silently skipped `updateLine`'s bullet rewrite.
+ *
+ * Counting a pending shortcut as one character also refuses a dead end while it
+ * is being typed rather than at the closing `>`: with the cap already full,
+ * `ABC<x` can never resolve to anything legal, so it never gets taken.
+ *
+ * An unknown tag (`<q>`) is ordinary text here exactly as it is in a label.
  */
 export function serviceCodeDraft(raw: string): string | null {
   const expanded = expandGlyphTags(raw);
-  // A `<` with no `>` after it is a shortcut still being typed; everything from
-  // there on is the pending fragment.
   const open = expanded.lastIndexOf('<');
-  const cut = open > expanded.lastIndexOf('>') ? open : expanded.length;
-  const code = expanded.slice(0, cut);
-  if ([...code].length > SERVICE_CODE_MAX) return null;
-  return code.toUpperCase() + expanded.slice(cut);
+  const pending = open >= 0 && isPendingGlyphTag(expanded.slice(open));
+  const code = pending ? expanded.slice(0, open) : expanded;
+  if ([...code].length + (pending ? 1 : 0) > SERVICE_CODE_MAX) return null;
+  return pending ? code.toUpperCase() + expanded.slice(open) : code.toUpperCase();
+}
+
+/**
+ * What a finished edit writes, or `null` to abandon it and leave the stored code
+ * standing.
+ *
+ * The one thing a draft can hold that is not a code is a shortcut the user never
+ * finished — `<a_ne` is five characters, over the cap, and not a legal bullet
+ * `CODE`, so committing it would both break `SERVICE_CODE_MAX` and strand every
+ * bullet wearing the old code. An unfinished shortcut is an unfinished edit:
+ * nothing is written, rather than the fragment being trimmed to some prefix the
+ * user never asked for. Everything else — including an empty field, which is the
+ * deliberate clear — commits exactly as it reads.
+ */
+export function serviceCodeCommit(draft: string): string | null {
+  const open = draft.lastIndexOf('<');
+  return open >= 0 && isPendingGlyphTag(draft.slice(open)) ? null : draft;
 }
 
 // Auto-name sequence for new lines: A, B, …, Z, 0, 1, …, 9, AA, AB, …, AZ,

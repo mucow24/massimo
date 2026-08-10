@@ -2417,9 +2417,9 @@ which are a separate slot-based system where Shift flips the lattice basis.
   column wraps until closed. The shortcuts are the one part of this grammar reaching outside a
   label: `expandGlyphTags` applies `GLYPH_TAGS` and nothing else (no bullets, no style tags, no
   escape), which is how a SERVICE CODE can be spelled `<air>` — see `serviceCodeDraft`. Unknown tags
-  stay literal text. Both free-floating text labels
-  (`LabelView`) and station labels (`renderStationLabelText`) render these tags; the inline rename
-  editor shows the raw tokens (`literalBullets`). Free-floating labels also carry optional `leading`
+  stay literal text. Both free-floating text labels (`LabelView`) and station labels
+  (`renderStationLabelText`) render these tags; the inline rename editor shows the raw tokens
+  (`literalBullets`). Free-floating labels also carry optional `leading`
   (line-spacing multiplier) and `tracking` (em letter-spacing) per label; station labels carry the
   same two per-station (`Station.leading` / `Station.tracking`, collapse-at-default). Both are
   applied by the measurer.

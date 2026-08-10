@@ -169,6 +169,31 @@ describe('<LineInspector /> — name / service / default-shape (E9)', () => {
       expect(useDoc.getState().lines.L1.service).toBe('✈');
     });
 
+    it('an angle bracket is no way past the length cap', () => {
+      seedThree();
+      render(<LineInspector id="L1" />);
+      const input = fieldInput('Service code');
+      fireEvent.focus(input);
+      // Not a shortcut being typed — just text with a bracket in it. It must be
+      // refused like any other over-long value, not smuggled through as a
+      // "pending tag" and committed on blur.
+      fireEvent.change(input, { target: { value: 'a<bbbbb' } });
+      fireEvent.blur(input);
+      expect(useDoc.getState().lines.L1.service).toBe('A');
+    });
+
+    it('leaving the field mid-shortcut writes nothing', () => {
+      seedThree();
+      render(<LineInspector id="L1" />);
+      const input = fieldInput('Service code');
+      fireEvent.focus(input);
+      fireEvent.change(input, { target: { value: '<air' } });
+      expect(input.value).toBe('<air');
+      fireEvent.blur(input);
+      // An unfinished shortcut is an unfinished edit — the old code stands.
+      expect(useDoc.getState().lines.L1.service).toBe('A');
+    });
+
     it('a shortcut renames inline bullets like any other code', () => {
       useDoc.setState({
         ...DEFAULT_DOC,

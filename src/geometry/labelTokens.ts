@@ -221,12 +221,23 @@ const GLYPH_NAMES = Object.keys(GLYPH_TAGS).join('|');
 const GLYPH_TAG_RE = new RegExp(`<(${GLYPH_NAMES})>`, 'g');
 
 /**
- * Longest a shortcut can be while it is being typed — the longest tag name plus
- * its two angle brackets. A field that accepts shortcuts has to allow this much
- * more raw text than the value it produces, since a code spelled as a shortcut
- * is briefly longer than the one character it collapses to.
+ * Is `text` a glyph shortcut part-way through being typed — `<`, `<a`, `<air`,
+ * `<x` (on its way to `<xfer>`) — rather than ordinary text that merely holds an
+ * angle bracket, like `<b`, `<q` or `<x1`?
+ *
+ * A field that expands shortcuts live has to leave a half-typed one alone, and
+ * this is what "alone" is allowed to mean. Exempting anything after a `<`
+ * instead reads as a pending tag forever, which in a length-capped field lets
+ * arbitrary text past the cap (see `serviceCodeDraft`).
+ *
+ * A closed or malformed tag is NOT pending: `>` can't appear in a name, so
+ * `<air>` and `<a>b` both fail here and go back to being ordinary text.
  */
-export const GLYPH_TAG_MAX_LEN = Math.max(...Object.keys(GLYPH_TAGS).map((n) => n.length)) + 2;
+export function isPendingGlyphTag(text: string): boolean {
+  if (!text.startsWith('<')) return false;
+  const typed = text.slice(1);
+  return Object.keys(GLYPH_TAGS).some((name) => name.startsWith(typed));
+}
 
 /**
  * Substitute every glyph shortcut with its character and leave all other text

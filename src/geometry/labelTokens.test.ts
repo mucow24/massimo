@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   BOLDWARD_TAG_STEPS,
-  GLYPH_TAG_MAX_LEN,
   emptyStyleState,
   expandGlyphTags,
   hasFormattedToken,
+  isPendingGlyphTag,
   migrateLegacyInlineTokens,
   parseFormattedLine,
   parseLabelLine,
@@ -650,10 +650,27 @@ describe('expandGlyphTags', () => {
     // No escape handling: a service code has nothing an escape could protect.
     expect(expandGlyphTags('\\<air>')).toBe('\\✈');
   });
+});
 
-  it('reports the longest raw spelling of a shortcut, brackets included', () => {
-    // `<xfer>` / `<a_ne>` — the field's raw maxLength is sized off this.
-    expect(GLYPH_TAG_MAX_LEN).toBe(6);
+describe('isPendingGlyphTag', () => {
+  it('accepts a shortcut part-way through being typed', () => {
+    for (const partial of ['<', '<a', '<ai', '<air', '<a_', '<a_n', '<a_ne']) {
+      expect(isPendingGlyphTag(partial)).toBe(true);
+    }
+    // A prefix of `<xfer>`, even though `x` names nothing on its own.
+    expect(isPendingGlyphTag('<x')).toBe(true);
+  });
+
+  it('rejects text that merely contains a bracket', () => {
+    for (const text of ['<b', '<q', '<x1', '<zz', 'a<b', '']) {
+      expect(isPendingGlyphTag(text)).toBe(false);
+    }
+  });
+
+  it('rejects a tag that is already closed or malformed', () => {
+    // `>` can't appear in a name, so nothing past the closer is still pending.
+    expect(isPendingGlyphTag('<air>')).toBe(false);
+    expect(isPendingGlyphTag('<a>b')).toBe(false);
   });
 });
 

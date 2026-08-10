@@ -5,7 +5,7 @@ import { parseLabelLine } from '../geometry/labelTokens';
 
 // Probe: updateLine's inline-bullet rewrite when the OLD service code is ''.
 describe('updateLine with an empty old service code', () => {
-  it("leaves another line's unfilled bullet alone (typing after a full backspace)", () => {
+  it("leaves another line's unfilled bullet alone (a rename off an empty code)", () => {
     // Sanity: `||B||` really is ONE unfilled circle bullet for line B, and a
     // bare `||` is literal text (CODE requires >= 1 char).
     expect(parseLabelLine('Union Sq ||B||')).toEqual([
@@ -19,8 +19,10 @@ describe('updateLine with an empty old service code', () => {
       textLabels: [makeTextLabel({ id: 't1', text: 'Depot []' })],
     });
 
-    // Exactly what the Service-code input does: Backspace clears it (one
-    // controlled onChange), then the next keystroke types the new code.
+    // A direct model call, the way the second test below is: the inspector no
+    // longer walks through an empty intermediate (it commits once, on blur), so
+    // this pins the backstop rather than a gesture — nothing stops another
+    // caller landing an empty code here.
     const cleared = T.updateLine(doc, 'L1', { service: '' });
     const next = T.updateLine(cleared, 'L1', { service: 'C' });
 
@@ -31,7 +33,7 @@ describe('updateLine with an empty old service code', () => {
     expect(next.stations.s1.name).toBe('Union Sq ||B||');
   });
 
-  it("does not mangle the line's OWN unfilled bullet across the same two keystrokes", () => {
+  it("does not mangle the line's OWN unfilled bullet across the same two writes", () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 's1', name: '||A|| North' })],
       lines: [makeLine({ id: 'L1', service: 'A' })],
