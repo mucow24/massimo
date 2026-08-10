@@ -9,8 +9,10 @@ import {
   pickFace,
   resolveTextStyle,
   symbolFontFor,
+  SYMBOL_FONT_URLS,
 } from './pdfGlyphs';
 import { FONT_TABLE } from './fonts';
+import { FONT_STACK } from '../util/fonts';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -68,7 +70,8 @@ describe('glyphPathData', () => {
 // Guards the glyph-shortcut choices (labelTokens.ts) against a font swap that
 // silently drops a symbol from the export. Söhne carries the arrows as well as
 // © and ™ — unlike Helvetica Neue, which needed the fallback for ↔ — but it has
-// no dingbats, so `<air>` (✈) and its neighbours still ride on DejaVu Sans.
+// no dingbats, so `<air>` (✈) rides on the fallback chain: Massimo Symbols
+// first, DejaVu Sans behind it.
 //
 // Both faces are read straight off /public/fonts. The Söhne .ttf files are
 // git-ignored (licensed, not redistributable), so CI injects them from the
@@ -86,6 +89,8 @@ describe('shipped fonts cover the glyph-shortcut codepoints', () => {
     const buf = readFileSync(`public/fonts/${file}`);
     return opentype.parse(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
   };
+  /** `fonts/Foo.ttf` (base-relative, as SYMBOL_FONT_URLS stores it) → `Foo.ttf`. */
+  const basename = (url: string): string => url.replace(/^.*\//, '');
   const dejavu = parseFont('DejaVuSans.ttf');
   const covers = (font: opentype.Font, cp: number) =>
     font.charToGlyphIndex(String.fromCodePoint(cp)) !== 0;
@@ -172,10 +177,67 @@ describe('shipped fonts cover the glyph-shortcut codepoints', () => {
     },
   );
 
-  it('DejaVu Sans covers the ✈ dingbat the text face lacks (outline fallback)', () => {
+  it('DejaVu Sans stays a full coverage net behind the symbols face', () => {
     expect(covers(dejavu, AIR)).toBe(true);
     expect(covers(dejavu, COPY)).toBe(true);
     expect(covers(dejavu, TM)).toBe(true);
+  });
+
+  // The chain is ORDERED and `symbolFontFor` takes the first cover, so the face
+  // that wins ✈ is a choice, not an accident: DejaVu's plane is a fussy
+  // side-view that dissolves at label sizes, and the symbols face exists to beat
+  // it. Reordering the list, or dropping the file, would silently hand the glyph
+  // back to DejaVu — visible only by looking at an export.
+  it('resolves ✈ to the symbols face, ahead of DejaVu', () => {
+    const winner = SYMBOL_FONT_URLS.find((url) => covers(parseFont(basename(url)), AIR));
+    expect(winner).toBeDefined();
+    expect(winner).not.toMatch(/DejaVu/);
+    // DejaVu stays in the chain behind it as the coverage net for everything
+    // else Söhne lacks — it is passed over for ✈, not removed.
+    expect(SYMBOL_FONT_URLS.some((url) => /DejaVu/.test(url))).toBe(true);
+  });
+
+  it('traces ✈ from the symbols face to non-empty outline path data', () => {
+    const winner = SYMBOL_FONT_URLS.find((url) => covers(parseFont(basename(url)), AIR))!;
+    const d = glyphPathData(parseFont(basename(winner)).getPath('✈', 0, 0, 1000));
+    expect(d.length).toBeGreaterThan(0);
+  });
+
+  // The symbols face was CUT to these numbers, and they are the whole reason it
+  // beats DejaVu's plane: a glyph that is the right shape but the wrong size or
+  // off the baseline looks worse than the one it replaced. "Traces to something
+  // non-empty" cannot tell a correct face from a regenerated or mis-scaled one,
+  // so pin the geometry itself. See public/fonts/MassimoSymbols-NOTICE.txt.
+  describe('the symbols face is cut to Söhne', () => {
+    const symbols = parseFont('MassimoSymbols.otf');
+    const air = symbols.charToGlyph('✈');
+
+    it('stands one cap height tall, sitting on the baseline', () => {
+      // y1 === 0: the plane rests ON the baseline rather than floating like
+      // DejaVu's (which sits 21.5 units above it at this em).
+      expect(symbols.unitsPerEm).toBe(1000);
+      expect(air.getBoundingBox()).toEqual({ x1: 58, y1: 0, x2: 776, y2: 718 });
+    });
+
+    it.skipIf(onSubstituteFaces)(
+      'is exactly as tall as the text face is (Söhne cap height)',
+      () => {
+        // The point of the whole exercise: ✈ reads as the same size as the caps
+        // beside it. A stand-in face cannot answer this — its 'H' is not Söhne's.
+        const box = air.getBoundingBox();
+        expect(box.y2 - box.y1).toBe(parseFont('soehne-buch.ttf').charToGlyph('H').yMax);
+      },
+    );
+
+    it('advances within a few units of the plane it replaces', () => {
+      // 834 against DejaVu's 837.9 at this em, so swapping the face in leaves
+      // label spacing where it was — no re-layout of anything already drawn.
+      const dv = dejavu.charToGlyph('✈');
+      expect(air.advanceWidth).toBe(834);
+      expect(dv.advanceWidth).toBeDefined(); // opentype types advanceWidth optional
+      const dejavuAt1000 = (dv.advanceWidth! * 1000) / dejavu.unitsPerEm;
+      expect(Math.abs(air.advanceWidth! - dejavuAt1000)).toBeLessThan(5);
+    });
   });
 
   it('traces © and ™ to non-empty outline path data (tracer fallback works)', () => {
@@ -183,6 +245,61 @@ describe('shipped fonts cover the glyph-shortcut codepoints', () => {
       const d = glyphPathData(dejavu.getPath(String.fromCodePoint(cp), 0, 0, 16));
       expect(d.length).toBeGreaterThan(0);
     }
+  });
+});
+
+// The fallback order is written out THREE times — FONT_STACK (canvas
+// measurement and the exported SVG's font-family), the @font-face blocks and DOM
+// stack in styles.css, and SYMBOL_FONT_URLS (the outline tracer). They are not
+// derived from each other and nothing but this guards them: reorder one and the
+// browser draws ✈ from one face while the tracer traces another, which shows up
+// only as an export that no longer matches the screen.
+//
+// The three are compared by FALLBACK ORDER, not as strings — styles.css also
+// carries 'Inter' for the app chrome, which the map's own stack has no use for.
+describe('the fallback chain agrees in all three places', () => {
+  const css = readFileSync('src/styles.css', 'utf8');
+  const SOEHNE = 'Soehne';
+  const SYMBOLS = 'Massimo Symbols';
+  const DEJAVU = 'DejaVu Sans';
+
+  /** Positions of the three faces in a string, in the order they appear. */
+  const orderIn = (haystack: string, needles: string[]): string[] =>
+    needles
+      .map((n) => ({ n, at: haystack.indexOf(n) }))
+      .filter((e) => e.at >= 0)
+      .sort((a, b) => a.at - b.at)
+      .map((e) => e.n);
+
+  it('FONT_STACK puts the symbols face between the text face and the net', () => {
+    expect(orderIn(FONT_STACK, [SOEHNE, SYMBOLS, DEJAVU])).toEqual([SOEHNE, SYMBOLS, DEJAVU]);
+  });
+
+  it('the @font-face blocks declare the symbols face before the net', () => {
+    expect(orderIn(css, [`font-family: '${SYMBOLS}'`, `font-family: '${DEJAVU}'`])).toEqual([
+      `font-family: '${SYMBOLS}'`,
+      `font-family: '${DEJAVU}'`,
+    ]);
+  });
+
+  it("styles.css's own stack falls back in the same order as FONT_STACK", () => {
+    // The DOM stack, i.e. the one non-canvas copy. Matched by the comma: a
+    // `@font-face` block also says `font-family: 'DejaVu Sans';`, and without
+    // requiring a LIST this reads that single family instead and can never fail.
+    const decl = /font-family:\s*([^;]*,[^;]*'DejaVu Sans'[^;]*);/.exec(css);
+    expect(decl, 'no DOM font stack found in styles.css').not.toBeNull();
+    expect(orderIn(decl![1], [SOEHNE, SYMBOLS, DEJAVU])).toEqual(
+      orderIn(FONT_STACK, [SOEHNE, SYMBOLS, DEJAVU]),
+    );
+  });
+
+  it('SYMBOL_FONT_URLS lists the same fallbacks, in the same order', () => {
+    // The stack names families; the tracer names files. Compare what they have
+    // in common: the fallbacks, in order, with the text face dropped (the tracer
+    // gets those from FONT_TABLE instead).
+    expect(SYMBOL_FONT_URLS.map((u) => (/DejaVu/.test(u) ? DEJAVU : SYMBOLS))).toEqual(
+      orderIn(FONT_STACK, [SYMBOLS, DEJAVU]),
+    );
   });
 });
 
@@ -581,7 +698,8 @@ describe('outlineAllText — glyph prototypes in <defs>, instances as <use>', ()
   it('keeps a symbol-font fallback separate from the same character in a main face', () => {
     // Same codepoint, but the bold face doesn't cover it so it traces from the
     // symbol font instead. Two different faces, therefore two prototypes — the
-    // dingbat case (✈ from DejaVu) sharing a codepoint with a covered glyph.
+    // dingbat case (✈ from the symbols face) sharing a codepoint with a
+    // covered glyph.
     const svg = seedTwoWeights();
     try {
       outlineAllText(svg, {

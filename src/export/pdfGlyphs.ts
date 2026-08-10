@@ -5,8 +5,8 @@
  * `outlineAllText` traces each glyph from the same face the browser drew it in,
  * at the browser's own measured pen position, so it lands 1:1 with no measuring,
  * centering, or scaling of our own. Glyphs the text face lacks (the dingbats —
- * ✈, ★, ⚠) trace from the shipped DejaVu Sans fallback, which is the same face
- * `FONT_STACK` puts behind Söhne on screen.
+ * ✈, ★, ⚠) trace from the shipped fallbacks, in the same order `FONT_STACK` puts
+ * them behind Söhne on screen: Massimo Symbols, then DejaVu Sans.
  *
  * Each distinct glyph is traced ONCE, into a `<defs>` prototype at a fixed em
  * size, and every occurrence becomes a `<use>` that translates it to its pen
@@ -31,9 +31,11 @@ const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
 // Base-relative paths (prefixed with BASE_URL via `fontUrl` at fetch time, so
 // they resolve under subpath builds like GitHub Pages /massimo/).
 // Outline sources for glyphs the text face lacks (the dingbats), tried in
-// order. Mirrors the on-screen font stack so the export traces the same glyph
-// the browser drew.
-const SYMBOL_FONT_URLS = ['fonts/DejaVuSans.ttf'];
+// order — `symbolFontFor` takes the FIRST cover. Mirrors the on-screen font
+// stack (`FONT_STACK`, util/fonts.ts, and the @font-face order in styles.css)
+// so the export traces the same glyph the browser drew: Massimo Symbols for ✈,
+// DejaVu Sans behind it for everything else Söhne lacks.
+export const SYMBOL_FONT_URLS = ['fonts/MassimoSymbols.otf', 'fonts/DejaVuSans.ttf'];
 
 const covers = (font: opentype.Font, cp: number): boolean =>
   font.charToGlyphIndex(String.fromCodePoint(cp)) !== 0;

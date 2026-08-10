@@ -1,0 +1,44 @@
+Massimo Symbols
+===============
+
+A single-glyph font containing the ✈ airplane (U+2708) used by the `<air>` label
+shortcut. It sits ahead of DejaVu Sans in the app's font stacks so that one glyph
+is drawn by this face; every other character Söhne lacks still falls through to
+DejaVu.
+
+Derivation
+----------
+
+This file is a derivative of Material Symbols, by Google LLC, licensed under the
+Apache License, Version 2.0.
+
+  Source icon:  `flight`, Sharp style, filled (FILL=1), 24px grid
+  Source file:  symbols/web/flight/materialsymbolssharp/flight_fill1_24px.svg
+  Upstream:     https://github.com/google/material-design-icons
+  Licence:      https://www.apache.org/licenses/LICENSE-2.0
+
+Changes made to the source (Apache-2.0 §4(b)):
+
+  1. Only the one `flight` outline is kept; every other icon is discarded.
+  2. The outline is flipped from SVG's y-down box (`0 -960 960 960`) into font
+     coordinates, y-up with the glyph sitting on the baseline.
+  3. It is scaled so the plane stands exactly one cap height tall — 718 units on
+     a 1000 unit em, matching the yMax of Söhne's 'H', so it reads as the same
+     size as the text beside it.
+  4. It is mapped to U+2708 (upstream Material Symbols addresses its icons by
+     private-use codepoints and ligature names, not by Unicode).
+  5. Side bearings of 58 units are added either side, giving an advance width of
+     834 — within a few units of DejaVu's own ✈, so label spacing is unchanged.
+  6. Font metrics are set to match Söhne: 1000 unit em, ascender 1171,
+     descender -423.
+
+The same attribution and notice of modification is recorded in the font's own
+name table (copyright, license, licenseURL, designer), so it travels with the
+file if it is ever separated from this NOTICE.
+
+Format
+------
+
+OpenType/CFF (sfnt tag `OTTO`), hence the .otf extension and the
+`format('opentype')` hint in styles.css. The export outline tracer parses it with
+opentype.js, which reads CFF and TrueType alike but not WOFF/WOFF2.

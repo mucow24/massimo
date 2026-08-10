@@ -4,6 +4,7 @@ import App from './App';
 import { installDevHandle } from './debug/devHandle';
 import { loadClipper } from './geometry/clip';
 import { initRegionPipeline } from './worker/regionPipeline';
+import { bootFailureMessage } from './util/staleBuild';
 import './styles.css';
 
 const mount = () => {
@@ -29,12 +30,13 @@ const mount = () => {
 // is synchronous, and there is no second implementation to draw with while it
 // loads (see clip.ts). If it cannot load there is no map to render, so say so
 // plainly rather than mounting an app whose every polygon operation throws.
+// Two unrelated failures arrive here as one rejection, and they want opposite
+// things said — see bootFailureMessage, which picks between them.
 void loadClipper().then(mount, (err: unknown) => {
   console.error(err);
   const root = document.getElementById('root');
   if (root) {
-    root.textContent =
-      'Could not load the polygon clipping engine, so the map cannot be drawn. Check the console, and that WebAssembly is enabled.';
+    root.textContent = bootFailureMessage(err);
     root.setAttribute('style', 'padding:2rem;font:14px system-ui;max-width:32rem');
   }
 });

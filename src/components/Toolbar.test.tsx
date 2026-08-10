@@ -1527,6 +1527,45 @@ describe('Toolbar — Export wiring', () => {
     await findToast(/Canvas not ready/);
     expect(exportCanvasSvg).not.toHaveBeenCalled();
   });
+
+  // A tab left open across a deploy still asks for the previous build's
+  // content-hashed chunk names, and every export lazy-loads one (the glyph
+  // outliner). The browser's raw failure names a chunk URL and suggests
+  // nothing; only a reload can fix it, so the toast has to say that.
+  it('reads a stale-build chunk failure as "reload", not as a fetch error', async () => {
+    vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
+    vi.mocked(exportCanvasPng).mockRejectedValueOnce(
+      new TypeError(
+        'Failed to fetch dynamically imported module: ' +
+          'https://mucow24.github.io/massimo/assets/pdfGlyphs-CI4rog1I.js',
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderToolbar();
+    await openExportSubmenu(user);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'PNG' }));
+
+    const toast = await findToast(/[Rr]eload/);
+    // The chunk URL is the part that made the old message useless.
+    expect(toast.textContent).not.toMatch(/pdfGlyphs|Failed to fetch/);
+  });
+
+  // The other half: a real export fault still speaks for itself, so the
+  // classifier can't pass by swallowing every failure into one message.
+  it('still reports a genuine export failure in its own words', async () => {
+    vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
+    vi.mocked(exportCanvasPng).mockRejectedValueOnce(
+      new Error('Nothing to export — the canvas is empty.'),
+    );
+
+    const user = userEvent.setup();
+    renderToolbar();
+    await openExportSubmenu(user);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'PNG' }));
+
+    await findToast(/Nothing to export/);
+  });
 });
 
 /**
