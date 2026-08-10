@@ -236,8 +236,10 @@ describe('<LabelView /> — formatting tags', () => {
   });
 
   it('renders a relative <w=+N>/<w=-N> as a step from the base weight', () => {
+    // +N counts RUNGS, and the ladder carries a SemiBold at 600, so +2 from
+    // Roman lands there rather than on Bold.
     const up = renderLabel(makeTextLabel({ id: 'g1', text: '<w=+2>up</w>', weight: 400 }));
-    expect(textByContent(up, 'up').getAttribute('font-weight')).toBe('700');
+    expect(textByContent(up, 'up').getAttribute('font-weight')).toBe('600');
     const down = renderLabel(makeTextLabel({ id: 'g2', text: '<w=-1>dn</w>', weight: 400 }));
     expect(textByContent(down, 'dn').getAttribute('font-weight')).toBe('300');
     // Relative to THIS label's base: +1 from Light lands on Roman.
@@ -246,8 +248,9 @@ describe('<LabelView /> — formatting tags', () => {
   });
 
   it('adds <b> on top of a <w=Name> run', () => {
+    // <b> is BOLD_WEIGHT_STEPS (3) rungs: Light -> SemiBold.
     const c = renderLabel(makeTextLabel({ id: 'g1', text: '<b><w=Light>x</w></b>', weight: 400 }));
-    expect(textByContent(c, 'x').getAttribute('font-weight')).toBe('500');
+    expect(textByContent(c, 'x').getAttribute('font-weight')).toBe('600');
   });
 
   it('renders <i> as an italic run', () => {

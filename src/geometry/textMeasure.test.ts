@@ -55,7 +55,7 @@ describe('measureTextLabel', () => {
   });
 
   it('treats different weights as distinct cache entries', () => {
-    const a = measureTextLabel(makeTextLabel({ id: 'g', text: 'X', weight: 100 }));
+    const a = measureTextLabel(makeTextLabel({ id: 'g', text: 'X', weight: 200 }));
     const b = measureTextLabel(makeTextLabel({ id: 'g', text: 'X', weight: 900 }));
     // Same id, same text, different weight → cache misses must not collide.
     // We can't assert exact widths (jsdom or browser canvas vary), but the

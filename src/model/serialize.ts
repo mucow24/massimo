@@ -16,6 +16,7 @@ import {
   stationIsSingleton,
   withTransferOverride,
 } from './transforms';
+import { BOLD_WEIGHT_STEPS, LABEL_WEIGHT_VALUES, RETIRED_ULTRALIGHT_WEIGHT } from '../util/fonts';
 import {
   TRANSFER_COLOR_DEFAULT,
   TRANSFER_DRAW_DEFAULT,
@@ -712,6 +713,8 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
   // typography, seeding + adopting the Default station style (runs after the
   // style invariants so styleDefaults.station resolves).
   merged = bakeLegacyLabelSettings(merged);
+  // Retired UltraLight rung (Söhne starts at 200) folded onto Thin.
+  merged = bakeLegacyUltraLightWeight(merged);
   // Version-gated (non-idempotent) rewrite: files saved before the pipe
   // bullet grammar carry `<X>` circle tokens and unescaped literal pipes.
   if ((typeof file.version === 'number' ? file.version : 1) < 2) {
@@ -2224,6 +2227,74 @@ export function backfillTransferDayNightColors(
  * `adoptDefaultStyles` is gated off). Guarded by the presence of any legacy
  * field, so it never touches a post-retirement save (idempotent).
  */
+/**
+ * Fold the retired UltraLight rung (weight 100) onto Thin (200).
+ *
+ * Söhne's ladder starts at 200, so 100 is no longer a shipped face. Without this
+ * a doc that stored it would fail `isLabelWeight` at every load boundary and
+ * fall back to the 400 default — an UltraLight label jumping to Roman rather
+ * than to its neighbour. Keyed off the legacy value rather than a version gate,
+ * so it catches imported files too, and idempotent: once nothing stores 100 it
+ * returns the doc by reference.
+ *
+ * Only stored weights need this. An inline `<w=UltraLight>` tag is handled by
+ * `parseWeightToken`, which still answers to the retired name.
+ */
+export function bakeLegacyUltraLightWeight<
+  T extends {
+    stations?: Record<string, Station>;
+    textLabels?: Record<string, TextLabel>;
+    styles?: Record<string, StyleDef>;
+  },
+>(doc: T): T {
+  const LEGACY = RETIRED_ULTRALIGHT_WEIGHT;
+  const THIN = LABEL_WEIGHT_VALUES[0];
+  let changed = false;
+
+  const fix = <V extends { weight?: unknown }>(o: V): V => {
+    if (o?.weight !== LEGACY) return o;
+    changed = true;
+    return { ...o, weight: THIN };
+  };
+  const fixMap = <V extends { weight?: unknown }>(
+    m: Record<string, V> | undefined,
+  ): Record<string, V> | undefined => {
+    if (!m) return m;
+    const out: Record<string, V> = {};
+    let hit = false;
+    for (const [k, v] of Object.entries(m)) {
+      const next = fix(v);
+      if (next !== v) hit = true;
+      out[k] = next;
+    }
+    return hit ? out : m;
+  };
+
+  const stations = fixMap(doc.stations);
+  const textLabels = fixMap(doc.textLabels);
+
+  // Style props carry a weight too (label + station kinds), so a style tagged
+  // UltraLight must move with the stations wearing it.
+  let styles = doc.styles;
+  if (styles) {
+    const out: Record<string, StyleDef> = {};
+    let hit = false;
+    for (const [id, def] of Object.entries(styles)) {
+      const props = def.props as { weight?: unknown };
+      if (props?.weight === LEGACY) {
+        hit = true;
+        out[id] = { ...def, props: { ...props, weight: THIN } } as StyleDef;
+      } else {
+        out[id] = def;
+      }
+    }
+    if (hit) styles = out;
+  }
+
+  if (!changed && styles === doc.styles) return doc;
+  return { ...doc, stations, textLabels, styles };
+}
+
 export function bakeLegacyLabelSettings<
   T extends {
     stations?: Record<string, Station>;
@@ -2278,7 +2349,7 @@ export function bakeLegacyLabelSettings<
     const italicFlag = rawSt.labelItalic === true;
     const eff = canonicalStationLabelStyle({
       fontSize: legacy.fontSize,
-      weight: bold ? bumpWeightByIndex(legacy.weight, 2) : legacy.weight,
+      weight: bold ? bumpWeightByIndex(legacy.weight, BOLD_WEIGHT_STEPS) : legacy.weight,
       italic: legacy.italic || italicFlag,
       leading: legacy.leading,
       tracking: legacy.tracking,

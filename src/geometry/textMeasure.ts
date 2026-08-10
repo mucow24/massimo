@@ -195,19 +195,20 @@ export const LINE_HEIGHT = 1.2;
 export const BASELINE_FRACTION = 0.8;
 
 /**
- * Cap height as a fraction of fontSize (Helvetica Neue: 714/1000 em) — the
- * height of the **Core Type Area**, baseline up to cap line, which is what the
- * transitmap.net tutorials align labels by and what autoAlign implements
- * (baseline sits above a line, cap line hangs below it, CTA center goes beside
- * it, the facing CTA corner pins on a 45°). Hardcoded — no font tables exist.
+ * Cap height as a fraction of fontSize (Söhne: `sCapHeight` 718/1000 em, which
+ * its own `H` matches exactly) — the height of the **Core Type Area**, baseline
+ * up to cap line, which is what the transitmap.net tutorials align labels by and
+ * what autoAlign implements (baseline sits above a line, cap line hangs below
+ * it, CTA center goes beside it, the facing CTA corner pins on a 45°).
+ * Hardcoded — nothing reads font tables at runtime.
  */
-export const CAP_FRACTION = 0.714;
+export const CAP_FRACTION = 0.718;
 
 /**
  * How far the deepest ink drops below the baseline, as a fraction of fontSize —
- * the other side of the em box from BASELINE_FRACTION, and consistent with the
- * shipped Helvetica Neue's own recorded descents (198/1000 hhea, 214/1000
- * usWin).
+ * the other side of the em box from BASELINE_FRACTION, and a shade deeper than
+ * the shipped Söhne actually descends (its `p` bottoms out at 180/1000), so the
+ * clearance it buys is never short.
  *
  * The Core Type Area ends AT the baseline, so nothing else in the label model
  * accounts for a descender. `autoAlign` charges HALF of this — scaled by the
@@ -225,14 +226,16 @@ export const DESCENDER_FRACTION = 1 - BASELINE_FRACTION;
  * default (alphabetic) baseline. For badge-style text — a service code in a
  * stop dot or route bullet, "WP" in a lozenge, a one-letter handle.
  *
- * Do NOT center that text with `dominantBaseline="central"` instead. `central`
- * centers the font's ascent..descent box, and Chrome sources those metrics from
- * a different table per platform: usWinAscent/Descent on Windows, hhea (via
- * CoreText) on macOS. The shipped Helvetica Neue doesn't set USE_TYPO_METRICS
- * and its two sets disagree badly — 904/-214 vs 714/-198 — so `central` lands
- * 0.345em above the baseline on Windows but 0.258em on macOS, i.e. identical
- * markup renders ~0.09em lower on a Mac. The alphabetic baseline is
- * platform-invariant, and is also what `export/pdfText` normalizes to.
+ * Do NOT center that text with `dominantBaseline="central"` instead. It is wrong
+ * twice over. It centers the font's ascent..descent box rather than the cap box,
+ * which is a different point even for a well-behaved face — Söhne's 1171/-423
+ * puts `central` 0.374em up where the cap box wants 0.359em. And Chrome sources
+ * those metrics from a different table per platform (usWinAscent/Descent on
+ * Windows, hhea via CoreText on macOS), so for any face whose two sets disagree
+ * the error also varies by platform: Helvetica Neue's 904/-214 against 714/-198
+ * put identical markup ~0.09em lower on a Mac. Söhne's two sets happen to agree,
+ * but the alphabetic baseline is platform-invariant for every face — and is what
+ * `export/pdfText` normalizes to.
  *
  * Only valid for text with no descenders and no non-Latin glyphs — it centers
  * the CAP BOX, not the ink. A dingbat from the DejaVu fallback (say the ⚠ on a

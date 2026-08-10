@@ -36,8 +36,8 @@ const FS = 12;
 // Distance from a line's central-baseline center DOWN to the baseline
 // (= fontSize * (BASELINE_FRACTION 0.8 − 0.5)).
 const CB = 0.3 * FS; // 3.6
-// Cap height (Helvetica Neue: 714/1000 em).
-const CAP = 0.714 * FS; // 8.568
+// Cap height (Söhne: sCapHeight 718/1000 em).
+const CAP = 0.718 * FS; // 8.616
 // Anchor fold-ins per vertical mode (see plan): the anchor is the first
 // line's central-baseline center; these place baseline / cap line / Core
 // Type Area center at the pinned target.

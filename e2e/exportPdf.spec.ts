@@ -1,16 +1,16 @@
 /**
  * PDF export regression. Seeds a map that exercises what the PDF pipeline has to
- * get right — selectable text in embedded Helvetica Neue, a hatched line segment
- * (baked to stripe geometry), an embedded SVG image, a logo whose casing is a
- * hard feDropShadow (baked to an offset silhouette), and a graphic with an alpha
- * `<mask>` (rasterized to a PNG, since svg2pdf has no mask support) — then drives
- * Canvas → Export → PDF and asserts on the downloaded bytes.
+ * get right — text outlined to vector paths (no font embedded), a hatched line
+ * segment (baked to stripe geometry), an embedded SVG image, a logo whose casing
+ * is a hard feDropShadow (baked to an offset silhouette), and a graphic with an
+ * alpha `<mask>` (rasterized to a PNG, since svg2pdf has no mask support) — then
+ * drives Canvas → Export → PDF and asserts on the downloaded bytes.
  *
- * The decisive guard is `/FontFile2` + `/Type0`: the original failure mode was
- * jsPDF silently falling back to the standard (non-embedded) Helvetica because
- * it can't embed the PostScript-outline fonts. With the fonts shipped as TTF
- * those markers are present; if a regression reintroduced the OTF path they'd
- * vanish.
+ * The decisive font guard is now the INVERSE of what it once was: text is
+ * outlined before svg2pdf sees it, so the PDF must carry NO embedded font —
+ * no `/FontFile2`, no `/Type0` — and instead be dominated by vector path
+ * operators. The licence permits the font in output only when the end user
+ * can't edit it, and outlines satisfy that.
  */
 import { test, expect, type Page, type Download } from '@playwright/test';
 import { readFileSync } from 'node:fs';
@@ -124,7 +124,7 @@ test.beforeEach(async ({ page }) => {
   await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
 });
 
-test('exports a vector PDF with embedded fonts from a hatch + text + image map', async ({
+test('exports a vector PDF with outlined text from a hatch + text + image map', async ({
   page,
 }) => {
   await seed(page);
@@ -145,13 +145,17 @@ test('exports a vector PDF with embedded fonts from a hatch + text + image map',
 
   // Valid, non-trivial PDF.
   expect(bytes.subarray(0, 5).toString('latin1')).toBe('%PDF-');
-  expect(bytes.length).toBeGreaterThan(20_000); // embedded font payload dominates
+  expect(bytes.length).toBeGreaterThan(5_000); // outlined glyph paths + a rasterized image
 
-  // Decisive font-embedding guard: real Helvetica Neue is embedded as a
-  // TrueType CID font, NOT the standard non-embedded Helvetica fallback.
-  expect(raw).toContain('/FontFile2'); // an embedded TrueType outline
-  expect(raw).toContain('/Type0'); // composite (CID) font — how jsPDF embeds TTF
-  expect(raw).toContain('Helvetica Neue'); // registered family, not bare /Helvetica
+  // Decisive font guard, INVERTED: text is outlined to vector paths before
+  // svg2pdf sees it, so the PDF embeds no font at all. A regression that went
+  // back to embedding a font (or fell back to a built-in one) would bring these
+  // markers back.
+  expect(raw).not.toContain('/FontFile2'); // no embedded TrueType outline
+  expect(raw).not.toContain('/Type0'); // no composite (CID) font — svg2pdf drew no text
+  // (jsPDF always lists its built-in standard-14 /BaseFont /Helvetica in the
+  // resources whether or not anything uses it, so its presence proves nothing —
+  // the /FontFile2 + /Type0 absence above is what proves no font was embedded.)
 
   // Mask guard: the masked graphic (img3) can't survive svg2pdf's mask-less
   // re-vectorizing, so the pipeline rasterizes it — landing in the PDF as an

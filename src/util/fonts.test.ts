@@ -9,13 +9,14 @@ import {
 } from './fonts';
 
 describe('bolderWeight', () => {
-  it('steps two weights up the shipped ladder (which has no 600)', () => {
-    expect(bolderWeight(100)).toBe(300);
-    expect(bolderWeight(200)).toBe(400);
-    expect(bolderWeight(300)).toBe(500);
+  it('steps bold-ward up the shipped ladder (Roman -> Bold)', () => {
+    // Three rungs, not two: the ladder carries a SemiBold at 600, and <b> has
+    // always meant Roman -> Bold. See BOLD_WEIGHT_STEPS.
+    expect(bolderWeight(200)).toBe(500);
+    expect(bolderWeight(300)).toBe(600);
     expect(bolderWeight(400)).toBe(700);
     expect(bolderWeight(500)).toBe(800);
-    expect(bolderWeight(700)).toBe(900);
+    expect(bolderWeight(600)).toBe(900);
   });
 
   it('clamps at the heaviest shipped weight', () => {
@@ -30,21 +31,21 @@ describe('stepWeight', () => {
     expect(stepWeight(300, 0)).toBe(300);
   });
 
-  it('steps up and down the shipped ladder (skipping the absent 600)', () => {
-    expect(stepWeight(400, 2)).toBe(700);
+  it('steps up and down the shipped ladder', () => {
+    expect(stepWeight(400, 2)).toBe(600);
     expect(stepWeight(400, -1)).toBe(300);
-    expect(stepWeight(500, 1)).toBe(700);
-    expect(stepWeight(700, -1)).toBe(500);
+    expect(stepWeight(500, 1)).toBe(600);
+    expect(stepWeight(700, -1)).toBe(600);
   });
 
   it('clamps at both ends of the ladder', () => {
     expect(stepWeight(900, 3)).toBe(900);
-    expect(stepWeight(100, -3)).toBe(100);
+    expect(stepWeight(200, -3)).toBe(200);
   });
 
   it('normalizes an off-ladder weight before stepping', () => {
     // 600 has no face → nearest shipped is 500, then +1 → 700.
-    expect(stepWeight(600, 1)).toBe(700);
+    expect(stepWeight(650, 1)).toBe(700);
   });
 });
 
@@ -92,6 +93,20 @@ describe('parseSizeToken', () => {
   });
 });
 
+describe('parseWeightToken — retired UltraLight', () => {
+  it('still answers to <w=UltraLight>, resolving to Thin', () => {
+    // The rung retired with the move to Söhne. Dropping the name outright would
+    // make every label written against it render the tag as literal text.
+    expect(parseWeightToken('UltraLight')).toEqual({ abs: 200 });
+    expect(parseWeightToken('ultralight')).toEqual({ abs: 200 });
+  });
+
+  it('still rejects names that were never rungs', () => {
+    expect(parseWeightToken('Ultralightish')).toBeNull();
+    expect(parseWeightToken('Fett')).toBeNull(); // the UI speaks English
+  });
+});
+
 describe('normalizeWeight', () => {
   it('maps keywords', () => {
     expect(normalizeWeight('normal')).toBe(400);
@@ -107,10 +122,10 @@ describe('normalizeWeight', () => {
   });
 
   it('rounds off-table weights to the nearest available weight', () => {
-    expect(normalizeWeight('650')).toBe(700); // 600 not in table
-    expect(normalizeWeight('600')).toBe(500); // tie -> lower (500 vs 700 both 100 away)
+    expect(normalizeWeight('650')).toBe(600); // tie -> lower (600 vs 700 both 50 away)
+    expect(normalizeWeight('600')).toBe(600); // on the ladder since Söhne
     expect(normalizeWeight('1000')).toBe(900);
-    expect(normalizeWeight('50')).toBe(100);
+    expect(normalizeWeight('50')).toBe(200); // below the ladder -> Thin
   });
 });
 

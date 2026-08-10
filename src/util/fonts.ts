@@ -13,12 +13,19 @@
 import type { TextLabelWeight } from '../model/types';
 import { clamp } from './grid';
 
-export const FONT_FAMILY = 'Helvetica Neue';
+// The map's typeface. Söhne, licensed per-application from Klim — which is what
+// lets its glyphs ride along in the SVG/PDF/PNG files the app produces. The
+// on-screen font and the export outline tracer must read the SAME files or
+// measured pen positions won't line up with the traced glyphs, so styles.css's
+// `@font-face` blocks and `FONT_TABLE` (export/fonts.ts) point at these too.
+// Spelled ASCII: the family name reaches CSS, the export tracer, and served
+// URLs, and none of those gain anything from the umlaut.
+export const FONT_FAMILY = 'Soehne';
 
-// Font stack for all on-screen + exported map text. Helvetica Neue first (the
-// map's type); DejaVu Sans then catches the symbol/dingbat/arrow glyphs HN lacks
-// (✈, ↔, ★, ■, …) so they render identically on screen and in the PDF.
-export const FONT_STACK = "'Helvetica Neue', 'DejaVu Sans', Helvetica, Arial, sans-serif";
+// Font stack for all on-screen + exported map text. The map's type first; DejaVu
+// Sans then catches the symbol/dingbat/arrow glyphs it lacks (✈, ↔, ★, ■, …) so
+// they render identically on screen and in exports.
+export const FONT_STACK = "'Soehne', 'DejaVu Sans', Helvetica, Arial, sans-serif";
 
 /**
  * Minimum rendered font size, in world units. The label Size field floors here
@@ -29,22 +36,33 @@ export const FONT_STACK = "'Helvetica Neue', 'DejaVu Sans', Helvetica, Arial, sa
  */
 export const MIN_FONT_SIZE = 1;
 
-// Display name ↔ shipped Helvetica Neue weight, ascending. THE weight ladder:
-// the dropdowns, the `<w=Name>` inline label tag, the ±step math below, and the
-// membership check every load path uses (`transforms.isLabelWeight`) all read
-// this one list. The names ARE the shipped faces in /public/fonts, so a rung
-// exists here exactly when there is a .ttf to render it — no 600 entry, because
-// there is no SemiBold face. Re-exported as `transforms.LABEL_WEIGHT_NAMES`.
+// Display name ↔ shipped weight, ascending. THE weight ladder: the dropdowns,
+// the `<w=Name>` inline label tag, the ±step math below, and the membership
+// check every load path uses (`transforms.isLabelWeight`) all read this one
+// list. The rungs ARE the shipped faces in /public/fonts, so a rung exists here
+// exactly when there is a .ttf to render it. Re-exported as
+// `transforms.LABEL_WEIGHT_NAMES`.
+//
+// The names stay English while the files are German: Söhne runs Extraleicht →
+// Extrafett over 200–900, which lines up rung-for-rung with the ladder below
+// (Thin=Extraleicht, Roman=Buch, Medium=Kräftig, SemiBold=Halbfett,
+// Bold=Dreiviertelfett, Heavy=Fett, Black=Extrafett). Söhne has no 100, so
+// UltraLight is retired — `bakeLegacyUltraLightWeight` (serialize.ts) folds a
+// stored 100 onto Thin, and `parseWeightToken` still answers to the old name.
 export const LABEL_WEIGHT_NAMES: readonly { value: TextLabelWeight; name: string }[] = [
-  { value: 100, name: 'UltraLight' },
   { value: 200, name: 'Thin' },
   { value: 300, name: 'Light' },
   { value: 400, name: 'Roman' },
   { value: 500, name: 'Medium' },
+  { value: 600, name: 'SemiBold' },
   { value: 700, name: 'Bold' },
   { value: 800, name: 'Heavy' },
   { value: 900, name: 'Black' },
 ] as const;
+
+/** Retired rung: Söhne's ladder starts at 200, so a stored/tagged UltraLight
+ * resolves to the adjacent Thin rather than snapping to the 400 default. */
+export const RETIRED_ULTRALIGHT_WEIGHT = 100;
 
 // The ladder's values alone — derived, never re-typed, so the rungs the weight
 // math walks are by construction the rungs the dropdowns offer.
@@ -59,10 +77,11 @@ const WEIGHT_NAME_TO_VALUE = new Map(
 /**
  * Shift a weight `steps` positions along the SHIPPED weight ladder, clamped at
  * both ends. Stepping the ladder (rather than adding ±100) is what keeps every
- * consumer — screen CSS, canvas measurement, PDF face embedding — on one real
- * face: the set has no 600, so a numeric ±200 from Regular would land between
- * Medium and Bold and each consumer would snap it differently. Off-ladder input
- * is first normalized to the nearest shipped weight.
+ * consumer — screen CSS, canvas measurement, the export outline tracer — on one
+ * real face: the ladder is not a uniform 100 apart (it starts at 200), so
+ * arithmetic on the number would land between rungs and each consumer would
+ * snap it differently. Off-ladder input is first normalized to the nearest
+ * shipped weight.
  */
 export function stepWeight(weight: number, steps: number): number {
   // Widened to `number`: the input is a raw CSS/SVG weight, off-ladder until
@@ -74,11 +93,19 @@ export function stepWeight(weight: number, steps: number): number {
 }
 
 /**
- * The `<b>` formatting tag's weight: two steps up the shipped ladder (400 → 700,
- * 300 → 500, 500 → 800), clamped at Black.
+ * Rungs between a weight and its bold counterpart: Roman → Bold, Medium →
+ * Heavy, Light → SemiBold.
+ *
+ * THREE, not two, because the ladder carries a SemiBold rung at 600. Every
+ * bold-ward jump reads this one constant — `<b>`, the station-label hover bump,
+ * and the legacy `labelBold` migration — so inserting or retiring a rung can't
+ * quietly demote bold text to the neighbour below it.
  */
+export const BOLD_WEIGHT_STEPS = 3;
+
+/** The `<b>` formatting tag's weight, clamped at Black. */
 export function bolderWeight(weight: number): number {
-  return stepWeight(weight, 2);
+  return stepWeight(weight, BOLD_WEIGHT_STEPS);
 }
 
 /**
@@ -87,10 +114,16 @@ export function bolderWeight(weight: number): number {
  * ladder step (`+N` / `-N`, sign required). Anything else — an unknown name, a
  * bare/unsigned number like `700` or `2`, empty — returns null so the parser
  * keeps the tag as literal text, matching an invalid `<color=…>`.
+ *
+ * `<w=UltraLight>` is still answered, resolving to Thin: the rung retired with
+ * the move to Söhne, and labels written against it would otherwise start
+ * rendering the tag as literal text.
  */
 export function parseWeightToken(value: string): { abs: number } | { rel: number } | null {
   if (/^[+-]\d+$/.test(value)) return { rel: Number(value) };
-  const abs = WEIGHT_NAME_TO_VALUE.get(value.toLowerCase());
+  const key = value.toLowerCase();
+  if (key === 'ultralight') return { abs: LABEL_WEIGHT_VALUES[0] };
+  const abs = WEIGHT_NAME_TO_VALUE.get(key);
   return abs !== undefined ? { abs } : null;
 }
 

@@ -17,7 +17,20 @@ test-results/
 playwright-report/
 .playwright/
 
-# Source archive for fonts (extracted into public/fonts/)
+# Licensed Söhne. The app licence covers shipping the typeface in the app and in
+# what the app exports; it does not cover redistributing the font files, so they
+# never enter this public repo. They sit on disk locally, and the Pages build
+# pulls them from the private mucow24/massimo-fonts repo (see
+# .github/workflows/deploy-pages.yml). DejaVuSans.ttf is committed on purpose —
+# its licence does permit redistribution.
+public/fonts/soehne-*.ttf
+
+# Where the deploy workflow checks that private repo out.
+.fonts/
+
+# Unlicensed Helvetica Neue, gone from the tree. Left ignored until its history
+# purge lands, so a stray copy on disk can never be committed back by accident.
+public/fonts/HelveticaNeue*.ttf
 helvetica-neue-*.zip
 
 # Drag-perf harnesses live in .perf/ and ARE tracked (see .perf/README.md) —

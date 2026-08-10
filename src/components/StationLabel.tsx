@@ -9,6 +9,7 @@ import { stationFrameDeg } from '../geometry/orientation';
 import { stationCircle } from '../geometry/lineCircle';
 import { useStopMetrics } from './useStopMetrics';
 import { bumpWeightByIndex, effectiveStationStyleProps } from '../model/transforms';
+import { BOLD_WEIGHT_STEPS } from '../util/fonts';
 import { legibleTextOn } from '../util/color';
 import { waypointLabelRectLocal } from '../geometry/waypointLozenge';
 import { renderStationLabelText, type RenderLabelTextArgs } from './stationLabelText';
@@ -139,9 +140,11 @@ function useStationLabelLayout(station: Station, lines: Record<string, Line>) {
   const effStyle = effectiveStationStyleProps(station);
   const stationWeight = effStyle.weight;
   const stationItalic = effStyle.italic;
-  // Rendered weight: the station's weight, +2 indices when hovered (saturating
-  // at Black 900).
-  const renderedWeight = hovered ? bumpWeightByIndex(stationWeight, 2) : stationWeight;
+  // Rendered weight: the station's weight, bumped bold-ward when hovered
+  // (saturating at Black 900).
+  const renderedWeight = hovered
+    ? bumpWeightByIndex(stationWeight, BOLD_WEIGHT_STEPS)
+    : stationWeight;
   // Service-code lookup for inline bullets. Only walked when a label's text
   // contains a <CODE> token; building once per render keeps it cheap.
   const lineByService = useMemo(() => {

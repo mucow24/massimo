@@ -503,7 +503,7 @@ describe('<StationView /> — inline formatting tags in station names', () => {
 
   it('renders a relative <w=+N>/<w=-N> as a step from the base weight', () => {
     const up = renderName('<w=+2>up</w>');
-    expect(runByContent(up, 'up')?.getAttribute('font-weight')).toBe('700'); // 400 → 700
+    expect(runByContent(up, 'up')?.getAttribute('font-weight')).toBe('600'); // 400 -> 600 (SemiBold rung)
     const down = renderName('<w=-1>dn</w>');
     expect(runByContent(down, 'dn')?.getAttribute('font-weight')).toBe('300'); // 400 → 300
   });

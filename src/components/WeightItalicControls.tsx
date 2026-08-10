@@ -4,9 +4,10 @@ import * as Toggle from '@radix-ui/react-toggle';
 import { FieldSelectContent } from './FieldSelectContent';
 import { LABEL_WEIGHT_NAMES, isLabelWeight } from '../model/transforms';
 import type { TextLabelWeight } from '../model/types';
+import { FONT_STACK } from '../util/fonts';
 
 /**
- * The Helvetica-Neue weight dropdown shared by every label/station style
+ * The Söhne weight dropdown shared by every label/station style
  * surface — the text-label + station popovers and their Styles-panel editors.
  * A Radix Select so the list renders in-app: each option previews its own
  * weight and the current italic (native `<option>` styling is OS-dependent),
@@ -33,7 +34,7 @@ export function WeightSelect({
   onChange: (w: TextLabelWeight) => void;
 }) {
   const face = (weight: number) => ({
-    fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+    fontFamily: FONT_STACK,
     fontWeight: weight,
     fontStyle: italic ? ('italic' as const) : ('normal' as const),
   });

@@ -47,7 +47,7 @@ function readDownload(d: Download): Promise<Buffer> {
 }
 
 test.describe('Canvas export', () => {
-  test('SVG export is clean, content-framed, and embeds fonts', async ({ page }) => {
+  test('SVG export is clean, content-framed, and outlines text to paths', async ({ page }) => {
     await seedAndOpen(page, fourInLineWithBulletsAndLabel);
 
     const screenViewBox = await page
@@ -60,17 +60,14 @@ test.describe('Canvas export', () => {
 
     const svg = (await readDownload(download)).toString('utf-8');
 
-    // Content is present.
-    expect(svg).toContain('Midtown');
-    // Fonts embedded as data URIs.
-    expect(svg).toContain('@font-face');
-    expect(svg).toContain('base64,');
-    // …and actually referenced: the map's <text> inherits its family from page
-    // CSS, which is absent in a standalone SVG. The root <svg> must carry an
-    // explicit Helvetica Neue font-family (NOT just the @font-face descriptor)
-    // or the text falls back to serif. Match the opening <svg …> tag only.
-    const svgOpenTag = /<svg\b[^>]*>/.exec(svg)?.[0] ?? '';
-    expect(svgOpenTag).toMatch(/font-family="[^"]*Helvetica Neue/i);
+    // Text is outlined, not embedded: no font data, no live <text>, only paths.
+    // The label "Midtown" survives as glyph outlines, so its letters are gone as
+    // text — the licence permits the font in output only when it can't be edited.
+    expect(svg).not.toContain('@font-face');
+    expect(svg).not.toContain('base64,');
+    expect(svg).not.toContain('<text');
+    expect(svg).not.toContain('Midtown');
+    expect(svg).toContain('<path');
     // Decisive "clean" oracle: every editing-only layer is tagged
     // data-export-exclude and stripped, so none survive serialization.
     expect(svg).not.toContain('data-export-exclude');
@@ -88,7 +85,9 @@ test.describe('Canvas export', () => {
     await page.mouse.click(a.x, a.y);
 
     const svg = (await readDownload(await exportVia(page, 'SVG'))).toString('utf-8');
-    expect(svg).toContain('Midtown');
+    // Content survives (outlined to paths, no live text), selection chrome doesn't.
+    expect(svg).toContain('<path');
+    expect(svg).not.toContain('<text');
     expect(svg).not.toContain('data-export-exclude');
   });
 

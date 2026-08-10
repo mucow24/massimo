@@ -47,10 +47,10 @@ beforeEach(() => {
 const FS = 12; // DEFAULT_DOC label size
 const HALF = STOP_SIZE / 2; // marker half-extent, 7
 const GAP = 3; // LABEL_GAP
-// Helvetica Neue's own numbers, stated here so the implementation cannot move
+// Söhne's own numbers, stated here so the implementation cannot move
 // them silently (mirrors labelLayout.autoAlign.test.ts).
 // The Core Type Area: baseline up to cap height. The whole vertical model.
-const CTA = 0.714 * FS;
+const CTA = 0.718 * FS;
 // How far the deepest ink drops below the baseline (1 − BASELINE_FRACTION). The
 // CTA stops AT the baseline, so this is the part of the label the tutorials'
 // alignment rules don't describe — and the part that would otherwise reach into

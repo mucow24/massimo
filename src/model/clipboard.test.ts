@@ -218,8 +218,10 @@ describe('readClipboard drops malformed items, keeps valid ones', () => {
     expect(readClipboard(envelope([bad, labelItem]))).toEqual([labelItem]);
   });
 
-  it('drops a text-label with an out-of-set weight (no 600)', () => {
-    const bad = { kind: 'text-label', data: { ...labelItem.data, weight: 600 } };
+  it('drops a text-label with an out-of-set weight', () => {
+    // 450 is between rungs. (600 IS on the ladder now — SemiBold — and 100 is
+    // the retired UltraLight, which only the doc-load bake folds onto Thin.)
+    const bad = { kind: 'text-label', data: { ...labelItem.data, weight: 450 } };
     expect(readClipboard(envelope([bad, bulletItem]))).toEqual([bulletItem]);
   });
 

@@ -13,7 +13,7 @@ import {
  * unstyled segments so bullet-only consumers keep their historical shapes.
  */
 export interface SegmentStyle {
-  /** Render two steps up the shipped weight ladder (see fonts.bolderWeight). */
+  /** Render bold-ward on the shipped weight ladder (see fonts.bolderWeight). */
   bold: boolean;
   italic: boolean;
   underline: boolean;

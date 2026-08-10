@@ -1,19 +1,15 @@
 /**
- * Font embedding for canvas export. When a browser rasterizes an SVG loaded as
- * an `<img>` (the PNG path), it renders in an isolated context with no access
- * to the page's `@font-face` rules — so the map's Helvetica Neue text would
- * silently fall back to a system font. To keep exports faithful we re-emit the
- * needed faces as `@font-face` rules with the font files inlined as base64
- * data-URIs, embedded in a `<style>` inside the exported SVG.
+ * The map's font faces and their URLs, feeding the export outline tracer.
  *
- * Only the weight/style combinations actually present in the map are fetched
- * and embedded, so the payload stays small.
- *
- * Every shipped face is a TrueType `.ttf` (jsPDF, used by PDF export, can only
- * embed TrueType outlines — not PostScript/CFF OpenType). `FONT_TABLE` mirrors
- * the Helvetica Neue `@font-face` blocks in styles.css 1:1 — keep the two in
- * sync if the shipped font set changes. (styles.css also declares a DejaVu
- * Sans fallback face, deliberately absent here: pdfGlyphs handles it.)
+ * `collectUsedFontFaces` walks the export SVG and returns the distinct
+ * weight/style faces in use; `loadOutlineFonts` (pdfGlyphs) then fetches and
+ * parses each with opentype.js to trace glyphs to vector paths. Because the
+ * tracer parses the file, every face must be a format opentype.js reads — a
+ * TrueType/OpenType `.ttf`/`.otf`, never `.woff2` (Brotli + table transforms it
+ * can't decode). `FONT_TABLE` mirrors the `@font-face` blocks in styles.css 1:1
+ * — keep the two in sync if the shipped font set changes. (styles.css also
+ * declares a DejaVu Sans fallback face, deliberately absent here: pdfGlyphs
+ * loads it as the symbol source.)
  *
  * File paths are stored base-relative (no leading slash) and prefixed with
  * Vite's `BASE_URL` when fetched (see `fontUrl`). A hardcoded `/fonts/…` 404s
@@ -22,7 +18,7 @@
  * string is left untouched, so each runtime font fetch must apply the base.
  */
 
-import { FONT_FAMILY, normalizeWeight } from '../util/fonts';
+import { normalizeWeight } from '../util/fonts';
 
 export interface FontFaceSpec {
   weight: number;
@@ -40,24 +36,27 @@ const ttf = (weight: number, italic: boolean, name: string): FontFaceSpec => ({
   format: 'truetype',
 });
 
+// Söhne's German face names against the app's English rungs. The files are
+// ASCII-folded from Klim's originals (`Söhne-Kräftig.ttf` → `soehne-kraftig.ttf`)
+// so the served URLs need no percent-encoding and CI's Linux filesystem can't
+// disagree with Windows over unicode normalisation.
 export const FONT_TABLE: FontFaceSpec[] = [
-  ttf(100, false, 'HelveticaNeueUltraLight'),
-  ttf(200, false, 'HelveticaNeueThin'),
-  ttf(300, false, 'HelveticaNeueLight'),
-  ttf(400, false, 'HelveticaNeueRoman'),
-  ttf(500, false, 'HelveticaNeueMedium'),
-  ttf(700, false, 'HelveticaNeueBold'),
-  ttf(800, false, 'HelveticaNeueHeavy'),
-  ttf(900, false, 'HelveticaNeueBlack'),
-  ttf(100, true, 'HelveticaNeueUltraLightItalic'),
-  ttf(200, true, 'HelveticaNeueThinItalic'),
-  ttf(300, true, 'HelveticaNeueLightItalic'),
-  // Weight-400 italic ships under the bare "Italic" filename, not "RomanItalic".
-  ttf(400, true, 'HelveticaNeueItalic'),
-  ttf(500, true, 'HelveticaNeueMediumItalic'),
-  ttf(700, true, 'HelveticaNeueBoldItalic'),
-  ttf(800, true, 'HelveticaNeueHeavyItalic'),
-  ttf(900, true, 'HelveticaNeueBlackItalic'),
+  ttf(200, false, 'soehne-extraleicht'), // Thin
+  ttf(300, false, 'soehne-leicht'), // Light
+  ttf(400, false, 'soehne-buch'), // Roman
+  ttf(500, false, 'soehne-kraftig'), // Medium
+  ttf(600, false, 'soehne-halbfett'), // SemiBold
+  ttf(700, false, 'soehne-dreiviertelfett'), // Bold
+  ttf(800, false, 'soehne-fett'), // Heavy
+  ttf(900, false, 'soehne-extrafett'), // Black
+  ttf(200, true, 'soehne-extraleicht-kursiv'),
+  ttf(300, true, 'soehne-leicht-kursiv'),
+  ttf(400, true, 'soehne-buch-kursiv'),
+  ttf(500, true, 'soehne-kraftig-kursiv'),
+  ttf(600, true, 'soehne-halbfett-kursiv'),
+  ttf(700, true, 'soehne-dreiviertelfett-kursiv'),
+  ttf(800, true, 'soehne-fett-kursiv'),
+  ttf(900, true, 'soehne-extrafett-kursiv'),
 ];
 
 /**
@@ -106,54 +105,4 @@ export function collectUsedFontFaces(root: Element): FontFaceSpec[] {
     if (spec) out.push(spec);
   }
   return out;
-}
-
-export function bytesToBase64(bytes: Uint8Array): string {
-  // btoa needs a binary string; chunk to avoid blowing the call-stack arg cap
-  // on multi-hundred-KB font files.
-  let binary = '';
-  const CHUNK = 0x8000;
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-  }
-  return btoa(binary);
-}
-
-/**
- * Build a CSS string of `@font-face` rules with each face's font file inlined
- * as a base64 data-URI. Fetches run in parallel; a face whose file fails to
- * load is skipped so export still succeeds (with partial font fidelity) rather
- * than throwing.
- *
- * `base` (Vite's `BASE_URL`, e.g. `/` in dev, `./` or `/massimo/` in prod) is
- * prefixed to each face's base-relative path so the fetch resolves under the
- * subpath the app is served from.
- */
-export async function buildEmbeddedFontCss(
-  faces: FontFaceSpec[],
-  fetchFn: typeof fetch = fetch,
-  base: string = import.meta.env.BASE_URL,
-): Promise<string> {
-  const rules = await Promise.all(
-    faces.map(async (face) => {
-      try {
-        const res = await fetchFn(fontUrl(face.file, base));
-        if (!res.ok) return '';
-        const buf = new Uint8Array(await res.arrayBuffer());
-        const b64 = bytesToBase64(buf);
-        const mime = face.format === 'truetype' ? 'font/ttf' : 'font/otf';
-        return [
-          '@font-face {',
-          `  font-family: '${FONT_FAMILY}';`,
-          `  font-weight: ${face.weight};`,
-          `  font-style: ${face.italic ? 'italic' : 'normal'};`,
-          `  src: url(data:${mime};base64,${b64}) format('${face.format}');`,
-          '}',
-        ].join('\n');
-      } catch {
-        return '';
-      }
-    }),
-  );
-  return rules.filter(Boolean).join('\n');
 }
