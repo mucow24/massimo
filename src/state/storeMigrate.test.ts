@@ -880,7 +880,10 @@ describe('migrateDoc', () => {
       expect(Object.values(out.styles).some((d) => d.kind === 'stopDot')).toBe(true);
     });
 
-    it('strips since-dropped width/leading/tracking keys from round-1 textLabel defs', () => {
+    it('keeps round-1 width/leading/tracking keys — the fields are covered again', () => {
+      // Round 1 covered layout, round 2 dropped it, and it is covered once
+      // more: values a round-1 def stored survive the rehydrate verbatim (and
+      // pre-empt the wearer-average backfill for those fields).
       const staleDef = {
         id: 'y1',
         name: 'Heading',
@@ -892,11 +895,9 @@ describe('migrateDoc', () => {
           weight: 700,
           italic: false,
           align: 'left',
-          // Round-1 covered keys, dropped in round 2 — must not survive the
-          // rehydrate or the stylePropsEqual no-op guards misfire forever.
-          width: 0,
-          leading: 1,
-          tracking: 0,
+          width: 120,
+          leading: 1.5,
+          tracking: 0.05,
         },
       };
       const out = run({ styles: { y1: staleDef } } as Record<string, unknown>, 9) as unknown as {
@@ -909,6 +910,9 @@ describe('migrateDoc', () => {
         weight: 700,
         italic: false,
         align: 'left',
+        width: 120,
+        leading: 1.5,
+        tracking: 0.05,
       });
     });
 

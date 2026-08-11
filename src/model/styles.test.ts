@@ -142,7 +142,7 @@ describe('captureStyleProps', () => {
     expect(plain).not.toHaveProperty('labelGap');
   });
 
-  it('captures only the covered label typography — width/leading/tracking stay per-label', () => {
+  it('captures the label typography AND its layout (width/leading/tracking covered)', () => {
     const doc = makeDoc({
       textLabels: [makeTextLabel({ id: 'g1', fontSize: 20, weight: 700, width: 200, leading: 2 })],
     });
@@ -153,6 +153,9 @@ describe('captureStyleProps', () => {
       weight: 700,
       italic: false,
       align: 'left',
+      width: 200,
+      leading: 2,
+      tracking: 0, // absent ⇒ neutral, captured concretely
     });
   });
 
@@ -538,9 +541,9 @@ describe('applyStyleToItem', () => {
     expect(next.stations.s1.stops[0].dotSize).toBeUndefined();
   });
 
-  it('stamps a text-label style and tags the label, leaving layout fields alone', () => {
+  it('stamps a text-label style and tags the label, layout fields included', () => {
     const style = makeStyle('textLabel', 'y1', {
-      props: { fontSize: 24, weight: 700, italic: true, align: 'center' },
+      props: { fontSize: 24, weight: 700, italic: true, align: 'center', width: 150 },
     });
     const doc = makeDoc({
       textLabels: [makeTextLabel({ id: 'g1', width: 200, leading: 1.5 })],
@@ -553,8 +556,8 @@ describe('applyStyleToItem', () => {
     expect(label.weight).toBe(700);
     expect(label.italic).toBe(true);
     expect(label.align).toBe('center');
-    expect(label.width).toBe(200); // per-label layout untouched
-    expect(label.leading).toBe(1.5);
+    expect(label.width).toBe(150); // layout is covered: the full stamp resets it
+    expect(label.leading).toBe(1); // fixture def's neutral leading
     expect(label.text).toBe('Label'); // content untouched
   });
 

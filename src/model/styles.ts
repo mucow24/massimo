@@ -17,6 +17,12 @@ import {
   POLYGON_STROKE_STEP,
   POLYGON_STROKE_WIDTH_MIN,
   TEXT_LABEL_FONT_SIZE_MIN,
+  TEXT_LABEL_LEADING_DEFAULT,
+  TEXT_LABEL_LEADING_MIN,
+  TEXT_LABEL_LEADING_STEP,
+  TEXT_LABEL_TRACKING_DEFAULT,
+  TEXT_LABEL_TRACKING_MIN,
+  TEXT_LABEL_TRACKING_STEP,
   canonicalStationLabelStyle,
   clampRouteBulletSize,
   effectiveStationStyleProps,
@@ -172,6 +178,11 @@ export function captureStyleProps<K extends StyleKind>(
         weight: t.weight,
         italic: t.italic,
         align: t.align,
+        // Effective layout (absent ⇒ auto width / neutral spacing), so a
+        // captured style is self-contained like the others.
+        width: t.width ?? 0,
+        leading: t.leading ?? TEXT_LABEL_LEADING_DEFAULT,
+        tracking: t.tracking ?? TEXT_LABEL_TRACKING_DEFAULT,
       } as StylePropsByKind[K];
     }
     case 'polygon': {
@@ -244,7 +255,17 @@ export const STYLE_FIELDS = {
     'interlineGap',
     'labelGap',
   ],
-  textLabel: ['color', 'darkColor', 'fontSize', 'weight', 'italic', 'align'],
+  textLabel: [
+    'color',
+    'darkColor',
+    'fontSize',
+    'weight',
+    'italic',
+    'align',
+    'width',
+    'leading',
+    'tracking',
+  ],
   polygon: ['fill', 'stroke', 'darkFill', 'darkStroke', 'strokeWidth', 'curveRadius', 'closed'],
   routeBullet: ['shape', 'size'],
   transfer: ['thickness', 'color', 'strokeWidth', 'strokeColor', 'draw'],
@@ -286,6 +307,26 @@ function styleFieldEqual(
     }
     if (field === 'draw') {
       return (a.draw ?? TRANSFER_DRAW_DEFAULT) === (b.draw ?? TRANSFER_DRAW_DEFAULT);
+    }
+  }
+  if (kind === 'textLabel') {
+    // Absent ≡ auto/neutral: a def from a save predating layout coverage
+    // must compare equal to one carrying the explicit defaults, or every
+    // wearer reads as overridden before the average backfill lands.
+    if (field === 'width') {
+      return ((a.width as number | undefined) ?? 0) === ((b.width as number | undefined) ?? 0);
+    }
+    if (field === 'leading') {
+      return (
+        ((a.leading as number | undefined) ?? TEXT_LABEL_LEADING_DEFAULT) ===
+        ((b.leading as number | undefined) ?? TEXT_LABEL_LEADING_DEFAULT)
+      );
+    }
+    if (field === 'tracking') {
+      return (
+        ((a.tracking as number | undefined) ?? TEXT_LABEL_TRACKING_DEFAULT) ===
+        ((b.tracking as number | undefined) ?? TEXT_LABEL_TRACKING_DEFAULT)
+      );
     }
   }
   return a[field] === b[field];
@@ -381,6 +422,18 @@ export function canonicalStyleProps<K extends StyleKind>(
     }
     case 'textLabel': {
       const p = props as TextLabelStyleProps;
+      // Layout fields stay ABSENT when absent (a pre-coverage def keeps its
+      // hole for the average backfill to fill); present values land on the
+      // same grids updateTextLabel writes.
+      const width = p.width == null ? undefined : Math.max(0, Math.round(p.width));
+      const leading =
+        p.leading == null
+          ? undefined
+          : snapToStep(p.leading, TEXT_LABEL_LEADING_STEP, TEXT_LABEL_LEADING_MIN);
+      const tracking =
+        p.tracking == null
+          ? undefined
+          : snapToStep(p.tracking, TEXT_LABEL_TRACKING_STEP, TEXT_LABEL_TRACKING_MIN);
       return {
         color: p.color,
         darkColor: p.darkColor,
@@ -388,6 +441,9 @@ export function canonicalStyleProps<K extends StyleKind>(
         weight: p.weight,
         italic: p.italic,
         align: p.align,
+        ...(width !== undefined ? { width } : {}),
+        ...(leading !== undefined ? { leading } : {}),
+        ...(tracking !== undefined ? { tracking } : {}),
       } as StylePropsByKind[K];
     }
     case 'polygon': {
@@ -480,9 +536,10 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
       break;
     }
     case 'textLabel': {
-      // Explicit pick, not a props spread — a def from an older save could
-      // carry since-dropped keys (width/leading/tracking) that must not be
-      // stamped onto the label.
+      // Explicit pick, not a props spread, so a def from an older save can't
+      // smuggle a foreign key onto the label. The layout fields stamp their
+      // absent-≡ values (auto width / neutral spacing) when a pre-backfill
+      // def lacks them, matching how the comparators read that absence.
       const p = def.props;
       next = updateTextLabel(next, itemId, {
         color: p.color,
@@ -491,6 +548,9 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
         weight: p.weight,
         italic: p.italic,
         align: p.align,
+        width: p.width ?? 0,
+        leading: p.leading ?? TEXT_LABEL_LEADING_DEFAULT,
+        tracking: p.tracking ?? TEXT_LABEL_TRACKING_DEFAULT,
       });
       break;
     }

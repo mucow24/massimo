@@ -8,11 +8,18 @@ import {
   STATION_LABEL_STYLE_DEFAULTS,
   TEXT_LABEL_COLOR_DEFAULT,
   TEXT_LABEL_DARK_COLOR_DEFAULT,
+  TEXT_LABEL_LEADING_DEFAULT,
+  TEXT_LABEL_LEADING_MIN,
+  TEXT_LABEL_LEADING_STEP,
+  TEXT_LABEL_TRACKING_DEFAULT,
+  TEXT_LABEL_TRACKING_MIN,
+  TEXT_LABEL_TRACKING_STEP,
   bumpWeightByIndex,
   canonicalStationLabelStyle,
   isLabelWeight,
   isRouteBulletShape,
   isTextLabelAlign,
+  snapToStep,
   stationIsSingleton,
   withTransferOverride,
 } from './transforms';
@@ -123,6 +130,7 @@ import type {
   StyleKind,
   SvgImage,
   TextLabel,
+  TextLabelStyleProps,
   TextLabelAlign,
   TextLabelWeight,
   Transfer,
@@ -744,11 +752,73 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
     }
   }
   let final = pruneDanglingStyleRefs(merged);
+  // textLabel defs from saves predating layout coverage take the AVERAGE of
+  // their (post-prune, so genuinely tagged) wearers' width/leading/tracking.
+  final = bakeTextLabelStyleLayout(final);
   // Pre-styles saves: adopt untagged, default-looking items into the
   // just-backfilled Default styles, so the Styles panel's Default editors
   // act on the whole loaded map rather than nothing.
   if (!hadStyles) final = adoptDefaultStyles(final);
   return { ok: true, doc: final };
+}
+
+/**
+ * Backfill the textLabel layout fields (width/leading/tracking) onto style
+ * defs from saves predating their coverage: each MISSING field takes the
+ * average of the def's wearers' effective values (auto/neutral when nobody
+ * wears it), snapped onto the item setter's grids. Items are never touched —
+ * the map repaints unchanged, each wearer's value either equaling the new
+ * default or reading as its per-field override. Idempotent (keyed off the
+ * fields' absence; app-written defs are concrete). Shared by parse() and
+ * migrateDoc (non-version-gated; the v28 bump forces one pass).
+ */
+export function bakeTextLabelStyleLayout<
+  Doc extends { styles?: Record<string, StyleDef>; textLabels?: Record<string, TextLabel> },
+>(doc: Doc): Doc {
+  const styles = doc.styles;
+  if (!styles) return doc;
+  const next: Record<string, StyleDef> = {};
+  let changed = false;
+  for (const id of Object.keys(styles)) {
+    const def = styles[id];
+    next[id] = def;
+    if (def.kind !== 'textLabel') continue;
+    const p = def.props;
+    const needWidth = p.width === undefined;
+    const needLeading = p.leading === undefined;
+    const needTracking = p.tracking === undefined;
+    if (!needWidth && !needLeading && !needTracking) continue;
+    const wearers = Object.values(doc.textLabels ?? {}).filter((t) => t.styleId === id);
+    const avg = (read: (t: TextLabel) => number, fallback: number): number =>
+      wearers.length === 0
+        ? fallback
+        : wearers.reduce((sum, t) => sum + read(t), 0) / wearers.length;
+    const props: TextLabelStyleProps = {
+      ...p,
+      ...(needWidth ? { width: Math.max(0, Math.round(avg((t) => t.width ?? 0, 0))) } : {}),
+      ...(needLeading
+        ? {
+            leading: snapToStep(
+              avg((t) => t.leading ?? TEXT_LABEL_LEADING_DEFAULT, TEXT_LABEL_LEADING_DEFAULT),
+              TEXT_LABEL_LEADING_STEP,
+              TEXT_LABEL_LEADING_MIN,
+            ),
+          }
+        : {}),
+      ...(needTracking
+        ? {
+            tracking: snapToStep(
+              avg((t) => t.tracking ?? TEXT_LABEL_TRACKING_DEFAULT, TEXT_LABEL_TRACKING_DEFAULT),
+              TEXT_LABEL_TRACKING_STEP,
+              TEXT_LABEL_TRACKING_MIN,
+            ),
+          }
+        : {}),
+    };
+    next[id] = { ...def, props } as StyleDef;
+    changed = true;
+  }
+  return changed ? { ...doc, styles: next } : doc;
 }
 
 // Loose shape both retirement bakes below operate on: a whole MapDoc on the
@@ -2799,8 +2869,13 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
         return undefined;
       if (!isLabelWeight(o.weight) || italic === undefined) return undefined;
       if (!isTextLabelAlign(o.align)) return undefined;
-      // Since-dropped keys from older saves (width/leading/tracking) are
-      // silently discarded by this rebuild.
+      // Layout fields are OPTIONAL on a def only when the save predates their
+      // coverage — kept absent here so bakeTextLabelStyleLayout can tell the
+      // difference and backfill the wearer average. Junk values drop to
+      // absent (then backfill) rather than failing the whole def.
+      const width = finiteNum(o.width);
+      const leading = finiteNum(o.leading);
+      const tracking = finiteNum(o.tracking);
       return canonicalStyleProps('textLabel', {
         color,
         darkColor,
@@ -2808,6 +2883,9 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
         weight: o.weight,
         italic,
         align: o.align as TextLabelAlign,
+        ...(width !== undefined ? { width } : {}),
+        ...(leading !== undefined ? { leading } : {}),
+        ...(tracking !== undefined ? { tracking } : {}),
       });
     }
     case 'polygon': {

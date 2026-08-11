@@ -1408,7 +1408,9 @@ the file itself carries (steps 3, 5, 6b/6c) — repair over guesswork, error ove
     non-idempotent step in Path A).
 13. `pruneDanglingStyleRefs` — **last**, so dangling / wrong-kind `styleId` tags check against
     fully-sanitized defs. Value divergence is NOT pruned — a diverged-but-tagged item loads
-    verbatim, its diff being a per-field override.
+    verbatim, its diff being a per-field override. Then `bakeTextLabelStyleLayout` — textLabel
+    defs from saves predating layout coverage (width/leading/tracking) backfill each missing
+    field with the AVERAGE of their (post-prune) wearers' effective values.
 14. `adoptDefaultStyles` — **only for files with no `styles` record at all** (pre-styles saves):
     untagged items whose values match their kind's designated default get tagged, so the Styles
     panel's Default editors act on the whole loaded map.
@@ -1453,11 +1455,12 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | (not gated) | `snapStationCells` whenever `stations !== undefined` — cell drift is not tied to a schema bump, so a gate could never catch it. **But see the `merge` hook** — for this repair that caveat is the main event, not a footnote |
 | (not gated) | `sanitizeImageHrefs` whenever `svgImages !== undefined` — the guard had one caller (the clipboard) and neither doc load, so a remote href could be persisted at ANY version. **But see the `merge` hook** — same reasoning as `snapStationCells` |
 | (not gated) | `bakeConcreteDotSizes` whenever `lines !== undefined` — dot sizes are REQUIRED stored fields (absent used to mean "my dot type's natural diameter"); pin stops that tracked a different natural than their line's, then materialize the line split sizes. The v27 bump forced one pass over every pre-existing doc; a size-less line written at the current version (legacy clipboard paste) is healed by the **`merge` hook** |
+| (not gated) | `bakeTextLabelStyleLayout` whenever `styles !== undefined` — width/leading/tracking became covered textLabel style fields; a def predating the coverage backfills each missing field with the AVERAGE of its wearers' effective values (auto/neutral when nobody wears it), so nothing repaints and per-item deviations read as per-field overrides. The v28 bump forces one pass; app-written defs are concrete, so no `merge`-hook membership is needed |
 
-A **corrupt/missing version is treated as v0** (all migrations run). The five non-gated repairs
+A **corrupt/missing version is treated as v0** (all migrations run). The six non-gated repairs
 (`backfillLinesEdges`, `ensureStyleInvariants`, `snapStationCells`, `sanitizeImageHrefs`,
-`bakeConcreteDotSizes`) are **not** tied to a schema bump — they run any time their field is
-present (an absent field is left for the persist-merge).
+`bakeConcreteDotSizes`, `bakeTextLabelStyleLayout`) are **not** tied to a schema bump — they run
+any time their field is present (an absent field is left for the persist-merge).
 `bakeActivePalettes`, which is gated, reads `useCustomPalettes.getState().palettes` to resolve
 legacy `custom:` ids — the only place in either load path that reaches into a store.
 

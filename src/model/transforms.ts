@@ -4206,6 +4206,9 @@ export const DEFAULT_STYLES: Record<string, StyleDef> = {
       weight: TEXT_LABEL_DEFAULTS.weight,
       italic: TEXT_LABEL_DEFAULTS.italic,
       align: TEXT_LABEL_DEFAULTS.align,
+      width: 0,
+      leading: TEXT_LABEL_DEFAULTS.leading,
+      tracking: TEXT_LABEL_DEFAULTS.tracking,
     },
   },
   'default-polygon': {

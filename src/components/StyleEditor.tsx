@@ -73,6 +73,15 @@ import {
   TEXT_LABEL_ALIGNS,
   TEXT_LABEL_FONT_SIZE_MAX,
   TEXT_LABEL_FONT_SIZE_MIN,
+  TEXT_LABEL_LEADING_DEFAULT,
+  TEXT_LABEL_LEADING_MAX,
+  TEXT_LABEL_LEADING_MIN,
+  TEXT_LABEL_LEADING_STEP,
+  TEXT_LABEL_TRACKING_DEFAULT,
+  TEXT_LABEL_TRACKING_MAX,
+  TEXT_LABEL_TRACKING_MIN,
+  TEXT_LABEL_TRACKING_STEP,
+  TEXT_LABEL_WIDTH_MAX,
 } from '../model/transforms';
 import { FieldCheckbox } from './FieldCheckbox';
 import {
@@ -397,6 +406,44 @@ function TextLabelStyleEditor({ id, props }: { id: string; props: TextLabelStyle
         </div>
         <ItalicButton active={props.italic} onToggle={() => patch({ italic: !props.italic })} />
       </div>
+      {/* Layout is covered too (0 = auto width; leading/tracking neutral at
+          1 / 0). The `??`s read a def from before the coverage — the load
+          paths backfill it, but a mid-migrate render must not crash. */}
+      <NumericFieldRow
+        id={`style-${id}-width`}
+        label="Width"
+        min={0}
+        max={TEXT_LABEL_WIDTH_MAX}
+        step={1}
+        value={props.width ?? 0}
+        onChange={(width) => patch({ width })}
+        getCurrent={liveNumberProp(id, 'width', 0)}
+        textboxAllowAboveMax
+      />
+      <NumericFieldRow
+        id={`style-${id}-leading`}
+        label="Leading"
+        min={TEXT_LABEL_LEADING_MIN}
+        max={TEXT_LABEL_LEADING_MAX}
+        step={TEXT_LABEL_LEADING_STEP}
+        value={props.leading ?? TEXT_LABEL_LEADING_DEFAULT}
+        onChange={(leading) => patch({ leading })}
+        getCurrent={liveNumberProp(id, 'leading', TEXT_LABEL_LEADING_DEFAULT)}
+        detent={TEXT_LABEL_LEADING_DEFAULT}
+        textboxAllowAboveMax
+      />
+      <NumericFieldRow
+        id={`style-${id}-tracking`}
+        label="Tracking"
+        min={TEXT_LABEL_TRACKING_MIN}
+        max={TEXT_LABEL_TRACKING_MAX}
+        step={TEXT_LABEL_TRACKING_STEP}
+        value={props.tracking ?? TEXT_LABEL_TRACKING_DEFAULT}
+        onChange={(tracking) => patch({ tracking })}
+        getCurrent={liveNumberProp(id, 'tracking', TEXT_LABEL_TRACKING_DEFAULT)}
+        detent={TEXT_LABEL_TRACKING_DEFAULT}
+        textboxAllowAboveMax
+      />
     </div>
   );
 }

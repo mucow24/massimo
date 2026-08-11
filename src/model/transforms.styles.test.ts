@@ -143,7 +143,7 @@ describe('covered-field edits keep the tag — text labels', () => {
     expect(updateTextLabel(tagged(), 'g1', { x: 50, y: 50 }).textLabels.g1.styleId).toBe('y1');
   });
 
-  it('width/leading/tracking are per-label layout, not style — real changes keep the tag', () => {
+  it('width/leading/tracking are covered too — real changes keep the tag (overrides)', () => {
     expect(updateTextLabel(tagged(), 'g1', { width: 200 }).textLabels.g1.styleId).toBe('y1');
     expect(updateTextLabel(tagged(), 'g1', { leading: 1.5 }).textLabels.g1.styleId).toBe('y1');
     expect(updateTextLabel(tagged(), 'g1', { tracking: 0.05 }).textLabels.g1.styleId).toBe('y1');

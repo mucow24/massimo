@@ -255,6 +255,15 @@ export function TextLabelPopover({ label, hostW, onClose }: Props) {
         getCurrent={() => useDoc.getState().textLabels[label.id]?.width ?? 0}
         textboxAllowAboveMax
         disabled={locked}
+        dot={
+          <OverrideDot
+            kind="textLabel"
+            itemId={label.id}
+            fields={['width']}
+            name="Width"
+            disabled={locked}
+          />
+        }
       />
 
       <hr className="popover-divider" aria-hidden="true" />
@@ -274,6 +283,15 @@ export function TextLabelPopover({ label, hostW, onClose }: Props) {
         detent={TEXT_LABEL_LEADING_DEFAULT}
         textboxAllowAboveMax
         disabled={locked}
+        dot={
+          <OverrideDot
+            kind="textLabel"
+            itemId={label.id}
+            fields={['leading']}
+            name="Leading"
+            disabled={locked}
+          />
+        }
       />
 
       {/* Letter-spacing in em (0 = normal); the tick marks the neutral 0. */}
@@ -291,6 +309,15 @@ export function TextLabelPopover({ label, hostW, onClose }: Props) {
         detent={TEXT_LABEL_TRACKING_DEFAULT}
         textboxAllowAboveMax
         disabled={locked}
+        dot={
+          <OverrideDot
+            kind="textLabel"
+            itemId={label.id}
+            fields={['tracking']}
+            name="Tracking"
+            disabled={locked}
+          />
+        }
       />
 
       <PopoverFooter noun="label" locked={locked} onToggleLock={onToggleLock} onDelete={onDelete} />

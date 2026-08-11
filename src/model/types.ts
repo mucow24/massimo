@@ -946,9 +946,9 @@ export interface TextLabel {
   // by `updateTextLabel`. Mirrors `Station.editorHeight`.
   editorHeight?: number;
   // Live link to a StyleDef of kind 'textLabel' — covered fields are the
-  // colors, fontSize, weight, italic and align (NOT width/leading/tracking/
-  // text/position/rotation/locked/editorHeight). Same contract as
-  // `Line.styleId`.
+  // colors, fontSize, weight, italic, align, and the layout trio
+  // width/leading/tracking (NOT text/position/rotation/locked/editorHeight).
+  // Same contract as `Line.styleId`.
   styleId?: string;
 }
 
@@ -1111,8 +1111,15 @@ export interface TextLabelStyleProps {
   weight: TextLabelWeight;
   italic: boolean;
   align: TextLabelAlign;
-  // Deliberately NOT covered: width, leading, tracking — per-label layout
-  // tuning, not reusable typography.
+  // Layout is covered too, so a style can set the width/leading/tracking a
+  // label then pins per-item as overrides. Optional ONLY because defs from
+  // saves predating the coverage lack the keys — absent compares as
+  // auto/neutral (0 / 1 / 0), and the load paths backfill each missing field
+  // with the AVERAGE of the def's wearers (bakeTextLabelStyleLayout), so old
+  // maps repaint unchanged. App-written defs are always concrete.
+  width?: number;
+  leading?: number;
+  tracking?: number;
 }
 
 export interface PolygonStyleProps {
@@ -1145,10 +1152,9 @@ export interface TransferStyleProps {
 
 // Per-station name typography. Every value is FULLY-RESOLVED (captured by
 // example — absent per-station optionals resolve through the LABEL_* defaults),
-// so a station style is self-contained like the others. Unlike
-// TextLabelStyleProps, leading and tracking ARE covered here: for stations
-// these were doc-global typography being decentralized (the retired
-// labelLeading/labelTracking), not per-item layout tuning.
+// so a station style is self-contained like the others. Leading and tracking
+// are covered here as they are on TextLabelStyleProps (station styles never
+// cover a width — station names have no column to wrap in).
 export interface StationStyleProps {
   fontSize: number;
   weight: TextLabelWeight;

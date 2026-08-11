@@ -264,6 +264,9 @@ const STYLE_PROPS_DEFAULTS: StylePropsByKind = {
     weight: 400,
     italic: false,
     align: 'left',
+    width: 0,
+    leading: 1,
+    tracking: 0,
   },
   polygon: {
     fill: '#cfe3f2',

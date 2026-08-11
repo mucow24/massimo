@@ -60,6 +60,7 @@ import {
   bakeConcreteDotSizes,
   bakeLineDotDefaults,
   bakeLineStyleDotIds,
+  bakeTextLabelStyleLayout,
   bakeStopDotLibrary,
   convertLegacyDotShapes,
   ensureStyleInvariants,
@@ -409,6 +410,11 @@ if (typeof window !== 'undefined') {
  *   otherwise), a live indirection now retired. Materialize the split sizes at
  *   what they rendered, pinning per-stop sizes that tracked a different
  *   natural than their line's, via the shared `bakeConcreteDotSizes`.
+ * - v27 → v28: width/leading/tracking became covered textLabel style fields.
+ *   Defs predating the coverage backfill each missing field with the AVERAGE
+ *   of their wearers' effective values via the shared
+ *   `bakeTextLabelStyleLayout`, so nothing repaints and per-item deviations
+ *   read as per-field overrides.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -652,7 +658,7 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     // already paints square and matches the healed def.
     out = backfillLineStyleEndStyle(out);
   }
-  // Non-version-gated invariant (the v27 bump forces one pass over every
+  // Non-version-gated invariant (the v27 bump forced one pass over every
   // pre-existing doc): dot sizes are REQUIRED stored line fields — absent
   // means "the natural size of my dot type", a retired live indirection. Pin
   // stops that tracked a different natural than their line's, then
@@ -663,6 +669,14 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
   // v<18 split bake, which put the dot styles it reads in singleton/multi
   // form.
   out = bakeConcreteDotSizes(out);
+  // Non-version-gated (the v28 bump forces one pass): textLabel style defs
+  // gained layout coverage (width/leading/tracking) — a def from before it
+  // backfills each missing field with the AVERAGE of its wearers' effective
+  // values, so the map repaints unchanged and each wearer's own value reads
+  // as equal-or-override. Idempotent (keyed off the fields' absence).
+  // Ordered after the v<11 adoption so adopted wearers count toward their
+  // Default style's average; parse() runs the same bake.
+  out = bakeTextLabelStyleLayout(out);
   // Non-version-gated repair: station cells that drifted off the integer
   // lattice. Like the palette invariant below and unlike the migrations above,
   // this isn't tied to a schema bump — the editor's old trig-rotated ghost
@@ -1441,8 +1455,8 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: debouncedDocStorage,
-        version: 27,
-        // Version migration chain v0 → v27 lives in `migrateDoc` (above), which
+        version: 28,
+        // Version migration chain v0 → v28 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         // `migrate` only runs when the STORED version differs from the config
