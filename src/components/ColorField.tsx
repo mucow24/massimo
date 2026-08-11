@@ -1,9 +1,10 @@
-import { CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { HexAlphaColorPicker } from 'react-colorful';
 import { clamp } from '../util/grid';
 import { beginHistoryGroup } from '../state/store';
 import { normalizeHex } from '../util/color';
+import { windowClientSize } from '../util/windowSize';
 
 interface Props {
   value: string;
@@ -144,47 +145,68 @@ export function ColorField({
     setOpen(false);
   };
 
-  // The picker's own measured box, which is what the edge math below is allowed
-  // to trust. Dep-less, because the popover mounts a commit AFTER `open` flips
-  // (there is no position to render it at until the effect below has run), so a
-  // keyed effect would never see it appear; the `!==` guard is what stops the
-  // setState looping. Layout effects flush before paint, so the corrected
+  // Put the popover under its swatch, flipping above / clamping to the window's
+  // client box (scrollbars excluded — see `windowClientSize`) so it never opens
+  // off-screen inside a scrolled inspector or off the side of a narrow window.
+  const place = useCallback(() => {
+    const r = swatchRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const win = windowClientSize();
+    const below = r.bottom + GAP;
+    const top = below + size.h <= win.h ? below : Math.max(GAP, r.top - GAP - size.h);
+    const left = clamp(r.left, GAP, win.w - size.w - GAP);
+    // Value-equal bail-out: through the stretch where the window's own edge is
+    // the clamp, every scroll event recomputes the same pair.
+    setPos((prev) => (prev && prev.left === left && prev.top === top ? prev : { left, top }));
+  }, [size.w, size.h]);
+
+  // The picker's own measured box, which is what `place` is allowed to trust.
+  // Keyed on `pos` as well as `open`, because the popover isn't rendered until
+  // there IS a position for it — a commit later than the flip of `open`, which
+  // a `[open]` effect would run too early to see. The `!==` guard is what stops
+  // the setState looping. Layout effects flush before paint, so the corrected
   // position is the first one painted — the nominal pass is never seen.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useLayoutEffect(() => {
     const el = popRef.current;
     if (!el) return;
     const w = el.offsetWidth;
     const h = el.offsetHeight;
     if (w > 0 && h > 0 && (w !== size.w || h !== size.h)) setSize({ w, h });
-  });
+  }, [open, pos, size.w, size.h]);
 
-  // Position the portalled popover under the swatch, flipping above / clamping
-  // to the viewport so it never opens off-screen inside a scrolled inspector.
   useLayoutEffect(() => {
     if (!open) return;
-    const r = swatchRef.current?.getBoundingClientRect();
-    if (!r) return;
     // Nearest chrome root that owns both the design tokens and FOCUS: inside a
     // modal Radix dialog (`.dialog` = Dialog.Content) the popover must mount
     // within the content subtree, or the dialog's focus trap yanks focus off
     // the hex field and it can't be typed into. Everywhere else, `.app`.
     setPortalTarget(swatchRef.current?.closest('.dialog, .app') ?? document.body);
-    // clientWidth/Height, not innerWidth/Height: they exclude the scrollbars,
-    // and the window this matters in has both — `.toolbar { min-width:
-    // max-content }` floors the app at the toolbar's width, so a narrow window
-    // scrolls the page sideways, and `.app` being 100vh (which doesn't count
-    // that horizontal scrollbar) overflows it vertically as well. Clamping
-    // against `innerWidth` put the picker's right edge under the vertical
-    // scrollbar and past the window. jsdom has no layout and reports 0 for
-    // both; the window's own numbers stand in there (same as useDock).
-    const winW = document.documentElement.clientWidth || window.innerWidth;
-    const winH = document.documentElement.clientHeight || window.innerHeight;
-    const below = r.bottom + GAP;
-    const top = below + size.h <= winH ? below : Math.max(GAP, r.top - GAP - size.h);
-    const left = clamp(r.left, GAP, winW - size.w - GAP);
-    setPos({ left, top });
-  }, [open, size.w, size.h]);
+    place();
+  }, [open, place]);
+
+  // Follow the swatch while open. The popover is `position: fixed` and the
+  // swatch is not, so the browser holds one against the window while the other
+  // rides the page — and the narrow window this placement is written for is
+  // exactly the one with somewhere to scroll TO, so a wheel there walked the
+  // picker off its swatch and left it hanging over the map.
+  //
+  // Listener trio as in useDock: a page scroll is dispatched at `document`, and
+  // the one that reliably hears it is the BUBBLE listener on `window`; the
+  // capture listener on `document` is what catches a scroll of some nested
+  // container, since those don't bubble at all. A page scroll trips both, and
+  // the bail-out above makes the second a no-op. Passive, so following never
+  // holds up the scroll itself.
+  useEffect(() => {
+    if (!open) return;
+    window.addEventListener('scroll', place, { passive: true });
+    document.addEventListener('scroll', place, { passive: true, capture: true });
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('scroll', place);
+      document.removeEventListener('scroll', place, { capture: true });
+      window.removeEventListener('resize', place);
+    };
+  }, [open, place]);
 
   // Close on outside pointerdown or Escape. Capture phase so it fires before a
   // click inside a parent popover can act on the stray press.

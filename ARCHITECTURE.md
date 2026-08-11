@@ -265,7 +265,9 @@ src/
   util/                         # color.ts (hex math), fonts.ts (font stack + weight math),
                                 #   grid.ts (clamp / roundClamp / snapToStep — the quarter-grid
                                 #   canonicalizer primitives every dimensional setter shares),
-                                #   staleBuild.ts (is this failure just a deploy-stranded chunk?)
+                                #   staleBuild.ts (is this failure just a deploy-stranded chunk?),
+                                #   windowSize.ts (the window's client box, scrollbars excluded —
+                                #   the edge every screen-space panel clamps itself inside)
   debug/                        # devHandle.ts: counters + the in-place resets (history / region
                                 #   caches / doc round-trip) that let a slowed-down session be
                                 #   bisected without the reload that cures it, plus the region
