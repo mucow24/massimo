@@ -403,7 +403,7 @@ interface MapDoc {
   regionAssignments: Record<string, RegionAssignment>; // region paint choices ("paint by numbers")
   svgImages: Record<string, SvgImage>;
   lineCircles: Record<string, LineCircle>; // dashed guide circles stations bind to (never exported)
-  guides: Record<string, AlignmentGuide>; // h/v alignment guides — always-on snap targets (never exported)
+  guides: Record<string, AlignmentGuide>; // h/v/45° alignment guides — always-on snap targets (never exported)
   palettes: Palette[]; // COPIES the map paints with, in picker/color-cycle order; may be empty.
   // A palette may carry a description; a swatch a night color (stored ONLY when ≠ its day color —
   // the collapse invariant — and unused by lines so far: the editor writes day == night)
@@ -709,20 +709,33 @@ malformed circles drop, dangling `circleId`s and orphaned `viaCircle` flags stri
 station that drifted off its circle reprojects.
 
 **`AlignmentGuide`** (`MapDoc.guides`) — the line circle's straight-line sibling: `id,
-orientation: 'horizontal' | 'vertical', offset` (the world Y or X the infinite line sits at),
-`locked?`. Same standing — editor scaffolding, export-excluded, same scaffolding band as the
-rings (above background art, below map ink) — but the OPPOSITE snapping role: nothing binds to
-a guide; it is an **always-on snap TARGET** for both snappers (see Snapping). It paints as a
-long-dashed line spanning the overdrawn viewBox in its own theme slots, not the ring grey
+orientation: 'horizontal' | 'vertical' | 'diagonal-down' | 'diagonal-up', offset`, `locked?`.
+The orientation names how the line reads left-to-right (`diagonal-down` is \, `diagonal-up` /);
+`offset` is the world Y (horizontal) or X (vertical) the infinite line sits at, and the
+Y-INTERCEPT — the Y where it crosses x = 0, `y − x` for \ and `y + x` for / — for the 45°s, so
+every orientation is one plain scalar. The "which line is that" math (axis, foot, perpendicular
+distance, the nudge/tow projection `guideNudgeDelta` and its inverse `guideMoveVector`, the
+box-clipped drawable segment) lives once, in `geometry/snap.ts`'s `guide*` helpers. Same
+standing as the rings — editor scaffolding, export-excluded, same scaffolding band (above
+background art, below map ink) — but the OPPOSITE snapping role: nothing binds to a guide; it
+is an **always-on snap TARGET** for both snappers (see Snapping). It paints as a long-dashed
+line spanning the overdrawn viewBox (diagonals clip to it — past the box is ink overflow — and
+one that misses it entirely mounts nothing) in its own theme slots, not the ring grey
 (`theme.alignGuide` + `-Selected`/`-Hover`, a day indigo / night periwinkle with an amber
 selected state — a guide's job is to be SEEN, and every state is a plain restroke since an
 infinite line has no body to outline; [GuideView.tsx](src/components/GuideView.tsx)). Born by dragging out of a **guide well** — slim strips flush with the canvas's
-top/left edges, top pulls a horizontal guide down, left pulls a vertical one right
-([GuideWells.tsx](src/components/canvas/GuideWells.tsx) + `useGuideDrag`, idle arrow-mode only;
-the pull ghost snaps live and the release commits one `addGuide` + selects it). Dragging a guide
-is 1-DOF (the offset takes the pointer's axis component, snapped through the point snapper with
-the matching `constrain`); dragging it back into its home well deletes it, and the wells tint as
-drop targets while a guide gesture hovers them. Its popover is the one coordinate + lock/delete
+top/left edges plus the two left corner squares between them: top pulls a horizontal guide
+down, left a vertical one right, the upper-left corner a / and the lower-left a \ — each well
+mints the guide PERPENDICULAR to its pull direction, which is why the corners map that way
+round (a \ pulled down-right from the top-left corner would never move: its intercept is
+constant along that drag) ([GuideWells.tsx](src/components/canvas/GuideWells.tsx) +
+`useGuideDrag`, idle arrow-mode only; the pull ghost snaps live and the release commits one
+`addGuide` + selects it). Dragging a guide is 1-DOF (the offset takes the pointer delta's
+`guideNudgeDelta` projection, snapped through the point snapper with the matching `constrain` —
+the two diagonal `constrain` values keep only their own 45° family and grid-quantize the
+intercept under the full lattice); dragging it back into its home well deletes it, and the
+wells tint as drop targets while a guide gesture hovers them. Its popover is the one coordinate
+(Y, X, or Y₀ for a diagonal) + lock/delete
 ([GuidePopover.tsx](src/components/GuidePopover.tsx)). `sanitizeGuides` (serialize.ts, the
 file-import path) drops malformed entries and collapses a stored `locked: false`; there are no
 cross-references to repair.
@@ -2352,8 +2365,9 @@ of them:
   (labels, polygons, svg images). Placement is **not** uniformly point-snapped: `placing-station`
   routes to the station engine, and `creating-route-bullet` does too whenever a default line
   exists — falling back to the point snapper only when there is none.
-  `constrain: 'x' | 'y'` restricts it for single-DOF consumers (edge resizes) so guides never
-  show a snap the caller discards. When `tens` is on **and grid is off**, an engaged alignment's
+  `constrain: 'x' | 'y' | 'diagonal-down' | 'diagonal-up'` restricts it for single-DOF
+  consumers (edge resizes, guide drags — the diagonal values are the diagonal guides' own
+  drags) so guides never show a snap the caller discards. When `tens` is on **and grid is off**, an engaged alignment's
   free axis (the slide along the guide) is notched to a whole grid length from the target — the
   same "Snap to grid length" idea extended past the skeleton, so any snapped object lands a clean
   step from what it caught. Corners have no free DOF; grid (when on) owns quantization; edge
@@ -2383,25 +2397,27 @@ included — it snaps 22.5° by default, Shift frees); every alignment snap draw
 distance-labeled guide through `SnapGuides`; grid snapping is silent.
 
 **Alignment guides are a target class of their own, ALWAYS ON.** Both snappers take
-`guideTargets` (`GuideTarget[]` — a guide is a ready-made H or V alignment axis at its offset),
-ungated by every mode toggle: you placed the guide on purpose, so it attracts like a ring
-captures, and Shift is how you decline (the line-tag snapper set this precedent). BOTH snappers
-decide a same-axis contest between a guide and any other candidate the same way: **the
-better-aligned one wins** (smaller perpendicular distance). In the point snapper that is just
-the bestV/bestH contest; the engine spells it as an explicit exception to its closest-wins
+`guideTargets` (`GuideTarget[]` — a guide is a ready-made alignment axis, H, V, or 45°, at its
+offset), ungated by every mode toggle: you placed the guide on purpose, so it attracts like a
+ring captures, and Shift is how you decline (the line-tag snapper set this precedent). BOTH
+snappers decide a same-axis contest between a guide and any other candidate the same way: **the
+better-aligned one wins** (smaller perpendicular distance — a diagonal's is the true distance,
+`guidePerpDist`, not the intercept delta). In the point snapper that is just the
+bestV/bestH/bestD contest; the engine spells it as an explicit exception to its closest-wins
 neighbor pick, because a guide's stand-in target is the drag's own foot — its "distance" IS its
 perpDist, so under closest-wins a parallel guide nine units off would yank a station off a
 one-unit-perfect corridor alignment. Mechanically a guide enters the engine's candidate set as
-`kind: 'guide'` with the station ANCHOR as the dragged reference (dOff 0) and joins the 2×2
-corner solve like any axis. Grid stays the
+`kind: 'guide'` with the station ANCHOR as the dragged reference (dOff 0, target stop = the
+anchor's foot on the guide line) and joins the 2×2 corner solve like any axis. Grid stays the
 hard constraint (an off-grid guide simply doesn't engage under grid), `tens` never notches off a
 guide (its stand-in target is the drag's own foot — no cadence anchor), and phase-3 refinement
 never fires off a guide primary. Engagement feedback: the snapper emits a **marker** — a
 `SnapGuide` carrying `alignGuideId` + the landed point, never a drawable segment — and the canvas
 turns it into the FULL snap chrome **on the guide itself** (`engagedGuides` in MapCanvas →
 `SnapGuides`' `engaged` prop): halo + dashed accent spanning the overdrawn box, a ring at the
-snap point, and a chip naming the coordinate snapped to (`Y 120` — the point lands ON the line,
-so the guide's coordinate is what "distance" means here), plus the guide's own accent recolor
+snap point, and a chip naming the coordinate snapped to (`Y 120`, or `Y₀ 120` for a diagonal's
+intercept — the point lands ON the line, so the guide's coordinate is what "distance" means
+here), plus the guide's own accent recolor
 (`GuideView` `engaged`). A guide engagement reads exactly as loud as every other snap. The pool is
 `liveGuideTargets(exclude)` beside `liveAlignTargets` — visibility-gated the same way, minus the
 guides moving with the drag (`AlignExclude.guideIds`); a guide's own drag passes NO guide pool
@@ -3077,8 +3093,9 @@ live-projection ref, stationary Shift/Alt recompute, pointercancel rollback),
 bullets via the point snapper), `usePolygonDrag` (whole-move / vertex / edge-add),
 `useSvgImageDrag` (move / resize / rotate — resize snaps only while axis-aligned, edge resizes
 axis-`constrain`ed; rotation snaps 22.5° by default, Shift frees), `useGuideDrag` (BOTH guide
-gestures: the 1-DOF move of an existing guide — offset takes the pointer's axis component,
-point-snapped under the matching `constrain`, released over its home well = delete — and the
+gestures: the 1-DOF move of an existing guide — offset takes the pointer delta's
+`guideNudgeDelta` projection, point-snapped under the matching `constrain`, released over its
+home well = delete — and the
 well PULL-OUT, a ghost that snaps like the real drag and commits one `addGuide` + select on
 release; sub-threshold or released back in the well commits nothing. The well strips forward
 their own move/up events for the sub-threshold stretch, since capture only moves to the svg on
@@ -3110,9 +3127,10 @@ against everything stationary, excluding only itself + everything MOVING with it
 (`excludedIds` for the station engine, `groupAlignExclude` → `alignTargets` for the point
 snapper); siblings then translate rigidly by the post-snap delta. Grid acts on the master's
 reference point only — towed siblings keep their offsets verbatim. A towed **alignment guide**
-takes only the AXIS COMPONENT of the delta (dy for horizontal, dx for vertical — its one degree
-of freedom), and a guide MASTER tows the group by that same single-axis delta, so master and
-tow stay rigid; guides never join the rotate.
+takes only the offset-changing PROJECTION of the delta (`guideNudgeDelta`: dy for horizontal,
+dx for vertical, dy∓dx for the diagonals — its one degree of freedom), and a guide MASTER tows
+the group by the perpendicular carry of its offset delta (`guideMoveVector`, the projection's
+inverse), so master and tow stay rigid; guides never join the rotate.
 A **line circle is a FRAME**, and that makes it the one member with a second list. It tows by its
 center (`moveLineCircle`), which carries the stations bound to it — so those passengers go in
 `carriedStations` (ids only, every station on a moving ring, selected or not) instead of

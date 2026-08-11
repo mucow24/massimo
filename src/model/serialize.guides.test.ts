@@ -20,6 +20,16 @@ describe('alignment guides on the load path', () => {
     expect(roundTrip(doc).guides).toEqual(doc.guides);
   });
 
+  it('round-trips diagonal guides', () => {
+    const doc = makeDoc({
+      guides: [
+        makeGuide({ id: 'g1', orientation: 'diagonal-up', offset: 80 }),
+        makeGuide({ id: 'g2', orientation: 'diagonal-down', offset: -12.5, locked: true }),
+      ],
+    });
+    expect(roundTrip(doc).guides).toEqual(doc.guides);
+  });
+
   it('backfills guides to {} for saves that predate the field', () => {
     const file = JSON.parse(serialize(makeDoc({})));
     delete file.doc.guides;

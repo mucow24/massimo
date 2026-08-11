@@ -26,6 +26,7 @@ import {
   type ClipPayload,
 } from './model/clipboard';
 import { _clearTextMeasureCache } from './geometry/textMeasure';
+import { guideNudgeDelta } from './geometry/snap';
 import { useFontEpoch } from './state/fontEpoch';
 import { screenDeltaToLabelOffsets } from './geometry/labelLayout';
 import { STOP_SIZE, rotateGridDelta, type Rotation } from './geometry/orientation';
@@ -557,12 +558,13 @@ export default function App() {
             const a = doc.transferAnchors[id];
             if (a) doc.moveTransferAnchor(id, a.x + dx, a.y + dy);
           }
-          // One degree of freedom: a guide takes only its axis component, so
-          // cross-axis presses no-op for it while still moving co-selected
-          // items (moveGuide bails on an unchanged offset).
+          // One degree of freedom: a guide takes only the offset-changing
+          // projection of the nudge (guideNudgeDelta), so cross-axis presses
+          // no-op for it while still moving co-selected items (moveGuide
+          // bails on an unchanged offset).
           for (const id of ids.guides) {
             const g = doc.guides[id];
-            if (g) doc.moveGuide(id, g.offset + (g.orientation === 'horizontal' ? dy : dx));
+            if (g) doc.moveGuide(id, g.offset + guideNudgeDelta(g.orientation, dx, dy));
           }
           group?.commit();
         }

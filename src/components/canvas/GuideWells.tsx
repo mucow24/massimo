@@ -30,13 +30,32 @@ function Grip() {
   return <span className="guide-well-grip" aria-hidden="true" />;
 }
 
+// The well strips' class + tooltip line, per orientation. The corner squares
+// mint the guide PERPENDICULAR to the pull-out direction, like the strips do:
+// pulling down-right from the upper-left corner sweeps a / across the canvas
+// (a \ would sit still under that drag — its intercept is constant along it).
+const WELLS: Record<GuideOrientation, { cls: string; hint: string }> = {
+  horizontal: { cls: 'guide-well-top', hint: 'Drag down to pull out a horizontal guide' },
+  vertical: { cls: 'guide-well-left', hint: 'Drag right to pull out a vertical guide' },
+  'diagonal-up': {
+    cls: 'guide-well-corner-tl',
+    hint: 'Drag out to pull a rising diagonal guide',
+  },
+  'diagonal-down': {
+    cls: 'guide-well-corner-bl',
+    hint: 'Drag out to pull a falling diagonal guide',
+  },
+};
+
 /**
- * The guide wells: two slim strips flush with the canvas's top and left edges.
- * Dragging DOWN out of the top strip pulls a horizontal guide; dragging RIGHT
- * out of the left one pulls a vertical guide (useGuideDrag owns the gesture).
- * Each also serves as the drop zone that deletes a dragged guide — the same
- * place it came from. Mounted only in idle arrow-mode; every other mode owns
- * the canvas edges (banner frame, placement).
+ * The guide wells: two slim strips flush with the canvas's top and left edges
+ * plus the two corner squares between them. Dragging DOWN out of the top
+ * strip pulls a horizontal guide; dragging RIGHT out of the left one pulls a
+ * vertical guide; dragging out of the upper-left corner pulls a rising (/)
+ * diagonal, out of the lower-left corner a falling (\) one (useGuideDrag owns
+ * the gesture). Each also serves as the drop zone that deletes a dragged
+ * guide — the same place it came from. Mounted only in idle arrow-mode; every
+ * other mode owns the canvas edges (banner frame, placement).
  */
 export function GuideWells({
   guidesHidden,
@@ -46,23 +65,16 @@ export function GuideWells({
   onPointerUp,
 }: Props) {
   const well = (orientation: GuideOrientation) => {
-    const horizontal = orientation === 'horizontal';
     const cls =
       'guide-well ' +
-      (horizontal ? 'guide-well-top' : 'guide-well-left') +
+      WELLS[orientation].cls +
       (guidesHidden ? ' disabled' : '') +
       (armed === orientation ? ' armed' : '');
     return (
       <div
         className={cls}
         data-guide-well={orientation}
-        title={
-          guidesHidden
-            ? 'Guides are hidden (View menu)'
-            : horizontal
-              ? 'Drag down to pull out a horizontal guide'
-              : 'Drag right to pull out a vertical guide'
-        }
+        title={guidesHidden ? 'Guides are hidden (View menu)' : WELLS[orientation].hint}
         onPointerDown={guidesHidden ? undefined : (e) => onWellPointerDown(orientation, e)}
         onPointerMove={guidesHidden ? undefined : onPointerMove}
         onPointerUp={guidesHidden ? undefined : onPointerUp}
@@ -75,6 +87,8 @@ export function GuideWells({
     <>
       {well('horizontal')}
       {well('vertical')}
+      {well('diagonal-up')}
+      {well('diagonal-down')}
     </>
   );
 }

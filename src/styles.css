@@ -953,12 +953,14 @@ select option {
   isolation: isolate;
 }
 
-/* ── Guide wells ── slim strips flush with the canvas's top and left edges;
-   dragging out of one pulls an alignment guide (GuideWells + useGuideDrag).
-   Quiet at rest — just the dashed grip glyph — a soft accent wash on hover,
-   and a danger wash while a guide gesture hovers the strip (dropping there
-   cancels the pull / deletes the dragged guide). The left strip starts below
-   the top one so the corner is unambiguous. */
+/* ── Guide wells ── slim strips flush with the canvas's top and left edges,
+   plus the two left-side corner squares; dragging out of one pulls an
+   alignment guide (GuideWells + useGuideDrag): top → horizontal, left →
+   vertical, upper-left corner → rising diagonal (/), lower-left → falling
+   (\). Quiet at rest — just the dashed grip glyph — a soft accent wash on
+   hover, and a danger wash while a guide gesture hovers the strip (dropping
+   there cancels the pull / deletes the dragged guide). The strips stop short
+   of the corner squares so each well is unambiguous. */
 .guide-well {
   position: absolute;
   z-index: 5;
@@ -981,9 +983,25 @@ select option {
 .guide-well-left {
   top: 14px;
   left: 0;
-  bottom: 0;
+  bottom: 14px; /* stops short of the lower-left corner well */
   width: 14px;
   cursor: ew-resize;
+}
+/* The corner squares. The cursor names the direction the MINTED guide will
+   move — the same cursor its hit stroke wears (GuideView). */
+.guide-well-corner-tl {
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+}
+.guide-well-corner-bl {
+  bottom: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nesw-resize;
 }
 .guide-well:hover:not(.disabled) {
   opacity: 1;
@@ -1013,6 +1031,20 @@ select option {
   width: 2px;
   height: 27px;
   background: repeating-linear-gradient(180deg, currentColor 0 6px, transparent 6px 9px);
+}
+/* Corner grips: the same dashed bar rotated to preview the diagonal it
+   mints — / in the upper-left corner, \ in the lower-left. */
+.guide-well-corner-tl .guide-well-grip,
+.guide-well-corner-bl .guide-well-grip {
+  width: 14px;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 7px);
+}
+.guide-well-corner-tl .guide-well-grip {
+  transform: rotate(-45deg);
+}
+.guide-well-corner-bl .guide-well-grip {
+  transform: rotate(45deg);
 }
 
 /* ── Item popovers (bullet / text label / polygon / svg image / transfer) ──

@@ -318,7 +318,10 @@ export function sanitizeGuides(guidesIn: Record<string, AlignmentGuide>): {
   for (const id of Object.keys(guidesIn)) {
     const g = guidesIn[id];
     if (
-      (g.orientation !== 'horizontal' && g.orientation !== 'vertical') ||
+      (g.orientation !== 'horizontal' &&
+        g.orientation !== 'vertical' &&
+        g.orientation !== 'diagonal-down' &&
+        g.orientation !== 'diagonal-up') ||
       typeof g.offset !== 'number' ||
       !Number.isFinite(g.offset)
     ) {

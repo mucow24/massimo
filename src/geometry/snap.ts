@@ -1,4 +1,12 @@
-import type { Line, LineCircle, LineId, Station, StationId, StopCell } from '../model/types';
+import type {
+  GuideOrientation,
+  Line,
+  LineCircle,
+  LineId,
+  Station,
+  StationId,
+  StopCell,
+} from '../model/types';
 import type { Vec2 } from './vec';
 import { cross, SQRT2_2 } from './vec';
 import { rotateBy, stationDirToWorld, stopCenterAt, travelDirLocal } from './orientation';
@@ -171,13 +179,147 @@ export interface SnapGuide {
   alignGuideId?: string;
 }
 
-/** An alignment guide as a snap target: an infinite horizontal (constant-Y)
- *  or vertical (constant-X) line at `offset`. `AlignmentGuide` is structurally
- *  assignable; callers pass the visibility-gated, exclusion-filtered pool. */
+/** An alignment guide as a snap target: an infinite horizontal (constant-Y),
+ *  vertical (constant-X), or 45° (constant-intercept) line at `offset`.
+ *  `AlignmentGuide` is structurally assignable; callers pass the
+ *  visibility-gated, exclusion-filtered pool. */
 export interface GuideTarget {
   id: string;
-  orientation: 'horizontal' | 'vertical';
+  orientation: GuideOrientation;
   offset: number;
+}
+
+// ---------- Guide-line geometry ----------
+//
+// The one home for "which line is a guide of orientation o at offset c":
+// both snappers, the drag hook, the nudge, the group tow, and the two
+// renderers (GuideView + the engaged chrome) all key off these five, so the
+// diagonal intercept convention (offset = Y at x 0; see GuideOrientation)
+// lives in exactly one place.
+
+/** The unit direction a guide of the given orientation runs along. */
+export function guideAxis(orientation: GuideOrientation): Vec2 {
+  switch (orientation) {
+    case 'horizontal':
+      return { x: 1, y: 0 };
+    case 'vertical':
+      return { x: 0, y: 1 };
+    case 'diagonal-down':
+      return { x: SQRT2_2, y: SQRT2_2 };
+    case 'diagonal-up':
+      return { x: SQRT2_2, y: -SQRT2_2 };
+  }
+}
+
+/** The offset a guide of this orientation would need to pass through `p` —
+ *  p.y / p.x for horizontal/vertical, the Y-intercept (y − x / y + x) for the
+ *  diagonals. */
+export function guideOffsetOf(orientation: GuideOrientation, p: Vec2): number {
+  switch (orientation) {
+    case 'horizontal':
+      return p.y;
+    case 'vertical':
+      return p.x;
+    case 'diagonal-down':
+      return p.y - p.x;
+    case 'diagonal-up':
+      return p.y + p.x;
+  }
+}
+
+/** True perpendicular distance from `p` to the guide line, in world units —
+ *  what an engage tolerance compares against. A diagonal's intercept delta
+ *  overstates the miss by √2, hence the divide. */
+export function guidePerpDist(orientation: GuideOrientation, offset: number, p: Vec2): number {
+  const d = Math.abs(guideOffsetOf(orientation, p) - offset);
+  return orientation === 'diagonal-down' || orientation === 'diagonal-up' ? d / Math.SQRT2 : d;
+}
+
+/** The foot of `p` on the guide line — the nearest point ON the guide. */
+export function guideFoot(orientation: GuideOrientation, offset: number, p: Vec2): Vec2 {
+  switch (orientation) {
+    case 'horizontal':
+      return { x: p.x, y: offset };
+    case 'vertical':
+      return { x: offset, y: p.y };
+    case 'diagonal-down': {
+      const e = (offset - (p.y - p.x)) / 2;
+      return { x: p.x - e, y: p.y + e };
+    }
+    case 'diagonal-up': {
+      const e = (offset - (p.y + p.x)) / 2;
+      return { x: p.x + e, y: p.y + e };
+    }
+  }
+}
+
+/** The single-scalar offset change a translation (dx, dy) carries for this
+ *  orientation — the tow/nudge projection. Cross-axis motion contributes
+ *  nothing: dy for horizontal, dx for vertical, dy − dx / dy + dx for the
+ *  diagonals. Inverse of {@link guideMoveVector}. */
+export function guideNudgeDelta(orientation: GuideOrientation, dx: number, dy: number): number {
+  switch (orientation) {
+    case 'horizontal':
+      return dy;
+    case 'vertical':
+      return dx;
+    case 'diagonal-down':
+      return dy - dx;
+    case 'diagonal-up':
+      return dy + dx;
+  }
+}
+
+/** The perpendicular world translation that changes a guide's offset by `d` —
+ *  how a guide MASTER tows its group rigidly. Round-trips through
+ *  {@link guideNudgeDelta}. */
+export function guideMoveVector(orientation: GuideOrientation, d: number): Vec2 {
+  switch (orientation) {
+    case 'horizontal':
+      return { x: 0, y: d };
+    case 'vertical':
+      return { x: d, y: 0 };
+    case 'diagonal-down':
+      return { x: -d / 2, y: d / 2 };
+    case 'diagonal-up':
+      return { x: d / 2, y: d / 2 };
+  }
+}
+
+/** The guide's drawable segment clipped to a box (the overdrawn viewBox —
+ *  painting past it is ink overflow, which costs the composited pan layer).
+ *  Horizontal/vertical guides span the full box edge-to-edge even when their
+ *  offset lies outside it (the layer draws them regardless, matching the
+ *  pre-diagonal behavior); a diagonal that misses the box entirely returns
+ *  null — there is no finite segment to draw. */
+export function guideSegmentInBox(
+  orientation: GuideOrientation,
+  offset: number,
+  vbX: number,
+  vbY: number,
+  vbW: number,
+  vbH: number,
+): { x1: number; y1: number; x2: number; y2: number } | null {
+  switch (orientation) {
+    case 'horizontal':
+      return { x1: vbX, y1: offset, x2: vbX + vbW, y2: offset };
+    case 'vertical':
+      return { x1: offset, y1: vbY, x2: offset, y2: vbY + vbH };
+    case 'diagonal-down': {
+      // y = x + offset: clip the x-range to where y stays inside the box.
+      const x1 = Math.max(vbX, vbY - offset);
+      const x2 = Math.min(vbX + vbW, vbY + vbH - offset);
+      if (x1 > x2) return null;
+      return { x1, y1: x1 + offset, x2, y2: x2 + offset };
+    }
+    case 'diagonal-up': {
+      // y = offset − x.
+      const x1 = Math.max(vbX, offset - (vbY + vbH));
+      const x2 = Math.min(vbX + vbW, offset - vbY);
+      if (x1 > x2) return null;
+      return { x1, y1: offset - x1, x2, y2: offset - x2 };
+    }
+  }
 }
 
 export interface SnapResult {
@@ -420,20 +562,21 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   // dragged reference is the station ANCHOR (dOff = 0 — the same reference
   // point the snapping contract names for grid), and the "target stop" is the
   // anchor's foot on the guide line, which gives the solver the constraint
-  // `anchor · perp = offset` verbatim.
+  // `anchor · perp = offset` verbatim — for all four orientations alike.
   for (const g of input.guideTargets ?? []) {
-    const horizontal = g.orientation === 'horizontal';
-    const perpDist = horizontal ? Math.abs(proposedY - g.offset) : Math.abs(proposedX - g.offset);
+    const anchor = { x: proposedX, y: proposedY };
+    const perpDist = guidePerpDist(g.orientation, g.offset, anchor);
     if (perpDist > tolerance) continue;
+    const foot = guideFoot(g.orientation, g.offset, anchor);
     all.push({
       target: null,
       guideId: g.id,
       dOff: { x: 0, y: 0 },
       tOff: { x: 0, y: 0 },
-      axis: horizontal ? { x: 1, y: 0 } : { x: 0, y: 1 },
+      axis: guideAxis(g.orientation),
       perpDist,
-      targetStopX: horizontal ? proposedX : g.offset,
-      targetStopY: horizontal ? g.offset : proposedY,
+      targetStopX: foot.x,
+      targetStopY: foot.y,
       kind: 'guide',
     });
   }

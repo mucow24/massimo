@@ -1,5 +1,5 @@
 import { STOP_DOT_RADIUS } from '../../geometry/orientation';
-import type { SnapGuide } from '../../geometry/snap';
+import { guideSegmentInBox, type SnapGuide } from '../../geometry/snap';
 import { midpoint, norm, perp, sub } from '../../geometry/vec';
 import type { Vec2 } from '../../geometry/vec';
 import { capCenterDy } from '../../geometry/textMeasure';
@@ -51,11 +51,11 @@ export function SnapGuides({ guides: allGuides, zoom, engaged, vb }: Props) {
   const engagedGuides = engaged && vb ? engaged : [];
   if (guides.length === 0 && engagedGuides.length === 0) return null;
   const halo = withAlpha(themeColors.accent, 0.3);
-  // An engaged guide's span across the overdrawn box, along its axis.
+  // An engaged guide's span across the overdrawn box, along its axis — the
+  // same clipped segment the guide itself paints with (GuideView). An
+  // engaged guide is under the cursor, so the box always catches it.
   const spanOf = (g: EngagedGuideChrome) =>
-    g.orientation === 'horizontal'
-      ? { x1: vb!.vbX, y1: g.offset, x2: vb!.vbX + vb!.vbW, y2: g.offset }
-      : { x1: g.offset, y1: vb!.vbY, x2: g.offset, y2: vb!.vbY + vb!.vbH };
+    guideSegmentInBox(g.orientation, g.offset, vb!.vbX, vb!.vbY, vb!.vbW, vb!.vbH);
   return (
     <g pointerEvents="none">
       <defs>
@@ -95,6 +95,7 @@ export function SnapGuides({ guides: allGuides, zoom, engaged, vb }: Props) {
         ))}
         {engagedGuides.map((g) => {
           const s = spanOf(g);
+          if (!s) return null;
           return (
             <g key={'ehalo' + g.id}>
               <line {...s} stroke={halo} strokeWidth={5 / zoom} strokeLinecap="round" />
@@ -125,6 +126,7 @@ export function SnapGuides({ guides: allGuides, zoom, engaged, vb }: Props) {
       ))}
       {engagedGuides.map((g) => {
         const s = spanOf(g);
+        if (!s) return null;
         return (
           <g key={'eng' + g.id} data-engaged-guide={g.id}>
             <line
@@ -184,10 +186,37 @@ export function SnapGuides({ guides: allGuides, zoom, engaged, vb }: Props) {
         // The chip names what was snapped TO — the guide's coordinate — and
         // rides the snap point so it stays by the cursor. Above the line for
         // a horizontal guide (the drawn-segment convention); beside it,
-        // reading east, for a vertical one.
+        // reading east, for a vertical one; up the perpendicular for a
+        // diagonal (straight above would graze the 45° line). A diagonal's
+        // coordinate is its Y-intercept, chip-named Y₀.
         const offset = 12 / zoom;
-        const lx = g.orientation === 'horizontal' ? g.at.x : g.offset + offset;
-        const ly = g.orientation === 'horizontal' ? g.offset - offset : g.at.y;
+        const d = offset / Math.SQRT2;
+        let lx: number;
+        let ly: number;
+        let anchor: 'start' | 'middle' | 'end' = 'middle';
+        let name = 'Y₀';
+        switch (g.orientation) {
+          case 'horizontal':
+            lx = g.at.x;
+            ly = g.offset - offset;
+            name = 'Y';
+            break;
+          case 'vertical':
+            lx = g.offset + offset;
+            ly = g.at.y;
+            anchor = 'start';
+            name = 'X';
+            break;
+          case 'diagonal-down':
+            lx = g.at.x + d;
+            ly = g.at.y - d;
+            break;
+          case 'diagonal-up':
+            lx = g.at.x - d;
+            ly = g.at.y - d;
+            anchor = 'end';
+            break;
+        }
         const value = Math.round(g.offset);
         return (
           <text
@@ -200,10 +229,10 @@ export function SnapGuides({ guides: allGuides, zoom, engaged, vb }: Props) {
             stroke={themeColors.accent}
             strokeWidth={4 / zoom}
             paintOrder="stroke"
-            textAnchor={g.orientation === 'horizontal' ? 'middle' : 'start'}
+            textAnchor={anchor}
             pointerEvents="none"
           >
-            {`${g.orientation === 'horizontal' ? 'Y' : 'X'} ${value}`}
+            {`${name} ${value}`}
           </text>
         );
       })}

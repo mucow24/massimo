@@ -2,7 +2,13 @@ import { RefObject, useCallback, useRef, useState } from 'react';
 import { beginHistoryGroup, useDoc } from '../../state/store';
 import { useSelection } from '../../state/selection';
 import { useRoutedSnapGuides } from './useRoutedSnapGuides';
-import type { SnapGuide } from '../../geometry/snap';
+import {
+  guideFoot,
+  guideMoveVector,
+  guideNudgeDelta,
+  guideOffsetOf,
+  type SnapGuide,
+} from '../../geometry/snap';
 import type { Vec2 } from '../../geometry/vec';
 import type { GuideOrientation } from '../../model/types';
 import { useDragSnap } from './useDragSnap';
@@ -90,16 +96,26 @@ export function useGuideDrag(
     allTargets: Vec2[];
   } | null>(null);
 
-  // Is the pointer inside (or past) the given orientation's home well strip —
-  // the top edge band for horizontal guides, the left band for vertical?
-  // Beyond the canvas edge counts too, so dragging a guide up into the
-  // toolbar reads as "back into the well" rather than a stranded commit.
+  // Is the pointer inside (or past) the given orientation's home well — the
+  // top edge band for horizontal guides, the left band for vertical, the
+  // upper-left / lower-left corner squares for the diagonals? Beyond the
+  // canvas edge counts too, so dragging a guide up into the toolbar reads as
+  // "back into the well" rather than a stranded commit.
   const inWell = (orientation: GuideOrientation, e: { clientX: number; clientY: number }) => {
     const host = svgRef.current?.closest('.canvas-host')?.getBoundingClientRect();
     if (!host) return false;
-    return orientation === 'horizontal'
-      ? e.clientY <= host.top + WELL_SIZE_PX
-      : e.clientX <= host.left + WELL_SIZE_PX;
+    const inTop = e.clientY <= host.top + WELL_SIZE_PX;
+    const inLeft = e.clientX <= host.left + WELL_SIZE_PX;
+    switch (orientation) {
+      case 'horizontal':
+        return inTop;
+      case 'vertical':
+        return inLeft;
+      case 'diagonal-up':
+        return inLeft && inTop;
+      case 'diagonal-down':
+        return inLeft && e.clientY >= host.bottom - WELL_SIZE_PX;
+    }
   };
   const syncOverWell = (orientation: GuideOrientation, e: React.PointerEvent) => {
     const over = inWell(orientation, e) ? orientation : null;
@@ -107,7 +123,8 @@ export function useGuideDrag(
   };
 
   // Shared by both gestures: the snapped offset for a proposed pointer
-  // position. The cross-axis coordinate rides the live cursor so any drawn
+  // position. The along-axis coordinate rides the live cursor (the proposed
+  // point is the cursor's foot on the proposed guide line) so any drawn
   // alignment segment lands by the pointer, not at a stale spot.
   const snappedOffset = (
     orientation: GuideOrientation,
@@ -122,11 +139,12 @@ export function useGuideDrag(
       return rawOffset;
     }
     const world = screenToWorld(e.clientX, e.clientY);
-    const horizontal = orientation === 'horizontal';
-    const proposed = horizontal ? { x: world.x, y: rawOffset } : { x: rawOffset, y: world.y };
-    const snap = snapPoint(proposed, { allTargets, constrain: horizontal ? 'y' : 'x' });
+    const proposed = guideFoot(orientation, rawOffset, world);
+    const constrain =
+      orientation === 'horizontal' ? 'y' : orientation === 'vertical' ? 'x' : orientation;
+    const snap = snapPoint(proposed, { allTargets, constrain });
     setSnapGuides(snap.guides);
-    return horizontal ? snap.y : snap.x;
+    return guideOffsetOf(orientation, snap);
   };
 
   const onStartDrag = useCallback((id: string, e: React.PointerEvent) => {
@@ -173,15 +191,15 @@ export function useGuideDrag(
       if (pointerLost(e)) return onPointerCancel();
       const { moved, dxScreen, dyScreen } = trackDragMove(ds, e, svgRef);
       if (!moved) return;
-      const horizontal = ds.orientation === 'horizontal';
-      const raw = ds.startOffset + (horizontal ? dyScreen : dxScreen) / zoom;
+      const raw =
+        ds.startOffset + guideNudgeDelta(ds.orientation, dxScreen / zoom, dyScreen / zoom);
       const next = snappedOffset(ds.orientation, raw, e, ds.allTargets);
       moveGuide(ds.id, next);
       if (hasGroupSiblings(ds.siblings)) {
-        // Rigid along the guide's one axis; the cross-axis half of the
-        // pointer's travel moves nothing, master included.
-        const d = next - ds.startOffset;
-        translateSiblings(ds.siblings, horizontal ? 0 : d, horizontal ? d : 0);
+        // Rigid along the guide's one degree of freedom; the along-axis half
+        // of the pointer's travel moves nothing, master included.
+        const mv = guideMoveVector(ds.orientation, next - ds.startOffset);
+        translateSiblings(ds.siblings, mv.x, mv.y);
       }
       syncOverWell(ds.orientation, e);
       return;
@@ -192,7 +210,7 @@ export function useGuideDrag(
       const { moved } = trackDragMove(ps, e, svgRef);
       if (!moved) return;
       const world = screenToWorld(e.clientX, e.clientY);
-      const raw = ps.orientation === 'horizontal' ? world.y : world.x;
+      const raw = guideOffsetOf(ps.orientation, world);
       ps.offset = snappedOffset(ps.orientation, raw, e, ps.allTargets);
       setPull({ orientation: ps.orientation, offset: ps.offset });
       syncOverWell(ps.orientation, e);

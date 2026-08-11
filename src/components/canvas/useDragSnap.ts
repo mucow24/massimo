@@ -13,8 +13,8 @@ export interface DragSnapOptions {
   /** Alignment-guide pool (always-on), snapshotted at pointer-down like the
    *  others — see liveGuideTargets. Absent means no guides in play. */
   guideTargets?: readonly GuideTarget[];
-  /** Single-DOF consumers (edge resizes); see {@link snapPolygonPoint}. */
-  constrain?: 'x' | 'y';
+  /** Single-DOF consumers (edge resizes, guide drags); see {@link snapPolygonPoint}. */
+  constrain?: 'x' | 'y' | 'diagonal-down' | 'diagonal-up';
 }
 
 export interface DragSnapApi {

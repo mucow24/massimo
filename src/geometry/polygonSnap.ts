@@ -3,6 +3,10 @@ import { add, scale, sub, dot, cross } from './vec';
 import {
   axesForAllSnap,
   GRID_INTERVAL,
+  guideAxis,
+  guideFoot,
+  guideOffsetOf,
+  guidePerpDist,
   projectOntoAxis,
   reconcileCorner,
   reconcileLockWithGrid,
@@ -29,11 +33,14 @@ export interface PolygonSnapInput {
   /** Grid cell size in world units. Defaults to {@link GRID_INTERVAL} (10); the
    *  toolbar threads the active size (5, 10, or 20). */
   gridInterval?: number;
-  /** Single-DOF consumers (edge resizes): only snaps that move this world
-   *  axis are considered — vertical alignments + X grid for 'x', horizontal
-   *  alignments + Y grid for 'y'; diagonals are excluded. Prevents guides
-   *  for snaps the caller would discard. */
-  constrain?: 'x' | 'y';
+  /** Single-DOF consumers: only snaps that move the caller's one degree of
+   *  freedom are considered. 'x'/'y' (edge resizes, straight-guide drags)
+   *  keep vertical/horizontal alignments + the matching grid axis and exclude
+   *  diagonals. The two diagonal values (a diagonal guide's own drag, which
+   *  can only move its intercept) keep only the matching 45° family, with
+   *  grid quantizing the intercept when the full lattice is on. Prevents
+   *  guides for snaps the caller would discard. */
+  constrain?: 'x' | 'y' | 'diagonal-down' | 'diagonal-up';
   /** Alignment guides in play, ALWAYS-ON targets independent of every mode
    *  toggle (Shift bypasses at the call sites, like all snapping). The caller
    *  passes the visibility-gated pool minus anything moving with the drag. */
@@ -94,20 +101,42 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   };
 
   // Single-DOF constraint: a vertical alignment axis locks X, a horizontal
-  // one locks Y; diagonals move both, so a constrained caller gets neither.
-  const axisAllowed = (a: Vec2): boolean =>
-    !constrain || (constrain === 'x' ? a.x === 0 : a.y === 0);
+  // one locks Y; diagonals move both, so an x/y-constrained caller gets
+  // neither. A diagonal-constrained caller can only slide its intercept, so
+  // it keeps exactly its own 45° family (the sign test reads the family off
+  // either sign convention of the unit axis).
+  const axisAllowed = (a: Vec2): boolean => {
+    if (!constrain) return true;
+    switch (constrain) {
+      case 'x':
+        return a.x === 0;
+      case 'y':
+        return a.y === 0;
+      case 'diagonal-down':
+        return a.x !== 0 && a.y !== 0 && a.x > 0 === a.y > 0;
+      case 'diagonal-up':
+        return a.x !== 0 && a.y !== 0 && a.x > 0 !== a.y > 0;
+    }
+  };
   // Grid narrows to the constrained axis the same way ('x' keeps vertical
-  // grid lines, which lock X).
+  // grid lines, which lock X). For a diagonal DOF only the full lattice
+  // means anything — its crossings are the discrete intercepts — so 'both'
+  // survives and either directional mode drops out.
+  const diagonalConstrain =
+    constrain === 'diagonal-down' || constrain === 'diagonal-up' ? constrain : null;
   const gridMode: GridSnap = !constrain
     ? modes.grid
-    : constrain === 'x'
-      ? modes.grid === 'both' || modes.grid === 'vertical'
-        ? 'vertical'
+    : diagonalConstrain
+      ? modes.grid === 'both'
+        ? 'both'
         : 'off'
-      : modes.grid === 'both' || modes.grid === 'horizontal'
-        ? 'horizontal'
-        : 'off';
+      : constrain === 'x'
+        ? modes.grid === 'both' || modes.grid === 'vertical'
+          ? 'vertical'
+          : 'off'
+        : modes.grid === 'both' || modes.grid === 'horizontal'
+          ? 'horizontal'
+          : 'off';
 
   const candidates: Candidate[] = [];
   if (modes.line) {
@@ -125,7 +154,7 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   // guide), never as a distance-labeled segment.
   let bestV: { value: number; perp: number; target: Vec2; guideId?: string } | null = null;
   let bestH: { value: number; perp: number; target: Vec2; guideId?: string } | null = null;
-  let bestD: { foot: Vec2; perp: number; target: Vec2; axis: Vec2 } | null = null;
+  let bestD: { foot: Vec2; perp: number; target: Vec2; axis: Vec2; guideId?: string } | null = null;
 
   for (const { target, axis } of candidates) {
     const { foot, perpDist } = axisFoot(proposed, target, axis);
@@ -146,7 +175,8 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   // Alignment guides: always-on candidates, independent of every mode toggle.
   // A horizontal guide is a horizontal alignment axis (locks Y), competing
   // with the point-derived winner above on plain perpendicular distance; its
-  // stand-in `target` is the proposed point's foot on the guide line.
+  // stand-in `target` is the proposed point's foot on the guide line. A
+  // diagonal guide competes in the diagonal slot the same way.
   for (const g of input.guideTargets ?? []) {
     if (g.orientation === 'vertical') {
       if (!axisAllowed({ x: 0, y: 1 })) continue;
@@ -155,12 +185,21 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
       if (!bestV || d < bestV.perp) {
         bestV = { value: g.offset, perp: d, target: { x: g.offset, y: proposed.y }, guideId: g.id };
       }
-    } else {
+    } else if (g.orientation === 'horizontal') {
       if (!axisAllowed({ x: 1, y: 0 })) continue;
       const d = Math.abs(proposed.y - g.offset);
       if (d > tol) continue;
       if (!bestH || d < bestH.perp) {
         bestH = { value: g.offset, perp: d, target: { x: proposed.x, y: g.offset }, guideId: g.id };
+      }
+    } else {
+      const axis = guideAxis(g.orientation);
+      if (!axisAllowed(axis)) continue;
+      const d = guidePerpDist(g.orientation, g.offset, proposed);
+      if (d > tol) continue;
+      if (!bestD || d < bestD.perp) {
+        const foot = guideFoot(g.orientation, g.offset, proposed);
+        bestD = { foot, perp: d, target: foot, axis, guideId: g.id };
       }
     }
   }
@@ -170,6 +209,17 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   // grid it yields entirely and we snap purely to grid (no guide).
   const plainGrid = (): PolygonSnapResult => {
     if (!gridOn) return { x: proposed.x, y: proposed.y, guides: [] };
+    if (diagonalConstrain) {
+      // A diagonal 1-DOF caller only reads the intercept back, so quantize
+      // THAT — the intercepts whose lines pass through lattice crossings are
+      // the whole-interval ones. Rounding x and y separately would sometimes
+      // land the second-nearest intercept (the two roundings can disagree
+      // near half-cell boundaries).
+      const c = guideOffsetOf(diagonalConstrain, proposed);
+      const q = Math.round(c / gridInterval) * gridInterval;
+      const p = guideFoot(diagonalConstrain, q, proposed);
+      return { x: p.x, y: p.y, guides: [] };
+    }
     const g = snapPointToGrid(proposed.x, proposed.y, gridMode, gridInterval);
     return { x: g.x, y: g.y, guides: [] };
   };
@@ -257,17 +307,19 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   }
   if (bestD) {
     if (!gridOn) {
-      if (applyTens) {
+      // Guide winners never notch (see the singleAxis path: a guide's
+      // stand-in target is the drag's own foot).
+      if (applyTens && !bestD.guideId) {
         // Free DOF runs along the diagonal; notch the distance from the target.
         const p = notchAlong(bestD.target, bestD.foot, bestD.axis);
         return { x: p.x, y: p.y, guides: tensGuide(bestD.target, p) };
       }
-      return { x: bestD.foot.x, y: bestD.foot.y, guides: [guideTo(bestD.target, bestD.foot)] };
+      return { x: bestD.foot.x, y: bestD.foot.y, guides: [emit(bestD, bestD.foot)] };
     }
     const r = reconcileLockWithGrid(bestD.target, bestD.axis, proposed, gridMode, gridInterval);
     if (!r.engaged) return plainGrid();
     const p: Vec2 = { x: r.x, y: r.y };
-    return { x: p.x, y: p.y, guides: [guideTo(bestD.target, p)] };
+    return { x: p.x, y: p.y, guides: [emit(bestD, p)] };
   }
 
   // No alignment engaged — grid is the only thing that can move the point.
