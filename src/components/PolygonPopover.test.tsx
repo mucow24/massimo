@@ -252,7 +252,7 @@ describe('<PolygonPopover />', () => {
 });
 
 describe('<PolygonPopover /> — style presets', () => {
-  it('applies a preset from the Style row, then flips to Custom on a covered edit', async () => {
+  it('applies a preset from the Style row; a covered edit keeps the style (override)', async () => {
     useDoc.setState({
       ...useDoc.getState(),
       styles: {
@@ -270,9 +270,9 @@ describe('<PolygonPopover /> — style presets', () => {
       styleId: 'y1',
     });
     expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Lake');
-    // A covered edit (closed) detaches back to Custom.
+    // A covered edit (closed) becomes a per-field override — the tag stays.
     fireEvent.click(screen.getByLabelText('Closed'));
-    expect(useDoc.getState().polygons['p0'].styleId).toBeUndefined();
-    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Custom');
+    expect(useDoc.getState().polygons['p0'].styleId).toBe('y1');
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Lake');
   });
 });

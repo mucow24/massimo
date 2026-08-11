@@ -1,5 +1,6 @@
-// Detach-on-edit ("tagged ⇒ matches" upkeep) and paste hygiene for incoming
-// styleIds. The styles transforms themselves are covered in styles.test.ts.
+// Covered edits KEEP the style tag (divergence is a per-field override) and
+// paste hygiene for incoming styleIds. The styles transforms themselves are
+// covered in styles.test.ts / styles.overrides.test.ts.
 import { describe, it, expect } from 'vitest';
 import {
   addPolygonWith,
@@ -34,7 +35,7 @@ import {
   makeTransfer,
 } from '../test/fixtures';
 
-describe('detach on covered-field edits — lines', () => {
+describe('covered-field edits keep the tag — lines', () => {
   const tagged = () =>
     makeDoc({
       lines: [
@@ -49,23 +50,23 @@ describe('detach on covered-field edits — lines', () => {
       styles: [makeStyle('line', 'y1')],
     });
 
-  it('setLineWidth detaches on a real change, keeps the tag on a no-op', () => {
+  it('setLineWidth keeps the tag on a real change AND on a no-op', () => {
     const doc = tagged();
     expect(setLineWidth(doc, 'l1', 10)).toBe(doc); // value-identical → same reference
-    expect(setLineWidth(doc, 'l1', 14).lines.l1.styleId).toBeUndefined();
+    expect(setLineWidth(doc, 'l1', 14).lines.l1.styleId).toBe('y1');
   });
 
-  it('setLineStrokeWidth / setLineStrokeColor detach on change only', () => {
+  it('setLineStrokeWidth / setLineStrokeColor keep the tag on change', () => {
     const doc = tagged();
     expect(setLineStrokeWidth(doc, 'l1', 2)).toBe(doc);
-    expect(setLineStrokeWidth(doc, 'l1', 3).lines.l1.styleId).toBeUndefined();
+    expect(setLineStrokeWidth(doc, 'l1', 3).lines.l1.styleId).toBe('y1');
     expect(setLineStrokeColor(doc, 'l1', { day: '#123456', night: '#123456' })).toBe(doc);
     expect(
       setLineStrokeColor(doc, 'l1', { day: '#654321', night: '#654321' }).lines.l1.styleId,
-    ).toBeUndefined();
+    ).toBe('y1');
   });
 
-  it('the split dot SIZE and TYPE setters detach on change only', () => {
+  it('the split dot SIZE and TYPE setters keep the tag on change', () => {
     const doc = makeDoc({
       lines: [
         makeLine({
@@ -73,6 +74,10 @@ describe('detach on covered-field edits — lines', () => {
           width: 10,
           strokeWidth: 2,
           strokeColor: { day: '#123456', night: '#123456' },
+          // Sizes stored like a real (stamped) line — absence is a legacy
+          // state, and a materializing write would read as a change.
+          singletonDotSize: 8,
+          multiDotSize: 8,
           styleId: 'y1',
         }),
       ],
@@ -81,17 +86,17 @@ describe('detach on covered-field edits — lines', () => {
         makeStyle('stopDot', 'sd-square', { props: { shape: 'square' } }),
       ],
     });
-    // Dot SIZE is a covered line-style field: a no-op (value already effective)
-    // keeps the tag…
+    // Dot SIZE is a covered line-style field: a no-op (value already stored)
+    // keeps the tag and the reference…
     expect(setLineSingletonDotSize(doc, 'l1', 8)).toBe(doc); // 8 = DOT_SIZE_DEFAULT
     expect(setLineMultiDotSize(doc, 'l1', 8)).toBe(doc);
-    // …and a real size change detaches, on either case independently.
-    expect(setLineSingletonDotSize(doc, 'l1', 12).lines.l1.styleId).toBeUndefined();
-    expect(setLineMultiDotSize(doc, 'l1', 12).lines.l1.styleId).toBeUndefined();
-    // Dot TYPE is ALSO covered now: pointing a case at a different stopDot
-    // library style detaches the line's preset, on either case independently.
-    expect(setLineSingletonDotStyle(doc, 'l1', 'sd-square').lines.l1.styleId).toBeUndefined();
-    expect(setLineMultiDotStyle(doc, 'l1', 'sd-square').lines.l1.styleId).toBeUndefined();
+    // …and a real size change keeps the tag too (a per-field override).
+    expect(setLineSingletonDotSize(doc, 'l1', 12).lines.l1.styleId).toBe('y1');
+    expect(setLineMultiDotSize(doc, 'l1', 12).lines.l1.styleId).toBe('y1');
+    // Dot TYPE is ALSO covered: pointing a case at a different stopDot
+    // library style overrides it, keeping the line's preset tag.
+    expect(setLineSingletonDotStyle(doc, 'l1', 'sd-square').lines.l1.styleId).toBe('y1');
+    expect(setLineMultiDotStyle(doc, 'l1', 'sd-square').lines.l1.styleId).toBe('y1');
   });
 
   it('setLineLabelGap snaps to the quarter grid, collapses at the default 3, keeps 0', () => {
@@ -110,27 +115,25 @@ describe('detach on covered-field edits — lines', () => {
     expect(setLineLabelGap(doc, 'l1', -99).lines.l1.labelGap).toBe(-10);
   });
 
-  it('setLineLabelGap detaches on a real change, keeps the tag on a no-op', () => {
+  it('setLineLabelGap keeps the tag on a real change AND on a no-op', () => {
     const doc = tagged();
     expect(setLineLabelGap(doc, 'l1', 3)).toBe(doc); // absent ≡ default → same reference
     expect(setLineLabelGap(doc, 'l1', Number.NaN)).toBe(doc);
-    expect(setLineLabelGap(doc, 'l1', 5).lines.l1.styleId).toBeUndefined();
+    expect(setLineLabelGap(doc, 'l1', 5).lines.l1.styleId).toBe('y1');
   });
 });
 
-describe('detach on covered-field edits — text labels', () => {
+describe('covered-field edits keep the tag — text labels', () => {
   const tagged = () =>
     makeDoc({
       textLabels: [makeTextLabel({ id: 'g1', fontSize: 24, styleId: 'y1' })],
       styles: [makeStyle('textLabel', 'y1', { props: { fontSize: 24 } })],
     });
 
-  it('detaches when a covered value actually changes', () => {
-    expect(updateTextLabel(tagged(), 'g1', { fontSize: 30 }).textLabels.g1.styleId).toBeUndefined();
-    expect(
-      updateTextLabel(tagged(), 'g1', { align: 'center' }).textLabels.g1.styleId,
-    ).toBeUndefined();
-    expect(updateTextLabel(tagged(), 'g1', { italic: true }).textLabels.g1.styleId).toBeUndefined();
+  it('keeps the tag when a covered value actually changes', () => {
+    expect(updateTextLabel(tagged(), 'g1', { fontSize: 30 }).textLabels.g1.styleId).toBe('y1');
+    expect(updateTextLabel(tagged(), 'g1', { align: 'center' }).textLabels.g1.styleId).toBe('y1');
+    expect(updateTextLabel(tagged(), 'g1', { italic: true }).textLabels.g1.styleId).toBe('y1');
   });
 
   it('keeps the tag on non-covered edits (text, editorHeight, locked, position)', () => {
@@ -140,7 +143,7 @@ describe('detach on covered-field edits — text labels', () => {
     expect(updateTextLabel(tagged(), 'g1', { x: 50, y: 50 }).textLabels.g1.styleId).toBe('y1');
   });
 
-  it('width/leading/tracking are per-label layout, not style — real changes keep the tag', () => {
+  it('width/leading/tracking are covered too — real changes keep the tag (overrides)', () => {
     expect(updateTextLabel(tagged(), 'g1', { width: 200 }).textLabels.g1.styleId).toBe('y1');
     expect(updateTextLabel(tagged(), 'g1', { leading: 1.5 }).textLabels.g1.styleId).toBe('y1');
     expect(updateTextLabel(tagged(), 'g1', { tracking: 0.05 }).textLabels.g1.styleId).toBe('y1');
@@ -152,17 +155,17 @@ describe('detach on covered-field edits — text labels', () => {
   });
 });
 
-describe('detach on covered-field edits — polygons', () => {
+describe('covered-field edits keep the tag — polygons', () => {
   const tagged = () =>
     makeDoc({
       polygons: [makePolygon({ id: 'p1', styleId: 'y1' })],
       styles: [makeStyle('polygon', 'y1')],
     });
 
-  it('detaches when a covered value actually changes', () => {
-    expect(updatePolygon(tagged(), 'p1', { fill: '#00ff00' }).polygons.p1.styleId).toBeUndefined();
-    expect(updatePolygon(tagged(), 'p1', { strokeWidth: 3 }).polygons.p1.styleId).toBeUndefined();
-    expect(updatePolygon(tagged(), 'p1', { closed: false }).polygons.p1.styleId).toBeUndefined();
+  it('keeps the tag when a covered value actually changes', () => {
+    expect(updatePolygon(tagged(), 'p1', { fill: '#00ff00' }).polygons.p1.styleId).toBe('y1');
+    expect(updatePolygon(tagged(), 'p1', { strokeWidth: 3 }).polygons.p1.styleId).toBe('y1');
+    expect(updatePolygon(tagged(), 'p1', { closed: false }).polygons.p1.styleId).toBe('y1');
   });
 
   it('keeps the tag on non-covered edits and value-identical covered writes', () => {
@@ -180,25 +183,25 @@ describe('detach on covered-field edits — polygons', () => {
   });
 });
 
-describe('detach on covered-field edits — route bullets', () => {
+describe('covered-field edits keep the tag — route bullets', () => {
   const tagged = () =>
     makeDoc({
       routeBullets: [makeRouteBullet({ id: 'b1', size: 20, styleId: 'y1' })],
       styles: [makeStyle('routeBullet', 'y1', { props: { size: 20 } })],
     });
 
-  it('detaches on shape/size changes, keeps the tag on lineId/locked/no-op writes', () => {
-    expect(
-      updateRouteBullet(tagged(), 'b1', { shape: 'diamond' }).routeBullets.b1.styleId,
-    ).toBeUndefined();
-    expect(updateRouteBullet(tagged(), 'b1', { size: 24 }).routeBullets.b1.styleId).toBeUndefined();
+  it('keeps the tag on shape/size changes and on lineId/locked/no-op writes', () => {
+    expect(updateRouteBullet(tagged(), 'b1', { shape: 'diamond' }).routeBullets.b1.styleId).toBe(
+      'y1',
+    );
+    expect(updateRouteBullet(tagged(), 'b1', { size: 24 }).routeBullets.b1.styleId).toBe('y1');
     expect(updateRouteBullet(tagged(), 'b1', { lineId: null }).routeBullets.b1.styleId).toBe('y1');
     expect(updateRouteBullet(tagged(), 'b1', { locked: true }).routeBullets.b1.styleId).toBe('y1');
     expect(updateRouteBullet(tagged(), 'b1', { size: 20 }).routeBullets.b1.styleId).toBe('y1');
   });
 });
 
-describe('detach on covered-field edits — transfers', () => {
+describe('covered-field edits keep the tag — transfers', () => {
   const base = () =>
     makeDoc({
       stations: [makeStation({ id: 's1' }), makeStation({ id: 's2' })],
@@ -206,18 +209,18 @@ describe('detach on covered-field edits — transfers', () => {
       styles: [makeStyle('transfer', 'y1', { props: { thickness: 6 } })],
     });
 
-  it('detaches when an override actually changes, keeps the tag on no-ops', () => {
+  it('keeps the tag when an override actually changes, and on no-ops', () => {
     const doc = base();
     expect(updateTransferStyle(doc, 'x1', { thickness: 6 })).toBe(doc);
-    expect(updateTransferStyle(doc, 'x1', { thickness: 9 }).transfers.x1.styleId).toBeUndefined();
+    expect(updateTransferStyle(doc, 'x1', { thickness: 9 }).transfers.x1.styleId).toBe('y1');
     expect(
       updateTransferStyle(doc, 'x1', { color: { day: '#ff0000', night: '#ff0000' } }).transfers.x1
         .styleId,
-    ).toBeUndefined();
+    ).toBe('y1');
   });
 });
 
-describe('detach on covered-field edits — stations', () => {
+describe('covered-field edits keep the tag — stations', () => {
   // Station stores only fontSize:20 (rest absent ⇒ effective defaults), tagged
   // to a style whose props match — the tagged ⇒ matches invariant holds.
   const tagged = () =>
@@ -226,22 +229,20 @@ describe('detach on covered-field edits — stations', () => {
       styles: [makeStyle('station', 'y1', { props: { fontSize: 20 } })],
     });
 
-  it('detaches when any covered typography value actually changes', () => {
-    expect(
-      updateStationLabelStyle(tagged(), 's1', { fontSize: 24 }).stations.s1.styleId,
-    ).toBeUndefined();
-    expect(
-      updateStationLabelStyle(tagged(), 's1', { weight: 700 }).stations.s1.styleId,
-    ).toBeUndefined();
-    expect(
-      updateStationLabelStyle(tagged(), 's1', { italic: true }).stations.s1.styleId,
-    ).toBeUndefined();
-    expect(
-      updateStationLabelStyle(tagged(), 's1', { leading: 1.5 }).stations.s1.styleId,
-    ).toBeUndefined();
-    expect(
-      updateStationLabelStyle(tagged(), 's1', { tracking: 0.05 }).stations.s1.styleId,
-    ).toBeUndefined();
+  it('keeps the tag when any covered typography value actually changes', () => {
+    expect(updateStationLabelStyle(tagged(), 's1', { fontSize: 24 }).stations.s1.styleId).toBe(
+      'y1',
+    );
+    expect(updateStationLabelStyle(tagged(), 's1', { weight: 700 }).stations.s1.styleId).toBe('y1');
+    expect(updateStationLabelStyle(tagged(), 's1', { italic: true }).stations.s1.styleId).toBe(
+      'y1',
+    );
+    expect(updateStationLabelStyle(tagged(), 's1', { leading: 1.5 }).stations.s1.styleId).toBe(
+      'y1',
+    );
+    expect(updateStationLabelStyle(tagged(), 's1', { tracking: 0.05 }).stations.s1.styleId).toBe(
+      'y1',
+    );
   });
 
   it('keeps the tag (same reference) on value-identical covered writes', () => {

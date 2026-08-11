@@ -486,8 +486,8 @@ describe('<StationInspector /> — shape picker wiring', () => {
       expect(useDoc.getState().stations.a.italic).toBeFalsy();
     });
 
-    it('editing a covered typography field detaches the style tag', () => {
-      // A default-looking station tagged to a matching style (tagged ⇒ matches).
+    it('editing a covered typography field keeps the style tag (an override)', () => {
+      // A default-looking station tagged to a matching style.
       useDoc.setState({
         ...DEFAULT_DOC,
         ...makeDoc({
@@ -500,7 +500,7 @@ describe('<StationInspector /> — shape picker wiring', () => {
       render(<StationInspector id="a" />);
       expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Big');
       stepSlider(screen.getByRole('slider', { name: /size/i }), 1);
-      expect(useDoc.getState().stations.a.styleId).toBeUndefined();
+      expect(useDoc.getState().stations.a.styleId).toBe('y1');
     });
 
     it('typography edits do NOT mirror-propagate to matching stations (pinned decision)', async () => {

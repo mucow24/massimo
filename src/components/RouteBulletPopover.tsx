@@ -8,6 +8,7 @@ import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
 import { SegmentedToggle } from './SegmentedToggle';
 import { StyleRow } from './StyleRow';
+import { OverrideDot } from './OverrideDot';
 import {
   ROUTE_BULLET_SHAPES,
   ROUTE_BULLET_SIZE_MAX,
@@ -92,7 +93,7 @@ export function RouteBulletPopover({ bullet, hostW, onClose }: Props) {
 
   return (
     <PopoverShell
-      className="bullet-popover"
+      className="bullet-popover style-fields"
       title="Route bullet"
       left={anchor.x}
       top={anchor.y}
@@ -139,6 +140,13 @@ export function RouteBulletPopover({ bullet, hostW, onClose }: Props) {
       />
       <hr className="popover-divider" aria-hidden="true" />
       <div className="row">
+        <OverrideDot
+          kind="routeBullet"
+          itemId={bullet.id}
+          fields={['shape']}
+          name="Shape"
+          disabled={locked}
+        />
         <label>Shape</label>
         <div className="shape-group">
           <SegmentedToggle
@@ -168,6 +176,15 @@ export function RouteBulletPopover({ bullet, hostW, onClose }: Props) {
         getCurrent={() => useDoc.getState().routeBullets[bullet.id]?.size ?? bullet.size}
         textboxAllowAboveMax
         disabled={locked}
+        dot={
+          <OverrideDot
+            kind="routeBullet"
+            itemId={bullet.id}
+            fields={['size']}
+            name="Size"
+            disabled={locked}
+          />
+        }
       />
       <PopoverFooter
         noun="route bullet"

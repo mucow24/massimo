@@ -6,6 +6,7 @@ import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
 import { DayNightColorRow } from './DayNightColorRow';
 import { StyleRow } from './StyleRow';
+import { OverrideDot } from './OverrideDot';
 import {
   POLYGON_CURVE_RADIUS_DEFAULT,
   POLYGON_CURVE_RADIUS_MAX,
@@ -62,7 +63,7 @@ export function PolygonPopover({ polygon, hostW, onClose }: Props) {
 
   return (
     <PopoverShell
-      className="bullet-popover polygon-popover"
+      className="bullet-popover polygon-popover style-fields"
       title="Polygon"
       left={anchor.x}
       top={anchor.y}
@@ -88,6 +89,15 @@ export function PolygonPopover({ polygon, hostW, onClose }: Props) {
         disabled={locked || !closed}
         onChange={onFill}
         onDarkChange={onDarkFill}
+        dot={
+          <OverrideDot
+            kind="polygon"
+            itemId={polygon.id}
+            fields={['fill', 'darkFill']}
+            name="Fill color"
+            disabled={locked}
+          />
+        }
       />
       <hr className="popover-divider" aria-hidden="true" />
       <DayNightColorRow
@@ -102,6 +112,15 @@ export function PolygonPopover({ polygon, hostW, onClose }: Props) {
         disabled={locked}
         onChange={onStroke}
         onDarkChange={onDarkStroke}
+        dot={
+          <OverrideDot
+            kind="polygon"
+            itemId={polygon.id}
+            fields={['stroke', 'darkStroke']}
+            name="Stroke color"
+            disabled={locked}
+          />
+        }
       />
       <NumericFieldRow
         id="polygon-stroke-width"
@@ -114,6 +133,15 @@ export function PolygonPopover({ polygon, hostW, onClose }: Props) {
         getCurrent={() => useDoc.getState().polygons[polygon.id]?.strokeWidth ?? 0}
         textboxAllowAboveMax
         disabled={locked}
+        dot={
+          <OverrideDot
+            kind="polygon"
+            itemId={polygon.id}
+            fields={['strokeWidth']}
+            name="Stroke width"
+            disabled={locked}
+          />
+        }
       />
       <hr className="popover-divider" aria-hidden="true" />
       <NumericFieldRow
@@ -129,10 +157,26 @@ export function PolygonPopover({ polygon, hostW, onClose }: Props) {
         }
         textboxAllowAboveMax
         disabled={locked}
+        dot={
+          <OverrideDot
+            kind="polygon"
+            itemId={polygon.id}
+            fields={['curveRadius']}
+            name="Curve radius"
+            disabled={locked}
+          />
+        }
       />
       {/* Open polygons render stroke-only along the vertex chain — no fill,
             no closing edge — so unchecking this also greys the fill controls. */}
       <div className="row">
+        <OverrideDot
+          kind="polygon"
+          itemId={polygon.id}
+          fields={['closed']}
+          name="Closed"
+          disabled={locked}
+        />
         <label htmlFor="polygon-closed">Closed</label>
         <FieldCheckbox
           id="polygon-closed"

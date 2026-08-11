@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StyleRow } from './StyleRow';
 import { useDoc } from '../state/store';
@@ -113,6 +113,46 @@ describe('<StyleRow />', () => {
   it('disables the select when asked (locked items)', () => {
     render(<StyleRow kind="textLabel" itemId="g1" styleId={undefined} disabled />);
     expect(screen.getByRole('combobox', { name: 'Style' })).toBeDisabled();
+  });
+
+  it('shows "(edited)" while the item diverges from its style', () => {
+    useDoc.getState().applyStyle('y1', 'g1');
+    render(<Harness />);
+    const select = () => screen.getByRole('combobox', { name: 'Style' });
+    expect(select()).toHaveTextContent('Heading');
+    expect(select()).not.toHaveTextContent('(edited)');
+    act(() => useDoc.getState().updateTextLabel('g1', { weight: 400 })); // override
+    expect(select()).toHaveTextContent('Heading (edited)');
+  });
+
+  it('Revert to style discards the overrides and keeps the tag', async () => {
+    useDoc.getState().applyStyle('y1', 'g1');
+    useDoc.getState().updateTextLabel('g1', { weight: 400 });
+    render(<Harness />);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Revert to style' }));
+    const label = useDoc.getState().textLabels.g1;
+    expect(label.weight).toBe(700);
+    expect(label.styleId).toBe('y1');
+    expect(screen.getByRole('combobox', { name: 'Style' })).not.toHaveTextContent('(edited)');
+  });
+
+  it("Sync to style pushes this item's look into the def", async () => {
+    useDoc.getState().applyStyle('y1', 'g1');
+    useDoc.getState().updateTextLabel('g1', { fontSize: 30 });
+    render(<Harness />);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Sync to style' }));
+    expect((useDoc.getState().styles.y1.props as TextLabelStyleProps).fontSize).toBe(30);
+    expect(useDoc.getState().textLabels.g1.styleId).toBe('y1');
+    expect(screen.getByRole('combobox', { name: 'Style' })).not.toHaveTextContent('(edited)');
+  });
+
+  it('Sync and Revert are disabled on Custom and when nothing diverges', () => {
+    render(<Harness />); // untagged ⇒ Custom
+    expect(screen.getByRole('button', { name: 'Sync to style' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Revert to style' })).toBeDisabled();
+    useDoc.getState().applyStyle('y1', 'g1'); // tagged, matching ⇒ still disabled
+    expect(screen.getByRole('button', { name: 'Sync to style' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Revert to style' })).toBeDisabled();
   });
 
   // The item popovers live inside `.canvas-host`, whose `isolation: isolate`

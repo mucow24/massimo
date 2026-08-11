@@ -29,15 +29,26 @@ describe('serialize / parse round-trip', () => {
         makeStation({ id: 's2', x: 100, y: 100, stops: [makeStop('L1')] }),
       ],
       lines: [
-        // Non-default per-line curve radius must survive the round-trip.
+        // Non-default per-line curve radius must survive the round-trip. Dot
+        // sizes are always stored (parse materializes absent ones), so the
+        // lossless fixture carries them explicitly.
         makeLine({
           id: 'L1',
           service: 'A',
           color: '#0039A6',
           stations: ['s1', 's2'],
           curveRadius: 30,
+          singletonDotSize: 8,
+          multiDotSize: 8,
         }),
-        makeLine({ id: 'L2', service: 'B', color: '#FF6319', stations: ['s1'] }),
+        makeLine({
+          id: 'L2',
+          service: 'B',
+          color: '#FF6319',
+          stations: ['s1'],
+          singletonDotSize: 8,
+          multiDotSize: 8,
+        }),
       ],
       lineOrder: ['L2', 'L1'],
       // Round-trip pins compare parse(serialize(doc)) with toEqual, so the
@@ -625,6 +636,8 @@ describe('serialize / parse — dot styles', () => {
           // Distinct singleton/shared defaults, to prove they survive independently.
           singletonDotStyle: DOT_SHAPE_PRESETS['filled-line-color'],
           multiDotStyle: DOT_SHAPE_PRESETS['open-white'],
+          singletonDotSize: 8,
+          multiDotSize: 8,
         }),
       ],
       styles: Object.values(T.DEFAULT_STYLES),
@@ -1053,7 +1066,7 @@ describe('parse — line width sanitizing', () => {
 
   it('round-trips a non-default width losslessly (pin — relies only on the optional field)', () => {
     const doc = makeDoc({
-      lines: [makeLine({ id: 'L1', width: 21 })],
+      lines: [makeLine({ id: 'L1', width: 21, singletonDotSize: 8, multiDotSize: 8 })],
       styles: Object.values(T.DEFAULT_STYLES),
     });
     const result = parse(serialize(doc));
@@ -1135,18 +1148,20 @@ describe('parse — dot size sanitizing', () => {
     if (result.ok) expect(result.doc).toEqual(doc);
   });
 
-  it('bakes a legacy default line size into both split fields; an explicit default drops', () => {
+  it('bakes a legacy default line size into both split fields; the default is stored too', () => {
     const both = parse(buildDotSizePayload({}, { defaultDotSize: 12 }));
     expect(both.ok).toBe(true);
     if (both.ok) {
       expect(both.doc.lines.L1.singletonDotSize).toBe(12);
       expect(both.doc.lines.L1.multiDotSize).toBe(12);
     }
+    // Sizes are always stored: the legacy split bake drops the flat default,
+    // and the materializing bake writes it right back as a concrete value.
     const atDefault = parse(buildDotSizePayload({}, { defaultDotSize: 8 }));
     expect(atDefault.ok).toBe(true);
     if (atDefault.ok) {
-      expect('singletonDotSize' in atDefault.doc.lines.L1).toBe(false);
-      expect('multiDotSize' in atDefault.doc.lines.L1).toBe(false);
+      expect(atDefault.doc.lines.L1.singletonDotSize).toBe(8);
+      expect(atDefault.doc.lines.L1.multiDotSize).toBe(8);
     }
   });
 
@@ -1168,13 +1183,15 @@ describe('parse — dot size sanitizing', () => {
     if (result.ok) expect(result.doc.stations.s1.stops[0].dotSize).toBe(8);
   });
 
-  it('drops non-numeric sizes on both fields', () => {
+  it('replaces non-numeric line sizes with the materialized natural; drops junk stop sizes', () => {
     for (const junk of ['big', null, true, {}]) {
       const result = parse(buildDotSizePayload({ dotSize: junk }, { defaultDotSize: junk }));
       expect(result.ok).toBe(true);
       if (!result.ok) return;
-      expect('singletonDotSize' in result.doc.lines.L1).toBe(false);
-      expect('multiDotSize' in result.doc.lines.L1).toBe(false);
+      // Junk is dropped by the sanitizers, then the line fields (always
+      // stored) are materialized at the dot type's natural.
+      expect(result.doc.lines.L1.singletonDotSize).toBe(8);
+      expect(result.doc.lines.L1.multiDotSize).toBe(8);
       expect('dotSize' in result.doc.stations.s1.stops[0]).toBe(false);
     }
   });
@@ -1186,12 +1203,12 @@ describe('parse — dot size sanitizing', () => {
     expect(low.doc.lines.L1.singletonDotSize).toBe(9.5); // 9.6 snaps to the 0.25 grid
     expect(low.doc.lines.L1.multiDotSize).toBe(9.5);
     expect(low.doc.stations.s1.stops[0].dotSize).toBe(0);
-    // Snaps-to-default (8.1 → 8 on the 0.25 grid) is dropped like an exact 8.
+    // Snaps-to-default (8.1 → 8 on the 0.25 grid) is stored like an exact 8.
     const nearDefault = parse(buildDotSizePayload({}, { defaultDotSize: 8.1 }));
     expect(nearDefault.ok).toBe(true);
     if (nearDefault.ok) {
-      expect('singletonDotSize' in nearDefault.doc.lines.L1).toBe(false);
-      expect('multiDotSize' in nearDefault.doc.lines.L1).toBe(false);
+      expect(nearDefault.doc.lines.L1.singletonDotSize).toBe(8);
+      expect(nearDefault.doc.lines.L1.multiDotSize).toBe(8);
     }
   });
 
@@ -1204,9 +1221,10 @@ describe('parse — dot size sanitizing', () => {
     const result = parse(json);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // A non-finite legacy default must be dropped by the bake, not clamped.
-    expect('singletonDotSize' in result.doc.lines.L1).toBe(false);
-    expect('multiDotSize' in result.doc.lines.L1).toBe(false);
+    // A non-finite legacy default is dropped by the bake (not clamped), and
+    // the always-stored line fields then materialize at the natural.
+    expect(result.doc.lines.L1.singletonDotSize).toBe(8);
+    expect(result.doc.lines.L1.multiDotSize).toBe(8);
     expect('dotSize' in result.doc.stations.s1.stops[0]).toBe(false);
   });
 });
@@ -1226,7 +1244,13 @@ describe('parse — line stroke sanitizing', () => {
   it('round-trips a non-default stroke losslessly', () => {
     const doc = makeDoc({
       lines: [
-        makeLine({ id: 'L1', strokeWidth: 4, strokeColor: { day: '#ff0000', night: '#ff0000' } }),
+        makeLine({
+          id: 'L1',
+          strokeWidth: 4,
+          strokeColor: { day: '#ff0000', night: '#ff0000' },
+          singletonDotSize: 8,
+          multiDotSize: 8,
+        }),
       ],
       styles: Object.values(T.DEFAULT_STYLES),
     });

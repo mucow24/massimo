@@ -449,16 +449,25 @@ kind: line, textLabel, polygon, routeBullet, transfer, station) **plus** the two
 library styles (`stop-filled-black`, `stop-none`), since `stopDot` is a 7th styleable kind whose
 styles live in a small doc-scoped library rather than as a single Default — and
 `styleDefaults: FACTORY_STYLE_DEFAULTS` designating one per kind (`stopDot` → `stop-filled-black`). Styles are doc-scoped: applying one
-stamps its props onto the item through the canonical setters and tags it (`styleId`, invariant:
-tagged => the item's covered values equal the style's props); editing a covered field detaches
-the item back to "Custom"; redefining a style (Styles-panel editor or "Save style..." over the
-same name) re-stamps its tagged users in the same undo entry; new items are stamped with their
-kind's DESIGNATED default style on creation. An optional prop that is OFF is **absent**, never
-present-and-undefined, and `canonicalStyleProps` is the sole owner of that rule — it rebuilds a
-props object field by field, so every producer (capture, the panel's edits, `sanitizeStyleProps`
-over untyped file data) hands it an undefined and gets a missing key back rather than re-spelling
-the omission. That matters because the tagged invariant is compared by `stylePropsEqual`, which
-reads ABSENCE: one stray present-and-undefined key would read every wearer as "Custom" on load.
+stamps its props onto the item through the canonical setters and tags it (`styleId`); new items
+are stamped with their kind's DESIGNATED default style on creation. The tag means MEMBERSHIP, not
+equality: editing a covered field keeps the tag, and the divergence is a **per-field override** —
+never stored, always computed by diffing the item's captured effective props against the style's
+(`styleFieldsDiff`, walking the per-kind `STYLE_FIELDS` list). Style edits propagate per-field:
+`updateStyleProps`/`saveStyleFromItem` snapshot each wearer's override set against the PRE-edit
+props, then stamp only the non-overridden fields (`stampStyleFields`), so a wearer's own pins
+survive a style edit — and a style landing exactly on a pinned value dissolves that pin (equal
+values = no override to compute). The editors surface all of this: the StyleRow trigger reads
+"<name> (edited)" while any override exists, each diverging row wears a red dot in the reserved
+left gutter (click = `revertStyleField`, stamping that one field back), and the Sync/Revert
+buttons resolve the whole divergence in either direction (`saveStyleFromItem` from the item /
+`applyStyleToItem` over it). "Custom" (the dropdown's `clearStyleTag`) remains the only way OFF a
+style. An optional prop that is OFF is **absent**, never present-and-undefined, and
+`canonicalStyleProps` is the sole owner of that rule — it rebuilds a props object field by field,
+so every producer (capture, the panel's edits, `sanitizeStyleProps` over untyped file data) hands
+it an undefined and gets a missing key back rather than re-spelling the omission. That matters
+because the per-field comparators read ABSENCE: one stray present-and-undefined key would read
+every wearer as overridden on load.
 Defaultness is explicit and id-keyed, never name-derived: `styleDefaults` maps each kind to one of
 its styles (`setDefaultStyle` re-assigns it — the panel's star), with three structural invariants
 enforced on both load paths by `ensureStyleInvariants` (serialize.ts): every kind has >= 1 style
@@ -466,10 +475,10 @@ enforced on both load paths by `ensureStyleInvariants` (serialize.ts): every kin
 the designation when the default itself is deleted), every `styleDefaults` entry resolves to a
 style of its kind, and every line style's dot-TYPE ids (`singleton`/`multiDotStyleId`) name live
 `stopDot` styles. That last one is what keeps dot type STAMPABLE: the setters no-op on an id that
-doesn't resolve, so a def naming a deleted dot style is unmatchable — applying it leaves the line
-tagged over diverged values and the next load strips the tag, i.e. the style silently reads "Custom"
-again after every save/load. A present-but-dangling (or wrong-kind) id is re-pointed at the
-designated default dot; `deleteStyle` re-points the defs it can see at delete time.
+doesn't resolve, so a def naming a dead dot style could never hand its wearers a real value. A
+present-but-dangling (or wrong-kind) id is re-pointed at the designated default dot;
+`deleteStyle` re-points the defs it can see at delete time — defs FIRST, while wearers still
+carry the old ref, so faithful wearers follow to the fallback instead of reading as overridden.
 Both halves of a delete — the last-of-kind refusal and the fallback it re-points at — read
 `selectableStylesOfKind`, which is `stylesOfKind` minus the reserved "None" stop dot. "None" is a
 primitive the dot picker always offers but nobody chose, so promoting it to a kind's default (or
@@ -503,7 +512,8 @@ See [styles.ts](src/model/styles.ts).
 - `fontSize? / weight? / italic? / leading? / tracking?` — **per-station name typography**, each
   omitted at its `LABEL_*` default (fontSize→`LABEL_FONT_SIZE_DEFAULT`, weight→`LABEL_WEIGHT_DEFAULT`,
   italic→false, leading→`LABEL_LEADING_DEFAULT`, tracking→`LABEL_TRACKING_DEFAULT`). These are the
-  five fields covered by the `'station'` StyleDef; editing any of them detaches the `styleId` tag.
+  five fields covered by the `'station'` StyleDef; editing one on a tagged station pins it as a
+  per-field override (the tag stays).
   The hover bump and append-starter styling are applied at **paint time**, not stored here.
 - `styleId?` — live link to a StyleDef of kind `'station'` (see MapDoc.styles); covers the
   typography above, not identity. Same contract as `Line.styleId`.
@@ -548,7 +558,9 @@ See [styles.ts](src/model/styles.ts).
 **`StopCell`** — one line's stop on a station. `lineId, row, col` (station-local grid;
 **`row`/`col` are floats now**, since diagonal moves use ±√2/2 — equality uses `CELL_EPS=1e-4`),
 `orientation: StopOrientation`. Optional, **dropped when equal to the line's effective default**:
-`dotStyle?: DotStyle`, `dotSize?: number` (dot **diameter** in px), plus `dotStyleId?: string` —
+`dotStyle?: DotStyle`, `dotSize?: number` (dot **diameter** in px; absent = "the line's size" for
+this stop's singleton/shared case — a per-stop dot-TYPE pick courtesy-pins the size the new type
+implies when the stop sat at the old type's natural), plus `dotStyleId?: string` —
 the stopDot-library link whose stamped shadow is `dotStyle`, exactly analogous to `Line`'s
 `singletonDotStyleId`/`multiDotStyleId`. `viaCircle?: boolean` (omitted when false) marks the
 stop as "routed via the circle" its station is bound to — see Line circles below. It is the
@@ -764,13 +776,17 @@ All remaining fields optional and **never stored at default**:
   default stopDot style** — `resolveDotStyle` never reads `doc.styles`/`doc.styleDefaults`. The two
   coincide only on a factory doc: re-designating the stopDot default via `setDefaultStyle` does not
   change what an untagged line draws.
-- `singletonDotSize?` / `multiDotSize?: number` — dot diameter px, split the same way. **A missing
-  size does NOT mean 8** — the default is **style-dependent**, resolved through
-  `defaultDotDiameter(style)` ([dotSize.ts](src/model/dotSize.ts)): a service-code disc renders at
-  `2×SERVICE_CODE_DOT_RADIUS` = **12**, everything else at `2×STOP_DOT_RADIUS` = 8
-  (`DOT_SIZE_DEFAULT`). Every collapse / display / sanitizer path must route through
-  `defaultDotDiameter`, never a flat `DOT_SIZE_DEFAULT`, or an explicitly-chosen 8 on a
-  service-code dot silently snaps to 12. Legacy `defaultDotSize` baked into both.
+- `singletonDotSize?` / `multiDotSize?: number` — dot diameter px, split the same way, and
+  **always stored on a real line** (from `addLine` on; the setters never collapse them). Absence
+  is a legacy/fixture state: the load paths materialize it at the dot type's natural diameter —
+  `defaultDotDiameter(style)` ([dotSize.ts](src/model/dotSize.ts)), 12 for a service-code disc,
+  8 otherwise — via `bakeConcreteDotSizes` (non-version-gated in `migrateDoc`, unconditional in
+  `parse()`; the v27 bump forced one pass over existing docs), and the read helpers
+  (`lineSingletonDotSizeOf`) heal the same way. What the old absent-means-natural indirection
+  rendered is preserved by EDIT-time writes instead: a dot-type pick courtesy-moves a size
+  sitting at the old type's natural to the new type's natural, and a stopDot style edit whose
+  natural changes sweeps the custom lines / stop pins that sat at it (a per-STOP absent
+  `dotSize` simply means "the line's size"). Legacy `defaultDotSize` baked into both.
 - `width?: number` — **stripe width, GEOMETRY**; missing ⇒ `LINE_WIDTH_DEFAULT` (= `STOP_SIZE` =
   14); on a 0.25 (quarter-unit) grid, ≥ `LINE_WIDTH_MIN` (1) (`canonicalLineWidth`, `LINE_WIDTH_STEP`).
   Drives stop-cell tangency, band merging, stripe offsets.
@@ -1275,8 +1291,8 @@ conversion).
 > worth explaining; two things are deliberately elided rather than repeated on every entity.
 > **`styleId?`** rides on all six styleable kinds (`Station`, `Line`, `Transfer`, `RouteBullet`,
 > `Polygon`, `TextLabel`) with the identical contract — a live link to a `StyleDef` of that kind,
-> covering formatting but never identity, detaching on any covered-field edit — so it is spelled
-> out under `Station`/`Line` and assumed thereafter. **`editorHeight?`** (remembered inspector
+> covering formatting but never identity; covered-field edits keep the tag as per-field
+> overrides — so it is spelled out under `Station`/`Line` and assumed thereafter. **`editorHeight?`** (remembered inspector
 > textarea height; editing-UI only, never rendered) is on both `Station` and `TextLabel`. For the
 > exhaustive, authoritative field set read [types.ts](src/model/types.ts) itself.
 
@@ -1384,10 +1400,11 @@ the file itself carries (steps 3, 5, 6b/6c) — repair over guesswork, error ove
    `singletonDotStyle`/`multiDotStyle` + sizes, on lines AND line style defs) — **after**
    `convertLegacyDotShapes` (which materializes `defaultDotStyle` from any legacy `defaultDotShape`)
    and **before** the singleton-aware `sanitizeStopDotSizes` + style validation below.
-   - 7b. `sanitizeLineDotSize` — the deferred per-line dot-size loop from step 5, run here because
-     its drop-at default is style-aware and must see the baked split dot styles.
-8. `sanitizeStopDotSizes` — **must run after** the per-line pass AND the dot-defaults bake (a stop
-   compares against the _sanitized_ line default for its own singleton/shared case). Then
+   - 7b. `sanitizeLineDotSize` — the deferred per-line dot-size loop from step 5 (grid snap only;
+     sizes never drop at a default), then `bakeConcreteDotSizes` — pin stops whose OLD effective
+     size read their own type's natural, then materialize the always-stored line split sizes.
+8. `sanitizeStopDotSizes` — **must run after** the per-line pass AND the materializing bake (a
+   stop's size collapses at the line's now-concrete size for its singleton/shared case). Then
    `bakeStopDotLibrary(doc, hadStyles)` (seed the "Stop dots" library + tag every dot slot by
    value-match) — **before** `sanitizeStyles`, so the seeded defs are sanitized and the invariant
    pass sees the non-empty `stopDot` kind. Note the **two-part** no-op gate: it skips only when the
@@ -1411,8 +1428,11 @@ the file itself carries (steps 3, 5, 6b/6c) — repair over guesswork, error ove
     seed the designated default station style; idempotent, keyed off field presence).
 12. `migrateLegacyBulletSyntax` — gated on the **file's own** `version < 2` (the one version-gated,
     non-idempotent step in Path A).
-13. `pruneDanglingStyleRefs` — **last**, so dangling / wrong-kind / value-mismatched `styleId`
-    tags compare fully-sanitized items against fully-sanitized defs.
+13. `pruneDanglingStyleRefs` — **last**, so dangling / wrong-kind `styleId` tags check against
+    fully-sanitized defs. Value divergence is NOT pruned — a diverged-but-tagged item loads
+    verbatim, its diff being a per-field override. Then `bakeTextLabelStyleLayout` — textLabel
+    defs from saves predating layout coverage (width/leading/tracking) backfill each missing
+    field with the MOST COMMON of their (post-prune) wearers' effective values.
 14. `adoptDefaultStyles` — **only for files with no `styles` record at all** (pre-styles saves):
     untagged items whose values match their kind's designated default get tagged, so the Styles
     panel's Default editors act on the whole loaded map.
@@ -1456,11 +1476,13 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `snapStationCells` whenever `stations !== undefined` — cell drift is not tied to a schema bump, so a gate could never catch it. **But see the `merge` hook** — for this repair that caveat is the main event, not a footnote |
 | (not gated) | `sanitizeImageHrefs` whenever `svgImages !== undefined` — the guard had one caller (the clipboard) and neither doc load, so a remote href could be persisted at ANY version. **But see the `merge` hook** — same reasoning as `snapStationCells` |
+| (not gated) | `bakeConcreteDotSizes` whenever `lines !== undefined` — dot sizes are REQUIRED stored fields (absent used to mean "my dot type's natural diameter"); pin stops that tracked a different natural than their line's, then materialize the line split sizes. The v27 bump forced one pass over every pre-existing doc; a size-less line written at the current version (legacy clipboard paste) is healed by the **`merge` hook** |
+| (not gated) | `bakeTextLabelStyleLayout` whenever `styles !== undefined` — width/leading/tracking became covered textLabel style fields; a def predating the coverage backfills each missing field with the MOST COMMON of its wearers' effective values (auto/neutral when nobody wears it; ties keep the first-seen value), so nothing repaints and only wearers off the plurality read as per-field overrides. The v28 bump forces one pass; app-written defs are concrete, so no `merge`-hook membership is needed |
 
-A **corrupt/missing version is treated as v0** (all migrations run). The four non-gated repairs
-(`backfillLinesEdges`, `ensureStyleInvariants`, `snapStationCells`, `sanitizeImageHrefs`) are
-**not** tied to a schema bump — they run any time their field is present (an absent field is left
-for the persist-merge).
+A **corrupt/missing version is treated as v0** (all migrations run). The six non-gated repairs
+(`backfillLinesEdges`, `ensureStyleInvariants`, `snapStationCells`, `sanitizeImageHrefs`,
+`bakeConcreteDotSizes`, `bakeTextLabelStyleLayout`) are **not** tied to a schema bump — they run
+any time their field is present (an absent field is left for the persist-merge).
 `bakeActivePalettes`, which is gated, reads `useCustomPalettes.getState().palettes` to resolve
 legacy `custom:` ids — the only place in either load path that reaches into a store.
 
@@ -1469,9 +1491,10 @@ legacy `custom:` ids — the only place in either load path that reaches into a 
 > already _at_ the version it claims, so it skips `migrateDoc` entirely, ungated repairs included,
 > and the renderer crashes on `ln.edges.join(...)`. That is why the persist config carries a custom
 > **`merge` hook** which runs the must-always-hold repairs — `backfillLinesEdges`,
-> `snapStationCells` and `sanitizeImageHrefs` — **on every rehydrate**, whatever the version says.
+> `snapStationCells`, `sanitizeImageHrefs` and `bakeConcreteDotSizes` — **on every rehydrate**,
+> whatever the version says.
 > `migrateDoc`'s own ungated calls cover the version-changed path; `merge` covers the rest. All
-> three are reference-stable on a canonical doc, so it still passes straight through the default
+> four are reference-stable on a canonical doc, so it still passes straight through the default
 > merge. A must-always-hold invariant belongs in that hook, **not** in the ungated block in
 > `migrateDoc` alone. `snapStationCells` shows why the distinction is not academic: the docs
 > carrying cell drift were saved by the CURRENT build at the CURRENT version, so they are precisely
@@ -4007,10 +4030,13 @@ Each is confirmed in source/tests; file pointers included.
   style drops the tag but keeps the raw shadow, so a line can draw a style it no longer names.
   Compare against `resolveDotStyle(line, null, isSingleton)` — what the renderer reads.
   ([transforms.ts](src/model/transforms.ts), `setDotStyle`)
-- **Editing a stopDot style can detach LINE styles** — dot diameter defaults are style-dependent
-  (service-code discs 12px, plain dots 8), so a stopDot edit moves a tracking line's resolved size
-  while its line style's props stand still. `updateStyleProps` re-stamps the affected line styles'
-  wearers; `deleteStopDotStyle` already did. ([styles.ts](src/model/styles.ts))
+- **A dot type implies a natural diameter, resolved at EDIT time, never at render time** — dot
+  sizes are stored concretely (absence is a legacy state the load paths materialize away via
+  `bakeConcreteDotSizes`), so what the retired absent-means-natural indirection used to do is now
+  explicit writes: dot-TYPE picks courtesy-move a size sitting at the old type's natural to the
+  new type's, and a stopDot edit whose natural changes (a service-code toggle: 12px ↔ 8) sweeps
+  the custom lines and stop pins that sat at it. Tagged lines stay at their LINE style's size.
+  ([styles.ts](src/model/styles.ts), [transforms.ts](src/model/transforms.ts))
 - **`parse()`'s DEFAULT_DOC merge fabricates `styles` before the bakes run** — so any bake gated on
   "does this doc already have X" must be handed the pre-merge answer (`hadStyles`), or it no-ops on
   exactly the legacy files it exists for. ([serialize.ts](src/model/serialize.ts))

@@ -217,7 +217,7 @@ describe('RouteBulletPopover — style presets', () => {
     return bullet ? <RouteBulletPopover bullet={bullet} hostW={800} onClose={() => {}} /> : null;
   }
 
-  it('applies a preset from the Style row, then flips to Custom on a covered edit', async () => {
+  it('applies a preset from the Style row; a covered edit keeps the style (override)', async () => {
     seed(bulletFixture());
     useDoc.setState({
       ...useDoc.getState(),
@@ -233,9 +233,9 @@ describe('RouteBulletPopover — style presets', () => {
       styleId: 'y1',
     });
     expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Big');
-    // A covered edit (shape) detaches; the Line select stays identity-only.
+    // A covered edit (shape) becomes a per-field override — the tag stays.
     fireEvent.click(screen.getByLabelText('Square'));
-    expect(useDoc.getState().routeBullets['b1'].styleId).toBeUndefined();
-    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Custom');
+    expect(useDoc.getState().routeBullets['b1'].styleId).toBe('y1');
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Big');
   });
 });

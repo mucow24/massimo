@@ -32,7 +32,7 @@ async function saveHeadingFromG1(page: Page): Promise<void> {
   await expect(currentStyleName(page)).toHaveText('Heading');
 }
 
-test('save a label style, survive reload, apply to another label, detach on edit', async ({
+test('save a label style, survive reload, apply to another label, override on edit', async ({
   page,
 }) => {
   await seedAndOpen(page, twoLabels);
@@ -55,11 +55,16 @@ test('save a label style, survive reload, apply to another label, detach on edit
   await pickStyleOption(page, 'Heading');
   await expect(page.getByRole('spinbutton', { name: 'Size' })).toHaveValue(/^24(\.00)?$/);
 
-  // Editing a covered control detaches: the dropdown flips back to Custom.
+  // Editing a covered control keeps the style — the divergence is a
+  // per-field override: the trigger reads "(edited)" and the Size row grows
+  // a red dot that reverts just that field.
   const size = page.getByRole('spinbutton', { name: 'Size' });
   await size.fill('30');
   await size.press('Enter');
-  await expect(currentStyleName(page)).toHaveText('Custom');
+  await expect(currentStyleName(page)).toHaveText('Heading (edited)');
+  await page.getByRole('button', { name: 'Revert Size to style' }).click();
+  await expect(page.getByRole('spinbutton', { name: 'Size' })).toHaveValue(/^24(\.00)?$/);
+  await expect(currentStyleName(page)).toHaveText('Heading');
 });
 
 test('the sidebar Styles tab lists, renames, edits live, and deletes styles', async ({ page }) => {

@@ -11,7 +11,6 @@ import {
   deleteStyle,
   duplicateStyle,
   renameStyle,
-  restampStyleTag,
   saveStyleFromItem,
   setDefaultStyle,
   stylePropsEqual,
@@ -143,7 +142,7 @@ describe('captureStyleProps', () => {
     expect(plain).not.toHaveProperty('labelGap');
   });
 
-  it('captures only the covered label typography — width/leading/tracking stay per-label', () => {
+  it('captures the label typography AND its layout (width/leading/tracking covered)', () => {
     const doc = makeDoc({
       textLabels: [makeTextLabel({ id: 'g1', fontSize: 20, weight: 700, width: 200, leading: 2 })],
     });
@@ -154,6 +153,9 @@ describe('captureStyleProps', () => {
       weight: 700,
       italic: false,
       align: 'left',
+      width: 200,
+      leading: 2,
+      tracking: 0, // absent ⇒ neutral, captured concretely
     });
   });
 
@@ -356,12 +358,13 @@ describe('stylePropsEqual — transfer day/night colors', () => {
   });
 });
 
-describe('restampStyleTag', () => {
-  // The clipboard-paste invariant repair: a pasted item can arrive still tagged
-  // with a style whose props were redefined AFTER the copy, so its frozen
-  // snapshot is stale. restampStyleTag re-asserts tagged ⇒ matches by stamping
-  // the style's CURRENT props onto the survivor.
-  it('re-stamps a tagged item whose style was redefined since the copy', () => {
+describe('a stale tagged clipboard snapshot pastes verbatim (overrides, no repair)', () => {
+  // A pasted item can arrive tagged with a style whose props were redefined
+  // after the copy. Its frozen values are legal now — the divergence is a
+  // per-field override — so nothing restamps it; the paste looks exactly like
+  // what was copied and still follows future edits to its style's OTHER
+  // fields.
+  it('keeps the pasted values AND the tag', () => {
     const style = makeStyle('line', 'y1', {
       props: {
         width: 10,
@@ -370,25 +373,16 @@ describe('restampStyleTag', () => {
         strokeColor: { day: '#123456', night: '#123456' },
       },
     });
-    // A line tagged y1 but carrying STALE props (copied when y1 was thinner).
-    const stale = makeLine({ id: 'l1', styleId: 'y1', width: 5, strokeWidth: 1 });
+    // A line tagged y1 but carrying values copied when y1 was thinner — its
+    // curveRadius still agrees with the def, so only width/stroke are pins.
+    const stale = makeLine({ id: 'l1', styleId: 'y1', width: 5, strokeWidth: 1, curveRadius: 40 });
     const doc = makeDoc({ lines: [stale], styles: [style] });
-    const next = restampStyleTag(doc, 'line', 'l1');
-    expect(next.lines.l1.width).toBe(10);
-    expect(next.lines.l1.strokeWidth).toBe(2);
-    expect(next.lines.l1.strokeColor).toEqual({ day: '#123456', night: '#123456' });
-    // Still tagged — the repair keeps the item wearing its style.
-    expect(next.lines.l1.styleId).toBe('y1');
-  });
-
-  it('is a no-op (same doc reference) for an untagged item', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'l1', width: 5 })] });
-    expect(restampStyleTag(doc, 'line', 'l1')).toBe(doc);
-  });
-
-  it('is a no-op (same doc reference) when the item is missing', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'l1' })] });
-    expect(restampStyleTag(doc, 'line', 'nope')).toBe(doc);
+    expect(doc.lines.l1.width).toBe(5);
+    expect(doc.lines.l1.styleId).toBe('y1');
+    // A style edit to an UN-overridden field still reaches it.
+    const next = updateStyleProps(doc, 'y1', { curveRadius: 60 });
+    expect(next.lines.l1.curveRadius).toBe(60);
+    expect(next.lines.l1.width).toBe(5);
   });
 });
 
@@ -513,10 +507,11 @@ describe('applyStyleToItem', () => {
     expect(line.curveRadius).toBeUndefined();
     expect(line.strokeWidth).toBeUndefined();
     expect(line.strokeColor).toBeUndefined();
-    // Dot SIZE collapses to absent at the default (never stored)…
-    expect(line.singletonDotSize).toBeUndefined();
-    expect(line.multiDotSize).toBeUndefined();
-    // …but dot TYPE is a covered field whose split defaults are ALWAYS stored
+    // Dot SIZE is ALWAYS stored, the default included (absence is a legacy
+    // state the load paths materialize away)…
+    expect(line.singletonDotSize).toBe(8);
+    expect(line.multiDotSize).toBe(8);
+    // …and dot TYPE is a covered field whose split defaults are ALWAYS stored
     // (a default-tracking line stays tagged so editing the stopDot style
     // restamps it), so the ids + raw shadows are present, not collapsed.
     expect(line.singletonDotStyleId).toBe(DEFAULT_STOP_DOT_STYLE_ID);
@@ -546,9 +541,9 @@ describe('applyStyleToItem', () => {
     expect(next.stations.s1.stops[0].dotSize).toBeUndefined();
   });
 
-  it('stamps a text-label style and tags the label, leaving layout fields alone', () => {
+  it('stamps a text-label style and tags the label, layout fields included', () => {
     const style = makeStyle('textLabel', 'y1', {
-      props: { fontSize: 24, weight: 700, italic: true, align: 'center' },
+      props: { fontSize: 24, weight: 700, italic: true, align: 'center', width: 150 },
     });
     const doc = makeDoc({
       textLabels: [makeTextLabel({ id: 'g1', width: 200, leading: 1.5 })],
@@ -561,8 +556,8 @@ describe('applyStyleToItem', () => {
     expect(label.weight).toBe(700);
     expect(label.italic).toBe(true);
     expect(label.align).toBe('center');
-    expect(label.width).toBe(200); // per-label layout untouched
-    expect(label.leading).toBe(1.5);
+    expect(label.width).toBe(150); // layout is covered: the full stamp resets it
+    expect(label.leading).toBe(1); // fixture def's neutral leading
     expect(label.text).toBe('Label'); // content untouched
   });
 
@@ -1285,12 +1280,12 @@ describe('line style — end style coverage', () => {
     expect(doc.lines.l2.styleId).toBe(styleId);
   });
 
-  it('detaches the line when the end style is edited by hand', () => {
+  it('keeps the tag when the end style is edited by hand (an override)', () => {
     let doc = lineDoc();
     doc = saveStyleFromItem(doc, 'sty-plain', 'line', 'Plain', 'l1');
     expect(doc.lines.l1.styleId).toBeDefined();
     doc = T.setLineEndStyle(doc, 'l1', 'round');
-    expect(doc.lines.l1.styleId).toBeUndefined();
+    expect(doc.lines.l1.styleId).toBe('sty-plain');
   });
 
   it('leaves the tag alone when only a per-terminus pin changes', () => {

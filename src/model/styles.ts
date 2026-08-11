@@ -17,6 +17,12 @@ import {
   POLYGON_STROKE_STEP,
   POLYGON_STROKE_WIDTH_MIN,
   TEXT_LABEL_FONT_SIZE_MIN,
+  TEXT_LABEL_LEADING_DEFAULT,
+  TEXT_LABEL_LEADING_MIN,
+  TEXT_LABEL_LEADING_STEP,
+  TEXT_LABEL_TRACKING_DEFAULT,
+  TEXT_LABEL_TRACKING_MIN,
+  TEXT_LABEL_TRACKING_STEP,
   canonicalStationLabelStyle,
   clampRouteBulletSize,
   effectiveStationStyleProps,
@@ -26,10 +32,11 @@ import {
   setLineDashWidth,
   setLineInterlineGap,
   setLineLabelGap,
-  setLineSingletonDotStyle,
-  setLineMultiDotStyle,
+  stampLineSingletonDotStyle,
+  stampLineMultiDotStyle,
   setLineSingletonDotSize,
   setLineMultiDotSize,
+  setDotSize,
   setLineStrokeColor,
   setLineStrokeWidth,
   setLineWidth,
@@ -44,6 +51,7 @@ import {
   DEFAULT_STOP_DOT_STYLE_ID,
   NONE_STOP_DOT_STYLE_ID,
   canonicalDotStyle,
+  defaultDotDiameter,
   dotStylesEqual,
 } from './dotStyle';
 import { DOT_SIZE_MIN, DOT_SIZE_STEP, lineSingletonDotSizeOf, lineMultiDotSizeOf } from './dotSize';
@@ -170,6 +178,11 @@ export function captureStyleProps<K extends StyleKind>(
         weight: t.weight,
         italic: t.italic,
         align: t.align,
+        // Effective layout (absent ⇒ auto width / neutral spacing), so a
+        // captured style is self-contained like the others.
+        width: t.width ?? 0,
+        leading: t.leading ?? TEXT_LABEL_LEADING_DEFAULT,
+        tracking: t.tracking ?? TEXT_LABEL_TRACKING_DEFAULT,
       } as StylePropsByKind[K];
     }
     case 'polygon': {
@@ -217,11 +230,130 @@ export function isReservedStyleName(trimmed: string): boolean {
   return trimmed.toLowerCase() === 'custom';
 }
 
-// Deep equality over style props. Most props are flat scalars, but two kinds
-// carry objects that must compare STRUCTURALLY, not by reference: a line
-// style's DotStyle (dotStylesEqual), and a transfer style's day/night
-// color/strokeColor (dayNightColorsEqual). Exported for serialize's
-// mismatched-tag pruning.
+// A kind that has an item collection (and therefore a per-field override
+// story) — everything but stopDot, whose wearers are dot slots compared as
+// whole DotStyles.
+export type ItemStyleKind = Exclude<StyleKind, 'stopDot'>;
+
+// The covered fields of each item-collection kind. THE single source of what
+// a style covers: per-field equality (styleFieldsDiff), selective stamping
+// (stampStyleFields / revertStyleField), and the popovers' override dots all
+// walk this list, so a new covered field is added here once.
+export const STYLE_FIELDS = {
+  line: [
+    'singletonDotStyleId',
+    'multiDotStyleId',
+    'singletonDotSize',
+    'multiDotSize',
+    'width',
+    'curveRadius',
+    'endStyle',
+    'strokeWidth',
+    'strokeColor',
+    'dashLength',
+    'dashWidth',
+    'interlineGap',
+    'labelGap',
+  ],
+  textLabel: [
+    'color',
+    'darkColor',
+    'fontSize',
+    'weight',
+    'italic',
+    'align',
+    'width',
+    'leading',
+    'tracking',
+  ],
+  polygon: ['fill', 'stroke', 'darkFill', 'darkStroke', 'strokeWidth', 'curveRadius', 'closed'],
+  routeBullet: ['shape', 'size'],
+  transfer: ['thickness', 'color', 'strokeWidth', 'strokeColor', 'draw'],
+  station: ['fontSize', 'weight', 'italic', 'leading', 'tracking'],
+} as const satisfies Record<ItemStyleKind, readonly string[]>;
+
+// Equality for ONE covered field. Most fields are flat scalars; the special
+// cases: a line casing color (structural pair-or-sentinel), a transfer's two
+// day/night pairs, and the absent-≡-default fields (labelGap 3, draw 'under')
+// — a def from a save predating those fields must compare equal to one
+// carrying the explicit default, or every legacy wearer reads as overridden
+// on load (the DotStyle strokeAlign trap).
+function styleFieldEqual(
+  kind: ItemStyleKind,
+  field: string,
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+): boolean {
+  if (kind === 'line') {
+    if (field === 'strokeColor') {
+      return lineStrokeColorsEqual(
+        a.strokeColor as LineStyleProps['strokeColor'],
+        b.strokeColor as LineStyleProps['strokeColor'],
+      );
+    }
+    if (field === 'labelGap') {
+      return (
+        ((a.labelGap as number | undefined) ?? LINE_LABEL_GAP_DEFAULT) ===
+        ((b.labelGap as number | undefined) ?? LINE_LABEL_GAP_DEFAULT)
+      );
+    }
+  }
+  if (kind === 'transfer') {
+    if (field === 'color' || field === 'strokeColor') {
+      return dayNightColorsEqual(
+        a[field] as TransferStyleProps['color'],
+        b[field] as TransferStyleProps['color'],
+      );
+    }
+    if (field === 'draw') {
+      return (a.draw ?? TRANSFER_DRAW_DEFAULT) === (b.draw ?? TRANSFER_DRAW_DEFAULT);
+    }
+  }
+  if (kind === 'textLabel') {
+    // Absent ≡ auto/neutral: a def from a save predating layout coverage
+    // must compare equal to one carrying the explicit defaults, or every
+    // wearer reads as overridden before the average backfill lands.
+    if (field === 'width') {
+      return ((a.width as number | undefined) ?? 0) === ((b.width as number | undefined) ?? 0);
+    }
+    if (field === 'leading') {
+      return (
+        ((a.leading as number | undefined) ?? TEXT_LABEL_LEADING_DEFAULT) ===
+        ((b.leading as number | undefined) ?? TEXT_LABEL_LEADING_DEFAULT)
+      );
+    }
+    if (field === 'tracking') {
+      return (
+        ((a.tracking as number | undefined) ?? TEXT_LABEL_TRACKING_DEFAULT) ===
+        ((b.tracking as number | undefined) ?? TEXT_LABEL_TRACKING_DEFAULT)
+      );
+    }
+  }
+  return a[field] === b[field];
+}
+
+/**
+ * The covered fields on which two props objects disagree — [] means equal.
+ * Read with `a` = an item's captured EFFECTIVE props and `b` = its style's
+ * props, the result is the item's OVERRIDE set: the fields it pins against
+ * the style, which style edits leave alone and the red dots mark. There is
+ * no stored override state — this diff IS the override, so a style edit that
+ * lands exactly on an item's pinned value dissolves the override.
+ */
+export function styleFieldsDiff(
+  kind: ItemStyleKind,
+  a: StyleDef['props'],
+  b: StyleDef['props'],
+): string[] {
+  const ra = a as unknown as Record<string, unknown>;
+  const rb = b as unknown as Record<string, unknown>;
+  return STYLE_FIELDS[kind].filter((f) => !styleFieldEqual(kind, f, ra, rb));
+}
+
+// Deep equality over style props — no covered field disagrees. stopDot props
+// are whole DotStyles (structural dotStylesEqual); every other kind runs the
+// per-field diff. Exported for serialize's tag pruning and the load-time
+// adoption pass.
 export function stylePropsEqual(
   kind: StyleKind,
   a: StyleDef['props'],
@@ -230,46 +362,7 @@ export function stylePropsEqual(
   if (kind === 'stopDot') {
     return dotStylesEqual(a as DotStyle, b as DotStyle);
   }
-  if (kind === 'line') {
-    const la = a as LineStyleProps;
-    const lb = b as LineStyleProps;
-    return (
-      la.singletonDotStyleId === lb.singletonDotStyleId &&
-      la.multiDotStyleId === lb.multiDotStyleId &&
-      la.singletonDotSize === lb.singletonDotSize &&
-      la.multiDotSize === lb.multiDotSize &&
-      la.width === lb.width &&
-      la.curveRadius === lb.curveRadius &&
-      la.endStyle === lb.endStyle &&
-      la.strokeWidth === lb.strokeWidth &&
-      lineStrokeColorsEqual(la.strokeColor, lb.strokeColor) &&
-      la.dashLength === lb.dashLength &&
-      la.dashWidth === lb.dashWidth &&
-      la.interlineGap === lb.interlineGap &&
-      // Absent ≡ the default 3: a def from a save that predates the field must
-      // compare equal to one carrying the explicit default, or every legacy
-      // wearer reads as detached on load (the DotStyle strokeAlign trap).
-      (la.labelGap ?? LINE_LABEL_GAP_DEFAULT) === (lb.labelGap ?? LINE_LABEL_GAP_DEFAULT)
-    );
-  }
-  if (kind === 'transfer') {
-    const ta = a as TransferStyleProps;
-    const tb = b as TransferStyleProps;
-    return (
-      ta.thickness === tb.thickness &&
-      ta.strokeWidth === tb.strokeWidth &&
-      dayNightColorsEqual(ta.color, tb.color) &&
-      dayNightColorsEqual(ta.strokeColor, tb.strokeColor) &&
-      // Absent ≡ 'under': a def from a save that predates the draw axis must
-      // compare equal to one carrying the explicit default, or every legacy
-      // wearer reads as detached on load (the DotStyle strokeAlign trap).
-      (ta.draw ?? TRANSFER_DRAW_DEFAULT) === (tb.draw ?? TRANSFER_DRAW_DEFAULT)
-    );
-  }
-  const ra = a as unknown as Record<string, unknown>;
-  const rb = b as unknown as Record<string, unknown>;
-  for (const k of Object.keys(rb)) if (ra[k] !== rb[k]) return false;
-  return true;
+  return styleFieldsDiff(kind, a, b).length === 0;
 }
 
 /**
@@ -329,6 +422,18 @@ export function canonicalStyleProps<K extends StyleKind>(
     }
     case 'textLabel': {
       const p = props as TextLabelStyleProps;
+      // Layout fields stay ABSENT when absent (a pre-coverage def keeps its
+      // hole for the average backfill to fill); present values land on the
+      // same grids updateTextLabel writes.
+      const width = p.width == null ? undefined : Math.max(0, Math.round(p.width));
+      const leading =
+        p.leading == null
+          ? undefined
+          : snapToStep(p.leading, TEXT_LABEL_LEADING_STEP, TEXT_LABEL_LEADING_MIN);
+      const tracking =
+        p.tracking == null
+          ? undefined
+          : snapToStep(p.tracking, TEXT_LABEL_TRACKING_STEP, TEXT_LABEL_TRACKING_MIN);
       return {
         color: p.color,
         darkColor: p.darkColor,
@@ -336,6 +441,9 @@ export function canonicalStyleProps<K extends StyleKind>(
         weight: p.weight,
         italic: p.italic,
         align: p.align,
+        ...(width !== undefined ? { width } : {}),
+        ...(leading !== undefined ? { leading } : {}),
+        ...(tracking !== undefined ? { tracking } : {}),
       } as StylePropsByKind[K];
     }
     case 'polygon': {
@@ -407,8 +515,8 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
       const p = def.props;
       // Dot TYPE: re-point the line's split defaults at the style's library
       // entries (setter no-ops when the id doesn't resolve, e.g. a dangling def).
-      next = setLineSingletonDotStyle(next, itemId, p.singletonDotStyleId);
-      next = setLineMultiDotStyle(next, itemId, p.multiDotStyleId);
+      next = stampLineSingletonDotStyle(next, itemId, p.singletonDotStyleId);
+      next = stampLineMultiDotStyle(next, itemId, p.multiDotStyleId);
       next = setLineSingletonDotSize(next, itemId, p.singletonDotSize);
       next = setLineMultiDotSize(next, itemId, p.multiDotSize);
       next = setLineWidth(next, itemId, p.width);
@@ -428,9 +536,10 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
       break;
     }
     case 'textLabel': {
-      // Explicit pick, not a props spread — a def from an older save could
-      // carry since-dropped keys (width/leading/tracking) that must not be
-      // stamped onto the label.
+      // Explicit pick, not a props spread, so a def from an older save can't
+      // smuggle a foreign key onto the label. The layout fields stamp their
+      // absent-≡ values (auto width / neutral spacing) when a pre-backfill
+      // def lacks them, matching how the comparators read that absence.
       const p = def.props;
       next = updateTextLabel(next, itemId, {
         color: p.color,
@@ -439,6 +548,9 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
         weight: p.weight,
         italic: p.italic,
         align: p.align,
+        width: p.width ?? 0,
+        leading: p.leading ?? TEXT_LABEL_LEADING_DEFAULT,
+        tracking: p.tracking ?? TEXT_LABEL_TRACKING_DEFAULT,
       });
       break;
     }
@@ -471,11 +583,97 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
 }
 
 /**
- * Stamp a style's props onto an item and tag it. No-ops (same reference)
- * when the style or item is missing, or the item is tagged AND its values
- * already match — the skip is by VALUE, not by tag, so re-applying a style
- * repairs a tagged item whose values drifted (a stale clipboard paste)
- * instead of early-outing on the tag.
+ * Stamp a SUBSET of a def's covered fields onto one item via the canonical
+ * setters — the per-field propagation primitive. updateStyleProps and
+ * saveStyleFromItem stamp every non-overridden field; revertStyleField (the
+ * red override dot) stamps exactly one. No tag write — callers own that (and
+ * the setters don't touch tags; divergence is a legal override).
+ */
+function stampStyleFields(
+  doc: MapDoc,
+  def: StyleDef,
+  itemId: string,
+  fields: readonly string[],
+): MapDoc {
+  if (def.kind === 'stopDot' || fields.length === 0) return doc;
+  let next = doc;
+  if (def.kind === 'line') {
+    const p = def.props;
+    for (const f of fields) {
+      switch (f) {
+        case 'singletonDotStyleId':
+          next = stampLineSingletonDotStyle(next, itemId, p.singletonDotStyleId);
+          break;
+        case 'multiDotStyleId':
+          next = stampLineMultiDotStyle(next, itemId, p.multiDotStyleId);
+          break;
+        case 'singletonDotSize':
+          next = setLineSingletonDotSize(next, itemId, p.singletonDotSize);
+          break;
+        case 'multiDotSize':
+          next = setLineMultiDotSize(next, itemId, p.multiDotSize);
+          break;
+        case 'width':
+          next = setLineWidth(next, itemId, p.width);
+          break;
+        case 'curveRadius':
+          next = setLineCurveRadius(next, itemId, p.curveRadius);
+          break;
+        case 'endStyle':
+          next = setLineEndStyle(next, itemId, p.endStyle);
+          break;
+        case 'strokeWidth':
+          next = setLineStrokeWidth(next, itemId, p.strokeWidth);
+          break;
+        case 'strokeColor':
+          next = setLineStrokeColor(next, itemId, p.strokeColor);
+          break;
+        // undefined ⇒ 0 ⇒ dropped, so the stamped line derives from its width.
+        case 'dashLength':
+          next = setLineDashLength(next, itemId, p.dashLength ?? 0);
+          break;
+        case 'dashWidth':
+          next = setLineDashWidth(next, itemId, p.dashWidth ?? 0);
+          break;
+        // undefined ⇒ 0 ⇒ dropped, back to plain tangency (re-packs stations).
+        case 'interlineGap':
+          next = setLineInterlineGap(next, itemId, p.interlineGap ?? 0);
+          break;
+        // undefined ⇒ the default 3 ⇒ dropped, back to the stock clearance.
+        case 'labelGap':
+          next = setLineLabelGap(next, itemId, p.labelGap ?? LINE_LABEL_GAP_DEFAULT);
+          break;
+      }
+    }
+    return next;
+  }
+  // Patch kinds: one partial update carrying just the chosen fields. Explicit
+  // per-field pick from the def (never a spread), so a def from an older save
+  // can't smuggle a since-dropped key onto the item.
+  const props = def.props as unknown as Record<string, unknown>;
+  const patch: Record<string, unknown> = {};
+  for (const f of fields) patch[f] = props[f];
+  switch (def.kind) {
+    case 'textLabel':
+      return updateTextLabel(next, itemId, patch);
+    case 'polygon':
+      return updatePolygon(next, itemId, patch);
+    case 'routeBullet':
+      return updateRouteBullet(next, itemId, patch);
+    case 'transfer':
+      return updateTransferStyle(next, itemId, patch);
+    case 'station':
+      return updateStationLabelStyle(next, itemId, patch);
+  }
+  return next;
+}
+
+/**
+ * Stamp a style's FULL props onto an item and tag it — the dropdown pick and
+ * the "Revert to style" button, so it also clears every per-field override.
+ * No-ops (same reference) when the style or item is missing, or the item is
+ * tagged AND its values already match — the skip is by VALUE, not by tag, so
+ * applying a style to a tagged-but-diverged item resets it.
  */
 export function applyStyleToItem(doc: MapDoc, styleId: string, itemId: string): MapDoc {
   const def = doc.styles[styleId];
@@ -491,25 +689,32 @@ export function applyStyleToItem(doc: MapDoc, styleId: string, itemId: string): 
 }
 
 /**
- * Re-assert the tagged ⇒ matches invariant on one item after an insert that
- * carried a frozen snapshot (clipboard paste): if the item arrived tagged but
- * the style was redefined since the copy, re-stamp it with the style's
- * CURRENT props. Same reference when untagged or already matching. The
- * add*With constructors have already stripped dangling/wrong-kind tags, so a
- * surviving tag always resolves.
+ * Stamp the style's value for ONE covered field back onto a tagged item —
+ * what clicking a red override dot does. Other overrides stay put. No-op
+ * (same reference) when the item is untagged, its tag doesn't resolve to a
+ * def of its kind, or the field isn't covered.
  */
-export function restampStyleTag(doc: MapDoc, kind: StyleKind, itemId: string): MapDoc {
+export function revertStyleField(
+  doc: MapDoc,
+  kind: ItemStyleKind,
+  itemId: string,
+  field: string,
+): MapDoc {
   const cur = itemsOf(doc, kind)[itemId];
-  if (!cur || cur.styleId === undefined) return doc;
-  return applyStyleToItem(doc, cur.styleId, itemId);
+  const def = cur?.styleId !== undefined ? doc.styles[cur.styleId] : undefined;
+  if (!def || def.kind !== kind) return doc;
+  if (!(STYLE_FIELDS[kind] as readonly string[]).includes(field)) return doc;
+  return stampStyleFields(doc, def, itemId, [field]);
 }
 
 /**
- * Upsert a style def captured from an item (define-by-example), then re-stamp
- * every item tagged with it — their values may predate the new props — plus
- * the source item, all in one returned doc (one undo entry). Users whose
- * effective values already match are skipped (keeps their references, and
- * keeps updateTextLabel's re-anchor from churning unchanged labels).
+ * Upsert a style def captured from an item (define-by-example) — both "Save
+ * style…" over an existing name and the Sync-to-style button — then carry the
+ * new props onto every other wearer per-field: each wearer's override set is
+ * diffed against the OLD props first, and only its non-overridden fields are
+ * stamped, so a wearer's own pins survive the sync. The source item matches
+ * the new def by construction and is just tagged. One returned doc (one undo
+ * entry); reference-stable when nothing changes.
  */
 export function saveStyleFromItem(
   doc: MapDoc,
@@ -532,16 +737,30 @@ export function saveStyleFromItem(
   ) {
     return doc;
   }
+  // Snapshot the other wearers' override sets against the OLD props before
+  // anything is written — "which fields does this wearer pin?" is only
+  // answerable against the def it was tracking.
+  const overrides: Record<string, string[]> = {};
+  if (kind !== 'stopDot' && existing !== undefined && existing.kind === kind) {
+    const coll = itemsOf(doc, kind);
+    for (const id of Object.keys(coll)) {
+      if (id === itemId || coll[id].styleId !== styleId) continue;
+      const cur = captureStyleProps(doc, kind, id);
+      overrides[id] = cur ? styleFieldsDiff(kind, cur, existing.props) : [];
+    }
+  }
   const def = { id: styleId, name: trimmed, kind, props } as StyleDef;
   let next: MapDoc = { ...doc, styles: { ...doc.styles, [styleId]: def } };
-  const coll = itemsOf(next, kind);
-  for (const id of Object.keys(coll)) {
-    if (id !== itemId && coll[id].styleId !== styleId) continue;
-    const cur = captureStyleProps(next, kind, id);
-    if (cur && stylePropsEqual(kind, cur, props)) {
-      next = withStyleTag(next, kind, id, styleId);
-    } else {
-      next = stampStyle(next, def, id);
+  next = withStyleTag(next, kind, itemId, styleId);
+  if (kind !== 'stopDot') {
+    for (const id of Object.keys(overrides)) {
+      const ov = overrides[id];
+      next = stampStyleFields(
+        next,
+        def,
+        id,
+        STYLE_FIELDS[kind].filter((f) => !ov.includes(f)),
+      );
     }
   }
   return next;
@@ -603,10 +822,15 @@ export type StylePropsPatch =
   | Partial<DotStyle>;
 
 /**
- * Patch a style def's props (the panel editor's write path) and re-stamp
- * every item tagged with it in the same returned doc — the live preview.
- * Values land on the canonical grids; users already matching are skipped
- * (reference-stable). Name and id are untouched (renameStyle owns the name).
+ * Patch a style def's props (the panel editor's write path) and carry the
+ * change onto every wearer PER-FIELD in the same returned doc — the live
+ * preview. Each wearer's override set (its diff against the OLD props) is
+ * snapshotted before anything is written, then only its non-overridden
+ * fields are stamped — a wearer's own pins survive the style edit, and a
+ * field the style moves to a wearer's exact pinned value dissolves that pin
+ * (no stored override state to disagree). Values land on the canonical
+ * grids; wearers already matching are reference-stable. Name and id are
+ * untouched (renameStyle owns the name).
  */
 export function updateStyleProps(doc: MapDoc, styleId: string, patch: StylePropsPatch): MapDoc {
   const def = doc.styles[styleId];
@@ -617,39 +841,61 @@ export function updateStyleProps(doc: MapDoc, styleId: string, patch: StyleProps
   } as StylePropsByKind[typeof def.kind]);
   if (stylePropsEqual(def.kind, merged, def.props)) return doc;
   const nextDef = { id: def.id, name: def.name, kind: def.kind, props: merged } as StyleDef;
+  // Snapshot every wearer's override set against the PRE-EDIT doc and old
+  // props — after the def (or, for stopDot, the dot shadows) is written,
+  // "which fields did this wearer pin?" is no longer answerable.
+  const overrides: Record<string, string[]> = {};
+  if (def.kind !== 'stopDot') {
+    const coll = itemsOf(doc, def.kind);
+    for (const id of Object.keys(coll)) {
+      if (coll[id].styleId !== styleId) continue;
+      const cur = captureStyleProps(doc, def.kind, id);
+      overrides[id] = cur ? styleFieldsDiff(def.kind, cur, def.props) : [];
+    }
+  }
   let next: MapDoc = { ...doc, styles: { ...doc.styles, [styleId]: nextDef } };
   // stopDot has no item collection — restamp its wearers (dot slots) directly.
   if (def.kind === 'stopDot') {
     next = restampStopDotStyle(next, styleId, merged as DotStyle);
-    // A stopDot style also picks the dot DIAMETER a tracking slot renders
-    // (service-code discs default to 12px, plain dots to 8) — and dot size is
-    // a covered LINE-style field. So this edit can move the resolved size of a
-    // line that stores none, drifting it off a line style it is still tagged
-    // with. Re-assert that contract on every line style pointing at this
-    // entry, mirroring what deleteStopDotStyle does for the delete half.
-    for (const d of Object.values(next.styles)) {
-      if (d.kind !== 'line') continue;
-      if (d.props.singletonDotStyleId !== styleId && d.props.multiDotStyleId !== styleId) continue;
-      next = restampTaggedWearers(next, d);
+    // A stopDot style implies a natural DIAMETER (12 with a service code, 8
+    // without). Sizes are stored concretely, so an edit that moves the natural
+    // sweeps it forward explicitly: every CUSTOM line sitting exactly at the
+    // old natural follows (that's what the retired absent-means-natural
+    // indirection rendered), as does every stop pin that tracked it — the
+    // setters re-collapse pins that now equal their line's size. Tagged lines
+    // are NOT swept: their LINE style's size rules, unchanged (their def keeps
+    // its size, so tagged ⇒ matches holds without touching them).
+    const oldNatural = defaultDotDiameter(def.props as DotStyle);
+    const newNatural = defaultDotDiameter(merged as DotStyle);
+    if (oldNatural !== newNatural) {
+      for (const id of Object.keys(next.lines)) {
+        const ln = next.lines[id];
+        if (ln.styleId !== undefined) continue;
+        if (
+          ln.singletonDotStyleId === styleId &&
+          (ln.singletonDotSize ?? oldNatural) === oldNatural
+        )
+          next = setLineSingletonDotSize(next, id, newNatural);
+        if (ln.multiDotStyleId === styleId && (ln.multiDotSize ?? oldNatural) === oldNatural)
+          next = setLineMultiDotSize(next, id, newNatural);
+      }
+      for (const sid of Object.keys(next.stations)) {
+        for (const s of next.stations[sid].stops) {
+          if (s.dotStyleId === styleId && s.dotSize === oldNatural)
+            next = setDotSize(next, sid, s.lineId, newNatural);
+        }
+      }
     }
     return next;
   }
-  return restampTaggedWearers(next, nextDef);
-}
-
-/**
- * Re-stamp every item tagged with `def` whose covered values have drifted away
- * from it, restoring the `tagged => matches` invariant. Reference-stable when
- * every wearer already matches.
- */
-function restampTaggedWearers(doc: MapDoc, def: StyleDef): MapDoc {
-  let next = doc;
-  const coll = itemsOf(next, def.kind);
-  for (const id of Object.keys(coll)) {
-    if (coll[id].styleId !== def.id) continue;
-    const cur = captureStyleProps(next, def.kind, id);
-    if (cur && stylePropsEqual(def.kind, cur, def.props)) continue;
-    next = stampStyle(next, def, id);
+  for (const id of Object.keys(overrides)) {
+    const ov = overrides[id];
+    next = stampStyleFields(
+      next,
+      nextDef,
+      id,
+      STYLE_FIELDS[def.kind].filter((f) => !ov.includes(f)),
+    );
   }
   return next;
 }
@@ -766,7 +1012,31 @@ function deleteStopDotStyle(
   styles: Record<string, StyleDef>,
   fallbackDefaultId: string,
 ): MapDoc {
-  let stations = doc.stations;
+  const styleDefaults =
+    doc.styleDefaults.stopDot === styleId
+      ? { ...doc.styleDefaults, stopDot: fallbackDefaultId }
+      : doc.styleDefaults;
+  let next: MapDoc = { ...doc, styles, styleDefaults };
+  // Dot TYPE is a covered LINE-style field, so a line style def can also
+  // reference the deleted id. Re-point those defs at the fallback FIRST,
+  // while wearer lines still carry the old ref — per-field propagation reads
+  // each wearer's diff against the old props, so a wearer that faithfully
+  // wore the deleted id follows to the fallback, and one that overrode its
+  // dot type keeps its own choice. (Ordering matters: dropping the lines'
+  // refs first would make every faithful wearer read as overridden.)
+  for (const def of Object.values(next.styles)) {
+    if (def.kind !== 'line') continue;
+    const patch: Partial<LineStyleProps> = {};
+    if (def.props.singletonDotStyleId === styleId) patch.singletonDotStyleId = fallbackDefaultId;
+    if (def.props.multiDotStyleId === styleId) patch.multiDotStyleId = fallbackDefaultId;
+    if (patch.singletonDotStyleId !== undefined || patch.multiDotStyleId !== undefined) {
+      next = updateStyleProps(next, def.id, patch);
+    }
+  }
+  // Whatever still references the deleted id — stops, custom lines, wearers
+  // whose dot type was an override — drops the TAG and keeps the raw shadow,
+  // like every other kind's delete keeps values.
+  let stations = next.stations;
   for (const sid of Object.keys(stations)) {
     const st = stations[sid];
     let stopsChanged = false;
@@ -778,7 +1048,7 @@ function deleteStopDotStyle(
     });
     if (stopsChanged) stations = { ...stations, [sid]: { ...st, stops } };
   }
-  let lines = doc.lines;
+  let lines = next.lines;
   for (const lid of Object.keys(lines)) {
     let ln = lines[lid];
     let changed = false;
@@ -794,23 +1064,8 @@ function deleteStopDotStyle(
     }
     if (changed) lines = { ...lines, [lid]: ln };
   }
-  const styleDefaults =
-    doc.styleDefaults.stopDot === styleId
-      ? { ...doc.styleDefaults, stopDot: fallbackDefaultId }
-      : doc.styleDefaults;
-  let next: MapDoc = { ...doc, styles, styleDefaults, stations, lines };
-  // Dot TYPE is now a covered LINE-style field, so a line style def can also
-  // reference the deleted id. Re-point those defs at the fallback and restamp
-  // their wearer lines (whose split tag was just dropped above) so the
-  // tagged ⇒ matches invariant holds — updateStyleProps owns both halves.
-  for (const def of Object.values(next.styles)) {
-    if (def.kind !== 'line') continue;
-    const patch: Partial<LineStyleProps> = {};
-    if (def.props.singletonDotStyleId === styleId) patch.singletonDotStyleId = fallbackDefaultId;
-    if (def.props.multiDotStyleId === styleId) patch.multiDotStyleId = fallbackDefaultId;
-    if (patch.singletonDotStyleId !== undefined || patch.multiDotStyleId !== undefined) {
-      next = updateStyleProps(next, def.id, patch);
-    }
+  if (stations !== next.stations || lines !== next.lines) {
+    next = { ...next, stations, lines };
   }
   return next;
 }

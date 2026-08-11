@@ -58,8 +58,10 @@ import {
   bakeLegacyLabelSettings,
   bakeLegacyTransferSettings,
   bakeLegacyUltraLightWeight,
+  bakeConcreteDotSizes,
   bakeLineDotDefaults,
   bakeLineStyleDotIds,
+  bakeTextLabelStyleLayout,
   bakeStopDotLibrary,
   convertLegacyDotShapes,
   ensureStyleInvariants,
@@ -408,6 +410,16 @@ if (typeof window !== 'undefined') {
  *   convert together, so tagged wearers stay tagged. Ordered BEFORE the v<10
  *   style hygiene, whose canonicalizer now reads the pair form. Idempotent;
  *   `parse()` does the same conversion in its sanitizers.
+ * - v26 → v27: line dot SIZES became required stored fields — absent used to
+ *   mean "the natural diameter of my dot type" (12 for a service-code disc, 8
+ *   otherwise), a live indirection now retired. Materialize the split sizes at
+ *   what they rendered, pinning per-stop sizes that tracked a different
+ *   natural than their line's, via the shared `bakeConcreteDotSizes`.
+ * - v27 → v28: width/leading/tracking became covered textLabel style fields.
+ *   Defs predating the coverage backfill each missing field with the MOST
+ *   COMMON of their wearers' effective values via the shared
+ *   `bakeTextLabelStyleLayout`, so nothing repaints and only the wearers off
+ *   the plurality read as per-field overrides.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -651,6 +663,25 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     // already paints square and matches the healed def.
     out = backfillLineStyleEndStyle(out);
   }
+  // Non-version-gated invariant (the v27 bump forced one pass over every
+  // pre-existing doc): dot sizes are REQUIRED stored line fields — absent
+  // means "the natural size of my dot type", a retired live indirection. Pin
+  // stops that tracked a different natural than their line's, then
+  // materialize the line split sizes, via the shared bakeConcreteDotSizes
+  // (parse() runs the same bake). Idempotent and value-keyed, so it also
+  // heals stragglers written at any version (e.g. a legacy clipboard paste
+  // that tagged without stamping). Ordered after the v<7 shape conversion and
+  // v<18 split bake, which put the dot styles it reads in singleton/multi
+  // form.
+  out = bakeConcreteDotSizes(out);
+  // Non-version-gated (the v28 bump forces one pass): textLabel style defs
+  // gained layout coverage (width/leading/tracking) — a def from before it
+  // backfills each missing field with the MOST COMMON of its wearers'
+  // effective values, so the map repaints unchanged and only wearers off the
+  // plurality read as overridden. Idempotent (keyed off the fields' absence).
+  // Ordered after the v<11 adoption so adopted wearers are counted; parse()
+  // runs the same bake.
+  out = bakeTextLabelStyleLayout(out);
   // Non-version-gated repair: station cells that drifted off the integer
   // lattice. Like the palette invariant below and unlike the migrations above,
   // this isn't tied to a schema bump — the editor's old trig-rotated ghost
@@ -898,8 +929,14 @@ interface DocState extends MapDoc {
    *  resolves to (nothing is written when the transform refuses — empty name
    *  or missing item). */
   saveStyle: (kind: StyleKind, name: string, itemId: string) => string;
-  /** Stamp a style's props onto an item and tag it (one undo entry). */
+  /** Stamp a style's props onto an item and tag it (one undo entry). Also the
+   *  Revert-to-style button — a full stamp clears every per-field override. */
   applyStyle: (styleId: string, itemId: string) => void;
+  /** Revert covered fields of a tagged item back to their style's values —
+   *  what clicking a red override dot does. Takes a list because one editor
+   *  ROW can carry several covered fields (color + darkColor, align +
+   *  italic); the whole batch is one set(), so one undo entry. */
+  revertStyleFields: (kind: S.ItemStyleKind, itemId: string, fields: readonly string[]) => void;
   /** Detach an item to "Custom": drop the tag, keep the values. */
   clearStyleTag: (kind: StyleKind, itemId: string) => void;
   renameStyle: (styleId: string, name: string) => void;
@@ -1135,23 +1172,19 @@ export const useDoc = create<DocState>()(
         },
         // Add a bullet from a clipboard payload, nudged by the drop offset. The
         // fresh copy comes out UNLOCKED even if the source was locked, so it's
-        // immediately movable (mirrors pastePolygon / pasteTextLabel). The
-        // restamp pass repairs a stale tagged payload — the clipboard froze
-        // the values, the style may have been redefined since the copy — in
-        // the SAME set(), so a paste stays one undo entry.
+        // immediately movable (mirrors pastePolygon / pasteTextLabel). A
+        // payload whose values diverge from its (possibly since-redefined)
+        // style pastes verbatim — the divergence is a per-field override; the
+        // constructor has already stripped a tag that doesn't resolve.
         pasteRouteBullet: (data) => {
           const { locked: _locked, ...rest } = data;
           const id = ids.routeBulletId();
           set((s) =>
-            S.restampStyleTag(
-              T.addRouteBulletWith(s, id, {
-                ...rest,
-                x: data.x + DROP_OFFSET,
-                y: data.y + DROP_OFFSET,
-              }),
-              'routeBullet',
-              id,
-            ),
+            T.addRouteBulletWith(s, id, {
+              ...rest,
+              x: data.x + DROP_OFFSET,
+              y: data.y + DROP_OFFSET,
+            }),
           );
           return id;
         },
@@ -1240,22 +1273,18 @@ export const useDoc = create<DocState>()(
         },
         // Add a label from a clipboard payload, nudged by the drop offset. The
         // fresh copy comes out UNLOCKED even if the source was locked, so it's
-        // immediately movable (mirrors pastePolygon / pasteRouteBullet). The
-        // restamp pass repairs a stale tagged payload in the same set() —
-        // see pasteRouteBullet.
+        // immediately movable (mirrors pastePolygon / pasteRouteBullet). A
+        // stale tagged payload pastes verbatim as overrides — see
+        // pasteRouteBullet.
         pasteTextLabel: (data) => {
           const { locked: _locked, ...rest } = data;
           const id = ids.textLabelId();
           set((s) =>
-            S.restampStyleTag(
-              T.addTextLabelWith(s, id, {
-                ...rest,
-                x: data.x + DROP_OFFSET,
-                y: data.y + DROP_OFFSET,
-              }),
-              'textLabel',
-              id,
-            ),
+            T.addTextLabelWith(s, id, {
+              ...rest,
+              x: data.x + DROP_OFFSET,
+              y: data.y + DROP_OFFSET,
+            }),
           );
           return id;
         },
@@ -1280,24 +1309,20 @@ export const useDoc = create<DocState>()(
         // Add a polygon from a clipboard payload, translating every vertex by
         // the drop offset (polygons have no center — geometry lives in
         // `vertices`, in world coords). The fresh copy comes out UNLOCKED even
-        // if the source was locked, so it's immediately movable/editable. The
-        // restamp pass repairs a stale tagged payload in the same set() —
-        // see pasteRouteBullet.
+        // if the source was locked, so it's immediately movable/editable. A
+        // stale tagged payload pastes verbatim as overrides — see
+        // pasteRouteBullet.
         pastePolygon: (data) => {
           const { locked: _locked, ...rest } = data;
           const id = ids.polygonId();
           set((s) =>
-            S.restampStyleTag(
-              T.addPolygonWith(s, id, {
-                ...rest,
-                vertices: data.vertices.map((v) => ({
-                  x: v.x + DROP_OFFSET,
-                  y: v.y + DROP_OFFSET,
-                })),
-              }),
-              'polygon',
-              id,
-            ),
+            T.addPolygonWith(s, id, {
+              ...rest,
+              vertices: data.vertices.map((v) => ({
+                x: v.x + DROP_OFFSET,
+                y: v.y + DROP_OFFSET,
+              })),
+            }),
           );
           return id;
         },
@@ -1388,6 +1413,14 @@ export const useDoc = create<DocState>()(
         },
         applyStyle: (styleId, itemId) =>
           set(withRegionReconcile((s) => S.applyStyleToItem(s, styleId, itemId))),
+        revertStyleFields: (kind, itemId, fields) =>
+          set(
+            withRegionReconcile((s) => {
+              let d: MapDoc = s;
+              for (const f of fields) d = S.revertStyleField(d, kind, itemId, f);
+              return d;
+            }),
+          ),
         clearStyleTag: (kind, itemId) => set((s) => S.clearStyleTag(s, kind, itemId)),
         renameStyle: (styleId, name) => set((s) => S.renameStyle(s, styleId, name)),
         deleteStyle: (styleId) => set((s) => S.deleteStyle(s, styleId)),
@@ -1442,8 +1475,8 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: debouncedDocStorage,
-        version: 26,
-        // Version migration chain v0 → v26 lives in `migrateDoc` (above), which
+        version: 28,
+        // Version migration chain v0 → v28 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         // `migrate` only runs when the STORED version differs from the config
@@ -1475,6 +1508,22 @@ export const useDoc = create<DocState>()(
             if (hrefs.changed) {
               patch.svgImages = hrefs.svgImages;
               if (doc.backgroundOrder) patch.backgroundOrder = hrefs.backgroundOrder;
+            }
+          }
+          // Dot sizes are required stored fields, and a size-less line can be
+          // written at the CURRENT version (a legacy clipboard payload pasted
+          // verbatim) — precisely the docs `migrate` never sees. Same shape as
+          // the cell-dust snap; reference-stable when everything is concrete.
+          {
+            const baked = bakeConcreteDotSizes({
+              stations: patch.stations ?? doc.stations,
+              lines: patch.lines ?? doc.lines,
+            });
+            if (baked.lines && baked.lines !== (patch.lines ?? doc.lines)) {
+              patch.lines = baked.lines;
+            }
+            if (baked.stations && baked.stations !== (patch.stations ?? doc.stations)) {
+              patch.stations = baked.stations;
             }
           }
           return { ...current, ...doc, ...patch };

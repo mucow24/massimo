@@ -1,10 +1,10 @@
-import { ChevronDownIcon } from '@radix-ui/react-icons';
+import { ChevronDownIcon, LoopIcon, ResetIcon } from '@radix-ui/react-icons';
 import * as Select from '@radix-ui/react-select';
 import { FieldSelectContent } from './FieldSelectContent';
 import { useInlineRename } from './useInlineRename';
 import { useDoc } from '../state/store';
-import { stylesOfKind } from '../model/styles';
-import type { StyleKind } from '../model/types';
+import { captureStyleProps, styleFieldsDiff, stylesOfKind } from '../model/styles';
+import type { MapDoc, StyleKind } from '../model/types';
 
 // Select sentinels. Real style ids are UUIDs (or `y0`-style counter ids in
 // tests), so the dunder values can't collide with one.
@@ -23,17 +23,28 @@ interface Props {
  * of this kind's named styles plus the "Custom" sentinel and a define-by-
  * example "Save style…" action that captures the item's current effective
  * formatting (typing an existing name redefines that style, like palette
- * upsert). The dropdown is a Radix Select wearing the shared `field-select`
- * chrome (same as the Weight dropdown). Its value derives from the styleId
- * tag alone — the transforms keep "tagged ⇒ matches" true, so no value
- * comparison happens here. Mount with key={itemId} so naming state resets
- * when the selection switches items.
+ * upsert), followed by the Sync-to-style and Revert-to-style buttons. The
+ * dropdown's VALUE derives from the styleId tag alone; covered edits keep the
+ * tag as per-field overrides, and while any exist the trigger reads
+ * "<name> (edited)" — the buttons resolve that divergence in either
+ * direction (push the item's look into the def, or re-stamp the def over the
+ * item). Mount with key={itemId} so naming state resets when the selection
+ * switches items.
  */
 export function StyleRow({ kind, itemId, styleId, disabled }: Props) {
   const styles = useDoc((s) => s.styles);
   const applyStyle = useDoc((s) => s.applyStyle);
   const clearStyleTag = useDoc((s) => s.clearStyleTag);
   const saveStyle = useDoc((s) => s.saveStyle);
+  // Does the item diverge from its style on any covered field? (false when
+  // untagged — nothing to diverge from.) stopDot never mounts a StyleRow, so
+  // the kind narrows safely.
+  const edited = useDoc((s) => {
+    const def = styleId !== undefined ? s.styles[styleId] : undefined;
+    if (!def || def.kind !== kind || kind === 'stopDot') return false;
+    const props = captureStyleProps(s as unknown as MapDoc, kind, itemId);
+    return props !== null && styleFieldsDiff(kind, props, def.props).length > 0;
+  });
   // Shared inline-rename plumbing (same as MapNameField / the Styles panel).
   const {
     editing: naming,
@@ -83,7 +94,11 @@ export function StyleRow({ kind, itemId, styleId, disabled }: Props) {
         }}
       >
         <Select.Trigger id={`style-select-${itemId}`} className="field-select" aria-label="Style">
-          <Select.Value />
+          {/* Explicit children (not the auto item text) so the trigger can
+              carry the divergence marker without it appearing in the list. */}
+          <Select.Value>
+            {current === CUSTOM ? 'Custom' : styles[current].name + (edited ? ' (edited)' : '')}
+          </Select.Value>
           <Select.Icon className="field-select-caret" aria-hidden="true">
             <ChevronDownIcon />
           </Select.Icon>
@@ -104,6 +119,28 @@ export function StyleRow({ kind, itemId, styleId, disabled }: Props) {
           </Select.Item>
         </FieldSelectContent>
       </Select.Root>
+      {/* Resolve a divergence in either direction. Both idle (disabled) until
+          the item actually diverges from a real style. */}
+      <button
+        type="button"
+        className="style-row-btn"
+        aria-label="Sync to style"
+        title="Sync to style — redefine the style from this item (all wearers follow)"
+        disabled={disabled || current === CUSTOM || !edited}
+        onClick={() => saveStyle(kind, styles[current].name, itemId)}
+      >
+        <LoopIcon />
+      </button>
+      <button
+        type="button"
+        className="style-row-btn"
+        aria-label="Revert to style"
+        title="Revert to style — discard this item's overrides"
+        disabled={disabled || current === CUSTOM || !edited}
+        onClick={() => applyStyle(current, itemId)}
+      >
+        <ResetIcon />
+      </button>
     </div>
   );
 }

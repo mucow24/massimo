@@ -31,16 +31,14 @@ export const DOT_SIZE_MAX = 20;
 export const DOT_SIZE_STEP = 0.25;
 
 /**
- * The canonical STORED form of a dot size (diameter px): round to the
- * DOT_SIZE_STEP (quarter-unit) grid, clamp to ≥ DOT_SIZE_MIN, and collapse to
- * `undefined` when it equals `dropAt` — the effective default the value would
- * otherwise redundantly duplicate. `dropAt` is DOT_SIZE_DEFAULT for a line
- * default, or the line's effective default (for the stop's singleton/shared
- * case) for a per-stop override. The one home for that arithmetic, shared by
- * the `setDotSize`/`setLineSingletonDotSize`/`setLineMultiDotSize` transforms
- * and the `sanitizeStopDotSizes`/`sanitizeLineDotSize` file cleaners so the
- * clamp rule can never drift. Callers own the finiteness guard (they diverge
- * on non-finite input).
+ * The canonical STORED form of a PER-STOP dot size (diameter px): round to
+ * the DOT_SIZE_STEP (quarter-unit) grid, clamp to ≥ DOT_SIZE_MIN, and
+ * collapse to `undefined` when it equals `dropAt` — the line's size for the
+ * stop's singleton/shared case, which an absent field defers to. Shared by
+ * the `setDotSize` transform and the `sanitizeStopDotSizes` file cleaner so
+ * the clamp rule can never drift. LINE sizes never collapse (always stored);
+ * their setters snap/clamp only. Callers own the finiteness guard (they
+ * diverge on non-finite input).
  */
 export const canonicalDotSize = (
   size: number,

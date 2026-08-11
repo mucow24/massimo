@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { MoonIcon, SunIcon } from '@radix-ui/react-icons';
 import { ColorField } from './ColorField';
 
@@ -25,6 +26,7 @@ export function DayNightColorRow({
   onChange,
   onDarkChange,
   disabled,
+  dot,
 }: {
   label: string;
   /** id of the light swatch; also the row `<label>`'s `htmlFor`. */
@@ -39,9 +41,12 @@ export function DayNightColorRow({
   onChange: (c: string) => void;
   onDarkChange: (c: string) => void;
   disabled?: boolean;
+  /** Optional override marker (an `OverrideDot`) rendered first in the row. */
+  dot?: ReactNode;
 }) {
   return (
     <div className={'row' + (disabled ? ' disabled' : '')}>
+      {dot}
       <label htmlFor={id}>{label}</label>
       <SunIcon aria-hidden="true" />
       <ColorField

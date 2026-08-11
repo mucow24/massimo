@@ -1298,9 +1298,9 @@ describe('setLineCurveRadius', () => {
     expect(T.setLineCurveRadius(doc, 'L1', Infinity)).toBe(doc);
   });
 
-  it('detaches the line from its style preset on change', () => {
+  it('keeps the style tag on change (divergence is an override)', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1', styleId: 'some-style' })] });
-    expect('styleId' in T.setLineCurveRadius(doc, 'L1', 40).lines.L1).toBe(false);
+    expect(T.setLineCurveRadius(doc, 'L1', 40).lines.L1.styleId).toBe('some-style');
   });
 
   it('returns the input doc for an unknown line id', () => {
@@ -1391,10 +1391,10 @@ describe('setLineDashLength / setLineDashWidth', () => {
     expect(T.setLineDashLength(unset, 'L1', 0)).toBe(unset); // 0 on an unset line = no-op
   });
 
-  it('detaches the line from its style preset on change', () => {
+  it('keeps the style tag on change (divergence is an override)', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1', styleId: 'some-style' })] });
-    expect('styleId' in T.setLineDashLength(doc, 'L1', 3).lines.L1).toBe(false);
-    expect('styleId' in T.setLineDashWidth(doc, 'L1', 3).lines.L1).toBe(false);
+    expect(T.setLineDashLength(doc, 'L1', 3).lines.L1.styleId).toBe('some-style');
+    expect(T.setLineDashWidth(doc, 'L1', 3).lines.L1.styleId).toBe('some-style');
   });
 });
 
@@ -1794,13 +1794,13 @@ describe('per-transfer style overrides', () => {
       expect('draw' in cleared.transfers['x1']).toBe(false);
     });
 
-    it('detaches from the style preset when the draw order changes (it is a covered field)', () => {
+    it('keeps the style tag when the draw order changes (a covered-field override)', () => {
       const doc = makeDoc({
         transfers: [makeTransfer({ id: 'x1', styleId: 'y1' })],
       });
       const next = T.updateTransferStyle(doc, 'x1', { draw: 'over-code' });
-      expect(next.transfers['x1'].styleId).toBeUndefined();
-      // …but a re-pick of the value already in force is a no-op, tag intact.
+      expect(next.transfers['x1'].styleId).toBe('y1');
+      // …and a re-pick of the value already in force is a no-op.
       expect(T.updateTransferStyle(next, 'x1', { draw: 'over-code' })).toBe(next);
     });
 
@@ -2422,8 +2422,8 @@ describe('setLineEndStyle', () => {
     expect('endStyle' in back.lines.L1).toBe(false);
   });
 
-  it('detaches from the style preset — end style is a covered field', () => {
-    expect(T.setLineEndStyle(doc(), 'L1', 'short').lines.L1.styleId).toBeUndefined();
+  it('keeps the style tag — end style is a covered field, so a change is an override', () => {
+    expect(T.setLineEndStyle(doc(), 'L1', 'short').lines.L1.styleId).toBe('sty');
   });
 
   it('is a reference no-op when the stored value would not change', () => {
@@ -3333,14 +3333,14 @@ describe('setLineSingletonDotSize', () => {
     expect('multiDotSize' in next.lines.L1).toBe(false);
   });
 
-  it('drops the field at DOT_SIZE_DEFAULT (exact or rounding onto it)', () => {
+  it('stores the default size explicitly (absence is never written, rounding lands on it)', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1', singletonDotSize: 12 })] });
+    expect(T.setLineSingletonDotSize(doc, 'L1', DOT_SIZE_DEFAULT).lines.L1.singletonDotSize).toBe(
+      DOT_SIZE_DEFAULT,
+    );
     expect(
-      'singletonDotSize' in T.setLineSingletonDotSize(doc, 'L1', DOT_SIZE_DEFAULT).lines.L1,
-    ).toBe(false);
-    expect(
-      'singletonDotSize' in T.setLineSingletonDotSize(doc, 'L1', DOT_SIZE_DEFAULT + 0.1).lines.L1,
-    ).toBe(false);
+      T.setLineSingletonDotSize(doc, 'L1', DOT_SIZE_DEFAULT + 0.1).lines.L1.singletonDotSize,
+    ).toBe(DOT_SIZE_DEFAULT);
   });
 
   it('reference-equal no-ops: unchanged value, unknown id, non-finite input', () => {
@@ -3348,8 +3348,6 @@ describe('setLineSingletonDotSize', () => {
     expect(T.setLineSingletonDotSize(doc, 'L1', 12)).toBe(doc);
     expect(T.setLineSingletonDotSize(doc, 'ghost', 16)).toBe(doc);
     expect(T.setLineSingletonDotSize(doc, 'L1', NaN)).toBe(doc);
-    const bare = makeDoc({ lines: [makeLine({ id: 'L1' })] });
-    expect(T.setLineSingletonDotSize(bare, 'L1', DOT_SIZE_DEFAULT)).toBe(bare);
   });
 
   it('clears matching overrides on SINGLETON stops only; different sizes untouched', () => {
@@ -3436,21 +3434,21 @@ describe('setLineSingletonDotSize', () => {
       doc = T.setLineSingletonDotSize(doc, 'L1', px);
       expect(renderedDiameter()).toBe(px);
     }
-    // Only the true tracking size (12) collapses back to a bare default.
+    // The natural size (12) is stored like any other — nothing collapses.
     doc = T.setLineSingletonDotSize(doc, 'L1', 12);
-    expect('singletonDotSize' in doc.lines.L1).toBe(false);
+    expect(doc.lines.L1.singletonDotSize).toBe(12);
     expect(renderedDiameter()).toBe(12);
   });
 });
 
 describe('setLineMultiDotSize', () => {
-  it('stores/drops the multi size independently of the singleton size', () => {
+  it('stores the multi size independently of the singleton size', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1', singletonDotSize: 6 })] });
     const set = T.setLineMultiDotSize(doc, 'L1', 12);
     expect(set.lines.L1.multiDotSize).toBe(12);
     expect(set.lines.L1.singletonDotSize).toBe(6);
-    expect('multiDotSize' in T.setLineMultiDotSize(set, 'L1', DOT_SIZE_DEFAULT).lines.L1).toBe(
-      false,
+    expect(T.setLineMultiDotSize(set, 'L1', DOT_SIZE_DEFAULT).lines.L1.multiDotSize).toBe(
+      DOT_SIZE_DEFAULT,
     );
   });
 

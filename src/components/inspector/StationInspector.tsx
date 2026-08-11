@@ -23,6 +23,7 @@ import {
 import { StopRows } from './StopRows';
 import { spawnAnchorCell } from './stopGridDrag';
 import { StyleRow } from '../StyleRow';
+import { OverrideDot } from '../OverrideDot';
 import { NumericFieldRow } from '../NumericFieldRow';
 import { WeightSelect, ItalicButton } from '../WeightItalicControls';
 import { useFieldHistory } from '../useFieldHistory';
@@ -488,7 +489,7 @@ export function StationInspector({ id }: { id: StationId }) {
           disclosure (collapsed by default, remembered). Edits are LOCAL to this
           station (never dispatchAll), preserving the pinned "typography never
           mirrors" decision. */}
-        <div className="field">
+        <div className="field style-fields">
           <StyleRow
             key={station.id}
             kind="station"
@@ -522,8 +523,24 @@ export function StationInspector({ id }: { id: StationId }) {
                 }
                 textboxAllowAboveMax
                 disabled={locked}
+                dot={
+                  <OverrideDot
+                    kind="station"
+                    itemId={station.id}
+                    fields={['fontSize']}
+                    name="Size"
+                    disabled={locked}
+                  />
+                }
               />
               <div className="field-row">
+                <OverrideDot
+                  kind="station"
+                  itemId={station.id}
+                  fields={['weight', 'italic']}
+                  name="Weight"
+                  disabled={locked}
+                />
                 <label htmlFor={`station-weight-${station.id}`}>Weight</label>
                 <WeightSelect
                   id={`station-weight-${station.id}`}
@@ -556,6 +573,15 @@ export function StationInspector({ id }: { id: StationId }) {
                 detent={LABEL_LEADING_DEFAULT}
                 textboxAllowAboveMax
                 disabled={locked}
+                dot={
+                  <OverrideDot
+                    kind="station"
+                    itemId={station.id}
+                    fields={['leading']}
+                    name="Leading"
+                    disabled={locked}
+                  />
+                }
               />
               {/* Letter-spacing in em (0 = normal); the tick marks the neutral 0. */}
               <NumericFieldRow
@@ -573,6 +599,15 @@ export function StationInspector({ id }: { id: StationId }) {
                 detent={LABEL_TRACKING_DEFAULT}
                 textboxAllowAboveMax
                 disabled={locked}
+                dot={
+                  <OverrideDot
+                    kind="station"
+                    itemId={station.id}
+                    fields={['tracking']}
+                    name="Tracking"
+                    disabled={locked}
+                  />
+                }
               />
             </>
           )}

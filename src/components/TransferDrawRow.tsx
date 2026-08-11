@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { ChevronDownIcon } from '@radix-ui/react-icons';
 import * as Select from '@radix-ui/react-select';
 import { FieldSelectContent } from './FieldSelectContent';
@@ -16,13 +17,17 @@ export function TransferDrawRow({
   id,
   value,
   onChange,
+  dot,
 }: {
   id: string;
   value: TransferDrawOrder;
   onChange: (draw: TransferDrawOrder) => void;
+  /** Optional override marker (an `OverrideDot`) rendered first in the row. */
+  dot?: ReactNode;
 }) {
   return (
     <div className="row">
+      {dot}
       <label htmlFor={id}>Draw</label>
       <Select.Root value={value} onValueChange={(v) => onChange(v as TransferDrawOrder)}>
         <Select.Trigger id={id} className="field-select" aria-label="Draw">

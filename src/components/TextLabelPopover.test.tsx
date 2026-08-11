@@ -404,7 +404,7 @@ describe('<TextLabelPopover /> — style presets', () => {
     return label ? <TextLabelPopover label={label} hostW={800} onClose={() => {}} /> : null;
   }
 
-  it('applies a preset from the Style row, then flips to Custom on a covered edit', async () => {
+  it('applies a preset from the Style row; a covered edit keeps the style (override)', async () => {
     useDoc.setState({
       ...useDoc.getState(),
       textLabels: { g1: makeTextLabel({ id: 'g1', text: 'Hi' }) },
@@ -425,9 +425,42 @@ describe('<TextLabelPopover /> — style presets', () => {
     });
     expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Heading');
     expect(screen.getByRole('spinbutton', { name: 'Size' })).toHaveValue(24);
-    // A covered edit (weight) detaches; the text content is not covered.
+    // A covered edit (weight) becomes a per-field override — the tag stays.
     await chooseOption(user, 'Weight', 'Roman');
-    expect(useDoc.getState().textLabels['g1'].styleId).toBeUndefined();
-    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Custom');
+    expect(useDoc.getState().textLabels['g1'].styleId).toBe('y1');
+    expect(useDoc.getState().textLabels['g1'].weight).toBe(400);
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Heading (edited)');
+  });
+
+  it('a red dot marks the overridden field; clicking it reverts just that field', async () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      textLabels: { g1: makeTextLabel({ id: 'g1', text: 'Hi' }) },
+      styles: {
+        y1: makeStyle('textLabel', 'y1', {
+          name: 'Heading',
+          props: { fontSize: 24, weight: 700 },
+        }),
+      },
+    });
+    render(<LivePopover />);
+    const user = userEvent.setup();
+    await chooseOption(user, 'Style', 'Heading');
+    // Matching everywhere: no dots.
+    expect(screen.queryByRole('button', { name: 'Revert Weight to style' })).toBeNull();
+    await chooseOption(user, 'Weight', 'Roman'); // override weight (700 → 400)
+    // Only the diverging row grows a dot, and its tooltip names the style's
+    // own value for the field.
+    expect(screen.queryByRole('button', { name: 'Revert Size to style' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Revert Weight to style' })).toHaveAttribute(
+      'title',
+      'Overrides style weight (Bold) — click to revert',
+    );
+    await user.click(screen.getByRole('button', { name: 'Revert Weight to style' }));
+    const label = useDoc.getState().textLabels.g1;
+    expect(label.weight).toBe(700);
+    expect(label.fontSize).toBe(24);
+    expect(label.styleId).toBe('y1');
+    expect(screen.queryByRole('button', { name: 'Revert Weight to style' })).toBeNull();
   });
 });

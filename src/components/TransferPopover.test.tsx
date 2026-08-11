@@ -222,7 +222,7 @@ describe('<TransferPopover />', () => {
 });
 
 describe('<TransferPopover /> — style presets', () => {
-  it('applies a preset from the Style row, then flips to Custom on a covered edit', async () => {
+  it('applies a preset from the Style row; a covered edit keeps the style (override)', async () => {
     useDoc.setState({
       ...useDoc.getState(),
       styles: { y1: makeStyle('transfer', 'y1', { name: 'Bold link', props: { thickness: 6 } }) },
@@ -232,13 +232,13 @@ describe('<TransferPopover /> — style presets', () => {
     expect(useDoc.getState().transfers['x1'].styleId).toBe('y1');
     expect(screen.getByRole('slider', { name: 'Thickness' })).toHaveAttribute('aria-valuenow', '6');
     expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Bold link');
-    // A covered edit detaches back to Custom.
+    // A covered edit becomes a per-field override — the tag stays.
     stepSlider(screen.getByRole('slider', { name: 'Thickness' }), 1);
-    expect(useDoc.getState().transfers['x1'].styleId).toBeUndefined();
-    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Custom');
+    expect(useDoc.getState().transfers['x1'].styleId).toBe('y1');
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Bold link');
   });
 
-  it('a preset carries its draw rung, and changing the rung detaches to Custom', async () => {
+  it('a preset carries its draw rung; changing the rung keeps the style (override)', async () => {
     useDoc.setState({
       ...useDoc.getState(),
       styles: {
@@ -250,9 +250,9 @@ describe('<TransferPopover /> — style presets', () => {
     await chooseOption(user, 'Style', 'Overlaid');
     expect(useDoc.getState().transfers['x1'].draw).toBe('over-code');
     expect(screen.getByRole('combobox', { name: 'Draw' })).toHaveTextContent('Over service code');
-    // The rung is a COVERED field, so re-picking a different one detaches.
+    // The rung is a COVERED field, so re-picking a different one overrides it.
     await chooseOption(user, 'Draw', 'Over stop dot stroke');
-    expect(useDoc.getState().transfers['x1'].styleId).toBeUndefined();
-    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Custom');
+    expect(useDoc.getState().transfers['x1'].styleId).toBe('y1');
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Overlaid');
   });
 });

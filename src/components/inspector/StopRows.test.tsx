@@ -136,7 +136,7 @@ describe('<StopRows /> — transfer picker', () => {
     expect(useDoc.getState().transfers).toEqual({});
   });
 
-  it('offers None plus every transfer style, and marks a hand-tuned one Custom', async () => {
+  it('offers None plus every transfer style; a hand-tuned one keeps its style', async () => {
     seedWithStyles();
     const user = userEvent.setup();
     renderRows();
@@ -147,14 +147,13 @@ describe('<StopRows /> — transfer picker', () => {
       'Fat',
     ]);
     await user.click(screen.getByRole('option', { name: 'Fat' }));
-    // Editing the transfer itself detaches it from the preset (updateTransferStyle's
-    // contract) — the picker has to admit that rather than keep claiming "Fat".
+    // Editing the transfer itself pins that field as a per-field override —
+    // the transfer stays a "Fat" wearer, so no Custom entry appears.
     useDoc.getState().updateTransferStyle(selfTransfer()!.id, { thickness: 9 });
-    expect(selfTransfer()!.styleId).toBeUndefined();
+    expect(selfTransfer()!.styleId).toBeDefined();
     await user.click(screen.getByRole('combobox', { name: xferCombo('1') }));
     expect(screen.getAllByRole('option').map((o) => o.textContent)).toEqual([
       'None',
-      'Custom',
       'Default',
       'Fat',
     ]);

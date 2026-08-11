@@ -12,6 +12,7 @@ import { PopoverShell } from './PopoverShell';
 import { usePinnedPopover } from './canvas/usePinnedPopover';
 import { usePersistedTextareaHeight } from './usePersistedTextareaHeight';
 import { StyleRow } from './StyleRow';
+import { OverrideDot } from './OverrideDot';
 import { WeightSelect, ItalicButton } from './WeightItalicControls';
 import {
   FONT_SIZE_STEP,
@@ -101,7 +102,7 @@ export function TextLabelPopover({ label, hostW, onClose }: Props) {
   // field). Outside click likewise closes through canvas deselection.
   return (
     <PopoverShell
-      className="text-label-popover"
+      className="text-label-popover style-fields"
       title="Label"
       left={anchor.x}
       top={anchor.y}
@@ -157,6 +158,15 @@ export function TextLabelPopover({ label, hostW, onClose }: Props) {
         disabled={locked}
         onChange={setColor}
         onDarkChange={setDarkColor}
+        dot={
+          <OverrideDot
+            kind="textLabel"
+            itemId={label.id}
+            fields={['color', 'darkColor']}
+            name="Color"
+            disabled={locked}
+          />
+        }
       />
 
       {/* textboxAllowAboveMax: the spinbutton (typing and step buttons) accepts
@@ -172,9 +182,25 @@ export function TextLabelPopover({ label, hostW, onClose }: Props) {
         getCurrent={() => useDoc.getState().textLabels[label.id]?.fontSize ?? label.fontSize}
         textboxAllowAboveMax
         disabled={locked}
+        dot={
+          <OverrideDot
+            kind="textLabel"
+            itemId={label.id}
+            fields={['fontSize']}
+            name="Size"
+            disabled={locked}
+          />
+        }
       />
 
       <div className="row">
+        <OverrideDot
+          kind="textLabel"
+          itemId={label.id}
+          fields={['weight']}
+          name="Weight"
+          disabled={locked}
+        />
         <label>Weight</label>
         <WeightSelect
           value={label.weight}
@@ -187,6 +213,13 @@ export function TextLabelPopover({ label, hostW, onClose }: Props) {
       <hr className="popover-divider" aria-hidden="true" />
 
       <div className="row">
+        <OverrideDot
+          kind="textLabel"
+          itemId={label.id}
+          fields={['align', 'italic']}
+          name="Align"
+          disabled={locked}
+        />
         <label>Align</label>
         <div className="shape-group">
           <SegmentedToggle
@@ -222,6 +255,15 @@ export function TextLabelPopover({ label, hostW, onClose }: Props) {
         getCurrent={() => useDoc.getState().textLabels[label.id]?.width ?? 0}
         textboxAllowAboveMax
         disabled={locked}
+        dot={
+          <OverrideDot
+            kind="textLabel"
+            itemId={label.id}
+            fields={['width']}
+            name="Width"
+            disabled={locked}
+          />
+        }
       />
 
       <hr className="popover-divider" aria-hidden="true" />
@@ -241,6 +283,15 @@ export function TextLabelPopover({ label, hostW, onClose }: Props) {
         detent={TEXT_LABEL_LEADING_DEFAULT}
         textboxAllowAboveMax
         disabled={locked}
+        dot={
+          <OverrideDot
+            kind="textLabel"
+            itemId={label.id}
+            fields={['leading']}
+            name="Leading"
+            disabled={locked}
+          />
+        }
       />
 
       {/* Letter-spacing in em (0 = normal); the tick marks the neutral 0. */}
@@ -258,6 +309,15 @@ export function TextLabelPopover({ label, hostW, onClose }: Props) {
         detent={TEXT_LABEL_TRACKING_DEFAULT}
         textboxAllowAboveMax
         disabled={locked}
+        dot={
+          <OverrideDot
+            kind="textLabel"
+            itemId={label.id}
+            fields={['tracking']}
+            name="Tracking"
+            disabled={locked}
+          />
+        }
       />
 
       <PopoverFooter noun="label" locked={locked} onToggleLock={onToggleLock} onDelete={onDelete} />

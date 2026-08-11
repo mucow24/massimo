@@ -8,11 +8,18 @@ import {
   STATION_LABEL_STYLE_DEFAULTS,
   TEXT_LABEL_COLOR_DEFAULT,
   TEXT_LABEL_DARK_COLOR_DEFAULT,
+  TEXT_LABEL_LEADING_DEFAULT,
+  TEXT_LABEL_LEADING_MIN,
+  TEXT_LABEL_LEADING_STEP,
+  TEXT_LABEL_TRACKING_DEFAULT,
+  TEXT_LABEL_TRACKING_MIN,
+  TEXT_LABEL_TRACKING_STEP,
   bumpWeightByIndex,
   canonicalStationLabelStyle,
   isLabelWeight,
   isRouteBulletShape,
   isTextLabelAlign,
+  snapToStep,
   stationIsSingleton,
   withTransferOverride,
 } from './transforms';
@@ -33,13 +40,19 @@ import {
 import { canonicalLineLabelGap, canonicalLineWidth } from './lineWidth';
 import { canonicalLineCircleRadius } from './lineCircle';
 import { projectToCircle, stationCircle } from '../geometry/lineCircle';
-import { clamp, rot8 } from '../util/grid';
+import { clamp, rot8, roundClamp } from '../util/grid';
 import {
   LINE_CURVE_RADIUS_DEFAULT,
   LINE_CURVE_RADIUS_MIN,
   canonicalLineCurveRadius,
 } from './lineCurve';
-import { canonicalDotSize } from './dotSize';
+import {
+  DOT_SIZE_MIN,
+  DOT_SIZE_STEP,
+  canonicalDotSize,
+  lineMultiDotSizeOf,
+  lineSingletonDotSizeOf,
+} from './dotSize';
 import {
   LINE_OWN_COLOR,
   canonicalStrokeColor,
@@ -60,7 +73,6 @@ import {
 import {
   adoptDefaultStyles,
   canonicalStyleProps,
-  captureStyleProps,
   isReservedStyleName,
   stylePropsEqual,
 } from './styles';
@@ -119,6 +131,7 @@ import type {
   StyleKind,
   SvgImage,
   TextLabel,
+  TextLabelStyleProps,
   TextLabelAlign,
   TextLabelWeight,
   Transfer,
@@ -658,8 +671,8 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
   let linesChanged = false;
   for (const id of Object.keys(merged.lines)) {
     const line = merged.lines[id];
-    // NB: dot-SIZE cleaning is deferred to after bakeLineDotDefaults — its
-    // drop-at default is style-aware, so it must see the baked split dot styles.
+    // NB: dot-SIZE cleaning is deferred to after bakeLineDotDefaults — the
+    // materializing bake that follows it reads the baked split dot styles.
     const cleaned = sanitizeLineStroke(
       sanitizeLineCurve(sanitizeLineWidth(sanitizeLineOverrides(line))),
     );
@@ -704,10 +717,11 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
   // BEFORE the singleton-aware `sanitizeStopDotSizes` (which reads the split
   // line sizes) and the style validation below (which reads the split props).
   merged = bakeLineDotDefaults(merged);
-  // Canonicalize the split dot SIZES now that the dot styles are baked: the
-  // drop-at default is style-aware (a service-code disc defaults to 12, not 8),
-  // so this must run after bakeLineDotDefaults and before the stop-size pass
-  // (which reads the cleaned line sizes).
+  // Canonicalize the split dot SIZES now that the dot styles are baked — the
+  // grid clamp runs on stored values, then bakeConcreteDotSizes materializes
+  // any absent ones (sizes are always stored; a legacy file's absence means
+  // "the natural diameter of my dot type", which the bake pins so nothing
+  // repaints).
   let lineSizesChanged = false;
   const sizedLines: Record<string, Line> = {};
   for (const id of Object.keys(merged.lines)) {
@@ -716,9 +730,10 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
     sizedLines[id] = cleaned;
   }
   if (lineSizesChanged) merged.lines = sizedLines;
-  // Sanitize per-stop dot sizes AFTER the line pass: the canonical stored
-  // form depends on the line's effective default, so the comparison must use
-  // sanitized line values.
+  merged = bakeConcreteDotSizes(merged);
+  // Sanitize per-stop dot sizes AFTER the line passes: the canonical stored
+  // form collapses at the line's (now materialized) size, so the comparison
+  // must use final line values.
   const sizes = sanitizeStopDotSizes(merged.stations, merged.lines);
   if (sizes.changed) merged.stations = sizes.stations;
   // Seed the stopDot style library + tag every dot slot (idempotent; a no-op on
@@ -776,11 +791,98 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
     }
   }
   let final = pruneDanglingStyleRefs(merged);
+  // textLabel defs from saves predating layout coverage take the AVERAGE of
+  // their (post-prune, so genuinely tagged) wearers' width/leading/tracking.
+  final = bakeTextLabelStyleLayout(final);
   // Pre-styles saves: adopt untagged, default-looking items into the
   // just-backfilled Default styles, so the Styles panel's Default editors
   // act on the whole loaded map rather than nothing.
   if (!hadStyles) final = adoptDefaultStyles(final);
   return { ok: true, doc: final };
+}
+
+/**
+ * Backfill the textLabel layout fields (width/leading/tracking) onto style
+ * defs from saves predating their coverage: each MISSING field takes the
+ * MOST COMMON of the def's wearers' effective values (auto/neutral when
+ * nobody wears it; ties break to the first-encountered wearer value),
+ * snapped onto the item setter's grids. Most-common rather than the mean —
+ * a mean of divergent wearers matches nobody, dotting every wearer as
+ * overridden over a value no label uses; the mode matches the plurality.
+ * Items are never touched — the map repaints unchanged, each wearer's value
+ * either equaling the new default or reading as its per-field override.
+ * Idempotent (keyed off the fields' absence; app-written defs are concrete).
+ * Shared by parse() and migrateDoc (non-version-gated; the v28 bump forces
+ * one pass).
+ */
+export function bakeTextLabelStyleLayout<
+  Doc extends { styles?: Record<string, StyleDef>; textLabels?: Record<string, TextLabel> },
+>(doc: Doc): Doc {
+  const styles = doc.styles;
+  if (!styles) return doc;
+  const next: Record<string, StyleDef> = {};
+  let changed = false;
+  for (const id of Object.keys(styles)) {
+    const def = styles[id];
+    next[id] = def;
+    if (def.kind !== 'textLabel') continue;
+    const p = def.props;
+    const needWidth = p.width === undefined;
+    const needLeading = p.leading === undefined;
+    const needTracking = p.tracking === undefined;
+    if (!needWidth && !needLeading && !needTracking) continue;
+    const wearers = Object.values(doc.textLabels ?? {}).filter((t) => t.styleId === id);
+    const mostCommon = (read: (t: TextLabel) => number, fallback: number): number => {
+      if (wearers.length === 0) return fallback;
+      const counts = new Map<number, number>();
+      for (const t of wearers) {
+        const v = read(t);
+        counts.set(v, (counts.get(v) ?? 0) + 1);
+      }
+      let best = fallback;
+      let bestN = 0;
+      // Map iteration is insertion order, so a tie keeps the first-seen value
+      // — deterministic across runs of the same doc.
+      for (const [v, n] of counts) {
+        if (n > bestN) {
+          best = v;
+          bestN = n;
+        }
+      }
+      return best;
+    };
+    const props: TextLabelStyleProps = {
+      ...p,
+      ...(needWidth ? { width: Math.max(0, Math.round(mostCommon((t) => t.width ?? 0, 0))) } : {}),
+      ...(needLeading
+        ? {
+            leading: snapToStep(
+              mostCommon(
+                (t) => t.leading ?? TEXT_LABEL_LEADING_DEFAULT,
+                TEXT_LABEL_LEADING_DEFAULT,
+              ),
+              TEXT_LABEL_LEADING_STEP,
+              TEXT_LABEL_LEADING_MIN,
+            ),
+          }
+        : {}),
+      ...(needTracking
+        ? {
+            tracking: snapToStep(
+              mostCommon(
+                (t) => t.tracking ?? TEXT_LABEL_TRACKING_DEFAULT,
+                TEXT_LABEL_TRACKING_DEFAULT,
+              ),
+              TEXT_LABEL_TRACKING_STEP,
+              TEXT_LABEL_TRACKING_MIN,
+            ),
+          }
+        : {}),
+    };
+    next[id] = { ...def, props } as StyleDef;
+    changed = true;
+  }
+  return changed ? { ...doc, styles: next } : doc;
 }
 
 // Loose shape both retirement bakes below operate on: a whole MapDoc on the
@@ -1820,26 +1922,19 @@ function sanitizeLineCurve(line: Line): Line {
 }
 
 // Normalize one hand-edited / legacy split default-dot-size field to the
-// canonical stored form the transforms maintain: integer ≥ DOT_SIZE_MIN, and
-// absent when it equals the default (the app never stores the default).
-// Non-numbers and non-finite values are dropped. File-import hygiene only —
+// canonical stored form the transforms maintain: on the quarter-unit grid and
+// ≥ DOT_SIZE_MIN. Sizes are ALWAYS stored (natural values included — see
+// bakeConcreteDotSizes, which materializes absent ones right after this pass),
+// so nothing drops at a default; only non-numbers and non-finite values are
+// dropped (and then materialized by the bake). File-import hygiene only —
 // localStorage rehydration never sees uncanonical sizes because every write
 // goes through the setters' clamp.
 function sanitizeLineDotSizeField(line: Line, field: 'singletonDotSize' | 'multiDotSize'): Line {
   if (!(field in line)) return line;
   const raw = line[field] as unknown;
   if (typeof raw === 'number' && Number.isFinite(raw)) {
-    // Drop at the size this case's DEFAULT STYLE renders when untracked (12 for
-    // a service-code disc, 8 otherwise) — mirrors setLineCaseDotSize, so an
-    // exported service-code default of 8 re-imports as 8, not a dropped-to-12.
-    // Requires the styles to be baked first (see the call site's ordering).
-    const style =
-      (field === 'singletonDotSize' ? line.singletonDotStyle : line.multiDotStyle) ??
-      DEFAULT_DOT_STYLE;
-    const stored = canonicalDotSize(raw, defaultDotDiameter(style));
-    if (stored !== undefined) {
-      return stored === line[field] ? line : { ...line, [field]: stored };
-    }
+    const stored = roundClamp(raw, DOT_SIZE_STEP, DOT_SIZE_MIN);
+    return stored === line[field] ? line : { ...line, [field]: stored };
   }
   const { [field]: _gone, ...rest } = line;
   return rest as Line;
@@ -1852,11 +1947,76 @@ function sanitizeLineDotSize(line: Line): Line {
   );
 }
 
+/**
+ * Materialize the dot sizes the retired absent-means-natural indirection used
+ * to imply: every line stores its split sizes (absent ⇒ the natural diameter
+ * of its case's dot type), and a stop whose OLD effective size — which could
+ * read the stop type's own natural — differs from what the materialized line
+ * will say gets that size pinned, so nothing repaints. Stops are pinned FIRST,
+ * against the pre-materialization lines, because "which natural did this stop
+ * render?" is only answerable while the line's size is still absent. Shared by
+ * parse() (unconditional, idempotent) and migrateDoc (v<27). Reference-stable
+ * when everything is already concrete.
+ */
+export function bakeConcreteDotSizes<
+  Doc extends { stations?: Record<string, Station>; lines?: Record<string, Line> },
+>(doc: Doc): Doc {
+  const lines = doc.lines;
+  if (!lines) return doc;
+  let out = doc;
+  if (doc.stations) {
+    let changed = false;
+    const stations: Record<string, Station> = {};
+    for (const sid of Object.keys(doc.stations)) {
+      const st = doc.stations[sid];
+      let stopsChanged = false;
+      const stops = st.stops.map((s) => {
+        if (s.dotSize !== undefined) return s;
+        const line = lines[s.lineId];
+        if (!line) return s;
+        const isSingleton = stationIsSingleton(st);
+        // A stored line size already ruled this stop (absent = the line's
+        // size, before and after) — nothing was implied, nothing to pin.
+        if ((isSingleton ? line.singletonDotSize : line.multiDotSize) !== undefined) return s;
+        const oldEff = defaultDotDiameter(resolveDotStyle(line, s, isSingleton));
+        const lineWill = defaultDotDiameter(
+          (isSingleton ? line.singletonDotStyle : line.multiDotStyle) ?? DEFAULT_DOT_STYLE,
+        );
+        if (oldEff === lineWill) return s;
+        stopsChanged = true;
+        return { ...s, dotSize: oldEff };
+      });
+      stations[sid] = stopsChanged ? { ...st, stops } : st;
+      if (stopsChanged) changed = true;
+    }
+    if (changed) out = { ...out, stations };
+  }
+  let linesChanged = false;
+  const nextLines: Record<string, Line> = {};
+  for (const id of Object.keys(lines)) {
+    let ln = lines[id];
+    if (ln.singletonDotSize === undefined) {
+      ln = {
+        ...ln,
+        singletonDotSize: defaultDotDiameter(ln.singletonDotStyle ?? DEFAULT_DOT_STYLE),
+      };
+    }
+    if (ln.multiDotSize === undefined) {
+      ln = { ...ln, multiDotSize: defaultDotDiameter(ln.multiDotStyle ?? DEFAULT_DOT_STYLE) };
+    }
+    nextLines[id] = ln;
+    if (ln !== lines[id]) linesChanged = true;
+  }
+  if (linesChanged) out = { ...out, lines: nextLines };
+  return out;
+}
+
 // Normalize hand-edited / legacy per-stop `dotSize` values to the canonical
-// stored form `setDotSize` maintains: integer ≥ DOT_SIZE_MIN, and absent
-// when it equals the line's EFFECTIVE default. Needs line context, so it
-// runs after the per-line cleaning — the comparison must use sanitized
-// line defaults. Non-numbers and non-finite values are dropped.
+// stored form `setDotSize` maintains: integer ≥ DOT_SIZE_MIN, and absent when
+// it equals the line's size (absent = "the line's size"). Needs line context,
+// so it runs after the per-line cleaning AND after bakeConcreteDotSizes — the
+// comparison must use materialized line sizes. Non-numbers and non-finite
+// values are dropped.
 export function sanitizeStopDotSizes(
   stations: Record<string, Station>,
   lines: Record<string, Line>,
@@ -1870,16 +2030,11 @@ export function sanitizeStopDotSizes(
       if (!('dotSize' in s)) return s;
       const raw = s.dotSize as unknown;
       if (typeof raw === 'number' && Number.isFinite(raw)) {
-        // Effective default depends on whether this stop's station is a
-        // singleton or shared — same split the renderer resolves — and, when
-        // the line default is itself unset, on the stop STYLE's own default
-        // diameter (12 for a service-code disc, 8 otherwise). Same rule as
-        // setDotSize, so import and edit agree.
+        // The tracked default is the LINE's singleton or shared size — same
+        // rule as setDotSize, so import and edit agree.
         const line = lines[s.lineId];
         const isSingleton = stationIsSingleton(st);
-        const effDefault =
-          (isSingleton ? line?.singletonDotSize : line?.multiDotSize) ??
-          defaultDotDiameter(resolveDotStyle(line, s, isSingleton));
+        const effDefault = isSingleton ? lineSingletonDotSizeOf(line) : lineMultiDotSizeOf(line);
         const stored = canonicalDotSize(raw, effDefault);
         if (stored !== undefined) {
           if (stored === s.dotSize) return s;
@@ -2778,8 +2933,13 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
         return undefined;
       if (!isLabelWeight(o.weight) || italic === undefined) return undefined;
       if (!isTextLabelAlign(o.align)) return undefined;
-      // Since-dropped keys from older saves (width/leading/tracking) are
-      // silently discarded by this rebuild.
+      // Layout fields are OPTIONAL on a def only when the save predates their
+      // coverage — kept absent here so bakeTextLabelStyleLayout can tell the
+      // difference and backfill the wearer average. Junk values drop to
+      // absent (then backfill) rather than failing the whole def.
+      const width = finiteNum(o.width);
+      const leading = finiteNum(o.leading);
+      const tracking = finiteNum(o.tracking);
       return canonicalStyleProps('textLabel', {
         color,
         darkColor,
@@ -2787,6 +2947,9 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
         weight: o.weight,
         italic,
         align: o.align as TextLabelAlign,
+        ...(width !== undefined ? { width } : {}),
+        ...(leading !== undefined ? { leading } : {}),
+        ...(tracking !== undefined ? { tracking } : {}),
       });
     }
     case 'polygon': {
@@ -2908,14 +3071,12 @@ export function sanitizeStyles(styles: Record<string, StyleDef>): {
   return { styles: next, changed };
 }
 
-// Strip every `styleId` tag that doesn't uphold the tagged ⇒ matches
-// invariant: dangling ids (the def was dropped or never shipped with the
-// file), wrong-kind ids, AND tags whose item values no longer equal the
-// style's props — only a hand-edited file can carry the last kind, and
-// loading it verbatim would show a style name over diverged values. Values
-// are kept in every case, same outcome as deleting a style. Runs LAST in
-// parse() so it compares the fully-sanitized items against the fully-
-// sanitized defs. Returns the same doc reference when nothing changed.
+// Strip every `styleId` tag that doesn't RESOLVE: dangling ids (the def was
+// dropped or never shipped with the file) and wrong-kind ids. Values that
+// diverge from the style's props are NOT a reason to strip — divergence is a
+// per-field override, and a loaded item keeps both its tag and its own
+// values. Runs LAST in parse() so it checks the fully-sanitized defs.
+// Returns the same doc reference when nothing changed.
 export function pruneDanglingStyleRefs(doc: MapDoc): MapDoc {
   function pruneColl<T extends { styleId?: string }>(
     coll: Record<string, T>,
@@ -2926,8 +3087,7 @@ export function pruneDanglingStyleRefs(doc: MapDoc): MapDoc {
     for (const id of Object.keys(coll)) {
       const item = coll[id];
       const def = typeof item.styleId === 'string' ? doc.styles[item.styleId] : undefined;
-      const props = def?.kind === kind ? captureStyleProps(doc, kind, id) : null;
-      const keep = def !== undefined && props !== null && stylePropsEqual(kind, props, def.props);
+      const keep = def?.kind === kind;
       if (item.styleId !== undefined && !keep) {
         const { styleId: _gone, ...rest } = item;
         next[id] = rest as T;

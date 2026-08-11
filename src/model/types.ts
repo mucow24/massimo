@@ -163,9 +163,11 @@ export interface StopCell {
   // the line default. Same raw-value-plus-tag contract lines/stations use.
   dotStyleId?: string;
   // Per-stop dot size override — the dot's DIAMETER in px. `undefined`
-  // defers to the line's `defaultDotSize`; the setter (`setDotSize`) drops
-  // the field when the chosen size equals the line's effective default, so
-  // the stop tracks the default going forward (same contract as `dotStyle`).
+  // defers to the line's split size for this stop's case (singleton/shared),
+  // full stop; the setter (`setDotSize`) drops the field when the chosen size
+  // equals that line size, so the stop tracks the line going forward. Picking
+  // a per-stop dot TYPE courtesy-writes the size the new type implies when
+  // the stop sat at the old type's natural (see setDotStyle).
   dotSize?: number;
 }
 
@@ -406,14 +408,14 @@ export interface Line {
   multiDotStyleId?: string;
   // Dot DIAMETER in px for this line's stops, split the same way as
   // `singletonDotStyle` / `multiDotStyle` (singleton vs. shared station) and
-  // used only for stops whose own `dotSize` is unset. Each missing ⇒
-  // DOT_SIZE_DEFAULT (= 2 × STOP_DOT_RADIUS). The setters clamp to
-  // ≥ DOT_SIZE_MIN, snap to the quarter-unit (0.25) grid, and drop the field at
-  // the default so it is never stored. An EXPLICIT size (here or per-stop) applies to every
-  // dot style including service-code discs; only the fully-default chain keeps
-  // the larger SERVICE_CODE_DOT_RADIUS (see resolveDotRender's sizeOverride
-  // param). Legacy saves carried one combined `defaultDotSize`, baked into both
-  // on load (bakeLineDotDefaults).
+  // used for stops whose own `dotSize` is unset. ALWAYS stored on a real
+  // line, natural values included — absence is a legacy/fixture state the
+  // load paths materialize away (bakeConcreteDotSizes; the read helpers heal
+  // it to the case's natural diameter). The setters clamp to ≥ DOT_SIZE_MIN
+  // and snap to the quarter-unit (0.25) grid; picking a dot TYPE
+  // courtesy-writes the size the new type implies when the line sat at the
+  // old type's natural (setLineCaseDotStyle). Legacy saves carried one
+  // combined `defaultDotSize`, baked into both on load (bakeLineDotDefaults).
   singletonDotSize?: number;
   multiDotSize?: number;
   // Stripe width in world units. Missing ⇒ LINE_WIDTH_DEFAULT (= STOP_SIZE,
@@ -494,14 +496,15 @@ export interface Line {
   // carries the line's own `endStyle`, never these pins (same split as the
   // per-stop dot overrides).
   stationEndStyles?: Record<StationId, LineEndStyle>;
-  // Live link to a StyleDef of kind 'line' (see MapDoc.styles). INVARIANT:
-  // when present, this line's covered style fields (singletonDotStyle,
-  // multiDotStyle, singletonDotSize, multiDotSize, width, interlineGap, labelGap,
-  // strokeWidth, strokeColor, dashLength, dashWidth, curveRadius —
-  // NOT color) equal the style's props. Transforms maintain it: editing any covered field clears
-  // the tag ("detach to Custom"), editing the style re-stamps its users,
-  // deleting the style untags. Absent ⇒ no style ("Custom" in the UI).
-  // Dangling ids are pruned on file load.
+  // Live link to a StyleDef of kind 'line' (see MapDoc.styles) — MEMBERSHIP,
+  // not equality. The covered fields (STYLE_FIELDS.line in styles.ts: dot
+  // type ids + sizes, width, curveRadius, endStyle, stroke, dashes, gaps —
+  // NOT color) may diverge per-field; the divergence IS the override,
+  // computed by styleFieldsDiff, never stored. Editing a covered field keeps
+  // the tag; editing the style stamps only each wearer's non-overridden
+  // fields; deleting the style untags (values kept). Absent ⇒ no style
+  // ("Custom" in the UI). Dangling ids are pruned on file load; diverged
+  // values are not.
   styleId?: string;
 }
 
@@ -971,9 +974,9 @@ export interface TextLabel {
   // by `updateTextLabel`. Mirrors `Station.editorHeight`.
   editorHeight?: number;
   // Live link to a StyleDef of kind 'textLabel' — covered fields are the
-  // colors, fontSize, weight, italic and align (NOT width/leading/tracking/
-  // text/position/rotation/locked/editorHeight). Same contract as
-  // `Line.styleId`.
+  // colors, fontSize, weight, italic, align, and the layout trio
+  // width/leading/tracking (NOT text/position/rotation/locked/editorHeight).
+  // Same contract as `Line.styleId`.
   styleId?: string;
 }
 
@@ -1136,8 +1139,15 @@ export interface TextLabelStyleProps {
   weight: TextLabelWeight;
   italic: boolean;
   align: TextLabelAlign;
-  // Deliberately NOT covered: width, leading, tracking — per-label layout
-  // tuning, not reusable typography.
+  // Layout is covered too, so a style can set the width/leading/tracking a
+  // label then pins per-item as overrides. Optional ONLY because defs from
+  // saves predating the coverage lack the keys — absent compares as
+  // auto/neutral (0 / 1 / 0), and the load paths backfill each missing field
+  // with the MOST COMMON wearer value (bakeTextLabelStyleLayout), so old
+  // maps repaint unchanged. App-written defs are always concrete.
+  width?: number;
+  leading?: number;
+  tracking?: number;
 }
 
 export interface PolygonStyleProps {
@@ -1170,10 +1180,9 @@ export interface TransferStyleProps {
 
 // Per-station name typography. Every value is FULLY-RESOLVED (captured by
 // example — absent per-station optionals resolve through the LABEL_* defaults),
-// so a station style is self-contained like the others. Unlike
-// TextLabelStyleProps, leading and tracking ARE covered here: for stations
-// these were doc-global typography being decentralized (the retired
-// labelLeading/labelTracking), not per-item layout tuning.
+// so a station style is self-contained like the others. Leading and tracking
+// are covered here as they are on TextLabelStyleProps (station styles never
+// cover a width — station names have no column to wrap in).
 export interface StationStyleProps {
   fontSize: number;
   weight: TextLabelWeight;
