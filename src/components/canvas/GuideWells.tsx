@@ -37,6 +37,11 @@ function Grip() {
  * Each also serves as the drop zone that deletes a dragged guide — the same
  * place it came from. Mounted only in idle arrow-mode; every other mode owns
  * the canvas edges (banner frame, placement).
+ *
+ * HTML, but sitting ON the canvas, so the ink follows the PAPER rather than the
+ * chrome's `data-theme` — see the host's `data-paper` (MapCanvas), which the
+ * well rules in styles.css hang their night values off. Nothing to do here: the
+ * strips stay props-only, and the paper is the host's business.
  */
 export function GuideWells({
   guidesHidden,

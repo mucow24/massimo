@@ -1358,6 +1358,12 @@ export function MapCanvas() {
     <div
       className="canvas-host"
       data-uimode={selection.uiMode.kind}
+      // Is the paper dark? The chrome overlays that sit ON the canvas as HTML
+      // (the guide wells) are themed in CSS off this, because they cannot use
+      // the chrome's data-theme: it darkens with the toolbar, and the toolbar
+      // and the paper disagree in both directions ("Dark UI in day" over a
+      // light map, a dimmed day paper under a light toolbar).
+      data-paper={theme.darkPaper ? 'dark' : undefined}
       // The host background is only a backstop behind the overdrawn SVG bg rect
       // (a pan can briefly outrun the rect's reproject). It tracks the MAP's
       // canvas color — not the chrome theme — so "Dark UI in day" darkens the

@@ -44,6 +44,26 @@ describe('visibility registry', () => {
     const groups = VISIBILITY_ITEMS.map((i) => i.group);
     expect(groups).toEqual([...groups].sort((a, b) => a - b));
   });
+
+  it('puts the guides directly under the master switch, in the same group', () => {
+    // Guides are reached for constantly and answer to no other layer, so they
+    // sit with the master switch rather than down among the network
+    // scaffolding — no divider between the two, which is what the shared group
+    // number buys.
+    const i = VISIBILITY_ITEMS.findIndex((x) => x.key === 'showGuides');
+    expect(VISIBILITY_ITEMS[i - 1].key).toBe('showNetwork');
+    expect(VISIBILITY_ITEMS[i].group).toBe(VISIBILITY_ITEMS[i - 1].group);
+  });
+
+  it('advertises the three bare letters, and only those', () => {
+    // The letter lives on the entry so the menu row can show it; a shortcut
+    // nobody can find is not a feature.
+    expect(VISIBILITY_ITEMS.filter((i) => i.shortcut).map((i) => [i.key, i.shortcut])).toEqual([
+      ['showGuides', 'G'],
+      ['showAnchors', 'A'],
+      ['showWaypoints', 'W'],
+    ]);
+  });
 });
 
 describe('kindVisible', () => {

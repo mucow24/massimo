@@ -105,6 +105,20 @@ describe('themeColors', () => {
     expect(themeColors(true).dimmedLabel).toBe('#bbbbbb');
   });
 
+  // The guide wells are HTML chrome sitting ON the paper, so they are themed in
+  // CSS and have to read against the paper rather than against the toolbar. The
+  // palette answers that one question for them, because BOTH mismatches are
+  // real: "Dark UI in day" darkens the chrome over a light map, and the
+  // gray/black day papers darken the map under a light chrome.
+  it('says whether the PAPER is dark — per paper, not per mode', () => {
+    expect(themeColors(false).darkPaper).toBe(false);
+    expect(themeColors(false, 'white').darkPaper).toBe(false);
+    // Grey 700 is dark enough that day-mode ink at well opacity vanishes on it.
+    expect(themeColors(false, 'gray').darkPaper).toBe(true);
+    expect(themeColors(false, 'black').darkPaper).toBe(true);
+    expect(themeColors(true).darkPaper).toBe(true);
+  });
+
   // The chrome side duplicates the accent as the --accent CSS variable
   // (styles.css declares it on .app and reassigns it for dark). The two copies
   // can't share code — CSS variables don't reach SVG attribute paint — so this
@@ -116,5 +130,13 @@ describe('themeColors', () => {
     const values = [...css.matchAll(/--accent:\s*([^;]+);/g)].map((m) => m[1].trim());
     // Order in the file: light block on .app, then the dark reassignment.
     expect(values).toEqual([themeColors(false).accent, themeColors(true).accent]);
+    // The guide wells hold a THIRD copy: they key off the paper rather than the
+    // chrome (see darkPaper), so they can't read --accent — but their hover
+    // wash is the same interaction blue and must stay the same blue. Note this
+    // pins the PAIR, not which one is live: on a dimmed day paper the wells use
+    // the night blue while the marquee beside them is still on the day one,
+    // because the dimmed papers keep day ink by design.
+    const wells = [...css.matchAll(/--well-accent:\s*([^;]+);/g)].map((m) => m[1].trim());
+    expect(wells).toEqual([themeColors(false).accent, themeColors(true).accent]);
   });
 });
