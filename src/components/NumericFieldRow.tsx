@@ -12,6 +12,9 @@ interface Props {
    *  — e.g. the dot-shape picker on the Line inspector's combined dot row. The
    *  `label` prop still names the slider + spinbutton for a11y/tests. */
   leading?: ReactNode;
+  /** Optional override marker (an `OverrideDot`) rendered first in the row —
+   *  it positions itself in the `.style-fields` gutter. */
+  dot?: ReactNode;
   min: number;
   max: number;
   step: number;
@@ -67,6 +70,7 @@ export function NumericFieldRow({
   detent,
   disabled,
   leading,
+  dot,
 }: Props) {
   const { text, history, onNumberFocus, onNumberChange, attachWheel, onNumberBlur } =
     useNumericField(value, onChange, getCurrent, step);
@@ -81,6 +85,7 @@ export function NumericFieldRow({
   // so a disabled row ignores the wheel.
   return (
     <div className="options-popover-row" ref={disabled ? undefined : attachWheel}>
+      {dot}
       {leading !== undefined ? (
         <div className="options-popover-label">{leading}</div>
       ) : (

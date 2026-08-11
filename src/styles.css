@@ -3385,6 +3385,69 @@ body:has(.app[data-theme='dark']) {
    they sit among text (the footer's Lock/Delete stay borderless; isolation,
    icon, and color already carry them), surface fill on hover, the shared
    accent pair while toggled on. */
+/* Per-field style overrides. Every row inside a `.style-fields` editor (the
+   six item popovers/inspectors whose fields a style can cover) reserves a
+   small left gutter, so field labels stay aligned whether or not an override
+   dot is present; the dot itself sits absolutely in that gutter, marking a
+   field that diverges from the item's style — clicking it reverts the field. */
+.style-fields .row,
+.style-fields .row-block,
+.style-fields .field-row,
+.style-fields .options-popover-row {
+  position: relative;
+  padding-left: 12px;
+}
+.override-dot {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger, #d64545);
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.override-dot:hover:not(:disabled) {
+  transform: translateY(-50%) scale(1.3);
+}
+.override-dot:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* The Sync-to-style / Revert-to-style buttons beside the style dropdown:
+   compact icon squares wearing the field-select ring. */
+.style-row-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  padding: 0;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+.style-row-btn:hover:not(:disabled) {
+  background: var(--control-hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.style-row-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .ghost-btn {
   display: inline-flex;
   align-items: center;

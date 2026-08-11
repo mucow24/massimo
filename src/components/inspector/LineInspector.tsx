@@ -11,6 +11,7 @@ import { useFieldHistory } from '../useFieldHistory';
 import { StationShapePicker } from '../StationShapePicker';
 import { NumericFieldRow } from '../NumericFieldRow';
 import { StyleRow } from '../StyleRow';
+import { OverrideDot } from '../OverrideDot';
 import { LineEndSegmented } from '../LineEndPicker';
 import { lineEndStyleOf } from '../../model/lineEnd';
 import { serviceCodeCommit, serviceCodeDraft } from '../../model/lineNaming';
@@ -133,7 +134,7 @@ export function LineInspector({ id }: { id: LineId }) {
         : { day: lineCasingColor(line, line.color, false), night: c };
 
   return (
-    <section className="inspector">
+    <section className="inspector style-fields">
       <div className="field">
         <label htmlFor={`line-name-${line.id}`}>Line name</label>
         <input
@@ -216,6 +217,7 @@ export function LineInspector({ id }: { id: LineId }) {
             getCurrent={() => lineWidthOf(useDoc.getState().lines[id])}
             textboxAllowAboveMax
             textboxMin={LINE_WIDTH_MIN}
+            dot={<OverrideDot kind="line" itemId={line.id} fields={['width']} name="Line width" />}
           />
           {/* Extra spacing against each interlined neighbor (the pair uses the
               larger of the two lines' gaps). 0 = classic edge-to-edge tangency.
@@ -230,6 +232,14 @@ export function LineInspector({ id }: { id: LineId }) {
             onChange={(n) => setLineInterlineGap(line.id, n)}
             getCurrent={() => lineInterlineGapOf(useDoc.getState().lines[id])}
             textboxAllowAboveMax
+            dot={
+              <OverrideDot
+                kind="line"
+                itemId={line.id}
+                fields={['interlineGap']}
+                name="Interline gap"
+              />
+            }
           />
           {/* Clearance station labels keep from this line's marker (stripe,
               dot, tick or transfer cap). 0 butts the text to the marker;
@@ -244,6 +254,9 @@ export function LineInspector({ id }: { id: LineId }) {
             onChange={(n) => setLineLabelGap(line.id, n)}
             getCurrent={() => lineLabelGapOf(useDoc.getState().lines[id])}
             textboxAllowAboveMax
+            dot={
+              <OverrideDot kind="line" itemId={line.id} fields={['labelGap']} name="Label gap" />
+            }
           />
           <NumericFieldRow
             id={`line-curve-${line.id}`}
@@ -255,10 +268,19 @@ export function LineInspector({ id }: { id: LineId }) {
             onChange={(n) => setLineCurveRadius(line.id, n)}
             getCurrent={() => lineCurveRadiusOf(useDoc.getState().lines[id])}
             textboxAllowAboveMax
+            dot={
+              <OverrideDot
+                kind="line"
+                itemId={line.id}
+                fields={['curveRadius']}
+                name="Curve radius"
+              />
+            }
           />
           {/* How the line's ends are painted at every terminus. Individual
               termini can override this in the station editor's stop row. */}
           <div className="options-popover-row">
+            <OverrideDot kind="line" itemId={line.id} fields={['endStyle']} name="Line ends" />
             <label className="options-popover-label">Line ends</label>
             <LineEndSegmented
               value={lineEndStyleOf(line)}
@@ -296,6 +318,14 @@ export function LineInspector({ id }: { id: LineId }) {
               onChange={(n) => setLineSingletonDotSize(line.id, n)}
               getCurrent={() => lineSingletonDotSizeOf(useDoc.getState().lines[id])}
               textboxAllowAboveMax
+              dot={
+                <OverrideDot
+                  kind="line"
+                  itemId={line.id}
+                  fields={['singletonDotStyleId', 'singletonDotSize']}
+                  name="Singleton dot"
+                />
+              }
             />
           </div>
           <div className="field dot-field">
@@ -322,6 +352,14 @@ export function LineInspector({ id }: { id: LineId }) {
               onChange={(n) => setLineMultiDotSize(line.id, n)}
               getCurrent={() => lineMultiDotSizeOf(useDoc.getState().lines[id])}
               textboxAllowAboveMax
+              dot={
+                <OverrideDot
+                  kind="line"
+                  itemId={line.id}
+                  fields={['multiDotStyleId', 'multiDotSize']}
+                  name="Interchange dot"
+                />
+              }
             />
           </div>
           {/* TfL-tick dimensions for this line's 'dash' stops — rendered only
@@ -341,6 +379,14 @@ export function LineInspector({ id }: { id: LineId }) {
                 onChange={(n) => setLineDashLength(line.id, n)}
                 getCurrent={() => dashRenderLength(useDoc.getState().lines[id])}
                 textboxAllowAboveMax
+                dot={
+                  <OverrideDot
+                    kind="line"
+                    itemId={line.id}
+                    fields={['dashLength']}
+                    name="Dash length"
+                  />
+                }
               />
               <NumericFieldRow
                 id={`line-dash-width-${line.id}`}
@@ -352,6 +398,14 @@ export function LineInspector({ id }: { id: LineId }) {
                 onChange={(n) => setLineDashWidth(line.id, n)}
                 getCurrent={() => dashRenderWidth(useDoc.getState().lines[id])}
                 textboxAllowAboveMax
+                dot={
+                  <OverrideDot
+                    kind="line"
+                    itemId={line.id}
+                    fields={['dashWidth']}
+                    name="Dash width"
+                  />
+                }
               />
             </>
           )}
@@ -366,6 +420,14 @@ export function LineInspector({ id }: { id: LineId }) {
             onChange={(n) => setLineStrokeWidth(line.id, n)}
             getCurrent={() => lineStrokeWidthOf(useDoc.getState().lines[id])}
             textboxAllowAboveMax
+            dot={
+              <OverrideDot
+                kind="line"
+                itemId={line.id}
+                fields={['strokeWidth']}
+                name="Stroke width"
+              />
+            }
           />
           {/* Only while the casing is on — a 0-width stroke has no color to
               pick. RESOLVED, not stored: a line style can set the casing to the
@@ -387,6 +449,14 @@ export function LineInspector({ id }: { id: LineId }) {
               darkValue={lineCasingColor(line, line.color, true)}
               onChange={(day) => setLineStrokeColor(line.id, nextCasing('day', day))}
               onDarkChange={(night) => setLineStrokeColor(line.id, nextCasing('night', night))}
+              dot={
+                <OverrideDot
+                  kind="line"
+                  itemId={line.id}
+                  fields={['strokeColor']}
+                  name="Stroke color"
+                />
+              }
             />
           )}
         </>

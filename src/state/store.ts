@@ -908,9 +908,11 @@ interface DocState extends MapDoc {
   /** Stamp a style's props onto an item and tag it (one undo entry). Also the
    *  Revert-to-style button — a full stamp clears every per-field override. */
   applyStyle: (styleId: string, itemId: string) => void;
-  /** Revert ONE covered field of a tagged item back to its style's value —
-   *  what clicking that field's red override dot does. */
-  revertStyleField: (kind: S.ItemStyleKind, itemId: string, field: string) => void;
+  /** Revert covered fields of a tagged item back to their style's values —
+   *  what clicking a red override dot does. Takes a list because one editor
+   *  ROW can carry several covered fields (color + darkColor, align +
+   *  italic); the whole batch is one set(), so one undo entry. */
+  revertStyleFields: (kind: S.ItemStyleKind, itemId: string, fields: readonly string[]) => void;
   /** Detach an item to "Custom": drop the tag, keep the values. */
   clearStyleTag: (kind: StyleKind, itemId: string) => void;
   renameStyle: (styleId: string, name: string) => void;
@@ -1377,8 +1379,14 @@ export const useDoc = create<DocState>()(
         },
         applyStyle: (styleId, itemId) =>
           set(withRegionReconcile((s) => S.applyStyleToItem(s, styleId, itemId))),
-        revertStyleField: (kind, itemId, field) =>
-          set(withRegionReconcile((s) => S.revertStyleField(s, kind, itemId, field))),
+        revertStyleFields: (kind, itemId, fields) =>
+          set(
+            withRegionReconcile((s) => {
+              let d: MapDoc = s;
+              for (const f of fields) d = S.revertStyleField(d, kind, itemId, f);
+              return d;
+            }),
+          ),
         clearStyleTag: (kind, itemId) => set((s) => S.clearStyleTag(s, kind, itemId)),
         renameStyle: (styleId, name) => set((s) => S.renameStyle(s, styleId, name)),
         deleteStyle: (styleId) => set((s) => S.deleteStyle(s, styleId)),

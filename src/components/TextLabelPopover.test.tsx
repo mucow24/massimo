@@ -429,6 +429,33 @@ describe('<TextLabelPopover /> — style presets', () => {
     await chooseOption(user, 'Weight', 'Roman');
     expect(useDoc.getState().textLabels['g1'].styleId).toBe('y1');
     expect(useDoc.getState().textLabels['g1'].weight).toBe(400);
-    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Heading');
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Heading (edited)');
+  });
+
+  it('a red dot marks the overridden field; clicking it reverts just that field', async () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      textLabels: { g1: makeTextLabel({ id: 'g1', text: 'Hi' }) },
+      styles: {
+        y1: makeStyle('textLabel', 'y1', {
+          name: 'Heading',
+          props: { fontSize: 24, weight: 700 },
+        }),
+      },
+    });
+    render(<LivePopover />);
+    const user = userEvent.setup();
+    await chooseOption(user, 'Style', 'Heading');
+    // Matching everywhere: no dots.
+    expect(screen.queryByRole('button', { name: 'Revert Weight to style' })).toBeNull();
+    await chooseOption(user, 'Weight', 'Roman'); // override weight (700 → 400)
+    // Only the diverging row grows a dot.
+    expect(screen.queryByRole('button', { name: 'Revert Size to style' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Revert Weight to style' }));
+    const label = useDoc.getState().textLabels.g1;
+    expect(label.weight).toBe(700);
+    expect(label.fontSize).toBe(24);
+    expect(label.styleId).toBe('y1');
+    expect(screen.queryByRole('button', { name: 'Revert Weight to style' })).toBeNull();
   });
 });
