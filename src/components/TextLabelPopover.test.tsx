@@ -449,8 +449,13 @@ describe('<TextLabelPopover /> — style presets', () => {
     // Matching everywhere: no dots.
     expect(screen.queryByRole('button', { name: 'Revert Weight to style' })).toBeNull();
     await chooseOption(user, 'Weight', 'Roman'); // override weight (700 → 400)
-    // Only the diverging row grows a dot.
+    // Only the diverging row grows a dot, and its tooltip names the style's
+    // own value for the field.
     expect(screen.queryByRole('button', { name: 'Revert Size to style' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Revert Weight to style' })).toHaveAttribute(
+      'title',
+      'Overrides style weight (style default Bold) — click to revert',
+    );
     await user.click(screen.getByRole('button', { name: 'Revert Weight to style' }));
     const label = useDoc.getState().textLabels.g1;
     expect(label.weight).toBe(700);
