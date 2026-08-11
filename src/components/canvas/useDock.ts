@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { windowClientSize } from '../../util/windowSize';
 
 /** Where the canvas host's docking corner sits, in WINDOW coordinates. */
 export interface Dock {
@@ -27,12 +28,8 @@ function readDock(el: HTMLElement | null, into: DockInto): Dock {
   // mounts there's nothing to read; the layout effect below re-measures on
   // every commit, so the first real one lands before the browser paints.
   const host = el?.parentElement?.getBoundingClientRect();
-  // clientWidth, not innerWidth: it excludes the vertical scrollbar, and the
-  // narrow window that scrolls the app horizontally has one — `.app` is 100vh,
-  // which doesn't count the horizontal scrollbar, so the page also overflows
-  // vertically by its height. jsdom has no layout and reports 0 for every
-  // clientWidth; the innerWidth it does report stands in there.
-  const windowW = document.documentElement.clientWidth || window.innerWidth;
+  // The window's own edge, scrollbars excluded (see `windowClientSize`).
+  const windowW = windowClientSize().w;
   // The host's LIVE right edge, not `fallbackW`. The two agree whenever React's
   // copy of the host width is current — but a viewport resize can leave that
   // copy a commit behind, and then the dock clears where the sidebar USED to
