@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { LabelView } from '../components/LabelView';
 import { useDoc } from '../state/store';
@@ -6,12 +6,13 @@ import { DEFAULT_DOC } from '../model/transforms';
 import { measureTextLabel, _clearTextMeasureCache } from '../geometry/textMeasure';
 import { inlineBulletDiameter } from '../geometry/labelTokens';
 import { makeTextLabel } from '../test/fixtures';
+import { stubCanvas2d } from '../test/textMetrics';
 import type { TextLabel } from '../model/types';
 
 /**
- * the measured box is sized by INK (`boxWidth = max(inkWidth)`,
- * textMeasure.ts:491) but each line's pen origin is derived from the pen
- * ADVANCE (`lineCursorX`, LabelView.tsx:55-60). The advance carries one
+ * the measured box is sized by INK (`measureTextLabel`'s `boxWidth =
+ * max(inkWidth)`) but each line's pen origin is derived from the pen
+ * ADVANCE (`LabelView`'s `lineCursorX`). The advance carries one
  * trailing letter-spacing step past the last glyph (that is how CSS/Chromium
  * letter-spacing works, and the measurer models it on purpose — see the
  * `d + letterSpacingPx` bullet advance and `approximateLineWidth`). Runs are
@@ -25,8 +26,8 @@ import type { TextLabel } from '../model/types';
 // ---------------------------------------------------------------------------
 // Chromium-faithful measureText stub (used ONLY by the text-run cases below).
 // Per-character advance CHAR, no side bearings, letter-spacing added AFTER
-// every character (including the last) — exactly the model textMeasure.ts
-// documents at lines 205-210 and 325-328.
+// every character (including the last) — exactly the model `measureTextSegment`
+// and `approximateLineWidth` document in textMeasure.ts.
 const CHAR = 10;
 let spacingPx = 0;
 const fakeCtx = {
@@ -51,17 +52,8 @@ const fakeCtx = {
   },
 };
 
-let originalGetContext: typeof HTMLCanvasElement.prototype.getContext;
-beforeAll(() => {
-  originalGetContext = HTMLCanvasElement.prototype.getContext;
-  HTMLCanvasElement.prototype.getContext = function () {
-    return fakeCtx as unknown as CanvasRenderingContext2D;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any;
-});
-afterAll(() => {
-  HTMLCanvasElement.prototype.getContext = originalGetContext;
-});
+stubCanvas2d(fakeCtx);
+
 beforeEach(() => {
   _clearTextMeasureCache();
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
@@ -88,7 +80,8 @@ const bulletCx = (c: HTMLElement) => {
 describe('tracked label: drawn ink vs the measured bbox it is selected/hit by', () => {
   // ---- Canvas-free proof -------------------------------------------------
   // An inline bullet needs NO canvas: its advance is `diameter + letterSpacing`
-  // and its ink extent is exactly `diameter` (textMeasure.ts:324-329, 351).
+  // and its ink extent is exactly `diameter` (`computeLineMetrics`'s bullet
+  // branch in textMeasure.ts).
   // So this case is independent of any measureText stub.
   it('right-aligned tracked bullet line: bullet sits inside the box it is measured as', () => {
     const label = makeTextLabel({

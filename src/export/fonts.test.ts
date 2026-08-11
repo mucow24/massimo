@@ -1,9 +1,11 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   FONT_TABLE,
   fontUrl,
   collectUsedFontFaces,
   contextualAlternate,
+  resolveTextStyle,
   type FontFaceSpec,
 } from './fonts';
 
@@ -54,6 +56,51 @@ describe('FONT_TABLE', () => {
   });
 });
 
+// FONT_TABLE and the `@font-face` blocks in styles.css are two hand-typed
+// copies of one list, and nothing derives either from the other. They have to
+// name the SAME FILE for each weight/style, because the browser measures a
+// label in the face styles.css loaded while the tracer outlines it in the face
+// FONT_TABLE names: point them at different files and the pen positions the
+// export places glyphs at stop belonging to the glyphs it places there. The
+// drift is invisible on screen and invisible in the unit suite — it shows up as
+// an exported map whose labels are subtly, uniformly wrong.
+//
+// The fallback order is guarded the same way in pdfGlyphs.test.ts ('the
+// fallback chain agrees in all three places'); this is the face table itself.
+describe('FONT_TABLE matches the @font-face blocks in styles.css', () => {
+  const TEXT_FAMILY = 'Soehne';
+
+  /** Every `@font-face` block declaring the map's text family, as a spec. */
+  const cssFaces = (): FontFaceSpec[] => {
+    const css = readFileSync('src/styles.css', 'utf8');
+    const out: FontFaceSpec[] = [];
+    for (const [, body] of css.matchAll(/@font-face\s*\{([^}]*)\}/g)) {
+      if (!new RegExp(`font-family:\\s*'${TEXT_FAMILY}'`).test(body)) continue;
+      const src = /src:\s*url\('([^']+)'\)\s*format\('([^']+)'\)/.exec(body);
+      const weight = /font-weight:\s*(\d+)\s*;/.exec(body);
+      const style = /font-style:\s*(\w+)\s*;/.exec(body);
+      expect(src, `@font-face block has no parseable src: ${body}`).not.toBeNull();
+      expect(weight, `@font-face block has no single font-weight: ${body}`).not.toBeNull();
+      out.push({
+        // styles.css writes a root-absolute url (Vite base-rewrites it); the
+        // table stores the same path base-relative, for `fontUrl` to prefix.
+        file: src![1].replace(/^\//, ''),
+        format: src![2] as FontFaceSpec['format'],
+        weight: Number(weight![1]),
+        italic: style?.[1] === 'italic',
+      });
+    }
+    return out;
+  };
+
+  const byKey = (a: FontFaceSpec, b: FontFaceSpec) =>
+    a.weight - b.weight || Number(a.italic) - Number(b.italic);
+
+  it('declares the same file, format and style for every weight', () => {
+    expect([...cssFaces()].sort(byKey)).toEqual([...FONT_TABLE].sort(byKey));
+  });
+});
+
 describe('fontUrl', () => {
   it('prefixes the given base to a base-relative path', () => {
     // Subpath prod build (e.g. GitHub Pages): the base must be carried through
@@ -98,6 +145,26 @@ describe('collectUsedFontFaces', () => {
     const faces = collectUsedFontFaces(svg);
     expect(faces).toEqual(expect.arrayContaining([want(700, false), want(600, true)]));
     expect(faces).toHaveLength(2);
+  });
+
+  // The seam between the two halves of the export's font handling: this decides
+  // which faces get FETCHED, `resolveTextStyle` decides which face each
+  // character is TRACED in, and a map whose labels carry their weight on an
+  // ancestor group is where the two would part company. They share the resolver
+  // so they cannot — this is what fails if some later edit un-shares it.
+  it('agrees with resolveTextStyle on a face inherited from an ancestor', () => {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    const g = document.createElementNS(SVG_NS, 'g');
+    g.setAttribute('font-weight', '700');
+    g.setAttribute('font-style', 'italic');
+    const text = document.createElementNS(SVG_NS, 'text');
+    text.textContent = 'X';
+    g.appendChild(text);
+    svg.appendChild(g);
+
+    const { weight, italic } = resolveTextStyle(text);
+    expect(collectUsedFontFaces(svg)).toEqual([want(weight, italic)]);
+    expect(want(weight, italic)).toEqual(want(700, true));
   });
 });
 

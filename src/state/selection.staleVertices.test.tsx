@@ -120,7 +120,7 @@ describe('user-visible consequence: Delete after a marquee', () => {
     useSelection.getState().selectVertices({ polygonId: 'p1', indices: [2] });
 
     // Exactly the commit sequence useRectSelect.onPointerUp runs in 'set' mode
-    // (useRectSelect.ts:270-274) for a marquee that swept up only p2.
+    // for a marquee that swept up only p2.
     const sel = useSelection.getState();
     sel.setStationSelection([]);
     sel.setRouteBulletSelection([]);

@@ -31,7 +31,7 @@ function fakeWheelTarget() {
 // useNumericField mirrors a store value into a local `text` state and guards
 // that mirror while the field is focused: an EXTERNAL value change (e.g. an
 // undo, a sibling edit) must not clobber text the user is mid-way through
-// typing. focusedRef (useNumericField.ts:24-27) is the guard. A wheel tick is
+// typing. The hook's own `focusedRef` is that guard. A wheel tick is
 // NOT external — it's a deliberate adjustment of THIS field — so it updates the
 // mirror immediately even while focused (see the wheel-while-focused test).
 // These tests drive the hook directly via renderHook, mutating the `value` prop

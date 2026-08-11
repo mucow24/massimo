@@ -284,7 +284,8 @@ describe('save/load round-trip', () => {
     }
   });
 
-  // The retired-segmentLayers strip is pinned by serialize.test.ts:351.
+  // The retired-segmentLayers strip is pinned by serialize.test.ts's
+  // 'parse — retired segmentLayers strip'.
 });
 
 describe('localStorage rehydrate — line edge backfill', () => {

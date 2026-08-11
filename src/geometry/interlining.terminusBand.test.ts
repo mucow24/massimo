@@ -4,8 +4,8 @@ import { makeDoc, makeStation, makeStop, makeLine } from '../test/fixtures';
 
 // Two lines share the corridor s1|s2 but traverse it on DIFFERENT world axes
 // at each end, so buildBands emits TWO sibling bands with the same pairKey
-// "s1|s2" (the documented sibling-band case pinned by
-// `buildBands — bandKey identity`, interlining.test.ts:842).
+// "s1|s2" (the documented sibling-band case pinned by interlining.test.ts's
+// `buildBands — bandKey identity`).
 //
 // Each line's single edge makes both stations degree-1 termini, so every
 // marker asks endOutwardFromBands for a tangent.

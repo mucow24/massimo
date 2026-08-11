@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `df6f4de` (2026-08-08, #465) — verified against the live source.** This
+**Up to date as of commit `82e7a59` (2026-08-11, #482) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -3546,10 +3546,12 @@ The outline pass is the load-bearing new idea: because it makes the SVG self-con
 the font file. Per-glyph work in `outlineAllText`: `collectStyledChars` walks the `<text>` pairing
 each codepoint with its UTF-16 index (for `getStartPositionOfChar` on the root) and the `<tspan>`
 that governs it, so a mixed-weight/mixed-colour label outlines each run in its own face and fill;
-`resolveTextStyle` reads weight/style/size/fill off the attributes; `pickFace` chooses the face
-(exact, else nearest weight in style, else any) and a glyph no main face covers falls back to the
-first symbol font that covers it. `glyphPathData` serializes with an explicit space between every
-coordinate — opentype's own `toPathData` can fuse a rounded `-0` into the previous number, a
+`resolveTextStyle` ([export/fonts.ts](src/export/fonts.ts)) reads weight/style/size/fill off the
+attributes — the same resolver `collectUsedFontFaces` decides which faces to fetch with, so the
+face that was loaded and measured is by construction the face that gets traced; `pickFace` chooses
+the face (exact, else nearest weight in style, else any) and a glyph no main face covers falls back
+to the first symbol font that covers it. `glyphPathData` serializes with an explicit space between
+every coordinate — opentype's own `toPathData` can fuse a rounded `-0` into the previous number, a
 malformed `d` Blink tolerates but stricter parsers (some Edge builds) drop.
 
 Map text is shaped with **contextual alternates on, ligatures off** (`FONT_FEATURE_SETTINGS`,
@@ -3599,7 +3601,9 @@ blocks in [styles.css](src/styles.css) — two hand-maintained copies. `collectU
 the faces a map uses; `loadOutlineFonts` parses each with **opentype.js**, which reads TrueType/
 OpenType `.ttf`/`.otf` but **not** WOFF2 — so every `FONT_TABLE` face must be a parseable
 `.ttf`/`.otf`, and the on-screen `@font-face` and the tracer must read the **same** files or
-measured pen positions won't line up with the traced glyphs. styles.css also carries the two
+measured pen positions won't line up with the traced glyphs — which is why a test parses the
+`@font-face` blocks back out of styles.css and compares them to `FONT_TABLE` face for face.
+styles.css also carries the two
 fallback faces, absent from `FONT_TABLE` — `pdfGlyphs` loads those separately, in order, as
 `SYMBOL_FONT_URLS`; `symbolFontFor` takes the first that covers the codepoint, so that order is a
 design decision, not an accident. `normalizeWeight` ties go **low** (650 → 600).
@@ -3608,8 +3612,8 @@ The typeface is **Söhne**, licensed per-application from Klim — an app licenc
 one, which is what permits the glyphs riding along in the files the app exports. The `.ttf` files
 are git-ignored (licensed, not redistributable), so a clean checkout has none, and **both** CI and
 the Pages deploy inject them from the private `mucow24/massimo-fonts` repo. CI needs them too: with
-all 16 deleted the unit suite loses one test, but every one of the eight **export e2e** specs fails,
-because `loadOutlineFonts` throws and the export never produces a download.
+all 16 deleted the unit suite loses four tests, but every one of the eight **export e2e** specs
+fails, because `loadOutlineFonts` throws and the export never produces a download.
 
 **Staging the typeface.** [scripts/stageFonts.mjs](scripts/stageFonts.mjs) is the single answer to
 "where do the faces come from here", run on `postinstall` (and by `npm run fonts`). It takes the
@@ -3625,9 +3629,12 @@ adding or renaming a face needs no edit in the script.
 
 Substitutes buy the **export e2e specs**, which need a parseable face at those paths and pass
 against DejaVu — including the two counting glyph fill operations, so the outlining is real. They
-announce themselves: staging one writes `public/fonts/.substitute`. Exactly one assertion reads that
-marker and skips — `pdfGlyphs.test.ts` on the text face *lacking* ✈, a fact about Söhne that a
-stand-in covering ✈ would invert. Rendering and metrics under them are not representative, and a
+announce themselves: staging one writes `public/fonts/.substitute`. Four assertions read that marker
+and skip, all in `pdfGlyphs.test.ts` and all asking the real Söhne files a question a stand-in
+answers wrongly rather than not at all: the text face *lacking* ✈ (a stand-in covering it inverts
+the fact), the shipped `calt` still being exactly the two 1:1 rules the tracer reproduces, every
+face exposing `colon.mid` by name, and ✈ standing exactly as tall as Söhne's caps. Rendering and
+metrics under them are not representative, and a
 substituted `public/fonts` is ~12 MB (16 × DejaVu), which a local `npm run build` will ship.
 
 Two invariants keep stand-ins from being mistaken for the real thing, both of which cost licensed
@@ -3987,7 +3994,9 @@ Each is confirmed in source/tests; file pointers included.
   together (`StopGlyph.labelClearance.test.tsx`: the painted dot silhouette vs. the clearance
   `stopMetricsOf` reports for it).
 - **Integration** ([src/test/](src/test/)) — `App.smoke`, `App.keyboard` (the two-tier form
-  guard), `App.fontLoad`, `saveLoad` (round-trip through the real `pickDocSnapshot` path),
+  guard), `App.fontLoad`, `App.fontEpoch` (the whole app driven through a web-font arrival, with the
+  canvas metrics swapped underneath it, so station labels are proved to re-lay-out and not merely to
+  drop their cache), `saveLoad` (round-trip through the real `pickDocSnapshot` path),
   `undoRedo` (value-restore, viewport-excluded-from-history, no-op equality, selection reconcile),
   `wandGalleryDoc` (one station per autoAlign placement case — readable label rotation × stripe
   axis × reading-frame octant mid-line, every exit ray × octant at termini, crossing-stripe
@@ -3999,6 +4008,11 @@ Each is confirmed in source/tests; file pointers included.
   stationary host rect and an svg rect that rides the pan layer's transform, so `useViewport`'s
   host-vs-svg measurement is observable; `stubCanvasHostSize()` patches the prototype
   `clientWidth`/`clientHeight` jsdom reports as 0, which any test rendering the canvas needs),
+  `textMetrics.ts` (`stubCanvas2d`/`stubTextMetrics` hand a fake 2D context to every canvas, since
+  jsdom ships no backend and `measureTextLabel` would otherwise fall back to its length estimate and
+  hide every bearing bug; `whitespaceAwareMetrics` and `inkOverhangMetrics` are the two models more
+  than one file needs, shared so the renderers they pin are held to the same numbers — the stubs
+  patch per test and nest, so a suite can install a distinct model over the file's),
   `setup.ts` (jsdom polyfills: ResizeObserver, pointer-capture, scrollIntoView).
 - **E2E (Playwright, [e2e/](e2e/))** — single-worker, no retries locally (2 on CI), honors `PORT`
   for parallel worktrees. `seedAndOpen` seeds a localStorage doc (`Seed*` shapes omit fields to

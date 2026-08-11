@@ -55,15 +55,6 @@ const CHUNK_FETCH_WORDINGS = [
 const MAX_CAUSE_DEPTH = 5;
 
 /**
- * True when `err` is — or wraps — a chunk that could not be fetched.
- *
- * The wrapping matters as much as the match. Boot never sees the raw failure:
- * `clip.ts` catches it and rethrows a `ClipperUnavailableError` holding the
- * original as `reason`, so a check of the outer message alone would read a
- * stranded build as a broken WebAssembly install. Both `cause` (the standard
- * field) and `reason` are followed, since a wrapper may use either.
- */
-/**
  * What to put on the boot screen when the clipper engine never resolved.
  *
  * Two unrelated failures arrive at `main.tsx` as one rejection, and they want
@@ -82,6 +73,15 @@ export function bootFailureMessage(err: unknown): string {
         'Check the console, and that WebAssembly is enabled.';
 }
 
+/**
+ * True when `err` is — or wraps — a chunk that could not be fetched.
+ *
+ * The wrapping matters as much as the match. Boot never sees the raw failure:
+ * `clip.ts` catches it and rethrows a `ClipperUnavailableError` holding the
+ * original as `reason`, so a check of the outer message alone would read a
+ * stranded build as a broken WebAssembly install. Both `cause` (the standard
+ * field) and `reason` are followed, since a wrapper may use either.
+ */
 export function isStaleChunkError(err: unknown): boolean {
   let current: unknown = err;
   for (let depth = 0; depth < MAX_CAUSE_DEPTH; depth++) {

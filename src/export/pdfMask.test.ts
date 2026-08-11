@@ -75,7 +75,7 @@ describe('rasterizeMaskedImages', () => {
   });
 
   // The href ENCODINGS (base64, URL-encoded, xlink fallback) are
-  // decodeEmbeddedSvgImage's, pinned at embeddedSvg.test.ts:24; re-running them
+  // decodeEmbeddedSvgImage's, pinned in embeddedSvg.test.ts; re-running them
   // through this delegator added nothing. The xlink case below stays, because
   // the write-back target following the attribute form is this function's own
   // behaviour and embeddedSvg only decodes.

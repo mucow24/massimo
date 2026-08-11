@@ -7,11 +7,10 @@ import {
   outlineAllText,
   glyphPathData,
   pickFace,
-  resolveTextStyle,
   symbolFontFor,
   SYMBOL_FONT_URLS,
 } from './pdfGlyphs';
-import { FONT_TABLE } from './fonts';
+import { FONT_TABLE, resolveTextStyle } from './fonts';
 import { FONT_STACK } from '../util/fonts';
 import { GLYPH_TAGS } from '../geometry/labelTokens';
 

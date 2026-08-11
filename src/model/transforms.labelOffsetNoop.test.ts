@@ -13,7 +13,8 @@ beforeEach(() => {
 describe('setLabelOffset no-op identity (ARCHITECTURE: transforms return the same reference on no-op)', () => {
   it('is reference-equal to input when the value is unchanged (like setLabelOffsetPerp)', () => {
     const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
-    // Control: the sibling transform DOES guard (pinned at transforms.test.ts:150).
+    // Control: the sibling transform DOES guard (pinned by transforms.test.ts's
+    // 'is reference-equal to input when the value is unchanged').
     expect(T.setLabelOffsetPerp(doc, 's1', 0)).toBe(doc);
     // The claim: the along-reading-direction twin does not.
     expect(T.setLabelOffset(doc, 's1', 0)).toBe(doc);
@@ -28,7 +29,7 @@ describe('setLabelOffset no-op identity (ARCHITECTURE: transforms return the sam
   });
 
   it('a slider gesture that never leaves the ±2 detent consumes no undo', () => {
-    // LabelOffsetControl.tsx:31 maps any |n| <= 2 to onChange(0), so dragging
+    // `LabelOffsetControl`'s slider maps any |n| <= 2 to onChange(0), so dragging
     // inside the detent streams setLabelOffset(id, 0) against a stored 0.
     // useFieldHistory opens a group on focus and commits on blur.
     const id = useDoc.getState().addStation(0, 0, 'Origin');
@@ -59,7 +60,7 @@ describe('setLabelOffset no-op identity (ARCHITECTURE: transforms return the sam
   });
 
   it('a value-identical write does not destroy the redo stack', () => {
-    // pushHistory (history.ts:13) clears futureStates, so the dead entry also
+    // `pushHistory` (history.ts) clears futureStates, so the dead entry also
     // strands a pending redo.
     const id = useDoc.getState().addStation(0, 0, 'Origin');
     useDoc.getState().renameStation(id, 'Renamed');

@@ -168,8 +168,9 @@ describe('MapCanvas — stroke edits repaint without a geometry rebuild', () => 
     expect(markerCasingEls('L1')).toHaveLength(12);
 
     // (The removed terminus arrowheads get their own describe in
-    // HighlightedLineLayer.test.tsx:55, which matches the closed-triangle path
-    // shape directly. A zero-count filter here for an 18-wide '#ffffff' 'Z'
+    // HighlightedLineLayer.test.tsx — 'no per-stop chevrons or terminus
+    // arrowheads' — which matches the closed-triangle path shape directly.
+    // A zero-count filter here for an 18-wide '#ffffff' 'Z'
     // path could not tell "the arrowhead is gone" from "the filter is wrong".)
   });
 });
