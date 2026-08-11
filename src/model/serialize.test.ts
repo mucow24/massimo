@@ -160,8 +160,8 @@ describe('parse — the map’s palettes', () => {
             { name: '2', color: '#222222', night: 5 },
           ],
         },
-        { name: 'b', description: '', swatches: [] },
-        { name: 'c', description: '   ', swatches: [] },
+        { name: 'b', description: '', swatches: [{ name: '1', color: '#333333' }] },
+        { name: 'c', description: '   ', swatches: [{ name: '1', color: '#444444' }] },
       ]),
     );
     expect(r.ok).toBe(true);
@@ -174,10 +174,22 @@ describe('parse — the map’s palettes', () => {
             { name: '2', color: '#222222' },
           ],
         },
-        { name: 'b', swatches: [] },
-        { name: 'c', swatches: [] },
+        { name: 'b', swatches: [{ name: '1', color: '#333333' }] },
+        { name: 'c', swatches: [{ name: '1', color: '#444444' }] },
       ]);
     }
+  });
+
+  // A palette carries at least one color. A hand-edited file can still say
+  // otherwise — with an empty list, or with entries that all clean away — and
+  // what it describes is nothing, so nothing is what the map gets.
+  it('drops a palette carrying no colors, and one whose colors all clean away', () => {
+    const good = { name: 'a', swatches: [{ name: '1', color: '#111111' }] };
+    const r = parse(
+      fileWith([good, { name: 'b', swatches: [] }, { name: 'c', swatches: [{ color: 7 }] }]),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.palettes).toEqual([good]);
   });
 });
 

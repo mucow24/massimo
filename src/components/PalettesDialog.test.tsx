@@ -236,6 +236,18 @@ describe('<PalettesDialog /> the map column', () => {
     expect(useCustomPalettes.getState().palettes).toEqual([FRRF]);
   });
 
+  // The library holds no palette without colors. Undo is what can still empty
+  // one where it stands — it replays the doc, and rightly so — so the arrow it
+  // leaves pointing at nothing says what it is refusing.
+  it('refuses to save a palette carrying no colors, and says why', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({ ...useDoc.getState(), palettes: [{ name: 'hollow', swatches: [] }] });
+    renderDialog();
+    await user.click(screen.getByRole('button', { name: 'Save hollow to the library' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('a palette keeps at least one');
+    expect(useCustomPalettes.getState().palettes).toEqual([]);
+  });
+
   // An armed speed bump must be able to stand down: any press elsewhere or
   // Escape un-arms it without running anything.
   it('clicking anywhere else stands an armed delete down', async () => {
@@ -540,22 +552,29 @@ describe('<PalettesDialog /> New… and the editor view', () => {
   const clickNew = (user: ReturnType<typeof userEvent.setup>) =>
     user.click(screen.getByRole('button', { name: 'New…' }));
 
-  it('New… mints a fresh name into BOTH destinations and opens the editor naming it', async () => {
+  // Unlike Load… and the custom colors row's `+`, this one arrives with no
+  // colors — and a palette with none is not something the library can hold. So
+  // it mints into the map alone, provisionally, and reaches the library the
+  // ordinary way once it has a color: through its row's save arrow.
+  it('New… mints a fresh name into the MAP alone and opens the editor naming it', async () => {
     const user = userEvent.setup();
     renderDialog();
     await clickNew(user);
-    expect(useCustomPalettes.getState().palettes.map((p) => p.name)).toEqual(['New palette']);
+    expect(useCustomPalettes.getState().palettes).toEqual([]);
     expect(useDoc.getState().palettes.map((p) => p.name)).toEqual(['MTA', 'New palette']);
     // Editor view, title already editing (it's a fresh palette), no columns.
     expect(screen.getByRole('textbox', { name: 'Palette name' })).toHaveValue('New palette');
     expect(screen.queryByRole('region', { name: 'Palette library' })).toBeNull();
   });
 
+  // The first has to be given a color to count against — one left empty is
+  // thrown away on the way out, and its name with it.
   it('a second New… counts up past the first', async () => {
     const user = userEvent.setup();
     renderDialog();
     await clickNew(user);
     await user.keyboard('{Escape}'); // cancel the title edit
+    await user.click(screen.getByRole('button', { name: 'Add color' }));
     await user.click(screen.getByRole('button', { name: 'Back to palettes' }));
     await clickNew(user);
     expect(useDoc.getState().palettes.map((p) => p.name)).toEqual([
@@ -645,6 +664,72 @@ describe('<PalettesDialog /> New… and the editor view', () => {
 
     await user.keyboard('{Escape}'); // now the dialog itself
     expect(onClose).toHaveBeenCalled();
+  });
+});
+
+// A palette carries at least one color. New… mints one empty anyway, so the
+// first color is chosen where the rest are — and that exception lasts exactly
+// as long as the editor does: leave with it still empty, by any door, and
+// there was never a palette to keep.
+describe('<PalettesDialog /> leaving the editor with an empty palette', () => {
+  const mapNames = () => useDoc.getState().palettes.map((p) => p.name);
+  // The fresh palette opens naming itself, and Escape peels that edit first.
+  const startNew = async (user: User) => {
+    await user.click(screen.getByRole('button', { name: 'New…' }));
+    await user.keyboard('{Escape}');
+  };
+
+  it('the back arrow throws it away', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await startNew(user);
+    await user.click(screen.getByRole('button', { name: 'Back to palettes' }));
+    expect(mapNames()).toEqual(['MTA']);
+    expect(rowNames(mapColumn())).toEqual(['MTA']);
+  });
+
+  it('Escape throws it away', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await startNew(user);
+    await user.keyboard('{Escape}');
+    expect(mapNames()).toEqual(['MTA']);
+  });
+
+  it('closing the manager outright throws it away', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await startNew(user);
+    await user.click(screen.getByRole('button', { name: 'Close palettes' }));
+    expect(onClose).toHaveBeenCalled();
+    expect(mapNames()).toEqual(['MTA']);
+  });
+
+  it('keeps it the moment it has a color', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await startNew(user);
+    await user.click(screen.getByRole('button', { name: 'Add color' }));
+    await user.click(screen.getByRole('button', { name: 'Back to palettes' }));
+    expect(useDoc.getState().palettes[1]).toEqual({
+      name: 'New palette',
+      swatches: [{ name: '1', color: '#888888' }],
+    });
+  });
+
+  // The same rule wherever the editor was opened from: a library palette left
+  // with no colors is no more a palette than a map one.
+  it('throws away an empty LIBRARY palette the same way', async () => {
+    const user = userEvent.setup();
+    useCustomPalettes.setState({
+      palettes: [{ name: 'stub', swatches: [] }],
+      starred: [],
+      sort: 'name',
+    });
+    renderDialog();
+    await rowCommand(user, 'stub', 'Edit stub');
+    await user.click(screen.getByRole('button', { name: 'Back to palettes' }));
+    expect(useCustomPalettes.getState().palettes).toEqual([]);
   });
 });
 

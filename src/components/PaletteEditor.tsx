@@ -9,7 +9,7 @@ import { legibleTextOn, normalizeHex } from '../util/color';
 import { ColorField } from './ColorField';
 import { MenuItem, SubMenu } from './Menu';
 import { useInlineRename } from './useInlineRename';
-import { useSpeedBump } from './dialogRow';
+import { IconButton, useSpeedBump } from './dialogRow';
 import { rowShiftStyle, useRowDragReorder } from './useRowDragReorder';
 
 /** The fixed row height the drag hook divides by — pinned in CSS. */
@@ -128,6 +128,11 @@ function EditableText({
  * (outside undo, like every library command — which is why delete keeps the
  * speed bump). The editor never touches the other copy; the manager's
  * transfer arrows stay the only crossing.
+ *
+ * This view is the one place a palette is allowed to carry NO colors
+ * (`dropEmptyPalettes`): New… mints one empty so its first color is chosen
+ * here among the rest. The deletes hold the floor at one from below, and the
+ * manager throws the palette away if the editor is left with it still empty.
  *
  * Day == night, invisibly: recoloring writes the day color and drops any
  * stored night, so a palette authored here never carries the split the file
@@ -356,13 +361,27 @@ export function PaletteEditor({
               inlineEditRef={inlineEditRef}
               onCommit={(raw) => commitSwatchName(i, raw)}
             />
-            {speedBump(
-              `sw:${i}`,
-              `Delete color ${i + 1}`,
-              `Confirm deleting color ${i + 1}`,
-              'Will delete this color from the palette',
-              <Cross2Icon />,
-              () => withSwatches(swatches.filter((_, j) => j !== i)),
+            {/* A palette carries at least one color, so on the last row the
+                delete stops being a command and becomes a state: disabled in
+                place rather than gone, so the row keeps the shape every other
+                row has and the tooltip can say why. */}
+            {swatches.length === 1 ? (
+              <IconButton
+                label={`Delete color ${i + 1}`}
+                title="A palette keeps at least one color"
+                disabled
+              >
+                <Cross2Icon />
+              </IconButton>
+            ) : (
+              speedBump(
+                `sw:${i}`,
+                `Delete color ${i + 1}`,
+                `Confirm deleting color ${i + 1}`,
+                'Will delete this color from the palette',
+                <Cross2Icon />,
+                () => withSwatches(swatches.filter((_, j) => j !== i)),
+              )
             )}
           </div>
         ))}

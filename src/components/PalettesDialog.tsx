@@ -277,6 +277,12 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
 
   /** Save a map palette back to the library, overwriting by name. */
   const onSaveToLibrary = (palette: Palette) => {
+    // Undo can empty a map palette where it stands (it replays the doc, and
+    // rightly so), and the library keeps no palette without colors.
+    if (palette.swatches.length === 0) {
+      setError(`“${palette.name}” has no colors — a palette keeps at least one.`);
+      return;
+    }
     if (!addToLibrary(palette)) {
       setError(`“${palette.name}” is a built-in palette’s name, so the library keeps its own.`);
       return;
@@ -326,6 +332,28 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
     setEditing({ source, name, fresh });
   };
 
+  /**
+   * Leave the editor view — and throw the palette away if it is still carrying
+   * no colors. A palette holds at least one wherever it comes to rest, and the
+   * editor is the single exception: New… mints one empty so its first color is
+   * chosen in there. That licence lasts exactly as long as the view does, so
+   * EVERY way out runs through here: the back arrow, Escape's middle layer,
+   * the editor asking to be left, and the dialog closing outright with the
+   * editor still up.
+   */
+  const leaveEditor = () => {
+    if (editing) {
+      const { source, name } = editing;
+      const held = (source === 'map' ? mapPalettes : custom).find((p) => p.name === name);
+      if (held?.swatches.length === 0) {
+        if (source === 'map') removePaletteFromMap(name);
+        else removeFromLibrary(name);
+      }
+    }
+    setMessage(null);
+    setEditing(null);
+  };
+
   // The map's custom colors — line colors no palette covers — stand as a row
   // of their own at the foot of the map column, where the `+` absorbs them
   // into a palette (and so empties the row away).
@@ -336,10 +364,14 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
   };
 
   /**
-   * Mint a palette and open the editor on it. Like Load…, it lands in BOTH
-   * destinations; the editor then edits the MAP copy (undoable, and the
-   * picker follows along), so the library keeps the creation-time seed until
+   * Mint a palette and open the editor on it. The editor edits the MAP copy
+   * (undoable, and the picker follows along), so a SEEDED palette lands in both
+   * destinations like Load…, the library keeping the creation-time colors until
    * it's saved back with the arrow.
+   *
+   * From empty there is nothing to keep: the library holds no palette without
+   * colors, so this one lands in the map alone, provisionally, and reaches the
+   * library the ordinary way once the editor has given it something to hold.
    */
   const createNew = (colors: readonly string[]) => {
     const taken = new Set<string>([
@@ -351,7 +383,7 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
       name: freshPaletteName(taken),
       swatches: swatchesFromColors(colors),
     };
-    addToLibrary(palette);
+    if (palette.swatches.length > 0) addToLibrary(palette);
     addPaletteToMap(palette);
     openEditor('map', palette.name, true);
   };
@@ -360,7 +392,12 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
     <Dialog.Root
       open
       onOpenChange={(open) => {
-        if (!open) onClose();
+        // Closing the window from inside the editor is a way out of the editor
+        // like any other — an empty palette does not survive it.
+        if (!open) {
+          leaveEditor();
+          onClose();
+        }
       }}
     >
       {/* `.app` is absent in standalone component tests; Radix then portals to
@@ -397,7 +434,7 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                 e.preventDefault();
               } else if (editing) {
                 e.preventDefault();
-                setEditing(null);
+                leaveEditor();
               }
             }}
           >
@@ -408,7 +445,7 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                     type="button"
                     className="dialog-close dialog-back"
                     aria-label="Back to palettes"
-                    onClick={() => setEditing(null)}
+                    onClick={leaveEditor}
                   >
                     <ArrowLeftIcon />
                   </button>
@@ -438,10 +475,7 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                 source={editing.source}
                 name={editing.name}
                 autoEditTitle={editing.fresh}
-                onBack={() => {
-                  setMessage(null);
-                  setEditing(null);
-                }}
+                onBack={leaveEditor}
                 onRenamed={(to) => setEditing({ source: editing.source, name: to })}
                 setError={setError}
                 inlineEditRef={inlineEditRef}

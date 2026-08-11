@@ -30,6 +30,22 @@ export interface Palette {
 }
 
 /**
+ * A palette carries AT LEAST ONE COLOR, everywhere one comes to rest: the
+ * library, a map, a palette file. One with none describes nothing — it paints
+ * nothing, it offers nothing to pick, and it reads as a name over an empty
+ * strip. The editor is the single licensed exception: New… mints a palette
+ * empty so its first color is chosen there, and leaving the editor with it
+ * still empty throws it away rather than keeping it.
+ *
+ * This drops the ones that predate the rule, at the two doors where stored
+ * palettes arrive: the doc and library persist migrations. A file goes through
+ * `sanitizePalettes`, which judges each entry as it cleans it.
+ */
+export function dropEmptyPalettes(palettes: readonly Palette[]): Palette[] {
+  return palettes.filter((p) => p.swatches.length > 0);
+}
+
+/**
  * Do two palettes carry the same CONTENT — swatches and description, but NOT
  * name? Used to tell whether the map's copy still matches the library's (a
  * changed copy is "modified"). `night` compares strictly: it is only ever

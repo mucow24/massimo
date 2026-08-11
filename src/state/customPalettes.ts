@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import {
   BUILTIN_PALETTE_NAMES,
   copyPalette,
+  dropEmptyPalettes,
   type Palette,
   type PaletteSort,
 } from '../model/palettes';
@@ -22,8 +23,9 @@ interface CustomPalettesState {
   /**
    * Add an imported palette, upserting by name: re-importing a name already in
    * the library replaces its swatches in place, keeping its position and its
-   * star. Returns false (changing nothing) when the name is a built-in's —
-   * the library is name-keyed, so it cannot hold two rows under one name.
+   * star. Returns false (changing nothing) when the name is a built-in's — the
+   * library is name-keyed, so it cannot hold two rows under one name — or when
+   * the palette carries no colors, which is not a palette (`dropEmptyPalettes`).
    */
   addPalette: (input: Palette) => boolean;
   /** Remove an imported palette, and the star that was on it. */
@@ -52,6 +54,7 @@ export const useCustomPalettes = create<CustomPalettesState>()(
       sort: 'name',
       addPalette: (input) => {
         if (BUILTIN_PALETTE_NAMES.has(input.name)) return false;
+        if (input.swatches.length === 0) return false;
         // A COPY, for the same reason the doc takes one: saving a map's palette
         // back here hands over a live document array, and the two are supposed
         // to be independent from that moment on.
@@ -98,18 +101,22 @@ export const useCustomPalettes = create<CustomPalettesState>()(
     }),
     {
       name: 'massimo-custom-palettes-v1',
-      version: 1,
-      // v0 → v1: palettes carried a generated `custom:<slug>` id, because the
-      // doc referenced them by id. The doc holds copies now and the library is
-      // keyed by name, so the ids have nothing left to name — drop them. The
-      // two new fields come from the initial state via persist's merge.
+      version: 2,
       migrate: (persisted, version) => {
         const s = persisted as { palettes?: (Palette & { id?: string })[] };
-        if (version >= 1 || !s?.palettes) return s as CustomPalettesState;
-        return {
-          ...s,
-          palettes: s.palettes.map(({ name, swatches }) => ({ name, swatches })),
-        } as CustomPalettesState;
+        if (!s?.palettes) return s as CustomPalettesState;
+        let palettes: Palette[] = s.palettes;
+        // v0 → v1: palettes carried a generated `custom:<slug>` id, because the
+        // doc referenced them by id. The doc holds copies now and the library is
+        // keyed by name, so the ids have nothing left to name — drop them. The
+        // two new fields come from the initial state via persist's merge.
+        if (version < 1) palettes = palettes.map(({ name, swatches }) => ({ name, swatches }));
+        // v1 → v2: a palette carries at least one color. New… used to seed the
+        // library with an empty one on the way into the editor, and only the
+        // map's copy ever took the colors, so a stub was left under every name
+        // it ever minted.
+        if (version < 2) palettes = dropEmptyPalettes(palettes);
+        return { ...s, palettes } as CustomPalettesState;
       },
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({ palettes: s.palettes, starred: s.starred, sort: s.sort }),
