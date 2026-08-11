@@ -21,6 +21,9 @@ export function LabelOffsetControl({
 }) {
   // Slider [-100, 100] with a tick at 0; textbox accepts any number.
   const clampedSlider = clamp(value, -100, 100);
+  // The thumb gets its OWN history group, separate from the one useNumericField
+  // opens for the box — so a drag and a subsequent type cost two undo entries
+  // here, where NumericFieldRow shares one group across both and costs one.
   const sliderField = useFieldHistory();
   // The textbox goes through the shared numeric field for its TEXT MIRROR, which
   // is what makes the negative half of the slider's range typeable. A lone "-"
@@ -54,7 +57,14 @@ export function LabelOffsetControl({
               rewrite any value within ±2 to 0, which made 0 a trap: the first
               arrow press proposed a value inside the band, the rewrite sent it
               straight back to 0, and the controlled thumb never moved — so no
-              offset smaller than the band was reachable by keyboard at all. */}
+              offset smaller than the band was reachable by keyboard at all.
+
+              The trade that buys back: a DRAG no longer lands on exactly 0.
+              200 units over a ~200px track puts 0 within half a pixel, where
+              the old band caught anything within ~4px. Deliberate — the tick
+              marks neutral, it doesn't hold you there, and both exact routes
+              to 0 stay open (type it, or arrow onto it: every drag ends on
+              the 0.5 grid, so 0 is a whole number of presses away). */}
           <span className="field-slider-detent" aria-hidden="true" style={{ left: '50%' }} />
         </Slider.Track>
         <Slider.Thumb className="field-slider-thumb" aria-label="Offset" {...sliderField} />

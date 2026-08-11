@@ -16,7 +16,7 @@ describe('setLabelOffset no-op identity (ARCHITECTURE: transforms return the sam
     // Control: the sibling transform DOES guard (pinned by transforms.test.ts's
     // 'is reference-equal to input when the value is unchanged').
     expect(T.setLabelOffsetPerp(doc, 's1', 0)).toBe(doc);
-    // The claim: the along-reading-direction twin does not.
+    // The claim: the along-reading-direction twin guards too.
     expect(T.setLabelOffset(doc, 's1', 0)).toBe(doc);
   });
 
@@ -29,18 +29,20 @@ describe('setLabelOffset no-op identity (ARCHITECTURE: transforms return the sam
   });
 
   it('a grouped run of value-identical writes consumes no undo', () => {
-    // The live streamers of a same-value write are the mirror fan-out (a match
-    // already sitting at the broadcast value) and the Alt+arrow nudge, whose
-    // dPerp is 0 on a non-diagonal reading axis — so every move writes the
-    // perpendicular offset back unchanged. useFieldHistory opens a group on
-    // focus and commits on blur; the guard is what keeps that group empty.
+    // The mirror fan-out is what streams these: it broadcasts one value to
+    // every match, and the matches already holding it write it back unchanged.
+    // (The Alt+arrow nudge only looks like a second source — its deltas come
+    // off Math.cos/sin, which give 6.1e-17 rather than 0 at every label
+    // rotation but 0, so those writes DO move the value. Same float trap
+    // serialize.ts documents for the ghost lattice.) useFieldHistory opens a
+    // group on focus and commits on blur; the guard keeps that group empty.
     const id = useDoc.getState().addStation(0, 0, 'Origin');
     useDoc.getState().renameStation(id, 'Renamed'); // one real entry to undo
     const depthAfterRealEdit = historyDepth();
 
-    const group = beginHistoryGroup(); // thumb focus
+    const group = beginHistoryGroup(); // field focus
     for (let i = 0; i < 6; i++) useDoc.getState().setLabelOffset(id, 0);
-    group.commit(); // thumb blur
+    group.commit(); // field blur
 
     expect(historyDepth()).toBe(depthAfterRealEdit);
   });
@@ -49,9 +51,9 @@ describe('setLabelOffset no-op identity (ARCHITECTURE: transforms return the sam
     const id = useDoc.getState().addStation(0, 0, 'Origin');
     useDoc.getState().renameStation(id, 'Renamed'); // the last REAL edit
 
-    const group = beginHistoryGroup(); // thumb focus
+    const group = beginHistoryGroup(); // field focus
     for (let i = 0; i < 3; i++) useDoc.getState().setLabelOffset(id, 0);
-    group.commit(); // thumb blur
+    group.commit(); // field blur
 
     undo(); // the user's single Ctrl+Z
     expect(useDoc.getState().stations[id].name).toBe('Origin');

@@ -75,7 +75,7 @@ describe('LabelOffsetControl — the 0 tick is a landmark, not a snap', () => {
   // band was unreachable from the keyboard, in both directions.
   it('commits a small slider value verbatim', () => {
     const { onChange, slider } = renderControl(1);
-    stepSlider(slider, -1); // 1 → 0.5, once rewritten to 0
+    stepSlider(slider, -1); // 1 → 0.5, formerly rewritten to 0
     expect(onChange).toHaveBeenLastCalledWith(0.5);
   });
 

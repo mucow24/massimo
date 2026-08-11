@@ -1910,9 +1910,11 @@ export function rotateLabel(doc: MapDoc, stationId: StationId): MapDoc {
 
 export function setLabelOffset(doc: MapDoc, stationId: StationId, offset: number): MapDoc {
   // Value guard, like every sibling here (setLabelOffsetPerp/Align/Valign):
-  // without it a slider gesture that never leaves its current detent still
-  // allocates, so the group commit's reference check sees a change and spends
-  // an undo entry on nothing — the next Ctrl+Z then appears to do nothing.
+  // without it a write of the value already stored still allocates, so the
+  // group commit's reference check sees a change and spends an undo entry on
+  // nothing — the next Ctrl+Z then appears to do nothing. The mirror fan-out
+  // is the streamer that makes this routine: it broadcasts one value to every
+  // match, and the matches already holding it write it back unchanged.
   return updateLabel(doc, stationId, (label) =>
     label.offset === offset ? label : { ...label, offset },
   );
