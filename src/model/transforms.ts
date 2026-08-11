@@ -715,6 +715,7 @@ function setLineCaseDotStyle(
   rawField: 'singletonDotStyle' | 'multiDotStyle',
   tagField: 'singletonDotStyleId' | 'multiDotStyleId',
   wantSingleton: boolean,
+  courtesySize: boolean,
 ): MapDoc {
   const cur = doc.lines[id];
   if (!cur) return doc;
@@ -730,15 +731,20 @@ function setLineCaseDotStyle(
   if (cur[tagField] === styleId && dotStylesEqual(existingRaw ?? DEFAULT_DOT_STYLE, props)) {
     return doc;
   }
-  // Courtesy size write: a size sitting at the OLD type's natural diameter was
-  // "the size this type implies" — the pick carries it to the NEW type's
-  // natural, exactly what the old absent-means-natural indirection rendered. A
-  // user-chosen size (≠ old natural) sticks. The `?? oldNatural` heals a
-  // size-less fixture/legacy line, materializing it in passing.
+  // Courtesy size write (DIRECT picks only): a size sitting at the OLD type's
+  // natural diameter was "the size this type implies" — the pick carries it to
+  // the NEW type's natural, exactly what the old absent-means-natural
+  // indirection rendered. A user-chosen size (≠ old natural) sticks. The
+  // `?? oldNatural` heals a size-less fixture/legacy line, materializing it in
+  // passing. The styles engine passes courtesySize=false (its stamp variants
+  // below): its per-field snapshot already decided whether the size stamps,
+  // and a courtesy jump would move a pin to a value neither the user nor the
+  // style chose.
   const sizeField = wantSingleton ? 'singletonDotSize' : 'multiDotSize';
   const oldNatural = defaultDotDiameter(existingRaw ?? DEFAULT_DOT_STYLE);
   const newNatural = defaultDotDiameter(props);
-  const followSize = oldNatural !== newNatural && (cur[sizeField] ?? oldNatural) === oldNatural;
+  const followSize =
+    courtesySize && oldNatural !== newNatural && (cur[sizeField] ?? oldNatural) === oldNatural;
   const nextLine: Line = {
     ...cur,
     [rawField]: props,
@@ -776,11 +782,39 @@ function setLineCaseDotStyle(
 }
 
 export function setLineSingletonDotStyle(doc: MapDoc, id: LineId, styleId: string): MapDoc {
-  return setLineCaseDotStyle(doc, id, styleId, 'singletonDotStyle', 'singletonDotStyleId', true);
+  return setLineCaseDotStyle(
+    doc,
+    id,
+    styleId,
+    'singletonDotStyle',
+    'singletonDotStyleId',
+    true,
+    true,
+  );
 }
 
 export function setLineMultiDotStyle(doc: MapDoc, id: LineId, styleId: string): MapDoc {
-  return setLineCaseDotStyle(doc, id, styleId, 'multiDotStyle', 'multiDotStyleId', false);
+  return setLineCaseDotStyle(doc, id, styleId, 'multiDotStyle', 'multiDotStyleId', false, true);
+}
+
+// The styles-engine stamp variants: identical to the setters above MINUS the
+// courtesy size write (and its stop-pin prune) — propagation must never move
+// a field its override snapshot excluded from stamping. Only styles.ts calls
+// these; every direct pick keeps the courtesy.
+export function stampLineSingletonDotStyle(doc: MapDoc, id: LineId, styleId: string): MapDoc {
+  return setLineCaseDotStyle(
+    doc,
+    id,
+    styleId,
+    'singletonDotStyle',
+    'singletonDotStyleId',
+    true,
+    false,
+  );
+}
+
+export function stampLineMultiDotStyle(doc: MapDoc, id: LineId, styleId: string): MapDoc {
+  return setLineCaseDotStyle(doc, id, styleId, 'multiDotStyle', 'multiDotStyleId', false, false);
 }
 
 /**

@@ -163,6 +163,54 @@ describe('style edits propagate per-field; overridden fields survive', () => {
   });
 });
 
+describe('propagation never moves a field its override snapshot excluded', () => {
+  // The dot-TYPE setters carry a courtesy size write for DIRECT picks (a size
+  // sitting at the old type's natural follows to the new type's). The styles
+  // engine must NOT inherit it: its snapshot already decided the size is a
+  // pin, and a courtesy jump would move it to a value neither the user nor
+  // the style chose.
+  const pinnedWearer = (): MapDoc => {
+    let doc = makeDoc({
+      lines: [makeLine({ id: 'l1', singletonDotSize: 8, multiDotSize: 8 })],
+      styles: [
+        makeStyle('line', 'y1', { props: { singletonDotSize: 10 } }),
+        makeStyle('stopDot', 'svc', { props: { showServiceCode: true } }),
+      ],
+    });
+    doc = applyStyleToItem(doc, 'y1', 'l1'); // stamps singleton size 10
+    // Pin the size back to 8 — which HAPPENS to be the plain type's natural.
+    doc = T.setLineSingletonDotSize(doc, 'l1', 8);
+    expect(doc.lines.l1.styleId).toBe('y1');
+    expect(doc.lines.l1.singletonDotSize).toBe(8);
+    return doc;
+  };
+
+  it("a def dot-TYPE edit keeps the wearer's pinned size", () => {
+    const doc = updateStyleProps(pinnedWearer(), 'y1', { singletonDotStyleId: 'svc' });
+    expect(doc.lines.l1.singletonDotStyleId).toBe('svc'); // type followed
+    expect(doc.lines.l1.singletonDotSize).toBe(8); // pin untouched (courtesy would say 12)
+    expect(doc.lines.l1.styleId).toBe('y1');
+  });
+
+  it("Sync-to-style keeps the other wearer's pinned size too", () => {
+    let doc = pinnedWearer();
+    doc = {
+      ...doc,
+      lines: { ...doc.lines, l2: makeLine({ id: 'l2', singletonDotSize: 8, multiDotSize: 8 }) },
+    };
+    doc = applyStyleToItem(doc, 'y1', 'l2');
+    doc = T.setLineSingletonDotSize(doc, 'l2', 8); // sit at the plain natural
+    // l2 becomes the source: give it the service-code type (direct pick — the
+    // courtesy write moving ITS size to 12 is the intended behavior here).
+    doc = T.setLineSingletonDotStyle(doc, 'l2', 'svc');
+    expect(doc.lines.l2.singletonDotSize).toBe(12);
+    doc = saveStyleFromItem(doc, 'y1', 'line', 'y1', 'l2');
+    // l1 follows the type but keeps its own pinned 8.
+    expect(doc.lines.l1.singletonDotStyleId).toBe('svc');
+    expect(doc.lines.l1.singletonDotSize).toBe(8);
+  });
+});
+
 describe('Sync to style (saveStyleFromItem over the same name)', () => {
   it("pushes the source item's look into the def; other wearers keep their own overrides", () => {
     let doc = twoLabels();

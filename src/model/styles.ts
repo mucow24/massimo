@@ -32,8 +32,8 @@ import {
   setLineDashWidth,
   setLineInterlineGap,
   setLineLabelGap,
-  setLineSingletonDotStyle,
-  setLineMultiDotStyle,
+  stampLineSingletonDotStyle,
+  stampLineMultiDotStyle,
   setLineSingletonDotSize,
   setLineMultiDotSize,
   setDotSize,
@@ -515,8 +515,8 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
       const p = def.props;
       // Dot TYPE: re-point the line's split defaults at the style's library
       // entries (setter no-ops when the id doesn't resolve, e.g. a dangling def).
-      next = setLineSingletonDotStyle(next, itemId, p.singletonDotStyleId);
-      next = setLineMultiDotStyle(next, itemId, p.multiDotStyleId);
+      next = stampLineSingletonDotStyle(next, itemId, p.singletonDotStyleId);
+      next = stampLineMultiDotStyle(next, itemId, p.multiDotStyleId);
       next = setLineSingletonDotSize(next, itemId, p.singletonDotSize);
       next = setLineMultiDotSize(next, itemId, p.multiDotSize);
       next = setLineWidth(next, itemId, p.width);
@@ -602,10 +602,10 @@ function stampStyleFields(
     for (const f of fields) {
       switch (f) {
         case 'singletonDotStyleId':
-          next = setLineSingletonDotStyle(next, itemId, p.singletonDotStyleId);
+          next = stampLineSingletonDotStyle(next, itemId, p.singletonDotStyleId);
           break;
         case 'multiDotStyleId':
-          next = setLineMultiDotStyle(next, itemId, p.multiDotStyleId);
+          next = stampLineMultiDotStyle(next, itemId, p.multiDotStyleId);
           break;
         case 'singletonDotSize':
           next = setLineSingletonDotSize(next, itemId, p.singletonDotSize);
