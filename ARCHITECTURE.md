@@ -405,9 +405,11 @@ interface MapDoc {
   lineCircles: Record<string, LineCircle>; // dashed guide circles stations bind to (never exported)
   guides: Record<string, AlignmentGuide>; // h/v/45° alignment guides — always-on snap targets (never exported)
   palettes: Palette[]; // COPIES the map paints with, in picker/color-cycle order; the LIST may be
-  // empty, a palette in it never is (≥1 color, wherever a palette is stored). A palette may carry
-  // a description; a swatch a night color (stored ONLY when ≠ its day color — the collapse
-  // invariant — and unused by lines so far: the editor writes day == night)
+  // empty, and a palette in it carries ≥1 color — held by the palette manager and repaired on
+  // load, but NOT a shape the readers may assume (the editor mints an empty one it may not have
+  // taken back yet; undo reaches back past a take-back). A palette may carry a description; a
+  // swatch a night color (stored ONLY when ≠ its day color — the collapse invariant — and unused
+  // by lines so far: the editor writes day == night)
   darkMode: boolean; // is this a NIGHT map? false = day. Travels in the saved/exported file
   styles: Record<string, StyleDef>; // named per-kind formatting presets ("Styles")
   styleDefaults: Record<StyleKind, string>; // per-kind DEFAULT designation (style id)
@@ -1327,14 +1329,17 @@ re-spreads a field only when `changed` is true), and each called by **both** loa
 (The palette fixups are the exceptions, and none returns a `changed` flag: callers assign the bare
 `Palette[]` outright, each under its own presence gate — `bakeActivePalettes` in parse when the
 file has `activePalettes` and no `palettes`, in `migrateDoc` at `v<24` with `palettes` absent;
-`dropEmptyPalettes` in `migrateDoc` at `v<29` whenever the doc carries any.
+`dropEmptyPalettes` at `v<29` for what the retired New… stored, and again in the **`merge` hook**
+for what this build still writes — the editor mints an empty palette into the doc and persists it
+synchronously, so closing the window mid-edit strands one at the CURRENT version, which `migrate`
+never sees. It signals by REFERENCE instead of a flag, handing its input back when there was
+nothing to drop.
 `sanitizePalettes` is **file-import only**, deliberately: it exists to keep a hand-edited or
 foreign `.massimo.json` from reaching the renderer as garbage, and localStorage has no such author
 — the app is its only writer, and the "≥1 valid palette" repair that used to run there
 unconditionally was guarding dangling _ids_, which copies cannot have. Adding it to `migrateDoc`
-would not close the gap either: a doc already at v24 never reaches `migrate` at all. What `v<29`
-cleans is not a foreign author but this app's own retired habit, which is why it is a one-time
-gated drop rather than a door.)
+would not close the gap either: a doc already at v24 never reaches `migrate` at all — the same
+reasoning that puts the empty-palette drop on `merge` rather than leaving it at its gate.)
 Most dict-level backfills allocate a fresh container even on a no-op, so don't
 rely on their reference identity — but not all: `convertLegacyDotShapes` hands back its **input**
 references when `changed` is false. (The per-line / per-dot sanitizers _do_ return the same element
@@ -1490,7 +1495,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | `v<24`      | `bakeActivePalettes` (retired `activePalettes` ids → the palette COPIES the map carries). Built-in ids resolve through `LEGACY_BUILTIN_IDS`; `custom:` ids resolve against the palette library by slugged name, the only place those definitions ever lived. Ids resolving to neither are dropped, and a map left carrying none is a legitimate outcome. Gated on `palettes` being absent as well, so it can never overwrite real palettes |
 | `v<25`      | `stripRetiredSeamFields` (the branch seam retired outright — self-overlaps are region faces now): `seamColor`/`seamWidth`/`seamEdges` leave every line AND every line style def together, plus any doc-level `seamEdges` remnant, so tagged wearers stay tagged; junctions come back with the branch-arm default in front — the old "Branch" seam look |
 | `v<26`      | `backfillLineCasingDayNightColors` (the line **casing** color gained day/night halves: legacy single-color strings → `{day, night}` pairs on per-line `strokeColor` AND line StyleDef props; the `'line'` sentinel passes through, being no color at all). Lines and defs convert together, so tagged wearers stay tagged. Ordered **before** the `v<10` style hygiene, whose canonicalizer now reads the pair form — and hence before the `v<11` adoption. Path A covers this via `sanitizeLineStroke` / `sanitizeStyleProps` |
-| `v<29`      | `dropEmptyPalettes` (a palette carries at least one color: drop the ones stored without any). New… used to seed a palette into the map on the way into the editor, so every "New palette N" backed out of left an empty stub behind. Ordered **after** the `v<24` bake, whose source library may hold stubs of its own. The library store's own `v1 → v2` migration does the same to its half |
+| `v<29`      | `dropEmptyPalettes` (a palette carries at least one color: drop the ones stored without any). New… used to seed a palette into the map on the way into the editor, so every "New palette N" backed out of left an empty stub behind. Ordered **after** the `v<24` bake, whose source library may hold stubs of its own. The library store's own `v1 → v2` migration does the same to its half. **But see the `merge` hook** — the gate alone would leave today's editor free to strand one at the current version |
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array. **But see the `merge` hook** — this call alone is not "every rehydrate" |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `snapStationCells` whenever `stations !== undefined` — cell drift is not tied to a schema bump, so a gate could never catch it. **But see the `merge` hook** — for this repair that caveat is the main event, not a footnote |
@@ -1510,14 +1515,16 @@ legacy `custom:` ids — the only place in either load path that reaches into a 
 > already _at_ the version it claims, so it skips `migrateDoc` entirely, ungated repairs included,
 > and the renderer crashes on `ln.edges.join(...)`. That is why the persist config carries a custom
 > **`merge` hook** which runs the must-always-hold repairs — `backfillLinesEdges`,
-> `snapStationCells`, `sanitizeImageHrefs` and `bakeConcreteDotSizes` — **on every rehydrate**,
-> whatever the version says.
+> `snapStationCells`, `sanitizeImageHrefs`, `dropEmptyPalettes` and `bakeConcreteDotSizes` — **on
+> every rehydrate**, whatever the version says.
 > `migrateDoc`'s own ungated calls cover the version-changed path; `merge` covers the rest. All
-> four are reference-stable on a canonical doc, so it still passes straight through the default
+> five are reference-stable on a canonical doc, so it still passes straight through the default
 > merge. A must-always-hold invariant belongs in that hook, **not** in the ungated block in
 > `migrateDoc` alone. `snapStationCells` shows why the distinction is not academic: the docs
 > carrying cell drift were saved by the CURRENT build at the CURRENT version, so they are precisely
-> the ones `migrate` never sees — and a remote image href is the same shape.
+> the ones `migrate` never sees — a remote image href is the same shape, and so is an empty
+> palette, which THIS build's editor mints into the doc and persists synchronously before the way
+> out takes it back.
 
 > **Do not "simplify" the two paths into one.** `storeMigrate.test.ts` pins reference-equality
 > pass-through for already-canonical docs (`expect(out).toBe(input)`); adding a file-only width
@@ -3423,13 +3430,19 @@ same three additions.
   (`dropEmptyPalettes`, and the parser rejects a colorless file outright). This view is the single
   exception, and only while it is up: New… mints its palette empty so the first color is chosen
   among the rest. The floor is held from both sides — the last row's delete stands DISABLED rather
-  than emptying the palette, and leaving the editor with no colors throws that palette away instead
-  of keeping it, by the back arrow, by Escape, or by closing the window from inside, all of which
-  are one `leaveEditor`. Which is why New… seeds the map alone: the library would hold an empty
+  than emptying the palette, wearing the reason as its LABEL because a disabled button has no
+  tooltip to give, and leaving the editor with no colors throws that palette away instead of
+  keeping it, by the back arrow, by Escape, or by closing the window from inside, all of which are
+  one `leaveEditor`. Which is why New… seeds the map alone: the library would hold an empty
   palette for as long as the editor stayed open, and keep holding it afterwards, since only the
-  map's copy takes the edits. Undo can still re-empty a palette after the fact (it replays the doc,
-  and rightly so); nothing guards against that, but the library refuses to take one, so it cannot
-  spread.
+  map's copy takes the edits. A cancelled New… rewinds the undo stack to the mark it took on the
+  way in (`markHistory`), so the create and its take-back leave no pair standing — the first Ctrl+Z
+  would otherwise hand back the very palette the cancel threw away.
+  Two ways out remain, and both are answered by the doc's persist **`merge` hook** rather than by a
+  guard: killing the window with the editor still open strands the empty palette in localStorage
+  (written synchronously, at the current version, where no migration reaches it), and undo can
+  re-empty a palette that was genuinely filled — it replays the doc, and rightly so. Neither
+  spreads: the library refuses to take an empty palette either way, and the next load drops it.
   Escape peels name edit → editor → dialog, gated through a ref because Radix hears Escape on a
   document listener; the dialog owns its own Ctrl+Z/Y (the app's global handler reads role=dialog
   as a form context), and the black band drags the window (a position:relative offset, never a

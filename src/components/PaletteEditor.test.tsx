@@ -152,18 +152,19 @@ describe('<PaletteEditor /> rows', () => {
 
   // A palette carries at least one color, so once a row is the only one left
   // its delete stops being a command: it stands disabled, keeping the row's
-  // shape, with the reason on the tooltip.
+  // shape. The reason is its NAME, not a title — Chrome renders no tooltip on
+  // a disabled button, so a reason kept there would reach nobody at all.
   it('will not delete the last color', async () => {
     const user = userEvent.setup();
     renderEditor('map', 'frrf');
     await user.click(screen.getByRole('button', { name: 'Delete color 2' }));
     await user.click(screen.getByRole('button', { name: 'Confirm deleting color 2' }));
 
-    const last = screen.getByRole('button', { name: 'Delete color 1' });
+    expect(screen.queryByRole('button', { name: 'Delete color 1' })).toBeNull();
+    const last = screen.getByRole('button', { name: 'A palette keeps at least one color' });
     expect(last).toBeDisabled();
-    expect(last).toHaveAttribute('title', 'A palette keeps at least one color');
     await user.click(last);
-    expect(screen.queryByRole('button', { name: 'Confirm deleting color 1' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Confirm deleting/ })).toBeNull();
     expect(mapSwatches()).toEqual([{ name: 'Red', color: '#c1272d' }]);
   });
 

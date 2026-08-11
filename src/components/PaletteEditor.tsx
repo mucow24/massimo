@@ -364,13 +364,12 @@ export function PaletteEditor({
             {/* A palette carries at least one color, so on the last row the
                 delete stops being a command and becomes a state: disabled in
                 place rather than gone, so the row keeps the shape every other
-                row has and the tooltip can say why. */}
+                row has. The reason is its LABEL, like every other disabled
+                button in these windows — a disabled button gets no tooltip out
+                of Chrome and no reason out of a screen reader, so a reason
+                parked in `title` would reach nobody. */}
             {swatches.length === 1 ? (
-              <IconButton
-                label={`Delete color ${i + 1}`}
-                title="A palette keeps at least one color"
-                disabled
-              >
+              <IconButton label="A palette keeps at least one color" disabled>
                 <Cross2Icon />
               </IconButton>
             ) : (

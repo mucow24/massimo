@@ -32,7 +32,7 @@ import {
   type PaletteSwatch,
 } from '../model/palettes';
 import { normalizeHex } from '../util/color';
-import { redo, undo } from '../state/history';
+import { markHistory, redo, undo } from '../state/history';
 import { pointerLost } from './canvas/dragGesture';
 import { downloadBlob, sanitizeBasename } from '../export/exportCanvas';
 import { DialogSortSelect, IconButton, RowCommands, useSpeedBump } from './dialogRow';
@@ -162,11 +162,14 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
   const setNotice = (text: string) => setMessage({ text, tone: 'notice' });
   const { speedBump, disarm } = useSpeedBump();
   // Which palette the editor view is open on, or null for the two columns.
-  // `fresh` marks a just-created palette, whose title opens already editing.
+  // `fresh` marks a just-created palette, whose title opens already editing;
+  // `rewind` is New…'s undo mark, spent only if that palette is thrown away
+  // again (see leaveEditor).
   const [editing, setEditing] = useState<{
     source: PaletteSource;
     name: string;
     fresh?: boolean;
+    rewind?: () => void;
   } | null>(null);
   // True while any double-click edit (title, description, a color name) is
   // open — Radix hears Escape on a document listener, so the gate has to be a
@@ -327,9 +330,13 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
   };
 
   /** Open the editor view on one palette, leaving any stale message behind. */
-  const openEditor = (source: PaletteSource, name: string, fresh?: boolean) => {
+  const openEditor = (
+    source: PaletteSource,
+    name: string,
+    extra?: { fresh?: boolean; rewind?: () => void },
+  ) => {
     setMessage(null);
-    setEditing({ source, name, fresh });
+    setEditing({ source, name, ...extra });
   };
 
   /**
@@ -343,11 +350,17 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
    */
   const leaveEditor = () => {
     if (editing) {
-      const { source, name } = editing;
+      const { source, name, rewind } = editing;
       const held = (source === 'map' ? mapPalettes : custom).find((p) => p.name === name);
       if (held?.swatches.length === 0) {
-        if (source === 'map') removePaletteFromMap(name);
-        else removeFromLibrary(name);
+        if (source === 'map') {
+          removePaletteFromMap(name);
+          // The doc now reads exactly as this visit found it, so the undo
+          // stack goes back too (New…'s mark). Otherwise a cancelled New…
+          // leaves a create and a remove standing there, and the first Ctrl+Z
+          // hands back the very palette the cancel threw away.
+          rewind?.();
+        } else removeFromLibrary(name);
       }
     }
     setMessage(null);
@@ -383,9 +396,15 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
       name: freshPaletteName(taken),
       swatches: swatchesFromColors(colors),
     };
-    if (palette.swatches.length > 0) addToLibrary(palette);
+    // Never gated here: the library refuses a palette with no colors on its
+    // own, so a from-empty mint lands in the map alone by that refusal rather
+    // than by a second copy of the same rule standing at this door.
+    addToLibrary(palette);
+    // Marked BEFORE the doc write, so backing out of an unfilled palette can
+    // put the undo stack back where it stood as well as the doc.
+    const rewind = markHistory();
     addPaletteToMap(palette);
-    openEditor('map', palette.name, true);
+    openEditor('map', palette.name, { fresh: true, rewind });
   };
 
   return (
@@ -476,7 +495,13 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                 name={editing.name}
                 autoEditTitle={editing.fresh}
                 onBack={leaveEditor}
-                onRenamed={(to) => setEditing({ source: editing.source, name: to })}
+                // The rename carries the undo mark along (a palette renamed and
+                // then left empty is still this visit's, and still goes back);
+                // `fresh` is spent, and re-arming the title edit on a rename
+                // would fight the one that just committed.
+                onRenamed={(to) =>
+                  setEditing({ source: editing.source, name: to, rewind: editing.rewind })
+                }
                 setError={setError}
                 inlineEditRef={inlineEditRef}
               />
@@ -493,7 +518,7 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                       <button
                         type="button"
                         className="dialog-colhead-btn"
-                        title="Create an empty palette in the library and this map"
+                        title="Create an empty palette in this map"
                         onClick={() => createNew([])}
                       >
                         New…

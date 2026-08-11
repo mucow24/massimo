@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, within, fireEvent } from '@testing-library/react';
+import { render, screen, within, act, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 // Exporting a palette downloads a file; jsdom has no download, and the real
@@ -15,6 +15,7 @@ import { useDoc } from '../state/store';
 import { useCustomPalettes } from '../state/customPalettes';
 import { DEFAULT_DOC } from '../model/transforms';
 import { PALETTES, type Palette } from '../model/palettes';
+import { historyDepth, undo } from '../state/history';
 import { chooseOption } from '../test/interaction';
 import { makeLine } from '../test/fixtures';
 
@@ -703,6 +704,34 @@ describe('<PalettesDialog /> leaving the editor with an empty palette', () => {
     await user.click(screen.getByRole('button', { name: 'Close palettes' }));
     expect(onClose).toHaveBeenCalled();
     expect(mapNames()).toEqual(['MTA']);
+  });
+
+  // The doc reads as this visit found it, so the undo stack must too. Two
+  // entries for a cancelled New… would leave the first Ctrl+Z handing back the
+  // very palette the cancel threw away.
+  it('leaves nothing on the undo stack — Ctrl+Z cannot bring it back', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await startNew(user);
+    await user.click(screen.getByRole('button', { name: 'Back to palettes' }));
+    expect(historyDepth()).toBe(0);
+    act(() => undo());
+    expect(mapNames()).toEqual(['MTA']);
+  });
+
+  // …but a rename made along the way is still this visit's, and goes back with
+  // it: the mark rides through onRenamed rather than being dropped there.
+  it('takes a renamed one back the same way', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await startNew(user);
+    await user.dblClick(screen.getByRole('heading', { level: 3, name: 'New palette' }));
+    const input = screen.getByRole('textbox', { name: 'Palette name' });
+    await user.clear(input);
+    await user.type(input, 'nearly{Enter}');
+    await user.click(screen.getByRole('button', { name: 'Back to palettes' }));
+    expect(mapNames()).toEqual(['MTA']);
+    expect(historyDepth()).toBe(0);
   });
 
   it('keeps it the moment it has a color', async () => {

@@ -51,3 +51,33 @@ describe('the library and the map are independent', () => {
     expect(useDoc.getState().palettes[1].swatches).toEqual([{ name: '1', color: '#000000' }]);
   });
 });
+
+// The v<29 migration cleans what the old New… stored, but the editor still
+// mints an empty palette into the doc at the CURRENT version — and a doc
+// persisted there never reaches `migrate` at all. So the floor needs a door on
+// every rehydrate, exactly like the cell-dust snap and the dot-size bake.
+describe('the persist merge hook drops empty palettes', () => {
+  // The live persist version, not a literal: the whole point is that the stored
+  // version EQUALS the config's, so zustand skips `migrate` and only `merge`
+  // can repair it. A hardcoded number stops testing that the day it bumps.
+  const rehydrate = (palettes: unknown) => {
+    localStorage.setItem(
+      'vignelli-map-doc-v1',
+      JSON.stringify({ version: useDoc.persist.getOptions().version, state: { palettes } }),
+    );
+    useDoc.persist.rehydrate();
+  };
+
+  it('drops one left by closing the window on a fresh, unfilled palette', () => {
+    rehydrate([FRRF, { name: 'New palette', swatches: [] }]);
+    expect(useDoc.getState().palettes).toEqual([FRRF]);
+  });
+
+  it('passes a canonical list straight through, by reference', () => {
+    const palettes = [FRRF];
+    rehydrate(palettes);
+    // Reference-stable like the other merge repairs — a doc with nothing to fix
+    // must not be rewritten on the way in.
+    expect(useDoc.getState().palettes).toEqual(palettes);
+  });
+});

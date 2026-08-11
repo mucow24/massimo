@@ -37,12 +37,19 @@ export interface Palette {
  * empty so its first color is chosen there, and leaving the editor with it
  * still empty throws it away rather than keeping it.
  *
- * This drops the ones that predate the rule, at the two doors where stored
- * palettes arrive: the doc and library persist migrations. A file goes through
- * `sanitizePalettes`, which judges each entry as it cleans it.
+ * This drops the ones stored anyway, wherever stored palettes arrive: the two
+ * persist migrations for what the rule predates, and the doc's persist MERGE
+ * hook for the rest — the editor mints its empty palette into the doc at the
+ * current version, and a doc persisted there (close the window mid-edit) never
+ * reaches a migration at all. A file goes through `sanitizePalettes`, which
+ * judges each entry as it cleans it.
+ *
+ * Reference-stable when there is nothing to drop, like every other repair on
+ * that hook: a canonical doc must pass through untouched.
  */
-export function dropEmptyPalettes(palettes: readonly Palette[]): Palette[] {
-  return palettes.filter((p) => p.swatches.length > 0);
+export function dropEmptyPalettes(palettes: Palette[]): Palette[] {
+  const kept = palettes.filter((p) => p.swatches.length > 0);
+  return kept.length === palettes.length ? palettes : kept;
 }
 
 /**

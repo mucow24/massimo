@@ -1507,7 +1507,8 @@ export const useDoc = create<DocState>()(
         // does: the drift is still being carried by docs saved at the CURRENT
         // version, which by definition never reach `migrate` at all. The image
         // href guard is the same shape — a remote href could be persisted by
-        // any build, this one included.
+        // any build, this one included — and so is the empty-palette drop,
+        // whose source is this build's own editor.
         merge: (persisted, current) => {
           const doc = (persisted ?? {}) as Partial<DocState>;
           const patch: Partial<DocState> = {};
@@ -1525,6 +1526,16 @@ export const useDoc = create<DocState>()(
               patch.svgImages = hrefs.svgImages;
               if (doc.backgroundOrder) patch.backgroundOrder = hrefs.backgroundOrder;
             }
+          }
+          // A palette carries at least one color, and the palette editor mints
+          // an EMPTY one into the doc on the way in — provisional, and thrown
+          // away on the way out, but persisted synchronously in between. Close
+          // the window there and the stub is written at the current version,
+          // which `migrate` never sees. Reference-stable, so a doc with none
+          // passes straight through.
+          if (doc.palettes) {
+            const kept = dropEmptyPalettes(doc.palettes);
+            if (kept !== doc.palettes) patch.palettes = kept;
           }
           // Dot sizes are required stored fields, and a size-less line can be
           // written at the CURRENT version (a legacy clipboard payload pasted
