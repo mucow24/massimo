@@ -116,6 +116,16 @@ const SECTIONS: HelpSection[] = [
     ],
   },
   {
+    title: 'Guides',
+    rows: [
+      {
+        k: 'Top / left edge',
+        effect: 'Drag out of the edge strip to pull an alignment guide — everything snaps to it',
+      },
+      { k: 'Drag back', effect: 'Drop a guide on its strip to delete it — click one to edit/lock' },
+    ],
+  },
+  {
     title: 'View',
     rows: [
       { k: 'A · W', effect: 'Show / hide anchors · waypoints (the View menu holds the rest)' },
@@ -173,7 +183,7 @@ export function HelpPopover() {
         ref={btnRef}
         type="button"
         className={'tool-btn' + (open ? ' active' : '')}
-        title="Help (?) — quick reference sheet"
+        title="Help (?) — quick reference"
         aria-label="Help"
         aria-haspopup="dialog"
         aria-expanded={open}

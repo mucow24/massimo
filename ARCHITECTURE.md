@@ -1980,7 +1980,7 @@ on any mode exit.
 
 **Layer visibility — the View menu** ([ViewPopover.tsx](src/components/ViewPopover.tsx), one eye
 button in the toolbar). Ten checkboxes in three groups: Lines and stations · Anchors, Line
-circles, Guides, Transfers, Waypoints · Images / SVGs, Canvas labels, Polygons, Route bullets.
+circles, Guides, Transfers, Waypoints · Images / SVGs, Text labels, Polygons, Route bullets.
 The **grid** is
 deliberately not among them — a drawing aid rather than map content, and its button pairs with the
 grid-size cycler beside it.
