@@ -1,13 +1,33 @@
 import { STOP_DOT_RADIUS } from '../../geometry/orientation';
 import type { SnapGuide } from '../../geometry/snap';
 import { midpoint, norm, perp, sub } from '../../geometry/vec';
+import type { Vec2 } from '../../geometry/vec';
 import { capCenterDy } from '../../geometry/textMeasure';
 import { useThemeColors } from '../../state/theme';
 import { withAlpha } from '../../util/color';
+import type { GuideOrientation } from '../../model/types';
+
+/** An alignment guide some drag or placement is snapped AGAINST right now,
+ *  plus the landed reference point of the drag that engaged it. */
+export interface EngagedGuideChrome {
+  id: string;
+  orientation: GuideOrientation;
+  offset: number;
+  at: Vec2;
+}
 
 interface Props {
   guides: SnapGuide[];
   zoom: number;
+  /** Engaged alignment guides. Rendered with the SAME chrome as any other
+   *  snap — halo + dashed accent spanning `vb`, a ring at the snap point, and
+   *  a chip naming what was snapped to (the guide's coordinate: there is no
+   *  target-distance to measure when the point is ON the line). */
+  engaged?: EngagedGuideChrome[];
+  /** The overdrawn box an engaged guide's chrome spans (present with
+   *  `engaged`) — the same slack the guides layer itself paints with, so a
+   *  mid-gesture camera can't reveal an end. */
+  vb?: { vbX: number; vbY: number; vbW: number; vbH: number };
 }
 
 /**
@@ -20,14 +40,22 @@ interface Props {
  * was a one-off teal + MTA-subway-yellow measurement chip; that yellow is a
  * real line color in the NYC palette, so the chip could be pixel-identical
  * to map content.)
+ *
+ * Alignment-guide MARKER entries (`alignGuideId`) are never drawn as segments
+ * — the engaged guide itself gets the chrome, via `engaged`, so the feedback
+ * lands on the object the user snapped to instead of a second line over it.
  */
-export function SnapGuides({ guides: allGuides, zoom }: Props) {
+export function SnapGuides({ guides: allGuides, zoom, engaged, vb }: Props) {
   const themeColors = useThemeColors();
-  // Alignment-guide MARKERS are not drawable segments — the engaged guide
-  // itself recolors in the guides layer (GuideView reads the same array).
   const guides = allGuides.filter((g) => !g.alignGuideId);
-  if (guides.length === 0) return null;
+  const engagedGuides = engaged && vb ? engaged : [];
+  if (guides.length === 0 && engagedGuides.length === 0) return null;
   const halo = withAlpha(themeColors.accent, 0.3);
+  // An engaged guide's span across the overdrawn box, along its axis.
+  const spanOf = (g: EngagedGuideChrome) =>
+    g.orientation === 'horizontal'
+      ? { x1: vb!.vbX, y1: g.offset, x2: vb!.vbX + vb!.vbW, y2: g.offset }
+      : { x1: g.offset, y1: vb!.vbY, x2: g.offset, y2: vb!.vbY + vb!.vbH };
   return (
     <g pointerEvents="none">
       <defs>
@@ -65,6 +93,22 @@ export function SnapGuides({ guides: allGuides, zoom }: Props) {
             />
           </g>
         ))}
+        {engagedGuides.map((g) => {
+          const s = spanOf(g);
+          return (
+            <g key={'ehalo' + g.id}>
+              <line {...s} stroke={halo} strokeWidth={5 / zoom} strokeLinecap="round" />
+              <circle
+                cx={g.at.x}
+                cy={g.at.y}
+                r={STOP_DOT_RADIUS + 1 / zoom}
+                fill="none"
+                stroke={halo}
+                strokeWidth={5 / zoom}
+              />
+            </g>
+          );
+        })}
       </g>
       {guides.map((g, i) => (
         <line
@@ -79,6 +123,27 @@ export function SnapGuides({ guides: allGuides, zoom }: Props) {
           strokeDasharray={`${4 / zoom} ${3 / zoom}`}
         />
       ))}
+      {engagedGuides.map((g) => {
+        const s = spanOf(g);
+        return (
+          <g key={'eng' + g.id} data-engaged-guide={g.id}>
+            <line
+              {...s}
+              stroke={themeColors.accent}
+              strokeWidth={2 / zoom}
+              strokeDasharray={`${4 / zoom} ${3 / zoom}`}
+            />
+            <circle
+              cx={g.at.x}
+              cy={g.at.y}
+              r={STOP_DOT_RADIUS + 1 / zoom}
+              fill="none"
+              stroke={themeColors.accent}
+              strokeWidth={2 / zoom}
+            />
+          </g>
+        );
+      })}
       {guides.map((g, i) => {
         if (!g.label) return null;
         // Position the label above the midpoint of the guide, offset
@@ -112,6 +177,33 @@ export function SnapGuides({ guides: allGuides, zoom }: Props) {
             pointerEvents="none"
           >
             {g.label}
+          </text>
+        );
+      })}
+      {engagedGuides.map((g) => {
+        // The chip names what was snapped TO — the guide's coordinate — and
+        // rides the snap point so it stays by the cursor. Above the line for
+        // a horizontal guide (the drawn-segment convention); beside it,
+        // reading east, for a vertical one.
+        const offset = 12 / zoom;
+        const lx = g.orientation === 'horizontal' ? g.at.x : g.offset + offset;
+        const ly = g.orientation === 'horizontal' ? g.offset - offset : g.at.y;
+        const value = Math.round(g.offset);
+        return (
+          <text
+            key={'elabel' + g.id}
+            x={lx}
+            y={ly + capCenterDy(14 / zoom)}
+            fontSize={14 / zoom}
+            fontWeight={700}
+            fill="#fff"
+            stroke={themeColors.accent}
+            strokeWidth={4 / zoom}
+            paintOrder="stroke"
+            textAnchor={g.orientation === 'horizontal' ? 'middle' : 'start'}
+            pointerEvents="none"
+          >
+            {`${g.orientation === 'horizontal' ? 'Y' : 'X'} ${value}`}
           </text>
         );
       })}

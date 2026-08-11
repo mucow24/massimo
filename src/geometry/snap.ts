@@ -163,11 +163,11 @@ export interface SnapGuide {
    *  spacing for a Ctrl-drag. */
   label?: string;
   /** Set when this entry marks an engaged ALIGNMENT GUIDE rather than a
-   *  drawable segment: the guide itself is already on the canvas, so the
-   *  feedback is recoloring it (the ring-capture convention — the scaffolding
-   *  IS the feedback), not a second dashed line with a distance chip.
-   *  `SnapGuides` skips these; the guides layer reads them to pick which
-   *  guides paint accent. `from`/`to` carry the landed point, unused. */
+   *  drawable segment. `SnapGuides` never draws it as a plain line — the
+   *  canvas resolves the id back to the guide and paints the full snap chrome
+   *  ON the guide itself (halo + dashed span + snap-point ring + coordinate
+   *  chip; see EngagedGuideChrome) plus the guide's accent recolor.
+   *  `from`/`to` both carry the LANDED point — the ring's position. */
   alignGuideId?: string;
 }
 

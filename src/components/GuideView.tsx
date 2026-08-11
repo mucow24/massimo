@@ -23,8 +23,9 @@ interface Props {
   // The shared hoveredChrome affordance (idle, not panning, not selected).
   hovered: boolean;
   // A drag or placement is snap-ENGAGED on this guide right now: paint it
-  // full accent. The ring-capture convention — the scaffolding itself is the
-  // feedback, not a second dashed segment with a distance chip.
+  // full accent. The loud half of the feedback — halo, dashed accent span,
+  // snap-point ring, coordinate chip — rides the SnapGuides overlay on top
+  // (see EngagedGuideChrome).
   engaged: boolean;
   // False while another mode owns the canvas: visible but takes no pointers.
   interactive: boolean;

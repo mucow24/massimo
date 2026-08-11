@@ -2366,10 +2366,13 @@ distance; in the engine it enters the candidate set as `kind: 'guide'` with the 
 as the dragged reference (dOff 0) and joins the 2×2 corner solve like any axis. Grid stays the
 hard constraint (an off-grid guide simply doesn't engage under grid), `tens` never notches off a
 guide (its stand-in target is the drag's own foot — no cadence anchor), and phase-3 refinement
-never fires off a guide primary. Engagement feedback is a **marker, not a segment**: the snapper
-emits a `SnapGuide` carrying `alignGuideId` instead of a drawable line, `SnapGuides` skips it,
-and the canvas recolors that guide full accent (`engagedGuideIds` in MapCanvas — the
-ring-capture convention: the scaffolding itself is the feedback, no distance chip). The pool is
+never fires off a guide primary. Engagement feedback: the snapper emits a **marker** — a
+`SnapGuide` carrying `alignGuideId` + the landed point, never a drawable segment — and the canvas
+turns it into the FULL snap chrome **on the guide itself** (`engagedGuides` in MapCanvas →
+`SnapGuides`' `engaged` prop): halo + dashed accent spanning the overdrawn box, a ring at the
+snap point, and a chip naming the coordinate snapped to (`Y 120` — the point lands ON the line,
+so the guide's coordinate is what "distance" means here), plus the guide's own accent recolor
+(`GuideView` `engaged`). A guide engagement reads exactly as loud as every other snap. The pool is
 `liveGuideTargets(exclude)` beside `liveAlignTargets` — visibility-gated the same way, minus the
 guides moving with the drag (`AlignExclude.guideIds`); a guide's own drag passes NO guide pool
 at all, since stacking two guides is meaningless. This deliberately pierces the stations-are-

@@ -77,7 +77,7 @@ import {
 import { Grid } from './canvas/Grid';
 import { WarningToasts } from './canvas/WarningToasts';
 import { EditingBanner } from './canvas/EditingBanner';
-import { SnapGuides } from './canvas/SnapGuides';
+import { SnapGuides, type EngagedGuideChrome } from './canvas/SnapGuides';
 import { useItemDrag } from './canvas/useItemDrag';
 import { usePolygonDrag } from './canvas/usePolygonDrag';
 import { useSvgImageDrag } from './canvas/useSvgImageDrag';
@@ -1336,10 +1336,23 @@ export function MapCanvas() {
     ...placementGuides,
   ];
   // The alignment guides some in-flight drag or placement is snapped AGAINST
-  // right now: they paint full accent (GuideView `engaged`) — the guide itself
-  // is the feedback, no distance chip.
-  const engagedGuideIds = new Set<string>();
-  for (const g of allSnapGuides) if (g.alignGuideId) engagedGuideIds.add(g.alignGuideId);
+  // right now, with the landed point that engaged each (the marker's `from`).
+  // Two consumers: GuideView recolors the guide accent, and SnapGuides paints
+  // the full snap chrome — halo + dashed span + ring + coordinate chip — so a
+  // guide engagement is exactly as loud as every other snap.
+  const engagedGuides: EngagedGuideChrome[] = [];
+  for (const g of allSnapGuides) {
+    if (!g.alignGuideId || engagedGuides.some((e) => e.id === g.alignGuideId)) continue;
+    const gd = guides[g.alignGuideId];
+    if (!gd) continue;
+    engagedGuides.push({
+      id: gd.id,
+      orientation: gd.orientation,
+      offset: gd.offset,
+      at: g.from,
+    });
+  }
+  const engagedGuideIds = new Set(engagedGuides.map((e) => e.id));
 
   return (
     <div
@@ -2471,7 +2484,12 @@ export function MapCanvas() {
             (including the armed-but-not-yet-landed window, where hook state is
             frozen at the same slice the canvas shows). */}
           <g data-export-exclude="1">
-            <SnapGuides guides={allSnapGuides} zoom={view.viewport.zoom} />
+            <SnapGuides
+              guides={allSnapGuides}
+              zoom={view.viewport.zoom}
+              engaged={engagedGuides}
+              vb={overdrawn}
+            />
           </g>
 
           {/* Station-layout-editor focus dim (editing-station-layout mode):

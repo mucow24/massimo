@@ -55,6 +55,55 @@ describe('<SnapGuides />', () => {
     expect(halo.getAttribute('stroke')).toBe('rgba(26, 78, 168, 0.3)');
   });
 
+  it('never draws an alignment-guide MARKER as a plain segment', () => {
+    const guides: SnapGuide[] = [{ from: { x: 5, y: 5 }, to: { x: 5, y: 5 }, alignGuideId: 'gh' }];
+    const { container } = render(<SnapGuides guides={guides} zoom={1} />);
+    expect(container.querySelectorAll('line')).toHaveLength(0);
+    expect(labelText(container)).toBeNull();
+  });
+
+  it('renders an ENGAGED guide with the full snap chrome: span, halo, ring at the snap point, coordinate chip', () => {
+    const { container } = render(
+      <SnapGuides
+        guides={[]}
+        zoom={1}
+        engaged={[{ id: 'gh', orientation: 'horizontal', offset: 120, at: { x: 40, y: 120 } }]}
+        vb={{ vbX: -500, vbY: -500, vbW: 1000, vbH: 1000 }}
+      />,
+    );
+    // The dashed accent line spans the whole overdrawn box along the guide.
+    const dashed = Array.from(container.querySelectorAll('line')).find((l) =>
+      l.getAttribute('stroke-dasharray'),
+    )!;
+    expect(dashed.getAttribute('stroke')).toBe('#1a4ea8');
+    expect(Number(dashed.getAttribute('x1'))).toBe(-500);
+    expect(Number(dashed.getAttribute('x2'))).toBe(500);
+    expect(Number(dashed.getAttribute('y1'))).toBe(120);
+    // A halo pass underneath, like every other snap guide.
+    expect(container.querySelector('g[filter] line')).not.toBeNull();
+    // The ring marks the snapped reference point.
+    const ring = container.querySelector('circle')!;
+    expect(Number(ring.getAttribute('cx'))).toBe(40);
+    expect(Number(ring.getAttribute('cy'))).toBe(120);
+    // The chip names what you snapped TO — the guide's coordinate.
+    const text = labelText(container);
+    expect(text.textContent).toBe('Y 120');
+    expect(Number(text.getAttribute('x'))).toBeCloseTo(40, 6);
+  });
+
+  it('labels a vertical engaged guide with its X, chip beside the snap point', () => {
+    const { container } = render(
+      <SnapGuides
+        guides={[]}
+        zoom={1}
+        engaged={[{ id: 'gv', orientation: 'vertical', offset: -340, at: { x: -340, y: 80 } }]}
+        vb={{ vbX: -500, vbY: -500, vbW: 1000, vbH: 1000 }}
+      />,
+    );
+    const text = labelText(container);
+    expect(text.textContent).toBe('X -340');
+  });
+
   it('keeps the label coordinates finite for a zero-length guide (from === to)', () => {
     const guides: SnapGuide[] = [{ from: { x: 5, y: 5 }, to: { x: 5, y: 5 }, label: '0' }];
     const { container } = render(<SnapGuides guides={guides} zoom={1} />);
