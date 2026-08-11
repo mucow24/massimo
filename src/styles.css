@@ -967,11 +967,26 @@ select option {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-muted);
+  /* The three colors are restated as a day/night pair of their own rather than
+     read off --text-muted / --accent / --danger. Those answer to the chrome's
+     data-theme, and the strips sit on the CANVAS: "Dark UI in day" would flip
+     them to night ink over a light map, and a dimmed day paper would strand
+     them in day ink over a dark one. The host's `data-paper` is the map
+     palette's own darkPaper (MapCanvas + theme.ts) — the values below are the
+     two themes' tokens, pinned to the paper instead of to the toolbar. */
+  --well-ink: #666;
+  --well-accent: #1a4ea8;
+  --well-danger: #c33;
+  color: var(--well-ink);
   opacity: 0.45;
   transition:
     background-color 120ms ease,
     opacity 120ms ease;
+}
+.canvas-host[data-paper='dark'] .guide-well {
+  --well-ink: #c4c4c4;
+  --well-accent: #6b9aff;
+  --well-danger: #d66;
 }
 .guide-well-top {
   top: 0;
@@ -1005,12 +1020,12 @@ select option {
 }
 .guide-well:hover:not(.disabled) {
   opacity: 1;
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  background: color-mix(in srgb, var(--well-accent) 10%, transparent);
 }
 .guide-well.armed {
   opacity: 1;
-  background: color-mix(in srgb, var(--danger) 16%, transparent);
-  color: var(--danger);
+  background: color-mix(in srgb, var(--well-danger) 16%, transparent);
+  color: var(--well-danger);
 }
 .guide-well.disabled {
   cursor: default;

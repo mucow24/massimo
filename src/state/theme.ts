@@ -91,6 +91,25 @@ export interface ThemeColors {
    * mode produces.
    */
   dimmedLabel: string;
+  /**
+   * Is the paper dark? The one entry that is not a color. It exists for the
+   * canvas chrome that is HTML rather than SVG paint and therefore themed in
+   * CSS — today only the guide wells, which flip their ink off the host's
+   * `data-paper` (MapCanvas stamps it from here; styles.css holds the values).
+   *
+   * They cannot read the chrome's `data-theme`, because the chrome and the
+   * paper disagree in BOTH directions — "Dark UI in day" darkens the toolbar
+   * over a still-light map, and the gray/black day papers darken the map under
+   * a still-light toolbar. So the question is answered here, where the papers
+   * are, rather than being re-derived from `darkMode` and `dayCanvasColor` at
+   * the call site and drifting the next time a paper is added.
+   *
+   * It does NOT mean "use the night palette". On a dimmed day paper the SVG ink
+   * above deliberately stays day — that is the whole point of the setting (see
+   * DAY_PAPER) — so `accent`, `alignGuide` and `phantomDot` are the day values
+   * over a gray or black canvas, and the wells are the one thing that departs.
+   */
+  darkPaper: boolean;
 }
 
 const LIGHT: ThemeColors = {
@@ -111,6 +130,7 @@ const LIGHT: ThemeColors = {
   dim: '#000000',
   dimOpacity: 0.7,
   dimmedLabel: '#eeeeee',
+  darkPaper: false,
 };
 
 const DARK: ThemeColors = {
@@ -131,6 +151,7 @@ const DARK: ThemeColors = {
   dim: '#000000',
   dimOpacity: 0.7,
   dimmedLabel: '#bbbbbb',
+  darkPaper: true,
 };
 
 /**
@@ -139,13 +160,15 @@ const DARK: ThemeColors = {
  * day mode with the lights down, not night. 'gray' (#616161, Material Grey
  * 700) is the middle rung between white and black.
  *
- * The grid is the one exception to "only the paper moves": the day grid is
- * tuned to whisper against near-white, so on a dimmed paper it reads as a cage
- * of bright white lines. Gray drops it to Grey 800, one rung below its paper;
- * black shares DARK's canvas, so it takes DARK's grid — referenced, not
- * copied, so the two can't drift apart.
+ * Two fields break "only the paper moves", both because they are read AGAINST
+ * the paper. The grid: the day grid is tuned to whisper against near-white, so
+ * on a dimmed paper it reads as a cage of bright white lines — gray drops it to
+ * Grey 800, one rung below its paper; black shares DARK's canvas, so it takes
+ * DARK's grid, referenced rather than copied so the two can't drift apart. And
+ * `darkPaper`, which is what the guide wells' ink follows: a dimmed paper is a
+ * dark one whatever the mode says.
  *
- * What licenses that exception is EXPORT REACH, not taste. `canvasBg` is
+ * What licenses those exceptions is EXPORT REACH, not taste. `canvasBg` is
  * stripped as `data-bg` and the grid renders inside a `data-export-exclude`
  * subtree, so both are screen-only and free to follow a local viewing
  * preference. `underlay` is not: it is real map paint (dash gaps, hollow
@@ -157,8 +180,8 @@ const DARK: ThemeColors = {
  */
 const DAY_PAPER: Record<DayCanvasColor, ThemeColors> = {
   white: LIGHT,
-  gray: { ...LIGHT, canvasBg: '#616161', grid: '#424242' },
-  black: { ...LIGHT, canvasBg: DARK.canvasBg, grid: DARK.grid },
+  gray: { ...LIGHT, canvasBg: '#616161', grid: '#424242', darkPaper: true },
+  black: { ...LIGHT, canvasBg: DARK.canvasBg, grid: DARK.grid, darkPaper: true },
 };
 
 /**

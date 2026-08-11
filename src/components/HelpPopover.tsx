@@ -132,8 +132,11 @@ const SECTIONS: HelpSection[] = [
   {
     title: 'View',
     rows: [
-      { k: 'A · W', effect: 'Show / hide anchors · waypoints (the View menu holds the rest)' },
-      { k: 'G · Shift+G', effect: 'Toggle the grid · cycle its size' },
+      {
+        k: 'A · W · G',
+        effect: 'Show / hide anchors · waypoints · guides (the View menu holds the rest)',
+      },
+      { k: 'R · Shift+R', effect: 'Toggle the grid · cycle its size (R rotates a selected stop)' },
     ],
   },
   {

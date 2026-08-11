@@ -699,7 +699,7 @@ export function Toolbar() {
         <button
           type="button"
           className={'tool-btn' + (gridVisible ? ' active' : '')}
-          title={gridVisible ? 'Hide grid (G)' : 'Show grid (G)'}
+          title={gridVisible ? 'Hide grid (R)' : 'Show grid (R)'}
           aria-label="Toggle grid"
           aria-pressed={gridVisible}
           onClick={() => setGridVisible(!gridVisible)}
@@ -709,7 +709,7 @@ export function Toolbar() {
         <button
           type="button"
           className="tool-btn tool-btn-text"
-          title={`Grid: ${gridSize} world units — click for ${nextGridSize(gridSize)} (Shift+G)`}
+          title={`Grid: ${gridSize} world units — click for ${nextGridSize(gridSize)} (Shift+R)`}
           aria-label="Cycle grid size"
           data-grid-size={gridSize}
           onClick={() => setGridSize(nextGridSize(gridSize))}

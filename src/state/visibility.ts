@@ -37,8 +37,11 @@ export interface VisibilityItem {
   label: string;
   /**
    * Menu grouping — a divider is drawn wherever this changes. 0 is the master
-   * lines/stations switch, 1 the network scaffolding that hangs off it, 2 the
-   * free-standing annotation layers.
+   * lines/stations switch and the alignment guides, 1 the network scaffolding
+   * that hangs off the master switch, 2 the free-standing annotation layers.
+   *
+   * The guides sit in group 0 rather than down among the scaffolding because
+   * they are reached for as often as the master switch itself.
    */
   group: number;
   /**
@@ -81,7 +84,7 @@ export interface VisibilityItem {
   revealedBy?: readonly UiMode['kind'][];
   /**
    * The bare letter that flips this flag from the canvas, shown as a muted hint
-   * on the menu row. Only the two layers worked hardest have one — a keyboard
+   * on the menu row. Only the three layers worked hardest have one — a keyboard
    * shortcut nobody can find is not a feature, so the letter lives HERE, beside
    * the row that advertises it, rather than being spelled out a second time in
    * the menu component where it could drift from the handler.
@@ -91,6 +94,16 @@ export interface VisibilityItem {
 
 export const VISIBILITY_ITEMS: readonly VisibilityItem[] = [
   { key: 'showNetwork', label: 'Lines and stations', group: 0, gatesExportedInk: true },
+  {
+    key: 'showGuides',
+    label: 'Guides',
+    group: 0,
+    gatesExportedInk: false,
+    // No revealedBy: guide creation is a gesture (the well pull-out), not a
+    // mode — so while hidden, the wells DISABLE instead of revealing the
+    // layer.
+    shortcut: 'G',
+  },
   {
     key: 'showAnchors',
     label: 'Anchors',
@@ -109,15 +122,6 @@ export const VISIBILITY_ITEMS: readonly VisibilityItem[] = [
     group: 1,
     gatesExportedInk: false,
     revealedBy: ['placing-line-circle'],
-  },
-  {
-    key: 'showGuides',
-    label: 'Guides',
-    group: 1,
-    gatesExportedInk: false,
-    // No revealedBy: guide creation is a gesture (the well pull-out), not a
-    // mode — so while hidden, the wells DISABLE instead of revealing the
-    // layer.
   },
   {
     key: 'showTransfers',
