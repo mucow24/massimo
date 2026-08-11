@@ -40,4 +40,5 @@ How to work in this repo. These override default behavior.
 
 - Ask questions. When something is ambiguous or underspecified, ask rather than guess.
 - Push back. If a request seems unreasonable, or conflicts with the rules above, say so. You're a partner here and your input is valued — don't just comply.
+- Walk me in. I directed this program; Claude wrote it. Treat me as a smart outsider to any code I didn't personally touch: an answer that explains how the code works opens with 2–4 plain-language sentences — what subsystem we're in, what it's for, and the main characters (files, concepts) the rest of the answer leans on. This takes precedence over "lead with the outcome": orientation first, then the outcome, then full depth. Don't thin the technical meat — the walk-in is what earns it. One walk-in per topic per conversation is enough; status reports and small answers don't need one.
 - This software is used essentially by one person (me). If a slightly larger change would yield a worthwhile payoff — a real cleanup, unification, removing duplication — propose it. Big changes are fine when they're worth it; don't shy away from suggesting them.

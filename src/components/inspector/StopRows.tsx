@@ -286,7 +286,7 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
         type="number"
         aria-label="Stop dot size"
         title={
-          isDash ? 'Dash size follows the line width (see line inspector)' : 'Stop dot size (px)'
+          isDash ? 'Dash size follows the line width — adjust it on the line' : 'Stop dot size (px)'
         }
         disabled={isDash}
         min={DOT_SIZE_MIN}

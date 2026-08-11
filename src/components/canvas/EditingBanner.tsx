@@ -19,7 +19,7 @@ const PLACING_TEXT: Record<
   string
 > = {
   'placing-station': 'Click on the canvas to place a new station.',
-  'creating-line-tag': 'Click a colored line to place a tag.',
+  'creating-line-tag': 'Click a line to place a tag.',
   'creating-route-bullet': 'Click on the canvas to place a route bullet.',
   'placing-label': 'Click on the canvas to place a text label.',
   'placing-anchor':
@@ -72,7 +72,7 @@ export function EditingBanner() {
           <div className="append-banner placing">
             {uiMode.center
               ? `Click to set the circle's radius — stations dropped on its rim snap onto it. ${CANCEL_HINT}`
-              : `Click on the canvas to place the line circle's CENTER. ${CANCEL_HINT}`}
+              : `Click on the canvas to place the line circle's center. ${CANCEL_HINT}`}
           </div>
         </>
       );

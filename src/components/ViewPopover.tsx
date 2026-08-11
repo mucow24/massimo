@@ -54,7 +54,7 @@ export function ViewPopover() {
       <button
         type="button"
         className={'tool-btn' + (open ? ' active' : '') + (marked ? ' has-hidden' : '')}
-        title={marked ? 'View — some layers are hidden' : 'View'}
+        title={marked ? 'View — some layers are hidden' : 'View — show or hide layers'}
         aria-label="View"
         aria-haspopup="dialog"
         aria-expanded={open}

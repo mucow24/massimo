@@ -472,7 +472,7 @@ describe('App keyboard shortcuts: snapping presets', () => {
       grid: 'both',
       circle: true,
     });
-    expect(toastTexts()).toEqual(['Snapping preset 3']);
+    expect(toastTexts()).toEqual(['Snapping preset 3 recalled']);
   });
 
   it('slot 0 is bound too (the plain digit keys stop at 6)', () => {

@@ -41,14 +41,14 @@ describe('MapVersionPill — version pill + save-status dot', () => {
     expect(dot()).not.toHaveAttribute('title');
   });
 
-  it('a dirty doc shows a red dot beside the pill, titled "Map has unsaved changes"', () => {
+  it('a dirty doc shows a red dot beside the pill, titled with the unsaved-changes hint', () => {
     useLibraryPointer.setState({ mapId: 'm1', version: 32 });
     anchor(markSaved);
     useDoc.getState().addStation(0, 0);
     render(<MapVersionPill />);
     expect(screen.getByText('v32')).toBeInTheDocument(); // still "came from v32"
     expect(dot()).toHaveAttribute('data-status', 'dirty');
-    expect(screen.getByTitle('Map has unsaved changes')).toBeInTheDocument();
+    expect(screen.getByTitle('Unsaved changes — Ctrl+S saves a version')).toBeInTheDocument();
   });
 
   it('an unsaved doc (a loaded file) shows a blue dot and the pill claims no version', () => {
@@ -61,9 +61,7 @@ describe('MapVersionPill — version pill + save-status dot', () => {
     expect(pill()).toHaveAttribute('data-empty', '');
     expect(pill()).not.toHaveAttribute('title');
     expect(dot()).toHaveAttribute('data-status', 'unsaved');
-    expect(
-      screen.getByTitle('Map has no changes, but is not saved to the library'),
-    ).toBeInTheDocument();
+    expect(screen.getByTitle('Not in the library yet — Ctrl+S saves it')).toBeInTheDocument();
   });
 
   it('with no version, the pill stays mounted as an empty hidden placeholder (reserves its box)', () => {

@@ -231,9 +231,9 @@ describe('Toolbar — tool + view toggles', () => {
   it('switches to hand mode and back to arrow', async () => {
     const user = userEvent.setup();
     renderToolbar();
-    await user.click(screen.getByTitle('Hand (hold Space, H to toggle)'));
+    await user.click(screen.getByTitle('Hand tool — pan the map (H, or hold Space)'));
     expect(useSelection.getState().toolMode).toBe('hand');
-    await user.click(screen.getByTitle('Arrow (V)'));
+    await user.click(screen.getByTitle('Arrow tool (V)'));
     expect(useSelection.getState().toolMode).toBe('arrow');
   });
 

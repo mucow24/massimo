@@ -43,9 +43,9 @@ export function MapVersionPill() {
         data-status={status}
         title={
           status === 'dirty'
-            ? 'Map has unsaved changes'
+            ? 'Unsaved changes — Ctrl+S saves a version'
             : status === 'unsaved'
-              ? 'Map has no changes, but is not saved to the library'
+              ? 'Not in the library yet — Ctrl+S saves it'
               : undefined
         }
       />

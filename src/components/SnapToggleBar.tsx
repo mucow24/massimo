@@ -85,26 +85,26 @@ const TOGGLES: ToggleSpec[] = [
   {
     key: 'line',
     label: 'Snap to line',
-    hint: 'Lock to the direction of the existing line',
+    hint: 'lock the drag to the line’s direction',
     states: boolStates(SliderIcon),
   },
   {
     key: 'equidistant',
     label: 'Snap to equidistant',
-    hint: 'Snap to the midpoint between same-line neighbors (stations only)',
+    hint: 'snap to the midpoint between same-line neighbors (stations only)',
     states: boolStates(SpaceEvenlyHorizontallyIcon),
     requiresLine: true,
   },
   {
     key: 'tens',
     label: 'Snap to grid length',
-    hint: 'Notch to whole grid steps from what you snap to',
+    hint: 'notch to whole grid steps from what you snap to',
     states: boolStates(RulerHorizontalIcon),
   },
   {
     key: 'all',
     label: 'Snap to all',
-    hint: 'Align with any stop; click to cycle the direction',
+    hint: 'align with any other stop',
     states: [
       { value: 'off', Icon: MoveIcon, name: 'Off' },
       { value: 'horizontal', Icon: WidthIcon, name: 'Horizontal only' },
@@ -116,7 +116,7 @@ const TOGGLES: ToggleSpec[] = [
   {
     key: 'grid',
     label: 'Snap to grid',
-    hint: 'Snap to grid lines; click to cycle the direction',
+    hint: 'snap to grid lines',
     states: [
       { value: 'off', Icon: GridIcon, name: 'Off' },
       { value: 'horizontal', Icon: ViewHorizontalIcon, name: 'Horizontal lines' },
@@ -127,7 +127,7 @@ const TOGGLES: ToggleSpec[] = [
   {
     key: 'circle',
     label: 'Snap to line circle cardinals',
-    hint: 'Snap to the 8 cardinal points of line circles',
+    hint: 'snap to the 8 cardinal points of line circles',
     // Not `boolStates` — this is the one toggle whose two states want DIFFERENT
     // glyphs, because the off glyph is load-bearing: a plain ring says circles
     // capture regardless (only Shift declines), and the dots say the cardinals
@@ -142,7 +142,7 @@ const TOGGLES: ToggleSpec[] = [
 /**
  * Advance one snap toggle a single step (wrapping), exactly as clicking its
  * button once would. `index` is the toggle's position in {@link TOGGLES} — also
- * the toolbar order and the 1–5 keyboard shortcut. Returns the mode key and its
+ * the toolbar order and the digit keyboard shortcut (1–{@link SNAP_TOGGLE_COUNT}). Returns the mode key and its
  * next value, or `null` when the index is out of range or the toggle is disabled
  * (equidistant while `line` is off), matching a click on a disabled button (a
  * no-op). Shared by the toolbar's onClick and App's number-key handler so a
@@ -188,11 +188,14 @@ export function SnapToggleBar() {
         // so the user sees what "one step" currently means. aria-label stays the
         // bare label for stable a11y/testing.
         const displayLabel = key === 'tens' ? `${label} (${gridSize}'s)` : label;
+        // Only the directional toggles earn a cycling hint — a plain on/off
+        // button explaining "click to toggle" would be noise.
+        const cycleHint = states.length > 2 ? ' · click to cycle direction' : '';
         const title = disabled
           ? `${displayLabel} — enable Snap to line first`
           : active
-            ? `${displayLabel}: ${state.name} — ${hint} · click to cycle`
-            : `${displayLabel} — ${hint} · click to cycle`;
+            ? `${displayLabel}: ${state.name} — ${hint}${cycleHint}`
+            : `${displayLabel} — ${hint}${cycleHint}`;
         return (
           <button
             key={key}

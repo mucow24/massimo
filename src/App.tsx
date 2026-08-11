@@ -753,7 +753,10 @@ export default function App() {
           // user's snapping just because they reached for a slot they never
           // filled. Say so rather than looking broken.
           const hit = useSnapPrefs.getState().recallPreset(slot);
-          pushToast('info', hit ? `Snapping preset ${slot}` : `Snapping preset ${slot} is empty`);
+          pushToast(
+            'info',
+            hit ? `Snapping preset ${slot} recalled` : `Snapping preset ${slot} is empty`,
+          );
         }
         return;
       }

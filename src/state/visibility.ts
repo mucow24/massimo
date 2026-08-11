@@ -148,7 +148,7 @@ export const VISIBILITY_ITEMS: readonly VisibilityItem[] = [
   },
   {
     key: 'showTextLabels',
-    label: 'Canvas labels',
+    label: 'Text labels',
     group: 2,
     gatesExportedInk: true,
     revealedBy: ['placing-label'],
