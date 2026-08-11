@@ -26,11 +26,11 @@ const lineDef = (doc: MapDoc): LineStyleProps => doc.styles['default-line'].prop
 describe('editing a stopDot style vs. the tagged ⇒ matches invariant on LINE styles', () => {
   it('keeps a tagged line matching its line style after its stopDot style gains a service code', () => {
     let doc = addStyledLine(T.DEFAULT_DOC, 'L1', 'A');
-    // Preconditions: the line wears "Default" and its dot size is fully
-    // tracking (nothing stored), so its captured size is style-derived.
+    // Preconditions: the line wears "Default" and stores its dot size (sizes
+    // are concrete from birth), equal to the def's.
     expect(doc.lines.L1.styleId).toBe('default-line');
     expect(doc.lines.L1.singletonDotStyleId).toBe(DEFAULT_STOP_DOT_STYLE_ID);
-    expect('singletonDotSize' in doc.lines.L1).toBe(false);
+    expect(doc.lines.L1.singletonDotSize).toBe(lineDef(doc).singletonDotSize);
     expect(captureStyleProps(doc, 'line', 'L1')!.singletonDotSize).toBe(
       lineDef(doc).singletonDotSize,
     );
@@ -64,9 +64,8 @@ describe('editing a stopDot style vs. the tagged ⇒ matches invariant on LINE s
     const r = parse(serialize(doc));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    // BOTH lines keep the tag through parse's style prune: L2 because it was
-    // stamped after the stopDot edit and stored an explicit 8, and L1 despite
-    // carrying no explicit dot size at all.
+    // BOTH lines keep the tag through parse's style prune — each stores the
+    // def's 8 explicitly, before and after the stopDot edit.
     expect(r.doc.lines.L2.styleId).toBe('default-line');
     expect(r.doc.lines.L1.styleId).toBe('default-line');
   });

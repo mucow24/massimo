@@ -145,8 +145,17 @@ describe('migrateDoc', () => {
     });
 
     it('is reference-stable for lines without the field', () => {
+      // Concrete dot sizes, so the unconditional materializing bake (which
+      // runs at every version) has nothing to write either.
       const lines = {
-        L1: { service: 'A', name: 'A line', stations: ['a', 'b'], edges: ['a|b'] },
+        L1: {
+          service: 'A',
+          name: 'A line',
+          stations: ['a', 'b'],
+          edges: ['a|b'],
+          singletonDotSize: 8,
+          multiDotSize: 8,
+        },
       };
       const out = run({ lines }, 14);
       expect(out.lines).toBe(lines);

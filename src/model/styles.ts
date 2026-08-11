@@ -30,6 +30,7 @@ import {
   setLineMultiDotStyle,
   setLineSingletonDotSize,
   setLineMultiDotSize,
+  setDotSize,
   setLineStrokeColor,
   setLineStrokeWidth,
   setLineWidth,
@@ -44,6 +45,7 @@ import {
   DEFAULT_STOP_DOT_STYLE_ID,
   NONE_STOP_DOT_STYLE_ID,
   canonicalDotStyle,
+  defaultDotDiameter,
   dotStylesEqual,
 } from './dotStyle';
 import { DOT_SIZE_MIN, DOT_SIZE_STEP, lineSingletonDotSizeOf, lineMultiDotSizeOf } from './dotSize';
@@ -621,12 +623,39 @@ export function updateStyleProps(doc: MapDoc, styleId: string, patch: StyleProps
   // stopDot has no item collection — restamp its wearers (dot slots) directly.
   if (def.kind === 'stopDot') {
     next = restampStopDotStyle(next, styleId, merged as DotStyle);
-    // A stopDot style also picks the dot DIAMETER a tracking slot renders
-    // (service-code discs default to 12px, plain dots to 8) — and dot size is
-    // a covered LINE-style field. So this edit can move the resolved size of a
-    // line that stores none, drifting it off a line style it is still tagged
-    // with. Re-assert that contract on every line style pointing at this
-    // entry, mirroring what deleteStopDotStyle does for the delete half.
+    // A stopDot style implies a natural DIAMETER (12 with a service code, 8
+    // without). Sizes are stored concretely, so an edit that moves the natural
+    // sweeps it forward explicitly: every CUSTOM line sitting exactly at the
+    // old natural follows (that's what the retired absent-means-natural
+    // indirection rendered), as does every stop pin that tracked it — the
+    // setters re-collapse pins that now equal their line's size. Tagged lines
+    // are NOT swept: their LINE style's size rules, unchanged (their def keeps
+    // its size, so tagged ⇒ matches holds without touching them).
+    const oldNatural = defaultDotDiameter(def.props as DotStyle);
+    const newNatural = defaultDotDiameter(merged as DotStyle);
+    if (oldNatural !== newNatural) {
+      for (const id of Object.keys(next.lines)) {
+        const ln = next.lines[id];
+        if (ln.styleId !== undefined) continue;
+        if (
+          ln.singletonDotStyleId === styleId &&
+          (ln.singletonDotSize ?? oldNatural) === oldNatural
+        )
+          next = setLineSingletonDotSize(next, id, newNatural);
+        if (ln.multiDotStyleId === styleId && (ln.multiDotSize ?? oldNatural) === oldNatural)
+          next = setLineMultiDotSize(next, id, newNatural);
+      }
+      for (const sid of Object.keys(next.stations)) {
+        for (const s of next.stations[sid].stops) {
+          if (s.dotStyleId === styleId && s.dotSize === oldNatural)
+            next = setDotSize(next, sid, s.lineId, newNatural);
+        }
+      }
+    }
+    // Belt and braces for degenerate (fixture/hand-edited) docs whose tagged
+    // lines never had sizes stamped: re-assert tagged ⇒ matches on every line
+    // style pointing at this entry. Reference-stable when everyone matches —
+    // the invariable case for app-written docs now that sizes are stored.
     for (const d of Object.values(next.styles)) {
       if (d.kind !== 'line') continue;
       if (d.props.singletonDotStyleId !== styleId && d.props.multiDotStyleId !== styleId) continue;

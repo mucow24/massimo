@@ -3333,14 +3333,14 @@ describe('setLineSingletonDotSize', () => {
     expect('multiDotSize' in next.lines.L1).toBe(false);
   });
 
-  it('drops the field at DOT_SIZE_DEFAULT (exact or rounding onto it)', () => {
+  it('stores the default size explicitly (absence is never written, rounding lands on it)', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1', singletonDotSize: 12 })] });
+    expect(T.setLineSingletonDotSize(doc, 'L1', DOT_SIZE_DEFAULT).lines.L1.singletonDotSize).toBe(
+      DOT_SIZE_DEFAULT,
+    );
     expect(
-      'singletonDotSize' in T.setLineSingletonDotSize(doc, 'L1', DOT_SIZE_DEFAULT).lines.L1,
-    ).toBe(false);
-    expect(
-      'singletonDotSize' in T.setLineSingletonDotSize(doc, 'L1', DOT_SIZE_DEFAULT + 0.1).lines.L1,
-    ).toBe(false);
+      T.setLineSingletonDotSize(doc, 'L1', DOT_SIZE_DEFAULT + 0.1).lines.L1.singletonDotSize,
+    ).toBe(DOT_SIZE_DEFAULT);
   });
 
   it('reference-equal no-ops: unchanged value, unknown id, non-finite input', () => {
@@ -3348,8 +3348,6 @@ describe('setLineSingletonDotSize', () => {
     expect(T.setLineSingletonDotSize(doc, 'L1', 12)).toBe(doc);
     expect(T.setLineSingletonDotSize(doc, 'ghost', 16)).toBe(doc);
     expect(T.setLineSingletonDotSize(doc, 'L1', NaN)).toBe(doc);
-    const bare = makeDoc({ lines: [makeLine({ id: 'L1' })] });
-    expect(T.setLineSingletonDotSize(bare, 'L1', DOT_SIZE_DEFAULT)).toBe(bare);
   });
 
   it('clears matching overrides on SINGLETON stops only; different sizes untouched', () => {
@@ -3436,21 +3434,21 @@ describe('setLineSingletonDotSize', () => {
       doc = T.setLineSingletonDotSize(doc, 'L1', px);
       expect(renderedDiameter()).toBe(px);
     }
-    // Only the true tracking size (12) collapses back to a bare default.
+    // The natural size (12) is stored like any other — nothing collapses.
     doc = T.setLineSingletonDotSize(doc, 'L1', 12);
-    expect('singletonDotSize' in doc.lines.L1).toBe(false);
+    expect(doc.lines.L1.singletonDotSize).toBe(12);
     expect(renderedDiameter()).toBe(12);
   });
 });
 
 describe('setLineMultiDotSize', () => {
-  it('stores/drops the multi size independently of the singleton size', () => {
+  it('stores the multi size independently of the singleton size', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1', singletonDotSize: 6 })] });
     const set = T.setLineMultiDotSize(doc, 'L1', 12);
     expect(set.lines.L1.multiDotSize).toBe(12);
     expect(set.lines.L1.singletonDotSize).toBe(6);
-    expect('multiDotSize' in T.setLineMultiDotSize(set, 'L1', DOT_SIZE_DEFAULT).lines.L1).toBe(
-      false,
+    expect(T.setLineMultiDotSize(set, 'L1', DOT_SIZE_DEFAULT).lines.L1.multiDotSize).toBe(
+      DOT_SIZE_DEFAULT,
     );
   });
 

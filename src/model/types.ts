@@ -163,9 +163,11 @@ export interface StopCell {
   // the line default. Same raw-value-plus-tag contract lines/stations use.
   dotStyleId?: string;
   // Per-stop dot size override — the dot's DIAMETER in px. `undefined`
-  // defers to the line's `defaultDotSize`; the setter (`setDotSize`) drops
-  // the field when the chosen size equals the line's effective default, so
-  // the stop tracks the default going forward (same contract as `dotStyle`).
+  // defers to the line's split size for this stop's case (singleton/shared),
+  // full stop; the setter (`setDotSize`) drops the field when the chosen size
+  // equals that line size, so the stop tracks the line going forward. Picking
+  // a per-stop dot TYPE courtesy-writes the size the new type implies when
+  // the stop sat at the old type's natural (see setDotStyle).
   dotSize?: number;
 }
 
@@ -406,14 +408,14 @@ export interface Line {
   multiDotStyleId?: string;
   // Dot DIAMETER in px for this line's stops, split the same way as
   // `singletonDotStyle` / `multiDotStyle` (singleton vs. shared station) and
-  // used only for stops whose own `dotSize` is unset. Each missing ⇒
-  // DOT_SIZE_DEFAULT (= 2 × STOP_DOT_RADIUS). The setters clamp to
-  // ≥ DOT_SIZE_MIN, snap to the quarter-unit (0.25) grid, and drop the field at
-  // the default so it is never stored. An EXPLICIT size (here or per-stop) applies to every
-  // dot style including service-code discs; only the fully-default chain keeps
-  // the larger SERVICE_CODE_DOT_RADIUS (see resolveDotRender's sizeOverride
-  // param). Legacy saves carried one combined `defaultDotSize`, baked into both
-  // on load (bakeLineDotDefaults).
+  // used for stops whose own `dotSize` is unset. ALWAYS stored on a real
+  // line, natural values included — absence is a legacy/fixture state the
+  // load paths materialize away (bakeConcreteDotSizes; the read helpers heal
+  // it to the case's natural diameter). The setters clamp to ≥ DOT_SIZE_MIN
+  // and snap to the quarter-unit (0.25) grid; picking a dot TYPE
+  // courtesy-writes the size the new type implies when the line sat at the
+  // old type's natural (setLineCaseDotStyle). Legacy saves carried one
+  // combined `defaultDotSize`, baked into both on load (bakeLineDotDefaults).
   singletonDotSize?: number;
   multiDotSize?: number;
   // Stripe width in world units. Missing ⇒ LINE_WIDTH_DEFAULT (= STOP_SIZE,

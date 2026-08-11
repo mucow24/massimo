@@ -37,12 +37,13 @@ export const isDotBaseShape = (v: unknown): v is DotBaseShape =>
 // styling rule, not an SVG-assembly detail.)
 export const SERVICE_CODE_DOT_RADIUS = 6;
 
-// The DIAMETER a dot renders at when its size is fully tracking defaults —
-// larger for a service-code disc so the code stays legible. This MUST equal
-// resolveDotRender's untracked radius × 2; it is the single tracking-size the
-// size layer collapses to and falls back to (see canonicalDotSize's `dropAt`
-// and the dotSize.ts display helpers). Identical to DOT_SIZE_DEFAULT for every
-// non-code style, so nothing about plain dots changes.
+// The natural DIAMETER a dot type implies — larger for a service-code disc so
+// the code stays legible. This MUST equal resolveDotRender's untracked radius
+// × 2. Sizes are stored concretely, so this is an EDIT-TIME value: what the
+// load-path materialization writes for an absent size, what the read helpers
+// heal to, and what the dot-type setters' courtesy writes move a
+// sat-at-natural size to. Identical to DOT_SIZE_DEFAULT for every non-code
+// style, so nothing about plain dots changes.
 export const defaultDotDiameter = (style: DotStyle): number =>
   2 * (style.showServiceCode ? SERVICE_CODE_DOT_RADIUS : STOP_DOT_RADIUS);
 

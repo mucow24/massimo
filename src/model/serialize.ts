@@ -33,13 +33,19 @@ import {
 import { canonicalLineLabelGap, canonicalLineWidth } from './lineWidth';
 import { canonicalLineCircleRadius } from './lineCircle';
 import { projectToCircle, stationCircle } from '../geometry/lineCircle';
-import { clamp, rot8 } from '../util/grid';
+import { clamp, rot8, roundClamp } from '../util/grid';
 import {
   LINE_CURVE_RADIUS_DEFAULT,
   LINE_CURVE_RADIUS_MIN,
   canonicalLineCurveRadius,
 } from './lineCurve';
-import { canonicalDotSize } from './dotSize';
+import {
+  DOT_SIZE_MIN,
+  DOT_SIZE_STEP,
+  canonicalDotSize,
+  lineMultiDotSizeOf,
+  lineSingletonDotSizeOf,
+} from './dotSize';
 import {
   LINE_OWN_COLOR,
   canonicalStrokeColor,
@@ -622,8 +628,8 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
   let linesChanged = false;
   for (const id of Object.keys(merged.lines)) {
     const line = merged.lines[id];
-    // NB: dot-SIZE cleaning is deferred to after bakeLineDotDefaults — its
-    // drop-at default is style-aware, so it must see the baked split dot styles.
+    // NB: dot-SIZE cleaning is deferred to after bakeLineDotDefaults — the
+    // materializing bake that follows it reads the baked split dot styles.
     const cleaned = sanitizeLineStroke(
       sanitizeLineCurve(sanitizeLineWidth(sanitizeLineOverrides(line))),
     );
@@ -665,10 +671,11 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
   // BEFORE the singleton-aware `sanitizeStopDotSizes` (which reads the split
   // line sizes) and the style validation below (which reads the split props).
   merged = bakeLineDotDefaults(merged);
-  // Canonicalize the split dot SIZES now that the dot styles are baked: the
-  // drop-at default is style-aware (a service-code disc defaults to 12, not 8),
-  // so this must run after bakeLineDotDefaults and before the stop-size pass
-  // (which reads the cleaned line sizes).
+  // Canonicalize the split dot SIZES now that the dot styles are baked — the
+  // grid clamp runs on stored values, then bakeConcreteDotSizes materializes
+  // any absent ones (sizes are always stored; a legacy file's absence means
+  // "the natural diameter of my dot type", which the bake pins so nothing
+  // repaints).
   let lineSizesChanged = false;
   const sizedLines: Record<string, Line> = {};
   for (const id of Object.keys(merged.lines)) {
@@ -677,9 +684,10 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
     sizedLines[id] = cleaned;
   }
   if (lineSizesChanged) merged.lines = sizedLines;
-  // Sanitize per-stop dot sizes AFTER the line pass: the canonical stored
-  // form depends on the line's effective default, so the comparison must use
-  // sanitized line values.
+  merged = bakeConcreteDotSizes(merged);
+  // Sanitize per-stop dot sizes AFTER the line passes: the canonical stored
+  // form collapses at the line's (now materialized) size, so the comparison
+  // must use final line values.
   const sizes = sanitizeStopDotSizes(merged.stations, merged.lines);
   if (sizes.changed) merged.stations = sizes.stations;
   // Seed the stopDot style library + tag every dot slot (idempotent; a no-op on
@@ -1781,26 +1789,19 @@ function sanitizeLineCurve(line: Line): Line {
 }
 
 // Normalize one hand-edited / legacy split default-dot-size field to the
-// canonical stored form the transforms maintain: integer ≥ DOT_SIZE_MIN, and
-// absent when it equals the default (the app never stores the default).
-// Non-numbers and non-finite values are dropped. File-import hygiene only —
+// canonical stored form the transforms maintain: on the quarter-unit grid and
+// ≥ DOT_SIZE_MIN. Sizes are ALWAYS stored (natural values included — see
+// bakeConcreteDotSizes, which materializes absent ones right after this pass),
+// so nothing drops at a default; only non-numbers and non-finite values are
+// dropped (and then materialized by the bake). File-import hygiene only —
 // localStorage rehydration never sees uncanonical sizes because every write
 // goes through the setters' clamp.
 function sanitizeLineDotSizeField(line: Line, field: 'singletonDotSize' | 'multiDotSize'): Line {
   if (!(field in line)) return line;
   const raw = line[field] as unknown;
   if (typeof raw === 'number' && Number.isFinite(raw)) {
-    // Drop at the size this case's DEFAULT STYLE renders when untracked (12 for
-    // a service-code disc, 8 otherwise) — mirrors setLineCaseDotSize, so an
-    // exported service-code default of 8 re-imports as 8, not a dropped-to-12.
-    // Requires the styles to be baked first (see the call site's ordering).
-    const style =
-      (field === 'singletonDotSize' ? line.singletonDotStyle : line.multiDotStyle) ??
-      DEFAULT_DOT_STYLE;
-    const stored = canonicalDotSize(raw, defaultDotDiameter(style));
-    if (stored !== undefined) {
-      return stored === line[field] ? line : { ...line, [field]: stored };
-    }
+    const stored = roundClamp(raw, DOT_SIZE_STEP, DOT_SIZE_MIN);
+    return stored === line[field] ? line : { ...line, [field]: stored };
   }
   const { [field]: _gone, ...rest } = line;
   return rest as Line;
@@ -1813,11 +1814,76 @@ function sanitizeLineDotSize(line: Line): Line {
   );
 }
 
+/**
+ * Materialize the dot sizes the retired absent-means-natural indirection used
+ * to imply: every line stores its split sizes (absent ⇒ the natural diameter
+ * of its case's dot type), and a stop whose OLD effective size — which could
+ * read the stop type's own natural — differs from what the materialized line
+ * will say gets that size pinned, so nothing repaints. Stops are pinned FIRST,
+ * against the pre-materialization lines, because "which natural did this stop
+ * render?" is only answerable while the line's size is still absent. Shared by
+ * parse() (unconditional, idempotent) and migrateDoc (v<27). Reference-stable
+ * when everything is already concrete.
+ */
+export function bakeConcreteDotSizes<
+  Doc extends { stations?: Record<string, Station>; lines?: Record<string, Line> },
+>(doc: Doc): Doc {
+  const lines = doc.lines;
+  if (!lines) return doc;
+  let out = doc;
+  if (doc.stations) {
+    let changed = false;
+    const stations: Record<string, Station> = {};
+    for (const sid of Object.keys(doc.stations)) {
+      const st = doc.stations[sid];
+      let stopsChanged = false;
+      const stops = st.stops.map((s) => {
+        if (s.dotSize !== undefined) return s;
+        const line = lines[s.lineId];
+        if (!line) return s;
+        const isSingleton = stationIsSingleton(st);
+        // A stored line size already ruled this stop (absent = the line's
+        // size, before and after) — nothing was implied, nothing to pin.
+        if ((isSingleton ? line.singletonDotSize : line.multiDotSize) !== undefined) return s;
+        const oldEff = defaultDotDiameter(resolveDotStyle(line, s, isSingleton));
+        const lineWill = defaultDotDiameter(
+          (isSingleton ? line.singletonDotStyle : line.multiDotStyle) ?? DEFAULT_DOT_STYLE,
+        );
+        if (oldEff === lineWill) return s;
+        stopsChanged = true;
+        return { ...s, dotSize: oldEff };
+      });
+      stations[sid] = stopsChanged ? { ...st, stops } : st;
+      if (stopsChanged) changed = true;
+    }
+    if (changed) out = { ...out, stations };
+  }
+  let linesChanged = false;
+  const nextLines: Record<string, Line> = {};
+  for (const id of Object.keys(lines)) {
+    let ln = lines[id];
+    if (ln.singletonDotSize === undefined) {
+      ln = {
+        ...ln,
+        singletonDotSize: defaultDotDiameter(ln.singletonDotStyle ?? DEFAULT_DOT_STYLE),
+      };
+    }
+    if (ln.multiDotSize === undefined) {
+      ln = { ...ln, multiDotSize: defaultDotDiameter(ln.multiDotStyle ?? DEFAULT_DOT_STYLE) };
+    }
+    nextLines[id] = ln;
+    if (ln !== lines[id]) linesChanged = true;
+  }
+  if (linesChanged) out = { ...out, lines: nextLines };
+  return out;
+}
+
 // Normalize hand-edited / legacy per-stop `dotSize` values to the canonical
-// stored form `setDotSize` maintains: integer ≥ DOT_SIZE_MIN, and absent
-// when it equals the line's EFFECTIVE default. Needs line context, so it
-// runs after the per-line cleaning — the comparison must use sanitized
-// line defaults. Non-numbers and non-finite values are dropped.
+// stored form `setDotSize` maintains: integer ≥ DOT_SIZE_MIN, and absent when
+// it equals the line's size (absent = "the line's size"). Needs line context,
+// so it runs after the per-line cleaning AND after bakeConcreteDotSizes — the
+// comparison must use materialized line sizes. Non-numbers and non-finite
+// values are dropped.
 export function sanitizeStopDotSizes(
   stations: Record<string, Station>,
   lines: Record<string, Line>,
@@ -1831,16 +1897,11 @@ export function sanitizeStopDotSizes(
       if (!('dotSize' in s)) return s;
       const raw = s.dotSize as unknown;
       if (typeof raw === 'number' && Number.isFinite(raw)) {
-        // Effective default depends on whether this stop's station is a
-        // singleton or shared — same split the renderer resolves — and, when
-        // the line default is itself unset, on the stop STYLE's own default
-        // diameter (12 for a service-code disc, 8 otherwise). Same rule as
-        // setDotSize, so import and edit agree.
+        // The tracked default is the LINE's singleton or shared size — same
+        // rule as setDotSize, so import and edit agree.
         const line = lines[s.lineId];
         const isSingleton = stationIsSingleton(st);
-        const effDefault =
-          (isSingleton ? line?.singletonDotSize : line?.multiDotSize) ??
-          defaultDotDiameter(resolveDotStyle(line, s, isSingleton));
+        const effDefault = isSingleton ? lineSingletonDotSizeOf(line) : lineMultiDotSizeOf(line);
         const stored = canonicalDotSize(raw, effDefault);
         if (stored !== undefined) {
           if (stored === s.dotSize) return s;

@@ -513,10 +513,11 @@ describe('applyStyleToItem', () => {
     expect(line.curveRadius).toBeUndefined();
     expect(line.strokeWidth).toBeUndefined();
     expect(line.strokeColor).toBeUndefined();
-    // Dot SIZE collapses to absent at the default (never stored)…
-    expect(line.singletonDotSize).toBeUndefined();
-    expect(line.multiDotSize).toBeUndefined();
-    // …but dot TYPE is a covered field whose split defaults are ALWAYS stored
+    // Dot SIZE is ALWAYS stored, the default included (absence is a legacy
+    // state the load paths materialize away)…
+    expect(line.singletonDotSize).toBe(8);
+    expect(line.multiDotSize).toBe(8);
+    // …and dot TYPE is a covered field whose split defaults are ALWAYS stored
     // (a default-tracking line stays tagged so editing the stopDot style
     // restamps it), so the ids + raw shadows are present, not collapsed.
     expect(line.singletonDotStyleId).toBe(DEFAULT_STOP_DOT_STYLE_ID);

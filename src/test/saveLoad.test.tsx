@@ -43,7 +43,18 @@ describe('save/load round-trip', () => {
           stops: [makeStop('L1')],
         }),
       ],
-      lines: [makeLine({ id: 'L1', service: 'A', color: '#0039A6', stations: ['s1'] })],
+      lines: [
+        makeLine({
+          id: 'L1',
+          service: 'A',
+          color: '#0039A6',
+          stations: ['s1'],
+          // Dot sizes are always stored — parse materializes absent ones, so a
+          // lossless comparison needs them in the fixture.
+          singletonDotSize: 8,
+          multiDotSize: 8,
+        }),
+      ],
       lineOrder: ['L1'],
     });
     useDoc.setState({ ...useDoc.getState(), ...fixture });

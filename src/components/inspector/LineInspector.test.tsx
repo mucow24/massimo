@@ -499,7 +499,7 @@ describe('<LineInspector /> — dot size control', () => {
     expect(singleton.compareDocumentPosition(shared) & 4).toBe(4);
   });
 
-  it('the two sliders write their own field independently; the default drops the key', () => {
+  it('the two sliders write their own field independently; the default is stored too', () => {
     seed();
     render(<LineInspector id="L1" />);
     const singleton = screen.getByRole('slider', { name: 'Singleton dot size' });
@@ -513,8 +513,8 @@ describe('<LineInspector /> — dot size control', () => {
     // Singleton unaffected by the shared edit.
     expect(useDoc.getState().lines.L1.singletonDotSize).toBe(8.25);
 
-    stepSlider(singleton, -1); // back to the 8 default drops the key
-    expect('singletonDotSize' in useDoc.getState().lines.L1).toBe(false);
+    stepSlider(singleton, -1); // back to 8 — the default is stored like any size
+    expect(useDoc.getState().lines.L1.singletonDotSize).toBe(8);
   });
 
   it('the spinbutton floors at 0 and is uncapped above the slider max', () => {

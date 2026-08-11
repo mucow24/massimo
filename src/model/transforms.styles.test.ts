@@ -73,6 +73,10 @@ describe('detach on covered-field edits — lines', () => {
           width: 10,
           strokeWidth: 2,
           strokeColor: { day: '#123456', night: '#123456' },
+          // Sizes stored like a real (stamped) line — absence is a legacy
+          // state, and a materializing write would read as a change.
+          singletonDotSize: 8,
+          multiDotSize: 8,
           styleId: 'y1',
         }),
       ],
@@ -81,7 +85,7 @@ describe('detach on covered-field edits — lines', () => {
         makeStyle('stopDot', 'sd-square', { props: { shape: 'square' } }),
       ],
     });
-    // Dot SIZE is a covered line-style field: a no-op (value already effective)
+    // Dot SIZE is a covered line-style field: a no-op (value already stored)
     // keeps the tag…
     expect(setLineSingletonDotSize(doc, 'l1', 8)).toBe(doc); // 8 = DOT_SIZE_DEFAULT
     expect(setLineMultiDotSize(doc, 'l1', 8)).toBe(doc);
