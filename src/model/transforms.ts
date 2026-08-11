@@ -99,8 +99,10 @@ import { add, dot, eq, leftNormal, len, norm, rotateAround, sub, type Vec2 } fro
 import { copyPalette, paletteContentEqual, PALETTES, type Palette } from './palettes';
 import { normalizeHex } from '../util/color';
 import type {
+  AlignmentGuide,
   AutoHAlign,
   AutoVAlign,
+  GuideOrientation,
   DotStyle,
   LabelAlign,
   LabelCell,
@@ -2742,6 +2744,7 @@ export interface LockableItemIds {
   polygons?: readonly string[];
   svgImages?: readonly string[];
   lineCircles?: readonly string[];
+  guides?: readonly string[];
 }
 
 // Flip `locked` on the listed members of one collection, allocating a new
@@ -2783,17 +2786,19 @@ export function setItemsLocked(doc: MapDoc, ids: LockableItemIds, locked: boolea
   const polygons = setLockedIn(doc.polygons, ids.polygons, locked);
   const svgImages = setLockedIn(doc.svgImages, ids.svgImages, locked);
   const lineCircles = setLockedIn(doc.lineCircles, ids.lineCircles, locked);
+  const guides = setLockedIn(doc.guides, ids.guides, locked);
   if (
     stations === doc.stations &&
     routeBullets === doc.routeBullets &&
     textLabels === doc.textLabels &&
     polygons === doc.polygons &&
     svgImages === doc.svgImages &&
-    lineCircles === doc.lineCircles
+    lineCircles === doc.lineCircles &&
+    guides === doc.guides
   ) {
     return doc;
   }
-  return { ...doc, stations, routeBullets, textLabels, polygons, svgImages, lineCircles };
+  return { ...doc, stations, routeBullets, textLabels, polygons, svgImages, lineCircles, guides };
 }
 
 // The covered per-station typography fields a station style controls. The patch
@@ -3953,6 +3958,45 @@ export function setStopViaCircle(
   });
 }
 
+// ---------- Alignment guides ----------
+//
+// The straight-line sibling of a line circle: an infinite horizontal or
+// vertical guide with a single `offset` degree of freedom. Nothing binds to
+// it (unlike a ring, it is a snap TARGET, not a constraint frame), so these
+// four transforms are the whole surface.
+
+export function addGuide(
+  doc: MapDoc,
+  id: string,
+  orientation: GuideOrientation,
+  offset: number,
+): MapDoc {
+  if (!Number.isFinite(offset)) return doc;
+  const guide: AlignmentGuide = { id, orientation, offset };
+  return { ...doc, guides: { ...doc.guides, [id]: guide } };
+}
+
+// No lock check, like every sibling move transform: lock is enforced at the
+// interaction layer (the drag hook refuses, the nudge filters, the popover
+// disables), never in the transform.
+export function moveGuide(doc: MapDoc, id: string, offset: number): MapDoc {
+  const cur = doc.guides[id];
+  if (!cur || !Number.isFinite(offset) || cur.offset === offset) return doc;
+  return { ...doc, guides: { ...doc.guides, [id]: { ...cur, offset } } };
+}
+
+// Thin wrapper over the canonical multi-item setItemsLocked (see
+// setStationLocked) so single- and multi-select locking can't drift apart.
+export function setGuideLocked(doc: MapDoc, id: string, locked: boolean): MapDoc {
+  return setItemsLocked(doc, { guides: [id] }, locked);
+}
+
+export function deleteGuide(doc: MapDoc, id: string): MapDoc {
+  if (!doc.guides[id]) return doc;
+  const { [id]: _gone, ...rest } = doc.guides;
+  return { ...doc, guides: rest };
+}
+
 export function addStationAnchor(
   doc: MapDoc,
   stationId: StationId,
@@ -4256,6 +4300,7 @@ export const DEFAULT_DOC: MapDoc = {
   regionAssignments: {},
   svgImages: {},
   lineCircles: {},
+  guides: {},
   styles: DEFAULT_STYLES,
   styleDefaults: FACTORY_STYLE_DEFAULTS,
   // A fresh map is seeded with MTA — copied in, like every palette in a map.

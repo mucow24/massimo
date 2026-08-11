@@ -25,7 +25,12 @@ import { textLabelCorners } from '../../geometry/stationBoundary';
 import { starterPolygonVertices } from '../../model/transforms';
 import { defaultStyleProps } from '../../model/styles';
 import { makePreviewTextLabel } from './LabelPlacingPreview';
-import { liveAlignTargets, liveCaptureCircles, liveSnapStations } from './snapTargets';
+import {
+  liveAlignTargets,
+  liveCaptureCircles,
+  liveGuideTargets,
+  liveSnapStations,
+} from './snapTargets';
 import type { ViewportApi } from './useViewport';
 
 export interface PlacementSnap {
@@ -54,6 +59,9 @@ export function snapPlacement(
   if (shiftKey) return raw;
   const doc = useDoc.getState();
   const tolerance = snapToleranceAt(zoom);
+  // Alignment guides target placement too — the new item isn't in the doc
+  // yet, so no exclusions, exactly like the point pool below.
+  const guideTargets = liveGuideTargets();
 
   // Station engine: a new station has no stops yet, so line mode is naturally
   // inert (nothing shares a line) and "Snap to all" works via the anchor
@@ -71,6 +79,7 @@ export function snapPlacement(
       lineCircles: doc.lineCircles,
       tolerance,
       bulletLineId,
+      guideTargets,
       modes,
       gridInterval: gridSize,
     });
@@ -85,6 +94,7 @@ export function snapPlacement(
       proposed: { x: world.x + anchorOff.x, y: world.y + anchorOff.y },
       lineTargets: [],
       allTargets: liveAlignTargets(),
+      guideTargets,
       modes,
       tolerance,
       gridInterval: gridSize,

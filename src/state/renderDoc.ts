@@ -17,7 +17,7 @@
  * strokes, clips, dots, labels, chrome all resolve from one snapshot.
  *
  * The rule is stronger than "painters": NOTHING may hold a reactive `useDoc`
- * subscription to the seven towed collections. Non-painting chrome (sidebar,
+ * subscription to the eight towed collections. Non-painting chrome (sidebar,
  * popovers, banner) subscribes HERE as a re-render damper — at rest identical,
  * mid-drag frozen with the canvas — and input hooks read `useDoc.getState()`
  * at event time. Otherwise every pointermove (60-125Hz) re-runs the
@@ -32,7 +32,7 @@ import { pickDocSnapshot, useDoc, type DocSnapshot } from './store';
 /**
  * The collections a geometry gesture can move per frame. A group drag tows
  * co-selected items of every kind and a ring carries its bound stations
- * (`groupDrag.translateSiblings` writes all seven), so a drag frame overlays
+ * (`groupDrag.translateSiblings` writes all eight), so a drag frame overlays
  * exactly these; nothing else changes mid-drag, and non-overlaid fields keep
  * reading through from the live doc.
  */
@@ -45,6 +45,7 @@ export type DragFrameDoc = Pick<
   | 'routeBullets'
   | 'textLabels'
   | 'transferAnchors'
+  | 'guides'
 >;
 
 /** The towed collections of a doc state, as an overlay-able frame. */
@@ -57,6 +58,7 @@ export function pickDragFrameDoc(s: DragFrameDoc): DragFrameDoc {
     routeBullets: s.routeBullets,
     textLabels: s.textLabels,
     transferAnchors: s.transferAnchors,
+    guides: s.guides,
   };
 }
 

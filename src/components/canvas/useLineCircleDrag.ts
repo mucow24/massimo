@@ -2,10 +2,10 @@ import { RefObject, useCallback, useRef, useState } from 'react';
 import { beginHistoryGroup, useDoc } from '../../state/store';
 import { useSelection } from '../../state/selection';
 import { useRoutedSnapGuides } from './useRoutedSnapGuides';
-import { type SnapGuide } from '../../geometry/snap';
+import { type GuideTarget, type SnapGuide } from '../../geometry/snap';
 import type { Vec2 } from '../../geometry/vec';
 import { useDragSnap } from './useDragSnap';
-import { liveAlignTargets } from './snapTargets';
+import { liveAlignTargets, liveGuideTargets } from './snapTargets';
 import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
 import {
   collectGroupSiblings,
@@ -69,6 +69,7 @@ export function useLineCircleDrag(
     // those movers excluded. Empty for a knob.
     siblings: GroupSiblings;
     allTargets: Vec2[];
+    guideTargets: readonly GuideTarget[];
     history: ReturnType<typeof beginHistoryGroup>;
   } | null>(null);
 
@@ -99,6 +100,7 @@ export function useLineCircleDrag(
     // forgetting it — a group that silently stops following — is silent.
     const siblings =
       part === 'knob' ? emptyGroupSiblings() : collectGroupSiblings('lineCircle', id);
+    const exclude = groupAlignExclude('lineCircle', id, siblings);
     dragRef.current = {
       id,
       part,
@@ -113,7 +115,8 @@ export function useLineCircleDrag(
       // pool is stationary for the gesture, and the movers (the ring's own
       // passengers, plus any towed sibling) are excluded — a target that moves
       // with the grab drags the snap along with it.
-      allTargets: liveAlignTargets(groupAlignExclude('lineCircle', id, siblings)),
+      allTargets: liveAlignTargets(exclude),
+      guideTargets: liveGuideTargets(exclude),
       history: beginHistoryGroup({ deferPersist: true }),
     };
   }, []);
@@ -138,7 +141,10 @@ export function useLineCircleDrag(
     let nx = ds.startWX + dx;
     let ny = ds.startWY + dy;
     if (!e.shiftKey) {
-      const snap = snapPoint({ x: nx, y: ny }, { allTargets: ds.allTargets });
+      const snap = snapPoint(
+        { x: nx, y: ny },
+        { allTargets: ds.allTargets, guideTargets: ds.guideTargets },
+      );
       nx = snap.x;
       ny = snap.y;
       setSnapGuides(snap.guides);

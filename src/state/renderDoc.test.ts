@@ -46,6 +46,7 @@ describe('useRenderDoc', () => {
       routeBullets: useDoc.getState().routeBullets,
       textLabels: useDoc.getState().textLabels,
       transferAnchors: useDoc.getState().transferAnchors,
+      guides: useDoc.getState().guides,
     });
     expect(renderDocArmed()).toBe(true);
     // The canvas sees the lagged frame…
@@ -72,6 +73,7 @@ describe('useRenderDoc', () => {
       routeBullets: useDoc.getState().routeBullets,
       textLabels: useDoc.getState().textLabels,
       transferAnchors: useDoc.getState().transferAnchors,
+      guides: useDoc.getState().guides,
     });
     // Fields outside the seven towed collections come from the doc as of the
     // overlay set — the frame's own base.
@@ -91,6 +93,7 @@ describe('useRenderDoc', () => {
       routeBullets: useDoc.getState().routeBullets,
       textLabels: useDoc.getState().textLabels,
       transferAnchors: useDoc.getState().transferAnchors,
+      guides: useDoc.getState().guides,
     });
 
     setRenderDocOverlay(null);

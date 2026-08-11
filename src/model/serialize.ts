@@ -84,6 +84,7 @@ import {
 } from './palettes';
 import { isAllowedImageHref } from './svgImport';
 import type {
+  AlignmentGuide,
   DayNightColor,
   DotBaseShape,
   DotFill,
@@ -285,6 +286,41 @@ export function sanitizeLineCircles(
   }
 
   return { lineCircles, stations, changed };
+}
+
+/**
+ * Alignment-guide hygiene for the file-import path. A guide is three fields
+ * with no cross-references, so unlike its ring sibling there are no bindings
+ * to repair — a malformed entry (non-finite offset, unknown orientation) is
+ * dropped, and a stored `locked: false` collapses to the omitted form (the
+ * canonical lock convention). Idempotent; identity (same reference) on a
+ * well-formed record.
+ */
+export function sanitizeGuides(guidesIn: Record<string, AlignmentGuide>): {
+  guides: Record<string, AlignmentGuide>;
+  changed: boolean;
+} {
+  let changed = false;
+  const out: Record<string, AlignmentGuide> = {};
+  for (const id of Object.keys(guidesIn)) {
+    const g = guidesIn[id];
+    if (
+      (g.orientation !== 'horizontal' && g.orientation !== 'vertical') ||
+      typeof g.offset !== 'number' ||
+      !Number.isFinite(g.offset)
+    ) {
+      changed = true;
+      continue;
+    }
+    if (g.locked === false) {
+      changed = true;
+      const { locked: _off, ...rest } = g;
+      out[id] = rest;
+    } else {
+      out[id] = g;
+    }
+  }
+  return changed ? { guides: out, changed } : { guides: guidesIn, changed };
 }
 
 /**
@@ -647,6 +683,9 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
     merged.lineCircles = circles.lineCircles;
     merged.stations = circles.stations;
   }
+  // Alignment-guide hygiene: drop malformed entries, collapse locked:false.
+  const cleanedGuides = sanitizeGuides(merged.guides);
+  if (cleanedGuides.changed) merged.guides = cleanedGuides.guides;
   // Region assignments validate against the CLEANED lines (dangling ids drop
   // the assignment; dangling pairKey anchors survive for reconcile).
   const cleanedAssignments = sanitizeRegionAssignments(merged.regionAssignments, merged.lines);
@@ -2980,6 +3019,7 @@ const RECORD_COLLECTIONS = [
   'regionAssignments',
   'svgImages',
   'lineCircles',
+  'guides',
 ] as const;
 
 /**

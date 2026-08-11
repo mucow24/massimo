@@ -11,7 +11,8 @@ export type GrabbedKind =
   | 'polygon'
   | 'svgImage'
   | 'anchor'
-  | 'lineCircle';
+  | 'lineCircle'
+  | 'guide';
 
 // Every OTHER selected item, captured at pointer-down with its start position,
 // so a group drag can tow them by the grabbed item's per-frame delta. x/y items
@@ -29,6 +30,10 @@ export interface GroupSiblings {
   // Line circles, towed by their CENTER (`moveLineCircle`, which carries the
   // stations bound to them).
   lineCircles: { id: string; startX: number; startY: number }[];
+  // Alignment guides: one degree of freedom, so a tow takes only the AXIS
+  // COMPONENT of the group delta (dy for a horizontal guide, dx for a
+  // vertical one) — the cross-axis half of the drag slides past it.
+  guides: { id: string; orientation: 'horizontal' | 'vertical'; startOffset: number }[];
   // Stations that MOVE with the drag but are NOT towed by us: the passengers of
   // a towed ring, carried by `moveLineCircle`. Ids only — nothing here is
   // translated. They are tracked so the snap pools can still exclude them (a
@@ -48,6 +53,7 @@ export function emptyGroupSiblings(): GroupSiblings {
     svgImages: [],
     anchors: [],
     lineCircles: [],
+    guides: [],
     carriedStations: [],
   };
 }
@@ -73,6 +79,7 @@ export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string
     svgImages: kindVisibleNow('showSvgImages'),
     anchors: kindVisibleNow('showAnchors'),
     lineCircles: kindVisibleNow('showLineCircles'),
+    guides: kindVisibleNow('showGuides'),
   };
   // Spelled out as an exhaustive switch rather than a ternary chain ending in a
   // catch-all: the tail used to be a bare `: sel.selectedSvgImageIds`, so a new
@@ -94,6 +101,8 @@ export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string
         return sel.selectedAnchorIds;
       case 'lineCircle':
         return sel.selectedLineCircleIds;
+      case 'guide':
+        return sel.selectedGuideIds;
       default: {
         const unhandled: never = kind;
         return unhandled;
@@ -174,6 +183,11 @@ export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string
       out.lineCircles.push({ id, startX: c.x, startY: c.y });
     }
   }
+  for (const id of shows.guides ? sel.selectedGuideIds : []) {
+    if (grabbedKind === 'guide' && id === grabbedId) continue;
+    const g = doc.guides[id];
+    if (g && !g.locked) out.guides.push({ id, orientation: g.orientation, startOffset: g.offset });
+  }
   return out;
 }
 
@@ -185,6 +199,13 @@ export function collectGroupSiblings(grabbedKind: GrabbedKind, grabbedId: string
  */
 export function movingStationIds(s: GroupSiblings): ReadonlySet<string> {
   return new Set([...s.stations.map((x) => x.id), ...s.carriedStations]);
+}
+
+/** Every guide that MOVES during the drag — the towed siblings. The guide-pool
+ *  exclusion set for hooks (useStationDrag) that don't route their exclusions
+ *  through {@link groupAlignExclude}. */
+export function movingGuideIds(s: GroupSiblings): ReadonlySet<string> {
+  return new Set(s.guides.map((g) => g.id));
 }
 
 /**
@@ -206,6 +227,7 @@ export function groupAlignExclude(
     polygonIds: new Set(siblings.polygons.map((p) => p.id)),
     svgImageIds: new Set(siblings.svgImages.map((i) => i.id)),
     anchorIds: new Set(siblings.anchors.map((a) => a.id)),
+    guideIds: new Set(movingGuideIds(siblings)),
   };
   // Every kind spelled out (the tail was a catch-all `else`, which would have
   // quietly filed a new kind's id under svgImageIds — excluding the wrong item
@@ -236,6 +258,9 @@ export function groupAlignExclude(
       // passengers it carries are already excluded above, via
       // `movingStationIds`.
       break;
+    case 'guide':
+      ex.guideIds.add(grabbedId);
+      break;
     default: {
       const unhandled: never = grabbedKind;
       throw new Error(`groupAlignExclude: unhandled kind ${String(unhandled)}`);
@@ -255,7 +280,8 @@ export function hasGroupSiblings(s: GroupSiblings): boolean {
       s.polygons.length +
       s.svgImages.length +
       s.anchors.length +
-      s.lineCircles.length >
+      s.lineCircles.length +
+      s.guides.length >
     0
   );
 }
@@ -275,4 +301,8 @@ export function translateSiblings(s: GroupSiblings, dx: number, dy: number): voi
   }
   for (const is of s.svgImages) doc.moveSvgImage(is.id, is.startX + dx, is.startY + dy);
   for (const as of s.anchors) doc.moveTransferAnchor(as.id, as.startX + dx, as.startY + dy);
+  // One degree of freedom: only the axis component of the delta moves a guide.
+  for (const gs of s.guides) {
+    doc.moveGuide(gs.id, gs.startOffset + (gs.orientation === 'horizontal' ? dy : dx));
+  }
 }

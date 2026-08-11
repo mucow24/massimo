@@ -4,15 +4,16 @@ import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
 import type { StationId } from '../../model/types';
 import { Rotation } from '../../geometry/orientation';
-import { snapDraggedStation, SnapGuide, snapToleranceAt } from '../../geometry/snap';
+import { snapDraggedStation, GuideTarget, SnapGuide, snapToleranceAt } from '../../geometry/snap';
 import { useRoutedSnapGuides } from './useRoutedSnapGuides';
 import { lineCircleAtPoint, snapPointToCircle, stationCircle } from '../../geometry/lineCircle';
-import { liveCaptureCircles } from './snapTargets';
+import { liveCaptureCircles, liveGuideTargets } from './snapTargets';
 import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
 import {
   collectGroupSiblings,
   emptyGroupSiblings,
   hasGroupSiblings,
+  movingGuideIds,
   movingStationIds,
   translateSiblings,
   type GroupSiblings,
@@ -80,6 +81,9 @@ export function useStationDrag(
     // authored in to land where the unbroken slide would have — see
     // `bindStationToCircle`. Null until the ring lets go.
     escapedFrom: { circleId: string; x: number; y: number; rotation: Rotation } | null;
+    // Alignment-guide pool, snapshotted at pointer-down like every pool,
+    // minus any guide towed by the group (a moving target is an unstable one).
+    guideTargets: readonly GuideTarget[];
     history: ReturnType<typeof beginHistoryGroup>;
   } | null>(null);
   const [snapGuides, setSnapGuides] = useRoutedSnapGuides('station');
@@ -114,6 +118,7 @@ export function useStationDrag(
         siblings,
         siblingIdSet: movingStationIds(siblings),
         escapedFrom: null,
+        guideTargets: liveGuideTargets({ guideIds: movingGuideIds(siblings) }),
         // Snapshot the doc + pause history; commit one entry on drag, cancel on a
         // pure click. Pointer capture is deferred to first movement (trackDragMove)
         // so the synthesized click still lands on the station's rect.
@@ -240,6 +245,7 @@ export function useStationDrag(
         redistributeAnchor: redistributeAnchor ?? undefined,
         // Group-drag: siblings move with the grab, so exclude them as targets.
         excludedIds: ds.siblingIdSet.size > 0 ? ds.siblingIdSet : undefined,
+        guideTargets: ds.guideTargets,
         modes: snapModes,
         gridInterval: gridSize,
       });

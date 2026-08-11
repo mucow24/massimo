@@ -39,6 +39,7 @@ export function ViewPopover() {
     showNetwork: useViewportStore((s) => s.showNetwork),
     showAnchors: useViewportStore((s) => s.showAnchors),
     showLineCircles: useViewportStore((s) => s.showLineCircles),
+    showGuides: useViewportStore((s) => s.showGuides),
     showTransfers: useViewportStore((s) => s.showTransfers),
     showWaypoints: useViewportStore((s) => s.showWaypoints),
     showSvgImages: useViewportStore((s) => s.showSvgImages),

@@ -24,6 +24,7 @@ export type VisibilityKey =
   | 'showNetwork'
   | 'showAnchors'
   | 'showLineCircles'
+  | 'showGuides'
   | 'showTransfers'
   | 'showWaypoints'
   | 'showSvgImages'
@@ -108,6 +109,15 @@ export const VISIBILITY_ITEMS: readonly VisibilityItem[] = [
     group: 1,
     gatesExportedInk: false,
     revealedBy: ['placing-line-circle'],
+  },
+  {
+    key: 'showGuides',
+    label: 'Guides',
+    group: 1,
+    gatesExportedInk: false,
+    // No revealedBy: guide creation is a gesture (the wells) and an immediate
+    // Add-menu drop, not a mode — so while hidden, those affordances DISABLE
+    // instead of revealing the layer.
   },
   {
     key: 'showTransfers',

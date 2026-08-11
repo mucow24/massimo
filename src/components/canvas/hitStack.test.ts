@@ -287,6 +287,7 @@ describe('lockedHitsAt', () => {
     routeBullets: {},
     transfers: {},
     lineCircles: {},
+    guides: {},
     ...over,
   });
 
@@ -395,6 +396,7 @@ describe('currentHitEntity', () => {
       selectedSvgImageIds: [],
       selectedAnchorIds: [],
       selectedLineCircleIds: [],
+      selectedGuideIds: [],
       selectedLineId: null,
       selectedTransferId: null,
       selectedLineTagId: null,

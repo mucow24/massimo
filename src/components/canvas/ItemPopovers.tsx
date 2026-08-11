@@ -13,11 +13,12 @@ import { SvgImagePopover } from '../SvgImagePopover';
 import { StationPopover } from '../StationPopover';
 import { TransferPopover } from '../TransferPopover';
 import { LineCirclePopover } from '../LineCirclePopover';
+import { GuidePopover } from '../GuidePopover';
 
 /**
  * Mounts the single popover for the current sole selection — a station, route
- * bullet, text label, polygon, svg image, line circle, or transfer (a free
- * anchor is selectable but deliberately has none). Driven by `soleSelection`
+ * bullet, text label, polygon, svg image, line circle, alignment guide, or
+ * transfer (a free anchor is selectable but deliberately has none). Driven by `soleSelection`
  * for the multi-select lists, so a popover only shows when exactly one item
  * across every list is selected (a co-selected item of another kind can't leak
  * one open); transfers are a single-id primary outside `soleSelection`,
@@ -53,6 +54,7 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
   const polygons = useRenderDoc((s) => s.polygons);
   const svgImages = useRenderDoc((s) => s.svgImages);
   const lineCircles = useRenderDoc((s) => s.lineCircles);
+  const guidesRec = useRenderDoc((s) => s.guides);
   const lines = useRenderDoc((s) => s.lines);
   const transfers = useRenderDoc((s) => s.transfers);
   // These panels are DOM overlays, not canvas content, so NOTHING about hiding a
@@ -92,6 +94,10 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
     lineCircle: shows(
       'showLineCircles',
       useViewportStore((s) => s.showLineCircles),
+    ),
+    guide: shows(
+      'showGuides',
+      useViewportStore((s) => s.showGuides),
     ),
     transfer: shows(
       'showTransfers',
@@ -146,6 +152,7 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
       svgImages: vis.svgImage ? selection.selectedSvgImageIds : [],
       anchors: vis.anchor ? selection.selectedAnchorIds : [],
       lineCircles: vis.lineCircle ? selection.selectedLineCircleIds : [],
+      guides: vis.guide ? selection.selectedGuideIds : [],
     };
     if (itemIdCount(multiIds) >= 2 && idle) {
       return <SelectionPopover ids={multiIds} hostW={hostW} />;
@@ -251,6 +258,18 @@ export function ItemPopovers({ hostSize }: { hostSize: { w: number; h: number } 
         circle={c}
         hostW={hostW}
         onClose={() => selection.selectLineCircle(null)}
+      />
+    );
+  }
+  if (sole.type === 'guide') {
+    const g = guidesRec[sole.id];
+    if (!g || !vis.guide || !idle) return null;
+    return (
+      <GuidePopover
+        key={g.id}
+        guide={g}
+        hostW={hostW}
+        onClose={() => selection.selectGuide(null)}
       />
     );
   }

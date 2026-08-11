@@ -1,7 +1,12 @@
 import { RefObject, useRef } from 'react';
 import { beginHistoryGroup, useDoc, useSelection } from '../../state/store';
 import { useRoutedSnapGuides } from './useRoutedSnapGuides';
-import { snapDraggedStation, snapToleranceAt, type SnapGuide } from '../../geometry/snap';
+import {
+  snapDraggedStation,
+  snapToleranceAt,
+  type GuideTarget,
+  type SnapGuide,
+} from '../../geometry/snap';
 import { polygonSnapAnchor } from '../../geometry/polygon';
 import { textLabelCorners } from '../../geometry/stationBoundary';
 import type { Vec2 } from '../../geometry/vec';
@@ -14,7 +19,7 @@ import {
   translateSiblings,
   type GroupSiblings,
 } from './groupDrag';
-import { liveAlignTargets, liveSnapStations } from './snapTargets';
+import { liveAlignTargets, liveGuideTargets, liveSnapStations } from './snapTargets';
 import { useDragSnap } from './useDragSnap';
 
 // Drag state for a free-floating x/y item. `kind` selects the per-frame snap;
@@ -37,6 +42,7 @@ type ItemDragState = {
   // both snapshotted at pointer-down. Zero/empty for bullets.
   anchorOff: Vec2;
   allTargets: Vec2[];
+  guideTargets: readonly GuideTarget[];
   history: ReturnType<typeof beginHistoryGroup>;
 };
 
@@ -114,7 +120,9 @@ export function useItemDrag(
       const anchor = polygonSnapAnchor(textLabelCorners(textLabels[id]));
       anchorOff = { x: anchor.x - wx, y: anchor.y - wy };
     }
-    const allTargets = liveAlignTargets(groupAlignExclude(kind, id, siblings));
+    const exclude = groupAlignExclude(kind, id, siblings);
+    const allTargets = liveAlignTargets(exclude);
+    const guideTargets = liveGuideTargets(exclude);
     dragRef.current = {
       kind,
       id,
@@ -127,6 +135,7 @@ export function useItemDrag(
       siblingStationIds: movingStationIds(siblings),
       anchorOff,
       allTargets,
+      guideTargets,
       history: beginHistoryGroup({ deferPersist: true }),
     };
   };
@@ -187,6 +196,7 @@ export function useItemDrag(
           tolerance: snapToleranceAt(zoom),
           bulletLineId: lineId,
           excludedIds: ds.siblingStationIds.size > 0 ? ds.siblingStationIds : undefined,
+          guideTargets: ds.guideTargets,
           modes: snapModes,
           gridInterval: gridSize,
         });
@@ -197,7 +207,10 @@ export function useItemDrag(
         // Unbound bullet: no line to align along, but the center still snaps
         // through the point snapper — "Snap to all" + grid — like every other
         // decoration item.
-        const snap = snapPoint({ x: nx, y: ny }, { allTargets: ds.allTargets });
+        const snap = snapPoint(
+          { x: nx, y: ny },
+          { allTargets: ds.allTargets, guideTargets: ds.guideTargets },
+        );
         nx = snap.x;
         ny = snap.y;
         setItemSnapGuides(snap.guides);
@@ -209,7 +222,10 @@ export function useItemDrag(
       // grid — against the shared pool. Shift bypasses.
       let guides: SnapGuide[] = [];
       if (!e.shiftKey) {
-        const snap = snapPoint({ x: nx, y: ny }, { allTargets: ds.allTargets });
+        const snap = snapPoint(
+          { x: nx, y: ny },
+          { allTargets: ds.allTargets, guideTargets: ds.guideTargets },
+        );
         nx = snap.x;
         ny = snap.y;
         guides = snap.guides;
@@ -224,7 +240,7 @@ export function useItemDrag(
       if (!e.shiftKey) {
         const snap = snapPoint(
           { x: nx + ds.anchorOff.x, y: ny + ds.anchorOff.y },
-          { allTargets: ds.allTargets },
+          { allTargets: ds.allTargets, guideTargets: ds.guideTargets },
         );
         nx = snap.x - ds.anchorOff.x;
         ny = snap.y - ds.anchorOff.y;

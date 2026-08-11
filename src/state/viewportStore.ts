@@ -74,6 +74,14 @@ interface ViewportState extends Viewport {
    *  rings with it. Guides are export-excluded either way. */
   showLineCircles: boolean;
   setShowLineCircles: (show: boolean) => void;
+  /** Render toggle: paint the alignment guides (the h/v snap lines). Scaffolding
+   *  like the line circles, so independent of `showNetwork` and export-excluded
+   *  either way. Hiding also drops them from the snap pools (liveGuideTargets)
+   *  and disables the creation affordances (wells + Add menu) — with no placing
+   *  mode there is no `revealedBy` reveal to lean on, and a pull that lands an
+   *  invisible guide would read as the gesture being broken. */
+  showGuides: boolean;
+  setShowGuides: (show: boolean) => void;
   /** Render toggle: paint transfers. Nested under `showNetwork` (a transfer runs
    *  between stations, so it goes when they do) — this narrows that to transfers
    *  alone, the same relationship `showAnchors` already has. */
@@ -186,6 +194,8 @@ export const useViewportStore = create<ViewportState>()(
       setShowNetwork: (showNetwork) => set({ showNetwork }),
       showLineCircles: true,
       setShowLineCircles: (showLineCircles) => set({ showLineCircles }),
+      showGuides: true,
+      setShowGuides: (showGuides) => set({ showGuides }),
       showTransfers: true,
       setShowTransfers: (showTransfers) => set({ showTransfers }),
       showSvgImages: true,
@@ -218,6 +228,7 @@ export const useViewportStore = create<ViewportState>()(
         // View button carries a hidden-content mark (see anyLayerHidden)
         // that answers "where did my polygons go" on the next launch.
         showLineCircles: s.showLineCircles,
+        showGuides: s.showGuides,
         showTransfers: s.showTransfers,
         showSvgImages: s.showSvgImages,
         showTextLabels: s.showTextLabels,

@@ -5,6 +5,7 @@ import type { GridSnap } from '../geometry/snap';
 import type {
   AutoHAlign,
   AutoVAlign,
+  GuideOrientation,
   LabelAlign,
   LabelValign,
   Line,
@@ -137,6 +138,10 @@ const DOC_FIELDS = [
   // Line circles (dashed guide circles stations bind to). New field: absent in
   // older saves, backfilled to {} by the shallow merge on both load paths.
   'lineCircles',
+  // Alignment guides (the h/v snap lines). Same standing as lineCircles:
+  // absent in older saves, backfilled to {} by the shallow merge on both load
+  // paths — no migration, no persist version bump.
+  'guides',
   // Named style presets + the per-kind default designations. Pre-styles saves
   // lack the keys, so zustand's shallow merge (and parse()'s DEFAULT_DOC
   // merge) backfills the factory set; docs persisted by earlier builds get
@@ -864,6 +869,11 @@ interface DocState extends MapDoc {
   setLineCircleRadius: (id: string, radius: number) => void;
   setLineCircleLocked: (id: string, locked: boolean) => void;
   deleteLineCircle: (id: string) => void;
+
+  addGuide: (orientation: GuideOrientation, offset: number) => string;
+  moveGuide: (id: string, offset: number) => void;
+  setGuideLocked: (id: string, locked: boolean) => void;
+  deleteGuide: (id: string) => void;
   bindStationToCircle: (
     stationId: StationId,
     circleId: string,
@@ -1342,6 +1352,16 @@ export const useDoc = create<DocState>()(
           set(withRegionReconcile((s) => T.setLineCircleRadius(s, id, radius))),
         setLineCircleLocked: (id, locked) => set((s) => T.setLineCircleLocked(s, id, locked)),
         deleteLineCircle: (id) => set(withRegionReconcile((s) => T.deleteLineCircle(s, id))),
+        // Guides move no stations and reroute no edges, so none of these
+        // reconcile regions — the plain-set family, like lock.
+        addGuide: (orientation, offset) => {
+          const id = ids.guideId();
+          set((s) => T.addGuide(s, id, orientation, offset));
+          return id;
+        },
+        moveGuide: (id, offset) => set((s) => T.moveGuide(s, id, offset)),
+        setGuideLocked: (id, locked) => set((s) => T.setGuideLocked(s, id, locked)),
+        deleteGuide: (id) => set((s) => T.deleteGuide(s, id)),
         bindStationToCircle: (stationId, circleId, seatFrom) =>
           set(withRegionReconcile((s) => T.bindStationToCircle(s, stationId, circleId, seatFrom))),
         unbindStationFromCircle: (stationId) =>

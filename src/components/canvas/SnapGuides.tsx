@@ -21,8 +21,11 @@ interface Props {
  * real line color in the NYC palette, so the chip could be pixel-identical
  * to map content.)
  */
-export function SnapGuides({ guides, zoom }: Props) {
+export function SnapGuides({ guides: allGuides, zoom }: Props) {
   const themeColors = useThemeColors();
+  // Alignment-guide MARKERS are not drawable segments — the engaged guide
+  // itself recolors in the guides layer (GuideView reads the same array).
+  const guides = allGuides.filter((g) => !g.alignGuideId);
   if (guides.length === 0) return null;
   const halo = withAlpha(themeColors.accent, 0.3);
   return (

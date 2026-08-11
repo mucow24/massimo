@@ -1,6 +1,6 @@
 import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
-import { snapToleranceAt, type SnapModes } from '../../geometry/snap';
+import { snapToleranceAt, type GuideTarget, type SnapModes } from '../../geometry/snap';
 import { snapPolygonPoint, type PolygonSnapResult } from '../../geometry/polygonSnap';
 import type { Vec2 } from '../../geometry/vec';
 
@@ -10,6 +10,9 @@ export interface DragSnapOptions {
   allTargets: Vec2[];
   /** "Snap to line" pool — only the polygon vertex drag has one. */
   lineTargets?: Vec2[];
+  /** Alignment-guide pool (always-on), snapshotted at pointer-down like the
+   *  others — see liveGuideTargets. Absent means no guides in play. */
+  guideTargets?: readonly GuideTarget[];
   /** Single-DOF consumers (edge resizes); see {@link snapPolygonPoint}. */
   constrain?: 'x' | 'y';
 }
@@ -45,6 +48,7 @@ export function useDragSnap(zoom: number): DragSnapApi {
         proposed,
         lineTargets: opts.lineTargets ?? [],
         allTargets: opts.allTargets,
+        guideTargets: opts.guideTargets,
         modes,
         tolerance: snapToleranceAt(zoom),
         gridInterval,

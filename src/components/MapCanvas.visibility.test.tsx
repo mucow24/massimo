@@ -16,6 +16,7 @@ import { lockedDispatchTarget } from './canvas/hitStack';
 import {
   makeDoc,
   makeLine,
+  makeGuide,
   makeLineCircle,
   makePolygon,
   makeRouteBullet,
@@ -75,6 +76,7 @@ const seed = () =>
         textLabels: [makeTextLabel({ id: 'g1', x: 500, y: 100 })],
         routeBullets: [makeRouteBullet({ id: 'b1', x: 300, y: 300 })],
         lineCircles: [makeLineCircle({ id: 'c1', x: -300, y: -300, radius: 80 })],
+        guides: [makeGuide({ id: 'gd1', orientation: 'horizontal', offset: -450 })],
         transferAnchors: [{ id: 'a1', x: -100, y: 250 }],
       }),
     });
@@ -83,6 +85,7 @@ const seed = () =>
 /** The DOM hook that proves each kind painted. */
 const PAINTED: Partial<Record<VisibilityKey, string>> = {
   showLineCircles: '[data-line-circle="c1"]',
+  showGuides: '[data-guide="gd1"]',
   showTransfers: '[data-transfer-id="x1"]',
   showSvgImages: '[data-svg-image-id="i1"]',
   showTextLabels: '[data-text-label-id="g1"]',

@@ -11,6 +11,7 @@ const resetFlags = () =>
     showAnchors: false,
     showWaypoints: false,
     showLineCircles: true,
+    showGuides: true,
     showTransfers: true,
     showSvgImages: true,
     showTextLabels: true,

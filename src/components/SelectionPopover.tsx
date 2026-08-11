@@ -36,6 +36,7 @@ export function SelectionPopover({ ids, hostW }: Props) {
   const polygons = useRenderDoc((s) => s.polygons);
   const svgImages = useRenderDoc((s) => s.svgImages);
   const lineCircles = useRenderDoc((s) => s.lineCircles);
+  const guides = useRenderDoc((s) => s.guides);
 
   const total = itemIdCount(ids);
   // Transfer anchors have no `locked` field, so they can never be counted as
@@ -52,7 +53,8 @@ export function SelectionPopover({ ids, hostW }: Props) {
     ids.labels.filter((id) => textLabels[id]?.locked).length +
     ids.polygons.filter((id) => polygons[id]?.locked).length +
     ids.svgImages.filter((id) => svgImages[id]?.locked).length +
-    ids.lineCircles.filter((id) => lineCircles[id]?.locked).length;
+    ids.lineCircles.filter((id) => lineCircles[id]?.locked).length +
+    ids.guides.filter((id) => guides[id]?.locked).length;
 
   return (
     <PopoverShell
