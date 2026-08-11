@@ -28,31 +28,29 @@ describe('setLabelOffset no-op identity (ARCHITECTURE: transforms return the sam
     expect(historyDepth()).toBe(before);
   });
 
-  it('a slider gesture that never leaves the ±2 detent consumes no undo', () => {
-    // `LabelOffsetControl`'s slider maps any |n| <= 2 to onChange(0), so dragging
-    // inside the detent streams setLabelOffset(id, 0) against a stored 0.
-    // useFieldHistory opens a group on focus and commits on blur.
+  it('a grouped run of value-identical writes consumes no undo', () => {
+    // The live streamers of a same-value write are the mirror fan-out (a match
+    // already sitting at the broadcast value) and the Alt+arrow nudge, whose
+    // dPerp is 0 on a non-diagonal reading axis — so every move writes the
+    // perpendicular offset back unchanged. useFieldHistory opens a group on
+    // focus and commits on blur; the guard is what keeps that group empty.
     const id = useDoc.getState().addStation(0, 0, 'Origin');
     useDoc.getState().renameStation(id, 'Renamed'); // one real entry to undo
     const depthAfterRealEdit = historyDepth();
 
     const group = beginHistoryGroup(); // thumb focus
-    for (const n of [1, 2, 1, 0, -1, -2]) {
-      useDoc.getState().setLabelOffset(id, Math.abs(n) <= 2 ? 0 : n);
-    }
+    for (let i = 0; i < 6; i++) useDoc.getState().setLabelOffset(id, 0);
     group.commit(); // thumb blur
 
     expect(historyDepth()).toBe(depthAfterRealEdit);
   });
 
-  it('one Ctrl+Z after a detent-only slider gesture undoes the previous real edit', () => {
+  it('one Ctrl+Z after a no-op-only gesture undoes the previous real edit', () => {
     const id = useDoc.getState().addStation(0, 0, 'Origin');
     useDoc.getState().renameStation(id, 'Renamed'); // the last REAL edit
 
     const group = beginHistoryGroup(); // thumb focus
-    for (const n of [1, 2, -1]) {
-      useDoc.getState().setLabelOffset(id, Math.abs(n) <= 2 ? 0 : n);
-    }
+    for (let i = 0; i < 3; i++) useDoc.getState().setLabelOffset(id, 0);
     group.commit(); // thumb blur
 
     undo(); // the user's single Ctrl+Z

@@ -3,6 +3,11 @@ import { useFieldHistory } from '../useFieldHistory';
 import { useNumericField } from '../useNumericField';
 import { clamp } from '../../util/grid';
 
+/** Granularity of both offset fields — slider grid, spinner arrows, and the
+ *  text mirror's decimal places, which all have to agree. Half a unit: whole
+ *  units were too coarse to seat a name against a stripe. */
+const OFFSET_STEP = 0.5;
+
 export function LabelOffsetControl({
   value,
   onChange,
@@ -14,8 +19,7 @@ export function LabelOffsetControl({
   // number show no specific value; the next interaction sets ALL of them.
   indeterminate?: boolean;
 }) {
-  // Slider [-100, 100] with detent at 0; textbox accepts any number.
-  // Snap to 0 when the slider sits within ±2 of zero.
+  // Slider [-100, 100] with a tick at 0; textbox accepts any number.
   const clampedSlider = clamp(value, -100, 100);
   const sliderField = useFieldHistory();
   // The textbox goes through the shared numeric field for its TEXT MIRROR, which
@@ -29,6 +33,7 @@ export function LabelOffsetControl({
     value,
     onChange,
     () => value,
+    OFFSET_STEP,
   );
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -36,15 +41,20 @@ export function LabelOffsetControl({
         className={'field-slider field-slider-centered' + (indeterminate ? ' indeterminate' : '')}
         min={-100}
         max={100}
-        step={1}
+        step={OFFSET_STEP}
         // In indeterminate mode the thumb sits at 0 visually but the styling
         // makes it clear the value is "mixed" — see styles.css.
         value={[indeterminate ? 0 : clampedSlider]}
-        onValueChange={([n]) => onChange(Math.abs(n) <= 2 ? 0 : n)}
+        onValueChange={([n]) => onChange(n)}
       >
         <Slider.Track className="field-slider-track">
           <Slider.Range className="field-slider-range" />
-          {/* The neutral tick at offset 0 (was the native datalist detent). */}
+          {/* The neutral tick at offset 0 — purely visual, like every other
+              detent in the app (NumericFieldRow's `detent`). It used to also
+              rewrite any value within ±2 to 0, which made 0 a trap: the first
+              arrow press proposed a value inside the band, the rewrite sent it
+              straight back to 0, and the controlled thumb never moved — so no
+              offset smaller than the band was reachable by keyboard at all. */}
           <span className="field-slider-detent" aria-hidden="true" style={{ left: '50%' }} />
         </Slider.Track>
         <Slider.Thumb className="field-slider-thumb" aria-label="Offset" {...sliderField} />
@@ -56,12 +66,14 @@ export function LabelOffsetControl({
         type="number"
         aria-label="Offset value"
         className="options-popover-spin"
+        // The stepper arrows walk the same half-unit grid as the slider. No
+        // min/max: the box is the only way to reach past the slider's rails.
+        step={OFFSET_STEP}
         value={indeterminate ? '' : text}
         placeholder={indeterminate ? '—' : undefined}
         onFocus={onNumberFocus}
         onChange={onNumberChange}
         onBlur={onNumberBlur}
-        style={{ width: 56 }}
       />
     </div>
   );

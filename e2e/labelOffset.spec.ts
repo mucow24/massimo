@@ -39,13 +39,33 @@ test.describe('Label offset textbox', () => {
 
     await expect(box).toHaveValue('-5');
     await box.blur();
-    await expect(box).toHaveValue('-5');
+    // Blur re-formats to the field's half-unit granularity, hence "-5.0".
+    await expect(box).toHaveValue('-5.0');
     expect(
       await page.evaluate(() => {
         const raw = localStorage.getItem('vignelli-map-doc-v1');
         return raw ? JSON.parse(raw).state.stations.A.label.offset : null;
       }),
     ).toBe(-5);
+  });
+
+  test('a half-unit value commits and survives blur', async ({ page }) => {
+    await seedAndOpen(page, fourInLine);
+    await selectStationA(page);
+
+    const box = OFFSET(page, 0);
+    await box.click();
+    await page.keyboard.press('Control+a');
+    await page.keyboard.type('-5.5');
+
+    await box.blur();
+    await expect(box).toHaveValue('-5.5');
+    expect(
+      await page.evaluate(() => {
+        const raw = localStorage.getItem('vignelli-map-doc-v1');
+        return raw ? JSON.parse(raw).state.stations.A.label.offset : null;
+      }),
+    ).toBe(-5.5);
   });
 
   test('a positive value still commits (control)', async ({ page }) => {
