@@ -698,11 +698,13 @@ station that drifted off its circle reprojects.
 
 **`AlignmentGuide`** (`MapDoc.guides`) — the line circle's straight-line sibling: `id,
 orientation: 'horizontal' | 'vertical', offset` (the world Y or X the infinite line sits at),
-`locked?`. Same standing — editor scaffolding rendered as a dashed line in `theme.guide`
-spanning the overdrawn viewBox ([GuideView.tsx](src/components/GuideView.tsx), export-excluded,
-same scaffolding band as the rings: above background art, below map ink) — but the OPPOSITE
-snapping role: nothing binds to a guide; it is an **always-on snap TARGET** for both snappers
-(see Snapping). Born by dragging out of a **guide well** — slim strips flush with the canvas's
+`locked?`. Same standing — editor scaffolding, export-excluded, same scaffolding band as the
+rings (above background art, below map ink) — but the OPPOSITE snapping role: nothing binds to
+a guide; it is an **always-on snap TARGET** for both snappers (see Snapping). It paints as a
+long-dashed line spanning the overdrawn viewBox in its own theme slots, not the ring grey
+(`theme.alignGuide` + `-Selected`/`-Hover`, a day indigo / night periwinkle with an amber
+selected state — a guide's job is to be SEEN, and every state is a plain restroke since an
+infinite line has no body to outline; [GuideView.tsx](src/components/GuideView.tsx)). Born by dragging out of a **guide well** — slim strips flush with the canvas's
 top/left edges, top pulls a horizontal guide down, left pulls a vertical one right
 ([GuideWells.tsx](src/components/canvas/GuideWells.tsx) + `useGuideDrag`, idle arrow-mode only;
 the pull ghost snaps live and the release commits one `addGuide` + selects it). Dragging a guide

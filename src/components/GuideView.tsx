@@ -1,10 +1,13 @@
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import type { AlignmentGuide } from '../model/types';
 
-// Stroke/hit sizes in SCREEN px (÷ zoom at use) — the line-circle recipe
-// verbatim, so all scaffolding speaks one visual language.
-const GUIDE_STROKE_PX = 1.25;
-const GUIDE_DASH_PX = 5;
+// Stroke/hit sizes in SCREEN px (÷ zoom at use), matching the selection-chrome
+// convention: the guide reads the same at every zoom. The long-dash pattern and
+// 1.5px weight were dialed in by eye against a dense map — the ring recipe's
+// 1.25px short dash was invisible over real ink.
+const GUIDE_STROKE_PX = 1.5;
+const GUIDE_DASH_PX = 12;
+const GUIDE_GAP_PX = 6;
 const HIT_PX = 12;
 
 interface Props {
@@ -17,15 +20,17 @@ interface Props {
   vbY: number;
   vbW: number;
   vbH: number;
+  // The three-state restroke palette (theme.alignGuide / -Selected / -Hover).
   guideColor: string;
+  selectedColor: string;
+  hoverColor: string;
+  // The interaction accent, worn while a drag is snap-ENGAGED on this guide —
+  // matching the snap chrome (halo + dashed span + ring + coordinate chip)
+  // that SnapGuides paints on top of it (see EngagedGuideChrome).
   accentColor: string;
   selected: boolean;
   // The shared hoveredChrome affordance (idle, not panning, not selected).
   hovered: boolean;
-  // A drag or placement is snap-ENGAGED on this guide right now: paint it
-  // full accent. The loud half of the feedback — halo, dashed accent span,
-  // snap-point ring, coordinate chip — rides the SnapGuides overlay on top
-  // (see EngagedGuideChrome).
   engaged: boolean;
   // False while another mode owns the canvas: visible but takes no pointers.
   interactive: boolean;
@@ -40,15 +45,16 @@ interface Props {
 }
 
 /**
- * One alignment guide: a dashed line spanning the whole (overdrawn) canvas in
- * the scaffolding style (export-excluded by the layer that mounts this).
- * Selection recolors it in the interaction accent; a mouseover previews that
- * recolour at half strength; a snap engagement paints it full accent with no
- * further chrome. The invisible fat stroke is the grab surface — and unlike a
- * locked ring's rim, it stays MOUNTED (pointer-events none) on a locked,
- * unselected guide: the marquee never sweeps guides, so the alt-click
- * deep-pick is a locked guide's only pointer recovery, and its synthetic
- * click needs this element to land on (see hitStack's lockedDispatchTarget).
+ * One alignment guide: a long-dashed line spanning the whole (overdrawn)
+ * canvas (export-excluded by the layer that mounts this). Selection, hover and
+ * snap engagement are each a RESTROKE — selected amber, hover the softened
+ * amber, engaged the accent under the snap chrome — rather than an overlay
+ * beside the line: a guide has no body to outline, so the color IS the state.
+ * The invisible fat stroke is the grab surface — and unlike a locked ring's
+ * rim, it stays MOUNTED (pointer-events none) on a locked, unselected guide:
+ * the marquee never sweeps guides, so the alt-click deep-pick is a locked
+ * guide's only pointer recovery, and its synthetic click needs this element
+ * to land on (see hitStack's lockedDispatchTarget).
  */
 export function GuideView({
   guide,
@@ -58,6 +64,8 @@ export function GuideView({
   vbW,
   vbH,
   guideColor,
+  selectedColor,
+  hoverColor,
   accentColor,
   selected,
   hovered,
@@ -76,19 +84,13 @@ export function GuideView({
   const x2 = horizontal ? vbX + vbW : guide.offset;
   const y1 = horizontal ? guide.offset : vbY;
   const y2 = horizontal ? guide.offset : vbY + vbH;
-  const stroke = selected || engaged ? accentColor : guideColor;
-  const dash = (
-    <line
-      x1={x1}
-      y1={y1}
-      x2={x2}
-      y2={y2}
-      stroke={stroke}
-      strokeWidth={px(GUIDE_STROKE_PX)}
-      strokeDasharray={`${px(GUIDE_DASH_PX)} ${px(GUIDE_DASH_PX)}`}
-      pointerEvents="none"
-    />
-  );
+  const stroke = selected
+    ? selectedColor
+    : engaged
+      ? accentColor
+      : hovered
+        ? hoverColor
+        : guideColor;
   return (
     <g
       data-guide={guide.id}
@@ -98,22 +100,16 @@ export function GuideView({
       onPointerEnter={onHoverEnter ? () => onHoverEnter(guide.id) : undefined}
       onPointerLeave={onHoverLeave ? () => onHoverLeave(guide.id) : undefined}
     >
-      {dash}
-      {/* Mouseover preview: the same line in the accent at half opacity OVER
-          the base coat — a restroke would leave it fainter than at rest. */}
-      {hovered && !selected && !engaged && (
-        <g data-guide-hover={guide.id} opacity={0.5} pointerEvents="none">
-          <line
-            x1={x1}
-            y1={y1}
-            x2={x2}
-            y2={y2}
-            stroke={accentColor}
-            strokeWidth={px(GUIDE_STROKE_PX)}
-            strokeDasharray={`${px(GUIDE_DASH_PX)} ${px(GUIDE_DASH_PX)}`}
-          />
-        </g>
-      )}
+      <line
+        x1={x1}
+        y1={y1}
+        x2={x2}
+        y2={y2}
+        stroke={stroke}
+        strokeWidth={px(GUIDE_STROKE_PX)}
+        strokeDasharray={`${px(GUIDE_DASH_PX)} ${px(GUIDE_GAP_PX)}`}
+        pointerEvents="none"
+      />
       <line
         data-guide-hit={guide.id}
         x1={x1}

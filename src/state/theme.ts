@@ -36,6 +36,22 @@ export interface ThemeColors {
    */
   guide: string;
   /**
+   * Alignment guides (the h/v snap lines) — their own slot rather than
+   * `guide`: rings sit UNDER stations they carry and want to whisper, but an
+   * alignment guide's whole job is to be seen and snapped against, and the
+   * ring grey was invisible over a busy map. Indigo: unmistakably editor ink,
+   * clearly apart from the interaction accent so a SELECTED guide still
+   * reads. Night is the same hue lifted for the black canvas.
+   */
+  alignGuide: string;
+  /** A selected alignment guide's restroke. Complementary amber — the base is
+   *  blue and the accent is blue, so "chosen" needs to leave the family. */
+  alignGuideSelected: string;
+  /** The mouseover restroke — the standard half-way-to-selected affordance,
+   *  spelled as its own (softened-amber) value because the guide restrokes
+   *  directly rather than compositing a half-opacity overlay. */
+  alignGuideHover: string;
+  /**
    * Opaque "off"-position fill for dashed/hatched line styles (the dashed
    * underlay stroke and the hatch-tile gap), and the interior of unfilled
    * inline route bullets. Matches the canvas so the gaps read as empty map,
@@ -83,6 +99,9 @@ const LIGHT: ThemeColors = {
   selectionStroke: '#000000',
   grid: '#eeeeee',
   guide: '#b5b5b5',
+  alignGuide: '#2f439b',
+  alignGuideSelected: '#e07a1f',
+  alignGuideHover: '#f0a76a',
   underlay: '#ffffff',
   editorBg: '#ffffff',
   editorText: '#111111',
@@ -100,6 +119,9 @@ const DARK: ThemeColors = {
   selectionStroke: '#ffffff',
   grid: '#222222',
   guide: '#5a5a5a',
+  alignGuide: '#8c9cf2',
+  alignGuideSelected: '#ffb066',
+  alignGuideHover: '#c98a45',
   underlay: '#000000',
   editorBg: '#000000',
   editorText: '#ffffff',

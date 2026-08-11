@@ -1562,7 +1562,9 @@ export function MapCanvas() {
                   vbY={overdrawn.vbY}
                   vbW={overdrawn.vbW}
                   vbH={overdrawn.vbH}
-                  guideColor={theme.guide}
+                  guideColor={theme.alignGuide}
+                  selectedColor={theme.alignGuideSelected}
+                  hoverColor={theme.alignGuideHover}
                   accentColor={theme.accent}
                   selected={selection.selectedGuideIds.includes(gid)}
                   hovered={hoverGuideId === gid}
@@ -1585,6 +1587,8 @@ export function MapCanvas() {
                     vbW={overdrawn.vbW}
                     vbH={overdrawn.vbH}
                     guideColor={theme.accent}
+                    selectedColor={theme.accent}
+                    hoverColor={theme.accent}
                     accentColor={theme.accent}
                     selected={false}
                     hovered={false}

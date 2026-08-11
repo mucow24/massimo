@@ -1005,14 +1005,14 @@ select option {
   display: block;
 }
 .guide-well-top .guide-well-grip {
-  width: 26px;
+  width: 27px;
   height: 2px;
-  background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 7px);
+  background: repeating-linear-gradient(90deg, currentColor 0 6px, transparent 6px 9px);
 }
 .guide-well-left .guide-well-grip {
   width: 2px;
-  height: 26px;
-  background: repeating-linear-gradient(180deg, currentColor 0 4px, transparent 4px 7px);
+  height: 27px;
+  background: repeating-linear-gradient(180deg, currentColor 0 6px, transparent 6px 9px);
 }
 
 /* ── Item popovers (bullet / text label / polygon / svg image / transfer) ──
