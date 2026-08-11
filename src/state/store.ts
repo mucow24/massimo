@@ -1476,6 +1476,22 @@ export const useDoc = create<DocState>()(
               if (doc.backgroundOrder) patch.backgroundOrder = hrefs.backgroundOrder;
             }
           }
+          // Dot sizes are required stored fields, and a size-less line can be
+          // written at the CURRENT version (a legacy clipboard payload pasted
+          // verbatim) — precisely the docs `migrate` never sees. Same shape as
+          // the cell-dust snap; reference-stable when everything is concrete.
+          {
+            const baked = bakeConcreteDotSizes({
+              stations: patch.stations ?? doc.stations,
+              lines: patch.lines ?? doc.lines,
+            });
+            if (baked.lines && baked.lines !== (patch.lines ?? doc.lines)) {
+              patch.lines = baked.lines;
+            }
+            if (baked.stations && baked.stations !== (patch.stations ?? doc.stations)) {
+              patch.stations = baked.stations;
+            }
+          }
           return { ...current, ...doc, ...patch };
         },
         partialize: (s) => pickDocSnapshot(s),

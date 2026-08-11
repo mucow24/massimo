@@ -496,14 +496,15 @@ export interface Line {
   // carries the line's own `endStyle`, never these pins (same split as the
   // per-stop dot overrides).
   stationEndStyles?: Record<StationId, LineEndStyle>;
-  // Live link to a StyleDef of kind 'line' (see MapDoc.styles). INVARIANT:
-  // when present, this line's covered style fields (singletonDotStyle,
-  // multiDotStyle, singletonDotSize, multiDotSize, width, interlineGap, labelGap,
-  // strokeWidth, strokeColor, dashLength, dashWidth, curveRadius —
-  // NOT color) equal the style's props. Transforms maintain it: editing any covered field clears
-  // the tag ("detach to Custom"), editing the style re-stamps its users,
-  // deleting the style untags. Absent ⇒ no style ("Custom" in the UI).
-  // Dangling ids are pruned on file load.
+  // Live link to a StyleDef of kind 'line' (see MapDoc.styles) — MEMBERSHIP,
+  // not equality. The covered fields (STYLE_FIELDS.line in styles.ts: dot
+  // type ids + sizes, width, curveRadius, endStyle, stroke, dashes, gaps —
+  // NOT color) may diverge per-field; the divergence IS the override,
+  // computed by styleFieldsDiff, never stored. Editing a covered field keeps
+  // the tag; editing the style stamps only each wearer's non-overridden
+  // fields; deleting the style untags (values kept). Absent ⇒ no style
+  // ("Custom" in the UI). Dangling ids are pruned on file load; diverged
+  // values are not.
   styleId?: string;
 }
 

@@ -340,6 +340,37 @@ describe('localStorage rehydrate — line edge backfill', () => {
     // Derived from the legacy linear `stations` order.
     expect(l1.edges).toEqual(['s1|s2']);
   });
+
+  it('materializes dot sizes when rehydrating a current-version doc with a size-less line', async () => {
+    // A size-less line CAN be written at the current version (a legacy
+    // clipboard payload pasted verbatim), and same-version docs skip
+    // `migrate` entirely — so the merge hook must run bakeConcreteDotSizes,
+    // same reasoning as the edges backfill above.
+    localStorage.setItem(
+      'vignelli-map-doc-v1',
+      JSON.stringify({
+        version: useDoc.persist.getOptions().version,
+        state: {
+          lines: {
+            L1: {
+              id: 'L1',
+              service: 'A',
+              name: 'A line',
+              color: '#0039A6',
+              stations: [],
+              edges: [],
+            },
+          },
+        },
+      }),
+    );
+
+    await useDoc.persist.rehydrate();
+
+    const l1 = useDoc.getState().lines.L1;
+    expect(l1.singletonDotSize).toBe(8);
+    expect(l1.multiDotSize).toBe(8);
+  });
 });
 
 describe('addLine auto-cycle across palettes', () => {
