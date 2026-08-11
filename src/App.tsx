@@ -695,16 +695,27 @@ export default function App() {
         group?.commit();
         return;
       }
-      // R rotates the selected stop's orientation (4-state axis cycle) or
-      // the selected label (8×45°) — the keyboard twin of the layout
-      // editor's right-click cycle. Only bound while a stop/label is the
-      // active sub-selection, so the key stays free otherwise.
+      // R does two jobs, split by what is selected and by the Shift.
+      //
+      // Plain R rotates the selected stop's orientation (4-state axis cycle) or
+      // the selected label (8×45°) — the keyboard twin of the layout editor's
+      // right-click cycle — but ONLY while a stop/label is the active
+      // sub-selection. Otherwise the letter works the grid, which is the far
+      // more common press: R toggles it, Shift+R cycles the cell size, the twin
+      // of the two paired toolbar buttons. The Shift is read FIRST and wins
+      // outright, so the size cycle is never held hostage by whatever happens
+      // to be selected (rotation has no shifted variant to lose).
+      //
+      // Which half runs is decided by e.shiftKey rather than the letter's case,
+      // or CapsLock would swap them (it reports 'R' with no shift held). The
+      // grid is NOT in the visibility registry — a drawing aid rather than map
+      // content — hence the direct setters.
       if (!inFormControl && !mod && (e.key === 'r' || e.key === 'R')) {
         const sel = useSelection.getState();
         const doc = useDoc.getState();
         const subStation =
           sel.selectedStationIds.length === 1 ? doc.stations[sel.selectedStationIds[0]] : null;
-        if (subStation && (sel.selectedStopLineId || sel.labelSelected)) {
+        if (!e.shiftKey && subStation && (sel.selectedStopLineId || sel.labelSelected)) {
           e.preventDefault();
           const stopLineId = sel.selectedStopLineId;
           dispatchMirrored(subStation.id, (sid) => {
@@ -713,7 +724,15 @@ export default function App() {
             if (sel.labelSelected) doc.rotateLabel(sid);
             else if (stopLineId) doc.rotateStop(sid, stopLineId);
           });
+          return;
         }
+        // Repeats dropped: a held key would otherwise toggle at auto-repeat
+        // rate, each press a store write and a full canvas re-render, landing
+        // wherever the user happened to let go.
+        if (e.repeat) return;
+        const vp = useViewportStore.getState();
+        if (e.shiftKey) vp.setGridSize(nextGridSize(vp.gridSize));
+        else vp.setGridVisible(!vp.gridVisible);
         return;
       }
       // Snapping presets: Shift+digit recalls slot 0–9, Ctrl/Cmd+Shift+digit
@@ -760,10 +779,12 @@ export default function App() {
           return;
         }
       }
-      // Layer visibility from the keyboard. Anchors and waypoints are the two
-      // scaffolding layers that default to hidden and get flipped constantly
-      // while working, so they get the letters; the rest stay a View-menu
-      // click away. The write goes through setVisibility, never a store setter
+      // Layer visibility from the keyboard. Anchors, waypoints and guides are
+      // the scaffolding layers flipped constantly while working, so they get
+      // the letters; the rest stay a View-menu click away. The guides earn
+      // theirs from the other side — they default to VISIBLE, and the press
+      // that matters is getting them out of the way to see the map under them.
+      // The write goes through setVisibility, never a store setter
       // by hand, so the registry stays the one place a flag's name lives, and
       // the letter is a FIELD on the registry entry so the menu row can show
       // it. Repeats are dropped throughout this block: a held key would
@@ -791,16 +812,10 @@ export default function App() {
         pushToast('info', next ? 'Showing waypoints' : 'Hiding waypoints');
         return;
       }
-      // G is the one letter here that reads its Shift: plain toggles the grid,
-      // Shift cycles the cell size — the keyboard twin of the two paired
-      // toolbar buttons. Which one runs is decided by e.shiftKey rather than
-      // the letter's case, or CapsLock would swap them (it reports 'G' with no
-      // shift held). The grid is NOT in the visibility registry — it is a
-      // drawing aid rather than map content — hence the direct setters.
       if (!inFormControl && !mod && !e.repeat && (e.key === 'g' || e.key === 'G')) {
-        const vp = useViewportStore.getState();
-        if (e.shiftKey) vp.setGridSize(nextGridSize(vp.gridSize));
-        else vp.setGridVisible(!vp.gridVisible);
+        const next = !useViewportStore.getState().showGuides;
+        setVisibility('showGuides', next);
+        pushToast('info', next ? 'Showing guides' : 'Hiding guides');
         return;
       }
       if (!inFormControl && !mod && (e.key === 'v' || e.key === 'V')) {

@@ -1979,19 +1979,23 @@ on any mode exit.
   (pan: composited pan-layer translate; zoom: viewBox write).
 
 **Layer visibility — the View menu** ([ViewPopover.tsx](src/components/ViewPopover.tsx), one eye
-button in the toolbar). Ten checkboxes in three groups: Lines and stations · Anchors, Line
-circles, Guides, Transfers, Waypoints · Images / SVGs, Canvas labels, Polygons, Route bullets.
+button in the toolbar). Ten checkboxes in three groups: Lines and stations, Guides · Anchors, Line
+circles, Transfers, Waypoints · Images / SVGs, Canvas labels, Polygons, Route bullets. The guides
+ride with the master switch rather than with the scaffolding below it: they answer to no other
+layer and are reached for as often as it is.
 The **grid** is
 deliberately not among them — a drawing aid rather than map content, and its button pairs with the
 grid-size cycler beside it.
 
-The two layers that default to hidden also answer to the keyboard: `A` flips anchors and `W`
-waypoints (App.tsx, writing through `setVisibility` exactly as the checkboxes do — no second
+Three layers also answer to the keyboard: `A` flips anchors, `W` waypoints and `G` guides (App.tsx,
+writing through `setVisibility` exactly as the checkboxes do — no second
 opinion about where a flag lives), and the letter is a `shortcut` field on the registry entry so
-the menu row can advertise it. Both letters **toast which way the layer went**: the flag can flip
+the menu row can advertise it. Each letter **toasts which way the layer went**: the flag can flip
 with nothing changing on screen — anchors held up by the master switch or a mode reveal, waypoints
-simply out of view — so the message is the only confirmation the key landed. `G` toggles the grid
-and `Shift+G` cycles its size, both straight to the setters — the grid is not registry content.
+simply out of view — so the message is the only confirmation the key landed. `R` toggles the grid
+and `Shift+R` cycles its size, both straight to the setters — the grid is not registry content. `R`
+is shared with the stop/label rotate: a rotatable sub-selection owns the plain letter, and the
+Shift is read first, so the size cycle answers whatever is selected.
 
 [visibility.ts](src/state/visibility.ts) holds the set as one `VISIBILITY_ITEMS` registry, because
 three consumers have to agree about it and each used to spell it out by hand: the menu, the export
@@ -2107,6 +2111,12 @@ Six seams cover it, and a seventh rule governs anything new:
   `canvasBg, label, selectionStroke, grid, underlay, editorBg, editorText, phantomDot`, plus the
   interaction accent `accent`/`accentWash` — marquee, snap guides, selection washes, mode frames —
   and the line-edit dim `dim`/`dimOpacity`/`dimmedLabel`; light `#fafafa`, dark `#000000`).
+  One entry is not a color: `darkPaper`, for the one piece of scaffolding that sits ON the canvas
+  as HTML rather than SVG paint — the guide wells, which flip their ink off it (a `.dark-paper`
+  class; styles.css). They cannot read the chrome's `data-theme`, because chrome and paper disagree
+  in both directions: **Dark UI in day** darkens the toolbar over a light map, and the gray/black
+  day papers darken the map under a light toolbar. Dimmed day papers therefore set it, alongside
+  their grid override.
   **No store of its own** — `useThemeColors()` reads `darkMode` off the **doc**, so loading a
   night map paints night with no extra wiring (unlike the camera, which needs an explicit
   `fitCameraToDoc`). Theming is split by what can

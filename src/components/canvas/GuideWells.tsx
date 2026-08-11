@@ -1,5 +1,6 @@
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import type { GuideOrientation } from '../../model/types';
+import { useThemeColors } from '../../state/theme';
 
 /** Well strip thickness in screen px. Shared with useGuideDrag's release
  *  hit-test, so the strip you see IS the drop zone that cancels/deletes. */
@@ -37,6 +38,12 @@ function Grip() {
  * Each also serves as the drop zone that deletes a dragged guide — the same
  * place it came from. Mounted only in idle arrow-mode; every other mode owns
  * the canvas edges (banner frame, placement).
+ *
+ * HTML, but sitting ON the canvas, so the ink follows the PAPER rather than the
+ * chrome's `data-theme`: "Dark UI in day" darkens the toolbar over a still-light
+ * map, and a dimmed day paper darkens the map under a still-light toolbar.
+ * `darkPaper` (theme.ts) is that question already answered; styles.css hangs the
+ * night values off the class.
  */
 export function GuideWells({
   guidesHidden,
@@ -45,11 +52,13 @@ export function GuideWells({
   onPointerMove,
   onPointerUp,
 }: Props) {
+  const darkPaper = useThemeColors().darkPaper;
   const well = (orientation: GuideOrientation) => {
     const horizontal = orientation === 'horizontal';
     const cls =
       'guide-well ' +
       (horizontal ? 'guide-well-top' : 'guide-well-left') +
+      (darkPaper ? ' dark-paper' : '') +
       (guidesHidden ? ' disabled' : '') +
       (armed === orientation ? ' armed' : '');
     return (

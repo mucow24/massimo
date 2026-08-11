@@ -1497,6 +1497,38 @@ describe('App keyboard: stop/label lattice nudge (station sub-selection)', () =>
     expect(useDoc.getState().stations.a.label.rotation).toBe(1);
   });
 
+  // R is shared with the grid. A rotatable sub-selection owns the plain letter —
+  // rotating a stop is why the binding exists — so the grid stays put under it.
+  it('R rotates instead of toggling the grid while a stop is sub-selected', () => {
+    render(<App />);
+    seedHub();
+    useViewportStore.setState({ gridVisible: true });
+    useSelection.setState({ ...useSelection.getState(), selectedStopLineId: 'L1' });
+    fireEvent.keyDown(window, { key: 'r' });
+    expect(useDoc.getState().stations.a.stops.find((s) => s.lineId === 'L1')!.orientation).toBe(
+      'auto-ne-sw',
+    );
+    expect(useViewportStore.getState().gridVisible).toBe(true);
+  });
+
+  // …but the SHIFT is read first, so the grid-size cycle is never held hostage
+  // by whatever happens to be selected (rotation has no shifted variant).
+  it('Shift+R cycles the grid size even with a stop sub-selected', () => {
+    render(<App />);
+    seedHub();
+    useSelection.setState({ ...useSelection.getState(), selectedStopLineId: 'L1' });
+    const before = useViewportStore.getState().gridSize;
+    try {
+      fireEvent.keyDown(window, { key: 'R', shiftKey: true });
+      expect(useViewportStore.getState().gridSize).not.toBe(before);
+      expect(useDoc.getState().stations.a.stops.find((s) => s.lineId === 'L1')!.orientation).toBe(
+        'auto-vertical',
+      );
+    } finally {
+      useViewportStore.setState({ gridSize: before });
+    }
+  });
+
   it('mirror matching broadcasts the nudge to the matching station in one entry', () => {
     render(<App />);
     seedHub({ mirror: true });
@@ -1707,9 +1739,9 @@ describe('App keyboard: station-editor Escape step-out ladder', () => {
   });
 });
 
-// The view keys stand in for a toolbar click: A/W flip a layer's View-menu
-// flag, G the grid, Shift+G its size. Unlike every other letter shortcut here,
-// g is CASE-SENSITIVE — the shift decides toggle vs. cycle — so both halves are
+// The view keys stand in for a toolbar click: A/W/G flip a layer's View-menu
+// flag, R the grid, Shift+R its size. Unlike every other letter shortcut here,
+// r is CASE-SENSITIVE — the shift decides toggle vs. cycle — so both halves are
 // pinned, and both are read off e.shiftKey rather than the letter's case so
 // CapsLock doesn't silently swap them.
 describe('App keyboard shortcuts: view + grid toggles', () => {
@@ -1721,6 +1753,7 @@ describe('App keyboard shortcuts: view + grid toggles', () => {
     useViewportStore.setState({
       showAnchors: false,
       showWaypoints: false,
+      showGuides: true,
       gridVisible: true,
       gridSize: 10,
       ...over,
@@ -1735,6 +1768,7 @@ describe('App keyboard shortcuts: view + grid toggles', () => {
     seedFlags({
       showAnchors: init.showAnchors,
       showWaypoints: init.showWaypoints,
+      showGuides: init.showGuides,
       gridVisible: init.gridVisible,
       gridSize: init.gridSize,
     });
@@ -1776,30 +1810,42 @@ describe('App keyboard shortcuts: view + grid toggles', () => {
     expect(toastTexts()).toEqual(['Showing waypoints', 'Hiding waypoints']);
   });
 
-  it('g toggles the grid without touching its size', () => {
+  it('G toggles guide visibility both ways, and says which way it went', () => {
     render(<App />);
     fireEvent.keyDown(window, { key: 'g' });
-    expect(useViewportStore.getState().gridVisible).toBe(false);
-    expect(useViewportStore.getState().gridSize).toBe(10);
+    expect(useViewportStore.getState().showGuides).toBe(false);
+    expect(toastTexts()).toEqual(['Hiding guides']);
     fireEvent.keyDown(window, { key: 'g' });
+    expect(useViewportStore.getState().showGuides).toBe(true);
+    expect(toastTexts()).toEqual(['Hiding guides', 'Showing guides']);
+    // The grid is a different key now — G must not touch it.
     expect(useViewportStore.getState().gridVisible).toBe(true);
   });
 
-  it('Shift+G cycles the grid size and leaves the grid switched on', () => {
+  it('r toggles the grid without touching its size', () => {
     render(<App />);
-    fireEvent.keyDown(window, { key: 'G', shiftKey: true });
+    fireEvent.keyDown(window, { key: 'r' });
+    expect(useViewportStore.getState().gridVisible).toBe(false);
+    expect(useViewportStore.getState().gridSize).toBe(10);
+    fireEvent.keyDown(window, { key: 'r' });
+    expect(useViewportStore.getState().gridVisible).toBe(true);
+  });
+
+  it('Shift+R cycles the grid size and leaves the grid switched on', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: 'R', shiftKey: true });
     expect(useViewportStore.getState().gridSize).toBe(20);
     expect(useViewportStore.getState().gridVisible).toBe(true);
     // 5 → 10 → 20 → 5 (GRID_SIZES), same wrap as the toolbar cycler.
-    fireEvent.keyDown(window, { key: 'G', shiftKey: true });
+    fireEvent.keyDown(window, { key: 'R', shiftKey: true });
     expect(useViewportStore.getState().gridSize).toBe(5);
   });
 
-  // CapsLock reports e.key 'G' with e.shiftKey false — that is a plain g press
+  // CapsLock reports e.key 'R' with e.shiftKey false — that is a plain r press
   // and must toggle, not cycle.
-  it('reads the shift, not the letter case (CapsLock G still toggles)', () => {
+  it('reads the shift, not the letter case (CapsLock R still toggles)', () => {
     render(<App />);
-    fireEvent.keyDown(window, { key: 'G', shiftKey: false });
+    fireEvent.keyDown(window, { key: 'R', shiftKey: false });
     expect(useViewportStore.getState().gridVisible).toBe(false);
     expect(useViewportStore.getState().gridSize).toBe(10);
   });
@@ -1812,11 +1858,11 @@ describe('App keyboard shortcuts: view + grid toggles', () => {
     for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { key: 'a', repeat: true });
     expect(useViewportStore.getState().showAnchors).toBe(true);
     expect(toastTexts()).toEqual(['Showing anchors']);
-    fireEvent.keyDown(window, { key: 'g' });
-    for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { key: 'g', repeat: true });
+    fireEvent.keyDown(window, { key: 'r' });
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(window, { key: 'r', repeat: true });
     expect(useViewportStore.getState().gridVisible).toBe(false);
     for (let i = 0; i < 5; i++)
-      fireEvent.keyDown(window, { key: 'G', shiftKey: true, repeat: true });
+      fireEvent.keyDown(window, { key: 'R', shiftKey: true, repeat: true });
     expect(useViewportStore.getState().gridSize).toBe(10);
   });
 
@@ -1827,11 +1873,12 @@ describe('App keyboard shortcuts: view + grid toggles', () => {
     document.body.appendChild(input);
     input.focus();
     try {
-      for (const key of ['a', 'w', 'g']) fireEvent.keyDown(input, { key });
-      fireEvent.keyDown(input, { key: 'G', shiftKey: true });
+      for (const key of ['a', 'w', 'g', 'r']) fireEvent.keyDown(input, { key });
+      fireEvent.keyDown(input, { key: 'R', shiftKey: true });
       expect(useViewportStore.getState()).toMatchObject({
         showAnchors: false,
         showWaypoints: false,
+        showGuides: true,
         gridVisible: true,
         gridSize: 10,
       });
