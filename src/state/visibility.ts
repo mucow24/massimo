@@ -40,9 +40,8 @@ export interface VisibilityItem {
    * lines/stations switch and the alignment guides, 1 the network scaffolding
    * that hangs off the master switch, 2 the free-standing annotation layers.
    *
-   * The guides sit in group 0 rather than with the scaffolding for the same
-   * reason they nest under nothing: they answer to no other layer, and they are
-   * reached for as often as the master switch itself.
+   * The guides sit in group 0 rather than down among the scaffolding because
+   * they are reached for as often as the master switch itself.
    */
   group: number;
   /**

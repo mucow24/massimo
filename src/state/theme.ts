@@ -92,9 +92,10 @@ export interface ThemeColors {
    */
   dimmedLabel: string;
   /**
-   * Is the paper dark? The one entry that is not a color, for the one piece of
-   * scaffolding that sits ON the canvas as HTML rather than SVG paint: the
-   * guide wells, themed in CSS off this flag (GuideWells + styles.css).
+   * Is the paper dark? The one entry that is not a color. It exists for the
+   * canvas chrome that is HTML rather than SVG paint and therefore themed in
+   * CSS — today only the guide wells, which flip their ink off the host's
+   * `data-paper` (MapCanvas stamps it from here; styles.css holds the values).
    *
    * They cannot read the chrome's `data-theme`, because the chrome and the
    * paper disagree in BOTH directions — "Dark UI in day" darkens the toolbar
@@ -102,6 +103,11 @@ export interface ThemeColors {
    * a still-light toolbar. So the question is answered here, where the papers
    * are, rather than being re-derived from `darkMode` and `dayCanvasColor` at
    * the call site and drifting the next time a paper is added.
+   *
+   * It does NOT mean "use the night palette". On a dimmed day paper the SVG ink
+   * above deliberately stays day — that is the whole point of the setting (see
+   * DAY_PAPER) — so `accent`, `alignGuide` and `phantomDot` are the day values
+   * over a gray or black canvas, and the wells are the one thing that departs.
    */
   darkPaper: boolean;
 }

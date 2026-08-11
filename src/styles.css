@@ -969,9 +969,9 @@ select option {
      read off --text-muted / --accent / --danger. Those answer to the chrome's
      data-theme, and the strips sit on the CANVAS: "Dark UI in day" would flip
      them to night ink over a light map, and a dimmed day paper would strand
-     them in day ink over a dark one. `.dark-paper` is the map palette's own
-     darkPaper (GuideWells + theme.ts) — the values below are the two themes'
-     tokens, pinned to the paper instead of the toolbar. */
+     them in day ink over a dark one. The host's `data-paper` is the map
+     palette's own darkPaper (MapCanvas + theme.ts) — the values below are the
+     two themes' tokens, pinned to the paper instead of to the toolbar. */
   --well-ink: #666;
   --well-accent: #1a4ea8;
   --well-danger: #c33;
@@ -981,7 +981,7 @@ select option {
     background-color 120ms ease,
     opacity 120ms ease;
 }
-.guide-well.dark-paper {
+.canvas-host[data-paper='dark'] .guide-well {
   --well-ink: #c4c4c4;
   --well-accent: #6b9aff;
   --well-danger: #d66;

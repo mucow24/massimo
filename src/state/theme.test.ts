@@ -132,7 +132,10 @@ describe('themeColors', () => {
     expect(values).toEqual([themeColors(false).accent, themeColors(true).accent]);
     // The guide wells hold a THIRD copy: they key off the paper rather than the
     // chrome (see darkPaper), so they can't read --accent — but their hover
-    // wash is the same interaction blue and must stay the same blue.
+    // wash is the same interaction blue and must stay the same blue. Note this
+    // pins the PAIR, not which one is live: on a dimmed day paper the wells use
+    // the night blue while the marquee beside them is still on the day one,
+    // because the dimmed papers keep day ink by design.
     const wells = [...css.matchAll(/--well-accent:\s*([^;]+);/g)].map((m) => m[1].trim());
     expect(wells).toEqual([themeColors(false).accent, themeColors(true).accent]);
   });

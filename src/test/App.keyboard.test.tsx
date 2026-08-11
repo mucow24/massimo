@@ -1822,6 +1822,16 @@ describe('App keyboard shortcuts: view + grid toggles', () => {
     expect(useViewportStore.getState().gridVisible).toBe(true);
   });
 
+  // The retired binding. G doesn't read its Shift (A and W don't either), so
+  // Shift+G is now a synonym for G rather than the grid-size cycler it was.
+  it('Shift+G no longer touches the grid — it is just the guides toggle', () => {
+    render(<App />);
+    fireEvent.keyDown(window, { key: 'G', shiftKey: true });
+    expect(useViewportStore.getState().gridSize).toBe(10);
+    expect(useViewportStore.getState().gridVisible).toBe(true);
+    expect(useViewportStore.getState().showGuides).toBe(false);
+  });
+
   it('r toggles the grid without touching its size', () => {
     render(<App />);
     fireEvent.keyDown(window, { key: 'r' });
