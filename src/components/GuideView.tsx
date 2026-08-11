@@ -1,5 +1,6 @@
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
-import type { AlignmentGuide } from '../model/types';
+import { guideSegmentInBox } from '../geometry/snap';
+import type { AlignmentGuide, GuideOrientation } from '../model/types';
 
 // Stroke/hit sizes in SCREEN px (÷ zoom at use), matching the selection-chrome
 // convention: the guide reads the same at every zoom. The long-dash pattern and
@@ -9,6 +10,15 @@ const GUIDE_STROKE_PX = 1.5;
 const GUIDE_DASH_PX = 12;
 const GUIDE_GAP_PX = 6;
 const HIT_PX = 12;
+
+// The direction the guide MOVES (its one degree of freedom, perpendicular to
+// the line): a / guide slides along NW–SE, a \ along NE–SW.
+const MOVE_CURSOR: Record<GuideOrientation, string> = {
+  horizontal: 'ns-resize',
+  vertical: 'ew-resize',
+  'diagonal-up': 'nwse-resize',
+  'diagonal-down': 'nesw-resize',
+};
 
 interface Props {
   guide: AlignmentGuide;
@@ -79,11 +89,12 @@ export function GuideView({
 }: Props) {
   const px = (v: number) => v / zoom;
   const clickThrough = !interactive || inHandMode || (guide.locked && !selected);
-  const horizontal = guide.orientation === 'horizontal';
-  const x1 = horizontal ? vbX : guide.offset;
-  const x2 = horizontal ? vbX + vbW : guide.offset;
-  const y1 = horizontal ? guide.offset : vbY;
-  const y2 = horizontal ? guide.offset : vbY + vbH;
+  // Clipped to the overdrawn box — a diagonal drawn past it would be ink
+  // overflow (and a diagonal needs finite endpoints regardless). One that
+  // misses the box entirely has nothing to mount.
+  const seg = guideSegmentInBox(guide.orientation, guide.offset, vbX, vbY, vbW, vbH);
+  if (!seg) return null;
+  const { x1, y1, x2, y2 } = seg;
   const stroke = selected
     ? selectedColor
     : engaged
@@ -119,7 +130,7 @@ export function GuideView({
         stroke="transparent"
         strokeWidth={px(HIT_PX)}
         pointerEvents={clickThrough ? 'none' : 'stroke'}
-        style={{ cursor: horizontal ? 'ns-resize' : 'ew-resize' }}
+        style={{ cursor: MOVE_CURSOR[guide.orientation] }}
         onPointerDown={(e) => onPointerDown?.(e, guide.id)}
         onClick={(e) => onClick?.(guide.id, e)}
         // Right-click on a guide has nothing to rotate; swallow it so the

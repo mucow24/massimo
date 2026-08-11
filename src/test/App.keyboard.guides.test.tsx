@@ -50,6 +50,26 @@ describe('App keyboard: alignment-guide nudge', () => {
     expect(useDoc.getState().guides.gv.offset).toBe(199);
   });
 
+  it('a diagonal guide projects the nudge onto its intercept', () => {
+    render(<App />);
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: {
+        gd: makeGuide({ id: 'gd', orientation: 'diagonal-down', offset: 50 }),
+        gu: makeGuide({ id: 'gu', orientation: 'diagonal-up', offset: 50 }),
+      },
+    });
+    useSelection.setState({ ...useSelection.getState(), selectedGuideIds: ['gd', 'gu'] });
+    // Down grows both intercepts (dy +1)…
+    fireEvent.keyDown(document.body, { key: 'ArrowDown' });
+    expect(useDoc.getState().guides.gd.offset).toBe(51);
+    expect(useDoc.getState().guides.gu.offset).toBe(51);
+    // …right shrinks the \ one (dy − dx) and grows the / one (dy + dx).
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' });
+    expect(useDoc.getState().guides.gd.offset).toBe(50);
+    expect(useDoc.getState().guides.gu.offset).toBe(52);
+  });
+
   it('a mixed guide+bullet nudge moves both in ONE undo entry', () => {
     render(<App />);
     seed();

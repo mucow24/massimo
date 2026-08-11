@@ -129,3 +129,152 @@ describe('snapPolygonPoint against alignment guides', () => {
     expect(r).toMatchObject({ x: 53, y: 100 });
   });
 });
+
+// The \ diagonal through the origin (y = x) and the / one at intercept 100
+// (y = 100 − x).
+const dDown = { id: 'gd', orientation: 'diagonal-down' as const, offset: 0 };
+const dUp = { id: 'gu', orientation: 'diagonal-up' as const, offset: 100 };
+
+describe('snapPolygonPoint against diagonal guides', () => {
+  it('snaps to the foot of a diagonal guide, reported as a marker', () => {
+    const r = snapPolygonPoint({
+      proposed: { x: 50, y: 54 },
+      ...noTargets,
+      modes: modes({ line: false, all: 'off' }),
+      guideTargets: [dDown],
+    });
+    expect(r.x).toBeCloseTo(52, 12);
+    expect(r.y).toBeCloseTo(52, 12);
+    expect(r.guides).toEqual([
+      { from: { x: r.x, y: r.y }, to: { x: r.x, y: r.y }, alignGuideId: 'gd' },
+    ]);
+    const r2 = snapPolygonPoint({
+      proposed: { x: 48, y: 50 },
+      ...noTargets,
+      modes: modes({ line: false, all: 'off' }),
+      guideTargets: [dUp],
+    });
+    expect(r2.x).toBeCloseTo(49, 12);
+    expect(r2.y).toBeCloseTo(51, 12);
+    expect(r2.guides.map((g) => g.alignGuideId)).toEqual(['gu']);
+  });
+
+  it('the tolerance is perpendicular distance, not the intercept delta', () => {
+    // Intercept miss 13 → true distance 13/√2 ≈ 9.2, inside the 10 tolerance.
+    const rIn = snapPolygonPoint({
+      proposed: { x: 50, y: 63 },
+      ...noTargets,
+      modes: modes(),
+      guideTargets: [dDown],
+    });
+    expect(rIn.guides.map((g) => g.alignGuideId)).toEqual(['gd']);
+    // Intercept miss 16 → distance ≈ 11.3, out.
+    const rOut = snapPolygonPoint({
+      proposed: { x: 50, y: 66 },
+      ...noTargets,
+      modes: modes(),
+      guideTargets: [dDown],
+    });
+    expect(rOut).toMatchObject({ x: 50, y: 66 });
+    expect(rOut.guides).toHaveLength(0);
+  });
+
+  it('an H+V corner still beats a diagonal guide running through it', () => {
+    // The \ through (30, 100) — intercept 70 — passes through the corner the
+    // two straight guides lock; the corner is the stronger snap.
+    const through = { id: 'gd2', orientation: 'diagonal-down' as const, offset: 70 };
+    const r = snapPolygonPoint({
+      proposed: { x: 33, y: 103 },
+      ...noTargets,
+      modes: modes(),
+      guideTargets: [hGuide, vGuide, through],
+    });
+    expect(r).toMatchObject({ x: 30, y: 100 });
+    expect(r.guides.map((g) => g.alignGuideId).sort()).toEqual(['g1', 'g2']);
+  });
+
+  it('a diagonal guide contests a single-axis winner on displacement', () => {
+    const dNear = { id: 'gd3', orientation: 'diagonal-down' as const, offset: 44 };
+    // H displacement 2 beats the diagonal's 3/√2 ≈ 2.12? No — 2 < 2.12, H wins.
+    const rH = snapPolygonPoint({
+      proposed: { x: 50, y: 98 },
+      ...noTargets,
+      modes: modes(),
+      guideTargets: [hGuide, dNear],
+    });
+    expect(rH).toMatchObject({ x: 50, y: 100 });
+    expect(rH.guides.map((g) => g.alignGuideId)).toEqual(['g1']);
+    // Nudge down: H displacement 3 loses to the diagonal's 3/√2.
+    const rD = snapPolygonPoint({
+      proposed: { x: 50, y: 97 },
+      ...noTargets,
+      modes: modes(),
+      guideTargets: [hGuide, dNear],
+    });
+    expect(rD.x).toBeCloseTo(51.5, 12);
+    expect(rD.y).toBeCloseTo(95.5, 12);
+    expect(rD.guides.map((g) => g.alignGuideId)).toEqual(['gd3']);
+  });
+
+  it('a better-aligned diagonal point target beats the guide', () => {
+    // The all-mode diagonal through (0, 1) is 0.7 units away; the guide 1.4.
+    const r = snapPolygonPoint({
+      proposed: { x: 50, y: 52 },
+      lineTargets: [],
+      allTargets: [{ x: 0, y: 1 }],
+      modes: modes({ all: 'all' }),
+      guideTargets: [dDown],
+    });
+    expect(r.x).toBeCloseTo(50.5, 12);
+    expect(r.y).toBeCloseTo(51.5, 12);
+    expect(r.guides).toHaveLength(1);
+    expect(r.guides[0].alignGuideId).toBeUndefined();
+    expect(r.guides[0].label).toBeDefined();
+  });
+
+  it('a single-DOF x/y constrain excludes diagonal guides entirely', () => {
+    const r = snapPolygonPoint({
+      proposed: { x: 50, y: 51 },
+      ...noTargets,
+      modes: modes(),
+      constrain: 'y',
+      guideTargets: [dDown],
+    });
+    expect(r).toMatchObject({ x: 50, y: 51 });
+    expect(r.guides).toHaveLength(0);
+  });
+
+  it('grid stays hard: an off-lattice diagonal guide yields to plain grid', () => {
+    // Intercept 5 on a 10-grid never passes through a crossing.
+    const offLattice = { id: 'gd4', orientation: 'diagonal-down' as const, offset: 5 };
+    const r = snapPolygonPoint({
+      proposed: { x: 52, y: 53 },
+      ...noTargets,
+      modes: modes({ grid: 'both' }),
+      guideTargets: [offLattice],
+    });
+    expect(r).toMatchObject({ x: 50, y: 50 });
+    expect(r.guides).toHaveLength(0);
+    // On-lattice engages and lands on a crossing ON the guide.
+    const r2 = snapPolygonPoint({
+      proposed: { x: 52, y: 53 },
+      ...noTargets,
+      modes: modes({ grid: 'both' }),
+      guideTargets: [dDown],
+    });
+    expect(r2).toMatchObject({ x: 50, y: 50 });
+    expect(r2.guides.map((g) => g.alignGuideId)).toEqual(['gd']);
+  });
+
+  it('tens never notches off a diagonal guide, and the marker still shows', () => {
+    const r = snapPolygonPoint({
+      proposed: { x: 53, y: 52 },
+      ...noTargets,
+      modes: modes({ tens: true }),
+      guideTargets: [dDown],
+    });
+    expect(r.x).toBeCloseTo(52.5, 12);
+    expect(r.y).toBeCloseTo(52.5, 12);
+    expect(r.guides.map((g) => g.alignGuideId)).toEqual(['gd']);
+  });
+});

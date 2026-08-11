@@ -91,6 +91,28 @@ describe('<SnapGuides />', () => {
     expect(Number(text.getAttribute('x'))).toBeCloseTo(40, 6);
   });
 
+  it('renders an engaged diagonal clipped to the box, chip naming its Y₀', () => {
+    // The \ at intercept 200 over a box spanning ±500: it enters the box at
+    // the left edge (−500, −300) and exits at the bottom (300, 500).
+    const { container } = render(
+      <SnapGuides
+        guides={[]}
+        zoom={1}
+        engaged={[{ id: 'gd', orientation: 'diagonal-down', offset: 200, at: { x: 40, y: 240 } }]}
+        vb={{ vbX: -500, vbY: -500, vbW: 1000, vbH: 1000 }}
+      />,
+    );
+    const dashed = Array.from(container.querySelectorAll('line')).find((l) =>
+      l.getAttribute('stroke-dasharray'),
+    )!;
+    expect(Number(dashed.getAttribute('x1'))).toBe(-500);
+    expect(Number(dashed.getAttribute('y1'))).toBe(-300);
+    expect(Number(dashed.getAttribute('x2'))).toBe(300);
+    expect(Number(dashed.getAttribute('y2'))).toBe(500);
+    const text = labelText(container);
+    expect(text.textContent).toBe('Y₀ 200');
+  });
+
   it('labels a vertical engaged guide with its X, chip beside the snap point', () => {
     const { container } = render(
       <SnapGuides

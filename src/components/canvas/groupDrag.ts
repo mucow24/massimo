@@ -1,7 +1,9 @@
 import { useDoc, useSelection } from '../../state/store';
 import { useViewportStore } from '../../state/viewportStore';
 import { kindVisibleNow } from '../../state/visibility';
+import { guideNudgeDelta } from '../../geometry/snap';
 import type { Vec2 } from '../../geometry/vec';
+import type { GuideOrientation } from '../../model/types';
 import type { AlignExclude } from './snapTargets';
 
 export type GrabbedKind =
@@ -30,10 +32,11 @@ export interface GroupSiblings {
   // Line circles, towed by their CENTER (`moveLineCircle`, which carries the
   // stations bound to them).
   lineCircles: { id: string; startX: number; startY: number }[];
-  // Alignment guides: one degree of freedom, so a tow takes only the AXIS
-  // COMPONENT of the group delta (dy for a horizontal guide, dx for a
-  // vertical one) — the cross-axis half of the drag slides past it.
-  guides: { id: string; orientation: 'horizontal' | 'vertical'; startOffset: number }[];
+  // Alignment guides: one degree of freedom, so a tow takes only the
+  // offset-changing PROJECTION of the group delta (guideNudgeDelta: dy for a
+  // horizontal guide, dx for a vertical, dy∓dx for the diagonals) — the
+  // along-axis half of the drag slides past it.
+  guides: { id: string; orientation: GuideOrientation; startOffset: number }[];
   // Stations that MOVE with the drag but are NOT towed by us: the passengers of
   // a towed ring, carried by `moveLineCircle`. Ids only — nothing here is
   // translated. They are tracked so the snap pools can still exclude them (a
@@ -301,8 +304,9 @@ export function translateSiblings(s: GroupSiblings, dx: number, dy: number): voi
   }
   for (const is of s.svgImages) doc.moveSvgImage(is.id, is.startX + dx, is.startY + dy);
   for (const as of s.anchors) doc.moveTransferAnchor(as.id, as.startX + dx, as.startY + dy);
-  // One degree of freedom: only the axis component of the delta moves a guide.
+  // One degree of freedom: only the offset-changing projection of the delta
+  // moves a guide.
   for (const gs of s.guides) {
-    doc.moveGuide(gs.id, gs.startOffset + (gs.orientation === 'horizontal' ? dy : dx));
+    doc.moveGuide(gs.id, gs.startOffset + guideNudgeDelta(gs.orientation, dx, dy));
   }
 }

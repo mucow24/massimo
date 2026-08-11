@@ -211,6 +211,21 @@ describe('useGuideDrag — dragging an existing guide', () => {
     expect(useDoc.getState().guides.gh).toBeDefined();
   });
 
+  it('a strip guide over a corner square tints THAT square, and still deletes', () => {
+    seedGuides();
+    const r = render();
+    act(() => r.current.onStartDrag('gv', pointerEvent({ clientX: 200, clientY: 300 })));
+    // x ≤ 14 is the vertical guide's whole delete zone, corner squares
+    // included — but the tint follows the well under the POINTER, so the
+    // square the cursor occupies is the one that lights up. (The jsdom host
+    // rect is zero-height, so any left-edge point below the top corner reads
+    // as the bottom one.)
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 8, clientY: 300, shiftKey: true })));
+    expect(r.current.overWell).toBe('diagonal-down');
+    act(() => r.current.onPointerUp(pointerEvent({ clientX: 8, clientY: 300 })));
+    expect(useDoc.getState().guides.gv).toBeUndefined();
+  });
+
   it("the OTHER orientation's well does not delete", () => {
     seedGuides();
     const r = render();
@@ -220,6 +235,132 @@ describe('useGuideDrag — dragging an existing guide', () => {
     expect(r.current.overWell).toBeNull();
     act(() => r.current.onPointerUp(pointerEvent({ clientX: 8, clientY: 160 })));
     expect(useDoc.getState().guides.gh.offset).toBe(160);
+  });
+});
+
+describe('useGuideDrag — diagonal guides', () => {
+  const seedDiagonals = () =>
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: {
+        gd: makeGuide({ id: 'gd', orientation: 'diagonal-down', offset: 0 }),
+        gu: makeGuide({ id: 'gu', orientation: 'diagonal-up', offset: 400 }),
+      },
+    });
+
+  it('moves a \\ guide by the intercept projection of the pointer delta', () => {
+    seedDiagonals();
+    const r = render();
+    act(() => r.current.onStartDrag('gd', pointerEvent({ clientX: 100, clientY: 100 })));
+    act(() => {
+      // dx 30, dy 50 → intercept delta dy − dx = 20.
+      r.current.onPointerMove(pointerEvent({ clientX: 130, clientY: 150, shiftKey: true }));
+      r.current.onPointerUp(pointerEvent({ clientX: 130, clientY: 150 }));
+    });
+    expect(useDoc.getState().guides.gd.offset).toBe(20);
+  });
+
+  it('moves a / guide by dy + dx, divided by the zoom', () => {
+    seedDiagonals();
+    const r = render(2);
+    act(() => r.current.onStartDrag('gu', pointerEvent({ clientX: 100, clientY: 100 })));
+    act(() => {
+      // dx 30, dy 50 → (50 + 30) / 2 = 40 world units.
+      r.current.onPointerMove(pointerEvent({ clientX: 130, clientY: 150, shiftKey: true }));
+      r.current.onPointerUp(pointerEvent({ clientX: 130, clientY: 150 }));
+    });
+    expect(useDoc.getState().guides.gu.offset).toBe(440);
+  });
+
+  it('snaps so the guide passes through an aligned station', () => {
+    setModes({ all: 'all' });
+    seedDiagonals();
+    useDoc.setState({
+      ...useDoc.getState(),
+      stations: { s1: makeStation({ id: 's1', x: 300, y: 150 }) },
+    });
+    const r = render();
+    act(() => r.current.onStartDrag('gd', pointerEvent({ clientX: 100, clientY: 100 })));
+    // Raw intercept −147, within tolerance of the station's y − x = −150.
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 100, clientY: -47 })));
+    expect(useDoc.getState().guides.gd.offset).toBe(-150);
+    expect(r.current.snapGuides.length).toBeGreaterThan(0);
+  });
+
+  it('the hard grid quantizes the intercept — full lattice only', () => {
+    setModes({ grid: 'both' });
+    seedDiagonals();
+    const r = render();
+    act(() => r.current.onStartDrag('gd', pointerEvent({ clientX: 100, clientY: 100 })));
+    // Raw intercept 33 on the 20 grid → 40.
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 100, clientY: 133 })));
+    expect(useDoc.getState().guides.gd.offset).toBe(40);
+    // A directional grid has no diagonal crossings to offer: raw wins.
+    act(() => setModes({ grid: 'horizontal' }));
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 100, clientY: 133 })));
+    expect(useDoc.getState().guides.gd.offset).toBe(33);
+  });
+
+  it('tows co-selected items by the perpendicular carry, half per axis', () => {
+    seedDiagonals();
+    useDoc.setState({
+      ...useDoc.getState(),
+      stations: { free: makeStation({ id: 'free', x: 500, y: 500 }) },
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['free'],
+      selectedGuideIds: ['gd'],
+    });
+    const r = render();
+    act(() => r.current.onStartDrag('gd', pointerEvent({ clientX: 300, clientY: 300 })));
+    act(() => {
+      r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 340, shiftKey: true }));
+      r.current.onPointerUp(pointerEvent({ clientX: 300, clientY: 340 }));
+    });
+    expect(useDoc.getState().guides.gd.offset).toBe(40);
+    expect(useDoc.getState().stations.free).toMatchObject({ x: 480, y: 520 });
+  });
+
+  it('deletes a \\ guide dropped on the lower-left corner well, not elsewhere', () => {
+    seedDiagonals();
+    const r = render();
+    act(() => r.current.onStartDrag('gd', pointerEvent({ clientX: 300, clientY: 300 })));
+    // The top strip is the HORIZONTAL home — not this guide's well.
+    act(() =>
+      r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 292, shiftKey: true })),
+    );
+    expect(r.current.overWell).toBeNull();
+    // The lower-left corner square is (x ≤ 14, y past the bottom edge — the
+    // jsdom host rect is zero-height, so any y qualifies).
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 8, clientY: 200, shiftKey: true })));
+    expect(r.current.overWell).toBe('diagonal-down');
+    act(() => r.current.onPointerUp(pointerEvent({ clientX: 8, clientY: 200 })));
+    expect(useDoc.getState().guides.gd).toBeUndefined();
+  });
+
+  it('pulls a / guide out of the upper-left corner well', () => {
+    const r = render();
+    act(() => r.current.onWellPointerDown('diagonal-up', pointerEvent({ clientX: 5, clientY: 5 })));
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 200, clientY: 100 })));
+    expect(r.current.pull).toEqual({ orientation: 'diagonal-up', offset: 300 });
+    act(() => r.current.onPointerUp(pointerEvent({ clientX: 200, clientY: 100 })));
+    const guides = Object.values(useDoc.getState().guides);
+    expect(guides).toHaveLength(1);
+    expect(guides[0]).toMatchObject({ orientation: 'diagonal-up', offset: 300 });
+    expect(useSelection.getState().selectedGuideIds).toEqual([guides[0].id]);
+  });
+
+  it('pulls a \\ guide out of the lower-left corner well', () => {
+    const r = render();
+    act(() =>
+      r.current.onWellPointerDown('diagonal-down', pointerEvent({ clientX: 5, clientY: 395 })),
+    );
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 200, clientY: 300 })));
+    expect(r.current.pull).toEqual({ orientation: 'diagonal-down', offset: 100 });
+    act(() => r.current.onPointerUp(pointerEvent({ clientX: 200, clientY: 300 })));
+    const guides = Object.values(useDoc.getState().guides);
+    expect(guides[0]).toMatchObject({ orientation: 'diagonal-down', offset: 100 });
   });
 });
 

@@ -3,7 +3,24 @@ import { PopoverShell } from './PopoverShell';
 import { usePinnedPopover } from './canvas/usePinnedPopover';
 import { useNumericField } from './useNumericField';
 import { PopoverFooter } from './PopoverFooter';
-import type { AlignmentGuide } from '../model/types';
+import type { AlignmentGuide, GuideOrientation } from '../model/types';
+
+// The one coordinate's title + field naming, per orientation. A diagonal's
+// scalar is its Y-intercept — labeled Y₀, spelled out in the hover title.
+const COORD: Record<GuideOrientation, { title: string; label: string; hint?: string }> = {
+  horizontal: { title: 'Horizontal guide', label: 'Y' },
+  vertical: { title: 'Vertical guide', label: 'X' },
+  'diagonal-down': {
+    title: 'Diagonal guide (\\)',
+    label: 'Y₀',
+    hint: 'Y where the guide crosses X = 0',
+  },
+  'diagonal-up': {
+    title: 'Diagonal guide (/)',
+    label: 'Y₀',
+    hint: 'Y where the guide crosses X = 0',
+  },
+};
 
 interface Props {
   guide: AlignmentGuide;
@@ -26,7 +43,7 @@ export function GuidePopover({ guide, hostW, onClose }: Props) {
   const setGuideLocked = useDoc((s) => s.setGuideLocked);
   const deleteGuide = useDoc((s) => s.deleteGuide);
 
-  const horizontal = guide.orientation === 'horizontal';
+  const coord = COORD[guide.orientation];
   const locked = guide.locked ?? false;
   // useNumericField (not a bare input): its text mirror ignores an emptied
   // field mid-edit — Number('') === 0 would teleport the guide to the axis.
@@ -39,17 +56,19 @@ export function GuidePopover({ guide, hostW, onClose }: Props) {
   return (
     <PopoverShell
       className="bullet-popover guide-popover"
-      title={horizontal ? 'Horizontal guide' : 'Vertical guide'}
+      title={coord.title}
       left={anchor.x}
       top={anchor.y}
       shellRef={shellRef}
     >
       <div className="row" ref={locked ? undefined : field.attachWheel}>
-        <label htmlFor="guide-offset">{horizontal ? 'Y' : 'X'}</label>
+        <label htmlFor="guide-offset" title={coord.hint}>
+          {coord.label}
+        </label>
         <input
           id="guide-offset"
           type="number"
-          aria-label={horizontal ? 'Y' : 'X'}
+          aria-label={coord.label}
           className="options-popover-spin"
           style={{ marginLeft: 'auto' }}
           value={field.text}

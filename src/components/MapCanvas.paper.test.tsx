@@ -55,7 +55,8 @@ describe('canvas paper marker', () => {
   it('keeps the guide wells inside the marked host, which is what the CSS needs', () => {
     useDoc.setState({ ...useDoc.getState(), darkMode: true });
     render(<App />);
-    // The selector the night ink is written against, end to end.
-    expect(document.querySelectorAll('.canvas-host[data-paper="dark"] .guide-well').length).toBe(2);
+    // The selector the night ink is written against, end to end. Four wells:
+    // the two edge strips plus the two diagonal corner squares.
+    expect(document.querySelectorAll('.canvas-host[data-paper="dark"] .guide-well').length).toBe(4);
   });
 });

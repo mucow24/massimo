@@ -7,6 +7,7 @@ import {
   textLabelsForRect,
 } from '../../geometry/stationBoundary';
 import { stopMetricsOf } from '../../model/stopMetrics';
+import { guidePerpDist } from '../../geometry/snap';
 import { effectiveBackgroundOrder } from '../../model/transforms';
 import { pairKeyOf } from '../../model/pairKey';
 import type { AppendCursor } from '../../model/appendGestures';
@@ -287,9 +288,7 @@ export function lockedHitsAt(pt: Pt, doc: LockedHitDocSlice, pad: number): HitRe
   for (const id of Object.keys(doc.guides)) {
     const g = doc.guides[id];
     if (!g.locked) continue;
-    const d =
-      g.orientation === 'horizontal' ? Math.abs(pt.y - g.offset) : Math.abs(pt.x - g.offset);
-    if (d <= pad) out.push({ kind: 'guide', id });
+    if (guidePerpDist(g.orientation, g.offset, pt) <= pad) out.push({ kind: 'guide', id });
   }
   // One walk of the shared background stack, topmost first — polygons and
   // images interleave, so they can't be pushed as two kind-grouped blocks.

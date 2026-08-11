@@ -762,17 +762,22 @@ export interface LineCircle {
 }
 
 // Which way an alignment guide runs. A horizontal guide is a line of constant
-// Y; a vertical one of constant X. Fixed at creation — converting is a delete
-// and a fresh pull from the other well.
-export type GuideOrientation = 'horizontal' | 'vertical';
+// Y; a vertical one of constant X. The two 45° families are named for how the
+// line reads left-to-right: 'diagonal-down' is \ (y − x constant, pulled from
+// the lower-left corner well), 'diagonal-up' is / (y + x constant, upper-left
+// corner). Fixed at creation — converting is a delete and a fresh pull from
+// another well.
+export type GuideOrientation = 'horizontal' | 'vertical' | 'diagonal-down' | 'diagonal-up';
 
-// An alignment guide: an infinite horizontal or vertical line pulled out of
-// the canvas-edge wells — the only way one is born. Editor scaffolding in
+// An alignment guide: an infinite horizontal, vertical, or 45° line pulled out
+// of the canvas-edge wells — the only way one is born. Editor scaffolding in
 // the line-circle mold — a dashed guide rendered below map ink and excluded
 // from every export — but an ALWAYS-ON snap target for both snappers: items
 // dragged or placed near it engage regardless of the "Snap to all" toggle
 // (Shift declines, as everywhere). `offset` is the world Y (horizontal) or
-// world X (vertical) the line sits at.
+// world X (vertical) the line sits at; for the diagonals it is the line's
+// Y-intercept — the Y where it crosses x = 0 (y − x for \, y + x for /), so
+// every orientation stores one plain world-unit scalar.
 export interface AlignmentGuide {
   id: string;
   orientation: GuideOrientation;

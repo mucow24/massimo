@@ -122,7 +122,11 @@ const SECTIONS: HelpSection[] = [
         k: 'Top / left edge',
         effect: 'Drag out of the edge strip to pull an alignment guide — everything snaps to it',
       },
-      { k: 'Drag back', effect: 'Drop a guide on its strip to delete it — click one to edit/lock' },
+      {
+        k: 'Left corners',
+        effect: 'Drag out of a corner square for a diagonal guide — upper-left /, lower-left \\',
+      },
+      { k: 'Drag back', effect: 'Drop a guide on its well to delete it — click one to edit/lock' },
     ],
   },
   {
