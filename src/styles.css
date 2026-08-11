@@ -977,6 +977,11 @@ select option {
   display: flex;
   flex-direction: column;
 }
+/* The text-label popover alone runs half again wider: its textarea, the
+   style row (+ sync/revert buttons) and six slider rows want the room. */
+.text-label-popover {
+  width: 372px;
+}
 /* The header is the panel's title band — the panels are docked to the host
    corner, not dragged: the signature black band wearing the panel's rounded
    top corners, white bold Söhne doing the chrome's talking. Same black in
