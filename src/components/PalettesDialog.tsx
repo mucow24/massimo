@@ -15,12 +15,12 @@ import {
   StarFilledIcon,
 } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
+import { useCustomLineColors } from '../state/customLineColors';
 import { useCustomPalettes } from '../state/customPalettes';
 import { parseCustomPalette, serializeCustomPalette } from '../model/customPalette';
 import {
   BUILTIN_PALETTE_NAMES,
   copyPalette,
-  customLineColors,
   freshPaletteName,
   libraryPalettes,
   paletteContentEqual,
@@ -51,11 +51,16 @@ const SORT_LABELS: Record<PaletteSort, string> = {
 
 /**
  * What the map column calls the row holding the colors no palette covers. It
- * is not a palette and never lands in the doc — the name is a label, not a key
+ * is not a palette and never lands in the doc — the name is a LABEL, not a key
  * — so it is italic in the list, and a map may perfectly well hold a real
  * palette of the same name.
+ *
+ * Which is why the export carries the other one: a file loaded back mints a
+ * real palette under the name inside it, and a palette called "Custom colors
+ * (not in a palette)" would sit in the map column impersonating this row.
  */
 const CUSTOM_COLORS_NAME = 'Custom colors (not in a palette)';
+const CUSTOM_COLORS_EXPORT_NAME = 'Custom colors';
 
 /**
  * Loose colors as a palette's swatches — numbered, because a hand-picked color
@@ -137,7 +142,6 @@ function StarToggle({
  */
 export function PalettesDialog({ onClose }: { onClose: () => void }) {
   const mapPalettes = useDoc((s) => s.palettes);
-  const lines = useDoc((s) => s.lines);
   const addPaletteToMap = useDoc((s) => s.addPaletteToMap);
   const removePaletteFromMap = useDoc((s) => s.removePaletteFromMap);
   const reorderMapPalette = useDoc((s) => s.reorderMapPalette);
@@ -325,12 +329,9 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
   // The map's custom colors — line colors no palette covers — stand as a row
   // of their own at the foot of the map column, where the `+` absorbs them
   // into a palette (and so empties the row away).
-  const customColors = customLineColors(
-    Object.values(lines).map((l) => l.color),
-    mapPalettes,
-  );
+  const customColors = useCustomLineColors();
   const customColorsPalette: Palette = {
-    name: CUSTOM_COLORS_NAME,
+    name: CUSTOM_COLORS_EXPORT_NAME,
     swatches: swatchesFromColors(customColors),
   };
 
@@ -600,10 +601,13 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                     <h3>In this map</h3>
                   </div>
                   <div className={'dialog-list' + (mapDrag.drag ? ' dragging' : '')}>
+                    {/* With no palettes AND no custom colors there is nothing
+                        here at all — which means nothing on the map is painted
+                        yet, so the old "line colors are all picked by hand"
+                        would be describing colors that don't exist. Where they
+                        DO, the custom colors row below says it better. */}
                     {mapPalettes.length === 0 && customColors.length === 0 && (
-                      <div className="empty">
-                        This map carries no palettes — line colors are all picked by hand.
-                      </div>
+                      <div className="empty">This map carries no palettes.</div>
                     )}
                     {mapPalettes.map((p, i) => {
                       const library = inLibrary.get(p.name);

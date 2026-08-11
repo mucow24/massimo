@@ -480,6 +480,10 @@ select option {
   flex-wrap: wrap;
   gap: 4px;
   max-width: 160px;
+  /* A map can be painted from thirty colors picked by hand; past about seven
+     rows of them the flyout scrolls rather than growing off the window. */
+  max-height: 200px;
+  overflow-y: auto;
   padding: 2px;
 }
 .menu-panel .menu-swatch {

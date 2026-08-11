@@ -1,5 +1,5 @@
 import { useDoc } from '../../state/store';
-import { customLineColors } from '../../model/palettes';
+import { useCustomLineColors } from '../../state/customLineColors';
 import { ColorField } from '../ColorField';
 import { normalizeHex } from '../../util/color';
 
@@ -11,13 +11,9 @@ export function ColorPalette({
   onChange: (c: string) => void;
 }) {
   const palettes = useDoc((s) => s.palettes);
-  const lines = useDoc((s) => s.lines);
   // Every distinct line color that isn't a swatch in one of the map's palettes
-  // — the contents of the always-present "Custom" section (see customLineColors).
-  const customColors = customLineColors(
-    Object.values(lines).map((l) => l.color),
-    palettes,
-  );
+  // — the contents of the always-present "Custom" section.
+  const customColors = useCustomLineColors();
   // Normalize both sides so matching ignores case and a spurious opaque `ff`
   // (a translucent color is intentionally never a swatch hit).
   const v = normalizeHex(value);

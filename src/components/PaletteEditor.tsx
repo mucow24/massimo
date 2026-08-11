@@ -2,13 +2,9 @@ import { useEffect, useRef, type MutableRefObject } from 'react';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { Cross2Icon, DragHandleDots2Icon, PlusIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
+import { useCustomLineColors } from '../state/customLineColors';
 import { useCustomPalettes } from '../state/customPalettes';
-import {
-  customLineColors,
-  FALLBACK_LINE_COLOR,
-  type Palette,
-  type PaletteSwatch,
-} from '../model/palettes';
+import { FALLBACK_LINE_COLOR, type Palette, type PaletteSwatch } from '../model/palettes';
 import { legibleTextOn, normalizeHex } from '../util/color';
 import { ColorField } from './ColorField';
 import { MenuItem, SubMenu } from './Menu';
@@ -18,6 +14,17 @@ import { rowShiftStyle, useRowDragReorder } from './useRowDragReorder';
 
 /** The fixed row height the drag hook divides by — pinned in CSS. */
 export const PALETTE_EDITOR_ROW_HEIGHT = 40;
+
+/**
+ * The Add color button, in both of its jobs: it either adds on the click, or
+ * (bare) stands as the trigger a menu hangs off. One element either way, so
+ * the command doesn't change size or wording as the map's colors come and go.
+ */
+const addButton = (onClick?: () => void) => (
+  <button type="button" className="palette-editor-add" onClick={onClick}>
+    <PlusIcon aria-hidden="true" /> Add color
+  </button>
+);
 
 export type PaletteSource = 'library' | 'map';
 
@@ -144,7 +151,11 @@ export function PaletteEditor({
   inlineEditRef: MutableRefObject<boolean>;
 }) {
   const mapPalettes = useDoc((s) => s.palettes);
-  const lines = useDoc((s) => s.lines);
+  // The colors this MAP paints with that no palette of its own covers — the
+  // same set the manager's custom colors row collects, offered here one at a
+  // time. Always the map's, even while a LIBRARY palette is open, since that
+  // is where you collect them to keep.
+  const customColors = useCustomLineColors();
   const addPaletteToMap = useDoc((s) => s.addPaletteToMap);
   const renameMapPalette = useDoc((s) => s.renameMapPalette);
   const recolorMapPaletteColor = useDoc((s) => s.recolorMapPaletteColor);
@@ -228,15 +239,13 @@ export function PaletteEditor({
   const addColor = (color: string = FALLBACK_LINE_COLOR) =>
     withSwatches([...swatches, { name: String(swatches.length + 1), color: normalizeHex(color) }]);
 
-  // The colors this MAP paints with that no palette of its own covers — the
-  // same set the manager's custom colors row collects, offered here one at a
-  // time. Always the map's, even while a LIBRARY palette is open: a library
-  // palette is where you keep them, and keeping one covers nothing, so that
-  // list simply doesn't shrink as you take from it.
-  const customColors = customLineColors(
-    Object.values(lines).map((l) => l.color),
-    mapPalettes,
-  );
+  // What Add color offers: the map's custom colors, minus whatever this
+  // palette already holds. That subtraction is the only reason the two sources
+  // behave alike — taking a color into a MAP palette covers it and the set
+  // shrinks on its own, but a LIBRARY palette covers nothing, and without this
+  // the same swatch could be added over and over.
+  const held = new Set(swatches.map((s) => normalizeHex(s.color)));
+  const offerable = customColors.filter((c) => !held.has(normalizeHex(c)));
 
   return (
     <div className="palette-editor">
@@ -264,21 +273,15 @@ export function PaletteEditor({
             inlineEditRef={inlineEditRef}
             onCommit={commitDescription}
           />
-          {/* Nothing to choose between until the map has colors of its own, so
-              the button adds on the click. Once it does, the same button opens
-              a menu of the two answers — a fresh gray to work from, or one of
-              the colors already on the map. */}
-          {customColors.length === 0 ? (
-            <button type="button" className="palette-editor-add" onClick={() => addColor()}>
-              <PlusIcon aria-hidden="true" /> Add color
-            </button>
+          {/* Nothing to choose between while the map has no color this palette
+              lacks, so the button adds on the click. When it does, the same
+              button opens a menu of the two answers — a fresh gray to work
+              from, or one of the colors already on the map. */}
+          {offerable.length === 0 ? (
+            addButton(() => addColor())
           ) : (
             <Dropdown.Root modal={false}>
-              <Dropdown.Trigger asChild>
-                <button type="button" className="palette-editor-add">
-                  <PlusIcon aria-hidden="true" /> Add color
-                </button>
-              </Dropdown.Trigger>
+              <Dropdown.Trigger asChild>{addButton()}</Dropdown.Trigger>
               {/* Non-portalled, like every menu in the app: inside `.app` for
                   the design tokens, and inside the dialog for its focus trap.
                   Aligned to the button's far edge, which is the window's — so
@@ -295,7 +298,7 @@ export function PaletteEditor({
                   {/* The picker's own swatches, standing as menu items — a
                       custom color looks the same wherever it is offered. */}
                   <div className="menu-swatches">
-                    {customColors.map((c) => {
+                    {offerable.map((c) => {
                       const hex = normalizeHex(c);
                       return (
                         <Dropdown.Item

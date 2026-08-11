@@ -360,6 +360,21 @@ describe('<PalettesDialog /> the custom colors row', () => {
     expect(rowNames(mapColumn())).toEqual(['MTA', 'New palette']);
   });
 
+  // The row's LABEL says what it is; the file has to carry a name a palette
+  // can actually wear, since loading one back mints a real palette under it.
+  it('exports under a plain name, not the row’s label', async () => {
+    const user = userEvent.setup();
+    withCustomColors();
+    renderDialog();
+    await openMore(user, 'custom colors');
+    await user.click(
+      await screen.findByRole('button', { name: 'Export these colors as a palette file' }),
+    );
+    const [blob, filename] = vi.mocked(downloadBlob).mock.calls[0];
+    expect(filename).toBe('Custom colors.palette.json');
+    expect(JSON.parse(await (blob as Blob).text()).name).toBe('Custom colors');
+  });
+
   // Export is the only row command that means anything for colors that aren't
   // a palette: nothing to edit, nothing to copy, nothing to take out of the map.
   it('offers export and nothing else behind its …', async () => {

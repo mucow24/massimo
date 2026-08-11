@@ -224,6 +224,26 @@ describe('<PaletteEditor /> Add color with custom colors about', () => {
     expect(await offered()).toEqual(['Add #abcdef']);
   });
 
+  // Taking the last one leaves nothing to choose between, so the trigger
+  // becomes the plain button again — under Radix, as it closes the menu and
+  // restores focus to a trigger that is on its way out.
+  it('falls back to the plain button when the last custom color is taken', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L: makeLine({ id: 'L', color: '#123456' }) },
+    });
+    renderEditor('map', 'frrf');
+    await openAdd(user);
+    await pick('#123456');
+    await user.click(screen.getByRole('button', { name: 'Add color' }));
+    expect(mapSwatches()).toEqual([
+      ...FRRF.swatches,
+      { name: '3', color: '#123456' },
+      { name: '4', color: '#888888' },
+    ]);
+  });
+
   // The custom colors are the MAP's either way — a library palette is where
   // you collect them to keep, and collecting them doesn't cover anything.
   it('offers them to a library palette too, and writes only the library', async () => {
@@ -234,6 +254,19 @@ describe('<PaletteEditor /> Add color with custom colors about', () => {
     await pick('#123456');
     expect(librarySwatches()).toEqual([...FRRF.swatches, { name: '3', color: '#123456' }]);
     expect(mapSwatches()).toEqual(FRRF.swatches);
+  });
+
+  // Taking a color into a LIBRARY palette covers nothing, so the map's list
+  // doesn't shrink — but the open palette holds that color now, and offering
+  // it again is offering to add it twice.
+  it('stops offering a color the open palette already holds', async () => {
+    const user = userEvent.setup();
+    withCustomColors();
+    renderEditor('library', 'frrf');
+    await openAdd(user);
+    await pick('#123456');
+    await openAdd(user);
+    expect(await offered()).toEqual(['Add #abcdef']);
   });
 });
 
