@@ -454,7 +454,7 @@ describe('<TextLabelPopover /> — style presets', () => {
     expect(screen.queryByRole('button', { name: 'Revert Size to style' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Revert Weight to style' })).toHaveAttribute(
       'title',
-      'Overrides style weight (style default Bold) — click to revert',
+      'Overrides style weight (Bold) — click to revert',
     );
     await user.click(screen.getByRole('button', { name: 'Revert Weight to style' }));
     const label = useDoc.getState().textLabels.g1;

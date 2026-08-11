@@ -123,8 +123,8 @@ export function OverrideDot({
       .split(',')
       .map(
         (f) =>
-          `Overrides style ${FIELD_LABELS[f] ?? f} (style default ` +
-          `${formatStyleValue(f, (def.props as unknown as Record<string, unknown>)[f], s.styles)})`,
+          `Overrides style ${FIELD_LABELS[f] ?? f} ` +
+          `(${formatStyleValue(f, (def.props as unknown as Record<string, unknown>)[f], s.styles)})`,
       );
     return lines.length === 1
       ? `${lines[0]} — click to revert`
