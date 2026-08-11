@@ -15,8 +15,8 @@ export const LINE_END_LABELS: Record<LineEndStyle, string> = {
 const DISABLED_TITLE = 'End style disabled — only a stop at the end of the line can take one';
 
 const LINE_END_TITLES: Record<LineEndStyle, string> = {
-  square: 'Square — fully encloses final stop',
-  short: 'Short — half-encloses final stop, so a same-width dot covers the end',
+  square: 'Square — fully encloses the final stop',
+  short: 'Short — half-encloses the final stop, so a same-width dot covers the end',
   round: 'Round — a rounded end, smooth behind a narrower round dot',
 };
 

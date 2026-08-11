@@ -295,7 +295,7 @@ export function LineInspector({ id }: { id: LineId }) {
               resolved live per stop, and always overridable per-stop in the
               station editor; the label tooltips explain each case. */}
           <div className="field dot-field">
-            <label title="Stations with only one non-empty line stop (by default)">
+            <label title="Stations where this is the only line stopping — a station’s Stop type can override">
               Singleton (One line stops)
             </label>
             <NumericFieldRow
@@ -329,7 +329,7 @@ export function LineInspector({ id }: { id: LineId }) {
             />
           </div>
           <div className="field dot-field">
-            <label title="Stations with more than one non-empty line stop (by default)">
+            <label title="Stations where other lines also stop — a station’s Stop type can override">
               Interchange (Multiple lines stop)
             </label>
             <NumericFieldRow

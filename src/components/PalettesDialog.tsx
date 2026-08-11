@@ -78,7 +78,7 @@ function StarToggle({
       title={
         starred
           ? 'Starred — kept by the Starred sort'
-          : 'Star this palette: the Starred sort keeps it'
+          : 'Star this palette — the Starred sort keeps it'
       }
     >
       {starred ? <StarFilledIcon /> : <StarIcon />}

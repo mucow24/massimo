@@ -104,14 +104,14 @@ function ToolButtons() {
     <div className="tool-group">
       <button
         className={'tool-btn' + (effective === 'arrow' ? ' active' : '')}
-        title="Arrow (V)"
+        title="Arrow tool (V)"
         onClick={() => setToolMode('arrow')}
       >
         <CursorArrowIcon />
       </button>
       <button
         className={'tool-btn' + (effective === 'hand' ? ' active' : '')}
-        title="Hand (hold Space, H to toggle)"
+        title="Hand tool — pan the map (H, or hold Space)"
         onClick={() => setToolMode('hand')}
       >
         <HandIcon />
@@ -722,7 +722,7 @@ export function Toolbar() {
           title={
             selection.uiMode.kind === 'layering'
               ? 'Exit layering mode (Esc)'
-              : 'Layering mode (L) — modify line layering'
+              : 'Layering mode (L) — choose which line paints on top where lines overlap'
           }
           aria-label="Toggle layering mode"
           aria-pressed={selection.uiMode.kind === 'layering'}

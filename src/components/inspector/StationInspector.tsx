@@ -230,11 +230,11 @@ export function StationInspector({ id }: { id: StationId }) {
               // reachable (a match can dissolve under an unmirrored edit while
               // the mode is on) and would otherwise boast of selecting none.
               mirrorOn && mirrorAvailable
-                ? `${matches.length} similar station${matches.length === 1 ? '' : 's'} selected — edits here apply to all of them; click to edit only this station`
+                ? `${matches.length} similar station${matches.length === 1 ? '' : 's'} selected — layout edits (stops, label, rotation) apply to all of them; click to edit only this station`
                 : mirrorOn
                   ? 'No matching stations — click to edit only this station'
                   : mirrorAvailable
-                    ? `Selects the ${matches.length} station${matches.length === 1 ? '' : 's'} on this line with the same layout — while selected, all edits to this station will apply to the selected stations as well`
+                    ? `Select the ${matches.length} station${matches.length === 1 ? '' : 's'} sharing a line and layout with this one — layout edits (stops, label, rotation) will apply to them too`
                     : 'No matching stations'
             }
             onClick={() => selection.setMirrorMatching(!mirrorOn)}
@@ -372,7 +372,7 @@ export function StationInspector({ id }: { id: StationId }) {
                 id={`station-stop-type-${station.id}`}
                 className="field-select"
                 aria-label="Stop type"
-                title="Whether this stop counts as a singleton or interchange for the purposes of line style — Auto picks based on the number of non-empty line stops"
+                title="Whether this station counts as a singleton or an interchange for line styling — Auto decides by how many stops have a visible dot"
               >
                 <Select.Value />
                 <Select.Icon className="field-select-caret" aria-hidden="true">
@@ -411,8 +411,8 @@ export function StationInspector({ id }: { id: StationId }) {
               aria-label="Auto placement"
               title={
                 autoAlignOn
-                  ? 'Auto placement on — alignment follows the nearest stop (transit-map typography); click for manual alignment'
-                  : 'Auto placement: align to the nearest stop with transit-map typography (overrides align/v-align)'
+                  ? 'Auto placement on — the label follows the nearest stop; click for manual alignment'
+                  : 'Auto placement — align the label to the nearest stop, transit-map style (overrides align/v-align)'
               }
               onClick={() => {
                 const next = !autoAlignOn;

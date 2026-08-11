@@ -456,8 +456,8 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
                           label={`${m.starred ? 'Unstar' : 'Star'} ${m.name}`}
                           title={
                             m.starred
-                              ? 'Starred — kept by the head’s star filter'
-                              : 'Star this map: the head’s star filter keeps it'
+                              ? 'Starred — kept by the star filter above'
+                              : 'Star this map — the star filter above keeps it'
                           }
                           onToggle={() => void onToggleMapStar(m)}
                         />
@@ -543,7 +543,7 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
                           title={
                             r.starred
                               ? 'Starred — never pruned, and kept by the star filter'
-                              : 'Star this version: safe from pruning, and kept by the filter'
+                              : 'Star this version — safe from pruning, and kept by the star filter'
                           }
                           onToggle={() => void onToggleStar(r)}
                         />
