@@ -11284,6 +11284,7 @@
     "regionAssignments": {},
     "svgImages": {},
     "lineCircles": {},
+    "guides": {},
     "styles": {
       "default-line": {
         "id": "default-line",

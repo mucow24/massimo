@@ -12,6 +12,7 @@ import { pairKeyOf } from '../../model/pairKey';
 import type { AppendCursor } from '../../model/appendGestures';
 import type { Pt } from '../../geometry/polygonUnion';
 import type {
+  AlignmentGuide,
   Line,
   LineCircle,
   LineId,
@@ -46,7 +47,12 @@ export type HitKind =
   // exception to the locked-geometry merge below: a locked, unselected circle
   // renders no rim element to dispatch to, so its recovery path is the
   // Alt-marquee, not the deep-pick.
-  | 'lineCircle';
+  | 'lineCircle'
+  // Guides cycle via their full-length hit stroke. Unlike a locked ring, a
+  // locked guide KEEPS that element (pointer-events none) — the marquee never
+  // sweeps guides, so the deep-pick is its only pointer recovery and needs a
+  // dispatch target.
+  | 'guide';
 
 export interface HitRef {
   kind: HitKind;
@@ -96,6 +102,7 @@ const RESOLVERS: { selector: string; kind: HitKind; attr: string }[] = [
   // (see HitKind).
   { selector: '[data-line-circle-rim]', kind: 'lineCircle', attr: 'data-line-circle-rim' },
   { selector: '[data-line-circle-center]', kind: 'lineCircle', attr: 'data-line-circle-center' },
+  { selector: '[data-guide-hit]', kind: 'guide', attr: 'data-guide-hit' },
 ];
 
 // Selected-item drag proxies re-assert footprints at top z; they must never
@@ -241,6 +248,7 @@ export interface LockedHitDocSlice {
   backgroundOrder: string[];
   textLabels: Record<string, TextLabel>;
   routeBullets: Record<string, RouteBullet>;
+  guides: Record<string, AlignmentGuide>;
 }
 
 /**
@@ -273,6 +281,16 @@ export function lockedHitsAt(pt: Pt, doc: LockedHitDocSlice, pad: number): HitRe
       (id) => doc.stations[id].locked,
     ),
   );
+  // Guides paint below map content, above the background band — same slot
+  // here. An infinite line needs no *ForRect helper: the point test is the
+  // perpendicular distance to its axis.
+  for (const id of Object.keys(doc.guides)) {
+    const g = doc.guides[id];
+    if (!g.locked) continue;
+    const d =
+      g.orientation === 'horizontal' ? Math.abs(pt.y - g.offset) : Math.abs(pt.x - g.offset);
+    if (d <= pad) out.push({ kind: 'guide', id });
+  }
   // One walk of the shared background stack, topmost first — polygons and
   // images interleave, so they can't be pushed as two kind-grouped blocks.
   // `effectiveBackgroundOrder` returns a fresh array (reconcileOrder always
@@ -307,6 +325,9 @@ const LOCKED_TARGET_SELECTORS: Partial<Record<HitKind, (id: string) => string>> 
   svgImage: (id) => `g[data-svg-image-id="${id}"] image`,
   label: (id) => `g[data-text-label-id="${id}"]`,
   bullet: (id) => `g[data-bullet-id="${id}"]`,
+  // The hit stroke stays mounted (pointer-events none) on a locked guide
+  // precisely so this dispatch has somewhere to land — see GuideView.
+  guide: (id) => `[data-guide-hit="${id}"]`,
 };
 
 /** The DOM element a locked entity's synthetic click should be dispatched to. */

@@ -171,11 +171,11 @@ const queueSend = (): void => {
 let lastSentAt = 0;
 
 /**
- * The sources a pipelined gesture's snap guides can come from — the five
+ * The sources a pipelined gesture's snap guides can come from — the six
  * armable drag hooks. Union order is the paint stacking order, fixed so a
  * frame's guides render deterministically.
  */
-const GUIDE_SOURCES = ['station', 'item', 'polygon', 'svgImage', 'lineCircle'] as const;
+const GUIDE_SOURCES = ['station', 'item', 'polygon', 'svgImage', 'lineCircle', 'guide'] as const;
 export type SnapGuideSource = (typeof GUIDE_SOURCES)[number];
 
 /** The latest guides published per source — the input-time truth the next

@@ -162,6 +162,22 @@ export interface SnapGuide {
    *  measurement readout: distance for a regular snap, station-to-station
    *  spacing for a Ctrl-drag. */
   label?: string;
+  /** Set when this entry marks an engaged ALIGNMENT GUIDE rather than a
+   *  drawable segment. `SnapGuides` never draws it as a plain line — the
+   *  canvas resolves the id back to the guide and paints the full snap chrome
+   *  ON the guide itself (halo + dashed span + snap-point ring + coordinate
+   *  chip; see EngagedGuideChrome) plus the guide's accent recolor.
+   *  `from`/`to` both carry the LANDED point — the ring's position. */
+  alignGuideId?: string;
+}
+
+/** An alignment guide as a snap target: an infinite horizontal (constant-Y)
+ *  or vertical (constant-X) line at `offset`. `AlignmentGuide` is structurally
+ *  assignable; callers pass the visibility-gated, exclusion-filtered pool. */
+export interface GuideTarget {
+  id: string;
+  orientation: 'horizontal' | 'vertical';
+  offset: number;
 }
 
 export interface SnapResult {
@@ -185,6 +201,7 @@ export function snapGuidesEqual(a: SnapGuide[], b: SnapGuide[]): boolean {
     if (ga.from.x !== gb.from.x || ga.from.y !== gb.from.y) return false;
     if (ga.to.x !== gb.to.x || ga.to.y !== gb.to.y) return false;
     if (ga.label !== gb.label) return false;
+    if (ga.alignGuideId !== gb.alignGuideId) return false;
   }
   return true;
 }
@@ -226,6 +243,10 @@ export interface SnapInput {
    *  (themselves-moving) snap targets for the grabbed station. The dragged
    *  station is always implicitly excluded; this set augments that. */
   excludedIds?: ReadonlySet<StationId>;
+  /** Alignment guides in play, ALWAYS-ON targets independent of every mode
+   *  toggle (Shift bypasses at the call sites, like all snapping). The caller
+   *  passes the visibility-gated pool minus anything moving with the drag. */
+  guideTargets?: readonly GuideTarget[];
   /** Which snap modes are active. Defaults to {@link DEFAULT_SNAP_MODES}
    *  (line on, others off) so existing call sites preserve current behavior. */
   modes?: SnapModes;
@@ -265,7 +286,10 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   } = input;
 
   type Cand = {
-    target: Station;
+    /** Null for an alignment-guide candidate — a guide has no station. */
+    target: Station | null;
+    /** Set for alignment-guide candidates; drives the marker emission. */
+    guideId?: string;
     dOff: Vec2;
     tOff: Vec2;
     axis: Vec2;
@@ -274,8 +298,10 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     targetStopY: number;
     /** Which snap mode produced this candidate. Used to gate the phase-3
      *  along-axis refinement (only fires when the primary came from line). */
-    kind: 'line' | 'all';
+    kind: 'line' | 'all' | 'guide';
   };
+  // Consolidation/opposite-guide grouping key: a station's id, or the guide's.
+  const targetKeyOf = (c: Cand): string => (c.guideId ? 'guide:' + c.guideId : c.target!.id);
 
   // Collect every alignment pair within perp tolerance.
   const all: Cand[] = [];
@@ -389,6 +415,29 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     }
   }
 
+  // Alignment guides: always-on candidates, independent of every mode toggle.
+  // A guide IS a ready-made alignment axis, so it needs no pair machinery: the
+  // dragged reference is the station ANCHOR (dOff = 0 — the same reference
+  // point the snapping contract names for grid), and the "target stop" is the
+  // anchor's foot on the guide line, which gives the solver the constraint
+  // `anchor · perp = offset` verbatim.
+  for (const g of input.guideTargets ?? []) {
+    const horizontal = g.orientation === 'horizontal';
+    const perpDist = horizontal ? Math.abs(proposedY - g.offset) : Math.abs(proposedX - g.offset);
+    if (perpDist > tolerance) continue;
+    all.push({
+      target: null,
+      guideId: g.id,
+      dOff: { x: 0, y: 0 },
+      tOff: { x: 0, y: 0 },
+      axis: horizontal ? { x: 1, y: 0 } : { x: 0, y: 1 },
+      perpDist,
+      targetStopX: horizontal ? proposedX : g.offset,
+      targetStopY: horizontal ? g.offset : proposedY,
+      kind: 'guide',
+    });
+  }
+
   if (all.length === 0) {
     // No alignment engaged — fall through to grid snap if enabled. Grid is
     // a fallback so explicit alignments (line/equidistant/tens/all) always
@@ -411,7 +460,7 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   const targetAxisGroups: Cand[][] = [];
   for (const c of all) {
     const g = targetAxisGroups.find(
-      (grp) => grp[0].target.id === c.target.id && parallel(grp[0].axis, c.axis),
+      (grp) => targetKeyOf(grp[0]) === targetKeyOf(c) && parallel(grp[0].axis, c.axis),
     );
     if (g) g.push(c);
     else targetAxisGroups.push([c]);
@@ -419,8 +468,13 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   const consolidated: Cand[] = targetAxisGroups.map((g) => {
     // If any candidate in this target+axis group came from line mode,
     // preserve the 'line' tag on the consolidated candidate — phase 3
-    // refinement only fires off line-mode primaries.
-    const kind: 'line' | 'all' = g.some((c) => c.kind === 'line') ? 'line' : 'all';
+    // refinement only fires off line-mode primaries. A guide group is always
+    // pure (its key is unique), so 'guide' survives untouched.
+    const kind: Cand['kind'] = g.some((c) => c.kind === 'line')
+      ? 'line'
+      : g[0].kind === 'guide'
+        ? 'guide'
+        : 'all';
     if (g.length === 1) return { ...g[0], kind };
     const axis = g[0].axis;
     const perpX = -axis.y;
@@ -452,11 +506,30 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   // is a candidate, could be a station way past the actual neighbors due
   // to sub-pixel perp differences). addOppositeGuide handles the other
   // side along the axis.
+  //
+  // GUIDES are the one exception to closest-wins: a guide's stand-in target
+  // is the drag's own foot, so its distance IS its perpDist and it would beat
+  // any real neighbor along the axis by construction — a parallel guide nine
+  // units off would yank a station off a one-unit-perfect corridor alignment.
+  // A guide contests its axis on ALIGNMENT QUALITY instead, the point
+  // snapper's rule: it wins only when its perpendicular distance is smaller
+  // than the best station candidate's.
   const distFromBullet = (c: Cand) =>
     Math.hypot(proposedX - c.targetStopX, proposedY - c.targetStopY);
-  const bests = groups.map((g) =>
-    g.reduce((a, b) => (distFromBullet(a) <= distFromBullet(b) ? a : b)),
-  );
+  const bests = groups.map((g) => {
+    let bestStation: Cand | null = null;
+    let bestGuide: Cand | null = null;
+    for (const c of g) {
+      if (c.kind === 'guide') {
+        if (!bestGuide || c.perpDist < bestGuide.perpDist) bestGuide = c;
+      } else if (!bestStation || distFromBullet(c) < distFromBullet(bestStation)) {
+        bestStation = c;
+      }
+    }
+    if (!bestStation) return bestGuide!;
+    if (!bestGuide) return bestStation;
+    return bestGuide.perpDist < bestStation.perpDist ? bestGuide : bestStation;
+  });
   // Across axes (for two-axis snap), the smallest perpDist still wins:
   // it picks the better-aligned axis as primary.
   bests.sort((a, b) => a.perpDist - b.perpDist);
@@ -642,8 +715,14 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   const guides: SnapGuide[] = [];
   const pushGuide = (c: Cand) => {
     const from = { x: sx + c.dOff.x, y: sy + c.dOff.y };
+    if (c.guideId) {
+      // An engaged alignment guide is a MARKER, not a drawable segment — the
+      // guide is already on the canvas; recoloring it is the feedback.
+      guides.push({ from, to: { ...from }, alignGuideId: c.guideId });
+      return;
+    }
     const to = { x: c.targetStopX, y: c.targetStopY };
-    const isAnchor = !!redistributeAnchor && c.target.id === redistributeAnchor;
+    const isAnchor = !!redistributeAnchor && c.target!.id === redistributeAnchor;
     guides.push({ from, to, label: labelFor(from, to, isAnchor) });
   };
   pushGuide(primary);
@@ -653,6 +732,8 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   // indicator). Emitted per active axis; does nothing when no third station
   // is already aligned.
   const addOppositeGuide = (c: Cand) => {
+    // A guide primary has no station neighbors to bracket the drag between.
+    if (c.guideId) return;
     const px = -c.axis.y;
     const py = c.axis.x;
     const dStopX = sx + c.dOff.x;
@@ -668,7 +749,10 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     // Use consolidated (one entry per target+axis) so a third interlined
     // station doesn't get a separate guide per shared line.
     for (const o of consolidated) {
-      if (o.target.id === c.target.id) continue;
+      // Guide entries never bracket: their "target stop" is the drag's own
+      // foot, so the along-axis distance is ~0, not a third-station cue.
+      if (o.guideId) continue;
+      if (targetKeyOf(o) === targetKeyOf(c)) continue;
       if (!parallel(o.axis, c.axis)) continue;
       const oDStopX = sx + o.dOff.x;
       const oDStopY = sy + o.dOff.y;

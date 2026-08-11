@@ -77,7 +77,8 @@ export type HoverKind =
   | 'polygon'
   | 'svgImage'
   | 'lineTag'
-  | 'lineCircle';
+  | 'lineCircle'
+  | 'guide';
 
 export interface HoveredCanvasItem {
   kind: HoverKind;
@@ -115,6 +116,7 @@ export const clearedSelections = () => ({
   selectedSvgImageIds: [] as string[],
   selectedAnchorIds: [] as string[],
   selectedLineCircleIds: [] as string[],
+  selectedGuideIds: [] as string[],
   selectedVertices: null as { polygonId: string; indices: number[] } | null,
   selectedLineId: null as LineId | null,
   selectedLineTagId: null as string | null,
@@ -261,6 +263,11 @@ export interface SelectionState {
   // tiny LineCirclePopover (diameter + lock/delete); absent from
   // getCopyableSelection.
   selectedLineCircleIds: string[];
+  // Alignment-guide selection. Click / shift-click only — the marquee NEVER
+  // sweeps guides, since an infinite line would join nearly every rect. Sole
+  // selection opens the GuidePopover (position + lock/delete); absent from
+  // getCopyableSelection.
+  selectedGuideIds: string[];
   // When true (the inspector's Select Similar toggle), layout edits (stop
   // layout + label + station rotation) mirror to every station sharing a
   // line whose layout renders identically (model/matching.ts — whole line,
@@ -350,6 +357,11 @@ export interface SelectionState {
   setLineCircleSelection: (ids: string[]) => void;
   addLineCirclesToSelection: (ids: string[]) => void;
   xorLineCirclesToSelection: (ids: string[]) => void;
+  selectGuide: (id: string | null) => void;
+  toggleGuideSelection: (id: string) => void;
+  setGuideSelection: (ids: string[]) => void;
+  addGuidesToSelection: (ids: string[]) => void;
+  xorGuidesToSelection: (ids: string[]) => void;
   // Replace the vertex selection (or clear with null). Does NOT touch
   // selectedPolygonIds — the polygon remains the primary selection.
   selectVertices: (sel: { polygonId: string; indices: number[] } | null) => void;
@@ -424,7 +436,8 @@ type IdListField =
   | 'selectedPolygonIds'
   | 'selectedSvgImageIds'
   | 'selectedAnchorIds'
-  | 'selectedLineCircleIds';
+  | 'selectedLineCircleIds'
+  | 'selectedGuideIds';
 
 type SelectionSet = (
   partial: Partial<SelectionState> | ((s: SelectionState) => Partial<SelectionState>),
@@ -525,6 +538,7 @@ export const useSelection = create<SelectionState>()(
       selectedSvgImageIds: [],
       selectedAnchorIds: [],
       selectedLineCircleIds: [],
+      selectedGuideIds: [],
       selectedVertices: null,
       mirrorMatching: false,
       toolMode: 'arrow',
@@ -854,6 +868,13 @@ export const useSelection = create<SelectionState>()(
         add: 'addLineCirclesToSelection',
         xor: 'xorLineCirclesToSelection',
       }),
+      ...makeIdListActions(set, get, 'selectedGuideIds', {
+        select: 'selectGuide',
+        toggle: 'toggleGuideSelection',
+        replace: 'setGuideSelection',
+        add: 'addGuidesToSelection',
+        xor: 'xorGuidesToSelection',
+      }),
       selectVertices: (sel) => set({ selectedVertices: sel }),
       toggleVertexSelection: ({ polygonId, index }) =>
         set((s) => {
@@ -906,6 +927,8 @@ export const useSelection = create<SelectionState>()(
         if (anchors) next.selectedAnchorIds = anchors;
         const circles = prune(s.selectedLineCircleIds, (id) => !!doc.lineCircles[id]);
         if (circles) next.selectedLineCircleIds = circles;
+        const guides = prune(s.selectedGuideIds, (id) => !!doc.guides[id]);
+        if (guides) next.selectedGuideIds = guides;
         // Single primaries.
         if (s.selectedLineId && !doc.lines[s.selectedLineId]) next.selectedLineId = null;
         // Edit Stops is bound to one line the same way selectedLineId is: if
@@ -1004,6 +1027,8 @@ function hoverTargetExists(doc: MapDoc, h: HoveredCanvasItem): boolean {
       return !!doc.lineTags[h.id];
     case 'lineCircle':
       return !!doc.lineCircles[h.id];
+    case 'guide':
+      return !!doc.guides[h.id];
   }
 }
 
@@ -1027,6 +1052,8 @@ function isHoverSelected(s: SelectionState, h: HoveredCanvasItem): boolean {
       return s.selectedLineTagId === h.id;
     case 'lineCircle':
       return s.selectedLineCircleIds.includes(h.id);
+    case 'guide':
+      return s.selectedGuideIds.includes(h.id);
   }
 }
 
@@ -1060,6 +1087,7 @@ export type SoleSelection =
   // cycling entirely.
   | { type: 'anchor'; id: string }
   | { type: 'lineCircle'; id: string }
+  | { type: 'guide'; id: string }
   | null;
 
 export function soleSelection(s: SelectionState): SoleSelection {
@@ -1070,7 +1098,8 @@ export function soleSelection(s: SelectionState): SoleSelection {
     s.selectedPolygonIds.length +
     s.selectedSvgImageIds.length +
     s.selectedAnchorIds.length +
-    s.selectedLineCircleIds.length;
+    s.selectedLineCircleIds.length +
+    s.selectedGuideIds.length;
   if (total !== 1) return null;
   if (s.selectedStationIds.length === 1) return { type: 'station', id: s.selectedStationIds[0] };
   if (s.selectedRouteBulletIds.length === 1)
@@ -1081,6 +1110,7 @@ export function soleSelection(s: SelectionState): SoleSelection {
   if (s.selectedAnchorIds.length === 1) return { type: 'anchor', id: s.selectedAnchorIds[0] };
   if (s.selectedLineCircleIds.length === 1)
     return { type: 'lineCircle', id: s.selectedLineCircleIds[0] };
+  if (s.selectedGuideIds.length === 1) return { type: 'guide', id: s.selectedGuideIds[0] };
   // Every list checked explicitly, then null. This used to END in an unguarded
   // `return { type: 'svgImage', id: s.selectedSvgImageIds[0] }`. The `total`
   // guard kept that honest while svgImages was the last list — but it was a

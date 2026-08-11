@@ -403,6 +403,7 @@ interface MapDoc {
   regionAssignments: Record<string, RegionAssignment>; // region paint choices ("paint by numbers")
   svgImages: Record<string, SvgImage>;
   lineCircles: Record<string, LineCircle>; // dashed guide circles stations bind to (never exported)
+  guides: Record<string, AlignmentGuide>; // h/v alignment guides — always-on snap targets (never exported)
   palettes: Palette[]; // COPIES the map paints with, in picker/color-cycle order; may be empty.
   // A palette may carry a description; a swatch a night color (stored ONLY when ≠ its day color —
   // the collapse invariant — and unused by lines so far: the editor writes day == night)
@@ -534,13 +535,15 @@ See [styles.ts](src/model/styles.ts).
   selection is visible without inviting edits. Polygon, RouteBullet, TextLabel and SvgImage
   share the same canvas protections, but their popovers **disable every editing control
   except the lock toggle** while locked. **Bulk lock/unlock**: a multi-selection (≥2 items,
-  any mix of the seven selectable kinds) mounts one shared `SelectionPopover` with Lock all /
+  any mix of the eight selectable kinds) mounts one shared `SelectionPopover` with Lock all /
   Unlock all / Delete all (`setItemsLocked` — one undo entry; delete shares the Delete key's
   unlocked-subset semantics via `state/selectionOps.ts`), so **Alt+marquee → Unlock all** is
   the mass-unlock path (and Lock all the mass-lock). Free transfer anchors are the one kind
   with **no `locked` field at all**, so Lock all counts them out (`lockableTotal`)
-  while Delete all still counts them in. Line circles (the seventh kind) do lock — a locked
-  circle refuses drag/resize/rotate/group-tow/delete and is click-through while unselected.
+  while Delete all still counts them in. Line circles and alignment guides (the seventh and
+  eighth kinds) do lock — a locked one refuses drag/nudge/group-tow/delete and is click-through
+  while unselected (a locked guide keeps ATTRACTING snaps, though — lock protects position, not
+  usefulness).
 
 **`StopCell`** — one line's stop on a station. `lineId, row, col` (station-local grid;
 **`row`/`col` are floats now**, since diagonal moves use ±√2/2 — equality uses `CELL_EPS=1e-4`),
@@ -692,6 +695,25 @@ other is a sliver of the neighbouring line showing through at every junction.
 `sanitizeLineCircles` (serialize.ts) enforces the binding invariants on both load paths:
 malformed circles drop, dangling `circleId`s and orphaned `viaCircle` flags strip, and a bound
 station that drifted off its circle reprojects.
+
+**`AlignmentGuide`** (`MapDoc.guides`) — the line circle's straight-line sibling: `id,
+orientation: 'horizontal' | 'vertical', offset` (the world Y or X the infinite line sits at),
+`locked?`. Same standing — editor scaffolding, export-excluded, same scaffolding band as the
+rings (above background art, below map ink) — but the OPPOSITE snapping role: nothing binds to
+a guide; it is an **always-on snap TARGET** for both snappers (see Snapping). It paints as a
+long-dashed line spanning the overdrawn viewBox in its own theme slots, not the ring grey
+(`theme.alignGuide` + `-Selected`/`-Hover`, a day indigo / night periwinkle with an amber
+selected state — a guide's job is to be SEEN, and every state is a plain restroke since an
+infinite line has no body to outline; [GuideView.tsx](src/components/GuideView.tsx)). Born by dragging out of a **guide well** — slim strips flush with the canvas's
+top/left edges, top pulls a horizontal guide down, left pulls a vertical one right
+([GuideWells.tsx](src/components/canvas/GuideWells.tsx) + `useGuideDrag`, idle arrow-mode only;
+the pull ghost snaps live and the release commits one `addGuide` + selects it). Dragging a guide
+is 1-DOF (the offset takes the pointer's axis component, snapped through the point snapper with
+the matching `constrain`); dragging it back into its home well deletes it, and the wells tint as
+drop targets while a guide gesture hovers them. Its popover is the one coordinate + lock/delete
+([GuidePopover.tsx](src/components/GuidePopover.tsx)). `sanitizeGuides` (serialize.ts, the
+file-import path) drops malformed entries and collapses a stored `locked: false`; there are no
+cross-references to repair.
 
 **`LabelCell`** — the station name's grid cell + placement. `row, col, rotation: Rotation`,
 `offset` (px forward along reading direction), `offsetPerp?` (cross-axis, default 0 — back-compat
@@ -1847,13 +1869,15 @@ accent for placement modes, the line's color for appending, orange for layering;
 `switch` over the union with a compile-time `never` guard, so a new mode that forgets its banner
 fails the build).
 
-**Selection** — **seven parallel id-list fields** (multi-select; order meaningful; **last entry =
+**Selection** — **eight parallel id-list fields** (multi-select; order meaningful; **last entry =
 anchor**, in the "anchor of a multi-select" sense — not a transfer anchor):
 `selectedStationIds` + `selectedRouteBulletIds`/`selectedLabelIds`/`selectedPolygonIds`/
-`selectedSvgImageIds`/`selectedAnchorIds`/`selectedLineCircleIds` (anchors are FREE transfer
-anchors; hosted ones are station internals and never appear here; line circles join a marquee
-when the rect touches their RIM — `lineCirclesForRect`, a marquee wholly inside the ring grabs
-nothing). The six generic lists' `select/toggle/set/add/xor`
+`selectedSvgImageIds`/`selectedAnchorIds`/`selectedLineCircleIds`/`selectedGuideIds` (anchors are
+FREE transfer anchors; hosted ones are station internals and never appear here; line circles join
+a marquee when the rect touches their RIM — `lineCirclesForRect`, a marquee wholly inside the
+ring grabs nothing; alignment guides never join a marquee at all — an infinite line would join
+nearly every rect, so guides are click / shift-click / deep-pick only). The seven generic lists'
+`select/toggle/set/add/xor`
 actions are generated by one `makeIdListActions` factory (hand-copying them is exactly how a
 cross-clear matrix drifted and caused a stale-line-highlight bug). Single primaries:
 `selectedLineId`, `selectedLineTagId`, `selectedTransferId`, `selectedStopLineId`, plus
@@ -1862,7 +1886,7 @@ in/out; independent of the polygon selection so the polygon stays selected while
 handles are active) and `selectedAnchorCellId` (the station-HOSTED anchor armed inside the layout
 editor — the third arm of the mutually-exclusive `selectedStopLineId`/`labelSelected` group, and
 a different thing entirely from `selectedAnchorIds`). Selectors:
-`soleSelection(s)` (non-null only when total across all seven lists === 1 — every list needs an
+`soleSelection(s)` (non-null only when total across all eight lists === 1 — every list needs an
 explicit arm; the tail is a bare `return null`, since the old unguarded svgImage
 fallthrough would have answered `{svgImage, id: undefined}` for a new list) and
 `getCopyableSelection(s)` (everything **except stations and anchors** — the clipboard has no
@@ -1908,10 +1932,10 @@ on any mode exit.
 **Two stores, intentionally:**
 
 - `useViewportStore` — the **committed** camera (`x, y, zoom`) + `gridVisible`, `gridSize`
-  (`GRID_SIZES = [5,10,20]`, default 10), the **nine layer-visibility flags** behind the View menu
+  (`GRID_SIZES = [5,10,20]`, default 10), the **ten layer-visibility flags** behind the View menu
   (`showNetwork` default true — see below; `showWaypoints` and `showAnchors` default false;
-  `showLineCircles`, `showTransfers`, `showSvgImages`, `showTextLabels`, `showPolygons`,
-  `showRouteBullets` default true), plus two **local chrome** preferences:
+  `showLineCircles`, `showGuides`, `showTransfers`, `showSvgImages`, `showTextLabels`,
+  `showPolygons`, `showRouteBullets` default true), plus two **local chrome** preferences:
   `dayCanvasColor: DayCanvasColor`
   (`'white'|'gray'|'black'`, default white — the day-mode paper color, dimming glare without
   touching the map) and `darkUiInDay: boolean` (default false — a chrome-only dark UI while the
@@ -1932,9 +1956,9 @@ on any mode exit.
   (pan: composited pan-layer translate; zoom: viewBox write).
 
 **Layer visibility — the View menu** ([ViewPopover.tsx](src/components/ViewPopover.tsx), one eye
-button in the toolbar). Nine checkboxes in three groups: Lines and stations · Anchors, Line
-circles, Transfers, Waypoints · Images / SVGs, Canvas labels, Polygons, Route bullets. The **grid**
-is
+button in the toolbar). Ten checkboxes in three groups: Lines and stations · Anchors, Line
+circles, Guides, Transfers, Waypoints · Images / SVGs, Canvas labels, Polygons, Route bullets.
+The **grid** is
 deliberately not among them — a drawing aid rather than map content, and its button pairs with the
 grid-size cycler beside it.
 
@@ -1973,7 +1997,10 @@ doc-geometric pools):
   (`creating-transfer` picks an anchor as a transfer end, `placing-anchor` needs the existing ones
   on screen); the rest name the single mode that places them. `showNetwork` has none at all — it
   is the deliberate get-out-of-my-way switch, and lifting the whole network back for one station
-  placement would undo what the user asked for.
+  placement would undo what the user asked for. `showGuides` has none either, for a different
+  reason: guide creation is a GESTURE (the well pull-out), not a mode, so there is
+  no mode kind to key a reveal off — while hidden, the wells disable with a tooltip naming the
+  fix instead.
 - `nestsUnderNetwork` — `showTransfers` and `showAnchors` ride with the master switch, a transfer
   running between stations and an anchor hanging off one. Checked FIRST, so a mode reveal lifts a
   kind's own box and never the master switch above it. `showLineCircles` deliberately does NOT
@@ -2025,7 +2052,9 @@ Six seams cover it, and a seventh rule governs anything new:
   `bindDroppedStation`, and the drag-side capture in `useStationDrag`. Ungated, a station dropped
   near a hidden rim snaps onto it AND gets **bound** to it — the map acquires a binding to a guide
   nobody can see. Rings are a hard constraint rather than an align target, which is why they take a
-  helper of their own instead of a slice in the pool.
+  helper of their own instead of a slice in the pool. `liveGuideTargets` is the fourth, and the
+  same shape for the same reason: alignment guides are axis targets, not points, so they ride
+  their own pool beside `liveAlignTargets` — empty while the View menu hides them.
   **Any new feature that reads the doc for interaction needs the same gate.** The one place that
   needs none is the locked-item deep-pick: `lockedHitsAt` probes geometry with no visibility
   opinion, but `lockedDispatchTarget` resolves through `document.querySelector`, so a hidden kind
@@ -2330,6 +2359,33 @@ hard world constraint; **Shift bypasses all snapping** during any pointer gestur
 included — it snaps 22.5° by default, Shift frees); every alignment snap draws a
 distance-labeled guide through `SnapGuides`; grid snapping is silent.
 
+**Alignment guides are a target class of their own, ALWAYS ON.** Both snappers take
+`guideTargets` (`GuideTarget[]` — a guide is a ready-made H or V alignment axis at its offset),
+ungated by every mode toggle: you placed the guide on purpose, so it attracts like a ring
+captures, and Shift is how you decline (the line-tag snapper set this precedent). BOTH snappers
+decide a same-axis contest between a guide and any other candidate the same way: **the
+better-aligned one wins** (smaller perpendicular distance). In the point snapper that is just
+the bestV/bestH contest; the engine spells it as an explicit exception to its closest-wins
+neighbor pick, because a guide's stand-in target is the drag's own foot — its "distance" IS its
+perpDist, so under closest-wins a parallel guide nine units off would yank a station off a
+one-unit-perfect corridor alignment. Mechanically a guide enters the engine's candidate set as
+`kind: 'guide'` with the station ANCHOR as the dragged reference (dOff 0) and joins the 2×2
+corner solve like any axis. Grid stays the
+hard constraint (an off-grid guide simply doesn't engage under grid), `tens` never notches off a
+guide (its stand-in target is the drag's own foot — no cadence anchor), and phase-3 refinement
+never fires off a guide primary. Engagement feedback: the snapper emits a **marker** — a
+`SnapGuide` carrying `alignGuideId` + the landed point, never a drawable segment — and the canvas
+turns it into the FULL snap chrome **on the guide itself** (`engagedGuides` in MapCanvas →
+`SnapGuides`' `engaged` prop): halo + dashed accent spanning the overdrawn box, a ring at the
+snap point, and a chip naming the coordinate snapped to (`Y 120` — the point lands ON the line,
+so the guide's coordinate is what "distance" means here), plus the guide's own accent recolor
+(`GuideView` `engaged`). A guide engagement reads exactly as loud as every other snap. The pool is
+`liveGuideTargets(exclude)` beside `liveAlignTargets` — visibility-gated the same way, minus the
+guides moving with the drag (`AlignExclude.guideIds`); a guide's own drag passes NO guide pool
+at all, since stacking two guides is meaningless. This deliberately pierces the stations-are-
+skeleton asymmetry below: stations DO snap to guides — aligning stations is what a guide is for,
+and rings already set the scaffolding-touches-skeleton precedent.
+
 The **target pool** (`alignTargets(doc, exclude)` in
 [snapTargets.ts](src/components/canvas/snapTargets.ts)) is what "Snap to all" means for point-
 snapper consumers: every station stop-center (anchor when stopless), every polygon vertex,
@@ -2340,8 +2396,9 @@ on the station lattice, so no stop centre stands in for one parked a few cells o
 exclusion sets remove the dragged item and, in a group drag, its co-selected siblings — a
 station's hosted anchors leave with it, since they ride on the same record. Stationary items
 always remain valid targets. Pools are snapshotted at pointer-down. One deliberate asymmetry:
-**stations are skeleton** — they snap only among themselves, never to decoration; and a bound
-bullet's all-mode pool is station stops (engine-internal), not the decoration pool.
+**stations are skeleton** — they snap only among themselves, never to decoration (alignment
+guides are the one carve-out: scaffolding, not decoration, and stations snap to them); and a
+bound bullet's all-mode pool is station stops (engine-internal), not the decoration pool.
 
 **Reference points** (grid + alignment use the same one per type, drag AND placement): station
 anchor; bullet center; text label topmost-then-leftmost visible rotated corner; polygon
@@ -2647,11 +2704,11 @@ of their own, and are omitted below to keep it readable:
 - **Mouseover-preview twins.** Almost every selection-chrome layer has a hover twin mounted
   immediately after it — same component, `preview`, `opacity 0.5`, gated by `hoveredChrome` (so it
   stays quiet mid-pan). There are seven: station `wash` and `stroke`, transfer outline, route-bullet
-  ring, label stroke, polygon outline, svg-image box. An eighth, the line circle's, is painted
-  INSIDE `LineCircleView` instead: its selection chrome is a RECOLOUR of a guide that is always
-  painted, not an outline added beside one, so a twin would have to re-render the whole component
-  in a stripped `preview` variant — no grab surfaces, no knob, no `data-*` ids — where a second
-  copy of the marks in place costs one `<g>`.
+  ring, label stroke, polygon outline, svg-image box. Two more — the line circle's and the
+  alignment guide's — are painted INSIDE `LineCircleView`/`GuideView` instead: their selection
+  chrome is a RECOLOUR of scaffolding that is always painted, not an outline added beside it, so
+  a twin would have to re-render the whole component in a stripped `preview` variant — no grab
+  surfaces, no knob, no `data-*` ids — where a second copy of the marks in place costs one `<g>`.
 - **Mode-transient previews.** The in-progress transfer rubber-band `<line data-transfer-preview>`
   (between steps 7 and 8) and the Edit Stops alt-create ghost `StopGlyph`
   (`data-append-create-ghost`, between `HighlightedLineLayer` and `LineTagsLayer` — i.e. splitting
@@ -2996,7 +3053,13 @@ live-projection ref, stationary Shift/Alt recompute, pointercancel rollback),
 `useItemDrag` (bullets + labels — bound bullets via the engine's bullet mode, labels + unbound
 bullets via the point snapper), `usePolygonDrag` (whole-move / vertex / edge-add),
 `useSvgImageDrag` (move / resize / rotate — resize snaps only while axis-aligned, edge resizes
-axis-`constrain`ed; rotation snaps 22.5° by default, Shift frees), `useLineTagDrag` (**the only
+axis-`constrain`ed; rotation snaps 22.5° by default, Shift frees), `useGuideDrag` (BOTH guide
+gestures: the 1-DOF move of an existing guide — offset takes the pointer's axis component,
+point-snapped under the matching `constrain`, released over its home well = delete — and the
+well PULL-OUT, a ghost that snaps like the real drag and commits one `addGuide` + select on
+release; sub-threshold or released back in the well commits nothing. The well strips forward
+their own move/up events for the sub-threshold stretch, since capture only moves to the svg on
+the first real move), `useLineTagDrag` (**the only
 hook wired to window-level pointer listeners** — the rest use the SVG's React handlers — because
 the drag wanders off the small tag rect; cursor→world via the shared `view.screenToWorld` like
 every other hook; neighbor-tag snap per the contract above), `useRectSelect`
@@ -3023,7 +3086,10 @@ group drag is **one rule for every master type**: the grabbed item snaps with it
 against everything stationary, excluding only itself + everything MOVING with it
 (`excludedIds` for the station engine, `groupAlignExclude` → `alignTargets` for the point
 snapper); siblings then translate rigidly by the post-snap delta. Grid acts on the master's
-reference point only — towed siblings keep their offsets verbatim.
+reference point only — towed siblings keep their offsets verbatim. A towed **alignment guide**
+takes only the AXIS COMPONENT of the delta (dy for horizontal, dx for vertical — its one degree
+of freedom), and a guide MASTER tows the group by that same single-axis delta, so master and
+tow stay rigid; guides never join the rotate.
 A **line circle is a FRAME**, and that makes it the one member with a second list. It tows by its
 center (`moveLineCircle`), which carries the stations bound to it — so those passengers go in
 `carriedStations` (ids only, every station on a moving ring, selected or not) instead of
@@ -3064,7 +3130,7 @@ popover/handles). Cursor-following ghost previews (`*PlacingPreview`, all `opaci
 `ItemPopovers` mounts the single popover for the sole selection — including the station editor
 (see UI chrome) and the transfer popover (whose selection is the single-id
 `selectedTransferId` primary outside `soleSelection`) — plus the one shared `SelectionPopover`
-when **≥2 items** are selected across the seven multi-select lists (idle only): a count summary +
+when **≥2 items** are selected across the eight multi-select lists (idle only): a count summary +
 Lock all / Unlock all / Delete all over the whole group.
 Every panel — those, the line editor and the station layout editor — is **docked to the
 top-right corner of what's visible of the host** by `usePinnedPopover`, right-aligned on the
@@ -3137,7 +3203,7 @@ old-geometry lookup instead of evicting it.
 **Pipelined drags.** Everything that paints map positions reads through `useRenderDoc`
 (`state/renderDoc.ts`), not `useDoc` — at rest the two are reference-identical, so this is free.
 The rule is stronger than "painters": NO component holds a reactive `useDoc` subscription to the
-seven towed collections at all. Input hooks (the drag hooks, `useStationInteraction`) read the
+eight towed collections at all. Input hooks (the drag hooks, `useStationInteraction`) read the
 store at event time, and position-independent chrome (sidebar, popovers, the editing banner)
 subscribes to the render source, so a mid-drag doc write re-renders nothing anywhere — pinned by
 a zero-commits test in `MapCanvas.renderSource.test.tsx`. That is what keeps 60–125Hz pointer

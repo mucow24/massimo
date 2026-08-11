@@ -52,7 +52,7 @@ const seedPair = () => {
   });
 };
 
-/** The seven towed collections as of now — what the pipeline would arm. */
+/** The towed collections as of now — what the pipeline would arm. */
 const frameOf = (): DragFrameDoc => {
   const d = useDoc.getState();
   return {
@@ -63,6 +63,7 @@ const frameOf = (): DragFrameDoc => {
     routeBullets: d.routeBullets,
     textLabels: d.textLabels,
     transferAnchors: d.transferAnchors,
+    guides: d.guides,
   };
 };
 
@@ -144,6 +145,7 @@ describe('the canvas paints the render source, not the live doc', () => {
           svgImages: [],
           anchors: [],
           lineCircles: [],
+          guides: [],
         }}
         hostW={800}
       />,

@@ -2,10 +2,10 @@ import { RefObject, useRef } from 'react';
 import { beginHistoryGroup, dragState, useDoc, useSelection } from '../../state/store';
 import { useRoutedSnapGuides } from './useRoutedSnapGuides';
 import { polygonSnapAnchor } from '../../geometry/polygon';
-import type { SnapGuide } from '../../geometry/snap';
+import type { GuideTarget, SnapGuide } from '../../geometry/snap';
 import type { Vec2 } from '../../geometry/vec';
 import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
-import { liveAlignTargets } from './snapTargets';
+import { liveAlignTargets, liveGuideTargets } from './snapTargets';
 import { useDragSnap } from './useDragSnap';
 import {
   collectGroupSiblings,
@@ -30,6 +30,7 @@ type WholeDragState = {
   // dragged polygon AND every co-moving sibling (they'd be unstable targets);
   // stationary items stay valid targets. See the liveAlignTargets call below.
   allTargets: Vec2[];
+  guideTargets: readonly GuideTarget[];
   history: ReturnType<typeof beginHistoryGroup>;
 };
 
@@ -59,6 +60,7 @@ type VertexDragState = {
   // vertices (own-shape alignment stays available through either toggle).
   lineTargets: Vec2[];
   allTargets: Vec2[];
+  guideTargets: readonly GuideTarget[];
   history: ReturnType<typeof beginHistoryGroup>;
 };
 
@@ -111,6 +113,7 @@ export function usePolygonDrag(
     // Group-drag: tow every other selected item by the same delta. Locked
     // polygons are skipped (handled in collectGroupSiblings).
     const siblings = collectGroupSiblings('polygon', id);
+    const exclude = groupAlignExclude('polygon', id, siblings);
     wholeDragRef.current = {
       id,
       startVerts: poly.vertices.map((v) => ({ ...v })),
@@ -121,7 +124,8 @@ export function usePolygonDrag(
       // The pool excludes the dragged polygon and every co-selected sibling
       // (they move with the grab); stationary items stay valid targets even
       // during a group drag.
-      allTargets: liveAlignTargets(groupAlignExclude('polygon', id, siblings)),
+      allTargets: liveAlignTargets(exclude),
+      guideTargets: liveGuideTargets(exclude),
       history: beginHistoryGroup({ deferPersist: true }),
     };
   };
@@ -136,6 +140,7 @@ export function usePolygonDrag(
     return {
       lineTargets: others,
       allTargets: [...liveAlignTargets({ polygonIds: new Set([polygonId]) }), ...others],
+      guideTargets: liveGuideTargets(),
     };
   };
 
@@ -221,7 +226,10 @@ export function usePolygonDrag(
         let guides: SnapGuide[] = [];
         const inGroupDrag = hasGroupSiblings(wd.siblings);
         if (!e.shiftKey) {
-          const snap = snapPoint(anchor, { allTargets: wd.allTargets });
+          const snap = snapPoint(anchor, {
+            allTargets: wd.allTargets,
+            guideTargets: wd.guideTargets,
+          });
           anchor = { x: snap.x, y: snap.y };
           guides = snap.guides;
         }
@@ -247,7 +255,11 @@ export function usePolygonDrag(
         };
         let guides: SnapGuide[] = [];
         if (!e.shiftKey) {
-          const snap = snapPoint(p, { allTargets: vd.allTargets, lineTargets: vd.lineTargets });
+          const snap = snapPoint(p, {
+            allTargets: vd.allTargets,
+            lineTargets: vd.lineTargets,
+            guideTargets: vd.guideTargets,
+          });
           p = { x: snap.x, y: snap.y };
           guides = snap.guides;
         }

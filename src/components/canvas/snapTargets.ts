@@ -1,4 +1,5 @@
 import { stopPosWorld } from '../../geometry/interlining';
+import type { GuideTarget } from '../../geometry/snap';
 import { stationAnchorWorld } from '../../geometry/transferEnds';
 import { textLabelCorners } from '../../geometry/stationBoundary';
 import { svgImageCorners } from '../../geometry/svgImage';
@@ -18,6 +19,10 @@ export interface AlignExclude {
   labelIds?: ReadonlySet<string>;
   bulletIds?: ReadonlySet<string>;
   anchorIds?: ReadonlySet<string>;
+  // Read by liveGuideTargets, not the point pool: guides are axis targets,
+  // not points, so they ride in their own parallel pool. Same rule though —
+  // a guide towed by the drag is a moving target and must sit out.
+  guideIds?: ReadonlySet<string>;
 }
 
 /** The doc slices the pool draws from. Structural so tests can pass a plain
@@ -132,6 +137,26 @@ export function liveAlignTargets(exclude: AlignExclude = {}): Vec2[] {
     },
     exclude,
   );
+}
+
+/**
+ * The alignment guides a drag or placement may snap AGAINST — empty while the
+ * View menu hides them (no snapping to invisible targets, the same rule as the
+ * point pool above), minus the guides moving with the drag (the dragged guide
+ * itself, and any towed by a group drag — `exclude.guideIds`). Guides are the
+ * one ALWAYS-ON target class: the pool is not gated on any snap-mode toggle,
+ * only Shift (at the call sites) declines it. Snapshotted at pointer-down by
+ * the callers, like every pool.
+ */
+export function liveGuideTargets(exclude: AlignExclude = {}): GuideTarget[] {
+  if (!kindVisibleNow('showGuides')) return [];
+  const guides = useDoc.getState().guides;
+  const out: GuideTarget[] = [];
+  for (const id of Object.keys(guides)) {
+    if (exclude.guideIds?.has(id)) continue;
+    out.push(guides[id]);
+  }
+  return out;
 }
 
 /**

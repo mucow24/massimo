@@ -758,6 +758,29 @@ export interface LineCircle {
   locked?: boolean;
 }
 
+// Which way an alignment guide runs. A horizontal guide is a line of constant
+// Y; a vertical one of constant X. Fixed at creation — converting is a delete
+// and a fresh pull from the other well.
+export type GuideOrientation = 'horizontal' | 'vertical';
+
+// An alignment guide: an infinite horizontal or vertical line pulled out of
+// the canvas-edge wells — the only way one is born. Editor scaffolding in
+// the line-circle mold — a dashed guide rendered below map ink and excluded
+// from every export — but an ALWAYS-ON snap target for both snappers: items
+// dragged or placed near it engage regardless of the "Snap to all" toggle
+// (Shift declines, as everywhere). `offset` is the world Y (horizontal) or
+// world X (vertical) the line sits at.
+export interface AlignmentGuide {
+  id: string;
+  orientation: GuideOrientation;
+  offset: number;
+  // When locked, the guide can't be dragged, nudged, deleted, or shift-click
+  // multi-selected, and is click-through while unselected — but it keeps
+  // attracting snaps (lock protects position, not usefulness). Optional;
+  // missing ⇒ unlocked. Mirrors LineCircle.locked.
+  locked?: boolean;
+}
+
 export interface MapDoc {
   // User-facing document name. Shown in the toolbar, the window title, and the
   // export/save filename. Never empty at runtime: absent in a loaded file (or
@@ -819,6 +842,11 @@ export interface MapDoc {
   // guides are outlines and don't meaningfully stack. Absent in older saves,
   // backfilled to {} by the shallow merge on both load paths — no migration.
   lineCircles: Record<string, LineCircle>;
+  // Alignment guides (see AlignmentGuide): the straight-line siblings of the
+  // line circles, keyed by guide id. Same standing: editor scaffolding — never
+  // exported — but part of the DOC. Absent in older saves, backfilled to {} by
+  // the shallow merge on both load paths — no migration.
+  guides: Record<string, AlignmentGuide>;
   // Named, reusable formatting presets, keyed by style id (see StyleDef at the
   // bottom of this file and model/styles.ts). Doc-scoped on purpose: styles
   // travel inside the saved file and every edit to them is undoable. Absent in

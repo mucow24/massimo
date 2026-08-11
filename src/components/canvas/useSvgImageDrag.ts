@@ -1,7 +1,7 @@
 import { RefObject, useRef } from 'react';
 import { beginHistoryGroup, useDoc } from '../../state/store';
 import { useRoutedSnapGuides } from './useRoutedSnapGuides';
-import type { SnapGuide } from '../../geometry/snap';
+import type { GuideTarget, SnapGuide } from '../../geometry/snap';
 import {
   normalizeRotation,
   resizeSvgImageCorner,
@@ -21,7 +21,7 @@ import {
   translateSiblings,
   type GroupSiblings,
 } from './groupDrag';
-import { liveAlignTargets } from './snapTargets';
+import { liveAlignTargets, liveGuideTargets } from './snapTargets';
 
 type ScreenToWorld = (mx: number, my: number) => Vec2;
 
@@ -39,6 +39,7 @@ type MoveState = {
   // targets); stationary items stay valid targets. See the liveAlignTargets call
   // below.
   allTargets: Vec2[];
+  guideTargets: readonly GuideTarget[];
   history: ReturnType<typeof beginHistoryGroup>;
 };
 
@@ -54,6 +55,7 @@ type ResizeState = {
   moved: boolean;
   // "Snap to all" pool for the moving handle, snapshotted at pointer-down.
   allTargets: Vec2[];
+  guideTargets: readonly GuideTarget[];
   history: ReturnType<typeof beginHistoryGroup>;
 };
 
@@ -127,6 +129,7 @@ export function useSvgImageDrag(
     if (im.locked) return;
     e.stopPropagation();
     const siblings = collectGroupSiblings('svgImage', id);
+    const exclude = groupAlignExclude('svgImage', id, siblings);
     moveRef.current = {
       id,
       start: geomOf(im),
@@ -137,7 +140,8 @@ export function useSvgImageDrag(
       // The pool excludes the dragged image and every co-selected sibling
       // (they move with the grab); stationary items stay valid targets even
       // during a group drag.
-      allTargets: liveAlignTargets(groupAlignExclude('svgImage', id, siblings)),
+      allTargets: liveAlignTargets(exclude),
+      guideTargets: liveGuideTargets(exclude),
       history: beginHistoryGroup({ deferPersist: true }),
     };
   };
@@ -161,6 +165,7 @@ export function useSvgImageDrag(
       startMY: e.clientY,
       moved: false,
       allTargets: liveAlignTargets({ svgImageIds: new Set([id]) }),
+      guideTargets: liveGuideTargets(),
       history: beginHistoryGroup({ deferPersist: true }),
     };
   };
@@ -202,7 +207,10 @@ export function useSvgImageDrag(
         let guides: SnapGuide[] = [];
         const inGroupDrag = hasGroupSiblings(mv.siblings);
         if (!e.shiftKey) {
-          const snap = snapPoint(anchor, { allTargets: mv.allTargets });
+          const snap = snapPoint(anchor, {
+            allTargets: mv.allTargets,
+            guideTargets: mv.guideTargets,
+          });
           anchor = { x: snap.x, y: snap.y };
           guides = snap.guides;
         }
@@ -226,6 +234,7 @@ export function useSvgImageDrag(
         if (axisAligned && !e.shiftKey) {
           const snap = snapPoint(pointer, {
             allTargets: rz.allTargets,
+            guideTargets: rz.guideTargets,
             // An edge resize has one degree of freedom — only snaps along
             // that world axis are considered, so a guide can never show a
             // perpendicular alignment the resize would discard. At 0/180 the

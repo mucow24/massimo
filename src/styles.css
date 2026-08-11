@@ -953,6 +953,68 @@ select option {
   isolation: isolate;
 }
 
+/* ── Guide wells ── slim strips flush with the canvas's top and left edges;
+   dragging out of one pulls an alignment guide (GuideWells + useGuideDrag).
+   Quiet at rest — just the dashed grip glyph — a soft accent wash on hover,
+   and a danger wash while a guide gesture hovers the strip (dropping there
+   cancels the pull / deletes the dragged guide). The left strip starts below
+   the top one so the corner is unambiguous. */
+.guide-well {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  opacity: 0.45;
+  transition:
+    background-color 120ms ease,
+    opacity 120ms ease;
+}
+.guide-well-top {
+  top: 0;
+  left: 14px; /* WELL_SIZE_PX */
+  right: 0;
+  height: 14px;
+  cursor: ns-resize;
+}
+.guide-well-left {
+  top: 14px;
+  left: 0;
+  bottom: 0;
+  width: 14px;
+  cursor: ew-resize;
+}
+.guide-well:hover:not(.disabled) {
+  opacity: 1;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.guide-well.armed {
+  opacity: 1;
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+}
+.guide-well.disabled {
+  cursor: default;
+  opacity: 0.25;
+}
+/* The grip: the guide's own dash pattern in miniature, as a CSS gradient —
+   an inline <svg> here would make the e2e suite's `.canvas-host svg` canvas
+   locator ambiguous. */
+.guide-well-grip {
+  display: block;
+}
+.guide-well-top .guide-well-grip {
+  width: 27px;
+  height: 2px;
+  background: repeating-linear-gradient(90deg, currentColor 0 6px, transparent 6px 9px);
+}
+.guide-well-left .guide-well-grip {
+  width: 2px;
+  height: 27px;
+  background: repeating-linear-gradient(180deg, currentColor 0 6px, transparent 6px 9px);
+}
+
 /* ── Item popovers (bullet / text label / polygon / svg image / transfer) ──
    Signature shell: white body, 3px black border, black header strip. The
    polygon + svg-image + transfer popovers stack their own class on top of

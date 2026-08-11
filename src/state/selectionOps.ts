@@ -23,6 +23,7 @@ export interface SelectionItemIds {
   svgImages: string[];
   anchors: string[];
   lineCircles: string[];
+  guides: string[];
 }
 
 /**
@@ -75,6 +76,10 @@ export function unlockedSelectedItemIds(): SelectionItemIds {
     lineCircles: shown(
       'showLineCircles',
       sel.selectedLineCircleIds.filter((id) => !doc.lineCircles[id]?.locked),
+    ),
+    guides: shown(
+      'showGuides',
+      sel.selectedGuideIds.filter((id) => !doc.guides[id]?.locked),
     ),
   };
 }
@@ -129,7 +134,8 @@ export function itemIdCount(ids: SelectionItemIds): number {
     // MANDATORY: both bulk gestures gate on this count being non-zero, so an
     // anchor-only selection would silently ignore Delete and the arrow keys.
     ids.anchors.length +
-    ids.lineCircles.length
+    ids.lineCircles.length +
+    ids.guides.length
   );
 }
 
@@ -161,6 +167,7 @@ export function deleteUnlockedSelection(): boolean {
   // Deleting a circle strips its stations' bindings in place (they stay put;
   // their edges just re-route octolinearly).
   for (const id of ids.lineCircles) doc.deleteLineCircle(id);
+  for (const id of ids.guides) doc.deleteGuide(id);
   group?.commit();
   return true;
 }

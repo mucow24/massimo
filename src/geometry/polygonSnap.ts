@@ -9,6 +9,7 @@ import {
   snapPointToGrid,
   SNAP_PERP_TOLERANCE,
   type GridSnap,
+  type GuideTarget,
   type SnapGuide,
   type SnapModes,
 } from './snap';
@@ -33,6 +34,10 @@ export interface PolygonSnapInput {
    *  alignments + Y grid for 'y'; diagonals are excluded. Prevents guides
    *  for snaps the caller would discard. */
   constrain?: 'x' | 'y';
+  /** Alignment guides in play, ALWAYS-ON targets independent of every mode
+   *  toggle (Shift bypasses at the call sites, like all snapping). The caller
+   *  passes the visibility-gated pool minus anything moving with the drag. */
+  guideTargets?: readonly GuideTarget[];
 }
 
 export interface PolygonSnapResult {
@@ -115,8 +120,11 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   }
 
   // Best vertical (snaps X), best horizontal (snaps Y), best diagonal (projects).
-  let bestV: { value: number; perp: number; target: Vec2 } | null = null;
-  let bestH: { value: number; perp: number; target: Vec2 } | null = null;
+  // `guideId` marks a winner that is an alignment guide rather than a point
+  // target — its engagement renders as a marker (the canvas recolors the
+  // guide), never as a distance-labeled segment.
+  let bestV: { value: number; perp: number; target: Vec2; guideId?: string } | null = null;
+  let bestH: { value: number; perp: number; target: Vec2; guideId?: string } | null = null;
   let bestD: { foot: Vec2; perp: number; target: Vec2; axis: Vec2 } | null = null;
 
   for (const { target, axis } of candidates) {
@@ -132,6 +140,28 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
       if (!bestH || d < bestH.perp) bestH = { value: target.y, perp: d, target };
     } else if (!bestD || perpDist < bestD.perp) {
       bestD = { foot, perp: perpDist, target, axis };
+    }
+  }
+
+  // Alignment guides: always-on candidates, independent of every mode toggle.
+  // A horizontal guide is a horizontal alignment axis (locks Y), competing
+  // with the point-derived winner above on plain perpendicular distance; its
+  // stand-in `target` is the proposed point's foot on the guide line.
+  for (const g of input.guideTargets ?? []) {
+    if (g.orientation === 'vertical') {
+      if (!axisAllowed({ x: 0, y: 1 })) continue;
+      const d = Math.abs(proposed.x - g.offset);
+      if (d > tol) continue;
+      if (!bestV || d < bestV.perp) {
+        bestV = { value: g.offset, perp: d, target: { x: g.offset, y: proposed.y }, guideId: g.id };
+      }
+    } else {
+      if (!axisAllowed({ x: 1, y: 0 })) continue;
+      const d = Math.abs(proposed.y - g.offset);
+      if (d > tol) continue;
+      if (!bestH || d < bestH.perp) {
+        bestH = { value: g.offset, perp: d, target: { x: proposed.x, y: g.offset }, guideId: g.id };
+      }
     }
   }
 
@@ -154,6 +184,12 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   // the point exactly on its target, and a from==to guide has nothing to show.
   const tensGuide = (target: Vec2, p: Vec2): SnapGuide[] =>
     p.x === target.x && p.y === target.y ? [] : [guideTo(target, p)];
+  // A point-target winner draws the labeled segment; an alignment-guide winner
+  // emits a MARKER instead (the canvas recolors the guide — see SnapGuide).
+  const emit = (best: { target: Vec2; guideId?: string }, p: Vec2): SnapGuide =>
+    best.guideId
+      ? { from: { ...p }, to: { ...p }, alignGuideId: best.guideId }
+      : guideTo(best.target, p);
 
   // A corner — both X and Y lock onto a target — is the strongest snap: take it
   // outright (snapping to the V×H intersection), even over a diagonal that
@@ -163,7 +199,7 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
     const cornerY = bestH.value;
     if (!gridOn) {
       const p: Vec2 = { x: cornerX, y: cornerY };
-      return { x: p.x, y: p.y, guides: [guideTo(bestV.target, p), guideTo(bestH.target, p)] };
+      return { x: p.x, y: p.y, guides: [emit(bestV, p), emit(bestH, p)] };
     }
     // Reconcile the corner with the grid. V is a vertical lock (perp X), H a
     // horizontal lock (perp Y); prefer the better-aligned axis as primary.
@@ -182,10 +218,10 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
     if (r.kept === 'none') return plainGrid();
     const p: Vec2 = { x: r.x, y: r.y };
     if (r.kept === 'both') {
-      return { x: p.x, y: p.y, guides: [guideTo(bestV.target, p), guideTo(bestH.target, p)] };
+      return { x: p.x, y: p.y, guides: [emit(bestV, p), emit(bestH, p)] };
     }
     const keptIsV = r.kept === 'primary' ? vIsPrimary : !vIsPrimary;
-    return { x: p.x, y: p.y, guides: [guideTo(keptIsV ? bestV.target : bestH.target, p)] };
+    return { x: p.x, y: p.y, guides: [emit(keptIsV ? bestV : bestH, p)] };
   }
 
   // Single-axis alignment vs. a diagonal: the smaller displacement wins.
@@ -198,14 +234,17 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
     const comboDisp = Math.hypot(combo.x - proposed.x, combo.y - proposed.y);
     if (!bestD || comboDisp <= bestD.perp) {
       if (!gridOn) {
-        if (applyTens) {
+        // A guide winner never notches: `tens` measures whole grid lengths
+        // FROM the target point, and a guide's stand-in target is the drag's
+        // own foot — quantizing a distance from yourself means nothing.
+        if (applyTens && !singleAxis.guideId) {
           // Free DOF runs along the alignment line: Y for a vertical lock,
           // X for a horizontal one. Notch it to a whole grid step from target.
           const axis: Vec2 = bestV ? { x: 0, y: 1 } : { x: 1, y: 0 };
           const p = notchAlong(singleAxis.target, combo, axis);
           return { x: p.x, y: p.y, guides: tensGuide(singleAxis.target, p) };
         }
-        return { x: combo.x, y: combo.y, guides: [guideTo(singleAxis.target, combo)] };
+        return { x: combo.x, y: combo.y, guides: [emit(singleAxis, combo)] };
       }
       const lock = bestV
         ? { q: { x: bestV.value, y: proposed.y }, axis: { x: 0, y: 1 } }
@@ -213,7 +252,7 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
       const r = reconcileLockWithGrid(lock.q, lock.axis, proposed, gridMode, gridInterval);
       if (!r.engaged) return plainGrid();
       const p: Vec2 = { x: r.x, y: r.y };
-      return { x: p.x, y: p.y, guides: [guideTo(singleAxis.target, p)] };
+      return { x: p.x, y: p.y, guides: [emit(singleAxis, p)] };
     }
   }
   if (bestD) {

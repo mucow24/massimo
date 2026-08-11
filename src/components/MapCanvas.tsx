@@ -50,6 +50,9 @@ import { overdrawnViewBox, panSurfaceViewBox } from './canvas/viewportMath';
 import { useStationDrag } from './canvas/useStationDrag';
 import { useLineCircleDrag } from './canvas/useLineCircleDrag';
 import { LineCircleView } from './LineCircleView';
+import { useGuideDrag } from './canvas/useGuideDrag';
+import { GuideView } from './GuideView';
+import { GuideWells } from './canvas/GuideWells';
 import { CircleDiameterLabel, LineCirclePlacingPreview } from './canvas/LineCirclePlacingPreview';
 import { useStationLayoutDrag } from './canvas/useStationLayoutDrag';
 import { StationLayoutEditor } from './canvas/StationLayoutEditor';
@@ -74,7 +77,7 @@ import {
 import { Grid } from './canvas/Grid';
 import { WarningToasts } from './canvas/WarningToasts';
 import { EditingBanner } from './canvas/EditingBanner';
-import { SnapGuides } from './canvas/SnapGuides';
+import { SnapGuides, type EngagedGuideChrome } from './canvas/SnapGuides';
 import { useItemDrag } from './canvas/useItemDrag';
 import { usePolygonDrag } from './canvas/usePolygonDrag';
 import { useSvgImageDrag } from './canvas/useSvgImageDrag';
@@ -165,6 +168,7 @@ export function MapCanvas() {
   // ACTION stays on useDoc.
   const stations = useRenderDoc((s) => s.stations);
   const lineCircles = useRenderDoc((s) => s.lineCircles);
+  const guides = useRenderDoc((s) => s.guides);
   const routeBulletsAll = useRenderDoc((s) => s.routeBullets);
   const transferAnchors = useRenderDoc((s) => s.transferAnchors);
   const textLabelsAll = useRenderDoc((s) => s.textLabels);
@@ -232,6 +236,10 @@ export function MapCanvas() {
     'showLineCircles',
     useViewportStore((s) => s.showLineCircles),
   );
+  const showGuides = shows(
+    'showGuides',
+    useViewportStore((s) => s.showGuides),
+  );
   // Transfers and anchors ride with the network — a transfer runs between
   // stations and an anchor hangs off one — and `shows` carries that nesting, so
   // neither needs a `showNetwork &&` of its own here.
@@ -291,6 +299,7 @@ export function MapCanvas() {
   const placement = usePlacementDispatch(view);
   const drag = useStationDrag(svgRef, view.viewport.zoom);
   const circleDrag = useLineCircleDrag(svgRef, view.viewport.zoom);
+  const guideDrag = useGuideDrag(svgRef, view.viewport.zoom, view.screenToWorld);
   const rectSelect = useRectSelect(svgRef, view.screenToWorld);
   // While a rect-select drag is in flight, render selection visuals
   // (station wash/stroke and bullet ring) over the previewed result
@@ -312,6 +321,7 @@ export function MapCanvas() {
   const hoverPolygonId = hover?.kind === 'polygon' ? hover.id : null;
   const hoverSvgImageId = hover?.kind === 'svgImage' ? hover.id : null;
   const hoverLineCircleId = hover?.kind === 'lineCircle' ? hover.id : null;
+  const hoverGuideId = hover?.kind === 'guide' ? hover.id : null;
   // Small helper for the enter/leave handlers each item's body wires up: set on
   // enter, clear on leave only if THIS item is still the hovered one (fresh
   // read, so a fast cross to a neighbor can't wipe the neighbor).
@@ -769,6 +779,7 @@ export function MapCanvas() {
     svgDrag.onPointerMove(e);
     layoutDrag.onPointerMove(e);
     circleDrag.onPointerMove(e);
+    guideDrag.onPointerMove(e);
   };
   const onPointerUp = (e: React.PointerEvent) => {
     view.onPointerUp(e);
@@ -779,6 +790,7 @@ export function MapCanvas() {
     svgDrag.onPointerUp(e);
     layoutDrag.onPointerUp(e);
     circleDrag.onPointerUp(e);
+    guideDrag.onPointerUp(e);
   };
   // A browser pointercancel (pen palm rejection, window switch, capture loss)
   // voids an in-flight gesture with no matching pointerup. Fan it out to every
@@ -800,6 +812,7 @@ export function MapCanvas() {
     svgDrag.onPointerCancel();
     layoutDrag.onPointerCancel();
     circleDrag.onPointerCancel();
+    guideDrag.onPointerCancel();
   };
 
   // Run a DOM hit-test (`element(s)FromPoint`) with the drag-proxy layer hidden,
@@ -1080,6 +1093,21 @@ export function MapCanvas() {
       toggle: selection.toggleLineCircleSelection,
       rotate: rotateLineCircle,
     });
+  // Guides carry the same click contract minus the right-click rotate (an
+  // axis-aligned infinite line has nothing to rotate), so they skip
+  // makeItemClickHandlers — its contextmenu half is the rotate gesture.
+  const onGuideClick = (id: string, e: React.MouseEvent) => {
+    if (dragState.suppressClick) return;
+    if (inHandMode) return;
+    e.stopPropagation();
+    const sel = useSelection.getState();
+    if (sel.uiMode.kind === 'appending-to-line') sel.setAppending(null);
+    if (e.shiftKey && !(e.ctrlKey || e.metaKey)) {
+      sel.toggleGuideSelection(id);
+      return;
+    }
+    sel.selectGuide(id);
+  };
   const onVertexClick = (id: string, index: number, e: React.MouseEvent) => {
     if (dragState.suppressClick) return;
     if (inHandMode) return;
@@ -1293,6 +1321,39 @@ export function MapCanvas() {
     if (plan.length) assignRegions(plan);
   };
 
+  // Every hook's live snap guides plus the placement preview's — or, during a
+  // pipelined drag, the landed frame's own cargo. ONE union feeds both
+  // consumers: the SnapGuides overlay (which draws the labeled segments and
+  // skips the markers) and the engaged-guide set below (which reads ONLY the
+  // markers), so the two can never disagree about what is engaged.
+  const allSnapGuides = pipelineFrame?.guides ?? [
+    ...drag.snapGuides,
+    ...itemDrag.itemSnapGuides,
+    ...polyDrag.polygonSnapGuides,
+    ...svgDrag.svgImageSnapGuides,
+    ...circleDrag.snapGuides,
+    ...guideDrag.snapGuides,
+    ...placementGuides,
+  ];
+  // The alignment guides some in-flight drag or placement is snapped AGAINST
+  // right now, with the landed point that engaged each (the marker's `from`).
+  // Two consumers: GuideView recolors the guide accent, and SnapGuides paints
+  // the full snap chrome — halo + dashed span + ring + coordinate chip — so a
+  // guide engagement is exactly as loud as every other snap.
+  const engagedGuides: EngagedGuideChrome[] = [];
+  for (const g of allSnapGuides) {
+    if (!g.alignGuideId || engagedGuides.some((e) => e.id === g.alignGuideId)) continue;
+    const gd = guides[g.alignGuideId];
+    if (!gd) continue;
+    engagedGuides.push({
+      id: gd.id,
+      orientation: gd.orientation,
+      offset: gd.offset,
+      at: g.from,
+    });
+  }
+  const engagedGuideIds = new Set(engagedGuides.map((e) => e.id));
+
   return (
     <div
       className="canvas-host"
@@ -1480,6 +1541,63 @@ export function MapCanvas() {
                   onHoverLeave={(id) => clearHoverIf('lineCircle', id)}
                 />
               ))}
+            </g>
+          )}
+
+          {/* Alignment guides: the line circles' straight-line siblings, in the
+            same scaffolding band (above the background art, below all map ink)
+            and equally export-excluded. Spanning the OVERDRAWN box, like the
+            Grid, so a mid-gesture camera can't reveal an end. A guide some
+            drag is snap-engaged against paints full accent — the guide itself
+            is the feedback (see engagedGuideIds). The pull-out ghost from the
+            wells rides in the same band at placement-ghost opacity. */}
+          {showGuides && (
+            <g data-export-exclude="1">
+              {Object.keys(guides).map((gid) => (
+                <GuideView
+                  key={gid}
+                  guide={guides[gid]}
+                  zoom={view.viewport.zoom}
+                  vbX={overdrawn.vbX}
+                  vbY={overdrawn.vbY}
+                  vbW={overdrawn.vbW}
+                  vbH={overdrawn.vbH}
+                  guideColor={theme.alignGuide}
+                  selectedColor={theme.alignGuideSelected}
+                  hoverColor={theme.alignGuideHover}
+                  accentColor={theme.accent}
+                  selected={selection.selectedGuideIds.includes(gid)}
+                  hovered={hoverGuideId === gid}
+                  engaged={engagedGuideIds.has(gid)}
+                  interactive={polygonsInteractive}
+                  inHandMode={inHandMode}
+                  onPointerDown={(e, id) => guideDrag.onStartDrag(id, e)}
+                  onClick={onGuideClick}
+                  onHoverEnter={(id) => setHover({ kind: 'guide', id })}
+                  onHoverLeave={(id) => clearHoverIf('guide', id)}
+                />
+              ))}
+              {guideDrag.pull && (
+                <g opacity={0.5} pointerEvents="none">
+                  <GuideView
+                    guide={{ id: '__guide-pull', ...guideDrag.pull }}
+                    zoom={view.viewport.zoom}
+                    vbX={overdrawn.vbX}
+                    vbY={overdrawn.vbY}
+                    vbW={overdrawn.vbW}
+                    vbH={overdrawn.vbH}
+                    guideColor={theme.accent}
+                    selectedColor={theme.accent}
+                    hoverColor={theme.accent}
+                    accentColor={theme.accent}
+                    selected={false}
+                    hovered={false}
+                    engaged={false}
+                    interactive={false}
+                    inHandMode={inHandMode}
+                  />
+                </g>
+              )}
             </g>
           )}
 
@@ -2371,17 +2489,10 @@ export function MapCanvas() {
             frozen at the same slice the canvas shows). */}
           <g data-export-exclude="1">
             <SnapGuides
-              guides={
-                pipelineFrame?.guides ?? [
-                  ...drag.snapGuides,
-                  ...itemDrag.itemSnapGuides,
-                  ...polyDrag.polygonSnapGuides,
-                  ...svgDrag.svgImageSnapGuides,
-                  ...circleDrag.snapGuides,
-                  ...placementGuides,
-                ]
-              }
+              guides={allSnapGuides}
               zoom={view.viewport.zoom}
+              engaged={engagedGuides}
+              vb={overdrawn}
             />
           </g>
 
@@ -2550,6 +2661,20 @@ export function MapCanvas() {
       </div>
 
       <ItemPopovers hostSize={view.size} />
+
+      {/* Guide wells: idle arrow-mode only — every other mode owns the canvas
+          edges (banner frame, placement clicks), and a pan tool press must
+          pan, not pull. The strips stay up mid-gesture (they are the cancel /
+          delete drop zones the tint advertises). */}
+      {selection.uiMode.kind === 'idle' && !inHandMode && (
+        <GuideWells
+          guidesHidden={!showGuides}
+          armed={guideDrag.overWell}
+          onWellPointerDown={guideDrag.onWellPointerDown}
+          onPointerMove={guideDrag.onPointerMove}
+          onPointerUp={guideDrag.onPointerUp}
+        />
+      )}
 
       {/* Routing warnings are about bands the user can't see while the network
           is hidden — the toast's "jump to the band" click would land on blank
