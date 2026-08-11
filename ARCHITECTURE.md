@@ -1998,7 +1998,7 @@ doc-geometric pools):
   on screen); the rest name the single mode that places them. `showNetwork` has none at all — it
   is the deliberate get-out-of-my-way switch, and lifting the whole network back for one station
   placement would undo what the user asked for. `showGuides` has none either, for a different
-  reason: guide creation is a GESTURE (the wells) plus an immediate drop, not a mode, so there is
+  reason: guide creation is a GESTURE (the well pull-out), not a mode, so there is
   no mode kind to key a reveal off — while hidden, the wells disable with a tooltip naming the
   fix instead.
 - `nestsUnderNetwork` — `showTransfers` and `showAnchors` ride with the master switch, a transfer
@@ -2362,10 +2362,15 @@ distance-labeled guide through `SnapGuides`; grid snapping is silent.
 **Alignment guides are a target class of their own, ALWAYS ON.** Both snappers take
 `guideTargets` (`GuideTarget[]` — a guide is a ready-made H or V alignment axis at its offset),
 ungated by every mode toggle: you placed the guide on purpose, so it attracts like a ring
-captures, and Shift is how you decline (the line-tag snapper set this precedent). In the point
-snapper a guide competes with point-derived candidates for the same axis on plain perpendicular
-distance; in the engine it enters the candidate set as `kind: 'guide'` with the station ANCHOR
-as the dragged reference (dOff 0) and joins the 2×2 corner solve like any axis. Grid stays the
+captures, and Shift is how you decline (the line-tag snapper set this precedent). BOTH snappers
+decide a same-axis contest between a guide and any other candidate the same way: **the
+better-aligned one wins** (smaller perpendicular distance). In the point snapper that is just
+the bestV/bestH contest; the engine spells it as an explicit exception to its closest-wins
+neighbor pick, because a guide's stand-in target is the drag's own foot — its "distance" IS its
+perpDist, so under closest-wins a parallel guide nine units off would yank a station off a
+one-unit-perfect corridor alignment. Mechanically a guide enters the engine's candidate set as
+`kind: 'guide'` with the station ANCHOR as the dragged reference (dOff 0) and joins the 2×2
+corner solve like any axis. Grid stays the
 hard constraint (an off-grid guide simply doesn't engage under grid), `tens` never notches off a
 guide (its stand-in target is the drag's own foot — no cadence anchor), and phase-3 refinement
 never fires off a guide primary. Engagement feedback: the snapper emits a **marker** — a

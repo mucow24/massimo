@@ -77,7 +77,7 @@ interface ViewportState extends Viewport {
   /** Render toggle: paint the alignment guides (the h/v snap lines). Scaffolding
    *  like the line circles, so independent of `showNetwork` and export-excluded
    *  either way. Hiding also drops them from the snap pools (liveGuideTargets)
-   *  and disables the creation affordances (wells + Add menu) — with no placing
+   *  and disables the wells (the one creation affordance) — with no placing
    *  mode there is no `revealedBy` reveal to lean on, and a pull that lands an
    *  invisible guide would read as the gesture being broken. */
   showGuides: boolean;

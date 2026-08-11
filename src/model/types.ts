@@ -764,7 +764,7 @@ export interface LineCircle {
 export type GuideOrientation = 'horizontal' | 'vertical';
 
 // An alignment guide: an infinite horizontal or vertical line pulled out of
-// the canvas-edge wells (or dropped from the Add menu). Editor scaffolding in
+// the canvas-edge wells — the only way one is born. Editor scaffolding in
 // the line-circle mold — a dashed guide rendered below map ink and excluded
 // from every export — but an ALWAYS-ON snap target for both snappers: items
 // dragged or placed near it engage regardless of the "Snap to all" toggle

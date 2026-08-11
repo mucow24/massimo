@@ -506,11 +506,30 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   // is a candidate, could be a station way past the actual neighbors due
   // to sub-pixel perp differences). addOppositeGuide handles the other
   // side along the axis.
+  //
+  // GUIDES are the one exception to closest-wins: a guide's stand-in target
+  // is the drag's own foot, so its distance IS its perpDist and it would beat
+  // any real neighbor along the axis by construction — a parallel guide nine
+  // units off would yank a station off a one-unit-perfect corridor alignment.
+  // A guide contests its axis on ALIGNMENT QUALITY instead, the point
+  // snapper's rule: it wins only when its perpendicular distance is smaller
+  // than the best station candidate's.
   const distFromBullet = (c: Cand) =>
     Math.hypot(proposedX - c.targetStopX, proposedY - c.targetStopY);
-  const bests = groups.map((g) =>
-    g.reduce((a, b) => (distFromBullet(a) <= distFromBullet(b) ? a : b)),
-  );
+  const bests = groups.map((g) => {
+    let bestStation: Cand | null = null;
+    let bestGuide: Cand | null = null;
+    for (const c of g) {
+      if (c.kind === 'guide') {
+        if (!bestGuide || c.perpDist < bestGuide.perpDist) bestGuide = c;
+      } else if (!bestStation || distFromBullet(c) < distFromBullet(bestStation)) {
+        bestStation = c;
+      }
+    }
+    if (!bestStation) return bestGuide!;
+    if (!bestGuide) return bestStation;
+    return bestGuide.perpDist < bestStation.perpDist ? bestGuide : bestStation;
+  });
   // Across axes (for two-axis snap), the smallest perpDist still wins:
   // it picks the better-aligned axis as primary.
   bests.sort((a, b) => a.perpDist - b.perpDist);
