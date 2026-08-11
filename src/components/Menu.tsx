@@ -119,9 +119,10 @@ interface SubMenuProps {
 }
 
 /**
- * A nested flyout inside a `<Menu>`. The trigger is a `menu-item` row with a ›
+ * A nested flyout inside a menu. The trigger is a `menu-item` row with a ›
  * caret; the child panel flies out to the right on hover, click, or ArrowRight.
- * Must be rendered inside a `<Menu>` (it is a Radix `Sub`).
+ * Must be rendered inside a Radix `DropdownMenu.Root` — a `<Menu>`, or a
+ * dialog's own trigger-plus-`menu-panel` pairing (it is a Radix `Sub`).
  */
 export function SubMenu({ label, children }: SubMenuProps) {
   return (

@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Toggle from '@radix-ui/react-toggle';
 import {
   ArrowLeftIcon,
@@ -11,6 +10,7 @@ import {
   DownloadIcon,
   DragHandleDots2Icon,
   Pencil1Icon,
+  PlusIcon,
   StarIcon,
   StarFilledIcon,
 } from '@radix-ui/react-icons';
@@ -29,6 +29,7 @@ import {
   isPaletteSort,
   type Palette,
   type PaletteSort,
+  type PaletteSwatch,
 } from '../model/palettes';
 import { normalizeHex } from '../util/color';
 import { redo, undo } from '../state/history';
@@ -47,6 +48,22 @@ const SORT_LABELS: Record<PaletteSort, string> = {
   name: 'Name',
   starred: 'Starred',
 };
+
+/**
+ * What the map column calls the row holding the colors no palette covers. It
+ * is not a palette and never lands in the doc — the name is a label, not a key
+ * — so it is italic in the list, and a map may perfectly well hold a real
+ * palette of the same name.
+ */
+const CUSTOM_COLORS_NAME = 'Custom colors (not in a palette)';
+
+/**
+ * Loose colors as a palette's swatches — numbered, because a hand-picked color
+ * has no name to carry. Both the custom colors row and the palette its `+`
+ * mints read from here, so what you see in the strip is what you get.
+ */
+const swatchesFromColors = (colors: readonly string[]): PaletteSwatch[] =>
+  colors.map((c, i) => ({ name: String(i + 1), color: normalizeHex(c) }));
 
 /** A palette's colors as a strip — how you recognise one without reading it. */
 function Strip({ palette }: { palette: Palette }) {
@@ -90,8 +107,8 @@ function StarToggle({
  * The palette manager: your library on the left, the palettes this map paints
  * with on the right. Reached from the toolbar's Manage palettes button, and the
  * only place palettes are created, imported, edited, starred or thrown away —
- * a row's pencil (and the New… menu) swaps this window for the PaletteEditor
- * view, where renaming lives too.
+ * a row's pencil (and New…) swaps this window for the PaletteEditor view,
+ * where renaming lives too.
  *
  * The two columns are independent lists, not a master and its detail — nothing
  * here is "selected", so every command lives in the row it acts on. A row
@@ -100,6 +117,11 @@ function StarToggle({
  * STATE (already in the map; built-in, so unsaveable) and one is a grab
  * target. Everything else stands in the row's `…` toolbar, which is what
  * keeps a column of rows from reading as a wall of identical glyphs.
+ *
+ * Under the map's palettes stands the one row the map does not carry: the
+ * CUSTOM COLORS row, the line colors no palette accounts for, derived from the
+ * doc rather than stored in it. It is the only row that breaks the grid above —
+ * see it at the foot of the map column for why.
  *
  * Adding a palette to the map COPIES it, which is what makes the two columns
  * genuinely separate: deleting from the library never disturbs a map, and
@@ -300,12 +322,17 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
     setEditing({ source, name, fresh });
   };
 
-  // The map's custom colors — line colors no palette covers — are what the
-  // "From map's custom colors…" seed absorbs into a palette of their own.
+  // The map's custom colors — line colors no palette covers — stand as a row
+  // of their own at the foot of the map column, where the `+` absorbs them
+  // into a palette (and so empties the row away).
   const customColors = customLineColors(
     Object.values(lines).map((l) => l.color),
     mapPalettes,
   );
+  const customColorsPalette: Palette = {
+    name: CUSTOM_COLORS_NAME,
+    swatches: swatchesFromColors(customColors),
+  };
 
   /**
    * Mint a palette and open the editor on it. Like Load…, it lands in BOTH
@@ -321,7 +348,7 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
     ]);
     const palette: Palette = {
       name: freshPaletteName(taken),
-      swatches: colors.map((c, i) => ({ name: String(i + 1), color: normalizeHex(c) })),
+      swatches: swatchesFromColors(colors),
     };
     addToLibrary(palette);
     addPaletteToMap(palette);
@@ -424,39 +451,18 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                   <div className="dialog-colhead">
                     <h3>Library</h3>
                     <div className="dialog-colhead-controls">
-                      {/* Not the toolbar Menu wrapper: its trigger is the
-                        underlined toolbar label, and this one is a colhead
-                        button. Same panel classes, so it reads as one menu
-                        system. Non-portalled, like every menu — it stays
-                        inside `.app` where the design tokens live. */}
-                      <Dropdown.Root modal={false}>
-                        <Dropdown.Trigger asChild>
-                          <button
-                            type="button"
-                            className="dialog-colhead-btn"
-                            title="Create a palette in the library and this map"
-                          >
-                            New…
-                          </button>
-                        </Dropdown.Trigger>
-                        <Dropdown.Content className="menu-panel" align="start" sideOffset={4} loop>
-                          <Dropdown.Item className="menu-item" onSelect={() => createNew([])}>
-                            From empty…
-                          </Dropdown.Item>
-                          <Dropdown.Item
-                            className="menu-item"
-                            disabled={customColors.length === 0}
-                            title={
-                              customColors.length === 0
-                                ? 'No custom colors (colors outside a palette) in this map'
-                                : undefined
-                            }
-                            onSelect={() => createNew(customColors)}
-                          >
-                            From map’s custom colors…
-                          </Dropdown.Item>
-                        </Dropdown.Content>
-                      </Dropdown.Root>
+                      {/* One thing to mint from — an empty palette — so this
+                        is a button, not a menu holding a single item. The map's
+                        custom colors are seeded from the row that holds them,
+                        where they can be seen. */}
+                      <button
+                        type="button"
+                        className="dialog-colhead-btn"
+                        title="Create an empty palette in the library and this map"
+                        onClick={() => createNew([])}
+                      >
+                        New…
+                      </button>
                       <button
                         type="button"
                         className="dialog-colhead-btn"
@@ -594,7 +600,7 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                     <h3>In this map</h3>
                   </div>
                   <div className={'dialog-list' + (mapDrag.drag ? ' dragging' : '')}>
-                    {mapPalettes.length === 0 && (
+                    {mapPalettes.length === 0 && customColors.length === 0 && (
                       <div className="empty">
                         This map carries no palettes — line colors are all picked by hand.
                       </div>
@@ -719,6 +725,52 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                         </div>
                       );
                     })}
+                    {/* The colors this map paints with that no palette accounts
+                      for — the picker's "Custom" section, seen from the palette
+                      side. It stands under the palettes because it is what is
+                      left over, and it is the only row here the map does not
+                      carry: it is derived from the lines, and turning it into a
+                      palette is what empties it away.
+
+                      So it breaks the row grid on purpose. The two slots that
+                      would be lies — save to the library, and the drag handle —
+                      stand EMPTY rather than disabled, because there is nothing
+                      here to save and nothing to reorder; keeping the width
+                      keeps the strips and the `…` in the columns they hold in
+                      every other row. In their place the row spends a slot of
+                      its own on the one command it has, which is why its strip
+                      is a slot shorter than its neighbours'. */}
+                    {customColors.length > 0 && (
+                      <div className="dialog-row palette-row palette-row-custom">
+                        <div className="palette-row-slot" aria-hidden="true" />
+                        <div className="dialog-row-body">
+                          <strong>{CUSTOM_COLORS_NAME}</strong>
+                          <Strip palette={customColorsPalette} />
+                        </div>
+                        <div className="dialog-row-actions">
+                          <IconButton
+                            label="Create palette from these colors"
+                            onClick={() => createNew(customColors)}
+                          >
+                            <PlusIcon />
+                          </IconButton>
+                          <RowCommands label="More actions for custom colors" onClose={disarm}>
+                            {(close) => (
+                              <IconButton
+                                label="Export these colors as a palette file"
+                                onClick={() => {
+                                  onExport(customColorsPalette);
+                                  close();
+                                }}
+                              >
+                                <DownloadIcon />
+                              </IconButton>
+                            )}
+                          </RowCommands>
+                          <div className="palette-row-slot" aria-hidden="true" />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </section>
               </div>

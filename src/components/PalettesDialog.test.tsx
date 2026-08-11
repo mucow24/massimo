@@ -285,6 +285,95 @@ describe('<PalettesDialog /> the map column', () => {
   });
 });
 
+// The map's custom colors — line colors no palette covers — stand at the foot
+// of the map column as a row of their own. It is not a palette, and the two
+// slots that would say otherwise (save to the library, reorder) stand empty.
+describe('<PalettesDialog /> the custom colors row', () => {
+  const CUSTOM = 'Custom colors (not in a palette)';
+  // Two colors outside MTA, one of its own, and a repeat of the first.
+  const withCustomColors = () =>
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: {
+        A: makeLine({ id: 'A', color: '#123456' }),
+        B: makeLine({ id: 'B', color: '#0039A6' }),
+        C: makeLine({ id: 'C', color: '#abcdef' }),
+        D: makeLine({ id: 'D', color: '#123456' }),
+      },
+    });
+  const customRow = () =>
+    within(mapColumn()).getByText(CUSTOM).closest('.palette-row') as HTMLElement;
+  const minted = {
+    name: 'New palette',
+    swatches: [
+      { name: '1', color: '#123456' },
+      { name: '2', color: '#abcdef' },
+    ],
+  };
+
+  it('shows every uncovered line color, once each, below the map’s palettes', () => {
+    withCustomColors();
+    renderDialog();
+    expect(rowNames(mapColumn())).toEqual(['MTA', CUSTOM]);
+    expect(
+      [...customRow().querySelectorAll('.palette-strip span')].map(
+        (s) => (s as HTMLElement).style.background,
+      ),
+    ).toEqual(['rgb(18, 52, 86)', 'rgb(171, 205, 239)']);
+  });
+
+  it('is absent when every line color is covered by a palette', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { B: makeLine({ id: 'B', color: '#0039A6' }) },
+    });
+    renderDialog();
+    expect(screen.queryByText(CUSTOM)).toBeNull();
+  });
+
+  // Nothing to save into the library, nothing to reorder: both slots stand
+  // empty rather than offering a command that could not work.
+  it('carries neither a save arrow nor a drag handle', () => {
+    withCustomColors();
+    renderDialog();
+    expect(within(customRow()).queryByRole('button', { name: /library/ })).toBeNull();
+    expect(within(customRow()).queryByRole('button', { name: /^Reorder/ })).toBeNull();
+  });
+
+  it('its + mints those colors into BOTH destinations and opens the editor naming it', async () => {
+    const user = userEvent.setup();
+    withCustomColors();
+    renderDialog();
+    await user.click(screen.getByRole('button', { name: 'Create palette from these colors' }));
+    expect(useDoc.getState().palettes).toEqual([...DEFAULT_DOC.palettes, minted]);
+    expect(useCustomPalettes.getState().palettes).toEqual([minted]);
+    expect(screen.getByRole('textbox', { name: 'Palette name' })).toHaveValue('New palette');
+  });
+
+  it('and the row is gone when the columns come back — a palette covers them now', async () => {
+    const user = userEvent.setup();
+    withCustomColors();
+    renderDialog();
+    await user.click(screen.getByRole('button', { name: 'Create palette from these colors' }));
+    await user.keyboard('{Escape}'); // cancel the title edit
+    await user.click(screen.getByRole('button', { name: 'Back to palettes' }));
+    expect(rowNames(mapColumn())).toEqual(['MTA', 'New palette']);
+  });
+
+  // Export is the only row command that means anything for colors that aren't
+  // a palette: nothing to edit, nothing to copy, nothing to take out of the map.
+  it('offers export and nothing else behind its …', async () => {
+    const user = userEvent.setup();
+    withCustomColors();
+    renderDialog();
+    await openMore(user, 'custom colors');
+    const panel = document.querySelector('.row-commands') as HTMLElement;
+    expect([...panel.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual([
+      'Export these colors as a palette file',
+    ]);
+  });
+});
+
 // What a built-in withholds — edit, delete — is asserted where those commands
 // now live, in the … toolbar describe above. What's left here is the map
 // column's side of it.
@@ -433,15 +522,13 @@ describe('<PalettesDialog /> Load…', () => {
 });
 
 describe('<PalettesDialog /> New… and the editor view', () => {
-  const newMenu = async (user: ReturnType<typeof userEvent.setup>, item: string | RegExp) => {
-    await user.click(screen.getByRole('button', { name: 'New…' }));
-    await user.click(await screen.findByRole('menuitem', { name: item }));
-  };
+  const clickNew = (user: ReturnType<typeof userEvent.setup>) =>
+    user.click(screen.getByRole('button', { name: 'New…' }));
 
-  it('From empty mints a fresh name into BOTH destinations and opens the editor naming it', async () => {
+  it('New… mints a fresh name into BOTH destinations and opens the editor naming it', async () => {
     const user = userEvent.setup();
     renderDialog();
-    await newMenu(user, 'From empty…');
+    await clickNew(user);
     expect(useCustomPalettes.getState().palettes.map((p) => p.name)).toEqual(['New palette']);
     expect(useDoc.getState().palettes.map((p) => p.name)).toEqual(['MTA', 'New palette']);
     // Editor view, title already editing (it's a fresh palette), no columns.
@@ -449,44 +536,18 @@ describe('<PalettesDialog /> New… and the editor view', () => {
     expect(screen.queryByRole('region', { name: 'Palette library' })).toBeNull();
   });
 
-  it('a second From empty counts up past the first', async () => {
+  it('a second New… counts up past the first', async () => {
     const user = userEvent.setup();
     renderDialog();
-    await newMenu(user, 'From empty…');
+    await clickNew(user);
     await user.keyboard('{Escape}'); // cancel the title edit
     await user.click(screen.getByRole('button', { name: 'Back to palettes' }));
-    await newMenu(user, 'From empty…');
+    await clickNew(user);
     expect(useDoc.getState().palettes.map((p) => p.name)).toEqual([
       'MTA',
       'New palette',
       'New palette 2',
     ]);
-  });
-
-  it('From map’s custom colors seeds the colors no palette covers', async () => {
-    const user = userEvent.setup();
-    useDoc.setState({
-      ...useDoc.getState(),
-      lines: { A: makeLine({ id: 'A', color: '#123456' }) },
-    });
-    renderDialog();
-    await newMenu(user, 'From map’s custom colors…');
-    const palettes = useDoc.getState().palettes;
-    expect(palettes[palettes.length - 1]).toEqual({
-      name: 'New palette',
-      swatches: [{ name: '1', color: '#123456' }],
-    });
-  });
-
-  it('From map’s custom colors is inert when every line color is covered', async () => {
-    const user = userEvent.setup();
-    useDoc.setState({ ...useDoc.getState(), lines: {} });
-    renderDialog();
-    await user.click(screen.getByRole('button', { name: 'New…' }));
-    const item = await screen.findByRole('menuitem', { name: 'From map’s custom colors…' });
-    expect(item).toHaveAttribute('data-disabled');
-    await user.click(item);
-    expect(useDoc.getState().palettes.map((p) => p.name)).toEqual(['MTA']);
   });
 
   // The dialog is MODAL: Radix traps focus inside Dialog.Content, so a color

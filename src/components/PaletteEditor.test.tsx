@@ -67,7 +67,9 @@ describe('<PaletteEditor /> rows', () => {
     });
   });
 
-  it('adds a gray color named by its position', async () => {
+  // No custom colors in this map, so there is nothing to choose between: the
+  // row is the plain button it has always been.
+  it('adds a gray color named by its position, on one click', async () => {
     const user = userEvent.setup();
     renderEditor('map', 'frrf');
     await user.click(screen.getByRole('button', { name: 'Add color' }));
@@ -103,10 +105,16 @@ describe('<PaletteEditor /> rows', () => {
     expect(useDoc.getState().lines.M.color).toBe('#123456');
   });
 
-  it('the Add color row sits at the top of the list', () => {
+  // Add color ends the description's line rather than spanning the list: the
+  // menu it opens hangs off its edge, and a window-wide button hangs one at the
+  // far side of the window.
+  it('Add color stands in the head, beside the description', () => {
     renderEditor('map', 'frrf');
+    expect(
+      screen.getByRole('button', { name: 'Add color' }).closest('.palette-editor-subhead'),
+    ).not.toBeNull();
     const list = document.querySelector('.palette-editor-list');
-    expect(list?.firstElementChild?.className).toContain('palette-editor-add');
+    expect(list?.firstElementChild?.className).toContain('palette-editor-row');
   });
 
   it('a library editor writes the library and leaves the doc alone', async () => {
@@ -157,6 +165,75 @@ describe('<PaletteEditor /> rows', () => {
 
     act(() => useDoc.temporal.getState().undo());
     expect(mapSwatches()?.map((s) => s.name)).toEqual(['Red', 'Yellow']);
+  });
+});
+
+// Once the map has colors of its own, Add color has something to choose
+// between and becomes a menu: New, or one of those colors.
+describe('<PaletteEditor /> Add color with custom colors about', () => {
+  // #c1272d is frrf's Red, so it is NOT custom; the other two are.
+  const withCustomColors = () =>
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: {
+        L: makeLine({ id: 'L', color: '#123456' }),
+        M: makeLine({ id: 'M', color: '#c1272d' }),
+        N: makeLine({ id: 'N', color: '#abcdef' }),
+      },
+    });
+  const openAdd = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Add color' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'Custom color' }));
+  };
+  const offered = async () =>
+    (await screen.findAllByRole('menuitem', { name: /^Add #/ })).map((el) =>
+      el.getAttribute('aria-label'),
+    );
+  // The leaf flyout is hover-driven; userEvent's pointer movement tears it down
+  // before the click lands, so fire the click directly on the leaf.
+  const pick = async (hex: string) =>
+    fireEvent.click(await screen.findByRole('menuitem', { name: `Add ${hex}` }));
+
+  it('keeps the old behavior on New', async () => {
+    const user = userEvent.setup();
+    withCustomColors();
+    renderEditor('map', 'frrf');
+    await user.click(screen.getByRole('button', { name: 'Add color' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'New' }));
+    expect(mapSwatches()).toEqual([...FRRF.swatches, { name: '3', color: '#888888' }]);
+  });
+
+  it('offers the line colors no palette covers, and only those', async () => {
+    const user = userEvent.setup();
+    withCustomColors();
+    renderEditor('map', 'frrf');
+    await openAdd(user);
+    expect(await offered()).toEqual(['Add #123456', 'Add #abcdef']);
+  });
+
+  // Adding one to the MAP's palette covers it, so the offer empties as it is
+  // taken up — the same set the manager's custom colors row shows.
+  it('appends the color it was given, which is custom no longer', async () => {
+    const user = userEvent.setup();
+    withCustomColors();
+    renderEditor('map', 'frrf');
+    await openAdd(user);
+    await pick('#123456');
+    expect(mapSwatches()).toEqual([...FRRF.swatches, { name: '3', color: '#123456' }]);
+    await openAdd(user);
+    expect(await offered()).toEqual(['Add #abcdef']);
+  });
+
+  // The custom colors are the MAP's either way — a library palette is where
+  // you collect them to keep, and collecting them doesn't cover anything.
+  it('offers them to a library palette too, and writes only the library', async () => {
+    const user = userEvent.setup();
+    withCustomColors();
+    renderEditor('library', 'frrf');
+    await openAdd(user);
+    await pick('#123456');
+    expect(librarySwatches()).toEqual([...FRRF.swatches, { name: '3', color: '#123456' }]);
+    expect(mapSwatches()).toEqual(FRRF.swatches);
   });
 });
 

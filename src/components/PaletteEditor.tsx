@@ -1,10 +1,17 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
+import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import { Cross2Icon, DragHandleDots2Icon, PlusIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { useCustomPalettes } from '../state/customPalettes';
-import { FALLBACK_LINE_COLOR, type Palette, type PaletteSwatch } from '../model/palettes';
+import {
+  customLineColors,
+  FALLBACK_LINE_COLOR,
+  type Palette,
+  type PaletteSwatch,
+} from '../model/palettes';
 import { legibleTextOn, normalizeHex } from '../util/color';
 import { ColorField } from './ColorField';
+import { MenuItem, SubMenu } from './Menu';
 import { useInlineRename } from './useInlineRename';
 import { useSpeedBump } from './dialogRow';
 import { rowShiftStyle, useRowDragReorder } from './useRowDragReorder';
@@ -96,10 +103,17 @@ function EditableText({
 }
 
 /**
- * The palette editor: the manager's second view, reached from a row's pencil
- * or the New… menu. Title and description edit on double-click; below them,
- * one row per color — drag handle, an index bullet in the color itself, the
- * color field, the name, a speed-bumped delete — and an Add color row.
+ * The palette editor: the manager's second view, reached from a row's pencil,
+ * from New…, or from the custom colors row's `+`. Title and description edit
+ * on double-click; below them, one row per color — drag handle, an index
+ * bullet in the color itself, the color field, the name, a speed-bumped
+ * delete — under an Add color row.
+ *
+ * Add color is a plain button while the map has no colors of its own, and a
+ * menu once it does: New, or one of the map's CUSTOM COLORS — the same set the
+ * manager's custom colors row collects. That second answer is the whole point:
+ * a color picked by hand on the canvas is filed into a palette by pointing at
+ * it, never by reading a hex off one window and typing it into another.
  *
  * Edits are LIVE against exactly one copy, named by `source`: a map palette
  * goes through the doc's upsert (each gesture one undo entry, the picker
@@ -130,6 +144,7 @@ export function PaletteEditor({
   inlineEditRef: MutableRefObject<boolean>;
 }) {
   const mapPalettes = useDoc((s) => s.palettes);
+  const lines = useDoc((s) => s.lines);
   const addPaletteToMap = useDoc((s) => s.addPaletteToMap);
   const renameMapPalette = useDoc((s) => s.renameMapPalette);
   const recolorMapPaletteColor = useDoc((s) => s.recolorMapPaletteColor);
@@ -210,8 +225,18 @@ export function PaletteEditor({
           swatches.map((s, j) => (j === i ? { name: s.name, color: normalizeHex(c) } : s)),
         );
 
-  const addColor = () =>
-    withSwatches([...swatches, { name: String(swatches.length + 1), color: FALLBACK_LINE_COLOR }]);
+  const addColor = (color: string = FALLBACK_LINE_COLOR) =>
+    withSwatches([...swatches, { name: String(swatches.length + 1), color: normalizeHex(color) }]);
+
+  // The colors this MAP paints with that no palette of its own covers — the
+  // same set the manager's custom colors row collects, offered here one at a
+  // time. Always the map's, even while a LIBRARY palette is open: a library
+  // palette is where you keep them, and keeping one covers nothing, so that
+  // list simply doesn't shrink as you take from it.
+  const customColors = customLineColors(
+    Object.values(lines).map((l) => l.color),
+    mapPalettes,
+  );
 
   return (
     <div className="palette-editor">
@@ -225,20 +250,72 @@ export function PaletteEditor({
           inlineEditRef={inlineEditRef}
           onCommit={commitTitle}
         />
-        <EditableText
-          tag="div"
-          className="palette-editor-desc"
-          value={palette.description ?? ''}
-          placeholder="Double-click to add a description"
-          ariaLabel="Palette description"
-          inlineEditRef={inlineEditRef}
-          onCommit={commitDescription}
-        />
+        {/* The description takes the line; Add color ends it. A command that
+            sat across the whole list — as this one used to — anchors any menu
+            it opens to a button as wide as the window, and a menu is never
+            that wide: it opened stranded at the far edge of its own trigger. */}
+        <div className="palette-editor-subhead">
+          <EditableText
+            tag="div"
+            className="palette-editor-desc"
+            value={palette.description ?? ''}
+            placeholder="Double-click to add a description"
+            ariaLabel="Palette description"
+            inlineEditRef={inlineEditRef}
+            onCommit={commitDescription}
+          />
+          {/* Nothing to choose between until the map has colors of its own, so
+              the button adds on the click. Once it does, the same button opens
+              a menu of the two answers — a fresh gray to work from, or one of
+              the colors already on the map. */}
+          {customColors.length === 0 ? (
+            <button type="button" className="palette-editor-add" onClick={() => addColor()}>
+              <PlusIcon aria-hidden="true" /> Add color
+            </button>
+          ) : (
+            <Dropdown.Root modal={false}>
+              <Dropdown.Trigger asChild>
+                <button type="button" className="palette-editor-add">
+                  <PlusIcon aria-hidden="true" /> Add color
+                </button>
+              </Dropdown.Trigger>
+              {/* Non-portalled, like every menu in the app: inside `.app` for
+                  the design tokens, and inside the dialog for its focus trap.
+                  Aligned to the button's far edge, which is the window's — so
+                  the panel opens back across the head rather than off it. */}
+              <Dropdown.Content
+                className="menu-panel"
+                align="end"
+                sideOffset={4}
+                collisionPadding={8}
+                loop
+              >
+                <MenuItem onClick={() => addColor()}>New</MenuItem>
+                <SubMenu label="Custom color">
+                  {/* The picker's own swatches, standing as menu items — a
+                      custom color looks the same wherever it is offered. */}
+                  <div className="menu-swatches">
+                    {customColors.map((c) => {
+                      const hex = normalizeHex(c);
+                      return (
+                        <Dropdown.Item
+                          key={hex}
+                          className="color-swatch menu-swatch"
+                          aria-label={`Add ${hex}`}
+                          title={hex}
+                          style={{ background: c }}
+                          onSelect={() => addColor(c)}
+                        />
+                      );
+                    })}
+                  </div>
+                </SubMenu>
+              </Dropdown.Content>
+            </Dropdown.Root>
+          )}
+        </div>
       </div>
       <div className={'palette-editor-list' + (drag ? ' dragging' : '')}>
-        <button type="button" className="palette-editor-add" onClick={addColor}>
-          <PlusIcon aria-hidden="true" /> Add color
-        </button>
         {swatches.map((s, i) => (
           <div
             key={i}
