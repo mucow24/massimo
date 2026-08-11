@@ -905,8 +905,12 @@ interface DocState extends MapDoc {
    *  resolves to (nothing is written when the transform refuses — empty name
    *  or missing item). */
   saveStyle: (kind: StyleKind, name: string, itemId: string) => string;
-  /** Stamp a style's props onto an item and tag it (one undo entry). */
+  /** Stamp a style's props onto an item and tag it (one undo entry). Also the
+   *  Revert-to-style button — a full stamp clears every per-field override. */
   applyStyle: (styleId: string, itemId: string) => void;
+  /** Revert ONE covered field of a tagged item back to its style's value —
+   *  what clicking that field's red override dot does. */
+  revertStyleField: (kind: S.ItemStyleKind, itemId: string, field: string) => void;
   /** Detach an item to "Custom": drop the tag, keep the values. */
   clearStyleTag: (kind: StyleKind, itemId: string) => void;
   renameStyle: (styleId: string, name: string) => void;
@@ -1142,23 +1146,19 @@ export const useDoc = create<DocState>()(
         },
         // Add a bullet from a clipboard payload, nudged by the drop offset. The
         // fresh copy comes out UNLOCKED even if the source was locked, so it's
-        // immediately movable (mirrors pastePolygon / pasteTextLabel). The
-        // restamp pass repairs a stale tagged payload — the clipboard froze
-        // the values, the style may have been redefined since the copy — in
-        // the SAME set(), so a paste stays one undo entry.
+        // immediately movable (mirrors pastePolygon / pasteTextLabel). A
+        // payload whose values diverge from its (possibly since-redefined)
+        // style pastes verbatim — the divergence is a per-field override; the
+        // constructor has already stripped a tag that doesn't resolve.
         pasteRouteBullet: (data) => {
           const { locked: _locked, ...rest } = data;
           const id = ids.routeBulletId();
           set((s) =>
-            S.restampStyleTag(
-              T.addRouteBulletWith(s, id, {
-                ...rest,
-                x: data.x + DROP_OFFSET,
-                y: data.y + DROP_OFFSET,
-              }),
-              'routeBullet',
-              id,
-            ),
+            T.addRouteBulletWith(s, id, {
+              ...rest,
+              x: data.x + DROP_OFFSET,
+              y: data.y + DROP_OFFSET,
+            }),
           );
           return id;
         },
@@ -1247,22 +1247,18 @@ export const useDoc = create<DocState>()(
         },
         // Add a label from a clipboard payload, nudged by the drop offset. The
         // fresh copy comes out UNLOCKED even if the source was locked, so it's
-        // immediately movable (mirrors pastePolygon / pasteRouteBullet). The
-        // restamp pass repairs a stale tagged payload in the same set() —
-        // see pasteRouteBullet.
+        // immediately movable (mirrors pastePolygon / pasteRouteBullet). A
+        // stale tagged payload pastes verbatim as overrides — see
+        // pasteRouteBullet.
         pasteTextLabel: (data) => {
           const { locked: _locked, ...rest } = data;
           const id = ids.textLabelId();
           set((s) =>
-            S.restampStyleTag(
-              T.addTextLabelWith(s, id, {
-                ...rest,
-                x: data.x + DROP_OFFSET,
-                y: data.y + DROP_OFFSET,
-              }),
-              'textLabel',
-              id,
-            ),
+            T.addTextLabelWith(s, id, {
+              ...rest,
+              x: data.x + DROP_OFFSET,
+              y: data.y + DROP_OFFSET,
+            }),
           );
           return id;
         },
@@ -1287,24 +1283,20 @@ export const useDoc = create<DocState>()(
         // Add a polygon from a clipboard payload, translating every vertex by
         // the drop offset (polygons have no center — geometry lives in
         // `vertices`, in world coords). The fresh copy comes out UNLOCKED even
-        // if the source was locked, so it's immediately movable/editable. The
-        // restamp pass repairs a stale tagged payload in the same set() —
-        // see pasteRouteBullet.
+        // if the source was locked, so it's immediately movable/editable. A
+        // stale tagged payload pastes verbatim as overrides — see
+        // pasteRouteBullet.
         pastePolygon: (data) => {
           const { locked: _locked, ...rest } = data;
           const id = ids.polygonId();
           set((s) =>
-            S.restampStyleTag(
-              T.addPolygonWith(s, id, {
-                ...rest,
-                vertices: data.vertices.map((v) => ({
-                  x: v.x + DROP_OFFSET,
-                  y: v.y + DROP_OFFSET,
-                })),
-              }),
-              'polygon',
-              id,
-            ),
+            T.addPolygonWith(s, id, {
+              ...rest,
+              vertices: data.vertices.map((v) => ({
+                x: v.x + DROP_OFFSET,
+                y: v.y + DROP_OFFSET,
+              })),
+            }),
           );
           return id;
         },
@@ -1385,6 +1377,8 @@ export const useDoc = create<DocState>()(
         },
         applyStyle: (styleId, itemId) =>
           set(withRegionReconcile((s) => S.applyStyleToItem(s, styleId, itemId))),
+        revertStyleField: (kind, itemId, field) =>
+          set(withRegionReconcile((s) => S.revertStyleField(s, kind, itemId, field))),
         clearStyleTag: (kind, itemId) => set((s) => S.clearStyleTag(s, kind, itemId)),
         renameStyle: (styleId, name) => set((s) => S.renameStyle(s, styleId, name)),
         deleteStyle: (styleId) => set((s) => S.deleteStyle(s, styleId)),

@@ -364,11 +364,10 @@ function updateRecord<K extends RecordCollectionKey>(
   return { ...doc, [key]: { ...coll, [id]: next } } as MapDoc;
 }
 
-// Detach an item from its style preset. Editing a covered style field breaks
-// the styleId tag's "tagged ⇒ matches" invariant (see types.ts), so the
-// transforms below clear the tag whenever a covered value ACTUALLY changes —
-// value-identical re-writes (a slider tick, re-clicking the active align
-// button) must keep it. Same reference when untagged.
+// Drop an item's style tag. Covered-field edits do NOT detach — an item may
+// legally diverge from its style per-field (an override; see types.ts) — so
+// the only remaining caller is paste hygiene below, stripping tags that don't
+// resolve. Same reference when untagged.
 function stripStyleId<T extends { styleId?: string }>(item: T): T {
   if (item.styleId === undefined) return item;
   const { styleId: _gone, ...rest } = item;
@@ -705,11 +704,10 @@ function dropRedundantStopOverrides(
 // tags the line default with the style id. Unlike per-stop overrides, line
 // defaults are ALWAYS stored (never dropped at the designated default): a
 // default-tracking line must stay tagged so editing the referenced style
-// restamps it. Dot TYPE IS a covered LINE-style field, so a real change here
-// detaches the line's own style preset (stripStyleId) — the "tagged ⇒ matches"
-// rule, same as every other covered setter; the value-identical early-out below
-// keeps it. `wantSingleton` selects which stop case the redundant-override
-// cascade prunes.
+// restamps it. Dot TYPE is a covered LINE-style field — a real change on a
+// line wearing a style becomes a per-field override (the tag stays; the
+// value-identical early-out below keeps it a no-op). `wantSingleton` selects
+// which stop case the redundant-override cascade prunes.
 function setLineCaseDotStyle(
   doc: MapDoc,
   id: LineId,
@@ -741,14 +739,12 @@ function setLineCaseDotStyle(
   const oldNatural = defaultDotDiameter(existingRaw ?? DEFAULT_DOT_STYLE);
   const newNatural = defaultDotDiameter(props);
   const followSize = oldNatural !== newNatural && (cur[sizeField] ?? oldNatural) === oldNatural;
-  // Real change (the value-identical case returned above) ⇒ detach the line's
-  // own style preset, like every other covered-field setter.
-  const nextLine: Line = stripStyleId({
+  const nextLine: Line = {
     ...cur,
     [rawField]: props,
     [tagField]: styleId,
     ...(followSize ? { [sizeField]: newNatural } : {}),
-  });
+  };
   // A per-stop override on a stop of the MATCHING case (singleton vs. shared)
   // tagged with the SAME style now equals the new line default → drop it (both
   // raw + tag) so the stop tracks the default going forward. Overrides on the
@@ -863,9 +859,7 @@ function setLineCaseDotSize(
     'dotSize',
     (s, st) => stationIsSingleton(st) === wantSingleton && s.dotSize === stored,
   );
-  // Fall-through = the stored default-dot-size changed → detach from the
-  // line's style preset.
-  return { ...doc, lines: { ...doc.lines, [id]: stripStyleId(nextLine) }, stations };
+  return { ...doc, lines: { ...doc.lines, [id]: nextLine }, stations };
 }
 
 export function setLineSingletonDotSize(doc: MapDoc, id: LineId, size: number): MapDoc {
@@ -905,7 +899,7 @@ function setLineStyleField<K extends keyof Line>(
   if (!cur || cur[field] === stored) return doc;
   return {
     ...doc,
-    lines: { ...doc.lines, [id]: stripStyleId(writeLineField(cur, field, stored)) },
+    lines: { ...doc.lines, [id]: writeLineField(cur, field, stored) },
   };
 }
 
@@ -940,10 +934,9 @@ export function setLineWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
       gap,
     ),
   );
-  // Fall-through = the stored width changed → detach from the style preset.
   return {
     ...doc,
-    lines: { ...doc.lines, [id]: stripStyleId(writeLineField(cur, 'width', stored)) },
+    lines: { ...doc.lines, [id]: writeLineField(cur, 'width', stored) },
     stations,
   };
 }
@@ -973,10 +966,9 @@ export function setLineInterlineGap(doc: MapDoc, id: LineId, v: number): MapDoc 
       stored ?? LINE_INTERLINE_GAP_DEFAULT,
     ),
   );
-  // Fall-through = the stored gap changed → detach from the style preset.
   return {
     ...doc,
-    lines: { ...doc.lines, [id]: stripStyleId(writeLineField(cur, 'interlineGap', stored)) },
+    lines: { ...doc.lines, [id]: writeLineField(cur, 'interlineGap', stored) },
     stations,
   };
 }
@@ -990,10 +982,9 @@ export function setLineLabelGap(doc: MapDoc, id: LineId, v: number): MapDoc {
   if (!cur || !Number.isFinite(v)) return doc;
   const stored = canonicalLineLabelGap(v);
   if (cur.labelGap === stored) return doc;
-  // Fall-through = the stored gap changed → detach from the style preset.
   return {
     ...doc,
-    lines: { ...doc.lines, [id]: stripStyleId(writeLineField(cur, 'labelGap', stored)) },
+    lines: { ...doc.lines, [id]: writeLineField(cur, 'labelGap', stored) },
   };
 }
 
@@ -2911,7 +2902,7 @@ export function updateStationLabelStyle(
       after.tracking !== before.tracking;
     // No effective change: keep the station verbatim (tag and reference intact).
     if (!coveredChanged) return st;
-    return stripStyleId(withStationLabelStyle(st, after));
+    return withStationLabelStyle(st, after);
   });
 }
 
@@ -3197,9 +3188,7 @@ export function updateRouteBullet(
     const nextPatch =
       typeof patch.size === 'number' ? { ...patch, size: clampRouteBulletSize(patch.size) } : patch;
     const next = { ...cur, ...nextPatch };
-    // Covered style fields are shape + size (NOT lineId/locked); a real change
-    // to either detaches the bullet from its style preset.
-    return next.shape !== cur.shape || next.size !== cur.size ? stripStyleId(next) : next;
+    return next;
   });
 }
 
@@ -3305,17 +3294,7 @@ export function updateTextLabel(
         y: cur.y + (after.height - before.height) / 2,
       };
     }
-    // Detach from the style preset when a covered style field ACTUALLY
-    // changes. Width/leading/tracking are per-label layout tuning, not style
-    // — like content, position, lock and editorHeight they never detach.
-    const coveredChanged =
-      next.color !== cur.color ||
-      next.darkColor !== cur.darkColor ||
-      next.fontSize !== cur.fontSize ||
-      next.weight !== cur.weight ||
-      next.italic !== cur.italic ||
-      next.align !== cur.align;
-    return coveredChanged ? stripStyleId(next) : next;
+    return next;
   });
 }
 
@@ -3484,18 +3463,7 @@ export function updatePolygon(doc: MapDoc, id: string, patch: PolygonStylePatch)
       nextPatch = { ...nextPatch, curveRadius: clampPolygonCurveRadius(nextPatch.curveRadius) };
     }
     const next = { ...cur, ...nextPatch };
-    // Detach from the style preset when a covered style field ACTUALLY
-    // changes (vertices/locked are not style). curveRadius/closed compare as
-    // EFFECTIVE values (absent ⇒ 0 / true).
-    const coveredChanged =
-      next.fill !== cur.fill ||
-      next.stroke !== cur.stroke ||
-      next.darkFill !== cur.darkFill ||
-      next.darkStroke !== cur.darkStroke ||
-      next.strokeWidth !== cur.strokeWidth ||
-      (next.curveRadius ?? 0) !== (cur.curveRadius ?? 0) ||
-      (next.closed !== false) !== (cur.closed !== false);
-    return coveredChanged ? stripStyleId(next) : next;
+    return next;
   });
 }
 
@@ -4123,9 +4091,7 @@ export function updateTransferStyle(doc: MapDoc, id: string, patch: TransferStyl
     );
   }
   if (next === cur) return doc;
-  // Any override actually changed → detach from the style preset (all five
-  // fields are covered).
-  return { ...doc, transfers: { ...doc.transfers, [id]: stripStyleId(next) } };
+  return { ...doc, transfers: { ...doc.transfers, [id]: next } };
 }
 
 /**

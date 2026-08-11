@@ -418,7 +418,8 @@ describe("ensureStyleInvariants via parse — a line style def's dot-TYPE refs",
 
   it('leaves a ref that resolves alone — no gratuitous rewrite to the designation', () => {
     // The line wears LIVE but its style says "Filled black"; both resolve, so
-    // the def keeps its own choice and the MISMATCH is what prunes the tag.
+    // the def keeps its own choice and the line's mismatch loads as a
+    // per-field OVERRIDE — tag and values both survive.
     const doc = docWithDefDotId('stop-filled-black', [
       STOP_DOT_FACTORY_STYLES['stop-filled-black'],
     ]);
@@ -427,7 +428,7 @@ describe("ensureStyleInvariants via parse — a line style def's dot-TYPE refs",
       singletonDotStyleId: 'stop-filled-black',
       multiDotStyleId: 'stop-filled-black',
     });
-    expect(out.lines.l1.styleId).toBeUndefined();
+    expect(out.lines.l1.styleId).toBe('ls');
   });
 });
 
@@ -465,16 +466,15 @@ describe('pruneDanglingStyleRefs via parse', () => {
     expect(out.textLabels.g1.styleId).toBeUndefined();
   });
 
-  it('strips a tag whose item values do not match the style (hand-edited file)', () => {
-    // In-app the invariant is maintained by the transforms; only a hand-edited
-    // file can carry a tagged-but-mismatched item. Loading one must not show a
-    // style name over diverged values — the tag goes, the values stay.
+  it('keeps a tag whose item values diverge from the style (a per-field override)', () => {
+    // Divergence is legal: the item pins fontSize against its style, the tag
+    // stays, and edits to the style's OTHER fields still reach it.
     const doc = makeDoc({
       textLabels: [makeTextLabel({ id: 'g1', fontSize: 16, styleId: 'y1' })],
       styles: [makeStyle('textLabel', 'y1', { name: 'Heading', props: { fontSize: 24 } })],
     });
     const out = parsed(doc);
-    expect(out.textLabels.g1.styleId).toBeUndefined();
+    expect(out.textLabels.g1.styleId).toBe('y1');
     expect(out.textLabels.g1.fontSize).toBe(16);
   });
 

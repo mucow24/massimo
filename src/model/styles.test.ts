@@ -11,7 +11,6 @@ import {
   deleteStyle,
   duplicateStyle,
   renameStyle,
-  restampStyleTag,
   saveStyleFromItem,
   setDefaultStyle,
   stylePropsEqual,
@@ -356,12 +355,13 @@ describe('stylePropsEqual — transfer day/night colors', () => {
   });
 });
 
-describe('restampStyleTag', () => {
-  // The clipboard-paste invariant repair: a pasted item can arrive still tagged
-  // with a style whose props were redefined AFTER the copy, so its frozen
-  // snapshot is stale. restampStyleTag re-asserts tagged ⇒ matches by stamping
-  // the style's CURRENT props onto the survivor.
-  it('re-stamps a tagged item whose style was redefined since the copy', () => {
+describe('a stale tagged clipboard snapshot pastes verbatim (overrides, no repair)', () => {
+  // A pasted item can arrive tagged with a style whose props were redefined
+  // after the copy. Its frozen values are legal now — the divergence is a
+  // per-field override — so nothing restamps it; the paste looks exactly like
+  // what was copied and still follows future edits to its style's OTHER
+  // fields.
+  it('keeps the pasted values AND the tag', () => {
     const style = makeStyle('line', 'y1', {
       props: {
         width: 10,
@@ -370,25 +370,16 @@ describe('restampStyleTag', () => {
         strokeColor: { day: '#123456', night: '#123456' },
       },
     });
-    // A line tagged y1 but carrying STALE props (copied when y1 was thinner).
-    const stale = makeLine({ id: 'l1', styleId: 'y1', width: 5, strokeWidth: 1 });
+    // A line tagged y1 but carrying values copied when y1 was thinner — its
+    // curveRadius still agrees with the def, so only width/stroke are pins.
+    const stale = makeLine({ id: 'l1', styleId: 'y1', width: 5, strokeWidth: 1, curveRadius: 40 });
     const doc = makeDoc({ lines: [stale], styles: [style] });
-    const next = restampStyleTag(doc, 'line', 'l1');
-    expect(next.lines.l1.width).toBe(10);
-    expect(next.lines.l1.strokeWidth).toBe(2);
-    expect(next.lines.l1.strokeColor).toEqual({ day: '#123456', night: '#123456' });
-    // Still tagged — the repair keeps the item wearing its style.
-    expect(next.lines.l1.styleId).toBe('y1');
-  });
-
-  it('is a no-op (same doc reference) for an untagged item', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'l1', width: 5 })] });
-    expect(restampStyleTag(doc, 'line', 'l1')).toBe(doc);
-  });
-
-  it('is a no-op (same doc reference) when the item is missing', () => {
-    const doc = makeDoc({ lines: [makeLine({ id: 'l1' })] });
-    expect(restampStyleTag(doc, 'line', 'nope')).toBe(doc);
+    expect(doc.lines.l1.width).toBe(5);
+    expect(doc.lines.l1.styleId).toBe('y1');
+    // A style edit to an UN-overridden field still reaches it.
+    const next = updateStyleProps(doc, 'y1', { curveRadius: 60 });
+    expect(next.lines.l1.curveRadius).toBe(60);
+    expect(next.lines.l1.width).toBe(5);
   });
 });
 
@@ -1286,12 +1277,12 @@ describe('line style — end style coverage', () => {
     expect(doc.lines.l2.styleId).toBe(styleId);
   });
 
-  it('detaches the line when the end style is edited by hand', () => {
+  it('keeps the tag when the end style is edited by hand (an override)', () => {
     let doc = lineDoc();
     doc = saveStyleFromItem(doc, 'sty-plain', 'line', 'Plain', 'l1');
     expect(doc.lines.l1.styleId).toBeDefined();
     doc = T.setLineEndStyle(doc, 'l1', 'round');
-    expect(doc.lines.l1.styleId).toBeUndefined();
+    expect(doc.lines.l1.styleId).toBe('sty-plain');
   });
 
   it('leaves the tag alone when only a per-terminus pin changes', () => {

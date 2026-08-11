@@ -404,7 +404,7 @@ describe('<TextLabelPopover /> — style presets', () => {
     return label ? <TextLabelPopover label={label} hostW={800} onClose={() => {}} /> : null;
   }
 
-  it('applies a preset from the Style row, then flips to Custom on a covered edit', async () => {
+  it('applies a preset from the Style row; a covered edit keeps the style (override)', async () => {
     useDoc.setState({
       ...useDoc.getState(),
       textLabels: { g1: makeTextLabel({ id: 'g1', text: 'Hi' }) },
@@ -425,9 +425,10 @@ describe('<TextLabelPopover /> — style presets', () => {
     });
     expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Heading');
     expect(screen.getByRole('spinbutton', { name: 'Size' })).toHaveValue(24);
-    // A covered edit (weight) detaches; the text content is not covered.
+    // A covered edit (weight) becomes a per-field override — the tag stays.
     await chooseOption(user, 'Weight', 'Roman');
-    expect(useDoc.getState().textLabels['g1'].styleId).toBeUndefined();
-    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Custom');
+    expect(useDoc.getState().textLabels['g1'].styleId).toBe('y1');
+    expect(useDoc.getState().textLabels['g1'].weight).toBe(400);
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Heading');
   });
 });

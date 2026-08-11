@@ -833,7 +833,7 @@ describe('<LineInspector /> — style presets', () => {
     expandStyleDetail();
   });
 
-  it('applies a preset from the Style row, then flips to Custom on a covered edit', async () => {
+  it('applies a preset from the Style row; a covered edit keeps the style (override)', async () => {
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
@@ -845,15 +845,15 @@ describe('<LineInspector /> — style presets', () => {
     await chooseOption(userEvent.setup(), 'Style', 'Thick');
     expect(useDoc.getState().lines['L1']).toMatchObject({ width: 12, styleId: 'y1' });
     expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Thick');
-    // A covered edit (line width) detaches; name/service/color stay identity.
+    // A covered edit (line width) becomes a per-field override — the tag stays.
     stepSlider(screen.getByRole('slider', { name: 'Line width' }), 1);
-    expect(useDoc.getState().lines['L1'].styleId).toBeUndefined();
-    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Custom');
+    expect(useDoc.getState().lines['L1'].styleId).toBe('y1');
+    expect(screen.getByRole('combobox', { name: 'Style' })).toHaveTextContent('Thick');
   });
 });
 
 // The line's END style: one segment per end, in the geometry group. Writing it
-// is a covered-field edit, so it detaches the line from its style preset.
+// is a covered-field edit — on a styled line it becomes a per-field override.
 describe('<LineInspector /> — line ends', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -900,7 +900,7 @@ describe('<LineInspector /> — line ends', () => {
     expect('endStyle' in useDoc.getState().lines.L1).toBe(false);
   });
 
-  it('detaches from the style preset, like every other covered field', async () => {
+  it('keeps the style tag, like every other covered field (an override)', async () => {
     seedLine();
     useDoc.setState({
       styles: { ...useDoc.getState().styles, sty: makeStyle('line', 'sty') },
@@ -909,7 +909,7 @@ describe('<LineInspector /> — line ends', () => {
     const user = userEvent.setup();
     render(<LineInspector id="L1" />);
     await user.click(screen.getByRole('radio', { name: 'Round' }));
-    expect(useDoc.getState().lines.L1.styleId).toBeUndefined();
+    expect(useDoc.getState().lines.L1.styleId).toBe('sty');
   });
 
   it('is one undo entry per pick', async () => {

@@ -309,10 +309,11 @@ describe('styleId through duplicate and paste', () => {
     expect(useDoc.getState().textLabels[pasted].fontSize).toBe(24);
   });
 
-  it('pasting a stale tagged payload re-stamps it to the CURRENT style values', () => {
-    // The clipboard froze the values before the style was redefined; the
-    // pasted item must come in matching its tag (tagged ⇒ matches), i.e.
-    // wearing the style's current props, not the stale snapshot.
+  it('pasting a stale tagged payload keeps its frozen values as overrides', () => {
+    // The clipboard froze the values before the style was redefined. The
+    // paste looks exactly like what was copied — the divergence is a
+    // per-field override, and the tag survives so future style edits to
+    // other fields still reach the pasted item.
     useDoc.setState({
       styles: {
         y1: makeStyle('textLabel', 'y1', { name: 'Heading', props: { fontSize: 36 } }),
@@ -321,12 +322,12 @@ describe('styleId through duplicate and paste', () => {
     });
     const { id: _g, ...label } = makeTextLabel({ id: 'tmp', fontSize: 24, styleId: 'y1' });
     const pastedLabel = useDoc.getState().pasteTextLabel(label);
-    expect(useDoc.getState().textLabels[pastedLabel].fontSize).toBe(36);
+    expect(useDoc.getState().textLabels[pastedLabel].fontSize).toBe(24);
     expect(useDoc.getState().textLabels[pastedLabel].styleId).toBe('y1');
 
     const { id: _b, ...bullet } = makeRouteBullet({ id: 'tmp', size: 12, styleId: 'y2' });
     const pastedBullet = useDoc.getState().pasteRouteBullet(bullet);
-    expect(useDoc.getState().routeBullets[pastedBullet].size).toBe(20);
+    expect(useDoc.getState().routeBullets[pastedBullet].size).toBe(12);
     expect(useDoc.getState().routeBullets[pastedBullet].styleId).toBe('y2');
   });
 });

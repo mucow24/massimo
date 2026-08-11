@@ -66,7 +66,6 @@ import {
 import {
   adoptDefaultStyles,
   canonicalStyleProps,
-  captureStyleProps,
   isReservedStyleName,
   stylePropsEqual,
 } from './styles';
@@ -2930,14 +2929,12 @@ export function sanitizeStyles(styles: Record<string, StyleDef>): {
   return { styles: next, changed };
 }
 
-// Strip every `styleId` tag that doesn't uphold the tagged ⇒ matches
-// invariant: dangling ids (the def was dropped or never shipped with the
-// file), wrong-kind ids, AND tags whose item values no longer equal the
-// style's props — only a hand-edited file can carry the last kind, and
-// loading it verbatim would show a style name over diverged values. Values
-// are kept in every case, same outcome as deleting a style. Runs LAST in
-// parse() so it compares the fully-sanitized items against the fully-
-// sanitized defs. Returns the same doc reference when nothing changed.
+// Strip every `styleId` tag that doesn't RESOLVE: dangling ids (the def was
+// dropped or never shipped with the file) and wrong-kind ids. Values that
+// diverge from the style's props are NOT a reason to strip — divergence is a
+// per-field override, and a loaded item keeps both its tag and its own
+// values. Runs LAST in parse() so it checks the fully-sanitized defs.
+// Returns the same doc reference when nothing changed.
 export function pruneDanglingStyleRefs(doc: MapDoc): MapDoc {
   function pruneColl<T extends { styleId?: string }>(
     coll: Record<string, T>,
@@ -2948,8 +2945,7 @@ export function pruneDanglingStyleRefs(doc: MapDoc): MapDoc {
     for (const id of Object.keys(coll)) {
       const item = coll[id];
       const def = typeof item.styleId === 'string' ? doc.styles[item.styleId] : undefined;
-      const props = def?.kind === kind ? captureStyleProps(doc, kind, id) : null;
-      const keep = def !== undefined && props !== null && stylePropsEqual(kind, props, def.props);
+      const keep = def?.kind === kind;
       if (item.styleId !== undefined && !keep) {
         const { styleId: _gone, ...rest } = item;
         next[id] = rest as T;
