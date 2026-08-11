@@ -11,6 +11,13 @@ const twoStop: Seed = {
   lines: [{ id: 'L1', service: 'L', color: '#0039A6', stations: ['A', 'B'] }],
 };
 
+// The same map painted by hand: #123456 is in none of the palettes a fresh map
+// carries, so it is exactly what the custom colors row collects.
+const looseColor: Seed = {
+  ...twoStop,
+  lines: [{ id: 'L1', service: 'L', color: '#123456', stations: ['A', 'B'] }],
+};
+
 // The "frrf" custom-palette format: only `human` colors are used; `line` becomes
 // the swatch name; `cat`/`locked` are ignored.
 const FRRF = JSON.stringify({
@@ -23,6 +30,8 @@ const FRRF = JSON.stringify({
     { line: 5, human: '#6a3d9a', cat: '#405677', locked: false },
   ],
 });
+
+const FRRF_COLORS = 5;
 
 const openManager = (page: Page) =>
   page.getByRole('button', { name: 'Manage palettes' }).click();
@@ -153,7 +162,6 @@ test.describe('palette manager', () => {
     await seedAndOpen(page, twoStop);
     await openManager(page);
     await page.getByRole('button', { name: 'New…' }).click();
-    await page.getByRole('menuitem', { name: 'From empty…' }).click();
 
     // The fresh palette opens naming itself; keep the minted name.
     await page.getByRole('textbox', { name: 'Palette name' }).press('Enter');
@@ -174,6 +182,50 @@ test.describe('palette manager', () => {
     await expect(page.locator('[data-band-stripe][data-line-id="L1"]').first()).toHaveAttribute(
       'stroke',
       '#c1272d',
+    );
+  });
+
+  // The custom colors row is the one row the map does not carry, and the only
+  // one that breaks the action grid — both of those are CSS facts jsdom can't
+  // see, so the italic and the third slot are asserted here.
+  test('the custom colors row turns the map’s loose colors into a palette', async ({ page }) => {
+    await seedAndOpen(page, looseColor);
+    await openManager(page);
+
+    const row = mapRow(page, 'Custom colors');
+    await expect(row.locator('.palette-strip > span')).toHaveCount(1);
+    await expect(row.locator('strong')).toHaveCSS('font-style', 'italic');
+    await expect(row.locator('.dialog-row-actions')).toHaveCSS(
+      'grid-template-columns',
+      '24px 24px 24px',
+    );
+
+    await row.getByRole('button', { name: 'Create palette from these colors' }).click();
+    // The fresh palette opens naming itself; keep the minted name.
+    await page.getByRole('textbox', { name: 'Palette name' }).press('Enter');
+    await page.getByRole('button', { name: 'Back to palettes' }).click();
+    await expect(mapRow(page, 'New palette')).toBeVisible();
+    // The colors are in a palette now, so there is nothing left to be custom.
+    await expect(mapRow(page, 'Custom colors')).toHaveCount(0);
+  });
+
+  // The other half of the same idea, in the editor: a flyout of the map's
+  // custom colors under Add color. It is a Radix submenu living INSIDE a modal
+  // dialog — whether it opens and stays clickable there is an e2e-only fact.
+  test('Add color files one of the map’s custom colors into the palette', async ({ page }) => {
+    await seedAndOpen(page, looseColor);
+    await openManager(page);
+    await loadFrrf(page);
+    await rowCommand(page, mapRow(page, 'frrf'), 'frrf in the map', 'Edit frrf in the map');
+
+    await page.getByRole('button', { name: 'Add color' }).click();
+    await page.getByRole('menuitem', { name: 'Custom color' }).click();
+    await page.getByRole('menuitem', { name: 'Add #123456' }).click();
+
+    await expect(page.locator('.palette-editor-row')).toHaveCount(FRRF_COLORS + 1);
+    await expect(page.locator('.palette-bullet').last()).toHaveCSS(
+      'background-color',
+      'rgb(18, 52, 86)',
     );
   });
 

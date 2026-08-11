@@ -475,6 +475,28 @@ select option {
   align-items: center;
   opacity: 0.6;
 }
+/* A flyout of colors instead of labels (palette editor: Add color → Custom
+   color): the picker's own swatches, tiled to the panel's inner width so six
+   sit on a row. [data-highlighted] is a menu's one hover-and-keyboard state,
+   worn here as a ring — a swatch has no text to wash — and as a shadow rather
+   than a border, which would shift the tile it lands on. */
+.menu-panel .menu-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 160px;
+  /* A map can be painted from thirty colors picked by hand; past about seven
+     rows of them the flyout scrolls rather than growing off the window. */
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 2px;
+}
+.menu-panel .menu-swatch {
+  outline: none;
+}
+.menu-panel .menu-swatch[data-highlighted] {
+  box-shadow: 0 0 0 2px var(--selection-ring);
+}
 
 .options-popover-wrap {
   position: relative;
@@ -2729,6 +2751,7 @@ button.dialog-sort {
 .palette-row > .icon-btn,
 .palette-editor-row .icon-btn,
 .row-commands .icon-btn,
+.palette-editor-add,
 .dialog-colhead-btn {
   height: 24px;
   padding: 0 8px;
@@ -2747,6 +2770,7 @@ button.dialog-sort {
 .palette-row > .icon-btn:hover:not(:disabled),
 .palette-editor-row .icon-btn:hover:not(:disabled),
 .row-commands .icon-btn:hover:not(:disabled),
+.palette-editor-add:hover,
 .dialog-colhead-btn:hover {
   background: var(--control-hover);
   border-color: var(--border-strong);
@@ -2942,6 +2966,30 @@ button.dialog-sort {
   width: 24px;
   justify-content: center;
 }
+/* The row height is pinned, so a name too long for its column ellipsises
+   rather than wrapping into the strip below it. */
+.palette-row .dialog-row-body strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The custom colors row — the map's line colors that no palette accounts for.
+   Italic because it is a description of what's left over rather than a palette
+   you could name, and it spends a THIRD action slot on the `+` that turns it
+   into one, which is what makes its strip a slot shorter than its neighbours'.
+   The two slots that would be lies here — save to the library, drag to reorder
+   — stand empty at the same width, so the strips and the `…` still read down
+   the column in line with every other row. */
+.palette-row-custom .dialog-row-actions {
+  grid-template-columns: repeat(3, 24px);
+}
+.palette-row-custom .dialog-row-body strong {
+  font-style: italic;
+}
+.palette-row-slot {
+  width: 24px;
+  flex: none;
+}
 /* The `…` panel: the row's action grid CONTINUED, not a menu — the same square
    buttons at the same 3px pitch, so a command looks the same standing here as
    it did standing in the row. Only the tray around them is new. */
@@ -2978,8 +3026,11 @@ button.dialog-sort {
   flex: 1;
   min-height: 0;
 }
+/* The right padding is the ROWS' inset, not the head's own: Add color and the
+   deletes below it are the only things on that edge, and they line up or they
+   look broken. The left stays where the title wants it. */
 .palette-editor-head {
-  padding: 10px 16px;
+  padding: 10px 12px 10px 16px;
   background: var(--inset-bg);
   border-bottom: 1px solid var(--border-soft);
   flex-shrink: 0;
@@ -3014,11 +3065,23 @@ button.dialog-sort {
   font-weight: 700;
   line-height: 1.3;
 }
+/* The description and Add color share the head's second line: the description
+   takes the width, the command ends the line. Add color is a button of the
+   ordinary size on purpose — it opens a menu, and a menu hangs off the edge of
+   whatever it was opened from, so a command spanning the whole window would
+   have hung one at the far side of the room. */
+.palette-editor-subhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+}
 /* One voice for the description whether it's real or the double-click invite —
    the muted italic IS the field's identity. (Not the global `.empty` class:
    its padding would indent this off the title's left edge.) */
 .palette-editor-desc {
-  margin-top: 2px;
+  flex: 1;
+  min-width: 0;
   color: var(--text-muted);
   font-size: calc(var(--fs-caption) * 1.5);
   font-style: italic;
@@ -3101,24 +3164,13 @@ button.dialog-sort {
 input.palette-color-name {
   flex: 1;
 }
+/* The rest of it — size, wash, border — comes from the shared small-button
+   recipe above, so it says the same thing here as Load… does in a column head. */
 .palette-editor-add {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 4px;
-  width: 100%;
-  height: 40px;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--border-soft);
-  color: var(--text-muted);
-  font-size: var(--fs-caption);
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 120ms ease;
-}
-.palette-editor-add:hover {
-  background: var(--row-hover);
+  flex: none;
   color: var(--text);
 }
 /* The header's back affordance (editor view only) sits with the title. */

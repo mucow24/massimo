@@ -2148,6 +2148,11 @@ Six seams cover it, and a seventh rule governs anything new:
   palette here can never disturb a map. The palette editor honors the split: it edits exactly ONE
   copy — a library palette through these actions (outside undo), a map palette through the doc's
   (undoable) — never both.
+- [customLineColors.ts](src/state/customLineColors.ts) — `useCustomLineColors()`: the map's
+  **custom colors**, i.e. every distinct line color no palette of the doc covers. Three surfaces
+  show that set — the line picker's Custom section, the palette manager's custom colors row, the
+  palette editor's Add color menu — and the point of it is that they agree, a color leaving all
+  three the moment a palette covers it, so the derivation is here rather than at each of them.
 - [snapPrefs.ts](src/state/snapPrefs.ts) — `useSnapPrefs`: snap-mode toggles plus the preset
   slots, persisted at **version 2** and migrated on rehydrate (v0's boolean `all`/`grid` become the
   directional enums, and **any key the blob predates is filled from `DEFAULT_SNAP_MODES`** —
@@ -3370,7 +3375,15 @@ same three additions.
   dead button. The two transfer
   arrows are outermost in their rows, each against the column it points into; the map rows' outer
   slot is a drag handle — the editor's reorder gesture on the same hook, one `reorderMapPalette`
-  write at the drop. The manager and the map library share one
+  write at the drop. Under the map's palettes stands the one row the map does not carry: **custom
+  colors** — the line colors no palette covers (`useCustomLineColors`, the same set the line
+  picker's Custom section shows), derived from the doc rather than stored in it, and italic to say
+  so. It is the one row that breaks the grid: a save arrow and a drag handle would both be lies, so
+  those two slots stand EMPTY at their usual width (strips and `…` stay in their columns), and the
+  row spends a third action slot on a **`+`** that mints those colors as a palette into library and
+  map and opens the editor on it — which covers them, and so empties the row away. Its `…` holds
+  export alone (under a plain name — the row's parenthetical label is not something a palette
+  loaded back from the file could wear). The manager and the map library share one
   **`.dialog-*`** shell in styles.css (backdrop, panel, black title band, column heads, lists,
   rows); what stays per-dialog is only what one list has and the other doesn't.
   Every command that destroys or displaces a palette takes the in-place speed bump
@@ -3380,14 +3393,22 @@ same three additions.
   these buttons sit side by side — in one `…` panel, or in the row beside its arrow — and a
   gesture that changed meaning between adjacent glyphs would be worse than a redundant click.
   Only commands that displace nothing act on one click.
-  A row's pencil, in its `…` (and the library head's **New…** menu — from empty, or from the map's
-  custom colors, both landing in library and map like Load…) swaps the columns for the
+  A row's pencil, in its `…` (and the library head's **New…**, which mints an empty
+  palette into library and map like Load…) swaps the columns for the
   **[PaletteEditor](src/components/PaletteEditor.tsx)** view, a back arrow joining the title band:
   the palette's title and description (double-click to edit — renaming lives here now), then one
   fixed-height row per color — a drag handle
   ([useRowDragReorder](src/components/useRowDragReorder.ts), preview local, ONE upsert at the
   drop), the color as an index route bullet, a ColorField, the
-  name, a speed-bumped delete — under an Add color row. Edits are live against the ONE copy the
+  name, a speed-bumped delete. **Add color** ends the description's line in the head, at the
+  deletes' own right edge — an ordinary-width button, because the menu it opens hangs off its
+  edge and a window-wide one hangs that menu at the far side of the window. It adds on the click
+  while there is nothing to choose between, and opens a MENU once there is: New, or one of the
+  map's custom colors as a swatch in a flyout — the way a color picked by hand on the canvas is
+  filed into a palette without being read off one window and typed into another. The offer is the
+  custom colors MINUS what the open palette already holds: taking one into a map palette covers it
+  and the set shrinks by itself, but a library palette covers nothing, and the same swatch must not
+  be addable twice. Edits are live against the ONE copy the
   pencil named (New… opens on the map copy), and recoloring a MAP swatch also repaints the lines
   wearing the old color in the same write (`recolorMapPaletteColor`, matched via `normalizeHex`
   exactly as the picker matches) — so the canvas follows a picker drag live. Escape peels name
