@@ -723,22 +723,23 @@ line spanning the overdrawn viewBox (diagonals clip to it — past the box is in
 one that misses it entirely mounts nothing) in its own theme slots, not the ring grey
 (`theme.alignGuide` + `-Selected`/`-Hover`, a day indigo / night periwinkle with an amber
 selected state — a guide's job is to be SEEN, and every state is a plain restroke since an
-infinite line has no body to outline; [GuideView.tsx](src/components/GuideView.tsx)). Born by dragging out of a **guide well** — slim strips flush with the canvas's
-top/left edges plus the two left corner squares between them: top pulls a horizontal guide
-down, left a vertical one right, the upper-left corner a / and the lower-left a \ — each well
-mints the guide PERPENDICULAR to its pull direction, which is why the corners map that way
-round (a \ pulled down-right from the top-left corner would never move: its intercept is
-constant along that drag) ([GuideWells.tsx](src/components/canvas/GuideWells.tsx) +
-`useGuideDrag`, idle arrow-mode only; the pull ghost snaps live and the release commits one
-`addGuide` + selects it). Dragging a guide is 1-DOF (the offset takes the pointer delta's
-`guideNudgeDelta` projection, snapped through the point snapper with the matching `constrain` —
-the two diagonal `constrain` values keep only their own 45° family and grid-quantize the
-intercept under the full lattice); dragging it back into its home well deletes it, and the
-wells tint as drop targets while a guide gesture hovers them. Its popover is the one coordinate
-(Y, X, or Y₀ for a diagonal) + lock/delete
-([GuidePopover.tsx](src/components/GuidePopover.tsx)). `sanitizeGuides` (serialize.ts, the
-file-import path) drops malformed entries and collapses a stored `locked: false`; there are no
-cross-references to repair.
+infinite line has no body to outline; [GuideView.tsx](src/components/GuideView.tsx)). Born by
+dragging out of a **guide well** — slim strips flush with the canvas's top/left edges plus the
+two left corner squares between them: top pulls a horizontal guide down, left a vertical one
+right, the upper-left corner a / and the lower-left a \ — each well mints the guide
+PERPENDICULAR to its pull direction, which is why the corners map that way round (a \ pulled
+down-right from the top-left corner would never move: its intercept is constant along that
+drag) ([GuideWells.tsx](src/components/canvas/GuideWells.tsx) + `useGuideDrag`, idle arrow-mode
+only; the pull ghost snaps live and the release commits one `addGuide` + selects it). Dragging
+a guide is 1-DOF (the offset takes the pointer delta's `guideNudgeDelta` projection, snapped
+through the point snapper with the matching `constrain` — the two diagonal `constrain` values
+keep only their own 45° family and grid-quantize the intercept under the full lattice);
+dragging it back into its home well deletes it, and the wells tint as drop targets while a
+guide gesture hovers them — the well under the CURSOR, since a strip guide's delete zone runs
+its whole edge band, corner squares included. Its popover is the one coordinate (Y, X, or Y₀
+for a diagonal) + lock/delete ([GuidePopover.tsx](src/components/GuidePopover.tsx)).
+`sanitizeGuides` (serialize.ts, the file-import path) drops malformed entries and collapses a
+stored `locked: false`; there are no cross-references to repair.
 
 **`LabelCell`** — the station name's grid cell + placement. `row, col, rotation: Rotation`,
 `offset` (px forward along reading direction), `offsetPerp?` (cross-axis, default 0 — back-compat
@@ -3191,11 +3192,12 @@ itself, its footer sticky at the shell's bottom edge — the panel is pinned to 
 anything past its bottom edge would simply be unreachable. Nothing about the item or the camera
 reaches the panel; its two inputs are `hostW` — the canvas host minus the open sidebar's
 `SIDEBAR_WIDTH` strip (the sidebar paints ABOVE the popovers, so docking to the raw host width
-would park a panel under it) — and the host's own box in the window. The second input is what a
-window narrower than the app needs: the grid is floored at the toolbar's `max-content` width,
-so the page scrolls sideways and the host's corner leaves the screen. The dock is then the
-nearer of the two right edges — the window's while the host's is out of reach, the host's (or
-the sidebar's) once it scrolls into view.
+would park a panel under it) — and the host's own box in the window. The dock is the nearer of
+the two right edges — the window's while the host's is out of reach, the host's (or the
+sidebar's) otherwise. That fallback is a backstop today: the toolbar scrolls its own overflow
+(`.toolbar` in styles.css — a page-level sideways scroll would pan the canvas and bury the
+bottom edge under the window scrollbar, lower-left guide well included), so the app never
+outgrows the viewport and the host's corner stays on screen.
 
 The **anchor is in window coordinates and `PopoverShell` is `position: fixed`**, which is what
 makes that stable — `useDock` owns the measurement, shared with the routing-warning toasts that

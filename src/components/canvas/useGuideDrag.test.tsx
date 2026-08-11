@@ -211,6 +211,21 @@ describe('useGuideDrag — dragging an existing guide', () => {
     expect(useDoc.getState().guides.gh).toBeDefined();
   });
 
+  it('a strip guide over a corner square tints THAT square, and still deletes', () => {
+    seedGuides();
+    const r = render();
+    act(() => r.current.onStartDrag('gv', pointerEvent({ clientX: 200, clientY: 300 })));
+    // x ≤ 14 is the vertical guide's whole delete zone, corner squares
+    // included — but the tint follows the well under the POINTER, so the
+    // square the cursor occupies is the one that lights up. (The jsdom host
+    // rect is zero-height, so any left-edge point below the top corner reads
+    // as the bottom one.)
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 8, clientY: 300, shiftKey: true })));
+    expect(r.current.overWell).toBe('diagonal-down');
+    act(() => r.current.onPointerUp(pointerEvent({ clientX: 8, clientY: 300 })));
+    expect(useDoc.getState().guides.gv).toBeUndefined();
+  });
+
   it("the OTHER orientation's well does not delete", () => {
     seedGuides();
     const r = render();

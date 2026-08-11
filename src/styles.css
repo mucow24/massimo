@@ -317,13 +317,18 @@ select option {
   border-bottom: 1px solid var(--border);
   box-shadow: 0 4px 12px var(--shadow-tint);
   z-index: 1;
-  /* The toolbar spans both grid columns and its items keep their natural width
-     (see the flex-shrink:0 rule below). When they exceed the viewport, force the
-     grid to grow to the toolbar's content width instead of letting the buttons
-     spill past the app's background: the window gets one clean horizontal
-     scrollbar, the toolbar background covers every button, and the sidebar stays
-     flush against the true right edge (no blank strip beside it). */
-  min-width: max-content;
+  /* The toolbar's items keep their natural width (see the flex-shrink:0 rule
+     below). When they exceed the viewport the STRIP scrolls, not the page: a
+     window-level scrollbar would pan the whole app — canvas included — and
+     overlay the bottom stripe of the 100vh grid, burying the lower-left guide
+     well. Scrolling here also zeroes the grid item's automatic minimum size,
+     so the app never outgrows the viewport, the strip's background covers
+     every button, and the sidebar stays flush against the true right edge.
+     The menu panels rendered inside the strip escape the clip because Radix
+     positions them fixed (toolbarOverflow e2e holds this). */
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
 
 /* Keep every toolbar item at its natural width instead of letting them

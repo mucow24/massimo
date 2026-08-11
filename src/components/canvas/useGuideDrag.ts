@@ -28,8 +28,11 @@ export interface GuideDragApi {
   /** The well pull-out ghost, or null. MapCanvas renders it in the guides
    *  layer at placement-ghost opacity. */
   pull: { orientation: GuideOrientation; offset: number } | null;
-  /** The well the in-flight gesture is currently hovering — its drop would
-   *  CANCEL a pull or DELETE a dragged guide, so the strip tints. */
+  /** The well under the pointer while a drop there would CANCEL the pull or
+   *  DELETE the dragged guide, so that well tints. It is the well the CURSOR
+   *  occupies, not the guide's home: a strip guide's delete zone includes the
+   *  corner squares (its whole edge band), and the square under the cursor is
+   *  the one that must light up. */
   overWell: GuideOrientation | null;
   onStartDrag: (id: string, e: React.PointerEvent) => void;
   onWellPointerDown: (orientation: GuideOrientation, e: React.PointerEvent) => void;
@@ -117,8 +120,23 @@ export function useGuideDrag(
         return inLeft && e.clientY >= host.bottom - WELL_SIZE_PX;
     }
   };
+  // The specific well under the pointer — corners beat the strips they
+  // interrupt. Only consulted once `inWell` says the drop would delete, so a
+  // strip guide hovering a corner square (inside its edge band, outside its
+  // home strip) tints the square the cursor actually occupies.
+  const wellAt = (e: { clientX: number; clientY: number }): GuideOrientation | null => {
+    const host = svgRef.current?.closest('.canvas-host')?.getBoundingClientRect();
+    if (!host) return null;
+    const inTop = e.clientY <= host.top + WELL_SIZE_PX;
+    const inLeft = e.clientX <= host.left + WELL_SIZE_PX;
+    if (inLeft && inTop) return 'diagonal-up';
+    if (inLeft && e.clientY >= host.bottom - WELL_SIZE_PX) return 'diagonal-down';
+    if (inTop) return 'horizontal';
+    if (inLeft) return 'vertical';
+    return null;
+  };
   const syncOverWell = (orientation: GuideOrientation, e: React.PointerEvent) => {
-    const over = inWell(orientation, e) ? orientation : null;
+    const over = inWell(orientation, e) ? wellAt(e) : null;
     if (over !== overWell) setOverWell(over);
   };
 
