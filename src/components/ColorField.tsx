@@ -24,10 +24,12 @@ interface Props {
   addNew?: boolean;
 }
 
-// Width/height of the floating picker popover (kept in sync with the CSS so the
-// edge-flip math can decide whether it fits below the swatch).
-const POPOVER_W = 212;
-const POPOVER_H = 240;
+// Size assumed for the floating picker until it has been measured — the CSS box
+// (`.color-field-popover`), whose height is content-driven. Only the first frame
+// of the first open ever uses these: a hardcoded pair drifted from the
+// stylesheet and left the picker hanging off the right of a narrow window.
+const NOMINAL_W = 224;
+const NOMINAL_H = 260;
 const GAP = 6;
 
 // Valid hex digit counts (sans '#'): 3/4-digit short forms + 6/8-digit full.
@@ -116,6 +118,7 @@ export function ColorField({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const [size, setSize] = useState({ w: NOMINAL_W, h: NOMINAL_H });
   // The portalled popover mounts here — the swatch's nearest `.dialog`/`.app`
   // ancestor (see the effect below for why the dialog case matters); both own
   // the design tokens (--control-bg etc.) + dark mode. Resolved in the effect
@@ -141,6 +144,21 @@ export function ColorField({
     setOpen(false);
   };
 
+  // The picker's own measured box, which is what the edge math below is allowed
+  // to trust. Dep-less, because the popover mounts a commit AFTER `open` flips
+  // (there is no position to render it at until the effect below has run), so a
+  // keyed effect would never see it appear; the `!==` guard is what stops the
+  // setState looping. Layout effects flush before paint, so the corrected
+  // position is the first one painted — the nominal pass is never seen.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    const el = popRef.current;
+    if (!el) return;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    if (w > 0 && h > 0 && (w !== size.w || h !== size.h)) setSize({ w, h });
+  });
+
   // Position the portalled popover under the swatch, flipping above / clamping
   // to the viewport so it never opens off-screen inside a scrolled inspector.
   useLayoutEffect(() => {
@@ -152,12 +170,21 @@ export function ColorField({
     // within the content subtree, or the dialog's focus trap yanks focus off
     // the hex field and it can't be typed into. Everywhere else, `.app`.
     setPortalTarget(swatchRef.current?.closest('.dialog, .app') ?? document.body);
+    // clientWidth/Height, not innerWidth/Height: they exclude the scrollbars,
+    // and the window this matters in has both — `.toolbar { min-width:
+    // max-content }` floors the app at the toolbar's width, so a narrow window
+    // scrolls the page sideways, and `.app` being 100vh (which doesn't count
+    // that horizontal scrollbar) overflows it vertically as well. Clamping
+    // against `innerWidth` put the picker's right edge under the vertical
+    // scrollbar and past the window. jsdom has no layout and reports 0 for
+    // both; the window's own numbers stand in there (same as useDock).
+    const winW = document.documentElement.clientWidth || window.innerWidth;
+    const winH = document.documentElement.clientHeight || window.innerHeight;
     const below = r.bottom + GAP;
-    const top =
-      below + POPOVER_H <= window.innerHeight ? below : Math.max(GAP, r.top - GAP - POPOVER_H);
-    const left = clamp(r.left, GAP, window.innerWidth - POPOVER_W - GAP);
+    const top = below + size.h <= winH ? below : Math.max(GAP, r.top - GAP - size.h);
+    const left = clamp(r.left, GAP, winW - size.w - GAP);
     setPos({ left, top });
-  }, [open]);
+  }, [open, size.w, size.h]);
 
   // Close on outside pointerdown or Escape. Capture phase so it fires before a
   // click inside a parent popover can act on the stray press.
