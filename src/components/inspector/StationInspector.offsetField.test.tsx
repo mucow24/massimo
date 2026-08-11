@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { LabelOffsetControl } from '../../components/inspector/LabelOffsetControl';
-import { stepSlider } from '../../test/interaction';
 import { useDoc } from '../../state/store';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { historyDepth, undo } from '../../state/history';
@@ -16,8 +15,8 @@ beforeEach(() => {
   useDoc.temporal.getState().clear();
 });
 
-describe('Offset (along reading direction) slider — detent-only gesture', () => {
-  it('does not consume an undo when the value never leaves the ±2 detent', () => {
+describe('Offset (along reading direction) — value-identical edit arc', () => {
+  it('does not consume an undo when the committed value never changes', () => {
     const id = useDoc.getState().addStation(0, 0, 'Origin');
     useDoc.getState().renameStation(id, 'Renamed'); // the last REAL edit
     const depthAfterRealEdit = historyDepth();
@@ -28,13 +27,13 @@ describe('Offset (along reading direction) slider — detent-only gesture', () =
         onChange={(v) => useDoc.getState().setLabelOffset(id, v)}
       />,
     );
-    const slider = screen.getByRole('slider', { name: 'Offset' });
+    const box = screen.getByRole('spinbutton', { name: 'Offset value' });
 
-    // focus (opens the field-history group) + one arrow step inside the
-    // detent. LabelOffsetControl maps |n| <= 2 to 0, and the stored offset
-    // is already 0, so this write is value-identical.
-    stepSlider(slider, 1);
-    fireEvent.blur(slider); // commits the group
+    // Focus opens the field-history group; retyping the value the box already
+    // holds writes 0 over a stored 0, so the group commits with nothing in it.
+    fireEvent.focus(box);
+    fireEvent.change(box, { target: { value: '0' } });
+    fireEvent.blur(box); // commits the group
 
     expect(useDoc.getState().stations[id].label.offset).toBe(0); // nothing changed
     expect(historyDepth()).toBe(depthAfterRealEdit);
