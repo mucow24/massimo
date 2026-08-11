@@ -137,7 +137,7 @@ test.describe('Select Similar — visually-identical mirror stations', () => {
     await expect(btn).toBeEnabled();
     // Title text encodes the match count — exact "2 stations" proves both
     // B (trivially identical) and C (180° mirror) were matched.
-    await expect(btn).toHaveAttribute('title', /Selects the 2 stations on this line/);
+    await expect(btn).toHaveAttribute('title', /Select the 2 stations sharing a line/);
   });
 
   test('moveStop under Select Similar keeps mirror stations visually in sync', async ({ page }) => {
