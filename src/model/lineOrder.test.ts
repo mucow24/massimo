@@ -20,7 +20,8 @@ describe('effectiveLineOrder', () => {
   });
 
   // The filter-dead-ids and append-missing rules are reconcileOrder's, and
-  // effectiveLineOrder is a one-line delegate to it — they are pinned at
-  // recordOrder.test.ts:12 and :16. Only the `?? []` fallback above is this
+  // effectiveLineOrder is a one-line delegate to it — they are pinned in
+  // recordOrder.test.ts ('drops ids whose record no longer exists' and 'appends
+  // record ids missing from the order'). Only the `?? []` fallback above is this
   // function's own behaviour.
 });

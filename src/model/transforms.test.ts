@@ -4329,7 +4329,7 @@ describe('redistributeBetween', () => {
     });
   });
 
-  // The 5° ANGLE_THRESHOLD (transforms.ts:526) decides, in arc-bends mode,
+  // The 5° `ANGLE_THRESHOLD` in transforms.ts decides, in arc-bends mode,
   // whether an intermediate station is a real "bend" (anchored, left in place)
   // or a smooth point (redistributed). The threshold is on the TURN angle —
   // the deviation from straight, computed as acos of the dot product of the two

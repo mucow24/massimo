@@ -101,7 +101,8 @@ describe('undo/redo', () => {
   });
 
   it('reconciles selection against the doc after REDO (drops dangling ids)', () => {
-    // Symmetric to the undo-side reconcile above, guarding history.ts:35.
+    // Symmetric to the undo-side reconcile above, guarding history.ts's
+    // `reconcileWithDoc` call on the redo path.
     // Select a station, delete it (history push), then undo the delete so the
     // station — and its still-live selection — come back. Redoing the delete
     // must prune the now-missing station from the selection, not leave it as a

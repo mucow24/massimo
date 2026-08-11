@@ -117,19 +117,44 @@ export function fontUrl(file: string, base: string = import.meta.env.BASE_URL): 
   return `${base}${file}`;
 }
 
-/** Effective `font-weight`/`font-style` for an element, walking ancestors. */
-function effectiveFont(el: Element): { weight: number; italic: boolean } {
+/** Resolved typography for a text-bearing element. */
+export interface TextStyle {
+  weight: number;
+  italic: boolean;
+  fontSize: number;
+  /** `fill` attribute value, or the default; `'none'` means draw nothing. */
+  fill: string;
+}
+
+/**
+ * Effective font-weight/style/size/fill for an element, reading presentation
+ * attributes and walking ancestors when absent — the export SVG carries these as
+ * attributes, so this matches what the browser drew without needing computed
+ * style (and works headlessly).
+ *
+ * ONE resolver for the whole export: `collectUsedFontFaces` decides here which
+ * faces to fetch, and the outline tracer decides here which face to draw each
+ * character in. Two copies of this walk would be two chances for the face that
+ * was loaded and measured to stop being the face that gets traced.
+ */
+export function resolveTextStyle(el: Element, defaultFill = '#000'): TextStyle {
   let weightAttr: string | null = null;
   let styleAttr: string | null = null;
+  let sizeAttr: string | null = null;
+  let fillAttr: string | null = null;
   let cur: Element | null = el;
-  while (cur && (weightAttr === null || styleAttr === null)) {
-    if (weightAttr === null) weightAttr = cur.getAttribute('font-weight');
-    if (styleAttr === null) styleAttr = cur.getAttribute('font-style');
+  while (cur) {
+    weightAttr ??= cur.getAttribute('font-weight');
+    styleAttr ??= cur.getAttribute('font-style');
+    sizeAttr ??= cur.getAttribute('font-size');
+    fillAttr ??= cur.getAttribute('fill');
     cur = cur.parentElement;
   }
   return {
     weight: normalizeWeight(weightAttr),
     italic: (styleAttr ?? '').trim().toLowerCase() === 'italic',
+    fontSize: sizeAttr ? parseFloat(sizeAttr) || 16 : 16,
+    fill: fillAttr ?? defaultFill,
   };
 }
 
@@ -144,7 +169,7 @@ export function collectUsedFontFaces(root: Element): FontFaceSpec[] {
   const seen = new Set<string>();
   const out: FontFaceSpec[] = [];
   for (const node of nodes) {
-    const { weight, italic } = effectiveFont(node);
+    const { weight, italic } = resolveTextStyle(node);
     const key = `${weight}:${italic}`;
     if (seen.has(key)) continue;
     seen.add(key);

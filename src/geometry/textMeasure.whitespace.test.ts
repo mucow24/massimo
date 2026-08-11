@@ -1,44 +1,15 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { measureTextLabel, _clearTextMeasureCache } from './textMeasure';
+import { stubCanvas2d, stubTextMetrics, whitespaceAwareMetrics } from '../test/textMetrics';
 
-// A faithful-enough stand-in for a real browser 2D context. The point of the
-// stub is the asymmetry that the production bug hinges on:
-//   - `width` (advance) INCLUDES whitespace, but
-//   - `actualBoundingBox*` (ink box) EXCLUDES leading/trailing whitespace.
-// jsdom ships no canvas backend, so without this stub measureTextLabel falls
-// back to a length-based estimate that happens to count spaces — which hides
-// the bug. With a real canvas (the actual app), typed leading/trailing spaces
-// are dropped from the measured width.
+// The stub is what makes this file possible at all: jsdom ships no canvas
+// backend, so without it measureTextLabel falls back to a length-based estimate
+// that happens to count spaces — which hides the bug. The asymmetry the bug
+// hinges on is `whitespaceAwareMetrics`'s whole point: `width` (advance)
+// INCLUDES whitespace, `actualBoundingBox*` (ink box) EXCLUDES the leading and
+// trailing runs of it, exactly as a real canvas reports.
 const CHAR = 10;
-function fakeMeasureText(s: string) {
-  const advance = s.length * CHAR;
-  const lead = (/^\s*/.exec(s)?.[0].length ?? 0) * CHAR;
-  const trail = (/\s*$/.exec(s)?.[0].length ?? 0) * CHAR;
-  const hasInk = s.trim().length > 0;
-  // Ink box spans [lead, advance - trail]. Bearings are measured from the pen
-  // origin (x = 0); `actualBoundingBoxLeft` is positive going LEFT, so ink
-  // sitting to the right of the origin (leading spaces) yields a negative
-  // left bearing.
-  return {
-    width: advance,
-    actualBoundingBoxLeft: hasInk ? -lead : 0,
-    actualBoundingBoxRight: hasInk ? advance - trail : 0,
-  };
-}
-
-let originalGetContext: typeof HTMLCanvasElement.prototype.getContext;
-
-beforeAll(() => {
-  originalGetContext = HTMLCanvasElement.prototype.getContext;
-  HTMLCanvasElement.prototype.getContext = function () {
-    return { font: '', measureText: fakeMeasureText } as unknown as CanvasRenderingContext2D;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any;
-});
-
-afterAll(() => {
-  HTMLCanvasElement.prototype.getContext = originalGetContext;
-});
+stubTextMetrics(whitespaceAwareMetrics(CHAR));
 
 beforeEach(() => {
   _clearTextMeasureCache();
@@ -78,40 +49,35 @@ describe('measureTextLabel — whitespace is not collapsed', () => {
 // The whitespace suite above only ever feeds the segment a 0 / negative left
 // bearing (its stub gives leading-space ink a -lead bearing, and no-ws words a
 // 0 bearing), so it never exercises the OTHER half of the bearing decomposition
-// (textMeasure.ts:120-134): a real interior glyph whose ink box has a POSITIVE
-// side bearing must keep that bearing — it must NOT be zeroed like a leading
-// space. (textMeasure.test.ts's ink-metric suite runs the length*0.55 fallback,
-// so this canvas path is dark there.)
+// (`measureTextSegment`'s bearing branch): a real interior glyph whose ink box
+// has a POSITIVE side bearing must keep that bearing — it must NOT be zeroed
+// like a leading space. (textMeasure.test.ts's ink-metric suite runs the
+// length*0.55 fallback, so this canvas path is dark there.)
 //
 // textMeasure memoizes its measurement context the first time it measures, so
-// the file-level stub above is already latched in. Reset the module registry
-// and install a DISTINCT stub (positive bearings, no whitespace) before the
-// fresh module's first measure so this suite gets its own context.
+// the file-level stub is already latched in. Reset the module registry and
+// install a DISTINCT stub (positive bearings, no whitespace) before the fresh
+// module's first measure so this suite gets its own context. Nesting is what
+// makes that work: this `stubCanvas2d` patches after the file-level one each
+// test and restores to it, rather than to the real (absent) backend.
 describe('measureTextLabel — interior glyph bearings are kept, not zeroed', () => {
   const BL = 2; // positive left ink bearing (ink box extends left of the origin)
   const BR = 28; // right ink edge
   const ADV = 30;
-  let originalGetContext: typeof HTMLCanvasElement.prototype.getContext;
 
-  beforeAll(() => {
-    originalGetContext = HTMLCanvasElement.prototype.getContext;
-    HTMLCanvasElement.prototype.getContext = function () {
-      return {
-        font: '',
-        // A no-whitespace word: positive bearings on both sides, advance > 0.
-        measureText: (_s: string) => ({
-          width: ADV,
-          actualBoundingBoxLeft: BL,
-          actualBoundingBoxRight: BR,
-        }),
-      } as unknown as CanvasRenderingContext2D;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any;
+  stubCanvas2d({
+    font: '',
+    // A no-whitespace word: positive bearings on both sides, advance > 0.
+    measureText: (_s: string) => ({
+      width: ADV,
+      actualBoundingBoxLeft: BL,
+      actualBoundingBoxRight: BR,
+    }),
+  });
+  beforeEach(() => {
     vi.resetModules();
   });
-
-  afterAll(() => {
-    HTMLCanvasElement.prototype.getContext = originalGetContext;
+  afterEach(() => {
     vi.resetModules();
   });
 

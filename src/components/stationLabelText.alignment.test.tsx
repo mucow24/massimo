@@ -1,39 +1,19 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import type { Line } from '../model/types';
 import { renderStationLabelText } from './stationLabelText';
 import { _clearTextMeasureCache } from '../geometry/textMeasure';
+import { inkOverhangMetrics, stubTextMetrics } from '../test/textMetrics';
 
-// Same fake-canvas trick as LabelView.alignment: report ink that overhangs the
-// pen box for hooked/tailed glyphs, so we can prove multi-line station labels
-// flush by pen advance (even edge) rather than by raw ink (ragged). Tracking is
-// set non-zero to route through the per-segment renderer (the only station path
-// that positions each line explicitly; the plain <tspan> path already flushes by
+// The same ink-overhang metrics LabelView.alignment runs on, shared so the two
+// renderers are held to one model: multi-line station labels must flush by pen
+// advance (even edge) rather than by raw ink (ragged). Tracking is set non-zero
+// to route through the per-segment renderer (the only station path that
+// positions each line explicitly; the plain <tspan> path already flushes by
 // text-anchor).
 const CHAR = 10;
-function fakeMeasureText(s: string) {
-  const advance = s.length * CHAR;
-  const hasInk = s.trim().length > 0;
-  const leftOver = hasInk && s.trimStart().startsWith('f') ? 3 : 0;
-  const rightOver = hasInk && s.trimEnd().endsWith('j') ? 3 : 0;
-  return {
-    width: advance,
-    actualBoundingBoxLeft: leftOver,
-    actualBoundingBoxRight: hasInk ? advance + rightOver : 0,
-  };
-}
+stubTextMetrics(inkOverhangMetrics(CHAR));
 
-let originalGetContext: typeof HTMLCanvasElement.prototype.getContext;
-beforeAll(() => {
-  originalGetContext = HTMLCanvasElement.prototype.getContext;
-  HTMLCanvasElement.prototype.getContext = function () {
-    return { font: '', measureText: fakeMeasureText } as unknown as CanvasRenderingContext2D;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any;
-});
-afterAll(() => {
-  HTMLCanvasElement.prototype.getContext = originalGetContext;
-});
 beforeEach(() => _clearTextMeasureCache());
 
 function renderStation(

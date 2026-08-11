@@ -1,37 +1,18 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { LabelView } from './LabelView';
 import { useDoc } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
 import { measureTextLabel, _clearTextMeasureCache } from '../geometry/textMeasure';
 import { makeTextLabel } from '../test/fixtures';
+import { stubTextMetrics, whitespaceAwareMetrics } from '../test/textMetrics';
 import type { TextLabel } from '../model/types';
 
 // Fixed 10px glyphs so every line's ink width === length * 10 and justify
 // offsets are exact.
 const CHAR = 10;
-function fakeMeasureText(s: string) {
-  const advance = s.length * CHAR;
-  const lead = (/^\s*/.exec(s)?.[0].length ?? 0) * CHAR;
-  const trail = (/\s*$/.exec(s)?.[0].length ?? 0) * CHAR;
-  const hasInk = s.trim().length > 0;
-  return {
-    width: advance,
-    actualBoundingBoxLeft: hasInk ? -lead : 0,
-    actualBoundingBoxRight: hasInk ? advance - trail : 0,
-  };
-}
-let originalGetContext: typeof HTMLCanvasElement.prototype.getContext;
-beforeAll(() => {
-  originalGetContext = HTMLCanvasElement.prototype.getContext;
-  HTMLCanvasElement.prototype.getContext = function () {
-    return { font: '', measureText: fakeMeasureText } as unknown as CanvasRenderingContext2D;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any;
-});
-afterAll(() => {
-  HTMLCanvasElement.prototype.getContext = originalGetContext;
-});
+stubTextMetrics(whitespaceAwareMetrics(CHAR));
+
 beforeEach(() => {
   _clearTextMeasureCache();
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });

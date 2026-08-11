@@ -39,8 +39,9 @@ describe('<StationInspector /> — shape picker wiring', () => {
   });
 
   // The always-enabled shape picker (and the one-per-stop-row count) belongs to
-  // StopRows and is pinned there — StopRows.test.tsx:296 — for ~1/20th the cost
-  // of mounting the whole inspector.
+  // StopRows and is pinned there — StopRows.test.tsx's 'every row has exactly
+  // one ENABLED shape picker' — for ~1/20th the cost of mounting the whole
+  // inspector.
 
   it('clicking the picker trigger does not deselect the stop (picker stays enabled)', async () => {
     const user = userEvent.setup();

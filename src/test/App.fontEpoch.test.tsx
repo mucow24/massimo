@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { act, render } from '@testing-library/react';
 import App from '../App';
 import { useDoc } from '../state/store';
@@ -8,22 +8,24 @@ import { DEFAULT_DOC } from '../model/transforms';
 import { makeStation, makeStop, makeLine, makeTextLabel } from '../test/fixtures';
 import { _clearTextMeasureCache } from '../geometry/textMeasure';
 import { stubCanvasHostSize } from './interaction';
+import { stubTextMetrics } from './textMetrics';
 
-// App.tsx clears the text-measure cache and bumps a font epoch when the
-// web fonts arrive (App.tsx:113-140). ARCHITECTURE.md "Gotchas & footguns"
-// documents the intent: "without it, first-paint labels (measured against the
-// fallback font) stay a pixel off until the next edit".
+// App's font-load effect clears the text-measure cache and bumps the font epoch
+// when the web fonts arrive. ARCHITECTURE.md "Gotchas & footguns" documents the
+// intent: "without it, first-paint labels (measured against the fallback font)
+// stay a pixel off until the next edit".
 //
 // This probe drives the REAL <App /> with a real named station and swaps the
 // canvas metrics underneath it (fallback font -> web font) at the moment the
 // font-load event fires — exactly what happens in the browser. If the fix works,
 // the station's label geometry must settle at the NEW metrics on font load.
 
-// Mutable per-character advance: stands in for "fallback font" vs "Helvetica
-// Neue". Same fake-canvas shape as stationLabelText.alignment.test.tsx.
+// Mutable per-character advance: stands in for the fallback font vs Söhne. Its
+// own model rather than a shared one, because the mutability IS the fixture and
+// the recorded texts are what the assertions read.
 let charWidth = 6;
 const measuredTexts: string[] = [];
-function fakeMeasureText(s: string) {
+stubTextMetrics((s: string) => {
   measuredTexts.push(s);
   const advance = s.length * charWidth;
   const hasInk = s.trim().length > 0;
@@ -32,18 +34,6 @@ function fakeMeasureText(s: string) {
     actualBoundingBoxLeft: 0,
     actualBoundingBoxRight: hasInk ? advance : 0,
   };
-}
-
-let originalGetContext: typeof HTMLCanvasElement.prototype.getContext;
-beforeAll(() => {
-  originalGetContext = HTMLCanvasElement.prototype.getContext;
-  HTMLCanvasElement.prototype.getContext = function () {
-    return { font: '', measureText: fakeMeasureText } as unknown as CanvasRenderingContext2D;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any;
-});
-afterAll(() => {
-  HTMLCanvasElement.prototype.getContext = originalGetContext;
 });
 
 // --- document.fonts stub (same shape as src/test/App.fontLoad.test.tsx) ---
@@ -130,7 +120,7 @@ describe('PROBE controls (must PASS — proves the harness is honest)', () => {
     const before = labelHitWidth();
 
     charWidth = 20;
-    fireFontsLoaded(); // clears the measure cache (App.tsx:128)
+    fireFontsLoaded(); // clears the measure cache (App's font-load effect)
 
     // Force an unrelated re-render of the station subtree (a doc nudge). The
     // cache really was cleared and the new metrics really are wider — so the
@@ -190,8 +180,8 @@ describe('web-font load must re-lay-out STATION labels, not just clear the cache
     charWidth = 20; // web font is materially wider than the fallback
     fireFontsLoaded();
 
-    // Labels must settle at their real metrics up front (App.tsx:113-120), not
-    // stay pinned at the fallback geometry until the next edit.
+    // Labels must settle at their real metrics up front (App's font-load
+    // effect), not stay pinned at the fallback geometry until the next edit.
     expect(labelHitWidth()).not.toBe(before);
   });
 });

@@ -1,32 +1,12 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { measureTextLabel, _clearTextMeasureCache } from './textMeasure';
+import { stubTextMetrics, whitespaceAwareMetrics } from '../test/textMetrics';
 
 // Fixed-width glyph stub (every char = CHAR px, ignoring font size) so wrap
 // points are exactly predictable: a line's ink width === its length * CHAR.
 const CHAR = 10;
-function fakeMeasureText(s: string) {
-  const advance = s.length * CHAR;
-  const lead = (/^\s*/.exec(s)?.[0].length ?? 0) * CHAR;
-  const trail = (/\s*$/.exec(s)?.[0].length ?? 0) * CHAR;
-  const hasInk = s.trim().length > 0;
-  return {
-    width: advance,
-    actualBoundingBoxLeft: hasInk ? -lead : 0,
-    actualBoundingBoxRight: hasInk ? advance - trail : 0,
-  };
-}
+stubTextMetrics(whitespaceAwareMetrics(CHAR));
 
-let originalGetContext: typeof HTMLCanvasElement.prototype.getContext;
-beforeAll(() => {
-  originalGetContext = HTMLCanvasElement.prototype.getContext;
-  HTMLCanvasElement.prototype.getContext = function () {
-    return { font: '', measureText: fakeMeasureText } as unknown as CanvasRenderingContext2D;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any;
-});
-afterAll(() => {
-  HTMLCanvasElement.prototype.getContext = originalGetContext;
-});
 beforeEach(() => {
   _clearTextMeasureCache();
 });

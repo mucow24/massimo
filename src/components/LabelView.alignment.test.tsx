@@ -1,43 +1,19 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { LabelView } from './LabelView';
 import { useDoc } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
 import { measureTextLabel, _clearTextMeasureCache } from '../geometry/textMeasure';
 import { makeTextLabel } from '../test/fixtures';
+import { inkOverhangMetrics, stubTextMetrics } from '../test/textMetrics';
 import type { TextLabel } from '../model/types';
 
-// jsdom has no real canvas, so we install a fake measureText that reports ink
-// bearings the way a real font does: some glyphs' ink overhangs the pen box.
-// Here an 'f'-initial word hooks 3px LEFT of the pen origin and a 'j'-final word
-// tails 3px RIGHT of its advance — everything else sits flush inside its advance.
-// This is exactly the situation the bug was about: lines whose first (or last)
-// glyph has a different ink overhang must STILL flush to a common, even edge.
+// The ink-overhang stub is exactly the situation the bug was about: lines whose
+// first (or last) glyph overhangs the pen box by a different amount must STILL
+// flush to a common, even edge.
 const CHAR = 10;
-function fakeMeasureText(s: string) {
-  const advance = s.length * CHAR;
-  const hasInk = s.trim().length > 0;
-  const leftOver = hasInk && s.trimStart().startsWith('f') ? 3 : 0;
-  const rightOver = hasInk && s.trimEnd().endsWith('j') ? 3 : 0;
-  return {
-    width: advance,
-    // +ve actualBoundingBoxLeft ⇒ ink extends LEFT of the pen origin.
-    actualBoundingBoxLeft: leftOver,
-    actualBoundingBoxRight: hasInk ? advance + rightOver : 0,
-  };
-}
+stubTextMetrics(inkOverhangMetrics(CHAR));
 
-let originalGetContext: typeof HTMLCanvasElement.prototype.getContext;
-beforeAll(() => {
-  originalGetContext = HTMLCanvasElement.prototype.getContext;
-  HTMLCanvasElement.prototype.getContext = function () {
-    return { font: '', measureText: fakeMeasureText } as unknown as CanvasRenderingContext2D;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any;
-});
-afterAll(() => {
-  HTMLCanvasElement.prototype.getContext = originalGetContext;
-});
 beforeEach(() => {
   _clearTextMeasureCache();
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });

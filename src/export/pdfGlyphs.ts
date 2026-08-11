@@ -22,9 +22,8 @@
  * the text face nor a fallback is dropped (renders nothing).
  */
 import * as opentype from 'opentype.js';
-import { contextualAlternate, fontUrl, type FontFaceSpec } from './fonts';
+import { contextualAlternate, fontUrl, resolveTextStyle, type FontFaceSpec } from './fonts';
 import { XLINK_NS } from './embeddedSvg';
-import { normalizeWeight } from '../util/fonts';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const XMLNS_NS = 'http://www.w3.org/2000/xmlns/';
@@ -182,43 +181,6 @@ export async function loadOutlineFonts(
     )
   ).filter((f): f is opentype.Font => f !== null);
   return { faces: loaded, symbols };
-}
-
-/** Resolved typography for a text-bearing element. */
-export interface TextStyle {
-  weight: number;
-  italic: boolean;
-  fontSize: number;
-  /** `fill` attribute value, or the default; `'none'` means draw nothing. */
-  fill: string;
-}
-
-/**
- * Effective font-weight/style/size/fill for an element, reading presentation
- * attributes and walking ancestors when absent — the export SVG carries these as
- * attributes, so this matches what the browser drew without needing computed
- * style (and works headlessly). Mirrors `collectUsedFontFaces`'s weight/style
- * resolution so the face picked here is the face that was measured.
- */
-export function resolveTextStyle(el: Element, defaultFill = '#000'): TextStyle {
-  let weightAttr: string | null = null;
-  let styleAttr: string | null = null;
-  let sizeAttr: string | null = null;
-  let fillAttr: string | null = null;
-  let cur: Element | null = el;
-  while (cur) {
-    weightAttr ??= cur.getAttribute('font-weight');
-    styleAttr ??= cur.getAttribute('font-style');
-    sizeAttr ??= cur.getAttribute('font-size');
-    fillAttr ??= cur.getAttribute('fill');
-    cur = cur.parentElement;
-  }
-  return {
-    weight: normalizeWeight(weightAttr),
-    italic: (styleAttr ?? '').trim().toLowerCase() === 'italic',
-    fontSize: sizeAttr ? parseFloat(sizeAttr) || 16 : 16,
-    fill: fillAttr ?? defaultFill,
-  };
 }
 
 /** A codepoint paired with its UTF-16 index in the root `<text>` and the element
