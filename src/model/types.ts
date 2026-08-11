@@ -1115,7 +1115,7 @@ export interface TextLabelStyleProps {
   // label then pins per-item as overrides. Optional ONLY because defs from
   // saves predating the coverage lack the keys — absent compares as
   // auto/neutral (0 / 1 / 0), and the load paths backfill each missing field
-  // with the AVERAGE of the def's wearers (bakeTextLabelStyleLayout), so old
+  // with the MOST COMMON wearer value (bakeTextLabelStyleLayout), so old
   // maps repaint unchanged. App-written defs are always concrete.
   width?: number;
   leading?: number;

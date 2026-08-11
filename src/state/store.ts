@@ -411,10 +411,10 @@ if (typeof window !== 'undefined') {
  *   what they rendered, pinning per-stop sizes that tracked a different
  *   natural than their line's, via the shared `bakeConcreteDotSizes`.
  * - v27 → v28: width/leading/tracking became covered textLabel style fields.
- *   Defs predating the coverage backfill each missing field with the AVERAGE
- *   of their wearers' effective values via the shared
- *   `bakeTextLabelStyleLayout`, so nothing repaints and per-item deviations
- *   read as per-field overrides.
+ *   Defs predating the coverage backfill each missing field with the MOST
+ *   COMMON of their wearers' effective values via the shared
+ *   `bakeTextLabelStyleLayout`, so nothing repaints and only the wearers off
+ *   the plurality read as per-field overrides.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -671,11 +671,11 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
   out = bakeConcreteDotSizes(out);
   // Non-version-gated (the v28 bump forces one pass): textLabel style defs
   // gained layout coverage (width/leading/tracking) — a def from before it
-  // backfills each missing field with the AVERAGE of its wearers' effective
-  // values, so the map repaints unchanged and each wearer's own value reads
-  // as equal-or-override. Idempotent (keyed off the fields' absence).
-  // Ordered after the v<11 adoption so adopted wearers count toward their
-  // Default style's average; parse() runs the same bake.
+  // backfills each missing field with the MOST COMMON of its wearers'
+  // effective values, so the map repaints unchanged and only wearers off the
+  // plurality read as overridden. Idempotent (keyed off the fields' absence).
+  // Ordered after the v<11 adoption so adopted wearers are counted; parse()
+  // runs the same bake.
   out = bakeTextLabelStyleLayout(out);
   // Non-version-gated repair: station cells that drifted off the integer
   // lattice. Like the palette invariant below and unlike the migrations above,

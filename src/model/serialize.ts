@@ -765,12 +765,16 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
 /**
  * Backfill the textLabel layout fields (width/leading/tracking) onto style
  * defs from saves predating their coverage: each MISSING field takes the
- * average of the def's wearers' effective values (auto/neutral when nobody
- * wears it), snapped onto the item setter's grids. Items are never touched —
- * the map repaints unchanged, each wearer's value either equaling the new
- * default or reading as its per-field override. Idempotent (keyed off the
- * fields' absence; app-written defs are concrete). Shared by parse() and
- * migrateDoc (non-version-gated; the v28 bump forces one pass).
+ * MOST COMMON of the def's wearers' effective values (auto/neutral when
+ * nobody wears it; ties break to the first-encountered wearer value),
+ * snapped onto the item setter's grids. Most-common rather than the mean —
+ * a mean of divergent wearers matches nobody, dotting every wearer as
+ * overridden over a value no label uses; the mode matches the plurality.
+ * Items are never touched — the map repaints unchanged, each wearer's value
+ * either equaling the new default or reading as its per-field override.
+ * Idempotent (keyed off the fields' absence; app-written defs are concrete).
+ * Shared by parse() and migrateDoc (non-version-gated; the v28 bump forces
+ * one pass).
  */
 export function bakeTextLabelStyleLayout<
   Doc extends { styles?: Record<string, StyleDef>; textLabels?: Record<string, TextLabel> },
@@ -789,17 +793,35 @@ export function bakeTextLabelStyleLayout<
     const needTracking = p.tracking === undefined;
     if (!needWidth && !needLeading && !needTracking) continue;
     const wearers = Object.values(doc.textLabels ?? {}).filter((t) => t.styleId === id);
-    const avg = (read: (t: TextLabel) => number, fallback: number): number =>
-      wearers.length === 0
-        ? fallback
-        : wearers.reduce((sum, t) => sum + read(t), 0) / wearers.length;
+    const mostCommon = (read: (t: TextLabel) => number, fallback: number): number => {
+      if (wearers.length === 0) return fallback;
+      const counts = new Map<number, number>();
+      for (const t of wearers) {
+        const v = read(t);
+        counts.set(v, (counts.get(v) ?? 0) + 1);
+      }
+      let best = fallback;
+      let bestN = 0;
+      // Map iteration is insertion order, so a tie keeps the first-seen value
+      // — deterministic across runs of the same doc.
+      for (const [v, n] of counts) {
+        if (n > bestN) {
+          best = v;
+          bestN = n;
+        }
+      }
+      return best;
+    };
     const props: TextLabelStyleProps = {
       ...p,
-      ...(needWidth ? { width: Math.max(0, Math.round(avg((t) => t.width ?? 0, 0))) } : {}),
+      ...(needWidth ? { width: Math.max(0, Math.round(mostCommon((t) => t.width ?? 0, 0))) } : {}),
       ...(needLeading
         ? {
             leading: snapToStep(
-              avg((t) => t.leading ?? TEXT_LABEL_LEADING_DEFAULT, TEXT_LABEL_LEADING_DEFAULT),
+              mostCommon(
+                (t) => t.leading ?? TEXT_LABEL_LEADING_DEFAULT,
+                TEXT_LABEL_LEADING_DEFAULT,
+              ),
               TEXT_LABEL_LEADING_STEP,
               TEXT_LABEL_LEADING_MIN,
             ),
@@ -808,7 +830,10 @@ export function bakeTextLabelStyleLayout<
       ...(needTracking
         ? {
             tracking: snapToStep(
-              avg((t) => t.tracking ?? TEXT_LABEL_TRACKING_DEFAULT, TEXT_LABEL_TRACKING_DEFAULT),
+              mostCommon(
+                (t) => t.tracking ?? TEXT_LABEL_TRACKING_DEFAULT,
+                TEXT_LABEL_TRACKING_DEFAULT,
+              ),
               TEXT_LABEL_TRACKING_STEP,
               TEXT_LABEL_TRACKING_MIN,
             ),

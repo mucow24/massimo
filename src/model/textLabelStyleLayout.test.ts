@@ -74,14 +74,16 @@ describe('width / leading / tracking are covered textLabel style fields', () => 
   });
 });
 
-describe('pre-coverage defs are backfilled with the AVERAGE of their wearers', () => {
+describe('pre-coverage defs are backfilled with the MOST COMMON wearer value', () => {
   const legacyDoc = (): MapDoc => {
     const doc = makeDoc({
       textLabels: [
-        // a: width 0 (auto), leading absent (⇒ 1), tracking absent (⇒ 0)
+        // a: width 0 (auto), leading absent (⇒ 1), tracking absent (⇒ 0) —
+        // the odd one out.
         makeTextLabel({ id: 'a', styleId: 'y1' }),
-        // b: width 300, leading 1.5, tracking 0.02
+        // b + d: the plurality at width 300, leading 1.5, tracking 0.02.
         makeTextLabel({ id: 'b', styleId: 'y1', width: 300, leading: 1.5, tracking: 0.02 }),
+        makeTextLabel({ id: 'd', styleId: 'y1', width: 300, leading: 1.5, tracking: 0.02 }),
         // c: untagged — never counted
         makeTextLabel({ id: 'c', width: 999 }),
       ],
@@ -89,17 +91,28 @@ describe('pre-coverage defs are backfilled with the AVERAGE of their wearers', (
     return { ...doc, styles: { ...doc.styles, y1: legacyDef('y1', 'Heading') } };
   };
 
-  it('migrateDoc averages wearers into the def and leaves the items alone', () => {
+  it('migrateDoc takes the plurality value and leaves the items alone', () => {
     const out = migrateDoc(legacyDoc(), 27);
     const props = out.styles!.y1.props as TextLabelStyleProps;
-    expect(props.width).toBe(150); // (0 + 300) / 2
-    expect(props.leading).toBe(1.25); // (1 + 1.5) / 2
-    expect(props.tracking).toBe(0.01); // (0 + 0.02) / 2
-    // Items keep their values — the halves that differ are overrides now.
+    expect(props.width).toBe(300); // 2 of 3 wearers
+    expect(props.leading).toBe(1.5);
+    expect(props.tracking).toBe(0.02);
+    // Items keep their values — only the odd one out reads as overridden.
     expect(out.textLabels!.a.width).toBeUndefined();
     expect(out.textLabels!.b.width).toBe(300);
     expect(out.textLabels!.a.styleId).toBe('y1');
     expect(out.textLabels!.b.styleId).toBe('y1');
+  });
+
+  it('a tie keeps the first-encountered wearer value (deterministic)', () => {
+    const doc = makeDoc({
+      textLabels: [
+        makeTextLabel({ id: 'a', styleId: 'y1', width: 100 }),
+        makeTextLabel({ id: 'b', styleId: 'y1', width: 300 }),
+      ],
+    });
+    const out = migrateDoc({ ...doc, styles: { ...doc.styles, y1: legacyDef('y1', 'Tied') } }, 27);
+    expect((out.styles!.y1.props as TextLabelStyleProps).width).toBe(100);
   });
 
   it('a wearer-less def backfills at auto/neutral', () => {
@@ -121,9 +134,9 @@ describe('pre-coverage defs are backfilled with the AVERAGE of their wearers', (
     };
     const out = migrateDoc(withFields, 27);
     const props = out.styles!.y1.props as TextLabelStyleProps;
-    expect(props.width).toBe(42); // stored value wins over the average
+    expect(props.width).toBe(42); // stored value wins over the wearers
     expect(props.leading).toBe(1.1);
-    expect(props.tracking).toBe(0.15); // only the MISSING field averages: a's 0.15
+    expect(props.tracking).toBe(0.15); // only the MISSING field backfills: a's 0.15
   });
 
   it('parse runs the same backfill on file open', () => {
@@ -131,9 +144,9 @@ describe('pre-coverage defs are backfilled with the AVERAGE of their wearers', (
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     const props = r.doc.styles.y1.props as TextLabelStyleProps;
-    expect(props.width).toBe(150);
-    expect(props.leading).toBe(1.25);
-    // Items untouched; the diff is now the override.
+    expect(props.width).toBe(300);
+    expect(props.leading).toBe(1.5);
+    // Items untouched; only the odd one out diverges (its diff = override).
     expect(r.doc.textLabels.b.width).toBe(300);
     expect(r.doc.textLabels.b.styleId).toBe('y1');
     // Round-trip: baked once, stable thereafter.
