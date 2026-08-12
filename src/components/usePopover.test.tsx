@@ -14,7 +14,7 @@ import { usePopover } from './usePopover';
 const TRIGGER_RECT = { bottom: 43, right: 800, top: 4, left: 760, width: 40, height: 39 };
 
 function Host() {
-  const { open, setOpen, wrapRef, panelStyle } = usePopover();
+  const { open, setOpen, wrapRef, panelStyle } = usePopover({ anchored: true });
   return (
     <div className="wrap" ref={wrapRef}>
       <button type="button" onClick={() => setOpen(!open)}>
@@ -80,6 +80,64 @@ describe('usePopover panel placement', () => {
     const panel = screen.getByRole('dialog', { name: 'Panel' });
     expect(panel.style.right).toBe('300px');
     expect(panel.style.top).toBe('64px');
+  });
+
+  it('says `fixed` before it has any offsets to go with it', async () => {
+    // The whole point of it being unconditional. React writes the style
+    // attribute before layout effects run, so the panel is already out of flow
+    // when the hook measures the wrap — and a wrap still holding an in-flow
+    // panel measures ~15× too wide, which put the panel off-screen. Here the
+    // wrap ref is deliberately never attached, so the measurement bails and the
+    // offsets never arrive; `fixed` must be there regardless.
+    function Unattached() {
+      const { open, setOpen, panelStyle } = usePopover({ anchored: true });
+      return (
+        <div>
+          <button type="button" onClick={() => setOpen(!open)}>
+            Trigger
+          </button>
+          {open && (
+            <div role="dialog" aria-label="Panel" style={panelStyle}>
+              body
+            </div>
+          )}
+        </div>
+      );
+    }
+    const user = userEvent.setup();
+    render(<Unattached />);
+    await user.click(screen.getByRole('button', { name: 'Trigger' }));
+
+    const panel = screen.getByRole('dialog', { name: 'Panel' });
+    expect(panel.style.position).toBe('fixed');
+    expect(panel.style.top).toBe('');
+    expect(panel.style.right).toBe('');
+  });
+
+  it('hands an un-anchored caller no style, so it keeps its own CSS placement', async () => {
+    // The inspector's shape picker: left-aligned, no scrolling ancestor, and it
+    // must not pay for a measurement it would ignore.
+    function Unanchored() {
+      const { open, setOpen, wrapRef, panelStyle } = usePopover();
+      return (
+        <div ref={wrapRef}>
+          <button type="button" onClick={() => setOpen(!open)}>
+            Trigger
+          </button>
+          {open && (
+            <div role="dialog" aria-label="Panel" style={panelStyle}>
+              body
+            </div>
+          )}
+        </div>
+      );
+    }
+    restore = stubLayout(TRIGGER_RECT);
+    const user = userEvent.setup();
+    render(<Unanchored />);
+    await user.click(screen.getByRole('button', { name: 'Trigger' }));
+
+    expect(screen.getByRole('dialog', { name: 'Panel' }).getAttribute('style')).toBeNull();
   });
 
   it('re-measures on reopen, so a rect from the last opening is never reused', async () => {

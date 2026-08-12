@@ -513,19 +513,13 @@ select option {
   position: relative;
   display: inline-flex;
 }
-/* `position: fixed` here and the OFFSETS from usePopover's `panelStyle` — see
-   the hook for why it cannot be `absolute`. Fixed must be declared in the CSS
-   rather than left to the inline style: the hook measures the wrap on the pass
-   that mounts the panel, and an in-flow panel is part of what it would measure,
-   handing the anchor a wrap 15× too wide.
-
-   An explicit `width`, not the `min-width` this carried, for the same reason.
-   Shrink-to-fit resolves against the containing block, which used to be the
-   26px wrap — pinning every panel to its floor — and is now the viewport, which
-   would let this one sprawl to its 379px max-content. */
+/* Placement — `position: fixed` and the offsets both — comes from usePopover's
+   `panelStyle`; see the hook for why it cannot be `absolute`. This rule owns
+   the chrome, and the WIDTH, which the placement makes its business: shrink-to-
+   fit resolves against the containing block, and a fixed panel's is the
+   viewport rather than the 26px wrap that used to pin every panel to its
+   `min-width` floor. Left to itself each would now sprawl to max-content. */
 .options-popover {
-  position: fixed;
-  width: 240px;
   z-index: 100;
   background: var(--surface-raised);
   border: 1px solid var(--border);
@@ -683,10 +677,9 @@ select option {
   position: relative;
   display: inline-flex;
 }
-/* Fixed here, offsets from usePopover's `panelStyle`, explicit width — all
-   three for the reasons spelled out on .options-popover. */
+/* Placement from usePopover's `panelStyle`, explicit width — both for the
+   reasons spelled out on .options-popover. 379px at max-content. */
 .view-popover {
-  position: fixed;
   width: 168px;
   z-index: 100;
   background: var(--surface-raised);
@@ -860,7 +853,7 @@ select option {
 .color-field-popover {
   position: fixed;
   /* The picker portals up to `.app` (ColorField), so it lives in the ROOT
-     stacking context alongside the toolbar (z-index:1) and sidebar (z-index:1)
+     stacking context alongside the toolbar (z-index:2) and sidebar (z-index:1)
      — above the isolated canvas layer that traps the item popovers (see
      .canvas-host). This z-index keeps it above BOTH: a picker opened from a
      canvas-popover swatch clears the canvas layer, and one opened from a
@@ -1661,7 +1654,7 @@ button.field-select {
     0 12px 28px rgba(0, 0, 0, 0.16);
   padding: 4px;
   /* FieldSelectContent portals this panel to `.app`, so its z-index competes in
-     the ROOT stacking context: 100 clears the toolbar + sidebar (z-index 1) and
+     the ROOT stacking context: 100 clears the toolbar (2) + sidebar (1) and
      the canvas-host layer (isolate, z-index auto) that would otherwise bury a
      panel flipped up over the toolbar. Below the color picker (1200) / help
      (1300), which never co-open with a select. */

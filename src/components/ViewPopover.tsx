@@ -27,7 +27,7 @@ import {
  * muted accelerator hint — the same job, so the same chrome.
  */
 export function ViewPopover() {
-  const { open, setOpen, wrapRef, panelStyle } = usePopover();
+  const { open, setOpen, wrapRef, panelStyle } = usePopover({ anchored: true });
   const panelId = useId();
 
   // One subscription per flag rather than a whole-store read: the store also

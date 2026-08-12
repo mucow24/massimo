@@ -99,11 +99,12 @@ const PANEL_GAP = 4;
  * element that contains both trigger and panel; clicks anywhere outside that
  * element (or Escape) close the popover.
  *
- * `panelStyle` pins the panel in WINDOW coordinates — fixed, just under the
- * wrap, right edges flush. Wear it on any panel that opens inside a scrolling
- * ancestor; a panel free to stay in flow (the inspector's shape picker, which
- * is left-aligned rather than right-flush anyway) can keep its CSS placement
- * and simply not spread it.
+ * Pass `anchored` when the panel opens inside a scrolling ancestor, and spread
+ * the returned `panelStyle` on it: that pins it in WINDOW coordinates — fixed,
+ * just under the wrap, right edges flush. A panel free to stay in flow (the
+ * inspector's shape picker, which is left-aligned rather than right-flush
+ * anyway) leaves it off and keeps its CSS placement, and then pays for none of
+ * the measurement below.
  *
  * Fixed rather than the `absolute; top: 100%; right: 0` this used to leave to
  * CSS, because `absolute` is clipped by any scrolling ancestor and the toolbar
@@ -114,11 +115,25 @@ const PANEL_GAP = 4;
  * the Radix menus ride a fixed popper, Help portals to `.app` — so the escape
  * belongs here, in the one place the un-portaled panels share.
  *
+ * `position: fixed` is in `panelStyle` unconditionally, offsets or no offsets,
+ * and that is what makes the first pass safe: React writes the style attribute
+ * during the commit's mutation phase, BEFORE layout effects, so the panel is
+ * already out of flow when `measure()` reads the wrap. Were it to appear only
+ * alongside the offsets, the mounting pass would measure a wrap still holding
+ * an in-flow panel — 15× too wide — and place it off-screen.
+ *
  * The panel stays a DOM CHILD of the wrap, which is what keeps `useDismiss`
  * whole: fixed positioning moves the box, not the tree, so an inside click is
  * still inside `wrapRef`.
+ *
+ * There is no viewport clamp and no flip: the panel goes exactly where its
+ * trigger says, and a short window or a trigger near an edge pushes it partly
+ * off-screen with no recovery — fixed positioning takes away even scrolling to
+ * it. Every trigger today sits in a toolbar whose panels fit; a caller that
+ * cannot promise that needs a real flip, not a nudge here.
  */
-export function usePopover() {
+export function usePopover(opts?: { anchored?: boolean }) {
+  const anchored = opts?.anchored ?? false;
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
@@ -131,7 +146,7 @@ export function usePopover() {
   // here, still before paint, so the rect left over from last time is never on
   // screen even for a frame.
   useLayoutEffect(() => {
-    if (!open) return;
+    if (!open || !anchored) return;
     const measure = () =>
       setAnchor((prev) => {
         const el = wrapRef.current;
@@ -152,10 +167,10 @@ export function usePopover() {
       window.removeEventListener('resize', measure);
       window.removeEventListener('scroll', measure, true);
     };
-  }, [open]);
+  }, [open, anchored]);
 
-  const panelStyle: CSSProperties | undefined = anchor
-    ? { position: 'fixed', top: anchor.top, right: anchor.right }
+  const panelStyle: CSSProperties | undefined = anchored
+    ? { position: 'fixed', top: anchor?.top, right: anchor?.right }
     : undefined;
 
   return { open, setOpen, wrapRef, panelStyle };
