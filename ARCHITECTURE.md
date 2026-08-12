@@ -746,8 +746,10 @@ slot of its OWN, `theme.alignGuideCasing` — a day translucent near-white (nigh
 slot rather than `theme.canvasBg` because a translucent white is no paper's color and the rail
 has to read OVER the paper, not into it. The recipe draws it SOLID (`casingDash` `1 0`), an
 unbroken rail outlining a dashed core against the band art painted below guides; dialed to the
-core's own pattern it hugs each dash instead; night, matching its paper, melts in as the casing
-once did on every paper. Map ink paints above guides and simply covers one it crosses. The
+core's own pattern it hugs each dash instead. Night's black matches its paper, so there the rail
+shows only against that art. A gapless pattern reaches the DOM as a plain stroke with no
+dasharray at all — Skia walks a zero gap dash by dash, thousands of sub-pixel segments per
+raster for identical pixels. Map ink paints above guides and simply covers one it crosses. The
 casing has its own width and dash dials but not its own curve: it rides the CORE's scale, so the
 proportion holds at every zoom and stops shrinking where the core's floor stops it. Dash phase
 is anchored to the line's own world foot — each pattern on its OWN period, so core and casing

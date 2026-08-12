@@ -46,11 +46,12 @@ export interface ThemeColors {
   alignGuide: string;
   /**
    * The casing under-stroke each alignment guide rides — its OWN slot rather
-   * than `canvasBg`, the paper the casing used to borrow. The recipe runs it
-   * solid and translucent (see useDevSettings), so it has to read AS a rail
-   * over the band art below guides, not melt into whichever paper is selected;
-   * a translucent white is not any paper's color. Day is that near-white;
-   * night stays black, matching its paper so the casing melts in as before.
+   * than `canvasBg`: the recipe runs it solid and translucent (see
+   * useDevSettings), so it has to read AS a rail over the band art below
+   * guides rather than as whichever paper is selected, and a translucent white
+   * is not any paper's color. Day is that near-white, held across the dimmed
+   * papers like `alignGuide` itself; night is black, matching its paper, so
+   * there the rail shows only where art sits under it.
    */
   alignGuideCasing: string;
   /** A selected alignment guide's restroke. Complementary amber — the base is

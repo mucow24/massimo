@@ -21,9 +21,10 @@ export interface GuideRenderSettings {
   /** The casing's own dasharray, same units and same held-as-typed contract.
    *  Unusable text falls back to the CORE's pattern, which hugs each dash; the
    *  shipped recipe instead runs it solid ("1 0" — a dash with no gap), an
-   *  unbroken rail under a dashed core. Both patterns start a dash at the
-   *  shared world anchor, so a longer
-   *  casing overhangs each dash's TAIL and leaves its head flush — casing both
+   *  unbroken rail under a dashed core. A gapless pattern skips the dasharray
+   *  entirely at the DOM (see GuideView). Both patterns start a dash at the
+   *  shared world anchor, so a longer casing overhangs each dash's TAIL and
+   *  leaves its head flush — casing both
    *  ends of a dash is not reachable from here (that would want a phase shift
    *  of half the difference, which multi-run patterns like "9 3 1 3" cannot
    *  express as one number). Equal periods keep the two in register the whole
@@ -93,6 +94,17 @@ export function parseDashPattern(
 export function dashPeriod(dash: readonly number[]): number {
   const sum = dash.reduce((a, b) => a + b, 0);
   return dash.length % 2 === 1 ? sum * 2 : sum;
+}
+
+/**
+ * Is every GAP in the pattern zero — i.e. does it draw as one unbroken stroke?
+ * ("1 0" is how the casing is dialed solid.) An odd-length list is never
+ * gapless however it reads: SVG runs it twice, so each dash length serves as a
+ * gap on the second pass ("4" is 4 on, 4 off). All-zero can't reach here —
+ * parseDashPattern rejects it as unusable.
+ */
+export function isGaplessDash(dash: readonly number[]): boolean {
+  return dash.length % 2 === 0 && dash.every((v, i) => i % 2 === 0 || v === 0);
 }
 
 interface DevSettingsState {

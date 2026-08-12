@@ -37,12 +37,16 @@ const renderGuide = (
     </svg>,
   );
 
+// `dashes`/`phase` are null on a line drawn solid — a gapless pattern reaches
+// the DOM as a plain stroke, with no dash attributes at all.
 const strokeOf = (container: HTMLElement, part: 'ink' | 'casing') => {
   const line = container.querySelector(`[data-guide-${part}]`)!;
+  const dasharray = line.getAttribute('stroke-dasharray');
+  const dashoffset = line.getAttribute('stroke-dashoffset');
   return {
     width: Number(line.getAttribute('stroke-width')),
-    dashes: line.getAttribute('stroke-dasharray')!.split(' ').map(Number),
-    phase: Number(line.getAttribute('stroke-dashoffset')),
+    dashes: dasharray === null ? null : dasharray.split(' ').map(Number),
+    phase: dashoffset === null ? null : Number(dashoffset),
   };
 };
 const inkOf = (container: HTMLElement) => strokeOf(container, 'ink');
@@ -50,9 +54,10 @@ const casingOf = (container: HTMLElement) => strokeOf(container, 'casing');
 
 // The recipe's thirds don't land on exact binary fractions, so dash lists are
 // compared elementwise rather than by value equality.
-const expectDashes = (actual: number[], expected: number[]) => {
-  expect(actual).toHaveLength(expected.length);
-  actual.forEach((v, i) => expect(v).toBeCloseTo(expected[i], 10));
+const expectDashes = (actual: number[] | null, expected: number[]) => {
+  expect(actual).not.toBeNull();
+  expect(actual!).toHaveLength(expected.length);
+  actual!.forEach((v, i) => expect(v).toBeCloseTo(expected[i], 10));
 };
 
 describe('<GuideView /> diagonals', () => {
@@ -89,8 +94,7 @@ describe('<GuideView /> hybrid ink sizing', () => {
     const ink = inkOf(container);
     // World 1.5/4 → 1.5 screen px at zoom 4.
     expect(ink.width).toBeCloseTo(0.375, 10);
-    expect(ink.dashes[0]).toBeCloseTo(2.5, 10);
-    expect(ink.dashes[1]).toBeCloseTo(0.5, 10);
+    expectDashes(ink.dashes, [2.5, 0.5]);
   });
 
   it('rides the canvas below the reference: frozen world size, shrinking screen size', () => {
@@ -99,8 +103,7 @@ describe('<GuideView /> hybrid ink sizing', () => {
     // Half the reference zoom, so half the recipe: world 0.5 at zoom 1.5 =
     // 0.75 screen px, and still clear of the ⅓ floor.
     expect(ink.width).toBeCloseTo(0.5, 10);
-    expect(ink.dashes[0]).toBeCloseTo(10 / 3, 10);
-    expect(ink.dashes[1]).toBeCloseTo(2 / 3, 10);
+    expectDashes(ink.dashes, [10 / 3, 2 / 3]);
     // The grab stroke is exempt from the hybrid: plain screen-constant.
     const hit = container.querySelector('[data-guide-hit]')!;
     expect(Number(hit.getAttribute('stroke-width')) * 1.5).toBeCloseTo(12, 10);
@@ -112,8 +115,8 @@ describe('<GuideView /> hybrid ink sizing', () => {
     // Scale floor 0.5/1.5 = ⅓: stroke 1.5·⅓ = 0.5 screen px → 2 world units.
     expect(ink.width * 0.25).toBeCloseTo(0.5, 10);
     // Dashes floor along with it (10·⅓ / 2·⅓ screen px), keeping the rhythm.
-    expect(ink.dashes[0] * 0.25).toBeCloseTo(10 / 3, 10);
-    expect(ink.dashes[1] * 0.25).toBeCloseTo(2 / 3, 10);
+    expect(ink.dashes![0] * 0.25).toBeCloseTo(10 / 3, 10);
+    expect(ink.dashes![1] * 0.25).toBeCloseTo(2 / 3, 10);
   });
 });
 
@@ -163,9 +166,12 @@ describe('<GuideView /> casing', () => {
     // 0.5 recipe px per side around the 1.5 core → 2.5, at the same hybrid
     // scale as the ink (⅓ at zoom 1).
     expect(Number(casing.getAttribute('stroke-width'))).toBeCloseTo(2.5 / 3, 10);
-    // "1 0" — a dash with no gap, so the rail is continuous under a core that
-    // is not.
-    expectDashes(casingOf(container).dashes, [1 / 3, 0]);
+    // "1 0" is a dash with no gap — a solid rail, and handed to the DOM as
+    // one: no pattern at all, rather than a sub-pixel period Skia would expand
+    // segment by segment across the whole overdrawn span.
+    expect(casing).not.toHaveAttribute('stroke-dasharray');
+    expect(casing).not.toHaveAttribute('stroke-dashoffset');
+    // The core, which IS dashed, keeps its pattern.
     expectDashes(inkOf(container).dashes, [10 / 3, 2 / 3]);
     expect(casing.getAttribute('pointer-events')).toBe('none');
     // Painted directly under the core.
@@ -237,7 +243,7 @@ describe('<GuideView /> developer dials', () => {
     // Phase is still anchored to the world foot, now modulo the new period
     // (16 recipe px → 16/3 world units at this scale).
     const line = container.querySelector('[data-guide-ink]')!;
-    const periods = (Number(line.getAttribute('x1')) - ink.phase) / (16 / 3);
+    const periods = (Number(line.getAttribute('x1')) - ink.phase!) / (16 / 3);
     expect(periods).toBeCloseTo(Math.round(periods), 10);
   });
 
@@ -245,7 +251,7 @@ describe('<GuideView /> developer dials', () => {
     setGuide({ casingThickness: -0.25 });
     const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
     // 1.5 − 0.5 = 1 recipe px: narrower than the core that covers it, so the
-    // paper only shows where the casing dash overhangs the core's.
+    // casing only shows where its dash overhangs the core's.
     expect(casingOf(container).width).toBeCloseTo(1 / 3, 10);
     expect(inkOf(container).width).toBeCloseTo(0.5, 10);
   });
@@ -259,6 +265,27 @@ describe('<GuideView /> developer dials', () => {
     const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
     const casing = container.querySelector('[data-guide-casing]')!;
     expect(Number(casing.getAttribute('stroke-width'))).toBe(0);
+  });
+
+  it('hands a gapless CORE pattern to the DOM as a plain stroke too', () => {
+    // Either line can be dialed solid, and the cost being dodged is the same:
+    // Skia walks a zero-gap pattern dash by dash however solid it looks.
+    setGuide({ dash: '4 0' });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    const ink = container.querySelector('[data-guide-ink]')!;
+    expect(ink).not.toHaveAttribute('stroke-dasharray');
+    expect(ink).not.toHaveAttribute('stroke-dashoffset');
+    // Still drawn — it is the pattern that goes, not the stroke.
+    expect(Number(ink.getAttribute('stroke-width'))).toBeCloseTo(0.5, 10);
+  });
+
+  it('keeps the pattern on an ODD-length list, which SVG doubles into gaps', () => {
+    // "4" runs 4 on, 4 off — gapless by the shape of the list, dashed in fact.
+    setGuide({ casingDash: '4' });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    const casing = container.querySelector('[data-guide-casing]')!;
+    expect(casing).toHaveAttribute('stroke-dasharray');
+    expectDashes(casingOf(container).dashes, [4 / 3]);
   });
 
   it('takes an arbitrary casing dash, leaving the core on its own', () => {
@@ -296,7 +323,7 @@ describe('<GuideView /> developer dials', () => {
     expect(periods).toBeCloseTo(Math.round(periods), 10);
     // Guard the guard: the core's own phase differs, so this isn't a pass by
     // coincidence of the two patterns agreeing.
-    expect(phase).not.toBeCloseTo(inkOf(container).phase, 10);
+    expect(phase).not.toBeCloseTo(inkOf(container).phase!, 10);
   });
 
   it('floors the recipe at the min-thickness dial', () => {
@@ -321,7 +348,9 @@ describe('<GuideView /> developer dials', () => {
     // Both dials bottom out at 0, and 0/0 in the floor ratio would reach the
     // DOM as stroke-width="NaN" — a dial turned all the way down should just
     // stop drawing.
-    setGuide({ thickness: 0, minThickness: 0 });
+    // The casing is dialed to a GAPPED pattern here: the shipped solid one
+    // emits no dasharray at all, so it could not carry a NaN to guard against.
+    setGuide({ thickness: 0, minThickness: 0, casingDash: '3 1' });
     const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
     const line = container.querySelector('[data-guide-ink]')!;
     expect(Number(line.getAttribute('stroke-width'))).toBe(0);
