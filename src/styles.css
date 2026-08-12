@@ -1118,21 +1118,29 @@ select option {
     0 0 0 1px rgba(0, 0, 0, 0.04),
     0 2px 6px rgba(0, 0, 0, 0.07),
     0 16px 40px rgba(0, 0, 0, 0.18);
-  width: 248px;
+  /* Two dropdowns set this floor, and neither has slack to give: the style
+     row has to show "<name> (edited)" whole, on one line, from what the 52px
+     label column and the Sync button leave it, and the transfer popover's
+     longest Draw rung ("Over stop dot stroke") needs 260px of shell before it
+     stops wrapping inside its panel. */
+  width: 280px;
   font-size: var(--fs-small);
   display: flex;
   flex-direction: column;
 }
 /* The text-label popover alone runs half again wider: its textarea, the
-   style row (+ sync/revert buttons) and six slider rows want the room. */
+   style row (+ Sync button) and six slider rows want the room. */
 .text-label-popover {
   width: 372px;
 }
-/* The transfer popover runs a notch wider: the longest Draw rung name ("Over
-   stop dot stroke") needs 260px of shell before it stops wrapping inside the
-   dropdown, which the standard width doesn't clear. */
-.transfer-popover {
-  width: 272px;
+/* The polygon popover pays for its own label column — "Curve radius" is its
+   longest label — and the style row's dropdown is what that came out of. The
+   24px it needs back comes 16 from the shell here and 8 from the column
+   (84 → 76, the sidebar inspector's), rather than all of it from the shell:
+   this panel docks over the canvas mid-line, and at the default window a
+   shell past ~300px reaches the world origin, where a map's content begins. */
+.polygon-popover {
+  width: 296px;
 }
 /* The header is the panel's title band — the panels are docked to the host
    corner, not dragged: the signature black band wearing the panel's rounded
@@ -1287,7 +1295,6 @@ select option {
   margin: 8px 0 12px;
 }
 .inspector .style-row label {
-  width: 52px; /* one label column with the popover .row rules above */
   flex-shrink: 0;
   color: var(--text);
   font-weight: 700;
@@ -1588,7 +1595,7 @@ button.field-select:hover:not(:disabled) {
 }
 .polygon-popover .row label,
 .polygon-popover .options-popover-label {
-  width: 84px;
+  width: 76px;
   flex-shrink: 0;
   color: var(--text-muted);
   font-weight: 500;
@@ -1645,10 +1652,22 @@ button.field-select {
   border-radius: var(--radius);
   font-size: inherit;
   cursor: pointer;
+  /* One line, always. The panels are sized so the app's own strings fit, but a
+     style or palette name is the user's to write and no width settles it — a
+     trigger that wraps grows the control to two or three lines and shoves the
+     rest of the panel down its own popover. Trailing off is the graceful end
+     of that; wrapping is not. */
+  white-space: nowrap;
+}
+/* The value, whatever Radix put in it — the caret is the only child exempt. */
+button.field-select > :not(.field-select-caret) {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .field-select-caret {
   display: inline-flex;
   align-items: center;
+  flex: none;
   opacity: 0.6;
 }
 .field-select-panel {
@@ -2022,7 +2041,14 @@ button.field-select {
   background: #000;
 }
 .tab-bar .tab {
-  flex: 1;
+  /* Grow to share the strip, but never start below the label's own width: an
+     equal-thirds basis (`flex: 1`) gives each tab 82px of text box, and
+     "Stations (489)" wants 85 — so a three-digit count folded that tab onto
+     two lines and took the whole strip's height with it. Sized from content
+     up, the counts tab simply takes the few pixels the two short ones don't
+     need. `nowrap` holds the line for counts past anything a real map reaches. */
+  flex: 1 1 auto;
+  white-space: nowrap;
   background: transparent;
   border: 0;
   border-bottom: 4px solid transparent;
