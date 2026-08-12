@@ -945,8 +945,8 @@ interface DocState extends MapDoc {
    *  resolves to (nothing is written when the transform refuses — empty name
    *  or missing item). */
   saveStyle: (kind: StyleKind, name: string, itemId: string) => string;
-  /** Stamp a style's props onto an item and tag it (one undo entry). Also the
-   *  Revert-to-style button — a full stamp clears every per-field override. */
+  /** Stamp a style's props onto an item and tag it (one undo entry) — the
+   *  dropdown pick. A full stamp also clears every per-field override. */
   applyStyle: (styleId: string, itemId: string) => void;
   /** Revert covered fields of a tagged item back to their style's values —
    *  what clicking a red override dot does. Takes a list because one editor
