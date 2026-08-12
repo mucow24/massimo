@@ -337,13 +337,19 @@ export function lockedDispatchTarget(ref: HitRef): Element | null {
 
 /**
  * Append locked entries BELOW the live stack — locked reads as background, so
- * cycling reaches live items first. A locked-but-selected item has live
- * pointer events and already sits in the DOM stack at its true paint
- * position; the dedupe keeps that entry.
+ * cycling reaches live items first. A locked item is click-through only while
+ * UNSELECTED; selecting it makes it hittable, so it re-enters the live
+ * elementsFromPoint stack at its natural z. That floating entry must not set
+ * its cycle position: `locked` (from `lockedHitsAt`) is selection-independent
+ * and stably ordered, so it is the single source of truth. We therefore strip
+ * any locked-keyed entry out of the live stack and re-append the whole locked
+ * tail — keeping the cycle order identical regardless of which locked item is
+ * currently selected (otherwise two stacked locked items swap places each
+ * click and Alt+click ping-pongs between them instead of wrapping).
  */
 export function mergeLockedIntoStack(stack: HitEntry[], locked: HitEntry[]): HitEntry[] {
-  const seen = new Set(stack.map((e) => e.kind + ':' + e.id));
-  return [...stack, ...locked.filter((e) => !seen.has(e.kind + ':' + e.id))];
+  const lockedKeys = new Set(locked.map((e) => e.kind + ':' + e.id));
+  return [...stack.filter((e) => !lockedKeys.has(e.kind + ':' + e.id)), ...locked];
 }
 
 /**
