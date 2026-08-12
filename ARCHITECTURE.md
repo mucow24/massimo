@@ -734,17 +734,21 @@ standing as the rings — editor scaffolding, export-excluded, same scaffolding 
 background art, below map ink) — but the OPPOSITE snapping role: nothing binds to a guide; it
 is an **always-on snap TARGET** for both snappers (see Snapping). It paints as a dashed line
 spanning the overdrawn viewBox (diagonals clip to it — past the box is ink overflow — and
-one that misses it entirely mounts nothing) in its own theme slots, not the ring grey
-(`theme.alignGuide` + `-Selected`/`-Hover`, a day indigo / night periwinkle with an amber
-selected state — a guide's job is to be SEEN, and every state is a plain restroke since an
-infinite line has no body to outline; [GuideView.tsx](src/components/GuideView.tsx)). The ink
-is hybrid-sized — screen-constant at/above 200% zoom, riding the canvas below it, floored at
-half a screen px — and each dash sits on a `theme.canvasBg` casing (the selection ring's
-two-tone lesson: a single tone vanishes against the wrong body — the casing melts into the
-paper, dimmed day papers included, and cuts an outline out of the band art painted below
-guides; map ink paints above them and simply covers a guide it crosses). That casing has its
-own width and dash dials but not its own curve: it rides the CORE's scale, so the proportion
-holds at every zoom and the casing stops shrinking where the core's floor stops it. Dash phase
+one that misses it entirely mounts nothing) in colors of its own, not the ring grey (the
+recipe's blue idle, with the amber selected state and its softened hover from
+`theme.alignGuideSelected`/`-Hover`; the theme's own `alignGuide`, a day indigo / night
+periwinkle, is what a CLEARED color dial falls back to — a guide's job is to be SEEN, and
+every state is a plain restroke since an infinite line has no body to outline;
+[GuideView.tsx](src/components/GuideView.tsx)). The ink is hybrid-sized — screen-constant
+at/above 300% zoom, riding the canvas below it, floored at half a screen px, a third of the
+core and so the weight it holds from 100% out — over a casing under-stroke (the selection
+ring's two-tone lesson: a single tone vanishes against the wrong body). The recipe runs that
+casing SOLID in a translucent near-white, an unbroken rail outlining a dashed core against the
+band art painted below guides; dialed to the core's own pattern it hugs each dash instead, and
+left to the theme it is `theme.canvasBg`, the paper itself, dimmed day papers included. Map
+ink paints above guides and simply covers one it crosses. That casing has its own width and
+dash dials but not its own curve: it rides the CORE's scale, so the proportion holds at every
+zoom and the casing stops shrinking where the core's floor stops it. Dash phase
 is anchored to the line's own world foot — each pattern on its OWN period, so core and casing
 are separately pan-stable, though only equal periods keep the two in register with each other
 past the anchor — and ink size tracks the in-flight wheel zoom, so a pan or zoom

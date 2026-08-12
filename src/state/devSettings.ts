@@ -12,15 +12,21 @@ import { persist, createJSONStorage } from 'zustand/middleware';
  * export-excluded to begin with).
  */
 export interface GuideRenderSettings {
-  /** Overrides `theme.alignGuide`, the idle stroke; null follows the theme. */
+  /** Overrides `theme.alignGuide`, the idle stroke; null follows the theme.
+   *  The recipe ships a blue of its own, so the theme slot shows through only
+   *  where a dial has been cleared (an older stored recipe). */
   color: string | null;
-  /** Overrides the paper-toned casing (`theme.canvasBg`); null follows it. */
+  /** Overrides the paper-toned casing (`theme.canvasBg`); null follows it. The
+   *  recipe ships a TRANSLUCENT near-white instead, which reads as an outline
+   *  over the band art below guides rather than melting into the paper. */
   casingColor: string | null;
-  /** SVG dasharray in recipe px, held exactly as typed — "5 2". */
+  /** SVG dasharray in recipe px, held exactly as typed — "10 2". */
   dash: string;
   /** The casing's own dasharray, same units and same held-as-typed contract.
-   *  Defaults to the core's pattern, which is what makes the casing hug each
-   *  dash. Both patterns start a dash at the shared world anchor, so a longer
+   *  Unusable text falls back to the CORE's pattern, which hugs each dash; the
+   *  shipped recipe instead runs it solid ("1 0" — a dash with no gap), an
+   *  unbroken rail under a dashed core. Both patterns start a dash at the
+   *  shared world anchor, so a longer
    *  casing overhangs each dash's TAIL and leaves its head flush — casing both
    *  ends of a dash is not reachable from here (that would want a phase shift
    *  of half the difference, which multi-run patterns like "9 3 1 3" cannot
@@ -48,26 +54,27 @@ export interface GuideRenderSettings {
 }
 
 export const DEFAULT_GUIDE_RENDER: GuideRenderSettings = {
-  color: null,
-  casingColor: null,
-  dash: '5 2',
-  casingDash: '5 2',
+  color: '#0067ff',
+  casingColor: '#fafafab5',
+  dash: '10 2',
+  casingDash: '1 0',
   thickness: 1.5,
-  casingThickness: 0.75,
+  casingThickness: 0.5,
   minThickness: 0.5,
-  transitionZoomPercent: 200,
+  transitionZoomPercent: 300,
 };
 
-const DEFAULT_DASH: readonly number[] = [5, 2];
+const DEFAULT_DASH: readonly number[] = [10, 2];
 
 /**
  * The dash text as a list of recipe-px lengths. Falls back to `fallback` for
  * anything unusable — the field holds whatever is typed, and half of "5 2" is
  * not a pattern, so mid-edit text must not blank the guides off the canvas.
- * All-zero counts as unusable for the same reason: it draws nothing. The
- * casing hands in the CORE's parsed pattern rather than taking the default,
- * so an emptied casing field re-registers with the core instead of snapping
- * to a 5 2 the core may not be wearing.
+ * All-zero counts as unusable for the same reason: it draws nothing (a zero
+ * GAP is fine — "1 0" is how the casing is dialed solid). The casing hands in
+ * the CORE's parsed pattern rather than taking the default, so an emptied
+ * casing field re-registers with the core instead of snapping to a 10 2 the
+ * core may not be wearing.
  */
 export function parseDashPattern(
   text: string,

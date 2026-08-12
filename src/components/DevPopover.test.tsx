@@ -103,9 +103,11 @@ describe('<DevPopover /> guide rendering section', () => {
       'true',
     );
     expect(screen.getByRole('spinbutton', { name: 'Thickness' })).toHaveValue(1.5);
-    expect(screen.getByRole('spinbutton', { name: 'Casing thickness' })).toHaveValue(0.75);
-    // The casing starts on the core's pattern — that is what hugs each dash.
-    expect(screen.getByRole('textbox', { name: 'Casing dash' })).toHaveValue('5 2');
+    expect(screen.getByRole('spinbutton', { name: 'Casing thickness' })).toHaveValue(0.5);
+    expect(screen.getByRole('textbox', { name: 'Dash' })).toHaveValue('10 2');
+    // "1 0" — a dash with no gap: the casing starts SOLID under a dashed core.
+    expect(screen.getByRole('textbox', { name: 'Casing dash' })).toHaveValue('1 0');
+    expect(screen.getByRole('spinbutton', { name: 'Transition zoom %' })).toHaveValue(300);
   });
 
   it('writes each dial straight to the live recipe', async () => {
@@ -170,17 +172,22 @@ describe('<DevPopover /> guide rendering section', () => {
     expect(useDevSettings.getState().guide.casingThickness).toBe(-1.5);
   });
 
-  it('shows the theme color until a dial overrides it', async () => {
+  it('shows the recipe color, and the theme color once a dial is cleared', async () => {
     const user = userEvent.setup();
     render(<Toolbar />);
     await openPane(user);
-    // Day theme: the guides' indigo, and the paper tone the casing matches.
     const chip = (name: string) =>
       screen
         .getByRole('button', { name })
         .querySelector('.color-field-chip')!
         .getAttribute('style');
-    expect(useDevSettings.getState().guide.color).toBeNull();
+    // The recipe ships both colors, so the swatches mirror those…
+    expect(chip('Guide color')).toContain('#0067ff');
+    expect(chip('Guide casing color')).toContain('#fafafab5');
+    // …and a cleared dial (a recipe stored before the colors were baked) falls
+    // through to the day theme's guide indigo and paper tone.
+    useDevSettings.getState().setGuide({ color: null, casingColor: null });
+    expect(await screen.findByRole('button', { name: 'Guide color' })).toBeInTheDocument();
     expect(chip('Guide color')).toContain('#2f439b');
     expect(chip('Guide casing color')).toContain('#fafafa');
   });
@@ -194,6 +201,6 @@ describe('<DevPopover /> guide rendering section', () => {
     await user.click(screen.getByRole('button', { name: 'Reset' }));
     expect(useDevSettings.getState().guide).toEqual(DEFAULT_GUIDE_RENDER);
     expect(screen.getByRole('spinbutton', { name: 'Thickness' })).toHaveValue(1.5);
-    expect(screen.getByRole('textbox', { name: 'Dash' })).toHaveValue('5 2');
+    expect(screen.getByRole('textbox', { name: 'Dash' })).toHaveValue('10 2');
   });
 });

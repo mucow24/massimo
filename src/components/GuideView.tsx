@@ -22,9 +22,10 @@ import type { AlignmentGuide, GuideOrientation } from '../model/types';
 // per SIDE of the core) comes from the two-tone trick from the selection ring:
 // one tone vanished against the wrong body, so the dash carries its own
 // contrast. Guides paint BELOW map ink, so the casing can only ever win
-// against what sits under them — polygons, images, the grid — where it cuts a
-// paper outline around each dash; on bare canvas it disappears into the paper
-// it matches.
+// against what sits under them — polygons, images, the grid — where it lays a
+// paper-toned rail under the ink (solid as the recipe ships it; dialed to the
+// core's own pattern it outlines each dash instead); on bare canvas it
+// disappears into the paper it matches.
 
 // The grab stroke's screen-constant width — the one part of the guide that is
 // sized for the finger rather than the eye.
