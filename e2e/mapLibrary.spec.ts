@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { openMapMenu, seedAndOpen, fourInLine } from './fixtures';
+import { closeMapMenu, openMapMenu, seedAndOpen, fourInLine } from './fixtures';
 
 /**
  * The map library against real Chromium: real IndexedDB and real rasterization,
@@ -219,12 +219,12 @@ test.describe('version tagging', () => {
     await saveToLibrary(page);
     await openMapMenu(page);
     await expect(page.getByRole('menuitem', { name: 'Save version' })).toBeDisabled();
-    await page.keyboard.press('Escape');
+    await closeMapMenu(page);
 
     await renameTo(page, 'Untitled map', 'Edited Map');
     await openMapMenu(page);
     await expect(page.getByRole('menuitem', { name: 'Save version' })).toBeEnabled();
-    await page.keyboard.press('Escape');
+    await closeMapMenu(page);
 
     // Still exactly one version: the greyed-out item never wrote a duplicate.
     // (The library row keeps the name the map was SAVED under.)

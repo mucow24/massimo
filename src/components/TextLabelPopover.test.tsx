@@ -463,4 +463,28 @@ describe('<TextLabelPopover /> — style presets', () => {
     expect(label.styleId).toBe('y1');
     expect(screen.queryByRole('button', { name: 'Revert Weight to style' })).toBeNull();
   });
+
+  it('the override marker carries a revert icon, and clicking the icon reverts', async () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      textLabels: { g1: makeTextLabel({ id: 'g1', text: 'Hi' }) },
+      styles: {
+        y1: makeStyle('textLabel', 'y1', {
+          name: 'Heading',
+          props: { fontSize: 24, weight: 700 },
+        }),
+      },
+    });
+    render(<LivePopover />);
+    const user = userEvent.setup();
+    await chooseOption(user, 'Style', 'Heading');
+    await chooseOption(user, 'Weight', 'Roman');
+    // The marker is an icon button, not a bare dot — and the glyph inside it
+    // is part of the target, so a click that lands on the icon still reverts.
+    const marker = screen.getByRole('button', { name: 'Revert Weight to style' });
+    const icon = marker.querySelector('svg');
+    expect(icon).not.toBeNull();
+    await user.click(icon!);
+    expect(useDoc.getState().textLabels.g1.weight).toBe(700);
+  });
 });

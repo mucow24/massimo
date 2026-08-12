@@ -404,6 +404,21 @@ export async function openMapMenu(page: Page): Promise<void> {
 }
 
 /**
+ * Close an open Map menu by clicking its trigger (the toggle), then wait for
+ * the close to commit. Deliberately NOT Escape: every status toast is a Radix
+ * dismissable layer, and only the HIGHEST layer listens for Escape — so an
+ * Escape that lands while a toast outranks the menu is swallowed whole (the
+ * toast eats it without preventDefault) and the menu never closes. The
+ * trigger's pointerdown toggle closes unconditionally, no layer stack
+ * involved. The trailing wait keeps the next trigger click from racing the
+ * unmount.
+ */
+export async function closeMapMenu(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Map', exact: true }).click();
+  await page.locator('.menu-panel').waitFor({ state: 'detached' });
+}
+
+/**
  * Expand the line popover's collapsed style detail (Line width → Stroke color).
  * The disclosure is remembered per browser profile, but every spec starts on
  * fresh storage, so it opens collapsed — call this before driving any of the
