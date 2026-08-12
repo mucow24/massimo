@@ -170,12 +170,14 @@ function GuideRenderControls() {
       <NumericFieldRow
         id="dev-guide-casing-thickness"
         label="Casing thickness"
-        min={0}
+        // An outset on the core, so negative insets it — down to half the
+        // core's width, where the casing stroke has shrunk to nothing.
+        min={-guide.thickness / 2}
         max={3}
         step={0.25}
         value={guide.casingThickness}
         getCurrent={() => live().casingThickness}
-        onChange={(n) => setGuide({ casingThickness: Math.max(0, n) })}
+        onChange={(n) => setGuide({ casingThickness: Math.max(-live().thickness / 2, n) })}
       />
       <NumericFieldRow
         id="dev-guide-min-thickness"
@@ -201,9 +203,10 @@ function GuideRenderControls() {
       />
       <p className="dev-note">
         Thicknesses are screen px at the transition zoom; below it the ink rides the canvas, down to
-        the minimum. Casing thickness is per side, and scales with the core — the proportion holds
-        at every zoom. A longer casing dash overhangs each dash tail, never its head; keep its
-        period equal to the core or the two drift apart along the line.
+        the minimum. Casing thickness is an outset per side, and scales with the core — the
+        proportion holds at every zoom; negative insets it behind the core, to nothing at half the
+        core width. A longer casing dash overhangs each dash tail, never its head; keep its period
+        equal to the core or the two drift apart along the line.
       </p>
       <button type="button" className="ghost-btn" onClick={resetGuide}>
         Reset

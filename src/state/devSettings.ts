@@ -30,9 +30,15 @@ export interface GuideRenderSettings {
   casingDash: string;
   /** Core stroke width in recipe px. */
   thickness: number;
-  /** The casing under-stroke's width in recipe px, per SIDE of the core. Its
-   *  own dial, but not its own zoom curve: it rides the core's scale (see
-   *  GuideView), so the pair keeps its proportion at every zoom. */
+  /** The casing under-stroke's width in recipe px, per SIDE of the core — an
+   *  OUTSET on it, so zero leaves the casing exactly as wide as the core it
+   *  hides behind, and negative insets it (visible only where the casing dash
+   *  overhangs the core's). The pane floors the dial at half the core's width,
+   *  where the casing stroke has shrunk to nothing; GuideView floors the sum
+   *  too, since thinning the core under an already-inset casing can straddle
+   *  zero from the other side. Its own dial, but not its own zoom curve: it
+   *  rides the core's scale (see GuideView), so the pair keeps its proportion
+   *  at every zoom. */
   casingThickness: number;
   /** The screen-px floor the whole recipe scales down to when zoomed out. */
   minThickness: number;

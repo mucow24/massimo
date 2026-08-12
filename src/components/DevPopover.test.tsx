@@ -144,6 +144,32 @@ describe('<DevPopover /> guide rendering section', () => {
     expect(useDevSettings.getState().guide.transitionZoomPercent).toBe(400);
   });
 
+  it('takes a negative casing thickness, down to where the casing vanishes', async () => {
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    await openPane(user);
+    const casing = screen.getByRole('spinbutton', { name: 'Casing thickness' });
+    // An inset can only run to half the core's width — past that the casing
+    // stroke would cross zero.
+    expect(casing).toHaveAttribute('min', '-0.75');
+    await user.clear(casing);
+    await user.type(casing, '-0.5');
+    expect(useDevSettings.getState().guide.casingThickness).toBe(-0.5);
+  });
+
+  it('moves the inset floor with the core thickness', async () => {
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    await openPane(user);
+    useDevSettings.getState().setGuide({ thickness: 3 });
+
+    const casing = await screen.findByRole('spinbutton', { name: 'Casing thickness' });
+    expect(casing).toHaveAttribute('min', '-1.5');
+    await user.clear(casing);
+    await user.type(casing, '-2');
+    expect(useDevSettings.getState().guide.casingThickness).toBe(-1.5);
+  });
+
   it('shows the theme color until a dial overrides it', async () => {
     const user = userEvent.setup();
     render(<Toolbar />);

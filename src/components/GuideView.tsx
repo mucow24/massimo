@@ -137,6 +137,13 @@ export function GuideView({
   const floor = recipe.thickness > 0 ? recipe.minThickness / recipe.thickness : 1;
   const scale = Math.min(Math.max(z / (recipe.transitionZoomPercent / 100), floor), 1);
   const ink = (v: number) => (v * scale) / z;
+  // The casing is an OUTSET on the core, so a negative dial insets it — the
+  // paper then shows only where the casing dash overhangs the core's. Past
+  // half the core's width the pair asks for a negative stroke, which the DOM
+  // reads as an invalid attribute rather than as a hidden one; the pane floors
+  // the dial there, and this floors the pair the dials can still straddle by
+  // thinning the core under a already-inset casing.
+  const casingWidth = Math.max(0, recipe.thickness + 2 * recipe.casingThickness);
   const clickThrough = !interactive || inHandMode || (guide.locked && !selected);
   // Clipped to the overdrawn box — a diagonal drawn past it would be ink
   // overflow (and a diagonal needs finite endpoints regardless). One that
@@ -193,7 +200,7 @@ export function GuideView({
         x2={x2}
         y2={y2}
         stroke={recipe.casingColor ?? casingColor}
-        strokeWidth={ink(recipe.thickness + 2 * recipe.casingThickness)}
+        strokeWidth={ink(casingWidth)}
         strokeDasharray={casingDashes.map(ink).join(' ')}
         strokeDashoffset={phaseOf(casingDashes)}
         pointerEvents="none"

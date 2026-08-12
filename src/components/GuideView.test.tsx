@@ -228,6 +228,27 @@ describe('<GuideView /> developer dials', () => {
     expect(periods).toBeCloseTo(Math.round(periods), 10);
   });
 
+  it('insets the casing behind the core at a negative thickness', () => {
+    setGuide({ casingThickness: -0.25 });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    // 1.5 − 0.5 = 1 recipe px: narrower than the core that covers it, so the
+    // paper only shows where the casing dash overhangs the core's.
+    const casing = container.querySelector('[data-guide-casing]')!;
+    expect(Number(casing.getAttribute('stroke-width'))).toBeCloseTo(0.5, 10);
+    expect(inkOf(container).width).toBeCloseTo(0.75, 10);
+  });
+
+  it('never lets an inset casing cross zero into a negative stroke width', () => {
+    // Reachable in two turns of the pane: dial the casing to its inset floor
+    // against a 1.5 core, then thin the core under it. The pair then asks for
+    // a negative width, which the DOM takes as an invalid attribute rather
+    // than as a hidden stroke.
+    setGuide({ casingThickness: -0.75, thickness: 0.5 });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    const casing = container.querySelector('[data-guide-casing]')!;
+    expect(Number(casing.getAttribute('stroke-width'))).toBe(0);
+  });
+
   it('takes an arbitrary casing dash, leaving the core on its own', () => {
     setGuide({ casingDash: '6 1' });
     const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
