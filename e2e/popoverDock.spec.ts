@@ -185,9 +185,10 @@ test.describe('canvas popovers dock to the top-right corner', () => {
 // the screen entirely. `scrollIntoView` reaches its row by scrolling every
 // scrollable ancestor up to the document, which would drag the whole page
 // ~500px sideways and take the map out from under the click. The shipped app
-// can't scroll sideways at all (the toolbar scrolls its own overflow;
-// toolbarOverflow.spec) — this holds the guard for any future overflow, and
-// only a browser has a real page scroll, so it lives here.
+// really does scroll sideways at a narrow window (`.toolbar { min-width:
+// max-content }` floors the grid; toolbarOverflow.spec) — the injected floor
+// just makes the geometry window-independent — so this guards live shipped
+// behavior, and only a browser has a real page scroll, so it lives here.
 // A list long enough to overflow the sidebar's box, with the target station's
 // row LAST in it (sorted by name, ascending): only then does revealing that row
 // have real vertical work to do, and only then does `scrollIntoView` reach for

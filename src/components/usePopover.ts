@@ -113,10 +113,10 @@ const PANEL_GAP = 4;
  * regime-independent answer either way — measured in viewport coordinates and
  * re-measured on resize and scroll, it holds under any ancestor's overflow,
  * and it keeps a panel glued to its trigger while the narrow-window regime
- * scrolls the PAGE sideways under it (toolbarOverflow e2e drives both panels
- * there). The siblings solve placement their own way — the Radix menus ride a
- * fixed popper, Help portals to `.app` — so this hook is the one place the
- * un-portaled panels share.
+ * scrolls the PAGE sideways under it (toolbarOverflow e2e scrolls the page
+ * under an open panel and holds the edge flush). The siblings solve placement
+ * their own way — the Radix menus ride a fixed popper, Help portals to `.app`
+ * — so this hook is the one place the un-portaled panels share.
  *
  * `position: fixed` is in `panelStyle` unconditionally, offsets or no offsets,
  * and that is what makes the first pass safe: React writes the style attribute
@@ -162,13 +162,23 @@ export function usePopover(opts?: { anchored?: boolean }) {
       });
     measure();
     window.addEventListener('resize', measure);
-    // Capture, so the strip scrolling its own tail counts — that scroll never
-    // reaches window in the bubble phase, and a fixed panel does not ride along
-    // with its trigger on its own.
-    window.addEventListener('scroll', measure, true);
+    // The same listener pair as useDock and ColorField — the repo's canonical
+    // page-scroll hook. A page scroll is dispatched at `document` and bubbles
+    // to `window` (uniquely; element scrolls don't bubble at all), so bubble-
+    // on-window is the reliable page hook and capture-on-document is what
+    // catches a nested container's scroll. A page scroll trips both, and
+    // measure's value-equal bailout makes the second a no-op. Passive —
+    // following must never hold up the scroll. toolbarOverflow e2e holds the
+    // contract (an open panel tracks a page scroll); beware verifying by hand
+    // in a page that is producing no frames — it dispatches no scroll events
+    // to ANY listener (popoverDock.spec records that trap), which reads as a
+    // stranded panel whatever the listeners say.
+    window.addEventListener('scroll', measure, { passive: true });
+    document.addEventListener('scroll', measure, { passive: true, capture: true });
     return () => {
       window.removeEventListener('resize', measure);
-      window.removeEventListener('scroll', measure, true);
+      window.removeEventListener('scroll', measure);
+      document.removeEventListener('scroll', measure, { capture: true });
     };
   }, [open, anchored]);
 

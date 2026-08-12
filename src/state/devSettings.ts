@@ -86,6 +86,11 @@ export const useDevSettings = create<DevSettingsState>()(
     {
       name: 'massimo-dev-settings',
       storage: createJSONStorage(() => localStorage),
+      // The full six-field snapshot persists after any dial turn (Reset
+      // re-snapshots too), so a later change to DEFAULT_GUIDE_RENDER is
+      // shadowed by the stored copy until the next Reset. Accepted: the
+      // endgame of tuning here is baking new constants, at which point the
+      // dials go back to following them.
       partialize: (s) => ({ guide: s.guide }),
       merge: (persisted, current) => ({
         ...current,

@@ -143,6 +143,36 @@ test.describe('toolbar overflow at a narrow window', () => {
       expect(reach.bottom, `${trigger} panel bottom edge is not hit-testable`).toBe(true);
     });
   }
+
+  test('an open panel follows its trigger through a page scroll', async ({ page }) => {
+    // The panels are position:fixed, so a page scroll moves the trigger in
+    // viewport space and the panel only follows if usePopover's re-measure
+    // hears the scroll. This pins that contract — including the listeners
+    // being dropped outright — but not the choice of listener idiom: this
+    // (frame-producing) page delivered the scroll to the previous
+    // window-capture listener too. Hand-verifying the difference is its own
+    // trap: a page producing NO frames dispatches no scroll events to any
+    // listener at all (see popoverDock.spec's wheel-scroll note), which reads
+    // as a stranded panel whatever the code says.
+    await page.getByRole('button', { name: 'View', exact: true }).click();
+    await expect(page.locator('.view-popover')).toBeVisible();
+    const gap = () =>
+      page.evaluate(() => {
+        const t = document.querySelector('.view-popover-wrap')!.getBoundingClientRect();
+        const p = document.querySelector('.view-popover')!.getBoundingClientRect();
+        return Math.round(p.right - t.right);
+      });
+    expect(await gap()).toBe(0); // right edges flush at open
+
+    // Scroll toward the strip's tail with the panel open — the trigger slides
+    // left in viewport space and the fixed panel must ride along. Guard the
+    // premise: the page really moved (the View trigger itself is on-screen at
+    // 900px, so nothing here scrolls implicitly).
+    await page.evaluate(() => window.scrollTo(150, 0));
+    const scrolled = await page.evaluate(() => window.scrollX);
+    expect(scrolled, 'premise: the page really scrolled').toBeGreaterThanOrEqual(100);
+    await expect.poll(gap).toBe(0);
+  });
 });
 
 test('a wide window fits the toolbar with no scrollbar anywhere', async ({ page }) => {
