@@ -12,13 +12,9 @@ import { persist, createJSONStorage } from 'zustand/middleware';
  * export-excluded to begin with).
  */
 export interface GuideRenderSettings {
-  /** Overrides `theme.alignGuide`, the idle stroke; null follows the theme.
-   *  The recipe ships a blue of its own, so the theme slot shows through only
-   *  where a dial has been cleared (an older stored recipe). */
+  /** Overrides `theme.alignGuide`, the idle stroke; null follows the theme. */
   color: string | null;
-  /** Overrides the paper-toned casing (`theme.canvasBg`); null follows it. The
-   *  recipe ships a TRANSLUCENT near-white instead, which reads as an outline
-   *  over the band art below guides rather than melting into the paper. */
+  /** Overrides the guide casing (`theme.alignGuideCasing`); null follows it. */
   casingColor: string | null;
   /** SVG dasharray in recipe px, held exactly as typed — "10 2". */
   dash: string;
@@ -54,8 +50,8 @@ export interface GuideRenderSettings {
 }
 
 export const DEFAULT_GUIDE_RENDER: GuideRenderSettings = {
-  color: '#0067ff',
-  casingColor: '#fafafab5',
+  color: null,
+  casingColor: null,
   dash: '10 2',
   casingDash: '1 0',
   thickness: 1.5,

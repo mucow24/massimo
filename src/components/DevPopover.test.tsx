@@ -172,7 +172,7 @@ describe('<DevPopover /> guide rendering section', () => {
     expect(useDevSettings.getState().guide.casingThickness).toBe(-1.5);
   });
 
-  it('shows the recipe color, and the theme color once a dial is cleared', async () => {
+  it('mirrors the day theme colors while the dials are clear', async () => {
     const user = userEvent.setup();
     render(<Toolbar />);
     await openPane(user);
@@ -181,15 +181,12 @@ describe('<DevPopover /> guide rendering section', () => {
         .getByRole('button', { name })
         .querySelector('.color-field-chip')!
         .getAttribute('style');
-    // The recipe ships both colors, so the swatches mirror those…
+    // Both dials start clear, so the swatches mirror the day theme: the guide
+    // blue and the translucent near-white casing (its own slot, not the paper).
+    expect(useDevSettings.getState().guide.color).toBeNull();
+    expect(useDevSettings.getState().guide.casingColor).toBeNull();
     expect(chip('Guide color')).toContain('#0067ff');
     expect(chip('Guide casing color')).toContain('#fafafab5');
-    // …and a cleared dial (a recipe stored before the colors were baked) falls
-    // through to the day theme's guide indigo and paper tone.
-    useDevSettings.getState().setGuide({ color: null, casingColor: null });
-    expect(await screen.findByRole('button', { name: 'Guide color' })).toBeInTheDocument();
-    expect(chip('Guide color')).toContain('#2f439b');
-    expect(chip('Guide casing color')).toContain('#fafafa');
   });
 
   it('puts every dial back with one Reset', async () => {

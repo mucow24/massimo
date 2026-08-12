@@ -18,14 +18,16 @@ import type { AlignmentGuide, GuideOrientation } from '../model/types';
 // (state/devSettings.ts), whose defaults ARE the recipe, and the Developer
 // pane's Guide rendering section turns them.
 //
-// The paper-toned under-stroke below (its own width and dash dials, the width
-// per SIDE of the core) comes from the two-tone trick from the selection ring:
-// one tone vanished against the wrong body, so the dash carries its own
-// contrast. Guides paint BELOW map ink, so the casing can only ever win
-// against what sits under them — polygons, images, the grid — where it lays a
-// paper-toned rail under the ink (solid as the recipe ships it; dialed to the
-// core's own pattern it outlines each dash instead); on bare canvas it
-// disappears into the paper it matches.
+// The under-stroke below (its own color, width and dash dials, the width per
+// SIDE of the core) comes from the two-tone trick from the selection ring: one
+// tone vanished against the wrong body, so the casing carries its own contrast.
+// Its color is theme.alignGuideCasing — a translucent near-white on day paper
+// (its own theme slot, not the canvas paper it once borrowed). Guides paint
+// BELOW map ink, so the casing can only ever win against what sits under them —
+// polygons, images, the grid — where a solid rail (as the recipe ships it;
+// dialed to the core's own pattern it outlines each dash instead) reads over
+// band art the paper-toned core would be lost in. Night keeps it black, melting
+// into the black paper as before.
 
 // The grab stroke's screen-constant width — the one part of the guide that is
 // sized for the finger rather than the eye.
@@ -54,10 +56,11 @@ interface Props {
   // The idle one is what a Developer-pane color dial replaces; the states are
   // never overridden (see `stroke` below).
   guideColor: string;
-  // The casing under-stroke — theme.canvasBg, the actual paper (it follows
-  // the dimmed day papers; this layer is export-excluded, so it sits on the
-  // screen side of the export door). NOT theme.underlay, which is
-  // export-reaching map paint deliberately frozen white across day papers.
+  // The casing under-stroke's color — theme.alignGuideCasing, a fixed
+  // translucent near-white on day paper (black on night). Its own theme slot
+  // rather than theme.canvasBg: a translucent rail has to read OVER the paper
+  // and the band art, not melt into whichever paper is selected. This whole
+  // layer is export-excluded, so it sits on the screen side of the export door.
   casingColor: string;
   selectedColor: string;
   hoverColor: string;

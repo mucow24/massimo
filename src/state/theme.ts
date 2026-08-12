@@ -39,11 +39,20 @@ export interface ThemeColors {
    * Alignment guides (the h/v snap lines) — their own slot rather than
    * `guide`: rings sit UNDER stations they carry and want to whisper, but an
    * alignment guide's whole job is to be seen and snapped against, and the
-   * ring grey was invisible over a busy map. Indigo: unmistakably editor ink,
-   * clearly apart from the interaction accent so a SELECTED guide still
-   * reads. Night is the same hue lifted for the black canvas.
+   * ring grey was invisible over a busy map. A saturated blue: unmistakably
+   * editor ink, clearly apart from the interaction accent so a SELECTED guide
+   * still reads. Night is a lifted periwinkle for the black canvas.
    */
   alignGuide: string;
+  /**
+   * The casing under-stroke each alignment guide rides — its OWN slot rather
+   * than `canvasBg`, the paper the casing used to borrow. The recipe runs it
+   * solid and translucent (see useDevSettings), so it has to read AS a rail
+   * over the band art below guides, not melt into whichever paper is selected;
+   * a translucent white is not any paper's color. Day is that near-white;
+   * night stays black, matching its paper so the casing melts in as before.
+   */
+  alignGuideCasing: string;
   /** A selected alignment guide's restroke. Complementary amber — the base is
    *  blue and the accent is blue, so "chosen" needs to leave the family. */
   alignGuideSelected: string;
@@ -118,7 +127,8 @@ const LIGHT: ThemeColors = {
   selectionStroke: '#000000',
   grid: '#eeeeee',
   guide: '#b5b5b5',
-  alignGuide: '#2f439b',
+  alignGuide: '#0067ff',
+  alignGuideCasing: '#fafafab5',
   alignGuideSelected: '#e07a1f',
   alignGuideHover: '#f0a76a',
   underlay: '#ffffff',
@@ -140,6 +150,7 @@ const DARK: ThemeColors = {
   grid: '#222222',
   guide: '#5a5a5a',
   alignGuide: '#8c9cf2',
+  alignGuideCasing: '#000000',
   alignGuideSelected: '#ffb066',
   alignGuideHover: '#c98a45',
   underlay: '#000000',

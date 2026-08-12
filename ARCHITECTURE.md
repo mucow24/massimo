@@ -734,30 +734,32 @@ standing as the rings — editor scaffolding, export-excluded, same scaffolding 
 background art, below map ink) — but the OPPOSITE snapping role: nothing binds to a guide; it
 is an **always-on snap TARGET** for both snappers (see Snapping). It paints as a dashed line
 spanning the overdrawn viewBox (diagonals clip to it — past the box is ink overflow — and
-one that misses it entirely mounts nothing) in colors of its own, not the ring grey (the
-recipe's blue idle, with the amber selected state and its softened hover from
-`theme.alignGuideSelected`/`-Hover`; the theme's own `alignGuide`, a day indigo / night
-periwinkle, is what a CLEARED color dial falls back to — a guide's job is to be SEEN, and
-every state is a plain restroke since an infinite line has no body to outline;
-[GuideView.tsx](src/components/GuideView.tsx)). The ink is hybrid-sized — screen-constant
+one that misses it entirely mounts nothing) in its own theme slots, not the ring grey:
+`theme.alignGuide` (a day blue / night periwinkle) for the idle stroke, with the amber
+selected state and softened hover from `-Selected`/`-Hover` — a guide's job is to be SEEN, and
+every state is a plain restroke since an infinite line has no body to outline
+([GuideView.tsx](src/components/GuideView.tsx)). The ink is hybrid-sized — screen-constant
 at/above 300% zoom, riding the canvas below it, floored at half a screen px, a third of the
 core and so the weight it holds from 100% out — over a casing under-stroke (the selection
-ring's two-tone lesson: a single tone vanishes against the wrong body). The recipe runs that
-casing SOLID in a translucent near-white, an unbroken rail outlining a dashed core against the
-band art painted below guides; dialed to the core's own pattern it hugs each dash instead, and
-left to the theme it is `theme.canvasBg`, the paper itself, dimmed day papers included. Map
-ink paints above guides and simply covers one it crosses. That casing has its own width and
-dash dials but not its own curve: it rides the CORE's scale, so the proportion holds at every
-zoom and the casing stops shrinking where the core's floor stops it. Dash phase
+ring's two-tone lesson: a single tone vanishes against the wrong body). That casing has a theme
+slot of its OWN, `theme.alignGuideCasing` — a day translucent near-white (night black), its own
+slot rather than `theme.canvasBg` because a translucent white is no paper's color and the rail
+has to read OVER the paper, not into it. The recipe draws it SOLID (`casingDash` `1 0`), an
+unbroken rail outlining a dashed core against the band art painted below guides; dialed to the
+core's own pattern it hugs each dash instead; night, matching its paper, melts in as the casing
+once did on every paper. Map ink paints above guides and simply covers one it crosses. The
+casing has its own width and dash dials but not its own curve: it rides the CORE's scale, so the
+proportion holds at every zoom and stops shrinking where the core's floor stops it. Dash phase
 is anchored to the line's own world foot — each pattern on its OWN period, so core and casing
 are separately pan-stable, though only equal periods keep the two in register with each other
 past the anchor — and ink size tracks the in-flight wheel zoom, so a pan or zoom
 commit neither re-phases nor pops the pattern; only the fat grab stroke stays plain
-screen-constant, so hit comfort survives zooming out however thin the ink runs. The whole
-recipe — both colors, both dash patterns, the core and casing widths, the screen floor, and
-the zoom it flips at — is live in `useDevSettings`, dialed from the Developer pane's **Guide
-rendering** section, and its defaults are the recipe described here (an idle-color override
-never takes the selected / hover / engaged restrokes with it). Born by
+screen-constant, so hit comfort survives zooming out however thin the ink runs. The
+geometry — both dash patterns, the core and casing widths, the screen floor, and the zoom it
+flips at — is live in `useDevSettings`, dialed from the Developer pane's **Guide rendering**
+section, and its defaults are the recipe described here; the two colors default to the theme
+slots above, with a per-session override dial each (an idle-color override never takes the
+selected / hover / engaged restrokes with it). Born by
 dragging out of a **guide well** — slim strips flush with the canvas's top/left edges plus the
 two left corner squares between them: top pulls a horizontal guide down, left a vertical one
 right, the upper-left corner a / and the lower-left a \ — each well mints the guide

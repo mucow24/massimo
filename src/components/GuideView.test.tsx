@@ -153,13 +153,13 @@ describe('<GuideView /> dash phase', () => {
 });
 
 describe('<GuideView /> casing', () => {
-  it('runs a solid translucent rail under the dashed core', () => {
+  it('runs a solid rail under the dashed core, in the theme casing color', () => {
     const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
     const casing = container.querySelector('[data-guide-casing]')!;
     const ink = container.querySelector('[data-guide-ink]')!;
-    // The recipe's own near-white, not the theme paper the prop carries — a
-    // translucent casing reads over the band art as well as over the paper.
-    expect(casing.getAttribute('stroke')).toBe('#fafafab5');
+    // The color comes from the theme — the harness passes '#fff'; the real
+    // value is theme.alignGuideCasing (see theme.test.ts).
+    expect(casing.getAttribute('stroke')).toBe('#fff');
     // 0.5 recipe px per side around the 1.5 core → 2.5, at the same hybrid
     // scale as the ink (⅓ at zoom 1).
     expect(Number(casing.getAttribute('stroke-width'))).toBeCloseTo(2.5 / 3, 10);
@@ -346,10 +346,9 @@ describe('<GuideView /> developer dials', () => {
     expect(container.querySelector('[data-guide-casing]')!.getAttribute('stroke')).toBe('#00ff00');
   });
 
-  it('hands both strokes back to the theme when a color dial is cleared', () => {
-    // The recipe ships explicit colors, so the theme's own guide indigo and
-    // paper tone are what a null dial falls through to — the state a recipe
-    // stored before the colors were baked rehydrates into.
+  it('follows the theme-provided colors while both color dials are clear (the default)', () => {
+    // Null is the default — the recipe carries no color of its own, so both
+    // strokes fall through to the theme values the props carry.
     setGuide({ color: null, casingColor: null });
     const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
     expect(container.querySelector('[data-guide-ink]')!.getAttribute('stroke')).toBe('#888');
