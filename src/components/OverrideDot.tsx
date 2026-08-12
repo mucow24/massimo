@@ -70,6 +70,44 @@ function formatStyleValue(field: string, value: unknown, styles: Record<string, 
   return String(value);
 }
 
+// A caller that supplies `overridden` has already diffed; the hook still runs
+// (rules of hooks) but bails before the capture.
+const NO_FIELDS: readonly string[] = [];
+
+/**
+ * The overridden subset of `fields`, joined so the subscription's result
+ * compares stably ('' = nothing diverges). Exported because the StyleRow needs
+ * the very same answer for its "(edited)" trigger and its Sync button, and one
+ * capture+diff per row is enough — it hands the result back down as
+ * `overridden`.
+ */
+export function useOverriddenFields(
+  kind: ItemStyleKind,
+  itemId: string,
+  fields: readonly string[],
+): string {
+  return useDoc((s) => {
+    if (fields.length === 0) return '';
+    const coll = s[STYLE_COLLECTION_OF[kind]] as Record<string, { styleId?: string }>;
+    const styleId = coll[itemId]?.styleId;
+    const def = styleId !== undefined ? s.styles[styleId] : undefined;
+    if (!def || def.kind !== kind) return '';
+    const props = captureStyleProps(s as unknown as MapDoc, kind, itemId);
+    if (!props) return '';
+    const diff = styleFieldsDiff(kind, props, def.props);
+    return fields.filter((f) => diff.includes(f)).join(',');
+  });
+}
+
+// Exactly one of the two sources, never neither: a dot handed no fields and no
+// diff would silently never show.
+type DotProps = {
+  kind: ItemStyleKind;
+  itemId: string;
+  name: string;
+  disabled?: boolean;
+} & ({ fields: readonly string[]; overridden?: never } | { overridden: string; fields?: never });
+
 /**
  * The red per-field override marker: rendered inside an editor row whose
  * covered field(s) diverge from the item's style, absolutely positioned in
@@ -82,36 +120,20 @@ function formatStyleValue(field: string, value: unknown, styles: Record<string, 
  * the diff, made visible.
  *
  * `fields` lists the covered field names this row edits (usually one; color
- * rows carry the day/night pair, the align row carries align + italic; the
- * StyleRow passes the kind's WHOLE covered set, so its dot is the wholesale
- * revert). `name` is the row's human label, for the button's accessible name.
+ * rows carry the day/night pair, the align row carries align + italic).
+ * `name` is the row's human label, for the button's accessible name. The
+ * StyleRow is the one caller that passes `overridden` instead: it stands for
+ * the kind's WHOLE covered set (so its dot is the wholesale revert) and has
+ * already run that diff for its own trigger text.
  */
-export function OverrideDot({
-  kind,
-  itemId,
-  fields,
-  name,
-  disabled,
-}: {
-  kind: ItemStyleKind;
-  itemId: string;
-  fields: readonly string[];
-  name: string;
-  disabled?: boolean;
-}) {
+export function OverrideDot({ kind, itemId, fields, overridden: given, name, disabled }: DotProps) {
   const revertStyleFields = useDoc((s) => s.revertStyleFields);
-  // The overridden subset of this row's fields, joined so the selector's
-  // result compares stably ('' = no dot).
-  const overridden = useDoc((s) => {
-    const coll = s[STYLE_COLLECTION_OF[kind]] as Record<string, { styleId?: string }>;
-    const styleId = coll[itemId]?.styleId;
-    const def = styleId !== undefined ? s.styles[styleId] : undefined;
-    if (!def || def.kind !== kind) return '';
-    const props = captureStyleProps(s as unknown as MapDoc, kind, itemId);
-    if (!props) return '';
-    const diff = styleFieldsDiff(kind, props, def.props);
-    return fields.filter((f) => diff.includes(f)).join(',');
-  });
+  const computed = useOverriddenFields(
+    kind,
+    itemId,
+    given === undefined ? (fields ?? NO_FIELDS) : NO_FIELDS,
+  );
+  const overridden = given ?? computed;
   // One tooltip line per diverging field, naming the style's value — string
   // result, so the subscription stays comparison-stable.
   const title = useDoc((s) => {

@@ -1,17 +1,10 @@
 import { ChevronDownIcon, LoopIcon } from '@radix-ui/react-icons';
 import * as Select from '@radix-ui/react-select';
 import { FieldSelectContent } from './FieldSelectContent';
-import { OverrideDot } from './OverrideDot';
+import { OverrideDot, useOverriddenFields } from './OverrideDot';
 import { useInlineRename } from './useInlineRename';
 import { useDoc } from '../state/store';
-import {
-  STYLE_FIELDS,
-  captureStyleProps,
-  styleFieldsDiff,
-  stylesOfKind,
-  type ItemStyleKind,
-} from '../model/styles';
-import type { MapDoc } from '../model/types';
+import { STYLE_FIELDS, stylesOfKind, type ItemStyleKind } from '../model/styles';
 
 // Select sentinels. Real style ids are UUIDs (or `y0`-style counter ids in
 // tests), so the dunder values can't collide with one.
@@ -46,14 +39,13 @@ export function StyleRow({ kind, itemId, styleId, disabled }: Props) {
   const applyStyle = useDoc((s) => s.applyStyle);
   const clearStyleTag = useDoc((s) => s.clearStyleTag);
   const saveStyle = useDoc((s) => s.saveStyle);
-  // Does the item diverge from its style on any covered field? (false when
-  // untagged — nothing to diverge from.)
-  const edited = useDoc((s) => {
-    const def = styleId !== undefined ? s.styles[styleId] : undefined;
-    if (!def || def.kind !== kind) return false;
-    const props = captureStyleProps(s as unknown as MapDoc, kind, itemId);
-    return props !== null && styleFieldsDiff(kind, props, def.props).length > 0;
-  });
+  // The item's whole override set — '' when it matches its style or is
+  // untagged (nothing to diverge from). ONE capture+diff for the row: the
+  // trigger's "(edited)", the Sync button's idle state and the gutter dot are
+  // three faces of this one answer, so the dot takes it rather than
+  // recomputing it.
+  const overridden = useOverriddenFields(kind, itemId, STYLE_FIELDS[kind]);
+  const edited = overridden !== '';
   // Shared inline-rename plumbing (same as MapNameField / the Styles panel).
   const {
     editing: naming,
@@ -98,7 +90,7 @@ export function StyleRow({ kind, itemId, styleId, disabled }: Props) {
       <OverrideDot
         kind={kind}
         itemId={itemId}
-        fields={STYLE_FIELDS[kind]}
+        overridden={overridden}
         name="all overrides"
         disabled={disabled}
       />

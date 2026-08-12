@@ -465,12 +465,16 @@ props, then stamp only the non-overridden fields (`stampStyleFields`), so a wear
 survive a style edit — and a style landing exactly on a pinned value dissolves that pin (equal
 values = no override to compute). The editors surface all of this: the StyleRow trigger reads
 "<name> (edited)" while any override exists, and each diverging row wears a red dot in the
-reserved left gutter (click = `revertStyleField`, stamping that row's fields back). The two ways
-out of a divergence are the Sync button, which pushes the item's look into the def
-(`saveStyleFromItem`, all wearers follow), and the STYLE row's own gutter dot — one `OverrideDot`
+reserved left gutter (click = `revertStyleField`, stamping that row's fields back). A divergence
+resolves wholesale in two directions: the Sync button pushes the item's look into the def
+(`saveStyleFromItem`, all wearers follow), while the STYLE row's own gutter dot — one `OverrideDot`
 over the kind's whole `STYLE_FIELDS` list, so reverting everything is the row-level case of the
-same dot idiom rather than a second button. "Custom" (the dropdown's `clearStyleTag`) remains the
-only way OFF a style. An optional prop that is OFF is **absent**, never present-and-undefined, and
+same dot idiom rather than a second button — and re-picking the style in the dropdown
+(`applyStyleToItem`, a full stamp) both put the item back on the def. One capture+diff answers for
+the whole row: `useOverriddenFields` runs it once, and the trigger text, the Sync button's idle
+state and that dot are three faces of the same string. "Custom" (the dropdown's `clearStyleTag`)
+remains the only way OFF a style. An optional prop that is OFF is **absent**, never
+present-and-undefined, and
 `canonicalStyleProps` is the sole owner of that rule — it rebuilds a props object field by field,
 so every producer (capture, the panel's edits, `sanitizeStyleProps` over untyped file data) hands
 it an undefined and gets a missing key back rather than re-spelling the omission. That matters
