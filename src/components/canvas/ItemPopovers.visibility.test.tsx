@@ -8,6 +8,7 @@ import { DEFAULT_DOC } from '../../model/transforms';
 import { setVisibility, type VisibilityKey } from '../../state/visibility';
 import {
   makeDoc,
+  makeGuide,
   makeLine,
   makeLineCircle,
   makePolygon,
@@ -45,6 +46,7 @@ beforeEach(() => {
     showAnchors: false,
     showWaypoints: false,
     showLineCircles: true,
+    showGuides: true,
     showTransfers: true,
     showSvgImages: true,
     showTextLabels: true,
@@ -59,6 +61,7 @@ beforeEach(() => {
     selectedLabelIds: [],
     selectedRouteBulletIds: [],
     selectedLineCircleIds: [],
+    selectedGuideIds: [],
     selectedTransferId: null,
     uiMode: { kind: 'idle' },
     sidebarOpen: false,
@@ -82,6 +85,7 @@ const seed = () =>
         textLabels: [makeTextLabel({ id: 'g1', x: 500, y: 100 })],
         routeBullets: [makeRouteBullet({ id: 'b1', x: 300, y: 300 })],
         lineCircles: [makeLineCircle({ id: 'c1', x: -300, y: -300, radius: 80 })],
+        guides: [makeGuide({ id: 'gd1', orientation: 'horizontal', offset: 120 })],
       }),
     });
   });
@@ -121,6 +125,14 @@ const CASES: {
     key: 'showTransfers',
     select: () => useSelection.getState().selectTransfer('x1'),
     panel: '.transfer-popover',
+  },
+  {
+    key: 'showGuides',
+    select: () => useSelection.getState().selectGuide('gd1'),
+    // `.guide-popover`, not the `.bullet-popover` it also carries for the
+    // shell's size — that class would match the route bullet's panel too, and
+    // this file seeds every kind at once.
+    panel: '.guide-popover',
   },
 ];
 

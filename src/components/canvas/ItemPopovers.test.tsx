@@ -8,6 +8,7 @@ import { historyDepth, undo } from '../../state/history';
 import { DEFAULT_DOC } from '../../model/transforms';
 import type { RouteBullet } from '../../model/types';
 import {
+  makeGuide,
   makeLine,
   makeLineCircle,
   makePolygon,
@@ -370,6 +371,21 @@ describe('ItemPopovers — sole-item popovers are idle-only', () => {
         useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC, routeBullets: { b1: bullet } });
         useSelection.getState().clearAllSelections();
         useSelection.setState({ ...useSelection.getState(), selectedRouteBulletIds: ['b1'] });
+      },
+    ],
+    [
+      // `.guide-popover`, not the `.bullet-popover` it also carries for the
+      // shell's size — that class would match the route bullet's panel too.
+      'guide',
+      '.guide-popover',
+      () => {
+        useDoc.setState({
+          ...useDoc.getState(),
+          ...DEFAULT_DOC,
+          guides: { g1: makeGuide({ id: 'g1' }) },
+        });
+        useSelection.getState().clearAllSelections();
+        useSelection.setState({ ...useSelection.getState(), selectedGuideIds: ['g1'] });
       },
     ],
   ];
