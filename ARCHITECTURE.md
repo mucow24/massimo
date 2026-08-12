@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `82e7a59` (2026-08-11, #482) — verified against the live source.** This
+**Up to date as of commit `7aff4ae` (2026-08-12, #495) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -1467,20 +1467,20 @@ Path A does **more** than Path B because hand-edited files can be non-canonical 
 sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for this).
 
 **Path B — localStorage rehydration: `migrateDoc(persisted, version)`** ([store.ts](src/state/store.ts)).
-The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 25`, `migrate:
+The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 29`, `migrate:
 migrateDoc`, `partialize: pickDocSnapshot`, plus a **custom `merge` hook** (below). Because the persist-merge already fills absent fields
 from the initial state, `migrateDoc` only does **value-level legacy fixups, version-gated**, on
 disjoint fields (order immaterial except where noted), never mutating the input:
 
 | Gate        | Fixup                                                                                                                                      |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --- | ------------------------------------------------------ |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `v<1`       | `backfillLineNames` (`"${service} line"`)                                                                                                  |
 | `v<3`       | `labelBold:boolean` → `labelWeight` (700/400; explicit weight wins)                                                                        |
 | `v<4`       | `sanitizeStations` (legacy stop orientations; `valign:'auto'`→`'auto-down'` — both fold into one runtime gate)                             |
 | `v<5`       | `backfillPolygonDarkColors`                                                                                                                |
 | `v<6`       | `backfillTextLabelColors`                                                                                                                  |
 | `v<7`       | `convertLegacyDotShapes` (preset ids → procedural `DotStyle`)                                                                              |
-| `v<8`       | `migrateLegacyBulletSyntax` (legacy `<X>` circle bullets / unescaped pipes → `                                                             | X   | ` inline-token syntax, on station names + text labels) |
+| `v<8`       | `migrateLegacyBulletSyntax` (legacy `<X>` circle bullets / unescaped pipes → `\|X\|` inline-token syntax, on station names + text labels)   |
 | `v<9`       | `foldPolygonFillOpacity` (legacy polygon `fillOpacity` percent → the alpha of `fill`/`darkFill`; runs after the `v<5` dark-color backfill) |
 | `v<10`      | `migrateV9Styles` (rebuild round-1 style defs on the canonical grids, materialize an explicit `styles` record), then — **after** the style-invariant pass below — `bakeLegacyTransferSettings` |
 | `v<11`      | `adoptDefaultStyles` (tag untagged, default-looking items — mirrors Path A's step 14)                                                      |
@@ -1502,13 +1502,16 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array. **But see the `merge` hook** — this call alone is not "every rehydrate" |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `snapStationCells` whenever `stations !== undefined` — cell drift is not tied to a schema bump, so a gate could never catch it. **But see the `merge` hook** — for this repair that caveat is the main event, not a footnote |
+| (not gated) | `sanitizeLineCircles` whenever `stations` or `lineCircles` is present — the binding invariants (a `circleId` resolves, `viaCircle` only on bound stations, a bound station sits ON its circle). Runs right after the cell snap, since both repair stations. Guides need no twin: an `AlignmentGuide` references nothing, so `sanitizeGuides` is the file path's alone |
 | (not gated) | `sanitizeImageHrefs` whenever `svgImages !== undefined` — the guard had one caller (the clipboard) and neither doc load, so a remote href could be persisted at ANY version. **But see the `merge` hook** — same reasoning as `snapStationCells` |
 | (not gated) | `bakeConcreteDotSizes` whenever `lines !== undefined` — dot sizes are REQUIRED stored fields (absent used to mean "my dot type's natural diameter"); pin stops that tracked a different natural than their line's, then materialize the line split sizes. The v27 bump forced one pass over every pre-existing doc; a size-less line written at the current version (legacy clipboard paste) is healed by the **`merge` hook** |
 | (not gated) | `bakeTextLabelStyleLayout` whenever `styles !== undefined` — width/leading/tracking became covered textLabel style fields; a def predating the coverage backfills each missing field with the MOST COMMON of its wearers' effective values (auto/neutral when nobody wears it; ties keep the first-seen value), so nothing repaints and only wearers off the plurality read as per-field overrides. The v28 bump forces one pass; app-written defs are concrete, so no `merge`-hook membership is needed |
+| (not gated) | `bakeLegacyUltraLightWeight` — the retired UltraLight rung (Söhne's ladder starts at 200) folded onto Thin, everywhere a weight is stored. Keyed off the legacy value 100 and reference-stable once nothing stores it, so it runs last and unconditionally, same contract as the file path's call |
 
-A **corrupt/missing version is treated as v0** (all migrations run). The six non-gated repairs
-(`backfillLinesEdges`, `ensureStyleInvariants`, `snapStationCells`, `sanitizeImageHrefs`,
-`bakeConcreteDotSizes`, `bakeTextLabelStyleLayout`) are **not** tied to a schema bump — they run
+A **corrupt/missing version is treated as v0** (all migrations run). The eight non-gated repairs
+(`backfillLinesEdges`, `ensureStyleInvariants`, `snapStationCells`, `sanitizeLineCircles`,
+`sanitizeImageHrefs`, `bakeConcreteDotSizes`, `bakeTextLabelStyleLayout`,
+`bakeLegacyUltraLightWeight`) are **not** tied to a schema bump — they run
 any time their field is present (an absent field is left for the persist-merge).
 `bakeActivePalettes`, which is gated, reads `useCustomPalettes.getState().palettes` to resolve
 legacy `custom:` ids — the only place in either load path that reaches into a store.
@@ -3251,6 +3254,22 @@ sidebar rides the right edge of the same over-wide grid — so in a narrow windo
 outside the window entirely. `scrollIntoView` would reach it by scrolling every scrollable
 ancestor up to the document, dragging the whole page across; the reveal instead scrolls the
 list's own box by the row's overhang — `block: 'nearest'` by hand, over one axis of one element.
+
+The **toolbar's own hand-rolled panels** (View, Perf) are fixed-positioned in window coordinates
+for a different reason, and through a different hook — `usePopover`, which pairs the open/dismiss
+state with a `panelStyle` measured off the trigger's wrap in a layout effect (4px under it, right
+edges flush), re-measured on resize and on toolbar scroll. The strip takes `overflow-x` so its
+tail scrolls rather than the page, and setting either axis computes the OTHER to `auto`, so the
+toolbar clips vertically too: a panel laid out `absolute; top: 100%` lands inside that scroll area
+instead of over the canvas. Fixed positioning is the escape, and it moves the BOX, not the tree —
+the panel stays a DOM child of the wrap, which is what keeps the dismiss handling whole. Their
+siblings never needed it (the Radix menus ride a fixed popper, Help portals to `.app`), so a new
+hand-rolled toolbar panel is the case to watch. Two consequences worth knowing before adding one:
+each panel needs an explicit `width`, since shrink-to-fit under `fixed` + `right` resolves against
+the viewport rather than the wrap; and there is no viewport clamp or flip in the hook, so a panel
+taller or wider than its corner allows will simply hang off. `anchored` is opt-in — a consumer
+that ignores `panelStyle` should not ask for it, or it pays for a window-capture scroll listener
+and a re-render per scroll tick for nothing.
 
 ### Memo contract (subtle but important)
 

@@ -213,6 +213,43 @@ export async function exportCanvasSvg(
 export const THUMB_BOX = { w: 240, h: 180 };
 
 /**
+ * Rasterize an export SVG string onto a canvas at exactly `width`×`height`.
+ *
+ * The blob URL is revoked in a `finally` — the caller reads its pixels off the
+ * returned canvas, which owns them outright, so the URL's job ends here.
+ *
+ * `decode()` rather than `onload`: it gates on the image being fully ready to
+ * PAINT, not merely fetched. There are no fonts to wait on in the PNG path
+ * (text arrives already outlined) and none worth waiting on in the thumbnail
+ * path, so this is the whole readiness contract.
+ *
+ * No context scaling: callers bake any scale into the SVG's own width/height
+ * (viewBox unchanged), so the vector rasterizes crisply at full resolution and
+ * `width`/`height` here are already target pixels.
+ */
+async function rasterizeSvg(
+  svg: string,
+  width: number,
+  height: number,
+): Promise<HTMLCanvasElement> {
+  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(width);
+    canvas.height = Math.round(height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Could not get a 2D canvas context.');
+    ctx.drawImage(img, 0, 0);
+    return canvas;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/**
  * A small PNG data URI of the current map, for the library's version list.
  *
  * Captured at save time because that is the only time it is possible: MapCanvas
@@ -230,21 +267,7 @@ export async function captureThumbnail(source: SVGSVGElement, background: string
     fitBox: THUMB_BOX,
     outlineText: false,
   });
-  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
-  try {
-    const img = new Image();
-    img.src = url;
-    await img.decode();
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(width);
-    canvas.height = Math.round(height);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Could not get a 2D canvas context.');
-    ctx.drawImage(img, 0, 0);
-    return canvas.toDataURL('image/png');
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  return (await rasterizeSvg(svg, width, height)).toDataURL('image/png');
 }
 
 /** Export the current map as a downloaded PNG file rendered at `scale`× size. */
@@ -254,31 +277,10 @@ export async function exportCanvasPng(
   basename: string,
   scale = PNG_SCALE,
 ): Promise<void> {
-  // pixelScale bakes the 4× into the SVG's own width/height (viewBox unchanged),
-  // so `width`/`height` here are already the target pixel dimensions and the
-  // vector rasterizes crisply at full resolution — no context scaling needed.
+  // pixelScale bakes the 4× into the SVG's own width/height (viewBox unchanged).
   const { svg, width, height } = await buildExportSvg(source, { background, pixelScale: scale });
-  const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
-  try {
-    const img = new Image();
-    img.src = url;
-    // Text is already outlined to paths, so there are no fonts to wait on; decode()
-    // still gates on the image being fully ready to paint (more reliable than onload).
-    await img.decode();
-
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.round(width);
-    canvas.height = Math.round(height);
-    const ctx = canvas.getContext('2d');
-    if (!ctx) throw new Error('Could not get a 2D canvas context.');
-    ctx.drawImage(img, 0, 0);
-
-    const pngBlob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, 'image/png'),
-    );
-    if (!pngBlob) throw new Error('PNG encoding failed.');
-    downloadBlob(pngBlob, `${basename}.png`);
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  const canvas = await rasterizeSvg(svg, width, height);
+  const pngBlob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
+  if (!pngBlob) throw new Error('PNG encoding failed.');
+  downloadBlob(pngBlob, `${basename}.png`);
 }
