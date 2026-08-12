@@ -94,7 +94,7 @@ function PerfStats() {
  * View — click the button again, click away, or press Escape.
  */
 export function PerfPopover() {
-  const { open, setOpen, wrapRef } = usePopover();
+  const { open, setOpen, wrapRef, panelStyle } = usePopover({ anchored: true });
   const panelId = useId();
   return (
     <div className="options-popover-wrap" ref={wrapRef}>
@@ -116,6 +116,7 @@ export function PerfPopover() {
           id={panelId}
           role="dialog"
           aria-label="Performance"
+          style={panelStyle}
         >
           <PerfStats />
         </div>

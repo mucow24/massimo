@@ -27,7 +27,7 @@ import {
  * muted accelerator hint — the same job, so the same chrome.
  */
 export function ViewPopover() {
-  const { open, setOpen, wrapRef } = usePopover();
+  const { open, setOpen, wrapRef, panelStyle } = usePopover({ anchored: true });
   const panelId = useId();
 
   // One subscription per flag rather than a whole-store read: the store also
@@ -64,7 +64,13 @@ export function ViewPopover() {
         <EyeOpenIcon />
       </button>
       {open && (
-        <div className="view-popover" id={panelId} role="dialog" aria-label="View">
+        <div
+          className="view-popover"
+          id={panelId}
+          role="dialog"
+          aria-label="View"
+          style={panelStyle}
+        >
           {VISIBILITY_ITEMS.map((item, i) => {
             const prev = i > 0 ? VISIBILITY_ITEMS[i - 1] : null;
             return (

@@ -316,7 +316,14 @@ select option {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   box-shadow: 0 4px 12px var(--shadow-tint);
-  z-index: 1;
+  /* Above the sidebar's own z-index:1, which — being equal, and earlier in the
+     DOM — used to lose the tie and paint over this whole stacking context. The
+     two never overlap in flow (different grid rows), so the only thing this
+     orders is a panel opened from the strip and hanging down into the canvas
+     row: at a narrow window the View and Perf panels reach the sidebar's
+     column, and their z-index:100 is scoped INSIDE here, so it could not save
+     them. Everything portaled to `.app` sits at 100+ and still clears this. */
+  z-index: 2;
   /* The toolbar's items keep their natural width (see the flex-shrink:0 rule
      below). When they exceed the viewport the STRIP scrolls, not the page: a
      window-level scrollbar would pan the whole app — canvas included — and
@@ -324,8 +331,12 @@ select option {
      well. Scrolling here also zeroes the grid item's automatic minimum size,
      so the app never outgrows the viewport, the strip's background covers
      every button, and the sidebar stays flush against the true right edge.
-     The menu panels rendered inside the strip escape the clip because Radix
-     positions them fixed (toolbarOverflow e2e holds this). */
+
+     Setting either axis makes the OTHER compute to `auto` as well, so the strip
+     clips vertically too: every panel opened from inside it must be positioned
+     fixed, or it is swallowed by 40px of chrome. The Radix menus get that from
+     their popper and Help from its `.app` portal; the hand-rolled ones get it
+     from usePopover's `panelStyle`. toolbarOverflow e2e holds all four. */
   overflow-x: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
@@ -502,18 +513,19 @@ select option {
   position: relative;
   display: inline-flex;
 }
+/* Placement — `position: fixed` and the offsets both — comes from usePopover's
+   `panelStyle`; see the hook for why it cannot be `absolute`. This rule owns
+   the chrome, and the WIDTH, which the placement makes its business: shrink-to-
+   fit resolves against the containing block, and a fixed panel's is the
+   viewport rather than the 26px wrap that used to pin every panel to its
+   `min-width` floor. Left to itself each would now sprawl to max-content. */
 .options-popover {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: 4px;
   z-index: 100;
   background: var(--surface-raised);
   border: 1px solid var(--border);
   border-radius: 4px;
   box-shadow: var(--shadow-pop);
   padding: 10px 12px;
-  min-width: 240px;
   font-size: var(--fs-small);
   color: var(--text);
 }
@@ -624,7 +636,7 @@ select option {
    feels slow. Same panel chrome as Options; wider, because these labels are
    words rather than the 72px control column Options uses. */
 .perf-popover {
-  min-width: 270px;
+  width: 270px;
 }
 .perf-group + .perf-group {
   margin-top: 10px;
@@ -665,18 +677,16 @@ select option {
   position: relative;
   display: inline-flex;
 }
+/* Placement from usePopover's `panelStyle`, explicit width — both for the
+   reasons spelled out on .options-popover. 379px at max-content. */
 .view-popover {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: 4px;
+  width: 168px;
   z-index: 100;
   background: var(--surface-raised);
   border: 1px solid var(--border);
   border-radius: 4px;
   box-shadow: var(--shadow-pop);
   padding: 8px 12px;
-  min-width: 168px;
   font-size: var(--fs-small);
   color: var(--text);
 }
@@ -843,7 +853,7 @@ select option {
 .color-field-popover {
   position: fixed;
   /* The picker portals up to `.app` (ColorField), so it lives in the ROOT
-     stacking context alongside the toolbar (z-index:1) and sidebar (z-index:1)
+     stacking context alongside the toolbar (z-index:2) and sidebar (z-index:1)
      — above the isolated canvas layer that traps the item popovers (see
      .canvas-host). This z-index keeps it above BOTH: a picker opened from a
      canvas-popover swatch clears the canvas layer, and one opened from a
@@ -1644,7 +1654,7 @@ button.field-select {
     0 12px 28px rgba(0, 0, 0, 0.16);
   padding: 4px;
   /* FieldSelectContent portals this panel to `.app`, so its z-index competes in
-     the ROOT stacking context: 100 clears the toolbar + sidebar (z-index 1) and
+     the ROOT stacking context: 100 clears the toolbar (2) + sidebar (1) and
      the canvas-host layer (isolate, z-index auto) that would otherwise bury a
      panel flipped up over the toolbar. Below the color picker (1200) / help
      (1300), which never co-open with a select. */

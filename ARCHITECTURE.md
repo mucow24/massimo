@@ -243,6 +243,9 @@ src/
     SegmentedToggle.tsx         # the ONE pick-one control (~16 inline Radix ToggleGroup clusters)
     FieldSelectContent.tsx      # shared Radix Select panel: portals popover Selects to .app (escapes
                                 #   the .canvas-host isolate layer) + bounds/scrolls a long list
+    usePopover.ts               # open/dismiss + `panelStyle` for the hand-rolled toolbar panels
+                                #   (View, Perf): the strip scrolls its tail, so it clips on BOTH
+                                #   axes and a panel must be fixed-positioned to escape
     canvas/                     # interaction layer: drag/placement/viewport hooks + overlay layers
     inspector/                  # LineInspector (hosted by the pinned on-canvas LinePopover; identity +
                                 #   line-style fields — stop/topology editing is canvas-driven, see
