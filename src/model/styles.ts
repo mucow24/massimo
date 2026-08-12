@@ -669,8 +669,8 @@ function stampStyleFields(
 }
 
 /**
- * Stamp a style's FULL props onto an item and tag it — the dropdown pick and
- * the "Revert to style" button, so it also clears every per-field override.
+ * Stamp a style's FULL props onto an item and tag it — the dropdown pick, so
+ * it also clears every per-field override.
  * No-ops (same reference) when the style or item is missing, or the item is
  * tagged AND its values already match — the skip is by VALUE, not by tag, so
  * applying a style to a tagged-but-diverged item resets it.

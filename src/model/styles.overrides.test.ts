@@ -136,7 +136,7 @@ describe('style edits propagate per-field; overridden fields survive', () => {
     expect(doc.textLabels.b.weight).toBe(300);
   });
 
-  it('re-applying the style clears every override (Revert to style)', () => {
+  it('re-applying the style clears every override (the dropdown re-pick)', () => {
     let doc = twoLabels();
     doc = T.updateTextLabel(doc, 'b', { weight: 700 });
     doc = applyStyleToItem(doc, 'y1', 'b');

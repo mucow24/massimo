@@ -3576,7 +3576,9 @@ body:has(.app[data-theme='dark']) {
    six item popovers/inspectors whose fields a style can cover) reserves a
    small left gutter, so field labels stay aligned whether or not an override
    dot is present; the dot itself sits absolutely in that gutter, marking a
-   field that diverges from the item's style — clicking it reverts the field. */
+   field that diverges from the item's style — clicking it reverts the field.
+   The style row's own dot rides the same gutter and stands for every covered
+   field at once. */
 .style-fields .row,
 .style-fields .row-block,
 .style-fields .field-row,
@@ -3605,8 +3607,8 @@ body:has(.app[data-theme='dark']) {
   cursor: default;
 }
 
-/* The Sync-to-style / Revert-to-style buttons beside the style dropdown:
-   compact icon squares wearing the field-select ring. */
+/* The Sync-to-style button beside the style dropdown: a compact icon square
+   wearing the field-select ring. */
 .style-row-btn {
   display: inline-flex;
   align-items: center;
