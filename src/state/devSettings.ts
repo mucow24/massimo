@@ -14,14 +14,17 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 export interface GuideRenderSettings {
   /** Overrides `theme.alignGuide`, the idle stroke; null follows the theme. */
   color: string | null;
-  /** Overrides the paper-toned casing (`theme.canvasBg`); null follows it. */
+  /** Overrides the guide casing (`theme.alignGuideCasing`); null follows it. */
   casingColor: string | null;
-  /** SVG dasharray in recipe px, held exactly as typed — "5 2". */
+  /** SVG dasharray in recipe px, held exactly as typed — "10 2". */
   dash: string;
   /** The casing's own dasharray, same units and same held-as-typed contract.
-   *  Defaults to the core's pattern, which is what makes the casing hug each
-   *  dash. Both patterns start a dash at the shared world anchor, so a longer
-   *  casing overhangs each dash's TAIL and leaves its head flush — casing both
+   *  Unusable text falls back to the CORE's pattern, which hugs each dash; the
+   *  shipped recipe instead runs it solid ("1 0" — a dash with no gap), an
+   *  unbroken rail under a dashed core. A gapless pattern skips the dasharray
+   *  entirely at the DOM (see GuideView). Both patterns start a dash at the
+   *  shared world anchor, so a longer casing overhangs each dash's TAIL and
+   *  leaves its head flush — casing both
    *  ends of a dash is not reachable from here (that would want a phase shift
    *  of half the difference, which multi-run patterns like "9 3 1 3" cannot
    *  express as one number). Equal periods keep the two in register the whole
@@ -50,24 +53,25 @@ export interface GuideRenderSettings {
 export const DEFAULT_GUIDE_RENDER: GuideRenderSettings = {
   color: null,
   casingColor: null,
-  dash: '5 2',
-  casingDash: '5 2',
+  dash: '10 2',
+  casingDash: '1 0',
   thickness: 1.5,
-  casingThickness: 0.75,
+  casingThickness: 0.5,
   minThickness: 0.5,
-  transitionZoomPercent: 200,
+  transitionZoomPercent: 300,
 };
 
-const DEFAULT_DASH: readonly number[] = [5, 2];
+const DEFAULT_DASH: readonly number[] = [10, 2];
 
 /**
  * The dash text as a list of recipe-px lengths. Falls back to `fallback` for
  * anything unusable — the field holds whatever is typed, and half of "5 2" is
  * not a pattern, so mid-edit text must not blank the guides off the canvas.
- * All-zero counts as unusable for the same reason: it draws nothing. The
- * casing hands in the CORE's parsed pattern rather than taking the default,
- * so an emptied casing field re-registers with the core instead of snapping
- * to a 5 2 the core may not be wearing.
+ * All-zero counts as unusable for the same reason: it draws nothing (a zero
+ * GAP is fine — "1 0" is how the casing is dialed solid). The casing hands in
+ * the CORE's parsed pattern rather than taking the default, so an emptied
+ * casing field re-registers with the core instead of snapping to a 10 2 the
+ * core may not be wearing.
  */
 export function parseDashPattern(
   text: string,
@@ -90,6 +94,17 @@ export function parseDashPattern(
 export function dashPeriod(dash: readonly number[]): number {
   const sum = dash.reduce((a, b) => a + b, 0);
   return dash.length % 2 === 1 ? sum * 2 : sum;
+}
+
+/**
+ * Is every GAP in the pattern zero — i.e. does it draw as one unbroken stroke?
+ * ("1 0" is how the casing is dialed solid.) An odd-length list is never
+ * gapless however it reads: SVG runs it twice, so each dash length serves as a
+ * gap on the second pass ("4" is 4 on, 4 off). All-zero can't reach here —
+ * parseDashPattern rejects it as unusable.
+ */
+export function isGaplessDash(dash: readonly number[]): boolean {
+  return dash.length % 2 === 0 && dash.every((v, i) => i % 2 === 0 || v === 0);
 }
 
 interface DevSettingsState {

@@ -79,6 +79,34 @@ describe('themeColors', () => {
     });
   });
 
+  // The alignment guides' COLORS live in the palette (their geometry — dashes,
+  // widths, the zoom curve — is in useDevSettings). Day gets a saturated blue
+  // over a translucent near-white casing that reads as a rail across band art;
+  // night keeps the lifted periwinkle and a black casing that melts into the
+  // black paper, unchanged.
+  describe('alignment guide colors', () => {
+    it('day: a blue guide over a translucent near-white casing', () => {
+      const c = themeColors(false);
+      expect(c.alignGuide).toBe('#0067ff');
+      expect(c.alignGuideCasing).toBe('#fafafab5');
+    });
+
+    it('night is left on its own values', () => {
+      const c = themeColors(true);
+      expect(c.alignGuide).toBe('#8c9cf2');
+      expect(c.alignGuideCasing).toBe('#000000');
+    });
+
+    it('the day casing holds across the dimmed papers, like the guide color', () => {
+      // alignGuide is one day value across white/gray/black; the casing follows
+      // suit — a fixed translucent rail rather than melting into each paper.
+      for (const paper of ['white', 'gray', 'black'] as const) {
+        expect(themeColors(false, paper).alignGuide).toBe('#0067ff');
+        expect(themeColors(false, paper).alignGuideCasing).toBe('#fafafab5');
+      }
+    });
+  });
+
   // The editor's interaction accent (marquee, drop targets, mode frames) lives
   // in the palette so both modes define it in one place. Light keeps the
   // original editing blue; dark must be a brighter variant — the light blue is

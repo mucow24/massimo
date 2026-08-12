@@ -1,7 +1,7 @@
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { guideSegmentInBox } from '../geometry/snap';
 import { useLivePendingZoom } from '../state/viewportStore';
-import { dashPeriod, parseDashPattern, useDevSettings } from '../state/devSettings';
+import { dashPeriod, isGaplessDash, parseDashPattern, useDevSettings } from '../state/devSettings';
 import type { AlignmentGuide, GuideOrientation } from '../model/types';
 
 // How the ink is sized. The recipe is written in SCREEN px at the transition
@@ -18,13 +18,16 @@ import type { AlignmentGuide, GuideOrientation } from '../model/types';
 // (state/devSettings.ts), whose defaults ARE the recipe, and the Developer
 // pane's Guide rendering section turns them.
 //
-// The paper-toned under-stroke below (its own width and dash dials, the width
-// per SIDE of the core) comes from the two-tone trick from the selection ring:
-// one tone vanished against the wrong body, so the dash carries its own
-// contrast. Guides paint BELOW map ink, so the casing can only ever win
-// against what sits under them — polygons, images, the grid — where it cuts a
-// paper outline around each dash; on bare canvas it disappears into the paper
-// it matches.
+// The under-stroke below (its own color, width and dash dials, the width per
+// SIDE of the core) comes from the two-tone trick from the selection ring: one
+// tone vanished against the wrong body, so the casing carries its own contrast.
+// Its color is theme.alignGuideCasing — its own theme slot, a translucent
+// near-white on day paper and black on night. Guides paint BELOW map ink, so
+// the casing can only ever win against what sits under them — polygons,
+// images, the grid — where a solid rail (as the recipe ships it; dialed to the
+// core's own pattern it outlines each dash instead) reads against band art. On
+// bare paper the day near-white all but disappears into it, and night's black
+// disappears outright.
 
 // The grab stroke's screen-constant width — the one part of the guide that is
 // sized for the finger rather than the eye.
@@ -53,10 +56,11 @@ interface Props {
   // The idle one is what a Developer-pane color dial replaces; the states are
   // never overridden (see `stroke` below).
   guideColor: string;
-  // The casing under-stroke — theme.canvasBg, the actual paper (it follows
-  // the dimmed day papers; this layer is export-excluded, so it sits on the
-  // screen side of the export door). NOT theme.underlay, which is
-  // export-reaching map paint deliberately frozen white across day papers.
+  // The casing under-stroke's color — theme.alignGuideCasing, a fixed
+  // translucent near-white on day paper (black on night). Its own theme slot
+  // rather than theme.canvasBg: a translucent rail has to read OVER the paper
+  // and the band art, not melt into whichever paper is selected. This whole
+  // layer is export-excluded, so it sits on the screen side of the export door.
   casingColor: string;
   selectedColor: string;
   hoverColor: string;
@@ -82,9 +86,9 @@ interface Props {
 
 /**
  * One alignment guide: a dashed line spanning the whole (overdrawn) canvas
- * (export-excluded by the layer that mounts this), riding a paper-toned
- * casing so the dashes stay legible over the background band painted below
- * guides — polygons, images, grid (map ink paints above and simply covers a
+ * (export-excluded by the layer that mounts this), riding a casing rail so the
+ * dashes stay legible over the background band painted below guides —
+ * polygons, images, grid (map ink paints above and simply covers a
  * guide it crosses). Selection,
  * hover and snap engagement are each a RESTROKE of the core — selected
  * amber, hover the softened amber, engaged the accent under the snap chrome
@@ -138,7 +142,7 @@ export function GuideView({
   const scale = Math.min(Math.max(z / (recipe.transitionZoomPercent / 100), floor), 1);
   const ink = (v: number) => (v * scale) / z;
   // The casing is an OUTSET on the core, so a negative dial insets it — the
-  // paper then shows only where the casing dash overhangs the core's. Past
+  // casing then shows only where its dash overhangs the core's. Past
   // half the core's width the pair asks for a negative stroke, which the DOM
   // reads as an invalid attribute rather than as a hidden one; the pane floors
   // the dial there, and this floors the pair the dials can still straddle by
@@ -174,6 +178,17 @@ export function GuideView({
     const period = ink(dashPeriod(pattern));
     return ((along % period) + period) % period;
   };
+  // A gapless pattern draws as one unbroken stroke, so it goes to the DOM as
+  // one — no dasharray at all. Skia does not special-case a zero gap: it walks
+  // the pattern dash by dash regardless, and these periods are a fraction of a
+  // SCREEN px (1 recipe px × a scale that bottoms out at ⅓) stretched over the
+  // overdrawn span, which is thousands of segments per guide per raster —
+  // re-paid on every zoom frame and every repaint behind a drag. Identical
+  // pixels either way; the pattern is pure cost.
+  const dashAttrs = (pattern: readonly number[]) =>
+    isGaplessDash(pattern)
+      ? { strokeDasharray: undefined, strokeDashoffset: undefined }
+      : { strokeDasharray: pattern.map(ink).join(' '), strokeDashoffset: phaseOf(pattern) };
   // Every state is a restroke of the core, so a color dial can only be the
   // IDLE one — an override that swallowed selected/engaged/hover would take
   // the states with it.
@@ -201,8 +216,7 @@ export function GuideView({
         y2={y2}
         stroke={recipe.casingColor ?? casingColor}
         strokeWidth={ink(casingWidth)}
-        strokeDasharray={casingDashes.map(ink).join(' ')}
-        strokeDashoffset={phaseOf(casingDashes)}
+        {...dashAttrs(casingDashes)}
         pointerEvents="none"
       />
       <line
@@ -213,8 +227,7 @@ export function GuideView({
         y2={y2}
         stroke={stroke}
         strokeWidth={ink(recipe.thickness)}
-        strokeDasharray={dashes.map(ink).join(' ')}
-        strokeDashoffset={phaseOf(dashes)}
+        {...dashAttrs(dashes)}
         pointerEvents="none"
       />
       <line

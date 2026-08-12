@@ -125,7 +125,7 @@ function GuideRenderControls() {
         <ColorField
           id="dev-guide-casing"
           ariaLabel="Guide casing color"
-          value={guide.casingColor ?? theme.canvasBg}
+          value={guide.casingColor ?? theme.alignGuideCasing}
           onChange={(c) => setGuide({ casingColor: c })}
         />
       </div>

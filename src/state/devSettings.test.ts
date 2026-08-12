@@ -1,5 +1,11 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { DEFAULT_GUIDE_RENDER, dashPeriod, parseDashPattern, useDevSettings } from './devSettings';
+import {
+  DEFAULT_GUIDE_RENDER,
+  dashPeriod,
+  isGaplessDash,
+  parseDashPattern,
+  useDevSettings,
+} from './devSettings';
 
 afterEach(() => {
   useDevSettings.getState().resetGuide();
@@ -43,6 +49,25 @@ describe('dashPeriod', () => {
   it('doubles an odd-length one — SVG runs the list twice before it repeats', () => {
     expect(dashPeriod([4])).toBe(8);
     expect(dashPeriod([5, 2, 1])).toBe(16);
+  });
+});
+
+describe('isGaplessDash', () => {
+  it('is true when every gap is zero — the pattern draws unbroken', () => {
+    expect(isGaplessDash([1, 0])).toBe(true);
+    expect(isGaplessDash([4, 0])).toBe(true);
+    expect(isGaplessDash([9, 0, 3, 0])).toBe(true);
+  });
+
+  it('is false for any real gap', () => {
+    expect(isGaplessDash([10, 2])).toBe(false);
+    expect(isGaplessDash([9, 0, 3, 1])).toBe(false);
+  });
+
+  it('is false for an ODD-length list — SVG doubles it, so the dashes become gaps', () => {
+    // "4" runs 4 on, 4 off: it reads gapless as written but draws dashed.
+    expect(isGaplessDash([4])).toBe(false);
+    expect(isGaplessDash([5, 2, 1])).toBe(false);
   });
 });
 
