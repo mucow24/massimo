@@ -202,8 +202,8 @@ function GuideRenderControls() {
       <p className="dev-note">
         Thicknesses are screen px at the transition zoom; below it the ink rides the canvas, down to
         the minimum. Casing thickness is per side, and scales with the core — the proportion holds
-        at every zoom. A casing dash longer than the core wraps the dash ends, which an equal one
-        leaves bare.
+        at every zoom. A longer casing dash overhangs each dash tail, never its head; keep its
+        period equal to the core or the two drift apart along the line.
       </p>
       <button type="button" className="ghost-btn" onClick={resetGuide}>
         Reset

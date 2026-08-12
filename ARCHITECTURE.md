@@ -746,7 +746,8 @@ guides; map ink paints above them and simply covers a guide it crosses). That ca
 own width and dash dials but not its own curve: it rides the CORE's scale, so the proportion
 holds at every zoom and the casing stops shrinking where the core's floor stops it. Dash phase
 is anchored to the line's own world foot — each pattern on its OWN period, so core and casing
-are separately pan-stable — and ink size tracks the in-flight wheel zoom, so a pan or zoom
+are separately pan-stable, though only equal periods keep the two in register with each other
+past the anchor — and ink size tracks the in-flight wheel zoom, so a pan or zoom
 commit neither re-phases nor pops the pattern; only the fat grab stroke stays plain
 screen-constant, so hit comfort survives zooming out however thin the ink runs. The whole
 recipe — both colors, both dash patterns, the core and casing widths, the screen floor, and

@@ -239,6 +239,19 @@ describe('<GuideView /> developer dials', () => {
     expect(inkOf(container).dashes).toEqual([2.5, 1]);
   });
 
+  it('falls back to the CORE pattern while the casing text is unusable', () => {
+    // Clearing the field to retype must not de-register the casing from a
+    // non-default core: the generic 5 2 fallback would visibly unstitch the
+    // two mid-edit, which is the opposite of what the fallback is for.
+    setGuide({ dash: '9 3', casingDash: '' });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    const casing = container.querySelector('[data-guide-casing]')!;
+    const ink = container.querySelector('[data-guide-ink]')!;
+    expect(casing.getAttribute('stroke-dasharray')).toBe('4.5 1.5');
+    expect(casing.getAttribute('stroke-dasharray')).toBe(ink.getAttribute('stroke-dasharray'));
+    expect(casing.getAttribute('stroke-dashoffset')).toBe(ink.getAttribute('stroke-dashoffset'));
+  });
+
   it('phases the casing on its OWN period, so a differing pattern is pan-stable too', () => {
     // Core period 7, casing period 4: borrowing the core's period here would
     // re-phase the casing on every pan or zoom commit — the flicker the
@@ -283,6 +296,15 @@ describe('<GuideView /> developer dials', () => {
     expect(Number(line.getAttribute('stroke-width'))).toBe(0);
     for (const attr of ['stroke-width', 'stroke-dasharray', 'stroke-dashoffset']) {
       expect(line.getAttribute(attr)).not.toMatch(/NaN/);
+    }
+    // The casing carries its own pattern and phase through the same unfloored
+    // scale, so it needs the same guard. It keeps DRAWING at a zeroed core —
+    // an independent dial holding its width is the dial working, not a bug —
+    // so the one thing to pin is that it stays a number.
+    const casing = container.querySelector('[data-guide-casing]')!;
+    expect(Number(casing.getAttribute('stroke-width'))).toBeCloseTo(1.5, 10);
+    for (const attr of ['stroke-width', 'stroke-dasharray', 'stroke-dashoffset']) {
+      expect(casing.getAttribute(attr)).not.toMatch(/NaN/);
     }
   });
 

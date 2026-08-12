@@ -18,12 +18,16 @@ import type { AlignmentGuide, GuideOrientation } from '../model/types';
 // (state/devSettings.ts), whose defaults ARE the recipe, and the Developer
 // pane's Guide rendering section turns them.
 //
-// The paper-toned under-stroke (its own dial, `casingThickness`, per SIDE of
-// the core) comes from the two-tone trick from the selection ring: one tone
-// vanished against the wrong body, so the dash carries its own contrast.
-// Guides paint BELOW map ink, so the casing can only ever win against what
-// sits under them — polygons, images, the grid — where it cuts a paper outline
-// around each dash; on bare canvas it disappears into the paper it matches.
+// The paper-toned under-stroke below (its own width and dash dials, the width
+// per SIDE of the core) comes from the two-tone trick from the selection ring:
+// one tone vanished against the wrong body, so the dash carries its own
+// contrast. Guides paint BELOW map ink, so the casing can only ever win
+// against what sits under them — polygons, images, the grid — where it cuts a
+// paper outline around each dash; on bare canvas it disappears into the paper
+// it matches.
+
+// The grab stroke's screen-constant width — the one part of the guide that is
+// sized for the finger rather than the eye.
 const HIT_PX = 12;
 
 // The direction the guide MOVES (its one degree of freedom, perpendicular to
@@ -125,7 +129,7 @@ export function GuideView({
   // identity only moves when a dial is turned, so idle frames are free.
   const recipe = useDevSettings((s) => s.guide);
   const dashes = parseDashPattern(recipe.dash);
-  const casingDashes = parseDashPattern(recipe.casingDash);
+  const casingDashes = parseDashPattern(recipe.casingDash, dashes);
   const px = (v: number) => v / z;
   // The floor as a fraction of the core. A thickness dialed to zero leaves it
   // meaningless — and 0/0 would reach the DOM as stroke-width="NaN" — so the
@@ -156,7 +160,9 @@ export function GuideView({
   // Each pattern phases on its OWN period: core and casing meet at the anchor
   // (identical patterns therefore stay locked dash-for-dash), and a casing
   // dialed to a different period is anchored just as firmly instead of
-  // re-phasing against the core's.
+  // re-phasing against the core's. Firmly anchored is not the same as in
+  // register, though — unequal periods agree at the anchor and walk apart
+  // along the line, which is the casing dial's to get wrong, not this math's.
   const phaseOf = (pattern: readonly number[]) => {
     const period = ink(dashPeriod(pattern));
     return ((along % period) + period) % period;

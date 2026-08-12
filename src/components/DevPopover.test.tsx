@@ -104,6 +104,8 @@ describe('<DevPopover /> guide rendering section', () => {
     );
     expect(screen.getByRole('spinbutton', { name: 'Thickness' })).toHaveValue(1.5);
     expect(screen.getByRole('spinbutton', { name: 'Casing thickness' })).toHaveValue(0.75);
+    // The casing starts on the core's pattern — that is what hugs each dash.
+    expect(screen.getByRole('textbox', { name: 'Casing dash' })).toHaveValue('5 2');
   });
 
   it('writes each dial straight to the live recipe', async () => {
