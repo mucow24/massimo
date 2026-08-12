@@ -1569,6 +1569,7 @@ export function MapCanvas() {
                   vbW={overdrawn.vbW}
                   vbH={overdrawn.vbH}
                   guideColor={theme.alignGuide}
+                  casingColor={theme.canvasBg}
                   selectedColor={theme.alignGuideSelected}
                   hoverColor={theme.alignGuideHover}
                   accentColor={theme.accent}
@@ -1593,6 +1594,7 @@ export function MapCanvas() {
                     vbW={overdrawn.vbW}
                     vbH={overdrawn.vbH}
                     guideColor={theme.accent}
+                    casingColor={theme.canvasBg}
                     selectedColor={theme.accent}
                     hoverColor={theme.accent}
                     accentColor={theme.accent}

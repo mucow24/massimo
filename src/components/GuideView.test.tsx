@@ -1,20 +1,22 @@
-import { describe, it, expect } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, it, expect, afterEach } from 'vitest';
+import { render, act } from '@testing-library/react';
 import { GuideView } from './GuideView';
 import { makeGuide } from '../test/fixtures';
+import { useLiveViewportStore } from '../state/viewportStore';
 import type { AlignmentGuide } from '../model/types';
 
-const renderGuide = (guide: AlignmentGuide) =>
+const renderGuide = (guide: AlignmentGuide, zoom = 1, vbX = -500, vbY = -500) =>
   render(
     <svg>
       <GuideView
         guide={guide}
-        zoom={1}
-        vbX={-500}
-        vbY={-500}
+        zoom={zoom}
+        vbX={vbX}
+        vbY={vbY}
         vbW={1000}
         vbH={1000}
         guideColor="#888"
+        casingColor="#fff"
         selectedColor="#a80"
         hoverColor="#cb6"
         accentColor="#1a4ea8"
@@ -27,6 +29,15 @@ const renderGuide = (guide: AlignmentGuide) =>
     </svg>,
   );
 
+const inkOf = (container: HTMLElement) => {
+  const line = container.querySelector('[data-guide-ink]')!;
+  return {
+    width: Number(line.getAttribute('stroke-width')),
+    dashes: line.getAttribute('stroke-dasharray')!.split(' ').map(Number),
+    phase: Number(line.getAttribute('stroke-dashoffset')),
+  };
+};
+
 describe('<GuideView /> diagonals', () => {
   it('draws a diagonal clipped to the overdrawn box, with the move cursor', () => {
     // The / at intercept 200: from the top edge (700, -500)… but x is capped
@@ -36,7 +47,7 @@ describe('<GuideView /> diagonals', () => {
     const { container } = renderGuide(
       makeGuide({ id: 'gu', orientation: 'diagonal-up', offset: 200 }),
     );
-    const visible = container.querySelector('line')!;
+    const visible = container.querySelector('[data-guide-ink]')!;
     expect(Number(visible.getAttribute('x1'))).toBe(-300);
     expect(Number(visible.getAttribute('y1'))).toBe(500);
     expect(Number(visible.getAttribute('x2'))).toBe(500);
@@ -50,5 +61,109 @@ describe('<GuideView /> diagonals', () => {
       makeGuide({ id: 'gd', orientation: 'diagonal-down', offset: 5000 }),
     );
     expect(container.querySelector('[data-guide]')).toBeNull();
+  });
+});
+
+// Recipe: 1.5px stroke, 5/2 dash, 0.5px screen floor, 200% reference zoom.
+describe('<GuideView /> hybrid ink sizing', () => {
+  it('holds screen-constant ink at/above the 200% reference zoom', () => {
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 4);
+    const ink = inkOf(container);
+    // World 1.5/4 → 1.5 screen px at zoom 4.
+    expect(ink.width).toBeCloseTo(0.375, 10);
+    expect(ink.dashes[0]).toBeCloseTo(1.25, 10);
+    expect(ink.dashes[1]).toBeCloseTo(0.5, 10);
+  });
+
+  it('rides the canvas below the reference: frozen world size, shrinking screen size', () => {
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    const ink = inkOf(container);
+    // World 0.75 at zoom 1 = 0.75 screen px — half the reference weight.
+    expect(ink.width).toBeCloseTo(0.75, 10);
+    expect(ink.dashes[0]).toBeCloseTo(2.5, 10);
+    expect(ink.dashes[1]).toBeCloseTo(1, 10);
+    // The grab stroke is exempt from the hybrid: plain screen-constant.
+    const hit = container.querySelector('[data-guide-hit]')!;
+    expect(Number(hit.getAttribute('stroke-width'))).toBeCloseTo(12, 10);
+  });
+
+  it('floors the whole recipe at 0.5 screen px when zoomed far out', () => {
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 0.25);
+    const ink = inkOf(container);
+    // Scale floor 0.5/1.5 = ⅓: stroke 1.5·⅓ = 0.5 screen px → 2 world units.
+    expect(ink.width * 0.25).toBeCloseTo(0.5, 10);
+    // Dashes floor along with it (5·⅓ / 2·⅓ screen px), keeping the rhythm.
+    expect(ink.dashes[0] * 0.25).toBeCloseTo(5 / 3, 10);
+    expect(ink.dashes[1] * 0.25).toBeCloseTo(2 / 3, 10);
+  });
+});
+
+describe('<GuideView /> dash phase', () => {
+  const ORIENTATIONS = ['horizontal', 'vertical', 'diagonal-up', 'diagonal-down'] as const;
+
+  it.each(ORIENTATIONS)('anchors the %s pattern to the world line, not the clip box', (o) => {
+    // Same guide, two overdrawn boxes (a pan commit re-clips the segment —
+    // the origin shifts on BOTH axes so every orientation's start actually
+    // moves): the pattern must sit at the same WORLD phase in both, i.e. the
+    // segment start's distance along the line from the guide's (0, offset)
+    // anchor minus dashoffset lands on a whole number of periods. That
+    // distance is x1 (horizontal), y1 (vertical), or x1·√2 (diagonals — the
+    // x-span foreshortens true length). Period at zoom 1: (5+2)·0.5 = 3.5.
+    const starts = new Set<number>();
+    for (const shift of [0, -1]) {
+      const { container, unmount } = renderGuide(
+        makeGuide({ id: 'g', orientation: o, offset: 0 }),
+        1,
+        -500 + shift,
+        -500 + shift,
+      );
+      const line = container.querySelector('[data-guide-ink]')!;
+      const x1 = Number(line.getAttribute('x1'));
+      const y1 = Number(line.getAttribute('y1'));
+      const along = o === 'horizontal' ? x1 : o === 'vertical' ? y1 : x1 * Math.SQRT2;
+      starts.add(along);
+      const phase = Number(line.getAttribute('stroke-dashoffset'));
+      const periods = (along - phase) / 3.5;
+      expect(periods).toBeCloseTo(Math.round(periods), 10);
+      unmount();
+    }
+    // Guard the guard: if the shifted box didn't move the segment start, the
+    // two renders proved nothing.
+    expect(starts.size).toBe(2);
+  });
+});
+
+describe('<GuideView /> casing', () => {
+  it('outlines every dash with the paper tone so the guide reads over any body', () => {
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    const casing = container.querySelector('[data-guide-casing]')!;
+    const ink = container.querySelector('[data-guide-ink]')!;
+    expect(casing.getAttribute('stroke')).toBe('#fff');
+    // 0.75 recipe px per side around the 1.5 core → 3, at the same hybrid
+    // scale as the ink (0.5 at zoom 1).
+    expect(Number(casing.getAttribute('stroke-width'))).toBeCloseTo(1.5, 10);
+    // Identical dash pattern and world phase — the casing hugs each dash.
+    expect(casing.getAttribute('stroke-dasharray')).toBe(ink.getAttribute('stroke-dasharray'));
+    expect(casing.getAttribute('stroke-dashoffset')).toBe(ink.getAttribute('stroke-dashoffset'));
+    expect(casing.getAttribute('pointer-events')).toBe('none');
+    // Painted directly under the core.
+    expect(casing.nextElementSibling).toBe(ink);
+  });
+});
+
+describe('<GuideView /> in-flight zoom', () => {
+  afterEach(() => {
+    useLiveViewportStore.getState().setPending(null);
+  });
+
+  it('sizes ink from the live pending zoom, then falls back to committed', () => {
+    // The committed prop says zoom 1, but a wheel gesture is mid-flight at
+    // zoom 4: the ink must track the gesture (no pop at the settle commit).
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    expect(inkOf(container).width).toBeCloseTo(0.75, 10);
+    act(() => useLiveViewportStore.getState().setPending({ x: 0, y: 0, zoom: 4 }));
+    expect(inkOf(container).width).toBeCloseTo(0.375, 10);
+    act(() => useLiveViewportStore.getState().setPending(null));
+    expect(inkOf(container).width).toBeCloseTo(0.75, 10);
   });
 });
