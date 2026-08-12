@@ -150,6 +150,24 @@ describe('<PaletteEditor /> rows', () => {
     expect(mapSwatches()).toEqual([{ name: 'Yellow', color: '#ffe800' }]);
   });
 
+  // A palette carries at least one color, so once a row is the only one left
+  // its delete stops being a command: it stands disabled, keeping the row's
+  // shape. The reason is its NAME, not a title — Chrome renders no tooltip on
+  // a disabled button, so a reason kept there would reach nobody at all.
+  it('will not delete the last color', async () => {
+    const user = userEvent.setup();
+    renderEditor('map', 'frrf');
+    await user.click(screen.getByRole('button', { name: 'Delete color 2' }));
+    await user.click(screen.getByRole('button', { name: 'Confirm deleting color 2' }));
+
+    expect(screen.queryByRole('button', { name: 'Delete color 1' })).toBeNull();
+    const last = screen.getByRole('button', { name: 'A palette keeps at least one color' });
+    expect(last).toBeDisabled();
+    await user.click(last);
+    expect(screen.queryByRole('button', { name: /^Confirm deleting/ })).toBeNull();
+    expect(mapSwatches()).toEqual([{ name: 'Red', color: '#c1272d' }]);
+  });
+
   it('drag-reorders a row by its handle, one undo entry for the drop', () => {
     renderEditor('map', 'frrf');
     const handle = screen.getByRole('button', { name: 'Reorder color 1' });
@@ -285,7 +303,10 @@ describe('<PaletteEditor /> title and description', () => {
 
   it('refuses a map rename onto another of the map’s palettes, and says why', async () => {
     const user = userEvent.setup();
-    useDoc.setState({ ...useDoc.getState(), palettes: [FRRF, { name: 'other', swatches: [] }] });
+    useDoc.setState({
+      ...useDoc.getState(),
+      palettes: [FRRF, { name: 'other', swatches: [{ name: '1', color: '#0061a8' }] }],
+    });
     renderEditor('map', 'frrf');
     await user.dblClick(screen.getByRole('heading', { level: 3, name: 'frrf' }));
     const input = screen.getByRole('textbox', { name: 'Palette name' });
@@ -299,7 +320,7 @@ describe('<PaletteEditor /> title and description', () => {
   it('renames a library palette, refusing a taken name with the library message', async () => {
     const user = userEvent.setup();
     useCustomPalettes.setState({
-      palettes: [FRRF, { name: 'other', swatches: [] }],
+      palettes: [FRRF, { name: 'other', swatches: [{ name: '1', color: '#0061a8' }] }],
       starred: [],
       sort: 'name',
     });

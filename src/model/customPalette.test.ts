@@ -146,11 +146,13 @@ describe('parseCustomPalette — massimo-palette format', () => {
     expect(r.error).toBe('No valid colors found');
   });
 
-  // An empty palette is a real state — the editor creates them — so an exported
-  // one must come back, unlike the legacy format's non-empty gate.
-  it('accepts an empty colors array', () => {
+  // A palette carries at least one color, so an empty list describes nothing —
+  // the same gate the legacy format has always had.
+  it('rejects an empty colors array', () => {
     const r = parseCustomPalette(file({ colors: [] }));
-    expect(r.ok && r.swatches).toEqual([]);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toBe('A palette needs at least one color');
   });
 
   it('rejects a file claiming some other format', () => {
@@ -220,11 +222,6 @@ describe('serializeCustomPalette', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect({ name: r.name, description: r.description, swatches: r.swatches }).toEqual(palette);
-  });
-
-  it('round-trips an empty palette', () => {
-    const r = parseCustomPalette(serializeCustomPalette({ name: 'x', swatches: [] }));
-    expect(r.ok && r.swatches).toEqual([]);
   });
 
   // A built-in's swatches carry upper-case hex; the parser normalizes, so an

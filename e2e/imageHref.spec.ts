@@ -22,7 +22,7 @@ const INLINE = 'data:image/svg+xml;base64,PHN2Zy8+';
 // silently degrade to exercising `migrate` instead and keep passing. Pinned by
 // reading the config off disk (same pattern as theme.test.ts and styles.css),
 // so a version bump goes red here instead of quietly retargeting the spec.
-const CURRENT_PERSIST_VERSION = 28;
+const CURRENT_PERSIST_VERSION = 29;
 
 test('the seeded version IS the persist config version (drift guard)', () => {
   const storePath = fileURLToPath(new URL('../src/state/store.ts', import.meta.url));

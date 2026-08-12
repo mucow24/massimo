@@ -53,6 +53,30 @@ function truncatePastTo(entry: PastEntry): void {
 }
 
 /**
+ * Mark the top of the undo stack, and hand back a rewind that drops whatever
+ * was recorded above it. For a PROVISIONAL edit — one the app makes on the
+ * user's way in and takes back on the way out — so a round trip that leaves
+ * the doc as it found it leaves the stack that way too. (New… mints an empty
+ * palette; leaving the editor without filling it takes that palette out again.
+ * Two entries for nothing — and the first Ctrl+Z would hand back exactly the
+ * empty palette the way out just threw away.)
+ *
+ * The mark is an entry IDENTITY, the same discipline the burst folding above
+ * keeps: a stack cleared underneath it — a file load, mid-visit — rewinds
+ * nothing rather than cutting into a history belonging to another document. A
+ * mark taken on an EMPTY stack has no identity to hold, so its rewind empties
+ * the stack; call the rewind only when the provisional edit is genuinely being
+ * taken back, which is what makes that the right reading rather than a guess.
+ */
+export function markHistory(): () => void {
+  const mark = topPastState();
+  return () => {
+    if (mark === undefined) useDoc.temporal.setState({ pastStates: [] });
+    else truncatePastTo(mark);
+  };
+}
+
+/**
  * Run a write that a user can fire in rapid succession without lifting a
  * finger — a wheel tick over a slider or spinbutton — and fold consecutive
  * ones into a SINGLE undo entry. A trackpad emits dozens of wheel events per

@@ -32,6 +32,22 @@ describe('useCustomPalettes', () => {
     expect(useCustomPalettes.getState().palettes).toEqual([]);
   });
 
+  // A palette carries at least one color wherever it comes to rest, and the
+  // library is the one place it rests longest.
+  it('refuses a palette with no colors, changing nothing', () => {
+    add('a');
+    expect(useCustomPalettes.getState().addPalette({ name: 'empty', swatches: [] })).toBe(false);
+    expect(useCustomPalettes.getState().palettes.map((p) => p.name)).toEqual(['a']);
+  });
+
+  it('refuses to empty a palette it already holds', () => {
+    add('a', '#c1272d');
+    useCustomPalettes.getState().addPalette({ name: 'a', swatches: [] });
+    expect(useCustomPalettes.getState().palettes[0].swatches).toEqual([
+      { name: '1', color: '#c1272d' },
+    ]);
+  });
+
   // The library and a map are meant to be independent, and saving a map's
   // palette back here is the one call that hands over a live document array.
   it('stores a COPY — the caller’s swatch array cannot reach the library', () => {
@@ -108,21 +124,29 @@ describe('useCustomPalettes', () => {
     expect(state.sort).toBe('starred');
   });
 
+  const persisted = (state: unknown, version: number) => {
+    localStorage.setItem('massimo-custom-palettes-v1', JSON.stringify({ state, version }));
+    useCustomPalettes.persist.rehydrate();
+  };
+
   // v0 stored `custom:<slug>` ids alongside the name; the library is name-keyed
   // now, so the migration drops them.
   it('migrates v0 entries by dropping their ids', () => {
-    localStorage.setItem(
-      'massimo-custom-palettes-v1',
-      JSON.stringify({
-        state: {
-          palettes: [{ id: 'custom:x', name: 'x', swatches: [{ name: '1', color: '#abcdef' }] }],
-        },
-        version: 0,
-      }),
+    persisted(
+      { palettes: [{ id: 'custom:x', name: 'x', swatches: [{ name: '1', color: '#abcdef' }] }] },
+      0,
     );
-    useCustomPalettes.persist.rehydrate();
     expect(useCustomPalettes.getState().palettes).toEqual([
       { name: 'x', swatches: [{ name: '1', color: '#abcdef' }] },
     ]);
+  });
+
+  // v1 → v2: New… seeded the library with an empty palette on the way into the
+  // editor, and only the map's copy ever got the colors — so the library kept
+  // a stub under every name it minted, backed out of or not.
+  it('migrates v1 by dropping the palettes carrying no colors', () => {
+    const kept = { name: 'x', swatches: [{ name: '1', color: '#abcdef' }] };
+    persisted({ palettes: [{ name: 'New palette', swatches: [] }, kept], starred: [] }, 1);
+    expect(useCustomPalettes.getState().palettes).toEqual([kept]);
   });
 });

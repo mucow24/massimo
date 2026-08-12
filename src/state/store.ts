@@ -38,7 +38,12 @@ import { pickNextLineName } from '../model/lineNaming';
 import { defaultIdFactory, IdFactory } from '../model/ids';
 import { DEFAULT_DOC } from '../model/transforms';
 import * as T from '../model/transforms';
-import { cyclingColors, FALLBACK_LINE_COLOR, type Palette } from '../model/palettes';
+import {
+  cyclingColors,
+  dropEmptyPalettes,
+  FALLBACK_LINE_COLOR,
+  type Palette,
+} from '../model/palettes';
 import { useCustomPalettes } from './customPalettes';
 import {
   sanitizeImageHrefs,
@@ -420,6 +425,10 @@ if (typeof window !== 'undefined') {
  *   COMMON of their wearers' effective values via the shared
  *   `bakeTextLabelStyleLayout`, so nothing repaints and only the wearers off
  *   the plurality read as per-field overrides.
+ * - v28 → v29: a palette carries at least one color. New… used to seed the map
+ *   with an empty palette on the way into the editor, so backing out left one
+ *   behind — `dropEmptyPalettes` takes those out. `parse()` does the same at
+ *   its own door, per entry, inside `sanitizePalettes`.
  */
 export function migrateDoc(persisted: unknown, version: number): DocState {
   const s = persisted as {
@@ -727,6 +736,13 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
       ...rest,
       palettes: bakeActivePalettes(activePalettes, useCustomPalettes.getState().palettes),
     };
+  }
+  if (v < 29 && out.palettes !== undefined) {
+    // A palette carries at least one color. New… used to seed both the library
+    // and the map on the way into the editor, so a map kept an empty stub under
+    // every "New palette N" that was backed out of. Ordered after the v<24
+    // bake, whose source library may hold stubs of its own.
+    out = { ...out, palettes: dropEmptyPalettes(out.palettes) };
   }
   // Retired UltraLight rung (Söhne's ladder starts at 200) folded onto Thin.
   // Non-version-gated: keyed off the legacy value, idempotent, and returns by
@@ -1475,8 +1491,8 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: debouncedDocStorage,
-        version: 28,
-        // Version migration chain v0 → v28 lives in `migrateDoc` (above), which
+        version: 29,
+        // Version migration chain v0 → v29 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         // `migrate` only runs when the STORED version differs from the config
@@ -1491,7 +1507,8 @@ export const useDoc = create<DocState>()(
         // does: the drift is still being carried by docs saved at the CURRENT
         // version, which by definition never reach `migrate` at all. The image
         // href guard is the same shape — a remote href could be persisted by
-        // any build, this one included.
+        // any build, this one included — and so is the empty-palette drop,
+        // whose source is this build's own editor.
         merge: (persisted, current) => {
           const doc = (persisted ?? {}) as Partial<DocState>;
           const patch: Partial<DocState> = {};
@@ -1509,6 +1526,16 @@ export const useDoc = create<DocState>()(
               patch.svgImages = hrefs.svgImages;
               if (doc.backgroundOrder) patch.backgroundOrder = hrefs.backgroundOrder;
             }
+          }
+          // A palette carries at least one color, and the palette editor mints
+          // an EMPTY one into the doc on the way in — provisional, and thrown
+          // away on the way out, but persisted synchronously in between. Close
+          // the window there and the stub is written at the current version,
+          // which `migrate` never sees. Reference-stable, so a doc with none
+          // passes straight through.
+          if (doc.palettes) {
+            const kept = dropEmptyPalettes(doc.palettes);
+            if (kept !== doc.palettes) patch.palettes = kept;
           }
           // Dot sizes are required stored fields, and a size-less line can be
           // written at the CURRENT version (a legacy clipboard payload pasted

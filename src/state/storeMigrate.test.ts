@@ -1404,6 +1404,27 @@ describe('migrateDoc', () => {
       expect(migrateDoc({ palettes: held, activePalettes: ['bart'] }, 24).palettes).toEqual(held);
     });
   });
+
+  describe('v28 → v29: a stored palette carrying no colors is dropped', () => {
+    // New… used to seed both destinations on the way into the editor, so every
+    // "New palette N" backed out of left an empty one behind.
+    const stored = [
+      { name: 'kept', swatches: [{ name: '1', color: '#010101' }] },
+      { name: 'New palette 2', swatches: [] },
+    ];
+
+    it('drops the empty one, leaving the rest in place', () => {
+      expect(migrateDoc({ palettes: stored }, 28).palettes).toEqual([stored[0]]);
+    });
+
+    it('leaves an ABSENT palettes list alone (the persist merge seeds it)', () => {
+      expect(migrateDoc({ lines: {} }, 28).palettes).toBeUndefined();
+    });
+
+    it('does not run at v29', () => {
+      expect(migrateDoc({ palettes: stored }, 29).palettes).toEqual(stored);
+    });
+  });
 });
 
 describe('beginHistoryGroup', () => {

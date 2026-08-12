@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   pushHistory,
   historyDepth,
+  markHistory,
   redoDepth,
   undo,
   redo,
@@ -41,6 +42,50 @@ describe('pushHistory — undo-stack cap', () => {
     expect(redoDepth()).toBe(1);
     pushHistory(snap);
     expect(redoDepth()).toBe(0);
+  });
+});
+
+// A PROVISIONAL edit — one the app makes on the user's way in and takes back
+// on the way out — should leave the stack as it found it, or a Ctrl+Z would
+// hand back exactly what the way out threw away.
+describe('markHistory — rewinding a provisional edit', () => {
+  beforeEach(() => {
+    useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
+    useDoc.temporal.getState().clear();
+  });
+
+  it('drops everything recorded since the mark, keeping what came before', () => {
+    useDoc.getState().setDocName('Kept');
+    const rewind = markHistory();
+    useDoc.getState().setDocName('Provisional');
+    useDoc.getState().setDocName('Taken back');
+    expect(historyDepth()).toBe(3);
+
+    rewind();
+    expect(historyDepth()).toBe(1);
+    // The entry that survives is the one from BEFORE the mark, so one undo
+    // still reaches the state the provisional edit started from.
+    undo();
+    expect(useDoc.getState().name).toBe(DEFAULT_DOC.name);
+  });
+
+  it('rewinds to empty when the mark was taken on an empty stack', () => {
+    const rewind = markHistory();
+    useDoc.getState().setDocName('Provisional');
+    rewind();
+    expect(historyDepth()).toBe(0);
+  });
+
+  // The mark is an entry IDENTITY, so a stack cleared underneath it (a file
+  // load) is never guessed at — the rewind does nothing rather than cutting
+  // into a history that belongs to another document.
+  it('does nothing when the marked entry is gone', () => {
+    useDoc.getState().setDocName('Kept');
+    const rewind = markHistory();
+    useDoc.temporal.getState().clear();
+    useDoc.getState().setDocName('Another document');
+    rewind();
+    expect(historyDepth()).toBe(1);
   });
 });
 

@@ -20,9 +20,9 @@ const HEX6OR8 = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/;
  * Colors are day/night pairs (both `#RRGGBB` or `#RRGGBBAA`); in storage the
  * night color is kept only when it differs from the day one, and both are
  * normalized to the canonical `normalizeHex` form. Entries with an invalid
- * `day` are skipped; a non-empty list surviving as nothing is rejected, but an
- * explicitly empty palette is legal — the editor creates them. `version` is
- * ignored on read (forward-tolerant, like the map loader).
+ * `day` are skipped, and a file left with no color at all is rejected — a
+ * palette carries at least one, whether it arrived empty or emptied itself.
+ * `version` is ignored on read (forward-tolerant, like the map loader).
  *
  * The legacy "frrf" format — no `format` key:
  *
@@ -79,8 +79,13 @@ function parseMassimoPalette(obj: {
     const name = e.name == null ? String(i + 1) : String(e.name);
     swatches.push({ name, color, ...(night !== undefined && night !== color && { night }) });
   });
-  if (obj.colors.length > 0 && swatches.length === 0) {
-    return { ok: false, error: 'No valid colors found' };
+  if (swatches.length === 0) {
+    // The two ways a file can describe no palette read differently to whoever
+    // has to fix it: one wrote colors we couldn't use, the other wrote none.
+    return {
+      ok: false,
+      error: obj.colors.length > 0 ? 'No valid colors found' : 'A palette needs at least one color',
+    };
   }
   const description =
     typeof obj.description === 'string' && obj.description.trim().length > 0

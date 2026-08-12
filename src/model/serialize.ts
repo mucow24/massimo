@@ -429,6 +429,11 @@ export type ParseResult = { ok: true; doc: MapDoc } | { ok: false; error: string
  * Keep only well-formed palettes, and only the first under any one name — the
  * map's list is keyed by name, so a duplicate would leave one of the pair
  * unreachable. Shared by both load paths.
+ *
+ * A palette that cleans away to no colors is dropped — the same rule
+ * `dropEmptyPalettes` applies to stored ones, judged here per entry as it is
+ * cleaned. Dropping it BEFORE it claims its name is what lets a second, real
+ * palette of that name survive it.
  */
 export function sanitizePalettes(value: unknown): Palette[] {
   if (!Array.isArray(value)) return [];
@@ -439,18 +444,20 @@ export function sanitizePalettes(value: unknown): Palette[] {
     const p = raw as { name?: unknown; swatches?: unknown; description?: unknown };
     if (typeof p.name !== 'string' || !p.name || seen.has(p.name)) continue;
     if (!Array.isArray(p.swatches)) continue;
+    const swatches = p.swatches
+      .filter((s) => s && typeof s.name === 'string' && typeof s.color === 'string')
+      // `night` is kept only when it differs from the day color — the same
+      // collapse invariant the editor and the palette-file parser enforce.
+      .map((s) => ({
+        name: s.name as string,
+        color: s.color as string,
+        ...(typeof s.night === 'string' && s.night !== s.color && { night: s.night as string }),
+      }));
+    if (swatches.length === 0) continue;
     seen.add(p.name);
     out.push({
       name: p.name,
-      swatches: p.swatches
-        .filter((s) => s && typeof s.name === 'string' && typeof s.color === 'string')
-        // `night` is kept only when it differs from the day color — the same
-        // collapse invariant the editor and the palette-file parser enforce.
-        .map((s) => ({
-          name: s.name as string,
-          color: s.color as string,
-          ...(typeof s.night === 'string' && s.night !== s.color && { night: s.night as string }),
-        })),
+      swatches,
       ...(typeof p.description === 'string' &&
         p.description.trim() !== '' && {
           description: p.description,
