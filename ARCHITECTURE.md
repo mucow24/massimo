@@ -3208,7 +3208,7 @@ when **≥2 items** are selected across the eight multi-select lists (idle only)
 Lock all / Unlock all / Delete all over the whole group.
 Every panel — those, the line editor and the station layout editor — is **docked to the
 top-right corner of what's visible of the host** by `usePinnedPopover`, right-aligned on the
-panel's own measured width (248 for the item popovers, 320 for the station/line editors) 8px
+panel's own measured width (each shell sets its own, 248 to 372) 8px
 off the top and right edges. Vertically the body clamps to the viewport and scrolls inside
 itself, its footer sticky at the shell's bottom edge — the panel is pinned to the window, so
 anything past its bottom edge would simply be unreachable. Nothing about the item or the camera

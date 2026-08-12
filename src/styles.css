@@ -1128,6 +1128,12 @@ select option {
 .text-label-popover {
   width: 372px;
 }
+/* The transfer popover runs a notch wider: the longest Draw rung name ("Over
+   stop dot stroke") needs 260px of shell before it stops wrapping inside the
+   dropdown, which the standard width doesn't clear. */
+.transfer-popover {
+  width: 272px;
+}
 /* The header is the panel's title band — the panels are docked to the host
    corner, not dragged: the signature black band wearing the panel's rounded
    top corners, white bold Söhne doing the chrome's talking. Same black in
