@@ -22,6 +22,16 @@ describe('parseDashPattern', () => {
     // All-zero draws nothing at all, which reads as a bug rather than a dial.
     expect(parseDashPattern('0 0')).toEqual(fallback);
   });
+
+  it('takes a caller-supplied fallback — what lets the casing borrow the core', () => {
+    // The casing hands in the core's parsed pattern, so clearing its field to
+    // retype leaves the two registered instead of snapping to a 5 2 the core
+    // may not be wearing.
+    expect(parseDashPattern('', [9, 3])).toEqual([9, 3]);
+    expect(parseDashPattern('0 0', [9, 3])).toEqual([9, 3]);
+    // Usable text still wins over the fallback.
+    expect(parseDashPattern('6 1', [9, 3])).toEqual([6, 1]);
+  });
 });
 
 describe('dashPeriod', () => {

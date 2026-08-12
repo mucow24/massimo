@@ -103,6 +103,9 @@ describe('<DevPopover /> guide rendering section', () => {
       'true',
     );
     expect(screen.getByRole('spinbutton', { name: 'Thickness' })).toHaveValue(1.5);
+    expect(screen.getByRole('spinbutton', { name: 'Casing thickness' })).toHaveValue(0.75);
+    // The casing starts on the core's pattern — that is what hugs each dash.
+    expect(screen.getByRole('textbox', { name: 'Casing dash' })).toHaveValue('5 2');
   });
 
   it('writes each dial straight to the live recipe', async () => {
@@ -120,6 +123,16 @@ describe('<DevPopover /> guide rendering section', () => {
     await user.type(thickness, '3');
     expect(useDevSettings.getState().guide.thickness).toBe(3);
 
+    const casingDash = screen.getByRole('textbox', { name: 'Casing dash' });
+    await user.clear(casingDash);
+    await user.type(casingDash, '6 1');
+    expect(useDevSettings.getState().guide.casingDash).toBe('6 1');
+
+    const casing = screen.getByRole('spinbutton', { name: 'Casing thickness' });
+    await user.clear(casing);
+    await user.type(casing, '2');
+    expect(useDevSettings.getState().guide.casingThickness).toBe(2);
+
     const min = screen.getByRole('spinbutton', { name: 'Min thickness' });
     await user.clear(min);
     await user.type(min, '1');
@@ -129,6 +142,32 @@ describe('<DevPopover /> guide rendering section', () => {
     await user.clear(transition);
     await user.type(transition, '400');
     expect(useDevSettings.getState().guide.transitionZoomPercent).toBe(400);
+  });
+
+  it('takes a negative casing thickness, down to where the casing vanishes', async () => {
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    await openPane(user);
+    const casing = screen.getByRole('spinbutton', { name: 'Casing thickness' });
+    // An inset can only run to half the core's width — past that the casing
+    // stroke would cross zero.
+    expect(casing).toHaveAttribute('min', '-0.75');
+    await user.clear(casing);
+    await user.type(casing, '-0.5');
+    expect(useDevSettings.getState().guide.casingThickness).toBe(-0.5);
+  });
+
+  it('moves the inset floor with the core thickness', async () => {
+    const user = userEvent.setup();
+    render(<Toolbar />);
+    await openPane(user);
+    useDevSettings.getState().setGuide({ thickness: 3 });
+
+    const casing = await screen.findByRole('spinbutton', { name: 'Casing thickness' });
+    expect(casing).toHaveAttribute('min', '-1.5');
+    await user.clear(casing);
+    await user.type(casing, '-2');
+    expect(useDevSettings.getState().guide.casingThickness).toBe(-1.5);
   });
 
   it('shows the theme color until a dial overrides it', async () => {

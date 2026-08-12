@@ -742,14 +742,18 @@ is hybrid-sized — screen-constant at/above 200% zoom, riding the canvas below 
 half a screen px — and each dash sits on a `theme.canvasBg` casing (the selection ring's
 two-tone lesson: a single tone vanishes against the wrong body — the casing melts into the
 paper, dimmed day papers included, and cuts an outline out of the band art painted below
-guides; map ink paints above them and simply covers a guide it crosses). Dash phase is
-anchored to the line's own world foot, and ink size tracks the in-flight wheel zoom, so a
-pan or zoom commit neither re-phases nor pops the pattern; only the fat grab stroke stays
-plain screen-constant, so hit comfort survives zooming out however thin the ink runs. The
-whole recipe — both colors, the dash pattern, the core width, the screen floor, and the zoom
-it flips at — is live in `useDevSettings`, dialed from the Developer pane's **Guide rendering**
-section, and its defaults are the recipe described here (an idle-color override never takes the
-selected / hover / engaged restrokes with it). Born by
+guides; map ink paints above them and simply covers a guide it crosses). That casing has its
+own width and dash dials but not its own curve: it rides the CORE's scale, so the proportion
+holds at every zoom and the casing stops shrinking where the core's floor stops it. Dash phase
+is anchored to the line's own world foot — each pattern on its OWN period, so core and casing
+are separately pan-stable, though only equal periods keep the two in register with each other
+past the anchor — and ink size tracks the in-flight wheel zoom, so a pan or zoom
+commit neither re-phases nor pops the pattern; only the fat grab stroke stays plain
+screen-constant, so hit comfort survives zooming out however thin the ink runs. The whole
+recipe — both colors, both dash patterns, the core and casing widths, the screen floor, and
+the zoom it flips at — is live in `useDevSettings`, dialed from the Developer pane's **Guide
+rendering** section, and its defaults are the recipe described here (an idle-color override
+never takes the selected / hover / engaged restrokes with it). Born by
 dragging out of a **guide well** — slim strips flush with the canvas's top/left edges plus the
 two left corner squares between them: top pulls a horizontal guide down, left a vertical one
 right, the upper-left corner a / and the lower-left a \ — each well mints the guide

@@ -120,7 +120,7 @@ function GuideRenderControls() {
       </div>
       <div className="options-popover-row">
         <label htmlFor="dev-guide-casing" className="options-popover-label">
-          Casing
+          Casing color
         </label>
         <ColorField
           id="dev-guide-casing"
@@ -143,6 +143,20 @@ function GuideRenderControls() {
           onChange={(e) => setGuide({ dash: e.target.value })}
         />
       </div>
+      <div className="options-popover-row">
+        <label htmlFor="dev-guide-casing-dash" className="options-popover-label">
+          Casing dash
+        </label>
+        <input
+          id="dev-guide-casing-dash"
+          type="text"
+          className="dev-text-field"
+          spellCheck={false}
+          autoComplete="off"
+          value={guide.casingDash}
+          onChange={(e) => setGuide({ casingDash: e.target.value })}
+        />
+      </div>
       <NumericFieldRow
         id="dev-guide-thickness"
         label="Thickness"
@@ -152,6 +166,18 @@ function GuideRenderControls() {
         value={guide.thickness}
         getCurrent={() => live().thickness}
         onChange={(n) => setGuide({ thickness: Math.max(0, n) })}
+      />
+      <NumericFieldRow
+        id="dev-guide-casing-thickness"
+        label="Casing thickness"
+        // An outset on the core, so negative insets it — down to half the
+        // core's width, where the casing stroke has shrunk to nothing.
+        min={-guide.thickness / 2}
+        max={3}
+        step={0.25}
+        value={guide.casingThickness}
+        getCurrent={() => live().casingThickness}
+        onChange={(n) => setGuide({ casingThickness: Math.max(-live().thickness / 2, n) })}
       />
       <NumericFieldRow
         id="dev-guide-min-thickness"
@@ -177,7 +203,10 @@ function GuideRenderControls() {
       />
       <p className="dev-note">
         Thicknesses are screen px at the transition zoom; below it the ink rides the canvas, down to
-        the minimum.
+        the minimum. Casing thickness is an outset per side, and scales with the core — the
+        proportion holds at every zoom; negative insets it behind the core, to nothing at half the
+        core width. A longer casing dash overhangs each dash tail, never its head; keep its period
+        equal to the core or the two drift apart along the line.
       </p>
       <button type="button" className="ghost-btn" onClick={resetGuide}>
         Reset

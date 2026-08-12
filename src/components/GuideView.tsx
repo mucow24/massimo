@@ -9,20 +9,25 @@ import type { AlignmentGuide, GuideOrientation } from '../model/types';
 // reference (where the thin line is what buys precise placement), riding the
 // canvas below it (so a zoomed-out overview isn't dominated by giant dashes),
 // floored at the min thickness on screen (so it never fades out entirely).
-// The whole recipe — stroke and dashes together — scales as one, keeping the
-// rhythm; only the grab stroke is exempt and stays plain screen-constant, since
+// The whole recipe — core, casing and dashes together — scales as one off the
+// CORE's thickness/min pair, so the guide reads proportionally the same at
+// every zoom and its casing stops shrinking where the core's floor stops it;
+// only the grab stroke is exempt and stays plain screen-constant, since
 // hit comfort must not shrink with the ink. The numbers were dialed in by eye
 // against a dense map and stay dialable: they live in `useDevSettings`
 // (state/devSettings.ts), whose defaults ARE the recipe, and the Developer
 // pane's Guide rendering section turns them.
 //
-// Paper-toned under-stroke per SIDE of the core (the two-tone trick from the
-// selection ring: one tone vanished against the wrong body, so the dash
-// carries its own contrast). Guides paint BELOW map ink, so the casing can
-// only ever win against what sits under them — polygons, images, the grid —
-// where it cuts a paper outline around each dash; on bare canvas it
-// disappears into the paper it matches.
-const GUIDE_CASING_PX = 0.75;
+// The paper-toned under-stroke below (its own width and dash dials, the width
+// per SIDE of the core) comes from the two-tone trick from the selection ring:
+// one tone vanished against the wrong body, so the dash carries its own
+// contrast. Guides paint BELOW map ink, so the casing can only ever win
+// against what sits under them — polygons, images, the grid — where it cuts a
+// paper outline around each dash; on bare canvas it disappears into the paper
+// it matches.
+
+// The grab stroke's screen-constant width — the one part of the guide that is
+// sized for the finger rather than the eye.
 const HIT_PX = 12;
 
 // The direction the guide MOVES (its one degree of freedom, perpendicular to
@@ -124,6 +129,7 @@ export function GuideView({
   // identity only moves when a dial is turned, so idle frames are free.
   const recipe = useDevSettings((s) => s.guide);
   const dashes = parseDashPattern(recipe.dash);
+  const casingDashes = parseDashPattern(recipe.casingDash, dashes);
   const px = (v: number) => v / z;
   // The floor as a fraction of the core. A thickness dialed to zero leaves it
   // meaningless — and 0/0 would reach the DOM as stroke-width="NaN" — so the
@@ -131,6 +137,13 @@ export function GuideView({
   const floor = recipe.thickness > 0 ? recipe.minThickness / recipe.thickness : 1;
   const scale = Math.min(Math.max(z / (recipe.transitionZoomPercent / 100), floor), 1);
   const ink = (v: number) => (v * scale) / z;
+  // The casing is an OUTSET on the core, so a negative dial insets it — the
+  // paper then shows only where the casing dash overhangs the core's. Past
+  // half the core's width the pair asks for a negative stroke, which the DOM
+  // reads as an invalid attribute rather than as a hidden one; the pane floors
+  // the dial there, and this floors the pair the dials can still straddle by
+  // thinning the core under a already-inset casing.
+  const casingWidth = Math.max(0, recipe.thickness + 2 * recipe.casingThickness);
   const clickThrough = !interactive || inHandMode || (guide.locked && !selected);
   // Clipped to the overdrawn box — a diagonal drawn past it would be ink
   // overflow (and a diagonal needs finite endpoints regardless). One that
@@ -145,14 +158,22 @@ export function GuideView({
   // flicker after each gesture. `along` is the signed distance from the
   // anchor to the segment start along the path direction (×√2 for the
   // diagonals: their x-span foreshortens true length by 1/√2).
-  const period = ink(dashPeriod(dashes));
   const along =
     guide.orientation === 'horizontal'
       ? x1
       : guide.orientation === 'vertical'
         ? y1
         : x1 * Math.SQRT2;
-  const dashOffset = ((along % period) + period) % period;
+  // Each pattern phases on its OWN period: core and casing meet at the anchor
+  // (identical patterns therefore stay locked dash-for-dash), and a casing
+  // dialed to a different period is anchored just as firmly instead of
+  // re-phasing against the core's. Firmly anchored is not the same as in
+  // register, though — unequal periods agree at the anchor and walk apart
+  // along the line, which is the casing dial's to get wrong, not this math's.
+  const phaseOf = (pattern: readonly number[]) => {
+    const period = ink(dashPeriod(pattern));
+    return ((along % period) + period) % period;
+  };
   // Every state is a restroke of the core, so a color dial can only be the
   // IDLE one — an override that swallowed selected/engaged/hover would take
   // the states with it.
@@ -163,7 +184,6 @@ export function GuideView({
       : hovered
         ? hoverColor
         : (recipe.color ?? guideColor);
-  const dasharray = dashes.map(ink).join(' ');
   return (
     <g
       data-guide={guide.id}
@@ -180,9 +200,9 @@ export function GuideView({
         x2={x2}
         y2={y2}
         stroke={recipe.casingColor ?? casingColor}
-        strokeWidth={ink(recipe.thickness + 2 * GUIDE_CASING_PX)}
-        strokeDasharray={dasharray}
-        strokeDashoffset={dashOffset}
+        strokeWidth={ink(casingWidth)}
+        strokeDasharray={casingDashes.map(ink).join(' ')}
+        strokeDashoffset={phaseOf(casingDashes)}
         pointerEvents="none"
       />
       <line
@@ -193,8 +213,8 @@ export function GuideView({
         y2={y2}
         stroke={stroke}
         strokeWidth={ink(recipe.thickness)}
-        strokeDasharray={dasharray}
-        strokeDashoffset={dashOffset}
+        strokeDasharray={dashes.map(ink).join(' ')}
+        strokeDashoffset={phaseOf(dashes)}
         pointerEvents="none"
       />
       <line

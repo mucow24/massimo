@@ -159,7 +159,7 @@ describe('<GuideView /> casing', () => {
   });
 });
 
-// The recipe's six numbers are dials in the Developer pane, not constants —
+// Every number in the recipe is a dial in the Developer pane, not a constant —
 // the defaults reproduce the tuned-by-eye recipe the tests above assert.
 describe('<GuideView /> developer dials', () => {
   const setGuide = (patch: Partial<GuideRenderSettings>) =>
@@ -174,9 +174,46 @@ describe('<GuideView /> developer dials', () => {
     const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
     // Scale at zoom 1 is still ½ (the 200% reference), so 3 recipe px → 1.5.
     expect(inkOf(container).width).toBeCloseTo(1.5, 10);
-    // The casing stays 0.75 recipe px per side around whatever the core is.
+    // The casing keeps its own 0.75 per side around whatever the core is.
     const casing = container.querySelector('[data-guide-casing]')!;
     expect(Number(casing.getAttribute('stroke-width'))).toBeCloseTo(2.25, 10);
+  });
+
+  it('sizes the casing from its own dial, independent of the core', () => {
+    setGuide({ casingThickness: 2 });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    // The core is untouched — 1.5 recipe px at zoom 1's ½ scale…
+    expect(inkOf(container).width).toBeCloseTo(0.75, 10);
+    // …while the casing is now 2 per SIDE around it: 1.5 + 4 → 5.5 → 2.75.
+    const casing = container.querySelector('[data-guide-casing]')!;
+    expect(Number(casing.getAttribute('stroke-width'))).toBeCloseTo(2.75, 10);
+  });
+
+  it('scales the casing with the core at every zoom, the min-thickness floor included', () => {
+    // Independent in VALUE, locked in SIZING: the pair rides the one scale the
+    // core's thickness/min-thickness pair defines, so the guide reads
+    // proportionally the same at any zoom — and stops shrinking exactly where
+    // the core's floor stops it.
+    setGuide({ casingThickness: 3 });
+    const at = (zoom: number) => {
+      const { container, unmount } = renderGuide(makeGuide({ id: 'g', offset: 0 }), zoom);
+      const casingWidth = Number(
+        container.querySelector('[data-guide-casing]')!.getAttribute('stroke-width'),
+      );
+      // Screen px, so the numbers are what the eye gets.
+      const sizes = { core: inkOf(container).width * zoom, casing: casingWidth * zoom };
+      unmount();
+      return sizes;
+    };
+    // Above the reference, riding the canvas, and floored: (1.5 + 2·3) / 1.5.
+    for (const zoom of [4, 1, 0.25]) {
+      const { core, casing } = at(zoom);
+      expect(casing / core).toBeCloseTo(5, 10);
+    }
+    // Guard the guard: 0.25 really is in the floored regime (core at its 0.5
+    // screen-px min), so the ratio there is a claim about a floored casing.
+    expect(at(0.25).core).toBeCloseTo(0.5, 10);
+    expect(at(0.25).casing).toBeCloseTo(2.5, 10);
   });
 
   it('takes an arbitrary dash pattern, phase included', () => {
@@ -189,6 +226,67 @@ describe('<GuideView /> developer dials', () => {
     const line = container.querySelector('[data-guide-ink]')!;
     const periods = (Number(line.getAttribute('x1')) - ink.phase) / 8;
     expect(periods).toBeCloseTo(Math.round(periods), 10);
+  });
+
+  it('insets the casing behind the core at a negative thickness', () => {
+    setGuide({ casingThickness: -0.25 });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    // 1.5 − 0.5 = 1 recipe px: narrower than the core that covers it, so the
+    // paper only shows where the casing dash overhangs the core's.
+    const casing = container.querySelector('[data-guide-casing]')!;
+    expect(Number(casing.getAttribute('stroke-width'))).toBeCloseTo(0.5, 10);
+    expect(inkOf(container).width).toBeCloseTo(0.75, 10);
+  });
+
+  it('never lets an inset casing cross zero into a negative stroke width', () => {
+    // Reachable in two turns of the pane: dial the casing to its inset floor
+    // against a 1.5 core, then thin the core under it. The pair then asks for
+    // a negative width, which the DOM takes as an invalid attribute rather
+    // than as a hidden stroke.
+    setGuide({ casingThickness: -0.75, thickness: 0.5 });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    const casing = container.querySelector('[data-guide-casing]')!;
+    expect(Number(casing.getAttribute('stroke-width'))).toBe(0);
+  });
+
+  it('takes an arbitrary casing dash, leaving the core on its own', () => {
+    setGuide({ casingDash: '6 1' });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    // Recipe px at zoom 1's ½ scale, same hybrid as everything else.
+    expect(container.querySelector('[data-guide-casing]')!.getAttribute('stroke-dasharray')).toBe(
+      '3 0.5',
+    );
+    // The core keeps its own 5 2 — the two patterns are separate dials.
+    expect(inkOf(container).dashes).toEqual([2.5, 1]);
+  });
+
+  it('falls back to the CORE pattern while the casing text is unusable', () => {
+    // Clearing the field to retype must not de-register the casing from a
+    // non-default core: the generic 5 2 fallback would visibly unstitch the
+    // two mid-edit, which is the opposite of what the fallback is for.
+    setGuide({ dash: '9 3', casingDash: '' });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    const casing = container.querySelector('[data-guide-casing]')!;
+    const ink = container.querySelector('[data-guide-ink]')!;
+    expect(casing.getAttribute('stroke-dasharray')).toBe('4.5 1.5');
+    expect(casing.getAttribute('stroke-dasharray')).toBe(ink.getAttribute('stroke-dasharray'));
+    expect(casing.getAttribute('stroke-dashoffset')).toBe(ink.getAttribute('stroke-dashoffset'));
+  });
+
+  it('phases the casing on its OWN period, so a differing pattern is pan-stable too', () => {
+    // Core period 7, casing period 4: borrowing the core's period here would
+    // re-phase the casing on every pan or zoom commit — the flicker the
+    // world-foot anchor exists to kill.
+    setGuide({ casingDash: '3 1' });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    const casing = container.querySelector('[data-guide-casing]')!;
+    const phase = Number(casing.getAttribute('stroke-dashoffset'));
+    // 4 recipe px → 2 world units at this scale.
+    const periods = (Number(casing.getAttribute('x1')) - phase) / 2;
+    expect(periods).toBeCloseTo(Math.round(periods), 10);
+    // Guard the guard: the core's own phase differs, so this isn't a pass by
+    // coincidence of the two patterns agreeing.
+    expect(phase).not.toBeCloseTo(inkOf(container).phase, 10);
   });
 
   it('floors the recipe at the min-thickness dial', () => {
@@ -219,6 +317,15 @@ describe('<GuideView /> developer dials', () => {
     expect(Number(line.getAttribute('stroke-width'))).toBe(0);
     for (const attr of ['stroke-width', 'stroke-dasharray', 'stroke-dashoffset']) {
       expect(line.getAttribute(attr)).not.toMatch(/NaN/);
+    }
+    // The casing carries its own pattern and phase through the same unfloored
+    // scale, so it needs the same guard. It keeps DRAWING at a zeroed core —
+    // an independent dial holding its width is the dial working, not a bug —
+    // so the one thing to pin is that it stays a number.
+    const casing = container.querySelector('[data-guide-casing]')!;
+    expect(Number(casing.getAttribute('stroke-width'))).toBeCloseTo(1.5, 10);
+    for (const attr of ['stroke-width', 'stroke-dasharray', 'stroke-dashoffset']) {
+      expect(casing.getAttribute(attr)).not.toMatch(/NaN/);
     }
   });
 
