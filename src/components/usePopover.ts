@@ -107,13 +107,16 @@ const PANEL_GAP = 4;
  * the measurement below.
  *
  * Fixed rather than the `absolute; top: 100%; right: 0` this used to leave to
- * CSS, because `absolute` is clipped by any scrolling ancestor and the toolbar
- * strip is one: it carries `overflow-x: auto` so its tail scrolls instead of
- * the page, and CSS forces the other axis to `auto` alongside it. The View and
- * Perf panels landed inside the strip's scroll area, 40px of chrome swallowing
- * a 287px panel, unreachable by the pointer. Their siblings never noticed —
- * the Radix menus ride a fixed popper, Help portals to `.app` — so the escape
- * belongs here, in the one place the un-portaled panels share.
+ * CSS: the panels survived a stretch where the toolbar scrolled its own
+ * overflow (setting one overflow axis force-computes the other, and the strip
+ * clipped hanging children on both), and fixed positioning is the
+ * regime-independent answer either way — measured in viewport coordinates and
+ * re-measured on resize and scroll, it holds under any ancestor's overflow,
+ * and it keeps a panel glued to its trigger while the narrow-window regime
+ * scrolls the PAGE sideways under it (toolbarOverflow e2e drives both panels
+ * there). The siblings solve placement their own way — the Radix menus ride a
+ * fixed popper, Help portals to `.app` — so this hook is the one place the
+ * un-portaled panels share.
  *
  * `position: fixed` is in `panelStyle` unconditionally, offsets or no offsets,
  * and that is what makes the first pass safe: React writes the style attribute

@@ -90,10 +90,10 @@ const GAP = 6;
 
 describe('<ColorField /> picker placement', () => {
   it('keeps the picker inside the window, clear of the vertical scrollbar', async () => {
-    // The narrow-window regime (see useDock): the app is floored at the
-    // toolbar's width, so the page scrolls sideways and — `.app` being 100vh —
-    // vertically too. `window.innerWidth` counts that vertical scrollbar;
-    // clamping against it parks the picker's right edge under and past it.
+    // The clamp must use the CLIENT box: `window.innerWidth` counts a vertical
+    // scrollbar when one exists (fabricated here — the shipped app rarely
+    // grows one), and clamping against it parks the picker's right edge under
+    // and past it.
     const page = stubPlacement({
       swatch: { left: 460, top: 78, bottom: 100 },
       client: { w: 500, h: 800 },

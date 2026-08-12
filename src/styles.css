@@ -217,7 +217,14 @@ select {
   grid-template-areas:
     'toolbar'
     'canvas';
-  height: 100vh;
+  /* 100% up the html/body/#root chain, NOT 100vh: vh units ignore window
+     scrollbars by definition, so whenever the narrow-window regime raises the
+     horizontal scrollbar (see .toolbar's min-width) a 100vh app keeps its full
+     height and its bottom stripe — the lower-left guide well — sits buried
+     under the bar. Percentages resolve against the viewport MINUS scrollbars,
+     so the grid ends where the scrollbar begins and the well stays clickable
+     at any width (toolbarOverflow e2e pins the mechanism). */
+  height: 100%;
 
   /* ── Design tokens ─────────────────────────────────────────────
      Single source of truth for the chrome's colors, radii, and type scale.
@@ -320,26 +327,25 @@ select option {
      DOM — used to lose the tie and paint over this whole stacking context. The
      two never overlap in flow (different grid rows), so the only thing this
      orders is a panel opened from the strip and hanging down into the canvas
-     row: at a narrow window the View and Perf panels reach the sidebar's
+     row: at a narrow window the View and Developer panels reach the sidebar's
      column, and their z-index:100 is scoped INSIDE here, so it could not save
      them. Everything portaled to `.app` sits at 100+ and still clears this. */
   z-index: 2;
   /* The toolbar's items keep their natural width (see the flex-shrink:0 rule
-     below). When they exceed the viewport the STRIP scrolls, not the page: a
-     window-level scrollbar would pan the whole app — canvas included — and
-     overlay the bottom stripe of the 100vh grid, burying the lower-left guide
-     well. Scrolling here also zeroes the grid item's automatic minimum size,
-     so the app never outgrows the viewport, the strip's background covers
-     every button, and the sidebar stays flush against the true right edge.
-
-     Setting either axis makes the OTHER compute to `auto` as well, so the strip
-     clips vertically too: every panel opened from inside it must be positioned
-     fixed, or it is swallowed by 40px of chrome. The Radix menus get that from
-     their popper and Help from its `.app` portal; the hand-rolled ones get it
-     from usePopover's `panelStyle`. toolbarOverflow e2e holds all four. */
-  overflow-x: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
+     below), and the strip itself NEVER scrolls — a toolbar with its own
+     scrollbar is nonstandard chrome, and its bar ate the buttons' breathing
+     room out of the 44px row. Instead this floors the app's single grid track
+     at the strip's natural width, so a narrower window gets the one standard
+     window-wide horizontal scrollbar: the page scrolls sideways, the strip's
+     background covers every button, and the sidebar stays flush against the
+     true right edge. The hazard that once argued for an internally scrolling
+     strip — that window scrollbar burying the lower-left guide well at the
+     foot of the grid — is closed where it lives instead: `.app` sizes by
+     height: 100%, which subtracts the scrollbar (see .app). The panels opened
+     from the strip position themselves fixed (Radix popper / `.app` portal /
+     usePopover's panelStyle); toolbarOverflow e2e holds all four, plus both
+     halves of the scroll regime. */
+  min-width: max-content;
 }
 
 /* Keep every toolbar item at its natural width instead of letting them
@@ -632,11 +638,39 @@ select option {
   border-top: 1px solid var(--border);
   margin: 4px 0;
 }
-/* Perf menu: a read-only snapshot of the counters worth having when the map
-   feels slow. Same panel chrome as Options; wider, because these labels are
-   words rather than the 72px control column Options uses. */
-.perf-popover {
-  width: 270px;
+/* Developer menu: the pane temporary dev controls are stashed in, plus the
+   read-only snapshot of the counters worth having when the map feels slow. Same
+   panel chrome as Options; wider, because these labels are words rather than
+   the 72px control column Options uses. */
+.dev-popover {
+  width: 296px;
+  /* The one toolbar panel with no ceiling on its content — sections land here
+     as they are needed and leave when they aren't. Expanded together they
+     already outrun a laptop window, and usePopover neither flips nor clamps
+     (fixed positioning takes away even scrolling TO the overhang), so the panel
+     scrolls its own body instead of hanging off the bottom of the screen. */
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+}
+/* Each top-level entry is a disclosure over its body; the toggles read as one
+   list, so only the bodies carry air. */
+.dev-section + .dev-section {
+  margin-top: 4px;
+}
+.dev-section-body {
+  padding: 6px 0 2px;
+}
+/* The dial rows' labels ("Transition zoom %") outrun the 72px Options column. */
+.dev-popover .options-popover-label {
+  width: 106px;
+}
+.dev-text-field {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-small);
+  padding: 1px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
 }
 .perf-group + .perf-group {
   margin-top: 10px;
@@ -663,12 +697,16 @@ select option {
   color: var(--text);
   white-space: nowrap;
 }
-.perf-note {
+/* A section's closing footnote — what the numbers above it mean. */
+.dev-note {
   margin: 10px 0 0;
   padding-top: 8px;
   border-top: 1px solid var(--border);
   color: var(--text-muted);
   line-height: 1.4;
+}
+.dev-note + .ghost-btn {
+  margin-top: 8px;
 }
 
 /* View menu: the canvas layer checklist. Same panel chrome as Options, narrower
@@ -3797,13 +3835,14 @@ body:has(.app[data-theme='dark']) {
   text-align: right;
 }
 
-/* Disclosure that collapses a popover's style detail: the station popover's
-   manual typography overrides (Size → Tracking) and the line popover's full
-   parameter stack (Line width → Stroke color). A quiet full-width sub-header:
-   muted caret + label, warms to full text color on hover. The style picker
-   above it always stays visible. */
+/* Disclosure that collapses a section: the station popover's manual typography
+   overrides (Size → Tracking), the line popover's full parameter stack (Line
+   width → Stroke color), and the Developer pane's top-level entries. A quiet
+   full-width sub-header: muted caret + label, warms to full text color on
+   hover. The style picker above it always stays visible. */
 .station-popover .style-collapse-toggle,
-.line-popover .style-collapse-toggle {
+.line-popover .style-collapse-toggle,
+.dev-popover .style-collapse-toggle {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -3819,11 +3858,13 @@ body:has(.app[data-theme='dark']) {
   text-align: left;
 }
 .station-popover .style-collapse-toggle:hover:not(:disabled),
-.line-popover .style-collapse-toggle:hover:not(:disabled) {
+.line-popover .style-collapse-toggle:hover:not(:disabled),
+.dev-popover .style-collapse-toggle:hover:not(:disabled) {
   color: var(--text);
 }
 .station-popover .style-collapse-toggle > svg,
-.line-popover .style-collapse-toggle > svg {
+.line-popover .style-collapse-toggle > svg,
+.dev-popover .style-collapse-toggle > svg {
   flex: none;
   color: var(--text-faint);
 }
