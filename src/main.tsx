@@ -8,7 +8,7 @@ import { bootFailureMessage } from './util/staleBuild';
 import './styles.css';
 
 const mount = () => {
-  // window.__massimo: the same counters the toolbar's Perf panel shows, plus
+  // window.__massimo: the same counters the toolbar's Developer pane shows, plus
   // the in-place resets that let a slowed-down session be bisected without the
   // reload that cures it. Installed in EVERY build, not just dev — the browser
   // perf harnesses measure the production build (dev carries its own tax, see

@@ -29,12 +29,15 @@ const probe = (page: Page, sel: string) =>
 
 /**
  * At any window narrower than the toolbar's natural width (~1120px), the PAGE
- * used to grow a horizontal scrollbar (`min-width: max-content` on the
- * toolbar): the whole app — canvas included — panned sideways, and the window
- * scrollbar overlaid the bottom stripe of the 100vh app, burying the
- * lower-left guide well. The toolbar now scrolls its own overflow instead:
- * the document never scrolls, every button stays reachable inside the strip,
- * and the canvas's bottom edge answers the pointer at every width.
+ * grows the one standard window-wide horizontal scrollbar: `min-width:
+ * max-content` on the toolbar floors the app grid at the strip's natural
+ * width, the page scrolls sideways, and the strip itself NEVER scrolls — a
+ * toolbar with its own scrollbar is nonstandard chrome, and its bar ate the
+ * buttons' breathing room. The hazard that once argued for an internally
+ * scrolling strip — the window scrollbar burying the lower-left guide well at
+ * the foot of the grid — is closed at the source instead: `.app` sizes by
+ * `height: 100%`, which (unlike `vh`) subtracts window scrollbars, so the
+ * grid's bottom stripe rides ABOVE the bar. Both halves are pinned here.
  *
  * jsdom has no layout, so only a real browser can hold any of this.
  */
@@ -44,7 +47,7 @@ test.describe('toolbar overflow at a narrow window', () => {
     await seedAndOpen(page, fourInLine);
   });
 
-  test('the page never scrolls sideways; the toolbar scrolls its own tail', async ({ page }) => {
+  test('the toolbar never scrolls itself; the page scrolls sideways', async ({ page }) => {
     const m = await page.evaluate(() => {
       const toolbar = document.querySelector('.toolbar')!;
       return {
@@ -52,26 +55,54 @@ test.describe('toolbar overflow at a narrow window', () => {
         docClientW: document.documentElement.clientWidth,
         toolbarScrollW: toolbar.scrollWidth,
         toolbarClientW: toolbar.clientWidth,
+        // offsetHeight − clientHeight is the border (1px) plus any horizontal
+        // scrollbar band the strip is paying for out of its own 44px row.
+        toolbarChromeH: (toolbar as HTMLElement).offsetHeight - toolbar.clientHeight,
       };
     });
-    expect(m.docScrollW).toBeLessThanOrEqual(m.docClientW);
-    // The tail is scrolled-to, not clipped away: the strip still holds its
-    // full content width.
-    expect(m.toolbarScrollW).toBeGreaterThan(m.toolbarClientW);
+    // The page overflows and scrolls; the strip holds no overflow of its own.
+    expect(m.docScrollW).toBeGreaterThan(m.docClientW);
+    expect(m.toolbarScrollW).toBeLessThanOrEqual(m.toolbarClientW + 1);
+    // No scrollbar band inside the strip: the buttons keep the full row.
+    expect(m.toolbarChromeH).toBeLessThanOrEqual(2);
   });
 
-  test('the lower-left guide well sits inside the scrollbar-free viewport', async ({ page }) => {
-    const box = await page.locator('.guide-well-corner-bl').boundingBox();
+  test('the lower-left guide well stays above the window scrollbar', async ({ page }) => {
+    // Headless Chromium paints no space-taking scrollbars (innerHeight always
+    // equals clientHeight here), so a real bar's burial cannot be reproduced
+    // in CI. What CAN be held is the mechanism that decides burial in a
+    // desktop browser: `.app` must size from the html height CHAIN —
+    // percentages subtract window scrollbars — and not from `vh`, which
+    // ignores them by definition. Shrinking the chain's root stands in for
+    // the scrollbar shaving the client box (the same injection idiom as
+    // popoverDock.spec's floor): under `height: 100vh` the app ignores it and
+    // this well sinks below the line; under `height: 100%` everything rides up.
     const clientH = await page.evaluate(() => document.documentElement.clientHeight);
-    expect(box).not.toBeNull();
-    expect(box!.y + box!.height).toBeLessThanOrEqual(clientH + 0.5);
+    const before = await page.locator('.guide-well-corner-bl').boundingBox();
+    expect(before).not.toBeNull();
+    expect(before!.y + before!.height).toBeLessThanOrEqual(clientH + 0.5);
+
+    const BAR = 15; // a classic Windows horizontal scrollbar
+    await page.addStyleTag({ content: `html { height: calc(100% - ${BAR}px) }` });
+    const app = await page.locator('.app').boundingBox();
+    expect(
+      app!.height,
+      'the app must follow the html height chain, not 100vh',
+    ).toBeLessThanOrEqual(clientH - BAR + 0.5);
+    // The well rides up with it and still answers the pointer at its centre.
+    const box = await page.locator('.guide-well-corner-bl').boundingBox();
+    expect(box!.y + box!.height).toBeLessThanOrEqual(clientH - BAR + 0.5);
+    const hit = await page.evaluate(
+      ([x, y]) => document.elementFromPoint(x, y)?.closest('.guide-well-corner-bl') != null,
+      [box!.x + box!.width / 2, box!.y + box!.height / 2],
+    );
+    expect(hit, 'lower-left well centre is not hit-testable').toBe(true);
   });
 
-  test('the un-portaled toolbar menus escape the scrolling strip', async ({ page }) => {
+  test('the Map menu renders inside the toolbar and stays clickable', async ({ page }) => {
     // The Map menu's panel renders INSIDE `.toolbar` on purpose (design
-    // tokens; see Menu.tsx) — this holds that the toolbar's overflow rule
-    // does not clip it. The last row must be truly clickable, not just
-    // present.
+    // tokens; see Menu.tsx) — this holds that nothing about the strip clips
+    // it. The last row must be truly clickable, not just present.
     await page.getByRole('button', { name: 'Map', exact: true }).click();
     const panel = page.locator('.menu-panel');
     await expect(panel).toBeVisible();
@@ -87,25 +118,18 @@ test.describe('toolbar overflow at a narrow window', () => {
 
   /**
    * Every panel the toolbar opens, held to the same bar as the Map menu above.
-   *
-   * The strip's `overflow-x: auto` also computes `overflow-y: auto` — CSS forces
-   * the other axis whenever one is non-visible — so the strip clips vertically
-   * too, and a panel that merely drops `position: absolute; top: 100%` lands
-   * inside the strip's SCROLL AREA rather than over the canvas. That is what
-   * caught View and Perf: the Radix menus survived on their fixed-position
-   * popper and Help on its `.app` portal, and the rule's escape reasoning was
-   * written for those two categories only.
+   * The right-hand triggers (View, Developer, Help) sit past the 900px window
+   * at rest; Playwright's click scrolls the WINDOW right to reach them — the
+   * standard behavior this spec pins — and usePopover measures the trigger
+   * after that scroll, so the fixed panel lands under it in viewport space.
    *
    * Hit-testing, not `toBeVisible()`: a clipped panel keeps its full bounding
-   * box, so Playwright calls it visible. Nor may this reach for a locator
-   * action — the actionability check scrolls the panel into view, which scrolls
-   * the STRIP (toolbar.scrollTop 0 → 283 for View) and hands the assertion the
-   * very geometry it is meant to reject.
+   * box, so Playwright calls it visible.
    */
   const PANELS: ReadonlyArray<{ trigger: string; panel: string }> = [
     { trigger: 'Map', panel: '.menu-panel' },
     { trigger: 'View', panel: '.view-popover' },
-    { trigger: 'Perf', panel: '.perf-popover' },
+    { trigger: 'Developer', panel: '.dev-popover' },
     { trigger: 'Help', panel: '.help-panel' },
   ];
 
@@ -119,25 +143,54 @@ test.describe('toolbar overflow at a narrow window', () => {
       expect(reach.bottom, `${trigger} panel bottom edge is not hit-testable`).toBe(true);
     });
   }
+
+  test('an open panel follows its trigger through a page scroll', async ({ page }) => {
+    // The panels are position:fixed, so a page scroll moves the trigger in
+    // viewport space and the panel only follows if usePopover's re-measure
+    // hears the scroll. This pins that contract — including the listeners
+    // being dropped outright — but not the choice of listener idiom: this
+    // (frame-producing) page delivered the scroll to the previous
+    // window-capture listener too. Hand-verifying the difference is its own
+    // trap: a page producing NO frames dispatches no scroll events to any
+    // listener at all (see popoverDock.spec's wheel-scroll note), which reads
+    // as a stranded panel whatever the code says.
+    await page.getByRole('button', { name: 'View', exact: true }).click();
+    await expect(page.locator('.view-popover')).toBeVisible();
+    const gap = () =>
+      page.evaluate(() => {
+        const t = document.querySelector('.view-popover-wrap')!.getBoundingClientRect();
+        const p = document.querySelector('.view-popover')!.getBoundingClientRect();
+        return Math.round(p.right - t.right);
+      });
+    expect(await gap()).toBe(0); // right edges flush at open
+
+    // Scroll toward the strip's tail with the panel open — the trigger slides
+    // left in viewport space and the fixed panel must ride along. Guard the
+    // premise: the page really moved (the View trigger itself is on-screen at
+    // 900px, so nothing here scrolls implicitly).
+    await page.evaluate(() => window.scrollTo(150, 0));
+    const scrolled = await page.evaluate(() => window.scrollX);
+    expect(scrolled, 'premise: the page really scrolled').toBeGreaterThanOrEqual(100);
+    await expect.poll(gap).toBe(0);
+  });
 });
 
-test('a toolbar panel escapes the strip at a wide window too', async ({ page }) => {
-  // The clip does not wait for the strip to actually overflow: `overflow-y`
-  // computes to `auto` at every width, so this fails on the same defect with
-  // the toolbar comfortably inside the viewport.
+test('a wide window fits the toolbar with no scrollbar anywhere', async ({ page }) => {
   await page.setViewportSize({ width: 1500, height: 900 });
   await seedAndOpen(page, fourInLine);
-  await page.getByRole('button', { name: 'View', exact: true }).click();
-  const overflowed = await page.evaluate(() => {
-    const toolbar = document.querySelector('.toolbar')!;
-    return toolbar.scrollWidth > toolbar.clientWidth;
-  });
-  expect(overflowed, 'this case is meant to run with the strip NOT overflowing').toBe(false);
+  const m = await page.evaluate(() => ({
+    docScrollW: document.documentElement.scrollWidth,
+    docClientW: document.documentElement.clientWidth,
+  }));
+  expect(m.docScrollW, 'this case is meant to run with the page NOT overflowing').toBeLessThanOrEqual(
+    m.docClientW,
+  );
 
+  await page.getByRole('button', { name: 'View', exact: true }).click();
   const reach = await probe(page, '.view-popover');
   expect(reach.centre, 'View panel centre is not hit-testable').toBe(true);
   expect(reach.bottom, 'View panel bottom edge is not hit-testable').toBe(true);
-  // The panel's width is no longer set by its containing block — a fixed box
+  // The panel's width is not set by its containing block — a fixed box
   // shrink-to-fits against the VIEWPORT, so dropping the explicit width for the
   // `min-width` this used to carry sprawls it to 379px of max-content.
   expect(reach.width, 'View panel is not at its designed width').toBe(168);

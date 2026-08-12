@@ -1,21 +1,21 @@
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { guideSegmentInBox } from '../geometry/snap';
 import { useLivePendingZoom } from '../state/viewportStore';
+import { dashPeriod, parseDashPattern, useDevSettings } from '../state/devSettings';
 import type { AlignmentGuide, GuideOrientation } from '../model/types';
 
-// Ink recipe in SCREEN px at/above GUIDE_REF_ZOOM. The ink is HYBRID-sized:
-// screen-constant zoomed in past the reference (where the thin line is what
-// buys precise placement), riding the canvas below it (so a zoomed-out
-// overview isn't dominated by giant dashes), floored at GUIDE_MIN_PX on
-// screen (so it never fades out entirely). The whole recipe — stroke and
-// dashes together — scales as one, keeping the rhythm; only the grab stroke
-// is exempt and stays plain screen-constant, since hit comfort must not
-// shrink with the ink. Numbers dialed in by eye against a dense map.
-const GUIDE_STROKE_PX = 1.5;
-const GUIDE_DASH_PX = 5;
-const GUIDE_GAP_PX = 2;
-const GUIDE_MIN_PX = 0.5;
-const GUIDE_REF_ZOOM = 2;
+// How the ink is sized. The recipe is written in SCREEN px at the transition
+// zoom, and HYBRID-sized around it: screen-constant zoomed in past that
+// reference (where the thin line is what buys precise placement), riding the
+// canvas below it (so a zoomed-out overview isn't dominated by giant dashes),
+// floored at the min thickness on screen (so it never fades out entirely).
+// The whole recipe — stroke and dashes together — scales as one, keeping the
+// rhythm; only the grab stroke is exempt and stays plain screen-constant, since
+// hit comfort must not shrink with the ink. The numbers were dialed in by eye
+// against a dense map and stay dialable: they live in `useDevSettings`
+// (state/devSettings.ts), whose defaults ARE the recipe, and the Developer
+// pane's Guide rendering section turns them.
+//
 // Paper-toned under-stroke per SIDE of the core (the two-tone trick from the
 // selection ring: one tone vanished against the wrong body, so the dash
 // carries its own contrast). Guides paint BELOW map ink, so the casing can
@@ -24,9 +24,6 @@ const GUIDE_REF_ZOOM = 2;
 // disappears into the paper it matches.
 const GUIDE_CASING_PX = 0.75;
 const HIT_PX = 12;
-// Derived: the recipe's scale floor, and its repeat length in recipe px.
-const MIN_SCALE = GUIDE_MIN_PX / GUIDE_STROKE_PX;
-const DASH_PERIOD = GUIDE_DASH_PX + GUIDE_GAP_PX;
 
 // The direction the guide MOVES (its one degree of freedom, perpendicular to
 // the line): a / guide slides along NW–SE, a \ along NE–SW.
@@ -48,6 +45,8 @@ interface Props {
   vbW: number;
   vbH: number;
   // The three-state restroke palette (theme.alignGuide / -Selected / -Hover).
+  // The idle one is what a Developer-pane color dial replaces; the states are
+  // never overridden (see `stroke` below).
   guideColor: string;
   // The casing under-stroke — theme.canvasBg, the actual paper (it follows
   // the dimmed day papers; this layer is export-excluded, so it sits on the
@@ -121,8 +120,16 @@ export function GuideView({
   // zoom frames re-render (see useLivePendingZoom), and only the few mounted
   // guides at that.
   const z = useLivePendingZoom() ?? zoom;
+  // The live recipe. One subscription per mounted guide, and the object's
+  // identity only moves when a dial is turned, so idle frames are free.
+  const recipe = useDevSettings((s) => s.guide);
+  const dashes = parseDashPattern(recipe.dash);
   const px = (v: number) => v / z;
-  const scale = Math.min(Math.max(z / GUIDE_REF_ZOOM, MIN_SCALE), 1);
+  // The floor as a fraction of the core. A thickness dialed to zero leaves it
+  // meaningless — and 0/0 would reach the DOM as stroke-width="NaN" — so the
+  // scale just goes unfloored; the ink is invisible either way.
+  const floor = recipe.thickness > 0 ? recipe.minThickness / recipe.thickness : 1;
+  const scale = Math.min(Math.max(z / (recipe.transitionZoomPercent / 100), floor), 1);
   const ink = (v: number) => (v * scale) / z;
   const clickThrough = !interactive || inHandMode || (guide.locked && !selected);
   // Clipped to the overdrawn box — a diagonal drawn past it would be ink
@@ -138,7 +145,7 @@ export function GuideView({
   // flicker after each gesture. `along` is the signed distance from the
   // anchor to the segment start along the path direction (×√2 for the
   // diagonals: their x-span foreshortens true length by 1/√2).
-  const period = ink(DASH_PERIOD);
+  const period = ink(dashPeriod(dashes));
   const along =
     guide.orientation === 'horizontal'
       ? x1
@@ -146,13 +153,17 @@ export function GuideView({
         ? y1
         : x1 * Math.SQRT2;
   const dashOffset = ((along % period) + period) % period;
+  // Every state is a restroke of the core, so a color dial can only be the
+  // IDLE one — an override that swallowed selected/engaged/hover would take
+  // the states with it.
   const stroke = selected
     ? selectedColor
     : engaged
       ? accentColor
       : hovered
         ? hoverColor
-        : guideColor;
+        : (recipe.color ?? guideColor);
+  const dasharray = dashes.map(ink).join(' ');
   return (
     <g
       data-guide={guide.id}
@@ -168,9 +179,9 @@ export function GuideView({
         y1={y1}
         x2={x2}
         y2={y2}
-        stroke={casingColor}
-        strokeWidth={ink(GUIDE_STROKE_PX + 2 * GUIDE_CASING_PX)}
-        strokeDasharray={`${ink(GUIDE_DASH_PX)} ${ink(GUIDE_GAP_PX)}`}
+        stroke={recipe.casingColor ?? casingColor}
+        strokeWidth={ink(recipe.thickness + 2 * GUIDE_CASING_PX)}
+        strokeDasharray={dasharray}
         strokeDashoffset={dashOffset}
         pointerEvents="none"
       />
@@ -181,8 +192,8 @@ export function GuideView({
         x2={x2}
         y2={y2}
         stroke={stroke}
-        strokeWidth={ink(GUIDE_STROKE_PX)}
-        strokeDasharray={`${ink(GUIDE_DASH_PX)} ${ink(GUIDE_GAP_PX)}`}
+        strokeWidth={ink(recipe.thickness)}
+        strokeDasharray={dasharray}
         strokeDashoffset={dashOffset}
         pointerEvents="none"
       />
