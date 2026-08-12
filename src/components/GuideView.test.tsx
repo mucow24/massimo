@@ -3,9 +3,16 @@ import { render, act } from '@testing-library/react';
 import { GuideView } from './GuideView';
 import { makeGuide } from '../test/fixtures';
 import { useLiveViewportStore } from '../state/viewportStore';
+import { useDevSettings, type GuideRenderSettings } from '../state/devSettings';
 import type { AlignmentGuide } from '../model/types';
 
-const renderGuide = (guide: AlignmentGuide, zoom = 1, vbX = -500, vbY = -500) =>
+const renderGuide = (
+  guide: AlignmentGuide,
+  zoom = 1,
+  vbX = -500,
+  vbY = -500,
+  extra: { selected?: boolean } = {},
+) =>
   render(
     <svg>
       <GuideView
@@ -25,6 +32,7 @@ const renderGuide = (guide: AlignmentGuide, zoom = 1, vbX = -500, vbY = -500) =>
         engaged={false}
         interactive={true}
         inHandMode={false}
+        {...extra}
       />
     </svg>,
   );
@@ -148,6 +156,85 @@ describe('<GuideView /> casing', () => {
     expect(casing.getAttribute('pointer-events')).toBe('none');
     // Painted directly under the core.
     expect(casing.nextElementSibling).toBe(ink);
+  });
+});
+
+// The recipe's six numbers are dials in the Developer pane, not constants —
+// the defaults reproduce the tuned-by-eye recipe the tests above assert.
+describe('<GuideView /> developer dials', () => {
+  const setGuide = (patch: Partial<GuideRenderSettings>) =>
+    act(() => useDevSettings.getState().setGuide(patch));
+
+  afterEach(() => {
+    act(() => useDevSettings.getState().resetGuide());
+  });
+
+  it('sizes the core and its casing from the thickness dial', () => {
+    setGuide({ thickness: 3 });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    // Scale at zoom 1 is still ½ (the 200% reference), so 3 recipe px → 1.5.
+    expect(inkOf(container).width).toBeCloseTo(1.5, 10);
+    // The casing stays 0.75 recipe px per side around whatever the core is.
+    const casing = container.querySelector('[data-guide-casing]')!;
+    expect(Number(casing.getAttribute('stroke-width'))).toBeCloseTo(2.25, 10);
+  });
+
+  it('takes an arbitrary dash pattern, phase included', () => {
+    setGuide({ dash: '9 3 1 3' });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    const ink = inkOf(container);
+    expect(ink.dashes).toEqual([4.5, 1.5, 0.5, 1.5]);
+    // Phase is still anchored to the world foot, now modulo the new period
+    // (16 recipe px → 8 world units at this scale).
+    const line = container.querySelector('[data-guide-ink]')!;
+    const periods = (Number(line.getAttribute('x1')) - ink.phase) / 8;
+    expect(periods).toBeCloseTo(Math.round(periods), 10);
+  });
+
+  it('floors the recipe at the min-thickness dial', () => {
+    // Floor raised to the full core width: the ink can never ride the canvas
+    // down, so it holds 1.5 screen px however far out the camera goes.
+    setGuide({ minThickness: 1.5 });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 0.25);
+    expect(inkOf(container).width * 0.25).toBeCloseTo(1.5, 10);
+  });
+
+  it('flips to screen-constant at the transition-zoom dial', () => {
+    setGuide({ transitionZoomPercent: 400 });
+    // Zoom 2 is now BELOW the reference: 1.5 · (2/4) / 2 world units.
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 2);
+    expect(inkOf(container).width).toBeCloseTo(0.375, 10);
+    // At the reference itself the ink is a screen-constant 1.5px again.
+    const at = renderGuide(makeGuide({ id: 'g', offset: 0 }), 4);
+    expect(inkOf(at.container).width * 4).toBeCloseTo(1.5, 10);
+  });
+
+  it('degrades to invisible ink rather than NaN attributes at a zeroed thickness', () => {
+    // Both dials bottom out at 0, and 0/0 in the floor ratio would reach the
+    // DOM as stroke-width="NaN" — a dial turned all the way down should just
+    // stop drawing.
+    setGuide({ thickness: 0, minThickness: 0 });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    const line = container.querySelector('[data-guide-ink]')!;
+    expect(Number(line.getAttribute('stroke-width'))).toBe(0);
+    for (const attr of ['stroke-width', 'stroke-dasharray', 'stroke-dashoffset']) {
+      expect(line.getAttribute(attr)).not.toMatch(/NaN/);
+    }
+  });
+
+  it('repaints the idle core and the casing from the color dials', () => {
+    setGuide({ color: '#ff00ff', casingColor: '#00ff00' });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    expect(container.querySelector('[data-guide-ink]')!.getAttribute('stroke')).toBe('#ff00ff');
+    expect(container.querySelector('[data-guide-casing]')!.getAttribute('stroke')).toBe('#00ff00');
+  });
+
+  it('leaves the state restrokes alone — an override is the IDLE color', () => {
+    setGuide({ color: '#ff00ff' });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1, -500, -500, {
+      selected: true,
+    });
+    expect(container.querySelector('[data-guide-ink]')!.getAttribute('stroke')).toBe('#a80');
   });
 });
 

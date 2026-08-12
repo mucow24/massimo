@@ -1,3 +1,4 @@
+import { ReloadIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import {
   STYLE_COLLECTION_OF,
@@ -113,11 +114,12 @@ type DotProps = {
  * covered field(s) diverge from the item's style, absolutely positioned in
  * the row's reserved left gutter (see the `.style-fields` CSS — every row in
  * a style-capable editor carries the gutter, so labels stay aligned whether
- * or not a dot is present). Its tooltip names the style's own value for each
- * diverging field; clicking it reverts exactly this row's fields to those
- * values, in one undo entry. Renders nothing when the item is untagged or
- * the row matches its style — there is no stored override state; the dot IS
- * the diff, made visible.
+ * or not a dot is present). It is badge-sized and carries a revert glyph, so
+ * the marker reads as the button it is rather than as decoration. Its tooltip
+ * names the style's own value for each diverging field; clicking it reverts
+ * exactly this row's fields to those values, in one undo entry. Renders
+ * nothing when the item is untagged or the row matches its style — there is
+ * no stored override state; the dot IS the diff, made visible.
  *
  * `fields` lists the covered field names this row edits (usually one; color
  * rows carry the day/night pair, the align row carries align + italic).
@@ -168,6 +170,8 @@ export function OverrideDot({ kind, itemId, fields, overridden: given, name, dis
         e.stopPropagation();
         revertStyleFields(kind, itemId, overridden.split(','));
       }}
-    />
+    >
+      <ReloadIcon aria-hidden="true" />
+    </button>
   );
 }

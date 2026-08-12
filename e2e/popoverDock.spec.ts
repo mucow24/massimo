@@ -63,13 +63,11 @@ test.describe('canvas popovers dock to the top-right corner', () => {
     expect(host.x + host.width - (wide.x + wide.width)).toBeCloseTo(8, 0);
   });
 
-  // The app as it ships never scrolls sideways — the toolbar scrolls its own
-  // overflow (toolbarOverflow.spec pins that), so the host's corner always
-  // stays on screen and useDock's window-edge regime is a backstop. It is
-  // still code, so it keeps its coverage the same way the occlusion test
-  // below reaches ITS unreachable branch: an injected floor recreates the old
-  // geometry — a grid wider than the window, a real page scroll, and the
-  // host's top-right corner carried off the right of the screen.
+  // The toolbar's real min-width floor gives a 700px window this geometry on
+  // its own — a grid wider than the window, a real page scroll, the host's
+  // top-right corner carried off the right of the screen. The injected floor
+  // stays on top of it so the numbers below don't ride the toolbar's natural
+  // width, which moves with the map name and the zoom readout.
   test('follows a narrow window across a horizontal scroll, then settles at its dock', async ({
     page,
   }) => {
@@ -188,9 +186,10 @@ test.describe('canvas popovers dock to the top-right corner', () => {
 // the screen entirely. `scrollIntoView` reaches its row by scrolling every
 // scrollable ancestor up to the document, which would drag the whole page
 // ~500px sideways and take the map out from under the click. The shipped app
-// can't scroll sideways at all (the toolbar scrolls its own overflow;
-// toolbarOverflow.spec) — this holds the guard for any future overflow, and
-// only a browser has a real page scroll, so it lives here.
+// really does scroll sideways at a narrow window (`.toolbar { min-width:
+// max-content }` floors the grid; toolbarOverflow.spec) — the injected floor
+// just makes the geometry window-independent — so this guards live shipped
+// behavior, and only a browser has a real page scroll, so it lives here.
 // A list long enough to overflow the sidebar's box, with the target station's
 // row LAST in it (sorted by name, ascending): only then does revealing that row
 // have real vertical work to do, and only then does `scrollIntoView` reach for
@@ -267,16 +266,17 @@ test.describe('selecting a station leaves the page where it is', () => {
 });
 
 test.describe('canvas popovers stack below the sidebar', () => {
-  // The host shrinks with the window (the toolbar scrolls its own overflow
-  // instead of flooring the grid), so a hard narrowing genuinely reaches
-  // usePinnedPopover's clamped-x branch (`Math.max(EDGE_PAD, …)`): at a host
-  // of 420 the sidebar eats all but 100px, the 280px panel floors at x = 8,
-  // and the two overlap by a wide margin. What must hold there is the paint
-  // order — `.canvas-host`'s `isolation: isolate` traps the shell's
-  // z-index:1100 inside the canvas layer, so the sidebar (z-index:1, its
-  // sibling in the same grid cell) still covers it. Without the isolation the
-  // 1100 escapes into the ROOT stacking context and the panel paints over the
-  // sidebar; that was the bug.
+  // `.toolbar { min-width: max-content }` floors the app grid — and with it the
+  // canvas host — at the toolbar's natural width however narrow the window
+  // gets, so the dock's 8px clearance always lands a panel left of the sidebar
+  // and usePinnedPopover's clamped-x branch (`Math.max(EDGE_PAD, …)`) is never
+  // taken in the app as it ships. Drop that floor to reach it: at a host of 420
+  // the sidebar eats all but 100px, the 280px panel floors at x = 8, and the two
+  // overlap by a wide margin. What must hold there is the paint order —
+  // `.canvas-host`'s `isolation: isolate` traps the shell's z-index:1100 inside
+  // the canvas layer, so the sidebar (z-index:1, its sibling in the same grid
+  // cell) still covers it. Without the isolation the 1100 escapes into the ROOT
+  // stacking context and the panel paints over the sidebar; that was the bug.
   test('a panel forced under the sidebar is occluded by it', async ({ page }) => {
     await seedAndOpen(page, fourInLineWithBullets);
     // Open the popover at the default window, where the bullet is reachable —
@@ -286,6 +286,7 @@ test.describe('canvas popovers stack below the sidebar', () => {
     await expect(page.locator('.bullet-popover')).toBeVisible();
     await expect(page.locator('.sidebar')).toBeVisible();
 
+    await page.addStyleTag({ content: '.toolbar { min-width: 0 }' });
     await page.setViewportSize({ width: 420, height: 820 });
     // Guard: the narrowing actually drove the pin into its clamped-x branch.
     await expect(page.locator('.bullet-popover')).toHaveCSS('left', '8px');

@@ -216,6 +216,8 @@ src/
     stationEditorPrefs.ts       # useStationEditorPrefs: station-popover typography detail
     lineListPrefs.ts            # useLineListPrefs: lines-list sort col + group-by-style + which
                                 #   style groups are collapsed — the ONE *Prefs store NOT persisted
+    devSettings.ts              # useDevSettings: the Developer pane's dials — today the alignment
+                                #   guides' ink recipe (persisted; defaults ARE the recipe)
     stationNames.ts             # random station-name word lists
     funMode.ts                  # useFunMode: easter-egg phase off|live|exiting + the drop origin
 
@@ -244,8 +246,8 @@ src/
     FieldSelectContent.tsx      # shared Radix Select panel: portals popover Selects to .app (escapes
                                 #   the .canvas-host isolate layer) + bounds/scrolls a long list
     usePopover.ts               # open/dismiss + `panelStyle` for the hand-rolled toolbar panels
-                                #   (View, Perf): the strip scrolls its tail, so it clips on BOTH
-                                #   axes and a panel must be fixed-positioned to escape
+                                #   (View, Developer): fixed-positioned in window coordinates off
+                                #   the trigger's wrap, re-measured on resize and scroll
     canvas/                     # interaction layer: drag/placement/viewport hooks + overlay layers
     inspector/                  # LineInspector (hosted by the pinned on-canvas LinePopover; identity +
                                 #   line-style fields — stop/topology editing is canvas-driven, see
@@ -275,9 +277,9 @@ src/
                                 #   caches / doc round-trip) that let a slowed-down session be
                                 #   bisected without the reload that cures it, plus the region
                                 #   pipeline's flag/status/kill and the worker health probe. Read
-                                #   three ways: the toolbar's Perf popover, window.__massimo, and
-                                #   the .perf browser harnesses. Installed in EVERY build, not
-                                #   just dev.
+                                #   three ways: the Developer pane's Performance section,
+                                #   window.__massimo, and the .perf browser harnesses. Installed
+                                #   in EVERY build, not just dev.
   test/                         # fixtures, jsdom setup, integration tests
 e2e/                            # Playwright specs + seedAndOpen harness
 public/fonts/                   # Two committed fallback faces, tried in this order for any glyph the
@@ -743,7 +745,11 @@ paper, dimmed day papers included, and cuts an outline out of the band art paint
 guides; map ink paints above them and simply covers a guide it crosses). Dash phase is
 anchored to the line's own world foot, and ink size tracks the in-flight wheel zoom, so a
 pan or zoom commit neither re-phases nor pops the pattern; only the fat grab stroke stays
-plain screen-constant, so hit comfort survives zooming out however thin the ink runs. Born by
+plain screen-constant, so hit comfort survives zooming out however thin the ink runs. The
+whole recipe — both colors, the dash pattern, the core width, the screen floor, and the zoom
+it flips at — is live in `useDevSettings`, dialed from the Developer pane's **Guide rendering**
+section, and its defaults are the recipe described here (an idle-color override never takes the
+selected / hover / engaged restrokes with it). Born by
 dragging out of a **guide well** — slim strips flush with the canvas's top/left edges plus the
 two left corner squares between them: top pulls a horizontal guide down, left a vertical one
 right, the upper-left corner a / and the lower-left a \ — each well mints the guide
@@ -3232,11 +3238,14 @@ anything past its bottom edge would simply be unreachable. Nothing about the ite
 reaches the panel; its two inputs are `hostW` — the canvas host minus the open sidebar's
 `SIDEBAR_WIDTH` strip (the sidebar paints ABOVE the popovers, so docking to the raw host width
 would park a panel under it) — and the host's own box in the window. The dock is the nearer of
-the two right edges — the window's while the host's is out of reach, the host's (or the
-sidebar's) otherwise. That fallback is a backstop today: the toolbar scrolls its own overflow
-(`.toolbar` in styles.css — a page-level sideways scroll would pan the canvas and bury the
-bottom edge under the window scrollbar, lower-left guide well included), so the app never
-outgrows the viewport and the host's corner stays on screen.
+the two right edges — the window's while the host's is carried off screen, the host's (or the
+sidebar's) otherwise. The window-edge regime is real chrome, not a backstop: `.toolbar
+{ min-width: max-content }` floors the app grid at the strip's natural width (the strip itself
+never scrolls or shrinks), so a narrower window scrolls the PAGE sideways and the host's corner
+leaves the window. The horizontal scrollbar that raises would bury the grid's bottom stripe —
+the lower-left guide well — if the app were `100vh` tall; `.app` sizes by `height: 100%`
+instead, which (unlike `vh`) subtracts window scrollbars, so the grid ends where the bar begins
+(toolbarOverflow e2e pins both the scroll split and the height mechanism).
 
 The **anchor is in window coordinates and `PopoverShell` is `position: fixed`**, which is what
 makes that stable — `useDock` owns the measurement, shared with the routing-warning toasts that
@@ -3269,16 +3278,15 @@ outside the window entirely. `scrollIntoView` would reach it by scrolling every 
 ancestor up to the document, dragging the whole page across; the reveal instead scrolls the
 list's own box by the row's overhang — `block: 'nearest'` by hand, over one axis of one element.
 
-The **toolbar's own hand-rolled panels** (View, Perf) are fixed-positioned in window coordinates
-for a different reason, and through a different hook — `usePopover`, which pairs the open/dismiss
-state with a `panelStyle` measured off the trigger's wrap in a layout effect (4px under it, right
-edges flush), re-measured on resize and on toolbar scroll. The strip takes `overflow-x` so its
-tail scrolls rather than the page, and setting either axis computes the OTHER to `auto`, so the
-toolbar clips vertically too: a panel laid out `absolute; top: 100%` lands inside that scroll area
-instead of over the canvas. Fixed positioning is the escape, and it moves the BOX, not the tree —
+The **toolbar's own hand-rolled panels** (View, Developer) are fixed-positioned in window coordinates
+through a different hook — `usePopover`, which pairs the open/dismiss state with a `panelStyle`
+measured off the trigger's wrap in a layout effect (4px under it, right edges flush), re-measured
+on resize and on scroll — which is what keeps a panel glued to its trigger while the narrow-window
+regime scrolls the page sideways under it. Fixed positioning moves the BOX, not the tree —
 the panel stays a DOM child of the wrap, which is what keeps the dismiss handling whole. Their
-siblings never needed it (the Radix menus ride a fixed popper, Help portals to `.app`), so a new
-hand-rolled toolbar panel is the case to watch. Two consequences worth knowing before adding one:
+siblings place themselves other ways (the Radix menus ride a fixed popper, Help portals to
+`.app`), so a new hand-rolled toolbar panel is the case to watch. Two consequences worth knowing
+before adding one:
 each panel needs an explicit `width`, since shrink-to-fit under `fixed` + `right` resolves against
 the viewport rather than the wrap; and there is no viewport clamp or flip in the hook, so a panel
 taller or wider than its corner allows will simply hang off. `anchored` is opt-in — a consumer
@@ -3378,9 +3386,11 @@ same three additions.
   bullet (`BrandBullet.tsx`) rather than text; alt-click knocks it loose into the easter egg (see
   `BouncingBullet`). Also embeds `MapNameField`, `MapVersionPill`, `SnapToggleBar`,
   `PalettesDialog`, `ViewPopover`,
-  the **`⚡` `PerfPopover`**
-  ([PerfPopover.tsx](src/components/PerfPopover.tsx) — a one-shot snapshot of `devCounters()`
-  taken when it opens, for diagnosing a session that has grown slow; see the `debug/` folder),
+  the **`🚀` `DevPopover`**
+  ([DevPopover.tsx](src/components/DevPopover.tsx) — the pane temporary dev controls are stashed
+  in, as collapsible top-level sections: **Performance**, a one-shot snapshot of `devCounters()`
+  taken when the section expands, for diagnosing a session that has grown slow (see the `debug/`
+  folder), and **Guide rendering**, the alignment guides' ink dials in `useDevSettings`),
   and the **`?` `HelpPopover`**
   ([HelpPopover.tsx](src/components/HelpPopover.tsx) — a quick-reference interaction guide, also
   opened by the `?` key). Owns **`captureExportSnapshot`** — a detached clone of the canvas as the
@@ -4245,7 +4255,7 @@ Each is confirmed in source/tests; file pointers included.
   only thing about it a gate touches. It is carried in the repo because the previous optimization
   run's harnesses died untracked with their worktree and cost more to rebuild than the optimization
   itself; `.perf/README.md` + `RESULTS.md` record what each measures and the still-open wasm-leak
-  investigation behind the Perf popover.
+  investigation behind the Developer pane's counters.
 - **Known gaps** (per the deep-dive): no pixel/visual golden for the merged-dot-border result;
   `MapCanvas`'s full pointer fan-out is only tested per-hook. (`Transfer`/`RouteBullet`/`LineTag`
   round-trips now live in `serialize.entities.test.ts`.)
