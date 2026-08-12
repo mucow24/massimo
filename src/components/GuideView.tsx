@@ -1,6 +1,6 @@
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { guideSegmentInBox } from '../geometry/snap';
-import { useLiveViewportStore } from '../state/viewportStore';
+import { useLivePendingZoom } from '../state/viewportStore';
 import type { AlignmentGuide, GuideOrientation } from '../model/types';
 
 // Ink recipe in SCREEN px at/above GUIDE_REF_ZOOM. The ink is HYBRID-sized:
@@ -18,8 +18,10 @@ const GUIDE_MIN_PX = 0.5;
 const GUIDE_REF_ZOOM = 2;
 // Paper-toned under-stroke per SIDE of the core (the two-tone trick from the
 // selection ring: one tone vanished against the wrong body, so the dash
-// carries its own contrast — the casing melts into bare paper and cuts an
-// outline out of any ink it crosses).
+// carries its own contrast). Guides paint BELOW map ink, so the casing can
+// only ever win against what sits under them — polygons, images, the grid —
+// where it cuts a paper outline around each dash; on bare canvas it
+// disappears into the paper it matches.
 const GUIDE_CASING_PX = 0.75;
 const HIT_PX = 12;
 // Derived: the recipe's scale floor, and its repeat length in recipe px.
@@ -47,8 +49,10 @@ interface Props {
   vbH: number;
   // The three-state restroke palette (theme.alignGuide / -Selected / -Hover).
   guideColor: string;
-  // The casing under-stroke — theme.underlay, the "reads as empty canvas"
-  // tone the dashed line styles already use for their gaps.
+  // The casing under-stroke — theme.canvasBg, the actual paper (it follows
+  // the dimmed day papers; this layer is export-excluded, so it sits on the
+  // screen side of the export door). NOT theme.underlay, which is
+  // export-reaching map paint deliberately frozen white across day papers.
   casingColor: string;
   selectedColor: string;
   hoverColor: string;
@@ -75,7 +79,9 @@ interface Props {
 /**
  * One alignment guide: a dashed line spanning the whole (overdrawn) canvas
  * (export-excluded by the layer that mounts this), riding a paper-toned
- * casing so the dashes stay legible across any body they cross. Selection,
+ * casing so the dashes stay legible over the background band painted below
+ * guides — polygons, images, grid (map ink paints above and simply covers a
+ * guide it crosses). Selection,
  * hover and snap engagement are each a RESTROKE of the core — selected
  * amber, hover the softened amber, engaged the accent under the snap chrome
  * — rather than an overlay beside the line: a guide has no body to outline,
@@ -111,12 +117,10 @@ export function GuideView({
 }: Props) {
   // The zoom the ink is sized by: the in-flight wheel zoom while a gesture is
   // live, else the committed prop — otherwise the recipe visibly POPS into
-  // its new size at the settle commit, ~100ms after the wheel stops. A
-  // zoom-only selector, deliberately not useLiveZoom: pan frames publish a
-  // new pending with the SAME zoom, so only zoom frames re-render, and only
-  // the few mounted guides at that.
-  const liveZoom = useLiveViewportStore((s) => s.pending?.zoom ?? null);
-  const z = liveZoom ?? zoom;
+  // its new size at the settle commit, ~100ms after the wheel stops. Only
+  // zoom frames re-render (see useLivePendingZoom), and only the few mounted
+  // guides at that.
+  const z = useLivePendingZoom() ?? zoom;
   const px = (v: number) => v / z;
   const scale = Math.min(Math.max(z / GUIDE_REF_ZOOM, MIN_SCALE), 1);
   const ink = (v: number) => (v * scale) / z;

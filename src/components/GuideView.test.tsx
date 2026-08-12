@@ -5,14 +5,14 @@ import { makeGuide } from '../test/fixtures';
 import { useLiveViewportStore } from '../state/viewportStore';
 import type { AlignmentGuide } from '../model/types';
 
-const renderGuide = (guide: AlignmentGuide, zoom = 1, vbX = -500) =>
+const renderGuide = (guide: AlignmentGuide, zoom = 1, vbX = -500, vbY = -500) =>
   render(
     <svg>
       <GuideView
         guide={guide}
         zoom={zoom}
         vbX={vbX}
-        vbY={-500}
+        vbY={vbY}
         vbW={1000}
         vbH={1000}
         guideColor="#888"
@@ -47,7 +47,7 @@ describe('<GuideView /> diagonals', () => {
     const { container } = renderGuide(
       makeGuide({ id: 'gu', orientation: 'diagonal-up', offset: 200 }),
     );
-    const visible = container.querySelector('line')!;
+    const visible = container.querySelector('[data-guide-ink]')!;
     expect(Number(visible.getAttribute('x1'))).toBe(-300);
     expect(Number(visible.getAttribute('y1'))).toBe(500);
     expect(Number(visible.getAttribute('x2'))).toBe(500);
@@ -99,21 +99,37 @@ describe('<GuideView /> hybrid ink sizing', () => {
 });
 
 describe('<GuideView /> dash phase', () => {
-  it('anchors the pattern to the world line, not the clip box', () => {
-    // Same guide, two overdrawn boxes (a pan commit re-clips the segment):
-    // the pattern must sit at the same WORLD phase in both, i.e. segment
-    // start minus dashoffset lands on a whole number of periods from the
-    // guide's (0, offset) anchor. Period at zoom 1: (5+2)·0.5 = 3.5 world.
-    for (const vbX of [-500, -501]) {
-      const { container, unmount } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1, vbX);
-      const line = container.querySelector('line')!;
+  const ORIENTATIONS = ['horizontal', 'vertical', 'diagonal-up', 'diagonal-down'] as const;
+
+  it.each(ORIENTATIONS)('anchors the %s pattern to the world line, not the clip box', (o) => {
+    // Same guide, two overdrawn boxes (a pan commit re-clips the segment —
+    // the origin shifts on BOTH axes so every orientation's start actually
+    // moves): the pattern must sit at the same WORLD phase in both, i.e. the
+    // segment start's distance along the line from the guide's (0, offset)
+    // anchor minus dashoffset lands on a whole number of periods. That
+    // distance is x1 (horizontal), y1 (vertical), or x1·√2 (diagonals — the
+    // x-span foreshortens true length). Period at zoom 1: (5+2)·0.5 = 3.5.
+    const starts = new Set<number>();
+    for (const shift of [0, -1]) {
+      const { container, unmount } = renderGuide(
+        makeGuide({ id: 'g', orientation: o, offset: 0 }),
+        1,
+        -500 + shift,
+        -500 + shift,
+      );
+      const line = container.querySelector('[data-guide-ink]')!;
       const x1 = Number(line.getAttribute('x1'));
+      const y1 = Number(line.getAttribute('y1'));
+      const along = o === 'horizontal' ? x1 : o === 'vertical' ? y1 : x1 * Math.SQRT2;
+      starts.add(along);
       const phase = Number(line.getAttribute('stroke-dashoffset'));
-      expect(x1).toBe(vbX);
-      const periods = (x1 - phase) / 3.5;
+      const periods = (along - phase) / 3.5;
       expect(periods).toBeCloseTo(Math.round(periods), 10);
       unmount();
     }
+    // Guard the guard: if the shifted box didn't move the segment start, the
+    // two renders proved nothing.
+    expect(starts.size).toBe(2);
   });
 });
 

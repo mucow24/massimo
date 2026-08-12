@@ -731,12 +731,13 @@ one that misses it entirely mounts nothing) in its own theme slots, not the ring
 selected state — a guide's job is to be SEEN, and every state is a plain restroke since an
 infinite line has no body to outline; [GuideView.tsx](src/components/GuideView.tsx)). The ink
 is hybrid-sized — screen-constant at/above 200% zoom, riding the canvas below it, floored at
-half a screen px — and each dash sits on a `theme.underlay` casing (the selection ring's
-two-tone lesson: a single tone vanishes against the wrong body, so the casing melts into bare
-paper and cuts an outline out of any ink the dash crosses). Dash phase is anchored to the
-line's own world foot and the size tracks the in-flight wheel zoom, so pan/zoom commits
-neither re-phase nor pop it (only the fat grab stroke stays plain screen-constant, so hit
-comfort survives zooming out). Born by
+half a screen px — and each dash sits on a `theme.canvasBg` casing (the selection ring's
+two-tone lesson: a single tone vanishes against the wrong body — the casing melts into the
+paper, dimmed day papers included, and cuts an outline out of the band art painted below
+guides; map ink paints above them and simply covers a guide it crosses). Dash phase is
+anchored to the line's own world foot, and ink size tracks the in-flight wheel zoom, so a
+pan or zoom commit neither re-phases nor pops the pattern; only the fat grab stroke stays
+plain screen-constant, so hit comfort survives zooming out however thin the ink runs. Born by
 dragging out of a **guide well** — slim strips flush with the canvas's top/left edges plus the
 two left corner squares between them: top pulls a horizontal guide down, left a vertical one
 right, the upper-left corner a / and the lower-left a \ — each well mints the guide

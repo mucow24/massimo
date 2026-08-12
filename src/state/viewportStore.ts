@@ -143,21 +143,31 @@ export const useLiveViewportStore = create<LiveViewportState>((set) => ({
 }));
 
 /**
+ * The in-flight gesture ZOOM, or null between gestures (and, because the
+ * selector returns only the primitive, subscribers re-render solely when the
+ * zoom VALUE changes — pan frames publish a new pending with the same zoom
+ * and wake nobody). That bailout is what makes a small per-item subscription
+ * affordable (the alignment guides size their ink by it); a per-item body
+ * pass over thousands of nodes would still re-render them all on every WHEEL
+ * frame, so the multi-thousand-node canvas keeps reading committed state.
+ */
+export function useLivePendingZoom(): number | null {
+  return useLiveViewportStore((s) => s.pending?.zoom ?? null);
+}
+
+/**
  * The zoom a SELECTED item's chrome should size its handles by: the in-flight
  * (pending) gesture zoom while a pan/zoom is live, else the committed zoom.
- * Subscribing to `pending` re-renders the caller on every gesture frame, so use
- * it ONLY inside selected-only overlays (one item at a time) — never in a
- * per-item body pass, which would re-render the whole multi-thousand-node
- * canvas per frame, the exact cost the imperative gesture path avoids. Handles stay
- * screen-constant AND track the gesture, so nothing snaps when it commits.
- * (Stroke widths don't need this — vector-effect="non-scaling-stroke" holds
- * them with no subscription at all; only handle body geometry, which
- * vector-effect can't touch, does.)
+ * Handles stay screen-constant AND track the gesture, so nothing snaps when
+ * it commits. Re-renders only on zoom changes (see useLivePendingZoom), but
+ * wheel frames still hit every subscriber, so the per-item-body-pass caution
+ * there applies here too. (Stroke widths don't need this —
+ * vector-effect="non-scaling-stroke" holds them with no subscription at all;
+ * only handle body geometry, which vector-effect can't touch, does.)
  */
 export function useLiveZoom(): number {
   const committed = useViewportStore((s) => s.zoom);
-  const pending = useLiveViewportStore((s) => s.pending);
-  return pending?.zoom ?? committed;
+  return useLivePendingZoom() ?? committed;
 }
 
 /**
