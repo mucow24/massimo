@@ -1,10 +1,10 @@
-import { ChevronDownIcon, LoopIcon, ResetIcon } from '@radix-ui/react-icons';
+import { ChevronDownIcon, LoopIcon } from '@radix-ui/react-icons';
 import * as Select from '@radix-ui/react-select';
 import { FieldSelectContent } from './FieldSelectContent';
+import { OverrideDot, useOverriddenFields } from './OverrideDot';
 import { useInlineRename } from './useInlineRename';
 import { useDoc } from '../state/store';
-import { captureStyleProps, styleFieldsDiff, stylesOfKind } from '../model/styles';
-import type { MapDoc, StyleKind } from '../model/types';
+import { STYLE_FIELDS, stylesOfKind, type ItemStyleKind } from '../model/styles';
 
 // Select sentinels. Real style ids are UUIDs (or `y0`-style counter ids in
 // tests), so the dunder values can't collide with one.
@@ -12,7 +12,8 @@ const CUSTOM = '__custom__';
 const SAVE = '__save__';
 
 interface Props {
-  kind: StyleKind;
+  // stopDot has no item collection, so it never mounts a style row.
+  kind: ItemStyleKind;
   itemId: string;
   styleId: string | undefined;
   disabled?: boolean;
@@ -23,28 +24,28 @@ interface Props {
  * of this kind's named styles plus the "Custom" sentinel and a define-by-
  * example "Save style…" action that captures the item's current effective
  * formatting (typing an existing name redefines that style, like palette
- * upsert), followed by the Sync-to-style and Revert-to-style buttons. The
- * dropdown's VALUE derives from the styleId tag alone; covered edits keep the
- * tag as per-field overrides, and while any exist the trigger reads
- * "<name> (edited)" — the buttons resolve that divergence in either
- * direction (push the item's look into the def, or re-stamp the def over the
- * item). Mount with key={itemId} so naming state resets when the selection
- * switches items.
+ * upsert), followed by the Sync-to-style button. The dropdown's VALUE derives
+ * from the styleId tag alone; covered edits keep the tag as per-field
+ * overrides, and while any exist the trigger reads "<name> (edited)". The two
+ * directions out of that divergence are Sync (push the item's look into the
+ * def, all wearers follow) and the row's own override dot — the same red
+ * gutter marker the field rows wear, standing for the whole covered set, so
+ * reverting everything is the row-level case of the one revert idiom rather
+ * than a second button. Mount with key={itemId} so naming state resets when
+ * the selection switches items.
  */
 export function StyleRow({ kind, itemId, styleId, disabled }: Props) {
   const styles = useDoc((s) => s.styles);
   const applyStyle = useDoc((s) => s.applyStyle);
   const clearStyleTag = useDoc((s) => s.clearStyleTag);
   const saveStyle = useDoc((s) => s.saveStyle);
-  // Does the item diverge from its style on any covered field? (false when
-  // untagged — nothing to diverge from.) stopDot never mounts a StyleRow, so
-  // the kind narrows safely.
-  const edited = useDoc((s) => {
-    const def = styleId !== undefined ? s.styles[styleId] : undefined;
-    if (!def || def.kind !== kind || kind === 'stopDot') return false;
-    const props = captureStyleProps(s as unknown as MapDoc, kind, itemId);
-    return props !== null && styleFieldsDiff(kind, props, def.props).length > 0;
-  });
+  // The item's whole override set — '' when it matches its style or is
+  // untagged (nothing to diverge from). ONE capture+diff for the row: the
+  // trigger's "(edited)", the Sync button's idle state and the gutter dot are
+  // three faces of this one answer, so the dot takes it rather than
+  // recomputing it.
+  const overridden = useOverriddenFields(kind, itemId, STYLE_FIELDS[kind]);
+  const edited = overridden !== '';
   // Shared inline-rename plumbing (same as MapNameField / the Styles panel).
   const {
     editing: naming,
@@ -83,6 +84,16 @@ export function StyleRow({ kind, itemId, styleId, disabled }: Props) {
 
   return (
     <div className="row style-row">
+      {/* Every covered field at once: the gutter dot appears as soon as the
+          item diverges anywhere, and clicking it puts the whole item back on
+          its style. */}
+      <OverrideDot
+        kind={kind}
+        itemId={itemId}
+        overridden={overridden}
+        name="all overrides"
+        disabled={disabled}
+      />
       <label htmlFor={`style-select-${itemId}`}>Style</label>
       <Select.Root
         value={current}
@@ -119,8 +130,7 @@ export function StyleRow({ kind, itemId, styleId, disabled }: Props) {
           </Select.Item>
         </FieldSelectContent>
       </Select.Root>
-      {/* Resolve a divergence in either direction. Both idle (disabled) until
-          the item actually diverges from a real style. */}
+      {/* Idle (disabled) until the item actually diverges from a real style. */}
       <button
         type="button"
         className="style-row-btn"
@@ -130,16 +140,6 @@ export function StyleRow({ kind, itemId, styleId, disabled }: Props) {
         onClick={() => saveStyle(kind, styles[current].name, itemId)}
       >
         <LoopIcon />
-      </button>
-      <button
-        type="button"
-        className="style-row-btn"
-        aria-label="Revert to style"
-        title="Revert to style — discard this item's overrides"
-        disabled={disabled || current === CUSTOM || !edited}
-        onClick={() => applyStyle(current, itemId)}
-      >
-        <ResetIcon />
       </button>
     </div>
   );
