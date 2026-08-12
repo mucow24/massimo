@@ -1166,7 +1166,7 @@ select option {
   display: flex;
   flex-direction: column;
 }
-/* The text-label popover alone runs half again wider: its textarea, the
+/* The text-label popover alone runs a third wider again: its textarea, the
    style row (+ Sync button) and six slider rows want the room. */
 .text-label-popover {
   width: 372px;
@@ -2079,13 +2079,14 @@ button.field-select > :not(.field-select-caret) {
   background: #000;
 }
 .tab-bar .tab {
-  /* Grow to share the strip, but never start below the label's own width: an
-     equal-thirds basis (`flex: 1`) gives each tab 82px of text box, and
-     "Stations (489)" wants 85 — so a three-digit count folded that tab onto
-     two lines and took the whole strip's height with it. Sized from content
-     up, the counts tab simply takes the few pixels the two short ones don't
-     need. `nowrap` holds the line for counts past anything a real map reaches. */
-  flex: 1 1 auto;
+  flex: 1;
+  /* An equal third of the 320px panel is 82px of text box and "Stations (489)"
+     wants 85, so the count folded onto two lines and took the strip's height
+     with it. `nowrap` is the whole fix, and it does two things: the text can no
+     longer break, and a flex item's automatic minimum size is its min-content
+     width — which for an unbreakable run is the run itself. So the long tab
+     floors at its own label and the two short ones give up the difference,
+     rather than all three splitting the strip evenly and one overflowing. */
   white-space: nowrap;
   background: transparent;
   border: 0;
@@ -3605,8 +3606,8 @@ body:has(.app[data-theme='dark']) {
 }
 
 /* Station + line popovers: the two sidebar-era editors as on-canvas popovers
-   (both share the .text-label-popover shell). Wider than the standard 248px
-   so the per-stop rows / slider rows fit on one line. */
+   (both share the .text-label-popover shell). Wider than the standard item
+   popover so the per-stop rows / slider rows fit on one line. */
 .station-popover,
 .line-popover {
   width: 320px;

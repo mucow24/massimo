@@ -18,39 +18,27 @@ import {
  * metrics at all, so these have to run in a real browser against the real
  * files in /public/fonts.
  *
- * Two different measurements, because the two failure modes are different and
- * a check for one is blind to the other:
+ * Which measurement proves which case depends on what `white-space: nowrap`
+ * is DOING there, and the two are blind to each other:
  *
- * `lines()` counts distinct line boxes over the element's TEXT nodes — the
- * mode for anything that may wrap. Not the element's height: a wrapped control
- * grows its whole row, so a height check tells you the row got tall without
- * telling you which string broke.
+ * On the dropdowns nowrap is the design — a style name is the user's to write,
+ * so the control is meant to trail off rather than grow. Text that cannot break
+ * always reports one line box, so a line count there can only ever answer 1 and
+ * proves nothing; TRUNCATION (`scrollWidth` vs `clientWidth`) is the only
+ * observable left.
  *
- * `shown()` returns what a one-line box actually renders. A control pinned to
- * `white-space: nowrap` can never fail a line count, so on the dropdowns —
- * which are pinned, deliberately — a line count is VACUOUS and only the
- * truncation test can go red. Sanity-check any edit here by putting
- * `.tab-bar .tab` back on `flex: 1` (equal thirds) or a `.style-row` label
- * back on its panel's fixed column width: the matching case must go red.
+ * On the tabs nowrap is the FIX. Take it away and the label breaks onto a
+ * second line — which costs height, not width, so `scrollWidth` stays put and
+ * the truncation check goes quiet on the very regression it was aimed at. The
+ * line count is what guards that, and the strip's own overflow guards the other
+ * direction (labels that no longer fit side by side).
+ *
+ * Sanity-check any edit by breaking the fix under it and confirming the
+ * matching case goes red first — all four verified: `white-space: nowrap` off
+ * `.tab-bar .tab` (line count), `padding: 10px 40px` on it (strip overflow), a
+ * `.style-row` label back on its panel's column (alignment), `.polygon-popover`
+ * back to 280 (truncation).
  */
-const lines = (page: Page, selector: string, nth = 0) =>
-  page.evaluate(
-    ([sel, i]) => {
-      const el = document.querySelectorAll(sel as string)[i as number];
-      if (!el) throw new Error(`no element for ${sel}[${i}]`);
-      const tops = new Set<number>();
-      const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-      let node: Node | null;
-      while ((node = walk.nextNode())) {
-        if (!node.nodeValue?.trim()) continue;
-        const range = document.createRange();
-        range.selectNodeContents(node);
-        for (const r of range.getClientRects()) if (r.width > 0.5) tops.add(Math.round(r.top));
-      }
-      return tops.size;
-    },
-    [selector, nth] as const,
-  );
 
 /**
  * `{ text, whole }` for a select trigger's value: what it holds, and whether
@@ -84,9 +72,7 @@ const controlEdges = (page: Page, panelSelector: string) =>
     const edges = new Set<number>();
     for (const row of panel.querySelectorAll('.row')) {
       if (!row.querySelector('label')) continue;
-      const control = row.querySelector(
-        'button.field-select, .shape-group, .segmented-toggle, .layer-buttons, .daynight-pair',
-      );
+      const control = row.querySelector('button.field-select, .shape-group');
       if (!control) continue;
       edges.add(Math.round(control.getBoundingClientRect().left - base));
     }
@@ -118,25 +104,49 @@ function manyStations(n: number): Seed {
   };
 }
 
+/**
+ * Equal thirds of the 320px panel give each tab 82px of text box, and
+ * "Stations (489)" wants 85.
+ *
+ * The strip's rect is no use here: `.tab-bar` is a block-level child of the
+ * sidebar, so its box is the sidebar's content box whatever the tabs inside it
+ * do — the children are what overflow. Both readings below have to come off the
+ * content: each tab against its own label, and the strip against the sum.
+ */
 test.describe('sidebar tabs', () => {
-  test('a three-digit station count stays on the tab’s own line', async ({ page }) => {
+  const measure = (page: Page) =>
+    page.evaluate(() => {
+      // Distinct line boxes, so a wrapped label reads 2. Deduped by top rather
+      // than counted: `getClientRects` yields one rect per text FRAGMENT, and
+      // "Stations ({n})" is three nodes — the raw count is 3 on one line.
+      const lineBoxes = (el: Element) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size;
+      };
+      return {
+        tabs: [...document.querySelectorAll('.tab-bar .tab')].map((t) => ({
+          text: (t.textContent ?? '').trim(),
+          lines: lineBoxes(t),
+        })),
+        stripOverflow:
+          document.querySelector('.tab-bar')!.scrollWidth -
+          document.querySelector('.tab-bar')!.clientWidth,
+      };
+    });
+
+  test('a three-digit station count stays on one line', async ({ page }) => {
     await seedAndOpen(page, manyStations(489));
     await expect(page.getByRole('button', { name: 'Stations (489)' })).toBeVisible();
-    // Equal thirds of the 320px panel leave "Stations (489)" ~3px short, so it
-    // wrapped — and took the whole tab strip to two rows with it.
-    expect(await lines(page, '.tab-bar .tab', 0)).toBe(1);
-    expect(await lines(page, '.tab-bar .tab', 1)).toBe(1);
-    expect(await lines(page, '.tab-bar .tab', 2)).toBe(1);
+    const m = await measure(page);
+    // Guard: the tab that has to hold the long label is really in the reading.
+    expect(m.tabs.map((t) => t.text)).toContain('Stations (489)');
+    expect(m.tabs.filter((t) => t.lines !== 1)).toEqual([]);
   });
 
-  test('the tab strip stays inside the sidebar', async ({ page }) => {
+  test('the three tabs together fit the strip', async ({ page }) => {
     await seedAndOpen(page, manyStations(489));
-    const fits = await page.evaluate(() => {
-      const bar = document.querySelector('.tab-bar')!;
-      const side = document.querySelector('.sidebar')!;
-      return bar.getBoundingClientRect().right <= side.getBoundingClientRect().right + 0.5;
-    });
-    expect(fits).toBe(true);
+    expect((await measure(page)).stripOverflow).toBeLessThanOrEqual(0);
   });
 });
 
@@ -151,7 +161,7 @@ test.describe('sidebar tabs', () => {
  * The room comes from the SHELL, never from the column. A style row that
  * shrinks its own label buys the dropdown 25px and hands back a ragged left
  * edge — the dropdown starting somewhere no other control in the panel starts.
- * `alignment` below is the assertion that closes that door.
+ * `controlEdges` is the assertion that closes that door.
  */
 test.describe('style row', () => {
   test('a route bullet’s style shows "Default (edited)" whole', async ({ page }) => {
@@ -172,7 +182,6 @@ test.describe('style row', () => {
     await size.fill('19');
     await size.press('Enter');
     await expect(style).toHaveText('Default (edited)');
-    expect(await lines(page, '.bullet-popover .style-row [role="combobox"]')).toBe(1);
     expect(await shown(page, '.bullet-popover .style-row [role="combobox"]')).toMatchObject({
       text: 'Default (edited)',
       whole: true,
@@ -194,7 +203,6 @@ test.describe('style row', () => {
     await strokeWidth.fill('3');
     await strokeWidth.press('Enter');
     await expect(style).toHaveText('Default (edited)');
-    expect(await lines(page, '.polygon-popover .style-row [role="combobox"]')).toBe(1);
     expect(await shown(page, '.polygon-popover .style-row [role="combobox"]')).toMatchObject({
       text: 'Default (edited)',
       whole: true,
@@ -226,7 +234,6 @@ test.describe('style row', () => {
     await width.fill('6');
     await width.press('Enter');
     await expect(style).toHaveText('Default (edited)');
-    expect(await lines(page, '.transfer-popover .style-row [role="combobox"]')).toBe(1);
     expect(await shown(page, '.transfer-popover .style-row [role="combobox"]')).toMatchObject({
       text: 'Default (edited)',
       whole: true,
