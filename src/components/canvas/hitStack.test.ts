@@ -377,12 +377,39 @@ describe('mergeLockedIntoStack', () => {
     expect(merged.map((e) => `${e.kind}:${e.id}`)).toEqual(['station:s1', 'line:L1', 'polygon:p0']);
   });
 
-  it('drops locked entries already present in the live stack (locked-but-selected items)', () => {
+  it('sinks a locked-but-selected entry from the live stack into the locked tail', () => {
+    // A locked item is click-through only while UNSELECTED; selecting it makes
+    // it hittable, so it leaks into the live elementsFromPoint stack at its
+    // natural z. It must not stay there: locked reads as background, so it
+    // belongs in the appended tail (below all live items), keeping the cycle
+    // order independent of what is currently selected.
     const merged = mergeLockedIntoStack(
       [entry('polygon', 'p0'), entry('line', 'L1')],
       [entry('polygon', 'p0')],
     );
-    expect(merged.map((e) => `${e.kind}:${e.id}`)).toEqual(['polygon:p0', 'line:L1']);
+    expect(merged.map((e) => `${e.kind}:${e.id}`)).toEqual(['line:L1', 'polygon:p0']);
+  });
+
+  it('keeps the locked tail order stable no matter which locked item is selected', () => {
+    // Two stacked locked polygons C, D. Whichever one is selected leaks into
+    // the live stack at its natural z; the OTHER stays click-through and is
+    // sourced only from the (selection-independent) locked list. If the merge
+    // let the selected one float up, the two would swap places between clicks
+    // and Alt+click would ping-pong C↔D forever instead of wrapping. Both
+    // selections must therefore produce the SAME cycle order.
+    const locked = [entry('polygon', 'C'), entry('polygon', 'D')];
+    const cSelected = mergeLockedIntoStack([entry('label', 'A'), entry('polygon', 'C')], locked);
+    const dSelected = mergeLockedIntoStack([entry('label', 'A'), entry('polygon', 'D')], locked);
+    expect(cSelected.map((e) => `${e.kind}:${e.id}`)).toEqual([
+      'label:A',
+      'polygon:C',
+      'polygon:D',
+    ]);
+    expect(dSelected.map((e) => `${e.kind}:${e.id}`)).toEqual([
+      'label:A',
+      'polygon:C',
+      'polygon:D',
+    ]);
   });
 });
 

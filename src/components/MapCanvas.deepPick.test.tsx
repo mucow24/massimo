@@ -5,7 +5,7 @@ import { dragState, useDoc } from '../state/store';
 import { useSelection } from '../state/selection';
 import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
-import { makePolygon, makeStation, makeStop, makeLine } from '../test/fixtures';
+import { makePolygon, makeStation, makeStop, makeLine, makeTextLabel } from '../test/fixtures';
 import { stubCanvasHostSize } from '../test/interaction';
 
 // jsdom reports clientWidth/clientHeight as 0, which collapses the viewBox to
@@ -319,5 +319,64 @@ describe('MapCanvas — Alt+click deep-picks through the under-cursor stack', ()
     });
     expect(redistributeBetween).not.toHaveBeenCalled();
     expect(useSelection.getState().selectedStationIds).toEqual(['s1']);
+  });
+
+  // A stack of TWO locked polygons under live items. A locked polygon is
+  // click-through only while unselected, so selecting one makes it hittable and
+  // it re-enters elementsFromPoint at its natural z. Cycling must still march
+  // through the whole stack and WRAP — not trap on the two locked entries,
+  // swapping their order each click. This is the real-world repro (a label over
+  // an unlocked shape over two locked shapes), and it needs a snapshot that
+  // reacts to selection the way a browser does — hence the pointer-events read.
+  it('cycles through a pair of stacked locked polygons and wraps (no locked ping-pong)', () => {
+    render(<App />);
+    act(() => {
+      useDoc.setState({
+        ...useDoc.getState(),
+        stations: {},
+        lines: {},
+        lineOrder: [],
+        polygons: {
+          B: makePolygon({ id: 'B' }),
+          C: makePolygon({ id: 'C', locked: true }),
+          D: makePolygon({ id: 'D', locked: true }),
+        },
+        textLabels: { A: makeTextLabel({ id: 'A', x: 0, y: 0, text: 'Hi' }) },
+        backgroundOrder: ['D', 'C', 'B'], // later = on top → B top, D bottom
+      });
+    });
+    stubSvgRect();
+    // Faithful elementsFromPoint: a body is reported only when it is NOT
+    // click-through (pointer-events:none), topmost-first. Reads the real
+    // rendered attribute, so it flips a locked polygon in as soon as selection
+    // makes it hittable — exactly the feedback the bug rode.
+    (document as unknown as { elementsFromPoint: () => Element[] }).elementsFromPoint = () =>
+      Array.from(document.querySelectorAll('g[data-text-label-id], path[data-polygon-id]'))
+        .filter((el) => {
+          const pe =
+            el.getAttribute('pointer-events') ?? (el as HTMLElement).style.pointerEvents ?? '';
+          return pe !== 'none';
+        })
+        .reverse();
+    const svg = document.querySelector('.canvas-host svg')!;
+    const pick = () => {
+      const s = useSelection.getState();
+      return s.selectedLabelIds[0]
+        ? `label:${s.selectedLabelIds[0]}`
+        : `poly:${s.selectedPolygonIds[0]}`;
+    };
+    const picks: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      altClickCenter(svg);
+      picks.push(pick());
+    }
+    expect(picks).toEqual([
+      'label:A',
+      'poly:B',
+      'poly:C',
+      'poly:D',
+      'label:A', // wraps back to the top — the step the ping-pong bug never reached
+      'poly:B',
+    ]);
   });
 });
