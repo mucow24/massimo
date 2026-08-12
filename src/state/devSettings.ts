@@ -20,6 +20,10 @@ export interface GuideRenderSettings {
   dash: string;
   /** Core stroke width in recipe px. */
   thickness: number;
+  /** The casing under-stroke's width in recipe px, per SIDE of the core. Its
+   *  own dial, but not its own zoom curve: it rides the core's scale (see
+   *  GuideView), so the pair keeps its proportion at every zoom. */
+  casingThickness: number;
   /** The screen-px floor the whole recipe scales down to when zoomed out. */
   minThickness: number;
   /** The zoom, as a percentage, where sizing flips from canvas-relative
@@ -32,6 +36,7 @@ export const DEFAULT_GUIDE_RENDER: GuideRenderSettings = {
   casingColor: null,
   dash: '5 2',
   thickness: 1.5,
+  casingThickness: 0.75,
   minThickness: 0.5,
   transitionZoomPercent: 200,
 };
@@ -86,7 +91,7 @@ export const useDevSettings = create<DevSettingsState>()(
     {
       name: 'massimo-dev-settings',
       storage: createJSONStorage(() => localStorage),
-      // The full six-field snapshot persists after any dial turn (Reset
+      // The full snapshot persists after any dial turn (Reset
       // re-snapshots too), so a later change to DEFAULT_GUIDE_RENDER is
       // shadowed by the stored copy until the next Reset. Accepted: the
       // endgame of tuning here is baking new constants, at which point the

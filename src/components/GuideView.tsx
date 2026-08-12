@@ -9,20 +9,21 @@ import type { AlignmentGuide, GuideOrientation } from '../model/types';
 // reference (where the thin line is what buys precise placement), riding the
 // canvas below it (so a zoomed-out overview isn't dominated by giant dashes),
 // floored at the min thickness on screen (so it never fades out entirely).
-// The whole recipe — stroke and dashes together — scales as one, keeping the
-// rhythm; only the grab stroke is exempt and stays plain screen-constant, since
+// The whole recipe — core, casing and dashes together — scales as one off the
+// CORE's thickness/min pair, so the guide reads proportionally the same at
+// every zoom and its casing stops shrinking where the core's floor stops it;
+// only the grab stroke is exempt and stays plain screen-constant, since
 // hit comfort must not shrink with the ink. The numbers were dialed in by eye
 // against a dense map and stay dialable: they live in `useDevSettings`
 // (state/devSettings.ts), whose defaults ARE the recipe, and the Developer
 // pane's Guide rendering section turns them.
 //
-// Paper-toned under-stroke per SIDE of the core (the two-tone trick from the
-// selection ring: one tone vanished against the wrong body, so the dash
-// carries its own contrast). Guides paint BELOW map ink, so the casing can
-// only ever win against what sits under them — polygons, images, the grid —
-// where it cuts a paper outline around each dash; on bare canvas it
-// disappears into the paper it matches.
-const GUIDE_CASING_PX = 0.75;
+// The paper-toned under-stroke (its own dial, `casingThickness`, per SIDE of
+// the core) comes from the two-tone trick from the selection ring: one tone
+// vanished against the wrong body, so the dash carries its own contrast.
+// Guides paint BELOW map ink, so the casing can only ever win against what
+// sits under them — polygons, images, the grid — where it cuts a paper outline
+// around each dash; on bare canvas it disappears into the paper it matches.
 const HIT_PX = 12;
 
 // The direction the guide MOVES (its one degree of freedom, perpendicular to
@@ -180,7 +181,7 @@ export function GuideView({
         x2={x2}
         y2={y2}
         stroke={recipe.casingColor ?? casingColor}
-        strokeWidth={ink(recipe.thickness + 2 * GUIDE_CASING_PX)}
+        strokeWidth={ink(recipe.thickness + 2 * recipe.casingThickness)}
         strokeDasharray={dasharray}
         strokeDashoffset={dashOffset}
         pointerEvents="none"

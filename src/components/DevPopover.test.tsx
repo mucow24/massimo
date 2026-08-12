@@ -103,6 +103,7 @@ describe('<DevPopover /> guide rendering section', () => {
       'true',
     );
     expect(screen.getByRole('spinbutton', { name: 'Thickness' })).toHaveValue(1.5);
+    expect(screen.getByRole('spinbutton', { name: 'Casing thickness' })).toHaveValue(0.75);
   });
 
   it('writes each dial straight to the live recipe', async () => {
@@ -119,6 +120,11 @@ describe('<DevPopover /> guide rendering section', () => {
     await user.clear(thickness);
     await user.type(thickness, '3');
     expect(useDevSettings.getState().guide.thickness).toBe(3);
+
+    const casing = screen.getByRole('spinbutton', { name: 'Casing thickness' });
+    await user.clear(casing);
+    await user.type(casing, '2');
+    expect(useDevSettings.getState().guide.casingThickness).toBe(2);
 
     const min = screen.getByRole('spinbutton', { name: 'Min thickness' });
     await user.clear(min);

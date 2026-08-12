@@ -154,6 +154,16 @@ function GuideRenderControls() {
         onChange={(n) => setGuide({ thickness: Math.max(0, n) })}
       />
       <NumericFieldRow
+        id="dev-guide-casing-thickness"
+        label="Casing thickness"
+        min={0}
+        max={3}
+        step={0.25}
+        value={guide.casingThickness}
+        getCurrent={() => live().casingThickness}
+        onChange={(n) => setGuide({ casingThickness: Math.max(0, n) })}
+      />
+      <NumericFieldRow
         id="dev-guide-min-thickness"
         label="Min thickness"
         min={0}
@@ -177,7 +187,8 @@ function GuideRenderControls() {
       />
       <p className="dev-note">
         Thicknesses are screen px at the transition zoom; below it the ink rides the canvas, down to
-        the minimum.
+        the minimum. Casing is per side, and scales with the core — the proportion holds at every
+        zoom.
       </p>
       <button type="button" className="ghost-btn" onClick={resetGuide}>
         Reset
