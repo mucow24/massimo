@@ -125,6 +125,7 @@ export function GuideView({
   // identity only moves when a dial is turned, so idle frames are free.
   const recipe = useDevSettings((s) => s.guide);
   const dashes = parseDashPattern(recipe.dash);
+  const casingDashes = parseDashPattern(recipe.casingDash);
   const px = (v: number) => v / z;
   // The floor as a fraction of the core. A thickness dialed to zero leaves it
   // meaningless — and 0/0 would reach the DOM as stroke-width="NaN" — so the
@@ -146,14 +147,20 @@ export function GuideView({
   // flicker after each gesture. `along` is the signed distance from the
   // anchor to the segment start along the path direction (×√2 for the
   // diagonals: their x-span foreshortens true length by 1/√2).
-  const period = ink(dashPeriod(dashes));
   const along =
     guide.orientation === 'horizontal'
       ? x1
       : guide.orientation === 'vertical'
         ? y1
         : x1 * Math.SQRT2;
-  const dashOffset = ((along % period) + period) % period;
+  // Each pattern phases on its OWN period: core and casing meet at the anchor
+  // (identical patterns therefore stay locked dash-for-dash), and a casing
+  // dialed to a different period is anchored just as firmly instead of
+  // re-phasing against the core's.
+  const phaseOf = (pattern: readonly number[]) => {
+    const period = ink(dashPeriod(pattern));
+    return ((along % period) + period) % period;
+  };
   // Every state is a restroke of the core, so a color dial can only be the
   // IDLE one — an override that swallowed selected/engaged/hover would take
   // the states with it.
@@ -164,7 +171,6 @@ export function GuideView({
       : hovered
         ? hoverColor
         : (recipe.color ?? guideColor);
-  const dasharray = dashes.map(ink).join(' ');
   return (
     <g
       data-guide={guide.id}
@@ -182,8 +188,8 @@ export function GuideView({
         y2={y2}
         stroke={recipe.casingColor ?? casingColor}
         strokeWidth={ink(recipe.thickness + 2 * recipe.casingThickness)}
-        strokeDasharray={dasharray}
-        strokeDashoffset={dashOffset}
+        strokeDasharray={casingDashes.map(ink).join(' ')}
+        strokeDashoffset={phaseOf(casingDashes)}
         pointerEvents="none"
       />
       <line
@@ -194,8 +200,8 @@ export function GuideView({
         y2={y2}
         stroke={stroke}
         strokeWidth={ink(recipe.thickness)}
-        strokeDasharray={dasharray}
-        strokeDashoffset={dashOffset}
+        strokeDasharray={dashes.map(ink).join(' ')}
+        strokeDashoffset={phaseOf(dashes)}
         pointerEvents="none"
       />
       <line

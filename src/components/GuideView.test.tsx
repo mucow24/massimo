@@ -228,6 +228,33 @@ describe('<GuideView /> developer dials', () => {
     expect(periods).toBeCloseTo(Math.round(periods), 10);
   });
 
+  it('takes an arbitrary casing dash, leaving the core on its own', () => {
+    setGuide({ casingDash: '6 1' });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    // Recipe px at zoom 1's ½ scale, same hybrid as everything else.
+    expect(container.querySelector('[data-guide-casing]')!.getAttribute('stroke-dasharray')).toBe(
+      '3 0.5',
+    );
+    // The core keeps its own 5 2 — the two patterns are separate dials.
+    expect(inkOf(container).dashes).toEqual([2.5, 1]);
+  });
+
+  it('phases the casing on its OWN period, so a differing pattern is pan-stable too', () => {
+    // Core period 7, casing period 4: borrowing the core's period here would
+    // re-phase the casing on every pan or zoom commit — the flicker the
+    // world-foot anchor exists to kill.
+    setGuide({ casingDash: '3 1' });
+    const { container } = renderGuide(makeGuide({ id: 'g', offset: 0 }), 1);
+    const casing = container.querySelector('[data-guide-casing]')!;
+    const phase = Number(casing.getAttribute('stroke-dashoffset'));
+    // 4 recipe px → 2 world units at this scale.
+    const periods = (Number(casing.getAttribute('x1')) - phase) / 2;
+    expect(periods).toBeCloseTo(Math.round(periods), 10);
+    // Guard the guard: the core's own phase differs, so this isn't a pass by
+    // coincidence of the two patterns agreeing.
+    expect(phase).not.toBeCloseTo(inkOf(container).phase, 10);
+  });
+
   it('floors the recipe at the min-thickness dial', () => {
     // Floor raised to the full core width: the ink can never ride the canvas
     // down, so it holds 1.5 screen px however far out the camera goes.

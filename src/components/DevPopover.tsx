@@ -120,7 +120,7 @@ function GuideRenderControls() {
       </div>
       <div className="options-popover-row">
         <label htmlFor="dev-guide-casing" className="options-popover-label">
-          Casing
+          Casing color
         </label>
         <ColorField
           id="dev-guide-casing"
@@ -141,6 +141,20 @@ function GuideRenderControls() {
           autoComplete="off"
           value={guide.dash}
           onChange={(e) => setGuide({ dash: e.target.value })}
+        />
+      </div>
+      <div className="options-popover-row">
+        <label htmlFor="dev-guide-casing-dash" className="options-popover-label">
+          Casing dash
+        </label>
+        <input
+          id="dev-guide-casing-dash"
+          type="text"
+          className="dev-text-field"
+          spellCheck={false}
+          autoComplete="off"
+          value={guide.casingDash}
+          onChange={(e) => setGuide({ casingDash: e.target.value })}
         />
       </div>
       <NumericFieldRow
@@ -187,8 +201,9 @@ function GuideRenderControls() {
       />
       <p className="dev-note">
         Thicknesses are screen px at the transition zoom; below it the ink rides the canvas, down to
-        the minimum. Casing is per side, and scales with the core — the proportion holds at every
-        zoom.
+        the minimum. Casing thickness is per side, and scales with the core — the proportion holds
+        at every zoom. A casing dash longer than the core wraps the dash ends, which an equal one
+        leaves bare.
       </p>
       <button type="button" className="ghost-btn" onClick={resetGuide}>
         Reset

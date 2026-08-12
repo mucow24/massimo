@@ -18,6 +18,11 @@ export interface GuideRenderSettings {
   casingColor: string | null;
   /** SVG dasharray in recipe px, held exactly as typed — "5 2". */
   dash: string;
+  /** The casing's own dasharray, same units and same held-as-typed contract.
+   *  Defaults to the core's pattern, which is what makes the casing hug each
+   *  dash; dial it longer to wrap the dash ENDS, which a same-length casing
+   *  leaves bare (butt caps end both strokes together). */
+  casingDash: string;
   /** Core stroke width in recipe px. */
   thickness: number;
   /** The casing under-stroke's width in recipe px, per SIDE of the core. Its
@@ -35,6 +40,7 @@ export const DEFAULT_GUIDE_RENDER: GuideRenderSettings = {
   color: null,
   casingColor: null,
   dash: '5 2',
+  casingDash: '5 2',
   thickness: 1.5,
   casingThickness: 0.75,
   minThickness: 0.5,

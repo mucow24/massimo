@@ -121,6 +121,11 @@ describe('<DevPopover /> guide rendering section', () => {
     await user.type(thickness, '3');
     expect(useDevSettings.getState().guide.thickness).toBe(3);
 
+    const casingDash = screen.getByRole('textbox', { name: 'Casing dash' });
+    await user.clear(casingDash);
+    await user.type(casingDash, '6 1');
+    expect(useDevSettings.getState().guide.casingDash).toBe('6 1');
+
     const casing = screen.getByRole('spinbutton', { name: 'Casing thickness' });
     await user.clear(casing);
     await user.type(casing, '2');
