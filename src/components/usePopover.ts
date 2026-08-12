@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type RefObject,
+} from 'react';
 
 /**
  * True when a keyboard event's target is a form field that should swallow
@@ -82,16 +90,73 @@ export function useDismiss(
   }, [active, onDismiss, escape, ...ignore]);
 }
 
+/** Air between the trigger's bottom edge and the panel's top. */
+const PANEL_GAP = 4;
+
 /**
  * Open/close state + outside-click and Escape handling for a small floating
  * panel anchored to a trigger element. Spread `wrapRef` onto the wrapping
  * element that contains both trigger and panel; clicks anywhere outside that
  * element (or Escape) close the popover.
+ *
+ * `panelStyle` pins the panel in WINDOW coordinates — fixed, just under the
+ * wrap, right edges flush. Wear it on any panel that opens inside a scrolling
+ * ancestor; a panel free to stay in flow (the inspector's shape picker, which
+ * is left-aligned rather than right-flush anyway) can keep its CSS placement
+ * and simply not spread it.
+ *
+ * Fixed rather than the `absolute; top: 100%; right: 0` this used to leave to
+ * CSS, because `absolute` is clipped by any scrolling ancestor and the toolbar
+ * strip is one: it carries `overflow-x: auto` so its tail scrolls instead of
+ * the page, and CSS forces the other axis to `auto` alongside it. The View and
+ * Perf panels landed inside the strip's scroll area, 40px of chrome swallowing
+ * a 287px panel, unreachable by the pointer. Their siblings never noticed —
+ * the Radix menus ride a fixed popper, Help portals to `.app` — so the escape
+ * belongs here, in the one place the un-portaled panels share.
+ *
+ * The panel stays a DOM CHILD of the wrap, which is what keeps `useDismiss`
+ * whole: fixed positioning moves the box, not the tree, so an inside click is
+ * still inside `wrapRef`.
  */
 export function usePopover() {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
   const close = useCallback(() => setOpen(false), []);
   useDismiss(open, close, [wrapRef]);
-  return { open, setOpen, wrapRef };
+
+  // Layout effect so the measurement lands before paint — a panel that mounted
+  // unplaced and snapped into position a frame later would visibly jump. That
+  // timing is also why a CLOSE need not clear the anchor: reopening re-measures
+  // here, still before paint, so the rect left over from last time is never on
+  // screen even for a frame.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const measure = () =>
+      setAnchor((prev) => {
+        const el = wrapRef.current;
+        if (!el) return prev;
+        const r = el.getBoundingClientRect();
+        const next = { top: r.bottom + PANEL_GAP, right: window.innerWidth - r.right };
+        // Value-equal bailout, as useDock does: a scroll that doesn't move the
+        // trigger must not cost a render.
+        return prev && prev.top === next.top && prev.right === next.right ? prev : next;
+      });
+    measure();
+    window.addEventListener('resize', measure);
+    // Capture, so the strip scrolling its own tail counts — that scroll never
+    // reaches window in the bubble phase, and a fixed panel does not ride along
+    // with its trigger on its own.
+    window.addEventListener('scroll', measure, true);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
+    };
+  }, [open]);
+
+  const panelStyle: CSSProperties | undefined = anchor
+    ? { position: 'fixed', top: anchor.top, right: anchor.right }
+    : undefined;
+
+  return { open, setOpen, wrapRef, panelStyle };
 }

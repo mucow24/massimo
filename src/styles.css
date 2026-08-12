@@ -316,7 +316,14 @@ select option {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   box-shadow: 0 4px 12px var(--shadow-tint);
-  z-index: 1;
+  /* Above the sidebar's own z-index:1, which — being equal, and earlier in the
+     DOM — used to lose the tie and paint over this whole stacking context. The
+     two never overlap in flow (different grid rows), so the only thing this
+     orders is a panel opened from the strip and hanging down into the canvas
+     row: at a narrow window the View and Perf panels reach the sidebar's
+     column, and their z-index:100 is scoped INSIDE here, so it could not save
+     them. Everything portaled to `.app` sits at 100+ and still clears this. */
+  z-index: 2;
   /* The toolbar's items keep their natural width (see the flex-shrink:0 rule
      below). When they exceed the viewport the STRIP scrolls, not the page: a
      window-level scrollbar would pan the whole app — canvas included — and
@@ -324,8 +331,12 @@ select option {
      well. Scrolling here also zeroes the grid item's automatic minimum size,
      so the app never outgrows the viewport, the strip's background covers
      every button, and the sidebar stays flush against the true right edge.
-     The menu panels rendered inside the strip escape the clip because Radix
-     positions them fixed (toolbarOverflow e2e holds this). */
+
+     Setting either axis makes the OTHER compute to `auto` as well, so the strip
+     clips vertically too: every panel opened from inside it must be positioned
+     fixed, or it is swallowed by 40px of chrome. The Radix menus get that from
+     their popper and Help from its `.app` portal; the hand-rolled ones get it
+     from usePopover's `panelStyle`. toolbarOverflow e2e holds all four. */
   overflow-x: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
@@ -502,18 +513,25 @@ select option {
   position: relative;
   display: inline-flex;
 }
+/* `position: fixed` here and the OFFSETS from usePopover's `panelStyle` — see
+   the hook for why it cannot be `absolute`. Fixed must be declared in the CSS
+   rather than left to the inline style: the hook measures the wrap on the pass
+   that mounts the panel, and an in-flow panel is part of what it would measure,
+   handing the anchor a wrap 15× too wide.
+
+   An explicit `width`, not the `min-width` this carried, for the same reason.
+   Shrink-to-fit resolves against the containing block, which used to be the
+   26px wrap — pinning every panel to its floor — and is now the viewport, which
+   would let this one sprawl to its 379px max-content. */
 .options-popover {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: 4px;
+  position: fixed;
+  width: 240px;
   z-index: 100;
   background: var(--surface-raised);
   border: 1px solid var(--border);
   border-radius: 4px;
   box-shadow: var(--shadow-pop);
   padding: 10px 12px;
-  min-width: 240px;
   font-size: var(--fs-small);
   color: var(--text);
 }
@@ -624,7 +642,7 @@ select option {
    feels slow. Same panel chrome as Options; wider, because these labels are
    words rather than the 72px control column Options uses. */
 .perf-popover {
-  min-width: 270px;
+  width: 270px;
 }
 .perf-group + .perf-group {
   margin-top: 10px;
@@ -665,18 +683,17 @@ select option {
   position: relative;
   display: inline-flex;
 }
+/* Fixed here, offsets from usePopover's `panelStyle`, explicit width — all
+   three for the reasons spelled out on .options-popover. */
 .view-popover {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  margin-top: 4px;
+  position: fixed;
+  width: 168px;
   z-index: 100;
   background: var(--surface-raised);
   border: 1px solid var(--border);
   border-radius: 4px;
   box-shadow: var(--shadow-pop);
   padding: 8px 12px;
-  min-width: 168px;
   font-size: var(--fs-small);
   color: var(--text);
 }
