@@ -33,7 +33,11 @@ async function addPolygonAt(page: Page, x: number, y: number): Promise<void> {
   await page.mouse.click(x, y);
 }
 
-const CENTER = { x: 700, y: 400 };
+// Clear of the docked popover, which pins to the top-right of what the sidebar
+// leaves of the host: at the default 1280px window the polygon's 296px panel
+// starts at x = 656, and a polygon dropped under it can't be clicked, dragged,
+// or right-clicked afterwards. Leave room for the +60 reach below too.
+const CENTER = { x: 560, y: 400 };
 
 test.describe('Polygon shapes', () => {
   test('Add → Polygon drops a default square under the map content and selects it', async ({

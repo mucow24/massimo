@@ -9,8 +9,9 @@ import {
 
 // Every canvas popover docks to the top-right corner of what the sidebar
 // leaves of the canvas host. Real widths, heights, and paint order only exist
-// in a browser (the panels size themselves from CSS: 248 for the item
-// popovers, 320 for the station and line editors), so the dock's clearance,
+// in a browser (the panels size themselves from CSS: 280 for the item
+// popovers — 296 for the polygon's wider label column — and 320 for the
+// station and line editors), so the dock's clearance,
 // its shift when the sidebar opens or closes, its height clamp, and its
 // stacking under the sidebar are all pinned here rather than in jsdom.
 const boxOf = async (page: Page, sel: string) => {
@@ -270,7 +271,7 @@ test.describe('canvas popovers stack below the sidebar', () => {
   // gets, so the dock's 8px clearance always lands a panel left of the sidebar
   // and usePinnedPopover's clamped-x branch (`Math.max(EDGE_PAD, …)`) is never
   // taken in the app as it ships. Drop that floor to reach it: at a host of 420
-  // the sidebar eats all but 100px, the 248px panel floors at x = 8, and the two
+  // the sidebar eats all but 100px, the 280px panel floors at x = 8, and the two
   // overlap by a wide margin. What must hold there is the paint order —
   // `.canvas-host`'s `isolation: isolate` traps the shell's z-index:1100 inside
   // the canvas layer, so the sidebar (z-index:1, its sibling in the same grid

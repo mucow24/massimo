@@ -52,7 +52,7 @@ export function SvgImagePopover({ image, hostW, onClose }: Props) {
 
   return (
     <PopoverShell
-      className="bullet-popover polygon-popover svg-image-popover"
+      className="bullet-popover svg-image-popover"
       title="Image"
       left={anchor.x}
       top={anchor.y}
