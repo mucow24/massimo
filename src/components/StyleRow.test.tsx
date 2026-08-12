@@ -29,6 +29,10 @@ function Harness() {
   return <StyleRow kind="textLabel" itemId="g1" styleId={label?.styleId} />;
 }
 
+// The row's own override dot, in the same left gutter as the per-field ones —
+// present only while the item diverges from its style.
+const DOT = 'Revert all overrides to style';
+
 // The row is a Radix Select: the closed trigger shows the current choice as
 // text, and the option list exists in the DOM only while open.
 describe('<StyleRow />', () => {
@@ -125,15 +129,17 @@ describe('<StyleRow />', () => {
     expect(select()).toHaveTextContent('Heading (edited)');
   });
 
-  it('Revert to style discards the overrides and keeps the tag', async () => {
+  it("the row's override dot discards every override and keeps the tag", async () => {
     useDoc.getState().applyStyle('y1', 'g1');
-    useDoc.getState().updateTextLabel('g1', { weight: 400 });
+    useDoc.getState().updateTextLabel('g1', { weight: 400, fontSize: 30 });
     render(<Harness />);
-    await userEvent.setup().click(screen.getByRole('button', { name: 'Revert to style' }));
+    await userEvent.setup().click(screen.getByRole('button', { name: DOT }));
     const label = useDoc.getState().textLabels.g1;
     expect(label.weight).toBe(700);
+    expect(label.fontSize).toBe(24);
     expect(label.styleId).toBe('y1');
     expect(screen.getByRole('combobox', { name: 'Style' })).not.toHaveTextContent('(edited)');
+    expect(screen.queryByRole('button', { name: DOT })).toBeNull();
   });
 
   it("Sync to style pushes this item's look into the def", async () => {
@@ -146,13 +152,20 @@ describe('<StyleRow />', () => {
     expect(screen.getByRole('combobox', { name: 'Style' })).not.toHaveTextContent('(edited)');
   });
 
-  it('Sync and Revert are disabled on Custom and when nothing diverges', () => {
+  it('Sync is disabled on Custom and when nothing diverges; no dot either', () => {
     render(<Harness />); // untagged ⇒ Custom
     expect(screen.getByRole('button', { name: 'Sync to style' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Revert to style' })).toBeDisabled();
-    useDoc.getState().applyStyle('y1', 'g1'); // tagged, matching ⇒ still disabled
+    expect(screen.queryByRole('button', { name: DOT })).toBeNull();
+    act(() => useDoc.getState().applyStyle('y1', 'g1')); // tagged, matching ⇒ still idle
     expect(screen.getByRole('button', { name: 'Sync to style' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Revert to style' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: DOT })).toBeNull();
+  });
+
+  it('the dot is inert on a locked item', () => {
+    useDoc.getState().applyStyle('y1', 'g1');
+    useDoc.getState().updateTextLabel('g1', { weight: 400 });
+    render(<StyleRow kind="textLabel" itemId="g1" styleId="y1" disabled />);
+    expect(screen.getByRole('button', { name: DOT })).toBeDisabled();
   });
 
   // The item popovers live inside `.canvas-host`, whose `isolation: isolate`

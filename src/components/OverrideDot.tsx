@@ -82,8 +82,9 @@ function formatStyleValue(field: string, value: unknown, styles: Record<string, 
  * the diff, made visible.
  *
  * `fields` lists the covered field names this row edits (usually one; color
- * rows carry the day/night pair, the align row carries align + italic).
- * `name` is the row's human label, for the button's accessible name.
+ * rows carry the day/night pair, the align row carries align + italic; the
+ * StyleRow passes the kind's WHOLE covered set, so its dot is the wholesale
+ * revert). `name` is the row's human label, for the button's accessible name.
  */
 export function OverrideDot({
   kind,
