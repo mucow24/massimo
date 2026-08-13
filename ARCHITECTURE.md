@@ -2560,7 +2560,9 @@ topmost-then-leftmost rotated corner.
 
 **A text label's alignment box** (`textLabelAlignRectLocal` / `textLabelAlignCorners`,
 stationBoundary.ts) is the Core Type Area of the block: first line's cap line down to the last
-line's baseline, measured-ink wide — the same font-model box station autoAlign pins by, so labels
+line's baseline, and the block's true ink extent horizontally (`blockInkExtentX` — lines POSITION
+by pen advance, so the pen box alone leaves a proportional side-bearing strip before the first
+glyph's ink) — the same font-model box station autoAlign pins by, so labels
 snapped to one guide share a baseline or cap line no matter which glyphs they contain (descenders
 hang below it on purpose; true pixel-ink bounds were rejected as glyph-dependent). It is what
 label snapping — by AND to — the dashed selection ring, the hit rects, and the marquee all ride
@@ -2650,11 +2652,21 @@ which are a separate slot-based system where Shift flips the lattice basis.
   Legacy docs (`<X>` circle bullets, unescaped literal pipes) are rewritten once by
   `migrateLegacyInlineTokens`, gated by persist v8 / file `version` 2.
 - **`measureTextLabel`** measures multi-line styled text **without a browser layout**: it lazily
-  creates an offscreen 2D canvas and uses `ctx.measureText` (advance + ink bearings). **In jsdom
-  there is no canvas backend**, so it falls back to a deliberate over-estimate
+  creates an offscreen 2D canvas and uses `ctx.measureText` (advance + ink bearings). Ink bearings
+  are a three-rung ladder, because `measureText` cannot say exactly where paint lands: bounds are
+  quantized to whole px at the measured size (≈ a world unit of slop at fontSize-as-px), so they
+  re-measure at 64× the run size — but even that converges only to the font's CONSERVATIVE outline
+  bbox (curve control points included, ~0.01em outside Söhne's heavy cuts). Where a rasterizer
+  exists, `probeInkEdges` therefore refines each edge by drawing the segment offscreen and
+  scanning a narrow strip just inside the conservative bound for the first ink column — the same
+  Skia that paints the SVG, so exact by construction (~0.02–0.08ms, cache misses only; pinned by
+  `e2e/labelInkBox.spec.ts` since only a real browser can run it). Advances always keep the
+  base-size measure: layout is advance-positioned and must not shift with bearing resolution.
+  **In jsdom there is no canvas backend**, so it falls back to a deliberate over-estimate
   `line.length * (fontSize * 0.55 + letterSpacingPx)` (the `0.55` core plus the per-character
-  tracking term). There are **no font-metrics tables**. Exact-geometry tests
-  inject a `measure` stub instead of trusting the default. Leading/trailing whitespace is a real
+  tracking term). There are **no font-metrics tables**. Exact-geometry tests inject a `measure`
+  stub instead of trusting the default; the shared stubs are SIZE-LINEAR (they scale their model
+  with the declared font px) so the hi-res re-measure passes through them transparently. Leading/trailing whitespace is a real
   historical bug source: canvas advance includes typed spaces but the ink box excludes them, so
   the measurer force-corrects bearings at segment ends. Line height **follows content**: each line
   is one `LINE_HEIGHT` of its largest run's size (`maxFontSize`), so an inline `<size>` grows or

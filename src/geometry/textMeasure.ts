@@ -1,5 +1,5 @@
 import { FONT_STACK } from '../util/fonts';
-import type { RouteBulletShape } from '../model/types';
+import type { RouteBulletShape, TextLabelAlign } from '../model/types';
 import {
   emptyStyleState,
   inlineBulletDiameter,
@@ -280,30 +280,186 @@ function approximateLineWidth(line: string, fontSize: number, letterSpacingPx: n
   return line.length * (fontSize * 0.55 + letterSpacingPx);
 }
 
+// Ink bounds are re-measured at this multiple of the run size and scaled back
+// down: Chrome quantizes `actualBoundingBox*` to whole px at the MEASURED
+// size, and the measurer measures at fontSize-as-px, so a single-size measure
+// carries up to ~a whole world unit of bearing slop at any font size — a
+// visible ring-vs-ink sliver once the alignment box hugs the ink. Advances
+// deliberately keep the base-size measure: layout is advance-positioned, and
+// its numbers must not move with bearing resolution.
+//
+// Even at a large multiple the measured bounds are only CONSERVATIVE: they
+// converge to the font's outline bounding box, curve control points included,
+// which for Söhne's heavy cuts sits up to ~0.01em outside the painted ink.
+// So the hi-res measure is the seed and the fallback; where rasterization is
+// available the true edges come from `probeInkEdges` below.
+const BEARING_MEASURE_SCALE = 64;
+
+// ---------- Raster probe: exact ink edges ----------
+//
+// The one instrument that reports where paint actually lands: draw the
+// segment into an offscreen canvas — the same Skia rasterizer that paints the
+// SVG — and scan a narrow strip for the first ink column. The strip sits just
+// inside the conservative measured bound (true ink can only be INSIDE it), so
+// the readback stays tiny (~0.02–0.08ms per side) and only runs on
+// measurement-cache misses. jsdom (and the test suites' canvas stubs) have no
+// rasterizer, so the probe reports unsupported and bearings keep the hi-res
+// measure — the unit-testable arm.
+
+// The probe draws at fontSize × PROBE_TARGET_SCALE device px (precision =
+// 1/scale world units), clamped so huge display labels don't raster
+// megapixel strips — above the cap, precision degrades gracefully in world
+// units while staying constant per em.
+const PROBE_TARGET_SCALE = 16;
+const PROBE_MIN_PX = 256;
+const PROBE_MAX_PX = 1024;
+// A column counts as ink above this alpha — the same visible-edge convention
+// the calibration raster used; below it is antialiasing fringe.
+const PROBE_ALPHA = 32;
+// Strip width in em: the gap between the conservative bound and true ink was
+// measured at ≤ ~0.03em (outline-bbox slack + hi-res quantization); 0.12em is
+// generous. A miss widens once to catch pathological glyphs, then gives up
+// and keeps the conservative bound.
+const PROBE_STRIP_EM = 0.12;
+const PROBE_WIDE_STRIP_EM = 0.5;
+
+let probeCtx: CanvasRenderingContext2D | null | undefined;
+function getProbeCtx(): CanvasRenderingContext2D | null {
+  if (probeCtx !== undefined) return probeCtx;
+  try {
+    const canvas = typeof document !== 'undefined' ? document.createElement('canvas') : null;
+    const ctx = canvas
+      ? (canvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D | null)
+      : null;
+    // A real rasterizer or nothing: the measure stubs (and jsdom) lack
+    // fillText/getImageData, which is exactly the signal to fall back.
+    probeCtx =
+      ctx && typeof ctx.fillText === 'function' && typeof ctx.getImageData === 'function'
+        ? ctx
+        : null;
+  } catch {
+    probeCtx = null;
+  }
+  return probeCtx;
+}
+
+// Scan one edge: raster `value` so the CONSERVATIVE edge sits a few px inside
+// the strip, and walk columns inward until the first ink. Returns the refined
+// edge in world units (pen-origin-relative), or null when the strip holds no
+// ink at all (caller widens, then gives up).
+function probeEdge(
+  ctx: CanvasRenderingContext2D,
+  value: string,
+  declAt: (px: number) => string,
+  fontSize: number,
+  letterSpacingPx: number,
+  side: 'left' | 'right',
+  conservative: number,
+  stripEm: number,
+): number | null {
+  const probePx = Math.min(PROBE_MAX_PX, Math.max(PROBE_MIN_PX, fontSize * PROBE_TARGET_SCALE));
+  const s = probePx / fontSize;
+  const canvas = ctx.canvas;
+  const w = Math.ceil(stripEm * fontSize * s) + 8;
+  const h = Math.ceil(1.7 * fontSize * s);
+  // Resizing clears the canvas; the assignments also bound the readback.
+  canvas.width = w;
+  canvas.height = h;
+  ctx.font = declAt(probePx);
+  if ('letterSpacing' in ctx) {
+    (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
+      `${letterSpacingPx * s}px`;
+  }
+  // True ink is INSIDE the conservative bound, so anchor the strip on it:
+  // for the left edge the strip runs rightward from 4px inside the left
+  // border; for the right edge it runs leftward from 4px inside the right.
+  const edgePx = side === 'left' ? 4 : w - 4;
+  const penX = edgePx - conservative * s;
+  ctx.fillText(value, penX, 1.2 * fontSize * s);
+  const img = ctx.getImageData(0, 0, w, h).data;
+  const inked = (x: number): boolean => {
+    for (let y = 0; y < h; y++) if (img[(y * w + x) * 4 + 3] > PROBE_ALPHA) return true;
+    return false;
+  };
+  if (side === 'left') {
+    for (let x = 0; x < w; x++) if (inked(x)) return (x - penX) / s;
+  } else {
+    for (let x = w - 1; x >= 0; x--) if (inked(x)) return (x + 1 - penX) / s;
+  }
+  return null;
+}
+
+// Refine the conservative measured ink box against the painted truth. Bounds
+// stay pen-origin-relative in the actualBoundingBox sign convention (left is
+// positive going LEFT). Null = no rasterizer here; keep the measured bounds.
+function probeInkEdges(
+  value: string,
+  declAt: (px: number) => string,
+  fontSize: number,
+  letterSpacingPx: number,
+  measuredLeft: number,
+  measuredRight: number,
+): { left: number; right: number } | null {
+  if (value.trim().length === 0) return null;
+  const ctx = getProbeCtx();
+  if (!ctx) return null;
+  const edge = (side: 'left' | 'right', conservative: number): number =>
+    probeEdge(ctx, value, declAt, fontSize, letterSpacingPx, side, conservative, PROBE_STRIP_EM) ??
+    probeEdge(
+      ctx,
+      value,
+      declAt,
+      fontSize,
+      letterSpacingPx,
+      side,
+      conservative,
+      PROBE_WIDE_STRIP_EM,
+    ) ??
+    conservative;
+  return {
+    left: -edge('left', -measuredLeft),
+    right: edge('right', measuredRight),
+  };
+}
+
 function measureTextSegment(
   value: string,
   fontSize: number,
   measureCtx: CanvasRenderingContext2D | null,
-  fontDecl: string,
+  declAt: (px: number) => string,
   letterSpacingPx: number,
 ): { advance: number; bearingLeft: number; bearingRight: number; trailing: number } {
   if (value.length === 0) return { advance: 0, bearingLeft: 0, bearingRight: 0, trailing: 0 };
   if (measureCtx) {
-    measureCtx.font = fontDecl;
+    const tracking = (px: number) =>
+      ((measureCtx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
+        `${px}px`);
+    measureCtx.font = declAt(fontSize);
     // Chromium's canvas honors letterSpacing (added after each character,
     // matching SVG letter-spacing); environments without the property just
     // measure untracked.
     // Whether it was honored decides `trailing` below: an environment that
     // measures untracked has no trailing step to discount.
     const tracked = 'letterSpacing' in measureCtx;
-    if (tracked) {
-      (measureCtx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing =
-        `${letterSpacingPx}px`;
-    }
+    if (tracked) tracking(letterSpacingPx);
     const tm = measureCtx.measureText(value);
-    const bL = tm.actualBoundingBoxLeft ?? 0;
-    const bR = tm.actualBoundingBoxRight ?? 0;
     const advance = tm.width;
+    // The hi-res pass for the ink bounds (see BEARING_MEASURE_SCALE), with
+    // the tracking scaled to match so interior letter-spacing widens the ink
+    // box identically at both sizes.
+    measureCtx.font = declAt(fontSize * BEARING_MEASURE_SCALE);
+    if (tracked) tracking(letterSpacingPx * BEARING_MEASURE_SCALE);
+    const hi = measureCtx.measureText(value);
+    let bL = (hi.actualBoundingBoxLeft ?? 0) / BEARING_MEASURE_SCALE;
+    let bR = (hi.actualBoundingBoxRight ?? 0) / BEARING_MEASURE_SCALE;
+    // Where a rasterizer exists, refine the conservative bounds to the
+    // painted truth (see the probe block above); everywhere else the hi-res
+    // measure stands.
+    const probed = probeInkEdges(value, declAt, fontSize, letterSpacingPx, bL, bR);
+    if (probed) {
+      bL = probed.left;
+      bR = probed.right;
+    }
     if (bL > 0 || bR > 0) {
       const adv = advance > 0 ? advance : bL + bR;
       // Leading/trailing whitespace carries advance but no ink, so the canvas
@@ -351,8 +507,8 @@ export function measureAdvance(
   letterSpacingPx = 0,
 ): number {
   if (text.length === 0) return 0;
-  const fontDecl = `${italic ? 'italic ' : ''}${weight} ${fontSize}px ${FONT_STACK}`;
-  return measureTextSegment(text, fontSize, getCtx(), fontDecl, letterSpacingPx).advance;
+  const declAt = (px: number) => `${italic ? 'italic ' : ''}${weight} ${px}px ${FONT_STACK}`;
+  return measureTextSegment(text, fontSize, getCtx(), declAt, letterSpacingPx).advance;
 }
 
 type ParseMode = 'literal' | 'formatted';
@@ -428,7 +584,7 @@ function computeLineMetrics(
       seg.value,
       segFontSize,
       measureCtx,
-      declFor(seg.style, segFontSize),
+      (px) => declFor(seg.style, px),
       letterSpacingPx,
     );
     trailings.push(t.trailing);
@@ -621,6 +777,53 @@ export function measureTextLabel(styled: StyledText): MeasuredBBox {
   }
   cache.set(key, result);
   return result;
+}
+
+/**
+ * Per-line start cursor (pen origin) X in the box's centered frame. Lines
+ * align by their PEN advance, not by raw ink, so they flush on the font's
+ * designed side bearings and read even. Aligning by ink instead pins each
+ * line's leftmost/rightmost ink *pixel* to the bbox edge, which shoves
+ * round/hooked initials (o, c, w, f, v, s…) visibly inward — the ragged,
+ * letter-shape-dependent edge this replaced. Shared by the renderer
+ * (LabelView) and the alignment-box extent below, so paint and box cannot
+ * drift. `justify` takes the default branch: its ragged last line is
+ * left-flush, and its stretched lines never call this.
+ */
+export function lineCursorX(align: TextLabelAlign, halfWidth: number, advanceWidth: number): number {
+  if (align === 'right') return halfWidth - advanceWidth;
+  if (align === 'center') return -advanceWidth / 2;
+  // left (and justify's ragged last line)
+  return -halfWidth;
+}
+
+/**
+ * The block's horizontal INK extent in the box's centered frame, or null when
+ * no rendered line carries ink. Lines are POSITIONED by pen advance (see
+ * {@link lineCursorX}), so the pen box and the ink disagree by the end glyphs'
+ * side bearings — a proportional empty strip when a box drawn on the pen
+ * extent claims to hug the ink. Each line contributes its true ink span
+ * (cursor ± bearings); an interior justified line with a gap to stretch is
+ * pen-flush to both box edges instead (justifyLine widens only the gaps, so
+ * its end insets are stretch-invariant).
+ */
+export function blockInkExtentX(
+  m: MeasuredBBox,
+  align: TextLabelAlign,
+): { left: number; right: number } | null {
+  const halfW = m.width / 2;
+  let left = Infinity;
+  let right = -Infinity;
+  for (const lm of m.lines) {
+    if (lm.segments.length === 0) continue;
+    const stretched = align === 'justify' && !lm.endsParagraph && /\s/.test(lm.raw.trim());
+    const cursor = lineCursorX(align, halfW, lm.alignAdvance);
+    const l = stretched ? -halfW - lm.bearingLeft : cursor - lm.bearingLeft;
+    const r = stretched ? halfW - (lm.alignAdvance - lm.bearingRight) : cursor + lm.bearingRight;
+    if (l < left) left = l;
+    if (r > right) right = r;
+  }
+  return Number.isFinite(left) ? { left, right } : null;
 }
 
 /** Test/dev hook: clear the measurement cache (used by tests). */

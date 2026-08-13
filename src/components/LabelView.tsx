@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import type { Line, RouteBulletShape, TextLabel } from '../model/types';
 import {
   capCenterDy,
+  lineCursorX,
   measureAdvance,
   measureTextLabel,
   type MeasuredBBox,
@@ -51,19 +52,9 @@ interface Props {
   inHandMode?: boolean;
 }
 
-// Per-line start cursor (pen origin) X. Lines align by their PEN advance, not by
-// raw ink, so they flush on the font's designed side bearings and read even.
-// Aligning by ink instead pins each line's leftmost/rightmost ink *pixel* to the
-// bbox edge, which shoves round/hooked initials (o, c, w, f, v, s…) visibly
-// inward — the ragged, letter-shape-dependent edge this replaced. The tiny ink
-// overhang past the pen box is a side bearing (< a couple px); it may kiss the
-// tight chrome rect, which is the box hugging the ink by design.
-function lineCursorX(align: TextLabel['align'], halfWidth: number, advanceWidth: number): number {
-  if (align === 'right') return halfWidth - advanceWidth;
-  if (align === 'center') return -advanceWidth / 2;
-  // left (and justify's ragged last line)
-  return -halfWidth;
-}
+// Per-line pen placement lives with the measurer (lineCursorX in
+// textMeasure.ts) so the alignment box's ink extent and the paint share one
+// cursor rule and cannot drift.
 
 export function LabelView({
   label,

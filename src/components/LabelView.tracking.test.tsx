@@ -28,7 +28,7 @@ import type { TextLabel } from '../model/types';
 // Per-character advance CHAR, no side bearings, letter-spacing added AFTER
 // every character (including the last) — exactly the model `measureTextSegment`
 // and `approximateLineWidth` document in textMeasure.ts.
-const CHAR = 10;
+const CHAR = 10; // per-character advance at the 24px the labels below use
 let spacingPx = 0;
 const fakeCtx = {
   font: '',
@@ -41,13 +41,19 @@ const fakeCtx = {
   measureText(s: string) {
     const n = s.length;
     if (n === 0) return { width: 0, actualBoundingBoxLeft: 0, actualBoundingBoxRight: 0 };
+    // Size-linear like the shared textMetrics stubs: the hi-res bearing
+    // re-measure declares the font (and its letterSpacing) at a large
+    // multiple, and this stub must scale with it or those bearings collapse.
+    // `spacingPx` needs no factor — the producer sets it in the same scaled
+    // space as the font it declares.
+    const f = parseFloat(/(\d+(?:\.\d+)?)px/.exec(this.font)?.[1] ?? '24') / 24;
     return {
       // Pen advance: one spacing step after EVERY character, last one included.
-      width: n * (CHAR + spacingPx),
+      width: n * (CHAR * f + spacingPx),
       // Ink: starts at the pen origin, stops at the last glyph — the trailing
       // spacing step is not ink.
       actualBoundingBoxLeft: 0,
-      actualBoundingBoxRight: n * CHAR + (n - 1) * spacingPx,
+      actualBoundingBoxRight: n * CHAR * f + (n - 1) * spacingPx,
     };
   },
 };

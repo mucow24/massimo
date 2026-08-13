@@ -12,7 +12,7 @@ import type { TextLabel } from '../model/types';
 // first (or last) glyph overhangs the pen box by a different amount must STILL
 // flush to a common, even edge.
 const CHAR = 10;
-stubTextMetrics(inkOverhangMetrics(CHAR));
+stubTextMetrics(inkOverhangMetrics(CHAR, 10));
 
 beforeEach(() => {
   _clearTextMeasureCache();

@@ -21,7 +21,7 @@ import {
   type StopMetricsFn,
 } from './labelLayout';
 import { normalizeAABB, rectIntersectsPolygon, type AABB } from './rectPolygon';
-import { CAP_FRACTION, measureTextLabel } from './textMeasure';
+import { blockInkExtentX, CAP_FRACTION, measureTextLabel } from './textMeasure';
 import { waypointLabelRectLocal } from './waypointLozenge';
 import { effectiveStationLabelStyle } from '../model/transforms';
 
@@ -261,22 +261,26 @@ export function textLabelCorners(label: TextLabel, pad = 0): Pt[] {
 
 /**
  * The label's ALIGNMENT box in its own unrotated frame, relative to the label
- * center: the measured ink width, first line's cap line down to the last
- * line's baseline — the Core Type Area, the same font-model box autoAlign
- * aligns station names by. The line box's leading and any descender live
- * OUTSIDE this box on purpose: two labels snapped to the same guide share a
- * baseline or cap line regardless of which glyphs they contain. Selection
- * chrome, hit-testing and every label snap point derive from this box; the
- * full leaded line box (textLabelCorners) stays the envelope for camera fit.
+ * center: the block's true ink extent horizontally (per-line pen placement
+ * plus bearings — see blockInkExtentX; the pen box alone leaves a
+ * proportional side-bearing strip before the first glyph), first line's cap
+ * line down to the last line's baseline — the Core Type Area, the same
+ * font-model box autoAlign aligns station names by. The line box's leading
+ * and any descender live OUTSIDE this box on purpose: two labels snapped to
+ * the same guide share a baseline or cap line regardless of which glyphs they
+ * contain. Selection chrome, hit-testing and every label snap point derive
+ * from this box; the full leaded line box (textLabelCorners) stays the
+ * envelope for camera fit.
  */
 export function textLabelAlignRectLocal(label: TextLabel): AABB {
   const m = measureTextLabel(label);
   const first = m.lines[0];
   const last = m.lines[m.lines.length - 1];
+  const ink = blockInkExtentX(m, label.align);
   return {
-    x0: -m.width / 2,
+    x0: ink ? ink.left : -m.width / 2,
     y0: -m.height / 2 + first.baselineFromTop - CAP_FRACTION * first.maxFontSize,
-    x1: m.width / 2,
+    x1: ink ? ink.right : m.width / 2,
     y1: -m.height / 2 + last.baselineFromTop,
   };
 }

@@ -25,9 +25,13 @@ import { stubTextMetrics } from './textMetrics';
 // the recorded texts are what the assertions read.
 let charWidth = 6;
 const measuredTexts: string[] = [];
-stubTextMetrics((s: string) => {
+stubTextMetrics((s: string, fontPx: number) => {
   measuredTexts.push(s);
-  const advance = s.length * charWidth;
+  // Size-linear (charWidth is the per-character advance at the station
+  // label's 12px), so the hi-res bearing re-measure scales consistently with
+  // the 1x advance measure. Every assertion here is relative or membership,
+  // so only that consistency matters, not the absolute base.
+  const advance = s.length * charWidth * (fontPx / 12);
   const hasInk = s.trim().length > 0;
   return {
     width: advance,
