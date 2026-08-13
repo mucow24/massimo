@@ -4,6 +4,7 @@ import { usePinnedPopover } from './canvas/usePinnedPopover';
 import { useNumericField } from './useNumericField';
 import { PopoverFooter } from './PopoverFooter';
 import type { AlignmentGuide, GuideOrientation } from '../model/types';
+import { cleanFloat } from '../util/grid';
 
 // The one coordinate's title + field naming, per orientation. A diagonal's
 // scalar is its Y-intercept — labeled Y₀, spelled out in the hover title.
@@ -47,10 +48,14 @@ export function GuidePopover({ guide, hostW, onClose }: Props) {
   const locked = guide.locked ?? false;
   // useNumericField (not a bare input): its text mirror ignores an emptied
   // field mid-edit — Number('') === 0 would teleport the guide to the axis.
+  // `cleanFloat`, not Math.round: a dragged guide must not read back as
+  // "120.4000000001", but a guide that IS at 120.4 must say so — the box never
+  // shows a coordinate the doc doesn't hold. The whole-unit step is what the
+  // wheel and the arrow keys move by.
   const field = useNumericField(
-    Math.round(guide.offset),
+    cleanFloat(guide.offset),
     (n) => moveGuide(guide.id, n),
-    () => Math.round(useDoc.getState().guides[guide.id]?.offset ?? guide.offset),
+    () => cleanFloat(useDoc.getState().guides[guide.id]?.offset ?? guide.offset),
   );
 
   return (

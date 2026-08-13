@@ -23,27 +23,28 @@ describe('line width constants', () => {
 });
 
 describe('canonicalLineWidth', () => {
-  it('rounds to the quarter grid, preserving quarter values', () => {
-    expect(canonicalLineWidth(20.1)).toBe(20);
-    expect(canonicalLineWidth(20.2)).toBe(20.25);
-    expect(canonicalLineWidth(20.4)).toBe(20.5);
-    // A quarter value survives instead of being rounded off to an integer.
+  it('keeps the width it is given — LINE_WIDTH_STEP is the control, not a filter', () => {
+    expect(canonicalLineWidth(20.1)).toBe(20.1);
+    expect(canonicalLineWidth(20.2)).toBe(20.2);
     expect(canonicalLineWidth(20.25)).toBe(20.25);
+    expect(canonicalLineWidth(20.32455)).toBe(20.32455);
   });
 
   it('clamps below the floor up to LINE_WIDTH_MIN', () => {
     expect(canonicalLineWidth(0)).toBe(LINE_WIDTH_MIN);
     expect(canonicalLineWidth(-5)).toBe(LINE_WIDTH_MIN);
     expect(canonicalLineWidth(0.4)).toBe(LINE_WIDTH_MIN);
+    // Just above the floor is kept, not rounded down to it.
+    expect(canonicalLineWidth(1.4)).toBe(1.4);
   });
 
   it('collapses the default to undefined so it is never stored', () => {
     expect(canonicalLineWidth(LINE_WIDTH_DEFAULT)).toBeUndefined();
-    // Within a quarter of the default still lands on it.
-    expect(canonicalLineWidth(LINE_WIDTH_DEFAULT + 0.1)).toBeUndefined();
+    // Only the default EXACTLY — a hair off it is a real, stored width.
+    expect(canonicalLineWidth(LINE_WIDTH_DEFAULT + 0.1)).toBe(LINE_WIDTH_DEFAULT + 0.1);
   });
 
-  it('keeps non-default widths on the quarter grid', () => {
+  it('keeps non-default widths', () => {
     expect(canonicalLineWidth(21)).toBe(21);
     expect(canonicalLineWidth(2)).toBe(2);
     expect(canonicalLineWidth(2.75)).toBe(2.75);

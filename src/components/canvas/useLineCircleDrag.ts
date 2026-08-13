@@ -7,6 +7,7 @@ import type { Vec2 } from '../../geometry/vec';
 import { useDragSnap } from './useDragSnap';
 import { liveAlignTargets, liveGuideTargets } from './snapTargets';
 import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
+import { snapDraggedLineCircleRadius } from '../../model/lineCircle';
 import {
   collectGroupSiblings,
   emptyGroupSiblings,
@@ -131,11 +132,13 @@ export function useLineCircleDrag(
     const dy = dyScreen / viewportZoom;
     if (ds.part === 'knob') {
       // The knob sits on the east point, so the radius follows the pointer's
-      // horizontal world distance from the center. Quarter-grid + minimum are
-      // the transform's clamp; nothing else to snap to. The diameter readout
-      // arms on the first real move (not pointer-down, so a click shows none).
+      // horizontal world distance from the center, landing on the quarter-unit
+      // grid every line-circle GESTURE shares (the transform itself keeps
+      // whatever radius it is handed — that is what lets the popover's Diameter
+      // field hold an off-grid number). The diameter readout arms on the first
+      // real move (not pointer-down, so a click shows none).
       if (resizingId !== ds.id) setResizingId(ds.id);
-      setLineCircleRadius(ds.id, ds.startRadius + dx);
+      setLineCircleRadius(ds.id, snapDraggedLineCircleRadius(ds.startRadius + dx));
       return;
     }
     let nx = ds.startWX + dx;

@@ -49,9 +49,9 @@ function boundDoc(): MapDoc {
 }
 
 describe('addLineCircle', () => {
-  it('adds a circle with a canonicalized radius', () => {
+  it('adds a circle with the radius it is handed (gestures snap; the transform does not)', () => {
     const doc = addLineCircle(makeDoc({}), 'c1', 10, 20, 33.13);
-    expect(doc.lineCircles.c1).toEqual({ id: 'c1', x: 10, y: 20, radius: 33.25 });
+    expect(doc.lineCircles.c1).toEqual({ id: 'c1', x: 10, y: 20, radius: 33.13 });
   });
 
   it('defaults the radius and floors it at the minimum', () => {

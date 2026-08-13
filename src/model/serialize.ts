@@ -10,16 +10,13 @@ import {
   TEXT_LABEL_DARK_COLOR_DEFAULT,
   TEXT_LABEL_LEADING_DEFAULT,
   TEXT_LABEL_LEADING_MIN,
-  TEXT_LABEL_LEADING_STEP,
   TEXT_LABEL_TRACKING_DEFAULT,
   TEXT_LABEL_TRACKING_MIN,
-  TEXT_LABEL_TRACKING_STEP,
   bumpWeightByIndex,
   canonicalStationLabelStyle,
   isLabelWeight,
   isRouteBulletShape,
   isTextLabelAlign,
-  snapToStep,
   stationIsSingleton,
   withTransferOverride,
 } from './transforms';
@@ -40,7 +37,7 @@ import {
 import { canonicalLineLabelGap, canonicalLineWidth } from './lineWidth';
 import { canonicalLineCircleRadius } from './lineCircle';
 import { projectToCircle, stationCircle } from '../geometry/lineCircle';
-import { clamp, rot8, roundClamp } from '../util/grid';
+import { clamp, clampField, rot8 } from '../util/grid';
 import {
   LINE_CURVE_RADIUS_DEFAULT,
   LINE_CURVE_RADIUS_MIN,
@@ -48,7 +45,6 @@ import {
 } from './lineCurve';
 import {
   DOT_SIZE_MIN,
-  DOT_SIZE_STEP,
   canonicalDotSize,
   lineMultiDotSizeOf,
   lineSingletonDotSizeOf,
@@ -863,27 +859,32 @@ export function bakeTextLabelStyleLayout<
     };
     const props: TextLabelStyleProps = {
       ...p,
-      ...(needWidth ? { width: Math.max(0, Math.round(mostCommon((t) => t.width ?? 0, 0))) } : {}),
+      ...(needWidth
+        ? {
+            width: clampField(
+              mostCommon((t) => t.width ?? 0, 0),
+              0,
+            ),
+          }
+        : {}),
       ...(needLeading
         ? {
-            leading: snapToStep(
+            leading: clampField(
               mostCommon(
                 (t) => t.leading ?? TEXT_LABEL_LEADING_DEFAULT,
                 TEXT_LABEL_LEADING_DEFAULT,
               ),
-              TEXT_LABEL_LEADING_STEP,
               TEXT_LABEL_LEADING_MIN,
             ),
           }
         : {}),
       ...(needTracking
         ? {
-            tracking: snapToStep(
+            tracking: clampField(
               mostCommon(
                 (t) => t.tracking ?? TEXT_LABEL_TRACKING_DEFAULT,
                 TEXT_LABEL_TRACKING_DEFAULT,
               ),
-              TEXT_LABEL_TRACKING_STEP,
               TEXT_LABEL_TRACKING_MIN,
             ),
           }
@@ -1932,8 +1933,7 @@ function sanitizeLineCurve(line: Line): Line {
 }
 
 // Normalize one hand-edited / legacy split default-dot-size field to the
-// canonical stored form the transforms maintain: on the quarter-unit grid and
-// ≥ DOT_SIZE_MIN. Sizes are ALWAYS stored (natural values included — see
+// canonical stored form the transforms maintain: ≥ DOT_SIZE_MIN. Sizes are ALWAYS stored (natural values included — see
 // bakeConcreteDotSizes, which materializes absent ones right after this pass),
 // so nothing drops at a default; only non-numbers and non-finite values are
 // dropped (and then materialized by the bake). File-import hygiene only —
@@ -1943,7 +1943,7 @@ function sanitizeLineDotSizeField(line: Line, field: 'singletonDotSize' | 'multi
   if (!(field in line)) return line;
   const raw = line[field] as unknown;
   if (typeof raw === 'number' && Number.isFinite(raw)) {
-    const stored = roundClamp(raw, DOT_SIZE_STEP, DOT_SIZE_MIN);
+    const stored = clampField(raw, DOT_SIZE_MIN);
     return stored === line[field] ? line : { ...line, [field]: stored };
   }
   const { [field]: _gone, ...rest } = line;

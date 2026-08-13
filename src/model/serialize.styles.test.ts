@@ -214,22 +214,24 @@ describe('sanitizeStyles via parse', () => {
             strokeColor: { day: '#ABCDEF', night: '#ABCDEF' },
           },
         }),
-        y2: makeStyle('textLabel', 'y2', { name: 'T', props: { fontSize: 12.1 } }),
+        y2: makeStyle('textLabel', 'y2', { name: 'T', props: { fontSize: 12.129 } }),
         y3: makeStyle('polygon', 'y3', { name: 'P', props: { strokeWidth: 2.3, curveRadius: -4 } }),
         y4: makeStyle('routeBullet', 'y4', { name: 'B', props: { size: 3 } }),
         y5: makeStyle('transfer', 'y5', { name: 'X', props: { thickness: 5.4, strokeWidth: -1 } }),
       },
     };
     const out = parsed(doc);
+    // Numbers survive exactly as the file states them; only the CLAMPS bite
+    // (curveRadius floored at 0, strokeWidth at 0, size at its minimum).
     expect(out.styles.y1.props).toMatchObject({
-      width: 9.5,
-      strokeWidth: 1.25,
+      width: 9.6,
+      strokeWidth: 1.3,
       strokeColor: { day: '#abcdef', night: '#abcdef' },
     });
-    expect(out.styles.y2.props).toMatchObject({ fontSize: 12 });
-    expect(out.styles.y3.props).toMatchObject({ strokeWidth: 2.25, curveRadius: 0 });
+    expect(out.styles.y2.props).toMatchObject({ fontSize: 12.129 });
+    expect(out.styles.y3.props).toMatchObject({ strokeWidth: 2.3, curveRadius: 0 });
     expect(out.styles.y4.props).toMatchObject({ size: 6 });
-    expect(out.styles.y5.props).toMatchObject({ thickness: 5.5, strokeWidth: 0 });
+    expect(out.styles.y5.props).toMatchObject({ thickness: 5.4, strokeWidth: 0 });
   });
 
   // The end of the chain the canonicalStyleProps omission test guards: a file

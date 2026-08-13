@@ -570,7 +570,7 @@ describe('applyStyleToItem', () => {
     const poly = next.polygons.p1;
     expect(poly.styleId).toBe('y1');
     expect(poly.fill).toBe('#00ff00');
-    expect(poly.strokeWidth).toBe(2.25); // snapped to the 0.25 grid
+    expect(poly.strokeWidth).toBe(2.3); // stored as the def holds it
     expect(poly.curveRadius).toBe(8);
     expect(poly.closed).toBe(false);
     expect(poly.vertices).toBe(doc.polygons.p1.vertices); // geometry untouched
@@ -991,27 +991,27 @@ describe('duplicateStyle', () => {
   });
 });
 
-describe('canonicalStyleProps — quarter-unit grids', () => {
-  // Regression: the style-props canonicalizer MUST use the same 0.25 grids the
-  // item transforms use (its own contract). Dot sizes and transfer thickness had
-  // drifted to integer Math.round, so a StyleEditor dot-size edit snapped the map
-  // to whole diameters (visible change only at each .5 rounding threshold) while
-  // the line inspector — routed through canonicalDotSize — moved smoothly.
-  it('snaps line dot sizes to the 0.25 grid, not integers', () => {
+describe('canonicalStyleProps — fractional values', () => {
+  // Regression: the style-props canonicalizer MUST treat numbers exactly like
+  // the item transforms do (its own contract). Dot sizes and transfer thickness
+  // had drifted to integer Math.round, so a StyleEditor dot-size edit snapped
+  // the map to whole diameters while the line inspector — routed through
+  // canonicalDotSize — moved smoothly. Neither rounds at all now.
+  it('keeps fractional line dot sizes', () => {
     const base = defaultStyleProps(DEFAULT_DOC, 'line')!;
     const out = canonicalStyleProps('line', {
       ...base,
       singletonDotSize: 6.25,
-      multiDotSize: 9.75,
+      multiDotSize: 9.7,
     });
     expect(out.singletonDotSize).toBe(6.25);
-    expect(out.multiDotSize).toBe(9.75);
+    expect(out.multiDotSize).toBe(9.7);
   });
 
-  it('snaps transfer thickness to the 0.25 grid, not integers', () => {
+  it('keeps a fractional transfer thickness', () => {
     const base = defaultStyleProps(DEFAULT_DOC, 'transfer')!;
-    const out = canonicalStyleProps('transfer', { ...base, thickness: 4.25 });
-    expect(out.thickness).toBe(4.25);
+    const out = canonicalStyleProps('transfer', { ...base, thickness: 4.3 });
+    expect(out.thickness).toBe(4.3);
   });
 
   // The single owner of "an absent optional stays ABSENT" for line props, and
@@ -1050,8 +1050,8 @@ describe('updateStyleProps', () => {
       styles: [makeStyle('routeBullet', 'y1', { props: { shape: 'square', size: 20 } })],
     });
     const next = updateStyleProps(doc, 'y1', { size: 24.4 });
-    expect((next.styles.y1.props as RouteBulletStyleProps).size).toBe(24.5); // snapped to 0.25
-    expect(next.routeBullets.b1.size).toBe(24.5); // live re-stamp
+    expect((next.styles.y1.props as RouteBulletStyleProps).size).toBe(24.4);
+    expect(next.routeBullets.b1.size).toBe(24.4); // live re-stamp
     expect(next.routeBullets.b1.styleId).toBe('y1');
     expect(next.routeBullets.b2).toBe(doc.routeBullets.b2);
   });

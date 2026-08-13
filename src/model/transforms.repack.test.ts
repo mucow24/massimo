@@ -463,10 +463,12 @@ describe('interline gap edits (setLineInterlineGap)', () => {
     expect(T.setLineInterlineGap(gapped, 'L1', 4)).toBe(gapped);
   });
 
-  it('rounds to the quarter-unit grid and drops the field at 0', () => {
+  it('stores the gap as given and drops the field at exactly 0', () => {
     const doc = interlinedPairDoc();
-    expect(T.setLineInterlineGap(doc, 'L1', 3.9).lines.L1.interlineGap).toBe(4);
-    expect(T.setLineInterlineGap(doc, 'L1', 0.1).lines.L1.interlineGap).toBeUndefined();
+    expect(T.setLineInterlineGap(doc, 'L1', 3.9).lines.L1.interlineGap).toBe(3.9);
+    // 0.1 is a real hairline gap; only an exact 0 means "tangent".
+    expect(T.setLineInterlineGap(doc, 'L1', 0.1).lines.L1.interlineGap).toBe(0.1);
+    expect(T.setLineInterlineGap(doc, 'L1', 0).lines.L1.interlineGap).toBeUndefined();
   });
 
   it('a width edit preserves an existing gap (the repack recognizes gapped chains)', () => {

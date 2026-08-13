@@ -127,6 +127,26 @@ describe('<TextLabelPopover /> — text / size / align / weight controls', () =>
     expect(spin.value).toBe('16.25');
   });
 
+  it('keeps a typed off-quarter size instead of pulling it to the nearest quarter', () => {
+    // The step drives the slider and the wheel; TYPING is exact. Snapping the
+    // box's own input made the field look deaf — 10.2, 10.3 and 10.35 all sat
+    // on 10.25, and 10.4 jumped to 10.5.
+    seedAndRender();
+    const spin = screen.getByRole('spinbutton', { name: 'Size' });
+    fireEvent.focus(spin);
+    for (const typed of ['10.2', '10.3', '10.35', '10.4']) {
+      fireEvent.change(spin, { target: { value: typed } });
+      expect(useDoc.getState().textLabels['g1'].fontSize).toBe(Number(typed));
+    }
+    // On blur the box re-reads the store, and reads back the same number it
+    // was given — the visible half of the bug was blurring on 10.2 and
+    // watching the box settle on 10.25. (Numerically: React skips the DOM
+    // write for a `type=number` input whose value only differs in trailing
+    // zeros, so the padded "10.40" mirror stays "10.4" on screen.)
+    fireEvent.blur(spin);
+    expect(Number((spin as HTMLInputElement).value)).toBe(10.4);
+  });
+
   it('writes quarter-point sizes via the wheel and the slider', () => {
     seedAndRender();
     fireEvent.wheel(screen.getByRole('spinbutton', { name: 'Size' }), { deltaY: -1 });

@@ -1,4 +1,4 @@
-import { canonicalLineCircleRadius } from '../../model/lineCircle';
+import { snapDraggedLineCircleRadius } from '../../model/lineCircle';
 import { capCenterDy } from '../../geometry/textMeasure';
 import { useThemeColors } from '../../state/theme';
 import type { Vec2 } from '../../geometry/vec';
@@ -83,7 +83,7 @@ export function LineCirclePlacingPreview({
   };
   if (!center) return <g pointerEvents="none">{cross(world!, 'center')}</g>;
   const radius = world
-    ? canonicalLineCircleRadius(Math.hypot(world.x - center.x, world.y - center.y))
+    ? snapDraggedLineCircleRadius(Math.hypot(world.x - center.x, world.y - center.y))
     : null;
   return (
     <g pointerEvents="none" data-line-circle-preview="">

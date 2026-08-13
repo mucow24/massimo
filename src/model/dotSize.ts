@@ -1,5 +1,5 @@
 import { STOP_DOT_RADIUS } from '../geometry/orientation';
-import { roundClamp } from '../util/grid';
+import { clampField } from '../util/grid';
 import { DEFAULT_DOT_STYLE, defaultDotDiameter, resolveDotStyle } from './dotStyle';
 import type { DotStyle } from './types';
 
@@ -25,26 +25,26 @@ export const DOT_SIZE_MIN = 0;
 // textboxAllowAboveMax); the transforms clamp only the floor, mirroring
 // setLineWidth.
 export const DOT_SIZE_MAX = 20;
-// Dot sizes live on a quarter-unit grid: the slider/steppers move in 0.25
-// increments and the canonicalizer rounds to the nearest step (matching
-// LINE_WIDTH_STEP / LINE_STROKE_STEP). The default (8) sits on the grid.
+// The dot-size slider/steppers move in 0.25 increments (matching
+// LINE_WIDTH_STEP / LINE_STROKE_STEP), and the default (8) sits on that grid.
+// A step is what the CONTROLS move by — a typed size is stored as typed.
 export const DOT_SIZE_STEP = 0.25;
 
 /**
- * The canonical STORED form of a PER-STOP dot size (diameter px): round to
- * the DOT_SIZE_STEP (quarter-unit) grid, clamp to ≥ DOT_SIZE_MIN, and
+ * The canonical STORED form of a PER-STOP dot size (diameter px): clamp to
+ * ≥ DOT_SIZE_MIN, and
  * collapse to `undefined` when it equals `dropAt` — the line's size for the
  * stop's singleton/shared case, which an absent field defers to. Shared by
  * the `setDotSize` transform and the `sanitizeStopDotSizes` file cleaner so
  * the clamp rule can never drift. LINE sizes never collapse (always stored);
- * their setters snap/clamp only. Callers own the finiteness guard (they
- * diverge on non-finite input).
+ * their setters clamp only. Callers own the finiteness guard (they diverge on
+ * non-finite input).
  */
 export const canonicalDotSize = (
   size: number,
   dropAt: number = DOT_SIZE_DEFAULT,
 ): number | undefined => {
-  const norm = roundClamp(size, DOT_SIZE_STEP, DOT_SIZE_MIN);
+  const norm = clampField(size, DOT_SIZE_MIN);
   return norm === dropAt ? undefined : norm;
 };
 
