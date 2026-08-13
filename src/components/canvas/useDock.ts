@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { windowClientSize } from '../../util/windowSize';
+import { useViewportFollow } from '../useViewportFollow';
 
 /** Where the canvas host's docking corner sits, in WINDOW coordinates. */
 export interface Dock {
@@ -89,7 +90,7 @@ export function useDock(ref: React.MutableRefObject<HTMLElement | null>, into: D
   // which is why the guard belongs here and not only there.)
   //
   // So measure when an INPUT changed, never merely because a commit happened.
-  // Tracking motion is the scroll listener's job below, where one event costs
+  // Tracking motion is `useViewportFollow`'s job below, where one event costs
   // exactly one render.
   useLayoutEffect(() => {
     const measure = () =>
@@ -118,30 +119,11 @@ export function useDock(ref: React.MutableRefObject<HTMLElement | null>, into: D
     measure();
   });
 
-  // Registered once, and only the host-edge regime needs them: while the
-  // window's edge is the dock, `readDock` returns the same value every time
-  // and the bailout above swallows the event.
-  //
-  // A page scroll is dispatched at `document`, and the listener that reliably
-  // sees it is the BUBBLE-phase one on `window` — the canonical page-scroll
-  // hook. A capture-phase listener on `window` does NOT: instrumenting one in
-  // Chrome counted zero events across a scroll that demonstrably moved the
-  // page, which is what left a panel sitting under the sidebar at the end of
-  // the travel. The capture listener on `document` is the one that catches a
-  // scroll of some nested container instead, since those don't bubble at all;
-  // a page scroll trips both, and the bailout makes the second a no-op.
-  // Passive throughout, so tracking never holds up the scroll itself.
-  useEffect(() => {
-    const onScroll = () => measureRef.current();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    document.addEventListener('scroll', onScroll, { passive: true, capture: true });
-    window.addEventListener('resize', onScroll);
-    return () => {
-      window.removeEventListener('scroll', onScroll);
-      document.removeEventListener('scroll', onScroll, { capture: true });
-      window.removeEventListener('resize', onScroll);
-    };
-  }, []);
+  // Always on, and only the host-edge regime actually needs it: while the
+  // window's edge is the dock, `readDock` returns the same value every time and
+  // the value-equal bailout above swallows the event. See `useViewportFollow`
+  // for why following the page takes three listeners.
+  useViewportFollow(true, () => measureRef.current());
 
   return dock;
 }

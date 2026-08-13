@@ -709,24 +709,15 @@ select option {
   margin-top: 8px;
 }
 
-/* View menu: the canvas layer checklist. Same panel chrome as Options, narrower
-   — every row is one checkbox and a short name. */
-.view-popover-wrap {
-  position: relative;
-  display: inline-flex;
-}
-/* Placement from usePopover's `panelStyle`, explicit width — both for the
-   reasons spelled out on .options-popover. 379px at max-content. */
+/* View menu: the canvas layer checklist. It wears `.options-popover-wrap` and
+   `.options-popover` for the shared shell (as .dev-popover does) and keeps this
+   class for the two things that are its own — an explicit width, for the
+   reasons spelled out on .options-popover (379px at max-content), and tighter
+   rows, since every one is a checkbox and a short name. The e2e specs and
+   fixtures address the panel by this class, so it stays on the element. */
 .view-popover {
   width: 168px;
-  z-index: 100;
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  box-shadow: var(--shadow-pop);
   padding: 8px 12px;
-  font-size: var(--fs-small);
-  color: var(--text);
 }
 .view-popover-row {
   display: flex;

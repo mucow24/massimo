@@ -7,6 +7,7 @@ import {
   type CSSProperties,
   type RefObject,
 } from 'react';
+import { useViewportFollow } from './useViewportFollow';
 
 /**
  * True when a keyboard event's target is a form field that should swallow
@@ -143,44 +144,30 @@ export function usePopover(opts?: { anchored?: boolean }) {
   const close = useCallback(() => setOpen(false), []);
   useDismiss(open, close, [wrapRef]);
 
-  // Layout effect so the measurement lands before paint — a panel that mounted
-  // unplaced and snapped into position a frame later would visibly jump. That
-  // timing is also why a CLOSE need not clear the anchor: reopening re-measures
-  // here, still before paint, so the rect left over from last time is never on
-  // screen even for a frame.
+  const measure = useCallback(() => {
+    setAnchor((prev) => {
+      const el = wrapRef.current;
+      if (!el) return prev;
+      const r = el.getBoundingClientRect();
+      const next = { top: r.bottom + PANEL_GAP, right: window.innerWidth - r.right };
+      // Value-equal bailout, as useDock does: a scroll that doesn't move the
+      // trigger must not cost a render.
+      return prev && prev.top === next.top && prev.right === next.right ? prev : next;
+    });
+  }, []);
+
+  // Layout effect so the FIRST measurement lands before paint — a panel that
+  // mounted unplaced and snapped into position a frame later would visibly
+  // jump. That timing is also why a CLOSE need not clear the anchor: reopening
+  // re-measures here, still before paint, so the rect left over from last time
+  // is never on screen even for a frame.
   useLayoutEffect(() => {
-    if (!open || !anchored) return;
-    const measure = () =>
-      setAnchor((prev) => {
-        const el = wrapRef.current;
-        if (!el) return prev;
-        const r = el.getBoundingClientRect();
-        const next = { top: r.bottom + PANEL_GAP, right: window.innerWidth - r.right };
-        // Value-equal bailout, as useDock does: a scroll that doesn't move the
-        // trigger must not cost a render.
-        return prev && prev.top === next.top && prev.right === next.right ? prev : next;
-      });
-    measure();
-    window.addEventListener('resize', measure);
-    // The same listener pair as useDock and ColorField — the repo's canonical
-    // page-scroll hook. A page scroll is dispatched at `document` and bubbles
-    // to `window` (uniquely; element scrolls don't bubble at all), so bubble-
-    // on-window is the reliable page hook and capture-on-document is what
-    // catches a nested container's scroll. A page scroll trips both, and
-    // measure's value-equal bailout makes the second a no-op. Passive —
-    // following must never hold up the scroll. toolbarOverflow e2e holds the
-    // contract (an open panel tracks a page scroll); beware verifying by hand
-    // in a page that is producing no frames — it dispatches no scroll events
-    // to ANY listener (popoverDock.spec records that trap), which reads as a
-    // stranded panel whatever the listeners say.
-    window.addEventListener('scroll', measure, { passive: true });
-    document.addEventListener('scroll', measure, { passive: true, capture: true });
-    return () => {
-      window.removeEventListener('resize', measure);
-      window.removeEventListener('scroll', measure);
-      document.removeEventListener('scroll', measure, { capture: true });
-    };
-  }, [open, anchored]);
+    if (open && anchored) measure();
+  }, [open, anchored, measure]);
+
+  // …and follow the trigger from there, which is what keeps the panel glued to
+  // it while the narrow-window regime scrolls the page sideways underneath.
+  useViewportFollow(open && anchored, measure);
 
   const panelStyle: CSSProperties | undefined = anchored
     ? { position: 'fixed', top: anchor?.top, right: anchor?.right }

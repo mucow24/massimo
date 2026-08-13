@@ -5,6 +5,7 @@ import { clamp } from '../util/grid';
 import { beginHistoryGroup } from '../state/store';
 import { normalizeHex } from '../util/color';
 import { windowClientSize } from '../util/windowSize';
+import { useViewportFollow } from './useViewportFollow';
 
 interface Props {
   value: string;
@@ -188,25 +189,9 @@ export function ColorField({
   // swatch is not, so the browser holds one against the window while the other
   // rides the page — and the narrow window this placement is written for is
   // exactly the one with somewhere to scroll TO, so a wheel there walked the
-  // picker off its swatch and left it hanging over the map.
-  //
-  // Listener trio as in useDock: a page scroll is dispatched at `document`, and
-  // the one that reliably hears it is the BUBBLE listener on `window`; the
-  // capture listener on `document` is what catches a scroll of some nested
-  // container, since those don't bubble at all. A page scroll trips both, and
-  // the bail-out above makes the second a no-op. Passive, so following never
-  // holds up the scroll itself.
-  useEffect(() => {
-    if (!open) return;
-    window.addEventListener('scroll', place, { passive: true });
-    document.addEventListener('scroll', place, { passive: true, capture: true });
-    window.addEventListener('resize', place);
-    return () => {
-      window.removeEventListener('scroll', place);
-      document.removeEventListener('scroll', place, { capture: true });
-      window.removeEventListener('resize', place);
-    };
-  }, [open, place]);
+  // picker off its swatch and left it hanging over the map. `place`'s own
+  // value-equal bail-out above is what keeps the doubled page-scroll event free.
+  useViewportFollow(open, place);
 
   // Close on outside pointerdown or Escape. Capture phase so it fires before a
   // click inside a parent popover can act on the stray press.

@@ -50,7 +50,7 @@ export function ViewPopover() {
   const marked = anyLayerHidden(values);
 
   return (
-    <div className="view-popover-wrap" ref={wrapRef}>
+    <div className="options-popover-wrap view-popover-wrap" ref={wrapRef}>
       <button
         type="button"
         className={'tool-btn' + (open ? ' active' : '') + (marked ? ' has-hidden' : '')}
@@ -65,7 +65,7 @@ export function ViewPopover() {
       </button>
       {open && (
         <div
-          className="view-popover"
+          className="options-popover view-popover"
           id={panelId}
           role="dialog"
           aria-label="View"

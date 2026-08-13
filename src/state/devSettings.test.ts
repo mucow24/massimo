@@ -31,8 +31,8 @@ describe('parseDashPattern', () => {
 
   it('takes a caller-supplied fallback — what lets the casing borrow the core', () => {
     // The casing hands in the core's parsed pattern, so clearing its field to
-    // retype leaves the two registered instead of snapping to a 5 2 the core
-    // may not be wearing.
+    // retype leaves the two registered instead of snapping to the default 10 2
+    // the core may not be wearing.
     expect(parseDashPattern('', [9, 3])).toEqual([9, 3]);
     expect(parseDashPattern('0 0', [9, 3])).toEqual([9, 3]);
     // Usable text still wins over the fallback.
@@ -68,6 +68,54 @@ describe('isGaplessDash', () => {
     // "4" runs 4 on, 4 off: it reads gapless as written but draws dashed.
     expect(isGaplessDash([4])).toBe(false);
     expect(isGaplessDash([5, 2, 1])).toBe(false);
+  });
+});
+
+describe('useDevSettings — rehydrating a stored recipe', () => {
+  afterEach(() => localStorage.clear());
+
+  // The dials come and go, so a stored recipe is routinely a dial or two behind
+  // the code reading it. zustand's default merge is shallow over TOP-LEVEL keys,
+  // which would hand `guide` over wholesale — and a recipe stored before the
+  // casing dials existed then reaches the ink math as `undefined`, where
+  // `parseDashPattern` throws on `.trim()` and takes the canvas down with it.
+  // The store's own `merge` hook is the only thing standing between the two.
+  const store = (guide: Record<string, unknown>) =>
+    localStorage.setItem('massimo-dev-settings', JSON.stringify({ state: { guide }, version: 0 }));
+
+  it('keeps the dials a stored recipe carries', async () => {
+    store({ dash: '4 4', thickness: 3 });
+    await useDevSettings.persist.rehydrate();
+    expect(useDevSettings.getState().guide.dash).toBe('4 4');
+    expect(useDevSettings.getState().guide.thickness).toBe(3);
+  });
+
+  it('fills the dials it predates from the defaults, never with undefined', async () => {
+    store({ dash: '4 4', thickness: 3 });
+    await useDevSettings.persist.rehydrate();
+    // Every dial the stored blob is missing comes back as the recipe's own
+    // default — the whole shape, so a dial added tomorrow is covered too.
+    expect(useDevSettings.getState().guide).toEqual({
+      ...DEFAULT_GUIDE_RENDER,
+      dash: '4 4',
+      thickness: 3,
+    });
+  });
+
+  it('leaves the dash parser something to read after a pre-casing recipe loads', async () => {
+    store({ dash: '4 4' });
+    await useDevSettings.persist.rehydrate();
+    const { casingDash } = useDevSettings.getState().guide;
+    // The call GuideView makes on every mount. Without the merge hook this is
+    // parseDashPattern(undefined) — a TypeError, not a fallback.
+    expect(() => parseDashPattern(casingDash)).not.toThrow();
+    expect(parseDashPattern(casingDash)).toEqual([1, 0]);
+  });
+
+  it('survives a stored blob with no recipe in it at all', async () => {
+    localStorage.setItem('massimo-dev-settings', JSON.stringify({ state: {}, version: 0 }));
+    await useDevSettings.persist.rehydrate();
+    expect(useDevSettings.getState().guide).toEqual(DEFAULT_GUIDE_RENDER);
   });
 });
 
