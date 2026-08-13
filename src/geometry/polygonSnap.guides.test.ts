@@ -266,6 +266,53 @@ describe('snapPolygonPoint against diagonal guides', () => {
     expect(r2.guides.map((g) => g.alignGuideId)).toEqual(['gd']);
   });
 
+  it('a bounded guide gates on the foot, per orientation', () => {
+    // y = 100 spanning x ∈ [200, 400]: in-span foot engages, out-of-span not.
+    const hBounded = { ...hGuide, extent: { center: 300, halfLength: 100 } };
+    const rIn = snapPolygonPoint({
+      proposed: { x: 250, y: 103 },
+      ...noTargets,
+      modes: modes(),
+      guideTargets: [hBounded],
+    });
+    expect(rIn).toMatchObject({ x: 250, y: 100 });
+    const rOut = snapPolygonPoint({
+      proposed: { x: 50, y: 103 },
+      ...noTargets,
+      modes: modes(),
+      guideTargets: [hBounded],
+    });
+    expect(rOut).toMatchObject({ x: 50, y: 103 });
+    expect(rOut.guides).toHaveLength(0);
+    // x = 30 spanning y ∈ [150, 250].
+    const vBounded = { ...vGuide, extent: { center: 200, halfLength: 50 } };
+    const rV = snapPolygonPoint({
+      proposed: { x: 33, y: 100 },
+      ...noTargets,
+      modes: modes(),
+      guideTargets: [vBounded],
+    });
+    expect(rV).toMatchObject({ x: 33, y: 100 });
+    expect(rV.guides).toHaveLength(0);
+    // y = x spanning x ∈ [40, 60].
+    const dBounded = { ...dDown, extent: { center: 50 * Math.SQRT2, halfLength: 10 * Math.SQRT2 } };
+    const rD = snapPolygonPoint({
+      proposed: { x: 80, y: 84 },
+      ...noTargets,
+      modes: modes(),
+      guideTargets: [dBounded],
+    });
+    expect(rD).toMatchObject({ x: 80, y: 84 });
+    expect(rD.guides).toHaveLength(0);
+    const rDIn = snapPolygonPoint({
+      proposed: { x: 50, y: 54 },
+      ...noTargets,
+      modes: modes({ line: false, all: 'off' }),
+      guideTargets: [dBounded],
+    });
+    expect(rDIn.guides.map((g) => g.alignGuideId)).toEqual(['gd']);
+  });
+
   it('tens never notches off a diagonal guide, and the marker still shows', () => {
     const r = snapPolygonPoint({
       proposed: { x: 53, y: 52 },

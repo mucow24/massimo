@@ -772,8 +772,8 @@ export interface LineCircle {
 // another well.
 export type GuideOrientation = 'horizontal' | 'vertical' | 'diagonal-down' | 'diagonal-up';
 
-// An alignment guide: an infinite horizontal, vertical, or 45° line pulled out
-// of the canvas-edge wells — the only way one is born. Editor scaffolding in
+// An alignment guide: a horizontal, vertical, or 45° line pulled out of the
+// canvas-edge wells — the only way one is born. Editor scaffolding in
 // the line-circle mold — a dashed guide rendered below map ink and excluded
 // from every export — but an ALWAYS-ON snap target for both snappers: items
 // dragged or placed near it engage regardless of the "Snap to all" toggle
@@ -785,9 +785,15 @@ export interface AlignmentGuide {
   id: string;
   orientation: GuideOrientation;
   offset: number;
-  // When locked, the guide can't be dragged, nudged, deleted, or shift-click
-  // multi-selected, and is click-through while unselected — but it keeps
-  // attracting snaps (lock protects position, not usefulness). Optional;
+  // The bounded span, in the guide's along-axis parameter t = p · guideAxis
+  // (world units of true length: x for horizontal, y for vertical, (x ± y)/√2
+  // for the diagonals). The guide renders only this span and attracts snaps
+  // only where a foot lands inside it — hard edge, no grace margin. Absent ⇒
+  // infinite (the historical guide, and the well pull-out's default).
+  extent?: { center: number; halfLength: number };
+  // When locked, the guide can't be dragged, nudged, resized, deleted, or
+  // shift-click multi-selected, and is click-through while unselected — but it
+  // keeps attracting snaps (lock protects position, not usefulness). Optional;
   // missing ⇒ unlocked. Mirrors LineCircle.locked.
   locked?: boolean;
 }

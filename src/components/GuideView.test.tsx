@@ -86,6 +86,38 @@ describe('<GuideView /> diagonals', () => {
   });
 });
 
+describe('<GuideView /> bounded extent', () => {
+  it('draws only the bounded span — ink, casing and hit stroke together', () => {
+    const { container } = renderGuide(
+      makeGuide({
+        id: 'g',
+        orientation: 'horizontal',
+        offset: 100,
+        extent: { center: 200, halfLength: 50 },
+      }),
+    );
+    for (const part of ['ink', 'casing', 'hit'] as const) {
+      const line = container.querySelector(`[data-guide-${part}]`)!;
+      expect(Number(line.getAttribute('x1'))).toBe(150);
+      expect(Number(line.getAttribute('x2'))).toBe(250);
+      expect(Number(line.getAttribute('y1'))).toBe(100);
+      expect(Number(line.getAttribute('y2'))).toBe(100);
+    }
+  });
+
+  it('mounts nothing for a span wholly outside the box', () => {
+    const { container } = renderGuide(
+      makeGuide({
+        id: 'g2',
+        orientation: 'horizontal',
+        offset: 100,
+        extent: { center: 5000, halfLength: 50 },
+      }),
+    );
+    expect(container.querySelector('[data-guide]')).toBeNull();
+  });
+});
+
 // Recipe: 1.5px stroke, 10/2 dash, 0.5px screen floor, 300% reference zoom —
 // so the floor (⅓ of the core) and the canvas-riding stretch meet at 100%.
 describe('<GuideView /> hybrid ink sizing', () => {

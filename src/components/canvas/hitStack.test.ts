@@ -11,7 +11,13 @@ import {
   type HitRef,
 } from './hitStack';
 import type { SelectionState } from '../../state/selection';
-import { makePolygon, makeSvgImage, makeTextLabel, stationWithStop } from '../../test/fixtures';
+import {
+  makeGuide,
+  makePolygon,
+  makeSvgImage,
+  makeTextLabel,
+  stationWithStop,
+} from '../../test/fixtures';
 import type { LineId, RouteBullet, StationId } from '../../model/types';
 
 // A miniature canvas DOM carrying one of every identity attribute the
@@ -289,6 +295,24 @@ describe('lockedHitsAt', () => {
     lineCircles: {},
     guides: {},
     ...over,
+  });
+
+  it('a locked BOUNDED guide answers only inside its span', () => {
+    const d = doc({
+      guides: {
+        g: makeGuide({
+          id: 'g',
+          orientation: 'horizontal',
+          offset: 0,
+          locked: true,
+          extent: { center: 300, halfLength: 50 },
+        }),
+      },
+    });
+    expect(lockedHitsAt({ x: 300, y: 2 }, d, 6)).toEqual([{ kind: 'guide', id: 'g' }]);
+    // Same line, past the tip: a bounded guide paints no ink (and no hit
+    // stroke) there, so the deep-pick must not reach it either.
+    expect(lockedHitsAt({ x: 500, y: 2 }, d, 6)).toEqual([]);
   });
 
   it('reports a locked polygon under the point, and ignores unlocked ones', () => {

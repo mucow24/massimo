@@ -298,12 +298,13 @@ export function sanitizeLineCircles(
 }
 
 /**
- * Alignment-guide hygiene for the file-import path. A guide is three fields
+ * Alignment-guide hygiene for the file-import path. A guide is a few fields
  * with no cross-references, so unlike its ring sibling there are no bindings
  * to repair — a malformed entry (non-finite offset, unknown orientation) is
- * dropped, and a stored `locked: false` collapses to the omitted form (the
- * canonical lock convention). Idempotent; identity (same reference) on a
- * well-formed record.
+ * dropped, a malformed `extent` (non-finite scalars, or a span of zero — an
+ * invisible, unhittable guide) is stripped back to the infinite form, and a
+ * stored `locked: false` collapses to the omitted form (the canonical lock
+ * convention). Idempotent; identity (same reference) on a well-formed record.
  */
 export function sanitizeGuides(guidesIn: Record<string, AlignmentGuide>): {
   guides: Record<string, AlignmentGuide>;
@@ -312,7 +313,7 @@ export function sanitizeGuides(guidesIn: Record<string, AlignmentGuide>): {
   let changed = false;
   const out: Record<string, AlignmentGuide> = {};
   for (const id of Object.keys(guidesIn)) {
-    const g = guidesIn[id];
+    let g = guidesIn[id];
     if (
       (g.orientation !== 'horizontal' &&
         g.orientation !== 'vertical' &&
@@ -323,6 +324,22 @@ export function sanitizeGuides(guidesIn: Record<string, AlignmentGuide>): {
     ) {
       changed = true;
       continue;
+    }
+    if (
+      g.extent !== undefined &&
+      // The object test first: a stored null or non-object extent must heal
+      // like any other malformed one, not throw into parse's refusal path.
+      (typeof g.extent !== 'object' ||
+        g.extent === null ||
+        typeof g.extent.center !== 'number' ||
+        !Number.isFinite(g.extent.center) ||
+        typeof g.extent.halfLength !== 'number' ||
+        !Number.isFinite(g.extent.halfLength) ||
+        g.extent.halfLength <= 0)
+    ) {
+      changed = true;
+      const { extent: _bad, ...rest } = g;
+      g = rest;
     }
     if (g.locked === false) {
       changed = true;

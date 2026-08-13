@@ -1366,6 +1366,7 @@ export function MapCanvas() {
       id: gd.id,
       orientation: gd.orientation,
       offset: gd.offset,
+      extent: gd.extent,
       at: g.from,
     });
   }

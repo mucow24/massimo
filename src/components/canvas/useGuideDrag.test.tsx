@@ -14,6 +14,7 @@ function pointerEvent(opts: {
   clientY: number;
   pointerId?: number;
   shiftKey?: boolean;
+  ctrlKey?: boolean;
   buttons?: number;
   button?: number;
 }): React.PointerEvent {
@@ -22,6 +23,7 @@ function pointerEvent(opts: {
     clientY: opts.clientY,
     pointerId: opts.pointerId ?? 1,
     shiftKey: opts.shiftKey ?? false,
+    ctrlKey: opts.ctrlKey ?? false,
     buttons: opts.buttons ?? 1,
     button: opts.button ?? 0,
     stopPropagation: () => {},
@@ -609,6 +611,326 @@ describe('useGuideDrag — diagonal guides', () => {
     act(() => r.current.onPointerUp(pointerEvent({ clientX: 200, clientY: 300 })));
     const guides = Object.values(useDoc.getState().guides);
     expect(guides[0]).toMatchObject({ orientation: 'diagonal-down', offset: 100 });
+  });
+});
+
+describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
+  // The jsdom host rect is all zeros, which reads as a zero-area visible box —
+  // every foot would sit "outside" and flip the span straight to infinite. The
+  // resize tests give the host a real box (the wells then live in its bands).
+  const hostRect = (w = 800, h = 600) => {
+    host.getBoundingClientRect = () =>
+      ({
+        left: 0,
+        top: 0,
+        right: w,
+        bottom: h,
+        width: w,
+        height: h,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }) as globalThis.DOMRect;
+  };
+
+  it('Ctrl at pointer-down scrubs from the press foot: it marks one END, the cursor the other', () => {
+    hostRect();
+    seedGuides();
+    const r = render();
+    act(() =>
+      r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100, ctrlKey: true })),
+    );
+    act(() =>
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 420, clientY: 108, ctrlKey: true, shiftKey: true }),
+      ),
+    );
+    const g = useDoc.getState().guides.gh;
+    expect(g.offset).toBe(100);
+    // Highlighter semantics: the span IS the swept stretch, 300 → 420.
+    expect(g.extent).toEqual({ center: 360, halfLength: 60 });
+    // The gesture chrome is a live length readout spanning the extent — the
+    // neighbour spacing readout stands down while the offset is frozen.
+    expect(r.current.snapGuides).toEqual([
+      { from: { x: 300, y: 100 }, to: { x: 420, y: 100 }, label: '120.0' },
+    ]);
+    act(() => r.current.onPointerUp(pointerEvent({ clientX: 420, clientY: 108, ctrlKey: true })));
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 360, halfLength: 60 });
+    // One undo entry for the whole gesture.
+    act(() => useDoc.temporal.getState().undo());
+    expect(useDoc.getState().guides.gh.extent).toBeUndefined();
+  });
+
+  it('Ctrl mid-gesture anchors an end at its first frame; releasing Ctrl resumes the offset with no jump', () => {
+    hostRect();
+    seedGuides();
+    const r = render();
+    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() =>
+      r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 140, shiftKey: true })),
+    );
+    expect(useDoc.getState().guides.gh.offset).toBe(140);
+    // The first Ctrl frame marks one end at ITS cursor foot; a zero-width
+    // frame writes no extent yet.
+    act(() =>
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 380, clientY: 152, ctrlKey: true, shiftKey: true }),
+      ),
+    );
+    expect(useDoc.getState().guides.gh.offset).toBe(140);
+    expect(useDoc.getState().guides.gh.extent).toBeUndefined();
+    act(() =>
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 460, clientY: 152, ctrlKey: true, shiftKey: true }),
+      ),
+    );
+    // The swept stretch 380 → 460.
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 420, halfLength: 40 });
+    expect(useDoc.getState().guides.gh.offset).toBe(140);
+    // Ctrl up: the offset resumes exactly where it froze (the perpendicular
+    // drift during the resize never lands)…
+    act(() =>
+      r.current.onPointerMove(pointerEvent({ clientX: 460, clientY: 152, shiftKey: true })),
+    );
+    expect(useDoc.getState().guides.gh.offset).toBe(140);
+    // …and further travel moves it from there, extent riding along untouched.
+    act(() =>
+      r.current.onPointerMove(pointerEvent({ clientX: 460, clientY: 172, shiftKey: true })),
+    );
+    expect(useDoc.getState().guides.gh.offset).toBe(160);
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 420, halfLength: 40 });
+    act(() => r.current.onPointerUp(pointerEvent({ clientX: 460, clientY: 172 })));
+    act(() => useDoc.temporal.getState().undo());
+    expect(useDoc.getState().guides.gh.offset).toBe(100);
+    expect(useDoc.getState().guides.gh.extent).toBeUndefined();
+  });
+
+  it('sweeping past the visible canvas edge flips the guide back to infinite; back inside re-bounds', () => {
+    hostRect(800, 600);
+    seedGuides();
+    const r = render();
+    act(() =>
+      r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100, ctrlKey: true })),
+    );
+    act(() =>
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 500, clientY: 100, ctrlKey: true, shiftKey: true }),
+      ),
+    );
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 400, halfLength: 100 });
+    // The foot crosses x = 800 — the visible edge — and the span lets go.
+    act(() =>
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 820, clientY: 100, ctrlKey: true, shiftKey: true }),
+      ),
+    );
+    expect(useDoc.getState().guides.gh.extent).toBeUndefined();
+    // Coming back inside re-bounds it from the same anchored end.
+    act(() =>
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 700, clientY: 100, ctrlKey: true, shiftKey: true }),
+      ),
+    );
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 500, halfLength: 200 });
+    act(() => r.current.onPointerUp(pointerEvent({ clientX: 700, clientY: 100, ctrlKey: true })));
+  });
+
+  it('the swept endpoint snaps along the axis — a station column sets the half-length; Shift declines', () => {
+    hostRect();
+    setModes({ all: 'all' });
+    seedGuides();
+    useDoc.setState({
+      ...useDoc.getState(),
+      stations: { s1: makeStation({ id: 's1', x: 423, y: 500 }) },
+    });
+    const r = render();
+    act(() =>
+      r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100, ctrlKey: true })),
+    );
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 420, clientY: 100, ctrlKey: true })));
+    // Cursor t 420, the station's column at x 423 within tolerance — the end
+    // lands ON the column: the span runs 300 → 423.
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 361.5, halfLength: 61.5 });
+    act(() =>
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 420, clientY: 100, ctrlKey: true, shiftKey: true }),
+      ),
+    );
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 360, halfLength: 60 });
+    act(() => r.current.onPointerUp(pointerEvent({ clientX: 420, clientY: 100, ctrlKey: true })));
+  });
+
+  it('the swept endpoint snaps onto a crossing guide, shown engaged', () => {
+    hostRect();
+    seedGuides();
+    const r = render();
+    act(() =>
+      r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100, ctrlKey: true })),
+    );
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 204, clientY: 100, ctrlKey: true })));
+    // gv crosses at x 200; the swept end clicks onto the crossing: 200 → 300.
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 250, halfLength: 50 });
+    expect(r.current.snapGuides.some((g) => g.alignGuideId === 'gv')).toBe(true);
+    act(() => r.current.onPointerUp(pointerEvent({ clientX: 204, clientY: 100, ctrlKey: true })));
+  });
+
+  it('a release inside the home well during resize commits — it does not delete', () => {
+    hostRect();
+    seedGuides();
+    const r = render();
+    act(() =>
+      r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100, ctrlKey: true })),
+    );
+    // The sweep ends inside the top band — the offset drag's delete zone —
+    // but a resize release never deletes: the guide can't have been carried
+    // anywhere (its offset is frozen).
+    act(() =>
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 40, clientY: 8, ctrlKey: true, shiftKey: true }),
+      ),
+    );
+    expect(r.current.overWell).toBeNull();
+    act(() => r.current.onPointerUp(pointerEvent({ clientX: 40, clientY: 8, ctrlKey: true })));
+    expect(useDoc.getState().guides.gh).toBeDefined();
+    // The swept stretch 40 → 300.
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 170, halfLength: 130 });
+  });
+
+  it('towed siblings freeze during resize and resume after from the true total', () => {
+    hostRect();
+    seedGuides();
+    useDoc.setState({
+      ...useDoc.getState(),
+      stations: { free: makeStation({ id: 'free', x: 500, y: 500 }) },
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['free'],
+      selectedGuideIds: ['gh'],
+    });
+    const r = render();
+    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() =>
+      r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 130, shiftKey: true })),
+    );
+    expect(useDoc.getState().stations.free).toMatchObject({ x: 500, y: 530 });
+    // Resize frames tow nothing…
+    act(() =>
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 360, clientY: 135, ctrlKey: true, shiftKey: true }),
+      ),
+    );
+    act(() =>
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 420, clientY: 135, ctrlKey: true, shiftKey: true }),
+      ),
+    );
+    expect(useDoc.getState().stations.free).toMatchObject({ x: 500, y: 530 });
+    expect(useDoc.getState().guides.gh.offset).toBe(130);
+    // …and the resumed offset drag carries them from the true total delta.
+    act(() =>
+      r.current.onPointerMove(pointerEvent({ clientX: 420, clientY: 145, shiftKey: true })),
+    );
+    expect(useDoc.getState().guides.gh.offset).toBe(140);
+    expect(useDoc.getState().stations.free).toMatchObject({ x: 500, y: 540 });
+    act(() => r.current.onPointerUp(pointerEvent({ clientX: 420, clientY: 145 })));
+  });
+
+  it('one motion: pull from the well, Ctrl mid-pull, sweep, release commits a bounded guide', () => {
+    hostRect();
+    const r = render();
+    act(() =>
+      r.current.onWellPointerDown('horizontal', pointerEvent({ clientX: 300, clientY: 5 })),
+    );
+    act(() =>
+      r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 140, shiftKey: true })),
+    );
+    expect(r.current.pull).toEqual({ orientation: 'horizontal', offset: 140 });
+    act(() =>
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 310, clientY: 140, ctrlKey: true, shiftKey: true }),
+      ),
+    );
+    act(() =>
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 500, clientY: 140, ctrlKey: true, shiftKey: true }),
+      ),
+    );
+    // The swept stretch 310 → 500.
+    expect(r.current.pull).toEqual({
+      orientation: 'horizontal',
+      offset: 140,
+      extent: { center: 405, halfLength: 95 },
+    });
+    act(() => r.current.onPointerUp(pointerEvent({ clientX: 500, clientY: 140, ctrlKey: true })));
+    const guides = Object.values(useDoc.getState().guides);
+    expect(guides).toHaveLength(1);
+    expect(guides[0]).toMatchObject({
+      orientation: 'horizontal',
+      offset: 140,
+      extent: { center: 405, halfLength: 95 },
+    });
+    expect(useSelection.getState().selectedGuideIds).toEqual([guides[0].id]);
+  });
+
+  it('Ctrl held from the well press anchors the pull sweep at the press foot', () => {
+    hostRect();
+    const r = render();
+    act(() =>
+      r.current.onWellPointerDown(
+        'horizontal',
+        pointerEvent({ clientX: 300, clientY: 5, ctrlKey: true }),
+      ),
+    );
+    // The first moved frame must still mint the offset — there is no line to
+    // bound before it — so the ghost appears unbounded…
+    act(() =>
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 302, clientY: 140, ctrlKey: true, shiftKey: true }),
+      ),
+    );
+    expect(r.current.pull).toEqual({ orientation: 'horizontal', offset: 140 });
+    // …and the sweep then anchors at the PRESS foot (x 300), not wherever the
+    // second frame happens to land — same rule as Ctrl at the grab of an
+    // existing guide.
+    act(() =>
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 450, clientY: 140, ctrlKey: true, shiftKey: true }),
+      ),
+    );
+    expect(r.current.pull).toEqual({
+      orientation: 'horizontal',
+      offset: 140,
+      extent: { center: 375, halfLength: 75 },
+    });
+    act(() => r.current.onPointerUp(pointerEvent({ clientX: 450, clientY: 140, ctrlKey: true })));
+    const guides = Object.values(useDoc.getState().guides);
+    expect(guides[0]).toMatchObject({ offset: 140, extent: { center: 375, halfLength: 75 } });
+  });
+
+  it('a diagonal sweep bounds in true length along the line', () => {
+    hostRect();
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: { gd: makeGuide({ id: 'gd', orientation: 'diagonal-down', offset: 0 }) },
+    });
+    const r = render();
+    act(() =>
+      r.current.onStartDrag('gd', pointerEvent({ clientX: 100, clientY: 100, ctrlKey: true })),
+    );
+    act(() =>
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 180, clientY: 180, ctrlKey: true, shiftKey: true }),
+      ),
+    );
+    const ext = useDoc.getState().guides.gd.extent;
+    expect(ext).toBeDefined();
+    // Press foot (100,100) → t = 100√2, sweep to (180,180) → t = 180√2: the
+    // swept stretch in TRUE length along the line.
+    expect(ext!.center).toBeCloseTo(140 * Math.SQRT2, 9);
+    expect(ext!.halfLength).toBeCloseTo(40 * Math.SQRT2, 9);
+    expect(useDoc.getState().guides.gd.offset).toBe(0);
+    act(() => r.current.onPointerUp(pointerEvent({ clientX: 180, clientY: 180, ctrlKey: true })));
   });
 });
 
