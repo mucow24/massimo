@@ -278,7 +278,9 @@ describe('guideTensOffset', () => {
 
   it('measures from the NEAREST parallel guide, not just any of them', () => {
     // 150 is 13 away, 40 is 97: the cadence runs from 150, one step below.
-    expect(guideTensOffset('horizontal', 137, { x: 0, y: 0 }, [h('lo', 40), h('hi', 150)], 20, 10)).toBe(130);
+    expect(
+      guideTensOffset('horizontal', 137, { x: 0, y: 0 }, [h('lo', 40), h('hi', 150)], 20, 10),
+    ).toBe(130);
   });
 
   it('never notches ONTO the anchor — a cadence of zero steps is a stack', () => {
@@ -333,8 +335,12 @@ describe('guideTensOffset', () => {
     // The tolerance is perpendicular too: one step out, a miss of 14 of
     // INTERCEPT is only 9.9 of distance, so it still engages.
     const oneStep = 20 * Math.SQRT2;
-    expect(guideTensOffset('diagonal-down', oneStep + 14, { x: 0, y: 0 }, [d(0)], 20, 10)).toBeCloseTo(oneStep, 9);
-    expect(guideTensOffset('diagonal-down', oneStep + 14, { x: 0, y: 0 }, [d(0)], 20, 9)).toBeNull();
+    expect(
+      guideTensOffset('diagonal-down', oneStep + 14, { x: 0, y: 0 }, [d(0)], 20, 10),
+    ).toBeCloseTo(oneStep, 9);
+    expect(
+      guideTensOffset('diagonal-down', oneStep + 14, { x: 0, y: 0 }, [d(0)], 20, 9),
+    ).toBeNull();
   });
 });
 
