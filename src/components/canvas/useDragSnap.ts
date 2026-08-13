@@ -1,6 +1,11 @@
 import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
-import { snapToleranceAt, type GuideTarget, type SnapModes } from '../../geometry/snap';
+import {
+  snapToleranceAt,
+  type GuideTarget,
+  type SnapConstraint,
+  type SnapModes,
+} from '../../geometry/snap';
 import { snapPolygonPoint, type PolygonSnapResult } from '../../geometry/polygonSnap';
 import type { Vec2 } from '../../geometry/vec';
 
@@ -14,7 +19,7 @@ export interface DragSnapOptions {
    *  others — see liveGuideTargets. Absent means no guides in play. */
   guideTargets?: readonly GuideTarget[];
   /** Single-DOF consumers (edge resizes, guide drags); see {@link snapPolygonPoint}. */
-  constrain?: 'x' | 'y' | 'diagonal-down' | 'diagonal-up';
+  constrain?: SnapConstraint;
 }
 
 export interface DragSnapApi {
@@ -22,6 +27,10 @@ export interface DragSnapApi {
   modes: SnapModes;
   /** The live grid size in world units. */
   gridInterval: number;
+  /** The engage tolerance at the live zoom, for callers that decide a snap of
+   *  their own beside `snapPoint` — the whole point of this hook is that the
+   *  zoom divide is not restated per site. */
+  tolerance: number;
   snapPoint: (proposed: Vec2, opts: DragSnapOptions) => PolygonSnapResult;
 }
 
@@ -40,9 +49,11 @@ export interface DragSnapApi {
 export function useDragSnap(zoom: number): DragSnapApi {
   const modes = useSnapPrefs((s) => s.modes);
   const gridInterval = useViewportStore((s) => s.gridSize);
+  const tolerance = snapToleranceAt(zoom);
   return {
     modes,
     gridInterval,
+    tolerance,
     snapPoint: (proposed, opts) =>
       snapPolygonPoint({
         proposed,
@@ -50,7 +61,7 @@ export function useDragSnap(zoom: number): DragSnapApi {
         allTargets: opts.allTargets,
         guideTargets: opts.guideTargets,
         modes,
-        tolerance: snapToleranceAt(zoom),
+        tolerance,
         gridInterval,
         constrain: opts.constrain,
       }),

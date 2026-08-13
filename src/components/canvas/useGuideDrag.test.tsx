@@ -326,6 +326,168 @@ describe('useGuideDrag — neighbour spacing readout', () => {
   });
 });
 
+describe('useGuideDrag — snap to grid length', () => {
+  // gh (100) is the dragged guide, ghLo (40) the parallel neighbour a cadence
+  // can run from. The grid is 20 throughout (the shared beforeEach).
+  const seedCadence = (neighbour = 40) =>
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: {
+        gh: makeGuide({ id: 'gh', orientation: 'horizontal', offset: 100 }),
+        ghLo: makeGuide({ id: 'ghLo', orientation: 'horizontal', offset: neighbour }),
+      },
+    });
+
+  const addGuide = (id: string, offset: number) =>
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: {
+        ...useDoc.getState().guides,
+        [id]: makeGuide({ id, orientation: 'horizontal', offset }),
+      },
+    });
+
+  it('notches the offset a whole grid length from the nearest parallel guide', () => {
+    setModes({ tens: true });
+    seedCadence();
+    const r = render();
+    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
+    // Raw 137 is 97 above ghLo; the nearest whole 20 is 100 → 140. The spacing
+    // readout is the feedback — the gap it names IS the cadence.
+    expect(useDoc.getState().guides.gh.offset).toBe(140);
+    expect(r.current.snapGuides.map((g) => g.label)).toEqual(['100.0']);
+  });
+
+  it('measures from the NEAREST parallel guide, not just any of them', () => {
+    setModes({ tens: true });
+    seedCadence();
+    addGuide('ghHi', 150);
+    const r = render();
+    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
+    // ghHi is 13 away, ghLo 97: the cadence runs from ghHi, one grid length
+    // below it — 130, not the 140 ghLo would have given.
+    expect(useDoc.getState().guides.gh.offset).toBe(130);
+  });
+
+  it('never takes its cadence from a guide towed by the same drag', () => {
+    setModes({ tens: true });
+    seedCadence();
+    addGuide('ghHi', 150);
+    useSelection.setState({ ...useSelection.getState(), selectedGuideIds: ['gh', 'ghHi'] });
+    const r = render();
+    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
+    // ghHi is the nearer guide but it moves WITH the grab, so its gap never
+    // changes: the anchor is stationary ghLo, and the notch is 140.
+    expect(useDoc.getState().guides.gh.offset).toBe(140);
+    expect(useDoc.getState().guides.ghHi.offset).toBe(190);
+  });
+
+  it('never lands the guide on top of the guide it measures from', () => {
+    setModes({ tens: true });
+    seedCadence();
+    const r = render();
+    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 45 })));
+    // Within half a step of ghLo the only whole multiple on offer is zero,
+    // which would stack the two guides — the one thing guides never do. The
+    // cadence stands down and the drag stays where the pointer put it.
+    expect(useDoc.getState().guides.gh.offset).toBe(45);
+  });
+
+  it('yields the axis the hard grid pins, and keeps the one it does not', () => {
+    setModes({ tens: true, grid: 'both' });
+    seedCadence(45);
+    const r = render();
+    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 133 })));
+    // Grid owns the quantization where it constrains: raw 133 → 140, not the
+    // 125 the cadence off ghLo (45) would have given.
+    expect(useDoc.getState().guides.gh.offset).toBe(140);
+    // A VERTICAL grid pins X — nothing this guide can move — so the cadence
+    // is back on.
+    act(() => setModes({ tens: true, grid: 'vertical' }));
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 133 })));
+    expect(useDoc.getState().guides.gh.offset).toBe(125);
+  });
+
+  it('stays put when the nearest notch is out of tolerance', () => {
+    setModes({ tens: true });
+    seedCadence();
+    // Zoom 2 halves the world-unit tolerance to 5, so a half-step miss on the
+    // 20 grid no longer reaches.
+    const r = render(2);
+    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 80 })));
+    expect(useDoc.getState().guides.gh.offset).toBe(90);
+  });
+
+  it('Shift declines the cadence, like every other snap', () => {
+    setModes({ tens: true });
+    seedCadence();
+    const r = render();
+    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() =>
+      r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137, shiftKey: true })),
+    );
+    expect(useDoc.getState().guides.gh.offset).toBe(137);
+  });
+
+  it('the better-aligned of a station alignment and the cadence wins', () => {
+    setModes({ tens: true, all: 'all' });
+    seedCadence();
+    useDoc.setState({
+      ...useDoc.getState(),
+      stations: { s1: makeStation({ id: 's1', x: 250, y: 150 }) },
+    });
+    const r = render();
+    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 147 })));
+    // The station is 3 off, the notch at 140 is 7: the alignment wins and
+    // draws its segment (50 across to the station) above the readout.
+    expect(useDoc.getState().guides.gh.offset).toBe(150);
+    expect(r.current.snapGuides.map((g) => g.label)).toEqual(['50.0', '110.0']);
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 143 })));
+    // Now the notch is 3 off and the station 7: the cadence wins, and the
+    // station's chrome goes with it — it would claim a snap that didn't happen.
+    expect(useDoc.getState().guides.gh.offset).toBe(140);
+    expect(r.current.snapGuides.map((g) => g.label)).toEqual(['100.0']);
+  });
+
+  it('notches the well pull-out ghost too', () => {
+    setModes({ tens: true });
+    seedCadence();
+    const r = render();
+    act(() =>
+      r.current.onWellPointerDown('horizontal', pointerEvent({ clientX: 300, clientY: 5 })),
+    );
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
+    // Nothing is excluded during a pull, so the nearest parallel guide is gh
+    // (100): 137 is 37 above it, and the nearest whole 20 is 40.
+    expect(r.current.pull).toEqual({ orientation: 'horizontal', offset: 140 });
+  });
+
+  it('a diagonal notches the true perpendicular gap, not its intercept', () => {
+    setModes({ tens: true });
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: {
+        gd: makeGuide({ id: 'gd', orientation: 'diagonal-down', offset: 100 }),
+        gdLo: makeGuide({ id: 'gdLo', orientation: 'diagonal-down', offset: 0 }),
+      },
+    });
+    const r = render();
+    act(() => r.current.onStartDrag('gd', pointerEvent({ clientX: 100, clientY: 100 })));
+    // dy −10, dx 0 → raw intercept 90, which is 63.6 of true distance from
+    // gdLo. The nearest whole 20 of DISTANCE is 60 — an intercept of 60√2.
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 100, clientY: 90 })));
+    expect(useDoc.getState().guides.gd.offset).toBeCloseTo(60 * Math.SQRT2, 9);
+    expect(r.current.snapGuides.map((g) => g.label)).toEqual(['60.0']);
+  });
+});
+
 describe('useGuideDrag — diagonal guides', () => {
   const seedDiagonals = () =>
     useDoc.setState({
