@@ -4,6 +4,7 @@ import {
   axesForAllSnap,
   formatMeasurement,
   GRID_INTERVAL,
+  guideAdmitsFoot,
   guideAxis,
   guideFoot,
   guideOffsetOf,
@@ -183,23 +184,29 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
       if (!axisAllowed({ x: 0, y: 1 })) continue;
       const d = Math.abs(proposed.x - g.offset);
       if (d > tol) continue;
+      const foot = { x: g.offset, y: proposed.y };
+      // A bounded guide attracts only where the foot lands inside its span.
+      if (!guideAdmitsFoot(g, foot)) continue;
       if (!bestV || d < bestV.perp) {
-        bestV = { value: g.offset, perp: d, target: { x: g.offset, y: proposed.y }, guideId: g.id };
+        bestV = { value: g.offset, perp: d, target: foot, guideId: g.id };
       }
     } else if (g.orientation === 'horizontal') {
       if (!axisAllowed({ x: 1, y: 0 })) continue;
       const d = Math.abs(proposed.y - g.offset);
       if (d > tol) continue;
+      const foot = { x: proposed.x, y: g.offset };
+      if (!guideAdmitsFoot(g, foot)) continue;
       if (!bestH || d < bestH.perp) {
-        bestH = { value: g.offset, perp: d, target: { x: proposed.x, y: g.offset }, guideId: g.id };
+        bestH = { value: g.offset, perp: d, target: foot, guideId: g.id };
       }
     } else {
       const axis = guideAxis(g.orientation);
       if (!axisAllowed(axis)) continue;
       const d = guidePerpDist(g.orientation, g.offset, proposed);
       if (d > tol) continue;
+      const foot = guideFoot(g.orientation, g.offset, proposed);
+      if (!guideAdmitsFoot(g, foot)) continue;
       if (!bestD || d < bestD.perp) {
-        const foot = guideFoot(g.orientation, g.offset, proposed);
         bestD = { foot, perp: d, target: foot, axis, guideId: g.id };
       }
     }

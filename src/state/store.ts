@@ -917,8 +917,13 @@ interface DocState extends MapDoc {
   setLineCircleLocked: (id: string, locked: boolean) => void;
   deleteLineCircle: (id: string) => void;
 
-  addGuide: (orientation: GuideOrientation, offset: number) => string;
-  moveGuide: (id: string, offset: number) => void;
+  addGuide: (
+    orientation: GuideOrientation,
+    offset: number,
+    extent?: { center: number; halfLength: number },
+  ) => string;
+  moveGuide: (id: string, offset: number, center?: number) => void;
+  resizeGuide: (id: string, extent: { center: number; halfLength: number } | null) => void;
   setGuideLocked: (id: string, locked: boolean) => void;
   deleteGuide: (id: string) => void;
   bindStationToCircle: (
@@ -1395,12 +1400,13 @@ export const useDoc = create<DocState>()(
         deleteLineCircle: (id) => set(withRegionReconcile((s) => T.deleteLineCircle(s, id))),
         // Guides move no stations and reroute no edges, so none of these
         // reconcile regions — the plain-set family, like lock.
-        addGuide: (orientation, offset) => {
+        addGuide: (orientation, offset, extent) => {
           const id = ids.guideId();
-          set((s) => T.addGuide(s, id, orientation, offset));
+          set((s) => T.addGuide(s, id, orientation, offset, extent));
           return id;
         },
-        moveGuide: (id, offset) => set((s) => T.moveGuide(s, id, offset)),
+        moveGuide: (id, offset, center) => set((s) => T.moveGuide(s, id, offset, center)),
+        resizeGuide: (id, extent) => set((s) => T.resizeGuide(s, id, extent)),
         setGuideLocked: (id, locked) => set((s) => T.setGuideLocked(s, id, locked)),
         deleteGuide: (id) => set((s) => T.deleteGuide(s, id)),
         bindStationToCircle: (stationId, circleId, seatFrom) =>

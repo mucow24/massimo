@@ -126,6 +126,11 @@ const SECTIONS: HelpSection[] = [
         k: 'Left corners',
         effect: 'Drag out of a corner square for a diagonal guide — upper-left /, lower-left \\',
       },
+      {
+        k: 'Ctrl while dragging',
+        effect:
+          'Bound the guide: the cursor sweeps one end, mirrored around where Ctrl went down — past the screen edge makes it infinite again',
+      },
       { k: 'Drag back', effect: 'Drop a guide on its well to delete it — click one to edit/lock' },
     ],
   },

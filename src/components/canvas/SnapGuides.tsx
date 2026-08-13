@@ -9,11 +9,14 @@ import { withAlpha } from '../../util/color';
 import type { GuideOrientation } from '../../model/types';
 
 /** An alignment guide some drag or placement is snapped AGAINST right now,
- *  plus the landed reference point of the drag that engaged it. */
+ *  plus the landed reference point of the drag that engaged it. A bounded
+ *  guide carries its extent so the chrome rides the same span the guide
+ *  itself paints. */
 export interface EngagedGuideChrome {
   id: string;
   orientation: GuideOrientation;
   offset: number;
+  extent?: { center: number; halfLength: number };
   at: Vec2;
 }
 
@@ -64,11 +67,12 @@ export function SnapGuides({ guides: allGuides, zoom, engaged, vb, labelBox }: P
   const engagedGuides = engaged && vb ? engaged : [];
   if (guides.length === 0 && engagedGuides.length === 0) return null;
   const halo = withAlpha(themeColors.accent, 0.3);
-  // An engaged guide's span across the overdrawn box, along its axis — the
-  // same clipped segment the guide itself paints with (GuideView). An
-  // engaged guide is under the cursor, so the box always catches it.
+  // An engaged guide's span across the overdrawn box (and its bounded extent,
+  // when it has one), along its axis — the same clipped segment the guide
+  // itself paints with (GuideView). An engaged guide is under the cursor, so
+  // the box always catches it.
   const spanOf = (g: EngagedGuideChrome) =>
-    guideSegmentInBox(g.orientation, g.offset, vb!.vbX, vb!.vbY, vb!.vbW, vb!.vbH);
+    guideSegmentInBox(g.orientation, g.offset, vb!.vbX, vb!.vbY, vb!.vbW, vb!.vbH, g.extent);
   // Where a measurement label sits along its span: the midpoint of the part
   // that is on screen, not of the whole thing. Zoomed in, a span can run for
   // several viewports — a guide's parallel neighbour routinely does — and the

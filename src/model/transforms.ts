@@ -4014,29 +4014,69 @@ export function setStopViaCircle(
 
 // ---------- Alignment guides ----------
 //
-// The straight-line sibling of a line circle: an infinite horizontal or
-// vertical guide with a single `offset` degree of freedom. Nothing binds to
-// it (unlike a ring, it is a snap TARGET, not a constraint frame), so these
-// four transforms are the whole surface.
+// The straight-line sibling of a line circle: a horizontal, vertical or 45°
+// guide with an `offset` degree of freedom and an optional bounded extent.
+// Nothing binds to it (unlike a ring, it is a snap TARGET, not a constraint
+// frame), so these five transforms are the whole surface.
+
+// A well-formed bounded extent: both scalars finite, and a real span —
+// halfLength 0 would commit an invisible, unhittable point of a guide.
+function validExtent(extent: { center: number; halfLength: number }): boolean {
+  return (
+    Number.isFinite(extent.center) && Number.isFinite(extent.halfLength) && extent.halfLength > 0
+  );
+}
 
 export function addGuide(
   doc: MapDoc,
   id: string,
   orientation: GuideOrientation,
   offset: number,
+  extent?: { center: number; halfLength: number },
 ): MapDoc {
   if (!Number.isFinite(offset)) return doc;
-  const guide: AlignmentGuide = { id, orientation, offset };
+  const guide: AlignmentGuide =
+    extent && validExtent(extent)
+      ? { id, orientation, offset, extent }
+      : { id, orientation, offset };
   return { ...doc, guides: { ...doc.guides, [id]: guide } };
 }
 
 // No lock check, like every sibling move transform: lock is enforced at the
 // interaction layer (the drag hook refuses, the nudge filters, the popover
-// disables), never in the transform.
-export function moveGuide(doc: MapDoc, id: string, offset: number): MapDoc {
+// disables), never in the transform. The optional `center` slides a bounded
+// guide's span along its axis in the same write (how a group tow and the
+// arrow keys move the whole segment rigidly); an unbounded guide ignores it.
+export function moveGuide(doc: MapDoc, id: string, offset: number, center?: number): MapDoc {
   const cur = doc.guides[id];
-  if (!cur || !Number.isFinite(offset) || cur.offset === offset) return doc;
-  return { ...doc, guides: { ...doc.guides, [id]: { ...cur, offset } } };
+  if (!cur || !Number.isFinite(offset)) return doc;
+  const slide = cur.extent !== undefined && center !== undefined && Number.isFinite(center);
+  if (cur.offset === offset && (!slide || cur.extent!.center === center)) return doc;
+  const next: AlignmentGuide = slide
+    ? { ...cur, offset, extent: { ...cur.extent!, center: center! } }
+    : { ...cur, offset };
+  return { ...doc, guides: { ...doc.guides, [id]: next } };
+}
+
+/** Set, replace or strip (null ⇒ back to infinite) a guide's bounded extent.
+ *  A malformed extent is refused — same-reference no-op, like every sibling. */
+export function resizeGuide(
+  doc: MapDoc,
+  id: string,
+  extent: { center: number; halfLength: number } | null,
+): MapDoc {
+  const cur = doc.guides[id];
+  if (!cur) return doc;
+  if (extent === null) {
+    if (cur.extent === undefined) return doc;
+    const { extent: _gone, ...rest } = cur;
+    return { ...doc, guides: { ...doc.guides, [id]: rest } };
+  }
+  if (!validExtent(extent)) return doc;
+  if (cur.extent?.center === extent.center && cur.extent.halfLength === extent.halfLength) {
+    return doc;
+  }
+  return { ...doc, guides: { ...doc.guides, [id]: { ...cur, extent } } };
 }
 
 // Thin wrapper over the canonical multi-item setItemsLocked (see

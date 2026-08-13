@@ -85,7 +85,8 @@ interface Props {
 }
 
 /**
- * One alignment guide: a dashed line spanning the whole (overdrawn) canvas
+ * One alignment guide: a dashed line spanning the whole (overdrawn) canvas —
+ * or just its bounded extent, when it carries one —
  * (export-excluded by the layer that mounts this), riding a casing rail so the
  * dashes stay legible over the background band painted below guides —
  * polygons, images, grid (map ink paints above and simply covers a
@@ -150,9 +151,11 @@ export function GuideView({
   const casingWidth = Math.max(0, recipe.thickness + 2 * recipe.casingThickness);
   const clickThrough = !interactive || inHandMode || (guide.locked && !selected);
   // Clipped to the overdrawn box — a diagonal drawn past it would be ink
-  // overflow (and a diagonal needs finite endpoints regardless). One that
-  // misses the box entirely has nothing to mount.
-  const seg = guideSegmentInBox(guide.orientation, guide.offset, vbX, vbY, vbW, vbH);
+  // overflow (and a diagonal needs finite endpoints regardless) — and to the
+  // guide's bounded extent, when it has one. One that misses the box entirely
+  // has nothing to mount (which for a bounded guide also parks the hit
+  // stroke: it is grabbable only where it is visible).
+  const seg = guideSegmentInBox(guide.orientation, guide.offset, vbX, vbY, vbW, vbH, guide.extent);
   if (!seg) return null;
   const { x1, y1, x2, y2 } = seg;
   // Dash phase anchored to the guide's own world point — the (0, offset) /

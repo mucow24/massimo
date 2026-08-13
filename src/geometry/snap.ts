@@ -194,14 +194,16 @@ export function formatMeasurement(value: number): string {
   return text === '-0.0' ? '0.0' : text;
 }
 
-/** An alignment guide as a snap target: an infinite horizontal (constant-Y),
- *  vertical (constant-X), or 45° (constant-intercept) line at `offset`.
- *  `AlignmentGuide` is structurally assignable; callers pass the
- *  visibility-gated, exclusion-filtered pool. */
+/** An alignment guide as a snap target: a horizontal (constant-Y), vertical
+ *  (constant-X), or 45° (constant-intercept) line at `offset`, infinite unless
+ *  a bounded `extent` narrows it to a span (see AlignmentGuide.extent — same
+ *  shape, same along-axis units). `AlignmentGuide` is structurally assignable;
+ *  callers pass the visibility-gated, exclusion-filtered pool. */
 export interface GuideTarget {
   id: string;
   orientation: GuideOrientation;
   offset: number;
+  extent?: { center: number; halfLength: number };
 }
 
 // ---------- Guide-line geometry ----------
@@ -301,12 +303,41 @@ export function guideMoveVector(orientation: GuideOrientation, d: number): Vec2 
   }
 }
 
+/** The along-axis parameter of `p` for this orientation — its signed distance
+ *  along {@link guideAxis} from the t = 0 anchor (the world origin's foot), in
+ *  TRUE world units: x for horizontal, y for vertical, (x ± y)/√2 for the
+ *  diagonals. The coordinate `AlignmentGuide.extent` speaks. */
+export function guideAlongOf(orientation: GuideOrientation, p: Vec2): number {
+  const a = guideAxis(orientation);
+  return p.x * a.x + p.y * a.y;
+}
+
+/** The point at along-parameter `t` on the guide line — the inverse of
+ *  {@link guideAlongOf} restricted to the line. The t = 0 anchor is the world
+ *  origin's foot, for every orientation alike. */
+export function guidePointAt(orientation: GuideOrientation, offset: number, t: number): Vec2 {
+  const anchor = guideFoot(orientation, offset, { x: 0, y: 0 });
+  const a = guideAxis(orientation);
+  return { x: anchor.x + t * a.x, y: anchor.y + t * a.y };
+}
+
+/** Does a snap FOOT on this guide's line land inside its span? Bounded guides
+ *  attract only where this is true — the edge is inclusive and hard (past the
+ *  tip is exactly where a bounded guide must let go; no grace margin). An
+ *  unbounded guide admits everything. The one gate both snappers share. */
+export function guideAdmitsFoot(g: GuideTarget, foot: Vec2): boolean {
+  if (!g.extent) return true;
+  return Math.abs(guideAlongOf(g.orientation, foot) - g.extent.center) <= g.extent.halfLength;
+}
+
 /** The guide's drawable segment clipped to a box (the overdrawn viewBox —
- *  painting past it is ink overflow, which costs the composited pan layer).
+ *  painting past it is ink overflow, which costs the composited pan layer)
+ *  and, when the guide is bounded, to its extent — the single choke point that
+ *  keeps GuideView and the engaged snap chrome drawing the same span.
  *  Horizontal/vertical guides span the full box edge-to-edge even when their
  *  offset lies outside it (the layer draws them regardless, matching the
- *  pre-diagonal behavior); a diagonal that misses the box entirely returns
- *  null — there is no finite segment to draw. */
+ *  pre-diagonal behavior); a diagonal that misses the box entirely — or an
+ *  extent that misses it — returns null: there is no finite segment to draw. */
 export function guideSegmentInBox(
   orientation: GuideOrientation,
   offset: number,
@@ -314,27 +345,45 @@ export function guideSegmentInBox(
   vbY: number,
   vbW: number,
   vbH: number,
+  extent?: { center: number; halfLength: number },
 ): { x1: number; y1: number; x2: number; y2: number } | null {
-  switch (orientation) {
-    case 'horizontal':
-      return { x1: vbX, y1: offset, x2: vbX + vbW, y2: offset };
-    case 'vertical':
-      return { x1: offset, y1: vbY, x2: offset, y2: vbY + vbH };
-    case 'diagonal-down': {
-      // y = x + offset: clip the x-range to where y stays inside the box.
-      const x1 = Math.max(vbX, vbY - offset);
-      const x2 = Math.min(vbX + vbW, vbY + vbH - offset);
-      if (x1 > x2) return null;
-      return { x1, y1: x1 + offset, x2, y2: x2 + offset };
+  const seg = ((): { x1: number; y1: number; x2: number; y2: number } | null => {
+    switch (orientation) {
+      case 'horizontal':
+        return { x1: vbX, y1: offset, x2: vbX + vbW, y2: offset };
+      case 'vertical':
+        return { x1: offset, y1: vbY, x2: offset, y2: vbY + vbH };
+      case 'diagonal-down': {
+        // y = x + offset: clip the x-range to where y stays inside the box.
+        const x1 = Math.max(vbX, vbY - offset);
+        const x2 = Math.min(vbX + vbW, vbY + vbH - offset);
+        if (x1 > x2) return null;
+        return { x1, y1: x1 + offset, x2, y2: x2 + offset };
+      }
+      case 'diagonal-up': {
+        // y = offset − x.
+        const x1 = Math.max(vbX, offset - (vbY + vbH));
+        const x2 = Math.min(vbX + vbW, offset - vbY);
+        if (x1 > x2) return null;
+        return { x1, y1: offset - x1, x2, y2: offset - x2 };
+      }
     }
-    case 'diagonal-up': {
-      // y = offset − x.
-      const x1 = Math.max(vbX, offset - (vbY + vbH));
-      const x2 = Math.min(vbX + vbW, offset - vbY);
-      if (x1 > x2) return null;
-      return { x1, y1: offset - x1, x2, y2: offset - x2 };
-    }
-  }
+  })();
+  if (!seg || !extent) return seg;
+  // Every arm above emits its endpoints t-ascending, so the extent is a plain
+  // interval intersection in the along parameter.
+  const lo = Math.max(
+    guideAlongOf(orientation, { x: seg.x1, y: seg.y1 }),
+    extent.center - extent.halfLength,
+  );
+  const hi = Math.min(
+    guideAlongOf(orientation, { x: seg.x2, y: seg.y2 }),
+    extent.center + extent.halfLength,
+  );
+  if (lo > hi) return null;
+  const a = guidePointAt(orientation, offset, lo);
+  const b = guidePointAt(orientation, offset, hi);
+  return { x1: a.x, y1: a.y, x2: b.x, y2: b.y };
 }
 
 /**
@@ -644,6 +693,8 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     const perpDist = guidePerpDist(g.orientation, g.offset, anchor);
     if (perpDist > tolerance) continue;
     const foot = guideFoot(g.orientation, g.offset, anchor);
+    // A bounded guide attracts only where the foot lands inside its span.
+    if (!guideAdmitsFoot(g, foot)) continue;
     all.push({
       target: null,
       guideId: g.id,

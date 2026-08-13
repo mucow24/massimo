@@ -70,6 +70,70 @@ describe('alignment guides on the load path', () => {
     expect(out.guides).toBe(guides);
   });
 
+  it('round-trips a bounded extent', () => {
+    const doc = makeDoc({
+      guides: [
+        makeGuide({ id: 'g1', orientation: 'horizontal', offset: 120 }),
+        makeGuide({
+          id: 'g2',
+          orientation: 'diagonal-up',
+          offset: 80,
+          extent: { center: 140.5, halfLength: 60 },
+        }),
+      ],
+    });
+    expect(roundTrip(doc).guides).toEqual(doc.guides);
+  });
+
+  it('sanitizeGuides strips a malformed extent but keeps the guide', () => {
+    const { guides, changed } = sanitizeGuides({
+      badCenter: {
+        id: 'badCenter',
+        orientation: 'horizontal',
+        offset: 10,
+        extent: { center: NaN, halfLength: 5 },
+      },
+      badHalf: {
+        id: 'badHalf',
+        orientation: 'vertical',
+        offset: 10,
+        extent: { center: 0, halfLength: 'wide' as unknown as number },
+      },
+      zeroSpan: {
+        id: 'zeroSpan',
+        orientation: 'horizontal',
+        offset: 10,
+        extent: { center: 0, halfLength: 0 },
+      },
+      ok: {
+        id: 'ok',
+        orientation: 'horizontal',
+        offset: 10,
+        extent: { center: 300, halfLength: 100 },
+      },
+    });
+    expect(changed).toBe(true);
+    expect(Object.keys(guides).sort()).toEqual(['badCenter', 'badHalf', 'ok', 'zeroSpan']);
+    expect('extent' in guides.badCenter).toBe(false);
+    expect('extent' in guides.badHalf).toBe(false);
+    expect('extent' in guides.zeroSpan).toBe(false);
+    expect(guides.ok.extent).toEqual({ center: 300, halfLength: 100 });
+  });
+
+  it('sanitizeGuides stays an identity on a well-formed bounded guide', () => {
+    const guides = {
+      g1: {
+        id: 'g1',
+        orientation: 'horizontal' as const,
+        offset: 10,
+        extent: { center: 5, halfLength: 2.5 },
+      },
+    };
+    const out = sanitizeGuides(guides);
+    expect(out.changed).toBe(false);
+    expect(out.guides).toBe(guides);
+  });
+
   it('parse drops a malformed guide instead of refusing the file', () => {
     const file = JSON.parse(serialize(makeDoc({ guides: [makeGuide({ id: 'g1', offset: 10 })] })));
     file.doc.guides.bad = { id: 'bad', orientation: 'horizontal', offset: 'ten' };

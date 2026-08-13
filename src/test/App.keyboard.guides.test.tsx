@@ -70,6 +70,31 @@ describe('App keyboard: alignment-guide nudge', () => {
     expect(useDoc.getState().guides.gu.offset).toBe(52);
   });
 
+  it("cross-axis arrows slide a BOUNDED guide's span; the offset stays put", () => {
+    render(<App />);
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: {
+        gh: makeGuide({
+          id: 'gh',
+          orientation: 'horizontal',
+          offset: 100,
+          extent: { center: 300, halfLength: 50 },
+        }),
+      },
+    });
+    useSelection.setState({ ...useSelection.getState(), selectedGuideIds: ['gh'] });
+    fireEvent.keyDown(document.body, { key: 'ArrowRight' });
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 301, halfLength: 50 });
+    expect(useDoc.getState().guides.gh.offset).toBe(100);
+    fireEvent.keyDown(document.body, { key: 'ArrowLeft', shiftKey: true });
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 296, halfLength: 50 });
+    // The offset arrows still move the line, span riding along.
+    fireEvent.keyDown(document.body, { key: 'ArrowDown' });
+    expect(useDoc.getState().guides.gh.offset).toBe(101);
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 296, halfLength: 50 });
+  });
+
   it('a mixed guide+bullet nudge moves both in ONE undo entry', () => {
     render(<App />);
     seed();
