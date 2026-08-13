@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   alignmentPairs,
   axisForRotation,
+  formatMeasurement,
   gridConstrains,
   isGridMultiple,
   parallel,
@@ -30,6 +31,23 @@ const linesOf = (...ls: Line[]): Record<LineId, Line> => {
   for (const l of ls) m[l.id] = l;
   return m;
 };
+
+describe('formatMeasurement', () => {
+  it('always shows one decimal, so a readout never changes width mid-drag', () => {
+    expect(formatMeasurement(3)).toBe('3.0');
+    expect(formatMeasurement(39.75)).toBe('39.8');
+    expect(formatMeasurement(100 / Math.SQRT2)).toBe('70.7');
+  });
+
+  it('never renders a negative zero', () => {
+    // Distances arrive via hypot/abs, but the engaged-guide chip formats a
+    // guide's signed offset — a guide a hair above y=0 must not read "-0.0".
+    expect(formatMeasurement(-0.02)).toBe('0.0');
+    expect(formatMeasurement(-0)).toBe('0.0');
+    // A real negative coordinate keeps its sign.
+    expect(formatMeasurement(-340)).toBe('-340.0');
+  });
+});
 
 describe('parallel', () => {
   it('flags vectors with the same direction', () => {

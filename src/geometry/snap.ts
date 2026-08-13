@@ -183,10 +183,15 @@ export interface SnapGuide {
  *  Whole numbers keep the trailing ".0" — the fixed width is the point, so a
  *  number doesn't change shape as a drag crosses a unit boundary, and a readout
  *  that stalls on a fractional nudge is visibly still moving. The one home for
- *  the format: drag distances, redistribute spacing, and the engaged guide's
- *  coordinate chip all speak it. */
+ *  the format: drag distances, redistribute spacing, the circle-diameter chip,
+ *  and the engaged guide's coordinate chip all speak it.
+ *
+ *  Every caller but that last one passes a hypot/abs distance, so the sign can
+ *  only ever arrive from a guide's offset — and a guide a hair above y=0 must
+ *  not read "-0.0". */
 export function formatMeasurement(value: number): string {
-  return value.toFixed(1);
+  const text = value.toFixed(1);
+  return text === '-0.0' ? '0.0' : text;
 }
 
 /** An alignment guide as a snap target: an infinite horizontal (constant-Y),
