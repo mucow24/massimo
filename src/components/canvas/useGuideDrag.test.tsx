@@ -238,6 +238,92 @@ describe('useGuideDrag — dragging an existing guide', () => {
   });
 });
 
+describe('useGuideDrag — neighbour spacing readout', () => {
+  // gh (100) with a parallel guide either side of it, plus the vertical one
+  // from the shared seed — which crosses, so it is never a neighbour.
+  const seedNeighbours = () => {
+    seedGuides();
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: {
+        ...useDoc.getState().guides,
+        ghLo: makeGuide({ id: 'ghLo', orientation: 'horizontal', offset: 40 }),
+        ghHi: makeGuide({ id: 'ghHi', orientation: 'horizontal', offset: 160 }),
+      },
+    });
+  };
+
+  it('measures to the nearest parallel guide either side, riding the cursor', () => {
+    seedNeighbours();
+    const r = render();
+    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
+    expect(useDoc.getState().guides.gh.offset).toBe(137);
+    expect(r.current.snapGuides).toEqual([
+      { from: { x: 300, y: 137 }, to: { x: 300, y: 40 }, label: '97' },
+      { from: { x: 300, y: 137 }, to: { x: 300, y: 160 }, label: '23' },
+    ]);
+    // The readout is gesture chrome: it goes when the gesture does.
+    act(() => r.current.onPointerUp(pointerEvent({ clientX: 300, clientY: 137 })));
+    expect(r.current.snapGuides).toEqual([]);
+  });
+
+  it('keeps measuring under Shift — Shift declines snapping, not measuring', () => {
+    seedNeighbours();
+    const r = render();
+    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() =>
+      r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137, shiftKey: true })),
+    );
+    expect(r.current.snapGuides.map((g) => g.label)).toEqual(['97', '23']);
+  });
+
+  it('measures to a TOWED parallel sibling, at its live offset, rather than past it', () => {
+    seedNeighbours();
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: {
+        ...useDoc.getState().guides,
+        ghFar: makeGuide({ id: 'ghFar', orientation: 'horizontal', offset: 300 }),
+      },
+    });
+    useSelection.setState({ ...useSelection.getState(), selectedGuideIds: ['gh', 'ghHi'] });
+    const r = render();
+    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
+    // ghHi is towed to 197. It is out of the SNAP pool (a moving target), but
+    // it is still ink on the canvas — measuring past it to ghFar would draw a
+    // span straight through it.
+    expect(useDoc.getState().guides.ghHi.offset).toBe(197);
+    expect(r.current.snapGuides).toEqual([
+      { from: { x: 300, y: 137 }, to: { x: 300, y: 40 }, label: '97' },
+      { from: { x: 300, y: 137 }, to: { x: 300, y: 197 }, label: '60' },
+    ]);
+  });
+
+  it('measures the well pull-out ghost too', () => {
+    seedNeighbours();
+    const r = render();
+    act(() =>
+      r.current.onWellPointerDown('horizontal', pointerEvent({ clientX: 300, clientY: 5 })),
+    );
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
+    expect(r.current.pull).toEqual({ orientation: 'horizontal', offset: 137 });
+    // Nothing is excluded during a pull — the ghost isn't in the doc — so the
+    // seeded gh at 100 is the neighbour below, not ghLo at 40.
+    expect(r.current.snapGuides.map((g) => g.label)).toEqual(['37', '23']);
+  });
+
+  it('stays quiet while the View menu hides guides', () => {
+    seedNeighbours();
+    useViewportStore.setState({ showGuides: false });
+    const r = render();
+    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
+    expect(r.current.snapGuides).toEqual([]);
+  });
+});
+
 describe('useGuideDrag — diagonal guides', () => {
   const seedDiagonals = () =>
     useDoc.setState({
