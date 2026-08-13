@@ -129,7 +129,7 @@ const SECTIONS: HelpSection[] = [
       {
         k: 'Ctrl while dragging',
         effect:
-          'Bound the guide: the cursor sweeps one end, mirrored around where Ctrl went down — past the screen edge makes it infinite again',
+          'Bound the guide like a highlighter: where Ctrl went down marks one end, sweep to the other — past the screen edge makes it infinite again',
       },
       { k: 'Drag back', effect: 'Drop a guide on its well to delete it — click one to edit/lock' },
     ],

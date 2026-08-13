@@ -806,9 +806,10 @@ keep only their own 45° family and grid-quantize the intercept under the full l
 bounded guide's plain drag moves the line the same way, span riding along. **Ctrl/Cmd is the
 resize phase**, live per-move like the station drag's redistribute, in BOTH gestures — so drag
 down, Ctrl, sweep, release places a bounded guide in one motion. While held, the offset
-freezes and the cursor's foot sweeps one endpoint, mirrored about the span's center — pinned
-at the press foot when Ctrl was down at the grab (you aim the middle by where you press), else
-at the first Ctrl frame's foot. The swept end runs through the point snapper constrained ALONG
+freezes and the gesture runs like a highlighter: the foot where the phase began — the press
+foot when Ctrl was down at the grab, else the first Ctrl frame's — marks one END, the cursor's
+foot sweeps the other, and the swept stretch IS the span (stored center + half-length). The
+swept end runs through the point snapper constrained ALONG
 the axis (the offset drag's constraint mirrored), where CROSSING guides are legitimate targets —
 a perpendicular guide pins position along this one, the lone exception to guides-never-
 snap-to-guides (parallel stacking stays meaningless). Sweeping the foot past the visible canvas

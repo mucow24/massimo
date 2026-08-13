@@ -633,7 +633,7 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
       }) as globalThis.DOMRect;
   };
 
-  it('Ctrl at pointer-down resizes from the press foot: offset frozen, span mirrored', () => {
+  it('Ctrl at pointer-down scrubs from the press foot: it marks one END, the cursor the other', () => {
     hostRect();
     seedGuides();
     const r = render();
@@ -647,20 +647,21 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
     );
     const g = useDoc.getState().guides.gh;
     expect(g.offset).toBe(100);
-    expect(g.extent).toEqual({ center: 300, halfLength: 120 });
+    // Highlighter semantics: the span IS the swept stretch, 300 → 420.
+    expect(g.extent).toEqual({ center: 360, halfLength: 60 });
     // The gesture chrome is a live length readout spanning the extent — the
     // neighbour spacing readout stands down while the offset is frozen.
     expect(r.current.snapGuides).toEqual([
-      { from: { x: 180, y: 100 }, to: { x: 420, y: 100 }, label: '240.0' },
+      { from: { x: 300, y: 100 }, to: { x: 420, y: 100 }, label: '120.0' },
     ]);
     act(() => r.current.onPointerUp(pointerEvent({ clientX: 420, clientY: 108, ctrlKey: true })));
-    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 300, halfLength: 120 });
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 360, halfLength: 60 });
     // One undo entry for the whole gesture.
     act(() => useDoc.temporal.getState().undo());
     expect(useDoc.getState().guides.gh.extent).toBeUndefined();
   });
 
-  it('Ctrl mid-gesture pins the center at its first frame; releasing Ctrl resumes the offset with no jump', () => {
+  it('Ctrl mid-gesture anchors an end at its first frame; releasing Ctrl resumes the offset with no jump', () => {
     hostRect();
     seedGuides();
     const r = render();
@@ -669,8 +670,8 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
       r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 140, shiftKey: true })),
     );
     expect(useDoc.getState().guides.gh.offset).toBe(140);
-    // First Ctrl frame pins the center at ITS cursor foot; a zero-width frame
-    // writes no extent yet.
+    // The first Ctrl frame marks one end at ITS cursor foot; a zero-width
+    // frame writes no extent yet.
     act(() =>
       r.current.onPointerMove(
         pointerEvent({ clientX: 380, clientY: 152, ctrlKey: true, shiftKey: true }),
@@ -683,7 +684,8 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
         pointerEvent({ clientX: 460, clientY: 152, ctrlKey: true, shiftKey: true }),
       ),
     );
-    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 380, halfLength: 80 });
+    // The swept stretch 380 → 460.
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 420, halfLength: 40 });
     expect(useDoc.getState().guides.gh.offset).toBe(140);
     // Ctrl up: the offset resumes exactly where it froze (the perpendicular
     // drift during the resize never lands)…
@@ -696,7 +698,7 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
       r.current.onPointerMove(pointerEvent({ clientX: 460, clientY: 172, shiftKey: true })),
     );
     expect(useDoc.getState().guides.gh.offset).toBe(160);
-    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 380, halfLength: 80 });
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 420, halfLength: 40 });
     act(() => r.current.onPointerUp(pointerEvent({ clientX: 460, clientY: 172 })));
     act(() => useDoc.temporal.getState().undo());
     expect(useDoc.getState().guides.gh.offset).toBe(100);
@@ -715,7 +717,7 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
         pointerEvent({ clientX: 500, clientY: 100, ctrlKey: true, shiftKey: true }),
       ),
     );
-    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 300, halfLength: 200 });
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 400, halfLength: 100 });
     // The foot crosses x = 800 — the visible edge — and the span lets go.
     act(() =>
       r.current.onPointerMove(
@@ -723,13 +725,13 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
       ),
     );
     expect(useDoc.getState().guides.gh.extent).toBeUndefined();
-    // Coming back inside re-bounds it around the same center.
+    // Coming back inside re-bounds it from the same anchored end.
     act(() =>
       r.current.onPointerMove(
         pointerEvent({ clientX: 700, clientY: 100, ctrlKey: true, shiftKey: true }),
       ),
     );
-    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 300, halfLength: 400 });
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 500, halfLength: 200 });
     act(() => r.current.onPointerUp(pointerEvent({ clientX: 700, clientY: 100, ctrlKey: true })));
   });
 
@@ -747,14 +749,14 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
     );
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 420, clientY: 100, ctrlKey: true })));
     // Cursor t 420, the station's column at x 423 within tolerance — the end
-    // lands ON the column.
-    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 300, halfLength: 123 });
+    // lands ON the column: the span runs 300 → 423.
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 361.5, halfLength: 61.5 });
     act(() =>
       r.current.onPointerMove(
         pointerEvent({ clientX: 420, clientY: 100, ctrlKey: true, shiftKey: true }),
       ),
     );
-    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 300, halfLength: 120 });
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 360, halfLength: 60 });
     act(() => r.current.onPointerUp(pointerEvent({ clientX: 420, clientY: 100, ctrlKey: true })));
   });
 
@@ -766,8 +768,8 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
       r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100, ctrlKey: true })),
     );
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 204, clientY: 100, ctrlKey: true })));
-    // gv crosses at x 200; the swept end clicks onto the crossing.
-    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 300, halfLength: 100 });
+    // gv crosses at x 200; the swept end clicks onto the crossing: 200 → 300.
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 250, halfLength: 50 });
     expect(r.current.snapGuides.some((g) => g.alignGuideId === 'gv')).toBe(true);
     act(() => r.current.onPointerUp(pointerEvent({ clientX: 204, clientY: 100, ctrlKey: true })));
   });
@@ -790,7 +792,8 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
     expect(r.current.overWell).toBeNull();
     act(() => r.current.onPointerUp(pointerEvent({ clientX: 40, clientY: 8, ctrlKey: true })));
     expect(useDoc.getState().guides.gh).toBeDefined();
-    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 300, halfLength: 260 });
+    // The swept stretch 40 → 300.
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 170, halfLength: 130 });
   });
 
   it('towed siblings freeze during resize and resume after from the true total', () => {
@@ -853,10 +856,11 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
         pointerEvent({ clientX: 500, clientY: 140, ctrlKey: true, shiftKey: true }),
       ),
     );
+    // The swept stretch 310 → 500.
     expect(r.current.pull).toEqual({
       orientation: 'horizontal',
       offset: 140,
-      extent: { center: 310, halfLength: 190 },
+      extent: { center: 405, halfLength: 95 },
     });
     act(() => r.current.onPointerUp(pointerEvent({ clientX: 500, clientY: 140, ctrlKey: true })));
     const guides = Object.values(useDoc.getState().guides);
@@ -864,7 +868,7 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
     expect(guides[0]).toMatchObject({
       orientation: 'horizontal',
       offset: 140,
-      extent: { center: 310, halfLength: 190 },
+      extent: { center: 405, halfLength: 95 },
     });
     expect(useSelection.getState().selectedGuideIds).toEqual([guides[0].id]);
   });
@@ -886,10 +890,10 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
     );
     const ext = useDoc.getState().guides.gd.extent;
     expect(ext).toBeDefined();
-    // Press foot (100,100) → t = 100√2; sweep to (180,180) → 80√2 of true
-    // length either side.
-    expect(ext!.center).toBeCloseTo(100 * Math.SQRT2, 9);
-    expect(ext!.halfLength).toBeCloseTo(80 * Math.SQRT2, 9);
+    // Press foot (100,100) → t = 100√2, sweep to (180,180) → t = 180√2: the
+    // swept stretch in TRUE length along the line.
+    expect(ext!.center).toBeCloseTo(140 * Math.SQRT2, 9);
+    expect(ext!.halfLength).toBeCloseTo(40 * Math.SQRT2, 9);
     expect(useDoc.getState().guides.gd.offset).toBe(0);
     act(() => r.current.onPointerUp(pointerEvent({ clientX: 180, clientY: 180, ctrlKey: true })));
   });

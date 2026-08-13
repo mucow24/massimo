@@ -85,9 +85,11 @@ type ScreenToWorld = (mx: number, my: number) => Vec2;
  *
  * Both gestures also carry a RESIZE phase, live on Ctrl/Cmd like the station
  * drag's redistribute (re-read every move): while held, the offset freezes
- * where it stands and the gesture bounds the guide instead — the first Ctrl
- * frame's cursor foot pins the span's CENTER, and the cursor's foot from then
- * on is one endpoint, mirrored about it (`AlignmentGuide.extent`). The swept
+ * where it stands and the gesture bounds the guide instead, highlighter
+ * style — the foot where the phase began (the press foot when Ctrl was down
+ * at the grab, else the first Ctrl frame's) marks one END, and the cursor's
+ * foot sweeps the other; the swept stretch IS the span
+ * (`AlignmentGuide.extent`). The swept
  * endpoint runs through the point snapper constrained ALONG the axis (the
  * mirror of the offset drag's constraint), where crossing guides are
  * legitimate targets — a perpendicular guide determines position along this
@@ -157,14 +159,14 @@ export function useGuideDrag(
     // where it froze; startOffset itself never moves (the sibling tow's total
     // is measured from it).
     offsetBias: number;
-    // Live while Ctrl holds the resize phase; `center` is the span's pinned
-    // along-axis center, `mx/my` the last resize frame's cursor — what the
-    // resume re-base measures from, so the travel since that frame still
-    // lands. Entered lazily on the first Ctrl move frame — with Ctrl held
-    // from the press and no offset frame yet, the center pins at the PRESS
-    // foot (you aim the middle by where you grab), else at the entering
-    // frame's foot.
-    resize: { center: number; mx: number; my: number } | null;
+    // Live while Ctrl holds the resize phase; `anchor` is the span's FIXED end
+    // in the along parameter (the cursor's foot sweeps the other, highlighter
+    // style), `mx/my` the last resize frame's cursor — what the resume re-base
+    // measures from, so the travel since that frame still lands. Entered
+    // lazily on the first Ctrl move frame — with Ctrl held from the press and
+    // no offset frame yet, the anchor is the PRESS foot (you mark the first
+    // end by where you grab), else the entering frame's foot.
+    resize: { anchor: number; mx: number; my: number } | null;
     ctrlAtPress: boolean;
     everOffset: boolean;
     history: ReturnType<typeof beginHistoryGroup>;
@@ -179,13 +181,13 @@ export function useGuideDrag(
     neighbours: readonly GuideTarget[];
     towedGaps: readonly number[];
     // The ghost's bounded extent (null = infinite), its live resize phase
-    // (center + the last resize frame's cursor, the drag ref's convention),
-    // and the offset-resume correction — the pull's raw offset is
+    // (anchored end + the last resize frame's cursor, the drag ref's
+    // convention), and the offset-resume correction — the pull's raw offset is
     // cursor-absolute, so its bias is additive on `guideOffsetOf` rather than
     // on a delta. A pull can only enter resize once an offset frame has run
     // (`everOffset`): before that there is no line to bound.
     extent: { center: number; halfLength: number } | null;
-    resize: { center: number; mx: number; my: number } | null;
+    resize: { anchor: number; mx: number; my: number } | null;
     everOffset: boolean;
     perpBias: number;
   } | null>(null);
@@ -323,17 +325,18 @@ export function useGuideDrag(
           ? ('diagonal-up' as const)
           : ('diagonal-down' as const);
 
-  // One resize frame: the snapped swept endpoint mirrored about the pinned
-  // center, or null when the cursor's foot has left the visible canvas box —
-  // the flip back to infinite. Also emits the phase's chrome: the endpoint
-  // snap's own guides plus a live length chip spanning the extent (the
-  // neighbour readout stands down — the offset is frozen, so the spacing it
-  // measures cannot change). The flip tests the UNSNAPPED foot: it answers
-  // where the cursor is, not where a target pulled the endpoint.
+  // One resize frame, highlighter-style: the span runs from the ANCHORED end
+  // (where the phase began) to the snapped cursor foot — or null when the
+  // cursor's foot has left the visible canvas box, the flip back to infinite.
+  // Also emits the phase's chrome: the endpoint snap's own guides plus a live
+  // length chip spanning the extent (the neighbour readout stands down — the
+  // offset is frozen, so the spacing it measures cannot change). The flip
+  // tests the UNSNAPPED foot: it answers where the cursor is, not where a
+  // target pulled the endpoint.
   const resizedExtent = (
     orientation: GuideOrientation,
     offset: number,
-    center: number,
+    anchor: number,
     e: React.PointerEvent,
     pools: { allTargets: Vec2[]; neighbours: readonly GuideTarget[] },
   ): { center: number; halfLength: number } | null => {
@@ -359,7 +362,9 @@ export function useGuideDrag(
       end = { x: snap.x, y: snap.y };
       snapChrome = snap.guides;
     }
-    const halfLength = Math.abs(guideAlongOf(orientation, end) - center);
+    const t = guideAlongOf(orientation, end);
+    const center = (anchor + t) / 2;
+    const halfLength = Math.abs(t - anchor) / 2;
     // A zero-width frame (no along travel yet) has no span to chip.
     setSnapGuides(
       halfLength > 0
@@ -376,11 +381,11 @@ export function useGuideDrag(
     return { center, halfLength };
   };
 
-  // Where the resize phase pins its center: a screen point's foot on the
+  // Where the resize phase anchors its fixed end: a screen point's foot on the
   // frozen guide line, in the along parameter. Called only from the per-render
   // move handler — the pointer-down callbacks are `useCallback([])` and would
   // capture a first-render `screenToWorld`.
-  const centerAt = (orientation: GuideOrientation, offset: number, mx: number, my: number) =>
+  const footAlongAt = (orientation: GuideOrientation, offset: number, mx: number, my: number) =>
     guideAlongOf(orientation, guideFoot(orientation, offset, screenToWorld(mx, my)));
 
   const onStartDrag = useCallback((id: string, e: React.PointerEvent) => {
@@ -446,17 +451,17 @@ export function useGuideDrag(
       if (!moved) return;
       if (e.ctrlKey || e.metaKey) {
         if (!ds.resize) {
-          // Ctrl held since the press with no offset frame run: the center is
-          // the PRESS foot. A mid-gesture Ctrl pins it at this frame's foot.
+          // Ctrl held since the press with no offset frame run: the anchored
+          // end is the PRESS foot. A mid-gesture Ctrl marks this frame's foot.
           const [mx, my] =
             ds.ctrlAtPress && !ds.everOffset ? [ds.startMX, ds.startMY] : [e.clientX, e.clientY];
-          ds.resize = { center: centerAt(ds.orientation, ds.lastOffset, mx, my), mx, my };
+          ds.resize = { anchor: footAlongAt(ds.orientation, ds.lastOffset, mx, my), mx, my };
         }
         ds.resize.mx = e.clientX;
         ds.resize.my = e.clientY;
         // resizeGuide already refuses the zero-width frame, so the guide keeps
         // its previous span until the sweep starts; null strips to infinite.
-        resizeGuide(ds.id, resizedExtent(ds.orientation, ds.lastOffset, ds.resize.center, e, ds));
+        resizeGuide(ds.id, resizedExtent(ds.orientation, ds.lastOffset, ds.resize.anchor, e, ds));
         setOverWell(null);
         return;
       }
@@ -501,14 +506,14 @@ export function useGuideDrag(
       if ((e.ctrlKey || e.metaKey) && ps.everOffset) {
         if (!ps.resize) {
           ps.resize = {
-            center: centerAt(ps.orientation, ps.offset, e.clientX, e.clientY),
+            anchor: footAlongAt(ps.orientation, ps.offset, e.clientX, e.clientY),
             mx: e.clientX,
             my: e.clientY,
           };
         }
         ps.resize.mx = e.clientX;
         ps.resize.my = e.clientY;
-        const ext = resizedExtent(ps.orientation, ps.offset, ps.resize.center, e, ps);
+        const ext = resizedExtent(ps.orientation, ps.offset, ps.resize.anchor, e, ps);
         // null = flipped to infinite; a zero-width frame keeps the last span.
         if (ext === null) ps.extent = null;
         else if (ext.halfLength > 0) ps.extent = ext;
