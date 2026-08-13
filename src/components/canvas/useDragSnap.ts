@@ -1,6 +1,11 @@
 import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
-import { snapToleranceAt, type GuideTarget, type SnapModes } from '../../geometry/snap';
+import {
+  snapToleranceAt,
+  type GuideTarget,
+  type SnapConstraint,
+  type SnapModes,
+} from '../../geometry/snap';
 import { snapPolygonPoint, type PolygonSnapResult } from '../../geometry/polygonSnap';
 import type { Vec2 } from '../../geometry/vec';
 
@@ -14,7 +19,7 @@ export interface DragSnapOptions {
    *  others — see liveGuideTargets. Absent means no guides in play. */
   guideTargets?: readonly GuideTarget[];
   /** Single-DOF consumers (edge resizes, guide drags); see {@link snapPolygonPoint}. */
-  constrain?: 'x' | 'y' | 'diagonal-down' | 'diagonal-up';
+  constrain?: SnapConstraint;
 }
 
 export interface DragSnapApi {

@@ -2,6 +2,7 @@ import type { Vec2 } from './vec';
 import { add, scale, sub, dot, cross } from './vec';
 import {
   axesForAllSnap,
+  constrainedGridMode,
   formatMeasurement,
   GRID_INTERVAL,
   guideAxis,
@@ -15,6 +16,7 @@ import {
   SNAP_PERP_TOLERANCE,
   type GridSnap,
   type GuideTarget,
+  type SnapConstraint,
   type SnapGuide,
   type SnapModes,
 } from './snap';
@@ -41,7 +43,7 @@ export interface PolygonSnapInput {
    *  can only move its intercept) keep only the matching 45° family, with
    *  grid quantizing the intercept when the full lattice is on. Prevents
    *  guides for snaps the caller would discard. */
-  constrain?: 'x' | 'y' | 'diagonal-down' | 'diagonal-up';
+  constrain?: SnapConstraint;
   /** Alignment guides in play, ALWAYS-ON targets independent of every mode
    *  toggle (Shift bypasses at the call sites, like all snapping). The caller
    *  passes the visibility-gated pool minus anything moving with the drag. */
@@ -119,25 +121,12 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
         return a.x !== 0 && a.y !== 0 && a.x > 0 !== a.y > 0;
     }
   };
-  // Grid narrows to the constrained axis the same way ('x' keeps vertical
-  // grid lines, which lock X). For a diagonal DOF only the full lattice
-  // means anything — its crossings are the discrete intercepts — so 'both'
-  // survives and either directional mode drops out.
+  // Grid narrows to the constrained axis the same way ('x' keeps vertical grid
+  // lines, which lock X) — `constrainedGridMode`, shared with the guide drag,
+  // which asks the same question of its own one DOF.
   const diagonalConstrain =
     constrain === 'diagonal-down' || constrain === 'diagonal-up' ? constrain : null;
-  const gridMode: GridSnap = !constrain
-    ? modes.grid
-    : diagonalConstrain
-      ? modes.grid === 'both'
-        ? 'both'
-        : 'off'
-      : constrain === 'x'
-        ? modes.grid === 'both' || modes.grid === 'vertical'
-          ? 'vertical'
-          : 'off'
-        : modes.grid === 'both' || modes.grid === 'horizontal'
-          ? 'horizontal'
-          : 'off';
+  const gridMode: GridSnap = constrainedGridMode(modes.grid, constrain);
 
   const candidates: Candidate[] = [];
   if (modes.line) {

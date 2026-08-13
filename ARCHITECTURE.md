@@ -800,6 +800,16 @@ is therefore every PARALLEL guide, including one towed by this very drag (whose 
 hook re-derives from its constant gap to the master): a guide the readout cannot see is one the
 span reaches past and is drawn through, which is the one thing this chrome must never do. A
 coincident guide silences it instead — zero away on both sides is no gap to report.
+**Snap to grid length** rides that one DOF as well (`guideTensOffset`): the offset notches to a
+whole multiple of the active grid size measured from the NEAREST parallel guide — a terminal
+station's cadence, which likewise steps off its single neighbour. Anchors come from the SNAP
+pool, not the readout's wider one: a guide towed by this drag holds a constant gap and can
+anchor nothing. The step is a DISTANCE, so a diagonal's intercept moves by grid × √2. It stands
+down where the grid pins that DOF (`constrainedGridMode`, the narrowing the point snapper runs
+on its own `constrain` — a vertical grid constrains nothing a horizontal guide can move), and
+against an engaged alignment it settles by the same better-aligned-wins rule, ties to the
+alignment. A losing alignment's chrome is dropped rather than claim a snap that didn't happen;
+the readout is the cadence's own feedback, since the gap it labels IS the notch.
 Dragging a guide back into its home well deletes it, and the wells tint as drop targets while a
 guide gesture hovers them — the well under the CURSOR, since a strip guide's delete zone runs
 its whole edge band, corner squares included. Its popover is the one coordinate (Y, X, or Y₀
@@ -2466,8 +2476,9 @@ of them:
   drags) so guides never show a snap the caller discards. When `tens` is on **and grid is off**, an engaged alignment's
   free axis (the slide along the guide) is notched to a whole grid length from the target — the
   same "Snap to grid length" idea extended past the skeleton, so any snapped object lands a clean
-  step from what it caught. Corners have no free DOF; grid (when on) owns quantization; edge
-  resizes opt out via `constrain`.
+  step from what it caught. Corners have no free DOF; grid (when on) owns quantization; a
+  single-DOF caller opts out via `constrain` — a guide's own drag then runs its own version of
+  the cadence, off its nearest parallel guide (see `AlignmentGuide`).
 
 **The redistribute (Ctrl-drag) pools split.** `redistributeAnchor` puts the engine in line mode
 regardless of the user's toggle — it is an explicit modal gesture — and line mode then snaps
