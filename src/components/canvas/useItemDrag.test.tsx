@@ -155,7 +155,7 @@ describe('useItemDrag — unbound bullet alignment via the point snapper', () =>
     expect(useDoc.getState().routeBullets['b1'].x).toBeCloseTo(100, 5);
     expect(useDoc.getState().routeBullets['b1'].y).toBeCloseTo(50, 5);
     expect(result.current.itemSnapGuides).toHaveLength(1);
-    expect(result.current.itemSnapGuides[0].label).toBe('50');
+    expect(result.current.itemSnapGuides[0].label).toBe('50.0');
   });
 
   it('an unbound bullet master never aligns to a CO-SELECTED station', () => {
@@ -307,7 +307,7 @@ describe('useItemDrag — label drag', () => {
     expect(g.x).toBeCloseTo(100 + hw, 5);
     expect(g.y).toBeCloseTo(50 + hh, 5);
     expect(result.current.itemSnapGuides).toHaveLength(1);
-    expect(result.current.itemSnapGuides[0].label).toBe('50');
+    expect(result.current.itemSnapGuides[0].label).toBe('50.0');
   });
 
   it('commits one history entry for a real label drag', () => {

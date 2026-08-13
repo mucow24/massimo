@@ -590,7 +590,7 @@ describe('snapDraggedStation', () => {
     });
     // Snaps onto a's vertical axis (x=100); the anchor guide spans 90px.
     expect(r.x).toBeCloseTo(100, 5);
-    expect(r.guides[0].label).toBe('90');
+    expect(r.guides[0].label).toBe('90.0');
   });
 
   it('redistribute readout: counts segments over the edge graph, not membership order', () => {
@@ -599,7 +599,7 @@ describe('snapDraggedStation', () => {
     // from the anchor a. The readout must divide the 90px span by 2 ("45"),
     // matching what redistributeBetween actually does (it walks the edge graph
     // via shortestPathOnLine). The old index-slice `|indexOf(d)-indexOf(a)|`
-    // sees only one segment and misreports "90".
+    // sees only one segment and misreports "90.0".
     const a = makeStation({ id: 'a', x: 100, y: 0, stops: [makeStop('L1')] });
     const d = makeStation({ id: 'd', x: 0, y: 0, stops: [makeStop('L1')] });
     const m = makeStation({ id: 'm', x: 100, y: 300, stops: [makeStop('L1')] });
@@ -621,7 +621,7 @@ describe('snapDraggedStation', () => {
       redistributeAnchor: 'a',
     });
     expect(r.x).toBeCloseTo(100, 5);
-    expect(r.guides[0].label).toBe('45');
+    expect(r.guides[0].label).toBe('45.0');
   });
 
   it('emits an opposite-direction guide when a third in-line station exists', () => {

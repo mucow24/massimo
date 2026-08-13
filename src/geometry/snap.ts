@@ -168,7 +168,7 @@ export interface SnapGuide {
   to: Vec2;
   /** Optional label to render above the guide. Used for the per-drag
    *  measurement readout: distance for a regular snap, station-to-station
-   *  spacing for a Ctrl-drag. */
+   *  spacing for a Ctrl-drag. Formatted with {@link formatMeasurement}. */
   label?: string;
   /** Set when this entry marks an engaged ALIGNMENT GUIDE rather than a
    *  drawable segment. `SnapGuides` never draws it as a plain line — the
@@ -177,6 +177,16 @@ export interface SnapGuide {
    *  chip; see EngagedGuideChrome) plus the guide's accent recolor.
    *  `from`/`to` both carry the LANDED point — the ring's position. */
   alignGuideId?: string;
+}
+
+/** How every live readout renders a world-unit measurement: one decimal place.
+ *  Whole numbers keep the trailing ".0" — the fixed width is the point, so a
+ *  number doesn't change shape as a drag crosses a unit boundary, and a readout
+ *  that stalls on a fractional nudge is visibly still moving. The one home for
+ *  the format: drag distances, redistribute spacing, and the engaged guide's
+ *  coordinate chip all speak it. */
+export function formatMeasurement(value: number): string {
+  return value.toFixed(1);
 }
 
 /** An alignment guide as a snap target: an infinite horizontal (constant-Y),
@@ -377,7 +387,7 @@ export function guideNeighbourReadout(
     out.push({
       from,
       to: guideFoot(orientation, n, from),
-      label: Math.round(guidePerpDist(orientation, n, from)).toString(),
+      label: formatMeasurement(guidePerpDist(orientation, n, from)),
     });
   }
   return out;
@@ -909,9 +919,9 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   const labelFor = (from: Vec2, to: Vec2, isAnchor: boolean): string => {
     const dist = Math.hypot(to.x - from.x, to.y - from.y);
     if (isAnchor && spacingDivisor > 0) {
-      return Math.round(dist / spacingDivisor).toString();
+      return formatMeasurement(dist / spacingDivisor);
     }
-    return Math.round(dist).toString();
+    return formatMeasurement(dist);
   };
 
   // Build guides for every active axis (so the user sees that both snaps

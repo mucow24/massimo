@@ -2,7 +2,7 @@ import { RefObject, useRef, useState } from 'react';
 import { beginHistoryGroup, useDoc } from '../../state/store';
 import type { LineId, StationId } from '../../model/types';
 import { edgeEndpoints } from '../../model/lineTopology';
-import type { SnapGuide } from '../../geometry/snap';
+import { formatMeasurement, type SnapGuide } from '../../geometry/snap';
 import {
   anchorFromArcLen,
   closestParamOnOffsetPath,
@@ -163,8 +163,8 @@ export function useLineTagDrag(
         })
       : { canonT: best.tCanon, snapped: false as const, match: undefined };
 
-    // Guide to the matched neighbor, with the same rounded-distance label as
-    // every other alignment guide (here the cross-stripe gap between the two
+    // Guide to the matched neighbor, with the same distance label as every
+    // other alignment guide (here the cross-stripe gap between the two
     // aligned tags).
     if (snap.snapped && snap.match) {
       const dragged = sampleOffsetPath(
@@ -183,7 +183,7 @@ export function useLineTagDrag(
         {
           from: neighbor,
           to: dragged,
-          label: Math.round(Math.hypot(dragged.x - neighbor.x, dragged.y - neighbor.y)).toString(),
+          label: formatMeasurement(Math.hypot(dragged.x - neighbor.x, dragged.y - neighbor.y)),
         },
       ]);
     } else {

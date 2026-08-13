@@ -260,8 +260,8 @@ describe('useGuideDrag — neighbour spacing readout', () => {
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
     expect(useDoc.getState().guides.gh.offset).toBe(137);
     expect(r.current.snapGuides).toEqual([
-      { from: { x: 300, y: 137 }, to: { x: 300, y: 40 }, label: '97' },
-      { from: { x: 300, y: 137 }, to: { x: 300, y: 160 }, label: '23' },
+      { from: { x: 300, y: 137 }, to: { x: 300, y: 40 }, label: '97.0' },
+      { from: { x: 300, y: 137 }, to: { x: 300, y: 160 }, label: '23.0' },
     ]);
     // The readout is gesture chrome: it goes when the gesture does.
     act(() => r.current.onPointerUp(pointerEvent({ clientX: 300, clientY: 137 })));
@@ -275,7 +275,7 @@ describe('useGuideDrag — neighbour spacing readout', () => {
     act(() =>
       r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137, shiftKey: true })),
     );
-    expect(r.current.snapGuides.map((g) => g.label)).toEqual(['97', '23']);
+    expect(r.current.snapGuides.map((g) => g.label)).toEqual(['97.0', '23.0']);
   });
 
   it('measures to a TOWED parallel sibling, at its live offset, rather than past it', () => {
@@ -296,8 +296,8 @@ describe('useGuideDrag — neighbour spacing readout', () => {
     // span straight through it.
     expect(useDoc.getState().guides.ghHi.offset).toBe(197);
     expect(r.current.snapGuides).toEqual([
-      { from: { x: 300, y: 137 }, to: { x: 300, y: 40 }, label: '97' },
-      { from: { x: 300, y: 137 }, to: { x: 300, y: 197 }, label: '60' },
+      { from: { x: 300, y: 137 }, to: { x: 300, y: 40 }, label: '97.0' },
+      { from: { x: 300, y: 137 }, to: { x: 300, y: 197 }, label: '60.0' },
     ]);
   });
 
@@ -311,7 +311,7 @@ describe('useGuideDrag — neighbour spacing readout', () => {
     expect(r.current.pull).toEqual({ orientation: 'horizontal', offset: 137 });
     // Nothing is excluded during a pull — the ghost isn't in the doc — so the
     // seeded gh at 100 is the neighbour below, not ghLo at 40.
-    expect(r.current.snapGuides.map((g) => g.label)).toEqual(['37', '23']);
+    expect(r.current.snapGuides.map((g) => g.label)).toEqual(['37.0', '23.0']);
   });
 
   it('stays quiet while the View menu hides guides', () => {

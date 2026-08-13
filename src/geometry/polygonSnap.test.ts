@@ -176,7 +176,7 @@ describe('snapPolygonPoint', () => {
         modes: modes({ line: true, all: 'off', grid: 'off' }),
       });
       // Snapped point (100, 50) is 50 from the target (100, 0).
-      expect(r.guides[0].label).toBe('50');
+      expect(r.guides[0].label).toBe('50.0');
     });
 
     it('corner-snap guides each carry their own distance label', () => {
@@ -189,7 +189,7 @@ describe('snapPolygonPoint', () => {
         allTargets: [],
         modes: modes({ line: true, all: 'off', grid: 'off' }),
       });
-      expect(r.guides.map((g) => g.label).sort()).toEqual(['100', '200']);
+      expect(r.guides.map((g) => g.label).sort()).toEqual(['100.0', '200.0']);
     });
   });
 
@@ -370,7 +370,7 @@ describe('snapPolygonPoint', () => {
       });
       expect(r.x).toBeCloseTo(100, 6);
       expect(r.y).toBeCloseTo(50, 6);
-      expect(r.guides[0].label).toBe('50');
+      expect(r.guides[0].label).toBe('50.0');
     });
 
     it('leaves the free axis free when tens is off (baseline)', () => {
@@ -430,7 +430,7 @@ describe('snapPolygonPoint', () => {
       });
       expect(Math.hypot(r.x, r.y)).toBeCloseTo(50, 4);
       expect(r.x).toBeCloseTo(r.y, 4); // still on the diagonal
-      expect(r.guides[0].label).toBe('50');
+      expect(r.guides[0].label).toBe('50.0');
     });
 
     it('leaves a corner untouched (no free DOF to notch)', () => {

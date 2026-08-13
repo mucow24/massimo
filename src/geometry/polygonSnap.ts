@@ -2,6 +2,7 @@ import type { Vec2 } from './vec';
 import { add, scale, sub, dot, cross } from './vec';
 import {
   axesForAllSnap,
+  formatMeasurement,
   GRID_INTERVAL,
   guideAxis,
   guideFoot,
@@ -223,12 +224,12 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
     const g = snapPointToGrid(proposed.x, proposed.y, gridMode, gridInterval);
     return { x: g.x, y: g.y, guides: [] };
   };
-  // Same rounded-distance readout as the station engine's guides, so every
-  // alignment guide in the app carries a measurement label.
+  // Same distance readout as the station engine's guides, so every alignment
+  // guide in the app carries a measurement label in the same format.
   const guideTo = (target: Vec2, p: Vec2): SnapGuide => ({
     from: { ...target },
     to: { ...p },
-    label: Math.round(Math.hypot(p.x - target.x, p.y - target.y)).toString(),
+    label: formatMeasurement(Math.hypot(p.x - target.x, p.y - target.y)),
   });
   // Like guideTo, but drops a zero-length guide — a grid-length notch can land
   // the point exactly on its target, and a from==to guide has nothing to show.

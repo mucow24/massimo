@@ -1,5 +1,5 @@
 import { STOP_DOT_RADIUS } from '../../geometry/orientation';
-import { guideSegmentInBox, type SnapGuide } from '../../geometry/snap';
+import { formatMeasurement, guideSegmentInBox, type SnapGuide } from '../../geometry/snap';
 import { clipSegmentToRect, midpoint, norm, perp, sub } from '../../geometry/vec';
 import type { Vec2 } from '../../geometry/vec';
 import type { ViewBox } from './viewportMath';
@@ -266,7 +266,7 @@ export function SnapGuides({ guides: allGuides, zoom, engaged, vb, labelBox }: P
             anchor = 'end';
             break;
         }
-        const value = Math.round(g.offset);
+        const value = formatMeasurement(g.offset);
         return (
           <text
             key={'elabel' + g.id}
