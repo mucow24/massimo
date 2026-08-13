@@ -457,9 +457,13 @@ export function guideNeighbourReadout(
  *
  * The step is a DISTANCE, not an intercept: a diagonal's offsets are Y-
  * intercepts, √2 apart for every world unit of true gap (`guidePerpDist`), so
- * both the notch and the tolerance run through that scale. The spacing readout
- * is then the feedback for free — the gap it labels is the whole grid multiple
- * this landed on.
+ * both the notch and the tolerance run through that scale.
+ *
+ * The spacing readout is then the feedback for free — the gap it labels is the
+ * whole grid multiple this landed on. With one exception, from the pool split
+ * above: in a group drag whose towed sibling sits BETWEEN the guide and its
+ * anchor, the readout names that sibling's constant gap and the notch goes
+ * unlabelled. The cadence is right there, just unannounced.
  */
 export function guideTensOffset(
   orientation: GuideOrientation,
@@ -478,7 +482,14 @@ export function guideTensOffset(
   const offsetPerUnit =
     orientation === 'diagonal-down' || orientation === 'diagonal-up' ? Math.SQRT2 : 1;
   const step = gridInterval * offsetPerUnit;
-  const notched = anchor + Math.round((offset - anchor) / step) * step;
+  const steps = Math.round((offset - anchor) / step);
+  // Inside half a step the only whole multiple on offer is zero, and a cadence
+  // of zero steps is a STACK — the one thing guides never do (see the readout,
+  // which likewise refuses to name a gap of nothing). Standing down there is
+  // the honest answer: the guide moves freely through that band. Clamping to
+  // one step instead would fling it a whole interval off the pointer.
+  if (steps === 0) return null;
+  const notched = anchor + steps * step;
   return Math.abs(notched - offset) / offsetPerUnit <= tolerance ? notched : null;
 }
 

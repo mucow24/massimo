@@ -804,12 +804,16 @@ coincident guide silences it instead — zero away on both sides is no gap to re
 whole multiple of the active grid size measured from the NEAREST parallel guide — a terminal
 station's cadence, which likewise steps off its single neighbour. Anchors come from the SNAP
 pool, not the readout's wider one: a guide towed by this drag holds a constant gap and can
-anchor nothing. The step is a DISTANCE, so a diagonal's intercept moves by grid × √2. It stands
-down where the grid pins that DOF (`constrainedGridMode`, the narrowing the point snapper runs
-on its own `constrain` — a vertical grid constrains nothing a horizontal guide can move), and
-against an engaged alignment it settles by the same better-aligned-wins rule, ties to the
-alignment. A losing alignment's chrome is dropped rather than claim a snap that didn't happen;
-the readout is the cadence's own feedback, since the gap it labels IS the notch.
+anchor nothing. The step is a DISTANCE, so a diagonal's intercept moves by grid × √2, and it is
+never ZERO steps: inside half an interval the only multiple on offer would stack the two guides,
+so the cadence stands down and the guide moves freely through that band. It stands down as well
+where the grid pins that DOF (`constrainedGridMode`, the narrowing the point snapper runs on its
+own `constrain` — a vertical grid constrains nothing a horizontal guide can move), and against
+an engaged alignment it settles by the same better-aligned-wins rule, ties to the alignment. A
+losing alignment's chrome is dropped rather than claim a snap that didn't happen; the readout is
+then the cadence's own feedback, since the gap it labels is the notch — except in a group drag
+whose towed sibling sits BETWEEN the guide and its anchor, where the readout names that
+sibling's constant gap and the notch goes unlabelled.
 Dragging a guide back into its home well deletes it, and the wells tint as drop targets while a
 guide gesture hovers them — the well under the CURSOR, since a strip guide's delete zone runs
 its whole edge band, corner squares included. Its popover is the one coordinate (Y, X, or Y₀

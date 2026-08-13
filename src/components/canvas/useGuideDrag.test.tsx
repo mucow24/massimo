@@ -383,6 +383,18 @@ describe('useGuideDrag — snap to grid length', () => {
     expect(useDoc.getState().guides.ghHi.offset).toBe(190);
   });
 
+  it('never lands the guide on top of the guide it measures from', () => {
+    setModes({ tens: true });
+    seedCadence();
+    const r = render();
+    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 45 })));
+    // Within half a step of ghLo the only whole multiple on offer is zero,
+    // which would stack the two guides — the one thing guides never do. The
+    // cadence stands down and the drag stays where the pointer put it.
+    expect(useDoc.getState().guides.gh.offset).toBe(45);
+  });
+
   it('yields the axis the hard grid pins, and keeps the one it does not', () => {
     setModes({ tens: true, grid: 'both' });
     seedCadence(45);

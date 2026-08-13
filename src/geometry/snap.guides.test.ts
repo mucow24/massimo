@@ -192,6 +192,17 @@ describe('guideTensOffset', () => {
     expect(guideTensOffset('horizontal', 137, [h('lo', 40), h('hi', 150)], 20, 10)).toBe(130);
   });
 
+  it('never notches ONTO the anchor — a cadence of zero steps is a stack', () => {
+    // Inside half a step there is no whole multiple to land on but zero, and
+    // zero would put the guide on top of its neighbour. The cadence stands
+    // down instead, and the guide moves freely through that band.
+    expect(guideTensOffset('horizontal', 45, [h('lo', 40)], 20, 10)).toBeNull();
+    expect(guideTensOffset('horizontal', 40, [h('lo', 40)], 20, 10)).toBeNull();
+    expect(guideTensOffset('horizontal', 31, [h('lo', 40)], 20, 10)).toBeNull();
+    // Past half a step the first whole multiple is back in play.
+    expect(guideTensOffset('horizontal', 52, [h('lo', 40)], 20, 10)).toBe(60);
+  });
+
   it('declines when the nearest notch is out of tolerance', () => {
     // Exactly half a step from either notch — 10 out, so a 5 tolerance (zoom 2)
     // does not reach it while the standard 10 does.
@@ -217,10 +228,11 @@ describe('guideTensOffset', () => {
     expect(
       guidePerpDist('diagonal-down', 0, guideFoot('diagonal-down', r!, { x: 0, y: 0 })),
     ).toBeCloseTo(60, 9);
-    // The tolerance is perpendicular too: this intercept miss is 14 of
-    // intercept but only 9.9 of distance, so it still engages.
-    expect(guideTensOffset('diagonal-down', 14, [d(0)], 20, 10)).toBe(0);
-    expect(guideTensOffset('diagonal-down', 14, [d(0)], 20, 9)).toBeNull();
+    // The tolerance is perpendicular too: one step out, a miss of 14 of
+    // INTERCEPT is only 9.9 of distance, so it still engages.
+    const oneStep = 20 * Math.SQRT2;
+    expect(guideTensOffset('diagonal-down', oneStep + 14, [d(0)], 20, 10)).toBeCloseTo(oneStep, 9);
+    expect(guideTensOffset('diagonal-down', oneStep + 14, [d(0)], 20, 9)).toBeNull();
   });
 });
 
