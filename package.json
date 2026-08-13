@@ -21,7 +21,8 @@
     "e2e:prod": "cross-env E2E_PREVIEW=1 playwright test",
     "perf:check": "tsc -p tsconfig.perf.json --noEmit",
     "e2e:install": "playwright install --with-deps chromium",
-    "pre-pr": "npm run format && npm run lint && npm run format:check && npm run test && npm run build && npm run e2e:prod"
+    "pre-pr": "npm run format && npm run lint && npm run format:check && npm run test && npm run build && npm run e2e:prod",
+    "pre-pr:queued": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/preprQueued.ps1"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.7",

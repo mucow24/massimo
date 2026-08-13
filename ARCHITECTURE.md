@@ -95,12 +95,17 @@ npm run e2e          # playwright test (drives the dev server — no build neede
 npm run e2e:prod     # playwright test against the built dist (E2E_PREVIEW=1 → vite preview)
 npm run fonts        # stage the typeface into public/fonts (also runs on postinstall)
 npm run pre-pr       # format → lint → format:check → test → build → e2e:prod  (the PR gate)
+npm run pre-pr:queued # the gate behind a machine-wide mutex — parallel local sessions serialize
 ```
 
 `pre-pr` runs `format` (prettier --write, auto-fixes) **first** so formatting can't block, then
 `format:check` later is the actual gate. It ends with the full Playwright suite (added after an
 interaction-behavior change passed every unit gate but broke an e2e spec — PR #159/#160), so it
-needs the Chromium binary installed once via `npm run e2e:install`.
+needs the Chromium binary installed once via `npm run e2e:install`. `pre-pr:queued` wraps the
+gate in a named-kernel-mutex queue ([scripts/preprQueued.ps1](scripts/preprQueued.ps1)) so
+simultaneous local sessions run it one at a time on a machine that would otherwise thrash;
+unlock-on-death is the kernel's guarantee (a holder that errors out abandons the mutex to the
+next waiter). Windows-only by design — CI and cloud containers run plain `pre-pr`.
 
 ---
 

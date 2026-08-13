@@ -99,7 +99,15 @@ const persisted = {
 
 async function seed(page: Page): Promise<void> {
   await openWithRawDoc(page, persisted);
-  await page.evaluate(() => document.fonts.ready);
+  // Fonts must be DONE loading before the export asserts on outlined glyph
+  // bytes. waitForFunction, not `evaluate(() => document.fonts.ready)`:
+  // shortly after the first paint Chromium can tear down and RECREATE the
+  // page's JS context without any navigation (probed: window state survives
+  // and no second navigation entry appears), which kills an evaluate that is
+  // sitting on a pending in-page promise. waitForFunction re-arms across
+  // context recreation. The old double-boot seeding masked this — fonts were
+  // warm by the second boot, so the promise never pended.
+  await page.waitForFunction(() => document.fonts.status === 'loaded');
 }
 
 async function exportPdf(page: Page): Promise<Download> {

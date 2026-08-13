@@ -33,6 +33,12 @@ test.describe('fallback faces are never synthesized', () => {
     page: import('@playwright/test').Page,
     text: string,
   ): Promise<{ regular: number; bold: number }> {
+    // Settle fonts BEFORE the evaluate: an evaluate awaiting a pending
+    // in-page promise dies if Chromium recreates the page's JS context (it
+    // can, shortly after first paint, with no navigation involved —
+    // waitForFunction re-arms across that; see exportPdf's seed()). The
+    // in-evaluate await below then resolves instantly.
+    await page.waitForFunction(() => document.fonts.status === 'loaded');
     return page.evaluate(async (t) => {
       await document.fonts.ready;
       // The canvas 2D `font` shorthand takes the same stack the map draws with.
