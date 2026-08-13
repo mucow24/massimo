@@ -119,45 +119,57 @@ export function useGuideDrag(
     towedGaps: readonly number[];
   } | null>(null);
 
-  // Is the pointer inside (or past) the given orientation's home well — the
-  // top edge band for horizontal guides, the left band for vertical, the
-  // upper-left / lower-left corner squares for the diagonals? Beyond the
-  // canvas edge counts too, so dragging a guide up into the toolbar reads as
-  // "back into the well" rather than a stranded commit.
-  const inWell = (orientation: GuideOrientation, e: { clientX: number; clientY: number }) => {
+  // Which of the host's three well-bearing edge bands the pointer is in. Beyond
+  // the canvas edge counts as inside, so dragging a guide up into the toolbar
+  // reads as "back into the well" rather than a stranded commit. Null before
+  // the host has a box to measure. One layout read per gesture frame — both
+  // questions below are answered off this one reading rather than each taking
+  // its own.
+  type WellBands = { top: boolean; left: boolean; bottom: boolean };
+  const wellBandsAt = (e: { clientX: number; clientY: number }): WellBands | null => {
     const host = svgRef.current?.closest('.canvas-host')?.getBoundingClientRect();
-    if (!host) return false;
-    const inTop = e.clientY <= host.top + WELL_SIZE_PX;
-    const inLeft = e.clientX <= host.left + WELL_SIZE_PX;
+    if (!host) return null;
+    return {
+      top: e.clientY <= host.top + WELL_SIZE_PX,
+      left: e.clientX <= host.left + WELL_SIZE_PX,
+      bottom: e.clientY >= host.bottom - WELL_SIZE_PX,
+    };
+  };
+  // Is the pointer inside this orientation's DELETE zone — its home well plus
+  // the corner squares that interrupt the strip it lives in? A strip guide's
+  // zone is its whole edge band; a diagonal's is only its own corner.
+  const inWell = (orientation: GuideOrientation, b: WellBands) => {
     switch (orientation) {
       case 'horizontal':
-        return inTop;
+        return b.top;
       case 'vertical':
-        return inLeft;
+        return b.left;
       case 'diagonal-up':
-        return inLeft && inTop;
+        return b.left && b.top;
       case 'diagonal-down':
-        return inLeft && e.clientY >= host.bottom - WELL_SIZE_PX;
+        return b.left && b.bottom;
     }
   };
   // The specific well under the pointer — corners beat the strips they
   // interrupt. Only consulted once `inWell` says the drop would delete, so a
   // strip guide hovering a corner square (inside its edge band, outside its
   // home strip) tints the square the cursor actually occupies.
-  const wellAt = (e: { clientX: number; clientY: number }): GuideOrientation | null => {
-    const host = svgRef.current?.closest('.canvas-host')?.getBoundingClientRect();
-    if (!host) return null;
-    const inTop = e.clientY <= host.top + WELL_SIZE_PX;
-    const inLeft = e.clientX <= host.left + WELL_SIZE_PX;
-    if (inLeft && inTop) return 'diagonal-up';
-    if (inLeft && e.clientY >= host.bottom - WELL_SIZE_PX) return 'diagonal-down';
-    if (inTop) return 'horizontal';
-    if (inLeft) return 'vertical';
+  const wellAt = (b: WellBands): GuideOrientation | null => {
+    if (b.left && b.top) return 'diagonal-up';
+    if (b.left && b.bottom) return 'diagonal-down';
+    if (b.top) return 'horizontal';
+    if (b.left) return 'vertical';
     return null;
   };
   const syncOverWell = (orientation: GuideOrientation, e: React.PointerEvent) => {
-    const over = inWell(orientation, e) ? wellAt(e) : null;
+    const bands = wellBandsAt(e);
+    const over = bands && inWell(orientation, bands) ? wellAt(bands) : null;
     if (over !== overWell) setOverWell(over);
+  };
+  // The drop test, for the two release paths: no host box means no well.
+  const releasedInWell = (orientation: GuideOrientation, e: React.PointerEvent) => {
+    const bands = wellBandsAt(e);
+    return bands !== null && inWell(orientation, bands);
   };
 
   // Shared by both gestures: the snapped offset for a proposed pointer
@@ -282,7 +294,7 @@ export function useGuideDrag(
     const ds = dragRef.current;
     if (ds) {
       dragRef.current = null;
-      if (ds.moved && inWell(ds.orientation, e)) {
+      if (ds.moved && releasedInWell(ds.orientation, e)) {
         // Back into the well it came from: the drop deletes the guide, inside
         // the same single history entry as the drag that carried it there.
         useSelection.getState().selectGuide(null);
@@ -298,7 +310,7 @@ export function useGuideDrag(
     const ps = pullRef.current;
     if (ps) {
       pullRef.current = null;
-      if (ps.moved && !inWell(ps.orientation, e)) {
+      if (ps.moved && !releasedInWell(ps.orientation, e)) {
         // One write = one undo entry; selecting opens the popover, the same
         // auto-select every single-shot placement does.
         const id = addGuide(ps.orientation, ps.offset);

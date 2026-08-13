@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `7aff4ae` (2026-08-12, #495) — verified against the live source.** This
+**Up to date as of commit `fb7e835` (2026-08-13, #505) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -182,7 +182,7 @@ src/
     waypointLozenge.ts          # WP-lozenge pill geometry (shared drawn glyph + hit/selection box)
     itemBounds.ts contentBounds.ts  # per-item + whole-map world AABBs (camera fit)
 
-  state/                        # Zustand stores (18 of them) + history
+  state/                        # Zustand stores (19 of them) + history
     store.ts                    # useDoc: temporal(persist(...)) + ~140 actions + migrateDoc
     history.ts                  # the ONLY module touching zundo internals
     renderDoc.ts                # useRenderDoc: the doc slice the canvas PAINTS from — mirrors
@@ -217,7 +217,9 @@ src/
     lineListPrefs.ts            # useLineListPrefs: lines-list sort col + group-by-style + which
                                 #   style groups are collapsed — the ONE *Prefs store NOT persisted
     devSettings.ts              # useDevSettings: the Developer pane's dials — today the alignment
-                                #   guides' ink recipe (persisted; defaults ARE the recipe)
+                                #   guides' ink recipe (persisted; defaults ARE the recipe, and a
+                                #   stored one merges OVER them dial by dial, since the dials come
+                                #   and go and a missing one would reach the ink math undefined)
     stationNames.ts             # random station-name word lists
     funMode.ts                  # useFunMode: easter-egg phase off|live|exiting + the drop origin
 
@@ -248,6 +250,9 @@ src/
     usePopover.ts               # open/dismiss + `panelStyle` for the hand-rolled toolbar panels
                                 #   (View, Developer): fixed-positioned in window coordinates off
                                 #   the trigger's wrap, re-measured on resize and scroll
+    useViewportFollow.ts        # the canonical page-scroll hook: the three listeners any chrome
+                                #   measured in window coordinates needs (useDock, usePopover's
+                                #   anchored panels, ColorField's picker)
     canvas/                     # interaction layer: drag/placement/viewport hooks + overlay layers
     inspector/                  # LineInspector (hosted by the pinned on-canvas LinePopover; identity +
                                 #   line-style fields — stop/topology editing is canvas-driven, see
@@ -3294,8 +3299,21 @@ The dock **re-measures when one of its inputs changes** — the element it reads
 attach a commit late, or the box being docked into — and never merely because a commit happened.
 The page it measures can be MOVING, and an animated scroll gives a different answer every frame:
 through the tracking regime a measurement per commit sets state into a page that has moved on,
-commits, measures again, and React's nested-update limit tears the app down. Motion is the scroll
-listener's job, where one event is one render.
+commits, measures again, and React's nested-update limit tears the app down. Motion is
+`useViewportFollow`'s job, where one event is one render.
+
+That hook is the one place the **page-scroll listener trio** lives, and every piece of chrome
+measured in window coordinates takes it: the dock, `usePopover`'s anchored panels, and
+`ColorField`'s picker following its swatch. All three thirds are load-bearing and none is
+guessable. A **page** scroll is dispatched at `document` and bubbles to `window` — uniquely;
+element scrolls do not bubble at all — so the reliable page hook is the BUBBLE listener on
+`window`, and a capture-phase listener there hears nothing (instrumented in Chrome across a
+scroll that demonstrably moved the page: zero events). The CAPTURE listener on `document` is
+what catches a scroll of some nested container instead. A page scroll trips both, which is why
+every consumer bails out on a value-equal measurement — that is what makes the second free
+rather than a doubled render. `resize` covers the window changing size without scrolling.
+The callback is read through a ref, so consumers hand in a fresh closure per render and the
+listeners still attach and detach on the active flag alone.
 
 Nothing should be animating the page sideways in the first place, and the one thing that could is
 why that cadence matters. Selecting a station reveals its row in the sidebar's list, and the
@@ -3316,8 +3334,13 @@ before adding one:
 each panel needs an explicit `width`, since shrink-to-fit under `fixed` + `right` resolves against
 the viewport rather than the wrap; and there is no viewport clamp or flip in the hook, so a panel
 taller or wider than its corner allows will simply hang off. `anchored` is opt-in — a consumer
-that ignores `panelStyle` should not ask for it, or it pays for a window-capture scroll listener
+that ignores `panelStyle` should not ask for it, or it pays for `useViewportFollow`'s listeners
 and a re-render per scroll tick for nothing.
+
+The View and Developer panels are also one shell in CSS: both wear `.options-popover` (and
+`.options-popover-wrap`) for the frame, and their own class carries only what differs — a width,
+and whatever else that panel alone needs. A new toolbar panel composes the same way rather than
+restating the frame.
 
 ### Memo contract (subtle but important)
 
