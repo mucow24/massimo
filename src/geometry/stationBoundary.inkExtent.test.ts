@@ -60,6 +60,17 @@ describe('textLabelAlignRectLocal — horizontal extent is ink, not the pen box'
     expect(r.x1).toBeCloseTo(20, 5);
   });
 
+  it('column mode: the left edge hugs ink, the right edge shows the authored width', () => {
+    // 'Hi' (ink [2, 18] pen-relative) in an 80-wide column, left-aligned:
+    // pen at -40, ink starts at -38 — the box must start AT the ink (no
+    // side-bearing strip), while the right edge reaches the wrap width.
+    const r = textLabelAlignRectLocal(
+      makeTextLabel({ id: 'g', text: 'Hi', align: 'left', fontSize: 16, width: 80 }),
+    );
+    expect(r.x0).toBeCloseTo(-40 + INSET, 5);
+    expect(r.x1).toBeCloseTo(40, 5);
+  });
+
   it('justify: a stretched interior line is pen-flush to both edges, ink inset', () => {
     // 'a b' (advance 30, ink [2, 28]) stretches to fill the box; 'Hi' is the
     // ragged last line (left-flush). m.width = 26, halfW = 13. Stretched line

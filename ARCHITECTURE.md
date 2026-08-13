@@ -2623,8 +2623,9 @@ topmost-then-leftmost rotated corner.
 stationBoundary.ts) is the Core Type Area of the block: first line's cap line down to the last
 line's baseline, and the block's true ink extent horizontally (`blockInkExtentX` — lines POSITION
 by pen advance, so the pen box alone leaves a proportional side-bearing strip before the first
-glyph's ink). A fixed-width COLUMN label spans its authored column instead: the wrap edge stays
-visible and the column corners are what aligns into a layout; only Auto labels hug their ink.
+glyph's ink). A fixed-width COLUMN label keeps the ink-hugged LEFT edge but its RIGHT edge
+reaches at least the authored column's right (further if an unbreakable word overflows the wrap),
+so the wrap edge stays visible and is what aligns into a layout.
 It is the same font-model box station autoAlign pins by, so labels
 snapped to one guide share a baseline or cap line no matter which glyphs they contain (descenders
 hang below it on purpose; true pixel-ink bounds were rejected as glyph-dependent). It is what
