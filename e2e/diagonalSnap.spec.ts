@@ -47,12 +47,6 @@ const diagonalTargetSeed: Seed = {
   ],
 };
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
-  await page.evaluate(() => localStorage.removeItem('massimo-snap-prefs-v1'));
-});
-
 test.describe('Drag-snap aligns with the target stop\'s cell-grid position', () => {
   test("dragging D near T snaps D.L1 onto T.L1's cell-grid world position", async ({ page }) => {
     await seedAndOpen(page, diagonalTargetSeed);

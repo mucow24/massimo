@@ -121,11 +121,6 @@ async function dragStopByLocalDelta(
   await page.mouse.up();
 }
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
-});
-
 test.describe('Select Similar — visually-identical mirror stations', () => {
   test('the button counts a 180° layout-mirror as a match', async ({ page }) => {
     await seedAndOpen(page, mirroredTrio);

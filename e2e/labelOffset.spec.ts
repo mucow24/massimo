@@ -22,11 +22,6 @@ async function selectStationA(page: Page): Promise<void> {
   await page.locator('.inspector').waitFor();
 }
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
-});
-
 test.describe('Label offset textbox', () => {
   test('a negative value can be typed', async ({ page }) => {
     await seedAndOpen(page, fourInLine);

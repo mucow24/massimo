@@ -24,13 +24,9 @@ const verticalLine: Seed = {
   lines: [{ id: 'L1', service: 'L', color: '#0039A6', stations: ['A', 'B', 'C'] }],
 };
 
-test.beforeEach(async ({ page }) => {
-  // Reset persisted snap prefs to defaults so each test starts deterministic
-  // — snap-prefs persistence is the whole point of the feature, but it would
-  // make the test order-dependent.
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('massimo-snap-prefs-v1'));
-});
+// Snap-prefs persistence is the whole point of the feature, but it can't make
+// tests order-dependent: each test's fresh BrowserContext starts with empty
+// storage, so every test begins from default prefs.
 
 test.describe('Snap mode toolbar', () => {
   test('renders the snap toggles, with Line active by default', async ({ page }) => {

@@ -11,8 +11,10 @@ import react from '@vitejs/plugin-react';
 // 404s the assets when the site is served from root. The app has no client-side
 // router, so no nested route can shift the document base and break the relative
 // paths. The dev server keeps an absolute '/' base — `mode` is 'development'
-// there (and 'production' for both `vite build` and `vite preview`), so
-// Playwright e2e, which drives the dev server at '/', is unaffected.
+// there ('production' for both `vite build` and `vite preview`). Playwright
+// drives both: plain `npm run e2e` uses the dev server at '/', and the
+// `e2e:prod` gate uses `vite preview`, which serves dist/ at its own root,
+// where the relative base resolves fine (both `/` and `/e2e-blank.html` load).
 export default defineConfig(({ mode }) => ({
   base: mode === 'production' ? './' : '/',
   plugins: [react()],

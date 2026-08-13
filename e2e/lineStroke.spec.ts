@@ -194,11 +194,6 @@ async function exportSvg(page: Page): Promise<string> {
   return readFileSync(path).toString('utf-8');
 }
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
-});
-
 test.describe('Per-line stroke', () => {
   test('a line without stroke renders no casing', async ({ page }) => {
     await seedAndOpen(page, bareTwoStop);

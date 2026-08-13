@@ -1,11 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { seedAndOpen, stationCenter, fourInLine } from './fixtures';
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
-});
-
 // The station popover's Xfer picker is the only way to put a SELF-transfer on a
 // stop dot — a transfer with both ends on the one dot, which paints as a disc
 // that rounds the stop off into a thick transfer bar. Unit tests pin the

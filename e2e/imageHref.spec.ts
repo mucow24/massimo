@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { test, expect, type Page } from '@playwright/test';
+import { openWithRawDoc } from './fixtures';
 
 // Every image a map carries is inline bytes — that is what lets a map paint
 // without reaching the network and an export be genuinely self-contained. The
@@ -43,34 +44,20 @@ const image = (id: string, href: string) => ({
 });
 
 async function bootWith(page: Page, hrefs: Record<string, string>): Promise<void> {
-  await page.goto('/');
-  await page.evaluate(
-    ([key, value, viewportKey, viewport]) => {
-      localStorage.setItem(key as string, value as string);
-      localStorage.setItem(viewportKey as string, viewport as string);
+  await openWithRawDoc(page, {
+    state: {
+      stations: {},
+      lines: {},
+      lineOrder: [],
+      svgImages: Object.fromEntries(
+        Object.entries(hrefs).map(([id, href]) => [id, image(id, href)]),
+      ),
+      backgroundOrder: Object.keys(hrefs),
     },
-    [
-      'vignelli-map-doc-v1',
-      JSON.stringify({
-        state: {
-          stations: {},
-          lines: {},
-          lineOrder: [],
-          svgImages: Object.fromEntries(
-            Object.entries(hrefs).map(([id, href]) => [id, image(id, href)]),
-          ),
-          backgroundOrder: Object.keys(hrefs),
-        },
-        // The CURRENT persist version (drift-guarded above): migrateDoc is
-        // skipped entirely.
-        version: CURRENT_PERSIST_VERSION,
-      }),
-      'massimo-viewport',
-      JSON.stringify({ state: { x: 0, y: 0, zoom: 1 }, version: 0 }),
-    ],
-  );
-  await page.reload();
-  await page.waitForSelector('.canvas-host svg');
+    // The CURRENT persist version (drift-guarded above): migrateDoc is
+    // skipped entirely.
+    version: CURRENT_PERSIST_VERSION,
+  });
 }
 
 // The doc the app is actually holding — what a save, a library version and

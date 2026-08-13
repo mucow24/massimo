@@ -94,11 +94,6 @@ async function setStopDotSizeTo(page: Page, value: string): Promise<void> {
   await replaceNumber(page, 'Stop dot size', value);
 }
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
-});
-
 test.describe('Stop dot size', () => {
   test('default-tracking dots render at r 4 (diameter 8)', async ({ page }) => {
     await seedAndOpen(page, fourInLine);

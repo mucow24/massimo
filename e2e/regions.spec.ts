@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedAndOpen, type Seed } from './fixtures';
+import { openWithRawDoc, seedAndOpen, type Seed } from './fixtures';
 
 // A perpendicular crossing away from all four stations: horizontal L1 crossed
 // by vertical L2 at (200, 0). One overlap face with cover {L1, L2}; default
@@ -28,11 +28,6 @@ const crossing: Seed = {
     { id: 'L2', service: '2', color: '#ee352e', stations: ['C', 'D'] },
   ],
 };
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
-});
 
 test.describe('Region layering — click a face to cycle which line shows', () => {
   test('L toggles the mode; overlap faces get outlines and click targets', async ({ page }) => {
@@ -133,49 +128,41 @@ test.describe('legacy segmentLayers migration', () => {
     page.on('console', (msg) => {
       if (msg.type() === 'error') errors.push(msg.text());
     });
-    await page.goto('/');
-    await page.evaluate(() => {
-      const doc = {
-        stations: {
-          A: {
-            id: 'A',
-            name: 'A',
-            x: 0,
-            y: 0,
-            rotation: 0,
-            stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
-            label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
-          },
-          B: {
-            id: 'B',
-            name: 'B',
-            x: 200,
-            y: 0,
-            rotation: 0,
-            stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
-            label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
-          },
+    const doc = {
+      stations: {
+        A: {
+          id: 'A',
+          name: 'A',
+          x: 0,
+          y: 0,
+          rotation: 0,
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
         },
-        lines: {
-          L1: {
-            id: 'L1',
-            service: '1',
-            name: '1 line',
-            color: '#0039A6',
-            stations: ['A', 'B'],
-            edges: ['A|B'],
-            segmentLayers: { 'A|B': 3 },
-          },
+        B: {
+          id: 'B',
+          name: 'B',
+          x: 200,
+          y: 0,
+          rotation: 0,
+          stops: [{ lineId: 'L1', row: 0, col: 0, orientation: 'auto-vertical' }],
+          label: { row: 0, col: -1, rotation: 0, offset: 0, align: 'auto', valign: 'middle' },
         },
-        lineOrder: ['L1'],
-      };
-      localStorage.setItem(
-        'vignelli-map-doc-v1',
-        JSON.stringify({ state: doc, version: 14 }),
-      );
-    });
-    await page.goto('/');
-    await page.waitForSelector('.canvas-host svg');
+      },
+      lines: {
+        L1: {
+          id: 'L1',
+          service: '1',
+          name: '1 line',
+          color: '#0039A6',
+          stations: ['A', 'B'],
+          edges: ['A|B'],
+          segmentLayers: { 'A|B': 3 },
+        },
+      },
+      lineOrder: ['L1'],
+    };
+    await openWithRawDoc(page, { state: doc, version: 14 });
     // The doc renders (strip didn't corrupt anything) with zero console
     // errors; the strip itself is pinned by storeMigrate.test.ts.
     await expect(page.locator('[data-band-stripe][data-line-id="L1"]')).toHaveCount(1);

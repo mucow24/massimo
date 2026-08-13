@@ -68,11 +68,6 @@ const diagonalBandSeed: Seed = {
   ],
 };
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
-});
-
 test.describe('Diagonal interlining — cell-grid is the rendered position', () => {
   test('three auto-nw-se stops on the diagonal basis pack at STOP_SIZE perp spacing', async ({
     page,

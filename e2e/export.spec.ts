@@ -26,11 +26,6 @@ const twoLines: Seed = {
   ],
 };
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
-});
-
 /** Drive Map → Export → <kind> and return the captured download. */
 async function exportVia(page: Page, kind: 'PNG' | 'SVG'): Promise<Download> {
   await openMapMenu(page);
