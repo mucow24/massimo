@@ -771,8 +771,15 @@ drag) ([GuideWells.tsx](src/components/canvas/GuideWells.tsx) + `useGuideDrag`, 
 only; the pull ghost snaps live and the release commits one `addGuide` + selects it). Dragging
 a guide is 1-DOF (the offset takes the pointer delta's `guideNudgeDelta` projection, snapped
 through the point snapper with the matching `constrain` — the two diagonal `constrain` values
-keep only their own 45° family and grid-quantize the intercept under the full lattice);
-dragging it back into its home well deletes it, and the wells tint as drop targets while a
+keep only their own 45° family and grid-quantize the intercept under the full lattice). Both
+gestures draw the **spacing readout** while they run: labeled segments from the cursor's foot on
+the guide out to the nearest PARALLEL guide either side (`guideNeighbourReadout`, rendered as
+ordinary `SnapGuide`s — the measurement chrome a station drag shows its neighbours). It is a
+measurement, not a snap: guides still never snap to each other, so it needs no engagement, rides
+every frame of the gesture, and survives Shift (which declines snapping, not measuring). Only a
+same-orientation guide can be a neighbour — anything else crosses — and the number is the TRUE
+perpendicular distance (`guidePerpDist`), so it equals the length of the segment drawn.
+Dragging a guide back into its home well deletes it, and the wells tint as drop targets while a
 guide gesture hovers them — the well under the CURSOR, since a strip guide's delete zone runs
 its whole edge band, corner squares included. Its popover is the one coordinate (Y, X, or Y₀
 for a diagonal) + lock/delete ([GuidePopover.tsx](src/components/GuidePopover.tsx)).
@@ -2489,7 +2496,9 @@ here), plus the guide's own accent recolor
 (`GuideView` `engaged`). A guide engagement reads exactly as loud as every other snap. The pool is
 `liveGuideTargets(exclude)` beside `liveAlignTargets` — visibility-gated the same way, minus the
 guides moving with the drag (`AlignExclude.guideIds`); a guide's own drag passes NO guide pool
-at all, since stacking two guides is meaningless. This deliberately pierces the stations-are-
+to the SNAPPER, since stacking two guides is meaningless — it takes the same pool, under the same
+exclusions, purely to MEASURE against (the spacing readout under `AlignmentGuide`). This
+deliberately pierces the stations-are-
 skeleton asymmetry below: stations DO snap to guides — aligning stations is what a guide is for,
 and rings already set the scaffolding-touches-skeleton precedent.
 

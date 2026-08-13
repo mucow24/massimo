@@ -5,14 +5,16 @@ import { useRoutedSnapGuides } from './useRoutedSnapGuides';
 import {
   guideFoot,
   guideMoveVector,
+  guideNeighbourReadout,
   guideNudgeDelta,
   guideOffsetOf,
+  type GuideTarget,
   type SnapGuide,
 } from '../../geometry/snap';
 import type { Vec2 } from '../../geometry/vec';
 import type { GuideOrientation } from '../../model/types';
 import { useDragSnap } from './useDragSnap';
-import { liveAlignTargets } from './snapTargets';
+import { liveAlignTargets, liveGuideTargets } from './snapTargets';
 import { finishDrag, pointerLost, releaseDragCapture, trackDragMove } from './dragGesture';
 import {
   collectGroupSiblings,
@@ -60,7 +62,13 @@ type ScreenToWorld = (mx: number, my: number) => Vec2;
  *    threshold — creates nothing.
  *
  * Guides never snap to other guides (stacking two is meaningless), so neither
- * gesture passes `guideTargets`. Shift bypasses snapping, as everywhere. Both
+ * gesture passes `guideTargets` to the snapper. Both do carry the guide pool
+ * as a MEASUREMENT pool: every frame draws the spacing to the nearest parallel
+ * guide either side (`guideNeighbourReadout`), the same labeled chrome a
+ * station drag shows to its neighbours. Being a readout rather than a snap, it
+ * survives Shift — which declines snapping, not measuring.
+ *
+ * Shift bypasses snapping, as everywhere. Both
  * gestures capture to the SVG on the first real move (trackDragMove), so the
  * svg's shared pointer pipeline drives them; the well strips also forward
  * their own move/up events for the sub-threshold stretch where the pointer is
@@ -88,6 +96,9 @@ export function useGuideDrag(
     moved: boolean;
     siblings: GroupSiblings;
     allTargets: Vec2[];
+    // The guides this gesture MEASURES against — never a snap pool. Snapshotted
+    // at pointer-down like every other pool, minus whatever moves with the drag.
+    neighbours: readonly GuideTarget[];
     history: ReturnType<typeof beginHistoryGroup>;
   } | null>(null);
   const pullRef = useRef<{
@@ -97,6 +108,7 @@ export function useGuideDrag(
     startMY: number;
     moved: boolean;
     allTargets: Vec2[];
+    neighbours: readonly GuideTarget[];
   } | null>(null);
 
   // Is the pointer inside (or past) the given orientation's home well — the
@@ -141,28 +153,35 @@ export function useGuideDrag(
   };
 
   // Shared by both gestures: the snapped offset for a proposed pointer
-  // position. The along-axis coordinate rides the live cursor (the proposed
-  // point is the cursor's foot on the proposed guide line) so any drawn
-  // alignment segment lands by the pointer, not at a stale spot.
+  // position, plus the chrome that goes with it. The along-axis coordinate
+  // rides the live cursor (the proposed point is the cursor's foot on the
+  // proposed guide line) so any drawn alignment segment — snap or spacing
+  // readout — lands by the pointer, not at a stale spot.
   const snappedOffset = (
     orientation: GuideOrientation,
     rawOffset: number,
     e: React.PointerEvent,
-    allTargets: Vec2[],
+    pools: { allTargets: Vec2[]; neighbours: readonly GuideTarget[] },
   ): number => {
-    if (e.shiftKey) {
-      // Unconditional clear: frozen local state can't gate a clear while the
-      // pipeline is armed (see useRoutedSnapGuides).
-      setSnapGuides([]);
-      return rawOffset;
-    }
     const world = screenToWorld(e.clientX, e.clientY);
-    const proposed = guideFoot(orientation, rawOffset, world);
-    const constrain =
-      orientation === 'horizontal' ? 'y' : orientation === 'vertical' ? 'x' : orientation;
-    const snap = snapPoint(proposed, { allTargets, constrain });
-    setSnapGuides(snap.guides);
-    return guideOffsetOf(orientation, snap);
+    let offset = rawOffset;
+    let snapGuides: SnapGuide[] = [];
+    if (!e.shiftKey) {
+      const proposed = guideFoot(orientation, rawOffset, world);
+      const constrain =
+        orientation === 'horizontal' ? 'y' : orientation === 'vertical' ? 'x' : orientation;
+      const snap = snapPoint(proposed, { allTargets: pools.allTargets, constrain });
+      offset = guideOffsetOf(orientation, snap);
+      snapGuides = snap.guides;
+    }
+    // Set unconditionally — frozen local state can't gate a clear while the
+    // pipeline is armed (see useRoutedSnapGuides). The spacing readout is
+    // measured off the LANDED offset, so it reads the gap the release commits.
+    setSnapGuides([
+      ...snapGuides,
+      ...guideNeighbourReadout(orientation, offset, world, pools.neighbours),
+    ]);
+    return offset;
   };
 
   const onStartDrag = useCallback((id: string, e: React.PointerEvent) => {
@@ -177,6 +196,7 @@ export function useGuideDrag(
     const sel = useSelection.getState();
     if (!e.shiftKey && !sel.selectedGuideIds.includes(id)) sel.selectGuide(id);
     const siblings = collectGroupSiblings('guide', id);
+    const exclude = groupAlignExclude('guide', id, siblings);
     dragRef.current = {
       id,
       orientation: guide.orientation,
@@ -185,7 +205,11 @@ export function useGuideDrag(
       startMY: e.clientY,
       moved: false,
       siblings,
-      allTargets: liveAlignTargets(groupAlignExclude('guide', id, siblings)),
+      allTargets: liveAlignTargets(exclude),
+      // Same exclusions as the point pool, for the same reason: a guide towed
+      // by this drag holds its gap for the whole gesture, so measuring to it
+      // says nothing.
+      neighbours: liveGuideTargets(exclude),
       history: beginHistoryGroup({ deferPersist: true }),
     };
   }, []);
@@ -200,6 +224,7 @@ export function useGuideDrag(
       moved: false,
       // No exclusions: the ghost isn't in the doc yet (placement's rule).
       allTargets: liveAlignTargets(),
+      neighbours: liveGuideTargets(),
     };
   }, []);
 
@@ -211,7 +236,7 @@ export function useGuideDrag(
       if (!moved) return;
       const raw =
         ds.startOffset + guideNudgeDelta(ds.orientation, dxScreen / zoom, dyScreen / zoom);
-      const next = snappedOffset(ds.orientation, raw, e, ds.allTargets);
+      const next = snappedOffset(ds.orientation, raw, e, ds);
       moveGuide(ds.id, next);
       if (hasGroupSiblings(ds.siblings)) {
         // Rigid along the guide's one degree of freedom; the along-axis half
@@ -229,7 +254,7 @@ export function useGuideDrag(
       if (!moved) return;
       const world = screenToWorld(e.clientX, e.clientY);
       const raw = guideOffsetOf(ps.orientation, world);
-      ps.offset = snappedOffset(ps.orientation, raw, e, ps.allTargets);
+      ps.offset = snappedOffset(ps.orientation, raw, e, ps);
       setPull({ orientation: ps.orientation, offset: ps.offset });
       syncOverWell(ps.orientation, e);
     }

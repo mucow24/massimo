@@ -4,6 +4,7 @@ import {
   guideAxis,
   guideFoot,
   guideMoveVector,
+  guideNeighbourReadout,
   guideNudgeDelta,
   guideOffsetOf,
   guidePerpDist,
@@ -103,6 +104,59 @@ describe('guide-line geometry helpers', () => {
       x2: 100,
       y2: 250,
     });
+  });
+});
+
+describe('guideNeighbourReadout', () => {
+  const h = (id: string, offset: number) => ({ id, orientation: 'horizontal' as const, offset });
+
+  it('brackets the drag with the nearest parallel guide on each side, below first', () => {
+    // Cursor way off the line: the span still anchors at the cursor's FOOT on
+    // the dragged guide, so it lands beside the pointer along the line.
+    const r = guideNeighbourReadout('horizontal', 100, { x: 250, y: 999 }, [
+      h('far-below', 40),
+      h('below', 60),
+      h('above', 160),
+      h('far-above', 300),
+    ]);
+    expect(r).toEqual([
+      { from: { x: 250, y: 100 }, to: { x: 250, y: 60 }, label: '40' },
+      { from: { x: 250, y: 100 }, to: { x: 250, y: 160 }, label: '60' },
+    ]);
+  });
+
+  it('measures only its own orientation, and reports nothing without one', () => {
+    const others = [
+      { id: 'v', orientation: 'vertical' as const, offset: 120 },
+      { id: 'd', orientation: 'diagonal-down' as const, offset: 120 },
+      { id: 'u', orientation: 'diagonal-up' as const, offset: 120 },
+    ];
+    expect(guideNeighbourReadout('horizontal', 100, { x: 0, y: 0 }, others)).toEqual([]);
+    expect(guideNeighbourReadout('horizontal', 100, { x: 0, y: 0 }, [])).toEqual([]);
+  });
+
+  it('reports one span when the drag has run past every guide on a side', () => {
+    const r = guideNeighbourReadout('horizontal', 400, { x: 0, y: 0 }, [h('a', 60), h('b', 160)]);
+    expect(r.map((g) => g.label)).toEqual(['240']);
+  });
+
+  it('a coincident guide is not a neighbour', () => {
+    expect(guideNeighbourReadout('horizontal', 100, { x: 0, y: 0 }, [h('same', 100)])).toEqual([]);
+  });
+
+  it('a diagonal measures TRUE perpendicular distance, not the intercept delta', () => {
+    const r = guideNeighbourReadout('diagonal-down', 0, { x: 50, y: 50 }, [
+      { id: 'd', orientation: 'diagonal-down', offset: 100 },
+    ]);
+    expect(r).toHaveLength(1);
+    // Intercept delta 100 → true distance 100/√2 ≈ 70.7, and the drawn segment
+    // is exactly as long as the number claims.
+    expect(r[0].label).toBe('71');
+    expect(Math.hypot(r[0].to.x - r[0].from.x, r[0].to.y - r[0].from.y)).toBeCloseTo(
+      100 / Math.SQRT2,
+      9,
+    );
+    expect(r[0].from).toEqual({ x: 50, y: 50 });
   });
 });
 

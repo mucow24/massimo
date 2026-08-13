@@ -322,6 +322,55 @@ export function guideSegmentInBox(
   }
 }
 
+/**
+ * The spacing readout for a guide gesture: the perpendicular span from the
+ * dragged guide to the nearest PARALLEL guide on each side, as labeled
+ * `SnapGuide` segments — the same measurement chrome a station drag draws to
+ * its adjacent stations.
+ *
+ * It is a measurement, not a snap: guides never snap to each other (stacking
+ * two is meaningless), so nothing here engages anything, and it is emitted on
+ * every frame of the gesture rather than only when something locks. Shift
+ * declines snapping, not measuring.
+ *
+ * `at` is the live cursor; the spans anchor at its FOOT on the dragged guide,
+ * so they land by the pointer instead of at a fixed spot along an infinite
+ * line. The label is the TRUE perpendicular distance (`guidePerpDist` — a
+ * diagonal's intercept delta overstates it by √2), which is exactly the length
+ * of the segment drawn, so the number and the ink agree. Only guides of the
+ * same orientation can be neighbours — anything else crosses the dragged guide,
+ * and the distance between two crossing lines is zero somewhere. A coincident
+ * guide (equal offset) is skipped for the same reason.
+ */
+export function guideNeighbourReadout(
+  orientation: GuideOrientation,
+  offset: number,
+  at: Vec2,
+  others: readonly GuideTarget[],
+): SnapGuide[] {
+  let below: GuideTarget | null = null;
+  let above: GuideTarget | null = null;
+  for (const o of others) {
+    if (o.orientation !== orientation) continue;
+    if (o.offset < offset) {
+      if (!below || o.offset > below.offset) below = o;
+    } else if (o.offset > offset) {
+      if (!above || o.offset < above.offset) above = o;
+    }
+  }
+  const from = guideFoot(orientation, offset, at);
+  const out: SnapGuide[] = [];
+  for (const n of [below, above]) {
+    if (!n) continue;
+    out.push({
+      from,
+      to: guideFoot(orientation, n.offset, from),
+      label: Math.round(guidePerpDist(orientation, n.offset, from)).toString(),
+    });
+  }
+  return out;
+}
+
 export interface SnapResult {
   x: number;
   y: number;
