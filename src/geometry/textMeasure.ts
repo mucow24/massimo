@@ -643,10 +643,14 @@ function computeLineMetrics(
 /**
  * Greedily word-wrap one paragraph to `width`, returning each wrapped line
  * with the open-tag state it starts under (so committed lines can be
- * re-measured/rendered with the right entry style). Whitespace runs collapse
- * to single-space gaps; a word wider than the column lands on its own
- * (overflowing) line — no mid-word hyphenation. An empty or all-whitespace
- * paragraph yields a single blank line so vertical spacing is preserved.
+ * re-measured/rendered with the right entry style). The paragraph's LEADING
+ * whitespace is the author's indent: it rides the first word onto the first
+ * wrapped line and its advance counts toward the wrap width (typed spaces
+ * measure as real width — see the whitespace bearing corrections). Interior
+ * whitespace runs collapse to single-space gaps; a word wider than the
+ * column lands on its own (overflowing) line — no mid-word hyphenation. An
+ * empty or all-whitespace paragraph yields a single blank line so vertical
+ * spacing is preserved.
  */
 function wrapParagraph(
   paragraph: string,
@@ -656,6 +660,8 @@ function wrapParagraph(
 ): { raw: string; entry: InlineStyleState | null }[] {
   const words = paragraph.split(/\s+/).filter((w) => w.length > 0);
   if (words.length === 0) return [{ raw: '', entry }];
+  const lead = /^\s*/.exec(paragraph)![0];
+  if (lead.length > 0) words[0] = lead + words[0];
   const lines: { raw: string; entry: InlineStyleState | null }[] = [];
   let current = '';
   let currentEntry = entry;

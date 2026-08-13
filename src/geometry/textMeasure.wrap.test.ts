@@ -67,4 +67,28 @@ describe('measureTextLabel — column wrapping (width > 0)', () => {
     expect(m.lineCount).toBe(3);
     expect(m.lines.map((l) => l.endsParagraph)).toEqual([true, true, true]);
   });
+
+  it("preserves a paragraph's LEADING whitespace on its first wrapped line", () => {
+    // The author typed an indent; word-wrap must not eat it. It rides the
+    // first word — continuation lines start at the pen origin as usual.
+    const m = measureTextLabel(styled('  aa bb', 50));
+    expect(m.lines.map((l) => l.raw)).toEqual(['  aa', 'bb']);
+  });
+
+  it('the indent counts toward the wrap width', () => {
+    // '  aa' is 40 ink-px (spaces count); adding ' bb' (70) overflows 50, so
+    // the break lands after 'aa' — the indent consumed room like real text.
+    const m = measureTextLabel(styled('  aa bb', 70));
+    expect(m.lines.map((l) => l.raw)).toEqual(['  aa bb']);
+  });
+
+  it("every source line's indent survives, not just the first paragraph's", () => {
+    const m = measureTextLabel(styled('x\n  y', 50));
+    expect(m.lines.map((l) => l.raw)).toEqual(['x', '  y']);
+  });
+
+  it('interior whitespace runs still collapse to single-space gaps', () => {
+    const m = measureTextLabel(styled('aa    bb', 50));
+    expect(m.lines.map((l) => l.raw)).toEqual(['aa bb']);
+  });
 });
