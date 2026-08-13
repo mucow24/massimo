@@ -6,7 +6,8 @@ import { useDoc, useSelection } from '../../state/store';
 import { useSnapPrefs } from '../../state/snapPrefs';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { DEFAULT_SNAP_MODES, type SnapModes } from '../../geometry/snap';
-import { makeTextLabel, stationWithStop, makeLine } from '../../test/fixtures';
+import { makeGuide, makeTextLabel, stationWithStop, makeLine } from '../../test/fixtures';
+import { useViewportStore } from '../../state/viewportStore';
 import { fakeSvgRef } from '../../test/interaction';
 import { historyDepth, isHistoryGrouping } from '../../state/history';
 import type { StationId } from '../../model/types';
@@ -43,6 +44,43 @@ beforeEach(() => {
     selectedStationIds: [],
     selectedRouteBulletIds: [],
     selectedLabelIds: [],
+  });
+});
+
+describe('useStationDrag — towing a bounded guide', () => {
+  it('a group drag slides the span along with it, not just the offset', () => {
+    setModes({ line: false, all: 'off', grid: 'off' });
+    useViewportStore.setState({ showGuides: true });
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1', stations: ['D'] }) },
+      lineOrder: ['L1'],
+      stations: { D: stationWithStop('D' as StationId, 'L1', { x: 0, y: 0 }) },
+      guides: {
+        gh: makeGuide({
+          id: 'gh',
+          orientation: 'horizontal',
+          offset: 100,
+          extent: { center: 300, halfLength: 50 },
+        }),
+      },
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['D'],
+      selectedGuideIds: ['gh'],
+    });
+
+    const svgRef = createRef<SVGSVGElement>() as RefObject<SVGSVGElement | null>;
+    const { result } = renderHook(() => useStationDrag(svgRef, 1));
+    result.current.onStartDrag('D' as StationId, pointerEvent({ clientX: 200, clientY: 200 }));
+    result.current.onPointerMove(pointerEvent({ clientX: 240, clientY: 230, shiftKey: true }));
+    result.current.onPointerUp(pointerEvent({ clientX: 240, clientY: 230, shiftKey: true }));
+
+    // The offset takes the perpendicular component (dy), the span the
+    // along-axis one (dx): the whole segment travels rigidly with the group.
+    expect(useDoc.getState().guides.gh.offset).toBe(130);
+    expect(useDoc.getState().guides.gh.extent).toEqual({ center: 340, halfLength: 50 });
   });
 });
 

@@ -2,8 +2,10 @@ import type { Vec2 } from './vec';
 import { add, scale, sub, dot, cross } from './vec';
 import {
   axesForAllSnap,
+  constrainedGridMode,
   formatMeasurement,
   GRID_INTERVAL,
+  guideAdmitsFoot,
   guideAxis,
   guideFoot,
   guideOffsetOf,
@@ -15,6 +17,7 @@ import {
   SNAP_PERP_TOLERANCE,
   type GridSnap,
   type GuideTarget,
+  type SnapConstraint,
   type SnapGuide,
   type SnapModes,
 } from './snap';
@@ -51,7 +54,7 @@ export interface PolygonSnapInput {
    *  can only move its intercept) keep only the matching 45° family, with
    *  grid quantizing the intercept when the full lattice is on. Prevents
    *  guides for snaps the caller would discard. */
-  constrain?: 'x' | 'y' | 'diagonal-down' | 'diagonal-up';
+  constrain?: SnapConstraint;
   /** Alignment guides in play, ALWAYS-ON targets independent of every mode
    *  toggle (Shift bypasses at the call sites, like all snapping). The caller
    *  passes the visibility-gated pool minus anything moving with the drag. */
@@ -129,25 +132,12 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
         return a.x !== 0 && a.y !== 0 && a.x > 0 !== a.y > 0;
     }
   };
-  // Grid narrows to the constrained axis the same way ('x' keeps vertical
-  // grid lines, which lock X). For a diagonal DOF only the full lattice
-  // means anything — its crossings are the discrete intercepts — so 'both'
-  // survives and either directional mode drops out.
+  // Grid narrows to the constrained axis the same way ('x' keeps vertical grid
+  // lines, which lock X) — `constrainedGridMode`, shared with the guide drag,
+  // which asks the same question of its own one DOF.
   const diagonalConstrain =
     constrain === 'diagonal-down' || constrain === 'diagonal-up' ? constrain : null;
-  const gridMode: GridSnap = !constrain
-    ? modes.grid
-    : diagonalConstrain
-      ? modes.grid === 'both'
-        ? 'both'
-        : 'off'
-      : constrain === 'x'
-        ? modes.grid === 'both' || modes.grid === 'vertical'
-          ? 'vertical'
-          : 'off'
-        : modes.grid === 'both' || modes.grid === 'horizontal'
-          ? 'horizontal'
-          : 'off';
+  const gridMode: GridSnap = constrainedGridMode(modes.grid, constrain);
 
   const candidates: Candidate[] = [];
   if (modes.line) {
@@ -215,35 +205,30 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
         if (!axisAllowed({ x: 0, y: 1 })) continue;
         const d = Math.abs(a.x - g.offset);
         if (d > tol) continue;
+        const foot = { x: g.offset, y: a.y };
+        // A bounded guide attracts only where the foot lands inside its span —
+        // the ANCHOR's foot: the engaged corner is what aligns to the guide.
+        if (!guideAdmitsFoot(g, foot)) continue;
         if (!bestV || d < bestV.perp) {
-          bestV = {
-            value: g.offset - off.x,
-            perp: d,
-            target: { x: g.offset, y: a.y },
-            off,
-            guideId: g.id,
-          };
+          bestV = { value: g.offset - off.x, perp: d, target: foot, off, guideId: g.id };
         }
       } else if (g.orientation === 'horizontal') {
         if (!axisAllowed({ x: 1, y: 0 })) continue;
         const d = Math.abs(a.y - g.offset);
         if (d > tol) continue;
+        const foot = { x: a.x, y: g.offset };
+        if (!guideAdmitsFoot(g, foot)) continue;
         if (!bestH || d < bestH.perp) {
-          bestH = {
-            value: g.offset - off.y,
-            perp: d,
-            target: { x: a.x, y: g.offset },
-            off,
-            guideId: g.id,
-          };
+          bestH = { value: g.offset - off.y, perp: d, target: foot, off, guideId: g.id };
         }
       } else {
         const axis = guideAxis(g.orientation);
         if (!axisAllowed(axis)) continue;
         const d = guidePerpDist(g.orientation, g.offset, a);
         if (d > tol) continue;
+        const foot = guideFoot(g.orientation, g.offset, a);
+        if (!guideAdmitsFoot(g, foot)) continue;
         if (!bestD || d < bestD.perp) {
-          const foot = guideFoot(g.orientation, g.offset, a);
           bestD = { foot: sub(foot, off), perp: d, target: foot, axis, off, guideId: g.id };
         }
       }

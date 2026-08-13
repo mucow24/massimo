@@ -148,14 +148,14 @@ describe('polygon transforms', () => {
     expect(tri.polygons['p0'].vertices).toHaveLength(3);
   });
 
-  it('updatePolygon patches style and snaps strokeWidth to the nearest 0.25, clamping at MIN only', () => {
+  it('updatePolygon patches style and stores strokeWidth as given, clamping at MIN only', () => {
     const doc = makeDoc({ polygons: [makePolygon({ id: 'p0' })] });
     const a = updatePolygon(doc, 'p0', { fill: '#ff0000', stroke: '#00ff00', strokeWidth: 4 });
     expect(a.polygons['p0'].fill).toBe('#ff0000');
     expect(a.polygons['p0'].stroke).toBe('#00ff00');
     expect(a.polygons['p0'].strokeWidth).toBe(4);
-    // Snaps to the 0.25 grid, matching the line stroke-width control.
-    expect(updatePolygon(doc, 'p0', { strokeWidth: 2.7 }).polygons['p0'].strokeWidth).toBe(2.75);
+    // Off-step widths stand, matching the line stroke-width control.
+    expect(updatePolygon(doc, 'p0', { strokeWidth: 2.7 }).polygons['p0'].strokeWidth).toBe(2.7);
     expect(updatePolygon(doc, 'p0', { strokeWidth: 2.5 }).polygons['p0'].strokeWidth).toBe(2.5);
     // No upper clamp — the textbox accepts arbitrary values above the slider max.
     expect(updatePolygon(doc, 'p0', { strokeWidth: 999 }).polygons['p0'].strokeWidth).toBe(999);

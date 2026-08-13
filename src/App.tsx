@@ -26,7 +26,7 @@ import {
   type ClipPayload,
 } from './model/clipboard';
 import { _clearTextMeasureCache } from './geometry/textMeasure';
-import { guideNudgeDelta } from './geometry/snap';
+import { guideAlongOf, guideNudgeDelta } from './geometry/snap';
 import { useFontEpoch } from './state/fontEpoch';
 import { screenDeltaToLabelOffsets } from './geometry/labelLayout';
 import { STOP_SIZE, rotateGridDelta, type Rotation } from './geometry/orientation';
@@ -558,13 +558,22 @@ export default function App() {
             const a = doc.transferAnchors[id];
             if (a) doc.moveTransferAnchor(id, a.x + dx, a.y + dy);
           }
-          // One degree of freedom: a guide takes only the offset-changing
-          // projection of the nudge (guideNudgeDelta), so cross-axis presses
-          // no-op for it while still moving co-selected items (moveGuide
-          // bails on an unchanged offset).
+          // A guide's LINE takes only the offset-changing projection of the
+          // nudge (guideNudgeDelta), so cross-axis presses no-op for an
+          // infinite guide while still moving co-selected items (moveGuide
+          // bails on an unchanged offset). A BOUNDED span answers them: the
+          // along-axis projection slides the segment along its street.
           for (const id of ids.guides) {
             const g = doc.guides[id];
-            if (g) doc.moveGuide(id, g.offset + guideNudgeDelta(g.orientation, dx, dy));
+            if (g) {
+              doc.moveGuide(
+                id,
+                g.offset + guideNudgeDelta(g.orientation, dx, dy),
+                g.extent
+                  ? g.extent.center + guideAlongOf(g.orientation, { x: dx, y: dy })
+                  : undefined,
+              );
+            }
           }
           group?.commit();
         }

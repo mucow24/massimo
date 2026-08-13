@@ -34,13 +34,13 @@ describe('dot size constants', () => {
 });
 
 describe('canonicalDotSize', () => {
-  it('snaps to the DOT_SIZE_STEP (quarter-unit) grid and clamps to the floor', () => {
-    // Quarter values survive verbatim — they did NOT on the old integer grid.
+  it('keeps the size it is given and clamps to the floor', () => {
     expect(canonicalDotSize(10.25)).toBe(10.25);
     expect(canonicalDotSize(10.75)).toBe(10.75);
-    // Off-grid inputs snap to the nearest quarter.
-    expect(canonicalDotSize(10.2)).toBe(10.25);
-    expect(canonicalDotSize(10.1)).toBe(10);
+    // Off-quarter sizes stand: DOT_SIZE_STEP is what the slider/wheel move by.
+    expect(canonicalDotSize(10.2)).toBe(10.2);
+    expect(canonicalDotSize(10.1)).toBe(10.1);
+    expect(canonicalDotSize(10.32455)).toBe(10.32455);
     // The floor still clamps; 0 is a legal, visible-free dot.
     expect(canonicalDotSize(-3)).toBe(DOT_SIZE_MIN);
     expect(DOT_SIZE_MIN).toBe(0);

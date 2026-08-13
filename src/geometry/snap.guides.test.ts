@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_SNAP_MODES,
+  guideAdmitsFoot,
+  guideAlongOf,
   guideAxis,
   guideFoot,
   guideMoveVector,
@@ -8,7 +10,9 @@ import {
   guideNudgeDelta,
   guideOffsetOf,
   guidePerpDist,
+  guidePointAt,
   guideSegmentInBox,
+  guideTensOffset,
   snapDraggedStation,
   type SnapInput,
   type SnapModes,
@@ -80,6 +84,75 @@ describe('guide-line geometry helpers', () => {
     }
   });
 
+  it('along-of / point-at round-trip on the line, for every orientation', () => {
+    for (const o of ORIENTATIONS) {
+      const offset = 37;
+      // point-at lands ON the line at exactly the asked-for parameter…
+      const p = guidePointAt(o, offset, 123.5);
+      expect(guideOffsetOf(o, p)).toBeCloseTo(offset, 9);
+      expect(guideAlongOf(o, p)).toBeCloseTo(123.5, 9);
+      // …and the t = 0 anchor is the world origin's foot.
+      expect(guidePointAt(o, offset, 0)).toEqual(guideFoot(o, offset, { x: 0, y: 0 }));
+      // Along-distance is TRUE length: one unit of t is one world unit.
+      const q = guidePointAt(o, offset, 124.5);
+      expect(Math.hypot(q.x - p.x, q.y - p.y)).toBeCloseTo(1, 9);
+    }
+  });
+
+  it('a bounded guide admits a foot up to its inclusive span edge', () => {
+    const g = {
+      id: 'g',
+      orientation: 'horizontal' as const,
+      offset: 100,
+      extent: { center: 300, halfLength: 100 },
+    };
+    expect(guideAdmitsFoot(g, { x: 300, y: 100 })).toBe(true);
+    expect(guideAdmitsFoot(g, { x: 400, y: 100 })).toBe(true);
+    expect(guideAdmitsFoot(g, { x: 400.5, y: 100 })).toBe(false);
+    // No extent admits everything.
+    expect(guideAdmitsFoot({ ...g, extent: undefined }, { x: 9999, y: 100 })).toBe(true);
+  });
+
+  it('clips to a bounded extent, and culls a span wholly outside the box', () => {
+    // Horizontal at y=100, box x 0..400: the span [150, 250] draws as itself…
+    expect(
+      guideSegmentInBox('horizontal', 100, 0, 0, 400, 300, { center: 200, halfLength: 50 }),
+    ).toEqual({ x1: 150, y1: 100, x2: 250, y2: 100 });
+    // …one straddling the box edge keeps only the intersection…
+    expect(
+      guideSegmentInBox('horizontal', 100, 0, 0, 400, 300, { center: 390, halfLength: 50 }),
+    ).toEqual({ x1: 340, y1: 100, x2: 400, y2: 100 });
+    // …and one wholly past it has nothing to draw.
+    expect(
+      guideSegmentInBox('horizontal', 100, 0, 0, 400, 300, { center: 900, halfLength: 50 }),
+    ).toBeNull();
+    expect(
+      guideSegmentInBox('vertical', 200, 0, 0, 400, 300, { center: 150, halfLength: 30 }),
+    ).toEqual({ x1: 200, y1: 120, x2: 200, y2: 180 });
+    // Diagonal extents are TRUE length along the line: on y = x, the span
+    // centered at (50,50) with half-length 25√2 runs (25,25) → (75,75).
+    const dd = guideSegmentInBox('diagonal-down', 0, 0, 0, 100, 100, {
+      center: 50 * Math.SQRT2,
+      halfLength: 25 * Math.SQRT2,
+    });
+    expect(dd).not.toBeNull();
+    expect(dd!.x1).toBeCloseTo(25, 9);
+    expect(dd!.y1).toBeCloseTo(25, 9);
+    expect(dd!.x2).toBeCloseTo(75, 9);
+    expect(dd!.y2).toBeCloseTo(75, 9);
+    // On y = 100 − x the t = 0 point is (50,50); same half-length spans
+    // (25,75) → (75,25), in the arm's x-ascending order.
+    const du = guideSegmentInBox('diagonal-up', 100, 0, 0, 100, 100, {
+      center: 0,
+      halfLength: 25 * Math.SQRT2,
+    });
+    expect(du).not.toBeNull();
+    expect(du!.x1).toBeCloseTo(25, 9);
+    expect(du!.y1).toBeCloseTo(75, 9);
+    expect(du!.x2).toBeCloseTo(75, 9);
+    expect(du!.y2).toBeCloseTo(25, 9);
+  });
+
   it('clips a diagonal to the box and culls a complete miss', () => {
     // Box x 0..100, y 0..100. \ at intercept 50 enters (0,50), exits (50,100).
     expect(guideSegmentInBox('diagonal-down', 50, 0, 0, 100, 100)).toEqual({
@@ -145,6 +218,23 @@ describe('guideNeighbourReadout', () => {
     expect(r.map((g) => g.label)).toEqual(['240.0']);
   });
 
+  it('skips a bounded parallel whose span does not reach the cursor foot', () => {
+    // The nearer neighbour (60) is bounded with its span far along the axis:
+    // it has no ink at x 250, so the readout measures past it to the infinite
+    // one at 40 rather than ending a labeled segment in blank canvas.
+    const r = guideNeighbourReadout('horizontal', 100, { x: 250, y: 0 }, [
+      { orientation: 'horizontal', offset: 60, extent: { center: 600, halfLength: 50 } },
+      { orientation: 'horizontal', offset: 40 },
+    ]);
+    expect(r).toEqual([{ from: { x: 250, y: 100 }, to: { x: 250, y: 40 }, label: '60.0' }]);
+    // Covering the foot, the bounded one is the nearest again.
+    const r2 = guideNeighbourReadout('horizontal', 100, { x: 250, y: 0 }, [
+      { orientation: 'horizontal', offset: 60, extent: { center: 250, halfLength: 50 } },
+      { orientation: 'horizontal', offset: 40 },
+    ]);
+    expect(r2.map((g) => g.label)).toEqual(['40.0']);
+  });
+
   it('a coincident parallel guide silences the readout rather than reaching past it', () => {
     // The nearest neighbour is zero away on BOTH sides, so there is no gap
     // left to report — and the span to `far` would start out of a guide it
@@ -171,6 +261,86 @@ describe('guideNeighbourReadout', () => {
       9,
     );
     expect(r[0].from).toEqual({ x: 50, y: 50 });
+  });
+});
+
+describe('guideTensOffset', () => {
+  const h = (id: string, offset: number) => ({ id, orientation: 'horizontal' as const, offset });
+
+  it('notches the offset a whole grid length from the nearest parallel guide', () => {
+    // 137 sits 97 above the anchor; the nearest whole 20 is 100.
+    expect(guideTensOffset('horizontal', 137, { x: 0, y: 0 }, [h('lo', 40)], 20, 10)).toBe(140);
+    // Below the anchor the cadence runs the other way, and an exact multiple
+    // is already on cadence.
+    expect(guideTensOffset('horizontal', -63, { x: 0, y: 0 }, [h('lo', 40)], 20, 10)).toBe(-60);
+    expect(guideTensOffset('horizontal', 100, { x: 0, y: 0 }, [h('lo', 40)], 20, 10)).toBe(100);
+  });
+
+  it('measures from the NEAREST parallel guide, not just any of them', () => {
+    // 150 is 13 away, 40 is 97: the cadence runs from 150, one step below.
+    expect(
+      guideTensOffset('horizontal', 137, { x: 0, y: 0 }, [h('lo', 40), h('hi', 150)], 20, 10),
+    ).toBe(130);
+  });
+
+  it('never notches ONTO the anchor — a cadence of zero steps is a stack', () => {
+    // Inside half a step there is no whole multiple to land on but zero, and
+    // zero would put the guide on top of its neighbour. The cadence stands
+    // down instead, and the guide moves freely through that band.
+    expect(guideTensOffset('horizontal', 45, { x: 0, y: 0 }, [h('lo', 40)], 20, 10)).toBeNull();
+    expect(guideTensOffset('horizontal', 40, { x: 0, y: 0 }, [h('lo', 40)], 20, 10)).toBeNull();
+    expect(guideTensOffset('horizontal', 31, { x: 0, y: 0 }, [h('lo', 40)], 20, 10)).toBeNull();
+    // Past half a step the first whole multiple is back in play.
+    expect(guideTensOffset('horizontal', 52, { x: 0, y: 0 }, [h('lo', 40)], 20, 10)).toBe(60);
+  });
+
+  it('declines when the nearest notch is out of tolerance', () => {
+    // Exactly half a step from either notch — 10 out, so a 5 tolerance (zoom 2)
+    // does not reach it while the standard 10 does.
+    expect(guideTensOffset('horizontal', 90, { x: 0, y: 0 }, [h('lo', 40)], 20, 5)).toBeNull();
+    expect(guideTensOffset('horizontal', 90, { x: 0, y: 0 }, [h('lo', 40)], 20, 10)).toBe(100);
+  });
+
+  it('has no cadence without a parallel guide to measure from', () => {
+    const crossing = [
+      { id: 'v', orientation: 'vertical' as const, offset: 120 },
+      { id: 'd', orientation: 'diagonal-down' as const, offset: 120 },
+    ];
+    expect(guideTensOffset('horizontal', 137, { x: 0, y: 0 }, crossing, 20, 10)).toBeNull();
+    expect(guideTensOffset('horizontal', 137, { x: 0, y: 0 }, [], 20, 10)).toBeNull();
+  });
+
+  it('anchors only off a parallel whose span covers the cursor foot', () => {
+    // Span far along the axis: no ink at x 250, nothing to step from.
+    const elsewhere = [
+      { orientation: 'horizontal' as const, offset: 40, extent: { center: 600, halfLength: 50 } },
+    ];
+    expect(guideTensOffset('horizontal', 63, { x: 250, y: 0 }, elsewhere, 20, 10)).toBeNull();
+    // Covering the foot, the same guide anchors the cadence again.
+    const covering = [
+      { orientation: 'horizontal' as const, offset: 40, extent: { center: 250, halfLength: 50 } },
+    ];
+    expect(guideTensOffset('horizontal', 63, { x: 250, y: 0 }, covering, 20, 10)).toBe(60);
+  });
+
+  it('a diagonal notches the TRUE gap — an intercept step of grid × √2', () => {
+    const d = (offset: number) => ({ id: 'd', orientation: 'diagonal-down' as const, offset });
+    // An intercept of 90 is 63.6 of true distance; the nearest whole 20 of
+    // distance is 60, i.e. an intercept of 60√2.
+    const r = guideTensOffset('diagonal-down', 90, { x: 0, y: 0 }, [d(0)], 20, 10);
+    expect(r).toBeCloseTo(60 * Math.SQRT2, 9);
+    expect(
+      guidePerpDist('diagonal-down', 0, guideFoot('diagonal-down', r!, { x: 0, y: 0 })),
+    ).toBeCloseTo(60, 9);
+    // The tolerance is perpendicular too: one step out, a miss of 14 of
+    // INTERCEPT is only 9.9 of distance, so it still engages.
+    const oneStep = 20 * Math.SQRT2;
+    expect(
+      guideTensOffset('diagonal-down', oneStep + 14, { x: 0, y: 0 }, [d(0)], 20, 10),
+    ).toBeCloseTo(oneStep, 9);
+    expect(
+      guideTensOffset('diagonal-down', oneStep + 14, { x: 0, y: 0 }, [d(0)], 20, 9),
+    ).toBeNull();
   });
 });
 
@@ -338,6 +508,56 @@ describe('snapDraggedStation against alignment guides', () => {
       expect(r2.x).toBeCloseTo(50, 9);
       expect(r2.y).toBeCloseTo(50, 9);
       expect(r2.guides.map((g) => g.alignGuideId)).toEqual(['gd']);
+    });
+  });
+
+  describe('bounded guides (extent)', () => {
+    // y = 100, spanning x ∈ [200, 400].
+    const bounded = { ...hGuide, extent: { center: 300, halfLength: 100 } };
+
+    it('attracts only where the anchor foot lands inside the span', () => {
+      const rIn = snapDraggedStation(
+        drag({ proposedX: 250, proposedY: 104, guideTargets: [bounded] }),
+      );
+      expect(rIn).toMatchObject({ x: 250, y: 100 });
+      expect(rIn.guides.map((g) => g.alignGuideId)).toEqual(['g1']);
+      // Same perpendicular miss, foot far past the tip: Brooklyn stays free.
+      const rOut = snapDraggedStation(
+        drag({ proposedX: 50, proposedY: 104, guideTargets: [bounded] }),
+      );
+      expect(rOut).toMatchObject({ x: 50, y: 104 });
+      expect(rOut.guides).toHaveLength(0);
+    });
+
+    it('the span edge is inclusive, and hard — no grace margin past the tip', () => {
+      const rTip = snapDraggedStation(
+        drag({ proposedX: 400, proposedY: 104, guideTargets: [bounded] }),
+      );
+      expect(rTip).toMatchObject({ x: 400, y: 100 });
+      const rPast = snapDraggedStation(
+        drag({ proposedX: 400.5, proposedY: 104, guideTargets: [bounded] }),
+      );
+      expect(rPast).toMatchObject({ x: 400.5, y: 104 });
+      expect(rPast.guides).toHaveLength(0);
+    });
+
+    it('a bounded diagonal gates on its along-axis parameter', () => {
+      // y = x, span x ∈ [40, 60].
+      const dBounded = {
+        id: 'gd',
+        orientation: 'diagonal-down' as const,
+        offset: 0,
+        extent: { center: 50 * Math.SQRT2, halfLength: 10 * Math.SQRT2 },
+      };
+      const rIn = snapDraggedStation(
+        drag({ proposedX: 50, proposedY: 54, guideTargets: [dBounded] }),
+      );
+      expect(rIn.guides.map((g) => g.alignGuideId)).toEqual(['gd']);
+      const rOut = snapDraggedStation(
+        drag({ proposedX: 80, proposedY: 84, guideTargets: [dBounded] }),
+      );
+      expect(rOut).toMatchObject({ x: 80, y: 84 });
+      expect(rOut.guides).toHaveLength(0);
     });
   });
 

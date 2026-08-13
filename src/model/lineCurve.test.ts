@@ -7,11 +7,10 @@ import {
 } from './lineCurve';
 
 describe('canonicalLineCurveRadius', () => {
-  it('rounds to the quarter grid, preserving quarter values', () => {
-    expect(canonicalLineCurveRadius(30.1)).toBe(30);
-    expect(canonicalLineCurveRadius(30.4)).toBe(30.5);
-    // A quarter value survives instead of being rounded off to an integer.
+  it('keeps the radius it is given — LINE_CURVE_RADIUS_STEP is the control, not a filter', () => {
+    expect(canonicalLineCurveRadius(30.1)).toBe(30.1);
     expect(canonicalLineCurveRadius(30.25)).toBe(30.25);
+    expect(canonicalLineCurveRadius(30.32455)).toBe(30.32455);
   });
 
   it('clamps below the floor up to LINE_CURVE_RADIUS_MIN', () => {
@@ -21,8 +20,10 @@ describe('canonicalLineCurveRadius', () => {
 
   it('collapses the default to undefined so it is never stored', () => {
     expect(canonicalLineCurveRadius(LINE_CURVE_RADIUS_DEFAULT)).toBeUndefined();
-    // Within a quarter of the default still lands on it.
-    expect(canonicalLineCurveRadius(LINE_CURVE_RADIUS_DEFAULT + 0.1)).toBeUndefined();
+    // Only the default EXACTLY — a hair off it is a real, stored choice.
+    expect(canonicalLineCurveRadius(LINE_CURVE_RADIUS_DEFAULT + 0.1)).toBe(
+      LINE_CURVE_RADIUS_DEFAULT + 0.1,
+    );
   });
 });
 

@@ -28,11 +28,10 @@ describe('line stroke constants', () => {
 });
 
 describe('canonicalStrokeWidth', () => {
-  it('rounds to the quarter grid, preserving quarter values', () => {
-    expect(canonicalStrokeWidth(2.1)).toBe(2);
-    expect(canonicalStrokeWidth(2.4)).toBe(2.5);
-    // A quarter value survives instead of snapping to a half.
+  it('keeps the width it is given — LINE_STROKE_STEP is the control, not a filter', () => {
+    expect(canonicalStrokeWidth(2.1)).toBe(2.1);
     expect(canonicalStrokeWidth(2.25)).toBe(2.25);
+    expect(canonicalStrokeWidth(0.32455)).toBe(0.32455);
   });
 
   it('collapses the default (0 = no casing) to undefined, including clamped negatives', () => {
@@ -41,7 +40,8 @@ describe('canonicalStrokeWidth', () => {
     expect(LINE_STROKE_WIDTH_MIN).toBe(LINE_STROKE_WIDTH_DEFAULT);
     expect(canonicalStrokeWidth(-1)).toBeUndefined();
     expect(canonicalStrokeWidth(0)).toBeUndefined();
-    expect(canonicalStrokeWidth(0.1)).toBeUndefined();
+    // 0.1 is a real hairline casing now, not something rounded away to "off".
+    expect(canonicalStrokeWidth(0.1)).toBe(0.1);
     expect(canonicalStrokeWidth(1.5)).toBe(1.5);
   });
 });

@@ -114,6 +114,34 @@ export type AllSnap = 'off' | 'horizontal' | 'vertical' | 'diagonal' | 'all';
 export type GridSnap = 'off' | 'horizontal' | 'vertical' | 'both';
 
 /**
+ * The one degree of freedom a single-DOF snap caller has left — an edge resize's
+ * axis, or a guide's offset. 'x'/'y' name the world axis the point may move
+ * along; the two diagonal values are a diagonal guide's own drag, which can only
+ * slide its intercept.
+ */
+export type SnapConstraint = 'x' | 'y' | 'diagonal-down' | 'diagonal-up';
+
+/**
+ * What the directional grid means for that one DOF: the modes that constrain an
+ * axis the caller cannot move are no constraint at all, and drop to 'off'. A
+ * diagonal DOF keeps only the full lattice — its crossings are the discrete
+ * intercepts, and a single-axis grid has none to offer. The one home for the
+ * narrowing, so the point snapper and a caller deciding whether the grid already
+ * owns its DOF (see {@link guideTensOffset}) cannot answer it differently.
+ */
+export function constrainedGridMode(mode: GridSnap, constrain?: SnapConstraint): GridSnap {
+  if (!constrain) return mode;
+  switch (constrain) {
+    case 'x':
+      return mode === 'both' || mode === 'vertical' ? 'vertical' : 'off';
+    case 'y':
+      return mode === 'both' || mode === 'horizontal' ? 'horizontal' : 'off';
+    default:
+      return mode === 'both' ? 'both' : 'off';
+  }
+}
+
+/**
  * User-toggleable snap modes. `line`, `equidistant`, and `tens` are boolean
  * flags (the latter two are no-ops unless `line` is also true); `all` and
  * `grid` are directional cycles.
@@ -131,7 +159,8 @@ export interface SnapModes {
    *  prev-in-line-ordering neighbor. For stations/bullets this is gated on
    *  `line` (the engine only refines a line-mode primary). The point snapper
    *  (`snapPolygonPoint`) reuses the same flag to notch other objects a whole
-   *  grid length from whatever they snap to. */
+   *  grid length from whatever they snap to, and a guide's own drag to step its
+   *  offset off its nearest parallel guide ({@link guideTensOffset}). */
   tens: boolean;
   /** Snap when the dragged stop is aligned with any other stop along the
    *  selected axis family (vertical, horizontal, and/or diagonal; line
@@ -194,14 +223,16 @@ export function formatMeasurement(value: number): string {
   return text === '-0.0' ? '0.0' : text;
 }
 
-/** An alignment guide as a snap target: an infinite horizontal (constant-Y),
- *  vertical (constant-X), or 45° (constant-intercept) line at `offset`.
- *  `AlignmentGuide` is structurally assignable; callers pass the
- *  visibility-gated, exclusion-filtered pool. */
+/** An alignment guide as a snap target: a horizontal (constant-Y), vertical
+ *  (constant-X), or 45° (constant-intercept) line at `offset`, infinite unless
+ *  a bounded `extent` narrows it to a span (see AlignmentGuide.extent — same
+ *  shape, same along-axis units). `AlignmentGuide` is structurally assignable;
+ *  callers pass the visibility-gated, exclusion-filtered pool. */
 export interface GuideTarget {
   id: string;
   orientation: GuideOrientation;
   offset: number;
+  extent?: { center: number; halfLength: number };
 }
 
 // ---------- Guide-line geometry ----------
@@ -239,6 +270,20 @@ export function guideOffsetOf(orientation: GuideOrientation, p: Vec2): number {
       return p.y - p.x;
     case 'diagonal-up':
       return p.y + p.x;
+  }
+}
+
+/** A guide's one degree of freedom, as the snappers' constraint: it may only
+ *  move perpendicular to itself, which for a strip is a single world axis and
+ *  for a diagonal is its own 45° family. */
+export function guideConstraint(orientation: GuideOrientation): SnapConstraint {
+  switch (orientation) {
+    case 'horizontal':
+      return 'y';
+    case 'vertical':
+      return 'x';
+    default:
+      return orientation;
   }
 }
 
@@ -301,12 +346,47 @@ export function guideMoveVector(orientation: GuideOrientation, d: number): Vec2 
   }
 }
 
+/** The along-axis parameter of `p` for this orientation — its signed distance
+ *  along {@link guideAxis} from the t = 0 anchor (the world origin's foot), in
+ *  TRUE world units: x for horizontal, y for vertical, (x ± y)/√2 for the
+ *  diagonals. The coordinate `AlignmentGuide.extent` speaks. */
+export function guideAlongOf(orientation: GuideOrientation, p: Vec2): number {
+  const a = guideAxis(orientation);
+  return p.x * a.x + p.y * a.y;
+}
+
+/** The point at along-parameter `t` on the guide line — the inverse of
+ *  {@link guideAlongOf} restricted to the line. The t = 0 anchor is the world
+ *  origin's foot, for every orientation alike. */
+export function guidePointAt(orientation: GuideOrientation, offset: number, t: number): Vec2 {
+  const anchor = guideFoot(orientation, offset, { x: 0, y: 0 });
+  const a = guideAxis(orientation);
+  return { x: anchor.x + t * a.x, y: anchor.y + t * a.y };
+}
+
+/** Does a snap FOOT on this guide's line land inside its span? Bounded guides
+ *  exist only where this is true — the edge is inclusive and hard (past the
+ *  tip is exactly where a bounded guide must let go; no grace margin). An
+ *  unbounded guide admits everything. The one gate every extent consumer
+ *  shares: both snappers, the spacing readout and grid-length cadence below,
+ *  and the locked deep-pick's point test (hitStack). Structural on purpose —
+ *  readout/cadence pool entries carry no id. */
+export function guideAdmitsFoot(
+  g: { orientation: GuideOrientation; extent?: { center: number; halfLength: number } },
+  foot: Vec2,
+): boolean {
+  if (!g.extent) return true;
+  return Math.abs(guideAlongOf(g.orientation, foot) - g.extent.center) <= g.extent.halfLength;
+}
+
 /** The guide's drawable segment clipped to a box (the overdrawn viewBox —
- *  painting past it is ink overflow, which costs the composited pan layer).
+ *  painting past it is ink overflow, which costs the composited pan layer)
+ *  and, when the guide is bounded, to its extent — the single choke point that
+ *  keeps GuideView and the engaged snap chrome drawing the same span.
  *  Horizontal/vertical guides span the full box edge-to-edge even when their
  *  offset lies outside it (the layer draws them regardless, matching the
- *  pre-diagonal behavior); a diagonal that misses the box entirely returns
- *  null — there is no finite segment to draw. */
+ *  pre-diagonal behavior); a diagonal that misses the box entirely — or an
+ *  extent that misses it — returns null: there is no finite segment to draw. */
 export function guideSegmentInBox(
   orientation: GuideOrientation,
   offset: number,
@@ -314,27 +394,45 @@ export function guideSegmentInBox(
   vbY: number,
   vbW: number,
   vbH: number,
+  extent?: { center: number; halfLength: number },
 ): { x1: number; y1: number; x2: number; y2: number } | null {
-  switch (orientation) {
-    case 'horizontal':
-      return { x1: vbX, y1: offset, x2: vbX + vbW, y2: offset };
-    case 'vertical':
-      return { x1: offset, y1: vbY, x2: offset, y2: vbY + vbH };
-    case 'diagonal-down': {
-      // y = x + offset: clip the x-range to where y stays inside the box.
-      const x1 = Math.max(vbX, vbY - offset);
-      const x2 = Math.min(vbX + vbW, vbY + vbH - offset);
-      if (x1 > x2) return null;
-      return { x1, y1: x1 + offset, x2, y2: x2 + offset };
+  const seg = ((): { x1: number; y1: number; x2: number; y2: number } | null => {
+    switch (orientation) {
+      case 'horizontal':
+        return { x1: vbX, y1: offset, x2: vbX + vbW, y2: offset };
+      case 'vertical':
+        return { x1: offset, y1: vbY, x2: offset, y2: vbY + vbH };
+      case 'diagonal-down': {
+        // y = x + offset: clip the x-range to where y stays inside the box.
+        const x1 = Math.max(vbX, vbY - offset);
+        const x2 = Math.min(vbX + vbW, vbY + vbH - offset);
+        if (x1 > x2) return null;
+        return { x1, y1: x1 + offset, x2, y2: x2 + offset };
+      }
+      case 'diagonal-up': {
+        // y = offset − x.
+        const x1 = Math.max(vbX, offset - (vbY + vbH));
+        const x2 = Math.min(vbX + vbW, offset - vbY);
+        if (x1 > x2) return null;
+        return { x1, y1: offset - x1, x2, y2: offset - x2 };
+      }
     }
-    case 'diagonal-up': {
-      // y = offset − x.
-      const x1 = Math.max(vbX, offset - (vbY + vbH));
-      const x2 = Math.min(vbX + vbW, offset - vbY);
-      if (x1 > x2) return null;
-      return { x1, y1: offset - x1, x2, y2: offset - x2 };
-    }
-  }
+  })();
+  if (!seg || !extent) return seg;
+  // Every arm above emits its endpoints t-ascending, so the extent is a plain
+  // interval intersection in the along parameter.
+  const lo = Math.max(
+    guideAlongOf(orientation, { x: seg.x1, y: seg.y1 }),
+    extent.center - extent.halfLength,
+  );
+  const hi = Math.min(
+    guideAlongOf(orientation, { x: seg.x2, y: seg.y2 }),
+    extent.center + extent.halfLength,
+  );
+  if (lo > hi) return null;
+  const a = guidePointAt(orientation, offset, lo);
+  const b = guidePointAt(orientation, offset, hi);
+  return { x1: a.x, y1: a.y, x2: b.x, y2: b.y };
 }
 
 /**
@@ -356,12 +454,17 @@ export function guideSegmentInBox(
  *
  * Only guides of the same ORIENTATION can be neighbours: any other crosses the
  * dragged guide, so the distance between the two is zero somewhere and there is
- * no one gap to name. `others` must therefore be every parallel guide on the
+ * no one gap to name. And a BOUNDED parallel is a neighbour only where its span
+ * covers the cursor's along-position (`guideAdmitsFoot` at its foot): past its
+ * tip there is no ink to measure to, and a labeled segment ending in blank
+ * canvas claims a neighbour that visibly isn't there. `others` must therefore
+ * be every parallel guide on the
  * canvas — not the snap pool, which drops the guides MOVING with the drag. A
  * missing one doesn't just go unmeasured: the span reaches past it to the next
  * one out and is drawn straight through it, claiming a "nearest" neighbour with
  * a guide visibly crossing the line. The caller re-derives a towed guide's live
- * offset rather than excluding it (see useGuideDrag).
+ * offset rather than excluding it (see useGuideDrag; those towed entries carry
+ * no extent on purpose — never drawing through a sibling dominates).
  *
  * A COINCIDENT parallel guide (one at this very offset — reachable whenever
  * both are grid-snapped) silences the readout instead: the nearest neighbour is
@@ -372,12 +475,19 @@ export function guideNeighbourReadout(
   orientation: GuideOrientation,
   offset: number,
   at: Vec2,
-  others: readonly { orientation: GuideOrientation; offset: number }[],
+  others: readonly {
+    orientation: GuideOrientation;
+    offset: number;
+    extent?: { center: number; halfLength: number };
+  }[],
 ): SnapGuide[] {
+  const from = guideFoot(orientation, offset, at);
   let below: number | null = null;
   let above: number | null = null;
   for (const o of others) {
     if (o.orientation !== orientation) continue;
+    // A bounded parallel with no ink at this along-position is not there.
+    if (!guideAdmitsFoot(o, guideFoot(orientation, o.offset, from))) continue;
     // GRID_EPS as the "same coordinate" bar: two grid-snapped guides land on
     // bit-equal offsets, and a hair of FP drift below this is not a gap.
     if (Math.abs(o.offset - offset) < GRID_EPS) return [];
@@ -385,7 +495,6 @@ export function guideNeighbourReadout(
       if (below === null || o.offset > below) below = o.offset;
     } else if (above === null || o.offset < above) above = o.offset;
   }
-  const from = guideFoot(orientation, offset, at);
   const out: SnapGuide[] = [];
   for (const n of [below, above]) {
     if (n === null) continue;
@@ -396,6 +505,70 @@ export function guideNeighbourReadout(
     });
   }
   return out;
+}
+
+/**
+ * "Snap to grid length" (the `tens` mode) on a guide's one degree of freedom:
+ * `offset` notched to a whole multiple of `gridInterval` measured from the
+ * NEAREST parallel guide, or null when nothing anchors it — no parallel guide
+ * on the canvas, or the nearest notch further than `tolerance` off.
+ *
+ * It is the terminal station's cadence, transplanted: a station at the end of a
+ * line takes its step from its one neighbour, and a guide has exactly one
+ * neighbour worth measuring to either side. Which is also why `others` is the
+ * pool the caller may not move — a cadence measured off something towed by the
+ * same grab never changes (the station engine spells the same rule
+ * `excludedIds`), so the drag hook passes its snap pool here, not the wider one
+ * the readout measures against. `at` is the live cursor, the readout's
+ * convention: a BOUNDED parallel anchors only where its span covers the
+ * cursor's along-position (`guideAdmitsFoot` at its foot) — past its tip there
+ * is no ink to step from, and a cadence off invisible ink is a snap the user
+ * cannot see the reason for.
+ *
+ * The step is a DISTANCE, not an intercept: a diagonal's offsets are Y-
+ * intercepts, √2 apart for every world unit of true gap (`guidePerpDist`), so
+ * both the notch and the tolerance run through that scale.
+ *
+ * The spacing readout is then the feedback for free — the gap it labels is the
+ * whole grid multiple this landed on. With one exception, from the pool split
+ * above: in a group drag whose towed sibling sits BETWEEN the guide and its
+ * anchor, the readout names that sibling's constant gap and the notch goes
+ * unlabelled. The cadence is right there, just unannounced.
+ */
+export function guideTensOffset(
+  orientation: GuideOrientation,
+  offset: number,
+  at: Vec2,
+  others: readonly {
+    orientation: GuideOrientation;
+    offset: number;
+    extent?: { center: number; halfLength: number };
+  }[],
+  gridInterval: number,
+  tolerance: number,
+): number | null {
+  const from = guideFoot(orientation, offset, at);
+  let anchor: number | null = null;
+  for (const o of others) {
+    if (o.orientation !== orientation) continue;
+    // A bounded parallel with no ink at this along-position anchors nothing.
+    if (!guideAdmitsFoot(o, guideFoot(orientation, o.offset, from))) continue;
+    if (anchor === null || Math.abs(o.offset - offset) < Math.abs(anchor - offset))
+      anchor = o.offset;
+  }
+  if (anchor === null) return null;
+  const offsetPerUnit =
+    orientation === 'diagonal-down' || orientation === 'diagonal-up' ? Math.SQRT2 : 1;
+  const step = gridInterval * offsetPerUnit;
+  const steps = Math.round((offset - anchor) / step);
+  // Inside half a step the only whole multiple on offer is zero, and a cadence
+  // of zero steps is a STACK — the one thing guides never do (see the readout,
+  // which likewise refuses to name a gap of nothing). Standing down there is
+  // the honest answer: the guide moves freely through that band. Clamping to
+  // one step instead would fling it a whole interval off the pointer.
+  if (steps === 0) return null;
+  const notched = anchor + steps * step;
+  return Math.abs(notched - offset) / offsetPerUnit <= tolerance ? notched : null;
 }
 
 export interface SnapResult {
@@ -644,6 +817,8 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
     const perpDist = guidePerpDist(g.orientation, g.offset, anchor);
     if (perpDist > tolerance) continue;
     const foot = guideFoot(g.orientation, g.offset, anchor);
+    // A bounded guide attracts only where the foot lands inside its span.
+    if (!guideAdmitsFoot(g, foot)) continue;
     all.push({
       target: null,
       guideId: g.id,

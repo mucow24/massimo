@@ -459,8 +459,9 @@ export interface Line {
   // halves match the default (the transfer colors' all-or-nothing collapse).
   strokeColor?: LineStrokeColor;
   // TfL-tick dimensions for this line's 'dash' stops, world units. Both are
-  // stored like `strokeWidth` (quarter-unit grid, drop at 0 = "auto"); an UNSET
-  // value derives from the line width at render time (length = width,
+  // stored like `strokeWidth` (floored at 0, kept as given, drop at exactly
+  // 0 = "auto"); an UNSET value derives from the line width at render time
+  // (length = width,
   // thickness = width / 2 — see dashSize.ts). PRESENTATION: never moves band
   // geometry. `dashLength` is how far the tick protrudes from the stripe edge
   // toward the label; `dashWidth` is its thickness along the travel axis.
@@ -750,9 +751,11 @@ export interface LineCircle {
   // World coords of the circle CENTER.
   x: number;
   y: number;
-  // Radius in world units, on the quarter-unit grid, ≥ LINE_CIRCLE_RADIUS_MIN
-  // (see model/lineCircle.ts). Editing it reprojects bound stations radially
-  // (angle preserved); moving the center translates them rigidly.
+  // Radius in world units, ≥ LINE_CIRCLE_RADIUS_MIN and otherwise stored as
+  // given (see model/lineCircle.ts). Only the POINTER gestures grid it — the
+  // resize knob and the two-click placement land on quarter units, the
+  // popover's Diameter field does not. Editing it reprojects bound stations
+  // radially (angle preserved); moving the center translates them rigidly.
   radius: number;
   // When locked, the circle can't be dragged, resized, deleted, or
   // marquee-selected, and is click-through while unselected. It can still be
@@ -769,8 +772,8 @@ export interface LineCircle {
 // another well.
 export type GuideOrientation = 'horizontal' | 'vertical' | 'diagonal-down' | 'diagonal-up';
 
-// An alignment guide: an infinite horizontal, vertical, or 45° line pulled out
-// of the canvas-edge wells — the only way one is born. Editor scaffolding in
+// An alignment guide: a horizontal, vertical, or 45° line pulled out of the
+// canvas-edge wells — the only way one is born. Editor scaffolding in
 // the line-circle mold — a dashed guide rendered below map ink and excluded
 // from every export — but an ALWAYS-ON snap target for both snappers: items
 // dragged or placed near it engage regardless of the "Snap to all" toggle
@@ -782,9 +785,15 @@ export interface AlignmentGuide {
   id: string;
   orientation: GuideOrientation;
   offset: number;
-  // When locked, the guide can't be dragged, nudged, deleted, or shift-click
-  // multi-selected, and is click-through while unselected — but it keeps
-  // attracting snaps (lock protects position, not usefulness). Optional;
+  // The bounded span, in the guide's along-axis parameter t = p · guideAxis
+  // (world units of true length: x for horizontal, y for vertical, (x ± y)/√2
+  // for the diagonals). The guide renders only this span and attracts snaps
+  // only where a foot lands inside it — hard edge, no grace margin. Absent ⇒
+  // infinite (the historical guide, and the well pull-out's default).
+  extent?: { center: number; halfLength: number };
+  // When locked, the guide can't be dragged, nudged, resized, deleted, or
+  // shift-click multi-selected, and is click-through while unselected — but it
+  // keeps attracting snaps (lock protects position, not usefulness). Optional;
   // missing ⇒ unlocked. Mirrors LineCircle.locked.
   locked?: boolean;
 }
@@ -931,9 +940,10 @@ export interface TextLabel {
   rotation: Rotation;
   // Multiline; '\n'-separated.
   text: string;
-  // Floored at TEXT_LABEL_FONT_SIZE_MIN and snapped to a 0.5 step by
-  // `updateTextLabel`; the slider caps at 96 but the spinbutton is unbounded
-  // above, so this can be any half-integer >= the minimum.
+  // Floored at TEXT_LABEL_FONT_SIZE_MIN by `updateTextLabel` and otherwise
+  // stored as typed; the slider caps at 96 but the spinbutton is unbounded
+  // above, so this can be any size >= the minimum. FONT_SIZE_STEP moves the
+  // controls, not the value.
   fontSize: number;
   weight: TextLabelWeight;
   italic: boolean;
@@ -943,8 +953,8 @@ export interface TextLabel {
   // (the historical behavior). >0 = a fixed-width column: text word-wraps to
   // this width and each '\n' becomes a hard paragraph break. Orthogonal to
   // `align` — left/center/right/justify all position within whichever box this
-  // implies. Optional so saves predating the field load as Auto; clamped to a
-  // non-negative integer by `updateTextLabel`.
+  // implies. Optional so saves predating the field load as Auto; floored at 0
+  // by `updateTextLabel`, fractions kept.
   width?: number;
   // Day/night text colors. `color` paints in light mode, `darkColor` in dark
   // mode. Unlike a polygon (whose dark color is initialized equal to its light
@@ -958,13 +968,14 @@ export interface TextLabel {
   // Line-spacing multiplier applied between lines: 1 = the default 1.2em
   // spacing, 0 stacks lines on top of each other, 2 doubles the spacing.
   // Single-line labels are unaffected (one line has no between-line space).
-  // Optional so saves predating the field load as 1; clamped to [0, ∞) and
-  // snapped to the slider's 0.05 step by `updateTextLabel`.
+  // Optional so saves predating the field load as 1; clamped to [0, ∞) by
+  // `updateTextLabel` and otherwise stored as given (the slider's 0.05 step
+  // moves the controls only).
   leading?: number;
   // Extra letter-spacing in em added inside text runs (0 = font-normal
   // spacing, negative = tighter). Optional so saves predating the field load
-  // as 0; clamped at the slider floor and snapped to its 0.01 step by
-  // `updateTextLabel`.
+  // as 0; clamped at the slider floor by `updateTextLabel` and otherwise
+  // stored as given.
   tracking?: number;
   // When locked, the label can't be dragged, nudged, rotated, deleted, or
   // marquee-selected, and its popover controls (other than the lock toggle)

@@ -12,17 +12,13 @@
 
 import {
   DEFAULT_STYLES,
-  FONT_SIZE_STEP,
   POLYGON_CURVE_RADIUS_MIN,
-  POLYGON_STROKE_STEP,
   POLYGON_STROKE_WIDTH_MIN,
   TEXT_LABEL_FONT_SIZE_MIN,
   TEXT_LABEL_LEADING_DEFAULT,
   TEXT_LABEL_LEADING_MIN,
-  TEXT_LABEL_LEADING_STEP,
   TEXT_LABEL_TRACKING_DEFAULT,
   TEXT_LABEL_TRACKING_MIN,
-  TEXT_LABEL_TRACKING_STEP,
   canonicalStationLabelStyle,
   clampRouteBulletSize,
   effectiveStationStyleProps,
@@ -40,13 +36,13 @@ import {
   setLineStrokeColor,
   setLineStrokeWidth,
   setLineWidth,
-  snapToStep,
   updatePolygon,
   updateRouteBullet,
   updateStationLabelStyle,
   updateTextLabel,
   updateTransferStyle,
 } from './transforms';
+import { clampField } from '../util/grid';
 import {
   DEFAULT_STOP_DOT_STYLE_ID,
   NONE_STOP_DOT_STYLE_ID,
@@ -54,24 +50,17 @@ import {
   defaultDotDiameter,
   dotStylesEqual,
 } from './dotStyle';
-import { DOT_SIZE_MIN, DOT_SIZE_STEP, lineSingletonDotSizeOf, lineMultiDotSizeOf } from './dotSize';
+import { DOT_SIZE_MIN, lineSingletonDotSizeOf, lineMultiDotSizeOf } from './dotSize';
 import { lineDashLengthOf, lineDashWidthOf } from './dashSize';
 import {
   LINE_LABEL_GAP_DEFAULT,
   LINE_WIDTH_MIN,
-  LINE_WIDTH_STEP,
   canonicalLineLabelGap,
   lineWidthOf,
 } from './lineWidth';
 import { LINE_END_STYLE_DEFAULT, isLineEndStyle, lineEndStyleOf } from './lineEnd';
+import { LINE_CURVE_RADIUS_DEFAULT, LINE_CURVE_RADIUS_MIN, lineCurveRadiusOf } from './lineCurve';
 import {
-  LINE_CURVE_RADIUS_DEFAULT,
-  LINE_CURVE_RADIUS_MIN,
-  LINE_CURVE_RADIUS_STEP,
-  lineCurveRadiusOf,
-} from './lineCurve';
-import {
-  LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_MIN,
   canonicalStrokeWidth,
   lineStrokeColorStored,
@@ -82,9 +71,7 @@ import {
 import {
   TRANSFER_DRAW_DEFAULT,
   TRANSFER_STROKE_WIDTH_MIN,
-  TRANSFER_STROKE_WIDTH_STEP,
   TRANSFER_THICKNESS_MIN,
-  TRANSFER_THICKNESS_STEP,
   resolveTransferStyle,
 } from './transferStyle';
 import { dayNightColorsEqual } from './dayNightColor';
@@ -396,21 +383,17 @@ export function canonicalStyleProps<K extends StyleKind>(
         // could still dangle here).
         singletonDotStyleId: p.singletonDotStyleId ?? DEFAULT_STOP_DOT_STYLE_ID,
         multiDotStyleId: p.multiDotStyleId ?? DEFAULT_STOP_DOT_STYLE_ID,
-        singletonDotSize: snapToStep(p.singletonDotSize, DOT_SIZE_STEP, DOT_SIZE_MIN),
-        multiDotSize: snapToStep(p.multiDotSize, DOT_SIZE_STEP, DOT_SIZE_MIN),
-        width: snapToStep(p.width, LINE_WIDTH_STEP, LINE_WIDTH_MIN),
+        singletonDotSize: clampField(p.singletonDotSize, DOT_SIZE_MIN),
+        multiDotSize: clampField(p.multiDotSize, DOT_SIZE_MIN),
+        width: clampField(p.width, LINE_WIDTH_MIN),
         // `?? DEFAULT` heals defs from saves that predate the field (the load
         // paths bake it in first — see bakeDocCurveRadius — this is the
         // keep-canonical-props-concrete backstop).
-        curveRadius: snapToStep(
-          p.curveRadius ?? LINE_CURVE_RADIUS_DEFAULT,
-          LINE_CURVE_RADIUS_STEP,
-          LINE_CURVE_RADIUS_MIN,
-        ),
+        curveRadius: clampField(p.curveRadius ?? LINE_CURVE_RADIUS_DEFAULT, LINE_CURVE_RADIUS_MIN),
         // Same `?? DEFAULT` healing as curveRadius, for defs written before
         // line ends were a covered field.
         endStyle: isLineEndStyle(p.endStyle) ? p.endStyle : LINE_END_STYLE_DEFAULT,
-        strokeWidth: snapToStep(p.strokeWidth, LINE_STROKE_STEP, LINE_STROKE_WIDTH_MIN),
+        strokeWidth: clampField(p.strokeWidth, LINE_STROKE_WIDTH_MIN),
         // Lowercased but NOT collapsed: style props are concrete, so a def
         // spells out the white default rather than dropping it.
         strokeColor: normalizedStrokeColor(p.strokeColor),
@@ -423,21 +406,16 @@ export function canonicalStyleProps<K extends StyleKind>(
     case 'textLabel': {
       const p = props as TextLabelStyleProps;
       // Layout fields stay ABSENT when absent (a pre-coverage def keeps its
-      // hole for the average backfill to fill); present values land on the
-      // same grids updateTextLabel writes.
-      const width = p.width == null ? undefined : Math.max(0, Math.round(p.width));
-      const leading =
-        p.leading == null
-          ? undefined
-          : snapToStep(p.leading, TEXT_LABEL_LEADING_STEP, TEXT_LABEL_LEADING_MIN);
+      // hole for the average backfill to fill); present values land exactly
+      // where updateTextLabel would have written them.
+      const width = p.width == null ? undefined : clampField(p.width, 0);
+      const leading = p.leading == null ? undefined : clampField(p.leading, TEXT_LABEL_LEADING_MIN);
       const tracking =
-        p.tracking == null
-          ? undefined
-          : snapToStep(p.tracking, TEXT_LABEL_TRACKING_STEP, TEXT_LABEL_TRACKING_MIN);
+        p.tracking == null ? undefined : clampField(p.tracking, TEXT_LABEL_TRACKING_MIN);
       return {
         color: p.color,
         darkColor: p.darkColor,
-        fontSize: snapToStep(p.fontSize, FONT_SIZE_STEP, TEXT_LABEL_FONT_SIZE_MIN),
+        fontSize: clampField(p.fontSize, TEXT_LABEL_FONT_SIZE_MIN),
         weight: p.weight,
         italic: p.italic,
         align: p.align,
@@ -453,7 +431,7 @@ export function canonicalStyleProps<K extends StyleKind>(
         stroke: p.stroke,
         darkFill: p.darkFill,
         darkStroke: p.darkStroke,
-        strokeWidth: snapToStep(p.strokeWidth, POLYGON_STROKE_STEP, POLYGON_STROKE_WIDTH_MIN),
+        strokeWidth: clampField(p.strokeWidth, POLYGON_STROKE_WIDTH_MIN),
         curveRadius: Math.max(POLYGON_CURVE_RADIUS_MIN, p.curveRadius),
         closed: p.closed,
       } as StylePropsByKind[K];
@@ -465,13 +443,9 @@ export function canonicalStyleProps<K extends StyleKind>(
     case 'transfer': {
       const p = props as TransferStyleProps;
       return {
-        thickness: snapToStep(p.thickness, TRANSFER_THICKNESS_STEP, TRANSFER_THICKNESS_MIN),
+        thickness: clampField(p.thickness, TRANSFER_THICKNESS_MIN),
         color: p.color,
-        strokeWidth: snapToStep(
-          p.strokeWidth,
-          TRANSFER_STROKE_WIDTH_STEP,
-          TRANSFER_STROKE_WIDTH_MIN,
-        ),
+        strokeWidth: clampField(p.strokeWidth, TRANSFER_STROKE_WIDTH_MIN),
         strokeColor: p.strokeColor,
         // `?? DEFAULT` heals defs written before the draw axis existed — the
         // keep-canonical-props-concrete backstop, same as line's curveRadius.

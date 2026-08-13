@@ -99,19 +99,19 @@ describe('covered-field edits keep the tag — lines', () => {
     expect(setLineMultiDotStyle(doc, 'l1', 'sd-square').lines.l1.styleId).toBe('y1');
   });
 
-  it('setLineLabelGap snaps to the quarter grid, collapses at the default 3, keeps 0', () => {
+  it('setLineLabelGap stores the gap as given, collapses at the default 3, keeps 0', () => {
     const doc = tagged();
-    // 2.1 rounds onto the grid and stores.
-    expect(setLineLabelGap(doc, 'l1', 2.1).lines.l1.labelGap).toBe(2);
-    // 2.9 rounds to 3 — the default is never stored.
-    expect('labelGap' in setLineLabelGap(doc, 'l1', 2.9).lines.l1).toBe(false);
+    expect(setLineLabelGap(doc, 'l1', 2.1).lines.l1.labelGap).toBe(2.1);
+    // Only an EXACT 3 is the default; 2.9 is a real gap.
+    expect(setLineLabelGap(doc, 'l1', 2.9).lines.l1.labelGap).toBe(2.9);
+    expect('labelGap' in setLineLabelGap(doc, 'l1', 3).lines.l1).toBe(false);
     // 0 is a REAL value (text butts the marker), unlike interlineGap's 0-off.
     expect(setLineLabelGap(doc, 'l1', 0).lines.l1.labelGap).toBe(0);
   });
 
   it('setLineLabelGap accepts NEGATIVE gaps (ink into the marker), floored at −10', () => {
     const doc = tagged();
-    expect(setLineLabelGap(doc, 'l1', -2.1).lines.l1.labelGap).toBe(-2);
+    expect(setLineLabelGap(doc, 'l1', -2.1).lines.l1.labelGap).toBe(-2.1);
     expect(setLineLabelGap(doc, 'l1', -99).lines.l1.labelGap).toBe(-10);
   });
 
@@ -272,13 +272,16 @@ describe('covered-field edits keep the tag — stations', () => {
 
   it('clamps/snaps to the canonical grids', () => {
     const doc = makeDoc({ stations: [makeStation({ id: 's1' })] });
-    // fontSize floored at LABEL_FONT_SIZE_MIN=2, snapped to the 0.25 grid.
+    // fontSize floored at LABEL_FONT_SIZE_MIN=2, and otherwise stored exactly
+    // as given — the slider steps never filter the value.
     expect(updateStationLabelStyle(doc, 's1', { fontSize: 0 }).stations.s1.fontSize).toBe(2);
-    expect(updateStationLabelStyle(doc, 's1', { fontSize: 13.1 }).stations.s1.fontSize).toBe(13);
-    // leading snaps to 0.05, tracking to 0.001.
-    expect(updateStationLabelStyle(doc, 's1', { leading: 1.53 }).stations.s1.leading).toBe(1.55);
-    expect(updateStationLabelStyle(doc, 's1', { tracking: 0.0123 }).stations.s1.tracking).toBe(
-      0.012,
+    expect(updateStationLabelStyle(doc, 's1', { fontSize: 13.1 }).stations.s1.fontSize).toBe(13.1);
+    expect(updateStationLabelStyle(doc, 's1', { fontSize: 13.129 }).stations.s1.fontSize).toBe(
+      13.129,
+    );
+    expect(updateStationLabelStyle(doc, 's1', { leading: 1.53 }).stations.s1.leading).toBe(1.53);
+    expect(updateStationLabelStyle(doc, 's1', { tracking: 0.32455 }).stations.s1.tracking).toBe(
+      0.32455,
     );
   });
 });

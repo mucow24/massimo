@@ -10,16 +10,13 @@ import {
   TEXT_LABEL_DARK_COLOR_DEFAULT,
   TEXT_LABEL_LEADING_DEFAULT,
   TEXT_LABEL_LEADING_MIN,
-  TEXT_LABEL_LEADING_STEP,
   TEXT_LABEL_TRACKING_DEFAULT,
   TEXT_LABEL_TRACKING_MIN,
-  TEXT_LABEL_TRACKING_STEP,
   bumpWeightByIndex,
   canonicalStationLabelStyle,
   isLabelWeight,
   isRouteBulletShape,
   isTextLabelAlign,
-  snapToStep,
   stationIsSingleton,
   withTransferOverride,
 } from './transforms';
@@ -40,7 +37,7 @@ import {
 import { canonicalLineLabelGap, canonicalLineWidth } from './lineWidth';
 import { canonicalLineCircleRadius } from './lineCircle';
 import { projectToCircle, stationCircle } from '../geometry/lineCircle';
-import { clamp, rot8, roundClamp } from '../util/grid';
+import { clamp, clampField, rot8 } from '../util/grid';
 import {
   LINE_CURVE_RADIUS_DEFAULT,
   LINE_CURVE_RADIUS_MIN,
@@ -48,7 +45,6 @@ import {
 } from './lineCurve';
 import {
   DOT_SIZE_MIN,
-  DOT_SIZE_STEP,
   canonicalDotSize,
   lineMultiDotSizeOf,
   lineSingletonDotSizeOf,
@@ -217,7 +213,7 @@ const CIRCLE_DRIFT_TOL = 1e-6;
  * rehydration); idempotent, so both run it unconditionally.
  *
  *  - a malformed circle (non-finite center/radius) is dropped; a legal one
- *    gets its radius canonicalized (quarter grid, floored at the minimum);
+ *    gets its radius canonicalized (floored at the minimum, otherwise kept);
  *  - a station whose `circleId` no longer resolves loses the binding (and its
  *    stops' `viaCircle` flags — the flag only lives on bound stations);
  *  - `viaCircle` on a stop of an unbound station is stripped, and a stored
@@ -302,12 +298,13 @@ export function sanitizeLineCircles(
 }
 
 /**
- * Alignment-guide hygiene for the file-import path. A guide is three fields
+ * Alignment-guide hygiene for the file-import path. A guide is a few fields
  * with no cross-references, so unlike its ring sibling there are no bindings
  * to repair — a malformed entry (non-finite offset, unknown orientation) is
- * dropped, and a stored `locked: false` collapses to the omitted form (the
- * canonical lock convention). Idempotent; identity (same reference) on a
- * well-formed record.
+ * dropped, a malformed `extent` (non-finite scalars, or a span of zero — an
+ * invisible, unhittable guide) is stripped back to the infinite form, and a
+ * stored `locked: false` collapses to the omitted form (the canonical lock
+ * convention). Idempotent; identity (same reference) on a well-formed record.
  */
 export function sanitizeGuides(guidesIn: Record<string, AlignmentGuide>): {
   guides: Record<string, AlignmentGuide>;
@@ -316,7 +313,7 @@ export function sanitizeGuides(guidesIn: Record<string, AlignmentGuide>): {
   let changed = false;
   const out: Record<string, AlignmentGuide> = {};
   for (const id of Object.keys(guidesIn)) {
-    const g = guidesIn[id];
+    let g = guidesIn[id];
     if (
       (g.orientation !== 'horizontal' &&
         g.orientation !== 'vertical' &&
@@ -327,6 +324,22 @@ export function sanitizeGuides(guidesIn: Record<string, AlignmentGuide>): {
     ) {
       changed = true;
       continue;
+    }
+    if (
+      g.extent !== undefined &&
+      // The object test first: a stored null or non-object extent must heal
+      // like any other malformed one, not throw into parse's refusal path.
+      (typeof g.extent !== 'object' ||
+        g.extent === null ||
+        typeof g.extent.center !== 'number' ||
+        !Number.isFinite(g.extent.center) ||
+        typeof g.extent.halfLength !== 'number' ||
+        !Number.isFinite(g.extent.halfLength) ||
+        g.extent.halfLength <= 0)
+    ) {
+      changed = true;
+      const { extent: _bad, ...rest } = g;
+      g = rest;
     }
     if (g.locked === false) {
       changed = true;
@@ -863,27 +876,32 @@ export function bakeTextLabelStyleLayout<
     };
     const props: TextLabelStyleProps = {
       ...p,
-      ...(needWidth ? { width: Math.max(0, Math.round(mostCommon((t) => t.width ?? 0, 0))) } : {}),
+      ...(needWidth
+        ? {
+            width: clampField(
+              mostCommon((t) => t.width ?? 0, 0),
+              0,
+            ),
+          }
+        : {}),
       ...(needLeading
         ? {
-            leading: snapToStep(
+            leading: clampField(
               mostCommon(
                 (t) => t.leading ?? TEXT_LABEL_LEADING_DEFAULT,
                 TEXT_LABEL_LEADING_DEFAULT,
               ),
-              TEXT_LABEL_LEADING_STEP,
               TEXT_LABEL_LEADING_MIN,
             ),
           }
         : {}),
       ...(needTracking
         ? {
-            tracking: snapToStep(
+            tracking: clampField(
               mostCommon(
                 (t) => t.tracking ?? TEXT_LABEL_TRACKING_DEFAULT,
                 TEXT_LABEL_TRACKING_DEFAULT,
               ),
-              TEXT_LABEL_TRACKING_STEP,
               TEXT_LABEL_TRACKING_MIN,
             ),
           }
@@ -1932,8 +1950,8 @@ function sanitizeLineCurve(line: Line): Line {
 }
 
 // Normalize one hand-edited / legacy split default-dot-size field to the
-// canonical stored form the transforms maintain: on the quarter-unit grid and
-// ≥ DOT_SIZE_MIN. Sizes are ALWAYS stored (natural values included — see
+// canonical stored form the transforms maintain: ≥ DOT_SIZE_MIN, otherwise
+// kept as written. Sizes are ALWAYS stored (natural values included — see
 // bakeConcreteDotSizes, which materializes absent ones right after this pass),
 // so nothing drops at a default; only non-numbers and non-finite values are
 // dropped (and then materialized by the bake). File-import hygiene only —
@@ -1943,7 +1961,7 @@ function sanitizeLineDotSizeField(line: Line, field: 'singletonDotSize' | 'multi
   if (!(field in line)) return line;
   const raw = line[field] as unknown;
   if (typeof raw === 'number' && Number.isFinite(raw)) {
-    const stored = roundClamp(raw, DOT_SIZE_STEP, DOT_SIZE_MIN);
+    const stored = clampField(raw, DOT_SIZE_MIN);
     return stored === line[field] ? line : { ...line, [field]: stored };
   }
   const { [field]: _gone, ...rest } = line;

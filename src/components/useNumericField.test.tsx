@@ -86,6 +86,42 @@ describe('useNumericField — external-update focus guard', () => {
     expect(result.current.text).toBe('10');
   });
 
+  it('a wheel tick LANDS on the step grid from an off-grid value, never carries the offset', () => {
+    // Fields store what you type, so a value can sit anywhere between steps.
+    // One notch must then behave like the native spinner arrows and Radix's
+    // slider keys: move to the next grid point (10.2 → 10.25 → 10.5), not add
+    // the step and walk 10.2 → 10.45 → 10.7 forever.
+    let live = 10.2;
+    const onChange = vi.fn((n: number) => {
+      live = n;
+    });
+    const { result } = renderHook(() => useNumericField(live, onChange, () => live, 0.25, 1));
+    const target = fakeWheelTarget();
+    act(() => result.current.attachWheel(target.el));
+
+    const notch = (deltaY: number) =>
+      act(() => target.entry!.listener({ deltaY, preventDefault() {} }));
+
+    notch(-1);
+    expect(onChange).toHaveBeenLastCalledWith(10.25);
+    notch(-1);
+    expect(onChange).toHaveBeenLastCalledWith(10.5);
+    // Downward from an off-grid value lands on the grid below.
+    live = 10.2;
+    notch(1);
+    expect(onChange).toHaveBeenLastCalledWith(10);
+    notch(1);
+    expect(onChange).toHaveBeenLastCalledWith(9.75);
+  });
+
+  it('shows a value finer than its step in full rather than rounding the mirror', () => {
+    // The mirror pads to the step's decimals ("9.00"), but a stored 0.32455 on
+    // a 0.001-step field must not read back as "0.325" — the box would be
+    // showing a number the document does not hold.
+    const { result } = renderHook(() => useNumericField(0.32455, vi.fn(), () => 0.32455, 0.001));
+    expect(result.current.text).toBe('0.32455');
+  });
+
   it('DOES resync the mirror to an external value while NOT focused', () => {
     const onChange = vi.fn();
     const getCurrent = () => 5;

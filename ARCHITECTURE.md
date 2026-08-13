@@ -142,7 +142,8 @@ src/
     transferAnchors.ts          # the ONLY place a TransferEnd's three-arm union is narrowed (all four guards)
     lineWidth.ts lineStroke.ts  # stripe width (GEOMETRY) + casing rails (PRESENTATION)
     lineCurve.ts                # per-line corner radius resolution (the fillet the router turns by)
-    lineCircle.ts               # line-circle radius floor + canonicalizer (quarter grid)
+    lineCircle.ts               # line-circle radius floor + canonicalizer, and the quarter-grid
+                                #   snap its DRAG/placement gestures (not its field) go through
     lineEnd.ts                  # line END style resolution (line default → per-end pin) + the round→short degrade
     stopMetrics.ts              # stopMetricsOf: the production StopMetrics lookup — everything the
                                 #   label geometry knows about one PAINTED stop, resolved through the
@@ -283,8 +284,10 @@ src/
                                 #   roll, kick, throw, and the pendulum a held ball hangs from.
                                 #   Pure, in window pixels; no React, no store (BouncingBullet.tsx)
   util/                         # color.ts (hex math), fonts.ts (font stack + weight math),
-                                #   grid.ts (clamp / roundClamp / snapToStep — the quarter-grid
-                                #   canonicalizer primitives every dimensional setter shares),
+                                #   grid.ts (clamp / cleanFloat / clampField — the canonicalizer
+                                #   primitives every dimensional setter shares; plus snapToStep
+                                #   and stepDecimals / stepFromValue for the controls. See
+                                #   **A field's step is not its grid** below),
                                 #   staleBuild.ts (is this failure just a deploy-stranded chunk?),
                                 #   windowSize.ts (the window's client box, scrollbars excluded —
                                 #   the edge every screen-space panel clamps itself inside)
@@ -603,7 +606,10 @@ leaving the Circle state clears the flag either way. Shown as a ring where the a
 arrows (stop rows, layout editor, hover badges).
 
 **`LineCircle`** (`MapDoc.lineCircles`) — a perfect-circle guide: `id, x, y` (center),
-`radius` (quarter-unit grid, ≥ `LINE_CIRCLE_RADIUS_MIN`, [model/lineCircle.ts](src/model/lineCircle.ts)),
+`radius` (≥ `LINE_CIRCLE_RADIUS_MIN`, [model/lineCircle.ts](src/model/lineCircle.ts); the resize
+knob and the two-click placement land it on a quarter-unit grid — Shift declines that grid, as it
+declines every other drag's snapping — while the popover's Diameter field never grids at all: see
+**A field's `step` is not its grid**),
 `locked?`. **Editor scaffolding, never map ink**: rendered as a dashed guide ring with a ⊕ handle
 at its centre — plus a resize knob on its east point while selected, and eight radial cardinal
 ticks while the `circle` snap mode is on ([LineCircleView.tsx](src/components/LineCircleView.tsx),
@@ -740,18 +746,26 @@ malformed circles drop, dangling `circleId`s and orphaned `viaCircle` flags stri
 station that drifted off its circle reprojects.
 
 **`AlignmentGuide`** (`MapDoc.guides`) — the line circle's straight-line sibling: `id,
-orientation: 'horizontal' | 'vertical' | 'diagonal-down' | 'diagonal-up', offset`, `locked?`.
-The orientation names how the line reads left-to-right (`diagonal-down` is \, `diagonal-up` /);
-`offset` is the world Y (horizontal) or X (vertical) the infinite line sits at, and the
+orientation: 'horizontal' | 'vertical' | 'diagonal-down' | 'diagonal-up', offset`, `extent?`,
+`locked?`. The orientation names how the line reads left-to-right (`diagonal-down` is \,
+`diagonal-up` /); `offset` is the world Y (horizontal) or X (vertical) the line sits at, and the
 Y-INTERCEPT — the Y where it crosses x = 0, `y − x` for \ and `y + x` for / — for the 45°s, so
-every orientation is one plain scalar. The "which line is that" math (axis, foot, perpendicular
-distance, the nudge/tow projection `guideNudgeDelta` and its inverse `guideMoveVector`, the
-box-clipped drawable segment) lives once, in `geometry/snap.ts`'s `guide*` helpers. Same
+every orientation is one plain scalar. A guide is INFINITE unless `extent` — `{ center,
+halfLength }` in the along-axis parameter t = p · axis, true world length for every orientation
+— narrows it to a bounded span: the segment for one street of the map instead of a line that
+slices every borough. The "which line is that" math (axis, foot, perpendicular distance, the
+nudge/tow projection `guideNudgeDelta` and its inverse `guideMoveVector`, the along parameter
+`guideAlongOf` / `guidePointAt` pair, the within-span gate `guideAdmitsFoot`, and the drawable
+segment clipped to box AND extent) lives once, in `geometry/snap.ts`'s `guide*` helpers. Same
 standing as the rings — editor scaffolding, export-excluded, same scaffolding band (above
 background art, below map ink) — but the OPPOSITE snapping role: nothing binds to a guide; it
-is an **always-on snap TARGET** for both snappers (see Snapping). It paints as a dashed line
-spanning the overdrawn viewBox (diagonals clip to it — past the box is ink overflow — and
-one that misses it entirely mounts nothing) in its own theme slots, not the ring grey:
+is an **always-on snap TARGET** for both snappers (see Snapping) — though a bounded one
+attracts only where the dragged point's foot lands inside its span, an inclusive hard edge with
+no grace margin (past the tip is exactly where a bounded guide must let go). It paints as a
+dashed line spanning the overdrawn viewBox (diagonals clip to it — past the box is ink
+overflow — and one that misses it entirely mounts nothing; a bounded guide draws just its span,
+hit stroke included, so it is grabbable only where visible — and the locked deep-pick's point
+test honours the same span) in its own theme slots, not the ring grey:
 `theme.alignGuide` (a day blue / night periwinkle) for the idle stroke, with the amber
 selected state and softened hover from `-Selected`/`-Hover` — a guide's job is to be SEEN, and
 every state is a plain restroke since an infinite line has no body to outline
@@ -788,24 +802,68 @@ drag) ([GuideWells.tsx](src/components/canvas/GuideWells.tsx) + `useGuideDrag`, 
 only; the pull ghost snaps live and the release commits one `addGuide` + selects it). Dragging
 a guide is 1-DOF (the offset takes the pointer delta's `guideNudgeDelta` projection, snapped
 through the point snapper with the matching `constrain` — the two diagonal `constrain` values
-keep only their own 45° family and grid-quantize the intercept under the full lattice). Both
-gestures draw the **spacing readout** while they run: labeled segments from the cursor's foot on
-the guide out to the nearest PARALLEL guide either side (`guideNeighbourReadout`, rendered as
-ordinary `SnapGuide`s — the measurement chrome a station drag shows its neighbours). It is a
-measurement, not a snap: guides still never snap to each other, so it needs no engagement, rides
-every frame of the gesture, and survives Shift (which declines snapping, not measuring). Only a
-same-orientation guide can be a neighbour — anything else crosses — and the number is the TRUE
-perpendicular distance (`guidePerpDist`), so it equals the length of the segment drawn. The pool
-is therefore every PARALLEL guide, including one towed by this very drag (whose live offset the
-hook re-derives from its constant gap to the master): a guide the readout cannot see is one the
-span reaches past and is drawn through, which is the one thing this chrome must never do. A
-coincident guide silences it instead — zero away on both sides is no gap to report.
+keep only their own 45° family and grid-quantize the intercept under the full lattice); a
+bounded guide's plain drag moves the line the same way, span riding along. **Ctrl/Cmd is the
+resize phase**, live per-move like the station drag's redistribute, in BOTH gestures — so drag
+down, Ctrl, sweep, release places a bounded guide in one motion. While held, the offset freezes
+and the gesture runs like a highlighter: the foot where the phase began — the press foot when
+Ctrl was down at the grab (or at the well press), else the first Ctrl frame's — marks one END,
+the cursor's foot sweeps the other, and the swept stretch IS the span (stored center +
+half-length). The swept end runs through the point snapper constrained ALONG the axis (the
+offset drag's constraint mirrored), where CROSSING guides are legitimate targets — a
+perpendicular guide pins position along this one, the lone exception to
+guides-never-snap-to-guides (parallel stacking stays meaningless). Sweeping the foot past the
+visible canvas edge flips the guide back to INFINITE — the segment jumping to full span is the
+feedback — and back inside re-bounds it; the popover's ∞ button is the deliberate version. The
+flip also caps a sweep at the current viewport: a span longer than the screen — or restoring a
+span a re-sweep already replaced — is the popover Length field's job, or zoom out first.
+Releasing Ctrl resumes the offset drag re-based so nothing jumps, towed siblings freeze during
+the resize and resume from the gesture's true total after it, a resize release never reads as a
+well drop, and the chrome swaps the spacing readout for a live length chip spanning the extent.
+The arrow keys mirror the split: offset arrows nudge every guide, and the cross-axis pair —
+dead on an infinite guide — slides a bounded span along its street; a group tow
+(`translateSiblings`) slides `extent.center` by the along projection too, so the segment
+travels rigidly with its group. Both gestures draw the **spacing readout** while their offset
+phase runs: labeled segments from the cursor's foot on the guide out to the nearest PARALLEL
+guide either side (`guideNeighbourReadout`, rendered as ordinary `SnapGuide`s — the measurement
+chrome a station drag shows its neighbours). It is a measurement, not a snap: an offset never
+snaps to a parallel guide, so it needs no engagement, rides every frame of the phase, and
+survives Shift (which declines snapping, not measuring). Only a same-orientation guide can be a
+neighbour — anything else crosses, and a BOUNDED parallel counts only where its span covers the
+cursor's along-position (`guideAdmitsFoot`): past its tip there is no ink to measure to, and a
+labeled segment must never end in blank canvas. The number is the TRUE perpendicular distance
+(`guidePerpDist`), so it equals the length of the segment drawn. The pool is therefore every
+PARALLEL guide, including one towed by this very drag (whose live offset the hook re-derives
+from its constant gap to the master; towed entries carry no extent — never drawing through a
+sibling dominates): a guide the readout cannot see is one the span reaches past and is drawn
+through, which is the one thing this chrome must never do. A coincident guide silences it
+instead — zero away on both sides is no gap to report.
+**Snap to grid length** rides that one DOF as well (`guideTensOffset`): the offset notches to a
+whole multiple of the active grid size measured from the NEAREST parallel guide — a terminal
+station's cadence, which likewise steps off its single neighbour. Anchors come from the SNAP
+pool, not the readout's wider one: a guide towed by this drag holds a constant gap and can
+anchor nothing — and a bounded parallel anchors only where its span covers the cursor's
+along-position, the readout's own rule (a cadence off invisible ink is a snap the user cannot
+see the reason for). The step is a DISTANCE, so a diagonal's intercept moves by grid × √2, and
+it is never ZERO steps: inside half an interval the only multiple on offer would stack the two
+guides, so the cadence stands down and the guide moves freely through that band. It stands down
+as well where the grid pins that DOF (`constrainedGridMode`, the narrowing the point snapper
+runs on its own `constrain` — a vertical grid constrains nothing a horizontal guide can move),
+and against an engaged alignment it settles by the same better-aligned-wins rule, ties to the
+alignment. A losing alignment's chrome is dropped rather than claim a snap that didn't happen;
+the readout is then the cadence's own feedback, since the gap it labels is the notch — except
+in a group drag whose towed sibling sits BETWEEN the guide and its anchor, where the readout
+names that sibling's constant gap and the notch goes unlabelled.
 Dragging a guide back into its home well deletes it, and the wells tint as drop targets while a
 guide gesture hovers them — the well under the CURSOR, since a strip guide's delete zone runs
 its whole edge band, corner squares included. Its popover is the one coordinate (Y, X, or Y₀
-for a diagonal) + lock/delete ([GuidePopover.tsx](src/components/GuidePopover.tsx)).
-`sanitizeGuides` (serialize.ts, the file-import path) drops malformed entries and collapses a
-stored `locked: false`; there are no cross-references to repair.
+for a diagonal) + a Length row — 2 × the half-length, an empty box under an ∞ placeholder while
+infinite (typing there commits on blur, centered on the viewport center's foot), with the ∞
+button as the way back — + lock/delete, lock protecting extent too
+([GuidePopover.tsx](src/components/GuidePopover.tsx)). `sanitizeGuides` (serialize.ts, the
+file-import path) drops malformed entries, strips a malformed extent (a non-object, non-finite
+scalars, or a zero-or-negative span — an invisible, unhittable guide) back to the infinite
+form, and collapses a stored `locked: false`; there are no cross-references to repair.
 
 **`LabelCell`** — the station name's grid cell + placement. `row, col, rotation: Rotation`,
 `offset` (px forward along reading direction), `offsetPerp?` (cross-axis, default 0 — back-compat
@@ -868,7 +926,8 @@ All remaining fields optional and **never stored at default**:
   natural changes sweeps the custom lines / stop pins that sat at it (a per-STOP absent
   `dotSize` simply means "the line's size"). Legacy `defaultDotSize` baked into both.
 - `width?: number` — **stripe width, GEOMETRY**; missing ⇒ `LINE_WIDTH_DEFAULT` (= `STOP_SIZE` =
-  14); on a 0.25 (quarter-unit) grid, ≥ `LINE_WIDTH_MIN` (1) (`canonicalLineWidth`, `LINE_WIDTH_STEP`).
+  14); ≥ `LINE_WIDTH_MIN` (1), stored as given (`canonicalLineWidth`; `LINE_WIDTH_STEP` = 0.25
+  moves the controls only).
   Drives stop-cell tangency, band merging, stripe offsets.
   `setLineWidth` also **re-packs tangent stop chains** at every station hosting the line
   ([stationPacking.ts](src/model/stationPacking.ts)): stops packed edge-to-edge under the old
@@ -887,8 +946,8 @@ All remaining fields optional and **never stored at default**:
   at every `labelLayoutLocal` / `stationBoundaryRectsLocal` / `stationsForRect` /
   `stationWorldAABB` call site.
 - `interlineGap?: number` — **extra spacing against interlined neighbors, GEOMETRY**; world
-  units, missing ⇒ 0 (classic edge-to-edge tangency); on the 0.25 grid, ≥ 0 and **unbounded above**,
-  dropped at 0 (`canonicalStrokeWidth` clamps the floor only; `lineInterlineGapOf` reads it).
+  units, missing ⇒ 0 (classic edge-to-edge tangency); ≥ 0 and **unbounded above**,
+  dropped at exactly 0 (`canonicalStrokeWidth` clamps the floor only; `lineInterlineGapOf` reads it).
   `LINE_INTERLINE_GAP_MAX` = `STOP_SIZE` is a **slider bound only** — the spinbutton may exceed it
   (`textboxAllowAboveMax`), the same pattern polygon stroke width and curve radius use. Lets a thin line carry stop dots
   fatter than its stripe without adjacent dots overlapping. Like `width` this is GEOMETRY: it feeds
@@ -903,7 +962,7 @@ All remaining fields optional and **never stored at default**:
   `gap = 0` is a bit-exact identity — the interlining golden snapshot is unchanged.
 - `labelGap?: number` — **clearance a station label keeps from this line's marker** (stripe, dot,
   tick or transfer cap, whichever reaches furthest along the approach); world units, missing ⇒ 3
-  (the historical constant, now `LINE_LABEL_GAP_DEFAULT`); on the 0.25 grid, floored at
+  (the historical constant, now `LINE_LABEL_GAP_DEFAULT`); floored at
   `LINE_LABEL_GAP_MIN` (−10) — **0 and negative are real values** (text butted to, or ink into,
   the marker). Unlike `interlineGap`, `canonicalLineLabelGap`
   collapses the field at the DEFAULT, never at 0 — and style equality treats an absent key and an
@@ -912,7 +971,7 @@ All remaining fields optional and **never stored at default**:
   line that blocks it (at a cross, each AXIS does), so a row of labels along one corridor stays
   consistent by construction. Pure label placement — no repack, no region reconcile.
 - `strokeWidth?: number` — **casing rail, PRESENTATION**; centered on the body edges (half in /
-  half out), missing ⇒ 0; rounded to a 0.25 grid (`LINE_STROKE_STEP`). Resolved live; never moves paths.
+  half out), missing ⇒ 0, floored at 0 and stored as given. Resolved live; never moves paths.
 - `strokeColor?: LineStrokeColor` — casing color: a **theme-aware `DayNightColor`** (`{day,
   night}`, the same abstraction dot fill/stroke and transfer colors use), or the sentinel `'line'`
   (`LINE_OWN_COLOR`) — "the line's OWN color", resolved at render time, mirroring a dot style's
@@ -927,8 +986,8 @@ All remaining fields optional and **never stored at default**:
 - `dashLength?` / `dashWidth?: number` — **TfL-tick dimensions for this line's `dash` stops**,
   world units. PRESENTATION (never moves band geometry, resolved at render). Both **unset** ⇒
   derive from the stripe width (`dashLength = width`, `dashWidth = width/2` — the TfL proportions;
-  see [dashSize.ts](src/model/dashSize.ts), `dashRenderLength`/`dashRenderWidth`). Stored on the
-  casing width's quarter-unit grid with drop-at-0 (0 = "auto" ⇒ field dropped, derivation takes
+  see [dashSize.ts](src/model/dashSize.ts), `dashRenderLength`/`dashRenderWidth`). Stored like the
+  casing width, with drop-at-0 (0 = "auto" ⇒ field dropped, derivation takes
   over). `dashLength` is how far the tick protrudes from the stripe edge toward the label;
   `dashWidth` is its thickness along the travel axis. Covered by line styles.
 - `endStyle?: LineEndStyle` — how the line is PAINTED wherever its ink stops (see **Where a line
@@ -1203,13 +1262,13 @@ selection chrome and the hit area are unaffected, so a 0% image is still clickab
 
 **`TextLabel`** — a free-floating, rotatable text annotation rendered **on top** of the map.
 `id, x, y` (center), `rotation: Rotation`, `text` (multiline `\n`), `fontSize` (floored at
-`TEXT_LABEL_FONT_SIZE_MIN`, snapped to the quarter-unit `FONT_SIZE_STEP` = 0.25 grid every
-font-size control shares — the slider caps at 96, but the spinbutton/stored value is unbounded
-above and may be a quarter-integer),
+`TEXT_LABEL_FONT_SIZE_MIN` and otherwise stored as typed — the quarter-unit `FONT_SIZE_STEP` every
+font-size control shares moves the controls, not the value; the slider caps at 96, but the
+spinbutton/stored value is unbounded above),
 `weight: TextLabelWeight`, `italic`, `align: TextLabelAlign` (`left|center|right|justify`;
 `justify` flushes both edges), `width?` (column width in world units; `0`/absent = Auto —
 sizes to content and honors manual `\n`; `>0` = a fixed-width column that word-wraps, with
-`\n` a hard break; clamped to a non-negative integer by `updateTextLabel`), `color/
+`\n` a hard break; floored at 0 by `updateTextLabel`, fractions kept), `color/
 darkColor` (day/night; **defaults DIFFER**: `#111111` / `#ffffff` for legibility — unlike a
 polygon whose dark default equals its light; backfilled on load), `locked?`, plus optional
 per-label `leading` (line-spacing multiplier) / `tracking` (em letter-spacing) — station labels
@@ -1991,7 +2050,8 @@ anchor**, in the "anchor of a multi-select" sense — not a transfer anchor):
 FREE transfer anchors; hosted ones are station internals and never appear here; line circles join
 a marquee when the rect touches their RIM — `lineCirclesForRect`, a marquee wholly inside the
 ring grabs nothing; alignment guides never join a marquee at all — an infinite line would join
-nearly every rect, so guides are click / shift-click / deep-pick only). The seven generic lists'
+nearly every rect (bounded ones sit out too, one rule for the kind), so guides are click /
+shift-click / deep-pick only). The seven generic lists'
 `select/toggle/set/add/xor`
 actions are generated by one `makeIdListActions` factory (hand-copying them is exactly how a
 cross-clear matrix drifted and caused a stale-line-highlight bug). Single primaries:
@@ -2472,8 +2532,9 @@ of them:
   drags) so guides never show a snap the caller discards. When `tens` is on **and grid is off**, an engaged alignment's
   free axis (the slide along the guide) is notched to a whole grid length from the target — the
   same "Snap to grid length" idea extended past the skeleton, so any snapped object lands a clean
-  step from what it caught. Corners have no free DOF; grid (when on) owns quantization; edge
-  resizes opt out via `constrain`.
+  step from what it caught. Corners have no free DOF; grid (when on) owns quantization; a
+  single-DOF caller opts out via `constrain` — a guide's own drag then runs its own version of
+  the cadence, off its nearest parallel guide (see `AlignmentGuide`).
 
 **The redistribute (Ctrl-drag) pools split.** `redistributeAnchor` puts the engine in line mode
 regardless of the user's toggle — it is an explicit modal gesture — and line mode then snaps
@@ -4061,8 +4122,21 @@ downstream luminance / `rgba()` math.
   (`docSnapshotsEqual` is reference equality). A mutate-in-place transform would silently break
   history.
 - **Canonical stored form**: optional fields are **absent when equal to their default**; setters
-  clamp/round/lowercase and drop at default. `DotStyle` objects are written in fixed field order
+  clamp/lowercase and drop at default. `DotStyle` objects are written in fixed field order
   so `JSON.stringify` equality is exact for app-written docs.
+- **A field's `step` is not its grid.** `LINE_WIDTH_STEP`, `FONT_SIZE_STEP`, `DOT_SIZE_STEP` and
+  the rest size ONE movement of a control — a slider arrow, a wheel notch, a spinner press. They
+  are never a filter on the value. Every numeric setter runs `clampField` (floor + `cleanFloat`,
+  **no rounding**), so a typed `0.32455` is stored as `0.32455`, and a drop-at-default fires only
+  on an EXACT match — `14.1` is a real stripe width, not "near enough to the default to forget".
+  The CONTROLS do the gridding: `stepFromValue` moves the wheel one step along the grid anchored
+  at the field's `min`, **landing on** that grid from an off-grid value (10.2 → 10.25 → 10.5)
+  rather than carrying the offset along — the behaviour native `<input type=number>`
+  stepUp/stepDown and Radix's slider keys already have, so wheel, arrows and spinner agree.
+  `snapToStep` survives for exactly one job: a POINTER gesture that wants a grid (the line-circle
+  radius drag and the ghost ring previewing its drop, via `snapDraggedLineCircleRadius`). Rounding
+  a typed value onto the step grid is what made a Size box swallow 10.2, 10.3 and 10.35 and then
+  jump to 10.5.
 - **Referential integrity after every action**: `line.stations[i] ∈ stations`; `stop.lineId ∈
 lines`; every `segmentStyles` key is a real, non-default adjacency; every `stationEndStyles`
   key is a station its line still STOPS at (liveness, not endedness — see

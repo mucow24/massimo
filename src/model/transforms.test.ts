@@ -24,11 +24,11 @@ import {
 import type { DotStyle, MapDoc, RouteBullet, Station, TextLabel } from './types';
 
 describe('clampRouteBulletSize', () => {
-  it('snaps to the quarter-unit grid and clamps to the floor ROUTE_BULLET_SIZE_MIN', () => {
+  it('keeps the size it is given and clamps to the floor ROUTE_BULLET_SIZE_MIN', () => {
     expect(T.ROUTE_BULLET_SIZE_STEP).toBe(0.25);
-    // Quarter values survive verbatim — they did NOT on the old integer grid.
     expect(T.clampRouteBulletSize(14.25)).toBe(14.25);
-    expect(T.clampRouteBulletSize(14.3)).toBe(14.25);
+    // The step is the slider's/wheel's granularity, not a filter on the value.
+    expect(T.clampRouteBulletSize(14.3)).toBe(14.3);
     // Below the floor clamps up to the minimum.
     expect(T.clampRouteBulletSize(-3)).toBe(T.ROUTE_BULLET_SIZE_MIN);
     // Above the slider max is allowed (only the floor clamps).
@@ -1196,13 +1196,14 @@ describe('setLineWidth', () => {
     expect(T.setLineWidth(doc, 'L1', 20)).toBe(doc);
   });
 
-  it('clamps to the floor and rounds to the 0.25 grid', () => {
+  it('clamps to the floor and stores the width as given', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
     expect(T.setLineWidth(doc, 'L1', 0).lines.L1.width).toBe(1);
     expect(T.setLineWidth(doc, 'L1', -3).lines.L1.width).toBe(1);
-    expect(T.setLineWidth(doc, 'L1', 9.6).lines.L1.width).toBe(9.5);
-    // Rounds-to-default drops the field, same as an exact 14.
-    expect('width' in T.setLineWidth(doc, 'L1', 14.1).lines.L1).toBe(false);
+    expect(T.setLineWidth(doc, 'L1', 9.6).lines.L1.width).toBe(9.6);
+    // Only an EXACT default drops the field; 14.1 is a real width.
+    expect(T.setLineWidth(doc, 'L1', 14.1).lines.L1.width).toBe(14.1);
+    expect('width' in T.setLineWidth(doc, 'L1', 14).lines.L1).toBe(false);
   });
 
   it('ignores non-finite input (same reference out)', () => {
@@ -1240,14 +1241,15 @@ describe('setLineStrokeWidth', () => {
     expect(T.setLineStrokeWidth(doc, 'L1', 4)).toBe(doc);
   });
 
-  it('clamps to the floor and rounds to the 0.25 grid', () => {
+  it('clamps to the floor and stores the casing width as given', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
     // Below-floor clamps to 0 = the default, so the field is never stored.
     expect(T.setLineStrokeWidth(doc, 'L1', -3)).toBe(doc);
-    expect(T.setLineStrokeWidth(doc, 'L1', 3.6).lines.L1.strokeWidth).toBe(3.5);
-    expect(T.setLineStrokeWidth(doc, 'L1', 3.8).lines.L1.strokeWidth).toBe(3.75);
-    // Rounds-to-zero is dropped like an exact 0.
-    expect(T.setLineStrokeWidth(doc, 'L1', 0.1)).toBe(doc);
+    expect(T.setLineStrokeWidth(doc, 'L1', 3.6).lines.L1.strokeWidth).toBe(3.6);
+    expect(T.setLineStrokeWidth(doc, 'L1', 3.8).lines.L1.strokeWidth).toBe(3.8);
+    // Only an exact 0 drops: 0.1 is a hairline casing, not "off".
+    expect(T.setLineStrokeWidth(doc, 'L1', 0.1).lines.L1.strokeWidth).toBe(0.1);
+    expect(T.setLineStrokeWidth(doc, 'L1', 0)).toBe(doc);
   });
 
   it('ignores non-finite input (same reference out)', () => {
@@ -1284,12 +1286,13 @@ describe('setLineCurveRadius', () => {
     expect(T.setLineCurveRadius(doc, 'L1', 40)).toBe(doc);
   });
 
-  it('clamps to the floor and rounds to the 0.25 grid', () => {
+  it('clamps to the floor and stores the radius as given', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
     expect(T.setLineCurveRadius(doc, 'L1', 1).lines.L1.curveRadius).toBe(4);
-    expect(T.setLineCurveRadius(doc, 'L1', 39.6).lines.L1.curveRadius).toBe(39.5);
-    // Rounds-to-default is dropped like an exact 24.
-    expect(T.setLineCurveRadius(doc, 'L1', 23.9)).toBe(doc);
+    expect(T.setLineCurveRadius(doc, 'L1', 39.6).lines.L1.curveRadius).toBe(39.6);
+    // Only an EXACT default is dropped; 23.9 is a real radius.
+    expect(T.setLineCurveRadius(doc, 'L1', 23.9).lines.L1.curveRadius).toBe(23.9);
+    expect(T.setLineCurveRadius(doc, 'L1', 24)).toBe(doc);
   });
 
   it('ignores non-finite input (same reference out)', () => {
@@ -1361,11 +1364,11 @@ describe('setLineStrokeColor', () => {
 });
 
 describe('setLineDashLength / setLineDashWidth', () => {
-  it('stores dash dims on the quarter-unit grid, dropping the field at 0 (unset ⇒ derive from width)', () => {
+  it('stores dash dims as given, dropping the field at 0 (unset ⇒ derive from width)', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
     expect(T.setLineDashLength(doc, 'L1', 21).lines.L1.dashLength).toBe(21);
-    expect(T.setLineDashLength(doc, 'L1', 2.2).lines.L1.dashLength).toBe(2.25);
-    expect(T.setLineDashWidth(doc, 'L1', 3.6).lines.L1.dashWidth).toBe(3.5);
+    expect(T.setLineDashLength(doc, 'L1', 2.2).lines.L1.dashLength).toBe(2.2);
+    expect(T.setLineDashWidth(doc, 'L1', 3.6).lines.L1.dashWidth).toBe(3.6);
     const off = T.setLineDashLength(
       makeDoc({ lines: [makeLine({ id: 'L1', dashLength: 3 })] }),
       'L1',
@@ -1740,9 +1743,9 @@ describe('per-transfer style overrides', () => {
       expect('thickness' in doc.transfers['x1']).toBe(false);
     });
 
-    it('snaps to the quarter grid and floor-clamps the numeric fields', () => {
+    it('stores the numeric fields as given, floor-clamped', () => {
       const doc = T.updateTransferStyle(baseDoc(), 'x1', { thickness: 4.6, strokeWidth: -2 });
-      expect(doc.transfers['x1'].thickness).toBe(4.5);
+      expect(doc.transfers['x1'].thickness).toBe(4.6);
       // -2 clamps to 0 — the constant strokeWidth default — so it collapses
       // rather than storing a redundant 0.
       expect('strokeWidth' in doc.transfers['x1']).toBe(false);
@@ -3282,12 +3285,12 @@ describe('setDotSize', () => {
     expect(next.stations.a.stops[0].dotSize).toBe(DOT_SIZE_DEFAULT);
   });
 
-  it('snaps to the quarter-unit grid and clamps to ≥ DOT_SIZE_MIN', () => {
+  it('stores the size as given and clamps to ≥ DOT_SIZE_MIN', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 'a', stops: [makeStop('L1')] })],
       lines: [makeLine({ id: 'L1' })],
     });
-    expect(T.setDotSize(doc, 'a', 'L1', 7.4).stations.a.stops[0].dotSize).toBe(7.5);
+    expect(T.setDotSize(doc, 'a', 'L1', 7.4).stations.a.stops[0].dotSize).toBe(7.4);
     expect(T.setDotSize(doc, 'a', 'L1', 7.25).stations.a.stops[0].dotSize).toBe(7.25);
     expect(T.setDotSize(doc, 'a', 'L1', -3).stations.a.stops[0].dotSize).toBe(0);
   });
@@ -3333,14 +3336,15 @@ describe('setLineSingletonDotSize', () => {
     expect('multiDotSize' in next.lines.L1).toBe(false);
   });
 
-  it('stores the default size explicitly (absence is never written, rounding lands on it)', () => {
+  it('stores the default size explicitly (absence is never written)', () => {
     const doc = makeDoc({ lines: [makeLine({ id: 'L1', singletonDotSize: 12 })] });
     expect(T.setLineSingletonDotSize(doc, 'L1', DOT_SIZE_DEFAULT).lines.L1.singletonDotSize).toBe(
       DOT_SIZE_DEFAULT,
     );
+    // A hair off the default is its own size, not the default.
     expect(
       T.setLineSingletonDotSize(doc, 'L1', DOT_SIZE_DEFAULT + 0.1).lines.L1.singletonDotSize,
-    ).toBe(DOT_SIZE_DEFAULT);
+    ).toBe(DOT_SIZE_DEFAULT + 0.1);
   });
 
   it('reference-equal no-ops: unchanged value, unknown id, non-finite input', () => {
@@ -3725,23 +3729,28 @@ describe('updateTextLabel', () => {
     const next = T.updateTextLabel(doc, 'g1', { text: 'B', italic: true });
     expect(next.textLabels.g1).toMatchObject({ text: 'B', italic: true, fontSize: 16 });
   });
-  it('clamps fontSize at MIN only (textbox accepts arbitrary above) and snaps to the nearest 0.25', () => {
+  it('clamps fontSize at MIN only (textbox accepts arbitrary above) and keeps a typed size', () => {
     const doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1', fontSize: 16 })] });
     expect(T.updateTextLabel(doc, 'g1', { fontSize: 0 }).textLabels.g1.fontSize).toBe(1);
     expect(T.updateTextLabel(doc, 'g1', { fontSize: 999 }).textLabels.g1.fontSize).toBe(999);
-    expect(T.updateTextLabel(doc, 'g1', { fontSize: 23.7 }).textLabels.g1.fontSize).toBe(23.75);
+    // FONT_SIZE_STEP is the slider's/wheel's granularity, not the set of legal
+    // sizes: an off-quarter size stands exactly as given, to any precision.
+    expect(T.updateTextLabel(doc, 'g1', { fontSize: 23.7 }).textLabels.g1.fontSize).toBe(23.7);
     expect(T.updateTextLabel(doc, 'g1', { fontSize: 23.5 }).textLabels.g1.fontSize).toBe(23.5);
+    expect(T.updateTextLabel(doc, 'g1', { fontSize: 23.32455 }).textLabels.g1.fontSize).toBe(
+      23.32455,
+    );
   });
-  it('clamps column width to a non-negative integer (0 = Auto)', () => {
+  it('clamps column width to non-negative (0 = Auto), fractions included', () => {
     const doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1' })] });
     expect(T.updateTextLabel(doc, 'g1', { width: -5 }).textLabels.g1.width).toBe(0);
     expect(T.updateTextLabel(doc, 'g1', { width: 0 }).textLabels.g1.width).toBe(0);
-    expect(T.updateTextLabel(doc, 'g1', { width: 200.6 }).textLabels.g1.width).toBe(201);
+    expect(T.updateTextLabel(doc, 'g1', { width: 200.6 }).textLabels.g1.width).toBe(200.6);
   });
-  it('clamps leading at 0 and snaps to the 0.05 step', () => {
+  it('clamps leading at 0 and keeps what it is given', () => {
     const doc = makeDoc({ textLabels: [makeTextLabel({ id: 'g1' })] });
     expect(T.updateTextLabel(doc, 'g1', { leading: -0.5 }).textLabels.g1.leading).toBe(0);
-    expect(T.updateTextLabel(doc, 'g1', { leading: 1.234 }).textLabels.g1.leading).toBe(1.25);
+    expect(T.updateTextLabel(doc, 'g1', { leading: 1.234 }).textLabels.g1.leading).toBe(1.234);
     expect(T.updateTextLabel(doc, 'g1', { leading: 1.05 }).textLabels.g1.leading).toBe(1.05);
   });
   it('clamps tracking at the slider floor and snaps to the 0.001 step', () => {

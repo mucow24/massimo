@@ -7,6 +7,7 @@ import type { Vec2 } from '../../geometry/vec';
 import { useDragSnap } from './useDragSnap';
 import { liveAlignTargets, liveGuideTargets } from './snapTargets';
 import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
+import { snapDraggedLineCircleRadius } from '../../model/lineCircle';
 import {
   collectGroupSiblings,
   emptyGroupSiblings,
@@ -34,9 +35,10 @@ export interface LineCircleDragApi {
  * bound stations ride along rigidly inside moveLineCircle); grabbing the resize
  * knob drags the RADIUS (bound stations reproject radially). The circle's centre
  * is the drag reference point for both moves and snaps through the point snapper
- * against the shared pool (like an unbound bullet); the radius snaps only to its
- * quarter-unit grid (inside the transform). Shift bypasses snapping, matching
- * every other drag.
+ * against the shared pool (like an unbound bullet); the radius has no targets to
+ * snap to, only its quarter-unit grid — applied HERE, at the gesture, since the
+ * transform stores whatever radius it is handed. Shift bypasses snapping for
+ * both, matching every other drag.
  *
  * A move also tows the rest of a multi-selection, like every other master kind
  * (groupDrag). A knob drag never does — a resize isn't a translation.
@@ -131,11 +133,16 @@ export function useLineCircleDrag(
     const dy = dyScreen / viewportZoom;
     if (ds.part === 'knob') {
       // The knob sits on the east point, so the radius follows the pointer's
-      // horizontal world distance from the center. Quarter-grid + minimum are
-      // the transform's clamp; nothing else to snap to. The diameter readout
-      // arms on the first real move (not pointer-down, so a click shows none).
+      // horizontal world distance from the center, landing on the quarter-unit
+      // grid every line-circle GESTURE shares — and Shift declines it, exactly
+      // as it declines the point snapper on a move. The transform itself keeps
+      // whatever radius it is handed (that is what lets the popover's Diameter
+      // field hold an off-grid number), so the raw distance survives. The
+      // diameter readout arms on the first real move (not pointer-down, so a
+      // click shows none).
       if (resizingId !== ds.id) setResizingId(ds.id);
-      setLineCircleRadius(ds.id, ds.startRadius + dx);
+      const rawRadius = ds.startRadius + dx;
+      setLineCircleRadius(ds.id, e.shiftKey ? rawRadius : snapDraggedLineCircleRadius(rawRadius));
       return;
     }
     let nx = ds.startWX + dx;

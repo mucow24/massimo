@@ -1,4 +1,4 @@
-import { canonicalLineCircleRadius } from '../../model/lineCircle';
+import { snapDraggedLineCircleRadius } from '../../model/lineCircle';
 import { capCenterDy } from '../../geometry/textMeasure';
 import { formatMeasurement } from '../../geometry/snap';
 import { useThemeColors } from '../../state/theme';
@@ -59,8 +59,9 @@ export function CircleDiameterLabel({
  * Two-click line-circle placement ghost. Phase 1 (no center yet): a small
  * cross marks where the click will put the CENTER. Phase 2 (center armed):
  * the dashed ring previews the circle at the cursor's distance — floored and
- * quarter-gridded exactly like the drop (canonicalLineCircleRadius) — with
- * the diameter readout above the center.
+ * quarter-gridded exactly like the drop, both through
+ * `snapDraggedLineCircleRadius`, so preview and result cannot drift apart —
+ * with the diameter readout above the center.
  */
 export function LineCirclePlacingPreview({
   center,
@@ -87,7 +88,7 @@ export function LineCirclePlacingPreview({
   };
   if (!center) return <g pointerEvents="none">{cross(world!, 'center')}</g>;
   const radius = world
-    ? canonicalLineCircleRadius(Math.hypot(world.x - center.x, world.y - center.y))
+    ? snapDraggedLineCircleRadius(Math.hypot(world.x - center.x, world.y - center.y))
     : null;
   return (
     <g pointerEvents="none" data-line-circle-preview="">

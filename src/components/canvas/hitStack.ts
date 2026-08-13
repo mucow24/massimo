@@ -7,7 +7,7 @@ import {
   textLabelsForRect,
 } from '../../geometry/stationBoundary';
 import { stopMetricsOf } from '../../model/stopMetrics';
-import { guidePerpDist } from '../../geometry/snap';
+import { guideAdmitsFoot, guideFoot, guidePerpDist } from '../../geometry/snap';
 import { effectiveBackgroundOrder } from '../../model/transforms';
 import { pairKeyOf } from '../../model/pairKey';
 import type { AppendCursor } from '../../model/appendGestures';
@@ -283,12 +283,19 @@ export function lockedHitsAt(pt: Pt, doc: LockedHitDocSlice, pad: number): HitRe
     ),
   );
   // Guides paint below map content, above the background band — same slot
-  // here. An infinite line needs no *ForRect helper: the point test is the
-  // perpendicular distance to its axis.
+  // here. A guide needs no *ForRect helper: the point test is the
+  // perpendicular distance to its line, gated on the bounded span — past the
+  // tip a bounded guide paints no ink and no hit stroke, so the deep-pick
+  // must not reach it there either.
   for (const id of Object.keys(doc.guides)) {
     const g = doc.guides[id];
     if (!g.locked) continue;
-    if (guidePerpDist(g.orientation, g.offset, pt) <= pad) out.push({ kind: 'guide', id });
+    if (
+      guidePerpDist(g.orientation, g.offset, pt) <= pad &&
+      guideAdmitsFoot(g, guideFoot(g.orientation, g.offset, pt))
+    ) {
+      out.push({ kind: 'guide', id });
+    }
   }
   // One walk of the shared background stack, topmost first — polygons and
   // images interleave, so they can't be pushed as two kind-grouped blocks.

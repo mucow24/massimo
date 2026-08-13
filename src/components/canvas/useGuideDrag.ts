@@ -3,11 +3,17 @@ import { beginHistoryGroup, useDoc } from '../../state/store';
 import { useSelection } from '../../state/selection';
 import { useRoutedSnapGuides } from './useRoutedSnapGuides';
 import {
+  constrainedGridMode,
+  formatMeasurement,
+  guideAlongOf,
+  guideConstraint,
   guideFoot,
   guideMoveVector,
   guideNeighbourReadout,
   guideNudgeDelta,
   guideOffsetOf,
+  guidePointAt,
+  guideTensOffset,
   type GuideTarget,
   type SnapGuide,
 } from '../../geometry/snap';
@@ -28,8 +34,13 @@ import { WELL_SIZE_PX } from './GuideWells';
 export interface GuideDragApi {
   snapGuides: SnapGuide[];
   /** The well pull-out ghost, or null. MapCanvas renders it in the guides
-   *  layer at placement-ghost opacity. */
-  pull: { orientation: GuideOrientation; offset: number } | null;
+   *  layer at placement-ghost opacity. `extent` rides along once a mid-pull
+   *  Ctrl sweep has bounded the ghost. */
+  pull: {
+    orientation: GuideOrientation;
+    offset: number;
+    extent?: { center: number; halfLength: number };
+  } | null;
   /** The well under the pointer while a drop there would CANCEL the pull or
    *  DELETE the dragged guide, so that well tints. It is the well the CURSOR
    *  occupies, not the guide's home: a strip guide's delete zone includes the
@@ -61,17 +72,43 @@ type ScreenToWorld = (mx: number, my: number) => Vec2;
  *    placement); releasing back inside the well — or never crossing the drag
  *    threshold — creates nothing.
  *
- * Guides never snap to other guides (stacking two is meaningless), so neither
- * gesture passes `guideTargets` to the snapper. Both do carry a parallel pool
- * they only MEASURE against — every frame draws the spacing to the nearest
- * parallel guide either side (`guideNeighbourReadout`, whose contract is where
- * that pool's membership is argued).
+ * A guide's OFFSET never snaps to another guide (stacking two is meaningless),
+ * so neither offset gesture passes `guideTargets` to the snapper — only the
+ * resize phase below does, where a crossing guide is a legitimate endpoint
+ * target. Both gestures do carry a parallel pool the offset never snaps ONTO
+ * but does read: every frame draws the spacing to the
+ * nearest parallel guide either side (`guideNeighbourReadout`, whose contract
+ * is where that pool's membership is argued), and under "Snap to grid length"
+ * the nearest STATIONARY one also anchors the offset's cadence — a whole grid
+ * length measured off a guide, which is a gap, never a stack (`guideTensOffset`
+ * declines the zero-step notch that would land the two on top of each other).
  *
- * Shift bypasses snapping, as everywhere — but not the readout, which is a
- * measurement rather than a snap. Both gestures capture to the SVG on the first
- * real move (trackDragMove), so the svg's shared pointer pipeline drives them;
- * the well strips also forward their own move/up events for the sub-threshold
- * stretch where the pointer is still over the strip.
+ * Both gestures also carry a RESIZE phase, live on Ctrl/Cmd like the station
+ * drag's redistribute (re-read every move): while held, the offset freezes
+ * where it stands and the gesture bounds the guide instead, highlighter
+ * style — the foot where the phase began (the press foot when Ctrl was down
+ * at the grab, else the first Ctrl frame's) marks one END, and the cursor's
+ * foot sweeps the other; the swept stretch IS the span
+ * (`AlignmentGuide.extent`). The swept
+ * endpoint runs through the point snapper constrained ALONG the axis (the
+ * mirror of the offset drag's constraint), where crossing guides are
+ * legitimate targets — a perpendicular guide determines position along this
+ * one, which is exactly what an endpoint wants. Sweeping the foot past the
+ * visible canvas edge flips the guide back to INFINITE (the segment jumping to
+ * full span is the feedback); back inside re-bounds it. Releasing Ctrl returns
+ * to offset-dragging with the extent kept and the offset re-based so nothing
+ * jumps — but the sibling tow keeps measuring from the gesture's ORIGINAL
+ * start (`startOffset` is immutable; the re-base is a separate bias), since
+ * towed items resume from wherever the resize froze them. A release while
+ * resizing never reads as a well drop: the offset is frozen, so the guide
+ * can't have been carried to its well.
+ *
+ * Shift bypasses snapping, as everywhere — but not the readouts (the spacing
+ * one, and the resize phase's live length chip), which are measurements rather
+ * than snaps. Both gestures capture to the SVG on the first real move
+ * (trackDragMove), so the svg's shared pointer pipeline drives them; the well
+ * strips also forward their own move/up events for the sub-threshold stretch
+ * where the pointer is still over the strip.
  */
 export function useGuideDrag(
   svgRef: RefObject<SVGSVGElement | null>,
@@ -80,10 +117,15 @@ export function useGuideDrag(
 ): GuideDragApi {
   const moveGuide = useDoc((s) => s.moveGuide);
   const addGuide = useDoc((s) => s.addGuide);
+  const resizeGuide = useDoc((s) => s.resizeGuide);
   const deleteGuide = useDoc((s) => s.deleteGuide);
-  const { snapPoint } = useDragSnap(zoom);
+  const { snapPoint, modes, gridInterval, tolerance } = useDragSnap(zoom);
   const [snapGuides, setSnapGuides] = useRoutedSnapGuides('guide');
-  const [pull, setPull] = useState<{ orientation: GuideOrientation; offset: number } | null>(null);
+  const [pull, setPull] = useState<{
+    orientation: GuideOrientation;
+    offset: number;
+    extent?: { center: number; halfLength: number };
+  } | null>(null);
   const [overWell, setOverWell] = useState<GuideOrientation | null>(null);
 
   const dragRef = useRef<{
@@ -95,8 +137,11 @@ export function useGuideDrag(
     moved: boolean;
     siblings: GroupSiblings;
     allTargets: Vec2[];
-    // The STATIONARY guides this gesture measures against — never a snap pool.
-    // Snapshotted at pointer-down like every other pool.
+    // The STATIONARY guides this gesture reads: what the readout measures
+    // against, what the grid-length cadence steps FROM (never ONTO — see
+    // guideTensOffset), and what the resize phase's endpoint snaps onto (the
+    // crossing ones; a parallel is never a target). Snapshotted at
+    // pointer-down like every other pool.
     neighbours: readonly GuideTarget[];
     // The towed parallel siblings, as their constant gap to the master. They
     // are out of every SNAP pool (a target moving with the grab is an unstable
@@ -106,6 +151,24 @@ export function useGuideDrag(
     // offset delta verbatim (`guideNudgeDelta ∘ guideMoveVector` is the
     // identity on its own orientation), so the live offset is master + gap.
     towedGaps: readonly number[];
+    // The last committed offset — what the resize phase freezes at, and what
+    // the offset drag resumes from when Ctrl lifts.
+    lastOffset: number;
+    // The resume correction: raw = startOffset + bias + nudge(pointer delta).
+    // Set at each resize → offset transition so the offset picks up exactly
+    // where it froze; startOffset itself never moves (the sibling tow's total
+    // is measured from it).
+    offsetBias: number;
+    // Live while Ctrl holds the resize phase; `anchor` is the span's FIXED end
+    // in the along parameter (the cursor's foot sweeps the other, highlighter
+    // style), `mx/my` the last resize frame's cursor — what the resume re-base
+    // measures from, so the travel since that frame still lands. Entered
+    // lazily on the first Ctrl move frame — with Ctrl held from the press and
+    // no offset frame yet, the anchor is the PRESS foot (you mark the first
+    // end by where you grab), else the entering frame's foot.
+    resize: { anchor: number; mx: number; my: number } | null;
+    ctrlAtPress: boolean;
+    everOffset: boolean;
     history: ReturnType<typeof beginHistoryGroup>;
   } | null>(null);
   const pullRef = useRef<{
@@ -117,6 +180,22 @@ export function useGuideDrag(
     allTargets: Vec2[];
     neighbours: readonly GuideTarget[];
     towedGaps: readonly number[];
+    // The ghost's bounded extent (null = infinite), its live resize phase
+    // (anchored end + the last resize frame's cursor, the drag ref's
+    // convention), and the offset-resume correction — the pull's raw offset is
+    // cursor-absolute, so its bias is additive on `guideOffsetOf` rather than
+    // on a delta. A pull can only enter resize once an offset frame has run
+    // (`everOffset`): before that there is no line to bound. With Ctrl held
+    // from the WELL PRESS the first moved frame is forced through the offset
+    // branch to mint that line — `ctrlFreeOffset` stays false there, so the
+    // resize entry still anchors at the press foot ("where Ctrl went down
+    // marks one end", the drag path's rule).
+    extent: { center: number; halfLength: number } | null;
+    resize: { anchor: number; mx: number; my: number } | null;
+    everOffset: boolean;
+    ctrlAtPress: boolean;
+    ctrlFreeOffset: boolean;
+    perpBias: number;
   } | null>(null);
 
   // Which of the host's three well-bearing edge bands the pointer is in. Beyond
@@ -192,11 +271,39 @@ export function useGuideDrag(
     let snapChrome: SnapGuide[] = [];
     if (!e.shiftKey) {
       const proposed = guideFoot(orientation, rawOffset, world);
-      const constrain =
-        orientation === 'horizontal' ? 'y' : orientation === 'vertical' ? 'x' : orientation;
+      const constrain = guideConstraint(orientation);
       const snap = snapPoint(proposed, { allTargets: pools.allTargets, constrain });
       offset = guideOffsetOf(orientation, snap);
       snapChrome = snap.guides;
+      // "Snap to grid length" on the guide's one degree of freedom —
+      // `guideTensOffset` owns the cadence itself (anchor, step, why it stands
+      // down); this is where it competes. It is off while the grid pins that
+      // DOF, grid being the hard constraint that owns quantization there,
+      // exactly as the point snapper has it. Against an engaged alignment it
+      // settles by the closest-wins rule every same-axis contest uses, ties
+      // going to the alignment: that one says something about the map, the
+      // cadence only about spacing. The empty-chrome disjunct carries the case
+      // where nothing engaged at all — `offset` is then the raw pointer with
+      // zero displacement, which no candidate can beat on distance.
+      if (modes.tens && constrainedGridMode(modes.grid, constrain) === 'off') {
+        const tens = guideTensOffset(
+          orientation,
+          rawOffset,
+          world,
+          pools.neighbours,
+          gridInterval,
+          tolerance,
+        );
+        if (
+          tens !== null &&
+          (snapChrome.length === 0 || Math.abs(tens - rawOffset) < Math.abs(offset - rawOffset))
+        ) {
+          offset = tens;
+          // The alignment lost: its chrome would claim a snap that didn't
+          // happen. The spacing readout below is the cadence's own feedback.
+          snapChrome = [];
+        }
+      }
     }
     // Set unconditionally — frozen local state can't gate a clear while the
     // pipeline is armed (see useRoutedSnapGuides). The spacing readout is
@@ -211,6 +318,85 @@ export function useGuideDrag(
     ]);
     return offset;
   };
+
+  // The resize phase's snap constraint: the endpoint slides ALONG the guide,
+  // so the free axis is the one the offset drag locks — 'x' for a horizontal
+  // guide, 'y' for a vertical, and each diagonal frees the OTHER diagonal's
+  // normal (a \ guide's axis IS the / constraint's free direction).
+  const alongConstrain = (orientation: GuideOrientation) =>
+    orientation === 'horizontal'
+      ? ('x' as const)
+      : orientation === 'vertical'
+        ? ('y' as const)
+        : orientation === 'diagonal-down'
+          ? ('diagonal-up' as const)
+          : ('diagonal-down' as const);
+
+  // One resize frame, highlighter-style: the span runs from the ANCHORED end
+  // (where the phase began) to the snapped cursor foot — or null when the
+  // cursor's foot has left the visible canvas box, the flip back to infinite.
+  // The flip caps a sweep at the current viewport: a span longer than the
+  // screen (or a re-sweep that wanders out and back with a bounded guide's
+  // old span already replaced) is the popover Length field's job, or zoom
+  // out first. Also emits the phase's chrome: the endpoint snap's own guides
+  // plus a live length chip spanning the extent (the neighbour readout stands
+  // down — the offset is frozen, so the spacing it measures cannot change).
+  // The flip tests the UNSNAPPED foot: it answers where the cursor is, not
+  // where a target pulled the endpoint.
+  const resizedExtent = (
+    orientation: GuideOrientation,
+    offset: number,
+    anchor: number,
+    e: React.PointerEvent,
+    pools: { allTargets: Vec2[]; neighbours: readonly GuideTarget[] },
+  ): { center: number; halfLength: number } | null => {
+    const world = screenToWorld(e.clientX, e.clientY);
+    const foot = guideFoot(orientation, offset, world);
+    const host = svgRef.current?.closest('.canvas-host')?.getBoundingClientRect();
+    if (host) {
+      const tl = screenToWorld(host.left, host.top);
+      const br = screenToWorld(host.right, host.bottom);
+      if (foot.x < tl.x || foot.x > br.x || foot.y < tl.y || foot.y > br.y) {
+        setSnapGuides([]);
+        return null;
+      }
+    }
+    let end = foot;
+    let snapChrome: SnapGuide[] = [];
+    if (!e.shiftKey) {
+      const snap = snapPoint(foot, {
+        allTargets: pools.allTargets,
+        guideTargets: pools.neighbours,
+        constrain: alongConstrain(orientation),
+      });
+      end = { x: snap.x, y: snap.y };
+      snapChrome = snap.guides;
+    }
+    const t = guideAlongOf(orientation, end);
+    const center = (anchor + t) / 2;
+    const halfLength = Math.abs(t - anchor) / 2;
+    // A zero-width frame (no along travel yet) has no span to chip.
+    setSnapGuides(
+      halfLength > 0
+        ? [
+            ...snapChrome,
+            {
+              from: guidePointAt(orientation, offset, center - halfLength),
+              to: guidePointAt(orientation, offset, center + halfLength),
+              label: formatMeasurement(2 * halfLength),
+            },
+          ]
+        : snapChrome,
+    );
+    return { center, halfLength };
+  };
+
+  // Where the resize phase anchors its fixed end: a screen point's foot on the
+  // frozen guide line, in the along parameter. Called only from the per-render
+  // move handler — the pointer-down callbacks are `useCallback([])` and would
+  // capture a first-render `screenToWorld`.
+  const footAlongAt = (orientation: GuideOrientation, offset: number, mx: number, my: number) =>
+    guideAlongOf(orientation, guideFoot(orientation, offset, screenToWorld(mx, my)));
 
   const onStartDrag = useCallback((id: string, e: React.PointerEvent) => {
     // Left button only — a middle press bubbles to the pan, a right press to
@@ -238,6 +424,11 @@ export function useGuideDrag(
       towedGaps: siblings.guides
         .filter((g) => g.orientation === guide.orientation)
         .map((g) => g.startOffset - guide.offset),
+      lastOffset: guide.offset,
+      offsetBias: 0,
+      resize: null,
+      ctrlAtPress: e.ctrlKey || e.metaKey,
+      everOffset: false,
       history: beginHistoryGroup({ deferPersist: true }),
     };
   }, []);
@@ -255,6 +446,12 @@ export function useGuideDrag(
       allTargets: liveAlignTargets(),
       neighbours: liveGuideTargets(),
       towedGaps: [],
+      extent: null,
+      resize: null,
+      everOffset: false,
+      ctrlAtPress: e.ctrlKey || e.metaKey,
+      ctrlFreeOffset: false,
+      perpBias: 0,
     };
   }, []);
 
@@ -264,9 +461,44 @@ export function useGuideDrag(
       if (pointerLost(e)) return onPointerCancel();
       const { moved, dxScreen, dyScreen } = trackDragMove(ds, e, svgRef);
       if (!moved) return;
+      if (e.ctrlKey || e.metaKey) {
+        if (!ds.resize) {
+          // Ctrl held since the press with no offset frame run: the anchored
+          // end is the PRESS foot. A mid-gesture Ctrl marks this frame's foot.
+          const [mx, my] =
+            ds.ctrlAtPress && !ds.everOffset ? [ds.startMX, ds.startMY] : [e.clientX, e.clientY];
+          ds.resize = { anchor: footAlongAt(ds.orientation, ds.lastOffset, mx, my), mx, my };
+        }
+        ds.resize.mx = e.clientX;
+        ds.resize.my = e.clientY;
+        // resizeGuide already refuses the zero-width frame, so the guide keeps
+        // its previous span until the sweep starts; null strips to infinite.
+        resizeGuide(ds.id, resizedExtent(ds.orientation, ds.lastOffset, ds.resize.anchor, e, ds));
+        setOverWell(null);
+        return;
+      }
+      if (ds.resize) {
+        // Leaving resize: re-base so the offset resumes exactly where it
+        // froze — measured from the LAST RESIZE FRAME's cursor, so travel
+        // since then still lands this frame. startOffset stays put (the
+        // sibling tow measures its total from it).
+        ds.offsetBias =
+          ds.lastOffset -
+          (ds.startOffset +
+            guideNudgeDelta(
+              ds.orientation,
+              (ds.resize.mx - ds.startMX) / zoom,
+              (ds.resize.my - ds.startMY) / zoom,
+            ));
+        ds.resize = null;
+      }
+      ds.everOffset = true;
       const raw =
-        ds.startOffset + guideNudgeDelta(ds.orientation, dxScreen / zoom, dyScreen / zoom);
+        ds.startOffset +
+        ds.offsetBias +
+        guideNudgeDelta(ds.orientation, dxScreen / zoom, dyScreen / zoom);
       const next = snappedOffset(ds.orientation, raw, e, ds);
+      ds.lastOffset = next;
       moveGuide(ds.id, next);
       if (hasGroupSiblings(ds.siblings)) {
         // Rigid along the guide's one degree of freedom; the along-axis half
@@ -283,9 +515,43 @@ export function useGuideDrag(
       const { moved } = trackDragMove(ps, e, svgRef);
       if (!moved) return;
       const world = screenToWorld(e.clientX, e.clientY);
-      const raw = guideOffsetOf(ps.orientation, world);
+      if ((e.ctrlKey || e.metaKey) && ps.everOffset) {
+        if (!ps.resize) {
+          // Ctrl held since the well press with no ctrl-free offset frame run:
+          // the anchored end is the PRESS foot, the drag path's rule. A
+          // mid-pull Ctrl marks this frame's foot.
+          const [mx, my] =
+            ps.ctrlAtPress && !ps.ctrlFreeOffset
+              ? [ps.startMX, ps.startMY]
+              : [e.clientX, e.clientY];
+          ps.resize = {
+            anchor: footAlongAt(ps.orientation, ps.offset, mx, my),
+            mx,
+            my,
+          };
+        }
+        ps.resize.mx = e.clientX;
+        ps.resize.my = e.clientY;
+        const ext = resizedExtent(ps.orientation, ps.offset, ps.resize.anchor, e, ps);
+        // null = flipped to infinite; a zero-width frame keeps the last span.
+        if (ext === null) ps.extent = null;
+        else if (ext.halfLength > 0) ps.extent = ext;
+        setPull({ orientation: ps.orientation, offset: ps.offset, extent: ps.extent ?? undefined });
+        setOverWell(null);
+        return;
+      }
+      if (ps.resize) {
+        // Same resume rule as the drag: re-base off the last resize frame's
+        // cursor so travel since then still lands.
+        ps.perpBias =
+          ps.offset - guideOffsetOf(ps.orientation, screenToWorld(ps.resize.mx, ps.resize.my));
+        ps.resize = null;
+      }
+      ps.everOffset = true;
+      if (!(e.ctrlKey || e.metaKey)) ps.ctrlFreeOffset = true;
+      const raw = guideOffsetOf(ps.orientation, world) + ps.perpBias;
       ps.offset = snappedOffset(ps.orientation, raw, e, ps);
-      setPull({ orientation: ps.orientation, offset: ps.offset });
+      setPull({ orientation: ps.orientation, offset: ps.offset, extent: ps.extent ?? undefined });
       syncOverWell(ps.orientation, e);
     }
   };
@@ -294,9 +560,11 @@ export function useGuideDrag(
     const ds = dragRef.current;
     if (ds) {
       dragRef.current = null;
-      if (ds.moved && releasedInWell(ds.orientation, e)) {
+      if (ds.moved && !ds.resize && releasedInWell(ds.orientation, e)) {
         // Back into the well it came from: the drop deletes the guide, inside
         // the same single history entry as the drag that carried it there.
+        // Never while resizing — a frozen offset can't have carried the guide
+        // to its well; the cursor is just sweeping past it.
         useSelection.getState().selectGuide(null);
         deleteGuide(ds.id);
       }
@@ -310,10 +578,12 @@ export function useGuideDrag(
     const ps = pullRef.current;
     if (ps) {
       pullRef.current = null;
-      if (ps.moved && !releasedInWell(ps.orientation, e)) {
+      // A resize release always commits: the well cancel is the offset drag's
+      // exit, and a frozen ghost can't have been carried back to its strip.
+      if (ps.moved && (ps.resize !== null || !releasedInWell(ps.orientation, e))) {
         // One write = one undo entry; selecting opens the popover, the same
         // auto-select every single-shot placement does.
-        const id = addGuide(ps.orientation, ps.offset);
+        const id = addGuide(ps.orientation, ps.offset, ps.extent ?? undefined);
         useSelection.getState().selectGuide(id);
       }
       if (ps.moved) releaseDragCapture(e, svgRef);

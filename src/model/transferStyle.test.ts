@@ -70,10 +70,10 @@ describe('legacyColorToDayNight', () => {
 });
 
 describe('canonicalTransferThickness', () => {
-  it('snaps to the quarter-unit grid and clamps to the floor TRANSFER_THICKNESS_MIN', () => {
-    // Quarter values survive verbatim — they did NOT on the old integer grid.
+  it('keeps the thickness it is given and clamps to the floor TRANSFER_THICKNESS_MIN', () => {
     expect(canonicalTransferThickness(4.25, 2)).toBe(4.25);
-    expect(canonicalTransferThickness(4.3, 2)).toBe(4.25);
+    // Off-quarter stands: the step is what the slider/wheel move by.
+    expect(canonicalTransferThickness(4.3, 2)).toBe(4.3);
     expect(canonicalTransferThickness(0, 2)).toBe(TRANSFER_THICKNESS_MIN);
     expect(canonicalTransferThickness(-3, 2)).toBe(TRANSFER_THICKNESS_MIN);
   });
@@ -82,9 +82,9 @@ describe('canonicalTransferThickness', () => {
     expect(canonicalTransferThickness(25, 2)).toBe(25);
   });
 
-  it('collapses to undefined at the doc setting, including after snapping/clamping', () => {
+  it('collapses to undefined at the doc setting, including after clamping', () => {
     expect(canonicalTransferThickness(5, 5)).toBeUndefined();
-    expect(canonicalTransferThickness(5.1, 5)).toBeUndefined(); // snaps to 5 = setting
+    expect(canonicalTransferThickness(5.1, 5)).toBe(5.1); // a real override, not "near enough"
     // Clamping can land ON the setting: 2px default, junk input below the floor.
     expect(canonicalTransferThickness(-1, TRANSFER_THICKNESS_MIN)).toBeUndefined();
     // ...but the same value is kept when the setting differs.
@@ -93,9 +93,8 @@ describe('canonicalTransferThickness', () => {
 });
 
 describe('canonicalTransferStrokeWidth', () => {
-  it('rounds to the quarter grid and clamps to the floor TRANSFER_STROKE_WIDTH_MIN (0 is legal)', () => {
-    expect(canonicalTransferStrokeWidth(2.7, 0)).toBe(2.75);
-    // A quarter value survives instead of being rounded off to an integer.
+  it('keeps the width it is given and clamps to the floor TRANSFER_STROKE_WIDTH_MIN (0 is legal)', () => {
+    expect(canonicalTransferStrokeWidth(2.7, 0)).toBe(2.7);
     expect(canonicalTransferStrokeWidth(2.75, 0)).toBe(2.75);
     expect(canonicalTransferStrokeWidth(-2, 1)).toBe(TRANSFER_STROKE_WIDTH_MIN);
   });

@@ -368,6 +368,20 @@ describe('useLineCircleDrag — knob drag resizes', () => {
     expect(useDoc.getState().lineCircles.c1).toMatchObject({ x: 100, y: 100, radius: 100 });
   });
 
+  it('Shift frees the radius from the quarter grid, like every other drag', () => {
+    // The grid is a GESTURE snap now (the transform keeps whatever radius it is
+    // handed), so Shift can decline it the way it declines the point snapper on
+    // a move — and the hook's contract says it does.
+    seedCircle();
+    const r = render();
+    act(() => r.current.onStartDrag('c1', 'knob', pointerEvent({ clientX: 170, clientY: 100 })));
+    act(() => {
+      r.current.onPointerMove(pointerEvent({ clientX: 200.1, clientY: 160, shiftKey: true }));
+      r.current.onPointerUp(pointerEvent({ clientX: 200.1, clientY: 160, shiftKey: true }));
+    });
+    expect(useDoc.getState().lineCircles.c1.radius).toBe(100.1);
+  });
+
   it('clamps at the radius floor rather than inverting', () => {
     seedCircle();
     const r = render();

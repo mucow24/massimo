@@ -1453,6 +1453,28 @@ describe('<StationInspector /> — X/Y fields speak the pivot, not the pin', () 
     expect((screen.getByLabelText('Y') as HTMLInputElement).value).toBe('-10');
   });
 
+  it('shows a fractional pivot as it stands, minus the float dust', () => {
+    // A dragged/snapped station lands wherever the gesture put it. Rounding the
+    // display claimed a whole-unit position the doc did not hold — and, since
+    // the same rounding fed the wheel's getCurrent, one notch over the field
+    // quantized the station for real.
+    // Stop parked ON the pin (col 0), so the pivot IS the stored position and
+    // the assertion is about the rounding, nothing else.
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', x: 120.4, y: 0.1 + 0.2, stops: [makeStop('L1', { col: 0 })] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a'] })],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+    render(<StationInspector id="a" />);
+    expect((screen.getByLabelText('X') as HTMLInputElement).value).toBe('120.4');
+    expect((screen.getByLabelText('Y') as HTMLInputElement).value).toBe('0.3');
+  });
+
   it('typing X moves the station so the pivot lands there, cells untouched', () => {
     seedOffsetLayout();
     render(<StationInspector id="a" />);
