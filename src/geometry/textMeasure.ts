@@ -790,7 +790,11 @@ export function measureTextLabel(styled: StyledText): MeasuredBBox {
  * drift. `justify` takes the default branch: its ragged last line is
  * left-flush, and its stretched lines never call this.
  */
-export function lineCursorX(align: TextLabelAlign, halfWidth: number, advanceWidth: number): number {
+export function lineCursorX(
+  align: TextLabelAlign,
+  halfWidth: number,
+  advanceWidth: number,
+): number {
   if (align === 'right') return halfWidth - advanceWidth;
   if (align === 'center') return -advanceWidth / 2;
   // left (and justify's ragged last line)
