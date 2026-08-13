@@ -9,9 +9,11 @@ How to work in this repo. These override default behavior.
 
 ## Testing
 
-- On this machine, gate with `npm run pre-pr:queued`, not bare `pre-pr`: it queues the run behind
-  a machine-wide kernel mutex ([scripts/preprQueued.ps1](scripts/preprQueued.ps1)) so parallel
-  sessions' gates serialize instead of thrashing each other. Cloud and CI use plain `pre-pr`.
+- Gate with `npm run pre-pr:queued` when running on Windows (= Mike's machine, where several
+  sessions may gate at once): it queues the run behind a machine-wide kernel mutex
+  ([scripts/preprQueued.ps1](scripts/preprQueued.ps1)) so parallel gates serialize instead of
+  thrashing each other. Everywhere else (Linux cloud containers, CI) use plain `npm run pre-pr` —
+  the wrapper is PowerShell and there is nothing to serialize on a one-session machine.
 - All logic changes must be unit-tested. No behavioral change ships without a test covering it.
 - Use red-first / TDD whenever possible: write the failing test first, watch it fail, then make it pass.
 - A red test must fail on **behavioral logic**, not on plumbing. "The module I'm about to write isn't importing yet" is NOT a red test. The test must exercise actual behavior and fail because that behavior is wrong or missing.
