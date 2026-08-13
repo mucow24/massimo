@@ -246,13 +246,16 @@ test.describe('selecting a station leaves the page where it is', () => {
     expect(m.overflows).toBe(true);
     expect(m.rowBelowFold).toBe(true);
 
-    // Selected through the store rather than by clicking the dot. The reveal
-    // fires on the selection, not on the click, and at this width much of the
-    // canvas is outside the window — aiming a real click at a station whose row
-    // must also sort last is fragile for no gain.
-    await page.evaluate(async () => {
-      const s = await import('/src/state/store.ts');
-      s.useSelection.getState().selectStation('zz');
+    // Selected through the live store (via the __massimo handle — it works in
+    // dev AND prod bundles) rather than by clicking the dot. The reveal fires
+    // on the selection, not on the click, and at this width much of the canvas
+    // is outside the window — aiming a real click at a station whose row must
+    // also sort last is fragile for no gain.
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        __massimo: { stores: { selection: { getState: () => { selectStation: (id: string) => void } } } };
+      };
+      w.__massimo.stores.selection.getState().selectStation('zz');
     });
     await expect(page.locator('.station-popover')).toBeVisible();
 

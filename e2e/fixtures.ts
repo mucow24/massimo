@@ -117,6 +117,38 @@ export interface Seed {
 }
 
 /**
+ * Write a raw persisted doc (+ camera) into localStorage and open the app on
+ * it — ONE full app boot per test. localStorage is only writable from a
+ * same-origin document, so prime the origin with the static blank page in
+ * public/ (a trivial fetch, not an app boot), write both keys, then load the
+ * app for real. Callers whose docs the typed `Seed` can't express (legacy
+ * shapes, raw persist versions) use this directly; everything else goes
+ * through seedAndOpen.
+ */
+export async function openWithRawDoc(
+  page: Page,
+  persisted: unknown,
+  viewport: { x: number; y: number; zoom: number } = { x: 0, y: 0, zoom: 1 },
+): Promise<void> {
+  await page.goto('/e2e-blank.html');
+  await page.evaluate(
+    ([key, value, viewportKey, vp]) => {
+      localStorage.setItem(key as string, value as string);
+      localStorage.setItem(viewportKey as string, vp as string);
+    },
+    [
+      'vignelli-map-doc-v1',
+      JSON.stringify(persisted),
+      'massimo-viewport',
+      JSON.stringify({ state: viewport, version: 0 }),
+    ],
+  );
+  await page.goto('/');
+  // Wait until the SVG is in place — proxy for "doc loaded".
+  await page.waitForSelector('.canvas-host svg');
+}
+
+/**
  * Seeds the persisted doc fixture into localStorage and navigates to the
  * dev server. Selection state is intentionally NOT persisted, so every test
  * starts with no selection.
@@ -132,11 +164,6 @@ export async function seedAndOpen(
   // tests that reach for "Filled black diamond" / "Dash (tick)" opt in here.
   opts: { zoom?: number; x?: number; y?: number; stopDotLibrary?: boolean } = {},
 ): Promise<void> {
-  // Pre-navigation: localStorage isn't writable until a page exists in the
-  // origin. Open `/` once so the origin is established, then write, then
-  // reload.
-  await page.goto('/');
-
   const stations: Record<string, unknown> = {};
   for (const s of seed.stations) {
     stations[s.id] = {
@@ -261,25 +288,11 @@ export async function seedAndOpen(
     },
   };
 
-  await page.evaluate(
-    ([key, value, viewportKey, viewport]) => {
-      localStorage.setItem(key as string, value as string);
-      localStorage.setItem(viewportKey as string, viewport as string);
-    },
-    [
-      'vignelli-map-doc-v1',
-      JSON.stringify(persisted),
-      'massimo-viewport',
-      JSON.stringify({
-        state: { x: opts.x ?? 0, y: opts.y ?? 0, zoom: opts.zoom ?? 1 },
-        version: 0,
-      }),
-    ],
-  );
-
-  await page.reload();
-  // Wait until the SVG is in place — proxy for "doc loaded".
-  await page.waitForSelector('.canvas-host svg');
+  await openWithRawDoc(page, persisted, {
+    x: opts.x ?? 0,
+    y: opts.y ?? 0,
+    zoom: opts.zoom ?? 1,
+  });
 }
 
 /**

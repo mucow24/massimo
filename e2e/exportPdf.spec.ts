@@ -15,7 +15,7 @@
 import { test, expect, type Page, type Download } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { inflateSync } from 'node:zlib';
-import { openMapMenu, seedAndOpen, fourInLineWithBulletsAndLabel } from './fixtures';
+import { openMapMenu, openWithRawDoc, seedAndOpen, fourInLineWithBulletsAndLabel } from './fixtures';
 
 // A small self-contained SVG, embedded as the "Add SVG…" feature would store
 // it: an opaque data:image/svg+xml;base64 URI.
@@ -98,21 +98,7 @@ const persisted = {
 };
 
 async function seed(page: Page): Promise<void> {
-  await page.goto('/');
-  await page.evaluate(
-    ([k, v, vk, vp]) => {
-      localStorage.setItem(k, v);
-      localStorage.setItem(vk, vp);
-    },
-    [
-      'vignelli-map-doc-v1',
-      JSON.stringify(persisted),
-      'massimo-viewport',
-      JSON.stringify({ state: { x: 0, y: 0, zoom: 1 }, version: 0 }),
-    ],
-  );
-  await page.reload();
-  await page.waitForSelector('.canvas-host svg');
+  await openWithRawDoc(page, persisted);
   await page.evaluate(() => document.fonts.ready);
 }
 
@@ -123,11 +109,6 @@ async function exportPdf(page: Page): Promise<Download> {
   await page.getByRole('menuitem', { name: 'PDF', exact: true }).click();
   return downloadPromise;
 }
-
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
-});
 
 test('exports a vector PDF with outlined text from a hatch + text + image map', async ({
   page,

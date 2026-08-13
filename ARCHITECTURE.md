@@ -63,8 +63,10 @@ genuinely absent engine apart from a page that has outlived its build
   `migrateDoc()` (localStorage rehydration). There is **no `normalizeDoc()`** — absent fields
   fill from `DEFAULT_DOC`; legacy fixups are shared exported "backfill"/"sanitize" functions
   called by both paths.
-- **CI gate:** `npm run pre-pr` = `format → lint → format:check → test → build → e2e`. The
-  Playwright suite runs last (it's the slow step) so unit-level failures surface first.
+- **CI gate:** `npm run pre-pr` = `format → lint → format:check → test → build → e2e:prod`. The
+  Playwright suite runs last (it's the slow step) so unit-level failures surface first, and it
+  runs against the production bundle the `build` stage just produced (`vite preview`) — app
+  boots there are far cheaper than dev-server serves.
 
 ---
 
@@ -89,9 +91,10 @@ Scripts ([package.json](package.json)):
 npm run dev          # vite dev server
 npm run build        # tsc -b && vite build
 npm test             # vitest run (unit, jsdom)
-npm run e2e          # playwright test (drives the dev server)
+npm run e2e          # playwright test (drives the dev server — no build needed, for iterating)
+npm run e2e:prod     # playwright test against the built dist (E2E_PREVIEW=1 → vite preview)
 npm run fonts        # stage the typeface into public/fonts (also runs on postinstall)
-npm run pre-pr       # format → lint → format:check → test → build → e2e  (the PR gate)
+npm run pre-pr       # format → lint → format:check → test → build → e2e:prod  (the PR gate)
 ```
 
 `pre-pr` runs `format` (prettier --write, auto-fixes) **first** so formatting can't block, then
@@ -281,7 +284,9 @@ src/
   debug/                        # devHandle.ts: counters + the in-place resets (history / region
                                 #   caches / doc round-trip) that let a slowed-down session be
                                 #   bisected without the reload that cures it, plus the region
-                                #   pipeline's flag/status/kill and the worker health probe. Read
+                                #   pipeline's flag/status/kill, the worker health probe, and the
+                                #   live store singletons (the e2e door for selections no pointer
+                                #   can reach — prod bundles have no /src/ URLs to import). Read
                                 #   three ways: the Developer pane's Performance section,
                                 #   window.__massimo, and the .perf browser harnesses. Installed
                                 #   in EVERY build, not just dev.
@@ -4178,9 +4183,10 @@ Each is confirmed in source/tests; file pointers included.
   the hash or a width edit serves a stale face from the region cache. (It has no terminus, so no
   line end applies — a lone stop has no direction to end along, and stays a full square.)
   ([regionCache.ts](src/geometry/regionCache.ts))
-- **`pre-pr` ends with the full Playwright suite** — it's the slow step, but interaction-behavior
-  changes can invalidate e2e specs without failing any unit test (PR #159's layout-edit retarget
-  did exactly that), and migration/rehydration is only covered by e2e (`e2e/migration.spec.ts`).
+- **`pre-pr` ends with the full Playwright suite** (against the built dist — see `e2e:prod`
+  above) — it's the slow step, but interaction-behavior changes can invalidate e2e specs without
+  failing any unit test (PR #159's layout-edit retarget did exactly that), and
+  migration/rehydration is only covered by e2e (`e2e/migration.spec.ts`).
 - **No 100 weight anywhere** — `TextLabelWeight`, the weight tables, and clipboard validation all
   start at 200: Söhne's ladder has no UltraLight. A stored 100 is folded onto Thin by
   `bakeLegacyUltraLightWeight` (called by both `parse()` and `migrateDoc`), and `<w=UltraLight>`
@@ -4292,9 +4298,17 @@ Each is confirmed in source/tests; file pointers included.
   patch per test and nest, so a suite can install a distinct model over the file's),
   `setup.ts` (jsdom polyfills: ResizeObserver, pointer-capture, scrollIntoView).
 - **E2E (Playwright, [e2e/](e2e/))** — single-worker, no retries locally (2 on CI), honors `PORT`
-  for parallel worktrees. `seedAndOpen` seeds a localStorage doc (`Seed*` shapes omit fields to
-  simulate legacy saves) and opens the app — **this is the only place the rehydrate/migrate path is
-  exercised**. `migration.spec.ts` asserts **zero console errors** loading legacy docs;
+  for parallel worktrees, 120s per-test timeout (app boots dominate on slow cloud containers; the
+  default 30s phantom-failed them). `pre-pr` and CI run the suite against the production bundle
+  (`e2e:prod` = `E2E_PREVIEW=1` → `vite preview` over dist/); plain `npm run e2e` drives the dev
+  server so a spec can be iterated on without a build. Every test boots the app exactly ONCE:
+  `openWithRawDoc` primes the origin on the static `public/e2e-blank.html`, writes the doc +
+  camera into localStorage, then loads the app — and no spec carries a goto/cleanup `beforeEach`,
+  because each test's fresh BrowserContext already starts with empty storage (localStorage AND
+  IndexedDB). `seedAndOpen` wraps it with the typed `Seed` shapes (fields omitted to simulate
+  legacy saves) — **this is the only place the rehydrate/migrate path is exercised**. Specs drive
+  state no pointer can reach through `window.__massimo.stores`, never `import('/src/…')` (a
+  dev-server-only URL that 404s in the production bundle). `migration.spec.ts` asserts **zero console errors** loading legacy docs;
   `export.spec.ts` checks the exported SVG is chrome-free and text-free (outlined to paths, with a
   differential glyph count so a tracer that emitted nothing fails) and that PNG is genuinely 4×
   (reads IHDR bytes); `exportPdf.spec.ts` exports a hatch+text+image map and asserts the PDF embeds

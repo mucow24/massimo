@@ -7,26 +7,10 @@ import { closeMapMenu, openMapMenu, seedAndOpen, fourInLine } from './fixtures';
  * is a picture rather than a string.
  */
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(async () => {
-    localStorage.removeItem('vignelli-map-doc-v1');
-    // Both keys: the pointer store adopts the legacy one on boot and only then
-    // retires it, so a stale `massimo-library-current` would leak between tests.
-    localStorage.removeItem('massimo-library-current');
-    localStorage.removeItem('massimo-library-pointer');
-    // The save-baseline hash: two tests seed byte-identical docs, so a hash one
-    // test recorded would vouch for the next test's seed — reading clean, with
-    // Save version greyed out.
-    localStorage.removeItem('massimo-save-baseline');
-    await new Promise((resolve) => {
-      const req = indexedDB.deleteDatabase('massimo-library');
-      req.onsuccess = resolve;
-      req.onerror = resolve;
-      req.onblocked = resolve;
-    });
-  });
-});
+// No cleanup beforeEach: each test's fresh BrowserContext partitions
+// localStorage (library pointer, save-baseline hash) AND IndexedDB, so no
+// library state — not even the massimo-library database — can leak between
+// tests.
 
 const saveToLibrary = async (page: Page) => {
   await openMapMenu(page);

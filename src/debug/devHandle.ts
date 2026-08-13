@@ -20,7 +20,7 @@ import { resetExclusionHoleCache } from '../geometry/lineRegions';
 import { regionCacheSize, resetRegionCache } from '../geometry/regionCache';
 import { parse, serialize } from '../model/serialize';
 import { clearHistory, historyDepth, redoDepth } from '../state/history';
-import { useDoc } from '../state/store';
+import { useDoc, useSelection } from '../state/store';
 import {
   killRegionPipelineWorkerForTest,
   regionPipelineStatus,
@@ -157,6 +157,16 @@ export async function workerPing(): Promise<{
 
 export interface DevHandle {
   counters: () => DevCounters;
+  /** The live zustand singletons — the same instances the React tree renders
+   *  from. This is the e2e door for driving state no pointer can reach (a
+   *  factory transfer paints at r = 1; a station whose sidebar row sits off a
+   *  narrow window): prod bundles have no `/src/…` modules to dynamically
+   *  import, so specs that once imported the store off the dev server reach
+   *  it here instead, in whichever build is open. */
+  stores: {
+    doc: typeof useDoc;
+    selection: typeof useSelection;
+  };
   /** The region worker's health probe (see {@link workerPing}). */
   workerPing: () => ReturnType<typeof workerPing>;
   /** The pipelined-drag flag: on by default (see .perf/RESULTS.md);
@@ -183,6 +193,7 @@ export interface DevHandle {
 export function makeDevHandle(): DevHandle {
   return {
     counters: devCounters,
+    stores: { doc: useDoc, selection: useSelection },
     workerPing,
     regionPipeline: {
       enable: setRegionPipelineEnabled,

@@ -1,11 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { seedAndOpen, stationCenter, fourInLine } from './fixtures';
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
-});
-
 // The picker lives in the StationInspector, which only renders for a
 // single-station selection. Selecting a station is therefore a precondition
 // for the picker to be on the page at all. Picking a stop in the on-canvas

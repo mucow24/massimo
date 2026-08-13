@@ -220,10 +220,17 @@ test.describe('style row', () => {
     await page.getByRole('combobox', { name: /^Transfer \(line/ }).click();
     await page.getByRole('option', { name: 'Default' }).click();
     await page.keyboard.press('Escape');
-    await page.evaluate(async () => {
-      const s = await import('/src/state/store.ts');
-      const id = Object.keys(s.useDoc.getState().transfers)[0];
-      s.useSelection.getState().selectTransfer(id);
+    await page.evaluate(() => {
+      const w = window as unknown as {
+        __massimo: {
+          stores: {
+            doc: { getState: () => { transfers: Record<string, unknown> } };
+            selection: { getState: () => { selectTransfer: (id: string) => void } };
+          };
+        };
+      };
+      const id = Object.keys(w.__massimo.stores.doc.getState().transfers)[0];
+      w.__massimo.stores.selection.getState().selectTransfer(id);
     });
     const pop = page.locator('.transfer-popover');
     await expect(pop).toBeVisible();

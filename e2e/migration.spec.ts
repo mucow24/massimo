@@ -1,31 +1,14 @@
 import { test, expect, type Page } from '@playwright/test';
-import { stationCenter } from './fixtures';
+import { openWithRawDoc, stationCenter } from './fixtures';
 
 // Seed `localStorage` with a doc whose stop orientations use the *legacy*
 // explicit cardinals (`up`/`down`/`left`/`right`) and an unknown garbage
-// value. Reload — `parse()` migrates everything to the four canonical auto-*
-// orientations.
+// value. Boot on it — `parse()` migrates everything to the four canonical
+// auto-* orientations.
 //
-// Bypasses `seedAndOpen` here because its TS-typed `Seed` only accepts
-// canonical orientations; this test specifically needs to inject legacy
-// strings.
-async function seedRaw(page: Page, persisted: unknown): Promise<void> {
-  await page.goto('/');
-  await page.evaluate(
-    ([key, value, viewportKey, viewport]) => {
-      localStorage.setItem(key as string, value as string);
-      localStorage.setItem(viewportKey as string, viewport as string);
-    },
-    [
-      'vignelli-map-doc-v1',
-      JSON.stringify(persisted),
-      'massimo-viewport',
-      JSON.stringify({ state: { x: 0, y: 0, zoom: 1 }, version: 0 }),
-    ],
-  );
-  await page.reload();
-  await page.waitForSelector('.canvas-host svg');
-}
+// openWithRawDoc rather than `seedAndOpen` because the TS-typed `Seed` only
+// accepts canonical orientations; these tests specifically need to inject
+// legacy strings.
 
 const baseStation = (
   id: string,
@@ -120,7 +103,7 @@ test.describe('Legacy dotShape migration on load (v6 → v7)', () => {
       if (msg.type() === 'error') errors.push(msg.text());
     });
 
-    await seedRaw(page, persisted);
+    await openWithRawDoc(page, persisted);
 
     // A: the per-stop diamond override, now a black diamond polygon.
     const a = page.locator('[data-stop-station="A"][data-stop-line="L1"]');
@@ -190,7 +173,7 @@ test.describe('Legacy inline bullet syntax migration on load (v7 → v8)', () =>
       if (msg.type() === 'error') errors.push(msg.text());
     });
 
-    await seedRaw(page, persisted);
+    await openWithRawDoc(page, persisted);
 
     // The free text label renders its migrated token as an inline bullet in
     // the line color.
@@ -255,7 +238,7 @@ test.describe('Legacy stop-orientation migration on load', () => {
       if (msg.type() === 'error') errors.push(msg.text());
     });
 
-    await seedRaw(page, persisted);
+    await openWithRawDoc(page, persisted);
 
     // The sidebar is irrelevant to migration; close it so the per-station editor
     // popovers (which now stack BELOW the sidebar) aren't tucked behind it for

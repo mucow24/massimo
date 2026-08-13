@@ -10,7 +10,7 @@ import {
 } from '../geometry/lineRegions';
 import { buildRegionsIncremental } from '../geometry/regionIncremental';
 import { clearHistory, historyDepth } from '../state/history';
-import { useDoc } from '../state/store';
+import { useDoc, useSelection } from '../state/store';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makeBandSpec, makeLine, makeStation, makeStop } from '../test/fixtures';
 import type { LineId } from '../model/types';
@@ -182,6 +182,18 @@ describe('roundTripDoc', () => {
 });
 
 describe('the handle wiring', () => {
+  it('stores hands out the app singletons, and a selection driven through it is live', () => {
+    const h = makeDevHandle();
+    // Identity, not shape: the entire value of the door is that e2e drives the
+    // SAME instances the React tree renders from — a copy would select nothing.
+    expect(h.stores.doc).toBe(useDoc);
+    expect(h.stores.selection).toBe(useSelection);
+    h.stores.selection.getState().selectStation('s1');
+    expect(useSelection.getState().selectedStationIds).toEqual(['s1']);
+    h.stores.selection.getState().selectStation(null);
+    expect(useSelection.getState().selectedStationIds).toEqual([]);
+  });
+
   it('reset.history empties the undo stack', () => {
     useDoc.getState().addStation(50, 50, 'New');
     expect(historyDepth()).toBeGreaterThan(0);

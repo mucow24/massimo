@@ -82,11 +82,6 @@ async function stopDotCenter(page: Page, sid: string): Promise<{ x: number; y: n
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
-});
-
 test('segment click + station click splices the station into that edge', async ({ page }) => {
   await seedAndOpen(page, withFreeStations);
   await openEditStops(page);

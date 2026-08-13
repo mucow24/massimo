@@ -1,11 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { seedAndOpen, stationCenter, fourInLine, toggleViewLayer } from './fixtures';
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
-});
-
 test.describe('Waypoint toggle', () => {
   test('toggling Waypoint on B hides its bullets but leaves it selectable; WP pill in sidebar', async ({
     page,

@@ -22,12 +22,6 @@ const seed: Seed = {
   lines: [{ id: 'L1', service: 'L1', color: '#0039A6', stations: ['D', 'T'] }],
 };
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
-  await page.evaluate(() => localStorage.removeItem('massimo-snap-prefs-v1'));
-});
-
 // The snap engage radius is constant in SCREEN pixels (10px), so its world
 // extent shrinks as you zoom in — allowing finer positioning before a snap grabs.
 test.describe('Snap engage radius is constant on screen across zoom', () => {

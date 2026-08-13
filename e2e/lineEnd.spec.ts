@@ -9,11 +9,6 @@ import { seedAndOpen, stationCenter, fourInLine } from './fixtures';
 // path carries an arc that bulges OUTWARD. A unit test can assert the `d`
 // string; only a real renderer can be asked whether a point is inside the fill.
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
-});
-
 // fourInLine runs A–B–C–D along y=0, so A and D are the line's two termini.
 const stripe = (page: Page) => page.locator('[data-band-stripe][data-line-id="L1"]').first();
 

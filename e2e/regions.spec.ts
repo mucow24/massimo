@@ -29,11 +29,6 @@ const crossing: Seed = {
   ],
 };
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
-});
-
 test.describe('Region layering — click a face to cycle which line shows', () => {
   test('L toggles the mode; overlap faces get outlines and click targets', async ({ page }) => {
     await seedAndOpen(page, crossing);

@@ -42,11 +42,6 @@ const lShape: Seed = {
   lines: [],
 };
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
-});
-
 test.describe('auto-orientation — appending never re-rotates a prior station', () => {
   test('adding a third station leaves the existing corner station untouched', async ({ page }) => {
     await seedAndOpen(page, lShape);

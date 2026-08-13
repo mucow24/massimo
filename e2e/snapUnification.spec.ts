@@ -71,10 +71,10 @@ const verticalLine: Seed = {
   lines: [{ id: 'L1', service: 'L', color: '#0039A6', stations: ['A', 'B', 'C'] }],
 };
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('massimo-snap-prefs-v1'));
-});
+// No snap-prefs reset here: each test runs in a fresh BrowserContext, and the
+// prefs store only writes localStorage on a user toggle — so the key cannot
+// exist before the test acts. Every test seeds via seedAndOpen; a beforeEach
+// goto would only add a third full page load per test.
 
 // Cycle "Snap to all" from off to the given directional state.
 async function setSnapAll(page: Page, state: 'horizontal' | 'vertical'): Promise<void> {

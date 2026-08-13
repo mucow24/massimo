@@ -109,11 +109,6 @@ const restSnapshot = (page: Page) =>
     return { stations, clips };
   });
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
-});
-
 test('WYSIWYG at the drop: the pipelined drag lands byte-identical to the synchronous one', async ({
   page,
 }) => {

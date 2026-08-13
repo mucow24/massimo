@@ -28,14 +28,9 @@ const loneStation: Seed = {
   lines: [{ id: 'LB', service: 'B', color: '#A00033', stations: ['B'] }],
 };
 
-test.beforeEach(async ({ page }) => {
-  // Snap prefs persist across tests; reset so each test starts from defaults
-  // (line on, grid off). The grid SIZE lives in massimo-viewport, which
-  // seedAndOpen rewrites without a gridSize each run → defaults back to 10px.
-  await page.goto('/');
-  await page.evaluate(() => localStorage.removeItem('massimo-snap-prefs-v1'));
-});
-
+// Every test starts from default snap prefs (line on, grid off): each gets a
+// fresh BrowserContext. The grid SIZE lives in massimo-viewport, which
+// seedAndOpen rewrites without a gridSize each run → defaults back to 10px.
 test.describe('grid size toggle', () => {
   test('button cycles 10 → 20 → 5 and persists across reload', async ({ page }) => {
     await seedAndOpen(page, loneStation);
