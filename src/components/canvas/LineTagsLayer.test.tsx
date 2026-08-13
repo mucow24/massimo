@@ -1,11 +1,11 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/react';
+import { render, fireEvent, act } from '@testing-library/react';
 import { LineTagsLayer, resolveTag } from './LineTagsLayer';
 import { cancelOpenHistoryGroup, useDoc, useSelection } from '../../state/store';
 import { isHistoryGrouping } from '../../state/history';
 import { DEFAULT_DOC } from '../../model/transforms';
-import { makeBandSpec, makeLine } from '../../test/fixtures';
-import { fakeSvgRef } from '../../test/interaction';
+import { makeBandSpec, makeLine, makeStation, makeStop } from '../../test/fixtures';
+import { dispatchWindowPointer, fakeSvgRef } from '../../test/interaction';
 import type { LineTag } from '../../model/types';
 import { capCenterDy } from '../../geometry/textMeasure';
 
@@ -320,5 +320,101 @@ describe('<LineTagsLayer> — orientation rotation (E5a)', () => {
     // rendered rotations follow from the table being distinct — so assert that
     // directly instead of paying four more renders to rediscover it.
     expect(new Set(Object.values(ORIENTATION_OFFSET_DEG)).size).toBe(4);
+  });
+});
+
+// The layer mounts its own SnapGuides for the tag drag's neighbour guide, so
+// it needs the label box threaded through it like the canvas-level mount does
+// — otherwise a tag-drag distance label rides the whole-span midpoint and goes
+// off screen the moment an end is past the edge, which is the bug the box
+// exists to fix.
+describe('LineTagsLayer — the tag drag readout honours the label box', () => {
+  // Two interlined lines over the fixture's s1→s2 corridor, a tag on each.
+  // Dragging L1's tag near L2's snaps it across the corridor and draws the
+  // labelled guide between the two stripes.
+  const corridorTag = {
+    fromStationId: 's1',
+    toStationId: 's2',
+    anchorEnd: 'from' as const,
+    orientation: 0 as const,
+  };
+  const seedInterlined = () => {
+    const stops = () => [
+      makeStop('L1', { row: 0, col: 0, orientation: 'auto-horizontal' }),
+      makeStop('L2', { row: 1, col: 0, orientation: 'auto-horizontal' }),
+    ];
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      lines: {
+        L1: makeLine({ id: 'L1', stations: ['s1', 's2'] }),
+        L2: makeLine({ id: 'L2', stations: ['s1', 's2'] }),
+      },
+      lineOrder: ['L1', 'L2'],
+      stations: {
+        s1: makeStation({ id: 's1', x: 0, y: 0, stops: stops() }),
+        s2: makeStation({ id: 's2', x: 100, y: 0, stops: stops() }),
+      },
+      lineTags: {
+        T: { ...corridorTag, id: 'T', lineId: 'L1', distance: 20 },
+        N: { ...corridorTag, id: 'N', lineId: 'L2', distance: 50 },
+      },
+    });
+    useDoc.temporal.getState().clear();
+  };
+
+  // Drag T onto N's cross-section, then read back the guide the layer drew:
+  // the dashed span's own endpoints plus where the label landed on it. Taking
+  // the span from the DOM keeps the expectation calibrated against the real
+  // stripe geometry instead of a hard-coded offset.
+  const dragAndReadGuide = (labelBox?: { vbX: number; vbY: number; vbW: number; vbH: number }) => {
+    seedInterlined();
+    const { ref } = fakeSvgRef();
+    const { container } = render(
+      <svg>
+        <LineTagsLayer
+          bands={[makeBandSpec(['L1', 'L2'])]}
+          zoom={1}
+          svgRef={ref}
+          screenToWorld={identityScreenToWorld}
+          labelBox={labelBox}
+        />
+      </svg>,
+    );
+    fireEvent.pointerDown(container.querySelector('rect[data-line-tag-id="T"]')!, {
+      button: 0,
+      clientX: 20,
+      clientY: 0,
+    });
+    act(() => dispatchWindowPointer('pointermove', { clientX: 50, clientY: 0 }));
+    const span = Array.from(container.querySelectorAll('line')).find((l) =>
+      l.getAttribute('stroke-dasharray'),
+    )!;
+    const label = Array.from(container.querySelectorAll('text')).find(
+      (t) => t.getAttribute('paint-order') === 'stroke',
+    )!;
+    const out = {
+      y1: Number(span.getAttribute('y1')),
+      y2: Number(span.getAttribute('y2')),
+      labelY: Number(label.getAttribute('y')) - capCenterDy(14),
+    };
+    dispatchWindowPointer('pointerup', { clientX: 50, clientY: 0 });
+    return out;
+  };
+
+  it('rides the whole-span midpoint with no box, and the visible run with one', () => {
+    const plain = dragAndReadGuide();
+    const mid = (plain.y1 + plain.y2) / 2;
+    // The guide crosses the corridor, so it is a real two-ended span.
+    expect(plain.y1).not.toBeCloseTo(plain.y2, 3);
+    expect(plain.labelY).toBeCloseTo(mid, 3);
+
+    // A box whose top edge cuts the corridor at that midpoint leaves only the
+    // lower half of the span on screen; the label has to move to the middle of
+    // THAT. (The half-span is far shorter than the inset, so this exercises the
+    // bare-box fallback — the point here is that the box arrives at all.)
+    const clipped = dragAndReadGuide({ vbX: -1000, vbY: mid, vbW: 2000, vbH: 1000 });
+    expect(clipped.labelY).toBeCloseTo((mid + Math.max(clipped.y1, clipped.y2)) / 2, 3);
+    expect(clipped.labelY).toBeGreaterThan(mid);
   });
 });

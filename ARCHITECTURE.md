@@ -2473,7 +2473,13 @@ two pools are the same set, so nothing else changes.
 Shared conventions, all paths: alignment tolerances are `/zoom` (constant screen px); grid is a
 hard world constraint; **Shift bypasses all snapping** during any pointer gesture (svg rotation
 included — it snaps 22.5° by default, Shift frees); every alignment snap draws a
-distance-labeled guide through `SnapGuides`; grid snapping is silent.
+distance-labeled guide through `SnapGuides`; grid snapping is silent. A span with an end off
+screen keeps its label on the part you can SEE, rather than at the true midpoint — zoomed in the
+far end sits several viewports away (a guide's parallel neighbour routinely does), which would
+hide the number exactly when the span is longest. The canvas hands every `SnapGuides` mount one
+box a label must land inside: the visible viewBox minus the strip the sidebar floats over, since
+that panel covers the canvas rather than shrinking it and a label clamped under it is no more
+readable than one off screen. A span already inside that box is never moved.
 
 **Alignment guides are a target class of their own, ALWAYS ON.** Both snappers take
 `guideTargets` (`GuideTarget[]` — a guide is a ready-made alignment axis, H, V, or 45°, at its

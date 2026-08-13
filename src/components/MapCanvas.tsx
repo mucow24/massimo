@@ -47,6 +47,7 @@ import { dotSizeOverride } from '../model/dotSize';
 import { StationView } from './StationView';
 import { useViewport } from './canvas/useViewport';
 import { overdrawnViewBox, panSurfaceViewBox } from './canvas/viewportMath';
+import { SIDEBAR_WIDTH, sidebarVisible } from './Sidebar';
 import { useStationDrag } from './canvas/useStationDrag';
 import { useLineCircleDrag } from './canvas/useLineCircleDrag';
 import { LineCircleView } from './LineCircleView';
@@ -293,6 +294,22 @@ export function MapCanvas() {
   // wheel zoom's imperative viewBox write) can't reveal a bare strip before
   // the gesture commits and re-renders them. See overdrawnViewBox.
   const overdrawn = overdrawnViewBox(view);
+  // Where a snap measurement label may land and still be READ — the visible
+  // viewBox minus the strip the sidebar floats over. The sidebar is
+  // `grid-area: canvas; justify-self: end`, so it COVERS the canvas rather than
+  // shrinking it: a label clamped to the right edge would sit behind the panel,
+  // as invisible as the off-screen one the clamp exists to rescue. The same
+  // subtraction the pinned popovers dock against (ItemPopovers). Computed here,
+  // once, and handed to every `SnapGuides` mount so they can't disagree.
+  const labelBox = {
+    vbX: view.vbX,
+    vbY: view.vbY,
+    vbW: Math.max(
+      0,
+      view.vbW - (sidebarVisible(selection) ? SIDEBAR_WIDTH / view.viewport.zoom : 0),
+    ),
+    vbH: view.vbH,
+  };
   // The window the (oversized) svg element actually renders: the visible box
   // grown half a viewport per side, matching .canvas-pan-layer{inset:-50%}.
   const surface = panSurfaceViewBox(view);
@@ -2204,6 +2221,7 @@ export function MapCanvas() {
                 zoom={view.viewport.zoom}
                 svgRef={svgRef}
                 screenToWorld={view.screenToWorld}
+                labelBox={labelBox}
               />
             </g>
           )}
@@ -2501,6 +2519,7 @@ export function MapCanvas() {
               zoom={view.viewport.zoom}
               engaged={engagedGuides}
               vb={overdrawn}
+              labelBox={labelBox}
             />
           </g>
 

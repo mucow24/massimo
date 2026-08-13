@@ -17,6 +17,7 @@ import { pairKeyOf } from '../../model/pairKey';
 import { SELECTION_WASH_OPACITY, selectionOutlineTones } from '../selectionStyle';
 import { useLineTagDrag } from './useLineTagDrag';
 import { SnapGuides } from './SnapGuides';
+import type { ViewBox } from './viewportMath';
 
 const ALONG_FONT_SIZE = 12;
 const TEXT_PAD = 1;
@@ -65,6 +66,12 @@ interface Props {
   zoom: number;
   svgRef: React.RefObject<SVGSVGElement | null>;
   screenToWorld: (mx: number, my: number) => { x: number; y: number };
+  /** Where this layer's own snap chrome may put a distance label — forwarded
+   *  verbatim to `SnapGuides`. A tag drag's guide crosses the corridor, so it
+   *  is short, but the label goes off screen the same way any other does once
+   *  an end is past the edge; the canvas computes the box once for every
+   *  `SnapGuides` mount. */
+  labelBox?: ViewBox;
 }
 
 /**
@@ -126,7 +133,7 @@ const ORIENTATION_OFFSET_DEG: Record<0 | 1 | 2 | 3, number> = {
   3: 90, // perpendicular CW
 };
 
-export function LineTagsLayer({ bands, zoom, svgRef, screenToWorld }: Props) {
+export function LineTagsLayer({ bands, zoom, svgRef, screenToWorld, labelBox }: Props) {
   const lines = useDoc((s) => s.lines);
   const lineTags = useDoc((s) => s.lineTags);
   const cycleLineTagOrientation = useDoc((s) => s.cycleLineTagOrientation);
@@ -276,7 +283,7 @@ export function LineTagsLayer({ bands, zoom, svgRef, screenToWorld }: Props) {
       {/* Neighbor-snap guide for an in-flight tag drag: same dashed +
           labeled treatment as every other alignment guide. */}
       <g data-export-exclude="1">
-        <SnapGuides guides={drag.lineTagSnapGuides} zoom={zoom} />
+        <SnapGuides guides={drag.lineTagSnapGuides} zoom={zoom} labelBox={labelBox} />
       </g>
 
       {/* Ghost preview while in add-line-tag mode and hovering a stripe. */}
