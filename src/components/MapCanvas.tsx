@@ -2501,6 +2501,7 @@ export function MapCanvas() {
               zoom={view.viewport.zoom}
               engaged={engagedGuides}
               vb={overdrawn}
+              visible={view}
             />
           </g>
 

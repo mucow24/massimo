@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { angleDeg, centroid, midpoint, rotateAround, rotatedRectCorners, v } from './vec';
+import {
+  angleDeg,
+  centroid,
+  clipSegmentToRect,
+  midpoint,
+  rotateAround,
+  rotatedRectCorners,
+  v,
+} from './vec';
 
 const nearPt = (a: { x: number; y: number }, b: { x: number; y: number }) => {
   expect(a.x).toBeCloseTo(b.x, 6);
@@ -80,5 +88,49 @@ describe('centroid', () => {
 
   it('returns the origin for empty input (guarded, not NaN)', () => {
     expect(centroid([])).toEqual(v(0, 0));
+  });
+});
+
+describe('clipSegmentToRect', () => {
+  const box = { x: 0, y: 0, w: 100, h: 100 };
+
+  it('returns a wholly-inside segment untouched', () => {
+    const r = clipSegmentToRect(v(10, 20), v(80, 90), box)!;
+    nearPt(r.a, v(10, 20));
+    nearPt(r.b, v(80, 90));
+  });
+
+  it('trims the end that runs outside, keeping the direction', () => {
+    // Rightwards from inside, exiting the x = 100 edge.
+    const r = clipSegmentToRect(v(50, 50), v(400, 50), box)!;
+    nearPt(r.a, v(50, 50));
+    nearPt(r.b, v(100, 50));
+  });
+
+  it('trims both ends of a segment that spans the whole box', () => {
+    const r = clipSegmentToRect(v(-500, 50), v(500, 50), box)!;
+    nearPt(r.a, v(0, 50));
+    nearPt(r.b, v(100, 50));
+  });
+
+  it('clips a diagonal at the corner it actually crosses', () => {
+    // y = x from far outside: enters at (0,0), leaves at (100,100).
+    const r = clipSegmentToRect(v(-200, -200), v(300, 300), box)!;
+    nearPt(r.a, v(0, 0));
+    nearPt(r.b, v(100, 100));
+  });
+
+  it('returns null for a segment wholly outside, on either kind of axis', () => {
+    expect(clipSegmentToRect(v(200, 10), v(300, 90), box)).toBeNull();
+    expect(clipSegmentToRect(v(10, -300), v(90, -200), box)).toBeNull();
+    // Parallel to an edge and beyond it — the p === 0 arm.
+    expect(clipSegmentToRect(v(-50, 200), v(150, 200), box)).toBeNull();
+  });
+
+  it('handles a degenerate point: kept when inside, null when out', () => {
+    const r = clipSegmentToRect(v(5, 5), v(5, 5), box)!;
+    nearPt(r.a, v(5, 5));
+    nearPt(r.b, v(5, 5));
+    expect(clipSegmentToRect(v(-5, -5), v(-5, -5), box)).toBeNull();
   });
 });

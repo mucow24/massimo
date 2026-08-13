@@ -126,6 +126,63 @@ describe('<SnapGuides />', () => {
     expect(text.textContent).toBe('X -340');
   });
 
+  // Zoomed in, a guide's parallel neighbour is routinely several viewports
+  // away. The label used to ride the midpoint of the WHOLE span, which is then
+  // off screen with the far end — the measurement the readout exists to show
+  // was invisible exactly when the span was longest.
+  describe('a span running off screen', () => {
+    // 200 world units across at zoom 1 — a hard-zoomed viewport.
+    const visible = { vbX: 0, vbY: 0, vbW: 200, vbH: 200 };
+
+    it('keeps the label inside the visible box, on the span', () => {
+      // From a point near the middle of the screen out to a neighbour 4000
+      // units below: the true midpoint is y ≈ 2050, ten viewports down.
+      const guides: SnapGuide[] = [
+        { from: { x: 100, y: 100 }, to: { x: 100, y: 4100 }, label: '4000' },
+      ];
+      const { container } = render(<SnapGuides guides={guides} zoom={1} visible={visible} />);
+      const text = labelText(container);
+      const y = Number(text.getAttribute('y')) - capCenterDy(14);
+      expect(Number(text.getAttribute('x'))).toBeGreaterThan(visible.vbX);
+      expect(Number(text.getAttribute('x'))).toBeLessThan(visible.vbX + visible.vbW);
+      expect(y).toBeGreaterThan(visible.vbY);
+      expect(y).toBeLessThan(visible.vbY + visible.vbH);
+      // Midway along the VISIBLE run (100 → the inset bottom edge), not at 2050.
+      expect(y).toBeCloseTo((100 + (200 - 24)) / 2, 6);
+    });
+
+    it('centres on the visible run when BOTH ends are off screen', () => {
+      const guides: SnapGuide[] = [
+        { from: { x: -3000, y: 100 }, to: { x: 3000, y: 100 }, label: '6000' },
+      ];
+      const { container } = render(<SnapGuides guides={guides} zoom={1} visible={visible} />);
+      expect(Number(labelText(container).getAttribute('x'))).toBeCloseTo(100, 6);
+    });
+
+    it('still lands on screen when the whole visible run is inside the inset', () => {
+      // Grab a guide 10 units from the bottom edge and measure DOWNWARDS: the
+      // visible run is y 190..200, entirely within the label inset, so the
+      // inset box has nothing to offer and the bare box has to answer.
+      const guides: SnapGuide[] = [
+        { from: { x: 100, y: 190 }, to: { x: 100, y: 4100 }, label: '3910' },
+      ];
+      const { container } = render(<SnapGuides guides={guides} zoom={1} visible={visible} />);
+      const y = Number(labelText(container).getAttribute('y')) - capCenterDy(14);
+      expect(y).toBeGreaterThan(visible.vbY);
+      expect(y).toBeLessThan(visible.vbY + visible.vbH);
+      expect(y).toBeCloseTo(195, 6);
+    });
+
+    it('leaves a fully-visible span exactly where it always sat', () => {
+      const guides: SnapGuide[] = [
+        { from: { x: 40, y: 100 }, to: { x: 160, y: 100 }, label: '120' },
+      ];
+      const { container } = render(<SnapGuides guides={guides} zoom={1} visible={visible} />);
+      // The plain midpoint, untouched by the clip.
+      expect(Number(labelText(container).getAttribute('x'))).toBeCloseTo(100, 6);
+    });
+  });
+
   it('keeps the label coordinates finite for a zero-length guide (from === to)', () => {
     const guides: SnapGuide[] = [{ from: { x: 5, y: 5 }, to: { x: 5, y: 5 }, label: '0' }];
     const { container } = render(<SnapGuides guides={guides} zoom={1} />);

@@ -69,6 +69,52 @@ export const centroid = (points: readonly Vec2[]): Vec2 => {
   return { x: sx / n, y: sy / n };
 };
 
+// The part of segment a→b that lies inside an axis-aligned rect, or null when
+// none of it does. Liang–Barsky: walk the four edges as parametric half-planes,
+// tightening the surviving [t0, t1] window on the segment. A degenerate segment
+// (a === b) is a point test — itself when inside, null when out.
+//
+// Used to keep a measurement label on screen: the midpoint of a span whose far
+// end is several viewports away is off screen too, so the label rides the
+// midpoint of the CLIPPED span instead (see SnapGuides).
+export const clipSegmentToRect = (
+  a: Vec2,
+  b: Vec2,
+  rect: { x: number; y: number; w: number; h: number },
+): { a: Vec2; b: Vec2 } | null => {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  let t0 = 0;
+  let t1 = 1;
+  // [direction into the half-plane, signed distance from `a` to that edge].
+  const edges: [number, number][] = [
+    [-dx, a.x - rect.x],
+    [dx, rect.x + rect.w - a.x],
+    [-dy, a.y - rect.y],
+    [dy, rect.y + rect.h - a.y],
+  ];
+  for (const [p, q] of edges) {
+    if (p === 0) {
+      // Parallel to this edge: no crossing to solve for, so it either lies
+      // inside the half-plane for its whole length or misses entirely.
+      if (q < 0) return null;
+      continue;
+    }
+    const r = q / p;
+    if (p < 0) {
+      if (r > t1) return null;
+      if (r > t0) t0 = r;
+    } else {
+      if (r < t0) return null;
+      if (r < t1) t1 = r;
+    }
+  }
+  return {
+    a: { x: a.x + t0 * dx, y: a.y + t0 * dy },
+    b: { x: a.x + t1 * dx, y: a.y + t1 * dy },
+  };
+};
+
 // Unsigned angle in radians ([0, π]) between two UNIT vectors, via their
 // clamped dot product (the clamp guards acos against FP drift past ±1). Callers
 // pass unit tangents/directions; this does NOT normalize its inputs.

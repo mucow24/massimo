@@ -2473,7 +2473,12 @@ two pools are the same set, so nothing else changes.
 Shared conventions, all paths: alignment tolerances are `/zoom` (constant screen px); grid is a
 hard world constraint; **Shift bypasses all snapping** during any pointer gesture (svg rotation
 included — it snaps 22.5° by default, Shift frees); every alignment snap draws a
-distance-labeled guide through `SnapGuides`; grid snapping is silent.
+distance-labeled guide through `SnapGuides`; grid snapping is silent. That label rides the
+midpoint of the span's VISIBLE run, not of the whole span — zoomed in, the far end sits several
+viewports away (a guide's parallel neighbour routinely does) and a true midpoint goes off screen
+with it, hiding the number exactly when the span is longest. Hence `SnapGuides`' `visible` prop,
+which is the plain viewBox and NOT the overdrawn `vb` beside it: overdrawn is what an engaged
+guide's chrome SPANS, visible is what a label must stay inside.
 
 **Alignment guides are a target class of their own, ALWAYS ON.** Both snappers take
 `guideTargets` (`GuideTarget[]` — a guide is a ready-made alignment axis, H, V, or 45°, at its

@@ -1,7 +1,8 @@
 import { STOP_DOT_RADIUS } from '../../geometry/orientation';
 import { guideSegmentInBox, type SnapGuide } from '../../geometry/snap';
-import { midpoint, norm, perp, sub } from '../../geometry/vec';
+import { clipSegmentToRect, midpoint, norm, perp, sub } from '../../geometry/vec';
 import type { Vec2 } from '../../geometry/vec';
+import type { ViewBox } from './viewportMath';
 import { capCenterDy } from '../../geometry/textMeasure';
 import { useThemeColors } from '../../state/theme';
 import { withAlpha } from '../../util/color';
@@ -28,7 +29,17 @@ interface Props {
    *  `engaged`) — the same slack the guides layer itself paints with, so a
    *  mid-gesture camera can't reveal an end. */
   vb?: { vbX: number; vbY: number; vbW: number; vbH: number };
+  /** The box actually ON SCREEN — the plain visible viewBox, NOT `vb` above.
+   *  Measurement labels are kept inside it (see `labelAt`). Optional: absent,
+   *  labels ride the plain midpoint, which is right whenever the whole span
+   *  fits on screen anyway. */
+  visible?: ViewBox;
 }
+
+/** Screen-px margin held clear of the visible edge when a label is pulled back
+ *  on screen — roughly half a wide readout plus its halo stroke, so the text
+ *  lands fully inside rather than half-clipped by the edge it was clamped to. */
+const LABEL_EDGE_INSET_PX = 24;
 
 /**
  * Snap-axis guide rendering: a soft halo behind + a dashed accent line on top
@@ -45,7 +56,7 @@ interface Props {
  * — the engaged guide itself gets the chrome, via `engaged`, so the feedback
  * lands on the object the user snapped to instead of a second line over it.
  */
-export function SnapGuides({ guides: allGuides, zoom, engaged, vb }: Props) {
+export function SnapGuides({ guides: allGuides, zoom, engaged, vb, visible }: Props) {
   const themeColors = useThemeColors();
   const guides = allGuides.filter((g) => !g.alignGuideId);
   const engagedGuides = engaged && vb ? engaged : [];
@@ -56,6 +67,36 @@ export function SnapGuides({ guides: allGuides, zoom, engaged, vb }: Props) {
   // engaged guide is under the cursor, so the box always catches it.
   const spanOf = (g: EngagedGuideChrome) =>
     guideSegmentInBox(g.orientation, g.offset, vb!.vbX, vb!.vbY, vb!.vbW, vb!.vbH);
+  // Where a measurement label sits along its span: the midpoint of the part
+  // that is ON SCREEN, not of the whole thing. Zoomed in, a span can run for
+  // several viewports — a guide's parallel neighbour routinely does — and the
+  // true midpoint then sits off screen with the far end, taking the number
+  // with it. Clipping first pins the label to the visible run instead.
+  // Identical to the plain midpoint whenever the span fits on screen, which is
+  // every case that already read correctly.
+  //
+  // Two clips, in falling order of comfort. The INSET box first, so the text
+  // lands clear of the edge rather than half-cut by it. Then the bare box,
+  // which answers the two cases the inset one cannot: a visible run lying
+  // entirely within a label's width of the edge (grab a guide hard against the
+  // bottom and measure downwards), and a window too narrow to hold the inset at
+  // all — there the inset rect inverts, and an inverted rect contains nothing,
+  // so it falls through on its own with no size guard. If even that is empty
+  // the span is wholly off screen: nothing to label, so keep the plain midpoint
+  // rather than inventing a position for it.
+  const labelAt = (from: Vec2, to: Vec2): Vec2 => {
+    if (!visible) return midpoint(from, to);
+    const { vbX, vbY, vbW, vbH } = visible;
+    const inset = LABEL_EDGE_INSET_PX / zoom;
+    const clipped =
+      clipSegmentToRect(from, to, {
+        x: vbX + inset,
+        y: vbY + inset,
+        w: vbW - 2 * inset,
+        h: vbH - 2 * inset,
+      }) ?? clipSegmentToRect(from, to, { x: vbX, y: vbY, w: vbW, h: vbH });
+    return clipped ? midpoint(clipped.a, clipped.b) : midpoint(from, to);
+  };
   return (
     <g pointerEvents="none">
       <defs>
@@ -148,12 +189,12 @@ export function SnapGuides({ guides: allGuides, zoom, engaged, vb }: Props) {
       })}
       {guides.map((g, i) => {
         if (!g.label) return null;
-        // Position the label above the midpoint of the guide, offset
-        // perpendicular by a small fixed screen-pixel amount so it sits
-        // clear of the dotted line. "Above" = the side toward smaller y
-        // (screen up) — the perpendicular flips to keep the label on top
-        // regardless of the line's direction.
-        const { x: mx, y: my } = midpoint(g.from, g.to);
+        // Position the label above the anchor point (see labelAt — the
+        // midpoint of the span's visible run), offset perpendicular by a small
+        // fixed screen-pixel amount so it sits clear of the dotted line.
+        // "Above" = the side toward smaller y (screen up) — the perpendicular
+        // flips to keep the label on top regardless of the line's direction.
+        const { x: mx, y: my } = labelAt(g.from, g.to);
         let { x: px, y: py } = perp(norm(sub(g.to, g.from)));
         if (py > 0) {
           px = -px;
