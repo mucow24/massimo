@@ -6,7 +6,7 @@ import { useSnapPrefs } from '../../state/snapPrefs';
 import { DEFAULT_DOC, starterPolygonVertices, TEXT_LABEL_DEFAULTS } from '../../model/transforms';
 import { DEFAULT_SNAP_MODES, snapPointToGrid } from '../../geometry/snap';
 import { polygonSnapAnchor } from '../../geometry/polygon';
-import { measureTextLabel } from '../../geometry/textMeasure';
+import { textLabelAlignRectLocal } from '../../geometry/stationBoundary';
 import { makeLine, stationWithStop } from '../../test/fixtures';
 import { pointerEvent } from '../../test/interaction';
 import { pairKeyOf } from '../../model/pairKey';
@@ -404,18 +404,18 @@ describe('handleCanvasPlace — placement snaps exactly like the first drag woul
     expect(b.y).toBeCloseTo(50, 5);
   });
 
-  it('placing-label: grid-snaps the visible upper-left corner of the default label', () => {
+  it("placing-label: grid-snaps the default label's alignment-box upper-left corner", () => {
     gridBoth();
     resetSelection({ kind: 'placing-label' });
-    const m = measureTextLabel(TEXT_LABEL_DEFAULTS);
-    const ul = snapPointToGrid(37 - m.width / 2, 23 - m.height / 2, 'both');
+    const r = textLabelAlignRectLocal({ id: 'preview', x: 0, y: 0, ...TEXT_LABEL_DEFAULTS });
+    const ul = snapPointToGrid(37 + r.x0, 23 + r.y0, 'both');
     const { result } = renderHook(() => usePlacementDispatch(fakeView));
     act(() => {
       result.current.handleCanvasPlace(pointerEvent({ clientX: 37, clientY: 23 }));
     });
     const label = Object.values(useDoc.getState().textLabels)[0];
-    expect(label.x).toBeCloseTo(ul.x + m.width / 2, 5);
-    expect(label.y).toBeCloseTo(ul.y + m.height / 2, 5);
+    expect(label.x).toBeCloseTo(ul.x - r.x0, 5);
+    expect(label.y).toBeCloseTo(ul.y - r.y0, 5);
   });
 
   it('creating-polygon: grid-snaps the starter square by its top-left vertex', () => {

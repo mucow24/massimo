@@ -11,7 +11,7 @@ import type { TextLabel } from '../model/types';
 // Fixed 10px glyphs so every line's ink width === length * 10 and justify
 // offsets are exact.
 const CHAR = 10;
-stubTextMetrics(whitespaceAwareMetrics(CHAR));
+stubTextMetrics(whitespaceAwareMetrics(CHAR, 10));
 
 beforeEach(() => {
   _clearTextMeasureCache();

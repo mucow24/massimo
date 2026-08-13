@@ -19,6 +19,10 @@ export interface FakeTextMetrics {
   actualBoundingBoxRight: number;
 }
 
+// Font px size out of a canvas font declaration ("italic 700 12px Soehne, …").
+const fontPxSize = (font: string): number =>
+  parseFloat(/(?:^|\s)(\d+(?:\.\d+)?)px/.exec(font)?.[1] ?? '0');
+
 /**
  * Hand `ctx` to every `canvas.getContext()` for this file's tests.
  *
@@ -44,9 +48,22 @@ export function stubCanvas2d(ctx: object): void {
   });
 }
 
-/** `stubCanvas2d` for a context whose only behaviour is `measureText`. */
-export function stubTextMetrics(measureText: (s: string) => FakeTextMetrics): void {
-  stubCanvas2d({ font: '', measureText });
+/**
+ * `stubCanvas2d` for a context whose only behaviour is `measureText`. The
+ * model receives the FONT PX SIZE of the current `ctx.font` alongside the
+ * string: `measureTextSegment` re-measures ink bearings at a large multiple
+ * of the run size (Chrome quantizes ink bounds to whole px at the measured
+ * size), so a size-blind model would hand the hi-res pass base-size numbers
+ * and every bearing would collapse by that multiple. A model that scales its
+ * output linearly with the size is transparent to the re-measure.
+ */
+export function stubTextMetrics(measureText: (s: string, fontPx: number) => FakeTextMetrics): void {
+  stubCanvas2d({
+    font: '',
+    measureText(this: { font: string }, s: string): FakeTextMetrics {
+      return measureText(s, fontPxSize(this.font));
+    },
+  });
 }
 
 /**
@@ -57,11 +74,15 @@ export function stubTextMetrics(measureText: (s: string) => FakeTextMetrics): vo
  * Bearings are measured from the pen origin and `actualBoundingBoxLeft` is
  * positive going LEFT, so ink pushed right by leading spaces reads negative.
  */
-export function whitespaceAwareMetrics(char: number) {
-  return (s: string): FakeTextMetrics => {
-    const advance = s.length * char;
-    const lead = (/^\s*/.exec(s)?.[0].length ?? 0) * char;
-    const trail = (/\s*$/.exec(s)?.[0].length ?? 0) * char;
+export function whitespaceAwareMetrics(char: number, atSize: number) {
+  return (s: string, fontPx: number): FakeTextMetrics => {
+    // `char` is the per-character advance AT `atSize` (the test's base font
+    // size); other measured sizes — the bearing re-measure's large multiple —
+    // scale linearly, like a real (unhinted) font.
+    const f = fontPx / atSize;
+    const advance = s.length * char * f;
+    const lead = (/^\s*/.exec(s)?.[0].length ?? 0) * char * f;
+    const trail = (/\s*$/.exec(s)?.[0].length ?? 0) * char * f;
     const hasInk = s.trim().length > 0;
     return {
       width: advance,
@@ -81,12 +102,15 @@ export function whitespaceAwareMetrics(char: number) {
  * are both held to it — and to the same numbers, since the whole point is that
  * the two agree.
  */
-export function inkOverhangMetrics(char: number, overhang = 3) {
-  return (s: string): FakeTextMetrics => {
-    const advance = s.length * char;
+export function inkOverhangMetrics(char: number, atSize: number, overhang = 3) {
+  return (s: string, fontPx: number): FakeTextMetrics => {
+    // Same size-linear contract as whitespaceAwareMetrics: `char`/`overhang`
+    // are px AT `atSize`, and every other measured size scales.
+    const f = fontPx / atSize;
+    const advance = s.length * char * f;
     const hasInk = s.trim().length > 0;
-    const leftOver = hasInk && s.trimStart().startsWith('f') ? overhang : 0;
-    const rightOver = hasInk && s.trimEnd().endsWith('j') ? overhang : 0;
+    const leftOver = hasInk && s.trimStart().startsWith('f') ? overhang * f : 0;
+    const rightOver = hasInk && s.trimEnd().endsWith('j') ? overhang * f : 0;
     return {
       width: advance,
       // +ve actualBoundingBoxLeft ⇒ ink extends LEFT of the pen origin.

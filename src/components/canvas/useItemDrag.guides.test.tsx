@@ -7,7 +7,7 @@ import { useSnapPrefs } from '../../state/snapPrefs';
 import { useViewportStore } from '../../state/viewportStore';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { DEFAULT_SNAP_MODES, type SnapModes } from '../../geometry/snap';
-import { textLabelCorners } from '../../geometry/stationBoundary';
+import { textLabelAlignCorners } from '../../geometry/stationBoundary';
 import { polygonSnapAnchor } from '../../geometry/polygon';
 import { makeGuide, makeTextLabel } from '../../test/fixtures';
 import { fakeSvgRef, pointerEvent } from '../../test/interaction';
@@ -39,9 +39,9 @@ describe('useItemDrag — canvas labels vs alignment guides', () => {
       textLabels: { g1: label },
       guides: { gh: makeGuide({ id: 'gh', orientation: 'horizontal', offset: 100 }) },
     });
-    // The label's snap reference is its topmost-then-leftmost visible corner,
-    // offset from (x, y) by the measured box.
-    const anchorOffY = polygonSnapAnchor(textLabelCorners(label)).y - label.y;
+    // The label's primary snap reference is the topmost-then-leftmost corner
+    // of its ALIGNMENT box (cap line → baseline), offset from (x, y).
+    const anchorOffY = polygonSnapAnchor(textLabelAlignCorners(label)).y - label.y;
 
     const { ref } = fakeSvgRef();
     const { result } = renderHook(() => useItemDrag(ref, 1, false));
@@ -57,6 +57,30 @@ describe('useItemDrag — canvas labels vs alignment guides', () => {
     expect(useDoc.getState().textLabels.g1.y + anchorOffY).toBeCloseTo(100, 5);
   });
 
+  it('the BOTTOM corner of the alignment box engages a guide too (four-corner snap)', () => {
+    const label = makeTextLabel({ id: 'g1', x: 300, y: 300 });
+    useDoc.setState({
+      ...useDoc.getState(),
+      textLabels: { g1: label },
+      guides: { gh: makeGuide({ id: 'gh', orientation: 'horizontal', offset: 100 }) },
+    });
+    // BL corner ([3] of the unrotated box) — the baseline edge, far from the
+    // primary top-left anchor.
+    const bottomOffY = textLabelAlignCorners(label)[3].y - label.y;
+
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useItemDrag(ref, 1, false));
+    labelDown(result, 'g1', pointerEvent({ clientX: 0, clientY: 0 }));
+    // Drag so the BOTTOM corner lands 4 world units below the guide.
+    const dy = 100 + 4 - bottomOffY - label.y;
+    move(result, pointerEvent({ clientX: 0, clientY: dy }));
+    // The baseline edge locks onto the guide line…
+    expect(useDoc.getState().textLabels.g1.y + bottomOffY).toBeCloseTo(100, 5);
+    expect(result.current.itemSnapGuides.map((g) => g.alignGuideId)).toEqual(['gh']);
+    up(result, pointerEvent({ clientX: 0, clientY: dy }));
+    expect(useDoc.getState().textLabels.g1.y + bottomOffY).toBeCloseTo(100, 5);
+  });
+
   it('Shift declines the guide', () => {
     const label = makeTextLabel({ id: 'g1', x: 300, y: 300 });
     useDoc.setState({
@@ -64,7 +88,7 @@ describe('useItemDrag — canvas labels vs alignment guides', () => {
       textLabels: { g1: label },
       guides: { gh: makeGuide({ id: 'gh', orientation: 'horizontal', offset: 100 }) },
     });
-    const anchorOffY = polygonSnapAnchor(textLabelCorners(label)).y - label.y;
+    const anchorOffY = polygonSnapAnchor(textLabelAlignCorners(label)).y - label.y;
     const { ref } = fakeSvgRef();
     const { result } = renderHook(() => useItemDrag(ref, 1, false));
     labelDown(result, 'g1', pointerEvent({ clientX: 0, clientY: 0 }));
@@ -81,7 +105,7 @@ describe('useItemDrag — canvas labels vs alignment guides', () => {
       guides: { gh: makeGuide({ id: 'gh', orientation: 'horizontal', offset: 100 }) },
     });
     useViewportStore.setState({ showGuides: false });
-    const anchorOffY = polygonSnapAnchor(textLabelCorners(label)).y - label.y;
+    const anchorOffY = polygonSnapAnchor(textLabelAlignCorners(label)).y - label.y;
     const { ref } = fakeSvgRef();
     const { result } = renderHook(() => useItemDrag(ref, 1, false));
     labelDown(result, 'g1', pointerEvent({ clientX: 0, clientY: 0 }));

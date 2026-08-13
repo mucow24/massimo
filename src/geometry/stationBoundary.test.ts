@@ -7,11 +7,15 @@ import {
   stationBoundaryRectsLocal,
   stationLocalToWorld,
   stationsForRect,
+  textLabelAlignCorners,
+  textLabelChromeRectLocal,
   textLabelCorners,
   textLabelHitPolygon,
   textLabelsForRect,
   transferAnchorsForRect,
 } from './stationBoundary';
+import { CAP_FRACTION, measureTextLabel } from './textMeasure';
+import { rotateAround } from './vec';
 import { transferAnchorAABB } from './itemBounds';
 import {
   makeLabel,
@@ -464,17 +468,25 @@ describe('textLabelHitPolygon', () => {
     }
   });
 
-  it('is exactly the padless corners grown by the hit pad', () => {
-    // textLabelHitPolygon is textLabelCorners with the visual hit padding; the
-    // padded corners sit TEXT_LABEL_HIT_PAD (=4) further out on each axis.
+  it('is exactly the alignment box — no padding', () => {
+    // The hit polygon (and the dashed ring drawn from the same chrome rect) is
+    // tight to the alignment box: what you can click is what you can align.
     const label = makeTextLabel({ id: 'g', text: 'Hi', fontSize: 16, rotation: 0 });
-    const tight = textLabelCorners(label);
-    const padded = textLabelHitPolygon(label);
-    // Unrotated: TL grows up-left by pad, BR grows down-right by pad.
-    expect(padded[0].x).toBeCloseTo(tight[0].x - 4, 5);
-    expect(padded[0].y).toBeCloseTo(tight[0].y - 4, 5);
-    expect(padded[2].x).toBeCloseTo(tight[2].x + 4, 5);
-    expect(padded[2].y).toBeCloseTo(tight[2].y + 4, 5);
+    const align = textLabelAlignCorners(label);
+    const hit = textLabelHitPolygon(label);
+    for (let i = 0; i < 4; i++) {
+      expect(hit[i].x).toBeCloseTo(align[i].x, 5);
+      expect(hit[i].y).toBeCloseTo(align[i].y, 5);
+    }
+  });
+
+  it('keeps a minimal footprint for a zero-ink label', () => {
+    // An empty label's alignment box is width-0; the chrome rect floors it so
+    // a blank label stays visible and clickable.
+    const label = makeTextLabel({ id: 'g', text: '', fontSize: 16, rotation: 0 });
+    const hit = textLabelHitPolygon(label);
+    const xs = hit.map((p) => p.x);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(0);
   });
 });
 
@@ -489,6 +501,61 @@ describe('textLabelCorners', () => {
     expect(tr.x).toBeCloseTo(br.x, 5);
     expect(tl.x).toBeLessThan(tr.x);
     expect(tl.y).toBeLessThan(bl.y);
+  });
+});
+
+describe('textLabelAlignCorners', () => {
+  it('spans cap line to baseline vertically and the measured ink horizontally', () => {
+    const label = makeTextLabel({ id: 'g', text: 'Hi', fontSize: 16, rotation: 0, x: 0, y: 0 });
+    const m = measureTextLabel(label);
+    const [tl, tr, br] = textLabelAlignCorners(label);
+    const boxTop = -m.height / 2;
+    expect(tl.x).toBeCloseTo(-m.width / 2, 5);
+    expect(tr.x).toBeCloseTo(m.width / 2, 5);
+    expect(tl.y).toBeCloseTo(
+      boxTop + m.lines[0].baselineFromTop - CAP_FRACTION * m.lines[0].maxFontSize,
+      5,
+    );
+    expect(br.y).toBeCloseTo(boxTop + m.lines[m.lines.length - 1].baselineFromTop, 5);
+  });
+
+  it('sits strictly inside the leaded line box (the envelope)', () => {
+    const label = makeTextLabel({ id: 'g', text: 'Hi', fontSize: 16, rotation: 0 });
+    const env = textLabelCorners(label);
+    const [tl, , br] = textLabelAlignCorners(label);
+    expect(tl.y).toBeGreaterThan(env[0].y);
+    expect(br.y).toBeLessThan(env[2].y);
+    expect(tl.x).toBeCloseTo(env[0].x, 5);
+    expect(br.x).toBeCloseTo(env[2].x, 5);
+  });
+
+  it('bottom rides the LAST line baseline of a multi-line label', () => {
+    const one = textLabelAlignCorners(makeTextLabel({ id: 'g', text: 'Hi', fontSize: 16 }));
+    const two = textLabelAlignCorners(makeTextLabel({ id: 'g', text: 'Hi\nHo', fontSize: 16 }));
+    // Both boxes are centered on the same (x, y); two lines reach further down.
+    expect(two[2].y).toBeGreaterThan(one[2].y);
+  });
+
+  it('rotates about the label center', () => {
+    const flat = makeTextLabel({ id: 'g', text: 'Hi', fontSize: 16, rotation: 0, x: 30, y: 40 });
+    const turned = { ...flat, rotation: 2 as const };
+    const expected = textLabelAlignCorners(flat).map((p) =>
+      rotateAround(p, { x: 30, y: 40 }, Math.PI / 2),
+    );
+    const got = textLabelAlignCorners(turned);
+    for (let i = 0; i < 4; i++) {
+      expect(got[i].x).toBeCloseTo(expected[i].x, 5);
+      expect(got[i].y).toBeCloseTo(expected[i].y, 5);
+    }
+  });
+
+  it('chrome rect equals the align rect for inked labels and floors empty ones', () => {
+    const inked = makeTextLabel({ id: 'g', text: 'Hi', fontSize: 16 });
+    const m = measureTextLabel(inked);
+    const r = textLabelChromeRectLocal(inked);
+    expect(r.x1 - r.x0).toBeCloseTo(m.width, 5);
+    const empty = textLabelChromeRectLocal(makeTextLabel({ id: 'g', text: '', fontSize: 16 }));
+    expect(empty.x1 - empty.x0).toBeGreaterThan(0);
   });
 });
 

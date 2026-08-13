@@ -6,6 +6,7 @@ import { useViewportStore } from '../state/viewportStore';
 import { DEFAULT_DOC, updateTextLabel } from '../model/transforms';
 import { makeLine, makeTextLabel } from '../test/fixtures';
 import { capCenterDy } from '../geometry/textMeasure';
+import { textLabelChromeRectLocal } from '../geometry/stationBoundary';
 import type { Line, TextLabel, TextLabelAlign } from '../model/types';
 
 const seedLine = (overrides: Partial<Line> & Pick<Line, 'id' | 'service'>): Line =>
@@ -59,6 +60,44 @@ describe('<LabelView /> — selection ring', () => {
     const [edge, core] = ringRects();
     expect(Number(edge.getAttribute('stroke-width'))).toBe(4);
     expect(Number(core.getAttribute('stroke-width'))).toBe(2);
+  });
+});
+
+describe('<LabelView /> — chrome rects hug the alignment box', () => {
+  const expectChromeRect = (rect: Element, label: TextLabel) => {
+    const r = textLabelChromeRectLocal(label);
+    expect(parseFloat(rect.getAttribute('x')!)).toBeCloseTo(r.x0, 5);
+    expect(parseFloat(rect.getAttribute('y')!)).toBeCloseTo(r.y0, 5);
+    expect(parseFloat(rect.getAttribute('width')!)).toBeCloseTo(r.x1 - r.x0, 5);
+    expect(parseFloat(rect.getAttribute('height')!)).toBeCloseTo(r.y1 - r.y0, 5);
+  };
+
+  it('draws the dashed ring exactly on the chrome rect — no padding', () => {
+    const label = makeTextLabel({ id: 'g1', text: 'Hi', fontSize: 16 });
+    const { container } = render(
+      <svg>
+        <LabelView label={label} selected layer="stroke" />
+      </svg>,
+    );
+    for (const rect of container.querySelectorAll('[data-text-label-stroke] rect')) {
+      expectChromeRect(rect, label);
+    }
+  });
+
+  it('the interactive hit rect and the selected-on-top proxy match the chrome rect', () => {
+    const label = makeTextLabel({ id: 'g1', text: 'Hi', fontSize: 16 });
+    const bg = render(
+      <svg>
+        <LabelView label={label} selected={false} onPointerDown={() => {}} />
+      </svg>,
+    ).container;
+    expectChromeRect(bg.querySelector('[data-text-label-id="g1"] rect')!, label);
+    const proxy = render(
+      <svg>
+        <LabelView label={label} selected layer="hit" onPointerDown={() => {}} />
+      </svg>,
+    ).container;
+    expectChromeRect(proxy.querySelector('[data-text-label-hit="g1"] rect')!, label);
   });
 });
 

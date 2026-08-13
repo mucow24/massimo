@@ -5,7 +5,7 @@ import { stubTextMetrics, whitespaceAwareMetrics } from '../test/textMetrics';
 // Fixed-width glyph stub (every char = CHAR px, ignoring font size) so wrap
 // points are exactly predictable: a line's ink width === its length * CHAR.
 const CHAR = 10;
-stubTextMetrics(whitespaceAwareMetrics(CHAR));
+stubTextMetrics(whitespaceAwareMetrics(CHAR, 10));
 
 beforeEach(() => {
   _clearTextMeasureCache();

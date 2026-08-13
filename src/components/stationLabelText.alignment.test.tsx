@@ -12,7 +12,7 @@ import { inkOverhangMetrics, stubTextMetrics } from '../test/textMetrics';
 // positions each line explicitly; the plain <tspan> path already flushes by
 // text-anchor).
 const CHAR = 10;
-stubTextMetrics(inkOverhangMetrics(CHAR));
+stubTextMetrics(inkOverhangMetrics(CHAR, 10));
 
 beforeEach(() => _clearTextMeasureCache());
 

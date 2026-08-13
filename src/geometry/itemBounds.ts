@@ -58,9 +58,12 @@ export function stationWorldAABB(
 }
 
 /**
- * World AABB of a text label's rotated bbox. `pad` grows the box on every
- * side before rotating (0 = tight visible bbox; TEXT_LABEL_HIT_PAD = the
- * dashed-ring hit bbox).
+ * World AABB of a text label's leaded line box — the ENVELOPE that always
+ * contains the ink (descenders and leading included), which is what the
+ * camera hull needs; the tighter alignment box the chrome and snapping ride
+ * would let a descender poke past a fit-to-content frame. `pad` grows the box
+ * on every side before rotating; contentBounds passes TEXT_LABEL_HIT_PAD as
+ * breathing room.
  */
 export function textLabelAABB(label: TextLabel, pad = 0): AABB {
   return aabbOfPoints(textLabelCorners(label, pad));

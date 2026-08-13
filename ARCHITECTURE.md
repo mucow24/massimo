@@ -2520,7 +2520,13 @@ of them:
   moves + axis-aligned resizes, text-label drags, unbound route bullets, and **most placement**
   (labels, polygons, svg images). Placement is **not** uniformly point-snapped: `placing-station`
   routes to the station engine, and `creating-route-bullet` does too whenever a default line
-  exists — falling back to the point snapper only when there is none.
+  exists — falling back to the point snapper only when there is none. An optional `anchors` set
+  generalizes the one reference point to a RIGID set snapping as one translation: every anchor
+  generates candidates, each engagement converts to the translation that aligns its anchor, and
+  the winner tows the whole set — so a cross-anchor corner (V via one anchor, H via another) locks
+  both axes. `proposed` stays the grid subject (grid keeps THAT point on the lattice, in whose
+  frame alignments must reconcile) while guides, measurement labels and `tens` notching all speak
+  from the anchor that engaged. Text labels are the consumer, drag AND placement.
   `constrain: 'x' | 'y' | 'diagonal-down' | 'diagonal-up'` restricts it for single-DOF
   consumers (edge resizes, guide drags — the diagonal values are the diagonal guides' own
   drags) so guides never show a snap the caller discards. When `tens` is on **and grid is off**, an engaged alignment's
@@ -2597,8 +2603,8 @@ scaffolding-touches-skeleton precedent.
 The **target pool** (`alignTargets(doc, exclude)` in
 [snapTargets.ts](src/components/canvas/snapTargets.ts)) is what "Snap to all" means for point-
 snapper consumers: every station stop-center (anchor when stopless), every polygon vertex,
-every svg image's rotated corners, three points per text label (visible-bbox UL corner, center,
-LR corner — no hit pad), every route bullet center, and every transfer anchor — free ones from
+every svg image's rotated corners, five points per text label (its alignment box's four corners
+plus that box's own center), every route bullet center, and every transfer anchor — free ones from
 the doc collection, hosted ones alongside their station's stops (an anchor cell is its own point
 on the station lattice, so no stop centre stands in for one parked a few cells out). Per-kind
 exclusion sets remove the dragged item and, in a group drag, its co-selected siblings — a
@@ -2609,8 +2615,22 @@ guides are the one carve-out: scaffolding, not decoration, and stations snap to 
 bound bullet's all-mode pool is station stops (engine-internal), not the decoration pool.
 
 **Reference points** (grid + alignment use the same one per type, drag AND placement): station
-anchor; bullet center; text label topmost-then-leftmost visible rotated corner; polygon
-topmost-then-leftmost vertex; svg image topmost-then-leftmost rotated corner.
+anchor; bullet center; text label topmost-then-leftmost corner of its ALIGNMENT box, with all four
+corners co-snapping as a rigid `anchors` set; polygon topmost-then-leftmost vertex; svg image
+topmost-then-leftmost rotated corner.
+
+**A text label's alignment box** (`textLabelAlignRectLocal` / `textLabelAlignCorners`,
+stationBoundary.ts) is the Core Type Area of the block: first line's cap line down to the last
+line's baseline, and the block's true ink extent horizontally (`blockInkExtentX` — lines POSITION
+by pen advance, so the pen box alone leaves a proportional side-bearing strip before the first
+glyph's ink) — the same font-model box station autoAlign pins by, so labels
+snapped to one guide share a baseline or cap line no matter which glyphs they contain (descenders
+hang below it on purpose; true pixel-ink bounds were rejected as glyph-dependent). It is what
+label snapping — by AND to — the dashed selection ring, the hit rects, and the marquee all ride
+(`textLabelChromeRectLocal` floors a zero-ink label to a `TEXT_LABEL_HIT_PAD` footprint so a blank
+label stays clickable; inked labels get no padding). The full leaded line box (`textLabelCorners`)
+remains the envelope the camera hull (`contentBounds`) folds, so descenders and leading never fall
+outside a fit-to-content frame.
 
 **Placement parity**: `snapPlacement` in
 [usePlacementDispatch.ts](src/components/canvas/usePlacementDispatch.ts) is shared by every
@@ -2693,11 +2713,21 @@ which are a separate slot-based system where Shift flips the lattice basis.
   Legacy docs (`<X>` circle bullets, unescaped literal pipes) are rewritten once by
   `migrateLegacyInlineTokens`, gated by persist v8 / file `version` 2.
 - **`measureTextLabel`** measures multi-line styled text **without a browser layout**: it lazily
-  creates an offscreen 2D canvas and uses `ctx.measureText` (advance + ink bearings). **In jsdom
-  there is no canvas backend**, so it falls back to a deliberate over-estimate
+  creates an offscreen 2D canvas and uses `ctx.measureText` (advance + ink bearings). Ink bearings
+  are a three-rung ladder, because `measureText` cannot say exactly where paint lands: bounds are
+  quantized to whole px at the measured size (≈ a world unit of slop at fontSize-as-px), so they
+  re-measure at 64× the run size — but even that converges only to the font's CONSERVATIVE outline
+  bbox (curve control points included, ~0.01em outside Söhne's heavy cuts). Where a rasterizer
+  exists, `probeInkEdges` therefore refines each edge by drawing the segment offscreen and
+  scanning a narrow strip just inside the conservative bound for the first ink column — the same
+  Skia that paints the SVG, so exact by construction (~0.02–0.08ms, cache misses only; pinned by
+  `e2e/labelInkBox.spec.ts` since only a real browser can run it). Advances always keep the
+  base-size measure: layout is advance-positioned and must not shift with bearing resolution.
+  **In jsdom there is no canvas backend**, so it falls back to a deliberate over-estimate
   `line.length * (fontSize * 0.55 + letterSpacingPx)` (the `0.55` core plus the per-character
-  tracking term). There are **no font-metrics tables**. Exact-geometry tests
-  inject a `measure` stub instead of trusting the default. Leading/trailing whitespace is a real
+  tracking term). There are **no font-metrics tables**. Exact-geometry tests inject a `measure`
+  stub instead of trusting the default; the shared stubs are SIZE-LINEAR (they scale their model
+  with the declared font px) so the hi-res re-measure passes through them transparently. Leading/trailing whitespace is a real
   historical bug source: canvas advance includes typed spaces but the ink box excludes them, so
   the measurer force-corrects bearings at segment ends. Line height **follows content**: each line
   is one `LINE_HEIGHT` of its largest run's size (`maxFontSize`), so an inline `<size>` grows or

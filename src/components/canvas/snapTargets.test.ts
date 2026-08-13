@@ -3,6 +3,7 @@ import { alignTargets, liveAlignTargets, textLabelAlignPoints } from './snapTarg
 import { stopPosWorld } from '../../geometry/interlining';
 import { svgImageCorners } from '../../geometry/svgImage';
 import { measureTextLabel } from '../../geometry/textMeasure';
+import { textLabelAlignCorners } from '../../geometry/stationBoundary';
 import { STOP_SIZE } from '../../geometry/orientation';
 import { useDoc } from '../../state/store';
 import { useViewportStore } from '../../state/viewportStore';
@@ -17,30 +18,27 @@ import {
 } from '../../test/fixtures';
 
 describe('textLabelAlignPoints', () => {
-  it('emits the visible UL corner, center, and LR corner (no hit pad) for an unrotated label', () => {
+  it('emits the four alignment-box corners plus its center for an unrotated label', () => {
     const label = makeTextLabel({ id: 't0', x: 50, y: 40 });
     const m = measureTextLabel(label);
     expect(m.width).toBeGreaterThan(0); // guard: measurement must be live in tests
-    expect(textLabelAlignPoints(label)).toEqual([
-      { x: 50 - m.width / 2, y: 40 - m.height / 2 },
-      { x: 50, y: 40 },
-      { x: 50 + m.width / 2, y: 40 + m.height / 2 },
-    ]);
+    const corners = textLabelAlignCorners(label);
+    const pts = textLabelAlignPoints(label);
+    expect(pts).toHaveLength(5);
+    expect(pts.slice(0, 4)).toEqual(corners);
+    // The 5th point is the ALIGNMENT box's center — midway between TL and BR
+    // (not label.y: the box sits off-center in the leaded line box).
+    expect(pts[4].x).toBeCloseTo((corners[0].x + corners[2].x) / 2, 6);
+    expect(pts[4].y).toBeCloseTo((corners[0].y + corners[2].y) / 2, 6);
   });
 
-  it('rotates the corner points about the center (rotation 2 = 90° clockwise)', () => {
+  it('rotates with the label (rotation 2 = 90° clockwise)', () => {
     const label = makeTextLabel({ id: 't0', x: 50, y: 40, rotation: 2 });
-    const m = measureTextLabel(label);
-    const hw = m.width / 2;
-    const hh = m.height / 2;
-    // 90° CW in the y-down frame maps local (x, y) → (−y, x): the UL corner
-    // (−hw, −hh) lands at (hh, −hw), the LR corner mirrors it.
-    const [ul, center, lr] = textLabelAlignPoints(label);
-    expect(ul.x).toBeCloseTo(50 + hh, 6);
-    expect(ul.y).toBeCloseTo(40 - hw, 6);
-    expect(center).toEqual({ x: 50, y: 40 });
-    expect(lr.x).toBeCloseTo(50 - hh, 6);
-    expect(lr.y).toBeCloseTo(40 + hw, 6);
+    const corners = textLabelAlignCorners(label);
+    const pts = textLabelAlignPoints(label);
+    expect(pts.slice(0, 4)).toEqual(corners);
+    expect(pts[4].x).toBeCloseTo((corners[0].x + corners[2].x) / 2, 6);
+    expect(pts[4].y).toBeCloseTo((corners[0].y + corners[2].y) / 2, 6);
   });
 });
 
@@ -113,7 +111,7 @@ describe('alignTargets', () => {
     expect(alignTargets(makeDoc({ svgImages: [img] }))).toEqual(svgImageCorners(img));
   });
 
-  it('emits the three label points per text label', () => {
+  it('emits the five label points per text label', () => {
     const label = makeTextLabel({ id: 't0', x: 50, y: 40 });
     expect(alignTargets(makeDoc({ textLabels: [label] }))).toEqual(textLabelAlignPoints(label));
   });
@@ -233,14 +231,14 @@ describe('liveAlignTargets — the per-kind View toggles', () => {
     const out = liveAlignTargets();
     expect(out).toContainEqual({ x: 10, y: 10 }); // polygon vertex
     expect(out).toContainEqual({ x: 700, y: 700 }); // bullet centre
-    expect(out).toContainEqual({ x: 900, y: 900 }); // label centre
+    expect(out).toContainEqual(textLabelAlignPoints(label)[4]); // label centre
     expect(out).toContainEqual(svgImageCorners(image)[0]);
   });
 
   it.each([
     ['showPolygons' as const, { x: 10, y: 10 }],
     ['showRouteBullets' as const, { x: 700, y: 700 }],
-    ['showTextLabels' as const, { x: 900, y: 900 }],
+    ['showTextLabels' as const, textLabelAlignPoints(label)[4]],
   ])('drops %s targets while that kind is hidden', (flag, point) => {
     // The pool is geometric, straight off the doc, so hiding a kind doesn't
     // remove it by itself — snapping to one draws a guide pointing at bare

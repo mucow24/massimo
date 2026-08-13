@@ -21,7 +21,7 @@ import {
   type StopMetricsFn,
 } from './labelLayout';
 import { normalizeAABB, rectIntersectsPolygon, type AABB } from './rectPolygon';
-import { measureTextLabel } from './textMeasure';
+import { blockInkExtentX, CAP_FRACTION, measureTextLabel } from './textMeasure';
 import { waypointLabelRectLocal } from './waypointLozenge';
 import { effectiveStationLabelStyle } from '../model/transforms';
 
@@ -234,17 +234,22 @@ export function stationsForRect(
   return hits;
 }
 
-// Visual padding around the measured text bbox — matches the dashed ring's
-// outer offset in LabelView so marquee hits reflect what the user can see.
+// Minimal chrome footprint for a ZERO-INK label: an empty label's alignment
+// box is width-0, so the chrome rect grows by this much on every side to keep
+// a blank label visible and clickable. Inked labels get no padding — their
+// ring and hit rect are tight to the alignment box.
 export const TEXT_LABEL_HIT_PAD = 4;
 
 /**
- * The 4 world-space corners of a TextLabel's rotated bbox, clockwise from the
- * unrotated top-left ([TL, TR, BR, BL]). The label is a rectangle centered on
- * (x, y) with size (measuredWidth + 2*pad, measuredHeight + 2*pad) in its own
- * unrotated frame, rotated by `rotation * 45°` clockwise (the `Rotation`
- * semantics). `pad` grows the box outward on every side; it defaults to 0 (the
- * tight visible bbox) — hit-testing passes TEXT_LABEL_HIT_PAD. Routes through
+ * The 4 world-space corners of a TextLabel's leaded LINE BOX, clockwise from
+ * the unrotated top-left ([TL, TR, BR, BL]) — the ENVELOPE that always
+ * contains the ink, leading and descenders included, which is what the camera
+ * hull folds (contentBounds, which passes TEXT_LABEL_HIT_PAD as breathing
+ * room via `pad`). Selection chrome, hit-testing and snapping ride the
+ * ALIGNMENT box instead (textLabelAlignCorners below). The label is a
+ * rectangle centered on (x, y) with size (measuredWidth + 2*pad,
+ * measuredHeight + 2*pad) in its own unrotated frame, rotated by
+ * `rotation * 45°` clockwise (the `Rotation` semantics). Routes through
  * `rotatedRectCorners`, the single home for rotated-rectangle corners.
  */
 export function textLabelCorners(label: TextLabel, pad = 0): Pt[] {
@@ -258,12 +263,77 @@ export function textLabelCorners(label: TextLabel, pad = 0): Pt[] {
 }
 
 /**
- * The 4 corners of a TextLabel's hit polygon in world coords — the visible
- * bbox grown by TEXT_LABEL_HIT_PAD so marquee hits match the dashed ring the
+ * The label's ALIGNMENT box in its own unrotated frame, relative to the label
+ * center: the block's true ink extent horizontally (per-line pen placement
+ * plus bearings — see blockInkExtentX; the pen box alone leaves a
+ * proportional side-bearing strip before the first glyph), first line's cap
+ * line down to the last line's baseline — the Core Type Area, the same
+ * font-model box autoAlign aligns station names by. The line box's leading
+ * and any descender live OUTSIDE this box on purpose: two labels snapped to
+ * the same guide share a baseline or cap line regardless of which glyphs they
+ * contain. Selection chrome, hit-testing and every label snap point derive
+ * from this box; the full leaded line box (textLabelCorners) stays the
+ * envelope for camera fit.
+ */
+export function textLabelAlignRectLocal(label: TextLabel): AABB {
+  const m = measureTextLabel(label);
+  const first = m.lines[0];
+  const last = m.lines[m.lines.length - 1];
+  const ink = blockInkExtentX(m, label.align);
+  return {
+    x0: ink ? ink.left : -m.width / 2,
+    y0: -m.height / 2 + first.baselineFromTop - CAP_FRACTION * first.maxFontSize,
+    x1: ink ? ink.right : m.width / 2,
+    y1: -m.height / 2 + last.baselineFromTop,
+  };
+}
+
+/**
+ * The rect the label's chrome (dashed ring, hit rect, marquee) draws: the
+ * alignment box, floored to a TEXT_LABEL_HIT_PAD footprint when the label has
+ * no ink so a blank label stays visible and clickable.
+ */
+export function textLabelChromeRectLocal(label: TextLabel): AABB {
+  const r = textLabelAlignRectLocal(label);
+  if (r.x1 - r.x0 > 0) return r;
+  return {
+    x0: r.x0 - TEXT_LABEL_HIT_PAD,
+    y0: r.y0 - TEXT_LABEL_HIT_PAD,
+    x1: r.x1 + TEXT_LABEL_HIT_PAD,
+    y1: r.y1 + TEXT_LABEL_HIT_PAD,
+  };
+}
+
+// A label-local rect (relative to the label center) to world corners,
+// clockwise from the unrotated top-left, rotated about the center like
+// everything else label-shaped.
+function labelRectCornersWorld(label: TextLabel, r: AABB): Pt[] {
+  const c = { x: label.x, y: label.y };
+  const rad = rotRad(label.rotation);
+  const corners: Pt[] = [
+    { x: r.x0, y: r.y0 },
+    { x: r.x1, y: r.y0 },
+    { x: r.x1, y: r.y1 },
+    { x: r.x0, y: r.y1 },
+  ];
+  return corners.map((p) => rotateAround({ x: c.x + p.x, y: c.y + p.y }, c, rad));
+}
+
+/**
+ * The 4 world-space corners of the alignment box ([TL, TR, BR, BL] unrotated
+ * order) — what label drags snap BY and what other drags snap TO.
+ */
+export function textLabelAlignCorners(label: TextLabel): Pt[] {
+  return labelRectCornersWorld(label, textLabelAlignRectLocal(label));
+}
+
+/**
+ * The 4 corners of a TextLabel's hit polygon in world coords — tight to the
+ * alignment box (floored for zero-ink labels), matching the dashed ring the
  * user sees.
  */
 export function textLabelHitPolygon(label: TextLabel): Pt[] {
-  return textLabelCorners(label, TEXT_LABEL_HIT_PAD);
+  return labelRectCornersWorld(label, textLabelChromeRectLocal(label));
 }
 
 /**

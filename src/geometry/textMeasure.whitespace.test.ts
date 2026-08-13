@@ -9,7 +9,7 @@ import { stubCanvas2d, stubTextMetrics, whitespaceAwareMetrics } from '../test/t
 // INCLUDES whitespace, `actualBoundingBox*` (ink box) EXCLUDES the leading and
 // trailing runs of it, exactly as a real canvas reports.
 const CHAR = 10;
-stubTextMetrics(whitespaceAwareMetrics(CHAR));
+stubTextMetrics(whitespaceAwareMetrics(CHAR, 12));
 
 beforeEach(() => {
   _clearTextMeasureCache();
@@ -68,11 +68,16 @@ describe('measureTextLabel — interior glyph bearings are kept, not zeroed', ()
   stubCanvas2d({
     font: '',
     // A no-whitespace word: positive bearings on both sides, advance > 0.
-    measureText: (_s: string) => ({
-      width: ADV,
-      actualBoundingBoxLeft: BL,
-      actualBoundingBoxRight: BR,
-    }),
+    // Size-linear (values are px at the 12px label) so the hi-res bearing
+    // re-measure scales consistently — same contract as stubTextMetrics.
+    measureText(this: { font: string }, _s: string) {
+      const f = parseFloat(/(\d+(?:\.\d+)?)px/.exec(this.font)?.[1] ?? '12') / 12;
+      return {
+        width: ADV * f,
+        actualBoundingBoxLeft: BL * f,
+        actualBoundingBoxRight: BR * f,
+      };
+    },
   });
   beforeEach(() => {
     vi.resetModules();
