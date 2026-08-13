@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
-import { SnapGuides } from './SnapGuides';
+import { LABEL_EDGE_INSET_PX, SnapGuides } from './SnapGuides';
 import type { SnapGuide } from '../../geometry/snap';
 import { capCenterDy } from '../../geometry/textMeasure';
 
@@ -132,7 +132,7 @@ describe('<SnapGuides />', () => {
   // was invisible exactly when the span was longest.
   describe('a span running off screen', () => {
     // 200 world units across at zoom 1 — a hard-zoomed viewport.
-    const visible = { vbX: 0, vbY: 0, vbW: 200, vbH: 200 };
+    const box = { vbX: 0, vbY: 0, vbW: 200, vbH: 200 };
 
     it('keeps the label inside the visible box, on the span', () => {
       // From a point near the middle of the screen out to a neighbour 4000
@@ -140,22 +140,22 @@ describe('<SnapGuides />', () => {
       const guides: SnapGuide[] = [
         { from: { x: 100, y: 100 }, to: { x: 100, y: 4100 }, label: '4000' },
       ];
-      const { container } = render(<SnapGuides guides={guides} zoom={1} visible={visible} />);
+      const { container } = render(<SnapGuides guides={guides} zoom={1} labelBox={box} />);
       const text = labelText(container);
       const y = Number(text.getAttribute('y')) - capCenterDy(14);
-      expect(Number(text.getAttribute('x'))).toBeGreaterThan(visible.vbX);
-      expect(Number(text.getAttribute('x'))).toBeLessThan(visible.vbX + visible.vbW);
-      expect(y).toBeGreaterThan(visible.vbY);
-      expect(y).toBeLessThan(visible.vbY + visible.vbH);
+      expect(Number(text.getAttribute('x'))).toBeGreaterThan(box.vbX);
+      expect(Number(text.getAttribute('x'))).toBeLessThan(box.vbX + box.vbW);
+      expect(y).toBeGreaterThan(box.vbY);
+      expect(y).toBeLessThan(box.vbY + box.vbH);
       // Midway along the VISIBLE run (100 → the inset bottom edge), not at 2050.
-      expect(y).toBeCloseTo((100 + (200 - 24)) / 2, 6);
+      expect(y).toBeCloseTo((100 + (200 - LABEL_EDGE_INSET_PX)) / 2, 6);
     });
 
     it('centres on the visible run when BOTH ends are off screen', () => {
       const guides: SnapGuide[] = [
         { from: { x: -3000, y: 100 }, to: { x: 3000, y: 100 }, label: '6000' },
       ];
-      const { container } = render(<SnapGuides guides={guides} zoom={1} visible={visible} />);
+      const { container } = render(<SnapGuides guides={guides} zoom={1} labelBox={box} />);
       expect(Number(labelText(container).getAttribute('x'))).toBeCloseTo(100, 6);
     });
 
@@ -166,10 +166,10 @@ describe('<SnapGuides />', () => {
       const guides: SnapGuide[] = [
         { from: { x: 100, y: 190 }, to: { x: 100, y: 4100 }, label: '3910' },
       ];
-      const { container } = render(<SnapGuides guides={guides} zoom={1} visible={visible} />);
+      const { container } = render(<SnapGuides guides={guides} zoom={1} labelBox={box} />);
       const y = Number(labelText(container).getAttribute('y')) - capCenterDy(14);
-      expect(y).toBeGreaterThan(visible.vbY);
-      expect(y).toBeLessThan(visible.vbY + visible.vbH);
+      expect(y).toBeGreaterThan(box.vbY);
+      expect(y).toBeLessThan(box.vbY + box.vbH);
       expect(y).toBeCloseTo(195, 6);
     });
 
@@ -177,9 +177,20 @@ describe('<SnapGuides />', () => {
       const guides: SnapGuide[] = [
         { from: { x: 40, y: 100 }, to: { x: 160, y: 100 }, label: '120' },
       ];
-      const { container } = render(<SnapGuides guides={guides} zoom={1} visible={visible} />);
+      const { container } = render(<SnapGuides guides={guides} zoom={1} labelBox={box} />);
       // The plain midpoint, untouched by the clip.
       expect(Number(labelText(container).getAttribute('x'))).toBeCloseTo(100, 6);
+    });
+
+    // The case above sits clear of the inset on both sides, so it cannot catch
+    // a clip that fires on a span it had no business touching. This one ends
+    // INSIDE the inset margin (x 10, with the inset at 24) while still being
+    // perfectly on screen and perfectly readable where it is: clipping it would
+    // trim the near end to x 24 and slide the label from 55 to 62.
+    it('does not nudge a span that ends within the inset but is fully on screen', () => {
+      const guides: SnapGuide[] = [{ from: { x: 10, y: 50 }, to: { x: 100, y: 50 }, label: '90' }];
+      const { container } = render(<SnapGuides guides={guides} zoom={1} labelBox={box} />);
+      expect(Number(labelText(container).getAttribute('x'))).toBeCloseTo(55, 6);
     });
   });
 
