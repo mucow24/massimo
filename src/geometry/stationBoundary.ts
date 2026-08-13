@@ -279,14 +279,17 @@ export function textLabelAlignRectLocal(label: TextLabel): AABB {
   const m = measureTextLabel(label);
   const first = m.lines[0];
   const last = m.lines[m.lines.length - 1];
-  // A fixed-width COLUMN is authored geometry: the box spans the column
-  // (m.width is pinned to it), so the wrap edge stays visible and the column
-  // corners are what aligns into a layout. Only Auto labels hug their ink.
-  const ink = (label.width ?? 0) > 0 ? null : blockInkExtentX(m, label.align);
+  // A fixed-width COLUMN is authored geometry, so its wrap edge must stay
+  // visible: the RIGHT edge reaches at least the column's right (m.width is
+  // pinned to it; further if an unbreakable word overflows the wrap). The
+  // LEFT edge stays on the ink like every other label — a column must not
+  // reintroduce the side-bearing strip the alignment box exists to remove.
+  const ink = blockInkExtentX(m, label.align);
+  const column = (label.width ?? 0) > 0;
   return {
     x0: ink ? ink.left : -m.width / 2,
     y0: -m.height / 2 + first.baselineFromTop - CAP_FRACTION * first.maxFontSize,
-    x1: ink ? ink.right : m.width / 2,
+    x1: column ? Math.max(ink ? ink.right : -Infinity, m.width / 2) : ink ? ink.right : m.width / 2,
     y1: -m.height / 2 + last.baselineFromTop,
   };
 }

@@ -549,19 +549,25 @@ describe('textLabelAlignCorners', () => {
     }
   });
 
-  it('a fixed-width COLUMN label spans the authored column, not the ink', () => {
-    // The column is authored geometry — the box must show the impact of
-    // `width` (the wrap edge), and its corners are what aligns into layouts.
+  it('a fixed-width COLUMN label reaches the wrap edge on the right, ink on the left', () => {
+    // `width` is authored geometry: the right edge must show the wrap width.
+    // The left edge stays on the ink like every other label — a column must
+    // not reintroduce the side-bearing strip the alignment box exists to
+    // remove. (jsdom's approximate metrics carry no bearings, so ink-left
+    // coincides with the pen/column left here; the real-bearing case is
+    // pinned in stationBoundary.inkExtent.test.ts.)
     const label = makeTextLabel({ id: 'g', text: 'Hi', fontSize: 16, width: 80 });
     const [tl, , br] = textLabelAlignCorners(label);
     expect(tl.x).toBeCloseTo(-40, 5);
     expect(br.x).toBeCloseTo(40, 5);
   });
 
-  it('a right-aligned column keeps the full column too (the ragged side is the left)', () => {
+  it('a right-aligned column: ink-hugged left, the wrap width kept on the right', () => {
+    // 'Hi' right-flushed in an 80 column: ink starts at 40 − advance.
     const label = makeTextLabel({ id: 'g', text: 'Hi', fontSize: 16, width: 80, align: 'right' });
+    const m = measureTextLabel(label);
     const [tl, , br] = textLabelAlignCorners(label);
-    expect(tl.x).toBeCloseTo(-40, 5);
+    expect(tl.x).toBeCloseTo(40 - m.lines[0].alignAdvance, 5);
     expect(br.x).toBeCloseTo(40, 5);
   });
 
