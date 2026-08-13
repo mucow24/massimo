@@ -253,7 +253,9 @@ test.describe('selecting a station leaves the page where it is', () => {
     // also sort last is fragile for no gain.
     await page.evaluate(() => {
       const w = window as unknown as {
-        __massimo: { stores: { selection: { getState: () => { selectStation: (id: string) => void } } } };
+        __massimo: {
+          stores: { selection: { getState: () => { selectStation: (id: string) => void } } };
+        };
       };
       w.__massimo.stores.selection.getState().selectStation('zz');
     });

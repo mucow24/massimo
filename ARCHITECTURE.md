@@ -105,7 +105,9 @@ needs the Chromium binary installed once via `npm run e2e:install`. `pre-pr:queu
 gate in a named-kernel-mutex queue ([scripts/preprQueued.ps1](scripts/preprQueued.ps1)) so
 simultaneous local sessions run it one at a time on a machine that would otherwise thrash;
 unlock-on-death is the kernel's guarantee (a holder that errors out abandons the mutex to the
-next waiter). Windows-only by design — CI and cloud containers run plain `pre-pr`.
+next waiter). Windows-only by design — CI and cloud containers run plain `pre-pr`. `e2e:prod`
+on its own tests whatever `dist/` already holds; run `npm run build` first (as `pre-pr` does)
+or it gates a stale bundle.
 
 ---
 
@@ -4313,7 +4315,10 @@ Each is confirmed in source/tests; file pointers included.
   IndexedDB). `seedAndOpen` wraps it with the typed `Seed` shapes (fields omitted to simulate
   legacy saves) — **this is the only place the rehydrate/migrate path is exercised**. Specs drive
   state no pointer can reach through `window.__massimo.stores`, never `import('/src/…')` (a
-  dev-server-only URL that 404s in the production bundle). `migration.spec.ts` asserts **zero console errors** loading legacy docs;
+  dev-server-only URL that 404s in the production bundle). Gating on the prod bundle trades away
+  the one systematic dev/prod delta — StrictMode's double-invoked effects (src has no
+  `import.meta.env.DEV` branches) — for covering the bundle the Pages deploy actually ships.
+  `migration.spec.ts` asserts **zero console errors** loading legacy docs;
   `export.spec.ts` checks the exported SVG is chrome-free and text-free (outlined to paths, with a
   differential glyph count so a tracer that emitted nothing fails) and that PNG is genuinely 4×
   (reads IHDR bytes); `exportPdf.spec.ts` exports a hatch+text+image map and asserts the PDF embeds

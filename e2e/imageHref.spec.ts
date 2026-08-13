@@ -49,7 +49,9 @@ async function bootWith(page: Page, hrefs: Record<string, string>): Promise<void
       stations: {},
       lines: {},
       lineOrder: [],
-      svgImages: Object.fromEntries(Object.entries(hrefs).map(([id, href]) => [id, image(id, href)])),
+      svgImages: Object.fromEntries(
+        Object.entries(hrefs).map(([id, href]) => [id, image(id, href)]),
+      ),
       backgroundOrder: Object.keys(hrefs),
     },
     // The CURRENT persist version (drift-guarded above): migrateDoc is

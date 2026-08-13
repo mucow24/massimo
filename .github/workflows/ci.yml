@@ -129,10 +129,11 @@ jobs:
 
       # Against the production bundle (vite preview): bundled modules make each
       # app boot far cheaper than the dev server's unbundled serve, and every
-      # test pays one boot. The build cost is repaid many times over across the
-      # suite. (The checks job also builds — separate runner, separate machine.)
+      # test pays one boot. `npx vite build`, not `npm run build`: the checks
+      # job owns the typecheck (tsc -b) on its own runner, and repeating it
+      # here would only lengthen the e2e critical path.
       - name: Build
-        run: npm run build
+        run: npx vite build
 
       - name: E2E
         run: npm run e2e:prod

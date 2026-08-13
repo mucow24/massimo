@@ -15,7 +15,12 @@
 import { test, expect, type Page, type Download } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { inflateSync } from 'node:zlib';
-import { openMapMenu, openWithRawDoc, seedAndOpen, fourInLineWithBulletsAndLabel } from './fixtures';
+import {
+  openMapMenu,
+  openWithRawDoc,
+  seedAndOpen,
+  fourInLineWithBulletsAndLabel,
+} from './fixtures';
 
 // A small self-contained SVG, embedded as the "Add SVG…" feature would store
 // it: an opaque data:image/svg+xml;base64 URI.
@@ -106,8 +111,15 @@ async function seed(page: Page): Promise<void> {
   // and no second navigation entry appears), which kills an evaluate that is
   // sitting on a pending in-page promise. waitForFunction re-arms across
   // context recreation. The old double-boot seeding masked this — fonts were
-  // warm by the second boot, so the promise never pended.
-  await page.waitForFunction(() => document.fonts.status === 'loaded');
+  // warm by the second boot, so the promise never pended. The bare status
+  // check is not enough: a fresh document reads 'loaded' BEFORE any load has
+  // begun, so also require that at least one face actually finished (the
+  // seeded labels guarantee one will).
+  await page.waitForFunction(
+    () =>
+      document.fonts.status === 'loaded' &&
+      [...document.fonts].some((f) => f.status === 'loaded'),
+  );
 }
 
 async function exportPdf(page: Page): Promise<Download> {

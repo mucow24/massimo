@@ -120,8 +120,7 @@ test('WYSIWYG at the drop: the pipelined drag lands byte-identical to the synchr
   const syncResult = await restSnapshot(page);
 
   // Same drag with the pipeline on. status() proves it really armed.
-  await page.evaluate(() => localStorage.removeItem('vignelli-map-doc-v1'));
-  await page.reload();
+  // (seedAndOpen overwrites the doc key and boots fresh — no cleanup needed.)
   await seedAndOpen(page, crossing);
   await paintOverride(page);
   await enablePipeline(page);

@@ -38,7 +38,11 @@ export default defineConfig({
       ? `npm run preview -- --port ${PORT} --strictPort`
       : `npm run dev -- --port ${PORT}`,
     url: `http://localhost:${PORT}`,
-    reuseExistingServer: !process.env.CI,
+    // Never reuse in preview mode: whatever already answers on the port is at
+    // best a dev server (often another worktree's) — reusing it would silently
+    // gate the prod run on the wrong bundle and un-fix the exact bug class
+    // e2e:prod exists to catch (e.g. import('/src/…') 404s only in dist).
+    reuseExistingServer: !process.env.CI && !PREVIEW,
     timeout: 60_000,
   },
 });

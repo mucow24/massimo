@@ -37,8 +37,14 @@ test.describe('fallback faces are never synthesized', () => {
     // in-page promise dies if Chromium recreates the page's JS context (it
     // can, shortly after first paint, with no navigation involved —
     // waitForFunction re-arms across that; see exportPdf's seed()). The
-    // in-evaluate await below then resolves instantly.
-    await page.waitForFunction(() => document.fonts.status === 'loaded');
+    // in-evaluate await below then resolves instantly. Bare status is
+    // 'loaded' on a fresh document before any load begins, so also require
+    // one face to have actually finished (the station labels force loads).
+    await page.waitForFunction(
+      () =>
+        document.fonts.status === 'loaded' &&
+        [...document.fonts].some((f) => f.status === 'loaded'),
+    );
     return page.evaluate(async (t) => {
       await document.fonts.ready;
       // The canvas 2D `font` shorthand takes the same stack the map draws with.

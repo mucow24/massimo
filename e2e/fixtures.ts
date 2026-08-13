@@ -124,6 +124,11 @@ export interface Seed {
  * app for real. Callers whose docs the typed `Seed` can't express (legacy
  * shapes, raw persist versions) use this directly; everything else goes
  * through seedAndOpen.
+ *
+ * NOT addInitScript (the obvious zero-extra-navigation alternative): init
+ * scripts re-run on EVERY navigation, so specs that mutate state and then
+ * assert it survives a page.reload() (mapLibrary, gridSize, …) would have
+ * the seed re-injected over what the app persisted.
  */
 export async function openWithRawDoc(
   page: Page,

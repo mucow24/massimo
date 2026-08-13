@@ -17,7 +17,10 @@
 # lock legitimately, and the heartbeat below makes that visible. Killing the
 # stuck run IS the release (death -> abandonment -> the next waiter proceeds).
 
-$mutex = [System.Threading.Mutex]::new($false, 'Local\massimo-pre-pr')
+# Global\ so the queue spans logon sessions too (an SSH logon or a service
+# would miss a Local\ mutex). Creating a Global\ mutex needs no privilege —
+# that restriction applies to file mappings, not synchronization objects.
+$mutex = [System.Threading.Mutex]::new($false, 'Global\massimo-pre-pr')
 $owned = $false
 try {
   try { $owned = $mutex.WaitOne(0) }
