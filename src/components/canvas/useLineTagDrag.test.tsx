@@ -140,7 +140,7 @@ describe('useLineTagDrag', () => {
     // Same-stripe neighbor: the guide collapses onto the shared point (50, 0).
     expect(result.current.lineTagSnapGuides[0].from.x).toBeCloseTo(50, 3);
     expect(result.current.lineTagSnapGuides[0].to.x).toBeCloseTo(50, 3);
-    expect(result.current.lineTagSnapGuides[0].label).toBe('0');
+    expect(result.current.lineTagSnapGuides[0].label).toBe('0.0');
     dispatchWindowPointer('pointerup', { clientX: 44, clientY: 0 });
   });
 
@@ -196,7 +196,7 @@ describe('useLineTagDrag', () => {
     expect(result.current.lineTagSnapGuides).toHaveLength(1);
     const g = result.current.lineTagSnapGuides[0];
     expect(g.from.x).toBeCloseTo(g.to.x, 3);
-    expect(g.label).toBe('14');
+    expect(g.label).toBe('14.0');
     dispatchWindowPointer('pointerup', { clientX: 44, clientY: 0 });
   });
 

@@ -2478,7 +2478,10 @@ two pools are the same set, so nothing else changes.
 Shared conventions, all paths: alignment tolerances are `/zoom` (constant screen px); grid is a
 hard world constraint; **Shift bypasses all snapping** during any pointer gesture (svg rotation
 included — it snaps 22.5° by default, Shift frees); every alignment snap draws a
-distance-labeled guide through `SnapGuides`; grid snapping is silent. A span with an end off
+distance-labeled guide through `SnapGuides`; grid snapping is silent. Every live measurement
+readout — those guide labels, the Ctrl-drag spacing, the engaged guide's coordinate chip, the
+circle-diameter chip — speaks one format, `formatMeasurement`: one decimal place, the trailing
+`.0` kept so a number never changes width as a drag crosses a unit boundary. A span with an end off
 screen keeps its label on the part you can SEE, rather than at the true midpoint — zoomed in the
 far end sits several viewports away (a guide's parallel neighbour routinely does), which would
 hide the number exactly when the span is longest. The canvas hands every `SnapGuides` mount one
@@ -2505,7 +2508,7 @@ never fires off a guide primary. Engagement feedback: the snapper emits a **mark
 `SnapGuide` carrying `alignGuideId` + the landed point, never a drawable segment — and the canvas
 turns it into the FULL snap chrome **on the guide itself** (`engagedGuides` in MapCanvas →
 `SnapGuides`' `engaged` prop): halo + dashed accent spanning the overdrawn box, a ring at the
-snap point, and a chip naming the coordinate snapped to (`Y 120`, or `Y₀ 120` for a diagonal's
+snap point, and a chip naming the coordinate snapped to (`Y 120.0`, or `Y₀ 120.0` for a diagonal's
 intercept — the point lands ON the line, so the guide's coordinate is what "distance" means
 here), plus the guide's own accent recolor
 (`GuideView` `engaged`). A guide engagement reads exactly as loud as every other snap. The pool is

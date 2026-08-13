@@ -118,7 +118,7 @@ describe('snapDraggedStation: equidistant mode', () => {
     expect(r.y).toBeCloseTo(0, 5);
     // The yellow tooltip should now read 50 (B is 50 from both A and C).
     const labels = r.guides.map((g) => g.label).filter(Boolean);
-    expect(labels).toContain('50');
+    expect(labels).toContain('50.0');
   });
 
   it('does nothing when modes.line is off (equidistant is gated on line)', () => {
@@ -208,7 +208,7 @@ describe('snapDraggedStation: equidistant mode', () => {
     expect(r.y).toBeCloseTo(0, 5);
     // The yellow tooltip should reflect the matched cadence.
     const labels = r.guides.map((g) => g.label).filter(Boolean);
-    expect(labels).toContain('40');
+    expect(labels).toContain('40.0');
   });
 
   it('snaps the start terminus by mirroring the next → next-next cadence', () => {
@@ -231,7 +231,7 @@ describe('snapDraggedStation: equidistant mode', () => {
     expect(r.x).toBeCloseTo(0, 5);
     expect(r.y).toBeCloseTo(0, 5);
     const labels = r.guides.map((g) => g.label).filter(Boolean);
-    expect(labels).toContain('40');
+    expect(labels).toContain('40.0');
   });
 
   it('fires on a 3-station line — the smallest case with a prev-prev', () => {
@@ -366,7 +366,7 @@ describe('snapDraggedStation: equidistant mode', () => {
         Math.abs(g.to.y - 0) < 1e-6,
     );
     expect(sourceGuide).toBeDefined();
-    expect(sourceGuide?.label).toBe('40');
+    expect(sourceGuide?.label).toBe('40.0');
   });
 
   it('emits a source-cadence guide from next-next to next on start terminus snap', () => {
@@ -397,7 +397,7 @@ describe('snapDraggedStation: equidistant mode', () => {
         Math.abs(g.to.y - 0) < 1e-6,
     );
     expect(sourceGuide).toBeDefined();
-    expect(sourceGuide?.label).toBe('40');
+    expect(sourceGuide?.label).toBe('40.0');
   });
 
   it('does not emit a source-cadence guide on the interior midpoint case', () => {

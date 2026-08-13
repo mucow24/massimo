@@ -87,7 +87,7 @@ describe('<SnapGuides />', () => {
     expect(Number(ring.getAttribute('cy'))).toBe(120);
     // The chip names what you snapped TO — the guide's coordinate.
     const text = labelText(container);
-    expect(text.textContent).toBe('Y 120');
+    expect(text.textContent).toBe('Y 120.0');
     expect(Number(text.getAttribute('x'))).toBeCloseTo(40, 6);
   });
 
@@ -110,7 +110,7 @@ describe('<SnapGuides />', () => {
     expect(Number(dashed.getAttribute('x2'))).toBe(300);
     expect(Number(dashed.getAttribute('y2'))).toBe(500);
     const text = labelText(container);
-    expect(text.textContent).toBe('Y₀ 200');
+    expect(text.textContent).toBe('Y₀ 200.0');
   });
 
   it('labels a vertical engaged guide with its X, chip beside the snap point', () => {
@@ -123,7 +123,7 @@ describe('<SnapGuides />', () => {
       />,
     );
     const text = labelText(container);
-    expect(text.textContent).toBe('X -340');
+    expect(text.textContent).toBe('X -340.0');
   });
 
   // Zoomed in, a guide's parallel neighbour is routinely several viewports

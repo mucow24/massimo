@@ -120,9 +120,14 @@ describe('guideNeighbourReadout', () => {
       h('far-above', 300),
     ]);
     expect(r).toEqual([
-      { from: { x: 250, y: 100 }, to: { x: 250, y: 60 }, label: '40' },
-      { from: { x: 250, y: 100 }, to: { x: 250, y: 160 }, label: '60' },
+      { from: { x: 250, y: 100 }, to: { x: 250, y: 60 }, label: '40.0' },
+      { from: { x: 250, y: 100 }, to: { x: 250, y: 160 }, label: '60.0' },
     ]);
+  });
+
+  it('reports the gap to one decimal place, not a rounded whole number', () => {
+    const r = guideNeighbourReadout('horizontal', 100, { x: 0, y: 0 }, [h('below', 60.25)]);
+    expect(r.map((g) => g.label)).toEqual(['39.8']);
   });
 
   it('measures only its own orientation, and reports nothing without one', () => {
@@ -137,7 +142,7 @@ describe('guideNeighbourReadout', () => {
 
   it('reports one span when the drag has run past every guide on a side', () => {
     const r = guideNeighbourReadout('horizontal', 400, { x: 0, y: 0 }, [h('a', 60), h('b', 160)]);
-    expect(r.map((g) => g.label)).toEqual(['240']);
+    expect(r.map((g) => g.label)).toEqual(['240.0']);
   });
 
   it('a coincident parallel guide silences the readout rather than reaching past it', () => {
@@ -160,7 +165,7 @@ describe('guideNeighbourReadout', () => {
     expect(r).toHaveLength(1);
     // Intercept delta 100 → true distance 100/√2 ≈ 70.7, and the drawn segment
     // is exactly as long as the number claims.
-    expect(r[0].label).toBe('71');
+    expect(r[0].label).toBe('70.7');
     expect(Math.hypot(r[0].to.x - r[0].from.x, r[0].to.y - r[0].from.y)).toBeCloseTo(
       100 / Math.SQRT2,
       9,

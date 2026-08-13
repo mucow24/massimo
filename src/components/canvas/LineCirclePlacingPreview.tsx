@@ -1,5 +1,6 @@
 import { canonicalLineCircleRadius } from '../../model/lineCircle';
 import { capCenterDy } from '../../geometry/textMeasure';
+import { formatMeasurement } from '../../geometry/snap';
 import { useThemeColors } from '../../state/theme';
 import type { Vec2 } from '../../geometry/vec';
 
@@ -13,9 +14,12 @@ const LABEL_PX = 14;
 /**
  * The diameter readout shown while a circle's radius is being chosen (the
  * two-click placement's second phase) or dragged (the resize knob): the same
- * white-on-accent measurement text the snap guides use, sitting just above
- * the circle's center. Shows the CANONICAL value — what the doc will actually
- * store — not the raw cursor distance, so the number never lies.
+ * white-on-accent measurement text the snap guides use, in the same
+ * `formatMeasurement` format, sitting just above the circle's center. Shows the
+ * CANONICAL value — what the doc will actually store — not the raw cursor
+ * distance, so the number never lies. One decimal is lossless here:
+ * `canonicalLineCircleRadius` quantises the radius to a quarter unit, so the
+ * diameter always lands on a half.
  */
 export function CircleDiameterLabel({
   cx,
@@ -46,7 +50,7 @@ export function CircleDiameterLabel({
       textAnchor="middle"
       pointerEvents="none"
     >
-      {`⌀ ${+(2 * radius).toFixed(2)}`}
+      {`⌀ ${formatMeasurement(2 * radius)}`}
     </text>
   );
 }
