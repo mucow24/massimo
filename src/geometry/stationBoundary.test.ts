@@ -549,6 +549,22 @@ describe('textLabelAlignCorners', () => {
     }
   });
 
+  it('a fixed-width COLUMN label spans the authored column, not the ink', () => {
+    // The column is authored geometry — the box must show the impact of
+    // `width` (the wrap edge), and its corners are what aligns into layouts.
+    const label = makeTextLabel({ id: 'g', text: 'Hi', fontSize: 16, width: 80 });
+    const [tl, , br] = textLabelAlignCorners(label);
+    expect(tl.x).toBeCloseTo(-40, 5);
+    expect(br.x).toBeCloseTo(40, 5);
+  });
+
+  it('a right-aligned column keeps the full column too (the ragged side is the left)', () => {
+    const label = makeTextLabel({ id: 'g', text: 'Hi', fontSize: 16, width: 80, align: 'right' });
+    const [tl, , br] = textLabelAlignCorners(label);
+    expect(tl.x).toBeCloseTo(-40, 5);
+    expect(br.x).toBeCloseTo(40, 5);
+  });
+
   it('chrome rect equals the align rect for inked labels and floors empty ones', () => {
     const inked = makeTextLabel({ id: 'g', text: 'Hi', fontSize: 16 });
     const m = measureTextLabel(inked);
