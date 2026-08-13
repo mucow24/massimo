@@ -778,7 +778,11 @@ ordinary `SnapGuide`s — the measurement chrome a station drag shows its neighb
 measurement, not a snap: guides still never snap to each other, so it needs no engagement, rides
 every frame of the gesture, and survives Shift (which declines snapping, not measuring). Only a
 same-orientation guide can be a neighbour — anything else crosses — and the number is the TRUE
-perpendicular distance (`guidePerpDist`), so it equals the length of the segment drawn.
+perpendicular distance (`guidePerpDist`), so it equals the length of the segment drawn. The pool
+is therefore every PARALLEL guide, including one towed by this very drag (whose live offset the
+hook re-derives from its constant gap to the master): a guide the readout cannot see is one the
+span reaches past and is drawn through, which is the one thing this chrome must never do. A
+coincident guide silences it instead — zero away on both sides is no gap to report.
 Dragging a guide back into its home well deletes it, and the wells tint as drop targets while a
 guide gesture hovers them — the well under the CURSOR, since a strip guide's delete zone runs
 its whole edge band, corner squares included. Its popover is the one coordinate (Y, X, or Y₀
@@ -2495,12 +2499,13 @@ intercept — the point lands ON the line, so the guide's coordinate is what "di
 here), plus the guide's own accent recolor
 (`GuideView` `engaged`). A guide engagement reads exactly as loud as every other snap. The pool is
 `liveGuideTargets(exclude)` beside `liveAlignTargets` — visibility-gated the same way, minus the
-guides moving with the drag (`AlignExclude.guideIds`); a guide's own drag passes NO guide pool
-to the SNAPPER, since stacking two guides is meaningless — it takes the same pool, under the same
-exclusions, purely to MEASURE against (the spacing readout under `AlignmentGuide`). This
-deliberately pierces the stations-are-
-skeleton asymmetry below: stations DO snap to guides — aligning stations is what a guide is for,
-and rings already set the scaffolding-touches-skeleton precedent.
+guides moving with the drag (`AlignExclude.guideIds`); a guide's own drag passes NO guide pool to
+the SNAPPER, since stacking two guides is meaningless. It takes that pool only to MEASURE against
+(the spacing readout under `AlignmentGuide`) — and there the moving-guide exclusion is
+deliberately UNDONE, since a guide the readout cannot see is one it draws a span straight through.
+This deliberately pierces the stations-are-skeleton asymmetry below: stations DO snap to guides —
+aligning stations is what a guide is for, and rings already set the
+scaffolding-touches-skeleton precedent.
 
 The **target pool** (`alignTargets(doc, exclude)` in
 [snapTargets.ts](src/components/canvas/snapTargets.ts)) is what "Snap to all" means for point-

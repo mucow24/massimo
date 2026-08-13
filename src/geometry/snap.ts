@@ -337,35 +337,47 @@ export function guideSegmentInBox(
  * so they land by the pointer instead of at a fixed spot along an infinite
  * line. The label is the TRUE perpendicular distance (`guidePerpDist` — a
  * diagonal's intercept delta overstates it by √2), which is exactly the length
- * of the segment drawn, so the number and the ink agree. Only guides of the
- * same orientation can be neighbours — anything else crosses the dragged guide,
- * and the distance between two crossing lines is zero somewhere. A coincident
- * guide (equal offset) is skipped for the same reason.
+ * of the segment drawn, so the number and the ink agree.
+ *
+ * Only guides of the same ORIENTATION can be neighbours: any other crosses the
+ * dragged guide, so the distance between the two is zero somewhere and there is
+ * no one gap to name. `others` must therefore be every parallel guide on the
+ * canvas — not the snap pool, which drops the guides MOVING with the drag. A
+ * missing one doesn't just go unmeasured: the span reaches past it to the next
+ * one out and is drawn straight through it, claiming a "nearest" neighbour with
+ * a guide visibly crossing the line. The caller re-derives a towed guide's live
+ * offset rather than excluding it (see useGuideDrag).
+ *
+ * A COINCIDENT parallel guide (one at this very offset — reachable whenever
+ * both are grid-snapped) silences the readout instead: the nearest neighbour is
+ * then zero away on both sides, so no gap is left to report, and a span to
+ * anything further would start out of a guide it never named.
  */
 export function guideNeighbourReadout(
   orientation: GuideOrientation,
   offset: number,
   at: Vec2,
-  others: readonly GuideTarget[],
+  others: readonly { orientation: GuideOrientation; offset: number }[],
 ): SnapGuide[] {
-  let below: GuideTarget | null = null;
-  let above: GuideTarget | null = null;
+  let below: number | null = null;
+  let above: number | null = null;
   for (const o of others) {
     if (o.orientation !== orientation) continue;
+    // GRID_EPS as the "same coordinate" bar: two grid-snapped guides land on
+    // bit-equal offsets, and a hair of FP drift below this is not a gap.
+    if (Math.abs(o.offset - offset) < GRID_EPS) return [];
     if (o.offset < offset) {
-      if (!below || o.offset > below.offset) below = o;
-    } else if (o.offset > offset) {
-      if (!above || o.offset < above.offset) above = o;
-    }
+      if (below === null || o.offset > below) below = o.offset;
+    } else if (above === null || o.offset < above) above = o.offset;
   }
   const from = guideFoot(orientation, offset, at);
   const out: SnapGuide[] = [];
   for (const n of [below, above]) {
-    if (!n) continue;
+    if (n === null) continue;
     out.push({
       from,
-      to: guideFoot(orientation, n.offset, from),
-      label: Math.round(guidePerpDist(orientation, n.offset, from)).toString(),
+      to: guideFoot(orientation, n, from),
+      label: Math.round(guidePerpDist(orientation, n, from)).toString(),
     });
   }
   return out;

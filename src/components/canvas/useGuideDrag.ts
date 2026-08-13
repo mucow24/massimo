@@ -62,17 +62,16 @@ type ScreenToWorld = (mx: number, my: number) => Vec2;
  *    threshold — creates nothing.
  *
  * Guides never snap to other guides (stacking two is meaningless), so neither
- * gesture passes `guideTargets` to the snapper. Both do carry the guide pool
- * as a MEASUREMENT pool: every frame draws the spacing to the nearest parallel
- * guide either side (`guideNeighbourReadout`), the same labeled chrome a
- * station drag shows to its neighbours. Being a readout rather than a snap, it
- * survives Shift — which declines snapping, not measuring.
+ * gesture passes `guideTargets` to the snapper. Both do carry a parallel pool
+ * they only MEASURE against — every frame draws the spacing to the nearest
+ * parallel guide either side (`guideNeighbourReadout`, whose contract is where
+ * that pool's membership is argued).
  *
- * Shift bypasses snapping, as everywhere. Both
- * gestures capture to the SVG on the first real move (trackDragMove), so the
- * svg's shared pointer pipeline drives them; the well strips also forward
- * their own move/up events for the sub-threshold stretch where the pointer is
- * still over the strip.
+ * Shift bypasses snapping, as everywhere — but not the readout, which is a
+ * measurement rather than a snap. Both gestures capture to the SVG on the first
+ * real move (trackDragMove), so the svg's shared pointer pipeline drives them;
+ * the well strips also forward their own move/up events for the sub-threshold
+ * stretch where the pointer is still over the strip.
  */
 export function useGuideDrag(
   svgRef: RefObject<SVGSVGElement | null>,
@@ -96,9 +95,17 @@ export function useGuideDrag(
     moved: boolean;
     siblings: GroupSiblings;
     allTargets: Vec2[];
-    // The guides this gesture MEASURES against — never a snap pool. Snapshotted
-    // at pointer-down like every other pool, minus whatever moves with the drag.
+    // The STATIONARY guides this gesture measures against — never a snap pool.
+    // Snapshotted at pointer-down like every other pool.
     neighbours: readonly GuideTarget[];
+    // The towed parallel siblings, as their constant gap to the master. They
+    // are out of every SNAP pool (a target moving with the grab is an unstable
+    // one) but they are still ink on the canvas, so the readout has to see them
+    // or it draws a span through one — hence a gap rather than an exclusion.
+    // Constant for the whole gesture: a parallel sibling takes the master's
+    // offset delta verbatim (`guideNudgeDelta ∘ guideMoveVector` is the
+    // identity on its own orientation), so the live offset is master + gap.
+    towedGaps: readonly number[];
     history: ReturnType<typeof beginHistoryGroup>;
   } | null>(null);
   const pullRef = useRef<{
@@ -109,6 +116,7 @@ export function useGuideDrag(
     moved: boolean;
     allTargets: Vec2[];
     neighbours: readonly GuideTarget[];
+    towedGaps: readonly number[];
   } | null>(null);
 
   // Is the pointer inside (or past) the given orientation's home well — the
@@ -161,25 +169,33 @@ export function useGuideDrag(
     orientation: GuideOrientation,
     rawOffset: number,
     e: React.PointerEvent,
-    pools: { allTargets: Vec2[]; neighbours: readonly GuideTarget[] },
+    pools: {
+      allTargets: Vec2[];
+      neighbours: readonly GuideTarget[];
+      towedGaps: readonly number[];
+    },
   ): number => {
     const world = screenToWorld(e.clientX, e.clientY);
     let offset = rawOffset;
-    let snapGuides: SnapGuide[] = [];
+    let snapChrome: SnapGuide[] = [];
     if (!e.shiftKey) {
       const proposed = guideFoot(orientation, rawOffset, world);
       const constrain =
         orientation === 'horizontal' ? 'y' : orientation === 'vertical' ? 'x' : orientation;
       const snap = snapPoint(proposed, { allTargets: pools.allTargets, constrain });
       offset = guideOffsetOf(orientation, snap);
-      snapGuides = snap.guides;
+      snapChrome = snap.guides;
     }
     // Set unconditionally — frozen local state can't gate a clear while the
     // pipeline is armed (see useRoutedSnapGuides). The spacing readout is
-    // measured off the LANDED offset, so it reads the gap the release commits.
+    // measured off the LANDED offset, so it reads the gap the release commits,
+    // and the towed siblings ride that same offset out to where they now sit.
     setSnapGuides([
-      ...snapGuides,
-      ...guideNeighbourReadout(orientation, offset, world, pools.neighbours),
+      ...snapChrome,
+      ...guideNeighbourReadout(orientation, offset, world, [
+        ...pools.neighbours,
+        ...pools.towedGaps.map((gap) => ({ orientation, offset: offset + gap })),
+      ]),
     ]);
     return offset;
   };
@@ -206,10 +222,10 @@ export function useGuideDrag(
       moved: false,
       siblings,
       allTargets: liveAlignTargets(exclude),
-      // Same exclusions as the point pool, for the same reason: a guide towed
-      // by this drag holds its gap for the whole gesture, so measuring to it
-      // says nothing.
       neighbours: liveGuideTargets(exclude),
+      towedGaps: siblings.guides
+        .filter((g) => g.orientation === guide.orientation)
+        .map((g) => g.startOffset - guide.offset),
       history: beginHistoryGroup({ deferPersist: true }),
     };
   }, []);
@@ -222,9 +238,11 @@ export function useGuideDrag(
       startMX: e.clientX,
       startMY: e.clientY,
       moved: false,
-      // No exclusions: the ghost isn't in the doc yet (placement's rule).
+      // No exclusions: the ghost isn't in the doc yet (placement's rule), and
+      // a pull tows nothing.
       allTargets: liveAlignTargets(),
       neighbours: liveGuideTargets(),
+      towedGaps: [],
     };
   }, []);
 

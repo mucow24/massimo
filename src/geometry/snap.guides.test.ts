@@ -140,13 +140,22 @@ describe('guideNeighbourReadout', () => {
     expect(r.map((g) => g.label)).toEqual(['240']);
   });
 
-  it('a coincident guide is not a neighbour', () => {
-    expect(guideNeighbourReadout('horizontal', 100, { x: 0, y: 0 }, [h('same', 100)])).toEqual([]);
+  it('a coincident parallel guide silences the readout rather than reaching past it', () => {
+    // The nearest neighbour is zero away on BOTH sides, so there is no gap
+    // left to report — and the span to `far` would start out of a guide it
+    // never named.
+    expect(
+      guideNeighbourReadout('horizontal', 100, { x: 0, y: 0 }, [h('same', 100), h('far', 300)]),
+    ).toEqual([]);
+    // Near-coincident counts: a hair of FP drift is not a gap.
+    expect(
+      guideNeighbourReadout('horizontal', 100, { x: 0, y: 0 }, [h('drift', 100 + 1e-9)]),
+    ).toEqual([]);
   });
 
   it('a diagonal measures TRUE perpendicular distance, not the intercept delta', () => {
     const r = guideNeighbourReadout('diagonal-down', 0, { x: 50, y: 50 }, [
-      { id: 'd', orientation: 'diagonal-down', offset: 100 },
+      { orientation: 'diagonal-down', offset: 100 },
     ]);
     expect(r).toHaveLength(1);
     // Intercept delta 100 → true distance 100/√2 ≈ 70.7, and the drawn segment

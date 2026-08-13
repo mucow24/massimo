@@ -278,16 +278,27 @@ describe('useGuideDrag — neighbour spacing readout', () => {
     expect(r.current.snapGuides.map((g) => g.label)).toEqual(['97', '23']);
   });
 
-  it('never measures to a guide towed by the same drag', () => {
+  it('measures to a TOWED parallel sibling, at its live offset, rather than past it', () => {
     seedNeighbours();
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: {
+        ...useDoc.getState().guides,
+        ghFar: makeGuide({ id: 'ghFar', orientation: 'horizontal', offset: 300 }),
+      },
+    });
     useSelection.setState({ ...useSelection.getState(), selectedGuideIds: ['gh', 'ghHi'] });
     const r = render();
     act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
-    // ghHi moved with the drag, so the gap to it never changed — only the
-    // stationary ghLo is a neighbour.
+    // ghHi is towed to 197. It is out of the SNAP pool (a moving target), but
+    // it is still ink on the canvas — measuring past it to ghFar would draw a
+    // span straight through it.
     expect(useDoc.getState().guides.ghHi.offset).toBe(197);
-    expect(r.current.snapGuides.map((g) => g.label)).toEqual(['97']);
+    expect(r.current.snapGuides).toEqual([
+      { from: { x: 300, y: 137 }, to: { x: 300, y: 40 }, label: '97' },
+      { from: { x: 300, y: 137 }, to: { x: 300, y: 197 }, label: '60' },
+    ]);
   });
 
   it('measures the well pull-out ghost too', () => {
