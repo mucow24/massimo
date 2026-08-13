@@ -15,7 +15,7 @@
 // Renderers resolve it live from the line (like color), so edits repaint
 // without a geometry rebuild.
 
-import { roundClamp } from '../util/grid';
+import { clampField } from '../util/grid';
 import { resolveDayNight, sentinelOrDayNightEqual } from './dayNightColor';
 import type { DayNightColor, LineStrokeColor } from './types';
 
@@ -27,8 +27,8 @@ export const LINE_STROKE_WIDTH_MIN = 0;
 // textboxAllowAboveMax); the rendered rail clamps at the stripe width
 // regardless (see lineStrokeRailWidth).
 export const LINE_STROKE_WIDTH_MAX = 10;
-// Stroke widths live on a quarter-unit grid: the slider/steppers move in
-// 0.25 increments and the setters round to the nearest step.
+// The casing slider/steppers move in 0.25 increments; a typed width is stored
+// as typed.
 export const LINE_STROKE_STEP = 0.25;
 // The casing's theme-aware default: white on BOTH canvases — the historical
 // single-color look, so a save from before the day/night split repaints
@@ -49,15 +49,15 @@ export const LINE_STROKE_COLOR_DEFAULT: DayNightColor = { day: '#ffffff', night:
 export const LINE_OWN_COLOR = 'line';
 
 /**
- * The canonical STORED form of a casing width: round to the LINE_STROKE_STEP
- * (quarter-unit) grid, clamp to ≥ LINE_STROKE_WIDTH_MIN, and collapse to
- * `undefined` at LINE_STROKE_WIDTH_DEFAULT (0 = no casing, never stored).
+ * The canonical STORED form of a casing width: clamp to ≥
+ * LINE_STROKE_WIDTH_MIN, and collapse to `undefined` at
+ * LINE_STROKE_WIDTH_DEFAULT (0 = no casing, never stored).
  * Shared by the `setLineStrokeWidth` transform and the `sanitizeLineStroke`
- * file cleaner so the grid/floor can never drift. Callers own the finiteness
+ * file cleaner so the floor can never drift. Callers own the finiteness
  * guard.
  */
 export const canonicalStrokeWidth = (w: number): number | undefined => {
-  const norm = roundClamp(w, LINE_STROKE_STEP, LINE_STROKE_WIDTH_MIN);
+  const norm = clampField(w, LINE_STROKE_WIDTH_MIN);
   return norm === LINE_STROKE_WIDTH_DEFAULT ? undefined : norm;
 };
 

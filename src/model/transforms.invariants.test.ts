@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fc from 'fast-check';
 import * as T from './transforms';
-import { LINE_WIDTH_DEFAULT, LINE_WIDTH_MIN, LINE_WIDTH_STEP } from './lineWidth';
+import { LINE_WIDTH_DEFAULT, LINE_WIDTH_MIN } from './lineWidth';
 import {
   LINE_OWN_COLOR,
   LINE_STROKE_COLOR_DEFAULT,
@@ -420,13 +420,13 @@ describe('transforms invariants (property-based)', () => {
     );
   });
 
-  it('line.width is always in canonical stored form (on the 0.25 grid, ≥ MIN, never the default)', () => {
-    // Deterministic coverage of the fractional path. As of #276 widths live on
-    // a 0.25 grid (LINE_WIDTH_STEP), so 1.125 canonicalizes to a legal
-    // non-integer 1.25 — the case a naive Number.isInteger check wrongly
-    // rejected. Injecting it as an example keeps this a reliable regression
-    // guard instead of a seed-dependent flake (the original flaky counterexample
-    // was exactly setLineWidth w:1.125).
+  it('line.width is always in canonical stored form (≥ MIN, never the default)', () => {
+    // Deterministic coverage of the fractional path: a width is a free
+    // world-unit measurement (the width step only moves the controls), so
+    // 1.125 is stored verbatim — the case a naive Number.isInteger check
+    // wrongly rejected. Injecting it as an example keeps this a reliable
+    // regression guard instead of a seed-dependent flake (the original flaky
+    // counterexample was exactly setLineWidth w:1.125).
     const fractionalWidth: Action[] = [
       { kind: 'addLine' },
       { kind: 'setLineWidth', idx: 0, w: 1.125 },
@@ -437,7 +437,7 @@ describe('transforms invariants (property-based)', () => {
         for (const lid of Object.keys(doc.lines)) {
           const w = doc.lines[lid].width;
           if (w === undefined) continue;
-          expect(Number.isInteger(w / LINE_WIDTH_STEP)).toBe(true);
+          expect(Number.isFinite(w)).toBe(true);
           expect(w).toBeGreaterThanOrEqual(LINE_WIDTH_MIN);
           expect(w).not.toBe(LINE_WIDTH_DEFAULT);
         }

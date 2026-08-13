@@ -154,6 +154,31 @@ describe('stopDot styles — v19 migration (bakeStopDotLibrary)', () => {
     expect(bakeStopDotLibrary(baked)).toBe(baked);
   });
 
+  it('does NOT fold a legacy OFF-STEP stroke width into the preset it used to round onto', () => {
+    // The bakes value-match RAW legacy dots against the canonical presets, and
+    // that match runs through `canonicalDotStyle` — which no longer rounds
+    // strokeWidth onto the 0.25 stepper grid. A hand-edited hairline 0.05 used
+    // to snap onto the diamond preset's 0 and be tagged as that preset; now it
+    // is its own look, so the slot stays UNTAGGED with its raw value intact
+    // rather than reading as a style it doesn't match.
+    const legacy = legacyDoc();
+    const preset = props(DIAMOND);
+    const offStep: DotStyle = { ...preset, strokeWidth: preset.strokeWidth + 0.05 };
+    const baked = bakeStopDotLibrary({
+      ...legacy,
+      lines: { ...legacy.lines, L1: { ...legacy.lines.L1, singletonDotStyle: offStep } },
+    });
+    expect(baked.lines.L1.singletonDotStyleId).toBeUndefined();
+    expect(baked.lines.L1.singletonDotStyle?.strokeWidth).toBe(offStep.strokeWidth);
+    // An ON-preset value in the same slot still tags, so the miss above is the
+    // stroke width talking, not a broken bake.
+    const onPreset = bakeStopDotLibrary({
+      ...legacy,
+      lines: { ...legacy.lines, L1: { ...legacy.lines.L1, singletonDotStyle: preset } },
+    });
+    expect(onPreset.lines.L1.singletonDotStyleId).toBe(DIAMOND);
+  });
+
   it('renders identically before and after migration (raw shadow preserved)', () => {
     const legacy = legacyDoc();
     const baked = bakeStopDotLibrary(legacy);

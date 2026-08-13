@@ -30,6 +30,7 @@ import { useFieldHistory } from '../useFieldHistory';
 import { usePersistedTextareaHeight } from '../usePersistedTextareaHeight';
 import { useNumericField } from '../useNumericField';
 import { useDismiss } from '../usePopover';
+import { cleanFloat } from '../../util/grid';
 import {
   FONT_SIZE_STEP,
   LABEL_FONT_SIZE_MAX,
@@ -122,15 +123,20 @@ export function StationInspector({ id }: { id: StationId }) {
   };
   // useNumericField (not bare inputs): its text mirror ignores an emptied
   // field mid-edit — Number('') === 0 would teleport the station to the axis.
+  // `cleanFloat`, not Math.round: a station lands wherever its drag/snap put
+  // it, so the box must not claim a whole-unit position the doc doesn't hold —
+  // and this value feeds the wheel's `getCurrent`, where rounding first would
+  // quantize the station for real on the next notch. The whole-unit step is
+  // what the wheel and the arrows move by.
   const xField = useNumericField(
-    Math.round(pivot.x),
+    cleanFloat(pivot.x),
     (n) => moveStationPivotTo(id, n, livePivot().y),
-    () => Math.round(livePivot().x),
+    () => cleanFloat(livePivot().x),
   );
   const yField = useNumericField(
-    Math.round(pivot.y),
+    cleanFloat(pivot.y),
     (n) => moveStationPivotTo(id, livePivot().x, n),
-    () => Math.round(livePivot().y),
+    () => cleanFloat(livePivot().y),
   );
   const stopRowsRef = useRef<HTMLDivElement | null>(null);
 

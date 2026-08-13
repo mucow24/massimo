@@ -31,7 +31,6 @@ import { repackStationForSpacing } from './stationPacking';
 import {
   DOT_SIZE_DEFAULT,
   DOT_SIZE_MIN,
-  DOT_SIZE_STEP,
   canonicalDotSize,
   lineMultiDotSizeOf,
   lineSingletonDotSizeOf,
@@ -68,11 +67,11 @@ import {
 // resolve the style-aware default without an import cycle); keep the historical
 // import path working for its existing callers.
 export { resolveDotStyle } from './dotStyle';
-// `snapToStep` is a leaf grid util (in util/grid) so lower-level model modules
+// `clampField` is a leaf grid util (in util/grid) so lower-level model modules
 // like `dotStyle` can share it without importing `transforms`; keep the
 // historical import path working for its existing callers.
-import { clamp, roundClamp, rot8, snapToStep } from '../util/grid';
-export { snapToStep };
+import { clamp, clampField, rot8 } from '../util/grid';
+export { clampField };
 import { pairKeyOf } from './pairKey';
 import {
   addEdge,
@@ -150,9 +149,11 @@ export const LABEL_FONT_SIZE_MIN = 2;
 export const LABEL_FONT_SIZE_MAX = 24;
 export const LABEL_FONT_SIZE_DEFAULT = 12;
 
-// Every font-size control (station labels + text labels) steps in quarters and
-// stores values snapped to this grid. Mirrors `LINE_STROKE_STEP`'s role for
-// the stroke-width field.
+// Every font-size control (station labels + text labels) steps in quarters —
+// one arrow press on the slider, one wheel notch over the row. Like every other
+// dimensional step, the quarter is NOT the set of legal sizes: a TYPED size is
+// stored as typed (`clampField`). Snapping it made the field look deaf — 10.2,
+// 10.3 and 10.35 all landed on 10.25.
 export const FONT_SIZE_STEP = 0.25;
 
 // The weight ladder lives with the other font primitives in util/fonts — the
@@ -260,9 +261,10 @@ export function effectiveStationLabelStyle(
 }
 
 /**
- * Clamp/snap a full StationStyleProps onto the canonical grids (fontSize on the
- * FONT_SIZE_STEP grid floored at LABEL_FONT_SIZE_MIN; leading/tracking snapped
- * to their slider steps). The ONE canonicalizer shared by
+ * Clamp a full StationStyleProps to its canonical stored form: each numeric
+ * field floored at its LABEL_*_MIN and otherwise kept exactly as given — the
+ * slider steps are what the CONTROLS move by, never a filter on the value. The
+ * ONE canonicalizer shared by
  * `updateStationLabelStyle` (the per-station writer) and
  * `canonicalStyleProps('station')` (the style def), so a def edited in the panel
  * compares exactly equal to what stamping it stores back. `weight`/`italic` pass
@@ -270,11 +272,11 @@ export function effectiveStationLabelStyle(
  */
 export function canonicalStationLabelStyle(props: StationStyleProps): StationStyleProps {
   return {
-    fontSize: snapToStep(props.fontSize, FONT_SIZE_STEP, LABEL_FONT_SIZE_MIN),
+    fontSize: clampField(props.fontSize, LABEL_FONT_SIZE_MIN),
     weight: props.weight,
     italic: props.italic,
-    leading: snapToStep(props.leading, LABEL_LEADING_STEP, LABEL_LEADING_MIN),
-    tracking: snapToStep(props.tracking, LABEL_TRACKING_STEP, LABEL_TRACKING_MIN),
+    leading: clampField(props.leading, LABEL_LEADING_MIN),
+    tracking: clampField(props.tracking, LABEL_TRACKING_MIN),
   };
 }
 
@@ -883,7 +885,7 @@ function setLineCaseDotSize(
 ): MapDoc {
   const cur = doc.lines[id];
   if (!cur || !Number.isFinite(size)) return doc;
-  const stored = snapToStep(size, DOT_SIZE_STEP, DOT_SIZE_MIN);
+  const stored = clampField(size, DOT_SIZE_MIN);
   if (cur[field] === stored) return doc;
   const nextLine = writeLineField(cur, field, stored);
   // A per-stop override is redundant when dropping it renders the same size —
@@ -979,7 +981,7 @@ export function setLineWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
 
 // Per-line interline gap: extra spacing against each interlined neighbor
 // (the pair uses the LARGER of the two lines' gaps). Same storage contract
-// as setLineStrokeWidth (quarter-unit grid, floor at 0, dropped at 0), but
+// as setLineStrokeWidth (floor at 0, stored as given, dropped at exactly 0), but
 // like `width` this is GEOMETRY: the packed stop spacing and the band merge
 // gate include it, so a bare write would strand packed layouts and un-merge
 // their bands. Each edit therefore also re-packs the packed stop chains at
@@ -1010,7 +1012,7 @@ export function setLineInterlineGap(doc: MapDoc, id: LineId, v: number): MapDoc 
 }
 
 // Per-line station-label clearance. Same storage contract as setLineWidth
-// (quarter-unit grid, collapse at the DEFAULT — here 3, and 0 is a real
+// (stored as given, collapse at the DEFAULT — here 3, and 0 is a real
 // stored value). Pure label placement: nothing packs or re-routes, so no
 // repack and no region reconcile — the derived label layout follows the doc.
 export function setLineLabelGap(doc: MapDoc, id: LineId, v: number): MapDoc {
@@ -2913,8 +2915,8 @@ function withStationLabelStyle(st: Station, props: StationStyleProps): Station {
 
 /**
  * Write one or more per-station typography fields (the 'station' style fields).
- * Each provided field is clamped/snapped to the same canonical grid the style
- * def uses (so a stamped station compares exactly equal to its style), then the
+ * Each provided field is clamped exactly as the style def clamps it (so a
+ * stamped station compares exactly equal to its style), then the
  * whole set is rebuilt with collapse-at-default. Detaches the styleId tag
  * whenever a covered EFFECTIVE value actually changes — a value-identical
  * rewrite (a slider tick landing on the same value) keeps the tag and the same
@@ -3167,15 +3169,14 @@ export const isRouteBulletShape = (v: unknown): v is RouteBulletShape =>
 export const ROUTE_BULLET_SIZE_MIN = 6;
 export const ROUTE_BULLET_SIZE_MAX = 48;
 export const ROUTE_BULLET_SIZE_DEFAULT = 14;
-// Sizes live on a quarter-unit grid: the slider/steppers move in 0.25
-// increments and the clamp rounds to the nearest step (like line width).
+// The size slider/steppers move in 0.25 increments (like line width); a typed
+// size is stored as typed.
 export const ROUTE_BULLET_SIZE_STEP = 0.25;
 
-// Snaps to the quarter-unit grid and clamps at the bottom only; the spinbutton
-// accepts sizes beyond the slider's range (ROUTE_BULLET_SIZE_MAX constrains the
-// slider, not the value).
+// Clamps at the bottom only; the spinbutton accepts sizes beyond the slider's
+// range (ROUTE_BULLET_SIZE_MAX constrains the slider, not the value).
 export function clampRouteBulletSize(n: number): number {
-  return roundClamp(n, ROUTE_BULLET_SIZE_STEP, ROUTE_BULLET_SIZE_MIN);
+  return clampField(n, ROUTE_BULLET_SIZE_MIN);
 }
 
 export function addRouteBullet(
@@ -3269,38 +3270,29 @@ export function updateTextLabel(
   patch: Partial<Omit<TextLabel, 'id'>>,
 ): MapDoc {
   return updateRecord(doc, 'textLabels', id, (cur) => {
-    // Clamp font size at the bottom only so callers (slider, spinbutton,
-    // paste) can't push it to 0/negative; the spinbutton accepts sizes beyond
-    // the slider's range. Snaps to the FONT_SIZE_STEP (0.25) grid. Mirrors
-    // `canonicalStationLabelStyle`'s fontSize clamp.
+    // Every numeric field clamps at the bottom only and is otherwise stored as
+    // given: callers (slider, spinbutton, paste) can't push a size to
+    // 0/negative, but the spinbutton accepts sizes beyond the slider's range
+    // AND off the slider's step. Mirrors `canonicalStationLabelStyle`.
     let nextPatch = patch;
     if (typeof patch.fontSize === 'number') {
-      const clamped = roundClamp(patch.fontSize, FONT_SIZE_STEP, TEXT_LABEL_FONT_SIZE_MIN);
-      nextPatch = { ...nextPatch, fontSize: clamped };
+      nextPatch = { ...nextPatch, fontSize: clampField(patch.fontSize, TEXT_LABEL_FONT_SIZE_MIN) };
     }
-    // Clamp the column width to a non-negative integer (0 = Auto). Callers
-    // (slider, spinbutton, paste) can't push it negative or fractional.
+    // Column width: floored at 0 (= Auto). A fractional column is legal — it is
+    // a world-unit measurement like any other.
     if (typeof patch.width === 'number') {
-      nextPatch = { ...nextPatch, width: Math.max(0, Math.round(patch.width)) };
+      nextPatch = { ...nextPatch, width: clampField(patch.width, 0) };
     }
-    // Clamp the editor-box height to a positive integer. It's a stored px
-    // dimension for the popover textarea, never below one pixel.
+    // The editor-box height stays a positive INTEGER: it is a CSS px dimension
+    // written by the popover's resize handle, not a field anyone types into.
     if (typeof patch.editorHeight === 'number') {
       nextPatch = { ...nextPatch, editorHeight: Math.max(1, Math.round(patch.editorHeight)) };
     }
-    // Leading/tracking snap to their slider steps and clamp at the bottom only,
-    // mirroring fontSize. Shared with the global station-label setters.
     if (typeof patch.leading === 'number') {
-      nextPatch = {
-        ...nextPatch,
-        leading: snapToStep(patch.leading, TEXT_LABEL_LEADING_STEP, TEXT_LABEL_LEADING_MIN),
-      };
+      nextPatch = { ...nextPatch, leading: clampField(patch.leading, TEXT_LABEL_LEADING_MIN) };
     }
     if (typeof patch.tracking === 'number') {
-      nextPatch = {
-        ...nextPatch,
-        tracking: snapToStep(patch.tracking, TEXT_LABEL_TRACKING_STEP, TEXT_LABEL_TRACKING_MIN),
-      };
+      nextPatch = { ...nextPatch, tracking: clampField(patch.tracking, TEXT_LABEL_TRACKING_MIN) };
     }
     let next = { ...cur, ...nextPatch };
     // Re-anchor whenever a resize-affecting property changes — text content,
@@ -3378,13 +3370,11 @@ export const POLYGON_DEFAULT_HALF = 30;
 // A polygon never drops below a triangle, so deleting a vertex is a no-op here.
 export const POLYGON_MIN_VERTICES = 3;
 
-// Stroke width snaps to the POLYGON_STROKE_STEP (0.25) grid and clamps at the
-// bottom only; its spinbutton accepts values beyond the slider max
-// (POLYGON_STROKE_WIDTH_MAX constrains the slider, not the value). Mirrors the
-// line stroke-width control.
-const clampPolygonStrokeWidth = (w: number): number =>
-  roundClamp(w, POLYGON_STROKE_STEP, POLYGON_STROKE_WIDTH_MIN);
-// Curve radius clamps at the bottom only (no rounding) — a free-form world-unit
+// Stroke width clamps at the bottom only; its spinbutton accepts values beyond
+// the slider max (POLYGON_STROKE_WIDTH_MAX constrains the slider, not the
+// value). Mirrors the line stroke-width control.
+const clampPolygonStrokeWidth = (w: number): number => clampField(w, POLYGON_STROKE_WIDTH_MIN);
+// Curve radius clamps at the bottom only — a free-form world-unit
 // value whose spinbutton accepts values beyond the slider max.
 const clampPolygonCurveRadius = (r: number): number => Math.max(POLYGON_CURVE_RADIUS_MIN, r);
 

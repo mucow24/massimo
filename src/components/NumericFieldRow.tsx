@@ -73,7 +73,7 @@ export function NumericFieldRow({
   dot,
 }: Props) {
   const { text, history, onNumberFocus, onNumberChange, attachWheel, onNumberBlur } =
-    useNumericField(value, onChange, getCurrent, step);
+    useNumericField(value, onChange, getCurrent, step, min);
 
   // The store value may sit outside the slider's range (the spinbutton can
   // type past `max`); the slider clamps its own display, like the native

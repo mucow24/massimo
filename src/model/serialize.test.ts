@@ -974,11 +974,13 @@ describe('parse — line style-def interline gap sanitizing', () => {
       },
     });
 
-  it('canonicalizes onto the quarter grid, collapses 0 to absent, drops junk', () => {
+  it('keeps the stored gap verbatim, collapses 0 to absent, drops junk', () => {
     const keep = parse(buildStyledFile({ interlineGap: 2.1 }));
     expect(keep.ok).toBe(true);
     if (keep.ok) {
-      expect((keep.doc.styles.ln.props as unknown as Record<string, unknown>).interlineGap).toBe(2);
+      expect((keep.doc.styles.ln.props as unknown as Record<string, unknown>).interlineGap).toBe(
+        2.1,
+      );
     }
     for (const off of [{ interlineGap: 0 }, { interlineGap: 'wide' }, {}]) {
       const r = parse(buildStyledFile(off));
@@ -987,11 +989,11 @@ describe('parse — line style-def interline gap sanitizing', () => {
     }
   });
 
-  it('labelGap props: snapped and kept (0 included), collapsed at the default 3, junk dropped', () => {
+  it('labelGap props: kept verbatim (0 included), collapsed at the default 3, junk dropped', () => {
     const keep = parse(buildStyledFile({ labelGap: 2.1 }));
     expect(keep.ok).toBe(true);
     if (keep.ok) {
-      expect((keep.doc.styles.ln.props as unknown as Record<string, unknown>).labelGap).toBe(2);
+      expect((keep.doc.styles.ln.props as unknown as Record<string, unknown>).labelGap).toBe(2.1);
     }
     const butt = parse(buildStyledFile({ labelGap: 0 }));
     expect(butt.ok).toBe(true);
@@ -1100,17 +1102,20 @@ describe('parse — line width sanitizing', () => {
     }
   });
 
-  it('clamps and rounds numeric widths to the canonical stored form', () => {
+  it('clamps numeric widths to the canonical stored form, keeping fractions', () => {
     const low = parse(buildWithWidth(-3));
     expect(low.ok).toBe(true);
     if (low.ok) expect(low.doc.lines.L1.width).toBe(1);
     const frac = parse(buildWithWidth(9.6));
     expect(frac.ok).toBe(true);
-    if (frac.ok) expect(frac.doc.lines.L1.width).toBe(9.5);
-    // Rounds-to-default is dropped like an exact 14.
+    if (frac.ok) expect(frac.doc.lines.L1.width).toBe(9.6);
+    // Only an EXACT default is dropped.
     const nearDefault = parse(buildWithWidth(14.1));
     expect(nearDefault.ok).toBe(true);
-    if (nearDefault.ok) expect('width' in nearDefault.doc.lines.L1).toBe(false);
+    if (nearDefault.ok) expect(nearDefault.doc.lines.L1.width).toBe(14.1);
+    const atDefault = parse(buildWithWidth(14));
+    expect(atDefault.ok).toBe(true);
+    if (atDefault.ok) expect('width' in atDefault.doc.lines.L1).toBe(false);
   });
 
   it('drops non-finite widths', () => {
@@ -1178,14 +1183,14 @@ describe('parse — dot size sanitizing', () => {
   });
 
   it("drops a singleton stop override equal to the line's effective default (after bake + sanitizing)", () => {
-    // The legacy 10.1 snaps to a canonical singleton default of 10 on the 0.25
-    // grid; the singleton stop's 10 must compare against THAT — catching a
-    // bake/sanitize ordering bug.
-    const result = parse(buildDotSizePayload({ dotSize: 10 }, { defaultDotSize: 10.1 }));
+    // The legacy default carries straight through to the line's singleton
+    // default; the singleton stop's identical size must compare against THAT —
+    // catching a bake/sanitize ordering bug.
+    const result = parse(buildDotSizePayload({ dotSize: 10.1 }, { defaultDotSize: 10.1 }));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.doc.lines.L1.singletonDotSize).toBe(10);
-    expect(result.doc.lines.L1.multiDotSize).toBe(10);
+    expect(result.doc.lines.L1.singletonDotSize).toBe(10.1);
+    expect(result.doc.lines.L1.multiDotSize).toBe(10.1);
     expect('dotSize' in result.doc.stations.s1.stops[0]).toBe(false);
   });
 
@@ -1208,19 +1213,19 @@ describe('parse — dot size sanitizing', () => {
     }
   });
 
-  it('clamps and rounds numeric sizes to the canonical stored form', () => {
+  it('clamps numeric sizes to the canonical stored form, keeping fractions', () => {
     const low = parse(buildDotSizePayload({ dotSize: -3 }, { defaultDotSize: 9.6 }));
     expect(low.ok).toBe(true);
     if (!low.ok) return;
-    expect(low.doc.lines.L1.singletonDotSize).toBe(9.5); // 9.6 snaps to the 0.25 grid
-    expect(low.doc.lines.L1.multiDotSize).toBe(9.5);
+    expect(low.doc.lines.L1.singletonDotSize).toBe(9.6); // kept, not pulled to 9.5
+    expect(low.doc.lines.L1.multiDotSize).toBe(9.6);
     expect(low.doc.stations.s1.stops[0].dotSize).toBe(0);
-    // Snaps-to-default (8.1 → 8 on the 0.25 grid) is stored like an exact 8.
+    // A near-default size is its own value; line sizes are always stored.
     const nearDefault = parse(buildDotSizePayload({}, { defaultDotSize: 8.1 }));
     expect(nearDefault.ok).toBe(true);
     if (nearDefault.ok) {
-      expect(nearDefault.doc.lines.L1.singletonDotSize).toBe(8);
-      expect(nearDefault.doc.lines.L1.multiDotSize).toBe(8);
+      expect(nearDefault.doc.lines.L1.singletonDotSize).toBe(8.1);
+      expect(nearDefault.doc.lines.L1.multiDotSize).toBe(8.1);
     }
   });
 
@@ -1285,14 +1290,14 @@ describe('parse — line stroke sanitizing', () => {
     }
   });
 
-  it('clamps and rounds numeric stroke widths to the canonical 0.5-grid form', () => {
+  it('clamps numeric stroke widths to the canonical stored form, keeping fractions', () => {
     // Negative clamps to 0 = the default, so the field is dropped.
     const low = parse(buildWithStroke({ strokeWidth: -3 }));
     expect(low.ok).toBe(true);
     if (low.ok) expect('strokeWidth' in low.doc.lines.L1).toBe(false);
     const frac = parse(buildWithStroke({ strokeWidth: 3.6 }));
     expect(frac.ok).toBe(true);
-    if (frac.ok) expect(frac.doc.lines.L1.strokeWidth).toBe(3.5);
+    if (frac.ok) expect(frac.doc.lines.L1.strokeWidth).toBe(3.6);
     const half = parse(buildWithStroke({ strokeWidth: 1.5 }));
     expect(half.ok).toBe(true);
     if (half.ok) expect(half.doc.lines.L1.strokeWidth).toBe(1.5);
@@ -1379,12 +1384,12 @@ describe('parse — line stroke sanitizing', () => {
     }
   });
 
-  it('round-trips dash dimensions on the quarter-unit grid and drops them at 0 (unset ⇒ derive)', () => {
+  it('round-trips dash dimensions verbatim and drops them at 0 (unset ⇒ derive)', () => {
     const keep = parse(buildWithStroke({ dashLength: 3.6, dashWidth: 2.2 }));
     expect(keep.ok).toBe(true);
     if (keep.ok) {
-      expect(keep.doc.lines.L1.dashLength).toBe(3.5);
-      expect(keep.doc.lines.L1.dashWidth).toBe(2.25);
+      expect(keep.doc.lines.L1.dashLength).toBe(3.6);
+      expect(keep.doc.lines.L1.dashWidth).toBe(2.2);
     }
     const off = parse(buildWithStroke({ dashLength: 0, dashWidth: 0 }));
     expect(off.ok).toBe(true);
@@ -1405,10 +1410,10 @@ describe('parse — line stroke sanitizing', () => {
     }
   });
 
-  it('round-trips an interline gap on the quarter-unit grid and drops it at 0 (unset ⇒ tangent)', () => {
+  it('round-trips an interline gap verbatim and drops it at 0 (unset ⇒ tangent)', () => {
     const keep = parse(buildWithStroke({ interlineGap: 2.1 }));
     expect(keep.ok).toBe(true);
-    if (keep.ok) expect(keep.doc.lines.L1.interlineGap).toBe(2);
+    if (keep.ok) expect(keep.doc.lines.L1.interlineGap).toBe(2.1);
     const off = parse(buildWithStroke({ interlineGap: 0 }));
     expect(off.ok).toBe(true);
     if (off.ok) expect('interlineGap' in off.doc.lines.L1).toBe(false);
@@ -1422,10 +1427,10 @@ describe('parse — line stroke sanitizing', () => {
     }
   });
 
-  it('round-trips a label gap on the quarter grid; the default 3 collapses, 0 is REAL', () => {
+  it('round-trips a label gap verbatim; the default 3 collapses, 0 is REAL', () => {
     const keep = parse(buildWithStroke({ labelGap: 2.1 }));
     expect(keep.ok).toBe(true);
-    if (keep.ok) expect(keep.doc.lines.L1.labelGap).toBe(2);
+    if (keep.ok) expect(keep.doc.lines.L1.labelGap).toBe(2.1);
     // Unlike interlineGap (0 = off = absent), labelGap collapses at its
     // default 3 and keeps an explicit 0 — text butted to the marker.
     const def = parse(buildWithStroke({ labelGap: 3 }));
@@ -1534,17 +1539,20 @@ describe('parse — transfer style sanitizing', () => {
     if (distinct.ok) expect('thickness' in distinct.doc.transfers.x1).toBe(false);
   });
 
-  it('clamps and rounds numeric overrides to the canonical stored form', () => {
+  it('clamps numeric overrides to the canonical stored form, keeping fractions', () => {
     const frac = parse(buildWithTransfer({ thickness: 4.6, strokeWidth: 2.7 }));
     expect(frac.ok).toBe(true);
     if (frac.ok) {
-      expect(frac.doc.transfers.x1.thickness).toBe(4.5); // 4.6 snaps to the 0.25 grid
-      expect(frac.doc.transfers.x1.strokeWidth).toBe(2.75);
+      expect(frac.doc.transfers.x1.thickness).toBe(4.6);
+      expect(frac.doc.transfers.x1.strokeWidth).toBe(2.7);
     }
-    // Snaps-to-setting is dropped like an exact match.
+    // Only an EXACT match with the setting is dropped.
     const nearDefault = parse(buildWithTransfer({ thickness: 2.1 }));
     expect(nearDefault.ok).toBe(true);
-    if (nearDefault.ok) expect('thickness' in nearDefault.doc.transfers.x1).toBe(false);
+    if (nearDefault.ok) expect(nearDefault.doc.transfers.x1.thickness).toBe(2.1);
+    const atDefault = parse(buildWithTransfer({ thickness: 2 }));
+    expect(atDefault.ok).toBe(true);
+    if (atDefault.ok) expect('thickness' in atDefault.doc.transfers.x1).toBe(false);
     // Negative thickness clamps to the floor 1 — distinct from the setting 2, kept.
     const low = parse(buildWithTransfer({ thickness: -3 }));
     expect(low.ok).toBe(true);
@@ -1833,7 +1841,7 @@ describe('parse — legacy doc-level curveRadius bake', () => {
     expect((r.doc.styles['default-line'].props as { curveRadius?: number }).curveRadius).toBe(30);
   });
 
-  it('sanitizes per-line curveRadius: rounds, clamps to the floor, drops at the default', () => {
+  it('sanitizes per-line curveRadius: clamps to the floor, drops at the default', () => {
     const stamped = (v: string) => {
       const r = parse(
         buildFile({}).replace('"color":"#ee352e"', `"color":"#ee352e","curveRadius":${v}`),
@@ -1841,7 +1849,7 @@ describe('parse — legacy doc-level curveRadius bake', () => {
       expect(r.ok).toBe(true);
       return r.ok ? r.doc.lines.L1.curveRadius : undefined;
     };
-    expect(stamped('39.6')).toBe(39.5);
+    expect(stamped('39.6')).toBe(39.6);
     expect(stamped('1')).toBe(4); // clamps to LINE_CURVE_RADIUS_MIN
     expect(stamped('24')).toBe(undefined); // default is never stored
     expect(stamped('"junk"')).toBe(undefined); // garbage dropped

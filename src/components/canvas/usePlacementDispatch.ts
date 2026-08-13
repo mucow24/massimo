@@ -24,6 +24,7 @@ import type { LineId } from '../../model/types';
 import { textLabelCorners } from '../../geometry/stationBoundary';
 import { starterPolygonVertices } from '../../model/transforms';
 import { defaultStyleProps } from '../../model/styles';
+import { snapDraggedLineCircleRadius } from '../../model/lineCircle';
 import { makePreviewTextLabel } from './LabelPlacingPreview';
 import {
   liveAlignTargets,
@@ -317,13 +318,13 @@ export function usePlacementDispatch(view: ViewportApi): PlacementDispatch {
         setUiMode({ kind: 'placing-line-circle', center: { x: w.x, y: w.y } });
         return true;
       }
-      // Second click: radius = cursor distance from the armed center (the
-      // transform floors + quarter-grids it). Exit and select so the rim/knob
-      // handles appear for immediate manipulation.
+      // Second click: radius = cursor distance from the armed center, on the
+      // same quarter-unit grid the ghost ring previewed. Exit and select so the
+      // rim/knob handles appear for immediate manipulation.
       const id = addLineCircle(
         mode.center.x,
         mode.center.y,
-        Math.hypot(w.x - mode.center.x, w.y - mode.center.y),
+        snapDraggedLineCircleRadius(Math.hypot(w.x - mode.center.x, w.y - mode.center.y)),
       );
       setUiMode({ kind: 'idle' });
       selectLineCircle(id);

@@ -10,13 +10,16 @@ import {
   SVG_IMAGE_OPACITY_MIN,
 } from '../model/transforms';
 import type { SvgImage } from '../model/types';
+import { cleanFloat } from '../util/grid';
 
-// The doc stores an SVG-native 0..1 alpha; the slider trades in whole percent,
-// which is what people actually mean by "50% opacity". Round on the way out —
-// an alpha × 100 lands on values like 37.000000000000004.
+// The doc stores an SVG-native 0..1 alpha; the field trades in percent, which
+// is what people actually mean by "50% opacity". `cleanFloat` on the way out
+// kills the conversion's float dust (an alpha × 100 lands on values like
+// 37.000000000000004) WITHOUT rounding to whole percent — a typed 33.5 has to
+// read back as 33.5, not 34.
 const PERCENT = 100;
 const toPercent = (alpha: number | undefined): number =>
-  Math.round((alpha ?? SVG_IMAGE_OPACITY_DEFAULT) * PERCENT);
+  cleanFloat((alpha ?? SVG_IMAGE_OPACITY_DEFAULT) * PERCENT);
 
 interface Props {
   image: SvgImage;

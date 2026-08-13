@@ -1,20 +1,16 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useFieldHistory } from './useFieldHistory';
 import { withCoalescedHistory } from '../state/history';
+import { stepDecimals, stepFromValue } from '../util/grid';
 
-/** Decimal places implied by a step: 1 → 0, 0.5 → 1, 0.25 → 2. Drives how many
- *  digits the text mirror shows so a half-step field reads "9.0" / "7.5". */
-function stepDecimals(step: number): number {
-  if (!Number.isFinite(step) || step <= 0) return 0;
-  const s = String(step);
-  const dot = s.indexOf('.');
-  return dot === -1 ? 0 : s.length - dot - 1;
-}
-
-/** Integer-step fields keep their bare `String(n)` mirror (no rounding); a
- *  fractional step pads to its decimal places. */
+/** The step's decimal places are a FLOOR on what the box shows, never a cap: a
+ *  half-step field reads "9.0" / "7.5", but a value carrying finer precision
+ *  than its step (fields store what you type — see `clampField`) is shown in
+ *  full rather than rounded down to a number the store doesn't hold. */
 function formatValue(n: number, decimals: number): string {
-  return decimals > 0 ? n.toFixed(decimals) : String(n);
+  if (decimals <= 0) return String(n);
+  const padded = n.toFixed(decimals);
+  return Number(padded) === n ? padded : String(n);
 }
 
 /**
@@ -30,15 +26,19 @@ function formatValue(n: number, decimals: number): string {
  * fires before React re-renders an external change still steps from the live
  * value, not a stale prop.
  *
- * `step` is the field's granularity: each wheel tick moves by it, and the text
- * mirror is padded to its decimal places (1 → "9", 0.5 → "9.0"). It should match
- * the paired slider/spinbutton `step` attribute.
+ * `step` is the field's granularity: each wheel tick moves one step along the
+ * grid anchored at `min` (from an off-grid value the first tick LANDS on the
+ * grid — see `stepFromValue`), and the text mirror is padded to the step's
+ * decimal places (1 → "9", 0.5 → "9.0"). Both should match the paired
+ * slider/spinbutton attributes, so wheel, arrow keys and spinner buttons move
+ * the field identically.
  */
 export function useNumericField(
   value: number,
   onChange: (n: number) => void,
   getCurrent: () => number,
   step = 1,
+  min = 0,
 ) {
   const decimals = stepDecimals(step);
   const history = useFieldHistory();
@@ -71,7 +71,7 @@ export function useNumericField(
     // group. burstKey is this field's identity, so a scroll that moves on to a
     // different field starts a new entry there.
     withCoalescedHistory(burstKey, () => {
-      onChange(getCurrent() + (e.deltaY < 0 ? step : -step));
+      onChange(stepFromValue(getCurrent(), step, min, e.deltaY < 0 ? 1 : -1));
     });
     // A wheel tick is a deliberate adjustment of THIS field, so mirror the new
     // (clamped) value straight into the text — bypassing the focus guard, which

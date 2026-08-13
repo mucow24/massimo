@@ -11,7 +11,7 @@ import type {
 } from './types';
 import { STOP_DOT_RADIUS } from '../geometry/orientation';
 import { legibleTextOn } from '../util/color';
-import { snapToStep } from '../util/grid';
+import { clampField } from '../util/grid';
 import { resolveDayNight, sentinelOrDayNightEqual } from './dayNightColor';
 
 // Every DotBaseShape, in the order the Styles panel's shape chips render. THE
@@ -495,8 +495,8 @@ function optDotColorEqual(
   return sentinelOrDayNightEqual(a, b);
 }
 
-// Stroke width shares the casing width's quarter-unit grid (same stepper
-// convention as every other stroke slider).
+// The stroke-width stepper moves in quarter units, the same convention as
+// every other stroke slider; a typed width is stored as typed.
 export const DOT_STROKE_STEP = 0.25;
 
 const lcDayNight = (c: DayNightColor): DayNightColor => ({
@@ -513,13 +513,14 @@ const lcStroke = <T extends DotStrokeColor>(s: T): T =>
  * Canonicalize a DotStyle onto the grids/casing the setters use, rebuilt in the
  * pinned field order (so a panel-edited stopDot style round-trips stringify-
  * stable and compares exactly equal to a stamped one). Colors lowercased,
- * strokeWidth floored at 0 and snapped to the quarter-unit grid.
+ * strokeWidth floored at 0 (and otherwise kept as given — DOT_STROKE_STEP is
+ * what the control moves by, not a filter on the value).
  */
 export function canonicalDotStyle(s: DotStyle): DotStyle {
   const out: DotStyle = {
     shape: s.shape,
     fill: lcFill(s.fill),
-    strokeWidth: snapToStep(s.strokeWidth, DOT_STROKE_STEP, 0),
+    strokeWidth: clampField(s.strokeWidth, 0),
     strokeColor: lcStroke(s.strokeColor),
     strokeAlign: s.strokeAlign,
     showServiceCode: s.showServiceCode,

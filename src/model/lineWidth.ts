@@ -1,5 +1,5 @@
 import { STOP_SIZE } from '../geometry/orientation';
-import { roundClamp } from '../util/grid';
+import { clampField } from '../util/grid';
 
 // Per-line stripe width, in world units. The default IS the historical
 // constant — `LINE_WIDTH_DEFAULT === STOP_SIZE` is what makes all-default
@@ -15,14 +15,14 @@ export const LINE_WIDTH_MIN = 1;
 // down to LINE_WIDTH_MIN.
 export const LINE_WIDTH_SLIDER_MIN = 2;
 export const LINE_WIDTH_MAX = 28;
-// Widths live on a quarter-unit grid: the slider/steppers move in 0.25
-// increments and the setter rounds to the nearest step.
+// The width slider/steppers move in 0.25 increments — that is the granularity
+// of the CONTROLS; a typed width is stored as typed.
 export const LINE_WIDTH_STEP = 0.25;
 
 /**
- * The canonical STORED form of a stripe width: round to the LINE_WIDTH_STEP
- * (quarter-unit) grid, clamp to ≥ LINE_WIDTH_MIN, and collapse to `undefined`
- * (store nothing) when it lands on LINE_WIDTH_DEFAULT — the app never stores
+ * The canonical STORED form of a stripe width: clamp to ≥ LINE_WIDTH_MIN, and
+ * collapse to `undefined` (store nothing) when it lands on
+ * LINE_WIDTH_DEFAULT — the app never stores
  * the default. This is the one home for that arithmetic, shared by the
  * `setLineWidth` transform and the `sanitizeLineWidth` file-import cleaner so
  * the two can never drift. Callers own the finiteness guard, because they
@@ -30,7 +30,7 @@ export const LINE_WIDTH_STEP = 0.25;
  * value; a sanitizer drops the field).
  */
 export const canonicalLineWidth = (w: number): number | undefined => {
-  const norm = roundClamp(w, LINE_WIDTH_STEP, LINE_WIDTH_MIN);
+  const norm = clampField(w, LINE_WIDTH_MIN);
   return norm === LINE_WIDTH_DEFAULT ? undefined : norm;
 };
 
@@ -44,9 +44,9 @@ export const lineWidthOf = (line: { width?: number } | null | undefined): number
   line?.width ?? LINE_WIDTH_DEFAULT;
 
 // Extra spacing between a line and each interlined neighbor, world units.
-// 0 = today's edge-to-edge tangency; never stored at the default. Stored on
-// the same quarter-unit grid as the casing width (canonicalStrokeWidth —
-// grid + floor-at-0 + drop-at-0 is exactly this field's contract too).
+// 0 = today's edge-to-edge tangency; never stored at the default. Canonicalized
+// exactly like the casing width (canonicalStrokeWidth — floor-at-0 +
+// drop-at-0 is this field's contract too).
 // Where two neighbors disagree, the pair uses the LARGER gap (see
 // tangentGap in geometry/orientation.ts). GEOMETRY, like `width`.
 export const LINE_INTERLINE_GAP_DEFAULT = 0;
@@ -75,16 +75,16 @@ export const LINE_LABEL_GAP_MIN = -10;
 export const LINE_LABEL_GAP_MAX = 10;
 
 /**
- * The canonical STORED form of a label gap: round to the quarter-unit grid,
- * clamp to ≥ LINE_LABEL_GAP_MIN, and collapse to `undefined` (store nothing)
- * when it lands on LINE_LABEL_GAP_DEFAULT — the app never stores the default.
+ * The canonical STORED form of a label gap: clamp to ≥ LINE_LABEL_GAP_MIN, and
+ * collapse to `undefined` (store nothing) when it lands on
+ * LINE_LABEL_GAP_DEFAULT — the app never stores the default.
  * Shared by the `setLineLabelGap` transform, the style-props canonicalizer and
  * the file-import cleaner so the three can never drift. Callers own the
  * finiteness guard (a transform ignores non-finite input; a sanitizer drops
  * the field).
  */
 export const canonicalLineLabelGap = (v: number): number | undefined => {
-  const norm = roundClamp(v, LINE_WIDTH_STEP, LINE_LABEL_GAP_MIN);
+  const norm = clampField(v, LINE_LABEL_GAP_MIN);
   return norm === LINE_LABEL_GAP_DEFAULT ? undefined : norm;
 };
 

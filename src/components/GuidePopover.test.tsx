@@ -64,16 +64,18 @@ describe('GuidePopover — the one coordinate is named per orientation', () => {
 });
 
 describe('GuidePopover — the offset field', () => {
-  it('shows a dragged guide’s offset rounded to whole world units', () => {
-    // A well pull-out lands on whatever the pointer said; the field is a
-    // whole-unit spinbutton, so it must not read back "120.4000000001".
+  it('shows a dragged guide’s offset as it stands, minus the float dust', () => {
+    // A well pull-out lands on whatever the pointer said. The box must not read
+    // back "120.4000000001" — but it must not claim "120" either when the guide
+    // really sits at 120.4. The whole-unit step moves the wheel and the arrows;
+    // it is not a claim about what the field can hold.
     renderGuide({ offset: 120.4 });
-    expect(screen.getByRole('spinbutton', { name: 'Y' })).toHaveProperty('value', '120');
+    expect(screen.getByRole('spinbutton', { name: 'Y' })).toHaveProperty('value', '120.4');
   });
 
-  it('rounds half-up the same way for a negative offset', () => {
+  it('shows a negative offset the same way', () => {
     renderGuide({ offset: -7.5 });
-    expect(screen.getByRole('spinbutton', { name: 'Y' })).toHaveProperty('value', '-7');
+    expect(screen.getByRole('spinbutton', { name: 'Y' })).toHaveProperty('value', '-7.5');
   });
 
   it('commits a typed value through moveGuide', () => {

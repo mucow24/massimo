@@ -142,7 +142,8 @@ src/
     transferAnchors.ts          # the ONLY place a TransferEnd's three-arm union is narrowed (all four guards)
     lineWidth.ts lineStroke.ts  # stripe width (GEOMETRY) + casing rails (PRESENTATION)
     lineCurve.ts                # per-line corner radius resolution (the fillet the router turns by)
-    lineCircle.ts               # line-circle radius floor + canonicalizer (quarter grid)
+    lineCircle.ts               # line-circle radius floor + canonicalizer, and the quarter-grid
+                                #   snap its DRAG/placement gestures (not its field) go through
     lineEnd.ts                  # line END style resolution (line default → per-end pin) + the round→short degrade
     stopMetrics.ts              # stopMetricsOf: the production StopMetrics lookup — everything the
                                 #   label geometry knows about one PAINTED stop, resolved through the
@@ -283,8 +284,10 @@ src/
                                 #   roll, kick, throw, and the pendulum a held ball hangs from.
                                 #   Pure, in window pixels; no React, no store (BouncingBullet.tsx)
   util/                         # color.ts (hex math), fonts.ts (font stack + weight math),
-                                #   grid.ts (clamp / roundClamp / snapToStep — the quarter-grid
-                                #   canonicalizer primitives every dimensional setter shares),
+                                #   grid.ts (clamp / cleanFloat / clampField — the canonicalizer
+                                #   primitives every dimensional setter shares; plus snapToStep
+                                #   and stepDecimals / stepFromValue for the controls. See
+                                #   **A field's step is not its grid** below),
                                 #   staleBuild.ts (is this failure just a deploy-stranded chunk?),
                                 #   windowSize.ts (the window's client box, scrollbars excluded —
                                 #   the edge every screen-space panel clamps itself inside)
@@ -603,7 +606,10 @@ leaving the Circle state clears the flag either way. Shown as a ring where the a
 arrows (stop rows, layout editor, hover badges).
 
 **`LineCircle`** (`MapDoc.lineCircles`) — a perfect-circle guide: `id, x, y` (center),
-`radius` (quarter-unit grid, ≥ `LINE_CIRCLE_RADIUS_MIN`, [model/lineCircle.ts](src/model/lineCircle.ts)),
+`radius` (≥ `LINE_CIRCLE_RADIUS_MIN`, [model/lineCircle.ts](src/model/lineCircle.ts); the resize
+knob and the two-click placement land it on a quarter-unit grid — Shift declines that grid, as it
+declines every other drag's snapping — while the popover's Diameter field never grids at all: see
+**A field's `step` is not its grid**),
 `locked?`. **Editor scaffolding, never map ink**: rendered as a dashed guide ring with a ⊕ handle
 at its centre — plus a resize knob on its east point while selected, and eight radial cardinal
 ticks while the `circle` snap mode is on ([LineCircleView.tsx](src/components/LineCircleView.tsx),
@@ -868,7 +874,8 @@ All remaining fields optional and **never stored at default**:
   natural changes sweeps the custom lines / stop pins that sat at it (a per-STOP absent
   `dotSize` simply means "the line's size"). Legacy `defaultDotSize` baked into both.
 - `width?: number` — **stripe width, GEOMETRY**; missing ⇒ `LINE_WIDTH_DEFAULT` (= `STOP_SIZE` =
-  14); on a 0.25 (quarter-unit) grid, ≥ `LINE_WIDTH_MIN` (1) (`canonicalLineWidth`, `LINE_WIDTH_STEP`).
+  14); ≥ `LINE_WIDTH_MIN` (1), stored as given (`canonicalLineWidth`; `LINE_WIDTH_STEP` = 0.25
+  moves the controls only).
   Drives stop-cell tangency, band merging, stripe offsets.
   `setLineWidth` also **re-packs tangent stop chains** at every station hosting the line
   ([stationPacking.ts](src/model/stationPacking.ts)): stops packed edge-to-edge under the old
@@ -887,8 +894,8 @@ All remaining fields optional and **never stored at default**:
   at every `labelLayoutLocal` / `stationBoundaryRectsLocal` / `stationsForRect` /
   `stationWorldAABB` call site.
 - `interlineGap?: number` — **extra spacing against interlined neighbors, GEOMETRY**; world
-  units, missing ⇒ 0 (classic edge-to-edge tangency); on the 0.25 grid, ≥ 0 and **unbounded above**,
-  dropped at 0 (`canonicalStrokeWidth` clamps the floor only; `lineInterlineGapOf` reads it).
+  units, missing ⇒ 0 (classic edge-to-edge tangency); ≥ 0 and **unbounded above**,
+  dropped at exactly 0 (`canonicalStrokeWidth` clamps the floor only; `lineInterlineGapOf` reads it).
   `LINE_INTERLINE_GAP_MAX` = `STOP_SIZE` is a **slider bound only** — the spinbutton may exceed it
   (`textboxAllowAboveMax`), the same pattern polygon stroke width and curve radius use. Lets a thin line carry stop dots
   fatter than its stripe without adjacent dots overlapping. Like `width` this is GEOMETRY: it feeds
@@ -903,7 +910,7 @@ All remaining fields optional and **never stored at default**:
   `gap = 0` is a bit-exact identity — the interlining golden snapshot is unchanged.
 - `labelGap?: number` — **clearance a station label keeps from this line's marker** (stripe, dot,
   tick or transfer cap, whichever reaches furthest along the approach); world units, missing ⇒ 3
-  (the historical constant, now `LINE_LABEL_GAP_DEFAULT`); on the 0.25 grid, floored at
+  (the historical constant, now `LINE_LABEL_GAP_DEFAULT`); floored at
   `LINE_LABEL_GAP_MIN` (−10) — **0 and negative are real values** (text butted to, or ink into,
   the marker). Unlike `interlineGap`, `canonicalLineLabelGap`
   collapses the field at the DEFAULT, never at 0 — and style equality treats an absent key and an
@@ -912,7 +919,7 @@ All remaining fields optional and **never stored at default**:
   line that blocks it (at a cross, each AXIS does), so a row of labels along one corridor stays
   consistent by construction. Pure label placement — no repack, no region reconcile.
 - `strokeWidth?: number` — **casing rail, PRESENTATION**; centered on the body edges (half in /
-  half out), missing ⇒ 0; rounded to a 0.25 grid (`LINE_STROKE_STEP`). Resolved live; never moves paths.
+  half out), missing ⇒ 0, floored at 0 and stored as given. Resolved live; never moves paths.
 - `strokeColor?: LineStrokeColor` — casing color: a **theme-aware `DayNightColor`** (`{day,
   night}`, the same abstraction dot fill/stroke and transfer colors use), or the sentinel `'line'`
   (`LINE_OWN_COLOR`) — "the line's OWN color", resolved at render time, mirroring a dot style's
@@ -927,8 +934,8 @@ All remaining fields optional and **never stored at default**:
 - `dashLength?` / `dashWidth?: number` — **TfL-tick dimensions for this line's `dash` stops**,
   world units. PRESENTATION (never moves band geometry, resolved at render). Both **unset** ⇒
   derive from the stripe width (`dashLength = width`, `dashWidth = width/2` — the TfL proportions;
-  see [dashSize.ts](src/model/dashSize.ts), `dashRenderLength`/`dashRenderWidth`). Stored on the
-  casing width's quarter-unit grid with drop-at-0 (0 = "auto" ⇒ field dropped, derivation takes
+  see [dashSize.ts](src/model/dashSize.ts), `dashRenderLength`/`dashRenderWidth`). Stored like the
+  casing width, with drop-at-0 (0 = "auto" ⇒ field dropped, derivation takes
   over). `dashLength` is how far the tick protrudes from the stripe edge toward the label;
   `dashWidth` is its thickness along the travel axis. Covered by line styles.
 - `endStyle?: LineEndStyle` — how the line is PAINTED wherever its ink stops (see **Where a line
@@ -1203,13 +1210,13 @@ selection chrome and the hit area are unaffected, so a 0% image is still clickab
 
 **`TextLabel`** — a free-floating, rotatable text annotation rendered **on top** of the map.
 `id, x, y` (center), `rotation: Rotation`, `text` (multiline `\n`), `fontSize` (floored at
-`TEXT_LABEL_FONT_SIZE_MIN`, snapped to the quarter-unit `FONT_SIZE_STEP` = 0.25 grid every
-font-size control shares — the slider caps at 96, but the spinbutton/stored value is unbounded
-above and may be a quarter-integer),
+`TEXT_LABEL_FONT_SIZE_MIN` and otherwise stored as typed — the quarter-unit `FONT_SIZE_STEP` every
+font-size control shares moves the controls, not the value; the slider caps at 96, but the
+spinbutton/stored value is unbounded above),
 `weight: TextLabelWeight`, `italic`, `align: TextLabelAlign` (`left|center|right|justify`;
 `justify` flushes both edges), `width?` (column width in world units; `0`/absent = Auto —
 sizes to content and honors manual `\n`; `>0` = a fixed-width column that word-wraps, with
-`\n` a hard break; clamped to a non-negative integer by `updateTextLabel`), `color/
+`\n` a hard break; floored at 0 by `updateTextLabel`, fractions kept), `color/
 darkColor` (day/night; **defaults DIFFER**: `#111111` / `#ffffff` for legibility — unlike a
 polygon whose dark default equals its light; backfilled on load), `locked?`, plus optional
 per-label `leading` (line-spacing multiplier) / `tracking` (em letter-spacing) — station labels
@@ -4031,8 +4038,21 @@ downstream luminance / `rgba()` math.
   (`docSnapshotsEqual` is reference equality). A mutate-in-place transform would silently break
   history.
 - **Canonical stored form**: optional fields are **absent when equal to their default**; setters
-  clamp/round/lowercase and drop at default. `DotStyle` objects are written in fixed field order
+  clamp/lowercase and drop at default. `DotStyle` objects are written in fixed field order
   so `JSON.stringify` equality is exact for app-written docs.
+- **A field's `step` is not its grid.** `LINE_WIDTH_STEP`, `FONT_SIZE_STEP`, `DOT_SIZE_STEP` and
+  the rest size ONE movement of a control — a slider arrow, a wheel notch, a spinner press. They
+  are never a filter on the value. Every numeric setter runs `clampField` (floor + `cleanFloat`,
+  **no rounding**), so a typed `0.32455` is stored as `0.32455`, and a drop-at-default fires only
+  on an EXACT match — `14.1` is a real stripe width, not "near enough to the default to forget".
+  The CONTROLS do the gridding: `stepFromValue` moves the wheel one step along the grid anchored
+  at the field's `min`, **landing on** that grid from an off-grid value (10.2 → 10.25 → 10.5)
+  rather than carrying the offset along — the behaviour native `<input type=number>`
+  stepUp/stepDown and Radix's slider keys already have, so wheel, arrows and spinner agree.
+  `snapToStep` survives for exactly one job: a POINTER gesture that wants a grid (the line-circle
+  radius drag and the ghost ring previewing its drop, via `snapDraggedLineCircleRadius`). Rounding
+  a typed value onto the step grid is what made a Size box swallow 10.2, 10.3 and 10.35 and then
+  jump to 10.5.
 - **Referential integrity after every action**: `line.stations[i] ∈ stations`; `stop.lineId ∈
 lines`; every `segmentStyles` key is a real, non-default adjacency; every `stationEndStyles`
   key is a station its line still STOPS at (liveness, not endedness — see
