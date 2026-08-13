@@ -327,7 +327,11 @@ export function sanitizeGuides(guidesIn: Record<string, AlignmentGuide>): {
     }
     if (
       g.extent !== undefined &&
-      (typeof g.extent.center !== 'number' ||
+      // The object test first: a stored null or non-object extent must heal
+      // like any other malformed one, not throw into parse's refusal path.
+      (typeof g.extent !== 'object' ||
+        g.extent === null ||
+        typeof g.extent.center !== 'number' ||
         !Number.isFinite(g.extent.center) ||
         typeof g.extent.halfLength !== 'number' ||
         !Number.isFinite(g.extent.halfLength) ||

@@ -764,8 +764,8 @@ attracts only where the dragged point's foot lands inside its span, an inclusive
 no grace margin (past the tip is exactly where a bounded guide must let go). It paints as a
 dashed line spanning the overdrawn viewBox (diagonals clip to it — past the box is ink
 overflow — and one that misses it entirely mounts nothing; a bounded guide draws just its span,
-hit stroke included, so it is grabbable only where visible) in its own theme slots, not the
-ring grey:
+hit stroke included, so it is grabbable only where visible — and the locked deep-pick's point
+test honours the same span) in its own theme slots, not the ring grey:
 `theme.alignGuide` (a day blue / night periwinkle) for the idle stroke, with the amber
 selected state and softened hover from `-Selected`/`-Hover` — a guide's job is to be SEEN, and
 every state is a plain restroke since an infinite line has no body to outline
@@ -805,60 +805,65 @@ through the point snapper with the matching `constrain` — the two diagonal `co
 keep only their own 45° family and grid-quantize the intercept under the full lattice); a
 bounded guide's plain drag moves the line the same way, span riding along. **Ctrl/Cmd is the
 resize phase**, live per-move like the station drag's redistribute, in BOTH gestures — so drag
-down, Ctrl, sweep, release places a bounded guide in one motion. While held, the offset
-freezes and the gesture runs like a highlighter: the foot where the phase began — the press
-foot when Ctrl was down at the grab, else the first Ctrl frame's — marks one END, the cursor's
-foot sweeps the other, and the swept stretch IS the span (stored center + half-length). The
-swept end runs through the point snapper constrained ALONG
-the axis (the offset drag's constraint mirrored), where CROSSING guides are legitimate targets —
-a perpendicular guide pins position along this one, the lone exception to guides-never-
-snap-to-guides (parallel stacking stays meaningless). Sweeping the foot past the visible canvas
-edge flips the guide back to INFINITE — the segment jumping to full span is the feedback — and
-back inside re-bounds it; the popover's ∞ button is the deliberate version. Releasing Ctrl
-resumes the offset drag re-based so nothing jumps, towed siblings freeze during the resize and
-resume from the gesture's true total after it, a resize release never reads as a well drop, and
-the chrome swaps the spacing readout for a live length chip spanning the extent. The arrow
-keys mirror the split: offset arrows nudge every guide, and the cross-axis pair — dead on an
-infinite guide — slides a bounded span along its street; a group tow (`translateSiblings`)
-slides `extent.center` by the along projection too, so the segment travels rigidly with its
-group. Both gestures draw the **spacing readout** while their offset phase runs: labeled
-segments from the cursor's foot on
-the guide out to the nearest PARALLEL guide either side (`guideNeighbourReadout`, rendered as
-ordinary `SnapGuide`s — the measurement chrome a station drag shows its neighbours). It is a
-measurement, not a snap: an offset never snaps to a parallel guide, so it needs no engagement,
-rides
-every frame of the phase, and survives Shift (which declines snapping, not measuring). Only a
-same-orientation guide can be a neighbour — anything else crosses — and the number is the TRUE
-perpendicular distance (`guidePerpDist`), so it equals the length of the segment drawn. The pool
-is therefore every PARALLEL guide, including one towed by this very drag (whose live offset the
-hook re-derives from its constant gap to the master): a guide the readout cannot see is one the
-span reaches past and is drawn through, which is the one thing this chrome must never do. A
-coincident guide silences it instead — zero away on both sides is no gap to report.
+down, Ctrl, sweep, release places a bounded guide in one motion. While held, the offset freezes
+and the gesture runs like a highlighter: the foot where the phase began — the press foot when
+Ctrl was down at the grab (or at the well press), else the first Ctrl frame's — marks one END,
+the cursor's foot sweeps the other, and the swept stretch IS the span (stored center +
+half-length). The swept end runs through the point snapper constrained ALONG the axis (the
+offset drag's constraint mirrored), where CROSSING guides are legitimate targets — a
+perpendicular guide pins position along this one, the lone exception to
+guides-never-snap-to-guides (parallel stacking stays meaningless). Sweeping the foot past the
+visible canvas edge flips the guide back to INFINITE — the segment jumping to full span is the
+feedback — and back inside re-bounds it; the popover's ∞ button is the deliberate version. The
+flip also caps a sweep at the current viewport: a span longer than the screen — or restoring a
+span a re-sweep already replaced — is the popover Length field's job, or zoom out first.
+Releasing Ctrl resumes the offset drag re-based so nothing jumps, towed siblings freeze during
+the resize and resume from the gesture's true total after it, a resize release never reads as a
+well drop, and the chrome swaps the spacing readout for a live length chip spanning the extent.
+The arrow keys mirror the split: offset arrows nudge every guide, and the cross-axis pair —
+dead on an infinite guide — slides a bounded span along its street; a group tow
+(`translateSiblings`) slides `extent.center` by the along projection too, so the segment
+travels rigidly with its group. Both gestures draw the **spacing readout** while their offset
+phase runs: labeled segments from the cursor's foot on the guide out to the nearest PARALLEL
+guide either side (`guideNeighbourReadout`, rendered as ordinary `SnapGuide`s — the measurement
+chrome a station drag shows its neighbours). It is a measurement, not a snap: an offset never
+snaps to a parallel guide, so it needs no engagement, rides every frame of the phase, and
+survives Shift (which declines snapping, not measuring). Only a same-orientation guide can be a
+neighbour — anything else crosses, and a BOUNDED parallel counts only where its span covers the
+cursor's along-position (`guideAdmitsFoot`): past its tip there is no ink to measure to, and a
+labeled segment must never end in blank canvas. The number is the TRUE perpendicular distance
+(`guidePerpDist`), so it equals the length of the segment drawn. The pool is therefore every
+PARALLEL guide, including one towed by this very drag (whose live offset the hook re-derives
+from its constant gap to the master; towed entries carry no extent — never drawing through a
+sibling dominates): a guide the readout cannot see is one the span reaches past and is drawn
+through, which is the one thing this chrome must never do. A coincident guide silences it
+instead — zero away on both sides is no gap to report.
 **Snap to grid length** rides that one DOF as well (`guideTensOffset`): the offset notches to a
 whole multiple of the active grid size measured from the NEAREST parallel guide — a terminal
 station's cadence, which likewise steps off its single neighbour. Anchors come from the SNAP
 pool, not the readout's wider one: a guide towed by this drag holds a constant gap and can
-anchor nothing. The step is a DISTANCE, so a diagonal's intercept moves by grid × √2, and it is
-never ZERO steps: inside half an interval the only multiple on offer would stack the two guides,
-so the cadence stands down and the guide moves freely through that band. It stands down as well
-where the grid pins that DOF (`constrainedGridMode`, the narrowing the point snapper runs on its
-own `constrain` — a vertical grid constrains nothing a horizontal guide can move), and against
-an engaged alignment it settles by the same better-aligned-wins rule, ties to the alignment. A
-losing alignment's chrome is dropped rather than claim a snap that didn't happen; the readout is
-then the cadence's own feedback, since the gap it labels is the notch — except in a group drag
-whose towed sibling sits BETWEEN the guide and its anchor, where the readout names that
-sibling's constant gap and the notch goes unlabelled.
+anchor nothing — and a bounded parallel anchors only where its span covers the cursor's
+along-position, the readout's own rule (a cadence off invisible ink is a snap the user cannot
+see the reason for). The step is a DISTANCE, so a diagonal's intercept moves by grid × √2, and
+it is never ZERO steps: inside half an interval the only multiple on offer would stack the two
+guides, so the cadence stands down and the guide moves freely through that band. It stands down
+as well where the grid pins that DOF (`constrainedGridMode`, the narrowing the point snapper
+runs on its own `constrain` — a vertical grid constrains nothing a horizontal guide can move),
+and against an engaged alignment it settles by the same better-aligned-wins rule, ties to the
+alignment. A losing alignment's chrome is dropped rather than claim a snap that didn't happen;
+the readout is then the cadence's own feedback, since the gap it labels is the notch — except
+in a group drag whose towed sibling sits BETWEEN the guide and its anchor, where the readout
+names that sibling's constant gap and the notch goes unlabelled.
 Dragging a guide back into its home well deletes it, and the wells tint as drop targets while a
 guide gesture hovers them — the well under the CURSOR, since a strip guide's delete zone runs
 its whole edge band, corner squares included. Its popover is the one coordinate (Y, X, or Y₀
 for a diagonal) + a Length row — 2 × the half-length, an empty box under an ∞ placeholder while
 infinite (typing there commits on blur, centered on the viewport center's foot), with the ∞
-button as the way back — + lock/delete (lock protects extent too)
-([GuidePopover.tsx](src/components/GuidePopover.tsx)).
-`sanitizeGuides` (serialize.ts, the file-import path) drops malformed entries, strips a
-malformed extent (non-finite scalars or a zero-or-negative span — an invisible, unhittable
-guide) back to the infinite form, and collapses a
-stored `locked: false`; there are no cross-references to repair.
+button as the way back — + lock/delete, lock protecting extent too
+([GuidePopover.tsx](src/components/GuidePopover.tsx)). `sanitizeGuides` (serialize.ts, the
+file-import path) drops malformed entries, strips a malformed extent (a non-object, non-finite
+scalars, or a zero-or-negative span — an invisible, unhittable guide) back to the infinite
+form, and collapses a stored `locked: false`; there are no cross-references to repair.
 
 **`LabelCell`** — the station name's grid cell + placement. `row, col, rotation: Rotation`,
 `offset` (px forward along reading direction), `offsetPerp?` (cross-axis, default 0 — back-compat

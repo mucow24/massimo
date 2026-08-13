@@ -873,6 +873,41 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
     expect(useSelection.getState().selectedGuideIds).toEqual([guides[0].id]);
   });
 
+  it('Ctrl held from the well press anchors the pull sweep at the press foot', () => {
+    hostRect();
+    const r = render();
+    act(() =>
+      r.current.onWellPointerDown(
+        'horizontal',
+        pointerEvent({ clientX: 300, clientY: 5, ctrlKey: true }),
+      ),
+    );
+    // The first moved frame must still mint the offset — there is no line to
+    // bound before it — so the ghost appears unbounded…
+    act(() =>
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 302, clientY: 140, ctrlKey: true, shiftKey: true }),
+      ),
+    );
+    expect(r.current.pull).toEqual({ orientation: 'horizontal', offset: 140 });
+    // …and the sweep then anchors at the PRESS foot (x 300), not wherever the
+    // second frame happens to land — same rule as Ctrl at the grab of an
+    // existing guide.
+    act(() =>
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 450, clientY: 140, ctrlKey: true, shiftKey: true }),
+      ),
+    );
+    expect(r.current.pull).toEqual({
+      orientation: 'horizontal',
+      offset: 140,
+      extent: { center: 375, halfLength: 75 },
+    });
+    act(() => r.current.onPointerUp(pointerEvent({ clientX: 450, clientY: 140, ctrlKey: true })));
+    const guides = Object.values(useDoc.getState().guides);
+    expect(guides[0]).toMatchObject({ offset: 140, extent: { center: 375, halfLength: 75 } });
+  });
+
   it('a diagonal sweep bounds in true length along the line', () => {
     hostRect();
     useDoc.setState({

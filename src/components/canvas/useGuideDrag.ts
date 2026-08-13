@@ -185,10 +185,16 @@ export function useGuideDrag(
     // convention), and the offset-resume correction — the pull's raw offset is
     // cursor-absolute, so its bias is additive on `guideOffsetOf` rather than
     // on a delta. A pull can only enter resize once an offset frame has run
-    // (`everOffset`): before that there is no line to bound.
+    // (`everOffset`): before that there is no line to bound. With Ctrl held
+    // from the WELL PRESS the first moved frame is forced through the offset
+    // branch to mint that line — `ctrlFreeOffset` stays false there, so the
+    // resize entry still anchors at the press foot ("where Ctrl went down
+    // marks one end", the drag path's rule).
     extent: { center: number; halfLength: number } | null;
     resize: { anchor: number; mx: number; my: number } | null;
     everOffset: boolean;
+    ctrlAtPress: boolean;
+    ctrlFreeOffset: boolean;
     perpBias: number;
   } | null>(null);
 
@@ -283,6 +289,7 @@ export function useGuideDrag(
         const tens = guideTensOffset(
           orientation,
           rawOffset,
+          world,
           pools.neighbours,
           gridInterval,
           tolerance,
@@ -328,11 +335,14 @@ export function useGuideDrag(
   // One resize frame, highlighter-style: the span runs from the ANCHORED end
   // (where the phase began) to the snapped cursor foot — or null when the
   // cursor's foot has left the visible canvas box, the flip back to infinite.
-  // Also emits the phase's chrome: the endpoint snap's own guides plus a live
-  // length chip spanning the extent (the neighbour readout stands down — the
-  // offset is frozen, so the spacing it measures cannot change). The flip
-  // tests the UNSNAPPED foot: it answers where the cursor is, not where a
-  // target pulled the endpoint.
+  // The flip caps a sweep at the current viewport: a span longer than the
+  // screen (or a re-sweep that wanders out and back with a bounded guide's
+  // old span already replaced) is the popover Length field's job, or zoom
+  // out first. Also emits the phase's chrome: the endpoint snap's own guides
+  // plus a live length chip spanning the extent (the neighbour readout stands
+  // down — the offset is frozen, so the spacing it measures cannot change).
+  // The flip tests the UNSNAPPED foot: it answers where the cursor is, not
+  // where a target pulled the endpoint.
   const resizedExtent = (
     orientation: GuideOrientation,
     offset: number,
@@ -439,6 +449,8 @@ export function useGuideDrag(
       extent: null,
       resize: null,
       everOffset: false,
+      ctrlAtPress: e.ctrlKey || e.metaKey,
+      ctrlFreeOffset: false,
       perpBias: 0,
     };
   }, []);
@@ -505,10 +517,17 @@ export function useGuideDrag(
       const world = screenToWorld(e.clientX, e.clientY);
       if ((e.ctrlKey || e.metaKey) && ps.everOffset) {
         if (!ps.resize) {
+          // Ctrl held since the well press with no ctrl-free offset frame run:
+          // the anchored end is the PRESS foot, the drag path's rule. A
+          // mid-pull Ctrl marks this frame's foot.
+          const [mx, my] =
+            ps.ctrlAtPress && !ps.ctrlFreeOffset
+              ? [ps.startMX, ps.startMY]
+              : [e.clientX, e.clientY];
           ps.resize = {
-            anchor: footAlongAt(ps.orientation, ps.offset, e.clientX, e.clientY),
-            mx: e.clientX,
-            my: e.clientY,
+            anchor: footAlongAt(ps.orientation, ps.offset, mx, my),
+            mx,
+            my,
           };
         }
         ps.resize.mx = e.clientX;
@@ -529,6 +548,7 @@ export function useGuideDrag(
         ps.resize = null;
       }
       ps.everOffset = true;
+      if (!(e.ctrlKey || e.metaKey)) ps.ctrlFreeOffset = true;
       const raw = guideOffsetOf(ps.orientation, world) + ps.perpBias;
       ps.offset = snappedOffset(ps.orientation, raw, e, ps);
       setPull({ orientation: ps.orientation, offset: ps.offset, extent: ps.extent ?? undefined });

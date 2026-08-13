@@ -218,6 +218,23 @@ describe('guideNeighbourReadout', () => {
     expect(r.map((g) => g.label)).toEqual(['240.0']);
   });
 
+  it('skips a bounded parallel whose span does not reach the cursor foot', () => {
+    // The nearer neighbour (60) is bounded with its span far along the axis:
+    // it has no ink at x 250, so the readout measures past it to the infinite
+    // one at 40 rather than ending a labeled segment in blank canvas.
+    const r = guideNeighbourReadout('horizontal', 100, { x: 250, y: 0 }, [
+      { orientation: 'horizontal', offset: 60, extent: { center: 600, halfLength: 50 } },
+      { orientation: 'horizontal', offset: 40 },
+    ]);
+    expect(r).toEqual([{ from: { x: 250, y: 100 }, to: { x: 250, y: 40 }, label: '60.0' }]);
+    // Covering the foot, the bounded one is the nearest again.
+    const r2 = guideNeighbourReadout('horizontal', 100, { x: 250, y: 0 }, [
+      { orientation: 'horizontal', offset: 60, extent: { center: 250, halfLength: 50 } },
+      { orientation: 'horizontal', offset: 40 },
+    ]);
+    expect(r2.map((g) => g.label)).toEqual(['40.0']);
+  });
+
   it('a coincident parallel guide silences the readout rather than reaching past it', () => {
     // The nearest neighbour is zero away on BOTH sides, so there is no gap
     // left to report — and the span to `far` would start out of a guide it
@@ -252,34 +269,34 @@ describe('guideTensOffset', () => {
 
   it('notches the offset a whole grid length from the nearest parallel guide', () => {
     // 137 sits 97 above the anchor; the nearest whole 20 is 100.
-    expect(guideTensOffset('horizontal', 137, [h('lo', 40)], 20, 10)).toBe(140);
+    expect(guideTensOffset('horizontal', 137, { x: 0, y: 0 }, [h('lo', 40)], 20, 10)).toBe(140);
     // Below the anchor the cadence runs the other way, and an exact multiple
     // is already on cadence.
-    expect(guideTensOffset('horizontal', -63, [h('lo', 40)], 20, 10)).toBe(-60);
-    expect(guideTensOffset('horizontal', 100, [h('lo', 40)], 20, 10)).toBe(100);
+    expect(guideTensOffset('horizontal', -63, { x: 0, y: 0 }, [h('lo', 40)], 20, 10)).toBe(-60);
+    expect(guideTensOffset('horizontal', 100, { x: 0, y: 0 }, [h('lo', 40)], 20, 10)).toBe(100);
   });
 
   it('measures from the NEAREST parallel guide, not just any of them', () => {
     // 150 is 13 away, 40 is 97: the cadence runs from 150, one step below.
-    expect(guideTensOffset('horizontal', 137, [h('lo', 40), h('hi', 150)], 20, 10)).toBe(130);
+    expect(guideTensOffset('horizontal', 137, { x: 0, y: 0 }, [h('lo', 40), h('hi', 150)], 20, 10)).toBe(130);
   });
 
   it('never notches ONTO the anchor — a cadence of zero steps is a stack', () => {
     // Inside half a step there is no whole multiple to land on but zero, and
     // zero would put the guide on top of its neighbour. The cadence stands
     // down instead, and the guide moves freely through that band.
-    expect(guideTensOffset('horizontal', 45, [h('lo', 40)], 20, 10)).toBeNull();
-    expect(guideTensOffset('horizontal', 40, [h('lo', 40)], 20, 10)).toBeNull();
-    expect(guideTensOffset('horizontal', 31, [h('lo', 40)], 20, 10)).toBeNull();
+    expect(guideTensOffset('horizontal', 45, { x: 0, y: 0 }, [h('lo', 40)], 20, 10)).toBeNull();
+    expect(guideTensOffset('horizontal', 40, { x: 0, y: 0 }, [h('lo', 40)], 20, 10)).toBeNull();
+    expect(guideTensOffset('horizontal', 31, { x: 0, y: 0 }, [h('lo', 40)], 20, 10)).toBeNull();
     // Past half a step the first whole multiple is back in play.
-    expect(guideTensOffset('horizontal', 52, [h('lo', 40)], 20, 10)).toBe(60);
+    expect(guideTensOffset('horizontal', 52, { x: 0, y: 0 }, [h('lo', 40)], 20, 10)).toBe(60);
   });
 
   it('declines when the nearest notch is out of tolerance', () => {
     // Exactly half a step from either notch — 10 out, so a 5 tolerance (zoom 2)
     // does not reach it while the standard 10 does.
-    expect(guideTensOffset('horizontal', 90, [h('lo', 40)], 20, 5)).toBeNull();
-    expect(guideTensOffset('horizontal', 90, [h('lo', 40)], 20, 10)).toBe(100);
+    expect(guideTensOffset('horizontal', 90, { x: 0, y: 0 }, [h('lo', 40)], 20, 5)).toBeNull();
+    expect(guideTensOffset('horizontal', 90, { x: 0, y: 0 }, [h('lo', 40)], 20, 10)).toBe(100);
   });
 
   it('has no cadence without a parallel guide to measure from', () => {
@@ -287,15 +304,28 @@ describe('guideTensOffset', () => {
       { id: 'v', orientation: 'vertical' as const, offset: 120 },
       { id: 'd', orientation: 'diagonal-down' as const, offset: 120 },
     ];
-    expect(guideTensOffset('horizontal', 137, crossing, 20, 10)).toBeNull();
-    expect(guideTensOffset('horizontal', 137, [], 20, 10)).toBeNull();
+    expect(guideTensOffset('horizontal', 137, { x: 0, y: 0 }, crossing, 20, 10)).toBeNull();
+    expect(guideTensOffset('horizontal', 137, { x: 0, y: 0 }, [], 20, 10)).toBeNull();
+  });
+
+  it('anchors only off a parallel whose span covers the cursor foot', () => {
+    // Span far along the axis: no ink at x 250, nothing to step from.
+    const elsewhere = [
+      { orientation: 'horizontal' as const, offset: 40, extent: { center: 600, halfLength: 50 } },
+    ];
+    expect(guideTensOffset('horizontal', 63, { x: 250, y: 0 }, elsewhere, 20, 10)).toBeNull();
+    // Covering the foot, the same guide anchors the cadence again.
+    const covering = [
+      { orientation: 'horizontal' as const, offset: 40, extent: { center: 250, halfLength: 50 } },
+    ];
+    expect(guideTensOffset('horizontal', 63, { x: 250, y: 0 }, covering, 20, 10)).toBe(60);
   });
 
   it('a diagonal notches the TRUE gap — an intercept step of grid × √2', () => {
     const d = (offset: number) => ({ id: 'd', orientation: 'diagonal-down' as const, offset });
     // An intercept of 90 is 63.6 of true distance; the nearest whole 20 of
     // distance is 60, i.e. an intercept of 60√2.
-    const r = guideTensOffset('diagonal-down', 90, [d(0)], 20, 10);
+    const r = guideTensOffset('diagonal-down', 90, { x: 0, y: 0 }, [d(0)], 20, 10);
     expect(r).toBeCloseTo(60 * Math.SQRT2, 9);
     expect(
       guidePerpDist('diagonal-down', 0, guideFoot('diagonal-down', r!, { x: 0, y: 0 })),
@@ -303,8 +333,8 @@ describe('guideTensOffset', () => {
     // The tolerance is perpendicular too: one step out, a miss of 14 of
     // INTERCEPT is only 9.9 of distance, so it still engages.
     const oneStep = 20 * Math.SQRT2;
-    expect(guideTensOffset('diagonal-down', oneStep + 14, [d(0)], 20, 10)).toBeCloseTo(oneStep, 9);
-    expect(guideTensOffset('diagonal-down', oneStep + 14, [d(0)], 20, 9)).toBeNull();
+    expect(guideTensOffset('diagonal-down', oneStep + 14, { x: 0, y: 0 }, [d(0)], 20, 10)).toBeCloseTo(oneStep, 9);
+    expect(guideTensOffset('diagonal-down', oneStep + 14, { x: 0, y: 0 }, [d(0)], 20, 9)).toBeNull();
   });
 });
 

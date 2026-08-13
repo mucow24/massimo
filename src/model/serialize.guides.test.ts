@@ -105,6 +105,18 @@ describe('alignment guides on the load path', () => {
         offset: 10,
         extent: { center: 0, halfLength: 0 },
       },
+      nullExtent: {
+        id: 'nullExtent',
+        orientation: 'horizontal',
+        offset: 10,
+        extent: null as unknown as { center: number; halfLength: number },
+      },
+      strExtent: {
+        id: 'strExtent',
+        orientation: 'horizontal',
+        offset: 10,
+        extent: 'wide' as unknown as { center: number; halfLength: number },
+      },
       ok: {
         id: 'ok',
         orientation: 'horizontal',
@@ -113,10 +125,21 @@ describe('alignment guides on the load path', () => {
       },
     });
     expect(changed).toBe(true);
-    expect(Object.keys(guides).sort()).toEqual(['badCenter', 'badHalf', 'ok', 'zeroSpan']);
+    expect(Object.keys(guides).sort()).toEqual([
+      'badCenter',
+      'badHalf',
+      'nullExtent',
+      'ok',
+      'strExtent',
+      'zeroSpan',
+    ]);
     expect('extent' in guides.badCenter).toBe(false);
     expect('extent' in guides.badHalf).toBe(false);
     expect('extent' in guides.zeroSpan).toBe(false);
+    // A null or non-object extent heals the same way rather than throwing —
+    // a throw would REFUSE the whole file at parse's shape gate.
+    expect('extent' in guides.nullExtent).toBe(false);
+    expect('extent' in guides.strExtent).toBe(false);
     expect(guides.ok.extent).toEqual({ center: 300, halfLength: 100 });
   });
 
