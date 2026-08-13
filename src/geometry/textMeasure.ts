@@ -428,6 +428,12 @@ function measureTextSegment(
   measureCtx: CanvasRenderingContext2D | null,
   declAt: (px: number) => string,
   letterSpacingPx: number,
+  // False = advance-only: skip the whole bearing ladder (64x re-measure +
+  // raster probe) and take the base measure's bounds as-is. For callers that
+  // read nothing but `.advance` — measureAdvance sits UNCACHED on per-frame
+  // paths (justify positions every word/space per render), where the ladder
+  // is pure waste. Advances are identical either way by design.
+  inkBearings = true,
 ): { advance: number; bearingLeft: number; bearingRight: number; trailing: number } {
   if (value.length === 0) return { advance: 0, bearingLeft: 0, bearingRight: 0, trailing: 0 };
   if (measureCtx) {
@@ -444,21 +450,25 @@ function measureTextSegment(
     if (tracked) tracking(letterSpacingPx);
     const tm = measureCtx.measureText(value);
     const advance = tm.width;
-    // The hi-res pass for the ink bounds (see BEARING_MEASURE_SCALE), with
-    // the tracking scaled to match so interior letter-spacing widens the ink
-    // box identically at both sizes.
-    measureCtx.font = declAt(fontSize * BEARING_MEASURE_SCALE);
-    if (tracked) tracking(letterSpacingPx * BEARING_MEASURE_SCALE);
-    const hi = measureCtx.measureText(value);
-    let bL = (hi.actualBoundingBoxLeft ?? 0) / BEARING_MEASURE_SCALE;
-    let bR = (hi.actualBoundingBoxRight ?? 0) / BEARING_MEASURE_SCALE;
-    // Where a rasterizer exists, refine the conservative bounds to the
-    // painted truth (see the probe block above); everywhere else the hi-res
-    // measure stands.
-    const probed = probeInkEdges(value, declAt, fontSize, letterSpacingPx, bL, bR);
-    if (probed) {
-      bL = probed.left;
-      bR = probed.right;
+    let bL = tm.actualBoundingBoxLeft ?? 0;
+    let bR = tm.actualBoundingBoxRight ?? 0;
+    if (inkBearings) {
+      // The hi-res pass for the ink bounds (see BEARING_MEASURE_SCALE), with
+      // the tracking scaled to match so interior letter-spacing widens the ink
+      // box identically at both sizes.
+      measureCtx.font = declAt(fontSize * BEARING_MEASURE_SCALE);
+      if (tracked) tracking(letterSpacingPx * BEARING_MEASURE_SCALE);
+      const hi = measureCtx.measureText(value);
+      bL = (hi.actualBoundingBoxLeft ?? 0) / BEARING_MEASURE_SCALE;
+      bR = (hi.actualBoundingBoxRight ?? 0) / BEARING_MEASURE_SCALE;
+      // Where a rasterizer exists, refine the conservative bounds to the
+      // painted truth (see the probe block above); everywhere else the hi-res
+      // measure stands.
+      const probed = probeInkEdges(value, declAt, fontSize, letterSpacingPx, bL, bR);
+      if (probed) {
+        bL = probed.left;
+        bR = probed.right;
+      }
     }
     if (bL > 0 || bR > 0) {
       const adv = advance > 0 ? advance : bL + bR;
@@ -508,7 +518,8 @@ export function measureAdvance(
 ): number {
   if (text.length === 0) return 0;
   const declAt = (px: number) => `${italic ? 'italic ' : ''}${weight} ${px}px ${FONT_STACK}`;
-  return measureTextSegment(text, fontSize, getCtx(), declAt, letterSpacingPx).advance;
+  // Advance-only: no bearing ladder (see measureTextSegment's inkBearings).
+  return measureTextSegment(text, fontSize, getCtx(), declAt, letterSpacingPx, false).advance;
 }
 
 type ParseMode = 'literal' | 'formatted';

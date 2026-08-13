@@ -241,12 +241,15 @@ export function stationsForRect(
 export const TEXT_LABEL_HIT_PAD = 4;
 
 /**
- * The 4 world-space corners of a TextLabel's rotated bbox, clockwise from the
- * unrotated top-left ([TL, TR, BR, BL]). The label is a rectangle centered on
- * (x, y) with size (measuredWidth + 2*pad, measuredHeight + 2*pad) in its own
- * unrotated frame, rotated by `rotation * 45°` clockwise (the `Rotation`
- * semantics). `pad` grows the box outward on every side; it defaults to 0 (the
- * tight visible bbox) — hit-testing passes TEXT_LABEL_HIT_PAD. Routes through
+ * The 4 world-space corners of a TextLabel's leaded LINE BOX, clockwise from
+ * the unrotated top-left ([TL, TR, BR, BL]) — the ENVELOPE that always
+ * contains the ink, leading and descenders included, which is what the camera
+ * hull folds (contentBounds, which passes TEXT_LABEL_HIT_PAD as breathing
+ * room via `pad`). Selection chrome, hit-testing and snapping ride the
+ * ALIGNMENT box instead (textLabelAlignCorners below). The label is a
+ * rectangle centered on (x, y) with size (measuredWidth + 2*pad,
+ * measuredHeight + 2*pad) in its own unrotated frame, rotated by
+ * `rotation * 45°` clockwise (the `Rotation` semantics). Routes through
  * `rotatedRectCorners`, the single home for rotated-rectangle corners.
  */
 export function textLabelCorners(label: TextLabel, pad = 0): Pt[] {
