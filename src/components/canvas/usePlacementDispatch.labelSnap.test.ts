@@ -9,7 +9,7 @@ import { DEFAULT_DOC } from '../../model/transforms';
 import { defaultStyleProps } from '../../model/styles';
 import { DEFAULT_SNAP_MODES, snapPointToGrid } from '../../geometry/snap';
 import { polygonSnapAnchor } from '../../geometry/polygon';
-import { textLabelCorners } from '../../geometry/stationBoundary';
+import { textLabelAlignCorners } from '../../geometry/stationBoundary';
 import { pointerEvent } from '../../test/interaction';
 import type { ViewportApi } from '../../components/canvas/useViewport';
 
@@ -69,11 +69,11 @@ describe('placing-label snap vs. the doc-default label style', () => {
       useViewportStore.getState().gridSize,
       1,
     );
-    const ghost = polygonSnapAnchor(textLabelCorners(makePreviewTextLabel(snap, style)));
+    const ghost = polygonSnapAnchor(textLabelAlignCorners(makePreviewTextLabel(snap, style)));
 
     const label = place(37, 23);
     expect(label.fontSize).toBe(40); // sanity: the drop wears the default style
-    const dropped = polygonSnapAnchor(textLabelCorners(label));
+    const dropped = polygonSnapAnchor(textLabelAlignCorners(label));
 
     // Preview must match the placed position.
     expect(ghost.x).toBeCloseTo(dropped.x, 5);
@@ -102,11 +102,11 @@ describe('placing-label snap vs. the doc-default label style', () => {
       useViewportStore.getState().gridSize,
       1,
     );
-    const ghost = polygonSnapAnchor(textLabelCorners(makePreviewTextLabel(snap, style)));
+    const ghost = polygonSnapAnchor(textLabelAlignCorners(makePreviewTextLabel(snap, style)));
 
     const label = place(37, 23);
     expect(label.fontSize).toBe(40); // sanity: the drop wears the default style
-    const dropped = polygonSnapAnchor(textLabelCorners(label));
+    const dropped = polygonSnapAnchor(textLabelAlignCorners(label));
 
     expect(ghost.x).toBeCloseTo(dropped.x, 5);
     expect(ghost.y).toBeCloseTo(dropped.y, 5);
@@ -122,9 +122,9 @@ describe('placing-label snap vs. the doc-default label style', () => {
     const label = place(37, 23);
     expect(label.align).toBe('center'); // sanity: the default style really applied
 
-    // Grid snapping is on, so the label's drag reference point (its topmost-
-    // then-leftmost visible corner, per useItemDrag) must land ON the grid.
-    const anchor = polygonSnapAnchor(textLabelCorners(label));
+    // Grid snapping is on, so the label's drag reference point (its ALIGNMENT
+    // box's topmost-then-leftmost corner, per useItemDrag) must land ON the grid.
+    const anchor = polygonSnapAnchor(textLabelAlignCorners(label));
     const onGrid = snapPointToGrid(anchor.x, anchor.y, 'both');
     expect(anchor.x).toBeCloseTo(onGrid.x, 5);
     expect(anchor.y).toBeCloseTo(onGrid.y, 5);

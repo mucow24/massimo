@@ -13,6 +13,9 @@ export interface DragSnapOptions {
   /** Alignment-guide pool (always-on), snapshotted at pointer-down like the
    *  others — see liveGuideTargets. Absent means no guides in play. */
   guideTargets?: readonly GuideTarget[];
+  /** A rigid multi-point snapper (a label's four alignment-box corners); see
+   *  {@link snapPolygonPoint}. Absent means the proposed point alone snaps. */
+  anchors?: Vec2[];
   /** Single-DOF consumers (edge resizes, guide drags); see {@link snapPolygonPoint}. */
   constrain?: 'x' | 'y' | 'diagonal-down' | 'diagonal-up';
 }
@@ -46,6 +49,7 @@ export function useDragSnap(zoom: number): DragSnapApi {
     snapPoint: (proposed, opts) =>
       snapPolygonPoint({
         proposed,
+        anchors: opts.anchors,
         lineTargets: opts.lineTargets ?? [],
         allTargets: opts.allTargets,
         guideTargets: opts.guideTargets,

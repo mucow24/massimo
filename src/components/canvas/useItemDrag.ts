@@ -8,7 +8,7 @@ import {
   type SnapGuide,
 } from '../../geometry/snap';
 import { polygonSnapAnchor } from '../../geometry/polygon';
-import { textLabelCorners } from '../../geometry/stationBoundary';
+import { textLabelAlignCorners } from '../../geometry/stationBoundary';
 import type { Vec2 } from '../../geometry/vec';
 import { finishDrag, pointerLost, trackDragMove } from './dragGesture';
 import {
@@ -37,10 +37,13 @@ type ItemDragState = {
   // towed ring carries), excluded from the bullet snap engine's candidate
   // pool — they're unstable targets. Mirrors useStationDrag's siblingIdSet.
   siblingStationIds: ReadonlySet<string>;
-  // Label drags only: offset from the label center to its snap anchor (the
-  // topmost-then-leftmost visible rotated corner) and the "Snap to all" pool,
-  // both snapshotted at pointer-down. Zero/empty for bullets.
+  // Label drags only: offsets from the label center to its snap geometry —
+  // the primary anchor (topmost-then-leftmost alignment-box corner, the grid
+  // subject) plus all four alignment-box corners as rigid co-anchors — and
+  // the "Snap to all" pool, all snapshotted at pointer-down. Zero/null for
+  // bullets and free anchors.
   anchorOff: Vec2;
+  cornerOffs: Vec2[] | null;
   allTargets: Vec2[];
   guideTargets: readonly GuideTarget[];
   history: ReturnType<typeof beginHistoryGroup>;
@@ -111,14 +114,18 @@ export function useItemDrag(
     e.stopPropagation();
     // Tow the rest of the multi-selection (every type) by the same delta.
     const siblings = collectGroupSiblings(kind, id);
-    // Point-snapper geometry, fixed for the whole gesture: the snap anchor's
-    // offset from the item position (a label's topmost-then-leftmost visible
-    // corner; a bullet is its own anchor) and the target pool (everything in
-    // it is stationary; the item and co-selected siblings are excluded).
+    // Point-snapper geometry, fixed for the whole gesture: the snap anchors'
+    // offsets from the item position (a label snaps all four alignment-box
+    // corners as one rigid set, with the topmost-then-leftmost as the primary;
+    // a bullet is its own anchor) and the target pool (everything in it is
+    // stationary; the item and co-selected siblings are excluded).
     let anchorOff: Vec2 = { x: 0, y: 0 };
+    let cornerOffs: Vec2[] | null = null;
     if (kind === 'label') {
-      const anchor = polygonSnapAnchor(textLabelCorners(textLabels[id]));
+      const corners = textLabelAlignCorners(textLabels[id]);
+      const anchor = polygonSnapAnchor(corners);
       anchorOff = { x: anchor.x - wx, y: anchor.y - wy };
+      cornerOffs = corners.map((c) => ({ x: c.x - wx, y: c.y - wy }));
     }
     const exclude = groupAlignExclude(kind, id, siblings);
     const allTargets = liveAlignTargets(exclude);
@@ -134,6 +141,7 @@ export function useItemDrag(
       siblings,
       siblingStationIds: movingStationIds(siblings),
       anchorOff,
+      cornerOffs,
       allTargets,
       guideTargets,
       history: beginHistoryGroup({ deferPersist: true }),
@@ -233,14 +241,19 @@ export function useItemDrag(
       setItemSnapGuides(guides);
       moveTransferAnchor(ds.id, nx, ny);
     } else {
-      // Labels snap like polygons/images: the topmost-then-leftmost visible
-      // (rotated, unpadded) corner aligns against the shared pool, with grid
-      // as the hard constraint. Shift bypasses.
+      // Labels snap ALL FOUR alignment-box corners as one rigid set: whichever
+      // corner best reaches a target aligns, and the whole label translates.
+      // The topmost-then-leftmost corner stays the primary (the grid subject),
+      // so grid remains a hard constraint on that corner. Shift bypasses.
       let guides: SnapGuide[] = [];
       if (!e.shiftKey) {
         const snap = snapPoint(
           { x: nx + ds.anchorOff.x, y: ny + ds.anchorOff.y },
-          { allTargets: ds.allTargets, guideTargets: ds.guideTargets },
+          {
+            allTargets: ds.allTargets,
+            guideTargets: ds.guideTargets,
+            anchors: ds.cornerOffs?.map((o) => ({ x: nx + o.x, y: ny + o.y })),
+          },
         );
         nx = snap.x - ds.anchorOff.x;
         ny = snap.y - ds.anchorOff.y;

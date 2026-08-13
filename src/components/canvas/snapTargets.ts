@@ -1,7 +1,7 @@
 import { stopPosWorld } from '../../geometry/interlining';
 import type { GuideTarget } from '../../geometry/snap';
 import { stationAnchorWorld } from '../../geometry/transferEnds';
-import { textLabelCorners } from '../../geometry/stationBoundary';
+import { textLabelAlignCorners } from '../../geometry/stationBoundary';
 import { svgImageCorners } from '../../geometry/svgImage';
 import { type Vec2 } from '../../geometry/vec';
 import { useDoc } from '../../state/store';
@@ -39,20 +39,26 @@ export type AlignDoc = Pick<
 >;
 
 /**
- * The three alignment points a text label contributes as a snap target: the
- * visible bbox's upper-left corner, its center, and its lower-right corner.
- * UL + LR cover left/top and right/bottom edge alignment of label stacks;
- * the center covers centering.
+ * The five alignment points a text label contributes as a snap target: all
+ * four corners of its ALIGNMENT box (cap line → baseline, measured ink wide)
+ * plus that box's center. Four corners cover edge alignment of label stacks
+ * along any side; the center covers centering. The center is the box's own
+ * midpoint, NOT (label.x, label.y) — the alignment box sits off-center in the
+ * leaded line box the label lays out in.
  */
 export function textLabelAlignPoints(label: TextLabel): Vec2[] {
-  const corners = textLabelCorners(label);
-  return [corners[0], { x: label.x, y: label.y }, corners[2]];
+  const corners = textLabelAlignCorners(label);
+  const center = {
+    x: (corners[0].x + corners[2].x) / 2,
+    y: (corners[0].y + corners[2].y) / 2,
+  };
+  return [...corners, center];
 }
 
 /**
  * The shared "Snap to all" target pool: every station stop-center (the station's
  * own point when stopless) plus each anchor cell it hosts, every polygon vertex,
- * every svg image's rotated corners, three points per text label, every route
+ * every svg image's rotated corners, five points per text label, every route
  * bullet's center, and every free transfer anchor — minus the excluded items.
  * Built once at pointer-down (everything in it is stationary for the duration of
  * a drag), shared by every point-snapper drag path.

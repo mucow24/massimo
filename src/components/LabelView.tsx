@@ -13,7 +13,7 @@ import {
   resolveRunWeight,
   type SegmentStyle,
 } from '../geometry/labelTokens';
-import { TEXT_LABEL_HIT_PAD } from '../geometry/stationBoundary';
+import { textLabelChromeRectLocal } from '../geometry/stationBoundary';
 import { FONT_STACK } from '../util/fonts';
 import { useDoc } from '../state/store';
 import { useThemeColors } from '../state/theme';
@@ -56,8 +56,8 @@ interface Props {
 // Aligning by ink instead pins each line's leftmost/rightmost ink *pixel* to the
 // bbox edge, which shoves round/hooked initials (o, c, w, f, v, s…) visibly
 // inward — the ragged, letter-shape-dependent edge this replaced. The tiny ink
-// overhang past the pen box is a side bearing (< a couple px) and sits inside
-// the selection padding (TEXT_LABEL_HIT_PAD).
+// overhang past the pen box is a side bearing (< a couple px); it may kiss the
+// tight chrome rect, which is the box hugging the ink by design.
 function lineCursorX(align: TextLabel['align'], halfWidth: number, advanceWidth: number): number {
   if (align === 'right') return halfWidth - advanceWidth;
   if (align === 'center') return -advanceWidth / 2;
@@ -94,6 +94,17 @@ export function LabelView({
   const halfW = m.width / 2;
   const halfH = m.height / 2;
   const letterSpacingPx = (label.tracking ?? 0) * label.fontSize;
+  // Selection ring + hit rects hug the ALIGNMENT box (cap line → baseline),
+  // not the leaded line box the text lays out in — the dotted boundary is the
+  // thing snapping aligns, so it must sit on the ink. Floored to a minimal
+  // footprint for zero-ink labels (see textLabelChromeRectLocal).
+  const chrome = textLabelChromeRectLocal(label);
+  const chromeRect = {
+    x: chrome.x0,
+    y: chrome.y0,
+    width: chrome.x1 - chrome.x0,
+    height: chrome.y1 - chrome.y0,
+  };
 
   if (layer === 'stroke') {
     if (!selected) return null;
@@ -105,15 +116,11 @@ export function LabelView({
         data-text-label-stroke-preview={preview ? label.id : undefined}
       >
         {/* Two-tone ring: black core over white underlay, screen-constant via
-            vector-effect (no zoom subscription → no snap on commit). The pad
-            (TEXT_LABEL_HIT_PAD) is world units, so the gap scales with the map. */}
+            vector-effect (no zoom subscription → no snap on commit). */}
         {selectionOutlineTones(themeColors).map(({ tone, stroke, strokeWidth }) => (
           <rect
             key={tone}
-            x={-halfW - TEXT_LABEL_HIT_PAD}
-            y={-halfH - TEXT_LABEL_HIT_PAD}
-            width={m.width + 2 * TEXT_LABEL_HIT_PAD}
-            height={m.height + 2 * TEXT_LABEL_HIT_PAD}
+            {...chromeRect}
             fill="none"
             stroke={stroke}
             strokeWidth={strokeWidth}
@@ -141,13 +148,7 @@ export function LabelView({
         onContextMenu={onContextMenu ? (e) => onContextMenu(label.id, e) : undefined}
         style={{ cursor: itemCursor(inHandMode, label.locked) }}
       >
-        <rect
-          x={-halfW - TEXT_LABEL_HIT_PAD}
-          y={-halfH - TEXT_LABEL_HIT_PAD}
-          width={m.width + 2 * TEXT_LABEL_HIT_PAD}
-          height={m.height + 2 * TEXT_LABEL_HIT_PAD}
-          fill="transparent"
-        />
+        <rect {...chromeRect} fill="transparent" />
       </g>
     );
   }
@@ -175,18 +176,10 @@ export function LabelView({
       onPointerLeave={onHoverLeave ? () => onHoverLeave(label.id) : undefined}
       style={interactive ? { cursor: itemCursor(inHandMode, label.locked) } : undefined}
     >
-      {/* Invisible hit rect covering the measured bbox + padding. Catches
-          clicks, drags, and right-clicks anywhere inside the label's visual
-          footprint — not just the glyphs. */}
-      {interactive && (
-        <rect
-          x={-halfW - TEXT_LABEL_HIT_PAD}
-          y={-halfH - TEXT_LABEL_HIT_PAD}
-          width={m.width + 2 * TEXT_LABEL_HIT_PAD}
-          height={m.height + 2 * TEXT_LABEL_HIT_PAD}
-          fill="transparent"
-        />
-      )}
+      {/* Invisible hit rect covering the chrome rect. Catches clicks, drags,
+          and right-clicks anywhere inside the label's visual footprint — not
+          just the glyphs. */}
+      {interactive && <rect {...chromeRect} fill="transparent" />}
       {m.lines.map((lm, i) => {
         if (lm.segments.length === 0) return null;
         // Every run on the line shares this baseline; the measurer placed it

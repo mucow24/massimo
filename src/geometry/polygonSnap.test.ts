@@ -358,6 +358,121 @@ describe('snapPolygonPoint', () => {
     });
   });
 
+  describe('anchors — a rigid set of points snapping as one translation', () => {
+    // Anchors model a whole-item drag with several snappable corners: every
+    // anchor generates alignment candidates, the winning alignment moves the
+    // whole set, and `proposed` stays the grid subject and the returned frame.
+    const A = { x: 0, y: 0 }; // the primary (== proposed)
+    const B = { x: 100, y: 50 }; // a far corner of the same rigid box
+
+    it('a non-primary anchor engages and translates the primary by its delta', () => {
+      const r = snapPolygonPoint({
+        proposed: A,
+        anchors: [A, B],
+        lineTargets: [],
+        allTargets: [{ x: 102, y: 300 }],
+        modes: modes({ all: 'all', grid: 'off' }),
+      });
+      expect(r.x).toBeCloseTo(2, 6);
+      expect(r.y).toBeCloseTo(0, 6);
+      // The guide runs from the target to the ENGAGED anchor's aligned
+      // position (102, 50) — not to the primary.
+      expect(r.guides).toHaveLength(1);
+      expect(r.guides[0].label).toBe('250.0');
+      expect(r.guides[0].to).toMatchObject({ x: 102, y: 50 });
+    });
+
+    it('cross-anchor corner: V via one anchor + H via another both lock', () => {
+      const r = snapPolygonPoint({
+        proposed: A,
+        anchors: [A, B],
+        lineTargets: [],
+        allTargets: [
+          { x: 102, y: 300 }, // vertical alignment, reachable only via B
+          { x: 300, y: 3 }, // horizontal alignment, reachable only via A
+        ],
+        modes: modes({ all: 'all', grid: 'off' }),
+      });
+      expect(r.x).toBeCloseTo(2, 6);
+      expect(r.y).toBeCloseTo(3, 6);
+      expect(r.guides.map((g) => g.label).sort()).toEqual(['247.0', '298.0']);
+    });
+
+    it('within one slot the better-aligned anchor wins', () => {
+      const r = snapPolygonPoint({
+        proposed: A,
+        anchors: [A, B],
+        lineTargets: [],
+        allTargets: [
+          { x: 101, y: 300 }, // via B: off by 1
+          { x: 5, y: 300 }, // via A: off by 5
+        ],
+        modes: modes({ all: 'all', grid: 'off' }),
+      });
+      expect(r.x).toBeCloseTo(1, 6);
+      expect(r.guides).toHaveLength(1);
+    });
+
+    it('an alignment guide engages through any anchor and emits its marker', () => {
+      const r = snapPolygonPoint({
+        proposed: A,
+        anchors: [A, B],
+        lineTargets: [],
+        allTargets: [],
+        modes: modes({ grid: 'off' }),
+        guideTargets: [{ id: 'g1', orientation: 'horizontal', offset: 53 }],
+      });
+      expect(r.x).toBeCloseTo(0, 6);
+      expect(r.y).toBeCloseTo(3, 6);
+      expect(r.guides).toHaveLength(1);
+      expect(r.guides[0].alignGuideId).toBe('g1');
+    });
+
+    it('a diagonal target projects the engaged anchor and tows the set', () => {
+      const r = snapPolygonPoint({
+        proposed: A,
+        anchors: [A, B],
+        lineTargets: [],
+        allTargets: [{ x: 130, y: 77 }],
+        modes: modes({ all: 'all', grid: 'off' }),
+      });
+      expect(r.x).toBeCloseTo(1.5, 6);
+      expect(r.y).toBeCloseTo(-1.5, 6);
+    });
+
+    it('grid stays the hard constraint in the PRIMARY frame', () => {
+      // The alignment via B lands the primary at x=10 — on the lattice, so the
+      // lock survives; grid 'vertical' leaves Y alone.
+      const r = snapPolygonPoint({
+        proposed: A,
+        anchors: [A, B],
+        lineTargets: [],
+        allTargets: [{ x: 110, y: 300 }],
+        modes: modes({ all: 'all', grid: 'vertical' }),
+      });
+      expect(r.x).toBeCloseTo(10, 6);
+      expect(r.y).toBeCloseTo(0, 6);
+      expect(r.guides).toHaveLength(1);
+    });
+
+    it('tens notches the ENGAGED anchor a clean grid step from the target', () => {
+      const b = { x: 100, y: 54 };
+      const r = snapPolygonPoint({
+        proposed: A,
+        anchors: [A, b],
+        lineTargets: [],
+        allTargets: [{ x: 102, y: 30 }],
+        modes: modes({ all: 'all', tens: true, grid: 'off' }),
+      });
+      // V locks via b (x -> 102 at the anchor, +2 in the primary frame); the
+      // free Y slides so the anchor sits a whole grid step from the target:
+      // 54 - 30 = 24 notches to 20, pulling the set down by 4.
+      expect(r.x).toBeCloseTo(2, 6);
+      expect(r.y).toBeCloseTo(-4, 6);
+      expect(r.guides[0].label).toBe('20.0');
+    });
+  });
+
   describe('snap to grid length (tens) — notch the free axis a whole grid step from the target', () => {
     it('notches the free Y of a vertical alignment to a multiple of the grid length', () => {
       // Vertical lock (x→100); Y slides free. With tens on, Y notches to the

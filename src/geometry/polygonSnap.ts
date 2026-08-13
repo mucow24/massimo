@@ -22,6 +22,16 @@ import {
 export interface PolygonSnapInput {
   /** The point being dragged — a vertex, or a whole-polygon's snap anchor. */
   proposed: Vec2;
+  /**
+   * A rigid SET of snappable points (a text label's four alignment-box
+   * corners) dragged as one translation. When present, alignment candidates
+   * come from exactly these points — include `proposed` in the list if it
+   * should still generate candidates. Every engagement converts to the
+   * translation that aligns its anchor; `proposed` stays the grid subject
+   * (grid keeps the primary on the lattice, exactly as without anchors) and
+   * the returned x/y stay in the primary's frame. Absent = [proposed].
+   */
+  anchors?: Vec2[];
   /** Targets for "Snap to line": the current polygon's other vertices. Aligned
    *  along all four axis families (horizontal, vertical, both diagonals). */
   lineTargets: Vec2[];
@@ -149,58 +159,93 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
     for (const t of allTargets) for (const axis of axes) candidates.push({ target: t, axis });
   }
 
+  // Anchors: the rigid point set generating candidates (default: just the
+  // primary). Every engagement below converts to the primary's frame through
+  // the engaged anchor's fixed offset `off`, so a hit on ANY anchor moves the
+  // whole set by one translation; `off` rides the winner so guides, tens and
+  // measurement labels can speak from the corner that actually aligned.
+  const anchorPts = input.anchors ?? [proposed];
+
   // Best vertical (snaps X), best horizontal (snaps Y), best diagonal (projects).
   // `guideId` marks a winner that is an alignment guide rather than a point
   // target — its engagement renders as a marker (the canvas recolors the
-  // guide), never as a distance-labeled segment.
-  let bestV: { value: number; perp: number; target: Vec2; guideId?: string } | null = null;
-  let bestH: { value: number; perp: number; target: Vec2; guideId?: string } | null = null;
-  let bestD: { foot: Vec2; perp: number; target: Vec2; axis: Vec2; guideId?: string } | null = null;
+  // guide), never as a distance-labeled segment. All stored values/feet are in
+  // the PRIMARY frame; `off` recovers the engaged anchor's position.
+  let bestV: { value: number; perp: number; target: Vec2; off: Vec2; guideId?: string } | null =
+    null;
+  let bestH: { value: number; perp: number; target: Vec2; off: Vec2; guideId?: string } | null =
+    null;
+  let bestD: {
+    foot: Vec2;
+    perp: number;
+    target: Vec2;
+    axis: Vec2;
+    off: Vec2;
+    guideId?: string;
+  } | null = null;
 
-  for (const { target, axis } of candidates) {
-    const { foot, perpDist } = axisFoot(proposed, target, axis);
-    if (perpDist > tol) continue;
-    if (axis.x === 0) {
-      // vertical line -> aligns X
-      const d = Math.abs(proposed.x - target.x);
-      if (!bestV || d < bestV.perp) bestV = { value: target.x, perp: d, target };
-    } else if (axis.y === 0) {
-      // horizontal line -> aligns Y
-      const d = Math.abs(proposed.y - target.y);
-      if (!bestH || d < bestH.perp) bestH = { value: target.y, perp: d, target };
-    } else if (!bestD || perpDist < bestD.perp) {
-      bestD = { foot, perp: perpDist, target, axis };
+  for (const a of anchorPts) {
+    const off = sub(a, proposed);
+    for (const { target, axis } of candidates) {
+      const { foot, perpDist } = axisFoot(a, target, axis);
+      if (perpDist > tol) continue;
+      if (axis.x === 0) {
+        // vertical line -> aligns the anchor's X; primary X follows by -off.
+        const d = Math.abs(a.x - target.x);
+        if (!bestV || d < bestV.perp) bestV = { value: target.x - off.x, perp: d, target, off };
+      } else if (axis.y === 0) {
+        // horizontal line -> aligns the anchor's Y.
+        const d = Math.abs(a.y - target.y);
+        if (!bestH || d < bestH.perp) bestH = { value: target.y - off.y, perp: d, target, off };
+      } else if (!bestD || perpDist < bestD.perp) {
+        bestD = { foot: sub(foot, off), perp: perpDist, target, axis, off };
+      }
     }
   }
 
   // Alignment guides: always-on candidates, independent of every mode toggle.
   // A horizontal guide is a horizontal alignment axis (locks Y), competing
   // with the point-derived winner above on plain perpendicular distance; its
-  // stand-in `target` is the proposed point's foot on the guide line. A
+  // stand-in `target` is the engaged anchor's foot on the guide line. A
   // diagonal guide competes in the diagonal slot the same way.
-  for (const g of input.guideTargets ?? []) {
-    if (g.orientation === 'vertical') {
-      if (!axisAllowed({ x: 0, y: 1 })) continue;
-      const d = Math.abs(proposed.x - g.offset);
-      if (d > tol) continue;
-      if (!bestV || d < bestV.perp) {
-        bestV = { value: g.offset, perp: d, target: { x: g.offset, y: proposed.y }, guideId: g.id };
-      }
-    } else if (g.orientation === 'horizontal') {
-      if (!axisAllowed({ x: 1, y: 0 })) continue;
-      const d = Math.abs(proposed.y - g.offset);
-      if (d > tol) continue;
-      if (!bestH || d < bestH.perp) {
-        bestH = { value: g.offset, perp: d, target: { x: proposed.x, y: g.offset }, guideId: g.id };
-      }
-    } else {
-      const axis = guideAxis(g.orientation);
-      if (!axisAllowed(axis)) continue;
-      const d = guidePerpDist(g.orientation, g.offset, proposed);
-      if (d > tol) continue;
-      if (!bestD || d < bestD.perp) {
-        const foot = guideFoot(g.orientation, g.offset, proposed);
-        bestD = { foot, perp: d, target: foot, axis, guideId: g.id };
+  for (const a of anchorPts) {
+    const off = sub(a, proposed);
+    for (const g of input.guideTargets ?? []) {
+      if (g.orientation === 'vertical') {
+        if (!axisAllowed({ x: 0, y: 1 })) continue;
+        const d = Math.abs(a.x - g.offset);
+        if (d > tol) continue;
+        if (!bestV || d < bestV.perp) {
+          bestV = {
+            value: g.offset - off.x,
+            perp: d,
+            target: { x: g.offset, y: a.y },
+            off,
+            guideId: g.id,
+          };
+        }
+      } else if (g.orientation === 'horizontal') {
+        if (!axisAllowed({ x: 1, y: 0 })) continue;
+        const d = Math.abs(a.y - g.offset);
+        if (d > tol) continue;
+        if (!bestH || d < bestH.perp) {
+          bestH = {
+            value: g.offset - off.y,
+            perp: d,
+            target: { x: a.x, y: g.offset },
+            off,
+            guideId: g.id,
+          };
+        }
+      } else {
+        const axis = guideAxis(g.orientation);
+        if (!axisAllowed(axis)) continue;
+        const d = guidePerpDist(g.orientation, g.offset, a);
+        if (d > tol) continue;
+        if (!bestD || d < bestD.perp) {
+          const foot = guideFoot(g.orientation, g.offset, a);
+          bestD = { foot: sub(foot, off), perp: d, target: foot, axis, off, guideId: g.id };
+        }
       }
     }
   }
@@ -237,10 +282,14 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
     p.x === target.x && p.y === target.y ? [] : [guideTo(target, p)];
   // A point-target winner draws the labeled segment; an alignment-guide winner
   // emits a MARKER instead (the canvas recolors the guide — see SnapGuide).
-  const emit = (best: { target: Vec2; guideId?: string }, p: Vec2): SnapGuide =>
-    best.guideId
-      ? { from: { ...p }, to: { ...p }, alignGuideId: best.guideId }
-      : guideTo(best.target, p);
+  // Both speak from the ENGAGED anchor's final position (p + off), so the
+  // chrome lands on the corner that aligned, not on the primary.
+  const emit = (best: { target: Vec2; off: Vec2; guideId?: string }, p: Vec2): SnapGuide => {
+    const pe = add(p, best.off);
+    return best.guideId
+      ? { from: { ...pe }, to: { ...pe }, alignGuideId: best.guideId }
+      : guideTo(best.target, pe);
+  };
 
   // A corner — both X and Y lock onto a target — is the strongest snap: take it
   // outright (snapping to the V×H intersection), even over a diagonal that
@@ -290,10 +339,12 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
         // own foot — quantizing a distance from yourself means nothing.
         if (applyTens && !singleAxis.guideId) {
           // Free DOF runs along the alignment line: Y for a vertical lock,
-          // X for a horizontal one. Notch it to a whole grid step from target.
+          // X for a horizontal one. Notch the ENGAGED anchor to a whole grid
+          // step from the target, then step back to the primary frame.
           const axis: Vec2 = bestV ? { x: 0, y: 1 } : { x: 1, y: 0 };
-          const p = notchAlong(singleAxis.target, combo, axis);
-          return { x: p.x, y: p.y, guides: tensGuide(singleAxis.target, p) };
+          const pe = notchAlong(singleAxis.target, add(combo, singleAxis.off), axis);
+          const p = sub(pe, singleAxis.off);
+          return { x: p.x, y: p.y, guides: tensGuide(singleAxis.target, pe) };
         }
         return { x: combo.x, y: combo.y, guides: [emit(singleAxis, combo)] };
       }
@@ -311,13 +362,24 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
       // Guide winners never notch (see the singleAxis path: a guide's
       // stand-in target is the drag's own foot).
       if (applyTens && !bestD.guideId) {
-        // Free DOF runs along the diagonal; notch the distance from the target.
-        const p = notchAlong(bestD.target, bestD.foot, bestD.axis);
-        return { x: p.x, y: p.y, guides: tensGuide(bestD.target, p) };
+        // Free DOF runs along the diagonal; notch the ENGAGED anchor's
+        // distance from the target, then step back to the primary frame.
+        const pe = notchAlong(bestD.target, add(bestD.foot, bestD.off), bestD.axis);
+        const p = sub(pe, bestD.off);
+        return { x: p.x, y: p.y, guides: tensGuide(bestD.target, pe) };
       }
       return { x: bestD.foot.x, y: bestD.foot.y, guides: [emit(bestD, bestD.foot)] };
     }
-    const r = reconcileLockWithGrid(bestD.target, bestD.axis, proposed, gridMode, gridInterval);
+    // The engaged anchor must sit on the line through `target`; the PRIMARY
+    // (the grid subject) therefore sits on the parallel line through
+    // target - off, which is what grid reconciliation intersects.
+    const r = reconcileLockWithGrid(
+      sub(bestD.target, bestD.off),
+      bestD.axis,
+      proposed,
+      gridMode,
+      gridInterval,
+    );
     if (!r.engaged) return plainGrid();
     const p: Vec2 = { x: r.x, y: r.y };
     return { x: p.x, y: p.y, guides: [emit(bestD, p)] };

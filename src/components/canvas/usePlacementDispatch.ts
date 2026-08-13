@@ -21,7 +21,7 @@ import { lineCircleAtPoint, snapPointToCircle } from '../../geometry/lineCircle'
 import { polygonSnapAnchor } from '../../geometry/polygon';
 import type { Vec2 } from '../../geometry/vec';
 import type { LineId } from '../../model/types';
-import { textLabelCorners } from '../../geometry/stationBoundary';
+import { textLabelAlignCorners } from '../../geometry/stationBoundary';
 import { starterPolygonVertices } from '../../model/transforms';
 import { defaultStyleProps } from '../../model/styles';
 import { makePreviewTextLabel } from './LabelPlacingPreview';
@@ -88,10 +88,12 @@ export function snapPlacement(
 
   // Point snapper on the item's drag reference point (`anchorOff` from the
   // item position), against the shared pool. No exclusions: the new item
-  // isn't in the doc yet.
-  const viaPoint = (anchorOff: Vec2): PlacementSnap => {
+  // isn't in the doc yet. `cornerOffs` threads a rigid co-anchor set (a
+  // label's four alignment-box corners), matching the item's own drag.
+  const viaPoint = (anchorOff: Vec2, cornerOffs?: Vec2[]): PlacementSnap => {
     const snap = snapPolygonPoint({
       proposed: { x: world.x + anchorOff.x, y: world.y + anchorOff.y },
+      anchors: cornerOffs?.map((o) => ({ x: world.x + o.x, y: world.y + o.y })),
       lineTargets: [],
       allTargets: liveAlignTargets(),
       guideTargets,
@@ -134,11 +136,16 @@ export function snapPlacement(
       // default label style included — not a factory-sized phantom. Sharing
       // makePreviewTextLabel with the ghost keeps preview, snap and drop on ONE
       // box; measuring the factory box instead offsets the snap by half the
-      // size delta the moment the Default style is redefined.
-      const anchor = polygonSnapAnchor(
-        textLabelCorners(makePreviewTextLabel(world, defaultStyleProps(doc, 'textLabel'))),
+      // size delta the moment the Default style is redefined. All four
+      // alignment-box corners snap as one rigid set, like the label's drag.
+      const corners = textLabelAlignCorners(
+        makePreviewTextLabel(world, defaultStyleProps(doc, 'textLabel')),
       );
-      return viaPoint({ x: anchor.x - world.x, y: anchor.y - world.y });
+      const anchor = polygonSnapAnchor(corners);
+      return viaPoint(
+        { x: anchor.x - world.x, y: anchor.y - world.y },
+        corners.map((c) => ({ x: c.x - world.x, y: c.y - world.y })),
+      );
     }
     case 'placing-anchor':
       // A bare point with nothing to measure: snap the drop position itself
