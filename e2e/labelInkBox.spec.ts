@@ -48,9 +48,15 @@ test('the selection ring sits on rasterized ink, not the conservative font bound
     const adv = ctx.measureText(text).width;
     c.width = Math.ceil((adv + size) * S);
     c.height = Math.ceil(size * 1.7 * S);
-    ctx.setTransform(S, 0, 0, S, 0, 0);
-    ctx.font = `${weight} ${size}px ${family}`;
-    ctx.fillText(text, size / 2, size * 1.2);
+    // Draw at the scaled FONT size directly — the same convention the app's
+    // probe rasters under, NOT a base-size draw scaled by the CTM. The two are
+    // identical on Windows/mac, but FreeType (the Linux CI runner) rasters
+    // them differently by up to ~0.4 units on this glyph's terminals; the
+    // scaled-font draw is the zoom-independent outline-faithful one, so both
+    // instruments measure it. Still an independent reimplementation — full
+    // string, own scan — of what the probe measures strip-wise.
+    ctx.font = `${weight} ${size * S}px ${family}`;
+    ctx.fillText(text, (size / 2) * S, size * 1.2 * S);
     const img = ctx.getImageData(0, 0, c.width, c.height).data;
     const inked = (x: number): boolean => {
       for (let y = 0; y < c.height; y++) if (img[(y * c.width + x) * 4 + 3] > 32) return true;
@@ -71,54 +77,14 @@ test('the selection ring sits on rasterized ink, not the conservative font bound
     const rasterLeft = left / S - size / 2;
     const rasterRight = right / S - size / 2;
     const rasterWidth = rasterRight - rasterLeft;
-    // TEMPORARY DIAGNOSTICS (CI-only failure): raster the same string the way
-    // the app's probe does — at the scaled FONT size directly, no transform —
-    // to separate "the app probe fell back" from "the platform rasters the
-    // two draw styles differently" (FreeType hinting is size-dependent).
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.font = `${weight} ${size * S}px ${family}`;
-    ctx.clearRect(0, 0, c.width, c.height);
-    ctx.fillText(text, (size / 2) * S, size * 1.2 * S);
-    const img2 = ctx.getImageData(0, 0, c.width, c.height).data;
-    const inked2 = (x: number): boolean => {
-      for (let y = 0; y < c.height; y++) if (img2[(y * c.width + x) * 4 + 3] > 32) return true;
-      return false;
-    };
-    let left2 = -1;
-    let right2 = -1;
-    for (let x = 0; x < c.width; x++)
-      if (inked2(x)) {
-        left2 = x;
-        break;
-      }
-    for (let x = c.width - 1; x >= 0; x--)
-      if (inked2(x)) {
-        right2 = x + 1;
-        break;
-      }
     return {
       rasterWidth,
       consWidth: consRight - consLeft,
       // Left-aligned single line: the box left edge is the leftmost ink,
       // which sits at (pen-relative inkLeft) − inkWidth/2 of the label center.
       expectedX0: rasterLeft - rasterWidth / 2,
-      diag: {
-        family,
-        consLeft,
-        consRight,
-        rasterLeft,
-        rasterRight,
-        raster640Left: left2 / S - size / 2,
-        raster640Right: right2 / S - size / 2,
-      },
     };
   });
-  console.log('INKBOX-DIAG truth:', JSON.stringify(truth));
-  console.log(
-    'INKBOX-DIAG ring:',
-    await ring.getAttribute('x'),
-    await ring.getAttribute('width'),
-  );
 
   // Anti-vacuous precondition: for this font/weight/string the conservative
   // bounds really ARE wider than the painted ink, so the assertions below can
