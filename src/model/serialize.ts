@@ -213,7 +213,7 @@ const CIRCLE_DRIFT_TOL = 1e-6;
  * rehydration); idempotent, so both run it unconditionally.
  *
  *  - a malformed circle (non-finite center/radius) is dropped; a legal one
- *    gets its radius canonicalized (quarter grid, floored at the minimum);
+ *    gets its radius canonicalized (floored at the minimum, otherwise kept);
  *  - a station whose `circleId` no longer resolves loses the binding (and its
  *    stops' `viaCircle` flags — the flag only lives on bound stations);
  *  - `viaCircle` on a stop of an unbound station is stripped, and a stored
@@ -1933,7 +1933,8 @@ function sanitizeLineCurve(line: Line): Line {
 }
 
 // Normalize one hand-edited / legacy split default-dot-size field to the
-// canonical stored form the transforms maintain: ≥ DOT_SIZE_MIN. Sizes are ALWAYS stored (natural values included — see
+// canonical stored form the transforms maintain: ≥ DOT_SIZE_MIN, otherwise
+// kept as written. Sizes are ALWAYS stored (natural values included — see
 // bakeConcreteDotSizes, which materializes absent ones right after this pass),
 // so nothing drops at a default; only non-numbers and non-finite values are
 // dropped (and then materialized by the bake). File-import hygiene only —

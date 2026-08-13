@@ -12,8 +12,8 @@ export const DASH_WIDTH_RATIO = 0.5;
 
 // Slider bounds only — the textboxes may exceed them (NumericFieldRow's
 // textboxAllowAboveMax). Stored values share the casing width's canonical
-// quarter-unit grid + drop-at-0 (see canonicalStrokeWidth): 0 = "auto",
-// i.e. the field is dropped and the width derivation takes over.
+// form: floored at 0, kept as given, dropped at exactly 0 (see
+// canonicalStrokeWidth), where 0 = "auto" and the width derivation takes over.
 export const DASH_LENGTH_MAX = 40;
 export const DASH_WIDTH_MAX = 20;
 

@@ -595,8 +595,9 @@ arrows (stop rows, layout editor, hover badges).
 
 **`LineCircle`** (`MapDoc.lineCircles`) — a perfect-circle guide: `id, x, y` (center),
 `radius` (≥ `LINE_CIRCLE_RADIUS_MIN`, [model/lineCircle.ts](src/model/lineCircle.ts); the resize
-knob and the two-click placement land it on a quarter-unit grid, the popover's Diameter field does
-not — see **A field's `step` is not its grid**),
+knob and the two-click placement land it on a quarter-unit grid — Shift declines that grid, as it
+declines every other drag's snapping — while the popover's Diameter field never grids at all: see
+**A field's `step` is not its grid**),
 `locked?`. **Editor scaffolding, never map ink**: rendered as a dashed guide ring with a ⊕ handle
 at its centre — plus a resize knob on its east point while selected, and eight radial cardinal
 ticks while the `circle` snap mode is on ([LineCircleView.tsx](src/components/LineCircleView.tsx),

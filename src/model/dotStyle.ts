@@ -495,8 +495,8 @@ function optDotColorEqual(
   return sentinelOrDayNightEqual(a, b);
 }
 
-// Stroke width shares the casing width's quarter-unit grid (same stepper
-// convention as every other stroke slider).
+// The stroke-width stepper moves in quarter units, the same convention as
+// every other stroke slider; a typed width is stored as typed.
 export const DOT_STROKE_STEP = 0.25;
 
 const lcDayNight = (c: DayNightColor): DayNightColor => ({

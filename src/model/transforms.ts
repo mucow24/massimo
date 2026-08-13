@@ -150,11 +150,10 @@ export const LABEL_FONT_SIZE_MAX = 24;
 export const LABEL_FONT_SIZE_DEFAULT = 12;
 
 // Every font-size control (station labels + text labels) steps in quarters —
-// one arrow press on the slider, one wheel notch over the row. Unlike
-// `LINE_STROKE_STEP` and the other dimensional steps, the quarter is NOT the
-// set of legal sizes: a TYPED size is kept as typed (`roundToStepPrecision`),
-// rounded only to the two decimals the box shows. Snapping the typed value
-// made the field look deaf — 10.2, 10.3 and 10.35 all landed on 10.25.
+// one arrow press on the slider, one wheel notch over the row. Like every other
+// dimensional step, the quarter is NOT the set of legal sizes: a TYPED size is
+// stored as typed (`clampField`). Snapping it made the field look deaf — 10.2,
+// 10.3 and 10.35 all landed on 10.25.
 export const FONT_SIZE_STEP = 0.25;
 
 // The weight ladder lives with the other font primitives in util/fonts — the
@@ -982,7 +981,7 @@ export function setLineWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
 
 // Per-line interline gap: extra spacing against each interlined neighbor
 // (the pair uses the LARGER of the two lines' gaps). Same storage contract
-// as setLineStrokeWidth (quarter-unit grid, floor at 0, dropped at 0), but
+// as setLineStrokeWidth (floor at 0, stored as given, dropped at exactly 0), but
 // like `width` this is GEOMETRY: the packed stop spacing and the band merge
 // gate include it, so a bare write would strand packed layouts and un-merge
 // their bands. Each edit therefore also re-packs the packed stop chains at
@@ -1013,7 +1012,7 @@ export function setLineInterlineGap(doc: MapDoc, id: LineId, v: number): MapDoc 
 }
 
 // Per-line station-label clearance. Same storage contract as setLineWidth
-// (quarter-unit grid, collapse at the DEFAULT — here 3, and 0 is a real
+// (stored as given, collapse at the DEFAULT — here 3, and 0 is a real
 // stored value). Pure label placement: nothing packs or re-routes, so no
 // repack and no region reconcile — the derived label layout follows the doc.
 export function setLineLabelGap(doc: MapDoc, id: LineId, v: number): MapDoc {
@@ -2916,8 +2915,8 @@ function withStationLabelStyle(st: Station, props: StationStyleProps): Station {
 
 /**
  * Write one or more per-station typography fields (the 'station' style fields).
- * Each provided field is clamped/snapped to the same canonical grid the style
- * def uses (so a stamped station compares exactly equal to its style), then the
+ * Each provided field is clamped exactly as the style def clamps it (so a
+ * stamped station compares exactly equal to its style), then the
  * whole set is rebuilt with collapse-at-default. Detaches the styleId tag
  * whenever a covered EFFECTIVE value actually changes — a value-identical
  * rewrite (a slider tick landing on the same value) keeps the tag and the same

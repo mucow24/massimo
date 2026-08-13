@@ -55,8 +55,9 @@ export function CircleDiameterLabel({
  * Two-click line-circle placement ghost. Phase 1 (no center yet): a small
  * cross marks where the click will put the CENTER. Phase 2 (center armed):
  * the dashed ring previews the circle at the cursor's distance — floored and
- * quarter-gridded exactly like the drop (canonicalLineCircleRadius) — with
- * the diameter readout above the center.
+ * quarter-gridded exactly like the drop, both through
+ * `snapDraggedLineCircleRadius`, so preview and result cannot drift apart —
+ * with the diameter readout above the center.
  */
 export function LineCirclePlacingPreview({
   center,
