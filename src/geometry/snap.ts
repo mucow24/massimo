@@ -114,6 +114,34 @@ export type AllSnap = 'off' | 'horizontal' | 'vertical' | 'diagonal' | 'all';
 export type GridSnap = 'off' | 'horizontal' | 'vertical' | 'both';
 
 /**
+ * The one degree of freedom a single-DOF snap caller has left — an edge resize's
+ * axis, or a guide's offset. 'x'/'y' name the world axis the point may move
+ * along; the two diagonal values are a diagonal guide's own drag, which can only
+ * slide its intercept.
+ */
+export type SnapConstraint = 'x' | 'y' | 'diagonal-down' | 'diagonal-up';
+
+/**
+ * What the directional grid means for that one DOF: the modes that constrain an
+ * axis the caller cannot move are no constraint at all, and drop to 'off'. A
+ * diagonal DOF keeps only the full lattice — its crossings are the discrete
+ * intercepts, and a single-axis grid has none to offer. The one home for the
+ * narrowing, so the point snapper and a caller deciding whether the grid already
+ * owns its DOF (see {@link guideTensOffset}) cannot answer it differently.
+ */
+export function constrainedGridMode(mode: GridSnap, constrain?: SnapConstraint): GridSnap {
+  if (!constrain) return mode;
+  switch (constrain) {
+    case 'x':
+      return mode === 'both' || mode === 'vertical' ? 'vertical' : 'off';
+    case 'y':
+      return mode === 'both' || mode === 'horizontal' ? 'horizontal' : 'off';
+    default:
+      return mode === 'both' ? 'both' : 'off';
+  }
+}
+
+/**
  * User-toggleable snap modes. `line`, `equidistant`, and `tens` are boolean
  * flags (the latter two are no-ops unless `line` is also true); `all` and
  * `grid` are directional cycles.
@@ -131,7 +159,8 @@ export interface SnapModes {
    *  prev-in-line-ordering neighbor. For stations/bullets this is gated on
    *  `line` (the engine only refines a line-mode primary). The point snapper
    *  (`snapPolygonPoint`) reuses the same flag to notch other objects a whole
-   *  grid length from whatever they snap to. */
+   *  grid length from whatever they snap to, and a guide's own drag to step its
+   *  offset off its nearest parallel guide ({@link guideTensOffset}). */
   tens: boolean;
   /** Snap when the dragged stop is aligned with any other stop along the
    *  selected axis family (vertical, horizontal, and/or diagonal; line
@@ -239,6 +268,20 @@ export function guideOffsetOf(orientation: GuideOrientation, p: Vec2): number {
       return p.y - p.x;
     case 'diagonal-up':
       return p.y + p.x;
+  }
+}
+
+/** A guide's one degree of freedom, as the snappers' constraint: it may only
+ *  move perpendicular to itself, which for a strip is a single world axis and
+ *  for a diagonal is its own 45° family. */
+export function guideConstraint(orientation: GuideOrientation): SnapConstraint {
+  switch (orientation) {
+    case 'horizontal':
+      return 'y';
+    case 'vertical':
+      return 'x';
+    default:
+      return orientation;
   }
 }
 
@@ -396,6 +439,58 @@ export function guideNeighbourReadout(
     });
   }
   return out;
+}
+
+/**
+ * "Snap to grid length" (the `tens` mode) on a guide's one degree of freedom:
+ * `offset` notched to a whole multiple of `gridInterval` measured from the
+ * NEAREST parallel guide, or null when nothing anchors it — no parallel guide
+ * on the canvas, or the nearest notch further than `tolerance` off.
+ *
+ * It is the terminal station's cadence, transplanted: a station at the end of a
+ * line takes its step from its one neighbour, and a guide has exactly one
+ * neighbour worth measuring to either side. Which is also why `others` is the
+ * pool the caller may not move — a cadence measured off something towed by the
+ * same grab never changes (the station engine spells the same rule
+ * `excludedIds`), so the drag hook passes its snap pool here, not the wider one
+ * the readout measures against.
+ *
+ * The step is a DISTANCE, not an intercept: a diagonal's offsets are Y-
+ * intercepts, √2 apart for every world unit of true gap (`guidePerpDist`), so
+ * both the notch and the tolerance run through that scale.
+ *
+ * The spacing readout is then the feedback for free — the gap it labels is the
+ * whole grid multiple this landed on. With one exception, from the pool split
+ * above: in a group drag whose towed sibling sits BETWEEN the guide and its
+ * anchor, the readout names that sibling's constant gap and the notch goes
+ * unlabelled. The cadence is right there, just unannounced.
+ */
+export function guideTensOffset(
+  orientation: GuideOrientation,
+  offset: number,
+  others: readonly { orientation: GuideOrientation; offset: number }[],
+  gridInterval: number,
+  tolerance: number,
+): number | null {
+  let anchor: number | null = null;
+  for (const o of others) {
+    if (o.orientation !== orientation) continue;
+    if (anchor === null || Math.abs(o.offset - offset) < Math.abs(anchor - offset))
+      anchor = o.offset;
+  }
+  if (anchor === null) return null;
+  const offsetPerUnit =
+    orientation === 'diagonal-down' || orientation === 'diagonal-up' ? Math.SQRT2 : 1;
+  const step = gridInterval * offsetPerUnit;
+  const steps = Math.round((offset - anchor) / step);
+  // Inside half a step the only whole multiple on offer is zero, and a cadence
+  // of zero steps is a STACK — the one thing guides never do (see the readout,
+  // which likewise refuses to name a gap of nothing). Standing down there is
+  // the honest answer: the guide moves freely through that band. Clamping to
+  // one step instead would fling it a whole interval off the pointer.
+  if (steps === 0) return null;
+  const notched = anchor + steps * step;
+  return Math.abs(notched - offset) / offsetPerUnit <= tolerance ? notched : null;
 }
 
 export interface SnapResult {

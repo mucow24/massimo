@@ -3,11 +3,14 @@ import { beginHistoryGroup, useDoc } from '../../state/store';
 import { useSelection } from '../../state/selection';
 import { useRoutedSnapGuides } from './useRoutedSnapGuides';
 import {
+  constrainedGridMode,
+  guideConstraint,
   guideFoot,
   guideMoveVector,
   guideNeighbourReadout,
   guideNudgeDelta,
   guideOffsetOf,
+  guideTensOffset,
   type GuideTarget,
   type SnapGuide,
 } from '../../geometry/snap';
@@ -63,9 +66,12 @@ type ScreenToWorld = (mx: number, my: number) => Vec2;
  *
  * Guides never snap to other guides (stacking two is meaningless), so neither
  * gesture passes `guideTargets` to the snapper. Both do carry a parallel pool
- * they only MEASURE against — every frame draws the spacing to the nearest
- * parallel guide either side (`guideNeighbourReadout`, whose contract is where
- * that pool's membership is argued).
+ * they never snap ONTO but do read: every frame draws the spacing to the
+ * nearest parallel guide either side (`guideNeighbourReadout`, whose contract
+ * is where that pool's membership is argued), and under "Snap to grid length"
+ * the nearest STATIONARY one also anchors the offset's cadence — a whole grid
+ * length measured off a guide, which is a gap, never a stack (`guideTensOffset`
+ * declines the zero-step notch that would land the two on top of each other).
  *
  * Shift bypasses snapping, as everywhere — but not the readout, which is a
  * measurement rather than a snap. Both gestures capture to the SVG on the first
@@ -81,7 +87,7 @@ export function useGuideDrag(
   const moveGuide = useDoc((s) => s.moveGuide);
   const addGuide = useDoc((s) => s.addGuide);
   const deleteGuide = useDoc((s) => s.deleteGuide);
-  const { snapPoint } = useDragSnap(zoom);
+  const { snapPoint, modes, gridInterval, tolerance } = useDragSnap(zoom);
   const [snapGuides, setSnapGuides] = useRoutedSnapGuides('guide');
   const [pull, setPull] = useState<{ orientation: GuideOrientation; offset: number } | null>(null);
   const [overWell, setOverWell] = useState<GuideOrientation | null>(null);
@@ -95,8 +101,9 @@ export function useGuideDrag(
     moved: boolean;
     siblings: GroupSiblings;
     allTargets: Vec2[];
-    // The STATIONARY guides this gesture measures against — never a snap pool.
-    // Snapshotted at pointer-down like every other pool.
+    // The STATIONARY guides this gesture reads: what the readout measures
+    // against, and what the grid-length cadence steps FROM (never ONTO — see
+    // guideTensOffset). Snapshotted at pointer-down like every other pool.
     neighbours: readonly GuideTarget[];
     // The towed parallel siblings, as their constant gap to the master. They
     // are out of every SNAP pool (a target moving with the grab is an unstable
@@ -192,11 +199,38 @@ export function useGuideDrag(
     let snapChrome: SnapGuide[] = [];
     if (!e.shiftKey) {
       const proposed = guideFoot(orientation, rawOffset, world);
-      const constrain =
-        orientation === 'horizontal' ? 'y' : orientation === 'vertical' ? 'x' : orientation;
+      const constrain = guideConstraint(orientation);
       const snap = snapPoint(proposed, { allTargets: pools.allTargets, constrain });
       offset = guideOffsetOf(orientation, snap);
       snapChrome = snap.guides;
+      // "Snap to grid length" on the guide's one degree of freedom —
+      // `guideTensOffset` owns the cadence itself (anchor, step, why it stands
+      // down); this is where it competes. It is off while the grid pins that
+      // DOF, grid being the hard constraint that owns quantization there,
+      // exactly as the point snapper has it. Against an engaged alignment it
+      // settles by the closest-wins rule every same-axis contest uses, ties
+      // going to the alignment: that one says something about the map, the
+      // cadence only about spacing. The empty-chrome disjunct carries the case
+      // where nothing engaged at all — `offset` is then the raw pointer with
+      // zero displacement, which no candidate can beat on distance.
+      if (modes.tens && constrainedGridMode(modes.grid, constrain) === 'off') {
+        const tens = guideTensOffset(
+          orientation,
+          rawOffset,
+          pools.neighbours,
+          gridInterval,
+          tolerance,
+        );
+        if (
+          tens !== null &&
+          (snapChrome.length === 0 || Math.abs(tens - rawOffset) < Math.abs(offset - rawOffset))
+        ) {
+          offset = tens;
+          // The alignment lost: its chrome would claim a snap that didn't
+          // happen. The spacing readout below is the cadence's own feedback.
+          snapChrome = [];
+        }
+      }
     }
     // Set unconditionally — frozen local state can't gate a clear while the
     // pipeline is armed (see useRoutedSnapGuides). The spacing readout is

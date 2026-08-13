@@ -9,6 +9,7 @@ import {
   guideOffsetOf,
   guidePerpDist,
   guideSegmentInBox,
+  guideTensOffset,
   snapDraggedStation,
   type SnapInput,
   type SnapModes,
@@ -171,6 +172,67 @@ describe('guideNeighbourReadout', () => {
       9,
     );
     expect(r[0].from).toEqual({ x: 50, y: 50 });
+  });
+});
+
+describe('guideTensOffset', () => {
+  const h = (id: string, offset: number) => ({ id, orientation: 'horizontal' as const, offset });
+
+  it('notches the offset a whole grid length from the nearest parallel guide', () => {
+    // 137 sits 97 above the anchor; the nearest whole 20 is 100.
+    expect(guideTensOffset('horizontal', 137, [h('lo', 40)], 20, 10)).toBe(140);
+    // Below the anchor the cadence runs the other way, and an exact multiple
+    // is already on cadence.
+    expect(guideTensOffset('horizontal', -63, [h('lo', 40)], 20, 10)).toBe(-60);
+    expect(guideTensOffset('horizontal', 100, [h('lo', 40)], 20, 10)).toBe(100);
+  });
+
+  it('measures from the NEAREST parallel guide, not just any of them', () => {
+    // 150 is 13 away, 40 is 97: the cadence runs from 150, one step below.
+    expect(guideTensOffset('horizontal', 137, [h('lo', 40), h('hi', 150)], 20, 10)).toBe(130);
+  });
+
+  it('never notches ONTO the anchor — a cadence of zero steps is a stack', () => {
+    // Inside half a step there is no whole multiple to land on but zero, and
+    // zero would put the guide on top of its neighbour. The cadence stands
+    // down instead, and the guide moves freely through that band.
+    expect(guideTensOffset('horizontal', 45, [h('lo', 40)], 20, 10)).toBeNull();
+    expect(guideTensOffset('horizontal', 40, [h('lo', 40)], 20, 10)).toBeNull();
+    expect(guideTensOffset('horizontal', 31, [h('lo', 40)], 20, 10)).toBeNull();
+    // Past half a step the first whole multiple is back in play.
+    expect(guideTensOffset('horizontal', 52, [h('lo', 40)], 20, 10)).toBe(60);
+  });
+
+  it('declines when the nearest notch is out of tolerance', () => {
+    // Exactly half a step from either notch — 10 out, so a 5 tolerance (zoom 2)
+    // does not reach it while the standard 10 does.
+    expect(guideTensOffset('horizontal', 90, [h('lo', 40)], 20, 5)).toBeNull();
+    expect(guideTensOffset('horizontal', 90, [h('lo', 40)], 20, 10)).toBe(100);
+  });
+
+  it('has no cadence without a parallel guide to measure from', () => {
+    const crossing = [
+      { id: 'v', orientation: 'vertical' as const, offset: 120 },
+      { id: 'd', orientation: 'diagonal-down' as const, offset: 120 },
+    ];
+    expect(guideTensOffset('horizontal', 137, crossing, 20, 10)).toBeNull();
+    expect(guideTensOffset('horizontal', 137, [], 20, 10)).toBeNull();
+  });
+
+  it('a diagonal notches the TRUE gap — an intercept step of grid × √2', () => {
+    const d = (offset: number) => ({ id: 'd', orientation: 'diagonal-down' as const, offset });
+    // An intercept of 90 is 63.6 of true distance; the nearest whole 20 of
+    // distance is 60, i.e. an intercept of 60√2.
+    const r = guideTensOffset('diagonal-down', 90, [d(0)], 20, 10);
+    expect(r).toBeCloseTo(60 * Math.SQRT2, 9);
+    expect(
+      guidePerpDist('diagonal-down', 0, guideFoot('diagonal-down', r!, { x: 0, y: 0 })),
+    ).toBeCloseTo(60, 9);
+    // The tolerance is perpendicular too: one step out, a miss of 14 of
+    // INTERCEPT is only 9.9 of distance, so it still engages.
+    const oneStep = 20 * Math.SQRT2;
+    expect(guideTensOffset('diagonal-down', oneStep + 14, [d(0)], 20, 10)).toBeCloseTo(oneStep, 9);
+    expect(guideTensOffset('diagonal-down', oneStep + 14, [d(0)], 20, 9)).toBeNull();
   });
 });
 
