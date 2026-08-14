@@ -1766,6 +1766,37 @@ button.field-select > :not(.field-select-caret) {
 .field-select-item.field-select-action[data-highlighted] {
   color: var(--text);
 }
+/* Palette-color dropdown (PaletteColorRow): grouped design-swatch rows whose
+   NAME is the point — the split swatch is the recognizer beside it. */
+.field-select-group-label {
+  padding: 5px 12px 2px;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+.palette-split-swatch {
+  display: inline-flex;
+  width: 22px;
+  height: 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  overflow: hidden;
+  vertical-align: -2px;
+  margin-right: 7px;
+  flex: none;
+}
+.palette-split-swatch > span {
+  flex: 1;
+}
+.field-select-item.palette-color-item {
+  display: flex;
+  align-items: center;
+}
+.field-select.palette-color-trigger > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
 
 .tool-group {
   display: inline-flex;

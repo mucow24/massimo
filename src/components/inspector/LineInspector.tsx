@@ -6,7 +6,7 @@ import { useLineEditorPrefs } from '../../state/lineEditorPrefs';
 import type { LineId, LineStrokeColor } from '../../model/types';
 import { DEFAULT_DOT_STYLE } from '../../model/dotStyle';
 import { ColorPalette } from './ColorPalette';
-import { DayNightColorRow } from '../DayNightColorRow';
+import { PaletteColorRow } from '../PaletteColorRow';
 import { useFieldHistory } from '../useFieldHistory';
 import { StationShapePicker } from '../StationShapePicker';
 import { NumericFieldRow } from '../NumericFieldRow';
@@ -445,7 +445,7 @@ export function LineInspector({ id }: { id: LineId }) {
               exactly what reaching for a swatch means; the "follow the line"
               mode itself is chosen in the style editor. */}
           {lineStrokeWidthOf(line) > 0 && (
-            <DayNightColorRow
+            <PaletteColorRow
               label="Stroke color"
               id={`line-stroke-color-${line.id}`}
               darkId={`line-dark-stroke-color-${line.id}`}
@@ -454,8 +454,15 @@ export function LineInspector({ id }: { id: LineId }) {
               titleNoun="stroke color"
               value={lineCasingColor(line, line.color, false)}
               darkValue={lineCasingColor(line, line.color, true)}
+              swatchRef={line.strokeColorRef}
               onChange={(day) => setLineStrokeColor(line.id, nextCasing('day', day))}
               onDarkChange={(night) => setLineStrokeColor(line.id, nextCasing('night', night))}
+              onPick={(ref, pair) =>
+                // A swatch pick writes a fixed pair + its ref (replacing the
+                // 'line' sentinel if that's what stood — same as a hand pick);
+                // Custom re-writes the current pair ref-less, detaching.
+                setLineStrokeColor(line.id, pair, ref ?? undefined)
+              }
               dot={
                 <OverrideDot
                   kind="line"

@@ -58,6 +58,28 @@ export const resolveDesignSwatchRef = (
 ): PaletteSwatch | undefined => resolveIn(palettes, ref, (p) => !isLinePalette(p));
 
 /**
+ * The write rule, for patch-style transforms: the ref a patch leaves on a
+ * pair. Its own ref key wins when present (undefined clears); a patch that
+ * touched a value half WITHOUT the ref key detaches (a hand-picked color);
+ * anything else keeps the current link.
+ */
+export function patchedRef(
+  patch: Record<string, unknown>,
+  valueKeys: readonly string[],
+  refKey: string,
+  cur: SwatchRef | undefined,
+): SwatchRef | undefined {
+  if (refKey in patch) return patch[refKey] as SwatchRef | undefined;
+  return valueKeys.some((k) => k in patch) ? undefined : cur;
+}
+
+/** The day/night pair a swatch paints — `night` collapsed means "same as day". */
+export const swatchPair = (s: PaletteSwatch): { day: string; night: string } => ({
+  day: s.color,
+  night: s.night ?? s.color,
+});
+
+/**
  * The ref a line color IS, if any: the first LINE-palette swatch (map palette
  * order) whose color equals it via `normalizeHex`. One rule shared by
  * `addLine` (a line born on a swatch hex is born linked) and the load-time

@@ -146,6 +146,13 @@ export interface DotStyle {
   // full SERVICE_CODE_DOT_RADIUS size. Optional, absent ⇒ the whole code, and
   // dropped when off so presets and untouched styles stay byte-identical.
   serviceCodeFirstLetterOnly?: boolean;
+  // Design-palette links for the three color fields (see SwatchRef). Each is
+  // only ever present while its field holds a real day/night PAIR — a sentinel
+  // ('line'/'none'/'bw') carries no ref — and folds into that field's equality
+  // in `dotStylesEqual`, so a link is part of what makes two styles the same.
+  fillRef?: SwatchRef;
+  strokeColorRef?: SwatchRef;
+  serviceCodeColorRef?: SwatchRef;
 }
 
 export interface StopCell {
@@ -477,6 +484,13 @@ export interface Line {
   // themes. The setter normalizes to lowercase and drops the field when BOTH
   // halves match the default (the transfer colors' all-or-nothing collapse).
   strokeColor?: LineStrokeColor;
+  // Design-palette link for the casing pair (see SwatchRef). Present only
+  // while `strokeColor` is (effectively) a pair — never beside the 'line'
+  // sentinel — and possibly beside an ABSENT strokeColor when the swatch sits
+  // exactly on the white default (the collapse above still applies; the
+  // invariant is over EFFECTIVE values). Folds into strokeColor's style-field
+  // equality; stamped/detached together with it.
+  strokeColorRef?: SwatchRef;
   // TfL-tick dimensions for this line's 'dash' stops, world units. Both are
   // stored like `strokeWidth` (floored at 0, kept as given, drop at exactly
   // 0 = "auto"); an UNSET value derives from the line width at render time
@@ -696,6 +710,12 @@ export interface Polygon {
   // instead of the filled body. Optional; missing ⇒ true (closed), so polygons
   // saved before this field render unchanged.
   closed?: boolean;
+  // Design-palette links for the two day/night pairs (see SwatchRef): fillRef
+  // covers fill+darkFill, strokeRef covers stroke+darkStroke. Each folds into
+  // its pair's style-field equality; a value write without the ref key in the
+  // same patch detaches (updatePolygon owns the rule).
+  fillRef?: SwatchRef;
+  strokeRef?: SwatchRef;
   // Live link to a StyleDef of kind 'polygon' — covered fields are the
   // colors, strokeWidth, curveRadius and closed (NOT vertices/locked). Same
   // contract as `Line.styleId`.
@@ -712,6 +732,8 @@ export type PolygonStylePatch = Partial<
     | 'stroke'
     | 'darkFill'
     | 'darkStroke'
+    | 'fillRef'
+    | 'strokeRef'
     | 'strokeWidth'
     | 'locked'
     | 'curveRadius'
@@ -1008,6 +1030,10 @@ export interface TextLabel {
   // missing ⇒ the box auto-sizes to its content. Clamped to a positive integer
   // by `updateTextLabel`. Mirrors `Station.editorHeight`.
   editorHeight?: number;
+  // Design-palette link for the color+darkColor pair (see SwatchRef). Folds
+  // into the pair's style-field equality; a value write without the ref key
+  // in the same patch detaches (updateTextLabel owns the rule).
+  colorRef?: SwatchRef;
   // Live link to a StyleDef of kind 'textLabel' — covered fields are the
   // colors, fontSize, weight, italic, align, and the layout trio
   // width/leading/tracking (NOT text/position/rotation/locked/editorHeight).
@@ -1080,6 +1106,13 @@ export interface Transfer {
   // TransferDrawOrder). Same override contract as the four above: absent ⇒
   // 'under', the legacy behaviour.
   draw?: TransferDrawOrder;
+  // Design-palette links for the two pairs (see SwatchRef). A ref can sit
+  // beside an ABSENT color — the override collapses at the constant default,
+  // and the invariant is over EFFECTIVE values. Each folds into its pair's
+  // style-field equality; a value write without the ref key detaches
+  // (updateTransferStyle owns the rule).
+  colorRef?: SwatchRef;
+  strokeColorRef?: SwatchRef;
   // Live link to a StyleDef of kind 'transfer' — covered fields are all five
   // style overrides above. Same contract as `Line.styleId`.
   styleId?: string;
@@ -1092,7 +1125,10 @@ export interface Transfer {
 // patch carries the WHOLE DayNightColor (both halves), even when the popover
 // edits only one theme.
 export type TransferStylePatch = Partial<
-  Pick<Transfer, 'thickness' | 'color' | 'strokeWidth' | 'strokeColor' | 'draw'>
+  Pick<
+    Transfer,
+    'thickness' | 'color' | 'strokeWidth' | 'strokeColor' | 'colorRef' | 'strokeColorRef' | 'draw'
+  >
 >;
 
 // ---------- Styles (named, reusable per-kind formatting presets) ----------
@@ -1154,6 +1190,9 @@ export interface LineStyleProps {
   // one style can give a dozen differently-colored lines a casing in their own
   // hue.
   strokeColor: LineStrokeColor;
+  // The casing pair's design-palette link, captured/stamped with it (see
+  // Line.strokeColorRef). Never present beside the 'line' sentinel.
+  strokeColorRef?: SwatchRef;
   // TfL-tick dimensions (world units). Optional: absent ⇒ derive from the
   // line width at render time (see Line.dashLength / Line.dashWidth).
   dashLength?: number;
@@ -1183,6 +1222,9 @@ export interface TextLabelStyleProps {
   width?: number;
   leading?: number;
   tracking?: number;
+  // The color pair's design-palette link, captured/stamped with it (see
+  // TextLabel.colorRef).
+  colorRef?: SwatchRef;
 }
 
 export interface PolygonStyleProps {
@@ -1193,6 +1235,10 @@ export interface PolygonStyleProps {
   strokeWidth: number;
   curveRadius: number;
   closed: boolean;
+  // The pairs' design-palette links, captured/stamped with them (see
+  // Polygon.fillRef / strokeRef).
+  fillRef?: SwatchRef;
+  strokeRef?: SwatchRef;
 }
 
 export interface RouteBulletStyleProps {
@@ -1211,6 +1257,10 @@ export interface TransferStyleProps {
   // Concrete like every other captured prop; defs written before the axis
   // existed lack it and read as 'under' (see stylePropsEqual's `??`).
   draw: TransferDrawOrder;
+  // The pairs' design-palette links, captured/stamped with them (see
+  // Transfer.colorRef / strokeColorRef).
+  colorRef?: SwatchRef;
+  strokeColorRef?: SwatchRef;
 }
 
 // Per-station name typography. Every value is FULLY-RESOLVED (captured by

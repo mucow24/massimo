@@ -1,5 +1,5 @@
 import { useDoc } from '../state/store';
-import { DayNightColorRow } from './DayNightColorRow';
+import { PaletteColorRow } from './PaletteColorRow';
 import { NumericFieldRow } from './NumericFieldRow';
 import { LineEndSegmented } from './LineEndPicker';
 import { WeightSelect, ItalicButton } from './WeightItalicControls';
@@ -101,6 +101,7 @@ import type {
   RouteBulletStyleProps,
   StationStyleProps,
   StyleDef,
+  SwatchRef,
   TextLabelAlign,
   TextLabelStyleProps,
   TransferStyleProps,
@@ -266,6 +267,10 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
           onPickType={(t) => patch({ strokeColor: t === 'line' ? LINE_OWN_COLOR : strokePair })}
           pair={strokePair}
           onPair={(strokeColor) => patch({ strokeColor })}
+          swatchRef={props.strokeColorRef}
+          onPickSwatch={(ref, pair) =>
+            patch(ref ? { strokeColor: pair, strokeColorRef: ref } : { strokeColor: pair })
+          }
         />
       )}
 
@@ -358,7 +363,7 @@ function TextLabelStyleEditor({ id, props }: { id: string; props: TextLabelStyle
   const patch = usePatch(id);
   return (
     <div className="style-editor">
-      <DayNightColorRow
+      <PaletteColorRow
         label="Color"
         id={`style-${id}-color`}
         darkId={`style-${id}-dark-color`}
@@ -367,8 +372,16 @@ function TextLabelStyleEditor({ id, props }: { id: string; props: TextLabelStyle
         titleNoun="color"
         value={props.color}
         darkValue={props.darkColor}
+        swatchRef={props.colorRef}
         onChange={(color) => patch({ color })}
         onDarkChange={(darkColor) => patch({ darkColor })}
+        onPick={(ref, pair) =>
+          patch(
+            ref
+              ? { color: pair.day, darkColor: pair.night, colorRef: ref }
+              : { color: pair.day, darkColor: pair.night },
+          )
+        }
       />
       <NumericFieldRow
         id={`style-${id}-size`}
@@ -452,7 +465,7 @@ function PolygonStyleEditor({ id, props }: { id: string; props: PolygonStyleProp
   const patch = usePatch(id);
   return (
     <div className="style-editor">
-      <DayNightColorRow
+      <PaletteColorRow
         label="Fill color"
         id={`style-${id}-fill`}
         darkId={`style-${id}-dark-fill`}
@@ -461,10 +474,18 @@ function PolygonStyleEditor({ id, props }: { id: string; props: PolygonStyleProp
         titleNoun="fill"
         value={props.fill}
         darkValue={props.darkFill}
+        swatchRef={props.fillRef}
         onChange={(fill) => patch({ fill })}
         onDarkChange={(darkFill) => patch({ darkFill })}
+        onPick={(ref, pair) =>
+          patch(
+            ref
+              ? { fill: pair.day, darkFill: pair.night, fillRef: ref }
+              : { fill: pair.day, darkFill: pair.night },
+          )
+        }
       />
-      <DayNightColorRow
+      <PaletteColorRow
         label="Stroke color"
         id={`style-${id}-stroke-color`}
         darkId={`style-${id}-dark-stroke`}
@@ -473,8 +494,16 @@ function PolygonStyleEditor({ id, props }: { id: string; props: PolygonStyleProp
         titleNoun="stroke"
         value={props.stroke}
         darkValue={props.darkStroke}
+        swatchRef={props.strokeRef}
         onChange={(stroke) => patch({ stroke })}
         onDarkChange={(darkStroke) => patch({ darkStroke })}
+        onPick={(ref, pair) =>
+          patch(
+            ref
+              ? { stroke: pair.day, darkStroke: pair.night, strokeRef: ref }
+              : { stroke: pair.day, darkStroke: pair.night },
+          )
+        }
       />
       <NumericFieldRow
         id={`style-${id}-stroke-width`}
@@ -563,7 +592,7 @@ function TransferStyleEditor({ id, props }: { id: string; props: TransferStylePr
         getCurrent={liveNumberProp(id, 'thickness', props.thickness)}
         textboxAllowAboveMax
       />
-      <DayNightColorRow
+      <PaletteColorRow
         label="Color"
         id={`style-${id}-color`}
         darkId={`style-${id}-dark-color`}
@@ -572,8 +601,10 @@ function TransferStyleEditor({ id, props }: { id: string; props: TransferStylePr
         titleNoun="color"
         value={props.color.day}
         darkValue={props.color.night}
+        swatchRef={props.colorRef}
         onChange={(day) => patch({ color: { day, night: props.color.night } })}
         onDarkChange={(night) => patch({ color: { day: props.color.day, night } })}
+        onPick={(ref, pair) => patch(ref ? { color: pair, colorRef: ref } : { color: pair })}
       />
       <NumericFieldRow
         id={`style-${id}-stroke-width`}
@@ -586,7 +617,7 @@ function TransferStyleEditor({ id, props }: { id: string; props: TransferStylePr
         getCurrent={liveNumberProp(id, 'strokeWidth', props.strokeWidth)}
         textboxAllowAboveMax
       />
-      <DayNightColorRow
+      <PaletteColorRow
         label="Stroke color"
         id={`style-${id}-stroke-color`}
         darkId={`style-${id}-dark-stroke-color`}
@@ -595,8 +626,12 @@ function TransferStyleEditor({ id, props }: { id: string; props: TransferStylePr
         titleNoun="stroke"
         value={props.strokeColor.day}
         darkValue={props.strokeColor.night}
+        swatchRef={props.strokeColorRef}
         onChange={(day) => patch({ strokeColor: { day, night: props.strokeColor.night } })}
         onDarkChange={(night) => patch({ strokeColor: { day: props.strokeColor.day, night } })}
+        onPick={(ref, pair) =>
+          patch(ref ? { strokeColor: pair, strokeColorRef: ref } : { strokeColor: pair })
+        }
       />
       {/* `?? DEFAULT` for a def written before the axis existed — the same
           absent-≡-'under' reading stylePropsEqual applies. */}
@@ -727,6 +762,8 @@ function ColorTypeRow<T extends ColorType>({
   bwTitle,
   pair,
   onPair,
+  swatchRef,
+  onPickSwatch,
   disabled,
 }: {
   label: string;
@@ -739,6 +776,10 @@ function ColorTypeRow<T extends ColorType>({
   bwTitle?: string;
   pair: DayNightColor;
   onPair: (pair: DayNightColor) => void;
+  /** The pair's design-palette link (only meaningful while type === 'color'). */
+  swatchRef?: SwatchRef;
+  /** Write pair + ref together (a swatch pick) or pair-without-ref (Custom). */
+  onPickSwatch: (ref: SwatchRef | null, pair: DayNightColor) => void;
   disabled?: boolean;
 }) {
   const noun = label.toLowerCase();
@@ -761,7 +802,7 @@ function ColorTypeRow<T extends ColorType>({
         </div>
       </div>
       {type === 'color' && (
-        <DayNightColorRow
+        <PaletteColorRow
           label={`${label} color`}
           id={`${idBase}-day`}
           darkId={`${idBase}-night`}
@@ -770,9 +811,11 @@ function ColorTypeRow<T extends ColorType>({
           titleNoun={`${noun} color`}
           value={pair.day}
           darkValue={pair.night}
+          swatchRef={swatchRef}
           disabled={disabled}
           onChange={(day) => onPair({ day, night: pair.night })}
           onDarkChange={(night) => onPair({ day: pair.day, night })}
+          onPick={onPickSwatch}
         />
       )}
     </>
@@ -872,6 +915,8 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
         bwTitle="Black or white, whichever reads on the line"
         pair={fillPair}
         onPair={(fill) => patch({ fill })}
+        swatchRef={p.fillRef}
+        onPickSwatch={(ref, pair) => patch(ref ? { fill: pair, fillRef: ref } : { fill: pair })}
       />
       {isDash ? (
         <div className="style-editor-caption">
@@ -901,6 +946,10 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
             bwTitle="Black or white, whichever reads on the fill"
             pair={strokePair}
             onPair={(strokeColor) => patch({ strokeColor })}
+            swatchRef={p.strokeColorRef}
+            onPickSwatch={(ref, pair) =>
+              patch(ref ? { strokeColor: pair, strokeColorRef: ref } : { strokeColor: pair })
+            }
             disabled={strokeOff}
           />
           <div className={'row' + (strokeOff ? ' disabled' : '')}>
@@ -946,6 +995,14 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
             bwTitle="Black or white, whichever reads on the fill"
             pair={codePair}
             onPair={(serviceCodeColor) => patch({ serviceCodeColor })}
+            swatchRef={p.serviceCodeColorRef}
+            onPickSwatch={(ref, pair) =>
+              patch(
+                ref
+                  ? { serviceCodeColor: pair, serviceCodeColorRef: ref }
+                  : { serviceCodeColor: pair },
+              )
+            }
           />
           {codeType !== 'none' && (
             <div className="row">

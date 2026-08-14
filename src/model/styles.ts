@@ -74,6 +74,7 @@ import {
   TRANSFER_THICKNESS_MIN,
   resolveTransferStyle,
 } from './transferStyle';
+import { isSwatchRef, patchedRef, swatchRefsEqual } from './swatchRef';
 import { dayNightColorsEqual } from './dayNightColor';
 import type {
   DotStyle,
@@ -86,6 +87,7 @@ import type {
   StyleDef,
   StyleKind,
   StylePropsByKind,
+  SwatchRef,
   TextLabelStyleProps,
   TransferStyleProps,
 } from './types';
@@ -148,7 +150,8 @@ export function captureStyleProps<K extends StyleKind>(
         strokeWidth: lineStrokeWidthOf(l),
         strokeColor: lineStrokeColorStored(l),
         // Optional: omitted when unset, so a captured style compares equal to
-        // one that never had the key.
+        // one that never had the key. The swatch ref rides its pair.
+        ...(l.strokeColorRef !== undefined ? { strokeColorRef: l.strokeColorRef } : {}),
         ...(dashLength !== undefined ? { dashLength } : {}),
         ...(dashWidth !== undefined ? { dashWidth } : {}),
         ...(interlineGap !== undefined ? { interlineGap } : {}),
@@ -170,6 +173,7 @@ export function captureStyleProps<K extends StyleKind>(
         width: t.width ?? 0,
         leading: t.leading ?? TEXT_LABEL_LEADING_DEFAULT,
         tracking: t.tracking ?? TEXT_LABEL_TRACKING_DEFAULT,
+        ...(t.colorRef !== undefined ? { colorRef: t.colorRef } : {}),
       } as StylePropsByKind[K];
     }
     case 'polygon': {
@@ -183,6 +187,8 @@ export function captureStyleProps<K extends StyleKind>(
         strokeWidth: p.strokeWidth,
         curveRadius: p.curveRadius ?? 0,
         closed: p.closed !== false,
+        ...(p.fillRef !== undefined ? { fillRef: p.fillRef } : {}),
+        ...(p.strokeRef !== undefined ? { strokeRef: p.strokeRef } : {}),
       } as StylePropsByKind[K];
     }
     case 'routeBullet': {
@@ -193,7 +199,13 @@ export function captureStyleProps<K extends StyleKind>(
     case 'transfer': {
       const t = doc.transfers[itemId];
       if (!t) return null;
-      return resolveTransferStyle(t) as StylePropsByKind[K];
+      // The refs ride BESIDE the resolved five (resolveTransferStyle stays
+      // theme-agnostic and ref-blind on purpose).
+      return {
+        ...resolveTransferStyle(t),
+        ...(t.colorRef !== undefined ? { colorRef: t.colorRef } : {}),
+        ...(t.strokeColorRef !== undefined ? { strokeColorRef: t.strokeColorRef } : {}),
+      } as StylePropsByKind[K];
     }
     case 'station': {
       const s = doc.stations[itemId];
@@ -265,6 +277,49 @@ export const STYLE_FIELDS = {
 // — a def from a save predating those fields must compare equal to one
 // carrying the explicit default, or every legacy wearer reads as overridden
 // on load (the DotStyle strokeAlign trap).
+//
+// The swatch refs FOLD INTO their pair's value halves rather than standing as
+// covered fields of their own: value+provenance are one unit, so a same-hex
+// pair linked to a different swatch reads as overridden, and stamping a value
+// half always carries the pair's ref with it — never a ref alone (which could
+// link a custom-pinned value) or a value alone (which would clobber an
+// aliased wearer's own link). Absent ≡ absent, so ref-less legacy defs stay
+// equal to their wearers.
+const refFolds = (
+  field: string,
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+  pairs: Record<string, string>,
+): boolean => {
+  const refKey = pairs[field];
+  if (refKey === undefined) return true;
+  return swatchRefsEqual(a[refKey] as SwatchRef | undefined, b[refKey] as SwatchRef | undefined);
+};
+
+// The ref-covered pairs per kind: refKey → the value halves it rides. Drives
+// the write rule in updateStyleProps and the ref bundling in stampStyleFields;
+// the fold into equality is spelled per-kind in styleFieldEqual (and
+// dotStylesEqual owns the stopDot fold).
+const STYLE_REF_PAIRS: Partial<
+  Record<StyleKind, readonly (readonly [string, readonly string[]])[]>
+> = {
+  line: [['strokeColorRef', ['strokeColor']]],
+  textLabel: [['colorRef', ['color', 'darkColor']]],
+  polygon: [
+    ['fillRef', ['fill', 'darkFill']],
+    ['strokeRef', ['stroke', 'darkStroke']],
+  ],
+  transfer: [
+    ['colorRef', ['color']],
+    ['strokeColorRef', ['strokeColor']],
+  ],
+  stopDot: [
+    ['fillRef', ['fill']],
+    ['strokeColorRef', ['strokeColor']],
+    ['serviceCodeColorRef', ['serviceCodeColor']],
+  ],
+};
+
 function styleFieldEqual(
   kind: ItemStyleKind,
   field: string,
@@ -273,9 +328,11 @@ function styleFieldEqual(
 ): boolean {
   if (kind === 'line') {
     if (field === 'strokeColor') {
-      return lineStrokeColorsEqual(
-        a.strokeColor as LineStyleProps['strokeColor'],
-        b.strokeColor as LineStyleProps['strokeColor'],
+      return (
+        lineStrokeColorsEqual(
+          a.strokeColor as LineStyleProps['strokeColor'],
+          b.strokeColor as LineStyleProps['strokeColor'],
+        ) && refFolds(field, a, b, { strokeColor: 'strokeColorRef' })
       );
     }
     if (field === 'labelGap') {
@@ -287,16 +344,28 @@ function styleFieldEqual(
   }
   if (kind === 'transfer') {
     if (field === 'color' || field === 'strokeColor') {
-      return dayNightColorsEqual(
-        a[field] as TransferStyleProps['color'],
-        b[field] as TransferStyleProps['color'],
+      return (
+        dayNightColorsEqual(
+          a[field] as TransferStyleProps['color'],
+          b[field] as TransferStyleProps['color'],
+        ) && refFolds(field, a, b, { color: 'colorRef', strokeColor: 'strokeColorRef' })
       );
     }
     if (field === 'draw') {
       return (a.draw ?? TRANSFER_DRAW_DEFAULT) === (b.draw ?? TRANSFER_DRAW_DEFAULT);
     }
   }
+  if (kind === 'polygon') {
+    const folds = refFolds(field, a, b, {
+      fill: 'fillRef',
+      darkFill: 'fillRef',
+      stroke: 'strokeRef',
+      darkStroke: 'strokeRef',
+    });
+    if (!folds) return false;
+  }
   if (kind === 'textLabel') {
+    if (!refFolds(field, a, b, { color: 'colorRef', darkColor: 'colorRef' })) return false;
     // Absent ≡ auto/neutral: a def from a save predating layout coverage
     // must compare equal to one carrying the explicit defaults, or every
     // wearer reads as overridden before the average backfill lands.
@@ -397,6 +466,11 @@ export function canonicalStyleProps<K extends StyleKind>(
         // Lowercased but NOT collapsed: style props are concrete, so a def
         // spells out the white default rather than dropping it.
         strokeColor: normalizedStrokeColor(p.strokeColor),
+        // The ref rides only while the casing is a real pair — never beside
+        // the 'line' sentinel, which is not a linkable pair.
+        ...(isSwatchRef(p.strokeColorRef) && typeof p.strokeColor === 'object'
+          ? { strokeColorRef: p.strokeColorRef }
+          : {}),
         ...(dashLength !== undefined ? { dashLength } : {}),
         ...(dashWidth !== undefined ? { dashWidth } : {}),
         ...(interlineGap !== undefined ? { interlineGap } : {}),
@@ -422,6 +496,7 @@ export function canonicalStyleProps<K extends StyleKind>(
         ...(width !== undefined ? { width } : {}),
         ...(leading !== undefined ? { leading } : {}),
         ...(tracking !== undefined ? { tracking } : {}),
+        ...(isSwatchRef(p.colorRef) ? { colorRef: p.colorRef } : {}),
       } as StylePropsByKind[K];
     }
     case 'polygon': {
@@ -434,6 +509,8 @@ export function canonicalStyleProps<K extends StyleKind>(
         strokeWidth: clampField(p.strokeWidth, POLYGON_STROKE_WIDTH_MIN),
         curveRadius: Math.max(POLYGON_CURVE_RADIUS_MIN, p.curveRadius),
         closed: p.closed,
+        ...(isSwatchRef(p.fillRef) ? { fillRef: p.fillRef } : {}),
+        ...(isSwatchRef(p.strokeRef) ? { strokeRef: p.strokeRef } : {}),
       } as StylePropsByKind[K];
     }
     case 'routeBullet': {
@@ -450,6 +527,8 @@ export function canonicalStyleProps<K extends StyleKind>(
         // `?? DEFAULT` heals defs written before the draw axis existed — the
         // keep-canonical-props-concrete backstop, same as line's curveRadius.
         draw: p.draw ?? TRANSFER_DRAW_DEFAULT,
+        ...(isSwatchRef(p.colorRef) ? { colorRef: p.colorRef } : {}),
+        ...(isSwatchRef(p.strokeColorRef) ? { strokeColorRef: p.strokeColorRef } : {}),
       } as StylePropsByKind[K];
     }
     case 'station': {
@@ -497,7 +576,8 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
       next = setLineCurveRadius(next, itemId, p.curveRadius);
       next = setLineEndStyle(next, itemId, p.endStyle);
       next = setLineStrokeWidth(next, itemId, p.strokeWidth);
-      next = setLineStrokeColor(next, itemId, p.strokeColor);
+      // Value + ref in one call (the write rule): a ref-less def detaches.
+      next = setLineStrokeColor(next, itemId, p.strokeColor, p.strokeColorRef);
       // undefined ⇒ 0 ⇒ dropped, so the stamped line derives from its width.
       next = setLineDashLength(next, itemId, p.dashLength ?? 0);
       next = setLineDashWidth(next, itemId, p.dashWidth ?? 0);
@@ -525,6 +605,9 @@ function stampStyle(doc: MapDoc, def: StyleDef, itemId: string): MapDoc {
         width: p.width ?? 0,
         leading: p.leading ?? TEXT_LABEL_LEADING_DEFAULT,
         tracking: p.tracking ?? TEXT_LABEL_TRACKING_DEFAULT,
+        // Present ⇒ the ref rides the pair; absent ⇒ the key stays OUT, so the
+        // patcher's write rule detaches the wearer — following a ref-less def.
+        ...(p.colorRef !== undefined ? { colorRef: p.colorRef } : {}),
       });
       break;
     }
@@ -600,7 +683,10 @@ function stampStyleFields(
           next = setLineStrokeWidth(next, itemId, p.strokeWidth);
           break;
         case 'strokeColor':
-          next = setLineStrokeColor(next, itemId, p.strokeColor);
+          // The ref rides its pair (folded equality guarantees a stamped pair
+          // matched the PRE-edit def ref-and-all, so following means taking
+          // the new def's ref too — or its detachment).
+          next = setLineStrokeColor(next, itemId, p.strokeColor, p.strokeColorRef);
           break;
         // undefined ⇒ 0 ⇒ dropped, so the stamped line derives from its width.
         case 'dashLength':
@@ -627,6 +713,15 @@ function stampStyleFields(
   const props = def.props as unknown as Record<string, unknown>;
   const patch: Record<string, unknown> = {};
   for (const f of fields) patch[f] = props[f];
+  // Bundle each stamped pair's swatch ref (present ⇒ ride along; absent ⇒
+  // leave the key out so the patcher's write rule detaches — following a
+  // ref-less def). The folded equality means a pair only reaches the stamp
+  // list when the wearer matched the PRE-edit def ref-and-all.
+  for (const [refKey, valueKeys] of STYLE_REF_PAIRS[def.kind] ?? []) {
+    if (valueKeys.some((k) => k in patch) && props[refKey] !== undefined) {
+      patch[refKey] = props[refKey];
+    }
+  }
   switch (def.kind) {
     case 'textLabel':
       return updateTextLabel(next, itemId, patch);
@@ -809,10 +904,26 @@ export type StylePropsPatch =
 export function updateStyleProps(doc: MapDoc, styleId: string, patch: StylePropsPatch): MapDoc {
   const def = doc.styles[styleId];
   if (!def) return doc;
-  const merged = canonicalStyleProps(def.kind, {
-    ...def.props,
-    ...patch,
-  } as StylePropsByKind[typeof def.kind]);
+  // The swatch-ref write rule stands on def edits too — every StyleEditor
+  // color write lands here, never in an item patcher. A patch touching a
+  // pair's value half without its ref key detaches the DEF's ref (the merge
+  // below would otherwise carry it stale beside the new color).
+  const mergedRaw = { ...def.props, ...patch } as unknown as Record<string, unknown>;
+  const oldProps = def.props as unknown as Record<string, unknown>;
+  for (const [refKey, valueKeys] of STYLE_REF_PAIRS[def.kind] ?? []) {
+    const kept = patchedRef(
+      patch as Record<string, unknown>,
+      valueKeys,
+      refKey,
+      oldProps[refKey] as SwatchRef | undefined,
+    );
+    if (kept === undefined) delete mergedRaw[refKey];
+    else mergedRaw[refKey] = kept;
+  }
+  const merged = canonicalStyleProps(
+    def.kind,
+    mergedRaw as unknown as StylePropsByKind[typeof def.kind],
+  );
   if (stylePropsEqual(def.kind, merged, def.props)) return doc;
   const nextDef = { id: def.id, name: def.name, kind: def.kind, props: merged } as StyleDef;
   // Snapshot every wearer's override set against the PRE-EDIT doc and old

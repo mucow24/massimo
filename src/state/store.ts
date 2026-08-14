@@ -26,6 +26,7 @@ import type {
   StyleKind,
   SvgImage,
   SvgImageStylePatch,
+  SwatchRef,
   TextLabel,
   TextLabelWeight,
   TransferEnd,
@@ -835,7 +836,7 @@ interface DocState extends MapDoc {
   setLineEndStyle: (lineId: LineId, end: LineEndStyle) => void;
   setStationEndStyle: (lineId: LineId, stationId: StationId, end: LineEndStyle) => void;
   setLineStrokeWidth: (lineId: LineId, w: number) => void;
-  setLineStrokeColor: (lineId: LineId, c: LineStrokeColor) => void;
+  setLineStrokeColor: (lineId: LineId, c: LineStrokeColor, ref?: SwatchRef) => void;
   setLineDashLength: (lineId: LineId, v: number) => void;
   setLineDashWidth: (lineId: LineId, v: number) => void;
   deleteLine: (id: LineId) => void;
@@ -1168,7 +1169,8 @@ export const useDoc = create<DocState>()(
         setStationEndStyle: (lineId, stationId, end) =>
           set(withRegionReconcile((s) => T.setStationEndStyle(s, lineId, stationId, end))),
         setLineStrokeWidth: (lineId, w) => set((s) => T.setLineStrokeWidth(s, lineId, w)),
-        setLineStrokeColor: (lineId, c) => set((s) => T.setLineStrokeColor(s, lineId, c)),
+        setLineStrokeColor: (lineId, c, ref) =>
+          set((s) => T.setLineStrokeColor(s, lineId, c, ref)),
         setLineDashLength: (lineId, v) => set((s) => T.setLineDashLength(s, lineId, v)),
         setLineDashWidth: (lineId, v) => set((s) => T.setLineDashWidth(s, lineId, v)),
         deleteLine: (id) => set(withRegionReconcile((s) => T.deleteLine(s, id))),

@@ -30,7 +30,7 @@ import {
   TEXT_LABEL_WIDTH_MAX,
 } from '../model/transforms';
 import { useFieldHistory } from './useFieldHistory';
-import { DayNightColorRow } from './DayNightColorRow';
+import { PaletteColorRow } from './PaletteColorRow';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
 import { SegmentedToggle } from './SegmentedToggle';
@@ -146,7 +146,7 @@ export function TextLabelPopover({ label, hostW, onClose }: Props) {
         disabled={locked}
       />
       <hr className="popover-divider" aria-hidden="true" />
-      <DayNightColorRow
+      <PaletteColorRow
         label="Color"
         id={`label-color-${label.id}`}
         darkId={`label-dark-color-${label.id}`}
@@ -155,9 +155,18 @@ export function TextLabelPopover({ label, hostW, onClose }: Props) {
         titleNoun="color"
         value={label.color}
         darkValue={label.darkColor}
+        swatchRef={label.colorRef}
         disabled={locked}
         onChange={setColor}
         onDarkChange={setDarkColor}
+        onPick={(ref, pair) =>
+          updateTextLabel(
+            label.id,
+            ref
+              ? { color: pair.day, darkColor: pair.night, colorRef: ref }
+              : { color: pair.day, darkColor: pair.night },
+          )
+        }
         dot={
           <OverrideDot
             kind="textLabel"

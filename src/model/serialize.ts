@@ -92,7 +92,7 @@ import {
   PALETTES,
   type Palette,
 } from './palettes';
-import { lineColorRefFor } from './swatchRef';
+import { isSwatchRef, lineColorRefFor } from './swatchRef';
 import { isAllowedImageHref } from './svgImport';
 import type {
   AlignmentGuide,
@@ -129,6 +129,7 @@ import type {
   StyleDef,
   StyleKind,
   SvgImage,
+  SwatchRef,
   TextLabel,
   TextLabelStyleProps,
   TextLabelAlign,
@@ -1805,6 +1806,16 @@ function sanitizeDotStyle(raw: unknown): DotStyle | undefined {
   // the (absent) off state, so a garbage value degrades to the whole code
   // rather than invalidating the style.
   if (o.serviceCodeFirstLetterOnly === true) out.serviceCodeFirstLetterOnly = true;
+  // Swatch refs: shape-gated, and kept only beside a real pair (the same
+  // pair-only rule canonicalDotStyle applies); a dangling one is dropped by
+  // the ref reconcile pass at the end of parse().
+  if (isSwatchRef(o.fillRef) && typeof fill === 'object') out.fillRef = o.fillRef;
+  if (isSwatchRef(o.strokeColorRef) && typeof strokeColor === 'object') {
+    out.strokeColorRef = o.strokeColorRef;
+  }
+  if (isSwatchRef(o.serviceCodeColorRef) && typeof serviceCodeColor === 'object') {
+    out.serviceCodeColorRef = o.serviceCodeColorRef;
+  }
   return out;
 }
 
@@ -2968,7 +2979,9 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       // rebuilds rather than spreading, so an optional that arrives undefined
       // comes back a missing key — see its test. Re-spelling the omission here
       // would be a second copy of a rule the funnel already owns, and one a
-      // seventh optional field could be added to only one of.
+      // seventh optional field could be added to only one of. The swatch ref
+      // rides the same way (canonicalStyleProps gates its shape and the
+      // pair-only rule; a dangling one is dropped by the ref reconcile pass).
       return canonicalStyleProps('line', {
         singletonDotStyleId,
         multiDotStyleId,
@@ -2979,6 +2992,7 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
         endStyle,
         strokeWidth,
         strokeColor,
+        strokeColorRef: o.strokeColorRef as SwatchRef | undefined,
         dashLength,
         dashWidth,
         interlineGap,
@@ -3016,6 +3030,7 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
         ...(width !== undefined ? { width } : {}),
         ...(leading !== undefined ? { leading } : {}),
         ...(tracking !== undefined ? { tracking } : {}),
+        colorRef: o.colorRef as SwatchRef | undefined,
       });
     }
     case 'polygon': {
@@ -3038,6 +3053,8 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
         strokeWidth,
         curveRadius,
         closed,
+        fillRef: o.fillRef as SwatchRef | undefined,
+        strokeRef: o.strokeRef as SwatchRef | undefined,
       });
     }
     case 'routeBullet': {
@@ -3057,7 +3074,15 @@ function sanitizeStyleProps(kind: StyleKind, raw: unknown): StyleDef['props'] | 
       // value heals to 'under' rather than invalidating the whole def (same
       // treatment as DotStyle's strokeAlign).
       const draw = isTransferDrawOrder(o.draw) ? o.draw : TRANSFER_DRAW_DEFAULT;
-      return canonicalStyleProps('transfer', { thickness, color, strokeWidth, strokeColor, draw });
+      return canonicalStyleProps('transfer', {
+        thickness,
+        color,
+        strokeWidth,
+        strokeColor,
+        draw,
+        colorRef: o.colorRef as SwatchRef | undefined,
+        strokeColorRef: o.strokeColorRef as SwatchRef | undefined,
+      });
     }
     case 'station': {
       // All five typography fields are required in a style def (concrete, even

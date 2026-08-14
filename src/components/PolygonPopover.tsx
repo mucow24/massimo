@@ -4,7 +4,7 @@ import { usePinnedPopover } from './canvas/usePinnedPopover';
 import { LayerOrderRow } from './LayerOrderRow';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
-import { DayNightColorRow } from './DayNightColorRow';
+import { PaletteColorRow } from './PaletteColorRow';
 import { StyleRow } from './StyleRow';
 import { OverrideDot } from './OverrideDot';
 import {
@@ -77,7 +77,7 @@ export function PolygonPopover({ polygon, hostW, onClose }: Props) {
         disabled={locked}
       />
       <hr className="popover-divider" aria-hidden="true" />
-      <DayNightColorRow
+      <PaletteColorRow
         label="Fill color"
         id="polygon-fill"
         darkId="polygon-dark-fill"
@@ -86,9 +86,18 @@ export function PolygonPopover({ polygon, hostW, onClose }: Props) {
         titleNoun="fill"
         value={polygon.fill}
         darkValue={darkFill}
+        swatchRef={polygon.fillRef}
         disabled={locked || !closed}
         onChange={onFill}
         onDarkChange={onDarkFill}
+        onPick={(ref, pair) =>
+          updatePolygon(
+            polygon.id,
+            ref
+              ? { fill: pair.day, darkFill: pair.night, fillRef: ref }
+              : { fill: pair.day, darkFill: pair.night },
+          )
+        }
         dot={
           <OverrideDot
             kind="polygon"
@@ -100,7 +109,7 @@ export function PolygonPopover({ polygon, hostW, onClose }: Props) {
         }
       />
       <hr className="popover-divider" aria-hidden="true" />
-      <DayNightColorRow
+      <PaletteColorRow
         label="Stroke color"
         id="polygon-stroke"
         darkId="polygon-dark-stroke"
@@ -109,9 +118,18 @@ export function PolygonPopover({ polygon, hostW, onClose }: Props) {
         titleNoun="stroke"
         value={polygon.stroke}
         darkValue={darkStroke}
+        swatchRef={polygon.strokeRef}
         disabled={locked}
         onChange={onStroke}
         onDarkChange={onDarkStroke}
+        onPick={(ref, pair) =>
+          updatePolygon(
+            polygon.id,
+            ref
+              ? { stroke: pair.day, darkStroke: pair.night, strokeRef: ref }
+              : { stroke: pair.day, darkStroke: pair.night },
+          )
+        }
         dot={
           <OverrideDot
             kind="polygon"
