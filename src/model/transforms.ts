@@ -102,7 +102,13 @@ import { measureTextLabel } from '../geometry/textMeasure';
 import { isBulletCode } from '../geometry/labelTokens';
 import type { LabelStyle } from '../geometry/labelLayout';
 import { add, dot, eq, leftNormal, len, norm, rotateAround, sub, type Vec2 } from '../geometry/vec';
-import { copyPalette, paletteContentEqual, PALETTES, type Palette } from './palettes';
+import {
+  copyPalette,
+  paletteContentEqual,
+  PALETTES,
+  recolorSwatch,
+  type Palette,
+} from './palettes';
 import { normalizeHex } from '../util/color';
 import type {
   AlignmentGuide,
@@ -3006,34 +3012,53 @@ export function renameMapPalette(doc: MapDoc, from: string, to: string): MapDoc 
 }
 
 /**
- * Recolor one swatch of a map palette AND repaint every line wearing the old
- * color — matched via `normalizeHex`, the same equivalence the picker's
- * selected-swatch ring uses, so "the lines using that palette color" follow it
- * to the new value in the same doc write (one undo entry). The recolored
- * swatch drops any stored night (the editor writes day == night).
+ * Recolor one half of one swatch of a map palette, and take the wearers along
+ * in the same doc write (one undo entry).
+ *
+ * A LINE palette edits its day half only (there is no night UI for line
+ * identities): the recolored swatch drops any stored night, and every line
+ * wearing the old color — matched via `normalizeHex`, the same equivalence
+ * the picker's selected-swatch ring uses — follows to the new value.
+ *
+ * A DESIGN palette edits either half independently: a day recolor keeps the
+ * stored night, a night recolor stores its half collapsed (`night` is kept
+ * only when it differs from `color`), and lines never repaint — design
+ * swatches are decoration colors, not line identities.
  */
 export function recolorMapPaletteColor(
   doc: MapDoc,
   name: string,
   index: number,
   color: string,
+  half: 'day' | 'night' = 'day',
 ): MapDoc {
   const pi = doc.palettes.findIndex((p) => p.name === name);
   if (pi < 0) return doc;
-  const swatch = doc.palettes[pi].swatches[index];
-  if (!swatch) return doc;
-  const prev = normalizeHex(swatch.color);
+  const palette = doc.palettes[pi];
+  const design = palette.kind === 'design';
+  const swatch = palette.swatches[index];
+  if (!swatch || (half === 'night' && !design)) return doc;
   const next = normalizeHex(color);
-  if (next === prev && swatch.night === undefined) return doc;
+  if (half === 'night') {
+    if (next === normalizeHex(swatch.night ?? swatch.color)) return doc;
+  } else if (design) {
+    if (next === normalizeHex(swatch.color)) return doc;
+  } else if (next === normalizeHex(swatch.color) && swatch.night === undefined) {
+    return doc;
+  }
+  const recolored = recolorSwatch(swatch, color, half, design);
   const palettes = doc.palettes.slice();
-  const swatches = palettes[pi].swatches.slice();
-  swatches[index] = { name: swatch.name, color: next };
-  palettes[pi] = { ...palettes[pi], swatches };
+  const swatches = palette.swatches.slice();
+  swatches[index] = recolored;
+  palettes[pi] = { ...palette, swatches };
   let lines = doc.lines;
-  for (const [id, line] of Object.entries(doc.lines)) {
-    if (normalizeHex(line.color) !== prev) continue;
-    if (lines === doc.lines) lines = { ...doc.lines };
-    lines[id] = { ...line, color: next };
+  if (!design) {
+    const prev = normalizeHex(swatch.color);
+    for (const [id, line] of Object.entries(doc.lines)) {
+      if (normalizeHex(line.color) !== prev) continue;
+      if (lines === doc.lines) lines = { ...doc.lines };
+      lines[id] = { ...line, color: next };
+    }
   }
   return { ...doc, palettes, lines };
 }

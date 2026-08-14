@@ -191,6 +191,27 @@ describe('parse — the map’s palettes', () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.doc.palettes).toEqual([good]);
   });
+
+  it('keeps kind: design and collapses any other kind away', () => {
+    const sw = [{ name: '1', color: '#111111' }];
+    const r = parse(
+      fileWith([
+        { name: 'a', kind: 'design', swatches: sw },
+        { name: 'b', kind: 'line', swatches: sw },
+        { name: 'c', kind: 'nope', swatches: sw },
+        { name: 'd', kind: 7, swatches: sw },
+      ]),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.doc.palettes).toEqual([
+        { name: 'a', kind: 'design', swatches: sw },
+        { name: 'b', swatches: sw },
+        { name: 'c', swatches: sw },
+        { name: 'd', swatches: sw },
+      ]);
+    }
+  });
 });
 
 describe('parse — legacy activePalettes', () => {

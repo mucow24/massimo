@@ -31,6 +31,15 @@ const FRRF: Palette = {
   ],
 };
 
+const DESIGN: Palette = {
+  name: 'Design grays',
+  kind: 'design',
+  swatches: [
+    { name: 'Border', color: '#333333', night: '#bbbbbb' },
+    { name: 'Wash', color: '#eeeeee' },
+  ],
+};
+
 describe('PALETTES catalog', () => {
   // Names are the library's key — a duplicate would make one of the two
   // unreachable, and `BUILTIN_PALETTE_NAMES` would silently under-count.
@@ -92,6 +101,13 @@ describe('paletteContentEqual', () => {
   it('a differing swatch count breaks equality', () => {
     expect(paletteContentEqual(base, { ...base, swatches: [base.swatches[0]] })).toBe(false);
   });
+
+  it('a differing kind breaks equality — a design palette is not its line twin', () => {
+    expect(paletteContentEqual(base, { ...base, kind: 'design' })).toBe(false);
+    expect(paletteContentEqual({ ...base, kind: 'design' }, { ...base, kind: 'design' })).toBe(
+      true,
+    );
+  });
 });
 
 describe('copyPalette', () => {
@@ -114,6 +130,11 @@ describe('copyPalette', () => {
 
   it('omits the description key entirely when absent', () => {
     expect('description' in copyPalette(FRRF)).toBe(false);
+  });
+
+  it('carries the design kind, and omits the key when absent', () => {
+    expect(copyPalette(DESIGN)).toEqual(DESIGN);
+    expect('kind' in copyPalette(FRRF)).toBe(false);
   });
 });
 
@@ -215,6 +236,13 @@ describe('cyclingColors', () => {
     expect(colors.slice(0, 2)).toEqual(['#c1272d', '#0061a8']);
     expect(colors).toHaveLength(2 + 11);
   });
+
+  // Design palettes hold decoration colors (borders, washes), not line
+  // identities — the auto-color cycle never deals them out.
+  it('skips design palettes', () => {
+    expect(cyclingColors([DESIGN, FRRF])).toEqual(cyclingColors([FRRF]));
+    expect(cyclingColors([DESIGN])).toEqual([]);
+  });
 });
 
 describe('customLineColors', () => {
@@ -253,5 +281,11 @@ describe('customLineColors', () => {
     expect(customLineColors(['#c1272d'], [MTA, FRRF])).toEqual([]);
     // …and with frrf removed from the map, that color is custom again.
     expect(customLineColors(['#c1272d'], inMap)).toEqual(['#c1272d']);
+  });
+
+  // Only LINE palettes cover line colors: a line sitting on a design swatch's
+  // hex is a hand-picked custom color as far as the line picker is concerned.
+  it('ignores design palettes when deciding what is custom', () => {
+    expect(customLineColors(['#333333'], [MTA, DESIGN])).toEqual(['#333333']);
   });
 });

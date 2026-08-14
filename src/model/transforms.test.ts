@@ -2000,6 +2000,13 @@ describe('the map’s palettes', () => {
     expect(T.addPaletteToMap(doc, described)).toBe(doc);
   });
 
+  it('a kind-only change is a real upsert, not a no-op', () => {
+    const doc = T.addPaletteToMap(makeDoc({}), FRRF);
+    const next = T.addPaletteToMap(doc, { ...FRRF, kind: 'design' });
+    expect(next).not.toBe(doc);
+    expect(next.palettes.find((p) => p.name === 'frrf')?.kind).toBe('design');
+  });
+
   describe('recolorMapPaletteColor', () => {
     // Line A wears swatch 0's color in a different spelling — the repaint must
     // match the way the picker does (normalizeHex), not by string equality.
@@ -2048,6 +2055,45 @@ describe('the map’s palettes', () => {
       });
       doc = T.recolorMapPaletteColor(doc, 'frrf', 0, '#C1272D');
       expect(doc.palettes[1].swatches[0]).toEqual({ name: '1', color: '#c1272d' });
+    });
+
+    describe('design palettes', () => {
+      const withDesign = (night?: string) =>
+        T.addPaletteToMap(
+          makeDoc({ lines: [makeLine({ id: 'A', color: '#333333' })] }),
+          {
+            name: 'Design grays',
+            kind: 'design',
+            swatches: [{ name: 'Border', color: '#333333', ...(night && { night }) }],
+          },
+        );
+
+      it('a day recolor keeps the stored night — design halves edit independently', () => {
+        const doc = T.recolorMapPaletteColor(withDesign('#bbbbbb'), 'Design grays', 0, '#444444');
+        expect(doc.palettes[1].swatches[0]).toEqual({
+          name: 'Border',
+          color: '#444444',
+          night: '#bbbbbb',
+        });
+      });
+
+      it('a night recolor stores the night half, collapsed when it equals day', () => {
+        let doc = T.recolorMapPaletteColor(withDesign(), 'Design grays', 0, '#bbbbbb', 'night');
+        expect(doc.palettes[1].swatches[0]).toEqual({
+          name: 'Border',
+          color: '#333333',
+          night: '#bbbbbb',
+        });
+        doc = T.recolorMapPaletteColor(doc, 'Design grays', 0, '#333333', 'night');
+        expect(doc.palettes[1].swatches[0]).toEqual({ name: 'Border', color: '#333333' });
+      });
+
+      it('never repaints lines — design swatches are not line identities', () => {
+        // Line A sits on the same hex as the design swatch; a design recolor
+        // must leave it alone (the value sweep is a LINE-palette behavior).
+        const doc = T.recolorMapPaletteColor(withDesign(), 'Design grays', 0, '#00ff00');
+        expect(doc.lines.A.color).toBe('#333333');
+      });
     });
   });
 

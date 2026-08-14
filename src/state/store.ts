@@ -992,9 +992,11 @@ interface DocState extends MapDoc {
   addPaletteToMap: (palette: Palette) => void;
   removePaletteFromMap: (name: string) => void;
   renameMapPalette: (from: string, to: string) => void;
-  /** Recolor one swatch of a map palette, repainting the lines wearing the
-   *  old color in the same write — the palette editor's recolor gesture. */
-  recolorMapPaletteColor: (name: string, index: number, color: string) => void;
+  /** Recolor one half of one swatch of a map palette — the palette editors'
+   *  recolor gesture. A line palette repaints the lines wearing the old color
+   *  in the same write; a design palette edits its day/night halves
+   *  independently and repaints nothing. */
+  recolorMapPaletteColor: (name: string, index: number, color: string, half?: 'day' | 'night') => void;
   /** Move a palette from one slot to another in the map's list — the order
    *  the picker's sections and the `addLine` color cycle follow. */
   reorderMapPalette: (from: number, to: number) => void;
@@ -1488,8 +1490,8 @@ export const useDoc = create<DocState>()(
         addPaletteToMap: (palette) => set((s) => T.addPaletteToMap(s, palette)),
         removePaletteFromMap: (name) => set((s) => T.removePaletteFromMap(s, name)),
         renameMapPalette: (from, to) => set((s) => T.renameMapPalette(s, from, to)),
-        recolorMapPaletteColor: (name, index, color) =>
-          set((s) => T.recolorMapPaletteColor(s, name, index, color)),
+        recolorMapPaletteColor: (name, index, color, half) =>
+          set((s) => T.recolorMapPaletteColor(s, name, index, color, half)),
         reorderMapPalette: (from, to) => set((s) => T.reorderMapPalette(s, from, to)),
         setDarkMode: (darkMode) => set((s) => T.setDarkMode(s, darkMode)),
         clearAll: () => set((s) => T.clearAll(s)),

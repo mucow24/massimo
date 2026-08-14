@@ -454,7 +454,7 @@ export function sanitizePalettes(value: unknown): Palette[] {
   const out: Palette[] = [];
   for (const raw of value) {
     if (!raw || typeof raw !== 'object') continue;
-    const p = raw as { name?: unknown; swatches?: unknown; description?: unknown };
+    const p = raw as { name?: unknown; swatches?: unknown; description?: unknown; kind?: unknown };
     if (typeof p.name !== 'string' || !p.name || seen.has(p.name)) continue;
     if (!Array.isArray(p.swatches)) continue;
     const swatches = p.swatches
@@ -475,6 +475,9 @@ export function sanitizePalettes(value: unknown): Palette[] {
         p.description.trim() !== '' && {
           description: p.description,
         }),
+      // `kind` is stored only when 'design' — the same collapse rule the
+      // palette type documents; anything else means a line palette.
+      ...(p.kind === 'design' && { kind: 'design' as const }),
     });
   }
   return out;

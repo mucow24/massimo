@@ -1,10 +1,15 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Cross2Icon, DragHandleDots2Icon, PlusIcon } from '@radix-ui/react-icons';
+import { Cross2Icon, DragHandleDots2Icon, MoonIcon, PlusIcon, SunIcon } from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { useCustomLineColors } from '../state/customLineColors';
 import { useCustomPalettes } from '../state/customPalettes';
-import { FALLBACK_LINE_COLOR, type Palette, type PaletteSwatch } from '../model/palettes';
+import {
+  FALLBACK_LINE_COLOR,
+  recolorSwatch,
+  type Palette,
+  type PaletteSwatch,
+} from '../model/palettes';
 import { legibleTextOn, normalizeHex } from '../util/color';
 import { ColorField } from './ColorField';
 import { MenuItem, SubMenu } from './Menu';
@@ -230,16 +235,16 @@ export function PaletteEditor({
     withSwatches(swatches.map((s, j) => (j === i ? { ...s, name: next } : s)));
   };
 
-  // Day == night: the recolored swatch is rebuilt without its night color. A
-  // MAP recolor goes through the transform that also repaints the lines
-  // wearing the old color — that's what makes the map follow a picker drag
-  // live. A library palette has no lines to take along.
-  const recolor = (i: number, c: string) =>
+  // A MAP recolor goes through the transform so the map follows a picker drag
+  // live (a LINE palette repaints the lines wearing the old color in the same
+  // write); a library palette has no map to take along, so it rebuilds the
+  // swatch by the same shared rules. Line palettes write day == night (the
+  // rebuilt swatch drops its night); design palettes edit either half.
+  const design = palette.kind === 'design';
+  const recolor = (i: number, c: string, half: 'day' | 'night' = 'day') =>
     source === 'map'
-      ? recolorMapPaletteColor(palette.name, i, c)
-      : withSwatches(
-          swatches.map((s, j) => (j === i ? { name: s.name, color: normalizeHex(c) } : s)),
-        );
+      ? recolorMapPaletteColor(palette.name, i, c, half)
+      : withSwatches(swatches.map((s, j) => (j === i ? recolorSwatch(s, c, half, design) : s)));
 
   const addColor = (color: string = FALLBACK_LINE_COLOR) =>
     withSwatches([...swatches, { name: String(swatches.length + 1), color: normalizeHex(color) }]);
@@ -346,12 +351,33 @@ export function PaletteEditor({
             >
               {i + 1}
             </span>
-            <ColorField
-              value={s.color}
-              onChange={(c) => recolor(i, c)}
-              ariaLabel={`Color ${i + 1}`}
-              title="Edit color"
-            />
+            {design ? (
+              // A design swatch is a day/night pair — the same sun-then-moon
+              // vocabulary every themed-color row speaks (DayNightColorRow).
+              <>
+                <SunIcon aria-hidden="true" />
+                <ColorField
+                  value={s.color}
+                  onChange={(c) => recolor(i, c)}
+                  ariaLabel={`Color ${i + 1}`}
+                  title="Light mode color"
+                />
+                <MoonIcon aria-hidden="true" />
+                <ColorField
+                  value={s.night ?? s.color}
+                  onChange={(c) => recolor(i, c, 'night')}
+                  ariaLabel={`Dark mode color ${i + 1}`}
+                  title="Dark mode color"
+                />
+              </>
+            ) : (
+              <ColorField
+                value={s.color}
+                onChange={(c) => recolor(i, c)}
+                ariaLabel={`Color ${i + 1}`}
+                title="Edit color"
+              />
+            )}
             <EditableText
               tag="span"
               className="palette-color-name"

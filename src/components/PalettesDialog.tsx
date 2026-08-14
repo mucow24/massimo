@@ -81,6 +81,10 @@ function Strip({ palette }: { palette: Palette }) {
   );
 }
 
+/** A quiet "design" tag after the palette's name — line palettes go unmarked. */
+const KindBadge = ({ palette }: { palette: Palette }) =>
+  palette.kind === 'design' ? <span className="palette-kind-badge">design</span> : null;
+
 /** A star as it appears in the map library: state first, command on approach. */
 function StarToggle({
   name,
@@ -247,6 +251,7 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
       name: result.name,
       swatches: result.swatches,
       ...(result.description !== undefined && { description: result.description }),
+      ...(result.kind !== undefined && { kind: result.kind }),
     };
     // A load is the one place a name collision can't be shown before the fact —
     // the name arrives with the file, and it lands in BOTH destinations. So it
@@ -386,15 +391,16 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
    * colors, so this one lands in the map alone, provisionally, and reaches the
    * library the ordinary way once the editor has given it something to hold.
    */
-  const createNew = (colors: readonly string[]) => {
+  const createNew = (colors: readonly string[], kind?: 'design') => {
     const taken = new Set<string>([
       ...BUILTIN_PALETTE_NAMES,
       ...custom.map((p) => p.name),
       ...mapPalettes.map((p) => p.name),
     ]);
     const palette: Palette = {
-      name: freshPaletteName(taken),
+      name: freshPaletteName(taken, kind === 'design' ? 'New design palette' : undefined),
       swatches: swatchesFromColors(colors),
+      ...(kind !== undefined && { kind }),
     };
     // Never gated here: the library refuses a palette with no colors on its
     // own, so a from-empty mint lands in the map alone by that refusal rather
@@ -511,17 +517,25 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                   <div className="dialog-colhead">
                     <h3>Library</h3>
                     <div className="dialog-colhead-controls">
-                      {/* One thing to mint from — an empty palette — so this
-                        is a button, not a menu holding a single item. The map's
-                        custom colors are seeded from the row that holds them,
-                        where they can be seen. */}
+                      {/* Two things to mint from empty — one per palette kind —
+                        so these are two buttons, not a menu. The map's custom
+                        colors are seeded from the row that holds them, where
+                        they can be seen. */}
                       <button
                         type="button"
                         className="dialog-colhead-btn"
-                        title="Create an empty palette in this map"
+                        title="Create an empty line palette in this map"
                         onClick={() => createNew([])}
                       >
-                        New…
+                        New line…
+                      </button>
+                      <button
+                        type="button"
+                        className="dialog-colhead-btn"
+                        title="Create an empty design palette in this map — day/night decoration colors"
+                        onClick={() => createNew([], 'design')}
+                      >
+                        New design…
                       </button>
                       <button
                         type="button"
@@ -567,7 +581,10 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                             onToggle={() => setStarred(p.name, !p.starred)}
                           />
                           <div className="dialog-row-body">
-                            <strong>{p.name}</strong>
+                            <strong>
+                              {p.name}
+                              <KindBadge palette={p} />
+                            </strong>
                             <Strip palette={p} />
                           </div>
                           <div className="dialog-row-actions">
@@ -717,7 +734,10 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                             </IconButton>
                           )}
                           <div className="dialog-row-body">
-                            <strong>{p.name}</strong>
+                            <strong>
+                              {p.name}
+                              <KindBadge palette={p} />
+                            </strong>
                             <Strip palette={p} />
                           </div>
                           <div className="dialog-row-actions">

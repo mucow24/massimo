@@ -2952,6 +2952,19 @@ button.dialog-sort {
    3-color palette and a 19-color one both read as one band. The 2px gap is what
    keeps two near-identical neighbours from reading as one wide swatch — a
    hairline border round each would be too much ink at this height. */
+/* The quiet "design" tag after a design palette's name in the manager rows —
+   the kind is load-bearing (it decides which pickers offer the swatches), so
+   it reads as a label, not decoration. */
+.palette-kind-badge {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  vertical-align: 1px;
+}
 .palette-strip {
   display: flex;
   gap: 2px;
@@ -3170,6 +3183,13 @@ button.dialog-sort {
   height: 40px;
   padding: 0 12px;
   border-bottom: 1px solid var(--border-soft);
+}
+/* A design row's sun/moon glyphs — the same muted markers DayNightColorRow
+   puts before its two swatches. */
+.palette-editor-row > svg {
+  color: var(--text-muted);
+  flex: none;
+  margin-right: -4px;
 }
 /* Rows slide aside only WHILE a drag is live — on the drop the class leaves
    with the transforms, so the reordered list snaps into place in one go

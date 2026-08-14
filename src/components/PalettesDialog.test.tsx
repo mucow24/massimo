@@ -466,6 +466,28 @@ describe('<PalettesDialog /> Load…', () => {
     expect(useDoc.getState().palettes.map((p) => p.name)).toEqual(['frrf']);
   });
 
+  it('a loaded design palette lands as one, in both destinations', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({ ...useDoc.getState(), palettes: [] });
+    renderDialog();
+    await user.upload(
+      loadInput(),
+      file({
+        format: 'massimo-palette',
+        version: 1,
+        name: 'grays',
+        kind: 'design',
+        colors: [{ name: 'Border', day: '#333333', night: '#bbbbbb' }],
+      }),
+    );
+    expect(useCustomPalettes.getState().palettes[0].kind).toBe('design');
+    expect(useDoc.getState().palettes[0]).toEqual({
+      name: 'grays',
+      kind: 'design',
+      swatches: [{ name: 'Border', color: '#333333', night: '#bbbbbb' }],
+    });
+  });
+
   // A load is the one collision that can't be warned about first — the name
   // arrives with the file — so it reports what it displaced. It lands in BOTH
   // destinations, so it has to account for both.
@@ -551,7 +573,7 @@ describe('<PalettesDialog /> Load…', () => {
 
 describe('<PalettesDialog /> New… and the editor view', () => {
   const clickNew = (user: ReturnType<typeof userEvent.setup>) =>
-    user.click(screen.getByRole('button', { name: 'New…' }));
+    user.click(screen.getByRole('button', { name: 'New line…' }));
 
   // Unlike Load… and the custom colors row's `+`, this one arrives with no
   // colors — and a palette with none is not something the library can hold. So
@@ -566,6 +588,19 @@ describe('<PalettesDialog /> New… and the editor view', () => {
     // Editor view, title already editing (it's a fresh palette), no columns.
     expect(screen.getByRole('textbox', { name: 'Palette name' })).toHaveValue('New palette');
     expect(screen.queryByRole('region', { name: 'Palette library' })).toBeNull();
+  });
+
+  // The design mint is the same gesture with a kind on it: its own name stem,
+  // and the editor it opens speaks day/night per row once a color exists.
+  it('New design… mints a design palette under its own stem', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(screen.getByRole('button', { name: 'New design…' }));
+    const minted = useDoc.getState().palettes.find((p) => p.name === 'New design palette');
+    expect(minted?.kind).toBe('design');
+    await user.keyboard('{Escape}'); // cancel the title edit
+    await user.click(screen.getByRole('button', { name: 'Add color' }));
+    expect(screen.getByLabelText('Dark mode color 1')).toBeInTheDocument();
   });
 
   // The first has to be given a color to count against — one left empty is
@@ -676,7 +711,7 @@ describe('<PalettesDialog /> leaving the editor with an empty palette', () => {
   const mapNames = () => useDoc.getState().palettes.map((p) => p.name);
   // The fresh palette opens naming itself, and Escape peels that edit first.
   const startNew = async (user: User) => {
-    await user.click(screen.getByRole('button', { name: 'New…' }));
+    await user.click(screen.getByRole('button', { name: 'New line…' }));
     await user.keyboard('{Escape}');
   };
 

@@ -27,6 +27,15 @@ export interface Palette {
   swatches: PaletteSwatch[];
   /** Absent rather than empty — an empty edit collapses the field away. */
   description?: string;
+  /**
+   * What the palette's swatches ARE. Absent means a LINE palette: swatches are
+   * line identities, dealt out by the auto-color cycle and offered by the line
+   * color picker, day-only in practice. `'design'` means decoration colors
+   * (borders, washes, label inks): real day/night halves, offered by the
+   * decoration color dropdowns and never by the line picker. Stored only when
+   * `'design'` — the same collapse rule as `night`.
+   */
+  kind?: 'design';
 }
 
 /**
@@ -53,15 +62,16 @@ export function dropEmptyPalettes(palettes: Palette[]): Palette[] {
 }
 
 /**
- * Do two palettes carry the same CONTENT — swatches and description, but NOT
- * name? Used to tell whether the map's copy still matches the library's (a
- * changed copy is "modified"). `night` compares strictly: it is only ever
- * stored when it differs from `color` (the collapse invariant), so canonical
- * forms are unique and `===` is exact. Name is compared by callers that care;
- * keeping it out here is what lets a rename stay "same content".
+ * Do two palettes carry the same CONTENT — swatches, description, and kind,
+ * but NOT name? Used to tell whether the map's copy still matches the
+ * library's (a changed copy is "modified"). `night` and `kind` compare
+ * strictly: each is only ever stored in its canonical collapsed form, so
+ * `===` is exact. Name is compared by callers that care; keeping it out here
+ * is what lets a rename stay "same content".
  */
 export function paletteContentEqual(a: Palette, b: Palette): boolean {
   if (a.description !== b.description) return false;
+  if (a.kind !== b.kind) return false;
   if (a.swatches.length !== b.swatches.length) return false;
   return a.swatches.every(
     (s, i) =>
@@ -355,11 +365,12 @@ export const LEGACY_BUILTIN_IDS: Readonly<Record<string, string>> = {
  * library, so nothing library-only (a star, the built-in mark) and no shared
  * array reference can ride along into a document.
  */
-export function copyPalette({ name, swatches, description }: Palette): Palette {
+export function copyPalette({ name, swatches, description, kind }: Palette): Palette {
   return {
     name,
     swatches: swatches.map((s) => ({ ...s })),
     ...(description !== undefined && { description }),
+    ...(kind !== undefined && { kind }),
   };
 }
 
@@ -410,19 +421,56 @@ export function libraryPalettes(
   return visible.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Is this a LINE palette — the kind whose swatches are line identities? */
+export const isLinePalette = (p: Palette): boolean => p.kind !== 'design';
+
 /**
- * Flat list of colors from the map's palettes, in the map's palette order —
- * used by `addLine` to auto-pick the next color.
+ * One swatch after recoloring `half`, collapse invariants applied — the single
+ * owner of the recolor rules, shared by the doc transform and the editor's
+ * library branch. A LINE palette edits day only and drops any stored night
+ * (its editor writes day == night); a DESIGN palette edits its halves
+ * independently, `night` kept only while it differs from `color`.
+ */
+export function recolorSwatch(
+  swatch: PaletteSwatch,
+  color: string,
+  half: 'day' | 'night',
+  design: boolean,
+): PaletteSwatch {
+  const next = normalizeHex(color);
+  if (half === 'night') {
+    return {
+      name: swatch.name,
+      color: swatch.color,
+      ...(next !== normalizeHex(swatch.color) && { night: next }),
+    };
+  }
+  if (design) {
+    return {
+      name: swatch.name,
+      color: next,
+      ...(swatch.night !== undefined && swatch.night !== next && { night: swatch.night }),
+    };
+  }
+  return { name: swatch.name, color: next };
+}
+
+/**
+ * Flat list of colors from the map's LINE palettes, in the map's palette
+ * order — used by `addLine` to auto-pick the next color. Design palettes hold
+ * decoration colors, never line identities, so they sit out the cycle.
  */
 export function cyclingColors(palettes: readonly Palette[]): string[] {
-  return palettes.flatMap((p) => p.swatches.map((s) => s.color));
+  return palettes.filter(isLinePalette).flatMap((p) => p.swatches.map((s) => s.color));
 }
 
 /**
  * The distinct "custom" colors used by lines in the map: line colors that are
- * NOT a swatch in any of the map's palettes. These populate the always-present
- * "Custom" section of the line color picker, so removing a palette from the map
- * moves its colors into Custom and adding it back takes them out again.
+ * NOT a swatch in any of the map's LINE palettes. These populate the
+ * always-present "Custom" section of the line color picker, so removing a
+ * palette from the map moves its colors into Custom and adding it back takes
+ * them out again. Design palettes cover nothing here — a line sitting on a
+ * design swatch's hex is a hand-picked color as far as lines are concerned.
  *
  * Colors are compared via `normalizeHex` (case-insensitive, alpha-normalized);
  * the first spelling of each distinct color is kept, in first-seen order.
@@ -432,7 +480,8 @@ export function customLineColors(
   palettes: readonly Palette[],
 ): string[] {
   const known = new Set<string>();
-  for (const p of palettes) for (const s of p.swatches) known.add(normalizeHex(s.color));
+  for (const p of palettes.filter(isLinePalette))
+    for (const s of p.swatches) known.add(normalizeHex(s.color));
   const seen = new Set<string>();
   const out: string[] = [];
   for (const c of lineColors) {

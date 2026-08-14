@@ -161,7 +161,7 @@ test.describe('palette manager', () => {
   test('a palette built from scratch in the editor paints a line', async ({ page }) => {
     await seedAndOpen(page, twoStop);
     await openManager(page);
-    await page.getByRole('button', { name: 'New…' }).click();
+    await page.getByRole('button', { name: 'New line…' }).click();
 
     // The fresh palette opens naming itself; keep the minted name.
     await page.getByRole('textbox', { name: 'Palette name' }).press('Enter');

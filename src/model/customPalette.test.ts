@@ -174,6 +174,15 @@ describe('parseCustomPalette — massimo-palette format', () => {
     expect(parseCustomPalette(file({ version: undefined })).ok).toBe(true);
     expect(parseCustomPalette(file({ version: 99 })).ok).toBe(true);
   });
+
+  it('reads kind: design; anything else (line, junk, absent) collapses to line', () => {
+    const design = parseCustomPalette(file({ kind: 'design' }));
+    expect(design.ok && design.kind).toBe('design');
+    for (const kind of [undefined, 'line', 'nope', 7]) {
+      const r = parseCustomPalette(file({ kind }));
+      expect(r.ok && !('kind' in r)).toBe(true);
+    }
+  });
 });
 
 describe('serializeCustomPalette', () => {
@@ -189,6 +198,7 @@ describe('serializeCustomPalette', () => {
       format: 'massimo-palette',
       version: 1,
       name: 'p',
+      kind: 'line',
       description: 'weekend reds',
       colors: [
         { name: 'Red', day: '#C1272DFF', night: '#C1272DFF' },
@@ -222,6 +232,18 @@ describe('serializeCustomPalette', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect({ name: r.name, description: r.description, swatches: r.swatches }).toEqual(palette);
+  });
+
+  // The file is explicit where storage is terse (like night): the kind is
+  // always spelled out, and a design palette round-trips as one.
+  it('writes the kind explicitly and round-trips a design palette', () => {
+    const line = JSON.parse(serializeCustomPalette({ name: 'p', swatches: [RED] }));
+    expect(line.kind).toBe('line');
+    const design = { name: 'p', kind: 'design' as const, swatches: [RED] };
+    const out = JSON.parse(serializeCustomPalette(design));
+    expect(out.kind).toBe('design');
+    const r = parseCustomPalette(serializeCustomPalette(design));
+    expect(r.ok && r.kind).toBe('design');
   });
 
   // A built-in's swatches carry upper-case hex; the parser normalizes, so an
