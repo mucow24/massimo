@@ -279,17 +279,22 @@ export function textLabelAlignRectLocal(label: TextLabel): AABB {
   const m = measureTextLabel(label);
   const first = m.lines[0];
   const last = m.lines[m.lines.length - 1];
+  // No ink at all (empty or all-whitespace) leaves the pen box standing in —
+  // which in column mode IS the authored column, so an empty column keeps its
+  // width instead of collapsing.
+  const ink = blockInkExtentX(m, label.align);
+  const left = ink ? ink.left : -m.width / 2;
+  const right = ink ? ink.right : m.width / 2;
   // A fixed-width COLUMN is authored geometry, so its wrap edge must stay
   // visible: the RIGHT edge reaches at least the column's right (m.width is
   // pinned to it; further if an unbreakable word overflows the wrap). The
   // LEFT edge stays on the ink like every other label — a column must not
   // reintroduce the side-bearing strip the alignment box exists to remove.
-  const ink = blockInkExtentX(m, label.align);
   const column = (label.width ?? 0) > 0;
   return {
-    x0: ink ? ink.left : -m.width / 2,
+    x0: left,
     y0: -m.height / 2 + first.baselineFromTop - CAP_FRACTION * first.maxFontSize,
-    x1: column ? Math.max(ink ? ink.right : -Infinity, m.width / 2) : ink ? ink.right : m.width / 2,
+    x1: column ? Math.max(right, m.width / 2) : right,
     y1: -m.height / 2 + last.baselineFromTop,
   };
 }
