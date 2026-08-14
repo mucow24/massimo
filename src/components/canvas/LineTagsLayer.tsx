@@ -187,6 +187,14 @@ export function LineTagsLayer({ bands, zoom, svgRef, screenToWorld, labelBox }: 
     cycleLineTagOrientation(tagId);
   };
 
+  // Every TagShape below takes the same three pointer handlers, bound to its
+  // own tag — one spelling, so a shape can't be mounted with a subset.
+  const tagHandlers = (tagId: string) => ({
+    onPointerDown: (e: React.PointerEvent) => onTagPointerDown(e, tagId),
+    onClick: (e: React.MouseEvent) => onTagClick(e, tagId),
+    onContextMenu: (e: React.MouseEvent) => onTagContextMenu(e, tagId),
+  });
+
   // Canvas mouseover → preview this tag's selection wash + ring at 50%. Set on
   // enter, clear on leave only if THIS tag is still hovered (fresh read).
   const onTagPointerEnter = (tagId: string) =>
@@ -199,6 +207,11 @@ export function LineTagsLayer({ bands, zoom, svgRef, screenToWorld, labelBox }: 
   const hover = hoveredChrome(selection);
   const hoverTagId = hover?.kind === 'lineTag' ? hover.id : null;
   const hoverTag = hoverTagId ? resolved.find((x) => x.tag.id === hoverTagId) : undefined;
+  // The selected tag's two chrome layers straddle the tag text in z-order, so
+  // they mount separately — off one lookup, like the hovered tag above.
+  const selectedTag = selection.selectedLineTagId
+    ? resolved.find((x) => x.tag.id === selection.selectedLineTagId)
+    : undefined;
 
   // Hover/ghost preview is cleared by the mode-setters, not on unmount.
   // Delete is wired in App.tsx for keyboard.
@@ -209,21 +222,14 @@ export function LineTagsLayer({ bands, zoom, svgRef, screenToWorld, labelBox }: 
       <Measurer services={services} />
 
       {/* Selection wash for the selected tag (painted first, before tag text). */}
-      {selection.selectedLineTagId &&
-        (() => {
-          const r = resolved.find((x) => x.tag.id === selection.selectedLineTagId);
-          if (!r) return null;
-          return (
-            <TagShape
-              r={r}
-              widths={widths}
-              layer="wash"
-              onPointerDown={(e) => onTagPointerDown(e, r.tag.id)}
-              onClick={(e) => onTagClick(e, r.tag.id)}
-              onContextMenu={(e) => onTagContextMenu(e, r.tag.id)}
-            />
-          );
-        })()}
+      {selectedTag && (
+        <TagShape
+          r={selectedTag}
+          widths={widths}
+          layer="wash"
+          {...tagHandlers(selectedTag.tag.id)}
+        />
+      )}
 
       {/* All tag texts. */}
       {resolved.map((r) => (
@@ -232,9 +238,7 @@ export function LineTagsLayer({ bands, zoom, svgRef, screenToWorld, labelBox }: 
           r={r}
           widths={widths}
           layer="text"
-          onPointerDown={(e) => onTagPointerDown(e, r.tag.id)}
-          onClick={(e) => onTagClick(e, r.tag.id)}
-          onContextMenu={(e) => onTagContextMenu(e, r.tag.id)}
+          {...tagHandlers(r.tag.id)}
           onPointerEnter={() => onTagPointerEnter(r.tag.id)}
           onPointerLeave={() => onTagPointerLeave(r.tag.id)}
         />
@@ -244,41 +248,20 @@ export function LineTagsLayer({ bands, zoom, svgRef, screenToWorld, labelBox }: 
           opacity — the same two chrome layers the selected tag uses, fainter. */}
       {hoverTag && (
         <g data-export-exclude="1" opacity={0.5}>
-          <TagShape
-            r={hoverTag}
-            widths={widths}
-            layer="wash"
-            onPointerDown={(e) => onTagPointerDown(e, hoverTag.tag.id)}
-            onClick={(e) => onTagClick(e, hoverTag.tag.id)}
-            onContextMenu={(e) => onTagContextMenu(e, hoverTag.tag.id)}
-          />
-          <TagShape
-            r={hoverTag}
-            widths={widths}
-            layer="stroke"
-            onPointerDown={(e) => onTagPointerDown(e, hoverTag.tag.id)}
-            onClick={(e) => onTagClick(e, hoverTag.tag.id)}
-            onContextMenu={(e) => onTagContextMenu(e, hoverTag.tag.id)}
-          />
+          <TagShape r={hoverTag} widths={widths} layer="wash" {...tagHandlers(hoverTag.tag.id)} />
+          <TagShape r={hoverTag} widths={widths} layer="stroke" {...tagHandlers(hoverTag.tag.id)} />
         </g>
       )}
 
       {/* Selection stroke for the selected tag (on top of text). */}
-      {selection.selectedLineTagId &&
-        (() => {
-          const r = resolved.find((x) => x.tag.id === selection.selectedLineTagId);
-          if (!r) return null;
-          return (
-            <TagShape
-              r={r}
-              widths={widths}
-              layer="stroke"
-              onPointerDown={(e) => onTagPointerDown(e, r.tag.id)}
-              onClick={(e) => onTagClick(e, r.tag.id)}
-              onContextMenu={(e) => onTagContextMenu(e, r.tag.id)}
-            />
-          );
-        })()}
+      {selectedTag && (
+        <TagShape
+          r={selectedTag}
+          widths={widths}
+          layer="stroke"
+          {...tagHandlers(selectedTag.tag.id)}
+        />
+      )}
 
       {/* Neighbor-snap guide for an in-flight tag drag: same dashed +
           labeled treatment as every other alignment guide. */}

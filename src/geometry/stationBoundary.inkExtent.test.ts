@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { textLabelAlignRectLocal } from './stationBoundary';
+import { textLabelAlignRectLocal, textLabelChromeRectLocal } from './stationBoundary';
 import { _clearTextMeasureCache } from './textMeasure';
 import { stubTextMetrics, type FakeTextMetrics } from '../test/textMetrics';
 import { makeTextLabel } from '../test/fixtures';
@@ -69,6 +69,21 @@ describe('textLabelAlignRectLocal — horizontal extent is ink, not the pen box'
     );
     expect(r.x0).toBeCloseTo(-40 + INSET, 5);
     expect(r.x1).toBeCloseTo(40, 5);
+  });
+
+  it('column mode with no ink at all: the box still spans the authored column', () => {
+    // An empty (or all-whitespace) column has no ink to hug, but the column is
+    // still authored geometry — the box spans it, so the wrap edge stays
+    // visible and an empty column stays grabbable at its real width rather
+    // than collapsing to the zero-ink chrome floor.
+    for (const text of ['', '   ']) {
+      const label = makeTextLabel({ id: 'g', text, align: 'left', fontSize: 16, width: 80 });
+      const r = textLabelAlignRectLocal(label);
+      expect(r.x0).toBeCloseTo(-40, 5);
+      expect(r.x1).toBeCloseTo(40, 5);
+      // Wide enough that the chrome rect takes no zero-ink padding.
+      expect(textLabelChromeRectLocal(label).x0).toBeCloseTo(-40, 5);
+    }
   });
 
   it('justify: a stretched interior line is pen-flush to both edges, ink inset', () => {

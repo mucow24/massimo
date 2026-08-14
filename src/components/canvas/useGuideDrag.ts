@@ -398,6 +398,33 @@ export function useGuideDrag(
   const footAlongAt = (orientation: GuideOrientation, offset: number, mx: number, my: number) =>
     guideAlongOf(orientation, guideFoot(orientation, offset, screenToWorld(mx, my)));
 
+  // Enter — or advance — the resize phase, for either gesture. The FIRST frame
+  // fixes the anchored end: at the PRESS foot when Ctrl has been down since the
+  // press with no Ctrl-free offset frame behind it (`anchorAtPress` — "where
+  // you grab marks one end"), else at this frame's foot. Every frame then
+  // records the cursor, which is what the resume re-base measures travel from.
+  // One home for the rule so the drag and the pull can't drift apart on it.
+  type ResizePhase = { anchor: number; mx: number; my: number };
+  const enterResize = (
+    st: {
+      orientation: GuideOrientation;
+      startMX: number;
+      startMY: number;
+      resize: ResizePhase | null;
+    },
+    offset: number,
+    anchorAtPress: boolean,
+    e: React.PointerEvent,
+  ): ResizePhase => {
+    if (!st.resize) {
+      const [mx, my] = anchorAtPress ? [st.startMX, st.startMY] : [e.clientX, e.clientY];
+      st.resize = { anchor: footAlongAt(st.orientation, offset, mx, my), mx, my };
+    }
+    st.resize.mx = e.clientX;
+    st.resize.my = e.clientY;
+    return st.resize;
+  };
+
   const onStartDrag = useCallback((id: string, e: React.PointerEvent) => {
     // Left button only — a middle press bubbles to the pan, a right press to
     // the context-menu path; either would fight a move handler.
@@ -462,18 +489,10 @@ export function useGuideDrag(
       const { moved, dxScreen, dyScreen } = trackDragMove(ds, e, svgRef);
       if (!moved) return;
       if (e.ctrlKey || e.metaKey) {
-        if (!ds.resize) {
-          // Ctrl held since the press with no offset frame run: the anchored
-          // end is the PRESS foot. A mid-gesture Ctrl marks this frame's foot.
-          const [mx, my] =
-            ds.ctrlAtPress && !ds.everOffset ? [ds.startMX, ds.startMY] : [e.clientX, e.clientY];
-          ds.resize = { anchor: footAlongAt(ds.orientation, ds.lastOffset, mx, my), mx, my };
-        }
-        ds.resize.mx = e.clientX;
-        ds.resize.my = e.clientY;
+        const rz = enterResize(ds, ds.lastOffset, ds.ctrlAtPress && !ds.everOffset, e);
         // resizeGuide already refuses the zero-width frame, so the guide keeps
         // its previous span until the sweep starts; null strips to infinite.
-        resizeGuide(ds.id, resizedExtent(ds.orientation, ds.lastOffset, ds.resize.anchor, e, ds));
+        resizeGuide(ds.id, resizedExtent(ds.orientation, ds.lastOffset, rz.anchor, e, ds));
         setOverWell(null);
         return;
       }
@@ -516,23 +535,8 @@ export function useGuideDrag(
       if (!moved) return;
       const world = screenToWorld(e.clientX, e.clientY);
       if ((e.ctrlKey || e.metaKey) && ps.everOffset) {
-        if (!ps.resize) {
-          // Ctrl held since the well press with no ctrl-free offset frame run:
-          // the anchored end is the PRESS foot, the drag path's rule. A
-          // mid-pull Ctrl marks this frame's foot.
-          const [mx, my] =
-            ps.ctrlAtPress && !ps.ctrlFreeOffset
-              ? [ps.startMX, ps.startMY]
-              : [e.clientX, e.clientY];
-          ps.resize = {
-            anchor: footAlongAt(ps.orientation, ps.offset, mx, my),
-            mx,
-            my,
-          };
-        }
-        ps.resize.mx = e.clientX;
-        ps.resize.my = e.clientY;
-        const ext = resizedExtent(ps.orientation, ps.offset, ps.resize.anchor, e, ps);
+        const rz = enterResize(ps, ps.offset, ps.ctrlAtPress && !ps.ctrlFreeOffset, e);
+        const ext = resizedExtent(ps.orientation, ps.offset, rz.anchor, e, ps);
         // null = flipped to infinite; a zero-width frame keeps the last span.
         if (ext === null) ps.extent = null;
         else if (ext.halfLength > 0) ps.extent = ext;

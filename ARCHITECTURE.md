@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `fb7e835` (2026-08-13, #505) — verified against the live source.** This
+**Up to date as of commit `b427ca5` (2026-08-13, #516) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -1268,7 +1268,10 @@ spinbutton/stored value is unbounded above),
 `weight: TextLabelWeight`, `italic`, `align: TextLabelAlign` (`left|center|right|justify`;
 `justify` flushes both edges), `width?` (column width in world units; `0`/absent = Auto —
 sizes to content and honors manual `\n`; `>0` = a fixed-width column that word-wraps, with
-`\n` a hard break; floored at 0 by `updateTextLabel`, fractions kept), `color/
+`\n` a hard break — interior whitespace runs collapse to single gaps, but a paragraph's
+LEADING whitespace survives as the author's indent, riding the first word onto the first
+wrapped line and counting toward the wrap width, so a typed indent reads the same in both
+modes; floored at 0 by `updateTextLabel`, fractions kept), `color/
 darkColor` (day/night; **defaults DIFFER**: `#111111` / `#ffffff` for legibility — unlike a
 polygon whose dark default equals its light; backfilled on load), `locked?`, plus optional
 per-label `leading` (line-spacing multiplier) / `tracking` (em letter-spacing) — station labels
@@ -2945,7 +2948,10 @@ of their own, and are omitted below to keep it readable:
 - **Mouseover-preview twins.** Almost every selection-chrome layer has a hover twin mounted
   immediately after it — same component, `preview`, `opacity 0.5`, gated by `hoveredChrome` (so it
   stays quiet mid-pan). There are seven: station `wash` and `stroke`, transfer outline, route-bullet
-  ring, label stroke, polygon outline, svg-image box. Two more — the line circle's and the
+  ring, label stroke, polygon outline, svg-image box. A line TAG's twin lives inside
+  `LineTagsLayer` instead, and carries BOTH chrome halves in one `<g>`: the selected tag's wash
+  and stroke straddle the tag text in z-order, and a preview is not worth bracketing the layer's
+  own content to reproduce that. Two more — the line circle's and the
   alignment guide's — are painted INSIDE `LineCircleView`/`GuideView` instead: their selection
   chrome is a RECOLOUR of scaffolding that is always painted, not an outline added beside it, so
   a twin would have to re-render the whole component in a stripped `preview` variant — no grab
@@ -2958,6 +2964,11 @@ of their own, and are omitted below to keep it readable:
 1. Background band — polygons and svg images in **ONE interleaved pass** over
    `backgroundRenderOrder`, resolving kind per id (they share `backgroundOrder`, so neither kind is
    structurally above the other; see the z-order gotcha). Under all map content.
+1b. **Scaffolding band** — line circles (`LineCircleView`), then alignment guides (`GuideView`,
+    plus the wells' pull-out ghost at placement-ghost opacity; both span the OVERDRAWN box like
+    the Grid, so a mid-gesture camera can't reveal an end). Above the background art, below all
+    map ink, `data-export-exclude` throughout: scaffolding positions map content without being
+    any. Selection chrome here is a recolour in place, not a twin (see above).
 2. Station `wash` (selection silhouette fill, behind bands).
 3. Interleaved band renderables, ordered by per-stripe z-priority via `buildOrderedRenderables`,
    which emits **three** kinds: `casing` (at `priority + CASING_EPS`), `body` stripe, and
