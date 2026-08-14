@@ -2948,7 +2948,10 @@ of their own, and are omitted below to keep it readable:
 - **Mouseover-preview twins.** Almost every selection-chrome layer has a hover twin mounted
   immediately after it — same component, `preview`, `opacity 0.5`, gated by `hoveredChrome` (so it
   stays quiet mid-pan). There are seven: station `wash` and `stroke`, transfer outline, route-bullet
-  ring, label stroke, polygon outline, svg-image box. Two more — the line circle's and the
+  ring, label stroke, polygon outline, svg-image box. A line TAG's twin lives inside
+  `LineTagsLayer` instead, and carries BOTH chrome halves in one `<g>`: the selected tag's wash
+  and stroke straddle the tag text in z-order, and a preview is not worth bracketing the layer's
+  own content to reproduce that. Two more — the line circle's and the
   alignment guide's — are painted INSIDE `LineCircleView`/`GuideView` instead: their selection
   chrome is a RECOLOUR of scaffolding that is always painted, not an outline added beside it, so
   a twin would have to re-render the whole component in a stripped `preview` variant — no grab
