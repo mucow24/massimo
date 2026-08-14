@@ -1,4 +1,4 @@
-import type { Palette, PaletteSwatch } from './palettes';
+import { uniqueSwatchNames, type Palette, type PaletteSwatch } from './palettes';
 import { normalizeHex, parseHexA } from '../util/color';
 
 export type ParsedCustomPalette =
@@ -107,7 +107,9 @@ function parseMassimoPalette(obj: {
   return {
     ok: true,
     name: obj.name.trim(),
-    swatches,
+    // Names are the swatch-ref key: a file naming two colors alike is cleaned
+    // here, before the manager ever shows it.
+    swatches: uniqueSwatchNames(swatches),
     ...(description !== undefined && { description }),
     ...(obj.kind === 'design' && { kind: 'design' as const }),
   };
@@ -130,7 +132,7 @@ function parseLegacyPalette(obj: { name?: unknown; colors?: unknown }): ParsedCu
   if (swatches.length === 0) {
     return { ok: false, error: 'No valid `human` colors found' };
   }
-  return { ok: true, name: obj.name.trim(), swatches };
+  return { ok: true, name: obj.name.trim(), swatches: uniqueSwatchNames(swatches) };
 }
 
 // The file is the interchange form, so it is explicit where storage is terse:

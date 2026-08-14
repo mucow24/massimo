@@ -372,6 +372,70 @@ describe('localStorage rehydrate — line edge backfill', () => {
     expect(l1.singletonDotSize).toBe(8);
     expect(l1.multiDotSize).toBe(8);
   });
+
+  // Swatch refs live on the decoration side too — polygons, labels, transfers,
+  // dot shadows, style defs — so the hook's reconcile must walk the WHOLE doc,
+  // not just the lines. Same reasoning as the two above: a doc at the current
+  // version never reaches `migrate`, so this is the only door left.
+  it('restamps a DESIGN ref whose value drifted, rehydrating at the current version', async () => {
+    localStorage.setItem(
+      'vignelli-map-doc-v1',
+      JSON.stringify({
+        version: useDoc.persist.getOptions().version,
+        state: {
+          palettes: [
+            {
+              name: 'grays',
+              kind: 'design',
+              swatches: [{ name: 'Border', color: '#333333', night: '#bbbbbb' }],
+            },
+          ],
+          polygons: {
+            P1: {
+              id: 'P1',
+              vertices: [
+                { x: 0, y: 0 },
+                { x: 10, y: 0 },
+                { x: 10, y: 10 },
+              ],
+              // Drifted away from the swatch it claims to wear.
+              fill: '#000000',
+              darkFill: '#000000',
+              stroke: '#000000',
+              darkStroke: '#000000',
+              strokeWidth: 1,
+              fillRef: { palette: 'grays', swatch: 'Border' },
+            },
+            // A ref into a palette the doc doesn't carry: unlinked, and what
+            // it paints is left exactly as found.
+            P2: {
+              id: 'P2',
+              vertices: [
+                { x: 0, y: 0 },
+                { x: 10, y: 0 },
+                { x: 10, y: 10 },
+              ],
+              fill: '#123456',
+              darkFill: '#123456',
+              stroke: '#000000',
+              darkStroke: '#000000',
+              strokeWidth: 1,
+              fillRef: { palette: 'gone', swatch: 'Border' },
+            },
+          },
+          backgroundOrder: ['P1', 'P2'],
+        },
+      }),
+    );
+
+    await useDoc.persist.rehydrate();
+
+    const { P1, P2 } = useDoc.getState().polygons;
+    expect(P1.fill).toBe('#333333');
+    expect(P1.darkFill).toBe('#bbbbbb');
+    expect(P2.fill).toBe('#123456');
+    expect('fillRef' in P2).toBe(false);
+  });
 });
 
 describe('addLine auto-cycle across palettes', () => {

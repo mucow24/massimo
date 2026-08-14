@@ -364,11 +364,19 @@ export const LEGACY_BUILTIN_IDS: Readonly<Record<string, string>> = {
  * Take a palette into a map — the one place a definition is COPIED out of the
  * library, so nothing library-only (a star, the built-in mark) and no shared
  * array reference can ride along into a document.
+ *
+ * It is also where swatch names are made unique (`uniqueSwatchNames`): names
+ * are the swatch-REF key, and this one door is what every way into a doc or
+ * the library goes through — the map upsert, the library add, the manager's
+ * copies, the legacy-id bake. A palette from a file or a legacy library entry
+ * can genuinely name two swatches alike (the retired add named by position and
+ * collided after a delete), and a duplicate makes a ref resolve to whichever
+ * came first. Reference-stable per swatch when nothing needs renaming.
  */
 export function copyPalette({ name, swatches, description, kind }: Palette): Palette {
   return {
     name,
-    swatches: swatches.map((s) => ({ ...s })),
+    swatches: uniqueSwatchNames(swatches).map((s) => ({ ...s })),
     ...(description !== undefined && { description }),
     ...(kind !== undefined && { kind }),
   };

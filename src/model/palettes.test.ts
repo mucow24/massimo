@@ -136,6 +136,27 @@ describe('copyPalette', () => {
     expect(copyPalette(DESIGN)).toEqual(DESIGN);
     expect('kind' in copyPalette(FRRF)).toBe(false);
   });
+
+  // Swatch names are the swatch-ref KEY, so a duplicate makes a ref ambiguous
+  // (it would resolve to whichever came first) and collides the React keys the
+  // sidebar rows and the picker's menu items are built on. This is the one
+  // choke point every door into a doc or the library goes through — the map
+  // upsert, the library add, the manager's copies — so the rule is enforced
+  // here rather than at each of them. A palette whose names already stand
+  // alone passes through untouched.
+  it('uniquifies duplicate and blank swatch names', () => {
+    expect(
+      copyPalette({
+        name: 'p',
+        swatches: [
+          { name: 'Red', color: '#111111' },
+          { name: 'Red', color: '#222222' },
+          { name: '', color: '#333333' },
+        ],
+      }).swatches.map((s) => s.name),
+    ).toEqual(['Red', 'Red 2', '3']);
+    expect(copyPalette(FRRF).swatches.map((s) => s.name)).toEqual(['1', '2']);
+  });
 });
 
 describe('freshPaletteName', () => {

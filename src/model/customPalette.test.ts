@@ -35,6 +35,19 @@ describe('parseCustomPalette', () => {
     expect(r.ok && r.swatches[0].name).toBe('Red');
   });
 
+  it('uniquifies duplicate line names (a legacy file may repeat one)', () => {
+    const r = parseCustomPalette(
+      JSON.stringify({
+        name: 'x',
+        colors: [
+          { line: 'Red', human: '#111111' },
+          { line: 'Red', human: '#222222' },
+        ],
+      }),
+    );
+    expect(r.ok && r.swatches.map((s) => s.name)).toEqual(['Red', 'Red 2']);
+  });
+
   it('skips entries with a missing or invalid human color', () => {
     const r = parseCustomPalette(
       JSON.stringify({
@@ -173,6 +186,20 @@ describe('parseCustomPalette — massimo-palette format', () => {
   it('ignores the version field', () => {
     expect(parseCustomPalette(file({ version: undefined })).ok).toBe(true);
     expect(parseCustomPalette(file({ version: 99 })).ok).toBe(true);
+  });
+
+  // Names are the swatch-ref key, so a file naming two colors alike is cleaned
+  // before it is ever shown, let alone stored.
+  it('uniquifies duplicate color names', () => {
+    const r = parseCustomPalette(
+      file({
+        colors: [
+          { name: 'Red', day: '#111111' },
+          { name: 'Red', day: '#222222' },
+        ],
+      }),
+    );
+    expect(r.ok && r.swatches.map((s) => s.name)).toEqual(['Red', 'Red 2']);
   });
 
   it('reads kind: design; anything else (line, junk, absent) collapses to line', () => {

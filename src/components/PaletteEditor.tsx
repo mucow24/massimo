@@ -256,10 +256,10 @@ export function PaletteEditor({
   };
 
   // A MAP recolor goes through the transform so the map follows a picker drag
-  // live (a LINE palette repaints the lines wearing the old color in the same
-  // write); a library palette has no map to take along, so it rebuilds the
-  // swatch by the same shared rules. Line palettes write day == night (the
-  // rebuilt swatch drops its night); design palettes edit either half.
+  // live — everything LINKED to the swatch restamps in the same write; a
+  // library palette has no map to take along, so it rebuilds the swatch by the
+  // same shared rules. Line palettes write day == night (the rebuilt swatch
+  // drops its night); design palettes edit either half.
   const design = palette.kind === 'design';
   const recolor = (i: number, c: string, half: 'day' | 'night' = 'day') =>
     source === 'map'

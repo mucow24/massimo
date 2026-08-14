@@ -109,6 +109,7 @@ import {
   PALETTES,
   recolorSwatch,
   type Palette,
+  type PaletteSwatch,
 } from './palettes';
 import {
   isSwatchRef,
@@ -136,10 +137,12 @@ import type {
   LineId,
   LineStrokeColor,
   LineStyle,
+  LineStyleProps,
   LineTag,
   MapDoc,
   Polygon,
   PolygonStylePatch,
+  PolygonStyleProps,
   RegionAssignment,
   SvgImage,
   SvgImageStylePatch,
@@ -157,10 +160,12 @@ import type {
   SwatchRef,
   TextLabel,
   TextLabelAlign,
+  TextLabelStyleProps,
   TextLabelWeight,
   Transfer,
   TransferEnd,
   TransferStylePatch,
+  TransferStyleProps,
 } from './types';
 
 export const LABEL_FONT_SIZE_MIN = 2;
@@ -3011,29 +3016,25 @@ function palettesEqual(a: Palette, b: Palette): boolean {
   return a.name === b.name && paletteContentEqual(a, b);
 }
 
-/**
- * Enforce the swatch-ref invariant across the doc: every ref either resolves —
- * and its field is restamped to the swatch's color — or is dropped, keeping
- * the painted value (a deleted palette never changes what the map looks like).
- * Malformed ref shapes from hand-edited files count as dangling; this is the
- * only validation they get.
- *
- * Every palette-mutating transform ends here (mutate `doc.palettes`, then
- * reconcile), and so do all three load-side paths — parse(), migrateDoc, and
- * the persist merge hook — so it is reference-stable on a canonical doc, like
- * every repair that runs on that hook.
- */
-// ---- The swatch-ref homes ---------------------------------------------------
-// Every place a SwatchRef lives, walked by BOTH doc-wide sweeps below (they
-// must never disagree on the list):
-//   Line.colorRef                      (line palettes)
-//   Line.strokeColorRef                (design; the casing pair)
-//   Line.singletonDotStyle / multiDotStyle — DotStyle refs (design), walked as
-//     raw shadows regardless of tags (deleteStopDotStyle untags, keeps shadows)
-//   StopCell.dotStyle                  — DotStyle refs (design)
-//   Polygon.fillRef / strokeRef, TextLabel.colorRef,
-//   Transfer.colorRef / strokeColorRef (design)
+// ---- Swatch-ref homes -------------------------------------------------------
+// Every place a SwatchRef lives is a SLOT: the ref, plus the three things a
+// sweep ever does to one — point it elsewhere (a rename), unlink it (dangling),
+// or restamp its field from the swatch it resolves to. `walkRefs` visits every
+// slot in the doc exactly once, so the RENAME sweep and the RECONCILE sweep are
+// two visitors over ONE traversal and a new home is added in one place:
+//
+//   Line.colorRef (a LINE-palette link) / Line.strokeColorRef (the casing pair)
+//   Line.singletonDotStyle / multiDotStyle — dot slots, walked as raw shadows
+//     regardless of tags (deleteStopDotStyle untags but keeps the shadow)
+//   StopCell.dotStyle                      — dot slots
+//   Polygon.fillRef / strokeRef; TextLabel.colorRef;
+//   Transfer.colorRef / strokeColorRef
 //   StyleDef props of kinds line / polygon / textLabel / transfer / stopDot
+//
+// An item and the STYLE-DEF form of the same home share a slot table wherever
+// they store color alike (polygon, text label, dot). The line casing and the
+// transfer colors need their own pair of tables, because the ITEM collapses its
+// value at a constant default while the DEF stores it concrete.
 // -----------------------------------------------------------------------------
 
 type RefHomesDoc = {
@@ -3046,141 +3047,270 @@ type RefHomesDoc = {
   styles?: Record<string, StyleDef>;
 };
 
-// Rewrite every ref field of `obj` through `map` (identity in, same object
-// out). The generic building block of the rename sweeps.
-function mapObjRefs<T extends object>(
-  obj: T,
-  keys: readonly (keyof T)[],
-  map: (ref: SwatchRef) => SwatchRef,
-): T {
-  let next = obj;
-  for (const k of keys) {
-    const ref = obj[k] as SwatchRef | undefined;
-    if (ref === undefined || !isSwatchRef(ref)) continue;
-    const mapped = map(ref);
-    if (mapped === ref) continue;
-    if (next === obj) next = { ...obj };
-    (next as Record<string, unknown>)[k as string] = mapped;
-  }
-  return next;
-}
+/** One linkable color field, and every way a sweep rewrites it. */
+type RefSlot<T> = {
+  ref: (o: T) => SwatchRef | undefined;
+  /** Point the link elsewhere — the rename sweep's only move. */
+  withRef: (o: T, ref: SwatchRef) => T;
+  /** Unlink, keeping whatever is painted. */
+  drop: (o: T) => T;
+  /**
+   * Restamp the field from its swatch, through the same collapse rules the
+   * setters use. Returns the object UNCHANGED when it already paints that
+   * color (what keeps a canonical doc reference-stable), and UNLINKS where the
+   * value cannot hold a pair at all — a sentinel is not a linkable color.
+   */
+  stamp: (o: T, swatch: PaletteSwatch) => T;
+  /** Resolves against LINE palettes; every other slot is a design link. */
+  linePalette?: true;
+};
 
-const DOT_REF_KEYS = ['fillRef', 'strokeColorRef', 'serviceCodeColorRef'] as const;
+/** A visitor sees every slot of every ref-bearing object in the doc. */
+type RefVisitor = <T>(o: T, slot: RefSlot<T>) => T;
+
+const withoutKey = <T extends object>(o: T, key: keyof T): T => {
+  const next = { ...o };
+  delete (next as Record<string, unknown>)[key as string];
+  return next;
+};
+
+/** The shared mechanics of a plain `<field>Ref` key; `stamp` is the difference. */
+const refKeySlot = <T extends object>(
+  refKey: keyof T,
+  stamp: RefSlot<T>['stamp'],
+  linePalette?: true,
+): RefSlot<T> => ({
+  ref: (o) => o[refKey] as SwatchRef | undefined,
+  withRef: (o, ref) => ({ ...o, [refKey]: ref }),
+  drop: (o) => withoutKey(o, refKey),
+  stamp,
+  ...(linePalette && { linePalette }),
+});
+
+/** A pair stored as two sibling scalars (fill+darkFill, color+darkColor). */
+const scalarPairSlot = <T extends object>(
+  dayKey: keyof T,
+  nightKey: keyof T,
+  refKey: keyof T,
+): RefSlot<T> =>
+  refKeySlot(refKey, (o, sw) => {
+    const pair = swatchPair(sw);
+    return o[dayKey] === pair.day && o[nightKey] === pair.night
+      ? o
+      : { ...o, [dayKey]: pair.day, [nightKey]: pair.night };
+  });
+
+/** One DayNightColor-or-sentinel field of a DotStyle. */
+const dotSlot = (
+  valueKey: 'fill' | 'strokeColor' | 'serviceCodeColor',
+  refKey: 'fillRef' | 'strokeColorRef' | 'serviceCodeColorRef',
+): RefSlot<DotStyle> =>
+  refKeySlot(refKey, (d, sw) => {
+    const value = d[valueKey];
+    if (typeof value !== 'object') return withoutKey(d, refKey);
+    const pair = swatchPair(sw);
+    return dayNightColorsEqual(value, pair) ? d : { ...d, [valueKey]: pair };
+  });
+
+const DOT_SLOTS: readonly RefSlot<DotStyle>[] = [
+  dotSlot('fill', 'fillRef'),
+  dotSlot('strokeColor', 'strokeColorRef'),
+  dotSlot('serviceCodeColor', 'serviceCodeColorRef'),
+];
+
+// Polygon / text-label colors are stored identically on the item and on the
+// style def, so one factory answers for both.
+type PolygonColorFields = Pick<
+  Polygon,
+  'fill' | 'stroke' | 'darkFill' | 'darkStroke' | 'fillRef' | 'strokeRef'
+>;
+const polygonSlots = <T extends PolygonColorFields>(): readonly RefSlot<T>[] => [
+  scalarPairSlot<T>('fill', 'darkFill', 'fillRef'),
+  scalarPairSlot<T>('stroke', 'darkStroke', 'strokeRef'),
+];
+type TextLabelColorFields = Pick<TextLabel, 'color' | 'darkColor' | 'colorRef'>;
+const textLabelSlots = <T extends TextLabelColorFields>(): readonly RefSlot<T>[] => [
+  scalarPairSlot<T>('color', 'darkColor', 'colorRef'),
+];
+
+const POLYGON_ITEM_SLOTS = polygonSlots<Polygon>();
+const POLYGON_PROPS_SLOTS = polygonSlots<PolygonStyleProps>();
+const TEXT_LABEL_ITEM_SLOTS = textLabelSlots<TextLabel>();
+const TEXT_LABEL_PROPS_SLOTS = textLabelSlots<TextLabelStyleProps>();
+
+const LINE_ITEM_SLOTS: readonly RefSlot<Line>[] = [
+  refKeySlot<Line>(
+    'colorRef',
+    (l, sw) => (normalizeHex(l.color) === normalizeHex(sw.color) ? l : { ...l, color: sw.color }),
+    true,
+  ),
+  refKeySlot<Line>('strokeColorRef', (l, sw) => {
+    if (l.strokeColor === 'line') return withoutKey(l, 'strokeColorRef');
+    // Collapse-at-white: a swatch ON the default stores no value at all, so
+    // the ref legally outlives its field (the invariant is over EFFECTIVE
+    // colors). Judge structurally — a freshly built pair is never `===`.
+    const stored = canonicalStrokeColor(swatchPair(sw));
+    const same =
+      stored === undefined
+        ? l.strokeColor === undefined
+        : l.strokeColor !== undefined && lineStrokeColorsEqual(stored, l.strokeColor);
+    return same ? l : writeLineField(l, 'strokeColor', stored);
+  }),
+];
+
+const LINE_PROPS_SLOTS: readonly RefSlot<LineStyleProps>[] = [
+  refKeySlot<LineStyleProps>('strokeColorRef', (p, sw) => {
+    if (p.strokeColor === 'line') return withoutKey(p, 'strokeColorRef');
+    const pair = swatchPair(sw);
+    return lineStrokeColorsEqual(p.strokeColor, pair) ? p : { ...p, strokeColor: pair };
+  }),
+];
+
+// A transfer's overrides collapse at the constant defaults, so both the write
+// and the restamp go through withTransferOverride / canonicalTransferColor.
+const transferItemSlot = (
+  valueKey: 'color' | 'strokeColor',
+  refKey: 'colorRef' | 'strokeColorRef',
+  dflt: DayNightColor,
+): RefSlot<Transfer> => ({
+  ref: (t) => t[refKey],
+  withRef: (t, ref) => withTransferOverride(t, refKey, ref),
+  drop: (t) => withTransferOverride(t, refKey, undefined),
+  stamp: (t, sw) => {
+    const stored = canonicalTransferColor(swatchPair(sw), dflt);
+    const cur = t[valueKey];
+    const same =
+      stored === undefined
+        ? cur === undefined
+        : cur !== undefined && dayNightColorsEqual(cur, stored);
+    return same ? t : withTransferOverride(t, valueKey, stored);
+  },
+});
+
+const TRANSFER_ITEM_SLOTS: readonly RefSlot<Transfer>[] = [
+  transferItemSlot('color', 'colorRef', TRANSFER_COLOR_DEFAULT),
+  transferItemSlot('strokeColor', 'strokeColorRef', TRANSFER_STROKE_COLOR_DEFAULT),
+];
+
+// Def props store CONCRETE pairs (no collapse), so they restamp directly.
+const transferPropsSlot = (
+  valueKey: 'color' | 'strokeColor',
+  refKey: 'colorRef' | 'strokeColorRef',
+): RefSlot<TransferStyleProps> =>
+  refKeySlot(refKey, (p, sw) => {
+    const pair = swatchPair(sw);
+    return dayNightColorsEqual(p[valueKey], pair) ? p : { ...p, [valueKey]: pair };
+  });
+
+const TRANSFER_PROPS_SLOTS: readonly RefSlot<TransferStyleProps>[] = [
+  transferPropsSlot('color', 'colorRef'),
+  transferPropsSlot('strokeColor', 'strokeColorRef'),
+];
 
 /**
- * Rewrite every SwatchRef in the doc through `map` — the shared body of the
- * palette/swatch RENAME sweeps, which must reach every home a ref lives in
- * (see the list above) and never read as delete-plus-add. Reference-stable.
+ * Visit every swatch-ref slot in the doc (see the home list above). Returns
+ * the same doc reference when no visit changed anything — the property both
+ * sweeps rest on, and what lets the reconcile sit on the persist merge hook.
  */
-function mapDocSwatchRefs<Doc extends RefHomesDoc>(
-  doc: Doc,
-  map: (ref: SwatchRef) => SwatchRef,
-): Doc {
+function walkRefs<Doc extends RefHomesDoc>(doc: Doc, visit: RefVisitor): Doc {
   const out = { ...doc };
   let changed = false;
 
-  const mapCollection = <T extends object>(
-    coll: Record<string, T> | undefined,
-    fn: (item: T) => T,
-  ): Record<string, T> | undefined => {
-    if (!coll) return coll;
-    let next = coll;
-    for (const [id, item] of Object.entries(coll)) {
-      const mapped = fn(item);
-      if (mapped === item) continue;
-      if (next === coll) next = { ...coll };
-      next[id] = mapped;
-    }
+  const visitAll = <T>(o: T, slots: readonly RefSlot<T>[]): T => {
+    let next = o;
+    for (const slot of slots) next = visit(next, slot);
     return next;
   };
 
-  const mapDot = (style: DotStyle | undefined): DotStyle | undefined =>
-    style === undefined ? undefined : mapObjRefs(style, DOT_REF_KEYS, map);
+  const visitDot = (d: DotStyle | undefined): DotStyle | undefined =>
+    d === undefined ? d : visitAll(d, DOT_SLOTS);
 
-  const lines = mapCollection(doc.lines, (line) => {
-    let next = mapObjRefs(line, ['colorRef', 'strokeColorRef'], map);
-    const single = mapDot(line.singletonDotStyle);
-    if (single !== line.singletonDotStyle) {
-      if (next === line) next = { ...line };
-      next.singletonDotStyle = single;
+  const eachIn = <T extends object>(
+    key: keyof RefHomesDoc,
+    coll: Record<string, T> | undefined,
+    fn: (item: T) => T,
+  ) => {
+    if (!coll) return;
+    let next = coll;
+    for (const [id, item] of Object.entries(coll)) {
+      const done = fn(item);
+      if (done === item) continue;
+      if (next === coll) next = { ...coll };
+      next[id] = done;
     }
-    const multi = mapDot(line.multiDotStyle);
-    if (multi !== line.multiDotStyle) {
-      if (next === line) next = { ...line };
-      next.multiDotStyle = multi;
+    if (next !== coll) {
+      (out as RefHomesDoc)[key] = next as never;
+      changed = true;
     }
+  };
+
+  eachIn('lines', doc.lines, (line) => {
+    let next = visitAll(line, LINE_ITEM_SLOTS);
+    const single = visitDot(next.singletonDotStyle);
+    if (single !== next.singletonDotStyle) next = { ...next, singletonDotStyle: single };
+    const multi = visitDot(next.multiDotStyle);
+    if (multi !== next.multiDotStyle) next = { ...next, multiDotStyle: multi };
     return next;
   });
-  if (lines !== doc.lines) {
-    out.lines = lines;
-    changed = true;
-  }
 
-  const stations = mapCollection(doc.stations, (st) => {
+  eachIn('stations', doc.stations, (st) => {
     let stops = st.stops;
     for (let i = 0; i < st.stops.length; i++) {
       const stop = st.stops[i];
-      const mapped = mapDot(stop.dotStyle);
-      if (mapped === stop.dotStyle) continue;
+      const done = visitDot(stop.dotStyle);
+      if (done === stop.dotStyle) continue;
       if (stops === st.stops) stops = st.stops.slice();
-      stops[i] = { ...stop, dotStyle: mapped };
+      stops[i] = { ...stop, dotStyle: done };
     }
     return stops === st.stops ? st : { ...st, stops };
   });
-  if (stations !== doc.stations) {
-    out.stations = stations;
-    changed = true;
-  }
 
-  const polygons = mapCollection(doc.polygons, (p) => mapObjRefs(p, ['fillRef', 'strokeRef'], map));
-  if (polygons !== doc.polygons) {
-    out.polygons = polygons;
-    changed = true;
-  }
+  eachIn('polygons', doc.polygons, (p) => visitAll(p, POLYGON_ITEM_SLOTS));
+  eachIn('textLabels', doc.textLabels, (t) => visitAll(t, TEXT_LABEL_ITEM_SLOTS));
+  eachIn('transfers', doc.transfers, (t) => visitAll(t, TRANSFER_ITEM_SLOTS));
 
-  const textLabels = mapCollection(doc.textLabels, (t) => mapObjRefs(t, ['colorRef'], map));
-  if (textLabels !== doc.textLabels) {
-    out.textLabels = textLabels;
-    changed = true;
-  }
-
-  const transfers = mapCollection(doc.transfers, (t) =>
-    mapObjRefs(t, ['colorRef', 'strokeColorRef'], map),
-  );
-  if (transfers !== doc.transfers) {
-    out.transfers = transfers;
-    changed = true;
-  }
-
-  const styles = mapCollection(doc.styles, (def) => {
-    let props: object;
+  eachIn('styles', doc.styles, (def) => {
+    let props: StyleDef['props'];
     switch (def.kind) {
       case 'line':
-        props = mapObjRefs(def.props, ['strokeColorRef'], map);
+        props = visitAll(def.props, LINE_PROPS_SLOTS);
         break;
       case 'polygon':
-        props = mapObjRefs(def.props, ['fillRef', 'strokeRef'], map);
+        props = visitAll(def.props, POLYGON_PROPS_SLOTS);
         break;
       case 'textLabel':
-        props = mapObjRefs(def.props, ['colorRef'], map);
+        props = visitAll(def.props, TEXT_LABEL_PROPS_SLOTS);
         break;
       case 'transfer':
-        props = mapObjRefs(def.props, ['colorRef', 'strokeColorRef'], map);
+        props = visitAll(def.props, TRANSFER_PROPS_SLOTS);
         break;
       case 'stopDot':
-        props = mapObjRefs(def.props, DOT_REF_KEYS, map);
+        props = visitAll(def.props, DOT_SLOTS);
         break;
       default:
         return def;
     }
     return props === def.props ? def : ({ ...def, props } as StyleDef);
   });
-  if (styles !== doc.styles) {
-    out.styles = styles;
-    changed = true;
-  }
 
   return changed ? out : doc;
+}
+
+/**
+ * Rewrite every SwatchRef in the doc through `map` — the shared body of the
+ * palette/swatch RENAME sweeps, which must reach every home a ref lives in and
+ * never read as delete-plus-add. Reference-stable.
+ */
+function mapDocSwatchRefs<Doc extends RefHomesDoc>(
+  doc: Doc,
+  map: (ref: SwatchRef) => SwatchRef,
+): Doc {
+  return walkRefs(doc, (o, slot) => {
+    const ref = slot.ref(o);
+    if (ref === undefined || !isSwatchRef(ref)) return o;
+    const mapped = map(ref);
+    return mapped === ref ? o : slot.withRef(o, mapped);
+  });
 }
 
 /**
@@ -3194,241 +3324,22 @@ function mapDocSwatchRefs<Doc extends RefHomesDoc>(
  * file all count as dangling — this is the only validation refs get.
  *
  * Every palette-mutating transform ends here (mutate `doc.palettes`, then
- * reconcile), and so do all three load-side paths — parse(), migrateDoc, and
- * the persist merge hook — so it is reference-stable on a canonical doc, like
- * every repair that runs on that hook.
+ * reconcile), and so do both load-side doors: `parse()` for a file, and the
+ * persist MERGE hook for a rehydrate — which is where it belongs rather than
+ * in `migrateDoc`, since a doc already AT the current version never reaches a
+ * migration and merge runs on every rehydrate either way. Reference-stable on
+ * a canonical doc, like every other repair on that hook.
  */
 export function reconcileSwatchRefs<Doc extends RefHomesDoc>(doc: Doc): Doc {
   const palettes = doc.palettes;
   if (!palettes) return doc;
-  const out = { ...doc };
-  let changed = false;
-
-  // Resolve a DESIGN ref: undefined = leave as-is (no ref), null = drop it,
-  // a swatch = restamp from it.
-  const designSwatch = (ref: SwatchRef | undefined) => {
-    if (ref === undefined) return undefined;
-    const sw = isSwatchRef(ref) ? resolveDesignSwatchRef(palettes, ref) : undefined;
-    return sw ?? null;
-  };
-
-  // One sibling-scalar pair (fill+darkFill / color+darkColor) on a plain
-  // object: returns the reconciled object, same reference when canonical.
-  const pairHome = <T extends object>(
-    obj: T,
-    dayKey: keyof T,
-    nightKey: keyof T,
-    refKey: keyof T,
-  ): T => {
-    const verdict = designSwatch(obj[refKey] as SwatchRef | undefined);
-    if (verdict === undefined) return obj;
-    if (verdict === null) {
-      const next = { ...obj };
-      delete (next as Record<string, unknown>)[refKey as string];
-      return next;
-    }
-    const pair = swatchPair(verdict);
-    if (obj[dayKey] === pair.day && obj[nightKey] === pair.night) return obj;
-    return { ...obj, [dayKey]: pair.day, [nightKey]: pair.night };
-  };
-
-  // One DayNightColor-or-sentinel field: ref beside a non-pair value drops.
-  const dotField = (
-    style: DotStyle,
-    valueKey: 'fill' | 'strokeColor' | 'serviceCodeColor',
-    refKey: (typeof DOT_REF_KEYS)[number],
-  ): DotStyle => {
-    const verdict = designSwatch(style[refKey]);
-    if (verdict === undefined) return style;
-    const value = style[valueKey];
-    if (verdict === null || typeof value !== 'object') {
-      const next = { ...style };
-      delete next[refKey];
-      return next;
-    }
-    const pair = swatchPair(verdict);
-    if (dayNightColorsEqual(value, pair)) return style;
-    return { ...style, [valueKey]: pair };
-  };
-
-  const dotHome = (style: DotStyle): DotStyle =>
-    dotField(
-      dotField(dotField(style, 'fill', 'fillRef'), 'strokeColor', 'strokeColorRef'),
-      'serviceCodeColor',
-      'serviceCodeColorRef',
-    );
-
-  const reconcileCollection = <T extends object>(
-    key: keyof Doc & keyof RefHomesDoc,
-    coll: Record<string, T> | undefined,
-    fn: (item: T) => T,
-  ) => {
-    if (!coll) return;
-    let next = coll;
-    for (const [id, item] of Object.entries(coll)) {
-      const done = fn(item);
-      if (done === item) continue;
-      if (next === coll) next = { ...coll };
-      next[id] = done;
-    }
-    if (next !== coll) {
-      (out as RefHomesDoc)[key as keyof RefHomesDoc] = next as never;
-      changed = true;
-    }
-  };
-
-  reconcileCollection('lines', doc.lines, (line) => {
-    let next = line;
-    // The LINE-palette color link.
-    const colorRef = line.colorRef;
-    if (colorRef !== undefined) {
-      const sw = isSwatchRef(colorRef) ? resolveLineSwatchRef(palettes, colorRef) : undefined;
-      if (!sw) {
-        next = { ...next };
-        delete next.colorRef;
-      } else if (normalizeHex(next.color) !== normalizeHex(sw.color)) {
-        next = { ...next, color: sw.color };
-      }
-    }
-    // The casing pair (collapse-at-white; never beside the 'line' sentinel).
-    const verdict = designSwatch(next.strokeColorRef);
-    if (verdict !== undefined) {
-      if (verdict === null || next.strokeColor === 'line') {
-        next = next === line ? { ...next } : next;
-        delete next.strokeColorRef;
-      } else {
-        const stored = canonicalStrokeColor(swatchPair(verdict));
-        const same =
-          stored === undefined
-            ? next.strokeColor === undefined
-            : next.strokeColor !== undefined && lineStrokeColorsEqual(stored, next.strokeColor);
-        if (!same) {
-          next = writeLineField(next === line ? { ...next } : next, 'strokeColor', stored);
-        }
-      }
-    }
-    // The dot-default shadows.
-    const single = next.singletonDotStyle && dotHome(next.singletonDotStyle);
-    if (single !== next.singletonDotStyle) {
-      next = next === line ? { ...next } : next;
-      next.singletonDotStyle = single;
-    }
-    const multi = next.multiDotStyle && dotHome(next.multiDotStyle);
-    if (multi !== next.multiDotStyle) {
-      next = next === line ? { ...next } : next;
-      next.multiDotStyle = multi;
-    }
-    return next;
+  return walkRefs(doc, (o, slot) => {
+    const ref = slot.ref(o);
+    if (ref === undefined) return o;
+    const resolve = slot.linePalette ? resolveLineSwatchRef : resolveDesignSwatchRef;
+    const swatch = isSwatchRef(ref) ? resolve(palettes, ref) : undefined;
+    return swatch ? slot.stamp(o, swatch) : slot.drop(o);
   });
-
-  reconcileCollection('stations', doc.stations, (st) => {
-    let stops = st.stops;
-    for (let i = 0; i < st.stops.length; i++) {
-      const stop = st.stops[i];
-      if (!stop.dotStyle) continue;
-      const done = dotHome(stop.dotStyle);
-      if (done === stop.dotStyle) continue;
-      if (stops === st.stops) stops = st.stops.slice();
-      stops[i] = { ...stop, dotStyle: done };
-    }
-    return stops === st.stops ? st : { ...st, stops };
-  });
-
-  reconcileCollection('polygons', doc.polygons, (p) =>
-    pairHome(pairHome(p, 'fill', 'darkFill', 'fillRef'), 'stroke', 'darkStroke', 'strokeRef'),
-  );
-
-  reconcileCollection('textLabels', doc.textLabels, (t) =>
-    pairHome(t, 'color', 'darkColor', 'colorRef'),
-  );
-
-  reconcileCollection('transfers', doc.transfers, (t) => {
-    // Overrides collapse at the constant defaults, so restamping goes through
-    // withTransferOverride/canonicalTransferColor — the setters' own rules.
-    let next = t;
-    const reconcileOverride = (
-      valueKey: 'color' | 'strokeColor',
-      refKey: 'colorRef' | 'strokeColorRef',
-      dflt: DayNightColor,
-    ) => {
-      const verdict = designSwatch(next[refKey]);
-      if (verdict === undefined) return;
-      if (verdict === null) {
-        next = withTransferOverride(next, refKey, undefined);
-        return;
-      }
-      const stored = canonicalTransferColor(swatchPair(verdict), dflt);
-      // withTransferOverride's no-op guard is `===`, which a freshly-built
-      // pair never satisfies — judge structural equality here (the
-      // setLineStrokeColor shape) or a canonical doc allocates.
-      const cur = next[valueKey];
-      const same =
-        stored === undefined
-          ? cur === undefined
-          : cur !== undefined && dayNightColorsEqual(cur, stored);
-      if (!same) next = withTransferOverride(next, valueKey, stored);
-    };
-    reconcileOverride('color', 'colorRef', TRANSFER_COLOR_DEFAULT);
-    reconcileOverride('strokeColor', 'strokeColorRef', TRANSFER_STROKE_COLOR_DEFAULT);
-    return next;
-  });
-
-  reconcileCollection('styles', doc.styles, (def) => {
-    switch (def.kind) {
-      case 'polygon': {
-        const props = pairHome(
-          pairHome(def.props, 'fill', 'darkFill', 'fillRef'),
-          'stroke',
-          'darkStroke',
-          'strokeRef',
-        );
-        return props === def.props ? def : { ...def, props };
-      }
-      case 'textLabel': {
-        const props = pairHome(def.props, 'color', 'darkColor', 'colorRef');
-        return props === def.props ? def : { ...def, props };
-      }
-      case 'transfer': {
-        // Def props store CONCRETE pairs (no collapse), so restamp directly.
-        let props = def.props;
-        for (const [valueKey, refKey] of [
-          ['color', 'colorRef'],
-          ['strokeColor', 'strokeColorRef'],
-        ] as const) {
-          const verdict = designSwatch(props[refKey]);
-          if (verdict === undefined) continue;
-          if (verdict === null) {
-            props = { ...props };
-            delete props[refKey];
-          } else if (!dayNightColorsEqual(props[valueKey], swatchPair(verdict))) {
-            props = { ...props, [valueKey]: swatchPair(verdict) };
-          }
-        }
-        return props === def.props ? def : { ...def, props };
-      }
-      case 'line': {
-        const props = def.props;
-        const verdict = designSwatch(props.strokeColorRef);
-        if (verdict === undefined) return def;
-        if (verdict === null || props.strokeColor === 'line') {
-          const nextProps = { ...props };
-          delete nextProps.strokeColorRef;
-          return { ...def, props: nextProps };
-        }
-        const pair = swatchPair(verdict);
-        if (lineStrokeColorsEqual(props.strokeColor, pair)) return def;
-        return { ...def, props: { ...props, strokeColor: pair } };
-      }
-      case 'stopDot': {
-        const props = dotHome(def.props);
-        return props === def.props ? def : { ...def, props };
-      }
-      default:
-        return def;
-    }
-  });
-
-  return changed ? out : doc;
 }
 
 /**

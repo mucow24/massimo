@@ -1015,9 +1015,9 @@ interface DocState extends MapDoc {
    *  cannot tell a rename from delete-plus-add and would drop the links. */
   renameMapPaletteSwatch: (name: string, index: number, newName: string) => void;
   /** Recolor one half of one swatch of a map palette — the palette editors'
-   *  recolor gesture. A line palette repaints the lines wearing the old color
-   *  in the same write; a design palette edits its day/night halves
-   *  independently and repaints nothing. */
+   *  recolor gesture. Everything LINKED to that swatch restamps in the same
+   *  write (the ref-keyed reconcile sweep): lines for a line palette, the
+   *  decoration fields for a design one, whose halves edit independently. */
   recolorMapPaletteColor: (
     name: string,
     index: number,
@@ -1592,17 +1592,12 @@ export const useDoc = create<DocState>()(
           }
           // Swatch refs must agree with their palettes, and a same-version doc
           // (hand-edited storage, or any state a bug lets slip) never reaches
-          // `migrate` — so the ref reconcile stands here too. Reference-stable
-          // on a canonical doc, like every other repair on this hook.
-          {
-            const before = patch.lines ?? doc.lines;
-            const reconciled = T.reconcileSwatchRefs({
-              palettes: patch.palettes ?? doc.palettes,
-              lines: before,
-            });
-            if (reconciled.lines !== before) patch.lines = reconciled.lines;
-          }
-          return { ...current, ...doc, ...patch };
+          // `migrate` — so the ref reconcile stands here too, over the WHOLE
+          // merged doc: refs live on polygons, labels, transfers, dot shadows
+          // and style defs as well as lines, and every one of them needs the
+          // repair. Last, so it judges what the repairs above just wrote.
+          // Reference-stable on a canonical doc, like every other repair here.
+          return T.reconcileSwatchRefs({ ...current, ...doc, ...patch });
         },
         partialize: (s) => pickDocSnapshot(s),
       },

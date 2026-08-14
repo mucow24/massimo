@@ -3000,6 +3000,16 @@ button.dialog-sort {
    3-color palette and a 19-color one both read as one band. The 2px gap is what
    keeps two near-identical neighbours from reading as one wide swatch — a
    hairline border round each would be too much ink at this height. */
+.palette-strip {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+}
+.palette-strip span {
+  flex: 1;
+  min-width: 2px;
+  border-radius: 2px;
+}
 /* The quiet "design" tag after a design palette's name in the manager rows —
    the kind is load-bearing (it decides which pickers offer the swatches), so
    it reads as a label, not decoration. */
@@ -3012,16 +3022,6 @@ button.dialog-sort {
   font-size: var(--fs-caption);
   font-weight: 500;
   vertical-align: 1px;
-}
-.palette-strip {
-  display: flex;
-  gap: 2px;
-  height: 12px;
-}
-.palette-strip span {
-  flex: 1;
-  min-width: 2px;
-  border-radius: 2px;
 }
 .dialog-row-actions button:disabled {
   opacity: 0.4;

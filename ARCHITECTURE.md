@@ -549,15 +549,23 @@ a pair's value half without carrying its ref key DETACHES (a hand-picked color) 
 (recolor = the sweep, ref-keyed — a hand-picked color merely equal to a swatch's hex does NOT
 follow), a dangling/kind-mismatched/malformed one drops, keeping the painted values; renames
 (palette and the first-class `renameMapPaletteSwatch`) rewrite refs through the shared
-`mapDocSwatchRefs` walker instead. The same reconcile runs on all three load-side paths (parse,
-migrateDoc, the persist merge hook), and persist v30 bakes pre-ref lines that value-match a
+`mapDocSwatchRefs` walker instead — and both sweeps are visitors over ONE traversal (`walkRefs`)
+of a per-home SLOT table, so a new linked field is added in a single place. The same reconcile
+runs on both load-side doors — `parse()` for a file, the persist **merge hook** for a rehydrate
+(not `migrateDoc`: a doc already AT the current version never reaches a migration, and merge runs
+on every rehydrate either way) — and persist v30 bakes pre-ref lines that value-match a
 line-palette swatch into explicit links (`bakeLineColorRefs`, shared with parse — so a line
 detached onto an exact swatch hex reads as linked again on load, today's value-match semantics
 preserved). In the styles machinery refs FOLD INTO their pair's covered-field equality
 (`styleFieldEqual`, `dotStylesEqual`) rather than joining `STYLE_FIELDS`: value+provenance move
 as one unit through capture/canonicalize/sanitize/stamp, so a linked wearer follows its def's
-token change while a pinned one keeps its pin, with no new override machinery. See
-[swatchRef.ts](src/model/swatchRef.ts).
+token change while a pinned one keeps its pin, with no new override machinery. A PASTE reconciles
+the incoming refs against the RECEIVING doc (`addPolygonWith`/`addTextLabelWith`), so a link
+survives a copy only where that doc carries the same palette and swatch NAME — and takes that
+doc's color, repainting the pasted item where the two maps spell one name differently. Name-keyed
+identity has to answer somewhere, and the receiving map's own palette is the answer that keeps its
+grays consistent; the alternative (silently keeping a foreign color and dropping the link) hides
+the divergence. See [swatchRef.ts](src/model/swatchRef.ts).
 
 ### Entities (field-level)
 
@@ -1695,8 +1703,10 @@ legacy `custom:` ids — the only place in either load path that reaches into a 
 > `reconcileSwatchRefs` — **on every rehydrate**, whatever the version says.
 > `migrateDoc`'s own ungated calls cover the version-changed path; `merge` covers the rest. All
 > six are reference-stable on a canonical doc, so it still passes straight through the default
-> merge. A must-always-hold invariant belongs in that hook, **not** in the ungated block in
-> `migrateDoc` alone. `snapStationCells` shows why the distinction is not academic: the docs
+> merge. `reconcileSwatchRefs` runs LAST there, over the whole merged doc, so it judges what the
+> repairs above just wrote; it is `migrateDoc`'s counterpart only in the sense that merge always
+> follows a migration, so the rehydrate path needs it in exactly one place. A must-always-hold
+> invariant belongs in that hook, **not** in the ungated block in `migrateDoc` alone. `snapStationCells` shows why the distinction is not academic: the docs
 > carrying cell drift were saved by the CURRENT build at the CURRENT version, so they are precisely
 > the ones `migrate` never sees — a remote image href is the same shape, and so is an empty
 > palette, which THIS build's editor mints into the doc and persists synchronously before the way

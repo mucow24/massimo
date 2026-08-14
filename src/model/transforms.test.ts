@@ -2003,6 +2003,20 @@ describe('the map’s palettes', () => {
     expect(T.addPaletteToMap(doc, described)).toBe(doc);
   });
 
+  // A palette arriving from a file or a legacy library entry can carry two
+  // swatches of one name — the retired `String(len + 1)` add collided after a
+  // delete-then-add. Names are the ref key, so the door uniquifies.
+  it('uniquifies duplicate swatch names on the way into the map', () => {
+    const doc = T.addPaletteToMap(makeDoc({}), {
+      name: 'dupes',
+      swatches: [
+        { name: 'Red', color: '#c1272d' },
+        { name: 'Red', color: '#0061a8' },
+      ],
+    });
+    expect(doc.palettes[1].swatches.map((s) => s.name)).toEqual(['Red', 'Red 2']);
+  });
+
   it('a kind-only change is a real upsert, not a no-op', () => {
     const doc = T.addPaletteToMap(makeDoc({}), FRRF);
     const next = T.addPaletteToMap(doc, { ...FRRF, kind: 'design' });
