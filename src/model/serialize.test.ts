@@ -52,7 +52,10 @@ describe('serialize / parse round-trip', () => {
       ],
       lineOrder: ['L2', 'L1'],
       // Round-trip pins compare parse(serialize(doc)) with toEqual, so the
-      // fixture must satisfy the load-time style invariants (>= 1 per kind).
+      // fixture must satisfy the load-time style invariants (>= 1 per kind) —
+      // and carry no palettes, or the fixture's MTA hexes would come back
+      // wearing the colorRefs the load-time bake links.
+      palettes: [],
       styles: Object.values(T.DEFAULT_STYLES),
     });
     const json = serialize(doc);
@@ -192,6 +195,27 @@ describe('parse — the map’s palettes', () => {
     if (r.ok) expect(r.doc.palettes).toEqual([good]);
   });
 
+  // Refs are name-keyed, so swatch names must be single answers within their
+  // palette: dupes count up, and a blank name takes its 1-based position.
+  it('uniquifies swatch names within a palette, naming blanks by position', () => {
+    const r = parse(
+      fileWith([
+        {
+          name: 'a',
+          swatches: [
+            { name: 'Red', color: '#111111' },
+            { name: 'Red', color: '#222222' },
+            { name: '', color: '#333333' },
+          ],
+        },
+      ]),
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.doc.palettes[0].swatches.map((s) => s.name)).toEqual(['Red', 'Red 2', '3']);
+    }
+  });
+
   it('keeps kind: design and collapses any other kind away', () => {
     const sw = [{ name: '1', color: '#111111' }];
     const r = parse(
@@ -211,6 +235,76 @@ describe('parse — the map’s palettes', () => {
         { name: 'd', swatches: sw },
       ]);
     }
+  });
+});
+
+describe('parse — line swatch refs', () => {
+  const INKS = {
+    name: 'inks',
+    swatches: [
+      { name: 'Red', color: '#c1272d' },
+      { name: 'Blue', color: '#0061a8' },
+    ],
+  };
+  const GRAYS = {
+    name: 'grays',
+    kind: 'design' as const,
+    swatches: [{ name: 'Wash', color: '#eeeeee' }],
+  };
+  const fileWith = (doc: object): string => JSON.stringify({ format: 'massimo-map', doc });
+
+  // The one-time conversion of the old value-match semantics into explicit
+  // links: a ref-less line sitting on a LINE-palette swatch hex is linked to
+  // it (first hit in map palette order); anything else stays a custom color.
+  it('bakes refs onto ref-less lines that value-match a line-palette swatch', () => {
+    const doc = makeDoc({
+      lines: [
+        makeLine({ id: 'A', color: '#C1272D' }), // matches via normalizeHex
+        makeLine({ id: 'B', color: '#123456' }), // custom
+        makeLine({ id: 'C', color: '#eeeeee' }), // design swatch hex — NOT linked
+      ],
+      palettes: [INKS, GRAYS],
+    });
+    const r = parse(fileWith(doc));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.doc.lines.A.colorRef).toEqual({ palette: 'inks', swatch: 'Red' });
+    expect('colorRef' in r.doc.lines.B).toBe(false);
+    expect('colorRef' in r.doc.lines.C).toBe(false);
+  });
+
+  it('keeps a stored ref, restamping a drifted color from its swatch', () => {
+    const doc = makeDoc({
+      lines: [
+        makeLine({ id: 'A', color: '#000000', colorRef: { palette: 'inks', swatch: 'Blue' } }),
+      ],
+      palettes: [INKS],
+    });
+    const r = parse(fileWith(doc));
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.doc.lines.A).toMatchObject({
+        color: '#0061a8',
+        colorRef: { palette: 'inks', swatch: 'Blue' },
+      });
+    }
+  });
+
+  it('drops a dangling or malformed ref, keeping the painted color', () => {
+    const doc = makeDoc({
+      lines: [
+        makeLine({ id: 'A', color: '#111111', colorRef: { palette: 'gone', swatch: 'x' } }),
+        makeLine({ id: 'B', color: '#123456' }),
+      ],
+      palettes: [INKS],
+    });
+    (doc.lines.B as unknown as { colorRef: unknown }).colorRef = 'junk';
+    const r = parse(fileWith(doc));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.doc.lines.A.color).toBe('#111111');
+    expect('colorRef' in r.doc.lines.A).toBe(false);
+    expect('colorRef' in r.doc.lines.B).toBe(false);
   });
 });
 
@@ -673,6 +767,7 @@ describe('serialize / parse — dot styles', () => {
           multiDotSize: 8,
         }),
       ],
+      palettes: [], // no palettes, or the fixture line's hex gains a colorRef
       styles: Object.values(T.DEFAULT_STYLES),
     });
     const result = parse(serialize(doc));
@@ -1102,6 +1197,7 @@ describe('parse — line width sanitizing', () => {
   it('round-trips a non-default width losslessly (pin — relies only on the optional field)', () => {
     const doc = makeDoc({
       lines: [makeLine({ id: 'L1', width: 21, singletonDotSize: 8, multiDotSize: 8 })],
+      palettes: [], // no palettes, or the fixture line's hex gains a colorRef
       styles: Object.values(T.DEFAULT_STYLES),
     });
     const result = parse(serialize(doc));
@@ -1179,6 +1275,7 @@ describe('parse — dot size sanitizing', () => {
     const doc = makeDoc({
       stations: [makeStation({ id: 's1', stops: [makeStop('L1', { dotSize: 16 })] })],
       lines: [makeLine({ id: 'L1', stations: ['s1'], singletonDotSize: 12, multiDotSize: 18 })],
+      palettes: [], // no palettes, or the fixture line's hex gains a colorRef
       styles: Object.values(T.DEFAULT_STYLES),
     });
     const result = parse(serialize(doc));
@@ -1290,6 +1387,7 @@ describe('parse — line stroke sanitizing', () => {
           multiDotSize: 8,
         }),
       ],
+      palettes: [], // no palettes, or the fixture line's hex gains a colorRef
       styles: Object.values(T.DEFAULT_STYLES),
     });
     const result = parse(serialize(doc));

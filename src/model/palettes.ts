@@ -425,6 +425,40 @@ export function libraryPalettes(
 export const isLinePalette = (p: Palette): boolean => p.kind !== 'design';
 
 /**
+ * Swatch names made unique within their list — refs are name-keyed, so a name
+ * must be a single answer. A blank name takes its 1-based position; a taken
+ * one counts up ("Red", "Red 2", …). Reference-stable when every name already
+ * stands alone.
+ */
+export function uniqueSwatchNames(swatches: readonly PaletteSwatch[]): PaletteSwatch[] {
+  const taken = new Set<string>();
+  let changed = false;
+  const out = swatches.map((s, i) => {
+    const base = s.name.trim() || String(i + 1);
+    let name = base;
+    for (let n = 2; taken.has(name); n++) name = `${base} ${n}`;
+    taken.add(name);
+    if (name === s.name) return s;
+    changed = true;
+    return { ...s, name };
+  });
+  return changed ? out : (swatches as PaletteSwatch[]);
+}
+
+/** `uniqueSwatchNames` over every palette of a map, reference-stable — the
+ *  shape the persist migration and merge-adjacent repairs consume. */
+export function dedupeSwatchNames(palettes: readonly Palette[]): Palette[] {
+  let changed = false;
+  const out = palettes.map((p) => {
+    const swatches = uniqueSwatchNames(p.swatches);
+    if (swatches === p.swatches) return p;
+    changed = true;
+    return { ...p, swatches };
+  });
+  return changed ? out : (palettes as Palette[]);
+}
+
+/**
  * One swatch after recoloring `half`, collapse invariants applied — the single
  * owner of the recolor rules, shared by the doc transform and the editor's
  * library branch. A LINE palette edits day only and drops any stored night

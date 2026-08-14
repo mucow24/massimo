@@ -40,6 +40,7 @@ import { DEFAULT_DOC } from '../model/transforms';
 import * as T from '../model/transforms';
 import {
   cyclingColors,
+  dedupeSwatchNames,
   dropEmptyPalettes,
   FALLBACK_LINE_COLOR,
   type Palette,
@@ -78,6 +79,7 @@ import {
   stripLegacySegmentLayers,
   stripRetiredSeamFields,
   bakeActivePalettes,
+  bakeLineColorRefs,
 } from '../model/serialize';
 import type { Station, Transfer } from '../model/types';
 import { randomStationName } from './stationNames';
@@ -425,6 +427,11 @@ if (typeof window !== 'undefined') {
  *   COMMON of their wearers' effective values via the shared
  *   `bakeTextLabelStyleLayout`, so nothing repaints and only the wearers off
  *   the plurality read as per-field overrides.
+ * - v29 → v30: name-keyed swatch refs. Swatch names go unique within their
+ *   palette (`dedupeSwatchNames`), and every ref-less line sitting on a
+ *   line-palette swatch hex gains `colorRef` (`bakeLineColorRefs`, shared
+ *   with `parse()`) — the one-time conversion of value-match recoloring into
+ *   explicit links.
  * - v28 → v29: a palette carries at least one color. New… used to seed the map
  *   with an empty palette on the way into the editor, so backing out left one
  *   behind — `dropEmptyPalettes` takes those out. `parse()` does the same at
@@ -744,6 +751,13 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     // bake, whose source library may hold stubs of its own.
     out = { ...out, palettes: dropEmptyPalettes(out.palettes) };
   }
+  if (v < 30 && out.palettes !== undefined) {
+    // Name-keyed swatch refs arrive at v30: swatch names become unique within
+    // their palette, and every ref-less line sitting on a line-palette swatch
+    // hex gains the explicit link the recolor sweep now keys off (the one-time
+    // conversion of the old value-match semantics — shared with parse()).
+    out = bakeLineColorRefs({ ...out, palettes: dedupeSwatchNames(out.palettes) });
+  }
   // Retired UltraLight rung (Söhne's ladder starts at 200) folded onto Thin.
   // Non-version-gated: keyed off the legacy value, idempotent, and returns by
   // reference once nothing stores 100 — same contract as the file path's call.
@@ -790,7 +804,10 @@ interface DocState extends MapDoc {
   setLabelAutoVAlign: (stationId: StationId, v: AutoVAlign | null) => void;
 
   addLine: () => LineId;
-  updateLine: (id: LineId, patch: Partial<Pick<Line, 'service' | 'name' | 'color'>>) => void;
+  updateLine: (
+    id: LineId,
+    patch: Partial<Pick<Line, 'service' | 'name' | 'color' | 'colorRef'>>,
+  ) => void;
   connectStationsOnLine: (lineId: LineId, fromStationId: StationId, toStationId: StationId) => void;
   spliceStationIntoEdge: (
     lineId: LineId,
@@ -992,6 +1009,10 @@ interface DocState extends MapDoc {
   addPaletteToMap: (palette: Palette) => void;
   removePaletteFromMap: (name: string) => void;
   renameMapPalette: (from: string, to: string) => void;
+  /** Rename one swatch of a map palette, rewriting the refs pointing at it in
+   *  the same write — never through the anonymous whole-palette upsert, which
+   *  cannot tell a rename from delete-plus-add and would drop the links. */
+  renameMapPaletteSwatch: (name: string, index: number, newName: string) => void;
   /** Recolor one half of one swatch of a map palette — the palette editors'
    *  recolor gesture. A line palette repaints the lines wearing the old color
    *  in the same write; a design palette edits its day/night halves
@@ -1490,6 +1511,8 @@ export const useDoc = create<DocState>()(
         addPaletteToMap: (palette) => set((s) => T.addPaletteToMap(s, palette)),
         removePaletteFromMap: (name) => set((s) => T.removePaletteFromMap(s, name)),
         renameMapPalette: (from, to) => set((s) => T.renameMapPalette(s, from, to)),
+        renameMapPaletteSwatch: (name, index, newName) =>
+          set((s) => T.renameMapPaletteSwatch(s, name, index, newName)),
         recolorMapPaletteColor: (name, index, color, half) =>
           set((s) => T.recolorMapPaletteColor(s, name, index, color, half)),
         reorderMapPalette: (from, to) => set((s) => T.reorderMapPalette(s, from, to)),
@@ -1499,8 +1522,8 @@ export const useDoc = create<DocState>()(
       {
         name: 'vignelli-map-doc-v1',
         storage: debouncedDocStorage,
-        version: 29,
-        // Version migration chain v0 → v29 lives in `migrateDoc` (above), which
+        version: 30,
+        // Version migration chain v0 → v30 lives in `migrateDoc` (above), which
         // is exported and unit-tested. See its doc comment for each step.
         migrate: (persisted, version) => migrateDoc(persisted, version),
         // `migrate` only runs when the STORED version differs from the config
@@ -1560,6 +1583,18 @@ export const useDoc = create<DocState>()(
             if (baked.stations && baked.stations !== (patch.stations ?? doc.stations)) {
               patch.stations = baked.stations;
             }
+          }
+          // Swatch refs must agree with their palettes, and a same-version doc
+          // (hand-edited storage, or any state a bug lets slip) never reaches
+          // `migrate` — so the ref reconcile stands here too. Reference-stable
+          // on a canonical doc, like every other repair on this hook.
+          {
+            const before = patch.lines ?? doc.lines;
+            const reconciled = T.reconcileSwatchRefs({
+              palettes: patch.palettes ?? doc.palettes,
+              lines: before,
+            });
+            if (reconciled.lines !== before) patch.lines = reconciled.lines;
           }
           return { ...current, ...doc, ...patch };
         },

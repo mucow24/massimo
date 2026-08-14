@@ -2007,18 +2007,183 @@ describe('the map’s palettes', () => {
     expect(next.palettes.find((p) => p.name === 'frrf')?.kind).toBe('design');
   });
 
-  describe('recolorMapPaletteColor', () => {
-    // Line A wears swatch 0's color in a different spelling — the repaint must
-    // match the way the picker does (normalizeHex), not by string equality.
-    const wearing = () =>
+  describe('line swatch refs', () => {
+    const RED = { palette: 'frrf', swatch: '1' };
+    // Line A is LINKED to frrf's first swatch; line B merely wears the same
+    // hex by hand. The ref, not the value, is what follows the palette now.
+    const linked = () =>
       T.addPaletteToMap(
         makeDoc({
-          lines: [makeLine({ id: 'A', color: '#C1272D' }), makeLine({ id: 'B', color: '#123456' })],
+          lines: [
+            makeLine({ id: 'A', color: '#c1272d', colorRef: RED }),
+            makeLine({ id: 'B', color: '#c1272d' }),
+          ],
         }),
         FRRF,
       );
 
-    it('recolors the swatch and repaints the lines wearing the old color', () => {
+    it('a line born on a line-palette swatch hex is born linked', () => {
+      const doc = T.addLine(T.addPaletteToMap(makeDoc({}), FRRF), 'N', 'X', '#C1272D');
+      expect(doc.lines.N.colorRef).toEqual({ palette: 'frrf', swatch: '1' });
+      const custom = T.addLine(makeDoc({ palettes: [] }), 'M', 'X', '#123456');
+      expect('colorRef' in custom.lines.M).toBe(false);
+    });
+
+    it('recolor sweeps by ref: linked lines follow, same-hex bystanders stay', () => {
+      const doc = T.recolorMapPaletteColor(linked(), 'frrf', 0, '#00ff00');
+      expect(doc.lines.A).toMatchObject({ color: '#00ff00', colorRef: RED });
+      expect(doc.lines.B.color).toBe('#c1272d');
+    });
+
+    it('removing the palette drops the refs and keeps the painted colors', () => {
+      const doc = T.removePaletteFromMap(linked(), 'frrf');
+      expect(doc.lines.A.color).toBe('#c1272d');
+      expect('colorRef' in doc.lines.A).toBe(false);
+    });
+
+    it('re-adding a palette over the name refreshes linked lines by swatch name', () => {
+      const doc = T.addPaletteToMap(linked(), {
+        name: 'frrf',
+        swatches: [{ name: '1', color: '#123456' }],
+      });
+      expect(doc.lines.A).toMatchObject({ color: '#123456', colorRef: RED });
+    });
+
+    it('a replacement lacking the swatch name drops the ref, keeping the color', () => {
+      const doc = T.addPaletteToMap(linked(), {
+        name: 'frrf',
+        swatches: [{ name: 'renamed away', color: '#123456' }],
+      });
+      expect(doc.lines.A.color).toBe('#c1272d');
+      expect('colorRef' in doc.lines.A).toBe(false);
+    });
+
+    it('renaming the palette rewrites the refs pointing at it', () => {
+      const doc = T.renameMapPalette(linked(), 'frrf', 'inks');
+      expect(doc.lines.A.colorRef).toEqual({ palette: 'inks', swatch: '1' });
+    });
+
+    describe('renameMapPaletteSwatch', () => {
+      it('renames the swatch and rewrites the refs pointing at it', () => {
+        const doc = T.renameMapPaletteSwatch(linked(), 'frrf', 0, 'Crimson');
+        expect(doc.palettes[1].swatches[0]).toEqual({ name: 'Crimson', color: '#c1272d' });
+        expect(doc.lines.A.colorRef).toEqual({ palette: 'frrf', swatch: 'Crimson' });
+      });
+
+      it('refuses a name another swatch of the palette holds, and an empty one', () => {
+        const doc = T.addPaletteToMap(makeDoc({}), {
+          name: 'frrf',
+          swatches: [
+            { name: '1', color: '#c1272d' },
+            { name: '2', color: '#0061a8' },
+          ],
+        });
+        expect(T.renameMapPaletteSwatch(doc, 'frrf', 0, '2')).toBe(doc);
+        expect(T.renameMapPaletteSwatch(doc, 'frrf', 0, '   ')).toBe(doc);
+      });
+
+      it('no-ops on an unknown palette, swatch, or unchanged name', () => {
+        const doc = linked();
+        expect(T.renameMapPaletteSwatch(doc, 'nope', 0, 'x')).toBe(doc);
+        expect(T.renameMapPaletteSwatch(doc, 'frrf', 9, 'x')).toBe(doc);
+        expect(T.renameMapPaletteSwatch(doc, 'frrf', 0, '1')).toBe(doc);
+      });
+    });
+
+    describe('reconcileSwatchRefs', () => {
+      it('passes a canonical doc through by reference', () => {
+        const doc = linked();
+        expect(T.reconcileSwatchRefs(doc)).toBe(doc);
+      });
+
+      it('restamps a drifted value from its swatch — the ref wins', () => {
+        const base = linked();
+        const doc = T.reconcileSwatchRefs({
+          ...base,
+          lines: { ...base.lines, A: { ...base.lines.A, color: '#000000' } },
+        });
+        expect(doc.lines.A.color).toBe('#c1272d');
+      });
+
+      it('drops a dangling or malformed ref, keeping the value', () => {
+        const base = linked();
+        const doc = T.reconcileSwatchRefs({
+          ...base,
+          lines: {
+            ...base.lines,
+            A: { ...base.lines.A, colorRef: { palette: 'gone', swatch: '1' } },
+            B: { ...base.lines.B, colorRef: 'junk' as unknown as import('./types').SwatchRef },
+          },
+        });
+        expect('colorRef' in doc.lines.A).toBe(false);
+        expect('colorRef' in doc.lines.B).toBe(false);
+        expect(doc.lines.A.color).toBe('#c1272d');
+      });
+
+      // A LINE ref into a design palette is a kind mismatch — dangling.
+      it('drops a line ref pointing into a design palette', () => {
+        const base = T.addPaletteToMap(linked(), {
+          name: 'grays',
+          kind: 'design',
+          swatches: [{ name: '1', color: '#333333' }],
+        });
+        const doc = T.reconcileSwatchRefs({
+          ...base,
+          lines: {
+            ...base.lines,
+            A: { ...base.lines.A, colorRef: { palette: 'grays', swatch: '1' } },
+          },
+        });
+        expect('colorRef' in doc.lines.A).toBe(false);
+      });
+    });
+
+    describe('updateLine and the detach rule', () => {
+      it('a color patch without a ref key detaches — a hand-picked color', () => {
+        const doc = T.updateLine(linked(), 'A', { color: '#00ff00' });
+        expect(doc.lines.A.color).toBe('#00ff00');
+        expect('colorRef' in doc.lines.A).toBe(false);
+      });
+
+      it('a color patch carrying its ref keeps the link', () => {
+        const doc = T.updateLine(linked(), 'B', { color: '#c1272d', colorRef: RED });
+        expect(doc.lines.B).toMatchObject({ color: '#c1272d', colorRef: RED });
+      });
+
+      it('a same-hex custom pick still detaches — that is a real change', () => {
+        const doc = T.updateLine(linked(), 'A', { color: '#c1272d' });
+        expect(doc).not.toBe(linked());
+        expect('colorRef' in doc.lines.A).toBe(false);
+      });
+
+      it('re-picking the linked swatch is a reference no-op', () => {
+        const doc = linked();
+        expect(T.updateLine(doc, 'A', { color: '#c1272d', colorRef: RED })).toBe(doc);
+      });
+
+      it('a non-color patch leaves the ref alone', () => {
+        const doc = T.updateLine(linked(), 'A', { name: 'renamed' });
+        expect(doc.lines.A.colorRef).toEqual(RED);
+      });
+    });
+  });
+
+  describe('recolorMapPaletteColor', () => {
+    // Line A is LINKED to swatch 0 (colorRef); line B wears an unrelated
+    // color. The sweep is ref-keyed — a hand-picked line that merely equals
+    // the swatch's hex no longer follows (see the "line swatch refs" suite).
+    const wearing = () =>
+      T.addPaletteToMap(
+        makeDoc({
+          lines: [
+            makeLine({ id: 'A', color: '#c1272d', colorRef: { palette: 'frrf', swatch: '1' } }),
+            makeLine({ id: 'B', color: '#123456' }),
+          ],
+        }),
+        FRRF,
+      );
+
+    it('recolors the swatch and repaints the lines linked to it', () => {
       const doc = T.recolorMapPaletteColor(wearing(), 'frrf', 0, '#00ff00');
       expect(doc.palettes[1].swatches[0]).toEqual({ name: '1', color: '#00ff00' });
       expect(doc.lines.A.color).toBe('#00ff00');

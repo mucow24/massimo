@@ -96,21 +96,21 @@ describe('<PaletteEditor /> rows', () => {
   });
 
   // The map paints from its palettes, so recoloring a swatch takes the lines
-  // wearing that color along — matched the way the picker matches
-  // (normalizeHex), and live per picker gesture.
-  it('recoloring a map swatch repaints the lines wearing that color', async () => {
+  // LINKED to it (colorRef) along, live per picker gesture. A hand-picked
+  // line stays put even on the same hex — the sweep is ref-keyed.
+  it('recoloring a map swatch repaints the lines linked to it', async () => {
     const user = userEvent.setup();
     useDoc.setState({
       ...useDoc.getState(),
       lines: {
-        L: makeLine({ id: 'L', color: '#C1272D' }),
-        M: makeLine({ id: 'M', color: '#123456' }),
+        L: makeLine({ id: 'L', color: '#c1272d', colorRef: { palette: 'frrf', swatch: 'Red' } }),
+        M: makeLine({ id: 'M', color: '#c1272d' }),
       },
     });
     renderEditor('map', 'frrf');
     await setColorField(user, 'Color 1', '#00ff00');
     expect(useDoc.getState().lines.L.color).toBe('#00ff00');
-    expect(useDoc.getState().lines.M.color).toBe('#123456');
+    expect(useDoc.getState().lines.M.color).toBe('#c1272d');
   });
 
   // Add color ends the description's line rather than spanning the list: the

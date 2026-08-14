@@ -56,6 +56,7 @@ describe('save/load round-trip', () => {
         }),
       ],
       lineOrder: ['L1'],
+      palettes: [], // no palettes, or the fixture line's hex gains a colorRef
     });
     useDoc.setState({ ...useDoc.getState(), ...fixture });
     // Serialize the same way Toolbar onSave does — via the DOC_FIELDS-driven

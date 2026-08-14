@@ -109,6 +109,12 @@ import {
   recolorSwatch,
   type Palette,
 } from './palettes';
+import {
+  isSwatchRef,
+  lineColorRefFor,
+  resolveLineSwatchRef,
+  swatchRefsEqual,
+} from './swatchRef';
 import { normalizeHex } from '../util/color';
 import type {
   AlignmentGuide,
@@ -1991,6 +1997,10 @@ export function setLabelValign(doc: MapDoc, stationId: StationId, valign: LabelV
 // ---------- Lines ----------
 
 export function addLine(doc: MapDoc, id: LineId, service: string, color: string): MapDoc {
+  // A line born on a LINE-palette swatch hex is born LINKED to it — the same
+  // rule the load-time bake applies (lineColorRefFor), so the auto-color
+  // cycle's picks follow their palette from the first moment.
+  const colorRef = lineColorRefFor(doc.palettes, color);
   // Dot sizes are stored from birth (absence is a legacy state the load paths
   // materialize away). A fresh line has no dot shadows yet, so both cases sit
   // at the plain-dot natural; the store's addLine composition then applies the
@@ -2001,6 +2011,7 @@ export function addLine(doc: MapDoc, id: LineId, service: string, color: string)
     service,
     name: `${service} line`,
     color,
+    ...(colorRef !== undefined && { colorRef }),
     stations: [],
     edges: [],
     singletonDotSize: DOT_SIZE_DEFAULT,
@@ -2019,10 +2030,15 @@ export function addLine(doc: MapDoc, id: LineId, service: string, color: string)
 export function updateLine(
   doc: MapDoc,
   id: LineId,
-  patch: Partial<Pick<Line, 'service' | 'name' | 'color'>>,
+  patch: Partial<Pick<Line, 'service' | 'name' | 'color' | 'colorRef'>>,
 ): MapDoc {
   const cur = doc.lines[id];
   if (!cur) return doc;
+  // A color write carries its provenance or loses it: a patch touching `color`
+  // without a `colorRef` KEY is a hand-picked color and detaches the ref (the
+  // swatch-ref write rule). A ref never changes under an unrelated patch.
+  const nextRef =
+    'colorRef' in patch ? patch.colorRef : 'color' in patch ? undefined : cur.colorRef;
   // Same-reference-on-no-op (ARCHITECTURE §2). This is an UNGROUPED store
   // write, so a value-identical patch that allocated would push a dead undo
   // entry AND wipe the redo stack — re-clicking the already-selected color
@@ -2031,11 +2047,15 @@ export function updateLine(
   if (
     (patch.service === undefined || patch.service === cur.service) &&
     (patch.name === undefined || patch.name === cur.name) &&
-    (patch.color === undefined || patch.color === cur.color)
+    (patch.color === undefined || patch.color === cur.color) &&
+    swatchRefsEqual(nextRef, cur.colorRef)
   ) {
     return doc;
   }
-  const nextLine = { ...cur, ...patch };
+  const { colorRef: _refKey, ...scalarPatch } = patch;
+  const nextLine = { ...cur, ...scalarPatch };
+  if (nextRef === undefined) delete nextLine.colorRef;
+  else nextLine.colorRef = nextRef;
   const lines = { ...doc.lines, [id]: nextLine };
   if (patch.service === undefined || patch.service === cur.service) {
     return { ...doc, lines };
@@ -2973,6 +2993,43 @@ function palettesEqual(a: Palette, b: Palette): boolean {
 }
 
 /**
+ * Enforce the swatch-ref invariant across the doc: every ref either resolves —
+ * and its field is restamped to the swatch's color — or is dropped, keeping
+ * the painted value (a deleted palette never changes what the map looks like).
+ * Malformed ref shapes from hand-edited files count as dangling; this is the
+ * only validation they get.
+ *
+ * Every palette-mutating transform ends here (mutate `doc.palettes`, then
+ * reconcile), and so do all three load-side paths — parse(), migrateDoc, and
+ * the persist merge hook — so it is reference-stable on a canonical doc, like
+ * every repair that runs on that hook.
+ */
+export function reconcileSwatchRefs<
+  Doc extends { palettes?: Palette[]; lines?: Record<string, Line> },
+>(doc: Doc): Doc {
+  const palettes = doc.palettes;
+  const docLines = doc.lines;
+  if (!palettes || !docLines) return doc;
+  let lines = docLines;
+  for (const [id, line] of Object.entries(docLines)) {
+    const ref = line.colorRef;
+    if (ref === undefined) continue;
+    let next: Line | undefined;
+    const swatch = isSwatchRef(ref) ? resolveLineSwatchRef(palettes, ref) : undefined;
+    if (!swatch) {
+      next = { ...line };
+      delete next.colorRef;
+    } else if (normalizeHex(line.color) !== normalizeHex(swatch.color)) {
+      next = { ...line, color: swatch.color };
+    }
+    if (!next) continue;
+    if (lines === docLines) lines = { ...docLines };
+    lines[id] = next;
+  }
+  return lines === docLines ? doc : { ...doc, lines };
+}
+
+/**
  * Add a palette to the map, upserting by name: adding a name the map already
  * holds replaces its swatches where it stands, which is also how a map picks up
  * a corrected palette from the library. Adding what the map already has changes
@@ -2981,24 +3038,29 @@ function palettesEqual(a: Palette, b: Palette): boolean {
 export function addPaletteToMap(doc: MapDoc, palette: Palette): MapDoc {
   const next = copyPalette(palette);
   const idx = doc.palettes.findIndex((p) => p.name === next.name);
-  if (idx < 0) return { ...doc, palettes: [...doc.palettes, next] };
+  if (idx < 0) return reconcileSwatchRefs({ ...doc, palettes: [...doc.palettes, next] });
   if (palettesEqual(doc.palettes[idx], next)) return doc;
   const palettes = doc.palettes.slice();
   palettes[idx] = next;
-  return { ...doc, palettes };
+  // Replacing a palette is "the refresh": linked fields restamp from the
+  // replacement's same-named swatches, and refs to names it lacks drop.
+  return reconcileSwatchRefs({ ...doc, palettes });
 }
 
-/** Drop a palette from the map. The map may end up holding none. */
+/** Drop a palette from the map — its refs drop, the painted values stay. The
+ *  map may end up holding none. */
 export function removePaletteFromMap(doc: MapDoc, name: string): MapDoc {
   const palettes = doc.palettes.filter((p) => p.name !== name);
   if (palettes.length === doc.palettes.length) return doc;
-  return { ...doc, palettes };
+  return reconcileSwatchRefs({ ...doc, palettes });
 }
 
 /**
  * Rename one of the map's palettes. Free to do — the map holds a copy, so a
  * built-in renamed here leaves the library's untouched. Refuses a name the map
- * already uses, since name is the key.
+ * already uses, since name is the key — which is also why every ref pointing
+ * at the old name is rewritten in the same write: a rename must never read as
+ * delete-plus-add to the links.
  */
 export function renameMapPalette(doc: MapDoc, from: string, to: string): MapDoc {
   const name = to.trim();
@@ -3008,7 +3070,48 @@ export function renameMapPalette(doc: MapDoc, from: string, to: string): MapDoc 
   if (idx < 0) return doc;
   const palettes = doc.palettes.slice();
   palettes[idx] = { ...palettes[idx], name };
-  return { ...doc, palettes };
+  let lines = doc.lines;
+  for (const [id, line] of Object.entries(doc.lines)) {
+    if (line.colorRef?.palette !== from) continue;
+    if (lines === doc.lines) lines = { ...doc.lines };
+    lines[id] = { ...line, colorRef: { palette: name, swatch: line.colorRef.swatch } };
+  }
+  return { ...doc, palettes, lines };
+}
+
+/**
+ * Rename one swatch of a map palette, rewriting every ref pointing at it in
+ * the same write (names are the ref key — see renameMapPalette). Refuses an
+ * empty name and one another swatch of the palette already holds: uniqueness
+ * within a palette is what keeps a ref a single answer.
+ */
+export function renameMapPaletteSwatch(
+  doc: MapDoc,
+  paletteName: string,
+  index: number,
+  newName: string,
+): MapDoc {
+  const name = newName.trim();
+  if (!name) return doc;
+  const pi = doc.palettes.findIndex((p) => p.name === paletteName);
+  if (pi < 0) return doc;
+  const palette = doc.palettes[pi];
+  const swatch = palette.swatches[index];
+  if (!swatch || swatch.name === name) return doc;
+  if (palette.swatches.some((s, i) => i !== index && s.name === name)) return doc;
+  const from = swatch.name;
+  const palettes = doc.palettes.slice();
+  const swatches = palette.swatches.slice();
+  swatches[index] = { ...swatch, name };
+  palettes[pi] = { ...palette, swatches };
+  let lines = doc.lines;
+  for (const [id, line] of Object.entries(doc.lines)) {
+    const ref = line.colorRef;
+    if (ref?.palette !== paletteName || ref.swatch !== from) continue;
+    if (lines === doc.lines) lines = { ...doc.lines };
+    lines[id] = { ...line, colorRef: { palette: paletteName, swatch: name } };
+  }
+  return { ...doc, palettes, lines };
 }
 
 /**
@@ -3017,8 +3120,8 @@ export function renameMapPalette(doc: MapDoc, from: string, to: string): MapDoc 
  *
  * A LINE palette edits its day half only (there is no night UI for line
  * identities): the recolored swatch drops any stored night, and every line
- * wearing the old color — matched via `normalizeHex`, the same equivalence
- * the picker's selected-swatch ring uses — follows to the new value.
+ * LINKED to it (colorRef) follows to the new value via the reconcile sweep —
+ * ref-keyed, so a hand-picked line that merely equals the swatch's hex stays.
  *
  * A DESIGN palette edits either half independently: a day recolor keeps the
  * stored night, a night recolor stores its half collapsed (`night` is kept
@@ -3051,16 +3154,7 @@ export function recolorMapPaletteColor(
   const swatches = palette.swatches.slice();
   swatches[index] = recolored;
   palettes[pi] = { ...palette, swatches };
-  let lines = doc.lines;
-  if (!design) {
-    const prev = normalizeHex(swatch.color);
-    for (const [id, line] of Object.entries(doc.lines)) {
-      if (normalizeHex(line.color) !== prev) continue;
-      if (lines === doc.lines) lines = { ...doc.lines };
-      lines[id] = { ...line, color: next };
-    }
-  }
-  return { ...doc, palettes, lines };
+  return reconcileSwatchRefs({ ...doc, palettes });
 }
 
 /**

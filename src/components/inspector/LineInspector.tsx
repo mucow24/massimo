@@ -189,7 +189,14 @@ export function LineInspector({ id }: { id: LineId }) {
       </div>
       <div className="field">
         <label>Color</label>
-        <ColorPalette value={line.color} onChange={(c) => updateLine(line.id, { color: c })} />
+        {/* A swatch click links the line to that palette color (color + ref in
+            one patch); a custom pick writes the color alone, which detaches. */}
+        <ColorPalette
+          value={line.color}
+          onChange={(c, ref) =>
+            updateLine(line.id, ref ? { color: c, colorRef: ref } : { color: c })
+          }
+        />
       </div>
       {/* Name/service/color above are identity, not style — the style row
           heads the covered formatting controls (dot, width, stroke). */}

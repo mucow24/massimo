@@ -17,6 +17,7 @@ import {
   isLabelWeight,
   isRouteBulletShape,
   isTextLabelAlign,
+  reconcileSwatchRefs,
   stationIsSingleton,
   withTransferOverride,
 } from './transforms';
@@ -85,11 +86,13 @@ import { parseHexA, withHexAlpha } from '../util/color';
 import { migrateLegacyInlineTokens } from '../geometry/labelTokens';
 import {
   copyPalette,
+  dedupeSwatchNames,
   FALLBACK_LINE_COLOR,
   LEGACY_BUILTIN_IDS,
   PALETTES,
   type Palette,
 } from './palettes';
+import { lineColorRefFor } from './swatchRef';
 import { isAllowedImageHref } from './svgImport';
 import type {
   AlignmentGuide,
@@ -480,7 +483,8 @@ export function sanitizePalettes(value: unknown): Palette[] {
       ...(p.kind === 'design' && { kind: 'design' as const }),
     });
   }
-  return out;
+  // Name-keyed refs need single-answer swatch names (see uniqueSwatchNames).
+  return dedupeSwatchNames(out);
 }
 
 // Custom palettes of the id era were `custom:<slug-of-name>`, so slugging the
@@ -527,6 +531,31 @@ export function bakeActivePalettes(
     out.push(copyPalette(found));
   }
   return out;
+}
+
+/**
+ * The one-time conversion of the old value-match line-recolor semantics into
+ * explicit links: every REF-LESS line whose color equals a LINE-palette
+ * swatch (via `normalizeHex`, first hit in map palette order) gains a
+ * `colorRef` to it. Runs unconditionally in `parse()` and at persist v<30 —
+ * unconditional because value-equals-swatch IS what "linked" meant before the
+ * field existed; the accepted consequence is that a hand-picked color sitting
+ * exactly on a line-palette swatch hex reads as linked again on every load.
+ * Reference-stable when there is nothing to link. Shared by both load paths.
+ */
+export function bakeLineColorRefs<
+  Doc extends { palettes?: Palette[]; lines?: Record<string, Line> },
+>(doc: Doc): Doc {
+  if (!doc.palettes || !doc.lines) return doc;
+  let lines = doc.lines;
+  for (const [id, line] of Object.entries(doc.lines)) {
+    if (line.colorRef !== undefined || typeof line.color !== 'string') continue;
+    const ref = lineColorRefFor(doc.palettes, line.color);
+    if (!ref) continue;
+    if (lines === doc.lines) lines = { ...doc.lines };
+    lines[id] = { ...line, colorRef: ref };
+  }
+  return lines === doc.lines ? doc : { ...doc, lines };
 }
 
 export function serialize(doc: MapDoc): string {
@@ -824,6 +853,12 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
   // just-backfilled Default styles, so the Styles panel's Default editors
   // act on the whole loaded map rather than nothing.
   if (!hadStyles) final = adoptDefaultStyles(final);
+  // Swatch refs, last (lines and palettes are final): link ref-less lines to
+  // the line-palette swatches they value-match, then reconcile — a stored ref
+  // wins over a drifted value, a dangling/malformed one drops. Bake BEFORE
+  // reconcile so a line already carrying a ref (however stale) is never
+  // re-matched by value.
+  final = reconcileSwatchRefs(bakeLineColorRefs(final));
   return { ok: true, doc: final };
 }
 

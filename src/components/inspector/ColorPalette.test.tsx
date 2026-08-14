@@ -68,6 +68,19 @@ describe('<ColorPalette /> sections', () => {
     expect(document.querySelectorAll('.color-swatch').length).toBe(5);
   });
 
+  // Design palettes hold decoration colors — never offered as line identities.
+  it('design palettes never render a section', () => {
+    withPalettes([
+      ...named('BART'),
+      { name: 'grays', kind: 'design', swatches: [{ name: 'Wash', color: '#eeeeee' }] },
+    ]);
+    render(<ColorPalette value="#FFE800" onChange={vi.fn()} />);
+    const headers = Array.from(document.querySelectorAll('.color-palette-section-label')).map(
+      (el) => el.textContent,
+    );
+    expect(headers).toEqual(['BART', 'Custom']);
+  });
+
   // A map may carry no palettes at all — the picker is still usable, because
   // hand-picked colors and the new-color field never depended on one.
   it('with no palettes at all, only the Custom section renders', () => {
@@ -80,13 +93,13 @@ describe('<ColorPalette /> sections', () => {
     expect(screen.getByLabelText('Custom color')).toBeInTheDocument();
   });
 
-  it('clicking a swatch fires onChange with the swatch hex', async () => {
+  it('clicking a swatch fires onChange with the swatch hex and its ref', async () => {
     const user = userEvent.setup();
     withPalettes(named('BART'));
     const onChange = vi.fn();
     render(<ColorPalette value="#FFE800" onChange={onChange} />);
     await user.click(screen.getByTitle('Red Line'));
-    expect(onChange).toHaveBeenCalledWith('#ED1C24');
+    expect(onChange).toHaveBeenCalledWith('#ED1C24', { palette: 'BART', swatch: 'Red Line' });
   });
 
   it('the currently-selected swatch carries the selected class (thick themed ring)', () => {

@@ -7,6 +7,7 @@ import { useCustomPalettes } from '../state/customPalettes';
 import {
   FALLBACK_LINE_COLOR,
   recolorSwatch,
+  uniqueSwatchNames,
   type Palette,
   type PaletteSwatch,
 } from '../model/palettes';
@@ -161,6 +162,7 @@ export function PaletteEditor({
   inlineEditRef: MutableRefObject<boolean>;
 }) {
   const mapPalettes = useDoc((s) => s.palettes);
+  const renameMapPaletteSwatch = useDoc((s) => s.renameMapPaletteSwatch);
   // The colors this MAP paints with that no palette of its own covers — the
   // same set the manager's custom colors row collects, offered here one at a
   // time. Always the map's, even while a LIBRARY palette is open, since that
@@ -232,7 +234,16 @@ export function PaletteEditor({
   const commitSwatchName = (i: number, raw: string) => {
     const next = raw.trim();
     if (!next || next === swatches[i].name) return;
-    withSwatches(swatches.map((s, j) => (j === i ? { ...s, name: next } : s)));
+    // Names are the swatch-ref key, so they stay unique within the palette,
+    // and a MAP rename goes through its own transform — the anonymous
+    // whole-palette upsert cannot tell a rename from delete-plus-add, and
+    // would drop the refs pointing at the old name.
+    if (swatches.some((s, j) => j !== i && s.name === next)) {
+      setError(`“${next}” is already one of this palette’s colors.`);
+      return;
+    }
+    if (source === 'map') renameMapPaletteSwatch(palette.name, i, next);
+    else withSwatches(swatches.map((s, j) => (j === i ? { ...s, name: next } : s)));
   };
 
   // A MAP recolor goes through the transform so the map follows a picker drag
@@ -246,8 +257,11 @@ export function PaletteEditor({
       ? recolorMapPaletteColor(palette.name, i, c, half)
       : withSwatches(swatches.map((s, j) => (j === i ? recolorSwatch(s, c, half, design) : s)));
 
+  // The new swatch is named by uniqueSwatchNames' canonical rule: a blank
+  // takes its 1-based position, counting up past any name already taken —
+  // String(len + 1) alone collides after a delete-then-add.
   const addColor = (color: string = FALLBACK_LINE_COLOR) =>
-    withSwatches([...swatches, { name: String(swatches.length + 1), color: normalizeHex(color) }]);
+    withSwatches(uniqueSwatchNames([...swatches, { name: '', color: normalizeHex(color) }]));
 
   // What Add color offers: the map's custom colors, minus whatever this
   // palette already holds. That subtraction is the only reason the two sources
