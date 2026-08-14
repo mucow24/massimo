@@ -2961,6 +2961,11 @@ of their own, and are omitted below to keep it readable:
 1. Background band — polygons and svg images in **ONE interleaved pass** over
    `backgroundRenderOrder`, resolving kind per id (they share `backgroundOrder`, so neither kind is
    structurally above the other; see the z-order gotcha). Under all map content.
+1b. **Scaffolding band** — line circles (`LineCircleView`), then alignment guides (`GuideView`,
+    plus the wells' pull-out ghost at placement-ghost opacity; both span the OVERDRAWN box like
+    the Grid, so a mid-gesture camera can't reveal an end). Above the background art, below all
+    map ink, `data-export-exclude` throughout: scaffolding positions map content without being
+    any. Selection chrome here is a recolour in place, not a twin (see above).
 2. Station `wash` (selection silhouette fill, behind bands).
 3. Interleaved band renderables, ordered by per-stripe z-priority via `buildOrderedRenderables`,
    which emits **three** kinds: `casing` (at `priority + CASING_EPS`), `body` stripe, and
