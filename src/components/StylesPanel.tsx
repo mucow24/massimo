@@ -13,6 +13,7 @@ import { selectableStylesOfKind } from '../model/styles';
 import { StyleEditor } from './StyleEditor';
 import { StopGlyph } from './StopGlyph';
 import { useInlineRename } from './useInlineRename';
+import { PalettesSection } from './PalettesSection';
 import type { StyleDef, StyleKind } from '../model/types';
 
 const KIND_ORDER: readonly StyleKind[] = [
@@ -234,6 +235,9 @@ export function StylesPanel() {
           </Fragment>
         );
       })}
+      {/* The map's palettes — the swatch tweak surface (recolor + rename);
+          structural palette work stays in the Manage palettes dialog. */}
+      <PalettesSection />
     </section>
   );
 }

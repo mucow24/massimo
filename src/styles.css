@@ -2288,6 +2288,23 @@ button.field-select > :not(.field-select-caret) {
   padding: 4px 12px;
   cursor: pointer;
 }
+/* The Styles tab's Palettes section: per-palette sub-headers sit quieter than
+   the kind headers (not sticky — they'd stack under "Palettes"), and swatch
+   rows lead with their day(/night) fields. */
+.list-header.palettes-section-palette {
+  position: static;
+  background: transparent;
+  border-bottom: none;
+  padding-left: 20px;
+}
+.palettes-section-row {
+  padding-left: 28px;
+}
+.palettes-section-empty {
+  padding: 8px 12px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
 .list-row:hover {
   background: var(--row-hover);
 }
