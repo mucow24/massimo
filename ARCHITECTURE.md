@@ -131,9 +131,12 @@ src/
     ids.ts                      # IdFactory: crypto UUIDs (prod) / counter ids (tests)
     pairKey.ts                  # pairKeyOf(a,b): canonical station-pair key
     recordOrder.ts              # reconcileOrder/moveInOrder: shared z-order algebra
-    palettes.ts                 # built-in PALETTES (name-keyed) + library assembly/sorting
+    palettes.ts                 # built-in PALETTES (name-keyed) + library assembly/sorting +
+                                #   palette kinds (line vs design) + swatch recolor/unique-name rules
     customPalette.ts            # palette files: parse both formats (ours + legacy "frrf"),
-                                #   serialize the massimo-palette format (day/night, description)
+                                #   serialize the massimo-palette format (day/night, description, kind)
+    swatchRef.ts                # SwatchRef equality/resolution + the write-rule helper (see
+                                #   "Swatch refs" under Styles)
     lineStyle.ts                # LINE_STYLES (the ladder) + LINE_STYLE_TIE_RANK + KNOWN_LINE_STYLES
     dayNightColor.ts            # resolve/compare a theme-aware {day,night} color (the ONE ternary)
     dotStyle.ts dotSize.ts      # procedural stop-dot style + size resolution
@@ -246,15 +249,22 @@ src/
     BrandBullet.tsx             # the wordmark: an "M" route bullet (black disc/white M; night
                                 #   inverts) — the toolbar badge, reused by the easter-egg ball
     MapLibraryDialog.tsx        # the library manager (maps | versions; Radix Dialog)
-    PalettesDialog.tsx          # the palette manager (library | in this map; same Dialog shell)
+    PalettesDialog.tsx          # the palette manager (library | in this map; same Dialog shell;
+                                #   mints via New line…/New design…, badges design rows)
     PaletteEditor.tsx           # the manager's second view: one palette's title/description/rows
+                                #   (design rows carry a sun/moon field pair)
+    PalettesSection.tsx         # the Styles tab's Palettes section: per-swatch recolor + rename —
+                                #   the tweak surface (structural work stays in the dialog)
     dialogRow.tsx               # shared dialog-row chrome: IconButton, RowCommands (the `…`
                                 #   overflow toolbar), the useSpeedBump two-click, DialogSortSelect
                                 #   (a library column's sort picker, over the union's own ladder)
     useRowDragReorder.ts        # pointer drag-to-reorder for fixed-height row lists (editor rows)
     MapVersionPill.tsx          # the live doc's version + save-status dot, beside the map name
     *Popover.tsx                # on-canvas item editors
-    DayNightColorRow.tsx        # shared label + light/dark ColorField pair (every themed-color row)
+    DayNightColorRow.tsx        # shared label + light/dark ColorField pair — the plain half of…
+    PaletteColorRow.tsx         # …the palette-aware themed-color row every pair site mounts:
+                                #   linked = swatch dropdown (split swatch + NAME), Custom = the
+                                #   pair reveals; plain row when the map has no design palettes
     SegmentedToggle.tsx         # the ONE pick-one control (~16 inline Radix ToggleGroup clusters)
     FieldSelectContent.tsx      # shared Radix Select panel: portals popover Selects to .app (escapes
                                 #   the .canvas-host isolate layer) + bounds/scrolls a long list
@@ -432,9 +442,12 @@ interface MapDoc {
   palettes: Palette[]; // COPIES the map paints with, in picker/color-cycle order; the LIST may be
   // empty, and a palette in it carries ≥1 color — held by the palette manager and repaired on
   // load, but NOT a shape the readers may assume (the editor mints an empty one it may not have
-  // taken back yet; undo reaches back past a take-back). A palette may carry a description; a
-  // swatch a night color (stored ONLY when ≠ its day color — the collapse invariant — and unused
-  // by lines so far: the editor writes day == night)
+  // taken back yet; undo reaches back past a take-back). A palette may carry a description, and
+  // a kind: absent = a LINE palette (swatches are line identities: the color cycle, the line
+  // picker, day-only in practice), 'design' = decoration colors with real day/night halves
+  // (night stored ONLY when ≠ day — the collapse invariant), offered by the PaletteColorRow
+  // dropdowns and never by the line picker. Swatch names are UNIQUE within their palette —
+  // they are the swatch-ref key (see "Swatch refs" below)
   darkMode: boolean; // is this a NIGHT map? false = day. Travels in the saved/exported file
   styles: Record<string, StyleDef>; // named per-kind formatting presets ("Styles")
   styleDefaults: Record<StyleKind, string>; // per-kind DEFAULT designation (style id)
@@ -519,6 +532,32 @@ primitive the dot picker always offers but nobody chose, so promoting it to a ki
 to a line style def's dot type) would stamp blank dots across every wearer. The picker itself
 reads the unfiltered `stylesOfKind` — offering "None" is its job.
 See [styles.ts](src/model/styles.ts).
+
+**Swatch refs** link color fields to named palette swatches by the raw-value-plus-tag contract dot
+styles use: the field keeps the LITERAL colors every painter/exporter reads, and an optional
+`SwatchRef {palette, swatch}` (both name-keyed) rides beside them. `Line.colorRef` points at a
+LINE-palette swatch; the decoration pairs — polygon `fillRef`/`strokeRef`, text label `colorRef`,
+transfer `colorRef`/`strokeColorRef`, line-casing `strokeColorRef`, and the three DotStyle color
+refs — point at DESIGN palettes, on items and style defs alike. INVARIANT: a present ref's field
+holds exactly the swatch's `(color, night ?? color)` — over EFFECTIVE values, since transfer
+colors and the line casing collapse their stored form at a constant default, and a ref never sits
+beside a sentinel (`'line'`/`'none'`/`'bw'`). The write rule keeps it airtight: any patch touching
+a pair's value half without carrying its ref key DETACHES (a hand-picked color) — hosted by
+`updateLine`/`updatePolygon`/`updateTextLabel`/`updateTransferStyle`/`updateStyleProps` and
+`setLineStrokeColor`'s ref param. Every palette-mutating transform ends in
+`reconcileSwatchRefs` (transforms.ts): a resolvable ref restamps its field from the swatch
+(recolor = the sweep, ref-keyed — a hand-picked color merely equal to a swatch's hex does NOT
+follow), a dangling/kind-mismatched/malformed one drops, keeping the painted values; renames
+(palette and the first-class `renameMapPaletteSwatch`) rewrite refs through the shared
+`mapDocSwatchRefs` walker instead. The same reconcile runs on all three load-side paths (parse,
+migrateDoc, the persist merge hook), and persist v30 bakes pre-ref lines that value-match a
+line-palette swatch into explicit links (`bakeLineColorRefs`, shared with parse — so a line
+detached onto an exact swatch hex reads as linked again on load, today's value-match semantics
+preserved). In the styles machinery refs FOLD INTO their pair's covered-field equality
+(`styleFieldEqual`, `dotStylesEqual`) rather than joining `STYLE_FIELDS`: value+provenance move
+as one unit through capture/canonicalize/sanitize/stamp, so a linked wearer follows its def's
+token change while a pinned one keeps its pin, with no new override machinery. See
+[swatchRef.ts](src/model/swatchRef.ts).
 
 ### Entities (field-level)
 
@@ -981,7 +1020,9 @@ All remaining fields optional and **never stored at default**:
   value (capture-by-example and the editors' mode pickers); `lineCasingColor(line, lineColor,
   darkMode)` resolves it for paint, taking the EFFECTIVE color so a line-colored casing desaturates
   with the body. The `'line'` sentinel resolves the same on both canvases — a line's body color
-  has no night half. `darkMode` reaches the painters (`SegmentBand`, `StopMarker`) as a PROP
+  has no night half. `strokeColorRef?` is the pair's swatch ref (see "Swatch refs"): never beside
+  the sentinel, possibly beside an ABSENT value when the swatch sits on the white default.
+  `darkMode` reaches the painters (`SegmentBand`, `StopMarker`) as a PROP
   rather than a store read: both are memoized and among the highest-instance components on canvas.
 - `dashLength?` / `dashWidth?: number` — **TfL-tick dimensions for this line's `dash` stops**,
   world units. PRESENTATION (never moves band geometry, resolved at render). Both **unset** ⇒
@@ -1244,7 +1285,8 @@ floored at 0 — the slider caps at 10, but the spinbutton/stored value is unbou
 `darkFill, darkStroke` (independent dark-mode colors, **backfilled to equal the light colors**
 on load for legacy saves). Optional: `locked?`, `curveRadius?` (floored at 0, slider caps at
 50, stored value unbounded above; missing ⇒ 0 = sharp), `closed?` (missing
-⇒ true; false = **open** chain: stroke-only, no fill, hit-test follows the stroke).
+⇒ true; false = **open** chain: stroke-only, no fill, hit-test follows the stroke), and the two
+pair-level swatch refs `fillRef?`/`strokeRef?` (see "Swatch refs").
 `PolygonStylePatch` is the shared `Partial<Pick<…>>` used by both the transform and the store
 action so they never drift.
 
@@ -1270,7 +1312,8 @@ spinbutton/stored value is unbounded above),
 sizes to content and honors manual `\n`; `>0` = a fixed-width column that word-wraps, with
 `\n` a hard break; floored at 0 by `updateTextLabel`, fractions kept), `color/
 darkColor` (day/night; **defaults DIFFER**: `#111111` / `#ffffff` for legibility — unlike a
-polygon whose dark default equals its light; backfilled on load), `locked?`, plus optional
+polygon whose dark default equals its light; backfilled on load), `colorRef?` (the pair's swatch
+ref — see "Swatch refs"), `locked?`, plus optional
 per-label `leading` (line-spacing multiplier) / `tracking` (em letter-spacing) — station labels
 carry their own per-station `leading`/`tracking` (see `Station`); there is no doc-global pair.
 
@@ -1398,8 +1441,10 @@ drops a value equal to the default. `color`/`strokeColor` are **theme-aware `Day
 (`{day, night}`, the same abstraction dot fill/stroke and a line's casing use) — day paints on
 the light canvas, night on the dark; the whole override drops only when **both** halves match the default
 (black/black body, white/white outline). `TransferLayer` resolves them to hex per the active
-theme via `resolveDayNight`. Map-wide restyling is the designated **Default** transfer
-style preset in `doc.styles`, not a doc field
+theme via `resolveDayNight`. `colorRef?`/`strokeColorRef?` are the pairs' swatch refs (see
+"Swatch refs") — legal beside an ABSENT color, since the override collapses at the default while
+the ref invariant is over effective values. Map-wide restyling is the designated **Default**
+transfer style preset in `doc.styles`, not a doc field
 ([transferStyle.ts](src/model/transferStyle.ts), `updateTransferStyle`).
 
 **`draw`** is the fifth override and the odd one out: a **paint order**, not a shape.
@@ -1581,12 +1626,17 @@ the file itself carries (steps 3, 5, 6b/6c) — repair over guesswork, error ove
 14. `adoptDefaultStyles` — **only for files with no `styles` record at all** (pre-styles saves):
     untagged items whose values match their kind's designated default get tagged, so the Styles
     panel's Default editors act on the whole loaded map.
+15. `bakeLineColorRefs` then `reconcileSwatchRefs` — **swatch refs, last** (lines and palettes are
+    final): link ref-less lines to the line-palette swatches they value-match (unconditional — see
+    the `v<30` gate for why), then reconcile every ref: a stored ref WINS over a drifted value, a
+    dangling/malformed one drops. Bake before reconcile, so a line already carrying a ref
+    (however stale) is never re-matched by value.
 
 Path A does **more** than Path B because hand-edited files can be non-canonical (the file-only
 sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for this).
 
 **Path B — localStorage rehydration: `migrateDoc(persisted, version)`** ([store.ts](src/state/store.ts)).
-The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 29`, `migrate:
+The zustand `persist` config: `name: 'vignelli-map-doc-v1'`, `version: 30`, `migrate:
 migrateDoc`, `partialize: pickDocSnapshot`, plus a **custom `merge` hook** (below). Because the persist-merge already fills absent fields
 from the initial state, `migrateDoc` only does **value-level legacy fixups, version-gated**, on
 disjoint fields (order immaterial except where noted), never mutating the input:
@@ -1618,6 +1668,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | `v<25`      | `stripRetiredSeamFields` (the branch seam retired outright — self-overlaps are region faces now): `seamColor`/`seamWidth`/`seamEdges` leave every line AND every line style def together, plus any doc-level `seamEdges` remnant, so tagged wearers stay tagged; junctions come back with the branch-arm default in front — the old "Branch" seam look |
 | `v<26`      | `backfillLineCasingDayNightColors` (the line **casing** color gained day/night halves: legacy single-color strings → `{day, night}` pairs on per-line `strokeColor` AND line StyleDef props; the `'line'` sentinel passes through, being no color at all). Lines and defs convert together, so tagged wearers stay tagged. Ordered **before** the `v<10` style hygiene, whose canonicalizer now reads the pair form — and hence before the `v<11` adoption. Path A covers this via `sanitizeLineStroke` / `sanitizeStyleProps` |
 | `v<29`      | `dropEmptyPalettes` (a palette carries at least one color: drop the ones stored without any). New… used to seed a palette into the map on the way into the editor, so every "New palette N" backed out of left an empty stub behind. Ordered **after** the `v<24` bake, whose source library may hold stubs of its own. The library store's own `v1 → v2` migration does the same to its half. **But see the `merge` hook** — the gate alone would leave today's editor free to strand one at the current version |
+| `v<30`      | name-keyed **swatch refs** arrive: `dedupeSwatchNames` (swatch names go unique within their palette — they are the ref key), then `bakeLineColorRefs` (every ref-less line sitting on a line-palette swatch hex gains an explicit `colorRef` — the one-time conversion of value-match recoloring into links, shared with the file path, where it runs unconditionally) |
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array. **But see the `merge` hook** — this call alone is not "every rehydrate" |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `snapStationCells` whenever `stations !== undefined` — cell drift is not tied to a schema bump, so a gate could never catch it. **But see the `merge` hook** — for this repair that caveat is the main event, not a footnote |
@@ -1640,10 +1691,10 @@ legacy `custom:` ids — the only place in either load path that reaches into a 
 > already _at_ the version it claims, so it skips `migrateDoc` entirely, ungated repairs included,
 > and the renderer crashes on `ln.edges.join(...)`. That is why the persist config carries a custom
 > **`merge` hook** which runs the must-always-hold repairs — `backfillLinesEdges`,
-> `snapStationCells`, `sanitizeImageHrefs`, `dropEmptyPalettes` and `bakeConcreteDotSizes` — **on
-> every rehydrate**, whatever the version says.
+> `snapStationCells`, `sanitizeImageHrefs`, `dropEmptyPalettes`, `bakeConcreteDotSizes` and
+> `reconcileSwatchRefs` — **on every rehydrate**, whatever the version says.
 > `migrateDoc`'s own ungated calls cover the version-changed path; `merge` covers the rest. All
-> five are reference-stable on a canonical doc, so it still passes straight through the default
+> six are reference-stable on a canonical doc, so it still passes straight through the default
 > merge. A must-always-hold invariant belongs in that hook, **not** in the ungated block in
 > `migrateDoc` alone. `snapStationCells` shows why the distinction is not academic: the docs
 > carrying cell drift were saved by the CURRENT build at the CURRENT version, so they are precisely
@@ -2289,7 +2340,8 @@ Six seams cover it, and a seventh rule governs anything new:
   copy — a library palette through these actions (outside undo), a map palette through the doc's
   (undoable) — never both.
 - [customLineColors.ts](src/state/customLineColors.ts) — `useCustomLineColors()`: the map's
-  **custom colors**, i.e. every distinct line color no palette of the doc covers. Three surfaces
+  **custom colors**, i.e. every distinct line color no LINE palette of the doc covers (design
+  palettes cover nothing here — their swatches are never line identities). Three surfaces
   show that set — the line picker's Custom section, the palette manager's custom colors row, the
   palette editor's Add color menu — and the point of it is that they agree, a color leaving all
   three the moment a palette covers it, so the derivation is here rather than at each of them.
@@ -3633,9 +3685,13 @@ same three additions.
   custom colors MINUS what the open palette already holds: taking one into a map palette covers it
   and the set shrinks by itself, but a library palette covers nothing, and the same swatch must not
   be addable twice. Edits are live against the ONE copy the
-  pencil named (New… opens on the map copy), and recoloring a MAP swatch also repaints the lines
-  wearing the old color in the same write (`recolorMapPaletteColor`, matched via `normalizeHex`
-  exactly as the picker matches) — so the canvas follows a picker drag live.
+  pencil named (New… opens on the map copy), and recoloring a MAP swatch also restamps everything
+  LINKED to it in the same write (`recolorMapPaletteColor` → the ref-keyed reconcile sweep; see
+  "Swatch refs") — so the canvas follows a picker drag live. A design palette's rows carry a
+  sun/moon field pair and recolor per half; a MAP swatch rename routes through
+  `renameMapPaletteSwatch` (never the anonymous whole-palette upsert, which cannot tell a rename
+  from delete-plus-add and would drop the refs), and a name a sibling swatch already holds is
+  refused.
   A palette **carries at least one color** wherever one comes to rest — library, map, palette file
   (`dropEmptyPalettes`, and the parser rejects a colorless file outright). This view is the single
   exception, and only while it is up: New… mints its palette empty so the first color is chosen
@@ -4263,8 +4319,9 @@ Each is confirmed in source/tests; file pointers included.
   since it is only correct while the collected placeholder is the last-added line. A doc
   subscription clears the mark the instant the line holds a station — from then on it is a line
   the user built, and emptying it again must not hand it back.
-- **`addLine` guards the empty color cycle** — a map carrying no palettes makes `cyclingColors`
-  return `[]`, and `n % 0` is NaN; it falls back to `FALLBACK_LINE_COLOR`.
+- **`addLine` guards the empty color cycle** — a map carrying no LINE palettes (design palettes
+  sit out the cycle) makes `cyclingColors` return `[]`, and `n % 0` is NaN; it falls back to
+  `FALLBACK_LINE_COLOR`. A line born on a swatch hex is born LINKED (`lineColorRefFor`).
 - **`finishDrag`'s cancel branch does NOT reset `suppressClick`** — a never-moved gesture never set
   it; cross-gesture stranding is handled by the capture-phase self-heal instead.
 - **Line-tag drag uses window listeners** — the only hook off the shared React-handler path,
