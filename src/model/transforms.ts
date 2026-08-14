@@ -3132,9 +3132,7 @@ function mapDocSwatchRefs<Doc extends RefHomesDoc>(
     changed = true;
   }
 
-  const polygons = mapCollection(doc.polygons, (p) =>
-    mapObjRefs(p, ['fillRef', 'strokeRef'], map),
-  );
+  const polygons = mapCollection(doc.polygons, (p) => mapObjRefs(p, ['fillRef', 'strokeRef'], map));
   if (polygons !== doc.polygons) {
     out.polygons = polygons;
     changed = true;
@@ -3337,12 +3335,7 @@ export function reconcileSwatchRefs<Doc extends RefHomesDoc>(doc: Doc): Doc {
   });
 
   reconcileCollection('polygons', doc.polygons, (p) =>
-    pairHome(
-      pairHome(p, 'fill', 'darkFill', 'fillRef'),
-      'stroke',
-      'darkStroke',
-      'strokeRef',
-    ),
+    pairHome(pairHome(p, 'fill', 'darkFill', 'fillRef'), 'stroke', 'darkStroke', 'strokeRef'),
   );
 
   reconcileCollection('textLabels', doc.textLabels, (t) =>
@@ -3510,7 +3503,9 @@ export function renameMapPaletteSwatch(
   swatches[index] = { ...swatch, name };
   palettes[pi] = { ...palette, swatches };
   return mapDocSwatchRefs({ ...doc, palettes }, (ref) =>
-    ref.palette === paletteName && ref.swatch === from ? { palette: paletteName, swatch: name } : ref,
+    ref.palette === paletteName && ref.swatch === from
+      ? { palette: paletteName, swatch: name }
+      : ref,
   );
 }
 

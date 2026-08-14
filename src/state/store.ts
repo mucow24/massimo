@@ -1018,7 +1018,12 @@ interface DocState extends MapDoc {
    *  recolor gesture. A line palette repaints the lines wearing the old color
    *  in the same write; a design palette edits its day/night halves
    *  independently and repaints nothing. */
-  recolorMapPaletteColor: (name: string, index: number, color: string, half?: 'day' | 'night') => void;
+  recolorMapPaletteColor: (
+    name: string,
+    index: number,
+    color: string,
+    half?: 'day' | 'night',
+  ) => void;
   /** Move a palette from one slot to another in the map's list — the order
    *  the picker's sections and the `addLine` color cycle follow. */
   reorderMapPalette: (from: number, to: number) => void;
@@ -1169,8 +1174,7 @@ export const useDoc = create<DocState>()(
         setStationEndStyle: (lineId, stationId, end) =>
           set(withRegionReconcile((s) => T.setStationEndStyle(s, lineId, stationId, end))),
         setLineStrokeWidth: (lineId, w) => set((s) => T.setLineStrokeWidth(s, lineId, w)),
-        setLineStrokeColor: (lineId, c, ref) =>
-          set((s) => T.setLineStrokeColor(s, lineId, c, ref)),
+        setLineStrokeColor: (lineId, c, ref) => set((s) => T.setLineStrokeColor(s, lineId, c, ref)),
         setLineDashLength: (lineId, v) => set((s) => T.setLineDashLength(s, lineId, v)),
         setLineDashWidth: (lineId, v) => set((s) => T.setLineDashWidth(s, lineId, v)),
         deleteLine: (id) => set(withRegionReconcile((s) => T.deleteLine(s, id))),

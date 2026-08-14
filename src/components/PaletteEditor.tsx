@@ -1,6 +1,12 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Cross2Icon, DragHandleDots2Icon, MoonIcon, PlusIcon, SunIcon } from '@radix-ui/react-icons';
+import {
+  Cross2Icon,
+  DragHandleDots2Icon,
+  MoonIcon,
+  PlusIcon,
+  SunIcon,
+} from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { useCustomLineColors } from '../state/customLineColors';
 import { useCustomPalettes } from '../state/customPalettes';
@@ -140,9 +146,12 @@ function EditableText({
  * here among the rest. The deletes hold the floor at one from below, and the
  * manager throws the palette away if the editor is left with it still empty.
  *
- * Day == night, invisibly: recoloring writes the day color and drops any
- * stored night, so a palette authored here never carries the split the file
- * format reserves for the future.
+ * The kinds edit differently: a LINE palette's rows carry one field and write
+ * day == night invisibly (recoloring drops any stored night), while a DESIGN
+ * palette's rows carry a sun/moon pair and recolor per half, `night` stored
+ * only while it differs from `color`. A MAP swatch rename routes through
+ * `renameMapPaletteSwatch` — refs are name-keyed, and the anonymous upsert
+ * cannot tell a rename from delete-plus-add.
  */
 export function PaletteEditor({
   source,

@@ -2227,14 +2227,11 @@ describe('the map’s palettes', () => {
 
     describe('design palettes', () => {
       const withDesign = (night?: string) =>
-        T.addPaletteToMap(
-          makeDoc({ lines: [makeLine({ id: 'A', color: '#333333' })] }),
-          {
-            name: 'Design grays',
-            kind: 'design',
-            swatches: [{ name: 'Border', color: '#333333', ...(night && { night }) }],
-          },
-        );
+        T.addPaletteToMap(makeDoc({ lines: [makeLine({ id: 'A', color: '#333333' })] }), {
+          name: 'Design grays',
+          kind: 'design',
+          swatches: [{ name: 'Border', color: '#333333', ...(night && { night }) }],
+        });
 
       it('a day recolor keeps the stored night — design halves edit independently', () => {
         const doc = T.recolorMapPaletteColor(withDesign('#bbbbbb'), 'Design grays', 0, '#444444');
@@ -5070,9 +5067,7 @@ describe('design swatch refs', () => {
     // One of everything, all linked to Border (#333333 day / #bbbbbb night).
     const linkedDoc = () =>
       withGrays({
-        polygons: [
-          makePolygon({ id: 'P', fill: '#333333', darkFill: '#bbbbbb', fillRef: BORDER }),
-        ],
+        polygons: [makePolygon({ id: 'P', fill: '#333333', darkFill: '#bbbbbb', fillRef: BORDER })],
         textLabels: [
           makeTextLabel({ id: 'G', color: '#333333', darkColor: '#bbbbbb', colorRef: BORDER }),
         ],
