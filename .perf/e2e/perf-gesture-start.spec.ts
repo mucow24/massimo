@@ -1,7 +1,10 @@
 /* THROWAWAY browser perf harness — not part of the suite.
  *
- *   PORT=5236 PERF_MAP=.perf/mta-v99.massimo.json \
- *     npx playwright test -c .perf/playwright.perf-prod.config.ts perf-gesture-start
+ *   PORT=5236 npx playwright test -c .perf/playwright.perf-prod.config.ts perf-gesture-start
+ *
+ * Resolves its map through perfMap.ts like every other harness here, so with
+ * nothing dropped in .perf/ it runs on the committed mta-v23 drawing. Needs a
+ * map with a LOCKED POLYGON (mta-v23 has three) for the deep-pick case.
  *
  * The complaint this exists for is NOT the drag frame (that has its own
  * harnesses) — it is the GAP BEFORE a gesture starts:
@@ -172,24 +175,35 @@ test('gesture-start latency', async ({ page }) => {
   const cx = Math.round(host.x + host.width / 2);
   const cy = Math.round(host.y + host.height / 2);
 
+  // The station point must belong to an UNLOCKED station: `onStartDrag` bails
+  // on a locked one without capturing the gesture, so the press gesture would
+  // measure a press that engaged nothing.
   const points = await page.evaluate(
     ([ox, oy]) => {
-      const kindAt = (x: number, y: number) => {
-        const el = document.elementFromPoint(x, y);
-        if (!el) return 'none';
-        if (el.closest('[data-station-id],[data-station-hit]')) return 'station';
-        if (el.closest('[data-bg]')) return 'bg';
-        return 'other';
+      const stations = (
+        window as unknown as {
+          __massimo: {
+            stores: {
+              doc: { getState: () => { stations: Record<string, { locked?: boolean }> } };
+            };
+          };
+        }
+      ).__massimo.stores.doc.getState().stations;
+      const stationIdAt = (x: number, y: number): string | null => {
+        const el = document.elementFromPoint(x, y)?.closest('[data-station-id]');
+        const id = el?.getAttribute('data-station-id') ?? null;
+        return id && stations[id] && !stations[id].locked ? id : null;
       };
-      let station: { x: number; y: number } | null = null;
+      const isBg = (x: number, y: number) => !!document.elementFromPoint(x, y)?.closest('[data-bg]');
+      let station: { x: number; y: number; id: string } | null = null;
       let bg: { x: number; y: number } | null = null;
       for (let r = 0; r <= 500 && (!station || !bg); r += 5) {
         for (let a = 0; a < 24; a++) {
           const x = Math.round((ox as number) + r * Math.cos((a * Math.PI) / 12));
           const y = Math.round((oy as number) + r * Math.sin((a * Math.PI) / 12));
-          const k = kindAt(x, y);
-          if (k === 'station' && !station) station = { x, y };
-          if (k === 'bg' && !bg) bg = { x, y };
+          const id = stationIdAt(x, y);
+          if (id && !station) station = { x, y, id };
+          if (isBg(x, y) && !bg) bg = { x, y };
         }
       }
       return { station, bg };
@@ -199,7 +213,42 @@ test('gesture-start latency', async ({ page }) => {
   if (!points.station || !points.bg) throw new Error(`no hit points: ${JSON.stringify(points)}`);
   const st = points.station;
   const bg = points.bg;
-  console.log(`  station ${st.x},${st.y}   bg ${bg.x},${bg.y}   polygon ${cx},${cy}`);
+  console.log(`  station ${st.id} @ ${st.x},${st.y}   bg ${bg.x},${bg.y}   polygon ${cx},${cy}`);
+
+  /** The dragged station's world position — the press gestures' engagement gate. */
+  const stationPos = (id: string) =>
+    page.evaluate((sid) => {
+      const s = (
+        window as unknown as {
+          __massimo: {
+            stores: {
+              doc: { getState: () => { stations: Record<string, { x: number; y: number }> } };
+            };
+          };
+        }
+      ).__massimo.stores.doc.getState().stations[sid as string];
+      return { x: s.x, y: s.y };
+    }, id);
+
+  // Where the pressed station sat before the current round, so the gate can ask
+  // whether the press actually moved it. Re-read every reset, so a drag the undo
+  // below failed to restore cannot make a later round's gate lie.
+  let pressedFrom = { x: 0, y: 0 };
+  const armPress = async () => {
+    pressedFrom = await stationPos(st.id);
+  };
+  /** Did the press engage a drag, and put the station back afterwards. */
+  const pressEngagedThenUndo = async (): Promise<boolean> => {
+    const now = await stationPos(st.id);
+    const moved = now.x !== pressedFrom.x || now.y !== pressedFrom.y;
+    await page.mouse.up();
+    await page.keyboard.press('Control+z');
+    await page.waitForTimeout(150);
+    return moved;
+  };
+  // Far enough that the snap engine cannot land the station back on its own
+  // position — a small oscillation commits nothing and is invisible to the gate.
+  const DRAG_PX = { dx: 40, dy: 24 };
 
   /** Run one gesture round: reset, act, drain, gate. */
   async function round(
@@ -322,20 +371,21 @@ test('gesture-start latency', async ({ page }) => {
       of: ['pointerdown', 'mousedown', 'pointermove', 'mousemove'],
       reset: async () => {
         await page.mouse.move(host.x + 6, host.y + 6);
+        await armPress();
         await page.waitForTimeout(120);
       },
       act: async () => {
-        for (let i = 0; i < 6; i++) {
-          await page.mouse.move(st.x - 60 + i * 24, st.y - 30 + i * 12);
+        // Cross live map content, LANDING on the station, then press — so this
+        // differs from the bare press below by the sweep alone.
+        for (let i = 0; i < 5; i++) {
+          await page.mouse.move(st.x - 100 + i * 20, st.y - 50 + i * 10);
         }
+        await page.mouse.move(st.x, st.y);
         await page.mouse.down();
+        await page.mouse.move(st.x + DRAG_PX.dx, st.y + DRAG_PX.dy);
         await page.waitForTimeout(400);
       },
-      gate: async () => {
-        await page.mouse.up();
-        await page.waitForTimeout(120);
-        return true;
-      },
+      gate: pressEngagedThenUndo,
     },
     {
       label: 'station press',
@@ -343,18 +393,15 @@ test('gesture-start latency', async ({ page }) => {
       reset: async () => {
         await clearSelection();
         await page.mouse.move(st.x, st.y);
+        await armPress();
         await page.waitForTimeout(120);
       },
       act: async () => {
         await page.mouse.down();
-        await page.mouse.move(st.x + 3, st.y + 3);
+        await page.mouse.move(st.x + DRAG_PX.dx, st.y + DRAG_PX.dy);
         await page.waitForTimeout(400);
       },
-      gate: async () => {
-        await page.mouse.up();
-        await page.waitForTimeout(120);
-        return true;
-      },
+      gate: pressEngagedThenUndo,
     },
     {
       label: 'alt-click polygon',
@@ -428,7 +475,7 @@ test('gesture-start latency', async ({ page }) => {
       const cdp = await page.context().newCDPSession(page);
       const evs: { name: string; dur?: number; ph: string; args?: Record<string, unknown> }[] = [];
       cdp.on('Tracing.dataCollected', (d) => {
-        evs.push(...(d.value as typeof evs));
+        evs.push(...(d.value as unknown as typeof evs));
       });
       await cdp.send('Tracing.start', {
         traceConfig: { includedCategories: ['devtools.timeline', 'blink', 'blink.user_timing'] },

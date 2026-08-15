@@ -3,16 +3,9 @@ import { TEXT_MEASURE_CACHE_LIMIT, _clearTextMeasureCache, measureTextLabel } fr
 import { makeTextLabel } from '../test/fixtures';
 
 /**
- * The measurement cache's failure mode is a CLIFF, not a slope. Every render
- * measures every rendered label, in roughly the same order — a cyclic scan —
- * and a cyclic scan over a working set larger than the cache hits nothing at
- * all, whatever the eviction policy. So a cap set below a real drawing's label
- * count does not make measuring "a bit slower": it makes every hover, press
- * and click re-measure the whole map from scratch. Measured on a 489-station
- * drawing, the cap at 256 cost 765ms per hover and 1416ms per alt+click; over
- * the working set both fall to nothing.
- *
- * These two tests are the guard rails on that number from both sides.
+ * Guard rails on TEXT_MEASURE_CACHE_LIMIT from both sides: big enough that a
+ * whole map's labels stay resident, still bounded. Why undershooting it is a
+ * cliff rather than a slope is written where the constant lives.
  */
 // Comfortably past any drawing that exists — the point is that the cache
 // survives a whole map's worth of distinct labels, not that it survives

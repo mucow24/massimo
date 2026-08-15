@@ -2741,11 +2741,7 @@ which are a separate slot-based system where Shift flips the lattice basis.
   shared by same-line runs) and reduce exactly to the uniform `fontSize*LINE_HEIGHT*(1+(n-1)*leading)`
   when nothing is resized. Results are cached (module-level, oldest-evicted, limit 5000) keyed by
   weight/style/parse-mode/size/width/leading/tracking/text — and that cache is cleared on web-font
-  load (see `App.tsx`). That cap has to clear the number of labels a drawing renders, and clear it
-  by a margin: a render measures every label once in the same order, so a working set one entry
-  past the cap is a cyclic scan that hits NOTHING, whatever gets evicted — the hit rate goes from
-  100% to 0% rather than degrading, and every hover, press and click then re-measures the whole map
-  through the raster probe.
+  load (see `App.tsx`).
 - **The vertical font model is three hardcoded fractions**, not measurement — no font tables exist.
   `BASELINE_FRACTION` (em-box top → baseline) is reached from the line's CENTRE everywhere, so it
   cancels out of the autoAlign pins and only slides glyphs inside their own hit rect;
@@ -4251,6 +4247,12 @@ Each is confirmed in source/tests; file pointers included.
 - **Web-font load invalidates the measure cache** — `App.tsx` clears `_clearTextMeasureCache()`
   and bumps a font epoch on `document.fonts.ready` + `loadingdone`; without it, first-paint labels
   (measured against the fallback font) stay a pixel off until the next edit. ([App.tsx](src/App.tsx))
+- **The measure cache's cap must clear a drawing's label count by a margin** — a render measures
+  every label once in the same order, so a working set one entry past `TEXT_MEASURE_CACHE_LIMIT` is
+  a cyclic scan that hits NOTHING whatever gets evicted. The hit rate goes 100% → 0% rather than
+  degrading, and every hover, press and click then re-measures the whole map through the raster
+  probe — seconds per gesture, and no JavaScript in the profile to show for it.
+  ([textMeasure.ts](src/geometry/textMeasure.ts))
 - **The two load paths must not be merged** — `storeMigrate.test.ts` pins reference-equality
   pass-through for canonical docs; file-only sanitizers must not leak into `migrateDoc`.
 - **Sanitizer ordering is load-bearing** — `convertLegacyDotShapes` and `sanitizeStopDotSizes` run

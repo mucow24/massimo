@@ -135,11 +135,23 @@ node harness.
 ## The gesture-start cliff (Aug 15 2026) — found and fixed
 
 Every harness above measures the drag FRAME. The reported symptom was the gap
-before a gesture starts, and nothing here could see it: hovering a station cost
-765 ms, pressing one 931 ms, alt+clicking a locked polygon 1416 ms, on a
-489-station drawing on a fast machine.
+before a gesture starts, and nothing here could see it. On the committed
+mta-v23 drawing, long-task ms, medians of 5:
 
-Two instrument lessons, both paid for:
+| gesture | cap 256 | cap 5000 |
+| ------- | ------- | -------- |
+| hover a station | 531 | 0 |
+| station press | 2045 | 131 |
+| sweep then press | 2152 | 135 |
+| alt+click a locked polygon | 3155 | 0 |
+| pan start (hand, and middle) | 0 | 0 |
+
+Pan start is on the list because it was the loudest complaint and it is NOT
+slow: the press itself is cheap in both arms. What the user felt was the hover
+storm fired by the cursor crossing stations on the way to the click, which the
+press then queued behind.
+
+Three instrument lessons, all paid for:
 
 - **Synthetic events measure nothing.** The first cut dispatched
   `new PointerEvent(...)` and reported a flat ~15 ms for all four gestures. A
@@ -147,6 +159,13 @@ Two instrument lessons, both paid for:
   never engaged, and a synthetic `pointerId` cannot be captured, so `startPan`
   threw. Real `page.mouse` input plus a per-gesture engagement gate is why
   `perf-gesture-start` reports numbers at all.
+- **A gesture without a gate reports the wrong number, not no number.** The
+  press gestures first ran a 3 px nudge and returned `true` for engagement. The
+  nudge never crossed the drag threshold, so "press" measured a press that
+  started no drag: 931 ms where the real figure was 2045 ms. Both press
+  gestures now gate on the dragged station's position actually changing, and
+  the gate was proved by setting the drag distance to zero — whereupon it goes
+  red and the ungated arm cheerfully reports **0 ms**.
 - **An empty CPU profile is a result, not a dead end.** The sampling profiler
   charged 9 ms across 5 hovers while the long-task observer saw 744 ms — both
   true. The work was style/paint/compositing over a 16.7k-node SVG, plus GC, and
@@ -161,24 +180,31 @@ fine when a miss was two `measureText` calls; the ink raster probe made a miss
 two canvas rasters plus two full `getImageData` readbacks, ~50× dearer, and the
 cap was never revisited.
 
-Cap swept on one build, medians of 4-5, long-task ms:
+Cap swept on one build to locate the cliff, long-task ms (the press column of
+this sweep predates the gate above and reads low; hover and alt+click locate it
+unambiguously on their own):
 
-| cap | hover | station press | alt+click |
-| --- | ----- | ------------- | --------- |
-| 256 (shipped) | 568-765 | 899-931 | 1414-1416 |
-| 512 | 0 | 155 | 0 |
-| 1024 | 51 | 170 | 0 |
-| 2048 | 0 | 164 | 0 |
-| 4096 | 51 | 161 | 0 |
+| cap | hover | alt+click |
+| --- | ----- | --------- |
+| 256 (shipped) | 568-765 | 1414-1416 |
+| 512 | 0 | 0 |
+| 1024 | 51 | 0 |
+| 2048 | 0 | 0 |
+| 4096 | 51 | 0 |
 
 The cliff is between 256 and 512 and the floor is flat above it — the working
-set is the map's label count, and this drawing sat just over the old cap, which
-is why it read as a property of the map. Shipped at 5000 for headroom;
-`src/geometry/textMeasure.cache.test.ts` holds both sides of the number.
+set is the map's label count, and both drawings sat just over the old cap,
+which is why it read as a property of whichever map was open. Shipped at 5000
+for headroom; `src/geometry/textMeasure.cache.test.ts` holds both sides of the
+number.
 
-The residual 157 ms on `station press` is compositing, not JavaScript (the CPU
+The residual ~131 ms on `station press` is compositing, not JavaScript (the CPU
 profile is empty, `Layerize` / `PaintArtifactCompositor::Update` dominate the
 timeline) — the pre-existing render floor, untouched by this.
+
+Still open, and the largest re-measure left: `App.tsx` clears the whole cache on
+`document.fonts` `loadingdone`, which fires when a label switches to a weight
+that has not been fetched yet. Mid-session, that is this same whole-map storm.
 
 ## The session-aging question (Aug 2026)
 

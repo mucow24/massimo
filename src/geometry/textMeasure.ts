@@ -256,15 +256,19 @@ export const capCenterDy = (fontSize: number) => (fontSize * CAP_FRACTION) / 2;
 // the cache hits NOTHING, whatever gets evicted. One label past the cap takes
 // the hit rate from 100% to 0%.
 //
-// That is not an abstract risk: the cap sat at 256 while a 489-station drawing
+// That is not an abstract risk: the cap sat at 256 while a ~490-station drawing
 // rendered ~500 keys, so every hover, press and click re-measured the whole map
-// — 765ms per hover, 1416ms per alt+click, against ~0 once the working set
-// fits. It went unnoticed because a miss used to be two cheap measureText
-// calls; the ink probe below made a miss two canvas rasters and two full
-// getImageData readbacks, roughly fifty times dearer, and the cap was never
-// revisited. Entries are small (a few hundred bytes of line/segment metrics),
-// so headroom is far cheaper than the cliff. `textMeasure.cache.test.ts` holds
-// both sides of this.
+// — 531ms per hover, 2045ms per station press, 3155ms per alt+click, against ~0
+// once the working set fits. It went unnoticed because a miss used to be two
+// cheap measureText calls; the ink probe below made a miss two canvas rasters
+// and two full getImageData readbacks, roughly fifty times dearer, and the cap
+// was never revisited. `textMeasure.cache.test.ts` holds both sides of the
+// number.
+//
+// Still exposed, and NOT addressed here: App.tsx clears this whole cache on
+// `document.fonts` 'loadingdone', which fires when a label switches to a weight
+// that has not been fetched yet. That is the same whole-map re-measure through
+// the raster probe, mid-session, and it is now the largest one left.
 export const TEXT_MEASURE_CACHE_LIMIT = 5000;
 const cache = new Map<string, MeasuredBBox>();
 
