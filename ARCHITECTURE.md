@@ -4267,8 +4267,12 @@ Each is confirmed in source/tests; file pointers included.
   and bumps a font epoch on `document.fonts.ready`; without it, first-paint labels (measured
   against the fallback font) stay a pixel off until the next edit. A LATER `loadingdone` (a label
   reaching for a weight not yet fetched) goes through `invalidateMeasuredFaces` instead, which
-  drops only the entries whose measurement resolved to an arriving face — clearing the lot there
-  is a whole-map re-measure because one label went bold. ([App.tsx](src/App.tsx))
+  drops only the entries whose measurement REQUESTED an arriving face — clearing the lot there is
+  a whole-map re-measure because one label went bold. An entry records the face its declaration
+  asked for, not the one CSS matching served, so that narrowing is sound only while `styles.css`
+  ships a face for every rung of `LABEL_WEIGHT_NAMES` in both slopes: drop one and those labels
+  name a face that never arrives, nothing invalidates them, and they keep fallback metrics for the
+  session. Pinned by `textMeasure.cache.test.ts`. ([App.tsx](src/App.tsx))
 - **The measure cache's cap must clear a drawing's label count by a margin** — a render measures
   every label once in the same order, so a working set one entry past `TEXT_MEASURE_CACHE_LIMIT` is
   a cyclic scan that hits NOTHING whatever gets evicted. The hit rate goes 100% → 0% rather than

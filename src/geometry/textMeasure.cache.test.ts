@@ -7,6 +7,8 @@ import {
 } from './textMeasure';
 import { makeTextLabel } from '../test/fixtures';
 import { stubTextMetrics } from '../test/textMetrics';
+import { LABEL_WEIGHT_NAMES } from '../util/fonts';
+import { readFileSync } from 'node:fs';
 
 /**
  * Guard rails on TEXT_MEASURE_CACHE_LIMIT from both sides: big enough that a
@@ -67,6 +69,32 @@ describe('text measurement cache', () => {
     const seeded = measureTextLabel(label);
     invalidateMeasuredFaces([{ family: 'Massimo Symbols', weight: '400', style: 'normal' }]);
     expect(measureTextLabel(label)).not.toBe(seeded);
+  });
+
+  // The narrowing above records the face a measurement ASKED for. CSS matching
+  // is free to serve that request from a neighbouring face when the exact one
+  // is not declared — and then the entry names a face that never arrives,
+  // nothing ever invalidates it, and that label keeps its fallback metrics for
+  // the session. Narrowing is only sound while every rung the weight ladder
+  // offers is a face the stylesheet actually ships, in both slopes.
+  it('styles.css ships a face for every rung of the weight ladder, normal and italic', () => {
+    const css = readFileSync('src/styles.css', 'utf8');
+    const declared = new Set(
+      [...css.matchAll(/@font-face\s*\{([^}]*)\}/g)]
+        .map((m) => m[1])
+        .filter((body) => /font-family:\s*['"]?Soehne['"]?\s*;/.test(body))
+        .map((body) => {
+          const weight = /font-weight:\s*(\d+)\s*;/.exec(body)?.[1];
+          const style = /font-style:\s*(\w+)\s*;/.exec(body)?.[1];
+          return `${weight}|${style}`;
+        }),
+    );
+    const missing = LABEL_WEIGHT_NAMES.flatMap(({ value }) =>
+      ['normal', 'italic']
+        .map((slope) => `${value}|${slope}`)
+        .filter((face) => !declared.has(face)),
+    );
+    expect(missing).toEqual([]);
   });
 
   it('is still bounded — the entry past the cap evicts the oldest', () => {

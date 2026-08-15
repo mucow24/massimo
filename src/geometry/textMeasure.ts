@@ -269,10 +269,11 @@ export const capCenterDy = (fontSize: number) => (fontSize * CAP_FRACTION) / 2;
 // below is what keeps it out.
 export const TEXT_MEASURE_CACHE_LIMIT = 5000;
 
-/** A measured label, plus the faces its measurement actually resolved to —
- *  which is what lets a late webfont drop only what it staled. Inline `<b>` /
- *  `<w=…>` runs put their own weight in the set, so the label's own weight is
- *  not enough to answer this. */
+/** A measured label, plus the faces its measurement REQUESTED — the run
+ *  weight/style each declaration named, not whatever CSS font matching went on
+ *  to serve. That is what lets a late webfont drop only what it staled. Inline
+ *  `<b>` / `<w=…>` runs put their own weight in the set, so the label's own
+ *  weight is not enough to answer this. */
 interface CacheEntry {
   bbox: MeasuredBBox;
   faces: ReadonlySet<string>;
@@ -282,18 +283,19 @@ const cache = new Map<string, CacheEntry>();
 /** A shipped face's identity, as both the measurer and `@font-face` name it. */
 const faceKey = (weight: number, italic: boolean): string => `${weight}|${italic ? 'i' : 'n'}`;
 
+/** A CSS family token as the CSSOM may hand it back — possibly quoted. */
+const unquote = (family: string): string => family.trim().replace(/^['"]|['"]$/g, '');
+
 // The text face is the FIRST family in the stack — taken from FONT_STACK so the
 // name is not written down twice. It has to be the first ENTRY rather than
 // membership of the stack: `FONT_STACK.includes(face.family)` would also match
 // the symbol and DejaVu fallbacks, and those are precisely the faces that
 // CANNOT be narrowed by weight, since either can supply glyphs to a run at any
 // weight.
-const TEXT_FAMILY = FONT_STACK.split(',')[0]
-  .trim()
-  .replace(/^['"]|['"]$/g, '');
+const TEXT_FAMILY = unquote(FONT_STACK.split(',')[0]);
 
 /** The `FontFace` fields {@link invalidateMeasuredFaces} reads. */
-export interface MeasuredFace {
+export interface ArrivedFace {
   family: string;
   weight: string;
   style: string;
@@ -312,8 +314,17 @@ export interface MeasuredFace {
  * (the symbol font, DejaVu) can supply glyphs to ANY declaration, so nothing
  * can be ruled out and the whole cache goes — as it does for a weight this
  * cannot read, which includes a variable font's range.
+ *
+ * It is also sound only while `styles.css` declares a face for EVERY rung of
+ * `LABEL_WEIGHT_NAMES` in both normal and italic, which
+ * `textMeasure.cache.test.ts` pins. An entry names the face its measurement
+ * ASKED for; CSS matching is free to serve a request from a neighbouring face
+ * when the exact one is missing. Drop a rung and those labels record a face
+ * that never arrives, so nothing ever invalidates them and they keep their
+ * fallback metrics for the rest of the session — sub-pixel, silent, and not
+ * recoverable short of an unrelated edit to the same label.
  */
-export function invalidateMeasuredFaces(faces: readonly MeasuredFace[]): void {
+export function invalidateMeasuredFaces(faces: readonly ArrivedFace[]): void {
   // Nothing named means nothing can be ruled out.
   if (faces.length === 0) {
     cache.clear();
@@ -322,7 +333,9 @@ export function invalidateMeasuredFaces(faces: readonly MeasuredFace[]): void {
   const stale = new Set<string>();
   for (const f of faces) {
     const weight = /^\d+$/.test(f.weight.trim()) ? Number(f.weight.trim()) : NaN;
-    if (!f.family.includes(TEXT_FAMILY) || !Number.isFinite(weight)) {
+    // Exact family, not a substring: a future 'Soehne Mono' is a DIFFERENT
+    // face, and narrowing by its weight would leave real text entries stale.
+    if (unquote(f.family) !== TEXT_FAMILY || !Number.isFinite(weight)) {
       cache.clear();
       return;
     }
@@ -804,9 +817,11 @@ export function measureTextLabel(styled: StyledText): MeasuredBBox {
   // inline-bullet cursor spaces it against the wrong (system-fallback) width.
   // Per-segment: a <w=…>/<b>/<i> tag bumps the weight/style and a <size=…> tag the
   // size for that run only (the caller resolves the run size and passes it in).
-  // Every face this measurement resolves to, collected as it goes — the whole
+  // Every face this measurement REQUESTS, collected as it goes — the whole
   // bearing ladder and the raster probe run through this one closure, so it
-  // sees each run's real weight/style including inline-tag overrides.
+  // sees each run's real weight/style including inline-tag overrides. What CSS
+  // matching then serves is not observable here; see invalidateMeasuredFaces
+  // for why the two must not be allowed to diverge.
   const usedFaces = new Set<string>();
   const declFor = (style: SegmentStyle | undefined, size: number): string => {
     const w = resolveRunWeight(styled.weight, style);

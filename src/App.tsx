@@ -28,7 +28,7 @@ import {
 import {
   _clearTextMeasureCache,
   invalidateMeasuredFaces,
-  type MeasuredFace,
+  type ArrivedFace,
 } from './geometry/textMeasure';
 import { guideAlongOf, guideNudgeDelta } from './geometry/snap';
 import { useFontEpoch } from './state/fontEpoch';
@@ -160,7 +160,7 @@ export default function App() {
       // carries no face list says nothing about WHAT arrived, so there is
       // nothing to narrow by and the whole cache goes.
       const fontfaces = (
-        e as (globalThis.Event & { fontfaces?: readonly MeasuredFace[] }) | undefined
+        e as (globalThis.Event & { fontfaces?: readonly ArrivedFace[] }) | undefined
       )?.fontfaces;
       if (fontfaces?.length) invalidateMeasuredFaces(fontfaces);
       else _clearTextMeasureCache();

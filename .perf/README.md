@@ -213,11 +213,14 @@ runs) on a fully rendered map and times what follows: **587 ms → 92 ms** once
 actually resolved to an arriving face. The residual is the font-epoch re-render,
 which still walks every label — but now they hit the cache.
 
-Entries record the faces they used rather than deriving them from the label's
-own weight, because an inline `<b>` / `<w=…>` run measures at a weight the
-label's own key never mentions. An entry that recorded NO face (the no-canvas
-fallback never builds a declaration) invalidates on anything, so unknown
-provenance can never strand stale metrics.
+Entries record the faces they REQUESTED rather than deriving them from the
+label's own weight, because an inline `<b>` / `<w=…>` run measures at a weight
+the label's own key never mentions. An entry that recorded NO face (the
+no-canvas fallback never builds a declaration) invalidates on anything, so
+unknown provenance can never strand stale metrics — and because the record is
+the request rather than what CSS matching served, the narrowing is sound only
+while the stylesheet ships every rung of the weight ladder in both slopes,
+which a test pins.
 
 ## The session-aging question (Aug 2026)
 
