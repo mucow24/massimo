@@ -202,9 +202,25 @@ The residual ~131 ms on `station press` is compositing, not JavaScript (the CPU
 profile is empty, `Layerize` / `PaintArtifactCompositor::Update` dominate the
 timeline) — the pre-existing render floor, untouched by this.
 
-Still open, and the largest re-measure left: `App.tsx` clears the whole cache on
-`document.fonts` `loadingdone`, which fires when a label switches to a weight
-that has not been fetched yet. Mid-session, that is this same whole-map storm.
+### The same storm, through a late webfont
+
+`App.tsx` used to clear the whole cache on `document.fonts` `loadingdone`,
+which fires whenever a label is the first to ask for a weight — so bolding one
+label re-measured every label on the map. `perf-gesture-start` triggers a REAL
+face load (`fonts.load()`; a dispatched event would prove only that the listener
+runs) on a fully rendered map and times what follows: **587 ms → 92 ms** once
+`invalidateMeasuredFaces` narrowed the drop to entries whose measurement
+actually resolved to an arriving face. The residual is the font-epoch re-render,
+which still walks every label — but now they hit the cache.
+
+Entries record the faces they REQUESTED rather than deriving them from the
+label's own weight, because an inline `<b>` / `<w=…>` run measures at a weight
+the label's own key never mentions. An entry that recorded NO face (the
+no-canvas fallback never builds a declaration) invalidates on anything, so
+unknown provenance can never strand stale metrics — and because the record is
+the request rather than what CSS matching served, the narrowing is sound only
+while the stylesheet ships every rung of the weight ladder in both slopes,
+which a test pins.
 
 ## The session-aging question (Aug 2026)
 
