@@ -18,12 +18,11 @@ const LABEL_PX = 14;
  * `formatMeasurement` format, sitting just above the circle's center.
  *
  * It reads the radius the gesture is about to STORE, not the raw cursor
- * distance. On the ordinary path that is exact: `snapDraggedLineCircleRadius`
- * has already put the radius on the quarter-unit grid, so the diameter lands
- * on a half and one decimal is lossless. Under **Shift**, which declines that
- * grid, the stored radius is the raw distance and the readout is a rounding of
- * it — the shared one-decimal measurement format is worth more here than a
- * digit nobody is reading mid-drag.
+ * distance, so the number tracks the document rather than the pointer. It
+ * reads it at the shared one-decimal measurement precision, which is a DISPLAY
+ * precision and not a claim about the stored value — see "A field's `step` is
+ * not its grid": every numeric surface in the app shows fewer digits than
+ * `cleanFloat` keeps, and this chip is one more of them.
  */
 export function CircleDiameterLabel({
   cx,
