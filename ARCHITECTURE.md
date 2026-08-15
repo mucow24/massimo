@@ -2144,11 +2144,14 @@ on any mode exit.
   apparently-empty map. It is the broad one; the narrow toggles each clear a single kind, so a
   reload under them still shows a recognisable map. The giant SVG tree subscribes here and is
   re-rendered only on commit.
-- `useLiveViewportStore` — the **in-flight** gesture viewport (`pending: Viewport | null`).
-  **Not persisted, not undoable.** Only a small set of overlays subscribes — the selected-item
-  handle overlays (`PolygonView`, `SvgImageView`) via the `useLiveZoom` selector — never the giant
-  station/band tree. Exists solely
-  so per-frame pan/zoom writes don't hammer localStorage or re-render the SVG. See the
+- `useLiveViewportStore` — the **in-flight** gesture viewport (`pending: Viewport | null`), plus
+  `panning` (is a pan armed). **Not persisted, not undoable.** Only a small set of overlays
+  subscribes — the selected-item handle overlays (`PolygonView`, `SvgImageView`) via the
+  `useLiveZoom` selector, and `HighlightedLineLayer` for `panning` — never the giant station/band
+  tree. `panning` lives here rather than in `useViewport`'s own `useState` for exactly that
+  reason: that hook runs inside MapCanvas, so a boolean flip there re-rendered the whole canvas
+  (~7ms a press on a 464-station map, for a cursor change). Exists solely so per-frame pan/zoom
+  writes don't hammer localStorage or re-render the SVG. See the
   [Interaction layer](#canvas-interaction-layer) for how the gestures move the world imperatively
   (pan: composited pan-layer translate; zoom: viewBox write).
 
@@ -3213,8 +3216,11 @@ re-render of the SVG tree mid-gesture — but the two move the world by differen
   a viewport bigger than the host on every side (`inset: -50%`); the svg renders the matching 2×
   window (`panSurfaceViewBox`), so a half-viewport ring around the visible box is pre-painted.
   Each move, `applyPan(v)` does `setPending(v)` (live store) and sets a `translate(…)` on the
-  layer — promoted via gesture-scoped `will-change: transform` at pointer-down — which the
-  compositor executes without any style/layout/paint/raster work, whatever the map's node count.
+  layer — which the compositor executes without any style/layout/paint/raster work, whatever the
+  map's node count. The layer carries `will-change: transform` in the **stylesheet**, for the
+  whole session: granting it makes the browser rebuild the layer, at a cost proportional to the
+  painted tree, so promoting at pointer-down and demoting at pointer-up charged that rebuild to
+  every press (~20ms of a 49ms press on a 464-station map).
   Blink has no such fast path for transforms on the svg element itself or an inner `<g>`, and
   letting svg ink overflow define the layer bounds also kills it — the margin must come from the
   oversized **element box**. Before a translate could outrun the margin (45% of a viewport
@@ -3228,8 +3234,9 @@ re-render of the SVG tree mid-gesture — but the two move the world by differen
   repaint-per-tick path. Ticks are ignored while a pan gesture is active.
 
 On gesture end (`commitPending`), `setViewport(pending)` then `setPending(null)` (clearing pending
-**last** so overlays stay on the live viewport right up to commit — no jump); a pan also retires
-its transform and `will-change` in the same handler, so the swap lands in one frame. The JSX
+**last** so overlays stay on the live viewport right up to commit — no jump); a pan also zeroes
+its transform in the same handler, so the swap lands in one frame (the promotion is permanent and
+is NOT retired here). The JSX
 `viewBox` binds to the **committed** viewport (via `panSurfaceViewBox`), so a mid-gesture
 re-render leaves that prop string unchanged and React skips the DOM write (never clobbering an
 imperative zoom write, never moving the attribute mid-pan).

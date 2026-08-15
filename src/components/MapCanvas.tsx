@@ -1396,7 +1396,13 @@ export function MapCanvas() {
         <svg
           ref={svgRef}
           viewBox={`${surface.vbX} ${surface.vbY} ${surface.vbW} ${surface.vbH}`}
-          className={(inHandMode ? 'tool-hand' : 'tool-arrow') + (view.panning ? ' panning' : '')}
+          // Tool cursor only. The in-flight PAN's cursor is not here and not on
+          // this element at all: useViewport marks `.canvas-host` imperatively
+          // and a childless overlay serves the cursor. Both detours are load
+          // bearing — through React it re-rendered this whole tree every press,
+          // and on this svg the inherited `cursor` re-styled all ~15k
+          // descendants (see useViewport.setPanningCursor).
+          className={inHandMode ? 'tool-hand' : 'tool-arrow'}
           // Wheel zoom is bound as a non-passive native listener inside useViewport
           // (React's onWheel is passive, so its preventDefault would warn + no-op).
           // Self-heal a stranded click-suppress flag at the start of every fresh
@@ -2116,9 +2122,11 @@ export function MapCanvas() {
                 uiMode={selection.uiMode}
                 // Pan-suppress the hover preview the same way hoveredChrome does
                 // for idle mode — a lingering ring/halo mid-pan reads as stale.
-                // view.panning covers the arrow-mode middle-drag pan, whose
-                // pointer capture freezes appendHover at its pre-pan target.
-                appendHover={inHandMode || view.panning ? null : selection.appendHover}
+                // The PAN half of that gate lives inside the layer, which
+                // subscribes to the live pan flag itself: reading it here would
+                // re-render the whole canvas per press for a preview that only
+                // exists while a line is highlighted.
+                appendHover={inHandMode ? null : selection.appendHover}
                 zoom={view.viewport.zoom}
                 onStartDrag={drag.onStartDrag}
                 onRemoveCursorStation={(sid) => {
@@ -2687,6 +2695,17 @@ export function MapCanvas() {
           )}
         </svg>
       </div>
+
+      {/* The in-flight pan's "grabbing" cursor, served by an element with no
+          children. `cursor` is inherited, so a rule whose subject is the map
+          svg makes Blink recompute inherited style across all ~15k of its
+          descendants — 22ms per press on a 464-station map, and the whole of
+          the remaining pan-start latency once the layer stopped being
+          re-promoted. Static JSX: it is switched on by `.canvas-host.panning`
+          (written imperatively by useViewport), never by a React render.
+          Pointer events are unaffected — the svg holds pointer capture for the
+          whole gesture, so moves route there whatever sits on top. */}
+      <div className="pan-cursor-overlay" aria-hidden="true" />
 
       <ItemPopovers hostSize={view.size} />
 

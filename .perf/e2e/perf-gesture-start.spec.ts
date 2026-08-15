@@ -45,14 +45,17 @@ interface DocShape {
   [k: string]: unknown;
 }
 
-interface EventEntry {
+/** One input event, timed by the page itself from arrival to the task after
+ *  the next paint. */
+interface LatencySample {
   name: string;
-  handlerMs: number;
-  durationMs: number;
+  /** OS event stamp -> our capture listener: queueing on a busy main thread. */
   delayMs: number;
+  /** Capture listener -> first task after the next paint: the app's work. */
+  toPaintMs: number;
 }
 interface Round {
-  events: EventEntry[];
+  lat: LatencySample[];
   longTasks: number[];
   engaged: boolean;
   wallMs: number;
@@ -61,6 +64,37 @@ interface Round {
 function loadDoc(): DocShape {
   const doc = (JSON.parse(readPerfMap()) as { doc: DocShape }).doc;
   if (process.env.PERF_NO_REGIONS) doc.regionAssignments = {};
+  // PERF_KEEP=<n>: keep only the n stations nearest the map's centre of mass.
+  // The question this answers is whether gesture-start latency is a property of
+  // WHAT the gesture does or of HOW BIG the painted tree is — if the compositor
+  // is re-committing the whole layer, the cost tracks node count and nothing
+  // else. Lines keep only edges whose endpoints both survive.
+  const keep = Number(process.env.PERF_KEEP ?? 0);
+  if (keep > 0) {
+    const all = Object.values(doc.stations);
+    const mid = {
+      x: all.reduce((a, s) => a + s.x, 0) / all.length,
+      y: all.reduce((a, s) => a + s.y, 0) / all.length,
+    };
+    const near = [...all]
+      .sort(
+        (a, b) =>
+          (a.x - mid.x) ** 2 + (a.y - mid.y) ** 2 - ((b.x - mid.x) ** 2 + (b.y - mid.y) ** 2),
+      )
+      .slice(0, keep);
+    const ids = new Set(near.map((s) => s.id));
+    doc.stations = Object.fromEntries(near.map((s) => [s.id, s]));
+    const lines = doc.lines as Record<string, { stations: string[]; edges: string[] }>;
+    for (const l of Object.values(lines)) {
+      l.stations = l.stations.filter((id) => ids.has(id));
+      l.edges = l.edges.filter((e) => e.split('|').every((id) => ids.has(id)));
+    }
+    doc.transfers = Object.fromEntries(
+      Object.entries(
+        doc.transfers as Record<string, { a: { stationId?: string }; b: { stationId?: string } }>,
+      ).filter(([, t]) => (!t.a.stationId || ids.has(t.a.stationId)) && (!t.b.stationId || ids.has(t.b.stationId))),
+    );
+  }
   return doc;
 }
 
@@ -88,51 +122,96 @@ async function seedAt(page: Page, doc: DocShape, centre: Vertex): Promise<void> 
   await page.waitForTimeout(2500);
 }
 
-/** Install the observers once; each round reads and clears their buffers. */
+/**
+ * Install the probes once; each round reads and clears their buffers.
+ *
+ * Latency is timed by the PAGE, not by the Event Timing API. Event Timing
+ * looked like the obvious instrument and is the reason this harness reported
+ * fiction for three revisions: it only emits entries for what it considers an
+ * interaction, so a middle-button press and a drag-style press produce NOTHING,
+ * and the natural `Math.max(0, ...entries)` renders that absence as a
+ * beautiful 0ms. Four of six gestures were "0ms" because they were unmeasured.
+ *
+ * A CAPTURE-phase window listener has none of that discretion — it sees every
+ * event, before React's root handler, so t0 is genuinely "the app has done
+ * nothing yet". requestAnimationFrame -> setTimeout(0) closes the interval on
+ * the first task after the next paint. `probeFloor` below measures the same
+ * interval doing nothing, so every number has a stated noise floor, and the
+ * table asserts a sample count so an unmeasured gesture fails instead of
+ * reporting zero.
+ */
+const PROBED_EVENTS = ['pointerdown', 'pointermove', 'pointerup', 'click'] as const;
+
 async function installProbes(page: Page): Promise<void> {
-  await page.evaluate(() => {
+  await page.evaluate((types: readonly string[]) => {
     interface Probe {
-      events: { name: string; handlerMs: number; durationMs: number; delayMs: number }[];
+      lat: { name: string; delayMs: number; toPaintMs: number }[];
       longTasks: number[];
     }
     const w = window as unknown as { __probe?: Probe };
     if (w.__probe) return;
-    const probe: Probe = { events: [], longTasks: [] };
+    const probe: Probe = { lat: [], longTasks: [] };
     w.__probe = probe;
-    new PerformanceObserver((list) => {
-      for (const e of list.getEntries() as PerformanceEventTiming[]) {
-        probe.events.push({
-          name: e.name,
-          handlerMs: e.processingEnd - e.processingStart,
-          durationMs: e.duration,
-          delayMs: e.processingStart - e.startTime,
-        });
-      }
-    }).observe({ type: 'event', durationThreshold: 0 } as PerformanceObserverInit);
+    for (const type of types) {
+      window.addEventListener(
+        type,
+        (e) => {
+          const t0 = performance.now();
+          const delayMs = t0 - e.timeStamp;
+          requestAnimationFrame(() =>
+            setTimeout(() => {
+              probe.lat.push({ name: type, delayMs, toPaintMs: performance.now() - t0 });
+            }, 0),
+          );
+        },
+        true,
+      );
+    }
     new PerformanceObserver((list) => {
       for (const e of list.getEntries()) probe.longTasks.push(e.duration);
     }).observe({ type: 'longtask' } as PerformanceObserverInit);
-  });
+  }, PROBED_EVENTS as unknown as string[]);
 }
+
+/** The instrument's own cost: the identical rAF -> setTimeout(0) interval with
+ *  nothing between it, on the same idle page. Every latency below is only
+ *  meaningful against this. */
+const probeFloor = (page: Page, reps = 15) =>
+  page.evaluate(async (n: number) => {
+    const out: number[] = [];
+    for (let i = 0; i < n; i++) {
+      const t0 = performance.now();
+      await new Promise<void>((res) =>
+        requestAnimationFrame(() =>
+          setTimeout(() => {
+            out.push(performance.now() - t0);
+            res();
+          }, 0),
+        ),
+      );
+      await new Promise((res) => setTimeout(res, 40));
+    }
+    return out;
+  }, reps);
 
 const resetProbe = (page: Page) =>
   page.evaluate(() => {
-    const w = window as unknown as { __probe: { events: unknown[]; longTasks: number[] } };
-    w.__probe.events.length = 0;
+    const w = window as unknown as { __probe: { lat: unknown[]; longTasks: number[] } };
+    w.__probe.lat.length = 0;
     w.__probe.longTasks.length = 0;
   });
 
-/** Drain the observers. A rAF+timeout lets the last entries flush first. */
+/** Drain the probes. A rAF+timeout lets the last entries flush first. */
 const readProbe = (page: Page) =>
   page.evaluate(async () => {
     await new Promise<void>((r) => requestAnimationFrame(() => setTimeout(() => r(), 60)));
     const w = window as unknown as {
       __probe: {
-        events: { name: string; handlerMs: number; durationMs: number; delayMs: number }[];
+        lat: { name: string; delayMs: number; toPaintMs: number }[];
         longTasks: number[];
       };
     };
-    return { events: [...w.__probe.events], longTasks: [...w.__probe.longTasks] };
+    return { lat: [...w.__probe.lat], longTasks: [...w.__probe.longTasks] };
   });
 
 const sel = (page: Page) =>
@@ -170,6 +249,110 @@ test('gesture-start latency', async ({ page }) => {
   console.log(
     `  svgNodes ${counters.svgNodes}  defsNodes ${counters.defsNodes}  clipPaths ${counters.clipPaths}`,
   );
+
+  // Where the painted nodes actually are. Gesture-start latency is linear in
+  // this count (~4µs per node), and it is the only lever that does not depend
+  // on zoom — culling buys nothing with the whole map on screen, which is a
+  // normal working view for a transit diagram.
+  if (process.env.PERF_CENSUS) {
+    const census = await page.evaluate(() => {
+      const svg = document.querySelector('.canvas-pan-layer > svg')!;
+      const all = [...svg.querySelectorAll('*')];
+      const byTag = new Map<string, number>();
+      const byOwner = new Map<string, number>();
+      const OWNERS = [
+        'data-station-id',
+        'data-transfer-id',
+        'data-line-id',
+        'data-polygon-id',
+        'data-text-label-id',
+        'data-bullet-id',
+        'data-guide-id',
+        'data-line-tag-id',
+        'data-svg-image-id',
+      ];
+      for (const el of all) {
+        byTag.set(el.tagName, (byTag.get(el.tagName) ?? 0) + 1);
+        let owner = 'other/chrome';
+        if (el.closest('defs')) owner = 'defs';
+        else {
+          for (const a of OWNERS) {
+            if (el.closest(`[${a}]`)) {
+              owner = a.replace('data-', '').replace('-id', '');
+              break;
+            }
+          }
+        }
+        byOwner.set(owner, (byOwner.get(owner) ?? 0) + 1);
+      }
+      // One station's whole subtree, so "nodes per station" has a shape.
+      const st = svg.querySelector('[data-station-id]');
+      const stTags = new Map<string, number>();
+      if (st) {
+        for (const el of [st, ...st.querySelectorAll('*')]) {
+          stTags.set(el.tagName, (stTags.get(el.tagName) ?? 0) + 1);
+        }
+      }
+      // How much of the <g> mass is pure wrapping — a group carrying no
+      // attributes, or one child, or both (which is free to delete).
+      const gs = all.filter((el) => el.tagName === 'g');
+      const gNoAttrs = gs.filter((el) => el.attributes.length === 0).length;
+      const gOneChild = gs.filter((el) => el.children.length === 1).length;
+      const gCollapsible = gs.filter(
+        (el) => el.attributes.length === 0 && el.children.length <= 1,
+      ).length;
+      // What the unattributed majority actually is: the nearest ancestor
+      // carrying ANY data- attribute names the layer it belongs to.
+      const layer = new Map<string, number>();
+      for (const el of all) {
+        let n: Element | null = el;
+        let name = '(svg root)';
+        while (n && n !== svg) {
+          const attr = [...n.attributes].find((a) => a.name.startsWith('data-'));
+          if (attr) {
+            name = attr.name;
+            break;
+          }
+          n = n.parentElement;
+        }
+        layer.set(name, (layer.get(name) ?? 0) + 1);
+      }
+      return {
+        total: all.length,
+        gTotal: gs.length,
+        gNoAttrs,
+        gOneChild,
+        gCollapsible,
+        layer: [...layer.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12),
+        stations: svg.querySelectorAll('[data-station-id]').length,
+        byTag: [...byTag.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12),
+        byOwner: [...byOwner.entries()].sort((a, b) => b[1] - a[1]),
+        stTags: [...stTags.entries()].sort((a, b) => b[1] - a[1]),
+        stTotal: st ? 1 + st.querySelectorAll('*').length : 0,
+      };
+    });
+    console.log(`\n=== painted node census (${census.total} nodes in the map svg) ===`);
+    console.log('  --- by owner ---');
+    for (const [k, n] of census.byOwner) {
+      console.log(`  ${String(n).padStart(6)}  ${((n / census.total) * 100).toFixed(1).padStart(5)}%  ${k}`);
+    }
+    console.log('  --- by tag ---');
+    for (const [k, n] of census.byTag) {
+      console.log(`  ${String(n).padStart(6)}  ${((n / census.total) * 100).toFixed(1).padStart(5)}%  ${k}`);
+    }
+    console.log('  --- <g> wrapping ---');
+    console.log(
+      `  ${String(census.gTotal).padStart(6)}  total <g>;  ${census.gNoAttrs} carry NO attributes;  ${census.gOneChild} have ONE child;  ${census.gCollapsible} are both (free to delete)`,
+    );
+    console.log('  --- by nearest data- ancestor (which layer the nodes belong to) ---');
+    for (const [k, n] of census.layer) {
+      console.log(`  ${String(n).padStart(6)}  ${((n / census.total) * 100).toFixed(1).padStart(5)}%  ${k}`);
+    }
+    console.log(
+      `  --- one station: ${census.stTotal} nodes (${census.stations} stations on the map) ---`,
+    );
+    console.log(`  ${census.stTags.map(([t, n]) => `${t}×${n}`).join('  ')}`);
+  }
 
   const host = (await page.locator('.canvas-host').boundingBox())!;
   const cx = Math.round(host.x + host.width / 2);
@@ -210,8 +393,13 @@ test('gesture-start latency', async ({ page }) => {
     },
     [cx, cy],
   );
-  if (!points.station || !points.bg) throw new Error(`no hit points: ${JSON.stringify(points)}`);
-  const st = points.station;
+  // PERF_PAN_ONLY runs just the middle-click block, which needs only a
+  // background point — that is what lets the scale sweep trim the map down to
+  // sizes where no station lands near the camera.
+  const panOnly = !!process.env.PERF_PAN_ONLY;
+  if (!points.bg) throw new Error(`no background hit point: ${JSON.stringify(points)}`);
+  if (!panOnly && !points.station) throw new Error(`no station hit point`);
+  const st = points.station ?? { x: 0, y: 0, id: '' };
   const bg = points.bg;
   console.log(`  station ${st.id} @ ${st.x},${st.y}   bg ${bg.x},${bg.y}   polygon ${cx},${cy}`);
 
@@ -262,8 +450,8 @@ test('gesture-start latency', async ({ page }) => {
     const t0 = Date.now();
     await act();
     const wallMs = Date.now() - t0;
-    const { events, longTasks } = await readProbe(page);
-    return { events, longTasks, engaged: await gate(), wallMs };
+    const { lat, longTasks } = await readProbe(page);
+    return { lat, longTasks, engaged: await gate(), wallMs };
   }
 
   const clearHover = async () => {
@@ -313,7 +501,7 @@ test('gesture-start latency', async ({ page }) => {
         await page.waitForTimeout(400);
       },
       gate: async () => {
-        const on = await page.locator('.canvas-host svg.panning').count();
+        const on = await page.locator('.canvas-host.panning').count();
         await page.mouse.up({ button: 'middle' });
         await page.waitForTimeout(120);
         return on > 0;
@@ -345,7 +533,7 @@ test('gesture-start latency', async ({ page }) => {
         await page.waitForTimeout(400);
       },
       gate: async () => {
-        const on = await page.locator('.canvas-host svg.panning').count();
+        const on = await page.locator('.canvas-host.panning').count();
         await page.mouse.up();
         await page.evaluate(() => {
           (
@@ -430,38 +618,161 @@ test('gesture-start latency', async ({ page }) => {
     },
   ];
 
+  const floor0 = (await probeFloor(page)).sort((a, b) => a - b);
+  console.log(
+    `\n  PROBE FLOOR (rAF -> setTimeout with no work): med ${med(floor0).toFixed(1)}ms  max ${floor0[floor0.length - 1].toFixed(1)}ms`,
+  );
   console.log(`\n=== gesture-start latency, real input, median of ${REPS} ===`);
-  console.log('  gesture               engaged   handler ms   dur ms   longtask ms   wall ms');
+  console.log(
+    '  gesture               engaged  samples   delay ms   worst→paint   longtask ms   wall ms',
+  );
   const failures: string[] = [];
-  for (const g of gestures) {
+  for (const g of panOnly ? [] : gestures) {
     await round(g.act, g.gate, g.reset); // warm-up, discarded
-    const handler: number[] = [];
-    const dur: number[] = [];
+    const delay: number[] = [];
+    const worstPaint: number[] = [];
     const lt: number[] = [];
     const wall: number[] = [];
+    const samples: number[] = [];
     let engagedAll = true;
-    const worst: EventEntry[] = [];
     for (let i = 0; i < REPS; i++) {
       const r = await round(g.act, g.gate, g.reset);
       engagedAll &&= r.engaged;
-      const mine = r.events.filter((e) => g.of.includes(e.name));
-      handler.push(sum(mine.map((e) => e.handlerMs)));
-      dur.push(Math.max(0, ...mine.map((e) => e.durationMs)));
+      const mine = r.lat.filter((e) => g.of.includes(e.name));
+      samples.push(mine.length);
+      // The costliest single event of the gesture — a gesture is felt as its
+      // worst frame, not its average one.
+      if (mine.length) {
+        worstPaint.push(Math.max(...mine.map((e) => e.toPaintMs)));
+        delay.push(med(mine.map((e) => e.delayMs)));
+      }
       lt.push(sum(r.longTasks));
       wall.push(r.wallMs);
-      for (const e of mine) if (e.handlerMs > 30) worst.push(e);
     }
-    if (!engagedAll) failures.push(g.label);
+    if (!engagedAll) failures.push(`${g.label} (never engaged)`);
+    // A gesture that produced no timing samples measured NOTHING. That is a
+    // broken instrument, not a fast gesture, and it is exactly how this table
+    // reported fiction for three revisions — so it fails the run.
+    if (sum(samples) === 0) failures.push(`${g.label} (no latency samples)`);
+    const cell = (xs: number[], dp: number, w: number) =>
+      (xs.length ? med(xs).toFixed(dp) : '—').padStart(w);
     console.log(
       `  ${g.label.padEnd(20)} ${(engagedAll ? 'yes' : 'NO').padStart(6)} ` +
-        `${med(handler).toFixed(1).padStart(11)} ${med(dur).toFixed(0).padStart(8)} ` +
-        `${med(lt).toFixed(0).padStart(13)} ${med(wall).toFixed(0).padStart(9)}`,
+        `${med(samples).toFixed(0).padStart(8)} ${cell(delay, 1, 10)} ` +
+        `${cell(worstPaint, 1, 13)} ${med(lt).toFixed(0).padStart(13)} ${med(wall).toFixed(0).padStart(9)}`,
     );
-    for (const e of worst.slice(0, 4)) {
+  }
+
+  // Middle-click -> pan armed, at finer resolution than the table above can
+  // give: Event Timing quantizes `duration` to 8ms, so a fast gesture reports a
+  // flat 0 and the wall column is mostly this harness's own settle waits. The
+  // page times itself instead — a CAPTURE-phase listener on window runs before
+  // React's root handler, so t0 is genuinely "the app has done nothing yet",
+  // and the first task after the next paint closes the interval. `inputDelay`
+  // is the gap between the OS event stamp and that listener: queueing, i.e.
+  // what a busy main thread would add.
+  {
+    const PAN_REPS = Number(process.env.PERF_PAN_REPS ?? 15);
+    const floor = await probeFloor(page);
+    /** Drain the shared probe, keeping only presses. */
+    const readPresses = async () => {
+      await resetProbeAfterRead();
+      return pressBuf.splice(0, pressBuf.length);
+    };
+    const pressBuf: LatencySample[] = [];
+    async function resetProbeAfterRead() {
+      const { lat } = await readProbe(page);
+      pressBuf.push(...lat.filter((e) => e.name === 'pointerdown'));
+      await resetProbe(page);
+    }
+
+    // CONTROL: the identical middle-press, at a point OUTSIDE .canvas-host, so
+    // MapCanvas's handler never runs and no pan is armed. Same probe, same
+    // page, same button — the only difference is whether the app does its
+    // pan-arm work. This is what separates "the app costs 90ms" from "a middle
+    // press costs 90ms".
+    // Scan the window for a point that is neither canvas nor an interactive
+    // control — pressing a button or field would measure that instead.
+    const offCanvas = await page.evaluate(() => {
+      for (let y = 4; y < window.innerHeight; y += 12) {
+        for (let x = 4; x < window.innerWidth; x += 12) {
+          const el = document.elementFromPoint(x, y);
+          if (!el || el.closest('.canvas-host')) continue;
+          if (el.closest('button,input,select,textarea,a,[role="button"],[role="menuitem"]')) {
+            continue;
+          }
+          return { x, y };
+        }
+      }
+      return null;
+    });
+    const offCanvasIsClear = offCanvas != null;
+    await resetProbe(page);
+    let controlSamples: LatencySample[] = [];
+    if (offCanvas) {
+      for (let i = 0; i < PAN_REPS; i++) {
+        await page.mouse.move(offCanvas.x + (i % 3), offCanvas.y + (i % 3));
+        await page.waitForTimeout(60);
+        await page.mouse.down({ button: 'middle' });
+        await page.waitForTimeout(90);
+        await page.mouse.up({ button: 'middle' });
+        await page.waitForTimeout(60);
+      }
+      controlSamples = await readPresses();
+    }
+
+    let armed = 0;
+    for (let i = 0; i < PAN_REPS; i++) {
+      await page.mouse.move(bg.x + (i % 5), bg.y + (i % 3));
+      await page.waitForTimeout(60);
+      await page.mouse.down({ button: 'middle' });
+      await page.waitForTimeout(90);
+      // Armed = the pan is live AND the cursor overlay is the element under the
+      // pointer. The second half is not decoration: the overlay is how the
+      // "grabbing" cursor is served now, and if it were not hit-tested the
+      // gesture would simply have lost its cursor — a fast number bought by
+      // deleting the feature.
+      const state = await page.evaluate(
+        ([px, py]) => ({
+          panning: !!document.querySelector('.canvas-host.panning'),
+          overlayUnderPointer: !!document
+            .elementFromPoint(px as number, py as number)
+            ?.classList.contains('pan-cursor-overlay'),
+        }),
+        [bg.x + (i % 5), bg.y + (i % 3)],
+      );
+      if (state.panning && state.overlayUnderPointer) armed++;
+      await page.mouse.up({ button: 'middle' });
+      await page.waitForTimeout(60);
+    }
+    const panSamples = await readPresses();
+    const toPaint = panSamples.map((s) => s.toPaintMs).sort((a, b) => a - b);
+    const delays = panSamples.map((s) => s.delayMs).sort((a, b) => a - b);
+    const p = (xs: number[], q: number) => xs[Math.min(xs.length - 1, Math.floor(xs.length * q))];
+    const floorSorted = [...floor].sort((a, b) => a - b);
+    console.log(`\n=== middle-click -> pan armed, ${panSamples.length} presses ===`);
+    console.log(`  armed ${armed}/${PAN_REPS}   (samples ${panSamples.length}/${PAN_REPS})`);
+    console.log(
+      `  PROBE FLOOR (same interval, no press):  med ${med(floorSorted).toFixed(1)}ms   max ${floorSorted[floorSorted.length - 1].toFixed(1)}ms`,
+    );
+    if (!offCanvasIsClear) {
+      console.log(`  CONTROL: no off-canvas point found — control skipped`);
+    } else {
+      const ctl = controlSamples.map((s) => s.toPaintMs).sort((a, b) => a - b);
       console.log(
-        `      slow ${e.name}: handler ${e.handlerMs.toFixed(0)}ms, delay ${e.delayMs.toFixed(0)}ms, dur ${e.durationMs.toFixed(0)}ms`,
+        `  CONTROL middle-press at ${offCanvas!.x},${offCanvas!.y} (off canvas, no pan armed), ${ctl.length} presses:  med ${ctl.length ? med(ctl).toFixed(1) : '—'}ms`,
       );
     }
+    if (toPaint.length) {
+      console.log(
+        `  press -> painted:  med ${med(toPaint).toFixed(1)}ms   p90 ${p(toPaint, 0.9).toFixed(1)}ms   max ${toPaint[toPaint.length - 1].toFixed(1)}ms   min ${toPaint[0].toFixed(1)}ms`,
+      );
+      console.log(
+        `  input delay:       med ${med(delays).toFixed(1)}ms   p90 ${p(delays, 0.9).toFixed(1)}ms   max ${delays[delays.length - 1].toFixed(1)}ms`,
+      );
+    }
+    // An un-armed press measured nothing, same rule as the gestures above.
+    expect(armed, 'middle-press never armed a pan').toBe(PAN_REPS);
   }
 
   // A webfont arriving mid-session is the other whole-map re-measure: App.tsx

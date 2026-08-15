@@ -7,6 +7,7 @@ import {
   type SegmentBandSpec,
 } from '../../geometry/interlining';
 import { pairKeyOf } from '../../model/pairKey';
+import { useLiveViewportStore } from '../../state/viewportStore';
 import { resolveDotStyle, spawnStopCellAt, stationIsSingleton } from '../../model/transforms';
 import { stationCircle } from '../../geometry/lineCircle';
 import { STOP_SIZE } from '../../geometry/orientation';
@@ -91,7 +92,7 @@ export function HighlightedLineLayer({
   renderables,
   underlayColor,
   uiMode,
-  appendHover,
+  appendHover: appendHoverProp,
   zoom,
   onStartDrag,
   onRemoveCursorStation,
@@ -103,6 +104,13 @@ export function HighlightedLineLayer({
   vbH,
 }: Props) {
   const themeColors = useThemeColors();
+  // The pan half of the hover-suppression gate. Subscribed HERE, not in
+  // MapCanvas: this layer mounts only while a line is highlighted, so between
+  // pans nothing in the app is listening and a press re-renders nothing. Read
+  // from MapCanvas instead, the flag re-rendered the whole canvas on every
+  // press — 29ms on a 464-station map (see LiveViewportState.panning).
+  const panning = useLiveViewportStore((s) => s.panning);
+  const appendHover = panning ? undefined : appendHoverProp;
   // The overlay repaints the line's own bands and markers, so it resolves the
   // same theme-aware casing color the base layer does.
   const darkMode = useDoc((s) => s.darkMode);

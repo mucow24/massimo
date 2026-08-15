@@ -210,6 +210,10 @@ export interface FakePanLayer {
     clientWidth: number;
     clientHeight: number;
     getBoundingClientRect(): FakeRect;
+    /** `.canvas-host`. The pan's `.panning` cursor class is written HERE, not
+     *  on the svg: a class on the svg makes Blink recompute inherited style
+     *  across its whole subtree (22ms on a 464-station map). */
+    classList: { toggle(name: string, on?: boolean): void; contains(name: string): boolean };
   };
 }
 
@@ -239,9 +243,18 @@ export function fakeSvgRef(opts: FakeSvgOpts = {}): {
     return m ? { dx: Number(m[1]), dy: Number(m[2]) } : { dx: 0, dy: 0 };
   };
   const svg = fakeSvg({ ...opts, panOffset: () => panTranslate() });
+  const hostClasses = new Set<string>();
   const panLayer: FakePanLayer = {
     style: { transform: '', willChange: '' },
     parentElement: {
+      classList: {
+        toggle: (name: string, on?: boolean) => {
+          const next = on ?? !hostClasses.has(name);
+          if (next) hostClasses.add(name);
+          else hostClasses.delete(name);
+        },
+        contains: (name: string) => hostClasses.has(name),
+      },
       clientWidth: width,
       clientHeight: height,
       getBoundingClientRect: (): FakeRect => ({

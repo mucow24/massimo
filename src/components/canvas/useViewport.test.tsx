@@ -249,7 +249,7 @@ describe('useViewport — cancelled / dead pan gestures disarm', () => {
     // First hover move after focus returns: no buttons held.
     move(result, pointerEvent({ clientX: 300, clientY: 300, buttons: 0 }));
 
-    expect(result.current.panning).toBe(false);
+    expect(useLiveViewportStore.getState().panning).toBe(false);
     expect(result.current.viewport.x).toBe(-50);
     expect(result.current.viewport.y).toBe(-30);
     // The composited layer is retired along with the gesture.
@@ -267,7 +267,7 @@ describe('useViewport — cancelled / dead pan gestures disarm', () => {
 
     act(() => result.current.cancel());
 
-    expect(result.current.panning).toBe(false);
+    expect(useLiveViewportStore.getState().panning).toBe(false);
     expect(result.current.viewport.x).toBe(-50);
     // The live slot is resolved — no dangling pending for overlays.
     expect(useLiveViewportStore.getState().pending).toBeNull();
@@ -280,16 +280,29 @@ describe('useViewport — cancelled / dead pan gestures disarm', () => {
 
 describe('useViewport — panning', () => {
   it('starts a pan on the left button and captures the pointer', () => {
-    const { result, svg } = render();
+    const { result, svg, panLayer } = render();
     down(result, pointerEvent({ clientX: 100, clientY: 100, button: 0 }));
-    expect(result.current.panning).toBe(true);
+    expect(useLiveViewportStore.getState().panning).toBe(true);
     expect(svg.hasPointerCapture(1)).toBe(true);
+    // The cursor class goes on .canvas-host, written straight to the element.
+    // Through React it re-rendered the whole canvas (29ms/press on a large
+    // map); on the SVG it made Blink recompute inherited style across 15k
+    // nodes (22ms). Both were the whole of the remaining pan-start latency.
+    expect(panLayer.parentElement.classList.contains('panning')).toBe(true);
+  });
+
+  it('takes the cursor class back off on pointer-up', () => {
+    const { result, panLayer } = render();
+    down(result, pointerEvent({ clientX: 100, clientY: 100, button: 0 }));
+    up(result, pointerEvent({ clientX: 100, clientY: 100, button: 0 }));
+    expect(panLayer.parentElement.classList.contains('panning')).toBe(false);
+    expect(useLiveViewportStore.getState().panning).toBe(false);
   });
 
   it('ignores non-left/middle buttons', () => {
     const { result } = render();
     down(result, pointerEvent({ clientX: 100, clientY: 100, button: 2 }));
-    expect(result.current.panning).toBe(false);
+    expect(useLiveViewportStore.getState().panning).toBe(false);
   });
 
   it('translates the viewport by the screen delta divided by zoom (committed on pointer-up)', () => {
@@ -347,14 +360,21 @@ describe('useViewport — panning', () => {
     expect(result.current.screenToWorld(400, 300)).toEqual({ x: -50, y: -30 });
   });
 
-  it('promotes the pan layer on pan start and demotes it when the gesture ends', () => {
-    // will-change is gesture-scoped: promotion happens at pointer-down (the
-    // one-off layerization raster hides in the press), and the layer is
-    // demoted on commit so idle rendering is exactly what it was before.
+  it('never touches will-change: the layer is promoted for the whole session', () => {
+    // Promotion used to be gesture-scoped — set at pointer-down, cleared on
+    // commit. Granting it makes the browser rebuild the layer, which costs
+    // ~4µs per painted node, so charging it to every press cost ~20ms of the
+    // press latency on a 464-station map. `.canvas-pan-layer` now carries
+    // `will-change: transform` in the stylesheet and the hook writes only the
+    // transform. If this starts failing, someone has re-introduced the
+    // per-gesture promotion.
     const { result, panLayer } = render();
     down(result, pointerEvent({ clientX: 100, clientY: 100, button: 0 }));
-    expect(panLayer.style.willChange).toBe('transform');
-    up(result, pointerEvent({ clientX: 100, clientY: 100 }));
+    expect(panLayer.style.willChange).toBe('');
+    move(result, pointerEvent({ clientX: 150, clientY: 130 }));
+    expect(panLayer.style.transform).toBe('translate(50px, 30px)');
+    expect(panLayer.style.willChange).toBe('');
+    up(result, pointerEvent({ clientX: 150, clientY: 130 }));
     expect(panLayer.style.willChange).toBe('');
     expect(panLayer.style.transform).toBe('');
   });
@@ -372,7 +392,7 @@ describe('useViewport — panning', () => {
     // Mid-gesture commit: camera moved by the full delta, transform reset.
     expect(result.current.viewport.x).toBe(-400);
     expect(panLayer.style.transform).toBe('');
-    expect(result.current.panning).toBe(true);
+    expect(useLiveViewportStore.getState().panning).toBe(true);
     // The gesture continues seamlessly from the new anchor…
     move(result, pointerEvent({ clientX: 550, clientY: 100 }));
     expect(panLayer.style.transform).toBe('translate(50px, 0px)');
@@ -491,7 +511,7 @@ describe('useViewport — panning', () => {
     move(result, pointerEvent({ clientX: 200, clientY: 100 }));
     up(result, pointerEvent({ clientX: 200, clientY: 100 }));
     expect(dragState.suppressClick).toBe(true);
-    expect(result.current.panning).toBe(false);
+    expect(useLiveViewportStore.getState().panning).toBe(false);
     expect(svg.hasPointerCapture(1)).toBe(false);
   });
 });

@@ -40,7 +40,6 @@ export interface ViewportApi {
   vbY: number;
   vbW: number;
   vbH: number;
-  panning: boolean;
   screenToWorld: (mx: number, my: number) => { x: number; y: number };
   onWheel: (e: WheelInput) => void;
   startPan: (e: React.PointerEvent) => void;
@@ -94,7 +93,22 @@ export function useViewport(
   const setPending = useLiveViewportStore.getState().setPending;
 
   const [size, setSize] = useState({ w: 800, h: 600 });
-  const [panning, setPanning] = useState(false);
+  // NOT useState, and not subscribed — see LiveViewportState.panning. This hook
+  // runs inside MapCanvas, so a re-render here re-renders the whole canvas.
+  const setPanningState = useLiveViewportStore.getState().setPanning;
+  // Arm/disarm the in-flight pan's "grabbing" cursor, by class on `.canvas-host`
+  // (the pan layer's parent). Two things make this imperative rather than a
+  // render, and both were measured on a 464-station map against a 0.5ms floor:
+  // going through React state cost ~7ms a press (it re-renders the whole
+  // canvas), and putting the class on the SVG cost ~15ms more (the cursor it
+  // applies is an INHERITED property, so Blink recomputes inherited style
+  // across all ~15k descendants). `.canvas-host` carries a constant className
+  // from React, so React never rewrites the attribute and this survives.
+  // What the class switches on is a childless overlay — see styles.css.
+  const setPanningCursor = (on: boolean) => {
+    setPanningState(on);
+    panLayerRef.current?.parentElement?.classList.toggle('panning', on);
+  };
   const panStartRef = useRef<{
     mx: number;
     my: number;
@@ -185,14 +199,14 @@ export function useViewport(
     svgRef.current?.setAttribute('viewBox', viewBoxStr(panSurfaceViewBox(viewBoxFor(v, size))));
   };
 
-  // Retire the pan gesture's compositor state: transform gone, layer demoted.
-  // Runs in the same synchronous handler as the camera commit, so the React
-  // viewBox write and the transform reset land in one frame — no double-offset.
+  // Retire the pan gesture's transform. Runs in the same synchronous handler as
+  // the camera commit, so the React viewBox write and the transform reset land
+  // in one frame — no double-offset. The layer stays PROMOTED (see styles.css):
+  // demoting here is what made the next press pay for a fresh layer.
   const releasePanLayer = () => {
     const el = panLayerRef.current;
     if (!el) return;
     el.style.transform = '';
-    el.style.willChange = '';
   };
 
   // PAN path: show viewport `v` by translating the composited pan layer by the
@@ -286,11 +300,12 @@ export function useViewport(
       moved: false,
       captured: false,
     };
-    // Promote the pan layer at pointer-down: the one-off layerization raster
-    // hides in the press, so the first move frame is already compositor-only.
-    const layer = panLayerRef.current;
-    if (layer) layer.style.willChange = 'transform';
-    setPanning(true);
+    // No promotion here. The layer carries `will-change: transform` in the
+    // stylesheet for the whole session: promoting on press and demoting on
+    // release meant the browser rebuilt the layer once per gesture, and that
+    // rebuild is proportional to the painted tree — measured at ~95ms per press
+    // on the 464-station map, against 0.3ms for a press that arms no pan.
+    setPanningCursor(true);
     svgRef.current?.setPointerCapture(e.pointerId);
     panStartRef.current.captured = true;
   };
@@ -322,7 +337,7 @@ export function useViewport(
     const panMoved = panStartRef.current.moved;
     const wasCaptured = panStartRef.current.captured;
     panStartRef.current = null;
-    setPanning(false);
+    setPanningCursor(false);
     if (wasCaptured) {
       try {
         svgRef.current?.releasePointerCapture(e.pointerId);
@@ -350,7 +365,7 @@ export function useViewport(
     commitPending();
     releasePanLayer();
     panStartRef.current = null;
-    setPanning(false);
+    setPanningCursor(false);
   };
 
   return {
@@ -360,7 +375,6 @@ export function useViewport(
     vbY,
     vbW,
     vbH,
-    panning,
     screenToWorld,
     onWheel,
     startPan,
