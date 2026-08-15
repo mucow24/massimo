@@ -18,19 +18,25 @@ export const LINE_CIRCLE_RADIUS_DEFAULT = 5 * STOP_SIZE;
  * never drift. Callers own the finiteness guard (a transform ignores non-finite
  * input; the sanitizer drops the circle).
  *
- * The quarter-unit GRID a dragged radius lands on lives at the two gesture
- * sites (`useLineCircleDrag`, `LineCirclePlacingPreview`) — a pointer distance
- * wants a grid, a typed diameter does not.
+ * This function does NOT quantise. The quarter-unit grid a dragged radius
+ * lands on is `snapDraggedLineCircleRadius` below, applied at the gesture
+ * sites — a pointer distance wants a grid, a typed diameter does not, and
+ * keeping the clamp separate is what lets the popover's Diameter field hold an
+ * off-grid number.
  */
 export const canonicalLineCircleRadius = (r: number): number =>
   clampField(r, LINE_CIRCLE_RADIUS_MIN);
 
 /**
  * The radius a POINTER gesture lands on: the quarter-unit grid, floored at the
- * minimum. Shared by the resize knob, the two-click placement drop and the
- * ghost ring that previews that drop, so preview and result can never disagree.
- * The popover's Diameter field does NOT come through here — a typed number is
- * kept as typed.
+ * minimum. Shared by the resize knob (`useLineCircleDrag`), the two-click
+ * placement drop (`usePlacementDispatch`) and the ghost ring that previews that
+ * drop (`LineCirclePlacingPreview`), so preview and result can never disagree.
+ *
+ * Two ways past it, both deliberate: the popover's Diameter field never comes
+ * through here (a typed number is kept as typed), and **Shift declines the
+ * grid** mid-drag exactly as it declines the point snapper on a move, storing
+ * the raw pointer distance.
  */
 export const snapDraggedLineCircleRadius = (r: number): number =>
   snapToStep(r, LINE_WIDTH_STEP, LINE_CIRCLE_RADIUS_MIN);

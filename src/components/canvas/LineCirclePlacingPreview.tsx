@@ -15,11 +15,15 @@ const LABEL_PX = 14;
  * The diameter readout shown while a circle's radius is being chosen (the
  * two-click placement's second phase) or dragged (the resize knob): the same
  * white-on-accent measurement text the snap guides use, in the same
- * `formatMeasurement` format, sitting just above the circle's center. Shows the
- * CANONICAL value — what the doc will actually store — not the raw cursor
- * distance, so the number never lies. One decimal is lossless here:
- * `canonicalLineCircleRadius` quantises the radius to a quarter unit, so the
- * diameter always lands on a half.
+ * `formatMeasurement` format, sitting just above the circle's center.
+ *
+ * It reads the radius the gesture is about to STORE, not the raw cursor
+ * distance. On the ordinary path that is exact: `snapDraggedLineCircleRadius`
+ * has already put the radius on the quarter-unit grid, so the diameter lands
+ * on a half and one decimal is lossless. Under **Shift**, which declines that
+ * grid, the stored radius is the raw distance and the readout is a rounding of
+ * it — the shared one-decimal measurement format is worth more here than a
+ * digit nobody is reading mid-drag.
  */
 export function CircleDiameterLabel({
   cx,

@@ -1101,6 +1101,31 @@ describe('migrateDoc', () => {
       expect(line.stations).toEqual(['s1', 's2', 's3']);
     });
 
+    it('drops a style def whose props is a primitive, exactly as the file path does', () => {
+      // Nothing catches a throw out of migrateDoc — zustand's `migrate` hook
+      // has no shell of its own, so a raw TypeError here white-screens the app
+      // on the persisted doc that caused it, with no way back in. And a def
+      // that survives with primitive props is a slower version of the same
+      // crash: every reader indexes into props. The file path drops such a def
+      // in `sanitizeStyles` (which this path never runs), so the rehydrate
+      // drops it in `ensureStyleInvariants` — where both paths meet — leaving
+      // the emptied kind to be refilled with its factory Default.
+      for (const props of ['oops', 7, true]) {
+        const label = `props = ${JSON.stringify(props)}`;
+        const out = run(
+          {
+            lines: { L1: { service: 'A', name: 'A line', stations: [], edges: [] } },
+            styles: { y2: { id: 'y2', kind: 'line', name: 'Primitive', props } },
+          },
+          0,
+        );
+        expect(out.styles!.y2, label).toBeUndefined();
+        const lineDefault = out.styles![out.styleDefaults!.line];
+        expect(lineDefault.name, label).toBe('Default');
+        expect(lineDefault.kind, label).toBe('line');
+      }
+    });
+
     it('backfills line edges even for a doc already stamped at the current version', () => {
       // Regression: an intermediate build bumped the persist version to 14 and
       // re-saved docs BEFORE lines were writing `edges`. Those docs are stranded
