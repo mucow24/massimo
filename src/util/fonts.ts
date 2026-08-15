@@ -13,15 +13,15 @@
 import type { TextLabelWeight } from '../model/types';
 import { clamp } from './grid';
 
-// The map's typeface. Söhne, licensed per-application from Klim — which is what
-// lets its glyphs ride along in the SVG/PDF/PNG files the app produces. The
-// on-screen font and the export outline tracer must read the SAME files or
+// The map's typeface is Söhne, licensed per-application from Klim — which is
+// what lets its glyphs ride along in the SVG/PDF/PNG files the app produces.
+// The on-screen font and the export outline tracer must read the SAME files or
 // measured pen positions won't line up with the traced glyphs, so styles.css's
 // `@font-face` blocks and `FONT_TABLE` (export/fonts.ts) point at these too.
-// Spelled ASCII: the family name reaches CSS, the export tracer, and served
-// URLs, and none of those gain anything from the umlaut.
-export const FONT_FAMILY = 'Soehne';
-
+// The family name is spelled ASCII ('Soehne') everywhere: it reaches CSS, the
+// export tracer, and served URLs, and none of those gain anything from the
+// umlaut.
+//
 // Font stack for all on-screen + exported map text. The map's type first, then
 // two fallbacks in a deliberate order: Massimo Symbols carries the handful of
 // pictograms we care about the LOOK of (today just ✈, drawn to match Söhne's cap

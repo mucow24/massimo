@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `b427ca5` (2026-08-13, #516) — verified against the live source.** This
+**Up to date as of commit `683b507` (2026-08-14, #518) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -212,6 +212,8 @@ src/
     fontEpoch.ts                # useFontEpoch: web-font load counter — a STORE so it crosses memo
     theme.ts                    # themeColors(darkMode, dayCanvasColor) table (no store; reads doc.darkMode)
     customPalettes.ts           # useCustomPalettes: the library's user half + stars + sort
+    customLineColors.ts         # useCustomLineColors(): the line colors no palette of the map
+                                #   covers, derived once for the three surfaces that show them
     mapLibrary.ts               # saved maps + versions in IndexedDB (no store; opaque JSON)
     libraryPrefs.ts             # useLibraryPrefs: map-library UI prefs (sort mode; two star filters)
     libraryPointer.ts           # useLibraryPointer: which map + version the live doc came from
@@ -504,11 +506,16 @@ because the per-field comparators read ABSENCE: one stray present-and-undefined 
 every wearer as overridden on load.
 Defaultness is explicit and id-keyed, never name-derived: `styleDefaults` maps each kind to one of
 its styles (`setDefaultStyle` re-assigns it — the panel's star), with three structural invariants
-enforced on both load paths by `ensureStyleInvariants` (serialize.ts): every kind has >= 1 style
-(empty kinds get their factory Default injected; `deleteStyle` refuses last-of-kind and re-points
-the designation when the default itself is deleted), every `styleDefaults` entry resolves to a
-style of its kind, and every line style's dot-TYPE ids (`singleton`/`multiDotStyleId`) name live
-`stopDot` styles. That last one is what keeps dot type STAMPABLE: the setters no-op on an id that
+enforced on both load paths by `ensureStyleInvariants` (serialize.ts). It first drops any def
+whose `props` is not a record — a primitive or absent one is not a style, and every reader
+downstream indexes into props, so it would answer `in` with a throw and a field read with
+`undefined` (the file path drops it in `sanitizeStyles`, which the rehydrate never runs, so the
+drop belongs where both paths meet). Then the three structural invariants: every kind has >= 1
+style (empty kinds get their factory Default injected — which is also what refills a kind the drop
+just emptied; `deleteStyle` refuses last-of-kind and re-points the designation when the default
+itself is deleted), every `styleDefaults` entry resolves to a style of its kind, and every line
+style's dot-TYPE ids (`singleton`/`multiDotStyleId`) name live `stopDot` styles. That last one is
+what keeps dot type STAMPABLE: the setters no-op on an id that
 doesn't resolve, so a def naming a dead dot style could never hand its wearers a real value. A
 present-but-dangling (or wrong-kind) id is re-pointed at the designated default dot;
 `deleteStyle` re-points the defs it can see at delete time — defs FIRST, while wearers still
@@ -1541,7 +1548,12 @@ the file itself carries (steps 3, 5, 6b/6c) — repair over guesswork, error ove
 
    Then `sanitizeImageHrefs` (drop every svg image whose `href` is outside the inline-data
    allow-list, and its `backgroundOrder` entry with it — see "Every image href is inline data"),
-   then `sanitizeRegionAssignments` (region-assignment hygiene — validates against the **cleaned**
+   then `sanitizeLineCircles` (the ring binding invariants — drop malformed circles, strip
+   dangling `circleId`s and orphaned `viaCircle` flags, reproject drifted bound stations; it
+   repairs STATIONS as well as circles, which is why it sits after the station passes), then
+   `sanitizeGuides` (drop malformed guides, collapse a stored `locked: false`; an
+   `AlignmentGuide` references nothing, so this one has no rehydrate twin), then
+   `sanitizeRegionAssignments` (region-assignment hygiene — validates against the **cleaned**
    lines: dangling line ids drop the assignment, dangling pairKey anchors survive for reconcile).
 7. `convertLegacyDotShapes` (preset ids → `DotStyle`) — **runs after** the line/station passes.
    Then `bakeLineDotDefaults` (retired single `defaultDotStyle`/`defaultDotSize` → the split
@@ -1899,16 +1911,23 @@ parts and shared one millisecond suffix across kinds.)
 
 ## State management
 
-Fourteen Zustand stores, split deliberately by lifecycle. The three that carry real application
+Nineteen Zustand stores, split deliberately by lifecycle. The three that carry real application
 state — `useDoc`, `useSelection`, `useViewportStore` (+ its in-flight twin `useLiveViewportStore`)
-— get their own sections below. The rest are small and single-purpose: `useSnapPrefs`,
-`useCustomPalettes`, `useSaveBaseline`, `useLibraryPointer`, `useToasts`, `useFontEpoch`, and four
-persisted UI-preference stores that exist only so a panel's disclosure state survives a reload
-(`useLabelEditorPrefs`, `useLineEditorPrefs`, `useStationEditorPrefs`, `useLibraryPrefs`). Files in
-[src/state/](src/state/). Four modules sit alongside them **without** being stores — they own no
-React state: `mapLibrary.ts` (IndexedDB; see the map-library section below), `theme.ts` (a pure
-table), and `visibility.ts` / `anchorVisibility.ts` (derivations over the viewport and selection
-stores).
+— get their own sections below. Two more are structural rather than small: `useRenderDoc` (the doc
+slice the canvas PAINTS from) and `useDragFrame` (the landed pipelined frame), both covered under
+Rendering: pipelined drags. The rest are small and single-purpose: `useSnapPrefs`,
+`useCustomPalettes`, `useSaveBaseline`, `useLibraryPointer`, `useToasts`, `useFontEpoch`,
+`useDevSettings`, `useFunMode`, and five UI-preference stores that exist only so a panel's
+disclosure state survives a reload (`useLabelEditorPrefs`, `useLineEditorPrefs`,
+`useStationEditorPrefs`, `useLibraryPrefs`, and `useLineListPrefs` — the one of the five NOT
+persisted). Files in [src/state/](src/state/).
+
+Most of that folder is **not** a store, though: eleven modules sit alongside them owning no React
+state at all. `mapLibrary.ts` (IndexedDB; see the map-library section below) and `history.ts`
+(zundo's internals) own state that lives outside React entirely; `theme.ts` and `stationNames.ts`
+are pure tables; `visibility.ts` / `anchorVisibility.ts` / `customLineColors.ts` are derivations
+over the stores; and `selectionOps.ts`, `transferPick.ts`, `mirrorDispatch.ts`, `exportAudit.ts`
+are pure rules or fan-outs that read the stores through `getState()` rather than subscribing.
 
 **`useFontEpoch` is a store for one specific reason** — see the memo gotcha: a re-render signal
 that must cross a `memo` boundary cannot live in App-local `useState`, because `StationView`'s
@@ -4424,6 +4443,9 @@ Each is confirmed in source/tests; file pointers included.
   hide every bearing bug; `whitespaceAwareMetrics` and `inkOverhangMetrics` are the two models more
   than one file needs, shared so the renderers they pin are held to the same numbers — the stubs
   patch per test and nest, so a suite can install a distinct model over the file's),
+  `colorField.ts` (drives `<ColorField />`, whose swatch is a button rather than a native
+  `<input type=color>`: open the portalled picker and set the hex in ONE `fireEvent.change`, so a
+  normalize-on-emit binding never sees the char-by-char intermediates),
   `setup.ts` (jsdom polyfills: ResizeObserver, pointer-capture, scrollIntoView).
 - **E2E (Playwright, [e2e/](e2e/))** — single-worker, no retries locally (2 on CI), honors `PORT`
   for parallel worktrees, 120s per-test timeout (app boots dominate on slow cloud containers; the

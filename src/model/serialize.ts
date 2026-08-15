@@ -918,6 +918,55 @@ export function bakeTextLabelStyleLayout<
 type LinesAndStyles = { lines?: Record<string, Line>; styles?: Record<string, StyleDef> };
 
 /**
+ * Rewrite the props of every LINE style def, leaving every other def — and the
+ * doc itself, when no def changed — at its original reference.
+ *
+ * Every legacy bake that reaches into `styles` wants exactly this walk, and
+ * spelling it per bake meant each one restated the same two contracts. Both
+ * bite when they drift:
+ *
+ *   - The GUARD. A def's `props` is raw persisted JSON, so it can be anything:
+ *     absent, null, or a primitive a hand-edit or a corrupt blob left behind.
+ *     Every bake probes it with `in`, which THROWS on a primitive — and a throw
+ *     here is not a dropped def, it is a refused file (parse's shell) or a
+ *     white screen (migrateDoc has no shell). A def that is not a record is not
+ *     a line def these bakes can rewrite; it rides through untouched, and the
+ *     validators drop it downstream — `sanitizeStyles` on the file path,
+ *     `ensureStyleInvariants` on both.
+ *   - REFERENCE STABILITY. `storeMigrate.test.ts` pins `expect(out).toBe(input)`
+ *     for an already-canonical doc, so the styles record must not be rebuilt
+ *     when nothing in it changed.
+ *
+ * `rewrite` sees the loose record view (the def predates the field it is about
+ * to gain, so it is not valid props until the write lands) and returns the
+ * replacement props, or `null` for "this def is already canonical".
+ */
+function mapLineStyleProps<T extends { styles?: Record<string, StyleDef> }>(
+  doc: T,
+  rewrite: (props: Record<string, unknown>) => Record<string, unknown> | null,
+): T {
+  if (!doc.styles) return doc;
+  let changed = false;
+  const styles: Record<string, StyleDef> = {};
+  for (const id of Object.keys(doc.styles)) {
+    const def = doc.styles[id];
+    const next =
+      def && def.kind === 'line' && def.props && typeof def.props === 'object'
+        ? rewrite(def.props as unknown as Record<string, unknown>)
+        : null;
+    if (next === null) {
+      styles[id] = def;
+      continue;
+    }
+    // Cast back through `unknown`: the props are a loose record until the
+    // sanitizer validates them, not yet a LineStyleProps.
+    styles[id] = { ...def, props: next } as unknown as StyleDef;
+    changed = true;
+  }
+  return changed ? ({ ...doc, styles } as T) : doc;
+}
+
+/**
  * The shared body of a "this doc-global became a covered line-style field"
  * bake. `curveRadius` is the one live user (the retired `seamEdges` took the
  * same route until the whole seam retired — see stripRetiredSeamFields) and
@@ -971,36 +1020,12 @@ function bakeRetiredLineField<T extends LinesAndStyles, V>(
     }
   }
 
-  if (out.styles) {
-    let stylesChanged = false;
-    const styles: Record<string, StyleDef> = {};
-    for (const id of Object.keys(out.styles)) {
-      const def = out.styles[id];
-      if (
-        def &&
-        def.kind === 'line' &&
-        def.props &&
-        typeof def.props === 'object' &&
-        !(field in def.props)
-      ) {
-        // Raw persisted props — spread via a loose view, and cast back through
-        // `unknown`: the def predates the field, so it is not a valid
-        // LineStyleProps until this write lands. (The computed key widens the
-        // spread to an index signature, which is why the cast needs the hop.)
-        const props = def.props as unknown as Record<string, unknown>;
-        styles[id] = {
-          ...def,
-          props: { ...props, [field]: defOf(legacy) },
-        } as unknown as StyleDef;
-        stylesChanged = true;
-      } else {
-        styles[id] = def;
-      }
-    }
-    if (stylesChanged) {
-      out = out === doc ? ({ ...doc, styles } as T) : { ...out, styles };
-      changed = true;
-    }
+  const withDefs = mapLineStyleProps(out, (props) =>
+    field in props ? null : { ...props, [field]: defOf(legacy) },
+  );
+  if (withDefs !== out) {
+    out = withDefs;
+    changed = true;
   }
 
   return changed ? out : doc;
@@ -1068,30 +1093,14 @@ export function stripRetiredSeamFields<T extends LinesAndStyles>(doc: T): T {
       changed = true;
     }
   }
-  if (out.styles) {
-    let stylesChanged = false;
-    const styles: Record<string, StyleDef> = {};
-    for (const id of Object.keys(out.styles)) {
-      const def = out.styles[id];
-      if (
-        def &&
-        def.kind === 'line' &&
-        def.props &&
-        typeof def.props === 'object' &&
-        hasSeam(def.props)
-      ) {
-        const props = def.props as unknown as Record<string, unknown>;
-        const { seamColor: _c, seamWidth: _w, seamEdges: _e, ...restProps } = props;
-        styles[id] = { ...def, props: restProps } as unknown as StyleDef;
-        stylesChanged = true;
-      } else {
-        styles[id] = def;
-      }
-    }
-    if (stylesChanged) {
-      out = out === doc ? ({ ...doc, styles } as T) : { ...out, styles };
-      changed = true;
-    }
+  const stripped = mapLineStyleProps(out, (props) => {
+    if (!hasSeam(props)) return null;
+    const { seamColor: _c, seamWidth: _w, seamEdges: _e, ...restProps } = props;
+    return restProps;
+  });
+  if (stripped !== out) {
+    out = stripped;
+    changed = true;
   }
   return changed ? out : doc;
 }
@@ -1107,33 +1116,16 @@ export function stripRetiredSeamFields<T extends LinesAndStyles>(doc: T): T {
  * presence) and reference-stable when every line def already carries both.
  */
 export function bakeLineStyleDotIds<T extends { styles?: Record<string, StyleDef> }>(doc: T): T {
-  if (!doc.styles) return doc;
-  let changed = false;
-  const styles: Record<string, StyleDef> = {};
-  for (const id of Object.keys(doc.styles)) {
-    const def = doc.styles[id];
-    if (def && def.kind === 'line' && def.props && typeof def.props === 'object') {
-      // Raw persisted props — a loose view, since a pre-v20 def isn't a valid
-      // LineStyleProps yet.
-      const props = def.props as unknown as Record<string, unknown>;
-      const missingSingle = !('singletonDotStyleId' in props);
-      const missingMulti = !('multiDotStyleId' in props);
-      if (missingSingle || missingMulti) {
-        styles[id] = {
-          ...def,
-          props: {
-            ...props,
-            ...(missingSingle ? { singletonDotStyleId: DEFAULT_STOP_DOT_STYLE_ID } : {}),
-            ...(missingMulti ? { multiDotStyleId: DEFAULT_STOP_DOT_STYLE_ID } : {}),
-          },
-        } as StyleDef;
-        changed = true;
-        continue;
-      }
-    }
-    styles[id] = def;
-  }
-  return changed ? ({ ...doc, styles } as T) : doc;
+  return mapLineStyleProps(doc, (props) => {
+    const missingSingle = !('singletonDotStyleId' in props);
+    const missingMulti = !('multiDotStyleId' in props);
+    if (!missingSingle && !missingMulti) return null;
+    return {
+      ...props,
+      ...(missingSingle ? { singletonDotStyleId: DEFAULT_STOP_DOT_STYLE_ID } : {}),
+      ...(missingMulti ? { multiDotStyleId: DEFAULT_STOP_DOT_STYLE_ID } : {}),
+    };
+  });
 }
 
 /**
@@ -1151,26 +1143,9 @@ export function bakeLineStyleDotIds<T extends { styles?: Record<string, StyleDef
 export function backfillLineStyleEndStyle<T extends { styles?: Record<string, StyleDef> }>(
   doc: T,
 ): T {
-  if (!doc.styles) return doc;
-  let changed = false;
-  const styles: Record<string, StyleDef> = {};
-  for (const id of Object.keys(doc.styles)) {
-    const def = doc.styles[id];
-    if (def && def.kind === 'line' && def.props && typeof def.props === 'object') {
-      // Raw persisted props — a pre-v22 def isn't a valid LineStyleProps yet.
-      const props = def.props as unknown as Record<string, unknown>;
-      if (!isLineEndStyle(props.endStyle)) {
-        styles[id] = {
-          ...def,
-          props: { ...props, endStyle: LINE_END_STYLE_DEFAULT },
-        } as StyleDef;
-        changed = true;
-        continue;
-      }
-    }
-    styles[id] = def;
-  }
-  return changed ? ({ ...doc, styles } as T) : doc;
+  return mapLineStyleProps(doc, (props) =>
+    isLineEndStyle(props.endStyle) ? null : { ...props, endStyle: LINE_END_STYLE_DEFAULT },
+  );
 }
 
 /**
@@ -1270,37 +1245,22 @@ export function bakeLineDotDefaults<
     }
   }
 
-  if (out.styles) {
-    let stylesChanged = false;
-    const styles: Record<string, StyleDef> = {};
-    for (const id of Object.keys(out.styles)) {
-      const def = out.styles[id];
-      const props = def?.props as unknown as Record<string, unknown> | undefined;
-      if (
-        def &&
-        def.kind === 'line' &&
-        props &&
-        ('defaultDotStyle' in props || 'defaultDotSize' in props)
-      ) {
-        // Line styles no longer cover dot APPEARANCE — the retired
-        // `defaultDotStyle` is just stripped here (sanitizeStyleProps would drop
-        // it anyway); only dot SIZE still splits onto the def.
-        const { defaultDotStyle: _ls, defaultDotSize: lz, ...restProps } = props;
-        const filled: Record<string, unknown> = { ...restProps };
-        // Style-def props are CONCRETE (always store the resolved value, even a
-        // default), so no drop-at-default here — mirror bakeDocCurveRadius.
-        if (!('singletonDotSize' in filled) && lz !== undefined) filled.singletonDotSize = lz;
-        if (!('multiDotSize' in filled) && lz !== undefined) filled.multiDotSize = lz;
-        styles[id] = { ...def, props: filled } as unknown as StyleDef;
-        stylesChanged = true;
-      } else {
-        styles[id] = def;
-      }
-    }
-    if (stylesChanged) {
-      out = out === doc ? ({ ...doc, styles } as T) : { ...out, styles };
-      changed = true;
-    }
+  const split = mapLineStyleProps(out, (props) => {
+    if (!('defaultDotStyle' in props) && !('defaultDotSize' in props)) return null;
+    // Line styles no longer cover dot APPEARANCE — the retired
+    // `defaultDotStyle` is just stripped here (sanitizeStyleProps would drop
+    // it anyway); only dot SIZE still splits onto the def.
+    const { defaultDotStyle: _ls, defaultDotSize: lz, ...restProps } = props;
+    const filled: Record<string, unknown> = { ...restProps };
+    // Style-def props are CONCRETE (always store the resolved value, even a
+    // default), so no drop-at-default here — mirror bakeDocCurveRadius.
+    if (!('singletonDotSize' in filled) && lz !== undefined) filled.singletonDotSize = lz;
+    if (!('multiDotSize' in filled) && lz !== undefined) filled.multiDotSize = lz;
+    return filled;
+  });
+  if (split !== out) {
+    out = split;
+    changed = true;
   }
 
   return changed ? out : doc;
@@ -2754,6 +2714,17 @@ export function migrateV9Styles(styles: Record<string, StyleDef>): Record<string
   const next: Record<string, StyleDef> = {};
   for (const key of Object.keys(styles)) {
     const def = styles[key];
+    // `canonicalStyleProps` reads fields off its argument without validating
+    // it — a def whose persisted `props` is absent or a primitive would throw
+    // on the first one it reaches. This migration rebuilds canonical props; it
+    // is not the validator (see the doc comment), so a def it cannot rebuild
+    // rides through for `ensureStyleInvariants` and the file path's
+    // `sanitizeStyles` to judge. Throwing is the one thing it must not do:
+    // migrateDoc has no shell, so a raw error white-screens the app.
+    if (!def || !def.props || typeof def.props !== 'object') {
+      next[key] = def;
+      continue;
+    }
     const cleaned = {
       id: def.id,
       name: def.name,
@@ -2795,6 +2766,20 @@ export function ensureStyleInvariants(
 } {
   let changed = false;
   let nextStyles = styles;
+  // A def whose `props` is absent or a primitive is not a style: every reader
+  // downstream — the dot-ref repair below, `stylePropsEqual`, the inspectors —
+  // indexes into it, and a primitive answers `in` with a throw and a field
+  // read with `undefined`. The file path drops it in `sanitizeStyles`, which
+  // the rehydrate path never runs, so the drop belongs HERE, where both paths
+  // meet: the kind it leaves empty is refilled with its factory Default just
+  // below, which is exactly where the file path lands too.
+  const usable = Object.entries(nextStyles).filter(
+    ([, d]) => d && d.props && typeof d.props === 'object',
+  );
+  if (usable.length !== Object.keys(nextStyles).length) {
+    nextStyles = Object.fromEntries(usable);
+    changed = true;
+  }
   const raw =
     styleDefaults && typeof styleDefaults === 'object' && !Array.isArray(styleDefaults)
       ? (styleDefaults as Record<string, unknown>)

@@ -202,6 +202,30 @@ describe('sanitizeStyles via parse', () => {
     expect(out.styleDefaults).toEqual(FACTORY_STYLE_DEFAULTS);
   });
 
+  // A def whose `props` is a PRIMITIVE rather than a record. It reaches the
+  // legacy bakes — which run before sanitizeStyles — as a truthy non-object,
+  // and every one of them probes it with `in`, which throws on a primitive.
+  // Styles are deliberately outside the substance gate (their sanitizer heals
+  // garbage wholesale), so this must drop the one def and load the map, not
+  // refuse the file with a message about an operator.
+  it('drops a LINE def whose props is a primitive, rather than refusing the file', () => {
+    const good = makeStyle('routeBullet', 'y1', { name: 'Big', props: { size: 20 } });
+    for (const props of ['oops', 7, true]) {
+      const result = parse(
+        fileWith({
+          ...makeDoc({}),
+          styles: { y1: good, y2: { id: 'y2', name: 'Primitive', kind: 'line', props } },
+        }),
+      );
+      expect(result.ok, `props = ${JSON.stringify(props)}: ${result.ok ? '' : result.error}`).toBe(
+        true,
+      );
+      if (!result.ok) continue;
+      expect(result.doc.styles.y2).toBeUndefined();
+      expect(result.doc.styles.y1).toEqual(good);
+    }
+  });
+
   it('clamps numerics onto the canonical grids and lowercases the line casing color', () => {
     const doc = {
       ...makeDoc({}),
