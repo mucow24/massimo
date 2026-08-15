@@ -56,11 +56,13 @@ interface Props {
   renderables: OrderedRenderable[];
   underlayColor: string;
   uiMode: UiMode;
-  // Edit Stops mouseover target (already pan-suppressed by the caller — null
-  // while panning). Drives the 50%-opacity preview of the ring/halo a click
-  // would produce: a station ring on a hovered station, a halo on a hovered
-  // segment. Gated per target through the click matrix (appendGestures) so the
-  // preview never promises an action the click wouldn't take.
+  // Edit Stops mouseover target. The caller suppresses it in HAND mode; the
+  // PAN suppression happens inside this component, off the live pan flag —
+  // reading that flag in MapCanvas re-rendered the whole canvas per press.
+  // Drives the 50%-opacity preview of the ring/halo a click would produce: a
+  // station ring on a hovered station, a halo on a hovered segment. Gated per
+  // target through the click matrix (appendGestures) so the preview never
+  // promises an action the click wouldn't take.
   appendHover?: AppendHover;
   zoom: number;
   onStartDrag: ComponentProps<typeof StationView>['onStartDrag'];
@@ -108,7 +110,7 @@ export function HighlightedLineLayer({
   // MapCanvas: this layer mounts only while a line is highlighted, so between
   // pans nothing in the app is listening and a press re-renders nothing. Read
   // from MapCanvas instead, the flag re-rendered the whole canvas on every
-  // press — 29ms on a 464-station map (see LiveViewportState.panning).
+  // press — about 6ms on a 464-station map (see LiveViewportState.panning).
   const panning = useLiveViewportStore((s) => s.panning);
   const appendHover = panning ? undefined : appendHoverProp;
   // The overlay repaints the line's own bands and markers, so it resolves the

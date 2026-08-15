@@ -139,12 +139,11 @@ interface LiveViewportState {
    * Is a pan gesture in flight? Here rather than in useViewport's own
    * `useState` for the same reason `pending` is: that hook runs inside
    * MapCanvas, so a boolean flip there re-rendered the whole canvas, and
-   * Blink answered by re-compositing every node in the tree. Measured at
-   * **29ms per middle-press** on the 464-station map, against 0.3ms with the
-   * flip removed — the entire remaining pan-start latency, for a cursor
-   * change. The pan's own cursor is applied imperatively (useViewport); the
-   * only React subscriber is HighlightedLineLayer, which is mounted solely
-   * while a line is highlighted and is a fraction of the tree.
+   * Blink answered by re-compositing every node in the tree. Moving it here
+   * took a middle-press from 28.7ms to 22.2ms on the 464-station map — about
+   * 6ms, for a cursor change. The pan's own cursor is applied imperatively
+   * (useViewport); the only React subscriber is HighlightedLineLayer, which is
+   * mounted solely while a line is highlighted and is a fraction of the tree.
    */
   panning: boolean;
   setPanning: (v: boolean) => void;

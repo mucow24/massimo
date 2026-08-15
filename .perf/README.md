@@ -153,22 +153,11 @@ which the press then queued behind.
 
 That is not to say pan start is free. Timed properly (see the Event Timing
 lesson below — the `0 ms` this table used to print for it was an absence, not a
-measurement), **a middle-press takes ~87 ms to reach paint**, every press:
-
-| middle-press -> painted | med |
-| ----------------------- | --- |
-| ON canvas, pan armed | 86.8 ms |
-| OFF canvas, no pan armed (control) | 0.3 ms |
-| probe floor, no press at all | 0.5 ms |
-
-The control is the claim: same probe, same button, same page, the only
-difference being whether the app arms a pan. `longtask` is 0 throughout, so
-none of it is main-thread JavaScript — it is the compositor promoting
-`.canvas-pan-layer` (`will-change: transform`) and rastering the 4x pan
-surface. `releasePanLayer` drops the promotion on pointerup, so this is paid on
-EVERY press rather than once as the hook's comment assumes. Untouched here;
-whether it can be held across presses without pinning a large layer
-permanently is an open question.
+measurement), a middle-press took **~87 ms** to reach paint against a 0.3 ms
+control (same probe, same button, same page, the only difference being whether
+the app arms a pan) and 0.5 ms probe floor. `longtask` is 0 throughout, so none
+of it is main-thread JavaScript. What it is, and what was done about it, is the
+next section.
 
 Three instrument lessons, all paid for:
 
@@ -262,15 +251,33 @@ whether a gesture triggers a commit at all. Pan start, paired, same map:
 | baseline | 49.1 ms |
 | `will-change` held for the session instead of granted per press | 28.7 ms |
 | `panning` moved out of React state (it re-rendered the whole canvas) | 22.2 ms |
-| "grabbing" cursor moved off the svg onto a childless overlay | **7.6 ms** |
+| "grabbing" cursor moved off the svg onto a childless overlay | 7.6 ms |
+| **SHIPPED** — the last two only, promotion left gesture-scoped | **21.7 ms** |
 
-Each was isolated by ablation, not guessed. The third is the surprising one:
-it is not the class change (2.4ms with the class toggled and no rule matching
-it) but the STYLE it applies — `cursor` is inherited, so a rule whose subject
-is the map svg restyles all ~15k descendants. Moving the class to
+Each was isolated by ablation, not guessed. The cursor one is the surprising
+one: it is not the class change (2.4ms with the class toggled and no rule
+matching it) but the STYLE it applies — `cursor` is inherited, so a rule whose
+subject is the map svg restyles all ~15k descendants. Moving the class to
 `.canvas-host` does not help (same subject); a `display`-toggled overlay does
 not either (a paint change re-composites the layer). Toggling `pointer-events`
 on an always-mounted childless overlay does, because it paints nothing.
+
+**The promotion row was measured on the OTHER side and rejected.** Holding
+`will-change` for the session is worth ~14ms a press, but a permanently
+promoted 4x surface is carried through every station-drag repaint. Interleaved
+A/B on `perf-drag`, 12 rounds a side, rebuilding between arms, Times Sq:
+
+| | drag frame med | fps | paired wins |
+| --- | --- | --- | --- |
+| held for the session | 19.3 ms | 51.9 | 2 of 12 |
+| gesture-scoped (shipped) | **18.1 ms** | **55.4** | **10 of 12** |
+
+~1.2ms on every frame against 20ms once per press: a three-second drag is ~165
+frames, so it loses by an order of magnitude on volume. Sign test on the paired
+rounds gives p≈0.04. Note the first four rounds alone pointed the WRONG way
+(medians 52.9 held vs 50.5) — this harness's 25% spread eats a 5% effect at
+n=4, and four rounds of it read as a clean refutation. Twelve was barely
+enough.
 
 **A sibling element is not an escape hatch.** The cursor overlay is a plain
 sibling div in `.canvas-host` and toggling its `display` still cost 22ms — it

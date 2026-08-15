@@ -1979,14 +1979,16 @@ button.field-select > :not(.field-select-caret) {
 .canvas-pan-layer {
   position: absolute;
   inset: -50%;
-  /* Promoted for the whole session, not per gesture. Promotion is what makes a
-     pan compositor-only, but the browser rebuilds the layer to grant it — a
-     cost proportional to the painted tree (~4µs per node, so ~55ms on a
-     464-station map), and doing it on pointer-down and undoing it on pointer-up
-     charged that to EVERY press. Held here, it is paid once. The trade is the
-     retained texture: 4× the viewport (see inset above), which is the same
-     texture a pan needs anyway. */
-  will-change: transform;
+  /* NO `will-change` here, deliberately — promotion is granted per gesture by
+     useViewport. Holding it for the whole session makes pan START ~20ms
+     cheaper (granting it rebuilds the layer, at a cost proportional to the
+     painted tree, so per-gesture pays that on every press) but costs STATION
+     DRAG ~1.2ms on EVERY frame, because a promoted 4× surface is carried
+     through each drag repaint. Interleaved A/B, 12 rounds a side, 464-station
+     map: 19.3ms/frame held vs 18.1ms per-gesture (51.9 vs 55.4 fps), the
+     per-gesture arm winning 10 of 12 paired rounds. It loses on volume: a
+     three-second drag is ~165 frames, so ~200ms spent to save 20ms once.
+     See .perf/README.md. */
 }
 /* Child of the pan layer only: this is the map canvas itself. The item
    popovers also live inside .canvas-host, and a descendant selector would blow

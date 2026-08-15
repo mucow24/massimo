@@ -15,16 +15,19 @@ import { makeLine, stationWithStop } from '../test/fixtures';
 // Blink re-runs the compositing update over the whole thing for ANY change
 // inside it — at roughly 4µs a node. So the cost of starting a pan was never
 // about what starting a pan does; it was about how many nodes got touched.
-// Middle-press latency on a 464-station map, against a 0.5ms floor:
+// Middle-press latency on a 464-station map, against a ~0.5ms floor: 49ms
+// baseline -> 21.7ms, from two changes. `panning` left React state (a
+// re-render of this tree), and the "grabbing" cursor moved off the svg —
+// `cursor` is inherited, so a rule whose subject is the svg restyles every
+// descendant — onto a childless overlay toggled by `pointer-events`, which
+// paints nothing.
 //
-//   49ms  baseline
-//   29ms  after the pan layer stopped being promoted/demoted per gesture
-//   22ms  after `panning` left React state (a re-render of this tree)
-//    8ms  after the "grabbing" cursor moved off the svg (inherited `cursor`
-//         restyles every descendant) onto a childless overlay
+// A third change, holding the layer's `will-change` for the session, would
+// take this to ~8ms and is deliberately NOT here: it taxes every station-drag
+// frame instead. See styles.css.
 //
-// Each of those three is one line away from coming back, and none of them
-// would fail an existing test. These are the pins.
+// Both shipped changes are one line away from coming back, and neither would
+// fail an existing test. These are the pins.
 
 beforeEach(() => {
   useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });

@@ -2,31 +2,31 @@ import { test, expect } from '@playwright/test';
 import { fourInLine, seedAndOpen } from './fixtures';
 
 /**
- * The pan-start compositing contract, which only a real browser can check.
+ * The pan-start compositing contract, which only a real browser can check —
+ * both facts below are pure CSS, and jsdom never loads `styles.css`.
  *
  * The canvas is one composited layer, and Blink re-runs the compositing update
  * over the WHOLE layer for any change inside it — about 4µs per painted node,
- * so ~55ms on a 464-station drawing. Arming a pan used to trigger that twice
- * over: once by granting `will-change` at pointer-down (and revoking it at
- * pointer-up, so the next press paid again), and once by applying the
- * "grabbing" cursor, which is an INHERITED property and therefore restyles
- * every descendant of whatever element carries it.
+ * so ~55ms on a 464-station drawing. Two things about arming a pan follow from
+ * that: the layer's promotion is granted per gesture (holding it is cheaper per
+ * press but taxes every drag frame — see styles.css), and the "grabbing" cursor
+ * must not be a rule at or above the map svg, because `cursor` is INHERITED and
+ * would restyle every descendant.
  *
- * Both fixes live in CSS, so no jsdom test can see them — `styles.css` is never
- * loaded there. Middle-press latency on a 464-station map, 0.5ms floor:
- * 49ms → 29ms (promotion held) → 8ms (cursor moved to the overlay).
+ * Middle-press latency on a 464-station map, ~0.5ms floor: 49ms → 21.7ms.
  */
-test('the pan layer is promoted for the whole session, not per gesture', async ({ page }) => {
+test('the pan layer is promoted per gesture, not for the session', async ({ page }) => {
   await seedAndOpen(page, fourInLine);
   await page.waitForSelector('.canvas-host svg');
 
   const willChange = () =>
-    page.evaluate(
-      () => getComputedStyle(document.querySelector('.canvas-pan-layer')!).willChange,
-    );
+    page.evaluate(() => getComputedStyle(document.querySelector('.canvas-pan-layer')!).willChange);
 
-  // At rest, before any gesture: already promoted.
-  expect(await willChange()).toBe('transform');
+  // At rest: NOT promoted. Holding the promotion makes each press ~20ms
+  // cheaper but taxes every station-drag frame by ~1.2ms, which loses on
+  // volume — a three-second drag is ~165 frames. Measured both ways, 12
+  // interleaved rounds a side.
+  expect(await willChange()).toBe('auto');
 
   const host = (await page.locator('.canvas-host').boundingBox())!;
   const x = Math.round(host.x + host.width / 2);
@@ -35,10 +35,7 @@ test('the pan layer is promoted for the whole session, not per gesture', async (
   await page.mouse.down({ button: 'middle' });
   expect(await willChange()).toBe('transform');
   await page.mouse.up({ button: 'middle' });
-
-  // ...and STILL promoted afterwards. Revoking it here is what made the next
-  // press rebuild the layer from scratch.
-  expect(await willChange()).toBe('transform');
+  expect(await willChange()).toBe('auto');
 });
 
 test('the grabbing cursor comes from the overlay, never from the map svg', async ({ page }) => {

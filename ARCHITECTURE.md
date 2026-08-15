@@ -2149,8 +2149,8 @@ on any mode exit.
   subscribes — the selected-item handle overlays (`PolygonView`, `SvgImageView`) via the
   `useLiveZoom` selector, and `HighlightedLineLayer` for `panning` — never the giant station/band
   tree. `panning` lives here rather than in `useViewport`'s own `useState` for exactly that
-  reason: that hook runs inside MapCanvas, so a boolean flip there re-rendered the whole canvas
-  (~7ms a press on a 464-station map, for a cursor change). Exists solely so per-frame pan/zoom
+  reason: that hook runs inside MapCanvas, so a boolean flip there re-renders the whole canvas
+  (~6ms a press on a 464-station map, for a cursor change). Exists solely so per-frame pan/zoom
   writes don't hammer localStorage or re-render the SVG. See the
   [Interaction layer](#canvas-interaction-layer) for how the gestures move the world imperatively
   (pan: composited pan-layer translate; zoom: viewBox write).
@@ -3216,11 +3216,14 @@ re-render of the SVG tree mid-gesture — but the two move the world by differen
   a viewport bigger than the host on every side (`inset: -50%`); the svg renders the matching 2×
   window (`panSurfaceViewBox`), so a half-viewport ring around the visible box is pre-painted.
   Each move, `applyPan(v)` does `setPending(v)` (live store) and sets a `translate(…)` on the
-  layer — which the compositor executes without any style/layout/paint/raster work, whatever the
-  map's node count. The layer carries `will-change: transform` in the **stylesheet**, for the
-  whole session: granting it makes the browser rebuild the layer, at a cost proportional to the
-  painted tree, so promoting at pointer-down and demoting at pointer-up charged that rebuild to
-  every press (~20ms of a 49ms press on a 464-station map).
+  layer — promoted via **gesture-scoped** `will-change: transform` at pointer-down — which the
+  compositor executes without any style/layout/paint/raster work, whatever the map's node count.
+  The scoping is a measured trade, not an oversight: granting the promotion makes Blink rebuild
+  the layer at a cost proportional to the painted tree, so each press pays ~14ms for it on a
+  464-station map, and holding it in the stylesheet instead would remove that — but a permanently
+  promoted 4× surface then costs ~1.2ms on EVERY station-drag frame, which loses on volume (a
+  three-second drag is ~165 frames). Interleaved A/B, 12 rounds a side: 18.1ms/frame gesture-scoped
+  vs 19.3ms held.
   Blink has no such fast path for transforms on the svg element itself or an inner `<g>`, and
   letting svg ink overflow define the layer bounds also kills it — the margin must come from the
   oversized **element box**. Before a translate could outrun the margin (45% of a viewport
@@ -3234,9 +3237,8 @@ re-render of the SVG tree mid-gesture — but the two move the world by differen
   repaint-per-tick path. Ticks are ignored while a pan gesture is active.
 
 On gesture end (`commitPending`), `setViewport(pending)` then `setPending(null)` (clearing pending
-**last** so overlays stay on the live viewport right up to commit — no jump); a pan also zeroes
-its transform in the same handler, so the swap lands in one frame (the promotion is permanent and
-is NOT retired here). The JSX
+**last** so overlays stay on the live viewport right up to commit — no jump); a pan also retires
+its transform and `will-change` in the same handler, so the swap lands in one frame. The JSX
 `viewBox` binds to the **committed** viewport (via `panSurfaceViewBox`), so a mid-gesture
 re-render leaves that prop string unchanged and React skips the DOM write (never clobbering an
 imperative zoom write, never moving the attribute mid-pan).
@@ -3244,6 +3246,19 @@ imperative zoom write, never moving the attribute mid-pan).
 > The gesture writes are **synchronous, not rAF** — rAF was tried and reverted (synchronous tracks
 > the cursor with zero added latency). Per-frame writes go to `useLiveViewportStore`, **never**
 > `useViewportStore` (which is persisted — a per-frame write would hammer localStorage).
+
+**The in-flight pan's `grabbing` cursor is served by `.pan-cursor-overlay`** — a childless sibling
+div in `.canvas-host`, always mounted and always laid out, whose `pointer-events` is what toggles
+(`.canvas-host.panning`, marked imperatively by `useViewport`). It must not be expressed as a
+cursor rule at or above the map svg, and it must not be mounted on demand. `cursor` is
+**inherited**, so a rule whose subject is the svg restyles every one of its ~15k descendants; and
+`display`/`visibility` are paint changes, which re-run the compositing update over the whole
+layer. `pointer-events` paints nothing, so it is the only free switch. On a 464-station map the
+difference is 22ms a press against a 0.3ms floor. Pointer routing is unaffected either way — the
+svg holds pointer capture for the whole gesture. Pinned by
+[panLayer.spec.ts](e2e/panLayer.spec.ts), which asserts `elementFromPoint` still lands on the
+overlay mid-pan (without that, the latency is trivially "won" by dropping the cursor) and by
+[MapCanvas.panStart.test.tsx](src/components/MapCanvas.panStart.test.tsx).
 
 `screenToWorld` reads the **live** viewport and measures the **host** box (`.canvas-host` — the
 svg's own rect rides the pan transform, so measuring it would double-count the gesture); the

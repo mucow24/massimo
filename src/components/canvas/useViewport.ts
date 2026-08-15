@@ -146,13 +146,16 @@ export function useViewport(
   }, [svgRef, panLayerRef]);
 
   // Don't leave a settle commit scheduled — or an in-flight gesture's live
-  // viewport — dangling past unmount.
+  // viewport, or its armed flag — dangling past unmount. `panning` lives in a
+  // module-level store, so unmounting mid-gesture would strand it true and
+  // suppress the Edit Stops hover preview for the rest of the session.
   useEffect(
     () => () => {
       if (zoomSettleRef.current != null) clearTimeout(zoomSettleRef.current);
       setPending(null);
+      setPanningState(false);
     },
-    [setPending],
+    [setPending, setPanningState],
   );
 
   // viewBox: world coords; center of screen = (viewport.x, viewport.y), zoom scales.
@@ -199,14 +202,16 @@ export function useViewport(
     svgRef.current?.setAttribute('viewBox', viewBoxStr(panSurfaceViewBox(viewBoxFor(v, size))));
   };
 
-  // Retire the pan gesture's transform. Runs in the same synchronous handler as
-  // the camera commit, so the React viewBox write and the transform reset land
-  // in one frame — no double-offset. The layer stays PROMOTED (see styles.css):
-  // demoting here is what made the next press pay for a fresh layer.
+  // Retire the pan gesture's compositor state: transform gone, layer demoted.
+  // Runs in the same synchronous handler as the camera commit, so the React
+  // viewBox write and the transform reset land in one frame — no double-offset.
+  // Demoting costs the NEXT press its layer rebuild; keeping it costs every
+  // station-drag frame instead, which is the worse deal (see startPan).
   const releasePanLayer = () => {
     const el = panLayerRef.current;
     if (!el) return;
     el.style.transform = '';
+    el.style.willChange = '';
   };
 
   // PAN path: show viewport `v` by translating the composited pan layer by the
@@ -300,11 +305,15 @@ export function useViewport(
       moved: false,
       captured: false,
     };
-    // No promotion here. The layer carries `will-change: transform` in the
-    // stylesheet for the whole session: promoting on press and demoting on
-    // release meant the browser rebuilt the layer once per gesture, and that
-    // rebuild is proportional to the painted tree — measured at ~95ms per press
-    // on the 464-station map, against 0.3ms for a press that arms no pan.
+    // Promote the pan layer at pointer-down: the layerization raster hides in
+    // the press, so the first move frame is already compositor-only. This costs
+    // ~20ms of the press on a 464-station map (granting it rebuilds the layer,
+    // at a cost proportional to the painted tree) and holding it for the whole
+    // session in CSS removes that — but a permanently promoted 4× surface costs
+    // ~1.2ms on every station-drag frame, which loses badly on volume. Measured
+    // both ways; see styles.css and .perf/README.md.
+    const layer = panLayerRef.current;
+    if (layer) layer.style.willChange = 'transform';
     setPanningCursor(true);
     svgRef.current?.setPointerCapture(e.pointerId);
     panStartRef.current.captured = true;

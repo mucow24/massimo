@@ -360,21 +360,18 @@ describe('useViewport — panning', () => {
     expect(result.current.screenToWorld(400, 300)).toEqual({ x: -50, y: -30 });
   });
 
-  it('never touches will-change: the layer is promoted for the whole session', () => {
-    // Promotion used to be gesture-scoped — set at pointer-down, cleared on
-    // commit. Granting it makes the browser rebuild the layer, which costs
-    // ~4µs per painted node, so charging it to every press cost ~20ms of the
-    // press latency on a 464-station map. `.canvas-pan-layer` now carries
-    // `will-change: transform` in the stylesheet and the hook writes only the
-    // transform. If this starts failing, someone has re-introduced the
-    // per-gesture promotion.
+  it('promotes the pan layer on pan start and demotes it when the gesture ends', () => {
+    // Promotion is GESTURE-SCOPED, and deliberately so. Holding it for the
+    // session removes ~20ms from every press (granting it rebuilds the layer)
+    // but a permanently promoted 4× surface costs ~1.2ms on every station-drag
+    // frame — measured both ways, 12 interleaved rounds a side, and the drag
+    // cost wins on volume. If this starts failing because `will-change` moved
+    // into the stylesheet, re-measure the DRAG side before believing it is an
+    // improvement.
     const { result, panLayer } = render();
     down(result, pointerEvent({ clientX: 100, clientY: 100, button: 0 }));
-    expect(panLayer.style.willChange).toBe('');
-    move(result, pointerEvent({ clientX: 150, clientY: 130 }));
-    expect(panLayer.style.transform).toBe('translate(50px, 30px)');
-    expect(panLayer.style.willChange).toBe('');
-    up(result, pointerEvent({ clientX: 150, clientY: 130 }));
+    expect(panLayer.style.willChange).toBe('transform');
+    up(result, pointerEvent({ clientX: 100, clientY: 100 }));
     expect(panLayer.style.willChange).toBe('');
     expect(panLayer.style.transform).toBe('');
   });
