@@ -2739,9 +2739,13 @@ which are a separate slot-based system where Shift flips the lattice basis.
   is one `LINE_HEIGHT` of its largest run's size (`maxFontSize`), so an inline `<size>` grows or
   shrinks that line and the box; baselines are laid out cumulatively (`baselineFromTop` per line,
   shared by same-line runs) and reduce exactly to the uniform `fontSize*LINE_HEIGHT*(1+(n-1)*leading)`
-  when nothing is resized. Results are cached (module-level LRU,
-  limit 256) keyed by weight/style/parse-mode/size/width/leading/tracking/text — and that cache is
-  cleared on web-font load (see `App.tsx`).
+  when nothing is resized. Results are cached (module-level, oldest-evicted, limit 5000) keyed by
+  weight/style/parse-mode/size/width/leading/tracking/text — and that cache is cleared on web-font
+  load (see `App.tsx`). That cap has to clear the number of labels a drawing renders, and clear it
+  by a margin: a render measures every label once in the same order, so a working set one entry
+  past the cap is a cyclic scan that hits NOTHING, whatever gets evicted — the hit rate goes from
+  100% to 0% rather than degrading, and every hover, press and click then re-measures the whole map
+  through the raster probe.
 - **The vertical font model is three hardcoded fractions**, not measurement — no font tables exist.
   `BASELINE_FRACTION` (em-box top → baseline) is reached from the line's CENTRE everywhere, so it
   cancels out of the autoAlign pins and only slides glyphs inside their own hit rect;

@@ -248,7 +248,24 @@ export const capCenterDy = (fontSize: number) => (fontSize * CAP_FRACTION) / 2;
 // cacheKey). Marquee hit testing re-measures every label on every move;
 // without a cache the canvas API churn would dominate. Bounded by a soft cap;
 // oldest entries evicted.
-const CACHE_LIMIT = 256;
+//
+// The cap MUST stay well clear of the number of labels a drawing renders, and
+// the reason is that undershooting it is a cliff rather than a slope: a render
+// measures every label once, in the same order every time, so the access
+// pattern is a cyclic scan — and a cyclic scan over a working set larger than
+// the cache hits NOTHING, whatever gets evicted. One label past the cap takes
+// the hit rate from 100% to 0%.
+//
+// That is not an abstract risk: the cap sat at 256 while a 489-station drawing
+// rendered ~500 keys, so every hover, press and click re-measured the whole map
+// — 765ms per hover, 1416ms per alt+click, against ~0 once the working set
+// fits. It went unnoticed because a miss used to be two cheap measureText
+// calls; the ink probe below made a miss two canvas rasters and two full
+// getImageData readbacks, roughly fifty times dearer, and the cap was never
+// revisited. Entries are small (a few hundred bytes of line/segment metrics),
+// so headroom is far cheaper than the cliff. `textMeasure.cache.test.ts` holds
+// both sides of this.
+export const TEXT_MEASURE_CACHE_LIMIT = 5000;
 const cache = new Map<string, MeasuredBBox>();
 
 function cacheKey(styled: StyledText): string {
@@ -787,7 +804,7 @@ export function measureTextLabel(styled: StyledText): MeasuredBBox {
     lines: lineMetrics,
   };
 
-  if (cache.size >= CACHE_LIMIT) {
+  if (cache.size >= TEXT_MEASURE_CACHE_LIMIT) {
     // Drop oldest entry (Map preserves insertion order).
     const first = cache.keys().next().value;
     if (first !== undefined) cache.delete(first);

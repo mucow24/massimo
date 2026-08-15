@@ -82,6 +82,7 @@ npm run perf:check
 | `bench/marshalling.perf.test.ts` | toInt / clipToPaths / fromInt split |
 | `e2e/perf-drag.spec.ts` | real-drag browser cost. `PERF_NO_REGIONS=1` isolates the render floor; `PERF_KEEP=n` trims the map to test tree-size scaling |
 | `e2e/perf-drag-age.spec.ts` | paint-time staleness: how far (ms, px) the painted station trails the cursor, and post-stop convergence (travel paints, settle time), pipeline on vs off. `PERF_SNAP=1` runs the real per-event snap; `PERF_POPOVER=1` drags with the popover open; `PERF_SPEED`, `PERF_EVENTS_PER_TICK` scale cursor speed and input rate. Run it against `playwright.perf-dev.config.ts` too: the dev server is where the pipelined arm goes STALER than sync (Aug 2026 finding), and a prod-only run hides that |
+| `e2e/perf-gesture-start.spec.ts` | the gap BEFORE a gesture starts — hover, pan start (hand and middle), station press, alt+click deep-pick — measured with the Event Timing API on REAL mouse input, each gesture gated on the store field it is supposed to change. `PERF_PROFILE` adds a CPU profile per gesture, `PERF_TRACE` a renderer timeline (style/layout/paint/layerize), which is what you want when the CPU profile comes back empty |
 | `e2e/perf-profile.spec.ts` | CDP CPU profile, bucketed by file and function |
 | `e2e/perf-ab.spec.ts` | in-page interleaved A/B of a toggleable change |
 | `e2e/perf-aging.spec.ts` | does a session get slower the longer it is edited, and which quantity grows. `PERF_PLANT_LEAK=1` proves the instrument; the RESET test says which reload-equivalent gives the time back. **Has never produced a valid run** — see below |
@@ -131,11 +132,64 @@ note that the region pipeline carries an incremental cache, so interleaved arms
 contaminate each other's state and both get slower. For geometry, prefer the
 node harness.
 
+## The gesture-start cliff (Aug 15 2026) — found and fixed
+
+Every harness above measures the drag FRAME. The reported symptom was the gap
+before a gesture starts, and nothing here could see it: hovering a station cost
+765 ms, pressing one 931 ms, alt+clicking a locked polygon 1416 ms, on a
+489-station drawing on a fast machine.
+
+Two instrument lessons, both paid for:
+
+- **Synthetic events measure nothing.** The first cut dispatched
+  `new PointerEvent(...)` and reported a flat ~15 ms for all four gestures. A
+  synthesized `pointermove` fires no `pointerover`/`pointerenter`, so the hover
+  never engaged, and a synthetic `pointerId` cannot be captured, so `startPan`
+  threw. Real `page.mouse` input plus a per-gesture engagement gate is why
+  `perf-gesture-start` reports numbers at all.
+- **An empty CPU profile is a result, not a dead end.** The sampling profiler
+  charged 9 ms across 5 hovers while the long-task observer saw 744 ms — both
+  true. The work was style/paint/compositing over a 16.7k-node SVG, plus GC, and
+  only a renderer timeline (`PERF_TRACE`) shows it. That trace is what surfaced
+  **2,144 `GetImageData` calls per alt+click, 1086 ms** of them.
+
+The cause was `textMeasure.ts`'s measurement cache at `CACHE_LIMIT = 256`
+against a working set of ~500 (one key per rendered label). A render measures
+every label once in the same order, so past the cap the access pattern is a
+cyclic scan and the hit rate is not merely low, it is ZERO. The cap had been
+fine when a miss was two `measureText` calls; the ink raster probe made a miss
+two canvas rasters plus two full `getImageData` readbacks, ~50× dearer, and the
+cap was never revisited.
+
+Cap swept on one build, medians of 4-5, long-task ms:
+
+| cap | hover | station press | alt+click |
+| --- | ----- | ------------- | --------- |
+| 256 (shipped) | 568-765 | 899-931 | 1414-1416 |
+| 512 | 0 | 155 | 0 |
+| 1024 | 51 | 170 | 0 |
+| 2048 | 0 | 164 | 0 |
+| 4096 | 51 | 161 | 0 |
+
+The cliff is between 256 and 512 and the floor is flat above it — the working
+set is the map's label count, and this drawing sat just over the old cap, which
+is why it read as a property of the map. Shipped at 5000 for headroom;
+`src/geometry/textMeasure.cache.test.ts` holds both sides of the number.
+
+The residual 157 ms on `station press` is compositing, not JavaScript (the CPU
+profile is empty, `Layerize` / `PaintArtifactCompositor::Update` dominate the
+timeline) — the pre-existing render floor, untouched by this.
+
 ## The session-aging question (Aug 2026)
 
 Reported symptom: after an hour or two of editing a complex map, station drags
 fall to a few fps and a reload cures it; panning stays smooth once started but
 the click-to-pan-start gap grows.
+
+Read the section above before chasing this one: a large, CONSTANT gesture-start
+cost was present from the moment a big map loaded, owed nothing to session
+length, and is fixed. Whatever remains of this question has to be measured as
+GROWTH against that floor, not as absolute slowness.
 
 What the harnesses above establish:
 
