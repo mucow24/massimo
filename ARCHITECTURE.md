@@ -4264,8 +4264,11 @@ Each is confirmed in source/tests; file pointers included.
   `measure` stub.
   ([textMeasure.ts](src/geometry/textMeasure.ts))
 - **Web-font load invalidates the measure cache** — `App.tsx` clears `_clearTextMeasureCache()`
-  and bumps a font epoch on `document.fonts.ready` + `loadingdone`; without it, first-paint labels
-  (measured against the fallback font) stay a pixel off until the next edit. ([App.tsx](src/App.tsx))
+  and bumps a font epoch on `document.fonts.ready`; without it, first-paint labels (measured
+  against the fallback font) stay a pixel off until the next edit. A LATER `loadingdone` (a label
+  reaching for a weight not yet fetched) goes through `invalidateMeasuredFaces` instead, which
+  drops only the entries whose measurement resolved to an arriving face — clearing the lot there
+  is a whole-map re-measure because one label went bold. ([App.tsx](src/App.tsx))
 - **The measure cache's cap must clear a drawing's label count by a margin** — a render measures
   every label once in the same order, so a working set one entry past `TEXT_MEASURE_CACHE_LIMIT` is
   a cyclic scan that hits NOTHING whatever gets evicted. The hit rate goes 100% → 0% rather than

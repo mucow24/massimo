@@ -265,12 +265,86 @@ export const capCenterDy = (fontSize: number) => (fontSize * CAP_FRACTION) / 2;
 // was never revisited. `textMeasure.cache.test.ts` holds both sides of the
 // number.
 //
-// Still exposed, and NOT addressed here: App.tsx clears this whole cache on
-// `document.fonts` 'loadingdone', which fires when a label switches to a weight
-// that has not been fetched yet. That is the same whole-map re-measure through
-// the raster probe, mid-session, and it is now the largest one left.
+// A late webfont is the other way into that storm, and `invalidateMeasuredFaces`
+// below is what keeps it out.
 export const TEXT_MEASURE_CACHE_LIMIT = 5000;
-const cache = new Map<string, MeasuredBBox>();
+
+/** A measured label, plus the faces its measurement actually resolved to —
+ *  which is what lets a late webfont drop only what it staled. Inline `<b>` /
+ *  `<w=…>` runs put their own weight in the set, so the label's own weight is
+ *  not enough to answer this. */
+interface CacheEntry {
+  bbox: MeasuredBBox;
+  faces: ReadonlySet<string>;
+}
+const cache = new Map<string, CacheEntry>();
+
+/** A shipped face's identity, as both the measurer and `@font-face` name it. */
+const faceKey = (weight: number, italic: boolean): string => `${weight}|${italic ? 'i' : 'n'}`;
+
+// The text face is the FIRST family in the stack — taken from FONT_STACK so the
+// name is not written down twice. It has to be the first ENTRY rather than
+// membership of the stack: `FONT_STACK.includes(face.family)` would also match
+// the symbol and DejaVu fallbacks, and those are precisely the faces that
+// CANNOT be narrowed by weight, since either can supply glyphs to a run at any
+// weight.
+const TEXT_FAMILY = FONT_STACK.split(',')[0]
+  .trim()
+  .replace(/^['"]|['"]$/g, '');
+
+/** The `FontFace` fields {@link invalidateMeasuredFaces} reads. */
+export interface MeasuredFace {
+  family: string;
+  weight: string;
+  style: string;
+}
+
+/**
+ * Drop what a newly-arrived webfont just made stale, and only that.
+ *
+ * `document.fonts` fires `loadingdone` whenever a face finishes loading, which
+ * mid-session means some label was the first to ask for that weight. Clearing
+ * the whole cache there re-measures every label on the map through the raster
+ * probe — 587ms on a 464-station drawing, the same storm the cap above exists
+ * to prevent, just triggered by bolding one label instead.
+ *
+ * Narrowing is sound only for the text family. A face from the fallback chain
+ * (the symbol font, DejaVu) can supply glyphs to ANY declaration, so nothing
+ * can be ruled out and the whole cache goes — as it does for a weight this
+ * cannot read, which includes a variable font's range.
+ */
+export function invalidateMeasuredFaces(faces: readonly MeasuredFace[]): void {
+  // Nothing named means nothing can be ruled out.
+  if (faces.length === 0) {
+    cache.clear();
+    return;
+  }
+  const stale = new Set<string>();
+  for (const f of faces) {
+    const weight = /^\d+$/.test(f.weight.trim()) ? Number(f.weight.trim()) : NaN;
+    if (!f.family.includes(TEXT_FAMILY) || !Number.isFinite(weight)) {
+      cache.clear();
+      return;
+    }
+    stale.add(faceKey(weight, f.style.trim() === 'italic'));
+  }
+  for (const [key, entry] of cache) {
+    // An entry that recorded no face was measured without resolving one — the
+    // no-canvas fallback takes the length estimate and never builds a
+    // declaration. Unknown provenance invalidates, so a future path that
+    // measures some other way cannot strand stale metrics here forever.
+    if (entry.faces.size === 0) {
+      cache.delete(key);
+      continue;
+    }
+    for (const face of entry.faces) {
+      if (stale.has(face)) {
+        cache.delete(key);
+        break;
+      }
+    }
+  }
+}
 
 function cacheKey(styled: StyledText): string {
   const parseMode = styled.literalBullets ? 'L' : 'f';
@@ -720,7 +794,7 @@ function wrapParagraph(
 export function measureTextLabel(styled: StyledText): MeasuredBBox {
   const key = cacheKey(styled);
   const hit = cache.get(key);
-  if (hit) return hit;
+  if (hit) return hit.bbox;
 
   const measureCtx = getCtx();
   const mode: ParseMode = styled.literalBullets ? 'literal' : 'formatted';
@@ -730,9 +804,14 @@ export function measureTextLabel(styled: StyledText): MeasuredBBox {
   // inline-bullet cursor spaces it against the wrong (system-fallback) width.
   // Per-segment: a <w=…>/<b>/<i> tag bumps the weight/style and a <size=…> tag the
   // size for that run only (the caller resolves the run size and passes it in).
+  // Every face this measurement resolves to, collected as it goes — the whole
+  // bearing ladder and the raster probe run through this one closure, so it
+  // sees each run's real weight/style including inline-tag overrides.
+  const usedFaces = new Set<string>();
   const declFor = (style: SegmentStyle | undefined, size: number): string => {
     const w = resolveRunWeight(styled.weight, style);
     const it = styled.italic || style?.italic;
+    usedFaces.add(faceKey(w, !!it));
     return `${it ? 'italic ' : ''}${w} ${size}px ${FONT_STACK}`;
   };
   const measure = (raw: string, entry: InlineStyleState | null): ParsedLine =>
@@ -813,7 +892,7 @@ export function measureTextLabel(styled: StyledText): MeasuredBBox {
     const first = cache.keys().next().value;
     if (first !== undefined) cache.delete(first);
   }
-  cache.set(key, result);
+  cache.set(key, { bbox: result, faces: usedFaces });
   return result;
 }
 

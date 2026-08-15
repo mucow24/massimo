@@ -464,6 +464,36 @@ test('gesture-start latency', async ({ page }) => {
     }
   }
 
+  // A webfont arriving mid-session is the other whole-map re-measure: App.tsx
+  // drops the measurement cache on `document.fonts` 'loadingdone', which fires
+  // whenever a label first uses a weight that has not been fetched. Trigger a
+  // REAL face load (fonts.load(), not a synthesized event — a dispatched event
+  // would prove only that the listener runs) on a fully rendered map, and time
+  // what follows. One shot: the face is loaded afterwards.
+  {
+    await resetProbe(page);
+    const loaded = await page.evaluate(async () => {
+      const unloaded = [...(document.fonts as unknown as Iterable<FontFace>)].find(
+        (f) => f.family.includes('Soehne') && f.status !== 'loaded',
+      );
+      if (!unloaded) return null;
+      const decl = `${unloaded.style} ${unloaded.weight} 16px ${unloaded.family}`;
+      await document.fonts.load(`${unloaded.weight} 16px "${unloaded.family}"`);
+      await new Promise<void>((r) => requestAnimationFrame(() => setTimeout(() => r(), 400)));
+      return decl;
+    });
+    const after = await readProbe(page);
+    console.log(`\n=== mid-session webfont arrival ===`);
+    if (!loaded) {
+      console.log('  every Soehne face was already loaded — nothing to measure');
+    } else {
+      console.log(`  loaded ${loaded}`);
+      console.log(
+        `  long tasks: ${after.longTasks.length}, total ${sum(after.longTasks).toFixed(0)}ms, worst ${Math.max(0, ...after.longTasks).toFixed(0)}ms`,
+      );
+    }
+  }
+
   // PERF_TRACE: the renderer's own timeline. The JS sampling profiler reports
   // ~0ms busy for these gestures while the long task runs ~750ms, which is the
   // profiler telling the truth — the cost is style recalc / layout / paint over

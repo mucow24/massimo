@@ -25,7 +25,11 @@ import {
   writeClipboard,
   type ClipPayload,
 } from './model/clipboard';
-import { _clearTextMeasureCache } from './geometry/textMeasure';
+import {
+  _clearTextMeasureCache,
+  invalidateMeasuredFaces,
+  type MeasuredFace,
+} from './geometry/textMeasure';
 import { guideAlongOf, guideNudgeDelta } from './geometry/snap';
 import { useFontEpoch } from './state/fontEpoch';
 import { screenDeltaToLabelOffsets } from './geometry/labelLayout';
@@ -134,19 +138,39 @@ export default function App() {
     const fonts = document.fonts;
     if (!fonts) return;
     let cancelled = false;
-    const refresh = () => {
+    // `ready` covers the fonts in use at first paint. Everything measured
+    // before it resolved was measured against the fallback face, so the whole
+    // cache is stale and the whole cache goes.
+    const onReady = () => {
       if (cancelled) return;
       _clearTextMeasureCache();
       bumpFontEpoch();
     };
-    // `ready` covers the fonts in use at first paint; `loadingdone` covers
-    // weights that load later (e.g. switching a label to a weight not yet
-    // fetched), so those re-measure too.
-    fonts.ready.then(refresh);
-    fonts.addEventListener('loadingdone', refresh);
+    // A LATER arrival — a label switching to a weight not yet fetched — stales
+    // only the labels that use that face. Dropping the whole cache here would
+    // re-measure every label on the map through the raster probe (587ms on a
+    // 464-station drawing) because one label went bold, so the invalidation is
+    // narrowed to the faces that actually arrived. The epoch still bumps: the
+    // re-render is what shows the new metrics, and it is cheap now that the
+    // labels it walks past mostly still hit the cache.
+    const onLoadingDone = (e?: globalThis.Event) => {
+      if (cancelled) return;
+      // `fontfaces` rides on FontFaceSetLoadEvent, which is not in the lint
+      // env's globals — read it structurally rather than by name. An event that
+      // carries no face list says nothing about WHAT arrived, so there is
+      // nothing to narrow by and the whole cache goes.
+      const fontfaces = (
+        e as (globalThis.Event & { fontfaces?: readonly MeasuredFace[] }) | undefined
+      )?.fontfaces;
+      if (fontfaces?.length) invalidateMeasuredFaces(fontfaces);
+      else _clearTextMeasureCache();
+      bumpFontEpoch();
+    };
+    fonts.ready.then(onReady);
+    fonts.addEventListener('loadingdone', onLoadingDone);
     return () => {
       cancelled = true;
-      fonts.removeEventListener('loadingdone', refresh);
+      fonts.removeEventListener('loadingdone', onLoadingDone);
     };
   }, [bumpFontEpoch]);
   const setUiMode = useSelection((s) => s.setUiMode);
