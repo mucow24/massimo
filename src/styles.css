@@ -1979,6 +1979,16 @@ button.field-select > :not(.field-select-caret) {
 .canvas-pan-layer {
   position: absolute;
   inset: -50%;
+  /* NO `will-change` here, deliberately — promotion is granted per gesture by
+     useViewport. Holding it for the whole session makes pan START ~20ms
+     cheaper (granting it rebuilds the layer, at a cost proportional to the
+     painted tree, so per-gesture pays that on every press) but costs STATION
+     DRAG ~1.2ms on EVERY frame, because a promoted 4× surface is carried
+     through each drag repaint. Interleaved A/B, 12 rounds a side, 464-station
+     map: 19.3ms/frame held vs 18.1ms per-gesture (51.9 vs 55.4 fps), the
+     per-gesture arm winning 10 of 12 paired rounds. It loses on volume: a
+     three-second drag is ~165 frames, so ~200ms spent to save 20ms once.
+     See .perf/README.md. */
 }
 /* Child of the pan layer only: this is the map canvas itself. The item
    popovers also live inside .canvas-host, and a descendant selector would blow
@@ -1998,8 +2008,29 @@ button.field-select > :not(.field-select-caret) {
    alone (not .tool-hand.panning) so a middle-drag, which leaves the svg in
    .tool-arrow, still gets grabbing. Sits after .tool-hand so it wins the
    equal-specificity tie while a hand-tool pan is in flight. */
-.canvas-pan-layer > svg.panning {
+/* The in-flight pan's "grabbing" cursor is served by a CHILDLESS overlay, not
+   by a rule whose subject is the map svg. `cursor` is an INHERITED property,
+   so applying it anywhere at or above the svg makes Blink recompute inherited
+   style for all ~15k descendants — measured at 22ms per press on a
+   464-station map, which was the whole of the remaining pan-start latency
+   (2.4ms with the class toggled but no rule matching it). The overlay has no
+   children, so switching it on invalidates one element.
+
+   Pointer events are unaffected: the svg holds pointer capture for the whole
+   gesture, so every move still routes there regardless of what sits on top. */
+.pan-cursor-overlay {
+  position: absolute;
+  inset: 0;
   cursor: grabbing;
+  /* Always mounted and always laid out — only its HIT-TESTABILITY toggles.
+     `pointer-events` paints nothing, so flipping it leaves the layer's paint
+     artifact untouched; `display` or `visibility` would repaint, and any paint
+     change in this host re-runs the compositing update over the whole map
+     (~4µs per node, 22-27ms on a 464-station drawing). */
+  pointer-events: none;
+}
+.canvas-host.panning .pan-cursor-overlay {
+  pointer-events: auto;
 }
 
 /* Line-editor click priority: while editing a line's stops (Edit Stops), the

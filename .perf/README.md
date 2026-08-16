@@ -146,10 +146,18 @@ mta-v23 drawing, long-task ms, medians of 5:
 | alt+click a locked polygon | 3155 | 0 |
 | pan start (hand, and middle) | 0 | 0 |
 
-Pan start is on the list because it was the loudest complaint and it is NOT
-slow: the press itself is cheap in both arms. What the user felt was the hover
-storm fired by the cursor crossing stations on the way to the click, which the
-press then queued behind.
+Pan start is on the list because it was the loudest complaint, and the cache had
+nothing to do with it — it costs the same in both arms. What the user felt was
+the hover storm fired by the cursor crossing stations on the way to the click,
+which the press then queued behind.
+
+That is not to say pan start is free. Timed properly (see the Event Timing
+lesson below — the `0 ms` this table used to print for it was an absence, not a
+measurement), a middle-press took **~87 ms** to reach paint against a 0.3 ms
+control (same probe, same button, same page, the only difference being whether
+the app arms a pan) and 0.5 ms probe floor. `longtask` is 0 throughout, so none
+of it is main-thread JavaScript. What it is, and what was done about it, is the
+next section.
 
 Three instrument lessons, all paid for:
 
@@ -166,6 +174,22 @@ Three instrument lessons, all paid for:
   gestures now gate on the dragged station's position actually changing, and
   the gate was proved by setting the drag distance to zero — whereupon it goes
   red and the ungated arm cheerfully reports **0 ms**.
+- **The Event Timing API is silent about events it does not consider
+  interactions, and silence averaged as zero.** `handler ms` and `dur ms` came
+  from `PerformanceObserver({type:'event'})`, which emits NOTHING for a
+  middle-button press or a drag-style press — so `Math.max(0, ...entries)` over
+  an empty list printed a confident `0`, and four of the six rows were
+  unmeasured for three revisions while looking like the fastest in the table.
+  Worse, the zeros corroborated a true story ("no JS in the handler; the cost is
+  after it"), so they read as a finding. What caught it was building a SECOND
+  instrument that disagreed — nothing in the first one could have.
+
+  Latency is now timed by the page: a capture-phase window listener (which has
+  no discretion about which events it sees) stamps `t0` before React's root
+  handler, and `rAF -> setTimeout(0)` closes the interval after the next paint.
+  The table prints a per-gesture SAMPLE COUNT and fails the run when a gesture
+  produces none, on the same principle as the engagement gate — and every run
+  reports the probe's own floor, so a number can be read against its noise.
 - **An empty CPU profile is a result, not a dead end.** The sampling profiler
   charged 9 ms across 5 hovers while the long-task observer saw 744 ms — both
   true. The work was style/paint/compositing over a 16.7k-node SVG, plus GC, and
@@ -201,6 +225,84 @@ number.
 The residual ~131 ms on `station press` is compositing, not JavaScript (the CPU
 profile is empty, `Layerize` / `PaintArtifactCompositor::Update` dominate the
 timeline) — the pre-existing render floor, untouched by this.
+
+### Gesture-start latency is `commits × nodes`, and the trigger is the lever
+
+Once the measurement was honest, the shape fell out: press-to-paint is **linear
+in painted SVG node count**, at ~3.8µs a node, and flat in what the gesture
+actually does. Middle-press, one build, control (a press that arms nothing)
+0.3ms at every size:
+
+| stations | svgNodes | press -> painted |
+| -------- | -------- | ---------------- |
+| 30 | 1,392 | 6.3 ms |
+| 60 | 2,201 | 8.8 ms |
+| 120 | 4,330 | 17.1 ms |
+| 250 | 9,288 | 36.5 ms |
+| 464 | 15,073 | 55.6 ms |
+
+The canvas is ONE composited layer, and Blink re-runs the compositing update
+over the whole layer for any change inside it. So the cost is `commits ×
+nodes`, and the cheap lever is not the node count (see the census below) but
+whether a gesture triggers a commit at all. Pan start, paired, same map:
+
+| | press -> painted |
+| --- | --- |
+| baseline | 49.1 ms |
+| `will-change` held for the session instead of granted per press | 28.7 ms |
+| `panning` moved out of React state (it re-rendered the whole canvas) | 22.2 ms |
+| "grabbing" cursor moved off the svg onto a childless overlay | 7.6 ms |
+| **SHIPPED** — the last two only, promotion left gesture-scoped | **21.7 ms** |
+
+Each was isolated by ablation, not guessed. The cursor one is the surprising
+one: it is not the class change (2.4ms with the class toggled and no rule
+matching it) but the STYLE it applies — `cursor` is inherited, so a rule whose
+subject is the map svg restyles all ~15k descendants. Moving the class to
+`.canvas-host` does not help (same subject); a `display`-toggled overlay does
+not either (a paint change re-composites the layer). Toggling `pointer-events`
+on an always-mounted childless overlay does, because it paints nothing.
+
+**The promotion row was measured on the OTHER side and rejected.** Holding
+`will-change` for the session is worth ~14ms a press, but a permanently
+promoted 4x surface is carried through every station-drag repaint. Interleaved
+A/B on `perf-drag`, 12 rounds a side, rebuilding between arms, Times Sq:
+
+| | drag frame med | fps | paired wins |
+| --- | --- | --- | --- |
+| held for the session | 19.3 ms | 51.9 | 2 of 12 |
+| gesture-scoped (shipped) | **18.1 ms** | **55.4** | **10 of 12** |
+
+~1.2ms on every frame against 20ms once per press: a three-second drag is ~165
+frames, so it loses by an order of magnitude on volume. Sign test on the paired
+rounds gives p≈0.04. Note the first four rounds alone pointed the WRONG way
+(medians 52.9 held vs 50.5) — this harness's 25% spread eats a 5% effect at
+n=4, and four rounds of it read as a clean refutation. Twelve was barely
+enough.
+
+**A sibling element is not an escape hatch.** The cursor overlay is a plain
+sibling div in `.canvas-host` and toggling its `display` still cost 22ms — it
+shares the host's paint artifact. Any "move the chrome to its own layer" plan
+has to promote that layer, and that is unmeasured.
+
+### Where the 15k nodes are
+
+Census (`PERF_CENSUS=1`), 464 stations. `<g>` looked like the free win and is
+not: 5,820 groups, but only **220** carry no attributes and ≤1 child.
+
+| nodes | share | nearest `data-` ancestor |
+| ----- | ----- | ------------------------ |
+| 3,363 | 22.3% | `data-region-excluded` |
+| 2,017 | 13.4% | `data-marker-casing` |
+| 1,384 | 9.2% | `data-station-id` |
+| 1,084 | 7.2% | `data-label-line` |
+| 1,942 | 12.9% | `data-band-casing` + `data-band-stripe` |
+| 1,609 | 10.7% | `data-stop-shape` + `data-stop-code` |
+
+Region exclusion is the biggest single block and is machinery rather than ink.
+The casing passes (~26% combined) are the deliberate stroke-before-fill two-pass
+— a design trade, not a cleanup. Viewport culling is NOT the lever here: zoomed
+out to the whole map (a normal working view for a transit diagram) nothing is
+off-screen, and the pan surface deliberately renders a 2× window anyway.
 
 ### The same storm, through a late webfont
 

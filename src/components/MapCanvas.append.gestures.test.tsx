@@ -111,12 +111,13 @@ describe('MapCanvas — append hover preview suppressed while panning', () => {
 
     const bg = document.querySelector('[data-bg]')!;
     fireEvent.pointerDown(bg, { button: 1, buttons: 4, clientX: 300, clientY: 300, pointerId: 7 });
-    // Sanity: the pan is live (the svg wears the .panning cursor class).
-    expect(document.querySelector('svg.panning')).not.toBeNull();
+    // Sanity: the pan is live. The cursor class sits on .canvas-host, not the
+    // svg — on the svg it cost 22ms a press in inherited-style recalc.
+    expect(document.querySelector('.canvas-host.panning')).not.toBeNull();
     expect(document.querySelector('[data-append-hover-segment="A|B"]')).toBeNull();
 
     fireEvent.pointerUp(bg, { button: 1, clientX: 320, clientY: 300, pointerId: 7 });
-    expect(document.querySelector('svg.panning')).toBeNull();
+    expect(document.querySelector('.canvas-host.panning')).toBeNull();
     expect(document.querySelector('[data-append-hover-segment="A|B"]')).not.toBeNull();
   });
 });

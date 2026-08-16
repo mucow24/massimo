@@ -40,7 +40,6 @@ export interface ViewportApi {
   vbY: number;
   vbW: number;
   vbH: number;
-  panning: boolean;
   screenToWorld: (mx: number, my: number) => { x: number; y: number };
   onWheel: (e: WheelInput) => void;
   startPan: (e: React.PointerEvent) => void;
@@ -94,7 +93,22 @@ export function useViewport(
   const setPending = useLiveViewportStore.getState().setPending;
 
   const [size, setSize] = useState({ w: 800, h: 600 });
-  const [panning, setPanning] = useState(false);
+  // NOT useState, and not subscribed — see LiveViewportState.panning. This hook
+  // runs inside MapCanvas, so a re-render here re-renders the whole canvas.
+  const setPanningState = useLiveViewportStore.getState().setPanning;
+  // Arm/disarm the in-flight pan's "grabbing" cursor, by class on `.canvas-host`
+  // (the pan layer's parent). Two things make this imperative rather than a
+  // render, and both were measured on a 464-station map against a 0.5ms floor:
+  // going through React state cost ~7ms a press (it re-renders the whole
+  // canvas), and putting the class on the SVG cost ~15ms more (the cursor it
+  // applies is an INHERITED property, so Blink recomputes inherited style
+  // across all ~15k descendants). `.canvas-host` carries a constant className
+  // from React, so React never rewrites the attribute and this survives.
+  // What the class switches on is a childless overlay — see styles.css.
+  const setPanningCursor = (on: boolean) => {
+    setPanningState(on);
+    panLayerRef.current?.parentElement?.classList.toggle('panning', on);
+  };
   const panStartRef = useRef<{
     mx: number;
     my: number;
@@ -132,13 +146,16 @@ export function useViewport(
   }, [svgRef, panLayerRef]);
 
   // Don't leave a settle commit scheduled — or an in-flight gesture's live
-  // viewport — dangling past unmount.
+  // viewport, or its armed flag — dangling past unmount. `panning` lives in a
+  // module-level store, so unmounting mid-gesture would strand it true and
+  // suppress the Edit Stops hover preview for the rest of the session.
   useEffect(
     () => () => {
       if (zoomSettleRef.current != null) clearTimeout(zoomSettleRef.current);
       setPending(null);
+      setPanningState(false);
     },
-    [setPending],
+    [setPending, setPanningState],
   );
 
   // viewBox: world coords; center of screen = (viewport.x, viewport.y), zoom scales.
@@ -188,6 +205,8 @@ export function useViewport(
   // Retire the pan gesture's compositor state: transform gone, layer demoted.
   // Runs in the same synchronous handler as the camera commit, so the React
   // viewBox write and the transform reset land in one frame — no double-offset.
+  // Demoting costs the NEXT press its layer rebuild; keeping it costs every
+  // station-drag frame instead, which is the worse deal (see startPan).
   const releasePanLayer = () => {
     const el = panLayerRef.current;
     if (!el) return;
@@ -286,11 +305,16 @@ export function useViewport(
       moved: false,
       captured: false,
     };
-    // Promote the pan layer at pointer-down: the one-off layerization raster
-    // hides in the press, so the first move frame is already compositor-only.
+    // Promote the pan layer at pointer-down: the layerization raster hides in
+    // the press, so the first move frame is already compositor-only. This costs
+    // ~20ms of the press on a 464-station map (granting it rebuilds the layer,
+    // at a cost proportional to the painted tree) and holding it for the whole
+    // session in CSS removes that — but a permanently promoted 4× surface costs
+    // ~1.2ms on every station-drag frame, which loses badly on volume. Measured
+    // both ways; see styles.css and .perf/README.md.
     const layer = panLayerRef.current;
     if (layer) layer.style.willChange = 'transform';
-    setPanning(true);
+    setPanningCursor(true);
     svgRef.current?.setPointerCapture(e.pointerId);
     panStartRef.current.captured = true;
   };
@@ -322,7 +346,7 @@ export function useViewport(
     const panMoved = panStartRef.current.moved;
     const wasCaptured = panStartRef.current.captured;
     panStartRef.current = null;
-    setPanning(false);
+    setPanningCursor(false);
     if (wasCaptured) {
       try {
         svgRef.current?.releasePointerCapture(e.pointerId);
@@ -350,7 +374,7 @@ export function useViewport(
     commitPending();
     releasePanLayer();
     panStartRef.current = null;
-    setPanning(false);
+    setPanningCursor(false);
   };
 
   return {
@@ -360,7 +384,6 @@ export function useViewport(
     vbY,
     vbW,
     vbH,
-    panning,
     screenToWorld,
     onWheel,
     startPan,
