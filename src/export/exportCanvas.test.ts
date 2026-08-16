@@ -1,23 +1,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { buildExportSvg, mapFileBasename } from './exportCanvas';
+import { stubGetBBox } from '../test/interaction';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
-
-// jsdom implements no SVG layout, so getBBox is absent. Stub it on the
-// SVGGraphicsElement prototype (which every <svg>/<g>/<circle> inherits) so
-// buildExportSvg's content-bounds measurement runs. Each test restores it.
-function stubGetBBox(box: { x: number; y: number; width: number; height: number }): () => void {
-  const proto = (
-    globalThis as unknown as { SVGGraphicsElement: { prototype: Record<string, unknown> } }
-  ).SVGGraphicsElement.prototype;
-  const had = Object.prototype.hasOwnProperty.call(proto, 'getBBox');
-  const prev = proto.getBBox;
-  proto.getBBox = () => box;
-  return () => {
-    if (had) proto.getBBox = prev;
-    else delete proto.getBBox;
-  };
-}
 
 const makeSourceSvg = (innerHTML: string): SVGSVGElement => {
   const svg = document.createElementNS(SVG_NS, 'svg') as SVGSVGElement;
