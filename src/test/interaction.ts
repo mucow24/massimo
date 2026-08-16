@@ -91,6 +91,34 @@ export function stubCanvasHostSize({ w = 800, h = 600 }: { w?: number; h?: numbe
   });
 }
 
+/**
+ * jsdom implements no SVG layout, so `getBBox` is absent entirely — every
+ * content-bounds measurement (`buildExportSvg`'s, above all) throws or reads
+ * nothing without it. Stub it on `SVGGraphicsElement.prototype`, which every
+ * `<svg>`/`<g>`/`<circle>` inherits, so the measurement runs against `box`.
+ *
+ * Returns the restore, since a caller may want a second box within one file;
+ * call it from `afterEach` so a throwing test cannot leave the prototype
+ * patched for the rest of the run.
+ */
+export function stubGetBBox(box: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): () => void {
+  const proto = (
+    globalThis as unknown as { SVGGraphicsElement: { prototype: Record<string, unknown> } }
+  ).SVGGraphicsElement.prototype;
+  const had = Object.prototype.hasOwnProperty.call(proto, 'getBBox');
+  const prev = proto.getBBox;
+  proto.getBBox = () => box;
+  return () => {
+    if (had) proto.getBBox = prev;
+    else delete proto.getBBox;
+  };
+}
+
 export interface FakeSvgOpts {
   width?: number;
   height?: number;

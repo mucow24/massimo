@@ -83,6 +83,7 @@ import type {
   PolygonStyleProps,
   RouteBulletStyleProps,
   StationStyleProps,
+  StopCell,
   StyleDef,
   StyleKind,
   StylePropsByKind,
@@ -931,49 +932,64 @@ export function deleteStyle(doc: MapDoc, styleId: string): MapDoc {
 }
 
 // ---- stopDot: the dedicated slot-walk (stopDot has no item collection) ----
-// A stopDot style's "items" are the dot slots: each station stop's `dotStyleId`
-// override and each line's `singletonDotStyleId` / `multiDotStyleId` split
-// default. These two helpers are the stopDot analogue of the generic
-// updateStyleProps restamp loop and deleteStyle untag loop.
+// The two helpers below are the stopDot analogue of the generic
+// updateStyleProps restamp loop and deleteStyle untag loop, and both reach
+// their wearers through mapDotSlotsWearing.
 
-/** Re-stamp the raw shadow (`dotStyle` / `singleton|multiDotStyle`) of every dot
- *  slot tagged with `styleId` to the style's new `props`. The def has already
- *  been written by the caller; this only refreshes the wearers. Reference-stable
- *  per collection when nothing wears the style. */
-function restampStopDotStyle(doc: MapDoc, styleId: string, props: DotStyle): MapDoc {
+/**
+ * Rewrite every dot slot wearing `styleId`, leaving the rest untouched.
+ *
+ * The ONE owner of what counts as a dot slot: a station stop's `dotStyleId`
+ * override, or either half of a line's `singletonDotStyleId`/`multiDotStyleId`
+ * split default. The restamp and the delete want opposite things from a slot
+ * (refresh its raw shadow / drop its tag) but have to agree exactly on WHICH
+ * slots those are, so only the payload is theirs — a slot kind added here
+ * reaches both without either being touched.
+ *
+ * `mapLine` is called once per wearing half, so a line wearing the style on
+ * both is threaded through it twice. Reference-stable per collection when
+ * nothing wears the style.
+ */
+function mapDotSlotsWearing(
+  doc: MapDoc,
+  styleId: string,
+  mapStop: (stop: StopCell) => StopCell,
+  mapLine: (line: Line, split: 'singleton' | 'multi') => Line,
+): MapDoc {
   let stations = doc.stations;
-  let stationsChanged = false;
   for (const sid of Object.keys(stations)) {
     const st = stations[sid];
     let stopsChanged = false;
     const stops = st.stops.map((s) => {
       if (s.dotStyleId !== styleId) return s;
       stopsChanged = true;
-      return { ...s, dotStyle: props };
+      return mapStop(s);
     });
-    if (stopsChanged) {
-      stations = { ...stations, [sid]: { ...st, stops } };
-      stationsChanged = true;
-    }
+    if (stopsChanged) stations = { ...stations, [sid]: { ...st, stops } };
   }
   let lines = doc.lines;
-  let linesChanged = false;
   for (const lid of Object.keys(lines)) {
     const ln = lines[lid];
-    let nextLine: Line | undefined;
-    if (ln.singletonDotStyleId === styleId) nextLine = { ...ln, singletonDotStyle: props };
-    if (ln.multiDotStyleId === styleId) nextLine = { ...(nextLine ?? ln), multiDotStyle: props };
-    if (nextLine) {
-      lines = { ...lines, [lid]: nextLine };
-      linesChanged = true;
-    }
+    let next = ln;
+    if (ln.singletonDotStyleId === styleId) next = mapLine(next, 'singleton');
+    if (ln.multiDotStyleId === styleId) next = mapLine(next, 'multi');
+    if (next !== ln) lines = { ...lines, [lid]: next };
   }
-  if (!stationsChanged && !linesChanged) return doc;
-  return {
-    ...doc,
-    ...(stationsChanged ? { stations } : {}),
-    ...(linesChanged ? { lines } : {}),
-  };
+  if (stations === doc.stations && lines === doc.lines) return doc;
+  return { ...doc, stations, lines };
+}
+
+/** Re-stamp the raw shadow (`dotStyle` / `singleton|multiDotStyle`) of every dot
+ *  slot tagged with `styleId` to the style's new `props`. The def has already
+ *  been written by the caller; this only refreshes the wearers. */
+function restampStopDotStyle(doc: MapDoc, styleId: string, props: DotStyle): MapDoc {
+  return mapDotSlotsWearing(
+    doc,
+    styleId,
+    (s) => ({ ...s, dotStyle: props }),
+    (ln, split) =>
+      split === 'singleton' ? { ...ln, singletonDotStyle: props } : { ...ln, multiDotStyle: props },
+  );
 }
 
 /** Delete a stopDot style: drop the TAG (keep the raw shadow, like every other
@@ -1010,38 +1026,22 @@ function deleteStopDotStyle(
   // Whatever still references the deleted id — stops, custom lines, wearers
   // whose dot type was an override — drops the TAG and keeps the raw shadow,
   // like every other kind's delete keeps values.
-  let stations = next.stations;
-  for (const sid of Object.keys(stations)) {
-    const st = stations[sid];
-    let stopsChanged = false;
-    const stops = st.stops.map((s) => {
-      if (s.dotStyleId !== styleId) return s;
-      stopsChanged = true;
-      const { dotStyleId: _g, ...rest } = s;
+  return mapDotSlotsWearing(
+    next,
+    styleId,
+    (s) => {
+      const { dotStyleId: _gone, ...rest } = s;
       return rest;
-    });
-    if (stopsChanged) stations = { ...stations, [sid]: { ...st, stops } };
-  }
-  let lines = next.lines;
-  for (const lid of Object.keys(lines)) {
-    let ln = lines[lid];
-    let changed = false;
-    if (ln.singletonDotStyleId === styleId) {
-      const { singletonDotStyleId: _g, ...rest } = ln;
-      ln = rest as Line;
-      changed = true;
-    }
-    if (ln.multiDotStyleId === styleId) {
-      const { multiDotStyleId: _g, ...rest } = ln;
-      ln = rest as Line;
-      changed = true;
-    }
-    if (changed) lines = { ...lines, [lid]: ln };
-  }
-  if (stations !== next.stations || lines !== next.lines) {
-    next = { ...next, stations, lines };
-  }
-  return next;
+    },
+    (ln, split) => {
+      if (split === 'singleton') {
+        const { singletonDotStyleId: _gone, ...rest } = ln;
+        return rest as Line;
+      }
+      const { multiDotStyleId: _gone, ...rest } = ln;
+      return rest as Line;
+    },
+  );
 }
 
 /** Drop an item's style tag only (the dropdown's "Custom" choice). No stopDot

@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `683b507` (2026-08-14, #518) — verified against the live source.** This
+**Up to date as of commit `cbe4107` (2026-08-15, #523) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -124,7 +124,7 @@ src/
 
   model/                        # PURE domain logic — no React, no store
     types.ts                    # MapDoc + every entity type (the canonical data shape)
-    transforms.ts               # ~4200 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
+    transforms.ts               # ~4400 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
     serialize.ts                # serialize()/parse() + shared backfill/sanitize helpers
     docAudit.ts                 # auditDoc(doc): referential audit (tests + the export doors)
     styles.ts                   # named per-kind formatting presets (StyleDef) + styleId tag/stamp
@@ -4472,7 +4472,9 @@ Each is confirmed in source/tests; file pointers included.
   wheel events; a `fakeSvg` with an identity screen↔world CTM, paired by `fakeSvgRef` with a
   stationary host rect and an svg rect that rides the pan layer's transform, so `useViewport`'s
   host-vs-svg measurement is observable; `stubCanvasHostSize()` patches the prototype
-  `clientWidth`/`clientHeight` jsdom reports as 0, which any test rendering the canvas needs),
+  `clientWidth`/`clientHeight` jsdom reports as 0, which any test rendering the canvas needs;
+  `stubGetBBox()` fills the other jsdom SVG hole — no layout at all, so the prototype has no
+  `getBBox` for a content-bounds measurement to call),
   `textMetrics.ts` (`stubCanvas2d`/`stubTextMetrics` hand a fake 2D context to every canvas, since
   jsdom ships no backend and `measureTextLabel` would otherwise fall back to its length estimate and
   hide every bearing bug; `whitespaceAwareMetrics` and `inkOverhangMetrics` are the two models more

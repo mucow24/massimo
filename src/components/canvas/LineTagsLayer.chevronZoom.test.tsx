@@ -5,23 +5,8 @@ import { buildExportSvg } from '../../export/exportCanvas';
 import { useDoc } from '../../state/store';
 import { DEFAULT_DOC } from '../../model/transforms';
 import { makeBandSpec, makeLine } from '../../test/fixtures';
-import { fakeSvgRef } from '../../test/interaction';
+import { fakeSvgRef, stubGetBBox } from '../../test/interaction';
 import type { LineTag } from '../../model/types';
-
-// jsdom has no SVG layout, so getBBox is absent. Same stub the real
-// exportCanvas.test.ts uses, so buildExportSvg's content-bounds measurement runs.
-function stubGetBBox(box: { x: number; y: number; width: number; height: number }): () => void {
-  const proto = (
-    globalThis as unknown as { SVGGraphicsElement: { prototype: Record<string, unknown> } }
-  ).SVGGraphicsElement.prototype;
-  const had = Object.prototype.hasOwnProperty.call(proto, 'getBBox');
-  const prev = proto.getBBox;
-  proto.getBBox = () => box;
-  return () => {
-    if (had) proto.getBBox = prev;
-    else delete proto.getBBox;
-  };
-}
 
 const identityScreenToWorld = (x: number, y: number) => ({ x, y });
 

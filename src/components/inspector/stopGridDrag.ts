@@ -136,8 +136,9 @@ export const ORIENTATION_NAME: Record<StopOrientation, string> = {
  *  marks a BODY-LESS node — the label cell or a hosted transfer anchor: it
  *  occupies a lattice cell but has no ink on the rendered map, so the overlap
  *  filter treats it as a point (width 0) — only its nominal `w` still sets the
- *  lattice pitch when it serves as anchor. (Named `isLabel` until anchors
- *  became its second user, matching the srcIsLabel → srcIsPoint rename.)
+ *  lattice pitch when it serves as anchor. Point-ness is a property of the
+ *  NODE, not of being the label: hosted transfer anchors carry it too, which is
+ *  why neither this flag nor `srcIsPoint` names the label.
  *  `g` is the line's interline gap (absent ⇒ 0): it widens the lattice
  *  pitch (packed spacing, max-of-pair) but not the overlap clearance —
  *  bodies don't grow with the gap. */

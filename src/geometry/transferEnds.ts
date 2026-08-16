@@ -1,12 +1,10 @@
 // World positions for the three shapes a transfer end can take.
 //
-// This lived inside TransferLayer.tsx as a private `endpointWorld` plus an
-// exported `transferEndWorld`, which meant a component owned the geometry and
-// two other modules imported it back out of the render layer. It is pure
-// world-coordinate math over the doc, so it belongs here — and its call sites
-// (the transfer bodies pass, the selection outline, and the in-progress
-// creation preview) must all resolve an end identically or a transfer would
-// render somewhere its own outline isn't.
+// The single resolver, and it lives in geometry/ rather than in the render
+// layer because three separate call sites — the transfer bodies pass, the
+// selection outline, and the in-progress creation preview — must land on the
+// same point for the same end. Two of them resolving it differently draws a
+// transfer somewhere its own outline isn't.
 import { stopPosWorld } from './interlining';
 import { stationCellToWorld, stopCenterAt } from './orientation';
 import { stationCircle } from './lineCircle';
