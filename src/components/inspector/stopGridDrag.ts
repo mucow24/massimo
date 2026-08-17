@@ -236,8 +236,8 @@ export interface GhostSpec {
   /** The dragged/nudged node is POINT-like — the label cell, or a transfer
    *  anchor. Its handle is editor chrome, not map ink, so it has no body for
    *  overlap purposes: slots are only dropped where a dot's body would cover
-   *  the point itself. (Named srcIsLabel until anchors became the second
-   *  source with exactly these mechanics.) */
+   *  the point itself. Point-ness is the node's, not the label's — see
+   *  `WidthNode.isPoint`, the same property on the blocker side. */
   srcIsPoint?: boolean;
   /** Anchor node the candidate lattice hangs off (typically the nearest
    *  non-source node). */

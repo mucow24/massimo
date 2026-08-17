@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `cbe4107` (2026-08-15, #523) — verified against the live source.** This
+**Up to date as of commit `9b1dde2` (2026-08-16, #524) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -1362,11 +1362,12 @@ on the station's `locked` (the row by the inspector's whole-panel disabled field
 its own check).
 
 In the lattice they ride as **passengers**: never in `stationLayoutNodes` (whose node identity is
-`lineId: string | null`, where null already means "the label", and where a non-`isLabel` node would
-become a lattice ORIGIN via `anchorPool`), but appended to `otherNodes` as width-0 blockers
-(`anchorBlockerNodes`) so a stop can't be dropped on one. They drag and nudge on the LABEL's exact
-parameters (`wSrc = STOP_SIZE`, `gSrc = 0`, `srcIsPoint` — renamed from `srcIsLabel` when anchors
-became its second user). A hosted-anchor move **must not** fan out through `dispatchMirrored`:
+`lineId: string | null`, where null already means "the label", and where a node lacking `isPoint`
+would become a lattice ORIGIN via `anchorPool` — the incommensurate-pitch kink that pool exists to
+forbid), but appended to `otherNodes` as width-0 blockers (`anchorBlockerNodes`) so a stop can't be
+dropped on one. They drag and nudge on the LABEL's exact parameters (`wSrc = STOP_SIZE`,
+`gSrc = 0`, `srcIsPoint` — point-ness is a property of the NODE, not of being the label, which is
+why neither flag names it). A hosted-anchor move **must not** fan out through `dispatchMirrored`:
 `matching.ts`'s `stopsKey` ignores anchors, so two stations with different anchor sets still MATCH,
 and every target would apply its own rotated delta to the same global anchorId — a 0/2 offset pair
 cancels outright and the anchor wouldn't move at all.
@@ -3276,7 +3277,10 @@ store).
 
 `MapCanvas`'s `<svg>`'s main handlers (plus small utility ones: `onPointerLeave` clears
 `cursorWorld`; `onClickCapture`/`onContextMenuCapture` do the alt+click deep-pick and the proxy
-reroute described below; `onContextMenu`/`onDragStart` just `preventDefault`):
+reroute described below; `onDoubleClickCapture` swallows **alt**-dblclicks, since the two rapid
+alt+clicks of a deep-pick cycle also synthesize a native dblclick on the topmost element, which
+would open the station layout editor over the pick the cycling just made — the plain double-click
+is untouched; `onContextMenu`/`onDragStart` just `preventDefault`):
 
 - `onPointerDown`: middle-button or hand-mode → `view.startPan`; else `rectSelect.onPointerDown`
   (self-gates). **Item drags start from the item's own pointer-down** (fired by the child view),

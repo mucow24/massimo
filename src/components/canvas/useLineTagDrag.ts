@@ -53,6 +53,25 @@ export function useLineTagDrag(
     onCancel: () => void;
   } | null>(null);
 
+  /**
+   * Disarm the gesture: unhook the three window listeners, drop the drag state
+   * and clear the live guides. Both endings need exactly this before they part
+   * ways over the doc (commit vs rollback), and this hook is the only
+   * window-wired drag — the shared dragGesture.ts owns the ending every hook
+   * has, not the listener bookkeeping only this one carries. Returns the state
+   * it disarmed, or null when there was no live gesture.
+   */
+  const disarm = () => {
+    const ds = dragRef.current;
+    if (!ds) return null;
+    window.removeEventListener('pointermove', ds.onMove);
+    window.removeEventListener('pointerup', ds.onUp);
+    window.removeEventListener('pointercancel', ds.onCancel);
+    dragRef.current = null;
+    setLineTagSnapGuides([]);
+    return ds;
+  };
+
   const onStartDrag = (id: string, e: React.PointerEvent) => {
     const onMove = (ev: PointerEvent) => onPointerMove(ev);
     const onUp = (ev: PointerEvent) => onPointerUp(ev);
@@ -198,13 +217,8 @@ export function useLineTagDrag(
   };
 
   const onPointerUp = (e: PointerEvent) => {
-    const ds = dragRef.current;
+    const ds = disarm();
     if (!ds) return;
-    window.removeEventListener('pointermove', ds.onMove);
-    window.removeEventListener('pointerup', ds.onUp);
-    window.removeEventListener('pointercancel', ds.onCancel);
-    dragRef.current = null;
-    setLineTagSnapGuides([]);
     // Shared commit/cancel: one history entry + capture release + click-suppress
     // clear when the gesture moved, else cancel (a pure click).
     finishDrag(ds, e, svgRef);
@@ -217,13 +231,8 @@ export function useLineTagDrag(
   // button-less tag) and roll the live moveLineTag writes back to the pre-drag
   // snapshot without committing.
   const onPointerCancel = () => {
-    const ds = dragRef.current;
+    const ds = disarm();
     if (!ds) return;
-    window.removeEventListener('pointermove', ds.onMove);
-    window.removeEventListener('pointerup', ds.onUp);
-    window.removeEventListener('pointercancel', ds.onCancel);
-    dragRef.current = null;
-    setLineTagSnapGuides([]);
     ds.history.rollback();
   };
 
