@@ -293,19 +293,22 @@ export const STYLE_FIELDS = {
 // Sync state) without dirtying the STYLE over it; the divergence it represents
 // is against the PALETTE, and the palette pickers are where it shows.
 //
-// Returns null for "no ref involvement here — compare the values".
+// `sameRefWins` picks which question is being asked: the OVERRIDE reading
+// folds a matching link into agreement, the LITERAL reading carries on to the
+// values. Returns null for "no verdict — compare the values".
 const refVerdict = (
   field: string,
   a: Record<string, unknown>,
   b: Record<string, unknown>,
   pairs: Record<string, string>,
+  sameRefWins: boolean,
 ): boolean | null => {
   const refKey = pairs[field];
   if (refKey === undefined) return null;
   const ra = a[refKey] as SwatchRef | undefined;
   const rb = b[refKey] as SwatchRef | undefined;
   if (!swatchRefsEqual(ra, rb)) return false;
-  return ra === undefined ? null : true;
+  return sameRefWins && ra !== undefined ? true : null;
 };
 
 // The ref-covered pairs per kind: refKey → the value halves it rides. Drives
@@ -337,10 +340,11 @@ function styleFieldEqual(
   field: string,
   a: Record<string, unknown>,
   b: Record<string, unknown>,
+  sameRefWins: boolean,
 ): boolean {
   if (kind === 'line') {
     if (field === 'strokeColor') {
-      const verdict = refVerdict(field, a, b, { strokeColor: 'strokeColorRef' });
+      const verdict = refVerdict(field, a, b, { strokeColor: 'strokeColorRef' }, sameRefWins);
       if (verdict !== null) return verdict;
       return lineStrokeColorsEqual(
         a.strokeColor as LineStyleProps['strokeColor'],
@@ -356,10 +360,16 @@ function styleFieldEqual(
   }
   if (kind === 'transfer') {
     if (field === 'color' || field === 'strokeColor') {
-      const verdict = refVerdict(field, a, b, {
-        color: 'colorRef',
-        strokeColor: 'strokeColorRef',
-      });
+      const verdict = refVerdict(
+        field,
+        a,
+        b,
+        {
+          color: 'colorRef',
+          strokeColor: 'strokeColorRef',
+        },
+        sameRefWins,
+      );
       if (verdict !== null) return verdict;
       return dayNightColorsEqual(
         a[field] as TransferStyleProps['color'],
@@ -371,16 +381,28 @@ function styleFieldEqual(
     }
   }
   if (kind === 'polygon') {
-    const verdict = refVerdict(field, a, b, {
-      fill: 'fillRef',
-      darkFill: 'fillRef',
-      stroke: 'strokeRef',
-      darkStroke: 'strokeRef',
-    });
+    const verdict = refVerdict(
+      field,
+      a,
+      b,
+      {
+        fill: 'fillRef',
+        darkFill: 'fillRef',
+        stroke: 'strokeRef',
+        darkStroke: 'strokeRef',
+      },
+      sameRefWins,
+    );
     if (verdict !== null) return verdict;
   }
   if (kind === 'textLabel') {
-    const verdict = refVerdict(field, a, b, { color: 'colorRef', darkColor: 'colorRef' });
+    const verdict = refVerdict(
+      field,
+      a,
+      b,
+      { color: 'colorRef', darkColor: 'colorRef' },
+      sameRefWins,
+    );
     if (verdict !== null) return verdict;
     // Absent ≡ auto/neutral: a def from a save predating layout coverage
     // must compare equal to one carrying the explicit defaults, or every
@@ -408,9 +430,16 @@ function styleFieldEqual(
  * The covered fields on which two props objects disagree — [] means equal.
  * Read with `a` = an item's captured EFFECTIVE props and `b` = its style's
  * props, the result is the item's OVERRIDE set: the fields it pins against
- * the style, which style edits leave alone and the red dots mark. There is
- * no stored override state — this diff IS the override, so a style edit that
- * lands exactly on an item's pinned value dissolves the override.
+ * the style, and the red dots mark. There is no stored override state — this
+ * diff IS the override, so a style edit that lands exactly on an item's
+ * pinned value dissolves the override.
+ *
+ * This is the answer to "is this wearer OVERRIDING its style?", and only that
+ * one: a pair linked to the same swatch as its def agrees with it whatever hex
+ * either paints (`refVerdict`), because the style's answer for that field is
+ * the swatch and the wearer still gives it. It is deliberately NOT the answer
+ * to "did anything change?" — see `styleFieldsChanged`, which style EDITS use,
+ * or a locally recolored link would be invisible to them and get stamped over.
  */
 export function styleFieldsDiff(
   kind: ItemStyleKind,
@@ -419,13 +448,33 @@ export function styleFieldsDiff(
 ): string[] {
   const ra = a as unknown as Record<string, unknown>;
   const rb = b as unknown as Record<string, unknown>;
-  return STYLE_FIELDS[kind].filter((f) => !styleFieldEqual(kind, f, ra, rb));
+  return STYLE_FIELDS[kind].filter((f) => !styleFieldEqual(kind, f, ra, rb, true));
 }
 
-// Deep equality over style props — no covered field disagrees. stopDot props
-// are whole DotStyles (structural dotStylesEqual); every other kind runs the
-// per-field diff. Exported for serialize's tag pruning and the load-time
-// adoption pass.
+/**
+ * The covered fields whose stored VALUE or link differs — the literal reading,
+ * where a same-ref pair painting two different colors is a difference like any
+ * other. Style edits read the world this way: what may be stamped over
+ * (nothing a wearer has coloured itself), and whether a def edit changed
+ * anything at all.
+ */
+export function styleFieldsChanged(
+  kind: ItemStyleKind,
+  a: StyleDef['props'],
+  b: StyleDef['props'],
+): string[] {
+  const ra = a as unknown as Record<string, unknown>;
+  const rb = b as unknown as Record<string, unknown>;
+  return STYLE_FIELDS[kind].filter((f) => !styleFieldEqual(kind, f, ra, rb, false));
+}
+
+// Deep equality over style props — no covered field differs, LITERALLY (values
+// and links both). stopDot props are whole DotStyles (structural
+// dotStylesEqual); every other kind runs the per-field comparison. This is the
+// "are these the same props?" question — asked by serialize's tag pruning, the
+// load-time adoption pass, and `updateStyleProps`'s no-op guard — so it must
+// not fold same-ref pairs together: a def whose linked color was just edited
+// has to read as changed, or the edit is silently dropped.
 export function stylePropsEqual(
   kind: StyleKind,
   a: StyleDef['props'],
@@ -434,7 +483,7 @@ export function stylePropsEqual(
   if (kind === 'stopDot') {
     return dotStylesEqual(a as DotStyle, b as DotStyle);
   }
-  return styleFieldsDiff(kind, a, b).length === 0;
+  return styleFieldsChanged(kind, a, b).length === 0;
 }
 
 /**
@@ -822,16 +871,18 @@ export function saveStyleFromItem(
   ) {
     return doc;
   }
-  // Snapshot the other wearers' override sets against the OLD props before
-  // anything is written — "which fields does this wearer pin?" is only
-  // answerable against the def it was tracking.
+  // Snapshot what the other wearers hold of their own against the OLD props
+  // before anything is written — only answerable against the def they were
+  // tracking. The LITERAL diff, for the reason `updateStyleProps` gives: a
+  // locally recolored link is not an override, but it is still not ours to
+  // stamp over.
   const overrides: Record<string, string[]> = {};
   if (kind !== 'stopDot' && existing !== undefined && existing.kind === kind) {
     const coll = itemsOf(doc, kind);
     for (const id of Object.keys(coll)) {
       if (id === itemId || coll[id].styleId !== styleId) continue;
       const cur = captureStyleProps(doc, kind, id);
-      overrides[id] = cur ? styleFieldsDiff(kind, cur, existing.props) : [];
+      overrides[id] = cur ? styleFieldsChanged(kind, cur, existing.props) : [];
     }
   }
   const def = { id: styleId, name: trimmed, kind, props } as StyleDef;
@@ -942,16 +993,22 @@ export function updateStyleProps(doc: MapDoc, styleId: string, patch: StyleProps
   );
   if (stylePropsEqual(def.kind, merged, def.props)) return doc;
   const nextDef = { id: def.id, name: def.name, kind: def.kind, props: merged } as StyleDef;
-  // Snapshot every wearer's override set against the PRE-EDIT doc and old
-  // props — after the def (or, for stopDot, the dot shadows) is written,
+  // Snapshot what each wearer holds of its OWN against the PRE-EDIT doc and
+  // old props — after the def (or, for stopDot, the dot shadows) is written,
   // "which fields did this wearer pin?" is no longer answerable.
+  //
+  // The LITERAL diff, not the override one: a pair linked to the same swatch
+  // as the def but painting its own color is not an override (no red dot —
+  // the style's answer is still that swatch), yet it is just as much a color
+  // the user chose, and stamping over it would throw the palette picker's
+  // Reset/Sync state away on any unrelated edit to the style.
   const overrides: Record<string, string[]> = {};
   if (def.kind !== 'stopDot') {
     const coll = itemsOf(doc, def.kind);
     for (const id of Object.keys(coll)) {
       if (coll[id].styleId !== styleId) continue;
       const cur = captureStyleProps(doc, def.kind, id);
-      overrides[id] = cur ? styleFieldsDiff(def.kind, cur, def.props) : [];
+      overrides[id] = cur ? styleFieldsChanged(def.kind, cur, def.props) : [];
     }
   }
   let next: MapDoc = { ...doc, styles: { ...doc.styles, [styleId]: nextDef } };

@@ -52,10 +52,15 @@ export interface DayNightColor {
 // (MapDoc.palettes) — both levels name-keyed, the palettes' own identity rule.
 // The link rides BESIDE the literal color the renderer reads (the raw-value-
 // plus-tag contract dot styles use): editing the swatch restamps every field
-// carrying its ref in the same doc write, renames rewrite refs, and a deleted
-// palette/swatch drops the refs and keeps the values. INVARIANT: a present
-// ref's field holds exactly the swatch's color(s) — `model/swatchRef.ts` owns
-// resolution and the reconcile pass that restores this on load.
+// still FAITHFUL to it in the same doc write, renames rewrite refs, and a
+// deleted palette/swatch drops the refs and keeps the values.
+//
+// A linked field normally paints exactly its swatch, but is ALLOWED to hold a
+// color of its own — recolor one in place and the link stands while the color
+// diverges, which is the state the picker's Reset and Sync act on. So a ref
+// means "this field's color comes FROM here", not "this field's color IS
+// here". `model/swatchRef.ts` owns resolution; a ref that stops resolving is
+// dropped (never repaired) by `reconcileSwatchRefs`.
 export interface SwatchRef {
   palette: string;
   swatch: string;
@@ -381,11 +386,12 @@ export interface Line {
   service: string;
   name: string;
   color: string;
-  // Link to the LINE-palette swatch `color` came from — absent for a
-  // hand-picked color. See SwatchRef: `color` always equals the swatch's day
-  // color while this is present; a swatch recolor sweeps linked lines (the
-  // ref-keyed successor of the old value-match sweep), and any plain `color`
-  // write without a ref in the same patch detaches (updateLine owns the rule).
+  // Link to the LINE-palette swatch `color` came FROM — absent for a
+  // hand-picked color. See SwatchRef: `color` normally equals the swatch's day
+  // color but may diverge from it, in which case a swatch recolor leaves this
+  // line alone (the sweep carries the faithful only — the ref-keyed successor
+  // of the old value-match sweep). Any plain `color` write without a ref in
+  // the same patch detaches (updateLine owns the rule).
   colorRef?: SwatchRef;
   // The stations this line SERVES — its members, one StopCell each. Order is
   // DISPLAY ONLY (the inspector list, "reverse", stable iteration); it does NOT

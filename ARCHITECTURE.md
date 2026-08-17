@@ -568,19 +568,25 @@ detached onto an exact swatch hex reads as linked again on load, today's value-m
 preserved). In the styles machinery refs FOLD INTO their pair's covered-field equality
 (`styleFieldEqual`, `dotStylesEqual`) rather than joining `STYLE_FIELDS`: value+provenance move
 as one unit through capture/canonicalize/sanitize/stamp, so a linked wearer follows its def's
-token change while a pinned one keeps its pin, with no new override machinery. Where BOTH sides
-name the same swatch the ref IS the answer and the values are not compared (`refVerdict`): the
-style says "this swatch", the wearer still says so, and a locally recolored link therefore never
-dirties its STYLE — its divergence is against the palette, and the palette's own controls are
-where it shows. `dotStylesEqual` is the deliberate exception, still comparing values under equal
-refs: it also decides when an override may be DROPPED, and two dots that link alike but paint
-differently are not interchangeable there. A PASTE reconciles
-the incoming refs against the RECEIVING doc (`addPolygonWith`/`addTextLabelWith`), so a link
-survives a copy only where that doc carries the same palette and swatch NAME — and takes that
-doc's color, repainting the pasted item where the two maps spell one name differently. Name-keyed
-identity has to answer somewhere, and the receiving map's own palette is the answer that keeps its
-grays consistent; the alternative (silently keeping a foreign color and dropping the link) hides
-the divergence. See [swatchRef.ts](src/model/swatchRef.ts).
+token change while a pinned one keeps its pin, with no new override machinery. Divergence makes
+that equality answer TWO questions, and they part company where both sides name the same swatch:
+**`styleFieldsDiff`** asks "is this wearer OVERRIDING its style?" and folds a matching link into
+agreement whatever hex either paints (`refVerdict`'s `sameRefWins`) — the style says "this
+swatch", the wearer still says so, so a locally recolored link never lights a red dot; its
+divergence is against the palette, and the palette's own controls are where it shows.
+**`styleFieldsChanged`** (and `stylePropsEqual`, built on it) asks the LITERAL question — did any
+value or link differ — and every style EDIT reads that one: `updateStyleProps`'s no-op guard,
+which would otherwise drop an edit to a def's own linked color on the floor, and the
+snapshot of what each wearer holds of its own, which must count a local recolor or stamping
+would throw it away on any unrelated edit to the style. `dotStylesEqual` never folds either: it
+also decides when an override may be DROPPED, and two dots that link alike but paint differently
+are not interchangeable there. A PASTE reconciles the incoming refs against the
+RECEIVING doc (`addPolygonWith`/`addTextLabelWith`), so a link survives a copy only where that doc
+carries the same palette and swatch NAME — and the pasted item keeps the COLORS it was copied
+with, arriving already diverged where the two maps spell one name differently. It looks like what
+was copied, which is what a paste should do; the link it carries then says where that color was
+meant to come from, and the picker's Reset adopts this map's answer when you want it.
+See [swatchRef.ts](src/model/swatchRef.ts).
 
 ### Entities (field-level)
 

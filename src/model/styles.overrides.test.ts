@@ -332,6 +332,39 @@ describe('swatch refs fold into the covered color fields', () => {
     expect(doc.polygons.p.fill).toBe('#00ff00');
   });
 
+  // The fold answers "is this wearer overriding its style?" — it must not also
+  // answer "did this def just change?", or a def's linked color is a dead
+  // control: the patch carries the same ref, the def compares equal to itself,
+  // and updateStyleProps early-outs before writing anything.
+  it('a def’s linked color can be edited — the same-ref fold is not def equality', () => {
+    let doc = linkedPolygons();
+    doc = updateStyleProps(doc, 'y1', {
+      fill: '#00ff00',
+      darkFill: '#bbbbbb',
+      fillRef: BORDER,
+    });
+    const def = doc.styles.y1;
+    expect(def.kind === 'polygon' && def.props.fill).toBe('#00ff00');
+    expect(def.kind === 'polygon' && def.props.fillRef).toEqual(BORDER);
+  });
+
+  // A locally recolored link is not a style OVERRIDE (no red dot), but it is
+  // still a color the user chose: an unrelated edit to the style must leave it
+  // alone rather than stamping the def's color back over it.
+  it('an unrelated def edit leaves a wearer’s locally recolored link alone', () => {
+    let doc = linkedPolygons();
+    doc = T.updatePolygon(doc, 'p', {
+      fill: '#00ff00',
+      darkFill: '#00ff00',
+      fillRef: BORDER,
+    });
+    doc = updateStyleProps(doc, 'y1', { strokeWidth: 7 });
+    expect(doc.polygons.p).toMatchObject({ fill: '#00ff00', darkFill: '#00ff00' });
+    expect(doc.polygons.p.fillRef).toEqual(BORDER);
+    // The edit it WAS about still landed.
+    expect(doc.polygons.p.strokeWidth).toBe(7);
+  });
+
   it('same values with a different ref read as overridden — the link is real', () => {
     const doc = linkedPolygons();
     const def = doc.styles.y1;
