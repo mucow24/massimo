@@ -41,6 +41,7 @@ describe('styles round-trip', () => {
       polygons: [makePolygon({ id: 'p1' })],
       routeBullets: [makeRouteBullet({ id: 'b1' })],
       transfers: [makeTransfer({ id: 'x1' })],
+      palettes: [], // no palettes, or the fixture line's hex gains a colorRef
       styles: [
         makeStyle('line', 'y1', { name: 'Thick', props: { width: 10, strokeWidth: 1.5 } }),
         makeStyle('textLabel', 'y2', { name: 'Heading', props: { fontSize: 24, weight: 700 } }),

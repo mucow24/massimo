@@ -13,6 +13,7 @@ import { selectableStylesOfKind } from '../model/styles';
 import { StyleEditor } from './StyleEditor';
 import { StopGlyph } from './StopGlyph';
 import { useInlineRename } from './useInlineRename';
+import { PalettesSection } from './PalettesSection';
 import type { StyleDef, StyleKind } from '../model/types';
 
 const KIND_ORDER: readonly StyleKind[] = [
@@ -234,6 +235,11 @@ export function StylesPanel() {
           </Fragment>
         );
       })}
+      {/* The map's palettes, filed by kind, under the styles they feed: mint,
+          rename, and edit a palette's colors here; what reaches outside this
+          map (the library, palette files) stays in the Manage palettes
+          dialog. */}
+      <PalettesSection />
     </section>
   );
 }

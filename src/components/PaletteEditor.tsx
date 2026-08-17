@@ -1,10 +1,23 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import { Cross2Icon, DragHandleDots2Icon, PlusIcon } from '@radix-ui/react-icons';
+import {
+  Cross2Icon,
+  DragHandleDots2Icon,
+  MoonIcon,
+  PlusIcon,
+  SunIcon,
+} from '@radix-ui/react-icons';
 import { useDoc } from '../state/store';
 import { useCustomLineColors } from '../state/customLineColors';
 import { useCustomPalettes } from '../state/customPalettes';
-import { FALLBACK_LINE_COLOR, type Palette, type PaletteSwatch } from '../model/palettes';
+import {
+  FALLBACK_LINE_COLOR,
+  recolorSwatch,
+  withAddedSwatch,
+  withoutSwatch,
+  type Palette,
+  type PaletteSwatch,
+} from '../model/palettes';
 import { legibleTextOn, normalizeHex } from '../util/color';
 import { ColorField } from './ColorField';
 import { MenuItem, SubMenu } from './Menu';
@@ -134,9 +147,12 @@ function EditableText({
  * here among the rest. The deletes hold the floor at one from below, and the
  * manager throws the palette away if the editor is left with it still empty.
  *
- * Day == night, invisibly: recoloring writes the day color and drops any
- * stored night, so a palette authored here never carries the split the file
- * format reserves for the future.
+ * The kinds edit differently: a LINE palette's rows carry one field and write
+ * day == night invisibly (recoloring drops any stored night), while a DESIGN
+ * palette's rows carry a sun/moon pair and recolor per half, `night` stored
+ * only while it differs from `color`. A MAP swatch rename routes through
+ * `renameMapPaletteSwatch` — refs are name-keyed, and the anonymous upsert
+ * cannot tell a rename from delete-plus-add.
  */
 export function PaletteEditor({
   source,
@@ -156,6 +172,7 @@ export function PaletteEditor({
   inlineEditRef: MutableRefObject<boolean>;
 }) {
   const mapPalettes = useDoc((s) => s.palettes);
+  const renameMapPaletteSwatch = useDoc((s) => s.renameMapPaletteSwatch);
   // The colors this MAP paints with that no palette of its own covers — the
   // same set the manager's custom colors row collects, offered here one at a
   // time. Always the map's, even while a LIBRARY palette is open, since that
@@ -227,22 +244,33 @@ export function PaletteEditor({
   const commitSwatchName = (i: number, raw: string) => {
     const next = raw.trim();
     if (!next || next === swatches[i].name) return;
-    withSwatches(swatches.map((s, j) => (j === i ? { ...s, name: next } : s)));
+    // Names are the swatch-ref key, so they stay unique within the palette,
+    // and a MAP rename goes through its own transform — the anonymous
+    // whole-palette upsert cannot tell a rename from delete-plus-add, and
+    // would drop the refs pointing at the old name.
+    if (swatches.some((s, j) => j !== i && s.name === next)) {
+      setError(`“${next}” is already one of this palette’s colors.`);
+      return;
+    }
+    if (source === 'map') renameMapPaletteSwatch(palette.name, i, next);
+    else withSwatches(swatches.map((s, j) => (j === i ? { ...s, name: next } : s)));
   };
 
-  // Day == night: the recolored swatch is rebuilt without its night color. A
-  // MAP recolor goes through the transform that also repaints the lines
-  // wearing the old color — that's what makes the map follow a picker drag
-  // live. A library palette has no lines to take along.
-  const recolor = (i: number, c: string) =>
+  // A MAP recolor goes through the transform so the map follows a picker drag
+  // live — everything LINKED to the swatch restamps in the same write; a
+  // library palette has no map to take along, so it rebuilds the swatch by the
+  // same shared rules. Line palettes write day == night (the rebuilt swatch
+  // drops its night); design palettes edit either half.
+  const design = palette.kind === 'design';
+  const recolor = (i: number, c: string, half: 'day' | 'night' = 'day') =>
     source === 'map'
-      ? recolorMapPaletteColor(palette.name, i, c)
-      : withSwatches(
-          swatches.map((s, j) => (j === i ? { name: s.name, color: normalizeHex(c) } : s)),
-        );
+      ? recolorMapPaletteColor(palette.name, i, c, half)
+      : withSwatches(swatches.map((s, j) => (j === i ? recolorSwatch(s, c, half, design) : s)));
 
+  // The list edits themselves are the model's, shared with the Styles tab's
+  // palette sections so the two surfaces name and place a new color alike.
   const addColor = (color: string = FALLBACK_LINE_COLOR) =>
-    withSwatches([...swatches, { name: String(swatches.length + 1), color: normalizeHex(color) }]);
+    withSwatches(withAddedSwatch(swatches, color));
 
   // What Add color offers: the map's custom colors, minus whatever this
   // palette already holds. That subtraction is the only reason the two sources
@@ -346,12 +374,33 @@ export function PaletteEditor({
             >
               {i + 1}
             </span>
-            <ColorField
-              value={s.color}
-              onChange={(c) => recolor(i, c)}
-              ariaLabel={`Color ${i + 1}`}
-              title="Edit color"
-            />
+            {design ? (
+              // A design swatch is a day/night pair — the same sun-then-moon
+              // vocabulary every themed-color row speaks (DayNightColorRow).
+              <>
+                <SunIcon aria-hidden="true" />
+                <ColorField
+                  value={s.color}
+                  onChange={(c) => recolor(i, c)}
+                  ariaLabel={`Color ${i + 1}`}
+                  title="Light mode color"
+                />
+                <MoonIcon aria-hidden="true" />
+                <ColorField
+                  value={s.night ?? s.color}
+                  onChange={(c) => recolor(i, c, 'night')}
+                  ariaLabel={`Dark mode color ${i + 1}`}
+                  title="Dark mode color"
+                />
+              </>
+            ) : (
+              <ColorField
+                value={s.color}
+                onChange={(c) => recolor(i, c)}
+                ariaLabel={`Color ${i + 1}`}
+                title="Edit color"
+              />
+            )}
             <EditableText
               tag="span"
               className="palette-color-name"
@@ -379,7 +428,7 @@ export function PaletteEditor({
                 `Confirm deleting color ${i + 1}`,
                 'Will delete this color from the palette',
                 <Cross2Icon />,
-                () => withSwatches(swatches.filter((_, j) => j !== i)),
+                () => withSwatches(withoutSwatch(swatches, i)),
               )
             )}
           </div>

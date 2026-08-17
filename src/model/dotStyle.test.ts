@@ -330,6 +330,29 @@ describe('dotStylesEqual', () => {
     expect(dotStylesEqual(style({ fill: 'none' }), style({ fill: 'line' }))).toBe(false);
   });
 
+  // The swatch refs fold into their color comparisons: a link is part of what
+  // makes two styles the same, compared by value (never object identity), and
+  // absent ≡ absent so every preset and legacy style stays equal to itself.
+  it('folds the swatch refs into the color comparisons', () => {
+    const ref = { palette: 'grays', swatch: 'Border' };
+    const linked = style({ fill: { day: '#333333', night: '#bbbbbb' }, fillRef: ref });
+    expect(dotStylesEqual(linked, style({ fill: { day: '#333333', night: '#bbbbbb' } }))).toBe(
+      false,
+    );
+    expect(
+      dotStylesEqual(
+        linked,
+        style({ fill: { day: '#333333', night: '#bbbbbb' }, fillRef: { ...ref } }),
+      ),
+    ).toBe(true);
+    expect(
+      dotStylesEqual(
+        style({ strokeColorRef: ref, strokeColor: { day: '#333333', night: '#bbbbbb' } }),
+        style({ strokeColor: { day: '#333333', night: '#bbbbbb' } }),
+      ),
+    ).toBe(false);
+  });
+
   it('compares the nested day/night sides', () => {
     expect(
       dotStylesEqual(style({ fill: { day: '#000000', night: '#ffffff' } }), style({ fill: K })),

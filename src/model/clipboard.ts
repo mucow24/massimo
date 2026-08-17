@@ -4,11 +4,13 @@ import type {
   RouteBullet,
   RouteBulletShape,
   SvgImage,
+  SwatchRef,
   TextLabel,
   TextLabelAlign,
   TextLabelWeight,
 } from './types';
 import { isAllowedImageHref } from './svgImport';
+import { isSwatchRef } from './swatchRef';
 // Paste is a THIRD gate on these unions, behind the two load paths' sanitizers.
 // It judges by the model's own ladders rather than re-spelling them, so a value
 // the app can produce can never be one paste silently drops.
@@ -205,6 +207,10 @@ function parseTextLabelData(raw: unknown): Omit<TextLabel, 'id'> | null {
   // Optional style tag. Only the type is checked here — whether the id
   // resolves in the RECEIVING doc is the paste transform's job (addTextLabelWith).
   if (d.styleId !== undefined && typeof d.styleId !== 'string') return null;
+  // Optional swatch ref, same contract: shape here, resolution in the
+  // receiving doc (the paste transform reconciles — a same-named palette
+  // re-links, anything else degrades to the plain colors).
+  if (d.colorRef !== undefined && !isSwatchRef(d.colorRef)) return null;
   const out: Omit<TextLabel, 'id'> = {
     x: d.x,
     y: d.y,
@@ -222,6 +228,7 @@ function parseTextLabelData(raw: unknown): Omit<TextLabel, 'id'> | null {
   if (d.leading !== undefined) out.leading = d.leading as number;
   if (d.tracking !== undefined) out.tracking = d.tracking as number;
   if (d.styleId !== undefined) out.styleId = d.styleId as string;
+  if (d.colorRef !== undefined) out.colorRef = d.colorRef as SwatchRef;
   return out;
 }
 
@@ -253,6 +260,9 @@ function parsePolygonData(raw: unknown): Omit<Polygon, 'id'> | null {
   // Optional style tag. Only the type is checked here — whether the id
   // resolves in the RECEIVING doc is the paste transform's job (addPolygonWith).
   if (d.styleId !== undefined && typeof d.styleId !== 'string') return null;
+  // Optional swatch refs — shape here, resolution at paste (see textLabel).
+  if (d.fillRef !== undefined && !isSwatchRef(d.fillRef)) return null;
+  if (d.strokeRef !== undefined && !isSwatchRef(d.strokeRef)) return null;
   const out: Omit<Polygon, 'id'> = {
     vertices,
     fill: d.fill,
@@ -263,6 +273,8 @@ function parsePolygonData(raw: unknown): Omit<Polygon, 'id'> | null {
   };
   if (d.styleId !== undefined) out.styleId = d.styleId as string;
   if (d.locked !== undefined) out.locked = d.locked as boolean;
+  if (d.fillRef !== undefined) out.fillRef = d.fillRef as SwatchRef;
+  if (d.strokeRef !== undefined) out.strokeRef = d.strokeRef as SwatchRef;
   // curveRadius and closed ride along like the other optional fields. Both are
   // already validated finite/boolean above; `updatePolygon` re-clamps a later
   // curveRadius edit at its lower bound, so no clamp is needed at paste time.

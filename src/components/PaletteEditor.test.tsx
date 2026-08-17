@@ -40,6 +40,14 @@ const mapSwatches = () => useDoc.getState().palettes.find((p) => p.name === 'frr
 const librarySwatches = () =>
   useCustomPalettes.getState().palettes.find((p) => p.name === 'frrf')?.swatches;
 
+const DESIGN: Palette = {
+  name: 'Design grays',
+  kind: 'design',
+  swatches: [{ name: 'Border', color: '#333333', night: '#bbbbbb' }],
+};
+const designSwatches = () =>
+  useDoc.getState().palettes.find((p) => p.name === 'Design grays')?.swatches;
+
 beforeEach(() => {
   localStorage.clear();
   onBack.mockReset();
@@ -88,21 +96,21 @@ describe('<PaletteEditor /> rows', () => {
   });
 
   // The map paints from its palettes, so recoloring a swatch takes the lines
-  // wearing that color along — matched the way the picker matches
-  // (normalizeHex), and live per picker gesture.
-  it('recoloring a map swatch repaints the lines wearing that color', async () => {
+  // LINKED to it (colorRef) along, live per picker gesture. A hand-picked
+  // line stays put even on the same hex — the sweep is ref-keyed.
+  it('recoloring a map swatch repaints the lines linked to it', async () => {
     const user = userEvent.setup();
     useDoc.setState({
       ...useDoc.getState(),
       lines: {
-        L: makeLine({ id: 'L', color: '#C1272D' }),
-        M: makeLine({ id: 'M', color: '#123456' }),
+        L: makeLine({ id: 'L', color: '#c1272d', colorRef: { palette: 'frrf', swatch: 'Red' } }),
+        M: makeLine({ id: 'M', color: '#c1272d' }),
       },
     });
     renderEditor('map', 'frrf');
     await setColorField(user, 'Color 1', '#00ff00');
     expect(useDoc.getState().lines.L.color).toBe('#00ff00');
-    expect(useDoc.getState().lines.M.color).toBe('#123456');
+    expect(useDoc.getState().lines.M.color).toBe('#c1272d');
   });
 
   // Add color ends the description's line rather than spanning the list: the
@@ -123,6 +131,34 @@ describe('<PaletteEditor /> rows', () => {
     await setColorField(user, 'Color 1', '#123456');
     expect(librarySwatches()?.[0]).toEqual({ name: 'Red', color: '#123456' });
     expect(mapSwatches()).toEqual(FRRF.swatches);
+  });
+
+  it('a line palette row carries no night field', () => {
+    renderEditor('map', 'frrf');
+    expect(screen.queryByLabelText('Dark mode color 1')).toBeNull();
+  });
+
+  // A design swatch is a day/night pair: two fields, edited independently, the
+  // night half stored only while it differs from the day one.
+  it('a design row edits its day and night halves independently', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({ ...useDoc.getState(), palettes: [DESIGN] });
+    renderEditor('map', 'Design grays');
+    await setColorField(user, 'Color 1', '#444444');
+    expect(designSwatches()).toEqual([{ name: 'Border', color: '#444444', night: '#bbbbbb' }]);
+    // Land the night on the day color: the pair collapses back to one value.
+    await setColorField(user, 'Dark mode color 1', '#444444');
+    expect(designSwatches()).toEqual([{ name: 'Border', color: '#444444' }]);
+  });
+
+  it('a LIBRARY design palette recolors by the same half rules', async () => {
+    const user = userEvent.setup();
+    useCustomPalettes.setState({ palettes: [DESIGN], starred: [], sort: 'name' });
+    renderEditor('library', 'Design grays');
+    await setColorField(user, 'Dark mode color 1', '#999999');
+    expect(useCustomPalettes.getState().palettes[0].swatches).toEqual([
+      { name: 'Border', color: '#333333', night: '#999999' },
+    ]);
   });
 
   it('renames a color on double-click, and an empty draft reverts', async () => {

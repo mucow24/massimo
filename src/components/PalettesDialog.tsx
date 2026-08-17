@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
+import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Toggle from '@radix-ui/react-toggle';
 import {
   ArrowLeftIcon,
@@ -35,12 +36,18 @@ import { normalizeHex } from '../util/color';
 import { markHistory, redo, undo } from '../state/history';
 import { pointerLost } from './canvas/dragGesture';
 import { downloadBlob, sanitizeBasename } from '../export/exportCanvas';
+import { MenuItem } from './Menu';
 import { DialogSortSelect, IconButton, RowCommands, useSpeedBump } from './dialogRow';
 import { rowShiftStyle, useRowDragReorder } from './useRowDragReorder';
 import { PaletteEditor, type PaletteSource } from './PaletteEditor';
 
-/** The map column's fixed row height — the drag hook divides by it (CSS pins it). */
-export const PALETTE_ROW_HEIGHT = 44;
+/**
+ * The map column's fixed row height — the drag hook divides by it (CSS pins it).
+ * One height for BOTH palette kinds: a design row's stacked day/night pair is
+ * what sets it, and a line row reserves the same band, because a per-kind
+ * height would put the drag preview's arithmetic out by a row.
+ */
+export const PALETTE_ROW_HEIGHT = 56;
 
 // The picker's wording, one entry per PALETTE_SORTS rung — a Record over the
 // union, so a mode added to PaletteSort fails to compile until it is named here.
@@ -70,16 +77,48 @@ const CUSTOM_COLORS_EXPORT_NAME = 'Custom colors';
 const swatchesFromColors = (colors: readonly string[]): PaletteSwatch[] =>
   colors.map((c, i) => ({ name: String(i + 1), color: normalizeHex(c) }));
 
-/** A palette's colors as a strip — how you recognise one without reading it. */
+/**
+ * A palette's colors as a strip — how you recognise one without reading it, and
+ * how you tell the two KINDS apart before reading anything at all. The SHAPE
+ * carries that: a LINE palette is a row of round color bullets (its swatches
+ * are line identities, one color each), while a DESIGN palette keeps the
+ * rectangular bars, stacked — every swatch's day color over its night one. A
+ * collapsed night means night == day, so that pair shows the same color twice,
+ * which is exactly what the map paints in both themes.
+ *
+ * One direct child per swatch either way, so "how many colors is this?" reads
+ * the same from both, and the rows keep a single fixed height (the drag hook's
+ * contract) whichever kind fills them.
+ */
 function Strip({ palette }: { palette: Palette }) {
+  const design = palette.kind === 'design';
   return (
-    <div className="palette-strip" aria-hidden="true">
-      {palette.swatches.map((s, i) => (
-        <span key={i} style={{ background: s.color }} />
-      ))}
+    <div className={'palette-strip' + (design ? ' design' : '')} aria-hidden="true">
+      {/* The swatch's own name on hover — the one place the strip can say which
+          color is which without the editor. An unnamed swatch offers no
+          tooltip at all rather than an empty one. */}
+      {palette.swatches.map((s, i) =>
+        design ? (
+          <span key={i} className="palette-dot-pair" title={s.name || undefined}>
+            <span className="palette-bar" style={{ background: s.color }} />
+            <span className="palette-bar" style={{ background: s.night ?? s.color }} />
+          </span>
+        ) : (
+          <span
+            key={i}
+            className="palette-dot"
+            title={s.name || undefined}
+            style={{ background: s.color }}
+          />
+        ),
+      )}
     </div>
   );
 }
+
+/** A quiet "design" tag after the palette's name — line palettes go unmarked. */
+const KindBadge = ({ palette }: { palette: Palette }) =>
+  palette.kind === 'design' ? <span className="palette-kind-badge">design</span> : null;
 
 /** A star as it appears in the map library: state first, command on approach. */
 function StarToggle({
@@ -247,6 +286,7 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
       name: result.name,
       swatches: result.swatches,
       ...(result.description !== undefined && { description: result.description }),
+      ...(result.kind !== undefined && { kind: result.kind }),
     };
     // A load is the one place a name collision can't be shown before the fact —
     // the name arrives with the file, and it lands in BOTH destinations. So it
@@ -386,15 +426,16 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
    * colors, so this one lands in the map alone, provisionally, and reaches the
    * library the ordinary way once the editor has given it something to hold.
    */
-  const createNew = (colors: readonly string[]) => {
+  const createNew = (colors: readonly string[], kind?: 'design') => {
     const taken = new Set<string>([
       ...BUILTIN_PALETTE_NAMES,
       ...custom.map((p) => p.name),
       ...mapPalettes.map((p) => p.name),
     ]);
     const palette: Palette = {
-      name: freshPaletteName(taken),
+      name: freshPaletteName(taken, kind === 'design' ? 'New design palette' : undefined),
       swatches: swatchesFromColors(colors),
+      ...(kind !== undefined && { kind }),
     };
     // Never gated here: the library refuses a palette with no colors on its
     // own, so a from-empty mint lands in the map alone by that refusal rather
@@ -511,18 +552,37 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                   <div className="dialog-colhead">
                     <h3>Library</h3>
                     <div className="dialog-colhead-controls">
-                      {/* One thing to mint from — an empty palette — so this
-                        is a button, not a menu holding a single item. The map's
+                      {/* ONE command with two answers: the kinds differ in what
+                        they are FOR, not in how you mint one, so they share a
+                        button and the menu says which is which. The map's
                         custom colors are seeded from the row that holds them,
                         where they can be seen. */}
-                      <button
-                        type="button"
-                        className="dialog-colhead-btn"
-                        title="Create an empty palette in this map"
-                        onClick={() => createNew([])}
-                      >
-                        New…
-                      </button>
+                      <Dropdown.Root modal={false}>
+                        <Dropdown.Trigger asChild>
+                          <button
+                            type="button"
+                            className="dialog-colhead-btn"
+                            title="Create an empty palette in this map"
+                          >
+                            New…
+                          </button>
+                        </Dropdown.Trigger>
+                        {/* Non-portalled, like every menu in the app: inside
+                            `.app` for the design tokens, and inside the dialog
+                            for its focus trap. */}
+                        <Dropdown.Content
+                          className="menu-panel"
+                          align="start"
+                          sideOffset={4}
+                          collisionPadding={8}
+                          loop
+                        >
+                          <MenuItem onClick={() => createNew([])}>New line color palette</MenuItem>
+                          <MenuItem onClick={() => createNew([], 'design')}>
+                            New design palette
+                          </MenuItem>
+                        </Dropdown.Content>
+                      </Dropdown.Root>
                       <button
                         type="button"
                         className="dialog-colhead-btn"
@@ -567,7 +627,10 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                             onToggle={() => setStarred(p.name, !p.starred)}
                           />
                           <div className="dialog-row-body">
-                            <strong>{p.name}</strong>
+                            <strong>
+                              {p.name}
+                              <KindBadge palette={p} />
+                            </strong>
                             <Strip palette={p} />
                           </div>
                           <div className="dialog-row-actions">
@@ -717,7 +780,10 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                             </IconButton>
                           )}
                           <div className="dialog-row-body">
-                            <strong>{p.name}</strong>
+                            <strong>
+                              {p.name}
+                              <KindBadge palette={p} />
+                            </strong>
                             <Strip palette={p} />
                           </div>
                           <div className="dialog-row-actions">

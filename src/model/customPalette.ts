@@ -1,8 +1,15 @@
-import type { Palette, PaletteSwatch } from './palettes';
+import { uniqueSwatchNames, type Palette, type PaletteSwatch } from './palettes';
 import { normalizeHex, parseHexA } from '../util/color';
 
 export type ParsedCustomPalette =
-  | { ok: true; name: string; swatches: PaletteSwatch[]; description?: string }
+  | {
+      ok: true;
+      name: string;
+      swatches: PaletteSwatch[];
+      description?: string;
+      /** Present only for a design palette, mirroring `Palette.kind`. */
+      kind?: 'design';
+    }
   | { ok: false; error: string };
 
 const HEX6 = /^#[0-9a-fA-F]{6}$/;
@@ -14,8 +21,12 @@ const HEX6OR8 = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/;
  * The massimo-palette format — ours, what export writes:
  *
  *   { "format": "massimo-palette", "version": 1, "name": "My palette",
- *     "description": "…", "colors": [ { "name": "Line 1",
+ *     "kind": "line", "description": "…", "colors": [ { "name": "Line 1",
  *     "day": "#C1272DFF", "night": "#C1272DFF" } ] }
+ *
+ * `kind` is `"line"` or `"design"` (see Palette.kind); in the file it is
+ * always spelled out, in storage only `'design'` is kept — anything else,
+ * including files predating the field, reads as a line palette.
  *
  * Colors are day/night pairs (both `#RRGGBB` or `#RRGGBBAA`); in storage the
  * night color is kept only when it differs from the day one, and both are
@@ -48,6 +59,7 @@ export function parseCustomPalette(json: string): ParsedCustomPalette {
     name?: unknown;
     description?: unknown;
     colors?: unknown;
+    kind?: unknown;
   };
   if ('format' in obj) {
     if (obj.format !== 'massimo-palette') {
@@ -62,6 +74,7 @@ function parseMassimoPalette(obj: {
   name?: unknown;
   description?: unknown;
   colors?: unknown;
+  kind?: unknown;
 }): ParsedCustomPalette {
   if (typeof obj.name !== 'string' || obj.name.trim().length === 0) {
     return { ok: false, error: 'Missing a palette `name`' };
@@ -94,8 +107,11 @@ function parseMassimoPalette(obj: {
   return {
     ok: true,
     name: obj.name.trim(),
-    swatches,
+    // Names are the swatch-ref key: a file naming two colors alike is cleaned
+    // here, before the manager ever shows it.
+    swatches: uniqueSwatchNames(swatches),
     ...(description !== undefined && { description }),
+    ...(obj.kind === 'design' && { kind: 'design' as const }),
   };
 }
 
@@ -116,7 +132,7 @@ function parseLegacyPalette(obj: { name?: unknown; colors?: unknown }): ParsedCu
   if (swatches.length === 0) {
     return { ok: false, error: 'No valid `human` colors found' };
   }
-  return { ok: true, name: obj.name.trim(), swatches };
+  return { ok: true, name: obj.name.trim(), swatches: uniqueSwatchNames(swatches) };
 }
 
 // The file is the interchange form, so it is explicit where storage is terse:
@@ -131,14 +147,16 @@ const fileHex = (hex: string): string => {
  * Write a palette out in the massimo-palette format `parseCustomPalette`
  * reads, so an exported palette re-imports as itself (modulo hex
  * canonicalization). The night color is backfilled from the day one when the
- * palette stores none — the file always spells out the pair.
+ * palette stores none, and the kind is always named — the file spells out
+ * what storage keeps terse.
  */
-export function serializeCustomPalette({ name, swatches, description }: Palette): string {
+export function serializeCustomPalette({ name, swatches, description, kind }: Palette): string {
   return JSON.stringify(
     {
       format: 'massimo-palette',
       version: 1,
       name,
+      kind: kind ?? 'line',
       ...(description !== undefined && { description }),
       colors: swatches.map((s) => ({
         name: s.name,

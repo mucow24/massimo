@@ -1766,6 +1766,78 @@ button.field-select > :not(.field-select-caret) {
 .field-select-item.field-select-action[data-highlighted] {
   color: var(--text);
 }
+/* Palette-color dropdown (PaletteColorRow): grouped design-swatch rows whose
+   NAME is the point — the split swatch is the recognizer beside it. */
+.field-select-group-label {
+  padding: 5px 12px 2px;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+.palette-split-swatch {
+  display: inline-flex;
+  width: 22px;
+  height: 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  overflow: hidden;
+  vertical-align: -2px;
+  margin-right: 7px;
+  flex: none;
+}
+.palette-split-swatch > span {
+  flex: 1;
+}
+.field-select-item.palette-color-item {
+  display: flex;
+  align-items: center;
+}
+.field-select.palette-color-trigger > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+/* The palette's own revert: the override dot's twin — same badge, same revert
+   glyph — in the ACCENT color instead of the danger red, and standing IN the
+   row rather than in its gutter. Both say "this differs from what it links to,
+   click to put it back", but the gutter is the STYLE's column (the red dots
+   line up down it), so the palette's revert leaves it and sits against the sun
+   instead, inside the run of controls it actually acts on. */
+/* The badge's slot, held open whether or not the badge is in it: it appears
+   the moment the color diverges and goes again on Reset, and the pickers
+   beside it must not slide sideways under the cursor as that happens. Sized
+   to the badge itself (.override-dot is 16px). */
+.palette-revert-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  flex: none;
+}
+.override-dot.palette-dot-revert {
+  position: static;
+  transform: none;
+  flex: none;
+  background: var(--accent);
+}
+.override-dot.palette-dot-revert:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 82%, #000);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+/* A row's bare glyphs (the sun and moon marking the two halves) are fixed
+   marks, not flexible space: without this they are the first thing to give
+   when a row grows a control — the revert badge above pushed them narrower
+   and the whole pair started reading smaller. */
+.row > svg {
+  flex: none;
+}
+/* Sync-to-palette rides the row's far edge, where sync-to-STYLE already sits
+   on the style row above it: the two do the same thing one level apart, so
+   they line up in one column rather than landing wherever their own row's
+   controls happen to end. */
+.palette-sync-btn {
+  margin-left: auto;
+}
 
 .tool-group {
   display: inline-flex;
@@ -2287,6 +2359,30 @@ button.field-select > :not(.field-select-caret) {
   gap: 6px;
   padding: 4px 12px;
   cursor: pointer;
+}
+/* The Styles tab's Palettes section: per-palette sub-headers sit quieter than
+   the kind headers (not sticky — they'd stack under "Palettes"), and swatch
+   rows lead with their day(/night) fields. */
+.list-header.palettes-section-palette {
+  position: static;
+  background: transparent;
+  border-bottom: none;
+  padding-left: 20px;
+}
+.palettes-section-row {
+  padding-left: 28px;
+}
+/* The sun/moon markers before a design row's two fields — muted and out of the
+   way, the same weight they carry in every other themed-color row. */
+.palettes-section-row > svg {
+  color: var(--text-muted);
+  flex: none;
+  margin-right: -4px;
+}
+.palettes-section-empty {
+  padding: 8px 12px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
 }
 .list-row:hover {
   background: var(--row-hover);
@@ -2979,19 +3075,95 @@ button.dialog-sort {
   height: min(500px, 80vh);
 }
 /* The strip IS the palette: you recognise one by its colors long before its
-   name. Swatches share the row's width rather than tiling at a fixed size, so a
-   3-color palette and a 19-color one both read as one band. The 2px gap is what
-   keeps two near-identical neighbours from reading as one wide swatch — a
-   hairline border round each would be too much ink at this height. */
+   name — and by their SHAPE, which is what tells the two kinds apart at a
+   glance. A LINE palette tiles round bullets, a DESIGN palette stacked
+   rectangles. Both hug the left at the same swatch width, so a 3-color palette
+   and a 19-color one read alike; where they differ is what happens when the
+   colors run out of room — bullets keep their size and overflow (faded below),
+   bars shrink to share what is left. */
 .palette-strip {
   display: flex;
-  gap: 2px;
-  height: 12px;
+  align-items: center;
+  gap: 4px;
+  /* The DESIGN pair's height, held by both kinds: a line row and a design row
+     must stand exactly as tall (the drag hook divides by ONE row height), so
+     the shorter kind reserves the band rather than closing it up. EVEN, so the
+     pair's two halves split it on a whole pixel and meet without a seam. */
+  height: 22px;
+  /* A LINE palette's bullets hold their size rather than squeezing oval, so a
+     long one runs past the column. Clipped, never wrapped — wrapping would
+     break the pinned row height. */
+  overflow: hidden;
 }
-.palette-strip span {
+/* Where a line palette DOES outrun its column (the 19-color built-ins do), the
+   tail fades instead of ending on a half-bullet — "there is more here" rather
+   than a cut. The gradient only bites once the bullets reach that far, so a
+   short palette is untouched. Design strips are excluded: their bars SHRINK to
+   fit instead of overflowing, so a crowded one ends exactly at the edge with
+   nothing cut off, and fading it would claim otherwise. */
+.palette-strip:not(.design) {
+  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+}
+/* A LINE palette's swatch: a round bullet, at a fixed size and left-justified.
+   Round is the kind's tell — one color, one identity, like the route bullet a
+   line wears on the map — so it is sized to read as a bullet rather than as a
+   dot, while still sitting clear of the band's edges. */
+.palette-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex: none;
+}
+/* A DESIGN palette keeps the rectangular swatch it always had — the shapes are
+   what tell the kinds apart, so only their STACKING is new. The tighter gap is
+   what keeps two near-identical neighbours from reading as one wide swatch. */
+.palette-strip.design {
+  gap: 2px;
+}
+/* One swatch of a design palette: its day color over its night one, the two
+   TOUCHING, so a swatch reads as one bar split across the themes rather than
+   as two colors that happen to be near each other. The pair STRETCHES to the
+   strip's band (the strip centers its children, so without this the column has
+   no height for its bars to divide and collapses flat); the two bars then
+   split that band between them, and the rounding is carried by the pair's
+   OUTER corners alone. */
+.palette-dot-pair {
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  /* Capped at the bullet's width: a three-color palette shouldn't stretch into
+     three great slabs. Still shrinks below it when a long palette crowds. */
   flex: 1;
+  max-width: 14px;
   min-width: 2px;
-  border-radius: 2px;
+  /* A hairline round the whole swatch, so a pale color still reads as a shape
+     against the row. Mid-grey holds against both the light and the dark UI, so
+     it needs no theme of its own. Drawn INSIDE (negative offset) — the strip
+     clips its overflow, which would otherwise eat the top and bottom edges. */
+  outline: 0.5px solid #808080;
+  outline-offset: -0.5px;
+}
+.palette-bar {
+  flex: 1;
+}
+.palette-bar:first-child {
+  border-radius: 2px 2px 0 0;
+}
+.palette-bar:last-child {
+  border-radius: 0 0 2px 2px;
+}
+/* The quiet "design" tag after a design palette's name in the manager rows —
+   the kind is load-bearing (it decides which pickers offer the swatches), so
+   it reads as a label, not decoration. */
+.palette-kind-badge {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  vertical-align: 1px;
 }
 .dialog-row-actions button:disabled {
   opacity: 0.4;
@@ -3016,8 +3188,11 @@ button.dialog-sort {
    The height is pinned (not content-sized) as the drag hook's row pitch, and
    it's ONE height for both columns — the map rows' drag handle fits a 24px
    slot like every other command, so nothing forces them taller. */
+/* Tall enough for a design palette's stacked day/night pair, and the SAME
+   height for a line palette's single row of bullets — the drag hook divides by
+   one row height, so the two kinds cannot differ (PALETTE_ROW_HEIGHT). */
 .palette-row {
-  height: 44px;
+  height: 56px;
   padding-top: 6px;
   padding-bottom: 6px;
 }
@@ -3201,6 +3376,13 @@ button.dialog-sort {
   height: 40px;
   padding: 0 12px;
   border-bottom: 1px solid var(--border-soft);
+}
+/* A design row's sun/moon glyphs — the same muted markers DayNightColorRow
+   puts before its two swatches. */
+.palette-editor-row > svg {
+  color: var(--text-muted);
+  flex: none;
+  margin-right: -4px;
 }
 /* Rows slide aside only WHILE a drag is live — on the drop the class leaves
    with the transforms, so the reordered list snaps into place in one go
@@ -3388,9 +3570,13 @@ input.palette-color-name {
 }
 
 /* Styles panel (sidebar): the click-to-rename name field. Button shows the
-   name in row typography; the input takes its place while editing (MapNameField
-   pattern). `.grow` supplies the flex from the .list-row recipe. */
-.list-row .style-name {
+   name in the typography of whatever it sits in — a row, or a HEADER, where a
+   palette's own name is editable the same way — and the input takes its place
+   while editing (MapNameField pattern). `.grow` supplies the flex from the
+   .list-row / .list-header recipe. Both contexts are named: a bare `.style-name`
+   would leave it wearing the browser's default button chrome. */
+.list-row .style-name,
+.list-header .style-name {
   background: transparent;
   border: 0;
   padding: 0;
@@ -3399,10 +3585,12 @@ input.palette-color-name {
   text-align: left;
   cursor: text;
 }
-.list-row .style-name:hover {
+.list-row .style-name:hover,
+.list-header .style-name:hover {
   text-decoration: underline dotted;
 }
-.list-row .style-name-input {
+.list-row .style-name-input,
+.list-header .style-name-input {
   font: inherit;
   min-width: 0;
   padding: 1px 4px;

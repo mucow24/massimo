@@ -162,6 +162,7 @@ test.describe('palette manager', () => {
     await seedAndOpen(page, twoStop);
     await openManager(page);
     await page.getByRole('button', { name: 'New…' }).click();
+    await page.getByRole('menuitem', { name: 'New line color palette' }).click();
 
     // The fresh palette opens naming itself; keep the minted name.
     await page.getByRole('textbox', { name: 'Palette name' }).press('Enter');

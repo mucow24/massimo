@@ -13,6 +13,7 @@ import { STOP_DOT_RADIUS } from '../geometry/orientation';
 import { legibleTextOn } from '../util/color';
 import { clampField } from '../util/grid';
 import { resolveDayNight, sentinelOrDayNightEqual } from './dayNightColor';
+import { swatchRefsEqual } from './swatchRef';
 
 // Every DotBaseShape, in the order the Styles panel's shape chips render. THE
 // ladder: the chips read their set from here and the file-import gate judges by
@@ -530,11 +531,30 @@ export function canonicalDotStyle(s: DotStyle): DotStyle {
   // Default-collapse: only the ON state is stored (a `false` would be noise in
   // every preset and save), which is why dotStylesEqual reads absent as off.
   if (s.serviceCodeFirstLetterOnly) out.serviceCodeFirstLetterOnly = true;
+  // The swatch refs ride only while their field holds a real pair — a ref
+  // beside a sentinel describes nothing and is dropped here.
+  if (s.fillRef !== undefined && typeof out.fill === 'object') out.fillRef = s.fillRef;
+  if (s.strokeColorRef !== undefined && typeof out.strokeColor === 'object') {
+    out.strokeColorRef = s.strokeColorRef;
+  }
+  if (s.serviceCodeColorRef !== undefined && typeof out.serviceCodeColor === 'object') {
+    out.serviceCodeColorRef = s.serviceCodeColorRef;
+  }
   return out;
 }
 
 // Deep equality over canonical style objects — the `===` of the style world,
-// used wherever transforms drop a field that lands back on a default.
+// used wherever transforms drop a field that lands back on a default. The
+// swatch refs FOLD IN (absent ≡ absent, else value-wise): a link is part of
+// what makes two styles the same, so a def/shadow ref divergence reads as a
+// real difference and every ref-less preset stays equal to itself.
+//
+// Values are compared even when both sides name the SAME swatch — deliberately
+// unlike `styleFieldEqual`, which stops at the ref so a locally-recolored link
+// doesn't dirty its style. This equality also decides whether an override may
+// be DROPPED (setDotStyle's clears, the tagged⇒matches early-outs), and two
+// dots that link alike but paint differently are not interchangeable there:
+// forgetting one would repaint the stop.
 export function dotStylesEqual(a: DotStyle, b: DotStyle): boolean {
   return (
     a.shape === b.shape &&
@@ -551,6 +571,9 @@ export function dotStylesEqual(a: DotStyle, b: DotStyle): boolean {
     // Absent means off (the canonical form drops a `false`), so a raw legacy
     // dot still value-matches the factory presets during the migration bakes —
     // the same absent-as-default rule strokeAlign needs above.
-    (a.serviceCodeFirstLetterOnly ?? false) === (b.serviceCodeFirstLetterOnly ?? false)
+    (a.serviceCodeFirstLetterOnly ?? false) === (b.serviceCodeFirstLetterOnly ?? false) &&
+    swatchRefsEqual(a.fillRef, b.fillRef) &&
+    swatchRefsEqual(a.strokeColorRef, b.strokeColorRef) &&
+    swatchRefsEqual(a.serviceCodeColorRef, b.serviceCodeColorRef)
   );
 }

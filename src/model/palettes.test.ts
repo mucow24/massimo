@@ -11,6 +11,9 @@ import {
   libraryPalettes,
   PALETTE_SORTS,
   paletteContentEqual,
+  withAddedSwatch,
+  withDuplicatedSwatch,
+  withoutSwatch,
   type Palette,
 } from './palettes';
 
@@ -28,6 +31,15 @@ const FRRF: Palette = {
   swatches: [
     { name: '1', color: '#c1272d' },
     { name: '2', color: '#0061a8' },
+  ],
+};
+
+const DESIGN: Palette = {
+  name: 'Design grays',
+  kind: 'design',
+  swatches: [
+    { name: 'Border', color: '#333333', night: '#bbbbbb' },
+    { name: 'Wash', color: '#eeeeee' },
   ],
 };
 
@@ -92,6 +104,13 @@ describe('paletteContentEqual', () => {
   it('a differing swatch count breaks equality', () => {
     expect(paletteContentEqual(base, { ...base, swatches: [base.swatches[0]] })).toBe(false);
   });
+
+  it('a differing kind breaks equality — a design palette is not its line twin', () => {
+    expect(paletteContentEqual(base, { ...base, kind: 'design' })).toBe(false);
+    expect(paletteContentEqual({ ...base, kind: 'design' }, { ...base, kind: 'design' })).toBe(
+      true,
+    );
+  });
 });
 
 describe('copyPalette', () => {
@@ -114,6 +133,69 @@ describe('copyPalette', () => {
 
   it('omits the description key entirely when absent', () => {
     expect('description' in copyPalette(FRRF)).toBe(false);
+  });
+
+  it('carries the design kind, and omits the key when absent', () => {
+    expect(copyPalette(DESIGN)).toEqual(DESIGN);
+    expect('kind' in copyPalette(FRRF)).toBe(false);
+  });
+
+  // Swatch names are the swatch-ref KEY, so a duplicate makes a ref ambiguous
+  // (it would resolve to whichever came first) and collides the React keys the
+  // sidebar rows and the picker's menu items are built on. This is the one
+  // choke point every door into a doc or the library goes through — the map
+  // upsert, the library add, the manager's copies — so the rule is enforced
+  // here rather than at each of them. A palette whose names already stand
+  // alone passes through untouched.
+  it('uniquifies duplicate and blank swatch names', () => {
+    expect(
+      copyPalette({
+        name: 'p',
+        swatches: [
+          { name: 'Red', color: '#111111' },
+          { name: 'Red', color: '#222222' },
+          { name: '', color: '#333333' },
+        ],
+      }).swatches.map((s) => s.name),
+    ).toEqual(['Red', 'Red 2', '3']);
+    expect(copyPalette(FRRF).swatches.map((s) => s.name)).toEqual(['1', '2']);
+  });
+});
+
+// The three list edits both palette surfaces share. They live in the model so
+// the manager's editor and the Styles tab's sections cannot disagree about
+// what a new color is called or where a copy lands.
+describe('editing a swatch list', () => {
+  const RED = { name: 'Red', color: '#c1272d' };
+  const BLUE = { name: 'Blue', color: '#0061a8', night: '#00335c' };
+
+  it('adds a color named by the first free position', () => {
+    expect(withAddedSwatch([RED, BLUE])).toEqual([RED, BLUE, { name: '3', color: '#888888' }]);
+    expect(withAddedSwatch([RED], '#00FF00')[1]).toEqual({ name: '2', color: '#00ff00' });
+  });
+
+  // "2" is taken, so the appended blank counts PAST it rather than colliding.
+  it('counts past a position name already in use', () => {
+    expect(withAddedSwatch([RED, { name: '2', color: '#111111' }])[2].name).toBe('3');
+  });
+
+  it('duplicates in place, both halves, under a counted-up name', () => {
+    const once = withDuplicatedSwatch([RED, BLUE], 1);
+    expect(once).toEqual([RED, BLUE, { ...BLUE, name: 'Blue copy' }]);
+    // The copy claims the free name; the ORIGINAL keeps its own, or a rename
+    // would move it out from under anything linked to it.
+    const twice = withDuplicatedSwatch(once, 1);
+    expect(twice.map((s) => s.name)).toEqual(['Red', 'Blue', 'Blue copy 2', 'Blue copy']);
+  });
+
+  it('duplicating an index that is not there changes nothing', () => {
+    const list = [RED];
+    expect(withDuplicatedSwatch(list, 9)).toBe(list);
+  });
+
+  it('removes by index, leaving the floor of one to its callers', () => {
+    expect(withoutSwatch([RED, BLUE], 0)).toEqual([BLUE]);
+    expect(withoutSwatch([RED], 0)).toEqual([]);
   });
 });
 
@@ -215,6 +297,13 @@ describe('cyclingColors', () => {
     expect(colors.slice(0, 2)).toEqual(['#c1272d', '#0061a8']);
     expect(colors).toHaveLength(2 + 11);
   });
+
+  // Design palettes hold decoration colors (borders, washes), not line
+  // identities — the auto-color cycle never deals them out.
+  it('skips design palettes', () => {
+    expect(cyclingColors([DESIGN, FRRF])).toEqual(cyclingColors([FRRF]));
+    expect(cyclingColors([DESIGN])).toEqual([]);
+  });
 });
 
 describe('customLineColors', () => {
@@ -253,5 +342,11 @@ describe('customLineColors', () => {
     expect(customLineColors(['#c1272d'], [MTA, FRRF])).toEqual([]);
     // …and with frrf removed from the map, that color is custom again.
     expect(customLineColors(['#c1272d'], inMap)).toEqual(['#c1272d']);
+  });
+
+  // Only LINE palettes cover line colors: a line sitting on a design swatch's
+  // hex is a hand-picked custom color as far as the line picker is concerned.
+  it('ignores design palettes when deciding what is custom', () => {
+    expect(customLineColors(['#333333'], [MTA, DESIGN])).toEqual(['#333333']);
   });
 });

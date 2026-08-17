@@ -3,7 +3,7 @@ import { PopoverShell } from './PopoverShell';
 import { usePinnedPopover } from './canvas/usePinnedPopover';
 import { NumericFieldRow } from './NumericFieldRow';
 import { PopoverFooter } from './PopoverFooter';
-import { DayNightColorRow } from './DayNightColorRow';
+import { PaletteColorRow } from './PaletteColorRow';
 import { StyleRow } from './StyleRow';
 import { OverrideDot } from './OverrideDot';
 import { TransferDrawRow } from './TransferDrawRow';
@@ -85,7 +85,7 @@ export function TransferPopover({ transfer, hostW, onClose }: Props) {
           />
         }
       />
-      <DayNightColorRow
+      <PaletteColorRow
         label="Color"
         id="transfer-color"
         darkId="transfer-dark-color"
@@ -94,11 +94,15 @@ export function TransferPopover({ transfer, hostW, onClose }: Props) {
         titleNoun="color"
         value={style.color.day}
         darkValue={style.color.night}
+        swatchRef={transfer.colorRef}
         onChange={(day) =>
           updateTransferStyle(transfer.id, { color: { day, night: style.color.night } })
         }
         onDarkChange={(night) =>
           updateTransferStyle(transfer.id, { color: { day: style.color.day, night } })
+        }
+        onPick={(ref, pair) =>
+          updateTransferStyle(transfer.id, ref ? { color: pair, colorRef: ref } : { color: pair })
         }
         dot={<OverrideDot kind="transfer" itemId={transfer.id} fields={['color']} name="Color" />}
       />
@@ -122,7 +126,7 @@ export function TransferPopover({ transfer, hostW, onClose }: Props) {
           />
         }
       />
-      <DayNightColorRow
+      <PaletteColorRow
         label="Stroke color"
         id="transfer-stroke-color"
         darkId="transfer-dark-stroke-color"
@@ -131,6 +135,7 @@ export function TransferPopover({ transfer, hostW, onClose }: Props) {
         titleNoun="stroke"
         value={style.strokeColor.day}
         darkValue={style.strokeColor.night}
+        swatchRef={transfer.strokeColorRef}
         onChange={(day) =>
           updateTransferStyle(transfer.id, {
             strokeColor: { day, night: style.strokeColor.night },
@@ -140,6 +145,12 @@ export function TransferPopover({ transfer, hostW, onClose }: Props) {
           updateTransferStyle(transfer.id, {
             strokeColor: { day: style.strokeColor.day, night },
           })
+        }
+        onPick={(ref, pair) =>
+          updateTransferStyle(
+            transfer.id,
+            ref ? { strokeColor: pair, strokeColorRef: ref } : { strokeColor: pair },
+          )
         }
         dot={
           <OverrideDot

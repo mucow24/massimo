@@ -27,6 +27,15 @@ export interface Palette {
   swatches: PaletteSwatch[];
   /** Absent rather than empty — an empty edit collapses the field away. */
   description?: string;
+  /**
+   * What the palette's swatches ARE. Absent means a LINE palette: swatches are
+   * line identities, dealt out by the auto-color cycle and offered by the line
+   * color picker, day-only in practice. `'design'` means decoration colors
+   * (borders, washes, label inks): real day/night halves, offered by the
+   * decoration color dropdowns and never by the line picker. Stored only when
+   * `'design'` — the same collapse rule as `night`.
+   */
+  kind?: 'design';
 }
 
 /**
@@ -53,15 +62,16 @@ export function dropEmptyPalettes(palettes: Palette[]): Palette[] {
 }
 
 /**
- * Do two palettes carry the same CONTENT — swatches and description, but NOT
- * name? Used to tell whether the map's copy still matches the library's (a
- * changed copy is "modified"). `night` compares strictly: it is only ever
- * stored when it differs from `color` (the collapse invariant), so canonical
- * forms are unique and `===` is exact. Name is compared by callers that care;
- * keeping it out here is what lets a rename stay "same content".
+ * Do two palettes carry the same CONTENT — swatches, description, and kind,
+ * but NOT name? Used to tell whether the map's copy still matches the
+ * library's (a changed copy is "modified"). `night` and `kind` compare
+ * strictly: each is only ever stored in its canonical collapsed form, so
+ * `===` is exact. Name is compared by callers that care; keeping it out here
+ * is what lets a rename stay "same content".
  */
 export function paletteContentEqual(a: Palette, b: Palette): boolean {
   if (a.description !== b.description) return false;
+  if (a.kind !== b.kind) return false;
   if (a.swatches.length !== b.swatches.length) return false;
   return a.swatches.every(
     (s, i) =>
@@ -354,12 +364,21 @@ export const LEGACY_BUILTIN_IDS: Readonly<Record<string, string>> = {
  * Take a palette into a map — the one place a definition is COPIED out of the
  * library, so nothing library-only (a star, the built-in mark) and no shared
  * array reference can ride along into a document.
+ *
+ * It is also where swatch names are made unique (`uniqueSwatchNames`): names
+ * are the swatch-REF key, and this one door is what every way into a doc or
+ * the library goes through — the map upsert, the library add, the manager's
+ * copies, the legacy-id bake. A palette from a file or a legacy library entry
+ * can genuinely name two swatches alike (the retired add named by position and
+ * collided after a delete), and a duplicate makes a ref resolve to whichever
+ * came first. Reference-stable per swatch when nothing needs renaming.
  */
-export function copyPalette({ name, swatches, description }: Palette): Palette {
+export function copyPalette({ name, swatches, description, kind }: Palette): Palette {
   return {
     name,
-    swatches: swatches.map((s) => ({ ...s })),
+    swatches: uniqueSwatchNames(swatches).map((s) => ({ ...s })),
     ...(description !== undefined && { description }),
+    ...(kind !== undefined && { kind }),
   };
 }
 
@@ -410,19 +429,127 @@ export function libraryPalettes(
   return visible.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** Is this a LINE palette — the kind whose swatches are line identities? */
+export const isLinePalette = (p: Palette): boolean => p.kind !== 'design';
+
 /**
- * Flat list of colors from the map's palettes, in the map's palette order —
- * used by `addLine` to auto-pick the next color.
+ * Swatch names made unique within their list — refs are name-keyed, so a name
+ * must be a single answer. A blank name takes its 1-based position; a taken
+ * one counts up ("Red", "Red 2", …). Reference-stable when every name already
+ * stands alone.
+ */
+export function uniqueSwatchNames(swatches: readonly PaletteSwatch[]): PaletteSwatch[] {
+  const taken = new Set<string>();
+  let changed = false;
+  const out = swatches.map((s, i) => {
+    const base = s.name.trim() || String(i + 1);
+    let name = base;
+    for (let n = 2; taken.has(name); n++) name = `${base} ${n}`;
+    taken.add(name);
+    if (name === s.name) return s;
+    changed = true;
+    return { ...s, name };
+  });
+  return changed ? out : (swatches as PaletteSwatch[]);
+}
+
+/** `uniqueSwatchNames` over every palette of a map, reference-stable — the
+ *  shape the persist migration and merge-adjacent repairs consume. */
+export function dedupeSwatchNames(palettes: readonly Palette[]): Palette[] {
+  let changed = false;
+  const out = palettes.map((p) => {
+    const swatches = uniqueSwatchNames(p.swatches);
+    if (swatches === p.swatches) return p;
+    changed = true;
+    return { ...p, swatches };
+  });
+  return changed ? out : (palettes as Palette[]);
+}
+
+// ---- Editing a palette's swatch list ---------------------------------------
+// The three list edits both palette surfaces offer — the manager's editor and
+// the Styles tab's sections. They live here, as plain list→list functions, so
+// the two cannot drift on what a new color is called or where a copy lands;
+// each caller only decides how to WRITE the result (a doc upsert, or the
+// library store).
+
+/** One color appended, named by the first free position ("3", then "4"…). */
+export function withAddedSwatch(
+  swatches: readonly PaletteSwatch[],
+  color: string = FALLBACK_LINE_COLOR,
+): PaletteSwatch[] {
+  return uniqueSwatchNames([...swatches, { name: '', color: normalizeHex(color) }]);
+}
+
+/**
+ * A copy of swatch `index`, both halves, landing right after it under the
+ * first free "<name> copy". The copy claims its name HERE rather than leaving
+ * it to the positional pass, which would hand the copy the free name and
+ * RENAME the original — moving an existing swatch out from under its refs.
+ */
+export function withDuplicatedSwatch(
+  swatches: readonly PaletteSwatch[],
+  index: number,
+): PaletteSwatch[] {
+  const source = swatches[index];
+  if (!source) return swatches as PaletteSwatch[];
+  const name = freshPaletteName(new Set(swatches.map((s) => s.name)), `${source.name} copy`);
+  return [...swatches.slice(0, index + 1), { ...source, name }, ...swatches.slice(index + 1)];
+}
+
+/** Swatch `index` gone. The FLOOR of one is the callers' (both disable the
+ *  last row's delete rather than emptying a palette). */
+export function withoutSwatch(swatches: readonly PaletteSwatch[], index: number): PaletteSwatch[] {
+  return swatches.filter((_, i) => i !== index);
+}
+
+/**
+ * One swatch after recoloring `half`, collapse invariants applied — the single
+ * owner of the recolor rules, shared by the doc transform and the editor's
+ * library branch. A LINE palette edits day only and drops any stored night
+ * (its editor writes day == night); a DESIGN palette edits its halves
+ * independently, `night` kept only while it differs from `color`.
+ */
+export function recolorSwatch(
+  swatch: PaletteSwatch,
+  color: string,
+  half: 'day' | 'night',
+  design: boolean,
+): PaletteSwatch {
+  const next = normalizeHex(color);
+  if (half === 'night') {
+    return {
+      name: swatch.name,
+      color: swatch.color,
+      ...(next !== normalizeHex(swatch.color) && { night: next }),
+    };
+  }
+  if (design) {
+    return {
+      name: swatch.name,
+      color: next,
+      ...(swatch.night !== undefined && swatch.night !== next && { night: swatch.night }),
+    };
+  }
+  return { name: swatch.name, color: next };
+}
+
+/**
+ * Flat list of colors from the map's LINE palettes, in the map's palette
+ * order — used by `addLine` to auto-pick the next color. Design palettes hold
+ * decoration colors, never line identities, so they sit out the cycle.
  */
 export function cyclingColors(palettes: readonly Palette[]): string[] {
-  return palettes.flatMap((p) => p.swatches.map((s) => s.color));
+  return palettes.filter(isLinePalette).flatMap((p) => p.swatches.map((s) => s.color));
 }
 
 /**
  * The distinct "custom" colors used by lines in the map: line colors that are
- * NOT a swatch in any of the map's palettes. These populate the always-present
- * "Custom" section of the line color picker, so removing a palette from the map
- * moves its colors into Custom and adding it back takes them out again.
+ * NOT a swatch in any of the map's LINE palettes. These populate the
+ * always-present "Custom" section of the line color picker, so removing a
+ * palette from the map moves its colors into Custom and adding it back takes
+ * them out again. Design palettes cover nothing here — a line sitting on a
+ * design swatch's hex is a hand-picked color as far as lines are concerned.
  *
  * Colors are compared via `normalizeHex` (case-insensitive, alpha-normalized);
  * the first spelling of each distinct color is kept, in first-seen order.
@@ -432,7 +559,8 @@ export function customLineColors(
   palettes: readonly Palette[],
 ): string[] {
   const known = new Set<string>();
-  for (const p of palettes) for (const s of p.swatches) known.add(normalizeHex(s.color));
+  for (const p of palettes.filter(isLinePalette))
+    for (const s of p.swatches) known.add(normalizeHex(s.color));
   const seen = new Set<string>();
   const out: string[] = [];
   for (const c of lineColors) {

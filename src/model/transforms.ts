@@ -62,6 +62,7 @@ import {
   isBlankDotStyle,
   resolveDotStyle,
 } from './dotStyle';
+import { dayNightColorsEqual } from './dayNightColor';
 
 // `resolveDotStyle` now lives in the leaf `dotStyle` module (so `dotSize` can
 // resolve the style-aware default without an import cycle); keep the historical
@@ -102,12 +103,29 @@ import { measureTextLabel } from '../geometry/textMeasure';
 import { isBulletCode } from '../geometry/labelTokens';
 import type { LabelStyle } from '../geometry/labelLayout';
 import { add, dot, eq, leftNormal, len, norm, rotateAround, sub, type Vec2 } from '../geometry/vec';
-import { copyPalette, paletteContentEqual, PALETTES, type Palette } from './palettes';
+import {
+  copyPalette,
+  paletteContentEqual,
+  PALETTES,
+  recolorSwatch,
+  type Palette,
+  type PaletteSwatch,
+} from './palettes';
+import {
+  isSwatchRef,
+  lineColorRefFor,
+  patchedRef,
+  resolveDesignSwatchRef,
+  resolveLineSwatchRef,
+  swatchPair,
+  swatchRefsEqual,
+} from './swatchRef';
 import { normalizeHex } from '../util/color';
 import type {
   AlignmentGuide,
   AutoHAlign,
   AutoVAlign,
+  DayNightColor,
   GuideOrientation,
   DotStyle,
   LabelAlign,
@@ -119,10 +137,12 @@ import type {
   LineId,
   LineStrokeColor,
   LineStyle,
+  LineStyleProps,
   LineTag,
   MapDoc,
   Polygon,
   PolygonStylePatch,
+  PolygonStyleProps,
   RegionAssignment,
   SvgImage,
   SvgImageStylePatch,
@@ -137,12 +157,15 @@ import type {
   StopOrientation,
   StyleDef,
   StyleKind,
+  SwatchRef,
   TextLabel,
   TextLabelAlign,
+  TextLabelStyleProps,
   TextLabelWeight,
   Transfer,
   TransferEnd,
   TransferStylePatch,
+  TransferStyleProps,
 } from './types';
 
 export const LABEL_FONT_SIZE_MIN = 2;
@@ -1117,22 +1140,35 @@ export function setLineStrokeWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
 // carry `#FFFFFF`), and the field is dropped when both halves land on the
 // default so it is never stored — the invariant is "stored color is lowercase
 // and never the default".
-export function setLineStrokeColor(doc: MapDoc, id: LineId, c: LineStrokeColor): MapDoc {
+//
+// `ref` is the pair's design-palette link, written or cleared with the value
+// in the SAME call (the swatch-ref write rule; absent = detach). It may sit
+// beside a value collapsed at the white default — the invariant is over
+// EFFECTIVE values — but never beside the 'line' sentinel, which is not a
+// linkable pair.
+export function setLineStrokeColor(
+  doc: MapDoc,
+  id: LineId,
+  c: LineStrokeColor,
+  ref?: SwatchRef,
+): MapDoc {
   const cur = doc.lines[id];
   if (!cur) return doc;
   const stored = canonicalStrokeColor(c);
+  const storedRef = c === 'line' ? undefined : ref;
   // The shared field setter's no-op guard is `===`, which a freshly-built pair
   // can never satisfy — so the "already stored" case is judged here, where the
   // structural rule lives. Without it every swatch tick would push an undo
-  // entry (and detach the line from its style).
-  if (
+  // entry. The ref compares too, or a ref-only change (linking a casing that
+  // already sits on the swatch's colors) would silently no-op.
+  const sameValue =
     stored === undefined
       ? cur.strokeColor === undefined
-      : cur.strokeColor !== undefined && lineStrokeColorsEqual(stored, cur.strokeColor)
-  ) {
-    return doc;
-  }
-  return setLineStyleField(doc, id, 'strokeColor', stored);
+      : cur.strokeColor !== undefined && lineStrokeColorsEqual(stored, cur.strokeColor);
+  if (sameValue && swatchRefsEqual(storedRef, cur.strokeColorRef)) return doc;
+  let line = writeLineField(cur, 'strokeColor', stored);
+  line = writeLineField(line, 'strokeColorRef', storedRef);
+  return { ...doc, lines: { ...doc.lines, [id]: line } };
 }
 
 // Per-line tick length for 'dash' stops. Shares the casing width's canonical
@@ -1985,6 +2021,10 @@ export function setLabelValign(doc: MapDoc, stationId: StationId, valign: LabelV
 // ---------- Lines ----------
 
 export function addLine(doc: MapDoc, id: LineId, service: string, color: string): MapDoc {
+  // A line born on a LINE-palette swatch hex is born LINKED to it — the same
+  // rule the load-time bake applies (lineColorRefFor), so the auto-color
+  // cycle's picks follow their palette from the first moment.
+  const colorRef = lineColorRefFor(doc.palettes, color);
   // Dot sizes are stored from birth (absence is a legacy state the load paths
   // materialize away). A fresh line has no dot shadows yet, so both cases sit
   // at the plain-dot natural; the store's addLine composition then applies the
@@ -1995,6 +2035,7 @@ export function addLine(doc: MapDoc, id: LineId, service: string, color: string)
     service,
     name: `${service} line`,
     color,
+    ...(colorRef !== undefined && { colorRef }),
     stations: [],
     edges: [],
     singletonDotSize: DOT_SIZE_DEFAULT,
@@ -2013,10 +2054,15 @@ export function addLine(doc: MapDoc, id: LineId, service: string, color: string)
 export function updateLine(
   doc: MapDoc,
   id: LineId,
-  patch: Partial<Pick<Line, 'service' | 'name' | 'color'>>,
+  patch: Partial<Pick<Line, 'service' | 'name' | 'color' | 'colorRef'>>,
 ): MapDoc {
   const cur = doc.lines[id];
   if (!cur) return doc;
+  // A color write carries its provenance or loses it: a patch touching `color`
+  // without a `colorRef` KEY is a hand-picked color and detaches the ref (the
+  // swatch-ref write rule). A ref never changes under an unrelated patch.
+  const nextRef =
+    'colorRef' in patch ? patch.colorRef : 'color' in patch ? undefined : cur.colorRef;
   // Same-reference-on-no-op (ARCHITECTURE §2). This is an UNGROUPED store
   // write, so a value-identical patch that allocated would push a dead undo
   // entry AND wipe the redo stack — re-clicking the already-selected color
@@ -2025,11 +2071,15 @@ export function updateLine(
   if (
     (patch.service === undefined || patch.service === cur.service) &&
     (patch.name === undefined || patch.name === cur.name) &&
-    (patch.color === undefined || patch.color === cur.color)
+    (patch.color === undefined || patch.color === cur.color) &&
+    swatchRefsEqual(nextRef, cur.colorRef)
   ) {
     return doc;
   }
-  const nextLine = { ...cur, ...patch };
+  const { colorRef: _refKey, ...scalarPatch } = patch;
+  const nextLine = { ...cur, ...scalarPatch };
+  if (nextRef === undefined) delete nextLine.colorRef;
+  else nextLine.colorRef = nextRef;
   const lines = { ...doc.lines, [id]: nextLine };
   if (patch.service === undefined || patch.service === cur.service) {
     return { ...doc, lines };
@@ -2966,6 +3016,415 @@ function palettesEqual(a: Palette, b: Palette): boolean {
   return a.name === b.name && paletteContentEqual(a, b);
 }
 
+// ---- Swatch-ref homes -------------------------------------------------------
+// Every place a SwatchRef lives is a SLOT: the ref, plus the three things a
+// sweep ever does to one — point it elsewhere (a rename), unlink it (dangling),
+// or restamp its field from the swatch it resolves to. `walkRefs` visits every
+// slot in the doc exactly once, so the RENAME sweep and the RECONCILE sweep are
+// two visitors over ONE traversal and a new home is added in one place:
+//
+//   Line.colorRef (a LINE-palette link) / Line.strokeColorRef (the casing pair)
+//   Line.singletonDotStyle / multiDotStyle — dot slots, walked as raw shadows
+//     regardless of tags (deleteStopDotStyle untags but keeps the shadow)
+//   StopCell.dotStyle                      — dot slots
+//   Polygon.fillRef / strokeRef; TextLabel.colorRef;
+//   Transfer.colorRef / strokeColorRef
+//   StyleDef props of kinds line / polygon / textLabel / transfer / stopDot
+//
+// An item and the STYLE-DEF form of the same home share a slot table wherever
+// they store color alike (polygon, text label, dot). The line casing and the
+// transfer colors need their own pair of tables, because the ITEM collapses its
+// value at a constant default while the DEF stores it concrete.
+// -----------------------------------------------------------------------------
+
+type RefHomesDoc = {
+  palettes?: Palette[];
+  lines?: Record<string, Line>;
+  stations?: Record<string, Station>;
+  polygons?: Record<string, Polygon>;
+  textLabels?: Record<string, TextLabel>;
+  transfers?: Record<string, Transfer>;
+  styles?: Record<string, StyleDef>;
+};
+
+/** One linkable color field, and every way a sweep rewrites it. */
+type RefSlot<T> = {
+  ref: (o: T) => SwatchRef | undefined;
+  /** Point the link elsewhere — the rename sweep's only move. */
+  withRef: (o: T, ref: SwatchRef) => T;
+  /** Unlink, keeping whatever is painted. */
+  drop: (o: T) => T;
+  /**
+   * Restamp the field from its swatch, through the same collapse rules the
+   * setters use. Returns the object UNCHANGED when it already paints that
+   * color (what keeps a canonical doc reference-stable), and UNLINKS where the
+   * value cannot hold a pair at all — a sentinel is not a linkable color.
+   */
+  stamp: (o: T, swatch: PaletteSwatch) => T;
+  /**
+   * Can this field hold a linked pair AT ALL? A sentinel ('line'/'none'/'bw')
+   * cannot, so a ref beside one is nonsense and drops. Absent ⇒ always.
+   */
+  linkable?: (o: T) => boolean;
+  /** Resolves against LINE palettes; every other slot is a design link. */
+  linePalette?: true;
+};
+
+/** Is this field still painting exactly what `swatch` paints? A stamp that
+ *  changes nothing is the definition — the slot already owns the collapse
+ *  rules, so nothing here has to re-derive them. */
+const slotMatches = <T>(o: T, slot: RefSlot<T>, swatch: PaletteSwatch): boolean =>
+  slot.stamp(o, swatch) === o;
+
+/** A visitor sees every slot of every ref-bearing object in the doc. */
+type RefVisitor = <T>(o: T, slot: RefSlot<T>) => T;
+
+const withoutKey = <T extends object>(o: T, key: keyof T): T => {
+  const next = { ...o };
+  delete (next as Record<string, unknown>)[key as string];
+  return next;
+};
+
+/** The shared mechanics of a plain `<field>Ref` key; `stamp` is the difference. */
+const refKeySlot = <T extends object>(
+  refKey: keyof T,
+  stamp: RefSlot<T>['stamp'],
+  linePalette?: true,
+): RefSlot<T> => ({
+  ref: (o) => o[refKey] as SwatchRef | undefined,
+  withRef: (o, ref) => ({ ...o, [refKey]: ref }),
+  drop: (o) => withoutKey(o, refKey),
+  stamp,
+  ...(linePalette && { linePalette }),
+});
+
+/** A pair stored as two sibling scalars (fill+darkFill, color+darkColor). */
+const scalarPairSlot = <T extends object>(
+  dayKey: keyof T,
+  nightKey: keyof T,
+  refKey: keyof T,
+): RefSlot<T> =>
+  refKeySlot(refKey, (o, sw) => {
+    const pair = swatchPair(sw);
+    return o[dayKey] === pair.day && o[nightKey] === pair.night
+      ? o
+      : { ...o, [dayKey]: pair.day, [nightKey]: pair.night };
+  });
+
+/** One DayNightColor-or-sentinel field of a DotStyle. */
+const dotSlot = (
+  valueKey: 'fill' | 'strokeColor' | 'serviceCodeColor',
+  refKey: 'fillRef' | 'strokeColorRef' | 'serviceCodeColorRef',
+): RefSlot<DotStyle> => ({
+  ...refKeySlot<DotStyle>(refKey, (d, sw) => {
+    const value = d[valueKey];
+    if (typeof value !== 'object') return withoutKey(d, refKey);
+    const pair = swatchPair(sw);
+    return dayNightColorsEqual(value, pair) ? d : { ...d, [valueKey]: pair };
+  }),
+  linkable: (d) => typeof d[valueKey] === 'object',
+});
+
+const DOT_SLOTS: readonly RefSlot<DotStyle>[] = [
+  dotSlot('fill', 'fillRef'),
+  dotSlot('strokeColor', 'strokeColorRef'),
+  dotSlot('serviceCodeColor', 'serviceCodeColorRef'),
+];
+
+// Polygon / text-label colors are stored identically on the item and on the
+// style def, so one factory answers for both.
+type PolygonColorFields = Pick<
+  Polygon,
+  'fill' | 'stroke' | 'darkFill' | 'darkStroke' | 'fillRef' | 'strokeRef'
+>;
+const polygonSlots = <T extends PolygonColorFields>(): readonly RefSlot<T>[] => [
+  scalarPairSlot<T>('fill', 'darkFill', 'fillRef'),
+  scalarPairSlot<T>('stroke', 'darkStroke', 'strokeRef'),
+];
+type TextLabelColorFields = Pick<TextLabel, 'color' | 'darkColor' | 'colorRef'>;
+const textLabelSlots = <T extends TextLabelColorFields>(): readonly RefSlot<T>[] => [
+  scalarPairSlot<T>('color', 'darkColor', 'colorRef'),
+];
+
+const POLYGON_ITEM_SLOTS = polygonSlots<Polygon>();
+const POLYGON_PROPS_SLOTS = polygonSlots<PolygonStyleProps>();
+const TEXT_LABEL_ITEM_SLOTS = textLabelSlots<TextLabel>();
+const TEXT_LABEL_PROPS_SLOTS = textLabelSlots<TextLabelStyleProps>();
+
+const LINE_ITEM_SLOTS: readonly RefSlot<Line>[] = [
+  refKeySlot<Line>(
+    'colorRef',
+    (l, sw) => (normalizeHex(l.color) === normalizeHex(sw.color) ? l : { ...l, color: sw.color }),
+    true,
+  ),
+  {
+    ...refKeySlot<Line>('strokeColorRef', (l, sw) => {
+      if (l.strokeColor === 'line') return withoutKey(l, 'strokeColorRef');
+      // Collapse-at-white: a swatch ON the default stores no value at all, so
+      // the ref legally outlives its field (the invariant is over EFFECTIVE
+      // colors). Judge structurally — a freshly built pair is never `===`.
+      const stored = canonicalStrokeColor(swatchPair(sw));
+      const same =
+        stored === undefined
+          ? l.strokeColor === undefined
+          : l.strokeColor !== undefined && lineStrokeColorsEqual(stored, l.strokeColor);
+      return same ? l : writeLineField(l, 'strokeColor', stored);
+    }),
+    linkable: (l) => l.strokeColor !== 'line',
+  },
+];
+
+const LINE_PROPS_SLOTS: readonly RefSlot<LineStyleProps>[] = [
+  {
+    ...refKeySlot<LineStyleProps>('strokeColorRef', (p, sw) => {
+      if (p.strokeColor === 'line') return withoutKey(p, 'strokeColorRef');
+      const pair = swatchPair(sw);
+      return lineStrokeColorsEqual(p.strokeColor, pair) ? p : { ...p, strokeColor: pair };
+    }),
+    linkable: (p) => p.strokeColor !== 'line',
+  },
+];
+
+// A transfer's overrides collapse at the constant defaults, so both the write
+// and the restamp go through withTransferOverride / canonicalTransferColor.
+const transferItemSlot = (
+  valueKey: 'color' | 'strokeColor',
+  refKey: 'colorRef' | 'strokeColorRef',
+  dflt: DayNightColor,
+): RefSlot<Transfer> => ({
+  ref: (t) => t[refKey],
+  withRef: (t, ref) => withTransferOverride(t, refKey, ref),
+  drop: (t) => withTransferOverride(t, refKey, undefined),
+  stamp: (t, sw) => {
+    const stored = canonicalTransferColor(swatchPair(sw), dflt);
+    const cur = t[valueKey];
+    const same =
+      stored === undefined
+        ? cur === undefined
+        : cur !== undefined && dayNightColorsEqual(cur, stored);
+    return same ? t : withTransferOverride(t, valueKey, stored);
+  },
+});
+
+const TRANSFER_ITEM_SLOTS: readonly RefSlot<Transfer>[] = [
+  transferItemSlot('color', 'colorRef', TRANSFER_COLOR_DEFAULT),
+  transferItemSlot('strokeColor', 'strokeColorRef', TRANSFER_STROKE_COLOR_DEFAULT),
+];
+
+// Def props store CONCRETE pairs (no collapse), so they restamp directly.
+const transferPropsSlot = (
+  valueKey: 'color' | 'strokeColor',
+  refKey: 'colorRef' | 'strokeColorRef',
+): RefSlot<TransferStyleProps> =>
+  refKeySlot(refKey, (p, sw) => {
+    const pair = swatchPair(sw);
+    return dayNightColorsEqual(p[valueKey], pair) ? p : { ...p, [valueKey]: pair };
+  });
+
+const TRANSFER_PROPS_SLOTS: readonly RefSlot<TransferStyleProps>[] = [
+  transferPropsSlot('color', 'colorRef'),
+  transferPropsSlot('strokeColor', 'strokeColorRef'),
+];
+
+/**
+ * Visit every swatch-ref slot in the doc (see the home list above). Returns
+ * the same doc reference when no visit changed anything — the property both
+ * sweeps rest on, and what lets the reconcile sit on the persist merge hook.
+ */
+function walkRefs<Doc extends RefHomesDoc>(doc: Doc, visit: RefVisitor): Doc {
+  const out = { ...doc };
+  let changed = false;
+
+  const visitAll = <T>(o: T, slots: readonly RefSlot<T>[]): T => {
+    let next = o;
+    for (const slot of slots) next = visit(next, slot);
+    return next;
+  };
+
+  const visitDot = (d: DotStyle | undefined): DotStyle | undefined =>
+    d === undefined ? d : visitAll(d, DOT_SLOTS);
+
+  const eachIn = <T extends object>(
+    key: keyof RefHomesDoc,
+    coll: Record<string, T> | undefined,
+    fn: (item: T) => T,
+  ) => {
+    if (!coll) return;
+    let next = coll;
+    for (const [id, item] of Object.entries(coll)) {
+      const done = fn(item);
+      if (done === item) continue;
+      if (next === coll) next = { ...coll };
+      next[id] = done;
+    }
+    if (next !== coll) {
+      (out as RefHomesDoc)[key] = next as never;
+      changed = true;
+    }
+  };
+
+  eachIn('lines', doc.lines, (line) => {
+    let next = visitAll(line, LINE_ITEM_SLOTS);
+    const single = visitDot(next.singletonDotStyle);
+    if (single !== next.singletonDotStyle) next = { ...next, singletonDotStyle: single };
+    const multi = visitDot(next.multiDotStyle);
+    if (multi !== next.multiDotStyle) next = { ...next, multiDotStyle: multi };
+    return next;
+  });
+
+  eachIn('stations', doc.stations, (st) => {
+    let stops = st.stops;
+    for (let i = 0; i < st.stops.length; i++) {
+      const stop = st.stops[i];
+      const done = visitDot(stop.dotStyle);
+      if (done === stop.dotStyle) continue;
+      if (stops === st.stops) stops = st.stops.slice();
+      stops[i] = { ...stop, dotStyle: done };
+    }
+    return stops === st.stops ? st : { ...st, stops };
+  });
+
+  eachIn('polygons', doc.polygons, (p) => visitAll(p, POLYGON_ITEM_SLOTS));
+  eachIn('textLabels', doc.textLabels, (t) => visitAll(t, TEXT_LABEL_ITEM_SLOTS));
+  eachIn('transfers', doc.transfers, (t) => visitAll(t, TRANSFER_ITEM_SLOTS));
+
+  eachIn('styles', doc.styles, (def) => {
+    let props: StyleDef['props'];
+    switch (def.kind) {
+      case 'line':
+        props = visitAll(def.props, LINE_PROPS_SLOTS);
+        break;
+      case 'polygon':
+        props = visitAll(def.props, POLYGON_PROPS_SLOTS);
+        break;
+      case 'textLabel':
+        props = visitAll(def.props, TEXT_LABEL_PROPS_SLOTS);
+        break;
+      case 'transfer':
+        props = visitAll(def.props, TRANSFER_PROPS_SLOTS);
+        break;
+      case 'stopDot':
+        props = visitAll(def.props, DOT_SLOTS);
+        break;
+      default:
+        return def;
+    }
+    return props === def.props ? def : ({ ...def, props } as StyleDef);
+  });
+
+  return changed ? out : doc;
+}
+
+/**
+ * Rewrite every SwatchRef in the doc through `map` — the shared body of the
+ * palette/swatch RENAME sweeps, which must reach every home a ref lives in and
+ * never read as delete-plus-add. Reference-stable.
+ */
+function mapDocSwatchRefs<Doc extends RefHomesDoc>(
+  doc: Doc,
+  map: (ref: SwatchRef) => SwatchRef,
+): Doc {
+  return walkRefs(doc, (o, slot) => {
+    const ref = slot.ref(o);
+    if (ref === undefined || !isSwatchRef(ref)) return o;
+    const mapped = map(ref);
+    return mapped === ref ? o : slot.withRef(o, mapped);
+  });
+}
+
+/**
+ * Drop every swatch ref that no longer means anything, keeping the color it
+ * was painting: a palette or swatch that is gone, a kind mismatch (design refs
+ * resolve against design palettes, `Line.colorRef` against line ones), a
+ * sentinel value that cannot hold a linked pair at all, or a malformed ref
+ * shape from a hand-edited file — the only validation refs get. Deleting a
+ * palette therefore never changes what the map looks like.
+ *
+ * What it deliberately does NOT do is force a resolvable ref's field back onto
+ * its swatch. A linked field may sit on a color of its own — the palette
+ * picker's "dirty" state, offering Reset and Sync — and that divergence is a
+ * user's edit, not drift to be repaired. Propagation belongs to the swatch
+ * WRITE instead (see `writeMapPaletteSwatch`), which knows which fields were
+ * still faithful a moment ago; a reconcile that only ever sees the after state
+ * cannot tell a deliberate override from a stale value, so it leaves both be.
+ *
+ * Every palette-mutating transform ends here (mutate `doc.palettes`, then
+ * reconcile), and so do both load-side doors: `parse()` for a file, and the
+ * persist MERGE hook for a rehydrate — which is where it belongs rather than
+ * in `migrateDoc`, since a doc already AT the current version never reaches a
+ * migration and merge runs on every rehydrate either way. Reference-stable on
+ * a canonical doc, like every other repair on that hook.
+ */
+export function reconcileSwatchRefs<Doc extends RefHomesDoc>(doc: Doc): Doc {
+  const palettes = doc.palettes;
+  if (!palettes) return doc;
+  return walkRefs(doc, (o, slot) => {
+    const ref = slot.ref(o);
+    if (ref === undefined) return o;
+    const resolve = slot.linePalette ? resolveLineSwatchRef : resolveDesignSwatchRef;
+    const swatch = isSwatchRef(ref) ? resolve(palettes, ref) : undefined;
+    if (!swatch) return slot.drop(o);
+    return slot.linkable && !slot.linkable(o) ? slot.drop(o) : o;
+  });
+}
+
+/**
+ * Write one swatch of a map palette and carry its FAITHFUL wearers along: every
+ * field linked to it that still paints exactly what the swatch painted a moment
+ * ago follows to the new color, and every field that had drifted onto a color
+ * of its own keeps it. Snapshot-then-stamp, the same shape a style edit uses on
+ * its wearers — which is why the palette pickers' Reset and Sync can exist at
+ * all: a local override survives the swatch moving under it.
+ *
+ * Reference-stable when the swatch is already what it is being set to.
+ */
+function writeMapPaletteSwatch(
+  doc: MapDoc,
+  paletteName: string,
+  index: number,
+  next: PaletteSwatch,
+): MapDoc {
+  const pi = doc.palettes.findIndex((p) => p.name === paletteName);
+  if (pi < 0) return doc;
+  const palette = doc.palettes[pi];
+  const from = palette.swatches[index];
+  if (!from) return doc;
+  if (from.name === next.name && from.color === next.color && from.night === next.night) return doc;
+  const palettes = doc.palettes.slice();
+  const swatches = palette.swatches.slice();
+  swatches[index] = next;
+  palettes[pi] = { ...palette, swatches };
+  return sweepFaithfulWearers({ ...doc, palettes }, paletteName, new Map([[from.name, next]]), {
+    [from.name]: from,
+  });
+}
+
+/**
+ * Carry the faithful wearers of one palette's swatches to new colors: `moved`
+ * maps an OLD swatch name to what it became, `before` gives the color each was
+ * painting. A linked field still painting its old color follows; one that had
+ * drifted onto a color of its own keeps it (see `writeMapPaletteSwatch`). One
+ * pass over the doc however many swatches moved, then the ordinary reconcile
+ * to drop whatever no longer resolves.
+ */
+function sweepFaithfulWearers(
+  doc: MapDoc,
+  paletteName: string,
+  moved: ReadonlyMap<string, PaletteSwatch>,
+  before: Readonly<Record<string, PaletteSwatch>>,
+): MapDoc {
+  const swept = walkRefs(doc, (o, slot) => {
+    const ref = slot.ref(o);
+    if (ref === undefined || !isSwatchRef(ref) || ref.palette !== paletteName) return o;
+    const next = moved.get(ref.swatch);
+    const from = before[ref.swatch];
+    if (!next || !from) return o;
+    if (slot.linkable && !slot.linkable(o)) return o;
+    return slotMatches(o, slot, from) ? slot.stamp(o, next) : o;
+  });
+  return reconcileSwatchRefs(swept);
+}
+
 /**
  * Add a palette to the map, upserting by name: adding a name the map already
  * holds replaces its swatches where it stands, which is also how a map picks up
@@ -2975,24 +3434,35 @@ function palettesEqual(a: Palette, b: Palette): boolean {
 export function addPaletteToMap(doc: MapDoc, palette: Palette): MapDoc {
   const next = copyPalette(palette);
   const idx = doc.palettes.findIndex((p) => p.name === next.name);
-  if (idx < 0) return { ...doc, palettes: [...doc.palettes, next] };
-  if (palettesEqual(doc.palettes[idx], next)) return doc;
+  if (idx < 0) return reconcileSwatchRefs({ ...doc, palettes: [...doc.palettes, next] });
+  const previous = doc.palettes[idx];
+  if (palettesEqual(previous, next)) return doc;
   const palettes = doc.palettes.slice();
   palettes[idx] = next;
-  return { ...doc, palettes };
+  // Replacing a palette is "the refresh", and it refreshes the map with it:
+  // every swatch this name still has carries its FAITHFUL wearers to the new
+  // color (a wearer that had drifted onto its own keeps it), and a ref to a
+  // name the replacement lacks drops in the reconcile.
+  const moved = new Map(next.swatches.map((s) => [s.name, s]));
+  const before: Record<string, PaletteSwatch> = {};
+  for (const s of previous.swatches) before[s.name] = s;
+  return sweepFaithfulWearers({ ...doc, palettes }, next.name, moved, before);
 }
 
-/** Drop a palette from the map. The map may end up holding none. */
+/** Drop a palette from the map — its refs drop, the painted values stay. The
+ *  map may end up holding none. */
 export function removePaletteFromMap(doc: MapDoc, name: string): MapDoc {
   const palettes = doc.palettes.filter((p) => p.name !== name);
   if (palettes.length === doc.palettes.length) return doc;
-  return { ...doc, palettes };
+  return reconcileSwatchRefs({ ...doc, palettes });
 }
 
 /**
  * Rename one of the map's palettes. Free to do — the map holds a copy, so a
  * built-in renamed here leaves the library's untouched. Refuses a name the map
- * already uses, since name is the key.
+ * already uses, since name is the key — which is also why every ref pointing
+ * at the old name is rewritten in the same write: a rename must never read as
+ * delete-plus-add to the links.
  */
 export function renameMapPalette(doc: MapDoc, from: string, to: string): MapDoc {
   const name = to.trim();
@@ -3002,40 +3472,97 @@ export function renameMapPalette(doc: MapDoc, from: string, to: string): MapDoc 
   if (idx < 0) return doc;
   const palettes = doc.palettes.slice();
   palettes[idx] = { ...palettes[idx], name };
-  return { ...doc, palettes };
+  return mapDocSwatchRefs({ ...doc, palettes }, (ref) =>
+    ref.palette === from ? { palette: name, swatch: ref.swatch } : ref,
+  );
 }
 
 /**
- * Recolor one swatch of a map palette AND repaint every line wearing the old
- * color — matched via `normalizeHex`, the same equivalence the picker's
- * selected-swatch ring uses, so "the lines using that palette color" follow it
- * to the new value in the same doc write (one undo entry). The recolored
- * swatch drops any stored night (the editor writes day == night).
+ * Rename one swatch of a map palette, rewriting every ref pointing at it in
+ * the same write (names are the ref key — see renameMapPalette). Refuses an
+ * empty name and one another swatch of the palette already holds: uniqueness
+ * within a palette is what keeps a ref a single answer.
+ */
+export function renameMapPaletteSwatch(
+  doc: MapDoc,
+  paletteName: string,
+  index: number,
+  newName: string,
+): MapDoc {
+  const name = newName.trim();
+  if (!name) return doc;
+  const pi = doc.palettes.findIndex((p) => p.name === paletteName);
+  if (pi < 0) return doc;
+  const palette = doc.palettes[pi];
+  const swatch = palette.swatches[index];
+  if (!swatch || swatch.name === name) return doc;
+  if (palette.swatches.some((s, i) => i !== index && s.name === name)) return doc;
+  const from = swatch.name;
+  const palettes = doc.palettes.slice();
+  const swatches = palette.swatches.slice();
+  swatches[index] = { ...swatch, name };
+  palettes[pi] = { ...palette, swatches };
+  return mapDocSwatchRefs({ ...doc, palettes }, (ref) =>
+    ref.palette === paletteName && ref.swatch === from
+      ? { palette: paletteName, swatch: name }
+      : ref,
+  );
+}
+
+/**
+ * Recolor one half of one swatch of a map palette, taking its faithful wearers
+ * along in the same doc write (one undo entry — see `writeMapPaletteSwatch`
+ * for which wearers follow and which keep a color of their own).
+ *
+ * A LINE palette edits its day half only (there is no night UI for line
+ * identities) and the recolored swatch drops any stored night. A DESIGN
+ * palette edits either half independently: a day recolor keeps the stored
+ * night, a night recolor stores its half collapsed (`night` is kept only when
+ * it differs from `color`).
  */
 export function recolorMapPaletteColor(
   doc: MapDoc,
   name: string,
   index: number,
   color: string,
+  half: 'day' | 'night' = 'day',
 ): MapDoc {
-  const pi = doc.palettes.findIndex((p) => p.name === name);
-  if (pi < 0) return doc;
-  const swatch = doc.palettes[pi].swatches[index];
-  if (!swatch) return doc;
-  const prev = normalizeHex(swatch.color);
-  const next = normalizeHex(color);
-  if (next === prev && swatch.night === undefined) return doc;
-  const palettes = doc.palettes.slice();
-  const swatches = palettes[pi].swatches.slice();
-  swatches[index] = { name: swatch.name, color: next };
-  palettes[pi] = { ...palettes[pi], swatches };
-  let lines = doc.lines;
-  for (const [id, line] of Object.entries(doc.lines)) {
-    if (normalizeHex(line.color) !== prev) continue;
-    if (lines === doc.lines) lines = { ...doc.lines };
-    lines[id] = { ...line, color: next };
-  }
-  return { ...doc, palettes, lines };
+  const palette = doc.palettes.find((p) => p.name === name);
+  const swatch = palette?.swatches[index];
+  if (!palette || !swatch) return doc;
+  const design = palette.kind === 'design';
+  if (half === 'night' && !design) return doc;
+  return writeMapPaletteSwatch(doc, name, index, recolorSwatch(swatch, color, half, design));
+}
+
+/**
+ * Set BOTH halves of one swatch at once — the palette pickers' "sync to
+ * palette": a field that drifted onto its own color pushes that color back
+ * into the swatch it is linked to, so the palette (and every other faithful
+ * wearer) catches up to it rather than the other way round. The field doing
+ * the syncing already paints this pair, so the sweep leaves it alone and it
+ * simply reads as faithful again afterwards.
+ *
+ * Night collapses when it equals day, the storage rule everywhere else.
+ */
+export function syncMapPaletteSwatch(
+  doc: MapDoc,
+  name: string,
+  index: number,
+  pair: DayNightColor,
+): MapDoc {
+  const palette = doc.palettes.find((p) => p.name === name);
+  const swatch = palette?.swatches[index];
+  if (!palette || !swatch) return doc;
+  const day = normalizeHex(pair.day);
+  const night = normalizeHex(pair.night);
+  // A line palette has no night half to carry (its editor writes day == night).
+  const design = palette.kind === 'design';
+  return writeMapPaletteSwatch(doc, name, index, {
+    name: swatch.name,
+    color: day,
+    ...(design && night !== day && { night }),
+  });
 }
 
 /**
@@ -3247,10 +3774,12 @@ export function addTextLabel(doc: MapDoc, id: string, x: number, y: number): Map
   return { ...doc, textLabels: { ...doc.textLabels, [id]: label } };
 }
 
-// Insert a fully-specified label (used by duplicate + paste).
+// Insert a fully-specified label (used by duplicate + paste). Reconciled: a
+// pasted swatch ref re-links against THIS doc's palettes (restamping the
+// colors from the same-named swatch) or degrades to the plain values.
 export function addTextLabelWith(doc: MapDoc, id: string, fields: Omit<TextLabel, 'id'>): MapDoc {
   const label = sanitizeIncomingStyleId(doc, 'textLabel', { id, ...fields });
-  return { ...doc, textLabels: { ...doc.textLabels, [id]: label } };
+  return reconcileSwatchRefs({ ...doc, textLabels: { ...doc.textLabels, [id]: label } });
 }
 
 export function moveTextLabel(doc: MapDoc, id: string, x: number, y: number): MapDoc {
@@ -3294,7 +3823,13 @@ export function updateTextLabel(
     if (typeof patch.tracking === 'number') {
       nextPatch = { ...nextPatch, tracking: clampField(patch.tracking, TEXT_LABEL_TRACKING_MIN) };
     }
-    let next = { ...cur, ...nextPatch };
+    // The swatch-ref write rule (patchedRef): a color-half write without the
+    // ref key detaches; the ref is written explicitly, never spread.
+    const colorRef = patchedRef(patch, ['color', 'darkColor'], 'colorRef', cur.colorRef);
+    const { colorRef: _cr, ...valuePatch } = nextPatch;
+    let next = { ...cur, ...valuePatch };
+    if (colorRef === undefined) delete next.colorRef;
+    else next.colorRef = colorRef;
     // Re-anchor whenever a resize-affecting property changes — text content,
     // font size, weight, italic, or the column width (which changes both the
     // box width and, via re-wrapping, the height). The label's (x, y) is the
@@ -3410,14 +3945,15 @@ export function addPolygon(doc: MapDoc, id: string, x: number, y: number): MapDo
   };
 }
 
-// Insert a fully-specified polygon (used by duplicate + paste).
+// Insert a fully-specified polygon (used by duplicate + paste). Reconciled
+// like addTextLabelWith: pasted refs re-link or degrade to plain values.
 export function addPolygonWith(doc: MapDoc, id: string, fields: Omit<Polygon, 'id'>): MapDoc {
   const polygon = sanitizeIncomingStyleId(doc, 'polygon', { id, ...fields });
-  return {
+  return reconcileSwatchRefs({
     ...doc,
     polygons: { ...doc.polygons, [id]: polygon },
     backgroundOrder: [...doc.backgroundOrder, id],
-  };
+  });
 }
 
 // Absolute vertex setter — used by whole-polygon drag and group-tow, which
@@ -3493,7 +4029,17 @@ export function updatePolygon(doc: MapDoc, id: string, patch: PolygonStylePatch)
     if (typeof nextPatch.curveRadius === 'number') {
       nextPatch = { ...nextPatch, curveRadius: clampPolygonCurveRadius(nextPatch.curveRadius) };
     }
-    const next = { ...cur, ...nextPatch };
+    // The swatch-ref write rule (patchedRef): a value-half write without its
+    // ref key detaches that pair; refs are written explicitly, never spread —
+    // a cleared ref must leave no present-and-undefined key behind.
+    const fillRef = patchedRef(patch, ['fill', 'darkFill'], 'fillRef', cur.fillRef);
+    const strokeRef = patchedRef(patch, ['stroke', 'darkStroke'], 'strokeRef', cur.strokeRef);
+    const { fillRef: _fr, strokeRef: _sr, ...valuePatch } = nextPatch;
+    const next: Polygon = { ...cur, ...valuePatch };
+    if (fillRef === undefined) delete next.fillRef;
+    else next.fillRef = fillRef;
+    if (strokeRef === undefined) delete next.strokeRef;
+    else next.strokeRef = strokeRef;
     return next;
   });
 }
@@ -4149,7 +4695,14 @@ export function deleteStationAnchor(doc: MapDoc, stationId: StationId, anchorId:
 // serialize's `sanitizeTransferStyles`, which normalizes hand-edited files
 // to the same stored form.
 export function withTransferOverride<
-  K extends 'thickness' | 'color' | 'strokeWidth' | 'strokeColor' | 'draw',
+  K extends
+    | 'thickness'
+    | 'color'
+    | 'strokeWidth'
+    | 'strokeColor'
+    | 'colorRef'
+    | 'strokeColorRef'
+    | 'draw',
 >(t: Transfer, field: K, stored: Transfer[K]): Transfer {
   if (t[field] === stored) return t;
   if (stored === undefined) {
@@ -4199,6 +4752,18 @@ export function updateTransferStyle(doc: MapDoc, id: string, patch: TransferStyl
       'draw',
       canonicalTransferDraw(patch.draw, TRANSFER_DRAW_DEFAULT),
     );
+  }
+  // The swatch-ref write rule (patchedRef). A ref legally sits beside an
+  // ABSENT value — the override collapses at the constant default while the
+  // invariant is over EFFECTIVE values — so the refs ride withTransferOverride
+  // like any other optional field.
+  const colorRef = patchedRef(patch, ['color'], 'colorRef', cur.colorRef);
+  const strokeColorRef = patchedRef(patch, ['strokeColor'], 'strokeColorRef', cur.strokeColorRef);
+  if (!swatchRefsEqual(colorRef, next.colorRef)) {
+    next = withTransferOverride(next, 'colorRef', colorRef);
+  }
+  if (!swatchRefsEqual(strokeColorRef, next.strokeColorRef)) {
+    next = withTransferOverride(next, 'strokeColorRef', strokeColorRef);
   }
   if (next === cur) return doc;
   return { ...doc, transfers: { ...doc.transfers, [id]: next } };

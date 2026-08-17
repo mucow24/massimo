@@ -56,6 +56,7 @@ describe('save/load round-trip', () => {
         }),
       ],
       lineOrder: ['L1'],
+      palettes: [], // no palettes, or the fixture line's hex gains a colorRef
     });
     useDoc.setState({ ...useDoc.getState(), ...fixture });
     // Serialize the same way Toolbar onSave does — via the DOC_FIELDS-driven
@@ -370,6 +371,76 @@ describe('localStorage rehydrate — line edge backfill', () => {
     const l1 = useDoc.getState().lines.L1;
     expect(l1.singletonDotSize).toBe(8);
     expect(l1.multiDotSize).toBe(8);
+  });
+
+  // Swatch refs live on the decoration side too — polygons, labels, transfers,
+  // dot shadows, style defs — so the hook's reconcile must walk the WHOLE doc,
+  // not just the lines. Same reasoning as the two above: a doc at the current
+  // version never reaches `migrate`, so this is the only door left. What it
+  // drops is a ref that no longer resolves; a ref that DOES resolve keeps
+  // whatever color it was painting, divergent or not (that is the pickers'
+  // dirty state, not damage).
+  it('drops a dangling DESIGN ref on rehydrate, and keeps a divergent one', async () => {
+    localStorage.setItem(
+      'vignelli-map-doc-v1',
+      JSON.stringify({
+        version: useDoc.persist.getOptions().version,
+        state: {
+          palettes: [
+            {
+              name: 'grays',
+              kind: 'design',
+              swatches: [{ name: 'Border', color: '#333333', night: '#bbbbbb' }],
+            },
+          ],
+          polygons: {
+            P1: {
+              id: 'P1',
+              vertices: [
+                { x: 0, y: 0 },
+                { x: 10, y: 0 },
+                { x: 10, y: 10 },
+              ],
+              // Painting a color of its own while still linked — kept as found.
+              fill: '#000000',
+              darkFill: '#000000',
+              stroke: '#000000',
+              darkStroke: '#000000',
+              strokeWidth: 1,
+              fillRef: { palette: 'grays', swatch: 'Border' },
+            },
+            // A ref into a palette the doc doesn't carry: unlinked, and what
+            // it paints is left exactly as found.
+            P2: {
+              id: 'P2',
+              vertices: [
+                { x: 0, y: 0 },
+                { x: 10, y: 0 },
+                { x: 10, y: 10 },
+              ],
+              fill: '#123456',
+              darkFill: '#123456',
+              stroke: '#000000',
+              darkStroke: '#000000',
+              strokeWidth: 1,
+              fillRef: { palette: 'gone', swatch: 'Border' },
+            },
+          },
+          backgroundOrder: ['P1', 'P2'],
+        },
+      }),
+    );
+
+    await useDoc.persist.rehydrate();
+
+    const { P1, P2 } = useDoc.getState().polygons;
+    // Resolvable: both the local color and the link survive the trip.
+    expect(P1.fill).toBe('#000000');
+    expect(P1.fillRef).toEqual({ palette: 'grays', swatch: 'Border' });
+    // Dangling: the link goes, the paint stays — and the hook reached a
+    // POLYGON to do it, which is the doc-wide half of this test.
+    expect(P2.fill).toBe('#123456');
+    expect('fillRef' in P2).toBe(false);
   });
 });
 

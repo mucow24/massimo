@@ -1450,6 +1450,42 @@ describe('migrateDoc', () => {
       expect(migrateDoc({ palettes: stored }, 29).palettes).toEqual(stored);
     });
   });
+
+  describe('v29 → v30: name-keyed swatch refs', () => {
+    const palettes = [
+      {
+        name: 'inks',
+        swatches: [
+          { name: 'Red', color: '#c1272d' },
+          { name: 'Red', color: '#0061a8' },
+          { name: '', color: '#00ff00' },
+        ],
+      },
+    ];
+
+    it('uniquifies swatch names within each palette', () => {
+      expect(migrateDoc({ palettes }, 29).palettes?.[0].swatches.map((s) => s.name)).toEqual([
+        'Red',
+        'Red 2',
+        '3',
+      ]);
+    });
+
+    it('links ref-less lines sitting on a line-palette swatch hex', () => {
+      const lines = {
+        A: makeLine({ id: 'A', color: '#C1272D' }),
+        B: makeLine({ id: 'B', color: '#123456' }),
+      };
+      const out = migrateDoc({ palettes, lines }, 29);
+      expect(out.lines?.A.colorRef).toEqual({ palette: 'inks', swatch: 'Red' });
+      expect(out.lines && 'colorRef' in out.lines.B).toBe(false);
+    });
+
+    it('does not run at v30', () => {
+      const dup = [{ name: 'p', swatches: palettes[0].swatches }];
+      expect(migrateDoc({ palettes: dup }, 30).palettes).toEqual(dup);
+    });
+  });
 });
 
 describe('beginHistoryGroup', () => {

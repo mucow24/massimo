@@ -2,15 +2,20 @@ import { useDoc } from '../../state/store';
 import { useCustomLineColors } from '../../state/customLineColors';
 import { ColorField } from '../ColorField';
 import { normalizeHex } from '../../util/color';
+import { isLinePalette } from '../../model/palettes';
+import type { SwatchRef } from '../../model/types';
 
 export function ColorPalette({
   value,
   onChange,
 }: {
   value: string;
-  onChange: (c: string) => void;
+  /** A swatch click hands over its ref; a custom pick hands none (detach). */
+  onChange: (c: string, ref?: SwatchRef) => void;
 }) {
-  const palettes = useDoc((s) => s.palettes);
+  // Line palettes only: design palettes hold decoration colors, and their
+  // swatches are never line identities.
+  const palettes = useDoc((s) => s.palettes).filter(isLinePalette);
   // Every distinct line color that isn't a swatch in one of the map's palettes
   // — the contents of the always-present "Custom" section.
   const customColors = useCustomLineColors();
@@ -35,7 +40,7 @@ export function ColorPalette({
                 type="button"
                 className={'color-swatch' + (v === normalizeHex(p.color) ? ' selected' : '')}
                 title={p.name}
-                onClick={() => onChange(p.color)}
+                onClick={() => onChange(p.color, { palette: palette.name, swatch: p.name })}
                 style={{ background: p.color }}
               />
             ))}

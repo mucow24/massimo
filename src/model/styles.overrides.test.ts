@@ -5,6 +5,7 @@ import {
   captureStyleProps,
   clearStyleTag,
   saveStyleFromItem,
+  styleFieldsDiff,
   stylePropsEqual,
   updateStyleProps,
 } from './styles';
@@ -266,5 +267,152 @@ describe('serialize: diverged-but-tagged items survive the round-trip', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.doc.lines.l1.styleId).toBeUndefined();
+  });
+});
+
+describe('swatch refs fold into the covered color fields', () => {
+  const GRAYS = {
+    name: 'grays',
+    kind: 'design' as const,
+    swatches: [
+      { name: 'Border', color: '#333333', night: '#bbbbbb' },
+      { name: 'Wash', color: '#eeeeee' },
+    ],
+  };
+  const BORDER = { palette: 'grays', swatch: 'Border' };
+  const WASH = { palette: 'grays', swatch: 'Wash' };
+
+  // A polygon def linked to Border, with two wearers: `p` faithful, edited per
+  // test; docs carry the design palette so reconcile leaves the links alone.
+  const linkedPolygons = (): MapDoc => {
+    let doc = makeDoc({
+      polygons: [makePolygon({ id: 'p' }), makePolygon({ id: 'q' })],
+      styles: [
+        makeStyle('polygon', 'y1', {
+          name: 'Zone',
+          props: { fill: '#333333', darkFill: '#bbbbbb', fillRef: BORDER },
+        }),
+      ],
+    });
+    doc = T.addPaletteToMap(doc, GRAYS);
+    doc = applyStyleToItem(doc, 'y1', 'p');
+    doc = applyStyleToItem(doc, 'y1', 'q');
+    return doc;
+  };
+
+  it('applying a def stamps its refs onto the wearer', () => {
+    const doc = linkedPolygons();
+    expect(doc.polygons.p.fillRef).toEqual(BORDER);
+    expect(doc.polygons.p).toMatchObject({ fill: '#333333', darkFill: '#bbbbbb' });
+  });
+
+  it('capture reads the refs back, so save-from-item keeps the link', () => {
+    let doc = linkedPolygons();
+    expect(captureStyleProps(doc, 'polygon', 'p')).toMatchObject({ fillRef: BORDER });
+    doc = saveStyleFromItem(doc, 'y2', 'polygon', 'From p', 'p');
+    const def = doc.styles.y2;
+    expect(def.kind === 'polygon' && def.props.fillRef).toEqual(BORDER);
+  });
+
+  // The style's answer for this field is "Border", and a wearer that still
+  // says Border agrees with it — whatever hex either happens to be painting.
+  // A locally recolored palette color is a divergence from the PALETTE (shown
+  // by the picker's own Reset / Sync), never from the style.
+  it('a locally recolored link is NOT a style override', () => {
+    let doc = linkedPolygons();
+    doc = T.updatePolygon(doc, 'p', {
+      fill: '#00ff00',
+      darkFill: '#00ff00',
+      fillRef: BORDER,
+    });
+    const def = doc.styles.y1;
+    expect(styleFieldsDiff('polygon', captureStyleProps(doc, 'polygon', 'p')!, def.props)).toEqual(
+      [],
+    );
+    expect(doc.polygons.p.fill).toBe('#00ff00');
+  });
+
+  // The fold answers "is this wearer overriding its style?" — it must not also
+  // answer "did this def just change?", or a def's linked color is a dead
+  // control: the patch carries the same ref, the def compares equal to itself,
+  // and updateStyleProps early-outs before writing anything.
+  it('a def’s linked color can be edited — the same-ref fold is not def equality', () => {
+    let doc = linkedPolygons();
+    doc = updateStyleProps(doc, 'y1', {
+      fill: '#00ff00',
+      darkFill: '#bbbbbb',
+      fillRef: BORDER,
+    });
+    const def = doc.styles.y1;
+    expect(def.kind === 'polygon' && def.props.fill).toBe('#00ff00');
+    expect(def.kind === 'polygon' && def.props.fillRef).toEqual(BORDER);
+  });
+
+  // A locally recolored link is not a style OVERRIDE (no red dot), but it is
+  // still a color the user chose: an unrelated edit to the style must leave it
+  // alone rather than stamping the def's color back over it.
+  it('an unrelated def edit leaves a wearer’s locally recolored link alone', () => {
+    let doc = linkedPolygons();
+    doc = T.updatePolygon(doc, 'p', {
+      fill: '#00ff00',
+      darkFill: '#00ff00',
+      fillRef: BORDER,
+    });
+    doc = updateStyleProps(doc, 'y1', { strokeWidth: 7 });
+    expect(doc.polygons.p).toMatchObject({ fill: '#00ff00', darkFill: '#00ff00' });
+    expect(doc.polygons.p.fillRef).toEqual(BORDER);
+    // The edit it WAS about still landed.
+    expect(doc.polygons.p.strokeWidth).toBe(7);
+  });
+
+  it('same values with a different ref read as overridden — the link is real', () => {
+    const doc = linkedPolygons();
+    const def = doc.styles.y1;
+    const detached = { ...captureStyleProps(doc, 'polygon', 'p')! };
+    delete (detached as { fillRef?: unknown }).fillRef;
+    expect(stylePropsEqual('polygon', detached, def.props)).toBe(false);
+  });
+
+  it('retargeting the def moves faithful wearers and skips pinned ones', () => {
+    let doc = linkedPolygons();
+    // q pins a custom day fill (detaching its ref via the write rule).
+    doc = T.updatePolygon(doc, 'q', { fill: '#123456' });
+    doc = updateStyleProps(doc, 'y1', {
+      fill: '#eeeeee',
+      darkFill: '#eeeeee',
+      fillRef: WASH,
+    });
+    expect(doc.polygons.p).toMatchObject({ fill: '#eeeeee', darkFill: '#eeeeee' });
+    expect(doc.polygons.p.fillRef).toEqual(WASH);
+    expect(doc.polygons.q.fill).toBe('#123456');
+    expect('fillRef' in doc.polygons.q).toBe(false);
+  });
+
+  it('a def value edit without the ref key detaches the def (the write rule)', () => {
+    let doc = linkedPolygons();
+    doc = updateStyleProps(doc, 'y1', { fill: '#000000' });
+    const def = doc.styles.y1;
+    expect(def.kind === 'polygon' && 'fillRef' in def.props).toBe(false);
+    // …and the faithful wearer followed the detach.
+    expect('fillRef' in doc.polygons.p).toBe(false);
+    expect(doc.polygons.p.fill).toBe('#000000');
+  });
+
+  it('a stopDot def value edit without the ref key detaches too', () => {
+    let doc = makeDoc({
+      styles: [
+        makeStyle('stopDot', 'd1', {
+          name: 'Linked',
+          props: {
+            fill: { day: '#333333', night: '#bbbbbb' },
+            fillRef: BORDER,
+          },
+        }),
+      ],
+    });
+    doc = T.addPaletteToMap(doc, GRAYS);
+    doc = updateStyleProps(doc, 'd1', { fill: { day: '#000000', night: '#000000' } });
+    const def = doc.styles.d1;
+    expect(def.kind === 'stopDot' && 'fillRef' in def.props).toBe(false);
   });
 });
