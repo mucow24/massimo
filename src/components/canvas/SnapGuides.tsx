@@ -47,9 +47,41 @@ interface Props {
 export const LABEL_EDGE_INSET_PX = 24;
 
 /**
+ * The two registers a span paints in, in screen px. A snap that ENGAGED gets the
+ * LOUD one — halo pass, endpoint rings, a fat dash and a bold chip — because
+ * something locked and the user has to see it. A `quiet` span is an ambient
+ * measurement that rides every frame of a gesture whether or not anything
+ * locked (`SnapGuide.quiet`; the guide drag's spacing readout is the one
+ * source), so it drops the halo and the rings and thins the rest: it measures
+ * FROM the thing being dragged, and at full chrome two stationary spans read as
+ * the subject while the moving guide reads as incidental ink — which is what
+ * made pulling a vertical guide out feel broken. It stays a real readout
+ * though: the chip keeps its halo (thinner), or the number dies over band art.
+ */
+// The quiet pattern is DOTTED rather than dashed, where the loud one runs the
+// other way round: a ZERO-length mark, which a round cap paints as a circle of
+// the stroke's own width (butt-capped it would draw nothing at all), on a pitch
+// a touch wider than the dot. A tracer running off a stationary guide should
+// read as a measurement being taken, not as a second line drawn on the map.
+const REGISTER = {
+  loud: { width: 2, dash: [4, 3], cap: 'butt', font: 14, weight: 700, chipHalo: 4, labelGap: 9 },
+  quiet: {
+    width: 1,
+    dash: [0, 3],
+    cap: 'round',
+    font: 11,
+    weight: 600,
+    chipHalo: 2.5,
+    labelGap: 7,
+  },
+} as const;
+
+/**
  * Snap-axis guide rendering: a soft halo behind + a dashed accent line on top
- * for each active alignment axis, plus circles at the endpoints. Stroke
- * widths are inverse to zoom so the guide stays visually consistent.
+ * for each active alignment axis, plus circles at the endpoints — or, for a
+ * `quiet` span, the thinned-down version of the same with neither the halo nor
+ * the circles (see REGISTER). Stroke widths are inverse to zoom so the guide
+ * stays visually consistent.
  *
  * Colors derive from the theme accent — the same "the editor is helping you"
  * blue as the marquee, mode frames, and selection washes. (The old palette
@@ -117,35 +149,39 @@ export function SnapGuides({ guides: allGuides, zoom, engaged, vb, labelBox }: P
         </filter>
       </defs>
       <g filter="url(#snap-halo-blur)">
-        {guides.map((g, i) => (
-          <g key={'halo' + i}>
-            <line
-              x1={g.from.x}
-              y1={g.from.y}
-              x2={g.to.x}
-              y2={g.to.y}
-              stroke={halo}
-              strokeWidth={5 / zoom}
-              strokeLinecap="round"
-            />
-            <circle
-              cx={g.from.x}
-              cy={g.from.y}
-              r={STOP_DOT_RADIUS + 1 / zoom}
-              fill="none"
-              stroke={halo}
-              strokeWidth={5 / zoom}
-            />
-            <circle
-              cx={g.to.x}
-              cy={g.to.y}
-              r={STOP_DOT_RADIUS + 1 / zoom}
-              fill="none"
-              stroke={halo}
-              strokeWidth={5 / zoom}
-            />
-          </g>
-        ))}
+        {guides.map((g, i) =>
+          // The quiet register has no halo pass and no endpoint rings at all —
+          // the blur and the two blobs are most of what made these spans shout.
+          g.quiet ? null : (
+            <g key={'halo' + i}>
+              <line
+                x1={g.from.x}
+                y1={g.from.y}
+                x2={g.to.x}
+                y2={g.to.y}
+                stroke={halo}
+                strokeWidth={5 / zoom}
+                strokeLinecap="round"
+              />
+              <circle
+                cx={g.from.x}
+                cy={g.from.y}
+                r={STOP_DOT_RADIUS + 1 / zoom}
+                fill="none"
+                stroke={halo}
+                strokeWidth={5 / zoom}
+              />
+              <circle
+                cx={g.to.x}
+                cy={g.to.y}
+                r={STOP_DOT_RADIUS + 1 / zoom}
+                fill="none"
+                stroke={halo}
+                strokeWidth={5 / zoom}
+              />
+            </g>
+          ),
+        )}
         {engagedGuides.map((g) => {
           const s = spanOf(g);
           if (!s) return null;
@@ -164,19 +200,23 @@ export function SnapGuides({ guides: allGuides, zoom, engaged, vb, labelBox }: P
           );
         })}
       </g>
-      {guides.map((g, i) => (
-        <line
-          key={'dash' + i}
-          data-snap-guide=""
-          x1={g.from.x}
-          y1={g.from.y}
-          x2={g.to.x}
-          y2={g.to.y}
-          stroke={themeColors.accent}
-          strokeWidth={2 / zoom}
-          strokeDasharray={`${4 / zoom} ${3 / zoom}`}
-        />
-      ))}
+      {guides.map((g, i) => {
+        const reg = g.quiet ? REGISTER.quiet : REGISTER.loud;
+        return (
+          <line
+            key={'dash' + i}
+            data-snap-guide=""
+            x1={g.from.x}
+            y1={g.from.y}
+            x2={g.to.x}
+            y2={g.to.y}
+            stroke={g.quiet ? withAlpha(themeColors.accent, 0.6) : themeColors.accent}
+            strokeWidth={reg.width / zoom}
+            strokeDasharray={reg.dash.map((d) => d / zoom).join(' ')}
+            strokeLinecap={reg.cap}
+          />
+        );
+      })}
       {engagedGuides.map((g) => {
         const s = spanOf(g);
         if (!s) return null;
@@ -185,8 +225,8 @@ export function SnapGuides({ guides: allGuides, zoom, engaged, vb, labelBox }: P
             <line
               {...s}
               stroke={themeColors.accent}
-              strokeWidth={2 / zoom}
-              strokeDasharray={`${4 / zoom} ${3 / zoom}`}
+              strokeWidth={REGISTER.loud.width / zoom}
+              strokeDasharray={REGISTER.loud.dash.map((d) => d / zoom).join(' ')}
             />
             <circle
               cx={g.at.x}
@@ -194,7 +234,7 @@ export function SnapGuides({ guides: allGuides, zoom, engaged, vb, labelBox }: P
               r={STOP_DOT_RADIUS + 1 / zoom}
               fill="none"
               stroke={themeColors.accent}
-              strokeWidth={2 / zoom}
+              strokeWidth={REGISTER.loud.width / zoom}
             />
           </g>
         );
@@ -212,7 +252,8 @@ export function SnapGuides({ guides: allGuides, zoom, engaged, vb, labelBox }: P
           px = -px;
           py = -py;
         }
-        const offset = 9 / zoom;
+        const reg = g.quiet ? REGISTER.quiet : REGISTER.loud;
+        const offset = reg.labelGap / zoom;
         const lx = mx + px * offset;
         const ly = my + py * offset;
         return (
@@ -221,12 +262,12 @@ export function SnapGuides({ guides: allGuides, zoom, engaged, vb, labelBox }: P
             x={lx}
             // Cap-centered on the alphabetic baseline — NOT dominantBaseline="central",
             // which resolves from platform-specific font metrics (see capCenterDy).
-            y={ly + capCenterDy(14 / zoom)}
-            fontSize={14 / zoom}
-            fontWeight={700}
+            y={ly + capCenterDy(reg.font / zoom)}
+            fontSize={reg.font / zoom}
+            fontWeight={reg.weight}
             fill="#fff"
             stroke={themeColors.accent}
-            strokeWidth={4 / zoom}
+            strokeWidth={reg.chipHalo / zoom}
             paintOrder="stroke"
             textAnchor="middle"
             pointerEvents="none"
@@ -275,12 +316,12 @@ export function SnapGuides({ guides: allGuides, zoom, engaged, vb, labelBox }: P
           <text
             key={'elabel' + g.id}
             x={lx}
-            y={ly + capCenterDy(14 / zoom)}
-            fontSize={14 / zoom}
-            fontWeight={700}
+            y={ly + capCenterDy(REGISTER.loud.font / zoom)}
+            fontSize={REGISTER.loud.font / zoom}
+            fontWeight={REGISTER.loud.weight}
             fill="#fff"
             stroke={themeColors.accent}
-            strokeWidth={4 / zoom}
+            strokeWidth={REGISTER.loud.chipHalo / zoom}
             paintOrder="stroke"
             textAnchor={anchor}
             pointerEvents="none"

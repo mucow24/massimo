@@ -832,8 +832,8 @@ dead on an infinite guide — slides a bounded span along its street; a group to
 (`translateSiblings`) slides `extent.center` by the along projection too, so the segment
 travels rigidly with its group. Both gestures draw the **spacing readout** while their offset
 phase runs: labeled segments from the cursor's foot on the guide out to the nearest PARALLEL
-guide either side (`guideNeighbourReadout`, rendered as ordinary `SnapGuide`s — the measurement
-chrome a station drag shows its neighbours). It is a measurement, not a snap: an offset never
+guide either side (`guideNeighbourReadout`, `SnapGuide`s flagged `quiet` — the ambient register,
+see Snapping). It is a measurement, not a snap: an offset never
 snaps to a parallel guide, so it needs no engagement, rides every frame of the phase, and
 survives Shift (which declines snapping, not measuring). Only a same-orientation guide can be a
 neighbour — anything else crosses, and a BOUNDED parallel counts only where its span covers the
@@ -2583,7 +2583,12 @@ two pools are the same set, so nothing else changes.
 Shared conventions, all paths: alignment tolerances are `/zoom` (constant screen px); grid is a
 hard world constraint; **Shift bypasses all snapping** during any pointer gesture (svg rotation
 included — it snaps 22.5° by default, Shift frees); every alignment snap draws a
-distance-labeled guide through `SnapGuides`; grid snapping is silent. Every live measurement
+distance-labeled guide through `SnapGuides`; grid snapping is silent. `SnapGuides` paints in two
+**registers**: a snap that ENGAGED gets the loud one — blurred halo, endpoint rings, fat dash,
+bold chip — while a span flagged `quiet` (an AMBIENT measurement, riding every frame of a gesture
+whether or not anything locked; the guide drag's spacing readout is the only one) drops the halo
+and the rings and thins the line and its chip. Ambient chrome at engagement volume claims a lock
+that never happened, and it out-shouts the very thing the span measures FROM. Every live measurement
 readout — those guide labels, the Ctrl-drag spacing, the engaged guide's coordinate chip, the
 circle-diameter chip — speaks one format, `formatMeasurement`: one decimal place, the trailing
 `.0` kept so a number never changes width as a drag crosses a unit boundary. A span with an end off

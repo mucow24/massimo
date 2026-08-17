@@ -193,9 +193,18 @@ describe('guideNeighbourReadout', () => {
       h('far-above', 300),
     ]);
     expect(r).toEqual([
-      { from: { x: 250, y: 100 }, to: { x: 250, y: 60 }, label: '40.0' },
-      { from: { x: 250, y: 100 }, to: { x: 250, y: 160 }, label: '60.0' },
+      { from: { x: 250, y: 100 }, to: { x: 250, y: 60 }, label: '40.0', quiet: true },
+      { from: { x: 250, y: 100 }, to: { x: 250, y: 160 }, label: '60.0', quiet: true },
     ]);
+  });
+
+  // The readout is AMBIENT — it rides every frame of a guide gesture whether or
+  // not anything engaged — so it paints in the QUIET register: full snap chrome
+  // on a stationary measurement made the moving guide read as the incidental
+  // ink and the numbers as the subject (see SnapGuides).
+  it('marks every span quiet, never the loud snap register', () => {
+    const r = guideNeighbourReadout('horizontal', 100, { x: 0, y: 0 }, [h('a', 60), h('b', 160)]);
+    expect(r.map((g) => g.quiet)).toEqual([true, true]);
   });
 
   it('reports the gap to one decimal place, not a rounded whole number', () => {
@@ -226,7 +235,9 @@ describe('guideNeighbourReadout', () => {
       { orientation: 'horizontal', offset: 60, extent: { center: 600, halfLength: 50 } },
       { orientation: 'horizontal', offset: 40 },
     ]);
-    expect(r).toEqual([{ from: { x: 250, y: 100 }, to: { x: 250, y: 40 }, label: '60.0' }]);
+    expect(r).toEqual([
+      { from: { x: 250, y: 100 }, to: { x: 250, y: 40 }, label: '60.0', quiet: true },
+    ]);
     // Covering the foot, the bounded one is the nearest again.
     const r2 = guideNeighbourReadout('horizontal', 100, { x: 250, y: 0 }, [
       { orientation: 'horizontal', offset: 60, extent: { center: 250, halfLength: 50 } },

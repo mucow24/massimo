@@ -262,8 +262,8 @@ describe('useGuideDrag — neighbour spacing readout', () => {
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
     expect(useDoc.getState().guides.gh.offset).toBe(137);
     expect(r.current.snapGuides).toEqual([
-      { from: { x: 300, y: 137 }, to: { x: 300, y: 40 }, label: '97.0' },
-      { from: { x: 300, y: 137 }, to: { x: 300, y: 160 }, label: '23.0' },
+      { from: { x: 300, y: 137 }, to: { x: 300, y: 40 }, label: '97.0', quiet: true },
+      { from: { x: 300, y: 137 }, to: { x: 300, y: 160 }, label: '23.0', quiet: true },
     ]);
     // The readout is gesture chrome: it goes when the gesture does.
     act(() => r.current.onPointerUp(pointerEvent({ clientX: 300, clientY: 137 })));
@@ -298,8 +298,8 @@ describe('useGuideDrag — neighbour spacing readout', () => {
     // span straight through it.
     expect(useDoc.getState().guides.ghHi.offset).toBe(197);
     expect(r.current.snapGuides).toEqual([
-      { from: { x: 300, y: 137 }, to: { x: 300, y: 40 }, label: '97.0' },
-      { from: { x: 300, y: 137 }, to: { x: 300, y: 197 }, label: '60.0' },
+      { from: { x: 300, y: 137 }, to: { x: 300, y: 40 }, label: '97.0', quiet: true },
+      { from: { x: 300, y: 137 }, to: { x: 300, y: 197 }, label: '60.0', quiet: true },
     ]);
   });
 
