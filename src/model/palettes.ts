@@ -466,6 +466,43 @@ export function dedupeSwatchNames(palettes: readonly Palette[]): Palette[] {
   return changed ? out : (palettes as Palette[]);
 }
 
+// ---- Editing a palette's swatch list ---------------------------------------
+// The three list edits both palette surfaces offer — the manager's editor and
+// the Styles tab's sections. They live here, as plain list→list functions, so
+// the two cannot drift on what a new color is called or where a copy lands;
+// each caller only decides how to WRITE the result (a doc upsert, or the
+// library store).
+
+/** One color appended, named by the first free position ("3", then "4"…). */
+export function withAddedSwatch(
+  swatches: readonly PaletteSwatch[],
+  color: string = FALLBACK_LINE_COLOR,
+): PaletteSwatch[] {
+  return uniqueSwatchNames([...swatches, { name: '', color: normalizeHex(color) }]);
+}
+
+/**
+ * A copy of swatch `index`, both halves, landing right after it under the
+ * first free "<name> copy". The copy claims its name HERE rather than leaving
+ * it to the positional pass, which would hand the copy the free name and
+ * RENAME the original — moving an existing swatch out from under its refs.
+ */
+export function withDuplicatedSwatch(
+  swatches: readonly PaletteSwatch[],
+  index: number,
+): PaletteSwatch[] {
+  const source = swatches[index];
+  if (!source) return swatches as PaletteSwatch[];
+  const name = freshPaletteName(new Set(swatches.map((s) => s.name)), `${source.name} copy`);
+  return [...swatches.slice(0, index + 1), { ...source, name }, ...swatches.slice(index + 1)];
+}
+
+/** Swatch `index` gone. The FLOOR of one is the callers' (both disable the
+ *  last row's delete rather than emptying a palette). */
+export function withoutSwatch(swatches: readonly PaletteSwatch[], index: number): PaletteSwatch[] {
+  return swatches.filter((_, i) => i !== index);
+}
+
 /**
  * One swatch after recoloring `half`, collapse invariants applied — the single
  * owner of the recolor rules, shared by the doc transform and the editor's

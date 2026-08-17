@@ -11,6 +11,9 @@ import {
   libraryPalettes,
   PALETTE_SORTS,
   paletteContentEqual,
+  withAddedSwatch,
+  withDuplicatedSwatch,
+  withoutSwatch,
   type Palette,
 } from './palettes';
 
@@ -156,6 +159,43 @@ describe('copyPalette', () => {
       }).swatches.map((s) => s.name),
     ).toEqual(['Red', 'Red 2', '3']);
     expect(copyPalette(FRRF).swatches.map((s) => s.name)).toEqual(['1', '2']);
+  });
+});
+
+// The three list edits both palette surfaces share. They live in the model so
+// the manager's editor and the Styles tab's sections cannot disagree about
+// what a new color is called or where a copy lands.
+describe('editing a swatch list', () => {
+  const RED = { name: 'Red', color: '#c1272d' };
+  const BLUE = { name: 'Blue', color: '#0061a8', night: '#00335c' };
+
+  it('adds a color named by the first free position', () => {
+    expect(withAddedSwatch([RED, BLUE])).toEqual([RED, BLUE, { name: '3', color: '#888888' }]);
+    expect(withAddedSwatch([RED], '#00FF00')[1]).toEqual({ name: '2', color: '#00ff00' });
+  });
+
+  // "2" is taken, so the appended blank counts PAST it rather than colliding.
+  it('counts past a position name already in use', () => {
+    expect(withAddedSwatch([RED, { name: '2', color: '#111111' }])[2].name).toBe('3');
+  });
+
+  it('duplicates in place, both halves, under a counted-up name', () => {
+    const once = withDuplicatedSwatch([RED, BLUE], 1);
+    expect(once).toEqual([RED, BLUE, { ...BLUE, name: 'Blue copy' }]);
+    // The copy claims the free name; the ORIGINAL keeps its own, or a rename
+    // would move it out from under anything linked to it.
+    const twice = withDuplicatedSwatch(once, 1);
+    expect(twice.map((s) => s.name)).toEqual(['Red', 'Blue', 'Blue copy 2', 'Blue copy']);
+  });
+
+  it('duplicating an index that is not there changes nothing', () => {
+    const list = [RED];
+    expect(withDuplicatedSwatch(list, 9)).toBe(list);
+  });
+
+  it('removes by index, leaving the floor of one to its callers', () => {
+    expect(withoutSwatch([RED, BLUE], 0)).toEqual([BLUE]);
+    expect(withoutSwatch([RED], 0)).toEqual([]);
   });
 });
 

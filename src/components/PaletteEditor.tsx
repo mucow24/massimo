@@ -13,7 +13,8 @@ import { useCustomPalettes } from '../state/customPalettes';
 import {
   FALLBACK_LINE_COLOR,
   recolorSwatch,
-  uniqueSwatchNames,
+  withAddedSwatch,
+  withoutSwatch,
   type Palette,
   type PaletteSwatch,
 } from '../model/palettes';
@@ -266,11 +267,10 @@ export function PaletteEditor({
       ? recolorMapPaletteColor(palette.name, i, c, half)
       : withSwatches(swatches.map((s, j) => (j === i ? recolorSwatch(s, c, half, design) : s)));
 
-  // The new swatch is named by uniqueSwatchNames' canonical rule: a blank
-  // takes its 1-based position, counting up past any name already taken —
-  // String(len + 1) alone collides after a delete-then-add.
+  // The list edits themselves are the model's, shared with the Styles tab's
+  // palette sections so the two surfaces name and place a new color alike.
   const addColor = (color: string = FALLBACK_LINE_COLOR) =>
-    withSwatches(uniqueSwatchNames([...swatches, { name: '', color: normalizeHex(color) }]));
+    withSwatches(withAddedSwatch(swatches, color));
 
   // What Add color offers: the map's custom colors, minus whatever this
   // palette already holds. That subtraction is the only reason the two sources
@@ -428,7 +428,7 @@ export function PaletteEditor({
                 `Confirm deleting color ${i + 1}`,
                 'Will delete this color from the palette',
                 <Cross2Icon />,
-                () => withSwatches(swatches.filter((_, j) => j !== i)),
+                () => withSwatches(withoutSwatch(swatches, i)),
               )
             )}
           </div>

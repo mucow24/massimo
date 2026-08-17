@@ -15,6 +15,9 @@ import {
   FALLBACK_LINE_COLOR,
   freshPaletteName,
   isLinePalette,
+  withAddedSwatch,
+  withDuplicatedSwatch,
+  withoutSwatch,
   type Palette,
 } from '../model/palettes';
 
@@ -99,10 +102,9 @@ function PaletteGroup({
   /**
    * Add, duplicate and delete are all ONE upsert of the whole palette, which
    * is also what reconciles the refs: a deleted swatch's links drop and the
-   * fields keep what they were painting. A blank name arrives NAMED by that
-   * door (`copyPalette` positions it against the names already taken), which
-   * is how `+` gets its "3"; a duplicate names itself first, or that same
-   * positional pass would hand the copy the free name and rename the original.
+   * fields keep what they were painting. What each edit DOES to the list is
+   * the model's (`withAddedSwatch` and friends), shared with the manager's
+   * editor so the two surfaces cannot disagree about naming or placement.
    */
   const withSwatches = (next: typeof swatches) => addPaletteToMap({ ...palette, swatches: next });
 
@@ -126,7 +128,7 @@ function PaletteGroup({
           className="btn-mini icon"
           aria-label={`Add a color to ${name}`}
           title="Add a color"
-          onClick={() => withSwatches([...swatches, { name: '', color: FALLBACK_LINE_COLOR }])}
+          onClick={() => withSwatches(withAddedSwatch(swatches))}
         >
           <PlusIcon />
         </button>
@@ -155,25 +157,11 @@ function PaletteGroup({
               </>
             )}
             <SwatchNameField palette={name} index={i} name={s.name} />
-            {/* A copy of this color, both halves, landing right after it. The
-                copy claims its own free name HERE — leaving that to the door's
-                positional dedupe would hand the new swatch the plain "<name>
-                copy" and rename the EXISTING one out from under its refs. */}
             <button
               className="btn-mini icon"
               aria-label={`Duplicate ${name} ${s.name}`}
               title="Duplicate color"
-              onClick={() =>
-                withSwatches([
-                  ...swatches.slice(0, i + 1),
-                  {
-                    ...s,
-                    // Same first-unused rule the palette names use.
-                    name: freshPaletteName(new Set(swatches.map((x) => x.name)), `${s.name} copy`),
-                  },
-                  ...swatches.slice(i + 1),
-                ])
-              }
+              onClick={() => withSwatches(withDuplicatedSwatch(swatches, i))}
             >
               <CopyIcon />
             </button>
@@ -189,7 +177,7 @@ function PaletteGroup({
                   : 'Delete color (anything linked to it keeps its paint)'
               }
               disabled={swatches.length === 1}
-              onClick={() => withSwatches(swatches.filter((_, j) => j !== i))}
+              onClick={() => withSwatches(withoutSwatch(swatches, i))}
             >
               <Cross2Icon />
             </button>
