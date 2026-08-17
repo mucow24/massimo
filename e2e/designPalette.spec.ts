@@ -27,6 +27,26 @@ const onlyPolygon = (page: Page): Promise<PolygonRead> =>
     return polys[Object.keys(polys)[0]];
   });
 
+/** The design palette's first swatch, straight from the doc. */
+const firstSwatch = (page: Page): Promise<{ name: string; color: string; night?: string }> =>
+  page.evaluate(() => {
+    const w = window as unknown as {
+      __massimo: {
+        stores: {
+          doc: {
+            getState: () => {
+              palettes: { name: string; kind?: string; swatches: { name: string; color: string }[] }[];
+            };
+          };
+        };
+      };
+    };
+    const design = w.__massimo.stores.doc
+      .getState()
+      .palettes.find((p) => p.kind === 'design');
+    return design!.swatches[0];
+  });
+
 // Clear of the docked popover (see polygon.spec.ts).
 const CENTER = { x: 560, y: 400 };
 
@@ -78,15 +98,15 @@ test('design palette: author, link a polygon, tweak from the sidebar, detach', a
   await page.getByRole('button', { name: 'Close palettes' }).click();
 
   // Link the polygon's fill to the swatch from the popover dropdown: the
-  // trigger flips from Custom to the swatch's name and the pair pickers fold
-  // away; the canvas paints the swatch's day color.
+  // trigger flips from Custom to the swatch's name and the pickers stay put,
+  // now showing the swatch's colors; the canvas paints its day color.
   await page.mouse.click(CENTER.x, CENTER.y);
   await expect(page.locator('.polygon-popover')).toBeVisible();
   const fillTrigger = page.getByRole('combobox', { name: 'Fill color palette color' });
   await fillTrigger.click();
   await page.getByRole('option', { name: '1', exact: true }).click();
   await expect(fillTrigger).toHaveText('1');
-  await expect(page.getByRole('button', { name: 'Polygon color', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Polygon color', exact: true })).toHaveCount(1);
   expect(await onlyPolygon(page)).toMatchObject({
     fill: '#333333',
     darkFill: '#bbbbbb',
@@ -100,6 +120,44 @@ test('design palette: author, link a polygon, tweak from the sidebar, detach', a
   await setColor(page, 'New design palette 1', '#008800');
   await expect(page.locator('[data-polygon-id]')).toHaveAttribute('fill', '#008800');
   expect((await onlyPolygon(page)).fill).toBe('#008800');
+
+  // Recolor the LINKED field in place: the link survives (the trigger keeps
+  // naming the swatch) and the row grows its two palette controls.
+  //
+  // The LAYOUT is the point here, and jsdom cannot see it: the revert badge
+  // comes and goes as the color diverges and is put back, so its slot has to
+  // be held open — otherwise the pickers slide sideways under the cursor on
+  // the very click that resets them. Measuring the day swatch's x across all
+  // three states is what pins that.
+  const daySwatchX = () =>
+    page
+      .getByRole('button', { name: 'Polygon color', exact: true })
+      .evaluate((el) => Math.round(el.getBoundingClientRect().x));
+
+  const xLinkedClean = await daySwatchX();
+  await setColor(page, 'Polygon color', '#112233');
+  await expect(fillTrigger).toHaveText('1'); // still linked, just diverged
+  expect((await onlyPolygon(page)).fillRef).toEqual({
+    palette: 'New design palette',
+    swatch: '1',
+  });
+  expect(await daySwatchX()).toBe(xLinkedClean);
+
+  // Reset puts the swatch's own color back, and nothing moves doing it.
+  await page.getByRole('button', { name: /^Reset fill/ }).click();
+  expect((await onlyPolygon(page)).fill).toBe('#008800');
+  expect(await daySwatchX()).toBe(xLinkedClean);
+
+  // Sync sends a local color the other way — into the swatch, so the palette
+  // itself (and the sidebar row showing it) lands on what this field paints.
+  await setColor(page, 'Polygon color', '#112233');
+  await page.getByRole('button', { name: /^Sync fill/ }).click();
+  await expect.poll(() => firstSwatch(page)).toMatchObject({ name: '1', color: '#112233' });
+  expect((await onlyPolygon(page)).fill).toBe('#112233');
+  expect(await daySwatchX()).toBe(xLinkedClean);
+
+  // Put the field back on the swatch's color for the detach check below.
+  await expect(fillTrigger).toHaveText('1');
 
   // Detach: Custom keeps the colors but drops the link — the next palette
   // tweak leaves the polygon alone.

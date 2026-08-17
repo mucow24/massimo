@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PaletteColorRow } from './PaletteColorRow';
 import { useDoc } from '../state/store';
@@ -50,6 +50,20 @@ beforeEach(() => {
   useDoc.temporal.getState().clear();
 });
 
+/**
+ * Drive one of the row's two ColorFields for real: open its picker and type a
+ * hex. Role-scoped rather than `setColorField`, because the row's `<label>`
+ * carries the same accessible name as the swatch it sits beside.
+ */
+const editSwatch = async (
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+  hex: string,
+) => {
+  await user.click(screen.getByRole('button', { name }));
+  fireEvent.change(screen.getByLabelText(`${name} hex value`), { target: { value: hex } });
+};
+
 describe('<PaletteColorRow />', () => {
   // The swatch ColorFields are buttons; the dropdown trigger is a combobox —
   // role-scoped queries keep the two apart (the row label reaches both).
@@ -70,14 +84,97 @@ describe('<PaletteColorRow />', () => {
     expect(screen.getByRole('button', { name: 'Dark mode fill color' })).toBeInTheDocument();
   });
 
-  it('linked state: the trigger names the swatch and the pair pickers are gone', () => {
+  // The pair is always there — linked only changes where the color CAME from,
+  // never whether you can reach it.
+  it('linked state: the trigger names the swatch, the pair pickers stay', () => {
     useDoc.setState({ ...useDoc.getState(), palettes: [GRAYS] });
     renderRow({ swatchRef: BORDER });
     expect(screen.getByRole('combobox', { name: 'Fill color palette color' })).toHaveTextContent(
       'Border',
     );
-    expect(screen.queryByRole('button', { name: 'Fill color' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Dark mode fill color' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Fill color' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dark mode fill color' })).toBeInTheDocument();
+  });
+
+  // Nothing diverges, so there is nothing to put back and nothing to push:
+  // the revert is absent and Sync stands idle, the same reading the style
+  // row's own Sync button has while an item matches its style.
+  it('a link painting its swatch has no revert, and Sync sits idle', () => {
+    useDoc.setState({ ...useDoc.getState(), palettes: [GRAYS] });
+    renderRow({ swatchRef: BORDER });
+    expect(screen.queryByRole('button', { name: /^Reset fill/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Sync fill to Border' })).toBeDisabled();
+  });
+
+  // THE gesture the whole feature exists for, driven end to end: link a field,
+  // then edit its picker. It must write the new color WITH the same ref — a
+  // value written without the ref key is the detach gesture, which would drop
+  // the row back to Custom and make the dirty state unreachable.
+  it('editing a picker while linked keeps the link (does NOT fall back to Custom)', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({ ...useDoc.getState(), palettes: [GRAYS] });
+    renderRow({ swatchRef: BORDER });
+    await editSwatch(user, 'Fill color', '#00ff00');
+    expect(onPick).toHaveBeenCalledWith(BORDER, { day: '#00ff00', night: '#bbbbbb' });
+    // Never the bare value write — that is what unlinks.
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('editing the DARK picker while linked keeps the link too', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({ ...useDoc.getState(), palettes: [GRAYS] });
+    renderRow({ swatchRef: BORDER });
+    await editSwatch(user, 'Dark mode fill color', '#00ff00');
+    expect(onPick).toHaveBeenCalledWith(BORDER, { day: '#333333', night: '#00ff00' });
+    expect(onDarkChange).not.toHaveBeenCalled();
+  });
+
+  // Unlinked, the pickers still write plain values — that is how a Custom
+  // color is edited, and how a detach stays detached.
+  it('editing a picker while UNLINKED writes the plain value', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({ ...useDoc.getState(), palettes: [GRAYS] });
+    renderRow();
+    await editSwatch(user, 'Fill color', '#00ff00');
+    expect(onChange).toHaveBeenCalledWith('#00ff00');
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  describe('a linked field recolored in place', () => {
+    // The row still says Border, but paints something else.
+    const dirtyRow = () => {
+      useDoc.setState({ ...useDoc.getState(), palettes: [GRAYS] });
+      renderRow({ swatchRef: BORDER, value: '#00ff00', darkValue: '#00ff00' });
+    };
+
+    it('keeps naming its swatch and offers reset + sync', () => {
+      dirtyRow();
+      expect(screen.getByRole('combobox', { name: 'Fill color palette color' })).toHaveTextContent(
+        'Border',
+      );
+      expect(screen.getByRole('button', { name: 'Reset fill to Border' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Sync fill to Border' })).toBeInTheDocument();
+    });
+
+    it('reset restamps the swatch back over the local color, link intact', async () => {
+      const user = userEvent.setup();
+      dirtyRow();
+      await user.click(screen.getByRole('button', { name: 'Reset fill to Border' }));
+      expect(onPick).toHaveBeenCalledWith(BORDER, { day: '#333333', night: '#bbbbbb' });
+    });
+
+    it('sync writes the local pair into the swatch itself', async () => {
+      const user = userEvent.setup();
+      dirtyRow();
+      await user.click(screen.getByRole('button', { name: 'Sync fill to Border' }));
+      expect(useDoc.getState().palettes[0].swatches[0]).toEqual({
+        name: 'Border',
+        color: '#00ff00',
+      });
+      // The field itself is left alone — it already paints this.
+      expect(onPick).not.toHaveBeenCalled();
+      expect(onChange).not.toHaveBeenCalled();
+    });
   });
 
   it('picking a swatch hands over its ref and resolved pair', async () => {

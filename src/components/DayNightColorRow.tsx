@@ -27,6 +27,8 @@ export function DayNightColorRow({
   onDarkChange,
   disabled,
   dot,
+  leading,
+  trailing,
 }: {
   label: string;
   /** id of the light swatch; also the row `<label>`'s `htmlFor`. */
@@ -41,13 +43,22 @@ export function DayNightColorRow({
   onChange: (c: string) => void;
   onDarkChange: (c: string) => void;
   disabled?: boolean;
-  /** Optional override marker (an `OverrideDot`) rendered first in the row. */
+  /** Optional override marker (an `OverrideDot`) rendered first in the row —
+   *  in the reserved gutter, where it speaks for the row's STYLE. */
   dot?: ReactNode;
+  /** Optional control between the label and the sun — up against the colors
+   *  themselves, which is what keeps the palette's revert from reading as the
+   *  style's. */
+  leading?: ReactNode;
+  /** Optional control after the two swatches — the palette row's "sync to
+   *  palette", which belongs on the far side of the colors it would push. */
+  trailing?: ReactNode;
 }) {
   return (
     <div className={'row' + (disabled ? ' disabled' : '')}>
       {dot}
       <label htmlFor={id}>{label}</label>
+      {leading}
       <SunIcon aria-hidden="true" />
       <ColorField
         id={id}
@@ -66,6 +77,7 @@ export function DayNightColorRow({
         disabled={disabled}
         onChange={onDarkChange}
       />
+      {trailing}
     </div>
   );
 }

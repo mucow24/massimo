@@ -5,6 +5,7 @@ import type { GridSnap } from '../geometry/snap';
 import type {
   AutoHAlign,
   AutoVAlign,
+  DayNightColor,
   GuideOrientation,
   LabelAlign,
   LabelValign,
@@ -1024,6 +1025,10 @@ interface DocState extends MapDoc {
     color: string,
     half?: 'day' | 'night',
   ) => void;
+  /** Push a color INTO the swatch it is linked to — the palette pickers' "sync
+   *  to palette", the way a field that drifted onto its own color makes the
+   *  palette (and every wearer still faithful to the old one) catch up. */
+  syncMapPaletteSwatch: (name: string, index: number, pair: DayNightColor) => void;
   /** Move a palette from one slot to another in the map's list — the order
    *  the picker's sections and the `addLine` color cycle follow. */
   reorderMapPalette: (from: number, to: number) => void;
@@ -1521,6 +1526,8 @@ export const useDoc = create<DocState>()(
           set((s) => T.renameMapPaletteSwatch(s, name, index, newName)),
         recolorMapPaletteColor: (name, index, color, half) =>
           set((s) => T.recolorMapPaletteColor(s, name, index, color, half)),
+        syncMapPaletteSwatch: (name, index, pair) =>
+          set((s) => T.syncMapPaletteSwatch(s, name, index, pair)),
         reorderMapPalette: (from, to) => set((s) => T.reorderMapPalette(s, from, to)),
         setDarkMode: (darkMode) => set((s) => T.setDarkMode(s, darkMode)),
         clearAll: () => set((s) => T.clearAll(s)),

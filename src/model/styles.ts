@@ -285,15 +285,27 @@ export const STYLE_FIELDS = {
 // link a custom-pinned value) or a value alone (which would clobber an
 // aliased wearer's own link). Absent ≡ absent, so ref-less legacy defs stay
 // equal to their wearers.
-const refFolds = (
+//
+// Where BOTH sides name the same swatch, the ref is the whole answer and the
+// values are not compared at all: the style says "this field is P", the wearer
+// still says P, and they agree — whatever hex either happens to be painting.
+// That is what lets a linked field carry a local color (the picker's Reset /
+// Sync state) without dirtying the STYLE over it; the divergence it represents
+// is against the PALETTE, and the palette pickers are where it shows.
+//
+// Returns null for "no ref involvement here — compare the values".
+const refVerdict = (
   field: string,
   a: Record<string, unknown>,
   b: Record<string, unknown>,
   pairs: Record<string, string>,
-): boolean => {
+): boolean | null => {
   const refKey = pairs[field];
-  if (refKey === undefined) return true;
-  return swatchRefsEqual(a[refKey] as SwatchRef | undefined, b[refKey] as SwatchRef | undefined);
+  if (refKey === undefined) return null;
+  const ra = a[refKey] as SwatchRef | undefined;
+  const rb = b[refKey] as SwatchRef | undefined;
+  if (!swatchRefsEqual(ra, rb)) return false;
+  return ra === undefined ? null : true;
 };
 
 // The ref-covered pairs per kind: refKey → the value halves it rides. Drives
@@ -328,11 +340,11 @@ function styleFieldEqual(
 ): boolean {
   if (kind === 'line') {
     if (field === 'strokeColor') {
-      return (
-        lineStrokeColorsEqual(
-          a.strokeColor as LineStyleProps['strokeColor'],
-          b.strokeColor as LineStyleProps['strokeColor'],
-        ) && refFolds(field, a, b, { strokeColor: 'strokeColorRef' })
+      const verdict = refVerdict(field, a, b, { strokeColor: 'strokeColorRef' });
+      if (verdict !== null) return verdict;
+      return lineStrokeColorsEqual(
+        a.strokeColor as LineStyleProps['strokeColor'],
+        b.strokeColor as LineStyleProps['strokeColor'],
       );
     }
     if (field === 'labelGap') {
@@ -344,11 +356,14 @@ function styleFieldEqual(
   }
   if (kind === 'transfer') {
     if (field === 'color' || field === 'strokeColor') {
-      return (
-        dayNightColorsEqual(
-          a[field] as TransferStyleProps['color'],
-          b[field] as TransferStyleProps['color'],
-        ) && refFolds(field, a, b, { color: 'colorRef', strokeColor: 'strokeColorRef' })
+      const verdict = refVerdict(field, a, b, {
+        color: 'colorRef',
+        strokeColor: 'strokeColorRef',
+      });
+      if (verdict !== null) return verdict;
+      return dayNightColorsEqual(
+        a[field] as TransferStyleProps['color'],
+        b[field] as TransferStyleProps['color'],
       );
     }
     if (field === 'draw') {
@@ -356,16 +371,17 @@ function styleFieldEqual(
     }
   }
   if (kind === 'polygon') {
-    const folds = refFolds(field, a, b, {
+    const verdict = refVerdict(field, a, b, {
       fill: 'fillRef',
       darkFill: 'fillRef',
       stroke: 'strokeRef',
       darkStroke: 'strokeRef',
     });
-    if (!folds) return false;
+    if (verdict !== null) return verdict;
   }
   if (kind === 'textLabel') {
-    if (!refFolds(field, a, b, { color: 'colorRef', darkColor: 'colorRef' })) return false;
+    const verdict = refVerdict(field, a, b, { color: 'colorRef', darkColor: 'colorRef' });
+    if (verdict !== null) return verdict;
     // Absent ≡ auto/neutral: a def from a save predating layout coverage
     // must compare equal to one carrying the explicit defaults, or every
     // wearer reads as overridden before the average backfill lands.

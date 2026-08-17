@@ -273,7 +273,9 @@ describe('parse — line swatch refs', () => {
     expect('colorRef' in r.doc.lines.C).toBe(false);
   });
 
-  it('keeps a stored ref, restamping a drifted color from its swatch', () => {
+  // A linked field may paint a color of its own (the palette pickers' dirty
+  // state); loading is not the moment to overrule it, so both survive.
+  it('keeps a stored ref AND the color it had drifted onto', () => {
     const doc = makeDoc({
       lines: [
         makeLine({ id: 'A', color: '#000000', colorRef: { palette: 'inks', swatch: 'Blue' } }),
@@ -284,7 +286,7 @@ describe('parse — line swatch refs', () => {
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.doc.lines.A).toMatchObject({
-        color: '#0061a8',
+        color: '#000000',
         colorRef: { palette: 'inks', swatch: 'Blue' },
       });
     }

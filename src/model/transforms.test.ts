@@ -2058,12 +2058,25 @@ describe('the map’s palettes', () => {
       expect('colorRef' in doc.lines.A).toBe(false);
     });
 
-    it('re-adding a palette over the name refreshes linked lines by swatch name', () => {
+    it('re-adding a palette over the name refreshes its FAITHFUL wearers', () => {
       const doc = T.addPaletteToMap(linked(), {
         name: 'frrf',
         swatches: [{ name: '1', color: '#123456' }],
       });
       expect(doc.lines.A).toMatchObject({ color: '#123456', colorRef: RED });
+    });
+
+    it('…and leaves a wearer that had drifted onto a color of its own', () => {
+      const base = linked();
+      const drifted = {
+        ...base,
+        lines: { ...base.lines, A: { ...base.lines.A, color: '#00ff00' } },
+      };
+      const doc = T.addPaletteToMap(drifted, {
+        name: 'frrf',
+        swatches: [{ name: '1', color: '#123456' }],
+      });
+      expect(doc.lines.A).toMatchObject({ color: '#00ff00', colorRef: RED });
     });
 
     it('a replacement lacking the swatch name drops the ref, keeping the color', () => {
@@ -2113,13 +2126,16 @@ describe('the map’s palettes', () => {
         expect(T.reconcileSwatchRefs(doc)).toBe(doc);
       });
 
-      it('restamps a drifted value from its swatch — the ref wins', () => {
+      // A linked field on a color of its own is the pickers' "dirty" state —
+      // a deliberate override, not drift to repair. Reconcile leaves both the
+      // color and the link exactly as it found them.
+      it('keeps a drifted value AND its ref — the divergence is the point', () => {
         const base = linked();
         const doc = T.reconcileSwatchRefs({
           ...base,
           lines: { ...base.lines, A: { ...base.lines.A, color: '#000000' } },
         });
-        expect(doc.lines.A.color).toBe('#c1272d');
+        expect(doc.lines.A).toMatchObject({ color: '#000000', colorRef: RED });
       });
 
       it('drops a dangling or malformed ref, keeping the value', () => {
@@ -5174,6 +5190,62 @@ describe('design swatch refs', () => {
       expect(polyDef.kind === 'polygon' && polyDef.props.fillRef).toEqual(renamed);
       const dotDef = doc.styles.y2;
       expect(dotDef.kind === 'stopDot' && dotDef.props.fillRef).toEqual(renamed);
+    });
+
+    // The whole point of the pickers' Reset / Sync: a linked field may carry a
+    // color of its own, and the swatch moving under it does not revoke that.
+    describe('faithful wearers follow a recolor; overridden ones do not', () => {
+      const withOverride = () => {
+        const base = linkedDoc();
+        return {
+          ...base,
+          // P keeps painting Border's colors (faithful); G has been recolored
+          // locally while still linked (overridden).
+          textLabels: {
+            ...base.textLabels,
+            G: { ...base.textLabels.G, color: '#00ff00', darkColor: '#00ff00' },
+          },
+        };
+      };
+
+      it('recolor moves the faithful and leaves the overridden', () => {
+        const doc = T.recolorMapPaletteColor(withOverride(), 'grays', 0, '#444444');
+        expect(doc.polygons.P.fill).toBe('#444444');
+        expect(doc.textLabels.G).toMatchObject({ color: '#00ff00', colorRef: BORDER });
+      });
+
+      it('syncing pushes an overridden color back INTO the swatch', () => {
+        // G's local pair becomes Border, so the swatch — and every wearer still
+        // faithful to the old one — lands on it.
+        const doc = T.syncMapPaletteSwatch(withOverride(), 'grays', 0, {
+          day: '#00ff00',
+          night: '#00ff00',
+        });
+        expect(doc.palettes.find((p) => p.name === 'grays')?.swatches[0]).toEqual({
+          name: 'Border',
+          color: '#00ff00',
+        });
+        // The syncing field is untouched and now reads faithful again…
+        expect(doc.textLabels.G).toMatchObject({ color: '#00ff00', colorRef: BORDER });
+        // …and what was faithful to the old color came along.
+        expect(doc.polygons.P.fill).toBe('#00ff00');
+      });
+
+      it('a line palette sync keeps day == night', () => {
+        const inkRef = { palette: 'inks', swatch: '1' };
+        const base = T.addPaletteToMap(
+          makeDoc({ lines: [makeLine({ id: 'L', color: '#c1272d', colorRef: inkRef })] }),
+          { name: 'inks', swatches: [{ name: '1', color: '#c1272d' }] },
+        );
+        const doc = T.syncMapPaletteSwatch(base, 'inks', 0, {
+          day: '#00ff00',
+          night: '#123456',
+        });
+        expect(doc.palettes.find((p) => p.name === 'inks')?.swatches[0]).toEqual({
+          name: '1',
+          color: '#00ff00',
+        });
+      });
     });
 
     it('a design ref pointing into a LINE palette is dangling', () => {

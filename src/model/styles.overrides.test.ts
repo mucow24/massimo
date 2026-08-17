@@ -5,6 +5,7 @@ import {
   captureStyleProps,
   clearStyleTag,
   saveStyleFromItem,
+  styleFieldsDiff,
   stylePropsEqual,
   updateStyleProps,
 } from './styles';
@@ -311,6 +312,24 @@ describe('swatch refs fold into the covered color fields', () => {
     doc = saveStyleFromItem(doc, 'y2', 'polygon', 'From p', 'p');
     const def = doc.styles.y2;
     expect(def.kind === 'polygon' && def.props.fillRef).toEqual(BORDER);
+  });
+
+  // The style's answer for this field is "Border", and a wearer that still
+  // says Border agrees with it — whatever hex either happens to be painting.
+  // A locally recolored palette color is a divergence from the PALETTE (shown
+  // by the picker's own Reset / Sync), never from the style.
+  it('a locally recolored link is NOT a style override', () => {
+    let doc = linkedPolygons();
+    doc = T.updatePolygon(doc, 'p', {
+      fill: '#00ff00',
+      darkFill: '#00ff00',
+      fillRef: BORDER,
+    });
+    const def = doc.styles.y1;
+    expect(styleFieldsDiff('polygon', captureStyleProps(doc, 'polygon', 'p')!, def.props)).toEqual(
+      [],
+    );
+    expect(doc.polygons.p.fill).toBe('#00ff00');
   });
 
   it('same values with a different ref read as overridden — the link is real', () => {

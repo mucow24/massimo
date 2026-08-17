@@ -1797,6 +1797,47 @@ button.field-select > :not(.field-select-caret) {
   align-items: center;
   min-width: 0;
 }
+/* The palette's own revert: the override dot's twin — same badge, same revert
+   glyph — in the ACCENT color instead of the danger red, and standing IN the
+   row rather than in its gutter. Both say "this differs from what it links to,
+   click to put it back", but the gutter is the STYLE's column (the red dots
+   line up down it), so the palette's revert leaves it and sits against the sun
+   instead, inside the run of controls it actually acts on. */
+/* The badge's slot, held open whether or not the badge is in it: it appears
+   the moment the color diverges and goes again on Reset, and the pickers
+   beside it must not slide sideways under the cursor as that happens. Sized
+   to the badge itself (.override-dot is 16px). */
+.palette-revert-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  flex: none;
+}
+.override-dot.palette-dot-revert {
+  position: static;
+  transform: none;
+  flex: none;
+  background: var(--accent);
+}
+.override-dot.palette-dot-revert:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 82%, #000);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+/* A row's bare glyphs (the sun and moon marking the two halves) are fixed
+   marks, not flexible space: without this they are the first thing to give
+   when a row grows a control — the revert badge above pushed them narrower
+   and the whole pair started reading smaller. */
+.row > svg {
+  flex: none;
+}
+/* Sync-to-palette rides the row's far edge, where sync-to-STYLE already sits
+   on the style row above it: the two do the same thing one level apart, so
+   they line up in one column rather than landing wherever their own row's
+   controls happen to end. */
+.palette-sync-btn {
+  margin-left: auto;
+}
 
 .tool-group {
   display: inline-flex;

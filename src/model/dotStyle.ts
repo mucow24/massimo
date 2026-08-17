@@ -548,6 +548,13 @@ export function canonicalDotStyle(s: DotStyle): DotStyle {
 // swatch refs FOLD IN (absent ≡ absent, else value-wise): a link is part of
 // what makes two styles the same, so a def/shadow ref divergence reads as a
 // real difference and every ref-less preset stays equal to itself.
+//
+// Values are compared even when both sides name the SAME swatch — deliberately
+// unlike `styleFieldEqual`, which stops at the ref so a locally-recolored link
+// doesn't dirty its style. This equality also decides whether an override may
+// be DROPPED (setDotStyle's clears, the tagged⇒matches early-outs), and two
+// dots that link alike but paint differently are not interchangeable there:
+// forgetting one would repaint the stop.
 export function dotStylesEqual(a: DotStyle, b: DotStyle): boolean {
   return (
     a.shape === b.shape &&

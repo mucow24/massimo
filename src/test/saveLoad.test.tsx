@@ -376,8 +376,11 @@ describe('localStorage rehydrate — line edge backfill', () => {
   // Swatch refs live on the decoration side too — polygons, labels, transfers,
   // dot shadows, style defs — so the hook's reconcile must walk the WHOLE doc,
   // not just the lines. Same reasoning as the two above: a doc at the current
-  // version never reaches `migrate`, so this is the only door left.
-  it('restamps a DESIGN ref whose value drifted, rehydrating at the current version', async () => {
+  // version never reaches `migrate`, so this is the only door left. What it
+  // drops is a ref that no longer resolves; a ref that DOES resolve keeps
+  // whatever color it was painting, divergent or not (that is the pickers'
+  // dirty state, not damage).
+  it('drops a dangling DESIGN ref on rehydrate, and keeps a divergent one', async () => {
     localStorage.setItem(
       'vignelli-map-doc-v1',
       JSON.stringify({
@@ -398,7 +401,7 @@ describe('localStorage rehydrate — line edge backfill', () => {
                 { x: 10, y: 0 },
                 { x: 10, y: 10 },
               ],
-              // Drifted away from the swatch it claims to wear.
+              // Painting a color of its own while still linked — kept as found.
               fill: '#000000',
               darkFill: '#000000',
               stroke: '#000000',
@@ -431,8 +434,11 @@ describe('localStorage rehydrate — line edge backfill', () => {
     await useDoc.persist.rehydrate();
 
     const { P1, P2 } = useDoc.getState().polygons;
-    expect(P1.fill).toBe('#333333');
-    expect(P1.darkFill).toBe('#bbbbbb');
+    // Resolvable: both the local color and the link survive the trip.
+    expect(P1.fill).toBe('#000000');
+    expect(P1.fillRef).toEqual({ palette: 'grays', swatch: 'Border' });
+    // Dangling: the link goes, the paint stays — and the hook reached a
+    // POLYGON to do it, which is the doc-wide half of this test.
     expect(P2.fill).toBe('#123456');
     expect('fillRef' in P2).toBe(false);
   });
