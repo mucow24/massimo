@@ -119,8 +119,16 @@ describe('spawnAnchorCell', () => {
     expect(second).not.toEqual(first);
   });
 
-  it('is deterministic', () => {
-    expect(spawnAnchorCell(station(), lines)).toEqual(spawnAnchorCell(station(), lines));
+  it('picks ONE fixed slot, not merely some equally-near one', () => {
+    // A stop at (0,0) with its label at (0,-1) leaves SIX free slots exactly one
+    // cell from a node, and the two tests above are satisfied by any of them.
+    // Which one you get is a product decision, not an accident: the same station
+    // must grow its anchor in the same place every time, or a map re-opened
+    // after an unrelated change sprouts anchors somewhere new. Pinned as the
+    // concrete cell — the lowest (row, col) of the tied set — because a change
+    // in the sort keys OR in the lattice walk's emission order would otherwise
+    // move every newly spawned anchor with nothing going red.
+    expect(spawnAnchorCell(station(), lines)).toEqual([-1, -1]);
   });
 });
 
