@@ -253,8 +253,8 @@ src/
                                 #   New… mints either kind, rows show which by their swatch SHAPE)
     PaletteEditor.tsx           # the manager's second view: one palette's title/description/rows
                                 #   (design rows carry a sun/moon field pair)
-    PalettesSection.tsx         # the Styles tab's Palettes section: per-swatch recolor + rename —
-                                #   the tweak surface (structural work stays in the dialog)
+    PalettesSection.tsx         # the Styles tab's two palette sections (line | design): mint a
+                                #   palette, rename it, add/duplicate/delete/recolor its colors
     dialogRow.tsx               # shared dialog-row chrome: IconButton, RowCommands (the `…`
                                 #   overflow toolbar), the useSpeedBump two-click, DialogSortSelect
                                 #   (a library column's sort picker, over the union's own ladder)
@@ -3748,7 +3748,12 @@ same three additions.
   tuned value, which may well be zero.
 - **[Sidebar.tsx](src/components/Sidebar.tsx)** — Stations/Lines/**Styles** tabs (each showing a
   count; the reserved "None" stop-dot is hidden from the Styles list and excluded from its count),
-  the latter two hosting `LinesPanel` and `StylesPanel`; a sortable station list
+  the latter two hosting `LinesPanel` and `StylesPanel` — which carries the per-kind style
+  sections and, under them, the map's **palettes** in two more
+  ([PalettesSection](src/components/PalettesSection.tsx), line and design): where a palette is
+  minted, renamed, and has its colors added, duplicated, recolored and deleted, every edit
+  sweeping whatever links to it. The manager dialog keeps what reaches outside this map (the
+  library, palette files) and the description field; a sortable station list
   (rows select/deselect; the station editor itself is an on-canvas popover), and a Lines list
   that is purely delete / pick-for-editing — clicking a row goes **straight into
   Edit Stops** (there is no selected-but-not-editing state) and the line editor rides in the

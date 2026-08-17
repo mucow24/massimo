@@ -116,7 +116,9 @@ test('a new label is created wearing the (redefined) Default style', async ({ pa
 
   // Drop a new label on empty canvas (clear of the two seeded labels): it
   // comes in at 32 and reads Default.
-  await page.getByRole('button', { name: 'Add' }).click();
+  // exact — the name matches as a SUBSTRING, and the Styles tab (open here)
+  // carries an "Add a color to <palette>" button per palette.
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Label' }).click();
   await page.mouse.click(500, 550);
   await expect(page.locator('[data-text-label-id]')).toHaveCount(3);

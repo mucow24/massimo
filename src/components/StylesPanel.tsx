@@ -235,8 +235,10 @@ export function StylesPanel() {
           </Fragment>
         );
       })}
-      {/* The map's palettes — the swatch tweak surface (recolor + rename);
-          structural palette work stays in the Manage palettes dialog. */}
+      {/* The map's palettes, filed by kind, under the styles they feed: mint,
+          rename, and edit a palette's colors here; what reaches outside this
+          map (the library, palette files) stays in the Manage palettes
+          dialog. */}
       <PalettesSection />
     </section>
   );

@@ -2300,6 +2300,13 @@ button.field-select > :not(.field-select-caret) {
 .palettes-section-row {
   padding-left: 28px;
 }
+/* The sun/moon markers before a design row's two fields — muted and out of the
+   way, the same weight they carry in every other themed-color row. */
+.palettes-section-row > svg {
+  color: var(--text-muted);
+  flex: none;
+  margin-right: -4px;
+}
 .palettes-section-empty {
   padding: 8px 12px;
   color: var(--text-muted);
@@ -3491,9 +3498,13 @@ input.palette-color-name {
 }
 
 /* Styles panel (sidebar): the click-to-rename name field. Button shows the
-   name in row typography; the input takes its place while editing (MapNameField
-   pattern). `.grow` supplies the flex from the .list-row recipe. */
-.list-row .style-name {
+   name in the typography of whatever it sits in — a row, or a HEADER, where a
+   palette's own name is editable the same way — and the input takes its place
+   while editing (MapNameField pattern). `.grow` supplies the flex from the
+   .list-row / .list-header recipe. Both contexts are named: a bare `.style-name`
+   would leave it wearing the browser's default button chrome. */
+.list-row .style-name,
+.list-header .style-name {
   background: transparent;
   border: 0;
   padding: 0;
@@ -3502,10 +3513,12 @@ input.palette-color-name {
   text-align: left;
   cursor: text;
 }
-.list-row .style-name:hover {
+.list-row .style-name:hover,
+.list-header .style-name:hover {
   text-decoration: underline dotted;
 }
-.list-row .style-name-input {
+.list-row .style-name-input,
+.list-header .style-name-input {
   font: inherit;
   min-width: 0;
   padding: 1px 4px;
