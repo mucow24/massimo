@@ -55,11 +55,7 @@ beforeEach(() => {
  * hex. Role-scoped rather than `setColorField`, because the row's `<label>`
  * carries the same accessible name as the swatch it sits beside.
  */
-const editSwatch = async (
-  user: ReturnType<typeof userEvent.setup>,
-  name: string,
-  hex: string,
-) => {
+const editSwatch = async (user: ReturnType<typeof userEvent.setup>, name: string, hex: string) => {
   await user.click(screen.getByRole('button', { name }));
   fireEvent.change(screen.getByLabelText(`${name} hex value`), { target: { value: hex } });
 };

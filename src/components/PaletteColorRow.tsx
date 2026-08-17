@@ -105,9 +105,7 @@ export function PaletteColorRow({
       // plain onChange would write a value with no ref key — the detach
       // gesture — and the field would silently fall back to Custom.
       onChange={
-        extra?.keepRef
-          ? (c) => onPick(extra.keepRef!, { day: c, night: darkValue })
-          : onChange
+        extra?.keepRef ? (c) => onPick(extra.keepRef!, { day: c, night: darkValue }) : onChange
       }
       onDarkChange={
         extra?.keepRef ? (c) => onPick(extra.keepRef!, { day: value, night: c }) : onDarkChange
@@ -123,9 +121,7 @@ export function PaletteColorRow({
   if (designPalettes.length === 0 && swatchRef === undefined) return plainRow(label);
 
   const linkedPalette =
-    swatchRef === undefined
-      ? undefined
-      : designPalettes.find((p) => p.name === swatchRef.palette);
+    swatchRef === undefined ? undefined : designPalettes.find((p) => p.name === swatchRef.palette);
   const linkedIndex =
     swatchRef === undefined
       ? -1

@@ -538,19 +538,28 @@ styles use: the field keeps the LITERAL colors every painter/exporter reads, and
 `SwatchRef {palette, swatch}` (both name-keyed) rides beside them. `Line.colorRef` points at a
 LINE-palette swatch; the decoration pairs — polygon `fillRef`/`strokeRef`, text label `colorRef`,
 transfer `colorRef`/`strokeColorRef`, line-casing `strokeColorRef`, and the three DotStyle color
-refs — point at DESIGN palettes, on items and style defs alike. INVARIANT: a present ref's field
-holds exactly the swatch's `(color, night ?? color)` — over EFFECTIVE values, since transfer
-colors and the line casing collapse their stored form at a constant default, and a ref never sits
-beside a sentinel (`'line'`/`'none'`/`'bw'`). The write rule keeps it airtight: any patch touching
-a pair's value half without carrying its ref key DETACHES (a hand-picked color) — hosted by
+refs — point at DESIGN palettes, on items and style defs alike. A ref never sits beside a sentinel
+(`'line'`/`'none'`/`'bw'`), which is no color to link to. A linked field normally paints exactly
+its swatch's `(color, night ?? color)` — over EFFECTIVE values, since transfer colors and the line
+casing collapse their stored form at a constant default — but it is ALLOWED to diverge, and that
+divergence is the feature: recoloring a linked field in place leaves the link standing and the
+field painting its own color, which the picker offers to Reset (back to the swatch) or Sync (the
+swatch to it). What still detaches is a value written WITHOUT its ref key, the write rule hosted by
 `updateLine`/`updatePolygon`/`updateTextLabel`/`updateTransferStyle`/`updateStyleProps` and
-`setLineStrokeColor`'s ref param. Every palette-mutating transform ends in
-`reconcileSwatchRefs` (transforms.ts): a resolvable ref restamps its field from the swatch
-(recolor = the sweep, ref-keyed — a hand-picked color merely equal to a swatch's hex does NOT
-follow), a dangling/kind-mismatched/malformed one drops, keeping the painted values; renames
-(palette and the first-class `renameMapPaletteSwatch`) rewrite refs through the shared
-`mapDocSwatchRefs` walker instead — and both sweeps are visitors over ONE traversal (`walkRefs`)
-of a per-home SLOT table, so a new linked field is added in a single place. The same reconcile
+`setLineStrokeColor`'s ref param — so a picker edit on a linked field must carry the ref along, or
+the field silently falls back to Custom.
+
+Because a link may diverge, propagation belongs to the swatch WRITE rather than to any after-the-
+fact repair: `writeMapPaletteSwatch` snapshots which linked fields were still FAITHFUL (painting
+what the swatch painted a moment ago), then carries exactly those to the new color and leaves the
+overridden alone — the same snapshot-then-stamp shape a style edit uses on its wearers, and the
+reason Reset/Sync can exist at all. Re-adding a palette from the library sweeps the same way, per
+swatch name. `reconcileSwatchRefs` (transforms.ts) is then only the DROP pass: a dangling,
+kind-mismatched, sentinel-bound or malformed ref goes, keeping the painted values, so deleting a
+palette never changes what the map looks like. Renames (palette and the first-class
+`renameMapPaletteSwatch`) rewrite refs through the shared `mapDocSwatchRefs` walker instead — and
+every sweep here is a visitor over ONE traversal (`walkRefs`) of a per-home SLOT table, so a new
+linked field is added in a single place. The reconcile
 runs on both load-side doors — `parse()` for a file, the persist **merge hook** for a rehydrate
 (not `migrateDoc`: a doc already AT the current version never reaches a migration, and merge runs
 on every rehydrate either way) — and persist v30 bakes pre-ref lines that value-match a
@@ -559,7 +568,13 @@ detached onto an exact swatch hex reads as linked again on load, today's value-m
 preserved). In the styles machinery refs FOLD INTO their pair's covered-field equality
 (`styleFieldEqual`, `dotStylesEqual`) rather than joining `STYLE_FIELDS`: value+provenance move
 as one unit through capture/canonicalize/sanitize/stamp, so a linked wearer follows its def's
-token change while a pinned one keeps its pin, with no new override machinery. A PASTE reconciles
+token change while a pinned one keeps its pin, with no new override machinery. Where BOTH sides
+name the same swatch the ref IS the answer and the values are not compared (`refVerdict`): the
+style says "this swatch", the wearer still says so, and a locally recolored link therefore never
+dirties its STYLE — its divergence is against the palette, and the palette's own controls are
+where it shows. `dotStylesEqual` is the deliberate exception, still comparing values under equal
+refs: it also decides when an override may be DROPPED, and two dots that link alike but paint
+differently are not interchangeable there. A PASTE reconciles
 the incoming refs against the RECEIVING doc (`addPolygonWith`/`addTextLabelWith`), so a link
 survives a copy only where that doc carries the same palette and swatch NAME — and takes that
 doc's color, repainting the pasted item where the two maps spell one name differently. Name-keyed
@@ -1636,9 +1651,11 @@ the file itself carries (steps 3, 5, 6b/6c) — repair over guesswork, error ove
     panel's Default editors act on the whole loaded map.
 15. `bakeLineColorRefs` then `reconcileSwatchRefs` — **swatch refs, last** (lines and palettes are
     final): link ref-less lines to the line-palette swatches they value-match (unconditional — see
-    the `v<30` gate for why), then reconcile every ref: a stored ref WINS over a drifted value, a
-    dangling/malformed one drops. Bake before reconcile, so a line already carrying a ref
-    (however stale) is never re-matched by value.
+    the `v<30` gate for why), then drop every ref that no longer resolves, keeping the color it
+    was painting. A ref that DOES resolve is left alone, colors and all: a linked field painting
+    something other than its swatch is a deliberate divergence (see "Swatch refs"), not drift for
+    a loader to repair. Bake before that drop, so a line already carrying a ref (however stale) is
+    never re-matched by value.
 
 Path A does **more** than Path B because hand-edited files can be non-canonical (the file-only
 sanitizers `sanitizeLineWidth/Stroke/DotSize/Segments/StopDotSizes` exist for this).
@@ -3701,7 +3718,8 @@ same three additions.
   and the set shrinks by itself, but a library palette covers nothing, and the same swatch must not
   be addable twice. Edits are live against the ONE copy the
   pencil named (New… opens on the map copy), and recoloring a MAP swatch also restamps everything
-  LINKED to it in the same write (`recolorMapPaletteColor` → the ref-keyed reconcile sweep; see
+  still FAITHFUL to it in the same write (`recolorMapPaletteColor` → `writeMapPaletteSwatch`'s
+  ref-keyed sweep; a field that had been recolored in place keeps its own color — see
   "Swatch refs") — so the canvas follows a picker drag live. A design palette's rows carry a
   sun/moon field pair and recolor per half; a MAP swatch rename routes through
   `renameMapPaletteSwatch` (never the anonymous whole-palette upsert, which cannot tell a rename
