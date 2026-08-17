@@ -856,6 +856,61 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
     act(() => r.current.onPointerUp(pointerEvent({ clientX: 420, clientY: 145 })));
   });
 
+  it('a sweep on an ALREADY-bounded guide re-places the span without towing by it', () => {
+    hostRect();
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: {
+        gb: makeGuide({
+          id: 'gb',
+          orientation: 'horizontal',
+          offset: 100,
+          extent: { center: 300, halfLength: 50 },
+        }),
+      },
+      stations: { free: makeStation({ id: 'free', x: 500, y: 500 }) },
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['free'],
+      selectedGuideIds: ['gb'],
+    });
+    const r = render();
+    act(() => r.current.onStartDrag('gb', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
+    // Slide 50 along: the sibling follows, since that IS a translation.
+    act(() =>
+      r.current.onPointerMove(pointerEvent({ clientX: 350, clientY: 100, shiftKey: true })),
+    );
+    expect(useDoc.getState().stations.free).toMatchObject({ x: 550, y: 500 });
+    // Now sweep the span somewhere else entirely. Resize frames tow nothing.
+    act(() =>
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 600, clientY: 100, ctrlKey: true, shiftKey: true }),
+      ),
+    );
+    act(() =>
+      r.current.onPointerMove(
+        pointerEvent({ clientX: 700, clientY: 100, ctrlKey: true, shiftKey: true }),
+      ),
+    );
+    expect(useDoc.getState().guides.gb.extent).toEqual({ center: 650, halfLength: 50 });
+    expect(useDoc.getState().stations.free).toMatchObject({ x: 550, y: 500 });
+    // Ctrl up. The sweep moved the span 350 along, but a resize is NOT a
+    // translation: the sibling must not take that re-placement as travel.
+    act(() =>
+      r.current.onPointerMove(pointerEvent({ clientX: 700, clientY: 100, shiftKey: true })),
+    );
+    expect(useDoc.getState().guides.gb.extent).toEqual({ center: 650, halfLength: 50 });
+    expect(useDoc.getState().stations.free).toMatchObject({ x: 550, y: 500 });
+    // …and the slide resumes from there, carrying the sibling again.
+    act(() => {
+      r.current.onPointerMove(pointerEvent({ clientX: 750, clientY: 100, shiftKey: true }));
+      r.current.onPointerUp(pointerEvent({ clientX: 750, clientY: 100 }));
+    });
+    expect(useDoc.getState().guides.gb.extent).toEqual({ center: 700, halfLength: 50 });
+    expect(useDoc.getState().stations.free).toMatchObject({ x: 600, y: 500 });
+  });
+
   it('one motion: pull from the well, Ctrl mid-pull, sweep, release commits a bounded guide', () => {
     hostRect();
     const r = render();

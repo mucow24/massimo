@@ -128,18 +128,26 @@ describe('<GuideView /> end handles', () => {
     const { container } = renderGuide(bounded({ center: 200, halfLength: 50 }), 2, -500, -500, {
       selected: true,
     });
-    // Screen-constant: half 4px at zoom 2 is 2 world units, so an 4×4 world box
-    // centred on each tip (150 and 250 along y = 100).
+    // Screen-constant, both squares centred on the tip (150 and 250 along
+    // y = 100): the MARK is 8 screen px (4 world at zoom 2), the GRAB 12 (6),
+    // matching the line's own hit stroke so neither grab is the fiddlier one.
     for (const [which, cx] of [
       ['start', 150],
       ['end', 250],
     ] as const) {
-      const h = handleAt(container, which)!;
-      expect(Number(h.getAttribute('x'))).toBeCloseTo(cx - 2, 10);
-      expect(Number(h.getAttribute('y'))).toBeCloseTo(98, 10);
-      expect(Number(h.getAttribute('width'))).toBeCloseTo(4, 10);
+      const grab = handleAt(container, which)!;
+      expect(Number(grab.getAttribute('x'))).toBeCloseTo(cx - 3, 10);
+      expect(Number(grab.getAttribute('y'))).toBeCloseTo(97, 10);
+      expect(Number(grab.getAttribute('width'))).toBeCloseTo(6, 10);
       // A tip slides ALONG the line, the axis the line itself cannot move on.
-      expect((h as unknown as HTMLElement).style.cursor).toBe('ew-resize');
+      expect((grab as unknown as HTMLElement).style.cursor).toBe('ew-resize');
+      // The mark under it, inert so it can't shrink the target back to itself.
+      const mark = grab.parentElement!.querySelector('rect')!;
+      expect(mark).not.toBe(grab);
+      expect(Number(mark.getAttribute('x'))).toBeCloseTo(cx - 2, 10);
+      expect(Number(mark.getAttribute('width'))).toBeCloseTo(4, 10);
+      expect(mark.getAttribute('fill')).toBe('#a80');
+      expect(mark.getAttribute('pointer-events')).toBe('none');
     }
   });
 

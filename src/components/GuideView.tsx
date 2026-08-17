@@ -36,9 +36,15 @@ const HIT_PX = 12;
 // The end handles a selected, bounded guide grows: the line circle's resize
 // knob, in the guide's selected amber instead of the ring's accent — every
 // other mark on a guide is that colour, and a handle is a mark on the guide.
-// Screen px, like every manipulator in the app.
+// Screen px, like every manipulator in the app. The grab square is wider than
+// the painted one (the ⊕'s rule: the mark wants to stay small and quiet, the
+// target wants to be catchable), and here it earns it twice over — a miss does
+// not do nothing, it lands on the hit stroke running underneath and TRANSLATES
+// the guide instead of resizing it. Matched to that stroke's own width so the
+// two grabs are equally forgiving.
 const HANDLE_HALF_PX = 4;
 const HANDLE_STROKE_PX = 1;
+const HANDLE_HIT_PX = HIT_PX;
 // Float dust on a tip's round trip through the along parameter — see `segLo`.
 const ALONG_EPS = 1e-6;
 
@@ -307,24 +313,37 @@ export function GuideView({
           if (t < segLo - ALONG_EPS || t > segHi + ALONG_EPS) return null;
           const p = guidePointAt(guide.orientation, guide.offset, t);
           const half = px(HANDLE_HALF_PX);
+          const grab = px(HANDLE_HIT_PX) / 2;
           return (
-            <rect
-              key={which}
-              data-guide-handle={which}
-              x={p.x - half}
-              y={p.y - half}
-              width={half * 2}
-              height={half * 2}
-              fill={selectedColor}
-              stroke="#ffffff"
-              strokeWidth={px(HANDLE_STROKE_PX)}
-              style={{ cursor: END_CURSOR[guide.orientation] }}
-              onPointerDown={(e) => onPointerDown?.(e, guide.id, which)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-            />
+            <g key={which}>
+              {/* The mark. Takes no pointer events — it sits under the grab
+                  square, and one that ate the press would shrink the target
+                  back to the glyph. */}
+              <rect
+                x={p.x - half}
+                y={p.y - half}
+                width={half * 2}
+                height={half * 2}
+                fill={selectedColor}
+                stroke="#ffffff"
+                strokeWidth={px(HANDLE_STROKE_PX)}
+                pointerEvents="none"
+              />
+              <rect
+                data-guide-handle={which}
+                x={p.x - grab}
+                y={p.y - grab}
+                width={grab * 2}
+                height={grab * 2}
+                fill="transparent"
+                style={{ cursor: END_CURSOR[guide.orientation] }}
+                onPointerDown={(e) => onPointerDown?.(e, guide.id, which)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+              />
+            </g>
           );
         })}
     </g>

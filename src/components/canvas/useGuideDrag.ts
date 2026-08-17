@@ -170,19 +170,24 @@ export function useGuideDrag(
     // The last committed offset — what the resize phase freezes at, and what
     // the offset drag resumes from when Ctrl lifts.
     lastOffset: number;
-    // The span's along-position at pointer-down, null on an infinite guide
-    // (which has none to move). Immutable once set, like `startOffset`: the
-    // sibling tow measures its along total from it. A guide BORN bounded inside
-    // this gesture — the Ctrl sweep on an infinite one — fills it in at the
-    // resize exit, where it was still null and so nothing depended on it.
+    // Where the span's along-position is measured FROM: its center at
+    // pointer-down, null on an infinite guide (which has none to move). Unlike
+    // `startOffset` this is NOT immutable — every resize exit re-bases it to
+    // wherever the sweep left the span, because a sweep RE-PLACES the span
+    // rather than translating it, and a tow measured from the original center
+    // would carry the siblings by that re-placement (see `alongCarry`).
     startCenter: number | null;
     // The along twin of `offsetBias`, set at each resize → offset transition so
     // the span resumes exactly where the sweep left it.
     alongBias: number;
-    // The along distance travelled so far — what the group tow adds to the
-    // offset's perpendicular carry. Held rather than recomputed so a span that
-    // flips to infinite mid-gesture FREEZES its towed siblings where they are
-    // instead of snapping them back.
+    // The along travel done BEFORE the current re-base — the part of the tow the
+    // re-based `startCenter` no longer accounts for. Zero until the first resize
+    // exit, so a gesture that never sweeps never thinks about it.
+    alongCarry: number;
+    // The along distance the group tow adds to the offset's perpendicular carry:
+    // `alongCarry` plus the travel since the re-base. Held rather than
+    // recomputed so a span that flips to infinite mid-gesture FREEZES its towed
+    // siblings where they are instead of snapping them back.
     lastAlong: number;
     // Set for an END-HANDLE drag: which tip the pointer carries, and the along
     // parameter of the tip it pivots on (the opposite one, fixed for the whole
@@ -438,15 +443,15 @@ export function useGuideDrag(
   ): { center: number; halfLength: number } | null => {
     const world = screenToWorld(e.clientX, e.clientY);
     const foot = guideFoot(orientation, offset, world);
-    const host = flipOutsideBox
-      ? svgRef.current?.closest('.canvas-host')?.getBoundingClientRect()
-      : undefined;
-    if (host) {
-      const tl = screenToWorld(host.left, host.top);
-      const br = screenToWorld(host.right, host.bottom);
-      if (foot.x < tl.x || foot.x > br.x || foot.y < tl.y || foot.y > br.y) {
-        setSnapGuides([]);
-        return null;
+    if (flipOutsideBox) {
+      const host = svgRef.current?.closest('.canvas-host')?.getBoundingClientRect();
+      if (host) {
+        const tl = screenToWorld(host.left, host.top);
+        const br = screenToWorld(host.right, host.bottom);
+        if (foot.x < tl.x || foot.x > br.x || foot.y < tl.y || foot.y > br.y) {
+          setSnapGuides([]);
+          return null;
+        }
       }
     }
     let end = foot;
@@ -549,6 +554,7 @@ export function useGuideDrag(
       offsetBias: 0,
       startCenter: guide.extent?.center ?? null,
       alongBias: 0,
+      alongCarry: 0,
       lastAlong: 0,
       handle,
       handleAnchor:
@@ -621,15 +627,20 @@ export function useGuideDrag(
         const resizeDY = (ds.resize.my - ds.startMY) / zoom;
         ds.offsetBias =
           ds.lastOffset - (ds.startOffset + guideNudgeDelta(ds.orientation, resizeDX, resizeDY));
-        // The span re-bases the same way. A guide the sweep just BOUNDED has no
-        // start along-position yet; this is where it gets one, since the tow
-        // could not have used it before there was a span to slide.
+        // The span re-bases the same way, but with one extra move the offset
+        // needs no equivalent of: `startCenter` moves TO where the sweep left
+        // the span, and the along travel done up to here is banked in
+        // `alongCarry`. A sweep RE-PLACES a span — it can drop it a thousand
+        // units down the street — and that is not a translation, so the tow
+        // must not read the gap between the old center and the new one as
+        // travel. (The offset needs none of this because a sweep freezes the
+        // offset: `startOffset` is still a true origin afterwards.) A guide the
+        // sweep just BOUNDED comes through the same path, banking a carry of
+        // zero — there was no span to slide before it existed.
         if (extent) {
-          if (ds.startCenter === null) ds.startCenter = extent.center;
-          ds.alongBias =
-            extent.center -
-            ds.startCenter -
-            guideAlongOf(ds.orientation, { x: resizeDX, y: resizeDY });
+          ds.alongCarry = ds.lastAlong;
+          ds.startCenter = extent.center;
+          ds.alongBias = -guideAlongOf(ds.orientation, { x: resizeDX, y: resizeDY });
         }
         ds.resize = null;
       }
@@ -654,7 +665,7 @@ export function useGuideDrag(
           : undefined;
       const { offset: next, center } = snappedOffset(ds.orientation, raw, e, ds, alongTravel);
       ds.lastOffset = next;
-      if (center !== null) ds.lastAlong = center - ds.startCenter!;
+      if (center !== null) ds.lastAlong = ds.alongCarry + (center - ds.startCenter!);
       moveGuide(ds.id, next, center ?? undefined);
       if (hasGroupSiblings(ds.siblings)) {
         // Rigid in both of the master's degrees of freedom: the offset's

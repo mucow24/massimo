@@ -831,20 +831,19 @@ halfLength }` in the along-axis parameter t = p · axis, true world length for e
 slices every borough. The "which line is that" math (axis, foot, perpendicular distance, the
 nudge/tow projection `guideNudgeDelta` and its inverse `guideMoveVector`, the along parameter
 `guideAlongOf` / `guidePointAt` pair, the tip picker `guideEndAlong`, the within-span gate
-`guideAdmitsFoot`, and the drawable
-segment clipped to box AND extent) lives once, in `geometry/snap.ts`'s `guide*` helpers. Same
-standing as the rings — editor scaffolding, export-excluded, same scaffolding band (above
-background art, below map ink) — but the OPPOSITE snapping role: nothing binds to a guide; it
-is an **always-on snap TARGET** for both snappers (see Snapping) — though a bounded one
-attracts only where the dragged point's foot lands inside its span, an inclusive hard edge with
-no grace margin (past the tip is exactly where a bounded guide must let go). It paints as a
-dashed line spanning the overdrawn viewBox (diagonals clip to it — past the box is ink
-overflow — and one that misses it entirely mounts nothing; a bounded guide draws just its span,
-hit stroke included, so it is grabbable only where visible — and the locked deep-pick's point
-test honours the same span) in its own theme slots, not the ring grey:
-`theme.alignGuide` (a day blue / night periwinkle) for the idle stroke, with the amber
-selected state and softened hover from `-Selected`/`-Hover` — a guide's job is to be SEEN, and
-every state is a plain restroke since an infinite line has no body to outline
+`guideAdmitsFoot`, and the drawable segment clipped to box AND extent) lives once, in
+`geometry/snap.ts`'s `guide*` helpers. Same standing as the rings — editor scaffolding,
+export-excluded, same scaffolding band (above background art, below map ink) — but the OPPOSITE
+snapping role: nothing binds to a guide; it is an **always-on snap TARGET** for both snappers
+(see Snapping) — though a bounded one attracts only where the dragged point's foot lands inside
+its span, an inclusive hard edge with no grace margin (past the tip is exactly where a bounded
+guide must let go). It paints as a dashed line spanning the overdrawn viewBox (diagonals clip
+to it — past the box is ink overflow — and one that misses it entirely mounts nothing; a
+bounded guide draws just its span, hit stroke included, so it is grabbable only where visible —
+and the locked deep-pick's point test honours the same span) in its own theme slots, not the
+ring grey: `theme.alignGuide` (a day blue / night periwinkle) for the idle stroke, with the
+amber selected state and softened hover from `-Selected`/`-Hover` — a guide's job is to be
+SEEN, and every state is a plain restroke since an infinite line has no body to outline
 ([GuideView.tsx](src/components/GuideView.tsx)). The ink is hybrid-sized — screen-constant
 at/above 300% zoom, riding the canvas below it, floored at half a screen px, a third of the
 core and so the weight it holds from 100% out — over a casing under-stroke (the selection
@@ -878,33 +877,33 @@ drag) ([GuideWells.tsx](src/components/canvas/GuideWells.tsx) + `useGuideDrag`, 
 only; the pull ghost snaps live and the release commits one `addGuide` + selects it). Dragging
 an INFINITE guide is 1-DOF (the offset takes the pointer delta's `guideNudgeDelta` projection,
 snapped through the point snapper with the matching `constrain` — the two diagonal `constrain`
-values keep only their own 45° family and grid-quantize the intercept under the full lattice).
-A BOUNDED one is an object on the canvas rather than a line across it, so its drag is **2-DOF**:
-that same offset move, plus a slide down its own street by the along projection
-(`guideAlongOf` of the pointer delta, `extent.center` and the offset landing in one `moveGuide`
-write). The along half snaps on the span's two TIPS — each through the point snapper constrained
-ALONG the axis, the offset's constraint mirrored, so a slid tip and a swept one behave alike —
-and the better-aligned of the two carries the whole span onto its target. A tip with nothing in
-range ABSTAINS rather than voting for a zero displacement it would otherwise win every contest
-with, which is what lets a tip sitting exactly on a target hold the span against a further one
-pulling at it. The line wears the plain move cursor once bounded, in place of the perpendicular
-one an infinite guide advertises. **Ctrl/Cmd is the
-resize phase**, live per-move like the station drag's redistribute, in BOTH gestures — so drag
-down, Ctrl, sweep, release places a bounded guide in one motion. While held, the offset freezes
-and the gesture runs like a highlighter: the foot where the phase began — the press foot when
-Ctrl was down at the grab (or at the well press), else the first Ctrl frame's — marks one END,
-the cursor's foot sweeps the other, and the swept stretch IS the span (stored center +
-half-length). The swept end runs through the point snapper constrained ALONG the axis (the
-offset drag's constraint mirrored), where CROSSING guides are legitimate targets — a
-perpendicular guide pins position along this one, the lone exception to
-guides-never-snap-to-guides (parallel stacking stays meaningless). Sweeping the foot past the
-visible canvas edge flips the guide back to INFINITE — the segment jumping to full span is the
-feedback — and back inside re-bounds it; the popover's ∞ button is the deliberate version. The
-flip also caps a sweep at the current viewport: a span longer than the screen — or restoring a
-span a re-sweep already replaced — is the popover Length field's job, or zoom out first.
-Releasing Ctrl resumes the offset drag re-based so nothing jumps — the span re-bases the same
-way, and a guide the sweep just bounded gets its start along-position there — towed siblings
-freeze during
+values keep only their own 45° family and grid-quantize the intercept under the full lattice). A
+BOUNDED one is an object on the canvas rather than a line across it, so its drag is **2-DOF**: that
+same offset move, plus a slide down its own street by the along projection (`guideAlongOf` of the
+pointer delta, `extent.center` and the offset landing in one `moveGuide` write). The along half
+snaps on the span's two TIPS — each through the point snapper constrained ALONG the axis, the
+offset's constraint mirrored, so a slid tip and a swept one behave alike — and the better-aligned
+of the two carries the whole span onto its target. A tip with nothing in range ABSTAINS rather than
+voting for a zero displacement it would otherwise win every contest with, which is what lets a tip
+sitting exactly on a target hold the span against a further one pulling at it. The line wears the
+plain move cursor once bounded, in place of the perpendicular one an infinite guide advertises.
+**Ctrl/Cmd is the resize phase**, live per-move like the station drag's redistribute, in BOTH
+gestures — so drag down, Ctrl, sweep, release places a bounded guide in one motion. While held, the
+offset freezes and the gesture runs like a highlighter: the foot where the phase began — the press
+foot when Ctrl was down at the grab (or at the well press), else the first Ctrl frame's — marks one
+END, the cursor's foot sweeps the other, and the swept stretch IS the span (stored center +
+half-length). The swept end runs through the point snapper constrained ALONG the axis (the offset
+drag's constraint mirrored), where CROSSING guides are legitimate targets — a perpendicular guide
+pins position along this one, the lone exception to guides-never-snap-to-guides (parallel stacking
+stays meaningless). Sweeping the foot past the visible canvas edge flips the guide back to INFINITE
+— the segment jumping to full span is the feedback — and back inside re-bounds it; the popover's ∞
+button is the deliberate version. The flip also caps a SWEEP at the current viewport: a span longer
+than the screen — or restoring a span a re-sweep already replaced — wants an end handle below
+(which never flips, so it simply keeps going), the popover's Length field, or a zoom out first.
+Releasing Ctrl resumes the offset drag re-based so nothing jumps, and the span re-bases with it —
+its origin moving TO where the sweep left it while the along travel done so far is BANKED, since
+a sweep RE-PLACES a span rather than translating it and a tow still measured from the original
+center would carry the whole group by that re-placement. Towed siblings freeze during
 the resize and resume from the gesture's true total after it, a resize release never reads as a
 well drop, and the chrome swaps the spacing readout for a live length chip spanning the extent.
 A selected, unlocked, bounded guide also grows an **end handle at each tip**: the discoverable
@@ -2738,11 +2737,10 @@ here), plus the guide's own accent recolor
 `liveGuideTargets(exclude)` beside `liveAlignTargets` — visibility-gated the same way, minus the
 guides moving with the drag (`AlignExclude.guideIds`); a guide's own gesture passes NO guide pool
 on the OFFSET call, since stacking two guides is meaningless — but every gesture that moves a TIP
-passes it (the Ctrl sweep, an end handle, a bounded slide's two tips), where a crossing guide
-pins an end exactly where an end wants pinning and a parallel one is structurally out anyway, the
-along `constrain` dropping the axis it would engage on. Offset-side, that pool is taken only to
-MEASURE against
-(the spacing readout under `AlignmentGuide`) — and there the moving-guide exclusion is
+passes it (the Ctrl sweep, an end handle, a bounded slide's two tips), where a crossing guide pins
+an end exactly where an end wants pinning and a parallel one is structurally out anyway, the along
+`constrain` dropping the axis it would engage on. Offset-side, that pool is taken only to MEASURE
+against (the spacing readout under `AlignmentGuide`) — and there the moving-guide exclusion is
 deliberately UNDONE, since a guide the readout cannot see is one it draws a span straight through.
 This deliberately pierces the stations-are-skeleton asymmetry below: stations DO snap to guides —
 aligning stations is what a guide is for, and rings already set the
@@ -3512,9 +3510,12 @@ takes only the offset-changing PROJECTION of the delta (`guideNudgeDelta`: dy fo
 dx for vertical, dy∓dx for the diagonals), its bounded span sliding by the along projection on
 top; a guide MASTER tows the group by both halves in reverse — the perpendicular carry of its
 offset delta (`guideMoveVector`, the projection's inverse) plus its span's travel along
-`guideAxis` — so master and tow stay rigid whichever way the master moved. A master whose span
-flips to infinite mid-gesture FREEZES that along carry rather than dropping it, since the tow it
-already did is not undone by the guide losing its ends. Guides never join the rotate.
+`guideAxis` — so master and tow stay rigid whichever way the master moved. Two things a
+mid-gesture RESIZE must not do to that along carry: dropping it when the span flips to infinite
+(the tow already done is not undone by the guide losing its ends), and counting the sweep's
+re-placement of the span as travel — a sweep can drop a span a thousand units down the street,
+and it is not a translation, so the carry is BANKED and the along travel measured afresh from
+where the sweep left the span. Guides never join the rotate.
 A **line circle is a FRAME**, and that makes it the one member with a second list. It tows by its
 center (`moveLineCircle`), which carries the stations bound to it — so those passengers go in
 `carriedStations` (ids only, every station on a moving ring, selected or not) instead of
