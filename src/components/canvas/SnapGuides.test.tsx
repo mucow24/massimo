@@ -55,6 +55,79 @@ describe('<SnapGuides />', () => {
     expect(halo.getAttribute('stroke')).toBe('rgba(26, 78, 168, 0.3)');
   });
 
+  // A `quiet` span is an AMBIENT measurement — it rides every frame of a
+  // gesture whether or not anything engaged (the guide drag's spacing readout).
+  // The full snap chrome on such a span outshouts the thing being dragged: pull
+  // a vertical guide out and all you see is the pair of horizontal spans
+  // measuring it, which reads as a bug rather than as feedback.
+  describe('the quiet register', () => {
+    const span = (extra: Partial<SnapGuide> = {}): SnapGuide[] => [
+      { from: { x: 0, y: 0 }, to: { x: 0, y: 60 }, label: '60.0', ...extra },
+    ];
+    const attrs = (guides: SnapGuide[]) => {
+      const { container } = render(<SnapGuides guides={guides} zoom={1} />);
+      const line = container.querySelector('line[data-snap-guide]')!;
+      const text = labelText(container);
+      const dash = (line.getAttribute('stroke-dasharray') ?? '').split(' ').map(Number);
+      return {
+        haloed: container.querySelector('g[filter] line') !== null,
+        rings: container.querySelectorAll('circle').length,
+        width: Number(line.getAttribute('stroke-width')),
+        mark: dash[0],
+        gap: dash[1],
+        cap: line.getAttribute('stroke-linecap'),
+        fontSize: Number(text.getAttribute('font-size')),
+        chipHalo: Number(text.getAttribute('stroke-width')),
+      };
+    };
+
+    it('draws a quieter line and chip than a snap that engaged, with no halo or rings', () => {
+      const loud = attrs(span());
+      const quiet = attrs(span({ quiet: true }));
+      // Guard the guard: the loud register really does carry the chrome the
+      // quiet one is being checked for the absence of.
+      expect(loud.haloed).toBe(true);
+      expect(loud.rings).toBeGreaterThan(0);
+      expect(quiet.haloed).toBe(false);
+      expect(quiet.rings).toBe(0);
+      expect(quiet.width).toBeLessThan(loud.width);
+      expect(quiet.fontSize).toBeLessThan(loud.fontSize);
+      expect(quiet.chipHalo).toBeLessThan(loud.chipHalo);
+      // Still legible: the chip keeps a halo, or the number dies over band art.
+      expect(quiet.chipHalo).toBeGreaterThan(0);
+    });
+
+    // A tracer running off a stationary guide should read as a measurement
+    // being taken, not as a second line drawn on the map.
+    it('runs DOTTED where the loud register runs dashed', () => {
+      const loud = attrs(span());
+      const quiet = attrs(span({ quiet: true }));
+      // A dot is a mark shorter than its gap, round-capped so it reads round.
+      expect(quiet.mark).toBeLessThan(quiet.gap);
+      expect(quiet.cap).toBe('round');
+      // A dash is the other way round, and squared off.
+      expect(loud.mark).toBeGreaterThan(loud.gap);
+      expect(loud.cap).toBe('butt');
+    });
+
+    it('leaves a loud span in the same list its full chrome', () => {
+      const { container } = render(
+        <SnapGuides
+          guides={[
+            { from: { x: 0, y: 0 }, to: { x: 0, y: 60 }, label: '60.0', quiet: true },
+            { from: { x: 0, y: 0 }, to: { x: 90, y: 0 }, label: '90.0' },
+          ]}
+          zoom={1}
+        />,
+      );
+      // One halo pass and its two endpoint rings — the loud span's, not both.
+      expect(container.querySelectorAll('g[filter] line')).toHaveLength(1);
+      expect(container.querySelectorAll('circle')).toHaveLength(2);
+      const haloed = container.querySelector('g[filter] line')!;
+      expect(Number(haloed.getAttribute('x2'))).toBe(90);
+    });
+  });
+
   it('never draws an alignment-guide MARKER as a plain segment', () => {
     const guides: SnapGuide[] = [{ from: { x: 5, y: 5 }, to: { x: 5, y: 5 }, alignGuideId: 'gh' }];
     const { container } = render(<SnapGuides guides={guides} zoom={1} />);

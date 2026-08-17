@@ -206,6 +206,14 @@ export interface SnapGuide {
    *  chip; see EngagedGuideChrome) plus the guide's accent recolor.
    *  `from`/`to` both carry the LANDED point — the ring's position. */
   alignGuideId?: string;
+  /** Set on an AMBIENT measurement: a span that rides every frame of a gesture
+   *  whether or not anything engaged, rather than the feedback for a snap that
+   *  locked. `SnapGuides` paints it in a quieter register — no halo pass, no
+   *  endpoint rings, a thinner line and a smaller chip — because such a span
+   *  measures FROM the thing being dragged and must not outshout it. The guide
+   *  drag's spacing readout is the one source (see {@link
+   *  guideNeighbourReadout}). */
+  quiet?: boolean;
 }
 
 /** How every live readout renders a world-unit measurement: one decimal place.
@@ -438,13 +446,16 @@ export function guideSegmentInBox(
 /**
  * The spacing readout for a guide gesture: the perpendicular span from the
  * dragged guide to the nearest PARALLEL guide on each side, as labeled
- * `SnapGuide` segments — the same measurement chrome a station drag draws to
- * its adjacent stations.
+ * `SnapGuide` segments.
  *
  * It is a measurement, not a snap: guides never snap to each other (stacking
  * two is meaningless), so nothing here engages anything, and it is emitted on
  * every frame of the gesture rather than only when something locks. Shift
- * declines snapping, not measuring.
+ * declines snapping, not measuring. Hence `quiet` on every span — a station
+ * drag's neighbour chrome is the feedback for something that LOCKED and reads
+ * as loud as it likes, while these ride the whole gesture and measure from the
+ * guide the user is moving: at full chrome, two stationary spans out-shout the
+ * hairline that is actually under the cursor.
  *
  * `at` is the live cursor; the spans anchor at its FOOT on the dragged guide,
  * so they land by the pointer instead of at a fixed spot along an infinite
@@ -502,6 +513,7 @@ export function guideNeighbourReadout(
       from,
       to: guideFoot(orientation, n, from),
       label: formatMeasurement(guidePerpDist(orientation, n, from)),
+      quiet: true,
     });
   }
   return out;
@@ -593,6 +605,7 @@ export function snapGuidesEqual(a: SnapGuide[], b: SnapGuide[]): boolean {
     if (ga.to.x !== gb.to.x || ga.to.y !== gb.to.y) return false;
     if (ga.label !== gb.label) return false;
     if (ga.alignGuideId !== gb.alignGuideId) return false;
+    if (ga.quiet !== gb.quiet) return false;
   }
   return true;
 }
