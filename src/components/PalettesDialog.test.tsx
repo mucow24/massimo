@@ -75,8 +75,9 @@ describe('<PalettesDialog /> two columns', () => {
     expect(rowNames(mapColumn())).toEqual(['MTA', 'BART']);
   });
 
-  // The two kinds have to be told apart at a glance, before any name is read:
-  // a line palette is a row of round color bullets, a design palette pairs each
+  // The two kinds have to be told apart at a glance, before any name is read,
+  // and the SHAPE is what says which: a line palette is a row of round color
+  // bullets, a design palette keeps the rectangular bars — stacked, each
   // color's day over its night. One `> span` per swatch either way, so "how
   // many colors is this?" reads the same from both.
   describe('the strip tells the kinds apart', () => {
@@ -122,6 +123,10 @@ describe('<PalettesDialog /> two columns', () => {
       expect(pairs).toHaveLength(2);
       expect([...pairs[0].children].map(bg)).toEqual(['rgb(51, 51, 51)', 'rgb(187, 187, 187)']);
       expect([...pairs[1].children].map(bg)).toEqual(['rgb(238, 238, 238)', 'rgb(238, 238, 238)']);
+      // Bars, not bullets: the shape is what tells the kinds apart, so a design
+      // strip carries none of the line kind's round dots.
+      expect(s?.querySelectorAll('.palette-bar')).toHaveLength(4);
+      expect(s?.querySelectorAll('.palette-dot')).toHaveLength(0);
     });
   });
 

@@ -2996,35 +2996,82 @@ button.dialog-sort {
   height: min(500px, 80vh);
 }
 /* The strip IS the palette: you recognise one by its colors long before its
-   name. Swatches share the row's width rather than tiling at a fixed size, so a
-   3-color palette and a 19-color one both read as one band. The 2px gap is what
-   keeps two near-identical neighbours from reading as one wide swatch — a
-   hairline border round each would be too much ink at this height. */
+   name — and by their SHAPE, which is what tells the two kinds apart at a
+   glance. A LINE palette tiles round bullets, a DESIGN palette stacked
+   rectangles. Both hug the left at the same swatch width, so a 3-color palette
+   and a 19-color one read alike; where they differ is what happens when the
+   colors run out of room — bullets keep their size and overflow (faded below),
+   bars shrink to share what is left. */
 .palette-strip {
   display: flex;
   align-items: center;
   gap: 4px;
   /* The DESIGN pair's height, held by both kinds: a line row and a design row
      must stand exactly as tall (the drag hook divides by ONE row height), so
-     the shorter kind reserves the band rather than closing it up. */
-  height: 23px;
-  /* Bullets are a fixed size, so a palette with a great many colors runs past
-     the column rather than squeezing them oval. Clipped, never wrapped —
-     wrapping would break the pinned row height. */
+     the shorter kind reserves the band rather than closing it up. EVEN, so the
+     pair's two halves split it on a whole pixel and meet without a seam. */
+  height: 22px;
+  /* A LINE palette's bullets hold their size rather than squeezing oval, so a
+     long one runs past the column. Clipped, never wrapped — wrapping would
+     break the pinned row height. */
   overflow: hidden;
 }
+/* Where a line palette DOES outrun its column (the 19-color built-ins do), the
+   tail fades instead of ending on a half-bullet — "there is more here" rather
+   than a cut. The gradient only bites once the bullets reach that far, so a
+   short palette is untouched. Design strips are excluded: their bars SHRINK to
+   fit instead of overflowing, so a crowded one ends exactly at the edge with
+   nothing cut off, and fading it would claim otherwise. */
+.palette-strip:not(.design) {
+  mask-image: linear-gradient(to right, #000 calc(100% - 16px), transparent);
+}
+/* A LINE palette's swatch: a round bullet, at a fixed size and left-justified.
+   Round is the kind's tell — one color, one identity, like the route bullet a
+   line wears on the map — so it is sized to read as a bullet rather than as a
+   dot, while still sitting clear of the band's edges. */
 .palette-dot {
-  width: 10px;
-  height: 10px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
   flex: none;
 }
-/* One swatch of a design palette: its day color over its night one. */
+/* A DESIGN palette keeps the rectangular swatch it always had — the shapes are
+   what tell the kinds apart, so only their STACKING is new. The tighter gap is
+   what keeps two near-identical neighbours from reading as one wide swatch. */
+.palette-strip.design {
+  gap: 2px;
+}
+/* One swatch of a design palette: its day color over its night one, the two
+   TOUCHING, so a swatch reads as one bar split across the themes rather than
+   as two colors that happen to be near each other. The pair STRETCHES to the
+   strip's band (the strip centers its children, so without this the column has
+   no height for its bars to divide and collapses flat); the two bars then
+   split that band between them, and the rounding is carried by the pair's
+   OUTER corners alone. */
 .palette-dot-pair {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  flex: none;
+  align-self: stretch;
+  /* Capped at the bullet's width: a three-color palette shouldn't stretch into
+     three great slabs. Still shrinks below it when a long palette crowds. */
+  flex: 1;
+  max-width: 14px;
+  min-width: 2px;
+  /* A hairline round the whole swatch, so a pale color still reads as a shape
+     against the row. Mid-grey holds against both the light and the dark UI, so
+     it needs no theme of its own. Drawn INSIDE (negative offset) — the strip
+     clips its overflow, which would otherwise eat the top and bottom edges. */
+  outline: 0.5px solid #808080;
+  outline-offset: -0.5px;
+}
+.palette-bar {
+  flex: 1;
+}
+.palette-bar:first-child {
+  border-radius: 2px 2px 0 0;
+}
+.palette-bar:last-child {
+  border-radius: 0 0 2px 2px;
 }
 /* The quiet "design" tag after a design palette's name in the manager rows —
    the kind is load-bearing (it decides which pickers offer the swatches), so

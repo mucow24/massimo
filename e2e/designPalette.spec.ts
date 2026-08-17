@@ -57,6 +57,24 @@ test('design palette: author, link a polygon, tweak from the sidebar, detach', a
   await setColor(page, 'Color 1', '#333333');
   await setColor(page, 'Dark mode color 1', '#bbbbbb');
   await page.getByRole('button', { name: 'Back to palettes' }).click();
+
+  // The row's strip is a LAYOUT fact jsdom cannot see: the day/night halves are
+  // sized by flex against the strip's band, so a missing stretch collapses them
+  // to nothing while every DOM assertion still passes. Pin that they have real
+  // height, split the band evenly, and TOUCH.
+  const bars = await page
+    .locator('.palette-in-map .palette-row')
+    .filter({ hasText: 'New design palette' })
+    .locator('.palette-dot-pair')
+    .first()
+    .evaluate((pair) => {
+      const [day, night] = [...pair.children].map((c) => c.getBoundingClientRect());
+      return { dayH: Math.round(day.height), nightH: Math.round(night.height), seam: night.top - day.bottom };
+    });
+  expect(bars.dayH).toBeGreaterThan(4);
+  expect(bars.nightH).toBe(bars.dayH);
+  expect(bars.seam).toBe(0);
+
   await page.getByRole('button', { name: 'Close palettes' }).click();
 
   // Link the polygon's fill to the swatch from the popover dropdown: the

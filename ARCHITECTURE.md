@@ -250,7 +250,7 @@ src/
                                 #   inverts) — the toolbar badge, reused by the easter-egg ball
     MapLibraryDialog.tsx        # the library manager (maps | versions; Radix Dialog)
     PalettesDialog.tsx          # the palette manager (library | in this map; same Dialog shell;
-                                #   mints via New line…/New design…, badges design rows)
+                                #   New… mints either kind, rows show which by their swatch SHAPE)
     PaletteEditor.tsx           # the manager's second view: one palette's title/description/rows
                                 #   (design rows carry a sun/moon field pair)
     PalettesSection.tsx         # the Styles tab's Palettes section: per-swatch recolor + rename —
@@ -3679,7 +3679,12 @@ same three additions.
   these buttons sit side by side — in one `…` panel, or in the row beside its arrow — and a
   gesture that changed meaning between adjacent glyphs would be worse than a redundant click.
   Only commands that displace nothing act on one click.
-  A row's pencil, in its `…` (and the library head's **New…**, which mints an empty palette into
+  A row says which KIND it is by the shape of its colors, before its badge or its name is read: a
+  line palette tiles round bullets at a fixed size (a long one overruns the column and fades at
+  that edge), a design palette tiles the rectangular swatch it always had, now split into the day
+  color over the night one and shrinking to share the width when crowded. Hovering one names it.
+  A row's pencil, in its `…` (and the library head's **New…**, one command whose menu offers a
+  palette of either kind, minting it empty into
   the map alone — the library holds none, see the floor below) swaps the columns for the
   **[PaletteEditor](src/components/PaletteEditor.tsx)** view, a back arrow joining the title band:
   the palette's title and description (double-click to edit — renaming lives here now), then one

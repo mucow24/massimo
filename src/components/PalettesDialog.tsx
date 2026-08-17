@@ -79,11 +79,12 @@ const swatchesFromColors = (colors: readonly string[]): PaletteSwatch[] =>
 
 /**
  * A palette's colors as a strip — how you recognise one without reading it, and
- * how you tell the two KINDS apart before reading anything at all: a line
- * palette is a row of round color bullets (its swatches are line identities,
- * one color each), while a design palette pairs every swatch's day color over
- * its night one. A collapsed night means night == day, so that pair shows the
- * same color twice — which is exactly what the map paints in both themes.
+ * how you tell the two KINDS apart before reading anything at all. The SHAPE
+ * carries that: a LINE palette is a row of round color bullets (its swatches
+ * are line identities, one color each), while a DESIGN palette keeps the
+ * rectangular bars, stacked — every swatch's day color over its night one. A
+ * collapsed night means night == day, so that pair shows the same color twice,
+ * which is exactly what the map paints in both themes.
  *
  * One direct child per swatch either way, so "how many colors is this?" reads
  * the same from both, and the rows keep a single fixed height (the drag hook's
@@ -93,14 +94,22 @@ function Strip({ palette }: { palette: Palette }) {
   const design = palette.kind === 'design';
   return (
     <div className={'palette-strip' + (design ? ' design' : '')} aria-hidden="true">
+      {/* The swatch's own name on hover — the one place the strip can say which
+          color is which without the editor. An unnamed swatch offers no
+          tooltip at all rather than an empty one. */}
       {palette.swatches.map((s, i) =>
         design ? (
-          <span key={i} className="palette-dot-pair">
-            <span className="palette-dot" style={{ background: s.color }} />
-            <span className="palette-dot" style={{ background: s.night ?? s.color }} />
+          <span key={i} className="palette-dot-pair" title={s.name || undefined}>
+            <span className="palette-bar" style={{ background: s.color }} />
+            <span className="palette-bar" style={{ background: s.night ?? s.color }} />
           </span>
         ) : (
-          <span key={i} className="palette-dot" style={{ background: s.color }} />
+          <span
+            key={i}
+            className="palette-dot"
+            title={s.name || undefined}
+            style={{ background: s.color }}
+          />
         ),
       )}
     </div>
