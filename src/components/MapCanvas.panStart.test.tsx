@@ -104,8 +104,11 @@ describe('MapCanvas — arming a pan', () => {
     seed();
 
     // Always mounted, at rest and mid-pan: only its hit-testability changes
-    // (pointer-events, which paints nothing). Mounting it on demand would be a
-    // paint change, and a paint change re-composites the whole map.
+    // (pointer-events, which paints nothing). Mounting it on demand would build
+    // its box each time it appears — measured ~22ms on a 464-station map — where
+    // toggling pointer-events is free. The cost is box creation, not paint (a
+    // paint change to this overlay is ~1-2ms); see
+    // .perf/e2e/perf-chrome-layer.spec.ts.
     const overlay = document.querySelector('.pan-cursor-overlay');
     expect(overlay).not.toBeNull();
     expect(overlay!.children.length).toBe(0);

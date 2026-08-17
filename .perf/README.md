@@ -83,6 +83,7 @@ npm run perf:check
 | `e2e/perf-drag.spec.ts` | real-drag browser cost. `PERF_NO_REGIONS=1` isolates the render floor; `PERF_KEEP=n` trims the map to test tree-size scaling |
 | `e2e/perf-drag-age.spec.ts` | paint-time staleness: how far (ms, px) the painted station trails the cursor, and post-stop convergence (travel paints, settle time), pipeline on vs off. `PERF_SNAP=1` runs the real per-event snap; `PERF_POPOVER=1` drags with the popover open; `PERF_SPEED`, `PERF_EVENTS_PER_TICK` scale cursor speed and input rate. Run it against `playwright.perf-dev.config.ts` too: the dev server is where the pipelined arm goes STALER than sync (Aug 2026 finding), and a prod-only run hides that |
 | `e2e/perf-gesture-start.spec.ts` | the gap BEFORE a gesture starts — hover, pan start (hand and middle), station press, alt+click deep-pick — measured with the Event Timing API on REAL mouse input, each gesture gated on the store field it is supposed to change. `PERF_PROFILE` adds a CPU profile per gesture, `PERF_TRACE` a renderer timeline (style/layout/paint/layerize), which is what you want when the CPU profile comes back empty |
+| `e2e/perf-chrome-layer.spec.ts` | what a gesture's CHROME costs: `display` vs colour / `visibility` / `opacity`, on a sibling overlay and on a node inside the map svg, each with and without `will-change`. Every arm proves its mechanism is in force AND (for the painting ones) screenshots itself to prove the change reaches the screen. `CHROME_SVG_WHOLE=1` is the control for that proof; `CHROME_ROUNDS`, `CHROME_PRESSES` set the sampling |
 | `e2e/perf-profile.spec.ts` | CDP CPU profile, bucketed by file and function |
 | `e2e/perf-ab.spec.ts` | in-page interleaved A/B of a toggleable change |
 | `e2e/perf-aging.spec.ts` | does a session get slower the longer it is edited, and which quantity grows. `PERF_PLANT_LEAK=1` proves the instrument; the RESET test says which reload-equivalent gives the time back. **Has never produced a valid run** — see below |
@@ -131,6 +132,20 @@ interleaves within one page for changes that can be toggled at runtime — but
 note that the region pipeline carries an incremental cache, so interleaved arms
 contaminate each other's state and both get slower. For geometry, prefer the
 node harness.
+
+**The dev machine is a laptop, and its CPU perf mode swings every number here.**
+It is a Lenovo Legion, and its power mode (`quiet` / `balance` / `performance`)
+changes CPU performance by a large factor. The mode is constant WITHIN a session
+but varies BETWEEN sessions — so every number in a single run is mutually
+comparable, and all the tables here are internally sound, but a figure carried
+over from an earlier session must be RE-MEASURED before it is trusted or
+compared against a fresh one. A 2x "regression" against a months-old number may
+be nothing but a quieter power mode. The perf playwright configs stamp the mode
+at the top of every run (`[perf] Lenovo power mode: …`, via a `globalSetup`), and
+`powerMode.ts` reads it from Lenovo Legion Toolkit's CLI (`llt.exe feature get
+power-mode`, needs LLT running with its CLI enabled; `unknown` anywhere that
+does not hold, e.g. CI). The Windows power-overlay registry is NOT a reliable
+source — it read "Best performance" while the real Legion mode was `quiet`.
 
 ## The gesture-start cliff (Aug 15 2026) — found and fixed
 
@@ -259,8 +274,8 @@ one: it is not the class change (2.4ms with the class toggled and no rule
 matching it) but the STYLE it applies — `cursor` is inherited, so a rule whose
 subject is the map svg restyles all ~15k descendants. Moving the class to
 `.canvas-host` does not help (same subject); a `display`-toggled overlay does
-not either (a paint change re-composites the layer). Toggling `pointer-events`
-on an always-mounted childless overlay does, because it paints nothing.
+not either. Toggling `pointer-events` on an always-mounted childless overlay
+does, because it changes neither box nor paint.
 
 **The promotion row was measured on the OTHER side and rejected.** Holding
 `will-change` for the session is worth ~14ms a press, but a permanently
@@ -279,10 +294,144 @@ rounds gives p≈0.04. Note the first four rounds alone pointed the WRONG way
 n=4, and four rounds of it read as a clean refutation. Twelve was barely
 enough.
 
-**A sibling element is not an escape hatch.** The cursor overlay is a plain
-sibling div in `.canvas-host` and toggling its `display` still cost 22ms — it
-shares the host's paint artifact. Any "move the chrome to its own layer" plan
-has to promote that layer, and that is unmeasured.
+The pan-start section left one question open: it closed with "any move-the-
+chrome-to-its-own-layer plan has to promote that layer, and that is unmeasured."
+The next section measures it. The answer is that promotion is not the lever.
+
+### What costs a recomposite is the BOX, not the paint
+
+`e2e/perf-chrome-layer.spec.ts`. The section above left one question open —
+whether promoting the chrome to its own compositing layer would let hover,
+selection and drag escape the whole-map recomposite, since unlike pan start
+they genuinely change paint. It rested on reading the overlay's 22ms `display`
+toggle as "a paint change re-composites the layer". That reading was wrong, and
+the plan built on it does not work.
+
+Eleven arms, each one way of making a piece of chrome appear, fired by a class
+TOGGLE (`.perf-armed` on `.canvas-host`, flipped from JS) and interleaved in one
+page. The trigger matters and is the lesson of this harness — see the note
+below; a middle-press would confound the result on `main`. Timed class-add ->
+paint, medians of 18, two runs, mta-v23, `performance` power mode:
+
+| arm | vs baseline | what it does |
+| --- | --- | --- |
+| baseline (`pointer-events`, paints nothing) | 0 (≈4.8 ms abs) | the floor |
+| `display` on the overlay — MOUNT a box | **+22 ms** | build a box |
+| `display`, `will-change: transform` | +25 ms | " + promoted |
+| `colour` / `visibility` / `opacity` on an always-laid-out ring | +1.5 ms | paint, outside the layer |
+| the same repaint, `will-change: transform` | +3 ms | " + promoted |
+| `opacity` on a rect INSIDE `.canvas-pan-layer` | +6 ms | paint, inside the layer |
+| that rect, `will-change: transform` | +8 ms | " + promoted |
+| `opacity` on a rect OUTSIDE the pan layer, in `.canvas-host` | +5 ms | paint, outside |
+| `opacity` on ONE real `<path>` inside the map svg | +10 ms | paint a real map node |
+
+Three things fall out, and the plan assumed none of them.
+
+**Mounting is the whole cost.** Building a box (`display`) is +22ms; every way
+of PAINTING a box that already exists is +1 to +10ms. So the lever is: keep the
+chrome mounted and change its paint, never mount on demand — which is exactly
+what React does by default.
+
+**Promotion does nothing.** `display+layer` ≥ `display`, `sibling+layer` ≥
+`sibling`, every pair. The promotion is real — CDP `LayerTree` reports 6 layers
+unpromoted vs 11 promoted, checked per arm so a slow promoted arm cannot be
+confused with a promotion that never happened — it just does not help.
+`will-change` is not the lever and no amount of it will be.
+
+**Leaving the pan layer buys almost nothing.** Painting inside `.canvas-pan-
+layer` (+6ms) versus outside it in `.canvas-host` (+5ms) is a ~1ms difference,
+inside the noise. A real map node is dearer (+10ms) because it drags a larger,
+more complex repaint region with it, not because of the layer boundary. So the
+"move the chrome out of the pan layer" idea — which needs the chrome re-
+projected into screen space, since outside the layer it no longer rides the pan
+transform — is not worth building. The single cheap win, **stop mounting**,
+captures essentially all of it, and needs no re-projection.
+
+**The trigger is the lesson.** The first cut of this harness fired each arm with
+a real middle-press (a pan), and on `main` that reported the OPPOSITE: a flat
+~31ms baseline with every paint arm at +0. The reason is `main`'s per-gesture
+promotion — a middle-press promotes `.canvas-pan-layer` and re-composites it
+wholesale (~21.7ms, the shipped pan-start cost), which ABSORBS the chrome paint
+the harness is trying to isolate. That measurement was taken on the branch's
+un-shipped base (which held `will-change` for the session, so a press promoted
+nothing), and it did not survive re-measurement on `main`. A class toggle
+promotes nothing, so it measures the paint in the layer's resting state — which
+is the state hover and station-drag chrome actually paint into. Re-measuring
+against the shipped code is what turned "two wins worth ~14ms each" into "one
+win worth ~20ms and one worth ~1ms."
+
+**Chrome carrying TEXT is a different conversion.** Always-mounting the
+line-circle diameter chip — one `<text>`, hidden, at radius 0 — makes
+`e2e/labelInkBox.spec.ts` destroy its execution context, reproducibly, and the
+marquee conversion in the same commit does not. A `<text>` that is always
+present participates in font readiness whether or not it is painted, and on an
+otherwise text-free canvas that chip is the only thing asking for its face.
+Bisected, not guessed: reverting only the chip turns the spec green with the
+marquee change still in. Shape chrome and text chrome are not interchangeable
+here, and the station hover chrome includes labels.
+
+**What blocks the rest of it.** Converting a site needs the chrome to render
+with no subject, and most of this chrome cannot: `SwapPreview` returns null
+without a target, the hover rings each need their item, and the three station
+hover sites are keyed `key={hoverStationId + ':hover-…'}`, which forces an
+unmount and remount on every hover change by construction. Doing those needs a
+retain-the-last-subject pattern plus dropping those keys, and the win is not
+guaranteed, because a subtree whose node COUNT varies per subject is still
+creating and destroying boxes when the subject changes. Measure per site rather
+than assuming the ~22ms mount saving carries.
+
+Every piece of gesture chrome in `MapCanvas.tsx` today is mounted on demand
+INSIDE the svg, so each pays the ~22ms mount on every appearance (plus the few
+ms of being inside the svg chunk rather than outside it):
+
+| gate | what appears |
+| ---- | ------------ |
+| `hoverStationId` (three separate sites) | station hover chrome |
+| `hoverBulletId`, `hoverLabelId`, `hoverPolygonId`, `hoverSvgImageId` | per-item hover chrome |
+| `rectSelect.rect` | the marquee |
+| `selection.altHeld && cursorWorld` | the alt-held deep-pick cursor |
+| `circleDrag.resizingId` | line-circle resize handles |
+| `guideDrag.pull` | the guide pull-out ghost |
+| `inLayeringMode` (two sites) | region layering overlays |
+| `layoutDrag.overlay` | the station layout drag overlay |
+
+`SnapGuides` is mounted unconditionally in JSX but returns null while both its
+lists are empty, so in DOM terms it is mount-on-demand as well — it pays when
+the first guide of a drag appears.
+
+All of this chrome is pointer-transparent, which is what makes moving it out
+tractable: a layer over the map would otherwise have to choose between
+swallowing every event beneath it and being unable to host anything
+interactive. Station hover looks like an exception — its sites pass
+`onStartDrag` — but the `wash` and `stroke` layers render a `StationSilhouette`,
+which never takes the handler and is `pointerEvents="none"` throughout, and
+`hover-arrows` renders orientation arrows with no handler at all. The prop is
+dead weight at those three sites. `CircleDiameterLabel` is the one element with
+no explicit `pointer-events`, so it needs one if it moves. If chrome ever does
+need to be interactive on top, the selected-item drag proxies already solve it:
+a top hit layer with capture-phase re-dispatch to the element beneath
+(`rerouteProxyEventBeneath`).
+
+Two instrument notes, both paid for:
+
+- **`perfMapPath()` takes the alphabetically FIRST `.massimo.json` in
+  `.perf/`.** A gitignored drawing left behind by an earlier session outranks
+  the committed `mta-v23`, silently. The first run of this harness measured an
+  81-station map while reporting against a 464-station table, and nothing in
+  the output said so. It now prints the resolved path on every run — but the
+  trap is in the resolver, so it applies to every harness here.
+- **Computed style is not paint.** Three separate subjects inside the map svg
+  had the rule apply, `getComputedStyle` report the new opacity, and not one
+  pixel move: a group scissored away by `.canvas-host` (the pan layer is a 2x
+  surface and the window also holds the sidebar), and `[data-station-id]`
+  wrappers, which are hit targets — the ink lives in sibling layers keyed on
+  the same id. Each reported a confident +14 to +24 ms for repainting nothing.
+  The arm now screenshots its own subject before and after and fails unless the
+  bytes differ, and the subject is chosen by trying candidates until one is
+  PROVEN to paint rather than by a rule about which node ought to carry ink.
+  `CHROME_SVG_WHOLE=1` fades the entire pan layer as the control for that
+  proof: if even that shows no pixel change, the screenshot cannot see the
+  layer and no in-tree verdict here means anything. It can.
 
 ### Where the 15k nodes are
 
