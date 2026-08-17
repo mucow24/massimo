@@ -156,7 +156,7 @@ test('design palette: author, link a polygon, tweak from the sidebar, detach', a
   expect((await onlyPolygon(page)).fill).toBe('#112233');
   expect(await daySwatchX()).toBe(xLinkedClean);
 
-  // Put the field back on the swatch's color for the detach check below.
+  // Still linked after all that — sync moved the swatch, not the link.
   await expect(fillTrigger).toHaveText('1');
 
   // Detach: Custom keeps the colors but drops the link — the next palette
@@ -167,5 +167,6 @@ test('design palette: author, link a polygon, tweak from the sidebar, detach', a
     .poll(async () => 'fillRef' in ((await onlyPolygon(page)) as object))
     .toBe(false);
   await setColor(page, 'New design palette 1', '#aa0000');
-  await expect(page.locator('[data-polygon-id]')).toHaveAttribute('fill', '#008800');
+  // Holding the color it had when it detached — the sync above left it there.
+  await expect(page.locator('[data-polygon-id]')).toHaveAttribute('fill', '#112233');
 });
