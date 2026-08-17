@@ -3002,13 +3002,29 @@ button.dialog-sort {
    hairline border round each would be too much ink at this height. */
 .palette-strip {
   display: flex;
-  gap: 2px;
-  height: 12px;
+  align-items: center;
+  gap: 4px;
+  /* The DESIGN pair's height, held by both kinds: a line row and a design row
+     must stand exactly as tall (the drag hook divides by ONE row height), so
+     the shorter kind reserves the band rather than closing it up. */
+  height: 23px;
+  /* Bullets are a fixed size, so a palette with a great many colors runs past
+     the column rather than squeezing them oval. Clipped, never wrapped —
+     wrapping would break the pinned row height. */
+  overflow: hidden;
 }
-.palette-strip span {
-  flex: 1;
-  min-width: 2px;
-  border-radius: 2px;
+.palette-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+/* One swatch of a design palette: its day color over its night one. */
+.palette-dot-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: none;
 }
 /* The quiet "design" tag after a design palette's name in the manager rows —
    the kind is load-bearing (it decides which pickers offer the swatches), so
@@ -3046,8 +3062,11 @@ button.dialog-sort {
    The height is pinned (not content-sized) as the drag hook's row pitch, and
    it's ONE height for both columns — the map rows' drag handle fits a 24px
    slot like every other command, so nothing forces them taller. */
+/* Tall enough for a design palette's stacked day/night pair, and the SAME
+   height for a line palette's single row of bullets — the drag hook divides by
+   one row height, so the two kinds cannot differ (PALETTE_ROW_HEIGHT). */
 .palette-row {
-  height: 44px;
+  height: 56px;
   padding-top: 6px;
   padding-bottom: 6px;
 }

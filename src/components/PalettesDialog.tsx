@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
+import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Toggle from '@radix-ui/react-toggle';
 import {
   ArrowLeftIcon,
@@ -35,12 +36,18 @@ import { normalizeHex } from '../util/color';
 import { markHistory, redo, undo } from '../state/history';
 import { pointerLost } from './canvas/dragGesture';
 import { downloadBlob, sanitizeBasename } from '../export/exportCanvas';
+import { MenuItem } from './Menu';
 import { DialogSortSelect, IconButton, RowCommands, useSpeedBump } from './dialogRow';
 import { rowShiftStyle, useRowDragReorder } from './useRowDragReorder';
 import { PaletteEditor, type PaletteSource } from './PaletteEditor';
 
-/** The map column's fixed row height — the drag hook divides by it (CSS pins it). */
-export const PALETTE_ROW_HEIGHT = 44;
+/**
+ * The map column's fixed row height — the drag hook divides by it (CSS pins it).
+ * One height for BOTH palette kinds: a design row's stacked day/night pair is
+ * what sets it, and a line row reserves the same band, because a per-kind
+ * height would put the drag preview's arithmetic out by a row.
+ */
+export const PALETTE_ROW_HEIGHT = 56;
 
 // The picker's wording, one entry per PALETTE_SORTS rung — a Record over the
 // union, so a mode added to PaletteSort fails to compile until it is named here.
@@ -70,13 +77,32 @@ const CUSTOM_COLORS_EXPORT_NAME = 'Custom colors';
 const swatchesFromColors = (colors: readonly string[]): PaletteSwatch[] =>
   colors.map((c, i) => ({ name: String(i + 1), color: normalizeHex(c) }));
 
-/** A palette's colors as a strip — how you recognise one without reading it. */
+/**
+ * A palette's colors as a strip — how you recognise one without reading it, and
+ * how you tell the two KINDS apart before reading anything at all: a line
+ * palette is a row of round color bullets (its swatches are line identities,
+ * one color each), while a design palette pairs every swatch's day color over
+ * its night one. A collapsed night means night == day, so that pair shows the
+ * same color twice — which is exactly what the map paints in both themes.
+ *
+ * One direct child per swatch either way, so "how many colors is this?" reads
+ * the same from both, and the rows keep a single fixed height (the drag hook's
+ * contract) whichever kind fills them.
+ */
 function Strip({ palette }: { palette: Palette }) {
+  const design = palette.kind === 'design';
   return (
-    <div className="palette-strip" aria-hidden="true">
-      {palette.swatches.map((s, i) => (
-        <span key={i} style={{ background: s.color }} />
-      ))}
+    <div className={'palette-strip' + (design ? ' design' : '')} aria-hidden="true">
+      {palette.swatches.map((s, i) =>
+        design ? (
+          <span key={i} className="palette-dot-pair">
+            <span className="palette-dot" style={{ background: s.color }} />
+            <span className="palette-dot" style={{ background: s.night ?? s.color }} />
+          </span>
+        ) : (
+          <span key={i} className="palette-dot" style={{ background: s.color }} />
+        ),
+      )}
     </div>
   );
 }
@@ -517,26 +543,37 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
                   <div className="dialog-colhead">
                     <h3>Library</h3>
                     <div className="dialog-colhead-controls">
-                      {/* Two things to mint from empty — one per palette kind —
-                        so these are two buttons, not a menu. The map's custom
-                        colors are seeded from the row that holds them, where
-                        they can be seen. */}
-                      <button
-                        type="button"
-                        className="dialog-colhead-btn"
-                        title="Create an empty line palette in this map"
-                        onClick={() => createNew([])}
-                      >
-                        New line…
-                      </button>
-                      <button
-                        type="button"
-                        className="dialog-colhead-btn"
-                        title="Create an empty design palette in this map — day/night decoration colors"
-                        onClick={() => createNew([], 'design')}
-                      >
-                        New design…
-                      </button>
+                      {/* ONE command with two answers: the kinds differ in what
+                        they are FOR, not in how you mint one, so they share a
+                        button and the menu says which is which. The map's
+                        custom colors are seeded from the row that holds them,
+                        where they can be seen. */}
+                      <Dropdown.Root modal={false}>
+                        <Dropdown.Trigger asChild>
+                          <button
+                            type="button"
+                            className="dialog-colhead-btn"
+                            title="Create an empty palette in this map"
+                          >
+                            New…
+                          </button>
+                        </Dropdown.Trigger>
+                        {/* Non-portalled, like every menu in the app: inside
+                            `.app` for the design tokens, and inside the dialog
+                            for its focus trap. */}
+                        <Dropdown.Content
+                          className="menu-panel"
+                          align="start"
+                          sideOffset={4}
+                          collisionPadding={8}
+                          loop
+                        >
+                          <MenuItem onClick={() => createNew([])}>New line color palette</MenuItem>
+                          <MenuItem onClick={() => createNew([], 'design')}>
+                            New design palette
+                          </MenuItem>
+                        </Dropdown.Content>
+                      </Dropdown.Root>
                       <button
                         type="button"
                         className="dialog-colhead-btn"

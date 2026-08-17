@@ -47,10 +47,11 @@ test('design palette: author, link a polygon, tweak from the sidebar, detach', a
   await page.mouse.click(CENTER.x, CENTER.y);
   await expect(page.locator('.polygon-popover')).toBeVisible();
 
-  // Author a design palette: New design… mints one, its first color set to a
-  // gray pair in the editor's sun/moon fields.
+  // Author a design palette: New… → New design palette mints one, its first
+  // color set to a gray pair in the editor's sun/moon fields.
   await page.getByRole('button', { name: 'Manage palettes' }).click();
-  await page.getByRole('button', { name: 'New design…' }).click();
+  await page.getByRole('button', { name: 'New…' }).click();
+  await page.getByRole('menuitem', { name: 'New design palette' }).click();
   await page.getByRole('textbox', { name: 'Palette name' }).press('Enter');
   await page.getByRole('button', { name: 'Add color' }).click();
   await setColor(page, 'Color 1', '#333333');

@@ -75,6 +75,56 @@ describe('<PalettesDialog /> two columns', () => {
     expect(rowNames(mapColumn())).toEqual(['MTA', 'BART']);
   });
 
+  // The two kinds have to be told apart at a glance, before any name is read:
+  // a line palette is a row of round color bullets, a design palette pairs each
+  // color's day over its night. One `> span` per swatch either way, so "how
+  // many colors is this?" reads the same from both.
+  describe('the strip tells the kinds apart', () => {
+    const strip = (root: HTMLElement, name: string) =>
+      within(root).getByText(name).closest('.palette-row')?.querySelector('.palette-strip') as
+        | HTMLElement
+        | undefined;
+    const bg = (el: Element) => (el as HTMLElement).style.background;
+
+    it('a line palette is one round bullet per color', () => {
+      useDoc.setState({
+        ...useDoc.getState(),
+        palettes: [{ name: 'inks', swatches: [{ name: 'Red', color: '#c1272d' }] }],
+      });
+      renderDialog();
+      const s = strip(mapColumn(), 'inks');
+      expect(s?.children).toHaveLength(1);
+      const dots = s?.querySelectorAll('.palette-dot') ?? [];
+      expect(dots).toHaveLength(1);
+      expect(bg(dots[0])).toBe('rgb(193, 39, 45)');
+    });
+
+    it('a design palette stacks each color day-over-night', () => {
+      useDoc.setState({
+        ...useDoc.getState(),
+        palettes: [
+          {
+            name: 'grays',
+            kind: 'design',
+            swatches: [
+              { name: 'Border', color: '#333333', night: '#bbbbbb' },
+              // Night collapsed away: the pair shows the day color twice, which
+              // is exactly what the map paints in both themes.
+              { name: 'Wash', color: '#eeeeee' },
+            ],
+          },
+        ],
+      });
+      renderDialog();
+      const s = strip(mapColumn(), 'grays');
+      expect(s?.children).toHaveLength(2);
+      const pairs = [...(s?.querySelectorAll('.palette-dot-pair') ?? [])];
+      expect(pairs).toHaveLength(2);
+      expect([...pairs[0].children].map(bg)).toEqual(['rgb(51, 51, 51)', 'rgb(187, 187, 187)']);
+      expect([...pairs[1].children].map(bg)).toEqual(['rgb(238, 238, 238)', 'rgb(238, 238, 238)']);
+    });
+  });
+
   it('says so when the map carries no palettes', () => {
     useDoc.setState({ ...useDoc.getState(), palettes: [] });
     renderDialog();
@@ -572,13 +622,38 @@ describe('<PalettesDialog /> Load…', () => {
 });
 
 describe('<PalettesDialog /> New… and the editor view', () => {
-  const clickNew = (user: ReturnType<typeof userEvent.setup>) =>
-    user.click(screen.getByRole('button', { name: 'New line…' }));
+  const clickNew = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'New…' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'New line color palette' }));
+  };
 
   // Unlike Load… and the custom colors row's `+`, this one arrives with no
   // colors — and a palette with none is not something the library can hold. So
   // it mints into the map alone, provisionally, and reaches the library the
   // ordinary way once it has a color: through its row's save arrow.
+  // One command, two answers: the kinds differ in what they're FOR, not in how
+  // you make one, so they share a button rather than standing as two.
+  it('offers both kinds under one New… button', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    expect(screen.queryByRole('button', { name: 'New line…' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'New…' }));
+    expect((await screen.findAllByRole('menuitem')).map((el) => el.textContent)).toEqual([
+      'New line color palette',
+      'New design palette',
+    ]);
+  });
+
+  it('New design palette mints a design palette and opens the editor on it', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await user.click(screen.getByRole('button', { name: 'New…' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'New design palette' }));
+    const minted = useDoc.getState().palettes.find((p) => p.name === 'New design palette');
+    expect(minted?.kind).toBe('design');
+    expect(screen.getByRole('textbox', { name: 'Palette name' })).toHaveValue('New design palette');
+  });
+
   it('New… mints a fresh name into the MAP alone and opens the editor naming it', async () => {
     const user = userEvent.setup();
     renderDialog();
@@ -590,14 +665,13 @@ describe('<PalettesDialog /> New… and the editor view', () => {
     expect(screen.queryByRole('region', { name: 'Palette library' })).toBeNull();
   });
 
-  // The design mint is the same gesture with a kind on it: its own name stem,
-  // and the editor it opens speaks day/night per row once a color exists.
-  it('New design… mints a design palette under its own stem', async () => {
+  // The editor a design mint opens speaks day/night per row once a color exists
+  // (the mint itself is pinned by the menu test above).
+  it('the editor a design mint opens carries a night field per row', async () => {
     const user = userEvent.setup();
     renderDialog();
-    await user.click(screen.getByRole('button', { name: 'New design…' }));
-    const minted = useDoc.getState().palettes.find((p) => p.name === 'New design palette');
-    expect(minted?.kind).toBe('design');
+    await user.click(screen.getByRole('button', { name: 'New…' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'New design palette' }));
     await user.keyboard('{Escape}'); // cancel the title edit
     await user.click(screen.getByRole('button', { name: 'Add color' }));
     expect(screen.getByLabelText('Dark mode color 1')).toBeInTheDocument();
@@ -711,7 +785,8 @@ describe('<PalettesDialog /> leaving the editor with an empty palette', () => {
   const mapNames = () => useDoc.getState().palettes.map((p) => p.name);
   // The fresh palette opens naming itself, and Escape peels that edit first.
   const startNew = async (user: User) => {
-    await user.click(screen.getByRole('button', { name: 'New line…' }));
+    await user.click(screen.getByRole('button', { name: 'New…' }));
+    await user.click(await screen.findByRole('menuitem', { name: 'New line color palette' }));
     await user.keyboard('{Escape}');
   };
 
