@@ -1,5 +1,5 @@
 import type { MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from 'react';
-import { guideSegmentInBox } from '../geometry/snap';
+import { guideAlongOf, guideEndAlong, guidePointAt, guideSegmentInBox } from '../geometry/snap';
 import { useLivePendingZoom } from '../state/viewportStore';
 import { dashPeriod, isGaplessDash, parseDashPattern, useDevSettings } from '../state/devSettings';
 import type { AlignmentGuide, GuideOrientation } from '../model/types';
@@ -33,13 +33,43 @@ import type { AlignmentGuide, GuideOrientation } from '../model/types';
 // sized for the finger rather than the eye.
 const HIT_PX = 12;
 
-// The direction the guide MOVES (its one degree of freedom, perpendicular to
-// the line): a / guide slides along NW–SE, a \ along NE–SW.
+// The end handles a selected, bounded guide grows: the line circle's resize
+// knob, in the guide's selected amber instead of the ring's accent — every
+// other mark on a guide is that colour, and a handle is a mark on the guide.
+// Screen px, like every manipulator in the app. The grab square is wider than
+// the painted one (the ⊕'s rule: the mark wants to stay small and quiet, the
+// target wants to be catchable), and here it earns it twice over — a miss does
+// not do nothing, it lands on the hit stroke running underneath and TRANSLATES
+// the guide instead of resizing it. Matched to that stroke's own width so the
+// two grabs are equally forgiving.
+const HANDLE_HALF_PX = 4;
+const HANDLE_STROKE_PX = 1;
+const HANDLE_HIT_PX = HIT_PX;
+// Float dust on a tip's round trip through the along parameter — see `segLo`.
+const ALONG_EPS = 1e-6;
+
+// The direction an INFINITE guide moves (its one degree of freedom,
+// perpendicular to the line): a / guide slides along NW–SE, a \ along NE–SW. A
+// bounded one translates in both, so it wears the plain move cursor instead.
 const MOVE_CURSOR: Record<GuideOrientation, string> = {
   horizontal: 'ns-resize',
   vertical: 'ew-resize',
   'diagonal-up': 'nwse-resize',
   'diagonal-down': 'nesw-resize',
+};
+
+/** Which of a guide's grab surfaces a press landed on: the line itself (select
+ *  + move) or one of the two end handles a selected, bounded guide grows
+ *  (resize that tip). The line-circle convention (`LineCirclePart`). */
+export type GuidePart = 'line' | 'start' | 'end';
+
+// A tip slides ALONG the line — the axis the line itself cannot move on, so
+// this table is MOVE_CURSOR's mirror rather than a variation of it.
+const END_CURSOR: Record<GuideOrientation, string> = {
+  horizontal: 'ew-resize',
+  vertical: 'ns-resize',
+  'diagonal-up': 'nesw-resize',
+  'diagonal-down': 'nwse-resize',
 };
 
 interface Props {
@@ -76,7 +106,7 @@ interface Props {
   interactive: boolean;
   inHandMode: boolean;
   // Selection happens at pointer-down (the drag hook selects before arming).
-  onPointerDown?: (e: ReactPointerEvent, id: string) => void;
+  onPointerDown?: (e: ReactPointerEvent, id: string, part: GuidePart) => void;
   // The shared item click contract (Shift toggles membership, plain click
   // replaces); also the deep-pick's synthetic-click way in.
   onClick?: (id: string, e: ReactMouseEvent) => void;
@@ -158,6 +188,13 @@ export function GuideView({
   const seg = guideSegmentInBox(guide.orientation, guide.offset, vbX, vbY, vbW, vbH, guide.extent);
   if (!seg) return null;
   const { x1, y1, x2, y2 } = seg;
+  // The along range actually DRAWN, t-ascending — what the end handles below
+  // test their tips against. Round-tripping a tip through guidePointAt and back
+  // is exact for the strips and off by float dust for the diagonals, hence the
+  // epsilon; it is orders of magnitude below a world unit, so no tip the box
+  // truly clipped can slip through it.
+  const segLo = guideAlongOf(guide.orientation, { x: x1, y: y1 });
+  const segHi = guideAlongOf(guide.orientation, { x: x2, y: y2 });
   // Dash phase anchored to the guide's own world point — the (0, offset) /
   // (offset, 0) foot every orientation passes through — instead of the
   // segment start: the overdrawn box re-clips the endpoints on every pan or
@@ -242,8 +279,11 @@ export function GuideView({
         stroke="transparent"
         strokeWidth={px(HIT_PX)}
         pointerEvents={clickThrough ? 'none' : 'stroke'}
-        style={{ cursor: MOVE_CURSOR[guide.orientation] }}
-        onPointerDown={(e) => onPointerDown?.(e, guide.id)}
+        // A BOUNDED guide is an object on the canvas, free in both directions
+        // (its span slides along its own street), so it wears the plain move
+        // cursor; an infinite one has only the perpendicular DOF to advertise.
+        style={{ cursor: guide.extent ? 'move' : MOVE_CURSOR[guide.orientation] }}
+        onPointerDown={(e) => onPointerDown?.(e, guide.id, 'line')}
         onClick={(e) => onClick?.(guide.id, e)}
         // Right-click on a guide has nothing to rotate; swallow it so the
         // gesture doesn't read as a misfire on whatever sits beneath.
@@ -252,6 +292,60 @@ export function GuideView({
           e.stopPropagation();
         }}
       />
+      {/* The two end handles: the discoverable half of the resize the Ctrl
+          sweep does, and the reason a span's ends are worth aiming at. Only a
+          bounded guide has ends to grab, and lock protects the extent, so it
+          takes the manipulators with it (the line-circle knob's rule).
+          A tip the box CLIPPED OFF mounts nothing — the handles ride the drawn
+          segment's own ends, so a handle is grabbable exactly where it is
+          visible (the hit stroke's rule), and a span running several viewports
+          long parks no ink outside the box for the composited pan layer to pay
+          for. Testing the drawn segment rather than the tip's own coordinates
+          is also the only version that agrees with the line: a strip guide
+          spans the box edge-to-edge whatever its OFFSET, so a second box test
+          here would drop handles off a line that is still being drawn. */}
+      {selected &&
+        !guide.locked &&
+        !clickThrough &&
+        guide.extent &&
+        (['start', 'end'] as const).map((which) => {
+          const t = guideEndAlong(guide.extent!, which);
+          if (t < segLo - ALONG_EPS || t > segHi + ALONG_EPS) return null;
+          const p = guidePointAt(guide.orientation, guide.offset, t);
+          const half = px(HANDLE_HALF_PX);
+          const grab = px(HANDLE_HIT_PX) / 2;
+          return (
+            <g key={which}>
+              {/* The mark. Takes no pointer events — it sits under the grab
+                  square, and one that ate the press would shrink the target
+                  back to the glyph. */}
+              <rect
+                x={p.x - half}
+                y={p.y - half}
+                width={half * 2}
+                height={half * 2}
+                fill={selectedColor}
+                stroke="#ffffff"
+                strokeWidth={px(HANDLE_STROKE_PX)}
+                pointerEvents="none"
+              />
+              <rect
+                data-guide-handle={which}
+                x={p.x - grab}
+                y={p.y - grab}
+                width={grab * 2}
+                height={grab * 2}
+                fill="transparent"
+                style={{ cursor: END_CURSOR[guide.orientation] }}
+                onPointerDown={(e) => onPointerDown?.(e, guide.id, which)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+              />
+            </g>
+          );
+        })}
     </g>
   );
 }

@@ -131,6 +131,11 @@ const SECTIONS: HelpSection[] = [
         effect:
           'Bound the guide like a highlighter: where Ctrl went down marks one end, sweep to the other — past the screen edge makes it infinite again',
       },
+      {
+        k: 'End squares',
+        effect:
+          'Drag a selected guide’s end to resize the span — a bounded guide also slides along its own line',
+      },
       { k: 'Drag back', effect: 'Drop a guide on its well to delete it — click one to edit/lock' },
     ],
   },

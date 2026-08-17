@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { render, act } from '@testing-library/react';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { fireEvent, render, act } from '@testing-library/react';
 import { GuideView } from './GuideView';
 import { makeGuide } from '../test/fixtures';
 import { useLiveViewportStore } from '../state/viewportStore';
@@ -11,7 +11,7 @@ const renderGuide = (
   zoom = 1,
   vbX = -500,
   vbY = -500,
-  extra: { selected?: boolean } = {},
+  extra: Partial<React.ComponentProps<typeof GuideView>> = {},
 ) =>
   render(
     <svg>
@@ -115,6 +115,105 @@ describe('<GuideView /> bounded extent', () => {
       }),
     );
     expect(container.querySelector('[data-guide]')).toBeNull();
+  });
+});
+
+describe('<GuideView /> end handles', () => {
+  const bounded = (extent: { center: number; halfLength: number }, locked?: boolean) =>
+    makeGuide({ id: 'g', orientation: 'horizontal', offset: 100, extent, locked });
+  const handleAt = (container: HTMLElement, which: 'start' | 'end') =>
+    container.querySelector<SVGRectElement>(`[data-guide-handle="${which}"]`);
+
+  it('grows one at each tip of a selected span, sized on screen and cursored along the axis', () => {
+    const { container } = renderGuide(bounded({ center: 200, halfLength: 50 }), 2, -500, -500, {
+      selected: true,
+    });
+    // Screen-constant, both squares centred on the tip (150 and 250 along
+    // y = 100): the MARK is 8 screen px (4 world at zoom 2), the GRAB 12 (6),
+    // matching the line's own hit stroke so neither grab is the fiddlier one.
+    for (const [which, cx] of [
+      ['start', 150],
+      ['end', 250],
+    ] as const) {
+      const grab = handleAt(container, which)!;
+      expect(Number(grab.getAttribute('x'))).toBeCloseTo(cx - 3, 10);
+      expect(Number(grab.getAttribute('y'))).toBeCloseTo(97, 10);
+      expect(Number(grab.getAttribute('width'))).toBeCloseTo(6, 10);
+      // A tip slides ALONG the line, the axis the line itself cannot move on.
+      expect((grab as unknown as HTMLElement).style.cursor).toBe('ew-resize');
+      // The mark under it, inert so it can't shrink the target back to itself.
+      const mark = grab.parentElement!.querySelector('rect')!;
+      expect(mark).not.toBe(grab);
+      expect(Number(mark.getAttribute('x'))).toBeCloseTo(cx - 2, 10);
+      expect(Number(mark.getAttribute('width'))).toBeCloseTo(4, 10);
+      expect(mark.getAttribute('fill')).toBe('#a80');
+      expect(mark.getAttribute('pointer-events')).toBe('none');
+    }
+  });
+
+  it('reports which tip was pressed', () => {
+    const onPointerDown = vi.fn();
+    const { container } = renderGuide(bounded({ center: 200, halfLength: 50 }), 1, -500, -500, {
+      selected: true,
+      onPointerDown,
+    });
+    fireEvent.pointerDown(handleAt(container, 'start')!);
+    fireEvent.pointerDown(handleAt(container, 'end')!);
+    // The drag hook branches on the part: one tip pivots on the other.
+    expect(onPointerDown.mock.calls.map((c) => c[2])).toEqual(['start', 'end']);
+  });
+
+  it('mounts none while unselected, on an infinite guide, or on a locked one', () => {
+    const unselected = renderGuide(bounded({ center: 200, halfLength: 50 }));
+    expect(handleAt(unselected.container, 'start')).toBeNull();
+    unselected.unmount();
+    // No ends to handle.
+    const infinite = renderGuide(makeGuide({ id: 'g', offset: 100 }), 1, -500, -500, {
+      selected: true,
+    });
+    expect(infinite.container.querySelector('[data-guide-handle]')).toBeNull();
+    infinite.unmount();
+    // Lock protects the extent, so it takes the manipulators with it.
+    const locked = renderGuide(bounded({ center: 200, halfLength: 50 }, true), 1, -500, -500, {
+      selected: true,
+    });
+    expect(locked.container.querySelector('[data-guide-handle]')).toBeNull();
+  });
+
+  it('leaves off a tip the box clipped away', () => {
+    // Tips at 200 and 600; the box ends at x = 500, so the segment is drawn
+    // 200 → 500 and only the tip it really ends at gets a handle.
+    const { container } = renderGuide(bounded({ center: 400, halfLength: 200 }), 1, -500, -500, {
+      selected: true,
+    });
+    expect(handleAt(container, 'start')).not.toBeNull();
+    expect(handleAt(container, 'end')).toBeNull();
+  });
+
+  it('keeps both while the line runs OUTSIDE the box on its offset axis', () => {
+    // A strip guide spans the box edge-to-edge whatever its offset — the layer
+    // draws it regardless (guideSegmentInBox) — so the handles must follow the
+    // same rule the line does, not a stricter box test of their own.
+    const { container } = renderGuide(
+      makeGuide({
+        id: 'g',
+        orientation: 'horizontal',
+        offset: 900,
+        extent: { center: 200, halfLength: 50 },
+      }),
+      1,
+      -500,
+      -500,
+      { selected: true },
+    );
+    expect(handleAt(container, 'start')).not.toBeNull();
+    expect(handleAt(container, 'end')).not.toBeNull();
+  });
+
+  it('wears the plain move cursor on a bounded line — it travels in both directions', () => {
+    const { container } = renderGuide(bounded({ center: 200, halfLength: 50 }));
+    const hit = container.querySelector<HTMLElement>('[data-guide-hit]')!;
+    expect(hit.style.cursor).toBe('move');
   });
 });
 

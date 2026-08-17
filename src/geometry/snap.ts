@@ -372,6 +372,18 @@ export function guidePointAt(orientation: GuideOrientation, offset: number, t: n
   return { x: anchor.x + t * a.x, y: anchor.y + t * a.y };
 }
 
+/** The along-parameter of one TIP of a bounded guide's span: `'start'` is the
+ *  low-t end and `'end'` the high-t one — the direction {@link guideAxis} runs,
+ *  and the order {@link guideSegmentInBox} emits its endpoints in. The one home
+ *  for which tip is which, shared by the end handles' placement and the resize
+ *  that anchors at the OPPOSITE tip. */
+export function guideEndAlong(
+  extent: { center: number; halfLength: number },
+  which: 'start' | 'end',
+): number {
+  return which === 'start' ? extent.center - extent.halfLength : extent.center + extent.halfLength;
+}
+
 /** Does a snap FOOT on this guide's line land inside its span? Bounded guides
  *  exist only where this is true — the edge is inclusive and hard (past the
  *  tip is exactly where a bounded guide must let go; no grace margin). An
