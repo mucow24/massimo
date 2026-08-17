@@ -1602,7 +1602,7 @@ export function MapCanvas() {
                   engaged={engagedGuideIds.has(gid)}
                   interactive={polygonsInteractive}
                   inHandMode={inHandMode}
-                  onPointerDown={(e, id) => guideDrag.onStartDrag(id, e)}
+                  onPointerDown={(e, id, part) => guideDrag.onStartDrag(id, part, e)}
                   onClick={onGuideClick}
                   onHoverEnter={(id) => setHover({ kind: 'guide', id })}
                   onHoverLeave={(id) => clearHoverIf('guide', id)}

@@ -77,7 +77,7 @@ describe('useGuideDrag — dragging an existing guide', () => {
   it('moves a horizontal guide by the vertical world delta only, and selects at pointer-down', () => {
     seedGuides();
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
     expect(useSelection.getState().selectedGuideIds).toEqual(['gh']);
     act(() => {
       r.current.onPointerMove(pointerEvent({ clientX: 350, clientY: 137, shiftKey: true }));
@@ -89,7 +89,7 @@ describe('useGuideDrag — dragging an existing guide', () => {
   it('moves a vertical guide by the horizontal delta, divided by the zoom', () => {
     seedGuides();
     const r = render(2);
-    act(() => r.current.onStartDrag('gv', pointerEvent({ clientX: 200, clientY: 300 })));
+    act(() => r.current.onStartDrag('gv', 'line', pointerEvent({ clientX: 200, clientY: 300 })));
     act(() => {
       r.current.onPointerMove(pointerEvent({ clientX: 260, clientY: 300, shiftKey: true }));
       r.current.onPointerUp(pointerEvent({ clientX: 260, clientY: 300 }));
@@ -106,7 +106,7 @@ describe('useGuideDrag — dragging an existing guide', () => {
       stations: { s1: makeStation({ id: 's1', x: 300, y: 150 }) },
     });
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 400, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 400, clientY: 100 })));
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 400, clientY: 147 })));
     // Raw 147, within tolerance of the station's y 150 — the horizontal
     // alignment locks, and the labeled segment says so.
@@ -123,7 +123,7 @@ describe('useGuideDrag — dragging an existing guide', () => {
     setModes({ grid: 'both' });
     seedGuides();
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 400, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 400, clientY: 100 })));
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 400, clientY: 133 })));
     // Raw 133 on the 20 grid → 140.
     expect(useDoc.getState().guides.gh.offset).toBe(140);
@@ -140,7 +140,7 @@ describe('useGuideDrag — dragging an existing guide', () => {
       },
     });
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 400, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 400, clientY: 100 })));
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 400, clientY: 150 })));
     // 2 units from gh2 — if guides targeted guides this would land 152.
     expect(useDoc.getState().guides.gh.offset).toBe(150);
@@ -158,7 +158,7 @@ describe('useGuideDrag — dragging an existing guide', () => {
       selectedGuideIds: ['gh'],
     });
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 0, clientY: 0 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 0, clientY: 0 })));
     // Grabbing a guide already in the selection leaves the selection alone.
     expect(useSelection.getState().selectedStationIds).toEqual(['free']);
     act(() => {
@@ -180,7 +180,7 @@ describe('useGuideDrag — dragging an existing guide', () => {
       guides: { gh: makeGuide({ id: 'gh', orientation: 'horizontal', offset: 100, locked: true }) },
     });
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 200 })));
     expect(useDoc.getState().guides.gh.offset).toBe(100);
     expect(useSelection.getState().selectedGuideIds).toEqual([]);
@@ -189,7 +189,7 @@ describe('useGuideDrag — dragging an existing guide', () => {
   it('rolls back on pointercancel and on a button-less move', () => {
     seedGuides();
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
     act(() =>
       r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 160, shiftKey: true })),
     );
@@ -201,7 +201,7 @@ describe('useGuideDrag — dragging an existing guide', () => {
   it('deletes the guide when released back into its home well', () => {
     seedGuides();
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 8, shiftKey: true })));
     // Hovering the top strip advertises the delete.
     expect(r.current.overWell).toBe('horizontal');
@@ -216,7 +216,7 @@ describe('useGuideDrag — dragging an existing guide', () => {
   it('a strip guide over a corner square tints THAT square, and still deletes', () => {
     seedGuides();
     const r = render();
-    act(() => r.current.onStartDrag('gv', pointerEvent({ clientX: 200, clientY: 300 })));
+    act(() => r.current.onStartDrag('gv', 'line', pointerEvent({ clientX: 200, clientY: 300 })));
     // x ≤ 14 is the vertical guide's whole delete zone, corner squares
     // included — but the tint follows the well under the POINTER, so the
     // square the cursor occupies is the one that lights up. (The jsdom host
@@ -231,7 +231,7 @@ describe('useGuideDrag — dragging an existing guide', () => {
   it("the OTHER orientation's well does not delete", () => {
     seedGuides();
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
     // x ≤ 14 is the LEFT well — home of vertical guides, not this one.
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 8, clientY: 160, shiftKey: true })));
     expect(r.current.overWell).toBeNull();
@@ -258,7 +258,7 @@ describe('useGuideDrag — neighbour spacing readout', () => {
   it('measures to the nearest parallel guide either side, riding the cursor', () => {
     seedNeighbours();
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
     expect(useDoc.getState().guides.gh.offset).toBe(137);
     expect(r.current.snapGuides).toEqual([
@@ -273,7 +273,7 @@ describe('useGuideDrag — neighbour spacing readout', () => {
   it('keeps measuring under Shift — Shift declines snapping, not measuring', () => {
     seedNeighbours();
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
     act(() =>
       r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137, shiftKey: true })),
     );
@@ -291,7 +291,7 @@ describe('useGuideDrag — neighbour spacing readout', () => {
     });
     useSelection.setState({ ...useSelection.getState(), selectedGuideIds: ['gh', 'ghHi'] });
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
     // ghHi is towed to 197. It is out of the SNAP pool (a moving target), but
     // it is still ink on the canvas — measuring past it to ghFar would draw a
@@ -320,7 +320,7 @@ describe('useGuideDrag — neighbour spacing readout', () => {
     seedNeighbours();
     useViewportStore.setState({ showGuides: false });
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
     expect(r.current.snapGuides).toEqual([]);
   });
@@ -351,7 +351,7 @@ describe('useGuideDrag — snap to grid length', () => {
     setModes({ tens: true });
     seedCadence();
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
     // Raw 137 is 97 above ghLo; the nearest whole 20 is 100 → 140. The spacing
     // readout is the feedback — the gap it names IS the cadence.
@@ -364,7 +364,7 @@ describe('useGuideDrag — snap to grid length', () => {
     seedCadence();
     addGuide('ghHi', 150);
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
     // ghHi is 13 away, ghLo 97: the cadence runs from ghHi, one grid length
     // below it — 130, not the 140 ghLo would have given.
@@ -377,7 +377,7 @@ describe('useGuideDrag — snap to grid length', () => {
     addGuide('ghHi', 150);
     useSelection.setState({ ...useSelection.getState(), selectedGuideIds: ['gh', 'ghHi'] });
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137 })));
     // ghHi is the nearer guide but it moves WITH the grab, so its gap never
     // changes: the anchor is stationary ghLo, and the notch is 140.
@@ -389,7 +389,7 @@ describe('useGuideDrag — snap to grid length', () => {
     setModes({ tens: true });
     seedCadence();
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 45 })));
     // Within half a step of ghLo the only whole multiple on offer is zero,
     // which would stack the two guides — the one thing guides never do. The
@@ -401,7 +401,7 @@ describe('useGuideDrag — snap to grid length', () => {
     setModes({ tens: true, grid: 'both' });
     seedCadence(45);
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 133 })));
     // Grid owns the quantization where it constrains: raw 133 → 140, not the
     // 125 the cadence off ghLo (45) would have given.
@@ -419,7 +419,7 @@ describe('useGuideDrag — snap to grid length', () => {
     // Zoom 2 halves the world-unit tolerance to 5, so a half-step miss on the
     // 20 grid no longer reaches.
     const r = render(2);
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 80 })));
     expect(useDoc.getState().guides.gh.offset).toBe(90);
   });
@@ -428,7 +428,7 @@ describe('useGuideDrag — snap to grid length', () => {
     setModes({ tens: true });
     seedCadence();
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
     act(() =>
       r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 137, shiftKey: true })),
     );
@@ -443,7 +443,7 @@ describe('useGuideDrag — snap to grid length', () => {
       stations: { s1: makeStation({ id: 's1', x: 250, y: 150 }) },
     });
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 147 })));
     // The station is 3 off, the notch at 140 is 7: the alignment wins and
     // draws its segment (50 across to the station) above the readout.
@@ -479,7 +479,7 @@ describe('useGuideDrag — snap to grid length', () => {
       },
     });
     const r = render();
-    act(() => r.current.onStartDrag('gd', pointerEvent({ clientX: 100, clientY: 100 })));
+    act(() => r.current.onStartDrag('gd', 'line', pointerEvent({ clientX: 100, clientY: 100 })));
     // dy −10, dx 0 → raw intercept 90, which is 63.6 of true distance from
     // gdLo. The nearest whole 20 of DISTANCE is 60 — an intercept of 60√2.
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 100, clientY: 90 })));
@@ -501,7 +501,7 @@ describe('useGuideDrag — diagonal guides', () => {
   it('moves a \\ guide by the intercept projection of the pointer delta', () => {
     seedDiagonals();
     const r = render();
-    act(() => r.current.onStartDrag('gd', pointerEvent({ clientX: 100, clientY: 100 })));
+    act(() => r.current.onStartDrag('gd', 'line', pointerEvent({ clientX: 100, clientY: 100 })));
     act(() => {
       // dx 30, dy 50 → intercept delta dy − dx = 20.
       r.current.onPointerMove(pointerEvent({ clientX: 130, clientY: 150, shiftKey: true }));
@@ -513,7 +513,7 @@ describe('useGuideDrag — diagonal guides', () => {
   it('moves a / guide by dy + dx, divided by the zoom', () => {
     seedDiagonals();
     const r = render(2);
-    act(() => r.current.onStartDrag('gu', pointerEvent({ clientX: 100, clientY: 100 })));
+    act(() => r.current.onStartDrag('gu', 'line', pointerEvent({ clientX: 100, clientY: 100 })));
     act(() => {
       // dx 30, dy 50 → (50 + 30) / 2 = 40 world units.
       r.current.onPointerMove(pointerEvent({ clientX: 130, clientY: 150, shiftKey: true }));
@@ -530,7 +530,7 @@ describe('useGuideDrag — diagonal guides', () => {
       stations: { s1: makeStation({ id: 's1', x: 300, y: 150 }) },
     });
     const r = render();
-    act(() => r.current.onStartDrag('gd', pointerEvent({ clientX: 100, clientY: 100 })));
+    act(() => r.current.onStartDrag('gd', 'line', pointerEvent({ clientX: 100, clientY: 100 })));
     // Raw intercept −147, within tolerance of the station's y − x = −150.
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 100, clientY: -47 })));
     expect(useDoc.getState().guides.gd.offset).toBe(-150);
@@ -541,7 +541,7 @@ describe('useGuideDrag — diagonal guides', () => {
     setModes({ grid: 'both' });
     seedDiagonals();
     const r = render();
-    act(() => r.current.onStartDrag('gd', pointerEvent({ clientX: 100, clientY: 100 })));
+    act(() => r.current.onStartDrag('gd', 'line', pointerEvent({ clientX: 100, clientY: 100 })));
     // Raw intercept 33 on the 20 grid → 40.
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 100, clientY: 133 })));
     expect(useDoc.getState().guides.gd.offset).toBe(40);
@@ -563,7 +563,7 @@ describe('useGuideDrag — diagonal guides', () => {
       selectedGuideIds: ['gd'],
     });
     const r = render();
-    act(() => r.current.onStartDrag('gd', pointerEvent({ clientX: 300, clientY: 300 })));
+    act(() => r.current.onStartDrag('gd', 'line', pointerEvent({ clientX: 300, clientY: 300 })));
     act(() => {
       r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 340, shiftKey: true }));
       r.current.onPointerUp(pointerEvent({ clientX: 300, clientY: 340 }));
@@ -575,7 +575,7 @@ describe('useGuideDrag — diagonal guides', () => {
   it('deletes a \\ guide dropped on the lower-left corner well, not elsewhere', () => {
     seedDiagonals();
     const r = render();
-    act(() => r.current.onStartDrag('gd', pointerEvent({ clientX: 300, clientY: 300 })));
+    act(() => r.current.onStartDrag('gd', 'line', pointerEvent({ clientX: 300, clientY: 300 })));
     // The top strip is the HORIZONTAL home — not this guide's well.
     act(() =>
       r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 292, shiftKey: true })),
@@ -638,7 +638,11 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
     seedGuides();
     const r = render();
     act(() =>
-      r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100, ctrlKey: true })),
+      r.current.onStartDrag(
+        'gh',
+        'line',
+        pointerEvent({ clientX: 300, clientY: 100, ctrlKey: true }),
+      ),
     );
     act(() =>
       r.current.onPointerMove(
@@ -665,7 +669,7 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
     hostRect();
     seedGuides();
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
     act(() =>
       r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 140, shiftKey: true })),
     );
@@ -710,7 +714,11 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
     seedGuides();
     const r = render();
     act(() =>
-      r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100, ctrlKey: true })),
+      r.current.onStartDrag(
+        'gh',
+        'line',
+        pointerEvent({ clientX: 300, clientY: 100, ctrlKey: true }),
+      ),
     );
     act(() =>
       r.current.onPointerMove(
@@ -745,7 +753,11 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
     });
     const r = render();
     act(() =>
-      r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100, ctrlKey: true })),
+      r.current.onStartDrag(
+        'gh',
+        'line',
+        pointerEvent({ clientX: 300, clientY: 100, ctrlKey: true }),
+      ),
     );
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 420, clientY: 100, ctrlKey: true })));
     // Cursor t 420, the station's column at x 423 within tolerance — the end
@@ -765,7 +777,11 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
     seedGuides();
     const r = render();
     act(() =>
-      r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100, ctrlKey: true })),
+      r.current.onStartDrag(
+        'gh',
+        'line',
+        pointerEvent({ clientX: 300, clientY: 100, ctrlKey: true }),
+      ),
     );
     act(() => r.current.onPointerMove(pointerEvent({ clientX: 204, clientY: 100, ctrlKey: true })));
     // gv crosses at x 200; the swept end clicks onto the crossing: 200 → 300.
@@ -779,7 +795,11 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
     seedGuides();
     const r = render();
     act(() =>
-      r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100, ctrlKey: true })),
+      r.current.onStartDrag(
+        'gh',
+        'line',
+        pointerEvent({ clientX: 300, clientY: 100, ctrlKey: true }),
+      ),
     );
     // The sweep ends inside the top band — the offset drag's delete zone —
     // but a resize release never deletes: the guide can't have been carried
@@ -809,7 +829,7 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
       selectedGuideIds: ['gh'],
     });
     const r = render();
-    act(() => r.current.onStartDrag('gh', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
     act(() =>
       r.current.onPointerMove(pointerEvent({ clientX: 300, clientY: 130, shiftKey: true })),
     );
@@ -916,7 +936,11 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
     });
     const r = render();
     act(() =>
-      r.current.onStartDrag('gd', pointerEvent({ clientX: 100, clientY: 100, ctrlKey: true })),
+      r.current.onStartDrag(
+        'gd',
+        'line',
+        pointerEvent({ clientX: 100, clientY: 100, ctrlKey: true }),
+      ),
     );
     act(() =>
       r.current.onPointerMove(
@@ -931,6 +955,272 @@ describe('useGuideDrag — Ctrl bounds the guide (resize phase)', () => {
     expect(ext!.halfLength).toBeCloseTo(40 * Math.SQRT2, 9);
     expect(useDoc.getState().guides.gd.offset).toBe(0);
     act(() => r.current.onPointerUp(pointerEvent({ clientX: 180, clientY: 180, ctrlKey: true })));
+  });
+});
+
+// A bounded guide is an OBJECT on the canvas, not just a line: grabbing it
+// translates it in both directions, the along half sliding the span down its
+// own street. An infinite one has no along position, so it stays 1-DOF.
+describe('useGuideDrag — a bounded guide slides along its own street', () => {
+  const seedBounded = () =>
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: {
+        gb: makeGuide({
+          id: 'gb',
+          orientation: 'horizontal',
+          offset: 100,
+          extent: { center: 300, halfLength: 50 },
+        }),
+      },
+    });
+
+  it('carries the span along the axis as well as the offset', () => {
+    seedBounded();
+    const r = render();
+    act(() => r.current.onStartDrag('gb', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => {
+      r.current.onPointerMove(pointerEvent({ clientX: 350, clientY: 137, shiftKey: true }));
+      r.current.onPointerUp(pointerEvent({ clientX: 350, clientY: 137 }));
+    });
+    const g = useDoc.getState().guides.gb;
+    expect(g.offset).toBe(137);
+    // The span rode the along half of the travel, its length untouched.
+    expect(g.extent).toEqual({ center: 350, halfLength: 50 });
+  });
+
+  it('slides a diagonal span in true length along the line', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: {
+        gd: makeGuide({
+          id: 'gd',
+          orientation: 'diagonal-down',
+          offset: 0,
+          extent: { center: 0, halfLength: 40 },
+        }),
+      },
+    });
+    const r = render();
+    act(() => r.current.onStartDrag('gd', 'line', pointerEvent({ clientX: 100, clientY: 100 })));
+    act(() => {
+      r.current.onPointerMove(pointerEvent({ clientX: 180, clientY: 180, shiftKey: true }));
+      r.current.onPointerUp(pointerEvent({ clientX: 180, clientY: 180 }));
+    });
+    const g = useDoc.getState().guides.gd;
+    // Pure along-axis travel: the \ line stays put and the span walks 80√2.
+    expect(g.offset).toBe(0);
+    expect(g.extent!.center).toBeCloseTo(80 * Math.SQRT2, 9);
+    expect(g.extent!.halfLength).toBe(40);
+  });
+
+  it('leaves an infinite guide 1-DOF — the along travel moves nothing', () => {
+    seedGuides();
+    const r = render();
+    act(() => r.current.onStartDrag('gh', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => {
+      r.current.onPointerMove(pointerEvent({ clientX: 500, clientY: 137, shiftKey: true }));
+      r.current.onPointerUp(pointerEvent({ clientX: 500, clientY: 137 }));
+    });
+    expect(useDoc.getState().guides.gh).toEqual({
+      id: 'gh',
+      orientation: 'horizontal',
+      offset: 137,
+    });
+  });
+
+  it('snaps an END along the axis onto a station column; Shift declines', () => {
+    setModes({ all: 'all' });
+    seedBounded();
+    useDoc.setState({
+      ...useDoc.getState(),
+      stations: { s1: makeStation({ id: 's1', x: 423, y: 500 }) },
+    });
+    const r = render();
+    act(() => r.current.onStartDrag('gb', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
+    // Slid 70 right, the tips sit at 320 and 420 — the far one within tolerance
+    // of the station's column, so the whole span steps 3 further to land on it.
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 370, clientY: 100 })));
+    expect(useDoc.getState().guides.gb.extent).toEqual({ center: 373, halfLength: 50 });
+    expect(r.current.snapGuides.length).toBeGreaterThan(0);
+    act(() => {
+      r.current.onPointerMove(pointerEvent({ clientX: 370, clientY: 100, shiftKey: true }));
+      r.current.onPointerUp(pointerEvent({ clientX: 370, clientY: 100 }));
+    });
+    expect(useDoc.getState().guides.gb.extent).toEqual({ center: 370, halfLength: 50 });
+  });
+
+  it('lets the better-aligned tip hold the span against a further one', () => {
+    setModes({ all: 'all' });
+    seedBounded();
+    useDoc.setState({
+      ...useDoc.getState(),
+      stations: {
+        exact: makeStation({ id: 'exact', x: 300, y: 500 }),
+        near: makeStation({ id: 'near', x: 403, y: 500 }),
+      },
+    });
+    const r = render();
+    act(() => r.current.onStartDrag('gb', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
+    // Slid 50 right, the tips sit at 300 and 400: the low one dead on a column,
+    // the high one 3 short of another. Both engage, and the perfect alignment
+    // wins — the span holds where it is instead of being tugged 3 further.
+    act(() => {
+      r.current.onPointerMove(pointerEvent({ clientX: 350, clientY: 100 }));
+      r.current.onPointerUp(pointerEvent({ clientX: 350, clientY: 100 }));
+    });
+    expect(useDoc.getState().guides.gb.extent).toEqual({ center: 350, halfLength: 50 });
+  });
+
+  it('tows the group by the full 2-D travel', () => {
+    seedBounded();
+    useDoc.setState({
+      ...useDoc.getState(),
+      stations: { free: makeStation({ id: 'free', x: 500, y: 500 }) },
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['free'],
+      selectedGuideIds: ['gb'],
+    });
+    const r = render();
+    act(() => r.current.onStartDrag('gb', 'line', pointerEvent({ clientX: 300, clientY: 100 })));
+    act(() => {
+      r.current.onPointerMove(pointerEvent({ clientX: 340, clientY: 130, shiftKey: true }));
+      r.current.onPointerUp(pointerEvent({ clientX: 340, clientY: 130 }));
+    });
+    // Master and tow stay rigid: the sibling takes both halves of the travel,
+    // not just the offset's perpendicular carry.
+    expect(useDoc.getState().stations.free).toMatchObject({ x: 540, y: 530 });
+  });
+});
+
+// The end handles: the discoverable half of the resize the Ctrl sweep does.
+describe('useGuideDrag — end handles resize the span', () => {
+  const hostRect = (w = 800, h = 600) => {
+    host.getBoundingClientRect = () =>
+      ({
+        left: 0,
+        top: 0,
+        right: w,
+        bottom: h,
+        width: w,
+        height: h,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }) as globalThis.DOMRect;
+  };
+  const seedBounded = () =>
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: {
+        gb: makeGuide({
+          id: 'gb',
+          orientation: 'horizontal',
+          offset: 100,
+          extent: { center: 300, halfLength: 50 },
+        }),
+      },
+    });
+
+  it('sweeps the high tip from the anchored low one, offset frozen', () => {
+    hostRect();
+    seedBounded();
+    const r = render();
+    // Grab the tip at t 350; the far tip (250) is the anchor.
+    act(() => r.current.onStartDrag('gb', 'end', pointerEvent({ clientX: 350, clientY: 100 })));
+    act(() =>
+      r.current.onPointerMove(pointerEvent({ clientX: 500, clientY: 140, shiftKey: true })),
+    );
+    const g = useDoc.getState().guides.gb;
+    expect(g.extent).toEqual({ center: 375, halfLength: 125 });
+    // A handle drag is a resize, never a move: the perpendicular travel is
+    // ignored outright.
+    expect(g.offset).toBe(100);
+    // …and the live length chip spans the new extent.
+    expect(r.current.snapGuides).toEqual([
+      { from: { x: 250, y: 100 }, to: { x: 500, y: 100 }, label: '250.0' },
+    ]);
+    act(() => r.current.onPointerUp(pointerEvent({ clientX: 500, clientY: 140 })));
+    expect(useDoc.getState().guides.gb.extent).toEqual({ center: 375, halfLength: 125 });
+    // One undo entry for the gesture.
+    act(() => useDoc.temporal.getState().undo());
+    expect(useDoc.getState().guides.gb.extent).toEqual({ center: 300, halfLength: 50 });
+  });
+
+  it('sweeps the low tip from the anchored high one', () => {
+    hostRect();
+    seedBounded();
+    const r = render();
+    act(() => r.current.onStartDrag('gb', 'start', pointerEvent({ clientX: 250, clientY: 100 })));
+    act(() => {
+      r.current.onPointerMove(pointerEvent({ clientX: 100, clientY: 100, shiftKey: true }));
+      r.current.onPointerUp(pointerEvent({ clientX: 100, clientY: 100 }));
+    });
+    expect(useDoc.getState().guides.gb.extent).toEqual({ center: 225, halfLength: 125 });
+  });
+
+  it('keeps the span bounded when the tip leaves the visible box', () => {
+    hostRect(800, 600);
+    seedBounded();
+    const r = render();
+    act(() => r.current.onStartDrag('gb', 'end', pointerEvent({ clientX: 350, clientY: 100 })));
+    // The Ctrl sweep flips to infinite here — that is how a sweep says
+    // "unbounded". A handle is a resize of a span that already exists, so the
+    // tip just keeps going; the popover's ∞ is the way back.
+    act(() => {
+      r.current.onPointerMove(pointerEvent({ clientX: 900, clientY: 100, shiftKey: true }));
+      r.current.onPointerUp(pointerEvent({ clientX: 900, clientY: 100 }));
+    });
+    expect(useDoc.getState().guides.gb.extent).toEqual({ center: 575, halfLength: 325 });
+  });
+
+  it('tows nothing, and a release over the home well never deletes', () => {
+    hostRect();
+    seedBounded();
+    useDoc.setState({
+      ...useDoc.getState(),
+      stations: { free: makeStation({ id: 'free', x: 500, y: 500 }) },
+    });
+    useSelection.setState({
+      ...useSelection.getState(),
+      selectedStationIds: ['free'],
+      selectedGuideIds: ['gb'],
+    });
+    const r = render();
+    act(() => r.current.onStartDrag('gb', 'end', pointerEvent({ clientX: 350, clientY: 100 })));
+    // Into the top well's band: a resize can't have carried the guide there —
+    // its offset never moved.
+    act(() => r.current.onPointerMove(pointerEvent({ clientX: 420, clientY: 8, shiftKey: true })));
+    expect(r.current.overWell).toBeNull();
+    // A resize is not a translation, so the selection stays put.
+    expect(useDoc.getState().stations.free).toMatchObject({ x: 500, y: 500 });
+    act(() => r.current.onPointerUp(pointerEvent({ clientX: 420, clientY: 8 })));
+    expect(useDoc.getState().guides.gb).toBeDefined();
+    expect(useDoc.getState().guides.gb.extent).toEqual({ center: 335, halfLength: 85 });
+  });
+
+  it('refuses a locked guide, like every other guide gesture', () => {
+    hostRect();
+    useDoc.setState({
+      ...useDoc.getState(),
+      guides: {
+        gb: makeGuide({
+          id: 'gb',
+          orientation: 'horizontal',
+          offset: 100,
+          extent: { center: 300, halfLength: 50 },
+          locked: true,
+        }),
+      },
+    });
+    const r = render();
+    act(() => r.current.onStartDrag('gb', 'end', pointerEvent({ clientX: 350, clientY: 100 })));
+    act(() =>
+      r.current.onPointerMove(pointerEvent({ clientX: 500, clientY: 100, shiftKey: true })),
+    );
+    expect(useDoc.getState().guides.gb.extent).toEqual({ center: 300, halfLength: 50 });
   });
 });
 
