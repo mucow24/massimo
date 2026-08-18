@@ -13,6 +13,9 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.PORT ?? 5234);
 export default defineConfig({
   testDir: resolve(ROOT, '.perf/e2e'),
+  // Stamp every perf run with the machine's CPU perf mode (see powerMode.ts):
+  // it swings these numbers by a large factor and is invisible otherwise.
+  globalSetup: resolve(ROOT, '.perf/perfGlobalSetup.ts'),
 
   retries: 0,
   workers: 1,

@@ -2095,10 +2095,13 @@ button.field-select > :not(.field-select-caret) {
   inset: 0;
   cursor: grabbing;
   /* Always mounted and always laid out — only its HIT-TESTABILITY toggles.
-     `pointer-events` paints nothing, so flipping it leaves the layer's paint
-     artifact untouched; `display` or `visibility` would repaint, and any paint
-     change in this host re-runs the compositing update over the whole map
-     (~4µs per node, 22-27ms on a 464-station drawing). */
+     `pointer-events` changes neither box nor paint, so flipping it is free.
+     `display` would cost far more — building this element's box measured ~22ms
+     on a 464-station map — but that is box creation, not paint: painting an
+     already-present box here (`visibility`, `opacity`, `colour`) measures
+     ~1-2ms. Mounting is the expensive event, wherever the chrome lives; the
+     lever is keep the box, change its paint. Measured in
+     .perf/e2e/perf-chrome-layer.spec.ts. */
   pointer-events: none;
 }
 .canvas-host.panning .pan-cursor-overlay {
