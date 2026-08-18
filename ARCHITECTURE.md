@@ -115,7 +115,8 @@ run `npm run build` first (as `pre-pr` does) or it gates a stale bundle.
 ## Repository layout
 
 ```
-index.html                      # Vite entry; loads Inter (Google Fonts), mounts /src/main.tsx
+index.html                      # Vite entry; mounts /src/main.tsx. Loads nothing off-origin —
+                                #   every face the app uses is self-hosted in public/fonts/
 src/
   main.tsx                      # ReactDOM root, imports styles.css
   App.tsx                       # 3-pane shell + ALL global keyboard/contextmenu/blur wiring
