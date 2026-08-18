@@ -160,8 +160,9 @@ export interface LabelLayout {
   // modes of the same name is exactly what the model assumes them to mean.
   baseline: LabelBaseline;
   // First-line baseline shift in px (negative = up), shifting a multi-line
-  // block so `valign` refers to the BLOCK, not just the first line. Subsequent
-  // lines stack by the leading-scaled line height (`lineStackPx`). 0 = no shift.
+  // block so `valign` refers to the BLOCK, not just the first line — i.e. how
+  // far line 0 moved from where a single-line block of the same valign would
+  // have put it. 0 = no shift.
   firstLineDyPx: number;
   // Tight box around the rendered text in unrotated station-local coords,
   // padded by HIT_PAD on each side. Used by:
@@ -177,8 +178,12 @@ export interface LabelLayout {
   blockTopY: number;
   // Visual center y of the first text line, already folding in the valign AND
   // the multi-line first-line shift. THE number the renderer takes: both paint
-  // paths put line i's alphabetic baseline at
-  // firstLineCenterY + fontSize*(BASELINE_FRACTION - 0.5) + i*lineSpacing.
+  // paths put line 0's alphabetic baseline at
+  // firstLineCenterY + fontSize*(BASELINE_FRACTION - 0.5), and stack line i
+  // below it by that line's own advance (a fixed fontSize*LINE_HEIGHT*leading
+  // on the plain path, the measurer's cumulative baselineFromTop on the
+  // per-segment one — the two agree unless an inline `<size=…>` is open, and
+  // only the per-segment path ever sees one).
   // Measured from the line's center, never an edge — labelLayout works in a
   // 1.2em LINE box while BASELINE_FRACTION measures down from the 1.0em EM box
   // top, and the two share a center but not their top/bottom edges (0.1em of
@@ -238,12 +243,39 @@ export function labelLayoutLocal(
     // literal tag characters — the hit rect / wash silhouette then hugs the
     // painted glyphs (matches renderStationLabelText). The edit box still forces
     // the raw-token width via `literalBullets` above.
-    // Global leading/tracking: tracking widens the measured ink; leading feeds
-    // the height math below (measureTextLabel returns a leaded height too, but
-    // the vertical metrics here are derived independently).
+    // Global leading/tracking: tracking widens the measured ink; leading spaces
+    // the per-line baselines the height math below reads back.
     leading: style.leading,
     tracking: style.tracking,
   });
+
+  // Vertical metrics follow the paint, which sizes each line by its OWN largest
+  // run: an inline `<size=…>` grows or shrinks that line, and the per-segment
+  // renderer stacks the lines by the measurer's cumulative `baselineFromTop`
+  // instead of a fixed multiple of the base size. Deriving the block from
+  // `style.fontSize` alone left a size-tagged name painting outside its own hit
+  // rect and wash, and put a multi-line block's pinned line off its marker.
+  // Everything here reduces to the uniform ladder when no run is tagged — which
+  // is exactly when the plain single-`<text>` path (a fixed
+  // fontSize * LINE_HEIGHT * leading per line) does the painting.
+  const lineStackPx = style.fontSize * LINE_HEIGHT * (style.leading ?? 1);
+  // Rendered size of line i. A stub measurer returns no per-line metrics, so
+  // non-doc callers and the geometry tests keep the base size throughout.
+  const lineSizeOf = (i: number) => measured.lines[i]?.maxFontSize ?? style.fontSize;
+  // Distance from the FIRST line's baseline down to the LAST line's — the whole
+  // stack, as the renderer lays it out.
+  const firstFromTop = measured.lines[0]?.baselineFromTop;
+  const lastFromTop = measured.lines[extraLines]?.baselineFromTop;
+  const blockStackPx =
+    firstFromTop !== undefined && lastFromTop !== undefined
+      ? lastFromTop - firstFromTop
+      : extraLines * lineStackPx;
+  // A line owns one LINE_HEIGHT of its own size, centered so its baseline sits
+  // `BASELINE_FRACTION - 0.5` of that size below the line's center — the 1.2em
+  // line box and the 1.0em em box share a center but not their edges (see
+  // `firstLineCenterY`). These two are the block's reach past its end baselines.
+  const aboveBaseline = (size: number) => size * (LINE_HEIGHT / 2 + BASELINE_FRACTION - 0.5);
+  const belowBaseline = (size: number) => size * (LINE_HEIGHT / 2 - BASELINE_FRACTION + 0.5);
 
   // A waypoint never paints its own dot or tick — hidden it paints nothing;
   // revealed, the overlay replaces every stop style with a fixed circle
@@ -277,6 +309,7 @@ export function labelLayoutLocal(
       style,
       stopMetrics,
       lineAdvances,
+      blockStackPx,
     );
     textAnchor = info.textAnchor;
     valign = info.valign;
@@ -364,81 +397,53 @@ export function labelLayoutLocal(
   // is applied to it.
   const textW = Math.max(20, measured.width);
 
-  // Vertical metrics derived from the rendered font size, using the same
-  // LINE_HEIGHT ratio the renderer stacks lines by. A single line's block is
-  // one line height; half a line height is the central-baseline half-extent.
-  // This keeps the hit rect / wash silhouette height equal to
-  // measureTextLabel's height at any font size, instead of the old constants
-  // (7 / 14) that were tuned for a fixed ~12px font.
-  //
-  // Leading scales only the BETWEEN-line stacking (`lineStackPx`), not the
-  // single line's own half-extent (`textHalfH`): a one-line block is one
-  // line-height tall at any leading, exactly like measureTextLabel's height
-  // (fontSize*LINE_HEIGHT*(1 + extraLines*leading)).
-  const lineHeight = style.fontSize * LINE_HEIGHT;
-  const textHalfH = lineHeight / 2;
-  const lineStackPx = lineHeight * (style.leading ?? 1);
-
   let textXMin: number;
   if (textAnchor === 'start') textXMin = anchorX;
   else if (textAnchor === 'end') textXMin = anchorX - textW;
   else textXMin = anchorX - textW / 2;
+
+  // The block reaches `aboveFirst` above the FIRST line's baseline and
+  // `belowBaseline(last size)` below the LAST one's, with the stack in between.
+  // Both end terms are the ending line's own size, so a size-tagged first or
+  // last line grows the block on that side alone.
+  const aboveFirst = aboveBaseline(lineSizeOf(0));
+  const blockH = aboveFirst + blockStackPx + belowBaseline(lineSizeOf(extraLines));
+  // Center → baseline of the FIRST line as the renderer computes it: at the
+  // label's BASE size, not the line's (stationLabelText's centralToBaseline).
+  // The placement below inverts exactly that step, so whatever the renderer
+  // does with `firstLineCenterY` lands the block where this asked for it.
+  const cb = style.fontSize * (BASELINE_FRACTION - 0.5);
 
   // Vertical alignment, in BLOCK terms for top/middle/bottom and in
   // FIRST-/LAST-LINE terms for auto-down/auto-up: 'top' puts the block top at
   // the anchor, 'middle' centers the block, 'bottom' puts the block bottom at
   // the anchor, 'auto-down' keeps the first line's center on the anchor with
   // the rest of the block extending below it, 'auto-up' keeps the last line's
-  // center on the anchor with earlier lines stacking above it. We achieve this
-  // by shifting only the first line up; subsequent tspans stack by `lineStackPx`
-  // below it. The anchor itself stays on the L cell so rotation still
-  // pivots there.
+  // center on the anchor with earlier lines stacking above it. The anchor
+  // itself stays on the L cell so rotation still pivots there.
   //
-  // Lines stack down by `lineStackPx` (fontSize * LINE_HEIGHT * leading).
-  // The block's height is `2*textHalfH + extraLines*lineStackPx`. The
-  // first line's natural y given the dominant baseline is:
-  //   - 'text-before-edge': first line top   = anchorY
-  //   - 'central'         : first line center= anchorY  (top = anchorY - textHalfH)
-  //   - 'text-after-edge' : first line bottom= anchorY  (top = anchorY - lineHeight)
-  // To put the BLOCK at the desired position relative to anchorY, shift the
-  // first line up by:
-  //   - top      : 0
-  //   - auto-down: 0  (first line center already at anchorY via central baseline)
-  //   - middle   : extraLines * lineStackPx / 2
-  //   - bottom   : extraLines * lineStackPx
-  //   - auto-up  : extraLines * lineStackPx  (lifts the first line so the LAST
-  //                line lands at anchorY; matches 'bottom' but offset by half
-  //                a text body, which the blockTopY math below accounts for)
-  let firstLineShiftPx = 0;
-  if (valign === 'middle') firstLineShiftPx = (extraLines * lineStackPx) / 2;
-  else if (valign === 'bottom' || valign === 'auto-up') firstLineShiftPx = extraLines * lineStackPx;
-  // First-line baseline shift in px (negative = up). The renderer applies the
-  // per-line stacking in px too, so no em round-trip is needed.
-  const firstLineDyPx = firstLineShiftPx === 0 ? 0 : -firstLineShiftPx;
+  // Parameterized by the stack and the last line's size so `firstLineDyPx` can
+  // ask the same question of a single-line block (stack 0, ending on the first
+  // line).
+  const blockTopFor = (stack: number, endSize: number): number => {
+    if (valign === 'top') return anchorY;
+    // The two auto modes pin a LINE's baseline rather than a block edge: the
+    // anchor is that line's center, and its baseline sits `cb` below it.
+    if (valign === 'auto-down') return anchorY + cb - aboveFirst;
+    if (valign === 'auto-up') return anchorY + cb - stack - aboveFirst;
+    const h = aboveFirst + stack + belowBaseline(endSize);
+    return valign === 'bottom' ? anchorY - h : anchorY - h / 2;
+  };
+  const textYMin = blockTopFor(blockStackPx, lineSizeOf(extraLines));
+  // First-line shift in px (negative = up): how far the block's valign moved
+  // the first line from where a single-line block of the same valign would have
+  // put it.
+  const firstLineDyPx = textYMin - blockTopFor(0, lineSizeOf(0));
 
-  // Top of the painted text block (already accounting for the first-line
-  // shift above):
-  //   - top      : block top at anchorY
-  //   - auto-down: first line top at anchorY - textHalfH, block grows down
-  //                (block top stays put as lines are added)
-  //   - middle   : half a block-height above anchorY
-  //   - bottom   : a full block-height above anchorY
-  //   - auto-up  : last line bottom at anchorY + textHalfH, block grows up
-  //                (block bottom stays put as lines are added) — i.e. block
-  //                top at anchorY - textHalfH - extraLines*lineStackPx
-  const blockH = 2 * textHalfH + extraLines * lineStackPx;
-  let textYMin: number;
-  if (valign === 'top') textYMin = anchorY;
-  else if (valign === 'bottom') textYMin = anchorY - blockH;
-  else if (valign === 'auto-down') textYMin = anchorY - textHalfH;
-  else if (valign === 'auto-up') textYMin = anchorY - textHalfH - extraLines * lineStackPx;
-  else textYMin = anchorY - blockH / 2;
-
-  // First-line visual center, derived from the block-top + half a text body.
-  // Equivalent to (first line top + textHalfH). The block-top math already
-  // encodes the valign semantics; adding textHalfH walks down to the line's
-  // center.
-  const firstLineCenterY = textYMin + textHalfH;
+  // First-line visual center: walk from the block top down to the first line's
+  // baseline, then back up by the renderer's own center → baseline step. The
+  // block-top math already encodes the valign semantics.
+  const firstLineCenterY = textYMin + aboveFirst - cb;
 
   return {
     anchorX,
@@ -738,6 +743,9 @@ function autoAlignInfo(
   metrics: StopMetricsFn,
   // Per-line pen advances of the rendered name, for the H/V overrides.
   lineAdvances: number[],
+  // Distance from the first line's baseline to the last's — how far the block's
+  // ink reaches away from the anchor line, for the slant windows below.
+  blockStackPx: number,
 ): AutoAlignInfo {
   const fontSize = style.fontSize;
   const stops = station.stops;
@@ -1008,7 +1016,6 @@ function autoAlignInfo(
 
   // Pin point: marker edge + LABEL_GAP along the approach, stop-relative on
   // BOTH axes (the cell picks the octant; offset/offsetPerp fine-tune).
-  const stacked = (lineAdvances.length - 1) * fontSize * LINE_HEIGHT * (style.leading ?? 1);
   let extent = extentAlong(ref, u);
   if (o === 0 || o === 4) {
     // Beside octants only: the corner octants pin the block's extremity
@@ -1016,9 +1023,9 @@ function autoAlignInfo(
     // layout the octant model serves (the corners are). A diagonal CROSSING
     // stripe gets the same window treatment at the butt below.
     const growsUp = autoValign(label, besideDefault) === 'auto-up';
-    const tUp = capCenterDy(fontSize) + (growsUp ? stacked : 0);
+    const tUp = capCenterDy(fontSize) + (growsUp ? blockStackPx : 0);
     const tDown =
-      capCenterDy(fontSize) + 0.5 * DESCENDER_FRACTION * fontSize + (growsUp ? 0 : stacked);
+      capCenterDy(fontSize) + 0.5 * DESCENDER_FRACTION * fontSize + (growsUp ? 0 : blockStackPx);
     // The stop's own transfer capsules slant across the window the same way,
     // and against a beside label they are the corner-closing obstacle.
     extent = Math.max(
@@ -1057,8 +1064,8 @@ function autoAlignInfo(
     const tRel = pinPerp - cross.perp * STOP_SIZE;
     const slant =
       o === 6
-        ? stripeSlantExtent(cross, away, tRel - descHalf - stacked - capH, tRel)
-        : stripeSlantExtent(cross, away, tRel, tRel + capH + stacked + descHalf);
+        ? stripeSlantExtent(cross, away, tRel - descHalf - blockStackPx - capH, tRel)
+        : stripeSlantExtent(cross, away, tRel, tRel + capH + blockStackPx + descHalf);
     // The butt clears by the CROSSING line's own gap — each axis reads the
     // gap of the stop that blocks it, like every other term of its pin.
     pinRead =

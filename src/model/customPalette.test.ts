@@ -60,6 +60,20 @@ describe('parseCustomPalette', () => {
     expect(r.swatches).toEqual([{ name: '2', color: '#00ff00' }]);
   });
 
+  it('skips a null entry rather than throwing (hand-edited files carry them)', () => {
+    const r = parseCustomPalette(
+      JSON.stringify({ name: 'x', colors: [null, { line: 2, human: '#00ff00' }] }),
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.swatches).toEqual([{ name: '2', color: '#00ff00' }]);
+  });
+
+  it('rejects a file whose colors are all unusable entries', () => {
+    const r = parseCustomPalette(JSON.stringify({ name: 'x', colors: [null, null] }));
+    expect(r.ok).toBe(false);
+  });
+
   it('rejects invalid JSON', () => {
     expect(parseCustomPalette('{nope').ok).toBe(false);
   });
@@ -150,6 +164,13 @@ describe('parseCustomPalette — massimo-palette format', () => {
       }),
     );
     expect(r.ok && r.swatches).toEqual([{ name: 'ok', color: '#112233' }]);
+  });
+
+  it('skips a null entry rather than throwing (hand-edited files carry them)', () => {
+    const r = parseCustomPalette(file({ colors: [null, { name: 'ok', day: '#112233' }] }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.swatches).toEqual([{ name: 'ok', color: '#112233' }]);
   });
 
   it('rejects a non-empty colors list with no valid entry', () => {

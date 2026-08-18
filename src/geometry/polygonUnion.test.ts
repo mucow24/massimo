@@ -78,6 +78,54 @@ describe('unionConvex', () => {
     expect(result.length).toBe(2);
   });
 
+  it('merges two squares that only touch along a shared edge', () => {
+    // Edge-to-edge contact with no overlapping area: the shared edge is
+    // INTERIOR to the union, so both inputs must give it up and the result is
+    // the single 20x10 rectangle. (A label rect whose edge lands exactly on
+    // the cells rect's edge hits this.)
+    const A: Pt[] = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+    ];
+    const B: Pt[] = [
+      { x: 10, y: 0 },
+      { x: 20, y: 0 },
+      { x: 20, y: 10 },
+      { x: 10, y: 10 },
+    ];
+    const result = unionConvex(A, B);
+    expect(result.length).toBe(1);
+    expect(vertexSet(result[0])).toEqual(new Set(['0,0', '20,0', '20,10', '0,10']));
+    expect(insideOrOn({ x: 5, y: 5 }, result[0])).toBe(true); // only in A
+    expect(insideOrOn({ x: 15, y: 5 }, result[0])).toBe(true); // only in B
+  });
+
+  it('merges squares that overlap along part of a shared edge', () => {
+    // A's right edge and B's left edge are collinear but only overlap on
+    // y in [5, 10]; the union is an 8-corner staircase.
+    const A: Pt[] = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+    ];
+    const B: Pt[] = [
+      { x: 10, y: 5 },
+      { x: 20, y: 5 },
+      { x: 20, y: 15 },
+      { x: 10, y: 15 },
+    ];
+    const result = unionConvex(A, B);
+    expect(result.length).toBe(1);
+    expect(vertexSet(result[0])).toEqual(
+      new Set(['0,0', '10,0', '10,5', '20,5', '20,15', '10,15', '10,10', '0,10']),
+    );
+    expect(insideOrOn({ x: 5, y: 2 }, result[0])).toBe(true); // only in A
+    expect(insideOrOn({ x: 15, y: 12 }, result[0])).toBe(true); // only in B
+  });
+
   it('returns the outer square when one square is strictly nested in the other', () => {
     const A: Pt[] = [
       { x: -20, y: -20 },

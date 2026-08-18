@@ -1,8 +1,16 @@
 import { rotateStationLayoutBy90 } from './transforms';
 import type { MapDoc, Station, StationId, StopCell } from './types';
 import { rot8 } from '../util/grid';
+import { stationCircle } from '../geometry/lineCircle';
+import { stationFrameDeg } from '../geometry/orientation';
 
-type MatchingScope = Pick<MapDoc, 'stations' | 'lines'>;
+/**
+ * `lineCircles` is optional only so a caller with no rings in hand still
+ * type-checks; supply it whenever you have it. Without it a CIRCLE-BOUND
+ * station reads as unbound, and its key claims the octant frame it does not
+ * actually paint in (see `frameKey`).
+ */
+type MatchingScope = Pick<MapDoc, 'stations' | 'lines'> & Partial<Pick<MapDoc, 'lineCircles'>>;
 
 /**
  * Layout-rotation difference between a source and a matching station, in 90°
@@ -42,13 +50,18 @@ export interface StationMatch {
  * don't render, so they shouldn't make two visually-identical stations
  * fail to match.
  *
+ * A station bound to a line circle paints in the RING's frame rather than its
+ * octant `rotation`, so it only matches something painted at the same angle —
+ * see `frameKey`.
+ *
  * Excludes the selected station itself.
  */
 export function findMatchingStations(doc: MatchingScope, selectedId: StationId): StationMatch[] {
   const sel = doc.stations[selectedId];
   if (!sel) return [];
+  const circles = doc.lineCircles ?? {};
   // Compute the source's structural keys at all 4 rotations once.
-  const selKeys = rotatedKeys(sel, doc.lines);
+  const selKeys = rotatedKeys(sel, doc.lines, circles);
   const selCanonical = canonicalOf(selKeys);
 
   const candidates = new Set<StationId>();
@@ -63,7 +76,7 @@ export function findMatchingStations(doc: MatchingScope, selectedId: StationId):
   for (const sid of candidates) {
     const st = doc.stations[sid];
     if (!st) continue;
-    const candKeys = rotatedKeys(st, doc.lines);
+    const candKeys = rotatedKeys(st, doc.lines, circles);
     if (canonicalOf(candKeys) !== selCanonical) continue;
     // The source→candidate delta rotation: how much (dRow, dCol) edits must
     // be rotated when broadcast to this match.
@@ -78,14 +91,18 @@ export function findMatchingStations(doc: MatchingScope, selectedId: StationId):
  * Index k is the key after rotating the layout k 90°-steps via
  * `rotateStationLayoutBy90(_, +1)` while compensating `station.rotation`.
  */
-function rotatedKeys(st: Station, lines: MatchingScope['lines']): [string, string, string, string] {
-  const k0 = stopsKey(st, lines);
+function rotatedKeys(
+  st: Station,
+  lines: MatchingScope['lines'],
+  circles: MapDoc['lineCircles'],
+): [string, string, string, string] {
+  const k0 = stopsKey(st, lines, circles);
   const s1 = rotateStationLayoutBy90(st, 1);
-  const k1 = stopsKey(s1, lines);
+  const k1 = stopsKey(s1, lines, circles);
   const s2 = rotateStationLayoutBy90(s1, 1);
-  const k2 = stopsKey(s2, lines);
+  const k2 = stopsKey(s2, lines, circles);
   const s3 = rotateStationLayoutBy90(s2, 1);
-  const k3 = stopsKey(s3, lines);
+  const k3 = stopsKey(s3, lines, circles);
   return [k0, k1, k2, k3];
 }
 
@@ -117,9 +134,10 @@ function layoutOffsetOf(srcKey: string, candKeys: readonly string[]): LayoutOffs
 
 /**
  * Canonical string key for a station at its current layout rotation:
- * rotation, the sorted stop set (filtered to lines that still exist), and
- * the label's cell + rotation — every cell taken RELATIVE to the layout's own
- * corner, so where the layout sits in the grid doesn't enter its identity.
+ * the painted frame angle, the sorted stop set (filtered to lines that still
+ * exist), and the label's cell + rotation — every cell taken RELATIVE to the
+ * layout's own corner, so where the layout sits in the grid doesn't enter its
+ * identity.
  * `label.offset` is deliberately excluded — stations that are otherwise
  * identical but have slightly different offsets are still "the same kind of
  * station" for mass-editing purposes.
@@ -132,7 +150,30 @@ function layoutOffsetOf(srcKey: string, candKeys: readonly string[]): LayoutOffs
 // greater — a negative-ulp "-0.0000" can't arise.
 const q = (n: number): string => n.toFixed(4);
 
-function stopsKey(st: Station, lines: MatchingScope['lines']): string {
+/**
+ * The angle the station's whole picture is painted at, as an integer count of
+ * ten-thousandths of a degree wrapped into [0, 360).
+ *
+ * NOT `station.rotation`: that is the quantized octant, and a CIRCLE-BOUND
+ * station resolves its cells and its label through the RING frame instead — up
+ * to 22.5° away (see `stationFrameRad`). Keying on the octant lets a bound
+ * station match a free one that visibly paints askew of it, which the "renders
+ * IDENTICALLY" contract above forbids; worse, a mirrored rotate then re-picks
+ * the bound station's nearest quarter-turn and leaves its picture where it was
+ * while the source turns 45°. For an unbound station the frame IS the octant,
+ * so this says exactly what `rotation` said. Integers, and wrapped after
+ * rounding, so 360° and 0° cannot key apart; the 4-dp tolerance matches `q`.
+ */
+const frameKey = (st: Station, circles: MapDoc['lineCircles']): string => {
+  const ticks = Math.round(stationFrameDeg(st, stationCircle(st, circles)) * 1e4);
+  return String(((ticks % 3_600_000) + 3_600_000) % 3_600_000);
+};
+
+function stopsKey(
+  st: Station,
+  lines: MatchingScope['lines'],
+  circles: MapDoc['lineCircles'],
+): string {
   const cells = st.stops.filter((c) => lines[c.lineId]);
   const lab = st.label;
   // A waypoint renders no name and no dots — visually it is only the line
@@ -155,7 +196,7 @@ function stopsKey(st: Station, lines: MatchingScope['lines']): string {
   const oCol = anchored.length ? Math.min(...anchored.map((c) => c.col)) : 0;
   const parts = cells.map((c) => stopKey(c, oRow, oCol)).sort();
   const labelPart = wp ? 'wp' : `L${q(lab.row - oRow)},${q(lab.col - oCol)},${rot8(lab.rotation)}`;
-  return `r${rot8(st.rotation)}|${labelPart}|${parts.join('|')}`;
+  return `r${frameKey(st, circles)}|${labelPart}|${parts.join('|')}`;
 }
 
 function stopKey(c: StopCell, oRow: number, oCol: number): string {

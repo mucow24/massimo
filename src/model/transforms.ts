@@ -105,6 +105,7 @@ import type { LabelStyle } from '../geometry/labelLayout';
 import { add, dot, eq, leftNormal, len, norm, rotateAround, sub, type Vec2 } from '../geometry/vec';
 import {
   copyPalette,
+  isLinePalette,
   paletteContentEqual,
   PALETTES,
   recolorSwatch,
@@ -1389,13 +1390,13 @@ export function redistributeBetween(
   for (const id of conflicted) proposals.delete(id);
   if (proposals.size === 0) return doc;
 
-  let stations = doc.stations;
-  for (const [id, p] of proposals) {
-    const cur = stations[id];
-    if (!cur) continue;
-    stations = { ...stations, [id]: { ...cur, x: p.x, y: p.y } };
-  }
-  return { ...doc, stations };
+  // Committed through `moveStation`, not a raw x/y write: a circle-bound
+  // interior is AIMED by its proposal and seated on the rim, which is the
+  // whole difference between a chord that redistributes and one that pulls
+  // the chain's arcs apart. An unbound station lands exactly where it asked.
+  let out = doc;
+  for (const [id, p] of proposals) out = moveStation(out, id, p.x, p.y);
+  return out;
 }
 
 /**
@@ -1613,9 +1614,22 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
       const cur = stations[m.id];
       if (!cur) continue;
       const p = isPivot ? cur : rotateAround({ x: cur.x, y: cur.y }, pivotPt, ORBIT_STEP_RAD);
+      // A station bound to a ring that is NOT itself a member still has to end
+      // up ON that ring: the orbit only AIMS it, and the seat decides where it
+      // lands — the same deal `moveStation` gives the group DRAG that tows the
+      // identical selection. The seat also re-derives the rotation, which is
+      // what the carried case gets from `rotateBoundStations`; a bound station
+      // has no orientation of its own to step.
+      const circle = stationCircle(cur, lineCircles);
       stations = {
         ...stations,
-        [m.id]: { ...cur, rotation: stepRotation(cur.rotation), x: p.x, y: p.y },
+        [m.id]: circle
+          ? reseatCircleLayout(
+              cur,
+              { ...cur, ...circleSeat(circle, p, cur.label.rotation) },
+              circle,
+            )
+          : { ...cur, rotation: stepRotation(cur.rotation), x: p.x, y: p.y },
       };
     } else if (m.type === 'bullet') {
       const cur = routeBullets[m.id];
@@ -3413,9 +3427,18 @@ function sweepFaithfulWearers(
   moved: ReadonlyMap<string, PaletteSwatch>,
   before: Readonly<Record<string, PaletteSwatch>>,
 ): MapDoc {
+  const palette = doc.palettes.find((p) => p.name === paletteName);
+  if (!palette) return reconcileSwatchRefs(doc);
+  const linePalette = isLinePalette(palette);
   const swept = walkRefs(doc, (o, slot) => {
     const ref = slot.ref(o);
     if (ref === undefined || !isSwatchRef(ref) || ref.palette !== paletteName) return o;
+    // The KIND discriminator, read the way the reconcile resolves by it: a
+    // line slot follows line palettes only. An upsert that changes a name's
+    // kind must reach its wearers as a DELETED palette does — ref drops,
+    // painted value stays — so the sweep refuses before it stamps rather than
+    // repainting fields the reconcile is about to unlink anyway.
+    if (!!slot.linePalette !== linePalette) return o;
     const next = moved.get(ref.swatch);
     const from = before[ref.swatch];
     if (!next || !from) return o;
@@ -3732,7 +3755,19 @@ export function addRouteBulletWith(
   fields: Omit<RouteBullet, 'id'>,
 ): MapDoc {
   const bullet = sanitizeIncomingStyleId(doc, 'routeBullet', { id, ...fields });
-  return { ...doc, routeBullets: { ...doc.routeBullets, [id]: bullet } };
+  // `lineId` resolves live-or-null everywhere else it is written (deleteLine
+  // nulls it, the load path repairs it, the export audit flags it), so a
+  // pasted bullet naming a line only the SOURCE map has heals to the unset
+  // placeholder here rather than seating a dangling ref. The sibling
+  // constructors heal their cross-doc refs through `reconcileSwatchRefs`.
+  const lineId = bullet.lineId !== null && doc.lines[bullet.lineId] ? bullet.lineId : null;
+  return {
+    ...doc,
+    routeBullets: {
+      ...doc.routeBullets,
+      [id]: lineId === bullet.lineId ? bullet : { ...bullet, lineId },
+    },
+  };
 }
 
 export function moveRouteBullet(doc: MapDoc, id: string, x: number, y: number): MapDoc {

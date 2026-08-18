@@ -952,7 +952,17 @@ export function blockInkExtentX(
   let right = -Infinity;
   for (const lm of m.lines) {
     if (lm.segments.length === 0) continue;
-    const stretched = align === 'justify' && !lm.endsParagraph && /\s/.test(lm.raw.trim());
+    // A line is only stretched when justifyLine actually stretches it, and it
+    // BAILS on a line with no slack (labelJustify's `slack <= 0`) — which in
+    // Auto mode is the widest line every time, since the box hugs its INK while
+    // the slack is measured against its longer PEN advance. Such a line
+    // left-flushes like a ragged one, so boxing it pen-flush would leave the
+    // right edge short of the paint by the end glyphs' side bearings.
+    const stretched =
+      align === 'justify' &&
+      !lm.endsParagraph &&
+      m.width > lm.alignAdvance &&
+      /\s/.test(lm.raw.trim());
     const cursor = lineCursorX(align, halfW, lm.alignAdvance);
     const l = stretched ? -halfW - lm.bearingLeft : cursor - lm.bearingLeft;
     const r = stretched ? halfW - (lm.alignAdvance - lm.bearingRight) : cursor + lm.bearingRight;

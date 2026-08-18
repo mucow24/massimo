@@ -2079,6 +2079,20 @@ describe('the map’s palettes', () => {
       expect(doc.lines.A).toMatchObject({ color: '#00ff00', colorRef: RED });
     });
 
+    // A cross-KIND replacement is a kind mismatch, and a kind mismatch means
+    // exactly what a deleted palette means: the ref drops and the painted
+    // color stays. A design palette has no business supplying line colors, so
+    // the faithful-wearer sweep must refuse before it stamps.
+    it('a replacement of the other KIND drops the refs without repainting', () => {
+      const doc = T.addPaletteToMap(linked(), {
+        name: 'frrf',
+        kind: 'design',
+        swatches: [{ name: '1', color: '#00ff00' }],
+      });
+      expect(doc.lines.A.color).toBe('#c1272d');
+      expect('colorRef' in doc.lines.A).toBe(false);
+    });
+
     it('a replacement lacking the swatch name drops the ref, keeping the color', () => {
       const doc = T.addPaletteToMap(linked(), {
         name: 'frrf',

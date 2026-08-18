@@ -16,6 +16,27 @@ const IMAGE_HREF_PREFIXES = ['data:image/svg+xml', 'data:image/png', 'data:image
 export const RASTER_IMPORT_MIMES = ['image/png', 'image/jpeg'] as const;
 
 /**
+ * The largest image file we will pull into a map. An imported image lives in
+ * the document as an inline data URI, so it is re-serialized into localStorage
+ * on every edit (a ~5MB origin quota, and base64 inflates the bytes by a third
+ * on the way in) and travels inside every exported file. Without a ceiling a
+ * typical phone photo pushes the persisted doc past the quota and the map
+ * silently stops reaching storage — so the gate is on BYTES, not just on the
+ * mime type.
+ */
+export const MAX_IMAGE_IMPORT_BYTES = 2 * 1024 * 1024;
+
+/**
+ * Whether a chosen image file is too big to live inside a document. Callers
+ * check it before reading the file so the SVG branch (which has no decode step
+ * of its own) is covered too; `rasterFileToImage` applies it again as the
+ * backstop no raster import can bypass.
+ */
+export function isImageFileTooLarge(file: { size: number }): boolean {
+  return file.size > MAX_IMAGE_IMPORT_BYTES;
+}
+
+/**
  * Whether an SvgImage href is one of our allowed inline data URIs. Anything
  * else — a remote URL, a script URI, a non-image data URI — is rejected to
  * preserve the opaque-sandbox model.
@@ -87,15 +108,19 @@ export function svgTextToDataUri(text: string): string {
 /**
  * Read a raster image file (png/jpeg) as a placement payload: the file bytes
  * as an opaque data URI plus the decoded pixel size. Returns null for a
- * disallowed mime or a file that fails to decode (corrupt/not an image) —
- * unlike svg, a raster with no readable size would render as nothing at all,
- * so the caller skips placement entirely. NOT pure (decodes via
- * `createImageBitmap`), which is why it lives behind the pure helpers above.
+ * disallowed mime, a file over the import ceiling, or one that fails to decode
+ * (corrupt/not an image) — unlike svg, a raster with no readable size would
+ * render as nothing at all, so the caller skips placement entirely. NOT pure
+ * (decodes via `createImageBitmap`), which is why it lives behind the pure
+ * helpers above.
  */
 export async function rasterFileToImage(
   file: File,
 ): Promise<{ href: string; width: number; height: number } | null> {
   if (!(RASTER_IMPORT_MIMES as readonly string[]).includes(file.type)) return null;
+  // Before the decode: an oversized file is refused outright, never rasterized
+  // and never base64-expanded into a doc that then cannot be persisted.
+  if (isImageFileTooLarge(file)) return null;
   let width: number;
   let height: number;
   try {

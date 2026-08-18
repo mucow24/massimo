@@ -303,6 +303,17 @@ describe('paste hygiene: add*With sanitizes incoming styleIds', () => {
     expect(addPolygonWith(doc, 'p1', polygon).polygons.p1.styleId).toBeUndefined();
   });
 
+  // `routeBullet.lineId` resolves live-or-null everywhere else — deleteLine
+  // nulls it, the load path repairs it, the export audit flags it — so the
+  // paste door heals a line that only existed in the map the bullet came from.
+  it('nulls a lineId that does not resolve in the receiving doc (cross-map paste)', () => {
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1' })] });
+    const { id: _1, ...live } = makeRouteBullet({ id: 'tmp', lineId: 'L1' });
+    expect(addRouteBulletWith(doc, 'b1', live).routeBullets.b1.lineId).toBe('L1');
+    const { id: _2, ...dead } = makeRouteBullet({ id: 'tmp', lineId: 'gone' });
+    expect(addRouteBulletWith(doc, 'b2', dead).routeBullets.b2.lineId).toBeNull();
+  });
+
   it('strips a styleId that resolves to a style of the WRONG kind', () => {
     const doc = makeDoc({ styles: [makeStyle('polygon', 'y1')] });
     const { id: _1, ...fields } = makeTextLabel({ id: 'tmp', styleId: 'y1' });

@@ -1160,14 +1160,17 @@ export function buildStopMarkers(
       //    poke out of the octolinear bands for nothing;
       //  - mixed → a JOINT: arc-side tangent half + straight-side octant half
       //    + the cap-plane wedge (see StopMarkerSpec.jointRotationDeg).
-      // An END (outward set) is exempt: the end-style machinery owns its
-      // outward half. That holds however many edges it has — a stop only reads
-      // as an end when its bands agree to SAME_HEADING_DOT, and an arc and a
-      // straight that agree that closely are already on one frame, so there is
-      // no joint to build.
+      // An END (outward set) is exempt from the JOINT only: the end-style
+      // machinery owns its outward half. That holds however many edges it has —
+      // a stop only reads as an end when its bands agree to SAME_HEADING_DOT,
+      // and an arc and a straight that agree that closely are already on one
+      // frame, so there is no joint to build. The octant revert is NOT exempt:
+      // an end with no arc riding into it caps an octolinear band like any
+      // other stop, and a tangent square there paints up to 22.5° askew of the
+      // stripe it is capping.
       let jointRotationDeg: number | null = null;
       let jointArcOut: Vec2 | null = null;
-      if (viaCircle && !outward) {
+      if (viaCircle) {
         let arcNbrPos: Vec2 | null = null;
         let hasStraight = false;
         for (const edge of incidentEdges(line, station.id)) {
@@ -1186,7 +1189,7 @@ export function buildStopMarkers(
         }
         if (!arcNbrPos) {
           worldTangent = octantTangent;
-        } else if (hasStraight) {
+        } else if (hasStraight && !outward) {
           jointRotationDeg = angleDeg(octantTangent);
           const toArc = { x: arcNbrPos.x - cx, y: arcNbrPos.y - cy };
           const along = worldTangent.x * toArc.x + worldTangent.y * toArc.y;

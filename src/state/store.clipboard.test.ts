@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useDoc } from './store';
 import { DEFAULT_DOC } from '../model/transforms';
+import { makeLine } from '../test/fixtures';
 
 // Offset the paste/duplicate actions apply so a copy lands just off the source.
 const OFFSET = 15;
@@ -139,6 +140,23 @@ describe('pasteRouteBullet / duplicateRouteBullet', () => {
     shape: 'square' as const,
     size: 12,
   };
+
+  // A bullet's `lineId` resolves live-or-null in the doc that holds it, so the
+  // paste path drops a line the RECEIVING doc doesn't have. Seed the line these
+  // cases claim to be bound to, or they'd be asserting the heal instead of the
+  // field pass-through they are about.
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      lines: { L1: makeLine({ id: 'L1' }) },
+      lineOrder: ['L1'],
+    });
+  });
+
+  it('drops a lineId the receiving doc has no line for', () => {
+    const newId = useDoc.getState().pasteRouteBullet({ ...bulletData, lineId: 'from-another-map' });
+    expect(useDoc.getState().routeBullets[newId].lineId).toBeNull();
+  });
 
   it('pasteRouteBullet offsets x/y by the drop offset, preserves fields, and returns a new id', () => {
     const newId = useDoc.getState().pasteRouteBullet(bulletData);

@@ -745,6 +745,37 @@ describe('findMatchingStations', () => {
     expect(findMatchingStations(after, 'A').map((m) => m.id)).toEqual(['B']);
   });
 
+  // A circle-bound station resolves its cells and its label through the RING
+  // frame (stationFrameRad), not through its quantized octant `rotation` — so
+  // two stations agreeing on `rotation` can still paint up to 22.5° apart.
+  // Matching promises "renders IDENTICALLY", so the frame is what it has to
+  // compare.
+  describe('circle-bound stations', () => {
+    const ringDoc = (bx: number, by: number, rotation: 0 | 2 | 4 | 6) =>
+      makeDoc({
+        stations: [
+          makeStation({ id: 'A', x: 600, y: 600, rotation, stops: [makeStop('L1')] }),
+          makeStation({ id: 'B', x: bx, y: by, rotation, circleId: 'c1', stops: [makeStop('L1')] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['A', 'B'] })],
+        lineCircles: [{ id: 'c1', x: 0, y: 0, radius: 200 }],
+      });
+
+    it('does not match a free station against a ring seat between the octants', () => {
+      // B sits at ring angle 100°; its octant rotation 4 reads 180°, but the
+      // ring frame nearest that is 190° — so B's name and dots sit 10° off A's.
+      const doc = ringDoc(-34.73, 196.96, 4);
+      expect(findMatchingStations(doc, 'A')).toEqual([]);
+    });
+
+    it('still matches a seat that lands exactly on its octant', () => {
+      // B at ring angle 90°: the radial frame IS the octant, so B paints
+      // exactly as A does and the pair is a genuine match.
+      const doc = ringDoc(0, 200, 2);
+      expect(findMatchingStations(doc, 'A').map((m) => m.id)).toEqual(['B']);
+    });
+  });
+
   it('matching survives a line being deleted then re-added', () => {
     // Scenario: 3 identical stations on L1. User deletes L1 (which strips
     // every station's L1 stops). User re-adds L1 with the same id and re-

@@ -10,6 +10,7 @@ import {
   deleteLineCircle,
   moveLineCircle,
   moveStation,
+  redistributeBetween,
   removeStationFromLine,
   rotateItemsAround,
   rotateLineCircle,
@@ -257,6 +258,49 @@ describe('rotateItemsAround with a line circle', () => {
     expect(out.lineCircles.c1).toEqual(CIRCLE);
     expect(out.stations.s1.x).toBeCloseTo(100 + 70 / Math.SQRT2, 9);
     expect(out.stations.s1.y).toBeCloseTo(100 + 70 / Math.SQRT2, 9);
+  });
+
+  // Shift-clicking two passengers without their ring is a reachable selection
+  // (so is co-selecting a LOCKED ring, which groupRotate filters out of the
+  // members). The orbit then aims a bound station at a point off the rim — it
+  // must land on the rim anyway, exactly as the group-drag twin does towing
+  // through `moveStation`.
+  it('keeps a bound station ON its rim when the ring is NOT a member', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({
+          id: 's1',
+          x: 170,
+          y: 100,
+          rotation: 0,
+          circleId: 'c1',
+          stops: [makeStop('l1', { viaCircle: true })],
+        }),
+        makeStation({
+          id: 's2',
+          x: 100,
+          y: 170,
+          rotation: 2,
+          circleId: 'c1',
+          stops: [makeStop('l1', { viaCircle: true })],
+        }),
+      ],
+      lineCircles: [CIRCLE],
+    });
+    const out = rotateItemsAround(
+      doc,
+      { type: 'station', id: 's1' },
+      buildRotateMembers(['s1', 's2'], [], []),
+    );
+    // Orbiting s2 45° CW about s1 aims it at (71, 100) — 29 units from the
+    // center — so the seat slides it to the circle's west point instead.
+    expect(Math.hypot(out.stations.s2.x - 100, out.stations.s2.y - 100)).toBeCloseTo(70, 9);
+    expect(out.stations.s2.x).toBeCloseTo(30, 9);
+    expect(out.stations.s2.y).toBeCloseTo(100, 9);
+    expect(out.stations.s2.circleId).toBe('c1');
+    // The bound pivot holds its seat rather than turning off the tangent —
+    // the same thing that happens to it when the ring IS co-selected.
+    expect(out.stations.s1).toMatchObject({ x: 170, y: 100, rotation: 0 });
   });
 });
 
@@ -616,6 +660,55 @@ describe('moveStation on a bound station', () => {
     const doc = boundDoc();
     const out = moveStation(doc, 'free', 123, 456);
     expect(out.stations.free).toMatchObject({ x: 123, y: 456 });
+  });
+});
+
+describe('redistributeBetween on bound stations', () => {
+  // A|B|C|D all riding c1. Straight mode interpolates the interiors along the
+  // A–D CHORD, which cuts inside the rim; the commit has to seat them back on
+  // it or the corridor's arcs collapse (segCircleFit needs equal radii).
+  const chain = (): MapDoc => {
+    const at = (id: string, deg: number) =>
+      makeStation({
+        id,
+        x: 100 + 70 * Math.cos((deg * Math.PI) / 180),
+        y: 100 + 70 * Math.sin((deg * Math.PI) / 180),
+        circleId: 'c1',
+        stops: [makeStop('L1', { viaCircle: true })],
+      });
+    return makeDoc({
+      stations: [at('A', 0), at('B', 30), at('C', 60), at('D', 90)],
+      lines: [makeLine({ id: 'L1', stations: ['A', 'B', 'C', 'D'] })],
+      lineCircles: [CIRCLE],
+    });
+  };
+
+  it('seats the redistributed interiors back on the rim', () => {
+    const out = redistributeBetween(chain(), 'A', 'D', 'straight');
+    for (const id of ['B', 'C']) {
+      const st = out.stations[id];
+      expect(Math.hypot(st.x - 100, st.y - 100)).toBeCloseTo(70, 9);
+      expect(st.circleId).toBe('c1');
+    }
+    // The endpoints are anchors: they stay exactly where they were.
+    expect(out.stations.A).toMatchObject({ x: 170, y: 100 });
+    expect(out.stations.D.x).toBeCloseTo(100, 9);
+    expect(out.stations.D.y).toBeCloseTo(170, 9);
+  });
+
+  it('leaves unbound interiors on the straight chord', () => {
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 'A', x: 0, y: 0, stops: [makeStop('L1')] }),
+        makeStation({ id: 'B', x: 5, y: 5, stops: [makeStop('L1')] }),
+        makeStation({ id: 'C', x: 30, y: 0, stops: [makeStop('L1')] }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['A', 'B', 'C'] })],
+    });
+    expect(redistributeBetween(doc, 'A', 'C', 'straight').stations.B).toMatchObject({
+      x: 15,
+      y: 0,
+    });
   });
 });
 
