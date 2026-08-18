@@ -133,6 +133,16 @@ note that the region pipeline carries an incremental cache, so interleaved arms
 contaminate each other's state and both get slower. For geometry, prefer the
 node harness.
 
+**Runs serialize behind the pre-pr mutex and self-check for contention.** Both
+playwright configs and the bench config take the machine-wide gate mutex
+(`gateMutex.ts` — the same `Global\massimo-pre-pr` that `npm run pre-pr`
+queues on), so a gate and a perf run can never overlap; a blocked run prints
+that it is queued. Because the mutex only covers work that opted in, every run
+also probes scheduler jitter at start and end (`contention.ts`) and FAILS as
+CONTENDED rather than printing numbers from a machine something else was
+using. `PERF_ALLOW_CONTENDED=1` downgrades that to a warning for deliberate
+measure-under-load sessions.
+
 **The dev machine is a laptop, and its CPU perf mode swings every number here.**
 It is a Lenovo Legion, and its power mode (`quiet` / `balance` / `performance`)
 changes CPU performance by a large factor. The mode is constant WITHIN a session

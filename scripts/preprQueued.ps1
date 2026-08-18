@@ -9,9 +9,13 @@
 # it"). No lock files, no staleness probes, no daemon; nothing on disk exists
 # to wedge.
 #
-# Scope: local sessions on this Windows box run `npm run pre-pr:queued`. CI
-# and cloud containers run plain `npm run pre-pr` — one session per machine,
-# nothing to serialize, and no PowerShell dependency.
+# Entry is FORCED, not chosen: `npm run pre-pr` routes here on Windows via
+# scripts/prePr.mjs (callers kept forgetting the queued variant, which put
+# unserialized gates on top of perf runs), and `pre-pr:queued` remains as a
+# compatibility alias. CI and cloud containers run the chain directly — one
+# session per machine, nothing to serialize, no PowerShell dependency. The
+# perf harnesses in .perf/ take this same mutex (.perf/gateMutex.ts), so a
+# gate and a perf run can never overlap either.
 #
 # The kernel covers DEATH, not a live hang: a stuck-but-alive pre-pr holds the
 # lock legitimately, and the heartbeat below makes that visible. Killing the
@@ -38,7 +42,11 @@ try {
     Write-Host ('pre-pr:queued: lock acquired after {0:f1}m in queue' -f $sw.Elapsed.TotalMinutes)
   }
 
-  npm run pre-pr
+  # The guard keeps prePr.mjs from routing this inner call back into the
+  # queue; calling the raw chain directly would also work, but the guard must
+  # be set regardless so any nested `npm run pre-pr` stays queue-free.
+  $env:PREPR_UNDER_MUTEX = '1'
+  npm run pre-pr:raw
   # A missing/unlaunchable npm leaves $LASTEXITCODE null; a gate must never
   # turn that into a green exit 0.
   if ($null -eq $LASTEXITCODE) { exit 1 }
