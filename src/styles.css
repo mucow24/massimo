@@ -167,6 +167,24 @@ body,
   background: #f4f4f4;
 }
 
+/* Every Radix modal layer (a field-select menu, a dialog) carries
+   react-remove-scroll, which locks the page for as long as it is open:
+   `body[data-scroll-locked] { overflow: hidden !important }`. In the narrow
+   window regime that lock DELETES the page's horizontal scrollbar — and the bar
+   is holding up the layout, because the client box is measured net of it and
+   `.app`'s height: 100% hands the loss straight to `.canvas-host`. So opening a
+   menu grew the canvas by a scrollbar's thickness, the viewport re-centred on
+   the taller box, and the map slid half a bar out from under the popover; it
+   slid back on close. Nothing here wants the lock: the page's sideways scroll
+   is toolbar chrome overflow (see .toolbar's min-width), not content, and
+   react-remove-scroll's own wheel handlers still hold a background scroll off
+   regardless of this. Restoring the overflow keeps the bar, and the layout,
+   still. `html body` out-specifies the library's `body[data-scroll-locked]`;
+   `!important` is what its own `!important` costs. */
+html body[data-scroll-locked] {
+  overflow: visible !important;
+}
+
 .canvas-pan-layer > svg text {
   user-select: none;
   -webkit-user-select: none;
@@ -2134,6 +2152,31 @@ button.field-select > :not(.field-select-caret) {
 }
 .canvas-host.panning .pan-cursor-overlay {
   pointer-events: auto;
+}
+
+/* The map goes inert behind a modal overlay. Radix raises the barrier as
+   `body { pointer-events: none }`, which is enough for the chrome — buttons,
+   rows, fields all INHERIT it — but pointer-events is a per-element property,
+   not a gate, and every hit shape on the canvas states its own value as a
+   presentation attribute (a guide's grab stroke, a station's hit circle, a
+   line's stripe, a polygon's body). The barrier passed straight over all of
+   them: with a colour menu open you could still press the map behind the
+   popover and drag a guide, a station, the whole selection. This restates the
+   barrier at the shapes themselves, where inheritance can't.
+
+   Keyed on `data-aria-hidden` — the marker the `aria-hidden` package (Radix's
+   own) stamps on everything OUTSIDE an open modal layer and removes with it, so
+   it is exactly the "a modal layer is up" signal, and it is unambiguously the
+   library's rather than something the app might set for its own reasons. It
+   also draws the right line: the non-modal panels (toolbar menus, View,
+   Developer, the colour picker) raise no barrier and mark nothing, and the map
+   stays live under them on purpose — you turn a dial and keep working.
+
+   A presentation attribute has no specificity, so this wins without
+   `!important`; the descendant `*` is what reaches the nested hit shapes. */
+.canvas-host[data-aria-hidden='true'] .canvas-pan-layer > svg,
+.canvas-host[data-aria-hidden='true'] .canvas-pan-layer > svg * {
+  pointer-events: none;
 }
 
 /* Line-editor click priority: while editing a line's stops (Edit Stops), the

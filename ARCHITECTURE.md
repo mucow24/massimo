@@ -3582,7 +3582,12 @@ never scrolls or shrinks), so a narrower window scrolls the PAGE sideways and th
 leaves the window. The horizontal scrollbar that raises would bury the grid's bottom stripe —
 the lower-left guide well — if the app were `100vh` tall; `.app` sizes by `height: 100%`
 instead, which (unlike `vh`) subtracts window scrollbars, so the grid ends where the bar begins
-(toolbarOverflow e2e pins both the scroll split and the height mechanism).
+(toolbarOverflow e2e pins both the scroll split and the height mechanism). That makes the bar
+**load-bearing for the canvas's height**, so anything that deletes it moves the map: every Radix
+modal layer carries a react-remove-scroll page lock, and `html body[data-scroll-locked] { overflow:
+visible !important }` is what stops that lock from taking the bar — without it, opening a menu
+grew the host by a scrollbar and slid the map half a bar out from under the popover
+([modalMenu.spec.ts](e2e/modalMenu.spec.ts)).
 
 The **anchor is in window coordinates and `PopoverShell` is `position: fixed`**, which is what
 makes that stable — `useDock` owns the measurement, shared with the routing-warning toasts that
@@ -3600,6 +3605,17 @@ uiMode excursions, keeping its DOM node and measured width. Every popover render
 `PopoverShell`, which owns the floating frame (header + body) and the load-bearing event
 swallowing — pointerdown/click/contextmenu inside a popover must never reach the canvas, which
 would deselect the item (closing the popover) or right-click-rotate under it.
+
+A **modal** overlay opened from one — a `field-select` menu, a dialog — has to go further: the
+map BEHIND it must take no pointers at all. Radix raises that barrier as `body { pointer-events:
+none }`, which suffices for the chrome (buttons, rows and fields inherit it) but passes straight
+over the canvas, because `pointer-events` is a per-element property rather than a gate and every
+hit shape states its own value as a presentation attribute. So the barrier is restated at the
+shapes, keyed on the `data-aria-hidden` marker the `aria-hidden` package stamps on everything
+outside an open modal layer: `.canvas-host[data-aria-hidden='true'] .canvas-pan-layer > svg *`
+drops to `pointer-events: none`. That marker is also the right line to draw — the **non-modal**
+panels (toolbar menus, View, Developer, `ColorField`'s picker) raise no barrier and mark nothing,
+and the map stays live under them deliberately.
 
 The dock **re-measures when one of its inputs changes** — the element it reads from, which can
 attach a commit late, or the box being docked into — and never merely because a commit happened.
