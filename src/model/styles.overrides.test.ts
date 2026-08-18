@@ -5,9 +5,11 @@ import {
   captureStyleProps,
   clearStyleTag,
   saveStyleFromItem,
+  STYLE_REF_PAIRS,
   styleFieldsDiff,
   stylePropsEqual,
   updateStyleProps,
+  type ItemStyleKind,
 } from './styles';
 import { parse, serialize } from './serialize';
 import {
@@ -414,5 +416,62 @@ describe('swatch refs fold into the covered color fields', () => {
     doc = updateStyleProps(doc, 'd1', { fill: { day: '#000000', night: '#000000' } });
     const def = doc.styles.d1;
     expect(def.kind === 'stopDot' && 'fillRef' in def.props).toBe(false);
+  });
+});
+
+// STYLE_REF_PAIRS is the one table naming which value halves each ref rides.
+// It drives the write rule and the ref bundling; the OVERRIDE fold reads it
+// too, so a pair added to the table cannot be left out of the fold and quietly
+// light a red dot on every linked wearer. This walks the table to hold that.
+describe('the same-ref fold covers every pair STYLE_REF_PAIRS declares', () => {
+  const REF = { palette: 'grays', swatch: 'Border' };
+  const OTHER = { palette: 'grays', swatch: 'Wash' };
+
+  // Two distinct paints per kind, in that kind's own value shape. The fold
+  // short-circuits before they are compared, so a MISSING fold surfaces as a
+  // non-empty diff rather than as a type error.
+  const DISTINCT: Record<string, readonly [unknown, unknown]> = {
+    line: [
+      { day: '#111111', night: '#111111' },
+      { day: '#222222', night: '#222222' },
+    ],
+    polygon: ['#111111', '#222222'],
+    textLabel: ['#111111', '#222222'],
+    transfer: [
+      { day: '#111111', night: '#111111' },
+      { day: '#222222', night: '#222222' },
+    ],
+  };
+
+  // stopDot props are whole DotStyles compared structurally by dotStylesEqual,
+  // which owns its own fold and never reaches styleFieldsDiff (stopDot is not
+  // an ItemStyleKind).
+  const cases = Object.entries(STYLE_REF_PAIRS)
+    .filter(([kind]) => kind !== 'stopDot')
+    .flatMap(([kind, pairs]) =>
+      (pairs ?? []).map(([refKey, halves]) => [kind as ItemStyleKind, refKey, halves] as const),
+    );
+
+  // A COMPLETE props object of that kind, with the pair's halves repainted:
+  // styleFieldsDiff walks every covered field, so a props object missing the
+  // ones this pair does not touch would compare undefined against undefined.
+  const paint = (kind: ItemStyleKind, halves: readonly string[], which: 0 | 1) => ({
+    ...(makeStyle(kind, 'base').props as unknown as Record<string, unknown>),
+    ...Object.fromEntries(halves.map((h) => [h, DISTINCT[kind][which]])),
+  });
+
+  it('the table names no kind this test cannot paint', () => {
+    for (const [kind] of cases) expect(DISTINCT[kind]).toBeDefined();
+  });
+
+  it.each(cases)('%s.%s: same ref, different paint, no override', (kind, refKey, halves) => {
+    const a = { ...paint(kind, halves, 0), [refKey]: REF };
+    const b = { ...paint(kind, halves, 1), [refKey]: REF };
+    expect(styleFieldsDiff(kind, a as never, b as never)).toEqual([]);
+
+    // The control: the halves really do disagree, so the empty diff above came
+    // from the fold and not from two objects that happened to match.
+    const c = { ...paint(kind, halves, 1), [refKey]: OTHER };
+    expect(styleFieldsDiff(kind, a as never, c as never)).not.toEqual([]);
   });
 });

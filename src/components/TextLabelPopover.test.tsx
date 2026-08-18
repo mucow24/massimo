@@ -87,16 +87,22 @@ describe('<TextLabelPopover /> — text / size / align / weight controls', () =>
     );
     const body = container.querySelector('.text-label-popover .body') as HTMLElement;
     // Map each body row to a token: dividers to 'divider', control rows to their
-    // label text, the footer (no label) to 'footer'. Locks order + divider spots.
-    const sequence = Array.from(body.children).map((child) =>
-      child.tagName === 'HR' ? 'divider' : (child.querySelector('label')?.textContent ?? 'footer'),
-    );
+    // label text, a blank-labelled color reveal to 'pair', the footer (no label)
+    // to 'footer'. Locks order + divider spots.
+    const sequence = Array.from(body.children).map((child) => {
+      if (child.tagName === 'HR') return 'divider';
+      const label = child.querySelector('label');
+      // A themed color field is TWO rows: the palette dropdown carries the
+      // name, and the day/night pair reveals beneath it blank-labelled.
+      return label ? label.textContent || 'pair' : 'footer';
+    });
     expect(sequence).toEqual([
       'Text',
       'Wrap',
       'Style',
       'divider',
       'Color',
+      'pair',
       'Size',
       'Weight',
       'divider',

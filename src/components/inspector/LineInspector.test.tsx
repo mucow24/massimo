@@ -695,7 +695,7 @@ describe('<LineInspector /> — stroke controls', () => {
     render(<LineInspector id="L1" />);
     // Greyed, not gone — the row holds its place so the panel doesn't reflow
     // while the width slides through 0 (the stopDot editor's rule).
-    expect(screen.getByLabelText('Stroke color')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Stroke color' })).toBeDisabled();
     expect(screen.getByLabelText('Dark mode stroke color')).toBeDisabled();
   });
 
@@ -786,7 +786,7 @@ describe('<LineInspector /> — collapsible style detail', () => {
       screen.getByText('Singleton (One line stops)'),
       screen.getByText('Interchange (Multiple lines stop)'),
       screen.getByRole('slider', { name: 'Stroke width' }),
-      screen.getByLabelText('Stroke color'),
+      screen.getByRole('button', { name: 'Stroke color' }),
     ];
     for (let i = 0; i + 1 < order.length; i++) {
       // DOCUMENT_POSITION_FOLLOWING = 4: the argument follows the receiver.
@@ -821,12 +821,12 @@ describe('<LineInspector /> — collapsible style detail', () => {
     seed();
     expandStyleDetail();
     const { unmount } = render(<LineInspector id="L1" />);
-    expect(screen.getByLabelText('Stroke color')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Stroke color' })).toBeDisabled();
     unmount();
 
     seed({ strokeWidth: 2 });
     render(<LineInspector id="L1" />);
-    expect(screen.getByLabelText('Stroke color')).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Stroke color' })).toBeEnabled();
   });
 });
 

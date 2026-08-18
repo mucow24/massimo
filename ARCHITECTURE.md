@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `9b1dde2` (2026-08-16, #524) — verified against the live source.** This
+**Up to date as of commit `4e51da3` (2026-08-18, #529) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -95,7 +95,6 @@ npm run e2e          # playwright test (drives the dev server — no build neede
 npm run e2e:prod     # playwright test against the built dist (E2E_PREVIEW=1 → vite preview)
 npm run fonts        # stage the typeface into public/fonts (also runs on postinstall)
 npm run pre-pr       # format → lint → format:check → test → build → e2e:prod  (the PR gate)
-npm run pre-pr:queued # the gate behind a machine-wide mutex — parallel local sessions serialize
 ```
 
 `pre-pr` runs `format` (prettier --write, auto-fixes) **first** so formatting can't block, then
@@ -103,12 +102,16 @@ npm run pre-pr:queued # the gate behind a machine-wide mutex — parallel local 
 interaction-behavior change passed every unit gate but broke an e2e spec — PR #159/#160), so it
 needs a Chromium: `npm run e2e:install` fetches the pinned one, and where that download is
 blocked the suite falls back to whatever build is already installed (see the E2E section below).
-`pre-pr:queued` wraps the gate in a named-kernel-mutex queue
-([scripts/preprQueued.ps1](scripts/preprQueued.ps1)) so simultaneous local sessions run it one at
-a time on a machine that would otherwise thrash; unlock-on-death is the kernel's guarantee (a
-holder that errors out abandons the mutex to the next waiter). Windows-only by design — CI and
-cloud containers run plain `pre-pr`. `e2e:prod` on its own tests whatever `dist/` already holds;
-run `npm run build` first (as `pre-pr` does) or it gates a stale bundle.
+On Windows the entry point ([scripts/prePr.mjs](scripts/prePr.mjs)) routes every invocation
+through a named-kernel-mutex queue ([scripts/preprQueued.ps1](scripts/preprQueued.ps1)) so
+simultaneous local sessions run the gate one at a time on a machine that would otherwise thrash;
+the queue is forced rather than opt-in (callers kept forgetting the old queued variant),
+`pre-pr:queued` survives as a compatibility alias, and unlock-on-death is the kernel's guarantee
+(a holder that errors out abandons the mutex to the next waiter). CI and cloud containers run
+the chain directly (`pre-pr:raw`). The perf harnesses take the same mutex
+(`.perf/gateMutex.ts`), so gates and perf runs serialize against each other too. `e2e:prod` on
+its own tests whatever `dist/` already holds; run `npm run build` first (as `pre-pr` does) or it
+gates a stale bundle.
 
 ---
 
@@ -266,10 +269,11 @@ src/
     MapVersionPill.tsx          # the live doc's version + save-status dot, beside the map name
     *Popover.tsx                # on-canvas item editors
     DayNightColorRow.tsx        # shared label + light/dark ColorField pair — the plain half of…
-    PaletteColorRow.tsx         # …the palette-aware themed-color row every pair site mounts:
-                                #   linked = swatch dropdown (split swatch + NAME) + Reset/Sync,
-                                #   Custom = the pair reveals + Save to palette (which can mint
-                                #   one); plain row + Save when the map has no design palettes
+    PaletteColorRow.tsx         # …the palette-aware themed-color row every pair site mounts: a
+                                #   swatch MENU (split swatch + NAME, plus Custom) over the
+                                #   revealed pair, Reset/Sync beside it while linked, and Save
+                                #   color to palette at its foot — a flyout of the design
+                                #   palettes, or one named on the spot
     SegmentedToggle.tsx         # the ONE pick-one control (~16 inline Radix ToggleGroup clusters)
     FieldSelectContent.tsx      # shared Radix Select panel: portals popover Selects to .app (escapes
                                 #   the .canvas-host isolate layer) + bounds/scrolls a long list
@@ -554,10 +558,15 @@ its swatch's `(color, night ?? color)` — over EFFECTIVE values, since transfer
 casing collapse their stored form at a constant default — but it is ALLOWED to diverge, and that
 divergence is the feature: recoloring a linked field in place leaves the link standing and the
 field painting its own color, which the picker offers to Reset (back to the swatch) or Sync (the
-swatch to it). A CUSTOM field has neither to offer and carries **Save to palette** in the same
-slot: the color becomes a new swatch — named after the field, counted up on collision — in a
-design palette the map already carries or in one minted for it, and the field links to it in one
-history group. So a swatch is not born only in the palette surfaces; any color row can make one.
+swatch to it). At the foot of the same dropdown, in both states, stands **Save color to palette**:
+a flyout of the map's design palettes plus one named on the spot, and behind whichever is chosen,
+an inline name field. Nothing reaches the doc until that name commits, so backing out leaves the
+map untouched — and the mint runs two fields in turn, the palette's then the color's. The typed
+name is what decides the outcome, as a style name does one level up: a name the palette already
+holds REDEFINES that swatch (carrying its faithful wearers along), any other name appends one,
+which is what makes saving a copy of a linked color reachable. The swatch and the field's link go
+in under one history group. So a swatch is not born only in the palette surfaces; any color row
+can make one.
 What still detaches is a value written WITHOUT its ref key, the write rule hosted by
 `updateLine`/`updatePolygon`/`updateTextLabel`/`updateTransferStyle`/`updateStyleProps` and
 `setLineStrokeColor`'s ref param — so a picker edit on a linked field must carry the ref along, or
@@ -3383,13 +3392,19 @@ div in `.canvas-host`, always mounted and always laid out, whose `pointer-events
 (`.canvas-host.panning`, marked imperatively by `useViewport`). It must not be expressed as a
 cursor rule at or above the map svg, and it must not be mounted on demand. `cursor` is
 **inherited**, so a rule whose subject is the svg restyles every one of its ~15k descendants; and
-`display`/`visibility` are paint changes, which re-run the compositing update over the whole
-layer. `pointer-events` paints nothing, so it is the only free switch. On a 464-station map the
-difference is 22ms a press against a 0.3ms floor. Pointer routing is unaffected either way — the
-svg holds pointer capture for the whole gesture. Pinned by
-[panLayer.spec.ts](e2e/panLayer.spec.ts), which asserts `elementFromPoint` still lands on the
-overlay mid-pan (without that, the latency is trivially "won" by dropping the cursor) and by
-[MapCanvas.panStart.test.tsx](src/components/MapCanvas.panStart.test.tsx).
+`display` would have to BUILD this element's box on every press, measured at ~22ms on a
+464-station map against a 0.3ms floor. `pointer-events` changes neither box nor paint, so it is
+the free switch. The expensive event is the box, not the paint — repainting a box already there
+(`visibility`, `opacity`, a color) measures ~1–2ms — which generalizes into the rule for all
+canvas chrome: **keep it mounted and change its paint, never mount on demand**. The escapes that
+sound plausible are both closed: promoting a piece of chrome to its own compositing layer
+(`will-change`) moves the cost nowhere, and lifting it out of `.canvas-pan-layer` buys ~1ms. See
+[.perf/e2e/perf-chrome-layer.spec.ts](.perf/e2e/perf-chrome-layer.spec.ts), which ablates every
+way of making chrome appear and screenshots each arm to prove the change reached the screen.
+Pointer routing is unaffected either way — the svg holds pointer capture for the whole gesture.
+Pinned by [panLayer.spec.ts](e2e/panLayer.spec.ts), which asserts `elementFromPoint` still lands
+on the overlay mid-pan (without that, the latency is trivially "won" by dropping the cursor) and
+by [MapCanvas.panStart.test.tsx](src/components/MapCanvas.panStart.test.tsx).
 
 `screenToWorld` reads the **live** viewport and measures the **host** box (`.canvas-host` — the
 svg's own rect rides the pan transform, so measuring it would double-count the gesture); the
@@ -4725,10 +4740,15 @@ Each is confirmed in source/tests; file pointers included.
   (`.perf/mta-v23.massimo.json`, 464 stations — the single exception to the no-maps-in-repo rule,
   because the numbers cannot be reproduced without a real map's crossing density; override with
   `PERF_MAP`). `npm run perf:check` (`tsc -p tsconfig.perf.json`) type-checks the harness and is the
-  only thing about it a gate touches. It is carried in the repo because the previous optimization
-  run's harnesses died untracked with their worktree and cost more to rebuild than the optimization
-  itself; `.perf/README.md` + `RESULTS.md` record what each measures and the still-open wasm-leak
-  investigation behind the Developer pane's counters.
+  only thing about it a gate touches. **A number is only comparable to one measured under the same
+  CPU power mode and rendering medium** — the swing between modes is a large factor and the mode
+  varies between sessions, so the configs stamp both at the top of every run (`.perf/powerMode.ts`,
+  `.perf/gpuInfo.ts`) and a carried-over figure must be re-measured before it is compared against a
+  fresh one. It is carried in the repo because the previous optimization run's harnesses died
+  untracked with their worktree and cost more to rebuild than the optimization itself;
+  `.perf/README.md` + `RESULTS.md` record what each measures and the wasm-leak finding behind the
+  Developer pane's counters — a real leak, though the symptom that motivated hunting it was
+  retracted as machine GPU-mode switching.
 - **Known gaps** (per the deep-dive): no pixel/visual golden for the merged-dot-border result;
   `MapCanvas`'s full pointer fan-out is only tested per-hook. (`Transfer`/`RouteBullet`/`LineTag`
   round-trips now live in `serialize.entities.test.ts`.)

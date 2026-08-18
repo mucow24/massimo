@@ -1,7 +1,10 @@
 # Loop & branch lines — design & work log
 
-Status: **in progress.** This doc is both the design record and the running work log for
-the change that lets a line form loops and branches without hacks.
+Status: **shipped.** This doc is the design record and work log for the change that let a
+line form loops and branches without hacks: every stage landed, and the edge set is the
+topology today (see ARCHITECTURE.md for how the code stands now). What is still open is
+listed under "Iterate-later" at the foot — known gaps, correct for linear lines today and
+cosmetic or edge-case on non-linear ones.
 
 ## The decision
 

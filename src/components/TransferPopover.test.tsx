@@ -42,17 +42,23 @@ describe('<TransferPopover />', () => {
   it('lays out the controls top-to-bottom with a divider between body and stroke', () => {
     const { container } = renderPopover();
     const body = container.querySelector('.transfer-popover .body') as HTMLElement;
-    const sequence = Array.from(body.children).map((child) =>
-      child.tagName === 'HR' ? 'divider' : (child.querySelector('label')?.textContent ?? 'footer'),
-    );
+    const sequence = Array.from(body.children).map((child) => {
+      if (child.tagName === 'HR') return 'divider';
+      const label = child.querySelector('label');
+      // A themed color field is TWO rows: the palette dropdown carries the
+      // name, and the day/night pair reveals beneath it blank-labelled.
+      return label ? label.textContent || 'pair' : 'footer';
+    });
     expect(sequence).toEqual([
       'Style',
       'divider',
       'Thickness',
       'Color',
+      'pair',
       'divider',
       'Stroke width',
       'Stroke color',
+      'pair',
       'divider',
       'Draw',
       'footer',
