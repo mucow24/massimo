@@ -13,6 +13,13 @@ import type { AlignmentGuide, GuideOrientation } from '../model/types';
 // (a typed 120.37 still lands). Its one decimal place is also what pads the
 // text mirrors, so a whole coordinate reads "120.0" and the box does not
 // change width as a drag crosses a unit boundary.
+//
+// The wheel additionally LANDS on the half grid from an off-grid value
+// (stepFromValue). The arrows and the spinner only match that where the input
+// carries a `min`, which doubles as the HTML step base — without one the base
+// is the box's own value, since React writes it to the content attribute. So
+// Length, floored at 0, agrees with its wheel; the offset row is signed and
+// unbounded, and its arrows step half a unit from wherever the box sits.
 const STEP = 0.5;
 
 // The one coordinate's title + field naming, per orientation. A diagonal's
@@ -154,6 +161,7 @@ export function GuidePopover({ guide, hostW, onClose }: Props) {
           type="number"
           aria-label="Length"
           step={STEP}
+          min={0}
           className="options-popover-spin"
           value={extent ? lengthField.text : pendingLength}
           placeholder={extent ? undefined : '∞'}

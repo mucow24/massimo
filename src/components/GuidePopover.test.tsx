@@ -91,9 +91,17 @@ describe('GuidePopover — the offset field', () => {
     expect(screen.getByRole('spinbutton', { name: 'Y' })).toHaveProperty('value', '-7.5');
   });
 
-  it('carries the half-unit step, so arrows and spinners move what the wheel does', () => {
+  it('carries the half-unit step, so the arrows and the spinner move by half a unit', () => {
+    // The step attribute sizes ONE arrow press. It does not hand them the
+    // wheel's grid: `min` doubles as the HTML step base, and with none the base
+    // is the input's own value (React writes it to the content attribute), so
+    // an arrow from 120.4 gives 120.9 where the wheel lands on 120.5. An offset
+    // is signed and unbounded, so there is no `min` to give it — see Length,
+    // which has one.
     renderGuide({ offset: 120 });
-    expect(screen.getByRole('spinbutton', { name: 'Y' }).getAttribute('step')).toBe('0.5');
+    const field = screen.getByRole('spinbutton', { name: 'Y' });
+    expect(field.getAttribute('step')).toBe('0.5');
+    expect(field.getAttribute('min')).toBeNull();
   });
 
   it('commits a typed value through moveGuide', () => {
@@ -157,6 +165,18 @@ describe('GuidePopover — the Length row', () => {
     fireEvent.wheel(container.querySelectorAll('.row')[1], { deltaY: -1 });
     expect(current().extent).toEqual({ center: 300, halfLength: 41.5 });
     expect(field).toHaveProperty('value', '83.0');
+  });
+
+  it('anchors its arrows on the same half grid the wheel lands on', () => {
+    // `min` doubles as the HTML step base. Without it the arrows would step
+    // from the box's own value and walk a grid of their own — the offset row's
+    // fate, which has no lower bound to give. A length does: it is never
+    // negative, and 0 sits on the half grid.
+    renderGuide({ offset: 120, extent: { center: 300, halfLength: 41.318 } });
+    const field = screen.getByRole('spinbutton', { name: 'Length' }) as HTMLInputElement;
+    expect(field.getAttribute('min')).toBe('0');
+    field.stepUp();
+    expect(field.value).toBe('83');
   });
 
   it('reads ∞ when unbounded; a typed length bounds around the viewport center on blur', () => {
