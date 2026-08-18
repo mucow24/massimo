@@ -4660,8 +4660,9 @@ Each is confirmed in source/tests; file pointers included.
   `PERF_MAP`). `npm run perf:check` (`tsc -p tsconfig.perf.json`) type-checks the harness and is the
   only thing about it a gate touches. It is carried in the repo because the previous optimization
   run's harnesses died untracked with their worktree and cost more to rebuild than the optimization
-  itself; `.perf/README.md` + `RESULTS.md` record what each measures and the still-open wasm-leak
-  investigation behind the Developer pane's counters.
+  itself; `.perf/README.md` + `RESULTS.md` record what each measures and the wasm-leak finding
+  behind the Developer pane's counters — a real leak, though the symptom that motivated hunting it
+  was retracted as machine GPU-mode switching.
 - **Known gaps** (per the deep-dive): no pixel/visual golden for the merged-dot-border result;
   `MapCanvas`'s full pointer fan-out is only tested per-hook. (`Transfer`/`RouteBullet`/`LineTag`
   round-trips now live in `serialize.entities.test.ts`.)
