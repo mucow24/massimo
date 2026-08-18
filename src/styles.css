@@ -549,6 +549,23 @@ select option {
   flex-shrink: 0;
   color: var(--text-muted);
 }
+/* A gated row greys its label to match its disabled controls — the stroke
+   color while the stroke width is 0, or anything on a locked item. Both row
+   shapes carry it: `.row` for the color and segmented rows, and
+   `.options-popover-row` for NumericFieldRow's slider + spinbutton. Not
+   scoped to the style editor: the item popovers and the line inspector gate
+   the same rows, and a black label over greyed controls reads as a bug.
+
+   The spinbutton needs saying explicitly. The author rule above paints every
+   `input[type='number']` with the input tokens, and author origin beats the
+   UA's `input:disabled` greying whatever the specificity — so a disabled
+   number box would otherwise sit at full contrast beside a 45% label and a
+   45% slider, which is the same half-greyed look this rule exists to fix. */
+.row.disabled > label,
+.options-popover-row.disabled > .options-popover-label,
+.options-popover-row.disabled > .options-popover-spin {
+  opacity: 0.45;
+}
 .options-popover-row input[type='range'] {
   flex: 1;
   min-width: 0;
@@ -3507,11 +3524,6 @@ input.palette-color-name {
   color: var(--text);
   font-weight: 700;
   font-size: var(--fs-small);
-}
-/* A gated row (stroke color/align while the stroke width is 0): grey the
-   label to match its disabled controls (button:disabled is 0.45 opacity). */
-.style-editor .row.disabled > label {
-  opacity: 0.45;
 }
 .style-editor .row select {
   flex: 1;

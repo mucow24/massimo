@@ -33,11 +33,26 @@ beforeEach(() => {
 });
 
 describe('<StyleEditor> — line', () => {
-  it('hides the stroke type and color until the def has a stroke', () => {
-    render(<StyleEditor def={makeStyle('line', 'y1', { props: { strokeWidth: 0 } })} />);
-    expect(screen.getByRole('slider', { name: 'Stroke width' })).toBeTruthy();
-    expect(screen.queryByText('Stroke')).toBeNull();
-    expect(screen.queryByText('Stroke color')).toBeNull();
+  it('greys the stroke type and color while the def has no stroke', () => {
+    // Greyed, not gone: the rows hold their place so the editor doesn't
+    // reflow while the width slides through 0 (the stopDot editor's rule).
+    const pair = { day: '#ffffff', night: '#ffffff' };
+    const { unmount } = render(
+      <StyleEditor
+        def={makeStyle('line', 'y1', { props: { strokeWidth: 0, strokeColor: pair } })}
+      />,
+    );
+    expect(screen.getByLabelText('Stroke type color')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Stroke color' })).toBeDisabled();
+    unmount();
+
+    render(
+      <StyleEditor
+        def={makeStyle('line', 'y2', { props: { strokeWidth: 2, strokeColor: pair } })}
+      />,
+    );
+    expect(screen.getByLabelText('Stroke type color')).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Stroke color' })).toBeEnabled();
   });
 
   // A patch is one store write — which is why this row needs no history group,
@@ -208,14 +223,17 @@ describe('<StyleEditor> — line', () => {
     expect(propsOf().strokeColor).toEqual({ day: '#ffffff', night: '#ffffff' });
   });
 
-  it('greys out Dash length/width unless a split default is a dash dot', () => {
-    // Default dots (filled black) ⇒ dash controls disabled.
+  // Hidden, not greyed — unlike the stroke color, these are gated by the dot
+  // TYPE picker rather than a slider they sit under, so no drag can reflow
+  // beneath them and an always-mounted pair would be inert on most maps.
+  it('renders Dash length/width only while a split default is a dash dot', () => {
+    // Default dots (filled black) ⇒ no dash rows at all.
     const { unmount } = render(<StyleEditor def={makeStyle('line', 'y1')} />);
-    expect(screen.getByRole('spinbutton', { name: 'Dash length' })).toBeDisabled();
-    expect(screen.getByRole('spinbutton', { name: 'Dash width' })).toBeDisabled();
+    expect(screen.queryByRole('spinbutton', { name: 'Dash length' })).toBeNull();
+    expect(screen.queryByRole('spinbutton', { name: 'Dash width' })).toBeNull();
     unmount();
 
-    // A dash singleton dot ⇒ the dash controls become editable.
+    // A dash singleton dot ⇒ the dash controls appear.
     render(
       <StyleEditor def={makeStyle('line', 'y2', { props: { singletonDotStyleId: 'sd-dash' } })} />,
     );
@@ -603,7 +621,37 @@ describe('<StyleEditor> — routeBullet', () => {
   });
 });
 
+describe('<StyleEditor> — polygon', () => {
+  it('puts stroke color under stroke width, greyed while the width is 0', () => {
+    const { unmount } = render(
+      <StyleEditor def={makeStyle('polygon', 'y1', { props: { strokeWidth: 0 } })} />,
+    );
+    // The gated row follows the control that gates it, as everywhere else.
+    const width = screen.getByRole('spinbutton', { name: 'Stroke width' });
+    const color = screen.getByRole('button', { name: 'Stroke color' });
+    expect(width.compareDocumentPosition(color) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(color).toBeDisabled();
+    unmount();
+
+    render(<StyleEditor def={makeStyle('polygon', 'y2', { props: { strokeWidth: 1 } })} />);
+    expect(screen.getByRole('button', { name: 'Stroke color' })).toBeEnabled();
+  });
+});
+
 describe('<StyleEditor> — transfer', () => {
+  it('greys the stroke color while the def has no stroke', () => {
+    const { unmount } = render(
+      <StyleEditor def={makeStyle('transfer', 'y1', { props: { strokeWidth: 0 } })} />,
+    );
+    expect(screen.getByRole('button', { name: 'Transfer stroke color' })).toBeDisabled();
+    // Draw is NOT gated: it orders the transfer's body, not just its halo.
+    expect(screen.getByRole('combobox', { name: 'Draw' })).toBeEnabled();
+    unmount();
+
+    render(<StyleEditor def={makeStyle('transfer', 'y2', { props: { strokeWidth: 1 } })} />);
+    expect(screen.getByRole('button', { name: 'Transfer stroke color' })).toBeEnabled();
+  });
+
   it('renders the draw rung at the def value and writes a pick through', async () => {
     const def = makeStyle('transfer', 'y1', { props: { draw: 'over-stroke' } });
     useDoc.setState({ styles: { ...useDoc.getState().styles, y1: def } });

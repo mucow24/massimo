@@ -84,7 +84,10 @@ export function NumericFieldRow({
   // passive, so its preventDefault would warn + no-op). Omit it while disabled
   // so a disabled row ignores the wheel.
   return (
-    <div className="options-popover-row" ref={disabled ? undefined : attachWheel}>
+    <div
+      className={'options-popover-row' + (disabled ? ' disabled' : '')}
+      ref={disabled ? undefined : attachWheel}
+    >
       {dot}
       {leading !== undefined ? (
         <div className="options-popover-label">{leading}</div>

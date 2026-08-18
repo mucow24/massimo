@@ -92,4 +92,21 @@ describe('NumericFieldRow slider', () => {
     }
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  // The row carries the state as a class because CSS is the only thing that
+  // can grey the LABEL and the spinbutton: neither is reached by the UA's
+  // `input:disabled` styling once styles.css paints number inputs with the
+  // input tokens. So the class is load-bearing, not decoration.
+  it('marks the whole row disabled so the label and spinbutton can grey with it', () => {
+    const { unmount } = render(<Harness disabled />);
+    const spin = screen.getByRole('spinbutton', { name: 'Size' });
+    expect(spin).toBeDisabled();
+    expect(spin.closest('.options-popover-row')).toHaveClass('disabled');
+    unmount();
+
+    render(<Harness />);
+    const live = screen.getByRole('spinbutton', { name: 'Size' });
+    expect(live).toBeEnabled();
+    expect(live.closest('.options-popover-row')).not.toHaveClass('disabled');
+  });
 });

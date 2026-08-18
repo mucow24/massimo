@@ -109,37 +109,6 @@ export function PolygonPopover({ polygon, hostW, onClose }: Props) {
         }
       />
       <hr className="popover-divider" aria-hidden="true" />
-      <PaletteColorRow
-        label="Stroke color"
-        id="polygon-stroke"
-        darkId="polygon-dark-stroke"
-        lightAriaLabel="Stroke color"
-        darkAriaLabel="Dark mode stroke color"
-        titleNoun="stroke"
-        value={polygon.stroke}
-        darkValue={darkStroke}
-        swatchRef={polygon.strokeRef}
-        disabled={locked}
-        onChange={onStroke}
-        onDarkChange={onDarkStroke}
-        onPick={(ref, pair) =>
-          updatePolygon(
-            polygon.id,
-            ref
-              ? { stroke: pair.day, darkStroke: pair.night, strokeRef: ref }
-              : { stroke: pair.day, darkStroke: pair.night },
-          )
-        }
-        dot={
-          <OverrideDot
-            kind="polygon"
-            itemId={polygon.id}
-            fields={['stroke', 'darkStroke']}
-            name="Stroke color"
-            disabled={locked}
-          />
-        }
-      />
       <NumericFieldRow
         id="polygon-stroke-width"
         label="Stroke width"
@@ -157,6 +126,40 @@ export function PolygonPopover({ polygon, hostW, onClose }: Props) {
             itemId={polygon.id}
             fields={['strokeWidth']}
             name="Stroke width"
+            disabled={locked}
+          />
+        }
+      />
+      {/* Under the width that gates it, greyed at 0 — a stroke nobody paints
+          has no color to pick. The fill above stays live: an open polygon is
+          stroke-only, but a closed one still fills with no stroke at all. */}
+      <PaletteColorRow
+        label="Stroke color"
+        id="polygon-stroke"
+        darkId="polygon-dark-stroke"
+        lightAriaLabel="Stroke color"
+        darkAriaLabel="Dark mode stroke color"
+        titleNoun="stroke"
+        value={polygon.stroke}
+        darkValue={darkStroke}
+        swatchRef={polygon.strokeRef}
+        disabled={locked || polygon.strokeWidth === 0}
+        onChange={onStroke}
+        onDarkChange={onDarkStroke}
+        onPick={(ref, pair) =>
+          updatePolygon(
+            polygon.id,
+            ref
+              ? { stroke: pair.day, darkStroke: pair.night, strokeRef: ref }
+              : { stroke: pair.day, darkStroke: pair.night },
+          )
+        }
+        dot={
+          <OverrideDot
+            kind="polygon"
+            itemId={polygon.id}
+            fields={['stroke', 'darkStroke']}
+            name="Stroke color"
             disabled={locked}
           />
         }

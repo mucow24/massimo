@@ -45,14 +45,39 @@ describe('<PolygonPopover />', () => {
       'divider',
       'Fill color',
       'divider',
-      'Stroke color',
       'Stroke width',
+      'Stroke color',
       'divider',
       'Curve radius',
       'Closed',
       'Layer',
       'footer',
     ]);
+  });
+
+  it('greys the stroke color while the stroke width is 0', () => {
+    useDoc.setState({
+      polygons: {
+        ...useDoc.getState().polygons,
+        p0: { ...useDoc.getState().polygons['p0'], strokeWidth: 0 },
+      },
+    });
+    const { unmount } = renderPopover();
+    // Greyed, not gone — the row holds its place while the width slides
+    // through 0. The fill above it stays live: it is not the stroke's.
+    expect(screen.getByLabelText('Stroke color')).toBeDisabled();
+    expect(screen.getByLabelText('Dark mode stroke color')).toBeDisabled();
+    expect(screen.getByLabelText('Polygon color')).toBeEnabled();
+    unmount();
+
+    useDoc.setState({
+      polygons: {
+        ...useDoc.getState().polygons,
+        p0: { ...useDoc.getState().polygons['p0'], strokeWidth: 2 },
+      },
+    });
+    renderPopover();
+    expect(screen.getByLabelText('Stroke color')).toBeEnabled();
   });
 
   it('renders fill + stroke color pickers, a 0–10 stroke-width control, and Delete', async () => {
