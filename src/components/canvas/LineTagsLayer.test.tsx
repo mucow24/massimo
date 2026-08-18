@@ -387,15 +387,23 @@ describe('<LineTagsLayer> — the width cache re-measures when the font arrives'
    * a `<text>`. jsdom implements only a handful of SVG interfaces and gives
    * `<text>` a bare SVGElement, so the measurer's call would throw straight
    * through to its length×7 fallback and never read the width a spec sets.
-   * Patch the base interface so the measurement path itself runs.
+   * Patch the base interface so the measurement path itself runs. Restore
+   * lives in afterEach, not the tests: a mid-test assertion failure must not
+   * leak the stub into the rest of the file.
    */
-  const stubTextBBox = (width: number): (() => void) => {
+  let unstubBBox: (() => void) | null = null;
+  afterEach(() => {
+    unstubBBox?.();
+    unstubBBox = null;
+  });
+  const stubTextBBox = (width: number): void => {
+    unstubBBox?.(); // swapping stubs mid-test: unwind the previous one first
     const proto = (globalThis as unknown as { SVGElement: { prototype: Record<string, unknown> } })
       .SVGElement.prototype;
     const had = Object.prototype.hasOwnProperty.call(proto, 'getBBox');
     const prev = proto.getBBox;
     proto.getBBox = () => ({ x: 0, y: 0, width, height: ALONG_FONT_SIZE_PX });
-    return () => {
+    unstubBBox = () => {
       if (had) proto.getBBox = prev;
       else delete proto.getBBox;
     };
@@ -415,7 +423,7 @@ describe('<LineTagsLayer> — the width cache re-measures when the font arrives'
     });
     useDoc.temporal.getState().clear();
 
-    const restore = stubTextBBox(30);
+    stubTextBBox(30);
     const { ref } = fakeSvgRef();
     const { container } = render(
       <svg>
@@ -431,7 +439,6 @@ describe('<LineTagsLayer> — the width cache re-measures when the font arrives'
     expect(
       Number(container.querySelector('rect[data-line-tag-id="T"]')!.getAttribute('width')),
     ).toBeCloseTo(32, 6);
-    restore();
   });
 
   it('drops fallback-face widths on a font-epoch bump', () => {
@@ -445,7 +452,7 @@ describe('<LineTagsLayer> — the width cache re-measures when the font arrives'
     useDoc.temporal.getState().clear();
 
     // Cold load: the fallback face measures the code at 30 wide.
-    let restore = stubTextBBox(30);
+    stubTextBBox(30);
     const { ref } = fakeSvgRef();
     // A FRESH element each time: re-rendering the identical element reference
     // makes React bail out of the subtree, which would render no new widths.
@@ -465,11 +472,9 @@ describe('<LineTagsLayer> — the width cache re-measures when the font arrives'
     expect(hitWidth()).toBeCloseTo(32, 6); // 2 * (30/2 + TEXT_PAD)
 
     // Söhne swaps in: App bumps the epoch, and the same string is now 60 wide.
-    restore();
-    restore = stubTextBBox(60);
+    stubTextBBox(60);
     act(() => useFontEpoch.getState().bump());
     expect(hitWidth()).toBeCloseTo(62, 6); // 2 * (60/2 + TEXT_PAD)
-    restore();
   });
 });
 

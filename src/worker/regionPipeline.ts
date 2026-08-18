@@ -284,6 +284,12 @@ const drain = (): void => {
   if (wasArmed) {
     setDragFrame(null);
     setRenderDocOverlay(null);
+  } else if (useDragFrame.getState().frame !== null) {
+    // Not armed but a frame is set: the guides-only carry a mid-gesture
+    // fallback left behind. The hooks' post-exit clears normally release it
+    // through routeSnapGuides, but the gesture is OVER — nothing may outlive
+    // it, whatever the hooks did.
+    setDragFrame(null);
   }
   if (worker && enabled) postSync(useDoc.getState());
 };

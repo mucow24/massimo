@@ -154,8 +154,14 @@ function collectKeptSegments(
       // Unless the polygons only MEET along that edge: then it is interior to
       // the union and A must give it up too, or A closes a ring on its own
       // segments and B's survivors are stranded as an unstitchable open chain.
+      // The across-edge probe is gated on the midpoint actually LYING on
+      // other's boundary — the only case it is meaningful for. Unconditioned,
+      // a NEAR-touch (disjoint by less than PROBE) probes inside the other
+      // polygon too, and dropping that edge strands the rest of this one as an
+      // unstitchable open chain: the polygon silently vanishes.
       const dropIfInside = selfIsA
-        ? isStrictlyInsideCCW(mid, other) || otherIsAcrossEdge(a, b, mid, other)
+        ? isStrictlyInsideCCW(mid, other) ||
+          (isInsideOrOnBoundaryCCW(mid, other) && otherIsAcrossEdge(a, b, mid, other))
         : isInsideOrOnBoundaryCCW(mid, other);
       if (!dropIfInside) {
         out.push({ start: a, end: b });

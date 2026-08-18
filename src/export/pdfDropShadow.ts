@@ -91,8 +91,12 @@ function sheetPaintRules(root: Element): PaintRule[] {
 
 /** What an element paints for `prop` if left alone: its own `style` attribute
  *  first, then the last matching `<style>` rule, then the presentation
- *  attribute — the order svg2pdf resolves paint in. Null when nothing declares
- *  it and the value is inherited. */
+ *  attribute — the BROWSER's cascade, which is what the artwork was authored
+ *  against. svg2pdf cannot replay it: its sheet collection walks the OUTER
+ *  export SVG only, so an embedded image's own `<style>` blocks are invisible
+ *  to it — which is why every decision made here must be written back INLINE
+ *  on the clone rather than left to the class that made it. Null when nothing
+ *  declares the prop and the value is inherited. */
 function declaredPaint(el: Element, prop: PaintProp, rules: PaintRule[]): string | null {
   const inline = declIn(el.getAttribute('style') ?? '', prop);
   if (inline !== null) return inline;
@@ -127,8 +131,11 @@ function paintSilhouette(el: Element, color: string, rules: PaintRule[]): void {
       const declared = declaredPaint(e, prop, rules);
       // Nothing declared: the value is inherited, and whichever ancestor does
       // declare it is inside this clone and gets recolored too. `none` draws
-      // nothing, so it floods nothing.
-      if (declared !== null && declared !== 'none') setPaint(e, prop, color);
+      // nothing, so it floods nothing — but that decision is written INLINE,
+      // because when it came from a sheet rule svg2pdf cannot see (see
+      // `declaredPaint`), the un-inlined clone would flood default black in
+      // the PDF exactly where the browser paints nothing.
+      if (declared !== null) setPaint(e, prop, declared === 'none' ? 'none' : color);
     }
     e.removeAttribute('id');
   };

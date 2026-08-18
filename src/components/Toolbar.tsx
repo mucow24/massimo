@@ -633,9 +633,9 @@ export function Toolbar() {
 
   // Add → Image…: read the file (svg text, or png/jpeg bytes), take its
   // intrinsic size, encode it as an opaque data URI, and enter placing-svg
-  // mode so the next canvas click drops it. A raster that fails to decode is
-  // skipped (it would render as nothing); a malformed svg keeps the existing
-  // 200×200 fallback.
+  // mode so the next canvas click drops it. A raster that fails to decode
+  // reports and adds nothing; a malformed svg keeps the existing 200×200
+  // fallback.
   const onAddImage = () => imageInputRef.current?.click();
   const onImageChosen = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];

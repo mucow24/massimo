@@ -251,8 +251,10 @@ export function StopGlyph({
       // stroke is placed by shifting the drawn radius to nativeDelta so the band
       // lands inside / centered / outside per the style (0 for center). Clamped
       // at 0 like the body path below: an inside stroke wider than the dot would
-      // otherwise ask for a negative SVG radius, which the browser rejects —
-      // dropping the element and vanishing the stop dot entirely.
+      // otherwise ask for a negative SVG radius — invalid markup (Edge drops
+      // it where Chromium recovers), and for diamond/x an inverted polygon. At
+      // 0 the glyph is degenerate either way; the clamp keeps it VALID, not
+      // visible.
       return shapeElement({ ...params, r: Math.max(0, params.r + nativeDelta) }, cx, cy, {
         fill: params.fill,
         ...(strokeAttrs ?? {}),

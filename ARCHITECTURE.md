@@ -4312,10 +4312,17 @@ check passes while the pixels differ.
 its text-outline pass** — then renders that SVG to a true vector PDF with **svg2pdf.js + jsPDF**:
 outlined text (no font embedded, no selectable text), vector line work, embedded SVG graphics kept
 as vectors (bar mask users, gap 4). Because text arrives already outlined, svg2pdf never touches it
-— no font registration, no baseline correction, no letter-spacing bake, no glyph fallback. Five
+— no font registration, no baseline correction, no letter-spacing bake, no glyph fallback. Six
 non-text gaps svg2pdf/jsPDF can't bridge are closed here:
 
-1. **Region-exclude clips** — the region-layering exclusion clips defeat Blink's clip-raster
+1. **Undecodable image data URIs** — svg2pdf decodes every `data:` image href itself
+   (`atob`/`decodeURIComponent`, and a mime split that throws on anything but `image/*`), and it
+   does so **outside its internal try**, so one malformed href — a hand-edited doc's literal `%`,
+   a truncated base64 run — would throw away the whole PDF. `dropUndecodableImages`
+   ([embeddedSvg.ts](src/export/embeddedSvg.ts)) removes exactly the images svg2pdf would die on,
+   judged by the same rules, before it ever sees them; the skip is reported (console + toast), not
+   silent. Runs first, so the passes below never meet an href they can't decode either.
+2. **Region-exclude clips** — the region-layering exclusion clips defeat Blink's clip-raster
    snapping by emitting the clip path at ×`CLIP_RASTER_SCALE` and pulling it back with
    `CLIP_RASTER_INVERSE_TRANSFORM` (`scale(1/64)`) on the clipPath's **child**
    ([clipRaster.ts](src/components/canvas/clipRaster.ts)). Exact on screen; through svg2pdf it
@@ -4330,15 +4337,15 @@ non-text gaps svg2pdf/jsPDF can't bridge are closed here:
    is exact for arcs, rotate/translate/matrix and `<rect>`/`<circle>` children too; a clipPath whose
    children carry *differing* transforms can't be hoisted and is warned about rather than silently
    mis-clipped.
-2. **Hatch** — svg2pdf can't tile a `<pattern>` along a stroke, so every hatch paint (band strokes
+3. **Hatch** — svg2pdf can't tile a `<pattern>` along a stroke, so every hatch paint (band strokes
    **and** the stop markers on them) is baked into clipped solid-stripe geometry; the stripe math
    lives in the pure, unit-tested [pdfHatch.ts](src/export/pdfHatch.ts) (`ribbonFromCenterline`,
    `hatchStripeRects`, phased off the world origin so a band and its marker read continuous).
-3. **Image drop shadows** — svg2pdf re-parses an svg+xml `<image>` as vectors but ignores
+4. **Image drop shadows** — svg2pdf re-parses an svg+xml `<image>` as vectors but ignores
    `<filter>`, so a logo's hard `feDropShadow` casing would silently drop; `bakeImageDropShadows`
    bakes it into a real offset silhouette (pure core in the unit-tested
    [pdfDropShadow.ts](src/export/pdfDropShadow.ts)).
-4. **Image masks** — that same svg+xml-image re-vectorizing has **no `<mask>` support** (`<mask>`/
+5. **Image masks** — that same svg+xml-image re-vectorizing has **no `<mask>` support** (`<mask>`/
    `<defs>` parse to no-op void nodes and the `mask="url(#…)"` attribute is never read), so a graphic
    using a mask exports at full opacity — the mask silently drops (it renders fine on screen via the
    browser's native `<image>`). A mask has no vector equivalent, so `rasterizeMaskedImages`
@@ -4348,7 +4355,7 @@ non-text gaps svg2pdf/jsPDF can't bridge are closed here:
    and `sizeSvgRoot` (which injects a `viewBox` so a no-viewBox graphic scales to fill) are pure and
    unit-tested; the canvas rasterizer is browser-only (e2e-covered, incl. an `/SMask` guard that the
    mask survived).
-5. **Translucent (hex8) colors** — svg2pdf.js truncates an 8-digit `#rrggbbaa` paint to its first 6
+6. **Translucent (hex8) colors** — svg2pdf.js truncates an 8-digit `#rrggbbaa` paint to its first 6
    digits and drops the alpha, so a translucent fill/stroke would print fully opaque; it _does_
    honor a separate `fill-opacity`/`stroke-opacity` (jsPDF writes it as a real PDF `ExtGState /ca
    /CA`). So `splitAlphaColors` ([pdfAlpha.ts](src/export/pdfAlpha.ts)) rewrites every hex8 paint on

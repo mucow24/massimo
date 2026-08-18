@@ -94,6 +94,12 @@ describe('bakeHardDropShadow', () => {
     expect(shadow.getAttribute('style') ?? '').not.toContain('fill:#ffffff');
     // The stroke is what draws — and what the flood color has to replace.
     expect(shadow.getAttribute('style')).toContain('stroke:#ffffff');
+    // The `fill:none` DECISION must also land inline: it came from a sheet
+    // rule, and svg2pdf never reads an embedded image's own <style> blocks —
+    // its sheet collection walks the OUTER export SVG only. Left uninlined,
+    // the class resolves nowhere in the PDF and the clone floods default
+    // black exactly where the browser (and this bake) decided nothing paints.
+    expect(shadow.getAttribute('style')).toContain('fill:none');
   });
 
   it('honors flood-opacity on the baked shadow', () => {

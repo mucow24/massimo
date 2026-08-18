@@ -126,6 +126,30 @@ describe('unionConvex', () => {
     expect(insideOrOn({ x: 15, y: 12 }, result[0])).toBe(true); // only in B
   });
 
+  it('keeps both squares when they nearly touch but do not', () => {
+    // Disjoint by less than the across-edge PROBE (1e-3), with overlapping
+    // spans so no stitch glue and no crossings exist. The touch-merge probe
+    // must not fire here: A's near edge is NOT on B's boundary, so dropping it
+    // strands the rest of A as an open chain and A silently vanishes — a label
+    // rect passing within a hair of the cells rect mid-drag hits this.
+    const A: Pt[] = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+    ];
+    const B: Pt[] = [
+      { x: 10.0005, y: 1 },
+      { x: 20, y: 1 },
+      { x: 20, y: 11 },
+      { x: 10.0005, y: 11 },
+    ];
+    const result = unionConvex(A, B);
+    expect(result.length).toBe(2);
+    expect(result.some((p) => insideOrOn({ x: 5, y: 5 }, p))).toBe(true); // A survives
+    expect(result.some((p) => insideOrOn({ x: 15, y: 6 }, p))).toBe(true); // B survives
+  });
+
   it('returns the outer square when one square is strictly nested in the other', () => {
     const A: Pt[] = [
       { x: -20, y: -20 },

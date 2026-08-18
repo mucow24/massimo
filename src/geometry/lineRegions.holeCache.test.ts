@@ -438,8 +438,8 @@ describe('buildExclusionHolesCached ≡ buildExclusionHoles', () => {
       built.slivers,
       chain,
     );
-    // Drag hA's casing width to 0. Same geometry, same state, same winners,
-    // same losers (hB, uncased either way) — only hA's rail moved.
+    // Drag vA's casing width to 0. Same geometry, same state, same winners,
+    // same losers (hB, uncased either way) — only vA's rail moved.
     const sameStateChain: HoleChain = { state: chain.state, prevState: null, dirtyBoxes: [] };
     const stats: HoleCacheStats = { reused: 0, recomputed: 0 };
     const cached = buildExclusionHolesCached(

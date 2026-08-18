@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { fromBase64, decodeEmbeddedSvgImage, setEmbeddedImageHref, XLINK_NS } from './embeddedSvg';
+import {
+  fromBase64,
+  decodeEmbeddedSvgImage,
+  dropUndecodableImages,
+  setEmbeddedImageHref,
+  XLINK_NS,
+} from './embeddedSvg';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const INNER = '<svg xmlns="http://www.w3.org/2000/svg"><rect width="4" height="4"/></svg>';
@@ -73,6 +79,58 @@ describe('decodeEmbeddedSvgImage', () => {
 // ('href') matches by localName in jsdom, so it can't tell the two apart.)
 const plainHref = (image: Element) => image.getAttributeNS(null, 'href');
 const xlinkHref = (image: Element) => image.getAttributeNS(XLINK_NS, 'href');
+
+describe('dropUndecodableImages', () => {
+  // svg2pdf decodes every data: image href itself, OUTSIDE its internal
+  // try — a payload that won't decode (or a data URI it can't classify as an
+  // image) throws out of the render and takes the whole PDF with it. The only
+  // rescue is to remove such images before svg2pdf ever sees them.
+  const svgWith = (...images: Element[]): SVGSVGElement => {
+    const svg = document.createElementNS(SVG_NS, 'svg') as SVGSVGElement;
+    for (const im of images) svg.appendChild(im);
+    return svg;
+  };
+
+  it('removes an image whose base64 payload will not decode', () => {
+    const bad = makeImage({ href: 'data:image/png;base64,!!not-base64!!' });
+    const svg = svgWith(bad);
+    expect(dropUndecodableImages(svg)).toBe(1);
+    expect(svg.querySelector('image')).toBeNull();
+  });
+
+  it('removes an image whose payload is not valid percent-encoding', () => {
+    const bad = makeImage({
+      href: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='100%'></svg>",
+    });
+    const svg = svgWith(bad);
+    expect(dropUndecodableImages(svg)).toBe(1);
+    expect(svg.querySelector('image')).toBeNull();
+  });
+
+  it('removes a data URI with no comma, and one whose mime is not image/*', () => {
+    const noComma = makeImage({ href: 'data:image/svg+xml' });
+    const notImage = makeImage({ href: 'data:text/plain,hello' });
+    const svg = svgWith(noComma, notImage);
+    expect(dropUndecodableImages(svg)).toBe(2);
+    expect(svg.querySelectorAll('image').length).toBe(0);
+  });
+
+  it('keeps healthy svg and raster data URIs, and external hrefs', () => {
+    const okSvg = makeImage({ href: `data:image/svg+xml;base64,${btoa(INNER)}` });
+    const okPng = makeImage({ href: 'data:image/png;base64,AAAA' });
+    const external = makeImage({ href: 'https://x/y.svg' });
+    const svg = svgWith(okSvg, okPng, external);
+    expect(dropUndecodableImages(svg)).toBe(0);
+    expect(svg.querySelectorAll('image').length).toBe(3);
+  });
+
+  it('judges the xlink:href channel too', () => {
+    const bad = makeImage({ xlink: 'data:image/png;base64,!!not-base64!!' });
+    const svg = svgWith(bad);
+    expect(dropUndecodableImages(svg)).toBe(1);
+    expect(svg.querySelector('image')).toBeNull();
+  });
+});
 
 describe('setEmbeddedImageHref', () => {
   it('rewrites a plain href and does not add an xlink:href', () => {

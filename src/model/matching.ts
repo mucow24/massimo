@@ -5,12 +5,14 @@ import { stationCircle } from '../geometry/lineCircle';
 import { stationFrameDeg } from '../geometry/orientation';
 
 /**
- * `lineCircles` is optional only so a caller with no rings in hand still
- * type-checks; supply it whenever you have it. Without it a CIRCLE-BOUND
- * station reads as unbound, and its key claims the octant frame it does not
- * actually paint in (see `frameKey`).
+ * `lineCircles` is REQUIRED on purpose: without it a CIRCLE-BOUND station
+ * reads as unbound, and its key claims the octant frame it does not actually
+ * paint in (see `frameKey`) — the exact omission that once matched bound
+ * stations against free ones painted at a different angle. Every caller has
+ * the rings in hand, so optionality would only re-arm that bug for the next
+ * caller that forgets.
  */
-type MatchingScope = Pick<MapDoc, 'stations' | 'lines'> & Partial<Pick<MapDoc, 'lineCircles'>>;
+type MatchingScope = Pick<MapDoc, 'stations' | 'lines' | 'lineCircles'>;
 
 /**
  * Layout-rotation difference between a source and a matching station, in 90°
@@ -59,7 +61,7 @@ export interface StationMatch {
 export function findMatchingStations(doc: MatchingScope, selectedId: StationId): StationMatch[] {
   const sel = doc.stations[selectedId];
   if (!sel) return [];
-  const circles = doc.lineCircles ?? {};
+  const circles = doc.lineCircles;
   // Compute the source's structural keys at all 4 rotations once.
   const selKeys = rotatedKeys(sel, doc.lines, circles);
   const selCanonical = canonicalOf(selKeys);
