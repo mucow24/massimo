@@ -65,18 +65,35 @@ describe('GuidePopover — the one coordinate is named per orientation', () => {
 });
 
 describe('GuidePopover — the offset field', () => {
-  it('shows a dragged guide’s offset as it stands, minus the float dust', () => {
-    // A well pull-out lands on whatever the pointer said. The box must not read
-    // back "120.4000000001" — but it must not claim "120" either when the guide
-    // really sits at 120.4. The whole-unit step moves the wheel and the arrows;
-    // it is not a claim about what the field can hold.
-    renderGuide({ offset: 120.4 });
+  it('shows a dragged guide’s offset to one decimal, not to the pointer’s', () => {
+    // A well pull-out lands on wherever the pointer said — 120.437291 — and a
+    // box reading that back is noise, not precision. It speaks the same
+    // one-decimal register the guide's own coordinate chip does
+    // (formatMeasurement); the doc keeps the full value until something is
+    // typed over it.
+    renderGuide({ offset: 120.437291 });
     expect(screen.getByRole('spinbutton', { name: 'Y' })).toHaveProperty('value', '120.4');
+    expect(current().offset).toBe(120.437291);
+  });
+
+  it('rounds to the nearest tenth rather than truncating', () => {
+    renderGuide({ offset: 120.46 });
+    expect(screen.getByRole('spinbutton', { name: 'Y' })).toHaveProperty('value', '120.5');
+  });
+
+  it('keeps a whole offset’s trailing .0 — the width must not change as it drags', () => {
+    renderGuide({ offset: 120 });
+    expect(screen.getByRole('spinbutton', { name: 'Y' })).toHaveProperty('value', '120.0');
   });
 
   it('shows a negative offset the same way', () => {
-    renderGuide({ offset: -7.5 });
+    renderGuide({ offset: -7.53 });
     expect(screen.getByRole('spinbutton', { name: 'Y' })).toHaveProperty('value', '-7.5');
+  });
+
+  it('carries the half-unit step, so arrows and spinners move what the wheel does', () => {
+    renderGuide({ offset: 120 });
+    expect(screen.getByRole('spinbutton', { name: 'Y' }).getAttribute('step')).toBe('0.5');
   });
 
   it('commits a typed value through moveGuide', () => {
@@ -97,11 +114,23 @@ describe('GuidePopover — the offset field', () => {
     expect(current().offset).toBe(120);
   });
 
-  it('steps the offset on a wheel tick over the row', () => {
+  it('steps the offset half a unit on a wheel tick over the row', () => {
     const { container } = renderGuide({ offset: 120 });
     const row = container.querySelector('.row')!;
     fireEvent.wheel(row, { deltaY: -1 });
+    expect(current().offset).toBe(120.5);
+  });
+
+  it('a tick from an off-grid guide moves the number the box is showing', () => {
+    // The wheel steps from the ROUNDED value. 120.47 reads "120.5", which is
+    // already on the half grid, so one tick up is 121. Stepping from the
+    // stored 120.47 instead would write 120.5 and leave the box still reading
+    // "120.5" — a tick that looks like it did nothing.
+    const { container } = renderGuide({ offset: 120.47 });
+    expect(screen.getByRole('spinbutton', { name: 'Y' })).toHaveProperty('value', '120.5');
+    fireEvent.wheel(container.querySelector('.row')!, { deltaY: -1 });
     expect(current().offset).toBe(121);
+    expect(screen.getByRole('spinbutton', { name: 'Y' })).toHaveProperty('value', '121.0');
   });
 });
 
@@ -109,10 +138,25 @@ describe('GuidePopover — the Length row', () => {
   it("shows a bounded guide's length and commits a typed one, keeping the center", () => {
     renderGuide({ offset: 120, extent: { center: 300, halfLength: 50 } });
     const field = screen.getByRole('spinbutton', { name: 'Length' });
-    expect(field).toHaveProperty('value', '100');
+    expect(field).toHaveProperty('value', '100.0');
     fireEvent.focus(field);
     fireEvent.change(field, { target: { value: '64' } });
     expect(current().extent).toEqual({ center: 300, halfLength: 32 });
+  });
+
+  it('reads a Ctrl-dragged length to one decimal, and steps by half a unit', () => {
+    // Same register as the offset row: a bound dragged out by pointer carries
+    // a half-length nobody typed, and the box rounds it rather than reciting it.
+    const { container } = renderGuide({
+      offset: 120,
+      extent: { center: 300, halfLength: 41.318 },
+    });
+    const field = screen.getByRole('spinbutton', { name: 'Length' });
+    expect(field).toHaveProperty('value', '82.6');
+    expect(field.getAttribute('step')).toBe('0.5');
+    fireEvent.wheel(container.querySelectorAll('.row')[1], { deltaY: -1 });
+    expect(current().extent).toEqual({ center: 300, halfLength: 41.5 });
+    expect(field).toHaveProperty('value', '83.0');
   });
 
   it('reads ∞ when unbounded; a typed length bounds around the viewport center on blur', () => {

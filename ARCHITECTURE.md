@@ -2702,10 +2702,12 @@ whether or not anything locked; the guide drag's spacing readout is the only one
 and the rings and thins the line and its chip. Ambient chrome at engagement volume claims a lock
 that never happened, and it out-shouts the very thing the span measures FROM. Every live measurement
 readout — those guide labels, the Ctrl-drag spacing, the engaged guide's coordinate chip, the
-circle-diameter chip — speaks one format, `formatMeasurement`: one decimal place, the trailing
-`.0` kept so a number never changes width as a drag crosses a unit boundary. A span with an end off
-screen keeps its label on the part you can SEE, rather than at the true midpoint — zoomed in the
-far end sits several viewports away (a guide's parallel neighbour routinely does), which would
+circle-diameter chip, the guide popover's two boxes — speaks one format, `formatMeasurement`: one
+decimal place, the trailing `.0` kept so a number never changes width as a drag crosses a unit
+boundary. A numeric field pads its own text to its step's decimals, so the popover rounds onto the
+same register as a number, `roundMeasurement`, which its wheel then steps from. A span with an end
+off screen keeps its label on the part you can SEE, rather than at the true midpoint — zoomed in
+the far end sits several viewports away (a guide's parallel neighbour routinely does), which would
 hide the number exactly when the span is longest. The canvas hands every `SnapGuides` mount one
 box a label must land inside: the visible viewBox minus the strip the sidebar floats over, since
 that panel covers the canvas rather than shrinking it and a label clamped under it is no more

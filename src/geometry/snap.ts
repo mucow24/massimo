@@ -231,6 +231,15 @@ export function formatMeasurement(value: number): string {
   return text === '-0.0' ? '0.0' : text;
 }
 
+/** The same one-decimal register as a NUMBER, for a numeric field that does its
+ *  own text formatting (`useNumericField` pads to its step's decimals). The
+ *  guide popover rounds its boxes onto this so a coordinate reads the same in
+ *  the box as it does in the chip riding the guide — and so its wheel steps
+ *  from the number the user can see. */
+export function roundMeasurement(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
 /** An alignment guide as a snap target: a horizontal (constant-Y), vertical
  *  (constant-X), or 45° (constant-intercept) line at `offset`, infinite unless
  *  a bounded `extent` narrows it to a span (see AlignmentGuide.extent — same

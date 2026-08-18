@@ -5,9 +5,15 @@ import { PopoverShell } from './PopoverShell';
 import { usePinnedPopover } from './canvas/usePinnedPopover';
 import { useNumericField } from './useNumericField';
 import { PopoverFooter } from './PopoverFooter';
-import { guideAlongOf, guideFoot } from '../geometry/snap';
+import { guideAlongOf, guideFoot, roundMeasurement } from '../geometry/snap';
 import type { AlignmentGuide, GuideOrientation } from '../model/types';
-import { cleanFloat } from '../util/grid';
+
+// Half a world unit per wheel tick, arrow press and spinner click — the
+// granularity a guide is nudged at, not a claim about what the fields hold
+// (a typed 120.37 still lands). Its one decimal place is also what pads the
+// text mirrors, so a whole coordinate reads "120.0" and the box does not
+// change width as a drag crosses a unit boundary.
+const STEP = 0.5;
 
 // The one coordinate's title + field naming, per orientation. A diagonal's
 // scalar is its Y-intercept — labeled Y₀, spelled out in the hover title.
@@ -55,28 +61,32 @@ export function GuidePopover({ guide, hostW, onClose }: Props) {
   const extent = guide.extent;
   // useNumericField (not a bare input): its text mirror ignores an emptied
   // field mid-edit — Number('') === 0 would teleport the guide to the axis.
-  // `cleanFloat`, not Math.round: a dragged guide must not read back as
-  // "120.4000000001", but a guide that IS at 120.4 must say so — the box never
-  // shows a coordinate the doc doesn't hold. The whole-unit step is what the
-  // wheel and the arrow keys move by.
+  // `roundMeasurement`: a guide dragged out of its well sits wherever the
+  // pointer said, and reciting all of 120.437291 back is noise — the box is a
+  // reading, in the same one-decimal register as the chip that rides the guide
+  // during a drag. The rounding covers `getCurrent` too, so a wheel tick steps
+  // from the number on screen rather than from a stored value a tenth away —
+  // otherwise the first tick can write a change the box can't show.
   const field = useNumericField(
-    cleanFloat(guide.offset),
+    roundMeasurement(guide.offset),
     (n) => moveGuide(guide.id, n),
-    () => cleanFloat(useDoc.getState().guides[guide.id]?.offset ?? guide.offset),
+    () => roundMeasurement(useDoc.getState().guides[guide.id]?.offset ?? guide.offset),
+    STEP,
   );
   // The Length mirror, live only while bounded: commits keep the current
   // center, and a zero-or-negative length is refused by resizeGuide rather
   // than collapsing the span (the blur re-sync then snaps the text back).
   const lengthField = useNumericField(
-    extent ? cleanFloat(2 * extent.halfLength) : 0,
+    extent ? roundMeasurement(2 * extent.halfLength) : 0,
     (n) => {
       const cur = useDoc.getState().guides[guide.id]?.extent;
       if (cur) resizeGuide(guide.id, { center: cur.center, halfLength: n / 2 });
     },
     () => {
       const cur = useDoc.getState().guides[guide.id]?.extent;
-      return cur ? cleanFloat(2 * cur.halfLength) : 0;
+      return cur ? roundMeasurement(2 * cur.halfLength) : 0;
     },
+    STEP,
   );
   // Typing a length into an INFINITE guide: there is no center to keep and no
   // numeric mirror to speak ∞, so the box holds plain local text and commits
@@ -111,6 +121,7 @@ export function GuidePopover({ guide, hostW, onClose }: Props) {
           id="guide-offset"
           type="number"
           aria-label={coord.label}
+          step={STEP}
           className="options-popover-spin"
           style={{ marginLeft: 'auto' }}
           value={field.text}
@@ -142,6 +153,7 @@ export function GuidePopover({ guide, hostW, onClose }: Props) {
           id="guide-length"
           type="number"
           aria-label="Length"
+          step={STEP}
           className="options-popover-spin"
           value={extent ? lengthField.text : pendingLength}
           placeholder={extent ? undefined : '∞'}
