@@ -264,10 +264,11 @@ src/
     MapVersionPill.tsx          # the live doc's version + save-status dot, beside the map name
     *Popover.tsx                # on-canvas item editors
     DayNightColorRow.tsx        # shared label + light/dark ColorField pair — the plain half of…
-    PaletteColorRow.tsx         # …the palette-aware themed-color row every pair site mounts:
-                                #   linked = swatch dropdown (split swatch + NAME) + Reset/Sync,
-                                #   Custom = the pair reveals + Save to palette (which can mint
-                                #   one); plain row + Save when the map has no design palettes
+    PaletteColorRow.tsx         # …the palette-aware themed-color row every pair site mounts: a
+                                #   swatch MENU (split swatch + NAME, plus Custom) over the
+                                #   revealed pair, Reset/Sync beside it while linked, and Save
+                                #   color to palette at its foot — a flyout of the design
+                                #   palettes, or one named on the spot
     SegmentedToggle.tsx         # the ONE pick-one control (~16 inline Radix ToggleGroup clusters)
     FieldSelectContent.tsx      # shared Radix Select panel: portals popover Selects to .app (escapes
                                 #   the .canvas-host isolate layer) + bounds/scrolls a long list
@@ -552,10 +553,15 @@ its swatch's `(color, night ?? color)` — over EFFECTIVE values, since transfer
 casing collapse their stored form at a constant default — but it is ALLOWED to diverge, and that
 divergence is the feature: recoloring a linked field in place leaves the link standing and the
 field painting its own color, which the picker offers to Reset (back to the swatch) or Sync (the
-swatch to it). A CUSTOM field has neither to offer and carries **Save to palette** in the same
-slot: the color becomes a new swatch — named after the field, counted up on collision — in a
-design palette the map already carries or in one minted for it, and the field links to it in one
-history group. So a swatch is not born only in the palette surfaces; any color row can make one.
+swatch to it). At the foot of the same dropdown, in both states, stands **Save color to palette**:
+a flyout of the map's design palettes plus one named on the spot, and behind whichever is chosen,
+an inline name field. Nothing reaches the doc until that name commits, so backing out leaves the
+map untouched — and the mint runs two fields in turn, the palette's then the color's. The typed
+name is what decides the outcome, as a style name does one level up: a name the palette already
+holds REDEFINES that swatch (carrying its faithful wearers along), any other name appends one,
+which is what makes saving a copy of a linked color reachable. The swatch and the field's link go
+in under one history group. So a swatch is not born only in the palette surfaces; any color row
+can make one.
 What still detaches is a value written WITHOUT its ref key, the write rule hosted by
 `updateLine`/`updatePolygon`/`updateTextLabel`/`updateTransferStyle`/`updateStyleProps` and
 `setLineStrokeColor`'s ref param — so a picker edit on a linked field must carry the ref along, or
