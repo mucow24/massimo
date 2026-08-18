@@ -231,6 +231,49 @@ describe('fallback', () => {
     g2.commit();
   });
 
+  it("an error for a drained gesture's frame leaves the NEXT gesture free to arm", async () => {
+    // The mirror of 'a late RESULT from the drained gesture is dropped': the
+    // frame in flight at pointerup can fail AFTER the drain. That failure
+    // belongs to a gesture that is already over — falling back on it would
+    // hold the next gesture on the synchronous path for nothing.
+    const g = await armMidGesture(10);
+    const frame = fake.frames()[0];
+    const dead = fake;
+    g.commit();
+
+    dead.deliver({ kind: 'error', message: 'clipper exploded', gen: frame.gen, seq: frame.seq });
+    expect(dead.terminated).toBe(false);
+
+    const g2 = await armMidGesture(60);
+    expect(regionPipelineStatus().armed).toBe(true);
+    g2.commit();
+  });
+
+  it('a stale error cannot disarm the gesture that came after it', async () => {
+    const g = await armMidGesture(10);
+    const stale = fake.frames()[0];
+    g.commit();
+    const g2 = await armMidGesture(60);
+    expect(regionPipelineStatus().armed).toBe(true);
+
+    fake.deliver({ kind: 'error', message: 'late', gen: stale.gen, seq: stale.seq });
+    expect(regionPipelineStatus().armed).toBe(true);
+    expect(renderDocArmed()).toBe(true);
+    g2.commit();
+  });
+
+  it('a fallback between gestures does not disable the next one', async () => {
+    // The worker can die at rest (its `onerror`, or a failure with no frame
+    // stamp). `brokenThisGesture` is a per-GESTURE bail, so a gesture that had
+    // not even started when the worker broke must still get to arm.
+    (await armMidGesture(10)).commit();
+    fake.onerror?.(new Error('worker died at rest'));
+
+    const g = await armMidGesture(60);
+    expect(regionPipelineStatus().armed).toBe(true);
+    g.commit();
+  });
+
   it('a frame timeout falls back the same way', async () => {
     vi.useFakeTimers();
     try {
@@ -279,6 +322,27 @@ describe('snap guides ride the frame', () => {
 
     g.commit();
     expect(useDragFrame.getState().frame).toBeNull();
+  });
+
+  it('a fallback carries the routed guides until the hooks take them back', async () => {
+    // Routing returned true for these, so the hook is NOT painting them —
+    // dropping the frame outright would blink the guide out mid-drag, on the
+    // one input where the user is being told what they are snapping to.
+    const g = await armMidGesture(10);
+    const routed = [guideAt(20)];
+    expect(routeSnapGuides('station', routed)).toBe(true);
+
+    fake.deliver({ kind: 'error', message: 'wasm exploded' });
+
+    // Holes go back to the synchronous build (null), but the guides survive.
+    expect(useDragFrame.getState().frame?.holes ?? null).toBeNull();
+    expect(useDragFrame.getState().frame?.guides).toEqual(routed);
+
+    // The next publish is the hook's own again (routing now declines), so the
+    // carried frame yields rather than winning by one input.
+    expect(routeSnapGuides('station', [guideAt(30)])).toBe(false);
+    expect(useDragFrame.getState().frame).toBeNull();
+    g.commit();
   });
 });
 

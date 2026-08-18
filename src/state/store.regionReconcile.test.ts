@@ -1,6 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { beginHistoryGroup, useDoc } from './store';
-import { undo, historyDepth } from './history';
+import { undo, historyDepth, isHistoryGrouping } from './history';
 import { DEFAULT_DOC } from '../model/transforms';
 import { makeLine, makeStation, makeStop } from '../test/fixtures';
 import { regionsFor } from '../geometry/regionCache';
@@ -96,6 +96,25 @@ describe('region reconcile — store wiring', () => {
     expect(useDoc.getState().stations.s3.x).toBe(50);
     expect(useDoc.getState().regionAssignments.r1.anchors).toEqual(before.anchors);
     expect(currentWinners()).toEqual(['l2']);
+  });
+
+  it('resumes recording even when the reconcile write throws', () => {
+    // The reconcile writes the rewritten assignments through useDoc.setState,
+    // and everything downstream of one (the persist writer included) can fail.
+    // `finish()` has already released ownership by then, so a group that
+    // leaves recording paused has nothing left to heal it: every later edit
+    // records no undo entry, and undo/redo silently no-op.
+    seedCross();
+    const group = beginHistoryGroup();
+    useDoc.getState().moveStation('s3', 300, -50);
+    useDoc.getState().moveStation('s4', 300, 50);
+    const failing = vi.spyOn(useDoc, 'setState').mockImplementation(() => {
+      throw new Error('write refused');
+    });
+    expect(() => group.commit()).toThrow('write refused');
+    failing.mockRestore();
+
+    expect(isHistoryGrouping()).toBe(false);
   });
 
   it('leaves assignments untouched when a group changes no geometry', () => {

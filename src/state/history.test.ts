@@ -69,6 +69,41 @@ describe('markHistory — rewinding a provisional edit', () => {
     expect(useDoc.getState().name).toBe(DEFAULT_DOC.name);
   });
 
+  it('puts the redo stack back too', () => {
+    // The provisional write records through zundo, which wipes futureStates on
+    // every fresh entry. Restoring the past stack alone would still cost the
+    // user a pending redo — and the round trip is supposed to leave the stack
+    // exactly as it found it.
+    useDoc.getState().setDocName('First');
+    useDoc.getState().setDocName('Second');
+    undo();
+    expect(useDoc.getState().name).toBe('First');
+    expect(redoDepth()).toBe(1);
+
+    const rewind = markHistory();
+    useDoc.getState().setDocName('Provisional');
+    expect(redoDepth()).toBe(0);
+    rewind();
+
+    expect(redoDepth()).toBe(1);
+    redo();
+    expect(useDoc.getState().name).toBe('Second');
+  });
+
+  it('puts the redo stack back when the mark was taken on an empty stack', () => {
+    useDoc.getState().setDocName('Only');
+    undo();
+    expect(historyDepth()).toBe(0);
+    expect(redoDepth()).toBe(1);
+
+    const rewind = markHistory();
+    useDoc.getState().setDocName('Provisional');
+    rewind();
+
+    expect(historyDepth()).toBe(0);
+    expect(redoDepth()).toBe(1);
+  });
+
   it('rewinds to empty when the mark was taken on an empty stack', () => {
     const rewind = markHistory();
     useDoc.getState().setDocName('Provisional');

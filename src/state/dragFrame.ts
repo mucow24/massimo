@@ -19,7 +19,11 @@ import type { Ring } from '../geometry/clip';
 import type { SnapGuide } from '../geometry/snap';
 
 export interface DragFrame {
-  holes: Map<LineId, Ring[]>;
+  // `null` when the frame carries guides ALONE: the pipeline fell back
+  // mid-gesture, so holes are the canvas's synchronous business again, but the
+  // guides it had already taken off the hooks still have to be painted until
+  // the hooks resume publishing their own.
+  holes: Map<LineId, Ring[]> | null;
   guides: SnapGuide[];
 }
 

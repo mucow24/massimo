@@ -44,11 +44,15 @@ function topPastState(): PastEntry | undefined {
 
 // Drop everything recorded above `entry`, putting the past stack back exactly
 // where the burst started. A no-op if the entry is gone (a load cleared the
-// stack mid-burst) — never guess at an index.
-function truncatePastTo(entry: PastEntry): void {
+// stack mid-burst) — never guess at an index. `futureStates`, when given, is
+// restored along with the truncation (see markHistory); a burst passes none,
+// because a fresh edit is entitled to wipe the redo stack.
+function truncatePastTo(entry: PastEntry, futureStates?: PastEntry[]): void {
   useDoc.temporal.setState((s) => {
     const i = s.pastStates.lastIndexOf(entry);
-    return i === -1 ? {} : { pastStates: s.pastStates.slice(0, i + 1) };
+    if (i === -1) return {};
+    const pastStates = s.pastStates.slice(0, i + 1);
+    return futureStates ? { pastStates, futureStates } : { pastStates };
   });
 }
 
@@ -67,12 +71,18 @@ function truncatePastTo(entry: PastEntry): void {
  * mark taken on an EMPTY stack has no identity to hold, so its rewind empties
  * the stack; call the rewind only when the provisional edit is genuinely being
  * taken back, which is what makes that the right reading rather than a guess.
+ *
+ * The REDO stack is marked with it: recording the provisional write clears
+ * futureStates (zundo does that for every fresh entry), so putting back only
+ * the past stack would leave a pending redo destroyed by an edit that no
+ * longer exists.
  */
 export function markHistory(): () => void {
-  const mark = topPastState();
+  const { pastStates, futureStates } = useDoc.temporal.getState();
+  const mark = pastStates[pastStates.length - 1];
   return () => {
-    if (mark === undefined) useDoc.temporal.setState({ pastStates: [] });
-    else truncatePastTo(mark);
+    if (mark === undefined) useDoc.temporal.setState({ pastStates: [], futureStates });
+    else truncatePastTo(mark, futureStates);
   };
 }
 

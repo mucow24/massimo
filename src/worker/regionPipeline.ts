@@ -24,7 +24,7 @@
  */
 import { onHistoryGroup, useDoc, type DocSnapshot } from '../state/store';
 import { pickDragFrameDoc, setRenderDocOverlay } from '../state/renderDoc';
-import { setDragFrame } from '../state/dragFrame';
+import { setDragFrame, useDragFrame } from '../state/dragFrame';
 import type { SnapGuide } from '../geometry/snap';
 import { diffMirror, unpackHoles, type RegionMirror } from './regionFrame';
 import type {
@@ -201,6 +201,10 @@ const pendingGuidesUnion = (): SnapGuide[] => {
  */
 export function routeSnapGuides(source: SnapGuideSource, guides: SnapGuide[]): boolean {
   pendingGuides[source] = guides;
+  // Unarmed, the only frame that can still be set is the guides-only one a
+  // fallback left behind. The hook is about to paint this publish itself, so
+  // let go of the carried guides rather than let them win by one input.
+  if (!armed && useDragFrame.getState().frame !== null) setDragFrame(null);
   return armed;
 }
 
@@ -231,8 +235,14 @@ const handleResult = (msg: FrameResult): void => {
 };
 
 const handleError = (msg: WorkerErrorResponse): void => {
-  // Any worker-side failure mid-gesture: back to the synchronous path.
   console.error('[regionPipeline] worker error:', msg.message, msg.stack ?? '');
+  // A frame-stamped failure from a drained generation is leftovers, exactly
+  // like a late RESULT: the gesture it belonged to is already over, and
+  // falling back on it would bar the NEXT gesture from arming (or disarm one
+  // mid-drag) for a failure it never suffered. Errors with no frame stamp — a
+  // sync or boot failure — belong to the live worker, so they still fall back.
+  if (msg.gen !== undefined && msg.gen !== gen) return;
+  // A live failure: back to the synchronous path for the rest of the gesture.
   fallback();
 };
 
@@ -247,10 +257,15 @@ const fallback = (): void => {
   armed = false;
   pending = false;
   inFlight = null;
+  // Guides routed while armed are ones the hooks deliberately did NOT paint,
+  // so dropping the frame outright blinks them out for the rest of this input.
+  // Carry them on a holes-less frame instead; routeSnapGuides releases it the
+  // moment a hook publishes its own again.
+  const carried = pendingGuidesUnion();
   pendingGuides = {};
   brokenThisGesture = true;
   gen++;
-  setDragFrame(null);
+  setDragFrame(carried.length > 0 ? { holes: null, guides: carried } : null);
   setRenderDocOverlay(null);
   worker?.terminate();
   worker = null;
@@ -341,6 +356,10 @@ export function initRegionPipeline(workerFactory?: () => WorkerLike): void {
       if (e.kind === 'begin') {
         anyGroupOpen = true;
         deferGroupOpen = e.deferPersist;
+        // The bail is per-GESTURE at both ends: a worker that broke while no
+        // gesture was open (its `onerror`, an unstamped failure) must not cost
+        // this gesture its pipeline — arming spawns the replacement.
+        brokenThisGesture = false;
         // Boot at pointerdown on a map that could arm: worker spawn + wasm
         // compile + the full-slice sync all overlap the gesture's cheap
         // early frames, so by the time a slow build reports, the mirror is

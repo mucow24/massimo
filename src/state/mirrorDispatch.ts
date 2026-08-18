@@ -26,7 +26,9 @@ export function captureMirrorTargets(stationId: StationId): MirrorTarget[] {
   const targets: MirrorTarget[] = [{ id: stationId, layoutOffset: 0 }];
   if (!useSelection.getState().mirrorMatching) return targets;
   const doc = useDoc.getState();
-  for (const m of findMatchingStations({ stations: doc.stations, lines: doc.lines }, stationId)) {
+  // `doc` whole rather than a two-field pick: the rings matter, because a
+  // circle-bound station paints in its RING's frame, not its octant rotation.
+  for (const m of findMatchingStations(doc, stationId)) {
     targets.push({ id: m.id, layoutOffset: m.layoutOffset });
   }
   return targets;

@@ -85,6 +85,7 @@ import {
 } from '../model/serialize';
 import type { Station, Transfer } from '../model/types';
 import { randomStationName } from './stationNames';
+import { pushToast } from './toastStore';
 import { isHistoryGrouping, pauseHistory, pushHistory, resumeHistory } from './history';
 import { reconcileRegionAssignments } from '../geometry/regionReconcile';
 import { regionGeometrySig, type GeometrySlice } from '../geometry/regionCache';
@@ -224,6 +225,17 @@ export function docSnapshotsEqual(a: DocSnapshot, b: DocSnapshot): boolean {
 
 const PERSIST_DEBOUNCE_MS = 300;
 
+// The one currently-open history group, if any — the ownership reference
+// behind the steal-on-begin overlap contract documented on beginHistoryGroup —
+// and whether its write stream defers the storage write (see that function's
+// deferPersist). Declared HERE, above the storage below that reads them,
+// because the very first write of a session comes from persist's hydrate while
+// this module is still evaluating: a `let` further down would still be in its
+// temporal dead zone, and the ReferenceError would be swallowed by zustand
+// along with the whole rest of hydration.
+let openHistoryGroup: { commit: () => void; cancel: () => void } | null = null;
+let openGroupDefersPersist = false;
+
 let pendingPersist: { name: string; value: StorageValue<DocSnapshot> } | null = null;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -234,12 +246,39 @@ function cancelPersistTimer(): void {
   }
 }
 
+// Whether the last write was refused. Reporting is keyed off it so a full
+// storage says so ONCE rather than on every keystroke (an `error` toast stays
+// until it is clicked), and the news comes back if writes fail again later.
+let persistRefused = false;
+
 function writePendingPersist(): void {
   if (!pendingPersist) return;
-  // Byte-identical to what createJSONStorage produced: a plain JSON.stringify
-  // of the same { state, version } StorageValue, on the same key.
-  localStorage.setItem(pendingPersist.name, JSON.stringify(pendingPersist.value));
+  const { name, value } = pendingPersist;
+  // Clear the slot BEFORE the write: a blob that cannot fit must not be handed
+  // to the next flush again, and the next set() supplies a fresh one anyway.
   pendingPersist = null;
+  try {
+    // Byte-identical to what createJSONStorage produced: a plain JSON.stringify
+    // of the same { state, version } StorageValue, on the same key.
+    localStorage.setItem(name, JSON.stringify(value));
+    persistRefused = false;
+  } catch {
+    // Storage is full (a multi-MB imported image is the usual cause) or is
+    // refusing writes. This runs inside the caller's set(), so an escaping
+    // error would skip the rest of every action from here on — mode exits,
+    // selection updates, group commits — while the document silently stopped
+    // reaching storage. Swallow it, keep the in-memory doc, and say so: only a
+    // reload reveals the loss otherwise, and by then it has happened.
+    if (!persistRefused) {
+      persistRefused = true;
+      pushToast(
+        'error',
+        'Could not save this map to browser storage — it is full. Editing still works, ' +
+          'but a reload would come back at the last saved state. Export the map, or ' +
+          'delete a large imported image, to make room.',
+      );
+    }
+  }
 }
 
 const debouncedDocStorage: PersistStorage<DocSnapshot> = {
@@ -544,6 +583,15 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     // funnel). No-op (reference-stable) on already-converted docs.
     out = backfillLineCasingDayNightColors(out);
   }
+  // Retired UltraLight rung (Söhne's ladder starts at 200) folded onto Thin.
+  // Non-version-gated: keyed off the legacy value, idempotent, and returns by
+  // reference once nothing stores 100 — same contract as the file path's call.
+  // Ordered here for the same reason parse() folds before its sanitizers:
+  // everything below reads a weight through `isLabelWeight`, which no longer
+  // answers to 100 — the v<10 rebuild would heal a def's weight to the 400
+  // default, and the v<14 bake would land every station on Roman rather than
+  // on the adjacent Thin.
+  out = bakeLegacyUltraLightWeight(out);
   if (v < 10) {
     // Style-def hygiene FIRST — strip round-1 defs' since-dropped keys, and
     // materialize an explicit (possibly empty) styles record so the invariant
@@ -760,10 +808,6 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
     // conversion of the old value-match semantics — shared with parse()).
     out = bakeLineColorRefs({ ...out, palettes: dedupeSwatchNames(out.palettes) });
   }
-  // Retired UltraLight rung (Söhne's ladder starts at 200) folded onto Thin.
-  // Non-version-gated: keyed off the legacy value, idempotent, and returns by
-  // reference once nothing stores 100 — same contract as the file path's call.
-  out = bakeLegacyUltraLightWeight(out);
   return out as DocState;
 }
 
@@ -1621,19 +1665,22 @@ export const useDoc = create<DocState>()(
       // the doc unchanged) would still push a redundant past entry — making one
       // Ctrl+Z appear to do nothing. The grouped path (beginHistoryGroup) runs
       // the same check before pushing; this extends it to the ungrouped writes.
-      equality: docSnapshotsEqual,
-      partialize: (state) => pickDocSnapshot(state),
+      //
+      // Both handle the ONE write that arrives with no state to read: persist
+      // hydrates synchronously from inside this initializer, so zundo's
+      // partialize runs before zustand has assigned the store's state. Reading
+      // DOC_FIELDS off `undefined` there throws a TypeError that zustand's
+      // thenable wrapper swallows whole — skipping the migrated write-back and
+      // every hydration callback with it — and a snapshot of "nothing" is not
+      // an edit to record either, so equality reads that same absence as equal.
+      equality: (past, cur) =>
+        (past as DocSnapshot | undefined) === undefined || docSnapshotsEqual(past, cur),
+      partialize: (state: DocState | undefined) =>
+        (state === undefined ? undefined : pickDocSnapshot(state)) as DocSnapshot,
       limit: HISTORY_LIMIT,
     },
   ),
 );
-
-// The one currently-open history group, if any — the ownership reference
-// behind the steal-on-begin overlap contract documented on beginHistoryGroup.
-let openHistoryGroup: { commit: () => void; cancel: () => void } | null = null;
-// Whether the open group's write stream defers the storage write (see
-// beginHistoryGroup's deferPersist). Reset whenever ownership is released.
-let openGroupDefersPersist = false;
 
 /**
  * Cancel the currently-open history group, if any. Called by clearHistory():
@@ -1792,7 +1839,6 @@ export function beginHistoryGroup(opts?: {
         if (reconciled !== live) {
           useDoc.setState({ regionAssignments: reconciled.regionAssignments });
         }
-        resumeHistory();
         const cur = pickDocSnapshot(useDoc.getState());
         // Reference-equality check across every tracked doc field. Transforms
         // produce new objects only when something changes, so this is sound.
@@ -1805,6 +1851,11 @@ export function beginHistoryGroup(opts?: {
         // write, if any, equals what a flush would produce and trails in.)
         flushDocPersist();
       } finally {
+        // Recording resumes on EVERY exit, a throw out of the reconcile write
+        // included: `finish()` has already released ownership, so a group that
+        // left recording paused would have nothing to heal it — every later
+        // edit would record no undo entry and undo/redo would silently no-op.
+        resumeHistory();
         // After the reconcile, so an `end` listener resyncing external state
         // sees the post-commit doc, assignments included.
         emitHistoryGroup({ kind: 'end' });
@@ -1824,8 +1875,10 @@ export function beginHistoryGroup(opts?: {
         // changed — a gesture that only drew overlays leaves the doc untouched.
         const cur = pickDocSnapshot(useDoc.getState());
         if (!docSnapshotsEqual(cur, snapshot)) useDoc.setState(snapshot);
-        resumeHistory();
       } finally {
+        // Same contract as commit's: the restore write can throw, and ownership
+        // is already released, so resuming has to be unconditional.
+        resumeHistory();
         emitHistoryGroup({ kind: 'end' });
       }
     },

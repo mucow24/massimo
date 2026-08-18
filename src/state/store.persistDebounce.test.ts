@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { beginHistoryGroup, flushDocPersist, pickDocSnapshot, useDoc } from './store';
+import { useToasts } from './toastStore';
 import { DEFAULT_DOC } from '../model/transforms';
 
 // The doc store's localStorage write is trailing-debounced ONLY inside a
@@ -28,6 +29,7 @@ describe('debounced doc persist', () => {
     useDoc.setState({ ...useDoc.getState(), ...DEFAULT_DOC });
     useDoc.temporal.getState().clear();
     localStorage.clear();
+    useToasts.setState({ toasts: [] });
   });
 
   afterEach(() => {
@@ -184,6 +186,36 @@ describe('debounced doc persist', () => {
 
     expect(persistedStationX(id)).toBe(31);
     group.cancel();
+  });
+
+  it('a refused write is reported, never thrown, and never re-queued', () => {
+    // localStorage full (a multi-MB image import is the usual cause). The
+    // write happens inside the caller's set(), so an escaping error would skip
+    // the rest of every action from then on — and the user would learn nothing
+    // until a reload handed back the last doc that fitted.
+    const failing = vi.spyOn(window.Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new window.DOMException('exceeded the quota', 'QuotaExceededError');
+    });
+
+    expect(() => useDoc.getState().setDocName('Too big to store')).not.toThrow();
+    // The doc in memory is untouched, and the failure is on screen.
+    expect(useDoc.getState().name).toBe('Too big to store');
+    expect(useToasts.getState().toasts.map((t) => t.kind)).toEqual(['error']);
+
+    // A second failing edit doesn't stack another copy of the same news.
+    useDoc.getState().setDocName('Still too big');
+    expect(useToasts.getState().toasts).toHaveLength(1);
+
+    // The blob that could not fit is dropped rather than retried: a flush with
+    // nothing new to say writes nothing at all.
+    failing.mockRestore();
+    const writes = vi.spyOn(window.Storage.prototype, 'setItem');
+    flushDocPersist();
+    expect(writes).not.toHaveBeenCalled();
+
+    // And the pipeline is not wedged — the next edit lands as usual.
+    useDoc.getState().setDocName('Fits again');
+    expect(persistedDoc()?.state.name).toBe('Fits again');
   });
 
   it('visibilitychange to hidden flushes the pending write', () => {
