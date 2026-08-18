@@ -88,12 +88,14 @@ import {
   BLACK_PAIR,
   DEFAULT_DOT_STYLE,
   DOT_BASE_SHAPES,
+  DOT_STROKE_ALIGNS,
   DOT_STROKE_STEP,
   WHITE_PAIR,
 } from '../model/dotStyle';
 import type {
   DayNightColor,
   DotBaseShape,
+  DotStrokeAlign,
   DotStyle,
   LineStyleProps,
   PolygonStyleProps,
@@ -727,6 +729,16 @@ const DOT_SHAPES = DOT_BASE_SHAPES.map((shape) => ({
   label: DOT_BASE_SHAPE_LABELS[shape],
 }));
 
+// How a stroke alignment is NAMED on its chips, and what its tooltip says the
+// stroke DOES. Also the exhaustiveness guard for `DOT_STROKE_ALIGNS` — an
+// alignment added to the union leaves a missing key here and fails to compile.
+// Exported for the test that pins the pairing.
+export const DOT_STROKE_ALIGN_LABELS: Record<DotStrokeAlign, { chip: string; hint: string }> = {
+  center: { chip: 'Center', hint: 'straddles the edge' },
+  inside: { chip: 'Inside', hint: 'grows inward' },
+  outside: { chip: 'Outside', hint: 'grows outward' },
+};
+
 // A stand-in line color for the editor previews — 'line' fills/strokes/dash
 // need *some* color to show; the real color comes from each line at paint time.
 const PREVIEW_LINE_COLOR = '#3b7dd8';
@@ -969,11 +981,11 @@ function StopDotStyleEditor({ id, props: p }: { id: string; props: DotStyle }) {
                 value={p.strokeAlign}
                 disabled={strokeOff}
                 onSelect={(v) => patch({ strokeAlign: v as DotStyle['strokeAlign'] })}
-                options={(['center', 'inside', 'outside'] as const).map((mode) => ({
+                options={DOT_STROKE_ALIGNS.map((mode) => ({
                   value: mode,
                   label: `Align ${mode}`,
-                  title: `Stroke ${mode === 'center' ? 'straddles the edge' : mode === 'inside' ? 'grows inward' : 'grows outward'}`,
-                  content: mode === 'center' ? 'Center' : mode === 'inside' ? 'Inside' : 'Outside',
+                  title: `Stroke ${DOT_STROKE_ALIGN_LABELS[mode].hint}`,
+                  content: DOT_STROKE_ALIGN_LABELS[mode].chip,
                 }))}
               />
             </div>

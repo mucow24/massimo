@@ -1,4 +1,4 @@
-import { RefObject, useRef, useState } from 'react';
+import { RefObject, useEffect, useRef, useState } from 'react';
 import { beginHistoryGroup, useDoc } from '../../state/store';
 import type { LineId, StationId } from '../../model/types';
 import { edgeEndpoints } from '../../model/lineTopology';
@@ -41,6 +41,22 @@ export function useLineTagDrag(
 ): LineTagDragApi {
   const moveLineTag = useDoc((s) => s.moveLineTag);
   const [lineTagSnapGuides, setLineTagSnapGuides] = useState<SnapGuide[]>([]);
+
+  // The camera, kept live for the gesture. The window listeners below are
+  // registered once at pointerdown and keep calling THAT render's
+  // `onPointerMove`, so its `screenToWorld`/`zoom` are frozen for the whole
+  // drag — every other hook is re-bound through per-render svg handlers and
+  // has no such problem. A mid-drag wheel zoom settles and COMMITS
+  // (useViewport's ZOOM_SETTLE_MS): the canvas re-renders with a new camera
+  // while the frozen closure falls back to the pre-zoom one, converting every
+  // remaining move at the old scale (the tag runs away from the pointer) and
+  // sizing the snap radius from a stale zoom. Read the camera through a ref
+  // every render refreshes instead — the same shape useGhostDragEngine keeps
+  // its own `screenToWorldRef` in, for the same reason.
+  const cameraRef = useRef({ zoom, screenToWorld });
+  useEffect(() => {
+    cameraRef.current = { zoom, screenToWorld };
+  }, [zoom, screenToWorld]);
 
   const dragRef = useRef<{
     tagId: string;
@@ -111,7 +127,7 @@ export function useLineTagDrag(
     // Cursor → world through the shared viewport helper (same one every other
     // drag hook uses), so this stays in sync with the live, un-committed pan/zoom
     // rather than re-deriving the offset from the svg's CTM.
-    const target = screenToWorld(e.clientX, e.clientY);
+    const target = cameraRef.current.screenToWorld(e.clientX, e.clientY);
 
     // Recompute bands fresh — buildBands is pure & memo'd at the canvas, but
     // here we just need the latest geometry. Cheap relative to drag latency.
@@ -178,7 +194,7 @@ export function useLineTagDrag(
           },
           lineTags: docState.lineTags,
           // Constant screen-pixel engage radius (see useStationDrag).
-          tol: LINE_TAG_SNAP_TOLERANCE / zoom,
+          tol: LINE_TAG_SNAP_TOLERANCE / cameraRef.current.zoom,
         })
       : { canonT: best.tCanon, snapped: false as const, match: undefined };
 

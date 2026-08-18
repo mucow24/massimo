@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { LineTag, MapDoc } from '../../model/types';
 import type { SegmentBandSpec } from '../../geometry/interlining';
 import {
@@ -8,6 +8,7 @@ import {
   sampleOffsetPathByArcLength,
 } from '../../geometry/lineTagGeometry';
 import { dragState, useDoc, useSelection } from '../../state/store';
+import { useFontEpochValue } from '../../state/fontEpoch';
 import { hoveredChrome } from '../../state/selection';
 import { useThemeColors } from '../../state/theme';
 import { legibleTextOn } from '../../util/color';
@@ -449,6 +450,14 @@ function GhostPreview({
  * instances share work and the cache survives re-renders.
  */
 const widthCache = new Map<string, number>();
+// The font epoch these widths were measured at. Web fonts arrive AFTER the
+// first paint (every Söhne face is `font-display: swap`), so a service code
+// measured on a cold load carries the FALLBACK face's advance — which then
+// sizes the tag's hit rect and its wash/ring footprint for the rest of the
+// session, since a cached string is never measured again. Dropping the cache
+// when the epoch moves is what makes the re-measure `useFontEpoch` exists for
+// actually reach these widths.
+let widthCacheEpoch = 0;
 // Subscribers fire when the cache mutates; useSyncExternalStore-style.
 const widthCacheListeners = new Set<() => void>();
 function subscribeWidthCache(fn: () => void): () => void {
@@ -457,14 +466,29 @@ function subscribeWidthCache(fn: () => void): () => void {
     widthCacheListeners.delete(fn);
   };
 }
+// Bumped with every mutation, so a consumer can tell "the cache moved" from a
+// snapshot alone — which is what lets the subscription below close the race.
+let widthCacheVersion = 0;
+const widthCacheSnapshot = () => widthCacheVersion;
 function notifyWidthCache() {
+  widthCacheVersion++;
   for (const fn of widthCacheListeners) fn();
 }
 
 function Measurer({ services }: { services: string[] }) {
   const refs = useRef(new Map<string, SVGTextElement | null>());
+  // Re-render (and therefore re-measure) when the web fonts land. The VALUE is
+  // only used to notice that it moved.
+  const fontEpoch = useFontEpochValue();
   useLayoutEffect(() => {
     let dirty = false;
+    if (fontEpoch !== widthCacheEpoch) {
+      widthCacheEpoch = fontEpoch;
+      if (widthCache.size > 0) {
+        widthCache.clear();
+        dirty = true;
+      }
+    }
     for (const s of services) {
       if (widthCache.has(s)) continue;
       const el = refs.current.get(s);
@@ -479,9 +503,14 @@ function Measurer({ services }: { services: string[] }) {
       }
     }
     if (dirty) notifyWidthCache();
-  }, [services]);
+  }, [services, fontEpoch]);
   return (
-    <g style={{ visibility: 'hidden' }} pointerEvents="none">
+    // `visibility: hidden` suppresses painting but NOT getBBox — which is why
+    // the measurer works at all, and why it has to be excluded from exports:
+    // buildExportSvg frames the file off the clone's getBBox, and these texts
+    // are unpositioned, so without this the frame is stretched out to world
+    // (0, 0) on any map that doesn't already reach the origin.
+    <g style={{ visibility: 'hidden' }} pointerEvents="none" data-export-exclude="1">
       {services.map((s) => (
         <text
           key={s}
@@ -500,9 +529,14 @@ function Measurer({ services }: { services: string[] }) {
 
 function useMeasureTextWidths(services: string[]): Map<string, number> {
   // Subscribe to cache notifications so newly-measured strings trigger a
-  // re-render of consumers in the next React tick.
-  const [, setTick] = useState(0);
-  useEffect(() => subscribeWidthCache(() => setTick((x) => x + 1)), []);
+  // re-render of consumers. useSyncExternalStore rather than a useEffect
+  // subscription, because the Measurer notifies from a LAYOUT effect: passive
+  // effects have not run by then, so a plain subscription is not yet listening
+  // when the mount's own measurement lands, and the tag keeps its length×7
+  // guess until some unrelated re-render — which on a quiet cold load never
+  // comes. useSyncExternalStore re-reads the snapshot right after subscribing
+  // and re-renders if it moved, which is exactly that gap.
+  useSyncExternalStore(subscribeWidthCache, widthCacheSnapshot, widthCacheSnapshot);
   const widths = new Map<string, number>();
   for (const s of services) {
     widths.set(s, widthCache.get(s) ?? s.length * 7);

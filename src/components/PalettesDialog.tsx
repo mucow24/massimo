@@ -277,7 +277,17 @@ export function PalettesDialog({ onClose }: { onClose: () => void }) {
     const f = e.target.files?.[0];
     e.target.value = ''; // allow re-picking the same file
     if (!f) return;
-    const result = parseCustomPalette(await f.text());
+    // A file that stops being readable between the picker and here rejects the
+    // read; unguarded, that escapes as an unhandled rejection and the dialog
+    // just sits there having added nothing.
+    let text: string;
+    try {
+      text = await f.text();
+    } catch {
+      setError(`“${f.name}” could not be read.`);
+      return;
+    }
+    const result = parseCustomPalette(text);
     if (!result.ok) {
       setError(result.error);
       return;

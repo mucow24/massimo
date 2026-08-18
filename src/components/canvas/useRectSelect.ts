@@ -342,6 +342,13 @@ export function useRectSelect(
       sel.setSvgImageSelection(hits.svgImages);
       sel.setAnchorSelection(hits.anchors);
       sel.setLineCircleSelection(hits.lineCircles);
+      // Alignment guides aren't marquee-sweepable — a rect can neither hit one
+      // nor miss one — but set-mode means REPLACE, and none of the seven above
+      // touches the guide list. Without this a guide selected just before the
+      // drag rides into the new selection: Delete takes it out with the rest,
+      // a group drag tows it, and the sole-selection popover never opens.
+      // Add/xor leave it alone on purpose — those modes are additive.
+      sel.setGuideSelection([]);
     }
 
     releaseDragCapture(e, svgRef);

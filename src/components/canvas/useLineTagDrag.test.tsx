@@ -59,6 +59,19 @@ function render(zoom = 1) {
   return { result, svg };
 }
 
+// Same hook, but re-renderable with a fresh camera — the shape a mid-drag
+// zoom commit produces (MapCanvas re-renders with a new screenToWorld/zoom
+// while the window listeners stay hooked from the pointerdown render).
+type Camera = { zoom: number; screenToWorld: (mx: number, my: number) => { x: number; y: number } };
+function renderWithCamera(initial: Camera) {
+  const { ref } = fakeSvgRef();
+  const { result, rerender } = renderHook(
+    ({ zoom, screenToWorld }: Camera) => useLineTagDrag(ref, zoom, screenToWorld),
+    { initialProps: initial },
+  );
+  return { result, rerender };
+}
+
 // A second tag on the same corridor, `distance` units from the A end — the
 // neighbor the dragged tag may snap to.
 const addNeighborAt = (distance: number) =>
@@ -259,6 +272,54 @@ describe('useLineTagDrag', () => {
     expect(useDoc.temporal.getState().isTracking).toBe(true); // recording resumed
     dispatchWindowPointer('pointermove', { clientX: 90, clientY: 0 });
     expect(useDoc.getState().lineTags['T'].distance).toBe(20); // disarmed + unhooked
+  });
+
+  // This is the only window-wired drag hook in src/ — every other one is
+  // re-bound through per-render SVG handlers, so it is the only one that can
+  // keep running the pointer-down render's closure. A wheel zoom mid-drag
+  // settles and COMMITS (useViewport's ZOOM_SETTLE_MS), which re-renders the
+  // canvas with a new screenToWorld and zoom; the live gesture has to see them
+  // or it converts every remaining move through the pre-zoom camera.
+  it('follows a camera that changes mid-drag (a wheel zoom that commits)', () => {
+    const { result, rerender } = renderWithCamera({
+      zoom: 1,
+      screenToWorld: identityScreenToWorld,
+    });
+    result.current.onStartDrag('T', pointerEvent({ clientX: 20, clientY: 0 }));
+    dispatchWindowPointer('pointermove', { clientX: 40, clientY: 0 });
+    expect(useDoc.getState().lineTags['T'].distance).toBeCloseTo(40, 0);
+
+    // Zoom 2x commits: the same cursor screen-x now names half the world x.
+    rerender({ zoom: 2, screenToWorld: (mx, my) => ({ x: mx / 2, y: my / 2 }) });
+    dispatchWindowPointer('pointermove', { clientX: 100, clientY: 0 });
+
+    // World x = 50 → the midpoint of the 100-unit A—B stripe. Through the
+    // stale camera the cursor reads as world x = 100, which clamps to the far
+    // end (anchor flips to 'to', distance 0) — the tag running away from the
+    // pointer at 2x its rate.
+    const tag = useDoc.getState().lineTags['T'];
+    expect(tag.anchorEnd).toBe('from');
+    expect(tag.distance).toBeCloseTo(50, 0);
+    dispatchWindowPointer('pointerup', { clientX: 100, clientY: 0 });
+  });
+
+  it('the snap tolerance follows the mid-drag zoom too', () => {
+    // The engage radius is LINE_TAG_SNAP_TOLERANCE ÷ zoom, so a stale zoom is
+    // a stale radius: at the pre-zoom 1 a 6-unit gap still snaps, when at the
+    // committed 4 it must not (world tolerance 2.5).
+    addNeighborAt(50);
+    const { result, rerender } = renderWithCamera({
+      zoom: 1,
+      screenToWorld: identityScreenToWorld,
+    });
+    result.current.onStartDrag('T', pointerEvent({ clientX: 20, clientY: 0 }));
+    act(() => dispatchWindowPointer('pointermove', { clientX: 30, clientY: 0 }));
+
+    rerender({ zoom: 4, screenToWorld: identityScreenToWorld });
+    act(() => dispatchWindowPointer('pointermove', { clientX: 44, clientY: 0 }));
+
+    expect(useDoc.getState().lineTags['T'].distance).toBeCloseTo(44, 5);
+    dispatchWindowPointer('pointerup', { clientX: 44, clientY: 0 });
   });
 
   it('can drag a tag onto a loop-filling segment, not just consecutive display pairs', () => {

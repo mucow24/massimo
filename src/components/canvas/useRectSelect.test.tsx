@@ -37,6 +37,7 @@ function resetSelection(over: Record<string, unknown> = {}) {
     selectedLabelIds: [],
     selectedPolygonIds: [],
     selectedAnchorIds: [],
+    selectedGuideIds: [],
     ...over,
   });
 }
@@ -497,6 +498,27 @@ describe('useRectSelect — modifier semantics', () => {
     const { result, ref } = render();
     dragRect(result, ref, { x: 160, y: 160 }, { x: 260, y: 260 }); // over B only
     expect(useSelection.getState().selectedStationIds).toEqual(['B']);
+  });
+
+  it('no modifier also drops a selected alignment guide (set means set)', () => {
+    // Guides are not marquee-sweepable — a rect can neither hit one nor miss
+    // one — but "no modifier" means REPLACE the selection, and the seven
+    // set*Selection actions between them don't touch selectedGuideIds. A guide
+    // selected just before the marquee otherwise rides along into it: Delete
+    // takes it out with the rest, a group drag tows it, and the sole-selection
+    // popover never opens because the selection is two items.
+    useSelection.getState().selectGuide('g1');
+    const { result, ref } = render();
+    dragRect(result, ref, { x: 160, y: 160 }, { x: 260, y: 260 }); // over B only
+    expect(useSelection.getState().selectedStationIds).toEqual(['B']);
+    expect(useSelection.getState().selectedGuideIds).toEqual([]);
+  });
+
+  it('shift keeps a selected guide, like every other kind it adds to', () => {
+    useSelection.getState().selectGuide('g1');
+    const { result, ref } = render();
+    dragRect(result, ref, { x: 160, y: 160 }, { x: 260, y: 260 }, { shiftKey: true });
+    expect(useSelection.getState().selectedGuideIds).toEqual(['g1']);
   });
 
   it('shift adds rect hits to the selection (add)', () => {

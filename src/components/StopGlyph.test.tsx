@@ -619,6 +619,29 @@ describe('<StopGlyph /> stroke/fill/code split (pass prop)', () => {
     expect(parseFloat(body.getAttribute('r')!)).toBe(0);
   });
 
+  it('clamps the native-stroke radius at 0 for an inside stroke thicker than the ring', () => {
+    // Open rings never split, so the alignment shift lands on the drawn radius
+    // itself: inside pushes it to r − strokeWidth/2, which a stroke wider than
+    // the dot drives negative. A negative r is an invalid SVG length and the
+    // browser drops the element, so the dot would vanish outright — floor it
+    // the same way the inset body path does.
+    const thickRing: DotStyle = {
+      ...P['open-black'],
+      strokeWidth: 2 * STOP_DOT_RADIUS + 2,
+      strokeAlign: 'inside',
+    };
+    const ring = renderPass(thickRing, 'fill').querySelector('circle')!;
+    expect(parseFloat(ring.getAttribute('r')!)).toBe(0);
+    // Same floor on the combined (preview) element, which takes the other
+    // native-delta branch.
+    const { container } = render(
+      <svg>
+        <StopGlyph cx={0} cy={0} style={thickRing} />
+      </svg>,
+    );
+    expect(parseFloat(container.querySelector('circle')!.getAttribute('r')!)).toBe(0);
+  });
+
   it('keeps a stroked X on a centered stroke (fill pass) with no silhouette', () => {
     // The saltire is concave; a radius offset can't make its border uniform, so
     // it isn't split — the outline rides the fill pass centered, as before.
