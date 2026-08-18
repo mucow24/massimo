@@ -10,10 +10,6 @@ import {
 } from './HatchPatterns';
 
 describe('hatchPatternId', () => {
-  it('returns the same id for the same color', () => {
-    expect(hatchPatternId('#EF374B')).toBe(hatchPatternId('#EF374B'));
-  });
-
   it('returns different ids for different colors', () => {
     expect(hatchPatternId('#EF374B')).not.toBe(hatchPatternId('#0039A6'));
   });
@@ -109,6 +105,22 @@ describe('<HatchPatterns>', () => {
       Math.max(1, HATCH_STRIPE_WIDTH + HATCH_GAP_WIDTH),
     );
   });
+
+  // The registry and the stroke that references it agree only because both go
+  // through hatchPatternId. Recomputing the id on the expectation side would
+  // assert that agreement against itself, so this reads the id OUT of the
+  // painted `url(#…)` and looks it up in the DOM: a naming drift between the
+  // two sides lands here as a dangling reference, which paints nothing.
+  it.each(['hatched', 'hatched-mirror'] as const)(
+    'the url a %s band paints with resolves to an emitted pattern',
+    (style) => {
+      const { container } = renderSvg(['#EF374B', '#0039A6']);
+      const { stroke } = lineStyleStrokeAttrs(style, '#0039A6', 14);
+      const id = /^url\(#(.+)\)$/.exec(stroke)?.[1];
+      expect(id).toBeTruthy();
+      expect(container.querySelector(`pattern#${id}`)).not.toBeNull();
+    },
+  );
 });
 
 describe('lineStyleStrokeAttrs', () => {
