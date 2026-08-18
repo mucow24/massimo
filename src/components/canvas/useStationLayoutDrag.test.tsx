@@ -281,6 +281,90 @@ describe('useStationLayoutDrag — no-op drag', () => {
   });
 });
 
+// The cancel path is useGhostDragEngine's, and this hook is its only consumer.
+// Its own drop is the only doc write, so a cancel has nothing to roll back —
+// what it must do is DISARM, so the pointerup the browser may still deliver
+// after a cancel finds no gesture and drops nothing where the pointer landed.
+describe('useStationLayoutDrag — a cancelled drag drops nothing', () => {
+  const cancel = (r: Result) => act(() => r.current.onPointerCancel());
+
+  it('pointercancel disarms the drag, and a later pointerup commits nothing', () => {
+    seed({ a: hubStation() });
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useStationLayoutDrag(ref, identity));
+
+    // Grab L1 and take it one slot up — the drop that would have landed.
+    down(result, 'a', { kind: 'stop', lineId: 'L1' }, pointerEvent({ clientX: 100, clientY: 100 }));
+    move(result, pointerEvent({ clientX: 100, clientY: 86 }));
+    expect(result.current.overlay).not.toBeNull();
+
+    // The browser cancels mid-drag (pen palm rejection, capture loss).
+    cancel(result);
+    expect(result.current.overlay).toBeNull();
+    // A trailing move must not bring the cancelled gesture back to life: the
+    // press is over, so there is nothing left for a move to steer.
+    move(result, pointerEvent({ clientX: 100, clientY: 72 }));
+    expect(result.current.overlay).toBeNull();
+    up(result, pointerEvent({ clientX: 100, clientY: 72 }));
+
+    const stop = useDoc.getState().stations.a.stops.find((s) => s.lineId === 'L1')!;
+    expect(stop.row).toBeCloseTo(0, 3);
+    expect(stop.col).toBeCloseTo(0, 3);
+    expect(historyDepth()).toBe(0);
+  });
+
+  it('a move with no buttons (a lost pointerup) cancels the same way', () => {
+    // Alt-tabbing away swallows the pointerup; the gesture's next move
+    // arrives with buttons === 0 and is the only signal the press ended.
+    seed({ a: hubStation() });
+    const { ref } = fakeSvgRef();
+    const { result } = renderHook(() => useStationLayoutDrag(ref, identity));
+
+    down(result, 'a', { kind: 'stop', lineId: 'L1' }, pointerEvent({ clientX: 100, clientY: 100 }));
+    move(result, pointerEvent({ clientX: 100, clientY: 86 }));
+    move(result, pointerEvent({ clientX: 100, clientY: 72, buttons: 0 }));
+
+    expect(result.current.overlay).toBeNull();
+    up(result, pointerEvent({ clientX: 100, clientY: 72 }));
+
+    const stop = useDoc.getState().stations.a.stops.find((s) => s.lineId === 'L1')!;
+    expect(stop.row).toBeCloseTo(0, 3);
+    expect(historyDepth()).toBe(0);
+  });
+});
+
+describe('useStationLayoutDrag — the projection stays live across a re-render', () => {
+  it('a camera that moves mid-drag steers the drop, not the mount-time one', () => {
+    // screenToWorld is a fresh closure every render, closing over THAT render's
+    // committed viewport. The engine reads it through a ref for exactly this
+    // case: pan or zoom mid-gesture and the drag must follow the new camera.
+    // Capturing the prop at mount instead freezes the mount-time projection,
+    // and the node teleports by however far the camera moved.
+    seed({ a: hubStation() });
+    const { ref } = fakeSvgRef();
+    const { result, rerender } = renderHook(
+      ({ s2w }: { s2w: (x: number, y: number) => { x: number; y: number } }) =>
+        useStationLayoutDrag(ref, s2w),
+      { initialProps: { s2w: identity } },
+    );
+
+    down(result, 'a', { kind: 'stop', lineId: 'L1' }, pointerEvent({ clientX: 100, clientY: 100 }));
+
+    // The canvas pans a full cell (14 world units) under the gesture: the same
+    // screen point now names a world point one cell further down.
+    rerender({ s2w: (x: number, y: number) => ({ x, y: y + 14 }) });
+    move(result, pointerEvent({ clientX: 100, clientY: 110 }));
+    up(result, pointerEvent({ clientX: 100, clientY: 110 }));
+
+    // Through the NEW camera the pointer reads world y = 124, which is row 2
+    // of a station at y = 100. The mount-time camera would read y = 110 and
+    // land on row 1 — one cell short, the teleport the ref exists to prevent.
+    const stop = useDoc.getState().stations.a.stops.find((s) => s.lineId === 'L1')!;
+    expect(stop.row).toBeCloseTo(2, 3);
+    expect(stop.col).toBeCloseTo(0, 3);
+  });
+});
+
 describe('useStationLayoutDrag — stationary Shift flips the lattice basis', () => {
   it('window Shift keydown mid-drag recomputes ghosts without a pointermove', () => {
     seed({ a: hubStation() });

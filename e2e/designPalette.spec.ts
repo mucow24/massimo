@@ -47,6 +47,23 @@ const firstSwatch = (page: Page): Promise<{ name: string; color: string; night?:
     return design!.swatches[0];
   });
 
+/** One palette by name, straight from the doc — what the save just wrote. */
+const paletteNamed = (page: Page, name: string): Promise<unknown> =>
+  page.evaluate((wanted) => {
+    const w = window as unknown as {
+      __massimo: {
+        stores: {
+          doc: {
+            getState: () => {
+              palettes: { name: string; kind?: string; swatches: { name: string; color: string }[] }[];
+            };
+          };
+        };
+      };
+    };
+    return w.__massimo.stores.doc.getState().palettes.find((p) => p.name === wanted) ?? null;
+  }, name);
+
 // Clear of the docked popover (see polygon.spec.ts).
 const CENTER = { x: 560, y: 400 };
 
@@ -102,9 +119,9 @@ test('design palette: author, link a polygon, tweak from the sidebar, detach', a
   // now showing the swatch's colors; the canvas paints its day color.
   await page.mouse.click(CENTER.x, CENTER.y);
   await expect(page.locator('.polygon-popover')).toBeVisible();
-  const fillTrigger = page.getByRole('combobox', { name: 'Fill color palette color' });
+  const fillTrigger = page.getByRole('button', { name: 'Fill color palette color' });
   await fillTrigger.click();
-  await page.getByRole('option', { name: '1', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: '1', exact: true }).click();
   await expect(fillTrigger).toHaveText('1');
   await expect(page.getByRole('button', { name: 'Polygon color', exact: true })).toHaveCount(1);
   expect(await onlyPolygon(page)).toMatchObject({
@@ -162,11 +179,53 @@ test('design palette: author, link a polygon, tweak from the sidebar, detach', a
   // Detach: Custom keeps the colors but drops the link — the next palette
   // tweak leaves the polygon alone.
   await fillTrigger.click();
-  await page.getByRole('option', { name: 'Custom', exact: true }).click();
+  await page.getByRole('menuitemradio', { name: 'Custom', exact: true }).click();
   await expect
     .poll(async () => 'fillRef' in ((await onlyPolygon(page)) as object))
     .toBe(false);
   await setColor(page, 'New design palette 1', '#aa0000');
   // Holding the color it had when it detached — the sync above left it there.
   await expect(page.locator('[data-polygon-id]')).toHaveAttribute('fill', '#112233');
+
+  // Save the detached color back into a palette, through the flyout and the
+  // two name fields the mint asks for. A REAL pointer is the point: jsdom's
+  // zero-size layout defeats Radix's hover-grace polygon, so moving from the
+  // sub trigger onto a flyout item closes the flyout there and the unit tests
+  // drive this by keyboard instead. The chain's focus hand-off is only truly
+  // exercised here too — the second field mounts where the first one stood.
+  await fillTrigger.click();
+  await page.getByRole('menuitem', { name: 'Save color to palette' }).click();
+  await page.getByRole('menuitem', { name: 'New palette…' }).click();
+
+  // The map already carries "New design palette", so the mint counts past it.
+  const paletteName = page.getByRole('textbox', { name: 'Palette name' });
+  await expect(paletteName).toBeFocused();
+  await expect(paletteName).toHaveValue('New design palette 2');
+  await paletteName.fill('Brand');
+  await paletteName.press('Enter');
+
+  const colorName = page.getByRole('textbox', { name: 'Color name' });
+  await expect(colorName).toBeFocused();
+  // The stem is the swatch's ARIA label ("Polygon color"), not the row's
+  // visible one ("Fill color") — four sites label the row just "Color".
+  await expect(colorName).toHaveValue('Polygon color');
+  await colorName.fill('Signal');
+  await colorName.press('Enter');
+
+  // One gesture, both halves: the palette exists carrying the one color, and
+  // the field arrives linked to it — faithful, so no revert badge on a color
+  // that has only just been saved.
+  await expect.poll(() => paletteNamed(page, 'Brand')).toEqual({
+    name: 'Brand',
+    kind: 'design',
+    // BOTH halves: the polygon's night side was never touched by the recolors
+    // above, and the swatch takes the pair the field paints, not its day half.
+    swatches: [{ name: 'Signal', color: '#112233', night: '#bbbbbb' }],
+  });
+  expect(await onlyPolygon(page)).toMatchObject({
+    fill: '#112233',
+    fillRef: { palette: 'Brand', swatch: 'Signal' },
+  });
+  await expect(fillTrigger).toHaveText('Signal');
+  await expect(page.getByRole('button', { name: /^Reset fill/ })).toHaveCount(0);
 });

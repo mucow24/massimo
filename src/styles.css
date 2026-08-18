@@ -167,6 +167,24 @@ body,
   background: #f4f4f4;
 }
 
+/* Every Radix modal layer (a field-select menu, a dialog) carries
+   react-remove-scroll, which locks the page for as long as it is open:
+   `body[data-scroll-locked] { overflow: hidden !important }`. In the narrow
+   window regime that lock DELETES the page's horizontal scrollbar — and the bar
+   is holding up the layout, because the client box is measured net of it and
+   `.app`'s height: 100% hands the loss straight to `.canvas-host`. So opening a
+   menu grew the canvas by a scrollbar's thickness, the viewport re-centred on
+   the taller box, and the map slid half a bar out from under the popover; it
+   slid back on close. Nothing here wants the lock: the page's sideways scroll
+   is toolbar chrome overflow (see .toolbar's min-width), not content, and
+   react-remove-scroll's own wheel handlers still hold a background scroll off
+   regardless of this. Restoring the overflow keeps the bar, and the layout,
+   still. `html body` out-specifies the library's `body[data-scroll-locked]`;
+   `!important` is what its own `!important` costs. */
+html body[data-scroll-locked] {
+  overflow: visible !important;
+}
+
 .canvas-pan-layer > svg text {
   user-select: none;
   -webkit-user-select: none;
@@ -548,6 +566,23 @@ select option {
   width: 72px;
   flex-shrink: 0;
   color: var(--text-muted);
+}
+/* A gated row greys its label to match its disabled controls — the stroke
+   color while the stroke width is 0, or anything on a locked item. Both row
+   shapes carry it: `.row` for the color and segmented rows, and
+   `.options-popover-row` for NumericFieldRow's slider + spinbutton. Not
+   scoped to the style editor: the item popovers and the line inspector gate
+   the same rows, and a black label over greyed controls reads as a bug.
+
+   The spinbutton needs saying explicitly. The author rule above paints every
+   `input[type='number']` with the input tokens, and author origin beats the
+   UA's `input:disabled` greying whatever the specificity — so a disabled
+   number box would otherwise sit at full contrast beside a 45% label and a
+   45% slider, which is the same half-greyed look this rule exists to fix. */
+.row.disabled > label,
+.options-popover-row.disabled > .options-popover-label,
+.options-popover-row.disabled > .options-popover-spin {
+  opacity: 0.45;
 }
 .options-popover-row input[type='range'] {
   flex: 1;
@@ -1838,6 +1873,54 @@ button.field-select > :not(.field-select-caret) {
 .palette-sync-btn {
   margin-left: auto;
 }
+/* The save's inline name field, standing exactly where the dropdown trigger
+   stood. The row is a flex line and that trigger carries `flex: 1`, so this
+   has to as well, or the label and the field drift apart mid-rename. */
+.palette-name-input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+/* The palette-color dropdown holds one row per swatch the map has, so unlike
+   the fixed toolbar menus it is as long as the map is. Cap it to the space
+   Radix reports for its collision boundary (the canvas area) — the same
+   treatment .field-select-panel gives a long option list, for the same reason:
+   a popover near the bottom of the canvas would otherwise open a panel running
+   off it.
+
+   The scroll goes on the swatch list ALONE, not the panel. A Radix submenu
+   renders in place rather than in a portal of its own, so an `overflow`
+   ancestor clips the flyout — Save color to palette has to stay outside the
+   scrolling box. `min-height: 0` is what lets it shrink inside .menu-panel's
+   column flex; without it a flex item floors at its content height and the
+   cap above has nothing to bite on. */
+.palette-color-menu {
+  max-height: var(--radix-dropdown-menu-content-available-height);
+}
+.palette-color-menu .palette-color-scroll {
+  overflow-y: auto;
+  min-height: 0;
+}
+/* The palette a run of swatch rows belongs to. Reads as a heading, not a row:
+   muted, small, and not indented to the items' text the way a menu item is. */
+.menu-panel .menu-group-label {
+  padding: 5px 10px 2px;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+/* A swatch row: the split swatch is the recognizer, the NAME is the point. */
+.menu-panel .palette-color-item {
+  display: flex;
+  align-items: center;
+}
+/* The current one, in the accent — the field-select panel's own checked
+   colour, worn here so the two dropdowns read the same. */
+.menu-panel .menu-item[data-state='checked'] {
+  color: var(--accent);
+}
 
 .tool-group {
   display: inline-flex;
@@ -2106,6 +2189,31 @@ button.field-select > :not(.field-select-caret) {
 }
 .canvas-host.panning .pan-cursor-overlay {
   pointer-events: auto;
+}
+
+/* The map goes inert behind a modal overlay. Radix raises the barrier as
+   `body { pointer-events: none }`, which is enough for the chrome — buttons,
+   rows, fields all INHERIT it — but pointer-events is a per-element property,
+   not a gate, and every hit shape on the canvas states its own value as a
+   presentation attribute (a guide's grab stroke, a station's hit circle, a
+   line's stripe, a polygon's body). The barrier passed straight over all of
+   them: with a colour menu open you could still press the map behind the
+   popover and drag a guide, a station, the whole selection. This restates the
+   barrier at the shapes themselves, where inheritance can't.
+
+   Keyed on `data-aria-hidden` — the marker the `aria-hidden` package (Radix's
+   own) stamps on everything OUTSIDE an open modal layer and removes with it, so
+   it is exactly the "a modal layer is up" signal, and it is unambiguously the
+   library's rather than something the app might set for its own reasons. It
+   also draws the right line: the non-modal panels (toolbar menus, View,
+   Developer, the colour picker) raise no barrier and mark nothing, and the map
+   stays live under them on purpose — you turn a dial and keep working.
+
+   A presentation attribute has no specificity, so this wins without
+   `!important`; the descendant `*` is what reaches the nested hit shapes. */
+.canvas-host[data-aria-hidden='true'] .canvas-pan-layer > svg,
+.canvas-host[data-aria-hidden='true'] .canvas-pan-layer > svg * {
+  pointer-events: none;
 }
 
 /* Line-editor click priority: while editing a line's stops (Edit Stops), the
@@ -3507,11 +3615,6 @@ input.palette-color-name {
   color: var(--text);
   font-weight: 700;
   font-size: var(--fs-small);
-}
-/* A gated row (stroke color/align while the stroke width is 0): grey the
-   label to match its disabled controls (button:disabled is 0.45 opacity). */
-.style-editor .row.disabled > label {
-  opacity: 0.45;
 }
 .style-editor .row select {
   flex: 1;

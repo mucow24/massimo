@@ -296,15 +296,16 @@ export const STYLE_FIELDS = {
 //
 // `sameRefWins` picks which question is being asked: the OVERRIDE reading
 // folds a matching link into agreement, the LITERAL reading carries on to the
-// values. Returns null for "no verdict — compare the values".
+// values. Returns null for "no verdict — compare the values", which is also
+// the answer for a field no ref rides.
 const refVerdict = (
+  kind: ItemStyleKind,
   field: string,
   a: Record<string, unknown>,
   b: Record<string, unknown>,
-  pairs: Record<string, string>,
   sameRefWins: boolean,
 ): boolean | null => {
-  const refKey = pairs[field];
+  const refKey = REF_KEY_OF_FIELD[kind]?.[field];
   if (refKey === undefined) return null;
   const ra = a[refKey] as SwatchRef | undefined;
   const rb = b[refKey] as SwatchRef | undefined;
@@ -312,11 +313,12 @@ const refVerdict = (
   return sameRefWins && ra !== undefined ? true : null;
 };
 
-// The ref-covered pairs per kind: refKey → the value halves it rides. Drives
-// the write rule in updateStyleProps and the ref bundling in stampStyleFields;
-// the fold into equality is spelled per-kind in styleFieldEqual (and
-// dotStylesEqual owns the stopDot fold).
-const STYLE_REF_PAIRS: Partial<
+// The ref-covered pairs per kind: refKey → the value halves it rides. The one
+// place that mapping is written down — it drives the write rule in
+// updateStyleProps, the ref bundling in stampStyleFields, and (through
+// REF_KEY_OF_FIELD below) the fold into equality. dotStylesEqual owns the
+// stopDot fold, structurally, so that kind's entry serves only the first two.
+export const STYLE_REF_PAIRS: Partial<
   Record<StyleKind, readonly (readonly [string, readonly string[]])[]>
 > = {
   line: [['strokeColorRef', ['strokeColor']]],
@@ -336,6 +338,18 @@ const STYLE_REF_PAIRS: Partial<
   ],
 };
 
+// The same table read the other way — value half → the ref riding it — which
+// is the direction the equality fold asks in (it is handed a field and needs
+// that field's ref). Derived rather than spelled a second time: a pair added
+// above is folded here with no second edit, and the two can't drift into a
+// linked field that reads as overridden on every wearer.
+const REF_KEY_OF_FIELD: Partial<Record<StyleKind, Record<string, string>>> = Object.fromEntries(
+  Object.entries(STYLE_REF_PAIRS).map(([kind, pairs]) => [
+    kind,
+    Object.fromEntries((pairs ?? []).flatMap(([refKey, halves]) => halves.map((h) => [h, refKey]))),
+  ]),
+);
+
 function styleFieldEqual(
   kind: ItemStyleKind,
   field: string,
@@ -343,10 +357,14 @@ function styleFieldEqual(
   b: Record<string, unknown>,
   sameRefWins: boolean,
 ): boolean {
+  // The LINK is asked first, for every kind: where both sides name the same
+  // swatch it is the whole answer and the values below are never reached. A
+  // field no ref rides returns null and falls through.
+  const verdict = refVerdict(kind, field, a, b, sameRefWins);
+  if (verdict !== null) return verdict;
+
   if (kind === 'line') {
     if (field === 'strokeColor') {
-      const verdict = refVerdict(field, a, b, { strokeColor: 'strokeColorRef' }, sameRefWins);
-      if (verdict !== null) return verdict;
       return lineStrokeColorsEqual(
         a.strokeColor as LineStyleProps['strokeColor'],
         b.strokeColor as LineStyleProps['strokeColor'],
@@ -361,17 +379,6 @@ function styleFieldEqual(
   }
   if (kind === 'transfer') {
     if (field === 'color' || field === 'strokeColor') {
-      const verdict = refVerdict(
-        field,
-        a,
-        b,
-        {
-          color: 'colorRef',
-          strokeColor: 'strokeColorRef',
-        },
-        sameRefWins,
-      );
-      if (verdict !== null) return verdict;
       return dayNightColorsEqual(
         a[field] as TransferStyleProps['color'],
         b[field] as TransferStyleProps['color'],
@@ -381,30 +388,7 @@ function styleFieldEqual(
       return (a.draw ?? TRANSFER_DRAW_DEFAULT) === (b.draw ?? TRANSFER_DRAW_DEFAULT);
     }
   }
-  if (kind === 'polygon') {
-    const verdict = refVerdict(
-      field,
-      a,
-      b,
-      {
-        fill: 'fillRef',
-        darkFill: 'fillRef',
-        stroke: 'strokeRef',
-        darkStroke: 'strokeRef',
-      },
-      sameRefWins,
-    );
-    if (verdict !== null) return verdict;
-  }
   if (kind === 'textLabel') {
-    const verdict = refVerdict(
-      field,
-      a,
-      b,
-      { color: 'colorRef', darkColor: 'colorRef' },
-      sameRefWins,
-    );
-    if (verdict !== null) return verdict;
     // Absent ≡ auto/neutral: a def from a save predating layout coverage
     // must compare equal to one carrying the explicit defaults, or every
     // wearer reads as overridden before the average backfill lands.

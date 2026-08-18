@@ -42,21 +42,50 @@ describe('<TransferPopover />', () => {
   it('lays out the controls top-to-bottom with a divider between body and stroke', () => {
     const { container } = renderPopover();
     const body = container.querySelector('.transfer-popover .body') as HTMLElement;
-    const sequence = Array.from(body.children).map((child) =>
-      child.tagName === 'HR' ? 'divider' : (child.querySelector('label')?.textContent ?? 'footer'),
-    );
+    const sequence = Array.from(body.children).map((child) => {
+      if (child.tagName === 'HR') return 'divider';
+      const label = child.querySelector('label');
+      // A themed color field is TWO rows: the palette dropdown carries the
+      // name, and the day/night pair reveals beneath it blank-labelled.
+      return label ? label.textContent || 'pair' : 'footer';
+    });
     expect(sequence).toEqual([
       'Style',
       'divider',
       'Thickness',
       'Color',
+      'pair',
       'divider',
       'Stroke width',
       'Stroke color',
+      'pair',
       'divider',
       'Draw',
       'footer',
     ]);
+  });
+
+  it('greys the stroke color while the stroke width is 0', () => {
+    const setWidth = (strokeWidth: number) =>
+      useDoc.setState({
+        transfers: {
+          ...useDoc.getState().transfers,
+          x1: { ...useDoc.getState().transfers['x1'], strokeWidth },
+        },
+      });
+
+    setWidth(0);
+    const { unmount } = renderPopover();
+    // Greyed, not gone — the row holds its place while the width slides
+    // through 0. Draw stays live: it orders the body, not just the halo.
+    expect(screen.getByLabelText('Transfer stroke color')).toBeDisabled();
+    expect(screen.getByLabelText('Transfer dark stroke color')).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Draw' })).toBeEnabled();
+    unmount();
+
+    setWidth(2);
+    renderPopover();
+    expect(screen.getByLabelText('Transfer stroke color')).toBeEnabled();
   });
 
   it('shows the effective draw rung and lists all four, bottom-up', async () => {
@@ -93,6 +122,17 @@ describe('<TransferPopover />', () => {
     );
     expect(await openColorField(user, 'Transfer color')).toHaveValue('#000000');
     await user.keyboard('{Escape}');
+    // The factory stroke is 0-width, so its color row is greyed and there is
+    // no picker to open. The white it would paint is pinned in the next test.
+    expect(screen.getByLabelText('Transfer stroke color')).toBeDisabled();
+  });
+
+  it('the effective stroke color is white once the transfer has a stroke', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({
+      transfers: { ...useDoc.getState().transfers, x1: makeTransfer({ id: 'x1', strokeWidth: 1 }) },
+    });
+    renderPopover();
     expect(await openColorField(user, 'Transfer stroke color')).toHaveValue('#ffffff');
   });
 
@@ -133,6 +173,11 @@ describe('<TransferPopover />', () => {
 
   it('editing the DAY color swatch writes that half; the night half stays at its effective value', async () => {
     const user = userEvent.setup();
+    // A stroke, so the second half of this test has a live stroke-color row
+    // to edit — the factory transfer's is 0-width and therefore greyed.
+    useDoc.setState({
+      transfers: { ...useDoc.getState().transfers, x1: makeTransfer({ id: 'x1', strokeWidth: 1 }) },
+    });
     renderPopover();
     await setColorField(user, 'Transfer color', '#ff0080');
     // Day takes the new color; night tracked the default (#000000) and is kept.

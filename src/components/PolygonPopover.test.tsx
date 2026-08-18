@@ -36,23 +36,55 @@ describe('<PolygonPopover />', () => {
     const { container } = renderPopover();
     const body = container.querySelector('.polygon-popover .body') as HTMLElement;
     // Map each body row to a token: dividers to 'divider', control rows to their
-    // label text, the footer (no label) to 'footer'. Locks order + divider spots.
-    const sequence = Array.from(body.children).map((child) =>
-      child.tagName === 'HR' ? 'divider' : (child.querySelector('label')?.textContent ?? 'footer'),
-    );
+    // label text, a blank-labelled color reveal to 'pair', the footer (no label)
+    // to 'footer'. Locks order + divider spots.
+    const sequence = Array.from(body.children).map((child) => {
+      if (child.tagName === 'HR') return 'divider';
+      const label = child.querySelector('label');
+      // A themed color field is TWO rows: the palette dropdown carries the
+      // name, and the day/night pair reveals beneath it blank-labelled.
+      return label ? label.textContent || 'pair' : 'footer';
+    });
     expect(sequence).toEqual([
       'Style',
       'divider',
       'Fill color',
+      'pair',
       'divider',
-      'Stroke color',
       'Stroke width',
+      'Stroke color',
+      'pair',
       'divider',
       'Curve radius',
       'Closed',
       'Layer',
       'footer',
     ]);
+  });
+
+  it('greys the stroke color while the stroke width is 0', () => {
+    useDoc.setState({
+      polygons: {
+        ...useDoc.getState().polygons,
+        p0: { ...useDoc.getState().polygons['p0'], strokeWidth: 0 },
+      },
+    });
+    const { unmount } = renderPopover();
+    // Greyed, not gone — the row holds its place while the width slides
+    // through 0. The fill above it stays live: it is not the stroke's.
+    expect(screen.getByRole('button', { name: 'Stroke color' })).toBeDisabled();
+    expect(screen.getByLabelText('Dark mode stroke color')).toBeDisabled();
+    expect(screen.getByLabelText('Polygon color')).toBeEnabled();
+    unmount();
+
+    useDoc.setState({
+      polygons: {
+        ...useDoc.getState().polygons,
+        p0: { ...useDoc.getState().polygons['p0'], strokeWidth: 2 },
+      },
+    });
+    renderPopover();
+    expect(screen.getByRole('button', { name: 'Stroke color' })).toBeEnabled();
   });
 
   it('renders fill + stroke color pickers, a 0–10 stroke-width control, and Delete', async () => {
@@ -204,7 +236,7 @@ describe('<PolygonPopover />', () => {
     expect(screen.getByLabelText('Polygon color')).toBeDisabled();
     expect(screen.getByLabelText('Dark mode color')).toBeDisabled();
     // Everything stroke-related (and the checkbox itself) remains editable.
-    expect(screen.getByLabelText('Stroke color')).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Stroke color' })).toBeEnabled();
     expect(screen.getByLabelText('Dark mode stroke color')).toBeEnabled();
     expect(screen.getByRole('slider', { name: 'Stroke width' })).toBeEnabled();
     expect(screen.getByRole('slider', { name: 'Curve radius' })).toBeEnabled();
@@ -241,7 +273,7 @@ describe('<PolygonPopover />', () => {
     // All four color pickers (light + dark, fill + stroke) are disabled too.
     expect(screen.getByLabelText('Polygon color')).toBeDisabled();
     expect(screen.getByLabelText('Dark mode color')).toBeDisabled();
-    expect(screen.getByLabelText('Stroke color')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Stroke color' })).toBeDisabled();
     expect(screen.getByLabelText('Dark mode stroke color')).toBeDisabled();
     // The unlock control remains usable.
     const unlock = screen.getByRole('button', { name: 'Unlock polygon' });

@@ -30,7 +30,7 @@ import { useFieldHistory } from '../useFieldHistory';
 import { usePersistedTextareaHeight } from '../usePersistedTextareaHeight';
 import { useNumericField } from '../useNumericField';
 import { useDismiss } from '../usePopover';
-import { cleanFloat } from '../../util/grid';
+import { roundMeasurement } from '../../geometry/snap';
 import {
   FONT_SIZE_STEP,
   LABEL_FONT_SIZE_MAX,
@@ -123,20 +123,23 @@ export function StationInspector({ id }: { id: StationId }) {
   };
   // useNumericField (not bare inputs): its text mirror ignores an emptied
   // field mid-edit — Number('') === 0 would teleport the station to the axis.
-  // `cleanFloat`, not Math.round: a station lands wherever its drag/snap put
-  // it, so the box must not claim a whole-unit position the doc doesn't hold —
-  // and this value feeds the wheel's `getCurrent`, where rounding first would
-  // quantize the station for real on the next notch. The whole-unit step is
-  // what the wheel and the arrows move by.
+  // `roundMeasurement`: a station lands wherever its drag/snap put it, and a
+  // box reciting all of 120.437291 back is noise — these are readings, in the
+  // one-decimal register every live measurement speaks (the guide popover's
+  // boxes, the snap chips). The doc keeps the full position behind them. The
+  // rounding covers `getCurrent` too, so a wheel notch steps from the number on
+  // screen rather than from a value a tenth away — otherwise a notch can write
+  // a change the box has no way to show. The whole-unit step is what the wheel
+  // and the arrows move by.
   const xField = useNumericField(
-    cleanFloat(pivot.x),
+    roundMeasurement(pivot.x),
     (n) => moveStationPivotTo(id, n, livePivot().y),
-    () => cleanFloat(livePivot().x),
+    () => roundMeasurement(livePivot().x),
   );
   const yField = useNumericField(
-    cleanFloat(pivot.y),
+    roundMeasurement(pivot.y),
     (n) => moveStationPivotTo(id, livePivot().x, n),
-    () => cleanFloat(livePivot().y),
+    () => roundMeasurement(livePivot().y),
   );
   const stopRowsRef = useRef<HTMLDivElement | null>(null);
 

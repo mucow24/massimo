@@ -126,6 +126,8 @@ export function TransferPopover({ transfer, hostW, onClose }: Props) {
           />
         }
       />
+      {/* Greyed at width 0 — a halo nobody paints has no color to pick. Draw
+          below is NOT gated: it orders the whole transfer, body included. */}
       <PaletteColorRow
         label="Stroke color"
         id="transfer-stroke-color"
@@ -136,6 +138,7 @@ export function TransferPopover({ transfer, hostW, onClose }: Props) {
         value={style.strokeColor.day}
         darkValue={style.strokeColor.night}
         swatchRef={transfer.strokeColorRef}
+        disabled={style.strokeWidth === 0}
         onChange={(day) =>
           updateTransferStyle(transfer.id, {
             strokeColor: { day, night: style.strokeColor.night },

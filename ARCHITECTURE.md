@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `9b1dde2` (2026-08-16, #524) — verified against the live source.** This
+**Up to date as of commit `4e51da3` (2026-08-18, #529) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -266,9 +266,11 @@ src/
     MapVersionPill.tsx          # the live doc's version + save-status dot, beside the map name
     *Popover.tsx                # on-canvas item editors
     DayNightColorRow.tsx        # shared label + light/dark ColorField pair — the plain half of…
-    PaletteColorRow.tsx         # …the palette-aware themed-color row every pair site mounts:
-                                #   linked = swatch dropdown (split swatch + NAME), Custom = the
-                                #   pair reveals; plain row when the map has no design palettes
+    PaletteColorRow.tsx         # …the palette-aware themed-color row every pair site mounts: a
+                                #   swatch MENU (split swatch + NAME, plus Custom) over the
+                                #   revealed pair, Reset/Sync beside it while linked, and Save
+                                #   color to palette at its foot — a flyout of the design
+                                #   palettes, or one named on the spot
     SegmentedToggle.tsx         # the ONE pick-one control (~16 inline Radix ToggleGroup clusters)
     FieldSelectContent.tsx      # shared Radix Select panel: portals popover Selects to .app (escapes
                                 #   the .canvas-host isolate layer) + bounds/scrolls a long list
@@ -553,7 +555,16 @@ its swatch's `(color, night ?? color)` — over EFFECTIVE values, since transfer
 casing collapse their stored form at a constant default — but it is ALLOWED to diverge, and that
 divergence is the feature: recoloring a linked field in place leaves the link standing and the
 field painting its own color, which the picker offers to Reset (back to the swatch) or Sync (the
-swatch to it). What still detaches is a value written WITHOUT its ref key, the write rule hosted by
+swatch to it). At the foot of the same dropdown, in both states, stands **Save color to palette**:
+a flyout of the map's design palettes plus one named on the spot, and behind whichever is chosen,
+an inline name field. Nothing reaches the doc until that name commits, so backing out leaves the
+map untouched — and the mint runs two fields in turn, the palette's then the color's. The typed
+name is what decides the outcome, as a style name does one level up: a name the palette already
+holds REDEFINES that swatch (carrying its faithful wearers along), any other name appends one,
+which is what makes saving a copy of a linked color reachable. The swatch and the field's link go
+in under one history group. So a swatch is not born only in the palette surfaces; any color row
+can make one.
+What still detaches is a value written WITHOUT its ref key, the write rule hosted by
 `updateLine`/`updatePolygon`/`updateTextLabel`/`updateTransferStyle`/`updateStyleProps` and
 `setLineStrokeColor`'s ref param — so a picker edit on a linked field must carry the ref along, or
 the field silently falls back to Custom.
@@ -2705,13 +2716,16 @@ and the rings and thins the line and its chip. Ambient chrome at engagement volu
 that never happened, and it out-shouts the very thing the span measures FROM. Every live measurement
 readout — those guide labels, the Ctrl-drag spacing, the engaged guide's coordinate chip, the
 circle-diameter chip — speaks one format, `formatMeasurement`: one decimal place, the trailing
-`.0` kept so a number never changes width as a drag crosses a unit boundary. A span with an end off
-screen keeps its label on the part you can SEE, rather than at the true midpoint — zoomed in the
-far end sits several viewports away (a guide's parallel neighbour routinely does), which would
-hide the number exactly when the span is longest. The canvas hands every `SnapGuides` mount one
-box a label must land inside: the visible viewBox minus the strip the sidebar floats over, since
-that panel covers the canvas rather than shrinking it and a label clamped under it is no more
-readable than one off screen. A span already inside that box is never moved.
+`.0` kept so a number never changes width as a drag crosses a unit boundary. The coordinate
+editors' boxes (a guide's Y/Length, a station's X/Y) read in the same register without calling it:
+a numeric field pads its own text to its step's decimals, so they take the value instead,
+`roundMeasurement`. A span with an end off screen keeps its label on the part you can SEE, rather
+than at the true midpoint — zoomed in the far end sits several viewports away (a guide's parallel
+neighbour routinely does), which would hide the number exactly when the span is longest. The
+canvas hands every `SnapGuides` mount one box a label must land inside: the visible viewBox minus
+the strip the sidebar floats over, since that panel covers the canvas rather than shrinking it and
+a label clamped under it is no more readable than one off screen. A span already inside that box
+is never moved.
 
 **Alignment guides are a target class of their own, ALWAYS ON.** Both snappers take
 `guideTargets` (`GuideTarget[]` — a guide is a ready-made alignment axis, H, V, or 45°, at its
@@ -3375,13 +3389,19 @@ div in `.canvas-host`, always mounted and always laid out, whose `pointer-events
 (`.canvas-host.panning`, marked imperatively by `useViewport`). It must not be expressed as a
 cursor rule at or above the map svg, and it must not be mounted on demand. `cursor` is
 **inherited**, so a rule whose subject is the svg restyles every one of its ~15k descendants; and
-`display`/`visibility` are paint changes, which re-run the compositing update over the whole
-layer. `pointer-events` paints nothing, so it is the only free switch. On a 464-station map the
-difference is 22ms a press against a 0.3ms floor. Pointer routing is unaffected either way — the
-svg holds pointer capture for the whole gesture. Pinned by
-[panLayer.spec.ts](e2e/panLayer.spec.ts), which asserts `elementFromPoint` still lands on the
-overlay mid-pan (without that, the latency is trivially "won" by dropping the cursor) and by
-[MapCanvas.panStart.test.tsx](src/components/MapCanvas.panStart.test.tsx).
+`display` would have to BUILD this element's box on every press, measured at ~22ms on a
+464-station map against a 0.3ms floor. `pointer-events` changes neither box nor paint, so it is
+the free switch. The expensive event is the box, not the paint — repainting a box already there
+(`visibility`, `opacity`, a color) measures ~1–2ms — which generalizes into the rule for all
+canvas chrome: **keep it mounted and change its paint, never mount on demand**. The escapes that
+sound plausible are both closed: promoting a piece of chrome to its own compositing layer
+(`will-change`) moves the cost nowhere, and lifting it out of `.canvas-pan-layer` buys ~1ms. See
+[.perf/e2e/perf-chrome-layer.spec.ts](.perf/e2e/perf-chrome-layer.spec.ts), which ablates every
+way of making chrome appear and screenshots each arm to prove the change reached the screen.
+Pointer routing is unaffected either way — the svg holds pointer capture for the whole gesture.
+Pinned by [panLayer.spec.ts](e2e/panLayer.spec.ts), which asserts `elementFromPoint` still lands
+on the overlay mid-pan (without that, the latency is trivially "won" by dropping the cursor) and
+by [MapCanvas.panStart.test.tsx](src/components/MapCanvas.panStart.test.tsx).
 
 `screenToWorld` reads the **live** viewport and measures the **host** box (`.canvas-host` — the
 svg's own rect rides the pan transform, so measuring it would double-count the gesture); the
@@ -3576,7 +3596,12 @@ never scrolls or shrinks), so a narrower window scrolls the PAGE sideways and th
 leaves the window. The horizontal scrollbar that raises would bury the grid's bottom stripe —
 the lower-left guide well — if the app were `100vh` tall; `.app` sizes by `height: 100%`
 instead, which (unlike `vh`) subtracts window scrollbars, so the grid ends where the bar begins
-(toolbarOverflow e2e pins both the scroll split and the height mechanism).
+(toolbarOverflow e2e pins both the scroll split and the height mechanism). That makes the bar
+**load-bearing for the canvas's height**, so anything that deletes it moves the map: every Radix
+modal layer carries a react-remove-scroll page lock, and `html body[data-scroll-locked] { overflow:
+visible !important }` is what stops that lock from taking the bar — without it, opening a menu
+grew the host by a scrollbar and slid the map half a bar out from under the popover
+([modalMenu.spec.ts](e2e/modalMenu.spec.ts)).
 
 The **anchor is in window coordinates and `PopoverShell` is `position: fixed`**, which is what
 makes that stable — `useDock` owns the measurement, shared with the routing-warning toasts that
@@ -3594,6 +3619,17 @@ uiMode excursions, keeping its DOM node and measured width. Every popover render
 `PopoverShell`, which owns the floating frame (header + body) and the load-bearing event
 swallowing — pointerdown/click/contextmenu inside a popover must never reach the canvas, which
 would deselect the item (closing the popover) or right-click-rotate under it.
+
+A **modal** overlay opened from one — a `field-select` menu, a dialog — has to go further: the
+map BEHIND it must take no pointers at all. Radix raises that barrier as `body { pointer-events:
+none }`, which suffices for the chrome (buttons, rows and fields inherit it) but passes straight
+over the canvas, because `pointer-events` is a per-element property rather than a gate and every
+hit shape states its own value as a presentation attribute. So the barrier is restated at the
+shapes, keyed on the `data-aria-hidden` marker the `aria-hidden` package stamps on everything
+outside an open modal layer: `.canvas-host[data-aria-hidden='true'] .canvas-pan-layer > svg *`
+drops to `pointer-events: none`. That marker is also the right line to draw — the **non-modal**
+panels (toolbar menus, View, Developer, `ColorField`'s picker) raise no barrier and mark nothing,
+and the map stays live under them deliberately.
 
 The dock **re-measures when one of its inputs changes** — the element it reads from, which can
 attach a commit late, or the box being docked into — and never merely because a commit happened.
@@ -3924,8 +3960,13 @@ same three additions.
   code, color palette, style row, default dot type + **two** separate sizes — singleton and
   interchange, line width, **interline gap**, curve radius, **line ends**, stroke width/color,
   **dash length/width**) over a Delete-only `PopoverFooter` (lines have no `locked` field;
-  Delete also exits the mode). The stroke color renders only while the stroke width is non-zero
-  — a 0-width casing has no color to pick. (What shows inside a branch mouth is not here at
+  Delete also exits the mode). The stroke color **greys out rather than vanishing** while the
+  stroke width is zero — a 0-width casing has no color to pick, but the row sits directly under
+  the slider that gates it and must not evaporate under the hand mid-drag. The dash dims are the
+  other kind of gate and still **render only** while a dash dot is in use (line default, or any
+  member stop's override): a dot-type picker flips them, not a slider above them, so nothing can
+  reflow and an always-mounted pair would sit inert on every map without TfL ticks. (What shows
+  inside a branch mouth is not here at
   all: that is a per-junction region choice, painted in Layering mode.) Identity
   (name/service/color) and the Style picker always show; everything from **Line width → Stroke
   color** collapses into a style-detail section so the panel stays compact while editing stops,
@@ -4078,6 +4119,16 @@ same three additions.
   unmount, as a safety net); `useNumericField` wraps it with a local text mirror, a focus guard,
   and wheel-to-increment off the live value. `NumericFieldRow` pairs a slider + spinbutton sharing
   one group so a drag + typing collapse to one undo entry.
+- **Gating a row**: a control the current state makes inert **greys out in place** rather than
+  disappearing, so the stack never reflows under the very slider that gates it — the stroke
+  color at width 0, and anything on a `locked` item. Both row shapes cooperate: `.row` (color and
+  segmented rows) and `.options-popover-row` (`NumericFieldRow`) each take a `disabled` prop and
+  add a matching `disabled` class, which is what greys the label and the spinbutton — neither is
+  reached by the UA's `input:disabled` styling, since the global `input[type='number']` rule wins
+  on origin. Rows gated by something a drag can't touch (the dash dims, behind a dot-type picker)
+  are **hidden** instead; so is a whole section the shape makes meaningless (a `dash` stop dot's
+  stroke block, swapped for a caption), and `ColorTypeRow`'s swatch row, revealed only at
+  `type === 'color'`.
 - **`StationNameEditor`** opens on **shift+double-click** on the canvas (plain double-click is the
   layout editor), and intercepts Ctrl+Z itself — native input undo would creep the doc back
   one char per press; it commits the rename group, runs doc-level undo/redo, then closes.
@@ -4335,7 +4386,14 @@ downstream luminance / `rgba()` math.
   The CONTROLS do the gridding: `stepFromValue` moves the wheel one step along the grid anchored
   at the field's `min`, **landing on** that grid from an off-grid value (10.2 → 10.25 → 10.5)
   rather than carrying the offset along — the behaviour native `<input type=number>`
-  stepUp/stepDown and Radix's slider keys already have, so wheel, arrows and spinner agree.
+  stepUp/stepDown and Radix's slider keys already have, so wheel, arrows and spinner agree. That
+  agreement needs the input's `min` attribute, which doubles as the HTML step base: without one
+  the base is the box's own value (React writes it to the content attribute) and the arrows walk
+  a grid of their own. The **coordinate editors** are the one place a box shows a number the doc
+  does not hold: a station's X/Y and a guide's Y/Length are READINGS of a dragged position, so
+  they round onto the one-decimal measurement register (`roundMeasurement`) and their wheel steps
+  from that reading — stepping from the stored value lets a notch write a change the box cannot
+  show. Typing is unaffected; what you type is still what the doc gets.
   `snapToStep` survives for exactly one job: a POINTER gesture that wants a grid (the line-circle
   radius drag and the ghost ring previewing its drop, via `snapDraggedLineCircleRadius`). Rounding
   a typed value onto the step grid is what made a Size box swallow 10.2, 10.3 and 10.35 and then
@@ -4660,11 +4718,15 @@ Each is confirmed in source/tests; file pointers included.
   (`.perf/mta-v23.massimo.json`, 464 stations — the single exception to the no-maps-in-repo rule,
   because the numbers cannot be reproduced without a real map's crossing density; override with
   `PERF_MAP`). `npm run perf:check` (`tsc -p tsconfig.perf.json`) type-checks the harness and is the
-  only thing about it a gate touches. It is carried in the repo because the previous optimization
-  run's harnesses died untracked with their worktree and cost more to rebuild than the optimization
-  itself; `.perf/README.md` + `RESULTS.md` record what each measures and the wasm-leak finding
-  behind the Developer pane's counters — a real leak, though the symptom that motivated hunting it
-  was retracted as machine GPU-mode switching.
+  only thing about it a gate touches. **A number is only comparable to one measured under the same
+  CPU power mode and rendering medium** — the swing between modes is a large factor and the mode
+  varies between sessions, so the configs stamp both at the top of every run (`.perf/powerMode.ts`,
+  `.perf/gpuInfo.ts`) and a carried-over figure must be re-measured before it is compared against a
+  fresh one. It is carried in the repo because the previous optimization run's harnesses died
+  untracked with their worktree and cost more to rebuild than the optimization itself;
+  `.perf/README.md` + `RESULTS.md` record what each measures and the wasm-leak finding behind the
+  Developer pane's counters — a real leak, though the symptom that motivated hunting it was
+  retracted as machine GPU-mode switching.
 - **Known gaps** (per the deep-dive): no pixel/visual golden for the merged-dot-border result;
   `MapCanvas`'s full pointer fan-out is only tested per-hook. (`Transfer`/`RouteBullet`/`LineTag`
   round-trips now live in `serialize.entities.test.ts`.)

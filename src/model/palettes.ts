@@ -13,6 +13,7 @@
 // lists palettes by name.
 
 import { normalizeHex } from '../util/color';
+import type { DayNightColor } from './types';
 
 export interface PaletteSwatch {
   name: string;
@@ -501,6 +502,52 @@ export function withDuplicatedSwatch(
  *  last row's delete rather than emptying a palette). */
 export function withoutSwatch(swatches: readonly PaletteSwatch[], index: number): PaletteSwatch[] {
   return swatches.filter((_, i) => i !== index);
+}
+
+/**
+ * One swatch appended carrying a day/night PAIR, under the first free "<stem>",
+ * "<stem> 2", … — the color pickers' Save to palette. It sits with the other
+ * list edits so what a saved color is called, and how its halves collapse,
+ * cannot drift from what the rest of the palette surfaces do.
+ *
+ * The assigned name comes back too, read off the appended entry AFTER the
+ * uniqueness pass rather than trusting the one it asked for. The caller is
+ * about to hand that name out as a swatch REF, and a palette already carrying
+ * duplicate names (a hand-edited file) renames as it dedupes — which can push
+ * the new swatch off the name it was given, leaving the ref pointing at
+ * nothing.
+ */
+export function withNamedSwatch(
+  swatches: readonly PaletteSwatch[],
+  stem: string,
+  pair: DayNightColor,
+): { swatches: PaletteSwatch[]; name: string } {
+  const day = normalizeHex(pair.day);
+  const night = normalizeHex(pair.night);
+  const asked = freshPaletteName(new Set(swatches.map((s) => s.name)), stem);
+  const next = uniqueSwatchNames([
+    ...swatches,
+    // The collapse invariant: night stored only while it differs from day.
+    { name: asked, color: day, ...(night !== day && { night }) },
+  ]);
+  return { swatches: next, name: next[next.length - 1].name };
+}
+
+/**
+ * The swatch already painting `pair`, if any — both halves compared through
+ * `normalizeHex`, an absent `night` reading as day. Save to palette links to
+ * this rather than appending: two swatches under one color are two names for
+ * one thing, and a palette that accumulates them says less, not more.
+ */
+export function matchingSwatch(
+  swatches: readonly PaletteSwatch[],
+  pair: DayNightColor,
+): PaletteSwatch | undefined {
+  const day = normalizeHex(pair.day);
+  const night = normalizeHex(pair.night);
+  return swatches.find(
+    (s) => normalizeHex(s.color) === day && normalizeHex(s.night ?? s.color) === night,
+  );
 }
 
 /**
