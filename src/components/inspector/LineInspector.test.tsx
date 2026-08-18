@@ -690,11 +690,13 @@ describe('<LineInspector /> — stroke controls', () => {
     expect(useDoc.getState().lines.L1.strokeColor).toEqual({ day: '#00aa55', night: '#0000ff' });
   });
 
-  it('hides the stroke color until there is a stroke to draw', () => {
+  it('greys the stroke color while there is no stroke to draw', () => {
     seed(); // width 0
     render(<LineInspector id="L1" />);
-    expect(screen.queryByLabelText('Stroke color')).toBeNull();
-    expect(screen.queryByLabelText('Dark mode stroke color')).toBeNull();
+    // Greyed, not gone — the row holds its place so the panel doesn't reflow
+    // while the width slides through 0 (the stopDot editor's rule).
+    expect(screen.getByLabelText('Stroke color')).toBeDisabled();
+    expect(screen.getByLabelText('Dark mode stroke color')).toBeDisabled();
   });
 
   it('one slider focus-arc collapses to a single undo entry', () => {
@@ -771,7 +773,7 @@ describe('<LineInspector /> — collapsible style detail', () => {
   });
 
   it('orders the expanded stack: geometry, dots (with header), then the stroke', () => {
-    // A casing width, so the stroke's colour row renders.
+    // A casing width, so the stroke's colour row is live rather than greyed.
     seed({ strokeWidth: 4 });
     expandStyleDetail();
     render(<LineInspector id="L1" />);
@@ -792,36 +794,36 @@ describe('<LineInspector /> — collapsible style detail', () => {
     }
   });
 
-  it('dash rows render only while a dash dot is in use (line default or stop override)', () => {
+  it('greys the dash rows unless a dash dot is in use (line default or stop override)', () => {
     seed();
     expandStyleDetail();
     const { unmount } = render(<LineInspector id="L1" />);
-    expect(screen.queryByRole('slider', { name: 'Dash length' })).toBeNull();
-    expect(screen.queryByRole('slider', { name: 'Dash width' })).toBeNull();
+    expect(screen.getByRole('spinbutton', { name: 'Dash length' })).toBeDisabled();
+    expect(screen.getByRole('spinbutton', { name: 'Dash width' })).toBeDisabled();
     unmount();
 
     // Line-level default: the singleton case is dash.
     seed({ singletonDotStyle: DOT_SHAPE_PRESETS.dash });
     const second = render(<LineInspector id="L1" />);
-    expect(screen.getByRole('slider', { name: 'Dash length' })).toBeInTheDocument();
+    expect(screen.getByRole('spinbutton', { name: 'Dash length' })).toBeEnabled();
     second.unmount();
 
     // Per-stop override on a member stop, with non-dash line defaults.
     seed({}, { dotStyle: DOT_SHAPE_PRESETS.dash });
     render(<LineInspector id="L1" />);
-    expect(screen.getByRole('slider', { name: 'Dash width' })).toBeInTheDocument();
+    expect(screen.getByRole('spinbutton', { name: 'Dash width' })).toBeEnabled();
   });
 
-  it('the stroke color row renders only while the stroke width is > 0', () => {
+  it('greys the stroke color row while the stroke width is 0', () => {
     seed();
     expandStyleDetail();
     const { unmount } = render(<LineInspector id="L1" />);
-    expect(screen.queryByText('Stroke color')).toBeNull();
+    expect(screen.getByLabelText('Stroke color')).toBeDisabled();
     unmount();
 
     seed({ strokeWidth: 2 });
     render(<LineInspector id="L1" />);
-    expect(screen.getByText('Stroke color')).toBeInTheDocument();
+    expect(screen.getByLabelText('Stroke color')).toBeEnabled();
   });
 });
 

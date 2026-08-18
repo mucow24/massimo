@@ -3922,8 +3922,10 @@ same three additions.
   code, color palette, style row, default dot type + **two** separate sizes — singleton and
   interchange, line width, **interline gap**, curve radius, **line ends**, stroke width/color,
   **dash length/width**) over a Delete-only `PopoverFooter` (lines have no `locked` field;
-  Delete also exits the mode). The stroke color renders only while the stroke width is non-zero
-  — a 0-width casing has no color to pick. (What shows inside a branch mouth is not here at
+  Delete also exits the mode). Rows whose switch is off **grey out rather than vanish** — the
+  stroke color while the stroke width is zero (a 0-width casing has no color to pick), the dash
+  dims unless a dash dot is in use — which is how every editor in the app gates a row, so the
+  stack never reflows under a slider mid-drag. (What shows inside a branch mouth is not here at
   all: that is a per-junction region choice, painted in Layering mode.) Identity
   (name/service/color) and the Style picker always show; everything from **Line width → Stroke
   color** collapses into a style-detail section so the panel stays compact while editing stops,

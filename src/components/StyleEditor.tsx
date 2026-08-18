@@ -254,25 +254,24 @@ function LineStyleEditor({ id, props }: { id: string; props: LineStyleProps }) {
         getCurrent={liveNumberProp(id, 'strokeWidth', props.strokeWidth)}
         textboxAllowAboveMax
       />
-      {/* Only while the casing is on — a 0-width stroke has no color to
-          pick. */}
-      {props.strokeWidth > 0 && (
-        <ColorTypeRow
-          label="Stroke"
-          idBase={`style-${id}-stroke`}
-          types={['line', 'color'] as const}
-          type={strokeType}
-          // Leaving Line lands on the casing default rather than some remembered
-          // hue — a style has no line of its own to take a color from.
-          onPickType={(t) => patch({ strokeColor: t === 'line' ? LINE_OWN_COLOR : strokePair })}
-          pair={strokePair}
-          onPair={(strokeColor) => patch({ strokeColor })}
-          swatchRef={props.strokeColorRef}
-          onPickSwatch={(ref, pair) =>
-            patch(ref ? { strokeColor: pair, strokeColorRef: ref } : { strokeColor: pair })
-          }
-        />
-      )}
+      {/* A 0-width stroke has no color to pick, so the row greys out — it does
+          NOT go away, or the editor would reflow under the hand mid-slide. */}
+      <ColorTypeRow
+        label="Stroke"
+        idBase={`style-${id}-stroke`}
+        types={['line', 'color'] as const}
+        type={strokeType}
+        // Leaving Line lands on the casing default rather than some remembered
+        // hue — a style has no line of its own to take a color from.
+        onPickType={(t) => patch({ strokeColor: t === 'line' ? LINE_OWN_COLOR : strokePair })}
+        pair={strokePair}
+        onPair={(strokeColor) => patch({ strokeColor })}
+        swatchRef={props.strokeColorRef}
+        onPickSwatch={(ref, pair) =>
+          patch(ref ? { strokeColor: pair, strokeColorRef: ref } : { strokeColor: pair })
+        }
+        disabled={props.strokeWidth === 0}
+      />
 
       <div className="style-section">Stop dots</div>
       {/* Dot TYPE + SIZE per station case, split by singleton (only line at the
@@ -485,26 +484,6 @@ function PolygonStyleEditor({ id, props }: { id: string; props: PolygonStyleProp
           )
         }
       />
-      <PaletteColorRow
-        label="Stroke color"
-        id={`style-${id}-stroke-color`}
-        darkId={`style-${id}-dark-stroke`}
-        lightAriaLabel="Stroke color"
-        darkAriaLabel="Dark mode stroke color"
-        titleNoun="stroke"
-        value={props.stroke}
-        darkValue={props.darkStroke}
-        swatchRef={props.strokeRef}
-        onChange={(stroke) => patch({ stroke })}
-        onDarkChange={(darkStroke) => patch({ darkStroke })}
-        onPick={(ref, pair) =>
-          patch(
-            ref
-              ? { stroke: pair.day, darkStroke: pair.night, strokeRef: ref }
-              : { stroke: pair.day, darkStroke: pair.night },
-          )
-        }
-      />
       <NumericFieldRow
         id={`style-${id}-stroke-width`}
         label="Stroke width"
@@ -515,6 +494,29 @@ function PolygonStyleEditor({ id, props }: { id: string; props: PolygonStyleProp
         onChange={(strokeWidth) => patch({ strokeWidth })}
         getCurrent={liveNumberProp(id, 'strokeWidth', props.strokeWidth)}
         textboxAllowAboveMax
+      />
+      {/* Under the width that gates it, greyed at 0 — the fill above stays
+          live, being no part of the stroke (an open polygon paints none). */}
+      <PaletteColorRow
+        label="Stroke color"
+        id={`style-${id}-stroke-color`}
+        darkId={`style-${id}-dark-stroke`}
+        lightAriaLabel="Stroke color"
+        darkAriaLabel="Dark mode stroke color"
+        titleNoun="stroke"
+        value={props.stroke}
+        darkValue={props.darkStroke}
+        swatchRef={props.strokeRef}
+        disabled={props.strokeWidth === 0}
+        onChange={(stroke) => patch({ stroke })}
+        onDarkChange={(darkStroke) => patch({ darkStroke })}
+        onPick={(ref, pair) =>
+          patch(
+            ref
+              ? { stroke: pair.day, darkStroke: pair.night, strokeRef: ref }
+              : { stroke: pair.day, darkStroke: pair.night },
+          )
+        }
       />
       <NumericFieldRow
         id={`style-${id}-curve`}
@@ -617,6 +619,8 @@ function TransferStyleEditor({ id, props }: { id: string; props: TransferStylePr
         getCurrent={liveNumberProp(id, 'strokeWidth', props.strokeWidth)}
         textboxAllowAboveMax
       />
+      {/* Greyed at width 0 — a halo nobody paints has no color to pick. Draw
+          below is NOT gated: it orders the whole transfer, body included. */}
       <PaletteColorRow
         label="Stroke color"
         id={`style-${id}-stroke-color`}
@@ -627,6 +631,7 @@ function TransferStyleEditor({ id, props }: { id: string; props: TransferStylePr
         value={props.strokeColor.day}
         darkValue={props.strokeColor.night}
         swatchRef={props.strokeColorRef}
+        disabled={props.strokeWidth === 0}
         onChange={(day) => patch({ strokeColor: { day, night: props.strokeColor.night } })}
         onDarkChange={(night) => patch({ strokeColor: { day: props.strokeColor.day, night } })}
         onPick={(ref, pair) =>

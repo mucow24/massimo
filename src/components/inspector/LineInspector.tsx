@@ -66,9 +66,9 @@ import {
 //
 // Identity (name/service/color) and the Style preset row always show; the
 // full parameter stack below them collapses behind a remembered disclosure
-// (useLineEditorPrefs), grouped geometry → stop dots → stroke, with
-// context-dependent rows (dash dims, and the stroke color below its width)
-// rendered only while relevant. (Which casing shows inside a branch mouth is
+// (useLineEditorPrefs), grouped geometry → stop dots → stroke. Rows whose
+// switch is off (dash dims off a dash dot, the stroke color at width 0) grey
+// out in place rather than vanish. (Which casing shows inside a branch mouth is
 // no longer a line setting at all: self-overlaps are region faces, painted
 // per junction in Layering mode.)
 export function LineInspector({ id }: { id: LineId }) {
@@ -132,6 +132,12 @@ export function LineInspector({ id }: { id: LineId }) {
       : half === 'day'
         ? { day: c, night: lineCasingColor(line, line.color, true) }
         : { day: lineCasingColor(line, line.color, false), night: c };
+
+  // The two gated pairs below. Both rows stay mounted and grey out when their
+  // switch is off, so the stack never reflows under a slider mid-drag — the
+  // stopDot editor's rule, applied to every editor that gates a row.
+  const dashActive = lineUsesDashTicks(line, stations);
+  const strokeOff = lineStrokeWidthOf(line) === 0;
 
   return (
     <section className="inspector style-fields">
@@ -369,53 +375,47 @@ export function LineInspector({ id }: { id: LineId }) {
               }
             />
           </div>
-          {/* TfL-tick dimensions for this line's 'dash' stops — rendered only
-              while a dash dot is actually in use (either line default, or any
-              member stop's override). Unset derives from the line width
-              (length = width, thickness = width/2); the sliders show the
-              resolved value and an explicit 0 returns to auto. */}
-          {lineUsesDashTicks(line, stations) && (
-            <>
-              <NumericFieldRow
-                id={`line-dash-length-${line.id}`}
-                label="Dash length"
-                min={0}
-                max={DASH_LENGTH_MAX}
-                step={LINE_STROKE_STEP}
-                value={dashRenderLength(line)}
-                onChange={(n) => setLineDashLength(line.id, n)}
-                getCurrent={() => dashRenderLength(useDoc.getState().lines[id])}
-                textboxAllowAboveMax
-                dot={
-                  <OverrideDot
-                    kind="line"
-                    itemId={line.id}
-                    fields={['dashLength']}
-                    name="Dash length"
-                  />
-                }
+          {/* TfL-tick dimensions for this line's 'dash' stops — greyed unless a
+              dash dot is actually in use (either line default, or any member
+              stop's override). Unset derives from the line width (length =
+              width, thickness = width/2); the sliders show the resolved value
+              and an explicit 0 returns to auto. */}
+          <NumericFieldRow
+            id={`line-dash-length-${line.id}`}
+            label="Dash length"
+            min={0}
+            max={DASH_LENGTH_MAX}
+            step={LINE_STROKE_STEP}
+            value={dashRenderLength(line)}
+            onChange={(n) => setLineDashLength(line.id, n)}
+            getCurrent={() => dashRenderLength(useDoc.getState().lines[id])}
+            textboxAllowAboveMax
+            disabled={!dashActive}
+            dot={
+              <OverrideDot
+                kind="line"
+                itemId={line.id}
+                fields={['dashLength']}
+                name="Dash length"
               />
-              <NumericFieldRow
-                id={`line-dash-width-${line.id}`}
-                label="Dash width"
-                min={0}
-                max={DASH_WIDTH_MAX}
-                step={LINE_STROKE_STEP}
-                value={dashRenderWidth(line)}
-                onChange={(n) => setLineDashWidth(line.id, n)}
-                getCurrent={() => dashRenderWidth(useDoc.getState().lines[id])}
-                textboxAllowAboveMax
-                dot={
-                  <OverrideDot
-                    kind="line"
-                    itemId={line.id}
-                    fields={['dashWidth']}
-                    name="Dash width"
-                  />
-                }
-              />
-            </>
-          )}
+            }
+          />
+          <NumericFieldRow
+            id={`line-dash-width-${line.id}`}
+            label="Dash width"
+            min={0}
+            max={DASH_WIDTH_MAX}
+            step={LINE_STROKE_STEP}
+            value={dashRenderWidth(line)}
+            onChange={(n) => setLineDashWidth(line.id, n)}
+            getCurrent={() => dashRenderWidth(useDoc.getState().lines[id])}
+            textboxAllowAboveMax
+            disabled={!dashActive}
+            dot={
+              <OverrideDot kind="line" itemId={line.id} fields={['dashWidth']} name="Dash width" />
+            }
+          />
+
           <hr className="popover-divider" aria-hidden="true" />
           <NumericFieldRow
             id={`line-stroke-${line.id}`}
@@ -436,7 +436,7 @@ export function LineInspector({ id }: { id: LineId }) {
               />
             }
           />
-          {/* Only while the casing is on — a 0-width stroke has no color to
+          {/* Greyed while the casing is off — a 0-width stroke has no color to
               pick. RESOLVED, not stored: a line style can set the casing to the
               line's own color, and that sentinel is not a paintable pair — the
               swatches show what's actually on each canvas (the same hue twice,
@@ -444,35 +444,34 @@ export function LineInspector({ id }: { id: LineId }) {
               writes a fixed pair (and detaches from the style), which is
               exactly what reaching for a swatch means; the "follow the line"
               mode itself is chosen in the style editor. */}
-          {lineStrokeWidthOf(line) > 0 && (
-            <PaletteColorRow
-              label="Stroke color"
-              id={`line-stroke-color-${line.id}`}
-              darkId={`line-dark-stroke-color-${line.id}`}
-              lightAriaLabel="Stroke color"
-              darkAriaLabel="Dark mode stroke color"
-              titleNoun="stroke color"
-              value={lineCasingColor(line, line.color, false)}
-              darkValue={lineCasingColor(line, line.color, true)}
-              swatchRef={line.strokeColorRef}
-              onChange={(day) => setLineStrokeColor(line.id, nextCasing('day', day))}
-              onDarkChange={(night) => setLineStrokeColor(line.id, nextCasing('night', night))}
-              onPick={(ref, pair) =>
-                // A swatch pick writes a fixed pair + its ref (replacing the
-                // 'line' sentinel if that's what stood — same as a hand pick);
-                // Custom re-writes the current pair ref-less, detaching.
-                setLineStrokeColor(line.id, pair, ref ?? undefined)
-              }
-              dot={
-                <OverrideDot
-                  kind="line"
-                  itemId={line.id}
-                  fields={['strokeColor']}
-                  name="Stroke color"
-                />
-              }
-            />
-          )}
+          <PaletteColorRow
+            label="Stroke color"
+            id={`line-stroke-color-${line.id}`}
+            darkId={`line-dark-stroke-color-${line.id}`}
+            lightAriaLabel="Stroke color"
+            darkAriaLabel="Dark mode stroke color"
+            titleNoun="stroke color"
+            value={lineCasingColor(line, line.color, false)}
+            darkValue={lineCasingColor(line, line.color, true)}
+            swatchRef={line.strokeColorRef}
+            disabled={strokeOff}
+            onChange={(day) => setLineStrokeColor(line.id, nextCasing('day', day))}
+            onDarkChange={(night) => setLineStrokeColor(line.id, nextCasing('night', night))}
+            onPick={(ref, pair) =>
+              // A swatch pick writes a fixed pair + its ref (replacing the
+              // 'line' sentinel if that's what stood — same as a hand pick);
+              // Custom re-writes the current pair ref-less, detaching.
+              setLineStrokeColor(line.id, pair, ref ?? undefined)
+            }
+            dot={
+              <OverrideDot
+                kind="line"
+                itemId={line.id}
+                fields={['strokeColor']}
+                name="Stroke color"
+              />
+            }
+          />
         </>
       )}
     </section>
