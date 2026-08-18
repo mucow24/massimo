@@ -54,10 +54,9 @@ jobs:
           node-version: 20
           cache: npm
 
-      # `npm install` (not `npm ci`) for the same reason as CI: Windows-
-      # generated lockfiles omit some platform-specific optional deps that
-      # `npm ci` rejects. See .github/workflows/ci.yml for the full note.
-      - run: npm install --no-audit --no-fund
+      # `npm ci` for the same reason as CI — the lockfile carries every
+      # platform's optional deps, so the strict install is the honest one.
+      - run: npm ci --no-audit --no-fund
 
       # Produces dist/ with relative asset URLs (production `base: './'` in
       # vite.config.ts), which resolve under the /massimo/ Pages subpath and

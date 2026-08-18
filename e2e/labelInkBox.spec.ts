@@ -19,7 +19,17 @@ test('the selection ring sits on rasterized ink, not the conservative font bound
     lines: [],
     textLabels: [{ id: 'g1', x: 0, y: 0, text: 'FURTA', fontSize: 40, weight: 900 }],
   });
-  await page.evaluate(() => document.fonts.ready);
+  // waitForFunction, not `evaluate(() => document.fonts.ready)`: an evaluate
+  // awaiting a pending in-page promise dies if Chromium recreates the page's
+  // JS context, which it can shortly after first paint with no navigation
+  // involved (see fallbackSynthesis's ink(), exportPdf's seed()).
+  // waitForFunction re-arms across that. The window is widest when the faces
+  // are big — DejaVu stand-ins are 12 MB across the sixteen filenames against
+  // Söhne's 1.6 — which is where this actually went red.
+  await page.waitForFunction(
+    () =>
+      document.fonts.status === 'loaded' && [...document.fonts].some((f) => f.status === 'loaded'),
+  );
   await page.evaluate(() => {
     const w = window as unknown as {
       __massimo: { stores: { selection: { getState(): { selectLabel(id: string): void } } } };

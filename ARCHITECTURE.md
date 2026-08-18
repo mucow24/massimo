@@ -3715,7 +3715,11 @@ events: disarm, bump the generation (late RESULTs are dropped), snap the render 
 the live doc, resync the mirror. Worker errors and frame timeouts fall back to the synchronous
 path mid-gesture; that path is never deleted — it is the at-rest path, the small-map path, and
 the reference the worker's output is pinned byte-equal to (`regionFrame.test.ts`, plus an e2e
-that replays sampled mid-drag frames at rest and requires identical paint).
+that replays sampled mid-drag frames at rest and requires identical paint). The frame watchdog
+runs on TWO budgets, because a worker that has never answered may still be paying spawn + wasm
+compile: a boot-sized 5s until its first accepted RESULT, `2.5 * emaMs` clamped to 500..5000
+after. `regionPipelineStatus().workerWarm` reports which is in force — anything killing the
+worker to exercise the fallback is timing a different scenario depending on the answer.
 
 **Specs are identity-stable.** Both interlining builders finish through a single-slot reuse
 layer: a band/marker spec whose every compared field equals the previous build's comes back as
