@@ -1,10 +1,9 @@
-import { useState, type ReactNode } from 'react';
-import { ChevronDownIcon, LoopIcon, PlusIcon, ReloadIcon } from '@radix-ui/react-icons';
+import { useRef, useState, type ReactNode } from 'react';
+import { ChevronDownIcon, LoopIcon, ReloadIcon } from '@radix-ui/react-icons';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
-import * as Select from '@radix-ui/react-select';
-import { FieldSelectContent } from './FieldSelectContent';
 import { DayNightColorRow } from './DayNightColorRow';
-import { MenuItem, MenuSeparator } from './Menu';
+import { MenuItem, MenuSeparator, SubMenu } from './Menu';
+import { useInlineRename } from './useInlineRename';
 import { beginHistoryGroup, useDoc } from '../state/store';
 import {
   freshPaletteName,
@@ -14,12 +13,12 @@ import {
   type Palette,
   type PaletteSwatch,
 } from '../model/palettes';
-import { swatchPair, swatchRefsEqual } from '../model/swatchRef';
+import { swatchPair } from '../model/swatchRef';
 import { dayNightColorsEqual } from '../model/dayNightColor';
 import type { DayNightColor, SwatchRef } from '../model/types';
 
 const CUSTOM = '__custom__';
-// A Radix Select item value is a string; palette/swatch names are free-form
+// A Radix radio item's value is a string; palette/swatch names are free-form
 // user text, so the tuple is JSON-encoded (always unambiguous) rather than
 // joined on a separator a name could contain.
 const encodeRef = (r: SwatchRef): string => JSON.stringify([r.palette, r.swatch]);
@@ -39,133 +38,23 @@ function SplitSwatch({ pair }: { pair: DayNightColor }) {
 }
 
 /**
- * The Custom state's answer to Sync, standing in the same slot: a hand-picked
- * color has no swatch to push into, so the button offers to MAKE it one. The
- * menu lists the map's design palettes and a mint — the mint being the only
- * item a map carrying none can show, and the reason this button stands on the
- * PLAIN row too, where there is no dropdown at all. Saving from there grows the
- * row its dropdown on the next render, naming the swatch it just created.
- *
- * Either branch is ONE gesture: the palette write and the field's link land
- * inside a single history group, so undo can't strand a swatch nothing points
- * at. The swatch goes in before the ref — make the thing, then point at it.
- * That ordering is defensive rather than load-bearing today (both of
- * `addPaletteToMap`'s branches leave a ref written first standing: the upsert
- * sweeps faithful wearers without reconciling, and the add reconciles against a
- * doc the palette is already in), so don't read a bug into a swap; read intent.
- * The pair written is the swatch's own, so the field arrives faithful: no
- * revert badge on a color that has only just been saved.
- */
-function SaveToPalette({
-  stem,
-  titleNoun,
-  designPalettes,
-  pair,
-  disabled,
-  onPick,
-}: {
-  /** What the saved swatch is called. The row's ARIA label, not its visible
-   *  one: four sites label the row just "Color", while the accessible names
-   *  are distinct by contract (see DayNightColorRow) — "Label color",
-   *  "Transfer color" — and a swatch name is read far from the field it came
-   *  from. */
-  stem: string;
-  titleNoun: string;
-  designPalettes: Palette[];
-  pair: DayNightColor;
-  disabled?: boolean;
-  onPick: (ref: SwatchRef, pair: DayNightColor) => void;
-}) {
-  const palettes = useDoc((s) => s.palettes);
-  const addPaletteToMap = useDoc((s) => s.addPaletteToMap);
-  // Where the panel mounts, and what bounds it — `FieldSelectContent`'s pair,
-  // resolved the same lazy way and for the same reasons. `.canvas-host` is an
-  // isolate layer that would trap a menu opened from an item popover BENEATH
-  // the sidebar, so the panel portals into `.app`, which also owns the design
-  // tokens and the dark-mode reassignment. It must be resolved by FIRST RENDER:
-  // Radix fires `onOpenChange` from a passive effect, after Content has already
-  // mounted, so resolving on open would portal the first frame into <body> —
-  // unthemed — and then remount the whole subtree under the real container.
-  const [{ app, host }] = useState(() => ({
-    app: document.querySelector<HTMLElement>('.app'),
-    host: document.querySelector<HTMLElement>('.canvas-host'),
-  }));
-
-  /** Into `palette`, or — undefined — into a design palette minted for it. */
-  const save = (palette?: Palette) => {
-    if (palette) {
-      // Already in this palette under some name: link to that rather than
-      // laying a second swatch over the same color.
-      const match = matchingSwatch(palette.swatches, pair);
-      if (match) {
-        onPick({ palette: palette.name, swatch: match.name }, swatchPair(match));
-        return;
-      }
-      const group = beginHistoryGroup();
-      const { swatches, name } = withNamedSwatch(palette.swatches, stem, pair);
-      addPaletteToMap({ ...palette, swatches });
-      onPick({ palette: palette.name, swatch: name }, pair);
-      group.commit();
-      return;
-    }
-    const group = beginHistoryGroup();
-    // The stem the Styles tab's own mint counts from.
-    const paletteName = freshPaletteName(
-      new Set(palettes.map((p) => p.name)),
-      'New design palette',
-    );
-    const { swatches, name } = withNamedSwatch([], stem, pair);
-    addPaletteToMap({ name: paletteName, swatches, kind: 'design' });
-    onPick({ palette: paletteName, swatch: name }, pair);
-    group.commit();
-  };
-
-  return (
-    <Dropdown.Root modal={false}>
-      <Dropdown.Trigger asChild>
-        <button
-          type="button"
-          className="style-row-btn palette-save-btn"
-          aria-label={`Save ${titleNoun} to a design palette`}
-          title="Save this color to a design palette"
-          disabled={disabled}
-        >
-          <PlusIcon />
-        </button>
-      </Dropdown.Trigger>
-      <Dropdown.Portal container={app ?? undefined}>
-        <Dropdown.Content
-          className="menu-panel palette-save-menu"
-          align="end"
-          sideOffset={4}
-          collisionBoundary={host ?? undefined}
-          collisionPadding={8}
-          loop
-        >
-          {designPalettes.map((p) => (
-            <MenuItem key={p.name} onClick={() => save(p)}>
-              {p.name}
-            </MenuItem>
-          ))}
-          {designPalettes.length > 0 && <MenuSeparator />}
-          <MenuItem onClick={() => save()}>New design palette…</MenuItem>
-        </Dropdown.Content>
-      </Dropdown.Portal>
-    </Dropdown.Root>
-  );
-}
-
-/**
  * A themed-color editor row that can LINK to a design-palette swatch — the
  * palette-aware wrapper every `DayNightColorRow` site upgrades to. The sun/moon
  * pair is ALWAYS there, under a dropdown naming where the color comes from:
  * a swatch, or Custom.
  *
+ * The dropdown is a MENU rather than a Select, and the reason is its last row.
+ * **Save color to palette** needs a flyout of the map's design palettes, and a
+ * Radix Select has no submenu to give it; a menu does (the same `SubMenu` the
+ * toolbar's Export uses). What it costs is the `combobox` role — the swatch
+ * rows are `menuitemradio` under one `RadioGroup`, which keeps the "which one
+ * is current" reading a Select gave for free, and Radix menus carry typeahead
+ * of their own.
+ *
  * Picking a swatch calls `onPick(ref, pair)` — the host writes value + ref in
  * ONE patch, so the pickers land on the swatch's colors. Picking Custom calls
  * `onPick(null, currentPair)` — the current values WITHOUT the ref key, which
- * is the detach gesture. With no design palettes in the map and no link, the
- * dropdown would offer nothing, so the row is exactly the plain one.
+ * is the detach gesture.
  *
  * A linked field may then be recolored in place, and that divergence belongs to
  * the PALETTE, not to the style: the style's answer is still "this swatch", so
@@ -176,10 +65,9 @@ function SaveToPalette({
  * Their slots are held open whenever the field is linked, so a row does not
  * jump as an edit makes them appear.
  *
- * A CUSTOM field has no swatch for either of those to act on, so the trailing
- * slot carries `SaveToPalette` instead — the offer to give the color a swatch
- * to be linked to. It rides the plain row as well, the one piece of chrome a
- * map with no design palette still has use for.
+ * The dropdown stands on EVERY map, including one carrying no design palette
+ * at all: the save's flyout always offers to mint one, so the row is never a
+ * dead end. That is what pays for a dropdown whose only other row is Custom.
  */
 export function PaletteColorRow({
   label,
@@ -214,15 +102,141 @@ export function PaletteColorRow({
   disabled?: boolean;
   dot?: ReactNode;
 }) {
-  const designPalettes = useDoc((s) => s.palettes).filter((p: Palette) => !isLinePalette(p));
+  const palettes = useDoc((s) => s.palettes);
+  const designPalettes = palettes.filter((p: Palette) => !isLinePalette(p));
   const syncMapPaletteSwatch = useDoc((s) => s.syncMapPaletteSwatch);
+  const addPaletteToMap = useDoc((s) => s.addPaletteToMap);
+  const pair = { day: value, night: darkValue };
 
-  const plainRow = (
-    rowLabel: string,
-    extra?: { leading?: ReactNode; trailing?: ReactNode; keepRef?: SwatchRef },
-  ) => (
+  // Where the panel mounts, and what bounds it — `FieldSelectContent`'s pair,
+  // resolved the same lazy way and for the same reasons. `.canvas-host` is an
+  // isolate layer that would trap a menu opened from an item popover BENEATH
+  // the sidebar, so the panel portals into `.app`, which also owns the design
+  // tokens and the dark-mode reassignment. It must be resolved by FIRST RENDER:
+  // Radix fires `onOpenChange` from a passive effect, after Content has already
+  // mounted, so resolving on open would portal the first frame into <body> —
+  // unthemed — and then remount the whole subtree under the real container.
+  const [{ app, host }] = useState(() => ({
+    app: document.querySelector<HTMLElement>('.app'),
+    host: document.querySelector<HTMLElement>('.canvas-host'),
+  }));
+
+  // The design palette the save will land in, once it is known. The mint does
+  // not know it until its first field commits, and nothing reaches the doc
+  // until the second one does, so backing out at either stage leaves the map
+  // untouched.
+  const [target, setTarget] = useState<string | null>(null);
+  // Set by every keystroke, read once at commit: `useInlineRename` cannot tell
+  // Enter from a blur, and the palette stage needs to (see below). Cleared
+  // wherever a name field OPENS, because the flag belongs to the attempt and
+  // not to the row — one left standing by an earlier commit would make the
+  // next chain advance on a blur that ought to have abandoned it.
+  const viaEnter = useRef(false);
+
+  /**
+   * What the color's name field opens on. A palette already painting this
+   * color seeds THAT swatch's name, so committing as-is links to it instead of
+   * laying a second swatch over one color — typing over the seed is how the
+   * copy is asked for. Otherwise it is the field's own name, already counted
+   * up past any collision: names are the ref key, and a seed that promised
+   * "Fill color" while the dedupe silently landed "Fill color 2" would show
+   * the user a name their swatch does not have.
+   */
+  const swatchSeed = (into: string): string => {
+    const palette = designPalettes.find((p) => p.name === into);
+    if (!palette) return lightAriaLabel;
+    const match = matchingSwatch(palette.swatches, pair);
+    if (match) return match.name;
+    return freshPaletteName(new Set(palette.swatches.map((s) => s.name)), lightAriaLabel);
+  };
+
+  /**
+   * The write both branches of the save end in, once every name is known.
+   *
+   * The typed name is what chooses between the two outcomes, exactly as a
+   * style name does one level up: a name the palette already holds REDEFINES
+   * that swatch (`syncMapPaletteSwatch`, the write the Sync button makes, so
+   * its other faithful wearers come along), and any other name appends. Two
+   * swatches cannot share a name — it is the ref key — so the alternative to
+   * redefining would be a silent count-up onto a name nobody asked for.
+   *
+   * Both halves go in under one history group, so undo cannot strand a swatch
+   * nothing points at, and the palette write lands BEFORE the link. That
+   * ordering is defensive rather than load-bearing today (both of
+   * `addPaletteToMap`'s branches leave a ref written first standing), so don't
+   * read a bug into a swap; read intent. The pair written is the swatch's own,
+   * so the field arrives faithful: no revert badge on a color just saved.
+   */
+  const save = (into: string, swatchName: string) => {
+    const palette = designPalettes.find((p) => p.name === into);
+    const group = beginHistoryGroup();
+    if (palette) {
+      const existing = palette.swatches.findIndex((s: PaletteSwatch) => s.name === swatchName);
+      if (existing >= 0) {
+        syncMapPaletteSwatch(palette.name, existing, pair);
+        onPick({ palette: palette.name, swatch: swatchName }, pair);
+      } else {
+        const { swatches, name } = withNamedSwatch(palette.swatches, swatchName, pair);
+        addPaletteToMap({ ...palette, swatches });
+        onPick({ palette: palette.name, swatch: name }, pair);
+      }
+    } else {
+      // A minted palette, under a name the map does not already hold:
+      // `addPaletteToMap` REPLACES a same-named palette (that is the refresh
+      // the library re-add needs), which reached through a typed name would
+      // wipe every other swatch in it and drop their refs. `freshPaletteName`
+      // is a no-op on a free name and counts up past a taken one — including a
+      // LINE palette's, which the design branch above would never have found.
+      const fresh = freshPaletteName(new Set(palettes.map((p: Palette) => p.name)), into);
+      const { swatches, name } = withNamedSwatch([], swatchName, pair);
+      addPaletteToMap({ name: fresh, swatches, kind: 'design' });
+      onPick({ palette: fresh, swatch: name }, pair);
+    }
+    group.commit();
+  };
+
+  // Shared inline-rename plumbing (same as StyleRow / the Styles panel), one
+  // instance per name the save can ask for. Two rather than one switched by a
+  // flag, because the mint HANDS OFF from the first to the second: a lone
+  // instance would have to call its own `start` from inside its own commit.
+  // The color's is declared first so the palette's can reach it.
+  //
+  // Neither calls back on Escape, so `editing` is what decides whether a field
+  // is on screen — never the target, which outlives an abandoned attempt.
+  const colorName = useInlineRename((draft) => {
+    const typed = draft.trim();
+    // Empty cancels, the rule every inline rename in the app shares.
+    if (typed && target) save(target, typed);
+  });
+  const paletteName = useInlineRename((draft) => {
+    const typed = draft.trim();
+    // Advancing a chain, not committing one. Only Enter carries on: a blur
+    // means the user clicked something else, and mounting the next field then
+    // would snatch focus straight back out of whatever they hit.
+    if (!typed || !viaEnter.current) return;
+    viaEnter.current = false;
+    setTarget(typed);
+    colorName.start(swatchSeed(typed));
+  });
+
+  /** Into `palette`, or — undefined — into a design palette named on the spot. */
+  const startSave = (palette?: Palette) => {
+    viaEnter.current = false;
+    if (palette) {
+      setTarget(palette.name);
+      colorName.start(swatchSeed(palette.name));
+      return;
+    }
+    setTarget(null);
+    // The stem the Styles tab's own mint counts from.
+    paletteName.start(
+      freshPaletteName(new Set(palettes.map((p: Palette) => p.name)), 'New design palette'),
+    );
+  };
+
+  const plainRow = (extra?: { leading?: ReactNode; trailing?: ReactNode; keepRef?: SwatchRef }) => (
     <DayNightColorRow
-      label={rowLabel}
+      label=""
       id={id}
       darkId={darkId}
       lightAriaLabel={lightAriaLabel}
@@ -242,28 +256,42 @@ export function PaletteColorRow({
         extra?.keepRef ? (c) => onPick(extra.keepRef!, { day: value, night: c }) : onDarkChange
       }
       disabled={disabled}
-      dot={rowLabel === label ? dot : undefined}
       leading={extra?.leading}
       trailing={extra?.trailing}
     />
   );
 
-  const pair = { day: value, night: darkValue };
-  const saveButton = (
-    <SaveToPalette
-      stem={lightAriaLabel}
-      titleNoun={titleNoun}
-      designPalettes={designPalettes}
-      pair={pair}
-      disabled={disabled}
-      onPick={onPick}
-    />
-  );
-
-  // No design palettes and no link: the plain row, carrying only the offer to
-  // start a palette off this color.
-  if (designPalettes.length === 0 && swatchRef === undefined)
-    return plainRow(label, { trailing: saveButton });
+  // Mid-save: the dropdown's slot carries the name field instead, and the pair
+  // stays put beneath it — you are naming a color, so the color has to be in
+  // front of you while you do. The key remounts the field between the mint's
+  // two stages, without which `autoFocus` (having already fired) would leave
+  // the second one waiting unfocused.
+  if (paletteName.editing || colorName.editing) {
+    const forPalette = paletteName.editing;
+    const nameLabel = forPalette ? 'Palette name' : 'Color name';
+    const inputProps = forPalette ? paletteName.inputProps : colorName.inputProps;
+    return (
+      <>
+        <div className={'row' + (disabled ? ' disabled' : '')}>
+          {dot}
+          <label htmlFor={`${id}-save-name`}>{label}</label>
+          <input
+            key={nameLabel}
+            id={`${id}-save-name`}
+            className="palette-name-input"
+            aria-label={nameLabel}
+            placeholder={nameLabel}
+            {...inputProps}
+            onKeyDown={(e) => {
+              viaEnter.current = e.key === 'Enter';
+              inputProps.onKeyDown(e);
+            }}
+          />
+        </div>
+        {plainRow()}
+      </>
+    );
+  }
 
   const linkedPalette =
     swatchRef === undefined ? undefined : designPalettes.find((p) => p.name === swatchRef.palette);
@@ -283,77 +311,103 @@ export function PaletteColorRow({
       <div className={'row' + (disabled ? ' disabled' : '')}>
         {dot}
         <label htmlFor={selectId}>{label}</label>
-        <Select.Root
-          value={swatchRef !== undefined && linked ? encodeRef(swatchRef) : CUSTOM}
-          disabled={disabled}
-          onValueChange={(v) => {
-            if (v === CUSTOM) {
-              onPick(null, { day: value, night: darkValue });
-              return;
-            }
-            const ref = decodeRef(v);
-            const swatch = designPalettes
-              .find((p) => p.name === ref.palette)
-              ?.swatches.find((s: PaletteSwatch) => s.name === ref.swatch);
-            if (swatch) onPick(ref, swatchPair(swatch));
-          }}
-        >
-          <Select.Trigger
-            id={selectId}
-            className="field-select palette-color-trigger"
-            aria-label={`${label} palette color`}
-          >
-            <Select.Value>
-              {linked && swatchRef ? (
-                <>
-                  <SplitSwatch pair={swatchPair(linked)} />
-                  {swatchRef.swatch}
-                </>
-              ) : (
-                'Custom'
-              )}
-            </Select.Value>
-            <Select.Icon className="field-select-caret" aria-hidden="true">
-              <ChevronDownIcon />
-            </Select.Icon>
-          </Select.Trigger>
-          <FieldSelectContent>
-            {designPalettes.map((p) => (
-              <Select.Group key={p.name}>
-                <Select.Label className="field-select-group-label">{p.name}</Select.Label>
-                {p.swatches.map((s) => {
-                  const ref = { palette: p.name, swatch: s.name };
-                  return (
-                    <Select.Item
-                      key={s.name}
-                      value={encodeRef(ref)}
-                      className={
-                        'field-select-item palette-color-item' +
-                        (swatchRefsEqual(swatchRef, ref) ? ' selected' : '')
-                      }
-                    >
-                      <SplitSwatch pair={swatchPair(s)} />
-                      <Select.ItemText>{s.name}</Select.ItemText>
-                    </Select.Item>
-                  );
-                })}
-              </Select.Group>
-            ))}
-            <Select.Separator className="field-select-separator" aria-hidden="true" />
-            <Select.Item value={CUSTOM} className="field-select-item">
-              <Select.ItemText>Custom</Select.ItemText>
-            </Select.Item>
-          </FieldSelectContent>
-        </Select.Root>
+        <Dropdown.Root modal={false}>
+          <Dropdown.Trigger asChild>
+            <button
+              type="button"
+              id={selectId}
+              className="field-select palette-color-trigger"
+              aria-label={`${label} palette color`}
+              disabled={disabled}
+            >
+              <span>
+                {linked && swatchRef ? (
+                  <>
+                    <SplitSwatch pair={swatchPair(linked)} />
+                    {swatchRef.swatch}
+                  </>
+                ) : (
+                  'Custom'
+                )}
+              </span>
+              <span className="field-select-caret" aria-hidden="true">
+                <ChevronDownIcon />
+              </span>
+            </button>
+          </Dropdown.Trigger>
+          <Dropdown.Portal container={app ?? undefined}>
+            <Dropdown.Content
+              className="menu-panel palette-color-menu"
+              align="start"
+              sideOffset={4}
+              collisionBoundary={host ?? undefined}
+              collisionPadding={8}
+              loop
+            >
+              <Dropdown.RadioGroup
+                value={swatchRef !== undefined && linked ? encodeRef(swatchRef) : CUSTOM}
+                onValueChange={(v) => {
+                  if (v === CUSTOM) {
+                    onPick(null, pair);
+                    return;
+                  }
+                  const ref = decodeRef(v);
+                  const swatch = designPalettes
+                    .find((p) => p.name === ref.palette)
+                    ?.swatches.find((s: PaletteSwatch) => s.name === ref.swatch);
+                  if (swatch) onPick(ref, swatchPair(swatch));
+                }}
+              >
+                {/* Only the swatch list scrolls. A Radix submenu renders in
+                    PLACE rather than in a portal of its own, so a flyout with
+                    an `overflow` ancestor is a flyout that gets clipped — the
+                    Save row has to stay outside this box, and Custom rides
+                    along so the two commands sit together at the foot. */}
+                <div className="palette-color-scroll">
+                  {designPalettes.map((p) => (
+                    <Dropdown.Group key={p.name}>
+                      <Dropdown.Label className="menu-group-label">{p.name}</Dropdown.Label>
+                      {p.swatches.map((s: PaletteSwatch) => (
+                        <Dropdown.RadioItem
+                          key={s.name}
+                          value={encodeRef({ palette: p.name, swatch: s.name })}
+                          className="menu-item palette-color-item"
+                        >
+                          <SplitSwatch pair={swatchPair(s)} />
+                          {s.name}
+                        </Dropdown.RadioItem>
+                      ))}
+                    </Dropdown.Group>
+                  ))}
+                </div>
+                {designPalettes.length > 0 && <MenuSeparator />}
+                <Dropdown.RadioItem value={CUSTOM} className="menu-item">
+                  Custom
+                </Dropdown.RadioItem>
+              </Dropdown.RadioGroup>
+              <MenuSeparator />
+              {/* Offered in BOTH states, which is what makes "save a copy"
+                  reachable: a linked color saved under a fresh name becomes a
+                  second swatch rather than overwriting the one it wears. */}
+              <SubMenu label="Save color to palette">
+                {designPalettes.map((p) => (
+                  <MenuItem key={p.name} onClick={() => startSave(p)}>
+                    {p.name}
+                  </MenuItem>
+                ))}
+                {designPalettes.length > 0 && <MenuSeparator />}
+                <MenuItem onClick={() => startSave()}>New palette…</MenuItem>
+              </SubMenu>
+            </Dropdown.Content>
+          </Dropdown.Portal>
+        </Dropdown.Root>
       </div>
       {/* The pair sits under the dropdown, blank-labelled — the row above
           already names the field (ColorTypeRow's reveal idiom). While the
           field is linked it is flanked by the two palette controls, whose
           slots stay open (empty when the colors agree) so an edit never
-          shifts the row. Custom has neither to offer, and carries the save in
-          the same trailing slot. */}
+          shifts the row. */}
       {plainRow(
-        '',
         linked
           ? {
               keepRef: swatchRef,
@@ -404,7 +458,7 @@ export function PaletteColorRow({
                 </button>
               ),
             }
-          : { trailing: saveButton },
+          : undefined,
       )}
     </>
   );
