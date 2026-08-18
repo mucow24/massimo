@@ -265,8 +265,9 @@ src/
     *Popover.tsx                # on-canvas item editors
     DayNightColorRow.tsx        # shared label + light/dark ColorField pair — the plain half of…
     PaletteColorRow.tsx         # …the palette-aware themed-color row every pair site mounts:
-                                #   linked = swatch dropdown (split swatch + NAME), Custom = the
-                                #   pair reveals; plain row when the map has no design palettes
+                                #   linked = swatch dropdown (split swatch + NAME) + Reset/Sync,
+                                #   Custom = the pair reveals + Save to palette (which can mint
+                                #   one); plain row + Save when the map has no design palettes
     SegmentedToggle.tsx         # the ONE pick-one control (~16 inline Radix ToggleGroup clusters)
     FieldSelectContent.tsx      # shared Radix Select panel: portals popover Selects to .app (escapes
                                 #   the .canvas-host isolate layer) + bounds/scrolls a long list
@@ -551,7 +552,11 @@ its swatch's `(color, night ?? color)` — over EFFECTIVE values, since transfer
 casing collapse their stored form at a constant default — but it is ALLOWED to diverge, and that
 divergence is the feature: recoloring a linked field in place leaves the link standing and the
 field painting its own color, which the picker offers to Reset (back to the swatch) or Sync (the
-swatch to it). What still detaches is a value written WITHOUT its ref key, the write rule hosted by
+swatch to it). A CUSTOM field has neither to offer and carries **Save to palette** in the same
+slot: the color becomes a new swatch — named after the field, counted up on collision — in a
+design palette the map already carries or in one minted for it, and the field links to it in one
+history group. So a swatch is not born only in the palette surfaces; any color row can make one.
+What still detaches is a value written WITHOUT its ref key, the write rule hosted by
 `updateLine`/`updatePolygon`/`updateTextLabel`/`updateTransferStyle`/`updateStyleProps` and
 `setLineStrokeColor`'s ref param — so a picker edit on a linked field must carry the ref along, or
 the field silently falls back to Custom.

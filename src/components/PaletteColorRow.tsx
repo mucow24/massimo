@@ -1,12 +1,20 @@
-import type { ReactNode } from 'react';
-import { ChevronDownIcon, LoopIcon, ReloadIcon } from '@radix-ui/react-icons';
+import { useRef, useState, type ReactNode } from 'react';
+import { ChevronDownIcon, LoopIcon, PlusIcon, ReloadIcon } from '@radix-ui/react-icons';
+import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Select from '@radix-ui/react-select';
 import { FieldSelectContent } from './FieldSelectContent';
 import { DayNightColorRow } from './DayNightColorRow';
-import { useDoc } from '../state/store';
-import { isLinePalette, type Palette, type PaletteSwatch } from '../model/palettes';
+import { MenuItem, MenuSeparator } from './Menu';
+import { beginHistoryGroup, useDoc } from '../state/store';
+import {
+  freshPaletteName,
+  isLinePalette,
+  type Palette,
+  type PaletteSwatch,
+} from '../model/palettes';
 import { swatchPair, swatchRefsEqual } from '../model/swatchRef';
 import { dayNightColorsEqual } from '../model/dayNightColor';
+import { normalizeHex } from '../util/color';
 import type { DayNightColor, SwatchRef } from '../model/types';
 
 const CUSTOM = '__custom__';
@@ -30,6 +38,115 @@ function SplitSwatch({ pair }: { pair: DayNightColor }) {
 }
 
 /**
+ * The Custom state's answer to Sync, standing in the same slot: a hand-picked
+ * color has no swatch to push into, so the button offers to MAKE it one. The
+ * menu lists the map's design palettes and a mint — the mint being the only
+ * item a map carrying none can show, and the reason this button stands on the
+ * PLAIN row too, where there is no dropdown at all. Saving from there grows the
+ * row its dropdown on the next render, naming the swatch it just created.
+ *
+ * Either branch is ONE gesture: the palette write and the field's link land
+ * inside a single history group, so undo can't strand a swatch nothing points
+ * at. Their ORDER is load-bearing — the swatch must exist before the ref is
+ * written, or `addPaletteToMap`'s reconcile drops a link to a swatch that isn't
+ * there yet. The pair written is the swatch's own, so the field arrives
+ * faithful: no revert badge on a color that has only just been saved.
+ */
+function SaveToPalette({
+  label,
+  titleNoun,
+  designPalettes,
+  pair,
+  disabled,
+  onPick,
+}: {
+  label: string;
+  titleNoun: string;
+  designPalettes: Palette[];
+  pair: DayNightColor;
+  disabled?: boolean;
+  onPick: (ref: SwatchRef, pair: DayNightColor) => void;
+}) {
+  const palettes = useDoc((s) => s.palettes);
+  const addPaletteToMap = useDoc((s) => s.addPaletteToMap);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  // Where the panel mounts. `.canvas-host` is an isolate layer that would trap
+  // a menu opened from an item popover BENEATH the sidebar, so the panel is
+  // portaled out — to the trigger's nearest `.dialog`/`.app`, ColorField's own
+  // expression, which covers the canvas popovers and the sidebar's style editor
+  // in one. Resolved on open (a mount effect would trip set-state-in-effect):
+  // Radix's own open flip batches with this, so the first render already has it.
+  const [container, setContainer] = useState<Element | null>(null);
+
+  const day = normalizeHex(pair.day);
+  const night = normalizeHex(pair.night);
+  // The collapse invariant every swatch write obeys: night stored only while it
+  // differs from day.
+  const swatch = (name: string): PaletteSwatch => ({
+    name,
+    color: day,
+    ...(night !== day && { night }),
+  });
+
+  /** Into `palette`, or — undefined — into a design palette minted for it. */
+  const save = (palette?: Palette) => {
+    const group = beginHistoryGroup();
+    if (palette) {
+      // Names are the ref key, so a second save off the same field counts up
+      // rather than landing a duplicate the refs couldn't tell apart.
+      const name = freshPaletteName(new Set(palette.swatches.map((s) => s.name)), label);
+      addPaletteToMap({ ...palette, swatches: [...palette.swatches, swatch(name)] });
+      onPick({ palette: palette.name, swatch: name }, { day, night });
+    } else {
+      // The stem the Styles tab's own mint counts from.
+      const name = freshPaletteName(new Set(palettes.map((p) => p.name)), 'New design palette');
+      addPaletteToMap({ name, swatches: [swatch(label)], kind: 'design' });
+      onPick({ palette: name, swatch: label }, { day, night });
+    }
+    group.commit();
+  };
+
+  return (
+    <Dropdown.Root
+      modal={false}
+      onOpenChange={(open) => {
+        if (open) setContainer(triggerRef.current?.closest('.dialog, .app') ?? document.body);
+      }}
+    >
+      <Dropdown.Trigger asChild>
+        <button
+          ref={triggerRef}
+          type="button"
+          className="style-row-btn palette-save-btn"
+          aria-label={`Save ${titleNoun} to a palette`}
+          title="Save this color to a design palette"
+          disabled={disabled}
+        >
+          <PlusIcon />
+        </button>
+      </Dropdown.Trigger>
+      <Dropdown.Portal container={container ?? undefined}>
+        <Dropdown.Content
+          className="menu-panel"
+          align="end"
+          sideOffset={4}
+          collisionPadding={8}
+          loop
+        >
+          {designPalettes.map((p) => (
+            <MenuItem key={p.name} onClick={() => save(p)}>
+              {p.name}
+            </MenuItem>
+          ))}
+          {designPalettes.length > 0 && <MenuSeparator />}
+          <MenuItem onClick={() => save()}>New design palette…</MenuItem>
+        </Dropdown.Content>
+      </Dropdown.Portal>
+    </Dropdown.Root>
+  );
+}
+
+/**
  * A themed-color editor row that can LINK to a design-palette swatch — the
  * palette-aware wrapper every `DayNightColorRow` site upgrades to. The sun/moon
  * pair is ALWAYS there, under a dropdown naming where the color comes from:
@@ -49,6 +166,11 @@ function SplitSwatch({ pair }: { pair: DayNightColor }) {
  * ones into the swatch so the palette and its other faithful wearers catch up.
  * Their slots are held open whenever the field is linked, so a row does not
  * jump as an edit makes them appear.
+ *
+ * A CUSTOM field has no swatch for either of those to act on, so the trailing
+ * slot carries `SaveToPalette` instead — the offer to give the color a swatch
+ * to be linked to. It rides the plain row as well, the one piece of chrome a
+ * map with no design palette still has use for.
  */
 export function PaletteColorRow({
   label,
@@ -117,8 +239,22 @@ export function PaletteColorRow({
     />
   );
 
-  // No design palettes and no link: today's plain row, zero new chrome.
-  if (designPalettes.length === 0 && swatchRef === undefined) return plainRow(label);
+  const pair = { day: value, night: darkValue };
+  const saveButton = (
+    <SaveToPalette
+      label={label}
+      titleNoun={titleNoun}
+      designPalettes={designPalettes}
+      pair={pair}
+      disabled={disabled}
+      onPick={onPick}
+    />
+  );
+
+  // No design palettes and no link: the plain row, carrying only the offer to
+  // start a palette off this color.
+  if (designPalettes.length === 0 && swatchRef === undefined)
+    return plainRow(label, { trailing: saveButton });
 
   const linkedPalette =
     swatchRef === undefined ? undefined : designPalettes.find((p) => p.name === swatchRef.palette);
@@ -130,7 +266,6 @@ export function PaletteColorRow({
   const linked = linkedIndex < 0 ? undefined : linkedPalette?.swatches[linkedIndex];
 
   // Linked but painting something else: the field has been recolored in place.
-  const pair = { day: value, night: darkValue };
   const dirty = linked !== undefined && !dayNightColorsEqual(swatchPair(linked), pair);
 
   const selectId = `${id}-palette`;
@@ -206,58 +341,61 @@ export function PaletteColorRow({
           already names the field (ColorTypeRow's reveal idiom). While the
           field is linked it is flanked by the two palette controls, whose
           slots stay open (empty when the colors agree) so an edit never
-          shifts the row. */}
+          shifts the row. Custom has neither to offer, and carries the save in
+          the same trailing slot. */}
       {plainRow(
         '',
-        linked && {
-          keepRef: swatchRef,
-          // The override dot's twin, in BLUE — the same filled circle and
-          // ReloadIcon a style override wears, saying the same thing one level
-          // down: "this differs from what it links to, click to put it back".
-          // It sits against the SUN rather than in the row's gutter, because
-          // the gutter is where the red dots speak for the STYLE and this one
-          // speaks only for the colors beside it.
-          // The slot is ALWAYS here while the field is linked, holding its
-          // width whether or not the badge is in it: clicking Reset makes the
-          // badge go away, and the pickers beside it must not move when it
-          // does.
-          leading: (
-            <span className="palette-revert-slot">
-              {dirty && (
+        linked
+          ? {
+              keepRef: swatchRef,
+              // The override dot's twin, in BLUE — the same filled circle and
+              // ReloadIcon a style override wears, saying the same thing one level
+              // down: "this differs from what it links to, click to put it back".
+              // It sits against the SUN rather than in the row's gutter, because
+              // the gutter is where the red dots speak for the STYLE and this one
+              // speaks only for the colors beside it.
+              // The slot is ALWAYS here while the field is linked, holding its
+              // width whether or not the badge is in it: clicking Reset makes the
+              // badge go away, and the pickers beside it must not move when it
+              // does.
+              leading: (
+                <span className="palette-revert-slot">
+                  {dirty && (
+                    <button
+                      type="button"
+                      className="override-dot palette-dot-revert"
+                      aria-label={`Reset ${titleNoun} to ${swatchRef?.swatch}`}
+                      title={`Reset to ${swatchRef?.swatch}`}
+                      disabled={disabled}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (swatchRef) onPick(swatchRef, swatchPair(linked));
+                      }}
+                    >
+                      <ReloadIcon aria-hidden="true" />
+                    </button>
+                  )}
+                </span>
+              ),
+              // The StyleRow Sync button's twin, aimed at the palette instead of
+              // the style: same LoopIcon, same idle-until-diverged reading.
+              trailing: (
                 <button
                   type="button"
-                  className="override-dot palette-dot-revert"
-                  aria-label={`Reset ${titleNoun} to ${swatchRef?.swatch}`}
-                  title={`Reset to ${swatchRef?.swatch}`}
-                  disabled={disabled}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (swatchRef) onPick(swatchRef, swatchPair(linked));
-                  }}
+                  className="style-row-btn palette-sync-btn"
+                  aria-label={`Sync ${titleNoun} to ${swatchRef?.swatch}`}
+                  title={`Update ${swatchRef?.swatch} to this color (changes everything using it)`}
+                  disabled={disabled || !dirty}
+                  onClick={() =>
+                    swatchRef && syncMapPaletteSwatch(swatchRef.palette, linkedIndex, pair)
+                  }
                 >
-                  <ReloadIcon aria-hidden="true" />
+                  <LoopIcon />
                 </button>
-              )}
-            </span>
-          ),
-          // The StyleRow Sync button's twin, aimed at the palette instead of
-          // the style: same LoopIcon, same idle-until-diverged reading.
-          trailing: (
-            <button
-              type="button"
-              className="style-row-btn palette-sync-btn"
-              aria-label={`Sync ${titleNoun} to ${swatchRef?.swatch}`}
-              title={`Update ${swatchRef?.swatch} to this color (changes everything using it)`}
-              disabled={disabled || !dirty}
-              onClick={() =>
-                swatchRef && syncMapPaletteSwatch(swatchRef.palette, linkedIndex, pair)
-              }
-            >
-              <LoopIcon />
-            </button>
-          ),
-        },
+              ),
+            }
+          : { trailing: saveButton },
       )}
     </>
   );

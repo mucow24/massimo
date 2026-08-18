@@ -208,4 +208,122 @@ describe('<PaletteColorRow />', () => {
     expect(screen.queryByRole('option', { name: /Blue/ })).toBeNull();
     expect(await screen.findByRole('option', { name: 'Border' })).toBeInTheDocument();
   });
+
+  /**
+   * Save to palette: the Custom state's answer to Sync. A hand-picked color has
+   * no swatch to push into, so the same slot offers to MAKE it one — in a
+   * palette the map already carries, or in a design palette minted on the spot.
+   * The save lands the swatch and links the field to it in one undo entry, so
+   * the row comes back naming what it just created.
+   */
+  describe('save to palette', () => {
+    const SAVE = 'Save fill to a palette';
+    const openSave = async (user: ReturnType<typeof userEvent.setup>) =>
+      user.click(screen.getByRole('button', { name: SAVE }));
+    const items = async () => (await screen.findAllByRole('menuitem')).map((el) => el.textContent);
+    const designPalette = () => useDoc.getState().palettes.find((p) => p.kind === 'design');
+
+    // Sync needs a link and Save needs Custom, so the two never share the slot.
+    it('stands in the Custom state, and yields to Sync while linked', () => {
+      useDoc.setState({ ...useDoc.getState(), palettes: [GRAYS] });
+      const { unmount } = renderRow();
+      expect(screen.getByRole('button', { name: SAVE })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /^Sync fill/ })).toBeNull();
+      unmount();
+      renderRow({ swatchRef: BORDER });
+      expect(screen.queryByRole('button', { name: SAVE })).toBeNull();
+      expect(screen.getByRole('button', { name: 'Sync fill to Border' })).toBeInTheDocument();
+    });
+
+    // The whole point of the mint item: a map with no design palette still has
+    // to be able to start one, and the plain row stays plain around the button.
+    it('is offered on the plain row too, where there is no dropdown at all', () => {
+      renderRow();
+      expect(screen.getByRole('button', { name: SAVE })).toBeInTheDocument();
+      expect(screen.queryByRole('combobox')).toBeNull();
+    });
+
+    it('lists the design palettes and the mint, never a line palette', async () => {
+      const user = userEvent.setup();
+      useDoc.setState({ ...useDoc.getState(), palettes: [...DEFAULT_DOC.palettes, GRAYS] });
+      renderRow();
+      await openSave(user);
+      expect(await items()).toEqual(['grays', 'New design palette…']);
+    });
+
+    it('appends a swatch named after the field, and links the field to it', async () => {
+      const user = userEvent.setup();
+      useDoc.setState({ ...useDoc.getState(), palettes: [GRAYS] });
+      renderRow();
+      await openSave(user);
+      await user.click(await screen.findByRole('menuitem', { name: 'grays' }));
+      expect(designPalette()?.swatches[2]).toEqual({
+        name: 'Fill color',
+        color: '#333333',
+        night: '#bbbbbb',
+      });
+      expect(onPick).toHaveBeenCalledWith(
+        { palette: 'grays', swatch: 'Fill color' },
+        { day: '#333333', night: '#bbbbbb' },
+      );
+    });
+
+    // The collapse invariant every other swatch write obeys.
+    it('stores no night half when the two halves agree', async () => {
+      const user = userEvent.setup();
+      useDoc.setState({ ...useDoc.getState(), palettes: [GRAYS] });
+      renderRow({ value: '#00ff00', darkValue: '#00ff00' });
+      await openSave(user);
+      await user.click(await screen.findByRole('menuitem', { name: 'grays' }));
+      expect(designPalette()?.swatches[2]).toEqual({ name: 'Fill color', color: '#00ff00' });
+    });
+
+    // Names are the ref key, so a second save off the same field counts up
+    // rather than landing a duplicate the refs could not tell apart.
+    it('counts up when the field has been saved here before', async () => {
+      const user = userEvent.setup();
+      useDoc.setState({
+        ...useDoc.getState(),
+        palettes: [
+          { ...GRAYS, swatches: [...GRAYS.swatches, { name: 'Fill color', color: '#111' }] },
+        ],
+      });
+      renderRow();
+      await openSave(user);
+      await user.click(await screen.findByRole('menuitem', { name: 'grays' }));
+      expect(designPalette()?.swatches[3].name).toBe('Fill color 2');
+      expect(onPick).toHaveBeenCalledWith(
+        { palette: 'grays', swatch: 'Fill color 2' },
+        { day: '#333333', night: '#bbbbbb' },
+      );
+    });
+
+    it('mints a DESIGN palette carrying the one color, and links to that', async () => {
+      const user = userEvent.setup();
+      renderRow();
+      await openSave(user);
+      await user.click(await screen.findByRole('menuitem', { name: 'New design palette…' }));
+      expect(designPalette()).toEqual({
+        name: 'New design palette',
+        kind: 'design',
+        swatches: [{ name: 'Fill color', color: '#333333', night: '#bbbbbb' }],
+      });
+      expect(onPick).toHaveBeenCalledWith(
+        { palette: 'New design palette', swatch: 'Fill color' },
+        { day: '#333333', night: '#bbbbbb' },
+      );
+    });
+
+    // The palette write and the field's link are one gesture: undo must not
+    // leave a swatch behind that nothing points at.
+    it('is a single undo entry', async () => {
+      const user = userEvent.setup();
+      useDoc.setState({ ...useDoc.getState(), palettes: [GRAYS] });
+      renderRow();
+      useDoc.temporal.getState().clear();
+      await openSave(user);
+      await user.click(await screen.findByRole('menuitem', { name: 'grays' }));
+      expect(useDoc.temporal.getState().pastStates).toHaveLength(1);
+    });
+  });
 });
