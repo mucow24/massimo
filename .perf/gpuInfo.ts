@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
-import { chromium } from '@playwright/test';
+import { chromium, type Page } from '@playwright/test';
+import { PERF_CHROMIUM_ARGS } from './chromiumArgs';
 
 /**
  * The GPU story for a perf run, stamped alongside the CPU power mode because it
@@ -75,21 +76,27 @@ function safeExecutablePath(): string | null {
   }
 }
 
+/** The unmasked WebGL renderer of the page's own browser — the ground truth
+ *  for the browser actually being measured. Specs print this next to the CPU
+ *  mode so a run testifies about its own medium. */
+export function readPageGpu(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const gl = document.createElement('canvas').getContext('webgl');
+    if (!gl) return 'unknown (no webgl context)';
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    return String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+  });
+}
+
 /**
- * Launch the same bundled chromium the harnesses use and ask which adapter it
- * actually rendered on.
+ * Launch chromium the way the perf configs do (same binary, same args, same
+ * headless mode) and ask which adapter it rendered on.
  */
 export async function readBrowserGpu(): Promise<string> {
   try {
-    const browser = await chromium.launch();
+    const browser = await chromium.launch({ args: PERF_CHROMIUM_ARGS });
     try {
-      const page = await browser.newPage();
-      return await page.evaluate(() => {
-        const gl = document.createElement('canvas').getContext('webgl');
-        if (!gl) return 'unknown (no webgl context)';
-        const ext = gl.getExtension('WEBGL_debug_renderer_info');
-        return String(gl.getParameter(ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
-      });
+      return await readPageGpu(await browser.newPage());
     } finally {
       await browser.close();
     }

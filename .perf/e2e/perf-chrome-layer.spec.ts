@@ -42,11 +42,17 @@
  * .perf/README.md): mounting is the whole cost. `display` (build a box) is
  * +22ms; every way of PAINTING an already-present box is +1 to +10ms. Promotion
  * does nothing — `display+layer` >= `display`, `sibling+layer` >= `sibling`,
- * every pair, with CDP confirming 6 layers unpromoted vs 11 promoted. And
- * leaving the pan layer buys ~1ms (inside +6 vs outside +5), not the ~14ms the
- * pan-press numbers implied. So the rule for chrome is one thing: always
- * mounted, appearing by a paint property. `will-change` and leaving the layer
- * are both off the table.
+ * every pair, with CDP confirming 6 layers unpromoted vs 11 promoted. Leaving
+ * the pan layer went from pointless to impossible: the software-era runs priced
+ * it at ~1ms of difference, and the hardware medium then showed the outside svg
+ * does not reliably repaint at all (see the removed arm's note in `buildArms`).
+ * So the rule for chrome is one thing: always mounted, IN the tree, appearing
+ * by a paint property.
+ *
+ * Re-run on hardware rendering (Aug 18, `--use-angle=d3d11`, page GPU stamped
+ * in the output): every surviving arm within ~1ms of its software-era median —
+ * this table measures the main-thread compositing update, not raster, so the
+ * medium hardly touches it.
  *
  * Three gates, all of which exist because a fast number from a mechanism that
  * silently did nothing is the exact failure this project has already paid for
@@ -78,6 +84,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { centroid, loadDoc, med, seedAt } from '../gestureProbe';
 import { perfMapPath } from '../perfMap';
 import { readPowerMode } from '../powerMode';
+import { readPageGpu } from '../gpuInfo';
 
 const ROUNDS = Number(process.env.CHROME_ROUNDS ?? 3);
 const PRESSES = Number(process.env.CHROME_PRESSES ?? 6);
@@ -94,8 +101,6 @@ interface Mech {
   targetCount: number;
   /** The rect in the injected sibling <svg>, which the gate arm switches. */
   siblingOpacity: string;
-  /** The same rect in the copy that lives OUTSIDE the pan layer. */
-  hostSiblingOpacity: string;
   /** The `.perf-armed` trigger class is applied, so the arm's rules are live. */
   armed: boolean;
 }
@@ -269,24 +274,16 @@ const buildArms = (svgTarget: string): Arm[] => [
         ? null
         : `sibling rect opacity unchanged (${pan.siblingOpacity})`),
   },
-  {
-    // Same rect, same svg, one level further out: a sibling of the pan layer
-    // rather than a child of it. If this is free while `sibling-svg` is not,
-    // the boundary is the promoted pan layer itself, and chrome has to live
-    // outside it and be handed the pan transform rather than inheriting it.
-    key: 'host-svg',
-    what: 'opacity on a rect in an <svg> OUTSIDE the pan layer, in .canvas-host',
-    css: `
-      #perf-chrome-host-svg rect { opacity: 0; }
-      .canvas-host.perf-armed #perf-chrome-host-svg rect { opacity: 1; }
-    `,
-    paints: 'svg',
-    live: (rest, pan) =>
-      armed(rest, pan) ??
-      (rest.hostSiblingOpacity !== pan.hostSiblingOpacity
-        ? null
-        : `host-sibling rect opacity unchanged (${pan.hostSiblingOpacity})`),
-  },
+  // There is no OUTSIDE-the-pan-layer arm any more. The software-era run
+  // priced it at +5ms (vs +6 inside — the boundary buys nothing), and the
+  // hardware medium then killed it for correctness instead of cost: an
+  // absolutely-positioned svg injected as a sibling of the pan layer paints
+  // once and becomes a STALE TEXTURE — stylesheet opacity, inline opacity and
+  // fill-attribute changes all resolve in computed style and never reach the
+  // screen (the pixel gate below is what caught it). Only promoting the svg
+  // onto its own compositing layer makes its changes render, and promotion is
+  // measured above as pure overhead. You can't time a paint that does not
+  // happen; the finding replaces the number. See README.
   {
     // The arm that decides whether any of the above transfers. Every arm before
     // it paints an HTML box that is a SIBLING of the map — and the whole reason
@@ -339,10 +336,6 @@ const readMech = (page: Page, svgTarget: string): Promise<Mech | null> =>
       targetCount: hits.length,
       siblingOpacity: (() => {
         const r = document.querySelector('#perf-chrome-svg rect');
-        return r ? getComputedStyle(r).opacity : '—';
-      })(),
-      hostSiblingOpacity: (() => {
-        const r = document.querySelector('#perf-chrome-host-svg rect');
         return r ? getComputedStyle(r).opacity : '—';
       })(),
       armed: !!document.querySelector('.canvas-host.perf-armed'),
@@ -473,19 +466,6 @@ test('chrome-layer promotion ablation', async ({ page }) => {
     rect.setAttribute('fill', '#dd3333');
     svg.appendChild(rect);
     map.parentElement!.appendChild(svg);
-
-    // The same layer again, but OUTSIDE .canvas-pan-layer — a sibling of it,
-    // inside .canvas-host, where the cursor overlay and popovers already live.
-    // This is the production shape if the in-pan-layer answer is no: it cannot
-    // inherit the pan transform, so it would have to be given the same one
-    // useViewport already writes imperatively.
-    const host = document.querySelector('.canvas-host');
-    if (host) {
-      document.getElementById('perf-chrome-host-svg')?.remove();
-      const outer = svg.cloneNode(true) as SVGSVGElement;
-      outer.id = 'perf-chrome-host-svg';
-      host.appendChild(outer);
-    }
     return true;
   });
   if (!siblingReady) throw new Error('could not inject the sibling chrome svg — no map svg found');
@@ -631,6 +611,9 @@ test('chrome-layer promotion ablation', async ({ page }) => {
   console.log(`  map: ${perfMapPath()}`);
   console.log(`       ${stations.length} stations, ${nodes} painted svg nodes`);
   console.log(`  CPU perf mode: ${readPowerMode()}  (swings these numbers; see README)`);
+  // THIS page's adapter — the browser being measured testifies about its own
+  // medium, so a config/arg mismatch can never misattribute a table again.
+  console.log(`  page GPU: ${await readPageGpu(page)}`);
   console.log(`  svg-arm subject: ${targetInfo}  (proved to paint; ${tried} tried)`);
   console.log(`  ${ROUNDS} rounds x ${PRESSES} arm-toggles per arm, interleaved`);
   console.log(

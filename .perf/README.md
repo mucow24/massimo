@@ -171,14 +171,23 @@ Playwright path applies to nothing, because the bundled binary's path changes
 with every Playwright version, and "no override" does not say which GPU
 Windows chose (`gpuInfo.ts`).
 
-The stamp's first run answered a question nobody had asked: the harness's own
-chromium reports **SwiftShader** — Playwright's default headless launch
-renders in software, on neither GPU. Every browser number in this directory
-was taken in that medium. They stay internally comparable (both arms of every
-A/B share it, which is all the tables claim), but read an absolute
-milliseconds figure as "headless software raster", not as the headed browser
-on the dGPU — and if the harness is ever switched to hardware rendering,
-every baseline here needs re-taking.
+Two facts of this machine, both discovered by the stamp and easy to misread:
+the `msedge.exe -> power saving (iGPU)` override is DELIBERATE (it keeps
+Claude-driven Edge sessions off the dGPU) — do not "fix" it — and a headed
+chromium binds the Intel iGPU anyway, because Windows steers browsers to the
+power-saving adapter by default. The dGPU is not the browser's medium on this
+machine at all.
+
+The perf configs pass `--use-angle=d3d11`, which is load-bearing: Playwright's
+default headless launch is FULL software rendering — SwiftShader WebGL,
+`gpu_compositing: disabled_software`, `rasterization: disabled_software`
+(verified via `SystemInfo.getInfo` featureStatus) — and the flag flips all
+three to hardware on that same Intel iGPU while staying headless. Every
+browser number in this directory earlier than Aug 18 2026 was taken in the
+software medium, and nothing in its output said so. Absolute milliseconds do
+not compare across that boundary; the interleaved ratios the ledgers actually
+claim survive, since both arms always shared a medium. The chrome-layer
+ablation was re-run on hardware as the first calibration — see its section.
 
 ## The gesture-start cliff (Aug 15 2026) — found and fixed
 
@@ -355,7 +364,7 @@ paint, medians of 18, two runs, mta-v23, `performance` power mode:
 | the same repaint, `will-change: transform` | +3 ms | " + promoted |
 | `opacity` on a rect INSIDE `.canvas-pan-layer` | +6 ms | paint, inside the layer |
 | that rect, `will-change: transform` | +8 ms | " + promoted |
-| `opacity` on a rect OUTSIDE the pan layer, in `.canvas-host` | +5 ms | paint, outside |
+| `opacity` on a rect OUTSIDE the pan layer, in `.canvas-host` | +5 ms | software era only — arm since removed, see below |
 | `opacity` on ONE real `<path>` inside the map svg | +10 ms | paint a real map node |
 
 Three things fall out, and the plan assumed none of them.
@@ -371,14 +380,28 @@ unpromoted vs 11 promoted, checked per arm so a slow promoted arm cannot be
 confused with a promotion that never happened — it just does not help.
 `will-change` is not the lever and no amount of it will be.
 
-**Leaving the pan layer buys almost nothing.** Painting inside `.canvas-pan-
-layer` (+6ms) versus outside it in `.canvas-host` (+5ms) is a ~1ms difference,
-inside the noise. A real map node is dearer (+10ms) because it drags a larger,
-more complex repaint region with it, not because of the layer boundary. So the
-"move the chrome out of the pan layer" idea — which needs the chrome re-
-projected into screen space, since outside the layer it no longer rides the pan
-transform — is not worth building. The single cheap win, **stop mounting**,
-captures essentially all of it, and needs no re-projection.
+**Leaving the pan layer went from pointless to impossible.** In the software
+era the boundary bought ~1ms (inside +6 vs outside +5) — and then the hardware
+medium killed the idea for correctness instead of cost. On `--use-angle=d3d11`
+(the shipped config), an absolutely-positioned svg injected as a SIBLING of
+the pan layer paints once and becomes a STALE TEXTURE: stylesheet opacity,
+inline-style opacity, and fill-attribute changes all resolve in computed style
+and never reach the screen — the pixel-proof gate is what caught it, three
+runs straight, and a screenshot with the rect visible at computed opacity 0 is
+what settled it. The one channel that renders is promoting the svg onto its
+own compositing layer first, and promotion is measured above as pure overhead.
+The arm was removed — you can't time a paint that does not happen — and the
+"move the chrome out of the pan layer" idea is dead twice over. The single
+cheap win, **stop mounting**, captures essentially all of it, in-tree, and
+needs no re-projection.
+
+**Hardware calibration (Aug 18).** The whole ablation re-run on hardware
+rendering: every surviving arm landed within ~1ms of its software-era median
+(mount +24.4 vs +24.2, ring +1.5, in-pan sibling +6.1, real map node +11.0 vs
++10.6). This table measures the main-thread compositing update, not raster,
+so the medium hardly touches it — the software-era conclusions above carry
+over to hardware unchanged, with the one exception being the stale-texture
+finding replacing the outside-the-layer row.
 
 **The trigger is the lesson.** The first cut of this harness fired each arm with
 a real middle-press (a pan), and on `main` that reported the OPPOSITE: a flat

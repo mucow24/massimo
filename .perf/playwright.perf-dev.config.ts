@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { PERF_CHROMIUM_ARGS } from './chromiumArgs';
 
 // The DEV-SERVER twin of playwright.perf-prod.config.ts: same specs, but
 // served by `vite` (unminified, React dev mode, StrictMode double-render)
@@ -23,7 +24,17 @@ export default defineConfig({
   workers: 1,
   reporter: 'list',
   use: { baseURL: `http://localhost:${PORT}`, trace: 'off' },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        // Hardware rendering on the iGPU instead of Playwright's all-software
+        // headless default — see chromiumArgs.ts, shared with the GPU stamp.
+        launchOptions: { args: PERF_CHROMIUM_ARGS },
+      },
+    },
+  ],
   webServer: {
     command: `npx vite --port ${PORT} --strictPort`,
     url: `http://localhost:${PORT}`,
