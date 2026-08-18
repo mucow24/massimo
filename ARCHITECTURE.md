@@ -167,7 +167,8 @@ src/
     autoOrient.ts               # rotate a just-added station to the line tangent (flipping 180° when the tangent would render its label upside down — same axis, right-side-up text)
     clipboard.ts                # ClipPayload union + read/write + SVG-href security guard
     svgImport.ts                # import external .svg or png/jpeg raster → intrinsic/decoded
-                                #   size + data URI (+ href security allow-list)
+                                #   size + data URI (+ href security allow-list, + the 2 MB
+                                #   ceiling that keeps an import off the localStorage quota)
 
   geometry/                     # PURE math — world coordinates, no React/store
     vec.ts orientation.ts       # vector primitives; rotation/local↔world; STOP_SIZE=14;
@@ -2110,7 +2111,15 @@ edits and focus-scoped groups (numeric fields, the color picker, name editors) �
 synchronously: a focus group stays open as long as focus does, so deferring under it would
 leave storage arbitrarily stale behind a discrete, observable edit. Flush points close the
 deferred window: gesture commit (durable at pointerup), the undo path above, and
-pagehide/beforeunload/visibilitychange.
+pagehide/beforeunload/visibilitychange. **The write itself can be refused** — the origin's
+localStorage quota, most often against a doc carrying an imported image — and it runs inside the
+caller's `set()`, so an escaping `QuotaExceededError` would skip the rest of every action from
+there on (mode exits, selection updates, group commits) while the doc silently stopped reaching
+storage, a loss only a reload reveals. So the write swallows it, keeps the in-memory doc, drops the
+pending blob rather than re-offering one that cannot fit, and reports through a toast — once per
+run of failures, not per keystroke. The import ceiling (`MAX_IMAGE_IMPORT_BYTES`, 2 MB, in
+[svgImport.ts](src/model/svgImport.ts)) is the other half: it keeps the common cause from reaching
+the doc at all.
 
 **Grouped edits — `beginHistoryGroup()`** ([store.ts](src/state/store.ts)). A drag is many
 `moveStation` calls; a text edit is many `onChange`s; a slider drag is many ticks. The pattern:
@@ -3728,7 +3737,10 @@ While holes are being served, MapCanvas's synchronous region build stands down e
 gesture exit — commit, cancel, rollback, and the steal — drains via the store's `onHistoryGroup`
 events: disarm, bump the generation (late RESULTs are dropped), snap the render source back to
 the live doc, resync the mirror. Worker errors and frame timeouts fall back to the synchronous
-path mid-gesture; that path is never deleted — it is the at-rest path, the small-map path, and
+path mid-gesture — carrying the routed guides on a holes-less frame (`DragFrame.holes` is nullable
+for exactly this), since those are guides the hooks were told not to paint and would otherwise
+blink out until the next pointermove takes them back; that path is never deleted — it is the
+at-rest path, the small-map path, and
 the reference the worker's output is pinned byte-equal to (`regionFrame.test.ts`, plus an e2e
 that replays sampled mid-drag frames at rest and requires identical paint). The frame watchdog
 runs on TWO budgets, because a worker that has never answered may still be paying spawn + wasm
@@ -4316,10 +4328,17 @@ check passes while the pixels differ.
 its text-outline pass** — then renders that SVG to a true vector PDF with **svg2pdf.js + jsPDF**:
 outlined text (no font embedded, no selectable text), vector line work, embedded SVG graphics kept
 as vectors (bar mask users, gap 4). Because text arrives already outlined, svg2pdf never touches it
-— no font registration, no baseline correction, no letter-spacing bake, no glyph fallback. Five
+— no font registration, no baseline correction, no letter-spacing bake, no glyph fallback. Six
 non-text gaps svg2pdf/jsPDF can't bridge are closed here:
 
-1. **Region-exclude clips** — the region-layering exclusion clips defeat Blink's clip-raster
+1. **Undecodable image data URIs** — svg2pdf decodes every `data:` image href itself
+   (`atob`/`decodeURIComponent`, and a mime split that throws on anything but `image/*`), and it
+   does so **outside its internal try**, so one malformed href — a hand-edited doc's literal `%`,
+   a truncated base64 run — would throw away the whole PDF. `dropUndecodableImages`
+   ([embeddedSvg.ts](src/export/embeddedSvg.ts)) removes exactly the images svg2pdf would die on,
+   judged by the same rules, before it ever sees them; the skip is reported (console + toast), not
+   silent. Runs first, so the passes below never meet an href they can't decode either.
+2. **Region-exclude clips** — the region-layering exclusion clips defeat Blink's clip-raster
    snapping by emitting the clip path at ×`CLIP_RASTER_SCALE` and pulling it back with
    `CLIP_RASTER_INVERSE_TRANSFORM` (`scale(1/64)`) on the clipPath's **child**
    ([clipRaster.ts](src/components/canvas/clipRaster.ts)). Exact on screen; through svg2pdf it
@@ -4334,15 +4353,15 @@ non-text gaps svg2pdf/jsPDF can't bridge are closed here:
    is exact for arcs, rotate/translate/matrix and `<rect>`/`<circle>` children too; a clipPath whose
    children carry *differing* transforms can't be hoisted and is warned about rather than silently
    mis-clipped.
-2. **Hatch** — svg2pdf can't tile a `<pattern>` along a stroke, so every hatch paint (band strokes
+3. **Hatch** — svg2pdf can't tile a `<pattern>` along a stroke, so every hatch paint (band strokes
    **and** the stop markers on them) is baked into clipped solid-stripe geometry; the stripe math
    lives in the pure, unit-tested [pdfHatch.ts](src/export/pdfHatch.ts) (`ribbonFromCenterline`,
    `hatchStripeRects`, phased off the world origin so a band and its marker read continuous).
-3. **Image drop shadows** — svg2pdf re-parses an svg+xml `<image>` as vectors but ignores
+4. **Image drop shadows** — svg2pdf re-parses an svg+xml `<image>` as vectors but ignores
    `<filter>`, so a logo's hard `feDropShadow` casing would silently drop; `bakeImageDropShadows`
    bakes it into a real offset silhouette (pure core in the unit-tested
    [pdfDropShadow.ts](src/export/pdfDropShadow.ts)).
-4. **Image masks** — that same svg+xml-image re-vectorizing has **no `<mask>` support** (`<mask>`/
+5. **Image masks** — that same svg+xml-image re-vectorizing has **no `<mask>` support** (`<mask>`/
    `<defs>` parse to no-op void nodes and the `mask="url(#…)"` attribute is never read), so a graphic
    using a mask exports at full opacity — the mask silently drops (it renders fine on screen via the
    browser's native `<image>`). A mask has no vector equivalent, so `rasterizeMaskedImages`
@@ -4352,7 +4371,7 @@ non-text gaps svg2pdf/jsPDF can't bridge are closed here:
    and `sizeSvgRoot` (which injects a `viewBox` so a no-viewBox graphic scales to fill) are pure and
    unit-tested; the canvas rasterizer is browser-only (e2e-covered, incl. an `/SMask` guard that the
    mask survived).
-5. **Translucent (hex8) colors** — svg2pdf.js truncates an 8-digit `#rrggbbaa` paint to its first 6
+6. **Translucent (hex8) colors** — svg2pdf.js truncates an 8-digit `#rrggbbaa` paint to its first 6
    digits and drops the alpha, so a translucent fill/stroke would print fully opaque; it _does_
    honor a separate `fill-opacity`/`stroke-opacity` (jsPDF writes it as a real PDF `ExtGState /ca
    /CA`). So `splitAlphaColors` ([pdfAlpha.ts](src/export/pdfAlpha.ts)) rewrites every hex8 paint on
@@ -4425,19 +4444,23 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   for a stored value, the store's own module for a union that never leaves the app (`MAP_SORTS` in
   `state/mapLibrary.ts`): an ordered array naming every member — `LINE_STYLES`, `LINE_END_STYLES`,
   `TRANSFER_DRAW_ORDERS`, `ROUTE_BULLET_SHAPES`, `TEXT_LABEL_ALIGNS`, `DOT_BASE_SHAPES`,
-  `PALETTE_SORTS`, `MAP_SORTS`, and `LABEL_WEIGHT_NAMES` (whose rungs carry their display names,
-  since the names ARE the shipped faces) — with a membership guard beside it: `isLineEndStyle`,
-  `isTransferDrawOrder`, `isRouteBulletShape`, `isTextLabelAlign`, `isDotBaseShape`,
-  `isPaletteSort`, `isMapSort`, `isLabelWeight`. **Every gate judges by the guard and every
-  picker takes its order from the array**; no consumer re-spells the members, including the three
-  gates that each judge stored values independently (both load paths and the clipboard's paste
-  validator). The rule earns its keep because a picker and a gate fail in OPPOSITE directions: a
-  picker short a member leaves a stored value uneditable, while a gate short one discards the
-  whole record carrying it — `canonicalStyleProps` refuses a def rather than repairing it, so the
-  user loses a style, not a field. A persisted PREF fails the same way from the other end: a sort
-  mode the picker no longer offers is stuck, and one the guard no longer accepts is silently
-  ignored on the next boot. Compile-time exhaustiveness comes from a `Record<Union, …>` the array
-  is paired with: the UI's chip or label map where the pickers need one
+  `DOT_STROKE_ALIGNS`, `PALETTE_SORTS`, `MAP_SORTS`, and `LABEL_WEIGHT_NAMES` (whose rungs carry
+  their display names, since the names ARE the shipped faces) — with a membership guard beside it:
+  `isLineEndStyle`, `isTransferDrawOrder`, `isRouteBulletShape`, `isTextLabelAlign`,
+  `isDotBaseShape`, `isDotStrokeAlign`, `isPaletteSort`, `isMapSort`, `isLabelWeight`. The two
+  stored unions still outside the rule are `GuideOrientation` and `StopOrientation`, whose gates
+  spell their members out; both are backstopped by `Record<Union, …>` tables elsewhere
+  (`WELLS`/`MOVE_CURSOR`, `ORIENTATION_ANGLE`/`ORIENTATION_NAME`), so widening either still fails
+  the build. **Every gate judges by the guard and every picker takes its order from the array**;
+  no consumer re-spells the members, including the three gates that each judge stored values
+  independently (both load paths and the clipboard's paste validator). The rule earns its keep
+  because a picker and a gate fail in OPPOSITE directions: a picker short a member leaves a
+  stored value uneditable, while a gate short one discards the whole record carrying it —
+  `canonicalStyleProps` refuses a def rather than repairing it, so the user loses a style, not a
+  field. A persisted PREF fails the same way from the other end: a sort mode the picker no longer
+  offers is stuck, and one the guard no longer accepts is silently ignored on the next boot.
+  Compile-time exhaustiveness comes from a `Record<Union, …>` the array is paired with: the UI's
+  chip or label map where the pickers need one
   (`ROUTE_BULLET_SHAPE_LABEL`, `LINE_END_LABELS`, `TRANSFER_DRAW_LABELS`, `DOT_BASE_SHAPE_LABELS`,
   `TEXT_LABEL_ALIGN_CHIPS`, each dialog's `SORT_LABELS`) or `LINE_STYLE_TIE_RANK` — a member added
   to the union leaves a missing key there and fails to compile, so the ladder cannot fall behind

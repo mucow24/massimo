@@ -2,6 +2,7 @@
 // serialize/parse, malformed defs are dropped, numerics land on the canonical
 // grids, and dangling / wrong-kind styleId tags are pruned.
 import { describe, it, expect } from 'vitest';
+import { auditDoc } from './docAudit';
 import { bakeLegacyLabelSettings, parse, serialize } from './serialize';
 import { applyStyleToItem, captureStyleProps } from './styles';
 import { DOT_BASE_SHAPES, STOP_DOT_FACTORY_STYLES } from './dotStyle';
@@ -18,6 +19,7 @@ import {
   makePolygon,
   makeRouteBullet,
   makeStation,
+  makeStop,
   makeStyle,
   makeTextLabel,
   makeTransfer,
@@ -503,6 +505,28 @@ describe('pruneDanglingStyleRefs via parse', () => {
     const out = parsed(doc);
     expect(out.textLabels.g1.styleId).toBe('y1');
     expect(out.textLabels.g1.fontSize).toBe(16);
+  });
+
+  it('strips dangling dot-slot ids off a line and a stop, keeping the live one', () => {
+    // The dot slots hold stopDot ids OUTSIDE the `styleId` tag, and auditDoc
+    // checks them: a dangling one left standing makes every export door raise
+    // its consistency toast for the life of the document.
+    const doc = makeDoc({
+      stations: [makeStation({ id: 's1', stops: [makeStop('l1', { dotStyleId: 'ghost' })] })],
+      lines: [
+        makeLine({
+          id: 'l1',
+          stations: ['s1'],
+          singletonDotStyleId: 'ghost',
+          multiDotStyleId: 'stop-filled-black',
+        }),
+      ],
+    });
+    const out = parsed(doc);
+    expect(out.lines.l1.singletonDotStyleId).toBeUndefined();
+    expect(out.lines.l1.multiDotStyleId).toBe('stop-filled-black');
+    expect(out.stations.s1.stops[0].dotStyleId).toBeUndefined();
+    expect(auditDoc(out)).toEqual([]);
   });
 
   it("drops a def wearing the reserved name 'Custom' (the dropdown sentinel)", () => {

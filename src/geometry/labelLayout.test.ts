@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { labelLayoutLocal, screenDeltaToLabelOffsets, DEFAULT_LABEL_STYLE } from './labelLayout';
 import { stopCenterAt, STOP_SIZE } from './orientation';
+import { BASELINE_FRACTION, LINE_HEIGHT, measureTextLabel } from './textMeasure';
 import { stopMetricsOf } from '../model/stopMetrics';
 import type { LabelValign, Rotation, Station } from '../model/types';
 import { makeLine } from '../test/fixtures';
@@ -583,6 +584,76 @@ describe("labelLayoutLocal — valign='auto-up'", () => {
     // above the anchor (so line 1 lands on the anchor).
     const lay = labelLayoutLocal(vStation({ name: 'Foo\nBar', valign: 'auto-up' }));
     expect(lay.firstLineCenterY).toBeCloseTo(-LINE_HEIGHT, 5);
+  });
+});
+
+describe('labelLayoutLocal — inline <size=…> vertical metrics', () => {
+  const HIT_PAD = 2;
+  const FONT = 12;
+  // Distance from a line's CENTER down to its baseline, at the label's BASE
+  // size — the one constant stationLabelText applies to firstLineCenterY.
+  const CB = FONT * (BASELINE_FRACTION - 0.5);
+
+  // The line boxes the PAINT actually occupies, reconstructed from what
+  // stationLabelText's per-segment path does with a layout: line 0's baseline
+  // sits CB below firstLineCenterY and later lines follow the measurer's
+  // cumulative baselineFromTop, which advances by each line's OWN largest run.
+  // Each line then owns one LINE_HEIGHT of that size, centered on its baseline
+  // the way the layout's own 1.2em line box is.
+  function paintedBlock(name: string, lay: ReturnType<typeof labelLayoutLocal>) {
+    const m = measureTextLabel({ text: name, fontSize: FONT, weight: 400, italic: false });
+    const first = lay.firstLineCenterY + CB;
+    const boxes = m.lines.map((lm) => {
+      const baselineY = first + (lm.baselineFromTop - m.lines[0].baselineFromTop);
+      return {
+        top: baselineY - lm.maxFontSize * (LINE_HEIGHT / 2 + BASELINE_FRACTION - 0.5),
+        bottom: baselineY + lm.maxFontSize * (LINE_HEIGHT / 2 - BASELINE_FRACTION + 0.5),
+      };
+    });
+    return { top: boxes[0].top, bottom: boxes[boxes.length - 1].bottom };
+  }
+
+  it('a single-line inline size sizes the block to the painted run', () => {
+    // 'middle': the block centers on the anchor, so a 24px run occupies
+    // 24 * 1.2 = 28.8 units, not the base size's 14.4.
+    const name = '<size=24>Hoboken</size>';
+    const lay = labelLayoutLocal(vStation({ name, valign: 'middle' }));
+    expect(lay.hitH - 2 * HIT_PAD).toBeCloseTo(24 * 1.2, 5);
+    const paint = paintedBlock(name, lay);
+    expect(lay.blockTopY).toBeCloseTo(paint.top, 5);
+    expect(lay.blockTopY + lay.hitH - 2 * HIT_PAD).toBeCloseTo(paint.bottom, 5);
+  });
+
+  it("'auto-up' pins the LAST line's baseline on the anchor across an inline size", () => {
+    // The renderer stacks line 1 by its own 24px line advance (28.8), not the
+    // base 14.4 — so line 0's center has to lift by 28.8 for the pinned last
+    // line to land back on the anchor.
+    const name = 'Grand\n<size=24>Central</size>';
+    const lay = labelLayoutLocal(vStation({ name, valign: 'auto-up' }));
+    expect(lay.firstLineCenterY).toBeCloseTo(-24 * 1.2, 5);
+    const paint = paintedBlock(name, lay);
+    expect(lay.blockTopY).toBeCloseTo(paint.top, 5);
+    expect(lay.blockTopY + lay.hitH - 2 * HIT_PAD).toBeCloseTo(paint.bottom, 5);
+  });
+
+  it("'auto-down' keeps the first line pinned and grows the block by the painted stack", () => {
+    const name = 'Grand\n<size=24>Central</size>';
+    const lay = labelLayoutLocal(vStation({ name, valign: 'auto-down' }));
+    // First line still centered on the anchor — its pin never moves.
+    expect(lay.firstLineCenterY).toBeCloseTo(0, 5);
+    const paint = paintedBlock(name, lay);
+    expect(lay.blockTopY).toBeCloseTo(paint.top, 5);
+    expect(lay.blockTopY + lay.hitH - 2 * HIT_PAD).toBeCloseTo(paint.bottom, 5);
+  });
+
+  it('a SMALLER inline size shortens the block rather than leaving it long', () => {
+    const name = 'Times Sq\n<size=8>42 St</size>';
+    const lay = labelLayoutLocal(vStation({ name, valign: 'top' }));
+    // 0.9*12 (line 0 above its baseline) + 8*1.2 (line 1's advance) + 0.3*8.
+    expect(lay.hitH - 2 * HIT_PAD).toBeCloseTo(10.8 + 9.6 + 2.4, 5);
+    const paint = paintedBlock(name, lay);
+    expect(lay.blockTopY).toBeCloseTo(paint.top, 5);
+    expect(lay.blockTopY + lay.hitH - 2 * HIT_PAD).toBeCloseTo(paint.bottom, 5);
   });
 });
 

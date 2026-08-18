@@ -74,4 +74,35 @@ describe('dispatchMirrored — history grouping', () => {
     expect(useDoc.getState().stations['s2'].stops[0].dotSize).toBeUndefined();
     expect(historyDepth()).toBe(1);
   });
+
+  it('sees the rings: a seat between the octants does not receive the broadcast', () => {
+    // Pins that THIS path hands lineCircles to the matcher. s2 is bound to a
+    // ring at angle 100° — its octant rotation matches s1's, but its painted
+    // frame sits 10° off, so it is only rejected when the rings reach
+    // findMatchingStations. A two-field pick here would fan the edit out to a
+    // station that renders differently (the pre-fix bug).
+    const doc = makeDoc({
+      stations: [
+        makeStation({ id: 's1', x: 600, y: 600, rotation: 4, stops: [makeStop('L1')] }),
+        makeStation({
+          id: 's2',
+          x: -34.73,
+          y: 196.96,
+          rotation: 4,
+          circleId: 'c1',
+          stops: [makeStop('L1')],
+        }),
+      ],
+      lines: [makeLine({ id: 'L1', stations: ['s1', 's2'] })],
+      lineCircles: [{ id: 'c1', x: 0, y: 0, radius: 200 }],
+    });
+    useDoc.getState().loadDoc(doc);
+    useSelection.getState().setMirrorMatching(true);
+    clearHistory();
+
+    dispatchMirrored('s1', (sid) => setDotSize(sid, 6));
+
+    expect(useDoc.getState().stations['s1'].stops[0].dotSize).toBe(6);
+    expect(useDoc.getState().stations['s2'].stops[0].dotSize).toBeUndefined();
+  });
 });

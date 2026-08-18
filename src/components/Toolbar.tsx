@@ -15,7 +15,13 @@ import { DEFAULT_DOC } from '../model/transforms';
 import { computeContentBounds } from '../geometry/contentBounds';
 import { fitViewport } from './canvas/viewportMath';
 import { clearHistory } from '../state/history';
-import { parseSvgIntrinsicSize, rasterFileToImage, svgTextToDataUri } from '../model/svgImport';
+import {
+  MAX_IMAGE_IMPORT_BYTES,
+  isImageFileTooLarge,
+  parseSvgIntrinsicSize,
+  rasterFileToImage,
+  svgTextToDataUri,
+} from '../model/svgImport';
 import { useCustomPalettes } from '../state/customPalettes';
 import { themeColors } from '../state/theme';
 import {
@@ -398,7 +404,18 @@ export function Toolbar() {
     downloadBlob(blob, `${currentBasename()}.massimo.json`);
   };
 
+  /**
+   * One save at a time. Nothing else can stop a second one: the clean-state
+   * gate the menu item and Ctrl+S both honour doesn't flip until markSaved
+   * runs, two awaits later, and the map id is read AFTER the thumbnail await —
+   * so an overlapping pass reads the same empty pointer and mints a library
+   * map of its own. Two presses, two maps, each with its own v1 and neither
+   * prunable (isPrunable only reclaims 'auto' versions).
+   */
+  const savingRef = useRef(false);
+
   const onSaveToLibrary = async () => {
+    if (savingRef.current) return;
     // Gated by the menu item's disabled state, not a check here: when the doc
     // is clean this handler is simply unreachable. Snapshot and bytes are
     // captured together BEFORE the awaits, so an edit that lands while the
@@ -407,6 +424,7 @@ export function Toolbar() {
     const snap = pickDocSnapshot(doc);
     auditExportDoc(snap);
     const json = serialize(snap);
+    savingRef.current = true;
     try {
       const thumb = await tryCaptureThumbnail();
       const id = useLibraryPointer.getState().mapId ?? newMapId();
@@ -416,6 +434,8 @@ export function Toolbar() {
       pushToast('info', `Saved “${doc.name}” as v${saved.version}`);
     } catch (err) {
       pushToast('error', errorText(err, 'Could not save to the library.'));
+    } finally {
+      savingRef.current = false;
     }
   };
 
@@ -442,6 +462,11 @@ export function Toolbar() {
       if (isFunModeActive()) return;
       if (!(e.metaKey || e.ctrlKey) || (e.key !== 's' && e.key !== 'S')) return;
       e.preventDefault();
+      // Repeats dropped, like every sibling accelerator in App: a held key
+      // asks for one save, not one per repeat. preventDefault stays above the
+      // guard — the browser's Save-page dialog must not open on a repeat
+      // either.
+      if (e.repeat) return;
       if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       if (saveStatusOf(useDoc.getState(), useSaveBaseline.getState()) === 'clean') return;
       void saveToLibraryRef.current();
@@ -570,7 +595,18 @@ export function Toolbar() {
     const f = e.target.files?.[0];
     e.target.value = ''; // allow re-picking the same file
     if (!f) return;
-    const text = await f.text();
+    // The read itself can fail — a volume ejected, or the file deleted or
+    // overwritten, between the picker and here. Unguarded that rejects out of
+    // the change handler and the picker simply closes, which is what
+    // cancelling looks like; say so instead, the way every other failure here
+    // does.
+    let text: string;
+    try {
+      text = await f.text();
+    } catch (err) {
+      pushToast('error', errorText(err, 'Could not read that file.'));
+      return;
+    }
     // Custom palettes (localStorage) let a loaded map keep its custom active ids
     // instead of dropping them as unknown.
     const result = parse(text, useCustomPalettes.getState().palettes);
@@ -597,22 +633,49 @@ export function Toolbar() {
 
   // Add → Image…: read the file (svg text, or png/jpeg bytes), take its
   // intrinsic size, encode it as an opaque data URI, and enter placing-svg
-  // mode so the next canvas click drops it. A raster that fails to decode is
-  // skipped (it would render as nothing); a malformed svg keeps the existing
-  // 200×200 fallback.
+  // mode so the next canvas click drops it. A raster that fails to decode
+  // reports and adds nothing; a malformed svg keeps the existing 200×200
+  // fallback.
   const onAddImage = () => imageInputRef.current?.click();
   const onImageChosen = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     e.target.value = ''; // allow re-picking the same file
     if (!f) return;
-    let image: { href: string; width: number; height: number } | null;
-    if (f.type === 'image/svg+xml' || /\.svg$/i.test(f.name)) {
-      const text = await f.text();
-      image = { href: svgTextToDataUri(text), ...parseSvgIntrinsicSize(text) };
-    } else {
-      image = await rasterFileToImage(f);
+    // Ahead of both branches, because only the raster one goes through the
+    // helper that carries the check. The encoded image rides every localStorage
+    // write from here on, so an oversized one does not cost the user this
+    // placement, it costs them the session's autosave.
+    if (isImageFileTooLarge(f)) {
+      pushToast(
+        'error',
+        `“${f.name}” is too large to add to a map (limit ${MAX_IMAGE_IMPORT_BYTES / (1024 * 1024)} MB).`,
+      );
+      return;
     }
-    if (!image) return;
+    let image: { href: string; width: number; height: number } | null;
+    // Wrapped for the same reason as the JSON load: a file that stops being
+    // readable between the picker and here rejects the read, and an image that
+    // never appears with no word about why is indistinguishable from a picker
+    // you cancelled.
+    try {
+      if (f.type === 'image/svg+xml' || /\.svg$/i.test(f.name)) {
+        const text = await f.text();
+        image = { href: svgTextToDataUri(text), ...parseSvgIntrinsicSize(text) };
+      } else {
+        image = await rasterFileToImage(f);
+      }
+    } catch (err) {
+      pushToast('error', errorText(err, 'Could not read that image.'));
+      return;
+    }
+    // The helper returns null for a file it cannot make an image of — an
+    // unsupported type, or bytes that do not decode. Either way the picker just
+    // closed with nothing on the canvas, which is the one outcome that must
+    // never be silent.
+    if (!image) {
+      pushToast('error', `“${f.name}” could not be read as an image.`);
+      return;
+    }
     selection.setUiMode({ kind: 'placing-svg', image });
   };
 

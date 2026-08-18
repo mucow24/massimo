@@ -277,6 +277,36 @@ describe('joint markers (arc meets octolinear at one stop)', () => {
     expect(m1?.jointArcOut).toBeNull();
   });
 
+  it('falls back to the octant marker at a LINE END too', () => {
+    // s1 sits at ring angle 30°, so its exact tangent is 120° while the octant
+    // its lattice is seated on is 135°. Its ONE edge runs to an off-ring
+    // station, so nothing arcs into it — and the square end cap that paints
+    // there is built in the band's octolinear frame. A tangent rotationDeg
+    // would leave the 14×14 body 15° askew of the stripe it caps.
+    const theta = Math.PI / 6;
+    const endRotationDeg = (viaCircle: boolean): number => {
+      const doc = makeDoc({
+        stations: [
+          ringStation('s1', theta, { viaCircle, rotation: 3 }),
+          makeStation({ id: 'n1', x: 400, y: 300, stops: [makeStop('l1')] }),
+        ],
+        lines: [makeLine({ id: 'l1', stations: ['s1', 'n1'] })],
+        lineCircles: [makeLineCircle({ id: 'c1', x: CX, y: CY, radius: R })],
+      });
+      const bands = buildBandGeometry(doc.stations, doc.lines, doc.lineCircles);
+      const markers = buildStopMarkers(doc.stations, doc.lines, ['l1'], bands, doc.lineCircles);
+      const m = markers.find((mk) => mk.stationId === 's1');
+      expect(m?.outward).not.toBeNull(); // it really is a line end
+      return m!.rotationDeg;
+    };
+    // The same seat with the stop NOT opted in is the octant frame by
+    // definition — that is what the revert has to land on.
+    expect(endRotationDeg(true)).toBeCloseTo(endRotationDeg(false), 9);
+    // …and the fixture is not vacuous: the tangent is a different angle.
+    const tangentDeg = (Math.atan2(Math.cos(theta), -Math.sin(theta)) * 180) / Math.PI;
+    expect(endRotationDeg(false)).not.toBeCloseTo(tangentDeg, 3);
+  });
+
   it('a pure ring stop (every edge arcs) has NO joint frame', () => {
     const doc = ringDoc();
     const bands = buildBandGeometry(doc.stations, doc.lines, doc.lineCircles);

@@ -148,8 +148,12 @@ export function StationInspector({ id }: { id: StationId }) {
   // (0–3): the source→candidate rotation callers apply to (dRow, dCol)
   // edits (rotateGridDelta) when broadcasting them to that match.
   const matches = useMemo(
-    () => findMatchingStations({ stations: stationsAll, lines: linesAll }, id),
-    [stationsAll, linesAll, id],
+    () =>
+      findMatchingStations(
+        { stations: stationsAll, lines: linesAll, lineCircles: lineCirclesRender },
+        id,
+      ),
+    [stationsAll, linesAll, lineCirclesRender, id],
   );
 
   // Mirror-aware dispatch: with mirror on, `act` fans out to every matching

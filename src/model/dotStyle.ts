@@ -33,6 +33,19 @@ export const DOT_BASE_SHAPES: readonly DotBaseShape[] = [
 export const isDotBaseShape = (v: unknown): v is DotBaseShape =>
   typeof v === 'string' && (DOT_BASE_SHAPES as readonly string[]).includes(v);
 
+// Every DotStrokeAlign, in the order the Styles panel's align chips render. THE
+// ladder, for the same reason the shapes have one: the load gate and the chips
+// used to spell these three out independently, so widening the union would have
+// left stored values the picker never offers AND the gate rewrites to 'center'
+// on load — a silent downgrade with nothing to fail the build. Its
+// exhaustiveness guard is the chips' label map (`DOT_STROKE_ALIGN_LABELS`, a
+// `Record<DotStrokeAlign, …>`).
+export const DOT_STROKE_ALIGNS: readonly DotStrokeAlign[] = ['center', 'inside', 'outside'];
+
+/** Is `v` one of the known stroke alignments? The gate both load paths judge by. */
+export const isDotStrokeAlign = (v: unknown): v is DotStrokeAlign =>
+  typeof v === 'string' && (DOT_STROKE_ALIGNS as readonly string[]).includes(v);
+
 // A dot showing its service code uses a larger disc than STOP_DOT_RADIUS so
 // the code inside stays legible. (Moved here from StopGlyph — the radius is a
 // styling rule, not an SVG-assembly detail.)

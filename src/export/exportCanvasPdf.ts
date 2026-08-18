@@ -41,6 +41,8 @@ import { bakeImageDropShadows } from './pdfDropShadow';
 import { rasterizeMaskedImages } from './pdfMask';
 import { splitAlphaColors } from './pdfAlpha';
 import { hoistClipPathTransforms } from './pdfClip';
+import { dropUndecodableImages } from './embeddedSvg';
+import { pushToast } from '../state/toastStore';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -181,6 +183,21 @@ export function bakeHatchedPaints(svg: SVGSVGElement): void {
  * left for svg2pdf to mis-baseline, mis-track, or fail to embed a font for.
  */
 export async function prepareSvgForPdf(el: SVGSVGElement): Promise<void> {
+  // First, images svg2pdf cannot survive: it decodes every data: href itself,
+  // outside its internal try, so a malformed one (a hand-edited doc's literal
+  // `%`, a truncated base64 run) would throw away the WHOLE export. One image
+  // we cannot rewrite costs that image, not the PDF — and not silently.
+  const droppedImages = dropUndecodableImages(el);
+  if (droppedImages > 0) {
+    if (typeof console !== 'undefined') {
+      console.warn(`PDF export: skipped ${droppedImages} image(s) with an undecodable data URI.`);
+    }
+    pushToast(
+      'error',
+      `${droppedImages} image${droppedImages === 1 ? '' : 's'} could not be decoded and ${droppedImages === 1 ? 'was' : 'were'} left out of the PDF.`,
+    );
+  }
+
   // Move the clip-raster scale(1/64) off region-exclude clip CHILDREN onto the
   // clipPath itself. svg2pdf memoizes each node's parsed path and transforms it
   // in place, so a transform on a clip child compounds once per referencing

@@ -48,23 +48,102 @@ function hardShadowOf(filter: Element): HardShadow | null {
   };
 }
 
+type PaintProp = 'fill' | 'stroke';
+
+/** One `<style>`-block rule, as far as a silhouette cares about it. */
+interface PaintRule {
+  selector: string;
+  fill: string | null;
+  stroke: string | null;
+}
+
+/** The value `prop` is given in a block of CSS text (a `style` attribute or a
+ *  rule body), or null if that block doesn't declare it. `fill-opacity` and
+ *  friends can't match — a `-` is not a `:`. */
+const declIn = (css: string, prop: PaintProp): string | null =>
+  new RegExp(`(?:^|[;{\\s])${prop}\\s*:\\s*([^;}]+)`).exec(css)?.[1].trim() ?? null;
+
+/** `matches` throws on a selector its parser rejects; an imported graphic's
+ *  hand-written sheet is not worth an aborted export. */
+const matchesSelector = (el: Element, selector: string): boolean => {
+  try {
+    return el.matches(selector);
+  } catch {
+    return false;
+  }
+};
+
+/** The paint rules the markup's own `<style>` blocks declare, in document
+ *  order. Drawing editors emit flat `.st0{fill:#d92626}` sheets and that is
+ *  what this reads; an at-rule wrapper's inner rules are read as if they
+ *  always applied, which for a color is close enough to leave alone. */
+function sheetPaintRules(root: Element): PaintRule[] {
+  const rules: PaintRule[] = [];
+  for (const style of root.querySelectorAll('style')) {
+    for (const [, selector, body] of (style.textContent ?? '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const sel = selector.trim();
+      if (sel === '' || sel.startsWith('@')) continue;
+      rules.push({ selector: sel, fill: declIn(body, 'fill'), stroke: declIn(body, 'stroke') });
+    }
+  }
+  return rules;
+}
+
+/** What an element paints for `prop` if left alone: its own `style` attribute
+ *  first, then the last matching `<style>` rule, then the presentation
+ *  attribute — the BROWSER's cascade, which is what the artwork was authored
+ *  against. svg2pdf cannot replay it: its sheet collection walks the OUTER
+ *  export SVG only, so an embedded image's own `<style>` blocks are invisible
+ *  to it — which is why every decision made here must be written back INLINE
+ *  on the clone rather than left to the class that made it. Null when nothing
+ *  declares the prop and the value is inherited. */
+function declaredPaint(el: Element, prop: PaintProp, rules: PaintRule[]): string | null {
+  const inline = declIn(el.getAttribute('style') ?? '', prop);
+  if (inline !== null) return inline;
+  for (let i = rules.length - 1; i >= 0; i--) {
+    const value = rules[i][prop];
+    if (value !== null && matchesSelector(el, rules[i].selector)) return value;
+  }
+  return el.getAttribute(prop);
+}
+
+/** Force `prop` to the flood color in BOTH channels that can carry it. The
+ *  attribute alone is not enough: the clone keeps its class and its `style`
+ *  attribute, and either of those outranks an attribute in svg2pdf — an
+ *  attribute-only repaint exports the artwork's own colors as the shadow. */
+function setPaint(el: Element, prop: PaintProp, color: string): void {
+  el.setAttribute(prop, color);
+  const style = el.getAttribute('style') ?? '';
+  const decl = new RegExp(`((?:^|[;\\s])${prop}\\s*:\\s*)[^;]+`);
+  el.setAttribute(
+    'style',
+    decl.test(style)
+      ? style.replace(decl, `$1${color}`)
+      : `${style === '' ? '' : `${style};`}${prop}:${color}`,
+  );
+}
+
 /** Repaint a cloned subtree as a solid silhouette in `color` (feDropShadow floods
  * the source alpha), and drop ids so the clone can't collide with the original. */
-function paintSilhouette(el: Element, color: string): void {
+function paintSilhouette(el: Element, color: string, rules: PaintRule[]): void {
   const recolor = (e: Element) => {
-    if (e.getAttribute('fill') !== 'none' && e.getAttribute('fill') !== null) {
-      e.setAttribute('fill', color);
-    }
-    if (e.getAttribute('stroke') !== 'none' && e.getAttribute('stroke') !== null) {
-      e.setAttribute('stroke', color);
+    for (const prop of ['fill', 'stroke'] as const) {
+      const declared = declaredPaint(e, prop, rules);
+      // Nothing declared: the value is inherited, and whichever ancestor does
+      // declare it is inside this clone and gets recolored too. `none` draws
+      // nothing, so it floods nothing — but that decision is written INLINE,
+      // because when it came from a sheet rule svg2pdf cannot see (see
+      // `declaredPaint`), the un-inlined clone would flood default black in
+      // the PDF exactly where the browser paints nothing.
+      if (declared !== null) setPaint(e, prop, declared === 'none' ? 'none' : color);
     }
     e.removeAttribute('id');
   };
   recolor(el);
   el.querySelectorAll('*').forEach(recolor);
-  // Shapes that paint via the inherited default (no fill attr) still cast a
-  // shadow, so force the flood color at the clone root.
-  if (el.getAttribute('fill') === null) el.setAttribute('fill', color);
+  // Shapes that paint via the inherited default (no fill declared anywhere)
+  // still cast a shadow, so force the flood color at the clone root.
+  if (declaredPaint(el, 'fill', rules) === null) el.setAttribute('fill', color);
 }
 
 /**
@@ -97,6 +176,7 @@ export function bakeHardDropShadow(markup: string): string {
   }
 
   let baked = false;
+  const rules = sheetPaintRules(root);
   for (const el of [...root.querySelectorAll('[filter]')]) {
     const id = /url\(#([^)]+)\)/.exec(el.getAttribute('filter') ?? '')?.[1];
     const shadow = id ? hard.get(id) : undefined;
@@ -104,7 +184,7 @@ export function bakeHardDropShadow(markup: string): string {
 
     const clone = el.cloneNode(true) as Element;
     clone.removeAttribute('filter');
-    paintSilhouette(clone, shadow.floodColor);
+    paintSilhouette(clone, shadow.floodColor, rules);
     if (shadow.floodOpacity !== 1) clone.setAttribute('opacity', String(shadow.floodOpacity));
     // Offset in the element's own user space (append after its transform), which
     // is where feDropShadow's userSpaceOnUse offset applies.

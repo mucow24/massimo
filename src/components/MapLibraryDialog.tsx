@@ -161,6 +161,8 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
   // Collapsing the two flashes "No saved maps" on every open.
   const [maps, setMaps] = useState<MapSummary[] | null>(null);
   const [selectedMapId, setSelectedMapId] = useState<string | null>(null);
+  /** Bumped to re-read the selected map's versions in place (see below). */
+  const [versionsEpoch, setVersionsEpoch] = useState(0);
   const [versions, setVersions] = useState<VersionMeta[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmKey, setConfirmKey] = useState<string | null>(null);
@@ -183,19 +185,41 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
   }, []);
 
   /**
-   * Re-read the open map's versions in place. Separate from `selectMap`, which
-   * blanks the list first: a star or a name is an edit to a list you are
-   * looking at, and flashing "Loading…" under your cursor for it reads as a
-   * glitch.
+   * Ask for a fresh read of the SELECTED map's versions — the map that is
+   * selected when the effect below runs, never the one that was selected when
+   * the caller started. A star, a name or a delete resolves after an await,
+   * by which time the click that started it may have been followed by a click
+   * on another map's row; naming the map here would paint one map's versions
+   * under another map's heading, where Open and the non-undoable Delete then
+   * act on them.
+   *
+   * Deliberately does NOT blank the list first, unlike `selectMap`: a star or
+   * a name is an edit to a list you are looking at, and flashing "Loading…"
+   * under your cursor for it reads as a glitch.
    */
-  const refreshVersions = useCallback(async (mapId: string) => {
-    try {
-      setVersions(await listVersions(mapId));
-    } catch {
-      setVersions([]);
-      setError('Could not read that map’s versions.');
-    }
-  }, []);
+  const refreshVersions = useCallback(() => setVersionsEpoch((n) => n + 1), []);
+
+  // The versions read, owned by the selection rather than by whoever asked for
+  // it. Re-runs on a new map or a bumped epoch, and the cleanup disowns the
+  // read in flight — two readonly IndexedDB reads may run concurrently and
+  // settle backwards, so the column takes rows only from its own read.
+  useEffect(() => {
+    if (selectedMapId === null) return;
+    let live = true;
+    void (async () => {
+      try {
+        const rows = await listVersions(selectedMapId);
+        if (live) setVersions(rows);
+      } catch {
+        if (!live) return;
+        setVersions([]);
+        setError('Could not read that map’s versions.');
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [selectedMapId, versionsEpoch]);
 
   // The first read. Guarded rather than calling refreshMaps: the dialog can be
   // dismissed while listMaps() is still in flight.
@@ -216,11 +240,15 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
     };
   }, []);
 
-  const selectMap = async (id: string) => {
+  // Blanks the list, so the column never shows the previous map's versions
+  // while the read for the new one is out. The refresh is what fetches them —
+  // and it is unconditional, because clicking the row you are already on
+  // blanks the list just the same and would otherwise sit at "Loading…".
+  const selectMap = (id: string) => {
     setSelectedMapId(id);
     setVersions(null);
     setConfirmKey(null);
-    await refreshVersions(id);
+    refreshVersions();
   };
 
   const onDeleteMap = async (id: string) => {
@@ -270,7 +298,7 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
     }
     const pointer = useLibraryPointer.getState();
     if (pointer.mapId === version.mapId && pointer.version === version.version) markUnbacked();
-    if (selectedMapId) await refreshVersions(selectedMapId);
+    refreshVersions();
     await refreshMaps();
   };
 
@@ -281,7 +309,7 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
       setError('Could not star that version.');
       return;
     }
-    if (selectedMapId) await refreshVersions(selectedMapId);
+    refreshVersions();
   };
 
   const onToggleMapStar = async (map: MapSummary) => {
@@ -304,7 +332,7 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
       setError('Could not name that version.');
       return;
     }
-    if (selectedMapId) await refreshVersions(selectedMapId);
+    refreshVersions();
   };
 
   const onCommitRename = async (id: string, name: string) => {
@@ -421,7 +449,7 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
                     <div
                       key={m.id}
                       className={'dialog-row map-row' + (m.id === selectedMapId ? ' selected' : '')}
-                      onClick={() => void selectMap(m.id)}
+                      onClick={() => selectMap(m.id)}
                     >
                       <Thumb src={m.thumb} />
                       <div className="dialog-row-body">

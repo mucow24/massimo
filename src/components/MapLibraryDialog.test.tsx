@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 // Every IndexedDB-touching function is mocked — jsdom has no indexedDB, and a
@@ -81,6 +81,16 @@ const V2: VersionMeta = {
 };
 const VERSIONS: VersionMeta[] = [V3, V2];
 
+/** Broadway's one version. A different map's rows, so "whose versions are
+ *  these" is a legible assertion rather than a count. */
+const M2_V9: VersionMeta = {
+  id: 90,
+  mapId: 'm2',
+  savedAt: Date.parse('2026-07-13T10:00:00Z'),
+  source: 'user',
+  version: 9,
+};
+
 const onClose = vi.fn();
 const onOpenVersion = vi.fn(async () => {});
 
@@ -100,6 +110,14 @@ const openCanalLine = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(await screen.findByText('Canal Line'));
   await waitFor(() => expect(listVersions).toHaveBeenCalledWith('m1'));
 };
+
+/** Run every already-resolved promise to its setState. A macrotask boundary
+ *  drains the whole microtask queue, so a read chain settles in one await —
+ *  which is what "the late read landed and was ignored" needs to observe. */
+const settle = () =>
+  act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
 
 // The dialog portals into document.body, so the render container is empty.
 const mapNames = () =>
@@ -786,6 +804,79 @@ describe('MapLibraryDialog', () => {
       await user.click(screen.getByRole('button', { name: 'Star Broadway' }));
       await waitFor(() => expect(setMapStarred).toHaveBeenCalled());
       expect(listVersions).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The right-hand column is headed by the selected map's name, and Open and
+   * the non-undoable Delete act on the rows under that heading — so a version
+   * read that lands after the selection moved on must not paint them.
+   */
+  describe('versions belong to the selected map', () => {
+    it('ignores a read that settles after another map was selected', async () => {
+      const user = userEvent.setup();
+      let landCanalLine: (rows: VersionMeta[]) => void = () => {};
+      vi.mocked(listVersions).mockImplementation((id) =>
+        id === 'm1'
+          ? new Promise<VersionMeta[]>((r) => {
+              landCanalLine = r;
+            })
+          : Promise.resolve([M2_V9]),
+      );
+      renderDialog();
+      await user.click(await screen.findByText('Canal Line'));
+      await user.click(await screen.findByText('Broadway'));
+      await waitFor(() => expect(versionNumbers()).toEqual(['v9']));
+
+      landCanalLine(VERSIONS); // two concurrent readonly reads, settling backwards
+      await settle();
+      expect(versionNumbers()).toEqual(['v9']);
+      expect(screen.getByRole('heading', { name: 'Broadway' })).toBeInTheDocument();
+    });
+
+    // Clicking the row you are already on blanks the list, so it owes you a
+    // read: without one the column sits at "Loading…" with nothing coming.
+    it('re-reads when the selected map is clicked again', async () => {
+      const user = userEvent.setup();
+      renderDialog();
+      await openCanalLine(user);
+      vi.mocked(listVersions).mockClear();
+      // From the maps column: the versions column is now headed by the same name.
+      const maps = document.querySelector('.map-library-maps') as HTMLElement;
+      await user.click(within(maps).getByText('Canal Line'));
+      await waitFor(() => expect(listVersions).toHaveBeenCalledWith('m1'));
+      expect(versionNumbers()).toEqual(['v3', 'v2']);
+    });
+
+    /**
+     * The route that needs no reordering at all: a version-name write blocks
+     * the reads behind it, so its own refresh — which closes over the map that
+     * was selected when the input was opened — is the LAST read issued.
+     */
+    it('ignores the refresh a name commit makes for the map you just left', async () => {
+      const user = userEvent.setup();
+      let commitName: () => void = () => {};
+      vi.mocked(setVersionName).mockReturnValue(
+        new Promise<void>((r) => {
+          commitName = () => r();
+        }),
+      );
+      vi.mocked(listVersions).mockImplementation((id) =>
+        Promise.resolve(id === 'm1' ? VERSIONS : [M2_V9]),
+      );
+      renderDialog();
+      await openCanalLine(user);
+      await user.click(screen.getByRole('button', { name: 'Name version 3' }));
+      await user.type(screen.getByRole('textbox', { name: 'Name version 3' }), 'beta 1');
+      // Mousedown on the map row blurs the input, so the name write is in
+      // flight while the click selects Broadway.
+      await user.click(screen.getByText('Broadway'));
+      await waitFor(() => expect(versionNumbers()).toEqual(['v9']));
+
+      commitName();
+      await settle();
+      expect(versionNumbers()).toEqual(['v9']);
+      expect(screen.getByRole('heading', { name: 'Broadway' })).toBeInTheDocument();
     });
   });
 

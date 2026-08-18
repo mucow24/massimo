@@ -158,6 +158,27 @@ describe('stopMetricsOf — reference stability', () => {
     expect(stopMetricsOf({ ...src, stations: rest })).not.toBe(first);
   });
 
+  it('the reused function answers in the frame it is HANDED, not the one it was built in', () => {
+    const src = scene();
+    const first = stopMetricsOf(src);
+    // Select-all and drag (or rotate): every station moves TOGETHER, so every
+    // neighbour projection is preserved and the content comparison passes. The
+    // same function comes back — but it must resolve neighbours out of the
+    // record its callers are now passing stations from, or B's own new
+    // position gets projected against A's and C's old ones and the whole map
+    // reads as continuing one way only.
+    const shifted = Object.fromEntries(
+      Object.entries(src.stations).map(([id, st]) => [id, { ...st, x: st.x + 1000 }]),
+    ) as Record<StationId, Station>;
+    const next = { ...src, stations: shifted };
+    const fn = stopMetricsOf(next);
+    expect(fn).toBe(first);
+    expect(fn(next.stations.B, next.stations.B.stops[0]).continues).toEqual({
+      plus: true,
+      minus: true,
+    });
+  });
+
   it('the reused function still answers correctly for the moved station', () => {
     const src = scene();
     stopMetricsOf(src);

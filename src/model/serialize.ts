@@ -65,6 +65,7 @@ import {
   defaultDotDiameter,
   dotStylesEqual,
   isDotBaseShape,
+  isDotStrokeAlign,
   resolveDotStyle,
 } from './dotStyle';
 import {
@@ -318,6 +319,13 @@ export function sanitizeGuides(guidesIn: Record<string, AlignmentGuide>): {
   const out: Record<string, AlignmentGuide> = {};
   for (const id of Object.keys(guidesIn)) {
     let g = guidesIn[id];
+    // The entry itself before any of its fields: a stored null (or a string,
+    // or any other non-object) drops like every other malformed guide rather
+    // than throwing out of parse's shell and refusing the whole file.
+    if (g === null || typeof g !== 'object') {
+      changed = true;
+      continue;
+    }
     if (
       (g.orientation !== 'horizontal' &&
         g.orientation !== 'vertical' &&
@@ -1570,6 +1578,12 @@ export function sanitizeImageHrefs(
 // the historical `${service} line` default. Shared by parse() (file import) and
 // the zustand persist `migrate` hook (localStorage rehydration), so both entry
 // points stay in step — like the other backfills.
+//
+// Keyed on ABSENCE, not falsiness: an EMPTY name is the deliberate clear of the
+// Line name field, which lineDisplayName reads as "an unnamed line" and renders
+// as `${service} line` while still tracking the code. Materializing that string
+// would freeze the display name against a later code change — and only on the
+// import path, since the rehydrate runs this behind its own version gate.
 export function backfillLineNames(lines: Record<string, Line>): {
   lines: Record<string, Line>;
   changed: boolean;
@@ -1578,7 +1592,7 @@ export function backfillLineNames(lines: Record<string, Line>): {
   const next: Record<string, Line> = {};
   for (const id of Object.keys(lines)) {
     const ln = lines[id];
-    if (!ln.name) {
+    if (typeof ln.name !== 'string') {
       next[id] = { ...ln, name: `${ln.service} line` };
       changed = true;
     } else {
@@ -1663,14 +1677,11 @@ export function foldPolygonFillOpacity(polygons: Record<string, Polygon>): {
   return { polygons: next, changed };
 }
 
-const KNOWN_DOT_STROKE_ALIGNS = new Set<DotStrokeAlign>(['center', 'inside', 'outside']);
 // Stroke alignment is REQUIRED on DotStyle but was added after some saves; a
 // missing or malformed value defaults to 'center' (the historical behavior)
-// rather than invalidating the whole style.
-const sanitizeStrokeAlign = (v: unknown): DotStrokeAlign =>
-  typeof v === 'string' && KNOWN_DOT_STROKE_ALIGNS.has(v as DotStrokeAlign)
-    ? (v as DotStrokeAlign)
-    : 'center';
+// rather than invalidating the whole style. Judged by the model's guard, so
+// the gate can't fall behind the ladder the picker offers.
+const sanitizeStrokeAlign = (v: unknown): DotStrokeAlign => (isDotStrokeAlign(v) ? v : 'center');
 
 // Validate + normalize one raw dot color from a hand-edited file: the 'line'
 // sentinel, a {day, night} string pair (lowercased), or whichever of the
@@ -3151,8 +3162,13 @@ export function sanitizeStyles(styles: Record<string, StyleDef>): {
 // dropped or never shipped with the file) and wrong-kind ids. Values that
 // diverge from the style's props are NOT a reason to strip — divergence is a
 // per-field override, and a loaded item keeps both its tag and its own
-// values. Runs LAST in parse() so it checks the fully-sanitized defs.
-// Returns the same doc reference when nothing changed.
+// values. The stopDot slots (a line's two dot defaults, a stop's own dot) get
+// the same repair: they are style references that live outside the `styleId`
+// tag, and auditDoc judges them exactly as strictly, so a dangling one left
+// standing raises the consistency toast at every export door. Dropping the id
+// repaints nothing — an unresolvable one already fell through to the raw dot
+// shadow / the line's default. Runs LAST in parse() so it checks the
+// fully-sanitized defs. Returns the same doc reference when nothing changed.
 export function pruneDanglingStyleRefs(doc: MapDoc): MapDoc {
   function pruneColl<T extends { styleId?: string }>(
     coll: Record<string, T>,
@@ -3174,12 +3190,55 @@ export function pruneDanglingStyleRefs(doc: MapDoc): MapDoc {
     }
     return changed ? next : coll;
   }
-  const lines = pruneColl(doc.lines, 'line');
+  // A dot slot resolves only to a stopDot def; absent is its untagged state.
+  const liveDot = (id: string | undefined): boolean =>
+    id === undefined || doc.styles[id]?.kind === 'stopDot';
+  function pruneLineDots(coll: Record<string, Line>): Record<string, Line> {
+    let changed = false;
+    const next: Record<string, Line> = {};
+    for (const id of Object.keys(coll)) {
+      let ln = coll[id];
+      if (!liveDot(ln.singletonDotStyleId)) {
+        const { singletonDotStyleId: _gone, ...rest } = ln;
+        ln = rest;
+        changed = true;
+      }
+      if (!liveDot(ln.multiDotStyleId)) {
+        const { multiDotStyleId: _gone, ...rest } = ln;
+        ln = rest;
+        changed = true;
+      }
+      next[id] = ln;
+    }
+    return changed ? next : coll;
+  }
+  function pruneStopDots(coll: Record<string, Station>): Record<string, Station> {
+    let changed = false;
+    const next: Record<string, Station> = {};
+    for (const id of Object.keys(coll)) {
+      const st = coll[id];
+      if (st.stops.every((s) => liveDot(s.dotStyleId))) {
+        next[id] = st;
+        continue;
+      }
+      changed = true;
+      next[id] = {
+        ...st,
+        stops: st.stops.map((s) => {
+          if (liveDot(s.dotStyleId)) return s;
+          const { dotStyleId: _gone, ...rest } = s;
+          return rest;
+        }),
+      };
+    }
+    return changed ? next : coll;
+  }
+  const lines = pruneLineDots(pruneColl(doc.lines, 'line'));
   const textLabels = pruneColl(doc.textLabels, 'textLabel');
   const polygons = pruneColl(doc.polygons, 'polygon');
   const routeBullets = pruneColl(doc.routeBullets, 'routeBullet');
   const transfers = pruneColl(doc.transfers, 'transfer');
-  const stations = pruneColl(doc.stations, 'station');
+  const stations = pruneStopDots(pruneColl(doc.stations, 'station'));
   if (
     lines === doc.lines &&
     textLabels === doc.textLabels &&
@@ -3646,6 +3705,7 @@ function sanitizeDocReferences(doc: MapDoc): MapDoc {
   sweep('polygons');
   sweep('svgImages');
   sweep('lineCircles');
+  sweep('guides');
 
   // Free transfer anchors: a bare {id, x, y} — drop on a non-finite point.
   // Before transfers, which judge anchor liveness against the survivors.

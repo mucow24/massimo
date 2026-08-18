@@ -521,6 +521,22 @@ describe('<PalettesDialog /> Load…', () => {
     expect(useDoc.getState().palettes.map((p) => p.name)).toEqual(['frrf']);
   });
 
+  // Same unreadable-file hazard the Toolbar's two pickers already report: the
+  // read can reject between the picker and here, and the dialog closing its
+  // file chooser with nothing added has to say why rather than swallow it.
+  it('surfaces a palette file that cannot be read', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({ ...useDoc.getState(), palettes: [] });
+    renderDialog();
+    const unreadable = file({ name: 'frrf', colors: [] });
+    Object.defineProperty(unreadable, 'text', {
+      value: () => Promise.reject(new Error('NotReadableError: the file could not be read')),
+    });
+    await user.upload(loadInput(), unreadable);
+    expect(screen.getByRole('alert')).toHaveTextContent(/could not be read/i);
+    expect(useDoc.getState().palettes).toEqual([]);
+  });
+
   it('a loaded design palette lands as one, in both destinations', async () => {
     const user = userEvent.setup();
     useDoc.setState({ ...useDoc.getState(), palettes: [] });

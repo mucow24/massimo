@@ -84,6 +84,9 @@ function parseMassimoPalette(obj: {
   }
   const swatches: PaletteSwatch[] = [];
   obj.colors.forEach((entry, i) => {
+    // A hand-edited file can hold a null (or otherwise non-object) entry where
+    // a color belongs; it is just one more color we can't use.
+    if (entry === null || typeof entry !== 'object') return;
     const e = entry as { name?: unknown; day?: unknown; night?: unknown };
     if (typeof e.day !== 'string' || !HEX6OR8.test(e.day)) return;
     const color = normalizeHex(e.day);
@@ -124,6 +127,7 @@ function parseLegacyPalette(obj: { name?: unknown; colors?: unknown }): ParsedCu
   }
   const swatches: PaletteSwatch[] = [];
   obj.colors.forEach((entry, i) => {
+    if (entry === null || typeof entry !== 'object') return;
     const e = entry as { line?: unknown; human?: unknown };
     if (typeof e.human !== 'string' || !HEX6.test(e.human)) return;
     const name = e.line == null ? String(i + 1) : String(e.line);

@@ -106,6 +106,26 @@ describe('serialize / parse round-trip', () => {
   });
 });
 
+describe('parse — line names', () => {
+  it('keeps a deliberately-cleared name: an unnamed line stays unnamed', () => {
+    // An empty `name` is a state the app writes (clear the Line name field)
+    // and lineDisplayName reads as "unnamed" — materializing the fallback
+    // string on import would freeze the display name against the service code.
+    const doc = makeDoc({ lines: [makeLine({ id: 'L1', service: 'A', name: '' })] });
+    const r = parse(serialize(doc));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.lines.L1.name).toBe('');
+  });
+
+  it('backfills an ABSENT name for a file saved before the field existed', () => {
+    const file = JSON.parse(serialize(makeDoc({ lines: [makeLine({ id: 'L1', service: 'A' })] })));
+    delete file.doc.lines.L1.name;
+    const r = parse(JSON.stringify(file));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.doc.lines.L1.name).toBe('A line');
+  });
+});
+
 describe('parse — the map’s palettes', () => {
   const fileWith = (palettes: unknown): string =>
     JSON.stringify({ format: 'massimo-map', doc: { ...T.DEFAULT_DOC, palettes } });

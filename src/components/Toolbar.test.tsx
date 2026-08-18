@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   act,
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -63,6 +64,7 @@ import { Toolbar } from './Toolbar';
 import { StatusToasts } from './StatusToasts';
 import { useFunMode } from '../state/funMode';
 import { useToasts } from '../state/toastStore';
+import { MAX_IMAGE_IMPORT_BYTES } from '../model/svgImport';
 import {
   downloadBlob,
   getCanvasSvg,
@@ -168,6 +170,14 @@ const findToast = (pattern: RegExp) =>
     const hit = toastsNow().find((t) => pattern.test(t.textContent ?? ''));
     if (!hit) throw new Error(`no toast matching ${pattern}`);
     return hit;
+  });
+
+/** Drain every pending promise chain. A macrotask boundary flushes the whole
+ *  microtask queue, so "how many saves did that burst of presses start" is a
+ *  settled number rather than a race with waitFor's first passing poll. */
+const settle = () =>
+  act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
   });
 
 /** Anchor the baseline to the CURRENT doc, the way every save/adopt site does:
@@ -661,6 +671,26 @@ describe('Toolbar — Load', () => {
   });
 
   /**
+   * A file that goes unreadable between the picker and the read — an ejected
+   * volume, a file deleted or overwritten under us — rejects the read itself.
+   * Unguarded that is an unhandled rejection and a picker that closes with
+   * nothing to show, which reads exactly like cancelling.
+   */
+  it('surfaces a file that cannot be read', async () => {
+    seedOutgoing();
+    renderToolbar();
+    const unreadable = validFile();
+    Object.defineProperty(unreadable, 'text', {
+      value: () => Promise.reject(new Error('NotReadableError: the file could not be read')),
+    });
+    fireEvent.change(fileInput(), { target: { files: [unreadable] } });
+    expect((await findToast(/could not be read/i)).dataset.kind).toBe('error');
+    // The read precedes both the auto-save and the adopt, so nothing moved.
+    expect(useDoc.getState().name).toBe('Outgoing');
+    expect(saveVersion).not.toHaveBeenCalled();
+  });
+
+  /**
    * The error-surface half is the load-bearing one: "doc unchanged" passes
    * against a defective implementation that swallows the rejection as an
    * unhandled promise and simply does nothing. eslint has no type-aware rules
@@ -677,6 +707,53 @@ describe('Toolbar — Load', () => {
     expect(useDoc.getState().name).toBe('Outgoing');
     // The doc stayed, so its pointer must stay with it — untouched, not cleared.
     expect(useLibraryPointer.getState()).toMatchObject({ mapId: 'lib-map', version: 7 });
+  });
+});
+
+describe('Toolbar — Add ▸ Image…', () => {
+  const imageInput = () => screen.getByLabelText('Import image file');
+
+  it('reads an svg and enters placing mode with it', async () => {
+    renderToolbar();
+    const svg = new File(['<svg width="40" height="20"></svg>'], 'logo.svg', {
+      type: 'image/svg+xml',
+    });
+    fireEvent.change(imageInput(), { target: { files: [svg] } });
+    await waitFor(() => expect(useSelection.getState().uiMode.kind).toBe('placing-svg'));
+    expect(toastsNow()).toHaveLength(0);
+  });
+
+  // Same unreadable-file hazard as Map ▸ Load ▸ JSON…, and the same remedy:
+  // the picker closing with nothing on the canvas has to say why.
+  it('surfaces an image file that cannot be read', async () => {
+    renderToolbar();
+    const unreadable = new File(['<svg/>'], 'logo.svg', { type: 'image/svg+xml' });
+    Object.defineProperty(unreadable, 'text', {
+      value: () => Promise.reject(new Error('NotReadableError: the file could not be read')),
+    });
+    fireEvent.change(imageInput(), { target: { files: [unreadable] } });
+    expect((await findToast(/could not be read/i)).dataset.kind).toBe('error');
+    expect(useSelection.getState().uiMode.kind).toBe('idle');
+  });
+
+  // The ceiling exists because the encoded image rides every localStorage
+  // write, and blowing the quota there wedges persistence for the session. It
+  // has to gate the SVG branch too — that one reads f.text() itself and never
+  // reaches the raster helper that carries the check.
+  it('refuses an oversized image, by either branch, and says so', async () => {
+    for (const [name, type] of [
+      ['huge.svg', 'image/svg+xml'],
+      ['huge.png', 'image/png'],
+    ]) {
+      renderToolbar();
+      const big = new File(['<svg/>'], name, { type });
+      Object.defineProperty(big, 'size', { value: MAX_IMAGE_IMPORT_BYTES + 1 });
+      fireEvent.change(imageInput(), { target: { files: [big] } });
+      expect((await findToast(/too large/i)).dataset.kind, name).toBe('error');
+      expect(useSelection.getState().uiMode.kind, name).toBe('idle');
+      cleanup();
+      useToasts.setState({ toasts: [] });
+    }
   });
 });
 
@@ -1468,6 +1545,70 @@ describe('Toolbar — Ctrl+S saves a version', () => {
     useFunMode.setState({ phase: 'off', origin: { x: 0, y: 0 } });
     fireEvent.keyDown(window, { key: 's', ctrlKey: true });
     await waitFor(() => expect(saveVersion).toHaveBeenCalledTimes(1));
+  });
+
+  /**
+   * The clean-state gate cannot suppress a second press: it does not flip
+   * until markSaved runs, two awaits later (thumbnail rasterization, then the
+   * IndexedDB write). Every press that lands inside that window re-reads a
+   * pointer nobody has set yet and mints a library map of its own — so a held
+   * key deposits one map per repeat, each with its own v1, none of them
+   * prunable.
+   */
+  it('drops auto-repeats: holding Ctrl+S saves once, not once per repeat', async () => {
+    seedMap('Canal Line');
+    vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
+    renderToolbar();
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    for (let i = 0; i < 5; i++) {
+      fireEvent.keyDown(window, { key: 's', ctrlKey: true, repeat: true });
+    }
+    await settle();
+
+    expect(saveVersion).toHaveBeenCalledTimes(1);
+    expect(newMapId).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores a second press while the first save is still in flight', async () => {
+    seedMap('Canal Line');
+    vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
+    // Hold the save open at the thumbnail rasterization, where the real one
+    // spends its time — both presses are deliberate (no auto-repeat), so only
+    // an in-flight guard can tell them apart.
+    let finishThumb: (thumb: string) => void = () => {};
+    vi.mocked(captureThumbnail).mockReturnValue(
+      new Promise<string>((r) => {
+        finishThumb = r;
+      }),
+    );
+    renderToolbar();
+
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    finishThumb('data:image/png;base64,THUMB');
+    await settle();
+
+    expect(saveVersion).toHaveBeenCalledTimes(1);
+    // The worse half of the same bug: with no pointer yet, a second pass reads
+    // the same null and forks a whole second library map from one document.
+    expect(newMapId).toHaveBeenCalledTimes(1);
+    expect(useLibraryPointer.getState().mapId).toBe('minted-1');
+  });
+
+  it('re-arms once the save has landed', async () => {
+    seedMap('Canal Line');
+    vi.mocked(getCanvasSvg).mockReturnValue(mountableSvg());
+    renderToolbar();
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await settle();
+    expect(saveVersion).toHaveBeenCalledTimes(1);
+
+    // A fresh edit re-dirties the doc; the guard must have let go of the key.
+    act(() => useDoc.getState().setDocName('Canal Line 2'));
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true });
+    await settle();
+    expect(saveVersion).toHaveBeenCalledTimes(2);
   });
 
   it('the Save version menu item advertises its Ctrl+S accelerator (name stays clean)', async () => {

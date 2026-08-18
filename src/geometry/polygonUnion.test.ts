@@ -78,6 +78,78 @@ describe('unionConvex', () => {
     expect(result.length).toBe(2);
   });
 
+  it('merges two squares that only touch along a shared edge', () => {
+    // Edge-to-edge contact with no overlapping area: the shared edge is
+    // INTERIOR to the union, so both inputs must give it up and the result is
+    // the single 20x10 rectangle. (A label rect whose edge lands exactly on
+    // the cells rect's edge hits this.)
+    const A: Pt[] = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+    ];
+    const B: Pt[] = [
+      { x: 10, y: 0 },
+      { x: 20, y: 0 },
+      { x: 20, y: 10 },
+      { x: 10, y: 10 },
+    ];
+    const result = unionConvex(A, B);
+    expect(result.length).toBe(1);
+    expect(vertexSet(result[0])).toEqual(new Set(['0,0', '20,0', '20,10', '0,10']));
+    expect(insideOrOn({ x: 5, y: 5 }, result[0])).toBe(true); // only in A
+    expect(insideOrOn({ x: 15, y: 5 }, result[0])).toBe(true); // only in B
+  });
+
+  it('merges squares that overlap along part of a shared edge', () => {
+    // A's right edge and B's left edge are collinear but only overlap on
+    // y in [5, 10]; the union is an 8-corner staircase.
+    const A: Pt[] = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+    ];
+    const B: Pt[] = [
+      { x: 10, y: 5 },
+      { x: 20, y: 5 },
+      { x: 20, y: 15 },
+      { x: 10, y: 15 },
+    ];
+    const result = unionConvex(A, B);
+    expect(result.length).toBe(1);
+    expect(vertexSet(result[0])).toEqual(
+      new Set(['0,0', '10,0', '10,5', '20,5', '20,15', '10,15', '10,10', '0,10']),
+    );
+    expect(insideOrOn({ x: 5, y: 2 }, result[0])).toBe(true); // only in A
+    expect(insideOrOn({ x: 15, y: 12 }, result[0])).toBe(true); // only in B
+  });
+
+  it('keeps both squares when they nearly touch but do not', () => {
+    // Disjoint by less than the across-edge PROBE (1e-3), with overlapping
+    // spans so no stitch glue and no crossings exist. The touch-merge probe
+    // must not fire here: A's near edge is NOT on B's boundary, so dropping it
+    // strands the rest of A as an open chain and A silently vanishes — a label
+    // rect passing within a hair of the cells rect mid-drag hits this.
+    const A: Pt[] = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+    ];
+    const B: Pt[] = [
+      { x: 10.0005, y: 1 },
+      { x: 20, y: 1 },
+      { x: 20, y: 11 },
+      { x: 10.0005, y: 11 },
+    ];
+    const result = unionConvex(A, B);
+    expect(result.length).toBe(2);
+    expect(result.some((p) => insideOrOn({ x: 5, y: 5 }, p))).toBe(true); // A survives
+    expect(result.some((p) => insideOrOn({ x: 15, y: 6 }, p))).toBe(true); // B survives
+  });
+
   it('returns the outer square when one square is strictly nested in the other', () => {
     const A: Pt[] = [
       { x: -20, y: -20 },

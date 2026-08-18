@@ -406,6 +406,21 @@ describe('<StopRows />', () => {
     await user.unhover(rows[1]);
     expect(useSelection.getState().hoveredLineStop).toBeNull();
   });
+
+  it('drops the highlight when the row goes away under the cursor', async () => {
+    // Double-clicking a badge hops into Edit Stops, which hides the whole
+    // sidebar: the row is removed with the pointer still on it, so no
+    // mouseleave ever fires. The channel is global, so an un-cleared hover
+    // paints a white ring on that canvas dot for the rest of the session —
+    // and bakes it into any export, which clones the live DOM.
+    const user = userEvent.setup();
+    seed({ a: hub() });
+    const { unmount } = renderRows();
+    await user.hover(screen.getAllByTestId('stop-row')[1]);
+    expect(useSelection.getState().hoveredLineStop).toEqual({ lineId: 'L2', stationId: 'a' });
+    unmount();
+    expect(useSelection.getState().hoveredLineStop).toBeNull();
+  });
 });
 
 // The per-terminus END style override. It shows only where the stop IS one of

@@ -61,6 +61,47 @@ describe('bakeHardDropShadow', () => {
     expect(bakeHardDropShadow(plain)).toBe(plain);
   });
 
+  // Drawing editors paint through CSS as often as through attributes —
+  // Inkscape writes `style="fill:…"`, Illustrator writes a `.st0` class — and
+  // svg2pdf resolves paint style-first, so a silhouette that only rewrites the
+  // attribute exports as a full-color duplicate of the artwork.
+  const firstPath = (markup: string): Element => parse(markup).querySelectorAll('path')[0];
+
+  it('recolors a fill declared by an inline style, not just the attribute', () => {
+    const logo = HARD_SHADOW_LOGO.replace('fill="#d92626"', 'style="fill:#d92626"');
+    const shadow = firstPath(bakeHardDropShadow(logo));
+    expect(shadow.getAttribute('style')).toContain('fill:#ffffff');
+    expect(shadow.getAttribute('style')).not.toContain('#d92626');
+  });
+
+  it('recolors a fill declared by a <style>-block class rule', () => {
+    const logo = HARD_SHADOW_LOGO.replace(
+      '<defs>',
+      '<style>.st0{fill:#d92626}</style><defs>',
+    ).replace('fill="#d92626"', 'class="st0"');
+    const shadow = firstPath(bakeHardDropShadow(logo));
+    // The class rule applies to the clone too, so the flood color has to be
+    // declared somewhere that outranks it.
+    expect(shadow.getAttribute('style')).toContain('fill:#ffffff');
+  });
+
+  it('floods no fill into a shape whose CSS paints none (it casts no shadow)', () => {
+    const logo = HARD_SHADOW_LOGO.replace(
+      '<defs>',
+      '<style>.st0{fill:none;stroke:#d92626}</style><defs>',
+    ).replace('fill="#d92626"', 'class="st0"');
+    const shadow = firstPath(bakeHardDropShadow(logo));
+    expect(shadow.getAttribute('style') ?? '').not.toContain('fill:#ffffff');
+    // The stroke is what draws — and what the flood color has to replace.
+    expect(shadow.getAttribute('style')).toContain('stroke:#ffffff');
+    // The `fill:none` DECISION must also land inline: it came from a sheet
+    // rule, and svg2pdf never reads an embedded image's own <style> blocks —
+    // its sheet collection walks the OUTER export SVG only. Left uninlined,
+    // the class resolves nowhere in the PDF and the clone floods default
+    // black exactly where the browser (and this bake) decided nothing paints.
+    expect(shadow.getAttribute('style')).toContain('fill:none');
+  });
+
   it('honors flood-opacity on the baked shadow', () => {
     const translucent = HARD_SHADOW_LOGO.replace('flood-opacity="1"', 'flood-opacity="0.5"');
     const doc = parse(bakeHardDropShadow(translucent));

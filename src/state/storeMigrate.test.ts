@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   migrateDoc,
   beginHistoryGroup,
@@ -8,7 +8,7 @@ import {
   useSelection,
 } from './store';
 import { useCustomPalettes } from './customPalettes';
-import { historyDepth } from './history';
+import { historyDepth, isHistoryGrouping } from './history';
 import {
   DEFAULT_DOC,
   DEFAULT_STYLES,
@@ -1183,6 +1183,26 @@ describe('migrateDoc', () => {
       expect(stationDefaultProps(out)).toMatchObject({ fontSize: 18, weight: 400 });
     });
 
+    it('folds a retired UltraLight global BEFORE baking it onto the stations', () => {
+      // labelWeight 100 was a real rung until Söhne retired it. The bake reads
+      // the global through isLabelWeight, which no longer answers to 100, so
+      // the fold onto Thin has to come first — otherwise every station lands
+      // on the 400 default, two rungs off, with no way back. parse() orders the
+      // same two calls this way; the rehydrate path must agree.
+      const out = run(
+        {
+          stations: { S: makeStation({ id: 'S' as StationId }) },
+          labelFontSize: 12,
+          labelWeight: 100,
+          labelItalic: false,
+          labelLeading: 1,
+          labelTracking: 0,
+        } as Record<string, unknown>,
+        0,
+      );
+      expect(stationDefaultProps(out)).toMatchObject({ weight: 200 });
+    });
+
     it('does not bake at version >= 14', () => {
       const out = run(
         {
@@ -1563,6 +1583,23 @@ describe('beginHistoryGroup', () => {
     // and recording still resumed cleanly.
     expect(writes).toBe(0);
     expect(historyDepth()).toBe(before);
+  });
+
+  it('rollback resumes recording even when the restore write throws', () => {
+    // The restore is a plain useDoc.setState, and everything downstream of one
+    // (the persist writer included) can fail. By then `finish()` has already
+    // released ownership, so a group that leaves recording paused has nothing
+    // left to heal it: every later edit records no undo entry, and undo/redo
+    // silently no-op on their isHistoryGrouping() guard.
+    const grp = beginHistoryGroup();
+    useDoc.getState().addStation(10, 20);
+    const failing = vi.spyOn(useDoc, 'setState').mockImplementation(() => {
+      throw new Error('write refused');
+    });
+    expect(() => grp.rollback()).toThrow('write refused');
+    failing.mockRestore();
+
+    expect(isHistoryGrouping()).toBe(false);
   });
 
   it('a rollback after commit is a no-op (done flag)', () => {

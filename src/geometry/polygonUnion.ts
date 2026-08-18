@@ -14,6 +14,10 @@ const EPS = 1e-6;
 // fp drift between an intersection point computed once on A's edge and once
 // on B's edge (they should agree but can differ by ~1e-12 to ~1e-9).
 const STITCH_EPS = 1e-3;
+// How far off an edge to step when asking which side of it the other polygon
+// is on. Small enough to stay inside any polygon we union here, far enough
+// clear of EPS that the inside test is decisive.
+const PROBE = 1e-3;
 
 function cross(o: Pt, a: Pt, b: Pt): number {
   return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
@@ -51,6 +55,21 @@ function isInsideOrOnBoundaryCCW(p: Pt, poly: Pt[]): boolean {
     if (cross(a, b, p) < -EPS) return false;
   }
   return true;
+}
+
+// True if `other` sits on the OUTWARD side of self's directed edge a→b, probed
+// just off the segment midpoint. Interior is on the left, so outward is the
+// right normal. Only meaningful for a segment that lies ON other's boundary:
+// it separates the two polygons merely TOUCHING along that edge (other is
+// across it, so the edge is interior to the union) from them overlapping past
+// it (other is behind, so the edge really is on the union's outline).
+function otherIsAcrossEdge(a: Pt, b: Pt, mid: Pt, other: Pt[]): boolean {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy);
+  if (len < EPS) return false;
+  const probe = { x: mid.x + (dy / len) * PROBE, y: mid.y - (dx / len) * PROBE };
+  return isStrictlyInsideCCW(probe, other);
 }
 
 interface Hit {
@@ -132,8 +151,17 @@ function collectKeptSegments(
       // Asymmetric: A keeps shared-edge segments (boundary midpoints),
       // B drops them. This way each shared edge is contributed exactly once
       // — by A — instead of twice (causing gap or duplicate during stitch).
+      // Unless the polygons only MEET along that edge: then it is interior to
+      // the union and A must give it up too, or A closes a ring on its own
+      // segments and B's survivors are stranded as an unstitchable open chain.
+      // The across-edge probe is gated on the midpoint actually LYING on
+      // other's boundary — the only case it is meaningful for. Unconditioned,
+      // a NEAR-touch (disjoint by less than PROBE) probes inside the other
+      // polygon too, and dropping that edge strands the rest of this one as an
+      // unstitchable open chain: the polygon silently vanishes.
       const dropIfInside = selfIsA
-        ? isStrictlyInsideCCW(mid, other)
+        ? isStrictlyInsideCCW(mid, other) ||
+          (isInsideOrOnBoundaryCCW(mid, other) && otherIsAcrossEdge(a, b, mid, other))
         : isInsideOrOnBoundaryCCW(mid, other);
       if (!dropIfInside) {
         out.push({ start: a, end: b });

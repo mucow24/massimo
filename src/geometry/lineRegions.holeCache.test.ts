@@ -396,6 +396,89 @@ describe('buildExclusionHolesCached ≡ buildExclusionHoles', () => {
     expect(stats.recomputed).toBe(1);
   });
 
+  // `neighborRail` clamps the shield's stand-down to the narrowest rail among
+  // the lines covering a SHIELDING NEIGHBOR that paint above the winner — lines
+  // that are in neither this face's cover nor its losers, so neither inputSig
+  // (winner + losers) nor neighborSig (face key + winner) records their casing.
+  // The geometry signature deliberately excludes casing too, so a casing edit
+  // on such a line arrives as a same-state frame with no dirty boxes: only a
+  // signature that carries those rails can see it.
+  it('a casing edit on a SHIELDING neighbor-only line invalidates via neighborSig', () => {
+    // vW and vA are the two adjacent stripes of one interlined band (bodies
+    // meet at x=57); hB crosses both, so the overlap faces {hB,vW} and
+    // {hB,vA} abut along that same edge — which is exactly where the winner's
+    // rail annulus falls, so the stand-down really lands in the neighbour.
+    const bands = [
+      hBand('hB', 'b1|b2', -40, 120, 0),
+      vBand('vW', 'w1|w2', -40, 60, 50),
+      vBand('vA', 'a1|a2', -40, 60, 64),
+    ];
+    const order = ['vA', 'hB', 'vW'];
+    const { built, chain } = frame(bands, null);
+    expect(built.faces.length).toBe(2);
+    // Only the vW pane is overridden (to vW, from its hB default); the vA pane
+    // keeps its default and so becomes the shielding neighbor. vA covers it,
+    // paints in front of vW and is NOT one of the vW pane's losers — exactly
+    // the line that sets `neighborRail` and that no signature names.
+    const wIdx = built.faces.findIndex((f) => f.lineIds.includes('vW'));
+    const winners = built.faces.map((_f, i) =>
+      i === wIdx
+        ? { winner: 'vW' as LineId, assignmentId: 'r' }
+        : { winner: 'vA' as LineId, assignmentId: null },
+    );
+    const railCased = (id: LineId): number => (id === 'vW' || id === 'vA' ? 2 : 0);
+    const railBare = (id: LineId): number => (id === 'vW' ? 2 : 0);
+    buildExclusionHolesCached(
+      built.faces,
+      winners,
+      order,
+      bands,
+      [],
+      railCased,
+      built.slivers,
+      chain,
+    );
+    // Drag vA's casing width to 0. Same geometry, same state, same winners,
+    // same losers (hB, uncased either way) — only vA's rail moved.
+    const sameStateChain: HoleChain = { state: chain.state, prevState: null, dirtyBoxes: [] };
+    const stats: HoleCacheStats = { reused: 0, recomputed: 0 };
+    const cached = buildExclusionHolesCached(
+      built.faces,
+      winners,
+      order,
+      bands,
+      [],
+      railBare,
+      built.slivers,
+      sameStateChain,
+      stats,
+    );
+    const reference = buildExclusionHoles(
+      built.faces,
+      winners,
+      order,
+      bands,
+      [],
+      railBare,
+      built.slivers,
+    );
+    expect(describeHoles(cached)).toBe(describeHoles(reference));
+    // Non-vacuous: an UNCASED neighbour clamps the stand-down to nothing, so
+    // the shield applies whole and the hole really is a different shape…
+    const before = buildExclusionHoles(
+      built.faces,
+      winners,
+      order,
+      bands,
+      [],
+      railCased,
+      built.slivers,
+    );
+    expect(describeHoles(before)).not.toBe(describeHoles(reference));
+    // …and the cache must have seen it.
+    expect(stats.recomputed).toBe(1);
+  });
+
   // The absorb gate reads the lineOrder RANK of sliver lines that are NOT in
   // the face's cover (`s.lineIds.every(id => orderIdx(id) >= winnerRank ||
   // loserSet.has(id))`): a permutation that moves such a line across the

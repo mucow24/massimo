@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { act, cleanup, render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { StyleEditor, DOT_BASE_SHAPE_LABELS } from './StyleEditor';
+import { StyleEditor, DOT_BASE_SHAPE_LABELS, DOT_STROKE_ALIGN_LABELS } from './StyleEditor';
 import { ROUTE_BULLET_SHAPE_LABEL } from './RouteBulletPopover';
 import { TEXT_LABEL_ALIGN_CHIPS } from './TextLabelPopover';
 import { useDoc } from '../state/store';
 import { historyDepth } from '../state/history';
-import { DOT_BASE_SHAPES } from '../model/dotStyle';
+import { DOT_BASE_SHAPES, DOT_STROKE_ALIGNS } from '../model/dotStyle';
 import { DEFAULT_DOC, ROUTE_BULLET_SHAPES, TEXT_LABEL_ALIGNS } from '../model/transforms';
 import { makeStyle } from '../test/fixtures';
 import { chooseOption } from '../test/interaction';
@@ -251,6 +251,16 @@ describe('<StyleEditor> — stopDot', () => {
     render(<StyleEditor def={makeStyle('stopDot', 'y1', { props: { shape: 'circle' } })} />);
     for (const shape of DOT_BASE_SHAPES) {
       expect(screen.getByLabelText(DOT_BASE_SHAPE_LABELS[shape]), shape).toBeTruthy();
+    }
+  });
+
+  it('offers a chip for every stroke alignment the model names', () => {
+    // Same pairing as the shapes above: the chips read the model's ladder, so a
+    // stored alignment can't be loadable-but-unpickable (or the reverse).
+    render(<StyleEditor def={makeStyle('stopDot', 'y1', { props: { shape: 'circle' } })} />);
+    for (const align of DOT_STROKE_ALIGNS) {
+      expect(screen.getByLabelText(`Align ${align}`), align).toBeTruthy();
+      expect(DOT_STROKE_ALIGN_LABELS[align].chip).toBeTruthy();
     }
   });
 

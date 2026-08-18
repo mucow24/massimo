@@ -86,13 +86,15 @@ describe('textLabelAlignRectLocal — horizontal extent is ink, not the pen box'
     }
   });
 
-  it('justify: a stretched interior line is pen-flush to both edges, ink inset', () => {
-    // 'a b' (advance 30, ink [2, 28]) stretches to fill the box; 'Hi' is the
-    // ragged last line (left-flush). m.width = 26, halfW = 13. Stretched line
-    // ink: [-13 + 2, 13 - 2]; last line ink: [-11, 5]. The block's right edge
-    // comes from the STRETCHED line's end inset, not its unstretched advance.
+  it('justify: an interior line with no slack is boxed where it paints', () => {
+    // In Auto mode the box hugs the widest line's INK (26 for 'a b': advance
+    // 30, ink [2, 28]) while justify measures slack against the PEN advance, so
+    // 'a b' has none — justifyLine bails and it left-flushes like the ragged
+    // last line. halfW = 13, so its pen sits at -13 and its ink reaches 15;
+    // 'Hi' spans [-11, 5]. (A line with real slack — column mode — is boxed
+    // pen-flush to both edges instead; see textMeasure.inkExtent.test.ts.)
     const r = rectOf('a b\nHi', 'justify');
     expect(r.x0).toBeCloseTo(-11, 5);
-    expect(r.x1).toBeCloseTo(11, 5);
+    expect(r.x1).toBeCloseTo(15, 5);
   });
 });

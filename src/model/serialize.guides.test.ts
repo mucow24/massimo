@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeDoc, makeGuide } from '../test/fixtures';
 import { parse, sanitizeGuides, serialize } from './serialize';
-import type { MapDoc } from './types';
+import type { AlignmentGuide, MapDoc } from './types';
 
 function roundTrip(doc: MapDoc): MapDoc {
   const parsed = parse(serialize(doc));
@@ -155,6 +155,44 @@ describe('alignment guides on the load path', () => {
     const out = sanitizeGuides(guides);
     expect(out.changed).toBe(false);
     expect(out.guides).toBe(guides);
+  });
+
+  it('sanitizeGuides drops a null or non-object entry rather than throwing', () => {
+    // A throw here would reach parse's catch-all and REFUSE the whole file —
+    // the same hazard the extent check guards against one level down.
+    const { guides, changed } = sanitizeGuides({
+      ok: { id: 'ok', orientation: 'horizontal', offset: 10 },
+      nullEntry: null as unknown as AlignmentGuide,
+      strEntry: 'guide' as unknown as AlignmentGuide,
+    });
+    expect(changed).toBe(true);
+    expect(Object.keys(guides)).toEqual(['ok']);
+  });
+
+  it('parse drops a null guide entry instead of refusing the file', () => {
+    const file = JSON.parse(serialize(makeDoc({ guides: [makeGuide({ id: 'g1', offset: 10 })] })));
+    file.doc.guides.bad = null;
+    const parsed = parse(JSON.stringify(file));
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.doc.guides.g1).toBeDefined();
+      expect(parsed.doc.guides.bad).toBeUndefined();
+    }
+  });
+
+  it('rewrites a guide’s inner id to its record key', () => {
+    // The key is the identity every edit resolves through (moveGuide,
+    // resizeGuide, delete), while the popover and the snapper both read the
+    // VALUE's id — a divergent one loads as a guide nothing can edit.
+    const file = JSON.parse(serialize(makeDoc({ guides: [makeGuide({ id: 'g1', offset: 10 })] })));
+    file.doc.guides.g1.id = 'other';
+    file.doc.guides.g2 = { orientation: 'vertical', offset: 40 };
+    const parsed = parse(JSON.stringify(file));
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.doc.guides.g1.id).toBe('g1');
+      expect(parsed.doc.guides.g2.id).toBe('g2');
+    }
   });
 
   it('parse drops a malformed guide instead of refusing the file', () => {

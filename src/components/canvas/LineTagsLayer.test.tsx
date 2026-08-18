@@ -8,6 +8,8 @@ import { makeBandSpec, makeLine, makeStation, makeStop } from '../../test/fixtur
 import { dispatchWindowPointer, fakeSvgRef } from '../../test/interaction';
 import type { LineTag } from '../../model/types';
 import { capCenterDy } from '../../geometry/textMeasure';
+import { useFontEpoch } from '../../state/fontEpoch';
+import { EXPORT_EXCLUDE_ATTR } from '../../export/exportCanvas';
 
 // These specs don't drag, so the cursor→world map is never called; identity
 // satisfies the prop.
@@ -320,6 +322,159 @@ describe('<LineTagsLayer> — orientation rotation (E5a)', () => {
     // rendered rotations follow from the table being distinct — so assert that
     // directly instead of paying four more renders to rediscover it.
     expect(new Set(Object.values(ORIENTATION_OFFSET_DEG)).size).toBe(4);
+  });
+});
+
+// The hidden width measurer is real, laid-out SVG: `visibility: hidden`
+// suppresses painting but NOT getBBox, which is precisely why it works. That
+// makes it a box at the world origin as far as the export frame is concerned,
+// so it has to carry the export-exclude attribute like every other piece of
+// editing-only chrome in this layer.
+describe('<LineTagsLayer> — the hidden width measurer stays out of exports', () => {
+  beforeEach(() => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      lines: { L2: makeLine({ id: 'L2', stations: ['s1', 's2'], width: 28 }) },
+      lineOrder: ['L2'],
+      lineTags: { T: tagOnL2() },
+    });
+    useDoc.temporal.getState().clear();
+  });
+
+  it('the measurer is dropped by the export strip pass', () => {
+    const { ref } = fakeSvgRef();
+    const { container } = render(
+      <svg>
+        <LineTagsLayer
+          bands={[mixedBand()]}
+          zoom={1}
+          svgRef={ref}
+          screenToWorld={identityScreenToWorld}
+        />
+      </svg>,
+    );
+    // It is on the canvas to begin with — otherwise nothing could be measured.
+    const hidden = () =>
+      Array.from(container.querySelectorAll('g')).filter(
+        (g) => (g as unknown as SVGGElement).style.visibility === 'hidden',
+      );
+    expect(hidden()).toHaveLength(1);
+
+    // buildExportSvg's one strip pass, verbatim: what survives it is what the
+    // frame's getBBox unions — and an unpositioned measurer text drags that
+    // frame out to world (0, 0).
+    container
+      .querySelectorAll(`[data-bg],[${EXPORT_EXCLUDE_ATTR}],foreignObject`)
+      .forEach((el) => el.remove());
+    expect(hidden()).toHaveLength(0);
+  });
+});
+
+// Web fonts arrive AFTER the first paint (every Söhne face is
+// `font-display: swap`), so a service code measured on a cold load is measured
+// against the fallback face. `useFontEpoch` is the store that exists to carry
+// that moment across memo boundaries; this cache has to listen to it, or the
+// tag's hit rect and selection ring keep the fallback face's width all session.
+describe('<LineTagsLayer> — the width cache re-measures when the font arrives', () => {
+  // A service code no other spec in this file measures: the cache is
+  // module-level and shared, so a shared key would be pre-filled here.
+  const SERVICE = 'ZQX';
+  const ALONG_FONT_SIZE_PX = 12;
+
+  /**
+   * The shared `stubGetBBox` patches SVGGraphicsElement — what a browser hands
+   * a `<text>`. jsdom implements only a handful of SVG interfaces and gives
+   * `<text>` a bare SVGElement, so the measurer's call would throw straight
+   * through to its length×7 fallback and never read the width a spec sets.
+   * Patch the base interface so the measurement path itself runs. Restore
+   * lives in afterEach, not the tests: a mid-test assertion failure must not
+   * leak the stub into the rest of the file.
+   */
+  let unstubBBox: (() => void) | null = null;
+  afterEach(() => {
+    unstubBBox?.();
+    unstubBBox = null;
+  });
+  const stubTextBBox = (width: number): void => {
+    unstubBBox?.(); // swapping stubs mid-test: unwind the previous one first
+    const proto = (globalThis as unknown as { SVGElement: { prototype: Record<string, unknown> } })
+      .SVGElement.prototype;
+    const had = Object.prototype.hasOwnProperty.call(proto, 'getBBox');
+    const prev = proto.getBBox;
+    proto.getBBox = () => ({ x: 0, y: 0, width, height: ALONG_FONT_SIZE_PX });
+    unstubBBox = () => {
+      if (had) proto.getBBox = prev;
+      else delete proto.getBBox;
+    };
+  };
+
+  // The measurer notifies from a LAYOUT effect; a passive-effect subscription
+  // has not run yet at that point, so the mount's own measurement reached no
+  // one and the tag kept its length×7 guess until some unrelated re-render.
+  // On a quiet cold load there is no such re-render.
+  it('the mount’s own measurement reaches the tag on the first render', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      lines: { L2: makeLine({ id: 'L2', service: SERVICE, stations: ['s1', 's2'], width: 28 }) },
+      lineOrder: ['L2'],
+      lineTags: { T: tagOnL2() },
+    });
+    useDoc.temporal.getState().clear();
+
+    stubTextBBox(30);
+    const { ref } = fakeSvgRef();
+    const { container } = render(
+      <svg>
+        <LineTagsLayer
+          bands={[mixedBand()]}
+          zoom={1}
+          svgRef={ref}
+          screenToWorld={identityScreenToWorld}
+        />
+      </svg>,
+    );
+    // No nudging re-render: 2 * (30/2 + TEXT_PAD), not the length×7 fallback.
+    expect(
+      Number(container.querySelector('rect[data-line-tag-id="T"]')!.getAttribute('width')),
+    ).toBeCloseTo(32, 6);
+  });
+
+  it('drops fallback-face widths on a font-epoch bump', () => {
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...DEFAULT_DOC,
+      lines: { L2: makeLine({ id: 'L2', service: SERVICE, stations: ['s1', 's2'], width: 28 }) },
+      lineOrder: ['L2'],
+      lineTags: { T: tagOnL2() },
+    });
+    useDoc.temporal.getState().clear();
+
+    // Cold load: the fallback face measures the code at 30 wide.
+    stubTextBBox(30);
+    const { ref } = fakeSvgRef();
+    // A FRESH element each time: re-rendering the identical element reference
+    // makes React bail out of the subtree, which would render no new widths.
+    const layer = () => (
+      <svg>
+        <LineTagsLayer
+          bands={[mixedBand()]}
+          zoom={1}
+          svgRef={ref}
+          screenToWorld={identityScreenToWorld}
+        />
+      </svg>
+    );
+    const { container } = render(layer());
+    const hitWidth = () =>
+      Number(container.querySelector('rect[data-line-tag-id="T"]')!.getAttribute('width'));
+    expect(hitWidth()).toBeCloseTo(32, 6); // 2 * (30/2 + TEXT_PAD)
+
+    // Söhne swaps in: App bumps the epoch, and the same string is now 60 wide.
+    stubTextBBox(60);
+    act(() => useFontEpoch.getState().bump());
+    expect(hitWidth()).toBeCloseTo(62, 6); // 2 * (60/2 + TEXT_PAD)
   });
 });
 

@@ -223,6 +223,15 @@ function StopRow({ station, stop, line }: { station: Station; stop: StopCell; li
     return () => {
       el.removeEventListener('mouseenter', enter);
       el.removeEventListener('mouseleave', leave);
+      // …and hand the channel back on the way out. A row can be REMOVED under
+      // the cursor — double-clicking the badge hops into Edit Stops, which
+      // hides the whole sidebar — and a node that never leaves fires no
+      // mouseleave. The channel is global, so what's left behind is a white
+      // ring painted on that canvas dot until something else happens to write
+      // the channel, which nothing on the way back to idle does; it even bakes
+      // into an export, since that clones the live DOM. Same `leave` guard, so
+      // a row torn down while ANOTHER row is hovered leaves that one alone.
+      leave();
     };
   }, [stationId, lineId]);
 

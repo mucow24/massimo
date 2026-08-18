@@ -170,10 +170,17 @@ const derivedEqual = (a: Derived, b: Derived): boolean => {
  *
  * Handing back the OLD closure is sound precisely because {@link Derived} is
  * the whole of what it captured from `stations`: same content ⇒ same answers,
- * for the moved station as much as for any other. `lines` must still match by
- * identity — `fn` reads it directly, per call, for every non-station field.
+ * for the moved station as much as for any other. It only holds while that
+ * closure resolves neighbours out of the CURRENT record, which is what the
+ * `stations` box is for — see the box's own comment. `lines` must still match
+ * by identity — `fn` reads it directly, per call, for every non-station field.
  */
-let lastBuild: { src: StopMetricsSource; fn: StopMetricsFn; derived: Derived } | null = null;
+let lastBuild: {
+  src: StopMetricsSource;
+  fn: StopMetricsFn;
+  derived: Derived;
+  stations: { current: Record<string, Station | undefined> };
+} | null = null;
 
 const cachedBuild = (src: StopMetricsSource): StopMetricsFn | null => {
   const prev = lastBuild;
@@ -209,6 +216,15 @@ export const stopMetricsOf = (src: StopMetricsSource): StopMetricsFn => {
   const hit = cachedBuild(src);
   if (hit) return hit;
   const transfers = transfersByStop(src.transfers, src.stations);
+  // The record `continuesOf` resolves neighbour positions out of — a BOX, not
+  // `src.stations` directly, because the content level below hands the previous
+  // `fn` back by reference and it is then invoked with stations from the NEW
+  // record. Projecting a station's new position against its neighbours' old
+  // ones is a frame mismatch no comparison can catch: a rigid group move or
+  // rotate preserves every projection, so `derivedEqual` passes while the mix
+  // flips signs. The reuse branch re-points the box, so the surviving closure
+  // always reads the record its callers are handing it stations from.
+  const stations = { current: src.stations };
   // Which signed halves of the stop's travel axis carry line body away from
   // the station: project each edge-neighbour's world delta onto the canonical
   // world axis. A perpendicular neighbour (the line bends away AT the
@@ -225,7 +241,7 @@ export const stopMetricsOf = (src: StopMetricsSource): StopMetricsFn => {
     if (line) {
       const axis = rotateBy(travelDirLocal(stop.orientation), station.rotation);
       for (const id of neighborsOf(line, station.id)) {
-        const n = src.stations[id];
+        const n = stations.current[id];
         if (!n) continue;
         const proj = (n.x - station.x) * axis.x + (n.y - station.y) * axis.y;
         if (proj > 1e-6) plus = true;
@@ -283,9 +299,10 @@ export const stopMetricsOf = (src: StopMetricsSource): StopMetricsFn => {
   if (prev && prev.src.lines === src.lines && derivedEqual(prev.derived, derived)) {
     // Re-bind to the new identities so the rest of this frame's callers take
     // the identity path, and hand back the function they already hold.
-    lastBuild = { src, fn: prev.fn, derived: prev.derived };
+    prev.stations.current = src.stations;
+    lastBuild = { src, fn: prev.fn, derived: prev.derived, stations: prev.stations };
     return prev.fn;
   }
-  lastBuild = { src, fn, derived };
+  lastBuild = { src, fn, derived, stations };
   return fn;
 };

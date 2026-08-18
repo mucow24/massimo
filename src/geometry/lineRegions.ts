@@ -2345,7 +2345,8 @@ interface FaceHoleEntry {
   contribution: FaceHoleContribution;
   /** Winner id | winner railW | default winner | losers with their railWs. */
   inputSig: string;
-  /** (face key, winner) of every shield-scan candidate near the region. */
+  /** (face key, winner, above-winner cover rails) of every shield-scan
+   *  candidate near the region. */
   neighborSig: string;
   /** (sliver token, gate outcomes) of every bbox-prefilter-passing sliver. */
   sliverSig: string;
@@ -2414,7 +2415,9 @@ export interface HoleCacheStats {
  *  4. the shield neighborhood matches (`neighborSig`: every candidate face's
  *     content key + CURRENT winner — a neighbor flipping between same- and
  *     different-winner must invalidate, so same-winner candidates are in the
- *     sig even though they are excluded from the shield);
+ *     sig even though they are excluded from the shield — plus the rails of
+ *     its above-winner cover lines, which set the shield's stand-down and
+ *     which no other signature can see);
  *  5. the nearby-sliver set matches (`sliverSig`: token + BOTH absorb-gate
  *     outcomes per bbox-passing sliver — a lineOrder edit can flip a gate
  *     through a sliver line that is NOT in F's cover, so the outcomes are
@@ -2513,7 +2516,18 @@ export function buildExclusionHolesCached(
       let sig = '';
       for (const j of ctx.facesNear(box, maxReach * 3)) {
         if (j === i) continue;
-        sig += `${faceKeyOf(faces[j])}=${winners[j]?.winner ?? ''};`;
+        sig += `${faceKeyOf(faces[j])}=${winners[j]?.winner ?? ''}`;
+        // The rails that can clamp `neighborRail`, and with it how far the
+        // shield stands down over the winner's own rail annulus. They belong to
+        // lines covering a NEIGHBOR — in neither this face's cover nor its
+        // losers — so nothing in inputSig names them, and the geometry
+        // signature excludes casing outright. Every candidate's rails go in,
+        // not just the ones that survive the shield's same-line skips: an
+        // over-broad sig costs a recompute, a narrow one serves a stale hole.
+        for (const id of distinctCoverLines(faces[j].lineIds)) {
+          if (ctx.orderIdx(id) < winnerRank && !loserSet.has(id)) sig += `:${railWOf(id)}`;
+        }
+        sig += ';';
       }
       return sig;
     };

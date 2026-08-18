@@ -249,8 +249,13 @@ export function StopGlyph({
     if (!splitBorder) {
       // A single native-stroke element (open ring / borderless). Its centered
       // stroke is placed by shifting the drawn radius to nativeDelta so the band
-      // lands inside / centered / outside per the style (0 for center).
-      return shapeElement({ ...params, r: params.r + nativeDelta }, cx, cy, {
+      // lands inside / centered / outside per the style (0 for center). Clamped
+      // at 0 like the body path below: an inside stroke wider than the dot would
+      // otherwise ask for a negative SVG radius — invalid markup (Edge drops
+      // it where Chromium recovers), and for diamond/x an inverted polygon. At
+      // 0 the glyph is degenerate either way; the clamp keeps it VALID, not
+      // visible.
+      return shapeElement({ ...params, r: Math.max(0, params.r + nativeDelta) }, cx, cy, {
         fill: params.fill,
         ...(strokeAttrs ?? {}),
         ...dataAttrs,
@@ -282,7 +287,7 @@ export function StopGlyph({
     );
   }
   return withCode(
-    shapeElement({ ...params, r: params.r + nativeDelta }, cx, cy, {
+    shapeElement({ ...params, r: Math.max(0, params.r + nativeDelta) }, cx, cy, {
       fill: params.fill,
       ...(strokeAttrs ?? {}),
       ...(code ? {} : dataAttrs),
