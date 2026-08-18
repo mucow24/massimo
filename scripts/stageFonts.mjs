@@ -17,18 +17,27 @@
  *                           worktrees under `.claude/worktrees/` share a `.git`
  *                           but not ignored files, so a fresh worktree finds the
  *                           faces the dev machine already has, with no network.
- *   3. substitutes        — DejaVu Sans (committed, redistributable) copied under
+ *   3. clone              — a shallow checkout of the private font repo into
+ *                           `.fonts/`, needing the environment's git
+ *                           credentials. This is a cloud session's only source:
+ *                           a fresh clone, no sibling on disk. Tried only when
+ *                           1 and 2 came up empty AND `public/fonts` is not
+ *                           already stocked, so no machine that has the faces
+ *                           ever pays for the network.
+ *   4. substitutes        — DejaVu Sans (committed, redistributable) copied under
  *                           each expected filename, so the export pipeline has a
  *                           real parseable face to trace even where the licensed
- *                           ones are unavailable. This is what a cloud session
- *                           lands on: a fresh clone with no sibling on disk.
+ *                           ones are unavailable — a container with no reach to
+ *                           the font repo.
  *
  * Substitutes are a LAST resort and they announce themselves: staging them
- * writes `public/fonts/.substitute`, and `pdfGlyphs.test.ts` reads that marker to
- * skip the one assertion that is about Söhne's own glyph coverage rather than
- * about the tracer. Everything else runs for real against the stand-ins — with
- * them staged, all eight export e2e specs pass, including the two that count
- * glyph fill operations, so the outlining genuinely happens.
+ * writes `public/fonts/.substitute`. Everything that would be asking about
+ * Söhne ITSELF reads that marker and skips — four assertions in
+ * `pdfGlyphs.test.ts` on its glyph coverage, and the two e2e gates behind
+ * `onSubstituteFaces` (fixtures.ts) that measure how it sets and how it bolds.
+ * Everything else runs for real against the stand-ins — with them staged, all
+ * eight export e2e specs pass, including the two that count glyph fill
+ * operations, so the outlining genuinely happens.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -90,6 +99,60 @@ export function chooseStrategy({ dotFontsFaces, siblingFaces, total }) {
   if (dotFontsFaces === total) return 'dot-fonts';
   if (siblingFaces === total) return 'sibling';
   return 'substitute';
+}
+
+/**
+ * Is a clone of the private font repo the next thing to try?
+ *
+ * Only when nothing on disk can supply the faces. A complete `.fonts/` or a
+ * sibling checkout both answer the question locally, for free, and must never
+ * be passed over for a network round-trip.
+ *
+ * `alreadyStaged` is the one the strategy cannot tell you: in the MAIN checkout
+ * on a machine that simply has the faces, there is no `.fonts/` and the sibling
+ * is us, so the vote comes back 'substitute' — and `stageInto` then keeps the
+ * real files anyway. Fetching on that vote would clone the font repo on every
+ * `npm install` on the one machine that never needed it. Stand-ins do NOT count
+ * as staged (`countFaces` reports a marked directory as empty), so a container
+ * that gains credentials upgrades itself on the next install.
+ *
+ * And never into an existing `.fonts/`: `git clone` refuses a non-empty target
+ * anyway, and whatever is in there (an interrupted clone, a hand-copied subset)
+ * belongs to whoever put it there.
+ */
+export function shouldFetch({ strategy, alreadyStaged, dotFontsExists }) {
+  return strategy === 'substitute' && !alreadyStaged && !dotFontsExists;
+}
+
+/**
+ * Check the private font repo out into `.fonts/`, the same place CI puts it.
+ *
+ * This is what makes a CLOUD session — a fresh clone with no sibling on disk
+ * and no `.fonts/` — able to run on the real faces instead of stand-ins, which
+ * matters because several e2e specs measure Söhne's own metrics and can only
+ * be answered by Söhne. It needs the container's git credentials to reach a
+ * private repo; where they are absent or the host is blocked, this fails and
+ * staging falls through to substitutes exactly as before. Failure is normal,
+ * so it must be both QUIET and NON-INTERACTIVE — this runs from `postinstall`,
+ * where a prompt is not a question anyone is there to answer. `stdio: 'ignore'`
+ * does not achieve that on its own: git asks for credentials on `/dev/tty`,
+ * which no stdio setting reaches, and on Windows the Git Credential Manager
+ * puts up a GUI dialog. Unset, a machine with neither fonts nor credentials
+ * stalls `npm install` until the timeout or pops a window out of nowhere. The
+ * two env vars below turn both into an immediate non-zero exit.
+ */
+export function fetchDotFonts(repo = PRIVATE_FONTS_REPO, dir = DOT_FONTS) {
+  try {
+    execFileSync('git', ['clone', '--depth', '1', `https://github.com/${repo}.git`, dir], {
+      stdio: 'ignore',
+      timeout: 120_000,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' },
+    });
+    return true;
+  } catch {
+    rmSync(dir, { recursive: true, force: true }); // a half-clone would block the next attempt
+    return false;
+  }
 }
 
 /**
@@ -177,11 +240,19 @@ function main() {
   }
 
   const sibling = siblingFontsDir();
-  const strategy = chooseStrategy({
-    dotFontsFaces: countFaces(DOT_FONTS, names),
-    siblingFaces: countFaces(sibling, names),
-    total: names.length,
-  });
+  const decide = () =>
+    chooseStrategy({
+      dotFontsFaces: countFaces(DOT_FONTS, names),
+      siblingFaces: countFaces(sibling, names),
+      total: names.length,
+    });
+
+  let strategy = decide();
+  const alreadyStaged = countFaces(FONTS_DIR, names) === names.length;
+  if (shouldFetch({ strategy, alreadyStaged, dotFontsExists: existsSync(DOT_FONTS) })) {
+    console.log(`[fonts] no faces on disk — trying ${PRIVATE_FONTS_REPO}.`);
+    if (fetchDotFonts()) strategy = decide();
+  }
   const source = strategy === 'dot-fonts' ? DOT_FONTS : strategy === 'sibling' ? sibling : null;
 
   const outcome = stageInto({

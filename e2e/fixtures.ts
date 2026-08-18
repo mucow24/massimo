@@ -1,5 +1,26 @@
 import { type Page } from '@playwright/test';
+import { existsSync } from 'node:fs';
 import { STOP_DOT_FACTORY_STYLES } from '../src/model/dotStyle';
+
+/**
+ * Is `public/fonts` holding DejaVu Sans stand-ins rather than the licensed
+ * Söhne faces? Set by `scripts/stageFonts.mjs`, which leaves this marker
+ * whenever it could reach neither `.fonts/`, a sibling checkout, nor the
+ * private font repo.
+ *
+ * Specs that measure Söhne's OWN metrics — how wide it sets a string, how much
+ * more ink its 700 lays down than its 400 — gate on this, exactly as four
+ * assertions in `pdfGlyphs.test.ts` already do. A stand-in does not answer
+ * those questions less precisely; it answers a different question, about
+ * DejaVu. CI and the Pages deploy always have the real faces, so nothing here
+ * stops being enforced — it stops being asked in the one environment that
+ * cannot answer it.
+ *
+ * Read from `public/`, where staging wrote it, not from the `dist/` the
+ * preview server serves: `pre-pr` builds immediately before the e2e stage, so
+ * the two agree, and `public/` is the one that exists in dev-server runs too.
+ */
+export const onSubstituteFaces = existsSync('public/fonts/.substitute');
 
 // Mirrors the partialized shape persisted by the doc store
 // (`vignelli-map-doc-v1` in localStorage).
@@ -446,4 +467,3 @@ export async function openLineStyleDetail(page: Page): Promise<void> {
   const toggle = page.getByRole('button', { name: 'Style detail' });
   if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
 }
-

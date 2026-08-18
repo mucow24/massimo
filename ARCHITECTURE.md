@@ -100,23 +100,26 @@ npm run pre-pr       # format → lint → format:check → test → build → e
 `pre-pr` runs `format` (prettier --write, auto-fixes) **first** so formatting can't block, then
 `format:check` later is the actual gate. It ends with the full Playwright suite (added after an
 interaction-behavior change passed every unit gate but broke an e2e spec — PR #159/#160), so it
-needs the Chromium binary installed once via `npm run e2e:install`. On Windows the entry point
-([scripts/prePr.mjs](scripts/prePr.mjs)) routes every invocation through a named-kernel-mutex
-queue ([scripts/preprQueued.ps1](scripts/preprQueued.ps1)) so simultaneous local sessions run
-the gate one at a time on a machine that would otherwise thrash; the queue is forced rather
-than opt-in (callers kept forgetting the old queued variant), `pre-pr:queued` survives as a
-compatibility alias, and unlock-on-death is the kernel's guarantee (a holder that errors out
-abandons the mutex to the next waiter). CI and cloud containers run the chain directly
-(`pre-pr:raw`). The perf harnesses take the same mutex (`.perf/gateMutex.ts`), so gates and
-perf runs serialize against each other too. `e2e:prod` on its own tests whatever `dist/`
-already holds; run `npm run build` first (as `pre-pr` does) or it gates a stale bundle.
+needs a Chromium: `npm run e2e:install` fetches the pinned one, and where that download is
+blocked the suite falls back to whatever build is already installed (see the E2E section below).
+On Windows the entry point ([scripts/prePr.mjs](scripts/prePr.mjs)) routes every invocation
+through a named-kernel-mutex queue ([scripts/preprQueued.ps1](scripts/preprQueued.ps1)) so
+simultaneous local sessions run the gate one at a time on a machine that would otherwise thrash;
+the queue is forced rather than opt-in (callers kept forgetting the old queued variant),
+`pre-pr:queued` survives as a compatibility alias, and unlock-on-death is the kernel's guarantee
+(a holder that errors out abandons the mutex to the next waiter). CI and cloud containers run
+the chain directly (`pre-pr:raw`). The perf harnesses take the same mutex
+(`.perf/gateMutex.ts`), so gates and perf runs serialize against each other too. `e2e:prod` on
+its own tests whatever `dist/` already holds; run `npm run build` first (as `pre-pr` does) or it
+gates a stale bundle.
 
 ---
 
 ## Repository layout
 
 ```
-index.html                      # Vite entry; loads Inter (Google Fonts), mounts /src/main.tsx
+index.html                      # Vite entry; mounts /src/main.tsx. Loads nothing off-origin —
+                                #   every face the app uses is self-hosted in public/fonts/
 src/
   main.tsx                      # ReactDOM root, imports styles.css
   App.tsx                       # 3-pane shell + ALL global keyboard/contextmenu/blur wiring
@@ -3727,7 +3730,11 @@ events: disarm, bump the generation (late RESULTs are dropped), snap the render 
 the live doc, resync the mirror. Worker errors and frame timeouts fall back to the synchronous
 path mid-gesture; that path is never deleted — it is the at-rest path, the small-map path, and
 the reference the worker's output is pinned byte-equal to (`regionFrame.test.ts`, plus an e2e
-that replays sampled mid-drag frames at rest and requires identical paint).
+that replays sampled mid-drag frames at rest and requires identical paint). The frame watchdog
+runs on TWO budgets, because a worker that has never answered may still be paying spawn + wasm
+compile: a boot-sized 5s until its first accepted RESULT, `2.5 * emaMs` clamped to 500..5000
+after. `regionPipelineStatus().workerWarm` reports which is in force — anything killing the
+worker to exercise the fallback is timing a different scenario depending on the answer.
 
 **Specs are identity-stable.** Both interlining builders finish through a single-slot reuse
 layer: a band/marker spec whose every compared field equals the previous build's comes back as
@@ -4254,22 +4261,31 @@ fails, because `loadOutlineFonts` throws and the export never produces a downloa
 first source that has them: `.fonts/`, where CI and the Pages deploy check the private font repo out
 before installing; the **sibling main checkout** — worktrees under `.claude/worktrees/` share a
 `.git` but not ignored files, so a fresh one is served from the dev machine's own copy with no
-network; and failing those, **DejaVu Sans copied under each of the 16 filenames**, which is what a
-cloud session lands on (a fresh clone with no sibling on disk). There is no credentialled fetch —
-CI and Pages stage the real faces themselves, so the script only ever copies what is already local.
-A source counts only if it is COMPLETE: a half-populated one would stage what it had and leave the
-rest missing with no fallback. The face list is parsed out of `FONT_TABLE` rather than re-typed, so
+network; a **shallow clone of `mucow24/massimo-fonts` into `.fonts/`**, which is the only source a
+cloud session has (a fresh clone, no sibling on disk) and the reason one can run the Söhne-metric
+specs at all; and failing all three, **DejaVu Sans copied under each of the 16 filenames**. The
+clone is tried last and only when nothing local answers — a complete `.fonts/` or sibling costs no
+network, and an existing `.fonts/` is never cloned into, since whatever is in it belongs to whoever
+put it there. It needs the container's git credentials to reach a private repo; where those are
+absent or the host is blocked it fails quietly and staging falls through to substitutes. A source
+counts only if it is COMPLETE: a half-populated one would stage what it had and leave the rest
+missing with no fallback. The face list is parsed out of `FONT_TABLE` rather than re-typed, so
 adding or renaming a face needs no edit in the script.
 
 Substitutes buy the **export e2e specs**, which need a parseable face at those paths and pass
 against DejaVu — including the two counting glyph fill operations, so the outlining is real. They
-announce themselves: staging one writes `public/fonts/.substitute`. Four assertions read that marker
-and skip, all in `pdfGlyphs.test.ts` and all asking the real Söhne files a question a stand-in
-answers wrongly rather than not at all: the text face *lacking* ✈ (a stand-in covering it inverts
-the fact), the shipped `calt` still being exactly the two 1:1 rules the tracer reproduces, every
-face exposing `colon.mid` by name, and ✈ standing exactly as tall as Söhne's caps. Rendering and
-metrics under them are not representative, and a
-substituted `public/fonts` is ~12 MB (16 × DejaVu), which a local `npm run build` will ship.
+announce themselves: staging one writes `public/fonts/.substitute`, and everything that asks the
+real Söhne files a question a stand-in answers *wrongly* rather than not at all reads that marker
+and skips. Four such assertions are in `pdfGlyphs.test.ts`: the text face *lacking* ✈ (a stand-in
+covering it inverts the fact), the shipped `calt` still being exactly the two 1:1 rules the tracer
+reproduces, every face exposing `colon.mid` by name, and ✈ standing exactly as tall as Söhne's
+caps. Two more are in e2e, reached through `onSubstituteFaces` in
+[e2e/fixtures.ts](e2e/fixtures.ts) — the whole of `chromeFit.spec.ts`, every case of which is "does
+this box hold this string, set in Söhne", and which DejaVu turns red by setting wider; and the half
+of `fallbackSynthesis.spec.ts` that guards the other half from passing vacuously, which needs a 700
+face distinct from the 400 and under stand-ins has the same bytes at both. Rendering and metrics
+under them are not representative, and a substituted `public/fonts` is ~12 MB (16 × DejaVu), which
+a local `npm run build` will ship.
 
 Two invariants keep stand-ins from being mistaken for the real thing, both of which cost licensed
 files that exist in no repo we can reach. Whether to substitute is decided from the **content** of
@@ -4693,7 +4709,13 @@ Each is confirmed in source/tests; file pointers included.
   `setup.ts` (jsdom polyfills: ResizeObserver, pointer-capture, scrollIntoView).
 - **E2E (Playwright, [e2e/](e2e/))** — single-worker, no retries locally (2 on CI), honors `PORT`
   for parallel worktrees, 120s per-test timeout (app boots dominate on slow cloud containers; the
-  default 30s phantom-failed them). `pre-pr` and CI run the suite against the production bundle
+  default 30s phantom-failed them). Playwright resolves its own pinned Chromium everywhere that
+  build is on disk; [scripts/chromium.mjs](scripts/chromium.mjs) supplies an `executablePath` only
+  where it is not, falling back to the newest plain `chromium-<rev>` in `PLAYWRIGHT_BROWSERS_PATH`
+  and announcing that it did. That is for the cloud container, which bakes a Chromium in at a fixed
+  revision and blocks `cdn.playwright.dev` at the proxy: without the fallback, a `@playwright/test`
+  bump past the image's build leaves the suite unable to launch anything at all, with the one fix
+  (`npm run e2e:install`) unreachable. `pre-pr` and CI run the suite against the production bundle
   (`e2e:prod` = `E2E_PREVIEW=1` → `vite preview` over dist/); plain `npm run e2e` drives the dev
   server so a spec can be iterated on without a build. Every test boots the app exactly ONCE:
   `openWithRawDoc` primes the origin on the static `public/e2e-blank.html`, writes the doc +

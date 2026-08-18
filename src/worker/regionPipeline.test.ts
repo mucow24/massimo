@@ -130,6 +130,21 @@ describe('arming', () => {
     g2.commit();
   });
 
+  // The watchdog budget keys on this: a worker that has never returned a
+  // result is given a boot-sized 5s, a warm one 2.5x its own average. Nothing
+  // outside could see which of the two was in force, so a test that kills the
+  // worker could not know whether it was killing a working one or a booting
+  // one — and got a different fallback deadline depending on the answer.
+  it('reports the worker cold until it has returned a result', async () => {
+    expect(regionPipelineStatus().workerWarm).toBe(false);
+    const g = await armMidGesture(10);
+    await flushMicrotasks();
+    expect(regionPipelineStatus().workerWarm).toBe(false);
+    fake.deliver(resultFor(fake.frames()[0], holesOf('L1', 5)));
+    expect(regionPipelineStatus().workerWarm).toBe(true);
+    g.commit();
+  });
+
   it('does not arm when disabled', async () => {
     setRegionPipelineEnabled(false);
     const g = await armMidGesture();

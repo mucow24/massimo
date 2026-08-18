@@ -212,3 +212,20 @@ describe('contextualAlternate', () => {
     expect(mid('121')).toBeNull();
   });
 });
+
+// The app boots from its own origin and nothing else. It shipped a Google
+// Fonts <link> for a while — three faces deep in a fallback stack behind
+// Söhne, Massimo Symbols and DejaVu Sans, so it could never be reached, but
+// still fetched on every boot. It cost a third-party round-trip in production
+// and it was a real e2e failure anywhere the browser has no direct internet:
+// migration.spec.ts is the one spec that gates on zero console errors, and a
+// blocked stylesheet is a console error, so the whole file went red for a
+// resource nothing renders. Self-hosting every face is the invariant — the
+// tracer needs the files locally anyway.
+describe('the boot document fetches nothing off-origin', () => {
+  it('links no third-party resource', () => {
+    const html = readFileSync('index.html', 'utf8');
+    const offOrigin = [...html.matchAll(/(?:href|src)="(https?:)?\/\/[^"]*"/g)].map((m) => m[0]);
+    expect(offOrigin).toEqual([]);
+  });
+});

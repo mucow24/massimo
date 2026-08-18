@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { seedAndOpen, fourInLine } from './fixtures';
+import { seedAndOpen, fourInLine, onSubstituteFaces } from './fixtures';
 
 // The export tracer draws every glyph from the face's own outlines. So anything
 // the BROWSER invents on top of a face — synthetic bold, synthetic oblique — is
@@ -82,6 +82,14 @@ test.describe('fallback faces are never synthesized', () => {
     // Guards the test above from passing vacuously. Söhne ships a real 700, so
     // ordinary text MUST lay down more ink — if this ever stops being true, the
     // ✈ assertion is no longer evidence of anything.
+    //
+    // Only THIS half needs the real faces. `stageFonts.mjs` stands DejaVu Sans
+    // in under all sixteen filenames, so the 700 face and the 400 face are the
+    // same bytes and 'Hoboken' paints identical ink at both — a guard that can
+    // only ever fail, on a fact about the staging rather than about the font.
+    // The ✈ check above keeps running: it rides on Massimo Symbols and DejaVu,
+    // which are committed and real wherever this runs.
+    test.skip(onSubstituteFaces, 'the stand-in has no 700 distinct from its 400');
     await seedAndOpen(page, fourInLine);
     const { regular, bold } = await ink(page, 'Hoboken');
     expect(bold).toBeGreaterThan(regular);

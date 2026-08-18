@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { chromiumExecutablePath } from './scripts/chromium.mjs';
 
 // Honor PORT env var so parallel worktrees can run e2e tests without
 // colliding on the default Vite port. Falls back to Vite's default (5173)
@@ -32,7 +33,19 @@ export default defineConfig({
     baseURL: `http://localhost:${PORT}`,
     trace: 'on-first-retry',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        // Normally undefined — Playwright resolves its own pinned build. Set
+        // only where that build is absent and undownloadable (see
+        // scripts/chromium.mjs), so the suite runs on the browser the image
+        // ships rather than not running at all.
+        launchOptions: { executablePath: chromiumExecutablePath() },
+      },
+    },
+  ],
   webServer: {
     command: PREVIEW
       ? `npm run preview -- --port ${PORT} --strictPort`
