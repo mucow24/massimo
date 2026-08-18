@@ -45,8 +45,10 @@ const BINARIES = [
  */
 export function pickFallbackRevision(wanted, present) {
   if (present.includes(wanted)) return null;
-  const older = present.filter((r) => Number.isInteger(r) && r > 0);
-  return older.length ? Math.max(...older) : null;
+  // Not "older": an image can lead the repo as easily as trail it, and a build
+  // newer than the pin is just as usable a fallback.
+  const candidates = present.filter((r) => Number.isInteger(r) && r > 0);
+  return candidates.length ? Math.max(...candidates) : null;
 }
 
 /** The `chromium-<rev>` revisions under `dir` that hold a launchable binary. */
@@ -87,6 +89,8 @@ export function chromiumExecutablePath(dir = process.env.PLAYWRIGHT_BROWSERS_PAT
 
   const root = join(dir, `chromium-${revision}`);
   const binary = BINARIES.map((b) => join(root, b)).find((p) => existsSync(p));
+  // Once per PROCESS that loads playwright.config, not once per run — the
+  // runner and each worker each load it, so expect this line more than once.
   console.warn(
     `[e2e] Chromium ${wanted} is not installed and cannot be downloaded here — ` +
       `launching the image's build ${revision} instead (${binary}).`,

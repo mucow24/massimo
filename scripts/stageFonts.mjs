@@ -133,13 +133,20 @@ export function shouldFetch({ strategy, alreadyStaged, dotFontsExists }) {
  * be answered by Söhne. It needs the container's git credentials to reach a
  * private repo; where they are absent or the host is blocked, this fails and
  * staging falls through to substitutes exactly as before. Failure is normal,
- * so it is quiet: `main` reports what was staged either way.
+ * so it must be both QUIET and NON-INTERACTIVE — this runs from `postinstall`,
+ * where a prompt is not a question anyone is there to answer. `stdio: 'ignore'`
+ * does not achieve that on its own: git asks for credentials on `/dev/tty`,
+ * which no stdio setting reaches, and on Windows the Git Credential Manager
+ * puts up a GUI dialog. Unset, a machine with neither fonts nor credentials
+ * stalls `npm install` until the timeout or pops a window out of nowhere. The
+ * two env vars below turn both into an immediate non-zero exit.
  */
 export function fetchDotFonts(repo = PRIVATE_FONTS_REPO, dir = DOT_FONTS) {
   try {
     execFileSync('git', ['clone', '--depth', '1', `https://github.com/${repo}.git`, dir], {
       stdio: 'ignore',
       timeout: 120_000,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'never' },
     });
     return true;
   } catch {
