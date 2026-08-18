@@ -223,14 +223,17 @@ describe('<StyleEditor> — line', () => {
     expect(propsOf().strokeColor).toEqual({ day: '#ffffff', night: '#ffffff' });
   });
 
-  it('greys out Dash length/width unless a split default is a dash dot', () => {
-    // Default dots (filled black) ⇒ dash controls disabled.
+  // Hidden, not greyed — unlike the stroke color, these are gated by the dot
+  // TYPE picker rather than a slider they sit under, so no drag can reflow
+  // beneath them and an always-mounted pair would be inert on most maps.
+  it('renders Dash length/width only while a split default is a dash dot', () => {
+    // Default dots (filled black) ⇒ no dash rows at all.
     const { unmount } = render(<StyleEditor def={makeStyle('line', 'y1')} />);
-    expect(screen.getByRole('spinbutton', { name: 'Dash length' })).toBeDisabled();
-    expect(screen.getByRole('spinbutton', { name: 'Dash width' })).toBeDisabled();
+    expect(screen.queryByRole('spinbutton', { name: 'Dash length' })).toBeNull();
+    expect(screen.queryByRole('spinbutton', { name: 'Dash width' })).toBeNull();
     unmount();
 
-    // A dash singleton dot ⇒ the dash controls become editable.
+    // A dash singleton dot ⇒ the dash controls appear.
     render(
       <StyleEditor def={makeStyle('line', 'y2', { props: { singletonDotStyleId: 'sd-dash' } })} />,
     );

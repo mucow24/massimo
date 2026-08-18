@@ -794,24 +794,27 @@ describe('<LineInspector /> — collapsible style detail', () => {
     }
   });
 
-  it('greys the dash rows unless a dash dot is in use (line default or stop override)', () => {
+  // Hidden, not greyed — the dot TYPE picker gates these, not a slider above
+  // them, so there is no mid-drag reflow to guard and a permanently mounted
+  // pair would sit inert in every line editor on a map with no TfL ticks.
+  it('dash rows render only while a dash dot is in use (line default or stop override)', () => {
     seed();
     expandStyleDetail();
     const { unmount } = render(<LineInspector id="L1" />);
-    expect(screen.getByRole('spinbutton', { name: 'Dash length' })).toBeDisabled();
-    expect(screen.getByRole('spinbutton', { name: 'Dash width' })).toBeDisabled();
+    expect(screen.queryByRole('slider', { name: 'Dash length' })).toBeNull();
+    expect(screen.queryByRole('slider', { name: 'Dash width' })).toBeNull();
     unmount();
 
     // Line-level default: the singleton case is dash.
     seed({ singletonDotStyle: DOT_SHAPE_PRESETS.dash });
     const second = render(<LineInspector id="L1" />);
-    expect(screen.getByRole('spinbutton', { name: 'Dash length' })).toBeEnabled();
+    expect(screen.getByRole('slider', { name: 'Dash length' })).toBeInTheDocument();
     second.unmount();
 
     // Per-stop override on a member stop, with non-dash line defaults.
     seed({}, { dotStyle: DOT_SHAPE_PRESETS.dash });
     render(<LineInspector id="L1" />);
-    expect(screen.getByRole('spinbutton', { name: 'Dash width' })).toBeEnabled();
+    expect(screen.getByRole('slider', { name: 'Dash width' })).toBeInTheDocument();
   });
 
   it('greys the stroke color row while the stroke width is 0', () => {

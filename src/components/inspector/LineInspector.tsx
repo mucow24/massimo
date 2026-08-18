@@ -66,9 +66,11 @@ import {
 //
 // Identity (name/service/color) and the Style preset row always show; the
 // full parameter stack below them collapses behind a remembered disclosure
-// (useLineEditorPrefs), grouped geometry → stop dots → stroke. Rows whose
-// switch is off (dash dims off a dash dot, the stroke color at width 0) grey
-// out in place rather than vanish. (Which casing shows inside a branch mouth is
+// (useLineEditorPrefs), grouped geometry → stop dots → stroke. The stroke
+// color GREYS at width 0 rather than vanishing (it is gated by the slider
+// right above it, and a row must not evaporate under the hand mid-drag); the
+// dash dims, gated by a dot-shape picker instead, still render only while a
+// dash dot is in use. (Which casing shows inside a branch mouth is
 // no longer a line setting at all: self-overlaps are region faces, painted
 // per junction in Layering mode.)
 export function LineInspector({ id }: { id: LineId }) {
@@ -133,10 +135,11 @@ export function LineInspector({ id }: { id: LineId }) {
         ? { day: c, night: lineCasingColor(line, line.color, true) }
         : { day: lineCasingColor(line, line.color, false), night: c };
 
-  // The two gated pairs below. Both rows stay mounted and grey out when their
-  // switch is off, so the stack never reflows under a slider mid-drag — the
-  // stopDot editor's rule, applied to every editor that gates a row.
-  const dashActive = lineUsesDashTicks(line, stations);
+  // The stroke color GREYS at width 0 rather than vanishing, so the stack
+  // never reflows under the slider that gates it. The dash rows are a
+  // different case and still hide: their switch is a dot-shape PICKER, not a
+  // slider, so there is no mid-drag reflow to protect — and a greyed pair
+  // would sit inert in every line editor on every map that has no TfL ticks.
   const strokeOff = lineStrokeWidthOf(line) === 0;
 
   return (
@@ -375,46 +378,53 @@ export function LineInspector({ id }: { id: LineId }) {
               }
             />
           </div>
-          {/* TfL-tick dimensions for this line's 'dash' stops — greyed unless a
-              dash dot is actually in use (either line default, or any member
-              stop's override). Unset derives from the line width (length =
-              width, thickness = width/2); the sliders show the resolved value
-              and an explicit 0 returns to auto. */}
-          <NumericFieldRow
-            id={`line-dash-length-${line.id}`}
-            label="Dash length"
-            min={0}
-            max={DASH_LENGTH_MAX}
-            step={LINE_STROKE_STEP}
-            value={dashRenderLength(line)}
-            onChange={(n) => setLineDashLength(line.id, n)}
-            getCurrent={() => dashRenderLength(useDoc.getState().lines[id])}
-            textboxAllowAboveMax
-            disabled={!dashActive}
-            dot={
-              <OverrideDot
-                kind="line"
-                itemId={line.id}
-                fields={['dashLength']}
-                name="Dash length"
+          {/* TfL-tick dimensions for this line's 'dash' stops — rendered only
+              while a dash dot is actually in use (either line default, or any
+              member stop's override). Unset derives from the line width
+              (length = width, thickness = width/2); the sliders show the
+              resolved value and an explicit 0 returns to auto. */}
+          {lineUsesDashTicks(line, stations) && (
+            <>
+              <NumericFieldRow
+                id={`line-dash-length-${line.id}`}
+                label="Dash length"
+                min={0}
+                max={DASH_LENGTH_MAX}
+                step={LINE_STROKE_STEP}
+                value={dashRenderLength(line)}
+                onChange={(n) => setLineDashLength(line.id, n)}
+                getCurrent={() => dashRenderLength(useDoc.getState().lines[id])}
+                textboxAllowAboveMax
+                dot={
+                  <OverrideDot
+                    kind="line"
+                    itemId={line.id}
+                    fields={['dashLength']}
+                    name="Dash length"
+                  />
+                }
               />
-            }
-          />
-          <NumericFieldRow
-            id={`line-dash-width-${line.id}`}
-            label="Dash width"
-            min={0}
-            max={DASH_WIDTH_MAX}
-            step={LINE_STROKE_STEP}
-            value={dashRenderWidth(line)}
-            onChange={(n) => setLineDashWidth(line.id, n)}
-            getCurrent={() => dashRenderWidth(useDoc.getState().lines[id])}
-            textboxAllowAboveMax
-            disabled={!dashActive}
-            dot={
-              <OverrideDot kind="line" itemId={line.id} fields={['dashWidth']} name="Dash width" />
-            }
-          />
+              <NumericFieldRow
+                id={`line-dash-width-${line.id}`}
+                label="Dash width"
+                min={0}
+                max={DASH_WIDTH_MAX}
+                step={LINE_STROKE_STEP}
+                value={dashRenderWidth(line)}
+                onChange={(n) => setLineDashWidth(line.id, n)}
+                getCurrent={() => dashRenderWidth(useDoc.getState().lines[id])}
+                textboxAllowAboveMax
+                dot={
+                  <OverrideDot
+                    kind="line"
+                    itemId={line.id}
+                    fields={['dashWidth']}
+                    name="Dash width"
+                  />
+                }
+              />
+            </>
+          )}
 
           <hr className="popover-divider" aria-hidden="true" />
           <NumericFieldRow

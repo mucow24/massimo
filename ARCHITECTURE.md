@@ -3922,10 +3922,13 @@ same three additions.
   code, color palette, style row, default dot type + **two** separate sizes — singleton and
   interchange, line width, **interline gap**, curve radius, **line ends**, stroke width/color,
   **dash length/width**) over a Delete-only `PopoverFooter` (lines have no `locked` field;
-  Delete also exits the mode). Rows whose switch is off **grey out rather than vanish** — the
-  stroke color while the stroke width is zero (a 0-width casing has no color to pick), the dash
-  dims unless a dash dot is in use — which is how every editor in the app gates a row, so the
-  stack never reflows under a slider mid-drag. (What shows inside a branch mouth is not here at
+  Delete also exits the mode). The stroke color **greys out rather than vanishing** while the
+  stroke width is zero — a 0-width casing has no color to pick, but the row sits directly under
+  the slider that gates it and must not evaporate under the hand mid-drag. The dash dims are the
+  other kind of gate and still **render only** while a dash dot is in use (line default, or any
+  member stop's override): a dot-type picker flips them, not a slider above them, so nothing can
+  reflow and an always-mounted pair would sit inert on every map without TfL ticks. (What shows
+  inside a branch mouth is not here at
   all: that is a per-junction region choice, painted in Layering mode.) Identity
   (name/service/color) and the Style picker always show; everything from **Line width → Stroke
   color** collapses into a style-detail section so the panel stays compact while editing stops,
@@ -4078,6 +4081,16 @@ same three additions.
   unmount, as a safety net); `useNumericField` wraps it with a local text mirror, a focus guard,
   and wheel-to-increment off the live value. `NumericFieldRow` pairs a slider + spinbutton sharing
   one group so a drag + typing collapse to one undo entry.
+- **Gating a row**: a control the current state makes inert **greys out in place** rather than
+  disappearing, so the stack never reflows under the very slider that gates it — the stroke
+  color at width 0, and anything on a `locked` item. Both row shapes cooperate: `.row` (color and
+  segmented rows) and `.options-popover-row` (`NumericFieldRow`) each take a `disabled` prop and
+  add a matching `disabled` class, which is what greys the label and the spinbutton — neither is
+  reached by the UA's `input:disabled` styling, since the global `input[type='number']` rule wins
+  on origin. Rows gated by something a drag can't touch (the dash dims, behind a dot-type picker)
+  are **hidden** instead; so is a whole section the shape makes meaningless (a `dash` stop dot's
+  stroke block, swapped for a caption), and `ColorTypeRow`'s swatch row, revealed only at
+  `type === 'color'`.
 - **`StationNameEditor`** opens on **shift+double-click** on the canvas (plain double-click is the
   layout editor), and intercepts Ctrl+Z itself — native input undo would creep the doc back
   one char per press; it commits the rename group, runs doc-level undo/redo, then closes.
