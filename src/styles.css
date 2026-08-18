@@ -1840,6 +1840,15 @@ button.field-select > :not(.field-select-caret) {
 .palette-save-btn {
   margin-left: auto;
 }
+/* Save-to-palette's menu lists one row per design palette, so unlike the fixed
+   toolbar menus it is as long as the map is. Cap it to the space Radix reports
+   for its collision boundary (the canvas area) and scroll — the same treatment
+   .field-select-panel gives a long option list, for the same reason: a popover
+   near the bottom of the canvas would otherwise open a panel running off it. */
+.palette-save-menu {
+  max-height: var(--radix-dropdown-menu-content-available-height);
+  overflow-y: auto;
+}
 
 .tool-group {
   display: inline-flex;

@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ChevronDownIcon, LoopIcon, PlusIcon, ReloadIcon } from '@radix-ui/react-icons';
 import * as Dropdown from '@radix-ui/react-dropdown-menu';
 import * as Select from '@radix-ui/react-select';
@@ -9,12 +9,13 @@ import { beginHistoryGroup, useDoc } from '../state/store';
 import {
   freshPaletteName,
   isLinePalette,
+  matchingSwatch,
+  withNamedSwatch,
   type Palette,
   type PaletteSwatch,
 } from '../model/palettes';
 import { swatchPair, swatchRefsEqual } from '../model/swatchRef';
 import { dayNightColorsEqual } from '../model/dayNightColor';
-import { normalizeHex } from '../util/color';
 import type { DayNightColor, SwatchRef } from '../model/types';
 
 const CUSTOM = '__custom__';
@@ -47,20 +48,28 @@ function SplitSwatch({ pair }: { pair: DayNightColor }) {
  *
  * Either branch is ONE gesture: the palette write and the field's link land
  * inside a single history group, so undo can't strand a swatch nothing points
- * at. Their ORDER is load-bearing — the swatch must exist before the ref is
- * written, or `addPaletteToMap`'s reconcile drops a link to a swatch that isn't
- * there yet. The pair written is the swatch's own, so the field arrives
- * faithful: no revert badge on a color that has only just been saved.
+ * at. The swatch goes in before the ref — make the thing, then point at it.
+ * That ordering is defensive rather than load-bearing today (both of
+ * `addPaletteToMap`'s branches leave a ref written first standing: the upsert
+ * sweeps faithful wearers without reconciling, and the add reconciles against a
+ * doc the palette is already in), so don't read a bug into a swap; read intent.
+ * The pair written is the swatch's own, so the field arrives faithful: no
+ * revert badge on a color that has only just been saved.
  */
 function SaveToPalette({
-  label,
+  stem,
   titleNoun,
   designPalettes,
   pair,
   disabled,
   onPick,
 }: {
-  label: string;
+  /** What the saved swatch is called. The row's ARIA label, not its visible
+   *  one: four sites label the row just "Color", while the accessible names
+   *  are distinct by contract (see DayNightColorRow) — "Label color",
+   *  "Transfer color" — and a swatch name is read far from the field it came
+   *  from. */
+  stem: string;
   titleNoun: string;
   designPalettes: Palette[];
   pair: DayNightColor;
@@ -69,67 +78,67 @@ function SaveToPalette({
 }) {
   const palettes = useDoc((s) => s.palettes);
   const addPaletteToMap = useDoc((s) => s.addPaletteToMap);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  // Where the panel mounts. `.canvas-host` is an isolate layer that would trap
-  // a menu opened from an item popover BENEATH the sidebar, so the panel is
-  // portaled out — to the trigger's nearest `.dialog`/`.app`, ColorField's own
-  // expression, which covers the canvas popovers and the sidebar's style editor
-  // in one. Resolved on open (a mount effect would trip set-state-in-effect):
-  // Radix's own open flip batches with this, so the first render already has it.
-  const [container, setContainer] = useState<Element | null>(null);
-
-  const day = normalizeHex(pair.day);
-  const night = normalizeHex(pair.night);
-  // The collapse invariant every swatch write obeys: night stored only while it
-  // differs from day.
-  const swatch = (name: string): PaletteSwatch => ({
-    name,
-    color: day,
-    ...(night !== day && { night }),
-  });
+  // Where the panel mounts, and what bounds it — `FieldSelectContent`'s pair,
+  // resolved the same lazy way and for the same reasons. `.canvas-host` is an
+  // isolate layer that would trap a menu opened from an item popover BENEATH
+  // the sidebar, so the panel portals into `.app`, which also owns the design
+  // tokens and the dark-mode reassignment. It must be resolved by FIRST RENDER:
+  // Radix fires `onOpenChange` from a passive effect, after Content has already
+  // mounted, so resolving on open would portal the first frame into <body> —
+  // unthemed — and then remount the whole subtree under the real container.
+  const [{ app, host }] = useState(() => ({
+    app: document.querySelector<HTMLElement>('.app'),
+    host: document.querySelector<HTMLElement>('.canvas-host'),
+  }));
 
   /** Into `palette`, or — undefined — into a design palette minted for it. */
   const save = (palette?: Palette) => {
-    const group = beginHistoryGroup();
     if (palette) {
-      // Names are the ref key, so a second save off the same field counts up
-      // rather than landing a duplicate the refs couldn't tell apart.
-      const name = freshPaletteName(new Set(palette.swatches.map((s) => s.name)), label);
-      addPaletteToMap({ ...palette, swatches: [...palette.swatches, swatch(name)] });
-      onPick({ palette: palette.name, swatch: name }, { day, night });
-    } else {
-      // The stem the Styles tab's own mint counts from.
-      const name = freshPaletteName(new Set(palettes.map((p) => p.name)), 'New design palette');
-      addPaletteToMap({ name, swatches: [swatch(label)], kind: 'design' });
-      onPick({ palette: name, swatch: label }, { day, night });
+      // Already in this palette under some name: link to that rather than
+      // laying a second swatch over the same color.
+      const match = matchingSwatch(palette.swatches, pair);
+      if (match) {
+        onPick({ palette: palette.name, swatch: match.name }, swatchPair(match));
+        return;
+      }
+      const group = beginHistoryGroup();
+      const { swatches, name } = withNamedSwatch(palette.swatches, stem, pair);
+      addPaletteToMap({ ...palette, swatches });
+      onPick({ palette: palette.name, swatch: name }, pair);
+      group.commit();
+      return;
     }
+    const group = beginHistoryGroup();
+    // The stem the Styles tab's own mint counts from.
+    const paletteName = freshPaletteName(
+      new Set(palettes.map((p) => p.name)),
+      'New design palette',
+    );
+    const { swatches, name } = withNamedSwatch([], stem, pair);
+    addPaletteToMap({ name: paletteName, swatches, kind: 'design' });
+    onPick({ palette: paletteName, swatch: name }, pair);
     group.commit();
   };
 
   return (
-    <Dropdown.Root
-      modal={false}
-      onOpenChange={(open) => {
-        if (open) setContainer(triggerRef.current?.closest('.dialog, .app') ?? document.body);
-      }}
-    >
+    <Dropdown.Root modal={false}>
       <Dropdown.Trigger asChild>
         <button
-          ref={triggerRef}
           type="button"
           className="style-row-btn palette-save-btn"
-          aria-label={`Save ${titleNoun} to a palette`}
+          aria-label={`Save ${titleNoun} to a design palette`}
           title="Save this color to a design palette"
           disabled={disabled}
         >
           <PlusIcon />
         </button>
       </Dropdown.Trigger>
-      <Dropdown.Portal container={container ?? undefined}>
+      <Dropdown.Portal container={app ?? undefined}>
         <Dropdown.Content
-          className="menu-panel"
+          className="menu-panel palette-save-menu"
           align="end"
           sideOffset={4}
+          collisionBoundary={host ?? undefined}
           collisionPadding={8}
           loop
         >
@@ -242,7 +251,7 @@ export function PaletteColorRow({
   const pair = { day: value, night: darkValue };
   const saveButton = (
     <SaveToPalette
-      label={label}
+      stem={lightAriaLabel}
       titleNoun={titleNoun}
       designPalettes={designPalettes}
       pair={pair}

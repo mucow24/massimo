@@ -9,10 +9,12 @@ import {
   freshPaletteName,
   isPaletteSort,
   libraryPalettes,
+  matchingSwatch,
   PALETTE_SORTS,
   paletteContentEqual,
   withAddedSwatch,
   withDuplicatedSwatch,
+  withNamedSwatch,
   withoutSwatch,
   type Palette,
 } from './palettes';
@@ -196,6 +198,67 @@ describe('editing a swatch list', () => {
   it('removes by index, leaving the floor of one to its callers', () => {
     expect(withoutSwatch([RED, BLUE], 0)).toEqual([BLUE]);
     expect(withoutSwatch([RED], 0)).toEqual([]);
+  });
+
+  describe('withNamedSwatch', () => {
+    it('appends the pair under the stem, both halves, hex canonicalized', () => {
+      const { swatches, name } = withNamedSwatch([RED], 'Fill color', {
+        day: '#00FF00',
+        night: '#004400',
+      });
+      expect(name).toBe('Fill color');
+      expect(swatches).toEqual([RED, { name: 'Fill color', color: '#00ff00', night: '#004400' }]);
+    });
+
+    // The collapse invariant: a pair whose halves agree stores no night.
+    it('stores no night half when the two agree', () => {
+      const { swatches } = withNamedSwatch([], 'Wash', { day: '#eee', night: '#eee' });
+      expect(swatches).toEqual([{ name: 'Wash', color: '#eeeeee' }]);
+    });
+
+    it('counts up rather than colliding with a name already there', () => {
+      const { name } = withNamedSwatch([{ name: 'Fill color', color: '#111111' }], 'Fill color', {
+        day: '#222222',
+        night: '#222222',
+      });
+      expect(name).toBe('Fill color 2');
+    });
+
+    /**
+     * The name is read back off the appended entry, never trusted from the ask.
+     * Asking sees a SET of existing names, so two swatches called "Ink" look
+     * like one and "Ink 2" reads as free — but the dedupe pass then hands
+     * "Ink 2" to the second "Ink" and pushes ours to "Ink 2 2". The caller is
+     * about to publish that name as a swatch ref, so trusting the ask would not
+     * merely dangle: it would point the field at somebody else's swatch.
+     */
+    it('answers the name the DEDUPE pass settled on, not the one it asked for', () => {
+      const dupes = [
+        { name: 'Ink', color: '#111111' },
+        { name: 'Ink', color: '#222222' },
+      ];
+      const { swatches, name } = withNamedSwatch(dupes, 'Ink', { day: '#333', night: '#333' });
+      expect(swatches.map((s) => s.name)).toEqual(['Ink', 'Ink 2', 'Ink 2 2']);
+      expect(name).toBe('Ink 2 2');
+      // The name it answers is the one carrying OUR color, not the neighbour's.
+      expect(swatches.find((s) => s.name === name)?.color).toBe('#333333');
+    });
+  });
+
+  describe('matchingSwatch', () => {
+    it('finds the swatch already painting the pair, either half spelt any way', () => {
+      expect(matchingSwatch([RED, BLUE], { day: '#0061A8', night: '#00335C' })).toBe(BLUE);
+    });
+
+    // An absent night reads as day, so a day-only swatch matches an equal pair.
+    it('treats a collapsed swatch as night == day', () => {
+      expect(matchingSwatch([RED], { day: '#c1272d', night: '#c1272d' })).toBe(RED);
+      expect(matchingSwatch([RED], { day: '#c1272d', night: '#000000' })).toBeUndefined();
+    });
+
+    it('is undefined when nothing paints it', () => {
+      expect(matchingSwatch([RED, BLUE], { day: '#123456', night: '#123456' })).toBeUndefined();
+    });
   });
 });
 

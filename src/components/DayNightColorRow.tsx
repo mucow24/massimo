@@ -51,7 +51,8 @@ export function DayNightColorRow({
    *  style's. */
   leading?: ReactNode;
   /** Optional control after the two swatches — the palette row's "sync to
-   *  palette", which belongs on the far side of the colors it would push. */
+   *  palette" while the field is linked, its "save to palette" while it is
+   *  Custom. Either belongs on the far side of the colors it acts on. */
   trailing?: ReactNode;
 }) {
   return (
