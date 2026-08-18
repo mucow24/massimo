@@ -55,17 +55,22 @@ const enablePipeline = (page: Page) =>
   });
 
 const pipelineStatus = (page: Page) =>
-  page.evaluate(
-    () =>
-      (
-        window as unknown as {
-          __massimo: {
-            regionPipeline: {
-              status: () => { enabled: boolean; armed: boolean; gen: number; seq: number };
+  page.evaluate(() =>
+    (
+      window as unknown as {
+        __massimo: {
+          regionPipeline: {
+            status: () => {
+              enabled: boolean;
+              armed: boolean;
+              workerWarm: boolean;
+              gen: number;
+              seq: number;
             };
           };
-        }
-      ).__massimo.regionPipeline.status(),
+        };
+      }
+    ).__massimo.regionPipeline.status(),
   );
 
 /** Shift-drag a station by (dx, dy) screen px in `steps` moves, WITHOUT
@@ -130,9 +135,7 @@ test('WYSIWYG at the drop: the pipelined drag lands byte-identical to the synchr
   expect(midStatus.armed, 'pipeline must actually arm mid-drag').toBe(true);
 
   // Converged: the DOM the user keeps is the synchronous path's, byte for byte.
-  await expect
-    .poll(async () => (await pipelineStatus(page)).armed, { timeout: 3000 })
-    .toBe(false);
+  await expect.poll(async () => (await pipelineStatus(page)).armed, { timeout: 3000 }).toBe(false);
   expect(await restSnapshot(page)).toEqual(syncResult);
 });
 
@@ -241,8 +244,8 @@ test('mid-drag, every sampled frame paints the hole its painted stations produce
   for (const s of picks) {
     await xField.fill(String(s.dx));
     await xField.blur();
-    const restHoleCx = await page.evaluate(
-      () => (window as unknown as { __holeCx: () => number | null }).__holeCx(),
+    const restHoleCx = await page.evaluate(() =>
+      (window as unknown as { __holeCx: () => number | null }).__holeCx(),
     );
     expect(restHoleCx, `no hole at rest for dx=${s.dx}`).not.toBeNull();
     expect(Math.abs((restHoleCx as number) - s.holeCx), JSON.stringify(s)).toBeLessThan(1.5);
@@ -258,6 +261,15 @@ test('worker killed mid-drag: times out, falls back, the drag finishes synchrono
 
   await dragStationTo(page, 'D', 60, 0, 6);
   expect((await pipelineStatus(page)).armed).toBe(true);
+  // Kill a worker that is WORKING, which is the scenario named above. Killing
+  // one still booting is a different test: it has never answered, so the
+  // watchdog holds the boot-sized 5s budget rather than 2.5x its own average,
+  // and the drag sits frozen behind a stale frame for all of it. That is why
+  // this went red only in a full-suite run — alone the first result lands in
+  // milliseconds; under load it was still in flight.
+  await expect
+    .poll(async () => (await pipelineStatus(page)).workerWarm, { timeout: 10_000 })
+    .toBe(true);
   await page.evaluate(() => {
     (
       window as unknown as { __massimo: { regionPipeline: { kill: () => void } } }
@@ -269,9 +281,9 @@ test('worker killed mid-drag: times out, falls back, the drag finishes synchrono
     await page.mouse.move(c.x + 60 + i * 10, c.y);
     await page.waitForTimeout(120);
   }
-  await expect
-    .poll(async () => (await pipelineStatus(page)).armed, { timeout: 4000 })
-    .toBe(false);
+  // Warm, so the budget is `2.5 * emaMs` clamped to 500..5000 — 5s is the
+  // ceiling the watchdog can hold, and the poll has to clear it.
+  await expect.poll(async () => (await pipelineStatus(page)).armed, { timeout: 6000 }).toBe(false);
   await releaseDrag(page);
 
   // The gesture itself was never in the worker's hands: the doc is live, the

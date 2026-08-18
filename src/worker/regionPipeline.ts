@@ -323,10 +323,16 @@ export function regionPipelineStatus(): {
   enabled: boolean;
   armed: boolean;
   workerAlive: boolean;
+  /** Has the worker ever returned an accepted RESULT? The watchdog budget in
+   *  `sendFrame` keys on this — a boot-sized 5s until it has, `2.5 * emaMs`
+   *  after — so a caller killing the worker to exercise the fallback must know
+   *  which of the two deadlines it is arming, or it is timing a different
+   *  scenario than the one it means to. */
+  workerWarm: boolean;
   gen: number;
   seq: number;
 } {
-  return { enabled, armed, workerAlive: worker !== null, gen, seq };
+  return { enabled, armed, workerAlive: worker !== null, workerWarm, gen, seq };
 }
 
 /**
