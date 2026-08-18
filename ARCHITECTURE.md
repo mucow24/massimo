@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `9b1dde2` (2026-08-16, #524) — verified against the live source.** This
+**Up to date as of commit `4e51da3` (2026-08-18, #529) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -3381,13 +3381,19 @@ div in `.canvas-host`, always mounted and always laid out, whose `pointer-events
 (`.canvas-host.panning`, marked imperatively by `useViewport`). It must not be expressed as a
 cursor rule at or above the map svg, and it must not be mounted on demand. `cursor` is
 **inherited**, so a rule whose subject is the svg restyles every one of its ~15k descendants; and
-`display`/`visibility` are paint changes, which re-run the compositing update over the whole
-layer. `pointer-events` paints nothing, so it is the only free switch. On a 464-station map the
-difference is 22ms a press against a 0.3ms floor. Pointer routing is unaffected either way — the
-svg holds pointer capture for the whole gesture. Pinned by
-[panLayer.spec.ts](e2e/panLayer.spec.ts), which asserts `elementFromPoint` still lands on the
-overlay mid-pan (without that, the latency is trivially "won" by dropping the cursor) and by
-[MapCanvas.panStart.test.tsx](src/components/MapCanvas.panStart.test.tsx).
+`display` would have to BUILD this element's box on every press, measured at ~22ms on a
+464-station map against a 0.3ms floor. `pointer-events` changes neither box nor paint, so it is
+the free switch. The expensive event is the box, not the paint — repainting a box already there
+(`visibility`, `opacity`, a color) measures ~1–2ms — which generalizes into the rule for all
+canvas chrome: **keep it mounted and change its paint, never mount on demand**. The escapes that
+sound plausible are both closed: promoting a piece of chrome to its own compositing layer
+(`will-change`) moves the cost nowhere, and lifting it out of `.canvas-pan-layer` buys ~1ms. See
+[.perf/e2e/perf-chrome-layer.spec.ts](.perf/e2e/perf-chrome-layer.spec.ts), which ablates every
+way of making chrome appear and screenshots each arm to prove the change reached the screen.
+Pointer routing is unaffected either way — the svg holds pointer capture for the whole gesture.
+Pinned by [panLayer.spec.ts](e2e/panLayer.spec.ts), which asserts `elementFromPoint` still lands
+on the overlay mid-pan (without that, the latency is trivially "won" by dropping the cursor) and
+by [MapCanvas.panStart.test.tsx](src/components/MapCanvas.panStart.test.tsx).
 
 `screenToWorld` reads the **live** viewport and measures the **host** box (`.canvas-host` — the
 svg's own rect rides the pan transform, so measuring it would double-count the gesture); the
@@ -4688,10 +4694,14 @@ Each is confirmed in source/tests; file pointers included.
   (`.perf/mta-v23.massimo.json`, 464 stations — the single exception to the no-maps-in-repo rule,
   because the numbers cannot be reproduced without a real map's crossing density; override with
   `PERF_MAP`). `npm run perf:check` (`tsc -p tsconfig.perf.json`) type-checks the harness and is the
-  only thing about it a gate touches. It is carried in the repo because the previous optimization
-  run's harnesses died untracked with their worktree and cost more to rebuild than the optimization
-  itself; `.perf/README.md` + `RESULTS.md` record what each measures and the still-open wasm-leak
-  investigation behind the Developer pane's counters.
+  only thing about it a gate touches. **A number is only comparable to one measured under the same
+  CPU power mode** — the swing between modes is a large factor and the mode varies between
+  sessions, so the Playwright configs stamp it at the top of every run (`.perf/powerMode.ts`) and a
+  carried-over figure must be re-measured before it is compared against a fresh one. It is carried
+  in the repo because the previous optimization run's harnesses died untracked with their worktree
+  and cost more to rebuild than the optimization itself; `.perf/README.md` + `RESULTS.md` record
+  what each measures and the still-open wasm-leak investigation behind the Developer pane's
+  counters.
 - **Known gaps** (per the deep-dive): no pixel/visual golden for the merged-dot-border result;
   `MapCanvas`'s full pointer fan-out is only tested per-hook. (`Transfer`/`RouteBullet`/`LineTag`
   round-trips now live in `serialize.entities.test.ts`.)
