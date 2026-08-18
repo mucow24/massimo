@@ -133,6 +133,16 @@ note that the region pipeline carries an incremental cache, so interleaved arms
 contaminate each other's state and both get slower. For geometry, prefer the
 node harness.
 
+**Runs serialize behind the pre-pr mutex and self-check for contention.** Both
+playwright configs and the bench config take the machine-wide gate mutex
+(`gateMutex.ts` — the same `Global\massimo-pre-pr` that `npm run pre-pr`
+queues on), so a gate and a perf run can never overlap; a blocked run prints
+that it is queued. Because the mutex only covers work that opted in, every run
+also probes scheduler jitter at start and end (`contention.ts`) and FAILS as
+CONTENDED rather than printing numbers from a machine something else was
+using. `PERF_ALLOW_CONTENDED=1` downgrades that to a warning for deliberate
+measure-under-load sessions.
+
 **The dev machine is a laptop, and its CPU perf mode swings every number here.**
 It is a Lenovo Legion, and its power mode (`quiet` / `balance` / `performance`)
 changes CPU performance by a large factor. The mode is constant WITHIN a session
@@ -146,6 +156,38 @@ at the top of every run (`[perf] Lenovo power mode: …`, via a `globalSetup`), 
 power-mode`, needs LLT running with its CLI enabled; `unknown` anywhere that
 does not hold, e.g. CI). The Windows power-overlay registry is NOT a reliable
 source — it read "Best performance" while the real Legion mode was `quiet`.
+
+**The same laptop also has two GPUs, and Windows picks one per PROCESS.** The
+iGPU/dGPU choice moves browser numbers as hard as the CPU mode, and a per-app
+override set in Settings > Display > Graphics (stored at
+`HKCU\Software\Microsoft\DirectX\UserGpuPreferences`) silently pins a binary
+to one of them — including a browser, including the harness's own chromium.
+The retracted session-aging symptom (below) was this machinery, not the app.
+So the `globalSetup` stamp also prints which adapter the run's chromium
+ACTUALLY bound (the unmasked WebGL renderer string — the outcome) and every
+per-app override in that key (the intent), flagging one that names the run's
+browser binary. Both layers matter: an override recorded for a stale
+Playwright path applies to nothing, because the bundled binary's path changes
+with every Playwright version, and "no override" does not say which GPU
+Windows chose (`gpuInfo.ts`).
+
+Two facts of this machine, both discovered by the stamp and easy to misread:
+the `msedge.exe -> power saving (iGPU)` override is DELIBERATE (it keeps
+Claude-driven Edge sessions off the dGPU) — do not "fix" it — and a headed
+chromium binds the Intel iGPU anyway, because Windows steers browsers to the
+power-saving adapter by default. The dGPU is not the browser's medium on this
+machine at all.
+
+The perf configs pass `--use-angle=d3d11`, which is load-bearing: Playwright's
+default headless launch is FULL software rendering — SwiftShader WebGL,
+`gpu_compositing: disabled_software`, `rasterization: disabled_software`
+(verified via `SystemInfo.getInfo` featureStatus) — and the flag flips all
+three to hardware on that same Intel iGPU while staying headless. Every
+browser number in this directory earlier than Aug 18 2026 was taken in the
+software medium, and nothing in its output said so. Absolute milliseconds do
+not compare across that boundary; the interleaved ratios the ledgers actually
+claim survive, since both arms always shared a medium. The chrome-layer
+ablation was re-run on hardware as the first calibration — see its section.
 
 ## The gesture-start cliff (Aug 15 2026) — found and fixed
 
@@ -322,7 +364,7 @@ paint, medians of 18, two runs, mta-v23, `performance` power mode:
 | the same repaint, `will-change: transform` | +3 ms | " + promoted |
 | `opacity` on a rect INSIDE `.canvas-pan-layer` | +6 ms | paint, inside the layer |
 | that rect, `will-change: transform` | +8 ms | " + promoted |
-| `opacity` on a rect OUTSIDE the pan layer, in `.canvas-host` | +5 ms | paint, outside |
+| `opacity` on a rect OUTSIDE the pan layer, in `.canvas-host` | +5 ms | software era only — arm since removed, see below |
 | `opacity` on ONE real `<path>` inside the map svg | +10 ms | paint a real map node |
 
 Three things fall out, and the plan assumed none of them.
@@ -338,14 +380,28 @@ unpromoted vs 11 promoted, checked per arm so a slow promoted arm cannot be
 confused with a promotion that never happened — it just does not help.
 `will-change` is not the lever and no amount of it will be.
 
-**Leaving the pan layer buys almost nothing.** Painting inside `.canvas-pan-
-layer` (+6ms) versus outside it in `.canvas-host` (+5ms) is a ~1ms difference,
-inside the noise. A real map node is dearer (+10ms) because it drags a larger,
-more complex repaint region with it, not because of the layer boundary. So the
-"move the chrome out of the pan layer" idea — which needs the chrome re-
-projected into screen space, since outside the layer it no longer rides the pan
-transform — is not worth building. The single cheap win, **stop mounting**,
-captures essentially all of it, and needs no re-projection.
+**Leaving the pan layer went from pointless to impossible.** In the software
+era the boundary bought ~1ms (inside +6 vs outside +5) — and then the hardware
+medium killed the idea for correctness instead of cost. On `--use-angle=d3d11`
+(the shipped config), an absolutely-positioned svg injected as a SIBLING of
+the pan layer paints once and becomes a STALE TEXTURE: stylesheet opacity,
+inline-style opacity, and fill-attribute changes all resolve in computed style
+and never reach the screen — the pixel-proof gate is what caught it, three
+runs straight, and a screenshot with the rect visible at computed opacity 0 is
+what settled it. The one channel that renders is promoting the svg onto its
+own compositing layer first, and promotion is measured above as pure overhead.
+The arm was removed — you can't time a paint that does not happen — and the
+"move the chrome out of the pan layer" idea is dead twice over. The single
+cheap win, **stop mounting**, captures essentially all of it, in-tree, and
+needs no re-projection.
+
+**Hardware calibration (Aug 18).** The whole ablation re-run on hardware
+rendering: every surviving arm landed within ~1ms of its software-era median
+(mount +24.4 vs +24.2, ring +1.5, in-pan sibling +6.1, real map node +11.0 vs
++10.6). This table measures the main-thread compositing update, not raster,
+so the medium hardly touches it — the software-era conclusions above carry
+over to hardware unchanged, with the one exception being the stale-texture
+finding replacing the outside-the-layer row.
 
 **The trigger is the lesson.** The first cut of this harness fired each arm with
 a real middle-press (a pan), and on `main` that reported the OPPOSITE: a flat
@@ -473,16 +529,18 @@ the request rather than what CSS matching served, the narrowing is sound only
 while the stylesheet ships every rung of the weight ladder in both slopes,
 which a test pins.
 
-## The session-aging question (Aug 2026)
+## The session-aging question (Aug 2026) — symptom retracted
 
 Reported symptom: after an hour or two of editing a complex map, station drags
 fall to a few fps and a reload cures it; panning stays smooth once started but
 the click-to-pan-start gap grows.
 
-Read the section above before chasing this one: a large, CONSTANT gesture-start
-cost was present from the moment a big map loaded, owed nothing to session
-length, and is fixed. Whatever remains of this question has to be measured as
-GROWTH against that floor, not as absolute slowness.
+RETRACTED (Aug 18): the cause was the machine, not the app. This laptop moves
+the browser between iGPU and dGPU, a refresh could flip that mode, and the
+flip is what a reload was "curing" — which is why the `globalSetup` stamp
+above prints the browser's actual adapter and the per-app overrides. No app
+symptom remains to explain, so nothing below is a lead; it stays because the
+instruments were expensive to build and what they measured is real.
 
 What the harnesses above establish:
 
@@ -501,6 +559,9 @@ What the harnesses above establish:
   clip.ts operation on its real arguments and measures live growth. Every other
   operation is exactly 0.0 bytes/call. `splitIntoFaces` is the only caller of
   `clipToPolyTree`.
+- **In the browser, nothing else grows.** Over ~1100 station drags: DOM nodes,
+  `<defs>`, clipPaths, CDP `Nodes`, `JSEventListeners` and the JS heap were all
+  flat. The wasm heap went 16 -> 83 MB.
 
 Two earlier answers to this question were WRONG, both from watching heap SIZE
 instead of live bytes. `wasmAttribution` charged 100% to `intersect` — heap
@@ -510,26 +571,17 @@ whatever the truth is. `intersectLeak` then "cleared" intersect by replaying
 under the probe's resolution against a heap with 15 MB free. Both harnesses are
 kept, with headers saying what they cannot answer.
 
-**OPEN: the exact upstream line, and the fix.** Reading js-angusj-clipper 1.3.1
-(the current release), `PolyNode.fillFromNativePolyNode` abandons embind
-handles — the `childs` vector, and one per child from `childs.get(i)`, passed
-on with `freeNativePolyNode = false`; the author's own comment there reads "do
-we need to clear the object ourselves? for now let's assume so (seems to
-work)". That is code reading, NOT a measurement. `polyTreeFix` tried to
-confirm it by freeing those handles and crashed, but that crash is ambiguous
-between "the handles are owning" and "the Proxy broke embind", so it settles
-nothing.
-- **In the browser, nothing else grows.** Over ~1100 station drags: DOM nodes,
-  `<defs>`, clipPaths, CDP `Nodes`, `JSEventListeners` and the JS heap were all
-  flat. The wasm heap went 16 -> 83 MB.
-
-NOT established: that the wasm growth is what the user feels. At 200 MB it
-costs nothing measurable. The open hypothesis is memory pressure at multi-GB
-sizes — which an hour of dragging would reach at 60 MB per 1000 frames — where
-every fresh allocation (drag frames, and the pan-start layer raster, which is
-exactly the pan symptom) gets slow while an already-composited pan stays
-smooth, and a reload frees it instantly. Confirming that needs a run long
-enough to reach GBs with drag cost sampled throughout.
+**The leak is real, but with the symptom retracted it is hygiene, not a
+lead.** At 200 MB the heap costs nothing measurable, and no felt cost is
+attached to it any more; fix it if ever working in that layer, not in pursuit
+of a symptom. The suspect line, from reading js-angusj-clipper 1.3.1 (the
+current release): `PolyNode.fillFromNativePolyNode` abandons embind handles —
+the `childs` vector, and one per child from `childs.get(i)`, passed on with
+`freeNativePolyNode = false`; the author's own comment there reads "do we need
+to clear the object ourselves? for now let's assume so (seems to work)". That
+is code reading, NOT a measurement. `polyTreeFix` tried to confirm it by
+freeing those handles and crashed, but that crash is ambiguous between "the
+handles are owning" and "the Proxy broke embind", so it settles nothing.
 
 See `RESULTS.md` for what has been measured, what shipped, and the four ideas
 that were built and thrown away.

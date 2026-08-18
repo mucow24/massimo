@@ -95,19 +95,21 @@ npm run e2e          # playwright test (drives the dev server — no build neede
 npm run e2e:prod     # playwright test against the built dist (E2E_PREVIEW=1 → vite preview)
 npm run fonts        # stage the typeface into public/fonts (also runs on postinstall)
 npm run pre-pr       # format → lint → format:check → test → build → e2e:prod  (the PR gate)
-npm run pre-pr:queued # the gate behind a machine-wide mutex — parallel local sessions serialize
 ```
 
 `pre-pr` runs `format` (prettier --write, auto-fixes) **first** so formatting can't block, then
 `format:check` later is the actual gate. It ends with the full Playwright suite (added after an
 interaction-behavior change passed every unit gate but broke an e2e spec — PR #159/#160), so it
-needs the Chromium binary installed once via `npm run e2e:install`. `pre-pr:queued` wraps the
-gate in a named-kernel-mutex queue ([scripts/preprQueued.ps1](scripts/preprQueued.ps1)) so
-simultaneous local sessions run it one at a time on a machine that would otherwise thrash;
-unlock-on-death is the kernel's guarantee (a holder that errors out abandons the mutex to the
-next waiter). Windows-only by design — CI and cloud containers run plain `pre-pr`. `e2e:prod`
-on its own tests whatever `dist/` already holds; run `npm run build` first (as `pre-pr` does)
-or it gates a stale bundle.
+needs the Chromium binary installed once via `npm run e2e:install`. On Windows the entry point
+([scripts/prePr.mjs](scripts/prePr.mjs)) routes every invocation through a named-kernel-mutex
+queue ([scripts/preprQueued.ps1](scripts/preprQueued.ps1)) so simultaneous local sessions run
+the gate one at a time on a machine that would otherwise thrash; the queue is forced rather
+than opt-in (callers kept forgetting the old queued variant), `pre-pr:queued` survives as a
+compatibility alias, and unlock-on-death is the kernel's guarantee (a holder that errors out
+abandons the mutex to the next waiter). CI and cloud containers run the chain directly
+(`pre-pr:raw`). The perf harnesses take the same mutex (`.perf/gateMutex.ts`), so gates and
+perf runs serialize against each other too. `e2e:prod` on its own tests whatever `dist/`
+already holds; run `npm run build` first (as `pre-pr` does) or it gates a stale bundle.
 
 ---
 
@@ -4717,13 +4719,14 @@ Each is confirmed in source/tests; file pointers included.
   because the numbers cannot be reproduced without a real map's crossing density; override with
   `PERF_MAP`). `npm run perf:check` (`tsc -p tsconfig.perf.json`) type-checks the harness and is the
   only thing about it a gate touches. **A number is only comparable to one measured under the same
-  CPU power mode** — the swing between modes is a large factor and the mode varies between
-  sessions, so the Playwright configs stamp it at the top of every run (`.perf/powerMode.ts`) and a
-  carried-over figure must be re-measured before it is compared against a fresh one. It is carried
-  in the repo because the previous optimization run's harnesses died untracked with their worktree
-  and cost more to rebuild than the optimization itself; `.perf/README.md` + `RESULTS.md` record
-  what each measures and the still-open wasm-leak investigation behind the Developer pane's
-  counters.
+  CPU power mode and rendering medium** — the swing between modes is a large factor and the mode
+  varies between sessions, so the configs stamp both at the top of every run (`.perf/powerMode.ts`,
+  `.perf/gpuInfo.ts`) and a carried-over figure must be re-measured before it is compared against a
+  fresh one. It is carried in the repo because the previous optimization run's harnesses died
+  untracked with their worktree and cost more to rebuild than the optimization itself;
+  `.perf/README.md` + `RESULTS.md` record what each measures and the wasm-leak finding behind the
+  Developer pane's counters — a real leak, though the symptom that motivated hunting it was
+  retracted as machine GPU-mode switching.
 - **Known gaps** (per the deep-dive): no pixel/visual golden for the merged-dot-border result;
   `MapCanvas`'s full pointer fan-out is only tested per-hook. (`Transfer`/`RouteBullet`/`LineTag`
   round-trips now live in `serialize.entities.test.ts`.)

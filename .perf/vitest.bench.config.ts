@@ -13,5 +13,8 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     include: ['.perf/bench/**/*.perf.test.ts'],
+    // Serialize behind the machine-wide gate mutex and verify the machine is
+    // quiet at both ends (see benchGlobalSetup.ts).
+    globalSetup: ['./.perf/benchGlobalSetup.ts'],
   },
 });
