@@ -51,6 +51,21 @@ describe('decodeEmbeddedSvgImage', () => {
   it('returns null for a malformed data URI with no comma/payload', () => {
     expect(decodeEmbeddedSvgImage(makeImage({ href: 'data:image/svg+xml' }))).toBeNull();
   });
+
+  it('returns null for a payload that is not valid percent-encoding', () => {
+    // A hand-written href carrying a literal `%` (here in `width='100%'`) is not
+    // decodable percent-encoding. It must read as "not an embedded SVG we can
+    // work with" — the passes skip that one image and the export goes on.
+    const image = makeImage({
+      href: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='100%'></svg>",
+    });
+    expect(decodeEmbeddedSvgImage(image)).toBeNull();
+  });
+
+  it('returns null for a base64 payload that is not valid base64', () => {
+    const image = makeImage({ href: 'data:image/svg+xml;base64,not!valid!base64' });
+    expect(decodeEmbeddedSvgImage(image)).toBeNull();
+  });
 });
 
 // Read each href channel precisely: getAttributeNS(null, 'href') is the genuine

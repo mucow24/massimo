@@ -20,8 +20,15 @@ export function fromBase64(b64: string): string {
  * The decoded inner SVG markup of an `<image>` whose href is an embedded
  * `data:image/svg+xml` URI (base64 or URL-encoded), or null for any other
  * image — raster (`data:image/png…`), an external reference, or a malformed
- * data URI with no payload — which callers skip. Reads a plain `href` in
- * preference to `xlink:href`, matching how the app emits these images.
+ * data URI, whether it has no payload at all or one that won't decode — which
+ * callers skip. Reads a plain `href` in preference to `xlink:href`, matching
+ * how the app emits these images.
+ *
+ * Every href the app itself mints decodes; a hand-edited doc file or a crafted
+ * clipboard payload can carry one that doesn't (a literal `%`, a truncated
+ * base64 run). That is one image we can't rewrite, so it reads as "not an
+ * embedded SVG" and the pass moves on — the same policy as
+ * `rasterizeMaskedImages`, which skips rather than aborting the whole export.
  */
 export function decodeEmbeddedSvgImage(image: Element): string | null {
   const href = image.getAttribute('href') ?? image.getAttributeNS(XLINK_NS, 'href') ?? '';
@@ -30,7 +37,11 @@ export function decodeEmbeddedSvgImage(image: Element): string | null {
   if (comma < 0) return null;
   const isBase64 = href.slice(0, comma).includes(';base64');
   const payload = href.slice(comma + 1);
-  return isBase64 ? fromBase64(payload) : decodeURIComponent(payload);
+  try {
+    return isBase64 ? fromBase64(payload) : decodeURIComponent(payload);
+  } catch {
+    return null;
+  }
 }
 
 /**
