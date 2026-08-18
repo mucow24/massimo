@@ -17,6 +17,7 @@ import {
   expectedFaceNames,
   FONT_TABLE_SOURCE,
   MARKER_NAME,
+  shouldFetch,
   stageInto,
 } from './stageFonts.mjs';
 
@@ -168,5 +169,53 @@ describe('stageInto', () => {
   it('reports when there is no stand-in to fall back to', () => {
     rmSync(standIn);
     expect(stageInto({ fontsDir, standIn, names, source: null })).toBe('nothing-available');
+  });
+});
+
+describe('shouldFetch', () => {
+  // Cloning is the LAST thing tried before giving up and standing DejaVu in.
+  it('fetches when nothing on disk can supply the faces', () => {
+    expect(shouldFetch({ strategy: 'substitute', dotFontsExists: false })).toBe(true);
+  });
+
+  // A complete source already won the vote. Cloning would spend a network
+  // round-trip to learn what the filesystem already answered — and on Mike's
+  // machine, where the faces are simply present, every `npm install` would pay
+  // it.
+  it('does not fetch when .fonts already holds the faces', () => {
+    expect(shouldFetch({ strategy: 'dot-fonts', dotFontsExists: true })).toBe(false);
+  });
+
+  // The worktree case. A sibling checkout is on the same disk and needs no
+  // credentials, so it must never be passed over for a clone.
+  it('does not fetch when a sibling checkout can supply them', () => {
+    expect(shouldFetch({ strategy: 'sibling', dotFontsExists: false })).toBe(false);
+  });
+
+  // The main checkout on the dev machine: the faces are simply THERE, and
+  // nothing else is — no `.fonts/`, and no sibling, because the sibling is us.
+  // That votes 'substitute' even though `stageInto` will go on to keep the real
+  // faces untouched, so the strategy alone cannot be trusted here: acting on it
+  // would clone the font repo on every single `npm install` Mike runs.
+  it('does not fetch when public/fonts already holds the real faces', () => {
+    expect(
+      shouldFetch({ strategy: 'substitute', alreadyStaged: true, dotFontsExists: false }),
+    ).toBe(false);
+  });
+
+  // The same container on its second install, now with credentials: the faces
+  // on disk are stand-ins, which `countFaces` reports as none. Upgrading them
+  // to the real thing is exactly what should happen.
+  it('fetches when the faces on disk are only stand-ins', () => {
+    expect(
+      shouldFetch({ strategy: 'substitute', alreadyStaged: false, dotFontsExists: false }),
+    ).toBe(true);
+  });
+
+  // `git clone` refuses a non-empty target, and a half-populated `.fonts/`
+  // (an interrupted clone, a hand-copied subset) is exactly what would be
+  // there. Whatever is in it is the user's; the clone is not entitled to it.
+  it('does not fetch into a .fonts that already exists', () => {
+    expect(shouldFetch({ strategy: 'substitute', dotFontsExists: true })).toBe(false);
   });
 });
