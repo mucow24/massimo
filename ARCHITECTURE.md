@@ -164,7 +164,8 @@ src/
     autoOrient.ts               # rotate a just-added station to the line tangent (flipping 180° when the tangent would render its label upside down — same axis, right-side-up text)
     clipboard.ts                # ClipPayload union + read/write + SVG-href security guard
     svgImport.ts                # import external .svg or png/jpeg raster → intrinsic/decoded
-                                #   size + data URI (+ href security allow-list)
+                                #   size + data URI (+ href security allow-list, + the 2 MB
+                                #   ceiling that keeps an import off the localStorage quota)
 
   geometry/                     # PURE math — world coordinates, no React/store
     vec.ts orientation.ts       # vector primitives; rotation/local↔world; STOP_SIZE=14;
@@ -2107,7 +2108,15 @@ edits and focus-scoped groups (numeric fields, the color picker, name editors) �
 synchronously: a focus group stays open as long as focus does, so deferring under it would
 leave storage arbitrarily stale behind a discrete, observable edit. Flush points close the
 deferred window: gesture commit (durable at pointerup), the undo path above, and
-pagehide/beforeunload/visibilitychange.
+pagehide/beforeunload/visibilitychange. **The write itself can be refused** — the origin's
+localStorage quota, most often against a doc carrying an imported image — and it runs inside the
+caller's `set()`, so an escaping `QuotaExceededError` would skip the rest of every action from
+there on (mode exits, selection updates, group commits) while the doc silently stopped reaching
+storage, a loss only a reload reveals. So the write swallows it, keeps the in-memory doc, drops the
+pending blob rather than re-offering one that cannot fit, and reports through a toast — once per
+run of failures, not per keystroke. The import ceiling (`MAX_IMAGE_IMPORT_BYTES`, 2 MB, in
+[svgImport.ts](src/model/svgImport.ts)) is the other half: it keeps the common cause from reaching
+the doc at all.
 
 **Grouped edits — `beginHistoryGroup()`** ([store.ts](src/state/store.ts)). A drag is many
 `moveStation` calls; a text edit is many `onChange`s; a slider drag is many ticks. The pattern:
@@ -3725,7 +3734,10 @@ While holes are being served, MapCanvas's synchronous region build stands down e
 gesture exit — commit, cancel, rollback, and the steal — drains via the store's `onHistoryGroup`
 events: disarm, bump the generation (late RESULTs are dropped), snap the render source back to
 the live doc, resync the mirror. Worker errors and frame timeouts fall back to the synchronous
-path mid-gesture; that path is never deleted — it is the at-rest path, the small-map path, and
+path mid-gesture — carrying the routed guides on a holes-less frame (`DragFrame.holes` is nullable
+for exactly this), since those are guides the hooks were told not to paint and would otherwise
+blink out until the next pointermove takes them back; that path is never deleted — it is the
+at-rest path, the small-map path, and
 the reference the worker's output is pinned byte-equal to (`regionFrame.test.ts`, plus an e2e
 that replays sampled mid-drag frames at rest and requires identical paint).
 
@@ -4409,19 +4421,23 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   for a stored value, the store's own module for a union that never leaves the app (`MAP_SORTS` in
   `state/mapLibrary.ts`): an ordered array naming every member — `LINE_STYLES`, `LINE_END_STYLES`,
   `TRANSFER_DRAW_ORDERS`, `ROUTE_BULLET_SHAPES`, `TEXT_LABEL_ALIGNS`, `DOT_BASE_SHAPES`,
-  `PALETTE_SORTS`, `MAP_SORTS`, and `LABEL_WEIGHT_NAMES` (whose rungs carry their display names,
-  since the names ARE the shipped faces) — with a membership guard beside it: `isLineEndStyle`,
-  `isTransferDrawOrder`, `isRouteBulletShape`, `isTextLabelAlign`, `isDotBaseShape`,
-  `isPaletteSort`, `isMapSort`, `isLabelWeight`. **Every gate judges by the guard and every
-  picker takes its order from the array**; no consumer re-spells the members, including the three
-  gates that each judge stored values independently (both load paths and the clipboard's paste
-  validator). The rule earns its keep because a picker and a gate fail in OPPOSITE directions: a
-  picker short a member leaves a stored value uneditable, while a gate short one discards the
-  whole record carrying it — `canonicalStyleProps` refuses a def rather than repairing it, so the
-  user loses a style, not a field. A persisted PREF fails the same way from the other end: a sort
-  mode the picker no longer offers is stuck, and one the guard no longer accepts is silently
-  ignored on the next boot. Compile-time exhaustiveness comes from a `Record<Union, …>` the array
-  is paired with: the UI's chip or label map where the pickers need one
+  `DOT_STROKE_ALIGNS`, `PALETTE_SORTS`, `MAP_SORTS`, and `LABEL_WEIGHT_NAMES` (whose rungs carry
+  their display names, since the names ARE the shipped faces) — with a membership guard beside it:
+  `isLineEndStyle`, `isTransferDrawOrder`, `isRouteBulletShape`, `isTextLabelAlign`,
+  `isDotBaseShape`, `isDotStrokeAlign`, `isPaletteSort`, `isMapSort`, `isLabelWeight`. The two
+  stored unions still outside the rule are `GuideOrientation` and `StopOrientation`, whose gates
+  spell their members out; both are backstopped by `Record<Union, …>` tables elsewhere
+  (`WELLS`/`MOVE_CURSOR`, `ORIENTATION_ANGLE`/`ORIENTATION_NAME`), so widening either still fails
+  the build. **Every gate judges by the guard and every picker takes its order from the array**;
+  no consumer re-spells the members, including the three gates that each judge stored values
+  independently (both load paths and the clipboard's paste validator). The rule earns its keep
+  because a picker and a gate fail in OPPOSITE directions: a picker short a member leaves a
+  stored value uneditable, while a gate short one discards the whole record carrying it —
+  `canonicalStyleProps` refuses a def rather than repairing it, so the user loses a style, not a
+  field. A persisted PREF fails the same way from the other end: a sort mode the picker no longer
+  offers is stuck, and one the guard no longer accepts is silently ignored on the next boot.
+  Compile-time exhaustiveness comes from a `Record<Union, …>` the array is paired with: the UI's
+  chip or label map where the pickers need one
   (`ROUTE_BULLET_SHAPE_LABEL`, `LINE_END_LABELS`, `TRANSFER_DRAW_LABELS`, `DOT_BASE_SHAPE_LABELS`,
   `TEXT_LABEL_ALIGN_CHIPS`, each dialog's `SORT_LABELS`) or `LINE_STYLE_TIE_RANK` — a member added
   to the union leaves a missing key there and fails to compile, so the ladder cannot fall behind
