@@ -2703,13 +2703,16 @@ and the rings and thins the line and its chip. Ambient chrome at engagement volu
 that never happened, and it out-shouts the very thing the span measures FROM. Every live measurement
 readout — those guide labels, the Ctrl-drag spacing, the engaged guide's coordinate chip, the
 circle-diameter chip — speaks one format, `formatMeasurement`: one decimal place, the trailing
-`.0` kept so a number never changes width as a drag crosses a unit boundary. A span with an end off
-screen keeps its label on the part you can SEE, rather than at the true midpoint — zoomed in the
-far end sits several viewports away (a guide's parallel neighbour routinely does), which would
-hide the number exactly when the span is longest. The canvas hands every `SnapGuides` mount one
-box a label must land inside: the visible viewBox minus the strip the sidebar floats over, since
-that panel covers the canvas rather than shrinking it and a label clamped under it is no more
-readable than one off screen. A span already inside that box is never moved.
+`.0` kept so a number never changes width as a drag crosses a unit boundary. The coordinate
+editors' boxes (a guide's Y/Length, a station's X/Y) read in the same register without calling it:
+a numeric field pads its own text to its step's decimals, so they take the value instead,
+`roundMeasurement`. A span with an end off screen keeps its label on the part you can SEE, rather
+than at the true midpoint — zoomed in the far end sits several viewports away (a guide's parallel
+neighbour routinely does), which would hide the number exactly when the span is longest. The
+canvas hands every `SnapGuides` mount one box a label must land inside: the visible viewBox minus
+the strip the sidebar floats over, since that panel covers the canvas rather than shrinking it and
+a label clamped under it is no more readable than one off screen. A span already inside that box
+is never moved.
 
 **Alignment guides are a target class of their own, ALWAYS ON.** Both snappers take
 `guideTargets` (`GuideTarget[]` — a guide is a ready-made alignment axis, H, V, or 45°, at its
@@ -4348,7 +4351,14 @@ downstream luminance / `rgba()` math.
   The CONTROLS do the gridding: `stepFromValue` moves the wheel one step along the grid anchored
   at the field's `min`, **landing on** that grid from an off-grid value (10.2 → 10.25 → 10.5)
   rather than carrying the offset along — the behaviour native `<input type=number>`
-  stepUp/stepDown and Radix's slider keys already have, so wheel, arrows and spinner agree.
+  stepUp/stepDown and Radix's slider keys already have, so wheel, arrows and spinner agree. That
+  agreement needs the input's `min` attribute, which doubles as the HTML step base: without one
+  the base is the box's own value (React writes it to the content attribute) and the arrows walk
+  a grid of their own. The **coordinate editors** are the one place a box shows a number the doc
+  does not hold: a station's X/Y and a guide's Y/Length are READINGS of a dragged position, so
+  they round onto the one-decimal measurement register (`roundMeasurement`) and their wheel steps
+  from that reading — stepping from the stored value lets a notch write a change the box cannot
+  show. Typing is unaffected; what you type is still what the doc gets.
   `snapToStep` survives for exactly one job: a POINTER gesture that wants a grid (the line-circle
   radius drag and the ghost ring previewing its drop, via `snapDraggedLineCircleRadius`). Rounding
   a typed value onto the step grid is what made a Size box swallow 10.2, 10.3 and 10.35 and then

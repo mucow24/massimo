@@ -1453,13 +1453,34 @@ describe('<StationInspector /> — X/Y fields speak the pivot, not the pin', () 
     expect((screen.getByLabelText('Y') as HTMLInputElement).value).toBe('-10');
   });
 
-  it('shows a fractional pivot as it stands, minus the float dust', () => {
-    // A dragged/snapped station lands wherever the gesture put it. Rounding the
-    // display claimed a whole-unit position the doc did not hold — and, since
-    // the same rounding fed the wheel's getCurrent, one notch over the field
-    // quantized the station for real.
+  it('reads a sub-tenth pivot in the one-decimal measurement register', () => {
+    // A dragged/snapped station lands wherever the gesture put it, and a box
+    // reciting all of 120.437291 back is noise rather than precision. Same
+    // reading as the guide popover's boxes and the canvas measurement chips
+    // (`roundMeasurement`); the doc keeps the full value behind it until
+    // something is typed over the box.
     // Stop parked ON the pin (col 0), so the pivot IS the stored position and
-    // the assertion is about the rounding, nothing else.
+    // the assertion is about the reading, nothing else.
+    useDoc.setState({
+      ...DEFAULT_DOC,
+      ...makeDoc({
+        stations: [
+          makeStation({ id: 'a', x: 120.437291, y: -0.04, stops: [makeStop('L1', { col: 0 })] }),
+        ],
+        lines: [makeLine({ id: 'L1', stations: ['a'] })],
+      }),
+    });
+    useSelection.setState({ ...SELECTION_BLANK, selectedStationIds: ['a'] });
+    render(<StationInspector id="a" />);
+    expect((screen.getByLabelText('X') as HTMLInputElement).value).toBe('120.4');
+    // A station a hair above the axis must not read "-0".
+    expect((screen.getByLabelText('Y') as HTMLInputElement).value).toBe('0');
+    expect(useDoc.getState().stations.a.x).toBe(120.437291);
+  });
+
+  it('shows a fractional pivot that already fits the register as it stands', () => {
+    // Stop parked ON the pin (col 0), so the pivot IS the stored position and
+    // the assertion is about the reading, nothing else.
     useDoc.setState({
       ...DEFAULT_DOC,
       ...makeDoc({
