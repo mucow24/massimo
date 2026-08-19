@@ -72,6 +72,13 @@ export function makeLine(overrides: Partial<Line> & { id: LineId }): Line {
   const service = overrides.service ?? overrides.id.toUpperCase();
   const base: Line = {
     service,
+    // Mirrors what production `addLine` names a fresh line, so a fixture line
+    // looks like a real one. CAUTION: that string is byte-identical to
+    // `lineDisplayName`'s "<service> line" fallback for an UNNAMED line, so a
+    // test asserting a user-facing line name proves nothing unless it
+    // overrides `name` — a surface hand-spelling the fallback would pass too.
+    // Three such tests were vacuous for exactly this reason; override with a
+    // name unlike the fallback, and cover the empty-name case separately.
     name: `${service} line`,
     color: '#0039A6',
     stations: [],

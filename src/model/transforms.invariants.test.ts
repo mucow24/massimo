@@ -10,6 +10,7 @@ import {
 } from './lineStroke';
 import type { LineStrokeColor, LineStyle, MapDoc, TransferEnd } from './types';
 import { counterIdFactory } from './ids';
+import { cleanFloat } from '../util/grid';
 import { isStopEnd, transferEndResolves } from './transferAnchors';
 
 // One transfer endpoint to fabricate: `endKind % 3` selects the arm — 0 a
@@ -430,6 +431,16 @@ describe('transforms invariants (property-based)', () => {
       { kind: 'addLine' },
       { kind: 'setLineWidth', idx: 0, w: 1.125 },
     ];
+    // A width carrying binary dust (1.1 + 2.2 = 3.3000000000000003), so the
+    // float-CLEAN half of "canonical" is exercised deterministically rather
+    // than waiting for a draw to produce one: 1.125 above is already clean and
+    // proves nothing about the cleaning. Dust must sit ABOVE LINE_WIDTH_MIN
+    // (1) or the clamp lands on the floor — itself clean — and proves nothing
+    // either.
+    const dustyWidth: Action[] = [
+      { kind: 'addLine' },
+      { kind: 'setLineWidth', idx: 0, w: 1.1 + 2.2 },
+    ];
     fc.assert(
       fc.property(fc.array(actionArb, { maxLength: 30 }), (actions) => {
         const doc = applyAll(actions);
@@ -437,11 +448,16 @@ describe('transforms invariants (property-based)', () => {
           const w = doc.lines[lid].width;
           if (w === undefined) continue;
           expect(Number.isFinite(w)).toBe(true);
+          // THE canonical form, and the only quantization there is: the value
+          // is float-CLEAN (idempotent under cleanFloat), so binary dust never
+          // reaches the doc. Not a step grid — that is what the controls move
+          // by, not the set of legal values.
+          expect(cleanFloat(w)).toBe(w);
           expect(w).toBeGreaterThanOrEqual(LINE_WIDTH_MIN);
           expect(w).not.toBe(LINE_WIDTH_DEFAULT);
         }
       }),
-      { examples: [[fractionalWidth]] },
+      { examples: [[fractionalWidth], [dustyWidth]] },
     );
   });
 
@@ -470,9 +486,11 @@ describe('transforms invariants (property-based)', () => {
         for (const lid of Object.keys(doc.lines)) {
           const { strokeWidth, strokeColor } = doc.lines[lid];
           if (strokeWidth !== undefined) {
-            // Finite and above the (dropped) default — 0 means "no casing" and
-            // is never stored. No grid: see the note above.
+            // Finite, float-clean (the canonical form — see the width sibling
+            // above), and above the (dropped) default: 0 means "no casing" and
+            // is never stored. No step grid; see the note above.
             expect(Number.isFinite(strokeWidth)).toBe(true);
+            expect(cleanFloat(strokeWidth)).toBe(strokeWidth);
             expect(strokeWidth).toBeGreaterThan(LINE_STROKE_WIDTH_DEFAULT);
           }
           if (strokeColor !== undefined) {

@@ -83,11 +83,24 @@ describe('<StationLayoutEditor />', () => {
   });
 
   it('gives each stop handle a tooltip naming its line', () => {
+    // The layout editor's stop tooltip is the third surface `lineNaming.ts`
+    // names, alongside the sidebar row and the inspector's stop badge, and all
+    // three must answer "which line is this?" identically. L1 is renamed away
+    // from the "<service> line" fallback and L2 cleared onto it, because the
+    // seed's own names ARE that fallback — assert them as seeded and a handle
+    // that hand-spelled `${line.service} line` would pass just as well.
     seed();
+    const lines = useDoc.getState().lines;
+    useDoc.setState({
+      lines: {
+        L1: { ...lines.L1, name: 'Broadway Express' },
+        L2: { ...lines.L2, name: '' },
+      },
+    });
     const { container } = renderEditor();
     const l1 = container.querySelector('[data-cell-kind="stop"][data-line-id="L1"]');
     const l2 = container.querySelector('[data-cell-kind="stop"][data-line-id="L2"]');
-    expect(l1?.querySelector('title')?.textContent).toBe('1 line');
+    expect(l1?.querySelector('title')?.textContent).toBe('Broadway Express');
     expect(l2?.querySelector('title')?.textContent).toBe('2 line');
   });
 
