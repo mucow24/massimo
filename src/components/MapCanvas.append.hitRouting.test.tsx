@@ -23,7 +23,7 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// from MapCanvas.appendDashedHitbox.test.tsx
+// Hit box: a segment whose style has gaps
 // ---------------------------------------------------------------------------
 // Edit Stops on a segment whose style has GAPS (dashed / dotted / dashed-open):
 // the painted stroke is a run of separate dashes, so `pointer-events: stroke` on
@@ -103,7 +103,7 @@ describe('Edit Stops — a gappy segment is clickable across its whole length', 
 });
 
 // ---------------------------------------------------------------------------
-// from MapCanvas.appendInterlinedHitbox.test.tsx
+// Hit box: which stripe of an interlined band
 // ---------------------------------------------------------------------------
 // Edit Stops hit box: the target for splicing into the edited line's edge is
 // that line's OWN stripe. When two lines interline along the same corridor the
@@ -205,7 +205,7 @@ describe('Edit Stops — interlined-corridor hit box is symmetric about the edit
 });
 
 // ---------------------------------------------------------------------------
-// from MapCanvas.appendEditedLineHitLift.test.tsx
+// Hit box: the edited line owns every pixel it paints
 // ---------------------------------------------------------------------------
 // Edit Stops: the line being edited owns every pixel it paints. The mode dims
 // the map and repaints the edited line ON TOP of it, so the base layer's
@@ -320,7 +320,7 @@ describe('Edit Stops — the edited line owns the pixels it paints', () => {
 });
 
 // ---------------------------------------------------------------------------
-// from MapCanvas.appendAltGhost.test.tsx
+// The alt-ghost preview
 // ---------------------------------------------------------------------------
 // Edit Stops alt-ghost: while Alt is held over empty canvas and the alt-click
 // would create a station (decideCanvasClick returns a create-* decision), the

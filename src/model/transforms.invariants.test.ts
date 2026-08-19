@@ -5,12 +5,12 @@ import { LINE_WIDTH_DEFAULT, LINE_WIDTH_MIN } from './lineWidth';
 import {
   LINE_OWN_COLOR,
   LINE_STROKE_COLOR_DEFAULT,
-  LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_DEFAULT,
   lineStrokeColorsEqual,
 } from './lineStroke';
 import type { LineStrokeColor, LineStyle, MapDoc, TransferEnd } from './types';
 import { counterIdFactory } from './ids';
+import { cleanFloat } from '../util/grid';
 import { isStopEnd, transferEndResolves } from './transferAnchors';
 
 // One transfer endpoint to fabricate: `endKind % 3` selects the arm — 0 a
@@ -431,6 +431,16 @@ describe('transforms invariants (property-based)', () => {
       { kind: 'addLine' },
       { kind: 'setLineWidth', idx: 0, w: 1.125 },
     ];
+    // A width carrying binary dust (1.1 + 2.2 = 3.3000000000000003), so the
+    // float-CLEAN half of "canonical" is exercised deterministically rather
+    // than waiting for a draw to produce one: 1.125 above is already clean and
+    // proves nothing about the cleaning. Dust must sit ABOVE LINE_WIDTH_MIN
+    // (1) or the clamp lands on the floor — itself clean — and proves nothing
+    // either.
+    const dustyWidth: Action[] = [
+      { kind: 'addLine' },
+      { kind: 'setLineWidth', idx: 0, w: 1.1 + 2.2 },
+    ];
     fc.assert(
       fc.property(fc.array(actionArb, { maxLength: 30 }), (actions) => {
         const doc = applyAll(actions);
@@ -438,21 +448,37 @@ describe('transforms invariants (property-based)', () => {
           const w = doc.lines[lid].width;
           if (w === undefined) continue;
           expect(Number.isFinite(w)).toBe(true);
+          // THE canonical form, and the only quantization there is: the value
+          // is float-CLEAN (idempotent under cleanFloat), so binary dust never
+          // reaches the doc. Not a step grid — that is what the controls move
+          // by, not the set of legal values.
+          expect(cleanFloat(w)).toBe(w);
           expect(w).toBeGreaterThanOrEqual(LINE_WIDTH_MIN);
           expect(w).not.toBe(LINE_WIDTH_DEFAULT);
         }
       }),
-      { examples: [[fractionalWidth]] },
+      { examples: [[fractionalWidth], [dustyWidth]] },
     );
   });
 
   it('line stroke fields are always in canonical stored form', () => {
-    // Deterministic coverage of the fractional path. Stroke width moved onto
-    // the same 0.25 grid in #276 (was 0.5, LINE_STROKE_STEP), so 0.75 stores as
-    // 0.75 — a value the old half-pixel (× 2) check wrongly rejected.
+    // Deterministic coverage of the fractional path, in both directions. A
+    // casing width is a free measurement like a stripe width: LINE_STROKE_STEP
+    // moves the slider, the steppers and the wheel, and is NOT the set of legal
+    // values, so what is typed is what is stored (`clampField` — float-cleaned,
+    // clamped at the floor, dropped at the default, never snapped). 0.75 is a
+    // typed value that happens to land on the step; 5e-7 is one that does not,
+    // cleaning to 1e-6 — small, off-step, and legitimately stored. Both are
+    // injected because a seed-dependent draw is what let a grid assertion sit
+    // here reddening unrelated PRs at random; the same fix the `width` sibling
+    // above got after w:1.125.
     const fractionalStroke: Action[] = [
       { kind: 'addLine' },
       { kind: 'setLineStrokeWidth', idx: 0, w: 0.75 },
+    ];
+    const tinyStroke: Action[] = [
+      { kind: 'addLine' },
+      { kind: 'setLineStrokeWidth', idx: 0, w: 5e-7 },
     ];
     fc.assert(
       fc.property(fc.array(actionArb, { maxLength: 30 }), (actions) => {
@@ -460,8 +486,11 @@ describe('transforms invariants (property-based)', () => {
         for (const lid of Object.keys(doc.lines)) {
           const { strokeWidth, strokeColor } = doc.lines[lid];
           if (strokeWidth !== undefined) {
-            // On the 0.25 grid, never the (dropped) default.
-            expect(Number.isInteger(strokeWidth / LINE_STROKE_STEP)).toBe(true);
+            // Finite, float-clean (the canonical form — see the width sibling
+            // above), and above the (dropped) default: 0 means "no casing" and
+            // is never stored. No step grid; see the note above.
+            expect(Number.isFinite(strokeWidth)).toBe(true);
+            expect(cleanFloat(strokeWidth)).toBe(strokeWidth);
             expect(strokeWidth).toBeGreaterThan(LINE_STROKE_WIDTH_DEFAULT);
           }
           if (strokeColor !== undefined) {
@@ -475,7 +504,7 @@ describe('transforms invariants (property-based)', () => {
           }
         }
       }),
-      { examples: [[fractionalStroke]] },
+      { examples: [[fractionalStroke], [tinyStroke]] },
     );
   });
 

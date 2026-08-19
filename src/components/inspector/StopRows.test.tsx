@@ -283,15 +283,25 @@ describe('<StopRows />', () => {
     // The badge tooltip is the inspector's answer to "which line is this stop
     // on?" — the same question the sidebar row and the layout editor's stop
     // tooltip answer. All three go through lineDisplayName, so a named line
-    // reads by NAME here too instead of "Line <service>".
+    // reads by NAME here too instead of by its "<service> line" fallback,
+    // followed by the double-click affordance, so the mode hop the next test
+    // exercises is discoverable rather than folklore.
     seed({ a: hub() });
+    // L1 is renamed away from the "<service> line" fallback and L2 cleared
+    // onto it: the seed's own names ARE the fallback strings, so both halves
+    // must be exercised or a hand-spelled `${service} line` would pass this.
+    const lines = useDoc.getState().lines;
+    useDoc.setState({
+      lines: {
+        L1: { ...lines.L1, name: 'Broadway Express' },
+        L2: { ...lines.L2, name: '' },
+      },
+    });
     renderRows();
     const rows = screen.getAllByTestId('stop-row');
-    // ...followed by the double-click affordance, so the mode hop below is
-    // discoverable rather than folklore.
     expect(rows[0].querySelector('.line-badge')).toHaveAttribute(
       'title',
-      '1 line — double-click to edit this line',
+      'Broadway Express — double-click to edit this line',
     );
     expect(rows[1].querySelector('.line-badge')).toHaveAttribute(
       'title',

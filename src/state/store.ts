@@ -173,6 +173,16 @@ const DOC_FIELDS = [
 type DocFieldName = (typeof DOC_FIELDS)[number];
 export type DocSnapshot = Pick<MapDoc, DocFieldName>;
 
+// The tuple must COVER MapDoc, and `Pick` cannot say so: a name the doc lacks
+// is already a hard error (DocSnapshot stops matching DocState), but a field
+// the tuple FORGETS is silently absent from the snapshot — it would default,
+// then never persist, never undo, and never enter a save-baseline compare. The
+// symptom is an edit that comes back after a refresh, days later. So the
+// leftover is spelled as a type: `never` while the tuple is exhaustive, and
+// otherwise a constraint violation that names the missing field, at the tuple,
+// in the editor. Exported because `noUnusedLocals` would otherwise flag it.
+export type DocFieldsCoverMapDoc<T extends never = Exclude<keyof MapDoc, DocFieldName>> = T;
+
 // Undo-stack cap. zundo applies it to ungrouped writes via its `limit` option;
 // pushHistory (the grouped-gesture path) must apply the same cap itself.
 export const HISTORY_LIMIT = 1000;

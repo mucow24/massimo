@@ -83,9 +83,7 @@ describe('placing-label snap vs. the doc-default label style', () => {
   it('the ghost preview lands where the drop lands with ALL snapping off', () => {
     // The unsnapped arm of the same parity rule: with every mode off the drop
     // point is the raw cursor, so this catches a ghost/commit divergence that
-    // grid snapping would otherwise round away. (Ported from the former
-    // usePlacementDispatch.labelDrop.test.ts, whose other case was a duplicate
-    // of the parity test above.)
+    // grid snapping would otherwise round away.
     useSnapPrefs.setState({
       modes: { ...DEFAULT_SNAP_MODES, line: false, grid: 'off', all: 'off' },
     });

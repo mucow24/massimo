@@ -28,7 +28,7 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// from MapCanvas.appendSpliceByClick.test.tsx
+// Splice by alt-click
 // ---------------------------------------------------------------------------
 // Edit Stops: alt-click ON the armed segment splices a new station into it at
 // the click point (the "drop a stop mid-segment" gesture). Previously the
@@ -174,7 +174,7 @@ describe('Edit Stops — alt-click on the armed segment splices a station', () =
 });
 
 // ---------------------------------------------------------------------------
-// from MapCanvas.appendDeepPickHand.test.tsx
+// The same alt-pick, in hand/pan mode
 // ---------------------------------------------------------------------------
 // hand/pan mode must be pan-only. Every other Edit Stops mutation path
 // is gated on it (onCanvasClick's `if (inHandMode) return`,
@@ -185,7 +185,7 @@ describe('Edit Stops — alt-click on the armed segment splices a station', () =
 // (since the splice-by-alt-click change), so going inert in hand mode is the
 // difference between panning over a line and silently splicing it.
 //
-// Harness mirrors src/components/MapCanvas.appendSpliceByClick.test.tsx.
+// Harness mirrors the splice section above.
 afterEach(() => {
   delete (document as unknown as { elementsFromPoint?: unknown }).elementsFromPoint;
 });

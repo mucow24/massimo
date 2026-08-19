@@ -289,13 +289,15 @@ describe('<Sidebar /> — line badge selects the line', () => {
       ...useDoc.getState(),
       ...makeDoc({
         stations: [makeStation({ id: 's1', name: 'Hub', stops: [makeStop('L1')] })],
-        lines: [makeLine({ id: 'L1', service: 'A', stations: ['s1'] })],
+        lines: [makeLine({ id: 'L1', service: 'A', name: 'Broadway Express', stations: ['s1'] })],
       }),
     });
     render(<Sidebar />);
 
-    // The badge carries the service code "A" and a "Edit line A" title.
-    const badge = screen.getByTitle('Edit A line');
+    // The badge carries the service code "A" and is titled by the line's
+    // display NAME — a name deliberately unlike the "<service> line" fallback,
+    // so finding it proves the title came from `lineDisplayName`.
+    const badge = screen.getByTitle('Edit Broadway Express');
     await user.click(badge);
 
     const sel = useSelection.getState();
@@ -305,6 +307,22 @@ describe('<Sidebar /> — line badge selects the line', () => {
     expect(sel.selectedStationIds).toEqual([]);
     // selectLine also switches the active tab to lines.
     expect(sel.activeTab).toBe('lines');
+  });
+
+  it('falls back to "<service> line" on an unnamed line, like every other surface', () => {
+    // The other half of `lineDisplayName`: a deliberately-cleared name reads
+    // by service code. Both halves are asserted because only the pair
+    // distinguishes the helper from a hand-spelled fallback.
+    useDoc.setState({
+      ...useDoc.getState(),
+      ...makeDoc({
+        stations: [makeStation({ id: 's1', name: 'Hub', stops: [makeStop('L1')] })],
+        lines: [makeLine({ id: 'L1', service: 'A', name: '', stations: ['s1'] })],
+      }),
+    });
+    render(<Sidebar />);
+
+    expect(screen.getByTitle('Edit A line')).toBeTruthy();
   });
 });
 

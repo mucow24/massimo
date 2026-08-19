@@ -219,8 +219,9 @@ describe('Toolbar — export is independent of the lines/stations toggle', () =>
 });
 
 // ---------------------------------------------------------------------------
-// from Toolbar.layeringExport.test.tsx — same mocks, same beforeEach, same
-// exportSvg helper; only the seed fixture and the assertions differ.
+// The layering fade, in the same export snapshot — same mocks, same beforeEach,
+// same exportSvg helper as above; only the seed fixture and the assertions
+// differ.
 // ---------------------------------------------------------------------------
 afterEach(() => {
   useSelection.setState({ uiMode: { kind: 'idle' } });

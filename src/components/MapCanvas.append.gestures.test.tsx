@@ -22,7 +22,7 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// from MapCanvas.appendContextMenu.test.tsx
+// Right-click: the mouse-only exit
 // ---------------------------------------------------------------------------
 // Right-click during Edit Stops is the mouse-only exit. With station
 // manipulation (drag/rotate) unwired from the mode, EVERY canvas right-click
@@ -93,7 +93,7 @@ describe('MapCanvas — right-click exits Edit Stops', () => {
 });
 
 // ---------------------------------------------------------------------------
-// from MapCanvas.appendHoverPan.test.tsx
+// The hover preview, mid-pan
 // ---------------------------------------------------------------------------
 // The Edit Stops hover preview (ring/halo) must not render mid-pan. A
 // middle-button pan captures the pointer, so the stripes get no enter/leave
