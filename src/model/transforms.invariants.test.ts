@@ -5,7 +5,6 @@ import { LINE_WIDTH_DEFAULT, LINE_WIDTH_MIN } from './lineWidth';
 import {
   LINE_OWN_COLOR,
   LINE_STROKE_COLOR_DEFAULT,
-  LINE_STROKE_STEP,
   LINE_STROKE_WIDTH_DEFAULT,
   lineStrokeColorsEqual,
 } from './lineStroke';
@@ -447,12 +446,23 @@ describe('transforms invariants (property-based)', () => {
   });
 
   it('line stroke fields are always in canonical stored form', () => {
-    // Deterministic coverage of the fractional path. Stroke width moved onto
-    // the same 0.25 grid in #276 (was 0.5, LINE_STROKE_STEP), so 0.75 stores as
-    // 0.75 — a value the old half-pixel (× 2) check wrongly rejected.
+    // Deterministic coverage of the fractional path, in both directions. A
+    // casing width is a free measurement like a stripe width: LINE_STROKE_STEP
+    // moves the slider, the steppers and the wheel, and is NOT the set of legal
+    // values, so what is typed is what is stored (`clampField` — float-cleaned,
+    // clamped at the floor, dropped at the default, never snapped). 0.75 is a
+    // typed value that happens to land on the step; 5e-7 is one that does not,
+    // cleaning to 1e-6 — small, off-step, and legitimately stored. Both are
+    // injected because a seed-dependent draw is what let a grid assertion sit
+    // here reddening unrelated PRs at random; the same fix the `width` sibling
+    // above got after w:1.125.
     const fractionalStroke: Action[] = [
       { kind: 'addLine' },
       { kind: 'setLineStrokeWidth', idx: 0, w: 0.75 },
+    ];
+    const tinyStroke: Action[] = [
+      { kind: 'addLine' },
+      { kind: 'setLineStrokeWidth', idx: 0, w: 5e-7 },
     ];
     fc.assert(
       fc.property(fc.array(actionArb, { maxLength: 30 }), (actions) => {
@@ -460,8 +470,9 @@ describe('transforms invariants (property-based)', () => {
         for (const lid of Object.keys(doc.lines)) {
           const { strokeWidth, strokeColor } = doc.lines[lid];
           if (strokeWidth !== undefined) {
-            // On the 0.25 grid, never the (dropped) default.
-            expect(Number.isInteger(strokeWidth / LINE_STROKE_STEP)).toBe(true);
+            // Finite and above the (dropped) default — 0 means "no casing" and
+            // is never stored. No grid: see the note above.
+            expect(Number.isFinite(strokeWidth)).toBe(true);
             expect(strokeWidth).toBeGreaterThan(LINE_STROKE_WIDTH_DEFAULT);
           }
           if (strokeColor !== undefined) {
@@ -475,7 +486,7 @@ describe('transforms invariants (property-based)', () => {
           }
         }
       }),
-      { examples: [[fractionalStroke]] },
+      { examples: [[fractionalStroke], [tinyStroke]] },
     );
   });
 

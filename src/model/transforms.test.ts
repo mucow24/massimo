@@ -1253,6 +1253,13 @@ describe('setLineStrokeWidth', () => {
     // Only an exact 0 drops: 0.1 is a hairline casing, not "off".
     expect(T.setLineStrokeWidth(doc, 'L1', 0.1).lines.L1.strokeWidth).toBe(0.1);
     expect(T.setLineStrokeWidth(doc, 'L1', 0)).toBe(doc);
+    // Below the float-clean register the value survives as whatever cleaning
+    // leaves — 5e-7 rounds UP to 1e-6 rather than to nothing, so the field is
+    // stored and the line keeps a casing. Only what cleans to exactly 0 (5e-8
+    // and below) reads as "off". This is the case that used to reach the
+    // invariants property test as a random counterexample.
+    expect(T.setLineStrokeWidth(doc, 'L1', 5e-7).lines.L1.strokeWidth).toBe(1e-6);
+    expect(T.setLineStrokeWidth(doc, 'L1', 5e-8)).toBe(doc);
   });
 
   it('ignores non-finite input (same reference out)', () => {

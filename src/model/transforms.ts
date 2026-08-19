@@ -966,8 +966,8 @@ function setLineStyleField<K extends keyof Line>(
 }
 
 // Per-line stripe width. Non-finite input is ignored; otherwise the value is
-// rounded and clamped to ≥ LINE_WIDTH_MIN, and the field is dropped when the
-// result lands on LINE_WIDTH_DEFAULT so the default is never stored (mirrors
+// float-cleaned and clamped to ≥ LINE_WIDTH_MIN, and the field is dropped when
+// the result lands on LINE_WIDTH_DEFAULT so the default is never stored (mirrors
 // `setLineSingletonDotStyle`/`setLineMultiDotStyle` + DEFAULT_DOT_STYLE).
 // Returns the input doc unchanged when the effective stored form wouldn't
 // change — the slider fires this on every drag tick, and reference equality is
@@ -1051,12 +1051,13 @@ export function setLineLabelGap(doc: MapDoc, id: LineId, v: number): MapDoc {
 }
 
 // Per-line corner-rounding radius. Same contract as setLineStrokeWidth:
-// non-finite input is ignored, the value is rounded to an integer and clamped
-// to ≥ LINE_CURVE_RADIUS_MIN, and the field is dropped when the result lands
-// on LINE_CURVE_RADIUS_DEFAULT so it is never stored. Reference-equal no-ops
-// keep slider ticks out of the undo history. Curve radius is GEOMETRY (it
-// moves band paths), so store actions wrap this in withRegionReconcile like
-// the other geometry writers.
+// non-finite input is ignored, the value is float-cleaned and clamped to
+// ≥ LINE_CURVE_RADIUS_MIN, and the field is dropped when the result lands
+// on LINE_CURVE_RADIUS_DEFAULT so it is never stored. Not rounded to an
+// integer — a typed radius is stored as typed, like every other field.
+// Reference-equal no-ops keep slider ticks out of the undo history. Curve
+// radius is GEOMETRY (it moves band paths), so store actions wrap this in
+// withRegionReconcile like the other geometry writers.
 export function setLineCurveRadius(doc: MapDoc, id: LineId, r: number): MapDoc {
   if (!Number.isFinite(r)) return doc;
   return setLineStyleField(doc, id, 'curveRadius', canonicalLineCurveRadius(r));
@@ -1124,12 +1125,13 @@ export function setStationEndStyle(
   return { ...doc, lines: { ...doc.lines, [lineId]: withStationEndStyles(line, next) } };
 }
 
-// Per-line casing width. Same contract as setLineWidth except the grid:
-// non-finite input is ignored, the value is rounded to the nearest
-// LINE_STROKE_STEP (0.25) and clamped to ≥ LINE_STROKE_WIDTH_MIN, and the
-// field is dropped when the result lands on the default (0 = no casing) so
-// it is never stored. Reference-equal no-ops keep slider ticks out of the
-// undo history.
+// Per-line casing width. Same contract as setLineWidth: non-finite input is
+// ignored, the value is float-cleaned and clamped to ≥ LINE_STROKE_WIDTH_MIN,
+// and the field is dropped when the result lands on the default (0 = no
+// casing) so it is never stored. Reference-equal no-ops keep slider ticks out
+// of the undo history. LINE_STROKE_STEP (0.25) moves the slider, the steppers
+// and the wheel — it is NOT a storage grid, so a typed 3.6 stays 3.6 (see
+// `clampField`).
 export function setLineStrokeWidth(doc: MapDoc, id: LineId, w: number): MapDoc {
   if (!Number.isFinite(w)) return doc;
   return setLineStyleField(doc, id, 'strokeWidth', canonicalStrokeWidth(w));
