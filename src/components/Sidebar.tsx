@@ -10,6 +10,7 @@ import { NONE_STOP_DOT_STYLE_ID } from '../model/dotStyle';
 import type { Line, LineId, Station, StationId } from '../model/types';
 import { legibleTextOn } from '../util/color';
 import { stationNameListText } from '../geometry/labelTokens';
+import { lineDisplayName } from '../model/lineNaming';
 
 type StationSortColumn = 'name' | 'stops';
 
@@ -155,7 +156,7 @@ const StationRow = memo(function StationRow({
                   color: legibleTextOn(ln.color),
                   cursor: 'pointer',
                 }}
-                title={`Edit ${ln.service} line`}
+                title={`Edit ${lineDisplayName(ln)}`}
                 onClick={(e) => {
                   e.stopPropagation();
                   const sel = useSelection.getState();

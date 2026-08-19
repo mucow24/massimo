@@ -273,8 +273,10 @@ describe('shipped fonts cover the glyph-shortcut codepoints', () => {
 // browser draws ✈ from one face while the tracer traces another, which shows up
 // only as an export that no longer matches the screen.
 //
-// The three are compared by FALLBACK ORDER, not as strings — styles.css also
-// carries 'Inter' for the app chrome, which the map's own stack has no use for.
+// The three are compared by FALLBACK ORDER, not as strings: styles.css spells
+// its stack with the generic tail every DOM stack wants ('Helvetica', 'Arial',
+// sans-serif) and declares each face in an `@font-face` block of its own, so
+// only the relative order of the three named faces is common ground.
 describe('the fallback chain agrees in all three places', () => {
   const css = readFileSync('src/styles.css', 'utf8');
   const SOEHNE = 'Soehne';

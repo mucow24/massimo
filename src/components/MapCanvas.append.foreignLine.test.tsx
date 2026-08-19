@@ -23,7 +23,7 @@ beforeEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// from MapCanvas.appendForeignHover.test.tsx
+// Hovering another line
 // ---------------------------------------------------------------------------
 // Edit Stops: hovering another line's stripe marks that LINE as the hover
 // target (a gentle whole-line highlight paints in HighlightedLineLayer), so
@@ -91,7 +91,7 @@ describe('MapCanvas — foreign-line hover during Edit Stops', () => {
 });
 
 // ---------------------------------------------------------------------------
-// from MapCanvas.appendForeignDeadClick.test.tsx
+// A dead click on a foreign station
 // ---------------------------------------------------------------------------
 // Edit Stops: a dead click on a foreign station must stay dead.
 //
@@ -190,7 +190,7 @@ describe('Edit Stops: clicking a foreign station with nothing armed', () => {
 });
 
 // ---------------------------------------------------------------------------
-// from MapCanvas.appendForeignStationClickThrough.test.tsx
+// A foreign station with nothing armed: click-through
 // ---------------------------------------------------------------------------
 // Edit Stops with NOTHING armed (append cursor null): a station that is NOT a
 // member of the edited line is a dead click, and it visually sits over other

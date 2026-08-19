@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `4e51da3` (2026-08-18, #529) — verified against the live source.** This
+**Up to date as of commit `6b97f60` (2026-08-18, #537) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -129,7 +129,7 @@ src/
 
   model/                        # PURE domain logic — no React, no store
     types.ts                    # MapDoc + every entity type (the canonical data shape)
-    transforms.ts               # ~4400 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
+    transforms.ts               # ~5000 lines: all (doc,…)→doc editing ops + DEFAULT_DOC + constants
     serialize.ts                # serialize()/parse() + shared backfill/sanitize helpers
     docAudit.ts                 # auditDoc(doc): referential audit (tests + the export doors)
     styles.ts                   # named per-kind formatting presets (StyleDef) + styleId tag/stamp
@@ -1709,9 +1709,14 @@ the file itself carries (steps 3, 5, 6b/6c) — repair over guesswork, error ove
     non-idempotent step in Path A).
 13. `pruneDanglingStyleRefs` — **last**, so dangling / wrong-kind `styleId` tags check against
     fully-sanitized defs. Value divergence is NOT pruned — a diverged-but-tagged item loads
-    verbatim, its diff being a per-field override. Then `bakeTextLabelStyleLayout` — textLabel
-    defs from saves predating layout coverage (width/leading/tracking) backfill each missing
-    field with the MOST COMMON of their (post-prune) wearers' effective values.
+    verbatim, its diff being a per-field override. The **dot slots** get the same repair: a line's
+    `singletonDotStyleId`/`multiDotStyleId` and a stop's own `dotStyleId` are style references
+    living outside the `styleId` tag, and `auditDoc` judges them exactly as strictly, so a dangling
+    one left standing raises the consistency toast at every export door. Dropping the id repaints
+    nothing — an unresolvable one already fell through to the raw dot shadow or the line's default.
+    Then `bakeTextLabelStyleLayout` — textLabel defs from saves predating layout coverage
+    (width/leading/tracking) backfill each missing field with the MOST COMMON of their (post-prune)
+    wearers' effective values.
 14. `adoptDefaultStyles` — **only for files with no `styles` record at all** (pre-styles saves):
     untagged items whose values match their kind's designated default get tagged, so the Styles
     panel's Default editors act on the whole loaded map.
@@ -1767,7 +1772,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | (not gated) | `sanitizeImageHrefs` whenever `svgImages !== undefined` — the guard had one caller (the clipboard) and neither doc load, so a remote href could be persisted at ANY version. **But see the `merge` hook** — same reasoning as `snapStationCells` |
 | (not gated) | `bakeConcreteDotSizes` whenever `lines !== undefined` — dot sizes are REQUIRED stored fields (absent used to mean "my dot type's natural diameter"); pin stops that tracked a different natural than their line's, then materialize the line split sizes. The v27 bump forced one pass over every pre-existing doc; a size-less line written at the current version (legacy clipboard paste) is healed by the **`merge` hook** |
 | (not gated) | `bakeTextLabelStyleLayout` whenever `styles !== undefined` — width/leading/tracking became covered textLabel style fields; a def predating the coverage backfills each missing field with the MOST COMMON of its wearers' effective values (auto/neutral when nobody wears it; ties keep the first-seen value), so nothing repaints and only wearers off the plurality read as per-field overrides. The v28 bump forces one pass; app-written defs are concrete, so no `merge`-hook membership is needed |
-| (not gated) | `bakeLegacyUltraLightWeight` — the retired UltraLight rung (Söhne's ladder starts at 200) folded onto Thin, everywhere a weight is stored. Keyed off the legacy value 100 and reference-stable once nothing stores it, so it runs last and unconditionally, same contract as the file path's call |
+| (not gated) | `bakeLegacyUltraLightWeight` — the retired UltraLight rung (Söhne's ladder starts at 200) folded onto Thin, everywhere a weight is stored. Keyed off the legacy value 100 and reference-stable once nothing stores it, so it runs unconditionally, same contract as the file path's call. Ordered **before the `v<10` style rebuild**, for the reason `parse()` folds before its sanitizers: everything from there down judges a weight by `isLabelWeight`, which no longer answers to 100, so the rebuild would heal a def's weight to the 400 default and the `v<14` label bake would land every station on Roman instead of the adjacent Thin |
 
 A **corrupt/missing version is treated as v0** (all migrations run). The eight non-gated repairs
 (`backfillLinesEdges`, `ensureStyleInvariants`, `snapStationCells`, `sanitizeLineCircles`,
@@ -2074,8 +2079,13 @@ entry (see Region layering) — the real shape is
 `moveStation: (id,x,y) => set(withRegionReconcile((s) => T.moveStation(s, id, x, y)))`, not a bare
 `set`.
 
-`temporalCfg`: `equality: docSnapshotsEqual`, `partialize: pickDocSnapshot`, `limit: HISTORY_LIMIT`
-(1000, [store.ts](src/state/store.ts)).
+zundo's `temporal` options: `limit: HISTORY_LIMIT` (1000), `partialize` over `pickDocSnapshot` and
+`equality` over `docSnapshotsEqual` — each wrapped in an `undefined` guard, because persist
+hydrates synchronously from inside the store initializer and zundo therefore partializes ONE write
+before zustand has assigned the state. Reading `DOC_FIELDS` off `undefined` there throws a
+TypeError that zustand's thenable wrapper swallows whole, taking the migrated write-back and every
+hydration callback with it; a snapshot of nothing is no edit to record either, so `equality` reads
+that same absence as equal ([store.ts](src/state/store.ts)).
 
 The mutator method references live on the full state but are **not** in the snapshot; they never
 change, so `Object.assign` on undo preserves them.
@@ -2083,9 +2093,20 @@ change, so `Object.assign` on undo preserves them.
 ### Undo/redo ([history.ts](src/state/history.ts))
 
 The **only** module that touches zundo's internals (`pastStates`/`futureStates`). Exposes
-`pushHistory`, `pauseHistory`, `resumeHistory`, `undo`, `redo`, `historyDepth`, `redoDepth`, and
-`clearHistory` (both stacks wiped — the file-load path, where undoing across a load would splice
-two documents together).
+`pushHistory`, `pauseHistory`, `resumeHistory`, `isHistoryGrouping`, `undo`, `redo`,
+`historyDepth`, `redoDepth`, `clearHistory` (both stacks wiped — the file-load path, where undoing
+across a load would splice two documents together), plus two stack-editing helpers:
+`withCoalescedHistory(key, apply)`, which folds a run of writes made through one control (`key` is
+a stable per-field token) within a short window into the single entry the run's first write pushed
+— it never pauses recording, so undo/redo, a file load or any unrelated write lands an entry of
+its own and ends the run by identity — and **`markHistory()`**, which takes a mark and returns its
+rewind — the take-back a provisional edit needs when it is cancelled rather than undone (a
+cancelled New… palette; see Palettes dialog). The mark is the top past entry BY IDENTITY, so a
+rewind whose entry is gone (a load cleared the stack mid-burst) is a no-op rather than a guess at
+an index, and a mark taken on an EMPTY stack rewinds to empty. It captures the REDO stack too:
+recording the provisional write clears `futureStates` (zundo does that for every fresh entry), so
+putting back only the past stack would leave a pending redo destroyed by an edit that no longer
+exists. Bursts pass no future stack — a genuinely fresh edit is entitled to wipe the redo.
 **`undo`/`redo` also call `useSelection.getState().reconcileWithDoc(...)`** — the selection store
 is separate and untouched by zundo, so after an undo restores the doc, dangling selection ids
 must be pruned.
@@ -2946,6 +2967,14 @@ which are a separate slot-based system where Shift flips the lattice basis.
   carries its shared baseline outright, so mixed inline `<size>` runs align with no per-size anchor
   back-off, and an inline bullet centers on its run's cap box (`capCenterDy`) rather than on a raw
   fraction of the line.
+  **The block's vertical extent follows the measure, not `style.fontSize`**: each line reaches above
+  and below its own baseline by its OWN largest run's size, and the stack between the first and last
+  baselines is the measurer's cumulative `baselineFromTop` — the ladder the per-segment renderer
+  actually lays out on. That is what keeps a size-tagged name inside its own hit rect and wash, and
+  a multi-line block's pinned line on its marker. It reduces exactly to the uniform
+  `fontSize · LINE_HEIGHT · leading` ladder when nothing is tagged, which is precisely when the
+  plain single-`<text>` path does the painting; a stub measurer returns no per-line metrics, so
+  non-doc callers and the geometry tests keep the base size throughout.
   `dominant-baseline` cannot do this job: Chrome derives its offset from the platform font metrics,
   so `central` measures 0.333em at fontSize 12 and 0.357em at 14 on Windows against 0.258em on
   macOS, versus the model's flat 0.3em — enough to put painted text ~1 world unit off the geometry
@@ -4044,8 +4073,14 @@ same three additions.
   (`findMatchingStations` returns stations sharing a line + a layout equal under TRANSLATION and
   the model's 4-fold mirror symmetry — whole line, not adjacency. Cell (0,0) is the station's own
   anchor point and paints nothing, so which cells a layout sits on is not part of its identity,
-  only their arrangement: the key is taken against the layout's own corner. An edit broadcasts
-  through [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts), rotating local deltas through
+  only their arrangement: the key is taken against the layout's own corner. What the key leads with
+  is the PAINTED frame angle (`stationFrameDeg`), not the octant `rotation` — a ring-bound station
+  resolves its cells and its label through the ring's own frame, up to 22.5° off its octant, so
+  keying on the octant would match it against a free station that visibly paints askew of it. For
+  an unbound station the frame IS the octant, so nothing else changes; `MatchingScope` therefore
+  requires `lineCircles`, deliberately non-optional, since a caller that omitted them would re-arm
+  exactly that bug. An edit broadcasts through
+  [state/mirrorDispatch.ts](src/state/mirrorDispatch.ts), rotating local deltas through
   `rotateGridDelta`; orientation cycles and station rotation are relative steps so odd-offset
   matches stay world-equivalent). **A station turns about its own picture, not its pin** —
   `rotateStation` pivots on `layoutPivotCell` (the stop cluster's centre, rounded to a whole cell
