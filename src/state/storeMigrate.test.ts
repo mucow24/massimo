@@ -66,7 +66,7 @@ type AnyDoc = {
     {
       name?: string;
       stops: { orientation: string; dotShape?: string; dotStyle?: DotStyle }[];
-      label: { valign: string };
+      label: { valign: string; align: string };
       fontSize?: number;
       weight?: number;
       styleId?: string;
@@ -174,22 +174,54 @@ describe('migrateDoc', () => {
     });
   });
 
-  describe('v1/v3 → v4: station sanitation (orientation + valign)', () => {
+  describe('v1/v3 → v4: station sanitation (legacy stop orientations)', () => {
     const legacyStation = () => ({
       ...makeStation({ id: 'S' as StationId }),
       stops: [makeStop('L1' as LineId, { orientation: 'up' as unknown as StopOrientation })],
-      label: makeLabel({ valign: 'auto' as unknown as LabelValign }),
     });
 
-    it('migrates legacy cardinal orientations and the legacy auto valign', () => {
+    it('migrates legacy cardinal orientations', () => {
       const out = run({ stations: { S: legacyStation() } }, 0);
       expect(out.stations!.S.stops[0].orientation).toBe('auto-vertical');
-      expect(out.stations!.S.label.valign).toBe('auto-down');
     });
 
     it('does not run station sanitation at version >= 4', () => {
       const out = run({ stations: { S: legacyStation() } }, 4);
       expect(out.stations!.S.stops[0].orientation).toBe('up');
+    });
+  });
+
+  // Label align/valign are judged by MEMBERSHIP, not by a schema era: nothing
+  // bumps a version when a value goes bad, so the repair has no gate to hang
+  // on. The legacy single `valign: 'auto'` is simply the best-known non-member
+  // and heals down the same path.
+  describe('label align/valign membership (ungated)', () => {
+    const stationWithLabel = (label: Record<string, unknown>) => ({
+      ...makeStation({ id: 'S' as StationId }),
+      label: { ...makeLabel(), ...label },
+    });
+
+    it('heals the legacy auto valign at v0', () => {
+      const out = run(
+        { stations: { S: stationWithLabel({ valign: 'auto' as unknown as LabelValign }) } },
+        0,
+      );
+      expect(out.stations!.S.label.valign).toBe('auto-down');
+    });
+
+    it('heals a non-member align/valign at the CURRENT version, where no gate would fire', () => {
+      const out = run(
+        { stations: { S: stationWithLabel({ align: 'sideways', valign: 'skew' }) } },
+        29,
+      );
+      expect(out.stations!.S.label.valign).toBe('auto-down');
+      expect(out.stations!.S.label.align).toBe('auto');
+    });
+
+    it('leaves a canonical label alone', () => {
+      const out = run({ stations: { S: stationWithLabel({}) } }, 29);
+      expect(out.stations!.S.label.valign).toBe('auto-down');
+      expect(out.stations!.S.label.align).toBe('auto');
     });
   });
 

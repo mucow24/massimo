@@ -51,6 +51,7 @@ import { useCustomPalettes } from './customPalettes';
 import {
   sanitizeImageHrefs,
   sanitizeLineCircles,
+  sanitizeLabelAlignment,
   sanitizeStations,
   snapStationCells,
   backfillLineNames,
@@ -357,8 +358,12 @@ if (typeof window !== 'undefined') {
  *   serialize.ts also calls for the file-import path.
  * - v2 → v3: translate legacy `labelBold: boolean` to `labelWeight:
  *   TextLabelWeight` (true → 700, false → 400). Matches `parse()`.
- * - v3 → v4: translate legacy label `valign: 'auto'` to `'auto-down'` (the
- *   new mirror option `'auto-up'` didn't exist yet). Also in sanitizeStations.
+ * - (ungated) hold each station label's `align`/`valign` to its ladder,
+ *   replacing a non-member with the historical `auto` / `auto-down` pair. Not
+ *   version-gated: nothing bumps a version when a stored union goes bad, and a
+ *   legacy `valign: 'auto'` (from before the `auto-up` mirror existed) is just
+ *   the best-known non-member. Runs via `sanitizeLabelAlignment`, which
+ *   `parse()` in serialize.ts also calls ungated for the file-import path.
  * - v4 → v5: backfill polygon `darkFill`/`darkStroke` (equal to the light
  *   colors) for polygons saved before the dark-mode fields existed. Mirrors
  *   `backfillPolygonDarkColors` in `parse()`.
@@ -519,6 +524,14 @@ export function migrateDoc(persisted: unknown, version: number): DocState {
   }
   if (v < 4 && out.stations) {
     const { stations: cleaned, changed } = sanitizeStations(out.stations);
+    if (changed) out = { ...out, stations: cleaned };
+  }
+  if (out.stations) {
+    // Label align/valign are held to their ladders by MEMBERSHIP, so there is
+    // no version to gate on — nothing bumps one when a value goes bad. Covers
+    // the legacy single `valign: 'auto'` on the way past, that being simply the
+    // best-known non-member. Reference-stable on a canonical doc.
+    const { stations: cleaned, changed } = sanitizeLabelAlignment(out.stations);
     if (changed) out = { ...out, stations: cleaned };
   }
   if (v < 5 && out.polygons) {

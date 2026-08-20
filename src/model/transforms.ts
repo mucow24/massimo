@@ -320,6 +320,35 @@ export const TEXT_LABEL_ALIGNS: readonly TextLabelAlign[] = ['left', 'center', '
 export const isTextLabelAlign = (v: unknown): v is TextLabelAlign =>
   typeof v === 'string' && (TEXT_LABEL_ALIGNS as readonly string[]).includes(v);
 
+// The STATION label's own two alignments — a different axis pair from the free
+// text label's single `align` above, and a different value space, so they get
+// their own ladders rather than borrowing that one. Order is the order the
+// inspector's two clusters render; the segment maps in LabelAlignButtons are
+// `Record`s over these unions, so a rung added to either type fails to compile
+// until the picker grows a segment for it.
+export const LABEL_ALIGNS: readonly LabelAlign[] = ['auto', 'start', 'middle', 'end'];
+export const LABEL_VALIGNS: readonly LabelValign[] = [
+  'auto-down',
+  'top',
+  'middle',
+  'bottom',
+  'auto-up',
+];
+
+// What a station label falls back to when its stored value is not a member —
+// the historical pair every legacy save carried, so a healed label reads as the
+// plain pre-wand label rather than as somebody's choice.
+export const LABEL_ALIGN_DEFAULT: LabelAlign = 'auto';
+export const LABEL_VALIGN_DEFAULT: LabelValign = 'auto-down';
+
+/** Is `v` one of the station label's horizontal alignments? */
+export const isLabelAlign = (v: unknown): v is LabelAlign =>
+  typeof v === 'string' && (LABEL_ALIGNS as readonly string[]).includes(v);
+
+/** Is `v` one of the station label's vertical alignments? */
+export const isLabelValign = (v: unknown): v is LabelValign =>
+  typeof v === 'string' && (LABEL_VALIGNS as readonly string[]).includes(v);
+
 // Column-width slider ceiling (world units). 0 = Auto (size to content, manual
 // line breaks). The spinbutton accepts larger values; updateTextLabel clamps
 // only at 0.

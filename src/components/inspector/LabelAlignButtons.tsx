@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { SegmentedToggle } from '../SegmentedToggle';
+import { LABEL_ALIGNS, LABEL_VALIGNS, isLabelAlign, isLabelValign } from '../../model/transforms';
 import type { AutoHAlign, AutoVAlign, LabelAlign, LabelValign } from '../../model/types';
 
 const ICON_SIZE = 15;
@@ -56,6 +57,33 @@ function AlignSegmentedGroup({
   );
 }
 
+// Chip text per member, and the ladders that order the two clusters. Written
+// as `Record`s over the unions rather than as segment arrays so a rung added to
+// `LabelAlign`/`LabelValign` leaves a missing key here and fails to compile —
+// the same backstop `TEXT_LABEL_ALIGN_CHIPS` gives the free text label's align.
+// Without it a picker can silently fall behind its own type, and a value the
+// cluster never offers is a stored value the user cannot edit.
+const H_ALIGN_CHIPS: Record<LabelAlign, { label: string; title: string }> = {
+  auto: { label: 'Align auto', title: 'Auto — snap against the adjacent stop' },
+  start: { label: 'Align left', title: 'Left' },
+  middle: { label: 'Align center', title: 'Center' },
+  end: { label: 'Align right', title: 'Right' },
+};
+
+const V_ALIGN_CHIPS: Record<LabelValign, { label: string; title: string }> = {
+  'auto-down': {
+    label: 'V-align auto (down)',
+    title: 'Auto-down — first line on the cell, extra lines below',
+  },
+  top: { label: 'V-align top', title: 'Top' },
+  middle: { label: 'V-align middle', title: 'Middle' },
+  bottom: { label: 'V-align bottom', title: 'Bottom' },
+  'auto-up': {
+    label: 'V-align auto (up)',
+    title: 'Auto-up — last line on the cell, extra lines above',
+  },
+};
+
 /**
  * Manual horizontal alignment (wand OFF): auto / left / center / right. `auto`
  * is the legacy half-plane snap — kept so old maps (every station defaults to
@@ -72,23 +100,12 @@ export function LabelAlignButtons({
     <AlignSegmentedGroup
       ariaLabel="Horizontal alignment"
       value={align}
-      onSelect={(v) => onSet(v as LabelAlign)}
-      segments={[
-        {
-          value: 'auto',
-          icon: <HAlignIcon mode="auto" />,
-          label: 'Align auto',
-          title: 'Auto — snap against the adjacent stop',
-        },
-        { value: 'start', icon: <HAlignIcon mode="start" />, label: 'Align left', title: 'Left' },
-        {
-          value: 'middle',
-          icon: <HAlignIcon mode="middle" />,
-          label: 'Align center',
-          title: 'Center',
-        },
-        { value: 'end', icon: <HAlignIcon mode="end" />, label: 'Align right', title: 'Right' },
-      ]}
+      onSelect={(v) => isLabelAlign(v) && onSet(v)}
+      segments={LABEL_ALIGNS.map((mode) => ({
+        value: mode,
+        icon: <HAlignIcon mode={mode} />,
+        ...H_ALIGN_CHIPS[mode],
+      }))}
     />
   );
 }
@@ -109,34 +126,12 @@ export function LabelValignButtons({
     <AlignSegmentedGroup
       ariaLabel="Vertical alignment"
       value={valign}
-      onSelect={(v) => onSet(v as LabelValign)}
-      segments={[
-        {
-          value: 'auto-down',
-          icon: <VAlignIcon mode="auto-down" />,
-          label: 'V-align auto (down)',
-          title: 'Auto-down — first line on the cell, extra lines below',
-        },
-        { value: 'top', icon: <VAlignIcon mode="top" />, label: 'V-align top', title: 'Top' },
-        {
-          value: 'middle',
-          icon: <VAlignIcon mode="middle" />,
-          label: 'V-align middle',
-          title: 'Middle',
-        },
-        {
-          value: 'bottom',
-          icon: <VAlignIcon mode="bottom" />,
-          label: 'V-align bottom',
-          title: 'Bottom',
-        },
-        {
-          value: 'auto-up',
-          icon: <VAlignIcon mode="auto-up" />,
-          label: 'V-align auto (up)',
-          title: 'Auto-up — last line on the cell, extra lines above',
-        },
-      ]}
+      onSelect={(v) => isLabelValign(v) && onSet(v)}
+      segments={LABEL_VALIGNS.map((mode) => ({
+        value: mode,
+        icon: <VAlignIcon mode={mode} />,
+        ...V_ALIGN_CHIPS[mode],
+      }))}
     />
   );
 }
