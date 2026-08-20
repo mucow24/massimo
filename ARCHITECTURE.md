@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `6b97f60` (2026-08-18, #537) — verified against the live source.** This
+**Up to date as of commit `92616cb` (2026-08-19, #538) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -299,7 +299,10 @@ src/
 
   export/                       # exportCanvas.ts (SVG/PNG), fonts.ts, exportCanvasPdf.ts
                                 #   + pure PDF-gap modules pdfHatch/pdfText/pdfGlyphs/
-                                #   pdfDropShadow/pdfMask/pdfAlpha + embeddedSvg (shared image-href plumbing)
+                                #   pdfDropShadow/pdfMask/pdfAlpha/pdfClip (clip-transform
+                                #   hoisting — svg2pdf mutates a cached child path in place, so a
+                                #   clip referenced twice compounds its scale)
+                                #   + embeddedSvg (shared image-href plumbing)
   fun/                          # ballPhysics.ts: the easter egg's rigid-disc simulation — bounce,
                                 #   roll, kick, throw, and the pendulum a held ball hangs from.
                                 #   Pure, in window pixels; no React, no store (BouncingBullet.tsx)
@@ -308,6 +311,8 @@ src/
                                 #   primitives every dimensional setter shares; plus snapToStep
                                 #   and stepDecimals / stepFromValue for the controls. See
                                 #   **A field's step is not its grid** below),
+                                #   json.ts (parseJsonObject — the preamble all three JSON doors
+                                #   share: the map file, the palette file and the clipboard),
                                 #   staleBuild.ts (is this failure just a deploy-stranded chunk?),
                                 #   windowSize.ts (the window's client box, scrollbars excluded —
                                 #   the edge every screen-space panel clamps itself inside)
@@ -352,10 +357,12 @@ setting?". Day/night (`MapDoc.darkMode`) sits on the doc precisely because a nig
 night map tomorrow, on another machine, in an exported file. Grid size and `showWaypoints` are the
 other side of that line: scaffolding for whoever is drawing right now.
 
-The exact set of persisted/undoable fields is the hand-maintained `DOC_FIELDS` tuple in
+The exact set of persisted/undoable fields is the hand-written `DOC_FIELDS` tuple in
 [src/state/store.ts](src/state/store.ts) — the single source of truth that drives `partialize`
 (both persist and zundo), `DocSnapshot`, `pickDocSnapshot`, and the change-detection equality
-check. **Adding a doc field is a one-line edit there** (plus adding it to `DEFAULT_DOC`).
+check. **Adding a doc field is a one-line edit there** (plus adding it to `DEFAULT_DOC`), and
+forgetting it is a compile error rather than a silent omission — see `DocFieldsCoverMapDoc` under
+Conventions & invariants.
 
 ### 2. Purity, and "same reference on no-op"
 
@@ -986,12 +993,16 @@ form, and collapses a stored `locked: false`; there are no cross-references to r
 
 **`LabelCell`** — the station name's grid cell + placement. `row, col, rotation: Rotation`,
 `offset` (px forward along reading direction), `offsetPerp?` (cross-axis, default 0 — back-compat
-absent), `align: LabelAlign` (`auto|start|middle|end`), `valign: LabelValign`
-(`auto-down|top|middle|bottom|auto-up`). `auto-down`/`auto-up` pin the block's top/bottom as a
-multi-line label grows; identical to `middle` for single-line. `autoAlign?: boolean` (omitted
-when off) overrides align **and** valign with transitmap.net typography derived from the label's
-octant relative to the nearest stop, re-anchored along the reading axis at a cross (see
-`labelLayoutLocal`); `offset`/`offsetPerp` still apply.
+absent), `align: LabelAlign` (`auto|start|middle|end` = `LABEL_ALIGNS`), `valign: LabelValign`
+(`auto-down|top|middle|bottom|auto-up` = `LABEL_VALIGNS`). `auto-down`/`auto-up` pin the block's
+top/bottom as a multi-line label grows; identical to `middle` for single-line. Both are held to
+their ladders on load (`sanitizeLabelAlignment`, ungated on either path): `labelLayout` resolves
+valign through a chain of `===` arms whose last one is `middle`, so an unhealed stray string would
+lay the label out under an alignment nobody picked while the inspector's cluster shows no segment
+selected. `autoAlign?: boolean` (omitted when off) overrides align **and** valign with
+transitmap.net typography derived from the label's octant relative to the nearest stop,
+re-anchored along the reading axis at a cross (see `labelLayoutLocal`); `offset`/`offsetPerp`
+still apply.
 `autoHAlign?: 'start'|'middle'|'end'` / `autoVAlign?: 'up'|'down'` (omitted = derived) tune
 autoAlign's multi-line handling: within-block line alignment, and which line anchors.
 
@@ -1573,8 +1584,9 @@ Files: [serialize.ts](src/model/serialize.ts), [store.ts](src/state/store.ts) (`
 ### The governing strategy: defaulting-by-merge, NOT normalization
 
 There is **no `normalizeDoc()`**. Absent fields fill from `DEFAULT_DOC`. The small number of
-value-level fixups are **shared exported functions** — `sanitizeStations`, `backfillLineNames`,
-`backfillPolygonDarkColors`, `backfillTextLabelColors`, `convertLegacyDotShapes` — each returning
+value-level fixups are **shared exported functions** — `sanitizeStations`,
+`sanitizeLabelAlignment`, `backfillLineNames`, `backfillPolygonDarkColors`,
+`backfillTextLabelColors`, `convertLegacyDotShapes` — each returning
 `{...cleaned, changed}`, where the **`changed` flag is the signal** callers use (`migrateDoc`
 re-spreads a field only when `changed` is true), and each called by **both** load paths.
 (The palette fixups are the exceptions, and none returns a `changed` flag: callers assign the bare
@@ -1611,7 +1623,9 @@ shape refuses the whole file with a message naming the entity (step 1's gate), w
 fields heal to defaults and broken REFERENCES are dropped or rebuilt from the redundant encodings
 the file itself carries (steps 3, 5, 6b/6c) — repair over guesswork, error over silent loss:
 
-1. `JSON.parse`; reject non-object / `format !== 'massimo-map'` / missing `doc`. Then the
+1. `parseJsonObject` ([util/json.ts](src/util/json.ts) — the preamble the palette file and the
+   clipboard run too, so the "not valid JSON" / "not a JSON object" wording is one string apiece
+   rather than a copy per door); then reject `format !== 'massimo-map'` / missing `doc`. Then the
    substance shape gate (`docShapeError`): a collection of the wrong container type, a station
    entry that isn't an object, a non-finite coordinate/rotation/cell, a non-array
    `stops`/`stations`/`edges` — each refuses the whole file. (`palettes` and `styles` stay out of
@@ -1639,8 +1653,11 @@ the file itself carries (steps 3, 5, 6b/6c) — repair over guesswork, error ove
    segment styles and end pins are judged against the REPAIRED topology/membership rather than
    the pre-closure one — which ate pins the closure was about to legitimize, and kept styles on
    edges it was about to drop (a non-idempotent parse).
-6. `sanitizeStations` (legacy orientations + `valign:'auto'`→`'auto-down'`) → `snapStationCells`
-   (stop/label/anchor cells within 1e-9 of an integer snap onto it — the drift the old
+6. `sanitizeStations` (legacy orientations) → `sanitizeLabelAlignment` (each label's
+   `align`/`valign` held to its ladder, a non-member replaced by the historical `auto` /
+   `auto-down` pair — which is also what the legacy single `valign:'auto'` heals to, needing no
+   arm of its own) → `snapStationCells` (stop/label/anchor cells within 1e-9 of an integer snap
+   onto it — the drift the old
    trig-rotated ghost lattice wrote; ±k·√2/2 and width-derived pitches are real coordinates and
    are left alone), then the two referential repairs:
    - 6b. `repairLineLinkages` — the closure over the three encodings of "line L serves station
@@ -1741,7 +1758,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `v<1`       | `backfillLineNames` (`"${service} line"`)                                                                                                  |
 | `v<3`       | `labelBold:boolean` → `labelWeight` (700/400; explicit weight wins)                                                                        |
-| `v<4`       | `sanitizeStations` (legacy stop orientations; `valign:'auto'`→`'auto-down'` — both fold into one runtime gate)                             |
+| `v<4`       | `sanitizeStations` (legacy stop orientations)                                                                                              |
 | `v<5`       | `backfillPolygonDarkColors`                                                                                                                |
 | `v<6`       | `backfillTextLabelColors`                                                                                                                  |
 | `v<7`       | `convertLegacyDotShapes` (preset ids → procedural `DotStyle`)                                                                              |
@@ -1768,15 +1785,16 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array. **But see the `merge` hook** — this call alone is not "every rehydrate" |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `snapStationCells` whenever `stations !== undefined` — cell drift is not tied to a schema bump, so a gate could never catch it. **But see the `merge` hook** — for this repair that caveat is the main event, not a footnote |
+| (not gated) | `sanitizeLabelAlignment` whenever `stations !== undefined` — each label's `align`/`valign` held to its ladder, a non-member replaced by the historical `auto` / `auto-down` pair. Judged by MEMBERSHIP, so there is no version to gate on: nothing bumps a version when a stored union goes bad. The legacy single `valign:'auto'` (from before the `auto-up` mirror) is simply the best-known non-member and heals down the same path, which is why it has no gated row of its own |
 | (not gated) | `sanitizeLineCircles` whenever `stations` or `lineCircles` is present — the binding invariants (a `circleId` resolves, `viaCircle` only on bound stations, a bound station sits ON its circle). Runs right after the cell snap, since both repair stations. Guides need no twin: an `AlignmentGuide` references nothing, so `sanitizeGuides` is the file path's alone |
 | (not gated) | `sanitizeImageHrefs` whenever `svgImages !== undefined` — the guard had one caller (the clipboard) and neither doc load, so a remote href could be persisted at ANY version. **But see the `merge` hook** — same reasoning as `snapStationCells` |
 | (not gated) | `bakeConcreteDotSizes` whenever `lines !== undefined` — dot sizes are REQUIRED stored fields (absent used to mean "my dot type's natural diameter"); pin stops that tracked a different natural than their line's, then materialize the line split sizes. The v27 bump forced one pass over every pre-existing doc; a size-less line written at the current version (legacy clipboard paste) is healed by the **`merge` hook** |
 | (not gated) | `bakeTextLabelStyleLayout` whenever `styles !== undefined` — width/leading/tracking became covered textLabel style fields; a def predating the coverage backfills each missing field with the MOST COMMON of its wearers' effective values (auto/neutral when nobody wears it; ties keep the first-seen value), so nothing repaints and only wearers off the plurality read as per-field overrides. The v28 bump forces one pass; app-written defs are concrete, so no `merge`-hook membership is needed |
 | (not gated) | `bakeLegacyUltraLightWeight` — the retired UltraLight rung (Söhne's ladder starts at 200) folded onto Thin, everywhere a weight is stored. Keyed off the legacy value 100 and reference-stable once nothing stores it, so it runs unconditionally, same contract as the file path's call. Ordered **before the `v<10` style rebuild**, for the reason `parse()` folds before its sanitizers: everything from there down judges a weight by `isLabelWeight`, which no longer answers to 100, so the rebuild would heal a def's weight to the 400 default and the `v<14` label bake would land every station on Roman instead of the adjacent Thin |
 
-A **corrupt/missing version is treated as v0** (all migrations run). The eight non-gated repairs
-(`backfillLinesEdges`, `ensureStyleInvariants`, `snapStationCells`, `sanitizeLineCircles`,
-`sanitizeImageHrefs`, `bakeConcreteDotSizes`, `bakeTextLabelStyleLayout`,
+A **corrupt/missing version is treated as v0** (all migrations run). The nine non-gated repairs
+(`backfillLinesEdges`, `ensureStyleInvariants`, `sanitizeLabelAlignment`, `snapStationCells`,
+`sanitizeLineCircles`, `sanitizeImageHrefs`, `bakeConcreteDotSizes`, `bakeTextLabelStyleLayout`,
 `bakeLegacyUltraLightWeight`) are **not** tied to a schema bump — they run
 any time their field is present (an absent field is left for the persist-merge).
 `bakeActivePalettes`, which is gated, reads `useCustomPalettes.getState().palettes` to resolve
@@ -3147,8 +3165,16 @@ of their own, and are omitted below to keep it readable:
 
 - **Mouseover-preview twins.** Almost every selection-chrome layer has a hover twin mounted
   immediately after it — same component, `preview`, `opacity 0.5`, gated by `hoveredChrome` (so it
-  stays quiet mid-pan). There are seven: station `wash` and `stroke`, transfer outline, route-bullet
-  ring, label stroke, polygon outline, svg-image box. A line TAG's twin lives inside
+  stays quiet mid-pan). Seven follow that recipe exactly: station `wash` and `stroke`, transfer
+  outline, route-bullet ring, label stroke, polygon outline, svg-image box. An **eighth** breaks
+  it on every count, so read the recipe as describing the seven and not this one: the hovered
+  station's **orientation badges** (`StationView layer="hover-arrows"`), which let a station's
+  stop orientations be read without entering the layout editor. It is gated by `hoverStationId`
+  rather than `hoveredChrome`, paints at FULL opacity (legibility is the entire point — it is
+  information, not an echo of selection chrome), and sits at the very END of the SVG rather than
+  beside the layer it twins, above the routing-warning markers for the same reason the layout
+  editor lifts its own dots there: a ⚠ frame appears exactly where you are looking when things go
+  wrong. A line TAG's twin lives inside
   `LineTagsLayer` instead, and carries BOTH chrome halves in one `<g>`: the selected tag's wash
   and stroke straddle the tag text in z-order, and a preview is not worth bracketing the layer's
   own content to reproduce that. Two more — the line circle's and the
@@ -4479,14 +4505,20 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   for a stored value, the store's own module for a union that never leaves the app (`MAP_SORTS` in
   `state/mapLibrary.ts`): an ordered array naming every member — `LINE_STYLES`, `LINE_END_STYLES`,
   `TRANSFER_DRAW_ORDERS`, `ROUTE_BULLET_SHAPES`, `TEXT_LABEL_ALIGNS`, `DOT_BASE_SHAPES`,
-  `DOT_STROKE_ALIGNS`, `PALETTE_SORTS`, `MAP_SORTS`, and `LABEL_WEIGHT_NAMES` (whose rungs carry
-  their display names, since the names ARE the shipped faces) — with a membership guard beside it:
+  `DOT_STROKE_ALIGNS`, `PALETTE_SORTS`, `MAP_SORTS`, `LABEL_ALIGNS`, `LABEL_VALIGNS` (the STATION
+  label's two axes — a different value space from the free text label's single `align`, hence
+  their own pair of ladders), and `LABEL_WEIGHT_NAMES` (whose rungs carry their display names,
+  since the names ARE the shipped faces) — with a membership guard beside it:
   `isLineEndStyle`, `isTransferDrawOrder`, `isRouteBulletShape`, `isTextLabelAlign`,
-  `isDotBaseShape`, `isDotStrokeAlign`, `isPaletteSort`, `isMapSort`, `isLabelWeight`. The two
-  stored unions still outside the rule are `GuideOrientation` and `StopOrientation`, whose gates
-  spell their members out; both are backstopped by `Record<Union, …>` tables elsewhere
+  `isDotBaseShape`, `isDotStrokeAlign`, `isPaletteSort`, `isMapSort`, `isLabelAlign`,
+  `isLabelValign`, `isLabelWeight`. The stored unions still outside the rule are
+  `GuideOrientation`, `StopOrientation` and `StationStopType`, whose gates spell their members
+  out. The first two are backstopped by `Record<Union, …>` tables elsewhere
   (`WELLS`/`MOVE_CURSOR`, `ORIENTATION_ANGLE`/`ORIENTATION_NAME`), so widening either still fails
-  the build. **Every gate judges by the guard and every picker takes its order from the array**;
+  the build. `StationStopType` has no such table — its only reader is `stationIsSingleton`, two
+  `===` arms over a fallthrough to the visible-stop heuristic — so a rung added there reads as
+  `auto` and stays invisible until someone notices the picker never offers it.
+  **Every gate judges by the guard and every picker takes its order from the array**;
   no consumer re-spells the members, including the three gates that each judge stored values
   independently (both load paths and the clipboard's paste validator). The rule earns its keep
   because a picker and a gate fail in OPPOSITE directions: a picker short a member leaves a
@@ -4502,8 +4534,13 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   the type. A user-facing CYCLE is deliberately NOT derived from its ladder (`NEXT_STYLE`,
   `AXIS_CYCLE`): reordering the ladder must not silently reorder what shift-click does.
 - **`DOC_FIELDS` is the single source of truth** for persisted/undoable fields — it is **not**
-  `Object.keys(DEFAULT_DOC)`; keep them in sync (a field in `DEFAULT_DOC` but not `DOC_FIELDS`
-  would default but never persist/undo).
+  `Object.keys(DEFAULT_DOC)`. Its COVERAGE of `MapDoc` is type-enforced, not trusted to review:
+  `Pick` cannot say "this tuple names every field", so `DocFieldsCoverMapDoc` spells the leftover
+  as a type — `never` while the tuple is exhaustive, and otherwise a constraint violation naming
+  the missing field, at the tuple, in the editor. A name the doc LACKS is a hard error on its own
+  (the snapshot stops matching the state); a field the tuple FORGETS is the silent half, and the
+  half worth a type: it would default, then never persist, never undo, and never enter a
+  save-baseline compare, surfacing as an edit that comes back after a refresh days later.
 - **Parallel arrays in a band** (`lines`, `paths`, `stripeOffsets`, `stripeWidths`,
   `linePriorities`, `arms`) are index-aligned; `stripeOffsets`/`stripeWidths`/`radius` are the
   single source of truth — read them, never re-derive; sample with `band.radius`, not a line's raw

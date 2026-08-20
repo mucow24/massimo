@@ -1,9 +1,11 @@
 import {
   DEFAULT_DOC,
   DEFAULT_STYLES,
+  LABEL_ALIGN_DEFAULT,
   LABEL_FONT_SIZE_DEFAULT,
   LABEL_LEADING_DEFAULT,
   LABEL_TRACKING_DEFAULT,
+  LABEL_VALIGN_DEFAULT,
   LABEL_WEIGHT_DEFAULT,
   STATION_LABEL_STYLE_DEFAULTS,
   TEXT_LABEL_COLOR_DEFAULT,
@@ -14,6 +16,8 @@ import {
   TEXT_LABEL_TRACKING_MIN,
   bumpWeightByIndex,
   canonicalStationLabelStyle,
+  isLabelAlign,
+  isLabelValign,
   isLabelWeight,
   isRouteBulletShape,
   isTextLabelAlign,
@@ -22,6 +26,7 @@ import {
   withTransferOverride,
 } from './transforms';
 import { BOLD_WEIGHT_STEPS, LABEL_WEIGHT_VALUES, RETIRED_ULTRALIGHT_WEIGHT } from '../util/fonts';
+import { parseJsonObject } from '../util/json';
 import {
   TRANSFER_COLOR_DEFAULT,
   TRANSFER_DRAW_DEFAULT,
@@ -106,7 +111,6 @@ import type {
   DotStrokeColor,
   DotStyle,
   LabelCell,
-  LabelValign,
   Line,
   LineId,
   LineTag,
@@ -164,14 +168,6 @@ function migrateStopOrientation(o: unknown): StopOrientation {
   return 'auto-vertical';
 }
 
-// Legacy valign value seen in saves from before the auto-down/auto-up split.
-// The single 'auto' option grew the block downward from the anchor; we map it
-// to the new 'auto-down' which has the same geometry.
-function migrateLabelValign(v: unknown): LabelValign | null {
-  if (v === 'auto') return 'auto-down';
-  return null;
-}
-
 // Re-apply the legacy-orientation migration to a stations dict. Used by
 // `parse()` (file-import path) and by the zustand persist `migrate` hook
 // (localStorage rehydration path) so legacy values from BOTH entry points
@@ -193,15 +189,60 @@ export function sanitizeStations(stations: Record<string, Station>): {
       }
       return c;
     });
-    const migratedValign = migrateLabelValign(st.label.valign);
-    const labelChanged = migratedValign !== null;
-    if (stopsChanged || labelChanged) {
+    if (stopsChanged) {
       changed = true;
-      const nextLabel = labelChanged ? { ...st.label, valign: migratedValign } : st.label;
-      out[id] = { ...st, stops, label: nextLabel };
+      out[id] = { ...st, stops };
     } else {
       out[id] = st;
     }
+  }
+  return { stations: out, changed };
+}
+
+/**
+ * Hold every station label's `align`/`valign` to its ladder, replacing anything
+ * else with the historical default pair. Both are STORED string unions that no
+ * schema bump ever touches, so this is judged by MEMBERSHIP and runs UNGATED on
+ * both load paths — a hand-edited or foreign file can carry a bad value at any
+ * version, and nothing downstream re-checks: `labelLayout` resolves valign by a
+ * ladder of `===` arms whose last arm is `middle`, so a stray string lays the
+ * label out under an alignment nobody picked while the inspector's cluster
+ * shows no segment selected.
+ *
+ * The legacy single `valign: 'auto'` (from before the auto-down/auto-up split)
+ * needs no arm of its own: it is a non-member, and `auto-down` — the rung that
+ * kept its geometry — is what the fallback already is.
+ *
+ * Reference-stable on a canonical doc, which the rehydrate path requires
+ * (`storeMigrate.test.ts` pins `expect(out).toBe(input)` pass-through).
+ */
+export function sanitizeLabelAlignment(stations: Record<string, Station>): {
+  stations: Record<string, Station>;
+  changed: boolean;
+} {
+  let changed = false;
+  const out: Record<string, Station> = {};
+  for (const id of Object.keys(stations)) {
+    const st = stations[id];
+    const label = st.label;
+    // A station may have no label at all. Only the REHYDRATE path reaches this
+    // — `migrateDoc` runs before the persist-merge fills absent substance,
+    // whereas parse() has already been through `repairCoreShapes`. Either way
+    // there is nothing to judge until a label exists, and what materializes one
+    // materializes the canonical pair with it.
+    if (!label || (isLabelAlign(label.align) && isLabelValign(label.valign))) {
+      out[id] = st;
+      continue;
+    }
+    changed = true;
+    out[id] = {
+      ...st,
+      label: {
+        ...label,
+        align: isLabelAlign(label.align) ? label.align : LABEL_ALIGN_DEFAULT,
+        valign: isLabelValign(label.valign) ? label.valign : LABEL_VALIGN_DEFAULT,
+      },
+    };
   }
   return { stations: out, changed };
 }
@@ -628,16 +669,9 @@ export function parse(json: string, custom: readonly Palette[] = []): ParseResul
 }
 
 function parseInner(json: string, custom: readonly Palette[]): ParseResult {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(json);
-  } catch (e) {
-    return { ok: false, error: `Not valid JSON: ${(e as Error).message}` };
-  }
-  if (!raw || typeof raw !== 'object') {
-    return { ok: false, error: 'File is not a JSON object' };
-  }
-  const file = raw as Partial<SerializedFile>;
+  const parsed = parseJsonObject(json);
+  if (!parsed.ok) return parsed;
+  const file = parsed.obj as Partial<SerializedFile>;
   if (file.format !== SCHEMA_FORMAT) {
     return {
       ok: false,
@@ -714,6 +748,10 @@ function parseInner(json: string, custom: readonly Palette[]): ParseResult {
   if (topoChanged) merged.lines = topoLines;
   const sanitized = sanitizeStations(merged.stations);
   if (sanitized.changed) merged.stations = sanitized.stations;
+  // Hold label align/valign to their ladders. Not gated on the file version —
+  // see `sanitizeLabelAlignment`.
+  const aligned = sanitizeLabelAlignment(merged.stations);
+  if (aligned.changed) merged.stations = aligned.stations;
   // Pull cells that drifted off the integer lattice back onto it. Not gated on
   // the file version — see `snapStationCells`.
   const snapped = snapStationCells(merged.stations);

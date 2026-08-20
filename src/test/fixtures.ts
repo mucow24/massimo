@@ -33,6 +33,11 @@ import { edgesFromStations } from '../model/lineTopology';
 
 export function makeStation(overrides: Partial<Station> & { id: StationId }): Station {
   return {
+    // CAUTION, the station twin of `makeLine`'s name warning below: a default
+    // name IS the id, so a test asserting a rendered station name proves
+    // nothing unless it overrides `name` — a surface painting the id instead
+    // would pass too. Give a name unlike the id wherever the name is the thing
+    // under test.
     name: overrides.name ?? overrides.id,
     x: 0,
     y: 0,

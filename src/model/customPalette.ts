@@ -1,5 +1,6 @@
 import { uniqueSwatchNames, type Palette, type PaletteSwatch } from './palettes';
 import { normalizeHex, parseHexA } from '../util/color';
+import { parseJsonObject } from '../util/json';
 
 export type ParsedCustomPalette =
   | {
@@ -45,16 +46,9 @@ const HEX6OR8 = /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/;
  * valid color survives.
  */
 export function parseCustomPalette(json: string): ParsedCustomPalette {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(json);
-  } catch (e) {
-    return { ok: false, error: `Not valid JSON: ${(e as Error).message}` };
-  }
-  if (!raw || typeof raw !== 'object') {
-    return { ok: false, error: 'File is not a JSON object' };
-  }
-  const obj = raw as {
+  const parsed = parseJsonObject(json);
+  if (!parsed.ok) return parsed;
+  const obj = parsed.obj as {
     format?: unknown;
     name?: unknown;
     description?: unknown;

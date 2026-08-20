@@ -16,6 +16,7 @@ import { isSwatchRef } from './swatchRef';
 // the app can produce can never be one paste silently drops.
 import { isLabelWeight, isRouteBulletShape, isTextLabelAlign } from './transforms';
 import type { Vec2 } from '../geometry/vec';
+import { parseJsonObject } from '../util/json';
 
 /**
  * Serializable clipboard payloads. The system clipboard holds JSON of the
@@ -73,14 +74,9 @@ export function svgImagePayload(im: SvgImage): ClipPayload {
  * array, or when no item survives validation — so paste-anything is safe.
  */
 export function readClipboard(text: string): ClipPayload[] | null {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch {
-    return null;
-  }
-  if (!raw || typeof raw !== 'object') return null;
-  const obj = raw as { format?: unknown; version?: unknown; items?: unknown };
+  const parsed = parseJsonObject(text);
+  if (!parsed.ok) return null;
+  const obj = parsed.obj as { format?: unknown; version?: unknown; items?: unknown };
   if (obj.format !== FORMAT) return null;
   if (typeof obj.version !== 'number' || obj.version > VERSION) return null;
   if (!Array.isArray(obj.items)) return null;
