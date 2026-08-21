@@ -725,7 +725,7 @@ export function setDotStyle(
 }
 
 /**
- * Drop every per-stop override of `field` on `lineId` that has become
+ * Drop every per-stop override in `fields` on `lineId` that has become
  * redundant — `isRedundant(stop, station)` decides when a stop now equals the
  * line's new effective default. The station is passed so the predicate can gate
  * on the stop's singleton/shared case (a singleton-default edit only makes
@@ -734,11 +734,16 @@ export function setDotStyle(
  * persisted docs clean and makes those stops track the default going forward —
  * can never drift between dot-style and dot-size. Returns the same `stations`
  * reference when nothing was pruned.
+ *
+ * `fields` is a LIST because a dot-style override is two stored fields — the
+ * raw shadow AND its tag — and a stop left holding one without the other is
+ * not tracking the default it was just pruned onto. A size override is the
+ * single value.
  */
 function dropRedundantStopOverrides(
   stations: Record<StationId, Station>,
   lineId: LineId,
-  field: 'dotStyle' | 'dotSize',
+  fields: readonly ('dotStyle' | 'dotStyleId' | 'dotSize')[],
   isRedundant: (stop: StopCell, station: Station) => boolean,
 ): Record<StationId, Station> {
   let out = stations;
@@ -748,7 +753,10 @@ function dropRedundantStopOverrides(
     const stops = st.stops.map((s) => {
       if (s.lineId !== lineId || !isRedundant(s, st)) return s;
       stopsChanged = true;
-      const { [field]: _gone, ...rest } = s;
+      // Spread + delete, the same reason as `writeTransferField`: TS can't
+      // prove the destructuring omit keeps StopCell's required fields.
+      const rest = { ...s };
+      for (const f of fields) delete rest[f];
       return rest;
     });
     if (stopsChanged) out = { ...out, [sid]: { ...st, stops } };
@@ -812,26 +820,19 @@ function setLineCaseDotStyle(
   // tagged with the SAME style now equals the new line default → drop it (both
   // raw + tag) so the stop tracks the default going forward. Overrides on the
   // OTHER case keep their pin.
-  let stations = doc.stations;
-  for (const sid of Object.keys(stations)) {
-    const st = stations[sid];
-    let stopsChanged = false;
-    const stops = st.stops.map((s) => {
-      if (s.lineId !== id || stationIsSingleton(st) !== wantSingleton || s.dotStyleId !== styleId)
-        return s;
-      stopsChanged = true;
-      const { dotStyle: _a, dotStyleId: _b, ...rest } = s;
-      return rest;
-    });
-    if (stopsChanged) stations = { ...stations, [sid]: { ...st, stops } };
-  }
+  let stations = dropRedundantStopOverrides(
+    doc.stations,
+    id,
+    ['dotStyle', 'dotStyleId'],
+    (s, st) => stationIsSingleton(st) === wantSingleton && s.dotStyleId === styleId,
+  );
   // The courtesy write moved the line size, so a per-stop size pin equal to
   // the new size is now redundant — same rule as setLineCaseDotSize.
   if (followSize) {
     stations = dropRedundantStopOverrides(
       stations,
       id,
-      'dotSize',
+      ['dotSize'],
       (s, st) => stationIsSingleton(st) === wantSingleton && s.dotSize === newNatural,
     );
   }
@@ -947,7 +948,7 @@ function setLineCaseDotSize(
   const stations = dropRedundantStopOverrides(
     doc.stations,
     id,
-    'dotSize',
+    ['dotSize'],
     (s, st) => stationIsSingleton(st) === wantSingleton && s.dotSize === stored,
   );
   return { ...doc, lines: { ...doc.lines, [id]: nextLine }, stations };
@@ -1638,13 +1639,20 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
     }
   }
 
+  // Where a member's position lands: orbited one step about the pivot, or held
+  // exactly where it is when the member IS the pivot. Held rather than
+  // round-tripped through the trig, so the pivot cannot drift over a run of
+  // rotations — the rule every positioned kind below shares, spelled once.
+  const orbit = (at: Vec2, isPivot: boolean): Vec2 =>
+    isPivot ? { x: at.x, y: at.y } : rotateAround({ x: at.x, y: at.y }, pivotPt, ORBIT_STEP_RAD);
+
   for (const m of members) {
     const isPivot = m.type === pivot.type && m.id === pivot.id;
     if (m.type === 'station') {
       if (carriedByCircle.has(m.id)) continue;
       const cur = stations[m.id];
       if (!cur) continue;
-      const p = isPivot ? cur : rotateAround({ x: cur.x, y: cur.y }, pivotPt, ORBIT_STEP_RAD);
+      const p = orbit(cur, isPivot);
       // A station bound to a ring that is NOT itself a member still has to end
       // up ON that ring: the orbit only AIMS it, and the seat decides where it
       // lands — the same deal `moveStation` gives the group DRAG that tows the
@@ -1665,7 +1673,7 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
     } else if (m.type === 'bullet') {
       const cur = routeBullets[m.id];
       if (!cur) continue;
-      const p = isPivot ? cur : rotateAround({ x: cur.x, y: cur.y }, pivotPt, ORBIT_STEP_RAD);
+      const p = orbit(cur, isPivot);
       routeBullets = {
         ...routeBullets,
         [m.id]: { ...cur, rotation: stepRotation(cur.rotation), x: p.x, y: p.y },
@@ -1673,7 +1681,7 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
     } else if (m.type === 'label') {
       const cur = textLabels[m.id];
       if (!cur) continue;
-      const p = isPivot ? cur : rotateAround({ x: cur.x, y: cur.y }, pivotPt, ORBIT_STEP_RAD);
+      const p = orbit(cur, isPivot);
       textLabels = {
         ...textLabels,
         [m.id]: { ...cur, rotation: stepRotation(cur.rotation), x: p.x, y: p.y },
@@ -1692,9 +1700,7 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
       // which also makes an anchor-as-pivot a natural no-op via `isPivot`.
       const cur = transferAnchors[m.id];
       if (!cur) continue;
-      const p = isPivot
-        ? { x: cur.x, y: cur.y }
-        : rotateAround({ x: cur.x, y: cur.y }, pivotPt, ORBIT_STEP_RAD);
+      const p = orbit(cur, isPivot);
       transferAnchors = { ...transferAnchors, [m.id]: { ...cur, x: p.x, y: p.y } };
     } else if (m.type === 'svgImage') {
       // Svg image: orbit the center (held fixed when it IS the pivot) and step
@@ -1702,9 +1708,7 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
       // grid, so a group rotate never desyncs an image from that grid.
       const cur = svgImages[m.id];
       if (!cur) continue;
-      const p = isPivot
-        ? { x: cur.x, y: cur.y }
-        : rotateAround({ x: cur.x, y: cur.y }, pivotPt, ORBIT_STEP_RAD);
+      const p = orbit(cur, isPivot);
       svgImages = {
         ...svgImages,
         [m.id]: { ...cur, x: p.x, y: p.y, rotation: normalizeRotation(cur.rotation + 45) },
@@ -1716,9 +1720,7 @@ export function rotateItemsAround(doc: MapDoc, pivot: ItemRef, members: ItemRef[
       // an anchor's: the center holds still while the members swing round it.
       const cur = lineCircles[m.id];
       if (!cur) continue;
-      const c = isPivot
-        ? { x: cur.x, y: cur.y }
-        : rotateAround({ x: cur.x, y: cur.y }, pivotPt, ORBIT_STEP_RAD);
+      const c = orbit(cur, isPivot);
       const moved = { ...cur, x: c.x, y: c.y };
       lineCircles = { ...lineCircles, [m.id]: moved };
       stations = rotateBoundStations(stations, moved, pivotPt) ?? stations;
@@ -2234,20 +2236,28 @@ function radialOutCell(
   }
 }
 
-// Centre-to-centre distance below which a new stop for `lineId` would paint
-// through an existing stop of `other`. Two stops are packed at exactly
-// `tangentGap`, so anything closer overlaps — less the shared BAND_MERGE_TOL
-// slack, or float drift in a computed position would read an exactly-packed
-// neighbour as a blocker. The one place that number is written; both the ring
-// branch (which has cells, and cell distance × STOP_SIZE IS world distance
-// under a rigid frame) and the world-space walk below measure against it.
-const overlapDistance = (lineId: LineId, other: LineId, lines: Record<LineId, Line>): number =>
+// Centre-to-centre distance at which a stop for `lineId` sits exactly tangent
+// to one for `other` — the pitch the stop packing puts consecutive stops at.
+// The one place `tangentGap` is fed from a `lines` record: the four arguments
+// have to be paired by line and by role (both widths, then both gaps), and
+// spelling that out per call site is the transposition waiting to happen.
+const stopPackPitch = (lineId: LineId, other: LineId, lines: Record<LineId, Line>): number =>
   tangentGap(
     lineWidthOf(lines[lineId]),
     lineWidthOf(lines[other]),
     lineInterlineGapOf(lines[lineId]),
     lineInterlineGapOf(lines[other]),
-  ) - BAND_MERGE_TOL;
+  );
+
+// Centre-to-centre distance below which a new stop for `lineId` would paint
+// through an existing stop of `other`. Two stops are packed at exactly the
+// pitch above, so anything closer overlaps — less the shared BAND_MERGE_TOL
+// slack, or float drift in a computed position would read an exactly-packed
+// neighbour as a blocker. The one place that slack is applied; both the ring
+// branch (which has cells, and cell distance × STOP_SIZE IS world distance
+// under a rigid frame) and the world-space walk below measure against it.
+const overlapDistance = (lineId: LineId, other: LineId, lines: Record<LineId, Line>): number =>
+  stopPackPitch(lineId, other, lines) - BAND_MERGE_TOL;
 
 // A stop centre in WORLD coordinates, and its inverse: the cell whose centre
 // lands on a world point. Station rotation is undone in ONE place — here — so
@@ -2486,13 +2496,7 @@ export function spawnStopCellAt(
         ? c
         : best,
     );
-    const gapCells =
-      tangentGap(
-        lineWidthOf(lines[lineId]),
-        lineWidthOf(lines[anchor.lineId]),
-        lineInterlineGapOf(lines[lineId]),
-        lineInterlineGapOf(lines[anchor.lineId]),
-      ) / STOP_SIZE;
+    const gapCells = stopPackPitch(lineId, anchor.lineId, lines) / STOP_SIZE;
     return {
       lineId,
       row: anchor.row + step.dRow * gapCells,
@@ -2513,16 +2517,7 @@ export function spawnStopCellAt(
       ? null
       : st.stops.reduce((best, c) => (c.col > best.col ? c : best), st.stops[0]);
   const newRow = anchor ? anchor.row : 0;
-  const newCol = anchor
-    ? anchor.col +
-      tangentGap(
-        lineWidthOf(lines[lineId]),
-        lineWidthOf(lines[anchor.lineId]),
-        lineInterlineGapOf(lines[lineId]),
-        lineInterlineGapOf(lines[anchor.lineId]),
-      ) /
-        STOP_SIZE
-    : 0;
+  const newCol = anchor ? anchor.col + stopPackPitch(lineId, anchor.lineId, lines) / STOP_SIZE : 0;
   // Even with no arrangement to reproduce, the travel axis still has to be
   // named in THIS station's frame: a station already carrying stops keeps its
   // rotation (autoOrient only fires on one gaining its first line), so a

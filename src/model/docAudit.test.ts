@@ -2,7 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { auditDoc } from './docAudit';
 import { parse } from './serialize';
 import * as T from './transforms';
-import { makeDoc, makeLine, makeStation, makeStop, makeTransfer } from '../test/fixtures';
+import {
+  makeDoc,
+  makeLine,
+  makeLineTag,
+  makeStation,
+  makeStop,
+  makeTransfer,
+} from '../test/fixtures';
 import type { MapDoc } from './types';
 
 // A small canonical two-station doc every mutation below corrupts from.
@@ -94,6 +101,129 @@ describe('auditDoc', () => {
       'dangling circle binding',
       (d) => (d.stations.s1 = { ...d.stations.s1, circleId: 'ghost' }),
       /dangling circleId/,
+    ],
+    [
+      'non-finite station position',
+      (d) => (d.stations.s1 = { ...d.stations.s1, x: Number.NaN }),
+      /non-finite position/,
+    ],
+    [
+      'stop for a line that is gone',
+      (d) => (d.stations.s1 = { ...d.stations.s1, stops: [makeStop('l1'), makeStop('ghost')] }),
+      /stop for missing line "ghost"/,
+    ],
+    [
+      'two stops for one line',
+      (d) => (d.stations.s1 = { ...d.stations.s1, stops: [makeStop('l1'), makeStop('l1')] }),
+      /duplicate stop for "l1"/,
+    ],
+    [
+      'stop dot tag naming a non-stopDot style',
+      (d) =>
+        (d.stations.s1 = {
+          ...d.stations.s1,
+          stops: [makeStop('l1', { dotStyleId: 'default-line' })],
+        }),
+      /stop dotStyleId "default-line" is not a stopDot style/,
+    ],
+    [
+      'line id/key mismatch',
+      (d) => (d.lines.l1 = { ...d.lines.l1, id: 'x' }),
+      /line "l1": id reads/,
+    ],
+    [
+      'line listing a member twice',
+      (d) => (d.lines.l1 = { ...d.lines.l1, stations: ['s1', 's2', 's1'] }),
+      /duplicate members/,
+    ],
+    [
+      'line member that is not a station',
+      (d) => (d.lines.l1 = { ...d.lines.l1, stations: ['s1', 's2', 'ghost'] }),
+      /member "ghost" is not a station/,
+    ],
+    [
+      'the same edge twice',
+      (d) => (d.lines.l1 = { ...d.lines.l1, edges: ['s1|s2', 's1|s2'] }),
+      /duplicate edge/,
+    ],
+    [
+      'line dot default naming a non-stopDot style',
+      (d) => (d.lines.l1 = { ...d.lines.l1, multiDotStyleId: 'default-line' }),
+      /dot style id "default-line" is not a stopDot style/,
+    ],
+    [
+      'lineOrder listing a line twice',
+      (d) => (d.lineOrder = ['l1', 'l1']),
+      /lineOrder: duplicate entry "l1"/,
+    ],
+    [
+      'backgroundOrder dangling id',
+      (d) => (d.backgroundOrder = ['ghost']),
+      /backgroundOrder: dangling entry "ghost"/,
+    ],
+    [
+      'lineTag on a line that is gone',
+      (d) => (d.lineTags = { t1: makeLineTag({ id: 't1', lineId: 'ghost' }) }),
+      /lineTag "t1": dangling line "ghost"/,
+    ],
+    [
+      'lineTag endpoints out of canonical order',
+      (d) =>
+        (d.lineTags = {
+          t1: makeLineTag({ id: 't1', fromStationId: 's2', toStationId: 's1' }),
+        }),
+      /lineTag "t1": endpoints not canonical/,
+    ],
+    [
+      'lineTag on a pair that is not an edge',
+      (d) => {
+        d.stations.s3 = makeStation({ id: 's3', x: 200, stops: [makeStop('l1')] });
+        d.lines.l1 = { ...d.lines.l1, stations: ['s1', 's2', 's3'], edges: ['s1|s2', 's2|s3'] };
+        d.lineTags = { t1: makeLineTag({ id: 't1', fromStationId: 's1', toStationId: 's3' }) };
+      },
+      /lineTag "t1": pair is not an edge of "l1"/,
+    ],
+    [
+      'transfer to a hosted anchor its station never grew',
+      (d) =>
+        (d.transfers = {
+          x1: makeTransfer({ id: 'x1', a: { stationId: 's1', anchorId: 'ghost' } }),
+        }),
+      /dangling hosted anchor "ghost"/,
+    ],
+    [
+      'transfer end pinned to a line that is gone',
+      (d) =>
+        (d.transfers = {
+          x1: makeTransfer({ id: 'x1', a: { stationId: 's1', lineId: 'ghost' } }),
+        }),
+      /transfer "x1": dangling line "ghost"/,
+    ],
+    [
+      'transfer to a free anchor that is gone',
+      (d) => (d.transfers = { x1: makeTransfer({ id: 'x1', a: { anchorId: 'ghost' } }) }),
+      /dangling free anchor "ghost"/,
+    ],
+    [
+      'regionAssignment on a line that is gone',
+      (d) =>
+        (d.regionAssignments = {
+          r1: { id: 'r1', lineId: 'ghost', lines: ['ghost'], anchors: [] },
+        }),
+      /regionAssignment "r1": dangling line "ghost"/,
+    ],
+    [
+      'regionAssignment whose winner is outside its own cover set',
+      (d) => (d.regionAssignments = { r1: { id: 'r1', lineId: 'l1', lines: [], anchors: [] } }),
+      /chosen line is not in its cover set/,
+    ],
+    [
+      'regionAssignment covered by a line that is gone',
+      (d) =>
+        (d.regionAssignments = {
+          r1: { id: 'r1', lineId: 'l1', lines: ['l1', 'ghost'], anchors: [] },
+        }),
+      /dangling cover line "ghost"/,
     ],
   ];
   for (const [label, corrupt, pattern] of cases) {
