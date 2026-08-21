@@ -79,7 +79,11 @@ export function GuideWells({
       <div
         className={cls}
         data-guide-well={orientation}
-        title={guidesHidden ? 'Guides are hidden (View menu)' : WELLS[orientation].hint}
+        title={
+          guidesHidden
+            ? 'Guides are hidden (Hit G or use the view menu to enable)'
+            : WELLS[orientation].hint
+        }
         onPointerDown={guidesHidden ? undefined : (e) => onWellPointerDown(orientation, e)}
         onPointerMove={guidesHidden ? undefined : onPointerMove}
         onPointerUp={guidesHidden ? undefined : onPointerUp}

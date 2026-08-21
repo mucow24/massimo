@@ -76,7 +76,9 @@ describe('GuideWells', () => {
       // nothing comes out of them.
       const { container } = renderWells({ guidesHidden: true });
       expect(container.querySelectorAll('.guide-well.disabled').length).toBe(4);
-      expect(wellAt(container, 'horizontal').title).toBe('Guides are hidden (View menu)');
+      expect(wellAt(container, 'horizontal').title).toBe(
+        'Guides are hidden (Hit G or use the view menu to enable)',
+      );
     });
   });
 
