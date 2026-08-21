@@ -233,8 +233,10 @@ export function useRectSelect(
     };
   };
 
-  // Clear the rendered marquee + the five selection previews (shared by the
-  // no-move click, the commit, and the cancel paths).
+  // Clear the rendered marquee + every selection preview (shared by the
+  // no-move click, the commit, and the cancel paths). One line per sweepable
+  // kind, so it has to grow with the preview list above — guides are the one
+  // absentee, and deliberately so (see the commit path).
   const clearOverlay = () => {
     setRect(null);
     setPreviewStationIds(null);
