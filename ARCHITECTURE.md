@@ -2658,12 +2658,26 @@ of them:
   grid as a **hard constraint** (when on, the result is always on-grid; an alignment fires only
   if reconcilable, else falls back to plain grid with no guide) → optional along-axis refinement
   (equidistant / tens; `excludedIds` also guards the cadence anchors) → build guides.
-- The **point snapper** `snapPolygonPoint` (`polygonSnap.ts`, decomposed — no 2×2 solver) snaps
-  one reference point against a target pool: polygon whole-drags + vertex drags, svg-image
-  moves + axis-aligned resizes, text-label drags, unbound route bullets, and **most placement**
-  (labels, polygons, svg images). Placement is **not** uniformly point-snapped: `placing-station`
-  routes to the station engine, and `creating-route-bullet` does too whenever a default line
-  exists — falling back to the point snapper only when there is none. An optional `anchors` set
+- The **point snapper** `snapPolygonPoint` (`polygonSnap.ts`) snaps one reference point against
+  a target pool: polygon whole-drags + vertex drags, svg-image moves + axis-aligned resizes,
+  text-label drags, unbound route bullets, and **most placement** (labels, polygons, svg
+  images). Placement is **not** uniformly point-snapped: `placing-station` routes to the station
+  engine, and `creating-route-bullet` does too whenever a default line exists — falling back to
+  the point snapper only when there is none. It keeps ONE winner per **axis family** — vertical,
+  horizontal, and the two 45° diagonals — and **a corner is always a right angle**: only (V, H)
+  and the two diagonals may lock together, the straight pair taking precedence when both are in
+  tolerance, solved through the same `solveTwoAxisLock` the engine corners with. With three
+  families live there is always exactly one complete perpendicular pair, so the odd axis out has
+  no degree of freedom left to constrain; a 45° pairing never locks both — the right angle is
+  what bounds the pull, a perpendicular pair moving the point at most √2× the tolerance where
+  45° reaches 2.6× — and the better-aligned one wins alone, free slide intact. Inside a family
+  the best alignment wins, except that everything matching it within a tie window (colinear
+  targets, which floating point separates only by noise) counts as equally aligned, and among
+  those the target NEAREST the engaged anchor takes it — the same closest-wins the engine runs
+  inside an axis group. The window is measured against that best alignment and never against a
+  running incumbent: epsilon-equality is not transitive, so folding pairwise would make the
+  winner depend on the order the caller assembled its pool in.
+  An optional `anchors` set
   generalizes the one reference point to a RIGID set snapping as one translation: every anchor
   generates candidates, each engagement converts to the translation that aligns its anchor, and
   the winner tows the whole set — so a cross-anchor corner (V via one anchor, H via another) locks
@@ -2725,10 +2739,9 @@ offset), ungated by every mode toggle: you placed the guide on purpose, so it at
 ring captures, and Shift is how you decline (the line-tag snapper set this precedent). BOTH
 snappers decide a same-axis contest between a guide and any other candidate the same way: **the
 better-aligned one wins** (smaller perpendicular distance — a diagonal's is the true distance,
-`guidePerpDist`, not the intercept delta). In the point snapper that is just the
-bestV/bestH/bestD contest; the engine spells it as an explicit exception to its closest-wins
-neighbor pick, because a guide's stand-in target is the drag's own foot — its "distance" IS its
-perpDist, so under closest-wins a parallel guide nine units off would yank a station off a
+`guidePerpDist`, not the intercept delta). Both spell it as an explicit exception to their
+closest-wins pick, because a guide's stand-in target is the drag's own foot — its "distance" IS
+its perpDist, so under closest-wins a parallel guide nine units off would yank a station off a
 one-unit-perfect corridor alignment. Mechanically a guide enters the engine's candidate set as
 `kind: 'guide'` with the station ANCHOR as the dragged reference (dOff 0, target stop = the
 anchor's foot on the guide line) and joins the 2×2 corner solve like any axis. Grid stays the
@@ -2767,6 +2780,11 @@ always remain valid targets. Pools are snapshotted at pointer-down. One delibera
 **stations are skeleton** — they snap only among themselves, never to decoration (alignment
 guides are the one carve-out: scaffolding, not decoration, and stations snap to them); and a
 bound bullet's all-mode pool is station stops (engine-internal), not the decoration pool.
+**"Snap to line"** has no topology to honour off the skeleton: for a polygon VERTEX drag it
+means the polygon's own non-moving vertices, offered on all four axis families whatever
+direction `all` is narrowed to — which is the whole of what the toggle buys, since those same
+vertices already sit in the all-mode pool. A whole-polygon drag passes none: the shape
+translates rigidly, so aligning it to its own vertices is a constant.
 
 **Reference points** (grid + alignment use the same one per type, drag AND placement): station
 anchor; bullet center; text label topmost-then-leftmost corner of its ALIGNMENT box, with all four
