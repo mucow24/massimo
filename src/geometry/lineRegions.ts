@@ -39,12 +39,12 @@ import {
 export const FLATTEN_TOL = 0.01;
 
 /** Faces that vanish under this erosion depth are hairline slivers. */
-export const SLIVER_ERODE = 0.15;
+const SLIVER_ERODE = 0.15;
 
 /** Arc-length sampling step for face spans, world units. */
 const SPAN_STEP = 2;
 
-export interface RegionSpanEntry {
+interface RegionSpanEntry {
   /** Arc-length intervals of the stripe path where the stripe BODY overlaps the face. */
   intervals: { d0: number; d1: number }[];
   /** Total arc length of that stripe path. */
@@ -91,7 +91,7 @@ const SLIVER_MIN_AREA = 0.02;
  * long tangent corridor sharing the winner+loser is bridged only near the
  * junction, not painted over along its whole length.
  */
-export const SLIVER_ABSORB_REACH = 2;
+const SLIVER_ABSORB_REACH = 2;
 
 /** Flatten line/arc offset segments into a polyline by chord tolerance. */
 export function flattenOffsetSegments(segs: OffsetPathSegment[], tol = FLATTEN_TOL): Vec2[] {
@@ -282,26 +282,26 @@ export const edgeCoverId = (lineId: LineId, pairKey: string): string =>
   `edge:${pairKey}${SLICE_SEP}${lineId}`;
 
 /** Is this cover id an arm spelling? */
-export const isArmCoverId = (id: string): boolean => id.startsWith('arm:');
+const isArmCoverId = (id: string): boolean => id.startsWith('arm:');
 
 /** Is this cover id a band (edge) spelling? */
-export const isEdgeCoverId = (id: string): boolean => id.startsWith('edge:');
+const isEdgeCoverId = (id: string): boolean => id.startsWith('edge:');
 
 /** Any slice spelling (vs a bare LineId)? */
-export const isSliceCoverId = (id: string): boolean => isArmCoverId(id) || isEdgeCoverId(id);
+const isSliceCoverId = (id: string): boolean => isArmCoverId(id) || isEdgeCoverId(id);
 
 /** The line behind a cover id, bare or slice-spelled. A bare id passes
  *  through untouched whatever characters it contains — only the slice
  *  prefixes are parsed. */
-export const lineOfCover = (id: string): LineId =>
+const lineOfCover = (id: string): LineId =>
   isSliceCoverId(id) ? id.slice(id.indexOf(SLICE_SEP) + 1) : id;
 
 /** The arm index of an arm-spelled cover id, or null otherwise. */
-export const armOfCover = (id: string): number | null =>
+const armOfCover = (id: string): number | null =>
   isArmCoverId(id) ? Number(id.slice(4, id.indexOf(SLICE_SEP))) : null;
 
 /** The pairKey of a band-spelled cover id, or null otherwise. */
-export const pairKeyOfCover = (id: string): string | null =>
+const pairKeyOfCover = (id: string): string | null =>
   isEdgeCoverId(id) ? id.slice(5, id.indexOf(SLICE_SEP)) : null;
 
 /**
@@ -453,7 +453,7 @@ export function selfCrossingParts(bands: SegmentBandSpec[], lineId: LineId): Sel
  * spelling — expressiveness there is deliberately line-level; the crossing
  * pair itself is what this partitions.
  */
-export function bandSliceBodiesForRestriction(
+function bandSliceBodiesForRestriction(
   bands: SegmentBandSpec[],
   markers: StopMarkerSpec[],
   lineId: LineId,
@@ -495,7 +495,7 @@ export function bandSliceBodiesForRestriction(
  * {@link buildLineBodies} unions per line; build ONCE per frame and reuse
  * across components, so the body-mask memos hold.
  */
-export function armBodiesForRestriction(
+function armBodiesForRestriction(
   bands: SegmentBandSpec[],
   markers: StopMarkerSpec[],
   lineId: LineId,
@@ -1750,7 +1750,7 @@ const orderIndexer = (lineOrder: LineId[]) => {
 };
 
 /** The cover id an unassigned face shows — see {@link makeDefaultWinner}. */
-export function regionDefaultWinner(
+function regionDefaultWinner(
   face: RegionFace,
   bands: SegmentBandSpec[],
   lineOrder: LineId[],
@@ -1841,7 +1841,7 @@ const makeDefaultWinner = (
 };
 
 /** Does a stripe's flattened path bbox (padded) intersect a box? */
-export function stripeIntersectsBox(
+function stripeIntersectsBox(
   band: SegmentBandSpec,
   stripeIndex: number,
   box: { x0: number; y0: number; x1: number; y1: number },
@@ -2574,7 +2574,7 @@ export function buildExclusionHolesCached(
 
 /** Slack around {@link regionClipBounds}: covers casing overhang, antialiasing,
  *  and any sub-world-unit overhang the per-band reach bound doesn't model. */
-export const REGION_CLIP_BOUNDS_PAD = 50;
+const REGION_CLIP_BOUNDS_PAD = 50;
 
 /**
  * World AABB every region-exclude clip must PASS — the union extent of all
@@ -2678,7 +2678,7 @@ export function resolveRegionWinners(
  * integer snap (1/CLIP_SCALE) — and must stay well under {@link SLIVER_ERODE}
  * so the opening's split lobes aren't re-bridged wholesale.
  */
-export const REGION_ADJACENCY_TOL = 0.05;
+const REGION_ADJACENCY_TOL = 0.05;
 
 /**
  * Flood-fill from a clicked face: every face that should join it in showing

@@ -20,15 +20,8 @@ import type {
 } from '../model/types';
 import type { SegmentBandSpec } from '../geometry/interlining';
 import { STOP_SIZE, stripeOffsetsForWidths } from '../geometry/orientation';
-import {
-  DEFAULT_DOT_STYLE,
-  DEFAULT_STOP_DOT_STYLE_ID,
-  STOP_DOT_FACTORY_STYLES,
-} from '../model/dotStyle';
+import { DEFAULT_STOP_DOT_STYLE_ID, STOP_DOT_FACTORY_STYLES } from '../model/dotStyle';
 import { DEFAULT_DOC } from '../model/transforms';
-import { DOT_SIZE_DEFAULT } from '../model/dotSize';
-import { LINE_WIDTH_DEFAULT } from '../model/lineWidth';
-import { LINE_CURVE_RADIUS_DEFAULT } from '../model/lineCurve';
 import { edgesFromStations } from '../model/lineTopology';
 
 export function makeStation(overrides: Partial<Station> & { id: StationId }): Station {
@@ -265,63 +258,26 @@ export function makeTransfer(overrides: Partial<Transfer> & { id: string }): Tra
 
 // Baseline props per style kind — the app's effective defaults for a fresh
 // item, so a fixture style is always well-formed and tests override only the
-// fields they exercise. Kept in one place so new props get a default here once.
-const STYLE_PROPS_DEFAULTS: StylePropsByKind = {
-  line: {
-    singletonDotStyleId: DEFAULT_STOP_DOT_STYLE_ID,
-    multiDotStyleId: DEFAULT_STOP_DOT_STYLE_ID,
-    singletonDotSize: DOT_SIZE_DEFAULT,
-    multiDotSize: DOT_SIZE_DEFAULT,
-    width: LINE_WIDTH_DEFAULT,
-    curveRadius: LINE_CURVE_RADIUS_DEFAULT,
-    endStyle: 'square',
-    strokeWidth: 0,
-    strokeColor: { day: '#ffffff', night: '#ffffff' },
-  },
-  stopDot: DEFAULT_DOT_STYLE,
-  textLabel: {
-    color: '#111111',
-    darkColor: '#ffffff',
-    fontSize: 16,
-    weight: 400,
-    italic: false,
-    align: 'left',
-    width: 0,
-    leading: 1,
-    tracking: 0,
-  },
-  polygon: {
-    fill: '#cfe3f2',
-    stroke: '#000000',
-    darkFill: '#cfe3f2',
-    darkStroke: '#000000',
-    strokeWidth: 1,
-    curveRadius: 0,
-    closed: true,
-  },
-  routeBullet: { shape: 'circle', size: 14 },
-  transfer: {
-    thickness: 2,
-    color: { day: '#000000', night: '#000000' },
-    strokeWidth: 0,
-    strokeColor: { day: '#ffffff', night: '#ffffff' },
-    draw: 'under',
-  },
-  station: { fontSize: 12, weight: 400, italic: false, leading: 1, tracking: 0 },
-};
+// fields they exercise. Read out of the factory styles a fresh doc actually
+// ships (DEFAULT_DOC's own default designation per kind) rather than restated
+// here: a restated copy drifts silently, and every suite would go on asserting
+// against a look the app no longer has.
+const factoryProps = <K extends StyleKind>(kind: K): StylePropsByKind[K] =>
+  DEFAULT_DOC.styles[DEFAULT_DOC.styleDefaults[kind]].props as StylePropsByKind[K];
 
 // A named style preset of the given kind. Props default to the app's
-// effective defaults (STYLE_PROPS_DEFAULTS) with per-field overrides.
+// effective defaults with per-field overrides.
 export function makeStyle<K extends StyleKind>(
   kind: K,
   id: string,
   overrides: { name?: string; props?: Partial<StylePropsByKind[K]> } = {},
 ): StyleDef {
+  const props = { ...factoryProps(kind), ...overrides.props } as StylePropsByKind[K];
   return {
     id,
     name: overrides.name ?? id,
     kind,
-    props: { ...STYLE_PROPS_DEFAULTS[kind], ...overrides.props },
+    props,
   } as StyleDef;
 }
 
