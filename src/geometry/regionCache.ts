@@ -9,6 +9,9 @@ import type { Line, LineCircle, LineId, Station, StationId } from '../model/type
 import {
   buildBandGeometry,
   buildStopMarkers,
+  pushLineCircleGeomSig,
+  pushLineGeomSig,
+  pushStationGeomSig,
   type SegmentBandSpec,
   type StopMarkerSpec,
 } from './interlining';
@@ -22,12 +25,14 @@ export interface GeometrySlice {
 }
 
 /**
- * Hash of everything region geometry depends on: station positions/rotations
- * and stop cells (including circle bindings and viaCircle flags), line edge
- * sets, widths, interline gaps and curve radii, line circles (their arcs ARE
- * band geometry), and segment style VALUES (they flip marker footprints
- * between full-square and stub/none). Deliberately excludes colors, casing,
- * seams, lineOrder — presentation.
+ * Hash of everything region geometry depends on: the band-routing field set
+ * (`pushStationGeomSig` / `pushLineCircleGeomSig` / `pushLineGeomSig` — station
+ * positions/rotations and stop cells including circle bindings and viaCircle
+ * flags, line edge sets, widths, interline gaps and curve radii, and the line
+ * circles whose arcs ARE band geometry), plus the fields only the MARKERS read:
+ * end styles and segment style VALUES, which flip a footprint between
+ * full-square and stub/none. Deliberately excludes colors, casing, seams,
+ * lineOrder — presentation.
  */
 export function regionGeometrySig(g: GeometrySlice): string {
   const parts: string[] = [];
@@ -45,34 +50,22 @@ export function regionGeometrySig(g: GeometrySlice): string {
   for (const id of Object.keys(g.stations)) {
     const st = g.stations[id];
     if (!st.stops.length) continue; // stopless stations carry no band geometry
-    parts.push(id, String(st.x), String(st.y), String(st.rotation), st.circleId ?? '');
-    for (const c of st.stops) {
-      parts.push(c.lineId, String(c.row), String(c.col), c.orientation, c.viaCircle ? '~' : '');
-      stoppedLines.add(c.lineId);
-    }
+    pushStationGeomSig(parts, id, st);
+    for (const c of st.stops) stoppedLines.add(c.lineId);
   }
-  // Line circles: a bound edge's arc reads the circle's center + radius, so
-  // they are geometry. Hashed unconditionally (bound or not) — a key that
+  // Line circles are hashed unconditionally (bound or not) — a key that
   // over-invalidates costs one rebuild; one that under-invalidates is a stale
   // arrangement.
-  for (const id of Object.keys(g.lineCircles)) {
-    const c = g.lineCircles[id];
-    parts.push(id, String(c.x), String(c.y), String(c.radius));
-  }
+  for (const id of Object.keys(g.lineCircles)) pushLineCircleGeomSig(parts, id, g.lineCircles[id]);
   for (const id of Object.keys(g.lines)) {
     const ln = g.lines[id];
     if (!ln.edges.length && !stoppedLines.has(id)) continue; // contributes nothing
-    parts.push(
-      id,
-      ln.edges.join('.'),
-      String(ln.width ?? ''),
-      String(ln.interlineGap ?? ''),
-      String(ln.curveRadius ?? ''),
-      // Line END style, and every per-terminus pin: like a segment style
-      // these flip marker footprints — a short end withdraws its outward half
-      // from the arrangement, a round one replaces it with a half-disc.
-      String(ln.endStyle ?? ''),
-    );
+    pushLineGeomSig(parts, id, ln);
+    // The marker-footprint fields, which the band routing itself is blind to:
+    // the line END style and every per-terminus pin — like a segment style
+    // these flip marker footprints, a short end withdrawing its outward half
+    // from the arrangement, a round one replacing it with a half-disc.
+    parts.push(String(ln.endStyle ?? ''));
     const ends = ln.stationEndStyles;
     if (ends) for (const k of Object.keys(ends)) parts.push(k, ends[k]);
     const styles = ln.segmentStyles;

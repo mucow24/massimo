@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `ae668dc` (2026-08-20, #539) — verified against the live source.** This
+**Up to date as of commit `26a3729` (2026-08-21, #541) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -3823,8 +3823,17 @@ Alt label fine-drag streaming `setLabelOffset` per pointermove repaints the labe
 band routing or the marker sort. Pinned by `MapCanvas.stationsSig.test.tsx`. A third sig,
 `circlesGeometrySig` (id/x/y/radius per line circle), joins the deps for the same reason the
 interline gap is hashed: a viaCircle arc reads the circle's center + radius, and the hash must not
-lean on the coupling that circle edits also move bound stations. `regionGeometrySig` hashes the
-same three additions.
+lean on the coupling that circle edits also move bound stations.
+
+**Which fields go in is the router's business, not the canvas's.** None of the three memos spells
+its list out: each is emitted by `pushStationGeomSig` / `pushLineGeomSig` / `pushLineCircleGeomSig`,
+which live beside `buildBandGeometry` in [interlining.ts](src/geometry/interlining.ts) because they
+name ITS inputs (one emitter per record kind, since the memos hash the collections on separate
+boundaries; they append into a caller's array so a whole-map rehash allocates once). The other
+caller is `regionGeometrySig`, which keys the region cache off the same three lists and adds only
+what the MARKERS read on top — end styles and segment style VALUES, which flip a footprint between
+full-square and stub/none. That single list is the invariant: a routing field reaching only one of
+the two keys is a stale picture on one side or a stale arrangement on the other.
 
 ---
 

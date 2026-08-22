@@ -15,6 +15,9 @@ import {
   buildBandGeometry,
   buildOrderedRenderables,
   buildStopMarkers,
+  pushLineCircleGeomSig,
+  pushLineGeomSig,
+  pushStationGeomSig,
   stopPosWorld,
   withLinePriorities,
   SegmentBandSpec,
@@ -413,67 +416,47 @@ export function MapCanvas() {
   const pickingTransferEnd = selection.uiMode.kind === 'creating-transfer';
   const freeAnchorsLive = selection.uiMode.kind === 'idle' || pickingTransferEnd;
 
-  // Geometry hash for buildBandGeometry's inputs: line topology (the `edges`
-  // SET) + per-line width + interline gap + curve radius. Topology is `edges`,
-  // not the `stations` member list — buildBandGeometry iterates edges, and a
-  // display-only reorder of `stations` must NOT churn geometry (so `edges`, not
-  // `stations`, is hashed; adding/removing an edge — e.g. closing a loop or
-  // branching — changes it and triggers the rebuild). EXCLUDES presentation-only
-  // fields so repaints don't churn geometry — `bandsGeometry`'s reference stays
-  // stable across them, which the layering-mode memos rely on. Color AND
-  // per-segment style are intentionally absent: buildBandGeometry is
-  // presentation-blind (stripes resolve both live from `lines`), so a color or
-  // style edit repaints WITHOUT a geometry rebuild — and the stop markers, whose
-  // footprint DOES depend on style, rebuild via the `renderables` memo's direct
-  // `lines` dep. Width, by contrast, IS geometry — it moves the baked paths and
-  // changes band merging — so it must be in the hash or width edits never
-  // repaint. Curve radius is geometry for the same reason (it moves the baked
-  // fillets), and the interline gap likewise (it feeds the merge gate and stripe
-  // offsets; in practice every gap write also re-packs stops, which invalidates
-  // the stations-side sig, but the hash must not rely on that coupling).
+  // Geometry hashes for buildBandGeometry's inputs, one per collection so each
+  // memo only re-runs when its own record changes. WHICH fields go in is the
+  // band router's business, not the canvas's, so all three take their field
+  // list from the emitters that ship with it (push*GeomSig) — the same list the
+  // region cache's key is built from, which is the point: two hand-written
+  // copies would be free to drift apart, and a field reaching only one of them
+  // means a stale picture on one side or a stale arrangement on the other.
+  //
+  // What that field list buys, per collection:
+  //  - lines: topology is the `edges` SET, not the `stations` member list, so a
+  //    display-only reorder does NOT churn geometry while closing a loop or
+  //    branching does. Color and per-segment style are absent — buildBandGeometry
+  //    is presentation-blind (stripes resolve both live from `lines`), so those
+  //    edits repaint without a geometry rebuild, and the stop markers, whose
+  //    footprint DOES depend on style, rebuild via the `renderables` memo's
+  //    direct `lines` dep instead. Width, gap and curve radius ARE geometry —
+  //    they move the baked paths and the merge gate.
+  //  - stations: the anchor, rotation and stop cells. EXCLUDES the label block
+  //    and per-stop dotStyle/dotSize (presentation, resolved live at render).
+  //    Label edits are the high-frequency writers here: an Alt fine-drag streams
+  //    setLabelOffset/setLabelOffsetPerp per pointermove, which must repaint the
+  //    label WITHOUT re-running band routing.
+  //  - lineCircles: a viaCircle edge's arc is routed from the ring itself. (In
+  //    practice every circle move/resize also moves its bound stations, and every
+  //    gap write re-packs stops, so the stations sig would catch both — but a
+  //    hash must not lean on that coupling.)
   const linesGeometrySig = useMemo(() => {
     const parts: string[] = [];
-    for (const id of Object.keys(lines)) {
-      const ln = lines[id];
-      parts.push(
-        id,
-        ln.edges.join('.'),
-        String(ln.width ?? ''),
-        String(ln.interlineGap ?? ''),
-        String(ln.curveRadius ?? ''),
-      );
-    }
+    for (const id of Object.keys(lines)) pushLineGeomSig(parts, id as LineId, lines[id]);
     return parts.join('|');
   }, [lines]);
 
-  // Stations-side twin of linesGeometrySig: hashes exactly the station
-  // fields buildBandGeometry / buildStopMarkers read — anchor (x, y),
-  // rotation, and each stop's lineId/row/col/orientation. EXCLUDES the
-  // label block and per-stop dotStyle/dotSize (presentation, resolved live
-  // at render). Label edits are the high-frequency writers here: an Alt
-  // fine-drag streams setLabelOffset/setLabelOffsetPerp per pointermove,
-  // which must repaint the label WITHOUT re-running band routing.
   const stationsGeometrySig = useMemo(() => {
     const parts: string[] = [];
-    for (const id of Object.keys(stations)) {
-      const st = stations[id];
-      parts.push(id, String(st.x), String(st.y), String(st.rotation), st.circleId ?? '');
-      for (const c of st.stops)
-        parts.push(c.lineId, String(c.row), String(c.col), c.orientation, c.viaCircle ? '~' : '');
-    }
+    for (const id of Object.keys(stations)) pushStationGeomSig(parts, id, stations[id]);
     return parts.join('|');
   }, [stations]);
 
-  // Line circles are geometry too: a viaCircle edge's arc reads the bound
-  // circle's center + radius. (In practice every circle move/resize also moves
-  // its bound stations, which changes the stations sig — but the hash must not
-  // rely on that coupling, same rule as the interline gap above.)
   const circlesGeometrySig = useMemo(() => {
     const parts: string[] = [];
-    for (const id of Object.keys(lineCircles)) {
-      const c = lineCircles[id];
-      parts.push(id, String(c.x), String(c.y), String(c.radius));
-    }
+    for (const id of Object.keys(lineCircles)) pushLineCircleGeomSig(parts, id, lineCircles[id]);
     return parts.join('|');
   }, [lineCircles]);
 

@@ -588,6 +588,46 @@ function forEachPackedRun(segs: PackedSeg[], emit: (run: PackedSeg[]) => void): 
 }
 
 /**
+ * The three field lists {@link buildBandGeometry} reads, as hash parts appended
+ * to `parts` — one emitter per record kind, since callers hash the collections
+ * on their own memo boundaries.
+ *
+ * Every caller that decides "has the band geometry changed?" asks it this way,
+ * and there are two: MapCanvas's per-collection memo keys (which gate the
+ * repaint) and `regionGeometrySig` (which keys the region cache, adding the
+ * marker-footprint fields on top). A field added to the routing that reaches
+ * only one of them is a stale picture on one side or a stale arrangement on the
+ * other, so the lists live HERE, beside the function whose inputs they name,
+ * rather than being spelled out at each key.
+ *
+ * They append rather than return so a whole-map rehash allocates one array, not
+ * one per record: these run on every doc change, over every station on the map.
+ */
+export function pushStationGeomSig(parts: string[], id: StationId, st: Station): void {
+  parts.push(id, String(st.x), String(st.y), String(st.rotation), st.circleId ?? '');
+  for (const c of st.stops)
+    parts.push(c.lineId, String(c.row), String(c.col), c.orientation, c.viaCircle ? '~' : '');
+}
+
+/** Line circles: a bound edge's arc is routed from the ring's center + radius. */
+export function pushLineCircleGeomSig(parts: string[], id: string, c: LineCircle): void {
+  parts.push(id, String(c.x), String(c.y), String(c.radius));
+}
+
+/** A line's own geometry: its edge set and the three dimensions that move the
+ * baked paths. NOT color, per-segment style, end style or lineOrder — those are
+ * presentation to the routing (see {@link buildBandGeometry}). */
+export function pushLineGeomSig(parts: string[], id: LineId, ln: Line): void {
+  parts.push(
+    id,
+    ln.edges.join('.'),
+    String(ln.width ?? ''),
+    String(ln.interlineGap ?? ''),
+    String(ln.curveRadius ?? ''),
+  );
+}
+
+/**
  * Geometric half of {@link buildBands}: groups lines by canonical
  * station-pair, buckets by world travel axis, merges perpendicular-
  * adjacency runs, and computes the routed centerline + per-stripe paths.
@@ -599,8 +639,8 @@ function forEachPackedRun(segs: PackedSeg[], emit: (run: PackedSeg[]) => void): 
  * reorder leaves this output byte-identical, and a caller that memoizes it gets
  * a stable bands reference across those edits — that's how the layering-mode
  * caches stay valid without a content-hash workaround. (A width, gap, or
- * curve-radius edit DOES rebuild — those ARE geometry; MapCanvas's
- * `linesGeometrySig` must include them, and only them.)
+ * curve-radius edit DOES rebuild — those ARE geometry, and reach a memo key
+ * through {@link pushLineGeomSig}, which names them and only them.)
  *
  * Returns bands with `linePriorities: []`; call {@link assignLinePriorities}
  * to fill those in before consuming the array for paint order.
