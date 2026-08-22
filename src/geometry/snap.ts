@@ -980,20 +980,19 @@ export function snapDraggedStation(input: SnapInput): SnapResult {
   let sy: number;
 
   if (secondary) {
-    // Two-axis snap: solve the 2x2 system that puts the dragged stop on each
-    // target axis line simultaneously. Each constraint is
-    //   (anchor + dOff_i - targetStop_i) · perp_i = 0
-    // ⇒  anchor · perp_i = (targetStop_i - dOff_i) · perp_i
-    const p1 = { x: -primary.axis.y, y: primary.axis.x };
-    const p2 = { x: -secondary.axis.y, y: secondary.axis.x };
-    const k1 =
-      (primary.targetStopX - primary.dOff.x) * p1.x + (primary.targetStopY - primary.dOff.y) * p1.y;
-    const k2 =
-      (secondary.targetStopX - secondary.dOff.x) * p2.x +
-      (secondary.targetStopY - secondary.dOff.y) * p2.y;
-    const det = p1.x * p2.y - p1.y * p2.x;
-    sx = (k1 * p2.y - k2 * p1.y) / det;
-    sy = (p1.x * k2 - p2.x * k1) / det;
+    // Two-axis snap: put the dragged stop on both target axis lines at once.
+    // In the dragged ANCHOR's frame each lock's line runs through
+    // `targetStop - dOff` along that candidate's axis, which is the form
+    // {@link solveTwoAxisLock} takes — the same solve the point snapper corners
+    // with.
+    const solved = solveTwoAxisLock(
+      { x: primary.targetStopX - primary.dOff.x, y: primary.targetStopY - primary.dOff.y },
+      primary.axis,
+      { x: secondary.targetStopX - secondary.dOff.x, y: secondary.targetStopY - secondary.dOff.y },
+      secondary.axis,
+    );
+    sx = solved.x;
+    sy = solved.y;
 
     // Grid is a hard constraint: the corner can't slide, so keep it only when
     // it's grid-valid; otherwise degrade to whichever single lock can be
@@ -1385,6 +1384,25 @@ export function reconcileLockWithGrid(
 export interface GridLock {
   q: Vec2;
   axis: Vec2;
+}
+
+/**
+ * The unique point satisfying two non-parallel line locks — lock i runs through
+ * `q(i)` with unit direction `a(i)`. Each constraint is `(p − q) · perp = 0`;
+ * solving the 2×2 system puts the point on both lines at once.
+ *
+ * Both snappers corner the same way, so the solve lives here rather than once
+ * per caller. Callers guarantee the axes are non-parallel (the point snapper
+ * only ever pairs perpendicular families; the engine screens its secondary on
+ * `SECONDARY_AXIS_SIN_GATE`), which is what keeps `det` off zero.
+ */
+export function solveTwoAxisLock(q1: Vec2, a1: Vec2, q2: Vec2, a2: Vec2): Vec2 {
+  const p1 = { x: -a1.y, y: a1.x };
+  const p2 = { x: -a2.y, y: a2.x };
+  const k1 = q1.x * p1.x + q1.y * p1.y;
+  const k2 = q2.x * p2.x + q2.y * p2.y;
+  const det = p1.x * p2.y - p1.y * p2.x;
+  return { x: (k1 * p2.y - k2 * p1.y) / det, y: (p1.x * k2 - p2.x * k1) / det };
 }
 
 /**
