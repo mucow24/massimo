@@ -2664,20 +2664,19 @@ of them:
   images). Placement is **not** uniformly point-snapped: `placing-station` routes to the station
   engine, and `creating-route-bullet` does too whenever a default line exists — falling back to
   the point snapper only when there is none. It keeps ONE winner per **axis family** — vertical,
-  horizontal, and the two 45° diagonals — and **a corner is always a right angle**: only (V, H)
-  and the two diagonals may lock together, the straight pair taking precedence when both are in
-  tolerance, solved through the same `solveTwoAxisLock` the engine corners with. With three
-  families live there is always exactly one complete perpendicular pair, so the odd axis out has
-  no degree of freedom left to constrain; a 45° pairing never locks both — the right angle is
-  what bounds the pull, a perpendicular pair moving the point at most √2× the tolerance where
-  45° reaches 2.6× — and the better-aligned one wins alone, free slide intact. Inside a family
-  the best alignment wins, except that everything matching it within a tie window (colinear
-  targets, which floating point separates only by noise) counts as equally aligned, and among
-  those the target NEAREST the engaged anchor takes it — the same closest-wins the engine runs
-  inside an axis group. The window is measured against that best alignment and never against a
-  running incumbent: epsilon-equality is not transitive, so folding pairwise would make the
-  winner depend on the order the caller assembled its pool in.
-  An optional `anchors` set
+  horizontal, and the two 45° diagonals — and **a corner is always a right angle that never
+  discards a better-aligned family**: only (V, H) and the two diagonals may lock together, the
+  straight pair taking precedence, and the diagonal pair only when neither member is worse
+  aligned than the best straight family live. Without that second test a target's own two
+  diagonals — which cross AT the target — collapse the point onto it past a perfect horizontal,
+  and reach further out along a world axis than a straight family does. Three families live
+  always leaves exactly one complete perpendicular pair, so the odd axis out has no freedom left
+  to constrain, and a rejected pair falls back to the better-aligned axis alone with its free
+  slide. The solve is `solveTwoAxisLock`, shared with the engine. Inside a family the best
+  alignment wins, except that everything matching it within a tie window — colinear targets,
+  which floating point separates only by noise — counts as equally aligned, and among those the
+  target NEAREST the engaged anchor takes it, the same closest-wins the engine runs inside an
+  axis group. An optional `anchors` set
   generalizes the one reference point to a RIGID set snapping as one translation: every anchor
   generates candidates, each engagement converts to the translation that aligns its anchor, and
   the winner tows the whole set — so a cross-anchor corner (V via one anchor, H via another) locks
@@ -2686,12 +2685,13 @@ of them:
   from the anchor that engaged. Text labels are the consumer, drag AND placement.
   `constrain: 'x' | 'y' | 'diagonal-down' | 'diagonal-up'` restricts it for single-DOF
   consumers (edge resizes, guide drags — the diagonal values are the diagonal guides' own
-  drags) so guides never show a snap the caller discards. When `tens` is on **and grid is off**, an engaged alignment's
-  free axis (the slide along the guide) is notched to a whole grid length from the target — the
-  same "Snap to grid length" idea extended past the skeleton, so any snapped object lands a clean
-  step from what it caught. Corners have no free DOF; grid (when on) owns quantization; a
-  single-DOF caller opts out via `constrain` — a guide's own drag then runs its own version of
-  the cadence, off its nearest parallel guide (see `AlignmentGuide`).
+  drags) so guides never show a snap the caller discards. When `tens` is on **and grid is
+  off**, an engaged alignment's free axis (the slide along the guide) is notched to a whole grid
+  length from the target — the same "Snap to grid length" idea extended past the skeleton, so
+  any snapped object lands a clean step from what it caught. Corners have no free DOF; grid
+  (when on) owns quantization; a single-DOF caller opts out via `constrain` — a guide's own drag
+  then runs its own version of the cadence, off its nearest parallel guide (see
+  `AlignmentGuide`).
 
 **The redistribute (Ctrl-drag) pools split.** `redistributeAnchor` puts the engine in line mode
 regardless of the user's toggle — it is an explicit modal gesture — and line mode then snaps

@@ -103,9 +103,11 @@ type Lock = {
    *  The admission test, the currency a guide contests in, and what ranks one
    *  family against another. */
   perp: number;
-  /** Distance from the engaged anchor to the target point. Separates
-   *  candidates that alignment quality cannot — see {@link PERP_TIE_EPS}. */
-  dist: number;
+  /** SQUARED distance from the engaged anchor to the target point. Separates
+   *  candidates that alignment quality cannot — see {@link PERP_TIE_EPS}. Kept
+   *  squared because it is only ever compared, and this is computed per anchor ×
+   *  per in-tolerance candidate × per frame in a drag. */
+  distSq: number;
   target: Vec2;
   off: Vec2;
   axis: Vec2;
@@ -127,12 +129,15 @@ function perpDistTo(p: Vec2, t: Vec2, a: Vec2): number {
  * its targets along the active snap axes, then to the grid.
  *
  * One winner per axis family, then at most two families lock together. **A
- * corner is always a right angle**: only (vertical, horizontal) and the two
- * diagonals may pair, with the straight pair preferred when both are on offer.
- * The right angle is what bounds how hard a corner can pull — a perpendicular
- * pair moves the point at most √2× the tolerance, where a 45° pairing reaches
- * 2.6× — so a pair that close falls back to the better-aligned axis alone,
- * free slide intact. Grid is a **hard constraint**: when on, the
+ * corner is always a right angle, and never discards a better-aligned family**:
+ * only (vertical, horizontal) and the two diagonals may pair, the straight pair
+ * preferred when both are on offer, and the diagonal pair only when neither of
+ * its members is worse aligned than the best straight family live. The right
+ * angle bounds how hard a corner can pull — a perpendicular pair moves the point
+ * at most √2× the tolerance, where a 45° pairing reaches 2.6× — and the
+ * better-aligned test is what stops two diagonals through one target from
+ * collapsing the point onto it past a perfect straight alignment. A rejected
+ * pair falls back to the better-aligned axis alone, free slide intact. Grid is a **hard constraint**: when on, the
  * result is always on the grid, and a chosen alignment engages only when it can
  * be reconciled with the grid (otherwise it yields to a plain grid snap, no
  * guide) — see {@link reconcileLockWithGrid}/{@link reconcileCorner}. Pure — no
@@ -227,7 +232,7 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
       offerPoint({
         family: familyOf(axis),
         perp: perpDist,
-        dist: Math.hypot(a.x - target.x, a.y - target.y),
+        distSq: (a.x - target.x) ** 2 + (a.y - target.y) ** 2,
         target,
         off,
         axis,
@@ -249,13 +254,13 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
       // A bounded guide attracts only where the foot lands inside its span —
       // the ANCHOR's foot: the engaged corner is what aligns to the guide.
       if (!guideAdmitsFoot(g, foot)) continue;
-      // `dist` is the perpendicular distance for a guide, and deliberately so:
-      // the foot IS the target, which is exactly why guides are judged on
+      // A guide's distance to its target IS its perpendicular distance — the
+      // foot is the target — which is exactly why guides are judged on
       // alignment alone rather than through the proximity tie-break.
       offerGuide({
         family: familyOf(axis),
         perp: d,
-        dist: d,
+        distSq: d * d,
         target: foot,
         off,
         axis,
@@ -281,7 +286,7 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
     let best: Lock | null = null;
     for (const c of cs) {
       if (c.perp - minPerp > PERP_TIE_EPS) continue;
-      if (!best || c.dist < best.dist) best = c;
+      if (!best || c.distSq < best.distSq) best = c;
     }
     return best;
   };
@@ -352,7 +357,18 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   // three families live there is always exactly one complete perpendicular pair
   // (three of four families means both of one pair plus one of the other), so
   // the odd axis out simply has no degree of freedom left to constrain.
-  const pair: [Lock, Lock] | null = v && h ? [v, h] : dDown && dUp ? [dDown, dUp] : null;
+  // Two diagonals through the SAME target cross AT that target, so cornering
+  // them collapses the point onto it — and their band reaches √2× the tolerance
+  // along a world axis, further out than a straight family's own reach. Fired
+  // unguarded that throws away a perfectly aligned horizontal or vertical to
+  // travel as much as 14 units, which is the opposite of what a snap is for. So
+  // the diagonal pair locks only when neither member is worse aligned than the
+  // best straight family on offer. The straight pair needs no such test: it is
+  // the preferred pair, and it cannot out-reach itself.
+  const straightBest = Math.min(v?.perp ?? Infinity, h?.perp ?? Infinity);
+  const diagonalPair: [Lock, Lock] | null =
+    dDown && dUp && Math.max(dDown.perp, dUp.perp) <= straightBest ? [dDown, dUp] : null;
+  const pair: [Lock, Lock] | null = v && h ? [v, h] : diagonalPair;
   if (pair) {
     const [first, second] = pair;
     const corner = solveTwoAxisLock(lineOf(first), first.axis, lineOf(second), second.axis);

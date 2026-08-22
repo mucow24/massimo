@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { snapPolygonPoint } from './polygonSnap';
-import { DEFAULT_SNAP_MODES, type SnapModes } from './snap';
+import { DEFAULT_SNAP_MODES, SNAP_PERP_TOLERANCE, type SnapModes } from './snap';
 
 const modes = (partial: Partial<SnapModes> = {}): SnapModes => ({
   ...DEFAULT_SNAP_MODES,
@@ -50,13 +50,14 @@ describe('two perpendicular diagonals form a corner', () => {
   });
 
   it('discards a lone third axis and corners the perpendicular pair', () => {
-    // Adds a vertical alignment 2 off. Three families in tolerance means
-    // exactly one complete perpendicular pair — here the diagonals — and the
-    // odd axis out has no degree of freedom left to constrain.
+    // Adds a vertical alignment 5 off — worse than either diagonal (0.71 and
+    // 2.12), so the guard lets the pair through. Three families in tolerance
+    // means exactly one complete perpendicular pair, here the diagonals, and
+    // the odd axis out has no degree of freedom left to constrain.
     const r = snapPolygonPoint({
       proposed: { x: 52, y: 51 },
       lineTargets: [],
-      allTargets: [A, B, { x: 54, y: 900 }],
+      allTargets: [A, B, { x: 57, y: 900 }],
       modes: allAxes(),
     });
     expect(r.x).toBeCloseTo(50, 6);
@@ -82,6 +83,51 @@ describe('two perpendicular diagonals form a corner', () => {
     expect(r.x).toBeCloseTo(100, 6);
     expect(r.y).toBeCloseTo(200, 6);
     expect(r.guides).toHaveLength(2);
+  });
+
+  it('never corners two diagonals at the cost of a better-aligned straight family', () => {
+    // Both diagonals through a SINGLE target cross at that target, so cornering
+    // them collapses the point onto it. Sitting 11 units away along a perfect
+    // horizontal alignment, that would throw a zero-error snap away to travel
+    // 11 units — the opposite of what a snap is for. The horizontal holds.
+    const r = snapPolygonPoint({
+      proposed: { x: 11, y: 0 },
+      lineTargets: [],
+      allTargets: [{ x: 0, y: 0 }],
+      modes: allAxes(),
+    });
+    expect(r.x).toBeCloseTo(11, 6);
+    expect(r.y).toBeCloseTo(0, 6);
+    expect(r.guides).toHaveLength(1);
+  });
+
+  it('stays inside the corner displacement bound, with no cliff across the diagonals reach', () => {
+    // Walk out through the band where a single target's two diagonals are both
+    // in tolerance (|d| <= sqrt(2)*tol) while its vertical is NOT. Nothing may
+    // displace further than a right-angle corner can, and the result may not
+    // jump as the diagonals drop out at the far edge.
+    //
+    // The sweep starts just past tolerance on purpose: at dx <= 10 the vertical
+    // is still admitted (the test is `perpDist > tol`, so equality passes) and
+    // the long-standing V×H corner legitimately collapses the point onto the
+    // target. That boundary predates this change and is not what is under test.
+    let prev: { x: number; y: number } | null = null;
+    for (let i = 0; i < 100; i++) {
+      const dx = 10.05 + i * 0.05; // just past tolerance → 15
+      const r = snapPolygonPoint({
+        proposed: { x: dx, y: 0 },
+        lineTargets: [],
+        allTargets: [{ x: 0, y: 0 }],
+        modes: allAxes(),
+      });
+      expect(Math.hypot(r.x - dx, r.y)).toBeLessThanOrEqual(
+        Math.SQRT2 * SNAP_PERP_TOLERANCE + 1e-9,
+      );
+      if (prev) {
+        expect(Math.hypot(r.x - prev.x, r.y - prev.y)).toBeLessThanOrEqual(SNAP_PERP_TOLERANCE);
+      }
+      prev = { x: r.x, y: r.y };
+    }
   });
 
   it('a 45-degree pair still does not corner: the better-aligned axis wins alone', () => {
