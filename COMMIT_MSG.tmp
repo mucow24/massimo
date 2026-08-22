@@ -1,0 +1,38 @@
+A corner is any two axes, and only one vertex is not a corner
+
+PR #542 said it would make D×D, D×V and D×H corners all work. It shipped only
+D×D. Mid-build I found a real pathology — a point 11 units down a PERFECT
+horizontal had both of that target's diagonals in tolerance, cornered them, and
+collapsed onto the target, throwing a zero-error snap away to travel 11 units —
+and I fixed it by banning 45° pairings. That was the wrong cut. The pathology is
+about two axes coming from the SAME target, which cross AT that target; the
+angle between them has nothing to do with it. Banning the angle took the
+octolinear corner with it, and a vertical edge meeting a diagonal at 135° is the
+commonest corner this app draws.
+
+So the cut moves to where the constraints come from. Any two non-parallel
+families corner, mixed pairs included. Two axes through the same target are not
+a corner at all — the lock is "snap onto this vertex", and it holds only within
+tolerance of the vertex by plain distance, which is the honest test of being
+near it. That kills the 11-unit collapse exactly (distance 11 > tolerance 10)
+while leaving every genuine crossing alone, and it subsumes the alignment-based
+guard it replaces.
+
+Which two families pair is still decided by family and never by ranking them —
+straight pair, then diagonals, then the one mixed pair a lone straight and a
+lone diagonal leave. A ranking would re-choose the pair as the pointer moved,
+which is the per-family tie-break's flutter one level up.
+
+A 135° corner can displace up to 2.6× the tolerance where a right angle caps at
+√2×. That is inherent to squaring a corner that is not square, and it is not
+capped.
+
+Three existing expectations move, all of them encoding the rule being replaced.
+Two asserted that a 45° pair does not corner — one for point targets, one for a
+straight guide crossing a diagonal one — and both now assert the corner. The
+third, the polygon vertex-drag test, began cornering incidentally when the apex
+caught a 45° line from the far base corner; its drop point moves 10 units so it
+keeps testing drag plumbing rather than corner arbitration, which belongs to
+polygonSnap's own tests.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>

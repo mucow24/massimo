@@ -193,27 +193,31 @@ describe('snapPolygonPoint against diagonal guides', () => {
     expect(r.guides.map((g) => g.alignGuideId).sort()).toEqual(['g1', 'g2']);
   });
 
-  it('a diagonal guide contests a single-axis winner on displacement', () => {
+  it('a straight guide and a diagonal one crossing it corner-lock', () => {
+    // y = 100 and y = x + 44 cross at (56, 100). Two guides at 135° pin both
+    // degrees of freedom exactly as two at 90° do — a guide is an axis the user
+    // placed on purpose, and the angle between two of them changes nothing.
     const dNear = { id: 'gd3', orientation: 'diagonal-down' as const, offset: 44 };
-    // H displacement 2 beats the diagonal's 3/√2 ≈ 2.12? No — 2 < 2.12, H wins.
     const rH = snapPolygonPoint({
       proposed: { x: 50, y: 98 },
       ...noTargets,
       modes: modes(),
       guideTargets: [hGuide, dNear],
     });
-    expect(rH).toMatchObject({ x: 50, y: 100 });
-    expect(rH.guides.map((g) => g.alignGuideId)).toEqual(['g1']);
-    // Nudge down: H displacement 3 loses to the diagonal's 3/√2.
+    expect(rH.x).toBeCloseTo(56, 12);
+    expect(rH.y).toBeCloseTo(100, 12);
+    expect(rH.guides.map((g) => g.alignGuideId).sort()).toEqual(['g1', 'gd3']);
+    // Approaching from the other side of the diagonal reaches the same corner —
+    // a corner has no free degree of freedom left to slide along.
     const rD = snapPolygonPoint({
       proposed: { x: 50, y: 97 },
       ...noTargets,
       modes: modes(),
       guideTargets: [hGuide, dNear],
     });
-    expect(rD.x).toBeCloseTo(51.5, 12);
-    expect(rD.y).toBeCloseTo(95.5, 12);
-    expect(rD.guides.map((g) => g.alignGuideId)).toEqual(['gd3']);
+    expect(rD.x).toBeCloseTo(56, 12);
+    expect(rD.y).toBeCloseTo(100, 12);
+    expect(rD.guides.map((g) => g.alignGuideId).sort()).toEqual(['g1', 'gd3']);
   });
 
   it('a better-aligned diagonal point target beats the guide', () => {
