@@ -2723,15 +2723,19 @@ of them:
   images). Placement is **not** uniformly point-snapped: `placing-station` routes to the station
   engine, and `creating-route-bullet` does too whenever a default line exists — falling back to
   the point snapper only when there is none. It keeps ONE winner per **axis family** — vertical,
-  horizontal, and the two 45° diagonals — and **a corner is always a right angle that never
-  discards a better-aligned family**: only (V, H) and the two diagonals may lock together, the
-  straight pair taking precedence, and the diagonal pair only when neither member is worse
-  aligned than the best straight family live. Without that second test a target's own two
-  diagonals — which cross AT the target — collapse the point onto it past a perfect horizontal,
-  and reach further out along a world axis than a straight family does. Three families live
-  always leaves exactly one complete perpendicular pair, so the odd axis out has no freedom left
-  to constrain, and a rejected pair falls back to the better-aligned axis alone with its free
-  slide. The solve is `solveTwoAxisLock`, shared with the engine. Inside a family the best
+  horizontal, and the two 45° diagonals — and **any two non-parallel families corner**, a
+  straight axis against a diagonal included: at 135° that is the commonest corner an octolinear
+  map has. Which two is decided by FAMILY, never by ranking them — the straight pair, then the
+  diagonals, then the one mixed pair a lone straight and a lone diagonal leave — because a
+  ranking would re-choose the pair as the pointer moved, the tie-break's flutter one level up.
+  **Two axes through the SAME target are not a corner**: they cross AT the target, so the lock
+  is really "snap onto this vertex", and it holds only within tolerance of the vertex by plain
+  distance. Further out every point is incidentally aligned with two of a target's axes, and one
+  11 units down a PERFECT horizontal would abandon that zero-error snap to travel onto the
+  vertex. A pair failing that test falls back to the better-aligned axis alone with its free
+  slide. A right-angle corner displaces at most √2× the tolerance and a 135° one reaches 2.6×,
+  the price of squaring a corner that is not square. The solve is `solveTwoAxisLock`, shared
+  with the engine. Inside a family the best
   alignment wins, except that everything matching it within a tie window — colinear targets,
   which floating point separates only by noise — counts as equally aligned, and among those the
   target NEAREST the engaged anchor takes it, the same closest-wins the engine runs inside an

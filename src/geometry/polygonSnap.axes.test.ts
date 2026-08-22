@@ -130,19 +130,20 @@ describe('two perpendicular diagonals form a corner', () => {
     }
   });
 
-  it('a 45-degree pair still does not corner: the better-aligned axis wins alone', () => {
-    // The \ through the origin is 0.71 off, the vertical 2 off. They are not
-    // perpendicular, so no corner: the diagonal wins outright and the point
-    // keeps its free slide along it.
+  it('a 45-degree pair corners too, when the two come from different targets', () => {
+    // The \ through the origin is 0.71 off, the vertical through (54, 900) is 2
+    // off. They meet at 135°, not 90° — still two constraints on two degrees of
+    // freedom, and still a corner. It lands where the two lines cross, x = 54
+    // on the line y = x.
     const r = snapPolygonPoint({
       proposed: { x: 52, y: 51 },
       lineTargets: [],
       allTargets: [A, { x: 54, y: 900 }],
       modes: allAxes(),
     });
-    expect(r.x).toBeCloseTo(51.5, 6);
-    expect(r.y).toBeCloseTo(51.5, 6);
-    expect(r.guides).toHaveLength(1);
+    expect(r.x).toBeCloseTo(54, 6);
+    expect(r.y).toBeCloseTo(54, 6);
+    expect(r.guides).toHaveLength(2);
   });
 });
 
@@ -281,5 +282,40 @@ describe('colinear targets tie on alignment, so the closest one wins', () => {
     });
     expect(r.y).toBeCloseTo(99.5, 6);
     expect(r.guides.map((g) => g.alignGuideId)).toEqual(['g']);
+  });
+});
+
+describe('a corner may mix a straight axis with a diagonal', () => {
+  // The commonest corner in an octolinear map is 135°, not 90°: an edge running
+  // straight up meeting one running up-left. Squaring it off means landing on
+  // the vertical through one neighbour AND the 45° through the other — two
+  // different targets, so the crossing is a real corner, not a vertex to
+  // collapse onto.
+  const above = { x: 0, y: -200 }; // vertical edge runs up to here
+  const upLeft = { x: -100, y: -100 }; // 45° edge runs up-left to here
+
+  it('corners a vertical against a diagonal from a different target', () => {
+    const r = snapPolygonPoint({
+      proposed: { x: 2, y: 1 },
+      lineTargets: [above, upLeft],
+      allTargets: [],
+      modes: modes({ line: true, all: 'off', grid: 'off' }),
+    });
+    expect(r.x).toBeCloseTo(0, 6);
+    expect(r.y).toBeCloseTo(0, 6);
+    expect(r.guides).toHaveLength(2);
+  });
+
+  it('corners a horizontal against a diagonal from a different target', () => {
+    const left = { x: -200, y: 0 };
+    const r = snapPolygonPoint({
+      proposed: { x: 1, y: 2 },
+      lineTargets: [left, upLeft],
+      allTargets: [],
+      modes: modes({ line: true, all: 'off', grid: 'off' }),
+    });
+    expect(r.x).toBeCloseTo(0, 6);
+    expect(r.y).toBeCloseTo(0, 6);
+    expect(r.guides).toHaveLength(2);
   });
 });

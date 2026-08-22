@@ -192,14 +192,18 @@ describe('usePolygonDrag — vertex drag', () => {
     useSelection.setState({ ...useSelection.getState(), selectedPolygonIds: ['p0'] });
     const r = render();
     // Drag apex (index 2) left toward x=0 (aligns vertically with vertex 0).
+    // Landing at y=75 rather than 85 keeps the 45° line up-left from the OTHER
+    // base corner out of tolerance, so this stays a single-axis snap: which
+    // axes pair into a corner is snapPolygonPoint's business and is tested
+    // there, while this test is about the drag itself moving one vertex.
     r.current.onVertexPointerDown('p0', 2, pointerEvent({ clientX: 200, clientY: 200 }));
     r.current.onPointerMove(pointerEvent({ clientX: 190, clientY: 200 }));
-    r.current.onPointerMove(pointerEvent({ clientX: 153, clientY: 205 })); // dx -47, dy +5 -> (3,85)
-    r.current.onPointerUp(pointerEvent({ clientX: 153, clientY: 205 }));
+    r.current.onPointerMove(pointerEvent({ clientX: 153, clientY: 195 })); // dx -47, dy -5 -> (3,75)
+    r.current.onPointerUp(pointerEvent({ clientX: 153, clientY: 195 }));
 
     const verts = useDoc.getState().polygons['p0'].vertices;
     expect(verts[2].x).toBeCloseTo(0, 6); // snapped to vertex 0's x
-    expect(verts[2].y).toBeCloseTo(85, 6); // y free
+    expect(verts[2].y).toBeCloseTo(75, 6); // y free
     // Base corners untouched.
     expect(verts[0]).toEqual({ x: 0, y: 0 });
     expect(verts[1]).toEqual({ x: 100, y: 0 });

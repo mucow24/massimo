@@ -128,16 +128,21 @@ function perpDistTo(p: Vec2, t: Vec2, a: Vec2): number {
  * Snap a polygon point (a dragged vertex, or a whole-polygon drag anchor) to
  * its targets along the active snap axes, then to the grid.
  *
- * One winner per axis family, then at most two families lock together. **A
- * corner is always a right angle, and never discards a better-aligned family**:
- * only (vertical, horizontal) and the two diagonals may pair, the straight pair
- * preferred when both are on offer, and the diagonal pair only when neither of
- * its members is worse aligned than the best straight family live. The right
- * angle bounds how hard a corner can pull — a perpendicular pair moves the point
- * at most √2× the tolerance, where a 45° pairing reaches 2.6× — and the
- * better-aligned test is what stops two diagonals through one target from
- * collapsing the point onto it past a perfect straight alignment. A rejected
- * pair falls back to the better-aligned axis alone, free slide intact. Grid is a **hard constraint**: when on, the
+ * One winner per axis family, then at most two families lock together. **Any two
+ * non-parallel families corner**, a straight axis against a diagonal included —
+ * at 135° that is the commonest corner an octolinear map has. Which two is
+ * decided by FAMILY and never by ranking them: the straight pair, then the
+ * diagonals, then the one mixed pair a lone straight and a lone diagonal leave.
+ * Ranking would re-choose the pair as the pointer moved, which is the per-family
+ * tie-break's flutter one level up. **Two axes through the SAME target are not a
+ * corner**: they cross AT the target, so the lock is really "snap onto this
+ * vertex" and holds only within tolerance of it by plain distance. Further out
+ * every point is incidentally aligned with two of a target's axes, and one
+ * sitting 11 units down a PERFECT horizontal would abandon that zero-error snap
+ * to travel onto the vertex. A pair failing that test falls back to the
+ * better-aligned axis alone, free slide intact. A right-angle corner displaces
+ * the point at most √2× the tolerance; a 135° one reaches 2.6×, which is the
+ * price of squaring a corner that is not square. Grid is a **hard constraint**: when on, the
  * result is always on the grid, and a chosen alignment engages only when it can
  * be reconciled with the grid (otherwise it yields to a plain grid snap, no
  * guide) — see {@link reconcileLockWithGrid}/{@link reconcileCorner}. Pure — no
@@ -352,23 +357,43 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   // two-axis solve take.
   const lineOf = (c: Lock) => sub(c.target, c.off);
 
-  // A corner — two constraints at a right angle — is the strongest snap, and
-  // the straight pair wins when both perpendicular pairs are in tolerance. With
-  // three families live there is always exactly one complete perpendicular pair
-  // (three of four families means both of one pair plus one of the other), so
-  // the odd axis out simply has no degree of freedom left to constrain.
-  // Two diagonals through the SAME target cross AT that target, so cornering
-  // them collapses the point onto it — and their band reaches √2× the tolerance
-  // along a world axis, further out than a straight family's own reach. Fired
-  // unguarded that throws away a perfectly aligned horizontal or vertical to
-  // travel as much as 14 units, which is the opposite of what a snap is for. So
-  // the diagonal pair locks only when neither member is worse aligned than the
-  // best straight family on offer. The straight pair needs no such test: it is
-  // the preferred pair, and it cannot out-reach itself.
-  const straightBest = Math.min(v?.perp ?? Infinity, h?.perp ?? Infinity);
-  const diagonalPair: [Lock, Lock] | null =
-    dDown && dUp && Math.max(dDown.perp, dUp.perp) <= straightBest ? [dDown, dUp] : null;
-  const pair: [Lock, Lock] | null = v && h ? [v, h] : diagonalPair;
+  // A corner is two constraints locking both degrees of freedom, and ANY two
+  // non-parallel families make one — including a straight axis against a
+  // diagonal, which at 135° is the commonest corner an octolinear map has.
+  //
+  // Which two is decided by FAMILY, never by ranking them: the straight pair
+  // first, then the diagonals, then the single mixed pair that one lone
+  // straight and one lone diagonal leave. A ranking would re-choose the pair as
+  // the pointer moved and the order shuffled, which is the same flutter the
+  // per-family tie-break exists to kill, one level up.
+  const lone = (a: Lock | null, b: Lock | null) => (a ? (b ? null : a) : b);
+  const loneStraight = lone(v, h);
+  const loneDiagonal = lone(dDown, dUp);
+  const chosen: [Lock, Lock] | null =
+    v && h
+      ? [v, h]
+      : dDown && dUp
+        ? [dDown, dUp]
+        : loneStraight && loneDiagonal
+          ? [loneStraight, loneDiagonal]
+          : null;
+
+  // Two axes through the SAME target cross AT that target, so their "corner" is
+  // not a corner at all — it is "snap onto this vertex", and it has to be judged
+  // as one. Within tolerance of the vertex that is exactly right. Further out it
+  // is a trap: every point near a target is incidentally aligned with two of its
+  // axes, so a point 11 units away down a PERFECT horizontal would throw that
+  // zero-error snap away and travel 11 units onto the vertex. Distance, not
+  // perpendicular distance, is the honest test of "near the vertex" — and it
+  // asks the engaged anchor, since with a rigid set the two locks can reach one
+  // target from different corners, which IS a genuine corner.
+  const ontoOneVertex =
+    chosen !== null &&
+    chosen[0].target.x === chosen[1].target.x &&
+    chosen[0].target.y === chosen[1].target.y &&
+    chosen[0].off.x === chosen[1].off.x &&
+    chosen[0].off.y === chosen[1].off.y;
+  const pair = ontoOneVertex && chosen[0].distSq > tol * tol ? null : chosen;
   if (pair) {
     const [first, second] = pair;
     const corner = solveTwoAxisLock(lineOf(first), first.axis, lineOf(second), second.axis);
