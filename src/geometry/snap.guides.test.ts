@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  axisFamily,
   DEFAULT_SNAP_MODES,
   guideAdmitsFoot,
   guideAlongOf,
   guideAxis,
+  guideConstraint,
   guideFoot,
   guideMoveVector,
   guideNeighbourReadout,
@@ -63,6 +65,29 @@ describe('guide-line geometry helpers', () => {
       const a = guideAxis(o);
       expect((foot.x - q.x) * a.x + (foot.y - q.y) * a.y).toBeCloseTo(0, 12);
       expect(Math.hypot(foot.x - q.x, foot.y - q.y)).toBeCloseTo(guidePerpDist(o, c, q), 12);
+    }
+  });
+
+  it('a guide runs along an axis of the very family its own drag constrains to', () => {
+    // Two routes to the same fact, and the point snapper crosses between them:
+    // a guide's own drag passes `guideConstraint(o)` as the constraint, while
+    // the candidate loop admits guides by reading `axisFamily` off the vector
+    // `guideAxis(o)` returns. If those ever disagreed, dragging a guide would
+    // filter out every parallel guide it should be snapping to.
+    for (const o of ORIENTATIONS) {
+      expect(axisFamily(guideAxis(o))).toBe(guideConstraint(o));
+    }
+    // And the four are genuinely four — a family per orientation, no collisions.
+    expect(new Set(ORIENTATIONS.map((o) => axisFamily(guideAxis(o)))).size).toBe(4);
+  });
+
+  it('reads the same family off either sign convention of an axis', () => {
+    // Candidates are generated from unit axes whose sign is arbitrary; a family
+    // that flipped with the sign would split one family across two slots and
+    // let a lone alignment "corner" with itself.
+    for (const o of ORIENTATIONS) {
+      const a = guideAxis(o);
+      expect(axisFamily({ x: -a.x, y: -a.y })).toBe(axisFamily(a));
     }
   });
 

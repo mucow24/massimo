@@ -118,8 +118,30 @@ export type GridSnap = 'off' | 'horizontal' | 'vertical' | 'both';
  * axis, or a guide's offset. 'x'/'y' name the world axis the point may move
  * along; the two diagonal values are a diagonal guide's own drag, which can only
  * slide its intercept.
+ *
+ * The same four values double as the **axis families** an alignment can belong
+ * to (see {@link axisFamily}): an axis and the constraint that admits it are the
+ * same question asked from two sides, so they are one vocabulary rather than two
+ * that have to be kept in step.
  */
 export type SnapConstraint = 'x' | 'y' | 'diagonal-down' | 'diagonal-up';
+
+/**
+ * Which family a unit alignment axis belongs to. Only two pairings are
+ * perpendicular — ('x', 'y') and the two diagonals — and every other pairing
+ * meets at 45°; non-parallel is what a corner needs, so all six pairings of
+ * distinct families corner.
+ *
+ * Naming a family with its {@link SnapConstraint} is what lets a single-DOF
+ * caller admit an axis by plain equality: a vertical axis locks X, so its family
+ * IS 'x'. Reading the family off the vector rather than off the caller keeps
+ * both sign conventions of an axis in the same family.
+ */
+export function axisFamily(a: Vec2): SnapConstraint {
+  if (a.x === 0) return 'x';
+  if (a.y === 0) return 'y';
+  return a.x > 0 === a.y > 0 ? 'diagonal-down' : 'diagonal-up';
+}
 
 /**
  * What the directional grid means for that one DOF: the modes that constrain an
@@ -1392,9 +1414,11 @@ export interface GridLock {
  * solving the 2×2 system puts the point on both lines at once.
  *
  * Both snappers corner the same way, so the solve lives here rather than once
- * per caller. Callers guarantee the axes are non-parallel (the point snapper
- * only ever pairs perpendicular families; the engine screens its secondary on
- * `SECONDARY_AXIS_SIN_GATE`), which is what keeps `det` off zero.
+ * per caller. Non-PERPENDICULAR is fine and routine — a straight axis against a
+ * diagonal meets at 135°, the commonest corner an octolinear map has. What
+ * callers must guarantee is non-PARALLEL, which is what keeps `det` off zero:
+ * the point snapper pairs two distinct {@link axisFamily} values, and the engine
+ * screens its secondary on `SECONDARY_AXIS_SIN_GATE`.
  */
 export function solveTwoAxisLock(q1: Vec2, a1: Vec2, q2: Vec2, a2: Vec2): Vec2 {
   const p1 = { x: -a1.y, y: a1.x };
