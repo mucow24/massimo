@@ -2,6 +2,7 @@ import type { Vec2 } from './vec';
 import { add, scale, sub, dot, cross } from './vec';
 import {
   axesForAllSnap,
+  axisFamily,
   constrainedGridMode,
   formatMeasurement,
   GRID_INTERVAL,
@@ -75,18 +76,6 @@ const ALL_AXES = axesForAllSnap('all');
 type Candidate = { target: Vec2; axis: Vec2 };
 
 /**
- * The four axis families a point can align along. Every candidate belongs to
- * exactly one, and only two pairings are perpendicular: (`v`, `h`) and
- * (`dDown`, `dUp`). Every other pairing meets at 45°.
- */
-type Family = 'v' | 'h' | 'dDown' | 'dUp';
-
-// Same reading of an axis vector that `axisAllowed` does, so a family and the
-// `constrain` value that admits it can never disagree.
-const familyOf = (a: Vec2): Family =>
-  a.x === 0 ? 'v' : a.y === 0 ? 'h' : a.x > 0 === a.y > 0 ? 'dDown' : 'dUp';
-
-/**
  * The window inside which two candidates count as equally well aligned. Two
  * colinear targets are mathematically tied, but a diagonal's perpendicular
  * distance runs through a cross product with irrational components, so in
@@ -96,9 +85,10 @@ const familyOf = (a: Vec2): Family =>
  */
 const PERP_TIE_EPS = 1e-6;
 
-/** One resolved alignment: the winning candidate for a single axis family. */
+/** One resolved alignment: the winning candidate for a single axis family
+ *  ({@link axisFamily} — every candidate belongs to exactly one). */
 type Lock = {
-  family: Family;
+  family: SnapConstraint;
   /** Perpendicular distance from the engaged anchor to this alignment line.
    *  The admission test, the currency a guide contests in, and what ranks one
    *  family against another. */
@@ -168,24 +158,13 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
     return add(target, scale(axis, q));
   };
 
-  // Single-DOF constraint: a vertical alignment axis locks X, a horizontal
-  // one locks Y; diagonals move both, so an x/y-constrained caller gets
-  // neither. A diagonal-constrained caller can only slide its intercept, so
-  // it keeps exactly its own 45° family (the sign test reads the family off
-  // either sign convention of the unit axis).
-  const axisAllowed = (a: Vec2): boolean => {
-    if (!constrain) return true;
-    switch (constrain) {
-      case 'x':
-        return a.x === 0;
-      case 'y':
-        return a.y === 0;
-      case 'diagonal-down':
-        return a.x !== 0 && a.y !== 0 && a.x > 0 === a.y > 0;
-      case 'diagonal-up':
-        return a.x !== 0 && a.y !== 0 && a.x > 0 !== a.y > 0;
-    }
-  };
+  // Single-DOF constraint: a caller with one degree of freedom keeps exactly
+  // the one family that moves it and nothing else — a vertical alignment axis
+  // locks X, so 'x' keeps the verticals and an x/y caller gets no diagonals at
+  // all (they move both), while a diagonal caller keeps its own 45° family.
+  // That is plain equality because `constrain` and {@link axisFamily} are the
+  // same four values: an axis and the DOF it locks are one fact.
+  const axisAllowed = (a: Vec2): boolean => !constrain || axisFamily(a) === constrain;
   // Grid narrows to the constrained axis the same way ('x' keeps vertical grid
   // lines, which lock X) — `constrainedGridMode`, shared with the guide drag,
   // which asks the same question of its own one DOF.
@@ -216,8 +195,8 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   // judged on alignment — its stand-in target is the drag's own foot, so its
   // distance-to-target IS its perpendicular distance and it would win every
   // proximity contest by construction.
-  const pointsByFamily = new Map<Family, Lock[]>();
-  const guideLocks = new Map<Family, Lock>();
+  const pointsByFamily = new Map<SnapConstraint, Lock[]>();
+  const guideLocks = new Map<SnapConstraint, Lock>();
 
   const offerPoint = (lock: Lock) => {
     const cs = pointsByFamily.get(lock.family);
@@ -235,7 +214,7 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
       const perpDist = perpDistTo(a, target, axis);
       if (perpDist > tol) continue;
       offerPoint({
-        family: familyOf(axis),
+        family: axisFamily(axis),
         perp: perpDist,
         distSq: (a.x - target.x) ** 2 + (a.y - target.y) ** 2,
         target,
@@ -263,7 +242,7 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
       // foot is the target — which is exactly why guides are judged on
       // alignment alone rather than through the proximity tie-break.
       offerGuide({
-        family: familyOf(axis),
+        family: axisFamily(axis),
         perp: d,
         distSq: d * d,
         target: foot,
@@ -283,7 +262,7 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   // let a candidate genuinely tied with the best lose to one that is not tied at
   // all. The winner carries the measurement label and the `tens` notch origin,
   // so an order-dependent pick is a visibly different snap, not just chrome.
-  const bestPointFor = (f: Family): Lock | null => {
+  const bestPointFor = (f: SnapConstraint): Lock | null => {
     const cs = pointsByFamily.get(f);
     if (!cs) return null;
     let minPerp = Infinity;
@@ -299,17 +278,19 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   // Per family, a guide takes the slot only by being better aligned than the
   // best point candidate — the exception that keeps a parallel guide from
   // yanking the point off a near-perfect alignment with a real target.
-  const winnerFor = (f: Family): Lock | null => {
+  const winnerFor = (f: SnapConstraint): Lock | null => {
     const p = bestPointFor(f);
     const g = guideLocks.get(f) ?? null;
     if (!p) return g;
     if (!g) return p;
     return g.perp < p.perp ? g : p;
   };
-  const v = winnerFor('v');
-  const h = winnerFor('h');
-  const dDown = winnerFor('dDown');
-  const dUp = winnerFor('dUp');
+  // The slots, named for the DOF each family locks: `lockX` is the vertical
+  // alignments, `lockY` the horizontals.
+  const lockX = winnerFor('x');
+  const lockY = winnerFor('y');
+  const dDown = winnerFor('diagonal-down');
+  const dUp = winnerFor('diagonal-up');
 
   const gridOn = gridMode !== 'off';
   // Grid is a hard constraint: when an alignment can't be reconciled with the
@@ -367,11 +348,11 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
   // the pointer moved and the order shuffled, which is the same flutter the
   // per-family tie-break exists to kill, one level up.
   const lone = (a: Lock | null, b: Lock | null) => (a ? (b ? null : a) : b);
-  const loneStraight = lone(v, h);
+  const loneStraight = lone(lockX, lockY);
   const loneDiagonal = lone(dDown, dUp);
   const chosen: [Lock, Lock] | null =
-    v && h
-      ? [v, h]
+    lockX && lockY
+      ? [lockX, lockY]
       : dDown && dUp
         ? [dDown, dUp]
         : loneStraight && loneDiagonal
@@ -422,11 +403,14 @@ export function snapPolygonPoint(input: PolygonSnapInput): PolygonSnapResult {
     return { x: p.x, y: p.y, guides: [emit(r.kept === 'primary' ? primary : secondary, p)] };
   }
 
-  // No right angle available: at most one straight family and one diagonal are
-  // in tolerance, and they meet at 45°. The better-aligned wins alone, ties
-  // going to the straight axis — the order below is the tie-break.
+  // No corner. Two ways to land here: only ONE family was in tolerance at all,
+  // or the pair was vetoed as a collapse onto a single vertex. So this scans
+  // all four slots rather than the pair — under the veto a THIRD family may be
+  // live and better aligned than either vetoed axis, and it snaps with its free
+  // slide intact where the pair would have pinned both DOF. The better-aligned
+  // wins, ties going to the straight axes — the order below is the tie-break.
   let single: Lock | null = null;
-  for (const c of [v, h, dDown, dUp]) {
+  for (const c of [lockX, lockY, dDown, dUp]) {
     if (c && (!single || c.perp < single.perp)) single = c;
   }
   if (single) {

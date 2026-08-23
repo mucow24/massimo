@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `26a3729` (2026-08-21, #541) — verified against the live source.** This
+**Up to date as of commit `98528bb` (2026-08-22, #544) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -2209,12 +2209,16 @@ Not persisted, not undoable. Two key pieces:
 
 **`UiMode`** — a discriminated union, **exactly one editor mode active at a time**:
 `idle | placing-station | creating-line-tag | creating-route-bullet | creating-transfer(firstEnd)
-| placing-label | placing-anchor | creating-polygon | placing-svg(image)
-| appending-to-line(lineId, cursor) | layering | editing-station-layout(stationId)`.
+| placing-label | placing-anchor | creating-polygon | placing-line-circle(center)
+| placing-svg(image) | appending-to-line(lineId, cursor) | layering
+| editing-station-layout(stationId)`.
 (`firstEnd: TransferEnd | null` is the transfer end picked by the first click — named `firstEnd`
 rather than `anchor` because an end can now itself BE a transfer anchor, and `anchor.anchorId`
 read like a riddle. `placing-anchor` is sticky click-to-place, like
 placing-station: each click drops one anchor, Esc / right-click exits.)
+(`center: Vec2 | null` is how `placing-line-circle` carries its own half-finished gesture — the
+only PLACEMENT that spans two clicks; `null` is the first phase, see Placement & popovers.
+`creating-transfer` also takes two, but it picks existing ends rather than placing anything.)
 (`cursor: AppendCursor` is the whole Edit Stops
 mode state — a station cursor connects on the next click, an edge cursor splices into that edge,
 `null` means nothing pending; see [appendGestures.ts](src/model/appendGestures.ts).)
@@ -2746,9 +2750,15 @@ of them:
   both axes. `proposed` stays the grid subject (grid keeps THAT point on the lattice, in whose
   frame alignments must reconcile) while guides, measurement labels and `tens` notching all speak
   from the anchor that engaged. Text labels are the consumer, drag AND placement.
-  `constrain: 'x' | 'y' | 'diagonal-down' | 'diagonal-up'` restricts it for single-DOF
-  consumers (edge resizes, guide drags — the diagonal values are the diagonal guides' own
-  drags) so guides never show a snap the caller discards. When `tens` is on **and grid is
+  `constrain: 'x' | 'y' | 'diagonal-down' | 'diagonal-up'` (`SnapConstraint`) restricts it for
+  single-DOF consumers (edge resizes, guide drags — the diagonal values are the diagonal guides'
+  own drags) so guides never show a snap the caller discards. Those same four values NAME the
+  axis families, which is why admitting an axis is plain equality: `axisFamily(axis)` reads the
+  family off the vector (a vertical axis locks X, so its family IS `'x'`, and either sign
+  convention of the vector answers the same), and a constrained caller keeps the one family that
+  equals its `constrain`. One vocabulary, so an axis and the DOF it locks cannot drift apart —
+  and `guideConstraint(orientation)`, which a guide's own drag passes, is the same value the
+  candidate loop derives from `guideAxis(orientation)`. When `tens` is on **and grid is
   off**, an engaged alignment's free axis (the slide along the guide) is notched to a whole grid
   length from the target — the same "Snap to grid length" idea extended past the skeleton, so
   any snapped object lands a clean step from what it caught. Corners have no free DOF; grid
@@ -3654,15 +3664,24 @@ same rule for translation.
 
 ### Placement & popovers
 
-`usePlacementDispatch.handleCanvasPlace(e)` is a per-`uiMode` dispatch. `placing-station` /
-`creating-route-bullet` / `placing-anchor` are **sticky** (click-click-click drops repeatedly,
-Esc / right-click exits); `placing-label` /
-`creating-polygon` / `placing-svg` are single-shot (drop, exit, auto-select to open the
-popover/handles). Cursor-following ghost previews (`*PlacingPreview`, all `opacity 0.5`,
-`pointerEvents none`) feed synthetic items to the real views. Every placement mode snaps ghost
+`usePlacementDispatch.handleCanvasPlace(e)` is a per-`uiMode` dispatch, and a placement mode is
+one of three shapes. `placing-station` / `creating-route-bullet` / `placing-anchor` are
+**sticky** (click-click-click drops repeatedly, Esc / right-click exits). `placing-label` /
+`creating-polygon` / `placing-svg` are **single-shot** (drop, exit, auto-select to open the
+popover/handles). `placing-line-circle` is the one **two-click** mode: the first click arms the
+CENTER into the mode itself (`center: Vec2 | null` — a placement's mode payload is otherwise set
+on ENTRY, like `placing-svg`'s parsed image, so this is the one a click writes), the second reads
+the radius off the cursor's distance from it, then exits and selects. Two clicks because a ring
+has a size as well as a position and no default worth guessing — the ghost ring and its diameter
+readout between the clicks are the sizing UI.
 
-- drop through the shared `snapPlacement` (see Snapping) — same reference point and prefs as
-  the item's first drag, Shift-click bypasses, preview guides render through `SnapGuides`.
+Cursor-following ghost previews (`*PlacingPreview`, all `opacity 0.5`, `pointerEvents none`) feed
+synthetic items to the real views. Placement snaps ghost + drop through the shared
+`snapPlacement` (see Snapping) — same reference point and prefs as the item's first drag,
+Shift-click bypasses, preview guides render through `SnapGuides`. The line circle's second click
+is the one deliberate exception: it takes the RAW cursor distance, because a rim point has
+nothing meaningful to align to and `snapDraggedLineCircleRadius`'s quarter-unit canonicalization
+already owns the rounding (its first click snaps like any bare point).
 
 `ItemPopovers` mounts the single popover for the sole selection — including the station editor
 (see UI chrome) and the transfer popover (whose selection is the single-id

@@ -855,10 +855,21 @@ describe('regionPaintPlan', () => {
  * per-line candidate prefilter, scratch-array scoring — are all claimed
  * output-identical; this property is the claim, executable. Reference kept
  * verbatim on purpose: if the two ever disagree, the reference is the spec.
+ *
+ * One optimization outlived its old code rather than replacing it: the pairKey
+ * index is an OPTIONAL argument to the still-shared `evaluateAnchor`, so the
+ * reference reaches the pre-optimization behavior by withholding it rather than
+ * by copying a function — see `refEvaluateAnchor`.
  */
 describe('bindAssignments cross-check vs reference implementation', () => {
   type Evaluated = { p: Vec2; d: number };
 
+  // The one step the reference does NOT copy — and the omitted third argument
+  // is the whole point. `evaluateAnchor(anchor, bands)` walks every band
+  // linearly; production hands it the pairKey index instead. Calling the same
+  // function down its unindexed branch is what makes the property a check on
+  // that index: pass `bandsByPairKey` here too and the cross-check still
+  // passes, having stopped testing anything.
   const refEvaluateAnchor = (
     anchor: RegionAssignment['anchors'][number],
     bands: ReturnType<typeof hBand>[],

@@ -101,6 +101,27 @@ describe('two perpendicular diagonals form a corner', () => {
     expect(r.guides).toHaveLength(1);
   });
 
+  it('two axes reaching ONE target from different anchors are a real corner', () => {
+    // The same-vertex veto above asks whether the two locks collapse the point
+    // onto a vertex, and with a rigid anchor set they need not: here the far
+    // corner catches the target's vertical while the primary catches its
+    // horizontal, so the "corner" is the crossing of two lines the SET must sit
+    // on, not the target itself — and the set stays 100 units from it. Judging
+    // by target identity alone would veto this and drop one of the two locks.
+    const A = { x: 0, y: 0 };
+    const B = { x: 100, y: 50 };
+    const r = snapPolygonPoint({
+      proposed: A,
+      anchors: [A, B],
+      lineTargets: [],
+      allTargets: [{ x: 102, y: 3 }], // vertical reachable via B, horizontal via A
+      modes: allAxes(),
+    });
+    expect(r.x).toBeCloseTo(2, 6);
+    expect(r.y).toBeCloseTo(3, 6);
+    expect(r.guides).toHaveLength(2);
+  });
+
   it('stays inside the corner displacement bound, with no cliff across the diagonals reach', () => {
     // Walk out through the band where a single target's two diagonals are both
     // in tolerance (|d| <= sqrt(2)*tol) while its vertical is NOT. Nothing may
