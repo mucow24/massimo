@@ -1,6 +1,15 @@
 import type { ReactNode } from 'react';
 import { SegmentedToggle } from '../SegmentedToggle';
-import { LABEL_ALIGNS, LABEL_VALIGNS, isLabelAlign, isLabelValign } from '../../model/transforms';
+import {
+  AUTO_H_ALIGNS,
+  AUTO_V_ALIGNS,
+  LABEL_ALIGNS,
+  LABEL_VALIGNS,
+  isAutoHAlign,
+  isAutoVAlign,
+  isLabelAlign,
+  isLabelValign,
+} from '../../model/transforms';
 import type { AutoHAlign, AutoVAlign, LabelAlign, LabelValign } from '../../model/types';
 
 const ICON_SIZE = 15;
@@ -84,6 +93,31 @@ const V_ALIGN_CHIPS: Record<LabelValign, { label: string; title: string }> = {
   },
 };
 
+// The wand-on clusters, same discipline: a `Record` over the union so a rung
+// added to `AutoHAlign`/`AutoVAlign` fails to compile here, plus the AUTO
+// sentinel's own chip — which is NOT a union member (absent IS auto), so it is
+// spelled beside the table rather than inside it.
+const AUTO_H_CHIPS: Record<AutoHAlign, { label: string; title: string }> = {
+  start: { label: 'Auto align: left', title: 'Left' },
+  middle: { label: 'Auto align: center', title: 'Center' },
+  end: { label: 'Auto align: right', title: 'Right' },
+};
+const AUTO_H_AUTO_CHIP = { label: 'Auto align: auto', title: 'Auto (from position)' };
+
+const AUTO_V_CHIPS: Record<AutoVAlign, { label: string; title: string }> = {
+  up: { label: 'Auto align V: up', title: 'Up — bottom line anchors, lines stack up' },
+  down: { label: 'Auto align V: down', title: 'Down — top line anchors, lines stack down' },
+};
+const AUTO_V_AUTO_CHIP = {
+  label: 'Auto align V: auto',
+  title: 'Auto (line nearest the station)',
+};
+
+// The icon each auto-V rung borrows from the manual valign glyphs: 'up' stacks
+// like auto-up, 'down' like auto-down, and the sentinel takes the neutral
+// middle (there is no auto-V glyph of its own).
+const AUTO_V_ICON: Record<AutoVAlign, LabelValign> = { up: 'auto-up', down: 'auto-down' };
+
 /**
  * Manual horizontal alignment (wand OFF): auto / left / center / right. `auto`
  * is the legacy half-plane snap — kept so old maps (every station defaults to
@@ -152,32 +186,14 @@ export function AutoHAlignButtons({
     <AlignSegmentedGroup
       ariaLabel="Auto horizontal alignment"
       value={value ?? AUTO}
-      onSelect={(v) => onSet(v === AUTO ? null : (v as AutoHAlign))}
+      onSelect={(v) => (v === AUTO ? onSet(null) : isAutoHAlign(v) && onSet(v))}
       segments={[
-        {
-          value: AUTO,
-          icon: <HAlignIcon mode="auto" />,
-          label: 'Auto align: auto',
-          title: 'Auto (from position)',
-        },
-        {
-          value: 'start',
-          icon: <HAlignIcon mode="start" />,
-          label: 'Auto align: left',
-          title: 'Left',
-        },
-        {
-          value: 'middle',
-          icon: <HAlignIcon mode="middle" />,
-          label: 'Auto align: center',
-          title: 'Center',
-        },
-        {
-          value: 'end',
-          icon: <HAlignIcon mode="end" />,
-          label: 'Auto align: right',
-          title: 'Right',
-        },
+        { value: AUTO, icon: <HAlignIcon mode="auto" />, ...AUTO_H_AUTO_CHIP },
+        ...AUTO_H_ALIGNS.map((mode) => ({
+          value: mode,
+          icon: <HAlignIcon mode={mode} />,
+          ...AUTO_H_CHIPS[mode],
+        })),
       ]}
     />
   );
@@ -199,26 +215,14 @@ export function AutoVAlignButtons({
     <AlignSegmentedGroup
       ariaLabel="Auto vertical alignment"
       value={value ?? AUTO}
-      onSelect={(v) => onSet(v === AUTO ? null : (v as AutoVAlign))}
+      onSelect={(v) => (v === AUTO ? onSet(null) : isAutoVAlign(v) && onSet(v))}
       segments={[
-        {
-          value: AUTO,
-          icon: <VAlignIcon mode="middle" />,
-          label: 'Auto align V: auto',
-          title: 'Auto (line nearest the station)',
-        },
-        {
-          value: 'up',
-          icon: <VAlignIcon mode="auto-up" />,
-          label: 'Auto align V: up',
-          title: 'Up — bottom line anchors, lines stack up',
-        },
-        {
-          value: 'down',
-          icon: <VAlignIcon mode="auto-down" />,
-          label: 'Auto align V: down',
-          title: 'Down — top line anchors, lines stack down',
-        },
+        { value: AUTO, icon: <VAlignIcon mode="middle" />, ...AUTO_V_AUTO_CHIP },
+        ...AUTO_V_ALIGNS.map((mode) => ({
+          value: mode,
+          icon: <VAlignIcon mode={AUTO_V_ICON[mode]} />,
+          ...AUTO_V_CHIPS[mode],
+        })),
       ]}
     />
   );

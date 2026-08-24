@@ -167,4 +167,53 @@ describe('station label align/valign membership gate', () => {
     expect(lab.rotation).toBe(5);
     expect(lab.offset).toBe(4);
   });
+
+  // The wand's two multi-line tuning fields are stored unions just like
+  // align/valign, and both are OPTIONAL — absent means "auto" (octant-derived),
+  // so a non-member heals by being dropped rather than replaced. Left standing,
+  // `autoHAlign` is written to the `<text>` element's `text-anchor` verbatim
+  // (labelLayout's `textAnchor`), and `autoVAlign` decides which line of a
+  // block anchors.
+  it('drops a non-member autoHAlign / autoVAlign back to auto', () => {
+    const lab = labelOf(
+      fileWithLabel({
+        ...plain,
+        align: 'auto',
+        valign: 'auto-down',
+        autoHAlign: 'banana',
+        autoVAlign: 'sideways',
+      }),
+    );
+    expect(lab.autoHAlign).toBeUndefined();
+    expect(lab.autoVAlign).toBeUndefined();
+  });
+
+  it('drops a wrong-typed autoHAlign / autoVAlign', () => {
+    const lab = labelOf(
+      fileWithLabel({
+        ...plain,
+        align: 'auto',
+        valign: 'auto-down',
+        autoHAlign: 7,
+        autoVAlign: {},
+      }),
+    );
+    expect(lab.autoHAlign).toBeUndefined();
+    expect(lab.autoVAlign).toBeUndefined();
+  });
+
+  it('leaves every auto-tuning ladder member untouched', () => {
+    for (const autoHAlign of ['start', 'middle', 'end'] as const) {
+      expect(
+        labelOf(fileWithLabel({ ...plain, align: 'auto', valign: 'auto-down', autoHAlign }))
+          .autoHAlign,
+      ).toBe(autoHAlign);
+    }
+    for (const autoVAlign of ['up', 'down'] as const) {
+      expect(
+        labelOf(fileWithLabel({ ...plain, align: 'auto', valign: 'auto-down', autoVAlign }))
+          .autoVAlign,
+      ).toBe(autoVAlign);
+    }
+  });
 });

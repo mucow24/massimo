@@ -1,11 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  axesForAllSnap,
-  maybeSnapToGrid,
-  snapDraggedStation,
-  snapPointToGrid,
-  type SnapModes,
-} from './snap';
+import { axesForAllSnap, snapDraggedStation, snapPointToGrid, type SnapModes } from './snap';
 import { makeLine, makeStation, makeStop } from '../test/fixtures';
 import type { Line, LineId, Station, StationId, StopCell } from '../model/types';
 
@@ -1237,11 +1231,6 @@ describe('grid interval: 5px grid', () => {
     expect(snapPointToGrid(33, 33, 'both', 20)).toEqual({ x: 40, y: 40 });
   });
 
-  it('maybeSnapToGrid threads the interval', () => {
-    const modes: SnapModes = { ...NO_MODES, grid: 'both' };
-    expect(maybeSnapToGrid({ x: 7, y: 7 }, modes, 5)).toEqual({ x: 5, y: 5 });
-  });
-
   it('snapDraggedStation grid fallback notches to 5 when gridInterval is 5', () => {
     const dragged = makeStation({ id: 'd', x: 0, y: 0, stops: [makeStop('L1')] });
     const r = snapDraggedStation({
@@ -1280,33 +1269,6 @@ describe('grid interval: 5px grid', () => {
     });
     expect(r.y).toBeCloseTo(0, 5);
     expect(r.x).toBeCloseTo(25, 5);
-  });
-});
-
-describe('maybeSnapToGrid', () => {
-  const ALL_OFF: SnapModes = { ...NO_MODES };
-  it('returns the input unchanged when grid mode is off', () => {
-    expect(maybeSnapToGrid({ x: 27, y: 43 }, ALL_OFF)).toEqual({ x: 27, y: 43 });
-  });
-  it('snaps to the nearest grid point when grid mode is on', () => {
-    expect(maybeSnapToGrid({ x: 27, y: 43 }, { ...ALL_OFF, grid: 'both' })).toEqual({
-      x: 30,
-      y: 40,
-    });
-  });
-  it('passes null through unchanged', () => {
-    expect(maybeSnapToGrid(null, { ...ALL_OFF, grid: 'both' })).toBeNull();
-    expect(maybeSnapToGrid(null, ALL_OFF)).toBeNull();
-  });
-  it("directional grid snaps only the locked axis ('horizontal' → Y)", () => {
-    expect(maybeSnapToGrid({ x: 27, y: 43 }, { ...ALL_OFF, grid: 'horizontal' })).toEqual({
-      x: 27,
-      y: 40,
-    });
-    expect(maybeSnapToGrid({ x: 27, y: 43 }, { ...ALL_OFF, grid: 'vertical' })).toEqual({
-      x: 30,
-      y: 43,
-    });
   });
 });
 

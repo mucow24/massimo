@@ -1776,7 +1776,7 @@ describe('serialize / parse — round-trip property', () => {
     | { kind: 'moveStation'; x: number; y: number }
     | { kind: 'deleteStation' }
     | { kind: 'deleteLine' }
-    | { kind: 'moveLineInOrder'; dir: -1 | 1 }
+    | { kind: 'rotateLineOrder' }
     | { kind: 'setLineWidth'; w: number };
 
   const actionArb = fc.oneof(
@@ -1791,10 +1791,7 @@ describe('serialize / parse — round-trip property', () => {
     }),
     fc.constant<Action>({ kind: 'deleteStation' }),
     fc.constant<Action>({ kind: 'deleteLine' }),
-    fc.record({
-      kind: fc.constant<'moveLineInOrder'>('moveLineInOrder'),
-      dir: fc.constantFrom<-1 | 1>(-1, 1),
-    }),
+    fc.constant<Action>({ kind: 'rotateLineOrder' }),
     fc.record({
       kind: fc.constant<'setLineWidth'>('setLineWidth'),
       w: fc.integer({ min: -5, max: 40 }),
@@ -1853,9 +1850,13 @@ describe('serialize / parse — round-trip property', () => {
           if (l) doc = T.deleteLine(doc, l);
           break;
         }
-        case 'moveLineInOrder': {
-          const l = firstKey(doc.lines);
-          if (l) doc = T.moveLineInOrder(doc, l, a.dir);
+        case 'rotateLineOrder': {
+          // Nothing in the app reorders lines (region painting settles which
+          // one wins where two bodies overlap), so the fuzzer rotates
+          // `lineOrder` itself — the round-trip must carry a stacking order
+          // that is not creation order.
+          if (doc.lineOrder.length > 1)
+            doc = { ...doc, lineOrder: [...doc.lineOrder.slice(1), doc.lineOrder[0]] };
           break;
         }
         case 'setLineWidth': {

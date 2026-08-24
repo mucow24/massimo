@@ -4,10 +4,16 @@ import { parse } from './serialize';
 import * as T from './transforms';
 import {
   makeDoc,
+  makeGuide,
   makeLine,
+  makeLineCircle,
   makeLineTag,
+  makePolygon,
+  makeRouteBullet,
   makeStation,
   makeStop,
+  makeSvgImage,
+  makeTextLabel,
   makeTransfer,
 } from '../test/fixtures';
 import type { MapDoc } from './types';
@@ -23,9 +29,76 @@ const cleanDoc = (): MapDoc =>
     styles: Object.values(T.DEFAULT_STYLES),
   });
 
+// The same doc carrying one record of EVERY id-keyed collection, so a test can
+// ask each of them the same question.
+const populatedDoc = (): MapDoc =>
+  makeDoc({
+    stations: [
+      makeStation({ id: 's1', stops: [makeStop('l1')] }),
+      makeStation({ id: 's2', x: 100, stops: [makeStop('l1')] }),
+    ],
+    lines: [makeLine({ id: 'l1', stations: ['s1', 's2'] })],
+    lineTags: [makeLineTag({ id: 't1' })],
+    routeBullets: [makeRouteBullet({ id: 'rb1' })],
+    transferAnchors: [{ id: 'fa1', x: 40, y: 40 }],
+    transfers: [makeTransfer({ id: 'x1' })],
+    textLabels: [makeTextLabel({ id: 'g1' })],
+    polygons: [makePolygon({ id: 'pg1' })],
+    regionAssignments: [{ id: 'r1', lineId: 'l1', lines: ['l1'], anchors: [] }],
+    svgImages: [makeSvgImage({ id: 'im1' })],
+    lineCircles: [makeLineCircle({ id: 'lc1' })],
+    guides: [makeGuide({ id: 'gd1' })],
+    styles: Object.values(T.DEFAULT_STYLES),
+  });
+
+/**
+ * Which of a doc's collections are keyed records whose records carry their own
+ * `id` — read off the doc rather than restated as a list, so a collection added
+ * to `MapDoc` joins the sweep below as soon as `populatedDoc` carries one.
+ */
+const idKeyedCollections = (doc: MapDoc): string[] =>
+  Object.entries(doc)
+    .filter(
+      ([, value]) =>
+        !!value &&
+        typeof value === 'object' &&
+        !Array.isArray(value) &&
+        Object.values(value).length > 0 &&
+        Object.values(value).every((r) => !!r && typeof (r as { id?: unknown }).id === 'string'),
+    )
+    .map(([key]) => key);
+
 describe('auditDoc', () => {
   it('a canonical doc audits clean', () => {
     expect(auditDoc(cleanDoc())).toEqual([]);
+  });
+
+  it('a doc carrying one of everything audits clean', () => {
+    expect(auditDoc(populatedDoc())).toEqual([]);
+  });
+
+  // A record's KEY is its identity: it is what every order array, every
+  // `styleId` tag, every selection and every drag carries around, and what the
+  // import path rewrites the inner `id` to (`sanitizeDocReferences`'s sweep,
+  // `sanitizeStyles`). A record filed under a key its own `id` disagrees with
+  // is therefore a writer bug the export door must catch — in EVERY collection,
+  // not just the two that happened to be spelled out.
+  it('flags an id/key mismatch in every id-keyed collection', () => {
+    const collections = idKeyedCollections(populatedDoc());
+    // Guards the sweep itself: a fixture that stopped populating a collection
+    // would otherwise silently shrink this test to nothing.
+    expect(collections.length).toBeGreaterThanOrEqual(13);
+    const missed = collections.filter((collection) => {
+      const doc = populatedDoc();
+      const records = doc[collection as keyof MapDoc] as Record<string, { id: string }>;
+      const key = Object.keys(records)[0];
+      (doc as unknown as Record<string, Record<string, unknown>>)[collection] = {
+        ...records,
+        [key]: { ...records[key], id: 'wrong-id' },
+      };
+      return !auditDoc(doc).join('\n').includes('wrong-id');
+    });
+    expect(missed).toEqual([]);
   });
 
   it('states the app legitimately produces are not violations', () => {

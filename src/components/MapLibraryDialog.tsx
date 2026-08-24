@@ -144,6 +144,50 @@ function Thumb({ src }: { src?: string }) {
 }
 
 /**
+ * The click-to-edit name field both columns use — a map's name on the left, a
+ * version's on the right. Same interaction as {@link useInlineRename}, which
+ * every other inline rename in the app runs on, but not that hook: a commit
+ * here is ASYNC (it awaits IndexedDB and can raise the dialog's error line), and
+ * Escape has to be kept out of the Dialog's own dismiss, which listens on
+ * `document`. What it does share is the behaviour, which is the part a user
+ * feels — entry selects the whole name, so typing replaces it; Enter and blur
+ * commit; Escape cancels without a write.
+ */
+function RenameField({
+  label,
+  initial,
+  placeholder,
+  onCommit,
+  onCancel,
+}: {
+  label: string;
+  initial: string;
+  placeholder?: string;
+  onCommit: (draft: string) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <input
+      autoFocus
+      aria-label={label}
+      defaultValue={initial}
+      placeholder={placeholder}
+      onFocus={(e) => e.currentTarget.select()}
+      // A row click selects the map; a click INSIDE its own name field must not.
+      onClick={(e) => e.stopPropagation()}
+      onBlur={(e) => onCommit(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') onCommit(e.currentTarget.value);
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          onCancel();
+        }
+      }}
+    />
+  );
+}
+
+/**
  * The library manager: maps on the left, the selected map's versions on the
  * right. Reached from Load → From library…, and the only place maps are renamed
  * or deleted — you never have to open a map to throw it away.
@@ -454,21 +498,11 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
                       <Thumb src={m.thumb} />
                       <div className="dialog-row-body">
                         {renamingId === m.id ? (
-                          <input
-                            autoFocus
-                            aria-label={`Rename ${m.name}`}
-                            defaultValue={m.name}
-                            onClick={(e) => e.stopPropagation()}
-                            onBlur={(e) => void onCommitRename(m.id, e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter')
-                                void onCommitRename(m.id, e.currentTarget.value);
-                              // Escape cancels the rename without closing the dialog.
-                              if (e.key === 'Escape') {
-                                e.stopPropagation();
-                                setRenamingId(null);
-                              }
-                            }}
+                          <RenameField
+                            label={`Rename ${m.name}`}
+                            initial={m.name}
+                            onCommit={(draft) => void onCommitRename(m.id, draft)}
+                            onCancel={() => setRenamingId(null)}
                           />
                         ) : (
                           <strong>{m.name}</strong>
@@ -539,20 +573,12 @@ export function MapLibraryDialog({ onClose, onOpenVersion }: Props) {
                       <Thumb src={r.thumb} />
                       <div className="dialog-row-body">
                         {namingVersionId === r.id ? (
-                          <input
-                            autoFocus
-                            aria-label={`Name version ${r.version}`}
-                            defaultValue={r.name ?? ''}
+                          <RenameField
+                            label={`Name version ${r.version}`}
+                            initial={r.name ?? ''}
                             placeholder="beta 1 — needs work"
-                            onBlur={(e) => void onCommitVersionName(r.id, e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter')
-                                void onCommitVersionName(r.id, e.currentTarget.value);
-                              if (e.key === 'Escape') {
-                                e.stopPropagation();
-                                setNamingVersionId(null);
-                              }
-                            }}
+                            onCommit={(draft) => void onCommitVersionName(r.id, draft)}
+                            onCancel={() => setNamingVersionId(null)}
                           />
                         ) : (
                           <span className="version-row-title">

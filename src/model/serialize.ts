@@ -16,6 +16,8 @@ import {
   TEXT_LABEL_TRACKING_MIN,
   bumpWeightByIndex,
   canonicalStationLabelStyle,
+  isAutoHAlign,
+  isAutoVAlign,
   isLabelAlign,
   isLabelValign,
   isLabelWeight,
@@ -200,18 +202,24 @@ export function sanitizeStations(stations: Record<string, Station>): {
 }
 
 /**
- * Hold every station label's `align`/`valign` to its ladder, replacing anything
- * else with the historical default pair. Both are STORED string unions that no
- * schema bump ever touches, so this is judged by MEMBERSHIP and runs UNGATED on
- * both load paths — a hand-edited or foreign file can carry a bad value at any
- * version, and nothing downstream re-checks: `labelLayout` resolves valign by a
- * ladder of `===` arms whose last arm is `middle`, so a stray string lays the
- * label out under an alignment nobody picked while the inspector's cluster
- * shows no segment selected.
+ * Hold every station label's four alignment fields to their ladders. All four
+ * are STORED string unions that no schema bump ever touches, so this is judged
+ * by MEMBERSHIP and runs UNGATED on both load paths — a hand-edited or foreign
+ * file can carry a bad value at any version, and nothing downstream re-checks.
  *
- * The legacy single `valign: 'auto'` (from before the auto-down/auto-up split)
- * needs no arm of its own: it is a non-member, and `auto-down` — the rung that
- * kept its geometry — is what the fallback already is.
+ * The two REQUIRED fields heal by replacement, to the historical default pair:
+ * `labelLayout` resolves valign by a ladder of `===` arms whose last arm is
+ * `middle`, so a stray string lays the label out under an alignment nobody
+ * picked while the inspector's cluster shows no segment selected. The legacy
+ * single `valign: 'auto'` (from before the auto-down/auto-up split) needs no arm
+ * of its own: it is a non-member, and `auto-down` — the rung that kept its
+ * geometry — is what the fallback already is.
+ *
+ * The wand's two OPTIONAL tuning fields heal by being DROPPED, because absent
+ * is their "auto" — there is no default member to replace them with. Left
+ * standing, `autoHAlign` reaches the `<text>` element's `text-anchor` verbatim
+ * (labelLayout's `textAnchor`), which is a stray string in the emitted SVG, and
+ * `autoVAlign` picks which line of a block anchors.
  *
  * Reference-stable on a canonical doc, which the rehydrate path requires
  * (`storeMigrate.test.ts` pins `expect(out).toBe(input)` pass-through).
@@ -230,19 +238,28 @@ export function sanitizeLabelAlignment(stations: Record<string, Station>): {
     // whereas parse() has already been through `repairCoreShapes`. Either way
     // there is nothing to judge until a label exists, and what materializes one
     // materializes the canonical pair with it.
-    if (!label || (isLabelAlign(label.align) && isLabelValign(label.valign))) {
+    if (!label) {
+      out[id] = st;
+      continue;
+    }
+    // `in` rather than a bare read, so an explicit `autoHAlign: undefined` is
+    // caught too: the canonical stored form is the key ABSENT, not present and
+    // empty, and the delete below is what puts it there.
+    const badAutoH = 'autoHAlign' in label && !isAutoHAlign(label.autoHAlign);
+    const badAutoV = 'autoVAlign' in label && !isAutoVAlign(label.autoVAlign);
+    if (isLabelAlign(label.align) && isLabelValign(label.valign) && !badAutoH && !badAutoV) {
       out[id] = st;
       continue;
     }
     changed = true;
-    out[id] = {
-      ...st,
-      label: {
-        ...label,
-        align: isLabelAlign(label.align) ? label.align : LABEL_ALIGN_DEFAULT,
-        valign: isLabelValign(label.valign) ? label.valign : LABEL_VALIGN_DEFAULT,
-      },
+    const nextLabel = {
+      ...label,
+      align: isLabelAlign(label.align) ? label.align : LABEL_ALIGN_DEFAULT,
+      valign: isLabelValign(label.valign) ? label.valign : LABEL_VALIGN_DEFAULT,
     };
+    if (badAutoH) delete nextLabel.autoHAlign;
+    if (badAutoV) delete nextLabel.autoVAlign;
+    out[id] = { ...st, label: nextLabel };
   }
   return { stations: out, changed };
 }

@@ -1,12 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  legibleTextOn,
-  withAlpha,
-  blendOver,
-  desaturateColor,
-  normalizeHex,
-  parseHexA,
-} from './color';
+import { legibleTextOn, withAlpha, desaturateColor, normalizeHex, parseHexA } from './color';
 import { PALETTES } from '../model/palettes';
 
 describe('legibleTextOn', () => {
@@ -57,35 +50,6 @@ describe('withAlpha', () => {
   it('passes the alpha through verbatim (no clamping)', () => {
     expect(withAlpha('#000000', 0)).toBe('rgba(0, 0, 0, 0)');
     expect(withAlpha('#ffffff', 1)).toBe('rgba(255, 255, 255, 1)');
-  });
-});
-
-describe('blendOver', () => {
-  it('returns the foreground unchanged at alpha 1', () => {
-    expect(blendOver('#3a7bd5', 1)).toBe('#3a7bd5');
-  });
-
-  it('returns the background (white by default) at alpha 0', () => {
-    expect(blendOver('#3a7bd5', 0)).toBe('#ffffff');
-  });
-
-  it('honors a custom background', () => {
-    expect(blendOver('#ffffff', 0, '#000000')).toBe('#000000');
-    // Half-blend of white over black → mid grey (128 after rounding).
-    expect(blendOver('#ffffff', 0.5, '#000000')).toBe('#808080');
-  });
-
-  it('clamps alpha below 0 to fully transparent (returns bg)', () => {
-    expect(blendOver('#3a7bd5', -1)).toBe('#ffffff');
-  });
-
-  it('clamps alpha above 1 to fully opaque (returns fg)', () => {
-    expect(blendOver('#3a7bd5', 2)).toBe('#3a7bd5');
-  });
-
-  it('rounds each channel of the blended result', () => {
-    // fg #010101 at 0.5 over #000000 → 0.5 per channel → rounds to 1 → #010101.
-    expect(blendOver('#010101', 0.5, '#000000')).toBe('#010101');
   });
 });
 
@@ -201,13 +165,11 @@ describe('parseHex robustness (malformed / alpha input)', () => {
     expect(legibleTextOn('not-a-color')).toBe('#fff');
   });
 
-  it('blendOver and desaturateColor fall back to black for malformed input', () => {
+  it('desaturateColor falls back to black for malformed input', () => {
     // Pin the resulting color, not just "some 6-digit hex": a fallback that
     // mis-parsed 'bogus' into another valid color (the exact bug the sibling
     // withAlpha tests guard against) would still match /^#[0-9a-f]{6}$/ but
-    // fail here. parseHex('bogus') → black [0,0,0]; blendOver black over the
-    // white default bg at 0.5 → #808080; desaturateColor of black stays black.
-    expect(blendOver('bogus', 0.5)).toBe('#808080');
+    // fail here. parseHex('bogus') → black [0,0,0], which stays black.
     expect(desaturateColor('bogus', 0.5)).toBe('#000000');
   });
 });

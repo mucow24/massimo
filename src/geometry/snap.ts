@@ -85,21 +85,6 @@ export function snapPointToGrid(
 }
 
 /**
- * Gate for grid snap at a placement site. Returns the world point snapped
- * to the grid when `modes.grid` is on (any direction); otherwise the point
- * unchanged. Null passes through so callers can pipe a cursor that may be
- * unset.
- */
-export function maybeSnapToGrid<T extends { x: number; y: number } | null>(
-  world: T,
-  modes: SnapModes,
-  gridInterval: number = GRID_INTERVAL,
-): T {
-  if (!world || modes.grid === 'off') return world;
-  return snapPointToGrid(world.x, world.y, modes.grid, gridInterval) as T;
-}
-
-/**
  * Directional state for "Snap to all". The button cycles through these:
  * off → horizontal-only → vertical-only → diagonal-only → all. Each value
  * selects which world axes the alignment may engage (see {@link axesForAllSnap}).

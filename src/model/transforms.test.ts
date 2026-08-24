@@ -1635,21 +1635,6 @@ describe('deleteLine', () => {
   });
 });
 
-describe('moveLineInOrder', () => {
-  it('swaps adjacent indices and clamps at boundaries', () => {
-    const doc = makeDoc({
-      lines: [makeLine({ id: 'A' }), makeLine({ id: 'B' }), makeLine({ id: 'C' })],
-      lineOrder: ['A', 'B', 'C'],
-    });
-    // A boundary no-op returns the SAME doc reference (not just an equal order)
-    // so history grouping doesn't push a spurious undo entry — see the guard in
-    // moveLineInOrder / moveInOrder.
-    expect(T.moveLineInOrder(doc, 'A', -1)).toBe(doc); // already at front
-    expect(T.moveLineInOrder(doc, 'A', 1).lineOrder).toEqual(['B', 'A', 'C']);
-    expect(T.moveLineInOrder(doc, 'C', 1)).toBe(doc); // already at back
-  });
-});
-
 describe('clearAll', () => {
   it('clearAll wipes every collection', () => {
     const doc = makeDoc({
