@@ -731,17 +731,23 @@ export function Toolbar() {
         </SubMenu>
         <MenuItem onClick={onClear}>Clear</MenuItem>
       </Menu>
+      {/* Grouped by what you get, not by how you place it: the two things a
+          map is made of, the transfer pair, the free-standing decorations,
+          and the two that hang off an existing line. */}
       <Menu label="Add">
         <MenuItem onClick={onAddStation}>Stations</MenuItem>
         <MenuItem onClick={onAddLine}>Line</MenuItem>
-        <MenuItem onClick={onAddLineTag}>Line tags / chevrons</MenuItem>
-        <MenuItem onClick={onAddRouteBullet}>Route bullets</MenuItem>
+        <MenuSeparator />
         <MenuItem onClick={onAddTransfer}>Transfer</MenuItem>
         <MenuItem onClick={onAddAnchor}>Transfer anchor</MenuItem>
+        <MenuSeparator />
         <MenuItem onClick={onAddLabel}>Label</MenuItem>
-        <MenuItem onClick={onAddPolygon}>Polygon</MenuItem>
-        <MenuItem onClick={onAddLineCircle}>Line circle</MenuItem>
         <MenuItem onClick={onAddImage}>Image / SVG…</MenuItem>
+        <MenuItem onClick={onAddPolygon}>Polygon</MenuItem>
+        <MenuItem onClick={onAddRouteBullet}>Route bullet</MenuItem>
+        <MenuSeparator />
+        <MenuItem onClick={onAddLineCircle}>Line circle</MenuItem>
+        <MenuItem onClick={onAddLineTag}>Line tags / chevrons</MenuItem>
       </Menu>
       <ToolButtons />
       <span className="tool-group-divider" aria-hidden="true" />
