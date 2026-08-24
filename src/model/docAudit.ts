@@ -2,6 +2,31 @@ import { edgeEndpoints } from './lineTopology';
 import { pairKeyOf } from './pairKey';
 import type { MapDoc, StyleKind } from './types';
 
+// Every keyed collection whose records carry their own `id`, with the noun a
+// violation names it by. The KEY is the identity — it is what the order arrays,
+// the `styleId` tags, the selection and every drag carry around — so a record
+// filed under a key its own `id` disagrees with is a writer bug, and one that
+// tags items with a dangling id if the record is a StyleDef. This is exactly
+// the set the import path rewrites (`sanitizeDocReferences`'s id sweep, plus
+// `sanitizeRegionAssignments` and `sanitizeStyles`, which each rebuild `id`
+// from the key), so the audit and the repair must enumerate the same
+// collections or the door stops guarding what the load path promises.
+const ID_KEYED_COLLECTIONS: ReadonlyArray<[keyof MapDoc, string]> = [
+  ['stations', 'station'],
+  ['lines', 'line'],
+  ['lineTags', 'lineTag'],
+  ['routeBullets', 'routeBullet'],
+  ['transferAnchors', 'transferAnchor'],
+  ['transfers', 'transfer'],
+  ['textLabels', 'textLabel'],
+  ['polygons', 'polygon'],
+  ['regionAssignments', 'regionAssignment'],
+  ['svgImages', 'svgImage'],
+  ['lineCircles', 'lineCircle'],
+  ['guides', 'guide'],
+  ['styles', 'style'],
+];
+
 // Which style kind each tagged collection's `styleId` must name. stopDot is
 // absent on purpose — its wearers are the dot SLOTS, audited separately below.
 const STYLE_KIND_OF: ReadonlyArray<[keyof MapDoc, StyleKind]> = [
@@ -32,8 +57,14 @@ export function auditDoc(doc: MapDoc): string[] {
   const v: string[] = [];
   const finite = (n: unknown): boolean => typeof n === 'number' && Number.isFinite(n);
 
+  for (const [collection, noun] of ID_KEYED_COLLECTIONS) {
+    const records = doc[collection] as Record<string, { id: string }>;
+    for (const [key, item] of Object.entries(records)) {
+      if (item.id !== key) v.push(`${noun} "${key}": id reads "${item.id}"`);
+    }
+  }
+
   for (const [key, st] of Object.entries(doc.stations)) {
-    if (st.id !== key) v.push(`station "${key}": id reads "${st.id}"`);
     if (!finite(st.x) || !finite(st.y)) v.push(`station "${key}": non-finite position`);
     if (st.circleId !== undefined && !doc.lineCircles[st.circleId])
       v.push(`station "${key}": dangling circleId "${st.circleId}"`);
@@ -52,7 +83,6 @@ export function auditDoc(doc: MapDoc): string[] {
   }
 
   for (const [key, ln] of Object.entries(doc.lines)) {
-    if (ln.id !== key) v.push(`line "${key}": id reads "${ln.id}"`);
     const members = new Set(ln.stations);
     if (members.size !== ln.stations.length) v.push(`line "${key}": duplicate members`);
     for (const sid of ln.stations) {

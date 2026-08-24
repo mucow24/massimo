@@ -6,7 +6,7 @@ import {
   AutoHAlignButtons,
   AutoVAlignButtons,
 } from './LabelAlignButtons';
-import { LABEL_ALIGNS, LABEL_VALIGNS } from '../../model/transforms';
+import { AUTO_H_ALIGNS, AUTO_V_ALIGNS, LABEL_ALIGNS, LABEL_VALIGNS } from '../../model/transforms';
 
 // The station label's two manual alignment clusters. What is worth pinning here
 // is the coupling between the ladder and the picker: a cluster short a member
@@ -89,11 +89,49 @@ describe('LabelValignButtons (vertical)', () => {
   });
 });
 
-// The wand-on tuning pair is a different mechanism: its domain includes `null`
-// ("leave it to the octant"), carried through Radix as the AUTO sentinel. That
-// mapping is the part worth pinning — a sentinel that leaked through as the
-// literal string would store nonsense.
+// The wand-on tuning pair adds one thing to the manual clusters' mechanism: its
+// domain includes `null` ("leave it to the octant"), carried through Radix as
+// the AUTO sentinel. The ladder coupling is worth pinning here for the same
+// reason it is above — plus the sentinel mapping, since a sentinel that leaked
+// through as the literal string would store nonsense.
 describe('auto H/V tuning (wand on)', () => {
+  const autoHGroup = () => groupLabelled('Auto horizontal alignment');
+  const autoVGroup = () => groupLabelled('Auto vertical alignment');
+
+  it('renders the AUTO sentinel plus one segment per AUTO_H_ALIGNS member', () => {
+    render(<AutoHAlignButtons value={null} onSet={() => {}} />);
+    expect(segmentValues(autoHGroup())).toEqual([
+      'Auto align: auto',
+      'Auto align: left',
+      'Auto align: center',
+      'Auto align: right',
+    ]);
+    expect(segmentValues(autoHGroup())).toHaveLength(AUTO_H_ALIGNS.length + 1);
+  });
+
+  it('renders the AUTO sentinel plus one segment per AUTO_V_ALIGNS member', () => {
+    render(<AutoVAlignButtons value={null} onSet={() => {}} />);
+    expect(segmentValues(autoVGroup())).toEqual([
+      'Auto align V: auto',
+      'Auto align V: up',
+      'Auto align V: down',
+    ]);
+    expect(segmentValues(autoVGroup())).toHaveLength(AUTO_V_ALIGNS.length + 1);
+  });
+
+  it('marks the current value as the pressed segment — for every member and for null', () => {
+    for (const value of [...AUTO_H_ALIGNS, null]) {
+      const { unmount } = render(<AutoHAlignButtons value={value} onSet={() => {}} />);
+      expect(pressedCount(autoHGroup())).toBe(1);
+      unmount();
+    }
+    for (const value of [...AUTO_V_ALIGNS, null]) {
+      const { unmount } = render(<AutoVAlignButtons value={value} onSet={() => {}} />);
+      expect(pressedCount(autoVGroup())).toBe(1);
+      unmount();
+    }
+  });
+
   it('maps the auto segment back to null rather than emitting the sentinel', () => {
     const onSet = vi.fn();
     render(<AutoHAlignButtons value="end" onSet={onSet} />);

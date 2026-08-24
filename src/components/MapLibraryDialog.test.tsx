@@ -717,6 +717,35 @@ describe('MapLibraryDialog', () => {
     expect(renameMap).not.toHaveBeenCalled();
   });
 
+  /**
+   * Every other click-to-edit name field in the app selects its text on entry
+   * (`useInlineRename`), so typing REPLACES the old name. The library's two
+   * fields are hand-rolled — they cannot use the hook (their commit is async
+   * and their Escape must be kept from the Dialog's dismiss) — but the
+   * interaction is the same one, and a rename you have to select-all first is
+   * a different control.
+   */
+  it('selects the existing name on entry, in both columns', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await openCanalLine(user);
+
+    await user.click(screen.getByRole('button', { name: 'Rename Canal Line' }));
+    const mapInput = screen.getByRole('textbox', {
+      name: 'Rename Canal Line',
+    }) as HTMLInputElement;
+    expect(mapInput.selectionStart).toBe(0);
+    expect(mapInput.selectionEnd).toBe('Canal Line'.length);
+
+    await user.click(screen.getByRole('button', { name: 'Name version 2' }));
+    const versionInput = screen.getByRole('textbox', {
+      name: 'Name version 2',
+    }) as HTMLInputElement;
+    expect(versionInput.selectionStart).toBe(0);
+    expect(versionInput.selectionEnd).toBe(versionInput.value.length);
+    expect(versionInput.value).not.toBe('');
+  });
+
   it('Escape with nothing else going on closes the library', async () => {
     const user = userEvent.setup();
     renderDialog();

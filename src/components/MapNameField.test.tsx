@@ -16,6 +16,20 @@ describe('MapNameField', () => {
     expect(screen.getByRole('button', { name: 'Untitled map' })).toBeInTheDocument();
   });
 
+  // The reference behaviour for every click-to-edit name in the app: entry
+  // selects the whole name, so the first keystroke replaces it rather than
+  // appending to it. `useInlineRename` owns it for its consumers, and the map
+  // library's hand-rolled fields match it deliberately (see `RenameField`).
+  it('selects the existing name on entry', async () => {
+    const user = userEvent.setup();
+    useDoc.setState({ ...useDoc.getState(), name: 'Night Owl' });
+    render(<MapNameField />);
+    await user.click(screen.getByRole('button', { name: 'Night Owl' }));
+    const input = screen.getByLabelText('Map name') as HTMLInputElement;
+    expect(input.selectionStart).toBe(0);
+    expect(input.selectionEnd).toBe('Night Owl'.length);
+  });
+
   it('commits an edit to the store on Enter', async () => {
     const user = userEvent.setup();
     render(<MapNameField />);

@@ -38,7 +38,7 @@ type Action =
   | { kind: 'deleteLine'; idx: number }
   | { kind: 'toggleMembership'; lineIdx: number; stationIdx: number }
   | { kind: 'rotateStation'; idx: number }
-  | { kind: 'moveLineInOrder'; idx: number; dir: -1 | 1 }
+  | { kind: 'rotateLineOrder' }
   | { kind: 'setLineWidth'; idx: number; w: number }
   | { kind: 'setLineStrokeWidth'; idx: number; w: number }
   | { kind: 'setLineStrokeColor'; idx: number; c: LineStrokeColor }
@@ -92,11 +92,7 @@ const actionArb = fc.oneof(
     stationIdx: idxArb,
   }),
   fc.record({ kind: fc.constant<'rotateStation'>('rotateStation'), idx: idxArb }),
-  fc.record({
-    kind: fc.constant<'moveLineInOrder'>('moveLineInOrder'),
-    idx: idxArb,
-    dir: fc.constantFrom<-1 | 1>(-1, 1),
-  }),
+  fc.constant<Action>({ kind: 'rotateLineOrder' }),
   fc.record({
     kind: fc.constant<'setLineWidth'>('setLineWidth'),
     idx: idxArb,
@@ -263,9 +259,14 @@ function applyOne(doc: MapDoc, action: Action, ids: ReturnType<typeof counterIdF
       const id = pickAt(doc.stations, action.idx);
       return id ? T.rotateStation(doc, id) : doc;
     }
-    case 'moveLineInOrder': {
-      const id = pickAt(doc.lines, action.idx);
-      return id ? T.moveLineInOrder(doc, id, action.dir) : doc;
+    case 'rotateLineOrder': {
+      // No app surface reorders lines — which line wins where two bodies
+      // overlap is settled per overlap by region painting, so `lineOrder` is
+      // only ever appended to. The fuzzer rotates it directly to keep feeding
+      // the invariants a stacking order that is not creation order; repeated
+      // rotations reach every cyclic permutation.
+      if (doc.lineOrder.length < 2) return doc;
+      return { ...doc, lineOrder: [...doc.lineOrder.slice(1), doc.lineOrder[0]] };
     }
     case 'setLineWidth': {
       const id = pickAt(doc.lines, action.idx);

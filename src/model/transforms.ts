@@ -349,6 +349,21 @@ export const isLabelAlign = (v: unknown): v is LabelAlign =>
 export const isLabelValign = (v: unknown): v is LabelValign =>
   typeof v === 'string' && (LABEL_VALIGNS as readonly string[]).includes(v);
 
+// The wand's multi-line tuning ladders — how the lines align WITHIN an
+// autoAlign block, and WHICH line anchors. Both are OPTIONAL on the label:
+// absent IS "auto" (octant-derived), which is why neither has a *_DEFAULT
+// constant — a non-member heals by being dropped, not replaced.
+export const AUTO_H_ALIGNS: readonly AutoHAlign[] = ['start', 'middle', 'end'];
+export const AUTO_V_ALIGNS: readonly AutoVAlign[] = ['up', 'down'];
+
+/** Is `v` one of the wand's horizontal multi-line alignments? */
+export const isAutoHAlign = (v: unknown): v is AutoHAlign =>
+  typeof v === 'string' && (AUTO_H_ALIGNS as readonly string[]).includes(v);
+
+/** Is `v` one of the wand's anchor-line choices? */
+export const isAutoVAlign = (v: unknown): v is AutoVAlign =>
+  typeof v === 'string' && (AUTO_V_ALIGNS as readonly string[]).includes(v);
+
 // Column-width slider ceiling (world units). 0 = Auto (size to content, manual
 // line breaks). The spinbutton accepts larger values; updateTextLabel clamps
 // only at 0.
@@ -2887,13 +2902,6 @@ function pruneRegionAssignmentsForLine(
     changed = true;
   }
   return changed ? out : assignments;
-}
-
-export function moveLineInOrder(doc: MapDoc, id: LineId, dir: -1 | 1): MapDoc {
-  const order = effectiveLineOrder(doc.lineOrder, doc.lines);
-  const next = moveInOrder(order, id, dir);
-  if (next === order) return doc;
-  return { ...doc, lineOrder: next };
 }
 
 // ---------- Misc ----------

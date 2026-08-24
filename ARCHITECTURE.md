@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `98528bb` (2026-08-22, #544) — verified against the live source.** This
+**Up to date as of commit `37beb8a` (2026-08-23, #546) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -1003,8 +1003,13 @@ selected. `autoAlign?: boolean` (omitted when off) overrides align **and** valig
 transitmap.net typography derived from the label's octant relative to the nearest stop,
 re-anchored along the reading axis at a cross (see `labelLayoutLocal`); `offset`/`offsetPerp`
 still apply.
-`autoHAlign?: 'start'|'middle'|'end'` / `autoVAlign?: 'up'|'down'` (omitted = derived) tune
-autoAlign's multi-line handling: within-block line alignment, and which line anchors.
+`autoHAlign?: AutoHAlign` (`start|middle|end` = `AUTO_H_ALIGNS`) / `autoVAlign?: AutoVAlign`
+(`up|down` = `AUTO_V_ALIGNS`) tune autoAlign's multi-line handling: within-block line alignment,
+and which line anchors. Both are held to their ladders by the same `sanitizeLabelAlignment` — but
+they heal by being DROPPED rather than replaced, since absent IS their "auto" (derived from the
+octant) and there is no default member to fall back on. `autoHAlign` is the value `labelLayout`
+hands the `<text>` element as its `text-anchor`, so an unhealed stray string reaches the emitted
+SVG verbatim.
 
 **`Line`** — `id, service` (the route code shown in bullets), `name, color`, `stations:
 StationId[]`, and the required `edges: string[]`.
@@ -1653,10 +1658,12 @@ the file itself carries (steps 3, 5, 6b/6c) — repair over guesswork, error ove
    segment styles and end pins are judged against the REPAIRED topology/membership rather than
    the pre-closure one — which ate pins the closure was about to legitimize, and kept styles on
    edges it was about to drop (a non-idempotent parse).
-6. `sanitizeStations` (legacy orientations) → `sanitizeLabelAlignment` (each label's
-   `align`/`valign` held to its ladder, a non-member replaced by the historical `auto` /
-   `auto-down` pair — which is also what the legacy single `valign:'auto'` heals to, needing no
-   arm of its own) → `snapStationCells` (stop/label/anchor cells within 1e-9 of an integer snap
+6. `sanitizeStations` (legacy orientations) → `sanitizeLabelAlignment` (each label's four
+   alignment fields held to their ladders: the required `align`/`valign` take the historical
+   `auto` / `auto-down` pair in place of a non-member — which is also what the legacy single
+   `valign:'auto'` heals to, needing no arm of its own — while the optional `autoHAlign`/
+   `autoVAlign` are DROPPED instead, absent being their "auto") → `snapStationCells`
+   (stop/label/anchor cells within 1e-9 of an integer snap
    onto it — the drift the old
    trig-rotated ghost lattice wrote; ±k·√2/2 and width-derived pitches are real coordinates and
    are left alone), then the two referential repairs:
@@ -1785,7 +1792,7 @@ disjoint fields (order immaterial except where noted), never mutating the input:
 | (not gated) | `backfillLinesEdges` whenever `lines !== undefined` — **not** `v<14`-gated: an intermediate build bumped the persist version to 14 and re-saved lines BEFORE they carried `edges`, so a `v<14` gate could never recover those (`ln.edges.join(...)` white-screens on load). Reference-stable when every line already has an array. **But see the `merge` hook** — this call alone is not "every rehydrate" |
 | (not gated) | `ensureStyleInvariants` whenever `styles !== undefined` — ordered between the `v<10` hygiene and the bake (the bake seeds the _designated_ default transfer style; adoption stamps designated defaults) |
 | (not gated) | `snapStationCells` whenever `stations !== undefined` — cell drift is not tied to a schema bump, so a gate could never catch it. **But see the `merge` hook** — for this repair that caveat is the main event, not a footnote |
-| (not gated) | `sanitizeLabelAlignment` whenever `stations !== undefined` — each label's `align`/`valign` held to its ladder, a non-member replaced by the historical `auto` / `auto-down` pair. Judged by MEMBERSHIP, so there is no version to gate on: nothing bumps a version when a stored union goes bad. The legacy single `valign:'auto'` (from before the `auto-up` mirror) is simply the best-known non-member and heals down the same path, which is why it has no gated row of its own |
+| (not gated) | `sanitizeLabelAlignment` whenever `stations !== undefined` — each label's four alignment fields held to their ladders: the required `align`/`valign` take the historical `auto` / `auto-down` pair in place of a non-member, and the optional `autoHAlign`/`autoVAlign` are dropped instead (absent IS their "auto", so there is no member to replace with). Judged by MEMBERSHIP, so there is no version to gate on: nothing bumps a version when a stored union goes bad. The legacy single `valign:'auto'` (from before the `auto-up` mirror) is simply the best-known non-member and heals down the same path, which is why it has no gated row of its own |
 | (not gated) | `sanitizeLineCircles` whenever `stations` or `lineCircles` is present — the binding invariants (a `circleId` resolves, `viaCircle` only on bound stations, a bound station sits ON its circle). Runs right after the cell snap, since both repair stations. Guides need no twin: an `AlignmentGuide` references nothing, so `sanitizeGuides` is the file path's alone |
 | (not gated) | `sanitizeImageHrefs` whenever `svgImages !== undefined` — the guard had one caller (the clipboard) and neither doc load, so a remote href could be persisted at ANY version. **But see the `merge` hook** — same reasoning as `snapStationCells` |
 | (not gated) | `bakeConcreteDotSizes` whenever `lines !== undefined` — dot sizes are REQUIRED stored fields (absent used to mean "my dot type's natural diameter"); pin stops that tracked a different natural than their line's, then materialize the line split sizes. The v27 bump forced one pass over every pre-existing doc; a size-less line written at the current version (legacy clipboard paste) is healed by the **`merge` hook** |
@@ -1834,7 +1841,10 @@ legacy `custom:` ids — the only place in either load path that reaches into a 
   hostage to a bug — but the failure surfaces as a persistent error toast now instead of a mangled
   file on some future load. Tests hold the complementary contract: `parse()` output always audits
   clean, and app-legal states (stopless stations, degree-0 members, region anchors awaiting
-  reconcile) are not violations.
+  reconcile) are not violations. What the audit judges is the vocabulary the import path repairs
+  TO, collection for collection — a record's key is its identity, so every id-keyed collection
+  (`ID_KEYED_COLLECTIONS`, styles included, since a StyleDef's own `id` is what a stamp tags its
+  wearers with) is checked against the same key↔`id` rule step 6c rewrites.
 - **Startup**: no explicit load in `App.tsx` — zustand `persist` rehydrates from localStorage on
   boot, running `migrateDoc`.
 - **Load → JSON…**: `parse(text, libraryPalettes)` then `adoptParsedDoc()` (below). The library
@@ -4499,7 +4509,7 @@ non-text gaps svg2pdf/jsPDF can't bridge are closed here:
    `STALE_BUILD_MESSAGE` ([staleBuild.ts](src/util/staleBuild.ts)).
 
 [color.ts](src/util/color.ts): pure hex math — `legibleTextOn` (W3C luminance → `#000`/`#fff`),
-`withAlpha`, `blendOver`, `desaturateColor`, plus the RGBA surface added with the react-colorful
+`withAlpha`, `desaturateColor`, plus the RGBA surface added with the react-colorful
 picker: `parseHexA` (→ `[r,g,b,a]`, preserving alpha from `#rgba`/`#rrggbbaa`), `withHexAlpha`
 (replace a color's alpha byte), and `normalizeHex` (canonical stored form — lowercase, shorthand
 expanded, an opaque `ff` suffix stripped back to 6 digits so opaque colors still match palette
@@ -4557,17 +4567,20 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   `TRANSFER_DRAW_ORDERS`, `ROUTE_BULLET_SHAPES`, `TEXT_LABEL_ALIGNS`, `DOT_BASE_SHAPES`,
   `DOT_STROKE_ALIGNS`, `PALETTE_SORTS`, `MAP_SORTS`, `LABEL_ALIGNS`, `LABEL_VALIGNS` (the STATION
   label's two axes — a different value space from the free text label's single `align`, hence
-  their own pair of ladders), and `LABEL_WEIGHT_NAMES` (whose rungs carry their display names,
-  since the names ARE the shipped faces) — with a membership guard beside it:
-  `isLineEndStyle`, `isTransferDrawOrder`, `isRouteBulletShape`, `isTextLabelAlign`,
-  `isDotBaseShape`, `isDotStrokeAlign`, `isPaletteSort`, `isMapSort`, `isLabelAlign`,
-  `isLabelValign`, `isLabelWeight`. The stored unions still outside the rule are
-  `GuideOrientation`, `StopOrientation` and `StationStopType`, whose gates spell their members
-  out. The first two are backstopped by `Record<Union, …>` tables elsewhere
-  (`WELLS`/`MOVE_CURSOR`, `ORIENTATION_ANGLE`/`ORIENTATION_NAME`), so widening either still fails
-  the build. `StationStopType` has no such table — its only reader is `stationIsSingleton`, two
-  `===` arms over a fallthrough to the visible-stop heuristic — so a rung added there reads as
-  `auto` and stays invisible until someone notices the picker never offers it.
+  their own pair of ladders), `AUTO_H_ALIGNS`/`AUTO_V_ALIGNS` (the wand's multi-line tuning pair, a
+  third value space again: both are OPTIONAL on the label, absent meaning "derived from the octant",
+  so a non-member heals by being DROPPED and neither ladder has a `*_DEFAULT` beside it), and
+  `LABEL_WEIGHT_NAMES` (whose rungs carry their display names, since the names ARE the shipped
+  faces) — with a membership guard beside it: `isLineEndStyle`, `isTransferDrawOrder`,
+  `isRouteBulletShape`, `isTextLabelAlign`, `isDotBaseShape`, `isDotStrokeAlign`, `isPaletteSort`,
+  `isMapSort`, `isLabelAlign`, `isLabelValign`, `isAutoHAlign`, `isAutoVAlign`, `isLabelWeight`.
+  The stored unions still outside the rule are `GuideOrientation`, `StopOrientation` and
+  `StationStopType`, whose gates spell their members out. The first two are backstopped by
+  `Record<Union, …>` tables elsewhere (`WELLS`/`MOVE_CURSOR`,
+  `ORIENTATION_ANGLE`/`ORIENTATION_NAME`), so widening either still fails the build.
+  `StationStopType` has no such table — its only reader is `stationIsSingleton`, two `===` arms
+  over a fallthrough to the visible-stop heuristic — so a rung added there reads as `auto` and
+  stays invisible until someone notices the picker never offers it.
   **Every gate judges by the guard and every picker takes its order from the array**;
   no consumer re-spells the members, including the three gates that each judge stored values
   independently (both load paths and the clipboard's paste validator). The rule earns its keep
@@ -4579,7 +4592,8 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   Compile-time exhaustiveness comes from a `Record<Union, …>` the array is paired with: the UI's
   chip or label map where the pickers need one
   (`ROUTE_BULLET_SHAPE_LABEL`, `LINE_END_LABELS`, `TRANSFER_DRAW_LABELS`, `DOT_BASE_SHAPE_LABELS`,
-  `TEXT_LABEL_ALIGN_CHIPS`, each dialog's `SORT_LABELS`) or `LINE_STYLE_TIE_RANK` — a member added
+  `TEXT_LABEL_ALIGN_CHIPS`, `LabelAlignButtons`'s four chip maps, each dialog's `SORT_LABELS`) or
+  `LINE_STYLE_TIE_RANK` — a member added
   to the union leaves a missing key there and fails to compile, so the ladder cannot fall behind
   the type. A user-facing CYCLE is deliberately NOT derived from its ladder (`NEXT_STYLE`,
   `AXIS_CYCLE`): reordering the ladder must not silently reorder what shift-click does.
