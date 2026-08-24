@@ -524,9 +524,36 @@ describe('Toolbar — Add menu mode commands', () => {
     await user.click(screen.getByRole('button', { name: 'Add' }));
   };
 
+  // The menu is grouped by what you get, not by how you place it: the two
+  // things a map is made of, then the transfer pair, then the free-standing
+  // decorations, then the two things that hang off an existing line.
+  it('lists the Add items in grouped order', async () => {
+    const user = userEvent.setup();
+    renderToolbar();
+    await openAdd(user);
+    const rows = Array.from(
+      screen.getByRole('menu').querySelectorAll('[role="menuitem"], [role="separator"]'),
+    ).map((el) => (el.getAttribute('role') === 'separator' ? '—' : el.textContent));
+    expect(rows).toEqual([
+      'Stations',
+      'Line',
+      '—',
+      'Transfer',
+      'Transfer anchor',
+      '—',
+      'Label',
+      'Image / SVG…',
+      'Polygon',
+      'Route bullet',
+      '—',
+      'Line circle',
+      'Line tags / chevrons',
+    ]);
+  });
+
   it.each<[string, string]>([
     ['Line tags / chevrons', 'creating-line-tag'],
-    ['Route bullets', 'creating-route-bullet'],
+    ['Route bullet', 'creating-route-bullet'],
     ['Label', 'placing-label'],
     ['Polygon', 'creating-polygon'],
     ['Transfer', 'creating-transfer'],
