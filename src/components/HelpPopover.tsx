@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Cross2Icon, QuestionMarkIcon } from '@radix-ui/react-icons';
 import { isInFormField, useDismiss } from './usePopover';
+import { SNAP_TOGGLE_COUNT, SNAP_TOGGLE_NAMES } from './SnapToggleBar';
 
 interface HelpRow {
   k: string; // the gesture/key, rendered as a <kbd> chip
@@ -12,9 +13,11 @@ interface HelpSection {
   rows: HelpRow[];
 }
 
-// Every row here is verified against the actual handlers (App.tsx keyboard
-// map, useStationInteraction, useRectSelect, the canvas drag hooks, …) — when
-// an interaction changes, update its row.
+// Every row here is verified by hand against the actual handlers (App.tsx
+// keyboard map, useStationInteraction, useRectSelect, the canvas drag hooks,
+// …) — when an interaction changes, update its row. The one exception is the
+// snap row, which is built from the toggle bar's ladder because that ladder
+// also fixes the digit keys it documents; see it below.
 const SECTIONS: HelpSection[] = [
   {
     title: 'Navigate',
@@ -106,10 +109,13 @@ const SECTIONS: HelpSection[] = [
   {
     title: 'Snap',
     rows: [
+      // Built from the toggle bar's own ladder, not re-listed: the digit keys
+      // ARE its indices (see App.tsx's SNAP_TOGGLE_COUNT bound), so a toggle
+      // added or reordered there would otherwise leave this row describing a
+      // bar that no longer exists.
       {
-        k: '1 – 6',
-        effect:
-          'Toggle the snap options (line, equidistant, grid length, all, grid, line circle cardinals) — press again to cycle direction',
+        k: `1 – ${SNAP_TOGGLE_COUNT}`,
+        effect: `Toggle the snap options (${SNAP_TOGGLE_NAMES.join(', ')}) — press again to cycle direction`,
       },
       { k: 'Ctrl+Shift+0 – 9', effect: 'Save the current snap options as that preset' },
       { k: 'Shift+0 – 9', effect: 'Recall that snap preset' },

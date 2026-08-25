@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { themeColors } from './theme';
+import { DAY_CANVAS_COLORS, DEFAULT_DAY_CANVAS_COLOR } from './viewportStore';
 
 describe('themeColors', () => {
   it('light mode: near-white canvas, dark labels, white underlay', () => {
@@ -76,6 +77,26 @@ describe('themeColors', () => {
     it('returns a stable reference per (mode, day color) pair', () => {
       expect(themeColors(false, 'black')).toBe(themeColors(false, 'black'));
       expect(themeColors(false, 'gray')).toBe(themeColors(false, 'gray'));
+    });
+
+    // The store heals a stored non-member on the way in (see viewportStore's
+    // merge), so nothing in the app should ever hand one over. This is the
+    // second net: a table MISS must degrade to the plain day palette rather
+    // than return undefined and take every canvas consumer down with it.
+    it('degrades an unknown paper to the plain day palette', () => {
+      const rogue = 'chartreuse' as unknown as Parameters<typeof themeColors>[1];
+      expect(themeColors(false, rogue)).toBe(themeColors(false));
+    });
+
+    it('paints a paper for every rung of the ladder — no rung falls to that net', () => {
+      const plain = themeColors(false);
+      for (const color of DAY_CANVAS_COLORS) {
+        const c = themeColors(false, color);
+        if (color === DEFAULT_DAY_CANVAS_COLOR) expect(c).toBe(plain);
+        // A rung the DAY_PAPER table forgot lands on the same `?? LIGHT` net
+        // the rogue value above does — a new menu row that paints nothing.
+        else expect(c).not.toBe(plain);
+      }
     });
   });
 

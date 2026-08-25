@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `37beb8a` (2026-08-23, #546) — verified against the live source.** This
+**Up to date as of commit `c4e9fb0` (2026-08-24, #547) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -2324,16 +2324,21 @@ on any mode exit.
   `showLineCircles`, `showGuides`, `showTransfers`, `showSvgImages`, `showTextLabels`,
   `showPolygons`, `showRouteBullets` default true), plus two **local chrome** preferences:
   `dayCanvasColor: DayCanvasColor`
-  (`'white'|'gray'|'black'`, default white — the day-mode paper color, dimming glare without
-  touching the map) and `darkUiInDay: boolean` (default false — a chrome-only dark UI while the
+  (the `DAY_CANVAS_COLORS` ladder `'white'|'gray'|'black'`, default white — the day-mode paper
+  color, dimming glare without touching the map) and `darkUiInDay: boolean` (default false — a
+  chrome-only dark UI while the
   **map** is still in day mode). The map's own day/night is **not** here — that is `MapDoc.darkMode`
   (a stale `darkMode` key in an existing persisted blob is ignored); `darkUiInDay` is orthogonal
   to it, so `App` drives `data-theme` off `chromeDark = darkMode || darkUiInDay`. **Persisted** as
   `'massimo-viewport'` (per-browser, **not** per-file) — except `showNetwork`, alone among the
   visibility flags, which `partialize` deliberately omits so a reload never opens onto an
   apparently-empty map. It is the broad one; the narrow toggles each clear a single kind, so a
-  reload under them still shows a recognisable map. The giant SVG tree subscribes here and is
-  re-rendered only on commit.
+  reload under them still shows a recognisable map. The store's `merge` hook is zustand's own
+  shallow one plus a gate on `dayCanvasColor`, the only stored UNION here: a paper the ladder no
+  longer offers heals to the default rather than sitting in the store for good, since no Map-menu
+  row names it and nothing but a rehydrate can write it (the flags and numbers beside it need no
+  gate — each is read as truthy or run through a ladder lookup that already falls back, see
+  `nextGridSize`). The giant SVG tree subscribes here and is re-rendered only on commit.
 - `useLiveViewportStore` — the **in-flight** gesture viewport (`pending: Viewport | null`), plus
   `panning` (is a pan armed). **Not persisted, not undoable.** Only a small set of overlays
   subscribes — the selected-item handle overlays (`PolygonView`, `SvgImageView`) via the
@@ -2518,7 +2523,9 @@ Six seams cover it, and a seventh rule governs anything new:
   click on that button. Both paths route through the pure `advanceSnapToggle(modes, index)`
   ([SnapToggleBar.tsx](src/components/SnapToggleBar.tsx)) so a keypress is exactly one click
   (multi-state toggles cycle over repeated presses; a disabled toggle is a no-op). The bound key
-  range is `SNAP_TOGGLE_COUNT`, derived from the toggle list, so a new toggle wires its own key.
+  range is `SNAP_TOGGLE_COUNT`, derived from the toggle list, so a new toggle wires its own key —
+  and the help sheet's snap row reads that count plus `SNAP_TOGGLE_NAMES` (each toggle's label
+  minus its `Snap to ` prefix), so the row cannot end up describing a bar that has moved on.
   **Ten preset slots** (`presets`, keyed 0–9) snapshot the whole `modes` object: **Shift+digit**
   recalls a slot, **Ctrl/Cmd+Shift+digit** saves the live modes into it, both toasting what they
   did. Read off `e.code`, never `e.key` — with Shift held a US layout reports `!`/`@`/`#`, so the
@@ -4565,7 +4572,8 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   for a stored value, the store's own module for a union that never leaves the app (`MAP_SORTS` in
   `state/mapLibrary.ts`): an ordered array naming every member — `LINE_STYLES`, `LINE_END_STYLES`,
   `TRANSFER_DRAW_ORDERS`, `ROUTE_BULLET_SHAPES`, `TEXT_LABEL_ALIGNS`, `DOT_BASE_SHAPES`,
-  `DOT_STROKE_ALIGNS`, `PALETTE_SORTS`, `MAP_SORTS`, `LABEL_ALIGNS`, `LABEL_VALIGNS` (the STATION
+  `DOT_STROKE_ALIGNS`, `PALETTE_SORTS`, `MAP_SORTS`, `DAY_CANVAS_COLORS`, `LABEL_ALIGNS`,
+  `LABEL_VALIGNS` (the STATION
   label's two axes — a different value space from the free text label's single `align`, hence
   their own pair of ladders), `AUTO_H_ALIGNS`/`AUTO_V_ALIGNS` (the wand's multi-line tuning pair, a
   third value space again: both are OPTIONAL on the label, absent meaning "derived from the octant",
@@ -4573,7 +4581,8 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   `LABEL_WEIGHT_NAMES` (whose rungs carry their display names, since the names ARE the shipped
   faces) — with a membership guard beside it: `isLineEndStyle`, `isTransferDrawOrder`,
   `isRouteBulletShape`, `isTextLabelAlign`, `isDotBaseShape`, `isDotStrokeAlign`, `isPaletteSort`,
-  `isMapSort`, `isLabelAlign`, `isLabelValign`, `isAutoHAlign`, `isAutoVAlign`, `isLabelWeight`.
+  `isMapSort`, `isDayCanvasColor`, `isLabelAlign`, `isLabelValign`, `isAutoHAlign`, `isAutoVAlign`,
+  `isLabelWeight`.
   The stored unions still outside the rule are `GuideOrientation`, `StopOrientation` and
   `StationStopType`, whose gates spell their members out. The first two are backstopped by
   `Record<Union, …>` tables elsewhere (`WELLS`/`MOVE_CURSOR`,
@@ -4587,12 +4596,15 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   because a picker and a gate fail in OPPOSITE directions: a picker short a member leaves a
   stored value uneditable, while a gate short one discards the whole record carrying it —
   `canonicalStyleProps` refuses a def rather than repairing it, so the user loses a style, not a
-  field. A persisted PREF fails the same way from the other end: a sort mode the picker no longer
-  offers is stuck, and one the guard no longer accepts is silently ignored on the next boot.
+  field. A persisted PREF fails the same way from the other end: a mode the picker no longer offers
+  is stuck in storage, unreachable and unwritable, painting whatever its reader's fallback is. The
+  guard is what lets the store heal one on the way in instead — `viewportStore`'s `merge` sends
+  `dayCanvasColor` through `isDayCanvasColor` and drops a non-member back to the default.
   Compile-time exhaustiveness comes from a `Record<Union, …>` the array is paired with: the UI's
   chip or label map where the pickers need one
   (`ROUTE_BULLET_SHAPE_LABEL`, `LINE_END_LABELS`, `TRANSFER_DRAW_LABELS`, `DOT_BASE_SHAPE_LABELS`,
-  `TEXT_LABEL_ALIGN_CHIPS`, `LabelAlignButtons`'s four chip maps, each dialog's `SORT_LABELS`) or
+  `TEXT_LABEL_ALIGN_CHIPS`, `LabelAlignButtons`'s four chip maps, each dialog's `SORT_LABELS`,
+  the Map menu's `DAY_CANVAS_COLOR_LABELS`) or
   `LINE_STYLE_TIE_RANK` — a member added
   to the union leaves a missing key there and fails to compile, so the ladder cannot fall behind
   the type. A user-facing CYCLE is deliberately NOT derived from its ladder (`NEXT_STYLE`,

@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { SnapToggleBar, advanceSnapToggle } from './SnapToggleBar';
+import {
+  SnapToggleBar,
+  advanceSnapToggle,
+  SNAP_TOGGLE_COUNT,
+  SNAP_TOGGLE_NAMES,
+} from './SnapToggleBar';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
@@ -280,5 +285,29 @@ describe('advanceSnapToggle', () => {
   it('returns null for an out-of-range index', () => {
     expect(advanceSnapToggle(modes(), 6)).toBeNull();
     expect(advanceSnapToggle(modes(), -1)).toBeNull();
+  });
+});
+
+// SNAP_TOGGLE_NAMES is what the help sheet's snap row is built from, and it is
+// derived by stripping the "Snap to " each toolbar label carries. That strip is
+// only correct while every label actually carries it: a label phrased another
+// way would pass its whole self through as the "short name" and put a stray
+// "Snap to …" inside the help row's parenthetical.
+describe('SNAP_TOGGLE_NAMES', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useSnapPrefs.setState({ modes: { ...DEFAULT_SNAP_MODES } });
+    useViewportStore.setState({ gridSize: 10 });
+  });
+
+  it('is the rendered bar, one short name per button, in bar order', () => {
+    render(<SnapToggleBar />);
+    const labels = screen
+      .getAllByRole('button')
+      .map((b) => b.getAttribute('aria-label'))
+      .filter((l): l is string => !!l);
+    expect(labels).toHaveLength(SNAP_TOGGLE_COUNT);
+    expect(SNAP_TOGGLE_NAMES).toHaveLength(SNAP_TOGGLE_COUNT);
+    expect(labels).toEqual(SNAP_TOGGLE_NAMES.map((n) => `Snap to ${n}`));
   });
 });

@@ -6,12 +6,20 @@ import type { Viewport } from '../model/types';
 export const GRID_SIZES: readonly number[] = [5, 10, 20];
 
 /**
- * The paper color used in DAY mode. A local viewing preference, not a document
- * property: 'gray'/'black' dim the bright canvas to cut glare without flipping
- * to night mode (see themeColors) — 'gray' is the middle setting. Night mode is
- * unaffected — it's always black.
+ * The paper colors available in DAY mode, in menu order — the union's ONE
+ * ladder, and what the Map menu's "Day canvas color" submenu takes its rows
+ * from. A local viewing
+ * preference, not a document property: 'gray'/'black' dim the bright canvas to
+ * cut glare without flipping to night mode (see themeColors) — 'gray' is the
+ * middle setting. Night mode is unaffected — it's always black.
  */
-export type DayCanvasColor = 'white' | 'gray' | 'black';
+export const DAY_CANVAS_COLORS = ['white', 'gray', 'black'] as const;
+export type DayCanvasColor = (typeof DAY_CANVAS_COLORS)[number];
+export const isDayCanvasColor = (v: unknown): v is DayCanvasColor =>
+  (DAY_CANVAS_COLORS as readonly unknown[]).includes(v);
+
+/** The paper a fresh boot opens on, and what a stored non-member heals to. */
+export const DEFAULT_DAY_CANVAS_COLOR: DayCanvasColor = 'white';
 
 /**
  * The next grid size in the cycle (5 → 10 → 20 → 5). Falls back to the first
@@ -230,7 +238,7 @@ export const useViewportStore = create<ViewportState>()(
       setShowPolygons: (showPolygons) => set({ showPolygons }),
       showRouteBullets: true,
       setShowRouteBullets: (showRouteBullets) => set({ showRouteBullets }),
-      dayCanvasColor: 'white',
+      dayCanvasColor: DEFAULT_DAY_CANVAS_COLOR,
       setDayCanvasColor: (dayCanvasColor) => set({ dayCanvasColor }),
       darkUiInDay: false,
       setDarkUiInDay: (darkUiInDay) => set({ darkUiInDay }),
@@ -267,6 +275,23 @@ export const useViewportStore = create<ViewportState>()(
         // The narrow toggles above each clear one kind, so a reload under them
         // still shows a recognisable map.
       }),
+      // zustand's own shallow merge, plus a gate on the one stored UNION here.
+      // A paper the ladder no longer offers has no way back — no menu row names
+      // it, and nothing but a rehydrate can write it — so it would sit in the
+      // store for good, painting the themeColors fallback while the Map menu
+      // shows a choice the user never made. The flags and numbers beside it
+      // need no such gate: each is read as truthy or run through a ladder
+      // lookup that already falls back (see nextGridSize).
+      merge: (persisted, current) => {
+        const stored = (persisted ?? {}) as Partial<ViewportState>;
+        const merged = { ...current, ...stored };
+        // Absent is not a violation: a blob predating the field keeps the live
+        // value, exactly as the shallow merge alone would have.
+        if (stored.dayCanvasColor !== undefined && !isDayCanvasColor(stored.dayCanvasColor)) {
+          merged.dayCanvasColor = DEFAULT_DAY_CANVAS_COLOR;
+        }
+        return merged;
+      },
     },
   ),
 );
