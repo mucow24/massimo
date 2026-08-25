@@ -21,6 +21,7 @@ beforeEach(() => {
     showTextLabels: true,
     showPolygons: true,
     showRouteBullets: true,
+    dayCanvasColor: 'white',
     darkUiInDay: false,
   });
 });
@@ -244,5 +245,45 @@ describe('viewportStore — showAnchors', () => {
     expect(s.showAnchors).toBe(true);
     expect(s.showAnchors).not.toBeUndefined();
     expect(s.gridVisible).toBe(false); // control: the rehydrate did apply
+  });
+});
+
+describe('viewportStore — the stored day-paper choice is judged on the way in', () => {
+  const store = (dayCanvasColor: unknown) =>
+    localStorage.setItem(
+      'massimo-viewport',
+      JSON.stringify({ state: { dayCanvasColor }, version: 0 }),
+    );
+
+  it('keeps a paper the ladder still offers', async () => {
+    store('gray');
+    await useViewportStore.persist.rehydrate();
+    expect(useViewportStore.getState().dayCanvasColor).toBe('gray');
+  });
+
+  // A paper the ladder no longer offers has no way back: nothing on the View
+  // menu can name it, so it would sit in the store for good, painting the
+  // fallback day palette while the menu shows a choice the user never made.
+  it('heals a paper the ladder no longer offers back to the default', async () => {
+    store('chartreuse');
+    await useViewportStore.persist.rehydrate();
+    expect(useViewportStore.getState().dayCanvasColor).toBe('white');
+  });
+
+  it('heals a paper of the wrong TYPE too — a blob is only ever JSON', async () => {
+    store(3);
+    await useViewportStore.persist.rehydrate();
+    expect(useViewportStore.getState().dayCanvasColor).toBe('white');
+  });
+
+  it('leaves the live paper alone when the blob predates the field', async () => {
+    useViewportStore.setState({ dayCanvasColor: 'black' });
+    localStorage.setItem(
+      'massimo-viewport',
+      JSON.stringify({ state: { gridVisible: false }, version: 0 }),
+    );
+    await useViewportStore.persist.rehydrate();
+    expect(useViewportStore.getState().dayCanvasColor).toBe('black');
+    expect(useViewportStore.getState().gridVisible).toBe(false); // control
   });
 });

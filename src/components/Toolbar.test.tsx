@@ -76,7 +76,7 @@ import { saveVersion, newMapId, getPayload, listMaps, listVersions } from '../st
 import type { MapSummary, VersionMeta } from '../state/mapLibrary';
 import { useLibraryPointer } from '../state/libraryPointer';
 import { useDoc, useSelection } from '../state/store';
-import { useViewportStore } from '../state/viewportStore';
+import { useViewportStore, DAY_CANVAS_COLORS } from '../state/viewportStore';
 import { DEFAULT_DOC } from '../model/transforms';
 import { pickDocSnapshot } from '../state/store';
 import { serialize } from '../model/serialize';
@@ -1849,5 +1849,39 @@ describe('Toolbar — transfer anchors toggle', () => {
     expect(box()).toHaveAttribute('aria-checked', 'true');
     await user.click(box());
     expect(useViewportStore.getState().showAnchors).toBe(false);
+  });
+});
+
+describe('Toolbar — day canvas color', () => {
+  const openPapers = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(screen.getByRole('button', { name: 'Map' }));
+    await user.click(screen.getByRole('menuitem', { name: 'Day canvas color' }));
+    return screen.findByRole('menuitem', { name: 'White' });
+  };
+
+  // The submenu is built from DAY_CANVAS_COLORS, not from three hand-written
+  // rows: a paper the ladder offers but the menu forgets is a paper the user
+  // can never reach, and one the menu offers but the ladder has dropped writes
+  // a value nothing downstream accepts.
+  it('offers one row per rung of the ladder, in ladder order', async () => {
+    const user = userEvent.setup();
+    renderToolbar();
+    await openPapers(user);
+    const rows = screen
+      .getAllByRole('menuitem')
+      .map((el) => el.textContent ?? '')
+      .filter((t) => ['White', 'Gray', 'Black'].includes(t));
+    expect(rows).toEqual(['White', 'Gray', 'Black']);
+    expect(rows).toHaveLength(DAY_CANVAS_COLORS.length);
+  });
+
+  it('writes the picked paper to the store', async () => {
+    const user = userEvent.setup();
+    renderToolbar();
+    await openPapers(user);
+    // fireEvent, like the Export rows above: Radix's own pointer handling on a
+    // sub-panel item doesn't complete under user-event in jsdom.
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Gray' }));
+    expect(useViewportStore.getState().dayCanvasColor).toBe('gray');
   });
 });

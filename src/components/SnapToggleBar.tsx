@@ -166,6 +166,21 @@ export function advanceSnapToggle(
 /** Count of snap toggles = the number of `1..N` keyboard shortcuts. */
 export const SNAP_TOGGLE_COUNT = TOGGLES.length;
 
+/**
+ * Every toggle's SHORT name, in the order the `1..N` keys press them. The help
+ * sheet's snap row is built from this rather than re-listing the toggles two
+ * modules away, so a toggle added or reordered here cannot leave that row
+ * quietly describing the old bar.
+ *
+ * Each `label` reads "Snap to <name>" — the prefix is the tooltip's phrasing,
+ * not part of the name. SnapToggleBar.test.tsx holds the rendered labels to
+ * that form, so a label written another way fails there rather than leaking a
+ * stray "Snap to …" into the help sheet.
+ */
+export const SNAP_TOGGLE_NAMES: readonly string[] = TOGGLES.map((t) =>
+  t.label.replace(/^Snap to /, ''),
+);
+
 export function SnapToggleBar() {
   const modes = useSnapPrefs((s) => s.modes);
   const setMode = useSnapPrefs((s) => s.setMode);

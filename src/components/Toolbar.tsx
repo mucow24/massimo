@@ -8,7 +8,12 @@ import {
   type UiMode,
 } from '../state/store';
 import type { MapDoc } from '../model/types';
-import { useViewportStore, nextGridSize } from '../state/viewportStore';
+import {
+  useViewportStore,
+  nextGridSize,
+  DAY_CANVAS_COLORS,
+  type DayCanvasColor,
+} from '../state/viewportStore';
 import { exportVisibilityOverrides } from '../state/visibility';
 import { parse, serialize } from '../model/serialize';
 import { DEFAULT_DOC } from '../model/transforms';
@@ -125,6 +130,15 @@ function ToolButtons() {
     </div>
   );
 }
+
+// Menu wording for the day-paper ladder. A `Record` so a paper added to
+// DAY_CANVAS_COLORS fails to compile until it is named here, and the submenu
+// below reads its rows straight off the ladder rather than re-spelling them.
+const DAY_CANVAS_COLOR_LABELS: Record<DayCanvasColor, string> = {
+  white: 'White',
+  gray: 'Gray',
+  black: 'Black',
+};
 
 export function Toolbar() {
   const zoom = useViewportStore((s) => s.zoom);
@@ -725,9 +739,11 @@ export function Toolbar() {
         {/* Local viewing preference: dim the day-mode paper to cut glare
             without switching to night mode. Persisted, never touches the doc. */}
         <SubMenu label="Day canvas color">
-          <MenuItem onClick={() => setDayCanvasColor('white')}>White</MenuItem>
-          <MenuItem onClick={() => setDayCanvasColor('gray')}>Gray</MenuItem>
-          <MenuItem onClick={() => setDayCanvasColor('black')}>Black</MenuItem>
+          {DAY_CANVAS_COLORS.map((color) => (
+            <MenuItem key={color} onClick={() => setDayCanvasColor(color)}>
+              {DAY_CANVAS_COLOR_LABELS[color]}
+            </MenuItem>
+          ))}
         </SubMenu>
         <MenuItem onClick={onClear}>Clear</MenuItem>
       </Menu>
