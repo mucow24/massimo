@@ -7,7 +7,7 @@ import { BouncingBullet } from './components/BouncingBullet';
 import { isFunModeActive } from './state/funMode';
 import { DEFAULT_PARAMS } from './fun/ballPhysics';
 import { nextGridSize, useViewportStore } from './state/viewportStore';
-import { kindVisibleNow, setVisibility } from './state/visibility';
+import { kindVisibleNow, setVisibility, VISIBILITY_ITEMS } from './state/visibility';
 import {
   beginHistoryGroup,
   cancelAppendMode,
@@ -822,12 +822,18 @@ export default function App() {
       // the letters; the rest stay a View-menu click away. The guides earn
       // theirs from the other side — they default to VISIBLE, and the press
       // that matters is getting them out of the way to see the map under them.
-      // The write goes through setVisibility, never a store setter
-      // by hand, so the registry stays the one place a flag's name lives, and
-      // the letter is a FIELD on the registry entry so the menu row can show
-      // it. Repeats are dropped throughout this block: a held key would
-      // otherwise toggle at auto-repeat rate, each press a store write and a
-      // full canvas re-render, landing wherever the user happened to let go.
+      //
+      // WHICH letters is not decided here: the shortcut is a field on the
+      // registry entry, beside the menu row that advertises it, and this reads
+      // that field rather than re-spelling three letters two modules away. A
+      // layer given a letter there is bound the same day — where three
+      // hand-written arms would have left it printed on its menu row (and in
+      // the help sheet, which reads the same field) and bound to nothing. The
+      // write still goes through setVisibility, never a store setter by hand,
+      // so the registry stays the one place a flag's name lives. Repeats are
+      // dropped: a held key would otherwise toggle at auto-repeat rate, each
+      // press a store write and a full canvas re-render, landing wherever the
+      // user happened to let go.
       //
       // A press can be a no-op on screen: anchors nest under showNetwork and
       // are force-revealed by creating-transfer/placing-anchor, so toggling
@@ -837,24 +843,17 @@ export default function App() {
       // and strands the preference the first time one is missed.
       // Which is also why each press toasts: with the layer off-screen, out of
       // view, or held up by a mode, the message is the only confirmation the
-      // key landed, and it names the direction so a mis-hit is legible.
-      if (!inFormControl && !mod && !e.repeat && (e.key === 'a' || e.key === 'A')) {
-        const next = !useViewportStore.getState().showAnchors;
-        setVisibility('showAnchors', next);
-        pushToast('info', next ? 'Showing anchors' : 'Hiding anchors');
-        return;
-      }
-      if (!inFormControl && !mod && !e.repeat && (e.key === 'w' || e.key === 'W')) {
-        const next = !useViewportStore.getState().showWaypoints;
-        setVisibility('showWaypoints', next);
-        pushToast('info', next ? 'Showing waypoints' : 'Hiding waypoints');
-        return;
-      }
-      if (!inFormControl && !mod && !e.repeat && (e.key === 'g' || e.key === 'G')) {
-        const next = !useViewportStore.getState().showGuides;
-        setVisibility('showGuides', next);
-        pushToast('info', next ? 'Showing guides' : 'Hiding guides');
-        return;
+      // key landed, and it names the direction so a mis-hit is legible. The
+      // noun is the menu row's own label, so the two cannot come to disagree
+      // about what the layer is called.
+      if (!inFormControl && !mod && !e.repeat) {
+        const layer = VISIBILITY_ITEMS.find((i) => i.shortcut === e.key.toUpperCase());
+        if (layer) {
+          const next = !useViewportStore.getState()[layer.key];
+          setVisibility(layer.key, next);
+          pushToast('info', `${next ? 'Showing' : 'Hiding'} ${layer.label.toLowerCase()}`);
+          return;
+        }
       }
       if (!inFormControl && !mod && (e.key === 'v' || e.key === 'V')) {
         setToolMode('arrow');

@@ -22,39 +22,37 @@ interface SnapPrefsState {
   recallPreset: (slot: number) => boolean;
 }
 
-/** What actually goes to localStorage (see `partialize`). */
-type SnapPrefsPersisted = Pick<SnapPrefsState, 'modes' | 'presets'>;
+/**
+ * What actually goes to localStorage (see `partialize`) — with `modes` PARTIAL
+ * on the way back in, which is the honest shape of a stored blob: it carries
+ * whatever keys existed when it was written, and {@link useSnapPrefs}'s `merge`
+ * completes it.
+ */
+interface SnapPrefsPersisted {
+  modes: Partial<SnapModes>;
+  presets: Record<number, SnapModes>;
+}
 
 /**
- * Bring a persisted blob up to the current shape. Two jobs, and the second is
- * the one that matters on every future bump:
+ * Bring a persisted blob up to the current SHAPE: v0 stored `all`/`grid` as
+ * booleans, and they become the directional enums (`all: true → 'all'`,
+ * `grid: true → 'both'`, false → 'off'). A v1 blob's are already strings and
+ * pass through untouched.
  *
- *  - v0 stored `all`/`grid` as booleans; they become the directional enums
- *    (`all: true → 'all'`, `grid: true → 'both'`, falsey → off). Idempotent for
- *    a v1 blob, whose values are already strings.
- *  - any key the blob PREDATES is filled from {@link DEFAULT_SNAP_MODES}. This
- *    is not optional politeness: zustand's default merge replaces `modes`
- *    wholesale, so a blob written before a mode existed would otherwise leave
- *    that mode `undefined` — a required field missing at runtime, with the
- *    toolbar reading one thing and the snap code another.
+ * Filling in keys the blob PREDATES is deliberately not this function's job —
+ * that lives in `merge`, which runs on every rehydrate rather than only when
+ * the stored version differs from the configured one.
  */
 function migrateSnapPrefs(persisted: unknown): SnapPrefsPersisted {
   const modes = (persisted as { modes?: Partial<Record<keyof SnapModes, unknown>> })?.modes ?? {};
-  const all = modes.all;
-  const grid = modes.grid;
+  const { all, grid } = modes;
   return {
     // A v0/v1 blob predates presets entirely — nothing to carry across.
     presets: {},
     modes: {
-      ...DEFAULT_SNAP_MODES,
       ...(modes as Partial<SnapModes>),
-      all: typeof all === 'boolean' ? (all ? 'all' : 'off') : ((all as SnapModes['all']) ?? 'off'),
-      grid:
-        typeof grid === 'boolean'
-          ? grid
-            ? 'both'
-            : 'off'
-          : ((grid as SnapModes['grid']) ?? 'off'),
+      ...(typeof all === 'boolean' ? { all: all ? ('all' as const) : ('off' as const) } : {}),
+      ...(typeof grid === 'boolean' ? { grid: grid ? ('both' as const) : ('off' as const) } : {}),
     },
   };
 }
@@ -92,6 +90,29 @@ export const useSnapPrefs = create<SnapPrefsState>()(
         version < 2 ? migrateSnapPrefs(persisted) : (persisted as SnapPrefsPersisted),
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({ modes: s.modes, presets: s.presets }),
+      // zustand's own shallow merge, plus the fill that keeps `modes` whole.
+      // That merge replaces `modes` WHOLESALE, so a blob written before a mode
+      // existed leaves it `undefined` — a required field missing at runtime,
+      // with the toolbar reading one thing and the snap code another.
+      //
+      // The fill belongs HERE and not in `migrate`: zustand runs `migrate` only
+      // when the stored version differs from the configured one, so every blob
+      // this build writes skips it entirely. A mode added without a version
+      // bump would land undefined on every existing installation while the
+      // migration's own tests went on passing.
+      //
+      // A PRESET's modes are a level deeper than any merge hook reaches, so
+      // they are filled on the way out instead — see `recallPreset`.
+      merge: (persisted, current) => {
+        const stored = (persisted ?? {}) as Partial<SnapPrefsPersisted>;
+        return {
+          ...current,
+          ...stored,
+          // Absent is not a violation: a blob with no `modes` at all keeps the
+          // live ones, exactly as the shallow merge alone would have.
+          modes: stored.modes ? { ...DEFAULT_SNAP_MODES, ...stored.modes } : current.modes,
+        };
+      },
     },
   ),
 );

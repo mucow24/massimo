@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { MapSort } from './mapLibrary';
+import { isMapSort, type MapSort } from './mapLibrary';
+import { healPersistedUnion } from './persistedUnion';
+
+/** The order a fresh boot opens the library on, and what a stored non-member
+ *  heals to: what you were last working on, first. */
+const DEFAULT_MAP_SORT: MapSort = 'updated';
 
 interface LibraryPrefsState {
   /** How the library dialog orders its map list. What each mode means is
@@ -27,7 +32,7 @@ interface LibraryPrefsState {
 export const useLibraryPrefs = create<LibraryPrefsState>()(
   persist(
     (set) => ({
-      sort: 'updated',
+      sort: DEFAULT_MAP_SORT,
       setSort: (sort) => set({ sort }),
       starredMapsOnly: false,
       setStarredMapsOnly: (starredMapsOnly) => set({ starredMapsOnly }),
@@ -42,6 +47,20 @@ export const useLibraryPrefs = create<LibraryPrefsState>()(
         starredMapsOnly: s.starredMapsOnly,
         starredVersionsOnly: s.starredVersionsOnly,
       }),
+      // zustand's shallow merge, plus the gate on the one stored UNION here
+      // (see healPersistedUnion). A mode MAP_SORTS no longer offers leaves the
+      // picker's Radix trigger with nothing to render while `sortMaps` falls
+      // through to newest-edited — the control blank and the list ordered by
+      // something it never said. The two star filters need no gate: each is
+      // read as a boolean.
+      merge: (persisted, current) => {
+        const stored = (persisted ?? {}) as Partial<LibraryPrefsState>;
+        return {
+          ...current,
+          ...stored,
+          sort: healPersistedUnion(stored.sort, current.sort, isMapSort, DEFAULT_MAP_SORT),
+        };
+      },
     },
   ),
 );

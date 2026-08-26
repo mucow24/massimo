@@ -4,9 +4,14 @@ import {
   BUILTIN_PALETTE_NAMES,
   copyPalette,
   dropEmptyPalettes,
+  isPaletteSort,
   type Palette,
   type PaletteSort,
 } from '../model/palettes';
+import { healPersistedUnion } from './persistedUnion';
+
+/** The order a fresh library opens in, and what a stored non-member heals to. */
+const DEFAULT_PALETTE_SORT: PaletteSort = 'name';
 
 interface CustomPalettesState {
   /** The user's imported palettes — the half of the library that isn't built in. */
@@ -51,7 +56,7 @@ export const useCustomPalettes = create<CustomPalettesState>()(
     (set, get) => ({
       palettes: [],
       starred: [],
-      sort: 'name',
+      sort: DEFAULT_PALETTE_SORT,
       addPalette: (input) => {
         if (BUILTIN_PALETTE_NAMES.has(input.name)) return false;
         if (input.swatches.length === 0) return false;
@@ -120,6 +125,19 @@ export const useCustomPalettes = create<CustomPalettesState>()(
       },
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({ palettes: s.palettes, starred: s.starred, sort: s.sort }),
+      // zustand's shallow merge, plus the gate on the one stored UNION here
+      // (see healPersistedUnion). A mode PALETTE_SORTS no longer offers leaves
+      // the picker's Radix trigger blank while `libraryPalettes` falls through
+      // to plain name order — and `starred` is a FILTER as well as an order, so
+      // a stuck value can hide most of the library too.
+      merge: (persisted, current) => {
+        const stored = (persisted ?? {}) as Partial<CustomPalettesState>;
+        return {
+          ...current,
+          ...stored,
+          sort: healPersistedUnion(stored.sort, current.sort, isPaletteSort, DEFAULT_PALETTE_SORT),
+        };
+      },
     },
   ),
 );

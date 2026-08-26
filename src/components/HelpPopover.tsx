@@ -3,6 +3,12 @@ import { createPortal } from 'react-dom';
 import { Cross2Icon, QuestionMarkIcon } from '@radix-ui/react-icons';
 import { isInFormField, useDismiss } from './usePopover';
 import { SNAP_TOGGLE_COUNT, SNAP_TOGGLE_NAMES } from './SnapToggleBar';
+import { VISIBILITY_ITEMS } from '../state/visibility';
+
+/** The layers that carry a bare-letter shortcut, in View-menu order — the same
+ *  entries App.tsx binds the keys from, so the row below and the keyboard
+ *  cannot come to describe different sets. */
+const LETTERED_LAYERS = VISIBILITY_ITEMS.filter((i) => i.shortcut);
 
 interface HelpRow {
   k: string; // the gesture/key, rendered as a <kbd> chip
@@ -15,9 +21,11 @@ interface HelpSection {
 
 // Every row here is verified by hand against the actual handlers (App.tsx
 // keyboard map, useStationInteraction, useRectSelect, the canvas drag hooks,
-// …) — when an interaction changes, update its row. The one exception is the
-// snap row, which is built from the toggle bar's ladder because that ladder
-// also fixes the digit keys it documents; see it below.
+// …) — when an interaction changes, update its row. The exceptions are the two
+// rows whose keys come from a registry that also FIXES them: the snap row (the
+// toggle bar's ladder, whose indices are the digit keys) and the layer row
+// (VISIBILITY_ITEMS, whose `shortcut` field is what App.tsx binds). Neither is
+// re-listed here; see them below.
 const SECTIONS: HelpSection[] = [
   {
     title: 'Navigate',
@@ -148,9 +156,13 @@ const SECTIONS: HelpSection[] = [
   {
     title: 'View',
     rows: [
+      // Built from the visibility registry, not re-listed: the registry is
+      // where a layer's letter lives and what App.tsx binds it from, so a
+      // layer given (or losing) one there would otherwise leave this row
+      // naming a keyboard nobody has.
       {
-        k: 'A · W · G',
-        effect: 'Show / hide anchors · waypoints · guides (the View menu holds the rest)',
+        k: LETTERED_LAYERS.map((i) => i.shortcut).join(' · '),
+        effect: `Show / hide ${LETTERED_LAYERS.map((i) => i.label.toLowerCase()).join(' · ')} (the View menu holds the rest)`,
       },
       { k: 'R · Shift+R', effect: 'Toggle the grid · cycle its size (R rotates a selected stop)' },
     ],

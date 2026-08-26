@@ -400,9 +400,10 @@ export const PALETTE_SORTS = ['name', 'starred'] as const;
 /** How the library column is listed. `starred` also FILTERS to starred rows. */
 export type PaletteSort = (typeof PALETTE_SORTS)[number];
 
-/** Is `v` one of the known sort modes? The gate the picker's value judges by. */
-export const isPaletteSort = (v: string): v is PaletteSort =>
-  (PALETTE_SORTS as readonly string[]).includes(v);
+/** Is `v` one of the known sort modes? The gate the picker's value judges by,
+ *  and the one a rehydrating pref heals against (see MAP_SORTS for the rule). */
+export const isPaletteSort = (v: unknown): v is PaletteSort =>
+  (PALETTE_SORTS as readonly unknown[]).includes(v);
 
 /** A library row: a palette plus the two things only the library knows. */
 export interface LibraryPalette extends Palette {

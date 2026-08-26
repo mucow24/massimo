@@ -57,7 +57,7 @@ describe('useSnapPrefs', () => {
 
   it('fills a key the persisted blob predates, rather than leaving it undefined', () => {
     // A v1 blob has no `circle`. Zustand's default merge replaces `modes`
-    // WHOLESALE, so without a version bump the store would run with a required
+    // WHOLESALE, so without the fill the store would run with a required
     // field missing — benign today only because `undefined` happens to be
     // falsey, which is not the invariant we want to rest on.
     localStorage.setItem(
@@ -71,6 +71,31 @@ describe('useSnapPrefs', () => {
     const modes = useSnapPrefs.getState().modes;
     expect(modes.circle).toBe(false);
     // ...without trampling what the user had actually set.
+    expect(modes.grid).toBe('both');
+  });
+
+  /**
+   * The same fill, at the CURRENT version — which is the case that actually
+   * happens. `migrate` runs only when the stored version differs from the
+   * configured one, so every blob written by this build skips it entirely: the
+   * next mode added without a version bump would land `undefined` on every
+   * existing installation, while the v1 test above went on passing. The fill
+   * therefore has to sit in `merge`, which runs on every rehydrate.
+   */
+  it('fills a predated key in a CURRENT-version blob too, where migrate never runs', () => {
+    localStorage.setItem(
+      'massimo-snap-prefs-v1',
+      JSON.stringify({
+        state: {
+          modes: { line: true, equidistant: false, tens: false, all: 'off', grid: 'both' },
+          presets: {},
+        },
+        version: 2,
+      }),
+    );
+    useSnapPrefs.persist.rehydrate();
+    const modes = useSnapPrefs.getState().modes;
+    expect(modes.circle).toBe(false);
     expect(modes.grid).toBe('both');
   });
 

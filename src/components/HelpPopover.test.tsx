@@ -5,6 +5,7 @@ import { HelpPopover } from './HelpPopover';
 import { SnapToggleBar, SNAP_TOGGLE_COUNT, SNAP_TOGGLE_NAMES } from './SnapToggleBar';
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useViewportStore } from '../state/viewportStore';
+import { VISIBILITY_ITEMS } from '../state/visibility';
 import { DEFAULT_SNAP_MODES } from '../geometry/snap';
 
 // The overlay portals to the nearest `.app` ancestor, so give it one.
@@ -116,5 +117,29 @@ describe('<HelpPopover /> — the snap row tracks the toggle bar', () => {
     expect(barNames).toHaveLength(SNAP_TOGGLE_COUNT);
     expect(row.textContent).toContain(`(${barNames.join(', ')})`);
     expect(row.textContent).toContain(`(${SNAP_TOGGLE_NAMES.join(', ')})`);
+  });
+});
+
+describe('<HelpPopover /> — the layer row tracks the visibility registry', () => {
+  // Same rule as the snap row one section up. The letter lives on the registry
+  // entry and App.tsx binds it from there, so this row must name that set and
+  // no other: a layer given a letter and missing here is a shortcut the user
+  // is never told about, and one listed here but dropped from the registry is
+  // a key press that does nothing.
+  it('names every lettered layer, in registry order, and only those', async () => {
+    const user = userEvent.setup();
+    render(
+      <div className="app">
+        <HelpPopover />
+      </div>,
+    );
+    await user.keyboard('?');
+    const lettered = VISIBILITY_ITEMS.filter((i) => i.shortcut);
+    const row = screen.getByText(/^Show \/ hide /);
+    const chip = row.parentElement?.querySelector('kbd');
+    expect(chip).toHaveTextContent(lettered.map((i) => i.shortcut).join(' · '));
+    expect(row.textContent).toBe(
+      `Show / hide ${lettered.map((i) => i.label.toLowerCase()).join(' · ')} (the View menu holds the rest)`,
+    );
   });
 });
