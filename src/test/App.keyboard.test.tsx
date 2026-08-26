@@ -1774,6 +1774,42 @@ describe('App keyboard shortcuts: view + grid toggles', () => {
     });
   });
 
+  /**
+   * The letter lives on the registry entry so the menu row can advertise it
+   * (`VisibilityItem.shortcut`) — a claim that only holds while the HANDLER
+   * reads the same field. One hand-written arm per letter satisfies every
+   * per-letter test below and still leaves a fourth layer's shortcut printed on
+   * its menu row, in the help sheet, and bound to nothing. Derived from the
+   * registry, so a letter added there is a letter bound here.
+   */
+  it('binds every shortcut the visibility registry advertises, to its own layer', () => {
+    render(<App />);
+    const advertised = VISIBILITY_ITEMS.filter((i) => i.shortcut);
+    expect(advertised.length).toBeGreaterThan(0);
+    for (const item of advertised) {
+      const before = useViewportStore.getState()[item.key];
+      fireEvent.keyDown(window, { key: (item.shortcut as string).toLowerCase() });
+      expect(useViewportStore.getState()[item.key], `${item.shortcut} → ${item.key}`).toBe(!before);
+      // And it says which way that layer went — see the toast rationale below.
+      const said = toastTexts();
+      expect(said[said.length - 1]).toBe(
+        `${before ? 'Hiding' : 'Showing'} ${item.label.toLowerCase()}`,
+      );
+    }
+  });
+
+  /** The other half: a bare letter the registry does NOT advertise must not
+   *  quietly flip a layer. Without this, "bind everything advertised" is
+   *  satisfied by binding every letter on the keyboard. */
+  it('leaves the layers alone on a letter the registry does not advertise', () => {
+    render(<App />);
+    const flags = () => VISIBILITY_ITEMS.map((i) => useViewportStore.getState()[i.key]);
+    const before = flags();
+    fireEvent.keyDown(window, { key: 'q' });
+    fireEvent.keyDown(window, { key: 'z' });
+    expect(flags()).toEqual(before);
+  });
+
   it('A toggles anchor visibility both ways', () => {
     render(<App />);
     fireEvent.keyDown(window, { key: 'a' });

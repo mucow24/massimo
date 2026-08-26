@@ -10,7 +10,10 @@ import type { MapDoc, StyleKind } from './types';
 // the set the import path rewrites (`sanitizeDocReferences`'s id sweep, plus
 // `sanitizeRegionAssignments` and `sanitizeStyles`, which each rebuild `id`
 // from the key), so the audit and the repair must enumerate the same
-// collections or the door stops guarding what the load path promises.
+// collections or the door stops guarding what the load path promises. Neither
+// list can derive itself from the other — the repair is split across three
+// functions with different jobs — so docAudit.test.ts asks BOTH the same
+// question, over the collections it reads off a populated doc.
 const ID_KEYED_COLLECTIONS: ReadonlyArray<[keyof MapDoc, string]> = [
   ['stations', 'station'],
   ['lines', 'line'],

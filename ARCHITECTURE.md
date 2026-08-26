@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `c4e9fb0` (2026-08-24, #547) — verified against the live source.** This
+**Up to date as of commit `2aee13f` (2026-08-26, #548) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -217,6 +217,8 @@ src/
                                 #   of them gate exported ink, which nest under the network,
                                 #   which modes reveal them, non-default detection
     mirrorDispatch.ts           # mirror-matching fan-out shared by every layout-edit surface
+    persistedUnion.ts           # healPersistedUnion: the gate a stored union field passes in a
+                                #   persist `merge` hook (member / non-member→default / absent→live)
     viewportStore.ts            # useViewportStore (committed) + useLiveViewportStore (in-flight)
     fontEpoch.ts                # useFontEpoch: web-font load counter — a STORE so it crosses memo
     theme.ts                    # themeColors(darkMode, dayCanvasColor) table (no store; reads doc.darkMode)
@@ -1844,7 +1846,12 @@ legacy `custom:` ids — the only place in either load path that reaches into a 
   reconcile) are not violations. What the audit judges is the vocabulary the import path repairs
   TO, collection for collection — a record's key is its identity, so every id-keyed collection
   (`ID_KEYED_COLLECTIONS`, styles included, since a StyleDef's own `id` is what a stamp tags its
-  wearers with) is checked against the same key↔`id` rule step 6c rewrites.
+  wearers with) is checked against the same key↔`id` rule step 6c rewrites. The two sides are
+  spelled out separately — the audit as one list, the repair as `sanitizeDocReferences`' sweep
+  plus the two sanitizers that rebuild `id` themselves — so `docAudit.test.ts` puts the same
+  question to BOTH, over the id-keyed collections it reads off a populated doc rather than a third
+  hand-written list. A collection the repair alone forgets is the cruel case: the file imports,
+  and every export door toasts on it forever after, with nothing the user can do to clear it.
 - **Startup**: no explicit load in `App.tsx` — zustand `persist` rehydrates from localStorage on
   boot, running `migrateDoc`.
 - **Load → JSON…**: `parse(text, libraryPalettes)` then `adoptParsedDoc()` (below). The library
@@ -2357,9 +2364,12 @@ with the master switch rather than with the scaffolding below it — they are re
 it is. The **grid** is deliberately not among them — a drawing aid rather than map content, and its
 button pairs with the grid-size cycler beside it.
 
-Three layers also answer to the keyboard: `A` flips anchors, `W` waypoints and `G` guides (App.tsx,
-writing through `setVisibility` exactly as the checkboxes do — no second opinion about where a flag
-lives), and the letter is a `shortcut` field on the registry entry so the menu row can advertise it.
+Three layers also answer to the keyboard: `A` flips anchors, `W` waypoints and `G` guides. The
+letter is a `shortcut` field on the registry entry, and all three readers take it from there —
+App.tsx's key handler, the menu row that advertises it, and the help sheet's layer row — so a
+layer given (or losing) a letter cannot end up advertised and unbound. The write goes through
+`setVisibility` exactly as the checkboxes do, and the toast's noun is the entry's own `label`: no
+second opinion anywhere about where a flag lives or what it is called.
 Each letter **toasts which way the layer went**: the flag can flip with nothing changing on screen —
 anchors held up by the master switch or a mode reveal, waypoints out of view, a map with no guides
 drawn on it yet — so the message is the only confirmation the key landed. `R` toggles the grid and
@@ -2515,10 +2525,12 @@ Six seams cover it, and a seventh rule governs anything new:
   palette editor's Add color menu — and the point of it is that they agree, a color leaving all
   three the moment a palette covers it, so the derivation is here rather than at each of them.
 - [snapPrefs.ts](src/state/snapPrefs.ts) — `useSnapPrefs`: snap-mode toggles plus the preset
-  slots, persisted at **version 2** and migrated on rehydrate (v0's boolean `all`/`grid` become the
-  directional enums, and **any key the blob predates is filled from `DEFAULT_SNAP_MODES`** —
-  zustand's default merge replaces `modes` wholesale, so without that a mode added later reads
-  `undefined` at runtime). Number keys **1–6** (and Numpad1–6, via `e.code` so they fire with
+  slots, persisted at **version 2**. `migrate` handles the one SHAPE change (v0's boolean
+  `all`/`grid` become the directional enums); **filling any key the blob predates is `merge`'s
+  job, not `migrate`'s** — zustand's default merge replaces `modes` wholesale, so without the fill
+  a mode added later reads `undefined` at runtime, and `migrate` runs only when the stored version
+  differs from the configured one, which is never for a blob the current build wrote. Number keys
+  **1–6** (and Numpad1–6, via `e.code` so they fire with
   NumLock off) each advance one toggle a single step, in toolbar order — the keyboard twin of a
   click on that button. Both paths route through the pure `advanceSnapToggle(modes, index)`
   ([SnapToggleBar.tsx](src/components/SnapToggleBar.tsx)) so a keypress is exactly one click
@@ -2534,10 +2546,10 @@ Six seams cover it, and a seventh rule governs anything new:
   The map is **sparse on purpose**: a slot never saved is absent, which is how `recallPreset`
   knows to leave the live modes alone and return `false` for the caller to say so, rather than
   silently resetting someone's snapping because they reached for an empty slot. A recall spreads
-  over `DEFAULT_SNAP_MODES` on the way out for the reason the migration exists at all — the
-  persist migration cannot reach a value nested inside a preset, so a slot saved before a mode
-  existed would otherwise land that mode `undefined`, or (worse) leave whatever the live modes
-  held, making a recall depend on what it replaced.
+  over `DEFAULT_SNAP_MODES` on the way out for the same reason the merge fill exists — a preset's
+  modes sit a level deeper than any merge hook reaches, so a slot saved before a mode existed
+  would otherwise land that mode `undefined`, or (worse) leave whatever the live modes held,
+  making a recall depend on what it replaced.
 
 ---
 
@@ -4598,8 +4610,16 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   `canonicalStyleProps` refuses a def rather than repairing it, so the user loses a style, not a
   field. A persisted PREF fails the same way from the other end: a mode the picker no longer offers
   is stuck in storage, unreachable and unwritable, painting whatever its reader's fallback is. The
-  guard is what lets the store heal one on the way in instead — `viewportStore`'s `merge` sends
-  `dayCanvasColor` through `isDayCanvasColor` and drops a non-member back to the default.
+  guard is what lets the store heal one on the way in instead, and every persisted union goes
+  through the one rule — `healPersistedUnion` ([persistedUnion.ts](src/state/persistedUnion.ts)):
+  a stored member passes, a stored non-member drops to the store's default, and an ABSENT one
+  keeps the live value, since a blob predating the field violates nothing. It belongs in a
+  `merge` hook and never in `migrate`, which zustand runs only when the stored version differs
+  from the configured one — so a gate placed there would never see a blob the current build
+  wrote. The three that need it are `viewportStore`'s `dayCanvasColor` (`isDayCanvasColor`),
+  `libraryPrefs`' `sort` (`isMapSort`) and `customPalettes`' `sort` (`isPaletteSort`); the flags
+  and numbers beside them need none, being read as booleans or run through a ladder lookup that
+  already falls back.
   Compile-time exhaustiveness comes from a `Record<Union, …>` the array is paired with: the UI's
   chip or label map where the pickers need one
   (`ROUTE_BULLET_SHAPE_LABEL`, `LINE_END_LABELS`, `TRANSFER_DRAW_LABELS`, `DOT_BASE_SHAPE_LABELS`,

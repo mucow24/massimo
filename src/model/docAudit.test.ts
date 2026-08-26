@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { auditDoc } from './docAudit';
-import { parse } from './serialize';
+import { parse, serialize } from './serialize';
 import * as T from './transforms';
 import {
   makeDoc,
@@ -30,7 +30,10 @@ const cleanDoc = (): MapDoc =>
   });
 
 // The same doc carrying one record of EVERY id-keyed collection, so a test can
-// ask each of them the same question.
+// ask each of them the same question. Every record is one the LOAD PATH keeps
+// as well as one the audit accepts — the two are not the same bar (a region
+// assignment with no anchors passes the audit and is dropped by
+// `sanitizeRegionAssignments`), and the round-trip test below needs both.
 const populatedDoc = (): MapDoc =>
   makeDoc({
     stations: [
@@ -44,7 +47,14 @@ const populatedDoc = (): MapDoc =>
     transfers: [makeTransfer({ id: 'x1' })],
     textLabels: [makeTextLabel({ id: 'g1' })],
     polygons: [makePolygon({ id: 'pg1' })],
-    regionAssignments: [{ id: 'r1', lineId: 'l1', lines: ['l1'], anchors: [] }],
+    regionAssignments: [
+      {
+        id: 'r1',
+        lineId: 'l1',
+        lines: ['l1'],
+        anchors: [{ pairKey: 's1|s2', anchorEnd: 'from', distance: 5, lineId: 'l1' }],
+      },
+    ],
     svgImages: [makeSvgImage({ id: 'im1' })],
     lineCircles: [makeLineCircle({ id: 'lc1' })],
     guides: [makeGuide({ id: 'gd1' })],
@@ -97,6 +107,39 @@ describe('auditDoc', () => {
         [key]: { ...records[key], id: 'wrong-id' },
       };
       return !auditDoc(doc).join('\n').includes('wrong-id');
+    });
+    expect(missed).toEqual([]);
+  });
+
+  /**
+   * The other half of the rule above, and the half nothing was holding.
+   *
+   * The audit's list and the import path's repair have to enumerate the SAME
+   * collections: the audit is what the export doors toast on, so a collection
+   * the repair forgets means a file that imports "successfully" and then
+   * toasts on every save the user ever makes of it, with no way to clear it.
+   * The audit half is derived off the doc and so extends itself; the repair
+   * half is eleven hand-written `sweep(...)` calls in `sanitizeDocReferences`
+   * plus two collections their own sanitizers rebuild (`sanitizeStyles`,
+   * `sanitizeRegionAssignments`), and a new collection joins none of them by
+   * itself. Asking parse() the same question the audit is asked is what makes
+   * that loud.
+   */
+  it('parse() repairs an id/key mismatch in every id-keyed collection', () => {
+    const collections = idKeyedCollections(populatedDoc());
+    expect(collections.length).toBeGreaterThanOrEqual(13);
+    const missed = collections.filter((collection) => {
+      const doc = populatedDoc();
+      const records = doc[collection as keyof MapDoc] as Record<string, { id: string }>;
+      const key = Object.keys(records)[0];
+      (doc as unknown as Record<string, Record<string, unknown>>)[collection] = {
+        ...records,
+        [key]: { ...records[key], id: 'wrong-id' },
+      };
+      const r = parse(serialize(doc));
+      if (!r.ok) return true;
+      const out = r.doc[collection as keyof MapDoc] as Record<string, { id: string }>;
+      return out[key]?.id !== key;
     });
     expect(missed).toEqual([]);
   });

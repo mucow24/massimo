@@ -149,4 +149,22 @@ describe('useCustomPalettes', () => {
     persisted({ palettes: [{ name: 'New palette', swatches: [] }, kept], starred: [] }, 1);
     expect(useCustomPalettes.getState().palettes).toEqual([kept]);
   });
+
+  /**
+   * `sort` is a persisted union, and a persisted union fails from the picker's
+   * end: a mode PALETTE_SORTS no longer offers has no Select item to match, so
+   * the trigger reads blank while `libraryPalettes` falls through to plain
+   * name order — the picker showing one thing and the column doing another.
+   * The guard beside the ladder is what lets the store heal it on the way in.
+   */
+  it('heals a stored sort the ladder no longer offers', () => {
+    persisted({ palettes: [], starred: [], sort: 'recent' }, 2);
+    expect(useCustomPalettes.getState().sort).toBe('name');
+  });
+
+  it('leaves a blob that predates the sort field on the live value', () => {
+    useCustomPalettes.setState({ sort: 'starred' });
+    persisted({ palettes: [], starred: [] }, 2);
+    expect(useCustomPalettes.getState().sort).toBe('starred');
+  });
 });

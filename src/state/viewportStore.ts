@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { Viewport } from '../model/types';
+import { healPersistedUnion } from './persistedUnion';
 
 /** Grid cell sizes the toolbar button cycles through, in world units. */
 export const GRID_SIZES: readonly number[] = [5, 10, 20];
@@ -275,22 +276,24 @@ export const useViewportStore = create<ViewportState>()(
         // The narrow toggles above each clear one kind, so a reload under them
         // still shows a recognisable map.
       }),
-      // zustand's own shallow merge, plus a gate on the one stored UNION here.
-      // A paper the ladder no longer offers has no way back — no menu row names
-      // it, and nothing but a rehydrate can write it — so it would sit in the
-      // store for good, painting the themeColors fallback while the Map menu
-      // shows a choice the user never made. The flags and numbers beside it
-      // need no such gate: each is read as truthy or run through a ladder
-      // lookup that already falls back (see nextGridSize).
+      // zustand's own shallow merge, plus the gate every stored UNION passes on
+      // the way in (healPersistedUnion, which is where the rule is written
+      // down). A paper the ladder no longer offers has no way back — no menu
+      // row names it, and nothing but a rehydrate can write it. The flags and
+      // numbers beside it need no such gate: each is read as truthy or run
+      // through a ladder lookup that already falls back (see nextGridSize).
       merge: (persisted, current) => {
         const stored = (persisted ?? {}) as Partial<ViewportState>;
-        const merged = { ...current, ...stored };
-        // Absent is not a violation: a blob predating the field keeps the live
-        // value, exactly as the shallow merge alone would have.
-        if (stored.dayCanvasColor !== undefined && !isDayCanvasColor(stored.dayCanvasColor)) {
-          merged.dayCanvasColor = DEFAULT_DAY_CANVAS_COLOR;
-        }
-        return merged;
+        return {
+          ...current,
+          ...stored,
+          dayCanvasColor: healPersistedUnion(
+            stored.dayCanvasColor,
+            current.dayCanvasColor,
+            isDayCanvasColor,
+            DEFAULT_DAY_CANVAS_COLOR,
+          ),
+        };
       },
     },
   ),

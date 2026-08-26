@@ -57,8 +57,11 @@ export const MAP_SORTS = ['updated', 'created', 'name'] as const;
 /** How the library list is ordered. A star never enters into it. */
 export type MapSort = (typeof MAP_SORTS)[number];
 
-/** Is `v` one of the known sort modes? The gate the picker's value judges by. */
-export const isMapSort = (v: string): v is MapSort => (MAP_SORTS as readonly string[]).includes(v);
+/** Is `v` one of the known sort modes? The gate the picker's value judges by,
+ *  and the one a rehydrating pref heals against — hence `unknown`: a stored
+ *  blob can hand over a number, a null or an object, not just a wrong string. */
+export const isMapSort = (v: unknown): v is MapSort =>
+  (MAP_SORTS as readonly unknown[]).includes(v);
 
 export interface VersionMeta {
   id: number;
