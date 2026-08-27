@@ -1288,3 +1288,50 @@ describe('clearAllSelections', () => {
     expect(useSelection.getState().hoveredLineStop).toBeNull();
   });
 });
+
+describe('selection — the stored sidebar tab is judged on the way in', () => {
+  // `activeTab` is the one persisted field in this store that is a UNION, and
+  // it fails the way every stored pref union does: no tab button writes a
+  // member the ladder has dropped, so a stale one is unreachable from the UI
+  // and sits in localStorage forever. Unlike the snap toggles it has no
+  // reader-side fallback either — Sidebar.tsx compares it against the three
+  // names with `===`, so a non-member paints a sidebar with no tab marked
+  // active and no panel body at all.
+  const store = (activeTab: unknown) =>
+    localStorage.setItem(
+      'massimo-sidebar-v1',
+      JSON.stringify({ state: { sidebarOpen: true, activeTab }, version: 0 }),
+    );
+
+  beforeEach(() => localStorage.clear());
+
+  it('keeps a tab the ladder still offers', async () => {
+    store('styles');
+    await useSelection.persist.rehydrate();
+    expect(useSelection.getState().activeTab).toBe('styles');
+  });
+
+  it('heals a tab the ladder no longer offers back to the default', async () => {
+    store('regions');
+    await useSelection.persist.rehydrate();
+    expect(useSelection.getState().activeTab).toBe('stations');
+  });
+
+  it('heals a tab of the wrong TYPE too — a blob is only ever JSON', async () => {
+    store(3);
+    await useSelection.persist.rehydrate();
+    expect(useSelection.getState().activeTab).toBe('stations');
+  });
+
+  it('leaves the live tab alone when the blob predates the field', async () => {
+    useSelection.setState({ activeTab: 'lines' });
+    localStorage.setItem(
+      'massimo-sidebar-v1',
+      JSON.stringify({ state: { sidebarOpen: true }, version: 0 }),
+    );
+    await useSelection.persist.rehydrate();
+    const s = useSelection.getState();
+    expect(s.activeTab).toBe('lines');
+    expect(s.sidebarOpen).toBe(true); // control: the rehydrate did apply
+  });
+});

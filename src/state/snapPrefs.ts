@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { DEFAULT_SNAP_MODES, type SnapModes } from '../geometry/snap';
+import { DEFAULT_SNAP_MODES, isAllSnap, isGridSnap, type SnapModes } from '../geometry/snap';
+import { healPersistedUnion } from './persistedUnion';
 
 interface SnapPrefsState {
   modes: SnapModes;
@@ -9,10 +10,14 @@ interface SnapPrefsState {
    *  absent, which is how {@link recallPreset} knows to leave the live modes
    *  alone rather than reset them. */
   presets: Record<number, SnapModes>;
-  /** Set one snap mode. Value type is the union across keys (booleans for
-   *  line/equidistant/tens, the directional enums for all/grid) — the
-   *  toolbar's spec table is the source of truth for which values are legal
-   *  per key, so a correlated generic isn't worth the call-site casts. */
+  /** Set one snap mode. The value type is deliberately WIDENED to the union
+   *  across keys (booleans for line/equidistant/tens, the directional enums for
+   *  all/grid): the only caller that varies its key is the toolbar's toggle
+   *  cycle, and correlating the setter itself would push a cast onto it for no
+   *  gain. What keeps that honest is that the toolbar's own spec table IS
+   *  correlated per key (`ToggleSpec` in SnapToggleBar.tsx), so a cycle handing
+   *  a key a value from another key's ladder fails to compile there — where the
+   *  pairing is actually written down. */
   setMode: (key: keyof SnapModes, value: SnapModes[keyof SnapModes]) => void;
   /** Snapshot the live modes into `slot`, replacing whatever was there. */
   savePreset: (slot: number) => void;
@@ -54,6 +59,33 @@ function migrateSnapPrefs(persisted: unknown): SnapPrefsPersisted {
       ...(typeof all === 'boolean' ? { all: all ? ('all' as const) : ('off' as const) } : {}),
       ...(typeof grid === 'boolean' ? { grid: grid ? ('both' as const) : ('off' as const) } : {}),
     },
+  };
+}
+
+/**
+ * Complete a stored `modes` blob and judge the two members of it that are
+ * UNIONS.
+ *
+ * The fill and the gate answer opposite halves of the same question. Filling
+ * covers a key the blob PREDATES — absent is not a violation, and the default
+ * is what zustand's shallow merge would have left there anyway. Gating covers a
+ * key the blob CARRIES with a value the ladder no longer offers: the toggle
+ * cycle only ever writes a member, so nothing in the UI can replace one once
+ * it is stored, and every reader swallows it in silence — `axesForAllSnap` and
+ * `gridConstrains` fall through to "no axes", and the toolbar's
+ * `Math.max(0, findIndex)` paints the Off glyph over it. The bar would read Off
+ * while the blob said `'sideways'`, on every reload, until the user happened to
+ * click that one toggle.
+ *
+ * The booleans beside them need neither: absent is filled here, and a stored
+ * non-boolean is read as one by every consumer.
+ */
+function healModes(stored: Partial<SnapModes>): SnapModes {
+  const filled = { ...DEFAULT_SNAP_MODES, ...stored };
+  return {
+    ...filled,
+    all: healPersistedUnion(stored.all, filled.all, isAllSnap, DEFAULT_SNAP_MODES.all),
+    grid: healPersistedUnion(stored.grid, filled.grid, isGridSnap, DEFAULT_SNAP_MODES.grid),
   };
 }
 
@@ -110,7 +142,7 @@ export const useSnapPrefs = create<SnapPrefsState>()(
           ...stored,
           // Absent is not a violation: a blob with no `modes` at all keeps the
           // live ones, exactly as the shallow merge alone would have.
-          modes: stored.modes ? { ...DEFAULT_SNAP_MODES, ...stored.modes } : current.modes,
+          modes: stored.modes ? healModes(stored.modes) : current.modes,
         };
       },
     },

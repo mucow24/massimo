@@ -10,7 +10,7 @@ import {
 import { useSnapPrefs } from '../state/snapPrefs';
 import { useSelection } from '../state/store';
 import { useViewportStore } from '../state/viewportStore';
-import { DEFAULT_SNAP_MODES, type SnapModes } from '../geometry/snap';
+import { ALL_SNAPS, DEFAULT_SNAP_MODES, GRID_SNAPS, type SnapModes } from '../geometry/snap';
 
 describe('<SnapToggleBar />', () => {
   beforeEach(() => {
@@ -309,5 +309,62 @@ describe('SNAP_TOGGLE_NAMES', () => {
     expect(labels).toHaveLength(SNAP_TOGGLE_COUNT);
     expect(SNAP_TOGGLE_NAMES).toHaveLength(SNAP_TOGGLE_COUNT);
     expect(labels).toEqual(SNAP_TOGGLE_NAMES.map((n) => `Snap to ${n}`));
+  });
+});
+
+/**
+ * The toolbar's cycle and the ladder in snap.ts are two spellings of the same
+ * set, and since the ladder became what `useSnapPrefs`' merge gate judges
+ * stored values against, a disagreement is no longer cosmetic:
+ *
+ *   - a member in the LADDER but not the cycle is a mode no click can ever
+ *     reach, exactly the stuck-in-storage case the gate exists to prevent;
+ *   - a state in the CYCLE but not the ladder is worse, and invisible in
+ *     manual testing — the click works, the map snaps, and then the next
+ *     reload heals the value away and the toggle springs back to Off with no
+ *     error anywhere.
+ *
+ * Neither can be derived from the other (the cycle carries icons and prose the
+ * geometry layer has no business knowing, and the ladder sits below the
+ * components so the store can reach it), so this asks them both the same
+ * question. Read through `advanceSnapToggle` rather than by exporting the spec
+ * table, so it pins the cycle the user actually walks.
+ */
+describe('the directional cycles and their ladders name the same members', () => {
+  /** Walk a toggle from the default modes, collecting each value it writes
+   *  until it wraps — i.e. the cycle in click order, starting one past Off. */
+  const cycleFrom = (index: number): unknown[] => {
+    const modes = { ...DEFAULT_SNAP_MODES } as Record<string, unknown>;
+    const walked: unknown[] = [];
+    for (let step = 0; step < SNAP_TOGGLE_COUNT * 4; step++) {
+      const next = advanceSnapToggle(modes as unknown as SnapModes, index);
+      if (!next || walked.includes(next.value)) break;
+      walked.push(next.value);
+      modes[next.key] = next.value;
+    }
+    return walked;
+  };
+
+  const indexOf = (key: keyof SnapModes) =>
+    Array.from({ length: SNAP_TOGGLE_COUNT }, (_, i) =>
+      advanceSnapToggle(DEFAULT_SNAP_MODES, i),
+    ).findIndex((r) => r?.key === key);
+
+  // Both start parked on Off, so a full walk is the ladder rotated by one.
+  const rotated = (ladder: readonly string[]) => [...ladder.slice(1), ladder[0]];
+
+  it('"Snap to all" cycles exactly ALL_SNAPS, in order', () => {
+    expect(cycleFrom(indexOf('all'))).toEqual(rotated(ALL_SNAPS));
+  });
+
+  it('"Snap to grid" cycles exactly GRID_SNAPS, in order', () => {
+    expect(cycleFrom(indexOf('grid'))).toEqual(rotated(GRID_SNAPS));
+  });
+
+  it('both ladders park on "off" at index 0, which is what the bar reads as inactive', () => {
+    expect(ALL_SNAPS[0]).toBe('off');
+    expect(GRID_SNAPS[0]).toBe('off');
+    expect(DEFAULT_SNAP_MODES.all).toBe('off');
+    expect(DEFAULT_SNAP_MODES.grid).toBe('off');
   });
 });

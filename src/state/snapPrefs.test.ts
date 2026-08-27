@@ -175,4 +175,56 @@ describe('useSnapPrefs', () => {
     expect(modes.all).toBe('off');
     expect(modes.grid).toBe('off');
   });
+  /**
+   * `all` and `grid` are the two stored snap prefs that are UNIONS, and they
+   * fail the way every stored union pref does: the toggle cycle only ever
+   * writes a member, so once a non-member is in the blob nothing in the UI can
+   * replace it. Every reader swallows it silently — `axesForAllSnap` and
+   * `gridConstrains` both fall through to "no axes", and the toolbar's
+   * `Math.max(0, findIndex)` paints the Off glyph — so the bar reads Off while
+   * the blob says otherwise, and it stays that way until the user happens to
+   * click that toggle. The gate heals it on the way in instead.
+   */
+  describe('the stored directional modes are judged on the way in', () => {
+    const storeModes = (modes: Record<string, unknown>) =>
+      localStorage.setItem(
+        'massimo-snap-prefs-v1',
+        JSON.stringify({ state: { modes, presets: {} }, version: 2 }),
+      );
+
+    it('keeps directional values the ladders still offer', () => {
+      storeModes({ all: 'diagonal', grid: 'vertical' });
+      useSnapPrefs.persist.rehydrate();
+      const modes = useSnapPrefs.getState().modes;
+      expect(modes.all).toBe('diagonal');
+      expect(modes.grid).toBe('vertical');
+    });
+
+    it('heals values the ladders no longer offer back to the defaults', () => {
+      storeModes({ all: 'sideways', grid: 'octolinear' });
+      useSnapPrefs.persist.rehydrate();
+      const modes = useSnapPrefs.getState().modes;
+      expect(modes.all).toBe('off');
+      expect(modes.grid).toBe('off');
+    });
+
+    it('heals values of the wrong TYPE too — a blob is only ever JSON', () => {
+      storeModes({ all: 7, grid: { x: 1 } });
+      useSnapPrefs.persist.rehydrate();
+      const modes = useSnapPrefs.getState().modes;
+      expect(modes.all).toBe('off');
+      expect(modes.grid).toBe('off');
+    });
+
+    it('leaves a blob that predates the directional modes on the defaults', () => {
+      // Absent is not a violation — the DEFAULT_SNAP_MODES fill owns that case,
+      // and the gate must not turn an omitted key into a second opinion.
+      storeModes({ line: true, tens: true });
+      useSnapPrefs.persist.rehydrate();
+      const modes = useSnapPrefs.getState().modes;
+      expect(modes.all).toBe('off');
+      expect(modes.grid).toBe('off');
+      expect(modes.tens).toBe(true); // control: the rehydrate did apply
+    });
+  });
 });
