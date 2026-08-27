@@ -85,18 +85,35 @@ export function snapPointToGrid(
 }
 
 /**
- * Directional state for "Snap to all". The button cycles through these:
- * off → horizontal-only → vertical-only → diagonal-only → all. Each value
- * selects which world axes the alignment may engage (see {@link axesForAllSnap}).
+ * Directional state for "Snap to all". The button cycles through these in this
+ * order: off → horizontal-only → vertical-only → diagonal-only → all. Each
+ * value selects which world axes the alignment may engage (see
+ * {@link axesForAllSnap}); index 0 is the off state the toolbar assumes.
+ *
+ * The ARRAY is the source of truth and the type is derived from it, so
+ * {@link isAllSnap} can judge a stored value without re-spelling the members.
+ * Both live here rather than beside the toolbar's cycle because the store that
+ * has to judge them sits below the components.
  */
-export type AllSnap = 'off' | 'horizontal' | 'vertical' | 'diagonal' | 'all';
+export const ALL_SNAPS = ['off', 'horizontal', 'vertical', 'diagonal', 'all'] as const;
+
+export type AllSnap = (typeof ALL_SNAPS)[number];
+
+export const isAllSnap = (v: unknown): v is AllSnap =>
+  typeof v === 'string' && (ALL_SNAPS as readonly string[]).includes(v);
 
 /**
- * Directional state for "Snap to grid". The button cycles through these:
+ * Directional state for "Snap to grid", in the order the button cycles them:
  * off → horizontal → vertical → both. "horizontal" locks Y (snaps onto
- * horizontal grid lines), "vertical" locks X, "both" snaps both axes.
+ * horizontal grid lines), "vertical" locks X, "both" snaps both axes. Ladder,
+ * type and guard as for {@link ALL_SNAPS}.
  */
-export type GridSnap = 'off' | 'horizontal' | 'vertical' | 'both';
+export const GRID_SNAPS = ['off', 'horizontal', 'vertical', 'both'] as const;
+
+export type GridSnap = (typeof GRID_SNAPS)[number];
+
+export const isGridSnap = (v: unknown): v is GridSnap =>
+  typeof v === 'string' && (GRID_SNAPS as readonly string[]).includes(v);
 
 /**
  * The one degree of freedom a single-DOF snap caller has left — an edge resize's

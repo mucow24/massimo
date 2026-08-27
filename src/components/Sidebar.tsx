@@ -11,6 +11,16 @@ import type { Line, LineId, Station, StationId } from '../model/types';
 import { legibleTextOn } from '../util/color';
 import { stationNameListText } from '../geometry/labelTokens';
 import { lineDisplayName } from '../model/lineNaming';
+import { SIDEBAR_TABS, type SidebarTab } from '../state/selection';
+
+/** Each tab's name in the strip; the count follows it in a badge. Keyed by the
+ *  ladder for the same reason `tabCounts` is — a new tab fails to compile until
+ *  it has one, rather than rendering a nameless button. */
+const TAB_LABELS: Record<SidebarTab, string> = {
+  stations: 'Stations',
+  lines: 'Lines',
+  styles: 'Styles',
+};
 
 type StationSortColumn = 'name' | 'stops';
 
@@ -240,6 +250,15 @@ export function Sidebar() {
     [stations, stationSortBy, stationSortDir, lineIndex],
   );
 
+  // The badge beside each tab's name. A Record, so a tab added to the ladder
+  // cannot ship without deciding what it counts — the compile-time half of the
+  // ladder rule, where SIDEBAR_TABS itself supplies the strip's order.
+  const tabCounts: Record<SidebarTab, number> = {
+    stations: stationList.length,
+    lines: Object.keys(lines).length,
+    styles: styleCount,
+  };
+
   const handleStationSortClick = (col: StationSortColumn) => {
     if (stationSortBy === col) {
       setStationSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -288,24 +307,15 @@ export function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="tab-bar">
-        <button
-          className={'tab' + (selection.activeTab === 'stations' ? ' active' : '')}
-          onClick={() => selection.toggleTab('stations')}
-        >
-          Stations ({stationList.length})
-        </button>
-        <button
-          className={'tab' + (selection.activeTab === 'lines' ? ' active' : '')}
-          onClick={() => selection.toggleTab('lines')}
-        >
-          Lines ({Object.keys(lines).length})
-        </button>
-        <button
-          className={'tab' + (selection.activeTab === 'styles' ? ' active' : '')}
-          onClick={() => selection.toggleTab('styles')}
-        >
-          Styles ({styleCount})
-        </button>
+        {SIDEBAR_TABS.map((tab) => (
+          <button
+            key={tab}
+            className={'tab' + (selection.activeTab === tab ? ' active' : '')}
+            onClick={() => selection.toggleTab(tab)}
+          >
+            {TAB_LABELS[tab]} ({tabCounts[tab]})
+          </button>
+        ))}
       </div>
 
       <div className="scroll">

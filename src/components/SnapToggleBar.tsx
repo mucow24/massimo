@@ -55,26 +55,39 @@ function CircleCardinalsIcon() {
 }
 
 /** One state in a toggle's cycle. Index 0 is always the "off" state. */
-interface SnapState {
-  value: SnapModes[keyof SnapModes];
+interface SnapState<V> {
+  value: V;
   Icon: React.ComponentType;
   /** Short name of this state, shown in the tooltip (e.g. "Horizontal only"). */
   name: string;
 }
 
-interface ToggleSpec {
-  key: keyof SnapModes;
-  label: string;
-  hint: string;
-  /** Ordered cycle of states; clicking advances to the next, wrapping back to
-   *  index 0. Boolean toggles are just two-state cycles. */
-  states: SnapState[];
-  /** When true, this toggle is disabled unless `modes.line` is also on. */
-  requiresLine?: boolean;
-}
+/**
+ * One toggle's spec, CORRELATED to its mode key: the mapped type is distributed
+ * over `keyof SnapModes` and then indexed back into a union, so each arm pairs a
+ * single key with states carrying only that key's value type. Spelling it as a
+ * flat `{ key: keyof SnapModes; states: SnapState<SnapModes[keyof SnapModes]>[] }`
+ * would take the value type across ALL keys, and happily accept `key: 'line'`
+ * with the directional states — which matters because `useSnapPrefs.setMode`
+ * takes that same widened value type and names THIS table as the thing that
+ * decides which values are legal per key. The correlation is what makes that
+ * true; it costs no call-site casts, because `TOGGLES` is a literal.
+ */
+type ToggleSpec = {
+  [K in keyof SnapModes]: {
+    key: K;
+    label: string;
+    hint: string;
+    /** Ordered cycle of states; clicking advances to the next, wrapping back to
+     *  index 0. Boolean toggles are just two-state cycles. */
+    states: SnapState<SnapModes[K]>[];
+    /** When true, this toggle is disabled unless `modes.line` is also on. */
+    requiresLine?: boolean;
+  };
+}[keyof SnapModes];
 
 /** A plain on/off toggle modeled as a two-state cycle with one icon. */
-function boolStates(Icon: React.ComponentType): SnapState[] {
+function boolStates(Icon: React.ComponentType): SnapState<boolean>[] {
   return [
     { value: false, Icon, name: 'Off' },
     { value: true, Icon, name: 'On' },

@@ -7,10 +7,26 @@ import type { Vec2 } from '../geometry/vec';
 // appendGestures model module (no store or component import, so no cycle).
 import type { AppendCursor, AppendHover } from '../model/appendGestures';
 import { sameAppendHover } from '../model/appendGestures';
+import { healPersistedUnion } from './persistedUnion';
 
-// ----- Selection (ephemeral, except the persisted sidebarOpen flag) -----
+// ----- Selection (ephemeral, except the two persisted sidebar fields:
+//       `sidebarOpen` and `activeTab`) -----
 
-export type SidebarTab = 'stations' | 'lines' | 'styles';
+/**
+ * The sidebar's tabs, in the order they sit in the strip. The ARRAY is the
+ * source of truth and the type is derived from it, so the membership guard
+ * below can judge a stored value without re-spelling the members — the same
+ * ladder-and-guard shape every other stored union in the app uses.
+ */
+export const SIDEBAR_TABS = ['stations', 'lines', 'styles'] as const;
+
+export type SidebarTab = (typeof SIDEBAR_TABS)[number];
+
+/** The tab a fresh session opens on, and what a stored non-member heals to. */
+export const DEFAULT_SIDEBAR_TAB: SidebarTab = 'stations';
+
+export const isSidebarTab = (v: unknown): v is SidebarTab =>
+  typeof v === 'string' && (SIDEBAR_TABS as readonly string[]).includes(v);
 
 // Hover preview shown while in add-line-tag mode: tracks the candidate
 // insertion point under the cursor on a line stripe, so the canvas can
@@ -527,7 +543,7 @@ export const useSelection = create<SelectionState>()(
       labelSelected: false,
       selectedAnchorCellId: null,
       editingStationId: null,
-      activeTab: 'stations',
+      activeTab: DEFAULT_SIDEBAR_TAB,
       sidebarOpen: true,
       selectedLineTagId: null,
       lineTagHoverPreview: null,
@@ -1002,6 +1018,26 @@ export const useSelection = create<SelectionState>()(
       name: 'massimo-sidebar-v1',
       storage: createJSONStorage(() => localStorage),
       partialize: (s) => ({ sidebarOpen: s.sidebarOpen, activeTab: s.activeTab }),
+      // `activeTab` is a union, so it goes through the one rule every stored
+      // union pref does. It needs the gate more than most: the toggles heal
+      // themselves on the next click (their readers fall back to off, and the
+      // cycle's next step writes a member back), but Sidebar.tsx matches this
+      // one against the three names with `===` — a non-member marks no tab
+      // active and renders no panel body, and no tab button can ever write it
+      // back, so the blank sidebar survives every reload.
+      merge: (persisted, current) => {
+        const stored = (persisted ?? {}) as Partial<SelectionState>;
+        return {
+          ...current,
+          ...stored,
+          activeTab: healPersistedUnion(
+            stored.activeTab,
+            current.activeTab,
+            isSidebarTab,
+            DEFAULT_SIDEBAR_TAB,
+          ),
+        };
+      },
     },
   ),
 );

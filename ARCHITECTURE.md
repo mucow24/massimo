@@ -1,6 +1,6 @@
 # Massimo — Architecture
 
-**Up to date as of commit `2aee13f` (2026-08-26, #548) — verified against the live source.** This
+**Up to date as of commit `4ecdb1a` (2026-08-27, #549) — verified against the live source.** This
 document describes the code as it stands; it is not a changelog. Use `git log` for history.
 
 > A fast-bootstrap reference for understanding the codebase: the ins, outs, gotchas, and
@@ -233,8 +233,9 @@ src/
     toastStore.ts               # useToasts: stacking status toasts (pushToast from anywhere)
     exportAudit.ts              # auditExportDoc: docAudit at the export doors (no store; toasts)
     snapPrefs.ts                # useSnapPrefs: snap toggles + the ten digit-keyed preset slots
-                                #   (persist v2; migrates v0's boolean all/grid + fills modes
-                                #   a blob predates)
+                                #   (persist v2; migrates v0's boolean all/grid, fills modes
+                                #   a blob predates and heals the two directional ones a blob
+                                #   carries off-ladder)
     labelEditorPrefs.ts         # useLabelEditorPrefs: text-label editor UI prefs (wrapText)
     lineEditorPrefs.ts          # useLineEditorPrefs: line-popover style-detail collapsed?
     stationEditorPrefs.ts       # useStationEditorPrefs: station-popover typography detail
@@ -2091,12 +2092,14 @@ disclosure state survives a reload (`useLabelEditorPrefs`, `useLineEditorPrefs`,
 `useStationEditorPrefs`, `useLibraryPrefs`, and `useLineListPrefs` — the one of the five NOT
 persisted). Files in [src/state/](src/state/).
 
-Most of that folder is **not** a store, though: eleven modules sit alongside them owning no React
+Most of that folder is **not** a store, though: twelve modules sit alongside them owning no React
 state at all. `mapLibrary.ts` (IndexedDB; see the map-library section below) and `history.ts`
 (zundo's internals) own state that lives outside React entirely; `theme.ts` and `stationNames.ts`
-are pure tables; `visibility.ts` / `anchorVisibility.ts` / `customLineColors.ts` are derivations
-over the stores; and `selectionOps.ts`, `transferPick.ts`, `mirrorDispatch.ts`, `exportAudit.ts`
-are pure rules or fan-outs that read the stores through `getState()` rather than subscribing.
+are pure tables; `persistedUnion.ts` is a pure rule the persist `merge` hooks call on the way in,
+touching no store of its own; `visibility.ts` / `anchorVisibility.ts` / `customLineColors.ts` are
+derivations over the stores; and `selectionOps.ts`, `transferPick.ts`, `mirrorDispatch.ts`,
+`exportAudit.ts` are pure rules or fan-outs that read the stores through `getState()` rather than
+subscribing.
 
 **`useFontEpoch` is a store for one specific reason** — see the memo gotcha: a re-render signal
 that must cross a `memo` boundary cannot live in App-local `useState`, because `StationView`'s
@@ -2222,7 +2225,13 @@ open group: those writes record nothing of their own for it to fold.
 
 ### `useSelection` — ephemeral UI/mode state ([selection.ts](src/state/selection.ts))
 
-Not persisted, not undoable. Two key pieces:
+Not undoable, and ephemeral apart from a deliberate two-field exception: the sidebar's
+`sidebarOpen` flag and `activeTab` persist under `localStorage['massimo-sidebar-v1']`, so the
+panel reopens where the user left it. Everything else in the store — every selection array, the
+hover channels, `UiMode` — must NOT survive a reload, which is why the `partialize` names those
+two rather than excluding the rest: a field added here is ephemeral by default. `activeTab` is a
+union, so it takes the persisted-union gate on the way in (see Conventions); the rest of this
+section is about the ephemeral majority. Two key pieces:
 
 **`UiMode`** — a discriminated union, **exactly one editor mode active at a time**:
 `idle | placing-station | creating-line-tag | creating-route-bullet | creating-transfer(firstEnd)
@@ -4584,7 +4593,10 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   for a stored value, the store's own module for a union that never leaves the app (`MAP_SORTS` in
   `state/mapLibrary.ts`): an ordered array naming every member — `LINE_STYLES`, `LINE_END_STYLES`,
   `TRANSFER_DRAW_ORDERS`, `ROUTE_BULLET_SHAPES`, `TEXT_LABEL_ALIGNS`, `DOT_BASE_SHAPES`,
-  `DOT_STROKE_ALIGNS`, `PALETTE_SORTS`, `MAP_SORTS`, `DAY_CANVAS_COLORS`, `LABEL_ALIGNS`,
+  `DOT_STROKE_ALIGNS`, `PALETTE_SORTS`, `MAP_SORTS`, `DAY_CANVAS_COLORS`, `SIDEBAR_TABS`,
+  `ALL_SNAPS`/`GRID_SNAPS` (the two directional snap cycles, in `geometry/snap.ts` rather than
+  beside the toolbar that spells their icons, because the store that judges a stored one sits
+  below the components), `LABEL_ALIGNS`,
   `LABEL_VALIGNS` (the STATION
   label's two axes — a different value space from the free text label's single `align`, hence
   their own pair of ladders), `AUTO_H_ALIGNS`/`AUTO_V_ALIGNS` (the wand's multi-line tuning pair, a
@@ -4593,8 +4605,8 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   `LABEL_WEIGHT_NAMES` (whose rungs carry their display names, since the names ARE the shipped
   faces) — with a membership guard beside it: `isLineEndStyle`, `isTransferDrawOrder`,
   `isRouteBulletShape`, `isTextLabelAlign`, `isDotBaseShape`, `isDotStrokeAlign`, `isPaletteSort`,
-  `isMapSort`, `isDayCanvasColor`, `isLabelAlign`, `isLabelValign`, `isAutoHAlign`, `isAutoVAlign`,
-  `isLabelWeight`.
+  `isMapSort`, `isDayCanvasColor`, `isSidebarTab`, `isAllSnap`, `isGridSnap`, `isLabelAlign`,
+  `isLabelValign`, `isAutoHAlign`, `isAutoVAlign`, `isLabelWeight`.
   The stored unions still outside the rule are `GuideOrientation`, `StopOrientation` and
   `StationStopType`, whose gates spell their members out. The first two are backstopped by
   `Record<Union, …>` tables elsewhere (`WELLS`/`MOVE_CURSOR`,
@@ -4616,19 +4628,44 @@ lines`; every `segmentStyles` key is a real, non-default adjacency; every `stati
   keeps the live value, since a blob predating the field violates nothing. It belongs in a
   `merge` hook and never in `migrate`, which zustand runs only when the stored version differs
   from the configured one — so a gate placed there would never see a blob the current build
-  wrote. The three that need it are `viewportStore`'s `dayCanvasColor` (`isDayCanvasColor`),
-  `libraryPrefs`' `sort` (`isMapSort`) and `customPalettes`' `sort` (`isPaletteSort`); the flags
-  and numbers beside them need none, being read as booleans or run through a ladder lookup that
-  already falls back.
+  wrote. Six fields go through it: `viewportStore`'s `dayCanvasColor` (`isDayCanvasColor`),
+  `libraryPrefs`' `sort` (`isMapSort`), `customPalettes`' `sort` (`isPaletteSort`), the sidebar's
+  `activeTab` (`isSidebarTab`) and `snapPrefs`' two directional modes, `all` and `grid`
+  (`isAllSnap`/`isGridSnap`). The flags and numbers beside them need none, being read as booleans
+  or run through a ladder lookup that already falls back — and a persisted union is exactly what
+  a `merge` hook is for in this app: no store has one for any other reason.
+  How LOUDLY a stale value fails varies, and none of it is a reason to skip the gate. The
+  sidebar tab is the silent extreme: `Sidebar.tsx` matches it against the three names with `===`,
+  so a non-member marks no tab active and renders no panel body at all, and since no tab button
+  can write that value back the blank sidebar survives every reload. The snap modes are the
+  quiet one: their readers (`axesForAllSnap`, `gridConstrains`) fall through to "no axes" and the
+  toolbar's `Math.max(0, findIndex)` paints the Off glyph, so the bar merely LIES until the user
+  happens to click that toggle, whose next step writes a member back. `snapPrefs` pairs the gate
+  with a separate fill from `DEFAULT_SNAP_MODES`, because its `modes` is a nested object the
+  shallow merge replaces wholesale: the fill answers a key the blob predates, the gate answers a
+  key it carries with a value the ladder dropped. A preset's modes sit a level deeper than any
+  merge hook reaches and are filled on the way out, in `recallPreset`.
   Compile-time exhaustiveness comes from a `Record<Union, …>` the array is paired with: the UI's
   chip or label map where the pickers need one
   (`ROUTE_BULLET_SHAPE_LABEL`, `LINE_END_LABELS`, `TRANSFER_DRAW_LABELS`, `DOT_BASE_SHAPE_LABELS`,
   `TEXT_LABEL_ALIGN_CHIPS`, `LabelAlignButtons`'s four chip maps, each dialog's `SORT_LABELS`,
-  the Map menu's `DAY_CANVAS_COLOR_LABELS`) or
+  the Map menu's `DAY_CANVAS_COLOR_LABELS`, the sidebar strip's `TAB_LABELS` and its
+  `tabCounts` sibling) or
   `LINE_STYLE_TIE_RANK` — a member added
   to the union leaves a missing key there and fails to compile, so the ladder cannot fall behind
   the type. A user-facing CYCLE is deliberately NOT derived from its ladder (`NEXT_STYLE`,
   `AXIS_CYCLE`): reordering the ladder must not silently reorder what shift-click does.
+  The snap toolbar's two directional cycles are the case where that independence has to be
+  policed rather than merely allowed. Their `states` arrays carry icons and tooltip prose the
+  geometry layer has no business holding, so they stay hand-written — but they must still name
+  exactly `ALL_SNAPS`/`GRID_SNAPS`, because the ladder is now what the persist gate judges
+  against: a rung the cycle omits is unreachable, and a state the cycle offers that the ladder
+  lacks is worse and invisible in manual testing, since the click works and the next reload
+  heals the value away. Neither list can derive the other, so `SnapToggleBar.test.tsx` walks the
+  cycle through `advanceSnapToggle` and holds it to the ladder. `ToggleSpec` itself is a mapped
+  type distributed over `keyof SnapModes`, so each arm pairs one key with only that key's value
+  type; `useSnapPrefs.setMode` widens its value to the union across keys and names that table as
+  what decides which values are legal per key, which the correlation is what makes true.
 - **`DOC_FIELDS` is the single source of truth** for persisted/undoable fields — it is **not**
   `Object.keys(DEFAULT_DOC)`. Its COVERAGE of `MapDoc` is type-enforced, not trusted to review:
   `Pick` cannot say "this tuple names every field", so `DocFieldsCoverMapDoc` spells the leftover
