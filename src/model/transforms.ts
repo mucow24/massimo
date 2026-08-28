@@ -648,6 +648,27 @@ export function stationIsSingleton(station: Station | undefined): boolean {
   return stationIsSingletonByCount(station.stops);
 }
 
+// Every StationStopType, in the order the Stop type picker lists them. The
+// STORED field is this ladder minus its first rung: `auto` is what an ABSENT
+// `stopType` spells, which is why `isStoredStopType` below — not this list — is
+// what the load gate judges by. The picker's label map is a `Record` over the
+// union, so a rung added here without a name for it fails to compile.
+export const STATION_STOP_TYPES: readonly StationStopType[] = ['auto', 'singleton', 'interchange'];
+
+/** Is `v` one of the Stop type picker's choices? */
+export const isStationStopType = (v: unknown): v is StationStopType =>
+  typeof v === 'string' && (STATION_STOP_TYPES as readonly string[]).includes(v);
+
+/**
+ * Is `v` a stop-type DECLARATION — a rung the field may actually hold? Derived
+ * from the picker's ladder rather than re-spelling the pair, so the two cannot
+ * drift. A stored `'auto'` fails deliberately: it is a real picker rung but not
+ * a real stored value, and the canonical way to say it is the key absent (what
+ * `setStationStopType(id, 'auto')` writes).
+ */
+export const isStoredStopType = (v: unknown): v is Exclude<StationStopType, 'auto'> =>
+  isStationStopType(v) && v !== 'auto';
+
 /**
  * Effective perpendicular label offset. The field defaults to 0 when absent
  * (older saves) or when the label is missing — one named home for that default

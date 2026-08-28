@@ -46,12 +46,23 @@ import {
   effectiveStationStyleProps,
   resolveAutoAlign,
   resolveOffsetPerp,
+  STATION_STOP_TYPES,
   stationIsSingletonByCount,
   stationPivotWorld,
 } from '../../model/transforms';
 
-// The Stop type dropdown's options. The two explicit names are the ones the
-// line inspector's own split rows use, so the surfaces read as one idea.
+// The Stop type dropdown's names. A `Record` over the union, so a rung added to
+// `StationStopType` leaves a missing key here and fails to compile — the ladder
+// below cannot grow a value this picker has no row for. The two explicit names
+// are the ones the line inspector's own split rows use, so the surfaces read as
+// one idea.
+const STOP_TYPE_LABELS: Record<StationStopType, string> = {
+  auto: 'Auto',
+  singleton: 'Singleton',
+  interchange: 'Interchange',
+};
+
+// The dropdown's options, in the ladder's order.
 //
 // Auto carries the answer it currently gives, because the count is the one
 // thing this control can't show you by looking. It asks for the count
@@ -59,17 +70,16 @@ import {
 // declared station must report what reverting would buy, not echo its own
 // declaration back. A station with no stops has no answer and just says "Auto".
 function stopTypeOptions(station: Station): { value: StationStopType; name: string }[] {
-  const auto =
+  const autoAnswer =
     station.stops.length === 0
-      ? 'Auto'
+      ? ''
       : stationIsSingletonByCount(station.stops)
-        ? 'Auto (Singleton)'
-        : 'Auto (Interchange)';
-  return [
-    { value: 'auto', name: auto },
-    { value: 'singleton', name: 'Singleton' },
-    { value: 'interchange', name: 'Interchange' },
-  ];
+        ? ' (Singleton)'
+        : ' (Interchange)';
+  return STATION_STOP_TYPES.map((value) => ({
+    value,
+    name: STOP_TYPE_LABELS[value] + (value === 'auto' ? autoAnswer : ''),
+  }));
 }
 
 export function StationInspector({ id }: { id: StationId }) {
